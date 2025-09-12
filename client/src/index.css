@@ -1,0 +1,128 @@
+/* src/index.css */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ==========================================================================
+  TEMA ALTYAPISI: CSS DEĞİŞKENLERİ
+  ==========================================================================
+  Uygulamanın tüm tasarımını buradan yönetiyoruz. Renkler, boşluklar, 
+  yazı tipleri gibi değerleri merkezi bir yerden kontrol ederek "tema"
+  mantığını kuruyoruz.
+*/
+:root {
+  /* --------------------
+   * ANA RENK PALETİ
+   * -------------------- 
+   * Projenin ana renklerini burada tanımlıyoruz. Bu renkler, aşağıdaki
+   * daha spesifik değişkenlerde kullanılacak.
+   */
+  --color-primary-100: #e0f2fe; /* cyan-100 */
+  --color-primary-300: #7dd3fc; /* cyan-300 */
+  --color-primary-400: #38bdf8; /* cyan-400 */
+  --color-primary-500: #0ea5e9; /* cyan-500 */
+  --color-primary-600: #0284c7; /* cyan-600 */
+
+  --color-gray-100: #f3f4f6;
+  --color-gray-300: #d1d5db;
+  --color-gray-400: #9ca3af;
+  --color-gray-500: #6b7280;
+  --color-gray-600: #4b5563;
+  --color-gray-700: #374151;
+  --color-gray-800: #1f2937;
+  --color-gray-900: #111827;
+  --color-gray-950: #030712;
+  
+  --color-danger: #ef4444; /* red-500 */
+  --color-warning: #f59e0b; /* amber-500 */
+
+  /* --------------------
+   * ARAYÜZ DEĞİŞKENLERİ
+   * -------------------- 
+   * Bu değişkenler doğrudan arayüz elemanlarına atanacak.
+   * Örneğin, tüm pencerelerin arkaplanı --bg-window-header olacak.
+   * Bu sayede tema değişikliği yapmak için sadece bu değişkenleri
+   * güncellemek yeterli olacak.
+   */
+
+  /* Genel Arkaplanlar */
+  --bg-main: var(--color-gray-900);
+  --bg-workspace: var(--color-gray-800);
+  --bg-toolbar: var(--color-gray-900);
+  --bg-sidebar: var(--color-gray-800);
+  
+  /* Pencere Elemanları */
+  --bg-window-header: var(--color-gray-950);
+  --bg-window-body: var(--color-gray-800);
+  --border-window: var(--color-gray-700);
+
+  /* Buton ve Etkileşimli Elemanlar */
+  --bg-btn-default: var(--color-gray-700);
+  --bg-btn-hover: var(--color-primary-500);
+  --bg-btn-active: var(--color-primary-600);
+  --text-btn-default: var(--color-gray-100);
+
+  /* Metin Renkleri */
+  --text-primary: var(--color-primary-400);
+  --text-default: var(--color-gray-300);
+  --text-muted: var(--color-gray-500);
+  --text-loud: var(--color-gray-100);
+  --text-danger: var(--color-danger);
+
+  /* Diğer Arayüz Elemanları */
+  --border-default: var(--color-gray-700);
+  --border-highlight: var(--color-primary-500);
+  
+  /* Scrollbar */
+  --scrollbar-thumb: var(--color-gray-600);
+  --scrollbar-thumb-hover: var(--color-gray-500);
+  --scrollbar-track: var(--color-gray-900);
+}
+
+/* ==========================================================================
+  YENİDEN KULLANILABİLİR YARDIMCI SINIFLAR (UTILITIES)
+  ==========================================================================
+  Sık kullanılan CSS kombinasyonlarını @apply ile birleştirerek 
+  özel sınıflar oluşturuyoruz. Bu, kod tekrarını azaltır ve
+  tasarım tutarlılığını artırır.
+*/
+.btn {
+  @apply px-4 py-2 rounded-md font-bold transition-colors duration-150;
+  background-color: var(--bg-btn-default);
+  color: var(--text-btn-default);
+}
+.btn:hover {
+  background-color: var(--bg-btn-hover);
+}
+
+/* ==========================================================================
+  SCROLLBAR TASARIMI
+  ==========================================================================
+  Uygulama genelinde tutarlı ve temaya uygun bir scrollbar stili.
+  Bu, projenin daha profesyonel ve bütünsel görünmesini sağlar.
+*/
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 5px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+/* --- ANİMASYON KISMI --- */
+.draggable-window-container {
+  opacity: 0;
+  transform: scale(0.95);
+  transition: opacity 50ms ease-out, transform 50ms ease-out;
+}
+.draggable-window-container.open {
+  opacity: 1;
+  transform: scale(1);
+}
