@@ -4,75 +4,61 @@ import VolumeKnob from '../../ui/VolumeKnob';
 import { usePlaybackStore } from '../../store/usePlaybackStore';
 
 function TopToolbar({ audioEngineRef }) {
-  const playbackState = usePlaybackStore(state => state.playbackState);
-  const bpm = usePlaybackStore(state => state.bpm);
-  const transportPosition = usePlaybackStore(state => state.transportPosition);
-  const masterVolume = usePlaybackStore(state => state.masterVolume);
-
-  const {
-    handlePlay,
-    handlePause,
-    handleStop,
-    handleBpmChange,
-    handleMasterVolumeChange,
-  } = usePlaybackStore.getState();
+  const { playbackState, bpm, transportPosition, masterVolume } = usePlaybackStore();
+  const { handlePlay, handlePause, handleStop, handleBpmChange, handleMasterVolumeChange } = usePlaybackStore.getState();
 
   return (
-    <header className="bg-gray-900 p-2 flex items-center justify-between border-b border-gray-700 h-16 shrink-0">
+    <header 
+      className="p-2 flex items-center justify-between h-16 shrink-0"
+      style={{
+        backgroundColor: 'var(--color-background)',
+        borderBottom: '1px solid var(--color-border)'
+      }}
+    >
       <div className="flex items-center space-x-4">
-        <div className="flex items-center space-x-1 text-cyan-400">
+        <div className="flex items-center space-x-1" style={{ color: 'var(--color-primary)' }}>
           <Wind size={24} />
-          <h1 className="font-bold text-lg">SoundForge</h1>
+          <h1 className="font-bold" style={{ fontSize: 'var(--font-size-header)' }}>SoundForge</h1>
         </div>
+        
         <div className="flex items-center space-x-2">
-          <div className="mr-2">
-            <VolumeKnob
-              label="Master"
-              size={36}
-              value={masterVolume}
-              // --- DÜZELTME: .current ile doğru motor örneğini gönder ---
-              onChange={(val) => handleMasterVolumeChange(val, audioEngineRef.current)}
-              defaultValue={0}
-              min={-60}
-              max={6}
-            />
-          </div>
-          {/* --- DÜZELTME: Tüm onClick eylemlerinde .current ile doğru motor örneğini gönder --- */}
+          <VolumeKnob
+            label="Master"
+            size={36}
+            value={masterVolume}
+            onChange={(val) => handleMasterVolumeChange(val, audioEngineRef.current)}
+            defaultValue={0} min={-60} max={6}
+          />
           {(playbackState === 'stopped' || playbackState === 'paused') && (
-            <button title="Play" onClick={() => handlePlay(audioEngineRef.current)} className="bg-gray-700 p-2 rounded hover:bg-cyan-500 transition-colors">
+            <button title="Play" onClick={() => handlePlay(audioEngineRef.current)} className="p-2 rounded hover:bg-[var(--color-primary)] transition-colors" style={{ backgroundColor: 'var(--color-surface2)'}}>
               <Play size={20} />
             </button>
           )}
           {playbackState === 'playing' && (
-            <button title="Pause" onClick={() => handlePause(audioEngineRef.current)} className="bg-gray-700 p-2 rounded hover:bg-cyan-500 transition-colors">
+            <button title="Pause" onClick={() => handlePause(audioEngineRef.current)} className="p-2 rounded hover:bg-[var(--color-primary)] transition-colors" style={{ backgroundColor: 'var(--color-surface2)'}}>
               <Pause size={20} />
             </button>
           )}
           {(playbackState === 'playing' || playbackState === 'paused') && (
-            <button title="Stop" onClick={() => handleStop(audioEngineRef.current)} className="bg-gray-700 p-2 rounded hover:bg-red-500 transition-colors">
+            <button title="Stop" onClick={() => handleStop(audioEngineRef.current)} className="p-2 rounded hover:bg-[var(--color-accent)] transition-colors" style={{ backgroundColor: 'var(--color-surface2)'}}>
               <Square size={20} />
             </button>
           )}
         </div>
-        <div className="flex items-center bg-gray-800 rounded">
-          <div className="flex items-center">
-            <input
-              type="number"
-              value={bpm}
-              // --- DÜZELTME: .current ile doğru motor örneğini gönder ---
-              onChange={(e) => handleBpmChange(Number(e.target.value), audioEngineRef.current)}
-              className="bg-transparent w-16 text-center focus:outline-none p-1"
-            />
-            <span className="bg-gray-700 text-xs font-bold p-2">BPM</span>
-          </div>
-          <div className="p-[5px] text-lg font-mono tracking-wider w-32 text-center text-cyan-400">
+
+        <div className="flex items-center rounded" style={{ backgroundColor: 'var(--color-surface)' }}>
+          <input
+            type="number"
+            value={bpm}
+            onChange={(e) => handleBpmChange(Number(e.target.value), audioEngineRef.current)}
+            className="bg-transparent w-16 text-center focus:outline-none p-1"
+            style={{ fontSize: 'var(--font-size-body)' }}
+          />
+          <span className="text-xs font-bold p-2" style={{ backgroundColor: 'var(--color-surface2)' }}>BPM</span>
+          <div className="p-[5px] font-mono tracking-wider w-32 text-center" style={{ color: 'var(--color-primary)', fontSize: 'var(--font-size-header)' }}>
             {transportPosition}
           </div>
         </div>
-      </div>
-      <div className="flex items-center text-xs font-bold">
-        <span>CPU:</span>
-        <span className="ml-1 font-mono text-green-500">0%</span>
       </div>
     </header>
   );

@@ -7,9 +7,11 @@
 import { create } from 'zustand';
 import { panelDefinitions } from '../config/panelConfig';
 import { getNextCascadePosition } from '../lib/utils/windowManager';
+import { useInstrumentsStore } from './useInstrumentsStore';
 
 const initialPanelsState = Object.keys(panelDefinitions).reduce((acc, id) => {
   const def = panelDefinitions[id];
+
   acc[id] = {
     id: id,
     title: def.title,
@@ -18,6 +20,7 @@ const initialPanelsState = Object.keys(panelDefinitions).reduce((acc, id) => {
     position: def.initialPos,
     size: def.initialSize,
   };
+
   return acc;
 }, {});
 

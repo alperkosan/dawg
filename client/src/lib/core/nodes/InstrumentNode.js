@@ -1,197 +1,96 @@
 import * as Tone from 'tone';
 
-const semitonesToPlaybackRate = (semitones) => {
-  return Math.pow(2, semitones / 12);
-};
-
-const noteToMidi = (note) => {
-  return Tone.Frequency(note).toMidi();
-}
-
+/**
+ * "Kurşun Geçirmez" InstrumentNode v2.0
+ * Bu versiyon, her enstrümanı kendi ses verisini yüklemekten ve yönetmekten
+ * sorumlu, tamamen izole bir birim haline getirir. Bu, enstrümanlar arası
+ * buffer sızıntısını ve "yarış durumu" hatalarını mimari olarak engeller.
+ */
 export class InstrumentNode {
-  constructor(instrumentData, buffer) {
+  constructor(instrumentData) {
     this.id = instrumentData.id;
-    this.baseMidi = 60;
-    
-    // State tracking için yeni özellikler
-    this.isEnvelopeBusy = false;
-    this.lastTriggerTime = 0;
-    this.pendingRelease = null; // Bekleyen release işlemini takip et
-    
-    // Ses düğümleri
+    this.pianoRoll = instrumentData.pianoRoll;
+    this.isReady = false; // YENİ: Sampler'ın ses çalmaya hazır olup olmadığını belirten bayrak.
+
+    // Sampler'ı, buffer yerine doğrudan URL ve bir "onload" callback'i ile oluşturuyoruz.
+    // Bu, Tone.js'e "Bu URL'deki sesi yükle ve işin bittiğinde bana haber ver" demektir.
+    this.sampler = new Tone.Sampler({
+      urls: { C4: instrumentData.url },
+      baseUrl: window.location.origin, // Ses dosyalarının kök dizinini belirtir.
+      onload: () => {
+        // Yükleme tamamlandığında, bu enstrümanın artık ses çalmaya hazır olduğunu işaretliyoruz.
+        this.isReady = true;
+        // console.log(`✅ ${instrumentData.name} çalmaya hazır.`);
+      },
+      onerror: (error) => {
+        console.error(`❌ ${instrumentData.name} için buffer yüklenemedi:`, error);
+      },
+      envelope: instrumentData.envelope,
+    });
+
     this.output = new Tone.Channel(0, 0);
-    this.player = new Tone.Player(buffer);
-    this.envelope = new Tone.AmplitudeEnvelope(instrumentData.envelope);
-
-    // Bağlantılar
-    this.player.connect(this.envelope);
-    this.envelope.connect(this.output);
-
-    // Envelope olaylarını dinle
-    this.envelope.onsilence = () => {
-      this.isEnvelopeBusy = false;
-      this.pendingRelease = null;
-    };
-
-    // Player olaylarını dinle
-    this.player.onstop = () => {
-      // Player durduğunda envelope'u da temizle
-      if (this.isEnvelopeBusy) {
-        this.forceEnvelopeRelease();
-      }
-    };
-
-    this.updateParameters(instrumentData);
+    this.sampler.connect(this.output);
   }
 
   /**
-   * Zarf (envelope) güvenli bir şekilde temizler.
+   * Bu fonksiyon artık AudioEngine tarafından kullanılmayacak.
+   * Her node kendi buffer'ını kendisi yönetir.
+   * Yine de uyumluluk için boş olarak bırakmakta fayda var.
    */
-  _cleanupEnvelope(time) {
-    // Pending release varsa iptal et
-    if (this.pendingRelease) {
-      Tone.Transport.clear(this.pendingRelease);
-      this.pendingRelease = null;
-    }
-
-    if (this.isEnvelopeBusy) {
-      try {
-        // Küçük bir gecikme ile release
-        const releaseTime = Math.max(time - 0.002, Tone.now());
-        this.envelope.triggerRelease(releaseTime);
-        this.isEnvelopeBusy = false;
-      } catch (error) {
-        console.warn(`[INSTRUMENT] Envelope cleanup hatası ${this.id}:`, error);
-        // Force cleanup
-        this.forceEnvelopeRelease();
-      }
-    }
+  updateBuffer(newBuffer) {
+    // Bu metodun içi artık boş.
   }
 
   /**
-   * Envelope'u zorla serbest bırak
+   * Sesi tetiklemeden önce, Sampler'ın hazır olup olmadığını KONTROL EDER.
    */
-  forceEnvelopeRelease() {
-    try {
-      this.envelope.triggerRelease();
-      this.isEnvelopeBusy = false;
-      this.pendingRelease = null;
-    } catch (error) {
-      console.warn(`[INSTRUMENT] Force release hatası ${this.id}:`, error);
-    }
-  }
-
-  /**
-   * Player'ı güvenli bir şekilde durdur
-   */
-  stopPlayerSafely(time) {
-    try {
-      if (this.player.state === 'started') {
-        // Transport time'ı kontrol et
-        const stopTime = Math.max(time, Tone.now());
-        this.player.stop(stopTime);
-      }
-    } catch (error) {
-      console.warn(`[INSTRUMENT] Durdurma hatası ${this.id}:`, error);
-      // Force stop
-      try {
-        this.player.stop();
-      } catch (e) {
-        // Ignore force stop errors
-      }
-    }
-  }
-
-  /**
-   * Player'ı güvenli bir şekilde başlat
-   */
-  startPlayerSafely(time) {
-    try {
-      // Önce durduğundan emin ol
-      if (this.player.state === 'started') {
-        this.player.stop(time - 0.001);
-      }
-      
-      // Buffer'ın hazır olduğunu kontrol et
-      if (!this.player.buffer || !this.player.buffer.loaded) {
-        console.warn(`[INSTRUMENT] Buffer hazır değil: ${this.id}`);
-        return;
-      }
-
-      this.player.start(time);
-    } catch (error) {
-      console.error(`[INSTRUMENT] Başlatma hatası ${this.id}:`, error);
-    }
-  }
-
-  /**
-   * KRİTİK DÜZELTİLMİŞ trigger metodu - Envelope state management ile
-   */
-  trigger(time, note, bufferDuration, cutItself, instrumentData) {
-    // Çok yakın zamanlı tetiklemeleri engelle (debounce)
-    const currentTime = Tone.now();
-    const timeDiff = Math.abs(time - this.lastTriggerTime);
-    if (timeDiff < 0.001) { // 1ms minimum aralık
-      console.warn(`[INSTRUMENT] Çok yakın tetikleme engellendi: ${this.id}`);
+  trigger(time, note, bufferDuration, cutItself) {
+    // Eğer buffer henüz yüklenmediyse, hiçbir şey yapma. Bu, hataları önler.
+    if (!this.isReady) {
       return;
     }
 
-    try {
-      // KRİTİK: Her durumda envelope'u temizle
-      this._cleanupEnvelope(time);
-
-      // Pitch hesaplama
-      let pitchToPlay = this.baseMidi;
-      if (instrumentData.pianoRoll) {
-        pitchToPlay = noteToMidi(note.pitch);
-      }
-      
-      const semitoneShift = pitchToPlay - this.baseMidi;
-      this.player.playbackRate = semitonesToPlaybackRate(semitoneShift);
-
-      // GÜVENLİ başlatma - Küçük offset ile timing conflict'i önle
-      const safeStartTime = time + 0.003; // 3ms offset
-      this.startPlayerSafely(safeStartTime);
-      
-      // Envelope'u güvenli şekilde tetikle
-      const duration = note.duration ? Tone.Time(note.duration).toSeconds() : bufferDuration;
-      this.envelope.triggerAttackRelease(duration, safeStartTime, note.velocity ?? 1.0);
-      this.isEnvelopeBusy = true;
-
-      // Release zamanını hesapla ve otomatik temizlik planla
-      const releaseTime = safeStartTime + duration;
-      this.pendingRelease = Tone.Transport.schedule(() => {
-        this.isEnvelopeBusy = false;
-        this.pendingRelease = null;
-      }, releaseTime + 0.1); // Release'den 100ms sonra temizle
-
-      this.lastTriggerTime = time;
-
-    } catch (error) {
-      console.error(`[INSTRUMENT] Tetikleme hatası ${this.id}:`, error);
+    if (cutItself) {
+      this.sampler.releaseAll(time);
     }
+
+    const pitchToPlay = this.pianoRoll ? (note.pitch || 'C4') : 'C4';
+    
+    // Artık bufferDuration'a ihtiyacımız yok, Sampler kendi süresini bilir.
+    const duration = note.duration || "1n"; // Varsayılan bir süre verelim.
+    
+    this.sampler.triggerAttackRelease(
+      pitchToPlay, 
+      duration, 
+      time, 
+      note.velocity ?? 1.0
+    );
+  }
+  
+  // YENİ: Nota deneme (auditioning) için anlık çalma
+  triggerAttack(pitch, time, velocity) {
+    if (!this.sampler.loaded) return;
+    this.sampler.triggerAttack(pitch, time, velocity);
   }
 
-  updateBuffer(newBuffer) {
-    this.player.buffer = newBuffer;
+  // YENİ: Nota deneme (auditioning) için anlık susturma
+  triggerRelease(pitch, time) {
+    if (!this.sampler.loaded) return;
+    this.sampler.triggerRelease(pitch, time);
   }
 
+  /**
+   * Enstrüman parametrelerini günceller.
+   */
   updateParameters(instrumentData) {
-    if (instrumentData.envelope) {
-      this.envelope.set(instrumentData.envelope);
+    if (this.sampler.envelope && instrumentData.envelope) {
+      this.sampler.set({ envelope: instrumentData.envelope });
     }
-    this.instrumentData = instrumentData;
+    this.pianoRoll = instrumentData.pianoRoll;
   }
 
   dispose() {
-    // Pending işlemleri temizle
-    if (this.pendingRelease) {
-      Tone.Transport.clear(this.pendingRelease);
-    }
-    
-    this.forceEnvelopeRelease();
-    this.player.dispose();
-    this.envelope.dispose();
+    this.sampler.dispose();
     this.output.dispose();
   }
 }

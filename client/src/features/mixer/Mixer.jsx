@@ -1,4 +1,4 @@
-import React, { useRef, useMemo } from 'react'; // useRef ve useMemo eklendi
+import React, { useRef, useMemo } from 'react';
 import MixerChannel from './MixerChannel';
 import { useMixerStore } from '../../store/useMixerStore';
 
@@ -6,14 +6,12 @@ function Mixer({ audioEngineRef }) {
   const tracks = useMixerStore(state => state.mixerTracks);
   const activeChannelId = useMixerStore(state => state.activeChannelId);
 
-  // Kanal pozisyonlarını tutmak için bir ref haritası oluşturuyoruz.
   const channelRefs = useRef(new Map());
 
   const masterTrack = tracks.find(t => t.type === 'master');
   const trackChannels = tracks.filter(t => t.type === 'track');
   const busChannels = tracks.filter(t => t.type === 'bus');
 
-  // Aktif kanal ve bağlantıları hesaplamak için useMemo kullanarak performansı artırıyoruz.
   const activeConnections = useMemo(() => {
     if (!activeChannelId) return [];
     
@@ -27,11 +25,9 @@ function Mixer({ audioEngineRef }) {
 
   }, [activeChannelId, tracks]);
 
-  // Kabloları çizen fonksiyon
   const renderCables = () => {
     if (!activeConnections.length) return null;
     
-    // Bağlantıların koordinatlarını dinamik olarak al
     const connectionsWithCoords = activeConnections.map(conn => {
         const fromRect = channelRefs.current.get(conn.fromId)?.getBoundingClientRect();
         const toRect = channelRefs.current.get(conn.toId)?.getBoundingClientRect();
@@ -45,36 +41,49 @@ function Mixer({ audioEngineRef }) {
             x2: toRect.left - containerRect.left + toRect.width / 2,
             y2: toRect.top - containerRect.top
         };
-    }).filter(Boolean); // null olanları filtrele
+    }).filter(Boolean);
 
     return (
       <svg className="absolute inset-0 pointer-events-none" style={{ zIndex: 1 }}>
         {connectionsWithCoords.map((conn, idx) => {
           const d = `M ${conn.x1} ${conn.y1} C ${conn.x1} ${conn.y1 + 50}, ${conn.x2} ${conn.y2 - 50}, ${conn.x2} ${conn.y2}`;
           return (
-            <path key={idx} d={d} stroke="#3b82f6" strokeWidth="2" fill="none" className="animate-pulse" opacity={0.7} />
+            <path key={idx} d={d} stroke="var(--color-primary)" strokeWidth="2" fill="none" className="animate-pulse" opacity={0.7} />
           );
         })}
       </svg>
     );
   };
+
+  const separatorStyle = {
+      borderLeft: '2px solid var(--color-border)',
+      height: '100%',
+      margin: '0 0.5rem',
+  };
   
   return (
-    // Ana container'a ref ekliyoruz
-    <div ref={node => channelRefs.current.set('container', node)} className="relative w-full h-full flex bg-gray-800 p-4 gap-x-4 overflow-x-auto">
+    <div 
+        ref={node => channelRefs.current.set('container', node)} 
+        className="relative w-full h-full flex overflow-x-auto"
+        style={{
+            backgroundColor: 'var(--color-background)',
+            padding: 'var(--padding-container)',
+            gap: 'var(--gap-container)',
+        }}
+    >
       {renderCables()}
       {masterTrack && (
         <div ref={node => channelRefs.current.set(masterTrack.id, node)}>
             <MixerChannel key={masterTrack.id} trackId={masterTrack.id} audioEngineRef={audioEngineRef} />
         </div>
       )}
-      {(trackChannels.length > 0 || busChannels.length > 0) && <div className="border-l-2 border-gray-700 h-full mx-2"></div>}
+      {(trackChannels.length > 0 || busChannels.length > 0) && <div style={separatorStyle}></div>}
       {trackChannels.map(track => (
          <div key={track.id} ref={node => channelRefs.current.set(track.id, node)}>
             <MixerChannel trackId={track.id} audioEngineRef={audioEngineRef} />
          </div>
       ))}
-      {busChannels.length > 0 && <div className="border-l-2 border-gray-700 h-full mx-2"></div>}
+      {busChannels.length > 0 && <div style={separatorStyle}></div>}
       {busChannels.map(bus => (
          <div key={bus.id} ref={node => channelRefs.current.set(bus.id, node)}>
             <MixerChannel trackId={bus.id} audioEngineRef={audioEngineRef} />

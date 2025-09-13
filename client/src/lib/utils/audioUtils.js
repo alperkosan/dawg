@@ -1,37 +1,30 @@
 import * as Tone from 'tone';
 
 /**
- * Bir Tone.ToneAudioBuffer'ın mükemmel ve bağımsız bir klonunu oluşturur.
- * --- GÜNCELLENDİ: Hem Tone.ToneAudioBuffer hem de ham AudioBuffer ile çalışacak şekilde GÜÇLENDİRİLDİ. ---
+ * Bir Tone.ToneAudioBuffer'ın veya ham AudioBuffer'ın mükemmel ve bağımsız bir klonunu oluşturur.
+ * Bu, tahribatsız (non-destructive) işlemler için hayati öneme sahiptir.
  * @param {Tone.ToneAudioBuffer | AudioBuffer} inputBuffer Klonlanacak buffer.
  * @returns {Tone.ToneAudioBuffer | null} Yeni, birebir aynı buffer örneği.
  */
 export const cloneBuffer = (inputBuffer) => {
   if (!inputBuffer) return null;
 
-  // 1. Adım: Gelen buffer'ın ham (native) versiyonunu al.
-  // Eğer bu bir ToneAudioBuffer ise .get() ile, değilse kendisini kullan.
   const nativeBuffer = inputBuffer instanceof Tone.ToneAudioBuffer 
     ? inputBuffer.get() 
     : inputBuffer;
   
-  // Gelen veri geçersizse veya .get() başarısız olursa diye ek bir kontrol.
   if (!nativeBuffer) return null;
 
-  // 2. Adım: Girdi ile aynı özelliklerde yeni, boş bir native AudioBuffer oluştur.
   const newNativeBuffer = Tone.context.createBuffer(
     nativeBuffer.numberOfChannels,
     nativeBuffer.length,
     nativeBuffer.sampleRate
   );
 
-  // 3. Adım: Her bir kanaldaki ses verisini kopyala.
   for (let c = 0; c < nativeBuffer.numberOfChannels; c++) {
-    // getChannelData her iki buffer tipinde de mevcuttur.
     newNativeBuffer.getChannelData(c).set(nativeBuffer.getChannelData(c));
   }
 
-  // 4. Adım: Bu yeni ve garanti olarak geçerli olan native buffer'ı ToneAudioBuffer ile sarıp geri döndür.
   return new Tone.ToneAudioBuffer(newNativeBuffer);
 };
 

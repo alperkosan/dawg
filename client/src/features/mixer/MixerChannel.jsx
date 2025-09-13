@@ -28,17 +28,34 @@ const MixerChannel = React.memo(function MixerChannel({ trackId, audioEngineRef 
     }
   };
 
+  const channelStyle = {
+    backgroundColor: 'var(--color-surface)',
+    border: `1px solid ${isMaster ? 'var(--color-accent)' : 'var(--color-border)'}`,
+    borderRadius: 'var(--border-radius)',
+    color: 'var(--color-text)',
+  };
+
+  const insertsContainerStyle = {
+    backgroundColor: 'rgba(0,0,0,0.2)',
+    borderRadius: 'var(--border-radius)',
+  };
+  
+  const trackNameStyle = {
+      backgroundColor: 'var(--color-background)',
+      borderRadius: 'var(--border-radius)',
+  };
+
   return (
-    <div className={`flex flex-col border rounded-lg p-2 w-28 shrink-0 bg-gray-800 shadow-lg relative ${isMaster ? 'border-amber-500' : 'border-gray-700'}`}>
-      <div className="h-32 bg-gray-900/50 rounded p-1 flex flex-col gap-1 mb-2 text-xs text-gray-500">
-        <span className="font-bold text-center sticky top-0 bg-gray-900/50 py-1">INSERTS</span>
+    <div className="flex flex-col p-2 w-28 shrink-0 shadow-lg relative" style={channelStyle}>
+      <div className="h-32 p-1 flex flex-col gap-1 mb-2 text-xs" style={insertsContainerStyle}>
+        <span className="font-bold text-center sticky top-0 py-1" style={{ fontSize: 'var(--font-size-label)', color: 'var(--color-muted)' }}>INSERTS</span>
         <div className="flex-grow min-h-0 overflow-y-auto pr-1 flex flex-col gap-1">
           {track.insertEffects.map(effect => (
-             <div key={effect.id} className="bg-gray-700/50 p-1 rounded text-xs flex items-center justify-between">
-              <span className="truncate text-cyan-400">{effect.type}</span>
+             <div key={effect.id} className="bg-[var(--color-surface2)] p-1 rounded text-xs flex items-center justify-between">
+              <span className="truncate" style={{ color: 'var(--color-primary)' }}>{effect.type}</span>
               <div className="flex items-center">
                  <EffectSwitch isActive={!effect.bypass} onClick={() => handleMixerEffectChange(track.id, effect.id, 'bypass', !effect.bypass, audioEngineRef.current)} />
-                 <button onClick={() => handleMixerEffectRemove(track.id, effect.id)} className="ml-1 text-gray-500 hover:text-red-500" title="Efekti Sil">
+                 <button onClick={() => handleMixerEffectRemove(track.id, effect.id)} className="ml-1 text-[var(--color-muted)] hover:text-[var(--color-accent)]" title="Efekti Sil">
                     <X size={12}/>
                  </button>
               </div>
@@ -46,7 +63,7 @@ const MixerChannel = React.memo(function MixerChannel({ trackId, audioEngineRef 
           ))}
         </div>
         <div className="relative mt-auto">
-            <button ref={addButtonRef} onClick={handleAddButtonClick} className="w-full mt-1 text-cyan-500 hover:text-cyan-300 text-xs flex items-center justify-center gap-1">
+            <button ref={addButtonRef} onClick={handleAddButtonClick} className="w-full mt-1 text-[var(--color-primary)] hover:text-[var(--color-text)] text-xs flex items-center justify-center gap-1">
                 <Plus size={12}/> <span>Ekle</span>
             </button>
             {menuState.isOpen && (
@@ -56,14 +73,14 @@ const MixerChannel = React.memo(function MixerChannel({ trackId, audioEngineRef 
       </div>
       {!isMaster && (
         <div className="flex justify-center mb-2">
-            <VolumeKnob label="Pan" value={track.pan} onChange={(val) => handleMixerParamChange(track.id, 'pan', val)} min={-1} max={1} defaultValue={0}/>
+            <VolumeKnob label="Pan" value={track.pan} onChange={(val) => handleMixerParamChange(track.id, 'pan', val, audioEngineRef.current)} min={-1} max={1} defaultValue={0}/>
         </div>
       )}
       <div className="flex-grow h-40">
-        <Fader value={track.volume} onChange={(val) => handleMixerParamChange(track.id, 'volume', val)} />
+        <Fader value={track.volume} onChange={(val) => handleMixerParamChange(track.id, 'volume', val, audioEngineRef.current)} />
       </div>
-      <div className="bg-gray-900 rounded mt-2 p-2 text-center h-10 flex items-center justify-center">
-        <span className="font-bold text-sm truncate">{track.name}</span>
+      <div className="rounded mt-2 p-2 text-center h-10 flex items-center justify-center" style={trackNameStyle}>
+        <span className="font-bold truncate" style={{ fontSize: 'var(--font-size-body)' }}>{track.name}</span>
       </div>
     </div>
   );

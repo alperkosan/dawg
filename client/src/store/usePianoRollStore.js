@@ -1,9 +1,3 @@
-/**
- * @file usePianoRollStore.js
- * @description Sadece Piano Roll paneline özgü durumları yönetir.
- * Zoom seviyeleri, aktif çizim aracı, gam (scale) vurgulama gibi
- * arayüzle ilgili ayarları tutar.
- */
 import { create } from 'zustand';
 
 export const NOTES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
@@ -26,21 +20,51 @@ export const usePianoRollStore = create((set) => ({
   scale: { root: 'C', type: 'Minor' },
   showScaleHighlighting: true,
   activeTool: 'pencil',
-  zoomX: 1, // Yatay zoom
-  zoomY: 1, // Dikey zoom
-  
+  zoomX: 1,
+  zoomY: 1,
+  gridSnapValue: '16n',
+  lastUsedDuration: '16n',
+  showVelocityLane: true,
+  velocityLaneHeight: 100,
+
   // --- ACTIONS ---
   setScale: (root, type) => set({ scale: { root, type } }),
   toggleScaleHighlighting: () => set(state => ({ showScaleHighlighting: !state.showScaleHighlighting })),
   setActiveTool: (tool) => set({ activeTool: tool }),
   
+  // GÜNCELLEME: handleZoom fonksiyonu, zoom işleminin merkezlenmesi için
+  // PianoRoll.jsx bileşenindeki DOM manipülasyonu ile birlikte çalışır.
+  // Buradaki zoomFactor, zoom'un hassasiyetini ayarlar.
   handleZoom: (deltaX, deltaY) => {
-    set(state => ({
-      zoomX: clamp(state.zoomX + deltaX * 0.01, 0.25, 4),
-      zoomY: clamp(state.zoomY + deltaY * 0.01, 0.5, 3),
-    }));
+    set(state => {
+      // Yakınlaşma/uzaklaşma hızını ayarlayan faktörü biraz artırdık.
+      const zoomFactor = 0.0025; 
+      
+      const newZoomX = state.zoomX - state.zoomX * deltaY * zoomFactor;
+      const newZoomY = state.zoomY - state.zoomY * deltaX * zoomFactor;
+
+      return {
+        zoomX: clamp(newZoomX, 0.25, 5),
+        zoomY: clamp(newZoomY, 0.5, 3),
+      }
+    });
   },
 
-  zoomIn: () => set(state => ({ zoomX: clamp(state.zoomX * 1.2, 0.25, 4)})),
-  zoomOut: () => set(state => ({ zoomX: clamp(state.zoomX / 1.2, 0.25, 4)})),
+  zoomIn: () => set(state => ({ zoomX: clamp(state.zoomX * 1.2, 0.25, 5)})),
+  zoomOut: () => set(state => ({ zoomX: clamp(state.zoomX / 1.2, 0.25, 5)})),
+
+  setGridSnapValue: (snap) => set({ gridSnapValue: snap }),
+  setLastUsedDuration: (duration) => set({ lastUsedDuration: duration }),
+
+  toggleVelocityLane: () => set(state => {
+    if (state.showVelocityLane && state.velocityLaneHeight > 0) {
+      return { velocityLaneHeight: 0 };
+    }
+    return { velocityLaneHeight: 100, showVelocityLane: true };
+  }),
+
+  setVelocityLaneHeight: (delta) => set(state => {
+      const newHeight = state.velocityLaneHeight + delta;
+      return { velocityLaneHeight: clamp(newHeight, 0, 300) };
+  }),
 }));

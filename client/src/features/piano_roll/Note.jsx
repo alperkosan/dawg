@@ -1,34 +1,46 @@
 import React from 'react';
 import * as Tone from 'tone';
 
-const Note = React.memo(({ note, noteToY, stepToX, keyHeight, stepWidth }) => {
-  // Nota süresini (örn: "4n", "8t") piksel genişliğine çevir
+const Note = React.memo(({ note, noteToY, stepToX, keyHeight, stepWidth, isSelected, isPreview, onResizeStart }) => {
   const durationInSeconds = Tone.Time(note.duration).toSeconds();
   const secondsPerStep = Tone.Time('16n').toSeconds();
   const durationInSteps = durationInSeconds / secondsPerStep;
-  const width = durationInSteps * stepWidth;
-  
+  const width = Math.max(stepWidth / 4, durationInSteps * stepWidth - 2);
+
   const y = noteToY(note.pitch);
   const x = stepToX(note.time);
+  
+  let stateClasses = 'bg-cyan-600 border-cyan-800 hover:border-white';
+  let opacity = 0.8 + (note.velocity * 0.2);
+  let zIndex = 5;
 
-  // Velocity'e göre opaklık ayarı
-  const opacity = 0.6 + (note.velocity * 0.4);
-
+  if (isPreview) {
+    stateClasses = 'bg-cyan-500/70 border-2 border-dashed border-white';
+    opacity = 1.0;
+    zIndex = 20;
+  } else if (isSelected) {
+    stateClasses = 'bg-amber-500 border-white ring-2 ring-white';
+    opacity = 1.0;
+    zIndex = 10;
+  }
+  
   return (
     <div
-      className="absolute bg-cyan-500 border border-cyan-300 rounded hover:border-white cursor-pointer flex items-center justify-end pr-1"
+      className={`absolute rounded flex items-center justify-end pr-1 transition-colors duration-50 ${stateClasses}`}
       style={{
-        left: x,
-        top: y,
-        height: keyHeight,
-        width: width,
-        opacity: opacity,
-        boxShadow: `0 0 10px rgba(56, 189, 248, ${opacity * 0.5})`
+        left: x, top: y, height: keyHeight, width: width, opacity, zIndex,
+        boxShadow: isSelected ? `0 0 10px var(--color-accent)` : 'none'
       }}
     >
-        {/* İleride velocity ayarı için bir handle eklenebilir */}
+      <div
+        data-role="note-resize-handle"
+        onMouseDown={(e) => onResizeStart(note, e)}
+        className="absolute right-0 top-0 h-full w-2 cursor-ew-resize z-30"
+        title="Süreyi Değiştir"
+      />
     </div>
   );
 });
 
 export default Note;
+

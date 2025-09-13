@@ -1,6 +1,6 @@
 import React from 'react';
 import VolumeKnob from '../VolumeKnob';
-import { PresetManager } from '../PresetManager'; // Preset yöneticisini import et
+import { PresetManager } from '../PresetManager';
 
 const timeOptions = [
     { value: '1n', label: '1/1' }, { value: '2n', label: '1/2' }, { value: '4n', label: '1/4' },
@@ -11,25 +11,35 @@ const timeOptions = [
 
 export const DelayUI = ({ effect, onChange, definition }) => {
   return (
-    <div className="relative w-full h-full p-4 bg-gray-800 rounded-lg flex flex-col items-center justify-between border border-gray-700
-                    bg-[radial-gradient(ellipse_at_bottom,_var(--tw-gradient-stops))] from-blue-900/40 to-gray-800">
+    <div 
+        className="relative w-full h-full p-4 bg-[var(--color-surface)] rounded-lg flex flex-col items-center justify-between"
+        style={{
+            border: '1px solid var(--color-border)',
+            gap: 'var(--gap-container)'
+        }}
+    >
     <PresetManager 
       pluginType={definition.type} 
-      effect={effect} // Efektin tüm verisini gönderiyoruz
+      effect={effect}
       factoryPresets={definition.presets} 
       onChange={onChange}
     />
         <div>
-            <h3 className="text-lg font-bold text-blue-300">{definition.type}</h3>
-            <p className="text-xs text-center text-gray-400 max-w-xs px-2 mt-1">{definition.story}</p>
+            <h3 className="font-bold text-[var(--color-primary)]" style={{ fontSize: 'var(--font-size-header)' }}>{definition.type}</h3>
+            <p className="text-center text-[var(--color-muted)] max-w-xs px-2 mt-1" style={{ fontSize: 'var(--font-size-label)' }}>{definition.story}</p>
         </div>
-        <div className="flex items-end justify-around w-full mt-4 gap-6">
-            <div className="flex flex-col items-center gap-2">
-                <label className="text-xs font-bold text-gray-400">Time</label>
+        <div className="flex items-end justify-around w-full mt-4" style={{ gap: 'var(--gap-container)' }}>
+            <div className="flex flex-col items-center" style={{ gap: 'var(--gap-controls)' }}>
+                <label className="font-bold text-[var(--color-muted)]" style={{ fontSize: 'var(--font-size-label)' }}>Time</label>
                 <select 
                     value={effect.settings.delayTime}
                     onChange={(e) => onChange('delayTime', e.target.value)}
-                    className="bg-gray-900 border border-gray-700 rounded px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="bg-[var(--color-background)] rounded px-4 py-2 focus:outline-none focus:ring-2"
+                    style={{
+                        border: '1px solid var(--color-border)',
+                        fontSize: 'var(--font-size-body)',
+                        ringColor: 'var(--color-primary)'
+                    }}
                 >
                     {timeOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
                 </select>
@@ -50,4 +60,3 @@ export const DelayUI = ({ effect, onChange, definition }) => {
     </div>
   );
 };
-

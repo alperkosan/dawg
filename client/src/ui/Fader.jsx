@@ -38,11 +38,16 @@ function Fader({ value, onChange, minDb = -60, maxDb = 6 }) {
       <div
         ref={faderRef}
         onMouseDown={handleMouseDown}
-        className="w-2 h-full bg-gray-900 rounded-full cursor-pointer relative"
+        className="w-2 h-full rounded-full cursor-pointer relative"
+        style={{ backgroundColor: 'var(--color-background)' }}
       >
         <div 
-          className="absolute w-6 h-8 bg-gray-600 hover:bg-cyan-500 border-2 border-gray-900 rounded-md -left-2"
-          style={{ top: `calc(${valueToPosition(value)}% - 16px)` }}
+          className="absolute w-6 h-8 hover:bg-[var(--color-primary)] border-2 rounded-md -left-2"
+          style={{ 
+              backgroundColor: 'var(--color-muted)',
+              borderColor: 'var(--color-background)',
+              top: `calc(${valueToPosition(value)}% - 16px)` 
+          }}
         />
       </div>
     </div>

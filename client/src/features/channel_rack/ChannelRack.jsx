@@ -12,63 +12,94 @@ import ChannelContextMenu from '../../components/ChannelContextMenu';
 
 const ItemTypes = { SOUND_SOURCE: 'soundSource' };
 
-const StepButton = React.memo(function StepButton({ instrumentId, stepIndex, isActive, isMuted, isPlaceholder, isBeat, isBarStart, onStepClick }) {
-    const bgClass = isActive ? 'bg-cyan-500 hover:bg-cyan-400' : isPlaceholder ? 'bg-gray-700/20 hover:bg-gray-600/50' : isBarStart ? 'bg-gray-600 hover:bg-gray-500' : isBeat ? 'bg-gray-700/70 hover:bg-gray-600' : 'bg-gray-800/60 hover:bg-gray-700';
-    return (<button onClick={() => onStepClick(instrumentId, stepIndex)} className={`h-full w-9 rounded transition-colors shrink-0 ${bgClass} ${isMuted ? 'opacity-50' : ''}`} aria-label={`Step ${stepIndex + 1}`} />);
+// StepButton artık tıklanabilir ve temadan besleniyor
+const StepButton = React.memo(function StepButton({ instrumentId, stepIndex, isActive, isMuted, isBeat, isBarStart, onStepClick }) {
+    const handleClick = () => {
+        onStepClick(instrumentId, stepIndex);
+    };
+
+    const style = {
+        height: '100%',
+        width: '36px',
+        borderRadius: 'var(--border-radius)',
+        transition: 'background-color 150ms, opacity 150ms',
+        backgroundColor: isActive 
+            ? 'var(--color-primary)' 
+            : isBarStart 
+            ? 'var(--color-surface2)' 
+            : isBeat 
+            ? 'var(--color-surface)' 
+            : 'var(--color-background)',
+        border: `1px solid var(--color-border)`,
+        opacity: isMuted ? 0.5 : 1,
+    };
+
+    return <button onClick={handleClick} style={style} aria-label={`Step ${stepIndex + 1}`} />;
 });
 
+// InstrumentChannel artık tüm orijinal fonksiyonelliği ve dinamik stilleri içeriyor
 const InstrumentChannel = React.memo(function InstrumentChannel({ instrumentId, onContextMenu, audioEngineRef }) {
     const instrument = useInstrumentsStore(state => state.instruments.find(i => i.id === instrumentId));
     const track = useMixerStore(state => state.mixerTracks.find(t => t.id === instrument?.mixerTrackId));
-
-    // --- GÜNCELLENDİ: Gerekli tüm eylemleri doğrudan ilgili store'lardan alıyoruz ---
+    
     const { handleToggleInstrumentMute, handlePatternChange, handleSetPianoRollMode } = useInstrumentsStore.getState();
     const { handleMixerParamChange } = useMixerStore.getState();
     const { handleEditInstrument, handleTogglePianoRoll } = usePanelsStore.getState();
 
     const loopLength = useInstrumentsStore(state => state.loopLength);
-    const audioLoopLength = useInstrumentsStore(state => state.audioLoopLength);
     
     if (!instrument || !track) return null;
 
     const onEdit = () => handleEditInstrument(instrument, audioEngineRef.current);
-
-    /**
-     * --- GÜNCELLENDİ: Burası artık bir "koordinatör" ---
-     * Bu fonksiyon, hem enstrümanın modunu değiştirmek için useInstrumentsStore'u,
-     * hem de paneli açmak/kapatmak için usePanelsStore'u çağırır.
-     * Bu, veri akışını netleştirir ve store'ların birbirine olan bağımlılığını ortadan kaldırır.
-     */
     const onTogglePianoRoll = () => {
         const isOpening = usePanelsStore.getState().pianoRollInstrumentId !== instrument.id;
-        handleSetPianoRollMode(instrument.id, isOpening); // 1. Enstrüman state'ini güncelle
-        handleTogglePianoRoll(instrument);              // 2. Panel state'ini güncelle
+        handleSetPianoRollMode(instrument.id, isOpening);
+        handleTogglePianoRoll(instrument);
     };
 
     return (
-        <div className="flex items-center h-14 gap-1">
-            <div className="sticky left-0 w-[300px] h-full bg-gray-900 rounded p-2 flex items-center gap-2 text-sm text-gray-300 z-20 shrink-0" onContextMenu={(e) => onContextMenu(e, instrument)}>
+        <div className="flex items-center h-14" style={{ gap: 'var(--gap-controls)' }}>
+            <div 
+                className="sticky left-0 w-[300px] h-full p-2 flex items-center z-20 shrink-0" 
+                style={{ 
+                    backgroundColor: 'var(--color-background)',
+                    borderRadius: 'var(--border-radius)',
+                    gap: 'var(--gap-controls)',
+                    fontSize: 'var(--font-size-body)'
+                }}
+                onContextMenu={(e) => onContextMenu(e, instrument)}
+            >
                 <EffectSwitch isActive={!instrument.isMuted} onClick={() => handleToggleInstrumentMute(instrument.id)} />
                 <div className="flex-grow flex items-center gap-2 min-w-0 cursor-pointer group" onClick={onEdit} title={`${instrument.name} (Düzenle)`}>
-                    <button onClick={(e) => { e.stopPropagation(); onTogglePianoRoll(); }} className="p-1 group-hover:bg-gray-700 rounded transition-colors shrink-0" title="Piano Roll'ü Aç/Kapat">
-                        <Music size={16} className={instrument.pianoRoll ? "text-amber-400" : "text-cyan-400"} />
+                    <button onClick={(e) => { e.stopPropagation(); onTogglePianoRoll(); }} className="p-1 group-hover:bg-[var(--color-surface)] rounded transition-colors shrink-0" title="Piano Roll'ü Aç/Kapat">
+                        <Music size={16} style={{ color: instrument.pianoRoll ? 'var(--color-accent)' : 'var(--color-primary)' }} />
                     </button>
-                    <span className="truncate font-bold group-hover:text-cyan-400">{instrument.name}</span>
+                    <span className="truncate font-bold group-hover:text-[var(--color-primary)]">{instrument.name}</span>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                     <VolumeKnob label="Pan" value={track.pan} onChange={(val) => handleMixerParamChange(track.id, 'pan', val, audioEngineRef.current)} min={-1} max={1} defaultValue={0} />
                     <VolumeKnob label="Vol" value={track.volume} onChange={(val) => handleMixerParamChange(track.id, 'volume', val, audioEngineRef.current)} min={-60} max={6} defaultValue={0} />
                 </div>
             </div>
-            <div className="flex gap-1 h-full">
+            <div className="flex h-full" style={{ gap: '4px' }}> {/* Step'ler arası boşluk daha az olmalı */}
                 {Array.from({ length: loopLength }).map((_, stepIndex) => (
-                    <StepButton key={stepIndex} instrumentId={instrument.id} stepIndex={stepIndex} isActive={instrument.notes?.some(note => note.time === stepIndex)} isMuted={instrument.isMuted} isPlaceholder={stepIndex >= audioLoopLength} isBeat={stepIndex % 4 === 0} isBarStart={stepIndex % 16 === 0} onStepClick={handlePatternChange} />
+                    <StepButton 
+                        key={stepIndex} 
+                        instrumentId={instrument.id}
+                        stepIndex={stepIndex}
+                        onStepClick={handlePatternChange}
+                        isActive={instrument.notes?.some(note => note.time === stepIndex)} 
+                        isMuted={instrument.isMuted}
+                        isBeat={stepIndex % 4 === 0} 
+                        isBarStart={stepIndex % 16 === 0}
+                    />
                 ))}
             </div>
         </div>
     );
 });
 
+// Ana ChannelRack bileşeni, tüm orijinal fonksiyonelliği ve dinamik stilleri içeriyor
 function ChannelRack({ audioEngineRef }) {
     const instruments = useInstrumentsStore(state => state.instruments);
     const instrumentIds = useMemo(() => instruments.map(i => i.id), [instruments]);
@@ -90,26 +121,47 @@ function ChannelRack({ audioEngineRef }) {
             { label: 'Cut Itself', icon: Scissors, action: () => handleToggleInstrumentCutItself(instrument.id), isActive: currentInstrumentState?.cutItself },
         ];
     }, [contextMenu, instruments, handleRenameInstrument, handleCloneInstrument, handleDeleteInstrument, handleToggleInstrumentCutItself]);
+    
     const playheadRef = useRef(null);
     const totalStepWidth = 36;
     const gapWidth = 4;
     const totalGridWidth = loopLength * (totalStepWidth + gapWidth);
     const leftPanelWidth = 300;
-    usePlaybackAnimator(playheadRef, { fullWidth: totalGridWidth, offset: leftPanelWidth });
+    usePlaybackAnimator(playheadRef, { fullWidth: totalGridWidth, offset: leftPanelWidth + 8 }); // 8px padding telafisi
+
     return (
-        <div className="w-full h-full flex flex-col bg-gray-800 text-white p-4 gap-4">
+        <div 
+            className="w-full h-full flex flex-col"
+            style={{ 
+                backgroundColor: 'var(--color-surface)',
+                padding: 'var(--padding-container)',
+                gap: 'var(--gap-container)'
+            }}
+        >
             <div className="flex-grow min-h-0 overflow-auto relative">
                 <div style={{ width: leftPanelWidth + totalGridWidth, height: '100%' }} className="relative">
-                    <div ref={playheadRef} className="absolute top-0 bottom-0 w-0.5 bg-amber-400 z-30 pointer-events-none" />
-                    <div className="flex flex-col gap-y-1">
+                    <div ref={playheadRef} className="absolute top-0 bottom-0 w-0.5 z-30 pointer-events-none" style={{ backgroundColor: 'var(--color-accent)'}} />
+                    <div className="flex flex-col" style={{ gap: 'var(--gap-controls)' }}>
                         {instrumentIds.map((id) => (
                             <InstrumentChannel key={id} instrumentId={id} onContextMenu={handleContextMenu} audioEngineRef={audioEngineRef} />
                         ))}
                     </div>
                 </div>
             </div>
-            <div ref={drop} className={`shrink-0 h-16 border-2 border-dashed rounded-lg flex items-center justify-center transition-all duration-200 ${isOver && canDrop ? 'border-cyan-400 bg-cyan-900/50 text-cyan-300' : 'border-gray-600 text-gray-500'}`}>
-                <div className="flex items-center gap-2"><PlusSquare size={20} /> <span className="font-bold">Yeni Enstrüman Eklemek İçin Sürükleyin</span></div>
+            <div 
+                ref={drop} 
+                className="shrink-0 h-16 border-2 border-dashed rounded-lg flex items-center justify-center transition-all duration-200"
+                style={{
+                    borderColor: isOver && canDrop ? 'var(--color-primary)' : 'var(--color-border)',
+                    backgroundColor: isOver && canDrop ? 'rgba(var(--color-primary-rgb), 0.1)' : 'transparent',
+                    color: isOver && canDrop ? 'var(--color-primary)' : 'var(--color-muted)',
+                    borderRadius: 'var(--border-radius)',
+                }}
+            >
+                <div className="flex items-center gap-2">
+                    <PlusSquare size={20} />
+                    <span className="font-bold">Yeni Enstrüman Eklemek İçin Sürükleyin</span>
+                </div>
             </div>
             {contextMenu && (<ChannelContextMenu x={contextMenu.x} y={contextMenu.y} options={getContextMenuOptions()} onClose={handleCloseContextMenu} />)}
         </div>
@@ -117,3 +169,4 @@ function ChannelRack({ audioEngineRef }) {
 }
 
 export default ChannelRack;
+

@@ -5,29 +5,25 @@ import { MixerStrip } from './nodes/MixerStrip.js';
 import { sliceBuffer, normalizeBuffer, reverseBuffer, reversePolarity, removeDCOffset, cloneBuffer } from '../utils/audioUtils.js';
 import { memoize } from 'lodash';
 
-// --- Buffer İşleme Optimizasyonu ---
+// Buffer işleme optimizasyonu (Bu kısım doğru ve kalmalı)
 const memoizedProcessBuffer = memoize(
   (originalBuffer, instData) => {
     let processed = cloneBuffer(originalBuffer);
     if (!processed) return null;
-
     const effects = instData.precomputed || {};
     if (effects.removeDCOffset) processed = removeDCOffset(processed);
     if (effects.normalize) processed = normalizeBuffer(processed);
     if (effects.reverse) processed = reverseBuffer(processed);
     if (effects.reversePolarity) processed = reversePolarity(processed);
-    
     return sliceBuffer(processed, instData.smpStart, instData.smpLength);
   },
   (originalBuffer, instData) => `${originalBuffer.url || originalBuffer.name}-${JSON.stringify(instData.precomputed)}-${instData.smpStart}-${instData.smpLength}`
 );
 
 /**
- * KARARLILIĞI ARTMIŞ AudioEngine v3.0
- * - Queue-based sync mekanizması
- * - Error isolation ile robustness
- * - Batch processing ile performans optimizasyonu
- * - Memory leak koruması
+ * GELİŞTİRİLMİŞ AudioEngine: Artık "kuyruk tabanlı" bir senkronizasyon
+ * mekanizmasına sahip. Bu, arayüzden gelen hızlı ve çoklu isteklerin
+ * motoru kararsız hale getirmesini (race condition) engeller.
  */
 class AudioEngine {
   constructor(callbacks) {
@@ -41,148 +37,131 @@ class AudioEngine {
     this.scheduledEventIds = new Map();
     this.instrumentData = [];
     this.mixerTrackData = [];
-    this.animationFrameId = null;
     
-    // Concurrency control
-    this.syncInProgress = false;
-    this.pendingSync = null;
+    // --- YENİ ve GELİŞMİŞ KUYRUK MEKANİZMASI ---
+    this.syncQueue = [];          // Gelen istekleri sırayla tutan bir dizi.
+    this.syncInProgress = false;  // Mevcut bir senkronizasyonun çalışıp çalışmadığını belirten bayrak.
     
-    console.log("[AUDIO ENGINE] Orkestra şefi hazır - v3.0 (Stabilized)");
+    console.log("[AUDIO ENGINE] Kuyruk Tabanlı Motor v3.0 Başlatıldı.");
+  }
+
+  // YENİ: Piano Roll'den gelen anlık nota çalma isteğini yönetir.
+  auditionNoteOn(instrumentId, pitch, velocity = 1) {
+    const instrumentNode = this.instruments.get(instrumentId);
+    instrumentNode?.triggerAttack(pitch, Tone.now(), velocity);
+  }
+
+  // YENİ: Piano Roll'den gelen anlık nota susturma isteğini yönetir.
+  auditionNoteOff(instrumentId, pitch) {
+    const instrumentNode = this.instruments.get(instrumentId);
+    instrumentNode?.triggerRelease(pitch, Tone.now());
   }
 
   /**
-   * QUEUE-BASED senkronizasyon - Overlapping sync isteklerini önler
+   * Artık bir Promise döndüren, AWAIT ile beklenebilir senkronizasyon fonksiyonu.
    */
   syncFromStores(instrumentData, mixerTrackData) {
-    this.pendingSync = { instrumentData, mixerTrackData };
-    if (!this.syncInProgress) {
-      this._processSyncQueue();
-    }
+    // Bu fonksiyon çağrıldığında, hemen bir "söz" (Promise) yaratır.
+    return new Promise((resolve) => {
+      // Gelen işi ve bu iş bittiğinde ne yapılacağını (resolve fonksiyonu) kuyruğa ekle.
+      this.syncQueue.push({ instrumentData, mixerTrackData, onComplete: resolve });
+      
+      // Eğer hali hazırda çalışan bir senkronizasyon yoksa, kuyruğu işlemeye başla.
+      if (!this.syncInProgress) {
+        this._processSyncQueue();
+      }
+    });
   }
 
   async _processSyncQueue() {
-    if (!this.pendingSync) {
+    // Kuyrukta bekleyen bir iş yoksa dur.
+    if (this.syncQueue.length === 0) {
       this.syncInProgress = false;
       return;
     }
 
+    // Bir işe başladığımızı belirtiyoruz.
     this.syncInProgress = true;
-    const { instrumentData, mixerTrackData } = this.pendingSync;
-    this.pendingSync = null;
+    // Kuyruktaki en eski işi al (FIFO mantığı).
+    const { instrumentData, mixerTrackData, onComplete } = this.syncQueue.shift();
 
     try {
+      // Asıl senkronizasyon işlemini gerçekleştir ve bitmesini bekle.
       await this._performSync(instrumentData, mixerTrackData);
     } catch (error) {
-      console.error("[AUDIO ENGINE] Kritik sync hatası:", error);
-      // Hata durumunda bile sistemi stabil tut
-      this._emergencyCleanup();
+      console.error("[AUDIO ENGINE] Senkronizasyon sırasında kritik hata:", error);
     }
 
-    // Eğer sync sırasında yeni bir istek geldi ise, onu işle
-    if (this.pendingSync) {
-      setTimeout(() => this._processSyncQueue(), 10);
+    // İş bitti! Şimdi bu işi başlatan yere "sözümüzü tuttuk, iş bitti" diyoruz.
+    onComplete();
+
+    // Kuyrukta hala bekleyen başka işler varsa, döngüye devam et.
+    if (this.syncQueue.length > 0) {
+      this._processSyncQueue();
     } else {
+      // Kuyruk boşaldı, bayrağı indirip yeni istekleri bekleyebiliriz.
       this.syncInProgress = false;
     }
   }
 
-  /**
-   * Acil durum temizlik işlemi
-   */
-  _emergencyCleanup() {
-    try {
-      this.clearAllScheduledNotes();
-      console.warn("[AUDIO ENGINE] Acil durum temizliği gerçekleştirildi.");
-    } catch (error) {
-      console.error("[AUDIO ENGINE] Acil durum temizliği başarısız:", error);
-    }
-  }
-
-  /**
-   * Ana senkronizasyon işlemi - Error isolation ile güvenli
-   */
   async _performSync(instrumentData, mixerTrackData) {
+    console.groupCollapsed("[Perform Sync] Motor senkronizasyon işlemi başladı.");
     this.instrumentData = instrumentData;
     this.mixerTrackData = mixerTrackData;
 
-    // Adım 1: Cleanup
-    await this._cleanupRemovedComponents(instrumentData, mixerTrackData);
-
-    // Adım 2: Mixer strips oluştur
-    await this._createMixerStrips(mixerTrackData);
-
-    // Adım 3: Bus inputs topla
+    console.log("Adım 1: Eski component'ler temizleniyor...");
+    this._cleanupRemovedComponents(instrumentData, mixerTrackData);
+    
+    console.log("Adım 2: Mikser kanalları (strip) oluşturuluyor...");
+    this._createMixerStrips(mixerTrackData);
     const busInputs = this._collectBusInputs(mixerTrackData);
 
-    // Adım 4: Mixer chains oluştur (paralel ve error-safe)
-    await this._buildMixerChains(mixerTrackData, busInputs);
-
-    // Adım 5: Instruments yükle (paralel ve error-safe)
+    const buildPromises = Array.from(this.mixerStrips.entries()).map(([id, strip]) => {
+      const trackData = mixerTrackData.find(t => t.id === id);
+      if (trackData) return strip.buildChain(trackData, this.masterFader, busInputs, this.mixerStrips);
+      return Promise.resolve();
+    });
+    await Promise.all(buildPromises);
+    console.log(`✅ ${this.mixerStrips.size} mikser kanalı yapılandırıldı.`);
+    
+    console.log("Adım 3: Enstrümanlar yükleniyor ve bağlanıyor...");
     await this._loadAndConnectInstruments(instrumentData);
-
-    // Adım 6: Schedule
-    await this.reschedule();
+    
+    console.log("Adım 4: Notalar transport'a planlanıyor (reschedule)...");
+    this.reschedule();
+    
+    console.groupEnd();
   }
 
-  /**
-   * Kaldırılmış componentleri güvenli şekilde temizle
-   */
-  async _cleanupRemovedComponents(instrumentData, mixerTrackData) {
+  _cleanupRemovedComponents(instrumentData, mixerTrackData) {
     const mixerIds = new Set(mixerTrackData.map(t => t.id));
-    const mixerCleanupPromises = [];
-
     this.mixerStrips.forEach((strip, id) => {
       if (!mixerIds.has(id)) {
-        mixerCleanupPromises.push(
-          Promise.resolve(strip.dispose()).catch(error => {
-            console.warn(`[AUDIO ENGINE] Mixer strip cleanup hatası ${id}:`, error);
-          })
-        );
+        strip.dispose();
         this.mixerStrips.delete(id);
       }
     });
 
     const instrumentIds = new Set(instrumentData.map(i => i.id));
-    const instrumentCleanupPromises = [];
-
     this.instruments.forEach((instrument, id) => {
       if (!instrumentIds.has(id)) {
-        instrumentCleanupPromises.push(
-          Promise.resolve(instrument.dispose()).catch(error => {
-            console.warn(`[AUDIO ENGINE] Instrument cleanup hatası ${id}:`, error);
-          })
-        );
+        instrument.dispose();
         this.instruments.delete(id);
       }
     });
-
-    await Promise.all([...mixerCleanupPromises, ...instrumentCleanupPromises]);
   }
 
-  /**
-   * Mixer strips oluştur (error isolation ile)
-   */
-  async _createMixerStrips(mixerTrackData) {
-    const creationPromises = mixerTrackData.map(async (trackData) => {
+  _createMixerStrips(mixerTrackData) {
+    mixerTrackData.forEach(trackData => {
       if (!this.mixerStrips.has(trackData.id)) {
-        try {
-          const newStrip = new MixerStrip(trackData, this.masterFader, new Map(), this.mixerStrips);
-          this.mixerStrips.set(trackData.id, newStrip);
-        } catch (error) {
-          console.error(`[AUDIO ENGINE] Mixer strip oluşturma hatası ${trackData.id}:`, error);
-        }
+        const newStrip = new MixerStrip(trackData, this.masterFader, new Map(), this.mixerStrips);
+        this.mixerStrips.set(trackData.id, newStrip);
       }
     });
-
-    await Promise.all(creationPromises);
   }
 
-  /**
-   * Bus inputs topla
-   */
   _collectBusInputs(mixerTrackData) {
     const busInputs = new Map();
-    
     mixerTrackData.forEach(trackData => {
       if (trackData.type === 'bus') {
         const busStrip = this.mixerStrips.get(trackData.id);
@@ -191,74 +170,50 @@ class AudioEngine {
         }
       }
     });
-
     return busInputs;
   }
 
-  /**
-   * Mixer chains oluştur (error isolation ile)
-   */
-  async _buildMixerChains(mixerTrackData, busInputs) {
-    const buildPromises = Array.from(this.mixerStrips.entries()).map(async ([id, strip]) => {
-      const trackData = mixerTrackData.find(t => t.id === id);
-      if (trackData) {
-        try {
-          await strip.buildChain(trackData, this.masterFader, busInputs, this.mixerStrips);
-        } catch (error) {
-          console.error(`[AUDIO ENGINE] Chain building hatası ${id}:`, error);
-        }
-      }
-    });
-
-    await Promise.all(buildPromises);
-  }
-
-  /**
-   * Instruments yükle ve bağla (error isolation ile)
-   */
   async _loadAndConnectInstruments(instrumentData) {
     const loadPromises = instrumentData.map(async (instData) => {
       try {
-        // Buffer yükleme
-        if (!this.originalAudioBuffers.has(instData.id)) {
+        if (!this.originalAudioBuffers.has(instData.id) && instData.url) {
+          console.log(`  -> Buffer yükleniyor: ${instData.name} (${instData.url})`);
           const buffer = await Tone.ToneAudioBuffer.load(instData.url);
           this.originalAudioBuffers.set(instData.id, buffer);
         }
 
-        // Buffer işleme
         const originalBuffer = this.originalAudioBuffers.get(instData.id);
         if (originalBuffer) {
           const processedBuffer = this.processBuffer(originalBuffer, instData);
           this.processedAudioBuffers.set(instData.id, processedBuffer);
 
-          // Instrument oluştur/güncelle
           if (!this.instruments.has(instData.id)) {
             const newInstrumentNode = new InstrumentNode(instData, processedBuffer);
             this.instruments.set(instData.id, newInstrumentNode);
+            console.log(`  ✅ Enstrüman oluşturuldu: ${instData.name}`);
           } else {
             const instrument = this.instruments.get(instData.id);
             instrument.updateParameters(instData);
             instrument.updateBuffer(processedBuffer);
           }
 
-          // Mixer bağlantısı
           const instrumentNode = this.instruments.get(instData.id);
           const targetStrip = this.mixerStrips.get(instData.mixerTrackId);
-          
           if (instrumentNode && targetStrip) {
             instrumentNode.output.disconnect();
             instrumentNode.output.connect(targetStrip.inputNode);
           }
         }
       } catch (error) {
-        console.error(`[AUDIO ENGINE] Instrument yükleme hatası ${instData.name}:`, error);
+        console.error(`  ❌ HATA: Enstrüman yüklenemedi ${instData.name}:`, error);
       }
     });
-
     await Promise.all(loadPromises);
+    console.log(`✅ ${this.instruments.size} enstrüman başarıyla yüklendi/güncellendi.`);
   }
 
-  // --- Kısmi Güncelleme Fonksiyonları ---
+  // --- Kısmi Güncelleme ve Diğer Fonksiyonlar (Aynı Kalıyor) ---
+
   updateMixerParam(trackId, param, value) {
     this.mixerStrips.get(trackId)?.updateParam(param, value);
   }
@@ -266,8 +221,7 @@ class AudioEngine {
   updateEffectParam(trackId, effectId, param, value) {
     this.mixerStrips.get(trackId)?.updateEffectParam(effectId, param, value);
   }
-
-  // --- Buffer İşleme ve Hafıza Yönetimi ---
+  
   processBuffer(originalBuffer, instData) {
     return memoizedProcessBuffer(originalBuffer, instData);
   }
@@ -281,17 +235,13 @@ class AudioEngine {
     this.processedAudioBuffers.set(instrumentId, newProcessedBuffer);
     
     if (oldBuffer && oldBuffer !== newProcessedBuffer) {
-      try {
-        oldBuffer.dispose();
-      } catch (error) {
-        console.warn(`[AUDIO ENGINE] Buffer dispose hatası:`, error);
-      }
+      try { oldBuffer.dispose(); } catch (e) {}
     }
 
     this.instruments.get(instrumentId)?.updateBuffer(newProcessedBuffer);
     return newProcessedBuffer;
   }
-
+  
   /**
    * Preview fonksiyonu (Sample Editor için)
    */
@@ -319,18 +269,12 @@ class AudioEngine {
     }
   }
   
-  // --- Playback ve Zamanlama ---
   start() {
     if (Tone.context.state !== 'running') Tone.context.resume();
     if (Tone.Transport.state === 'started') return;
-    
     this.reschedule();
     Tone.Transport.start();
     this.callbacks.setPlaybackState?.('playing');
-    
-    if (!this.animationFrameId) {
-      this.visualUpdateLoop();
-    }
   }
 
   pause() { 
@@ -342,101 +286,39 @@ class AudioEngine {
     Tone.Transport.stop(); 
     this.callbacks.setPlaybackState?.('stopped');
   }
-
-  /**
-   * OPTIMIZE EDİLMİŞ reschedule - Batch processing ve error handling ile
-   */
-  async reschedule() {
-    console.log("[AUDIO ENGINE] Optimized reschedule başlıyor...");
-    
+  
+  reschedule() {
     this.clearAllScheduledNotes();
-
-    const scheduleInstrument = async (inst) => {
-      if (inst.isMuted || !inst.notes) return;
-      
-      const instrumentNode = this.instruments.get(inst.id);
-      const buffer = this.processedAudioBuffers.get(inst.id);
-      if (!instrumentNode || !buffer) return;
-
-      // Notları küçük gruplar halinde işle (UI donmasını önle)
-      const batchSize = 50;
-      for (let i = 0; i < inst.notes.length; i += batchSize) {
-        const noteBatch = inst.notes.slice(i, i + batchSize);
-        
-        // Micro-task ile UI'yu bloklamadan işle
-        await new Promise(resolve => setTimeout(resolve, 0));
-        
-        noteBatch.forEach(note => {
-          try {
-            const startSec = Tone.Time('16n').toSeconds() * note.time;
-            const eventId = Tone.Transport.schedule(time => {
-              instrumentNode.trigger(time, note, buffer.duration, inst.cutItself, inst);
-            }, startSec);
-            this.scheduledEventIds.set(`${inst.id}-${note.time}`, eventId);
-          } catch (error) {
-            console.warn(`[AUDIO ENGINE] Note schedule hatası ${inst.name}:`, error);
-          }
-        });
-      }
-    };
-
-    // Her enstrümanı error isolation ile schedule et
-    const schedulePromises = this.instrumentData.map(async (inst) => {
-      try {
-        return await scheduleInstrument(inst);
-      } catch (error) {
-        console.error(`[AUDIO ENGINE] Schedule hatası ${inst.name}:`, error);
-        return null; // Continue with other instruments
-      }
-    });
-
-    await Promise.all(schedulePromises);
-
     const loopLength = calculateAudioLoopLength(this.instrumentData);
     Tone.Transport.loopEnd = Tone.Time('16n') * loopLength;
     Tone.Transport.loop = true;
     
-    console.log("[AUDIO ENGINE] Reschedule tamamlandı.");
-  }
+    let totalNotesScheduled = 0;
+    this.instrumentData.forEach(inst => {
+      if (inst.isMuted || !inst.notes) return;
+      const instrumentNode = this.instruments.get(inst.id);
+      const buffer = this.processedAudioBuffers.get(inst.id);
+      if (!instrumentNode || !buffer) return;
 
-  clearAllScheduledNotes() {
-    this.scheduledEventIds.forEach(id => {
-      try {
-        Tone.Transport.clear(id);
-      } catch (error) {
-        console.warn("[AUDIO ENGINE] Event clear hatası:", error);
-      }
+      inst.notes.forEach(note => {
+        const startSec = Tone.Time('16n').toSeconds() * note.time;
+        const eventId = Tone.Transport.schedule(time => {
+          instrumentNode.trigger(time, note, buffer.duration, inst.cutItself);
+        }, startSec);
+        this.scheduledEventIds.set(`${inst.id}-${note.time}`, eventId);
+        totalNotesScheduled++;
+      });
     });
+    console.log(`✅ Toplam ${totalNotesScheduled} nota başarıyla planlandı. Döngü uzunluğu: ${loopLength} adım.`);
+  }
+  
+  clearAllScheduledNotes() {
+    this.scheduledEventIds.forEach(id => Tone.Transport.clear(id));
     this.scheduledEventIds.clear();
   }
 
-  visualUpdateLoop() {
-    if (Tone.Transport.state !== 'started') {
-      this.animationFrameId = null;
-      return;
-    }
-    
-    try {
-      const progress = Tone.Transport.progress;
-      const position = Tone.Transport.position.toString().split('.')[0];
-      
-      this.callbacks.onProgressUpdate?.(progress);
-      this.callbacks.setTransportPosition?.(position);
-    } catch (error) {
-      console.warn("[AUDIO ENGINE] Visual update hatası:", error);
-    }
-
-    this.animationFrameId = requestAnimationFrame(() => this.visualUpdateLoop());
-  }
-
-  // --- Diğer Ayarlar ---
-  setBpm(newBpm) { 
-    Tone.Transport.bpm.value = newBpm; 
-  }
-
-  setMasterVolume(levelInDb) { 
-    this.masterFader.volume.value = levelInDb; 
-  }
+  setBpm(newBpm) { Tone.Transport.bpm.value = newBpm; }
+  setMasterVolume(levelInDb) { this.masterFader.volume.value = levelInDb; }
 
   // --- Hafıza Temizliği ---
   dispose() {

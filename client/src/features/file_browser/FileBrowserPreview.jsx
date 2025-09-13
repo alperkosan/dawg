@@ -5,17 +5,12 @@ import { usePreviewPlayerStore } from '../../store/usePreviewPlayerStore';
 
 export function FileBrowserPreview({ fileNode }) {
   const { url, name } = fileNode || {};
-
-  // --- NİHAİ ÇÖZÜM: Atomik Seçim ---
-  // Store'dan ihtiyacımız olan her bir veriyi ayrı ayrı seçiyoruz.
-  // Bu yöntem, gereksiz obje oluşturmayı ve referans hatalarını %100 engeller.
+  
   const isPlaying = usePreviewPlayerStore(state => state.isPlaying);
   const playingUrl = usePreviewPlayerStore(state => state.playingUrl);
   const loadingUrl = usePreviewPlayerStore(state => state.loadingUrl);
   const waveformBuffer = usePreviewPlayerStore(state => state.waveformBuffer);
   const error = usePreviewPlayerStore(state => state.error);
-
-  // Eylemi `getState` ile alıyoruz, çünkü bu fonksiyon değişmez ve render tetiklemez.
   const { playPreview } = usePreviewPlayerStore.getState();
 
   if (!fileNode || fileNode.type !== 'file') {
@@ -25,16 +20,41 @@ export function FileBrowserPreview({ fileNode }) {
   const isCurrentlyPlaying = isPlaying && playingUrl === url;
   const isLoading = loadingUrl === url;
 
-  const handlePreviewToggle = () => {
-    playPreview(url);
+  // Dinamik stiller
+  const containerStyle = {
+    height: '7rem', // 112px
+    backgroundColor: 'var(--color-surface)', // surface2'den surface'e değiştirildi
+    borderRadius: 'var(--border-radius)',
+    padding: 'var(--padding-controls)',
+    // **** İSTEĞİNİZ BURADA EKLENDİ ****
+    border: '1px solid var(--color-border)', 
+  };
+
+  const playButtonStyle = {
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    color: 'white',
+    borderRadius: '9999px',
+    padding: 'var(--padding-controls)',
+  };
+  
+  const textStyle = {
+    fontSize: 'var(--font-size-label)',
+    color: 'var(--color-muted)',
+    marginTop: 'var(--gap-controls)',
+  };
+  
+  const errorStyle = {
+      ...textStyle,
+      color: 'var(--color-accent)'
   };
 
   return (
-    <div className="w-full h-28 bg-gray-900/50 rounded-lg p-2 flex flex-col justify-center items-center shrink-0 relative">
+    <div className="w-full shrink-0 relative flex flex-col justify-center items-center" style={containerStyle}>
       {!isLoading && !error && (
         <button
-          onClick={handlePreviewToggle}
-          className="absolute z-10 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-black/70 hover:bg-black/90 text-white rounded-full p-2 transition-colors duration-200"
+          onClick={() => playPreview(url)}
+          className="absolute z-10 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transition-colors duration-200 hover:bg-[var(--color-primary)]"
+          style={playButtonStyle}
           title={isCurrentlyPlaying ? "Durdur" : "Çal"}
         >
           {isCurrentlyPlaying ? <Pause size={24} /> : <Play size={24} />}
@@ -43,31 +63,23 @@ export function FileBrowserPreview({ fileNode }) {
 
       <div className="w-full h-full relative">
         {isLoading && (
-          <div className="absolute inset-0 flex items-center justify-center text-gray-400">
+          <div className="absolute inset-0 flex items-center justify-center" style={{ color: 'var(--color-muted)'}}>
             <Loader2 className="animate-spin" size={24} />
           </div>
         )}
         {error && !isLoading && (
-          <div className="absolute inset-0 flex items-center justify-center text-xs text-red-500">
+          <div className="absolute inset-0 flex items-center justify-center" style={errorStyle}>
             {error}
           </div>
         )}
-        {/* Dalga formunu sadece seçili dosya bizimki ise göster */}
-        {waveformBuffer && url === usePreviewPlayerStore.getState().loadingUrl && !error && (
+        {waveformBuffer && (
           <WaveformDisplay
             buffer={waveformBuffer}
             className="w-full h-full opacity-50"
           />
         )}
-         {waveformBuffer && !isLoading && !error && (
-            <WaveformDisplay
-                buffer={waveformBuffer}
-                className="w-full h-full opacity-50"
-            />
-        )}
       </div>
-      <p className="text-xs text-gray-500 mt-1 truncate w-full text-center">{name}</p>
+      <p className="truncate w-full text-center" style={textStyle}>{name}</p>
     </div>
   );
 }
-

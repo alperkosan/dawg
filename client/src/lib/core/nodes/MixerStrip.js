@@ -34,7 +34,7 @@ export class MixerStrip {
     
     try {
       this.buildingChain = true;
-      await this._cleanupAsync(); // <-- Hatanın olduğu yer, artık fonksiyon mevcut.
+      await this._cleanupAsync();
       
       let lastNodeInChain = await this._buildEffectChain(trackData, allStrips);
       

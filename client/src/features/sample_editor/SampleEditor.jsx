@@ -9,30 +9,32 @@ import { useMixerStore } from '../../store/useMixerStore';
 import { usePanelsStore } from '../../store/usePanelsStore';
 import { usePlaybackStore } from '../../store/usePlaybackStore';
 import { AddEffectMenu } from '../../ui/AddEffectMenu';
-import EnvelopeDisplay from './EnvelopeDisplay'; // Yeni Envelope görselleştirici
+import EnvelopeDisplay from './EnvelopeDisplay';
 
-// --- ALT BİLEŞENLER (SEKMELER) YENİDEN TASARLANDI ---
-
+// Sekme Butonları artık temaya duyarlı
 function TabButton({ label, icon: Icon, isActive, onClick }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`flex items-center gap-2 px-4 py-2 text-sm font-bold rounded-t-lg transition-colors ${
-        isActive ? 'bg-gray-800 text-white' : 'bg-gray-900 text-gray-400 hover:bg-gray-800/70'
-      }`}
-    >
-      <Icon size={16} />
-      <span>{label}</span>
-    </button>
-  );
+    const style = {
+        backgroundColor: isActive ? 'var(--color-surface)' : 'var(--color-background)',
+        color: isActive ? 'var(--color-text)' : 'var(--color-muted)',
+        padding: 'var(--padding-controls) calc(var(--padding-container) / 2)',
+        gap: 'var(--gap-controls)',
+        fontSize: 'var(--font-size-body)',
+        borderTopLeftRadius: 'var(--border-radius)',
+        borderTopRightRadius: 'var(--border-radius)',
+    };
+    return (
+        <button onClick={onClick} className="flex items-center font-bold transition-colors" style={style}>
+            <Icon size={16} />
+            <span>{label}</span>
+        </button>
+    );
 }
 
+// Sample Sekmesi artık temaya duyarlı
 function SampleTab({ instrument, instrumentBuffer, audioEngineRef }) {
     const { updateInstrument, handleTogglePrecomputedEffect, handlePreviewInstrumentSlice } = useInstrumentsStore.getState();
     const effectsState = instrument.precomputed || {};
     const isProcessing = useInstrumentsStore(state => state.processingEffects[instrument.id]);
-
-    // YENİ: Önizleme oynatıcısının durumunu takip et
     const isPreviewPlaying = usePlaybackStore(state => state.isPreviewPlaying);
 
     const handlePreview = (e) => {
@@ -41,30 +43,18 @@ function SampleTab({ instrument, instrumentBuffer, audioEngineRef }) {
     };
 
     return (
-        <div className="w-full h-full flex gap-4 p-4 text-white bg-gray-800 rounded-b-lg rounded-r-lg">
-            {/* Sol Sütun: Kontroller (değişiklik yok) */}
-            <div className="w-48 bg-gray-900 rounded-lg p-4 flex flex-col gap-6 shrink-0">
-                <div className="flex flex-col gap-2">
-                    <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider text-center">Trim</h3>
+        <div className="w-full h-full flex" style={{ padding: 'var(--padding-container)', gap: 'var(--padding-container)', backgroundColor: 'var(--color-surface)' }}>
+            <div className="w-48 shrink-0 flex flex-col" style={{ backgroundColor: 'var(--color-background)', borderRadius: 'var(--border-radius)', padding: 'var(--padding-container)', gap: 'var(--gap-container)'}}>
+                <div>
+                    <h3 className="text-center font-bold uppercase" style={{ fontSize: 'var(--font-size-label)', color: 'var(--color-muted)', marginBottom: 'var(--gap-controls)' }}>Trim</h3>
                     <div className="flex items-center justify-around mt-2">
-                        {/* --- DEĞİŞİKLİK: onChange artık 'updateInstrument' fonksiyonunu doğru parametrelerle çağırıyor --- */}
-                        <VolumeKnob 
-                            label="Start" 
-                            value={instrument.smpStart || 0} 
-                            onChange={(val) => updateInstrument(instrument.id, { smpStart: val }, true, audioEngineRef.current)} 
-                            min={0} max={1} defaultValue={0} 
-                        />
-                        <VolumeKnob 
-                            label="Length" 
-                            value={instrument.smpLength || 1} 
-                            onChange={(val) => updateInstrument(instrument.id, { smpLength: val }, true, audioEngineRef.current)} 
-                            min={0.01} max={1} defaultValue={1} 
-                        />
+                        <VolumeKnob label="Start" value={instrument.smpStart || 0} onChange={(val) => updateInstrument(instrument.id, { smpStart: val }, true, audioEngineRef.current)} min={0} max={1} defaultValue={0} />
+                        <VolumeKnob label="Length" value={instrument.smpLength || 1} onChange={(val) => updateInstrument(instrument.id, { smpLength: val }, true, audioEngineRef.current)} min={0.01} max={1} defaultValue={1} />
                     </div>
                 </div>
-                <div className="w-full h-[1px] bg-gray-700" />
-                <div className="flex flex-col gap-2">
-                    <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider text-center">Process</h3>
+                <div className="w-full h-[1px]" style={{backgroundColor: 'var(--color-border)'}}/>
+                <div>
+                    <h3 className="text-center font-bold uppercase" style={{ fontSize: 'var(--font-size-label)', color: 'var(--color-muted)', marginBottom: 'var(--gap-controls)' }}>Process</h3>
                     <div className="grid grid-cols-2 gap-x-4 gap-y-3 mt-2 place-items-start">
                         <EffectSwitch label="Normalize" isActive={effectsState.normalize} onClick={() => handleTogglePrecomputedEffect(instrument.id, 'normalize', audioEngineRef.current)} disabled={isProcessing} />
                         <EffectSwitch label="Reverse" isActive={effectsState.reverse} onClick={() => handleTogglePrecomputedEffect(instrument.id, 'reverse', audioEngineRef.current)} disabled={isProcessing} />
@@ -74,26 +64,18 @@ function SampleTab({ instrument, instrumentBuffer, audioEngineRef }) {
                 </div>
             </div>
 
-            {/* Sağ Sütun: Dalga Formu */}
-            <div className="flex-grow bg-gray-900 rounded-lg relative flex items-center justify-center">
+            <div className="flex-grow rounded-lg relative flex items-center justify-center" style={{ backgroundColor: 'var(--color-background)', borderRadius: 'var(--border-radius)'}}>
                 {isProcessing ? (
-                    <div className="flex flex-col items-center gap-2 text-cyan-400">
+                    <div className="flex flex-col items-center gap-2" style={{color: 'var(--color-primary)'}}>
                         <Loader2 className="animate-spin" size={32} />
                         <span className="text-sm font-bold">Dalga formu işleniyor...</span>
                     </div>
                 ) : (
                     <>
-                        {/* --- YENİ OYNATMA BUTONU --- */}
-                        <button 
-                            onClick={handlePreview}
-                            className="absolute z-20 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-black/70 hover:bg-black/90 text-white rounded-full p-3 transition-colors"
-                        >
+                        <button onClick={handlePreview} className="absolute z-20 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-black/70 hover:bg-black/90 text-white rounded-full p-3 transition-colors">
                             {isPreviewPlaying ? <Pause size={28} /> : <Play size={28} />}
                         </button>
-                        <WaveformDisplay
-                          buffer={instrumentBuffer}
-                          className="w-full h-full"
-                        />
+                        <WaveformDisplay buffer={instrumentBuffer} className="w-full h-full" />
                     </>
                 )}
             </div>
@@ -101,17 +83,16 @@ function SampleTab({ instrument, instrumentBuffer, audioEngineRef }) {
     );
 }
 
-
 // --- Envelope Sekmesi (Yeni 2 Sütunlu Tasarım) ---
 function EnvelopeTab({ instrument, audioEngineRef }) {
     const handleInstrumentSynthParamChange = useInstrumentsStore(state => state.handleInstrumentSynthParamChange);
     const envelope = instrument.envelope || { attack: 0.01, decay: 0.1, sustain: 0.9, release: 1.0 };
 
     return (
-        <div className="w-full h-full flex gap-4 p-4 text-white bg-gray-800 rounded-b-lg rounded-r-lg">
+        <div className="w-full h-full flex" style={{ padding: 'var(--padding-container)', gap: 'var(--padding-container)', backgroundColor: 'var(--color-surface)' }}>
             {/* Sol Sütun: Kontroller */}
-            <div className="w-48 bg-gray-900 rounded-lg p-4 flex flex-col justify-center gap-6 shrink-0">
-                <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider text-center absolute top-8 left-1/2 -translate-x-1/2 w-48">Volume Envelope</h3>
+            <div className="w-48 shrink-0 flex flex-col" style={{ backgroundColor: 'var(--color-background)', borderRadius: 'var(--border-radius)', padding: 'var(--padding-container)', gap: 'var(--gap-container)'}}>
+                <h3 className="text-center font-bold uppercase" style={{ fontSize: 'var(--font-size-label)', color: 'var(--color-muted)', marginBottom: 'var(--gap-controls)' }}>Volume Envelope</h3>
                 <VolumeKnob label="Attack" value={envelope.attack} onChange={(val) => handleInstrumentSynthParamChange(instrument.id, 'envelope.attack', val, audioEngineRef.current)} min={0.001} max={2} defaultValue={0.01} />
                 <VolumeKnob label="Decay" value={envelope.decay} onChange={(val) => handleInstrumentSynthParamChange(instrument.id, 'envelope.decay', val, audioEngineRef.current)} min={0.001} max={2} defaultValue={0.1} />
                 <VolumeKnob label="Sustain" value={envelope.sustain} onChange={(val) => handleInstrumentSynthParamChange(instrument.id, 'envelope.sustain', val, audioEngineRef.current)} min={0} max={1} defaultValue={0.9} />
@@ -177,10 +158,11 @@ function EffectsTab({ track, audioEngineRef }) {
     };
 
     return (
-        <div className="w-full h-full flex gap-4 p-4 text-white bg-gray-800 rounded-b-lg rounded-r-lg">
+        <div className="w-full h-full flex" style={{ padding: 'var(--padding-container)', gap: 'var(--padding-container)', backgroundColor: 'var(--color-surface)' }}>
             {/* Sol Sütun: Efekt Listesi */}
-            <div className="w-48 bg-gray-900 rounded-lg p-2 flex flex-col gap-1 shrink-0">
-                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider text-center p-2">Inserts on '{track.name}'</h3>
+            <div className="w-48 shrink-0 flex flex-col" style={{ backgroundColor: 'var(--color-background)', borderRadius: 'var(--border-radius)', padding: 'var(--padding-container)', gap: 'var(--gap-container)'}}>
+                <h3 className="text-center font-bold uppercase" style={{ fontSize: 'var(--font-size-label)', color: 'var(--color-muted)', marginBottom: 'var(--gap-controls)' }}>Inserts on '{track.name}'</h3>
+
                 <div className="flex-grow min-h-0 overflow-y-auto pr-1 flex flex-col gap-1 mt-1">
                     {track.insertEffects.map((effect) => (
                          <div
@@ -246,7 +228,7 @@ const SampleEditor = React.memo(function SampleEditor({ instrument, audioEngineR
   const instrumentBuffer = usePanelsStore(state => state.editorBuffer); 
 
   if (!instrument || !track) {
-    return <div className="p-4 bg-gray-800 text-red-500">Enstrüman veya bağlı olduğu mixer kanalı bulunamadı. Lütfen pencereyi kapatıp tekrar açın.</div>;
+    return <div style={{padding: 'var(--padding-container)', color: 'var(--color-accent)'}}>Enstrüman veya bağlı olduğu mixer kanalı bulunamadı.</div>;
   }
 
   return (

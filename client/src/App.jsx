@@ -1,54 +1,60 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, {useState, useRef, useEffect} from 'react';
 import * as Tone from 'tone';
 import AudioEngine from './lib/core/AudioEngine';
 import WorkspacePanel from './layout/WorkspacePanel';
-import StartupScreen from './components/StartupScreen';
+import StartupScreen from './components/StartUpScreen';
+import { ThemeProvider } from './components/ThemeProvider'; // Yeni provider'ı import et
 import MainToolbar from './features/main_toolbar/MainToolbar';
 import TopToolbar from './features/top_toolbar/TopToolbar';
 import Taskbar from './features/taskbar/Taskbar';
-import { initKeybindings, destroyKeybindings } from './lib/core/KeybindingService'; // Yeni servisi import et
-import { PlaybackAnimatorService } from './lib/core/PlaybackAnimatorService'; // Bunu import edin
-import { keymap } from './config/keymapConfig'; // Yeni yapılandırmayı import et
+import { KeybindingService, destroyKeybindings } from './lib/core/KeybindingService';
+import { PlaybackAnimatorService } from './lib/core/PlaybackAnimatorService';
+import { keymap } from './config/keymapConfig';
 
 import { usePlaybackStore } from './store/usePlaybackStore';
 import { useInstrumentsStore } from './store/useInstrumentsStore';
 import { useMixerStore } from './store/useMixerStore';
+import { usePanelsStore } from './store/usePanelsStore';
 
-/**
- * Bu hook, Zustand store'ları ile AudioEngine arasındaki reaktif köprüyü kurar.
- * --- GÜNCELLENDİ: Artık efektlerin bypass durumundaki değişiklikleri de algılıyor. ---
- */
+import { initialInstruments, initialMixerTracks } from './config/initialData';
+import { calculateAudioLoopLength } from './lib/utils/patternUtils';
+
 const useAudioEngineSync = (audioEngineRef) => {
     const instruments = useInstrumentsStore(state => state.instruments);
     const mixerTracks = useMixerStore(state => state.mixerTracks);
 
-    // YENİ: "Yapısal imza" artık her efektin bypass durumunu da içeriyor.
-    // Bu sayede, bir efekti mute'lamak da yapısal bir değişiklik olarak kabul edilir.
-    const structuralSignature = 
-        instruments.map(i => i.id).join(',') + '-' + 
-        mixerTracks.map(t => 
-            // Her efekt için ID'sine ek olarak bypass durumunu da imzaya ekle.
-            `${t.id}:${t.insertEffects.map(fx => `${fx.id}:${fx.bypass}`).join(',')}`
-        ).join(';');
+    const structuralSignature = JSON.stringify({
+        instruments: instruments.map(i => ({ 
+            id: i.id, 
+            notes: i.notes, 
+            isMuted: i.isMuted, 
+            cutItself: i.cutItself, 
+            pianoRoll: i.pianoRoll 
+        })),
+        mixer: mixerTracks.map(t => ({ 
+            id: t.id, 
+            effects: t.insertEffects.map(fx => ({
+                id: fx.id, 
+                bypass: fx.bypass, 
+            })) 
+        }))
+    });
 
-    // Bu useEffect, artık SADECE yapısal imza değiştiğinde çalışacak.
     useEffect(() => {
         const engine = audioEngineRef.current;
         if (engine) {
-            console.log("[SYNC] Yapısal bir değişiklik algılandı (kanal/efekt/bypass), ses motoru tamamen senkronize ediliyor...");
+            console.log("[SYNC] Yapısal bir değişiklik algılandı, motor senkronize ediliyor...");
             engine.syncFromStores(instruments, mixerTracks);
         }
-    }, [structuralSignature]); // Bağımlılık sadece bu imza.
+    }, [structuralSignature, audioEngineRef]);
 
-    return null; // Bu hook'un bir şey render etmesine gerek yok.
+    return null;
 };
 
 function AppContent({ audioEngineRef }) {
   useAudioEngineSync(audioEngineRef);
   
-  // --- YENİ: Kısayol eylemlerini ve dinleyiciyi yöneten merkezi useEffect ---
   useEffect(() => {
-    // Eylem ID'lerini (keymap'ten gelen) gerçek store fonksiyonlarıyla eşleştir.
     const actions = {
       TOGGLE_PLAY_PAUSE: () => {
         const { playbackState, handlePlay, handlePause } = usePlaybackStore.getState();
@@ -64,12 +70,9 @@ function AppContent({ audioEngineRef }) {
       OPEN_PIANO_ROLL: () => usePanelsStore.getState().togglePanel('piano-roll'),
     };
     
-    // Servisi başlat.
-    initKeybindings(keymap, actions);
-    
-    // Component kaldırıldığında servisi temizle.
+    KeybindingService(keymap, actions);
     return () => destroyKeybindings();
-  }, [audioEngineRef]); // Sadece bir kez çalışması için.
+  }, [audioEngineRef]);
 
   return (
     <div className="text-white h-screen flex flex-col font-sans select-none">
@@ -83,35 +86,114 @@ function AppContent({ audioEngineRef }) {
   );
 }
 
+// --- SAĞLIK KONTROLÜ LOGLAMA FONKSİYONU ---
+function logStartupHealthCheck() {
+    console.groupCollapsed("SoundForge Başlangıç Sağlık Kontrolü (Beklenen Durum)");
+    
+    // Genel Ayarlar
+    console.log(`🎵 Beklenen BPM: ${usePlaybackStore.getState().bpm}`);
+    const expectedLoopLength = calculateAudioLoopLength(initialInstruments);
+    console.log(`🔄 Beklenen Ses Döngü Uzunluğu: ${expectedLoopLength} adım`);
+
+    // Enstrümanlar
+    console.group("🥁 Yüklenecek Enstrümanlar");
+    initialInstruments.forEach(inst => {
+        console.log(`- ${inst.name} (ID: ${inst.id}):`);
+        console.log(`  - Ses Dosyası: ${inst.url}`);
+        console.log(`  - Mixer Kanalı: ${inst.mixerTrackId}`);
+        console.log(`  - Planlanacak Nota Sayısı: ${inst.notes.length}`);
+    });
+    console.groupEnd();
+
+    // Mikser
+    console.group("🎚️ Yapılandırılacak Mikser Kanalları");
+    const usedTracks = initialMixerTracks.filter(
+        track => track.type !== 'track' || initialInstruments.some(inst => inst.mixerTrackId === track.id)
+    );
+    usedTracks.forEach(track => {
+        if(track.type === 'master') {
+            console.log(`- MASTER KANALI (ID: ${track.id})`);
+        } else if (track.type === 'bus') {
+            console.log(`- BUS KANALI: ${track.name} (ID: ${track.id})`);
+            track.insertEffects.forEach(fx => console.log(`  - Efekt: ${fx.type}`));
+        } else {
+             console.log(`- KANAL: ${track.name} (ID: ${track.id})`);
+        }
+        if(track.sends && track.sends.length > 0) {
+            track.sends.forEach(send => console.log(`  - SEND -> ${send.busId} @ ${send.level}dB`));
+        }
+    });
+    console.groupEnd();
+
+
+    console.log("✅ Beklenen durum loglandı. Şimdi motorun gerçek çıktısı takip edilecek.");
+    console.groupEnd();
+}
+
+function logPostSyncHealthCheck(engineInstance) {
+    if (!engineInstance) {
+        console.error("Denetçi: AudioEngine örneği bulunamadı!");
+        return;
+    }
+
+    console.group("SoundForge Senkronizasyon Sonrası Denetim (Gerçekleşen Durum)");
+
+    const expectedInstrumentCount = initialInstruments.length;
+    const actualInstrumentCount = engineInstance.instruments.size;
+    const instrumentsMatch = expectedInstrumentCount === actualInstrumentCount;
+    console.log(
+        `%cEnstrüman Sayısı: ${actualInstrumentCount} / ${expectedInstrumentCount} (Beklenen)`,
+        `color: ${instrumentsMatch ? 'green' : 'red'}`
+    );
+
+    const expectedNoteCount = initialInstruments.reduce((sum, inst) => sum + inst.notes.length, 0);
+    const actualNoteCount = engineInstance.scheduledEventIds.size;
+    const notesMatch = expectedNoteCount === actualNoteCount;
+    console.log(
+        `%cPlanlanan Nota Sayısı: ${actualNoteCount} / ${expectedNoteCount} (Beklenen)`,
+        `color: ${notesMatch ? 'green' : 'red'}`
+    );
+    
+    if (!notesMatch) {
+        console.warn("DIKKAT: Planlanan nota sayısı ile beklenen nota sayısı eşleşmiyor. Olası nedenler: Yinelenen notalar, zamanlama çakışmaları veya senkronizasyon hatası.");
+    }
+    
+    console.log(`Buffer Önbelleği: ${engineInstance.originalAudioBuffers.size} orijinal, ${engineInstance.processedAudioBuffers.size} işlenmiş buffer yüklü.`);
+    
+    console.groupEnd();
+}
+
 function App() {
   const [isAudioInitialized, setIsAudioInitialized] = useState(false);
   const audioEngine = useRef(null);
 
   const initializeAudio = async () => {
     if (audioEngine.current) return;
-
     try {
       await Tone.start();
       console.log("AudioContext başlatıldı.");
       
+      logStartupHealthCheck();
+      
       const engine = new AudioEngine({
         setPlaybackState: usePlaybackStore.getState().setPlaybackState,
-        
-        // --- BU İKİ SATIRI EKLEYİN ---
         onProgressUpdate: PlaybackAnimatorService.publish,
         setTransportPosition: usePlaybackStore.getState().setTransportPosition,
       });
-
       audioEngine.current = engine;
       
-      // Motoru, store'lardaki başlangıç verileriyle SADECE BİR KEZ senkronize et.
+      console.log("AudioEngine: İlk senkronizasyon başlatılıyor...");
       await engine.syncFromStores(
         useInstrumentsStore.getState().instruments,
         useMixerStore.getState().mixerTracks
       );
+      console.log("AudioEngine: İlk senkronizasyon tamamlandı.");
+      
+      // --- YENİ: Denetçiyi burada çağırıyoruz! ---
+      logPostSyncHealthCheck(audioEngine.current);
 
       setIsAudioInitialized(true);
-    } catch (error) {
+    } catch (error){
       console.error("Ses motoru başlatılamadı:", error);
     }
   };
@@ -124,7 +206,12 @@ function App() {
     return <StartupScreen onStart={initializeAudio} />;
   }
 
-  return <AppContent audioEngineRef={audioEngine} />;
+  // YENİ: ThemeProvider'ı AppContent'in etrafına ekliyoruz
+  return (
+    <ThemeProvider>
+      <AppContent audioEngineRef={audioEngine} />
+    </ThemeProvider>
+  );
 }
 
 export default App;

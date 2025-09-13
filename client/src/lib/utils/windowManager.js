@@ -1,6 +1,6 @@
 // Başlangıç pozisyonu ve her yeni pencere için eklenecek ofset miktarı
 const CASCADE_OFFSET = 25;
-const INITIAL_POS = { x: 300, y: 50 };
+const INITIAL_POS = { x: 50, y: 50 };
 
 /**
  * Yeni açılacak bir pencere için en uygun pozisyonu hesaplar.

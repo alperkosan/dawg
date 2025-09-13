@@ -12,7 +12,7 @@ let keydownListener = null;
  * @param {object} keymap - `keymapConfig.js`'ten gelen yapılandırma.
  * @param {object} actions - Eylem ID'lerini gerçek fonksiyonlarla eşleştiren harita.
  */
-export const initKeybindings = (keymap, actions) => {
+export const KeybindingService = (keymap, actions) => {
   // Mevcut bir dinleyici varsa, önce onu kaldır.
   if (keydownListener) {
     destroyKeybindings();
