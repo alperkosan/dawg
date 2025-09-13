@@ -1,15 +1,21 @@
 import * as Tone from 'tone';
+import { pianoRollUtils } from '../../lib/utils/pianoRollUtils';
 
 /**
  * Verilen koordinatlardaki notayı bulur.
- * @param {number} x - Grid üzerindeki yatay koordinat (scroll dahil).
- * @param {number} y - Grid üzerindeki dikey koordinat (scroll dahil).
+ * @param {number} x - Grid içindeki x koordinatı.
+ * @param {number} y - Grid içindeki y koordinatı.
  * @param {object} props - Gerekli yardımcı fonksiyonları ve state'i içeren nesne.
- * @returns {object|undefined} - Bulunan nota veya undefined.
+ * @param {() => Array<object>} props.getNotes - En güncel nota listesini döndüren fonksiyon.
+ * @param {(pitch: string) => number} props.noteToY - Nota perdesini Y koordinatına çeviren fonksiyon.
+ * @param {(step: number) => number} props.stepToX - Zaman adımını X koordinatına çeviren fonksiyon.
+ * @param {number} props.keyHeight - Bir nota sırasının piksel yüksekliği.
+ * @param {number} props.stepWidth - Bir zaman adımının piksel genişliği.
+ * @returns {object|null} - Bulunan nota nesnesi veya null.
  */
 export const getNoteAt = (x, y, props) => {
-    const { notes, noteToY, stepToX, keyHeight, stepWidth } = props;
-
+    const { getNotes, noteToY, stepToX, keyHeight, stepWidth } = props;
+    const notes = getNotes();
     // Notayı bulmak için tersten arama yapmak, üstteki notayı önceliklendirir.
     for (let i = notes.length - 1; i >= 0; i--) {
         const n = notes[i];
@@ -21,37 +27,36 @@ export const getNoteAt = (x, y, props) => {
             return n;
         }
     }
-    return undefined;
+    return null;
 };
 
 /**
- * Bir veya daha fazla notayı siler.
- * @param {Array<object>} notesToDelete - Silinecek nota nesnelerinin dizisi.
- * @param {object} props - Gerekli yardımcı fonksiyonları ve state'i içeren nesne.
+ * Belirtilen ID'lere sahip notaları siler.
+ * @param {Array<string>} noteIdsToDelete - Silinecek notaların ID'lerini içeren dizi.
+ * @param {object} props - Gerekli yardımcı fonksiyonları içeren nesne.
+ * @param {(updater: (prevNotes: Array<object>) => Array<object>) => void} props.handleNotesChange - Nota listesini güncelleyen ana fonksiyon.
  */
-export const deleteNotes = (notesToDelete, props) => {
-    if (!notesToDelete || notesToDelete.length === 0) return;
-    const { notes, handleNotesChange } = props;
-    const idsToDelete = new Set(notesToDelete.map(n => n.id));
-    const newNotes = notes.filter(n => !idsToDelete.has(n.id));
-    handleNotesChange(newNotes);
+export const deleteNotes = (noteIdsToDelete, props) => {
+    if (!noteIdsToDelete || noteIdsToDelete.length === 0) return;
+    const { handleNotesChange } = props;
+    const idsToDeleteSet = new Set(noteIdsToDelete);
+    handleNotesChange(prevNotes => prevNotes.filter(n => !idsToDeleteSet.has(n.id)));
 };
 
 /**
- * Yeni bir nota nesnesi oluşturur. Bu fonksiyon notayı state'e eklemez,
- * sadece bir obje olarak döndürür.
- * @returns {object|null} - Oluşturulan yeni nota nesnesi.
+ * Yeni bir nota oluşturur ve state'e ekler.
+ * @param {object} noteData - Oluşturulacak notanın bilgileri ({ time, pitch, duration }).
+ * @param {object} props - Gerekli yardımcı fonksiyonları içeren nesne.
+ * @param {(updater: (prevNotes: Array<object>) => Array<object>) => void} props.handleNotesChange - Nota listesini güncelleyen ana fonksiyon.
+ * @returns {object} - Oluşturulan yeni nota.
  */
-export const createNoteObject = (x, y, props) => {
-    const { xToStep, yToNote, lastUsedDuration } = props;
-    const time = xToStep(x);
-    const pitch = yToNote(y);
-    
-    return {
-        id: `note_${Date.now()}_${Math.random()}`, // Benzersiz ID
-        time,
-        pitch,
+export const createNote = (noteData, props) => {
+    const { handleNotesChange } = props;
+    const newNote = {
+        ...noteData,
+        id: pianoRollUtils.generateNoteId(), // Benzersiz ID oluştur
         velocity: 1.0,
-        duration: lastUsedDuration
     };
+    handleNotesChange(prevNotes => [...prevNotes, newNote]);
+    return newNote;
 };

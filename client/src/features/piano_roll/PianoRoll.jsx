@@ -1,233 +1,270 @@
 import React, { useRef, useState, useCallback, useMemo, useLayoutEffect, useEffect } from 'react';
 import * as Tone from 'tone';
+
+// Bileşenler
 import PianoKeyboard from './PianoKeyboard';
 import Note from './Note';
 import { PianoRollToolbar } from './PianoRollToolbar';
 import VelocityLane from './VelocityLane';
 import ResizableHandle from '../../ui/ResizableHandle';
+import GhostNote from './GhostNote';
+import PianoRollTooltip from './PianoRollTooltip';
+import CustomScrollbar from './CustomScrollbar';
+
+// Hook'lar ve Store'lar
 import { useInstrumentsStore } from '../../store/useInstrumentsStore';
 import { usePianoRollStore, NOTES, SCALES } from '../../store/usePianoRollStore';
 import { usePianoRollInteraction } from './usePianoRollInteraction';
 import { usePlaybackAnimator } from '../../hooks/usePlaybackAnimator';
+import { usePianoRollCursor } from './usePianoRollCursor';
+import { usePianoRollShortcuts } from './usePianoRollShortcuts';
 
 const totalOctaves = 8;
 const totalKeys = totalOctaves * 12;
 
 function PianoRoll({ instrument, audioEngineRef }) {
-  const gridContainerRef = useRef(null);
-  const playheadRef = useRef(null);
-  const [gridScroll, setGridScroll] = useState({ left: 0, top: 0 });
-  const KEYBOARD_WIDTH = 96;
+    // Referanslar ve State'ler
+    const gridContainerRef = useRef(null);
+    const playheadRef = useRef(null);
+    const [viewport, setViewport] = useState({ width: 0, height: 0 });
+    const [gridScroll, setGridScroll] = useState({ left: 0, top: 0 });
+    const [hoveredElement, setHoveredElement] = useState(null);
+    const [modifierKeys, setModifierKeys] = useState({ alt: false, shift: false, ctrl: false, isMouseDown: false });
+    const [visualFeedback, setVisualFeedback] = useState({ ghostNote: null, tooltip: { visible: false, content: null, x: 0, y: 0 } });
 
-  const lastMousePos = useRef({ x: 0, y: 0 });
-  const prevZoom = useRef({ zoomX: 1, zoomY: 1 });
+    // Sabitler ve Hesaplamalar
+    const KEYBOARD_WIDTH = 96;
+    const { 
+        activeTool, setActiveTool, gridSnapValue, scale, showScaleHighlighting, 
+        zoomX, zoomY, velocityLaneHeight, setVelocityLaneHeight, toggleVelocityLane,
+        targetScroll, handleZoom
+    } = usePianoRollStore();
+    
+    const { handleNotesChange: storeHandleNotesChange } = useInstrumentsStore.getState();
+    const currentInstrument = useInstrumentsStore(state => state.instruments.find(i => i.id === instrument?.id));
+    const loopLength = useInstrumentsStore(state => state.loopLength);
 
-  const { handleNotesChange: storeHandleNotesChange } = useInstrumentsStore.getState();
-  const currentInstrument = useInstrumentsStore(state => state.instruments.find(i => i.id === instrument?.id));
-  const loopLength = useInstrumentsStore(state => state.loopLength);
-  const { 
-      gridSnapValue, scale, showScaleHighlighting, zoomX, zoomY,
-      velocityLaneHeight, setVelocityLaneHeight, toggleVelocityLane,
-      handleZoom,
-  } = usePianoRollStore();
-  
-  const stepWidth = 40 * zoomX;
-  const keyHeight = 20 * zoomY;
-  const gridWidth = loopLength * stepWidth;
-  const gridHeight = totalKeys * keyHeight;
-  const snapSteps = useMemo(() => Tone.Time(gridSnapValue).toSeconds() / Tone.Time('16n').toSeconds(), [gridSnapValue]);
-  const clamp = (value, min, max) => Math.max(min, Math.min(value, max));
+    const stepWidth = 40 * zoomX;
+    const keyHeight = 20 * zoomY;
+    const gridWidth = loopLength * stepWidth;
+    const gridHeight = totalKeys * keyHeight;
+    const snapSteps = useMemo(() => Tone.Time(gridSnapValue).toSeconds() / Tone.Time('16n').toSeconds(), [gridSnapValue]);
 
-  const pitchToIndex = useCallback((pitch) => (parseInt(pitch.slice(-1), 10) * 12 + NOTES.indexOf(pitch.slice(0, -1))), []);
-  const indexToPitch = useCallback((index) => `${NOTES[index % 12]}${Math.floor(index / 12)}`, []);
-  const noteToY = useCallback((pitch) => (totalKeys - 1 - pitchToIndex(pitch)) * keyHeight, [keyHeight, pitchToIndex]);
-  const stepToX = useCallback((step) => step * stepWidth, [stepWidth]);
-  
-  const handleNotesChange = useCallback((newNotes) => {
-    if (currentInstrument) {
-        if (typeof newNotes === 'function') {
-            storeHandleNotesChange(currentInstrument.id, newNotes(currentInstrument.notes));
+    // Yardımcı Fonksiyonlar
+    const pitchToIndex = useCallback((pitch) => (parseInt(pitch.slice(-1), 10) * 12 + NOTES.indexOf(pitch.slice(0, -1))), []);
+    const indexToPitch = useCallback((index) => `${NOTES[index % 12]}${Math.floor(index / 12)}`, []);
+    const noteToY = useCallback((pitch) => (totalKeys - 1 - pitchToIndex(pitch)) * keyHeight, [keyHeight, pitchToIndex]);
+    const stepToX = useCallback((step) => step * stepWidth, [stepWidth]);
+    const xToStep = useCallback((x) => Math.max(0, x / stepWidth), [stepWidth]);
+    const yToNote = useCallback((y) => indexToPitch(Math.max(0, Math.min(totalKeys - 1, totalKeys - 1 - Math.floor(y / keyHeight)))), [keyHeight, indexToPitch, totalKeys]);
+    
+    const getNotes = useCallback(() => currentInstrument?.notes || [], [currentInstrument]);
+    const handleNotesChange = useCallback((newNotes) => {
+        if (currentInstrument) {
+            if (typeof newNotes === 'function') storeHandleNotesChange(currentInstrument.id, newNotes(currentInstrument.notes));
+            else storeHandleNotesChange(currentInstrument.id, newNotes);
+        }
+    }, [currentInstrument, storeHandleNotesChange]);
+
+    // Merkezi Hook'ların Kurulumu
+    const { interactionProps, selectedNotes, interaction, handleVelocityChange, handleResizeStart, setSelectedNotes } = usePianoRollInteraction({
+        notes: currentInstrument?.notes || [],
+        handleNotesChange, instrumentId: instrument?.id, audioEngineRef,
+        noteToY, stepToX, keyHeight, stepWidth, pitchToIndex, indexToPitch, totalKeys,
+        xToStep: useCallback((x) => Math.max(0, x / stepWidth), [stepWidth]),
+        yToNote: useCallback((y) => indexToPitch(Math.max(0, Math.min(totalKeys - 1, totalKeys - 1 - Math.floor(y / keyHeight)))), [keyHeight, indexToPitch]),
+        gridContainerRef, keyboardWidth: KEYBOARD_WIDTH, setHoveredElement, velocityLaneHeight 
+    });
+    
+    usePianoRollCursor(gridContainerRef, activeTool, hoveredElement, { ...modifierKeys, alt: modifierKeys.alt && modifierKeys.isMouseDown });
+    usePlaybackAnimator(playheadRef, { fullWidth: gridWidth, offset: 0 });
+    usePianoRollShortcuts({ setActiveTool, audioEngineRef, selectedNotes, handleNotesChange, getNotes, setSelectedNotes, instrument, viewport });
+
+    // Gezinme (Navigation) Mantığı
+    const handleWheel = useCallback((e) => {
+        e.preventDefault();
+        const grid = gridContainerRef.current;
+        if (!grid || (interaction && interaction.type !== 'panning')) return;
+
+        const isCtrlOrMeta = e.ctrlKey || e.metaKey;
+        const isShift = e.shiftKey;
+
+        if (isCtrlOrMeta) {
+            const rect = grid.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left - KEYBOARD_WIDTH + grid.scrollLeft;
+            const scrollPercentX = mouseX / gridWidth;
+            const delta = -e.deltaY * 0.001;
+            const newZoomX = zoomX + delta;
+            handleZoom(delta, 0);
+            grid.scrollLeft = (scrollPercentX * (loopLength * (40 * newZoomX))) - (e.clientX - rect.left - KEYBOARD_WIDTH);
+        } else if (isShift) {
+            grid.scrollLeft += e.deltaY;
         } else {
-            storeHandleNotesChange(currentInstrument.id, newNotes);
+            grid.scrollTop += e.deltaY;
         }
-    }
-  }, [currentInstrument, storeHandleNotesChange]);
+    }, [zoomX, loopLength, gridWidth, handleZoom, interaction]);
 
-  const { interactionProps, selectedNotes, interaction, handleVelocityChange, handleResizeStart } = usePianoRollInteraction({
-      notes: currentInstrument?.notes || [],
-      handleNotesChange, instrumentId: instrument?.id, audioEngineRef,
-      noteToY, stepToX, keyHeight, stepWidth, pitchToIndex, indexToPitch, totalKeys,
-      xToStep: useCallback((x) => Math.max(0, Math.round(x / stepWidth / snapSteps) * snapSteps), [stepWidth, snapSteps]),
-      yToNote: useCallback((y) => indexToPitch(clamp(totalKeys - 1 - Math.floor(y / keyHeight), 0, totalKeys - 1)), [keyHeight, indexToPitch, totalKeys]),
-      gridContainerRef,
-      keyboardWidth: KEYBOARD_WIDTH
-  });
+    // Görsel Geri Bildirim Mantığı
+    const handleMouseMoveForFeedback = useCallback((e) => {
+        const grid = gridContainerRef.current;
+        if (!grid) return;
 
-  usePlaybackAnimator(playheadRef, { fullWidth: gridWidth, offset: 0 });
+        let ghostNoteData = null;
+        let tooltipData = { visible: false, content: null, x: e.clientX, y: e.clientY };
 
-  const handleWheel = useCallback((e) => {
-    e.preventDefault();
-    const grid = gridContainerRef.current;
-    if (!grid) return;
+        if (!interaction) {
+            const rect = grid.getBoundingClientRect();
+            const x = e.clientX - rect.left + grid.scrollLeft - KEYBOARD_WIDTH;
+            const y = e.clientY - rect.top + grid.scrollTop;
 
-    const rect = grid.getBoundingClientRect();
-    lastMousePos.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+            if (activeTool === 'pencil' && !hoveredElement) {
+                const snappedTime = Math.round(xToStep(x) / snapSteps) * snapSteps;
+                const pitch = yToNote(y);
+                ghostNoteData = {
+                    position: { x: stepToX(snappedTime), y: noteToY(pitch) },
+                    dimensions: { width: Tone.Time(usePianoRollStore.getState().lastUsedDuration).toSeconds() / Tone.Time('16n').toSeconds() * stepWidth, height: keyHeight },
+                    isValid: true
+                };
+            }
 
-    if (e.ctrlKey || e.metaKey) {
-        handleZoom(e.deltaX, e.deltaY);
-    } 
-    else if (e.shiftKey) {
-        grid.scrollLeft += e.deltaY;
-    } 
-    else {
-        grid.scrollTop += e.deltaY;
-    }
-  }, [handleZoom]);
-  
-  // DÜZELTME: Olay dinleyicisini manuel olarak ve "passive: false" seçeneğiyle ekliyoruz.
-  useEffect(() => {
-    const gridElement = gridContainerRef.current;
-    if (gridElement) {
-      gridElement.addEventListener('wheel', handleWheel, { passive: false });
-    }
-    return () => {
-      if (gridElement) {
-        gridElement.removeEventListener('wheel', handleWheel);
-      }
-    };
-  }, [handleWheel]);
-
-  useLayoutEffect(() => {
-    const grid = gridContainerRef.current;
-    if (!grid || (prevZoom.current.zoomX === zoomX && prevZoom.current.zoomY === zoomY)) return;
-
-    const oldZoomX = prevZoom.current.zoomX;
-    const oldZoomY = prevZoom.current.zoomY;
-
-    const zoomRatioX = zoomX / oldZoomX;
-    const zoomRatioY = zoomY / oldZoomY;
-
-    const mouseX = lastMousePos.current.x + grid.scrollLeft;
-    const mouseY = lastMousePos.current.y + grid.scrollTop;
-
-    const newScrollLeft = mouseX * zoomRatioX - lastMousePos.current.x;
-    const newScrollTop = mouseY * zoomRatioY - lastMousePos.current.y;
-
-    grid.scrollLeft = newScrollLeft;
-    grid.scrollTop = newScrollTop;
-
-    prevZoom.current = { zoomX, zoomY };
-  }, [zoomX, zoomY]);
-
-  const gridSVG = useMemo(() => {
-    const lines = [];
-    for (let i = 0; i <= totalKeys; i++) {
-        const noteIndex = (totalKeys - 1 - i) % 12;
-        const isBlackKey = [1, 3, 6, 8, 10].includes(noteIndex);
-        lines.push(`<line x1="0" y1="${i * keyHeight}" x2="${gridWidth}" y2="${i * keyHeight}" stroke="${isBlackKey ? 'rgba(0,0,0,0.3)' : 'rgba(0,0,0,0.15)'}" stroke-width="1"/>`);
-    }
-    for (let i = 0; i <= loopLength; i++) {
-        const x = i * stepWidth;
-        const isBarStart = i % 16 === 0;
-        const isBeat = i % 4 === 0;
-        if (isBarStart || isBeat) {
-            lines.push(`<line x1="${x}" y1="0" x2="${x}" y2="${gridHeight}" stroke="rgba(0,0,0,${isBarStart ? 0.4 : 0.2})" stroke-width="${isBarStart ? 1.5 : 1}"/>`);
-        }
-    }
-    const snapValueInSteps = Tone.Time(gridSnapValue).toSeconds() / Tone.Time('16n').toSeconds();
-    if (snapValueInSteps < 4 && zoomX > 0.5) {
-        for (let i = 0; i <= loopLength; i += snapValueInSteps) {
-            if (i % 4 !== 0) {
-                 const x = i * stepWidth;
-                 lines.push(`<line x1="${x}" y1="0" x2="${x}" y2="${gridHeight}" stroke="rgba(0,0,0,0.08)" stroke-width="1"/>`);
+            if (hoveredElement?.type === 'note') {
+                const note = hoveredElement.data;
+                tooltipData.content = (
+                    <div>
+                        <div className="font-bold">{note.pitch}</div>
+                        <div>Velocity: {(note.velocity * 127).toFixed(0)}</div>
+                        <div>Süre: {note.duration}</div>
+                    </div>
+                );
+                tooltipData.visible = true;
             }
         }
-    }
-    return `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="${gridWidth}" height="${gridHeight}">${lines.join('')}</svg>`)}`;
-  }, [stepWidth, keyHeight, loopLength, gridWidth, gridHeight, totalKeys, gridSnapValue, zoomX]);
+        setVisualFeedback({ ghostNote: ghostNoteData, tooltip: tooltipData });
+    }, [interaction, activeTool, hoveredElement, snapSteps, stepWidth, keyHeight, stepToX, noteToY, xToStep, yToNote]);
+    
+    // Olay Dinleyicileri, Scroll ve Viewport Yönetimi
+    useEffect(() => {
+        const gridEl = gridContainerRef.current;
+        const handleScroll = () => { if (gridEl) setGridScroll({ left: gridEl.scrollLeft, top: gridEl.scrollTop }); };
+        const handleMouseLeave = () => setVisualFeedback({ ghostNote: null, tooltip: { visible: false, content: null, x: 0, y: 0 } });
+        
+        if (gridEl) {
+            gridEl.addEventListener('scroll', handleScroll, { passive: true });
+            gridEl.addEventListener('wheel', handleWheel, { passive: false });
+            gridEl.addEventListener('mousemove', handleMouseMoveForFeedback);
+            gridEl.addEventListener('mouseleave', handleMouseLeave);
+        }
+        return () => {
+            if (gridEl) {
+                gridEl.removeEventListener('scroll', handleScroll);
+                gridEl.removeEventListener('wheel', handleWheel);
+                gridEl.removeEventListener('mousemove', handleMouseMoveForFeedback);
+                gridEl.removeEventListener('mouseleave', handleMouseLeave);
+            }
+        };
+    }, [handleWheel, handleMouseMoveForFeedback]);
 
-  const scaleNotesSet = useMemo(() => {
-    if (!showScaleHighlighting || !SCALES[scale.type]) return null;
-    return new Set(SCALES[scale.type].map(i => (NOTES.indexOf(scale.root) + i) % 12));
-  }, [showScaleHighlighting, scale]);
-  
-  const handleScroll = (e) => setGridScroll({ left: e.target.scrollLeft, top: e.target.scrollTop });
-  
-  if (!currentInstrument) {
+    useEffect(() => {
+        if (targetScroll && gridContainerRef.current) {
+            gridContainerRef.current.scrollTo({ left: targetScroll.left, top: targetScroll.top, behavior: 'smooth' });
+        }
+    }, [targetScroll]);
+
+    useLayoutEffect(() => {
+        const gridEl = gridContainerRef.current;
+        if (!gridEl) return;
+        const resizeObserver = new ResizeObserver(entries => {
+            for (let entry of entries) setViewport({ width: entry.contentRect.width, height: entry.contentRect.height });
+        });
+        resizeObserver.observe(gridEl);
+        return () => resizeObserver.disconnect();
+    }, []);
+
+    if (!currentInstrument) {
       return (
-        <div className="w-full h-full flex flex-col"> <PianoRollToolbar />
-            <div className="flex-grow flex items-center justify-center bg-gray-800 text-gray-500"> Düzenlemek için bir enstrüman seçin. </div>
+        <div className="w-full h-full flex flex-col">
+            <PianoRollToolbar />
+            <div className="flex-grow flex items-center justify-center bg-gray-800 text-gray-500">
+                Düzenlemek için bir enstrüman seçin.
+            </div>
         </div>
       );
-  }
+    }
 
-  return (
+    return (
     <div className="w-full h-full flex flex-col bg-[var(--color-background)] text-white select-none">
-      <PianoRollToolbar />
-      <div className="flex-grow min-h-0 flex flex-col overflow-hidden">
-        <div className="flex-grow min-h-0 flex relative">
-          <div className="w-24 bg-gray-900 shrink-0 h-full z-20 absolute" style={{ transform: `translateY(-${gridScroll.top}px)`}}>
-            <PianoKeyboard 
-                keyHeight={keyHeight} scaleNotes={scaleNotesSet}
-                onKeyInteraction={(pitch, type) => {
-                    if (type === 'on') audioEngineRef.current?.auditionNoteOn(instrument.id, pitch);
-                    else audioEngineRef.current?.auditionNoteOff(instrument.id, pitch);
-                }}
-            />
-          </div>
-          <div 
-            ref={gridContainerRef} 
-            onScroll={handleScroll} 
-            // onWheel prop'unu buradan kaldırıyoruz çünkü useEffect ile yöneteceğiz.
-            className="w-full h-full overflow-auto"
-            onContextMenu={(e) => e.preventDefault()}
-            {...interactionProps} 
-          >
-            <div className="relative" style={{ 
-                width: gridWidth, 
-                height: gridHeight, 
-                marginLeft: KEYBOARD_WIDTH,
-                transition: 'width 0.05s linear, height 0.05s linear'
-            }}>
-              <div ref={playheadRef} className="absolute top-0 bottom-0 w-0.5 bg-cyan-400/80 z-30 pointer-events-none" />
-              <div className="absolute inset-0" style={{ backgroundImage: `url('${gridSVG}')`, cursor: 'cell' }} />
-              
-              {(currentInstrument.notes || []).map((note) => {
-                  return <Note key={note.id} note={note} isSelected={selectedNotes.has(note.id)} isBeingEdited={interaction?.type === 'dragging' && selectedNotes.has(note.id)} onResizeStart={handleResizeStart} {...{noteToY, stepToX, keyHeight, stepWidth}}/>
-              })}
-              
-              {interaction?.previewNotes?.map((note, i) => <Note key={`preview-drag-${i}`} note={note} isPreview={true} {...{noteToY, stepToX, keyHeight, stepWidth}}/>)}
-              {interaction?.previewNote && <Note key="preview-resize" note={interaction.previewNote} isPreview={true} {...{noteToY, stepToX, keyHeight, stepWidth}}/>}
-              {interaction?.type === 'marquee' && 
+        <PianoRollToolbar />
+        <div className="flex-grow min-h-0 flex flex-col overflow-hidden">
+            <div className="flex-grow min-h-0 relative">
                 <div 
-                    className="absolute border-2 border-dashed border-cyan-400 bg-cyan-400/20 pointer-events-none z-10" 
-                    style={{
-                        left: Math.min(interaction.gridStartX, interaction.endX), 
-                        top: Math.min(interaction.gridStartY, interaction.endY), 
-                        width: Math.abs(interaction.endX - interaction.gridStartX), 
-                        height: Math.abs(interaction.endY - interaction.gridStartY)
-                    }} 
-                />}
-            </div>
-          </div>
-        </div>
-        
-        {velocityLaneHeight > 0 && (
-            <>
-                <ResizableHandle onDrag={(delta) => setVelocityLaneHeight(-delta)} onDoubleClick={() => toggleVelocityLane()}/>
-                <div className="w-full relative flex overflow-hidden" style={{ height: velocityLaneHeight, flexShrink: 0 }}>
-                    <div className="h-full w-24 bg-gray-900 z-10 shrink-0" />
-                    <div className="h-full absolute top-0" style={{ left: KEYBOARD_WIDTH, transform: `translateX(-${gridScroll.left}px)`}}>
-                        <VelocityLane
-                            notes={currentInstrument.notes || []} selectedNotes={selectedNotes} gridWidth={gridWidth}
-                            height={velocityLaneHeight} onVelocityChange={handleVelocityChange}
-                            {...{stepToX, stepWidth}}
-                        />
+                    ref={gridContainerRef}
+                    className="w-full h-full overflow-hidden" // Özel scrollbar kullandığımız için ana scrollbar'ı gizle
+                    style={{ cursor: 'grab' }}
+                    {...interactionProps}
+                >
+                    <div className="relative" style={{ width: gridWidth + KEYBOARD_WIDTH, height: gridHeight }}>
+                        <div className="sticky left-0 top-0 h-full w-24 bg-gray-900 z-20" style={{ transform: `translateY(${gridScroll.top}px)`}}>
+                             <PianoKeyboard 
+                                keyHeight={keyHeight} 
+                                scaleNotes={useMemo(() => showScaleHighlighting ? new Set(SCALES[scale.type].map(i => (NOTES.indexOf(scale.root) + i) % 12)) : null, [showScaleHighlighting, scale])}
+                                onKeyInteraction={(pitch, type) => type === 'on' ? audioEngineRef.current?.auditionNoteOn(instrument.id, pitch) : audioEngineRef.current?.auditionNoteOff(instrument.id, pitch)}
+                             />
+                        </div>
+                        <div className="absolute top-0" style={{ left: KEYBOARD_WIDTH, width: gridWidth, height: gridHeight }}>
+                            {/* Grid, Notlar ve diğer elemanlar */}
+                            <div className="absolute inset-0" style={{ backgroundImage: `url('data:image/svg+xml,...')` }} />
+                            {currentInstrument.notes.map((note) => (
+                                <Note 
+                                    key={note.id} 
+                                    note={note} 
+                                    noteToY={noteToY} 
+                                    stepToX={stepToX} 
+                                    keyHeight={keyHeight} 
+                                    stepWidth={stepWidth} 
+                                    onResizeStart={handleResizeStart} 
+                                    isSelected={selectedNotes.has(note.id)} 
+                                    isBeingEdited={interaction?.type === 'dragging' && selectedNotes.has(note.id)} 
+                                />
+                            ))}
+                            {interaction?.previewNotes?.map(note => <Note key={`preview-${note.id}`} note={note} isPreview={true} {...{noteToY, stepToX, keyHeight, stepWidth}}/>)}
+                            {interaction?.previewNote && <Note key="preview-creating" note={interaction.previewNote} isPreview={true} {...{noteToY, stepToX, keyHeight, stepWidth}}/>}
+                            <GhostNote 
+                                position={visualFeedback.ghostNote?.position}
+                                dimensions={visualFeedback.ghostNote?.dimensions}
+                                isValid={visualFeedback.ghostNote?.isValid}
+                            />
+                            {interaction?.type === 'marquee' && <div className="absolute border-2 border-dashed border-cyan-400 bg-cyan-400/20 pointer-events-none z-10" style={{ left: Math.min(interaction.gridStartX, interaction.currentX), top: Math.min(interaction.gridStartY, interaction.currentY), width: Math.abs(interaction.currentX - interaction.gridStartX), height: Math.abs(interaction.currentY - interaction.gridStartY)}} />}
+                            <div ref={playheadRef} className="absolute top-0 bottom-0 w-0.5 z-30 pointer-events-none bg-cyan-400" />
+                        </div>
                     </div>
                 </div>
-            </>
-        )}
-      </div>
+                
+                {/* Özel Scrollbar'lar */}
+                <CustomScrollbar orientation="horizontal" contentSize={gridWidth + KEYBOARD_WIDTH} viewportSize={viewport.width} scrollPosition={gridScroll.left} onScroll={(pos) => gridContainerRef.current.scrollLeft = pos} />
+                <CustomScrollbar orientation="vertical" contentSize={gridHeight} viewportSize={viewport.height} scrollPosition={gridScroll.top} onScroll={(pos) => gridContainerRef.current.scrollTop = pos} />
+            </div>
+            
+            {/* Velocity Lane */}
+            {velocityLaneHeight > 0 && (
+                <>
+                    <ResizableHandle onDrag={(delta) => setVelocityLaneHeight(-delta)} onDoubleClick={() => toggleVelocityLane(false)}/>
+                    <div className="w-full relative flex overflow-hidden" style={{ height: velocityLaneHeight, flexShrink: 0 }}>
+                        <div className="h-full w-24 bg-gray-900 z-10 shrink-0" />
+                        <div className="h-full absolute top-0" style={{ left: KEYBOARD_WIDTH, transform: `translateX(-${gridScroll.left}px)`}}>
+                            <VelocityLane notes={currentInstrument?.notes || []} stepToX={stepToX} stepWidth={stepWidth} height={velocityLaneHeight} onVelocityChange={handleVelocityChange} selectedNotes={selectedNotes} gridWidth={gridWidth} />
+                        </div>
+                    </div>
+                </>
+            )}
+        </div>
+        
+        {/* Akıllı İpucu */}
+        <PianoRollTooltip 
+            x={visualFeedback.tooltip?.x || 0}
+            y={visualFeedback.tooltip?.y || 0}
+            content={visualFeedback.tooltip?.content}
+            visible={visualFeedback.tooltip?.visible || false}
+        />
     </div>
   );
 }

@@ -1,49 +1,48 @@
 import React from 'react';
-import VolumeKnob from '../VolumeKnob';
-import { PresetManager } from '../PresetManager';
+// YENİ: Profesyonel sistem bileşenlerini import ediyoruz
+import PluginContainer from '../plugin_system/PluginContainer';
+import { ProfessionalKnob } from '../plugin_system/PluginControls';
 
-export const ReverbUI = ({ effect, onChange, definition }) => {
+export const ReverbUI = ({ trackId, effect, onChange, definition }) => {
   return (
-    <div 
-      className="relative w-full h-full flex flex-col items-center"
-      style={{
-        backgroundColor: 'var(--color-surface)',
-        padding: 'var(--padding-container)',
-        gap: 'var(--gap-container)',
-        borderRadius: 'var(--border-radius)',
-        border: '1px solid var(--color-border)'
-      }}
+    // Arayüz artık PluginContainer ile sarmalanıyor.
+    // Bypass, preset yönetimi gibi özellikler artık buradan geliyor.
+    <PluginContainer
+      trackId={trackId}
+      effect={effect}
+      definition={definition}
     >
-      <PresetManager 
-        pluginType={definition.type} 
-        effect={effect}
-        factoryPresets={definition.presets} 
-        onChange={onChange}
-      />
-      <div className="text-center">
-        <h3 className="font-bold" style={{ fontSize: 'var(--font-size-header)', color: 'var(--color-primary)' }}>{definition.type}</h3>
-        <p className="max-w-xs px-2" style={{ fontSize: 'var(--font-size-body)', color: 'var(--color-muted)' }}>{definition.story}</p>
+      <div className="flex items-center justify-center h-full gap-8">
+        {/* Mevcut VolumeKnob'lar, ProfessionalKnob ile değiştirildi */}
+        <ProfessionalKnob
+          label="Decay"
+          value={effect.settings.decay}
+          onChange={(val) => onChange('decay', val)}
+          min={0.1} max={15} defaultValue={2.5}
+          size={80} // Ana kontrol olduğu için daha büyük
+          logarithmic={true} // Decay algısal olarak logaritmiktir
+          unit="s"
+          precision={2}
+        />
+        <ProfessionalKnob
+          label="Pre-Delay"
+          value={effect.settings.preDelay}
+          onChange={(val) => onChange('preDelay', val)}
+          min={0} max={0.2} defaultValue={0.01}
+          size={60}
+          unit="s"
+          precision={3}
+        />
+        <ProfessionalKnob
+          label="Mix"
+          value={effect.settings.wet}
+          onChange={(val) => onChange('wet', val)}
+          min={0} max={1} defaultValue={0.4}
+          size={60}
+          unit="%"
+          precision={0} // Yüzde için ondalık göstermiyoruz
+        />
       </div>
-      <div className="flex items-center justify-around w-full flex-grow" style={{ gap: 'var(--gap-controls)' }}>
-          <VolumeKnob 
-              label="Decay"
-              value={effect.settings.decay}
-              onChange={(val) => onChange('decay', val)}
-              min={0.1} max={15} defaultValue={2.5}
-          />
-           <VolumeKnob 
-              label="Pre-Delay"
-              value={effect.settings.preDelay}
-              onChange={(val) => onChange('preDelay', val)}
-              min={0} max={0.2} defaultValue={0.01}
-          />
-          <VolumeKnob 
-              label="Mix"
-              value={effect.settings.wet}
-              onChange={(val) => onChange('wet', val)}
-              min={0} max={1} defaultValue={0.4}
-          />
-      </div>
-    </div>
+    </PluginContainer>
   );
 };

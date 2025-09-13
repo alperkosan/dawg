@@ -1,6 +1,8 @@
 import React from 'react';
-import VolumeKnob from '../VolumeKnob';
-import { PresetManager } from '../PresetManager';
+// YENİ: Profesyonel sistem bileşenlerini import ediyoruz
+import PluginContainer from '../plugin_system/PluginContainer';
+import { ProfessionalKnob } from '../plugin_system/PluginControls';
+import { PluginTypography } from '../plugin_system/PluginDesignSystem'; // Stil için
 
 const timeOptions = [
     { value: '1n', label: '1/1' }, { value: '2n', label: '1/2' }, { value: '4n', label: '1/4' },
@@ -9,54 +11,53 @@ const timeOptions = [
     { value: '4n.', label: '1/4D' }, { value: '8n.', label: '1/8D' },
 ];
 
-export const DelayUI = ({ effect, onChange, definition }) => {
+export const DelayUI = ({ trackId, effect, onChange, definition }) => {
+  // Select menüsü için yeni profesyonel stil
+  const selectStyle = {
+    ...PluginTypography.value,
+    background: 'rgba(0,0,0,0.3)',
+    border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: '6px',
+    padding: '0.5rem 1rem',
+    color: '#fff',
+    WebkitAppearance: 'none',
+    appearance: 'none',
+    textAlign: 'center',
+    cursor: 'pointer',
+  };
+
   return (
-    <div 
-        className="relative w-full h-full p-4 bg-[var(--color-surface)] rounded-lg flex flex-col items-center justify-between"
-        style={{
-            border: '1px solid var(--color-border)',
-            gap: 'var(--gap-container)'
-        }}
-    >
-    <PresetManager 
-      pluginType={definition.type} 
+    <PluginContainer
+      trackId={trackId}
       effect={effect}
-      factoryPresets={definition.presets} 
-      onChange={onChange}
-    />
-        <div>
-            <h3 className="font-bold text-[var(--color-primary)]" style={{ fontSize: 'var(--font-size-header)' }}>{definition.type}</h3>
-            <p className="text-center text-[var(--color-muted)] max-w-xs px-2 mt-1" style={{ fontSize: 'var(--font-size-label)' }}>{definition.story}</p>
+      definition={definition}
+    >
+      <div className="flex items-center justify-center h-full gap-8">
+        <div className="flex flex-col items-center gap-2">
+            <label style={PluginTypography.label} className="text-white/80">Time</label>
+            <select
+                value={effect.settings.delayTime}
+                onChange={(e) => onChange('delayTime', e.target.value)}
+                style={selectStyle}
+            >
+                {timeOptions.map(opt => <option key={opt.value} value={opt.value} style={{backgroundColor: '#1f2937'}}>{opt.label}</option>)}
+            </select>
         </div>
-        <div className="flex items-end justify-around w-full mt-4" style={{ gap: 'var(--gap-container)' }}>
-            <div className="flex flex-col items-center" style={{ gap: 'var(--gap-controls)' }}>
-                <label className="font-bold text-[var(--color-muted)]" style={{ fontSize: 'var(--font-size-label)' }}>Time</label>
-                <select 
-                    value={effect.settings.delayTime}
-                    onChange={(e) => onChange('delayTime', e.target.value)}
-                    className="bg-[var(--color-background)] rounded px-4 py-2 focus:outline-none focus:ring-2"
-                    style={{
-                        border: '1px solid var(--color-border)',
-                        fontSize: 'var(--font-size-body)',
-                        ringColor: 'var(--color-primary)'
-                    }}
-                >
-                    {timeOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-                </select>
-            </div>
-            <VolumeKnob 
-                label="Feedback"
-                value={effect.settings.feedback}
-                onChange={(val) => onChange('feedback', val)}
-                min={0} max={0.95} defaultValue={0.3} size={60}
-            />
-            <VolumeKnob 
-                label="Mix"
-                value={effect.settings.wet}
-                onChange={(val) => onChange('wet', val)}
-                min={0} max={1} defaultValue={0.35} size={60}
-            />
-        </div>
-    </div>
+        <ProfessionalKnob
+            label="Feedback"
+            value={effect.settings.feedback}
+            onChange={(val) => onChange('feedback', val)}
+            min={0} max={0.95} defaultValue={0.3} size={70}
+            precision={2}
+        />
+        <ProfessionalKnob
+            label="Mix"
+            value={effect.settings.wet}
+            onChange={(val) => onChange('wet', val)}
+            min={0} max={1} defaultValue={0.35} size={70}
+            unit="%" precision={0}
+        />
+      </div>
+    </PluginContainer>
   );
 };
