@@ -10,8 +10,11 @@ import { usePanelsStore } from '../../store/usePanelsStore';
 import { usePlaybackStore } from '../../store/usePlaybackStore';
 import { AddEffectMenu } from '../../ui/AddEffectMenu';
 import EnvelopeDisplay from './EnvelopeDisplay';
+// *** YENİ: Artık doğrudan PluginContainer'ı kullanacağız ***
+import PluginContainer from '../../ui/plugin_system/PluginContainer';
 
-// Sekme Butonları artık temaya duyarlı
+
+// --- TabButton, SampleTab, EnvelopeTab (DEĞİŞİKLİK YOK) ---
 function TabButton({ label, icon: Icon, isActive, onClick }) {
     const style = {
         backgroundColor: isActive ? 'var(--color-surface)' : 'var(--color-background)',
@@ -30,7 +33,6 @@ function TabButton({ label, icon: Icon, isActive, onClick }) {
     );
 }
 
-// Sample Sekmesi artık temaya duyarlı
 function SampleTab({ instrument, instrumentBuffer, audioEngineRef }) {
     const { updateInstrument, handleTogglePrecomputedEffect, handlePreviewInstrumentSlice } = useInstrumentsStore.getState();
     const effectsState = instrument.precomputed || {};
@@ -83,14 +85,12 @@ function SampleTab({ instrument, instrumentBuffer, audioEngineRef }) {
     );
 }
 
-// --- Envelope Sekmesi (Yeni 2 Sütunlu Tasarım) ---
 function EnvelopeTab({ instrument, audioEngineRef }) {
     const handleInstrumentSynthParamChange = useInstrumentsStore(state => state.handleInstrumentSynthParamChange);
     const envelope = instrument.envelope || { attack: 0.01, decay: 0.1, sustain: 0.9, release: 1.0 };
 
     return (
         <div className="w-full h-full flex" style={{ padding: 'var(--padding-container)', gap: 'var(--padding-container)', backgroundColor: 'var(--color-surface)' }}>
-            {/* Sol Sütun: Kontroller */}
             <div className="w-48 shrink-0 flex flex-col" style={{ backgroundColor: 'var(--color-background)', borderRadius: 'var(--border-radius)', padding: 'var(--padding-container)', gap: 'var(--gap-container)'}}>
                 <h3 className="text-center font-bold uppercase" style={{ fontSize: 'var(--font-size-label)', color: 'var(--color-muted)', marginBottom: 'var(--gap-controls)' }}>Volume Envelope</h3>
                 <VolumeKnob label="Attack" value={envelope.attack} onChange={(val) => handleInstrumentSynthParamChange(instrument.id, 'envelope.attack', val, audioEngineRef.current)} min={0.001} max={2} defaultValue={0.01} />
@@ -98,7 +98,6 @@ function EnvelopeTab({ instrument, audioEngineRef }) {
                 <VolumeKnob label="Sustain" value={envelope.sustain} onChange={(val) => handleInstrumentSynthParamChange(instrument.id, 'envelope.sustain', val, audioEngineRef.current)} min={0} max={1} defaultValue={0.9} />
                 <VolumeKnob label="Release" value={envelope.release} onChange={(val) => handleInstrumentSynthParamChange(instrument.id, 'envelope.release', val, audioEngineRef.current)} min={0.001} max={5} defaultValue={1.0} />
             </div>
-            {/* Sağ Sütun: Envelope Grafiği */}
             <div className="flex-grow relative flex items-center justify-center">
                 <EnvelopeDisplay envelope={envelope} />
             </div>
@@ -106,11 +105,10 @@ function EnvelopeTab({ instrument, audioEngineRef }) {
     );
 }
 
-// --- Effects Sekmesi (Mevcut Tasarım Korundu) ---
+// --- Effects Sekmesi (MİMARİ OLARAK GÜNCELLENDİ) ---
 function EffectsTab({ track, audioEngineRef }) {
     const focusedEffect = useMixerStore(state => state.focusedEffect);
     const { setFocusedEffect, handleMixerEffectChange, handleMixerEffectAdd, handleMixerEffectRemove } = useMixerStore.getState();
-    const { instruments } = useInstrumentsStore.getState();
     const [menuState, setMenuState] = useState({ isOpen: false, x: 0, y: 0 });
     const addButtonRef = useRef(null);
 
@@ -122,7 +120,7 @@ function EffectsTab({ track, audioEngineRef }) {
     const PluginUIComponent = pluginDefinition ? pluginDefinition.uiComponent : null;
 
     const handleSelectEffect = (effectType) => {
-        handleMixerEffectAdd(track.id, effectType, instruments, audioEngineRef.current);
+        handleMixerEffectAdd(track.id, effectType);
         setMenuState({ isOpen: false, x: 0, y: 0 });
     };
     
@@ -130,52 +128,39 @@ function EffectsTab({ track, audioEngineRef }) {
         if (addButtonRef.current) {
             const rect = addButtonRef.current.getBoundingClientRect();
             const spaceBelow = window.innerHeight - rect.bottom;
-            const estimatedMenuHeight = 250; // Menünün yaklaşık yüksekliği (piksel)
-
+            const estimatedMenuHeight = 250; 
             let menuY;
-
-            // Eğer aşağıda yeterli alan yoksa VE yukarıda yeterli alan varsa, menüyü yukarıya aç.
             if (spaceBelow < estimatedMenuHeight && rect.top > estimatedMenuHeight) {
                 menuY = rect.top - estimatedMenuHeight;
             } else {
-                // Varsayılan olarak menüyü aşağıya aç.
                 menuY = rect.bottom + 5;
             }
-
-            setMenuState(prevState => ({
-                isOpen: !prevState.isOpen,
-                x: rect.left,
-                y: menuY
-            }));
+            setMenuState(prevState => ({ isOpen: !prevState.isOpen, x: rect.left, y: menuY }));
         }
     };
 
-    const handlePluginChange = (paramId, value) => {
+    // Bu fonksiyon artık hem tekil parametreleri hem de preset objelerini yönetir
+    const handlePluginChange = (paramOrSettings, value) => {
         if (currentEffect) {
-            // --- DEĞİŞİKLİK BURADA: audioEngineRef.current'i eyleme iletiyoruz ---
-            handleMixerEffectChange(track.id, currentEffect.id, paramId, value, audioEngineRef.current);
+            handleMixerEffectChange(track.id, currentEffect.id, paramOrSettings, value, audioEngineRef.current);
         }
     };
 
     return (
         <div className="w-full h-full flex" style={{ padding: 'var(--padding-container)', gap: 'var(--padding-container)', backgroundColor: 'var(--color-surface)' }}>
-            {/* Sol Sütun: Efekt Listesi */}
             <div className="w-48 shrink-0 flex flex-col" style={{ backgroundColor: 'var(--color-background)', borderRadius: 'var(--border-radius)', padding: 'var(--padding-container)', gap: 'var(--gap-container)'}}>
                 <h3 className="text-center font-bold uppercase" style={{ fontSize: 'var(--font-size-label)', color: 'var(--color-muted)', marginBottom: 'var(--gap-controls)' }}>Inserts on '{track.name}'</h3>
-
                 <div className="flex-grow min-h-0 overflow-y-auto pr-1 flex flex-col gap-1 mt-1">
                     {track.insertEffects.map((effect) => (
                          <div
                           key={effect.id}
                           onClick={() => setFocusedEffect({ trackId: track.id, effectId: effect.id })}
-                          className={`p-2 rounded text-sm cursor-pointer transition-colors flex items-center justify-between ${currentEffect?.id === effect.id ? 'bg-cyan-700' : 'bg-gray-700/50 hover:bg-gray-700'}`}
+                          className={`p-2 rounded text-sm cursor-pointer transition-colors flex items-center justify-between ${currentEffect?.id === effect.id ? 'bg-blue-700' : 'bg-gray-700/50 hover:bg-gray-700'}`}
                         >
                             <span className="truncate font-bold">{effect.type}</span>
                             <div className="flex items-center">
                                 <EffectSwitch isActive={!effect.bypass} onClick={(e) => { e.stopPropagation(); handleMixerEffectChange(track.id, effect.id, 'bypass', !effect.bypass, audioEngineRef.current)}} />
-                                <button 
-                                    onClick={(e) => { e.stopPropagation(); handleMixerEffectRemove(track.id, effect.id, instruments, audioEngineRef.current)}}
-                                    className="ml-1 text-gray-500 hover:text-red-500" title="Efekti Sil">
+                                <button onClick={(e) => { e.stopPropagation(); handleMixerEffectRemove(track.id, effect.id)}} className="ml-1 text-gray-500 hover:text-red-500" title="Efekti Sil">
                                     <X size={14}/>
                                 </button>
                             </div>
@@ -183,34 +168,30 @@ function EffectsTab({ track, audioEngineRef }) {
                     ))}
                 </div>
                 <div className="relative mt-auto pt-2 border-t border-gray-700">
-                   <button 
-                        ref={addButtonRef}
-                        onClick={handleAddButtonClick} 
-                        className="w-full flex items-center justify-center gap-2 px-2 py-1.5 text-xs bg-gray-700 hover:bg-cyan-600 rounded"
-                   >
-                       <Plus size={14}/> 
-                       <span>Efekt Ekle</span>
+                   <button ref={addButtonRef} onClick={handleAddButtonClick} className="w-full flex items-center justify-center gap-2 px-2 py-1.5 text-xs bg-gray-700 hover:bg-blue-600 rounded">
+                       <Plus size={14}/> <span>Efekt Ekle</span>
                    </button>
-                   {menuState.isOpen && (
-                       <AddEffectMenu 
-                           onSelect={handleSelectEffect} 
-                           onClose={() => setMenuState({ isOpen: false, x: 0, y: 0 })}
-                           x={menuState.x}
-                           y={menuState.y}
-                       />
-                   )}
+                   {menuState.isOpen && (<AddEffectMenu onSelect={handleSelectEffect} onClose={() => setMenuState({ isOpen: false, x: 0, y: 0 })} x={menuState.x} y={menuState.y} />)}
                 </div>
             </div>
-            {/* Sağ Sütun: Plugin Arayüzü */}
+            {/* *** ONARIM: Artık PluginContainer doğrudan burada render ediliyor *** */}
             <div className="flex-grow bg-gray-900 rounded-lg p-2 flex flex-col">
-                {pluginDefinition && PluginUIComponent ? (
-                    <PluginUIComponent
-                        effect={currentEffect}
-                        onChange={handlePluginChange} 
-                        definition={pluginDefinition}
+                {pluginDefinition && PluginUIComponent && currentEffect ? (
+                    <PluginContainer
+                        key={currentEffect.id} // ID değiştiğinde yeniden render olmasını sağlar
                         trackId={track.id}
-                        audioEngineRef={audioEngineRef}
-                    />
+                        effect={currentEffect}
+                        definition={pluginDefinition}
+                        onChange={handlePluginChange}
+                    >
+                        {/* Eklentinin kendine özel arayüzü (knob'lar vb.) children olarak içeriye aktarılıyor */}
+                        <PluginUIComponent
+                            trackId={track.id}
+                            effect={currentEffect}
+                            onChange={handlePluginChange}
+                            definition={pluginDefinition}
+                        />
+                    </PluginContainer>
                 ) : (
                     <div className="text-center text-gray-500 m-auto">
                         <p>Ayarlarını görmek için soldaki listeden bir efekt seçin veya yeni bir efekt ekleyin.</p>
@@ -221,10 +202,10 @@ function EffectsTab({ track, audioEngineRef }) {
     );
 }
 
-// --- Ana SampleEditor Bileşeni ---
+// --- Ana SampleEditor Bileşeni (DEĞİŞİKLİK YOK) ---
 const SampleEditor = React.memo(function SampleEditor({ instrument, audioEngineRef }) {
   const track = useMixerStore(state => state.mixerTracks.find(t => t.id === instrument?.mixerTrackId));
-  const [activeTab, setActiveTab] = useState('sample');
+  const [activeTab, setActiveTab] = useState('effects');
   const instrumentBuffer = usePanelsStore(state => state.editorBuffer); 
 
   if (!instrument || !track) {

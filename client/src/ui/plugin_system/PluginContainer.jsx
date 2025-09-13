@@ -1,32 +1,84 @@
 /**
  * @file PluginContainer.jsx
- * @description "Complete Plugin System Overhaul Guide" dokümanında belirtilen,
- * her eklenti için standart bir "çerçeve" görevi gören ana bileşen.
- * Bypass, başlık, preset yönetimi gibi ortak elemanları barındırır.
+ * @description Tüm eklentiler için standart, profesyonel ve işlevsel bir
+ * çerçeve (wrapper) bileşenidir. Bypass, preset yönetimi gibi ortak
+ * işlevleri merkezileştirir.
  */
 import React, { useState, useRef, useEffect } from 'react';
+import ReactDOM from 'react-dom';
 import { PluginColorPalette, PluginSpacing, PluginTypography, PluginAnimations } from './PluginDesignSystem';
-import { Power, Info, Save, ChevronDown, Trash2 } from 'lucide-react';
-import { useMixerStore } from '../../store/useMixerStore'; // State'i güncellemek için
+import { Power, Info, ChevronDown, Trash2 } from 'lucide-react';
 
-const PluginContainer = ({
-  trackId,
-  effect,
-  definition,
-  children,
+// *** YENİ: Portal'da render edilecek ayrı bir menü bileşeni ***
+const PresetMenu = ({
+  isOpen,
+  onClose,
+  anchorEl,
+  factoryPresets,
+  userPresets,
+  onSelect,
+  onDelete,
 }) => {
-  const { handleMixerEffectChange } = useMixerStore.getState();
-  
-  const [showInfo, setShowInfo] = useState(false);
-  const { type: pluginType, story: description, category, presets: factoryPresets = [] } = definition;
-  
-  // Bypass fonksiyonu artık doğrudan store'u güncelliyor
-  const onBypass = () => {
-    handleMixerEffectChange(trackId, effect.id, 'bypass', !effect.bypass);
-  };
+  const menuRef = useRef(null);
+  const [position, setPosition] = useState({ top: 0, left: 0 });
 
-  // --- Preset Yönetimi ---
-  const storageKey = `soundforge-user-presets-${pluginType}`;
+  useEffect(() => {
+    if (isOpen && anchorEl) {
+      const rect = anchorEl.getBoundingClientRect();
+      setPosition({ top: rect.bottom + 5, left: rect.left });
+    }
+  }, [isOpen, anchorEl]);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (menuRef.current && !menuRef.current.contains(event.target)) {
+        onClose();
+      }
+    };
+    if (isOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [isOpen, onClose]);
+
+  if (!isOpen) return null;
+
+  return ReactDOM.createPortal(
+    <div
+      ref={menuRef}
+      className="fixed w-56 bg-gray-800 border border-gray-700 rounded-md shadow-2xl p-1 max-h-60 overflow-y-auto"
+      style={{ top: position.top, left: position.left, zIndex: 1000 }} // Yüksek z-index
+    >
+      {factoryPresets.length > 0 && (
+        <>
+          <h4 className="text-xs text-gray-500 font-bold px-2 py-1">Fabrika</h4>
+          {factoryPresets.map(p =>
+            <button key={p.name} onClick={() => onSelect(p.settings)} className="w-full text-left text-sm px-2 py-1.5 rounded hover:bg-blue-600">{p.name}</button>
+          )}
+        </>
+      )}
+      {userPresets.length > 0 && (
+        <>
+          <h4 className="text-xs text-gray-500 font-bold px-2 py-1 mt-2">Kullanıcı</h4>
+          {userPresets.map(p =>
+            <div key={p.name} className="group flex items-center justify-between w-full text-left text-sm rounded hover:bg-blue-600">
+              <button onClick={() => onSelect(p.settings)} className="flex-grow text-left px-2 py-1.5">{p.name}</button>
+              <button onClick={() => onDelete(p.name)} className="p-1.5 opacity-0 group-hover:opacity-100 hover:text-red-500">
+                <Trash2 size={12} />
+              </button>
+            </div>
+          )}
+        </>
+      )}
+    </div>,
+    document.body
+  );
+};
+
+
+const PresetManager = ({ effect, factoryPresets, onChange, storageKey }) => {
   const [userPresets, setUserPresets] = useState(() => {
     try {
       const saved = window.localStorage.getItem(storageKey);
@@ -36,125 +88,121 @@ const PluginContainer = ({
       return [];
     }
   });
-  
+
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const menuRef = useRef(null);
   const [activePresetName, setActivePresetName] = useState('Default');
+  const buttonRef = useRef(null); // Butonun referansı
 
   useEffect(() => {
     const allPresets = [...factoryPresets, ...userPresets];
-    const matchingPreset = allPresets.find(p => JSON.stringify(p.settings) === JSON.stringify(effect.settings));
+    const matchingPreset = allPresets.find(p =>
+      JSON.stringify(p.settings) === JSON.stringify(effect.settings)
+    );
     setActivePresetName(matchingPreset ? matchingPreset.name : 'Custom*');
   }, [effect.settings, factoryPresets, userPresets]);
 
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (menuRef.current && !menuRef.current.contains(event.target)) setIsMenuOpen(false);
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
   const handlePresetSelect = (presetSettings) => {
-    handleMixerEffectChange(trackId, effect.id, presetSettings);
+    onChange(presetSettings);
     setIsMenuOpen(false);
   };
   
-  const handleSavePreset = () => {
-    const name = prompt("Preset için bir isim girin:");
-    if (name && name.trim()) {
-      const newPreset = { name: name.trim(), settings: { ...effect.settings } };
-      const updatedPresets = [...userPresets, newPreset];
-      setUserPresets(updatedPresets);
-      window.localStorage.setItem(storageKey, JSON.stringify(updatedPresets));
-    }
-  };
-  
-  const handleDeletePreset = (presetName) => {
-    if (window.confirm(`'${presetName}' preseti silinecek. Emin misiniz?`)) {
-      const updatedPresets = userPresets.filter(p => p.name !== presetName);
+  const handleDelete = (presetNameToDelete) => {
+    if (window.confirm(`'${presetNameToDelete}' preseti silinecek. Emin misiniz?`)) {
+      const updatedPresets = userPresets.filter(p => p.name !== presetNameToDelete);
       setUserPresets(updatedPresets);
       window.localStorage.setItem(storageKey, JSON.stringify(updatedPresets));
     }
   };
 
+  return (
+    <>
+      <button
+        ref={buttonRef}
+        onClick={() => setIsMenuOpen(!isMenuOpen)}
+        className="flex items-center gap-2 text-white text-xs font-bold px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg transition-colors"
+      >
+        <span className="max-w-[120px] truncate">{activePresetName}</span>
+        <ChevronDown size={14} className={`transition-transform ${isMenuOpen ? 'rotate-180' : ''}`} />
+      </button>
+      <PresetMenu
+        isOpen={isMenuOpen}
+        onClose={() => setIsMenuOpen(false)}
+        anchorEl={buttonRef.current}
+        factoryPresets={factoryPresets}
+        userPresets={userPresets}
+        onSelect={handlePresetSelect}
+        onDelete={handleDelete}
+      />
+    </>
+  );
+};
+
+
+const PluginContainer = ({ trackId, effect, definition, onChange, children }) => {
+  const [showInfo, setShowInfo] = useState(false);
+  const { type: title, story: description, category, presets = [] } = definition;
+
+  const handleBypass = () => {
+    onChange('bypass', !effect.bypass);
+  };
+  
   const containerStyle = {
     background: PluginColorPalette.backgrounds.primary,
     borderRadius: '12px',
-    border: `1px solid rgba(255, 255, 255, 0.1)`,
-    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.05)',
+    border: `1px solid ${effect.bypass ? 'rgba(100, 116, 139, 0.3)' : 'rgba(255, 255, 255, 0.1)'}`,
+    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1)',
     overflow: 'hidden',
     transition: `all ${PluginAnimations.normal}`,
     opacity: effect.bypass ? 0.6 : 1,
-    width: '100%',
-    height: '100%',
     display: 'flex',
     flexDirection: 'column',
+    width: '100%',
+    height: '100%',
   };
 
   const headerStyle = {
     background: 'rgba(0, 0, 0, 0.3)',
     backdropFilter: 'blur(10px)',
     borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
-    padding: PluginSpacing.sm,
+    padding: PluginSpacing.md,
   };
 
   return (
-    <div style={containerStyle} className="plugin-container">
-      {/* Header */}
-      <div style={headerStyle} className="flex items-center justify-between shrink-0">
+    <div style={containerStyle}>
+      <div style={headerStyle} className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <button
-            onClick={onBypass}
-            className={`w-7 h-7 rounded-full flex items-center justify-center transition-all duration-200 ${
-              effect.bypass ? 'bg-gray-700 text-gray-400' : `bg-gradient-to-br text-white shadow-lg from-blue-500 to-blue-600 shadow-blue-500/25`
-            }`}
+            onClick={handleBypass}
+            className={`w-8 h-8 rounded-full flex items-center justify-center transition-all duration-200 ${effect.bypass ? 'bg-gray-600 text-gray-400' : 'bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/25'}`}
             title={effect.bypass ? 'Plugin Bypassed' : 'Plugin Active'}
           >
             <Power size={14} />
           </button>
           <div>
-            <h3 style={PluginTypography.title} className="text-white">{pluginType}</h3>
-            {category && <div style={PluginTypography.label} className="text-blue-400 opacity-80">{category}</div>}
+            <h3 style={PluginTypography.title} className="text-white">{title}</h3>
+            {category && (<div style={PluginTypography.label} className="text-blue-400 opacity-80">{category}</div>)}
           </div>
         </div>
-
         <div className="flex items-center gap-2">
-          <button onClick={() => setShowInfo(!showInfo)} className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white transition-all" title="Plugin Information">
+          <button onClick={() => setShowInfo(!showInfo)} className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white transition-all" title="Plugin Information">
             <Info size={14} />
           </button>
-          <div className="relative" ref={menuRef}>
-            <button onClick={() => setIsMenuOpen(!isMenuOpen)} className="flex items-center gap-2 text-white text-xs font-bold px-3 py-1.5 bg-white/5 hover:bg-white/10 rounded-md transition-colors">
-                <span className="max-w-[100px] truncate">{activePresetName}</span>
-                <ChevronDown size={14} className={`transition-transform ${isMenuOpen ? 'rotate-180' : ''}`} />
-            </button>
-            {isMenuOpen && (
-                <div className="absolute top-full right-0 mt-1 w-56 bg-gray-900 border border-gray-700 rounded-md shadow-2xl p-1 max-h-60 overflow-y-auto z-50">
-                    <button onClick={handleSavePreset} className="w-full text-left text-sm px-2 py-1.5 rounded hover:bg-blue-600 flex items-center gap-2"><Save size={14}/> Yeni Preset Kaydet</button>
-                    <div className="my-1 h-[1px] bg-gray-700"/>
-                    {factoryPresets.map(p => <button key={p.name} onClick={() => handlePresetSelect(p.settings)} className="w-full text-left text-sm px-2 py-1.5 rounded hover:bg-gray-700">{p.name}</button>)}
-                    {userPresets.length > 0 && <div className="my-1 h-[1px] bg-gray-700"/>}
-                    {userPresets.map(p => 
-                        <div key={p.name} className="group flex items-center justify-between w-full text-left text-sm rounded hover:bg-gray-700">
-                            <button onClick={() => handlePresetSelect(p.settings)} className="flex-grow text-left px-2 py-1.5">{p.name}</button>
-                            <button onClick={() => handleDeletePreset(p.name)} className="p-1.5 opacity-0 group-hover:opacity-100 hover:text-red-500"><Trash2 size={12} /></button>
-                        </div>
-                    )}
-                </div>
-            )}
-          </div>
+          <PresetManager
+            effect={effect}
+            factoryPresets={presets}
+            onChange={onChange}
+            storageKey={`soundforge-user-presets-${title}`}
+          />
         </div>
       </div>
-
-      {/* Info Panel */}
       {showInfo && description && (
-        <div className="px-4 py-3 bg-black/20 border-b border-white/10 text-white" style={PluginTypography.description}>
+        <div className="px-4 py-3 bg-black/20 border-b border-white/10" style={{ ...PluginTypography.description, color: 'rgba(255, 255, 255, 0.8)' }}>
           {description}
         </div>
       )}
-
-      {/* Plugin Content */}
-      <div className="p-4 flex-grow relative">{children}</div>
+      <div className="p-6 flex-grow min-h-0">
+        {children}
+      </div>
     </div>
   );
 };

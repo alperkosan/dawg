@@ -1,38 +1,27 @@
 import React from 'react';
-// YENİ: Profesyonel sistem bileşenlerini import ediyoruz
-import PluginContainer from '../plugin_system/PluginContainer';
-import { ProfessionalKnob } from '../plugin_system/PluginControls';
+import { ProfessionalKnob } from '../../ui/plugin_system/PluginControls';
 
-// GÜNCELLENDİ: Component artık trackId ve effect gibi tüm gerekli bilgileri alıyor
-export const SaturatorUI = ({ trackId, effect, onChange, definition }) => {
-  
-  // Arayüz artık PluginContainer ile sarmalanıyor.
-  // Bypass, preset yönetimi gibi özellikler artık buradan geliyor.
+// Bu bileşen artık sadece kendine özgü kontrolleri render ediyor.
+// Çerçeve (Container), Presetler ve Bypass mantığı bir üst katmanda (EffectsTab) yönetiliyor.
+export const SaturatorUI = ({ effect, onChange, definition }) => {
   return (
-    <PluginContainer
-      trackId={trackId}
-      effect={effect}
-      definition={definition}
-    >
-      <div className="flex items-center justify-center h-full gap-8">
-        {/* Mevcut VolumeKnob'lar, ProfessionalKnob ile değiştirildi */}
-        <ProfessionalKnob 
-          label="Drive"
-          value={effect.settings.distortion}
-          onChange={(val) => onChange('distortion', val)}
-          min={0} max={1} defaultValue={0.4}
-          size={80} // Daha büyük bir ana kontrol
-        />
-        <ProfessionalKnob 
-          label="Mix"
-          value={effect.settings.wet}
-          onChange={(val) => onChange('wet', val)}
-          min={0} max={1} defaultValue={1.0}
-          size={60}
-          unit="%"
-          precision={0} // Yüzde için ondalık gösterme
-        />
-      </div>
-    </PluginContainer>
+    <div className="flex items-center justify-around w-full h-full">
+      <ProfessionalKnob
+        label="Drive"
+        value={effect.settings.distortion}
+        onChange={(val) => onChange('distortion', val)}
+        min={0} max={40} defaultValue={10}
+        unit="dB"
+      />
+      <ProfessionalKnob
+        label="Mix"
+        value={effect.settings.wet * 100}
+        onChange={(val) => onChange('wet', val / 100)}
+        min={0} max={100} defaultValue={100}
+        unit="%"
+        precision={0}
+      />
+    </div>
   );
 };
+

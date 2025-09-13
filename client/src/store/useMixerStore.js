@@ -54,26 +54,29 @@ export const useMixerStore = create((set) => ({
       }));
   },
   
-  handleMixerEffectChange: (trackId, effectId, param, value, audioEngine) => {
+  handleMixerEffectChange: (trackId, effectId, paramOrSettings, value, audioEngine) => {
     set(state => ({
       mixerTracks: state.mixerTracks.map(track => {
         if (track.id === trackId) {
           const newEffects = track.insertEffects.map(effect => {
             if (effect.id === effectId) {
-              if (typeof param === 'object' && param !== null) {
-                return { ...effect, settings: { ...param } };
+              // Eğer ilk parametre bir obje ise (yani bir preset'ten geliyorsa),
+              // tüm ayarları tek seferde değiştir.
+              if (typeof paramOrSettings === 'object' && paramOrSettings !== null) {
+                return { ...effect, settings: { ...paramOrSettings } };
               }
-              if (param === 'bypass') {
+              // Değilse, tekil parametre güncellemesi yap.
+              let newSettings = { ...effect.settings };
+              if (paramOrSettings === 'bypass') {
                   return { ...effect, bypass: value };
               }
-               let newSettings = { ...effect.settings };
-               if (param.startsWith('bands.')) {
-                   const [, bandIndex, bandParam] = param.split('.');
+               if (paramOrSettings.startsWith('bands.')) {
+                   const [, bandIndex, bandParam] = paramOrSettings.split('.');
                    const newBands = [...newSettings.bands];
                    if (newBands[bandIndex]) newBands[bandIndex] = {...newBands[bandIndex], [bandParam]: value};
                    newSettings = { ...newSettings, bands: newBands };
                } else {
-                  newSettings = { ...newSettings, [param]: value };
+                  newSettings = { ...newSettings, [paramOrSettings]: value };
                }
                return { ...effect, settings: newSettings };
             }
@@ -85,8 +88,10 @@ export const useMixerStore = create((set) => ({
       })
     }));
 
-    if (typeof param === 'string') {
-        audioEngine?.updateEffectParam(trackId, effectId, param, value);
+    // Ses motoruna sadece tekil parametre değişikliklerini bildir.
+    // Preset değişiklikleri motorun ana senkronizasyon döngüsünde ele alınacak.
+    if (typeof paramOrSettings === 'string') {
+        audioEngine?.updateEffectParam(trackId, effectId, paramOrSettings, value);
     }
   },
 }));

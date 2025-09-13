@@ -1,6 +1,5 @@
 import React from 'react';
 // YENİ: Profesyonel sistem bileşenlerini import ediyoruz
-import PluginContainer from '../plugin_system/PluginContainer';
 import { ProfessionalKnob } from '../plugin_system/PluginControls';
 import { PluginTypography } from '../plugin_system/PluginDesignSystem'; // Stil için
 
@@ -27,37 +26,31 @@ export const DelayUI = ({ trackId, effect, onChange, definition }) => {
   };
 
   return (
-    <PluginContainer
-      trackId={trackId}
-      effect={effect}
-      definition={definition}
-    >
-      <div className="flex items-center justify-center h-full gap-8">
-        <div className="flex flex-col items-center gap-2">
-            <label style={PluginTypography.label} className="text-white/80">Time</label>
-            <select
-                value={effect.settings.delayTime}
-                onChange={(e) => onChange('delayTime', e.target.value)}
-                style={selectStyle}
-            >
-                {timeOptions.map(opt => <option key={opt.value} value={opt.value} style={{backgroundColor: '#1f2937'}}>{opt.label}</option>)}
-            </select>
-        </div>
-        <ProfessionalKnob
-            label="Feedback"
-            value={effect.settings.feedback}
-            onChange={(val) => onChange('feedback', val)}
-            min={0} max={0.95} defaultValue={0.3} size={70}
-            precision={2}
-        />
-        <ProfessionalKnob
-            label="Mix"
-            value={effect.settings.wet}
-            onChange={(val) => onChange('wet', val)}
-            min={0} max={1} defaultValue={0.35} size={70}
-            unit="%" precision={0}
-        />
+    <div className="flex items-center justify-center h-full gap-8">
+      <div className="flex flex-col items-center gap-2">
+          <label style={PluginTypography.label} className="text-white/80">Time</label>
+          <select
+              value={effect.settings.delayTime}
+              onChange={(e) => onChange('delayTime', e.target.value)}
+              style={selectStyle}
+          >
+              {timeOptions.map(opt => <option key={opt.value} value={opt.value} style={{backgroundColor: '#1f2937'}}>{opt.label}</option>)}
+          </select>
       </div>
-    </PluginContainer>
+      <ProfessionalKnob
+          label="Feedback"
+          value={effect.settings.feedback}
+          onChange={(val) => onChange('feedback', val)}
+          min={0} max={0.95} defaultValue={0.3} size={70}
+          precision={2}
+      />
+      <ProfessionalKnob
+          label="Mix"
+          value={effect.settings.wet}
+          onChange={(val) => onChange('wet', val)}
+          min={0} max={1} defaultValue={0.35} size={70}
+          unit="%" precision={0}
+      />
+    </div>
   );
 };

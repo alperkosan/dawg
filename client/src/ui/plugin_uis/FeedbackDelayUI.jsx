@@ -1,8 +1,7 @@
 import React from 'react';
-import VolumeKnob from '../VolumeKnob';
-import { PresetManager } from '../PresetManager'; // Preset yöneticisini import et
+import { ProfessionalKnob } from '../plugin_system/PluginControls';
+import { PluginTypography } from '../plugin_system/PluginDesignSystem';
 
-// PingPongDelay'den kopyalanan ve sadeleştirilen zaman seçenekleri
 const timeOptions = [
     { value: '1n', label: '1/1' }, { value: '2n', label: '1/2' }, { value: '4n', label: '1/4' },
     { value: '8n', label: '1/8' }, { value: '16n', label: '1/16' }, { value: '32n', label: '1/32' },
@@ -10,44 +9,42 @@ const timeOptions = [
     { value: '4n.', label: '1/4D' }, { value: '8n.', label: '1/8D' },
 ];
 
-export const FeedbackDelayUI = ({ effect, onChange, definition }) => {
+export const FeedbackDelayUI = ({ trackId, effect, onChange, definition }) => {
+
+  const handleMixChange = (uiValue) => {
+    onChange('wet', uiValue / 100);
+  };
+  
+  const handleFeedbackChange = (uiValue) => {
+    onChange('feedback', uiValue / 100);
+  };
+
   return (
-    <div className="relative w-full h-full p-4 bg-gray-800 rounded-lg flex flex-col items-center justify-between border border-gray-700
-                    bg-[radial-gradient(ellipse_at_bottom,_var(--tw-gradient-stops))] from-gray-700/40 to-gray-800">
-    <PresetManager 
-      pluginType={definition.type} 
-      effect={effect} // Efektin tüm verisini gönderiyoruz
-      factoryPresets={definition.presets} 
-      onChange={onChange}
-    />
-        <div>
-            <h3 className="text-lg font-bold text-gray-300">{definition.type}</h3>
-            <p className="text-xs text-center text-gray-400 max-w-xs px-2 mt-1">{definition.story}</p>
-        </div>
-        <div className="flex items-end justify-around w-full mt-4 gap-6">
-            <div className="flex flex-col items-center gap-2">
-                <label className="text-xs font-bold text-gray-400">Time</label>
-                <select 
-                    value={effect.settings.delayTime}
-                    onChange={(e) => onChange('delayTime', e.target.value)}
-                    className="bg-gray-900 border border-gray-700 rounded px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                    {timeOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-                </select>
-            </div>
-            <VolumeKnob 
-                label="Feedback"
-                value={effect.settings.feedback}
-                onChange={(val) => onChange('feedback', val)}
-                min={0} max={0.95} defaultValue={0.4} size={60}
-            />
-            <VolumeKnob 
-                label="Mix"
-                value={effect.settings.wet}
-                onChange={(val) => onChange('wet', val)}
-                min={0} max={1} defaultValue={0.4} size={60}
-            />
-        </div>
+    <div className="flex items-center justify-center h-full gap-10">
+      <div className="flex flex-col items-center gap-2">
+          <label style={PluginTypography.label} className="text-white/90">Time</label>
+          <select
+              value={effect.settings.delayTime}
+              onChange={(e) => onChange('delayTime', e.target.value)}
+              className="bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+              {timeOptions.map(opt => <option key={opt.value} value={opt.value} className="bg-gray-800">{opt.label}</option>)}
+          </select>
+      </div>
+      <ProfessionalKnob
+        label="Feedback"
+        value={effect.settings.feedback * 100}
+        onChange={handleFeedbackChange}
+        min={0} max={95} defaultValue={40}
+        unit="%" precision={0} size={72}
+      />
+      <ProfessionalKnob
+        label="Mix"
+        value={effect.settings.wet * 100}
+        onChange={handleMixChange}
+        min={0} max={100} defaultValue={40}
+        unit="%" precision={0} size={72}
+      />
     </div>
   );
 };
