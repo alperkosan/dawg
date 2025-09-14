@@ -2,162 +2,107 @@ import { create } from 'zustand';
 import { useArrangementStore } from './useArrangementStore';
 
 /**
- * @file Enhanced usePlaybackStore.js
- * @description TimeManager entegrasyonlu geliştirilmiş playback store
+ * @file usePlaybackStore.js - NİHAİ SÜRÜM
+ * @description Uygulamanın genel playback (çalma) durumunu, transport
+ * kontrollerini ve zamanlama bilgilerini yönetir. Arayüz (UI) ile
+ * AudioEngine arasındaki ana köprüdür.
  */
 export const usePlaybackStore = create((set, get) => ({
   // --- STATE ---
-  playbackState: 'stopped',
-  bpm: 60, // BPM'i daha ritmik bir başlangıç için 120 yapalım
+  // Projenin anlık "fotoğrafını" tutan veriler.
+  
+  playbackState: 'stopped', // 'stopped', 'playing', 'paused'
+  bpm: 120,
   masterVolume: 0,
-  transportPosition: '1:1:0', // DEĞİŞTİ: BBT formatında
-  isPreviewPlaying: false,
-  playbackMode: 'pattern',
-  // YENİ: Loop bilgileri
-  loopInfo: {
-    currentBar: 1,
-    totalBars: 4,
-    progress: 0,
-  },
-  // YENİ: Debouncing için
-  _lastActionTime: 0,
-  _isProcessingAction: false,
+  transportPosition: '1:1:00', // GÜNCELLENDİ: Her zaman BBT formatında
+  playbackMode: 'pattern', // 'pattern' veya 'song'
 
   // --- ACTIONS ---
+  // State'i güvenli ve tahmin edilebilir bir şekilde değiştiren fonksiyonlar.
+
+  /**
+   * AudioEngine'den gelen anlık çalma durumunu state'e yazar.
+   */
   setPlaybackState: (state) => set({ playbackState: state }),
   
-  // GÜNCELLENDİ: Pozisyonu set ederken mevcut bar'ı da ayrıştırıyor
+  /**
+   * AudioEngine'den gelen anlık pozisyon bilgisini (BBT formatında) state'e yazar.
+   */
   setTransportPosition: (position) => {
     set({ transportPosition: position });
-    const parts = position.split(':');
-    if (parts.length >= 2) {
-      const currentBar = parseInt(parts[0], 10) || 1;
-      set(state => ({
-        loopInfo: { ...state.loopInfo, currentBar }
-      }));
-    }
   },
 
-  setIsPreviewPlaying: (isPlaying) => set({ isPreviewPlaying: isPlaying }),
+  /**
+   * Çalma modunu değiştirir. Eğer çalma devam ediyorsa,
+   * AudioEngine'e "kesintisiz geçiş" komutu gönderir.
+   */
+  setPlaybackMode: (mode, audioEngine) => {
+    const currentState = get();
+    // Mod zaten aynıysa bir şey yapma
+    if (currentState.playbackMode === mode) return;
 
-  // GÜNCELLENDİ: Çalma sırasında kesintisiz mod değişimi
-  setPlaybackMode: (mode) => {
-    const { playbackState } = get();
-    const isPlaying = playbackState === 'playing' || playbackState === 'paused';
+    const isPlaying = currentState.playbackState === 'playing' || currentState.playbackState === 'paused';
     
-    // window.audioEngineRef global'de olmayabilir, bu yüzden bu mantığı doğrudan
-    // UI bileşeninden gelen audioEngineRef üzerinden yapacağız. Bu eylem sadece state'i değiştirmeli.
-    // AudioEngine'e komut, UI'dan (örn: TopToolbar) gönderilecek.
+    // Eğer çalma devam ediyorsa, AudioEngine'deki akıllı metodu kullan
+    if (audioEngine && isPlaying) {
+      const activePatternId = useArrangementStore.getState().activePatternId;
+      audioEngine.switchPlaybackMode(mode, activePatternId);
+    }
+    // Her durumda arayüzün state'ini anında güncelle
     set({ playbackMode: mode });
-    console.log(`Playback modu: ${mode}`);
-    // Not: Gerçek switchPlaybackMode çağrısını UI'da yapacağız.
   },
 
+  /**
+   * BPM (tempo) değerini günceller ve AudioEngine'e bildirir.
+   */
   handleBpmChange: (newBpm, audioEngine) => {
     const clampedBpm = Math.max(40, Math.min(300, newBpm));
     set({ bpm: clampedBpm });
     audioEngine?.setBpm(clampedBpm);
   },
 
+  /**
+   * Ana ses seviyesini günceller ve AudioEngine'e bildirir.
+   */
   handleMasterVolumeChange: (newVolume, audioEngine) => {
     set({ masterVolume: newVolume });
     audioEngine?.setMasterVolume(newVolume);
   },
 
- handlePlay: (audioEngine) => {
-    const now = Date.now();
-    const { _lastActionTime, _isProcessingAction } = get();
-    
-    // 300ms içinde tekrar tıklamayı engelle
-    if (_isProcessingAction || (now - _lastActionTime) < 300) {
-      console.log('[Playback] Çok hızlı tıklama engellendi');
-      return;
-    }
-    
-    set({ _isProcessingAction: true, _lastActionTime: now });
-    
-    if (!audioEngine) {
-      set({ _isProcessingAction: false });
-      return;
-    }
-    
-    try {
-      const { playbackMode } = get();
-      const activePatternId = useArrangementStore.getState().activePatternId;
-      
-      console.log('[Playback] Play başlatılıyor...');
-      audioEngine.start(playbackMode, activePatternId);
-      
-      // 500ms sonra işlem bayrağını kaldır
-      setTimeout(() => {
-        set({ _isProcessingAction: false });
-      }, 500);
-      
-    } catch (error) {
-      console.error('[Playback] Play hatası:', error);
-      set({ _isProcessingAction: false });
-    }
+  /**
+   * Çalmayı başlatma komutunu AudioEngine'e gönderir.
+   */
+  handlePlay: (audioEngine) => {
+    if (!audioEngine) return;
+    const { playbackMode } = get();
+    const activePatternId = useArrangementStore.getState().activePatternId;
+    audioEngine.start(playbackMode, activePatternId); 
   },
 
-  // DÜZELTME: Debounced pause handler  
+  /**
+   * AKILLI TOGGLE: Çalma durumuna göre duraklatma veya devam etme
+   * komutunu AudioEngine'e gönderir.
+   */
   handlePause: (audioEngine) => {
-    const now = Date.now();
-    const { _lastActionTime, _isProcessingAction, playbackState } = get();
-    
-    if (_isProcessingAction || (now - _lastActionTime) < 200) {
-      console.log('[Playback] Çok hızlı tıklama engellendi');
-      return;
-    }
-    
-    set({ _isProcessingAction: true, _lastActionTime: now });
-    
-    try {
-      if (playbackState === 'playing') {
-        console.log('[Playback] Pause...');
-        audioEngine?.pause();
-      } else if (playbackState === 'paused') {
-        console.log('[Playback] Resume...');
-        audioEngine?.resume();
-      }
-      
-      setTimeout(() => {
-        set({ _isProcessingAction: false });
-      }, 300);
-      
-    } catch (error) {
-      console.error('[Playback] Pause/Resume hatası:', error);
-      set({ _isProcessingAction: false });
+    const { playbackState } = get();
+    if (playbackState === 'playing') {
+      audioEngine?.pause();
+    } else if (playbackState === 'paused') {
+      audioEngine?.resume();
     }
   },
 
-  // DÜZELTME: Debounced stop handler
+  /**
+   * Çalmayı durdurma ve başa sarma komutunu AudioEngine'e gönderir.
+   */
   handleStop: (audioEngine) => {
-    const now = Date.now();
-    const { _lastActionTime, _isProcessingAction } = get();
-    
-    if (_isProcessingAction || (now - _lastActionTime) < 200) {
-      return;
-    }
-    
-    set({ _isProcessingAction: true, _lastActionTime: now });
-    
-    try {
-      console.log('[Playback] Stop...');
-      audioEngine?.stop();
-      
-      setTimeout(() => {
-        set({ _isProcessingAction: false });
-      }, 300);
-      
-    } catch (error) {
-      console.error('[Playback] Stop hatası:', error);
-      set({ _isProcessingAction: false });
-    }
+    audioEngine?.stop();
   },
   
-  // YENİ: Timeline navigasyon eylemi
+  /**
+   * Timeline üzerinde belirli bir ölçüye atlama komutunu gönderir.
+   */
   jumpToBar: (barNumber, audioEngine) => {
     audioEngine?.jumpToBar(barNumber);
   },
-
 }));

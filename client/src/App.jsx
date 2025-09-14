@@ -102,9 +102,11 @@ function App() {
       // DÜZELTME: TimeManager callback'lerini doğru şekilde bağla
       const engine = new AudioEngine({
         setPlaybackState: usePlaybackStore.getState().setPlaybackState,
-        // DEĞIŞTI: onProgressUpdate artık doğrudan PlaybackAnimatorService'e bağlı
-        // AudioEngine'de timeManager zaten PlaybackAnimatorService.publish çağırıyor
+        onProgressUpdate: PlaybackAnimatorService.publish,
         setTransportPosition: usePlaybackStore.getState().setTransportPosition,
+        setLoopLengthFromEngine: useInstrumentsStore.getState().setLoopLengthFromEngine,
+        // YENİ: AudioEngine'in store'a komut verebilmesi için son bağlantı
+        setActivePatternId: useArrangementStore.getState()._internal_setActivePatternId,
       });
       
       const initialBpm = usePlaybackStore.getState().bpm;

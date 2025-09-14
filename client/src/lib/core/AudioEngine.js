@@ -91,6 +91,39 @@ class AudioEngine {
     }
   }
 
+  /**
+   * YENİ: Çalma sırasında güvenli bir şekilde aktif pattern'i değiştirir.
+   */
+  switchActivePattern(newPatternId) {
+    if (this.playbackMode !== 'pattern' || this.activePatternId === newPatternId) {
+      return;
+    }
+
+    const wasPlaying = Tone.Transport.state === 'started';
+
+    if (wasPlaying) {
+      Tone.Transport.pause();
+    }
+    
+    // 1. Yeni pattern ID'sini ayarla
+    this.activePatternId = newPatternId;
+
+    // 2. Yeni (boş) pattern'e göre notaları ve döngüyü yeniden zamanla
+    this.reschedule();
+
+    // 3. Çalmayı yeni döngünün en başına zıplat (Temiz Başlangıç)
+    this.jumpToPercent(0);
+    timeManager.resume(); // Animasyon döngüsünü de anında sıfırla
+
+    // 4. Arayüzün state'ini GÜVENLE güncelle
+    this.callbacks.setActivePatternId?.(newPatternId);
+
+    // 5. Çalmaya (yeni pattern'in başından) devam et
+    if (wasPlaying) {
+      Tone.Transport.start(Tone.now());
+    }
+  }
+
   _scheduleArrangementNotes() {
     // Bu metot şimdilik doğru kabul edilebilir, ana sorun pattern modundaydı.
     // ...

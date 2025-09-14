@@ -56,30 +56,6 @@ export const useArrangementStore = create((set, get) => ({
     clips: state.clips.filter(c => c.id !== clipId)
   })),
 
-  setActivePatternId: (patternId, audioEngine) => {
-    set({ activePatternId: patternId });
-    const { playbackState, playbackMode } = usePlaybackStore.getState();
-    if (audioEngine && playbackState === 'playing' && playbackMode === 'pattern') {
-      console.log(`[SYNC] Aktif pattern değişti -> ${patternId}. Motor yeniden zamanlanıyor...`);
-      audioEngine.activePatternId = patternId;
-      audioEngine.reschedule();
-    }
-  },
-
-  // GÜNCELLENDİ: Artık patternOrder dizisini de güncelliyor
-  addPattern: (audioEngine) => {
-    const newId = `pattern-${Date.now()}`;
-    const newPatternName = `Pattern ${get().patternOrder.length + 1}`;
-    const newPattern = { id: newId, name: newPatternName, data: {} };
-    
-    set(state => ({ 
-      patterns: { ...state.patterns, [newId]: newPattern },
-      patternOrder: [...state.patternOrder, newId] // Yeni pattern ID'sini sıranın sonuna ekle
-    }));
-    
-    get().setActivePatternId(newId, audioEngine);
-  },
-  
   renameActivePattern: (newName) => {
     const { activePatternId } = get();
     if (newName && activePatternId) {
@@ -93,7 +69,58 @@ export const useArrangementStore = create((set, get) => ({
     }
   },
 
-  // GÜNCELLENDİ: Artık Object.keys yerine patternOrder dizisini kullanıyor
+  setActivePatternId: (patternId, audioEngine) => {
+    const { playbackState, playbackMode } = usePlaybackStore.getState();
+    const isPlaying = playbackState === 'playing' || playbackState === 'paused';
+
+    if (audioEngine && isPlaying && playbackMode === 'pattern') {
+      audioEngine.switchActivePattern(patternId);
+    } else {
+      set({ activePatternId: patternId });
+    }
+  },
+  
+  _internal_setActivePatternId: (patternId) => {
+      set({ activePatternId: patternId });
+  },
+
+  /**
+   * NİHAİ DÜZELTME: Artık çalma sırasında "Temiz Başlangıç" mantığıyla çalışıyor.
+   */
+  addPattern: (audioEngine) => {
+    const { playbackState } = usePlaybackStore.getState();
+    const isPlaying = playbackState === 'playing' || playbackState === 'paused';
+
+    const newId = `pattern-${Date.now()}`;
+    const newPatternName = `Pattern ${get().patternOrder.length + 1}`;
+    // Her zaman boş bir pattern oluşturuyoruz
+    const newPattern = { id: newId, name: newPatternName, data: {} };
+    
+    // State'i her durumda anında güncelle
+    set(state => ({ 
+      patterns: { ...state.patterns, [newId]: newPattern },
+      patternOrder: [...state.patternOrder, newId]
+    }));
+    
+    // Eğer çalma devam ediyorsa, özel bir senkronizasyon ve reset işlemi yap
+    if (isPlaying && audioEngine) {
+      // 1. Motorun aktif pattern ID'sini, state'i değiştirmeden güncelle
+      audioEngine.activePatternId = newId;
+      // 2. Yeni (boş) pattern'e göre notaları ve döngüyü yeniden zamanla
+      audioEngine.reschedule();
+      // 3. Çalmayı yeni döngünün en başına zıplat
+      audioEngine.jumpToPercent(0);
+      // 4. Son olarak, store'daki aktif ID'yi güncelle
+      get()._internal_setActivePatternId(newId);
+    } else {
+      // Çalma duruyorsa, sadece state'i güncelle
+      get().setActivePatternId(newId, audioEngine);
+    }
+  },
+
+
+  // Geri kalan tüm metotlar artık akıllı setActivePatternId'yi kullandığı için
+  // otomatik olarak doğru çalışacaktır. DEĞİŞİKLİK GEREKMEZ.
   nextPattern: (audioEngine) => {
     const { patternOrder, activePatternId } = get();
     const currentIndex = patternOrder.indexOf(activePatternId);
@@ -101,7 +128,6 @@ export const useArrangementStore = create((set, get) => ({
     get().setActivePatternId(patternOrder[nextIndex], audioEngine);
   },
 
-  // GÜNCELLENDİ: Artık Object.keys yerine patternOrder dizisini kullanıyor
   previousPattern: (audioEngine) => {
     const { patternOrder, activePatternId } = get();
     const currentIndex = patternOrder.indexOf(activePatternId);
