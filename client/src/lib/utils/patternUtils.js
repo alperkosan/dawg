@@ -1,80 +1,15 @@
-// src/lib/utils/patternUtils.js
-
 /**
- * Aranjmandaki en son klibin bitiş zamanına göre ses motorunun döngü uzunluğunu hesaplar.
- * @param {Array} clips - Aranjmandaki klipleri içeren dizi.
- * @returns {number} - 16'nın katı olarak hesaplanmış döngü uzunluğu.
+ * @file patternUtils.js
+ * @description Döngü uzunluklarını hesaplamak için merkezi ve standart yardımcı fonksiyonlar.
  */
-export const calculateArrangementLoopLength = (clips) => {
-  if (!Array.isArray(clips) || clips.length === 0) {
-    return 16; // Hiç klip yoksa varsayılan olarak 1 bar (16 adım) döndür.
-  }
-
-  let lastStep = 0;
-  clips.forEach(clip => {
-    // Kliplerin başlangıç ve sürelerinin "ölçü" (bar) cinsinden olduğunu varsayıyoruz.
-    // 1 ölçü = 16 adım (4/4'lük bir ritimde).
-    const clipEndStep = (clip.startTime + clip.duration) * 16;
-    if (clipEndStep > lastStep) {
-      lastStep = clipEndStep;
-    }
-  });
-
-  // Gerekli uzunluğu en yakın üst 16'lık adıma yuvarla.
-  const requiredLength = Math.ceil(lastStep / 16) * 16;
-  return Math.max(16, requiredLength); // Minimum 16 adım olmalı.
-};
 
 /**
- * Kanallardaki en son notanın pozisyonuna göre ses motorunun döngü uzunluğunu hesaplar.
- * ARTIK ARANJMAN MODUNU DA DESTEKLİYOR.
- * @param {Array} instruments - Enstrüman verilerini içeren dizi.
- * @param {Array} [clips] - (Opsiyonel) Aranjmandaki klipler.
- * @returns {number} - 16'nın katı olarak hesaplanmış döngü uzunluğu (minimum 16).
- */
-export const calculateAudioLoopLength = (instruments, clips) => {
-  // Eğer klipler varsa, aranjman uzunluğunu hesapla.
-  if (Array.isArray(clips) && clips.length > 0) {
-    return calculateArrangementLoopLength(clips);
-  }
-  
-  // Klipler yoksa, eski pattern tabanlı yönteme geri dön.
-  if (!Array.isArray(instruments)) {
-    console.warn("calculateAudioLoopLength'e geçersiz enstrüman verisi gönderildi.");
-    return 16;
-  }
-
-  let lastStep = 0;
-  instruments.forEach(instrument => {
-    if (Array.isArray(instrument.notes) && instrument.notes.length > 0) {
-      const maxTime = Math.max(...instrument.notes.map(note => note.time));
-      if (maxTime > lastStep) {
-        lastStep = maxTime;
-      }
-    }
-  });
-
-  const requiredLength = Math.floor(lastStep / 16) * 16 + 16;
-  return Math.max(16, requiredLength);
-};
-
-/**
- * Channel Rack'te gösterilecek olan UI (kullanıcı arayüzü) uzunluğunu hesaplar.
- * Bu, gerçek ses döngüsünden her zaman bir bar (16 adım) daha uzundur.
- * @param {number} audioLoopLength - calculateAudioLoopLength'ten gelen değer.
- * @returns {number} - UI'da gösterilecek toplam adım sayısı.
- */
-export const calculateUIRackLength = (audioLoopLength) => {
-  return audioLoopLength + 16;
-};
-
-/**
- * Tek bir pattern içindeki notalara göre döngü uzunluğunu hesaplar.
+ * Tek bir pattern içindeki notalara göre döngü uzunluğunu ADIM cinsinden hesaplar.
  * @param {object} pattern - { id, name, data: { instId: [notes] } } yapısındaki pattern objesi.
- * @returns {number} 16'nın katı olarak hesaplanmış döngü uzunluğu.
+ * @returns {number} 16'nın katı olarak hesaplanmış döngü uzunluğu (adım sayısı).
  */
 export const calculatePatternLoopLength = (pattern) => {
-  if (!pattern?.data) return 16;
+  if (!pattern?.data) return 16; // Varsayılan 1 bar (16 adım)
 
   let lastStep = 0;
   Object.values(pattern.data).forEach(notes => {
@@ -86,6 +21,54 @@ export const calculatePatternLoopLength = (pattern) => {
     }
   });
 
-  const requiredLength = Math.floor(lastStep / 16) * 16 + 16;
-  return Math.max(16, requiredLength);
+  const requiredBars = Math.floor(lastStep / 16) + 1;
+  return Math.max(4, requiredBars) * 16; // Minimum 4 bar (64 adım) varsayalım
+};
+
+/**
+ * Aranjmandaki en son klibin bitiş zamanına göre döngü uzunluğunu ADIM cinsinden hesaplar.
+ * @param {Array} clips - Aranjmandaki klipleri içeren dizi.
+ * @returns {number} - 16'nın katı olarak hesaplanmış döngü uzunluğu.
+ */
+export const calculateArrangementLoopLength = (clips) => {
+  if (!Array.isArray(clips) || clips.length === 0) {
+    return 64; // Varsayılan 4 bar (64 adım)
+  }
+
+  let lastBar = 0;
+  clips.forEach(clip => {
+    const clipEndBar = (clip.startTime || 0) + (clip.duration || 0);
+    if (clipEndBar > lastBar) {
+      lastBar = clipEndBar;
+    }
+  });
+
+  const requiredBars = Math.ceil(lastBar / 4) * 4;
+  return Math.max(4, requiredBars) * 16; // Adım sayısını döndür
+};
+
+/**
+ * === KAYIP FONKSİYON (GÜÇLENDİRİLEREK GERİ GELDİ) ===
+ * Projenin o anki moduna göre doğru ses döngüsü uzunluğunu hesaplayan ana fonksiyon.
+ * @param {string} mode - 'pattern' veya 'song'.
+ * @param {object} data - Gerekli verileri içeren obje: { patterns, activePatternId, clips }.
+ * @returns {number} - Adım cinsinden hesaplanmış ses motoru döngü uzunluğu.
+ */
+export const calculateAudioLoopLength = (mode, data) => {
+    if (mode === 'song') {
+        return calculateArrangementLoopLength(data.clips);
+    }
+    // Varsayılan olarak ve 'pattern' modunda
+    const activePattern = data.patterns?.[data.activePatternId];
+    return calculatePatternLoopLength(activePattern);
+};
+
+
+/**
+ * Channel Rack gibi UI bileşenlerinde gösterilecek uzunluğu hesaplar.
+ * @param {number} audioLoopLengthInSteps - Adım cinsinden ses döngüsü uzunluğu.
+ * @returns {number} - UI'da gösterilecek toplam adım sayısı.
+ */
+export const calculateUIRackLength = (audioLoopLengthInSteps) => {
+  return audioLoopLengthInSteps + 16; // Her zaman fazladan 1 bar boşluk bırak
 };

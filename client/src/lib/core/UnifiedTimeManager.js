@@ -1,5 +1,6 @@
 import * as Tone from 'tone';
 import { PlaybackAnimatorService } from './PlaybackAnimatorService';
+import { calculatePatternLoopLength, calculateArrangementLoopLength } from '../utils/patternUtils';
 
 /**
  * @file UnifiedTimeManager.js
@@ -28,24 +29,22 @@ class UnifiedTimeManager {
    * Playback başlatıldığında veya mode değiştirildiğinde loop bilgilerini hassas şekilde hesaplar.
    */
   calculateLoopInfo(mode, activePatternId, arrangementData) {
-    let lengthInBars = 4; // Varsayılan
+    let lengthInSteps = 64; // Varsayılan 4 bar
 
+    // GÜNCELLENDİ: Artık merkezi fonksiyonları kullanıyoruz
     if (mode === 'pattern' && activePatternId && arrangementData?.patterns) {
       const pattern = arrangementData.patterns[activePatternId];
       if (pattern) {
-        lengthInBars = this._calculatePatternLength(pattern);
+        lengthInSteps = calculatePatternLoopLength(pattern);
       }
     } else if (mode === 'song' && arrangementData?.clips) {
-      lengthInBars = this._calculateArrangementLength(arrangementData.clips);
+      lengthInSteps = calculateArrangementLoopLength(arrangementData.clips);
     }
 
-    const lengthInSteps = lengthInBars * 16;
     const stepDurationSeconds = Tone.Time('16n').toSeconds();
     const lengthInSeconds = lengthInSteps * stepDurationSeconds;
 
     this.loopInfo = {
-      startBars: 0,
-      endBars: lengthInBars,
       lengthInSteps,
       lengthInSeconds,
     };
@@ -56,7 +55,6 @@ class UnifiedTimeManager {
 
     if (this.debug) {
       console.log(`[TimeManager] Loop Info [${mode}]:`, {
-        bars: lengthInBars,
         steps: lengthInSteps,
         seconds: lengthInSeconds.toFixed(3),
       });
@@ -114,17 +112,17 @@ class UnifiedTimeManager {
   _calculateBBTPosition() {
     const ticks = Tone.Transport.ticks;
     const timeSignature = Tone.Transport.timeSignature;
-    const ppq = Tone.Transport.PPQ;
+    const ppq = Tone.Transport.PPQ; // Pulses Per Quarter Note (Genellikle 192)
 
     const totalBeats = ticks / ppq;
     const bars = Math.floor(totalBeats / timeSignature);
     const beats = Math.floor(totalBeats % timeSignature);
-    const sixteenths = Math.floor(((totalBeats % 1) * 16));
+    const sixteenths = Math.floor((totalBeats % 1) * 4); 
 
     return {
       bars: bars + 1,
       beats: beats + 1,
-      sixteenths: sixteenths + 1,
+      sixteenths: sixteenths, // 0-indexed olabilir, UI'da +1 eklenebilir. Şimdilik böyle kalsın.
       formatted: `${bars + 1}:${beats + 1}:${sixteenths.toString().padStart(2, '0')}`
     };
   }

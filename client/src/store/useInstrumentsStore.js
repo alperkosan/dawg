@@ -12,7 +12,7 @@
 import { create } from 'zustand';
 import { initialInstruments, defaultNote } from '../config/initialData';
 // GÜNCELLENDİ: Tüm hesaplama fonksiyonlarını import ediyoruz
-import { calculateAudioLoopLength, calculatePatternLoopLength, calculateUIRackLength } from '../lib/utils/patternUtils';
+import { calculateAudioLoopLength, calculateUIRackLength } from '../lib/utils/patternUtils';
 import { useMixerStore } from './useMixerStore';
 import { usePanelsStore } from './usePanelsStore';
 // GÜNCELLENDİ: Diğer store'ları dinlemek için import ediyoruz
@@ -35,8 +35,8 @@ export const useInstrumentsStore = create((set, get) => ({
    * Bu değerler, initialInstruments verisine göre en başta bir kere hesaplanır.
    * Bu sayede ChannelRack gibi bileşenler ilk render olduğunda geçerli bir sayıya erişebilir.
    */
-  loopLength: calculateUIRackLength(calculateAudioLoopLength(initialInstruments)),
-  audioLoopLength: calculateAudioLoopLength(initialInstruments),
+  loopLength: 64 + 16,
+  audioLoopLength: 64,
 
   // ========================================================================
   // === ACTIONS (EYLEMLER) ===
@@ -46,29 +46,21 @@ export const useInstrumentsStore = create((set, get) => ({
   // === YENİ VE EN ÖNEMLİ EYLEM ===
   /**
    * Projenin o anki moduna ve verisine göre döngü uzunluklarını
-   * merkezi olarak hesaplar ve günceller.
+   * merkezi olarak hesaplar ve günceller. Bu, artık tek yetkili fonksiyondur.
    */
   updateLoopLength: () => {
     const { playbackMode } = usePlaybackStore.getState();
     const { clips, patterns, activePatternId } = useArrangementStore.getState();
-    const instruments = get().instruments;
 
-    let newAudioLoopLength = 16; // Varsayılan değer
-
-    if (playbackMode === 'song') {
-      // Song modundaysak, aranjmandaki kliplere göre hesapla
-      newAudioLoopLength = calculateAudioLoopLength(instruments, clips);
-    } else {
-      // Pattern modundaysak, sadece aktif pattern'e göre hesapla
-      const activePattern = patterns[activePatternId];
-      if (activePattern) {
-        newAudioLoopLength = calculatePatternLoopLength(activePattern);
-      }
-    }
+    // YENİ: Tek ve merkezi fonksiyona ilgili verileri göndererek hesaplama yapıyoruz.
+    const newAudioLoopLength = calculateAudioLoopLength(playbackMode, {
+      patterns,
+      activePatternId,
+      clips,
+    });
     
     const newUiRackLength = calculateUIRackLength(newAudioLoopLength);
 
-    // Hesaplanan yeni değerleri state'e set et
     set({
       audioLoopLength: newAudioLoopLength,
       loopLength: newUiRackLength
