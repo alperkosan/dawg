@@ -148,3 +148,29 @@ export const sliceBuffer = (inputBuffer, startPercentage = 0, lengthPercentage =
   
   return new Tone.ToneAudioBuffer(slicedBuffer);
 };
+
+/**
+ * YENİ: Bir ses parametresinin değerini tıklama ve patlamaları önlemek için
+ * yumuşak bir şekilde (rampalayarak) değiştirir.
+ * @param {Tone.Signal | Tone.Param | AudioParam} param - Değiştirilecek ses parametresi.
+ * @param {number} value - Hedef değer.
+ * @param {number} [rampTime=0.02] - Yumuşak geçişin saniye cinsinden süresi.
+ */
+export const setParamSmoothly = (param, value, rampTime = 0.02) => {
+  if (!param) return;
+
+  // Tone.js'in rampTo metodunu destekleyen sinyal veya parametreleri için
+  if (typeof param.rampTo === 'function') {
+    param.rampTo(value, rampTime);
+  }
+  // Doğrudan Web Audio API parametreleri için
+  else if (param instanceof window.AudioParam) {
+    // exponentialRampToValueAtTime, 0 değerini sevmez, bu yüzden çok küçük bir değerle değiştiriyoruz.
+    const safeValue = value <= 0 ? 0.00001 : value;
+    param.exponentialRampToValueAtTime(safeValue, Tone.context.currentTime + rampTime);
+  }
+  // Rampa desteklemeyen parametreler için (örn: boolean switch'ler)
+  else if (typeof param.value !== 'undefined') {
+    param.value = value;
+  }
+};

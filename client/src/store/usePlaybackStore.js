@@ -9,7 +9,7 @@ import { create } from 'zustand';
 export const usePlaybackStore = create((set, get) => ({
   // --- STATE ---
   playbackState: 'stopped',
-  bpm: 130,
+  bpm: 60,
   masterVolume: 0,
   transportPosition: '0:0:0',
   isPreviewPlaying: false, // YENİ STATE

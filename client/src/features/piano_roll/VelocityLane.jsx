@@ -1,14 +1,18 @@
+// src/features/piano_roll/VelocityLane.jsx
+
 import React from 'react';
 
-// Her bir velocity (vuruş gücü) çubuğunu temsil eden alt bileşen.
-const VelocityBar = React.memo(({ note, stepToX, stepWidth, height, onVelocityChange, isSelected }) => {
+/**
+ * VelocityBar artık tüm proplarını doğrudan ve isimlendirilmiş olarak alıyor.
+ */
+const VelocityBar = React.memo(({ note, isSelected, stepToX, stepWidth, height, onMouseDown, onWheel }) => {
   const x = stepToX(note.time);
   const barHeight = Math.max(2, note.velocity * height);
 
   return (
     <div
-      // Fareye tıklandığında velocity değiştirme etkileşimini başlatır.
-      onMouseDown={(e) => { e.stopPropagation(); onVelocityChange(note, e); }}
+      onMouseDown={(e) => { e.stopPropagation(); onMouseDown(note, e); }}
+      onWheel={(e) => { onWheel(note, e); }}
       className="absolute bottom-0 group"
       style={{ left: x, width: stepWidth, height: height, cursor: 'ns-resize' }}
     >
@@ -16,10 +20,8 @@ const VelocityBar = React.memo(({ note, stepToX, stepWidth, height, onVelocityCh
         className="absolute bottom-0 w-[60%] left-[20%] rounded-t transition-all duration-150"
         style={{
           height: barHeight,
-          // GÜNCELLEME: isSelected durumuna göre stil değiştiriliyor.
           backgroundColor: isSelected ? 'var(--color-accent)' : 'var(--color-primary)',
           opacity: isSelected ? 1 : 0.7,
-          // GÜNCELLEME: Seçiliyken bir parlama efekti (box-shadow) ekleniyor.
           boxShadow: isSelected ? `0 0 8px var(--color-accent)` : 'none'
         }}
       />
@@ -27,24 +29,42 @@ const VelocityBar = React.memo(({ note, stepToX, stepWidth, height, onVelocityCh
   );
 });
 
-// Tüm velocity çubuklarını içeren ana bileşen.
-const VelocityLane = ({ notes, stepToX, stepWidth, height, onVelocityChange, selectedNotes, gridWidth }) => {
+/**
+ * VelocityLane artık "...rest" kullanmıyor.
+ * Aldığı her prop'u ismen biliyor ve ismen aşağıya aktarıyor.
+ */
+const VelocityLane = ({ 
+    notes, 
+    selectedNotes, 
+    gridWidth, 
+    stepToX, 
+    stepWidth, 
+    height, 
+    onVelocityBarMouseDown, 
+    onVelocityWheel 
+}) => {
   if (height <= 0) return null;
 
   return (
-    <div className="h-full relative bg-[var(--color-background)]" style={{ width: gridWidth }}>
-      {notes.map(note => (
-        <VelocityBar
-          key={note.id} // Anahtar olarak benzersiz nota ID'si kullanılıyor
-          note={note}
-          stepToX={stepToX}
-          stepWidth={stepWidth}
-          height={height}
-          onVelocityChange={onVelocityChange}
-          // GÜNCELLEME: Ana notanın seçili olup olmadığı bilgisi buraya aktarılıyor.
-          isSelected={selectedNotes.has(note.id)}
-        />
-      ))}
+    <div 
+        data-role="velocity-lane-bg"
+        className="h-full relative bg-[var(--color-background)]" 
+        style={{ width: gridWidth }}
+    >
+        {notes.map(note => (
+            <VelocityBar
+                key={note.id}
+                note={note}
+                isSelected={selectedNotes.has(note.id)}
+                
+                // Propları açıkça aktarıyoruz
+                stepToX={stepToX}
+                stepWidth={stepWidth}
+                height={height}
+                onMouseDown={onVelocityBarMouseDown}
+                onWheel={onVelocityWheel}
+            />
+        ))}
     </div>
   );
 };

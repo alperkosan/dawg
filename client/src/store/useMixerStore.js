@@ -2,13 +2,12 @@ import { create } from 'zustand';
 import { initialMixerTracks } from '../config/initialData';
 import { pluginRegistry } from '../config/pluginConfig'; 
 
-export const useMixerStore = create((set) => ({
+export const useMixerStore = create((set, get) => ({ // 'get' parametresini ekliyoruz
   mixerTracks: initialMixerTracks,
   focusedEffect: null,
 
   setFocusedEffect: (effect) => set({ focusedEffect: effect }),
 
-  // YENİ: Eksik olan ve hataya neden olan fonksiyonu buraya ekliyoruz
   setTrackName: (trackId, newName) => {
     set(state => ({
       mixerTracks: state.mixerTracks.map(track =>
@@ -54,27 +53,27 @@ export const useMixerStore = create((set) => ({
       }));
   },
   
+  // Sizin sağladığınız, tam entegre ve doğru çalışan fonksiyon
   handleMixerEffectChange: (trackId, effectId, paramOrSettings, value, audioEngine) => {
+    // 1. Adım: State'i her zamanki gibi güncelle.
     set(state => ({
       mixerTracks: state.mixerTracks.map(track => {
         if (track.id === trackId) {
           const newEffects = track.insertEffects.map(effect => {
             if (effect.id === effectId) {
-              // Eğer ilk parametre bir obje ise (yani bir preset'ten geliyorsa),
-              // tüm ayarları tek seferde değiştir.
               if (typeof paramOrSettings === 'object' && paramOrSettings !== null) {
-                return { ...effect, settings: { ...paramOrSettings } };
+                return { ...effect, settings: { ...effect.settings, ...paramOrSettings } };
               }
-              // Değilse, tekil parametre güncellemesi yap.
-              let newSettings = { ...effect.settings };
               if (paramOrSettings === 'bypass') {
                   return { ...effect, bypass: value };
               }
-               if (paramOrSettings.startsWith('bands.')) {
-                   const [, bandIndex, bandParam] = paramOrSettings.split('.');
-                   const newBands = [...newSettings.bands];
-                   if (newBands[bandIndex]) newBands[bandIndex] = {...newBands[bandIndex], [bandParam]: value};
-                   newSettings = { ...newSettings, bands: newBands };
+               let newSettings = { ...effect.settings };
+               if (paramOrSettings === 'bands') {
+                   if (typeof value === 'function') {
+                       newSettings.bands = value(effect.settings.bands);
+                   } else {
+                       newSettings.bands = value;
+                   }
                } else {
                   newSettings = { ...newSettings, [paramOrSettings]: value };
                }
@@ -88,10 +87,27 @@ export const useMixerStore = create((set) => ({
       })
     }));
 
-    // Ses motoruna sadece tekil parametre değişikliklerini bildir.
-    // Preset değişiklikleri motorun ana senkronizasyon döngüsünde ele alınacak.
-    if (typeof paramOrSettings === 'string') {
-        audioEngine?.updateEffectParam(trackId, effectId, paramOrSettings, value);
+    // 2. Adım: Eğer bu bir bypass değilse, anlık güncelleme için ses motoruna haber ver.
+    if (audioEngine && typeof paramOrSettings === 'string' && paramOrSettings !== 'bypass') {
+        // ONARIM: 'set' asenkron olduğu için, motoru bilgilendirmeden önce
+        // state'in güncellenmesini beklemek üzere küçük bir gecikme ekliyoruz.
+        // Bu, "get is not defined" ve "stale state" hatalarını önler.
+        setTimeout(() => {
+            // 3. Adım: En güncel veriyi store'dan al.
+            const updatedTrack = get().mixerTracks.find(t => t.id === trackId);
+            const updatedEffect = updatedTrack?.insertEffects.find(fx => fx.id === effectId);
+            
+            if (updatedEffect) {
+                // 4. Adım: Güncellenmiş parametre değerini doğrudan ses motoruna gönder.
+                const updatedValue = updatedEffect.settings[paramOrSettings];
+
+                // Bazen 'bands' gibi tüm dizi gönderilir, bazen tekil değer.
+                // Ses motorundaki updateParam her ikisini de alacak şekilde tasarlanmıştı.
+                const valueToSend = paramOrSettings === 'bands' ? updatedEffect.settings.bands : updatedValue;
+
+                audioEngine.updateEffectParam(trackId, effectId, paramOrSettings, valueToSend);
+            }
+        }, 0); // 0ms timeout, işlemi bir sonraki event loop tick'ine erteler.
     }
   },
 }));

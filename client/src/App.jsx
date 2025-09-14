@@ -26,26 +26,28 @@ const useAudioEngineSync = (audioEngineRef) => {
     const structuralSignature = JSON.stringify({
         instruments: instruments.map(i => ({ 
             id: i.id, 
-            url: i.url, // URL değişiklikleri de yeniden yüklemeyi tetiklemeli
-            notes: i.notes.map(n => n.id), // Sadece nota ID'leri yeterli, tüm obje ağır olabilir
+            url: i.url,
+            notes: i.notes.map(n => n.id),
             isMuted: i.isMuted, 
             cutItself: i.cutItself, 
             pianoRoll: i.pianoRoll,
-            // Precomputed efektler sesi doğrudan etkiler, imzaya dahil edilmeli
             precomputed: i.precomputed,
             smpStart: i.smpStart,
             smpLength: i.smpLength,
         })),
         mixer: mixerTracks.map(t => ({ 
             id: t.id,
-            outputTarget: t.outputTarget, // Yönlendirme değişiklikleri
-            sends: t.sends, // Send değişiklikleri
+            outputTarget: t.outputTarget,
+            sends: t.sends.map(s => ({ busId: s.busId })), // Sadece yapısal bilgi yeterli
             effects: t.insertEffects.map(fx => ({
                 id: fx.id,
-                type: fx.type, // Efekt türü değişirse (nadiren)
+                type: fx.type,
                 bypass: fx.bypass, 
-                // *** ONARIM: Ayarların değişmesi motorun yeniden senkronize edilmesini tetiklemelidir ***
-                settings: fx.settings 
+                // !!! ANA DÜZELTME BURADA !!!
+                // 'settings' objesini buradan kaldırıyoruz. Çünkü bu bir parametre değişikliğidir,
+                // yapısal bir değişiklik değil. Bu sayede knob hareketleri tam senkronizasyonu
+                // tetiklemeyecek.
+                // settings: fx.settings <-- BU SATIRI SİLİN VEYA YORUMA ALIN
             })) 
         }))
     });
@@ -60,6 +62,7 @@ const useAudioEngineSync = (audioEngineRef) => {
 
     return null;
 };
+
 
 function AppContent({ audioEngineRef }) {
   useAudioEngineSync(audioEngineRef);

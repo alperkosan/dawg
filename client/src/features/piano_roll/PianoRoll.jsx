@@ -34,12 +34,12 @@ function PianoRoll({ instrument, audioEngineRef }) {
 
     // Sabitler ve Hesaplamalar
     const KEYBOARD_WIDTH = 96;
-    const { 
+    const {
         activeTool, setActiveTool, gridSnapValue, scale, showScaleHighlighting, 
         zoomX, zoomY, velocityLaneHeight, setVelocityLaneHeight, toggleVelocityLane,
         targetScroll, handleZoom
     } = usePianoRollStore();
-    
+
     const { handleNotesChange: storeHandleNotesChange } = useInstrumentsStore.getState();
     const currentInstrument = useInstrumentsStore(state => state.instruments.find(i => i.id === instrument?.id));
     const loopLength = useInstrumentsStore(state => state.loopLength);
@@ -57,7 +57,7 @@ function PianoRoll({ instrument, audioEngineRef }) {
     const stepToX = useCallback((step) => step * stepWidth, [stepWidth]);
     const xToStep = useCallback((x) => Math.max(0, x / stepWidth), [stepWidth]);
     const yToNote = useCallback((y) => indexToPitch(Math.max(0, Math.min(totalKeys - 1, totalKeys - 1 - Math.floor(y / keyHeight)))), [keyHeight, indexToPitch, totalKeys]);
-    
+
     const getNotes = useCallback(() => currentInstrument?.notes || [], [currentInstrument]);
     const handleNotesChange = useCallback((newNotes) => {
         if (currentInstrument) {
@@ -67,7 +67,7 @@ function PianoRoll({ instrument, audioEngineRef }) {
     }, [currentInstrument, storeHandleNotesChange]);
 
     // Merkezi Hook'ların Kurulumu
-    const { interactionProps, selectedNotes, interaction, handleVelocityChange, handleResizeStart, setSelectedNotes } = usePianoRollInteraction({
+    const { interactionProps, selectedNotes, interaction, handleVelocityBarMouseDown, handleVelocityWheel, handleResizeStart, setSelectedNotes } = usePianoRollInteraction({
         notes: currentInstrument?.notes || [],
         handleNotesChange, instrumentId: instrument?.id, audioEngineRef,
         noteToY, stepToX, keyHeight, stepWidth, pitchToIndex, indexToPitch, totalKeys,
@@ -75,7 +75,7 @@ function PianoRoll({ instrument, audioEngineRef }) {
         yToNote: useCallback((y) => indexToPitch(Math.max(0, Math.min(totalKeys - 1, totalKeys - 1 - Math.floor(y / keyHeight)))), [keyHeight, indexToPitch]),
         gridContainerRef, keyboardWidth: KEYBOARD_WIDTH, setHoveredElement, velocityLaneHeight 
     });
-    
+
     usePianoRollCursor(gridContainerRef, activeTool, hoveredElement, { ...modifierKeys, alt: modifierKeys.alt && modifierKeys.isMouseDown });
     usePlaybackAnimator(playheadRef, { fullWidth: gridWidth, offset: 0 });
     usePianoRollShortcuts({ setActiveTool, audioEngineRef, selectedNotes, handleNotesChange, getNotes, setSelectedNotes, instrument, viewport });
@@ -141,7 +141,7 @@ function PianoRoll({ instrument, audioEngineRef }) {
         }
         setVisualFeedback({ ghostNote: ghostNoteData, tooltip: tooltipData });
     }, [interaction, activeTool, hoveredElement, snapSteps, stepWidth, keyHeight, stepToX, noteToY, xToStep, yToNote]);
-    
+
     // Olay Dinleyicileri, Scroll ve Viewport Yönetimi
     useEffect(() => {
         const gridEl = gridContainerRef.current;
@@ -238,7 +238,7 @@ function PianoRoll({ instrument, audioEngineRef }) {
                         </div>
                     </div>
                 </div>
-                
+
                 {/* Özel Scrollbar'lar */}
                 <CustomScrollbar orientation="horizontal" contentSize={gridWidth + KEYBOARD_WIDTH} viewportSize={viewport.width} scrollPosition={gridScroll.left} onScroll={(pos) => gridContainerRef.current.scrollLeft = pos} />
                 <CustomScrollbar orientation="vertical" contentSize={gridHeight} viewportSize={viewport.height} scrollPosition={gridScroll.top} onScroll={(pos) => gridContainerRef.current.scrollTop = pos} />
@@ -247,17 +247,43 @@ function PianoRoll({ instrument, audioEngineRef }) {
             {/* Velocity Lane */}
             {velocityLaneHeight > 0 && (
                 <>
-                    <ResizableHandle onDrag={(delta) => setVelocityLaneHeight(-delta)} onDoubleClick={() => toggleVelocityLane(false)}/>
-                    <div className="w-full relative flex overflow-hidden" style={{ height: velocityLaneHeight, flexShrink: 0 }}>
+                    <ResizableHandle 
+                        onDrag={(delta) => setVelocityLaneHeight(-delta)} 
+                        onDoubleClick={() => toggleVelocityLane()}
+                    />
+                    <div 
+                        className="w-full relative flex overflow-hidden" 
+                        style={{ height: velocityLaneHeight, flexShrink: 0 }}
+                        onMouseDown={interactionProps.onMouseDown}
+                    >
                         <div className="h-full w-24 bg-gray-900 z-10 shrink-0" />
-                        <div className="h-full absolute top-0" style={{ left: KEYBOARD_WIDTH, transform: `translateX(-${gridScroll.left}px)`}}>
-                            <VelocityLane notes={currentInstrument?.notes || []} stepToX={stepToX} stepWidth={stepWidth} height={velocityLaneHeight} onVelocityChange={handleVelocityChange} selectedNotes={selectedNotes} gridWidth={gridWidth} />
+                        <div 
+                            data-role="velocity-lane-bg" 
+                            className="h-full absolute top-0" 
+                            style={{ left: KEYBOARD_WIDTH, transform: `translateX(-${gridScroll.left}px)`}}
+                        >
+                            {/* === GÜNCELLENEN BÖLÜM BAŞLANGICI === */}
+                            <VelocityLane 
+                                notes={currentInstrument?.notes || []} 
+                                selectedNotes={selectedNotes} 
+                                gridWidth={gridWidth}
+                                
+                                // Çizim için gerekli propları açıkça iletiyoruz
+                                stepToX={stepToX} 
+                                stepWidth={stepWidth} 
+                                height={velocityLaneHeight} 
+                                
+                                // İnteraksiyon için gerekli propları açıkça iletiyoruz
+                                onVelocityBarMouseDown={handleVelocityBarMouseDown} 
+                                onVelocityWheel={handleVelocityWheel}
+                            />
+                            {/* === GÜNCELLENEN BÖLÜM SONU === */}
                         </div>
                     </div>
                 </>
             )}
         </div>
-        
+
         {/* Akıllı İpucu */}
         <PianoRollTooltip 
             x={visualFeedback.tooltip?.x || 0}

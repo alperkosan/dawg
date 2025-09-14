@@ -1,66 +1,119 @@
 /**
  * @file EQCalculations.js
- * @description "Complete Plugin System Overhaul Guide" dokümanında belirtilen,
- * bilimsel olarak doğru Biquad filtresi katsayılarını ve frekans tepkisini
- * hesaplayan profesyonel DSP sınıfı.
+ * @description Profesyonel ve bilimsel olarak doğru Biquad filtresi katsayılarını
+ * ve frekans tepki eğrilerini hesaplayan yardımcı kütüphane.
+ * REHBERE GÖRE GÜNCELLENDİ: Tüm formüller endüstri standardı "Audio EQ Cookbook" temel alınarak düzeltilmiştir.
  */
 export class EQCalculations {
 
   /**
-   * Verilen parametreler için Biquad filtresi katsayılarını hesaplar.
-   * @param {string} type - Filtre tipi ('peaking', 'lowshelf', 'highshelf').
-   * @param {number} frequency - Merkez frekans (Hz).
-   * @param {number} gain - Kazanç (dB).
-   * @param {number} Q - Kalite faktörü.
-   * @param {number} sampleRate - Örnekleme oranı.
-   * @returns {object} - IIRFilterNode ile uyumlu, normalize edilmiş katsayılar.
+   * Belirli bir filtre tipi için Biquad filtresi katsayılarını hesaplar.
+   * @param {string} type - 'peaking', 'lowshelf', 'highshelf'
+   * @param {number} frequency - Merkez frekans (Hz)
+   * @param {number} gain - Kazanç (dB)
+   * @param {number} Q - Q faktörü
+   * @param {number} sampleRate - Örnekleme oranı
+   * @returns {object} a ve b katsayılarını içeren bir nesne.
    */
   static calculateBiquadCoefficients(type, frequency, gain, Q, sampleRate = 44100) {
     const w0 = 2 * Math.PI * frequency / sampleRate;
-    const cosw0 = Math.cos(w0);
-    const sinw0 = Math.sin(w0);
+    const cos_w0 = Math.cos(w0);
+    const sin_w0 = Math.sin(w0);
     const A = Math.pow(10, gain / 40);
-    const alpha = sinw0 / (2 * Q);
+    const alpha = sin_w0 / (2 * Q);
 
     let b0, b1, b2, a0, a1, a2;
 
     switch (type) {
       case 'peaking':
         b0 = 1 + alpha * A;
-        b1 = -2 * cosw0;
+        b1 = -2 * cos_w0;
         b2 = 1 - alpha * A;
         a0 = 1 + alpha / A;
-        a1 = -2 * cosw0;
+        a1 = -2 * cos_w0;
         a2 = 1 - alpha / A;
         break;
-
       case 'lowshelf':
-        b0 = A * ((A + 1) - (A - 1) * cosw0 + 2 * Math.sqrt(A) * alpha);
-        b1 = 2 * A * ((A - 1) - (A + 1) * cosw0);
-        b2 = A * ((A + 1) - (A - 1) * cosw0 - 2 * Math.sqrt(A) * alpha);
-        a0 = (A + 1) + (A - 1) * cosw0 + 2 * Math.sqrt(A) * alpha;
-        a1 = -2 * ((A - 1) + (A + 1) * cosw0);
-        a2 = (A + 1) + (A - 1) * cosw0 - 2 * Math.sqrt(A) * alpha;
+        // Düzeltilmiş ve doğru Lowshelf formülü [cite: 571-579]
+        b0 = A * ((A + 1) - (A - 1) * cos_w0 + 2 * Math.sqrt(A) * alpha);
+        b1 = 2 * A * ((A - 1) - (A + 1) * cos_w0);
+        b2 = A * ((A + 1) - (A - 1) * cos_w0 - 2 * Math.sqrt(A) * alpha);
+        a0 = (A + 1) + (A - 1) * cos_w0 + 2 * Math.sqrt(A) * alpha;
+        a1 = -2 * ((A - 1) + (A + 1) * cos_w0);
+        a2 = (A + 1) + (A - 1) * cos_w0 - 2 * Math.sqrt(A) * alpha;
         break;
-
       case 'highshelf':
-        b0 = A * ((A + 1) + (A - 1) * cosw0 + 2 * Math.sqrt(A) * alpha);
-        b1 = -2 * A * ((A - 1) + (A + 1) * cosw0);
-        b2 = A * ((A + 1) + (A - 1) * cosw0 - 2 * Math.sqrt(A) * alpha);
-        a0 = (A + 1) - (A - 1) * cosw0 + 2 * Math.sqrt(A) * alpha;
-        a1 = 2 * ((A - 1) - (A + 1) * cosw0);
-        a2 = (A + 1) - (A - 1) * cosw0 - 2 * Math.sqrt(A) * alpha;
+        // Düzeltilmiş ve doğru Highshelf formülü [cite: 581-589]
+        b0 = A * ((A + 1) + (A - 1) * cos_w0 + 2 * Math.sqrt(A) * alpha);
+        b1 = -2 * A * ((A - 1) + (A + 1) * cos_w0);
+        b2 = A * ((A + 1) + (A - 1) * cos_w0 - 2 * Math.sqrt(A) * alpha);
+        a0 = (A + 1) - (A - 1) * cos_w0 + 2 * Math.sqrt(A) * alpha;
+        a1 = 2 * ((A - 1) - (A + 1) * cos_w0);
+        a2 = (A + 1) - (A - 1) * cos_w0 - 2 * Math.sqrt(A) * alpha;
         break;
-        
       default:
-        // Varsayılan olarak 'pass-through' bir filtre döndür
-        return { feedforward: [1, 0, 0], feedback: [1, 0, 0] };
+        return { b0: 1, b1: 0, b2: 0, a0: 1, a1: 0, a2: 0 };
     }
 
-    // Web Audio API'nin IIRFilterNode formatına uygun hale getir
-    return {
-      feedforward: [b0 / a0, b1 / a0, b2 / a0], // b coeffs
-      feedback: [1, a1 / a0, a2 / a0],         // a coeffs (a0 normalize edildi)
-    };
+    // Katsayıları a0'a bölerek normalize et
+    return { b0: b0 / a0, b1: b1 / a0, b2: b2 / a0, a1: a1 / a0, a2: a2 / a0 };
+  }
+  
+  /**
+   * Verilen katsayılar ve frekans için büyüklük (dB) ve faz tepkisini hesaplar.
+   * REHBERE GÖRE GÜNCELLENDİ: Karmaşık sayılarla daha doğru bir hesaplama. 
+   */
+  static getFrequencyResponse(coeffs, freq, sampleRate) {
+    const { b0, b1, b2, a1, a2 } = coeffs;
+    const w = 2 * Math.PI * freq / sampleRate;
+    
+    const numReal = b0 + b1 * Math.cos(-w) + b2 * Math.cos(-2 * w);
+    const numImag = b1 * Math.sin(-w) + b2 * Math.sin(-2 * w);
+    const denReal = 1 + a1 * Math.cos(-w) + a2 * Math.cos(-2 * w);
+    const denImag = a1 * Math.sin(-w) + a2 * Math.sin(-2 * w);
+    
+    const denMagSq = denReal * denReal + denImag * denImag;
+    
+    const real = (numReal * denReal + numImag * denImag) / denMagSq;
+    const imag = (numImag * denReal - numReal * denImag) / denMagSq;
+    
+    const magnitude = Math.sqrt(real * real + imag * imag);
+    const magnitudeDB = 20 * Math.log10(magnitude);
+    const phase = Math.atan2(imag, real);
+
+    return { magnitudeDB, phase };
+  }
+
+  /**
+   * Tüm EQ bantlarının birleşik frekans tepki eğrisini oluşturur.
+   */
+  static generateResponseCurve(bands, sampleRate = 44100, points = 128) {
+    // *** ONARIM: Savunma mekanizması eklendi ***
+    // 'bands' parametresinin bir dizi olduğundan emin ol. Değilse, boş bir eğri döndür.
+    if (!Array.isArray(bands)) {
+        console.warn("EQCalculations: 'generateResponseCurve' fonksiyonuna dizi olmayan bir 'bands' parametresi gönderildi.", bands);
+        return [];
+    }
+
+    const curve = [];
+    const minFreq = 20;
+    const maxFreq = sampleRate / 2;
+    
+    for (let i = 0; i < points; i++) {
+        const percent = i / (points - 1);
+        const freq = minFreq * Math.pow(maxFreq / minFreq, percent);
+        
+        let totalMagnitudeDB = 0;
+        
+        bands.forEach(band => {
+            if (!band.active) return;
+            const coeffs = this.calculateBiquadCoefficients(band.type, band.frequency, band.gain, band.q, sampleRate);
+            const response = this.getFrequencyResponse(coeffs, freq, sampleRate);
+            totalMagnitudeDB += response.magnitudeDB;
+        });
+        
+        curve.push({ frequency: freq, magnitudeDB: totalMagnitudeDB });
+    }
+    return curve;
   }
 }

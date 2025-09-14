@@ -1,7 +1,7 @@
 import React from 'react';
-// HATA 1 ÇÖZÜMÜ: Sabitler artık store dosyasından doğru şekilde import ediliyor
 import { usePianoRollStore, NOTES, SCALES } from '../../store/usePianoRollStore';
-import { Pencil, Eraser, MousePointer, Grid, Scale, EyeOff, ZoomIn, ZoomOut, AlignVerticalSpaceAround } from 'lucide-react';
+// YENİ: Mıknatıs ikonu
+import { Pencil, Eraser, MousePointer, Grid, Scale, EyeOff, ZoomIn, ZoomOut, AlignVerticalSpaceAround, Magnet } from 'lucide-react';
 
 const ToolButton = ({ label, icon: Icon, toolId, activeTool, onClick }) => (
     <button onClick={onClick} title={label} className={`p-2 rounded-md transition-colors ${activeTool === toolId ? 'bg-indigo-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'}`}>
@@ -13,6 +13,8 @@ export function PianoRollToolbar() {
     const { 
         scale, setScale, showScaleHighlighting, toggleScaleHighlighting, 
         activeTool, setActiveTool, gridSnapValue, setGridSnapValue,
+        // YENİ: snapMode ve toggleSnapMode'u store'dan alıyoruz
+        snapMode, toggleSnapMode,
         zoomIn, zoomOut, velocityLaneHeight, toggleVelocityLane
     } = usePianoRollStore();
 
@@ -34,11 +36,22 @@ export function PianoRollToolbar() {
                 <select value={gridSnapValue} onChange={(e) => setGridSnapValue(e.target.value)} className="bg-gray-700 rounded px-2 py-1 text-xs" title="Grid Yakalama Aralığı">
                     {snapOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
                 </select>
+                
+                {/* YENİ: Snap Modu Düğmesi */}
+                <button 
+                  onClick={toggleSnapMode} 
+                  title={`Snap Modu: ${snapMode === 'hard' ? 'Sert' : 'Yumuşak'}`} 
+                  className={`p-2 rounded-md transition-colors ${snapMode === 'soft' ? 'bg-indigo-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'}`}
+                >
+                    <Magnet size={16} />
+                </button>
+
                 <button onClick={toggleVelocityLane} title="Velocity Alanını Göster/Gizle" className={`p-2 rounded-md transition-colors ${velocityLaneHeight > 0 ? 'bg-indigo-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'}`}>
                     <AlignVerticalSpaceAround size={16} />
                 </button>
             </div>
 
+            {/* ... (geri kalan kod aynı) ... */}
             <div className="flex items-center gap-3">
                  <Scale size={18} className="text-indigo-400" />
                  <select value={scale.root} onChange={(e) => setScale(e.target.value, scale.type)} className="bg-gray-700 rounded px-2 py-1 text-xs">

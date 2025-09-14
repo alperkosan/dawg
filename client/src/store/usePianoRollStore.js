@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { Magnet } from 'lucide-react'; // İkonu burada tanımlamak yerine toolbar'da kullanacağız.
 
 export const NOTES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 export const SCALES = {
@@ -22,6 +23,8 @@ export const usePianoRollStore = create((set, get) => ({
   zoomX: 1,
   zoomY: 1,
   gridSnapValue: '16n',
+  // YENİ: Snap modu için state ekliyoruz. 'hard' veya 'soft' olabilir.
+  snapMode: 'hard', 
   lastUsedDuration: '16n',
   showVelocityLane: true,
   velocityLaneHeight: 100,
@@ -31,9 +34,9 @@ export const usePianoRollStore = create((set, get) => ({
   toggleScaleHighlighting: () => set(state => ({ showScaleHighlighting: !state.showScaleHighlighting })),
   setActiveTool: (tool) => set({ activeTool: tool }),
   
-  // GÜNCELLEME: handleZoom fonksiyonu, zoom işleminin merkezlenmesi için
-  // PianoRoll.jsx bileşenindeki DOM manipülasyonu ile birlikte çalışır.
-  // Buradaki zoomFactor, zoom'un hassasiyetini ayarlar.
+  // YENİ: Snap modunu değiştiren eylem.
+  toggleSnapMode: () => set(state => ({ snapMode: state.snapMode === 'hard' ? 'soft' : 'hard' })),
+  
   handleZoom: (deltaX, deltaY) => {
     set(state => ({
       zoomX: clamp(state.zoomX + deltaX, 0.25, 5),
@@ -41,15 +44,12 @@ export const usePianoRollStore = create((set, get) => ({
     }));
   },
 
-  // YENİ: Belirli bir zoom ve scroll değerine animasyonlu geçiş için.
   setView: ({ zoomX, zoomY, scrollLeft, scrollTop }) => {
     set({ 
         zoomX: clamp(zoomX, 0.25, 5),
         zoomY: clamp(zoomY, 0.5, 3),
-        // Bu değerler doğrudan PianoRoll bileşeni tarafından okunacak.
         targetScroll: { left: scrollLeft, top: scrollTop }
     });
-    // Scroll pozisyonunu sıfırlamak için bir kerelik bir state yaratıyoruz.
     setTimeout(() => set({ targetScroll: null }), 10);
   },
 

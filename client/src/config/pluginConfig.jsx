@@ -40,7 +40,7 @@ export const pluginRegistry = {
   'MultiBandEQ': {
     type: 'MultiBandEQ', category: 'The Spectral Weave', story: "Sesin tayfını, bir heykeltıraş gibi biçimlendir.",
     // GÜNCELLENDİ: toneNode artık kendi özel ve doğru hesaplama yapan builder'ımızı hedefliyor.
-    toneNode: 'CustomMultiBand', uiComponent: AdvancedEQUI,
+    toneNode: 'MultiBand', uiComponent: AdvancedEQUI,
     defaultSettings: { bands: [ { id: 1, type: 'lowshelf', frequency: 120, gain: 0, q: 0.71, active: true }, { id: 2, type: 'peaking', frequency: 1000, gain: 0, q: 1.5, active: true }, { id: 3, type: 'highshelf', frequency: 8000, gain: 0, q: 0.71, active: true }, ], wet: 1.0, },
     presets: [
         { name: 'Vokal Parlaklığı', settings: { bands: [ { id: 1, type: 'peaking', frequency: 4000, gain: 2, q: 1.5, active: true }, { id: 2, type: 'highshelf', frequency: 10000, gain: 1, q: 0.71, active: true } ] } },
