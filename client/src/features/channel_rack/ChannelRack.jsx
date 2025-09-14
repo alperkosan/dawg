@@ -1,156 +1,162 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useDrop } from 'react-dnd';
-import { Music, PlusSquare, Plus, ChevronLeft, ChevronRight, Edit } from 'lucide-react';
+import { Music, PlusSquare, Plus, ChevronLeft, ChevronRight, Edit, Volume2, MoveRight } from 'lucide-react';
 
 import { useInstrumentsStore } from '../../store/useInstrumentsStore';
 import { useMixerStore } from '../../store/useMixerStore';
 import { usePanelsStore } from '../../store/usePanelsStore';
-import { useArrangementStore } from '../../store/useArrangementStore';
 import { PlaybackAnimatorService } from '../../lib/core/PlaybackAnimatorService';
-
+import { useArrangementStore } from '../../store/useArrangementStore';
 import VolumeKnob from '../../ui/VolumeKnob';
-import EffectSwitch from '../../ui/EffectSwitch';
 
 const ItemTypes = { SOUND_SOURCE: 'soundSource' };
 
-const StepButton = React.memo(function StepButton({ instrumentId, stepIndex, isActive, isMuted, isBeat, isBarStart, onStepClick, isCurrentlyPlaying }) {
-    const handleClick = () => { onStepClick(instrumentId, stepIndex); };
+// === YENİ VE MODERN TASARIM: StepButton ===
+const ModernStepButton = React.memo(({ note, isMuted, isBeat, onStepClick, isCurrentlyPlaying }) => {
+    const isActive = !!note;
+    const velocityHeight = isActive ? `${Math.max(10, note.velocity * 100)}%` : '0%';
 
     const playingStyle = {
-        boxShadow: `inset 0 0 15px 5px rgba(14, 165, 233, 0.3), 0 0 10px 2px rgba(14, 165, 233, 0.2)`,
-        transform: 'scale(1.02)',
+        boxShadow: `inset 0 0 10px 3px rgba(14, 165, 233, 0.4)`,
+        borderColor: 'var(--color-primary)'
     };
 
     const style = {
-        height: '100%', width: '36px', borderRadius: 'var(--border-radius)',
-        transition: 'background-color 150ms, opacity 150ms, box-shadow 50ms ease-out, transform 50ms ease-out, border-color 50ms ease-out',
-        backgroundColor: isActive 
-            ? 'var(--color-primary)' 
-            : isBarStart 
-            ? 'var(--color-surface2)' 
-            : isBeat 
-            ? 'var(--color-surface)' 
-            : 'var(--color-background)',
-        opacity: isMuted ? 0.5 : 1,
-        
-        // Kısayol 'border' yerine uzun versiyonları kullanıyoruz
-        borderWidth: '1px',
-        borderStyle: 'solid',
-        // borderColor'u duruma göre dinamik olarak değiştiriyoruz
-        borderColor: isCurrentlyPlaying ? 'var(--color-primary)' : 'var(--color-border)',
-        
+        backgroundColor: isBeat ? 'var(--color-surface)' : 'var(--color-background)',
+        border: `1px solid ${isCurrentlyPlaying ? 'var(--color-primary)' : 'var(--color-border)'}`,
+        opacity: isMuted ? 0.4 : 1,
+        transition: 'all 150ms ease',
         ...(isCurrentlyPlaying && playingStyle)
     };
-    return <button onClick={handleClick} style={style} aria-label={`Step ${stepIndex + 1}`} />;
+    
+    return (
+        <div 
+            onClick={onStepClick} 
+            className="w-9 h-12 bg-[var(--color-background)] rounded-md cursor-pointer relative overflow-hidden"
+            style={style}
+        >
+            {isActive && (
+                <div 
+                    className="absolute bottom-0 left-0 right-0 rounded-t-sm"
+                    style={{ 
+                        height: velocityHeight, 
+                        backgroundColor: 'var(--color-primary)',
+                        opacity: 0.75
+                    }} 
+                />
+            )}
+        </div>
+    );
 });
 
-const InstrumentChannel = React.memo(function InstrumentChannel({ instrument, onContextMenu, audioEngineRef, notes, activeStep }) {
+// === YENİ VE MODERN TASARIM: InstrumentChannel ===
+const ModernInstrumentChannel = React.memo(({ instrument, audioEngineRef, notes, activeStep }) => {
     const track = useMixerStore(state => state.mixerTracks.find(t => t.id === instrument?.mixerTrackId));
-    
     const { updatePatternNotes } = useArrangementStore.getState();
     const { handleToggleInstrumentMute, handleSetPianoRollMode } = useInstrumentsStore.getState();
     const { handleMixerParamChange } = useMixerStore.getState();
     const { handleEditInstrument, handleTogglePianoRoll } = usePanelsStore.getState();
 
-    const loopLength = useInstrumentsStore(state => state.loopLength);
-    
-    const handlePatternChange = (instrumentId, stepIndex) => {
+    const handlePatternChange = (stepIndex) => {
         const currentNotes = notes || [];
-        const noteExists = currentNotes.some(note => note.time === stepIndex);
+        const noteIndex = currentNotes.findIndex(note => note.time === stepIndex);
         let newNotes;
-        if (noteExists) {
-            newNotes = currentNotes.filter(note => note.time !== stepIndex);
+        if (noteIndex > -1) {
+            newNotes = currentNotes.filter((_, i) => i !== noteIndex);
         } else {
-            const newNote = { id: `note_${stepIndex}_${Math.random()}`, time: stepIndex, pitch: 'C4', velocity: 1.0, duration: '16n' };
-            newNotes = [...currentNotes, newNote];
+            const newNote = { id: `note_${stepIndex}_${Math.random()}`, time: stepIndex, pitch: 'C4', velocity: 0.75, duration: '16n' };
+            newNotes = [...currentNotes, newNote].sort((a,b) => a.time - b.time);
         }
-        updatePatternNotes(instrumentId, newNotes);
+        updatePatternNotes(instrument.id, newNotes);
     };
     
     if (!instrument || !track) return null;
 
-    const onEdit = () => handleEditInstrument(instrument, audioEngineRef.current);
-    const onTogglePianoRoll = () => {
-        const isOpening = usePanelsStore.getState().pianoRollInstrumentId !== instrument.id;
-        handleSetPianoRollMode(instrument.id, isOpening);
-        handleTogglePianoRoll(instrument);
-    };
-
     return (
-        <div className="flex items-center h-14" style={{ gap: 'var(--gap-controls)' }}>
-            <div 
-                className="sticky left-0 w-[300px] h-full p-2 flex items-center z-20 shrink-0" 
-                style={{ backgroundColor: 'var(--color-background)', borderRadius: 'var(--border-radius)', gap: 'var(--gap-controls)', fontSize: 'var(--font-size-body)'}}
-                onContextMenu={(e) => onContextMenu(e, instrument)}
-            >
-                <EffectSwitch isActive={!instrument.isMuted} onClick={() => handleToggleInstrumentMute(instrument.id)} />
-                <div className="flex-grow flex items-center gap-2 min-w-0 cursor-pointer group" onClick={onEdit} title={`${instrument.name} (Edit Sample)`}>
-                    <button onClick={(e) => { e.stopPropagation(); onTogglePianoRoll(); }} className="p-1 group-hover:bg-[var(--color-surface)] rounded transition-colors shrink-0" title="Toggle Piano Roll">
+        <div className="flex items-center" style={{ gap: 'var(--gap-controls)' }}>
+            {/* Sol Panel: Enstrüman Kontrol Merkezi */}
+            <div className="sticky left-0 w-[300px] h-14 p-2 flex items-center gap-3 z-20 shrink-0 bg-[var(--color-surface)] rounded-lg border border-transparent hover:border-[var(--color-border)] transition-colors">
+                <div className="w-1 h-full rounded-full" style={{backgroundColor: 'var(--color-primary)'}} />
+                <div 
+                    className="flex-grow flex items-center gap-2 min-w-0 cursor-pointer group" 
+                    onClick={() => handleEditInstrument(instrument, audioEngineRef.current)} 
+                    title={`${instrument.name} (Edit Sample)`}
+                >
+                    <button onClick={(e) => { e.stopPropagation(); handleTogglePianoRoll(instrument); }} className="p-1 group-hover:bg-[var(--color-background)] rounded transition-colors shrink-0" title="Toggle Piano Roll">
                         <Music size={16} style={{ color: instrument.pianoRoll ? 'var(--color-accent)' : 'var(--color-primary)' }} />
                     </button>
-                    <span className="truncate font-bold group-hover:text-[var(--color-primary)]">{instrument.name}</span>
+                    <span className="truncate font-bold text-sm group-hover:text-[var(--color-primary)]">{instrument.name}</span>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
-                    <VolumeKnob label="Pan" value={track.pan} onChange={(val) => handleMixerParamChange(track.id, 'pan', val, audioEngineRef.current)} min={-1} max={1} defaultValue={0} />
-                    <VolumeKnob label="Vol" value={track.volume} onChange={(val) => handleMixerParamChange(track.id, 'volume', val, audioEngineRef.current)} min={-60} max={6} defaultValue={0} />
+                <div className="flex items-center gap-3 shrink-0">
+                    <button 
+                        onClick={() => handleToggleInstrumentMute(instrument.id)}
+                        className={`w-6 h-6 rounded text-xs font-bold transition-colors ${!instrument.isMuted ? 'bg-cyan-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}`}
+                        title="Mute"
+                    >M</button>
+                    <VolumeKnob size={24} label="Pan" value={track.pan} onChange={(val) => handleMixerParamChange(track.id, 'pan', val, audioEngineRef.current)} min={-1} max={1} defaultValue={0} />
+                    <VolumeKnob size={24} label="Vol" value={track.volume} onChange={(val) => handleMixerParamChange(track.id, 'volume', val, audioEngineRef.current)} min={-60} max={6} defaultValue={0} />
                 </div>
             </div>
-            <div className="flex h-full" style={{ gap: '4px' }}>
-                {Array.from({ length: loopLength }).map((_, stepIndex) => (
-                    <StepButton 
-                        key={stepIndex} 
-                        instrumentId={instrument.id}
-                        stepIndex={stepIndex}
-                        onStepClick={handlePatternChange}
-                        isActive={notes?.some(note => note.time === stepIndex)} 
-                        isMuted={instrument.isMuted}
-                        isBeat={stepIndex % 4 === 0} 
-                        isBarStart={stepIndex % 16 === 0}
-                        isCurrentlyPlaying={stepIndex === activeStep}
-                    />
+            
+            {/* Sağ Panel: Step Sequencer */}
+            <div className="flex h-full items-center" style={{ gap: 'var(--gap-container)' }}>
+                {Array.from({ length: Math.ceil(useInstrumentsStore.getState().loopLength / 4) }).map((_, barIndex) => (
+                    <div key={barIndex} className="flex items-center" style={{ gap: '4px' }}>
+                        {Array.from({ length: 4 }).map((_, stepInBar) => {
+                            const stepIndex = barIndex * 4 + stepInBar;
+                            const note = notes?.find(n => n.time === stepIndex);
+                            return (
+                                <ModernStepButton
+                                    key={stepIndex}
+                                    note={note}
+                                    onStepClick={() => handlePatternChange(stepIndex)}
+                                    isMuted={instrument.isMuted}
+                                    isBeat={stepInBar === 0}
+                                    isCurrentlyPlaying={stepIndex === activeStep}
+                                />
+                            );
+                        })}
+                    </div>
                 ))}
             </div>
         </div>
     );
 });
 
+
+// Ana ChannelRack Bileşeni
 function ChannelRack({ audioEngineRef }) {
     const instruments = useInstrumentsStore(state => state.instruments);
     const loopLength = useInstrumentsStore(state => state.loopLength);
-    // YENİ: Hangi adımın çaldığını tutan state
-    const [activeStep, setActiveStep] = useState(-1);
-
     const { handleAddNewInstrument } = useInstrumentsStore.getState();
     const { patterns, activePatternId, addPattern, renameActivePattern, nextPattern, previousPattern } = useArrangementStore();
     const activePatternData = patterns[activePatternId]?.data || {};
     const activePatternName = patterns[activePatternId]?.name || '...';
-    const [{ isOver }, drop] = useDrop(() => ({ accept: ItemTypes.SOUND_SOURCE, drop: (item) => handleAddNewInstrument(item), collect: (m) => ({ isOver: !!m.isOver() }) }), []);
+    
+    const [activeStep, setActiveStep] = useState(-1);
+
+    useEffect(() => {
+        const handleProgressUpdate = (progress) => {
+            if (progress === 0 && activeStep !== 0) {
+                 setActiveStep(0);
+                 return;
+            }
+            const currentStep = Math.floor(progress * loopLength);
+            setActiveStep(prevStep => currentStep !== prevStep ? currentStep : prevStep);
+        };
+        PlaybackAnimatorService.subscribe(handleProgressUpdate);
+        return () => { PlaybackAnimatorService.unsubscribe(handleProgressUpdate); };
+    }, [loopLength, activeStep]);
 
     const handleRename = () => {
         const newName = prompt("Yeni pattern adı:", activePatternName);
         if (newName) { renameActivePattern(newName); }
     };
-
-    useEffect(() => {
-        const handleProgressUpdate = (progress) => {
-            // Gelen 0-1 arası progress değerini, mevcut loop uzunluğuna göre step index'ine çevir
-            const currentStep = Math.floor(progress * loopLength);
-            // Sadece step değiştiğinde state'i güncelle (performans için)
-            setActiveStep(prevStep => currentStep !== prevStep ? currentStep : prevStep);
-        };
-
-        // Servise abone ol
-        PlaybackAnimatorService.subscribe(handleProgressUpdate);
-
-        // Component kaldırıldığında abonelikten çık
-        return () => {
-            PlaybackAnimatorService.unsubscribe(handleProgressUpdate);
-        };
-    }, [loopLength]); // Sadece loopLength değiştiğinde bu effect yeniden çalışır
+    
+    const [{ isOver }, drop] = useDrop(() => ({ accept: ItemTypes.SOUND_SOURCE, drop: (item) => handleAddNewInstrument(item), collect: (m) => ({ isOver: !!m.isOver() }) }), []);
 
     return (
         <div className="w-full h-full flex flex-col" style={{ backgroundColor: 'var(--color-surface)', gap: 'var(--gap-container)' }}>
-
             <div className="flex items-center gap-2 p-2 shrink-0" style={{backgroundColor: 'var(--color-background)'}}>
                 <button onClick={() => addPattern(audioEngineRef.current)} className="p-2 hover:bg-[var(--color-surface)] rounded transition-colors" title="Yeni Pattern Ekle">
                     <Plus size={18} />
@@ -170,15 +176,13 @@ function ChannelRack({ audioEngineRef }) {
                     <Edit size={16} />
                 </button>
             </div>
-
             <div className="flex-grow min-h-0 overflow-auto relative" style={{ padding: '0 var(--padding-container) var(--padding-container)' }}>
                 <div style={{ width: 300 + (loopLength * 40), height: '100%' }} className="relative">
                     <div className="flex flex-col" style={{ gap: 'var(--gap-controls)' }}>
                         {instruments.map((inst) => (
-                            <InstrumentChannel 
+                             <ModernInstrumentChannel 
                                 key={inst.id} 
                                 instrument={inst}
-                                onContextMenu={() => {}}
                                 audioEngineRef={audioEngineRef}
                                 notes={activePatternData[inst.id]}
                                 activeStep={activeStep}

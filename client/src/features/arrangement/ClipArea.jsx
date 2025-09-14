@@ -1,18 +1,22 @@
 import { useArrangementStore } from '../../store/useArrangementStore';
 import { Clip } from './Clip';
 import { usePlaybackAnimator } from '../../hooks/usePlaybackAnimator';
+import { useInstrumentsStore } from '../../store/useInstrumentsStore';
 import ChannelContextMenu from '../../components/ChannelContextMenu'; // ContextMenu bileşenini import et
 import { useState, useRef } from 'react';
 
 export function ClipArea() {
     const { clips, tracks, zoomX, songLength, patterns, splitPatternClip } = useArrangementStore();
+    const loopLength = useInstrumentsStore(state => state.loopLength); // 👈 DEĞİŞİKLİK
+
     const playheadRef = useRef(null);
     const containerRef = useRef(null);
+    const [contextMenu, setContextMenu] = useState(null);
 
-    // YENİ: Context menu state'i
-    const [contextMenu, setContextMenu] = useState(null);    
     const BAR_WIDTH = 80;
-    const totalWidth = BAR_WIDTH * songLength * zoomX;
+    // GÜNCELLENDİ: Toplam genişlik artık dinamik loopLength'e göre hesaplanıyor
+    // Bir ölçü 16 adımdır, loopLength ise adım cinsindendir.
+    const totalWidth = BAR_WIDTH * (loopLength / 4) * zoomX;
 
     // Hook'u kullanarak animasyonu bağlıyoruz (ofset yok)
     usePlaybackAnimator(playheadRef, { fullWidth: totalWidth, offset: 0 });
@@ -53,7 +57,7 @@ export function ClipArea() {
         >
             <div className="relative" style={{ width: totalWidth, height: '100%' }}>
                 {/* Dikey Grid Çizgileri */}
-                {Array.from({ length: songLength }).map((_, i) => (
+                {Array.from({ length: loopLength / 4 }).map((_, i) => (
                     <div 
                         key={i}
                         className="absolute top-0 bottom-0"

@@ -11,9 +11,13 @@
  */
 import { create } from 'zustand';
 import { initialInstruments, defaultNote } from '../config/initialData';
-import { calculateAudioLoopLength, calculateUIRackLength } from '../lib/utils/patternUtils';
+// GÜNCELLENDİ: Tüm hesaplama fonksiyonlarını import ediyoruz
+import { calculateAudioLoopLength, calculatePatternLoopLength, calculateUIRackLength } from '../lib/utils/patternUtils';
 import { useMixerStore } from './useMixerStore';
 import { usePanelsStore } from './usePanelsStore';
+// GÜNCELLENDİ: Diğer store'ları dinlemek için import ediyoruz
+import { usePlaybackStore } from './usePlaybackStore';
+import { useArrangementStore } from './useArrangementStore';
 
 export const useInstrumentsStore = create((set, get) => ({
   // ========================================================================
@@ -39,15 +43,44 @@ export const useInstrumentsStore = create((set, get) => ({
   // State'i güvenli ve tahmin edilebilir bir şekilde değiştiren fonksiyonlar.
   // ========================================================================
 
+  // === YENİ VE EN ÖNEMLİ EYLEM ===
+  /**
+   * Projenin o anki moduna ve verisine göre döngü uzunluklarını
+   * merkezi olarak hesaplar ve günceller.
+   */
+  updateLoopLength: () => {
+    const { playbackMode } = usePlaybackStore.getState();
+    const { clips, patterns, activePatternId } = useArrangementStore.getState();
+    const instruments = get().instruments;
+
+    let newAudioLoopLength = 16; // Varsayılan değer
+
+    if (playbackMode === 'song') {
+      // Song modundaysak, aranjmandaki kliplere göre hesapla
+      newAudioLoopLength = calculateAudioLoopLength(instruments, clips);
+    } else {
+      // Pattern modundaysak, sadece aktif pattern'e göre hesapla
+      const activePattern = patterns[activePatternId];
+      if (activePattern) {
+        newAudioLoopLength = calculatePatternLoopLength(activePattern);
+      }
+    }
+    
+    const newUiRackLength = calculateUIRackLength(newAudioLoopLength);
+
+    // Hesaplanan yeni değerleri state'e set et
+    set({
+      audioLoopLength: newAudioLoopLength,
+      loopLength: newUiRackLength
+    });
+  },
+
   /**
    * Projedeki en son notanın yerine göre döngü uzunluklarını yeniden hesaplar.
    * @private
    */
   _recalculateLoop: () => {
-    const instruments = get().instruments;
-    const audioLoopLength = calculateAudioLoopLength(instruments);
-    const uiRackLength = calculateUIRackLength(audioLoopLength);
-    set({ audioLoopLength: audioLoopLength, loopLength: uiRackLength });
+    get().updateLoopLength();
   },
 
   /**

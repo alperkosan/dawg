@@ -1,7 +1,5 @@
 import React, { useRef, useState, useCallback, useMemo, useLayoutEffect, useEffect } from 'react';
 import * as Tone from 'tone';
-
-// Bileşenler
 import PianoKeyboard from './PianoKeyboard';
 import Note from './Note';
 import { PianoRollToolbar } from './PianoRollToolbar';
@@ -10,10 +8,10 @@ import ResizableHandle from '../../ui/ResizableHandle';
 import GhostNote from './GhostNote';
 import PianoRollTooltip from './PianoRollTooltip';
 import CustomScrollbar from './CustomScrollbar';
-
-// Hook'lar ve Store'lar
 import { useInstrumentsStore } from '../../store/useInstrumentsStore';
 import { usePianoRollStore, NOTES, SCALES } from '../../store/usePianoRollStore';
+// YENİ: Merkezi Pattern Havuzunu kullanmak için import ediyoruz
+import { useArrangementStore } from '../../store/useArrangementStore';
 import { usePianoRollInteraction } from './usePianoRollInteraction';
 import { usePlaybackAnimator } from '../../hooks/usePlaybackAnimator';
 import { usePianoRollCursor } from './usePianoRollCursor';
@@ -23,7 +21,6 @@ const totalOctaves = 8;
 const totalKeys = totalOctaves * 12;
 
 function PianoRoll({ instrument, audioEngineRef }) {
-    // Referanslar ve State'ler
     const gridContainerRef = useRef(null);
     const playheadRef = useRef(null);
     const [viewport, setViewport] = useState({ width: 0, height: 0 });
@@ -32,17 +29,23 @@ function PianoRoll({ instrument, audioEngineRef }) {
     const [modifierKeys, setModifierKeys] = useState({ alt: false, shift: false, ctrl: false, isMouseDown: false });
     const [visualFeedback, setVisualFeedback] = useState({ ghostNote: null, tooltip: { visible: false, content: null, x: 0, y: 0 } });
 
-    // Sabitler ve Hesaplamalar
     const KEYBOARD_WIDTH = 96;
     const {
         activeTool, setActiveTool, gridSnapValue, scale, showScaleHighlighting, 
         zoomX, zoomY, velocityLaneHeight, setVelocityLaneHeight, toggleVelocityLane,
         targetScroll, handleZoom
     } = usePianoRollStore();
-
-    const { handleNotesChange: storeHandleNotesChange } = useInstrumentsStore.getState();
-    const currentInstrument = useInstrumentsStore(state => state.instruments.find(i => i.id === instrument?.id));
+    
+    // === ANA DEĞİŞİKLİK: Veri Kaynağını Güncelleme ===
+    const { patterns, activePatternId, updatePatternNotes } = useArrangementStore();
     const loopLength = useInstrumentsStore(state => state.loopLength);
+    
+    // Aktif pattern'i ve o pattern içindeki bu enstrümana ait notaları alıyoruz.
+    const activePattern = patterns[activePatternId];
+    const currentNotes = useMemo(() => {
+        return activePattern?.data[instrument?.id] || [];
+    }, [activePattern, instrument?.id]);
+    // ===================================================
 
     const stepWidth = 40 * zoomX;
     const keyHeight = 20 * zoomY;
@@ -50,35 +53,42 @@ function PianoRoll({ instrument, audioEngineRef }) {
     const gridHeight = totalKeys * keyHeight;
     const snapSteps = useMemo(() => Tone.Time(gridSnapValue).toSeconds() / Tone.Time('16n').toSeconds(), [gridSnapValue]);
 
-    // Yardımcı Fonksiyonlar
     const pitchToIndex = useCallback((pitch) => (parseInt(pitch.slice(-1), 10) * 12 + NOTES.indexOf(pitch.slice(0, -1))), []);
     const indexToPitch = useCallback((index) => `${NOTES[index % 12]}${Math.floor(index / 12)}`, []);
     const noteToY = useCallback((pitch) => (totalKeys - 1 - pitchToIndex(pitch)) * keyHeight, [keyHeight, pitchToIndex]);
     const stepToX = useCallback((step) => step * stepWidth, [stepWidth]);
+
     const xToStep = useCallback((x) => Math.max(0, x / stepWidth), [stepWidth]);
     const yToNote = useCallback((y) => indexToPitch(Math.max(0, Math.min(totalKeys - 1, totalKeys - 1 - Math.floor(y / keyHeight)))), [keyHeight, indexToPitch, totalKeys]);
 
-    const getNotes = useCallback(() => currentInstrument?.notes || [], [currentInstrument]);
+    // === ANA DEĞİŞİKLİK: Artık merkezi store'daki doğru eylemi çağırıyoruz ===
     const handleNotesChange = useCallback((newNotes) => {
-        if (currentInstrument) {
-            if (typeof newNotes === 'function') storeHandleNotesChange(currentInstrument.id, newNotes(currentInstrument.notes));
-            else storeHandleNotesChange(currentInstrument.id, newNotes);
+        if (instrument) {
+            if (typeof newNotes === 'function') {
+                // Fonksiyonel güncelleme için mevcut notaları (currentNotes) kullan
+                updatePatternNotes(instrument.id, newNotes(currentNotes));
+            } else {
+                updatePatternNotes(instrument.id, newNotes);
+            }
         }
-    }, [currentInstrument, storeHandleNotesChange]);
+    }, [instrument, currentNotes, updatePatternNotes]);
+    // ===================================================================
 
     // Merkezi Hook'ların Kurulumu
     const { interactionProps, selectedNotes, interaction, handleVelocityBarMouseDown, handleVelocityWheel, handleResizeStart, setSelectedNotes } = usePianoRollInteraction({
-        notes: currentInstrument?.notes || [],
-        handleNotesChange, instrumentId: instrument?.id, audioEngineRef,
+        notes: currentNotes, // Hook'a güncel notaları iletiyoruz
+        handleNotesChange, 
+        instrumentId: instrument?.id, 
+        audioEngineRef,
         noteToY, stepToX, keyHeight, stepWidth, pitchToIndex, indexToPitch, totalKeys,
-        xToStep: useCallback((x) => Math.max(0, x / stepWidth), [stepWidth]),
-        yToNote: useCallback((y) => indexToPitch(Math.max(0, Math.min(totalKeys - 1, totalKeys - 1 - Math.floor(y / keyHeight)))), [keyHeight, indexToPitch]),
+        xToStep: xToStep, // Fonksiyonu hook'a iletiyoruz
+        yToNote: yToNote, // Fonksiyonu hook'a iletiyoruz
         gridContainerRef, keyboardWidth: KEYBOARD_WIDTH, setHoveredElement, velocityLaneHeight 
     });
 
     usePianoRollCursor(gridContainerRef, activeTool, hoveredElement, { ...modifierKeys, alt: modifierKeys.alt && modifierKeys.isMouseDown });
     usePlaybackAnimator(playheadRef, { fullWidth: gridWidth, offset: 0 });
-    usePianoRollShortcuts({ setActiveTool, audioEngineRef, selectedNotes, handleNotesChange, getNotes, setSelectedNotes, instrument, viewport });
+    usePianoRollShortcuts({ setActiveTool, audioEngineRef, selectedNotes, handleNotesChange, getNotes: () => currentNotes, setSelectedNotes, instrument, viewport });
 
     // Gezinme (Navigation) Mantığı
     const handleWheel = useCallback((e) => {
@@ -180,7 +190,7 @@ function PianoRoll({ instrument, audioEngineRef }) {
         return () => resizeObserver.disconnect();
     }, []);
 
-    if (!currentInstrument) {
+    if (!instrument) {
       return (
         <div className="w-full h-full flex flex-col">
             <PianoRollToolbar />
@@ -213,16 +223,17 @@ function PianoRoll({ instrument, audioEngineRef }) {
                         <div className="absolute top-0" style={{ left: KEYBOARD_WIDTH, width: gridWidth, height: gridHeight }}>
                             {/* Grid, Notlar ve diğer elemanlar */}
                             <div className="absolute inset-0" style={{ backgroundImage: `url('data:image/svg+xml,...')` }} />
-                            {currentInstrument.notes.map((note) => (
+                            {/* NOTA LİSTESİ GÜNCELLENDİ */}
+                            {currentNotes.map((note) => (
                                 <Note 
                                     key={note.id} 
                                     note={note} 
-                                    noteToY={noteToY} 
-                                    stepToX={stepToX} 
-                                    keyHeight={keyHeight} 
-                                    stepWidth={stepWidth} 
-                                    onResizeStart={handleResizeStart} 
-                                    isSelected={selectedNotes.has(note.id)} 
+                                    noteToY={noteToY}
+                                    stepToX={stepToX}
+                                    keyHeight={keyHeight}
+                                    stepWidth={stepWidth}
+                                    onResizeStart={handleResizeStart}
+                                    isSelected={selectedNotes.has(note.id)}
                                     isBeingEdited={interaction?.type === 'dragging' && selectedNotes.has(note.id)} 
                                 />
                             ))}
@@ -260,11 +271,11 @@ function PianoRoll({ instrument, audioEngineRef }) {
                         <div 
                             data-role="velocity-lane-bg" 
                             className="h-full absolute top-0" 
-                            style={{ left: KEYBOARD_WIDTH, transform: `translateX(-${gridScroll.left}px)`}}
+                            style={{ left: KEYBOARD_WIDTH, width: gridWidth, transform: `translateX(-${gridScroll.left}px)`}}
                         >
                             {/* === GÜNCELLENEN BÖLÜM BAŞLANGICI === */}
                             <VelocityLane 
-                                notes={currentInstrument?.notes || []} 
+                                notes={currentNotes} // NOTA LİSTESİ GÜNCELLENDİ
                                 selectedNotes={selectedNotes} 
                                 gridWidth={gridWidth}
                                 
