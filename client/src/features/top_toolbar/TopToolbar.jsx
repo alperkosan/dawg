@@ -2,8 +2,8 @@ import React from 'react';
 import { Play, Pause, Square, Wind } from 'lucide-react';
 import VolumeKnob from '../../ui/VolumeKnob';
 import { usePlaybackStore } from '../../store/usePlaybackStore';
+import { useArrangementStore } from '../../store/useArrangementStore'; // activePatternId için eklendi
 
-// YENİ: Mod Seçici Buton Bileşeni
 const ModeButton = ({ label, mode, activeMode, onClick }) => {
     const isActive = activeMode === mode;
     return (
@@ -17,8 +17,26 @@ const ModeButton = ({ label, mode, activeMode, onClick }) => {
 };
 
 function TopToolbar({ audioEngineRef }) {
+  // GÜNCELLENDİ: Store'dan en güncel state'leri alıyoruz
   const { playbackState, bpm, transportPosition, masterVolume, playbackMode } = usePlaybackStore();
   const { handlePlay, handlePause, handleStop, handleBpmChange, handleMasterVolumeChange, setPlaybackMode } = usePlaybackStore.getState();
+  const activePatternId = useArrangementStore(state => state.activePatternId);
+
+  // YENİ: Akıllı mod değiştirme fonksiyonu
+  const handleModeChange = (newMode) => {
+    const engine = audioEngineRef.current;
+    if (!engine) return;
+
+    const currentState = usePlaybackStore.getState().playbackState;
+    const isPlaying = currentState === 'playing' || currentState === 'paused';
+
+    if (isPlaying) {
+      // Çalma sırasında güvenli geçiş için engine'deki metodu çağır
+      engine.switchPlaybackMode(newMode, activePatternId);
+    }
+    // Her durumda store'daki state'i güncelle
+    setPlaybackMode(newMode);
+  };
 
   return (
     <header 
@@ -42,16 +60,16 @@ function TopToolbar({ audioEngineRef }) {
             onChange={(val) => handleMasterVolumeChange(val, audioEngineRef.current)}
             defaultValue={0} min={-60} max={6}
           />
-          {(playbackState === 'stopped' || playbackState === 'paused') && (
-            <button title="Play" onClick={() => handlePlay(audioEngineRef.current)} className="p-2 rounded hover:bg-[var(--color-primary)] transition-colors" style={{ backgroundColor: 'var(--color-surface2)'}}>
-              <Play size={20} />
-            </button>
-          )}
-          {playbackState === 'playing' && (
-            <button title="Pause" onClick={() => handlePause(audioEngineRef.current)} className="p-2 rounded hover:bg-[var(--color-primary)] transition-colors" style={{ backgroundColor: 'var(--color-surface2)'}}>
-              <Pause size={20} />
-            </button>
-          )}
+          {/* Oynat/Duraklat Düğmesi */}
+          <button 
+            title={playbackState === 'playing' ? 'Pause' : 'Play'} 
+            onClick={() => playbackState === 'playing' ? handlePause(audioEngineRef.current) : handlePlay(audioEngineRef.current)} 
+            className="p-2 rounded hover:bg-[var(--color-primary)] transition-colors" 
+            style={{ backgroundColor: 'var(--color-surface2)'}}
+          >
+            {playbackState === 'playing' ? <Pause size={20} /> : <Play size={20} />}
+          </button>
+          {/* Durdurma Düğmesi */}
           {(playbackState === 'playing' || playbackState === 'paused') && (
             <button title="Stop" onClick={() => handleStop(audioEngineRef.current)} className="p-2 rounded hover:bg-[var(--color-accent)] transition-colors" style={{ backgroundColor: 'var(--color-surface2)'}}>
               <Square size={20} />
@@ -59,21 +77,22 @@ function TopToolbar({ audioEngineRef }) {
           )}
         </div>
 
-        {/* YENİ: PAT/SONG Mod Seçici */}
+        {/* GÜNCELLENDİ: PAT/SONG Mod Seçici artık akıllı handleModeChange'i kullanıyor */}
         <div className="flex items-center p-1 rounded-lg gap-x-1" style={{backgroundColor: 'var(--color-background)'}}>
-            <ModeButton label="PAT" mode="pattern" activeMode={playbackMode} onClick={setPlaybackMode} />
-            <ModeButton label="SONG" mode="song" activeMode={playbackMode} onClick={setPlaybackMode} />
+            <ModeButton label="PAT" mode="pattern" activeMode={playbackMode} onClick={handleModeChange} />
+            <ModeButton label="SONG" mode="song" activeMode={playbackMode} onClick={handleModeChange} />
         </div>
 
         <div className="flex items-center rounded" style={{ backgroundColor: 'var(--color-surface)' }}>
           <input
             type="number"
-            value={bpm}
+            value={Math.round(bpm)}
             onChange={(e) => handleBpmChange(Number(e.target.value), audioEngineRef.current)}
             className="bg-transparent w-16 text-center focus:outline-none p-1"
             style={{ fontSize: 'var(--font-size-body)' }}
           />
           <span className="text-xs font-bold p-2" style={{ backgroundColor: 'var(--color-surface2)' }}>BPM</span>
+          {/* GÜNCELLENDİ: Zaman göstergesi artık BBT formatında */}
           <div className="p-[5px] font-mono tracking-wider w-32 text-center" style={{ color: 'var(--color-primary)', fontSize: 'var(--font-size-header)' }}>
             {transportPosition}
           </div>

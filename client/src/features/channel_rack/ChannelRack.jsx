@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useDrop } from 'react-dnd';
-import { Music, PlusSquare, Plus, ChevronLeft, ChevronRight, Edit, Volume2, MoveRight } from 'lucide-react';
+import { Music, PlusSquare, Plus, ChevronLeft, ChevronRight, Edit, Volume2 } from 'lucide-react';
 
 import { useInstrumentsStore } from '../../store/useInstrumentsStore';
 import { useMixerStore } from '../../store/useMixerStore';
@@ -8,10 +8,12 @@ import { usePanelsStore } from '../../store/usePanelsStore';
 import { PlaybackAnimatorService } from '../../lib/core/PlaybackAnimatorService';
 import { useArrangementStore } from '../../store/useArrangementStore';
 import VolumeKnob from '../../ui/VolumeKnob';
+// ADIM 1: Gerekli store'u import et
+import { usePlaybackStore } from '../../store/usePlaybackStore';
 
 const ItemTypes = { SOUND_SOURCE: 'soundSource' };
 
-// === YENİ VE MODERN TASARIM: StepButton ===
+// ModernStepButton bileşeninde değişiklik yok
 const ModernStepButton = React.memo(({ note, isMuted, isBeat, onStepClick, isCurrentlyPlaying }) => {
     const isActive = !!note;
     const velocityHeight = isActive ? `${Math.max(10, note.velocity * 100)}%` : '0%';
@@ -49,11 +51,12 @@ const ModernStepButton = React.memo(({ note, isMuted, isBeat, onStepClick, isCur
     );
 });
 
-// === YENİ VE MODERN TASARIM: InstrumentChannel ===
-const ModernInstrumentChannel = React.memo(({ instrument, audioEngineRef, notes, activeStep }) => {
+
+// ADIM 2: ModernInstrumentChannel bileşenine 'playbackMode' prop'unu ekle
+const ModernInstrumentChannel = React.memo(({ instrument, audioEngineRef, notes, activeStep, playbackMode }) => {
     const track = useMixerStore(state => state.mixerTracks.find(t => t.id === instrument?.mixerTrackId));
     const { updatePatternNotes } = useArrangementStore.getState();
-    const { handleToggleInstrumentMute, handleSetPianoRollMode } = useInstrumentsStore.getState();
+    const { handleToggleInstrumentMute } = useInstrumentsStore.getState();
     const { handleMixerParamChange } = useMixerStore.getState();
     const { handleEditInstrument, handleTogglePianoRoll } = usePanelsStore.getState();
 
@@ -74,10 +77,10 @@ const ModernInstrumentChannel = React.memo(({ instrument, audioEngineRef, notes,
 
     return (
         <div className="flex items-center" style={{ gap: 'var(--gap-controls)' }}>
-            {/* Sol Panel: Enstrüman Kontrol Merkezi */}
+            {/* Sol Panel: Enstrüman Kontrol Merkezi (Değişiklik yok) */}
             <div className="sticky left-0 w-[300px] h-14 p-2 flex items-center gap-3 z-20 shrink-0 bg-[var(--color-surface)] rounded-lg border border-transparent hover:border-[var(--color-border)] transition-colors">
-                <div className="w-1 h-full rounded-full" style={{backgroundColor: 'var(--color-primary)'}} />
-                <div 
+                 <div className="w-1 h-full rounded-full" style={{backgroundColor: 'var(--color-primary)'}} />
+                 <div 
                     className="flex-grow flex items-center gap-2 min-w-0 cursor-pointer group" 
                     onClick={() => handleEditInstrument(instrument, audioEngineRef.current)} 
                     title={`${instrument.name} (Edit Sample)`}
@@ -112,7 +115,8 @@ const ModernInstrumentChannel = React.memo(({ instrument, audioEngineRef, notes,
                                     onStepClick={() => handlePatternChange(stepIndex)}
                                     isMuted={instrument.isMuted}
                                     isBeat={stepInBar === 0}
-                                    isCurrentlyPlaying={stepIndex === activeStep}
+                                    // ADIM 3: Vurgulama mantığını playbackMode'a bağla
+                                    isCurrentlyPlaying={playbackMode === 'pattern' && stepIndex === activeStep}
                                 />
                             );
                         })}
@@ -132,6 +136,8 @@ function ChannelRack({ audioEngineRef }) {
     const { patterns, activePatternId, addPattern, renameActivePattern, nextPattern, previousPattern } = useArrangementStore();
     const activePatternData = patterns[activePatternId]?.data || {};
     const activePatternName = patterns[activePatternId]?.name || '...';
+    // ADIM 4: Ana bileşende playbackMode'u state'ten al
+    const playbackMode = usePlaybackStore(state => state.playbackMode);
     
     const [activeStep, setActiveStep] = useState(-1);
 
@@ -177,6 +183,7 @@ function ChannelRack({ audioEngineRef }) {
                 </button>
             </div>
             <div className="flex-grow min-h-0 overflow-auto relative" style={{ padding: '0 var(--padding-container) var(--padding-container)' }}>
+                {/* Genişlik hesaplaması için container */}
                 <div style={{ width: 300 + (loopLength * 40), height: '100%' }} className="relative">
                     <div className="flex flex-col" style={{ gap: 'var(--gap-controls)' }}>
                         {instruments.map((inst) => (
@@ -186,6 +193,8 @@ function ChannelRack({ audioEngineRef }) {
                                 audioEngineRef={audioEngineRef}
                                 notes={activePatternData[inst.id]}
                                 activeStep={activeStep}
+                                // ADIM 5: playbackMode'u alt bileşene prop olarak geçir
+                                playbackMode={playbackMode}
                             />
                         ))}
                     </div>

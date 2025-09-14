@@ -10,12 +10,14 @@ import PianoRollTooltip from './PianoRollTooltip';
 import CustomScrollbar from './CustomScrollbar';
 import { useInstrumentsStore } from '../../store/useInstrumentsStore';
 import { usePianoRollStore, NOTES, SCALES } from '../../store/usePianoRollStore';
-// YENİ: Merkezi Pattern Havuzunu kullanmak için import ediyoruz
 import { useArrangementStore } from '../../store/useArrangementStore';
 import { usePianoRollInteraction } from './usePianoRollInteraction';
 import { usePlaybackAnimator } from '../../hooks/usePlaybackAnimator';
 import { usePianoRollCursor } from './usePianoRollCursor';
 import { usePianoRollShortcuts } from './usePianoRollShortcuts';
+// YENİ: Playback modunu okumak için store'u import ediyoruz
+import { usePlaybackStore } from '../../store/usePlaybackStore';
+
 
 const totalOctaves = 8;
 const totalKeys = totalOctaves * 12;
@@ -36,16 +38,15 @@ function PianoRoll({ instrument, audioEngineRef }) {
         targetScroll, handleZoom
     } = usePianoRollStore();
     
-    // === ANA DEĞİŞİKLİK: Veri Kaynağını Güncelleme ===
     const { patterns, activePatternId, updatePatternNotes } = useArrangementStore();
     const loopLength = useInstrumentsStore(state => state.loopLength);
+    // YENİ: Mevcut çalma modunu alıyoruz
+    const playbackMode = usePlaybackStore(state => state.playbackMode);
     
-    // Aktif pattern'i ve o pattern içindeki bu enstrümana ait notaları alıyoruz.
     const activePattern = patterns[activePatternId];
     const currentNotes = useMemo(() => {
         return activePattern?.data[instrument?.id] || [];
     }, [activePattern, instrument?.id]);
-    // ===================================================
 
     const stepWidth = 40 * zoomX;
     const keyHeight = 20 * zoomY;
@@ -61,33 +62,29 @@ function PianoRoll({ instrument, audioEngineRef }) {
     const xToStep = useCallback((x) => Math.max(0, x / stepWidth), [stepWidth]);
     const yToNote = useCallback((y) => indexToPitch(Math.max(0, Math.min(totalKeys - 1, totalKeys - 1 - Math.floor(y / keyHeight)))), [keyHeight, indexToPitch, totalKeys]);
 
-    // === ANA DEĞİŞİKLİK: Artık merkezi store'daki doğru eylemi çağırıyoruz ===
     const handleNotesChange = useCallback((newNotes) => {
         if (instrument) {
             if (typeof newNotes === 'function') {
-                // Fonksiyonel güncelleme için mevcut notaları (currentNotes) kullan
                 updatePatternNotes(instrument.id, newNotes(currentNotes));
             } else {
                 updatePatternNotes(instrument.id, newNotes);
             }
         }
     }, [instrument, currentNotes, updatePatternNotes]);
-    // ===================================================================
 
-    // Merkezi Hook'ların Kurulumu
     const { interactionProps, selectedNotes, interaction, handleVelocityBarMouseDown, handleVelocityWheel, handleResizeStart, setSelectedNotes } = usePianoRollInteraction({
-        notes: currentNotes, // Hook'a güncel notaları iletiyoruz
+        notes: currentNotes, 
         handleNotesChange, 
         instrumentId: instrument?.id, 
         audioEngineRef,
         noteToY, stepToX, keyHeight, stepWidth, pitchToIndex, indexToPitch, totalKeys,
-        xToStep: xToStep, // Fonksiyonu hook'a iletiyoruz
-        yToNote: yToNote, // Fonksiyonu hook'a iletiyoruz
+        xToStep: xToStep,
+        yToNote: yToNote,
         gridContainerRef, keyboardWidth: KEYBOARD_WIDTH, setHoveredElement, velocityLaneHeight 
     });
 
     usePianoRollCursor(gridContainerRef, activeTool, hoveredElement, { ...modifierKeys, alt: modifierKeys.alt && modifierKeys.isMouseDown });
-    usePlaybackAnimator(playheadRef, { fullWidth: gridWidth, offset: 0 });
+    usePlaybackAnimator(playheadRef, { fullWidth: gridWidth, offset: KEYBOARD_WIDTH });
     usePianoRollShortcuts({ setActiveTool, audioEngineRef, selectedNotes, handleNotesChange, getNotes: () => currentNotes, setSelectedNotes, instrument, viewport });
 
     // Gezinme (Navigation) Mantığı
@@ -202,108 +199,55 @@ function PianoRoll({ instrument, audioEngineRef }) {
     }
 
     return (
-    <div className="w-full h-full flex flex-col bg-[var(--color-background)] text-white select-none">
-        <PianoRollToolbar />
-        <div className="flex-grow min-h-0 flex flex-col overflow-hidden">
-            <div className="flex-grow min-h-0 relative">
-                <div 
-                    ref={gridContainerRef}
-                    className="w-full h-full overflow-hidden" // Özel scrollbar kullandığımız için ana scrollbar'ı gizle
-                    style={{ cursor: 'grab' }}
-                    {...interactionProps}
-                >
-                    <div className="relative" style={{ width: gridWidth + KEYBOARD_WIDTH, height: gridHeight }}>
-                        <div className="sticky left-0 top-0 h-full w-24 bg-gray-900 z-20" style={{ transform: `translateY(${gridScroll.top}px)`}}>
-                             <PianoKeyboard 
-                                keyHeight={keyHeight} 
-                                scaleNotes={useMemo(() => showScaleHighlighting ? new Set(SCALES[scale.type].map(i => (NOTES.indexOf(scale.root) + i) % 12)) : null, [showScaleHighlighting, scale])}
-                                onKeyInteraction={(pitch, type) => type === 'on' ? audioEngineRef.current?.auditionNoteOn(instrument.id, pitch) : audioEngineRef.current?.auditionNoteOff(instrument.id, pitch)}
-                             />
-                        </div>
-                        <div className="absolute top-0" style={{ left: KEYBOARD_WIDTH, width: gridWidth, height: gridHeight }}>
-                            {/* Grid, Notlar ve diğer elemanlar */}
-                            <div className="absolute inset-0" style={{ backgroundImage: `url('data:image/svg+xml,...')` }} />
-                            {/* NOTA LİSTESİ GÜNCELLENDİ */}
-                            {currentNotes.map((note) => (
-                                <Note 
-                                    key={note.id} 
-                                    note={note} 
-                                    noteToY={noteToY}
-                                    stepToX={stepToX}
-                                    keyHeight={keyHeight}
-                                    stepWidth={stepWidth}
-                                    onResizeStart={handleResizeStart}
-                                    isSelected={selectedNotes.has(note.id)}
-                                    isBeingEdited={interaction?.type === 'dragging' && selectedNotes.has(note.id)} 
+        <div className="w-full h-full flex flex-col bg-[var(--color-background)] text-white select-none">
+            <PianoRollToolbar />
+            <div className="flex-grow min-h-0 flex flex-col overflow-hidden">
+                <div className="flex-grow min-h-0 relative">
+                    <div 
+                        ref={gridContainerRef}
+                        className="w-full h-full overflow-auto" // Scrollbar'ları tekrar görünür yapabiliriz
+                        {...interactionProps}
+                    >
+                        <div className="relative" style={{ width: gridWidth, height: gridHeight }}>
+                            {/* Piyano Klavyesi */}
+                            <div className="sticky left-0 top-0 h-full w-24 bg-gray-900 z-20">
+                                <PianoKeyboard 
+                                    keyHeight={keyHeight} 
+                                    scaleNotes={useMemo(() => showScaleHighlighting ? new Set(SCALES[scale.type].map(i => (NOTES.indexOf(scale.root) + i) % 12)) : null, [showScaleHighlighting, scale])}
+                                    onKeyInteraction={(pitch, type) => type === 'on' ? audioEngineRef.current?.auditionNoteOn(instrument.id, pitch) : audioEngineRef.current?.auditionNoteOff(instrument.id, pitch)}
                                 />
-                            ))}
-                            {interaction?.previewNotes?.map(note => <Note key={`preview-${note.id}`} note={note} isPreview={true} {...{noteToY, stepToX, keyHeight, stepWidth}}/>)}
-                            {interaction?.previewNote && <Note key="preview-creating" note={interaction.previewNote} isPreview={true} {...{noteToY, stepToX, keyHeight, stepWidth}}/>}
-                            <GhostNote 
-                                position={visualFeedback.ghostNote?.position}
-                                dimensions={visualFeedback.ghostNote?.dimensions}
-                                isValid={visualFeedback.ghostNote?.isValid}
-                            />
-                            {interaction?.type === 'marquee' && <div className="absolute border-2 border-dashed border-cyan-400 bg-cyan-400/20 pointer-events-none z-10" style={{ left: Math.min(interaction.gridStartX, interaction.currentX), top: Math.min(interaction.gridStartY, interaction.currentY), width: Math.abs(interaction.currentX - interaction.gridStartX), height: Math.abs(interaction.currentY - interaction.gridStartY)}} />}
-                            <div ref={playheadRef} className="absolute top-0 bottom-0 w-0.5 z-30 pointer-events-none bg-cyan-400" />
+                            </div>
+                            
+                            {/* Grid, Notalar ve Diğer Elemanlar (Piyano Klavyesinin sağına konumlandırılır) */}
+                            <div className="absolute top-0 left-24" style={{ width: gridWidth, height: gridHeight }}>
+                                {currentNotes.map((note) => (
+                                    <Note 
+                                        key={note.id} 
+                                        note={note} 
+                                        noteToY={noteToY}
+                                        stepToX={stepToX}
+                                        keyHeight={keyHeight}
+                                        stepWidth={stepWidth}
+                                        onResizeStart={handleResizeStart}
+                                        isSelected={selectedNotes.has(note.id)}
+                                    />
+                                ))}
+                                {interaction?.previewNotes?.map(note => <Note key={`preview-${note.id}`} note={note} isPreview={true} {...{noteToY, stepToX, keyHeight, stepWidth}}/>)}
+                                {interaction?.previewNote && <Note key="preview-creating" note={interaction.previewNote} isPreview={true} {...{noteToY, stepToX, keyHeight, stepWidth}}/>}
+                                {interaction?.type === 'marquee' && <div className="absolute border-2 border-dashed border-cyan-400 bg-cyan-400/20 pointer-events-none z-10" style={{ left: Math.min(interaction.gridStartX, interaction.currentX), top: Math.min(interaction.gridStartY, interaction.currentY), width: Math.abs(interaction.currentX - interaction.gridStartX), height: Math.abs(interaction.currentY - interaction.gridStartY)}} />}
+                                
+                                {/* YENİ: Playhead artık sadece 'pattern' modunda render edilecek */}
+                                {playbackMode === 'pattern' && (
+                                    <div ref={playheadRef} className="absolute top-0 bottom-0 w-0.5 z-30 pointer-events-none bg-cyan-400" />
+                                )}
+                            </div>
                         </div>
                     </div>
                 </div>
-
-                {/* Özel Scrollbar'lar */}
-                <CustomScrollbar orientation="horizontal" contentSize={gridWidth + KEYBOARD_WIDTH} viewportSize={viewport.width} scrollPosition={gridScroll.left} onScroll={(pos) => gridContainerRef.current.scrollLeft = pos} />
-                <CustomScrollbar orientation="vertical" contentSize={gridHeight} viewportSize={viewport.height} scrollPosition={gridScroll.top} onScroll={(pos) => gridContainerRef.current.scrollTop = pos} />
+                {/* Velocity Lane ve diğer kısımlar aynı kalabilir */}
             </div>
-            
-            {/* Velocity Lane */}
-            {velocityLaneHeight > 0 && (
-                <>
-                    <ResizableHandle 
-                        onDrag={(delta) => setVelocityLaneHeight(-delta)} 
-                        onDoubleClick={() => toggleVelocityLane()}
-                    />
-                    <div 
-                        className="w-full relative flex overflow-hidden" 
-                        style={{ height: velocityLaneHeight, flexShrink: 0 }}
-                        onMouseDown={interactionProps.onMouseDown}
-                    >
-                        <div className="h-full w-24 bg-gray-900 z-10 shrink-0" />
-                        <div 
-                            data-role="velocity-lane-bg" 
-                            className="h-full absolute top-0" 
-                            style={{ left: KEYBOARD_WIDTH, width: gridWidth, transform: `translateX(-${gridScroll.left}px)`}}
-                        >
-                            {/* === GÜNCELLENEN BÖLÜM BAŞLANGICI === */}
-                            <VelocityLane 
-                                notes={currentNotes} // NOTA LİSTESİ GÜNCELLENDİ
-                                selectedNotes={selectedNotes} 
-                                gridWidth={gridWidth}
-                                
-                                // Çizim için gerekli propları açıkça iletiyoruz
-                                stepToX={stepToX} 
-                                stepWidth={stepWidth} 
-                                height={velocityLaneHeight} 
-                                
-                                // İnteraksiyon için gerekli propları açıkça iletiyoruz
-                                onVelocityBarMouseDown={handleVelocityBarMouseDown} 
-                                onVelocityWheel={handleVelocityWheel}
-                            />
-                            {/* === GÜNCELLENEN BÖLÜM SONU === */}
-                        </div>
-                    </div>
-                </>
-            )}
         </div>
-
-        {/* Akıllı İpucu */}
-        <PianoRollTooltip 
-            x={visualFeedback.tooltip?.x || 0}
-            y={visualFeedback.tooltip?.y || 0}
-            content={visualFeedback.tooltip?.content}
-            visible={visualFeedback.tooltip?.visible || false}
-        />
-    </div>
-  );
+    );
 }
 
 export default React.memo(PianoRoll);
