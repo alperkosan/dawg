@@ -3,9 +3,22 @@ import { Play, Pause, Square, Wind } from 'lucide-react';
 import VolumeKnob from '../../ui/VolumeKnob';
 import { usePlaybackStore } from '../../store/usePlaybackStore';
 
+// YENİ: Mod Seçici Buton Bileşeni
+const ModeButton = ({ label, mode, activeMode, onClick }) => {
+    const isActive = activeMode === mode;
+    return (
+        <button
+            onClick={() => onClick(mode)}
+            className={`px-4 py-1.5 text-sm font-bold transition-all duration-150 rounded-md ${isActive ? 'bg-amber-500 text-gray-900 shadow-inner' : 'bg-[var(--color-surface)] hover:bg-[var(--color-surface2)]'}`}
+        >
+            {label}
+        </button>
+    );
+};
+
 function TopToolbar({ audioEngineRef }) {
-  const { playbackState, bpm, transportPosition, masterVolume } = usePlaybackStore();
-  const { handlePlay, handlePause, handleStop, handleBpmChange, handleMasterVolumeChange } = usePlaybackStore.getState();
+  const { playbackState, bpm, transportPosition, masterVolume, playbackMode } = usePlaybackStore();
+  const { handlePlay, handlePause, handleStop, handleBpmChange, handleMasterVolumeChange, setPlaybackMode } = usePlaybackStore.getState();
 
   return (
     <header 
@@ -44,6 +57,12 @@ function TopToolbar({ audioEngineRef }) {
               <Square size={20} />
             </button>
           )}
+        </div>
+
+        {/* YENİ: PAT/SONG Mod Seçici */}
+        <div className="flex items-center p-1 rounded-lg gap-x-1" style={{backgroundColor: 'var(--color-background)'}}>
+            <ModeButton label="PAT" mode="pattern" activeMode={playbackMode} onClick={setPlaybackMode} />
+            <ModeButton label="SONG" mode="song" activeMode={playbackMode} onClick={setPlaybackMode} />
         </div>
 
         <div className="flex items-center rounded" style={{ backgroundColor: 'var(--color-surface)' }}>

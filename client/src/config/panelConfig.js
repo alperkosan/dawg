@@ -2,6 +2,7 @@ import ChannelRack from '../features/channel_rack/ChannelRack';
 import Mixer from '../features/mixer/Mixer';
 import SampleEditor from '../features/sample_editor/SampleEditor';
 import PianoRoll from '../features/piano_roll/PianoRoll';
+import ArrangementPanel from '../features/arrangement/ArrangementPanel';
 import KeybindingsPanel from '../features/key_bindings/KeybindingsPanel';
 import { ThemeEditor } from '../features/theme_editor/ThemeEditor'; // YENİ: Tema Editörünü import et
 
@@ -11,6 +12,7 @@ export const panelRegistry = {
   'sample-editor': SampleEditor,
   'piano-roll': PianoRoll,
   'keybindings': KeybindingsPanel,
+  'arrangement': ArrangementPanel, // YENİ: ArrangementPanel'i kaydet
   'theme-editor': ThemeEditor, // YENİ: Tema Editörünü kaydet
 };
 
@@ -20,6 +22,12 @@ const BORDER_WIDTH = 8;
 const PANEL_PADDING_X = 32;
 
 export const panelDefinitions = {
+  'arrangement': {
+    title: 'Arrangement',
+    initialSize: { width: 1400, height: 600 },
+    initialPos: { x: 20, y: 10 },
+    minSize: { width: 800, height: 400 },
+  },
   'channel-rack': {
     title: 'Channel Rack',
     initialSize: { width: 1200, height: 400 },

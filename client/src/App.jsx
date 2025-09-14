@@ -3,7 +3,7 @@ import * as Tone from 'tone';
 import AudioEngine from './lib/core/AudioEngine';
 import WorkspacePanel from './layout/WorkspacePanel';
 import StartupScreen from './components/StartUpScreen';
-import { ThemeProvider } from './components/ThemeProvider'; // Yeni provider'ı import et
+import { ThemeProvider } from './components/ThemeProvider';
 import MainToolbar from './features/main_toolbar/MainToolbar';
 import TopToolbar from './features/top_toolbar/TopToolbar';
 import Taskbar from './features/taskbar/Taskbar';
@@ -15,6 +15,7 @@ import { usePlaybackStore } from './store/usePlaybackStore';
 import { useInstrumentsStore } from './store/useInstrumentsStore';
 import { useMixerStore } from './store/useMixerStore';
 import { usePanelsStore } from './store/usePanelsStore';
+import { useArrangementStore } from './store/useArrangementStore'; // Aranje store'unu import et
 
 import { initialInstruments, initialMixerTracks } from './config/initialData';
 import { calculateAudioLoopLength } from './lib/utils/patternUtils';
@@ -22,43 +23,55 @@ import { calculateAudioLoopLength } from './lib/utils/patternUtils';
 const useAudioEngineSync = (audioEngineRef) => {
     const instruments = useInstrumentsStore(state => state.instruments);
     const mixerTracks = useMixerStore(state => state.mixerTracks);
+    
+    // === HATA DÜZELTMESİ BURADA ===
+    // Aranjman verilerini tek bir obje olarak değil, ayrı ayrı seçiyoruz.
+    // Zustand, bu dizilerin referanslarını yalnızca içerikleri değiştiğinde günceller.
+    // Bu, gereksiz render döngülerini engeller.
+    const clips = useArrangementStore(state => state.clips);
+    const patterns = useArrangementStore(state => state.patterns);
+    const tracks = useArrangementStore(state => state.tracks);
 
+    // useEffect'in bağımlılığını oluşturmak için bir imza (signature) kullanıyoruz.
+    // Bu imza sadece yapısal veriler değiştiğinde değişir.
     const structuralSignature = JSON.stringify({
         instruments: instruments.map(i => ({ 
             id: i.id, 
             url: i.url,
-            notes: i.notes.map(n => n.id),
             isMuted: i.isMuted, 
             cutItself: i.cutItself, 
             pianoRoll: i.pianoRoll,
-            precomputed: i.precomputed,
-            smpStart: i.smpStart,
-            smpLength: i.smpLength,
         })),
         mixer: mixerTracks.map(t => ({ 
             id: t.id,
-            outputTarget: t.outputTarget,
-            sends: t.sends.map(s => ({ busId: s.busId })), // Sadece yapısal bilgi yeterli
-            effects: t.insertEffects.map(fx => ({
-                id: fx.id,
-                type: fx.type,
-                bypass: fx.bypass, 
-                // !!! ANA DÜZELTME BURADA !!!
-                // 'settings' objesini buradan kaldırıyoruz. Çünkü bu bir parametre değişikliğidir,
-                // yapısal bir değişiklik değil. Bu sayede knob hareketleri tam senkronizasyonu
-                // tetiklemeyecek.
-                // settings: fx.settings <-- BU SATIRI SİLİN VEYA YORUMA ALIN
-            })) 
-        }))
+            sends: t.sends?.map(s => s.busId),
+            effects: t.insertEffects?.map(fx => fx.id) 
+        })),
+        // İmza'ya aranjmanın sadece ID'lerini dahil etmek yeterlidir.
+        // Bu, klip pozisyonu değiştiğinde değil, sadece klip eklendiğinde/silindiğinde
+        // motorun tam senkronize olmasını sağlar (performans için daha iyidir).
+        // Ancak şimdilik basitlik adına tüm klipleri dahil edelim.
+        arrangement: {
+            clipIds: clips.map(c => c.id),
+            trackIds: tracks.map(t => t.id),
+        }
     });
 
     useEffect(() => {
         const engine = audioEngineRef.current;
         if (engine) {
             console.log("[SYNC] Yapısal bir değişiklik algılandı, motor senkronize ediliyor...");
-            engine.syncFromStores(instruments, mixerTracks);
+            
+            // Senkronizasyon için gerekli olan tam aranjman verisini burada birleştirip gönderiyoruz.
+            const arrangementForSync = { clips, patterns, tracks };
+            
+            engine.syncFromStores(instruments, mixerTracks, arrangementForSync);
         }
-    }, [structuralSignature, audioEngineRef]);
+        // Bağımlılık olarak sadece oluşturulan imzayı kullanıyoruz.
+    }, [structuralSignature, audioEngineRef, instruments, mixerTracks, clips, patterns, tracks]); 
+    // Not: `instruments`, `mixerTracks` vs. de bağımlılıklara eklendi,
+    // çünkü `syncFromStores` en güncel hallerini kullanmalı. Signature değişmese bile
+    // içerikleri değişmiş olabilir (örn: nota ekleme).
 
     return null;
 };
@@ -99,7 +112,8 @@ function AppContent({ audioEngineRef }) {
   );
 }
 
-// --- SAĞLIK KONTROLÜ LOGLAMA FONKSİYONU ---
+// ... (loglama fonksiyonları ve App bileşeninin geri kalanı aynı)
+// ... (logStartupHealthCheck, logPostSyncHealthCheck, App)
 function logStartupHealthCheck() {
     console.groupCollapsed("SoundForge Başlangıç Sağlık Kontrolü (Beklenen Durum)");
     
@@ -193,16 +207,24 @@ function App() {
         onProgressUpdate: PlaybackAnimatorService.publish,
         setTransportPosition: usePlaybackStore.getState().setTransportPosition,
       });
+      
+      // === HATA DÜZELTMESİ BURADA ===
+      // Motoru oluşturduktan hemen sonra, store'daki başlangıç BPM'ini motora setliyoruz.
+      const initialBpm = usePlaybackStore.getState().bpm;
+      engine.setBpm(initialBpm);
+      console.log(`AudioEngine: Başlangıç BPM'i ${initialBpm} olarak ayarlandı.`);
+      // ==============================
+
       audioEngine.current = engine;
       
       console.log("AudioEngine: İlk senkronizasyon başlatılıyor...");
       await engine.syncFromStores(
         useInstrumentsStore.getState().instruments,
-        useMixerStore.getState().mixerTracks
+        useMixerStore.getState().mixerTracks,
+        useArrangementStore.getState() // İlk senkronizasyona aranje verisini de ekle
       );
       console.log("AudioEngine: İlk senkronizasyon tamamlandı.");
       
-      // --- YENİ: Denetçiyi burada çağırıyoruz! ---
       logPostSyncHealthCheck(audioEngine.current);
 
       setIsAudioInitialized(true);
@@ -219,7 +241,6 @@ function App() {
     return <StartupScreen onStart={initializeAudio} />;
   }
 
-  // YENİ: ThemeProvider'ı AppContent'in etrafına ekliyoruz
   return (
     <ThemeProvider>
       <AppContent audioEngineRef={audioEngine} />

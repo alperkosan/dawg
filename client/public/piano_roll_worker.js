@@ -35,39 +35,38 @@ class PianoRollCalculations {
             const x = step * stepWidth;
             const positionInBar = step % 16; // 16'lık nota bazında
             
-            let opacity = 0.1, strokeWidth = 0.5; // Varsayılan değerler
+            let opacity = 0.1, strokeWidth = 0.5;
             
-            // === GÖRSEL İYİLEŞTİRME BAŞLANGICI ===
-            if (positionInBar === 0) { // Bar çizgisi (Kalın ve belirgin)
-                opacity = 0.6; // Daha görünür
-                strokeWidth = 2; // Daha kalın
+            // === DAHA BELİRGİN ÇİZGİLER İÇİN GÜNCELLEME V2 ===
+            if (positionInBar === 0) { // Bar çizgisi (Kalın ve çok belirgin)
+                opacity = 0.8; 
+                strokeWidth = 2; 
             } else if (positionInBar % 4 === 0) { // Vuruş çizgisi (Orta belirginlikte)
-                opacity = zoomX > 0.3 ? 0.4 : 0; // Opaklık artırıldı
-                strokeWidth = 1.25; // Kalınlık artırıldı
+                opacity = zoomX > 0.3 ? 0.6 : 0; 
+                strokeWidth = 1.25; 
             } else if (zoomX > 0.7) { // Alt bölüm çizgisi (İnce, sadece yakınlaşınca)
-                opacity = Math.min(0.25, (zoomX - 0.7) * 0.4); // Opaklık artırıldı
+                opacity = Math.min(0.4, (zoomX - 0.7) * 0.5);
+                strokeWidth = 0.75;
             }
-            // === GÖRSEL İYİLEŞTİRME SONU ===
             
             if (opacity > 0) {
-                // === HATA DÜZELTMESİ: Çizginin yüksekliğini canvas'ın tam yüksekliği yapıyoruz ===
+                // === ANA HATA DÜZELTMESİ: Çizgi objesine tam yüksekliği ekliyoruz ===
+                // Bu, çizim mantığının dikey çizgileri en alta kadar uzatmasını garantiler.
                 gridLines.vertical.push({ x, opacity, strokeWidth, height: height });
             }
         }
 
         // Yatay çizgiler (Pitch)
-        const totalKeyCount = Math.ceil(height / keyHeight);
-        for (let key = 0; key < totalKeyCount; key++) {
+        for (let key = 0; key < totalKeys; key++) {
             const y = key * keyHeight;
-            const noteIndex = (totalKeyCount - 1 - key) % 12;
+            const noteIndex = key % 12;
             const isBlackKey = [1, 3, 6, 8, 10].includes(noteIndex);
             
-            // === GÖRSEL İYİLEŞTİRME: Yatay çizgiler de artık daha belirgin ===
+            // === DAHA BELİRGİN ÇİZGİLER İÇİN GÜNCELLEME V2 ===
             gridLines.horizontal.push({
                 y,
-                // Opaklık değerleri genel olarak artırıldı
-                opacity: (isBlackKey ? 0.15 : 0.2) * (zoomY > 0.5 ? 1 : 0.5),
-                strokeWidth: 0.75 // Kalınlık artırıldı
+                opacity: (isBlackKey ? 0.25 : 0.35) * (zoomY > 0.5 ? 1 : 0.4),
+                strokeWidth: 0.75
             });
         }
         return gridLines;
@@ -133,4 +132,3 @@ self.onmessage = function(e) {
         self.postMessage({ taskId, error: error.message });
     }
 };
-

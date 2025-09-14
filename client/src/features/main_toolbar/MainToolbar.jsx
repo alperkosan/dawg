@@ -27,7 +27,11 @@ function MainToolbar() {
             </div>
 
             <div className="flex items-center gap-2">
-                <button title="Arrangement" className="p-2 hover:bg-[var(--color-surface)] rounded transition-colors">
+                <button
+                    title="Arrangement"
+                    className="p-2 hover:bg-[var(--color-surface)] rounded transition-colors"
+                    onClick={() => togglePanel('arrangement')}
+                >
                     <LayoutGrid className="w-5 h-5 text-[var(--color-text)]" />
                 </button>
                 <button title="Channel Rack" onClick={() => togglePanel('channel-rack')} className="p-2 hover:bg-[var(--color-surface)] rounded transition-colors" >

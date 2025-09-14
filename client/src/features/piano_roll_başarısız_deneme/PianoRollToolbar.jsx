@@ -1,6 +1,5 @@
 import React from 'react';
 import { usePianoRollStore, NOTES, SCALES } from '../../store/usePianoRollStore';
-// YENİ: Mıknatıs ikonu
 import { Pencil, Eraser, MousePointer, Grid, Scale, EyeOff, ZoomIn, ZoomOut, AlignVerticalSpaceAround, Magnet } from 'lucide-react';
 
 const ToolButton = ({ label, icon: Icon, toolId, activeTool, onClick }) => (
@@ -13,9 +12,9 @@ export function PianoRollToolbar() {
     const { 
         scale, setScale, showScaleHighlighting, toggleScaleHighlighting, 
         activeTool, setActiveTool, gridSnapValue, setGridSnapValue,
-        // YENİ: snapMode ve toggleSnapMode'u store'dan alıyoruz
-        snapMode, toggleSnapMode,
-        zoomIn, zoomOut, velocityLaneHeight, toggleVelocityLane
+        // --- GÜNCELLEME: Yeni state ve eylemleri alıyoruz ---
+        snapEnabled, toggleSnap,
+        zoomIn, zoomOut, showVelocityLane, toggleVelocityLane
     } = usePianoRollStore();
 
     const snapOptions = [
@@ -26,9 +25,9 @@ export function PianoRollToolbar() {
     return (
         <div className="bg-gray-900/80 backdrop-blur-sm p-2 flex items-center justify-between border-b-2 border-gray-950 shrink-0">
             <div className="flex items-center gap-2">
-                <ToolButton label="Seçim" icon={MousePointer} toolId="selection" activeTool={activeTool} onClick={() => setActiveTool('selection')} />
-                <ToolButton label="Kalem" icon={Pencil} toolId="pencil" activeTool={activeTool} onClick={() => setActiveTool('pencil')} />
-                <ToolButton label="Silgi" icon={Eraser} toolId="eraser" activeTool={activeTool} onClick={() => setActiveTool('eraser')} />
+                <ToolButton label="Seçim (1)" icon={MousePointer} toolId="selection" activeTool={activeTool} onClick={() => setActiveTool('selection')} />
+                <ToolButton label="Kalem (2)" icon={Pencil} toolId="pencil" activeTool={activeTool} onClick={() => setActiveTool('pencil')} />
+                <ToolButton label="Silgi (3)" icon={Eraser} toolId="eraser" activeTool={activeTool} onClick={() => setActiveTool('eraser')} />
             </div>
 
             <div className="flex items-center gap-2">
@@ -37,21 +36,20 @@ export function PianoRollToolbar() {
                     {snapOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
                 </select>
                 
-                {/* YENİ: Snap Modu Düğmesi */}
+                {/* --- GÜNCELLEME: Snap Düğmesi artık 'snapEnabled' kullanıyor --- */}
                 <button 
-                  onClick={toggleSnapMode} 
-                  title={`Snap Modu: ${snapMode === 'hard' ? 'Sert' : 'Yumuşak'}`} 
-                  className={`p-2 rounded-md transition-colors ${snapMode === 'soft' ? 'bg-indigo-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'}`}
+                  onClick={toggleSnap} 
+                  title={`Izgaraya Yasla: ${snapEnabled ? 'Açık' : 'Kapalı'}`} 
+                  className={`p-2 rounded-md transition-colors ${snapEnabled ? 'bg-indigo-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'}`}
                 >
                     <Magnet size={16} />
                 </button>
 
-                <button onClick={toggleVelocityLane} title="Velocity Alanını Göster/Gizle" className={`p-2 rounded-md transition-colors ${velocityLaneHeight > 0 ? 'bg-indigo-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'}`}>
+                <button onClick={toggleVelocityLane} title="Velocity Alanını Göster/Gizle" className={`p-2 rounded-md transition-colors ${showVelocityLane ? 'bg-indigo-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'}`}>
                     <AlignVerticalSpaceAround size={16} />
                 </button>
             </div>
 
-            {/* ... (geri kalan kod aynı) ... */}
             <div className="flex items-center gap-3">
                  <Scale size={18} className="text-indigo-400" />
                  <select value={scale.root} onChange={(e) => setScale(e.target.value, scale.type)} className="bg-gray-700 rounded px-2 py-1 text-xs">
@@ -61,7 +59,7 @@ export function PianoRollToolbar() {
                      {Object.keys(SCALES).map(scaleName => <option key={scaleName} value={scaleName}>{scaleName}</option>)}
                  </select>
                  <button onClick={toggleScaleHighlighting} title="Gam Vurgulamasını Aç/Kapat" className="p-2 rounded-md bg-gray-700 hover:bg-gray-600">
-                    <EyeOff size={16} />
+                    <EyeOff size={16} className={showScaleHighlighting ? 'text-indigo-400' : 'text-gray-400'}/>
                  </button>
             </div>
 
