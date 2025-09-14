@@ -10,7 +10,7 @@ export const usePlaybackStore = create((set, get) => ({
   playbackState: 'stopped',
   bpm: 120, // BPM'i daha ritmik bir başlangıç için 120 yapalım
   masterVolume: 0,
-  transportPosition: '1:1:00', // DEĞİŞTİ: BBT formatında
+  transportPosition: '1:1:0', // DEĞİŞTİ: BBT formatında
   isPreviewPlaying: false,
   playbackMode: 'pattern',
   // YENİ: Loop bilgileri
@@ -19,6 +19,9 @@ export const usePlaybackStore = create((set, get) => ({
     totalBars: 4,
     progress: 0,
   },
+  // YENİ: Debouncing için
+  _lastActionTime: 0,
+  _isProcessingAction: false,
 
   // --- ACTIONS ---
   setPlaybackState: (state) => set({ playbackState: state }),
@@ -61,25 +64,95 @@ export const usePlaybackStore = create((set, get) => ({
     audioEngine?.setMasterVolume(newVolume);
   },
 
-  handlePlay: (audioEngine) => {
-    if (!audioEngine) return;
-    const { playbackMode } = get();
-    const activePatternId = useArrangementStore.getState().activePatternId;
-    audioEngine.start(playbackMode, activePatternId); 
-  },
-
-  // GÜNCELLENDİ: Artık hem pause hem de resume işlevi görüyor
-  handlePause: (audioEngine) => {
-    const { playbackState } = get();
-    if (playbackState === 'playing') {
-        audioEngine?.pause();
-    } else if (playbackState === 'paused') {
-        audioEngine?.resume();
+ handlePlay: (audioEngine) => {
+    const now = Date.now();
+    const { _lastActionTime, _isProcessingAction } = get();
+    
+    // 300ms içinde tekrar tıklamayı engelle
+    if (_isProcessingAction || (now - _lastActionTime) < 300) {
+      console.log('[Playback] Çok hızlı tıklama engellendi');
+      return;
+    }
+    
+    set({ _isProcessingAction: true, _lastActionTime: now });
+    
+    if (!audioEngine) {
+      set({ _isProcessingAction: false });
+      return;
+    }
+    
+    try {
+      const { playbackMode } = get();
+      const activePatternId = useArrangementStore.getState().activePatternId;
+      
+      console.log('[Playback] Play başlatılıyor...');
+      audioEngine.start(playbackMode, activePatternId);
+      
+      // 500ms sonra işlem bayrağını kaldır
+      setTimeout(() => {
+        set({ _isProcessingAction: false });
+      }, 500);
+      
+    } catch (error) {
+      console.error('[Playback] Play hatası:', error);
+      set({ _isProcessingAction: false });
     }
   },
 
+  // DÜZELTME: Debounced pause handler  
+  handlePause: (audioEngine) => {
+    const now = Date.now();
+    const { _lastActionTime, _isProcessingAction, playbackState } = get();
+    
+    if (_isProcessingAction || (now - _lastActionTime) < 200) {
+      console.log('[Playback] Çok hızlı tıklama engellendi');
+      return;
+    }
+    
+    set({ _isProcessingAction: true, _lastActionTime: now });
+    
+    try {
+      if (playbackState === 'playing') {
+        console.log('[Playback] Pause...');
+        audioEngine?.pause();
+      } else if (playbackState === 'paused') {
+        console.log('[Playback] Resume...');
+        audioEngine?.resume();
+      }
+      
+      setTimeout(() => {
+        set({ _isProcessingAction: false });
+      }, 300);
+      
+    } catch (error) {
+      console.error('[Playback] Pause/Resume hatası:', error);
+      set({ _isProcessingAction: false });
+    }
+  },
+
+  // DÜZELTME: Debounced stop handler
   handleStop: (audioEngine) => {
-    audioEngine?.stop();
+    const now = Date.now();
+    const { _lastActionTime, _isProcessingAction } = get();
+    
+    if (_isProcessingAction || (now - _lastActionTime) < 200) {
+      return;
+    }
+    
+    set({ _isProcessingAction: true, _lastActionTime: now });
+    
+    try {
+      console.log('[Playback] Stop...');
+      audioEngine?.stop();
+      
+      setTimeout(() => {
+        set({ _isProcessingAction: false });
+      }, 300);
+      
+    } catch (error) {
+      console.error('[Playback] Stop hatası:', error);
+      set({ _isProcessingAction: false });
+    }
   },
   
   // YENİ: Timeline navigasyon eylemi

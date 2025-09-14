@@ -8,6 +8,7 @@ const initialPatternData = initialInstruments.reduce((acc, inst) => {
   return acc;
 }, {});
 
+// BAŞLANGIÇ VERİSİNİ YENİ YAPIYA UYGUN HALE GETİRELİM
 const initialPatterns = {
   'pattern-1': {
     id: 'pattern-1',
@@ -15,6 +16,8 @@ const initialPatterns = {
     data: initialPatternData
   }
 };
+// YENİ: Başlangıç sırasını tanımlayan dizi
+const initialPatternOrder = ['pattern-1'];
 
 const initialTracks = initialInstruments.map(inst => ({
   id: `track-${inst.id}`,
@@ -34,6 +37,7 @@ const initialClips = [{
 
 export const useArrangementStore = create((set, get) => ({
   patterns: initialPatterns,
+  patternOrder: initialPatternOrder, // YENİ: Sıralamayı tutan dizi
   tracks: initialTracks,
   clips: initialClips,
   activePatternId: 'pattern-1', 
@@ -42,7 +46,6 @@ export const useArrangementStore = create((set, get) => ({
 
   // --- Eylemler ---
   
-  // === KAYBOLAN FONKSİYONLAR BURAYA EKLENDİ ===
   addClip: (clipData) => set(state => ({ clips: [...state.clips, { id: uuidv4(), ...clipData }] })),
   
   updateClip: (clipId, newProperties) => set(state => ({
@@ -52,7 +55,6 @@ export const useArrangementStore = create((set, get) => ({
   deleteClip: (clipId) => set(state => ({
     clips: state.clips.filter(c => c.id !== clipId)
   })),
-  // ==========================================
 
   setActivePatternId: (patternId, audioEngine) => {
     set({ activePatternId: patternId });
@@ -64,11 +66,17 @@ export const useArrangementStore = create((set, get) => ({
     }
   },
 
+  // GÜNCELLENDİ: Artık patternOrder dizisini de güncelliyor
   addPattern: (audioEngine) => {
     const newId = `pattern-${Date.now()}`;
-    const newPatternName = `Pattern ${Object.keys(get().patterns).length + 1}`;
+    const newPatternName = `Pattern ${get().patternOrder.length + 1}`;
     const newPattern = { id: newId, name: newPatternName, data: {} };
-    set(state => ({ patterns: { ...state.patterns, [newId]: newPattern } }));
+    
+    set(state => ({ 
+      patterns: { ...state.patterns, [newId]: newPattern },
+      patternOrder: [...state.patternOrder, newId] // Yeni pattern ID'sini sıranın sonuna ekle
+    }));
+    
     get().setActivePatternId(newId, audioEngine);
   },
   
@@ -85,20 +93,20 @@ export const useArrangementStore = create((set, get) => ({
     }
   },
 
+  // GÜNCELLENDİ: Artık Object.keys yerine patternOrder dizisini kullanıyor
   nextPattern: (audioEngine) => {
-    const { patterns, activePatternId } = get();
-    const patternIds = Object.keys(patterns);
-    const currentIndex = patternIds.indexOf(activePatternId);
-    const nextIndex = (currentIndex + 1) % patternIds.length;
-    get().setActivePatternId(patternIds[nextIndex], audioEngine);
+    const { patternOrder, activePatternId } = get();
+    const currentIndex = patternOrder.indexOf(activePatternId);
+    const nextIndex = (currentIndex + 1) % patternOrder.length;
+    get().setActivePatternId(patternOrder[nextIndex], audioEngine);
   },
 
+  // GÜNCELLENDİ: Artık Object.keys yerine patternOrder dizisini kullanıyor
   previousPattern: (audioEngine) => {
-    const { patterns, activePatternId } = get();
-    const patternIds = Object.keys(patterns);
-    const currentIndex = patternIds.indexOf(activePatternId);
-    const prevIndex = (currentIndex - 1 + patternIds.length) % patternIds.length;
-    get().setActivePatternId(patternIds[prevIndex], audioEngine);
+    const { patternOrder, activePatternId } = get();
+    const currentIndex = patternOrder.indexOf(activePatternId);
+    const prevIndex = (currentIndex - 1 + patternOrder.length) % patternOrder.length;
+    get().setActivePatternId(patternOrder[prevIndex], audioEngine);
   },
 
   updatePatternNotes: (instrumentId, newNotes) => {

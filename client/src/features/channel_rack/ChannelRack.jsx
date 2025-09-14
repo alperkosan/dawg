@@ -8,7 +8,6 @@ import { usePanelsStore } from '../../store/usePanelsStore';
 import { PlaybackAnimatorService } from '../../lib/core/PlaybackAnimatorService';
 import { useArrangementStore } from '../../store/useArrangementStore';
 import VolumeKnob from '../../ui/VolumeKnob';
-// ADIM 1: Gerekli store'u import et
 import { usePlaybackStore } from '../../store/usePlaybackStore';
 
 const ItemTypes = { SOUND_SOURCE: 'soundSource' };
@@ -17,12 +16,10 @@ const ItemTypes = { SOUND_SOURCE: 'soundSource' };
 const ModernStepButton = React.memo(({ note, isMuted, isBeat, onStepClick, isCurrentlyPlaying }) => {
     const isActive = !!note;
     const velocityHeight = isActive ? `${Math.max(10, note.velocity * 100)}%` : '0%';
-
     const playingStyle = {
         boxShadow: `inset 0 0 10px 3px rgba(14, 165, 233, 0.4)`,
         borderColor: 'var(--color-primary)'
     };
-
     const style = {
         backgroundColor: isBeat ? 'var(--color-surface)' : 'var(--color-background)',
         border: `1px solid ${isCurrentlyPlaying ? 'var(--color-primary)' : 'var(--color-border)'}`,
@@ -30,29 +27,14 @@ const ModernStepButton = React.memo(({ note, isMuted, isBeat, onStepClick, isCur
         transition: 'all 150ms ease',
         ...(isCurrentlyPlaying && playingStyle)
     };
-    
     return (
-        <div 
-            onClick={onStepClick} 
-            className="w-9 h-12 bg-[var(--color-background)] rounded-md cursor-pointer relative overflow-hidden"
-            style={style}
-        >
-            {isActive && (
-                <div 
-                    className="absolute bottom-0 left-0 right-0 rounded-t-sm"
-                    style={{ 
-                        height: velocityHeight, 
-                        backgroundColor: 'var(--color-primary)',
-                        opacity: 0.75
-                    }} 
-                />
-            )}
+        <div onClick={onStepClick} className="w-9 h-12 rounded-md cursor-pointer relative overflow-hidden" style={style}>
+            {isActive && <div className="absolute bottom-0 left-0 right-0 rounded-t-sm" style={{ height: velocityHeight, backgroundColor: 'var(--color-primary)', opacity: 0.75 }} />}
         </div>
     );
 });
 
-
-// ADIM 2: ModernInstrumentChannel bileşenine 'playbackMode' prop'unu ekle
+// ModernInstrumentChannel bileşeninde değişiklik yok
 const ModernInstrumentChannel = React.memo(({ instrument, audioEngineRef, notes, activeStep, playbackMode }) => {
     const track = useMixerStore(state => state.mixerTracks.find(t => t.id === instrument?.mixerTrackId));
     const { updatePatternNotes } = useArrangementStore.getState();
@@ -77,31 +59,20 @@ const ModernInstrumentChannel = React.memo(({ instrument, audioEngineRef, notes,
 
     return (
         <div className="flex items-center" style={{ gap: 'var(--gap-controls)' }}>
-            {/* Sol Panel: Enstrüman Kontrol Merkezi (Değişiklik yok) */}
             <div className="sticky left-0 w-[300px] h-14 p-2 flex items-center gap-3 z-20 shrink-0 bg-[var(--color-surface)] rounded-lg border border-transparent hover:border-[var(--color-border)] transition-colors">
                  <div className="w-1 h-full rounded-full" style={{backgroundColor: 'var(--color-primary)'}} />
-                 <div 
-                    className="flex-grow flex items-center gap-2 min-w-0 cursor-pointer group" 
-                    onClick={() => handleEditInstrument(instrument, audioEngineRef.current)} 
-                    title={`${instrument.name} (Edit Sample)`}
-                >
+                 <div className="flex-grow flex items-center gap-2 min-w-0 cursor-pointer group" onClick={() => handleEditInstrument(instrument, audioEngineRef.current)} title={`${instrument.name} (Edit Sample)`}>
                     <button onClick={(e) => { e.stopPropagation(); handleTogglePianoRoll(instrument); }} className="p-1 group-hover:bg-[var(--color-background)] rounded transition-colors shrink-0" title="Toggle Piano Roll">
                         <Music size={16} style={{ color: instrument.pianoRoll ? 'var(--color-accent)' : 'var(--color-primary)' }} />
                     </button>
                     <span className="truncate font-bold text-sm group-hover:text-[var(--color-primary)]">{instrument.name}</span>
                 </div>
                 <div className="flex items-center gap-3 shrink-0">
-                    <button 
-                        onClick={() => handleToggleInstrumentMute(instrument.id)}
-                        className={`w-6 h-6 rounded text-xs font-bold transition-colors ${!instrument.isMuted ? 'bg-cyan-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}`}
-                        title="Mute"
-                    >M</button>
+                    <button onClick={() => handleToggleInstrumentMute(instrument.id)} className={`w-6 h-6 rounded text-xs font-bold transition-colors ${!instrument.isMuted ? 'bg-cyan-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}`} title="Mute">M</button>
                     <VolumeKnob size={24} label="Pan" value={track.pan} onChange={(val) => handleMixerParamChange(track.id, 'pan', val, audioEngineRef.current)} min={-1} max={1} defaultValue={0} />
                     <VolumeKnob size={24} label="Vol" value={track.volume} onChange={(val) => handleMixerParamChange(track.id, 'volume', val, audioEngineRef.current)} min={-60} max={6} defaultValue={0} />
                 </div>
             </div>
-            
-            {/* Sağ Panel: Step Sequencer */}
             <div className="flex h-full items-center" style={{ gap: 'var(--gap-container)' }}>
                 {Array.from({ length: Math.ceil(useInstrumentsStore.getState().loopLength / 4) }).map((_, barIndex) => (
                     <div key={barIndex} className="flex items-center" style={{ gap: '4px' }}>
@@ -115,7 +86,6 @@ const ModernInstrumentChannel = React.memo(({ instrument, audioEngineRef, notes,
                                     onStepClick={() => handlePatternChange(stepIndex)}
                                     isMuted={instrument.isMuted}
                                     isBeat={stepInBar === 0}
-                                    // ADIM 3: Vurgulama mantığını playbackMode'a bağla
                                     isCurrentlyPlaying={playbackMode === 'pattern' && stepIndex === activeStep}
                                 />
                             );
@@ -127,32 +97,29 @@ const ModernInstrumentChannel = React.memo(({ instrument, audioEngineRef, notes,
     );
 });
 
-
-// Ana ChannelRack Bileşeni
 function ChannelRack({ audioEngineRef }) {
+    // NİHAİ DÜZELTME: Hem görsel hem de ses uzunluğunu alıyoruz
     const instruments = useInstrumentsStore(state => state.instruments);
     const loopLength = useInstrumentsStore(state => state.loopLength);
+    const audioLoopLength = useInstrumentsStore(state => state.audioLoopLength);
+    
     const { handleAddNewInstrument } = useInstrumentsStore.getState();
     const { patterns, activePatternId, addPattern, renameActivePattern, nextPattern, previousPattern } = useArrangementStore();
     const activePatternData = patterns[activePatternId]?.data || {};
     const activePatternName = patterns[activePatternId]?.name || '...';
-    // ADIM 4: Ana bileşende playbackMode'u state'ten al
     const playbackMode = usePlaybackStore(state => state.playbackMode);
     
     const [activeStep, setActiveStep] = useState(-1);
 
     useEffect(() => {
         const handleProgressUpdate = (progress) => {
-            if (progress === 0 && activeStep !== 0) {
-                 setActiveStep(0);
-                 return;
-            }
-            const currentStep = Math.floor(progress * loopLength);
+            // NİHAİ DÜZELTME: Adım hesaplaması artık GERÇEK ses uzunluğuna göre yapılıyor.
+            const currentStep = Math.floor(progress * audioLoopLength);
             setActiveStep(prevStep => currentStep !== prevStep ? currentStep : prevStep);
         };
         PlaybackAnimatorService.subscribe(handleProgressUpdate);
         return () => { PlaybackAnimatorService.unsubscribe(handleProgressUpdate); };
-    }, [loopLength, activeStep]);
+    }, [audioLoopLength]); // Bağımlılığı audioLoopLength olarak değiştiriyoruz.
 
     const handleRename = () => {
         const newName = prompt("Yeni pattern adı:", activePatternName);
@@ -164,26 +131,15 @@ function ChannelRack({ audioEngineRef }) {
     return (
         <div className="w-full h-full flex flex-col" style={{ backgroundColor: 'var(--color-surface)', gap: 'var(--gap-container)' }}>
             <div className="flex items-center gap-2 p-2 shrink-0" style={{backgroundColor: 'var(--color-background)'}}>
-                <button onClick={() => addPattern(audioEngineRef.current)} className="p-2 hover:bg-[var(--color-surface)] rounded transition-colors" title="Yeni Pattern Ekle">
-                    <Plus size={18} />
-                </button>
+                <button onClick={() => addPattern(audioEngineRef.current)} className="p-2 hover:bg-[var(--color-surface)] rounded transition-colors" title="Yeni Pattern Ekle"><Plus size={18} /></button>
                 <div className="flex items-center border rounded-md" style={{borderColor: 'var(--color-border)'}}>
-                    <button onClick={() => previousPattern(audioEngineRef.current)} className="p-2 hover:bg-[var(--color-surface)] rounded-l-md transition-colors" title="Önceki Pattern">
-                        <ChevronLeft size={16} />
-                    </button>
-                    <div className="flex-grow text-center px-4 py-1.5 bg-[var(--color-surface2)] text-sm font-bold">
-                        <span>{activePatternName}</span>
-                    </div>
-                    <button onClick={() => nextPattern(audioEngineRef.current)} className="p-2 hover:bg-[var(--color-surface)] rounded-r-md transition-colors" title="Sonraki Pattern">
-                        <ChevronRight size={16} />
-                    </button>
+                    <button onClick={() => previousPattern(audioEngineRef.current)} className="p-2 hover:bg-[var(--color-surface)] rounded-l-md transition-colors" title="Önceki Pattern"><ChevronLeft size={16} /></button>
+                    <div className="flex-grow text-center px-4 py-1.5 bg-[var(--color-surface2)] text-sm font-bold"><span>{activePatternName}</span></div>
+                    <button onClick={() => nextPattern(audioEngineRef.current)} className="p-2 hover:bg-[var(--color-surface)] rounded-r-md transition-colors" title="Sonraki Pattern"><ChevronRight size={16} /></button>
                 </div>
-                <button onClick={handleRename} className="p-2 hover:bg-[var(--color-surface)] rounded transition-colors" title="Pattern'i Yeniden Adlandır">
-                    <Edit size={16} />
-                </button>
+                <button onClick={handleRename} className="p-2 hover:bg-[var(--color-surface)] rounded transition-colors" title="Pattern'i Yeniden Adlandır"><Edit size={16} /></button>
             </div>
             <div className="flex-grow min-h-0 overflow-auto relative" style={{ padding: '0 var(--padding-container) var(--padding-container)' }}>
-                {/* Genişlik hesaplaması için container */}
                 <div style={{ width: 300 + (loopLength * 40), height: '100%' }} className="relative">
                     <div className="flex flex-col" style={{ gap: 'var(--gap-controls)' }}>
                         {instruments.map((inst) => (
@@ -193,19 +149,14 @@ function ChannelRack({ audioEngineRef }) {
                                 audioEngineRef={audioEngineRef}
                                 notes={activePatternData[inst.id]}
                                 activeStep={activeStep}
-                                // ADIM 5: playbackMode'u alt bileşene prop olarak geçir
                                 playbackMode={playbackMode}
                             />
                         ))}
                     </div>
                 </div>
             </div>
-            <div ref={drop} className="shrink-0 h-16 border-2 border-dashed rounded-lg flex items-center justify-center m-4 mt-0 transition-colors"
-                style={{ borderColor: isOver ? 'var(--color-primary)' : 'var(--color-border)' }}>
-                <div className="flex items-center gap-2" style={{color: 'var(--color-muted)'}}>
-                    <PlusSquare size={20} />
-                    <span className="font-bold">Yeni Enstrüman Eklemek İçin Sürükleyin</span>
-                </div>
+            <div ref={drop} className="shrink-0 h-16 border-2 border-dashed rounded-lg flex items-center justify-center m-4 mt-0 transition-colors" style={{ borderColor: isOver ? 'var(--color-primary)' : 'var(--color-border)' }}>
+                <div className="flex items-center gap-2" style={{color: 'var(--color-muted)'}}><PlusSquare size={20} /><span className="font-bold">Yeni Enstrüman Eklemek İçin Sürükleyin</span></div>
             </div>
         </div>
     );

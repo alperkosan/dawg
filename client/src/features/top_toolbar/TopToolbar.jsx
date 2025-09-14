@@ -38,6 +38,40 @@ function TopToolbar({ audioEngineRef }) {
     setPlaybackMode(newMode);
   };
 
+  const SyncControls = () => {
+    const [compensation, setCompensation] = useState(0);
+    
+    const adjustSync = (delta) => {
+      const newComp = compensation + delta;
+      setCompensation(newComp);
+      
+      // Tüm playhead'leri güncelle
+      const playheads = document.querySelectorAll('[data-playhead]');
+      playheads.forEach(ph => {
+        if (ph._compensationOffset !== undefined) {
+          ph._compensationOffset = newComp;
+        }
+      });
+      
+      console.log(`Senkronizasyon: ${newComp}px`);
+    };
+    
+    return (
+      <div className="flex items-center gap-2 bg-red-900 p-2 rounded">
+        <span className="text-xs">SYNC:</span>
+        <button onClick={() => adjustSync(-5)} className="px-2 py-1 bg-red-700 text-xs">-5px</button>
+        <button onClick={() => adjustSync(-1)} className="px-2 py-1 bg-red-700 text-xs">-1px</button>
+        <span className="text-xs w-12 text-center">{compensation}px</span>
+        <button onClick={() => adjustSync(1)} className="px-2 py-1 bg-red-700 text-xs">+1px</button>
+        <button onClick={() => adjustSync(5)} className="px-2 py-1 bg-red-700 text-xs">+5px</button>
+        <button onClick={() => setCompensation(0)} className="px-2 py-1 bg-green-700 text-xs">Reset</button>
+      </div>
+    );
+  };
+
+  // TopToolbar JSX'inde, geliştirme modunda göster:
+  {process.env.NODE_ENV === 'development' && <SyncControls />}
+
   return (
     <header 
       className="p-2 flex items-center justify-between h-16 shrink-0"

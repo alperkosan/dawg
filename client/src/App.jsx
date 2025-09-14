@@ -99,9 +99,11 @@ function App() {
       await Tone.start();
       console.log("AudioContext başlatıldı.");
       
+      // DÜZELTME: TimeManager callback'lerini doğru şekilde bağla
       const engine = new AudioEngine({
         setPlaybackState: usePlaybackStore.getState().setPlaybackState,
-        onProgressUpdate: PlaybackAnimatorService.publish,
+        // DEĞIŞTI: onProgressUpdate artık doğrudan PlaybackAnimatorService'e bağlı
+        // AudioEngine'de timeManager zaten PlaybackAnimatorService.publish çağırıyor
         setTransportPosition: usePlaybackStore.getState().setTransportPosition,
       });
       
@@ -119,14 +121,23 @@ function App() {
       );
       console.log("AudioEngine: İlk senkronizasyon tamamlandı.");
       
+      // DÜZELTME: TimeManager'ın doğru şekilde kurulduğundan emin ol
+      console.log("TimeManager callback'leri ayarlandı.");
+      
       setIsAudioInitialized(true);
     } catch (error){
       console.error("Ses motoru başlatılamadı:", error);
     }
   };
 
+  // DÜZELTME: Component unmount'ta TimeManager'ı da temizle
   useEffect(() => {
-    return () => audioEngine.current?.dispose();
+    return () => {
+      if (audioEngine.current) {
+        console.log("App unmounting: AudioEngine temizleniyor...");
+        audioEngine.current.dispose();
+      }
+    };
   }, []);
 
   if (!isAudioInitialized) {

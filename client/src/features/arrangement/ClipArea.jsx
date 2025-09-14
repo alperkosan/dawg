@@ -20,8 +20,13 @@ export function ClipArea() {
     const BAR_WIDTH = 80;
     const totalWidth = BAR_WIDTH * (loopLength / 4) * zoomX;
 
-    usePlaybackAnimator(playheadRef, { fullWidth: totalWidth, offset: 0 });
-    
+    usePlaybackAnimator(playheadRef, { 
+        fullWidth: totalWidth, 
+        offset: 0,
+        smoothing: true, // Song modunda yumuşak geçiş
+        compensation: 'auto' // Otomatik latency kompanzasyonu
+    });
+
     const handleScroll = (e) => {
         // Bu fonksiyon şimdilik boş kalabilir, ileride kullanacağız.
     };
