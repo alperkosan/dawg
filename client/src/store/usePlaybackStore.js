@@ -8,7 +8,7 @@ import { useArrangementStore } from './useArrangementStore';
 export const usePlaybackStore = create((set, get) => ({
   // --- STATE ---
   playbackState: 'stopped',
-  bpm: 120, // BPM'i daha ritmik bir başlangıç için 120 yapalım
+  bpm: 60, // BPM'i daha ritmik bir başlangıç için 120 yapalım
   masterVolume: 0,
   transportPosition: '1:1:0', // DEĞİŞTİ: BBT formatında
   isPreviewPlaying: false,
