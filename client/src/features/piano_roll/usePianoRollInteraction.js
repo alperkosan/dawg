@@ -4,138 +4,127 @@ import { usePianoRollStore } from '../../store/usePianoRollStore';
 import { getNoteAt, deleteNotes, createNote } from './pianoRollInteractions';
 import { useInstrumentsStore } from '../../store/useInstrumentsStore';
 
+/**
+ * @file usePianoRollInteraction.js
+ * @description Piano Roll üzerindeki tüm kullanıcı etkileşimlerini (nota çizme, taşıma, silme, seçme,
+ * velocity ayarlama, kaydırma vb.) yöneten merkezi React Hook'u. Bu hook, bir state machine
+ * (durum makinesi) gibi çalışarak, o anki eylemi `interaction` state'i içinde tutar.
+ *
+ * MİMARİ NOTLARI:
+ * - State Machine: `interaction` nesnesi, `type` alanı (`creating`, `dragging` vb.) ile o anki
+ * kullanıcı eylemini tanımlar. Tüm fare hareketleri bu `type`'a göre yorumlanır.
+ * - Koordinat Sistemi: Tüm hesaplamalar, kaydırılabilir ızgara alanının (`gridContainerRef`)
+ * koordinat sistemine göre yapılır. Fare pozisyonları, `scrollLeft` ve `scrollTop`
+ * değerleri eklenerek ızgaranın mutlak pozisyonuna çevrilir.
+ * - Optimizasyon: Fonksiyonlar, gereksiz yeniden render'ları önlemek için `useCallback` ile
+ * sarmalanmıştır.
+ */
+
+// Bir değeri verilen min/max aralığında sınırlayan yardımcı fonksiyon.
 const clamp = (value, min, max) => Math.max(min, Math.min(value, max));
 
 export const usePianoRollInteraction = ({
-    notes, handleNotesChange, instrumentId, audioEngineRef,
-    noteToY, stepToX, keyHeight, stepWidth, pitchToIndex, indexToPitch, totalKeys,
+    // PROPS: Bu hook'un dış dünyadan ihtiyaç duyduğu veriler ve fonksiyonlar.
+    notes,
+    handleNotesChange,
+    instrumentId,
+    audioEngineRef,
+    noteToY, stepToX,
+    keyHeight, stepWidth,
+    pitchToIndex, indexToPitch, totalKeys,
     xToStep, yToNote,
-    gridContainerRef, keyboardWidth,
+    gridContainerRef,
     setHoveredElement,
     velocityLaneHeight
 }) => {
+    // STATE: Hook'un iç durumunu yöneten state'ler.
     const [interaction, setInteraction] = useState(null);
     const [selectedNotes, setSelectedNotes] = useState(new Set());
-    const panState = useRef({ velocityX: 0, velocityY: 0, lastX: 0, lastY: 0, isPanning: false, animationFrame: null });
+    const panState = useRef({ isPanning: false });
     
+    // STORE: Zustand store'larından gelen global state'ler ve eylemler.
     const { activeTool, lastUsedDuration, setLastUsedDuration, gridSnapValue, snapMode } = usePianoRollStore();
     const snapSteps = Tone.Time(gridSnapValue).toSeconds() / Tone.Time('16n').toSeconds();
     
-    const getNotes = () => useInstrumentsStore.getState().instruments.find(i => i.id === instrumentId)?.notes || [];
+    // YARDIMCILAR: Kod tekrarını önleyen yardımcı objeler.
+    const getNotes = useCallback(() => useInstrumentsStore.getState().instruments.find(i => i.id === instrumentId)?.notes || [], [instrumentId]);
     const commonInteractionProps = { getNotes, noteToY, stepToX, keyHeight, stepWidth, xToStep, yToNote, handleNotesChange, lastUsedDuration, instrumentId, notes };
 
-    /**
-     * Bu hook, kullanıcı bir notayı seçtiğinde "son kullanılan nota uzunluğunu" günceller.
-     * Bu sayede bir sonraki çizilecek nota, en son seçilen notanın uzunluğunda olur.
-    */
+    // Bir notanın seçilmesi durumunda, bir sonraki çizilecek notanın uzunluğunu günceller.
     useEffect(() => {
-        // Eğer seçili nota sayısı tam olarak 1 ise...
         if (selectedNotes.size === 1) {
-            // Seçili olan tek notanın ID'sini al.
             const lastSelectedId = selectedNotes.values().next().value;
-            const allNotes = getNotes();
-            const selectedNote = allNotes.find(n => n.id === lastSelectedId);
-
-            // Eğer notayı bulabildiysek...
+            const selectedNote = getNotes().find(n => n.id === lastSelectedId);
             if (selectedNote) {
-                // ...süresini merkezi state'e (store'a) kaydet.
                 setLastUsedDuration(selectedNote.duration);
             }
         }
-    }, [selectedNotes, setLastUsedDuration]); // Bu hook sadece 'selectedNotes' değiştiğinde çalışır.
-    // ========================================================================
+    }, [selectedNotes, setLastUsedDuration, getNotes]);
 
+    /**
+     * Izgara veya Velocity Lane üzerinde fareye basıldığında tetiklenir.
+     * Hangi eylemin başlayacağını belirler ve `interaction` state'ini kurar.
+     */
     const handleMouseDown = useCallback((e) => {
         const grid = gridContainerRef.current;
         if (!grid) return;
 
-        // Fikir 3: Alt tuşu ile otomasyon çizme
-        // Eğer tıklama Velocity Lane içinde ve Alt tuşu basılıysa...
-        const isVelocityLaneClick = e.target.dataset.role === 'velocity-lane-bg';
-        if (e.altKey && isVelocityLaneClick) {
-            e.preventDefault();
-            const rect = grid.getBoundingClientRect();
-            const x = e.clientX - rect.left + grid.scrollLeft - keyboardWidth;
-            const y = e.clientY - rect.top + grid.scrollTop;
-
-            setInteraction({
-                type: 'drawing-velocity',
-                startX: x,
-                startY: y,
-                drawnNotes: new Set(), // Hangi notaların üzerine çizildiğini takip et
-            });
-            return;
-        }
-
-        if (e.altKey || e.button === 1) { // Orta tuşa basmayı da yakala
-            panState.current.isPanning = true;
-            panState.current.lastX = e.clientX;
-            panState.current.lastY = e.clientY;
-            panState.current.velocityX = 0;
-            panState.current.velocityY = 0;
-            cancelAnimationFrame(panState.current.animationFrame);
+        // Eylem 1: Orta tuş veya Alt tuşu ile kaydırma (Panning)
+        if (e.altKey || e.button === 1) {
+            panState.current = { isPanning: true, lastX: e.clientX, lastY: e.clientY };
             grid.style.cursor = 'grabbing';
             e.preventDefault();
             return;
         }
 
         const rect = grid.getBoundingClientRect();
-        const x = e.clientX - rect.left + grid.scrollLeft - keyboardWidth;
+        const x = e.clientX - rect.left + grid.scrollLeft;
         const y = e.clientY - rect.top + grid.scrollTop;
+
+        // Eylem 2: Velocity Lane üzerinde Alt tuşu ile otomasyon çizme
+        if (e.altKey && e.target.dataset.role === 'velocity-lane-bg') {
+            e.preventDefault();
+            setInteraction({ type: 'drawing-velocity', lastX: x });
+            return;
+        }
 
         let interactionType = null;
         let newSelection = new Set(selectedNotes);
         const clickedNote = getNoteAt(x, y, commonInteractionProps);
-        const clickedResizeHandle = e.target.dataset.role === 'note-resize-handle';
 
-        if (clickedResizeHandle && clickedNote) {
-            return; // Yeniden boyutlandırma `Note` bileşeni tarafından başlatılıyor.
-        }
-
+        // Eylem 3: Sağ tık (Silme)
         if (e.button === 2) {
-             e.preventDefault();
-             // Sağ tık silgi gibi çalışsın
-             if (clickedNote) {
-                deleteNotes([clickedNote.id], commonInteractionProps);
-             }
-        } else {
-            switch (activeTool) {
-                case 'pencil':
-                    if (clickedNote) {
-                        interactionType = 'dragging';
-                        newSelection = new Set([clickedNote.id]);
-                    } else {
-                        // --- GÖRSEL-İŞİTSEL SENKRONİZASYON (BAŞLANGIÇ) ---
-                        // Nota çizmeye başlarken sesi de başlatıyoruz.
-                        const time = xToStep(x);
-                        const snappedTime = Math.round(time / snapSteps) * snapSteps;
-                        const pitch = yToNote(y);
-                        
-                        audioEngineRef.current?.auditionNoteOn(instrumentId, pitch);
-                        
-                        interactionType = 'creating';
-                    }
-                    break;
-                case 'eraser':
-                    interactionType = 'deleting';
-                    if (clickedNote) deleteNotes([clickedNote.id], commonInteractionProps);
-                    break;
-                case 'selection':
-                     if (clickedNote) {
-                        const noteId = clickedNote.id;
-                        if (e.shiftKey) {
-                            newSelection.has(noteId) ? newSelection.delete(noteId) : newSelection.add(noteId);
-                        } else if (!newSelection.has(noteId)) {
-                            newSelection = new Set([noteId]);
-                        }
-                        interactionType = 'dragging';
-                    } else {
-                        newSelection = new Set();
-                        interactionType = 'marquee';
-                    }
-                    break;
-                default: break;
-            }
+            e.preventDefault();
+            if (clickedNote) deleteNotes([clickedNote.id], commonInteractionProps);
+            return;
+        }
+        
+        // Eylem 4: Sol tık (Seçili araca göre değişir)
+        switch (activeTool) {
+            case 'pencil':
+                if (clickedNote) {
+                    interactionType = 'dragging';
+                    if (!selectedNotes.has(clickedNote.id)) newSelection = new Set([clickedNote.id]);
+                } else {
+                    interactionType = 'creating';
+                    const pitch = yToNote(y);
+                    audioEngineRef.current?.auditionNoteOn(instrumentId, pitch);
+                }
+                break;
+            case 'eraser':
+                if (clickedNote) deleteNotes([clickedNote.id], commonInteractionProps);
+                break;
+            case 'selection':
+                if (clickedNote) {
+                    const noteId = clickedNote.id;
+                    if (e.shiftKey) newSelection.has(noteId) ? newSelection.delete(noteId) : newSelection.add(noteId);
+                    else if (!newSelection.has(noteId)) newSelection = new Set([noteId]);
+                    interactionType = 'dragging';
+                } else {
+                    newSelection = new Set();
+                    interactionType = 'marquee';
+                }
+                break;
         }
         
         setSelectedNotes(newSelection);
@@ -147,160 +136,115 @@ export const usePianoRollInteraction = ({
 
             setInteraction({
                 type: interactionType,
-                startX: e.clientX,
-                startY: e.clientY,
-                gridStartX: x,
-                gridStartY: y,
+                startX: e.clientX, startY: e.clientY, startTime: Date.now(),
+                gridStartX: x, gridStartY: y,
                 notesToDrag,
-                // Oluşturulan notanın pitch'ini state'te tutuyoruz ki mouseUp'ta sesi durdurabilelim
-                createdNotePitch: (interactionType === 'creating') ? yToNote(y) : null,
-                deletedNotes: new Set(),
+                createdNotePitch: (interactionType === 'creating') ? yToNote(y) : null
             });
         }
-    }, [activeTool, commonInteractionProps, selectedNotes, gridContainerRef, keyboardWidth, snapSteps, instrumentId, audioEngineRef]);
-
+    }, [activeTool, commonInteractionProps, selectedNotes, gridContainerRef, snapSteps, instrumentId, audioEngineRef, pitchToIndex, yToNote, getNotes]);
+    
+    /**
+     * Fare hareket ettiğinde tetiklenir.
+     * Başlatılmış olan eyleme (`interaction.type`) göre işlem yapar.
+     */
     const handleMouseMove = useCallback((e) => {
-        const { isPanning, lastX, lastY } = panState.current;
-        if (isPanning) {
-            const dx = e.clientX - lastX;
-            const dy = e.clientY - lastY;
-            gridContainerRef.current.scrollLeft -= dx;
-            gridContainerRef.current.scrollTop -= dy;
-            panState.current.velocityX = dx;
-            panState.current.velocityY = dy;
+        const grid = gridContainerRef.current;
+        if (!grid) return;
+
+        if (panState.current.isPanning) {
+            const dx = e.clientX - panState.current.lastX;
+            const dy = e.clientY - panState.current.lastY;
+            grid.scrollLeft -= dx;
+            grid.scrollTop -= dy;
             panState.current.lastX = e.clientX;
             panState.current.lastY = e.clientY;
             return;
         }
+        
+        const rect = grid.getBoundingClientRect();
+        const currentX = e.clientX - rect.left + grid.scrollLeft;
+        const currentY = e.clientY - rect.top + grid.scrollTop;
+
+        // Hayalet nota (Ghost Note) mantığı
+        if (!interaction && activeTool === 'pencil') {
+            const snappedTime = Math.round(xToStep(currentX) / snapSteps) * snapSteps;
+            const pitch = yToNote(currentY);
+            setInteraction({ ghostNote: { time: snappedTime, pitch, duration: lastUsedDuration, id: 'ghost', velocity: 1.0 }});
+            return;
+        }
+        
+        if (interaction && interaction.ghostNote) {
+             setInteraction(null); // Gerçek eylem başlayınca hayaleti kaldır.
+        }
 
         if (!interaction) return;
         
-        const grid = gridContainerRef.current;
-        const rect = grid.getBoundingClientRect();
-        const currentX = e.clientX - rect.left + grid.scrollLeft - keyboardWidth;
-        const currentY = e.clientY - rect.top + grid.scrollTop;
-        let updatedInteraction = { ...interaction };
+        let updatedInteraction = { ...interaction, currentX, currentY };
 
         switch (interaction.type) {
             case 'dragging':
-                // --- IZGARA SİSTEMİ (DRAGGING) ---
-                // Bu bölüm, sürükleme sırasında hem 'hard' hem de 'soft' snap modunu destekliyor.
-                const dx = currentX - interaction.gridStartX;
-                const dy = currentY - interaction.gridStartY;
-
-                let dxSteps;
-                const totalDxSteps = dx / stepWidth;
-                
-                if (snapMode === 'soft') {
-                    const snapThreshold = snapSteps * 0.3;
-                    const nearestSnapPoint = Math.round(totalDxSteps / snapSteps) * snapSteps;
-                    const distanceFromSnap = Math.abs(totalDxSteps - nearestSnapPoint);
-                    dxSteps = (distanceFromSnap <= snapThreshold) ? nearestSnapPoint : totalDxSteps;
-                } else {
-                    dxSteps = Math.round(totalDxSteps / snapSteps) * snapSteps;
-                }
-                
-                const dySteps = Math.round(dy / keyHeight);
-
+                const dxSteps = Math.round(((currentX - interaction.gridStartX) / stepWidth) / snapSteps) * snapSteps;
+                const dySteps = Math.round((currentY - interaction.gridStartY) / keyHeight);
                 updatedInteraction.previewNotes = interaction.notesToDrag
-                    // 1. ADIM: Hesaplama yapmadan önce 'originalTime' değeri olmayan veya
-                    // sayı olmayan notaları filtreleyerek işlemi güvenli hale getiriyoruz.
                     .filter(note => typeof note.originalTime === 'number' && !isNaN(note.originalTime))
-                    .map(note => {
-                        // 2. ADIM: Her ihtimale karşı 'originalTime' değerini kontrol ediyoruz.
-                        const baseTime = note.originalTime || 0;
-                        const newTime = Math.max(0, baseTime + dxSteps);
-                        const newPitchIndex = clamp(note.originalPitchIndex - dySteps, 0, totalKeys - 1);
-                        return { ...note, time: newTime, pitch: indexToPitch(newPitchIndex) };
-                    });
+                    .map(note => ({ ...note, time: Math.max(0, note.originalTime + dxSteps), pitch: indexToPitch(clamp(note.originalPitchIndex - dySteps, 0, totalKeys - 1)) }));
                 break;
-
-            case 'deleting':
-                const noteToDelete = getNoteAt(currentX, currentY, commonInteractionProps);
-                if (noteToDelete && !updatedInteraction.deletedNotes.has(noteToDelete.id)) {
-                    updatedInteraction.deletedNotes.add(noteToDelete.id);
-                    deleteNotes([noteToDelete.id], commonInteractionProps);
-                }
-                break;
-            
             case 'creating':
-                // --- IZGARA SİSTEMİ (CREATING) ---
-                // Nota oluştururken de hem pozisyonu hem de uzunluğu ızgaraya hizalıyoruz.
-                const time = xToStep(interaction.gridStartX);
-                const snappedTime = Math.round(time / snapSteps) * snapSteps;
-                const pitch = yToNote(interaction.gridStartY);
-
-                const duration = xToStep(currentX - stepToX(snappedTime));
-                const snappedDuration = Math.max(snapSteps, Math.round(duration / snapSteps) * snapSteps);
-
-                updatedInteraction.previewNote = {
-                    time: snappedTime,
-                    pitch: pitch,
+                 const duration = xToStep(currentX - interaction.gridStartX);
+                 const snappedDuration = Math.max(snapSteps, Math.round(duration / snapSteps) * snapSteps);
+                 updatedInteraction.previewNote = {
+                    time: Math.round(xToStep(interaction.gridStartX) / snapSteps) * snapSteps,
+                    pitch: yToNote(interaction.gridStartY),
                     duration: Tone.Time(snappedDuration * Tone.Time('16n').toSeconds()).toNotation(),
-                    velocity: 1.0,
-                    id: 'preview'
-                };
-                break;
-
+                    velocity: 1.0, id: 'preview'
+                 };
+                 break;
             case 'marquee':
-                // ... (Marquee mantığı aynı kalıyor)
-                const x1 = Math.min(interaction.gridStartX, currentX);
-                const y1 = Math.min(interaction.gridStartY, currentY);
-                const x2 = Math.max(interaction.gridStartX, currentX);
-                const y2 = Math.max(interaction.gridStartY, currentY);
                 const selectedIds = new Set();
+                const [x1, x2] = [Math.min(interaction.gridStartX, currentX), Math.max(interaction.gridStartX, currentX)];
+                const [y1, y2] = [Math.min(interaction.gridStartY, currentY), Math.max(interaction.gridStartY, currentY)];
                 getNotes().forEach(note => {
                     const noteY = noteToY(note.pitch);
                     const noteX = stepToX(note.time);
-                    if (noteX < x2 && noteX + stepWidth > x1 && noteY < y2 && noteY + keyHeight > y1) {
-                        selectedIds.add(note.id);
-                    }
+                    if (noteX < x2 && noteX + stepWidth > x1 && noteY < y2 && noteY + keyHeight > y1) selectedIds.add(note.id);
                 });
                 setSelectedNotes(selectedIds);
-                updatedInteraction.currentX = currentX;
-                updatedInteraction.currentY = currentY;
                 break;
-
-            // Fikir 3: Otomasyon çizme mantığı
             case 'drawing-velocity':
-                const velocityLaneRect = e.currentTarget.getBoundingClientRect();
-                const relativeY = e.clientY - velocityLaneRect.top - (velocityLaneRect.height - velocityLaneHeight);
+                const gridRect = grid.getBoundingClientRect();
+                const velocityLaneTop = gridRect.top + (gridRect.height - velocityLaneHeight);
+                const relativeY = e.clientY - velocityLaneTop;
                 const newVelocity = clamp(1 - (relativeY / velocityLaneHeight), 0.01, 1);
-                
-                const allNotes = getNotes();
-                const startX = Math.min(interaction.startX, currentX);
-                const endX = Math.max(interaction.startX, currentX);
-                
-                const notesToUpdate = allNotes.filter(note => {
+
+                const startX = Math.min(interaction.lastX || currentX, currentX);
+                const endX = Math.max(interaction.lastX || currentX, currentX);
+
+                const notesToUpdate = getNotes().filter(note => {
                     const noteX = stepToX(note.time);
                     return noteX >= startX && noteX <= endX;
                 });
-                
                 if (notesToUpdate.length > 0) {
                     const idsToUpdate = new Set(notesToUpdate.map(n => n.id));
-                    handleNotesChange(prev => 
-                        prev.map(n => idsToUpdate.has(n.id) ? { ...n, velocity: newVelocity } : n)
-                    );
+                    handleNotesChange(prev => prev.map(n => idsToUpdate.has(n.id) ? { ...n, velocity: newVelocity } : n));
                 }
-                
-                updatedInteraction.startX = currentX; // "Çizgiyi" devam ettirmek için başlangıç noktasını güncelle
+                updatedInteraction.lastX = currentX;
                 break;
         }
         setInteraction(updatedInteraction);
-    }, [interaction, stepWidth, keyHeight, snapSteps, indexToPitch, noteToY, stepToX, keyboardWidth, gridContainerRef, commonInteractionProps, snapMode]);
-
+    }, [interaction, activeTool, stepWidth, keyHeight, snapSteps, indexToPitch, noteToY, stepToX, gridContainerRef, commonInteractionProps, totalKeys, lastUsedDuration, xToStep, yToNote, getNotes, velocityLaneHeight, handleNotesChange]);
+    
+    /**
+     * Fare bırakıldığında tetiklenir ve eylemi sonlandırır.
+     */
     const handleMouseUp = useCallback((e) => {
-        // ... (Pan mantığı aynı kalıyor)
         if (panState.current.isPanning) {
             panState.current.isPanning = false;
-            gridContainerRef.current.style.cursor = 'grab';
-            // ... (inertiaLoop)
+            if (gridContainerRef.current) gridContainerRef.current.style.cursor = 'default';
         }
 
         if (!interaction) return;
-
-        // --- GÖRSEL-İŞİTSEL SENKRONİZASYON (BİTİŞ) ---
-        // Eğer bir nota oluşturuluyorduysa, fare bırakıldığında sesi durdur.
+        
         if (interaction.type === 'creating' && interaction.createdNotePitch) {
             audioEngineRef.current?.auditionNoteOff(instrumentId, interaction.createdNotePitch);
         }
@@ -309,52 +253,52 @@ export const usePianoRollInteraction = ({
             case 'dragging':
                 if (interaction.previewNotes) {
                     const movedNotesMap = new Map(interaction.previewNotes.map(n => [n.id, { time: n.time, pitch: n.pitch }]));
-                    handleNotesChange(prevNotes => 
-                        prevNotes.map(n => movedNotesMap.has(n.id) ? { ...n, ...movedNotesMap.get(n.id) } : n)
-                    );
+                    handleNotesChange(prevNotes => prevNotes.map(n => movedNotesMap.has(n.id) ? { ...n, ...movedNotesMap.get(n.id) } : n));
                 }
                 break;
-            
             case 'creating':
-                if (interaction.previewNote) {
+                const DRAG_THRESHOLD_PIXELS = 5, TAP_THRESHOLD_MS = 150;
+                const timeElapsed = Date.now() - interaction.startTime;
+                const distanceDragged = Math.hypot(e.clientX - interaction.startX, e.clientY - interaction.startY);
+                const isQuickTap = distanceDragged < DRAG_THRESHOLD_PIXELS || timeElapsed < TAP_THRESHOLD_MS;
+
+                if (isQuickTap) {
+                    const time = xToStep(interaction.gridStartX);
+                    const pitch = yToNote(interaction.gridStartY);
+                    const newNote = createNote({ time: Math.round(time / snapSteps) * snapSteps, pitch, duration: lastUsedDuration }, commonInteractionProps);
+                    setSelectedNotes(new Set([newNote.id]));
+                } 
+                else if (interaction.previewNote && Tone.Time(interaction.previewNote.duration).toSeconds() > 0) {
                     const { time, pitch, duration } = interaction.previewNote;
-                    // Önizlemedeki nota geçerliyse, gerçek notayı oluştur.
-                    if (Tone.Time(duration).toSeconds() > 0) {
-                        createNote({ time, pitch, duration }, commonInteractionProps);
-                        setLastUsedDuration(duration); // Bu uzunluğu bir sonraki nota için hatırla
-                    }
+                    const newNote = createNote({ time, pitch, duration }, commonInteractionProps);
+                    setLastUsedDuration(duration);
+                    setSelectedNotes(new Set([newNote.id]));
                 }
                 break;
         }
         setInteraction(null);
-    }, [interaction, handleNotesChange, setLastUsedDuration, gridContainerRef, commonInteractionProps, instrumentId, audioEngineRef]);
+    }, [interaction, handleNotesChange, setLastUsedDuration, xToStep, yToNote, snapSteps, lastUsedDuration, instrumentId, audioEngineRef]);
 
+    /**
+     * Bir notanın kenarından tutulup yeniden boyutlandırılması eylemini yönetir.
+     */
     const handleResizeStart = useCallback((note, e) => {
-        e.preventDefault();
-        e.stopPropagation();
+        e.preventDefault(); e.stopPropagation();
         const startDurationSteps = Tone.Time(note.duration).toSeconds() / Tone.Time('16n').toSeconds();
-        
-        // --- GÖRSEL-İŞİTSEL SENKRONİZASYON (RESIZE) ---
-        // Boyutlandırma başladığında notayı çal.
         audioEngineRef.current?.auditionNoteOn(instrumentId, note.pitch);
 
         const handleResizeMove = (moveEvent) => {
             const dx = moveEvent.clientX - e.clientX;
-            const dSteps = dx / stepWidth;
-            const newDurationSteps = Math.max(snapSteps, startDurationSteps + dSteps);
+            const newDurationSteps = Math.max(snapSteps, startDurationSteps + (dx / stepWidth));
             const newDuration = Tone.Time(newDurationSteps * Tone.Time('16n').toSeconds()).toNotation();
-            
-            // Sadece önizlemeyi güncelle, asıl state'i mouseUp'ta değiştir.
             setInteraction({ type: 'resizing', note, previewNote: { ...note, duration: newDuration } });
         };
 
         const handleResizeUp = (upEvent) => {
             window.removeEventListener('mousemove', handleResizeMove);
             window.removeEventListener('mouseup', handleResizeUp);
-            
-            // Sesi durdur.
             audioEngineRef.current?.auditionNoteOff(instrumentId, note.pitch);
-
+            
             const dx = upEvent.clientX - e.clientX;
             const dSteps = dx / stepWidth;
             const finalDurationSteps = Math.max(snapSteps, Math.round((startDurationSteps + dSteps) / snapSteps) * snapSteps);
@@ -369,135 +313,74 @@ export const usePianoRollInteraction = ({
         window.addEventListener('mousemove', handleResizeMove);
         window.addEventListener('mouseup', handleResizeUp);
     }, [stepWidth, snapSteps, handleNotesChange, setLastUsedDuration, instrumentId, audioEngineRef]);
+    
+    // --- Velocity Lane Interaksiyonları ---
 
-    // ========================================================================
-    // === YENİ VE GÜNCELLENMİŞ FONKSİYONLAR BÖLÜMÜ ===
-    // ========================================================================
-
-    /**
-     * Fikir 2: Seçilen Notaları Toplu Düzenleme Mantığı
-     * Velocity sürüklemesini başlatır. Eğer sürüklenen nota seçiliyse,
-     * tüm seçili notaların velocity'sini oransal olarak değiştirir.
-     */
     const initiateVelocityDrag = useCallback((note, e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        
+        e.preventDefault(); e.stopPropagation();
         const startY = e.clientY;
         const isNoteSelected = selectedNotes.has(note.id);
-        
-        // Sürükleme başlangıcındaki tüm seçili notaların orijinal velocity değerlerini sakla.
         const startVelocities = new Map();
-        if (isNoteSelected) {
-            const currentNotes = getNotes();
-            currentNotes.forEach(n => {
-                if (selectedNotes.has(n.id)) {
-                    startVelocities.set(n.id, n.velocity);
-                }
-            });
-        } else {
-            // Eğer nota seçili değilse, sadece o notanınkini sakla.
-            startVelocities.set(note.id, note.velocity);
-        }
+        (isNoteSelected ? getNotes().filter(n => selectedNotes.has(n.id)) : [note]).forEach(n => {
+            startVelocities.set(n.id, n.velocity);
+        });
         
         const handleVelocityMove = (moveEvent) => {
             const dy = startY - moveEvent.clientY;
-            const sensitivity = moveEvent.shiftKey ? 0.002 : 0.008;
-            const velocityChange = dy * sensitivity;
-
-            handleNotesChange(prevNotes => 
-                prevNotes.map(n => {
-                    if (startVelocities.has(n.id)) {
-                        const startVelocity = startVelocities.get(n.id);
-                        const newVelocity = clamp(startVelocity + velocityChange, 0.01, 1);
-                        return { ...n, velocity: newVelocity };
-                    }
-                    return n;
-                })
-            );
+            const velocityChange = dy * (moveEvent.shiftKey ? 0.002 : 0.008);
+            handleNotesChange(prevNotes => prevNotes.map(n => {
+                if (startVelocities.has(n.id)) {
+                    return { ...n, velocity: clamp(startVelocities.get(n.id) + velocityChange, 0.01, 1) };
+                }
+                return n;
+            }));
         };
 
         const handleVelocityUp = () => {
             window.removeEventListener('mousemove', handleVelocityMove);
             window.removeEventListener('mouseup', handleVelocityUp);
         };
-
         window.addEventListener('mousemove', handleVelocityMove);
         window.addEventListener('mouseup', handleVelocityUp);
     }, [handleNotesChange, selectedNotes, getNotes]);
     
-    // ========================================================================
-    // === YENİ FONKSİYON: Seçim Mantığı ve Sürüklemeyi Birleştiriyor ===
-    // ========================================================================
-
-    /**
-     * Velocity çubuğuna tıklandığında çalışır.
-     * 1. Shift tuşu durumuna göre nota seçimini günceller.
-     * 2. Velocity değerini değiştirmek için sürükleme işlemini başlatır.
-     */
     const handleVelocityBarMouseDown = useCallback((note, e) => {
-        // Eğer Shift tuşuna basılıyorsa, notayı mevcut seçime ekle/çıkar (çoklu seçim)
         if (e.shiftKey) {
-            setSelectedNotes(prevSelected => {
-                const newSelection = new Set(prevSelected);
-                if (newSelection.has(note.id)) {
-                    newSelection.delete(note.id);
-                } else {
-                    newSelection.add(note.id);
-                }
+            setSelectedNotes(prev => {
+                const newSelection = new Set(prev);
+                newSelection.has(note.id) ? newSelection.delete(note.id) : newSelection.add(note.id);
                 return newSelection;
             });
-        } 
-        // Eğer Shift tuşuna basılı değilse, sadece tıklanan notayı seç
-        else if (!selectedNotes.has(note.id)) {
+        } else if (!selectedNotes.has(note.id)) {
             setSelectedNotes(new Set([note.id]));
         }
-
-        // Seçim güncellendikten sonra, sürükleme işlemini başlat.
         initiateVelocityDrag(note, e);
+    }, [setSelectedNotes, initiateVelocityDrag]);
 
-    }, [selectedNotes, setSelectedNotes, initiateVelocityDrag]);
-    
-    /**
-     * Fikir 1: Scroll ile Değer Değiştirme
-     * Bir velocity çubuğu üzerinde fare tekerleği döndürüldüğünde çalışır.
-     */
     const handleVelocityWheel = useCallback((note, e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        
-        const changeAmount = -e.deltaY * 0.001; // hassasiyet ayarı
-        handleNotesChange(prev =>
-            prev.map(n => 
-                n.id === note.id 
-                ? { ...n, velocity: clamp(n.velocity + changeAmount, 0.01, 1) } 
-                : n
-            )
-        );
-    }, [handleNotesChange]);
+        e.preventDefault(); e.stopPropagation();
+        const changeAmount = -e.deltaY * 0.0015;
+        const notesToUpdate = (e.altKey && selectedNotes.has(note.id)) ? selectedNotes : new Set([note.id]);
+        handleNotesChange(prev => prev.map(n => notesToUpdate.has(n.id) ? { ...n, velocity: clamp(n.velocity + changeAmount, 0.01, 1) } : n));
+    }, [handleNotesChange, selectedNotes]);
 
+    // Global 'mouseup' dinleyicisi, herhangi bir eylemi sonlandırmak için.
     useEffect(() => {
-        const upHandler = (e) => handleMouseUp(e);
-        const gridEl = gridContainerRef.current;
-        const handleMouseLeave = (e) => {
-            if (interaction) {
-                handleMouseUp(e);
-            }
-        }
+        const upHandler = (e) => {
+            if (panState.current.isPanning || interaction) handleMouseUp(e);
+        };
         window.addEventListener('mouseup', upHandler);
-        gridEl?.addEventListener('mouseleave', handleMouseLeave);
-        return () => {
-            window.removeEventListener('mouseup', upHandler);
-            gridEl?.removeEventListener('mouseleave', handleMouseLeave);
-        }
+        return () => window.removeEventListener('mouseup', upHandler);
     }, [handleMouseUp, interaction]);
 
+    // Hook'un dış dünyaya açtığı arayüz.
     return { 
-        interactionProps: { onMouseDown: handleMouseDown, onMouseMove: handleMouseMove }, 
-        selectedNotes, 
+        interactionProps: { onMouseDown: handleMouseDown, onMouseMove: handleMouseMove },
+        selectedNotes,
         interaction,
-        handleVelocityBarMouseDown, handleVelocityWheel,
+        handleVelocityBarMouseDown,
+        handleVelocityWheel,
         handleResizeStart,
-        setSelectedNotes
+        setSelectedNotes,
     };
 };

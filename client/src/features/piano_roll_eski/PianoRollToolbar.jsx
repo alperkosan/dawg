@@ -23,10 +23,6 @@ export function PianoRollToolbar() {
         { value: '8n', label: '1/8' }, { value: '4n', label: '1/4' },
     ];
 
-    // === YENİ: Butonlar artık prop olarak gelen onZoom'u çağırıyor ===
-    const handleZoomIn = () => onZoom(0.1, 0);
-    const handleZoomOut = () => onZoom(-0.1, 0);
-
     return (
         <div className="bg-gray-900/80 backdrop-blur-sm p-2 flex items-center justify-between border-b-2 border-gray-950 shrink-0">
             <div className="flex items-center gap-2">
@@ -55,6 +51,7 @@ export function PianoRollToolbar() {
                 </button>
             </div>
 
+            {/* ... (geri kalan kod aynı) ... */}
             <div className="flex items-center gap-3">
                  <Scale size={18} className="text-indigo-400" />
                  <select value={scale.root} onChange={(e) => setScale(e.target.value, scale.type)} className="bg-gray-700 rounded px-2 py-1 text-xs">
@@ -69,8 +66,8 @@ export function PianoRollToolbar() {
             </div>
 
             <div className="flex items-center gap-2">
-                 <button onClick={handleZoomOut} title="Uzaklaş" className="p-2 rounded-md bg-[var(--color-surface2)] hover:bg-[var(--color-surface)]"><ZoomOut size={16} /></button>
-                 <button onClick={handleZoomIn} title="Yakınlaş" className="p-2 rounded-md bg-[var(--color-surface2)] hover:bg-[var(--color-surface)]"><ZoomIn size={16} /></button>
+                 <button onClick={zoomOut} title="Uzaklaş" className="p-2 rounded-md bg-[var(--color-surface2)] hover:bg-[var(--color-surface)]"><ZoomOut size={16} /></button>
+                 <button onClick={zoomIn} title="Yakınlaş" className="p-2 rounded-md bg-[var(--color-surface2)] hover:bg-[var(--color-surface)]"><ZoomIn size={16} /></button>
             </div>
         </div>
     );
