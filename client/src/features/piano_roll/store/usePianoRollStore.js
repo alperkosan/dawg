@@ -22,6 +22,10 @@ export const SCALES = {
 
 const clamp = (value, min, max) => Math.max(min, Math.min(value, max));
 
+const updateNotesInArrangement = (instrumentId, newNotes) => {
+  useArrangementStore.getState().updatePatternNotes(instrumentId, newNotes);
+};
+
 export const usePianoRollStore = create(
   persist(
     (set, get) => ({

@@ -8,51 +8,62 @@ import { PianoRollToolbar } from './PianoRollToolbar';
 import VelocityLane from './VelocityLane';
 import ResizableHandle from '../../../ui/ResizableHandle';
 
-// YENİ HOOK'LARI İMPORT ET
+// ✅ DOĞRU HOOK'LARI İMPORT ET
 import { useViewportTracking } from '../hooks/useViewportTracking';
-import { usePianoRollInteractions } from '../hooks/usePianoRollInteractions'; // Bu güncellenmiş versiyon
+import { usePianoRollInteractions } from '../hooks/usePianoRollInteractions';
+import { usePianoRollState } from '../hooks/usePianoRollState';
+import { useViewport } from '../hooks/useViewport'; // [!code focus]
 
-// STORE'LARI İMPORT ET
+// ✅ STORE'LARI DOĞRU ŞEKILDE İMPORT ET
 import { useInstrumentsStore } from '../../../store/useInstrumentsStore';
 import { usePianoRollStore } from '../store/usePianoRollStore';
 import { useArrangementStore } from '../../../store/useArrangementStore';
 import { usePlaybackAnimator } from '../../../hooks/usePlaybackAnimator';
 import { usePlaybackStore } from '../../../store/usePlaybackStore';
 
-// CSS'i import et (eğer yoksa oluştur)
 import '../PianoRoll.css';
 
 const totalOctaves = 8;
 const totalKeys = totalOctaves * 12;
 
-function PianoRoll({ instrument, audioEngineRef }) {
+// ✅ ANA NOTES VERİSİNİ DOĞRUDAN PROPS'LARDAN AL
+function PianoRoll({ instrument, audioEngineRef, pattern, onPatternChange, playbackState }) {
+    console.log("instrument");
+    console.log(instrument);
+
     const scrollContainerRef = useRef(null);
     const playheadRef = useRef(null);
+    const { updatePatternNotes } = useArrangementStore();
+    const handleNotesChange = (newNotes) => {
+        updatePatternNotes(instrument?.id, newNotes);
+    };
 
     const KEYBOARD_WIDTH = 96;
     const RULER_HEIGHT = 32;
 
-    // YENİ: Viewport tracking hook'unu kullan
-    const viewport = useViewportTracking(scrollContainerRef);
+    // ✅ VIEWPORT TRACKING
+    const pianoRollState = usePianoRollState(pattern, onPatternChange);
+    const { notes, setSelectedNotes, scale, tool, zoom, snapSettings,  } = pianoRollState;
+    const viewport = useViewport(scrollContainerRef, pianoRollState); // [!code focus]
 
+    // ✅ PIANO ROLL UI AYARLARI
     const { 
         activeTool, zoomX, zoomY, velocityLaneHeight, 
         setVelocityLaneHeight, toggleVelocityLane,
-        // YENİ: Zoom to selection için target scroll
         targetScroll
     } = usePianoRollStore();
     
-    const { patterns, activePatternId, updatePatternNotes } = useArrangementStore();
+    // ✅ PLAYBACK DURUMU
+    const { playbackMode } = usePlaybackStore();
     const loopLength = useInstrumentsStore(state => state.loopLength);
-    const playbackMode = usePlaybackStore(state => state.playbackMode);
 
-    const activePattern = patterns[activePatternId];
+    // ✅ MEVCUT NOTES VERİSİ - Props'tan gelir
     const currentNotes = useMemo(() => 
-        activePattern?.data[instrument?.id] || [], 
-        [activePattern, instrument?.id]
+        pattern?.notes || [], 
+        [pattern?.notes]
     );
 
-    // Boyut hesaplamaları - memoized
+    // ✅ GRID BOYUTLARI
     const gridDimensions = useMemo(() => ({
         stepWidth: 40 * zoomX,
         keyHeight: 20 * zoomY,
@@ -60,9 +71,10 @@ function PianoRoll({ instrument, audioEngineRef }) {
         gridHeight: totalKeys * 20 * zoomY
     }), [zoomX, zoomY, loopLength]);
 
-    // Coordinate conversion functions - memoized
+    // ✅ KOORDİNAT ÇEVİRİM FONKSİYONLARI
     const coordinateConverters = useMemo(() => {
         const { stepWidth, keyHeight } = gridDimensions;
+        const NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
         
         return {
             pitchToIndex: (pitch) => (
@@ -85,15 +97,7 @@ function PianoRoll({ instrument, audioEngineRef }) {
         };
     }, [gridDimensions]);
 
-    const handleNotesChange = useCallback((newNotes) => {
-        if (instrument) {
-            updatePatternNotes(
-                instrument.id, 
-                typeof newNotes === 'function' ? newNotes(currentNotes) : newNotes
-            );
-        }
-    }, [instrument, currentNotes, updatePatternNotes]);
-
+    // ✅ ETKILEŞIM HOOK'U
     const { 
         interactionProps, selectedNotes, interaction, 
         handleVelocityBarMouseDown, handleVelocityWheel, handleResizeStart 
@@ -108,11 +112,10 @@ function PianoRoll({ instrument, audioEngineRef }) {
         gridContainerRef: scrollContainerRef,
         keyboardWidth: KEYBOARD_WIDTH, 
         velocityLaneHeight,
-        // YENİ: Viewport bilgisini interaction'a gönder
         viewport
     });
 
-    // Playback animator
+    // ✅ PLAYBACK ANIMATOR
     usePlaybackAnimator(playheadRef, { 
         fullWidth: gridDimensions.gridWidth, 
         offset: KEYBOARD_WIDTH,
@@ -120,7 +123,7 @@ function PianoRoll({ instrument, audioEngineRef }) {
         compensation: 'auto'
     });
 
-    // YENİ: Target scroll effect - zoom to selection için
+    // ✅ TARGET SCROLL EFFECT
     useEffect(() => {
         if (targetScroll && scrollContainerRef.current) {
             scrollContainerRef.current.scrollTo({
@@ -131,6 +134,7 @@ function PianoRoll({ instrument, audioEngineRef }) {
         }
     }, [targetScroll]);
 
+    // ✅ INSTRUMENT KONTROL
     if (!instrument) {
         return (
             <div className="w-full h-full flex flex-col">
@@ -149,7 +153,6 @@ function PianoRoll({ instrument, audioEngineRef }) {
         <div className="w-full h-full flex flex-col bg-[var(--color-background)] text-white select-none">
             <PianoRollToolbar />
             <div className="flex-grow min-h-0 relative">
-                {/* ANA KAYDIRILABİLİR ALAN - YENİ: Performance optimizasyonları */}
                 <div
                     ref={scrollContainerRef}
                     className="w-full h-full overflow-auto piano-roll-scroll"
@@ -159,7 +162,6 @@ function PianoRoll({ instrument, audioEngineRef }) {
                     }}
                     {...interactionProps}
                 >
-                    {/* TÜM İÇERİĞİ TUTAN KONTEYNER */}
                     <div
                         className="relative piano-roll-container"
                         style={{
@@ -189,9 +191,8 @@ function PianoRoll({ instrument, audioEngineRef }) {
                             }}
                         >
                             <TimelineRuler 
-                                loopLength={loopLength} 
-                                zoomX={zoomX} 
-                                stepWidth={gridDimensions.stepWidth} 
+                                viewport={viewport}
+                                playbackState={playbackState}
                             />
                         </div>
 
@@ -199,13 +200,16 @@ function PianoRoll({ instrument, audioEngineRef }) {
                         <div
                             className="sticky left-0 z-20"
                             style={{ 
-                                top: RULER_HEIGHT, 
-                                width: KEYBOARD_WIDTH, 
+                                top: RULER_HEIGHT,
+                                width: KEYBOARD_WIDTH,
                                 height: gridDimensions.gridHeight,
                                 contain: 'layout style paint'
                             }}
                         >
                             <PianoKeyboard
+                                viewport={viewport} 
+                                scale={scale}
+
                                 keyHeight={gridDimensions.keyHeight}
                                 onKeyInteraction={(pitch, type) => 
                                     type === 'on' ? 
@@ -215,7 +219,7 @@ function PianoRoll({ instrument, audioEngineRef }) {
                             />
                         </div>
 
-                        {/* ANA IZGARA ALANI - YENİ: Optimize edilmiş grid */}
+                        {/* ANA IZGARA ALANI */}
                         <div
                             className="absolute z-10"
                             style={{ 
@@ -239,7 +243,6 @@ function PianoRoll({ instrument, audioEngineRef }) {
                                 interaction={interaction} 
                                 playbackMode={playbackMode} 
                                 playheadRef={playheadRef}
-                                // YENİ: Viewport bilgisi
                                 viewport={viewport}
                             />
                         </div>
@@ -247,7 +250,7 @@ function PianoRoll({ instrument, audioEngineRef }) {
                         {/* VELOCITY LANE */}
                         {velocityLaneHeight > 0 && (
                             <div 
-                                className="absolute left-0" 
+                                className="absolute left-0"
                                 style={{ 
                                     top: RULER_HEIGHT + gridDimensions.gridHeight, 
                                     width: '100%', 
@@ -263,8 +266,9 @@ function PianoRoll({ instrument, audioEngineRef }) {
                                      <div className="w-24 shrink-0 bg-gray-800 border-r border-black"></div>
                                      <div className="flex-grow relative">
                                         <VelocityLane 
-                                            notes={currentNotes} 
+                                            notes={currentNotes}
                                             selectedNotes={selectedNotes} 
+                                            viewport={viewport}
                                             gridWidth={gridDimensions.gridWidth}
                                             stepToX={coordinateConverters.stepToX} 
                                             stepWidth={gridDimensions.stepWidth} 

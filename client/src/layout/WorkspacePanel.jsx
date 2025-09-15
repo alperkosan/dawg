@@ -12,14 +12,16 @@ import { panelRegistry, panelDefinitions } from '../config/panelConfig';
 function WorkspacePanel({ audioEngineRef }) {
   // --- Panellerin genel durumunu yöneten store ---
   const {
-    panels, panelStack, fullscreenPanel,
-    bringPanelToFront, togglePanel, handleMinimize, handleMaximize,
-    updatePanelState
+    panels, panelStack, fullscreenPanel, pianoRollInstrumentId, editingInstrumentId,
+    bringPanelToFront, togglePanel, handleMinimize, handleMaximize, updatePanelState
   } = usePanelsStore();
 
-  // --- Enstrüman verilerini alan store'lar ---
-  const editingInstrument = useInstrumentsStore(state => state.instruments.find(i => i.id === usePanelsStore.getState().editingInstrumentId));
-  const pianoRollInstrumentId = usePanelsStore(state => state.pianoRollInstrumentId);
+  const instruments = useInstrumentsStore(state => state.instruments);
+
+  // --- ANAHTAR DÜZELTME BURADA ---
+  // Piano Roll için seçili olan tam enstrüman nesnesini ID'sini kullanarak buluyoruz.
+  const pianoRollInstrument = instruments.find(i => i.id === pianoRollInstrumentId);
+  const editingInstrument = instruments.find(i => i.id === editingInstrumentId);
   
   // --- YENİ: Piano Roll için gerekli verileri ilgili store'lardan çekiyoruz ---
   const { patterns, activePatternId, updatePatternNotes } = useArrangementStore();
@@ -52,23 +54,36 @@ function WorkspacePanel({ audioEngineRef }) {
           }
           
           if (panel.id === 'piano-roll') {
-            // Yeni Piano Roll'un ihtiyaç duyduğu tüm props'ları hazırlıyoruz
+            // YENİ SİSTEMİN BEKLEDİĞİ PROPS'LARI HAZIRLIYORUZ
+            
+            // 1. Hangi enstrümanın düzenleneceğini ID olarak gönderiyoruz
             componentProps.instrumentId = pianoRollInstrumentId;
-            componentProps.pattern = activePattern; // Aktif pattern'in tüm verisi
+            componentProps.instrument = pianoRollInstrument;
+
+            // 2. O anki aktif pattern'in, bu enstrümana ait notalarını alıyoruz
+            const instrumentNotes = activePattern?.data[pianoRollInstrumentId] || [];
+            const patternForPianoRoll = {
+                id: activePattern?.id,
+                name: activePattern?.name,
+                notes: instrumentNotes
+            };
+            componentProps.pattern = patternForPianoRoll;
+            
+            // 3. Notalar değiştiğinde ana state'i güncelleyecek fonksiyonu gönderiyoruz
             componentProps.onPatternChange = (newPatternData) => {
-                // Nota değişikliklerini doğrudan arrangement store'una iletiyoruz
                 if (pianoRollInstrumentId) {
                     updatePatternNotes(pianoRollInstrumentId, newPatternData.notes);
                 }
             };
-            componentProps.audioEngine = audioEngineRef.current;
+
+            // 4. Ses motoru ve çalma durumu bilgilerini gönderiyoruz
             componentProps.playbackState = {
               isPlaying: playbackState === 'playing',
-              position: transportPosition, // Mevcut transport pozisyonu
+              position: transportPosition,
             };
           }
-          
-          if (panel.id === 'channel-rack' || panel.id === 'mixer' || panel.id === 'arrangement') {
+
+          if (panel.id === 'channel-rack' || panel.id === 'mixer' || panel.id === 'arrangement' || panel.id === 'piano-roll') {
             componentProps.audioEngineRef = audioEngineRef;
           }
 

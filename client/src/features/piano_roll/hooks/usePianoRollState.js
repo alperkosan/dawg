@@ -10,13 +10,15 @@ export const usePianoRollState = (pattern, onPatternChange) => {
   const [snapSettings, setSnapSettings] = useState({
     enabled: true,
     value: '16n',
-    mode: 'magnetic' // or 'hard'
+    mode: 'magnetic' // veya 'hard'
   });
   const [velocityLaneHeight, setVelocityLaneHeight] = useState(100);
   
   const notes = pattern?.notes || [];
   
-  // Scale calculations
+  // --- ANAHTAR DÜZELTME BURADA ---
+  // Bu bölüm, 'scale' nesnesini alıp ona 'getScaleNotes' fonksiyonunu ekler.
+  // Bu sayede PianoKeyboard gibi bileşenler bu fonksiyonu güvenle çağırabilir.
   const scaleInfo = useMemo(() => ({
     ...scale,
     getScaleNotes: () => {
@@ -26,7 +28,7 @@ export const usePianoRollState = (pattern, onPatternChange) => {
     }
   }), [scale]);
   
-  // Note operations
+  // Nota operasyonları
   const addNote = useCallback((noteData) => {
     const newNote = createNote(noteData);
     const updatedNotes = [...notes, newNote];
@@ -73,6 +75,7 @@ export const usePianoRollState = (pattern, onPatternChange) => {
     selectedNotes,
     tool,
     zoom,
+    // DÜZELTME: Artık fonksiyon içeren 'scaleInfo' nesnesini 'scale' olarak dışa aktarıyoruz.
     scale: scaleInfo,
     snapSettings,
     velocityLaneHeight,

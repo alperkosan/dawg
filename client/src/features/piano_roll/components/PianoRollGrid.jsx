@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useMemo, useCallback } from 'react';
 import * as Tone from 'tone';
 import Note from './Note';
-import { usePianoRollStore } from '../store/usePianoRollStore';
+import { usePianoRollStore, NOTES, SCALES } from '../store/usePianoRollStore';
 
 const totalOctaves = 8;
 const totalKeys = totalOctaves * 12;
