@@ -29,6 +29,7 @@ const useAudioEngineSync = (audioEngineRef) => {
     const clips = useArrangementStore(state => state.clips);
     const patterns = useArrangementStore(state => state.patterns);
     const tracks = useArrangementStore(state => state.tracks);
+    const activePatternId = useArrangementStore(state => state.activePatternId);
 
     const structuralSignature = JSON.stringify({
         instrumentIds: instruments.map(i => i.id),
@@ -37,6 +38,7 @@ const useAudioEngineSync = (audioEngineRef) => {
         clipIdsAndPositions: clips.map(c => `${c.id}@${c.startTime}`),
         trackIds: tracks.map(t => t.id),
         playbackMode: playbackMode,
+        activePatternId: activePatternId, // EN ÖNEMLİ EKLEME
     });
 
     useEffect(() => {
@@ -45,7 +47,7 @@ const useAudioEngineSync = (audioEngineRef) => {
             console.log("[SYNC] Yapısal bir değişiklik algılandı, motor ve UI senkronize ediliyor...");
             useInstrumentsStore.getState().updateLoopLength();
             // Senkronizasyon için verileri bir obje içinde topluyoruz
-            engine.syncFromStores(instruments, mixerTracks, { clips, patterns, tracks });
+            engine.syncFromStores(instruments, mixerTracks, { clips, patterns, tracks, activePatternId });
         }
     }, [structuralSignature, audioEngineRef, instruments, mixerTracks, clips, patterns, tracks]); 
 

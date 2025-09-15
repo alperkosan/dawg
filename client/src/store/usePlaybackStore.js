@@ -12,7 +12,7 @@ export const usePlaybackStore = create((set, get) => ({
   // Projenin anlık "fotoğrafını" tutan veriler.
   
   playbackState: 'stopped', // 'stopped', 'playing', 'paused'
-  bpm: 120,
+  bpm: 60,
   masterVolume: 0,
   transportPosition: '1:1:00', // GÜNCELLENDİ: Her zaman BBT formatında
   playbackMode: 'pattern', // 'pattern' veya 'song'

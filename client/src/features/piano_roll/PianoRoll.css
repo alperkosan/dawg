@@ -1,0 +1,110 @@
+/* src/features/piano_roll/PianoRoll.css */
+
+/* Ana konteyner optimizasyonları */
+.piano-roll-container {
+  contain: layout style paint;
+  will-change: scroll-position;
+}
+
+.piano-roll-scroll {
+  scroll-behavior: auto;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  /* GPU hızlandırması zorla */
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+/* Canvas optimizasyonları */
+.piano-roll-canvas {
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+  contain: strict;
+  transform: translateZ(0);
+  will-change: transform;
+}
+
+/* Nota elementleri için optimizasyon */
+.piano-roll-note {
+  contain: layout style paint;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  will-change: transform;
+}
+
+.piano-roll-note.selected {
+  will-change: transform, box-shadow;
+}
+
+/* Keyboard optimizasyonu */
+.piano-keyboard-key {
+  contain: layout style paint;
+  transform: translateZ(0);
+}
+
+/* Velocity lane optimizasyonu */
+.velocity-bar {
+  contain: layout style paint;
+  transform: translateZ(0);
+}
+
+/* Playhead optimizasyonu */
+.piano-roll-playhead {
+  contain: layout style paint;
+  transform: translateZ(0);
+  will-change: transform;
+  pointer-events: none;
+}
+
+/* Interaction elementleri */
+.piano-roll-marquee {
+  contain: layout style paint;
+  transform: translateZ(0);
+  pointer-events: none;
+}
+
+.piano-roll-preview-note {
+  contain: layout style paint;
+  transform: translateZ(0);
+  will-change: opacity, transform;
+}
+
+/* Scrollbar optimizasyonu */
+.piano-roll-scroll::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+.piano-roll-scroll::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+.piano-roll-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+}
+
+.piano-roll-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* Genel performans kuralları */
+* {
+  /* Outline'ları kapat - performans artışı */
+  outline: none;
+}
+
+/* GPU layer zorlamak için utility sınıfları */
+.gpu-layer {
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+.will-change-transform {
+  will-change: transform;
+}
+
+.contain-strict {
+  contain: strict;
+}

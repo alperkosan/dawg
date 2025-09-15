@@ -58,7 +58,14 @@ export const usePanelsStore = create((set, get) => ({
 
     if (panel.isOpen) {
       if (get().fullscreenPanel === panelId) set({ fullscreenPanel: null });
-      set(state => ({ panels: { ...state.panels, [panelId]: { ...panel, isOpen: false } } }));
+      
+      const newState = { panels: { ...get().panels, [panelId]: { ...panel, isOpen: false } } };
+      // Eğer kapatılan panel piyano rulosu ise, hangi enstrümana ait olduğu bilgisini sıfırla.
+      if (panelId === 'piano-roll') {
+          newState.pianoRollInstrumentId = null;
+      }
+      set(newState);
+
     } else {
       const newPosition = getNextCascadePosition(panels);
       set(state => ({
@@ -67,6 +74,41 @@ export const usePanelsStore = create((set, get) => ({
       get().bringPanelToFront(panelId);
     }
     get()._updateMinimizedPanels();
+  },
+
+  /**
+   * --- YENİ VE DÜZELTİLMİŞ FONKSİYON ---
+   * Belirtilen enstrüman için Piyano Rulosu'nu açar veya öne getirir.
+   * 'Toggle' mantığının yarattığı belirsizlik ortadan kaldırıldı.
+   */
+  openPianoRollForInstrument: (instrument) => {
+    if (!instrument) return;
+    const state = get();
+    const { panels } = state;
+    const panel = panels['piano-roll'];
+
+    // Eğer panel zaten aynı enstrüman için açıksa, sadece öne getir.
+    if (panel.isOpen && state.pianoRollInstrumentId === instrument.id) {
+      get().bringPanelToFront('piano-roll');
+      return;
+    }
+
+    // Değilse, paneli bu enstrüman için aç ve state'i güncelle.
+    const newPosition = getNextCascadePosition(panels);
+    set({
+      pianoRollInstrumentId: instrument.id, // Önce ID'yi ayarla
+      panels: {
+        ...panels,
+        'piano-roll': {
+          ...panel,
+          title: `Piano Roll: ${instrument.name}`,
+          isOpen: true,
+          isMinimized: false,
+          position: newPosition,
+        },
+      },
+    });
+    get().bringPanelToFront('piano-roll');
   },
 
   handleMaximize: (panelId) => {

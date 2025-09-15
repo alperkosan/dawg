@@ -1,75 +1,56 @@
 import { useEffect, useRef } from 'react';
-import { PlaybackAnimatorService } from '../lib/core/PlaybackAnimatorService';
+import * as Tone from 'tone';
+import { usePlaybackStore } from '../store/usePlaybackStore';
 
+/**
+ * @file usePlaybackAnimator.js - NİHAİ SÜRÜM
+ * @description Playhead pozisyonunu, döngü uzunluğundan tamamen bağımsız,
+ * doğrudan BPM ve anlık transport zamanına göre hesaplayan, tam senkronize animasyon kancası.
+ */
 export const usePlaybackAnimator = (elementRef, options = {}) => {
-  // YENİ: seçeneklerden playbackState'i alıyoruz
-  const { fullWidth, offset = 0, smoothing = false, playbackState } = options;
-  
-  const lastProgressRef = useRef(0);
-  const smoothProgressRef = useRef(0);
-  const animationRef = useRef(null);
-
-  // YENİ: Playback durumu değiştiğinde pozisyonu sıfırlayan useEffect
-  useEffect(() => {
-    if (playbackState === 'stopped') {
-      if (animationRef.current) {
-        cancelAnimationFrame(animationRef.current);
-      }
-      // Playback durduğunda, pozisyonu anında ve animasyonsuz olarak başa al.
-      if (elementRef.current) {
-        elementRef.current.style.transition = 'none'; // Anlık değişim için geçişi kaldır
-        elementRef.current.style.transform = `translateX(${offset}px)`;
-        // Kısa bir süre sonra geçişi tekrar ekle
-        setTimeout(() => {
-            if(elementRef.current) elementRef.current.style.transition = '';
-        }, 50);
-      }
-      lastProgressRef.current = 0;
-      smoothProgressRef.current = 0;
-    }
-  }, [playbackState, offset, elementRef]);
+  const { stepWidth, playbackState } = options;
+  const animationFrameRef = useRef(null);
 
   useEffect(() => {
-    if (!elementRef?.current || typeof fullWidth !== 'number' || fullWidth <= 0) return;
+    const element = elementRef.current;
+    if (!element) return;
 
-    const handleProgressUpdate = (progress) => {
-      // Çalma durumu 'playing' değilse güncelleme yapma (duraklatıldığında pozisyonda kalır)
-      if (playbackState !== 'playing' || !elementRef.current) return;
-      
-      const isLoopRestart = progress < lastProgressRef.current && lastProgressRef.current > 0.9;
-      if (isLoopRestart) {
-        smoothProgressRef.current = progress;
-      }
-      lastProgressRef.current = progress;
+    // Çalma durumu 'playing' ise animasyon döngüsünü başlat
+    if (playbackState === 'playing') {
+      const animate = () => {
+        // Doğrudan Tone.js'ten anlık saniyeyi al
+        const transportSeconds = Tone.Transport.seconds;
+        
+        // Saniyeyi 16'lık nota adımına çevir
+        const sixteenthNoteDuration = Tone.Time('16n').toSeconds();
+        const currentStep = transportSeconds / sixteenthNoteDuration;
+        
+        // Adımı piksel pozisyonuna çevir
+        const xPosition = currentStep * stepWidth;
 
-      const updatePosition = () => {
-          if (!elementRef.current) return;
-          let currentProgress = progress;
-          if (smoothing && !isLoopRestart) {
-              const smoothFactor = 0.2;
-              smoothProgressRef.current += (progress - smoothProgressRef.current) * smoothFactor;
-              currentProgress = smoothProgressRef.current;
-          } else {
-              smoothProgressRef.current = progress;
-          }
-          const xPosition = (currentProgress * fullWidth) + offset;
-          elementRef.current.style.transform = `translateX(${xPosition}px)`;
-          if (smoothing && Math.abs(currentProgress - progress) > 0.001) {
-            animationRef.current = requestAnimationFrame(updatePosition);
-          }
+        // Pozisyonu güncelle
+        element.style.transform = `translateX(${xPosition}px)`;
+        
+        animationFrameRef.current = requestAnimationFrame(animate);
       };
-      
-      if (animationRef.current) cancelAnimationFrame(animationRef.current);
-      animationRef.current = requestAnimationFrame(updatePosition);
-    };
+      animationFrameRef.current = requestAnimationFrame(animate);
+    } 
+    // Çalma durduysa veya duraklatıldıysa döngüyü temizle
+    else {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+      // Eğer tamamen durduysa, başa sar
+      if (playbackState === 'stopped') {
+        element.style.transform = 'translateX(0px)';
+      }
+    }
 
-    PlaybackAnimatorService.subscribe(handleProgressUpdate);
-
+    // Temizlik fonksiyonu
     return () => {
-      PlaybackAnimatorService.unsubscribe(handleProgressUpdate);
-      if (animationRef.current) cancelAnimationFrame(animationRef.current);
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
     };
-  }, [fullWidth, offset, smoothing, elementRef, playbackState]);
-
-  return {};
+  }, [playbackState, stepWidth, elementRef]); // Sadece bu değerler değiştiğinde effect yeniden çalışır
 };

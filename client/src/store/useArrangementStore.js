@@ -69,17 +69,29 @@ export const useArrangementStore = create((set, get) => ({
     }
   },
 
-  setActivePatternId: (patternId, audioEngine) => {
-    const { playbackState, playbackMode } = usePlaybackStore.getState();
-    const isPlaying = playbackState === 'playing' || playbackState === 'paused';
-
-    if (audioEngine && isPlaying && playbackMode === 'pattern') {
-      audioEngine.switchActivePattern(patternId);
-    } else {
-      set({ activePatternId: patternId });
-    }
+ /**
+   * NİHAİ SÜRÜM: Bu metot artık sadece ve sadece state'i günceller.
+   * Geri kalan tüm sihir, App.jsx'teki sync kancası tarafından yapılır.
+   */
+  setActivePatternId: (patternId) => {
+    set({ activePatternId: patternId });
   },
-  
+
+  // Bu metotlar artık sadece basit setter'ı çağırıyor.
+  nextPattern: () => {
+    const { patternOrder, activePatternId } = get();
+    const currentIndex = patternOrder.indexOf(activePatternId);
+    const nextIndex = (currentIndex + 1) % patternOrder.length;
+    get().setActivePatternId(patternOrder[nextIndex]);
+  },
+
+  previousPattern: () => {
+    const { patternOrder, activePatternId } = get();
+    const currentIndex = patternOrder.indexOf(activePatternId);
+    const prevIndex = (currentIndex - 1 + patternOrder.length) % patternOrder.length;
+    get().setActivePatternId(patternOrder[prevIndex]);
+  },
+
   _internal_setActivePatternId: (patternId) => {
       set({ activePatternId: patternId });
   },
@@ -96,7 +108,7 @@ export const useArrangementStore = create((set, get) => ({
     // Her zaman boş bir pattern oluşturuyoruz
     const newPattern = { id: newId, name: newPatternName, data: {} };
     
-    // State'i her durumda anında güncelle
+    // Arayüzün anında tepki vermesi için state'i hemen güncelliyoruz
     set(state => ({ 
       patterns: { ...state.patterns, [newId]: newPattern },
       patternOrder: [...state.patternOrder, newId]
@@ -104,35 +116,31 @@ export const useArrangementStore = create((set, get) => ({
     
     // Eğer çalma devam ediyorsa, özel bir senkronizasyon ve reset işlemi yap
     if (isPlaying && audioEngine) {
+      // --- ANAHTAR DÜZELTME BURADA ---
+      // Ses motorunun es_ki (stale) veriye sahip olma sorununu çözmek için,
+      // yeni pattern'i motorun kendi `patterns` listesine manuel olarak ekliyoruz.
+      audioEngine.patterns[newId] = newPattern;
+
+      // Artık motor yeni pattern'i tanıdığı için, `next/prev` butonlarındaki
+      // "temiz başlangıç" mantığını güvenle uygulayabiliriz.
+      
       // 1. Motorun aktif pattern ID'sini, state'i değiştirmeden güncelle
       audioEngine.activePatternId = newId;
+      
       // 2. Yeni (boş) pattern'e göre notaları ve döngüyü yeniden zamanla
       audioEngine.reschedule();
+      
       // 3. Çalmayı yeni döngünün en başına zıplat
       audioEngine.jumpToPercent(0);
-      // 4. Son olarak, store'daki aktif ID'yi güncelle
+      
+      // 4. Son olarak, store'daki aktif ID'yi arayüz için güncelle
       get()._internal_setActivePatternId(newId);
+
     } else {
-      // Çalma duruyorsa, sadece state'i güncelle
+      // Çalma duruyorsa, sadece state'i güncellemek yeterlidir.
+      // Bir sonraki "play" komutunda motor zaten senkronize olacaktır.
       get().setActivePatternId(newId, audioEngine);
     }
-  },
-
-
-  // Geri kalan tüm metotlar artık akıllı setActivePatternId'yi kullandığı için
-  // otomatik olarak doğru çalışacaktır. DEĞİŞİKLİK GEREKMEZ.
-  nextPattern: (audioEngine) => {
-    const { patternOrder, activePatternId } = get();
-    const currentIndex = patternOrder.indexOf(activePatternId);
-    const nextIndex = (currentIndex + 1) % patternOrder.length;
-    get().setActivePatternId(patternOrder[nextIndex], audioEngine);
-  },
-
-  previousPattern: (audioEngine) => {
-    const { patternOrder, activePatternId } = get();
-    const currentIndex = patternOrder.indexOf(activePatternId);
-    const prevIndex = (currentIndex - 1 + patternOrder.length) % patternOrder.length;
-    get().setActivePatternId(patternOrder[prevIndex], audioEngine);
   },
 
   updatePatternNotes: (instrumentId, newNotes) => {

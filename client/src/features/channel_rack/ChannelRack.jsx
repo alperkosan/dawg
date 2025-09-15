@@ -1,14 +1,14 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useDrop } from 'react-dnd';
 import { Music, PlusSquare, Plus, ChevronLeft, ChevronRight, Edit, Volume2 } from 'lucide-react';
 
 import { useInstrumentsStore } from '../../store/useInstrumentsStore';
 import { useMixerStore } from '../../store/useMixerStore';
 import { usePanelsStore } from '../../store/usePanelsStore';
-import { PlaybackAnimatorService } from '../../lib/core/PlaybackAnimatorService';
 import { useArrangementStore } from '../../store/useArrangementStore';
 import VolumeKnob from '../../ui/VolumeKnob';
 import { usePlaybackStore } from '../../store/usePlaybackStore';
+import * as Tone from 'tone'; // YENİ: Tone.js'i doğrudan kullanmak için import ediyoruz
 
 const ItemTypes = { SOUND_SOURCE: 'soundSource' };
 
@@ -40,7 +40,7 @@ const ModernInstrumentChannel = React.memo(({ instrument, audioEngineRef, notes,
     const { updatePatternNotes } = useArrangementStore.getState();
     const { handleToggleInstrumentMute } = useInstrumentsStore.getState();
     const { handleMixerParamChange } = useMixerStore.getState();
-    const { handleEditInstrument, handleTogglePianoRoll } = usePanelsStore.getState();
+    const { handleEditInstrument, openPianoRollForInstrument } = usePanelsStore.getState();
 
     const handlePatternChange = (stepIndex) => {
         const currentNotes = notes || [];
@@ -62,7 +62,7 @@ const ModernInstrumentChannel = React.memo(({ instrument, audioEngineRef, notes,
             <div className="sticky left-0 w-[300px] h-14 p-2 flex items-center gap-3 z-20 shrink-0 bg-[var(--color-surface)] rounded-lg border border-transparent hover:border-[var(--color-border)] transition-colors">
                  <div className="w-1 h-full rounded-full" style={{backgroundColor: 'var(--color-primary)'}} />
                  <div className="flex-grow flex items-center gap-2 min-w-0 cursor-pointer group" onClick={() => handleEditInstrument(instrument, audioEngineRef.current)} title={`${instrument.name} (Edit Sample)`}>
-                    <button onClick={(e) => { e.stopPropagation(); handleTogglePianoRoll(instrument); }} className="p-1 group-hover:bg-[var(--color-background)] rounded transition-colors shrink-0" title="Toggle Piano Roll">
+                    <button onClick={(e) => { e.stopPropagation(); openPianoRollForInstrument(instrument); }} className="p-1 group-hover:bg-[var(--color-background)] rounded transition-colors shrink-0" title="Toggle Piano Roll">
                         <Music size={16} style={{ color: instrument.pianoRoll ? 'var(--color-accent)' : 'var(--color-primary)' }} />
                     </button>
                     <span className="truncate font-bold text-sm group-hover:text-[var(--color-primary)]">{instrument.name}</span>
@@ -101,25 +101,56 @@ function ChannelRack({ audioEngineRef }) {
     // NİHAİ DÜZELTME: Hem görsel hem de ses uzunluğunu alıyoruz
     const instruments = useInstrumentsStore(state => state.instruments);
     const loopLength = useInstrumentsStore(state => state.loopLength);
-    const audioLoopLength = useInstrumentsStore(state => state.audioLoopLength);
-    
     const { handleAddNewInstrument } = useInstrumentsStore.getState();
     const { patterns, activePatternId, addPattern, renameActivePattern, nextPattern, previousPattern } = useArrangementStore();
+
+    const playbackMode = usePlaybackStore(state => state.playbackMode);
+    const playbackState = usePlaybackStore(state => state.playbackState);
     const activePatternData = patterns[activePatternId]?.data || {};
     const activePatternName = patterns[activePatternId]?.name || '...';
-    const playbackMode = usePlaybackStore(state => state.playbackMode);
     
     const [activeStep, setActiveStep] = useState(-1);
+    const animationFrameRef = useRef(null);
 
+    // NİHAİ DÜZELTME: useEffect artık döngü uzunluğundan bağımsız, mutlak zamanı dinliyor.
     useEffect(() => {
-        const handleProgressUpdate = (progress) => {
-            // NİHAİ DÜZELTME: Adım hesaplaması artık GERÇEK ses uzunluğuna göre yapılıyor.
-            const currentStep = Math.floor(progress * audioLoopLength);
-            setActiveStep(prevStep => currentStep !== prevStep ? currentStep : prevStep);
+        // Çalma durumu 'playing' ise animasyon döngüsünü başlat
+        if (playbackState === 'playing') {
+            const animate = () => {
+                // Doğrudan Tone.js'ten anlık saniyeyi al
+                const transportSeconds = Tone.Transport.seconds;
+                // Saniyeyi 16'lık nota adımına çevir
+                const sixteenthNoteDuration = Tone.Time('16n').toSeconds();
+                const currentStep = Math.floor(transportSeconds / sixteenthNoteDuration);
+                
+                // State'i sadece değiştiğinde güncelle (performans için)
+                setActiveStep(prevStep => {
+                    // Döngü başını yakala
+                    if (currentStep < prevStep) return currentStep;
+                    return currentStep !== prevStep ? currentStep : prevStep;
+                });
+
+                animationFrameRef.current = requestAnimationFrame(animate);
+            };
+            animationFrameRef.current = requestAnimationFrame(animate);
+        } else {
+             // Çalma durduysa veya duraklatıldıysa döngüyü temizle
+            if (animationFrameRef.current) {
+                cancelAnimationFrame(animationFrameRef.current);
+            }
+            // Eğer tamamen durduysa, adımı sıfırla
+            if (playbackState === 'stopped') {
+                setActiveStep(-1);
+            }
+        }
+
+        // Temizlik fonksiyonu
+        return () => {
+            if (animationFrameRef.current) {
+                cancelAnimationFrame(animationFrameRef.current);
+            }
         };
-        PlaybackAnimatorService.subscribe(handleProgressUpdate);
-        return () => { PlaybackAnimatorService.unsubscribe(handleProgressUpdate); };
-    }, [audioLoopLength]); // Bağımlılığı audioLoopLength olarak değiştiriyoruz.
+    }, [playbackState]); // Sadece çalma durumu değiştiğinde bu effect yeniden kurulur.
 
     const handleRename = () => {
         const newName = prompt("Yeni pattern adı:", activePatternName);

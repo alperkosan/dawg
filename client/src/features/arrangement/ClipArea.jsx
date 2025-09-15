@@ -18,13 +18,12 @@ export function ClipArea() {
     const [contextMenu, setContextMenu] = useState(null);
 
     const BAR_WIDTH = 80;
+    const stepWidth = BAR_WIDTH * zoomX;
     const totalWidth = BAR_WIDTH * (loopLength / 4) * zoomX;
 
     usePlaybackAnimator(playheadRef, { 
-        fullWidth: totalWidth, 
-        offset: 0,
-        smoothing: true, // Song modunda yumuşak geçiş
-        compensation: 'auto' // Otomatik latency kompanzasyonu
+        stepWidth: stepWidth,
+        playbackState: playbackState    
     });
 
     const handleScroll = (e) => {

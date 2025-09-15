@@ -2,22 +2,32 @@ import React from 'react';
 import DraggableWindow from '../ui/DraggableWindow';
 import FileBrowserPanel from '../features/file_browser/FileBrowserPanel';
 
+// Gerekli tüm store'ları import ediyoruz
 import { usePanelsStore } from '../store/usePanelsStore';
 import { useInstrumentsStore } from '../store/useInstrumentsStore';
+import { useArrangementStore } from '../store/useArrangementStore';
+import { usePlaybackStore } from '../store/usePlaybackStore';
 import { panelRegistry, panelDefinitions } from '../config/panelConfig';
 
 function WorkspacePanel({ audioEngineRef }) {
-  // --- STATE'İ DOĞRUDAN STORE'DAN ALIYORUZ ---
+  // --- Panellerin genel durumunu yöneten store ---
   const {
     panels, panelStack, fullscreenPanel,
     bringPanelToFront, togglePanel, handleMinimize, handleMaximize,
-    updatePanelState // Yeni action'ı alıyoruz
+    updatePanelState
   } = usePanelsStore();
 
-  const { instruments } = useInstrumentsStore();
+  // --- Enstrüman verilerini alan store'lar ---
   const editingInstrument = useInstrumentsStore(state => state.instruments.find(i => i.id === usePanelsStore.getState().editingInstrumentId));
-  const pianoRollInstrument = useInstrumentsStore(state => state.instruments.find(i => i.id === usePanelsStore.getState().pianoRollInstrumentId));
+  const pianoRollInstrumentId = usePanelsStore(state => state.pianoRollInstrumentId);
   
+  // --- YENİ: Piano Roll için gerekli verileri ilgili store'lardan çekiyoruz ---
+  const { patterns, activePatternId, updatePatternNotes } = useArrangementStore();
+  const { playbackState, transportPosition } = usePlaybackStore();
+
+  // Aktif pattern verisini alıyoruz
+  const activePattern = patterns[activePatternId];
+
   const baseZIndex = 10;
 
   return (
@@ -32,39 +42,55 @@ function WorkspacePanel({ audioEngineRef }) {
           const PanelComponent = panelRegistry[panel.id];
 
           if (!definition || !PanelComponent) return null;
+          
+          // YENİ: Her panel için props'ları burada dinamik olarak belirliyoruz
+          const componentProps = {};
 
-          const componentProps = {
-            'sample-editor': { instrument: editingInstrument, audioEngineRef },
-            'piano-roll': { instrument: pianoRollInstrument, audioEngineRef },
-            'channel-rack': { audioEngineRef },
-            'mixer': { audioEngineRef }
-          };
+          if (panel.id === 'sample-editor') {
+            componentProps.instrument = editingInstrument;
+            componentProps.audioEngineRef = audioEngineRef;
+          }
+          
+          if (panel.id === 'piano-roll') {
+            // Yeni Piano Roll'un ihtiyaç duyduğu tüm props'ları hazırlıyoruz
+            componentProps.instrumentId = pianoRollInstrumentId;
+            componentProps.pattern = activePattern; // Aktif pattern'in tüm verisi
+            componentProps.onPatternChange = (newPatternData) => {
+                // Nota değişikliklerini doğrudan arrangement store'una iletiyoruz
+                if (pianoRollInstrumentId) {
+                    updatePatternNotes(pianoRollInstrumentId, newPatternData.notes);
+                }
+            };
+            componentProps.audioEngine = audioEngineRef.current;
+            componentProps.playbackState = {
+              isPlaying: playbackState === 'playing',
+              position: transportPosition, // Mevcut transport pozisyonu
+            };
+          }
+          
+          if (panel.id === 'channel-rack' || panel.id === 'mixer' || panel.id === 'arrangement') {
+            componentProps.audioEngineRef = audioEngineRef;
+          }
 
           return (
             <DraggableWindow
               key={panel.id}
               id={panel.id}
-              title={panel.title} // State'ten gelen dinamik başlık
-              
-              // --- YENİ: State'i prop olarak iletiyoruz ---
+              title={panel.title}
               position={panel.position}
               size={panel.size}
-              
               minSize={definition.minSize}
               disableResizing={definition.disableResizing}
               zIndex={baseZIndex + panelStack.indexOf(panel.id)}
-              
-              // --- YENİ: Değişiklikleri store'a bildiren handler'lar ---
               onPositionChange={(newPos) => updatePanelState(panel.id, { position: newPos })}
               onSizeChange={(newSize) => updatePanelState(panel.id, { size: newSize })}
-
               onFocus={() => bringPanelToFront(panel.id)}
               onClose={() => togglePanel(panel.id)}
               onMinimize={() => handleMinimize(panel.id, definition.title)}
               onMaximize={() => handleMaximize(panel.id)}
               isMaximized={fullscreenPanel === panel.id}
             >
-              <PanelComponent {...componentProps[panel.id]} />
+              <PanelComponent {...componentProps} />
             </DraggableWindow>
           );
         })}
