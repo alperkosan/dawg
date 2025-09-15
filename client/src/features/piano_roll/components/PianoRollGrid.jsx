@@ -1,120 +1,110 @@
-import React, { useEffect, useRef, useMemo, useCallback } from 'react';
+// Enhanced PianoRollGrid.jsx - Optimized rendering and interactions
+import React, { useEffect, useRef, useMemo, useCallback, memo } from 'react';
 import * as Tone from 'tone';
 import Note from './Note';
-import { usePianoRollStore, NOTES, SCALES } from '../store/usePianoRollStore';
+import { usePianoRollStore } from '../store/usePianoRollStore';
 
-const totalOctaves = 8;
-const totalKeys = totalOctaves * 12;
-
-const PianoRollGrid = ({
+const PianoRollGrid = memo(({
   notes,
-  gridWidth,
-  gridHeight,
-  noteToY,
-  stepToX,
-  keyHeight,
-  stepWidth,
-  onResizeStart,
   selectedNotes,
+  viewport,
+  gridDimensions,
+  coordinateConverters,
   interaction,
-  playbackMode,
+  playbackState,
   playheadRef,
+  scale,
+  onResizeStart
 }) => {
   const canvasRef = useRef(null);
   const lastRenderHash = useRef('');
   
-  // YENİ: Gam bilgilerini store'dan alıyoruz
-  const { scale, showScaleHighlighting } = usePianoRollStore();
+  // Store state
+  const { showScaleHighlighting } = usePianoRollStore();
 
-  // YENİ: Viewport hesaplama - sadece görünür alanı render etmek için
-  const viewport = useMemo(() => {
-    // Parent container'dan scroll pozisyonunu al
+  // ✅ VIEWPORT CALCULATION - Only render visible area
+  const visibleBounds = useMemo(() => {
     const container = canvasRef.current?.parentElement?.parentElement;
     if (!container) {
       return { 
-        x: 0, 
-        y: 0, 
-        width: gridWidth, 
-        height: gridHeight,
-        scrollLeft: 0,
-        scrollTop: 0
+        left: 0, 
+        right: gridDimensions.gridWidth,
+        top: 0,
+        bottom: gridDimensions.gridHeight 
       };
     }
     
+    const margin = Math.max(gridDimensions.keyHeight * 3, gridDimensions.stepWidth * 16);
+    
     return {
-      x: container.scrollLeft,
-      y: container.scrollTop,
-      width: container.clientWidth,
-      height: container.clientHeight,
-      scrollLeft: container.scrollLeft,
-      scrollTop: container.scrollTop
+      left: Math.max(0, container.scrollLeft - margin),
+      right: Math.min(gridDimensions.gridWidth, container.scrollLeft + container.clientWidth + margin),
+      top: Math.max(0, container.scrollTop - margin),
+      bottom: Math.min(gridDimensions.gridHeight, container.scrollTop + container.clientHeight + margin)
     };
-  }, [gridWidth, gridHeight]);
+  }, [gridDimensions, viewport]);
 
-  // YENİ: Gam notalarını hesaplayan optimize edilmiş fonksiyon
+  // ✅ SCALE NOTES CALCULATION
   const scaleNoteSet = useMemo(() => {
-    if (!showScaleHighlighting) return new Set();
-    const rootNoteIndex = NOTES.indexOf(scale.root);
-    const scaleIntervals = SCALES[scale.type];
-    const noteIndicesInScale = new Set();
-    scaleIntervals.forEach(interval => {
-        noteIndicesInScale.add((rootNoteIndex + interval) % 12);
-    });
-    return noteIndicesInScale;
+    if (!showScaleHighlighting || !scale?.getScaleNotes) return new Set();
+    return scale.getScaleNotes();
   }, [scale, showScaleHighlighting]);
 
-  // YENİ: Görünür notaları filtreleyen optimizasyon
+  // ✅ VISIBLE NOTES - Performance optimization
   const visibleNotes = useMemo(() => {
     if (!notes || notes.length === 0) return [];
     
-    // Viewport kenar boşluğu - render alanını biraz genişlet
-    const margin = Math.max(keyHeight * 2, stepWidth * 8);
-    
     return notes.filter(note => {
-      const noteX = stepToX(note.time);
-      const noteY = noteToY(note.pitch);
+      const noteX = coordinateConverters.stepToX(note.time);
+      const noteY = coordinateConverters.noteToY(note.pitch);
       
-      // Notanın genişliğini hesapla
-      const durationInSteps = Tone.Time(note.duration).toSeconds() / Tone.Time('16n').toSeconds();
-      const noteWidth = durationInSteps * stepWidth;
+      // Calculate note width
+      let noteWidth;
+      try {
+        const durationInSteps = Tone.Time(note.duration).toSeconds() / Tone.Time('16n').toSeconds();
+        noteWidth = durationInSteps * gridDimensions.stepWidth;
+      } catch {
+        noteWidth = gridDimensions.stepWidth;
+      }
       
-      // Viewport içinde mi kontrolü
+      // Visibility check
       const isHorizontallyVisible = 
-        noteX + noteWidth >= viewport.scrollLeft - margin &&
-        noteX <= viewport.scrollLeft + viewport.width + margin;
+        noteX + noteWidth >= visibleBounds.left &&
+        noteX <= visibleBounds.right;
         
       const isVerticallyVisible = 
-        noteY + keyHeight >= viewport.scrollTop - margin &&
-        noteY <= viewport.scrollTop + viewport.height + margin;
+        noteY + gridDimensions.keyHeight >= visibleBounds.top &&
+        noteY <= visibleBounds.bottom;
       
       return isHorizontallyVisible && isVerticallyVisible;
     });
-  }, [notes, viewport, noteToY, stepToX, keyHeight, stepWidth]);
+  }, [notes, visibleBounds, coordinateConverters, gridDimensions]);
 
-  // YENİ: Grid çizim fonksiyonu - optimize edilmiş
+  // ✅ OPTIMIZED GRID DRAWING
   const drawOptimizedGrid = useCallback((ctx, width, height) => {
-    // Canvas'ı temizle
     ctx.clearRect(0, 0, width, height);
     
-    // Sadece görünür alanı hesapla
-    const viewStartBar = Math.max(0, Math.floor(viewport.scrollLeft / (stepWidth * 16)) - 1);
-    const viewEndBar = Math.min(
+    const { stepWidth, keyHeight } = gridDimensions;
+    
+    // Calculate visible grid range
+    const startBar = Math.max(0, Math.floor(visibleBounds.left / (stepWidth * 16)) - 1);
+    const endBar = Math.min(
       Math.ceil(width / (stepWidth * 16)), 
-      Math.ceil((viewport.scrollLeft + viewport.width) / (stepWidth * 16)) + 1
+      Math.ceil(visibleBounds.right / (stepWidth * 16)) + 1
     );
     
-    const viewStartKey = Math.max(0, Math.floor(viewport.scrollTop / keyHeight) - 2);
-    const viewEndKey = Math.min(
-      totalKeys, 
-      Math.ceil((viewport.scrollTop + viewport.height) / keyHeight) + 2
+    const startKey = Math.max(0, Math.floor(visibleBounds.top / keyHeight) - 2);
+    const endKey = Math.min(
+      Math.floor(height / keyHeight),
+      Math.ceil(visibleBounds.bottom / keyHeight) + 2
     );
 
-    // 1. Gam vurgulaması (eğer aktifse)
+    // 1. Scale highlighting
     if (showScaleHighlighting && scaleNoteSet.size > 0) {
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.03)';
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.02)';
       
-      for (let i = viewStartKey; i < viewEndKey; i++) {
-        const noteIndex = (totalKeys - 1 - i) % 12;
+      for (let i = startKey; i < endKey; i++) {
+        const noteIndex = (Math.floor(height / keyHeight) - 1 - i) % 12;
         if (!scaleNoteSet.has(noteIndex)) {
           const y = i * keyHeight;
           ctx.fillRect(0, y, width, keyHeight);
@@ -122,160 +112,242 @@ const PianoRollGrid = ({
       }
     }
 
-    // 2. Dikey çizgiler (Bar çizgileri)
+    // 2. Vertical grid lines
     ctx.lineWidth = 1;
     
-    for (let bar = viewStartBar; bar <= viewEndBar; bar++) {
+    for (let bar = startBar; bar <= endBar; bar++) {
       const x = bar * stepWidth * 16;
       
-      // Ana bar çizgisi
+      // Bar lines
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
       ctx.beginPath();
       ctx.moveTo(x, 0);
       ctx.lineTo(x, height);
       ctx.stroke();
       
-      // Beat çizgileri (1/4 note divisions)
+      // Beat lines
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
       for (let beat = 1; beat < 4; beat++) {
         const beatX = x + beat * stepWidth * 4;
-        ctx.beginPath();
-        ctx.moveTo(beatX, 0);
-        ctx.lineTo(beatX, height);
-        ctx.stroke();
+        if (beatX <= width) {
+          ctx.beginPath();
+          ctx.moveTo(beatX, 0);
+          ctx.lineTo(beatX, height);
+          ctx.stroke();
+        }
+      }
+      
+      // Subdivision lines (if zoomed in enough)
+      if (stepWidth > 20) {
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.04)';
+        for (let step = 1; step < 16; step++) {
+          if (step % 4 !== 0) {
+            const stepX = x + step * stepWidth;
+            if (stepX <= width) {
+              ctx.beginPath();
+              ctx.moveTo(stepX, 0);
+              ctx.lineTo(stepX, height);
+              ctx.stroke();
+            }
+          }
+        }
       }
     }
 
-    // 3. Yatay çizgiler (Oktav çizgileri) - isteğe bağlı
+    // 3. Horizontal lines (octave markers)
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.03)';
-    for (let octave = 0; octave < totalOctaves; octave++) {
+    ctx.lineWidth = 0.5;
+    
+    for (let octave = 0; octave < 8; octave++) {
       const y = octave * 12 * keyHeight;
-      if (y >= viewport.scrollTop - keyHeight && y <= viewport.scrollTop + viewport.height + keyHeight) {
+      if (y >= visibleBounds.top && y <= visibleBounds.bottom) {
         ctx.beginPath();
         ctx.moveTo(0, y);
         ctx.lineTo(width, y);
         ctx.stroke();
       }
     }
-  }, [
-    viewport, 
-    stepWidth, 
-    keyHeight, 
-    showScaleHighlighting, 
-    scaleNoteSet
-  ]);
 
-  // YENİ: Render hash - gereksiz re-render'ları önlemek için
+    // 4. C note highlighting
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.06)';
+    for (let key = startKey; key < endKey; key++) {
+      const noteIndex = (Math.floor(height / keyHeight) - 1 - key) % 12;
+      if (noteIndex === 0) { // C note
+        const y = key * keyHeight;
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(width, y);
+        ctx.stroke();
+      }
+    }
+  }, [gridDimensions, visibleBounds, showScaleHighlighting, scaleNoteSet]);
+
+  // ✅ RENDER HASH - Prevent unnecessary re-renders
   const renderHash = useMemo(() => {
     return JSON.stringify({
-      viewport: `${viewport.scrollLeft}-${viewport.scrollTop}-${viewport.width}-${viewport.height}`,
-      gridSize: `${gridWidth}-${gridHeight}`,
-      stepSize: `${stepWidth}-${keyHeight}`,
-      scale: showScaleHighlighting ? `${scale.root}-${scale.type}` : 'none'
+      bounds: `${visibleBounds.left}-${visibleBounds.top}-${visibleBounds.right}-${visibleBounds.bottom}`,
+      grid: `${gridDimensions.gridWidth}-${gridDimensions.gridHeight}`,
+      step: `${gridDimensions.stepWidth}-${gridDimensions.keyHeight}`,
+      scale: showScaleHighlighting ? `${scale?.root}-${scale?.type}` : 'none',
+      scaleNotes: Array.from(scaleNoteSet).join(',')
     });
-  }, [viewport, gridWidth, gridHeight, stepWidth, keyHeight, scale, showScaleHighlighting]);
+  }, [visibleBounds, gridDimensions, scale, showScaleHighlighting, scaleNoteSet]);
 
-  // Canvas rendering effect - optimize edilmiş
+  // ✅ CANVAS RENDERING EFFECT
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     
-    // Hash değişmediyse render etme
+    // Skip if nothing changed
     if (lastRenderHash.current === renderHash) return;
     
     const ctx = canvas.getContext('2d', { 
-      alpha: false,  // Alpha channel'ı kapat - performans artışı
-      desynchronized: true  // GPU için optimize et
+      alpha: false,
+      desynchronized: true
     });
     
-    // Device Pixel Ratio'yu sınırla - çok yüksek DPR performansı düşürür
+    // Limit DPR for performance
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     
-    // Canvas boyutlarını ayarla
-    canvas.width = gridWidth * dpr;
-    canvas.height = gridHeight * dpr;
-    canvas.style.width = `${gridWidth}px`;
-    canvas.style.height = `${gridHeight}px`;
+    // Set canvas dimensions
+    canvas.width = gridDimensions.gridWidth * dpr;
+    canvas.height = gridDimensions.gridHeight * dpr;
+    canvas.style.width = `${gridDimensions.gridWidth}px`;
+    canvas.style.height = `${gridDimensions.gridHeight}px`;
     
     ctx.scale(dpr, dpr);
     
-    // Grid'i çiz
-    drawOptimizedGrid(ctx, gridWidth, gridHeight);
+    // Draw grid
+    drawOptimizedGrid(ctx, gridDimensions.gridWidth, gridDimensions.gridHeight);
     
-    // Hash'i güncelle
+    // Update hash
     lastRenderHash.current = renderHash;
     
-  }, [renderHash, gridWidth, gridHeight, drawOptimizedGrid]);
+  }, [renderHash, gridDimensions, drawOptimizedGrid]);
+
+  // ✅ INTERACTION PREVIEW COMPONENTS
+  const renderInteractionPreviews = () => {
+    const previews = [];
+    
+    if (interaction?.type === 'create' && interaction.previewNote) {
+      previews.push(
+        <Note
+          key="preview-creating"
+          note={interaction.previewNote}
+          isPreview={true}
+          viewport={viewport}
+          coordinateConverters={coordinateConverters}
+          gridDimensions={gridDimensions}
+        />
+      );
+    }
+    
+    if (interaction?.previewNotes) {
+      interaction.previewNotes.forEach(note => {
+        previews.push(
+          <Note
+            key={`preview-${note.id}`}
+            note={note}
+            isPreview={true}
+            viewport={viewport}
+            coordinateConverters={coordinateConverters}
+            gridDimensions={gridDimensions}
+          />
+        );
+      });
+    }
+    
+    return previews;
+  };
+
+  // ✅ MARQUEE SELECTION RECTANGLE
+  const renderMarqueeSelection = () => {
+    if (interaction?.type !== 'marquee') return null;
+    
+    const { startPos, currentPos } = interaction;
+    
+    return (
+      <div
+        className="absolute border-2 border-dashed border-cyan-400 bg-cyan-400/10 pointer-events-none z-40"
+        style={{
+          left: Math.min(startPos.x, currentPos.x),
+          top: Math.min(startPos.y, currentPos.y),
+          width: Math.abs(currentPos.x - startPos.x),
+          height: Math.abs(currentPos.y - startPos.y),
+          borderRadius: '4px'
+        }}
+      />
+    );
+  };
+
+  // ✅ PLAYHEAD COMPONENT
+  const renderPlayhead = () => {
+    if (!playbackState?.isPlaying) return null;
+    
+    return (
+      <div 
+        ref={playheadRef} 
+        className="absolute top-0 bottom-0 w-0.5 z-30 pointer-events-none bg-cyan-400 shadow-lg shadow-cyan-400/50"
+        style={{ 
+          transform: 'translateZ(0)',
+          filter: 'drop-shadow(0 0 4px rgba(0, 188, 212, 0.8))'
+        }}
+      />
+    );
+  };
 
   return (
-    <div className="relative" style={{ width: gridWidth, height: gridHeight }}>
-      {/* Optimize edilmiş Canvas */}
+    <div 
+      className="relative bg-gray-900" 
+      style={{ 
+        width: gridDimensions.gridWidth, 
+        height: gridDimensions.gridHeight,
+        contain: 'layout style paint'
+      }}
+    >
+      {/* BACKGROUND GRID CANVAS */}
       <canvas 
         ref={canvasRef} 
         className="absolute inset-0 pointer-events-none z-0"
         style={{ 
-          imageRendering: 'pixelated',  // Crisp rendering
-          transform: 'translateZ(0)',   // GPU layer
+          imageRendering: 'pixelated',
+          transform: 'translateZ(0)',
+          contain: 'strict'
         }}
       />
       
-      {/* Sadece görünür notaları render et */}
+      {/* VISIBLE NOTES */}
       {visibleNotes.map((note) => (
         <Note
           key={note.id}
           note={note}
-          noteToY={noteToY}
-          stepToX={stepToX}
-          keyHeight={keyHeight}
-          stepWidth={stepWidth}
-          onResizeStart={onResizeStart}
           isSelected={selectedNotes.has(note.id)}
+          viewport={viewport}
+          coordinateConverters={coordinateConverters}
+          gridDimensions={gridDimensions}
+          onResizeStart={onResizeStart}
         />
       ))}
       
-      {/* Interaction preview notları */}
-      {interaction?.previewNotes?.map(note => (
-        <Note 
-          key={`preview-${note.id}`} 
-          note={note} 
-          isPreview={true} 
-          {...{noteToY, stepToX, keyHeight, stepWidth}}
-        />
-      ))}
+      {/* INTERACTION PREVIEWS */}
+      {renderInteractionPreviews()}
       
-      {/* Tek nota preview */}
-      {interaction?.previewNote && (
-        <Note 
-          key="preview-creating" 
-          note={interaction.previewNote} 
-          isPreview={true} 
-          {...{noteToY, stepToX, keyHeight, stepWidth}}
-        />
-      )}
+      {/* MARQUEE SELECTION */}
+      {renderMarqueeSelection()}
       
-      {/* Marquee selection */}
-      {interaction?.type === 'marquee' && (
-        <div
-          className="absolute border-2 border-dashed border-cyan-400 bg-cyan-400/20 pointer-events-none z-40"
-          style={{
-            left: Math.min(interaction.gridStartX, interaction.currentX),
-            top: Math.min(interaction.gridStartY, interaction.currentY),
-            width: Math.abs(interaction.currentX - interaction.gridStartX),
-            height: Math.abs(interaction.currentY - interaction.gridStartY),
-          }}
-        />
-      )}
+      {/* PLAYHEAD */}
+      {renderPlayhead()}
       
-      {/* Playhead */}
-      {playbackMode === 'pattern' && (
-        <div 
-          ref={playheadRef} 
-          className="absolute top-0 bottom-0 w-0.5 z-30 pointer-events-none bg-cyan-400"
-          style={{ transform: 'translateZ(0)' }}  // GPU layer
-        />
+      {/* RESIZE PREVIEW */}
+      {interaction?.type === 'resize' && (
+        <div className="absolute top-4 left-4 bg-gray-800/90 text-white px-3 py-1 rounded-lg text-sm z-50">
+          Duration: {Math.round(interaction.previewDuration || 1)} steps
+        </div>
       )}
     </div>
   );
-};
+});
 
-export default React.memo(PianoRollGrid);
+PianoRollGrid.displayName = 'PianoRollGrid';
+
+export default PianoRollGrid;
