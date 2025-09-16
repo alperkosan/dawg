@@ -1,4 +1,4 @@
-// Enhanced PianoRoll.jsx - Ana bileşen tüm tutarsızlıklar giderildi
+// client/src/features/piano_roll/components/PianoRoll.jsx - Enhanced with Touch & Keyboard
 import React, { useRef, useState, useCallback, useMemo, useEffect } from 'react';
 import * as Tone from 'tone';
 
@@ -7,22 +7,24 @@ import TimelineRuler from './TimelineRuler';
 import PianoRollGrid from './PianoRollGrid';
 import PianoKeyboard from './PianoKeyboard';
 import { PianoRollToolbar } from './PianoRollToolbar';
-import VelocityLane from './VelocityLane';
+import { EnhancedVelocityLane } from './EnhancedVelocityLane';
+import ContextMenu from './ContextMenu'; // Yeni oluşturduğumuz component'i import edin
+
 import ResizableHandle from '../../../ui/ResizableHandle';
 import Minimap from './Minimap';
+import KeyboardShortcutsPanel from './KeyboardShortcutsPanel'; // YENİ
 
-// Hooks
+// Enhanced Hooks
 import { useViewport } from '../hooks/useViewport';
-import { usePianoRollInteractions } from '../hooks/usePianoRollInteractions';
+import { useHybridInteractions } from '../hooks/useHybridInteractions'; // YENİ - Touch + Mouse
 import { usePianoRollState } from '../hooks/usePianoRollState';
-import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
+import { usePlaybackAnimator } from '../../../hooks/usePlaybackAnimator';
 
 // Stores
 import { useInstrumentsStore } from '../../../store/useInstrumentsStore';
 import { usePianoRollStore } from '../store/usePianoRollStore';
 import { useArrangementStore } from '../../../store/useArrangementStore';
 import { usePlaybackStore } from '../../../store/usePlaybackStore';
-import { usePlaybackAnimator } from '../../../hooks/usePlaybackAnimator';
 
 // Styles
 import '../PianoRoll.css';
@@ -37,6 +39,9 @@ function PianoRoll({ instrument, audioEngineRef, pattern, onPatternChange, playb
   const scrollContainerRef = useRef(null);
   const playheadRef = useRef(null);
   
+  // ✅ KEYBOARD SHORTCUTS PANEL STATE
+  const [showKeyboardShortcuts, setShowKeyboardShortcuts] = useState(false);
+  
   // ✅ STORE HOOKS
   const { updatePatternNotes } = useArrangementStore();
   const { playbackMode } = usePlaybackStore();
@@ -50,7 +55,7 @@ function PianoRoll({ instrument, audioEngineRef, pattern, onPatternChange, playb
 
   // ✅ PIANO ROLL STATE
   const pianoRollState = usePianoRollState(pattern, onPatternChange);
-  const { notes, selectedNotes, setSelectedNotes, scale, tool, zoom, snapSettings } = pianoRollState;
+  const { notes, selectedNotes, setSelectedNotes, scale, snapSettings } = pianoRollState;
 
   // ✅ VIEWPORT MANAGEMENT
   const viewport = useViewport(scrollContainerRef, {
@@ -66,7 +71,7 @@ function PianoRoll({ instrument, audioEngineRef, pattern, onPatternChange, playb
     }
   }, [instrument?.id, updatePatternNotes, onPatternChange, pattern]);
 
-  // ✅ GRID DIMENSIONS - Memoized
+  // ✅ GRID DIMENSIONS
   const gridDimensions = useMemo(() => ({
     stepWidth: 40 * zoomX,
     keyHeight: 20 * zoomY,
@@ -74,7 +79,7 @@ function PianoRoll({ instrument, audioEngineRef, pattern, onPatternChange, playb
     gridHeight: TOTAL_KEYS * 20 * zoomY
   }), [zoomX, zoomY, loopLength]);
 
-  // ✅ COORDINATE CONVERTERS - Memoized and optimized
+  // ✅ COORDINATE CONVERTERS
   const coordinateConverters = useMemo(() => {
     const { stepWidth, keyHeight } = gridDimensions;
     const NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -98,7 +103,6 @@ function PianoRoll({ instrument, audioEngineRef, pattern, onPatternChange, playb
       },
       
       stepToX: (step) => step * stepWidth,
-      
       xToStep: (x) => Math.max(0, x / stepWidth),
       
       yToNote: (y) => {
@@ -110,8 +114,8 @@ function PianoRoll({ instrument, audioEngineRef, pattern, onPatternChange, playb
     };
   }, [gridDimensions]);
 
-  // ✅ INTERACTIONS HOOK
-  const interactions = usePianoRollInteractions({
+  // ✅ ENHANCED INTERACTIONS HOOK - Now with Touch + Keyboard support
+  const interactions = useHybridInteractions({
     notes: notes || [],
     handleNotesChange,
     instrumentId: instrument?.id,
@@ -120,13 +124,9 @@ function PianoRoll({ instrument, audioEngineRef, pattern, onPatternChange, playb
     gridDimensions,
     coordinateConverters,
     containerRef: scrollContainerRef,
-    activeTool,
     selectedNotes,
     setSelectedNotes
   });
-
-  // ✅ KEYBOARD SHORTCUTS
-  useKeyboardShortcuts(pianoRollState, interactions);
 
   // ✅ PLAYBACK ANIMATOR
   usePlaybackAnimator(playheadRef, { 
@@ -169,6 +169,26 @@ function PianoRoll({ instrument, audioEngineRef, pattern, onPatternChange, playb
     }
   }, []);
 
+  // ✅ GLOBAL KEYBOARD SHORTCUTS
+  useEffect(() => {
+    const handleGlobalKeyDown = (e) => {
+      // F1 or ? to show shortcuts
+      if (e.key === 'F1' || (e.key === '?' && !e.shiftKey)) {
+        e.preventDefault();
+        setShowKeyboardShortcuts(true);
+      }
+      
+      // Escape to close shortcuts
+      if (e.key === 'Escape' && showKeyboardShortcuts) {
+        e.preventDefault();
+        setShowKeyboardShortcuts(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [showKeyboardShortcuts]);
+
   // ✅ NO INSTRUMENT FALLBACK
   if (!instrument) {
     return (
@@ -178,7 +198,10 @@ function PianoRoll({ instrument, audioEngineRef, pattern, onPatternChange, playb
           <div className="text-center text-gray-400">
             <div className="text-6xl mb-4">🎹</div>
             <h3 className="text-xl font-semibold mb-2">Piano Roll</h3>
-            <p>Düzenlemek için bir enstrüman seçin</p>
+            <p>Select an instrument to edit</p>
+            <div className="mt-4 text-sm text-gray-500">
+              Press <kbd className="px-2 py-1 bg-gray-700 rounded">F1</kbd> for shortcuts
+            </div>
           </div>
         </div>
       </div>
@@ -190,8 +213,38 @@ function PianoRoll({ instrument, audioEngineRef, pattern, onPatternChange, playb
 
   return (
     <div className="w-full h-full flex flex-col bg-gray-900 text-white select-none relative">
-      {/* TOOLBAR */}
-      <PianoRollToolbar />
+      {/* ENHANCED TOOLBAR with Input Mode Indicator */}
+      <div className="relative">
+        <PianoRollToolbar />
+        
+        {/* Input Mode & Shortcuts Indicator */}
+        <div className="absolute top-2 right-4 flex items-center gap-2">
+          {/* Input Mode Indicator */}
+          <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-xs ${
+            interactions.inputMode === 'touch' ? 'bg-emerald-900/30 text-emerald-300 border border-emerald-700/30' :
+            interactions.inputMode === 'hybrid' ? 'bg-purple-900/30 text-purple-300 border border-purple-700/30' :
+            'bg-blue-900/30 text-blue-300 border border-blue-700/30'
+          }`}>
+            <div className={`w-2 h-2 rounded-full ${
+              interactions.inputMode === 'touch' ? 'bg-emerald-400' :
+              interactions.inputMode === 'hybrid' ? 'bg-purple-400' :
+              'bg-blue-400'
+            }`} />
+            {interactions.inputMode === 'touch' ? '👆 Touch' :
+             interactions.inputMode === 'hybrid' ? '🖱️👆 Hybrid' :
+             '🖱️ Mouse'}
+          </div>
+          
+          {/* Shortcuts Button */}
+          <button
+            onClick={() => setShowKeyboardShortcuts(true)}
+            className="px-2 py-1 bg-gray-800/50 hover:bg-gray-700/50 border border-gray-600 rounded text-xs text-gray-300 hover:text-white transition-colors"
+            title="Keyboard Shortcuts (F1)"
+          >
+            F1
+          </button>
+        </div>
+      </div>
       
       {/* MAIN CONTENT */}
       <div className="flex-grow min-h-0 relative">
@@ -200,17 +253,19 @@ function PianoRoll({ instrument, audioEngineRef, pattern, onPatternChange, playb
           <Minimap
             notes={notes || []}
             viewport={viewport}
+            selectedNotes={interactions.selectedNotes}
             onNavigate={handleMinimapNavigate}
           />
         </div>
         
-        {/* SCROLL CONTAINER */}
+        {/* SCROLL CONTAINER with Enhanced Event Handlers */}
         <div
           ref={scrollContainerRef}
           className="w-full h-full overflow-auto piano-roll-scroll"
           style={{ 
             contain: 'layout style paint',
-            willChange: 'scroll-position'
+            willChange: 'scroll-position',
+            touchAction: 'none' // Prevent browser touch handling
           }}
           {...interactions.eventHandlers}
         >
@@ -222,9 +277,9 @@ function PianoRoll({ instrument, audioEngineRef, pattern, onPatternChange, playb
               contain: 'layout style paint'
             }}
           >
-            {/* TOP-LEFT CORNER SPACER */}
+            {/* TOP-LEFT CORNER SPACER with Debug Info */}
             <div
-              className="absolute top-0 left-0 bg-gray-800 border-r border-b border-gray-700 z-30 flex items-center justify-center"
+              className="absolute top-0 left-0 bg-gray-800 border-r border-b border-gray-700 z-30 flex flex-col items-center justify-center"
               style={{ 
                 width: KEYBOARD_WIDTH, 
                 height: RULER_HEIGHT
@@ -233,6 +288,11 @@ function PianoRoll({ instrument, audioEngineRef, pattern, onPatternChange, playb
               <span className="text-xs text-gray-400 font-mono">
                 {Math.round(zoomX * 100)}%
               </span>
+              {process.env.NODE_ENV === 'development' && (
+                <span className="text-xs text-cyan-400 font-mono">
+                  {interactions.debugInfo.currentTool}
+                </span>
+              )}
             </div>
 
             {/* TIME RULER */}
@@ -314,15 +374,13 @@ function PianoRoll({ instrument, audioEngineRef, pattern, onPatternChange, playb
                   </div>
                   
                   <div className="flex-grow relative">
-                    <VelocityLane 
-                      notes={notes || []}
-                      selectedNotes={interactions.selectedNotes}
-                      viewport={viewport}
-                      height={velocityLaneHeight}
-                      onVelocityChange={interactions.handleVelocityChange}
-                      onVelocityBarMouseDown={interactions.handleVelocityBarMouseDown}
-                      onVelocityWheel={interactions.handleVelocityWheel}
-                    />
+                        <EnhancedVelocityLane
+                        notes={notes || []}
+                        selectedNotes={interactions.selectedNotes}
+                        viewport={viewport}
+                        store={usePianoRollStore.getState()}
+                        onVelocityChange={interactions.handleVelocityChange}
+                        />
                   </div>
                 </div>
               </div>
@@ -331,20 +389,53 @@ function PianoRoll({ instrument, audioEngineRef, pattern, onPatternChange, playb
         </div>
       </div>
       
-      {/* STATUS BAR */}
+      {/* ENHANCED STATUS BAR with Touch Info */}
       <div className="h-6 bg-gray-800 border-t border-gray-700 flex items-center justify-between px-4 text-xs text-gray-400">
         <div className="flex items-center gap-4">
           <span>Notes: {notes?.length || 0}</span>
           <span>Selected: {interactions.selectedNotes.size}</span>
           <span>Tool: {activeTool}</span>
+          {interactions.touchState.isActive && (
+            <span className="text-emerald-400">
+              Touch: {interactions.touchState.gestureType || 'active'}
+            </span>
+          )}
         </div>
         
         <div className="flex items-center gap-4">
           <span>Scale: {scale.root} {scale.type}</span>
           <span>Snap: {snapSettings?.value || '16n'}</span>
           <span>Zoom: {Math.round(zoomX * 100)}%</span>
+          <span className="text-cyan-400 cursor-pointer" onClick={() => setShowKeyboardShortcuts(true)}>
+            Press F1 for shortcuts
+          </span>
         </div>
       </div>
+
+      {/* CONTEXT MENU */}
+      <ContextMenu 
+        contextMenu={interactions.contextMenu}
+        setContextMenu={interactions.setContextMenu}
+      />      
+
+      {/* KEYBOARD SHORTCUTS PANEL */}
+      <KeyboardShortcutsPanel 
+        isOpen={showKeyboardShortcuts}
+        onClose={() => setShowKeyboardShortcuts(false)}
+      />
+      
+      {/* TOUCH GESTURE HINTS (only on touch devices) */}
+      {interactions.inputMode === 'touch' && (
+        <div className="absolute bottom-16 left-4 bg-emerald-900/80 backdrop-blur-sm border border-emerald-700 rounded-lg p-3 max-w-xs">
+          <div className="text-emerald-300 text-sm font-medium mb-2">Touch Gestures</div>
+          <div className="text-emerald-200 text-xs space-y-1">
+            <div>• Tap: Select/Create note</div>
+            <div>• Double tap: Delete note</div>
+            <div>• Pinch: Zoom</div>
+            <div>• Long press: Context menu</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
