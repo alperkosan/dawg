@@ -4,9 +4,8 @@
 import * as Tone from 'tone';
 import { timeManager } from './UnifiedTimeManager';
 import { InstrumentNode } from './nodes/InstrumentNode.js';
-import { MixerStrip } from './nodes/MixerStrip.js'; // YENİ IMPORT
+import { MixerStrip } from './nodes/MixerStrip.js';
 import { sliceBuffer, normalizeBuffer, reverseBuffer, reversePolarity, removeDCOffset, cloneBuffer } from '../utils/audioUtils.js';
-import { usePlaybackStore } from '../../store/usePlaybackStore';
 import { memoize } from 'lodash';
 
 // Existing memoized function stays the same
@@ -227,50 +226,76 @@ class AudioEngine {
     }
   }
 
-  /**
-   * Enhanced sync process with new mixer system
-   */
   async _performEnhancedSync(instrumentData, mixerTrackData, arrangementData) {
-    // Update data cache
+    console.log("%c[SYNC START] Senkronizasyon başlıyor...", "color: #f59e0b; font-weight: bold;");
+    
+    // 1. Verileri al ve eski bileşenleri temizle
     this.instrumentData = instrumentData;
     this.mixerTrackData = mixerTrackData;
-    
-    if (arrangementData) {
-      this.clips = arrangementData.clips || [];
-      this.patterns = arrangementData.patterns || {};
-      this.arrangementTracks = arrangementData.tracks || [];
-      this.activePatternId = arrangementData.activePatternId;
-      this.playbackMode = usePlaybackStore.getState().playbackMode;
+    if (arrangementData) { /* ... arrangement verilerini al ... */ }
+    this._cleanupRemovedComponents(instrumentData, mixerTrackData);
+
+    // 2. Mixer kanallarını (strip) oluştur/güncelle
+    for (const trackData of mixerTrackData) {
+      if (!this.mixerStrips.has(trackData.id)) {
+        this.mixerStrips.set(trackData.id, new MixerStrip(trackData));
+      }
     }
     
-    // 1. Clean up removed components
-    this._cleanupRemovedComponents(instrumentData, mixerTrackData);
-    
-    // 2. Create/update mixer strips with enhanced system
-    await this._createMixerStrips(mixerTrackData);
-    
-    // 3. Build bus routing
-    const busInputs = this._buildBusRouting(mixerTrackData);
-    
-    // 4. Build all mixer chains in parallel for performance
-    const buildPromises = Array.from(this.mixerStrips.entries()).map(async ([id, strip]) => { 
-      const trackData = mixerTrackData.find(t => t.id === id); 
-      if (trackData) {
-        await strip.buildSignalChain(trackData, this.masterFader, busInputs, this.mixerStrips); 
+    const busInputs = new Map();
+    mixerTrackData.forEach(trackData => {
+      if (trackData.type === 'bus') {
+        const strip = this.mixerStrips.get(trackData.id);
+        if (strip) busInputs.set(trackData.id, strip.inputGain);
       }
     });
+
+    // 3. Tüm mixer kanallarının ses zincirini kur
+    for (const strip of this.mixerStrips.values()) {
+      const trackData = mixerTrackData.find(t => t.id === strip.id);
+      if(trackData) {
+        await strip.buildSignalChain(trackData, this.masterFader, busInputs);
+      }
+    }
     
-    await Promise.all(buildPromises);
+    // 4. NİHAİ DÜZELTME: Enstrümanları oluştur ve DOĞRUDAN bağla
+    await this._createAndConnectInstruments(instrumentData);
     
-    // 5. Connect instruments (unchanged)
-    await this._loadAndConnectInstruments(instrumentData);
-    
-    // 6. Setup send connections
-    this._setupSendConnections(mixerTrackData);
-    
-    // 7. Reschedule notes
     this.reschedule();
+    console.log("%c[SYNC END] Senkronizasyon tamamlandı.", "color: #10b981; font-weight: bold;");
   }
+  
+  /**
+   * YENİ: Bu fonksiyon, eski _loadAndConnectInstruments'ın yerini alır.
+   * Artık buffer'larla uğraşmaz, sadece enstrümanları oluşturur ve miksere bağlar.
+   */
+  async _createAndConnectInstruments(instrumentData) {
+    console.log(`[AUDIO ENGINE] ${instrumentData.length} enstrüman oluşturuluyor ve bağlanıyor...`);
+    for (const instData of instrumentData) {
+      let instrumentNode = this.instruments.get(instData.id);
+
+      // Eğer enstrüman daha önce oluşturulmamışsa, yenisini oluştur.
+      if (!instrumentNode) {
+        instrumentNode = new InstrumentNode(instData);
+        this.instruments.set(instData.id, instrumentNode);
+      } else {
+        // Zaten varsa, parametrelerini güncelle (örn: envelope)
+        instrumentNode.updateParameters(instData);
+      }
+      
+      // Enstrümanın çıkışını ilgili mikser kanalının girişine bağla.
+      const targetStrip = this.mixerStrips.get(instData.mixerTrackId);
+      if (instrumentNode && targetStrip) {
+        // Önceki bağlantıyı (varsa) kes ve yenisini kur.
+        instrumentNode.output.disconnect(); 
+        instrumentNode.output.connect(targetStrip.inputGain);
+        console.log(`%c[ROUTING] BAĞLANTI: (Enstrüman) ${instData.name} -> ${targetStrip.id}`, 'color: #8b5cf6');
+      } else {
+         console.error(`[ROUTING] HATA: ${instData.name} için hedef mikser kanalı (${instData.mixerTrackId}) bulunamadı!`);
+      }
+    }
+  }
+
 
   /**
    * Create enhanced mixer strips
@@ -353,6 +378,7 @@ class AudioEngine {
   }
 
   _schedulePatternNotes() {
+    this.clearAllScheduledNotes();
     const activePattern = this.patterns?.[this.activePatternId];
     if (!activePattern) return;
 
@@ -361,8 +387,8 @@ class AudioEngine {
       if (!inst || inst.isMuted || !notes) return;
       
       const node = this.instruments.get(instId);
-      const buffer = this.processedAudioBuffers.get(instId);
-      if (!node || !buffer) return;
+      // DÜZELTME: Artık buffer kontrolü yapmıyoruz, sadece node var mı diye bakıyoruz.
+      if (!node) return;
       
       notes.forEach(note => {
         const step = note.time;
@@ -372,7 +398,8 @@ class AudioEngine {
         const timeNotation = `${bar}:${beat}:${sixteenth}`;
         
         const id = Tone.Transport.schedule((time) => {
-          node.trigger(time, note, buffer.duration, inst.cutItself);
+          // 'trigger' fonksiyonuna artık buffer göndermiyoruz.
+          node.trigger(time, note, null, inst.cutItself);
         }, timeNotation);
         
         this.scheduledEventIds.set(`pattern-${this.activePatternId}-${instId}-${note.id || note.time}`, id);

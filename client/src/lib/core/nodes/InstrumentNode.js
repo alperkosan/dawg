@@ -16,6 +16,7 @@ export class InstrumentNode {
       urls: { C4: instrumentData.url },
       baseUrl: window.location.origin,
       onload: () => {
+        console.info(` ${instrumentData.name} için buffer yüklendi:`);
         this.isReady = true;
       },
       onerror: (error) => {
@@ -26,7 +27,6 @@ export class InstrumentNode {
 
     this.output = new Tone.Channel(0, 0);
     
-    // NİHAİ DÜZELTME: Sampler'ın ses çıkışını, enstrümanın ana çıkışına bağlıyoruz.
     // BU SATIR OLMADAN HİÇBİR SES DIŞARI ÇIKAMAZ!
     this.sampler.connect(this.output);
   }

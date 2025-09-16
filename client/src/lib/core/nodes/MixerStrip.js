@@ -38,8 +38,7 @@ export class MixerStrip {
    */
   async buildSignalChain(trackData, masterFader, busInputs) {
     if (this.isDisposed) return;
-    console.log(`[BUILD CHAIN] Sinyal zinciri kuruluyor: ${this.id}`);
-    
+
     // 1. Önceki zinciri tamamen temizle
     this.inputGain.disconnect();
     await this.clearChain();
@@ -279,7 +278,6 @@ export class MixerStrip {
       const targetBusInput = busInputs.get(send.busId);
       if (targetBusInput) {
         sendGain.connect(targetBusInput);
-        console.log(`%c[ROUTING] BAĞLANTI: (Send) ${this.id} -> ${send.busId}`, 'color: #0ea5e9');
       } else {
         console.warn(`[MIXER ROUTING] Hedef Bus bulunamadı: ${this.id} -> ${send.busId}`);
       }
@@ -295,17 +293,16 @@ export class MixerStrip {
       const customOutput = trackData.output;
 
       if (customOutput && busInputs.has(customOutput)) {
+          // Eğer kanal için özel bir çıkış (başka bir bus) belirtilmişse oraya bağla
           this.outputGain.connect(busInputs.get(customOutput));
-          console.log(`%c[ROUTING] BAĞLANTI: (Çıkış) ${this.id} -> ${customOutput}`, 'color: #0ea5e9');
-      } else if (this.type !== 'master') {
-          this.outputGain.connect(masterFader);
-          console.log(`%c[ROUTING] BAĞLANTI: (Çıkış) ${this.id} -> MASTER FADER`, 'color: #0ea5e9');
       } else {
-          // Master kanalı doğrudan hoparlörlere (Tone.Destination) gider.
-          this.outputGain.connect(Tone.getDestination());
-          console.log(`%c[ROUTING] BAĞLANTI: (Çıkış) ${this.id} -> HOPARLÖRLER`, 'color: #22c55e; font-weight: bold;');
+          // DÜZELTME: HATALI VARSAYIMI KALDIRIYORUZ.
+          // Master kanalı dahil, özel bir çıkışı olmayan TÜM kanallar
+          // doğrudan ana masterFader'a bağlanmalıdır.
+          this.outputGain.connect(masterFader);
       }
   }
+
 
   setupPreFaderSends(sendsData) {
     // Pre-fader send'ler postGain'den sonra alınır
@@ -398,12 +395,12 @@ export class MixerStrip {
   // ============================================
 
   async clearChain() {
-    console.log(`[CLEAR CHAIN] Zincir temizleniyor: ${this.id}`);
     this.meteringSchedules.forEach(id => Tone.Transport.clear(id));
     this.meteringSchedules.clear();
     
     this.sendNodes.forEach(node => node.dispose());
     this.sendNodes.clear();
+
     this.effectNodes.forEach(node => node.dispose());
     this.effectNodes.clear();
   }
