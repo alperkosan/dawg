@@ -8,6 +8,7 @@ import PianoRollGrid from './PianoRollGrid';
 import PianoKeyboard from './PianoKeyboard';
 import { PianoRollToolbar } from './PianoRollToolbar';
 import { EnhancedVelocityLane } from './EnhancedVelocityLane';
+import ContextMenu from './ContextMenu'; // Yeni oluşturduğumuz component'i import edin
 
 import ResizableHandle from '../../../ui/ResizableHandle';
 import Minimap from './Minimap';
@@ -412,8 +413,11 @@ function PianoRoll({ instrument, audioEngineRef, pattern, onPatternChange, playb
       </div>
 
       {/* CONTEXT MENU */}
-      <interactions.ContextMenu />
-      
+      <ContextMenu 
+        contextMenu={interactions.contextMenu}
+        setContextMenu={interactions.setContextMenu}
+      />      
+
       {/* KEYBOARD SHORTCUTS PANEL */}
       <KeyboardShortcutsPanel 
         isOpen={showKeyboardShortcuts}
