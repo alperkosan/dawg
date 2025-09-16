@@ -1,4 +1,4 @@
-// Enhanced PianoRollGrid.jsx - Optimized rendering and interactions
+// client/src/features/piano_roll/components/PianoRollGrid.jsx - Optimized version
 import React, { useEffect, useRef, useMemo, useCallback, memo } from 'react';
 import * as Tone from 'tone';
 import Note from './Note';
@@ -18,11 +18,11 @@ const PianoRollGrid = memo(({
 }) => {
   const canvasRef = useRef(null);
   const lastRenderHash = useRef('');
-  
+
   // Store state
   const { showScaleHighlighting } = usePianoRollStore();
 
-  // ✅ VIEWPORT CALCULATION - Only render visible area
+  // ✅ PERFORMANS: Sadece görünür alanı hesapla
   const visibleBounds = useMemo(() => {
     const container = canvasRef.current?.parentElement?.parentElement;
     if (!container) {
@@ -33,32 +33,33 @@ const PianoRollGrid = memo(({
         bottom: gridDimensions.gridHeight 
       };
     }
-    
-    const margin = Math.max(gridDimensions.keyHeight * 3, gridDimensions.stepWidth * 16);
-    
+
+    // Margin ekleyerek smooth scrolling sağla
+    const margin = Math.max(gridDimensions.keyHeight * 2, gridDimensions.stepWidth * 8);
+
     return {
       left: Math.max(0, container.scrollLeft - margin),
       right: Math.min(gridDimensions.gridWidth, container.scrollLeft + container.clientWidth + margin),
       top: Math.max(0, container.scrollTop - margin),
       bottom: Math.min(gridDimensions.gridHeight, container.scrollTop + container.clientHeight + margin)
     };
-  }, [gridDimensions, viewport]);
+  }, [gridDimensions]);
 
-  // ✅ SCALE NOTES CALCULATION
+  // ✅ SCALE NOTES - Sadece gerektiğinde hesapla
   const scaleNoteSet = useMemo(() => {
     if (!showScaleHighlighting || !scale?.getScaleNotes) return new Set();
     return scale.getScaleNotes();
   }, [scale, showScaleHighlighting]);
 
-  // ✅ VISIBLE NOTES - Performance optimization
+  // ✅ VISIBLE NOTES - Performans optimizasyonu
   const visibleNotes = useMemo(() => {
     if (!notes || notes.length === 0) return [];
-    
+
     return notes.filter(note => {
       const noteX = coordinateConverters.stepToX(note.time);
       const noteY = coordinateConverters.noteToY(note.pitch);
-      
-      // Calculate note width
+
+      // Not genişliğini hesapla
       let noteWidth;
       try {
         const durationInSteps = Tone.Time(note.duration).toSeconds() / Tone.Time('16n').toSeconds();
@@ -66,16 +67,16 @@ const PianoRollGrid = memo(({
       } catch {
         noteWidth = gridDimensions.stepWidth;
       }
-      
-      // Visibility check
+
+      // Görünürlük kontrolü
       const isHorizontallyVisible = 
         noteX + noteWidth >= visibleBounds.left &&
         noteX <= visibleBounds.right;
-        
+
       const isVerticallyVisible = 
         noteY + gridDimensions.keyHeight >= visibleBounds.top &&
         noteY <= visibleBounds.bottom;
-      
+
       return isHorizontallyVisible && isVerticallyVisible;
     });
   }, [notes, visibleBounds, coordinateConverters, gridDimensions]);
@@ -83,70 +84,70 @@ const PianoRollGrid = memo(({
   // ✅ OPTIMIZED GRID DRAWING
   const drawOptimizedGrid = useCallback((ctx, width, height) => {
     ctx.clearRect(0, 0, width, height);
-    
+
     const { stepWidth, keyHeight } = gridDimensions;
-    
-    // Calculate visible grid range
+
+    // Sadece görünür alanı çiz
     const startBar = Math.max(0, Math.floor(visibleBounds.left / (stepWidth * 16)) - 1);
     const endBar = Math.min(
       Math.ceil(width / (stepWidth * 16)), 
       Math.ceil(visibleBounds.right / (stepWidth * 16)) + 1
     );
-    
+
     const startKey = Math.max(0, Math.floor(visibleBounds.top / keyHeight) - 2);
     const endKey = Math.min(
       Math.floor(height / keyHeight),
       Math.ceil(visibleBounds.bottom / keyHeight) + 2
     );
 
-    // 1. Scale highlighting
+    // 1. Scale highlighting - Sadece görünür alan
     if (showScaleHighlighting && scaleNoteSet.size > 0) {
       ctx.fillStyle = 'rgba(255, 255, 255, 0.02)';
-      
+
       for (let i = startKey; i < endKey; i++) {
         const noteIndex = (Math.floor(height / keyHeight) - 1 - i) % 12;
         if (!scaleNoteSet.has(noteIndex)) {
           const y = i * keyHeight;
-          ctx.fillRect(0, y, width, keyHeight);
+          ctx.fillRect(visibleBounds.left, y, visibleBounds.right - visibleBounds.left, keyHeight);
         }
       }
     }
 
-    // 2. Vertical grid lines
+    // 2. Vertical grid lines - Sadece görünür barlar
     ctx.lineWidth = 1;
-    
+
     for (let bar = startBar; bar <= endBar; bar++) {
       const x = bar * stepWidth * 16;
-      
-      // Bar lines
+
+      // Bar lines (kalın)
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
       ctx.beginPath();
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, height);
+      ctx.moveTo(x, visibleBounds.top);
+      ctx.lineTo(x, visibleBounds.bottom);
       ctx.stroke();
-      
-      // Beat lines
+
+      // Beat lines (orta)
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
       for (let beat = 1; beat < 4; beat++) {
         const beatX = x + beat * stepWidth * 4;
         if (beatX <= width) {
           ctx.beginPath();
-          ctx.moveTo(beatX, 0);
-          ctx.lineTo(beatX, height);
+          ctx.moveTo(beatX, visibleBounds.top);
+          ctx.lineTo(beatX, visibleBounds.bottom);
           ctx.stroke();
         }
       }
-      
-      // Subdivision lines (if zoomed in enough)
+
+      // Subdivision lines - Sadece zoom yeterince büyükse
       if (stepWidth > 20) {
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.04)';
         for (let step = 1; step < 16; step++) {
-          if (step % 4 !== 0) {
+          if (step % 4 !== 0) { // Beat çizgilerini atla
             const stepX = x + step * stepWidth;
-            if (stepX <= width) {
+            if (stepX <= width && stepX >= visibleBounds.left && stepX <= visibleBounds.right) {
               ctx.beginPath();
-              ctx.moveTo(stepX, 0);
-              ctx.lineTo(stepX, height);
+              ctx.moveTo(stepX, visibleBounds.top);
+              ctx.lineTo(stepX, visibleBounds.bottom);
               ctx.stroke();
             }
           }
@@ -154,35 +155,23 @@ const PianoRollGrid = memo(({
       }
     }
 
-    // 3. Horizontal lines (octave markers)
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.03)';
-    ctx.lineWidth = 0.5;
-    
-    for (let octave = 0; octave < 8; octave++) {
-      const y = octave * 12 * keyHeight;
-      if (y >= visibleBounds.top && y <= visibleBounds.bottom) {
-        ctx.beginPath();
-        ctx.moveTo(0, y);
-        ctx.lineTo(width, y);
-        ctx.stroke();
-      }
-    }
-
-    // 4. C note highlighting
+    // 3. Horizontal lines - Sadece C notaları ve oktav işaretleri
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.06)';
+    ctx.lineWidth = 0.5;
+
     for (let key = startKey; key < endKey; key++) {
       const noteIndex = (Math.floor(height / keyHeight) - 1 - key) % 12;
       if (noteIndex === 0) { // C note
         const y = key * keyHeight;
         ctx.beginPath();
-        ctx.moveTo(0, y);
-        ctx.lineTo(width, y);
+        ctx.moveTo(visibleBounds.left, y);
+        ctx.lineTo(visibleBounds.right, y);
         ctx.stroke();
       }
     }
   }, [gridDimensions, visibleBounds, showScaleHighlighting, scaleNoteSet]);
 
-  // ✅ RENDER HASH - Prevent unnecessary re-renders
+  // ✅ RENDER HASH - Gereksiz render'ları önle
   const renderHash = useMemo(() => {
     return JSON.stringify({
       bounds: `${visibleBounds.left}-${visibleBounds.top}-${visibleBounds.right}-${visibleBounds.bottom}`,
@@ -193,42 +182,42 @@ const PianoRollGrid = memo(({
     });
   }, [visibleBounds, gridDimensions, scale, showScaleHighlighting, scaleNoteSet]);
 
-  // ✅ CANVAS RENDERING EFFECT
+  // ✅ CANVAS RENDERING - Sadece gerektiğinde
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    
-    // Skip if nothing changed
+
+    // Değişiklik yoksa render etme
     if (lastRenderHash.current === renderHash) return;
-    
+
     const ctx = canvas.getContext('2d', { 
       alpha: false,
-      desynchronized: true
+      desynchronized: true // Performans için
     });
-    
-    // Limit DPR for performance
+
+    // DPR'yi sınırla (performans için)
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    
-    // Set canvas dimensions
+
+    // Canvas boyutlarını ayarla
     canvas.width = gridDimensions.gridWidth * dpr;
     canvas.height = gridDimensions.gridHeight * dpr;
     canvas.style.width = `${gridDimensions.gridWidth}px`;
     canvas.style.height = `${gridDimensions.gridHeight}px`;
-    
+
     ctx.scale(dpr, dpr);
-    
-    // Draw grid
+
+    // Grid'i çiz
     drawOptimizedGrid(ctx, gridDimensions.gridWidth, gridDimensions.gridHeight);
-    
-    // Update hash
+
+    // Hash'i güncelle
     lastRenderHash.current = renderHash;
-    
+
   }, [renderHash, gridDimensions, drawOptimizedGrid]);
 
-  // ✅ INTERACTION PREVIEW COMPONENTS
+  // ✅ INTERACTION PREVIEWS
   const renderInteractionPreviews = () => {
     const previews = [];
-    
+
     if (interaction?.type === 'create' && interaction.previewNote) {
       previews.push(
         <Note
@@ -241,7 +230,7 @@ const PianoRollGrid = memo(({
         />
       );
     }
-    
+
     if (interaction?.previewNotes) {
       interaction.previewNotes.forEach(note => {
         previews.push(
@@ -256,16 +245,16 @@ const PianoRollGrid = memo(({
         );
       });
     }
-    
+
     return previews;
   };
 
-  // ✅ MARQUEE SELECTION RECTANGLE
+  // ✅ SELECTION RECTANGLE
   const renderMarqueeSelection = () => {
     if (interaction?.type !== 'marquee') return null;
-    
+
     const { startPos, currentPos } = interaction;
-    
+
     return (
       <div
         className="absolute border-2 border-dashed border-cyan-400 bg-cyan-400/10 pointer-events-none z-40"
@@ -280,10 +269,10 @@ const PianoRollGrid = memo(({
     );
   };
 
-  // ✅ PLAYHEAD COMPONENT
+  // ✅ PLAYHEAD
   const renderPlayhead = () => {
     if (!playbackState?.isPlaying) return null;
-    
+
     return (
       <div 
         ref={playheadRef} 
@@ -302,7 +291,7 @@ const PianoRollGrid = memo(({
       style={{ 
         width: gridDimensions.gridWidth, 
         height: gridDimensions.gridHeight,
-        contain: 'layout style paint'
+        contain: 'layout style paint' // Performans optimizasyonu
       }}
     >
       {/* BACKGROUND GRID CANVAS */}
@@ -315,8 +304,8 @@ const PianoRollGrid = memo(({
           contain: 'strict'
         }}
       />
-      
-      {/* VISIBLE NOTES */}
+
+      {/* VISIBLE NOTES - Sadece görünür olanlar */}
       {visibleNotes.map((note) => (
         <Note
           key={note.id}
@@ -328,20 +317,27 @@ const PianoRollGrid = memo(({
           onResizeStart={onResizeStart}
         />
       ))}
-      
+
       {/* INTERACTION PREVIEWS */}
       {renderInteractionPreviews()}
-      
+
       {/* MARQUEE SELECTION */}
       {renderMarqueeSelection()}
-      
+
       {/* PLAYHEAD */}
       {renderPlayhead()}
-      
-      {/* RESIZE PREVIEW */}
+
+      {/* RESIZE FEEDBACK */}
       {interaction?.type === 'resize' && (
         <div className="absolute top-4 left-4 bg-gray-800/90 text-white px-3 py-1 rounded-lg text-sm z-50">
           Duration: {Math.round(interaction.previewDuration || 1)} steps
+        </div>
+      )}
+
+      {/* PERFORMANCE INFO - Debug için */}
+      {process.env.NODE_ENV === 'development' && (
+        <div className="absolute top-4 right-4 bg-black/80 text-green-400 px-2 py-1 rounded text-xs z-50">
+          Visible: {visibleNotes.length}/{notes?.length || 0}
         </div>
       )}
     </div>

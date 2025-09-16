@@ -51,6 +51,41 @@ export const usePianoRollStore = create(
       showVelocityLane: true,
       
       // === ACTIONS ===
+
+      openPianoRollForInstrument: (instrument) => {
+        set({ 
+          pianoRollInstrumentId: instrument.id,
+          panels: {
+            ...get().panels,
+            'piano-roll': {
+              ...get().panels['piano-roll'],
+              isOpen: true,
+              isMinimized: false
+            }
+          }
+        });
+        get().bringPanelToFront('piano-roll');
+        console.log(`Piano Roll opened for instrument: ${instrument.name}`);
+      },
+      
+      // Piano Roll enstrümanını değiştir (panel açıkken)
+      setPianoRollInstrument: (instrumentId) => {
+        set({ pianoRollInstrumentId: instrumentId });
+      },
+      
+      // Piano Roll'u kapat ve enstrüman seçimini temizle
+      closePianoRoll: () => {
+        set({ 
+          pianoRollInstrumentId: null,
+          panels: {
+            ...get().panels,
+            'piano-roll': {
+              ...get().panels['piano-roll'],
+              isOpen: false
+            }
+          }
+        });
+      },      
       
       // Gam ayarları
       setScale: (root, type) => {

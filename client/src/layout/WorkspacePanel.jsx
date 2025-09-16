@@ -22,7 +22,7 @@ function WorkspacePanel({ audioEngineRef }) {
   // Piano Roll için seçili olan tam enstrüman nesnesini ID'sini kullanarak buluyoruz.
   const pianoRollInstrument = instruments.find(i => i.id === pianoRollInstrumentId);
   const editingInstrument = instruments.find(i => i.id === editingInstrumentId);
-  
+
   // --- YENİ: Piano Roll için gerekli verileri ilgili store'lardan çekiyoruz ---
   const { patterns, activePatternId, updatePatternNotes } = useArrangementStore();
   const { playbackState, transportPosition } = usePlaybackStore();
@@ -52,34 +52,33 @@ function WorkspacePanel({ audioEngineRef }) {
             componentProps.instrument = editingInstrument;
             componentProps.audioEngineRef = audioEngineRef;
           }
-          
+
           if (panel.id === 'piano-roll') {
-            // YENİ SİSTEMİN BEKLEDİĞİ PROPS'LARI HAZIRLIYORUZ
-            
-            // 1. Hangi enstrümanın düzenleneceğini ID olarak gönderiyoruz
-            componentProps.instrumentId = pianoRollInstrumentId;
+            // ✅ DÜZELTME: Props'ları doğru formatta hazırlıyoruz
+
             componentProps.instrument = pianoRollInstrument;
+            componentProps.audioEngineRef = audioEngineRef;
 
-            // 2. O anki aktif pattern'in, bu enstrümana ait notalarını alıyoruz
+            // Aktif pattern'in bu enstrümana ait notalarını alıyoruz
             const instrumentNotes = activePattern?.data[pianoRollInstrumentId] || [];
-            const patternForPianoRoll = {
-                id: activePattern?.id,
-                name: activePattern?.name,
-                notes: instrumentNotes
-            };
-            componentProps.pattern = patternForPianoRoll;
-            
-            // 3. Notalar değiştiğinde ana state'i güncelleyecek fonksiyonu gönderiyoruz
-            componentProps.onPatternChange = (newPatternData) => {
-                if (pianoRollInstrumentId) {
-                    updatePatternNotes(pianoRollInstrumentId, newPatternData.notes);
-                }
+
+            componentProps.pattern = {
+              id: activePattern?.id || 'default',
+              name: activePattern?.name || 'Pattern 1',
+              notes: instrumentNotes
             };
 
-            // 4. Ses motoru ve çalma durumu bilgilerini gönderiyoruz
+            // Notalar değiştiğinde ana state'i güncelleyecek fonksiyon
+            /*componentProps.onPatternChange = (newPatternData) => {
+              if (pianoRollInstrumentId && newPatternData.notes) {
+                updatePatternNotes(pianoRollInstrumentId, newPatternData.notes);
+              }
+            };*/
+
+            // Playback state'i doğru formatta gönderiyoruz
             componentProps.playbackState = {
               isPlaying: playbackState === 'playing',
-              position: transportPosition,
+              position: transportPosition || 0,
             };
           }
 

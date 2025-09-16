@@ -1,56 +1,91 @@
-import { useEffect, useRef } from 'react';
+// client/src/hooks/usePlaybackAnimator.js
+import { useEffect } from 'react';
 import * as Tone from 'tone';
-import { usePlaybackStore } from '../store/usePlaybackStore';
 
 /**
- * @file usePlaybackAnimator.js - NİHAİ SÜRÜM
- * @description Playhead pozisyonunu, döngü uzunluğundan tamamen bağımsız,
- * doğrudan BPM ve anlık transport zamanına göre hesaplayan, tam senkronize animasyon kancası.
+ * Playhead animasyon hook'u - Piano Roll için optimize edilmiş
  */
-export const usePlaybackAnimator = (elementRef, options = {}) => {
-  const { stepWidth, playbackState } = options;
-  const animationFrameRef = useRef(null);
+export const usePlaybackAnimator = (playheadRef, options = {}) => {
+  const { 
+    fullWidth, 
+    offset = 0, 
+    smoothing = true, 
+    compensation = 'auto' 
+  } = options;
 
   useEffect(() => {
-    const element = elementRef.current;
-    if (!element) return;
-
-    // Çalma durumu 'playing' ise animasyon döngüsünü başlat
-    if (playbackState === 'playing') {
-      const animate = () => {
-        // Doğrudan Tone.js'ten anlık saniyeyi al
-        const transportSeconds = Tone.Transport.seconds;
-        
-        // Saniyeyi 16'lık nota adımına çevir
-        const sixteenthNoteDuration = Tone.Time('16n').toSeconds();
-        const currentStep = transportSeconds / sixteenthNoteDuration;
-        
-        // Adımı piksel pozisyonuna çevir
-        const xPosition = currentStep * stepWidth;
-
-        // Pozisyonu güncelle
-        element.style.transform = `translateX(${xPosition}px)`;
-        
-        animationFrameRef.current = requestAnimationFrame(animate);
-      };
-      animationFrameRef.current = requestAnimationFrame(animate);
-    } 
-    // Çalma durduysa veya duraklatıldıysa döngüyü temizle
-    else {
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
+    let animationId = null;
+    
+    const animate = () => {
+      if (!playheadRef.current) {
+        animationId = requestAnimationFrame(animate);
+        return;
       }
-      // Eğer tamamen durduysa, başa sar
-      if (playbackState === 'stopped') {
-        element.style.transform = 'translateX(0px)';
+
+      // Tone.js'den mevcut transport pozisyonunu al
+      const currentTime = Tone.Transport.seconds;
+      const sixteenthNoteDuration = Tone.Time('16n').toSeconds();
+      const stepPosition = currentTime / sixteenthNoteDuration;
+      
+      // Pixel pozisyonunu hesapla (40px per step * zoom)
+      const stepWidth = 40; // Base step width
+      const pixelPosition = stepPosition * stepWidth + offset;
+      
+      // Playhead'i güncelle
+      if (fullWidth && pixelPosition > fullWidth) {
+        // Loop başına dön
+        playheadRef.current.style.left = `${offset}px`;
+      } else {
+        playheadRef.current.style.left = `${Math.max(offset, pixelPosition)}px`;
       }
+      
+      // Smooth animation için transform kullan
+      if (smoothing) {
+        playheadRef.current.style.transform = 'translateZ(0)';
+      }
+      
+      animationId = requestAnimationFrame(animate);
+    };
+
+    // Sadece Tone.js transport aktifse animasyonu başlat
+    if (Tone.Transport.state === 'started') {
+      animationId = requestAnimationFrame(animate);
     }
 
-    // Temizlik fonksiyonu
-    return () => {
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
+    // Transport state değişikliklerini dinle
+    const handleTransportChange = () => {
+      if (Tone.Transport.state === 'started' && !animationId) {
+        animationId = requestAnimationFrame(animate);
+      } else if (Tone.Transport.state === 'stopped') {
+        if (animationId) {
+          cancelAnimationFrame(animationId);
+          animationId = null;
+        }
+        // Playhead'i başa al
+        if (playheadRef.current) {
+          playheadRef.current.style.left = `${offset}px`;
+        }
       }
     };
-  }, [playbackState, stepWidth, elementRef]); // Sadece bu değerler değiştiğinde effect yeniden çalışır
+
+    // Tone.js event listener'ları (eğer mevcutsa)
+    Tone.Transport.on('start', handleTransportChange);
+    Tone.Transport.on('stop', handleTransportChange);
+    Tone.Transport.on('pause', () => {
+      if (animationId) {
+        cancelAnimationFrame(animationId);
+        animationId = null;
+      }
+    });
+
+    return () => {
+      if (animationId) {
+        cancelAnimationFrame(animationId);
+      }
+      // Event listener'ları temizle
+      Tone.Transport.off('start', handleTransportChange);
+      Tone.Transport.off('stop', handleTransportChange);
+      Tone.Transport.off('pause');
+    };
+  }, [playheadRef, fullWidth, offset, smoothing]);
 };
