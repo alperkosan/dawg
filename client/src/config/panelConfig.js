@@ -1,7 +1,7 @@
 import ChannelRack from '../features/channel_rack/ChannelRack';
 import Mixer from '../features/mixer/Mixer';
 import SampleEditor from '../features/sample_editor/SampleEditor';
-import PianoRoll from '../features/piano_roll/components/PianoRoll';
+import PianoRoll from '../features/piano_roll/components/PianoRollV2';
 import ArrangementPanel from '../features/arrangement/ArrangementPanel';
 import KeybindingsPanel from '../features/key_bindings/KeybindingsPanel';
 import { ThemeEditor } from '../features/theme_editor/ThemeEditor'; // YENİ: Tema Editörünü import et
