@@ -62,9 +62,19 @@ const ModernInstrumentChannel = React.memo(({ instrument, audioEngineRef, notes,
             <div className="sticky left-0 w-[300px] h-14 p-2 flex items-center gap-3 z-20 shrink-0 bg-[var(--color-surface)] rounded-lg border border-transparent hover:border-[var(--color-border)] transition-colors">
                  <div className="w-1 h-full rounded-full" style={{backgroundColor: 'var(--color-primary)'}} />
                  <div className="flex-grow flex items-center gap-2 min-w-0 cursor-pointer group" onClick={() => handleEditInstrument(instrument, audioEngineRef.current)} title={`${instrument.name} (Edit Sample)`}>
-                    <button onClick={(e) => { e.stopPropagation(); openPianoRollForInstrument(instrument); }} className="p-1 group-hover:bg-[var(--color-background)] rounded transition-colors shrink-0" title="Toggle Piano Roll">
-                        <Music size={16} style={{ color: instrument.pianoRoll ? 'var(--color-accent)' : 'var(--color-primary)' }} />
-                    </button>
+                    <button 
+                        onClick={(e) => { 
+                            e.stopPropagation(); // Parent click'ini engelle
+                            console.log(`Piano Roll opened for: ${instrument.name}`);
+                            openPianoRollForInstrument(instrument); 
+                        }} 
+                        className={`p-1 group-hover:bg-[var(--color-background)] rounded transition-colors shrink-0 ${
+                            instrument.pianoRoll ? 'text-[var(--color-accent)]' : 'text-[var(--color-primary)]'
+                        }`}
+                        title="Open Piano Roll"
+                    >
+                        <Music size={16} />
+                    </button>                    
                     <span className="truncate font-bold text-sm group-hover:text-[var(--color-primary)]">{instrument.name}</span>
                 </div>
                 <div className="flex items-center gap-3 shrink-0">
