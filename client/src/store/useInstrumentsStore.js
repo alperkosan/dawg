@@ -1,14 +1,5 @@
-/**
- * @file useInstrumentsStore.js
- * @description Projedeki tüm enstrümanların durumunu (state) ve bu durumu değiştiren
- * eylemleri (actions) yönetir. Uygulamanın en merkezi state yönetim birimidir.
- *
- * MİMARİ FELSEFESİ:
- * 1. TEK GERÇEKLİK KAYNAĞI: Bir enstrümanın tüm özellikleri (notaları, efektleri,
- * ses ayarları vb.) SADECE bu store içinde tutulur.
- * 2. TEK YÖNLÜ VERİ AKIŞI: Bir değişiklik olduğunda akış her zaman aynıdır:
- * Kullanıcı Arayüzü (UI) -> Store Eylemi -> Store State Güncellemesi -> AudioEngine Senkronizasyonu (useAudioEngineSync hook'u ile)
- */
+// src/store/useInstrumentsStore.js - GÜNCELLENMİŞ VE GÜÇLENDİRİLMİŞ VERSİYON
+
 import { create } from 'zustand';
 import { initialInstruments, defaultNote } from '../config/initialData';
 // GÜNCELLENDİ: Tüm hesaplama fonksiyonlarını import ediyoruz
@@ -22,29 +13,22 @@ import { useArrangementStore } from './useArrangementStore';
 export const useInstrumentsStore = create((set, get) => ({
   // ========================================================================
   // === STATE (DURUM) ===
-  // Uygulamanın o anki "fotoğrafını" temsil eden veriler.
   // ========================================================================
 
-  /** @type {Array<object>} Projedeki tüm enstrümanların listesi. */
   instruments: initialInstruments,
-
-  /** @type {object} Pre-computed efektler işlenirken hangi enstrümanın kilitli olduğunu tutar. */
   processingEffects: {},
 
-  /** * --- DÜZELTME: Başlangıç state'ine loopLength ve audioLoopLength eklendi ---
-   * Bu değerler, initialInstruments verisine göre en başta bir kere hesaplanır.
-   * Bu sayede ChannelRack gibi bileşenler ilk render olduğunda geçerli bir sayıya erişebilir.
-   */
-  loopLength: 64 + 16,
-  audioLoopLength: 64,
+  // DÜZELTME: Başlangıç state'ine loopLength ve audioLoopLength eklendi
+  loopLength: 64, // Varsayılan UI uzunluğu (4 bar)
+  audioLoopLength: 64, // Varsayılan ses motoru uzunluğu (4 bar)
+
 
   // ========================================================================
   // === ACTIONS (EYLEMLER) ===
-  // State'i güvenli ve tahmin edilebilir bir şekilde değiştiren fonksiyonlar.
   // ========================================================================
 
-  // === YENİ VE EN ÖNEMLİ EYLEM ===
   /**
+   * YENİ VE EN ÖNEMLİ EYLEM:
    * Projenin o anki moduna ve verisine göre döngü uzunluklarını
    * merkezi olarak hesaplar ve günceller. Bu, artık tek yetkili fonksiyondur.
    */
@@ -52,7 +36,7 @@ export const useInstrumentsStore = create((set, get) => ({
     const { playbackMode } = usePlaybackStore.getState();
     const { clips, patterns, activePatternId } = useArrangementStore.getState();
 
-    // YENİ: Tek ve merkezi fonksiyona ilgili verileri göndererek hesaplama yapıyoruz.
+    // Merkezi fonksiyona ilgili verileri göndererek hesaplama yapıyoruz.
     const newAudioLoopLength = calculateAudioLoopLength(playbackMode, {
       patterns,
       activePatternId,
@@ -66,23 +50,14 @@ export const useInstrumentsStore = create((set, get) => ({
       loopLength: newUiRackLength
     });
   },
-
-  /**
-   * Projedeki en son notanın yerine göre döngü uzunluklarını yeniden hesaplar.
-   * @private
-   */
+  
+  // Bu özel fonksiyon artık doğrudan updateLoopLength'i çağırıyor.
   _recalculateLoop: () => {
     get().updateLoopLength();
   },
 
-  /**
-   * --- GÜNCELLENDİ: Artık anlık ve doğru state ile çalışıyor ---
-   * Bu fonksiyon, bir enstrümanın state'ini günceller VE GEREKİRSE
-   * ses motoruna bu enstrümanın sesini yeniden işlemesi için komut gönderir.
-   */
   updateInstrument: (instrumentId, newParams, shouldReconcile, audioEngine) => {
     let updatedInstrument = null;
-    // 1. Adım: State'i anında güncelle ve güncellenmiş enstrüman objesini yakala.
     set(state => {
       const newInstruments = state.instruments.map(inst => {
         if (inst.id === instrumentId) {
@@ -94,14 +69,11 @@ export const useInstrumentsStore = create((set, get) => ({
       return { instruments: newInstruments };
     });
 
-    // 2. Adım: Eğer bu değişiklik sesi etkiliyorsa, motoru senkronize et.
     if (shouldReconcile && audioEngine && updatedInstrument) {
       set(state => ({ ...state, processingEffects: { ...state.processingEffects, [instrumentId]: true } }));
       
-      // Ses motoruna güncellenmiş enstrüman verisini DOĞRUDAN gönderiyoruz.
       const newBuffer = audioEngine.reconcileInstrument(instrumentId, updatedInstrument);
       
-      // 3. Adım: UI'ı yeni dalga formuyla güncelle.
       if (usePanelsStore.getState().editingInstrumentId === instrumentId) {
         usePanelsStore.getState().setEditorBuffer(newBuffer);
       }
@@ -110,38 +82,22 @@ export const useInstrumentsStore = create((set, get) => ({
     }
   },
 
-  /**
-   * --- EKLENDİ: Kayıp fonksiyon geri getirildi ---
-   * Sample Editor'daki anlık önizlemeyi tetikler.
-   * Bu fonksiyon, komutu doğrudan AudioEngine'e iletir.
-   */
   handlePreviewInstrumentSlice: (instrumentId, audioEngine) => {
     audioEngine?.previewInstrument(instrumentId);
   },
   
-  /**
-   * Sample Editor'daki pre-computed efekt düğmelerini (Normalize, Reverse vb.) yönetir.
-   */
   handleTogglePrecomputedEffect: (instrumentId, effectType, audioEngine) => {
     const instrument = get().instruments.find(inst => inst.id === instrumentId);
     if (!instrument) return;
     const newParams = { precomputed: { ...instrument.precomputed, [effectType]: !instrument.precomputed[effectType] } };
-    // Bu değişiklik sesi yeniden işlemeyi gerektirir (shouldReconcile = true)
     get().updateInstrument(instrumentId, newParams, true, audioEngine);
   },
 
-  /**
-   * Sample Editor'daki trim (kesme) ve length (uzunluk) knob'larını yönetir.
-   */
   handleInstrumentParamChange: (instrumentId, param, value, audioEngine) => {
     const newParams = { [param]: value };
-    // Bu değişiklik de sesi yeniden işlemeyi gerektirir (shouldReconcile = true)
     get().updateInstrument(instrumentId, newParams, true, audioEngine);
   },
 
-  /**
-   * Projeye sürüklenen yeni bir sample'dan yeni bir enstrüman oluşturur.
-   */
   handleAddNewInstrument: (sample) => {
     set(state => {
         const { instruments } = state;
@@ -169,7 +125,6 @@ export const useInstrumentsStore = create((set, get) => ({
 
         const newInstruments = [...instruments, newInstrument];
         
-        // İlgili mixer kanalının adını da güncelle
         useMixerStore.getState().setTrackName(firstUnusedTrack.id, newName);
 
         return { instruments: newInstruments };
@@ -177,24 +132,15 @@ export const useInstrumentsStore = create((set, get) => ({
     get()._recalculateLoop();
   },
   
-  /**
-   * Bir enstrümanın modunu 'player' (Channel Rack) ve 'sampler' (Piano Roll) arasında değiştirir.
-   */
   handleSetPianoRollMode: (instrumentId, isPianoRoll) => {
     get().updateInstrument(instrumentId, { pianoRoll: isPianoRoll });
   },
 
-  /**
-   * Bir enstrümanın tüm nota dizisini toplu olarak günceller (Piano Roll için).
-   */
   handleNotesChange: (instrumentId, newNotes) => {
     get().updateInstrument(instrumentId, { notes: newNotes });
     get()._recalculateLoop();
   },
 
-  /**
-   * Bir enstrümanın adını değiştirir ve bağlı olduğu mixer kanalını da günceller.
-   */
   handleRenameInstrument: (instrumentId, newName) => {
     if (!newName) return;
     const instrument = get().instruments.find(inst => inst.id === instrumentId);
@@ -204,17 +150,13 @@ export const useInstrumentsStore = create((set, get) => ({
     }
   },
 
-  /**
-   * Mevcut bir enstrümanın tüm ayarlarıyla bir kopyasını oluşturur.
-   */
   handleCloneInstrument: (instrumentId) => {
     set(state => {
-        const { instruments } = state;
-        const instrumentToClone = instruments.find(inst => inst.id === instrumentId);
+        const instrumentToClone = state.instruments.find(inst => inst.id === instrumentId);
         if (!instrumentToClone) return state;
 
         const mixerTracks = useMixerStore.getState().mixerTracks;
-        const firstUnusedTrack = mixerTracks.find(track => track.type === 'track' && !instruments.some(inst => inst.mixerTrackId === track.id));
+        const firstUnusedTrack = mixerTracks.find(track => track.type === 'track' && !state.instruments.some(inst => inst.mixerTrackId === track.id));
         
         if (!firstUnusedTrack) {
             alert("Boş mixer kanalı kalmadı!");
@@ -226,14 +168,11 @@ export const useInstrumentsStore = create((set, get) => ({
         
         useMixerStore.getState().setTrackName(firstUnusedTrack.id, newName);
         
-        return { instruments: [...instruments, newInstrument] };
+        return { instruments: [...state.instruments, newInstrument] };
     });
     get()._recalculateLoop();
   },
 
-  /**
-   * Bir enstrümanı projeden tamamen siler.
-   */
   handleDeleteInstrument: (instrumentId) => {
     if (window.confirm("Bu enstrümanı silmek istediğinize emin misiniz?")) {
       set(state => ({
@@ -243,39 +182,25 @@ export const useInstrumentsStore = create((set, get) => ({
     }
   },
 
-  /**
-   * Channel Rack'teki bir adıma tıklandığında nota ekler veya kaldırır.
-   * --- GÜÇLENDİRİLDİ: Yinelenen notaları önleyen ve temizleyen mantık. ---
-   */
   handlePatternChange: (instrumentId, stepIndex) => {
     const instrument = get().instruments.find(inst => inst.id === instrumentId);
     if (!instrument) return;
 
     const notes = instrument.notes || [];
-    
-    // Map yapısı, her bir zaman adımı (key) için sadece bir nota (value) olmasını garanti eder.
-    // Bu, mevcut yinelenen notaları otomatik olarak temizler.
     const uniqueNotes = new Map(notes.map(note => [note.time, note]));
 
     if (uniqueNotes.has(stepIndex)) {
-      // Nota zaten varsa, Map'ten sil.
       uniqueNotes.delete(stepIndex);
     } else {
-      // Nota yoksa, yeni notayı Map'e ekle.
-      const pitch = instrument.pitch || 'C4'; // Bu satır eski kodunuzdan gelmiş olabilir, C4 mantıklı bir varsayılan.
+      const pitch = instrument.pitch || 'C4';
       uniqueNotes.set(stepIndex, defaultNote(stepIndex, pitch));
     }
     
-    // Map'in içindeki değerleri yeni notalar dizisi olarak ayarla.
     const newNotes = Array.from(uniqueNotes.values());
-    
     get().updateInstrument(instrumentId, { notes: newNotes });
     get()._recalculateLoop();
   },
 
-  /**
-   * Bir enstrümanın envelope gibi sentezleyici parametrelerini günceller.
-   */
   handleInstrumentSynthParamChange: (instrumentId, paramPath, value) => {
     const instrument = get().instruments.find(inst => inst.id === instrumentId);
     if (!instrument) return;
@@ -291,9 +216,6 @@ export const useInstrumentsStore = create((set, get) => ({
     get().updateInstrument(instrumentId, { [keys[0]]: newInst[keys[0]] });
   },
 
-  /**
-   * Bir enstrümanı susturur veya sesini açar.
-   */
   handleToggleInstrumentMute: (instrumentId) => {
     const instrument = get().instruments.find(inst => inst.id === instrumentId);
     if (instrument) {
@@ -301,9 +223,6 @@ export const useInstrumentsStore = create((set, get) => ({
     }
   },
 
-  /**
-   * Bir enstrümanın "cut itself" özelliğini açıp kapatır.
-   */
   handleToggleInstrumentCutItself: (instrumentId) => {
     const instrument = get().instruments.find(inst => inst.id === instrumentId);
     if (instrument) {

@@ -1,11 +1,10 @@
+// src/lib/core/nodes/PluginNodeFactory.js - GÜNCELLENMİŞ
+
 import * as Tone from 'tone';
 import { pluginRegistry } from '../../../config/pluginConfig';
 // YENİ: setParamSmoothly fonksiyonunu import ediyoruz
 import { setParamSmoothly } from '../../utils/audioUtils';
 
-/**
- * Gelen tanıma göre basit veya karmaşık Tone.js ses düğümleri (efektler) oluşturan fabrika.
- */
 export const PluginNodeFactory = {
   create(fxData) {
     const pluginDef = pluginRegistry[fxData.type];
@@ -41,6 +40,7 @@ export const PluginNodeFactory = {
       };
     },
 
+    // Compressor ve MultiBand builder'larınız zaten iyi durumda, onları olduğu gibi bırakabiliriz.
     Compressor: (fxData, pluginDef) => {
       const compressor = new Tone.Compressor(fxData.settings);
       
@@ -51,7 +51,6 @@ export const PluginNodeFactory = {
         updateParam: (param, value) => {
           try {
             if (param !== 'sidechainSource') {
-              // GÜNCELLENDİ: Doğrudan atama yerine yumuşak geçiş fonksiyonu kullanılıyor.
               if (compressor[param] && typeof compressor[param].value !== 'undefined') {
                 setParamSmoothly(compressor[param], value);
               } else {
@@ -66,7 +65,6 @@ export const PluginNodeFactory = {
       };
     },
     
-    // MultiBand builder'ı zaten rampTo kullandığı için değişikliğe gerek yok.
     MultiBand: (fxData, pluginDef) => {
       const bandNodes = [];
       const input = new Tone.Gain();

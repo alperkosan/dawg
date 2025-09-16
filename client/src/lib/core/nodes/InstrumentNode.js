@@ -10,17 +10,13 @@ export class InstrumentNode {
   constructor(instrumentData) {
     this.id = instrumentData.id;
     this.pianoRoll = instrumentData.pianoRoll;
-    this.isReady = false; // YENİ: Sampler'ın ses çalmaya hazır olup olmadığını belirten bayrak.
+    this.isReady = false;
 
-    // Sampler'ı, buffer yerine doğrudan URL ve bir "onload" callback'i ile oluşturuyoruz.
-    // Bu, Tone.js'e "Bu URL'deki sesi yükle ve işin bittiğinde bana haber ver" demektir.
     this.sampler = new Tone.Sampler({
       urls: { C4: instrumentData.url },
-      baseUrl: window.location.origin, // Ses dosyalarının kök dizinini belirtir.
+      baseUrl: window.location.origin,
       onload: () => {
-        // Yükleme tamamlandığında, bu enstrümanın artık ses çalmaya hazır olduğunu işaretliyoruz.
         this.isReady = true;
-        // console.log(`✅ ${instrumentData.name} çalmaya hazır.`);
       },
       onerror: (error) => {
         console.error(`❌ ${instrumentData.name} için buffer yüklenemedi:`, error);
@@ -29,6 +25,9 @@ export class InstrumentNode {
     });
 
     this.output = new Tone.Channel(0, 0);
+    
+    // NİHAİ DÜZELTME: Sampler'ın ses çıkışını, enstrümanın ana çıkışına bağlıyoruz.
+    // BU SATIR OLMADAN HİÇBİR SES DIŞARI ÇIKAMAZ!
     this.sampler.connect(this.output);
   }
 

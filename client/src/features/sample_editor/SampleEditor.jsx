@@ -1,3 +1,5 @@
+// src/features/sample_editor/SampleEditor.jsx - GÜNCELLENMİŞ
+
 import React, { useState, useRef } from 'react';
 import { Waves, SlidersHorizontal, Zap, Play, Pause, Loader2, Plus, X } from 'lucide-react';
 import WaveformDisplay from './WaveformDisplay';
@@ -10,11 +12,11 @@ import { usePanelsStore } from '../../store/usePanelsStore';
 import { usePlaybackStore } from '../../store/usePlaybackStore';
 import { AddEffectMenu } from '../../ui/AddEffectMenu';
 import EnvelopeDisplay from './EnvelopeDisplay';
-// *** YENİ: Artık doğrudan PluginContainer'ı kullanacağız ***
+// YENİ: Artık doğrudan PluginContainer'ı kullanacağız
 import PluginContainer from '../../ui/plugin_system/PluginContainer';
 
-
 // --- TabButton, SampleTab, EnvelopeTab (DEĞİŞİKLİK YOK) ---
+// Bu alt bileşenler aynı kalabilir.
 function TabButton({ label, icon: Icon, isActive, onClick }) {
     const style = {
         backgroundColor: isActive ? 'var(--color-surface)' : 'var(--color-background)',
@@ -105,13 +107,17 @@ function EnvelopeTab({ instrument, audioEngineRef }) {
     );
 }
 
+
 // --- Effects Sekmesi (MİMARİ OLARAK GÜNCELLENDİ) ---
 function EffectsTab({ track, audioEngineRef }) {
+    // Verileri ve eylemleri doğrudan store'dan alıyoruz
     const focusedEffect = useMixerStore(state => state.focusedEffect);
     const { setFocusedEffect, handleMixerEffectChange, handleMixerEffectAdd, handleMixerEffectRemove } = useMixerStore.getState();
+    
     const [menuState, setMenuState] = useState({ isOpen: false, x: 0, y: 0 });
     const addButtonRef = useRef(null);
 
+    // Açık olan (focus'lanmış) efekti bul
     const currentEffect = focusedEffect && focusedEffect.trackId === track.id
       ? track.insertEffects.find(fx => fx.id === focusedEffect.effectId)
       : null;
@@ -121,21 +127,13 @@ function EffectsTab({ track, audioEngineRef }) {
 
     const handleSelectEffect = (effectType) => {
         handleMixerEffectAdd(track.id, effectType);
-        setMenuState({ isOpen: false, x: 0, y: 0 });
+        setMenuState({ isOpen: false });
     };
     
     const handleAddButtonClick = () => {
         if (addButtonRef.current) {
             const rect = addButtonRef.current.getBoundingClientRect();
-            const spaceBelow = window.innerHeight - rect.bottom;
-            const estimatedMenuHeight = 250; 
-            let menuY;
-            if (spaceBelow < estimatedMenuHeight && rect.top > estimatedMenuHeight) {
-                menuY = rect.top - estimatedMenuHeight;
-            } else {
-                menuY = rect.bottom + 5;
-            }
-            setMenuState(prevState => ({ isOpen: !prevState.isOpen, x: rect.left, y: menuY }));
+            setMenuState(prev => ({ isOpen: !prev.isOpen, x: rect.left, y: rect.bottom + 5 }));
         }
     };
 
@@ -148,6 +146,7 @@ function EffectsTab({ track, audioEngineRef }) {
 
     return (
         <div className="w-full h-full flex" style={{ padding: 'var(--padding-container)', gap: 'var(--padding-container)', backgroundColor: 'var(--color-surface)' }}>
+            {/* Sol Taraf: Efekt Listesi (DEĞİŞİKLİK YOK) */}
             <div className="w-48 shrink-0 flex flex-col" style={{ backgroundColor: 'var(--color-background)', borderRadius: 'var(--border-radius)', padding: 'var(--padding-container)', gap: 'var(--gap-container)'}}>
                 <h3 className="text-center font-bold uppercase" style={{ fontSize: 'var(--font-size-label)', color: 'var(--color-muted)', marginBottom: 'var(--gap-controls)' }}>Inserts on '{track.name}'</h3>
                 <div className="flex-grow min-h-0 overflow-y-auto pr-1 flex flex-col gap-1 mt-1">
@@ -171,10 +170,11 @@ function EffectsTab({ track, audioEngineRef }) {
                    <button ref={addButtonRef} onClick={handleAddButtonClick} className="w-full flex items-center justify-center gap-2 px-2 py-1.5 text-xs bg-gray-700 hover:bg-blue-600 rounded">
                        <Plus size={14}/> <span>Efekt Ekle</span>
                    </button>
-                   {menuState.isOpen && (<AddEffectMenu onSelect={handleSelectEffect} onClose={() => setMenuState({ isOpen: false, x: 0, y: 0 })} x={menuState.x} y={menuState.y} />)}
+                   {menuState.isOpen && (<AddEffectMenu onSelect={handleSelectEffect} onClose={() => setMenuState({ isOpen: false })} x={menuState.x} y={menuState.y} />)}
                 </div>
             </div>
-            {/* *** ONARIM: Artık PluginContainer doğrudan burada render ediliyor *** */}
+
+            {/* Sağ Taraf: Plugin Arayüzü (GÜNCELLENDİ) */}
             <div className="flex-grow bg-gray-900 rounded-lg p-2 flex flex-col">
                 {pluginDefinition && PluginUIComponent && currentEffect ? (
                     <PluginContainer
@@ -188,7 +188,7 @@ function EffectsTab({ track, audioEngineRef }) {
                         <PluginUIComponent
                             trackId={track.id}
                             effect={currentEffect}
-                            onChange={handlePluginChange}
+                            onChange={(param, value) => handlePluginChange(param, value)}
                             definition={pluginDefinition}
                         />
                     </PluginContainer>

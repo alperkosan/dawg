@@ -4,10 +4,9 @@
 import * as Tone from 'tone';
 import { timeManager } from './UnifiedTimeManager';
 import { InstrumentNode } from './nodes/InstrumentNode.js';
-import { EnhancedMixerStrip } from './nodes/EnhancedMixerStrip.js'; // YENİ IMPORT
+import { MixerStrip } from './nodes/MixerStrip.js'; // YENİ IMPORT
 import { sliceBuffer, normalizeBuffer, reverseBuffer, reversePolarity, removeDCOffset, cloneBuffer } from '../utils/audioUtils.js';
 import { usePlaybackStore } from '../../store/usePlaybackStore';
-import { ParameterWorklet } from './ParameterWorklet.js';
 import { memoize } from 'lodash';
 
 // Existing memoized function stays the same
@@ -29,13 +28,13 @@ const memoizedProcessBuffer = memoize(
  * ENHANCED AUDIO ENGINE - Yeni Mixer Sistemi ile Entegre
  * 
  * ÖNEMLİ DEĞİŞİKLİKLER:
- * 1. EnhancedMixerStrip kullanımı
+ * 1. MixerStrip kullanımı
  * 2. Real-time parameter update sistem
  * 3. Gelişmiş send/bus routing
  * 4. Solo/Mute sistem entegrasyonu
  * 5. A/B comparison desteği
  */
-class EnhancedAudioEngine {
+class AudioEngine {
   constructor(callbacks) {
     this.callbacks = callbacks || {};
     this.masterFader = new Tone.Volume(0).toDestination();
@@ -48,7 +47,7 @@ class EnhancedAudioEngine {
     this.instruments = new Map();
     
     // UPGRADED: Enhanced mixer strips
-    this.mixerStrips = new Map(); // trackId -> EnhancedMixerStrip
+    this.mixerStrips = new Map(); // trackId -> MixerStrip
     this.busInputs = new Map(); // busId -> inputNode (for routing)
     
     // NEW: Send/Bus routing system
@@ -79,10 +78,6 @@ class EnhancedAudioEngine {
     this.syncInProgress = false;
     
     this.setupTimeManager();
-
-    // YENİ: Parameter worklet sistemi (opsiyonel)
-    this.parameterWorklet = new ParameterWorklet();
-    this.initializeWorklet(); // Asenkron başlatma
     
     console.log("[ENHANCED AUDIO ENGINE] Initialized v7.0 (Real-time Mixer System)");
   }
@@ -95,49 +90,29 @@ class EnhancedAudioEngine {
    * Mixer parametrelerini anında günceller
    * UI'dan her knob/fader hareketi bu fonksiyonu çağırır
    */
-  // YENİ: Enhanced parameter update (mevcut API'nizi değiştirmiyor)
   updateMixerParam(trackId, param, value) {
-    // Worklet parameter ID oluştur
-    const paramId = `${trackId}.${param}`;
-    
-    // Worklet varsa ultra-low latency update
-    if (this.parameterWorklet && this.parameterWorklet.isLoaded) {
-      this.parameterWorklet.setParameter(paramId, value, 0.02);
-    }
-    
-    // MEVCUT sistemin devam etmesi için fallback
     const strip = this.mixerStrips.get(trackId);
     if (strip) {
-      // Mevcut update methodunuz aynen çalışır
-      if (param === 'volume' && strip.fader?.volume) {
-        strip.fader.volume.rampTo(value, 0.02);
-      } else if (param === 'pan' && strip.panner?.pan) {
-        strip.panner.pan.rampTo(value, 0.02);
+      // Smooth parameter transition with no audio dropouts
+      strip.updateParam(param, value);
+      
+      // Debug logging in development
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`[MIXER] ${trackId} ${param}: ${value}`);
       }
     }
   }
 
-  // YENİ: Enhanced effect parameter update
+  /**
+   * Effect parametrelerini anında günceller
+   * Knob döndürülürken gecikme olmadan ses değişir
+   */
   updateEffectParam(trackId, effectId, param, value) {
-    // Worklet parameter ID
-    const paramId = `${trackId}.${effectId}.${param}`;
-    
-    // Worklet update
-    if (this.parameterWorklet && this.parameterWorklet.isLoaded) {
-      this.parameterWorklet.setParameter(paramId, value, 0.01); // Faster for effects
-    }
-    
-    // MEVCUT sistem aynen çalışır
     const strip = this.mixerStrips.get(trackId);
     if (strip) {
-      const effects = strip.effects || strip.insertEffects || new Map();
-      const effect = effects.get(effectId);
-      if (effect?.updateParam) {
-        effect.updateParam(param, value);
-      }
+      strip.updateEffectParam(effectId, param, value);
     }
   }
-
 
   /**
    * Effect bypass durumunu değiştirir
@@ -272,7 +247,7 @@ class EnhancedAudioEngine {
     this._cleanupRemovedComponents(instrumentData, mixerTrackData);
     
     // 2. Create/update mixer strips with enhanced system
-    await this._createEnhancedMixerStrips(mixerTrackData);
+    await this._createMixerStrips(mixerTrackData);
     
     // 3. Build bus routing
     const busInputs = this._buildBusRouting(mixerTrackData);
@@ -300,11 +275,11 @@ class EnhancedAudioEngine {
   /**
    * Create enhanced mixer strips
    */
-  async _createEnhancedMixerStrips(mixerTrackData) {
+  async _createMixerStrips(mixerTrackData) {
     for (const trackData of mixerTrackData) {
       if (!this.mixerStrips.has(trackData.id)) {
         // Create new enhanced strip
-        const strip = new EnhancedMixerStrip(trackData);
+        const strip = new MixerStrip(trackData);
         this.mixerStrips.set(trackData.id, strip);
       }
       
@@ -630,12 +605,6 @@ class EnhancedAudioEngine {
     if (this.previewPlayer) {
       this.previewPlayer.dispose();
     }
-
-    if (this.parameterWorklet) {
-      console.log(`[WORKLET] Disposing Worklet...`);
-
-      this.parameterWorklet.dispose();
-    }
     
     // Enhanced mixer strip disposal
     console.log(`[DISPOSAL] Disposing ${this.mixerStrips.size} mixer strips...`);
@@ -723,4 +692,4 @@ class EnhancedAudioEngine {
   }
 }
 
-export default EnhancedAudioEngine;
+export default AudioEngine;

@@ -1,3 +1,5 @@
+// src/App.jsx - GÜNCELLENMİŞ VE OPTİMİZE EDİLMİŞ VERSİYON
+
 import React, { useState, useRef, useEffect } from 'react';
 import * as Tone from 'tone';
 import AudioEngine from './lib/core/AudioEngine';
@@ -14,42 +16,52 @@ import { keymap } from './config/keymapConfig';
 import { usePlaybackStore } from './store/usePlaybackStore';
 import { useInstrumentsStore } from './store/useInstrumentsStore';
 import { useMixerStore } from './store/useMixerStore';
-import { usePanelsStore } from './store/usePanelsStore';
 import { useArrangementStore } from './store/useArrangementStore';
-import { initialInstruments, initialMixerTracks } from './config/initialData';
 
 const useAudioEngineSync = (audioEngineRef) => {
     const instruments = useInstrumentsStore(state => state.instruments);
     const mixerTracks = useMixerStore(state => state.mixerTracks);
     const playbackMode = usePlaybackStore(state => state.playbackMode);
 
-    // === HATA DÜZELTMESİ BURADA ===
-    // Aranjman verilerini tek bir obje olarak değil, ayrı ayrı seçiyoruz.
+    // HATA DÜZELTMESİ: Aranjman verilerini tek bir obje olarak değil, ayrı ayrı seçiyoruz.
     // Bu, her render'da yeni bir obje referansı oluşmasını engeller ve döngüyü kırar.
     const clips = useArrangementStore(state => state.clips);
     const patterns = useArrangementStore(state => state.patterns);
     const tracks = useArrangementStore(state => state.tracks);
     const activePatternId = useArrangementStore(state => state.activePatternId);
 
+    // BÜYÜK DEĞİŞİKLİK: Sadece yapısal değişiklikleri temsil eden bir "imza" oluşturuyoruz.
+    // Sadece bu imza değiştiğinde senkronizasyon tetiklenecek.
     const structuralSignature = JSON.stringify({
         instrumentIds: instruments.map(i => i.id),
-        mixerEffectIds: mixerTracks.map(t => t.insertEffects?.map(fx => fx.id)),
-        // Ayrı seçtiğimiz state'leri imza oluşturmak için kullanıyoruz
-        clipIdsAndPositions: clips.map(c => `${c.id}@${c.startTime}`),
+        mixerTrackIds: mixerTracks.map(t => t.id),
+        // Efekt ve send'lerin varlığı/yokluğu da yapısal bir değişikliktir.
+        mixerEffectSignature: mixerTracks.map(t => t.insertEffects.map(fx => fx.id).join(',')).join(';'),
+        mixerSendSignature: mixerTracks.map(t => t.sends.map(s => s.busId).join(',')).join(';'),
+        clipIdsAndPositions: clips.map(c => `${c.id}@${c.startTime}:${c.duration}`).join(','),
         trackIds: tracks.map(t => t.id),
+        patternIds: Object.keys(patterns).join(','),
+        // Çalma modu veya aktif pattern değiştiğinde de senkronizasyon gerekir.
         playbackMode: playbackMode,
-        activePatternId: activePatternId, // EN ÖNEMLİ EKLEME
+        activePatternId: activePatternId,
     });
 
     useEffect(() => {
         const engine = audioEngineRef.current;
         if (engine) {
             console.log("[SYNC] Yapısal bir değişiklik algılandı, motor ve UI senkronize ediliyor...");
+            
+            // 1. Önce en güncel döngü uzunluğunu hesapla
             useInstrumentsStore.getState().updateLoopLength();
-            // Senkronizasyon için verileri bir obje içinde topluyoruz
-            engine.syncFromStores(instruments, mixerTracks, { clips, patterns, tracks, activePatternId });
+            
+            // 2. Tüm store'lardan en güncel verileri alarak motoru senkronize et
+            engine.syncFromStores(
+                useInstrumentsStore.getState().instruments, 
+                useMixerStore.getState().mixerTracks, 
+                useArrangementStore.getState()
+            );
         }
-    }, [structuralSignature, audioEngineRef, instruments, mixerTracks, clips, patterns, tracks]); 
+    }, [structuralSignature, audioEngineRef]); // Sadece "imza" değiştiğinde çalışır!
 
     return null;
 };
@@ -101,23 +113,22 @@ function App() {
       await Tone.start();
       console.log("AudioContext başlatıldı.");
       
-      // DÜZELTME: TimeManager callback'lerini doğru şekilde bağla
       const engine = new AudioEngine({
         setPlaybackState: usePlaybackStore.getState().setPlaybackState,
         onProgressUpdate: PlaybackAnimatorService.publish,
         setTransportPosition: usePlaybackStore.getState().setTransportPosition,
-        setLoopLengthFromEngine: useInstrumentsStore.getState().setLoopLengthFromEngine,
-        // YENİ: AudioEngine'in store'a komut verebilmesi için son bağlantı
+        // DÜZELTME: Bu callback artık gerekli değil, TimeManager'dan kaldırıldı.
+        // setLoopLengthFromEngine: useInstrumentsStore.getState().setLoopLengthFromEngine,
         setActivePatternId: useArrangementStore.getState()._internal_setActivePatternId,
       });
       
       const initialBpm = usePlaybackStore.getState().bpm;
       engine.setBpm(initialBpm);
-      console.log(`AudioEngine: Başlangıç BPM'i ${initialBpm} olarak ayarlandı.`);
-
       audioEngine.current = engine;
       
       console.log("AudioEngine: İlk senkronizasyon başlatılıyor...");
+      // Başlangıçta döngü uzunluğunu hesapla
+      useInstrumentsStore.getState().updateLoopLength();
       await engine.syncFromStores(
         useInstrumentsStore.getState().instruments,
         useMixerStore.getState().mixerTracks,
@@ -125,20 +136,15 @@ function App() {
       );
       console.log("AudioEngine: İlk senkronizasyon tamamlandı.");
       
-      // DÜZELTME: TimeManager'ın doğru şekilde kurulduğundan emin ol
-      console.log("TimeManager callback'leri ayarlandı.");
-      
       setIsAudioInitialized(true);
     } catch (error){
       console.error("Ses motoru başlatılamadı:", error);
     }
   };
 
-  // DÜZELTME: Component unmount'ta TimeManager'ı da temizle
   useEffect(() => {
     return () => {
       if (audioEngine.current) {
-        console.log("App unmounting: AudioEngine temizleniyor...");
         audioEngine.current.dispose();
       }
     };
