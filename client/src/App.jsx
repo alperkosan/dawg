@@ -10,6 +10,7 @@ import Taskbar from './features/taskbar/Taskbar';
 import { KeybindingService, destroyKeybindings } from './lib/core/KeybindingService';
 import { PlaybackAnimatorService } from './lib/core/PlaybackAnimatorService';
 import { keymap } from './config/keymapConfig';
+import { WorkletDebugPanel } from './components/WorkletDebugPanel';
 
 import { usePlaybackStore } from './store/usePlaybackStore';
 import { useInstrumentsStore } from './store/useInstrumentsStore';
@@ -152,6 +153,11 @@ function App() {
     <ThemeProvider>
       <AppContent audioEngineRef={audioEngine} />
     </ThemeProvider>
+
+    {process.env.NODE_ENV === 'development' && (
+      <WorkletDebugPanel audioEngineRef={audioEngineRef} />
+    )}
+
   );
 }
 
