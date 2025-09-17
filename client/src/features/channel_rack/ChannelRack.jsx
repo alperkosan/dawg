@@ -8,11 +8,11 @@ import { usePanelsStore } from '../../store/usePanelsStore';
 import { useArrangementStore } from '../../store/useArrangementStore';
 import VolumeKnob from '../../ui/VolumeKnob';
 import { usePlaybackStore } from '../../store/usePlaybackStore';
+
 import * as Tone from 'tone'; // YENİ: Tone.js'i doğrudan kullanmak için import ediyoruz
 
 const ItemTypes = { SOUND_SOURCE: 'soundSource' };
 
-// ModernStepButton bileşeninde değişiklik yok
 const ModernStepButton = React.memo(({ note, isMuted, isBeat, onStepClick, isCurrentlyPlaying }) => {
     const isActive = !!note;
     const velocityHeight = isActive ? `${Math.max(10, note.velocity * 100)}%` : '0%';
@@ -34,13 +34,16 @@ const ModernStepButton = React.memo(({ note, isMuted, isBeat, onStepClick, isCur
     );
 });
 
-// ModernInstrumentChannel bileşeninde değişiklik yok
 const ModernInstrumentChannel = React.memo(({ instrument, audioEngineRef, notes, activeStep, playbackMode }) => {
     const track = useMixerStore(state => state.mixerTracks.find(t => t.id === instrument?.mixerTrackId));
+    // DÜZELTME: Bu eylem artık `useInstrumentsStore`'da.
+    const { activePatternId } = useArrangementStore();
     const { updatePatternNotes } = useArrangementStore.getState();
     const { handleToggleInstrumentMute } = useInstrumentsStore.getState();
     const { handleMixerParamChange } = useMixerStore.getState();
     const { handleEditInstrument, openPianoRollForInstrument } = usePanelsStore.getState();
+    // GÜNCELLENDİ: `loopLength` artık playback store'dan geliyor.
+    const loopLength = usePlaybackStore(state => state.loopLength);
 
     const handlePatternChange = (stepIndex) => {
         const currentNotes = notes || [];
@@ -52,7 +55,17 @@ const ModernInstrumentChannel = React.memo(({ instrument, audioEngineRef, notes,
             const newNote = { id: `note_${stepIndex}_${Math.random()}`, time: stepIndex, pitch: 'C4', velocity: 0.75, duration: '16n' };
             newNotes = [...currentNotes, newNote].sort((a,b) => a.time - b.time);
         }
-        updatePatternNotes(instrument.id, newNotes);
+        
+        // 1. Veriyi güncelle (ArrangementStore)
+        updatePatternNotes(activePatternId, instrument.id, newNotes);
+        
+        // 2. Zamanlamayı güncelle (PlaybackStore)
+        usePlaybackStore.getState().updateLoopLength();
+
+        // 3. (Opsiyonel) Çalıyorsa motoru uyar
+        if (usePlaybackStore.getState().playbackState === 'playing') {
+          audioEngineRef.current?.reschedule();
+        }
     };
     
     if (!instrument || !track) return null;
@@ -60,12 +73,11 @@ const ModernInstrumentChannel = React.memo(({ instrument, audioEngineRef, notes,
     return (
         <div className="flex items-center" style={{ gap: 'var(--gap-controls)' }}>
             <div className="sticky left-0 w-[300px] h-14 p-2 flex items-center gap-3 z-20 shrink-0 bg-[var(--color-surface)] rounded-lg border border-transparent hover:border-[var(--color-border)] transition-colors">
-                 <div className="w-1 h-full rounded-full" style={{backgroundColor: 'var(--color-primary)'}} />
-                 <div className="flex-grow flex items-center gap-2 min-w-0 cursor-pointer group" onClick={() => handleEditInstrument(instrument, audioEngineRef.current)} title={`${instrument.name} (Edit Sample)`}>
+                    <div className="w-1 h-full rounded-full" style={{backgroundColor: 'var(--color-primary)'}} />
+                    <div className="flex-grow flex items-center gap-2 min-w-0 cursor-pointer group" onClick={() => handleEditInstrument(instrument, audioEngineRef.current)} title={`${instrument.name} (Edit Sample)`}>
                     <button 
                         onClick={(e) => { 
-                            e.stopPropagation(); // Parent click'ini engelle
-                            console.log(`Piano Roll opened for: ${instrument.name}`);
+                            e.stopPropagation();
                             openPianoRollForInstrument(instrument); 
                         }} 
                         className={`p-1 group-hover:bg-[var(--color-background)] rounded transition-colors shrink-0 ${
@@ -78,13 +90,14 @@ const ModernInstrumentChannel = React.memo(({ instrument, audioEngineRef, notes,
                     <span className="truncate font-bold text-sm group-hover:text-[var(--color-primary)]">{instrument.name}</span>
                 </div>
                 <div className="flex items-center gap-3 shrink-0">
-                    <button onClick={() => handleToggleInstrumentMute(instrument.id)} className={`w-6 h-6 rounded text-xs font-bold transition-colors ${!instrument.isMuted ? 'bg-cyan-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}`} title="Mute">M</button>
+                    <button onClick={() => handleToggleInstrumentMute(instrument.id, audioEngineRef.current)} className={`w-6 h-6 rounded text-xs font-bold transition-colors ${!instrument.isMuted ? 'bg-cyan-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}`} title="Mute">M</button>
                     <VolumeKnob size={24} label="Pan" value={track.pan} onChange={(val) => handleMixerParamChange(track.id, 'pan', val, audioEngineRef.current)} min={-1} max={1} defaultValue={0} />
                     <VolumeKnob size={24} label="Vol" value={track.volume} onChange={(val) => handleMixerParamChange(track.id, 'volume', val, audioEngineRef.current)} min={-60} max={6} defaultValue={0} />
                 </div>
             </div>
+
             <div className="flex h-full items-center" style={{ gap: 'var(--gap-container)' }}>
-                {Array.from({ length: Math.ceil(useInstrumentsStore.getState().loopLength / 4) }).map((_, barIndex) => (
+                {Array.from({ length: Math.ceil((loopLength || 64) / 4) }).map((_, barIndex) => (
                     <div key={barIndex} className="flex items-center" style={{ gap: '4px' }}>
                         {Array.from({ length: 4 }).map((_, stepInBar) => {
                             const stepIndex = barIndex * 4 + stepInBar;
@@ -108,59 +121,38 @@ const ModernInstrumentChannel = React.memo(({ instrument, audioEngineRef, notes,
 });
 
 function ChannelRack({ audioEngineRef }) {
-    // NİHAİ DÜZELTME: Hem görsel hem de ses uzunluğunu alıyoruz
     const instruments = useInstrumentsStore(state => state.instruments);
-    const loopLength = useInstrumentsStore(state => state.loopLength);
     const { handleAddNewInstrument } = useInstrumentsStore.getState();
+
     const { patterns, activePatternId, addPattern, renameActivePattern, nextPattern, previousPattern } = useArrangementStore();
 
+    const loopLength = usePlaybackStore(state => state.loopLength);
     const playbackMode = usePlaybackStore(state => state.playbackMode);
     const playbackState = usePlaybackStore(state => state.playbackState);
     const activePatternData = patterns[activePatternId]?.data || {};
     const activePatternName = patterns[activePatternId]?.name || '...';
-    
+
     const [activeStep, setActiveStep] = useState(-1);
     const animationFrameRef = useRef(null);
 
-    // NİHAİ DÜZELTME: useEffect artık döngü uzunluğundan bağımsız, mutlak zamanı dinliyor.
     useEffect(() => {
-        // Çalma durumu 'playing' ise animasyon döngüsünü başlat
         if (playbackState === 'playing') {
             const animate = () => {
-                // Doğrudan Tone.js'ten anlık saniyeyi al
                 const transportSeconds = Tone.Transport.seconds;
-                // Saniyeyi 16'lık nota adımına çevir
                 const sixteenthNoteDuration = Tone.Time('16n').toSeconds();
                 const currentStep = Math.floor(transportSeconds / sixteenthNoteDuration);
-                
-                // State'i sadece değiştiğinde güncelle (performans için)
-                setActiveStep(prevStep => {
-                    // Döngü başını yakala
-                    if (currentStep < prevStep) return currentStep;
-                    return currentStep !== prevStep ? currentStep : prevStep;
-                });
-
+                setActiveStep(prevStep => (currentStep < prevStep) ? currentStep : (currentStep !== prevStep ? currentStep : prevStep));
                 animationFrameRef.current = requestAnimationFrame(animate);
             };
             animationFrameRef.current = requestAnimationFrame(animate);
         } else {
-             // Çalma durduysa veya duraklatıldıysa döngüyü temizle
-            if (animationFrameRef.current) {
-                cancelAnimationFrame(animationFrameRef.current);
-            }
-            // Eğer tamamen durduysa, adımı sıfırla
-            if (playbackState === 'stopped') {
-                setActiveStep(-1);
-            }
+            if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+            if (playbackState === 'stopped') setActiveStep(-1);
         }
-
-        // Temizlik fonksiyonu
         return () => {
-            if (animationFrameRef.current) {
-                cancelAnimationFrame(animationFrameRef.current);
-            }
+            if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
         };
-    }, [playbackState]); // Sadece çalma durumu değiştiğinde bu effect yeniden kurulur.
+    }, [playbackState]);
 
     const handleRename = () => {
         const newName = prompt("Yeni pattern adı:", activePatternName);
@@ -181,7 +173,8 @@ function ChannelRack({ audioEngineRef }) {
                 <button onClick={handleRename} className="p-2 hover:bg-[var(--color-surface)] rounded transition-colors" title="Pattern'i Yeniden Adlandır"><Edit size={16} /></button>
             </div>
             <div className="flex-grow min-h-0 overflow-auto relative" style={{ padding: '0 var(--padding-container) var(--padding-container)' }}>
-                <div style={{ width: 300 + (loopLength * 40), height: '100%' }} className="relative">
+                {/* Canvas'taki kodunuz bu satıra karşılık geliyordu */}
+                <div style={{ width: 300 + ((loopLength || 64) * 40), height: '100%' }} className="relative">
                     <div className="flex flex-col" style={{ gap: 'var(--gap-controls)' }}>
                         {instruments.map((inst) => (
                              <ModernInstrumentChannel 

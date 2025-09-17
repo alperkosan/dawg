@@ -21,7 +21,6 @@ import { usePianoRollState } from '../hooks/usePianoRollState';
 import { usePlaybackAnimator } from '../../../hooks/usePlaybackAnimator';
 
 // Stores
-import { useInstrumentsStore } from '../../../store/useInstrumentsStore';
 import { usePianoRollStore } from '../store/usePianoRollStore';
 import { useArrangementStore } from '../../../store/useArrangementStore';
 import { usePlaybackStore } from '../../../store/usePlaybackStore';
@@ -44,8 +43,7 @@ function PianoRoll({ instrument, audioEngineRef, pattern, onPatternChange, playb
   
   // ✅ STORE HOOKS
   const { updatePatternNotes } = useArrangementStore();
-  const { playbackMode } = usePlaybackStore();
-  const loopLength = useInstrumentsStore(state => state.loopLength);
+  const { playbackMode, loopLength } = usePlaybackStore();
   
   const { 
     activeTool, zoomX, zoomY, velocityLaneHeight, 
@@ -75,7 +73,7 @@ function PianoRoll({ instrument, audioEngineRef, pattern, onPatternChange, playb
   const gridDimensions = useMemo(() => ({
     stepWidth: 40 * zoomX,
     keyHeight: 20 * zoomY,
-    gridWidth: (loopLength || 16) * 40 * zoomX,
+    gridWidth: (loopLength || 64) * 40 * zoomX,
     gridHeight: TOTAL_KEYS * 20 * zoomY
   }), [zoomX, zoomY, loopLength]);
 

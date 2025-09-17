@@ -141,7 +141,7 @@ const createEmptyTrack = (index) => ({
   volume: 0, pan: 0, insertEffects: [], sends: [],
 });
 
-const initialTracks = Array.from({ length: 100 }, (_, i) => createEmptyTrack(i + 1));
+const initialTracks = Array.from({ length: 10 }, (_, i) => createEmptyTrack(i + 1));
 
 // Kullanılan kanalların başlangıç ayarları
 const usedTracks = [

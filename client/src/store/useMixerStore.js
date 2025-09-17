@@ -1,57 +1,41 @@
-// src/store/useMixerStore.js - YENİDEN YAZILMIŞ VE GÜÇLENDİRİLMİŞ VERSİYON
+// src/store/useMixerStore.js - YENİDEN YAZILMIŞ (Olay Tabanlı Mimari)
 
 import { create } from 'zustand';
 import { initialMixerTracks } from '../config/initialData';
-import { pluginRegistry } from '../config/pluginConfig'; // Varsayılan ayarlar için
+import { pluginRegistry } from '../config/pluginConfig';
+import { v4 as uuidv4 } from 'uuid';
 
 export const useMixerStore = create((set, get) => ({
-  // ============================================
-  // STATE - Tek Gerçeklik Kaynağı
-  // ============================================
   mixerTracks: initialMixerTracks,
-  focusedEffect: null, // Sample Editor'da hangi efektin açık olduğunu tutar
 
-  soloedChannels: new Set(),
-  mutedChannels: new Set(),
+  // ========================================================
+  // === DOĞRUDAN SES MOTORUNU TETİKLEYEN EYLEMLER      ===
+  // ========================================================
+  // Bu eylemler, state'i güncelledikten sonra anında ses motoruna
+  // "ne yapması gerektiğini" söylerler.
 
-  // ============================================
-  // ANLIK EYLEMLER (SES MOTORUNU DOĞRUDAN TETİKLEYENLER)
-  // ============================================
-
-  /**
-   * Bir kanalın temel parametresini (volume, pan) günceller.
-   * Bu fonksiyon, ÖNCE state'i günceller, SONRA anında ses motoruna komut gönderir.
-   * Bu sayede UI ve ses arasında gecikme olmaz.
-   */
   handleMixerParamChange: (trackId, param, value, audioEngine) => {
     set(state => ({
       mixerTracks: state.mixerTracks.map(track => 
         track.id === trackId ? { ...track, [param]: value } : track
       )
     }));
+    // SES MOTORUNA KOMUT GÖNDER
     audioEngine?.updateMixerParam(trackId, param, value);
   },
-
-  /**
-   * Bir efektin parametresini günceller. A/B state'ini de yönetir.
-   * Bu da anında ses motoruna komut gönderir.
-   */
+  
   handleMixerEffectChange: (trackId, effectId, paramOrSettings, value, audioEngine) => {
+    let changedEffect = null;
     set(state => {
       const newTracks = state.mixerTracks.map(track => {
         if (track.id === trackId) {
           const newEffects = track.insertEffects.map(fx => {
             if (fx.id === effectId) {
-              let newSettings;
-              // Eğer gelen 'paramOrSettings' bir string ise (tekil parametre)
-              if (typeof paramOrSettings === 'string') {
-                newSettings = { ...fx.settings, [paramOrSettings]: value };
-              } 
-              // Değilse, bir preset objesi gelmiştir (tüm ayarlar)
-              else {
-                newSettings = { ...fx.settings, ...paramOrSettings };
-              }
-              return { ...fx, settings: newSettings };
+              const newSettings = typeof paramOrSettings === 'string'
+                ? { ...fx.settings, [paramOrSettings]: value }
+                : { ...fx.settings, ...paramOrSettings };
+              changedEffect = { ...fx, settings: newSettings };
+              return changedEffect;
             }
             return fx;
           });
@@ -62,14 +46,11 @@ export const useMixerStore = create((set, get) => ({
       return { mixerTracks: newTracks };
     });
 
-    // Ses motorunu anında güncelle
-    const updatedTrack = get().mixerTracks.find(t => t.id === trackId);
-    const updatedEffect = updatedTrack?.insertEffects.find(fx => fx.id === effectId);
-    if (audioEngine && updatedEffect) {
+    // SES MOTORUNA KOMUT GÖNDER
+    if (audioEngine && changedEffect) {
        if (typeof paramOrSettings === 'string') {
           audioEngine.updateEffectParam(trackId, effectId, paramOrSettings, value);
        } else {
-         // Preset yüklendiğinde tüm parametreleri tek tek gönder
          Object.entries(paramOrSettings).forEach(([p, v]) => {
             audioEngine.updateEffectParam(trackId, effectId, p, v);
          });
@@ -77,71 +58,51 @@ export const useMixerStore = create((set, get) => ({
     }
   },
 
-  toggleSolo: (trackId, audioEngine) => {
-    const { soloedChannels, mixerTracks } = get();
-    const newSoloed = new Set(soloedChannels);
-    if (newSoloed.has(trackId)) {
-      newSoloed.delete(trackId);
-    } else {
-      newSoloed.add(trackId);
-    }
-    set({ soloedChannels: newSoloed });
-
-    // Ses motoruna tüm kanalların yeni durumunu bildir
-    const hasSolo = newSoloed.size > 0;
-    mixerTracks.forEach(track => {
-      const shouldPlay = !hasSolo || newSoloed.has(track.id);
-      audioEngine?.setTrackSolo(track.id, shouldPlay);
-    });
-  },
-
   toggleMute: (trackId, audioEngine) => {
-    const { mutedChannels } = get();
-    const newMuted = new Set(mutedChannels);
-    if (newMuted.has(trackId)) {
-      newMuted.delete(trackId);
-    } else {
-      newMuted.add(trackId);
-    }
-    set({ mutedChannels: newMuted });
-    
-    // Ses motoruna bu kanalın yeni mute durumunu bildir
-    audioEngine?.setTrackMute(trackId, newMuted.has(trackId));
-  },
-  
-  // ============================================
-  // YAPISAL EYLEMLER (TAM SENKRONİZASYON GEREKTİRENLER)
-  // ============================================
-
-  setTrackName: (trackId, newName) => {
+    let isMuted = false;
     set(state => ({
-      mixerTracks: state.mixerTracks.map(track =>
-        track.id === trackId ? { ...track, name: newName } : track
-      )
+        mixerTracks: state.mixerTracks.map(track => {
+            if (track.id === trackId) {
+                isMuted = !track.isMuted;
+                return { ...track, isMuted };
+            }
+            return track;
+        })
     }));
+    // SES MOTORUNA KOMUT GÖNDER
+    audioEngine?.toggleMute(trackId, isMuted);
   },
 
-  handleMixerEffectAdd: (trackId, effectType) => {
+  // ========================================================
+  // === YAPISAL DEĞİŞİKLİK YARATAN EYLEMLER            ===
+  // ========================================================
+  
+  handleMixerEffectAdd: (trackId, effectType, audioEngine) => {
     const pluginDef = pluginRegistry[effectType];
     if (!pluginDef) return;
+
+    const newEffect = {
+      id: `fx-${uuidv4()}`,
+      type: effectType,
+      settings: { ...pluginDef.defaultSettings },
+      bypass: false,
+    };
 
     set(state => ({
       mixerTracks: state.mixerTracks.map(track => {
         if (track.id === trackId) {
-          const newEffect = {
-            id: `fx-${Date.now()}`,
-            type: effectType,
-            settings: pluginDef.defaultSettings,
-            bypass: false,
-          };
           return { ...track, insertEffects: [...track.insertEffects, newEffect] };
         }
         return track;
       })
     }));
+    
+    // SES MOTORUNA KOMUT GÖNDER
+    // Not: Motor, en güncel track verisini store'dan kendisi okuyacak.
+    audioEngine?.addEffectToTrack(trackId, newEffect);
   },
 
-  handleMixerEffectRemove: (trackId, effectId) => {
+  handleMixerEffectRemove: (trackId, effectId, audioEngine) => {
     set(state => ({
       mixerTracks: state.mixerTracks.map(track => {
         if (track.id === trackId) {
@@ -150,7 +111,16 @@ export const useMixerStore = create((set, get) => ({
         return track;
       })
     }));
+    
+    // SES MOTORUNA KOMUT GÖNDER
+    audioEngine?.removeEffectFromTrack(trackId, effectId);
   },
 
-  setFocusedEffect: (focus) => set({ focusedEffect: focus }),
+  setTrackName: (trackId, newName) => {
+    set(state => ({
+      mixerTracks: state.mixerTracks.map(track =>
+        track.id === trackId ? { ...track, name: newName } : track
+      )
+    }));
+  },
 }));

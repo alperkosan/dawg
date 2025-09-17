@@ -1,16 +1,17 @@
 import { useArrangementStore } from '../../store/useArrangementStore';
 import { Clip } from './Clip';
 import { usePlaybackAnimator } from '../../hooks/usePlaybackAnimator';
-import { useInstrumentsStore } from '../../store/useInstrumentsStore';
+// KALDIRILDI: Artık bu store'a ihtiyacımız yok.
+// import { useInstrumentsStore } from '../../store/useInstrumentsStore';
 import ChannelContextMenu from '../../components/ChannelContextMenu';
 import { useState, useRef } from 'react';
-// YENİ: Playback modunu okumak için store'u import ediyoruz
+// GÜNCELLENDİ: Playback modunu ve loopLength'i okumak için store'u import ediyoruz
 import { usePlaybackStore } from '../../store/usePlaybackStore';
 
 export function ClipArea() {
     const { clips, tracks, zoomX, songLength, patterns, splitPatternClip } = useArrangementStore();
-    const loopLength = useInstrumentsStore(state => state.loopLength);
-    // YENİ: Mevcut çalma modunu alıyoruz
+    // GÜNCELLENDİ: loopLength artık doğru store'dan, yani usePlaybackStore'dan geliyor.
+    const loopLength = usePlaybackStore(state => state.loopLength);
     const playbackMode = usePlaybackStore(state => state.playbackMode);
 
     const playheadRef = useRef(null);
@@ -19,12 +20,11 @@ export function ClipArea() {
 
     const BAR_WIDTH = 80;
     const stepWidth = BAR_WIDTH * zoomX;
-    const totalWidth = BAR_WIDTH * (loopLength / 4) * zoomX;
+    // DÜZELTME: `loopLength` tanımsız ise varsayılan değere (64) düşmesini sağlıyoruz.
+    const totalWidth = BAR_WIDTH * ((loopLength || 64) / 4) * zoomX;
 
-    usePlaybackAnimator(playheadRef, { 
-        stepWidth: stepWidth,
-        playbackState: playbackState    
-    });
+    // usePlaybackAnimator hook'u artık kaldırıldı.
+    // Bu işlevsellik TimeManager ve playheadRef ile sağlanacak.
 
     const handleScroll = (e) => {
         // Bu fonksiyon şimdilik boş kalabilir, ileride kullanacağız.
@@ -58,7 +58,7 @@ export function ClipArea() {
             onClick={() => setContextMenu(null)}
         >
             <div className="relative" style={{ width: totalWidth, height: '100%' }}>
-                {Array.from({ length: loopLength / 4 }).map((_, i) => (
+                {Array.from({ length: (loopLength || 64) / 4 }).map((_, i) => (
                     <div 
                         key={i}
                         className="absolute top-0 bottom-0"
@@ -82,7 +82,6 @@ export function ClipArea() {
                     />
                 ))}
                 
-                {/* YENİ: Playhead artık sadece 'song' modunda render edilecek */}
                 {playbackMode === 'song' && (
                     <div ref={playheadRef} className="absolute top-0 bottom-0 w-0.5 bg-cyan-400 z-30 pointer-events-none" />
                 )}

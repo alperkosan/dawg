@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { useArrangementStore } from './useArrangementStore';
+import { calculateAudioLoopLength, calculateUIRackLength } from '../lib/utils/patternUtils';
 
 /**
  * @file usePlaybackStore.js - NİHAİ SÜRÜM
@@ -16,9 +17,28 @@ export const usePlaybackStore = create((set, get) => ({
   masterVolume: 0,
   transportPosition: '1:1:00', // GÜNCELLENDİ: Her zaman BBT formatında
   playbackMode: 'pattern', // 'pattern' veya 'song'
+  loopLength: 64,       // UI (Channel Rack) için toplam adım sayısı
+  audioLoopLength: 64,  // Ses motoru için gerçek döngü adım sayısı
 
   // --- ACTIONS ---
   // State'i güvenli ve tahmin edilebilir bir şekilde değiştiren fonksiyonlar.
+  updateLoopLength: () => {
+    const { playbackMode } = get();
+    const { clips, patterns, activePatternId } = useArrangementStore.getState();
+
+    const newAudioLoopLength = calculateAudioLoopLength(playbackMode, {
+      patterns,
+      activePatternId,
+      clips,
+    });
+    
+    const newUiRackLength = calculateUIRackLength(newAudioLoopLength);
+
+    set({
+      audioLoopLength: newAudioLoopLength,
+      loopLength: newUiRackLength
+    });
+  },
 
   /**
    * AudioEngine'den gelen anlık çalma durumunu state'e yazar.
@@ -37,21 +57,18 @@ export const usePlaybackStore = create((set, get) => ({
    * AudioEngine'e "kesintisiz geçiş" komutu gönderir.
    */
   setPlaybackMode: (mode, audioEngine) => {
-    const currentState = get();
-    // Mod zaten aynıysa bir şey yapma
-    if (currentState.playbackMode === mode) return;
+      const currentState = get();
+      if (currentState.playbackMode === mode) return;
 
-    const isPlaying = currentState.playbackState === 'playing' || currentState.playbackState === 'paused';
-    
-    // Eğer çalma devam ediyorsa, AudioEngine'deki akıllı metodu kullan
-    if (audioEngine && isPlaying) {
-      const activePatternId = useArrangementStore.getState().activePatternId;
-      audioEngine.switchPlaybackMode(mode, activePatternId);
-    }
-    // Her durumda arayüzün state'ini anında güncelle
-    set({ playbackMode: mode });
-  },
-
+      set({ playbackMode: mode });
+      // Mod değiştiğinde döngü uzunluğunu yeniden hesapla
+      get().updateLoopLength();
+      
+      const isPlaying = currentState.playbackState === 'playing' || currentState.playbackState === 'paused';
+      if (audioEngine && isPlaying) {
+        audioEngine.reschedule();
+      }
+    },
   /**
    * BPM (tempo) değerini günceller ve AudioEngine'e bildirir.
    */

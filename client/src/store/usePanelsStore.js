@@ -11,16 +11,7 @@ import { useInstrumentsStore } from './useInstrumentsStore';
 
 const initialPanelsState = Object.keys(panelDefinitions).reduce((acc, id) => {
   const def = panelDefinitions[id];
-
-  acc[id] = {
-    id: id,
-    title: def.title,
-    isOpen: id === 'channel-rack', // Sadece channel rack başlangıçta açık
-    isMinimized: false,
-    position: def.initialPos,
-    size: def.initialSize,
-  };
-
+  acc[id] = { id, title: def.title, isOpen: id === 'channel-rack', isMinimized: false, position: def.initialPos, size: def.initialSize };
   return acc;
 }, {});
 
@@ -52,22 +43,16 @@ export const usePanelsStore = create((set, get) => ({
   },
 
   togglePanel: (panelId) => {
-    const panels = get().panels;
-    const panel = panels[panelId];
+    const panel = get().panels[panelId];
     if (!panel) return;
-
     if (panel.isOpen) {
       if (get().fullscreenPanel === panelId) set({ fullscreenPanel: null });
-      
       const newState = { panels: { ...get().panels, [panelId]: { ...panel, isOpen: false } } };
-      // Eğer kapatılan panel piyano rulosu ise, hangi enstrümana ait olduğu bilgisini sıfırla.
-      if (panelId === 'piano-roll') {
-          newState.pianoRollInstrumentId = null;
-      }
+      if (panelId === 'piano-roll') newState.pianoRollInstrumentId = null;
+      if (panelId === 'sample-editor') newState.editingInstrumentId = null; // Kapanınca ID'yi temizle
       set(newState);
-
     } else {
-      const newPosition = getNextCascadePosition(panels);
+      const newPosition = getNextCascadePosition(get().panels);
       set(state => ({
         panels: { ...state.panels, [panelId]: { ...panel, isOpen: true, isMinimized: false, position: newPosition } }
       }));
@@ -133,7 +118,7 @@ export const usePanelsStore = create((set, get) => ({
     }));
   },
 
-  handleEditInstrument: (instrument, audioEngine) => {
+  handleEditInstrument: async (instrument, audioEngine) => {
     if (!instrument || instrument.type !== 'sample') return;
     const state = get();
     if (state.editingInstrumentId === instrument.id && state.panels['sample-editor'].isOpen) {
@@ -141,9 +126,17 @@ export const usePanelsStore = create((set, get) => ({
       return;
     }
     
-    const buffer = audioEngine?.processedAudioBuffers?.get(instrument.id);
+    // 1. Ses motorundan buffer'ı ASENKRON olarak iste ve yüklenmesini BEKLE.
+    const buffer = await audioEngine?.requestInstrumentBuffer(instrument.id);
+    
+    // 2. Buffer güvenli bir şekilde geldikten sonra devam et.
     if (!buffer) {
-      console.error(`Buffer yüklenemedi: ${instrument.id}. AudioEngine'de bulunamadı.`);
+      console.log("buffer");
+      console.log(buffer);
+
+      // Artık hata konsolda `requestInstrumentBuffer` içinde loglanıyor.
+      // İsteğe bağlı olarak kullanıcıya bir bildirim gösterebiliriz.
+      alert("Enstrümanın ses dosyası yüklenemedi. Lütfen tekrar deneyin.");
       return;
     }
     
@@ -153,7 +146,13 @@ export const usePanelsStore = create((set, get) => ({
       editingInstrumentId: instrument.id,
       panels: {
         ...state.panels,
-        'sample-editor': { ...state.panels['sample-editor'], title: `Editor: ${instrument.name}`, isOpen: true, isMinimized: false, position: newPosition }
+        'sample-editor': { 
+            ...state.panels['sample-editor'], 
+            title: `Editor: ${instrument.name}`, 
+            isOpen: true, 
+            isMinimized: false, 
+            position: newPosition 
+        }
       }
     });
     get().bringPanelToFront('sample-editor');
