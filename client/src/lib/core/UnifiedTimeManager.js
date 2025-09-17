@@ -149,15 +149,31 @@ class UnifiedTimeManager {
     Tone.Transport.seconds = newSeconds;
   }
   
+  /**
+   * === YENİ FONKSİYON ===
+   * Transport'u, bar numarasına göre hesaplanan saniye cinsinden
+   * tam konuma anında taşır.
+   * @param {number} barNumber - Gidilecek bar numarası (1'den başlar).
+   */
   jumpToBar(barNumber) {
+    // Tone.js'in "Bar:Beat:Sixteenth" formatını kullanarak
+    // hedef zamanı oluşturuyoruz.
     const time = Tone.Time(`${barNumber - 1}:0:0`);
+    // Transport'un saniye cinsinden pozisyonunu doğrudan ayarlıyoruz.
     Tone.Transport.seconds = time.toSeconds();
+
+    // Debug logu
+    if (this.debug) {
+      console.log(`[TimeManager] Jump to Bar: ${barNumber} (-> ${time.toSeconds().toFixed(2)}s)`);
+    }
   }
 
   jumpToPercent(percent) {
     const targetSeconds = this.loopInfo.lengthInSeconds * percent;
     Tone.Transport.seconds = targetSeconds;
   }
+
+
 
   dispose() {
     this.stop();

@@ -1,126 +1,92 @@
-/* InstrumentRow.css */
-.instrument-row {
+/* InstrumentRow.css - v2 Modern Tasarım */
+.instrument-row-v2 {
   display: flex;
   align-items: center;
-  height: 60px;
-  padding: 0 12px;
-  gap: 8px;
-  transition: all 0.15s ease;
-  position: relative;
+  gap: 1rem;
+  padding: 0 1rem;
+  user-select: none;
+  border-bottom: 1px solid var(--color-border);
+  transition: background-color 0.15s ease;
 }
-
-.instrument-row:hover {
-  background-color: rgba(255, 255, 255, 0.02) !important;
-}
-
-.instrument-row.muted {
+.instrument-row-v2.muted {
   opacity: 0.6;
 }
+.instrument-row-v2:hover {
+  background-color: var(--color-surface2) !important;
+}
 
-.instrument-button {
+.instrument-info-v2 {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.instrument-icon-v2 {
+  width: 36px;
+  height: 36px;
+  border-radius: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: none;
-  background: transparent;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  position: relative;
+  flex-shrink: 0;
+  background-color: var(--instrument-color);
+  color: #fff;
 }
 
-.instrument-button:hover {
-  background-color: var(--hover-bg);
-  transform: scale(1.05);
+.instrument-details-v2 {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
-
-.instrument-button:active {
-  transform: scale(0.95);
-}
-
-.instrument-button.active {
-  background-color: var(--hover-bg);
-}
-
-.preview-button {
-  position: relative;
-  overflow: hidden;
-}
-
-.preview-button::after {
-  content: '';
-  position: absolute;
-  inset: -50%;
-  background: radial-gradient(circle, currentColor 0%, transparent 70%);
-  opacity: 0;
-  transition: opacity 0.3s ease;
-  animation: previewPulse 1s ease-out;
-}
-
-.preview-button:active::after {
-  opacity: 0.3;
-  animation: none;
-}
-
-@keyframes previewPulse {
-  0% {
-    transform: scale(0);
-    opacity: 0.5;
-  }
-  100% {
-    transform: scale(1);
-    opacity: 0;
-  }
-}
-
-.mute-button svg {
-  transition: all 0.2s ease;
-}
-
-.mute-button.active svg {
-  animation: muteShake 0.3s ease-out;
-}
-
-@keyframes muteShake {
-  0%, 100% { transform: translateX(0); }
-  25% { transform: translateX(-2px); }
-  75% { transform: translateX(2px); }
-}
-
-.instrument-name {
-  flex: 1;
-  font-size: 0.875rem;
-  font-weight: 500;
+.instrument-name-v2 {
+  font-weight: 600;
+  font-size: 0.9rem;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  padding: 0 8px;
-  min-width: 0;
+}
+.instrument-target-v2 {
+  font-size: 0.75rem;
+  font-weight: 500;
 }
 
-.piano-button {
+.instrument-controls-v2 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.instrument-actions-v2 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding-left: 1rem;
+  border-left: 1px solid var(--color-border);
+}
+
+.action-btn-v2 {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  background-color: transparent;
+  border: none;
+  color: var(--color-muted);
   transition: all 0.2s ease;
 }
 
-.piano-button.active {
-  border-radius: 50%;
+.action-btn-v2:hover {
+  background-color: var(--hover-bg);
+  color: var(--active-color);
 }
 
-.piano-button svg {
-  transition: transform 0.2s ease;
-}
-
-.piano-button:hover svg {
-  transform: rotateY(180deg);
-}
-
-.edit-button:hover {
-  animation: editRotate 0.5s ease;
-}
-
-@keyframes editRotate {
-  0%, 100% { transform: rotate(0deg); }
-  50% { transform: rotate(90deg); }
+.action-btn-v2.active {
+  background-color: var(--active-color);
+  color: var(--color-background);
 }

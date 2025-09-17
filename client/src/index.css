@@ -9,6 +9,14 @@
   Burada tanımlanan tüm renkler ve stiller, ThemeProvider bileşeni
   tarafından anlık olarak güncellenecek olan CSS değişkenlerinden güç alır.
 */
+
+:root {
+  --playhead-color: #00ff88;
+  --playhead-shadow: rgba(0, 255, 136, 0.4);
+  --timeline-bg: #1a1a1a;
+  --timeline-border: #333333;
+}
+
 body {
   background-color: var(--color-background);
   color: var(--color-text);

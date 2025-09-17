@@ -1,83 +1,69 @@
-/* StepGrid.css - BBT HİZALAMASI İÇİN GÜNCELLENDİ */
-.step-grid {
-  display: flex;
-  align-items: center;
-  height: 60px;
+/* StepGrid.css - v2 Modern Tasarım */
+.step-grid-v2 {
   position: relative;
-  width: 100%; /* Konteynerin tamamını doldur */
+  width: 100%;
+  height: 100%;
+  /* YENİ: Dikeyde padding ekleyerek satırlar arasına boşluk koyuyoruz */
+  padding: 8px 0; 
 }
 
-/* DEĞİŞİKLİK: step-bar artık sabit genişlikte değil, esnek */
-.step-bar {
+.background-grid-container {
+  position: absolute;
+  inset: 0;
+  display: flex;
+}
+
+.bar-background {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 256px; /* 16 * 16px */
+  display: flex;
+  border-right: 1px solid var(--color-border);
+}
+
+.beat-background {
+  width: 64px; /* 4 * 16px */
+  height: 100%;
+}
+
+.step-buttons-container {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   height: 100%;
   width: 100%;
-  /* DEĞİŞİKLİK: Gap kaldırıldı, genişliği butonlar belirleyecek */
 }
 
-.step-button {
-  /* DEĞİŞİKLİK: Her buton tam 16px genişliğinde */
-  flex: 0 0 16px; 
-  height: 32px;
-  /* DEĞİŞİKLİK: Kenarlık ile görsel ayrım sağlanıyor */
-  border: 1px solid transparent;
-  border-left-color: var(--color-border);
-  border-radius: 2px;
+.step-button-v2 {
+  flex: 0 0 16px;
+  height: 100%;
+  max-height: 48px;
   cursor: pointer;
   position: relative;
   transition: all 0.1s ease;
-  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.step-button:hover {
-  background-color: var(--hover-bg) !important;
-  transform: translateY(-1px);
-  border-color: var(--color-primary); /* Hover'da kenarlık belirginleşir */
+.step-button-v2::before {
+  content: '';
+  width: calc(100% - 2px);
+  height: calc(100% - 2px);
+  background-color: transparent;
+  border-radius: 3px;
+  transition: all 0.15s ease;
+  border: 1px solid var(--color-border);
 }
 
-.step-button:active {
-  transform: translateY(0);
+.step-button-v2:hover::before {
+  background-color: var(--hover-bg);
 }
 
-.step-button.active {
-  box-shadow: 0 0 8px var(--active-shadow);
-  border-color: var(--color-primary) !important;
-}
-
-/* DEĞİŞİKLİK: Her 4 adımda bir (beat) olan butonların arkaplanı daha belirgin */
-.step-button.beat {
-  background-color: var(--color-surface2) !important;
-}
-
-/* DEĞİŞİKLİK: Aktif olmayan butonlar için temel arkaplan */
-.step-button:not(.active) {
-    background-color: var(--color-surface);
-}
-
-/* Her ölçünün başlangıcındaki (bar) çizgi daha belirgin */
-.step-button.bar-start {
-  border-left: 1px solid var(--color-muted);
-}
-
-.step-indicator {
-  position: absolute;
-  top: 2px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  animation: stepPulse 1s ease infinite;
-}
-
-@keyframes stepPulse {
-  0%, 100% {
-    transform: translateX(-50%) scale(1);
-    opacity: 1;
-  }
-  50% {
-    transform: translateX(-50%) scale(1.2);
-    opacity: 0.8;
-  }
+.step-button-v2.active::before {
+  background-color: var(--active-color);
+  box-shadow: 0 0 12px var(--active-shadow);
+  border-color: var(--active-color);
 }

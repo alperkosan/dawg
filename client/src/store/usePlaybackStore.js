@@ -1,6 +1,18 @@
 import { create } from 'zustand';
 import { useArrangementStore } from './useArrangementStore';
-import { calculateAudioLoopLength, calculateUIRackLength } from '../lib/utils/patternUtils';
+import { calculateAudioLoopLength, calculateUIRackLength, calculatePatternLoopLength } from '../lib/utils/patternUtils';
+import { initialInstruments } from '../config/initialData';
+
+const initialPatternData = initialInstruments.reduce((acc, inst) => {
+  acc[inst.id] = inst.notes;
+  return acc;
+}, {});
+
+const initialActivePattern = { id: 'pattern-1', name: 'Pattern 1', data: initialPatternData };
+
+// 2. Başlangıç uzunluklarını hesapla.
+const initialAudioLoopLength = calculatePatternLoopLength(initialActivePattern);
+const initialUiRackLength = calculateUIRackLength(initialAudioLoopLength);
 
 /**
  * @file usePlaybackStore.js - NİHAİ SÜRÜM
@@ -11,35 +23,46 @@ import { calculateAudioLoopLength, calculateUIRackLength } from '../lib/utils/pa
 export const usePlaybackStore = create((set, get) => ({
   // --- STATE ---
   // Projenin anlık "fotoğrafını" tutan veriler.
-  
+  // 1. Başlangıç pattern'ini initialData'dan al.
+  //    Bu yapı useArrangementStore'daki mantığın aynısıdır.
   playbackState: 'stopped', // 'stopped', 'playing', 'paused'
   bpm: 60,
   masterVolume: 0,
   transportPosition: '1:1:00', // GÜNCELLENDİ: Her zaman BBT formatında
   playbackMode: 'pattern', // 'pattern' veya 'song'
-  loopLength: 64,       // UI (Channel Rack) için toplam adım sayısı
-  audioLoopLength: 64,  // Ses motoru için gerçek döngü adım sayısı
+  loopLength: initialUiRackLength, // Başlangıçta UI için ekstra boşluklu
+  audioLoopLength: initialAudioLoopLength,  // Ses motoru için gerçek döngü adım sayısı
 
   // --- ACTIONS ---
-  // State'i güvenli ve tahmin edilebilir bir şekilde değiştiren fonksiyonlar.
+
+  /**
+   * === MERKEZİ GÜNCELLEME FONKSİYONU ===
+   * Projenin durumuna göre hem ses motoru hem de UI için
+   * döngü uzunluklarını hesaplar ve state'i günceller.
+   * Bu fonksiyon, nota eklendiğinde/silindiğinde, mod değiştiğinde
+   * veya pattern değiştiğinde çağrılmalıdır.
+   */
   updateLoopLength: () => {
     const { playbackMode } = get();
     const { clips, patterns, activePatternId } = useArrangementStore.getState();
 
+    // 1. Ses motoru için gerçek uzunluğu hesapla
     const newAudioLoopLength = calculateAudioLoopLength(playbackMode, {
       patterns,
       activePatternId,
       clips,
     });
     
+    // 2. Arayüz için +1 barlık (16 step) ekstra boşluklu uzunluğu hesapla
     const newUiRackLength = calculateUIRackLength(newAudioLoopLength);
 
     set({
       audioLoopLength: newAudioLoopLength,
       loopLength: newUiRackLength
     });
+    
+    console.log(`[PlaybackStore] Döngü uzunlukları güncellendi: Audio(${newAudioLoopLength}), UI(${newUiRackLength})`);
   },
-
   /**
    * AudioEngine'den gelen anlık çalma durumunu state'e yazar.
    */
@@ -117,6 +140,7 @@ export const usePlaybackStore = create((set, get) => ({
   },
   
   /**
+   * === YENİ FONKSİYON ===
    * Timeline üzerinde belirli bir ölçüye atlama komutunu gönderir.
    */
   jumpToBar: (barNumber, audioEngine) => {

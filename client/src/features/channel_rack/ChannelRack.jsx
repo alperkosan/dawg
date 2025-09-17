@@ -1,195 +1,155 @@
-import React, { useRef, useEffect, useState, useCallback } from 'react';
+import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react';
 import { useInstrumentsStore } from '../../store/useInstrumentsStore';
 import { useArrangementStore } from '../../store/useArrangementStore';
 import { usePlaybackStore } from '../../store/usePlaybackStore';
 import { usePanelsStore } from '../../store/usePanelsStore';
 import { useThemeStore } from '../../store/useThemeStore';
+import { PlaybackAnimatorService } from '../../lib/core/PlaybackAnimatorService';
+
+// Bileşenleri import ediyoruz
 import InstrumentRow from './InstrumentRow';
 import StepGrid from './StepGrid';
 import PianoRollMiniView from './PianoRollMiniView';
-import { PlaybackAnimatorService } from '../../lib/core/PlaybackAnimatorService';
+
+// Stil dosyasını import ediyoruz
 import './ChannelRack.css';
 
-const MIN_VISIBLE_BARS = 4;
-const BAR_WIDTH = 256;
-const RULER_HEIGHT = 32; // Zaman cetveli yüksekliği için sabit
+// Sabitler
+const RULER_HEIGHT = 32;
+const ROW_HEIGHT = 64;
+const INSTRUMENT_COLUMN_WIDTH = 320;
+const STEP_WIDTH = 16;
+const BAR_WIDTH = STEP_WIDTH * 16;
 
 export default function ChannelRack({ audioEngineRef }) {
-  const instruments = useInstrumentsStore(state => state.instruments);
-  const { patterns, activePatternId, updatePatternNotes } = useArrangementStore();
-  const { loopLength } = usePlaybackStore();
-  const { openPianoRollForInstrument, handleEditInstrument } = usePanelsStore();
   const activeTheme = useThemeStore(state => state.getActiveTheme());
 
-  // DEĞİŞİKLİK: Ref'in adı daha anlaşılır hale getirildi. Bu artık ana kaydırma alanıdır.
+  const instruments = useInstrumentsStore(state => state.instruments);
+  const { patterns, activePatternId, updatePatternNotes } = useArrangementStore();
+  
+  // === DEĞİŞİKLİK BURADA ===
+  // Artık loopLength'i doğrudan merkezi store'dan okuyoruz.
+  // Kendi hesaplamamızı (useMemo) tamamen kaldırıyoruz.
+  const loopLength = usePlaybackStore(state => state.loopLength);
+  const audioLoopLength = usePlaybackStore(state => state.audioLoopLength);
+  
+  const { openPianoRollForInstrument, handleEditInstrument } = usePanelsStore();
+  
   const scrollContainerRef = useRef(null);
   const playheadRef = useRef(null);
-  const timelineRef = useRef(null);
-  const [selectedPosition, setSelectedPosition] = useState(null);
-  const [jumpToPosition, setJumpToPosition] = useState(null);
-
+  
   const activePattern = patterns[activePatternId];
-
-  const calculatePatternLength = useCallback(() => {
-    if (!activePattern) return 64;
-    let maxStep = 0;
-    Object.values(activePattern.data).forEach(notes => {
-      if (Array.isArray(notes)) {
-        notes.forEach(note => {
-          if (note.time > maxStep) maxStep = note.time;
-        });
-      }
-    });
-    const requiredBars = Math.ceil((maxStep + 1) / 16);
-    const minBars = Math.max(MIN_VISIBLE_BARS, requiredBars + 1);
-    return minBars * 16;
-  }, [activePattern]);
-
-  const patternLength = calculatePatternLength();
-
-  const handleTimelineClick = (e) => {
-    // DEĞİŞİKLİK: Fonksiyon artık mükemmel hizalama ile çalışıyor.
-    if (!timelineRef.current || !audioEngineRef?.current || !scrollContainerRef.current) return;
-    
-    const rect = timelineRef.current.getBoundingClientRect();
-    const scrollLeft = scrollContainerRef.current.scrollLeft;
-    const clickX = e.clientX - rect.left + scrollLeft;
-    const step = Math.floor(clickX / 16);
-    const bar = Math.floor(step / 16) + 1;
-    
-    audioEngineRef.current.jumpToBar(bar);
-    setJumpToPosition(step);
-    
-    setTimeout(() => setJumpToPosition(null), 300);
-  };
-
-  const handleTimelineHover = (e) => {
-    if (!timelineRef.current || !scrollContainerRef.current) return;
-    const rect = timelineRef.current.getBoundingClientRect();
-    const scrollLeft = scrollContainerRef.current.scrollLeft;
-    const hoverX = e.clientX - rect.left + scrollLeft;
-    const step = Math.floor(hoverX / 16);
-    setSelectedPosition(step);
-  };
-
+  
   useEffect(() => {
     const updatePlayhead = (progress) => {
       if (playheadRef.current) {
-        const position = progress * patternLength * 16;
+        // Playhead pozisyonu artık audioLoopLength'e göre hesaplanıyor.
+        const position = progress * audioLoopLength * STEP_WIDTH;
         playheadRef.current.style.transform = `translateX(${position}px)`;
       }
     };
-
     PlaybackAnimatorService.subscribe(updatePlayhead);
     return () => PlaybackAnimatorService.unsubscribe(updatePlayhead);
-  }, [patternLength]);
+  }, [audioLoopLength]); // Bağımlılığı audioLoopLength olarak değiştiriyoruz.
 
   const handleNoteToggle = useCallback((instrumentId, step) => {
-    const instrument = instruments.find(i => i.id === instrumentId);
-    if (!instrument || !activePattern) return;
-
-    const currentNotes = activePattern.data[instrumentId] || [];
-    const existingNoteIndex = currentNotes.findIndex(note => note.time === step);
-
+    const currentNotes = activePattern?.data[instrumentId] || [];
+    const noteExists = currentNotes.some(note => note.time === step);
     let newNotes;
-    if (existingNoteIndex >= 0) {
-      newNotes = currentNotes.filter((_, index) => index !== existingNoteIndex);
+    if (noteExists) {
+      newNotes = currentNotes.filter(note => note.time !== step);
     } else {
-      newNotes = [...currentNotes, { 
-        id: `note_${step}_${Date.now()}`, 
-        time: step, 
-        pitch: 'C4', 
-        velocity: 1, 
-        duration: '16n' 
-      }];
+      newNotes = [...currentNotes, { id: `note_${step}_${Date.now()}`, time: step, pitch: 'C4', velocity: 1, duration: '16n' }];
     }
-
     updatePatternNotes(activePatternId, instrumentId, newNotes);
-    audioEngineRef?.current?.reschedule();
-  }, [instruments, activePattern, activePatternId, updatePatternNotes, audioEngineRef]);
+    usePlaybackStore.getState().updateLoopLength();
+    audioEngineRef.current?.reschedule();
+  }, [activePattern, activePatternId, updatePatternNotes, audioEngineRef]);
+
+  const totalContentHeight = RULER_HEIGHT + instruments.length * ROW_HEIGHT;
+
+  // === YENİ VE DÜZELTİLMİŞ ZAMAN CETVELİ OLUŞTURMA FONKSİYONU ===
+  const renderTimelineMarkers = () => {
+    const markers = [];
+    const totalBars = Math.ceil(loopLength / 16); // uiPatternLength -> loopLength
+    
+    for (let i = 0; i < totalBars; i++) {
+      const barX = i * BAR_WIDTH;
+      // Ana ölçü çizgisi ve numarası
+      markers.push(
+        <div key={`bar-${i}`} className="timeline-marker bar-line" style={{ left: `${barX}px`, backgroundColor: activeTheme.colors.muted }}>
+          <span className="timeline-label" style={{ color: activeTheme.colors.text }}>{i + 1}</span>
+        </div>
+      );
+      // Vuruş (beat) çizgileri
+      for (let j = 1; j < 4; j++) {
+        const beatX = barX + (j * STEP_WIDTH * 4);
+        markers.push(<div key={`beat-${i}-${j}`} className="timeline-marker beat-line" style={{ left: `${beatX}px`, backgroundColor: activeTheme.colors.border }} />);
+      }
+    }
+    return markers;
+  };
 
   return (
-    <div className="channel-rack">
-      {/* Header */}
-      <div className="channel-rack-header" style={{
-        backgroundColor: activeTheme.colors.surface,
-        borderBottom: `1px solid ${activeTheme.colors.border}`
-      }}>
-        <div className="pattern-selector">
-          <span style={{ color: activeTheme.colors.muted }}>Pattern:</span>
-          <span style={{ color: activeTheme.colors.text }}>{activePattern?.name || 'Pattern 1'}</span>
-        </div>
-      </div>
-
-      {/* Main Content */}
-      <div className="channel-rack-content">
-        {/* Enstrüman Sütunu (Sol Taraf) */}
-        <div className="instruments-column" style={{
-          backgroundColor: activeTheme.colors.surface,
-          borderRight: `1px solid ${activeTheme.colors.border}`
-        }}>
-          {/* YENİ: Zaman cetveliyle hizalamak için boş bir başlık alanı */}
-          <div className="instrument-header-spacer" style={{ height: `${RULER_HEIGHT}px` }} />
-          {instruments.filter(Boolean).map((instrument) => (
-            <InstrumentRow
-              key={instrument.id}
-              instrument={instrument}
-              onPianoRollClick={() => openPianoRollForInstrument(instrument)}
-              onEditClick={() => handleEditInstrument(instrument, audioEngineRef.current)}
-              audioEngineRef={audioEngineRef}
-            />
-          ))}
-        </div>
-
-        {/* Kaydırılabilir Grid Alanı (Sağ Taraf) */}
+    <div className="rack-container-v3" style={{ backgroundColor: activeTheme.colors.background }}>
+      <div 
+        ref={scrollContainerRef} 
+        className="rack-scroll-container-v3"
+      >
         <div 
-          ref={scrollContainerRef}
-          className="grid-scroll-container"
+          className="rack-content-wrapper-v3" 
+          style={{ height: `${totalContentHeight}px` }}
         >
-          {/* Zaman Cetveli ve Grid'i içeren sarmalayıcı */}
-          <div className="grid-content-wrapper" style={{ width: `${patternLength * 16}px` }}>
-            {/* YENİ: Zaman Cetveli artık kayan alanın içinde ve "sticky" */}
+          {/* Sol Sütun: Enstrüman Listesi */}
+          <div 
+            className="instrument-column-sticky-v3" 
+            style={{ 
+              width: `${INSTRUMENT_COLUMN_WIDTH}px`, 
+              backgroundColor: activeTheme.colors.surface,
+              height: `${totalContentHeight}px`
+            }}
+          >
+            <div className="rack-header-v3" style={{ height: `${RULER_HEIGHT}px`, borderBottom: `1px solid ${activeTheme.colors.border}` }}>
+              Pattern: {activePattern?.name || 'Pattern 1'}
+            </div>
+            {instruments.map(inst => (
+              <InstrumentRow
+                key={inst.id}
+                instrument={inst}
+                onPianoRollClick={() => openPianoRollForInstrument(inst)}
+                onEditClick={() => handleEditInstrument(inst, audioEngineRef.current)}
+                audioEngineRef={audioEngineRef}
+              />
+            ))}
+          </div>
+          
+          {/* Sağ Taraf: Grid Alanı */}
+          <div 
+            className="grid-area-v3" 
+            style={{ width: `${loopLength * STEP_WIDTH}px`, marginLeft: `${INSTRUMENT_COLUMN_WIDTH}px` }}
+          >
+            {/* Üst Satır: Zaman Cetveli */}
             <div 
-              ref={timelineRef}
-              className="timeline-ruler"
-              onMouseMove={handleTimelineHover}
-              onMouseLeave={() => setSelectedPosition(null)}
-              onClick={handleTimelineClick}
+              className="timeline-sticky-v3"
+              style={{ height: `${RULER_HEIGHT}px`, backgroundColor: activeTheme.colors.surface, borderBottom: `1px solid ${activeTheme.colors.border}` }}
             >
-              {Array.from({ length: Math.ceil(patternLength / 16) }, (_, i) => (
-                <div key={i} className="timeline-bar" style={{ left: `${i * BAR_WIDTH}px`, color: activeTheme.colors.muted }}>
-                  <span>{i + 1}</span>
-                  {[1, 2, 3].map(beat => (
-                    <div key={beat} className="beat-marker" style={{ left: `${beat * 64}px`, backgroundColor: activeTheme.colors.border }} />
-                  ))}
-                </div>
-              ))}
-              {selectedPosition !== null && (
-                <div className="timeline-hover-indicator" style={{ left: `${selectedPosition * 16}px`, backgroundColor: activeTheme.colors.primary + '40' }} />
-              )}
-              {jumpToPosition !== null && (
-                <div className="timeline-jump-indicator" style={{ left: `${jumpToPosition * 16}px`, backgroundColor: activeTheme.colors.accent }} />
-              )}
+              {/* DÜZELTİLMİŞ ÇAĞRI: Artık yeni fonksiyonu kullanıyoruz */}
+              {renderTimelineMarkers()}
             </div>
 
-            {/* Playhead */}
-            <div 
-              ref={playheadRef}
-              className="playhead"
-              style={{ 
-                backgroundColor: activeTheme.colors.accent,
-              }}
-            />
+            <div ref={playheadRef} className="playhead-v3" style={{ backgroundColor: activeTheme.colors.accent, height: `${totalContentHeight}px` }} />
 
-            {/* Step Grids veya Piano Roll Mini Views */}
-            {instruments.filter(Boolean).map((instrument) => {
-              const notes = activePattern?.data[instrument.id] || [];
-              if (instrument.pianoRoll) {
-                return <PianoRollMiniView key={instrument.id} instrument={instrument} notes={notes} patternLength={patternLength} theme={activeTheme} onNoteClick={() => openPianoRollForInstrument(instrument)} />;
-              } else {
-                return <StepGrid key={instrument.id} instrumentId={instrument.id} notes={notes} totalSteps={patternLength} onNoteToggle={handleNoteToggle} theme={activeTheme} />;
-              }
-            })}
+            <div className="grid-rows-container-v3">
+              {instruments.map((inst) => (
+                <div key={inst.id} className="grid-row-v3" style={{ height: `${ROW_HEIGHT}px` }}>
+                   {inst.pianoRoll ? (
+                    <PianoRollMiniView instrument={inst} notes={activePattern?.data[inst.id] || []} patternLength={loopLength} theme={activeTheme} onNoteClick={() => openPianoRollForInstrument(inst)} />
+                  ) : (
+                    <StepGrid instrumentId={inst.id} notes={activePattern?.data[inst.id] || []} totalSteps={loopLength} onNoteToggle={handleNoteToggle} theme={activeTheme} />
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </div>

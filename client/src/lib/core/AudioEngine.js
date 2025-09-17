@@ -319,6 +319,37 @@ class AudioEngine {
     console.log(`%c[RESCHEDULE] Tamamlandı. ${totalScheduledNotes} nota zamanlandı.`, 'color: lightgreen; font-weight: bold;');
   }
 
+  setupPlayheadTracking() {
+    // Transport pozisyon değişikliklerini takip et
+    this.transport.on('step', (time, step) => {
+      // UniversalPlayheadManager'a pozisyon bildir
+      UniversalPlayheadManager.updatePosition(step, this.transport.state === 'started');
+    });
+
+    // Loop başlangıcında pozisyonu sıfırla
+    this.transport.on('loop', (time) => {
+      UniversalPlayheadManager.updatePosition(0, true);
+    });
+
+    // Stop durumunda pozisyonu sıfırla
+    this.transport.on('stop', (time) => {
+      UniversalPlayheadManager.updatePosition(0, false);
+    });
+  }
+
+  /* === YENİ FONKSİYON ===
+   * Belirtilen bar numarasına atlama komutunu TimeManager'a iletir.
+   * @param {number} barNumber - Hedef bar numarası.
+   */
+  jumpToBar(barNumber) {
+    timeManager.jumpToBar(barNumber);
+  }
+
+  // Yeni method: Step'e atlama
+  jumpToStep(step) {
+    timeManager.jumpToPosition(step);
+  }
+
   start() {
     console.log("▶️ [TRANSPORT] Start komutu alındı");
     
