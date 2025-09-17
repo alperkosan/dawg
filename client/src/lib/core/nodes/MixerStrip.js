@@ -36,10 +36,18 @@ export class MixerStrip {
    * ÖNCEDEN: Basit linear chain
    * SONRA: Profesyonel routing with sends, metering, solo/mute
    */
+  // MixerStrip.js içinde buildSignalChain metodunu güncelle:
+
   async buildSignalChain(trackData, masterFader, busInputs) {
     if (this.isDisposed) return;
+    
+    console.log(`🔧 [MIXER STRIP ${this.id}] Signal chain kuruluyor...`, {
+      type: this.type,
+      hasEffects: trackData.insertEffects?.length > 0,
+      hasSends: trackData.sends?.length > 0
+    });
 
-    // 1. Önceki zinciri tamamen temizle
+    // 1. Önceki zinciri temizle
     this.inputGain.disconnect();
     await this.clearChain();
 
@@ -47,11 +55,13 @@ export class MixerStrip {
     let currentNode = this.preGain;
     currentNode = await this.buildEffectChain(trackData.insertEffects || [], currentNode);
     
-    // 3. Ana Sinyal Akışı: input -> preGain -> effects -> postGain -> panner -> fader -> solo -> mute -> output
+    // 3. Ana Sinyal Akışı
+    console.log(`🔗 [MIXER STRIP ${this.id}] Ana zincir bağlanıyor...`);
+    
     this.inputGain.connect(this.preGain);
     currentNode.connect(this.postGain);
     
-    // Pre-fader send'ler post-gain'den sonra dallanır
+    // Pre-fader sends
     this.setupSends(trackData.sends || [], this.postGain, busInputs, true);
 
     let mainChainNode = this.postGain;
@@ -61,7 +71,7 @@ export class MixerStrip {
     }
     mainChainNode.connect(this.fader);
     
-    // Post-fader send'ler fader'dan sonra dallanır
+    // Post-fader sends
     this.setupSends(trackData.sends || [], this.fader, busInputs, false);
 
     this.fader.connect(this.soloGain);
@@ -69,13 +79,22 @@ export class MixerStrip {
     this.muteGain.connect(this.outputMeter);
     this.outputMeter.connect(this.outputGain);
 
-    // 4. Çıkışı doğru hedefe yönlendir (Master veya başka bir Bus)
+    // 4. Çıkışı yönlendir
+    console.log(`🎯 [MIXER STRIP ${this.id}] Çıkış routing...`);
     this.setupOutputRouting(trackData, masterFader, busInputs);
 
-    // 5. Metreleri başlat
+    // 5. DEBUG: Final bağlantı durumu
+    console.log(`✅ [MIXER STRIP ${this.id}] Signal chain kuruldu`, {
+      inputConnected: this.inputGain.numberOfInputs > 0,
+      outputConnected: this.outputGain.numberOfOutputs > 0,
+      volumeDb: this.fader.volume.value,
+      muted: this.muteGain.gain.value,
+      soloed: this.soloGain.gain.value
+    });
+
+    // 6. Metreleri başlat
     this.setupMetering();
   }
-
 
   /**
    * Effect zincirini oluşturur - sıralama korunarak
@@ -386,8 +405,25 @@ export class MixerStrip {
     return ['Compressor', 'Limiter', 'EQ', 'Filter'].includes(effectType);
   }
 
-  setupOutputRouting(trackData) {
-    // Ana output routing - AudioEngine'de implement edilecek
+  setupOutputRouting(trackData, masterFader, busInputs) {
+    this.outputGain.disconnect();
+    const customOutput = trackData.output;
+    
+    console.log(`🎯 [MIXER STRIP ${this.id}] Output routing:`, {
+      type: this.type,
+      customOutput,
+      hasBusInputs: busInputs.size > 0
+    });
+
+    if (customOutput && busInputs.has(customOutput)) {
+      // Özel çıkış (bus'a)
+      console.log(`🚌 [MIXER STRIP ${this.id}] Bus'a bağlanıyor: ${customOutput}`);
+      this.outputGain.connect(busInputs.get(customOutput));
+    } else {
+      // Master'a bağlan
+      console.log(`🎛️ [MIXER STRIP ${this.id}] Master'a bağlanıyor`);
+      this.outputGain.connect(masterFader);
+    }
   }
 
   // ============================================

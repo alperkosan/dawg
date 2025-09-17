@@ -1,0 +1,140 @@
+/* ChannelRack.css */
+.channel-rack {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  position: relative;
+}
+
+.channel-rack-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  min-height: 40px;
+  flex-shrink: 0;
+}
+
+.pattern-selector {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+/* Main Content */
+.channel-rack-content {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  position: relative;
+}
+
+.instruments-column {
+  width: 240px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none; /* Kaydırma çubuğunu gizleyelim */
+}
+.instruments-column::-webkit-scrollbar {
+  display: none; /* Safari/Chrome için */
+}
+
+
+.instrument-header-spacer {
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+/* YENİ: Grid ve Zaman Cetvelini tutan kaydırılabilir konteyner */
+.grid-scroll-container {
+  flex: 1;
+  overflow: auto; /* Hem yatay hem dikey kaydırmaya izin verir */
+  position: relative;
+  scrollbar-width: thin;
+}
+
+/* YENİ: İçeriğin toplam genişliğini belirleyen sarmalayıcı */
+.grid-content-wrapper {
+  position: relative;
+  min-height: 100%;
+}
+
+
+/* DEĞİŞİKLİK: Zaman Cetveli artık "sticky" */
+.timeline-ruler {
+  position: sticky;
+  top: 0;
+  height: 32px;
+  z-index: 20; /* Notaların üzerinde kalması için */
+  background-color: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  cursor: pointer;
+  width: 100%;
+}
+
+.timeline-ruler:hover {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+.timeline-bar {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  width: 256px;
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 4px 8px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  user-select: none;
+}
+
+.beat-marker, .timeline-hover-indicator, .timeline-jump-indicator {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  pointer-events: none;
+}
+.beat-marker { width: 1px; opacity: 0.3; }
+.timeline-hover-indicator { width: 16px; transition: opacity 0.15s ease; }
+.timeline-jump-indicator { width: 2px; animation: jumpFlash 0.3s ease-out; }
+
+@keyframes jumpFlash {
+  0% { opacity: 1; transform: scaleX(3); }
+  100% { opacity: 0; transform: scaleX(1); }
+}
+
+
+/* DEĞİŞİKLİK: Playhead artık tüm dikey alanı kaplıyor */
+.playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0; /* Üstten en alta kadar uzanır */
+  width: 2px;
+  pointer-events: none;
+  z-index: 10;
+  transition: transform 0.05s linear;
+  box-shadow: 0 0 8px currentColor;
+}
+
+/* Scrollbar styling */
+.grid-scroll-container::-webkit-scrollbar {
+  height: 8px;
+  width: 8px;
+}
+
+.grid-scroll-container::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.grid-scroll-container::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+}
+
+.grid-scroll-container::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}

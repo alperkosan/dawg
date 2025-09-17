@@ -5,12 +5,9 @@ import { MixerStrip } from './nodes/MixerStrip.js';
 import { useArrangementStore } from '../../store/useArrangementStore';
 import { usePlaybackStore } from '../../store/usePlaybackStore';
 import { useInstrumentsStore } from '../../store/useInstrumentsStore';
-// YENİ: Buffer işleme yardımcı fonksiyonlarını import ediyoruz
 import { cloneBuffer, normalizeBuffer, reverseBuffer, reversePolarity, removeDCOffset } from '../utils/audioUtils';
 import { memoize } from 'lodash';
 
-// YENİ: Buffer işleme işlemlerini hızlandırmak için memoization (önbellekleme) kullanıyoruz.
-// Aynı orijinal buffer ve aynı ayarlarla tekrar işlem yapılmasını engeller.
 const memoizedProcessBuffer = memoize(
   (originalBuffer, instData) => {
     if (!originalBuffer) return null;
@@ -23,24 +20,23 @@ const memoizedProcessBuffer = memoize(
     if (effects.reversePolarity) processed = reversePolarity(processed);
     return processed;
   },
-  // Önbellek anahtarı: Orijinal buffer'ın URL'si ve efekt ayarlarının birleşimi.
   (originalBuffer, instData) => `${originalBuffer.url || 'buffer'}-${JSON.stringify(instData.precomputed)}`
 );
 
-/**
- * @file AudioEngine.js - v2.0 Olay Tabanlı (Event-Driven)
- * @description Bu ses motoru, "her şeyi yeniden senkronize et" mantığı yerine,
- * store'lardan gelen spesifik komutlarla (event'lerle) çalışan modern bir mimariye sahiptir.
- * 'syncFromStores' sadece ilk yüklemede kullanılır. Sonraki tüm değişiklikler
- * granüler metodlar aracılığıyla anlık olarak işlenir.
- */
 class AudioEngine {
   constructor(callbacks) {
     this.callbacks = callbacks || {};
+    
+    // DEBUG: Master Fader kontrolü
     this.masterFader = new Tone.Volume(0).toDestination();
+    console.log("🎛️ [AUDIO ENGINE] Master Fader oluşturuldu ve Destination'a bağlandı", {
+      volume: this.masterFader.volume.value,
+      connected: this.masterFader.numberOfOutputs > 0
+    });
+    
     this.instruments = new Map();
     this.mixerStrips = new Map();
-    this.scheduledEventIds = new Map(); // schedule edilen event'leri takip etmek için
+    this.scheduledEventIds = new Map();
     this.originalAudioBuffers = new Map();
 
     this.activePatternId = null;
@@ -56,227 +52,248 @@ class AudioEngine {
     timeManager.onLoopInfoUpdate = (loopInfo) => this.callbacks.setLoopLengthFromEngine?.(loopInfo.lengthInSteps);
   }
 
-  // ============================================
-  // === 1. İLK YÜKLEME: BÜYÜK SENKRONİZASYON ===
-  // ============================================
-
   async syncFromStores(instrumentData, mixerTrackData, arrangementData) {
     console.log("%c[SYNC] Proje verileri ses motoruna yükleniyor...", "color: #818cf8; font-weight: bold;");
     
-    // Aktif pattern ve mod bilgisini al
+    // DEBUG: Gelen verileri kontrol et
+    console.log("📊 [SYNC DEBUG] Gelen veriler:", {
+      instrumentCount: instrumentData.length,
+      mixerTrackCount: mixerTrackData.length,
+      patternCount: Object.keys(arrangementData.patterns).length,
+      instruments: instrumentData.map(i => ({ id: i.id, name: i.name, mixerTrackId: i.mixerTrackId })),
+      mixerTracks: mixerTrackData.map(t => ({ id: t.id, name: t.name, type: t.type }))
+    });
+    
     this.patterns = arrangementData.patterns;
     this.activePatternId = arrangementData.activePatternId;
-    this.playbackMode = usePlaybackStore.getState().playbackMode; // PlaybackStore'dan al
+    this.playbackMode = usePlaybackStore.getState().playbackMode;
 
     // 1. Tüm mikser kanallarını oluştur
+    console.log("🎚️ [SYNC] Mikser kanalları oluşturuluyor...");
     for (const trackData of mixerTrackData) {
       this.createMixerStrip(trackData);
     }
 
-    // 2. Tüm mikser kanallarının ses zincirini kur (send/bus bağlantıları için)
-    this._buildAllSignalChains(mixerTrackData);
+    // 2. Tüm mikser kanallarının ses zincirini kur
+    console.log("🔗 [SYNC] Mikser ses zincirleri kuruluyor...");
+    await this._buildAllSignalChains(mixerTrackData);
 
     // 3. Tüm enstrümanları oluştur ve miksere bağla
+    console.log("🎹 [SYNC] Enstrümanlar oluşturuluyor...");
     for (const instData of instrumentData) {
       await this.createInstrument(instData);
     }
+    
+    // DEBUG: Final durumu kontrol et
+    console.log("🔍 [SYNC DEBUG] Final durum:", {
+      instrumentsCreated: this.instruments.size,
+      mixerStripsCreated: this.mixerStrips.size,
+      masterFaderVolume: this.masterFader.volume.value
+    });
     
     // 4. Notaları zaman çizelgesine yerleştir
     this.reschedule();
     console.log("%c[SYNC] Yükleme tamamlandı. Motor hazır.", "color: #34d399; font-weight: bold;");
   }
 
-  // ============================================
-  // === 2. GRANÜLER KOMUTLAR (OLAYLAR)       ===
-  // ============================================
-
   createMixerStrip(trackData) {
-    if (this.mixerStrips.has(trackData.id)) return;
+    if (this.mixerStrips.has(trackData.id)) {
+      console.log(`⚠️ [MIXER] Kanal zaten var, atlanıyor: ${trackData.id}`);
+      return;
+    }
+    
     const strip = new MixerStrip(trackData);
     this.mixerStrips.set(trackData.id, strip);
-    console.log(`[AUDIO] Mixer kanalı oluşturuldu: ${trackData.name} (${trackData.id})`);
+    console.log(`✅ [AUDIO] Mixer kanalı oluşturuldu: ${trackData.name} (${trackData.id})`, {
+      hasInputGain: !!strip.inputGain,
+      hasOutputGain: !!strip.outputGain
+    });
   }
 
   async createInstrument(instData) {
-    if (this.instruments.has(instData.id)) return;
+    if (this.instruments.has(instData.id)) {
+      console.log(`⚠️ [INSTRUMENT] Enstrüman zaten var, atlanıyor: ${instData.id}`);
+      return;
+    }
+    
+    console.log(`🎵 [INSTRUMENT] Oluşturuluyor: ${instData.name} (${instData.id})`);
     
     const instrumentNode = new InstrumentNode(instData);
     this.instruments.set(instData.id, instrumentNode);
     
-    // GÜNCELLEME: Artık burada await Tone.loaded() dememize gerek yok,
-    // çünkü InstrumentNode kendi promise'ini yönetiyor.
-    
-    // Yükleme tamamlandığında orijinal buffer'ı sakla.
-    instrumentNode.readyPromise.then(() => {
-        if (instrumentNode.sampler.loaded) {
-            this.originalAudioBuffers.set(instData.id, instrumentNode.sampler.buffer);
-        }
-    });
-
-    this.connectInstrumentToMixer(instData.id, instData.mixerTrackId);
+    // Yükleme tamamlanmasını bekle
+    try {
+      await instrumentNode.readyPromise;
+      console.log(`✅ [INSTRUMENT] Yüklendi: ${instData.name}`);
+      
+      // Buffer'ı sakla
+      if (instrumentNode.sampler.loaded) {
+        this.originalAudioBuffers.set(instData.id, instrumentNode.sampler.buffer);
+      }
+      
+      // Mixer'a bağla
+      this.connectInstrumentToMixer(instData.id, instData.mixerTrackId);
+      
+    } catch (error) {
+      console.error(`❌ [INSTRUMENT] Yükleme hatası: ${instData.name}`, error);
+    }
   }
   
   connectInstrumentToMixer(instrumentId, mixerTrackId) {
-      const instrumentNode = this.instruments.get(instrumentId);
-      const targetStrip = this.mixerStrips.get(mixerTrackId);
+    const instrumentNode = this.instruments.get(instrumentId);
+    const targetStrip = this.mixerStrips.get(mixerTrackId);
 
-      if (instrumentNode && targetStrip) {
-        instrumentNode.output.disconnect();
-        instrumentNode.output.connect(targetStrip.inputGain);
-        console.log(`[AUDIO] Bağlantı yapıldı: ${instrumentNode.id} -> ${targetStrip.id}`);
-      } else {
-        console.warn(`[AUDIO] Bağlantı hatası: Enstrüman (${instrumentId}) veya Mikser Kanalı (${mixerTrackId}) bulunamadı.`);
-      }
+    if (!instrumentNode) {
+      console.error(`❌ [ROUTING] Enstrüman bulunamadı: ${instrumentId}`);
+      return;
+    }
+    
+    if (!targetStrip) {
+      console.error(`❌ [ROUTING] Mixer kanalı bulunamadı: ${mixerTrackId}`);
+      return;
+    }
+
+    try {
+      instrumentNode.output.disconnect();
+      instrumentNode.output.connect(targetStrip.inputGain);
+      console.log(`🔗 [AUDIO] Bağlantı yapıldı: ${instrumentNode.id} -> ${targetStrip.id}`, {
+        instrumentOutput: instrumentNode.output,
+        stripInput: targetStrip.inputGain
+      });
+    } catch (error) {
+      console.error(`❌ [ROUTING] Bağlantı hatası:`, error);
+    }
   }
 
-  // YENİ VE ASENKRON: UI, bu metodu çağırarak buffer'ın yüklenmesini bekleyecek.
+  _buildAllSignalChains(mixerTrackData) {
+    const busInputs = new Map();
+    
+    // DEBUG: Bus inputs toplama
+    console.log("🚌 [ROUTING] Bus inputları toplanıyor...");
+    mixerTrackData.forEach(track => {
+      if (track.type === 'bus') {
+        const strip = this.mixerStrips.get(track.id);
+        if (strip?.inputGain) {
+          busInputs.set(track.id, strip.inputGain);
+          console.log(`✅ [ROUTING] Bus input eklendi: ${track.id}`);
+        }
+      }
+    });
+
+    // DEBUG: Her kanal için signal chain kurulumu
+    console.log("⛓️ [ROUTING] Signal chain'ler kuruluyor...");
+    for (const trackData of mixerTrackData) {
+      const strip = this.mixerStrips.get(trackData.id);
+      if (strip) {
+        console.log(`🔧 [ROUTING] Signal chain kuruluyor: ${trackData.id} (${trackData.type})`);
+        strip.buildSignalChain(trackData, this.masterFader, busInputs);
+      }
+    }
+  }
+
   async requestInstrumentBuffer(instrumentId) {
-      const node = this.instruments.get(instrumentId);
-      if (!node) {
-          console.error(`[requestInstrumentBuffer] Enstrüman bulunamadı: ${instrumentId}`);
-          return null;
-      }
+    const node = this.instruments.get(instrumentId);
+    if (!node) {
+      console.error(`❌ [requestInstrumentBuffer] Enstrüman bulunamadı: ${instrumentId}`);
+      return null;
+    }
 
-      // 1. Enstrümanın hazır olmasını bekle (buffer'ın yüklenmesi dahil).
-      await node.readyPromise;
-
-      // 2. Hazır olduğunda, güncel buffer'ı güvenle döndür.
-      return node.sampler.buffer;
+    await node.readyPromise;
+    return node.sampler.buffer;
   }
 
-  // YENİ VE KRİTİK: Buffer'ı yeniden işleyen ve güncelleyen metod.
   reconcileInstrument(instrumentId, updatedInstData) {
-      console.log(`[RECONCILE] ${instrumentId} için buffer yeniden işleniyor...`, updatedInstData.precomputed);
-      const originalBuffer = this.originalAudioBuffers.get(instrumentId);
-      const instrumentNode = this.instruments.get(instrumentId);
+    console.log(`🔄 [RECONCILE] ${instrumentId} için buffer yeniden işleniyor...`, updatedInstData.precomputed);
+    const originalBuffer = this.originalAudioBuffers.get(instrumentId);
+    const instrumentNode = this.instruments.get(instrumentId);
 
-      if (!originalBuffer || !instrumentNode) {
-          console.error(`[RECONCILE] Hata: Orijinal buffer veya enstrüman bulunamadı: ${instrumentId}`);
-          return null;
-      }
+    if (!originalBuffer || !instrumentNode) {
+      console.error(`❌ [RECONCILE] Hata: Orijinal buffer veya enstrüman bulunamadı: ${instrumentId}`);
+      return null;
+    }
 
-      // 1. Yeni ayarlarla buffer'ı yeniden işle (veya önbellekten al).
-      const newProcessedBuffer = memoizedProcessBuffer(originalBuffer, updatedInstData);
-      
-      // 2. InstrumentNode içindeki sampler'ın buffer'ını anında yeni işlenmiş buffer ile değiştir.
-      instrumentNode.sampler.buffer = newProcessedBuffer;
-
-      console.log(`[RECONCILE] ${instrumentId} için buffer güncellendi.`);
-      
-      // 3. Yeni buffer'ı UI'da (SampleEditor) göstermek üzere geri döndür.
-      return newProcessedBuffer;
-  }
-  
-  addEffectToTrack(trackId, effectData) {
-    // Bu metod, sadece bir kanalı yeniden yapılandırır, tüm motoru değil.
-    this._rebuildSingleSignalChain(trackId);
+    const newProcessedBuffer = memoizedProcessBuffer(originalBuffer, updatedInstData);
+    instrumentNode.sampler.buffer = newProcessedBuffer;
+    console.log(`✅ [RECONCILE] ${instrumentId} için buffer güncellendi.`);
+    
+    return newProcessedBuffer;
   }
 
-  removeEffectFromTrack(trackId, effectId) {
-    this._rebuildSingleSignalChain(trackId);
-  }
-  
   updateMixerParam = (trackId, param, value) => {
-    this.mixerStrips.get(trackId)?.updateParam(param, value);
+    const strip = this.mixerStrips.get(trackId);
+    if (strip) {
+      console.log(`🎛️ [MIXER] Parametre güncelleniyor: ${trackId}.${param} = ${value}`);
+      strip.updateParam(param, value);
+    }
   }
 
   updateEffectParam = (trackId, effectId, param, value) => {
     this.mixerStrips.get(trackId)?.updateEffectParam(effectId, param, value);
   }
-  
-  toggleSolo = (trackId, isSoloing) => {
-      // Logic to handle soloing for all tracks
-  }
-  
+
   toggleMute = (trackId, isMuted) => {
-      this.mixerStrips.get(trackId)?.setMute(isMuted);
+    this.mixerStrips.get(trackId)?.setMute(isMuted);
   }
-
-
-  // ============================================
-  // === 3. YÖNLENDİRME VE ZİNCİR YÖNETİMİ    ===
-  // ============================================
-  
-  _buildAllSignalChains(mixerTrackData) {
-      const busInputs = new Map();
-      mixerTrackData.forEach(track => {
-          if (track.type === 'bus') {
-              busInputs.set(track.id, this.mixerStrips.get(track.id)?.inputGain);
-          }
-      });
-
-      for (const trackData of mixerTrackData) {
-          this.mixerStrips.get(trackData.id)?.buildSignalChain(trackData, this.masterFader, busInputs);
-      }
-  }
-
-  _rebuildSingleSignalChain(trackId) {
-      const trackData = useMixerStore.getState().mixerTracks.find(t => t.id === trackId);
-      if (!trackData) return;
-      
-      const allTracks = useMixerStore.getState().mixerTracks;
-      const busInputs = new Map();
-      allTracks.forEach(track => {
-          if (track.type === 'bus') {
-              busInputs.set(track.id, this.mixerStrips.get(track.id)?.inputGain);
-          }
-      });
-      
-      this.mixerStrips.get(trackId)?.buildSignalChain(trackData, this.masterFader, busInputs);
-      console.log(`[AUDIO] Sinyal zinciri güncellendi: ${trackId}`);
-  }
-
-  // ============================================
-  // === 4. ZAMANLAMA VE ÇALMA                ===
-  // ============================================
 
   reschedule() {
     console.log('%c[RESCHEDULE] Notalar yeniden zamanlanıyor...', 'color: orange; font-weight: bold;');
     
-    // 1. Önceki tüm zamanlanmış olayları temizle
+    // Önceki zamanlamaları temizle
     Tone.Transport.cancel(0);
     this.scheduledEventIds.clear();
     
-    // 2. Gerekli en güncel veriyi store'lardan çek
+    // Store'lardan güncel veriyi al
     this.patterns = useArrangementStore.getState().patterns;
     this.activePatternId = useArrangementStore.getState().activePatternId;
     this.playbackMode = usePlaybackStore.getState().playbackMode;
     const instruments = useInstrumentsStore.getState().instruments;
 
     console.log(`[RESCHEDULE] Mod: ${this.playbackMode}, Aktif Pattern ID: ${this.activePatternId}`);
+    
+    // DEBUG: Enstrüman durumu
+    console.log("🎹 [RESCHEDULE DEBUG] Enstrüman durumu:", {
+      storeInstruments: instruments.length,
+      engineInstruments: this.instruments.size,
+      instrumentIds: Array.from(this.instruments.keys())
+    });
 
-    // 3. Zaman yöneticisini yeni duruma göre güncelle
+    // Time manager güncelleme
     const arrangementData = useArrangementStore.getState();
     timeManager.calculateLoopInfo(this.playbackMode, this.activePatternId, arrangementData);
 
-    // 4. Pattern modunda mıyız ve geçerli bir pattern var mı diye kontrol et
+    // Pattern kontrolü
     const activePattern = this.patterns?.[this.activePatternId];
     if (!activePattern) {
-        console.warn('[RESCHEDULE] Aktif pattern bulunamadı. Zamanlama atlanıyor.');
-        return;
+      console.warn('⚠️ [RESCHEDULE] Aktif pattern bulunamadı.');
+      return;
     }
     if (this.playbackMode !== 'pattern') {
-        console.log('[RESCHEDULE] Song modunda. Pattern zamanlaması atlanıyor.');
-        return;
+      console.log('ℹ️ [RESCHEDULE] Song modunda, pattern zamanlaması atlanıyor.');
+      return;
     }
     
-    console.log(`[RESCHEDULE] Aktif Pattern bulundu: "${activePattern.name}". Notalar işleniyor...`);
+    console.log(`✅ [RESCHEDULE] Aktif Pattern: "${activePattern.name}"`);
     let totalScheduledNotes = 0;
 
-    // 5. Notaları zamanla
+    // Notaları zamanla
     Object.entries(activePattern.data).forEach(([instId, notes]) => {
       const inst = instruments.find(i => i.id === instId);
       if (!inst || inst.isMuted || !notes || notes.length === 0) {
-        return; // Sessiz, notası olmayan veya bulunamayan enstrümanları atla
+        return;
       }
       
       const node = this.instruments.get(instId);
       if (!node) {
-        console.warn(`[RESCHEDULE] Zamanlama için enstrüman düğümü bulunamadı: ${instId}`);
+        console.warn(`⚠️ [RESCHEDULE] Enstrüman düğümü bulunamadı: ${instId}`);
         return;
       }
       
-      console.log(`%c  -> ${inst.name}: ${notes.length} nota zamanlanıyor...`, 'color: cyan;');
+      // DEBUG: Node durumunu kontrol et
+      console.log(`🎵 [RESCHEDULE] ${inst.name}: ${notes.length} nota zamanlanıyor`, {
+        nodeReady: node.isReady,
+        samplerLoaded: node.sampler?.loaded
+      });
+      
       let scheduledCountForInst = 0;
 
       notes.forEach(note => {
@@ -284,55 +301,68 @@ class AudioEngine {
         const timeNotation = `${Math.floor(step / 16)}:${Math.floor((step % 16) / 4)}:${step % 4}`;
         
         try {
-            const eventId = Tone.Transport.schedule(time => {
-              if (node && typeof node.trigger === 'function') {
-                node.trigger(time, note, null, inst.cutItself);
-              }
-            }, timeNotation);
-            this.scheduledEventIds.set(`${instId}-${note.id || note.time}`, eventId);
-            scheduledCountForInst++;
+          const eventId = Tone.Transport.schedule(time => {
+            if (node && typeof node.trigger === 'function') {
+              console.log(`🎶 [TRIGGER] ${inst.name} çalıyor: ${timeNotation}`);
+              node.trigger(time, note, null, inst.cutItself);
+            }
+          }, timeNotation);
+          this.scheduledEventIds.set(`${instId}-${note.id || note.time}`, eventId);
+          scheduledCountForInst++;
         } catch (e) {
-            console.error(`[RESCHEDULE] Hata: ${inst.name} için nota zamanlanamadı. Time: ${timeNotation}`, e);
+          console.error(`❌ [RESCHEDULE] Nota zamanlanamadı: ${inst.name}`, e);
         }
       });
       totalScheduledNotes += scheduledCountForInst;
     });
     
-    console.log(`%c[RESCHEDULE] Tamamlandı. Toplam ${totalScheduledNotes} nota zaman çizelgesine eklendi.`, 'color: lightgreen; font-weight: bold;');
+    console.log(`%c[RESCHEDULE] Tamamlandı. ${totalScheduledNotes} nota zamanlandı.`, 'color: lightgreen; font-weight: bold;');
   }
 
   start() {
-    if (Tone.context.state !== 'running') Tone.context.resume();
-    // Play'e basıldığında her zaman en güncel veriyi yeniden zamanla
-    this.reschedule(); 
+    console.log("▶️ [TRANSPORT] Start komutu alındı");
+    
+    // AudioContext durumunu kontrol et
+    if (Tone.context.state !== 'running') {
+      console.log("🔊 [TRANSPORT] AudioContext başlatılıyor...");
+      Tone.context.resume();
+    }
+    
+    // Transport durumunu kontrol et
+    console.log(`📊 [TRANSPORT DEBUG]`, {
+      contextState: Tone.context.state,
+      transportState: Tone.Transport.state,
+      bpm: Tone.Transport.bpm.value,
+      masterVolume: this.masterFader.volume.value
+    });
+    
+    this.reschedule();
     timeManager.start(this.playbackMode, this.activePatternId, useArrangementStore.getState());
     Tone.Transport.start();
     this.callbacks.setPlaybackState?.('playing');
+    
+    console.log("✅ [TRANSPORT] Playback başladı");
   }
 
   stop() {
+    console.log("⏹️ [TRANSPORT] Stop komutu alındı");
     Tone.Transport.stop();
     timeManager.stop();
     this.callbacks.setPlaybackState?.('stopped');
   }
 
   pause() {
-      Tone.Transport.pause();
-      timeManager.pause();
-      this.callbacks.setPlaybackState?.('paused');
+    console.log("⏸️ [TRANSPORT] Pause komutu alındı");
+    Tone.Transport.pause();
+    timeManager.pause();
+    this.callbacks.setPlaybackState?.('paused');
   }
   
   setBpm(newBpm) {
-      Tone.Transport.bpm.value = newBpm;
-      // BPM değiştiğinde döngü süresini ve notaları yeniden hesapla
-      this.reschedule();
+    console.log(`🎵 [BPM] Yeni BPM: ${newBpm}`);
+    Tone.Transport.bpm.value = newBpm;
+    this.reschedule();
   }
-
-  // ... Diğer transport fonksiyonları (resume, jumpToBar vb.) ...
-
-  // ============================================
-  // === 5. YARDIMCI METODLAR VE TEMİZLİK     ===
-  // ============================================
 
   dispose() {
     this.stop();
