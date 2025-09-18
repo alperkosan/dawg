@@ -54,3 +54,25 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--color-primary);
 }
+
+/* ==========================================================================
+  YATAY KAYDIRILABİLİR SEKME KONTEYNERİ (TAŞMA SORUNU İÇİN)
+  ========================================================================== */
+.tabs-container {
+  width: 100%;
+  overflow-x: auto; /* Gerektiğinde yatay kaydırmayı etkinleştir */
+  -ms-overflow-style: none;  /* IE ve Edge için kaydırma çubuğunu gizle */
+  scrollbar-width: none;  /* Firefox için kaydırma çubuğunu gizle */
+}
+
+/* Chrome, Safari ve Opera için kaydırma çubuğunu gizle */
+.tabs-container::-webkit-scrollbar {
+  display: none;
+}
+
+.tabs-wrapper {
+  display: flex; /* Butonları her zaman yan yana diz */
+  flex-direction: row;
+  width: fit-content; /* Genişliği içeriğe göre ayarla, taşmayı sağla */
+  border-bottom: 2px solid var(--color-background);
+}

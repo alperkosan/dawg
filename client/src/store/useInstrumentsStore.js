@@ -79,6 +79,7 @@ export const useInstrumentsStore = create((set, get) => ({
       audioEngine?.reschedule();
     }
   },
+
   updateInstrument: (instrumentId, newParams, shouldReconcile, audioEngine) => {
     let updatedInstrument = null;
     set(state => {
@@ -92,23 +93,50 @@ export const useInstrumentsStore = create((set, get) => ({
       return { instruments: newInstruments };
     });
 
-    // Eğer bu değişiklik ses buffer'ını etkiliyorsa (örn: reverse, normalize)...
-    if (shouldReconcile && audioEngine && updatedInstrument) {
+    if (!audioEngine || !updatedInstrument) return;
+
+    // ARAYÜZ <-> MOTOR İLETİŞİM HATTI ONARILDI
+    if (shouldReconcile) {
+      // Ses buffer'ını kalıcı olarak değiştiren ağır işlemler
+      console.log(`[STORE->ENGINE] Reconcile komutu gönderiliyor: ${instrumentId}`);
       set(state => ({ processingEffects: { ...state.processingEffects, [instrumentId]: true } }));
       
-      // 1. Motora buffer'ı yeniden işlemesini ve yeni buffer'ı geri göndermesini söyle.
       const newBuffer = audioEngine.reconcileInstrument(instrumentId, updatedInstrument);
       
-      // 2. Eğer Sample Editor o an bu enstrüman için açıksa, dalga formunu anında güncelle.
       if (usePanelsStore.getState().editingInstrumentId === instrumentId) {
         usePanelsStore.getState().setEditorBuffer(newBuffer);
       }
       
       set(state => ({ processingEffects: { ...state.processingEffects, [instrumentId]: false } }));
+    } else {
+      // Zarf (envelope) gibi anlık, kalıcı olmayan parametre değişiklikleri
+      console.log(`[STORE->ENGINE] Parametre güncelleme komutu gönderiliyor: ${instrumentId}`);
+      audioEngine.updateInstrumentParameters(instrumentId, updatedInstrument);
     }
   },
 
-  // YENİ: Bu eylem artık sadece state'i güncellemekle kalmıyor, motoru da tetikliyor.
+  handleInstrumentSynthParamChange: (instrumentId, paramPath, value, audioEngine) => {
+    let updatedInstrument = null;
+    set(state => {
+      const newInstruments = state.instruments.map(inst => {
+        if (inst.id === instrumentId) {
+          // lodash.set sayesinde 'envelope.attack' gibi yolları kolayca güncelleyebiliyoruz
+          const newSynthParams = { ...inst.synthParams };
+          set(newSynthParams, paramPath, value); 
+          updatedInstrument = { ...inst, synthParams: newSynthParams };
+          return updatedInstrument;
+        }
+        return inst;
+      });
+      return { instruments: newInstruments };
+    });
+
+    if (audioEngine && updatedInstrument) {
+      // Ses motoruna, canlı synth'i yeni parametrelerle güncellemesini söyle
+      audioEngine.updateInstrumentParameters(instrumentId, updatedInstrument);
+    }
+  },
+
   handleTogglePrecomputedEffect: (instrumentId, effectType, audioEngine) => {
     const instrument = get().instruments.find(inst => inst.id === instrumentId);
     if (!instrument) return;
@@ -119,9 +147,6 @@ export const useInstrumentsStore = create((set, get) => ({
             [effectType]: !instrument.precomputed?.[effectType] 
         } 
     };
-
-    // `updateInstrument` fonksiyonunu `shouldReconcile=true` ile çağırarak
-    // motorun buffer'ı yeniden işlemesini ve UI'ı güncellemesini sağlıyoruz.
     get().updateInstrument(instrumentId, newParams, true, audioEngine);
   },
 
@@ -137,5 +162,4 @@ export const useInstrumentsStore = create((set, get) => ({
     // Geliştirme: Notalar değiştiğinde motoru anında yeniden zamanlamak için:
     // audioEngine?.reschedule();
   },
-
 }));

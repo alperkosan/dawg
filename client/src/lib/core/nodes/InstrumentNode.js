@@ -50,9 +50,24 @@ export class InstrumentNode {
     }
   }
 
-  trigger(time, note, bufferDuration, cutItself) {
-    if (!this.isReady || !this.node) return;
+  // --- MOTOR İLETİŞİMİNİN SON DURAĞI ---
+  // Gelen yeni parametreleri doğrudan Tone.js enstrümanına uygular.
+  updateParameters(instrumentData) {
+    if (!this.node) return;
 
+    // Hem 'sample' hem de 'synth' tipleri için bu ortak metot çalışır.
+    // Bu, Tone.js'in en verimli anlık güncelleme yöntemidir.
+    if (instrumentData.envelope) {
+      this.node.set({ envelope: instrumentData.envelope });
+    }
+    if (instrumentData.synthParams) {
+      this.node.set(instrumentData.synthParams);
+    }
+    this.pianoRoll = instrumentData.pianoRoll;
+  }
+
+  trigger(time, note, bufferDuration, cutItself) {
+    if (!this.node) return;
     const pitchToPlay = note.pitch || 'C4';
     const duration = note.duration || "1n";
     const velocity = note.velocity ?? 1.0;
@@ -73,17 +88,6 @@ export class InstrumentNode {
   triggerRelease(pitch, time) {
     if (!this.isReady || !this.node) return;
     this.node.triggerRelease(pitch, time);
-  }
-
-  updateParameters(instrumentData) {
-    if (!this.node) return;
-
-    if (this.type === 'sample' && instrumentData.envelope) {
-      this.node.set({ envelope: instrumentData.envelope });
-    } else if (this.type === 'synth' && instrumentData.synthParams) {
-      this.node.set(instrumentData.synthParams);
-    }
-    this.pianoRoll = instrumentData.pianoRoll;
   }
 
   dispose() {

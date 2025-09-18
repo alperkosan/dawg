@@ -86,28 +86,30 @@ function App() {
       await Tone.start();
       console.log("AudioContext başlatıldı.");
       
-      // Ses motorunu UI'dan gelen güncellemeler için callback'lerle başlat
       const engine = new AudioEngine({
         setPlaybackState: usePlaybackStore.getState().setPlaybackState,
         setTransportPosition: usePlaybackStore.getState().setTransportPosition,
       });
-      
-      // Başlangıç BPM'ini ayarla, SİLİNECEK !!!
+
+      // örnek bpm setleme
       const initialBpm = usePlaybackStore.getState().bpm;
       engine.setBpm(initialBpm);
 
       audioEngine.current = engine;
       
-      console.log("AudioEngine: İlk ve tek tam senkronizasyon başlatılıyor...");
-      // Sadece başlangıçta, tüm store verilerini motora yükle
-      await engine.syncFromStores(
+      console.log("AudioEngine: Tek seferlik tam senkronizasyon başlatılıyor...");
+      
+      // --- ANAHTAR GÜNCELLEME ---
+      // Artık bu fonksiyonun tamamlanmasını bekliyoruz.
+      await engine.fullSync(
         useInstrumentsStore.getState().instruments,
         useMixerStore.getState().mixerTracks,
         useArrangementStore.getState()
       );
-      console.log("AudioEngine: Senkronizasyon tamamlandı ve motor hazır.");
       
+      console.log("AudioEngine: Senkronizasyon tamamlandı ve motor hazır.");
       setIsAudioInitialized(true);
+
     } catch (error){
       console.error("Ses motoru başlatılamadı:", error);
     }

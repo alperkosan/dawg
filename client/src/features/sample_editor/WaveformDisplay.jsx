@@ -8,7 +8,7 @@ const WaveformDisplay = React.memo(function WaveformDisplay({ buffer, className,
   // --- LOGLAMA ---
   // Bu bileşene gelen 'buffer' prop'unun ne olduğunu kontrol edelim.
   // Eğer burada 'undefined' veya 'null' görüyorsak, sorun bu bileşene veri gönderen
-  // üst bileşendedir (SampleEditor gibi).
+  // üst bileşendedir (InstrumentEditor gibi).
   useEffect(() => {
     console.log("WaveformDisplay'e gelen buffer verisi:", buffer);
   }, [buffer]);

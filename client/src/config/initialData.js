@@ -74,15 +74,15 @@ openHatPattern.forEach(oh => notes.openHat.push(defaultNote(oh, 'G#4', 0.7, '8n'
 // --- 808 BASS ---
 // Karanlık, melodik ve kick ile senkronize bir bas hattı (G minör skalasında).
 const bassline = [
-  { time: 0, pitch: 'G2', duration: '2n' }, { time: 8, pitch: 'G2', duration: '4n' },
-  { time: 14, pitch: 'A#2', duration: '8n' }, { time: 16, pitch: 'C3', duration: '2n' },
-  { time: 24, pitch: 'C3', duration: '4n' }, { time: 30, pitch: 'D3', duration: '8n' },
-  { time: 32, pitch: 'D#3', duration: '2n.' }, { time: 48, pitch: 'F3', duration: '2n' },
-  { time: 62, pitch: 'G3', duration: '8n' }, { time: 64, pitch: 'D#3', duration: '2n' },
-  { time: 80, pitch: 'D3', duration: '2n' }, { time: 94, pitch: 'C3', duration: '8n' },
-  { time: 96, pitch: 'A#2', duration: '1n' }, { time: 112, pitch: 'G2', duration: '1n' },
-  { time: 124, pitch: 'A#2', duration: '16n' }, { time: 125, pitch: 'C3', duration: '16n' },
-  { time: 126, pitch: 'D3', duration: '16n' }, { time: 127, pitch: 'D#3', duration: '16n' }
+  { time: 0, pitch: 'G3', duration: '2n' }, { time: 8, pitch: 'G3', duration: '4n' },
+  { time: 14, pitch: 'A#3', duration: '8n' }, { time: 16, pitch: 'C4', duration: '2n' },
+  { time: 24, pitch: 'C4', duration: '4n' }, { time: 30, pitch: 'D3', duration: '8n' },
+  { time: 32, pitch: 'D#4', duration: '2n.' }, { time: 48, pitch: 'F4', duration: '2n' },
+  { time: 62, pitch: 'G3', duration: '8n' }, { time: 64, pitch: 'D#4', duration: '2n' },
+  { time: 80, pitch: 'D3', duration: '2n' }, { time: 94, pitch: 'C4', duration: '8n' },
+  { time: 96, pitch: 'A#3', duration: '1n' }, { time: 112, pitch: 'G3', duration: '1n' },
+  { time: 124, pitch: 'A#3', duration: '16n' }, { time: 125, pitch: 'C4', duration: '16n' },
+  { time: 126, pitch: 'D3', duration: '16n' }, { time: 127, pitch: 'D#4', duration: '16n' }
 ];
 bassline.forEach(b => {
     notes.eight08.push({ ...defaultNote(b.time, b.pitch), duration: b.duration });
@@ -91,16 +91,15 @@ bassline.forEach(b => {
 // --- SYNTH LEAD MELODY ---
 // 808'i takip eden basit ama etkili bir melodi
 const synthMelody = [
-    { time: 0, pitch: 'G4', duration: '4n' }, { time: 8, pitch: 'G4', duration: '4n' },
-    { time: 16, pitch: 'C5', duration: '4n' }, { time: 24, pitch: 'C5', duration: '4n' },
-    { time: 32, pitch: 'D#5', duration: '2n' }, { time: 48, pitch: 'F5', duration: '2n' },
-    { time: 64, pitch: 'D#5', duration: '2n' }, { time: 80, pitch: 'D5', duration: '2n' },
-    { time: 96, pitch: 'A#4', duration: '1n' }, { time: 112, pitch: 'G4', duration: '1n' },
+    { time: 0, pitch: 'G3', duration: '4n' }, { time: 8, pitch: 'G3', duration: '4n' },
+    { time: 16, pitch: 'C4', duration: '4n' }, { time: 24, pitch: 'C4', duration: '4n' },
+    { time: 32, pitch: 'D#4', duration: '2n' }, { time: 48, pitch: 'F4', duration: '2n' },
+    { time: 64, pitch: 'D#4', duration: '2n' }, { time: 80, pitch: 'D4', duration: '2n' },
+    { time: 96, pitch: 'A#4', duration: '1n' }, { time: 112, pitch: 'G3', duration: '1n' },
 ];
 synthMelody.forEach(s => {
     notes.synthLead.push({ ...defaultNote(s.time, s.pitch), duration: s.duration });
 });
-
 
 // --- ENSTRÜMANLARI OLUŞTUR ---
 export const initialInstruments = [
@@ -150,7 +149,7 @@ export const initialInstruments = [
         oscillator: { type: 'sawtooth' },
         envelope: { attack: 0.02, decay: 0.1, sustain: 0.3, release: 0.8 }
     },
-    isMuted: false, pianoRoll: true,
+    isMuted: true, pianoRoll: true,
   }
 ];
 

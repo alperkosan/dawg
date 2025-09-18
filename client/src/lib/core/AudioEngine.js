@@ -28,123 +28,117 @@ const memoizedProcessBuffer = memoize(
 class AudioEngine {
   constructor(callbacks) {
     this.callbacks = callbacks || {};
-    
-    // DEBUG: Master Fader kontrolü
     this.masterFader = new Tone.Volume(0).toDestination();
-    console.log("🎛️ [AUDIO ENGINE] Master Fader oluşturuldu ve Destination'a bağlandı", {
-      volume: this.masterFader.volume.value,
-      connected: this.masterFader.numberOfOutputs > 0
-    });
-    
     this.instruments = new Map();
     this.mixerStrips = new Map();
-    this.scheduledEventIds = new Map();
-    this.originalAudioBuffers = new Map();
-
-    this.activePatternId = null;
-    this.animationFrameId = null;
-    this.patterns = {};
-    this.playbackMode = 'pattern';
-
-    this.setupTimeManager();
-    console.log("🔊 Olay Tabanlı Ses Motoru v2.0 Başlatıldı.");
+    this.originalAudioBuffers = new Map(); // Yüklenen ham buffer'lar için önbellek
+    this.scheduledEventIds = new Map(); 
+    this.isReady = false;
+    console.log("🔊 Atomik Ses Motoru v3.0 Başlatıldı.");
   }
 
-  setupTimeManager() {
-    timeManager.onPositionUpdate = (position, step) => {
-      // Gelen pozisyon objesinden sadece formatlanmış metni gönderiyoruz.
-      this.callbacks.setTransportPosition?.(position.formatted, step);
-    };
-    timeManager.onLoopInfoUpdate = (loopInfo) => this.callbacks.setLoopLengthFromEngine?.(loopInfo.lengthInSteps);
+  /**
+   * Projenin tüm verilerini alıp ses motorunu A'dan Z'ye kuran ana fonksiyon.
+   */
+  async fullSync(instrumentData, mixerTrackData, arrangementData) {
+    console.log("%c[SYNC BAŞLADI] Ses motoru kuruluyor...", "color: #818cf8; font-weight: bold;");
+    
+    // 1. Gerekli tüm ses dosyalarını ÖNCEDEN yükle
+    await this.preloadSamples(instrumentData);
+
+    // 2. Tüm mikser kanallarını (strip) oluştur
+    mixerTrackData.forEach(track => this.createMixerStrip(track));
+
+    // 3. Bus'ları ve yönlendirmeleri hazırla
+    const busInputs = this.prepareBusInputs(mixerTrackData);
+
+    // 4. Her bir mikser kanalının ses zincirini kur
+    this.mixerStrips.forEach(strip => {
+      const trackData = mixerTrackData.find(t => t.id === strip.id);
+      if (trackData) {
+        strip.buildSignalChain(trackData, this.masterFader, busInputs);
+      }
+    });
+
+    // 5. Yüklenmiş buffer'ları kullanarak enstrümanları oluştur ve miksere bağla
+    instrumentData.forEach(instData => this.createInstrument(instData));
+    
+    this.isReady = true;
+    console.log("%c[SYNC TAMAMLANDI] Motor hazır.", "color: #34d399; font-weight: bold;");
   }
 
-  async syncFromStores(instrumentData, mixerTrackData, arrangementData) {
-    console.log("%c[SYNC] Proje verileri ses motoruna yükleniyor...", "color: #818cf8; font-weight: bold;");
+  /**
+   * Projedeki tüm sample'ları bir kerede yükler ve önbelleğe alır.
+   */
+  async preloadSamples(instrumentData) {
+    const sampleLoadPromises = instrumentData
+      .filter(inst => inst.type === 'sample' && inst.url)
+      .map(inst => 
+        new Promise((resolve, reject) => {
+          const buffer = new Tone.ToneAudioBuffer(inst.url, 
+            () => {
+              this.originalAudioBuffers.set(inst.id, buffer);
+              console.log(`✅ Buffer yüklendi: ${inst.name}`);
+              resolve();
+            },
+            (err) => {
+              console.error(`❌ Buffer yüklenemedi: ${inst.name}`, err);
+              reject(err); // Hata durumunda bile devam et
+            }
+          );
+        })
+      );
     
-    // DEBUG: Gelen verileri kontrol et
-    console.log("📊 [SYNC DEBUG] Gelen veriler:", {
-      instrumentCount: instrumentData.length,
-      mixerTrackCount: mixerTrackData.length,
-      patternCount: Object.keys(arrangementData.patterns).length,
-      instruments: instrumentData.map(i => ({ id: i.id, name: i.name, mixerTrackId: i.mixerTrackId })),
-      mixerTracks: mixerTrackData.map(t => ({ id: t.id, name: t.name, type: t.type }))
-    });
-    
-    this.patterns = arrangementData.patterns;
-    this.activePatternId = arrangementData.activePatternId;
-    this.playbackMode = usePlaybackStore.getState().playbackMode;
-
-    // 1. Tüm mikser kanallarını oluştur
-    console.log("🎚️ [SYNC] Mikser kanalları oluşturuluyor...");
-    for (const trackData of mixerTrackData) {
-      this.createMixerStrip(trackData);
-    }
-
-    // 2. Tüm mikser kanallarının ses zincirini kur
-    console.log("🔗 [SYNC] Mikser ses zincirleri kuruluyor...");
-    await this._buildAllSignalChains(mixerTrackData);
-
-    // 3. Tüm enstrümanları oluştur ve miksere bağla
-    console.log("🎹 [SYNC] Enstrümanlar oluşturuluyor...");
-    for (const instData of instrumentData) {
-      await this.createInstrument(instData);
-    }
-    
-    // DEBUG: Final durumu kontrol et
-    console.log("🔍 [SYNC DEBUG] Final durum:", {
-      instrumentsCreated: this.instruments.size,
-      mixerStripsCreated: this.mixerStrips.size,
-      masterFaderVolume: this.masterFader.volume.value
-    });
-    
-    // 4. Notaları zaman çizelgesine yerleştir
-    this.reschedule();
-    console.log("%c[SYNC] Yükleme tamamlandı. Motor hazır.", "color: #34d399; font-weight: bold;");
+    await Promise.allSettled(sampleLoadPromises);
+    console.log(`[preloadSamples] ${this.originalAudioBuffers.size} adet sample önbelleğe alındı.`);
   }
 
   createMixerStrip(trackData) {
-    if (this.mixerStrips.has(trackData.id)) {
-      console.log(`⚠️ [MIXER] Kanal zaten var, atlanıyor: ${trackData.id}`);
-      return;
-    }
-    
+    if (this.mixerStrips.has(trackData.id)) return;
     const strip = new MixerStrip(trackData);
     this.mixerStrips.set(trackData.id, strip);
-    console.log(`✅ [AUDIO] Mixer kanalı oluşturuldu: ${trackData.name} (${trackData.id})`, {
-      hasInputGain: !!strip.inputGain,
-      hasOutputGain: !!strip.outputGain
-    });
   }
 
-  async createInstrument(instData) {
-    if (this.instruments.has(instData.id)) {
-      console.log(`⚠️ [INSTRUMENT] Enstrüman zaten var, atlanıyor: ${instData.id}`);
-      return;
-    }
-    
-    console.log(`🎵 [INSTRUMENT] Oluşturuluyor: ${instData.name} (${instData.id})`);
-    
-    const instrumentNode = new InstrumentNode(instData);
-    this.instruments.set(instData.id, instrumentNode);
-    
-    // --- ANAHTAR GÜNCELLEME ---
-    // Dışarıdan gelen promise'in tamamlanmasını bekle.
-    // Bu satır, yükleme bitene kadar sonraki adımlara geçilmesini engeller.
-    try {
-      await instrumentNode.readyPromise;
-      
-      if (instrumentNode.type === 'sample' && instrumentNode.node.loaded) {
-        // Buffer'ı SADECE yükleme başarılı olduğunda kasaya koy.
-        this.originalAudioBuffers.set(instData.id, instrumentNode.node.buffer);
+  prepareBusInputs(mixerTrackData) {
+    const busInputs = new Map();
+    mixerTrackData.forEach(track => {
+      if (track.type === 'bus') {
+        const strip = this.mixerStrips.get(track.id);
+        if (strip?.inputGain) {
+          busInputs.set(track.id, strip.inputGain);
+        }
       }
-      
-      this.connectInstrumentToMixer(instData.id, instData.mixerTrackId);
-      
-    } catch (error) {
-      // Promise reddedilirse (yükleme hatası), motor çalışmaya devam eder
-      // ancak hatalı enstrümanı atlar.
-      console.error(`❌ [INSTRUMENT] Yükleme zinciri hatası: ${instData.name}`, error);
+    });
+    return busInputs;
+  }
+
+  createInstrument(instData) {
+    if (this.instruments.has(instData.id)) return;
+    
+    // Önceden yüklenmiş buffer'ı al
+    const preloadedBuffer = this.originalAudioBuffers.get(instData.id);
+    
+    const instrumentNode = new InstrumentNode(instData, preloadedBuffer);
+    this.instruments.set(instData.id, instrumentNode);
+
+    // Anında miksere bağla
+    const targetStrip = this.mixerStrips.get(instData.mixerTrackId);
+    if (targetStrip) {
+      instrumentNode.output.connect(targetStrip.inputGain);
+    } else {
+      console.error(`[ROUTING] Hata: ${instData.name} için hedef mikser kanalı (${instData.mixerTrackId}) bulunamadı!`);
     }
+  }
+
+  /**
+   * Arayüzden gelen buffer isteğini anında önbellekten karşılar.
+   */
+  requestInstrumentBuffer(instrumentId) {
+    if (!this.originalAudioBuffers.has(instrumentId)) {
+      console.error(`❌ [requestInstrumentBuffer] Buffer önbellekte bulunamadı: ${instrumentId}`);
+      return null;
+    }
+    return this.originalAudioBuffers.get(instrumentId);
   }
 
   connectInstrumentToMixer(instrumentId, mixerTrackId) {
@@ -258,6 +252,11 @@ class AudioEngine {
 
   updateEffectParam = (trackId, effectId, param, value) => {
     this.mixerStrips.get(trackId)?.updateEffectParam(effectId, param, value);
+  }
+
+  updateInstrumentParameters(instrumentId, updatedInstrumentData) {
+      const node = this.instruments.get(instrumentId);
+      node?.updateParameters(updatedInstrumentData);
   }
 
   toggleMute = (trackId, isMuted) => {

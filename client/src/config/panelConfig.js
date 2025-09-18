@@ -1,6 +1,6 @@
 import ChannelRack from '../features/channel_rack/ChannelRack';
 import Mixer from '../features/mixer/Mixer';
-import SampleEditor from '../features/sample_editor/SampleEditor';
+import InstrumentEditor from '../features/sample_editor/InstrumentEditor';
 import PianoRoll from '../features/piano_roll/components/PianoRoll';
 import ArrangementPanel from '../features/arrangement/ArrangementPanel';
 import KeybindingsPanel from '../features/key_bindings/KeybindingsPanel';
@@ -9,7 +9,7 @@ import { ThemeEditor } from '../features/theme_editor/ThemeEditor'; // YENİ: Te
 export const panelRegistry = {
   'channel-rack': ChannelRack,
   'mixer': Mixer,
-  'sample-editor': SampleEditor,
+  'sample-editor': InstrumentEditor,
   'piano-roll': PianoRoll,
   'keybindings': KeybindingsPanel,
   'arrangement': ArrangementPanel, // YENİ: ArrangementPanel'i kaydet
