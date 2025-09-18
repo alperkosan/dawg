@@ -4,14 +4,14 @@ import { ProfessionalKnob } from '../../ui/plugin_system/PluginControls';
 
 const OSCILLATOR_TYPES = ['sine', 'square', 'sawtooth', 'triangle', 'fmsine', 'amsquare'];
 
-const SynthTab = ({ instrument, audioEngineRef }) => {
+const SynthTab = ({ instrument }) => {
     const { handleInstrumentSynthParamChange } = useInstrumentsStore.getState();
     const synthParams = instrument.synthParams || {};
     const oscillator = synthParams.oscillator || {};
     const envelope = synthParams.envelope || {};
 
     const handleParamChange = (paramPath, value) => {
-        handleInstrumentSynthParamChange(instrument.id, paramPath, value, audioEngineRef.current);
+        handleInstrumentSynthParamChange(instrument.id, paramPath, value);
     };
 
     return (

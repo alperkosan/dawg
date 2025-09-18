@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import * as Tone from 'tone';
 import AudioEngine from './lib/core/AudioEngine';
 import WorkspacePanel from './layout/WorkspacePanel';
@@ -8,68 +8,58 @@ import MainToolbar from './features/main_toolbar/MainToolbar';
 import TopToolbar from './features/top_toolbar/TopToolbar';
 import Taskbar from './features/taskbar/Taskbar';
 import { KeybindingService, destroyKeybindings } from './lib/core/KeybindingService';
-import { PlaybackAnimatorService } from './lib/core/PlaybackAnimatorService';
-import { keymap } from './config/keymapConfig';
-
-// Store'ları import ediyoruz
 import { usePlaybackStore } from './store/usePlaybackStore';
 import { useInstrumentsStore } from './store/useInstrumentsStore';
 import { useMixerStore } from './store/useMixerStore';
 import { useArrangementStore } from './store/useArrangementStore';
 import { usePanelsStore } from './store/usePanelsStore';
+// YENİ SERVİSİ IMPORT ET
+import { AudioContextService } from './lib/services/AudioContextService';
+import { keymap } from './config/keymapConfig';
+import { commandManager } from './lib/commands/CommandManager';
 
-/**
- * @file App.jsx - Olay Tabanlı Mimari
- * @description Artık 'useAudioEngineSync' kancası yok.
- * Ses motoru sadece başlangıçta bir kere tüm veriyi alarak senkronize olur.
- * Sonrasındaki tüm değişiklikler (enstrüman ekleme, efekt açma vb.),
- * ilgili store'lardaki eylemler tarafından doğrudan ses motorundaki
- * spesifik fonksiyonlara komut olarak gönderilir. Bu, gereksiz tam
- * senkronizasyonları ortadan kaldırır ve performansı artırır.
- */
-function AppContent({ audioEngineRef }) {
+
+// AppContent artık prop almayacak
+function AppContent() {
   useEffect(() => {
-    // Klavye kısayolları için eylem haritası
     const actions = {
       TOGGLE_PLAY_PAUSE: () => {
-        const { playbackState, handlePlay, handlePause } = usePlaybackStore.getState();
-        // NOT: Store'daki eylemler artık audioEngineRef'i parametre olarak almıyor.
-        // Eylemin kendisi, ilgili arayüz bileşeninden (örn: TopToolbar) çağrıldığında
-        // audioEngineRef'i zaten alacak. Bu merkezi harita, bu referansa sahip değil,
-        // bu yüzden doğrudan motoru tetikliyoruz.
-        const engine = audioEngineRef.current;
-        if (!engine) return;
+        const engine = AudioContextService.getAudioEngine();
         
-        if (playbackState === 'playing') {
-          engine.pause();
-          usePlaybackStore.getState().setPlaybackState('paused');
+        // --- DÜZELTME BURADA ---
+        // Artık var olmayan 'handleResume' fonksiyonunu çağırmıyoruz.
+        const { playbackState, handlePause, handlePlay } = usePlaybackStore.getState();
+
+        if (playbackState === 'playing' || playbackState === 'paused') {
+          // 'handlePause' hem duraklatma hem de devam etme işini zaten yapıyor.
+          handlePause(engine); 
         } else {
-          engine.start();
-          usePlaybackStore.getState().setPlaybackState('playing');
+          // 'stopped' durumundaysa 'handlePlay' çağrılır.
+          handlePlay(engine);
         }
       },
       STOP: () => {
-        const engine = audioEngineRef.current;
-        if (engine) {
-            engine.stop();
-            usePlaybackStore.getState().setPlaybackState('stopped');
-        }
+        const engine = AudioContextService.getAudioEngine();
+        usePlaybackStore.getState().handleStop(engine);
       },
       OPEN_CHANNEL_RACK: () => usePanelsStore.getState().togglePanel('channel-rack'),
       OPEN_MIXER: () => usePanelsStore.getState().togglePanel('mixer'),
       OPEN_PIANO_ROLL: () => usePanelsStore.getState().togglePanel('piano-roll'),
+      UNDO: () => commandManager.undo(),
+      REDO: () => commandManager.redo(),
     };
     
     KeybindingService(keymap, actions);
     return () => destroyKeybindings();
-  }, [audioEngineRef]); // Sadece bir kere kurulur
+  }, []);
 
   return (
     <div className="text-white h-screen flex flex-col font-sans select-none">
-      <TopToolbar audioEngineRef={audioEngineRef} />
+      {/* Bu component'lardan audioEngineRef prop'u kaldırılacak */}
+      <TopToolbar />
       <MainToolbar />
       <main className="flex flex-grow overflow-hidden">
-        <WorkspacePanel audioEngineRef={audioEngineRef} />
+        <WorkspacePanel />
       </main>
       <Taskbar />
     </div>
@@ -78,10 +68,11 @@ function AppContent({ audioEngineRef }) {
 
 function App() {
   const [isAudioInitialized, setIsAudioInitialized] = useState(false);
-  const audioEngine = useRef(null);
 
   const initializeAudio = async () => {
-    if (audioEngine.current) return;
+    // Servis üzerinden motorun zaten var olup olmadığını kontrol et
+    if (AudioContextService.getAudioEngine()) return;
+
     try {
       await Tone.start();
       console.log("AudioContext başlatıldı.");
@@ -91,23 +82,19 @@ function App() {
         setTransportPosition: usePlaybackStore.getState().setTransportPosition,
       });
 
-      // örnek bpm setleme
       const initialBpm = usePlaybackStore.getState().bpm;
       engine.setBpm(initialBpm);
-
-      audioEngine.current = engine;
       
-      console.log("AudioEngine: Tek seferlik tam senkronizasyon başlatılıyor...");
+      // --- ANAHTAR DEĞİŞİKLİK ---
+      // Ses motorunu oluşturduktan hemen sonra merkezi servisimize kaydediyoruz.
+      AudioContextService.setAudioEngine(engine);
       
-      // --- ANAHTAR GÜNCELLEME ---
-      // Artık bu fonksiyonun tamamlanmasını bekliyoruz.
       await engine.fullSync(
         useInstrumentsStore.getState().instruments,
         useMixerStore.getState().mixerTracks,
         useArrangementStore.getState()
       );
       
-      console.log("AudioEngine: Senkronizasyon tamamlandı ve motor hazır.");
       setIsAudioInitialized(true);
 
     } catch (error){
@@ -117,7 +104,7 @@ function App() {
 
   useEffect(() => {
     // Component unmount olduğunda motoru temizle
-    return () => audioEngine.current?.dispose();
+    return () => AudioContextService.getAudioEngine()?.dispose();
   }, []);
 
   if (!isAudioInitialized) {
@@ -126,9 +113,11 @@ function App() {
 
   return (
     <ThemeProvider>
-      <AppContent audioEngineRef={audioEngine} />
+      {/* Artık AppContent'e prop geçmiyoruz */}
+      <AppContent />
     </ThemeProvider>
   );
 }
 
 export default App;
+

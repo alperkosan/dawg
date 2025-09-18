@@ -1,85 +1,67 @@
-// src/store/useMixerStore.js - YENİDEN YAZILMIŞ (Olay Tabanlı Mimari)
+// src/store/useMixerStore.js - YENİDEN YAPILANDIRILMIŞ (Olay Tabanlı Mimari)
 
 import { create } from 'zustand';
+import { AudioContextService } from '../lib/services/AudioContextService';
 import { initialMixerTracks } from '../config/initialData';
 import { pluginRegistry } from '../config/pluginConfig';
 import { v4 as uuidv4 } from 'uuid';
 
 export const useMixerStore = create((set, get) => ({
   mixerTracks: initialMixerTracks,
+  // YENİ: Aktif kanalı ve solo/mute durumlarını takip etmek için
+  activeChannelId: 'master',
+  soloedChannels: new Set(),
+  mutedChannels: new Set(),
 
   // ========================================================
-  // === DOĞRUDAN SES MOTORUNU TETİKLEYEN EYLEMLER      ===
+  // === EYLEMLER (ACTIONS) ===
   // ========================================================
-  // Bu eylemler, state'i güncelledikten sonra anında ses motoruna
-  // "ne yapması gerektiğini" söylerler.
 
-  handleMixerParamChange: (trackId, param, value, audioEngine) => {
+  // Aktif (seçili) kanalı ayarlar, send kablolarının çizimi için kullanılır.
+  setActiveChannelId: (trackId) => set({ activeChannelId: trackId }),
+
+  // Bir kanalın Mute durumunu değiştirir.
+  toggleMute: (trackId) => {
+    const newMutedChannels = new Set(get().mutedChannels);
+    if (newMutedChannels.has(trackId)) {
+      newMutedChannels.delete(trackId);
+    } else {
+      newMutedChannels.add(trackId);
+    }
+    set({ mutedChannels: newMutedChannels });
+    // SES MOTORUNA KOMUT GÖNDER: Mute durumunu ses motoruna bildir.
+    AudioContextService?.setMuteState(trackId, newMutedChannels.has(trackId));
+  },
+
+  // Bir kanalın Solo durumunu değiştirir.
+  toggleSolo: (trackId) => {
+    const { soloedChannels } = get();
+    const newSoloedChannels = new Set(soloedChannels);
+    if (newSoloedChannels.has(trackId)) {
+      newSoloedChannels.delete(trackId);
+    } else {
+      newSoloedChannels.add(trackId);
+    }
+    set({ soloedChannels: newSoloedChannels });
+    // SES MOTORUNA KOMUT GÖNDER: Solo mantığı karmaşık olduğu için
+    // tüm solo durumunu motora bildirerek doğru yönlendirmeyi yapmasını sağlarız.
+    AudioContextService?.setSoloState(newSoloedChannels);
+  },
+
+  // Volume, Pan gibi temel parametreleri günceller.
+  handleMixerParamChange: (trackId, param, value) => {
     set(state => ({
       mixerTracks: state.mixerTracks.map(track => 
         track.id === trackId ? { ...track, [param]: value } : track
       )
     }));
-    // SES MOTORUNA KOMUT GÖNDER
-    audioEngine?.updateMixerParam(trackId, param, value);
-  },
-  
-  handleMixerEffectChange: (trackId, effectId, paramOrSettings, value, audioEngine) => {
-    let changedEffect = null;
-    set(state => {
-      const newTracks = state.mixerTracks.map(track => {
-        if (track.id === trackId) {
-          const newEffects = track.insertEffects.map(fx => {
-            if (fx.id === effectId) {
-              const newSettings = typeof paramOrSettings === 'string'
-                ? { ...fx.settings, [paramOrSettings]: value }
-                : { ...fx.settings, ...paramOrSettings };
-              changedEffect = { ...fx, settings: newSettings };
-              return changedEffect;
-            }
-            return fx;
-          });
-          return { ...track, insertEffects: newEffects };
-        }
-        return track;
-      });
-      return { mixerTracks: newTracks };
-    });
-
-    // SES MOTORUNA KOMUT GÖNDER
-    if (audioEngine && changedEffect) {
-       if (typeof paramOrSettings === 'string') {
-          audioEngine.updateEffectParam(trackId, effectId, paramOrSettings, value);
-       } else {
-         Object.entries(paramOrSettings).forEach(([p, v]) => {
-            audioEngine.updateEffectParam(trackId, effectId, p, v);
-         });
-       }
-    }
+    AudioContextService?.updateMixerParam(trackId, param, value);
   },
 
-  toggleMute: (trackId, audioEngine) => {
-    let isMuted = false;
-    set(state => ({
-        mixerTracks: state.mixerTracks.map(track => {
-            if (track.id === trackId) {
-                isMuted = !track.isMuted;
-                return { ...track, isMuted };
-            }
-            return track;
-        })
-    }));
-    // SES MOTORUNA KOMUT GÖNDER
-    audioEngine?.toggleMute(trackId, isMuted);
-  },
-
-  // ========================================================
-  // === YAPISAL DEĞİŞİKLİK YARATAN EYLEMLER            ===
-  // ========================================================
-  
-  handleMixerEffectAdd: (trackId, effectType, audioEngine) => {
+  // Bir kanala yeni bir efekt ekler.
+  handleMixerEffectAdd: (trackId, effectType) => {
     const pluginDef = pluginRegistry[effectType];
-    if (!pluginDef) return;
+    if (!pluginDef) return null;
 
     const newEffect = {
       id: `fx-${uuidv4()}`,
@@ -88,32 +70,196 @@ export const useMixerStore = create((set, get) => ({
       bypass: false,
     };
 
-    set(state => ({
-      mixerTracks: state.mixerTracks.map(track => {
+    let newTrackState;
+    set(state => {
+      const newTracks = state.mixerTracks.map(track => {
         if (track.id === trackId) {
-          return { ...track, insertEffects: [...track.insertEffects, newEffect] };
+          const updatedTrack = { ...track, insertEffects: [...track.insertEffects, newEffect] };
+          newTrackState = updatedTrack;
+          return updatedTrack;
         }
         return track;
-      })
-    }));
-    
-    // SES MOTORUNA KOMUT GÖNDER
-    // Not: Motor, en güncel track verisini store'dan kendisi okuyacak.
-    audioEngine?.addEffectToTrack(trackId, newEffect);
+      });
+      return { mixerTracks: newTracks };
+    });
+
+    // SES MOTORUNA KOMUT GÖNDER: Yeni efekt zincirini kurması için.
+    if (AudioContextService && newTrackState) {
+        AudioContextService.rebuildSignalChain(trackId, newTrackState);
+    }
+    return newEffect; // Oluşturulan efekti döndürerek UI'ın focus yapmasını sağlar
   },
 
-  handleMixerEffectRemove: (trackId, effectId, audioEngine) => {
+  // Bir efekti kanaldan kaldırır.
+  handleMixerEffectRemove: (trackId, effectId) => {
+    let newTrackState;
     set(state => ({
       mixerTracks: state.mixerTracks.map(track => {
         if (track.id === trackId) {
-          return { ...track, insertEffects: track.insertEffects.filter(fx => fx.id !== effectId) };
+          const updatedTrack = { ...track, insertEffects: track.insertEffects.filter(fx => fx.id !== effectId) };
+          newTrackState = updatedTrack;
+          return updatedTrack;
+        }
+        return track;
+      })
+    }));
+    if (AudioContextService && newTrackState) {
+        AudioContextService.rebuildSignalChain(trackId, newTrackState);
+    }
+  },
+  
+  // Efekt parametrelerini günceller.
+  handleMixerEffectChange: (trackId, effectId, paramOrSettings, value) => {
+    set(state => ({
+      mixerTracks: state.mixerTracks.map(track => {
+        if (track.id === trackId) {
+          return {
+            ...track,
+            insertEffects: track.insertEffects.map(fx => {
+              if (fx.id === effectId) {
+                const newSettings = typeof paramOrSettings === 'string'
+                  ? { ...fx.settings, [paramOrSettings]: value }
+                  : { ...fx.settings, ...paramOrSettings };
+                  
+                // Bypass durumu direkt efektin ana objesinde tutulur
+                if (paramOrSettings === 'bypass') {
+                    return { ...fx, bypass: value };
+                }
+                return { ...fx, settings: newSettings };
+              }
+              return fx;
+            })
+          };
         }
         return track;
       })
     }));
     
     // SES MOTORUNA KOMUT GÖNDER
-    audioEngine?.removeEffectFromTrack(trackId, effectId);
+    if (paramOrSettings === 'bypass') {
+        const trackData = get().mixerTracks.find(t => t.id === trackId);
+        AudioContextService?.rebuildSignalChain(trackId, trackData); // Bypass için zinciri yeniden kur
+    } else {
+        AudioContextService?.updateEffectParam(trackId, effectId, paramOrSettings, value);
+    }
+  },
+
+  // YENİ: Efektleri sürükle-bırak ile yeniden sıralamak için eylem
+  reorderEffect: (trackId, sourceIndex, destinationIndex) => {
+    let newTrackState;
+    set(state => {
+      const newTracks = state.mixerTracks.map(track => {
+        if (track.id === trackId) {
+          const effects = Array.from(track.insertEffects);
+          const [removed] = effects.splice(sourceIndex, 1);
+          effects.splice(destinationIndex, 0, removed);
+          const updatedTrack = { ...track, insertEffects: effects };
+          newTrackState = updatedTrack;
+          return updatedTrack;
+        }
+        return track;
+      });
+      return { mixerTracks: newTracks };
+    });
+
+    // SES MOTORUNA KOMUT GÖNDER: Sinyal zincirini yeni sıraya göre yeniden kurması için.
+    if (AudioContextService && newTrackState) {
+        AudioContextService.rebuildSignalChain(trackId, newTrackState);
+    }
+  },
+
+  // YENİ: Bir kanalın rengini değiştirir.
+  setTrackColor: (trackId, color) => {
+    set(state => ({
+      mixerTracks: state.mixerTracks.map(track => 
+        track.id === trackId ? { ...track, color } : track
+      )
+    }));
+  },
+
+  // YENİ: Bir kanalın çıkışını başka bir bus'a veya master'a yönlendirir.
+  setTrackOutput: (trackId, outputBusId) => {
+    let newTrackState;
+    set(state => ({
+      mixerTracks: state.mixerTracks.map(track => {
+        if (track.id === trackId) {
+          // outputBusId null ise Master'a yönlendir.
+          const updatedTrack = { ...track, output: outputBusId };
+          newTrackState = updatedTrack;
+          return updatedTrack;
+        }
+        return track;
+      })
+    }));
+    // SES MOTORUNA KOMUT: Sinyal zincirini yeni yönlendirmeye göre yeniden kur.
+    if (AudioContextService && newTrackState) {
+      AudioContextService.rebuildSignalChain(trackId, newTrackState);
+    }
+  },
+
+  // YENİ: Bir kanalı varsayılan ayarlarına sıfırlar.
+  resetTrack: (trackId) => {
+    const originalTrack = initialMixerTracks.find(t => t.id === trackId);
+    if (originalTrack) {
+        let newTrackState;
+        set(state => ({
+            mixerTracks: state.mixerTracks.map(track => {
+                if (track.id === trackId) {
+                    newTrackState = { ...originalTrack };
+                    return newTrackState;
+                }
+                return track;
+            })
+        }));
+        if (AudioContextService && newTrackState) {
+            AudioContextService.rebuildSignalChain(trackId, newTrackState);
+        }
+    }
+  },
+
+  // YENİ: Bir kanala yeni bir send ekler.
+  addSend: (trackId, busId) => {
+    let newTrackState;
+    set(state => ({
+      mixerTracks: state.mixerTracks.map(track => {
+        if (track.id === trackId && !track.sends.some(s => s.busId === busId)) {
+           const updatedTrack = { ...track, sends: [...track.sends, { busId, level: -6 }] };
+           newTrackState = updatedTrack;
+           return updatedTrack;
+        }
+        return track;
+      })
+    }));
+    if(AudioContextService && newTrackState) AudioContextService.rebuildSignalChain(trackId, newTrackState);
+  },
+
+  // YENİ: Bir kanaldan bir send'i kaldırır.
+  removeSend: (trackId, busId) => {
+      let newTrackState;
+      set(state => ({
+        mixerTracks: state.mixerTracks.map(track => {
+          if (track.id === trackId) {
+            const updatedTrack = { ...track, sends: track.sends.filter(s => s.busId !== busId) };
+            newTrackState = updatedTrack;
+            return updatedTrack;
+          }
+          return track;
+        })
+      }));
+      if (AudioContextService && newTrackState) AudioContextService.rebuildSignalChain(trackId, newTrackState);
+  },
+
+  // YENİ: Bir send'in seviyesini günceller.
+  updateSendLevel: (trackId, busId, level) => {
+    set(state => ({
+      mixerTracks: state.mixerTracks.map(track => {
+        if (track.id === trackId) {
+          return { ...track, sends: track.sends.map(s => s.busId === busId ? { ...s, level } : s) };
+        }
+        return track;
+      })
+    }));
+    AudioContextService?.updateSendLevel(trackId, busId, level);
   },
 
   setTrackName: (trackId, newName) => {
@@ -123,16 +269,4 @@ export const useMixerStore = create((set, get) => ({
       )
     }));
   },
-
-  // Bir kanalı başlangıç durumuna sıfırlar
-  resetTrack: (trackId) => {
-    const originalTrack = initialMixerTracks.find(t => t.id === trackId);
-    if (originalTrack) {
-        set(state => ({
-            mixerTracks: state.mixerTracks.map(track => 
-                track.id === trackId ? { ...originalTrack } : track
-            )
-        }));
-    }
-  }
 }));

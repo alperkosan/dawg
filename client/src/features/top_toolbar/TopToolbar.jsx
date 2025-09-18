@@ -4,6 +4,9 @@ import VolumeKnob from '../../ui/VolumeKnob';
 import { usePlaybackStore } from '../../store/usePlaybackStore';
 import { useArrangementStore } from '../../store/useArrangementStore';
 
+// DÜZELTME: Artık AudioContextService'i doğrudan burada import etmeye gerek yok.
+// Store eylemleri bu işi bizim için yapacak.
+
 const ModeButton = ({ label, mode, activeMode, onClick }) => {
     const isActive = activeMode === mode;
     return (
@@ -16,33 +19,26 @@ const ModeButton = ({ label, mode, activeMode, onClick }) => {
     );
 };
 
-function TopToolbar({ audioEngineRef }) {
-  // State'leri reaktif olarak al
+// DÜZELTME: Bileşen artık 'audioEngineRef' prop'unu almıyor.
+function TopToolbar() {
   const { playbackState, bpm, transportPosition, masterVolume, playbackMode } = usePlaybackStore();
-  // Eylemleri getState() ile al
-  const { handlePlay, handlePause, handleResume, handleStop, handleBpmChange, handleMasterVolumeChange, setPlaybackMode } = usePlaybackStore.getState();
-  const activePatternId = useArrangementStore(state => state.activePatternId);
-
+  // DÜZELTME: Store'dan eylemleri çekiyoruz. Bu eylemler motorla iletişimi kendileri kuracak.
+  const { handlePlay, handlePause, handleStop, handleBpmChange, handleMasterVolumeChange, setPlaybackMode } = usePlaybackStore.getState();
+  
   const handleModeChange = (newMode) => {
-    const engine = audioEngineRef.current;
-    if (!engine) return;
-    setPlaybackMode(newMode, engine);
+    // Sadece state'i güncelleyen eylemi çağırıyoruz.
+    setPlaybackMode(newMode);
   };
   
-  // ONARIM: Çalma/Duraklatma/Devam etme mantığını yöneten tek bir fonksiyon
   const handlePlayPauseClick = () => {
-    const engine = audioEngineRef.current;
-    if (!engine) return;
-
+    // Karmaşık mantık artık store'un içinde.
     if (playbackState === 'playing') {
-      handlePause(engine);
-    } else if (playbackState === 'paused') {
-      handleResume(engine);
+      handlePause();
     } else {
-      handlePlay(engine);
+      // Hem 'paused' hem de 'stopped' durumlarında handlePlay çalışır.
+      handlePlay();
     }
   };
-
 
   return (
     <header 
@@ -63,21 +59,21 @@ function TopToolbar({ audioEngineRef }) {
             label="Master"
             size={36}
             value={masterVolume}
-            onChange={(val) => handleMasterVolumeChange(val, audioEngineRef.current)}
+            // DÜZELTME: Doğrudan store eylemini çağırıyoruz.
+            onChange={handleMasterVolumeChange}
             defaultValue={0} min={-60} max={6}
           />
-          {/* ONARIM: Oynat/Duraklat Düğmesi */}
           <button 
             title={playbackState === 'playing' ? 'Pause' : 'Play'} 
-            onClick={handlePlayPauseClick} 
+            // DÜZELTME: handlePause ve handlePlay'i birleştiren akıllı fonksiyon.
+            onClick={playbackState === 'playing' ? handlePause : handlePlay} 
             className="p-2 rounded hover:bg-[var(--color-primary)] transition-colors" 
             style={{ backgroundColor: 'var(--color-surface2)'}}
           >
             {playbackState === 'playing' ? <Pause size={20} /> : <Play size={20} />}
           </button>
-          {/* ONARIM: Durdurma Düğmesi */}
           {(playbackState === 'playing' || playbackState === 'paused') && (
-            <button title="Stop" onClick={() => handleStop(audioEngineRef.current)} className="p-2 rounded hover:bg-[var(--color-accent)] transition-colors" style={{ backgroundColor: 'var(--color-surface2)'}}>
+            <button title="Stop" onClick={handleStop} className="p-2 rounded hover:bg-[var(--color-accent)] transition-colors" style={{ backgroundColor: 'var(--color-surface2)'}}>
               <Square size={20} />
             </button>
           )}
@@ -92,7 +88,8 @@ function TopToolbar({ audioEngineRef }) {
           <input
             type="number"
             value={Math.round(bpm)}
-            onChange={(e) => handleBpmChange(Number(e.target.value), audioEngineRef.current)}
+            // DÜZELTME: Doğrudan store eylemini çağırıyoruz.
+            onChange={(e) => handleBpmChange(Number(e.target.value))}
             className="bg-transparent w-16 text-center focus:outline-none p-1"
             style={{ fontSize: 'var(--font-size-body)' }}
           />

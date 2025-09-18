@@ -34,136 +34,102 @@ class AudioEngine {
     this.originalAudioBuffers = new Map(); // Yüklenen ham buffer'lar için önbellek
     this.scheduledEventIds = new Map(); 
     this.isReady = false;
+    this.killSwitch = new Tone.Gain(1).toDestination();
+
     console.log("🔊 Atomik Ses Motoru v3.0 Başlatıldı.");
   }
 
-  /**
-   * Projenin tüm verilerini alıp ses motorunu A'dan Z'ye kuran ana fonksiyon.
-   */
+  // Projenin tüm verilerini alıp ses motorunu kuran ana fonksiyon.
   async fullSync(instrumentData, mixerTrackData, arrangementData) {
     console.log("%c[SYNC BAŞLADI] Ses motoru kuruluyor...", "color: #818cf8; font-weight: bold;");
     
-    // 1. Gerekli tüm ses dosyalarını ÖNCEDEN yükle
     await this.preloadSamples(instrumentData);
 
-    // 2. Tüm mikser kanallarını (strip) oluştur
     mixerTrackData.forEach(track => this.createMixerStrip(track));
+    
+    this.rebuildAllSignalChains(mixerTrackData);
 
-    // 3. Bus'ları ve yönlendirmeleri hazırla
-    const busInputs = this.prepareBusInputs(mixerTrackData);
-
-    // 4. Her bir mikser kanalının ses zincirini kur
-    this.mixerStrips.forEach(strip => {
-      const trackData = mixerTrackData.find(t => t.id === strip.id);
-      if (trackData) {
-        strip.buildSignalChain(trackData, this.masterFader, busInputs);
-      }
-    });
-
-    // 5. Yüklenmiş buffer'ları kullanarak enstrümanları oluştur ve miksere bağla
     instrumentData.forEach(instData => this.createInstrument(instData));
     
     this.isReady = true;
     console.log("%c[SYNC TAMAMLANDI] Motor hazır.", "color: #34d399; font-weight: bold;");
   }
 
-  /**
-   * Projedeki tüm sample'ları bir kerede yükler ve önbelleğe alır.
-   */
+  // Gerekli tüm ses dosyalarını önceden yükler.
   async preloadSamples(instrumentData) {
     const sampleLoadPromises = instrumentData
-      .filter(inst => inst.type === 'sample' && inst.url)
+      .filter(inst => inst.type === 'sample' && inst.url && !this.originalAudioBuffers.has(inst.id))
       .map(inst => 
-        new Promise((resolve, reject) => {
+        new Promise((resolve) => {
           const buffer = new Tone.ToneAudioBuffer(inst.url, 
             () => {
               this.originalAudioBuffers.set(inst.id, buffer);
-              console.log(`✅ Buffer yüklendi: ${inst.name}`);
               resolve();
             },
-            (err) => {
-              console.error(`❌ Buffer yüklenemedi: ${inst.name}`, err);
-              reject(err); // Hata durumunda bile devam et
+            () => {
+              console.error(`Buffer yüklenemedi: ${inst.name}`);
+              resolve(); // Hata durumunda bile devam et
             }
           );
         })
       );
-    
     await Promise.allSettled(sampleLoadPromises);
-    console.log(`[preloadSamples] ${this.originalAudioBuffers.size} adet sample önbelleğe alındı.`);
   }
 
   createMixerStrip(trackData) {
-    if (this.mixerStrips.has(trackData.id)) return;
+    if (this.mixerStrips.has(trackData.id)) this.mixerStrips.get(trackData.id).dispose();
     const strip = new MixerStrip(trackData);
     this.mixerStrips.set(trackData.id, strip);
   }
 
-  prepareBusInputs(mixerTrackData) {
+  // YENİ: Tek bir kanalın veya tüm kanalların sinyal zincirini yeniden kurar.
+  rebuildSignalChain(trackId, trackData) {
+      if (!trackData) {
+        console.error(`[rebuildSignalChain] ${trackId} için veri bulunamadı.`);
+        return;
+      }
+      const busInputs = this.prepareBusInputs();
+      const strip = this.mixerStrips.get(trackId);
+      if(strip) {
+          strip.buildSignalChain(trackData, this.masterFader, busInputs);
+      }
+  }
+
+  rebuildAllSignalChains(mixerTrackData) {
+      const busInputs = this.prepareBusInputs();
+      mixerTrackData.forEach(trackData => {
+          const strip = this.mixerStrips.get(trackData.id);
+          if (strip) {
+              strip.buildSignalChain(trackData, this.masterFader, busInputs);
+          }
+      });
+  }
+  
+  // Bus kanallarının girişlerini bir haritada toplar, yönlendirme için kullanılır.
+  prepareBusInputs() {
     const busInputs = new Map();
-    mixerTrackData.forEach(track => {
-      if (track.type === 'bus') {
-        const strip = this.mixerStrips.get(track.id);
-        if (strip?.inputGain) {
-          busInputs.set(track.id, strip.inputGain);
-        }
+    this.mixerStrips.forEach(strip => {
+      if (strip.type === 'bus') {
+        busInputs.set(strip.id, strip.inputGain);
       }
     });
     return busInputs;
   }
 
   createInstrument(instData) {
-    if (this.instruments.has(instData.id)) return;
-    
-    // Önceden yüklenmiş buffer'ı al
+    if (this.instruments.has(instData.id)) this.instruments.get(instData.id).dispose();
     const preloadedBuffer = this.originalAudioBuffers.get(instData.id);
-    
     const instrumentNode = new InstrumentNode(instData, preloadedBuffer);
     this.instruments.set(instData.id, instrumentNode);
-
-    // Anında miksere bağla
-    const targetStrip = this.mixerStrips.get(instData.mixerTrackId);
-    if (targetStrip) {
-      instrumentNode.output.connect(targetStrip.inputGain);
-    } else {
-      console.error(`[ROUTING] Hata: ${instData.name} için hedef mikser kanalı (${instData.mixerTrackId}) bulunamadı!`);
-    }
+    this.connectInstrumentToMixer(instData.id, instData.mixerTrackId);
   }
-
-  /**
-   * Arayüzden gelen buffer isteğini anında önbellekten karşılar.
-   */
-  requestInstrumentBuffer(instrumentId) {
-    if (!this.originalAudioBuffers.has(instrumentId)) {
-      console.error(`❌ [requestInstrumentBuffer] Buffer önbellekte bulunamadı: ${instrumentId}`);
-      return null;
-    }
-    return this.originalAudioBuffers.get(instrumentId);
-  }
-
+  
   connectInstrumentToMixer(instrumentId, mixerTrackId) {
     const instrumentNode = this.instruments.get(instrumentId);
     const targetStrip = this.mixerStrips.get(mixerTrackId);
-
-    if (!instrumentNode) {
-      console.error(`❌ [ROUTING] Enstrüman bulunamadı: ${instrumentId}`);
-      return;
-    }
-    
-    if (!targetStrip) {
-      console.error(`❌ [ROUTING] Mixer kanalı bulunamadı: ${mixerTrackId}`);
-      return;
-    }
-
-    try {
+    if (instrumentNode && targetStrip) {
       instrumentNode.output.disconnect();
       instrumentNode.output.connect(targetStrip.inputGain);
-      console.log(`🔗 [AUDIO] Bağlantı yapıldı: ${instrumentNode.id} -> ${targetStrip.id}`, {
-        instrumentOutput: instrumentNode.output,
-        stripInput: targetStrip.inputGain
-      });
-    } catch (error) {
-      console.error(`❌ [ROUTING] Bağlantı hatası:`, error);
     }
   }
 
@@ -241,7 +207,6 @@ class AudioEngine {
     return newProcessedBuffer;
   }
 
-
   updateMixerParam = (trackId, param, value) => {
     const strip = this.mixerStrips.get(trackId);
     if (strip) {
@@ -263,8 +228,13 @@ class AudioEngine {
     }
   }
 
-  toggleMute = (trackId, isMuted) => {
-    this.mixerStrips.get(trackId)?.setMute(isMuted);
+  setMuteState = (trackId, isMuted) => this.mixerStrips.get(trackId)?.setMute(isMuted);
+
+  setSoloState = (soloedChannels) => {
+    const isAnySoloActive = soloedChannels.size > 0;
+    this.mixerStrips.forEach(strip => {
+      strip.setSolo(soloedChannels.has(strip.id), isAnySoloActive);
+    });
   }
 
   setInstrumentMute(instrumentId, isMuted) {
@@ -393,6 +363,10 @@ class AudioEngine {
   start() {
     if (Tone.context.state !== 'running') Tone.context.resume();
     if (Tone.Transport.state === 'started') return;
+    // YENİ: Çalmaya başlamadan önce "Kill Switch"i aç.
+    this.killSwitch.gain.cancelScheduledValues(Tone.now());
+    this.killSwitch.gain.rampTo(1, 0.01); // 10ms'de sesi aç
+
     this.reschedule();
     timeManager.start(this.playbackMode, this.activePatternId, useArrangementStore.getState());
     Tone.Transport.start();
@@ -402,6 +376,9 @@ class AudioEngine {
   
   resume() {
     if (Tone.Transport.state === 'paused') {
+      this.killSwitch.gain.cancelScheduledValues(Tone.now());
+      this.killSwitch.gain.rampTo(1, 0.01);
+
       Tone.Transport.start();
       timeManager.resume();
       this.callbacks.setPlaybackState?.('playing');
@@ -412,19 +389,15 @@ class AudioEngine {
   stop() {
     Tone.Transport.stop();
     timeManager.stop();
-
-    // --- YENİ: ANINDA SUSTURMA (PANİK BUTONU) ---
-    // Tüm enstrümanları dolaş ve o anda çalan bütün notaları sustur.
-    // Bu, uzun release'e sahip pad'lerin veya reverblerin anında kesilmesini sağlar.
-    this.instruments.forEach(instrumentNode => {
-      if (instrumentNode.node && typeof instrumentNode.node.releaseAll === 'function') {
-        instrumentNode.node.releaseAll(Tone.now());
-      }
-    });
-
     this.callbacks.setPlaybackState?.('stopped');
     this._stopAnimationLoop();
     PlaybackAnimatorService.publish(0);
+
+    // --- YENİ: ANINDA SUSTURMA (PANİK BUTONU) ---
+    // releaseAll yerine, tüm seslerin geçtiği ana vanayı kapatıyoruz.
+    // 50ms'lik çok kısa bir fade out, "klik" seslerini engeller.
+    this.killSwitch.gain.cancelScheduledValues(Tone.now());
+    this.killSwitch.gain.rampTo(0, 0.05);
   }
 
   pause() {
@@ -439,6 +412,10 @@ class AudioEngine {
     Tone.Transport.bpm.value = newBpm;
     this.reschedule();
   }
+
+  auditionNoteOn = (id, pitch, vel) => this.instruments.get(id)?.triggerAttack(pitch, Tone.now(), vel);
+  auditionNoteOff = (id, pitch) => this.instruments.get(id)?.triggerRelease(pitch, Tone.now());
+
 
   _startAnimationLoop() {
     if (this.animationFrameId) cancelAnimationFrame(this.animationFrameId);

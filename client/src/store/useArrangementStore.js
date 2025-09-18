@@ -1,6 +1,6 @@
 import { create } from 'zustand';
-import { v4 as uuidv4 } from 'uuid';
 import { initialInstruments } from '../config/initialData';
+import { AudioContextService } from '../lib/services/AudioContextService';
 
 const initialPatternData = initialInstruments.reduce((acc, inst) => {
   acc[inst.id] = inst.notes;
@@ -44,24 +44,24 @@ export const useArrangementStore = create((set, get) => ({
 
   // --- Eylemler ---
   
-  setActivePatternId: (patternId, audioEngine) => {
+  setActivePatternId: (patternId) => {
     set({ activePatternId: patternId });
     // Aktif pattern değiştiğinde, ses motorunun notaları yeniden zamanlaması gerekir.
-    audioEngine?.reschedule();
+    AudioContextService?.reschedule();
   },
 
-  nextPattern: (audioEngine) => {
+  nextPattern: () => {
     const { patternOrder, activePatternId } = get();
     const currentIndex = patternOrder.indexOf(activePatternId);
     const nextIndex = (currentIndex + 1) % patternOrder.length;
-    get().setActivePatternId(patternOrder[nextIndex], audioEngine);
+    get().setActivePatternId(patternOrder[nextIndex]);
   },
 
-  previousPattern: (audioEngine) => {
+  previousPattern: () => {
     const { patternOrder, activePatternId } = get();
     const currentIndex = patternOrder.indexOf(activePatternId);
     const prevIndex = (currentIndex - 1 + patternOrder.length) % patternOrder.length;
-    get().setActivePatternId(patternOrder[prevIndex], audioEngine);
+    get().setActivePatternId(patternOrder[prevIndex]);
   },
 
   updatePatternNotes: (patternId, instrumentId, newNotes) => {

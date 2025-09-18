@@ -3,7 +3,7 @@ import { Zap, Loader2, Play, Pause, RotateCcw } from 'lucide-react';
 import { useBufferProcessor } from '../hooks/useBufferProcessor';
 import WaveformDisplay from '../WaveformDisplay';
 
-const AdvancedProcessingTab = ({ instrument, instrumentBuffer, audioEngineRef }) => {
+const AdvancedProcessingTab = ({ instrument, instrumentBuffer }) => {
   const { isProcessing, processedBuffer, error, applyFadeIn, applyFadeOut, applyGain, resetProcessor } = useBufferProcessor();
   const [settings, setSettings] = useState({
     fadeInMs: 100,

@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { useArrangementStore } from './useArrangementStore';
 import { calculateAudioLoopLength, calculateUIRackLength, calculatePatternLoopLength } from '../lib/utils/patternUtils';
 import { initialInstruments } from '../config/initialData';
+import { AudioContextService } from '../lib/services/AudioContextService';
 
 const initialPatternData = initialInstruments.reduce((acc, inst) => {
   acc[inst.id] = inst.notes;
@@ -97,7 +98,7 @@ export const usePlaybackStore = create((set, get) => ({
    * Çalma modunu değiştirir. Eğer çalma devam ediyorsa,
    * AudioEngine'e "kesintisiz geçiş" komutu gönderir.
    */
-  setPlaybackMode: (mode, audioEngine) => {
+  setPlaybackMode: (mode) => {
       const currentState = get();
       if (currentState.playbackMode === mode) return;
 
@@ -106,62 +107,62 @@ export const usePlaybackStore = create((set, get) => ({
       get().updateLoopLength();
       
       const isPlaying = currentState.playbackState === 'playing' || currentState.playbackState === 'paused';
-      if (audioEngine && isPlaying) {
-        audioEngine.reschedule();
+      if (AudioContextService && isPlaying) {
+        AudioContextService.reschedule();
       }
     },
   /**
    * BPM (tempo) değerini günceller ve AudioEngine'e bildirir.
    */
-  handleBpmChange: (newBpm, audioEngine) => {
+  handleBpmChange: (newBpm) => {
     const clampedBpm = Math.max(40, Math.min(300, newBpm));
     set({ bpm: clampedBpm });
-    audioEngine?.setBpm(clampedBpm);
+    AudioContextService?.setBpm(clampedBpm);
   },
 
   /**
    * Ana ses seviyesini günceller ve AudioEngine'e bildirir.
    */
-  handleMasterVolumeChange: (newVolume, audioEngine) => {
+  handleMasterVolumeChange: (newVolume) => {
     set({ masterVolume: newVolume });
-    audioEngine?.setMasterVolume(newVolume);
+    AudioContextService?.setMasterVolume(newVolume);
   },
 
   /**
    * Çalmayı başlatma komutunu AudioEngine'e gönderir.
    */
-  handlePlay: (audioEngine) => {
-    if (!audioEngine) return;
+  handlePlay: () => {
+    if (!AudioContextService) return;
     const { playbackMode } = get();
     const activePatternId = useArrangementStore.getState().activePatternId;
-    audioEngine.start(playbackMode, activePatternId); 
+    AudioContextService.start(playbackMode, activePatternId); 
   },
 
   /**
    * AKILLI TOGGLE: Çalma durumuna göre duraklatma veya devam etme
    * komutunu AudioEngine'e gönderir.
    */
-  handlePause: (audioEngine) => {
+  handlePause: () => {
     const { playbackState } = get();
     if (playbackState === 'playing') {
-      audioEngine?.pause();
+      AudioContextService?.pause(); // Eğer çalıyorsa, DURAKLAT
     } else if (playbackState === 'paused') {
-      audioEngine?.resume();
+      AudioContextService?.resume(); // Eğer duraklatılmışsa, DEVAM ETTİR
     }
   },
 
   /**
    * Çalmayı durdurma ve başa sarma komutunu AudioEngine'e gönderir.
    */
-  handleStop: (audioEngine) => {
-    audioEngine?.stop();
+  handleStop: () => {
+    AudioContextService?.stop();
   },
 
-  jumpToBar: (barNumber, audioEngine) => {
-    audioEngine?.jumpToBar(barNumber);
+  jumpToBar: (barNumber) => {
+    AudioContextService?.jumpToBar(barNumber);
   },
 
-  jumpToStep: (step, audioEngine) => {
-    audioEngine?.jumpToStep(step);
+  jumpToStep: (step) => {
+    AudioContextService?.jumpToStep(step);
   },
 }));

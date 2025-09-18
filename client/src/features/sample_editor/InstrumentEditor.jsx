@@ -17,7 +17,11 @@ const TABS_CONFIG = [
   { id: 'effects', label: 'Effects', icon: SlidersHorizontal, component: lazy(() => import('./components/EnhancedEffectsTab')), supportedTypes: ['synth'] },
 ];
 
-const InstrumentEditor = ({ instrument, audioEngineRef }) => {
+const InstrumentEditor = ({ instrument }) => {
+  if (!instrument) {
+    return <div className="p-4 text-red-400">Düzenlenecek bir enstrüman seçilmedi.</div>;
+  }
+
   const track = useMixerStore(state => state.mixerTracks.find(t => t.id === instrument?.mixerTrackId));
   const instrumentBuffer = usePanelsStore(state => state.editorBuffer);
   
@@ -30,10 +34,6 @@ const InstrumentEditor = ({ instrument, audioEngineRef }) => {
         setActiveTab(defaultTab);
     }
   }, [instrument, activeTab, availableTabs]);
-
-  if (!instrument || !track) {
-    return <div className="p-4 text-red-400">Enstrüman veya mikser kanalı bulunamadı.</div>;
-  }
 
   const ActiveTabComponent = TABS_CONFIG.find(tab => tab.id === activeTab)?.component;
 
@@ -59,7 +59,6 @@ const InstrumentEditor = ({ instrument, audioEngineRef }) => {
                 instrument={instrument} 
                 instrumentBuffer={instrumentBuffer}
                 track={track}
-                audioEngineRef={audioEngineRef} 
               />
             )}
           </Suspense>

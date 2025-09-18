@@ -1,202 +1,160 @@
-// src/features/mixer/Mixer.jsx - GÜNCELLENMİŞ VE HATASI GİDERİLMİŞ VERSİYON
-
-import React, { useRef, useMemo, useEffect, useState } from 'react';
+import React, { useMemo, useState, useRef } from 'react';
 import MixerChannel from './MixerChannel';
 import { useMixerStore } from '../../store/useMixerStore';
-import { MeteringService } from '../../lib/core/MeteringService';
-import { Settings, Plus, Save, FolderOpen } from 'lucide-react';
+import { usePanelsStore } from '../../store/usePanelsStore';
+import { SlidersHorizontal, Plus, Trash2, Power, ArrowDownUp } from 'lucide-react';
+import { AddEffectMenu } from '../../ui/AddEffectMenu';
+import ChannelContextMenu from '../../components/ChannelContextMenu'; // Context Menu'yü import et
 
-// --- SendCables Bileşeni Düzeltmesi ---
-// Artık 'sends' prop'una ihtiyacı yok, çünkü bu bilgi 'mixerTracks' içinde mevcut.
-const SendCables = React.memo(({ containerRef, mixerTracks, activeChannelId }) => {
-  const [cablePositions, setCablePositions] = useState([]);
+// YENİ: Native HTML Drag-Drop API'si ile çalışan, sürükle-bırak özellikli Insert Paneli
+const InsertPanel = ({ activeTrack }) => {
+    const { handleMixerEffectAdd, handleMixerEffectRemove, handleMixerEffectChange, reorderEffect } = useMixerStore.getState();
+    const { togglePluginPanel } = usePanelsStore.getState();
+    const [addEffectMenu, setAddEffectMenu] = useState(null);
+    const [dragOverIndex, setDragOverIndex] = useState(null);
+    const draggedItemIndex = useRef(null);
 
-  const calculateCablePositions = () => {
-    if (!containerRef.current || !activeChannelId) return [];
-    const container = containerRef.current;
-    const containerRect = container.getBoundingClientRect();
-    const activeTrack = mixerTracks.find(t => t.id === activeChannelId);
-    if (!activeTrack?.sends?.length) return [];
-
-    return activeTrack.sends.map(send => {
-      const fromElement = container.querySelector(`[data-track-id="${activeChannelId}"]`);
-      const toElement = container.querySelector(`[data-track-id="${send.busId}"]`);
-      if (!fromElement || !toElement) return null;
-      
-      const fromRect = fromElement.getBoundingClientRect();
-      const toRect = toElement.getBoundingClientRect();
-      
-      return {
-        id: `${activeChannelId}->${send.busId}`,
-        x1: fromRect.left - containerRect.left + fromRect.width / 2,
-        y1: fromRect.bottom - containerRect.top,
-        x2: toRect.left - containerRect.left + toRect.width / 2,
-        y2: toRect.top - containerRect.top,
-        level: send.level,
-        active: send.level > -60
-      };
-    }).filter(Boolean);
-  };
-
-  useEffect(() => {
-    const updateCables = () => setCablePositions(calculateCablePositions());
-    updateCables();
-    window.addEventListener('resize', updateCables);
-    return () => window.removeEventListener('resize', updateCables);
-    // DÜZELTME: Bağımlılıklardan kaldırılan 'sends' prop'u çıkarıldı.
-  }, [activeChannelId, mixerTracks]);
-
-  if (!cablePositions.length) return null;
-
-  return (
-    <svg className="absolute inset-0 pointer-events-none" style={{ zIndex: 10 }}>
-      {cablePositions.map(cable => {
-        if (!cable.active) return null;
-        const controlOffset = Math.abs(cable.y2 - cable.y1) * 0.5;
-        const path = `M ${cable.x1} ${cable.y1} C ${cable.x1} ${cable.y1 + controlOffset}, ${cable.x2} ${cable.y2 - controlOffset}, ${cable.x2} ${cable.y2}`;
-        const opacity = Math.max(0.3, (cable.level + 60) / 60);
-        const strokeWidth = Math.max(1, (cable.level + 60) / 30);
-        
-        return (
-          <g key={cable.id}>
-            <path d={path} stroke="rgba(56, 189, 248, 0.3)" strokeWidth={strokeWidth + 2} fill="none" className="animate-pulse" />
-            <path d={path} stroke="rgb(56, 189, 248)" strokeWidth={strokeWidth} fill="none" opacity={opacity} strokeDasharray={cable.level < -40 ? "4 4" : "none"} />
-          </g>
-        );
-      })}
-    </svg>
-  );
-});
-
-// MasterSection ve GlobalSettingsPanel bileşenlerinde değişiklik yok.
-const MasterSection = React.memo(({ masterTrack, audioEngineRef }) => {
-  const { handleMixerParamChange } = useMixerStore.getState();
-  const [masterLevel, setMasterLevel] = useState(-60);
-  const [isLimiting, setIsLimiting] = useState(false);
-
-  useEffect(() => {
-    const meterId = `${masterTrack.id}-output`;
-    const handleMasterLevel = (level) => {
-      const dbLevel = typeof level === 'number' ? (level > 0 ? 20 * Math.log10(level) : -60) : -60;
-      setMasterLevel(Math.max(-60, Math.min(6, dbLevel)));
-      setIsLimiting(dbLevel > -0.5);
+    const onDragStart = (e, index) => {
+        draggedItemIndex.current = index;
+        e.dataTransfer.effectAllowed = 'move';
     };
-    MeteringService.subscribe(meterId, handleMasterLevel);
-    return () => MeteringService.unsubscribe(meterId, handleMasterLevel);
-  }, [masterTrack.id]);
+    const onDragEnd = () => {
+        draggedItemIndex.current = null;
+        setDragOverIndex(null);
+    };
+    const onDrop = (dropIndex) => {
+        const sourceIndex = draggedItemIndex.current;
+        if (sourceIndex !== null && sourceIndex !== dropIndex) {
+            reorderEffect(activeTrack.id, sourceIndex, dropIndex);
+        }
+    };
+    
+    if (!activeTrack) {
+        return (
+            <aside className="w-64 bg-gray-800/50 p-4 flex flex-col items-center justify-center text-center text-gray-500 shrink-0">
+                <SlidersHorizontal size={32} className="mb-2"/>
+                <p className="text-sm">Select a channel to see its effects.</p>
+            </aside>
+        );
+    }
+    
+    return (
+        <aside className="w-64 shrink-0 bg-gray-800/50 border-l-2 border-gray-700/50 p-2 flex flex-col">
+            <h3 className="text-sm font-bold text-cyan-400 p-2 mb-2 truncate shrink-0">
+                Inserts: <span className="text-white font-normal">{activeTrack.name}</span>
+            </h3>
+            <div className="flex-grow min-h-0 overflow-y-auto space-y-1 pr-1" onDragOver={(e) => e.preventDefault()}>
+                {activeTrack.insertEffects.map((effect, index) => (
+                    <div key={effect.id}>
+                        {dragOverIndex === index && <div className="h-1 bg-blue-500 rounded-full my-1" />}
+                        <div
+                            draggable
+                            onDragStart={(e) => onDragStart(e, index)}
+                            onDragEnter={() => setDragOverIndex(index)}
+                            onDragEnd={onDragEnd}
+                            onDrop={() => onDrop(index)}
+                            onClick={() => togglePluginPanel(effect, activeTrack)}
+                            className={`group flex items-center justify-between p-2 rounded-md cursor-grab active:cursor-grabbing transition-all
+                                ${effect.bypass ? 'bg-gray-700/50' : 'bg-gray-700 hover:bg-gray-600/80'}`
+                            }
+                            title={`Slot ${index + 1}: ${effect.type}\n(Click to open, Drag to reorder)`}
+                        >
+                            <div className="flex items-center gap-2">
+                                <button onClick={(e) => { e.stopPropagation(); handleMixerEffectChange(activeTrack.id, effect.id, 'bypass', !effect.bypass);}} title={effect.bypass ? 'Enable' : 'Bypass'}>
+                                    <Power size={14} className={effect.bypass ? 'text-gray-500' : 'text-green-400'}/>
+                                </button>
+                                <span className={`text-xs font-semibold truncate ${effect.bypass ? 'text-gray-500' : 'text-gray-200'}`}>
+                                    {index + 1}. {effect.type}
+                                </span>
+                            </div>
+                            <div className="flex items-center">
+                                <button onClick={(e) => { e.stopPropagation(); handleMixerEffectRemove(activeTrack.id, effect.id);}} className="text-gray-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity" title="Remove effect">
+                                    <Trash2 size={14}/>
+                                </button>
+                                <ArrowDownUp size={12} className="text-gray-500 ml-1 opacity-20 group-hover:opacity-50" />
+                            </div>
+                        </div>
+                    </div>
+                ))}
+                <div onDragEnter={() => setDragOverIndex(activeTrack.insertEffects.length)} onDrop={() => onDrop(activeTrack.insertEffects.length)} className="h-full"/>
+                {dragOverIndex === activeTrack.insertEffects.length && <div className="h-1 bg-blue-500 rounded-full my-1" />}
+            </div>
+            <div className="mt-2 shrink-0">
+                <button onClick={(e) => setAddEffectMenu({x: e.clientX, y: e.clientY})} className="w-full flex items-center justify-center gap-2 p-2 text-xs bg-cyan-600/20 text-cyan-300 hover:bg-cyan-600/40 rounded transition-colors">
+                    <Plus size={14}/> Add Effect
+                </button>
+                {addEffectMenu && <AddEffectMenu x={addEffectMenu.x} y={addEffectMenu.y} onClose={()=>setAddEffectMenu(null)} onSelect={(type) => { handleMixerEffectAdd(activeTrack.id, type); setAddEffectMenu(null); }}/>}
+            </div>
+        </aside>
+    );
+};
 
-  const handleMasterVolumeChange = (value) => {
-    handleMixerParamChange(masterTrack.id, 'volume', value, audioEngineRef.current);
-  };
-
-  return (
-    <div className="master-section bg-gradient-to-b from-gray-800 to-gray-900 border-l-2 border-cyan-500 p-4">
-      <div className="text-center mb-4">
-        <h3 className="text-lg font-bold text-cyan-400">MASTER</h3>
-        {isLimiting && (<div className="text-xs text-red-400 animate-pulse">LIMITING</div>)}
-      </div>
-      <div className="flex justify-center gap-2 mb-4">
-        <div className="master-meter w-8 h-32 bg-gray-900 rounded-lg relative overflow-hidden">
-          <div className={`absolute bottom-0 left-0 right-0 transition-all duration-75 ${masterLevel > 0 ? 'bg-red-500' : masterLevel > -6 ? 'bg-yellow-500' : 'bg-green-500'}`} style={{ height: `${Math.max(0, ((masterLevel + 60) / 66) * 100)}%` }} />
-          {[0, -6, -12, -18, -24].map(db => (<div key={db} className="absolute left-0 right-0 h-px bg-gray-600" style={{ bottom: `${((db + 60) / 66) * 100}%` }} />))}
-          <div className="absolute -right-6 top-0 text-[10px] text-gray-400">0</div>
-          <div className="absolute -right-8 bottom-0 text-[10px] text-gray-400">-60</div>
-        </div>
-        <div className="flex flex-col justify-between text-xs font-mono">
-          <div className={`p-1 rounded ${masterLevel > -0.5 ? 'bg-red-900 text-red-400' : 'bg-gray-800 text-gray-400'}`}>{masterLevel > -59 ? masterLevel.toFixed(1) : '---'}dB</div>
-          <div className="text-gray-500">PEAK</div>
-        </div>
-      </div>
-      <div className="flex justify-center mb-4">
-        <div className="relative">
-          <input type="range" min={-60} max={6} step={0.1} value={masterTrack.volume} onChange={(e) => handleMasterVolumeChange(parseFloat(e.target.value))} className="master-fader h-32 w-8 bg-gray-700 rounded-lg appearance-none cursor-pointer" orient="vertical" style={{ background: `linear-gradient(to top, #ef4444 0%, #eab308 15%, #22c55e 30%, #1f2937 ${((masterTrack.volume + 60) / 66) * 100}%, #1f2937 100%)` }} />
-          <div className="absolute -bottom-6 left-0 right-0 text-center text-xs text-gray-400">{masterTrack.volume.toFixed(1)}dB</div>
-        </div>
-      </div>
-      <div className="space-y-2">
-        <button className="w-full py-2 bg-red-600 hover:bg-red-500 text-white text-sm font-bold rounded transition-colors">PANIC</button>
-        <button className="w-full py-2 bg-gray-600 hover:bg-gray-500 text-white text-sm rounded transition-colors">Reset All</button>
-      </div>
-    </div>
-  );
-});
-
-const GlobalSettingsPanel = React.memo(({ isOpen, onClose }) => {
-  if (!isOpen) return null;
-  return (
-    <div className="absolute top-12 right-4 w-80 bg-gray-800 border border-gray-600 rounded-lg shadow-2xl z-50 p-4">
-        {/* İçerik aynı kalabilir */}
-    </div>
-  );
-});
-
-
-// Ana Mixer Bileşeni
-function Mixer({ audioEngineRef }) {
+function Mixer() {
   const mixerTracks = useMixerStore(state => state.mixerTracks);
   const activeChannelId = useMixerStore(state => state.activeChannelId);
-  // DÜZELTME: Bu satırı kaldırıyoruz, çünkü 'sends' artık burada değil.
-  // const sends = useMixerStore(state => state.sends);
-  
-  const containerRef = useRef(null);
-  const [showSettings, setShowSettings] = useState(false);
+  const { setTrackColor, setTrackName, setTrackOutput, resetTrack } = useMixerStore.getState();
+  const [contextMenu, setContextMenu] = useState(null);
 
-  const { masterTracks, trackChannels, busChannels } = useMemo(() => {
-    return {
-      masterTracks: mixerTracks.filter(t => t.type === 'master'),
-      trackChannels: mixerTracks.filter(t => t.type === 'track'),
-      busChannels: mixerTracks.filter(t => t.type === 'bus'),
-    };
-  }, [mixerTracks]);
-  
-  // DÜZELTME: Aktif send'lerin sayısını 'mixerTracks' üzerinden hesaplıyoruz.
-  const activeSendsCount = useMemo(() => {
-    return mixerTracks.reduce((acc, track) => acc + (track.sends?.length || 0), 0);
-  }, [mixerTracks]);
+  const activeTrack = useMemo(() => mixerTracks.find(t => t.id === activeChannelId), [mixerTracks, activeChannelId]);
 
+  const { masterTracks, trackChannels, busChannels } = useMemo(() => ({
+    masterTracks: mixerTracks.filter(t => t.type === 'master'),
+    trackChannels: mixerTracks.filter(t => t.type === 'track'),
+    busChannels: mixerTracks.filter(t => t.type === 'bus'),
+  }), [mixerTracks]);
+  
+  const handleContextMenu = (e, track) => {
+      e.preventDefault();
+      e.stopPropagation();
+      useMixerStore.getState().setActiveChannelId(track.id);
+      setContextMenu({ x: e.clientX, y: e.clientY, track });
+  };
+  
+  const getContextMenuOptions = () => {
+      if (!contextMenu?.track) return [];
+      const track = contextMenu.track;
+      const availableOutputs = mixerTracks.filter(t => (t.type === 'bus' || t.type === 'master') && t.id !== track.id);
+      const colorOptions = ['#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#a855f7', '#ec4899'];
+
+      return [
+          { label: 'Rename', action: () => {
+              const newName = prompt('Enter new name:', track.name);
+              if (newName) setTrackName(track.id, newName);
+          }},
+          { label: 'Reset channel', action: () => resetTrack(track.id) },
+          { type: 'separator' },
+          { label: 'Change Color', children: colorOptions.map(color => ({
+              label: <div className="w-4 h-4 rounded" style={{ backgroundColor: color }} />,
+              action: () => setTrackColor(track.id, color)
+          }))},
+          { label: 'Route to', children: [
+              ...availableOutputs.map(bus => ({
+                  label: bus.name,
+                  isActive: track.output === bus.id,
+                  action: () => setTrackOutput(track.id, bus.id)
+              })),
+              { type: 'separator' },
+              { label: 'Master', isActive: !track.output, action: () => setTrackOutput(track.id, null)}
+          ]},
+      ];
+  };
 
   return (
-    <div className="enhanced-mixer w-full h-full flex flex-col">
-      <div className="mixer-toolbar bg-gray-800 border-b border-gray-700 p-2 flex justify-between items-center">
-        {/* Toolbar içeriği aynı kalabilir */}
-      </div>
-
-      <div className="mixer-main flex-grow flex relative overflow-x-auto">
-        <div 
-          ref={containerRef}
-          className="mixer-channels flex h-full"
-          style={{ backgroundColor: 'var(--color-background)', padding: 'var(--padding-container)', gap: 'var(--gap-container)', minWidth: 'fit-content' }}
-        >
-          {/* DÜZELTME: SendCables bileşenine artık 'sends' prop'unu geçmiyoruz. */}
-          <SendCables 
-            containerRef={containerRef}
-            mixerTracks={mixerTracks}
-            activeChannelId={activeChannelId}
-          />
-          {masterTracks.map(master => (<div key={master.id} data-track-id={master.id} className="master-wrapper"><MasterSection masterTrack={master} audioEngineRef={audioEngineRef}/></div>))}
-          {masterTracks.length > 0 && (<div style={{ borderLeft: '2px solid var(--color-border)', height: '100%', margin: '0 0.5rem' }} />)}
-          {busChannels.map(bus => (<div key={bus.id} data-track-id={bus.id} className="channel-wrapper"><MixerChannel trackId={bus.id} audioEngineRef={audioEngineRef} /></div>))}
-          {busChannels.length > 0 && (<div style={{ borderLeft: '2px solid var(--color-border)', height: '100%', margin: '0 0.5rem' }} />)}
-
-          {trackChannels.map(track => (<div key={track.id} data-track-id={track.id} className="channel-wrapper"><MixerChannel trackId={track.id} audioEngineRef={audioEngineRef} /></div>))}
-        </div>
-        <GlobalSettingsPanel isOpen={showSettings} onClose={() => setShowSettings(false)} />
-      </div>
-
-      {/* Mixer Status Bar */}
-      <div className="mixer-status bg-gray-900 border-t border-gray-700 p-2 flex justify-between items-center text-xs text-gray-400">
-        <div className="flex items-center gap-4">
-          <span>Tracks: {trackChannels.length}</span>
-          <span>Buses: {busChannels.length}</span>
-          {/* DÜZELTME: Sayıyı yeni hesaplanan 'activeSendsCount' değişkeninden alıyoruz. */}
-          <span>Active Sends: {activeSendsCount}</span>
-        </div>
-        <div className="flex items-center gap-4">
-            {/* Sağ taraf aynı kalabilir */}
+    <div className="w-full h-full flex bg-gray-900 text-white" onClick={() => setContextMenu(null)}>
+      <div className="flex-grow flex relative overflow-x-auto overflow-y-hidden">
+        <div className="flex h-full p-4 gap-2" style={{ minWidth: 'fit-content' }}>
+          {masterTracks.map(track => <MixerChannel key={track.id} trackId={track.id} onContextMenu={handleContextMenu}/>)}
+          {busChannels.length > 0 && <div className="border-l-2 border-gray-700/50 h-full mx-2" />}
+          {busChannels.map(track => <MixerChannel key={track.id} trackId={track.id} onContextMenu={handleContextMenu}/>)}
+          {trackChannels.length > 0 && <div className="border-l-2 border-gray-700/50 h-full mx-2" />}
+          {trackChannels.map(track => <MixerChannel key={track.id} trackId={track.id} onContextMenu={handleContextMenu}/>)}
         </div>
       </div>
+      <InsertPanel activeTrack={activeTrack} />
+      {contextMenu && <ChannelContextMenu x={contextMenu.x} y={contextMenu.y} options={getContextMenuOptions()} onClose={() => setContextMenu(null)} />}
     </div>
   );
 }
 
 export default Mixer;
+

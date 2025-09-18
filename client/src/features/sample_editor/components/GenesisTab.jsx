@@ -7,17 +7,17 @@ import WaveEnvelopeEditor from './WaveEnvelopeEditor'; // Yeni interaktif bileş
 import EnhancedEffectsTab from './EnhancedEffectsTab';
 
 const GenesisTab = (props) => {
-  const { instrument, audioEngineRef } = props;
+  const { instrument } = props;
   const { updateInstrument } = useInstrumentsStore.getState();
   const envelope = instrument.envelope || { attack: 0.01, decay: 0.1, sustain: 0.9, release: 1.0 };
 
   const handleEnvelopeChange = (newEnvelope) => {
-    updateInstrument(instrument.id, { envelope: newEnvelope }, false, audioEngineRef.current);
+    updateInstrument(instrument.id, { envelope: newEnvelope }, false);
   };
   
   const handleKnobChange = (param, value) => {
       const newEnvelope = { ...envelope, [param]: value };
-      updateInstrument(instrument.id, { envelope: newEnvelope }, false, audioEngineRef.current);
+      updateInstrument(instrument.id, { envelope: newEnvelope }, false);
   };
 
   const itemVariants = {

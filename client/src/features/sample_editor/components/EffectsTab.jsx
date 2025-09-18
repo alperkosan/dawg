@@ -6,7 +6,7 @@ import { AddEffectMenu } from '../../../ui/AddEffectMenu';
 import PluginContainer from '../../../ui/plugin_system/PluginContainer';
 import EffectSwitch from '../../../ui/EffectSwitch';
 
-function EffectsTab({ track, audioEngineRef }) {
+function EffectsTab({ track }) {
     const { handleMixerEffectChange, handleMixerEffectAdd, handleMixerEffectRemove } = useMixerStore.getState();
     const [focusedEffectId, setFocusedEffectId] = useState(track.insertEffects[0]?.id || null);
     const [menuState, setMenuState] = useState({ isOpen: false, x: 0, y: 0 });
@@ -17,7 +17,7 @@ function EffectsTab({ track, audioEngineRef }) {
     const PluginUIComponent = pluginDefinition ? pluginDefinition.uiComponent : null;
 
     const handleSelectEffect = (effectType) => {
-        const newEffect = handleMixerEffectAdd(track.id, effectType, audioEngineRef.current);
+        const newEffect = handleMixerEffectAdd(track.id, effectType);
         if (newEffect) setFocusedEffectId(newEffect.id);
         setMenuState({ isOpen: false });
     };
@@ -31,7 +31,7 @@ function EffectsTab({ track, audioEngineRef }) {
 
     const handlePluginChange = (paramOrSettings, value) => {
         if (currentEffect) {
-            handleMixerEffectChange(track.id, currentEffect.id, paramOrSettings, value, audioEngineRef.current);
+            handleMixerEffectChange(track.id, currentEffect.id, paramOrSettings, value);
         }
     };
 
@@ -48,8 +48,8 @@ function EffectsTab({ track, audioEngineRef }) {
                         >
                             <span className="truncate font-bold">{effect.type}</span>
                             <div className="flex items-center">
-                                <EffectSwitch isActive={!effect.bypass} onClick={(e) => { e.stopPropagation(); handleMixerEffectChange(track.id, effect.id, 'bypass', !effect.bypass, audioEngineRef.current)}} />
-                                <button onClick={(e) => { e.stopPropagation(); handleMixerEffectRemove(track.id, effect.id, audioEngineRef.current)}} className="ml-1 text-gray-500 hover:text-red-500" title="Remove Effect">
+                                <EffectSwitch isActive={!effect.bypass} onClick={(e) => { e.stopPropagation(); handleMixerEffectChange(track.id, effect.id, 'bypass', !effect.bypass)}} />
+                                <button onClick={(e) => { e.stopPropagation(); handleMixerEffectRemove(track.id, effect.id)}} className="ml-1 text-gray-500 hover:text-red-500" title="Remove Effect">
                                     <X size={14}/>
                                 </button>
                             </div>

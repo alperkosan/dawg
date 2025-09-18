@@ -4,6 +4,7 @@ import { useTouchHandler } from './useTouchHandler';
 import { useAdvancedKeyboardShortcuts } from './useAdvancedKeyboardShortcuts';
 import { useGridSnapping } from './useGridSnapping';
 import { usePianoRollStore } from '../store/usePianoRollStore';
+import { AudioContextService } from '../../../lib/services/AudioContextService';
 
 /**
  * Touch, Mouse ve Klavye etkileşimlerini birleştiren hibrit sistem
@@ -13,7 +14,6 @@ export const useHybridInteractions = ({
   notes,
   handleNotesChange,
   instrumentId,
-  audioEngineRef,
   viewport,
   gridDimensions,
   coordinateConverters,
@@ -85,16 +85,16 @@ export const useHybridInteractions = ({
   const audioContext = {
     playingNotes: new Set(),
     auditionNote: useCallback((pitch, velocity = 0.8) => {
-      if (audioEngineRef.current && instrumentId) {
+      if (AudioContextService && instrumentId) {
         if (velocity > 0) {
-          audioEngineRef.current.auditionNoteOn(instrumentId, pitch, velocity);
+          AudioContextService.auditionNoteOn(instrumentId, pitch, velocity);
           audioContext.playingNotes.add(pitch);
         } else {
-          audioEngineRef.current.auditionNoteOff(instrumentId, pitch);
+          AudioContextService.auditionNoteOff(instrumentId, pitch);
           audioContext.playingNotes.delete(pitch);
         }
       }
-    }, [audioEngineRef, instrumentId]),
+    }, [instrumentId]),
     
     stopAllAudition: useCallback(() => {
       audioContext.playingNotes.forEach(pitch => {

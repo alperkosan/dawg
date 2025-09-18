@@ -8,6 +8,7 @@ import { useMixerStore } from './useMixerStore';
 import { useArrangementStore } from './useArrangementStore';
 import { usePanelsStore } from './usePanelsStore';
 import { usePlaybackStore } from './usePlaybackStore';
+import { AudioContextService } from '../lib/services/AudioContextService';
 
 export const useInstrumentsStore = create((set, get) => ({
   instruments: initialInstruments,
@@ -17,7 +18,7 @@ export const useInstrumentsStore = create((set, get) => ({
   // === YAPISAL DEĞİŞİKLİK YARATAN EYLEMLER            ===
   // ========================================================
 
-  handleAddNewInstrument: (sample, audioEngine) => {
+  handleAddNewInstrument: (sample) => {
     const { instruments } = get();
     const mixerTracks = useMixerStore.getState().mixerTracks;
 
@@ -55,10 +56,10 @@ export const useInstrumentsStore = create((set, get) => ({
     useMixerStore.getState().setTrackName(firstUnusedTrack.id, newName);
 
     // SES MOTORUNA KOMUT GÖNDER
-    audioEngine?.createInstrument(newInstrument);
+    AudioContextService?.createInstrument(newInstrument);
   },
 
-  handleToggleInstrumentMute: (instrumentId, audioEngine) => {
+  handleToggleInstrumentMute: (instrumentId) => {
     let isMuted = false;
     set(state => ({
       instruments: state.instruments.map(inst => {
@@ -71,16 +72,16 @@ export const useInstrumentsStore = create((set, get) => ({
     }));
     
     // ANLIK MUTE: Ses motoruna anında komut gönder.
-    audioEngine?.setInstrumentMute(instrumentId, isMuted);
+    AudioContextService?.setInstrumentMute(instrumentId, isMuted);
     
     // Eğer çalma devam ediyorsa, bir sonraki döngüde notaların
     // hiç çalınmaması için yeniden zamanlama yap. Bu daha verimlidir.
     if (usePlaybackStore.getState().playbackState === 'playing') {
-      audioEngine?.reschedule();
+      AudioContextService?.reschedule();
     }
   },
 
-  updateInstrument: (instrumentId, newParams, shouldReconcile, audioEngine) => {
+  updateInstrument: (instrumentId, newParams, shouldReconcile) => {
     let updatedInstrument = null;
     set(state => {
       const newInstruments = state.instruments.map(inst => {
@@ -93,7 +94,7 @@ export const useInstrumentsStore = create((set, get) => ({
       return { instruments: newInstruments };
     });
 
-    if (!audioEngine || !updatedInstrument) return;
+    if (!AudioContextService || !updatedInstrument) return;
 
     // ARAYÜZ <-> MOTOR İLETİŞİM HATTI ONARILDI
     if (shouldReconcile) {
@@ -101,7 +102,7 @@ export const useInstrumentsStore = create((set, get) => ({
       console.log(`[STORE->ENGINE] Reconcile komutu gönderiliyor: ${instrumentId}`);
       set(state => ({ processingEffects: { ...state.processingEffects, [instrumentId]: true } }));
       
-      const newBuffer = audioEngine.reconcileInstrument(instrumentId, updatedInstrument);
+      const newBuffer = AudioContextService.reconcileInstrument(instrumentId, updatedInstrument);
       
       if (usePanelsStore.getState().editingInstrumentId === instrumentId) {
         usePanelsStore.getState().setEditorBuffer(newBuffer);
@@ -111,33 +112,11 @@ export const useInstrumentsStore = create((set, get) => ({
     } else {
       // Zarf (envelope) gibi anlık, kalıcı olmayan parametre değişiklikleri
       console.log(`[STORE->ENGINE] Parametre güncelleme komutu gönderiliyor: ${instrumentId}`);
-      audioEngine.updateInstrumentParameters(instrumentId, updatedInstrument);
+      AudioContextService.updateInstrumentParameters(instrumentId, updatedInstrument);
     }
   },
 
-  handleInstrumentSynthParamChange: (instrumentId, paramPath, value, audioEngine) => {
-    let updatedInstrument = null;
-    set(state => {
-      const newInstruments = state.instruments.map(inst => {
-        if (inst.id === instrumentId) {
-          // lodash.set sayesinde 'envelope.attack' gibi yolları kolayca güncelleyebiliyoruz
-          const newSynthParams = { ...inst.synthParams };
-          set(newSynthParams, paramPath, value); 
-          updatedInstrument = { ...inst, synthParams: newSynthParams };
-          return updatedInstrument;
-        }
-        return inst;
-      });
-      return { instruments: newInstruments };
-    });
-
-    if (audioEngine && updatedInstrument) {
-      // Ses motoruna, canlı synth'i yeni parametrelerle güncellemesini söyle
-      audioEngine.updateInstrumentParameters(instrumentId, updatedInstrument);
-    }
-  },
-
-  handleTogglePrecomputedEffect: (instrumentId, effectType, audioEngine) => {
+  handleTogglePrecomputedEffect: (instrumentId, effectType) => {
     const instrument = get().instruments.find(inst => inst.id === instrumentId);
     if (!instrument) return;
     
@@ -147,7 +126,36 @@ export const useInstrumentsStore = create((set, get) => ({
             [effectType]: !instrument.precomputed?.[effectType] 
         } 
     };
-    get().updateInstrument(instrumentId, newParams, true, audioEngine);
+    get().updateInstrument(instrumentId, newParams, true);
+  },
+
+  handleInstrumentSynthParamChange: (instrumentId, paramPath, value) => {
+    // Synth'ler için bu özel fonksiyon, `updateInstrument`'ı dolaylı olarak kullanır.
+    // Bu, synth'lere özel karmaşık state güncellemeleri için esneklik sağlar.
+    let updatedInstrument = null;
+    set(state => {
+      const newInstruments = state.instruments.map(inst => {
+        if (inst.id === instrumentId) {
+          const newSynthParams = { ...inst.synthParams };
+          // lodash.set gibi bir yardımcı ile iç içe objeleri güvenle güncelleyebiliriz
+          // Şimdilik basit yol:
+          const keys = paramPath.split('.');
+          if (keys.length === 2) {
+              newSynthParams[keys[0]] = { ...newSynthParams[keys[0]], [keys[1]]: value };
+          } else {
+              newSynthParams[paramPath] = value;
+          }
+          updatedInstrument = { ...inst, synthParams: newSynthParams };
+          return updatedInstrument;
+        }
+        return inst;
+      });
+      return { instruments: newInstruments };
+    });
+
+    if (AudioContextService && updatedInstrument) {
+      AudioContextService.updateInstrumentParameters(instrumentId, updatedInstrument);
+    }
   },
 
   // Bu fonksiyon artık doğrudan ses motorunu etkilemiyor,
@@ -160,6 +168,6 @@ export const useInstrumentsStore = create((set, get) => ({
     useArrangementStore.getState().updatePatternNotes(activePatternId, instrumentId, newNotes);
     
     // Geliştirme: Notalar değiştiğinde motoru anında yeniden zamanlamak için:
-    // audioEngine?.reschedule();
+    // AudioContextService?.reschedule();
   },
 }));

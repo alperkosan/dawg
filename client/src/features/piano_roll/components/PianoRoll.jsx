@@ -13,6 +13,7 @@ import ContextMenu from './ContextMenu'; // Yeni oluşturduğumuz component'i im
 import ResizableHandle from '../../../ui/ResizableHandle';
 import Minimap from './Minimap';
 import KeyboardShortcutsPanel from './KeyboardShortcutsPanel'; // YENİ
+import { AudioContextService } from '../../../lib/services/AudioContextService';
 
 // Enhanced Hooks
 import { useViewport } from '../hooks/useViewport';
@@ -34,7 +35,8 @@ const TOTAL_KEYS = TOTAL_OCTAVES * 12;
 const KEYBOARD_WIDTH = 96;
 const RULER_HEIGHT = 32;
 
-function PianoRoll({ instrument, audioEngineRef, pattern, onPatternChange, playbackState }) {
+function PianoRoll({ instrument, pattern, onPatternChange, playbackState }) {
+  const engine = AudioContextService.getAudioEngine();
   const scrollContainerRef = useRef(null);
   const playheadRef = useRef(null);
   
@@ -117,7 +119,6 @@ function PianoRoll({ instrument, audioEngineRef, pattern, onPatternChange, playb
     notes: notes || [],
     handleNotesChange,
     instrumentId: instrument?.id,
-    audioEngineRef,
     viewport,
     gridDimensions,
     coordinateConverters,
@@ -147,14 +148,14 @@ function PianoRoll({ instrument, audioEngineRef, pattern, onPatternChange, playb
 
   // ✅ AUDIO PREVIEW HANDLER
   const handleNotePreview = useCallback((pitch, velocity = 0) => {
-    if (!audioEngineRef.current || !instrument?.id) return;
+    if (!engine || !instrument?.id) return;
     
     if (velocity > 0) {
-      audioEngineRef.current.auditionNoteOn(instrument.id, pitch, velocity);
+      engine.auditionNoteOn(instrument.id, pitch, velocity);
     } else {
-      audioEngineRef.current.auditionNoteOff(instrument.id, pitch);
+      engine.auditionNoteOff(instrument.id, pitch);
     }
-  }, [audioEngineRef, instrument?.id]);
+  }, [instrument?.id]);
 
   // ✅ MINIMAP NAVIGATION
   const handleMinimapNavigate = useCallback((x, y) => {

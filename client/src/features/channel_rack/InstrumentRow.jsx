@@ -6,8 +6,12 @@ import ChannelContextMenu from '../../components/ChannelContextMenu';
 import { Music, Piano, Edit3, Volume2, VolumeX, Scissors, Replace, Trash2 } from 'lucide-react';
 import VolumeKnob from '../../ui/VolumeKnob';
 import './InstrumentRow.css'; // Yeni ve gelişmiş CSS dosyasını import et
+import { InstrumentService } from '../../lib/services/InstrumentService';
+import { AudioContextService } from '../../lib/services/AudioContextService';
 
 const InstrumentRow = ({ instrument, onPianoRollClick, onEditClick, audioEngineRef }) => {
+  const engine = AudioContextService.getAudioEngine(); // Motoru doğrudan al
+
   const { updateInstrument, deleteInstrument, assignToNewTrack } = useInstrumentsStore.getState();
   const { setTrackName } = useMixerStore.getState();
   const activeTheme = useThemeStore(state => state.getActiveTheme());
@@ -42,17 +46,18 @@ const InstrumentRow = ({ instrument, onPianoRollClick, onEditClick, audioEngineR
     {
       label: 'Cut Itself',
       isActive: instrument.cutItself,
-      action: () => updateInstrument(instrument.id, { cutItself: !instrument.cutItself }, false, audioEngineRef.current)
+      action: () => updateInstrument(instrument.id, { cutItself: !instrument.cutItself }, false, engine)
     },
     {
       label: 'Assign to new mixer track',
-      action: () => assignToNewTrack(instrument.id, audioEngineRef.current)
+      action: () => assignToNewTrack(instrument.id, engine)
     },
     {
       label: 'Delete',
       action: () => {
-        if (window.confirm(`'${instrument.name}' will be deleted. Are you sure?`)) {
-          deleteInstrument(instrument.id, audioEngineRef.current);
+        if (window.confirm(`'${instrument.name}' silinecek. Emin misiniz?`)) {
+          // Karmaşık silme işlemini tek bir komutla servise devrediyoruz.
+          InstrumentService.deleteInstrument(instrument.id);
         }
       }
     }
@@ -84,22 +89,26 @@ const InstrumentRow = ({ instrument, onPianoRollClick, onEditClick, audioEngineR
       <div className="instrument-controls-v2">
         <VolumeKnob
           label="Pan" size={26} value={mixerTrack.pan}
-          onChange={(val) => useMixerStore.getState().handleMixerParamChange(mixerTrack.id, 'pan', val, audioEngineRef.current)}
+          onChange={(val) => useMixerStore.getState().handleMixerParamChange(mixerTrack.id, 'pan', val, engine)}
           min={-1} max={1} defaultValue={0}
         />
         <VolumeKnob
           label="Vol" size={26} value={mixerTrack.volume}
-          onChange={(val) => useMixerStore.getState().handleMixerParamChange(mixerTrack.id, 'volume', val, audioEngineRef.current)}
+          onChange={(val) => useMixerStore.getState().handleMixerParamChange(mixerTrack.id, 'volume', val, engine)}
           min={-60} max={6} defaultValue={0}
         />
       </div>
 
       <div className="instrument-actions-v2">
         <button
-          className={`action-btn-v2 mute-btn ${isMuted ? 'active' : ''}`}
-          onClick={(e) => { e.stopPropagation(); useInstrumentsStore.getState().handleToggleInstrumentMute(instrument.id, audioEngineRef.current); }}
-          title={isMuted ? "Unmute" : "Mute"}
-          style={{ '--active-color': activeTheme.colors.accent }}
+          className={`action-btn-v2 mute-btn ${instrument.isMuted ? 'active' : ''}`}
+          onClick={(e) => { 
+              e.stopPropagation(); 
+              // State ve motoru senkronize eden işlemi store'a bırakıyoruz.
+              // Bu mantık da ileride bir servise taşınabilir.
+              useInstrumentsStore.getState().handleToggleInstrumentMute(instrument.id, AudioContextService.getAudioEngine()); 
+          }}
+          title={instrument.isMuted ? "Unmute" : "Mute"}
         >
           {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
         </button>

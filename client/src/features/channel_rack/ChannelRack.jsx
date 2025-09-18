@@ -4,10 +4,11 @@ import { useArrangementStore } from '../../store/useArrangementStore';
 import { usePlaybackStore } from '../../store/usePlaybackStore';
 import { useThemeStore } from '../../store/useThemeStore';
 import { usePanelsStore } from '../../store/usePanelsStore';
-// ONARIM: PlaybackAnimatorService'i import ediyoruz.
 import { PlaybackAnimatorService } from '../../lib/core/PlaybackAnimatorService';
+import { commandManager } from '../../lib/commands/CommandManager';
+import { AddNoteCommand } from '../../lib/commands/AddNoteCommand';
+import { DeleteNoteCommand } from '../../lib/commands/DeleteNoteCommand';
 
-// Bileşenleri import ediyoruz
 import InstrumentRow from './InstrumentRow';
 import StepGrid from './StepGrid';
 import PianoRollMiniView from './PianoRollMiniView';
@@ -16,12 +17,13 @@ import { PlusCircle } from 'lucide-react';
 
 import './ChannelRack.css';
 
-const RULER_HEIGHT = 48; // Zaman cetveli için yükseklik
+const RULER_HEIGHT = 48;
 const ROW_HEIGHT = 64;
 const INSTRUMENT_COLUMN_WIDTH = 320;
 const STEP_WIDTH = 16;
 
-export default function ChannelRack({ audioEngineRef }) {
+// DÜZELTME: Bileşen artık 'audioEngineRef' prop'unu almıyor.
+export default function ChannelRack() {
   const activeTheme = useThemeStore(state => state.getActiveTheme());
   const instruments = useInstrumentsStore(state => state.instruments);
   const { patterns, activePatternId } = useArrangementStore();
@@ -34,8 +36,7 @@ export default function ChannelRack({ audioEngineRef }) {
   const playheadRef = useRef(null);
   
   const activePattern = patterns[activePatternId];
-  
-  // ONARIM: PlaybackAnimatorService'e abone olup playhead'i güncelliyoruz
+
   useEffect(() => {
     const updatePlayhead = (progress) => {
       if (playheadRef.current) {
@@ -45,21 +46,20 @@ export default function ChannelRack({ audioEngineRef }) {
     };
     PlaybackAnimatorService.subscribe(updatePlayhead);
     return () => PlaybackAnimatorService.unsubscribe(updatePlayhead);
-  }, [audioLoopLength]); // Sadece audioLoopLength değiştiğinde yeniden abone ol
+  }, [audioLoopLength]);
 
   const handleNoteToggle = useCallback((instrumentId, step) => {
-    const currentNotes = activePattern?.data[instrumentId] || [];
-    const noteExists = currentNotes.some(note => note.time === step);
-    let newNotes;
-    if (noteExists) {
-      newNotes = currentNotes.filter(note => note.time !== step);
+    const activePattern = patterns[activePatternId];
+    if (!activePattern) return;
+    const currentNotes = activePattern.data[instrumentId] || [];
+    const existingNote = currentNotes.find(note => note.time === step);
+    
+    if (existingNote) {
+      commandManager.execute(new DeleteNoteCommand(instrumentId, existingNote));
     } else {
-      newNotes = [...currentNotes, { id: `note_${step}_${Date.now()}`, time: step, pitch: 'C4', velocity: 1, duration: '16n' }];
+      commandManager.execute(new AddNoteCommand(instrumentId, step));
     }
-    useInstrumentsStore.getState().updatePatternNotes(instrumentId, newNotes);
-    usePlaybackStore.getState().updateLoopLength();
-    audioEngineRef.current?.reschedule();
-  }, [activePattern, activePatternId, audioEngineRef]);
+  }, [activePatternId, patterns]);
 
   const totalContentHeight = RULER_HEIGHT + (instruments.length + 1) * ROW_HEIGHT;
 
@@ -73,7 +73,6 @@ export default function ChannelRack({ audioEngineRef }) {
           className="rack-content-wrapper-v3" 
           style={{ height: `${totalContentHeight}px` }}
         >
-          {/* Sol Sütun: Enstrüman Listesi */}
           <div
             className="instrument-column-sticky-v3"
             style={{
@@ -90,8 +89,7 @@ export default function ChannelRack({ audioEngineRef }) {
                 key={inst.id}
                 instrument={inst}
                 onPianoRollClick={() => openPianoRollForInstrument(inst)}
-                onEditClick={() => handleEditInstrument(inst, audioEngineRef.current)}
-                audioEngineRef={audioEngineRef}
+                onEditClick={() => handleEditInstrument(inst)}
               />
             ))}
              <div
@@ -104,12 +102,10 @@ export default function ChannelRack({ audioEngineRef }) {
             </div>
           </div>
           
-          {/* Sağ Taraf: Grid Alanı */}
           <div 
             className="grid-area-v3" 
             style={{ width: `${loopLength * STEP_WIDTH}px`, marginLeft: `${INSTRUMENT_COLUMN_WIDTH}px` }}
           >
-            {/* Üst Satır: Zaman Cetveli */}
             <div
               className="timeline-sticky-v3"
               style={{ height: `${RULER_HEIGHT}px`, backgroundColor: activeTheme.colors.surface, borderBottom: `1px solid ${activeTheme.colors.border}` }}
@@ -117,12 +113,11 @@ export default function ChannelRack({ audioEngineRef }) {
               <InteractiveTimeline
                   loopLength={loopLength}
                   currentPosition={transportStep}
-                  onJumpToBar={(bar) => jumpToBar(bar, audioEngineRef.current)}
-                  onJumpToPosition={(step) => jumpToStep(step, audioEngineRef.current)}
+                  onJumpToBar={(bar) => jumpToBar(bar, engine)}
+                  onJumpToPosition={(step) => jumpToStep(step, engine)}
                   theme={activeTheme}
               />
             </div>
-            {/* Playhead artık burada, animasyon servisinden gelen veriyle güncellenecek */}
             <div 
               ref={playheadRef} 
               className="playhead-v3" 
@@ -150,5 +145,3 @@ export default function ChannelRack({ audioEngineRef }) {
     </div>
   );
 }
-
-

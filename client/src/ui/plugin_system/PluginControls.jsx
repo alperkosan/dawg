@@ -9,30 +9,19 @@ import { PluginColorPalette, PluginAnimations } from './PluginDesignSystem';
 
 // --- Profesyonel Knob Bileşeni ---
 export const ProfessionalKnob = ({
-  label,
-  value = 0,
-  min = 0,
-  max = 100,
-  defaultValue = 50,
-  onChange,
-  size = 60,
-  unit = '',
-  precision = 0,
-  logarithmic = false,
-  displayMultiplier, // Değeri gösterim için bir katsayı ile çarpar (örn: 0.5 -> 50%)
+  label, value = 0, min = 0, max = 100, defaultValue = 50, onChange,
+  size = 60, unit = '', precision = 0, displayMultiplier, className = ''
 }) => {
   const [isDragging, setIsDragging] = useState(false);
   const dragStartRef = useRef({ y: 0, value: 0 });
 
   const valueToAngle = useCallback((val) => {
     const normalizedValue = (val - min) / (max - min);
-    const clampedValue = Math.max(0, Math.min(1, normalizedValue));
-    return -135 + clampedValue * 270;
+    return -135 + Math.max(0, Math.min(1, normalizedValue)) * 270;
   }, [min, max]);
 
   const formatValue = useCallback((val) => {
-    const displayVal = displayMultiplier ? val * displayMultiplier : val;
-    return `${displayVal.toFixed(precision)}${unit}`;
+    return `${(displayMultiplier ? val * displayMultiplier : val).toFixed(precision)}${unit}`;
   }, [precision, unit, displayMultiplier]);
 
   const handleMouseMove = useCallback((e) => {
@@ -40,151 +29,74 @@ export const ProfessionalKnob = ({
     const range = max - min;
     const sensitivity = e.shiftKey ? 0.001 : 0.005;
     let newValue = dragStartRef.current.value + (deltaY * range * sensitivity);
-    newValue = Math.max(min, Math.min(max, newValue));
-    onChange?.(newValue);
+    onChange?.(Math.max(min, Math.min(max, newValue)));
   }, [min, max, onChange]);
 
   const handleMouseUp = useCallback(() => {
-    setIsDragging(false);
-    document.body.style.cursor = 'default';
+    setIsDragging(false); document.body.style.cursor = 'default';
     window.removeEventListener('mousemove', handleMouseMove);
     window.removeEventListener('mouseup', handleMouseUp);
   }, [handleMouseMove]);
   
   const handleMouseDown = useCallback((e) => {
-    e.preventDefault();
-    setIsDragging(true);
+    e.preventDefault(); setIsDragging(true);
     dragStartRef.current = { y: e.clientY, value };
     document.body.style.cursor = 'ns-resize';
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
   }, [value, handleMouseMove, handleMouseUp]);
 
-  const handleDoubleClick = useCallback(() => {
-    if (defaultValue !== undefined) onChange?.(defaultValue);
-  }, [defaultValue, onChange]);
-
   const angle = valueToAngle(value);
-  const r = size / 2 - 4;
-  const circumference = 2 * Math.PI * r;
-  const trackDashArray = `${circumference * 0.75} ${circumference * 0.25}`;
-  const progressPercentage = (angle + 135) / 270;
-  const progressDashOffset = circumference * (1 - (progressPercentage * 0.75));
 
   return (
-    <div className="flex flex-col items-center gap-2 relative select-none">
-      {isDragging && (
-        <div className="absolute -top-10 bg-black/90 text-white text-xs px-2 py-1 rounded backdrop-blur-sm z-50">
-          {formatValue(value)}
-        </div>
-      )}
+    <div className={`flex flex-col items-center gap-1 relative select-none ${className}`}>
+      {label && <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{label}</div>}
       <div
         style={{ width: size, height: size }}
-        className="relative flex items-center justify-center"
+        className="relative flex items-center justify-center cursor-ns-resize"
         onMouseDown={handleMouseDown}
-        onDoubleClick={handleDoubleClick}
-        title={`${label}: ${formatValue(value)} (Çift tıkla sıfırla)`}
+        onDoubleClick={() => onChange?.(defaultValue)}
+        title={`${label}: ${formatValue(value)}`}
       >
-        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ transform: 'rotate(-90deg)' }}>
-          <circle cx={size/2} cy={size/2} r={r} stroke={PluginColorPalette.controls.knobTrack} strokeWidth="4" fill="none" strokeDasharray={trackDashArray} transform={`rotate(135 ${size/2} ${size/2})`} />
-          <circle
-            cx={size / 2} cy={size / 2} r={r}
-            stroke={PluginColorPalette.controls.knobFill} strokeWidth="4" fill="none"
-            strokeDasharray={circumference} strokeDashoffset={progressDashOffset}
-            strokeLinecap="round" transform={`rotate(135 ${size/2} ${size/2})`}
-            style={{ transition: isDragging ? 'none' : `stroke-dashoffset 0.1s ${PluginAnimations.easeOut}` }}
-          />
+        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="transform -rotate-90">
+          <circle cx={size/2} cy={size/2} r={size/2 - 4} stroke="#333" strokeWidth="4" fill="none" strokeDasharray={`${Math.PI * (size - 8) * 0.75} ${Math.PI * (size - 8) * 0.25}`} transform={`rotate(135 ${size/2} ${size/2})`} />
+          <circle cx={size/2} cy={size/2} r={size/2-4} stroke={PluginColorPalette.controls.knobFill} strokeWidth="4" fill="none" strokeDasharray={Math.PI * (size - 8)} strokeDashoffset={Math.PI * (size - 8) * (1 - (((angle + 135) / 270) * 0.75))} strokeLinecap="round" transform={`rotate(135 ${size/2} ${size/2})`} style={{ transition: isDragging ? 'none' : 'stroke-dashoffset 0.1s ease-out' }}/>
         </svg>
-        <div
-          className="absolute w-1 bg-white rounded-full"
-          style={{
-            height: size * 0.3, top: size * 0.15,
-            transform: `rotate(${angle}deg)`, transformOrigin: `50% ${size * 0.35}px`,
-            transition: isDragging ? 'none' : `transform ${PluginAnimations.quick}`,
-          }}
-        />
-      </div>
-      <div className="text-center">
-        <div className="text-xs font-semibold text-white/90 uppercase tracking-wider">{label}</div>
-        <div className="text-xs font-mono text-blue-400">{formatValue(value)}</div>
+        <div className="absolute w-1 bg-white rounded-full" style={{ height: size * 0.3, top: size * 0.15, transform: `rotate(${angle}deg)`, transformOrigin: `50% ${size * 0.35}px`, transition: isDragging ? 'none' : `transform 0.1s ease-out` }}/>
       </div>
     </div>
   );
 };
 
-
-// --- Profesyonel Fader Bileşeni ---
+// YENİ: Aktif durumunu görsel olarak yansıtan Profesyonel Fader
 export const ProfessionalFader = ({
-  label,
-  value,
-  min = 0,
-  max = 1,
-  onChange,
-  height = 150,
+  value, min = -60, max = 6, onChange, height = 150, isActive
 }) => {
-  const [isDragging, setIsDragging] = useState(false);
   const faderRef = useRef(null);
+  const valueToPosition = useCallback((val) => ((val - min) / (max - min)) * 100, [min, max]);
 
-  const valueToPosition = useCallback((val) => {
-    return ((val - min) / (max - min)) * 100;
-  }, [min, max]);
-
-  const positionToValue = useCallback((pos) => {
-    return min + (pos / 100) * (max - min);
-  }, [min, max]);
+  const handleInteraction = useCallback((e) => {
+      if (!faderRef.current) return;
+      const rect = faderRef.current.getBoundingClientRect();
+      const pos = 100 - Math.max(0, Math.min(100, ((e.clientY - rect.top) / rect.height) * 100));
+      onChange?.(min + (pos / 100) * (max - min));
+  }, [min, max, onChange]);
 
   const handleMouseDown = useCallback((e) => {
-    if (!faderRef.current) return;
-    setIsDragging(true);
-
-    const rect = faderRef.current.getBoundingClientRect();
-    const pos = 100 - ((e.clientY - rect.top) / rect.height) * 100;
-    const newValue = Math.max(min, Math.min(max, positionToValue(pos)));
-    onChange?.(newValue);
-
-    const handleMouseMove = (moveEvent) => {
-      const movePos = 100 - ((moveEvent.clientY - rect.top) / rect.height) * 100;
-      const moveValue = Math.max(min, Math.min(max, positionToValue(movePos)));
-      onChange?.(moveValue);
-    };
-    
-    const handleMouseUp = () => {
-      setIsDragging(false);
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-    };
-
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
-  }, [min, max, onChange, positionToValue]);
+    handleInteraction(e);
+    const handleMouseMove = (moveEvent) => handleInteraction(moveEvent);
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', () => window.removeEventListener('mousemove', handleMouseMove), { once: true });
+  }, [handleInteraction]);
 
   const position = valueToPosition(value);
 
   return (
-    <div className="flex flex-col items-center gap-2 h-full justify-center">
-      <div className="relative flex-grow w-10 flex items-center justify-center" style={{height}}>
-        <div
-          ref={faderRef}
-          className="relative bg-gray-800 rounded-full cursor-ns-resize border border-white/10"
-          style={{
-            width: 8, height: '100%',
-            background: `linear-gradient(to top, ${PluginColorPalette.controls.knobFill} 0%, ${PluginColorPalette.controls.knobFill} ${position}%, ${PluginColorPalette.controls.faderTrack} ${position}%, ${PluginColorPalette.controls.faderTrack} 100%)`
-          }}
-          onMouseDown={handleMouseDown}
-        >
-          <div
-            className="absolute w-6 h-8 bg-gradient-to-b from-gray-200 to-gray-400 rounded-md border border-gray-500"
-            style={{
-              left: '50%',
-              bottom: `${position}%`,
-              transform: 'translate(-50%, 50%)',
-              boxShadow: isDragging ? `0 0 12px ${PluginColorPalette.controls.knobFill}60` : '0 2px 4px rgba(0,0,0,0.3)',
-              transition: isDragging ? 'none' : `box-shadow ${PluginAnimations.quick}`,
-            }}
-          />
-        </div>
+    <div className="relative w-full flex items-center justify-center" style={{ height }}>
+      <div ref={faderRef} className="relative w-2 h-full bg-black/50 rounded-full cursor-pointer" onMouseDown={handleMouseDown}>
+        <div className={`absolute bottom-0 left-0 w-full rounded-full transition-colors duration-200 ${isActive ? 'bg-blue-500' : 'bg-gray-500'}`} style={{ height: `${position}%` }} />
       </div>
-      <div className="text-xs font-semibold text-white/90 uppercase tracking-wider text-center">{label}</div>
+      <div className="absolute w-5 h-7 bg-gray-300 rounded-sm border-2 border-gray-400 shadow-md pointer-events-none" style={{ left: '50%', bottom: `calc(${position}% - 14px)`, transform: 'translateX(-50%)' }}/>
     </div>
   );
 };
