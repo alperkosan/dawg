@@ -255,8 +255,12 @@ class AudioEngine {
   }
 
   updateInstrumentParameters(instrumentId, updatedInstrumentData) {
-      const node = this.instruments.get(instrumentId);
-      node?.updateParameters(updatedInstrumentData);
+    const node = this.instruments.get(instrumentId);
+    if (node) {
+      node.updateParameters(updatedInstrumentData);
+    } else {
+      console.warn(`[ENGINE] Parametre güncellemesi için enstrüman bulunamadı: ${instrumentId}`);
+    }
   }
 
   toggleMute = (trackId, isMuted) => {
@@ -408,6 +412,16 @@ class AudioEngine {
   stop() {
     Tone.Transport.stop();
     timeManager.stop();
+
+    // --- YENİ: ANINDA SUSTURMA (PANİK BUTONU) ---
+    // Tüm enstrümanları dolaş ve o anda çalan bütün notaları sustur.
+    // Bu, uzun release'e sahip pad'lerin veya reverblerin anında kesilmesini sağlar.
+    this.instruments.forEach(instrumentNode => {
+      if (instrumentNode.node && typeof instrumentNode.node.releaseAll === 'function') {
+        instrumentNode.node.releaseAll(Tone.now());
+      }
+    });
+
     this.callbacks.setPlaybackState?.('stopped');
     this._stopAnimationLoop();
     PlaybackAnimatorService.publish(0);

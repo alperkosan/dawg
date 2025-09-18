@@ -97,7 +97,7 @@ export const useInstrumentsStore = create((set, get) => ({
 
     // ARAYÜZ <-> MOTOR İLETİŞİM HATTI ONARILDI
     if (shouldReconcile) {
-      // Ses buffer'ını kalıcı olarak değiştiren ağır işlemler
+      // Ses buffer'ını kalıcı olarak değiştiren ağır işlemler (reverse, normalize vb.)
       console.log(`[STORE->ENGINE] Reconcile komutu gönderiliyor: ${instrumentId}`);
       set(state => ({ processingEffects: { ...state.processingEffects, [instrumentId]: true } }));
       
