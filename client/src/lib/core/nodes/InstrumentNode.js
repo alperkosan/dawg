@@ -1,65 +1,93 @@
 import * as Tone from 'tone';
 
 /**
- * "Kurşun Geçirmez" InstrumentNode v2.1
- * GÜNCELLEME: Artık 'readyPromise' adında bir promise tutuyor.
- * Bu, ses motorunun, buffer yüklemesinin bitmesini beklemesine olanak tanır.
+ * "Kurşun Geçirmez" InstrumentNode v3.0
+ * GÜNCELLEME: Artık 'sample' ve 'synth' olmak üzere iki tür enstrümanı destekliyor.
+ * Generic 'this.node' propertysi ile her iki tipi de yönetir.
  */
 export class InstrumentNode {
   constructor(instrumentData) {
     this.id = instrumentData.id;
+    this.type = instrumentData.type;
     this.pianoRoll = instrumentData.pianoRoll;
     this.isReady = false;
+    this.node = null; // Sampler veya PolySynth'i tutacak
+    this.output = new Tone.Channel(0, 0);
 
-    // YENİ: Tone.Sampler'ın döndürdüğü promise'i yakalayıp saklıyoruz.
-    this.readyPromise = new Promise((resolve, reject) => {
-        this.sampler = new Tone.Sampler({
+    this.readyPromise = this._initialize(instrumentData);
+  }
+
+  async _initialize(instrumentData) {
+    try {
+      if (this.type === 'sample') {
+        this.node = await new Promise((resolve, reject) => {
+          const sampler = new Tone.Sampler({
             urls: { C4: instrumentData.url },
             baseUrl: window.location.origin,
-            onload: () => {
-                console.info(`✅ ${instrumentData.name} için buffer yüklendi.`);
-                this.isReady = true;
-                resolve(this); // Yükleme tamamlandığında promise'i çöz.
-            },
-            onerror: (error) => {
-                console.error(`❌ ${instrumentData.name} için buffer yüklenemedi:`, error);
-                reject(error); // Hata durumunda promise'i reddet.
-            },
+            onload: () => resolve(sampler),
+            onerror: reject,
             envelope: instrumentData.envelope,
+          });
         });
-    });
+        console.info(`✅ Sample yüklendi: ${instrumentData.name}`);
+      } else if (this.type === 'synth') {
+        this.node = new Tone.PolySynth(Tone.Synth, {
+          oscillator: instrumentData.synthParams?.oscillator || { type: 'sawtooth' },
+          envelope: instrumentData.synthParams?.envelope || { attack: 0.02, decay: 0.1, sustain: 0.3, release: 0.8 }
+        });
+        console.info(`✅ Synth oluşturuldu: ${instrumentData.name}`);
+      } else {
+        throw new Error(`Bilinmeyen enstrüman tipi: ${this.type}`);
+      }
 
-    this.output = new Tone.Channel(0, 0);
-    this.sampler.connect(this.output);
+      this.node.connect(this.output);
+      this.isReady = true;
+      return this; // Kendini döndürerek zincirleme işlemlere izin ver
+    } catch (error) {
+      console.error(`❌ Enstrüman başlatılamadı: ${instrumentData.name}`, error);
+      // Hata durumunda bile promise'i reddederek bekleyen işlemlerin haberdar olmasını sağla
+      throw error;
+    }
   }
 
   trigger(time, note, bufferDuration, cutItself) {
-    if (!this.isReady) return;
-    if (cutItself) this.sampler.releaseAll(time);
-    const pitchToPlay = this.pianoRoll ? (note.pitch || 'C4') : 'C4';
+    if (!this.isReady || !this.node) return;
+
+    const pitchToPlay = note.pitch || 'C4';
     const duration = note.duration || "1n";
-    this.sampler.triggerAttackRelease(pitchToPlay, duration, time, note.velocity ?? 1.0);
+    const velocity = note.velocity ?? 1.0;
+
+    if (this.type === 'sample') {
+      if (cutItself) this.node.releaseAll(time);
+      this.node.triggerAttackRelease(this.pianoRoll ? pitchToPlay : 'C4', duration, time, velocity);
+    } else if (this.type === 'synth') {
+      this.node.triggerAttackRelease(pitchToPlay, duration, time, velocity);
+    }
   }
   
   triggerAttack(pitch, time, velocity) {
-    if (!this.sampler.loaded) return;
-    this.sampler.triggerAttack(pitch, time, velocity);
+    if (!this.isReady || !this.node) return;
+    this.node.triggerAttack(pitch, time, velocity);
   }
 
   triggerRelease(pitch, time) {
-    if (!this.sampler.loaded) return;
-    this.sampler.triggerRelease(pitch, time);
+    if (!this.isReady || !this.node) return;
+    this.node.triggerRelease(pitch, time);
   }
 
   updateParameters(instrumentData) {
-    if (this.sampler.envelope && instrumentData.envelope) {
-      this.sampler.set({ envelope: instrumentData.envelope });
+    if (!this.node) return;
+
+    if (this.type === 'sample' && instrumentData.envelope) {
+      this.node.set({ envelope: instrumentData.envelope });
+    } else if (this.type === 'synth' && instrumentData.synthParams) {
+      this.node.set(instrumentData.synthParams);
     }
     this.pianoRoll = instrumentData.pianoRoll;
   }
 
   dispose() {
-    this.sampler.dispose();
-    this.output.dispose();
+    this.node?.dispose();
+    this.output?.dispose();
   }
 }

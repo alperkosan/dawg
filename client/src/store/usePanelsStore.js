@@ -120,65 +120,45 @@ export const usePanelsStore = create((set, get) => ({
 
   handleEditInstrument: async (instrument, audioEngine) => {
     if (!instrument || instrument.type !== 'sample') return;
+    
     const state = get();
     if (state.editingInstrumentId === instrument.id && state.panels['sample-editor'].isOpen) {
       get().togglePanel('sample-editor');
       return;
     }
     
-    // 1. Ses motorundan buffer'ı ASENKRON olarak iste ve yüklenmesini BEKLE.
-    const buffer = await audioEngine?.requestInstrumentBuffer(instrument.id);
-    
-    // 2. Buffer güvenli bir şekilde geldikten sonra devam et.
-    if (!buffer) {
-      console.log("buffer");
-      console.log(buffer);
-
-      // Artık hata konsolda `requestInstrumentBuffer` içinde loglanıyor.
-      // İsteğe bağlı olarak kullanıcıya bir bildirim gösterebiliriz.
-      alert("Enstrümanın ses dosyası yüklenemedi. Lütfen tekrar deneyin.");
-      return;
-    }
-    
-    const newPosition = getNextCascadePosition(get().panels);
-    set({
-      editorBuffer: buffer,
-      editingInstrumentId: instrument.id,
-      panels: {
-        ...state.panels,
-        'sample-editor': { 
-            ...state.panels['sample-editor'], 
-            title: `Editor: ${instrument.name}`, 
-            isOpen: true, 
-            isMinimized: false, 
-            position: newPosition 
-        }
+    try {
+      const buffer = await audioEngine?.requestInstrumentBuffer(instrument.id);
+      
+      // --- GÜÇLENDİRİLMİŞ KONTROL ---
+      // Eğer ses motoru bir buffer bulamazsa (dosya bozuk, yüklenememiş vb.),
+      // editörü hiç açma ve kullanıcıya bilgi ver.
+      if (!buffer) {
+        alert(`"${instrument.name}" için ses verisi bulunamadı veya yüklenemedi. Lütfen dosya yolunu kontrol edin.`);
+        return;
       }
-    });
-    get().bringPanelToFront('sample-editor');
-  },
+      
+      const newPosition = getNextCascadePosition(get().panels);
+      set({
+        editorBuffer: buffer,
+        editingInstrumentId: instrument.id,
+        panels: {
+          ...state.panels,
+          'sample-editor': { 
+              ...state.panels['sample-editor'], 
+              title: `Editor: ${instrument.name}`, 
+              isOpen: true, 
+              isMinimized: false, 
+              position: newPosition 
+          }
+        }
+      });
+      get().bringPanelToFront('sample-editor');
 
-  /**
-   * --- GÜNCELLENDİ: Sorumluluk alanı netleştirildi ---
-   * Bu fonksiyon artık SADECE Piano Roll panelinin durumunu yönetir.
-   * Enstrümanın 'pianoRoll' modunu değiştirmek artık bu fonksiyonun görevi DEĞİLDİR.
-   */
-  handleTogglePianoRoll: (instrument) => {
-    const { pianoRollInstrumentId, panels } = get();
-    const isOpening = pianoRollInstrumentId !== instrument.id;
-
-    if (isOpening) {
-      const newPosition = getNextCascadePosition(panels);
-      set(state => ({
-        pianoRollInstrumentId: instrument.id,
-        panels: { ...state.panels, 'piano-roll': { ...state.panels['piano-roll'], title: `Piano Roll: ${instrument.name}`, isOpen: true, isMinimized: false, position: newPosition } }
-      }));
-      get().bringPanelToFront('piano-roll');
-    } else {
-      set(state => ({
-        pianoRollInstrumentId: null,
-        panels: { ...state.panels, 'piano-roll': { ...state.panels['piano-roll'], isOpen: false } }
-      }));
+    } catch (error) {
+      // Promise'in reject olması (örn: ağ hatası) durumunda hatayı yakala.
+      console.error(`Sample Editor açılamadı (${instrument.name}):`, error);
+      alert(`"${instrument.name}" enstrümanı yüklenirken bir hata oluştu. Lütfen konsolu kontrol edin.`);
     }
   },
 }));

@@ -75,6 +75,24 @@ export const usePlaybackStore = create((set, get) => ({
     set({ transportPosition: position });
   },
 
+  // ONARIM: Gelen pozisyon verisinin bir obje olması durumunda bile hatayı engelleyen
+  // ve doğru formatı kullanan "savunmacı" bir fonksiyon.
+  setTransportPosition: (position, step) => {
+    let positionString = position;
+    // Eğer gelen 'position' bir obje ise ve içinde 'formatted' anahtarı varsa, onu kullan.
+    if (typeof position === 'object' && position !== null && position.hasOwnProperty('formatted')) {
+      positionString = position.formatted;
+    } else if (typeof position === 'object') {
+      // Beklenmedik bir obje gelirse, hatayı konsola yaz ve arayüzü çökertme.
+      console.warn("setTransportPosition beklenmedik bir obje aldı:", position);
+      positionString = 'HATA'; 
+    }
+    set({
+      transportPosition: positionString,
+      transportStep: step
+    });
+  },
+
   /**
    * Çalma modunu değiştirir. Eğer çalma devam ediyorsa,
    * AudioEngine'e "kesintisiz geçiş" komutu gönderir.
@@ -138,12 +156,12 @@ export const usePlaybackStore = create((set, get) => ({
   handleStop: (audioEngine) => {
     audioEngine?.stop();
   },
-  
-  /**
-   * === YENİ FONKSİYON ===
-   * Timeline üzerinde belirli bir ölçüye atlama komutunu gönderir.
-   */
+
   jumpToBar: (barNumber, audioEngine) => {
     audioEngine?.jumpToBar(barNumber);
+  },
+
+  jumpToStep: (step, audioEngine) => {
+    audioEngine?.jumpToStep(step);
   },
 }));

@@ -2,7 +2,7 @@ import React from 'react';
 import { Play, Pause, Square, Wind } from 'lucide-react';
 import VolumeKnob from '../../ui/VolumeKnob';
 import { usePlaybackStore } from '../../store/usePlaybackStore';
-import { useArrangementStore } from '../../store/useArrangementStore'; // activePatternId için eklendi
+import { useArrangementStore } from '../../store/useArrangementStore';
 
 const ModeButton = ({ label, mode, activeMode, onClick }) => {
     const isActive = activeMode === mode;
@@ -17,60 +17,32 @@ const ModeButton = ({ label, mode, activeMode, onClick }) => {
 };
 
 function TopToolbar({ audioEngineRef }) {
-  // GÜNCELLENDİ: Store'dan en güncel state'leri alıyoruz
+  // State'leri reaktif olarak al
   const { playbackState, bpm, transportPosition, masterVolume, playbackMode } = usePlaybackStore();
-  const { handlePlay, handlePause, handleStop, handleBpmChange, handleMasterVolumeChange, setPlaybackMode } = usePlaybackStore.getState();
+  // Eylemleri getState() ile al
+  const { handlePlay, handlePause, handleResume, handleStop, handleBpmChange, handleMasterVolumeChange, setPlaybackMode } = usePlaybackStore.getState();
   const activePatternId = useArrangementStore(state => state.activePatternId);
 
-  // YENİ: Akıllı mod değiştirme fonksiyonu
   const handleModeChange = (newMode) => {
     const engine = audioEngineRef.current;
     if (!engine) return;
+    setPlaybackMode(newMode, engine);
+  };
+  
+  // ONARIM: Çalma/Duraklatma/Devam etme mantığını yöneten tek bir fonksiyon
+  const handlePlayPauseClick = () => {
+    const engine = audioEngineRef.current;
+    if (!engine) return;
 
-    const currentState = usePlaybackStore.getState().playbackState;
-    const isPlaying = currentState === 'playing' || currentState === 'paused';
-
-    if (isPlaying) {
-      // Çalma sırasında güvenli geçiş için engine'deki metodu çağır
-      engine.switchPlaybackMode(newMode, activePatternId);
+    if (playbackState === 'playing') {
+      handlePause(engine);
+    } else if (playbackState === 'paused') {
+      handleResume(engine);
+    } else {
+      handlePlay(engine);
     }
-    // Her durumda store'daki state'i güncelle
-    setPlaybackMode(newMode);
   };
 
-  const SyncControls = () => {
-    const [compensation, setCompensation] = useState(0);
-    
-    const adjustSync = (delta) => {
-      const newComp = compensation + delta;
-      setCompensation(newComp);
-      
-      // Tüm playhead'leri güncelle
-      const playheads = document.querySelectorAll('[data-playhead]');
-      playheads.forEach(ph => {
-        if (ph._compensationOffset !== undefined) {
-          ph._compensationOffset = newComp;
-        }
-      });
-      
-      console.log(`Senkronizasyon: ${newComp}px`);
-    };
-    
-    return (
-      <div className="flex items-center gap-2 bg-red-900 p-2 rounded">
-        <span className="text-xs">SYNC:</span>
-        <button onClick={() => adjustSync(-5)} className="px-2 py-1 bg-red-700 text-xs">-5px</button>
-        <button onClick={() => adjustSync(-1)} className="px-2 py-1 bg-red-700 text-xs">-1px</button>
-        <span className="text-xs w-12 text-center">{compensation}px</span>
-        <button onClick={() => adjustSync(1)} className="px-2 py-1 bg-red-700 text-xs">+1px</button>
-        <button onClick={() => adjustSync(5)} className="px-2 py-1 bg-red-700 text-xs">+5px</button>
-        <button onClick={() => setCompensation(0)} className="px-2 py-1 bg-green-700 text-xs">Reset</button>
-      </div>
-    );
-  };
-
-  // TopToolbar JSX'inde, geliştirme modunda göster:
-  {process.env.NODE_ENV === 'development' && <SyncControls />}
 
   return (
     <header 
@@ -94,16 +66,16 @@ function TopToolbar({ audioEngineRef }) {
             onChange={(val) => handleMasterVolumeChange(val, audioEngineRef.current)}
             defaultValue={0} min={-60} max={6}
           />
-          {/* Oynat/Duraklat Düğmesi */}
+          {/* ONARIM: Oynat/Duraklat Düğmesi */}
           <button 
             title={playbackState === 'playing' ? 'Pause' : 'Play'} 
-            onClick={() => playbackState === 'playing' ? handlePause(audioEngineRef.current) : handlePlay(audioEngineRef.current)} 
+            onClick={handlePlayPauseClick} 
             className="p-2 rounded hover:bg-[var(--color-primary)] transition-colors" 
             style={{ backgroundColor: 'var(--color-surface2)'}}
           >
             {playbackState === 'playing' ? <Pause size={20} /> : <Play size={20} />}
           </button>
-          {/* Durdurma Düğmesi */}
+          {/* ONARIM: Durdurma Düğmesi */}
           {(playbackState === 'playing' || playbackState === 'paused') && (
             <button title="Stop" onClick={() => handleStop(audioEngineRef.current)} className="p-2 rounded hover:bg-[var(--color-accent)] transition-colors" style={{ backgroundColor: 'var(--color-surface2)'}}>
               <Square size={20} />
@@ -111,7 +83,6 @@ function TopToolbar({ audioEngineRef }) {
           )}
         </div>
 
-        {/* GÜNCELLENDİ: PAT/SONG Mod Seçici artık akıllı handleModeChange'i kullanıyor */}
         <div className="flex items-center p-1 rounded-lg gap-x-1" style={{backgroundColor: 'var(--color-background)'}}>
             <ModeButton label="PAT" mode="pattern" activeMode={playbackMode} onClick={handleModeChange} />
             <ModeButton label="SONG" mode="song" activeMode={playbackMode} onClick={handleModeChange} />
@@ -126,7 +97,6 @@ function TopToolbar({ audioEngineRef }) {
             style={{ fontSize: 'var(--font-size-body)' }}
           />
           <span className="text-xs font-bold p-2" style={{ backgroundColor: 'var(--color-surface2)' }}>BPM</span>
-          {/* GÜNCELLENDİ: Zaman göstergesi artık BBT formatında */}
           <div className="p-[5px] font-mono tracking-wider w-32 text-center" style={{ color: 'var(--color-primary)', fontSize: 'var(--font-size-header)' }}>
             {transportPosition}
           </div>

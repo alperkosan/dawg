@@ -123,4 +123,16 @@ export const useMixerStore = create((set, get) => ({
       )
     }));
   },
+
+  // Bir kanalı başlangıç durumuna sıfırlar
+  resetTrack: (trackId) => {
+    const originalTrack = initialMixerTracks.find(t => t.id === trackId);
+    if (originalTrack) {
+        set(state => ({
+            mixerTracks: state.mixerTracks.map(track => 
+                track.id === trackId ? { ...originalTrack } : track
+            )
+        }));
+    }
+  }
 }));

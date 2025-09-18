@@ -1,20 +1,50 @@
-/* InstrumentRow.css - v2 Modern Tasarım */
-.instrument-row-v2 {
+/* InstrumentRow.css - v4 Final Styles */
+.instrument-row-enhanced {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 1rem;
-  padding: 0 1rem;
-  user-select: none;
+  height: 64px;
+  transition: all 0.2s ease;
   border-bottom: 1px solid var(--color-border);
-  transition: background-color 0.15s ease;
-}
-.instrument-row-v2.muted {
-  opacity: 0.6;
-}
-.instrument-row-v2:hover {
-  background-color: var(--color-surface2) !important;
+  background-color: var(--color-surface);
+  user-select: none;
+  padding-left: 1rem;
 }
 
+/* === GÜÇLENDİRİLMİŞ MUTE STATE === */
+.instrument-row-enhanced.muted {
+  opacity: 0.5;
+  filter: grayscale(0.8) brightness(0.8);
+  background-color: rgba(239, 68, 68, 0.05); /* Hafif kırmızı arkaplan */
+  box-shadow: inset 3px 0 0 #ef4444; /* Sol kenarda kırmızı çizgi */
+  padding-left: calc(1rem - 3px);
+}
+
+.instrument-row-enhanced.muted .instrument-icon-v2 {
+  background-color: #6b7280 !important;
+}
+
+.instrument-row-enhanced.muted .step-button-v2.active::before {
+  background-color: #6b7280 !important;
+  box-shadow: none !important;
+  border-color: #4b5563 !important;
+}
+
+
+/* === HOVER & SELECTED STATES === */
+.instrument-row-enhanced:hover:not(.muted) {
+  background-color: var(--color-surface2) !important;
+  transform: translateX(2px);
+}
+
+.instrument-row-enhanced.selected {
+  background-color: rgba(14, 165, 233, 0.1);
+  box-shadow: inset 3px 0 0 var(--color-primary);
+  padding-left: calc(1rem - 3px);
+}
+
+
+/* === BİLEŞENLER === */
 .instrument-info-v2 {
   flex: 1;
   display: flex;
@@ -34,6 +64,10 @@
   flex-shrink: 0;
   background-color: var(--instrument-color);
   color: #fff;
+  transition: all 0.2s ease;
+}
+.instrument-row-enhanced:hover .instrument-icon-v2 {
+  transform: scale(1.05);
 }
 
 .instrument-details-v2 {
@@ -47,6 +81,7 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  color: var(--color-text);
 }
 .instrument-target-v2 {
   font-size: 0.75rem;
@@ -57,13 +92,14 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  padding: 0 1rem;
 }
 
 .instrument-actions-v2 {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding-left: 1rem;
+  padding: 0 1rem;
   border-left: 1px solid var(--color-border);
 }
 
@@ -84,9 +120,11 @@
 .action-btn-v2:hover {
   background-color: var(--hover-bg);
   color: var(--active-color);
+  transform: scale(1.1);
 }
 
 .action-btn-v2.active {
   background-color: var(--active-color);
   color: var(--color-background);
 }
+

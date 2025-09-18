@@ -7,6 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { useMixerStore } from './useMixerStore';
 import { useArrangementStore } from './useArrangementStore';
 import { usePanelsStore } from './usePanelsStore';
+import { usePlaybackStore } from './usePlaybackStore';
 
 export const useInstrumentsStore = create((set, get) => ({
   instruments: initialInstruments,
@@ -19,24 +20,65 @@ export const useInstrumentsStore = create((set, get) => ({
   handleAddNewInstrument: (sample, audioEngine) => {
     const { instruments } = get();
     const mixerTracks = useMixerStore.getState().mixerTracks;
+
     const baseName = sample.name.split('.')[0];
     let newName = baseName;
     let counter = 2;
-    while (instruments.some(inst => inst.name === newName)) newName = `${baseName}_${counter++}`;
-    const firstUnusedTrack = mixerTracks.find(track => track.type === 'track' && !instruments.some(inst => inst.mixerTrackId === track.id));
-    if (!firstUnusedTrack) { alert("Boş mixer kanalı kalmadı!"); return; }
-    const newInstrument = { id: `inst-${uuidv4()}`, name: newName, type: 'sample', url: sample.url, notes: [], mixerTrackId: firstUnusedTrack.id, envelope: { attack: 0.01, decay: 0.1, sustain: 1.0, release: 1.0 }, precomputed: {}, isMuted: false, cutItself: false, pianoRoll: false, };
+    while (instruments.some(inst => inst.name === newName)) {
+        newName = `${baseName}_${counter++}`;
+    }
+    
+    const firstUnusedTrack = mixerTracks.find(track => 
+        track.type === 'track' && !instruments.some(inst => inst.mixerTrackId === track.id)
+    );
+    
+    if (!firstUnusedTrack) {
+        alert("Boş mixer kanalı kalmadı!");
+        return;
+    }
+
+    const newInstrument = {
+        id: `inst-${uuidv4()}`,
+        name: newName,
+        type: 'sample',
+        url: sample.url,
+        notes: [],
+        mixerTrackId: firstUnusedTrack.id,
+        envelope: { attack: 0.01, decay: 0.1, sustain: 1.0, release: 1.0 },
+        precomputed: {},
+        isMuted: false,
+        cutItself: false,
+        pianoRoll: false,
+    };
+
     set({ instruments: [...instruments, newInstrument] });
     useMixerStore.getState().setTrackName(firstUnusedTrack.id, newName);
+
+    // SES MOTORUNA KOMUT GÖNDER
     audioEngine?.createInstrument(newInstrument);
-    usePlaybackStore.getState().updateLoopLength();
   },
+
   handleToggleInstrumentMute: (instrumentId, audioEngine) => {
-      let isMuted = false;
-      set(state => ({ instruments: state.instruments.map(inst => { if (inst.id === instrumentId) { isMuted = !inst.isMuted; return { ...inst, isMuted }; } return inst; }) }));
+    let isMuted = false;
+    set(state => ({
+      instruments: state.instruments.map(inst => {
+        if (inst.id === instrumentId) {
+          isMuted = !inst.isMuted;
+          return { ...inst, isMuted };
+        }
+        return inst;
+      })
+    }));
+    
+    // ANLIK MUTE: Ses motoruna anında komut gönder.
+    audioEngine?.setInstrumentMute(instrumentId, isMuted);
+    
+    // Eğer çalma devam ediyorsa, bir sonraki döngüde notaların
+    // hiç çalınmaması için yeniden zamanlama yap. Bu daha verimlidir.
+    if (usePlaybackStore.getState().playbackState === 'playing') {
       audioEngine?.reschedule();
+    }
   },
-  
   updateInstrument: (instrumentId, newParams, shouldReconcile, audioEngine) => {
     let updatedInstrument = null;
     set(state => {

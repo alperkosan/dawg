@@ -5,6 +5,8 @@ import { MixerStrip } from './nodes/MixerStrip.js';
 import { useArrangementStore } from '../../store/useArrangementStore';
 import { usePlaybackStore } from '../../store/usePlaybackStore';
 import { useInstrumentsStore } from '../../store/useInstrumentsStore';
+import { PlaybackAnimatorService } from './PlaybackAnimatorService';
+
 import { cloneBuffer, normalizeBuffer, reverseBuffer, reversePolarity, removeDCOffset } from '../utils/audioUtils';
 import { memoize } from 'lodash';
 
@@ -40,6 +42,7 @@ class AudioEngine {
     this.originalAudioBuffers = new Map();
 
     this.activePatternId = null;
+    this.animationFrameId = null;
     this.patterns = {};
     this.playbackMode = 'pattern';
 
@@ -48,7 +51,10 @@ class AudioEngine {
   }
 
   setupTimeManager() {
-    timeManager.onPositionUpdate = (position) => this.callbacks.setTransportPosition?.(position.formatted);
+    timeManager.onPositionUpdate = (position, step) => {
+      // Gelen pozisyon objesinden sadece formatlanmış metni gönderiyoruz.
+      this.callbacks.setTransportPosition?.(position.formatted, step);
+    };
     timeManager.onLoopInfoUpdate = (loopInfo) => this.callbacks.setLoopLengthFromEngine?.(loopInfo.lengthInSteps);
   }
 
@@ -121,24 +127,26 @@ class AudioEngine {
     const instrumentNode = new InstrumentNode(instData);
     this.instruments.set(instData.id, instrumentNode);
     
-    // Yükleme tamamlanmasını bekle
+    // --- ANAHTAR GÜNCELLEME ---
+    // Dışarıdan gelen promise'in tamamlanmasını bekle.
+    // Bu satır, yükleme bitene kadar sonraki adımlara geçilmesini engeller.
     try {
       await instrumentNode.readyPromise;
-      console.log(`✅ [INSTRUMENT] Yüklendi: ${instData.name}`);
       
-      // Buffer'ı sakla
-      if (instrumentNode.sampler.loaded) {
-        this.originalAudioBuffers.set(instData.id, instrumentNode.sampler.buffer);
+      if (instrumentNode.type === 'sample' && instrumentNode.node.loaded) {
+        // Buffer'ı SADECE yükleme başarılı olduğunda kasaya koy.
+        this.originalAudioBuffers.set(instData.id, instrumentNode.node.buffer);
       }
       
-      // Mixer'a bağla
       this.connectInstrumentToMixer(instData.id, instData.mixerTrackId);
       
     } catch (error) {
-      console.error(`❌ [INSTRUMENT] Yükleme hatası: ${instData.name}`, error);
+      // Promise reddedilirse (yükleme hatası), motor çalışmaya devam eder
+      // ancak hatalı enstrümanı atlar.
+      console.error(`❌ [INSTRUMENT] Yükleme zinciri hatası: ${instData.name}`, error);
     }
   }
-  
+
   connectInstrumentToMixer(instrumentId, mixerTrackId) {
     const instrumentNode = this.instruments.get(instrumentId);
     const targetStrip = this.mixerStrips.get(mixerTrackId);
@@ -192,32 +200,53 @@ class AudioEngine {
   }
 
   async requestInstrumentBuffer(instrumentId) {
-    const node = this.instruments.get(instrumentId);
-    if (!node) {
+    const instrumentNode = this.instruments.get(instrumentId);
+    if (!instrumentNode) {
       console.error(`❌ [requestInstrumentBuffer] Enstrüman bulunamadı: ${instrumentId}`);
       return null;
     }
+    if (instrumentNode.type === 'synth') {
+      return null; // Synth'lerin buffer'ı olmaz.
+    }
+  
+    // --- YENİ MANTIK ---
+    // İnternetten tekrar istemek yerine, doğrudan motorun kasasından veriyi al.
+    // Bu, işlemi anlık yapar ve ağ hatalarını ortadan kaldırır.
+    if (this.originalAudioBuffers.has(instrumentId)) {
+        return this.originalAudioBuffers.get(instrumentId);
+    }
 
-    await node.readyPromise;
-    return node.sampler.buffer;
+    // Eğer bir şekilde buffer kasada yoksa (bu bir hata durumudur),
+    // son bir deneme olarak yüklemeyi bekle.
+    console.warn(`⚠️ [requestInstrumentBuffer] Buffer önbellekte bulunamadı, yeniden bekleniyor: ${instrumentId}`);
+    await instrumentNode.readyPromise;
+    return instrumentNode.node.buffer;
   }
 
   reconcileInstrument(instrumentId, updatedInstData) {
-    console.log(`🔄 [RECONCILE] ${instrumentId} için buffer yeniden işleniyor...`, updatedInstData.precomputed);
-    const originalBuffer = this.originalAudioBuffers.get(instrumentId);
     const instrumentNode = this.instruments.get(instrumentId);
 
-    if (!originalBuffer || !instrumentNode) {
-      console.error(`❌ [RECONCILE] Hata: Orijinal buffer veya enstrüman bulunamadı: ${instrumentId}`);
+    // Sadece sample tabanlı enstrümanlar için çalıştır
+    if (instrumentNode?.type !== 'sample') {
+        console.warn(`[RECONCILE] ${instrumentId} bir sample olmadığı için işlem atlandı.`);
+        return null;
+    }
+  
+    console.log(`🔄 [RECONCILE] ${instrumentId} için buffer yeniden işleniyor...`, updatedInstData.precomputed);
+    const originalBuffer = this.originalAudioBuffers.get(instrumentId);
+
+    if (!originalBuffer) {
+      console.error(`❌ [RECONCILE] Hata: Orijinal buffer bulunamadı: ${instrumentId}`);
       return null;
     }
 
     const newProcessedBuffer = memoizedProcessBuffer(originalBuffer, updatedInstData);
-    instrumentNode.sampler.buffer = newProcessedBuffer;
+    instrumentNode.node.buffer = newProcessedBuffer;
     console.log(`✅ [RECONCILE] ${instrumentId} için buffer güncellendi.`);
     
     return newProcessedBuffer;
   }
+
 
   updateMixerParam = (trackId, param, value) => {
     const strip = this.mixerStrips.get(trackId);
@@ -233,6 +262,13 @@ class AudioEngine {
 
   toggleMute = (trackId, isMuted) => {
     this.mixerStrips.get(trackId)?.setMute(isMuted);
+  }
+
+  setInstrumentMute(instrumentId, isMuted) {
+    const instrument = useInstrumentsStore.getState().instruments.find(inst => inst.id === instrumentId);
+    if (instrument?.mixerTrackId) {
+      this.mixerStrips.get(instrument.mixerTrackId)?.setMute(isMuted);
+    }
   }
 
   reschedule() {
@@ -319,80 +355,95 @@ class AudioEngine {
     console.log(`%c[RESCHEDULE] Tamamlandı. ${totalScheduledNotes} nota zamanlandı.`, 'color: lightgreen; font-weight: bold;');
   }
 
-  setupPlayheadTracking() {
-    // Transport pozisyon değişikliklerini takip et
-    this.transport.on('step', (time, step) => {
-      // UniversalPlayheadManager'a pozisyon bildir
-      UniversalPlayheadManager.updatePosition(step, this.transport.state === 'started');
-    });
-
-    // Loop başlangıcında pozisyonu sıfırla
-    this.transport.on('loop', (time) => {
-      UniversalPlayheadManager.updatePosition(0, true);
-    });
-
-    // Stop durumunda pozisyonu sıfırla
-    this.transport.on('stop', (time) => {
-      UniversalPlayheadManager.updatePosition(0, false);
-    });
-  }
-
   /* === YENİ FONKSİYON ===
    * Belirtilen bar numarasına atlama komutunu TimeManager'a iletir.
    * @param {number} barNumber - Hedef bar numarası.
    */
   jumpToBar(barNumber) {
-    timeManager.jumpToBar(barNumber);
+    const timeInSeconds = Tone.Time(`${barNumber - 1}:0:0`).toSeconds();
+    timeManager.jumpToBar(barNumber); // Bu, Tone.Transport.seconds'ı ayarlar.
+    
+    // Eğer çalma durdurulmuşsa, arayüzü manuel olarak güncellemek zorundayız.
+    if (Tone.Transport.state !== 'started') {
+        const step = timeInSeconds / Tone.Time('16n').toSeconds();
+        const positionObject = timeManager._calculateBBTPosition(timeInSeconds);
+        // Doğrudan formatlanmış metni ve step'i gönderiyoruz.
+        this.callbacks.setTransportPosition?.(positionObject.formatted, step); 
+        
+        const loopEnd = timeManager.loopInfo.lengthInSeconds;
+        if (loopEnd > 0) {
+            PlaybackAnimatorService.publish(timeInSeconds / loopEnd);
+        }
+    }
   }
 
-  // Yeni method: Step'e atlama
   jumpToStep(step) {
-    timeManager.jumpToPosition(step);
+    const time = Tone.Time('16n').toSeconds() * step;
+    Tone.Transport.seconds = time;
+    if (Tone.Transport.state !== 'started') {
+      const loopEnd = timeManager.loopInfo.lengthInSeconds;
+      if (loopEnd > 0) PlaybackAnimatorService.publish(time / loopEnd);
+      this.callbacks.setTransportPosition?.(timeManager._calculateBBTPosition(time), step);
+    }
   }
 
   start() {
-    console.log("▶️ [TRANSPORT] Start komutu alındı");
-    
-    // AudioContext durumunu kontrol et
-    if (Tone.context.state !== 'running') {
-      console.log("🔊 [TRANSPORT] AudioContext başlatılıyor...");
-      Tone.context.resume();
-    }
-    
-    // Transport durumunu kontrol et
-    console.log(`📊 [TRANSPORT DEBUG]`, {
-      contextState: Tone.context.state,
-      transportState: Tone.Transport.state,
-      bpm: Tone.Transport.bpm.value,
-      masterVolume: this.masterFader.volume.value
-    });
-    
+    if (Tone.context.state !== 'running') Tone.context.resume();
+    if (Tone.Transport.state === 'started') return;
     this.reschedule();
     timeManager.start(this.playbackMode, this.activePatternId, useArrangementStore.getState());
     Tone.Transport.start();
     this.callbacks.setPlaybackState?.('playing');
-    
-    console.log("✅ [TRANSPORT] Playback başladı");
+    this._startAnimationLoop();
+  }
+  
+  resume() {
+    if (Tone.Transport.state === 'paused') {
+      Tone.Transport.start();
+      timeManager.resume();
+      this.callbacks.setPlaybackState?.('playing');
+      this._startAnimationLoop();
+    }
   }
 
   stop() {
-    console.log("⏹️ [TRANSPORT] Stop komutu alındı");
     Tone.Transport.stop();
     timeManager.stop();
     this.callbacks.setPlaybackState?.('stopped');
+    this._stopAnimationLoop();
+    PlaybackAnimatorService.publish(0);
   }
 
   pause() {
-    console.log("⏸️ [TRANSPORT] Pause komutu alındı");
     Tone.Transport.pause();
     timeManager.pause();
     this.callbacks.setPlaybackState?.('paused');
+    this._stopAnimationLoop();
   }
   
   setBpm(newBpm) {
     console.log(`🎵 [BPM] Yeni BPM: ${newBpm}`);
     Tone.Transport.bpm.value = newBpm;
     this.reschedule();
+  }
+
+  _startAnimationLoop() {
+    if (this.animationFrameId) cancelAnimationFrame(this.animationFrameId);
+    const animate = () => {
+      const loopEnd = timeManager.loopInfo.lengthInSeconds;
+      if (loopEnd > 0 && Tone.Transport.state === 'started') {
+        PlaybackAnimatorService.publish(Tone.Transport.seconds / loopEnd);
+      }
+      this.animationFrameId = requestAnimationFrame(animate);
+    };
+    this.animationFrameId = requestAnimationFrame(animate);
+  }
+
+  _stopAnimationLoop() {
+    if (this.animationFrameId) {
+      cancelAnimationFrame(this.animationFrameId);
+      this.animationFrameId = null;
+    }
   }
 
   dispose() {

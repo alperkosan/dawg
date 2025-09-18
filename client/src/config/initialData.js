@@ -18,6 +18,7 @@ const notes = {
   hiHat: [],
   openHat: [],
   eight08: [],
+  synthLead: [], // Yeni synth enstrümanı için nota dizisi
 };
 
 // --- KICK ---
@@ -54,7 +55,6 @@ notes.snare.push(defaultNote(127.5, 'D4', 1.0));
 // --- HI-HAT ---
 // Bu tarzın kalbi: Sürekli 16'lık notalar, velocity oynamaları ve hızlı triplet roll'lar.
 for (let i = 0; i < 128; i += 0.5) {
-    // Her 4 vuruşta bir velocity'yi değiştirerek bounce efekti yarat
     const stepInBar = i % 16;
     let velocity = 0.7;
     if (stepInBar % 4 === 0) velocity = 0.9;
@@ -62,41 +62,49 @@ for (let i = 0; i < 128; i += 0.5) {
     notes.hiHat.push(defaultNote(i, 'F#4', velocity));
 }
 // Özel roll'lar ekle
-// 2. barın sonunda hızlı bir triplet roll
 for (let i = 0; i < 6; i++) notes.hiHat.push(defaultNote(30 + (i * (1/3)), 'F#4', 0.6 + i * 0.05));
-// 4. barın sonunda 32'lik bir roll
 for (let i = 0; i < 4; i++) notes.hiHat.push(defaultNote(62 + (i * 0.5), 'F#4', 0.7 + i * 0.05));
-// 6. barın sonunda yine triplet
 for (let i = 0; i < 6; i++) notes.hiHat.push(defaultNote(94 + (i * (1/3)), 'F#4', 0.6 + i * 0.05));
-// 8. barın sonunda çok hızlı bir final roll
 for (let i = 0; i < 8; i++) notes.hiHat.push(defaultNote(126 + (i * 0.25), 'F#4', 0.5 + i * 0.06));
 
 // --- OPEN HAT ---
-// Vurguları güçlendirmek için genellikle snare'den hemen önce veya off-beat'lerde.
 const openHatPattern = [2, 14, 18, 30, 34, 46, 50, 62, 66, 78, 82, 94, 98, 110, 114, 126];
 openHatPattern.forEach(oh => notes.openHat.push(defaultNote(oh, 'G#4', 0.7, '8n')));
 
 // --- 808 BASS ---
 // Karanlık, melodik ve kick ile senkronize bir bas hattı (G minör skalasında).
 const bassline = [
-  { time: 0, pitch: 'G4', duration: '2n' }, { time: 8, pitch: 'G4', duration: '4n' },
-  { time: 14, pitch: 'A#4', duration: '8n' }, { time: 16, pitch: 'C5', duration: '2n' },
-  { time: 24, pitch: 'C5', duration: '4n' }, { time: 30, pitch: 'D5', duration: '8n' },
-  { time: 32, pitch: 'D#5', duration: '2n.' }, { time: 48, pitch: 'F5', duration: '2n' },
-  { time: 62, pitch: 'G5', duration: '8n' }, { time: 64, pitch: 'D#5', duration: '2n' },
-  { time: 80, pitch: 'D5', duration: '2n' }, { time: 94, pitch: 'C5', duration: '8n' },
-  { time: 96, pitch: 'A#4', duration: '1n' }, { time: 112, pitch: 'G4', duration: '1n' },
-  // Final 808 roll
-  { time: 124, pitch: 'A#4', duration: '16n' }, { time: 125, pitch: 'C5', duration: '16n' },
-  { time: 126, pitch: 'D5', duration: '16n' }, { time: 127, pitch: 'D#5', duration: '16n' }
+  { time: 0, pitch: 'G2', duration: '2n' }, { time: 8, pitch: 'G2', duration: '4n' },
+  { time: 14, pitch: 'A#2', duration: '8n' }, { time: 16, pitch: 'C3', duration: '2n' },
+  { time: 24, pitch: 'C3', duration: '4n' }, { time: 30, pitch: 'D3', duration: '8n' },
+  { time: 32, pitch: 'D#3', duration: '2n.' }, { time: 48, pitch: 'F3', duration: '2n' },
+  { time: 62, pitch: 'G3', duration: '8n' }, { time: 64, pitch: 'D#3', duration: '2n' },
+  { time: 80, pitch: 'D3', duration: '2n' }, { time: 94, pitch: 'C3', duration: '8n' },
+  { time: 96, pitch: 'A#2', duration: '1n' }, { time: 112, pitch: 'G2', duration: '1n' },
+  { time: 124, pitch: 'A#2', duration: '16n' }, { time: 125, pitch: 'C3', duration: '16n' },
+  { time: 126, pitch: 'D3', duration: '16n' }, { time: 127, pitch: 'D#3', duration: '16n' }
 ];
 bassline.forEach(b => {
     notes.eight08.push({ ...defaultNote(b.time, b.pitch), duration: b.duration });
 });
 
+// --- SYNTH LEAD MELODY ---
+// 808'i takip eden basit ama etkili bir melodi
+const synthMelody = [
+    { time: 0, pitch: 'G4', duration: '4n' }, { time: 8, pitch: 'G4', duration: '4n' },
+    { time: 16, pitch: 'C5', duration: '4n' }, { time: 24, pitch: 'C5', duration: '4n' },
+    { time: 32, pitch: 'D#5', duration: '2n' }, { time: 48, pitch: 'F5', duration: '2n' },
+    { time: 64, pitch: 'D#5', duration: '2n' }, { time: 80, pitch: 'D5', duration: '2n' },
+    { time: 96, pitch: 'A#4', duration: '1n' }, { time: 112, pitch: 'G4', duration: '1n' },
+];
+synthMelody.forEach(s => {
+    notes.synthLead.push({ ...defaultNote(s.time, s.pitch), duration: s.duration });
+});
+
 
 // --- ENSTRÜMANLARI OLUŞTUR ---
 export const initialInstruments = [
+  // ... (diğer sample tabanlı enstrümanlar aynı kalıyor) ...
   { 
     id: 'inst-1', name: 'Kick', type: 'sample', url: '/audio/kick.wav', 
     notes: notes.kick, mixerTrackId: 'track-1',
@@ -123,19 +131,30 @@ export const initialInstruments = [
     notes: notes.openHat, mixerTrackId: 'track-6',
     envelope: { attack: 0.01, decay: 0.4, sustain: 0.0, release: 0.3 },
     precomputed: { normalize: false, reverse: false, reversePolarity: false, removeDCOffset: false },
-    isMuted: false, cutItself: true, // Open hat'ler genellikle birbirini keser
+    isMuted: false, cutItself: true,
   },
   { 
     id: 'inst-2', name: '808', type: 'sample', url: '/audio/808.wav', 
     notes: notes.eight08, mixerTrackId: 'track-2',
     envelope: { attack: 0.01, decay: 0.1, sustain: 0.9, release: 1.5 },
     precomputed: { normalize: false, reverse: false, reversePolarity: false, removeDCOffset: false },
-    isMuted: false, cutItself: true, // 808 notaları birbirini kesmeli (glide efekti için)
+    isMuted: false, cutItself: true,
     pianoRoll: true,
   },
+  // --- YENİ SYNTH ENSTRÜMANI ---
+  {
+    id: 'inst-5', name: 'Synth Lead', type: 'synth', 
+    notes: notes.synthLead, mixerTrackId: 'track-5',
+    // Synth'e özel parametreler
+    synthParams: {
+        oscillator: { type: 'sawtooth' },
+        envelope: { attack: 0.02, decay: 0.1, sustain: 0.3, release: 0.8 }
+    },
+    isMuted: false, pianoRoll: true,
+  }
 ];
 
-// --- MİKSER KANALLARINI OLUŞTUR (Bu kısım aynı kalabilir) ---
+// --- MİKSER KANALLARINI OLUŞTUR ---
 const createEmptyTrack = (index) => ({
   id: `track-${index}`, name: `Insert ${index}`, type: 'track',
   volume: 0, pan: 0, insertEffects: [], sends: [],
@@ -143,12 +162,12 @@ const createEmptyTrack = (index) => ({
 
 const initialTracks = Array.from({ length: 10 }, (_, i) => createEmptyTrack(i + 1));
 
-// Kullanılan kanalların başlangıç ayarları
 const usedTracks = [
   { id: 'track-1', name: 'Kick', volume: 0 },
   { id: 'track-2', name: '808', volume: -2 },
   { id: 'track-3', name: 'Snare', volume: -3.5, pan: 0.05, sends: [{ busId: 'bus-1', level: -18 }] },
   { id: 'track-4', name: 'Hi-Hat', volume: -9, pan: -0.1 },
+  { id: 'track-5', name: 'Synth Lead', volume: -8, pan: 0, sends: [{ busId: 'bus-1', level: -12 }] }, // Synth için yeni kanal
   { id: 'track-6', name: 'Open Hat', volume: -12, pan: 0.15, sends: [{ busId: 'bus-1', level: -15 }] },
 ];
 
