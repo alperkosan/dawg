@@ -113,8 +113,8 @@ export default function ChannelRack() {
               <InteractiveTimeline
                   loopLength={loopLength}
                   currentPosition={transportStep}
-                  onJumpToBar={(bar) => jumpToBar(bar, engine)}
-                  onJumpToPosition={(step) => jumpToStep(step, engine)}
+                  onJumpToBar={(bar) => jumpToBar(bar)}
+                  onJumpToPosition={(step) => jumpToStep(step)}
                   theme={activeTheme}
               />
             </div>

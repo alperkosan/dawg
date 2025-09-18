@@ -1,5 +1,3 @@
-// src/lib/core/nodes/MixerStrip.js - GÜNCELLENMİŞ
-
 import * as Tone from 'tone';
 import { PluginNodeFactory } from './PluginNodeFactory.js';
 import { MeteringService } from '../MeteringService';
@@ -10,40 +8,33 @@ export class MixerStrip {
     this.id = trackData.id;
     this.type = trackData.type;
     this.isDisposed = false;
-
-    // Temel Ses Düğümleri
     this.inputGain = new Tone.Gain(1);
+    this.inputMeter = new Tone.Meter(); 
     this.panner = this.type !== 'master' ? new Tone.Panner(trackData.pan || 0) : null;
     this.fader = new Tone.Volume(trackData.volume ?? 0);
-    
-    // YENİ: Solo ve Mute için ayrı kazanç (gain) katmanları
     this.soloGain = new Tone.Gain(1);
     this.muteGain = new Tone.Gain(1);
-    
     this.outputMeter = new Tone.Meter();
     this.outputGain = new Tone.Gain(1);
-    
-    // Efekt ve Send'ler
     this.effectNodes = new Map();
     this.sendNodes = new Map();
-    
-    // Metreleme için
     this.meteringSchedules = new Map();
   }
 
-  /**
-   * Kanalın tüm ses zincirini (efektler, send'ler, solo/mute) kurar.
-   */
-  buildSignalChain(trackData, masterFader, busInputs) {
+  buildSignalChain(trackData, masterInput, busInputs) {
     if (this.isDisposed) return;
-    
-    // 1. Önceki zinciri tamamen temizle
     this.inputGain.disconnect();
     this.clearChain();
 
-    // 2. Efekt zincirini oluştur
-    let currentNode = this.inputGain;
-    if (trackData.insertEffects && trackData.insertEffects.length > 0) {
+    // 1. Gelen sinyali ÖNCE metreye bağla.
+    this.inputGain.connect(this.inputMeter);
+    
+    // HATA DÜZELTMESİ: Zincirin devamı, girişten değil, metreden başlamalı.
+    // Bu, sesin kaybolmasını önleyen kritik değişikliktir.
+    let currentNode = this.inputMeter;
+
+    // 2. Efektleri bu metrenin çıkışına zincirleme bağla.
+    if (trackData.insertEffects) {
       trackData.insertEffects.forEach(effectData => {
         if (!effectData.bypass) {
           const effectNode = PluginNodeFactory.create(effectData);
@@ -57,27 +48,38 @@ export class MixerStrip {
       });
     }
 
-    // 3. Ana Sinyal Akışını Bağla (Panner -> Fader -> Solo -> Mute)
+    // 3. Zincirin geri kalanını (Panner, Fader, Sends, Solo/Mute) kur.
     if (this.panner) {
       currentNode.connect(this.panner);
       currentNode = this.panner;
     }
     currentNode.connect(this.fader);
-
-    // YENİ: Post-fader send'leri fader'dan sonra bağla
     this.setupSends(trackData.sends || [], this.fader, busInputs);
-    
     this.fader.connect(this.soloGain);
     this.soloGain.connect(this.muteGain);
     this.muteGain.connect(this.outputMeter);
     this.outputMeter.connect(this.outputGain);
-
-    // 4. Çıkışı doğru hedefe yönlendir (Master veya başka bir Bus)
-    this.setupOutputRouting(trackData, masterFader, busInputs);
-
-    // 5. Metrelemeyi başlat
+    
+    // 4. Son çıkışı doğru hedefe yönlendir.
+    this.setupOutputRouting(trackData, masterInput, busInputs);
+    
+    // 5. Metrelemeyi başlat.
     this.setupMetering();
   }
+
+  setupOutputRouting(trackData, masterInput, busInputs) {
+    this.outputGain.disconnect();
+    const customOutput = trackData.output;
+    if (this.type === 'master') {
+        return;
+    }
+    if (customOutput && busInputs.has(customOutput)) {
+      this.outputGain.connect(busInputs.get(customOutput));
+    } else {
+      this.outputGain.connect(masterInput);
+    }
+  }
+
   
   // YENİ: Send'leri (gönderileri) oluşturan ve hedeflerine bağlayan fonksiyon
   setupSends(sendsData, sourceNode, busInputs) {
@@ -93,18 +95,6 @@ export class MixerStrip {
       }
       this.sendNodes.set(send.busId, sendGain);
     });
-  }
-
-  // YENİ: Kanalın çıkışını doğru yere (master veya bus) yönlendirir.
-  setupOutputRouting(trackData, masterFader, busInputs) {
-    this.outputGain.disconnect();
-    const customOutput = trackData.output;
-
-    if (customOutput && busInputs.has(customOutput)) {
-      this.outputGain.connect(busInputs.get(customOutput));
-    } else if (this.type !== 'master') {
-      this.outputGain.connect(masterFader);
-    }
   }
 
   // Anlık parametre güncellemeleri

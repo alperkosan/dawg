@@ -28,25 +28,39 @@ const memoizedProcessBuffer = memoize(
 class AudioEngine {
   constructor(callbacks) {
     this.callbacks = callbacks || {};
-    this.masterFader = new Tone.Volume(0).toDestination();
+    // KALDIRILDI: Artık motorun kendine ait bir master fader'ı yok.
+    // this.masterFader = new Tone.Volume(0).toDestination();
+    
+    // YENİ: Gerçek Master kanal şeridini (strip) burada tutacağız.
+    this.masterStrip = null;
+    
     this.instruments = new Map();
     this.mixerStrips = new Map();
-    this.originalAudioBuffers = new Map(); // Yüklenen ham buffer'lar için önbellek
-    this.scheduledEventIds = new Map(); 
+    this.originalAudioBuffers = new Map();
+    this.scheduledEventIds = new Map();
     this.isReady = false;
-    this.killSwitch = new Tone.Gain(1).toDestination();
-
-    console.log("🔊 Atomik Ses Motoru v3.0 Başlatıldı.");
+    console.log("🔊 Atomik Ses Motoru v4.0 (Yönlendirme Düzeltildi) Başlatıldı.");
   }
 
-  // Projenin tüm verilerini alıp ses motorunu kuran ana fonksiyon.
   async fullSync(instrumentData, mixerTrackData, arrangementData) {
     console.log("%c[SYNC BAŞLADI] Ses motoru kuruluyor...", "color: #818cf8; font-weight: bold;");
     
     await this.preloadSamples(instrumentData);
 
+    // 1. Önce tüm kanal şeritlerini (MixerStrip) oluştur.
     mixerTrackData.forEach(track => this.createMixerStrip(track));
+
+    // 2. YENİ: Master şeridini bul ve onun çıkışını ana hedefe (hoparlörlere) bağla.
+    const masterTrackData = mixerTrackData.find(t => t.type === 'master');
+    if (masterTrackData) {
+      this.masterStrip = this.mixerStrips.get(masterTrackData.id);
+      this.masterStrip.outputGain.toDestination(); // Gerçek master çıkışını bağlıyoruz!
+    } else {
+      console.error("KRİTİK HATA: Master kanalı bulunamadı!");
+      return;
+    }
     
+    // 3. Tüm kanalların sinyal zincirini, master'ı hedef alarak yeniden kur.
     this.rebuildAllSignalChains(mixerTrackData);
 
     instrumentData.forEach(instData => this.createInstrument(instData));
@@ -82,7 +96,7 @@ class AudioEngine {
     this.mixerStrips.set(trackData.id, strip);
   }
 
-  // YENİ: Tek bir kanalın veya tüm kanalların sinyal zincirini yeniden kurar.
+  // YENİ: Tek bir kanalın sinyal zincirini yeniden kurar.
   rebuildSignalChain(trackId, trackData) {
       if (!trackData) {
         console.error(`[rebuildSignalChain] ${trackId} için veri bulunamadı.`);
@@ -90,17 +104,27 @@ class AudioEngine {
       }
       const busInputs = this.prepareBusInputs();
       const strip = this.mixerStrips.get(trackId);
-      if(strip) {
-          strip.buildSignalChain(trackData, this.masterFader, busInputs);
+      // Hedef artık master kanalının GİRİŞİDİR.
+      const masterInput = this.masterStrip?.inputGain;
+      if(strip && masterInput) {
+          strip.buildSignalChain(trackData, masterInput, busInputs);
       }
   }
 
+  // YENİ: Tüm kanalların sinyal zincirini yeniden kurar.
   rebuildAllSignalChains(mixerTrackData) {
       const busInputs = this.prepareBusInputs();
+      const masterInput = this.masterStrip?.inputGain;
+
+      if (!masterInput) {
+        console.error("Master girişi bulunamadığı için sinyal zincirleri kurulamadı.");
+        return;
+      }
+
       mixerTrackData.forEach(trackData => {
           const strip = this.mixerStrips.get(trackData.id);
           if (strip) {
-              strip.buildSignalChain(trackData, this.masterFader, busInputs);
+              strip.buildSignalChain(trackData, masterInput, busInputs);
           }
       });
   }
@@ -364,8 +388,6 @@ class AudioEngine {
     if (Tone.context.state !== 'running') Tone.context.resume();
     if (Tone.Transport.state === 'started') return;
     // YENİ: Çalmaya başlamadan önce "Kill Switch"i aç.
-    this.killSwitch.gain.cancelScheduledValues(Tone.now());
-    this.killSwitch.gain.rampTo(1, 0.01); // 10ms'de sesi aç
 
     this.reschedule();
     timeManager.start(this.playbackMode, this.activePatternId, useArrangementStore.getState());
@@ -376,8 +398,6 @@ class AudioEngine {
   
   resume() {
     if (Tone.Transport.state === 'paused') {
-      this.killSwitch.gain.cancelScheduledValues(Tone.now());
-      this.killSwitch.gain.rampTo(1, 0.01);
 
       Tone.Transport.start();
       timeManager.resume();
@@ -396,8 +416,6 @@ class AudioEngine {
     // --- YENİ: ANINDA SUSTURMA (PANİK BUTONU) ---
     // releaseAll yerine, tüm seslerin geçtiği ana vanayı kapatıyoruz.
     // 50ms'lik çok kısa bir fade out, "klik" seslerini engeller.
-    this.killSwitch.gain.cancelScheduledValues(Tone.now());
-    this.killSwitch.gain.rampTo(0, 0.05);
   }
 
   pause() {
