@@ -25,61 +25,57 @@ export class MixerStrip {
     if (this.isDisposed) return;
     this.inputGain.disconnect();
     this.clearChain();
-
-    // 1. Gelen sinyali ÖNCE metreye bağla.
-    this.inputGain.connect(this.inputMeter);
     
-    // HATA DÜZELTMESİ: Zincirin devamı, girişten değil, metreden başlamalı.
-    // Bu, sesin kaybolmasını önleyen kritik değişikliktir.
-    let currentNode = this.inputMeter;
+    const mainSignalChain = [this.inputGain, this.inputMeter];
 
-    // 2. Efektleri bu metrenin çıkışına zincirleme bağla.
-    if (trackData.insertEffects) {
-      trackData.insertEffects.forEach(effectData => {
-        if (!effectData.bypass) {
-          const effectNode = PluginNodeFactory.create(effectData);
-          if (effectNode) {
-            currentNode.connect(effectNode.input);
-            currentNode = effectNode.output;
-            this.effectNodes.set(effectData.id, effectNode);
-            this.setupEffectMetering(effectData.id, effectNode, effectData.type);
-          }
+    (trackData.insertEffects || []).forEach(fxData => {
+        if (!fxData.bypass) {
+            const fxNode = PluginNodeFactory.create(fxData);
+            if (fxNode) {
+                mainSignalChain.push(fxNode.input);
+                if (fxNode.input !== fxNode.output) { // Efektin giriş ve çıkışı ayrı ise ikisini de ekle
+                    mainSignalChain.push(fxNode.output);
+                }
+                this.effectNodes.set(fxData.id, fxNode);
+                this.setupEffectMetering(fxData.id, fxNode, fxData.type);
+            }
         }
-      });
-    }
+    });
+    
+    if (this.panner) mainSignalChain.push(this.panner);
+    mainSignalChain.push(this.fader);
 
-    // 3. Zincirin geri kalanını (Panner, Fader, Sends, Solo/Mute) kur.
-    if (this.panner) {
-      currentNode.connect(this.panner);
-      currentNode = this.panner;
-    }
-    currentNode.connect(this.fader);
+    Tone.connectSeries(...mainSignalChain);
+    
     this.setupSends(trackData.sends || [], this.fader, busInputs);
+
     this.fader.connect(this.soloGain);
     this.soloGain.connect(this.muteGain);
     this.muteGain.connect(this.outputMeter);
     this.outputMeter.connect(this.outputGain);
     
-    // 4. Son çıkışı doğru hedefe yönlendir.
     this.setupOutputRouting(trackData, masterInput, busInputs);
     
-    // 5. Metrelemeyi başlat.
     this.setupMetering();
+    console.log(`✅ [MixerStrip: ${this.id}] Sinyal zinciri başarıyla kuruldu.`);
   }
 
   setupOutputRouting(trackData, masterInput, busInputs) {
     this.outputGain.disconnect();
-    const customOutput = trackData.output;
+    
     if (this.type === 'master') {
-        return;
+      // Master kanalını doğrudan hedefe bağla
+      this.outputGain.toDestination();
+      return;
     }
+    
+    const customOutput = trackData.output;
     if (customOutput && busInputs.has(customOutput)) {
       this.outputGain.connect(busInputs.get(customOutput));
     } else {
       this.outputGain.connect(masterInput);
     }
   }
-
   
   // YENİ: Send'leri (gönderileri) oluşturan ve hedeflerine bağlayan fonksiyon
   setupSends(sendsData, sourceNode, busInputs) {
