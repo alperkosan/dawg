@@ -70,7 +70,7 @@ export const usePanelsStore = create((set, get) => ({
       set(state => ({ panels: { ...state.panels, [panelId]: { ...state.panels[panelId], isOpen: false, isMinimized: true, title } } }));
       get()._updateMinimizedPanels();
   },
-  
+
   handleRestore: (panelId) => {
       set(state => ({ panels: { ...state.panels, [panelId]: { ...state.panels[panelId], isOpen: true, isMinimized: false } } }));
       get().bringPanelToFront(panelId);
@@ -110,6 +110,36 @@ export const usePanelsStore = create((set, get) => ({
     } catch (error) {
       console.error(`Sample Editor açılamadı (${instrument.name}):`, error);
     }
+  },
+
+  openPianoRollForInstrument: (instrument) => {
+    if (!instrument) return;
+    const state = get();
+    const { panels, pianoRollInstrumentId } = state;
+    const panel = panels['piano-roll'];
+
+    // Eğer panel zaten aynı enstrüman için açıksa, sadece öne getir.
+    if (panel.isOpen && pianoRollInstrumentId === instrument.id) {
+      get().bringPanelToFront('piano-roll');
+      return;
+    }
+
+    // Değilse, paneli bu enstrüman için aç ve state'i güncelle.
+    const newPosition = getNextCascadePosition(panels);
+    set({
+      pianoRollInstrumentId: instrument.id, // Önce ID'yi ayarla
+      panels: {
+        ...panels,
+        'piano-roll': {
+          ...panel,
+          title: `Piano Roll: ${instrument.name}`, // Başlığı dinamik olarak ayarla
+          isOpen: true,
+          isMinimized: false,
+          position: newPosition,
+        },
+      },
+    });
+    get().bringPanelToFront('piano-roll');
   },
 
   // YENİ VE GELİŞMİŞ: Efekt pencerelerini açan/kapatan/öne getiren fonksiyon

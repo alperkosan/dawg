@@ -1,7 +1,8 @@
 /**
  * @file initialData.js
  * @description Projenin başlangıçtaki tüm enstrüman, nota ve mikser verilerini içerir.
- * YENİ: Pattern, MGK - "Till I Die" tarzı enerjik ve modern bir trap ritmiyle güncellenmiştir.
+ * YENİ: Pattern, modern "Bouncy Drill" ve "Detroit Trap" tarzlarından ilham alan
+ * enerjik ve ritmik bir yapıya sahiptir.
  */
 
 // Her notaya benzersiz bir ID ekleyen yardımcı fonksiyon.
@@ -10,177 +11,111 @@ export const defaultNote = (time, pitch = 'C4', velocity = 1.0, duration = '16n'
   time, pitch, velocity, duration
 });
 
-// --- MGK "TILL I DIE" TARZI ENERJİK TRAP PATTERN ---
-// Bu pattern, 8 barlık (128 adım) oldukça dinamik bir döngüden oluşur.
+// --- MODERN DRILL & DETROIT TRAP PATTERN (4 BAR - 64 STEPS @ 142BPM) ---
 const notes = {
   kick: [],
   snare: [],
+  counterSnare: [], // Detroit tarzı için ikinci snare
   hiHat: [],
   openHat: [],
   eight08: [],
-  synthLead: [], // Yeni synth enstrümanı için nota dizisi
+  piano: [], // Karanlık melodi için
 };
 
-// --- KICK ---
-// Daha fazla senkop ve beklenmedik vuruşlarla dolu, agresif bir yapı.
+// --- KICK (Aralıklı ve Bouncy) ---
+// Standart 4/4 yerine sincoplu bir yapı.
 const kickPattern = [
-  { time: 0, vel: 1.0 }, { time: 6, vel: 0.9 }, { time: 8, vel: 1.0 }, { time: 14, vel: 0.95 },
-  { time: 16, vel: 1.0 }, { time: 22, vel: 0.9 }, { time: 24, vel: 1.0 }, { time: 30, vel: 1.0 },
-  { time: 32, vel: 1.0 }, { time: 38, vel: 0.9 }, { time: 40, vel: 1.0 }, { time: 46, vel: 0.95 },
-  { time: 48, vel: 1.0 }, { time: 54, vel: 0.9 }, { time: 56, vel: 1.0 }, { time: 62, vel: 1.0 },
-  { time: 64, vel: 1.0 }, { time: 70, vel: 0.9 }, { time: 72, vel: 1.0 }, { time: 78, vel: 0.95 },
-  { time: 80, vel: 1.0 }, { time: 86, vel: 0.9 }, { time: 88, vel: 1.0 }, { time: 94, vel: 1.0 },
-  { time: 96, vel: 1.0 }, { time: 102, vel: 0.9 }, { time: 104, vel: 1.0 }, { time: 110, vel: 0.95 },
-  { time: 112, vel: 1.0 }, { time: 118, vel: 0.9 }, { time: 120, vel: 1.0 }, { time: 124, vel: 1.0 }, { time: 126, vel: 1.0 }
+  { time: 0, vel: 1.0 }, { time: 6, vel: 0.95 }, { time: 11, vel: 0.98 },
+  { time: 16, vel: 1.0 }, { time: 22, vel: 0.95 }, { time: 27, vel: 0.98 },
+  { time: 32, vel: 1.0 }, { time: 38, vel: 0.95 }, { time: 43, vel: 0.98 },
+  { time: 48, vel: 1.0 }, { time: 54, vel: 0.95 }, { time: 61, vel: 0.98 },
 ];
 kickPattern.forEach(k => notes.kick.push(defaultNote(k.time, 'C4', k.vel)));
 
-// --- SNARE ---
-// Klasik 2 ve 4 vuruşları, ancak son barda heyecan yaratan bir snare roll ile.
-const snarePattern = [
-  { time: 4 }, { time: 12 }, { time: 20 }, { time: 28 },
-  { time: 36 }, { time: 44 }, { time: 52 }, { time: 60 },
-  { time: 68 }, { time: 76 }, { time: 84 }, { time: 92 },
-  { time: 100 }, { time: 108 }, { time: 116 }, { time: 124 },
-];
-snarePattern.forEach(s => notes.snare.push(defaultNote(s.time, 'D4', 1.0)));
-// Döngü sonu snare roll
-notes.snare.push(defaultNote(125, 'D4', 0.6));
-notes.snare.push(defaultNote(126, 'D4', 0.7));
-notes.snare.push(defaultNote(126.5, 'D4', 0.8));
-notes.snare.push(defaultNote(127, 'D4', 0.9));
-notes.snare.push(defaultNote(127.5, 'D4', 1.0));
+// --- SNARE (Ana Vurgu) ---
+// Geleneksel 2. ve 4. vuruşlar, ritmin bel kemiği.
+const snarePattern = [8, 24, 40, 56];
+snarePattern.forEach(s => notes.snare.push(defaultNote(s, 'C4', 1.0)));
 
+// --- COUNTER SNARE (Detroit Vurgusu) ---
+// Ritmi zenginleştiren ara vuruşlar.
+const counterSnarePattern = [13, 29, 35, 45, 62];
+counterSnarePattern.forEach(cs => notes.counterSnare.push(defaultNote(cs, 'C4', 0.75)));
 
-// --- HI-HAT ---
-// Bu tarzın kalbi: Sürekli 16'lık notalar, velocity oynamaları ve hızlı triplet roll'lar.
-for (let i = 0; i < 128; i += 0.5) {
-    const stepInBar = i % 16;
-    let velocity = 0.7;
-    if (stepInBar % 4 === 0) velocity = 0.9;
-    if (stepInBar % 2 === 0) velocity = 0.8;
-    notes.hiHat.push(defaultNote(i, 'F#4', velocity));
+// --- HI-HAT (Drill Tarzı Kaygan Ritimler) ---
+// Yoğun triplet'ler ve velocity oynamaları içerir.
+for (let i = 0; i < 64; i += 2) { // Temel 8'lik ritim
+    notes.hiHat.push(defaultNote(i, 'F#4', 0.6));
 }
-// Özel roll'lar ekle
-for (let i = 0; i < 6; i++) notes.hiHat.push(defaultNote(30 + (i * (1/3)), 'F#4', 0.6 + i * 0.05));
-for (let i = 0; i < 4; i++) notes.hiHat.push(defaultNote(62 + (i * 0.5), 'F#4', 0.7 + i * 0.05));
-for (let i = 0; i < 6; i++) notes.hiHat.push(defaultNote(94 + (i * (1/3)), 'F#4', 0.6 + i * 0.05));
-for (let i = 0; i < 8; i++) notes.hiHat.push(defaultNote(126 + (i * 0.25), 'F#4', 0.5 + i * 0.06));
+// Triplet (üçleme) ve hızlı roll'lar
+const hatRolls = [
+    {t: 6.66, d: '16t'}, {t: 7.33, d: '16t'},
+    {t: 14, d: '16n'}, {t: 14.5, d: '16n'},
+    {t: 22.66, d: '16t'}, {t: 23.33, d: '16t'},
+    {t: 30, d: '16n'}, {t: 30.5, d: '16n'}, {t: 31, d: '16n'},
+    {t: 38.66, d: '16t'}, {t: 39.33, d: '16t'},
+    {t: 46, d: '16n'}, {t: 46.5, d: '16n'},
+    {t: 54.66, d: '16t'}, {t: 55.33, d: '16t'},
+    {t: 62, d: '32n'}, {t: 62.25, d: '32n'}, {t: 62.5, d: '32n'}, {t: 62.75, d: '32n'},
+];
+hatRolls.forEach(r => notes.hiHat.push(defaultNote(r.t, 'F#4', 0.8, r.d)));
 
 // --- OPEN HAT ---
-const openHatPattern = [2, 14, 18, 30, 34, 46, 50, 62, 66, 78, 82, 94, 98, 110, 114, 126];
-openHatPattern.forEach(oh => notes.openHat.push(defaultNote(oh, 'G#4', 0.7, '8n')));
+// Havanın devamlılığını sağlar.
+const openHatPattern = [4, 20, 36, 52];
+openHatPattern.forEach(oh => notes.openHat.push(defaultNote(oh, 'G#4', 0.7, '4n')));
 
-// --- 808 BASS ---
-// Karanlık, melodik ve kick ile senkronize bir bas hattı (G minör skalasında).
+// --- 808 BASS (C Minör Tonunda) ---
+// Sincoplu ve melodik bas hattı.
 const bassline = [
-  { time: 0, pitch: 'G3', duration: '2n' }, { time: 8, pitch: 'G3', duration: '4n' },
-  { time: 14, pitch: 'A#3', duration: '8n' }, { time: 16, pitch: 'C4', duration: '2n' },
-  { time: 24, pitch: 'C4', duration: '4n' }, { time: 30, pitch: 'D3', duration: '8n' },
-  { time: 32, pitch: 'D#4', duration: '2n.' }, { time: 48, pitch: 'F4', duration: '2n' },
-  { time: 62, pitch: 'G3', duration: '8n' }, { time: 64, pitch: 'D#4', duration: '2n' },
-  { time: 80, pitch: 'D3', duration: '2n' }, { time: 94, pitch: 'C4', duration: '8n' },
-  { time: 96, pitch: 'A#3', duration: '1n' }, { time: 112, pitch: 'G3', duration: '1n' },
-  { time: 124, pitch: 'A#3', duration: '16n' }, { time: 125, pitch: 'C4', duration: '16n' },
-  { time: 126, pitch: 'D3', duration: '16n' }, { time: 127, pitch: 'D#4', duration: '16n' }
+  { time: 0, pitch: 'C3', duration: '2n' }, { time: 6, pitch: 'C3', duration: '8n' },
+  { time: 11, pitch: 'D#4', duration: '4n' },
+  { time: 16, pitch: 'G4', duration: '2n' }, { time: 22, pitch: 'G4', duration: '8n' },
+  { time: 27, pitch: 'G#4', duration: '4n' },
+  { time: 32, pitch: 'C3', duration: '2n' }, { time: 38, pitch: 'C3', duration: '8n' },
+  { time: 43, pitch: 'D#4', duration: '4n' },
+  { time: 48, pitch: 'G4', duration: '2n' }, { time: 54, pitch: 'D4', duration: '4n' },
+  { time: 61, pitch: 'C3', duration: '8n' },
 ];
-bassline.forEach(b => {
-    notes.eight08.push({ ...defaultNote(b.time, b.pitch), duration: b.duration });
-});
+bassline.forEach(b => notes.eight08.push({ ...defaultNote(b.time, b.pitch), duration: b.duration }));
 
-// --- SYNTH LEAD MELODY ---
-// 808'i takip eden basit ama etkili bir melodi
-const synthMelody = [
-    { time: 0, pitch: 'G3', duration: '4n' }, { time: 8, pitch: 'G3', duration: '4n' },
-    { time: 16, pitch: 'C4', duration: '4n' }, { time: 24, pitch: 'C4', duration: '4n' },
-    { time: 32, pitch: 'D#4', duration: '2n' }, { time: 48, pitch: 'F4', duration: '2n' },
-    { time: 64, pitch: 'D#4', duration: '2n' }, { time: 80, pitch: 'D4', duration: '2n' },
-    { time: 96, pitch: 'A#4', duration: '1n' }, { time: 112, pitch: 'G3', duration: '1n' },
+// --- PIANO MELODY (C Minör Tonunda) ---
+// Karanlık, aralıklı ve akılda kalıcı melodi.
+const pianoMelody = [
+    {t: 0, p: 'G4'}, {t: 3, p: 'D#4'}, {t: 6, p: 'C5'},
+    {t: 16, p: 'G4'}, {t: 19, p: 'F4'}, {t: 22, p: 'D#5'},
+    {t: 32, p: 'C5'}, {t: 35, p: 'G#4'}, {t: 38, p: 'G4'},
+    {t: 48, p: 'G4'}, {t: 51, p: 'D#4'}, {t: 54, p: 'D5'}, {t: 60, p: 'C5'},
 ];
-synthMelody.forEach(s => {
-    notes.synthLead.push({ ...defaultNote(s.time, s.pitch), duration: s.duration });
-});
+pianoMelody.forEach(n => notes.piano.push(defaultNote(n.t, n.p, 0.8, '4n')));
 
-// --- ENSTRÜMANLARI OLUŞTUR ---
+// --- ENSTRÜMANLARI VE MİKSER KANALLARINI OLUŞTUR ---
 export const initialInstruments = [
-  // ... (diğer sample tabanlı enstrümanlar aynı kalıyor) ...
-  { 
-    id: 'inst-1', name: 'Kick', type: 'sample', url: '/audio/kick.wav', 
-    notes: notes.kick, mixerTrackId: 'track-1',
-    envelope: { attack: 0.001, decay: 0.2, sustain: 0.8, release: 0.3 },
-    precomputed: { normalize: false, reverse: false, reversePolarity: false, removeDCOffset: false },
-    isMuted: false, cutItself: false, pianoRoll: false,
-  },
-  { 
-    id: 'inst-3', name: 'Snare', type: 'sample', url: '/audio/snare.wav', 
-    notes: notes.snare, mixerTrackId: 'track-3',
-    envelope: { attack: 0.001, decay: 0.15, sustain: 0.1, release: 0.2 },
-    precomputed: { normalize: false, reverse: false, reversePolarity: false, removeDCOffset: false },
-    isMuted: false, cutItself: false, pianoRoll: false,
-  },
-  { 
-    id: 'inst-4', name: 'Hi-Hat', type: 'sample', url: '/audio/hihat.wav', 
-    notes: notes.hiHat, mixerTrackId: 'track-4',
-    envelope: { attack: 0.001, decay: 0.05, sustain: 0.0, release: 0.1 },
-    precomputed: { normalize: false, reverse: false, reversePolarity: false, removeDCOffset: false },
-    isMuted: false, cutItself: false, pianoRoll: false,
-  },
-  {
-    id: 'inst-6', name: 'Open Hat', type: 'sample', url: '/audio/openhat.wav',
-    notes: notes.openHat, mixerTrackId: 'track-6',
-    envelope: { attack: 0.01, decay: 0.4, sustain: 0.0, release: 0.3 },
-    precomputed: { normalize: false, reverse: false, reversePolarity: false, removeDCOffset: false },
-    isMuted: false, cutItself: true,
-  },
-  { 
-    id: 'inst-2', name: '808', type: 'sample', url: '/audio/808.wav', 
-    notes: notes.eight08, mixerTrackId: 'track-2',
-    envelope: { attack: 0.01, decay: 0.1, sustain: 0.9, release: 1.5 },
-    precomputed: { normalize: false, reverse: false, reversePolarity: false, removeDCOffset: false },
-    isMuted: false, cutItself: true,
-    pianoRoll: true,
-  },
-  // --- YENİ SYNTH ENSTRÜMANI ---
-  {
-    id: 'inst-5', name: 'Synth Lead', type: 'synth', 
-    notes: notes.synthLead, mixerTrackId: 'track-5',
-    // Synth'e özel parametreler
-    synthParams: {
-        oscillator: { type: 'sawtooth' },
-        envelope: { attack: 0.02, decay: 0.1, sustain: 0.3, release: 0.8 }
-    },
-    isMuted: true, pianoRoll: true,
-  }
+  { id: 'inst-1', name: 'Kick', type: 'sample', url: '/audio/kick.wav', notes: notes.kick, mixerTrackId: 'track-1', isMuted: false, cutItself: false },
+  { id: 'inst-2', name: 'Snare', type: 'sample', url: '/audio/snare.wav', notes: notes.snare, mixerTrackId: 'track-2', isMuted: false, cutItself: false },
+  { id: 'inst-3', name: 'Counter Snare', type: 'sample', url: '/audio/rim.wav', notes: notes.counterSnare, mixerTrackId: 'track-3', isMuted: false, cutItself: false },
+  { id: 'inst-4', name: 'Hi-Hat', type: 'sample', url: '/audio/hihat.wav', notes: notes.hiHat, mixerTrackId: 'track-4', isMuted: false, cutItself: false },
+  { id: 'inst-5', name: 'Open Hat', type: 'sample', url: '/audio/openhat.wav', notes: notes.openHat, mixerTrackId: 'track-5', isMuted: false, cutItself: true },
+  { id: 'inst-6', name: '808', type: 'sample', url: '/audio/808.wav', notes: notes.eight08, mixerTrackId: 'track-6', isMuted: false, cutItself: true, pianoRoll: true },
+  { id: 'inst-7', name: 'Piano', type: 'synth', notes: notes.piano, mixerTrackId: 'track-7', isMuted: false, synthParams: { oscillator: { type: 'fatsquare' }, envelope: { attack: 0.01, decay: 1.5, sustain: 0.1, release: 0.8 } }, pianoRoll: true }
 ];
-
-// --- MİKSER KANALLARINI OLUŞTUR ---
-const createEmptyTrack = (index) => ({
-  id: `track-${index}`, name: `Insert ${index}`, type: 'track',
-  volume: 0, pan: 0, insertEffects: [], sends: [],
-});
-
-const initialTracks = Array.from({ length: 10 }, (_, i) => createEmptyTrack(i + 1));
-
-const usedTracks = [
-  { id: 'track-1', name: 'Kick', volume: 0 },
-  { id: 'track-2', name: '808', volume: -2 },
-  { id: 'track-3', name: 'Snare', volume: -3.5, pan: 0.05, sends: [{ busId: 'bus-1', level: -18 }] },
-  { id: 'track-4', name: 'Hi-Hat', volume: -9, pan: -0.1 },
-  { id: 'track-5', name: 'Synth Lead', volume: -8, pan: 0, sends: [{ busId: 'bus-1', level: -12 }] }, // Synth için yeni kanal
-  { id: 'track-6', name: 'Open Hat', volume: -12, pan: 0.15, sends: [{ busId: 'bus-1', level: -15 }] },
-];
-
-usedTracks.forEach(usedTrack => {
-  const index = initialTracks.findIndex(t => t.id === usedTrack.id);
-  if (index !== -1) initialTracks[index] = { ...initialTracks[index], ...usedTrack };
-});
 
 export const initialMixerTracks = [
   { id: 'master', name: 'Master', type: 'master', volume: 0, pan: 0, insertEffects: [], sends: [] },
-  ...initialTracks,
+  // Enstrüman Kanalları
+  { id: 'track-1', name: 'Kick', type: 'track', volume: 0, pan: 0, insertEffects: [], sends: [] },
+  { id: 'track-2', name: 'Snare', type: 'track', volume: -3.5, pan: 0, insertEffects: [], sends: [{ busId: 'bus-1', level: -18 }] },
+  { id: 'track-3', name: 'Counter Snare', type: 'track', volume: -8, pan: 0.2, insertEffects: [], sends: [{ busId: 'bus-1', level: -15 }] },
+  { id: 'track-4', name: 'Hi-Hat', type: 'track', volume: -10, pan: -0.15, insertEffects: [], sends: [] },
+  { id: 'track-5', name: 'Open Hat', type: 'track', volume: -12, pan: 0, insertEffects: [], sends: [{ busId: 'bus-1', level: -20 }] },
+  { id: 'track-6', name: '808', type: 'track', volume: -2, pan: 0, insertEffects: [], sends: [] },
+  { id: 'track-7', name: 'Piano', type: 'track', volume: -9, pan: 0, insertEffects: [], sends: [{ busId: 'bus-1', level: -12 }] },
+  // Kullanılmayan boş kanallar
+  ...Array.from({ length: 3 }, (_, i) => ({ id: `track-${8 + i}`, name: `Insert ${8 + i}`, type: 'track', volume: 0, pan: 0, insertEffects: [], sends: [] })),
+  // Bus Kanalları
   { 
-    id: 'bus-1', name: 'Reverb', type: 'bus', volume: -12, pan: 0, 
-    insertEffects: [{ id: 'fx-bus-reverb', type: 'Reverb', settings: { decay: 1.8, preDelay: 0.01, wet: 1.0 }, bypass: false }], 
+    id: 'bus-1', name: 'Reverb Bus', type: 'bus', volume: -12, pan: 0, 
+    insertEffects: [{ id: 'fx-reverb-bus', type: 'Reverb', settings: { decay: 2.2, preDelay: 0.015, wet: 1.0 }, bypass: false }], 
     sends: [] 
   },
 ];
