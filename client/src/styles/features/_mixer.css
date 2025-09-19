@@ -1,0 +1,203 @@
+/* ==========================================================================
+   Mixer Stilleri (_mixer.css) - Gelişmiş Tasarım Entegrasyonu
+   ========================================================================== */
+
+.mixer-container {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  background-color: var(--color-background);
+  color: var(--color-text-primary);
+  overflow: hidden; /* Dışarı taşmaları engelle */
+}
+
+.mixer-channels-area {
+  flex-grow: 1;
+  position: relative;
+  overflow-x: auto;
+  overflow-y: hidden;
+  /* Scrollbar stilleri */
+  scrollbar-color: var(--color-surface-3) var(--color-surface-1);
+  scrollbar-width: thin;
+}
+
+.mixer-channels-area::-webkit-scrollbar {
+  height: 8px;
+}
+.mixer-channels-area::-webkit-scrollbar-track {
+  background-color: var(--color-surface-1);
+}
+.mixer-channels-area::-webkit-scrollbar-thumb {
+  background-color: var(--color-surface-3);
+  border-radius: 4px;
+}
+
+.mixer-channels-wrapper {
+  display: flex;
+  height: 100%;
+  padding: var(--spacing-4);
+  gap: var(--spacing-4);
+  min-width: fit-content;
+}
+
+.mixer-channel__separator {
+  border-left: 2px solid var(--color-surface-2);
+  height: 95%;
+  align-self: center;
+  margin: 0 var(--spacing-2);
+}
+
+/* --- MixerChannel --- */
+.mixer-channel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+  width: 96px; /* Genişliği biraz daralttık */
+  height: 100%;
+  background: linear-gradient(180deg, var(--color-surface-2) 0%, var(--color-background) 100%);
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius-lg);
+  padding: var(--spacing-3);
+  transition: all var(--transition-speed) ease;
+  position: relative;
+  z-index: 10;
+  box-shadow: var(--shadow-md);
+}
+
+.mixer-channel--active {
+  border-color: var(--color-accent-primary);
+  box-shadow: 0 0 20px 0 rgba(0, 163, 255, 0.3), var(--shadow-lg);
+  z-index: 20;
+}
+
+.mixer-channel--dimmed {
+  opacity: 0.6;
+  filter: saturate(0.7);
+}
+
+.mixer-channel__color-strip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 5px;
+  background-color: var(--track-color, var(--color-border));
+  border-top-left-radius: var(--border-radius-lg);
+  border-top-right-radius: var(--border-radius-lg);
+}
+
+.mixer-channel__fader-area {
+  flex-grow: 1;
+  display: flex;
+  gap: var(--spacing-2);
+  margin-top: var(--spacing-2);
+  min-height: 0;
+  align-items: center;
+  flex-direction: column;
+}
+
+.mixer-channel__name {
+  text-align: center;
+  padding: var(--spacing-2) var(--spacing-1);
+  background-color: var(--color-background);
+  border-radius: var(--border-radius-md);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  border: 1px solid var(--color-border-subtle);
+  width: 100%;
+  margin-top: auto; /* En alta iter */
+}
+
+.mixer-channel__controls {
+  display: flex;
+  justify-content: center;
+  gap: var(--spacing-2);
+}
+
+.mixer-channel__control-button {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--color-border);
+  background-color: var(--color-surface-2);
+  color: var(--color-text-secondary);
+  font-weight: 700;
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  transition: all var(--transition-speed);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mixer-channel__control-button:hover {
+  border-color: var(--color-text-primary);
+  color: var(--color-text-primary);
+}
+
+.mixer-channel__control-button--solo-active {
+  background-color: var(--color-primary);
+  color: var(--color-text-inverse);
+  border-color: var(--color-primary);
+}
+
+.mixer-channel__control-button--mute-active {
+  background-color: var(--color-accent-danger);
+  color: var(--color-text-inverse);
+  border-color: var(--color-accent-danger);
+}
+
+/* --- Insert Panel (YENİ EKLENDİ) --- */
+.mixer-insert-panel {
+  width: 280px;
+  flex-shrink: 0;
+  background-color: var(--color-surface-1);
+  border-left: 1px solid var(--color-background);
+  padding: var(--spacing-3);
+  display: flex;
+  flex-direction: column;
+}
+
+.mixer-insert-panel__header {
+  font-size: var(--font-size-md);
+  font-weight: 700;
+  color: var(--color-accent-secondary);
+  padding: var(--spacing-2);
+  margin-bottom: var(--spacing-3);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.mixer-insert-panel__list {
+  flex-grow: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  padding-right: var(--spacing-1);
+}
+
+.mixer-insert-panel__add-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-2);
+  padding: var(--spacing-2);
+  font-size: var(--font-size-sm);
+  background-color: rgba(0, 229, 181, 0.1);
+  color: var(--color-accent-secondary);
+  border-radius: var(--border-radius-md);
+  transition: background-color var(--transition-speed);
+  margin-top: var(--spacing-3);
+  flex-shrink: 0;
+}
+
+.mixer-insert-panel__add-btn:hover {
+  background-color: rgba(0, 229, 181, 0.2);
+}
+

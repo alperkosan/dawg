@@ -3,7 +3,7 @@
 import * as Tone from 'tone';
 import { pluginRegistry } from '../../../config/pluginConfig';
 // YENİ: setParamSmoothly fonksiyonunu import ediyoruz
-import { setParamSmoothly } from '../../utils/audioUtils';
+import { setParamSmoothly, createSidechainRouter } from '../../utils/audioUtils';
 
 export const PluginNodeFactory = {
   create(fxData) {
@@ -115,6 +115,40 @@ export const PluginNodeFactory = {
             input.dispose();
             output.dispose();
             bandNodes.forEach(b => b.node.dispose());
+        },
+      };
+    },
+
+    // GÜNCELLEME: Rehberin 2. Adımında belirtilen Sidechain Compressor builder'ı eklendi.
+    SidechainCompressor: (fxData, pluginDef) => {
+      const compressor = new Tone.Compressor(fxData.settings);
+      // Sidechain sinyalini almak için ayrı bir giriş noktası oluşturuyoruz.
+      const sidechainInput = new Tone.Gain();
+
+      // Sidechain sinyalini compressor'ın "tetikleyici" girişine bağlıyoruz.
+      sidechainInput.connect(compressor.sidechain);
+
+      return {
+        input: compressor,
+        output: compressor,
+        sidechainInput: sidechainInput, // Bu giriş, AudioEngine tarafından yönlendirilecek.
+        updateParam: (param, value) => {
+          try {
+            // Sidechain kaynağı değişirse, bu AudioEngine seviyesinde ele alınmalıdır.
+            if (param === 'sidechainSource') {
+              console.log(`Sidechain source changed to: ${value}. Re-routing needed.`);
+              return;
+            }
+            if (compressor[param] && typeof compressor[param].value !== 'undefined') {
+              setParamSmoothly(compressor[param], value);
+            } else {
+              compressor.set({ [param]: value });
+            }
+          } catch (e) { console.warn(`'${pluginDef.type}' için '${param}' güncellenemedi:`, e); }
+        },
+        dispose: () => {
+          compressor.dispose();
+          sidechainInput.dispose();
         },
       };
     },

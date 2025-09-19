@@ -1,0 +1,61 @@
+/* src/styles/features/piano_roll/components/PianoRoll.css */
+
+/* --- Ana Yapı ve Layout (NİHAİ VERSİYON) --- */
+.piano-roll {
+  width: 100%; height: 100%; display: flex; flex-direction: column;
+  background-color: var(--color-background); color: var(--color-text-primary);
+  user-select: none; contain: strict;
+}
+
+.piano-roll__main-content {
+  flex-grow: 1; min-height: 0;
+  overflow: auto; /* Kaydırmayı bu ana element yapar */
+  position: relative; /* İçindeki sticky elemanlar için gereklidir */
+  background-color: var(--color-background-deep, #0a0a0a);
+  scrollbar-color: var(--color-surface-3) var(--color-surface-1);
+  scrollbar-width: thin;
+}
+
+/* Tüm scroll edilebilir içeriği tutan sarmalayıcı */
+.piano-roll__content-wrapper {
+  position: relative; /* İçindeki tüm absolute/sticky elemanların referans noktası */
+  display: block;
+}
+
+/* Köşe elemanı */
+.piano-roll__corner {
+  position: sticky; top: 0; left: 0;
+  width: 80px; height: 32px;
+  background-color: var(--color-surface-1);
+  border-right: 1px solid var(--color-background);
+  border-bottom: 1px solid var(--color-background);
+  z-index: 40;
+}
+
+/* Cetvel ve Klavye için sarmalayıcılar */
+.timeline-ruler-wrapper { 
+  position: sticky; top: 0; z-index: 30; height: 32px; 
+}
+.piano-keyboard-wrapper { 
+  position: sticky; left: 0; z-index: 20; width: 80px; 
+}
+
+/* Ana grid alanı için sarmalayıcı */
+.piano-roll__grid-container {
+  position: absolute; top: 0; left: 0;
+}
+
+.velocity-lane-container {
+  position: absolute; left: 0;
+  /* top ve width JS tarafından ayarlanır */
+}
+
+/* --- Placeholder (Değişiklik yok) --- */
+.piano-roll-placeholder {
+  width: 100%; height: 100%; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  color: var(--color-text-secondary);
+}
+.piano-roll-placeholder__icon { opacity: 0.5; margin-bottom: var(--spacing-4); }
+.piano-roll-placeholder__title { font-size: var(--font-size-xl); font-weight: bold; }
+.piano-roll-placeholder__text { font-size: var(--font-size-md); }

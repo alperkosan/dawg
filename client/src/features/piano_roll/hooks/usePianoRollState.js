@@ -1,9 +1,10 @@
 import { useState, useCallback, useMemo } from 'react';
 import { SCALES } from '../utils/constants';
 import { createNote, updateNote, deleteNotes } from '../utils/noteUtils';
+import { PIANO_ROLL_TOOLS } from '../../../config/constants'; // GÜNCELLENDİ
 
 export const usePianoRollState = (pattern, onPatternChange) => {
-  const [tool, setTool] = useState('pencil');
+  const [tool, setTool] = useState(PIANO_ROLL_TOOLS.PENCIL);
   const [zoom, setZoom] = useState({ x: 1, y: 1 });
   const [selectedNotes, setSelectedNotes] = useState(new Set());
   const [scale, setScaleData] = useState({ root: 'C', type: 'Minor' });

@@ -1,0 +1,20 @@
+/* ==========================================================================
+   Bileşen: Zaman Cetveli (TimelineRuler.css)
+   ========================================================================== */
+
+.timeline-ruler {
+    position: relative; height: 100%;
+    background-color: var(--color-surface-1);
+    border-bottom: 1px solid var(--color-background);
+}
+.timeline-ruler__bar {
+    position: absolute; height: 100%;
+    border-left: 1px solid var(--color-border);
+}
+.timeline-ruler__label {
+    position: absolute; top: 50%;
+    transform: translateY(-50%);
+    left: var(--spacing-1);
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+}

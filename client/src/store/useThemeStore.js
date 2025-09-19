@@ -7,43 +7,53 @@ const createTheme = (name, colors, styles) => ({
   id: uuidv4(),
   name,
   colors: {
-    primary: colors.primary || '#0ea5e9',
-    background: colors.background || '#111827',
-    surface: colors.surface || '#1f2937',
-    surface2: colors.surface2 || '#374151', // Ek yüzey rengi
-    text: colors.text || '#d1d5db',
-    muted: colors.muted || '#6b7280',
-    accent: colors.accent || '#f59e0b',
-    // YENİ: Kenarlık rengi artık varsayılan olarak tanımlı
-    border: colors.border || '#374151', 
+    // Varsayılan renkler
+    backgroundDeep: colors.backgroundDeep || '#121212',
+    background: colors.background || '#1A1A1A',
+    surface: colors.surface || '#242424',
+    surfaceRaised: colors.surfaceRaised || '#2C2C2C',
+    border: colors.border || '#3A3A3A',
+    borderSubtle: colors.borderSubtle || '#2A2A2A',
+    primary: colors.primary || '#FFD700',
+    accent: colors.accent || '#FF00FF',
+    text: colors.text || '#E0E0E0',
+    textMuted: colors.textMuted || '#888888',
+    textHeading: colors.textHeading || '#FFFFFF',
     ...colors,
   },
   styles: {
-    '--border-radius': styles?.borderRadius || '0.5rem',
-    '--padding-container': styles?.paddingContainer || '1rem',
-    '--padding-controls': styles?.paddingControls || '0.5rem',
-    '--gap-container': styles?.gapContainer || '1rem',
-    '--gap-controls': styles?.gapControls || '0.5rem', 
-    '--font-size-header': styles?.fontSizeHeader || '1.125rem',
-    '--font-size-subheader': styles?.fontSizeSubheader || '1rem',
-    '--font-size-body': styles?.fontSizeBody || '0.875rem',
-    '--font-size-label': styles?.fontSizeLabel || '0.75rem',
+    '--font-body': styles?.fontBody || "'Inter', sans-serif",
+    '--font-display': styles?.fontDisplay || "'Roboto Mono', monospace",
+    '--spacing-xs': styles?.spacingXs || '4px',
+    '--spacing-sm': styles?.spacingSm || '8px',
+    '--spacing-md': styles?.spacingMd || '16px',
+    '--spacing-lg': styles?.spacingLg || '24px',
+    '--spacing-xl': styles?.spacingXl || '32px',
+    '--border-radius': styles?.borderRadius || '4px',
+    '--transition-fast': styles?.transitionFast || '150ms ease-out',
+    '--transition-slow': styles?.transitionSlow || '300ms ease-out',
     ...styles,
   }
 });
 
+// Artık varsayılan tema "Ghetto Star"
 const defaultThemes = [
-  createTheme('Dark Cyan (Varsayılan)', 
-    { primary: '#0ea5e9', accent: '#f59e0b', border: '#374151' },
-    { '--border-radius': '0.5rem' }
+  createTheme('Ghetto Star', 
+    { 
+      primary: '#FFD700', // Altın Sarısı
+      accent: '#FF00FF', // Macenta
+      backgroundDeep: '#121212',
+      surface: '#242424',
+      border: '#3A3A3A'
+    },
+    { 
+      '--border-radius': '4px' 
+    }
   ),
-  createTheme('Synthwave', 
-    { primary: '#f43f5e', background: '#1e1b4b', surface: '#312e81', text: '#f5d0fe', accent: '#fbbf24', border: '#4f46e5' },
-    { '--border-radius': '0.25rem' }
-  ),
-  createTheme('Monochrome', 
-    { primary: '#ffffff', background: '#000000', surface: '#1f1f1f', text: '#e3e3e3', accent: '#ffffff', border: '#444444' },
-    { '--border-radius': '0rem' }
+  // Gelecekte eklenebilecek başka bir tema örneği
+  createTheme('8-Bit Night', 
+    { primary: '#4ade80', accent: '#fb923c', background: '#1e293b', surface: '#334155', text: '#e2e8f0', border: '#475569' },
+    { '--border-radius': '0px' }
   ),
 ];
 
@@ -65,7 +75,7 @@ export const useThemeStore = create(
           if (theme.id === themeId) {
             return {
               ...theme,
-              ...updatedProperties,
+              name: updatedProperties.name || theme.name,
               colors: { ...theme.colors, ...updatedProperties.colors },
               styles: { ...theme.styles, ...updatedProperties.styles },
             };
@@ -80,6 +90,6 @@ export const useThemeStore = create(
         set(state => ({ themes: state.themes.filter(theme => theme.id !== themeId) }));
       },
     }),
-    { name: 'daw-full-theme-manager' }
+    { name: 'soundforge-theme-manager' }
   )
 );

@@ -1,51 +1,44 @@
 import React from 'react';
-import './StepGrid.css';
+// CSS import'u kaldırıldı
 
-const StepButton = ({ isActive, onClick, theme }) => {
-  const style = {
-    '--active-color': theme.colors.primary,
-    '--active-shadow': theme.colors.primary + '80',
-    '--hover-bg': theme.colors.primary + '40',
-  };
-
+const StepButton = ({ isActive, onClick }) => {
+  const buttonClasses = `step-grid__button ${isActive ? 'step-grid__button--active' : ''}`;
   return (
-    <div
-      className={`step-button-v2 ${isActive ? 'active' : ''}`}
-      style={style}
-      onClick={onClick}
-    />
+    <div className={buttonClasses} onClick={onClick}>
+      <div className="step-grid__button-indicator" />
+    </div>
   );
 };
 
-export default function StepGrid({ instrumentId, notes, totalSteps, onNoteToggle, theme }) {
+export default function StepGrid({ instrumentId, notes, totalSteps, onNoteToggle }) {
   const noteSet = new Set(notes.map(n => n.time));
+  const STEP_WIDTH = 16;
 
-  // Arka plan beat/bar çizgilerini oluştur
+  // Arka plan beat/bar çizgilerini JSX ile oluştur
   const backgroundGrid = React.useMemo(() => {
     const bars = [];
     for (let i = 0; i < totalSteps; i += 16) {
       bars.push(
-        <div key={`bar-${i}`} className="bar-background" style={{ left: `${i * 16}px` }}>
-          <div className="beat-background" style={{ backgroundColor: theme.colors.surface2 }} />
-          <div className="beat-background" />
-          <div className="beat-background" style={{ backgroundColor: theme.colors.surface2 }} />
-          <div className="beat-background" />
+        <div key={`bar-${i}`} className="step-grid__bar-bg" style={{ width: `${16 * STEP_WIDTH}px` }}>
+          <div className="step-grid__beat-bg" style={{ width: `${4 * STEP_WIDTH}px` }} />
+          <div className="step-grid__beat-bg" style={{ width: `${4 * STEP_WIDTH}px` }} />
+          <div className="step-grid__beat-bg" style={{ width: `${4 * STEP_WIDTH}px` }} />
+          <div className="step-grid__beat-bg" style={{ width: `${4 * STEP_WIDTH}px` }} />
         </div>
       );
     }
     return bars;
-  }, [totalSteps, theme.colors.surface2]);
+  }, [totalSteps]);
 
   return (
-    <div className="step-grid-v2" style={{ backgroundColor: theme.colors.background }}>
-      <div className="background-grid-container">{backgroundGrid}</div>
-      <div className="step-buttons-container">
+    <div className="step-grid">
+      <div className="step-grid__background">{backgroundGrid}</div>
+      <div className="step-grid__buttons">
         {Array.from({ length: totalSteps }, (_, i) => (
           <StepButton
             key={i}
             isActive={noteSet.has(i)}
             onClick={() => onNoteToggle(instrumentId, i)}
-            theme={theme}
           />
         ))}
       </div>

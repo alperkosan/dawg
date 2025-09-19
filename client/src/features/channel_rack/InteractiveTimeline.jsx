@@ -1,13 +1,11 @@
 import React, { useState, useRef, useCallback } from 'react';
-import { MapPin, Clock } from 'lucide-react';
-import './InteractiveTimeline.css';
+import { Clock } from 'lucide-react';
+// CSS import'u artık gerekli değil, stiller main.css üzerinden geliyor.
 
-const InteractiveTimeline = ({ 
-  loopLength, 
-  currentPosition = 0, 
-  onJumpToBar, 
+const InteractiveTimeline = ({
+  loopLength,
+  currentPosition = 0,
   onJumpToPosition,
-  theme 
 }) => {
   const [hoverInfo, setHoverInfo] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -39,18 +37,14 @@ const InteractiveTimeline = ({
     setHoverInfo(null);
     setIsDragging(false);
   };
-  
+
   const handleMouseDown = (e) => {
     if (e.button !== 0) return;
     setIsDragging(true);
-    const rect = timelineRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const step = Math.floor(x / STEP_WIDTH);
-    if (step >= 0 && step < loopLength) {
-      onJumpToPosition?.(step);
-    }
+    // MouseMove'u tetikleyerek anında atlama sağla
+    handleMouseMove(e);
   };
-  
+
   const handleMouseUp = () => {
     setIsDragging(false);
   };
@@ -60,13 +54,13 @@ const InteractiveTimeline = ({
     for (let i = 0; i < totalBars; i++) {
       const barX = i * (STEP_WIDTH * 16);
       markers.push(
-        <div key={`bar-${i}`} className="timeline-marker bar-line" style={{ left: `${barX}px`, backgroundColor: theme.colors.muted }}>
-          <span className="timeline-label" style={{ color: theme.colors.text }}>{i + 1}</span>
+        <div key={`bar-${i}`} className="timeline__marker timeline__marker--bar" style={{ left: `${barX}px` }}>
+          <span className="timeline__marker-label">{i + 1}</span>
         </div>
       );
       for (let j = 1; j < 4; j++) {
         const beatX = barX + (j * STEP_WIDTH * 4);
-        markers.push(<div key={`beat-${i}-${j}`} className="timeline-marker beat-line" style={{ left: `${beatX}px`, backgroundColor: theme.colors.border }} />);
+        markers.push(<div key={`beat-${i}-${j}`} className="timeline__marker timeline__marker--beat" style={{ left: `${beatX}px` }} />);
       }
     }
     return markers;
@@ -77,11 +71,11 @@ const InteractiveTimeline = ({
   const currentTick = Math.floor(currentPosition % 4) + 1;
 
   return (
-    <div className="interactive-timeline-container-v2">
-      <div className="timeline-header-v2" style={{ color: theme.colors.text }}>
-        <div className="position-display-v2">
+    <div className="timeline">
+      <div className="timeline__header">
+        <div className="timeline__position-display">
           {hoverInfo ? (
-            <span className="hover-position-v2" style={{ color: theme.colors.primary }}>
+            <span className="timeline__position-display--hover">
               <Clock size={14} /> {hoverInfo.position}
             </span>
           ) : (
@@ -91,8 +85,7 @@ const InteractiveTimeline = ({
       </div>
       <div
         ref={timelineRef}
-        className="interactive-timeline-v2"
-        style={{ backgroundColor: theme.colors.background }}
+        className="timeline__track"
         onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}
         onMouseDown={handleMouseDown}
@@ -100,7 +93,7 @@ const InteractiveTimeline = ({
       >
         {renderMarkers()}
         {hoverInfo && (
-          <div className="timeline-hover-indicator-v2" style={{ left: `${hoverInfo.x}px`, borderColor: theme.colors.primary }} />
+          <div className="timeline__hover-indicator" style={{ left: `${hoverInfo.x}px` }} />
         )}
       </div>
     </div>

@@ -1,0 +1,36 @@
+/* ==========================================================================
+   Ana Stil Dosyası (main.css) - ZENITH
+   Tüm stil parçalarını bir araya getirir.
+   ========================================================================== */
+
+/* 1. Temel ve Global Stiller */
+@import url('./base/_variables.css');
+@import url('./base/_base.css');
+
+/* 2. Layout Stilleri */
+@import url('./layout/_layout.css');
+
+/* 3. Bileşen Stilleri */
+@import url('./components/_window.css');
+@import url('./components/_volumeKnob.css');
+@import url('./components/_fileTreeNode.css');
+
+/* 4. Özellik Stilleri */
+@import url('./features/_startupScreen.css');
+@import url('./features/_workspace.css');
+@import url('./features/_taskbar.css');
+@import url('./features/_channelRack.css');
+@import url('./features/_instrumentRow.css');
+@import url('./features/_interactiveTimeline.css');
+@import url('./features/_stepGrid.css');
+@import url('./features/_pianoRollMiniView.css');
+@import url('./features/_mixer.css');
+
+/* --- YENİ: BİLEŞEN BAZLI PIANO ROLL STİLLERİ --- */
+@import url('./features/piano_roll/components/PianoRoll.css');
+@import url('./features/piano_roll/components/PianoRollToolbar.css');
+@import url('./features/piano_roll/components/PianoKeyboard.css');
+@import url('./features/piano_roll/components/TimelineRuler.css');
+@import url('./features/piano_roll/components/PianoRollGrid.css');
+@import url('./features/piano_roll/components/EnhancedVelocityLane.css');
+

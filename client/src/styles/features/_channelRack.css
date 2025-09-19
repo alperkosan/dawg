@@ -1,0 +1,119 @@
+/* ==========================================================================
+   Channel Rack Stilleri (_channelRack.css) - Hizalama Düzeltmeleri
+   ========================================================================== */
+
+.channel-rack {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column; /* Dikeyde sırala */
+  background-color: var(--color-surface-1);
+}
+
+.channel-rack__scroll-container {
+  flex-grow: 1; /* Geriye kalan tüm alanı kapla */
+  overflow: auto; /* Gerektiğinde kaydırma çubuklarını göster */
+  position: relative; /* İçindeki absolut pozisyonlu elemanlar için */
+}
+
+.channel-rack__content {
+  position: relative;
+  width: fit-content; /* İçeriğin genişliğine göre ayarla */
+  min-width: 100%; /* Kaydırma çubuğunun her zaman görünmesini sağla */
+}
+
+/* Sol taraftaki enstrüman listesi sütunu */
+.channel-rack__instruments {
+  position: sticky; /* Yatay kaydırmada sabit kal */
+  left: 0;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  width: 320px; /* Sabit genişlik */
+  background-color: var(--color-surface-1);
+}
+
+/* Sağ taraftaki tüm grid alanı (timeline + notalar) */
+.channel-rack__grid-area {
+  position: absolute;
+  top: 0;
+  left: 320px; /* Enstrüman sütununun bittiği yerden başla */
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Grid alanının içindeki yapışkan zaman cetveli */
+.channel-rack__timeline {
+  position: sticky; /* Dikey kaydırmada sabit kal */
+  top: 0;
+  height: 48px;
+  z-index: 20;
+  background-color: var(--color-surface-1);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.channel-rack__rows {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.channel-rack__grid-row {
+  width: 100%;
+  height: 64px; /* InstrumentRow ile aynı yükseklik */
+  position: relative;
+  border-bottom: 1px solid var(--color-border);
+}
+
+
+/* Sol üstteki "Pattern:..." başlığı */
+.channel-rack__header {
+  display: flex;
+  align-items: center;
+  padding: 0 var(--spacing-4);
+  font-weight: 600;
+  font-size: var(--font-size-md);
+  height: 48px; /* Timeline ile aynı yükseklik */
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.channel-rack__playhead {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 2px;
+  background-color: var(--color-accent-secondary);
+  box-shadow: 0 0 8px var(--color-accent-secondary);
+  z-index: 25;
+  pointer-events: none;
+  /* transform, JS tarafından güncellenecek */
+}
+
+.channel-rack__add-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-2);
+  cursor: pointer;
+  transition: background-color var(--transition-speed);
+  color: var(--color-text-secondary);
+  height: 64px;
+  border-top: 1px solid var(--color-border);
+}
+.channel-rack__add-row:hover {
+  background-color: var(--color-surface-2);
+  color: var(--color-accent-primary);
+}
+.channel-rack__add-row-icon {
+  transition: transform 0.2s ease;
+}
+.channel-rack__add-row:hover .channel-rack__add-row-icon {
+  transform: rotate(90deg);
+}
+.channel-rack__add-row-text {
+  font-weight: 500;
+}
+

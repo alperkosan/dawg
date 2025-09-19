@@ -4,17 +4,18 @@ import { useMixerStore } from '../../store/useMixerStore';
 import { usePanelsStore } from '../../store/usePanelsStore';
 import TabButton from '../../ui/TabButton';
 import './SampleEditor.css';
+import { INSTRUMENT_TYPES } from '../../config/constants'; // GÜNCELLENDİ
 
 // --- YENİ VE OPTİMİZE EDİLMİŞ SEKME YAPISI ---
 // Artık her sekme kendi özel görevine odaklanıyor.
 const TABS_CONFIG = [
   // "Genesis" ana ses tasarım modülümüz
-  { id: 'genesis', label: 'Genesis', icon: Sparkles, component: lazy(() => import('./components/GenesisTab')), supportedTypes: ['sample', 'synth'] },
+  { id: 'genesis', label: 'Genesis', icon: Sparkles, component: lazy(() => import('./components/GenesisTab')), supportedTypes: [INSTRUMENT_TYPES.SAMPLE, INSTRUMENT_TYPES.SYNTH] },
   // Diğer uzmanlaşmış sekmeler
-  { id: 'ai-analysis', label: 'AI Analysis', icon: Bot, component: lazy(() => import('./components/AIAnalysisTab')), supportedTypes: ['sample'] },
-  { id: 'advanced', label: 'Advanced', icon: Settings, component: lazy(() => import('./components/AdvancedProcessingTab')), supportedTypes: ['sample'] },
+  { id: 'ai-analysis', label: 'AI Analysis', icon: Bot, component: lazy(() => import('./components/AIAnalysisTab')), supportedTypes: [INSTRUMENT_TYPES.SAMPLE] },
+  { id: 'advanced', label: 'Advanced', icon: Settings, component: lazy(() => import('./components/AdvancedProcessingTab')), supportedTypes: [INSTRUMENT_TYPES.SAMPLE] },
   // Synth'ler için ayrı bir efekt sekmesi de düşünülebilir.
-  { id: 'effects', label: 'Effects', icon: SlidersHorizontal, component: lazy(() => import('./components/EnhancedEffectsTab')), supportedTypes: ['synth'] },
+  { id: 'effects', label: 'Effects', icon: SlidersHorizontal, component: lazy(() => import('./components/EnhancedEffectsTab')), supportedTypes: [INSTRUMENT_TYPES.SYNTH] },
 ];
 
 const InstrumentEditor = ({ instrument }) => {

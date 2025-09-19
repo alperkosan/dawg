@@ -1,98 +1,65 @@
-import React, { useMemo, useState, useRef } from 'react';
+import React, { useMemo, useState } from 'react';
 import MixerChannel from './MixerChannel';
 import { useMixerStore } from '../../store/useMixerStore';
 import { usePanelsStore } from '../../store/usePanelsStore';
 import { SlidersHorizontal, Plus, Trash2, Power, ArrowDownUp } from 'lucide-react';
 import { AddEffectMenu } from '../../ui/AddEffectMenu';
-import ChannelContextMenu from '../../components/ChannelContextMenu'; // Context Menu'yü import et
+import ChannelContextMenu from '../../components/ChannelContextMenu';
 
-// YENİ: Native HTML Drag-Drop API'si ile çalışan, sürükle-bırak özellikli Insert Paneli
+// InsertPanel bileşenini Mixer dosyasının içine taşıdım, çünkü sadece burada kullanılıyor.
 const InsertPanel = ({ activeTrack }) => {
     const { handleMixerEffectAdd, handleMixerEffectRemove, handleMixerEffectChange, reorderEffect } = useMixerStore.getState();
     const { togglePluginPanel } = usePanelsStore.getState();
     const [addEffectMenu, setAddEffectMenu] = useState(null);
-    const [dragOverIndex, setDragOverIndex] = useState(null);
-    const draggedItemIndex = useRef(null);
 
-    const onDragStart = (e, index) => {
-        draggedItemIndex.current = index;
-        e.dataTransfer.effectAllowed = 'move';
-    };
-    const onDragEnd = () => {
-        draggedItemIndex.current = null;
-        setDragOverIndex(null);
-    };
-    const onDrop = (dropIndex) => {
-        const sourceIndex = draggedItemIndex.current;
-        if (sourceIndex !== null && sourceIndex !== dropIndex) {
-            reorderEffect(activeTrack.id, sourceIndex, dropIndex);
-        }
-    };
-    
     if (!activeTrack) {
         return (
-            <aside className="w-64 bg-gray-800/50 p-4 flex flex-col items-center justify-center text-center text-gray-500 shrink-0">
-                <SlidersHorizontal size={32} className="mb-2"/>
-                <p className="text-sm">Select a channel to see its effects.</p>
+            <aside className="mixer-insert-panel">
+                <div className="flex flex-col items-center justify-center text-center text-gray-500 h-full">
+                    <SlidersHorizontal size={32} className="mb-2"/>
+                    <p className="text-sm">Select a channel to see its effects.</p>
+                </div>
             </aside>
         );
     }
     
     return (
-        <aside className="w-64 shrink-0 bg-gray-800/50 border-l-2 border-gray-700/50 p-2 flex flex-col">
-            <h3 className="text-sm font-bold text-cyan-400 p-2 mb-2 truncate shrink-0">
+        <aside className="mixer-insert-panel">
+            <h3 className="mixer-insert-panel__header truncate">
                 Inserts: <span className="text-white font-normal">{activeTrack.name}</span>
             </h3>
-            <div className="flex-grow min-h-0 overflow-y-auto space-y-1 pr-1" onDragOver={(e) => e.preventDefault()}>
+            <div className="mixer-insert-panel__list">
                 {activeTrack.insertEffects.map((effect, index) => (
-                    <div key={effect.id}>
-                        {dragOverIndex === index && <div className="h-1 bg-blue-500 rounded-full my-1" />}
-                        <div
-                            draggable
-                            onDragStart={(e) => onDragStart(e, index)}
-                            onDragEnter={() => setDragOverIndex(index)}
-                            onDragEnd={onDragEnd}
-                            onDrop={() => onDrop(index)}
-                            onClick={() => togglePluginPanel(effect, activeTrack)}
-                            className={`group flex items-center justify-between p-2 rounded-md cursor-grab active:cursor-grabbing transition-all
-                                ${effect.bypass ? 'bg-gray-700/50' : 'bg-gray-700 hover:bg-gray-600/80'}`
-                            }
-                            title={`Slot ${index + 1}: ${effect.type}\n(Click to open, Drag to reorder)`}
-                        >
-                            <div className="flex items-center gap-2">
-                                <button onClick={(e) => { e.stopPropagation(); handleMixerEffectChange(activeTrack.id, effect.id, 'bypass', !effect.bypass);}} title={effect.bypass ? 'Enable' : 'Bypass'}>
-                                    <Power size={14} className={effect.bypass ? 'text-gray-500' : 'text-green-400'}/>
-                                </button>
-                                <span className={`text-xs font-semibold truncate ${effect.bypass ? 'text-gray-500' : 'text-gray-200'}`}>
-                                    {index + 1}. {effect.type}
-                                </span>
-                            </div>
-                            <div className="flex items-center">
-                                <button onClick={(e) => { e.stopPropagation(); handleMixerEffectRemove(activeTrack.id, effect.id);}} className="text-gray-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity" title="Remove effect">
-                                    <Trash2 size={14}/>
-                                </button>
-                                <ArrowDownUp size={12} className="text-gray-500 ml-1 opacity-20 group-hover:opacity-50" />
-                            </div>
+                    <div
+                        key={effect.id}
+                        onClick={() => togglePluginPanel(effect, activeTrack)}
+                        className={`group flex items-center justify-between p-2 rounded-md cursor-pointer transition-all ${effect.bypass ? 'bg-gray-700/50' : 'bg-gray-700 hover:bg-gray-600/80'}`}
+                        title={`Slot ${index + 1}: ${effect.type}`}
+                    >
+                        <div className="flex items-center gap-2 min-w-0">
+                            <button onClick={(e) => { e.stopPropagation(); handleMixerEffectChange(activeTrack.id, effect.id, 'bypass', !effect.bypass);}} title={effect.bypass ? 'Enable' : 'Bypass'}>
+                                <Power size={14} className={effect.bypass ? 'text-gray-500' : 'text-green-400'}/>
+                            </button>
+                            <span className={`text-sm font-semibold truncate ${effect.bypass ? 'text-gray-500 line-through' : 'text-gray-200'}`}>
+                                {effect.type}
+                            </span>
                         </div>
+                        <button onClick={(e) => { e.stopPropagation(); handleMixerEffectRemove(activeTrack.id, effect.id);}} className="text-gray-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity" title="Remove effect">
+                            <Trash2 size={14}/>
+                        </button>
                     </div>
                 ))}
-                <div onDragEnter={() => setDragOverIndex(activeTrack.insertEffects.length)} onDrop={() => onDrop(activeTrack.insertEffects.length)} className="h-full"/>
-                {dragOverIndex === activeTrack.insertEffects.length && <div className="h-1 bg-blue-500 rounded-full my-1" />}
             </div>
-            <div className="mt-2 shrink-0">
-                <button onClick={(e) => setAddEffectMenu({x: e.clientX, y: e.clientY})} className="w-full flex items-center justify-center gap-2 p-2 text-xs bg-cyan-600/20 text-cyan-300 hover:bg-cyan-600/40 rounded transition-colors">
-                    <Plus size={14}/> Add Effect
-                </button>
-                {addEffectMenu && <AddEffectMenu x={addEffectMenu.x} y={addEffectMenu.y} onClose={()=>setAddEffectMenu(null)} onSelect={(type) => { handleMixerEffectAdd(activeTrack.id, type); setAddEffectMenu(null); }}/>}
-            </div>
+            <button onClick={(e) => setAddEffectMenu({x: e.clientX, y: e.clientY})} className="mixer-insert-panel__add-btn">
+                <Plus size={14}/> Add Effect
+            </button>
+            {addEffectMenu && <AddEffectMenu x={addEffectMenu.x} y={addEffectMenu.y} onClose={()=>setAddEffectMenu(null)} onSelect={(type) => { handleMixerEffectAdd(activeTrack.id, type); setAddEffectMenu(null); }}/>}
         </aside>
     );
 };
 
 function Mixer() {
-  const mixerTracks = useMixerStore(state => state.mixerTracks);
-  const activeChannelId = useMixerStore(state => state.activeChannelId);
-  const { setTrackColor, setTrackName, setTrackOutput, resetTrack } = useMixerStore.getState();
+  const { mixerTracks, activeChannelId, setTrackColor, setTrackName, setTrackOutput, resetTrack } = useMixerStore();
   const [contextMenu, setContextMenu] = useState(null);
 
   const activeTrack = useMemo(() => mixerTracks.find(t => t.id === activeChannelId), [mixerTracks, activeChannelId]);
@@ -140,13 +107,15 @@ function Mixer() {
   };
 
   return (
-    <div className="w-full h-full flex bg-gray-900 text-white" onClick={() => setContextMenu(null)}>
-      <div className="flex-grow flex relative overflow-x-auto overflow-y-hidden">
-        <div className="flex h-full p-4 gap-2" style={{ minWidth: 'fit-content' }}>
+    <div className="mixer-container" onClick={() => setContextMenu(null)}>
+      <div className="mixer-channels-area">
+        <div className="mixer-channels-wrapper">
           {masterTracks.map(track => <MixerChannel key={track.id} trackId={track.id} onContextMenu={handleContextMenu}/>)}
-          {busChannels.length > 0 && <div className="border-l-2 border-gray-700/50 h-full mx-2" />}
+          
+          {busChannels.length > 0 && <div className="mixer-channel__separator" />}
           {busChannels.map(track => <MixerChannel key={track.id} trackId={track.id} onContextMenu={handleContextMenu}/>)}
-          {trackChannels.length > 0 && <div className="border-l-2 border-gray-700/50 h-full mx-2" />}
+          
+          {trackChannels.length > 0 && <div className="mixer-channel__separator" />}
           {trackChannels.map(track => <MixerChannel key={track.id} trackId={track.id} onContextMenu={handleContextMenu}/>)}
         </div>
       </div>
@@ -157,4 +126,3 @@ function Mixer() {
 }
 
 export default Mixer;
-

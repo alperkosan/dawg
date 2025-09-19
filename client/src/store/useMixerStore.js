@@ -110,36 +110,50 @@ export const useMixerStore = create((set, get) => ({
   
   // Efekt parametrelerini günceller.
   handleMixerEffectChange: (trackId, effectId, paramOrSettings, value) => {
+    let newTrackState; // YENİ: Güncellenmiş track state'ini tutmak için
+    let needsRebuild = false; // YENİ: Sinyal zincirinin yeniden kurulması gerekip gerekmediğini belirtir
+
     set(state => ({
       mixerTracks: state.mixerTracks.map(track => {
         if (track.id === trackId) {
-          return {
+          const newTrack = {
             ...track,
             insertEffects: track.insertEffects.map(fx => {
               if (fx.id === effectId) {
-                const newSettings = typeof paramOrSettings === 'string'
-                  ? { ...fx.settings, [paramOrSettings]: value }
-                  : { ...fx.settings, ...paramOrSettings };
-                  
-                // Bypass durumu direkt efektin ana objesinde tutulur
-                if (paramOrSettings === 'bypass') {
-                    return { ...fx, bypass: value };
+                // Eğer gelen bir string ise (tek parametre)
+                if (typeof paramOrSettings === 'string') {
+                    // Bypass veya sidechainSource değişirse sinyal zinciri yeniden kurulmalı
+                    if (paramOrSettings === 'bypass' || paramOrSettings === 'sidechainSource') {
+                        needsRebuild = true;
+                    }
+                    const newSettings = { ...fx.settings, [paramOrSettings]: value };
+                    return paramOrSettings === 'bypass' ? { ...fx, bypass: value } : { ...fx, settings: newSettings };
                 }
-                return { ...fx, settings: newSettings };
+                // Eğer gelen bir obje ise (tüm ayarlar)
+                else {
+                    // Sidechain kaynağı değişiyorsa, zinciri yeniden kur
+                    if (fx.settings.sidechainSource !== paramOrSettings.sidechainSource) {
+                        needsRebuild = true;
+                    }
+                    return { ...fx, settings: { ...fx.settings, ...paramOrSettings } };
+                }
               }
               return fx;
             })
           };
+          newTrackState = newTrack; // Güncellenmiş state'i yakala
+          return newTrack;
         }
         return track;
       })
     }));
     
     // SES MOTORUNA KOMUT GÖNDER
-    if (paramOrSettings === 'bypass') {
-        const trackData = get().mixerTracks.find(t => t.id === trackId);
-        AudioContextService?.rebuildSignalChain(trackId, trackData); // Bypass için zinciri yeniden kur
+    if (needsRebuild) {
+        // Bypass veya Sidechain kaynağı değiştiyse, tüm sinyal zincirini yeniden kur
+        AudioContextService?.rebuildSignalChain(trackId, newTrackState); 
     } else {
+        // Diğer parametreler için anlık güncelleme yeterli
         AudioContextService?.updateEffectParam(trackId, effectId, paramOrSettings, value);
     }
   },

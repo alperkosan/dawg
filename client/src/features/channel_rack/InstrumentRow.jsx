@@ -1,20 +1,15 @@
 import React, { useState } from 'react';
 import { useInstrumentsStore } from '../../store/useInstrumentsStore';
 import { useMixerStore } from '../../store/useMixerStore';
-import { useThemeStore } from '../../store/useThemeStore';
+import { usePanelsStore } from '../../store/usePanelsStore'; // Panelleri açmak için eklendi
 import ChannelContextMenu from '../../components/ChannelContextMenu';
-import { Music, Piano, Edit3, Volume2, VolumeX, Scissors, Replace, Trash2 } from 'lucide-react';
+import { Music, Piano, Volume2, VolumeX, SlidersHorizontal } from 'lucide-react';
 import VolumeKnob from '../../ui/VolumeKnob';
-import './InstrumentRow.css'; // Yeni ve gelişmiş CSS dosyasını import et
-import { InstrumentService } from '../../lib/services/InstrumentService';
-import { AudioContextService } from '../../lib/services/AudioContextService';
 
-const InstrumentRow = ({ instrument, onPianoRollClick, onEditClick, audioEngineRef }) => {
-  const engine = AudioContextService.getAudioEngine(); // Motoru doğrudan al
-
-  const { updateInstrument, deleteInstrument, assignToNewTrack } = useInstrumentsStore.getState();
-  const { setTrackName } = useMixerStore.getState();
-  const activeTheme = useThemeStore(state => state.getActiveTheme());
+const InstrumentRow = ({ instrument, onPianoRollClick, onEditClick }) => {
+  const { updateInstrument } = useInstrumentsStore.getState();
+  const { setTrackName, handleMixerParamChange, setActiveChannelId } = useMixerStore.getState(); // setActiveChannelId eklendi
+  const togglePanel = usePanelsStore(state => state.togglePanel); // togglePanel eklendi
 
   const mixerTrack = useMixerStore(state => 
     state.mixerTracks.find(t => t.id === instrument.mixerTrackId)
@@ -25,6 +20,7 @@ const InstrumentRow = ({ instrument, onPianoRollClick, onEditClick, audioEngineR
   if (!instrument || !mixerTrack) return null;
 
   const isMuted = instrument.isMuted;
+  const isSelected = usePanelsStore.getState().pianoRollInstrumentId === instrument.id;
 
   const handleContextMenu = (e) => {
     e.preventDefault();
@@ -32,92 +28,89 @@ const InstrumentRow = ({ instrument, onPianoRollClick, onEditClick, audioEngineR
     setContextMenu({ x: e.clientX, y: e.clientY });
   };
 
+  const openMixerAndFocus = (e) => {
+    e.stopPropagation();
+    setActiveChannelId(mixerTrack.id);
+    togglePanel('mixer');
+  };
+
   const getContextMenuOptions = () => [
     {
       label: 'Rename',
       action: () => {
         const newName = prompt('Enter new name:', instrument.name);
-        if (newName) {
-          updateInstrument(instrument.id, { name: newName });
-          setTrackName(mixerTrack.id, newName);
+        if (newName && newName.trim()) {
+          const trimmedName = newName.trim();
+          updateInstrument(instrument.id, { name: trimmedName });
+          setTrackName(mixerTrack.id, trimmedName);
         }
       }
     },
-    {
-      label: 'Cut Itself',
-      isActive: instrument.cutItself,
-      action: () => updateInstrument(instrument.id, { cutItself: !instrument.cutItself }, false, engine)
-    },
-    {
-      label: 'Assign to new mixer track',
-      action: () => assignToNewTrack(instrument.id, engine)
-    },
-    {
-      label: 'Delete',
-      action: () => {
-        if (window.confirm(`'${instrument.name}' silinecek. Emin misiniz?`)) {
-          // Karmaşık silme işlemini tek bir komutla servise devrediyoruz.
-          InstrumentService.deleteInstrument(instrument.id);
-        }
-      }
-    }
+    { label: 'Show in Mixer', action: openMixerAndFocus },
+    // ... diğer context menu seçenekleri ...
   ];
+  
+  // Dinamik olarak CSS sınıflarını oluşturuyoruz
+  const rowClasses = `
+    instrument-row 
+    ${isMuted ? 'instrument-row--muted' : ''}
+    ${isSelected ? 'instrument-row--selected' : ''}
+  `;
+  const muteButtonClasses = `instrument-row__action-btn ${isMuted ? 'instrument-row__action-btn--active' : ''}`;
+  const pianoButtonClasses = `instrument-row__action-btn ${instrument.pianoRoll ? 'instrument-row__action-btn--active' : ''}`;
+  const iconStyle = { '--instrument-color': mixerTrack.color || 'var(--color-surface-3)' };
 
   return (
-    <div 
-      className={`instrument-row-enhanced ${isMuted ? 'muted' : ''}`}
-      style={{
-        '--instrument-color': activeTheme.colors.primary,
-        '--hover-bg': activeTheme.colors.primary + '1A',
-        '--active-color': activeTheme.colors.primary,
-        height: '64px',
-      }}
-      onContextMenu={handleContextMenu}
-    >
-      <div className="instrument-info-v2" onClick={onEditClick} title="Open Sample Editor">
-        <div className="instrument-icon-v2">
+    <div className={rowClasses} onContextMenu={handleContextMenu}>
+      <div className="instrument-row__info" onClick={onEditClick} title="Open Sample/Synth Editor">
+        <div className="instrument-row__icon" style={iconStyle}>
           <Music size={18} />
         </div>
-        <div className="instrument-details-v2">
-          <span className="instrument-name-v2">{instrument.name}</span>
-          <span className="instrument-target-v2" style={{ color: activeTheme.colors.muted }}>
+        <div className="instrument-row__details">
+          <span className="instrument-row__name">{instrument.name}</span>
+          <span className="instrument-row__target">
             → Track {mixerTrack.id.split('-')[1]}
           </span>
         </div>
       </div>
 
-      <div className="instrument-controls-v2">
+      <div className="instrument-row__controls">
         <VolumeKnob
-          label="Pan" size={26} value={mixerTrack.pan}
-          onChange={(val) => useMixerStore.getState().handleMixerParamChange(mixerTrack.id, 'pan', val, engine)}
+          label="Pan" size={28} value={mixerTrack.pan}
+          onChange={(val) => handleMixerParamChange(mixerTrack.id, 'pan', val)}
           min={-1} max={1} defaultValue={0}
         />
         <VolumeKnob
-          label="Vol" size={26} value={mixerTrack.volume}
-          onChange={(val) => useMixerStore.getState().handleMixerParamChange(mixerTrack.id, 'volume', val, engine)}
+          label="Vol" size={28} value={mixerTrack.volume}
+          onChange={(val) => handleMixerParamChange(mixerTrack.id, 'volume', val)}
           min={-60} max={6} defaultValue={0}
         />
       </div>
 
-      <div className="instrument-actions-v2">
+      <div className="instrument-row__actions">
         <button
-          className={`action-btn-v2 mute-btn ${instrument.isMuted ? 'active' : ''}`}
+          className={muteButtonClasses}
           onClick={(e) => { 
               e.stopPropagation(); 
-              // State ve motoru senkronize eden işlemi store'a bırakıyoruz.
-              // Bu mantık da ileride bir servise taşınabilir.
-              useInstrumentsStore.getState().handleToggleInstrumentMute(instrument.id, AudioContextService.getAudioEngine()); 
+              useInstrumentsStore.getState().handleToggleInstrumentMute(instrument.id); 
           }}
-          title={instrument.isMuted ? "Unmute" : "Mute"}
+          title={isMuted ? "Unmute" : "Mute"}
         >
           {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
         </button>
         <button
-          className={`action-btn-v2 piano-btn ${instrument.pianoRoll ? 'active' : ''}`}
+          className={pianoButtonClasses}
           onClick={onPianoRollClick}
           title="Open Piano Roll"
         >
           <Piano size={16} />
+        </button>
+        <button
+          className="instrument-row__action-btn"
+          onClick={openMixerAndFocus}
+          title="Show in Mixer"
+        >
+          <SlidersHorizontal size={16} />
         </button>
       </div>
       

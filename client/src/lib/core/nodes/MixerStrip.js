@@ -2,6 +2,7 @@ import * as Tone from 'tone';
 import { PluginNodeFactory } from './PluginNodeFactory.js';
 import { MeteringService } from '../MeteringService';
 import { setParamSmoothly } from '../../utils/audioUtils';
+import { MIXER_TRACK_TYPES } from '../../../config/constants'; // GÜNCELLENDİ
 
 export class MixerStrip {
   constructor(trackData) {
@@ -10,7 +11,7 @@ export class MixerStrip {
     this.isDisposed = false;
     this.inputGain = new Tone.Gain(1);
     this.inputMeter = new Tone.Meter(); 
-    this.panner = this.type !== 'master' ? new Tone.Panner(trackData.pan || 0) : null;
+    this.panner = this.type !== MIXER_TRACK_TYPES.MASTER ? new Tone.Panner(trackData.pan || 0) : null; // GÜNCELLENDİ
     this.fader = new Tone.Volume(trackData.volume ?? 0);
     this.soloGain = new Tone.Gain(1);
     this.muteGain = new Tone.Gain(1);
@@ -33,7 +34,7 @@ export class MixerStrip {
             const fxNode = PluginNodeFactory.create(fxData);
             if (fxNode) {
                 mainSignalChain.push(fxNode.input);
-                if (fxNode.input !== fxNode.output) { // Efektin giriş ve çıkışı ayrı ise ikisini de ekle
+                if (fxNode.input !== fxNode.output) {
                     mainSignalChain.push(fxNode.output);
                 }
                 this.effectNodes.set(fxData.id, fxNode);
@@ -63,8 +64,7 @@ export class MixerStrip {
   setupOutputRouting(trackData, masterInput, busInputs) {
     this.outputGain.disconnect();
     
-    if (this.type === 'master') {
-      // Master kanalını doğrudan hedefe bağla
+    if (this.type === MIXER_TRACK_TYPES.MASTER) { // GÜNCELLENDİ
       this.outputGain.toDestination();
       return;
     }
@@ -77,7 +77,6 @@ export class MixerStrip {
     }
   }
   
-  // YENİ: Send'leri (gönderileri) oluşturan ve hedeflerine bağlayan fonksiyon
   setupSends(sendsData, sourceNode, busInputs) {
     sendsData.forEach(send => {
       const sendGain = new Tone.Gain(Tone.dbToGain(send.level));
@@ -93,7 +92,6 @@ export class MixerStrip {
     });
   }
 
-  // Anlık parametre güncellemeleri
   updateParam(param, value) {
     if (this.isDisposed) return;
     try {
@@ -129,10 +127,8 @@ export class MixerStrip {
       }
   }
   
-  // YENİ: Solo durumunu ayarlar
   setSolo(isSoloed, isAnySoloActive) {
-    // Master ve Bus kanalları solo'dan etkilenmez.
-    if (this.type === 'master' || this.type === 'bus') {
+    if (this.type === MIXER_TRACK_TYPES.MASTER || this.type === MIXER_TRACK_TYPES.BUS) { // GÜNCELLENDİ
       setParamSmoothly(this.soloGain.gain, 1, 0.01);
       return;
     }
@@ -140,13 +136,11 @@ export class MixerStrip {
     setParamSmoothly(this.soloGain.gain, gainValue, 0.01);
   }
 
-  // YENİ: Mute durumunu ayarlar
   setMute(isMuted) {
     const gainValue = isMuted ? 0 : 1;
     setParamSmoothly(this.muteGain.gain, gainValue, 0.01);
   }
 
-  // Metreleme kurulumu
   setupMetering() {
     this.clearMetering();
     const meterId = `${this.id}-output`;

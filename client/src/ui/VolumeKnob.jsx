@@ -1,20 +1,20 @@
 import React, { useRef, useCallback, useState, useEffect } from 'react';
+// Tailwind yerine merkezi stil dosyamızı import edeceğiz,
+// ancak bu import işlemi main.jsx'te tek seferde yapılacak.
 
-// Fare sürüklemesiyle değeri değişen, şık ve yeniden kullanılabilir bir knob bileşeni.
-function VolumeKnob({ 
-    size = 28, 
-    value = 0, 
-    defaultValue = 0, // Çift tıklandığında dönülecek varsayılan değer
-    min = -40, 
-    max = 6, 
-    onChange, 
-    label 
+function VolumeKnob({
+    size = 48,
+    value = 0,
+    defaultValue = 0,
+    min = -40,
+    max = 6,
+    onChange,
+    label
 }) {
   const [isDragging, setIsDragging] = useState(false);
   const [displayValue, setDisplayValue] = useState(value);
   const dragStartInfo = useRef({ y: 0, value: 0 });
 
-  // Değeri -135 ile +135 derece arasında bir açıya çevirir
   const valueToAngle = (val) => {
     const range = max - min;
     if (range === 0) return -135;
@@ -25,15 +25,10 @@ function VolumeKnob({
   const handleMouseMove = useCallback((e) => {
     const deltaY = dragStartInfo.current.y - e.clientY;
     const range = max - min;
-    
-    // [YENİ] Shift tuşuna basılıysa hassasiyeti 10 kat artır
-    const sensitivity = e.shiftKey ? 2000 : 200; 
-    
+    const sensitivity = e.shiftKey ? 1000 : 200;
     const newValue = dragStartInfo.current.value + (deltaY / sensitivity) * range;
     const clampedValue = Math.max(min, Math.min(max, newValue));
-    
     onChange(clampedValue);
-    setDisplayValue(clampedValue); // Gösterilen değeri anlık güncelle
   }, [min, max, onChange]);
 
   const handleMouseUp = useCallback(() => {
@@ -52,49 +47,51 @@ function VolumeKnob({
     window.addEventListener('mouseup', handleMouseUp);
   };
 
-  // [YENİ] Çift tıklandığında değeri sıfırla
   const handleDoubleClick = () => {
     onChange(defaultValue);
-    setDisplayValue(defaultValue);
   };
 
-  // State'i dışarıdan gelen prop ile senkronize et
   useEffect(() => {
     setDisplayValue(value);
   }, [value]);
+  
+  // BEM sınıfını artık boyut için kullanmıyoruz.
+  const knobClasses = `
+    knob 
+    ${isDragging ? 'knob--is-dragging' : ''}
+  `;
 
+  // Dinamik olarak inline stiller oluşturuyoruz.
+  const baseStyle = {
+    width: `${size}px`,
+    height: `${size}px`,
+  };
 
-  const angle = valueToAngle(displayValue);
+  const indicatorStyle = {
+    height: `${size * 0.33}px`, // Boyutla orantılı yükseklik
+    top: `${size * 0.16}px`,     // Boyutla orantılı pozisyon
+    transformOrigin: `50% ${size * 0.33}px`, // Dönme noktası
+    transform: `translateX(-50%) rotate(${valueToAngle(displayValue)}deg)`,
+  };
 
   return (
-    <div className="flex flex-col items-center justify-center select-none relative">
-        {/* [YENİ] Anlık Değer Göstergesi */}
-        {isDragging && (
-            <div className="absolute -top-7 bg-cyan-500 text-white text-xs font-bold px-2 py-1 rounded shadow-lg">
-                {displayValue.toFixed(1)}
-            </div>
-        )}
-      <div 
-        className="flex flex-col items-center justify-center"
+    <div className={knobClasses}>
+        <div className="knob__tooltip">
+            {displayValue.toFixed(1)}
+        </div>
+      <div
+        className="knob__base"
+        style={baseStyle} // Dinamik stili burada uyguluyoruz
         onMouseDown={handleMouseDown}
         onDoubleClick={handleDoubleClick}
         title={`${label}: ${value.toFixed(1)} (Shift for fine-tune, Double-click to reset)`}
       >
         <div
-          className="relative bg-gray-700 rounded-full cursor-ns-resize border-2 border-gray-900 shadow-inner"
-          style={{ width: size, height: size }}
-        >
-          <div 
-            className="absolute top-1/2 left-1/2 w-1 h-1/2 bg-cyan-400 rounded-full"
-            style={{ 
-              transform: `translate(-50%, -100%) rotate(${angle}deg)`, 
-              transformOrigin: '50% 100%',
-              transition: isDragging ? 'none' : 'transform 100ms ease-out'
-            }}
-          />
-        </div>
-        {label && <span className="text-xs mt-1 text-gray-400">{label}</span>}
+          className="knob__indicator"
+          style={indicatorStyle} // Dinamik stili burada uyguluyoruz
+        />
       </div>
+      {label && <span className="knob__label">{label}</span>}
     </div>
   );
 }

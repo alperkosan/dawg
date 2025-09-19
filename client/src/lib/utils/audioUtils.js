@@ -174,3 +174,29 @@ export const setParamSmoothly = (param, value, rampTime = 0.02) => {
     param.value = value;
   }
 };
+
+/**
+ * [REHBER ADIM 1] Sidechain yönlendirmesi için gerekli Web Audio düğümlerini oluşturur.
+ * @param {AudioContext} audioContext - Tone.js'ten alınan ham ses bağlamı.
+ * @returns {{splitter: ChannelSplitterNode, merger: ChannelMergerNode, sidechainGain: GainNode}}
+ */
+export const createSidechainRouter = (audioContext) => {
+    const splitter = audioContext.createChannelSplitter(2);
+    const merger = audioContext.createChannelMerger(2);
+    const sidechainGain = audioContext.createGain();
+    // Bu düğümlerin bağlantısı PluginNodeFactory içinde yapılacak.
+    return { splitter, merger, sidechainGain };
+};
+
+/**
+ * [REHBER ADIM 1] Spektrum analizi için bir AnalyserNode oluşturur.
+ * @param {AudioContext} audioContext - Tone.js'ten alınan ham ses bağlamı.
+ * @param {number} [fftSize=2048] - FFT (Hızlı Fourier Dönüşümü) boyutu.
+ * @returns {AnalyserNode}
+ */
+export const createAnalyzer = (audioContext, fftSize = 2048) => {
+    const analyzer = audioContext.createAnalyser();
+    analyzer.fftSize = fftSize;
+    analyzer.smoothingTimeConstant = 0.8;
+    return analyzer;
+};

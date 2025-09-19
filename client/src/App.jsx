@@ -13,34 +13,25 @@ import { useInstrumentsStore } from './store/useInstrumentsStore';
 import { useMixerStore } from './store/useMixerStore';
 import { useArrangementStore } from './store/useArrangementStore';
 import { usePanelsStore } from './store/usePanelsStore';
-// YENİ SERVİSİ IMPORT ET
 import { AudioContextService } from './lib/services/AudioContextService';
 import { keymap } from './config/keymapConfig';
 import { commandManager } from './lib/commands/CommandManager';
 
-
-// AppContent artık prop almayacak
+// AppContent artık sadece layout'u yönetiyor, gereksiz prop'lar yok.
 function AppContent() {
   useEffect(() => {
+    // Merkezi Klavye Kısayol Servisini Başlat
     const actions = {
       TOGGLE_PLAY_PAUSE: () => {
-        const engine = AudioContextService.getAudioEngine();
-        
-        // --- DÜZELTME BURADA ---
-        // Artık var olmayan 'handleResume' fonksiyonunu çağırmıyoruz.
         const { playbackState, handlePause, handlePlay } = usePlaybackStore.getState();
-
-        if (playbackState === 'playing' || playbackState === 'paused') {
-          // 'handlePause' hem duraklatma hem de devam etme işini zaten yapıyor.
-          handlePause(engine); 
+        if (playbackState === 'playing') {
+          handlePause();
         } else {
-          // 'stopped' durumundaysa 'handlePlay' çağrılır.
-          handlePlay(engine);
+          handlePlay();
         }
       },
       STOP: () => {
-        const engine = AudioContextService.getAudioEngine();
-        usePlaybackStore.getState().handleStop(engine);
+        usePlaybackStore.getState().handleStop();
       },
       OPEN_CHANNEL_RACK: () => usePanelsStore.getState().togglePanel('channel-rack'),
       OPEN_MIXER: () => usePanelsStore.getState().togglePanel('mixer'),
@@ -53,12 +44,13 @@ function AppContent() {
     return () => destroyKeybindings();
   }, []);
 
+  // Tüm layout, BEM ve merkezi CSS'e uygun olarak yeniden düzenlendi.
+  // Tailwind sınıfları tamamen kaldırıldı.
   return (
-    <div className="text-white h-screen flex flex-col font-sans select-none">
-      {/* Bu component'lardan audioEngineRef prop'u kaldırılacak */}
+    <div className="app-container">
       <TopToolbar />
       <MainToolbar />
-      <main className="flex flex-grow overflow-hidden">
+      <main className="app-main">
         <WorkspacePanel />
       </main>
       <Taskbar />
@@ -70,7 +62,6 @@ function App() {
   const [isAudioInitialized, setIsAudioInitialized] = useState(false);
 
   const initializeAudio = async () => {
-    // Servis üzerinden motorun zaten var olup olmadığını kontrol et
     if (AudioContextService.getAudioEngine()) return;
 
     try {
@@ -85,10 +76,9 @@ function App() {
       const initialBpm = usePlaybackStore.getState().bpm;
       engine.setBpm(initialBpm);
       
-      // --- ANAHTAR DEĞİŞİKLİK ---
-      // Ses motorunu oluşturduktan hemen sonra merkezi servisimize kaydediyoruz.
       AudioContextService.setAudioEngine(engine);
       
+      // Motoru, store'lardaki başlangıç verileriyle senkronize et
       await engine.fullSync(
         useInstrumentsStore.getState().instruments,
         useMixerStore.getState().mixerTracks,
@@ -103,7 +93,7 @@ function App() {
   };
 
   useEffect(() => {
-    // Component unmount olduğunda motoru temizle
+    // Component kaldırıldığında motoru temizle
     return () => AudioContextService.getAudioEngine()?.dispose();
   }, []);
 
@@ -113,11 +103,9 @@ function App() {
 
   return (
     <ThemeProvider>
-      {/* Artık AppContent'e prop geçmiyoruz */}
       <AppContent />
     </ThemeProvider>
   );
 }
 
 export default App;
-

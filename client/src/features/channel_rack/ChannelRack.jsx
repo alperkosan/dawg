@@ -2,44 +2,34 @@ import React, { useRef, useEffect, useCallback } from 'react';
 import { useInstrumentsStore } from '../../store/useInstrumentsStore';
 import { useArrangementStore } from '../../store/useArrangementStore';
 import { usePlaybackStore } from '../../store/usePlaybackStore';
-import { useThemeStore } from '../../store/useThemeStore';
 import { usePanelsStore } from '../../store/usePanelsStore';
 import { PlaybackAnimatorService } from '../../lib/core/PlaybackAnimatorService';
 import { commandManager } from '../../lib/commands/CommandManager';
 import { AddNoteCommand } from '../../lib/commands/AddNoteCommand';
 import { DeleteNoteCommand } from '../../lib/commands/DeleteNoteCommand';
-
 import InstrumentRow from './InstrumentRow';
 import StepGrid from './StepGrid';
 import PianoRollMiniView from './PianoRollMiniView';
 import InteractiveTimeline from './InteractiveTimeline';
 import { PlusCircle } from 'lucide-react';
+// CSS import'u artık gerekli değil, main.css üzerinden yönetiliyor.
 
-import './ChannelRack.css';
-
-const RULER_HEIGHT = 48;
-const ROW_HEIGHT = 64;
-const INSTRUMENT_COLUMN_WIDTH = 320;
 const STEP_WIDTH = 16;
 
-// DÜZELTME: Bileşen artık 'audioEngineRef' prop'unu almıyor.
 export default function ChannelRack() {
-  const activeTheme = useThemeStore(state => state.getActiveTheme());
   const instruments = useInstrumentsStore(state => state.instruments);
   const { patterns, activePatternId } = useArrangementStore();
-  const { loopLength, transportStep } = usePlaybackStore();
-  const { jumpToBar, jumpToStep } = usePlaybackStore.getState();
+  const { loopLength, audioLoopLength } = usePlaybackStore();
   const { openPianoRollForInstrument, handleEditInstrument, togglePanel } = usePanelsStore();
-  const audioLoopLength = usePlaybackStore(state => state.audioLoopLength);
-
-  const scrollContainerRef = useRef(null);
-  const playheadRef = useRef(null);
   
+  const playheadRef = useRef(null);
   const activePattern = patterns[activePatternId];
 
+  // Playhead animasyonu
   useEffect(() => {
     const updatePlayhead = (progress) => {
       if (playheadRef.current) {
+        // audioLoopLength, notaların gerçek uzunluğudur.
         const position = progress * audioLoopLength * STEP_WIDTH;
         playheadRef.current.style.transform = `translateX(${position}px)`;
       }
@@ -48,8 +38,8 @@ export default function ChannelRack() {
     return () => PlaybackAnimatorService.unsubscribe(updatePlayhead);
   }, [audioLoopLength]);
 
+  // Nota ekleme/silme işlemi (Komut Yöneticisi ile)
   const handleNoteToggle = useCallback((instrumentId, step) => {
-    const activePattern = patterns[activePatternId];
     if (!activePattern) return;
     const currentNotes = activePattern.data[instrumentId] || [];
     const existingNote = currentNotes.find(note => note.time === step);
@@ -59,29 +49,19 @@ export default function ChannelRack() {
     } else {
       commandManager.execute(new AddNoteCommand(instrumentId, step));
     }
-  }, [activePatternId, patterns]);
+  }, [activePatternId, activePattern]);
 
-  const totalContentHeight = RULER_HEIGHT + (instruments.length + 1) * ROW_HEIGHT;
+  const totalGridWidth = loopLength * STEP_WIDTH;
+  const contentHeight = 48 + (instruments.length + 1) * 64;
 
   return (
-    <div className="rack-container-v3" style={{ backgroundColor: activeTheme.colors.background }}>
-      <div 
-        ref={scrollContainerRef} 
-        className="rack-scroll-container-v3"
-      >
-        <div 
-          className="rack-content-wrapper-v3" 
-          style={{ height: `${totalContentHeight}px` }}
-        >
-          <div
-            className="instrument-column-sticky-v3"
-            style={{
-              width: `${INSTRUMENT_COLUMN_WIDTH}px`,
-              backgroundColor: activeTheme.colors.surface,
-              height: `${totalContentHeight}px`
-            }}
-          >
-            <div className="rack-header-v3" style={{ height: `${RULER_HEIGHT}px`, borderBottom: `1px solid ${activeTheme.colors.border}` }}>
+    <div className="channel-rack">
+      <div className="channel-rack__scroll-container">
+        <div className="channel-rack__content" style={{ height: `${contentHeight}px` }}>
+          
+          {/* Sol Taraf: Enstrüman Listesi (Sticky) */}
+          <div className="channel-rack__instruments">
+            <div className="channel-rack__header">
                Pattern: {activePattern?.name || 'Pattern 1'}
             </div>
             {instruments.map(inst => (
@@ -92,54 +72,44 @@ export default function ChannelRack() {
                 onEditClick={() => handleEditInstrument(inst)}
               />
             ))}
-             <div
-              className="add-instrument-row"
-              style={{ height: `${ROW_HEIGHT}px`, borderTop: `1px solid ${activeTheme.colors.border}`}}
+            <div
+              className="channel-rack__add-row"
               onClick={() => togglePanel('file-browser')}
             >
-              <PlusCircle size={20} className="add-instrument-icon" />
-              <span className="add-instrument-text">Add instrument...</span>
+              <PlusCircle size={20} className="channel-rack__add-row-icon" />
+              <span className="channel-rack__add-row-text">Add instrument...</span>
             </div>
           </div>
           
-          <div 
-            className="grid-area-v3" 
-            style={{ width: `${loopLength * STEP_WIDTH}px`, marginLeft: `${INSTRUMENT_COLUMN_WIDTH}px` }}
-          >
-            <div
-              className="timeline-sticky-v3"
-              style={{ height: `${RULER_HEIGHT}px`, backgroundColor: activeTheme.colors.surface, borderBottom: `1px solid ${activeTheme.colors.border}` }}
-            >
-              <InteractiveTimeline
+          {/* Sağ Taraf: Grid Alanı (Scrollable) */}
+          <div className="channel-rack__grid-area">
+            <div className="channel-rack__rows" style={{ width: `${totalGridWidth}px`}}>
+              {/* Timeline (Sticky) */}
+              <div className="channel-rack__timeline" style={{ width: `${totalGridWidth}px` }}>
+                <InteractiveTimeline
                   loopLength={loopLength}
-                  currentPosition={transportStep}
-                  onJumpToBar={(bar) => jumpToBar(bar)}
-                  onJumpToPosition={(step) => jumpToStep(step)}
-                  theme={activeTheme}
-              />
-            </div>
-            <div 
-              ref={playheadRef} 
-              className="playhead-v3" 
-              style={{ 
-                backgroundColor: activeTheme.colors.accent, 
-                height: `${totalContentHeight}px`,
-              }} 
-            />
+                  // Diğer proplar...
+                />
+              </div>
 
-            <div className="grid-rows-container-v3">
+              {/* Playhead */}
+              <div ref={playheadRef} className="channel-rack__playhead" style={{ height: `${contentHeight}px` }} />
+
+              {/* Grid Satırları */}
               {instruments.map((inst) => (
-                <div key={inst.id} className="grid-row-v3" style={{ height: `${ROW_HEIGHT}px` }}>
+                <div key={inst.id} className="channel-rack__grid-row">
                    {inst.pianoRoll ? (
-                    <PianoRollMiniView instrument={inst} notes={activePattern?.data[inst.id] || []} patternLength={loopLength} theme={activeTheme} onNoteClick={() => openPianoRollForInstrument(inst)} />
+                    <PianoRollMiniView instrument={inst} notes={activePattern?.data[inst.id] || []} patternLength={loopLength} />
                   ) : (
-                    <StepGrid instrumentId={inst.id} notes={activePattern?.data[inst.id] || []} totalSteps={loopLength} onNoteToggle={handleNoteToggle} theme={activeTheme} />
+                    <StepGrid instrumentId={inst.id} notes={activePattern?.data[inst.id] || []} totalSteps={loopLength} onNoteToggle={handleNoteToggle} />
                   )}
                 </div>
               ))}
-              <div style={{ height: `${ROW_HEIGHT}px` }}></div>
+              {/* "Add" satırı için boş bir grid satırı */}
+              <div className="channel-rack__grid-row" />
             </div>
           </div>
+
         </div>
       </div>
     </div>

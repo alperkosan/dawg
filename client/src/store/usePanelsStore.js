@@ -1,24 +1,18 @@
-/**
- * @file usePanelsStore.js
- * @description Arayüzdeki tüm panellerin (pencerelerin) durumunu yönetir.
- * YENİLİK: Artık sadece ana panelleri değil, her bir efekt plug-in'i için
- * açılan pencereleri de dinamik olarak yönetir.
- */
 import { create } from 'zustand';
 import { panelDefinitions } from '../config/panelConfig';
 import { getNextCascadePosition } from '../lib/utils/windowManager';
 import { AudioContextService } from '../lib/services/AudioContextService';
+import { INSTRUMENT_TYPES, PANEL_IDS } from '../config/constants'; // GÜNCELLENDİ
 
 const initialPanelsState = Object.keys(panelDefinitions).reduce((acc, id) => {
   const def = panelDefinitions[id];
-  acc[id] = { id, title: def.title, isOpen: id === 'channel-rack', isMinimized: false, position: def.initialPos, size: def.initialSize };
+  acc[id] = { id, title: def.title, isOpen: id === PANEL_IDS.CHANNEL_RACK, isMinimized: false, position: def.initialPos, size: def.initialSize };
   return acc;
 }, {});
 
 export const usePanelsStore = create((set, get) => ({
-  // --- STATE ---
   panels: initialPanelsState,
-  panelStack: ['channel-rack'],
+  panelStack: [PANEL_IDS.CHANNEL_RACK],
   fullscreenPanel: null,
   minimizedPanels: [],
   editingInstrumentId: null,
@@ -27,7 +21,6 @@ export const usePanelsStore = create((set, get) => ({
 
   setEditorBuffer: (buffer) => set({ editorBuffer: buffer }),
   
-  // --- ACTIONS ---
   _updateMinimizedPanels: () => {
       const minimized = Object.values(get().panels).filter(p => p.isMinimized);
       set({ minimizedPanels: minimized });
@@ -48,8 +41,8 @@ export const usePanelsStore = create((set, get) => ({
     if (panel.isOpen) {
       if (get().fullscreenPanel === panelId) set({ fullscreenPanel: null });
       const newState = { panels: { ...get().panels, [panelId]: { ...panel, isOpen: false } } };
-      if (panelId === 'piano-roll') newState.pianoRollInstrumentId = null;
-      if (panelId === 'sample-editor') newState.editingInstrumentId = null; // Kapanınca ID'yi temizle
+      if (panelId === PANEL_IDS.PIANO_ROLL) newState.pianoRollInstrumentId = null; // GÜNCELLENDİ
+      if (panelId === PANEL_IDS.SAMPLE_EDITOR) newState.editingInstrumentId = null; // GÜNCELLENDİ
       set(newState);
     } else {
       const newPosition = getNextCascadePosition(get().panels);
@@ -84,10 +77,10 @@ export const usePanelsStore = create((set, get) => ({
   },
 
   handleEditInstrument: async (instrument) => {
-    if (!instrument || instrument.type !== 'sample') return;
+    if (!instrument || instrument.type !== INSTRUMENT_TYPES.SAMPLE) return; // GÜNCELLENDİ
     const state = get();
-    if (state.editingInstrumentId === instrument.id && state.panels['sample-editor'].isOpen) {
-      get().togglePanel('sample-editor');
+    if (state.editingInstrumentId === instrument.id && state.panels[PANEL_IDS.SAMPLE_EDITOR].isOpen) { // GÜNCELLENDİ
+      get().togglePanel(PANEL_IDS.SAMPLE_EDITOR); // GÜNCELLENDİ
       return;
     }
     try {
@@ -103,10 +96,10 @@ export const usePanelsStore = create((set, get) => ({
         editingInstrumentId: instrument.id,
         panels: {
           ...state.panels,
-          'sample-editor': { ...state.panels['sample-editor'], title: `Editor: ${instrument.name}`, isOpen: true, isMinimized: false, position: newPosition }
+          [PANEL_IDS.SAMPLE_EDITOR]: { ...state.panels[PANEL_IDS.SAMPLE_EDITOR], title: `Editor: ${instrument.name}`, isOpen: true, isMinimized: false, position: newPosition } // GÜNCELLENDİ
         }
       });
-      get().bringPanelToFront('sample-editor');
+      get().bringPanelToFront(PANEL_IDS.SAMPLE_EDITOR); // GÜNCELLENDİ
     } catch (error) {
       console.error(`Sample Editor açılamadı (${instrument.name}):`, error);
     }
@@ -116,33 +109,30 @@ export const usePanelsStore = create((set, get) => ({
     if (!instrument) return;
     const state = get();
     const { panels, pianoRollInstrumentId } = state;
-    const panel = panels['piano-roll'];
+    const panel = panels[PANEL_IDS.PIANO_ROLL]; // GÜNCELLENDİ
 
-    // Eğer panel zaten aynı enstrüman için açıksa, sadece öne getir.
     if (panel.isOpen && pianoRollInstrumentId === instrument.id) {
-      get().bringPanelToFront('piano-roll');
+      get().bringPanelToFront(PANEL_IDS.PIANO_ROLL); // GÜNCELLENDİ
       return;
     }
 
-    // Değilse, paneli bu enstrüman için aç ve state'i güncelle.
     const newPosition = getNextCascadePosition(panels);
     set({
-      pianoRollInstrumentId: instrument.id, // Önce ID'yi ayarla
+      pianoRollInstrumentId: instrument.id,
       panels: {
         ...panels,
-        'piano-roll': {
+        [PANEL_IDS.PIANO_ROLL]: { // GÜNCELLENDİ
           ...panel,
-          title: `Piano Roll: ${instrument.name}`, // Başlığı dinamik olarak ayarla
+          title: `Piano Roll: ${instrument.name}`,
           isOpen: true,
           isMinimized: false,
           position: newPosition,
         },
       },
     });
-    get().bringPanelToFront('piano-roll');
+    get().bringPanelToFront(PANEL_IDS.PIANO_ROLL); // GÜNCELLENDİ
   },
 
-  // YENİ VE GELİŞMİŞ: Efekt pencerelerini açan/kapatan/öne getiren fonksiyon
   togglePluginPanel: (effect, track) => {
     const panelId = `plugin-${effect.id}`;
     const state = get();
@@ -158,10 +148,10 @@ export const usePanelsStore = create((set, get) => ({
         isOpen: true,
         isMinimized: false,
         position: newPosition,
-        size: { width: 450, height: 300 }, // Varsayılan plugin pencere boyutu
-        type: 'plugin', // Bu bir plugin penceresi
-        effectId: effect.id, // Hangi efekte ait
-        trackId: track.id,   // Hangi kanala ait
+        size: { width: 450, height: 300 },
+        type: 'plugin',
+        effectId: effect.id,
+        trackId: track.id,
       };
 
       set({

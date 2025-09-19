@@ -101,7 +101,6 @@ export const ProfessionalFader = ({
   );
 };
 
-
 // --- Profesyonel Buton Bileşeni ---
 export const ProfessionalButton = ({
   label,

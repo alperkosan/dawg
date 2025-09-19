@@ -1,0 +1,48 @@
+/* ==========================================================================
+   Draggable Window Stilleri (_window.css) - ZENITH V2
+   ========================================================================== */
+
+.window-base {
+  display: flex;
+  flex-direction: column;
+  position: absolute; /* Rnd.js'in doğru çalışması için */
+  border-radius: var(--border-radius-lg);
+  
+  /* Modern Glassmorphism Efekti */
+  background: rgba(30, 30, 30, 0.7); /* --color-surface-1'in yarı saydam hali */
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+
+  border: 1px solid rgba(58, 58, 58, 0.5); /* --color-border'ın yarı saydam hali */
+  box-shadow: var(--shadow-lg);
+}
+
+.window-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--spacing-2) var(--spacing-3);
+  cursor: move;
+  flex-shrink: 0;
+  
+  /* Header için hafif bir gradyan ve ayırıcı çizgi */
+  background: rgba(18, 18, 18, 0.5); /* --color-background'ın yarı saydam hali */
+  border-bottom: 1px solid rgba(58, 58, 58, 0.5);
+  border-top-left-radius: var(--border-radius-lg);
+  border-top-right-radius: var(--border-radius-lg);
+}
+
+.window-title {
+  font-weight: 600;
+  font-size: var(--font-size-md);
+  color: var(--color-text-primary);
+}
+
+.window-content {
+  flex-grow: 1;
+  overflow: hidden; /* İçeriğin taşmasını ve border-radius'u bozmasını engelle */
+  /* İçeriğin direkt kenarlara yapışmaması için */
+  /* Not: Bu, bazı panellerde (örn: ChannelRack) override edilebilir. */
+  padding: var(--spacing-1); 
+}
+

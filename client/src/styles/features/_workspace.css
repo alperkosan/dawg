@@ -1,0 +1,174 @@
+/* ==========================================================================
+   Workspace & File Browser Stilleri (_workspace.css) - ZENITH V2.4
+   ========================================================================== */
+
+.workspace {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  overflow: hidden;
+  background-color: var(--color-background);
+}
+
+.workspace__main-content {
+  flex-grow: 1;
+  position: relative; 
+  min-width: 0; 
+}
+
+.file-browser {
+  width: 256px; 
+  height: 100%;
+  flex-shrink: 0; 
+  display: flex;
+  flex-direction: column;
+  background-color: var(--color-surface-1);
+  border-right: 1px solid var(--color-background);
+  position: relative; /* Drop overlay'i için gerekli */
+  transition: border-right-color var(--transition-speed);
+}
+
+.file-browser__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacing-3) var(--spacing-4);
+  border-bottom: 1px solid var(--color-background);
+  flex-shrink: 0;
+}
+
+.file-browser__title {
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.file-browser__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+  color: var(--color-text-secondary);
+}
+.file-browser__action-btn {
+  transition: color var(--transition-speed);
+}
+.file-browser__action-btn:hover {
+  color: var(--color-text-primary);
+}
+
+.file-browser__tree-container {
+  flex-grow: 1;
+  overflow-y: auto;
+  padding: var(--spacing-2);
+}
+
+.file-browser__upload-input {
+  display: none;
+}
+
+
+/* ==========================================================================
+   File Browser Preview
+   ========================================================================== */
+
+.preview {
+  height: 128px;
+  flex-shrink: 0;
+  border-top: 1px solid var(--color-background);
+  background-color: var(--color-surface-1);
+  padding: var(--spacing-3);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.preview__info {
+  margin-bottom: var(--spacing-2);
+  text-align: center;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  order: 1;
+}
+
+.preview__content {
+  position: relative;
+  width: 100%;
+  height: 64px;
+  flex-shrink: 0;
+  background-color: var(--color-background);
+  border-radius: var(--border-radius-md);
+  order: 2;
+}
+
+.preview__waveform {
+  width: 100%;
+  height: 100%;
+  opacity: 0.7;
+  filter: blur(0.5px);
+}
+
+.preview__play-button {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background-color: rgba(30, 30, 30, 0.7);
+  backdrop-filter: blur(5px);
+  color: var(--color-text-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-speed) ease;
+  border: 1px solid rgba(58, 58, 58, 0.5);
+}
+.preview__play-button:hover {
+  background-color: var(--color-accent-primary);
+  color: var(--color-text-inverse);
+}
+
+.preview__status {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+.preview__status--error {
+  color: var(--color-accent-danger);
+}
+
+/* ==========================================================================
+   File Browser Drag & Drop (YENİ)
+   ========================================================================== */
+
+/* Dosya sürüklenirken panelin kenar rengini değiştir */
+.file-browser--drag-over {
+  border-right-color: var(--color-accent-primary);
+}
+
+/* Sürükleme sırasında görünen overlay */
+.file-browser__drop-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 100;
+  background-color: rgba(18, 18, 18, 0.8); /* Arkaplan rengi, saydam */
+  backdrop-filter: blur(5px);
+  border: 2px dashed var(--color-accent-primary);
+  border-radius: 0; /* Tüm paneli kapla */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none; /* Altındaki elementlerin tıklanmasını engelleme */
+}
+

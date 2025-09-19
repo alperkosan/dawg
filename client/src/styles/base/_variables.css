@@ -1,0 +1,56 @@
+/* ==========================================================================
+   Zenith Tema Sistemi v2 (_variables.css) - Derinleştirilmiş Tasarım
+   ========================================================================== */
+
+:root {
+  /* Renk Paleti */
+  --color-background: #121212;         /* Neredeyse siyah, saf ve odaklı */
+  --color-surface-1: #1E1E1E;        /* Ana paneller ve yüzeyler */
+  --color-surface-2: #282828;        /* İkincil yüzeyler, hover durumları */
+  --color-surface-3: #3A3A3A;        /* Aktif elementler, vurgulu hover'lar */
+  --color-border: #3A3A3A;           /* İnce ve belirgin kenarlıklar */
+  
+  --color-text-primary: #EAEAEA;     /* Ana metin rengi, yüksek okunurluk */
+  --color-text-secondary: #9E9E9E;   /* İkincil metin, etiketler */
+  --color-text-disabled: #616161;    /* Devre dışı elementler */
+  --color-text-inverse: #121212;     /* Vurgulu butonların üzerindeki metin */
+
+  /* Aksan Renkleri: Sadece gerektiğinde parlayan dokunuşlar */
+  --color-accent-primary: #00A3FF;   /* Ana etkileşim rengi (Canlı Mavi) */
+  --color-accent-secondary: #00E5B5; /* İkincil vurgu (Turkuaz/Yeşil) */
+  --color-accent-danger: #FF4D4D;   /* Hata ve silme işlemleri */
+
+  /* Tipografi */
+  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-display: 'Inter', sans-serif; /* Başlıklar ve büyük rakamlar için */
+  --font-mono: 'JetBrains Mono', monospace; /* Zaman göstergesi gibi yerler için */
+
+  --font-size-xs: 0.625rem; /* 10px */
+  --font-size-sm: 0.75rem;  /* 12px */
+  --font-size-md: 0.875rem; /* 14px */
+  --font-size-lg: 1rem;     /* 16px */
+  --font-size-xl: 1.125rem; /* 18px */
+
+  /* Boşluk (Spacing) Sistemi */
+  --spacing-1: 4px;
+  --spacing-2: 8px;
+  --spacing-3: 12px;
+  --spacing-4: 16px;
+  --spacing-5: 24px;
+  --spacing-6: 32px;
+
+  /* Kenarlık Yarıçapı (Border Radius) */
+  --border-radius-sm: 4px;
+  --border-radius-md: 6px;
+  --border-radius-lg: 8px;
+
+  /* Gölgeler (Shadows) - İnce ve modern */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.1);
+  --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.15);
+  --shadow-lg: 0 10px 20px rgba(0, 0, 0, 0.2);
+  --shadow-glow: 0 0 12px 0 var(--color-accent-primary);
+  
+  /* Geçişler (Transitions) */
+  --transition-speed: 150ms;
+}
+

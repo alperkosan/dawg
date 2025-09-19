@@ -47,6 +47,26 @@ export const pluginRegistry = {
         { name: 'Bass Gücü', settings: { bands: [ { id: 1, type: 'peaking', frequency: 80, gain: 3, q: 1.2, active: true }, { id: 2, type: 'peaking', frequency: 400, gain: -2, q: 2, active: true } ] } },
     ]
   },
+  'SidechainCompressor': {
+    type: 'SidechainCompressor',
+    category: 'The Dynamics Forge',
+    story: "Bir sesin ritmini, diğerini ezmek için kullanır.",
+    toneNode: 'SidechainCompressor', // Bu, Factory'deki yeni builder'ı hedefliyor.
+    uiComponent: AdvancedCompressorUI, // Şimdilik mevcut Compressor UI'ını kullanabilir.
+    defaultSettings: {
+      threshold: -12,
+      ratio: 4,
+      attack: 0.003,
+      release: 0.1,
+      knee: 30,
+      sidechainSource: null, // Hangi kanaldan sidechain alacağı (örn: 'track-1')
+      wet: 1.0,
+    },
+    presets: [
+        { name: 'Klasik Pump', settings: { threshold: -20, ratio: 8, attack: 0.005, release: 0.1, knee: 10 } },
+        { name: 'Subtle Bass Ducking', settings: { threshold: -15, ratio: 3, attack: 0.01, release: 0.2, knee: 15 } },
+    ]
+  },
   // ... Diğer tüm eklenti tanımları aynı kalır ...
   'TidalFilter': {
     type: 'TidalFilter', category: 'The Spectral Weave', story: "Sesin üzerinden gelgit dalgaları gibi geçen ritmik filtre.",

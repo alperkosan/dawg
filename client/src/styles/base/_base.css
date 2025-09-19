@@ -1,0 +1,72 @@
+/* ==========================================================================
+   Temel Stiller (_base.css) - Hizalama Düzeltmeleri Eklendi
+   ========================================================================== */
+
+/* 1. Kutulama Modelini Sıfırla (Box Model Reset) */
+/* Bu, padding ve border'ların genişlik hesaplamasını bozmamasını sağlar. */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+/* 2. Tarayıcı Varsayılanlarını Sıfırla */
+body, h1, h2, h3, h4, p, figure, blockquote, dl, dd {
+  margin: 0;
+}
+
+ul, ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* 3. Global Stiller */
+body {
+  background-color: var(--color-background);
+  color: var(--color-text-primary);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  line-height: 1.5;
+  min-height: 100vh;
+  /* Kaydırma çubuklarını temaya uygun hale getir */
+  scrollbar-color: var(--color-surface-3) var(--color-surface-1);
+  scrollbar-width: thin;
+}
+
+body::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+body::-webkit-scrollbar-track {
+  background-color: var(--color-surface-1);
+}
+
+body::-webkit-scrollbar-thumb {
+  background-color: var(--color-surface-3);
+  border-radius: 4px;
+}
+
+body::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-text-secondary);
+}
+
+
+/* 4. Buton ve Input Sıfırlamaları */
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+  font-size: 100%;
+  line-height: inherit;
+  color: inherit;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+
