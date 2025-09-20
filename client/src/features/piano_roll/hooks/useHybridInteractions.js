@@ -1,87 +1,74 @@
+// src/features/piano_roll/hooks/useHybridInteractions.js
+
 import { useState, useCallback, useRef, useMemo, useEffect } from 'react';
 import { usePianoRollStore } from '../store/usePianoRollStore';
 import { AudioContextService } from '../../../lib/services/AudioContextService';
-import { PIANO_ROLL_TOOLS } from '../../../config/constants'; // GÜNCELLENDİ
-
+import { PIANO_ROLL_TOOLS } from '../../../config/constants';
+import { useGridSnapping } from './useGridSnapping';
 import * as Tone from 'tone';
 
 const generateNoteId = () => `note_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+const clamp = (value, min, max) => Math.max(min, Math.min(value, max));
 
-/**
- * Piano Roll'daki tüm kullanıcı etkileşimlerini (mouse, klavye, touch) yöneten
- * merkezi ve gelişmiş hook. Hatalar giderildi ve profesyonel DAW özellikleri eklendi.
- */
 export const useHybridInteractions = ({
-  notes,
-  handleNotesChange,
-  instrumentId,
-  viewport,
-  containerRef,
-  selectedNotes,
-  setSelectedNotes,
+  notes, handleNotesChange, instrumentId, viewport,
+  containerRef, selectedNotes, setSelectedNotes,
 }) => {
   const [currentInteraction, setCurrentInteraction] = useState(null);
-  const { activeTool, gridSnapValue, lastUsedDuration, setLastUsedDuration } = usePianoRollStore();
+  const { activeTool, lastUsedDuration, setLastUsedDuration } = usePianoRollStore();
   const playingNotesRef = useRef(new Set());
+  const snapping = useGridSnapping(); 
 
-  const audioContext = useMemo(() => {
-    const auditionNote = (pitch, velocity = 0.8) => {
-      if (!instrumentId || typeof pitch !== 'string' || !pitch) return;
-      if (velocity > 0) {
-        AudioContextService.auditionNoteOn(instrumentId, pitch, velocity);
-        playingNotesRef.current.add(pitch);
-      } else {
-        AudioContextService.auditionNoteOff(instrumentId, pitch);
-        playingNotesRef.current.delete(pitch);
-      }
-    };
-    const stopAllAudition = () => {
-      playingNotesRef.current.forEach(pitch => auditionNote(pitch, 0));
-      playingNotesRef.current.clear();
-    };
-    return { auditionNote, stopAllAudition };
-  }, [instrumentId]);
-
-  const getGridPosition = useCallback((clientX, clientY) => {
-    const container = containerRef.current;
-    if (!container) return null;
-    const rect = container.getBoundingClientRect();
-    const x = clientX - rect.left + container.scrollLeft - viewport.keyboardWidth;
-    const y = clientY - rect.top + container.scrollTop - viewport.rulerHeight;
-    const time = viewport.xToStep(x);
-    const pitch = viewport.yToNote(y);
-    return { x, y, time, pitch };
-  }, [containerRef, viewport]);
-
-  const findNoteAtPosition = useCallback((x, y) => {
-    for (let i = notes.length - 1; i >= 0; i--) {
-      const note = notes[i];
-      const noteRect = viewport.getNoteRect(note);
-      if (x >= noteRect.x && x <= noteRect.x + noteRect.width &&
-          y >= noteRect.y && y <= noteRect.y + noteRect.height) {
-        return note;
-      }
+  const audioContext = useMemo(() => ({
+    auditionNote: (pitch, velocity = 0.8) => {
+        if (!instrumentId || !pitch) return;
+        if (velocity > 0) {
+            AudioContextService.auditionNoteOn(instrumentId, pitch, velocity);
+            playingNotesRef.current.add(pitch);
+        } else {
+            AudioContextService.auditionNoteOff(instrumentId, pitch);
+            playingNotesRef.current.delete(pitch);
+        }
+    },
+    stopAllAudition: () => {
+        playingNotesRef.current.forEach(pitch => audioContext.auditionNote(pitch, 0));
+        playingNotesRef.current.clear();
     }
-    return null;
+  }), [instrumentId]);
+
+  const findNoteAtPosition = useCallback((gridX, gridY) => {
+    return notes.find(note => {
+        const rect = viewport.getNoteRect(note);
+        return gridX >= rect.x && gridX <= rect.x + rect.width &&
+               gridY >= rect.y && gridY <= rect.y + rect.height;
+    });
   }, [notes, viewport]);
 
   const handleMouseDown = useCallback((e) => {
     if (e.button !== 0) return;
-    const gridPos = getGridPosition(e.clientX, e.clientY);
-    if (!gridPos) return;
+    
+    // DÜZELTME: Doğrudan viewport'un hatasız fonksiyonunu kullanıyoruz
+    const rect = containerRef.current.getBoundingClientRect();
+    const gridPos = {
+        x: e.clientX - rect.left + containerRef.current.scrollLeft,
+        y: e.clientY - rect.top + containerRef.current.scrollTop,
+    };
+    
+    const { time, pitch } = viewport.mouseToGrid(gridPos);
+    
     const clickedNote = findNoteAtPosition(gridPos.x, gridPos.y);
 
     switch (activeTool) {
       case PIANO_ROLL_TOOLS.PENCIL:
         if (clickedNote) {
-            handleNotesChange(notes.filter(n => n.id !== clickedNote.id));
+          handleNotesChange(notes.filter(n => n.id !== clickedNote.id));
         } else {
-            const snappedTime = Math.round(gridPos.time);
-            const newNote = { id: generateNoteId(), time: snappedTime, pitch: gridPos.pitch, duration: lastUsedDuration, velocity: 0.8 };
-            handleNotesChange([...notes, newNote]);
-            setSelectedNotes(new Set([newNote.id]));
-            audioContext.auditionNote(gridPos.pitch, 0.8);
-            setCurrentInteraction({ type: 'create', noteId: newNote.id, startMouseX: gridPos.x });
+          const snappedTime = snapping.snapTime(time);
+          const newNote = { id: generateNoteId(), time: snappedTime, pitch: pitch, duration: lastUsedDuration, velocity: 0.8 };
+          handleNotesChange([...notes, newNote]);
+          setSelectedNotes(new Set([newNote.id]));
+          audioContext.auditionNote(pitch, 0.8);
+          setCurrentInteraction({ type: 'create', noteId: newNote.id, startGridPos: { ...gridPos, time, pitch } });
         }
         break;
       case PIANO_ROLL_TOOLS.SELECTION:
@@ -95,40 +82,48 @@ export const useHybridInteractions = ({
             setSelectedNotes(new Set([clickedNote.id]));
           }
           const notesToDrag = selectedNotes.has(clickedNote.id) ? Array.from(selectedNotes) : [clickedNote.id];
-          setCurrentInteraction({ type: 'drag', startPos: gridPos, noteIds: notesToDrag, originalNotes: new Map(notes.filter(n => notesToDrag.includes(n.id)).map(n => [n.id, {...n}])) });
+          setCurrentInteraction({ type: 'drag', startPos: { ...gridPos, time, pitch }, noteIds: notesToDrag, originalNotes: new Map(notes.filter(n => notesToDrag.includes(n.id)).map(n => [n.id, {...n}])) });
         } else {
           if (!e.shiftKey) setSelectedNotes(new Set());
-          setCurrentInteraction({ type: 'marquee', startPos: gridPos, currentPos: gridPos });
+          setCurrentInteraction({ type: 'marquee', startPos: { ...gridPos, time, pitch }, currentPos: { ...gridPos, time, pitch } });
         }
         break;
     }
-  }, [activeTool, getGridPosition, findNoteAtPosition, notes, handleNotesChange, lastUsedDuration, audioContext, selectedNotes, setSelectedNotes]);
+  }, [activeTool, findNoteAtPosition, notes, handleNotesChange, lastUsedDuration, audioContext, selectedNotes, setSelectedNotes, snapping, viewport, containerRef]);
 
   const handleMouseMove = useCallback((e) => {
     if (!currentInteraction) return;
-    const gridPos = getGridPosition(e.clientX, e.clientY);
-    if (!gridPos) return;
+    
+    const rect = containerRef.current.getBoundingClientRect();
+    const gridPos = {
+        x: e.clientX - rect.left + containerRef.current.scrollLeft,
+        y: e.clientY - rect.top + containerRef.current.scrollTop,
+    };
+    const { time, pitch } = viewport.mouseToGrid(gridPos);
+
 
     if (currentInteraction.type === 'create') {
-        const timeDiff = (gridPos.x - currentInteraction.startMouseX) / viewport.stepWidth;
-        const newDurationSteps = Math.max(1, Math.round(timeDiff / (Tone.Time(gridSnapValue).toSeconds() / Tone.Time('16n').toSeconds())));
-        const newDurationNotation = `${newDurationSteps}*${gridSnapValue}`;
+        const timeDiff = time - currentInteraction.startGridPos.time;
+        const snappedDuration = snapping.snapTime(timeDiff);
+        const newDurationSteps = Math.max(snapping.snapSteps, snappedDuration);
+        const newDurationNotation = `${newDurationSteps / snapping.snapSteps}*${snapping.value}`;
         handleNotesChange(notes.map(n => n.id === currentInteraction.noteId ? { ...n, duration: newDurationNotation } : n));
         setLastUsedDuration(newDurationNotation);
     } else if (currentInteraction.type === 'drag') {
-        const deltaTime = gridPos.time - currentInteraction.startPos.time;
-        const deltaPitch = Math.round((gridPos.y - currentInteraction.startPos.y) / viewport.keyHeight);
-        const snappedDeltaTime = Math.round(deltaTime);
+        const deltaTime = time - currentInteraction.startPos.time;
+        const deltaPitch = viewport.pitchToIndex(currentInteraction.startPos.pitch) - viewport.pitchToIndex(pitch);
+        const snappedDeltaTime = snapping.snapTime(deltaTime);
         const previewNotes = currentInteraction.noteIds.map(id => {
             const original = currentInteraction.originalNotes.get(id);
-            const newPitchIndex = viewport.pitchToIndex(original.pitch) - deltaPitch;
+            const originalPitchIndex = viewport.pitchToIndex(original.pitch);
+            const newPitchIndex = clamp(originalPitchIndex + deltaPitch, 0, 127);
             return { ...original, time: Math.max(0, original.time + snappedDeltaTime), pitch: viewport.indexToPitch(newPitchIndex) };
         });
         setCurrentInteraction(prev => ({ ...prev, previewNotes }));
     } else if (currentInteraction.type === 'marquee') {
-        setCurrentInteraction(prev => ({ ...prev, currentPos: gridPos }));
+        setCurrentInteraction(prev => ({ ...prev, currentPos: { ...gridPos, time, pitch } }));
     }
-  }, [currentInteraction, getGridPosition, viewport, notes, handleNotesChange, gridSnapValue, setLastUsedDuration]);
+  }, [currentInteraction, viewport, notes, handleNotesChange, snapping, setLastUsedDuration, containerRef]);
 
   const handleMouseUp = useCallback(() => {
     if (currentInteraction?.type === 'drag' && currentInteraction.previewNotes) {
@@ -163,8 +158,9 @@ export const useHybridInteractions = ({
     const handleResizeMove = (moveEvent) => {
         const deltaX = moveEvent.clientX - startX;
         const deltaSteps = deltaX / viewport.stepWidth;
-        const newDurationSteps = Math.max(1, originalDurationSteps + deltaSteps);
-        const newDurationNotation = `${Math.round(newDurationSteps)}*16n`;
+        const newDurationSteps = Math.max(snapping.snapSteps, originalDurationSteps + deltaSteps);
+        const snappedDuration = snapping.snapTime(newDurationSteps);
+        const newDurationNotation = `${snappedDuration / snapping.snapSteps}*${snapping.value}`;
         handleNotesChange(notes.map(n => n.id === note.id ? { ...n, duration: newDurationNotation } : n));
     };
 
@@ -174,24 +170,20 @@ export const useHybridInteractions = ({
     };
     window.addEventListener('mousemove', handleResizeMove);
     window.addEventListener('mouseup', handleResizeUp);
-  }, [notes, handleNotesChange, viewport.stepWidth]);
+  }, [notes, handleNotesChange, viewport.stepWidth, snapping]);
 
   useEffect(() => {
-    // mouseup olayını global olarak dinlemek, pencere dışında fare bırakılsa bile işlemi sonlandırır.
     window.addEventListener('mouseup', handleMouseUp);
     return () => window.removeEventListener('mouseup', handleMouseUp);
   }, [handleMouseUp]);
 
-  // --- HATA DÜZELTMESİ: eventHandlers objesi artık doğru fonksiyon isimlerini referans alıyor. ---
   return {
     eventHandlers: {
       onMouseDown: handleMouseDown,
       onMouseMove: handleMouseMove,
-      // onMouseUp'ı doğrudan elemente bağlamak yerine global olarak dinliyoruz.
     },
     currentInteraction,
     handleResizeStart,
     audioContext,
   };
 };
-

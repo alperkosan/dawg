@@ -22,7 +22,7 @@ export const usePianoRollStore = create(
       // State
       scale: { root: 'C', type: 'Minor' },
       showScaleHighlighting: true,
-      showGhostNotes: true,
+      showGhostNotes: true, // YENİ: Ghost notes state'i
       activeTool: 'pencil',
       gridSnapValue: '16n',
       snapMode: 'hard',
@@ -30,12 +30,12 @@ export const usePianoRollStore = create(
       zoomX: 1,
       zoomY: 1,
       velocityLaneHeight: 100,
-      showVelocityLane: true, // `EnhancedVelocityLane` bunu bekliyor
+      showVelocityLane: true,
       
       // Actions
       setScale: (root, type) => set({ scale: { root, type } }),
       toggleScaleHighlighting: () => set(state => ({ showScaleHighlighting: !state.showScaleHighlighting })),
-      toggleGhostNotes: () => set(state => ({ showGhostNotes: !state.showGhostNotes })),
+      toggleGhostNotes: () => set(state => ({ showGhostNotes: !state.showGhostNotes })), // YENİ: Ghost notes action'ı
       setActiveTool: (tool) => set({ activeTool: tool }),
       setGridSnapValue: (snap) => set({ gridSnapValue: snap }),
       toggleSnapMode: () => set(state => ({ snapMode: state.snapMode === 'hard' ? 'soft' : 'hard' })),
@@ -43,8 +43,6 @@ export const usePianoRollStore = create(
       zoomIn: () => set(state => ({ zoomX: clamp(state.zoomX * 1.2, 0.1, 10) })),
       zoomOut: () => set(state => ({ zoomX: clamp(state.zoomX / 1.2, 0.1, 10) })),
       
-      // HATA DÜZELTMESİ: `EnhancedVelocityLane`'in beklediği fonksiyonlar eklendi.
-      // Artık mutlak bir yükseklik değeri alıyor.
       setVelocityLaneHeight: (height) => set({ 
           velocityLaneHeight: clamp(height, 20, 300),
           showVelocityLane: true 
@@ -76,4 +74,3 @@ export const usePianoRollStore = create(
     }
   )
 );
-

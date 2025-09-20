@@ -12,14 +12,17 @@ import StepGrid from './StepGrid';
 import PianoRollMiniView from './PianoRollMiniView';
 import InteractiveTimeline from './InteractiveTimeline';
 import { PlusCircle } from 'lucide-react';
-// CSS import'u artık gerekli değil, main.css üzerinden yönetiliyor.
 
 const STEP_WIDTH = 16;
 
 export default function ChannelRack() {
   const instruments = useInstrumentsStore(state => state.instruments);
   const { patterns, activePatternId } = useArrangementStore();
-  const { loopLength, audioLoopLength } = usePlaybackStore();
+  
+  // GÜNCELLEME: Gerekli state ve fonksiyonlar store'dan çekildi.
+  const { loopLength, audioLoopLength, transportStep } = usePlaybackStore();
+  const { jumpToStep } = usePlaybackStore.getState();
+  
   const { openPianoRollForInstrument, handleEditInstrument, togglePanel } = usePanelsStore();
   
   const playheadRef = useRef(null);
@@ -29,7 +32,6 @@ export default function ChannelRack() {
   useEffect(() => {
     const updatePlayhead = (progress) => {
       if (playheadRef.current) {
-        // audioLoopLength, notaların gerçek uzunluğudur.
         const position = progress * audioLoopLength * STEP_WIDTH;
         playheadRef.current.style.transform = `translateX(${position}px)`;
       }
@@ -38,7 +40,7 @@ export default function ChannelRack() {
     return () => PlaybackAnimatorService.unsubscribe(updatePlayhead);
   }, [audioLoopLength]);
 
-  // Nota ekleme/silme işlemi (Komut Yöneticisi ile)
+  // Nota ekleme/silme işlemi
   const handleNoteToggle = useCallback((instrumentId, step) => {
     if (!activePattern) return;
     const currentNotes = activePattern.data[instrumentId] || [];
@@ -59,7 +61,6 @@ export default function ChannelRack() {
       <div className="channel-rack__scroll-container">
         <div className="channel-rack__content" style={{ height: `${contentHeight}px` }}>
           
-          {/* Sol Taraf: Enstrüman Listesi (Sticky) */}
           <div className="channel-rack__instruments">
             <div className="channel-rack__header">
                Pattern: {activePattern?.name || 'Pattern 1'}
@@ -81,21 +82,19 @@ export default function ChannelRack() {
             </div>
           </div>
           
-          {/* Sağ Taraf: Grid Alanı (Scrollable) */}
           <div className="channel-rack__grid-area">
             <div className="channel-rack__rows" style={{ width: `${totalGridWidth}px`}}>
-              {/* Timeline (Sticky) */}
               <div className="channel-rack__timeline" style={{ width: `${totalGridWidth}px` }}>
+                {/* GÜNCELLEME: İnteraktivite için gerekli proplar eklendi */}
                 <InteractiveTimeline
                   loopLength={loopLength}
-                  // Diğer proplar...
+                  currentPosition={transportStep}
+                  onJumpToPosition={jumpToStep}
                 />
               </div>
 
-              {/* Playhead */}
               <div ref={playheadRef} className="channel-rack__playhead" style={{ height: `${contentHeight}px` }} />
 
-              {/* Grid Satırları */}
               {instruments.map((inst) => (
                 <div key={inst.id} className="channel-rack__grid-row">
                    {inst.pianoRoll ? (
@@ -105,7 +104,6 @@ export default function ChannelRack() {
                   )}
                 </div>
               ))}
-              {/* "Add" satırı için boş bir grid satırı */}
               <div className="channel-rack__grid-row" />
             </div>
           </div>

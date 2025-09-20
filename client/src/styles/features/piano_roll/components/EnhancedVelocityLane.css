@@ -1,47 +1,48 @@
 /* ==========================================================================
-   Bileşen: Vurgu Alanı (EnhancedVelocityLane.css)
+   Bileşen: Vurgu Alanı (Basitleştirilmiş)
    ========================================================================== */
 
-.velocity-lane-container {
-  position: sticky; bottom: 0; left: 0; width: 100%; z-index: 25;
-}
 .velocity-lane {
-  display: flex; background-color: var(--color-surface-1);
+  display: flex; 
+  background-color: var(--color-surface-1);
   border-top: 1px solid var(--color-background);
+  height: 100%; /* Ebeveyninin yüksekliğini doldur */
 }
+
 .velocity-lane__label-spacer {
-  width: 80px; flex-shrink: 0;
+  width: 80px; /* Klavye ile aynı genişlikte boşluk */
+  flex-shrink: 0;
   border-right: 1px solid var(--color-background);
 }
-.velocity-lane__bars-container { position: relative; height: 100%; }
+
+.velocity-lane__bars-container { 
+  position: relative; 
+  height: 100%; 
+}
+
 .velocity-lane__bar-wrapper {
-  position: absolute; bottom: 0; height: 100%;
-  display: flex; align-items: flex-end; justify-content: center;
+  position: absolute; 
+  bottom: 0; 
+  height: 100%;
+  display: flex; 
+  align-items: flex-end; 
+  justify-content: center;
   cursor: ns-resize;
 }
+
 .velocity-lane__bar {
-  width: 60%; background-color: var(--color-text-secondary);
-  border-top-left-radius: 2px; border-top-right-radius: 2px;
+  width: 60%; 
+  background-color: var(--color-text-secondary);
+  border-top-left-radius: 2px; 
+  border-top-right-radius: 2px;
   transition: background-color 100ms ease;
 }
+
 .velocity-lane__bar-wrapper:hover .velocity-lane__bar {
   background-color: var(--color-primary);
 }
+
 .velocity-lane__bar--selected {
   background-color: var(--color-primary);
   box-shadow: 0 0 8px var(--color-primary);
-}
-
-/* --- Yeniden Boyutlandırma Tutamacı (ResizableHandle) --- */
-.resizable-handle {
-  width: 100%; height: 8px; background-color: var(--color-surface-2);
-  cursor: ns-resize; display: flex; align-items: center; justify-content: center;
-  border-top: 1px solid var(--color-background);
-  border-bottom: 1px solid var(--color-background);
-}
-.resizable-handle:hover { background-color: var(--color-surface-3); }
-.resizable-handle::after {
-  content: ''; width: 40px; height: 4px;
-  background-color: var(--color-border);
-  border-radius: 2px;
 }

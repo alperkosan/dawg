@@ -3,19 +3,16 @@ import ReactDOM from 'react-dom';
 import { ChevronRight } from 'lucide-react';
 import { pluginRegistry } from '../config/pluginConfig';
 
-// Akıllı alt menü öğesi bileşeni
+// Akıllı alt menü öğesi bileşeni (değişiklik yok, ama burada olması önemli)
 const MenuItem = ({ category, plugins, onSelect }) => {
     const itemRef = useRef(null);
-    // Alt menünün hangi yöne açılacağını tutan state
     const [subMenuPositionClass, setSubMenuPositionClass] = useState('left-full');
 
     const handleMouseEnter = () => {
         if (itemRef.current) {
             const parentRect = itemRef.current.getBoundingClientRect();
             const viewportWidth = window.innerWidth;
-            const subMenuWidth = 256; // Alt menünün tahmini genişliği (256px)
-
-            // Eğer sağda yeterli alan yoksa, sola doğru açılmasını sağla
+            const subMenuWidth = 256; 
             if (parentRect.right + subMenuWidth > viewportWidth) {
                 setSubMenuPositionClass('right-full');
             } else {
@@ -50,7 +47,6 @@ const MenuItem = ({ category, plugins, onSelect }) => {
 
 export function AddEffectMenu({ onSelect, onClose, x, y }) {
   const menuRef = useRef(null);
-  // Menünün son pozisyonunu ve görünürlüğünü tutan state
   const [position, setPosition] = useState({ top: y, left: x, opacity: 0 });
 
   const categorizedPlugins = Object.values(pluginRegistry).reduce((acc, plugin) => {
@@ -60,33 +56,34 @@ export function AddEffectMenu({ onSelect, onClose, x, y }) {
     return acc;
   }, {});
 
-  // Bu "sihirli" hook, bileşen ekrana çizilmeden hemen önce çalışır.
-  // Bu sayede menünün boyutlarını ölçüp, taşma durumunda pozisyonunu anında düzeltebiliriz.
   useLayoutEffect(() => {
     if (menuRef.current) {
       const menuRect = menuRef.current.getBoundingClientRect();
       const viewportHeight = window.innerHeight;
+      const viewportWidth = window.innerWidth;
 
       let finalY = y;
+      let finalX = x;
 
-      // Eğer menü, alt kenardan taşıyorsa...
       if (y + menuRect.height > viewportHeight) {
-        // ...menüyü, yüksekliği kadar yukarı kaydırarak aç.
         finalY = y - menuRect.height;
       }
+      if (x + menuRect.width > viewportWidth) {
+          finalX = x - menuRect.width;
+      }
       
-      // Menünün son, akıllı pozisyonunu ayarla ve görünür yap.
-      setPosition({ top: finalY, left: x, opacity: 1 });
+      setPosition({ top: finalY, left: finalX, opacity: 1 });
     }
   }, [x, y]);
 
-  // Dışarı tıklandığında menüyü kapatan standart hook
   useEffect(() => {
     const handleClickOutside = (event) => {
+      // Menüye veya onu açan butona tıklanmadığından emin ol
       if (menuRef.current && !menuRef.current.contains(event.target)) {
         onClose();
       }
     };
+    // mousedown, click'ten önce çalıştığı için daha güvenilir
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [onClose]);
@@ -95,8 +92,10 @@ export function AddEffectMenu({ onSelect, onClose, x, y }) {
     <div
       ref={menuRef}
       className="fixed z-50 w-64 bg-gray-900 border border-gray-700 rounded-md shadow-2xl p-1 transition-opacity duration-150"
-      // Akıllıca hesaplanmış pozisyonu ve başlangıçta görünmez olmasını sağlayan stil
       style={{ top: position.top, left: position.left, opacity: position.opacity }}
+      // Olayların yukarı yayılmasını engelle, böylece dışarıya tıklama mekanizması bozulmaz
+      onClick={(e) => e.stopPropagation()} 
+      onMouseDown={(e) => e.stopPropagation()}
     >
       <ul className="flex flex-col gap-1">
         {Object.entries(categorizedPlugins).map(([category, plugins]) => (
@@ -106,5 +105,6 @@ export function AddEffectMenu({ onSelect, onClose, x, y }) {
     </div>
   );
 
+  // Portalı, `document.body`'nin sonuna ekliyoruz.
   return ReactDOM.createPortal(menuContent, document.body);
 }

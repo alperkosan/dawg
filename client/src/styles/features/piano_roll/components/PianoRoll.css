@@ -1,61 +1,49 @@
 /* src/styles/features/piano_roll/components/PianoRoll.css */
-
-/* --- Ana Yapı ve Layout (NİHAİ VERSİYON) --- */
 .piano-roll {
   width: 100%; height: 100%; display: flex; flex-direction: column;
-  background-color: var(--color-background); color: var(--color-text-primary);
-  user-select: none; contain: strict;
+  background-color: var(--color-background); overflow: hidden; position: relative;
 }
-
-.piano-roll__main-content {
-  flex-grow: 1; min-height: 0;
-  overflow: auto; /* Kaydırmayı bu ana element yapar */
-  position: relative; /* İçindeki sticky elemanlar için gereklidir */
-  background-color: var(--color-background-deep, #0a0a0a);
-  scrollbar-color: var(--color-surface-3) var(--color-surface-1);
-  scrollbar-width: thin;
+.piano-roll__main-grid-layout {
+  flex-grow: 1; display: grid; grid-template-columns: 80px 1fr;
+  grid-template-rows: 32px 1fr; min-height: 0;
 }
-
-/* Tüm scroll edilebilir içeriği tutan sarmalayıcı */
-.piano-roll__content-wrapper {
-  position: relative; /* İçindeki tüm absolute/sticky elemanların referans noktası */
-  display: block;
-}
-
-/* Köşe elemanı */
 .piano-roll__corner {
-  position: sticky; top: 0; left: 0;
-  width: 80px; height: 32px;
-  background-color: var(--color-surface-1);
-  border-right: 1px solid var(--color-background);
-  border-bottom: 1px solid var(--color-background);
-  z-index: 40;
+  grid-column: 1; grid-row: 1; background-color: var(--color-surface-1);
+  border-right: 1px solid var(--color-background); border-bottom: 1px solid var(--color-background);
+  z-index: 30;
 }
-
-/* Cetvel ve Klavye için sarmalayıcılar */
-.timeline-ruler-wrapper { 
-  position: sticky; top: 0; z-index: 30; height: 32px; 
+.piano-roll__ruler-container, .piano-roll__keyboard-container {
+  overflow: hidden; position: relative; background-color: var(--color-surface-1); z-index: 20;
 }
-.piano-keyboard-wrapper { 
-  position: sticky; left: 0; z-index: 20; width: 80px; 
+.piano-roll__ruler-container { grid-column: 2; grid-row: 1; }
+.piano-roll__keyboard-container { grid-column: 1; grid-row: 2; }
+.piano-roll__ruler-content, .piano-roll__keyboard-content {
+  position: absolute; top: 0; left: 0; will-change: transform;
 }
-
-/* Ana grid alanı için sarmalayıcı */
-.piano-roll__grid-container {
-  position: absolute; top: 0; left: 0;
+.piano-roll__scroll-container {
+  grid-column: 2; grid-row: 2; overflow: auto; position: relative; z-index: 10;
 }
-
-.velocity-lane-container {
-  position: absolute; left: 0;
-  /* top ve width JS tarafından ayarlanır */
+.piano-roll__scroll-content-wrapper {
+  position: relative;
 }
-
-/* --- Placeholder (Değişiklik yok) --- */
+.piano-roll__notes-container { position: absolute; inset: 0; pointer-events: none; z-index: 10; }
+.piano-roll__notes-container .note { pointer-events: auto; }
+.piano-roll__playhead {
+  position: absolute; top: 0; width: 2px;
+  background-color: var(--color-primary);
+  box-shadow: var(--shadow-glow);
+  pointer-events: none; z-index: 15;
+  will-change: transform;
+}
 .piano-roll-placeholder {
-  width: 100%; height: 100%; display: flex; flex-direction: column;
-  align-items: center; justify-content: center;
-  color: var(--color-text-secondary);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  width: 100%; height: 100%; color: var(--color-text-secondary);
 }
 .piano-roll-placeholder__icon { opacity: 0.5; margin-bottom: var(--spacing-4); }
 .piano-roll-placeholder__title { font-size: var(--font-size-xl); font-weight: bold; }
 .piano-roll-placeholder__text { font-size: var(--font-size-md); }
+.help-button {
+    width: 24px; height: 24px; border-radius: 50%; background: var(--color-surface-2);
+    color: var(--color-text-secondary); font-weight: bold; margin: 4px;
+    display: flex; align-items: center; justify-content: center;
+}

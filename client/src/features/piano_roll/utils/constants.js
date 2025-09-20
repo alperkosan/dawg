@@ -1,5 +1,9 @@
 export const NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
+// YENİ: Piyano klavyesi için temel sabitler eklendi
+export const TOTAL_OCTAVES = 8; // C0'dan B7'ye kadar
+export const TOTAL_KEYS = TOTAL_OCTAVES * 12; // Toplam 96 tuş
+
 export const SCALES = {
   'Major': [0, 2, 4, 5, 7, 9, 11],
   'Minor': [0, 2, 3, 5, 7, 8, 10],

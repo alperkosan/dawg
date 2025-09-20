@@ -14,50 +14,63 @@ const PianoRollGrid = React.memo(({ notes, selectedNotes, viewport, interaction,
         const { gridWidth, gridHeight, stepWidth, keyHeight, totalKeys } = viewport;
         if (!canvasRef.current) return;
 
+        // Renkleri doğrudan tema CSS değişkenlerinden alıyoruz
         const styles = getComputedStyle(canvasRef.current);
         const gridColors = {
             background: styles.getPropertyValue('--color-background-deep').trim(),
-            bar: styles.getPropertyValue('--color-border').trim(),
-            beat: styles.getPropertyValue('--color-border-subtle').trim(),
-            scaleHighlight: styles.getPropertyValue('--color-accent-primary').trim() + '1A', // %10 opacity
+            bar: 'rgba(255, 255, 255, 0.12)',      // Daha belirgin
+            beat: 'rgba(255, 255, 255, 0.08)',     // Orta belirginlikte
+            subdivision: 'rgba(255, 255, 255, 0.04)', // En soluk
+            scaleHighlight: styles.getPropertyValue('--color-accent-primary').trim() + '1A', // %10 alpha
         };
 
         ctx.fillStyle = gridColors.background;
         ctx.fillRect(0, 0, gridWidth, gridHeight);
 
-        // Gam vurgularını çiz
+        // Gam (Scale) Vurguları
         if (showScaleHighlighting) {
             const scaleNoteSet = scale?.getScaleNotes ? scale.getScaleNotes() : new Set();
             ctx.fillStyle = gridColors.scaleHighlight;
             for (let i = 0; i < totalKeys; i++) {
-                const noteIndex = i % 12;
+                const noteIndex = i % 12; // Hangi nota olduğunu bul (C, C#, D...)
                 if (!scaleNoteSet.has(noteIndex)) {
+                    // Nota gam içinde değilse, o satırı boya
                     const y = (totalKeys - 1 - i) * keyHeight;
                     ctx.fillRect(0, y, gridWidth, keyHeight);
                 }
             }
         }
         
-        // Dikey çizgileri çiz
+        // Dikey Çizgiler (Dinamik Görünürlük)
         for (let i = 0; i * stepWidth < gridWidth; i++) {
             const x = i * stepWidth;
-            if (i % 16 === 0) { // Bar çizgisi
+            
+            if (i % 16 === 0) { // Bar çizgisi (Her zaman görünür)
                 ctx.strokeStyle = gridColors.bar;
                 ctx.lineWidth = 1;
-            } else if (i % 4 === 0) { // Beat çizgisi
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, gridHeight);
+                ctx.stroke();
+            } else if (i % 4 === 0) { // Beat çizgisi (Her zaman görünür)
                 ctx.strokeStyle = gridColors.beat;
+                ctx.lineWidth = 0.75;
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, gridHeight);
+                ctx.stroke();
+            } else if (viewport.stepWidth > 12) { // 1/16'lık adımlar (Sadece yakınlaşınca görünür)
+                ctx.strokeStyle = gridColors.subdivision;
                 ctx.lineWidth = 0.5;
-            } else {
-                continue; // Diğer adımları çizme (performans)
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, gridHeight);
+                ctx.stroke();
             }
-            ctx.beginPath();
-            ctx.moveTo(x, 0);
-            ctx.lineTo(x, gridHeight);
-            ctx.stroke();
         }
 
-        // Yatay çizgileri çiz
-        ctx.strokeStyle = gridColors.beat;
+        // Yatay Çizgiler (Piyano Tuşları)
+        ctx.strokeStyle = gridColors.beat; // Beat çizgisiyle aynı renkte
         ctx.lineWidth = 0.5;
         for (let i = 0; i * keyHeight < gridHeight; i++) {
             const y = i * keyHeight;

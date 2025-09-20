@@ -1,54 +1,94 @@
 /* ==========================================================================
-   Bileşen: Grid ve Notalar (PianoRollGrid.css)
+   Bileşen: Grid ve Notalar (Geliştirilmiş Stil)
    ========================================================================== */
 
-.piano-roll__grid { position: relative; }
+.piano-roll__grid { 
+  position: relative; 
+}
 .piano-roll__grid-canvas {
-  position: absolute; inset: 0; pointer-events: none; z-index: 1;
+  position: absolute; 
+  inset: 0; 
+  pointer-events: none; 
+  z-index: 1;
 }
 .piano-roll__notes-container {
-  position: relative; z-index: 10; height: 100%; width: 100%;
-}
-.piano-roll__playhead {
-  position: absolute; top: 0; width: 2px;
-  background-color: var(--color-primary);
-  box-shadow: var(--shadow-glow);
-  pointer-events: none; z-index: 15;
-  will-change: transform;
+  position: relative; 
+  z-index: 10; 
+  height: 100%; 
+  width: 100%;
 }
 .piano-roll__marquee {
-  position: absolute; border: 1px solid var(--color-primary);
+  position: absolute; 
+  border: 1px solid var(--color-primary);
   background-color: rgba(0, 163, 255, 0.2);
-  z-index: 50; pointer-events: none;
+  z-index: 50; 
+  pointer-events: none;
   border-radius: var(--border-radius-sm);
 }
+.piano-roll__playhead {
+  position: absolute; 
+  top: 0; 
+  width: 2px;
+  background-color: var(--color-primary);
+  box-shadow: var(--shadow-glow);
+  pointer-events: none; 
+  z-index: 15;
+  will-change: transform;
+}
 
-/* --- Nota Elementi --- */
+/* --- YENİ ve GÜNCELLENMİŞ Nota Stilleri --- */
 .note {
-  position: absolute; border-radius: var(--border-radius-sm);
+  position: absolute;
+  border-radius: var(--border-radius-sm);
   transition: background-color 100ms, border-color 100ms, opacity 100ms, transform 50ms;
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 0 var(--spacing-1); font-size: var(--font-size-sm); font-weight: 500;
-  overflow: hidden; contain: strict; cursor: pointer;
-  background-color: var(--color-accent-secondary); color: var(--color-text-inverse);
+  display: flex;
+  align-items: center;
+  padding: 0 var(--spacing-1);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  overflow: hidden;
+  contain: strict;
+  cursor: pointer;
+  background-color: var(--color-accent-secondary);
+  color: var(--color-text-inverse);
   border: 1px solid rgba(0,0,0,0.4);
   opacity: var(--note-velocity-opacity, 1);
   will-change: transform;
 }
+
 .note--selected {
-  background-color: var(--color-primary); color: var(--color-background-deep);
-  border: 1px solid white; box-shadow: 0 0 12px 0 var(--color-primary);
-  transform: scale(1.02); z-index: 15;
+  background-color: var(--color-primary);
+  color: var(--color-background-deep);
+  border: 1px solid white;
+  box-shadow: 0 0 12px 0 var(--color-primary);
+  transform: scale(1.02); /* Hafifçe büyüt */
+  z-index: 15;
 }
+
 .note--preview {
   background-color: rgba(0, 163, 255, 0.5);
   border: 1px dashed var(--color-primary);
   z-index: 20;
 }
-.note__resize-handle {
-  position: absolute; top: 0; right: 0; bottom: 0;
-  width: 8px; cursor: ew-resize; z-index: 16;
+
+/* YENİ: Nota etiketinin (notasyon) stili */
+.note__label {
+  padding-left: var(--spacing-1);
+  white-space: nowrap;
+  pointer-events: none;
 }
+
+/* YENİ: Yeniden boyutlandırma tutamacının stili */
+.note__resize-handle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 8px; /* Daha kolay tıklanabilir alan */
+  cursor: ew-resize;
+  z-index: 16;
+}
+
 .note__resize-handle:hover {
   background-color: rgba(255, 255, 255, 0.2);
 }

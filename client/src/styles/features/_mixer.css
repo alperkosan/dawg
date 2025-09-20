@@ -8,7 +8,7 @@
   display: flex;
   background-color: var(--color-background);
   color: var(--color-text-primary);
-  overflow: hidden; /* Dışarı taşmaları engelle */
+  overflow: hidden;
 }
 
 .mixer-channels-area {
@@ -16,28 +16,20 @@
   position: relative;
   overflow-x: auto;
   overflow-y: hidden;
-  /* Scrollbar stilleri */
+  /* Modern scrollbar stilleri */
   scrollbar-color: var(--color-surface-3) var(--color-surface-1);
   scrollbar-width: thin;
 }
-
-.mixer-channels-area::-webkit-scrollbar {
-  height: 8px;
-}
-.mixer-channels-area::-webkit-scrollbar-track {
-  background-color: var(--color-surface-1);
-}
-.mixer-channels-area::-webkit-scrollbar-thumb {
-  background-color: var(--color-surface-3);
-  border-radius: 4px;
-}
+.mixer-channels-area::-webkit-scrollbar { height: 8px; }
+.mixer-channels-area::-webkit-scrollbar-track { background-color: var(--color-surface-1); }
+.mixer-channels-area::-webkit-scrollbar-thumb { background-color: var(--color-surface-3); border-radius: 4px; }
 
 .mixer-channels-wrapper {
   display: flex;
   height: 100%;
   padding: var(--spacing-4);
   gap: var(--spacing-4);
-  min-width: fit-content;
+  min-width: fit-content; /* Yatay kaydırmayı etkinleştirmek için */
 }
 
 .mixer-channel__separator {
@@ -52,7 +44,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--spacing-3);
-  width: 96px; /* Genişliği biraz daralttık */
+  width: 96px;
   height: 100%;
   background: linear-gradient(180deg, var(--color-surface-2) 0%, var(--color-background) 100%);
   border: 1px solid var(--color-border);
@@ -89,11 +81,11 @@
 .mixer-channel__fader-area {
   flex-grow: 1;
   display: flex;
+  flex-direction: column;
   gap: var(--spacing-2);
   margin-top: var(--spacing-2);
   min-height: 0;
   align-items: center;
-  flex-direction: column;
 }
 
 .mixer-channel__name {
@@ -109,7 +101,7 @@
   cursor: pointer;
   border: 1px solid var(--color-border-subtle);
   width: 100%;
-  margin-top: auto; /* En alta iter */
+  margin-top: auto;
 }
 
 .mixer-channel__controls {
@@ -151,7 +143,7 @@
   border-color: var(--color-accent-danger);
 }
 
-/* --- Insert Panel (YENİ EKLENDİ) --- */
+/* --- Insert Paneli --- */
 .mixer-insert-panel {
   width: 280px;
   flex-shrink: 0;
@@ -200,4 +192,3 @@
 .mixer-insert-panel__add-btn:hover {
   background-color: rgba(0, 229, 181, 0.2);
 }
-
