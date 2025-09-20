@@ -1,10 +1,10 @@
-import { useLayoutEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import WaveSurfer from 'wavesurfer.js';
 
 export const useWavesurfer = (containerRef, buffer) => {
   const wavesurferRef = useRef(null);
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     if (!containerRef.current) return;
 
     // Temadan renkleri alıyoruz
@@ -13,42 +13,45 @@ export const useWavesurfer = (containerRef, buffer) => {
     
     // Sadece bir kere wavesurfer instance'ı oluştur
     if (!wavesurferRef.current) {
-      console.log("%c[WaveSurfer] Instance oluşturuluyor...", "color: orange");
-      wavesurferRef.current = WaveSurfer.create({
-        container: containerRef.current,
-        waveColor: mutedColor,
-        progressColor: primaryColor,
-        cursorColor: 'white',
-        cursorWidth: 2,
-        barWidth: 3,
-        barRadius: 3,
-        barGap: 2,
-        height: 'auto', // Yüksekliği konteynere bırak
-        normalize: true,
-      });
+        wavesurferRef.current = WaveSurfer.create({
+            container: containerRef.current,
+            waveColor: mutedColor,
+            progressColor: primaryColor,
+            cursorColor: 'white',
+            cursorWidth: 2,
+            barWidth: 3,
+            barRadius: 3,
+            barGap: 2,
+            height: 'auto',
+            normalize: true,
+            dragToSeek: true,
+            autoplay: false,
+        });
     }
 
     const ws = wavesurferRef.current;
 
-    const loadAndRender = async () => {
-      if (buffer && ws) {
+    // Buffer mevcut ve geçerli ise yükle
+    if (buffer && ws) {
         const audioBuffer = buffer.get ? buffer.get() : buffer;
         if (audioBuffer instanceof AudioBuffer) {
-          console.log("%c[WaveSurfer] Geçerli buffer bulundu, yükleniyor...", "color: cyan");
-          try {
-            await ws.load(audioBuffer);
-            console.log("%c[WaveSurfer] Yükleme ve çizim tamamlandı!", "color: lightgreen");
-          } catch (error) {
-            if (error.name !== 'AbortError') {
-              console.error('[WaveSurfer] Yükleme hatası:', error);
-            }
-          }
+            ws.load(audioBuffer).catch(error => {
+                if (error.name === 'AbortError') {
+                    console.log('Waveform yüklemesi bilinçli olarak iptal edildi.');
+                } else {
+                    console.error('Waveform yükleme hatası:', error);
+                }
+            });
         }
-      }
-    };
-    
-    loadAndRender();
+    }
 
+    // Component unmount olduğunda instance'ı yok et
+    return () => {
+      // Not: Bu cleanup, sadece ana component (SampleEditor) kapandığında
+      // çalışacak şekilde ayarlanmalı. Şimdilik bu şekilde bırakıyoruz.
+      // Eğer sample'lar arası geçişte sorun olursa, bu destroy'u daha
+      // üst seviyede yönetmek gerekebilir.
+    };
   }, [containerRef, buffer]); // Sadece buffer değiştiğinde yeniden yükleme yap
 
   return wavesurferRef.current;
