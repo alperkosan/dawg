@@ -1,0 +1,173 @@
+/* src/styles/features/piano_roll/zIndexLayers.css */
+
+/* ==========================================================================
+   Piano Roll Z-Index Katman Sistemi
+   Tutarlı ve çakışmasız katmanlaşma için merkezi tanımlar
+   ========================================================================== */
+
+:root {
+  /* Z-Index Layer Definitions */
+  --z-background: 0;
+  --z-grid-canvas: 1;
+  --z-ghost-notes: 5;
+  --z-notes-base: 10;
+  --z-notes-selected: 15;
+  --z-playhead: 18;
+  --z-notes-preview: 20;
+  --z-ui-elements: 25;
+  --z-resize-handles: 30;
+  --z-ruler-keyboard: 35;
+  --z-marquee-selection: 40;
+  --z-context-menu: 50;
+  --z-modal: 100;
+  --z-tooltip: 200;
+}
+
+/* Background Elements */
+.piano-roll__scroll-content-wrapper {
+  z-index: var(--z-background);
+}
+
+.piano-roll__grid-canvas {
+  z-index: var(--z-grid-canvas);
+}
+
+/* Note Layers */
+.note--ghost {
+  z-index: var(--z-ghost-notes);
+  opacity: 0.3;
+  border-style: dashed;
+  background-color: var(--note-ghost-color);
+}
+
+.note {
+  z-index: var(--z-notes-base);
+}
+
+.note--selected {
+  z-index: var(--z-notes-selected);
+}
+
+.note--preview {
+  z-index: var(--z-notes-preview);
+}
+
+/* Playhead */
+.piano-roll__playhead {
+  z-index: var(--z-playhead);
+}
+
+/* UI Elements */
+.piano-roll__corner,
+.piano-roll__ruler-container,
+.piano-roll__keyboard-container {
+  z-index: var(--z-ruler-keyboard);
+}
+
+/* Interactive Elements */
+.note__resize-handle {
+  z-index: var(--z-resize-handles);
+}
+
+.piano-roll__marquee {
+  z-index: var(--z-marquee-selection);
+}
+
+/* Menus and Overlays */
+.context-menu {
+  z-index: var(--z-context-menu);
+}
+
+.velocity-lane {
+  z-index: var(--z-ui-elements);
+}
+
+/* Modals and Tooltips */
+.keyboard-shortcuts-panel {
+  z-index: var(--z-modal);
+}
+
+.tooltip {
+  z-index: var(--z-tooltip);
+}
+
+/* ==========================================================================
+   Ghost Notes Specific Styling
+   ========================================================================== */
+
+.piano-roll__ghost-notes-layer {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-ghost-notes);
+  pointer-events: none;
+}
+
+.note--ghost {
+  pointer-events: none;
+  opacity: 0.4;
+  border: 1px dashed rgba(255, 255, 255, 0.3);
+  background-color: var(--note-ghost-color, rgba(107, 114, 128, 0.6));
+  
+  /* Smooth opacity transition when toggling ghost notes */
+  transition: opacity 200ms ease-in-out;
+}
+
+/* Different opacity levels for different instruments */
+.note--ghost[data-instrument-type="drums"] {
+  opacity: 0.25;
+}
+
+.note--ghost[data-instrument-type="melodic"] {
+  opacity: 0.35;
+}
+
+/* ==========================================================================
+   Layered Interaction States
+   ========================================================================== */
+
+/* Ensure selected notes always appear above unselected ones */
+.note--selected {
+  transform: translateZ(0) scale(1.02);
+  box-shadow: 
+    0 0 0 1px rgba(255, 255, 255, 0.8),
+    0 2px 8px rgba(0, 0, 0, 0.3),
+    0 0 12px var(--color-primary);
+}
+
+/* Preview notes should be clearly visible during operations */
+.note--preview {
+  transform: translateZ(0);
+  animation: pulsePreview 1s ease-in-out infinite alternate;
+}
+
+@keyframes pulsePreview {
+  from { opacity: 0.6; }
+  to { opacity: 0.9; }
+}
+
+/* Ensure marquee selection is always visible */
+.piano-roll__marquee {
+  border: 2px solid var(--color-primary);
+  background-color: rgba(0, 163, 255, 0.15);
+  border-radius: 3px;
+  backdrop-filter: blur(1px);
+}
+
+/* ==========================================================================
+   Performance Optimizations
+   ========================================================================== */
+
+/* Enable hardware acceleration for frequently animated elements */
+.piano-roll__playhead,
+.note--selected,
+.note--preview,
+.piano-roll__marquee {
+  will-change: transform;
+  transform: translateZ(0);
+}
+
+/* Contain paint and layout for note containers */
+.piano-roll__notes-container,
+.piano-roll__ghost-notes-layer {
+  contain: layout style paint;
+}
