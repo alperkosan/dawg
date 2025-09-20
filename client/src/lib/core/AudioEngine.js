@@ -37,6 +37,14 @@ class AudioEngine {
     console.log("🔊 Atomik Ses Motoru v4.0 (Yönlendirme Düzeltildi) Başlatıldı.");
   }
 
+  // REHBER ADIM 5: Yeni EQ güncelleme metodu
+  updateChannelEQ(trackId, bandId, param, value) {
+      const strip = this.mixerStrips.get(trackId);
+      if (strip) {
+          strip.updateChannelEQ(bandId, param, value);
+      }
+  }
+
   async fullSync(instrumentData, mixerTrackData, arrangementData) {
     console.log("%c[SYNC BAŞLADI] Ses motoru kuruluyor...", "color: #818cf8; font-weight: bold;");
     

@@ -6,7 +6,6 @@ import { SlidersHorizontal, Plus, Trash2, Power, ArrowDownUp } from 'lucide-reac
 import { AddEffectMenu } from '../../ui/AddEffectMenu';
 import ChannelContextMenu from '../../components/ChannelContextMenu';
 
-// Insert Paneli, artık kendi state'ini ve event'lerini daha temiz yönetiyor.
 const InsertPanel = ({ activeTrack }) => {
     const { handleMixerEffectAdd, handleMixerEffectRemove, handleMixerEffectChange, reorderEffect } = useMixerStore.getState();
     const { togglePluginPanel } = usePanelsStore.getState();
@@ -17,10 +16,12 @@ const InsertPanel = ({ activeTrack }) => {
     const [dragOverIndex, setDragOverIndex] = useState(null);
 
     const handleAddButtonClick = (e) => {
+        // DÜZELTME: Olayın yayılmasını durdurarak anında kapanma sorununu çözüyoruz.
         e.stopPropagation();
         if (addButtonRef.current) {
             const rect = addButtonRef.current.getBoundingClientRect();
-            setAddEffectMenu({ isOpen: true, x: rect.left, y: rect.bottom + 5 });
+            // Menüyü mouse'un yanında açmak için event koordinatlarını kullanıyoruz.
+            setAddEffectMenu({ isOpen: true, x: e.clientX, y: e.clientY });
         }
     };
 
@@ -49,7 +50,7 @@ const InsertPanel = ({ activeTrack }) => {
             <aside className="mixer-insert-panel">
                 <div className="flex flex-col items-center justify-center text-center text-[var(--color-text-secondary)] h-full">
                     <SlidersHorizontal size={32} className="mb-2 opacity-50"/>
-                    <p className="text-sm">Efektlerini görmek için bir kanal seçin.</p>
+                    <p className="text-sm">Select a channel to see its inserts.</p>
                 </div>
             </aside>
         );
@@ -72,10 +73,10 @@ const InsertPanel = ({ activeTrack }) => {
                             onDrop={() => onDrop(index)}
                             onClick={() => togglePluginPanel(effect, activeTrack)}
                             className={`group flex items-center justify-between p-2 rounded-md cursor-grab active:cursor-grabbing transition-all ${effect.bypass ? 'bg-gray-700/50' : 'bg-gray-700 hover:bg-gray-600/80'}`}
-                            title={`Slot ${index + 1}: ${effect.type}\n(Açmak için tıkla, sıralamak için sürükle)`}
+                            title={`Slot ${index + 1}: ${effect.type}\n(Click to open, drag to reorder)`}
                         >
                             <div className="flex items-center gap-2">
-                                <button onClick={(e) => { e.stopPropagation(); handleMixerEffectChange(activeTrack.id, effect.id, 'bypass', !effect.bypass);}} title={effect.bypass ? 'Aktif Et' : 'Bypass'}>
+                                <button onClick={(e) => { e.stopPropagation(); handleMixerEffectChange(activeTrack.id, effect.id, 'bypass', !effect.bypass);}} title={effect.bypass ? 'Enable' : 'Bypass'}>
                                     <Power size={14} className={effect.bypass ? 'text-gray-500' : 'text-green-400'}/>
                                 </button>
                                 <span className={`text-xs font-semibold truncate ${effect.bypass ? 'text-gray-500' : 'text-gray-200'}`}>
@@ -83,7 +84,7 @@ const InsertPanel = ({ activeTrack }) => {
                                 </span>
                             </div>
                             <div className="flex items-center">
-                                <button onClick={(e) => { e.stopPropagation(); handleMixerEffectRemove(activeTrack.id, effect.id);}} className="text-gray-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity" title="Efekti kaldır">
+                                <button onClick={(e) => { e.stopPropagation(); handleMixerEffectRemove(activeTrack.id, effect.id);}} className="text-gray-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity" title="Remove effect">
                                     <Trash2 size={14}/>
                                 </button>
                                 <ArrowDownUp size={12} className="text-gray-500 ml-1 opacity-20 group-hover:opacity-50" />
@@ -111,6 +112,7 @@ const InsertPanel = ({ activeTrack }) => {
     );
 };
 
+// ... Mixer ana bileşeninin geri kalanı aynı ...
 function Mixer() {
   const mixerTracks = useMixerStore(state => state.mixerTracks);
   const activeChannelId = useMixerStore(state => state.activeChannelId);
@@ -140,7 +142,7 @@ function Mixer() {
 
       return [
           { label: 'Rename', action: () => {
-              const newName = prompt('Yeni isim girin:', track.name);
+              const newName = prompt('Enter new name:', track.name);
               if (newName) setTrackName(track.id, newName);
           }},
           { label: 'Reset channel', action: () => resetTrack(track.id) },

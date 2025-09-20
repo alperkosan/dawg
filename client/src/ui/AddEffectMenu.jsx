@@ -3,17 +3,19 @@ import ReactDOM from 'react-dom';
 import { ChevronRight } from 'lucide-react';
 import { pluginRegistry } from '../config/pluginConfig';
 
-// Akıllı alt menü öğesi bileşeni (değişiklik yok, ama burada olması önemli)
+// Akıllı alt menü bileşeni
 const MenuItem = ({ category, plugins, onSelect }) => {
     const itemRef = useRef(null);
     const [subMenuPositionClass, setSubMenuPositionClass] = useState('left-full');
 
+    // Alt menünün ekran dışına taşmasını engellemek için pozisyonunu hesapla
     const handleMouseEnter = () => {
         if (itemRef.current) {
             const parentRect = itemRef.current.getBoundingClientRect();
             const viewportWidth = window.innerWidth;
-            const subMenuWidth = 256; 
+            const subMenuWidth = 256; // Alt menünün tahmini genişliği
             if (parentRect.right + subMenuWidth > viewportWidth) {
+                // Sağa sığmıyorsa, sola aç
                 setSubMenuPositionClass('right-full');
             } else {
                 setSubMenuPositionClass('left-full');
@@ -45,9 +47,10 @@ const MenuItem = ({ category, plugins, onSelect }) => {
     );
 };
 
+// Ana menü bileşeni - YENİ AKILLI KONUMLANDIRMA MANTIĞI İLE
 export function AddEffectMenu({ onSelect, onClose, x, y }) {
   const menuRef = useRef(null);
-  const [position, setPosition] = useState({ top: y, left: x, opacity: 0 });
+  const [position, setPosition] = useState({ top: 0, left: 0, opacity: 0 });
 
   const categorizedPlugins = Object.values(pluginRegistry).reduce((acc, plugin) => {
     const category = plugin.category || 'Diğer';
@@ -56,34 +59,48 @@ export function AddEffectMenu({ onSelect, onClose, x, y }) {
     return acc;
   }, {});
 
+  // Menünün açılacağı en iyi pozisyonu hesaplayan hook
   useLayoutEffect(() => {
     if (menuRef.current) {
       const menuRect = menuRef.current.getBoundingClientRect();
       const viewportHeight = window.innerHeight;
       const viewportWidth = window.innerWidth;
+      const margin = 10; // Kenar boşluğu
 
-      let finalY = y;
-      let finalX = x;
+      // 4 potansiyel pozisyonu hesapla
+      const positions = {
+        bottomRight: { top: y + margin, left: x + margin },
+        bottomLeft: { top: y + margin, left: x - menuRect.width - margin },
+        topRight: { top: y - menuRect.height - margin, left: x + margin },
+        topLeft: { top: y - menuRect.height - margin, left: x - menuRect.width - margin },
+      };
 
-      if (y + menuRect.height > viewportHeight) {
-        finalY = y - menuRect.height;
-      }
-      if (x + menuRect.width > viewportWidth) {
-          finalX = x - menuRect.width;
+      // Her pozisyonun ne kadar "uygun" olduğunu hesapla (ekran içinde ne kadar alan kapladığı)
+      const scores = {};
+      for (const key in positions) {
+        const pos = positions[key];
+        if (pos.top >= 0 && pos.top + menuRect.height <= viewportHeight &&
+            pos.left >= 0 && pos.left + menuRect.width <= viewportWidth) {
+          scores[key] = (viewportWidth - (pos.left + menuRect.width)) * (viewportHeight - (pos.top + menuRect.height));
+        } else {
+          scores[key] = -1; // Uygun değil
+        }
       }
       
-      setPosition({ top: finalY, left: finalX, opacity: 1 });
+      // En yüksek skora sahip pozisyonu seç
+      const bestPosition = Object.keys(scores).reduce((a, b) => scores[a] > scores[b] ? a : b, 'bottomRight');
+      
+      setPosition({ ...positions[bestPosition], opacity: 1 });
     }
   }, [x, y]);
 
+  // Dışarı tıklandığında menüyü kapat
   useEffect(() => {
     const handleClickOutside = (event) => {
-      // Menüye veya onu açan butona tıklanmadığından emin ol
       if (menuRef.current && !menuRef.current.contains(event.target)) {
         onClose();
       }
     };
-    // mousedown, click'ten önce çalıştığı için daha güvenilir
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [onClose]);
@@ -91,9 +108,8 @@ export function AddEffectMenu({ onSelect, onClose, x, y }) {
   const menuContent = (
     <div
       ref={menuRef}
-      className="fixed z-50 w-64 bg-gray-900 border border-gray-700 rounded-md shadow-2xl p-1 transition-opacity duration-150"
+      className="fixed z-[1000] w-64 bg-gray-900 border border-gray-700 rounded-md shadow-2xl p-1 transition-opacity duration-150"
       style={{ top: position.top, left: position.left, opacity: position.opacity }}
-      // Olayların yukarı yayılmasını engelle, böylece dışarıya tıklama mekanizması bozulmaz
       onClick={(e) => e.stopPropagation()} 
       onMouseDown={(e) => e.stopPropagation()}
     >
@@ -105,6 +121,5 @@ export function AddEffectMenu({ onSelect, onClose, x, y }) {
     </div>
   );
 
-  // Portalı, `document.body`'nin sonuna ekliyoruz.
   return ReactDOM.createPortal(menuContent, document.body);
 }

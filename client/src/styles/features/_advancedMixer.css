@@ -1,0 +1,164 @@
+/* ==================================
+   Advanced Mixer Styles - Professional DAW Interface
+   ================================== */
+
+.advanced-mixer {
+  --mixer-channel-width: 80px;
+  --mixer-channel-width-expanded: 128px;
+  --mixer-fader-height: 200px;
+  --mixer-spacing: 12px;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(135deg, var(--color-background) 0%, var(--color-surface-1) 100%);
+  overflow: hidden;
+}
+
+.mixer-channels-container {
+  display: flex;
+  height: 100%;
+  padding: var(--spacing-4);
+  gap: var(--mixer-spacing);
+  overflow-x: auto;
+  overflow-y: hidden;
+  min-width: fit-content;
+}
+
+.mixer-channel {
+  width: var(--mixer-channel-width);
+  transition: width 300ms cubic-bezier(0.4, 0, 0.2, 1);
+  flex-shrink: 0;
+}
+
+.mixer-channel--expanded {
+  width: var(--mixer-channel-width-expanded);
+}
+
+.mixer-channel--active {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3), 0 0 0 2px var(--color-accent-primary), 0 0 20px rgba(59, 130, 246, 0.3);
+}
+
+.mixer-channel--muted {
+  opacity: 0.6;
+  filter: saturate(0.7);
+}
+
+.mixer-channel--solo {
+  box-shadow: 0 0 0 2px #eab308, 0 0 15px rgba(234, 179, 8, 0.4);
+}
+
+/* Fader Specific Styles */
+.professional-fader {
+  position: relative;
+  user-select: none;
+  cursor: ns-resize;
+}
+
+.professional-fader_track {
+  background: linear-gradient(to bottom, var(--color-surface-3) 0%, var(--color-surface-2) 50%, var(--color-background) 100%);
+  border-radius: 3px;
+  border: 1px solid var(--color-border);
+}
+
+.professional-fader_handle {
+  background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+  border: 2px solid var(--color-border);
+  border-radius: 4px;
+  cursor: ns-resize;
+  transition: all 150ms ease-out;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+.professional-fader_handle:hover {
+  border-color: var(--color-accent-primary);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15), 0 0 0 1px var(--color-accent-primary), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+.professional-fader_handle--dragging {
+  border-color: var(--color-accent-primary);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2), 0 0 0 2px var(--color-accent-primary), 0 0 15px rgba(59, 130, 246, 0.3);
+}
+
+/* Knob Specific Styles */
+.professional-knob {
+  cursor: ns-resize;
+  user-select: none;
+}
+
+.professional-knob_svg {
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));
+}
+
+.professional-knob_handle {
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
+}
+
+/* Level Meter Styles */
+.level-meter {
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.8) 0%, rgba(0, 0, 0, 0.6) 100%);
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  overflow: hidden;
+  position: relative;
+}
+
+.level-meter_bar {
+  background: linear-gradient(to top, #22c55e 0%, #22c55e 70%, #eab308 85%, #f97316 95%, #ef4444 100%);
+  transition: height 75ms ease-out;
+  border-radius: 2px;
+}
+
+.level-meter_peak {
+  background: #ef4444;
+  transition: background-color 200ms ease-out;
+}
+
+.level-meter_peak--active {
+  background: #ef4444;
+  box-shadow: 0 0 8px #ef4444;
+}
+
+/* Master Section */
+.master-section {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(37, 99, 235, 0.05) 100%);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  backdrop-filter: blur(10px);
+}
+
+.master-section_header {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(37, 99, 235, 0.1) 100%);
+  border-bottom: 1px solid rgba(59, 130, 246, 0.2);
+}
+
+/* Responsive Breakpoints */
+@media (max-width: 1200px) {
+  .advanced-mixer {
+    --mixer-channel-width: 70px;
+    --mixer-channel-width-expanded: 110px;
+    --mixer-fader-height: 160px;
+  }
+}
+
+@media (max-width: 768px) {
+  .advanced-mixer {
+    --mixer-channel-width: 60px;
+    --mixer-channel-width-expanded: 90px;
+    --mixer-fader-height: 120px;
+  }
+}
+
+/* Animation Keyframes */
+@keyframes channelActivate {
+  0% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-1px) scale(1.02); }
+  100% { transform: translateY(-2px) scale(1); }
+}
+
+@keyframes peakFlash {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.mixer-channel--peak-detected .level-meter_peak {
+  animation: peakFlash 200ms ease-in-out;
+}

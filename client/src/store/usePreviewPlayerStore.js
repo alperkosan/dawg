@@ -20,11 +20,7 @@ const loadWaveform = async (url, set) => {
         return;
     }
     try {
-        // --- GÜNCELLEME: new Tone.ToneAudioBuffer(url).load() yerine
-        // Tone.Buffer.load(url) kullanarak daha güvenilir bir yükleme yapıyoruz.
         const buffer = await Tone.Buffer.load(url);
-        // Tone.Buffer.load, standart bir AudioBuffer döndürür, bunu
-        // WaveformDisplay'in beklediği ToneAudioBuffer'a çeviriyoruz.
         const toneAudioBuffer = new Tone.ToneAudioBuffer(buffer);
         waveformCache.set(url, toneAudioBuffer);
         
@@ -35,9 +31,18 @@ const loadWaveform = async (url, set) => {
             return {};
         });
     } catch (err) {
+        // === HATA YAKALAMA DÜZELTMESİ BURADA ===
+        // Eğer hata bir 'AbortError' ise, bu, kullanıcının başka bir dosyaya
+        // tıkladığı ve bu yüklemenin bilinçli olarak iptal edildiği anlamına gelir.
+        // Bu yüzden bu hatayı görmezden geliyoruz.
+        if (err.name === 'AbortError') {
+            console.log(`Yükleme iptal edildi: ${url}`);
+            return; // Fonksiyonu sessizce sonlandır
+        }
+        
+        // Diğer hataları konsola yazdırmaya devam et
         console.error("Dalga formu yüklenemedi:", url, err);
         
-        // --- GÜNCELLEME: Hata mesajını daha anlaşılır hale getiriyoruz ---
         let errorMessage = 'Dalga formu yüklenemedi.';
         if (err instanceof Error && err.name === 'EncodingError') {
             errorMessage = 'Ses dosyası bozuk veya desteklenmiyor.';
@@ -90,7 +95,6 @@ export const usePreviewPlayerStore = create((set, get) => ({
     }
 
     if (waveformCache.has(url)) {
-        // Tone.Player hem AudioBuffer hem de ToneAudioBuffer ile çalışabilir.
         previewPlayer.buffer = waveformCache.get(url).get(); 
         previewPlayer.start();
         set({ isPlaying: true, playingUrl: url });
@@ -113,4 +117,3 @@ export const usePreviewPlayerStore = create((set, get) => ({
     }
   },
 }));
-

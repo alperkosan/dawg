@@ -77,31 +77,39 @@ export const usePanelsStore = create((set, get) => ({
   },
 
   handleEditInstrument: async (instrument) => {
-    if (!instrument || instrument.type !== INSTRUMENT_TYPES.SAMPLE) return; // GÜNCELLENDİ
+    if (!instrument || instrument.type !== INSTRUMENT_TYPES.SAMPLE) return;
     const state = get();
-    if (state.editingInstrumentId === instrument.id && state.panels[PANEL_IDS.SAMPLE_EDITOR].isOpen) { // GÜNCELLENDİ
-      get().togglePanel(PANEL_IDS.SAMPLE_EDITOR); // GÜNCELLENDİ
+    if (state.editingInstrumentId === instrument.id && state.panels[PANEL_IDS.SAMPLE_EDITOR].isOpen) {
+      get().togglePanel(PANEL_IDS.SAMPLE_EDITOR);
       return;
     }
     try {
+      // --- LOG 1: Ses motorundan buffer istiyoruz ---
+      console.log(`[LOG 1] AudioContextService'ten buffer isteniyor: ${instrument.id}`);
       const buffer = await AudioContextService?.requestInstrumentBuffer(instrument.id);
 
+      // --- LOG 2: Gelen buffer'ı kontrol edelim ---
       if (!buffer) {
+        console.error(`[LOG 2 - HATA] Buffer alınamadı. Enstrüman: ${instrument.name}`);
         alert(`"${instrument.name}" için ses verisi bulunamadı.`);
         return;
       }
+      console.log(`[LOG 2 - BAŞARILI] Buffer alındı. Süre: ${buffer.duration.toFixed(2)}s, Kanal Sayısı: ${buffer.numberOfChannels}`);
+      
       const newPosition = getNextCascadePosition(get().panels);
       set({
-        editorBuffer: buffer,
+        editorBuffer: buffer, // <<< ÖNEMLİ OLAN SATIR BU
         editingInstrumentId: instrument.id,
         panels: {
           ...state.panels,
-          [PANEL_IDS.SAMPLE_EDITOR]: { ...state.panels[PANEL_IDS.SAMPLE_EDITOR], title: `Editor: ${instrument.name}`, isOpen: true, isMinimized: false, position: newPosition } // GÜNCELLENDİ
+          [PANEL_IDS.SAMPLE_EDITOR]: { ...state.panels[PANEL_IDS.SAMPLE_EDITOR], title: `Editor: ${instrument.name}`, isOpen: true, isMinimized: false, position: newPosition }
         }
       });
-      get().bringPanelToFront(PANEL_IDS.SAMPLE_EDITOR); // GÜNCELLENDİ
+      // --- LOG 3: State güncellendi mi? ---
+      console.log('[LOG 3] usePanelsStore state güncellendi. editorBuffer artık dolu olmalı.');
+      get().bringPanelToFront(PANEL_IDS.SAMPLE_EDITOR);
     } catch (error) {
-      console.error(`Sample Editor açılamadı (${instrument.name}):`, error);
+      console.error(`[LOG - KRİTİK HATA] Sample Editor açılamadı (${instrument.name}):`, error);
     }
   },
 

@@ -1,16 +1,36 @@
 /**
  * @file MeteringService.js
  * @description AudioEngine'den gelen yüksek frekanslı görsel verileri (metreler, analizörler)
- * ilgili UI bileşenlerine dağıtan bir yayın/abonelik sistemidir.
+ * ilgili UI bileşenlerine dağıtan, kendi yaşam döngüsünü yöneten bir yayın/abonelik sistemidir.
+ * REHBER ADIM 4.1'e göre güncellenmiştir.
  */
 
-// Aboneleri tutacak olan ana nesne.
-// Yapısı: { "trackId-effectId": Set<callback>, ... }
 const subscribers = new Map();
+let isMeteringActive = false; // Metering'in aktif olup olmadığını takip eder
+
+/**
+ * Abonelik döngüsünü yönetir. AudioEngine'deki Tone.Transport'a bağlıdır.
+ * Bu fonksiyonun dışarıdan çağrılmasına gerek yoktur.
+ */
+const manageMeteringLifecycle = () => {
+  let totalSubscribers = 0;
+  subscribers.forEach(callbackSet => totalSubscribers += callbackSet.size);
+
+  if (totalSubscribers > 0 && !isMeteringActive) {
+    // İlk abone eklendiğinde metering aktif hale gelir.
+    // Gerçek veri gönderimi AudioEngine içindeki Tone.Transport.scheduleRepeat ile yapılır.
+    isMeteringActive = true;
+    console.log('[MeteringService] Aktif. Aboneler veri bekliyor.');
+  } else if (totalSubscribers === 0 && isMeteringActive) {
+    // Son abone de çıktığında deaktif hale gelir.
+    isMeteringActive = false;
+    console.log('[MeteringService] Pasif. Hiç abone yok.');
+  }
+};
 
 /**
  * Belirli bir efektin verisine abone olur.
- * @param {string} meterId - Benzersiz abone kimliği (örn: "track-1-fx-12345").
+ * @param {string} meterId - Benzersiz abone kimliği (örn: "track-1-output").
  * @param {Function} callback - Veri geldiğinde çalıştırılacak fonksiyon.
  */
 const subscribe = (meterId, callback) => {
@@ -18,6 +38,7 @@ const subscribe = (meterId, callback) => {
     subscribers.set(meterId, new Set());
   }
   subscribers.get(meterId).add(callback);
+  manageMeteringLifecycle();
 };
 
 /**
@@ -28,7 +49,11 @@ const subscribe = (meterId, callback) => {
 const unsubscribe = (meterId, callback) => {
   if (subscribers.has(meterId)) {
     subscribers.get(meterId).delete(callback);
+    if (subscribers.get(meterId).size === 0) {
+      subscribers.delete(meterId);
+    }
   }
+  manageMeteringLifecycle();
 };
 
 /**
@@ -37,9 +62,15 @@ const unsubscribe = (meterId, callback) => {
  * @param {*} data - Yayınlanacak veri (örn: gain reduction değeri, frekans spektrumu).
  */
 const publish = (meterId, data) => {
-  if (subscribers.has(meterId)) {
-    subscribers.get(meterId).forEach(callback => callback(data));
-  }
+  if (!isMeteringActive || !subscribers.has(meterId)) return;
+  
+  subscribers.get(meterId).forEach(callback => {
+    try {
+      callback(data);
+    } catch (error) {
+      console.error(`[MeteringService] Abone geri çağrım hatası (meterId: ${meterId}):`, error);
+    }
+  });
 };
 
 export const MeteringService = {

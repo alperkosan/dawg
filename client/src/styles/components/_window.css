@@ -1,19 +1,14 @@
-/* src/styles/components/_window.css */
+/* src/styles/components/_window.css - v2.2 Final Düzeltme */
 
-/* ==========================================================================
-   Draggable Window Stilleri (_window.css) - ZENITH V2.1 (YÜKSEKLİK DÜZELTMESİ)
-   ========================================================================== */
+/* ESKİ .window-base ve .window-content stillerini silebilir veya yorum satırı yapabilirsiniz. */
+/* Yeni, daha güvenilir yapı aşağıdadır. */
 
-.window-base {
-  display: flex;
-  flex-direction: column;
+.window-base-new {
   position: absolute;
   border-radius: var(--border-radius-lg);
-  
   background: rgba(30, 30, 30, 0.7);
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
-
   border: 1px solid rgba(58, 58, 58, 0.5);
   box-shadow: var(--shadow-lg);
 }
@@ -24,8 +19,7 @@
   align-items: center;
   padding: var(--spacing-2) var(--spacing-3);
   cursor: move;
-  flex-shrink: 0;
-  
+  flex-shrink: 0; /* Header'ın küçülmesini engelle */
   background: rgba(18, 18, 18, 0.5);
   border-bottom: 1px solid rgba(58, 58, 58, 0.5);
   border-top-left-radius: var(--border-radius-lg);
@@ -38,11 +32,8 @@
   color: var(--color-text-primary);
 }
 
-.window-content {
-  flex-grow: 1;
-  overflow: hidden;
+.window-content-new {
+  /* Bu alanın tüm davranışları artık DraggableWindow.jsx içindeki inline style ile yönetiliyor. */
+  /* Bu, başlık yüksekliğini dinamik olarak hesaba katmamızı sağlar. */
   padding: var(--spacing-1); 
-  
-  /* YENİ VE KRİTİK DÜZELTME: Bu kural, içeriğin ebeveyninin yüksekliğini doldurmasını sağlar. */
-  height: 100%;
 }

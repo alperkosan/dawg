@@ -1,0 +1,120 @@
+/* ==========================================================================
+   Sample Editor V2 - Stil Dosyası (Nihai Sürüm)
+   ========================================================================== */
+
+/* --- ANA YERLEŞİM --- */
+.sample-editor-v2-container {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  grid-template-columns: 280px 1fr 320px; /* Sol, Orta, Sağ Sütunlar */
+  gap: var(--spacing-4);
+  padding: var(--spacing-4);
+  background-color: var(--color-surface);
+  color: var(--color-text-primary);
+}
+
+.sample-editor-v2-container__left-column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-4);
+  min-width: 0;
+  min-height: 0; /* Dikeyde küçülmeyi sağlar */
+}
+
+/* --- GENEL PANEL STİLLERİ --- */
+.inspector-panel,
+.waveform-canvas,
+.effects-analysis-panel {
+  background-color: var(--color-background);
+  border-radius: var(--border-radius-lg);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+}
+
+.panel-header {
+  padding: var(--spacing-3);
+  font-weight: 700;
+  font-size: var(--font-size-md);
+  color: var(--color-text-primary);
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  flex-shrink: 0;
+  background-color: var(--color-surface-1);
+}
+
+/* --- SOL SÜTUN: INSPECTOR --- */
+.inspector-panel {
+  flex-shrink: 0;
+  max-height: 55%; /* Yüksekliğini sınırlar, kalanı Waveform'a bırakır */
+}
+.inspector-panel__content {
+  padding: var(--spacing-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-5);
+  overflow-y: auto; /* KAYDIRMA ÖZELLİĞİ EKLENDİ */
+}
+.inspector-panel__group-title {
+  font-size: var(--font-size-xs); font-weight: 700; color: var(--color-text-secondary);
+  text-transform: uppercase; letter-spacing: 0.1em; padding-bottom: var(--spacing-2);
+  border-bottom: 1px solid var(--color-border); margin-bottom: var(--spacing-3);
+}
+.inspector-panel__knob-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--spacing-4); justify-items: center; }
+.inspector-action {
+  display: flex; align-items: center; gap: var(--spacing-3); width: 100%;
+  padding: var(--spacing-2) var(--spacing-3); border-radius: var(--border-radius-md);
+  background-color: var(--color-surface-1); color: var(--color-text-secondary); /* Rengi text-secondary'den muted'a çektik */
+  font-weight: 500; transition: all var(--transition-fast);
+}
+.inspector-action:hover { background-color: var(--color-surface-2); color: var(--color-text-primary); }
+.inspector-action--active { background-color: var(--color-accent-primary); color: var(--color-background-deep); font-weight: 700; }
+
+
+/* --- SOL SÜTUN: WAVEFORM CANVAS --- */
+.waveform-canvas {
+  flex-grow: 1; /* Kalan tüm dikey alanı kaplar */
+  min-height: 200px;
+}
+.waveform-canvas__content { flex-grow: 1; position: relative; padding: var(--spacing-2); }
+.waveform-canvas__placeholder { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; height: 100%; color: var(--color-text-secondary); gap: var(--spacing-2); }
+.waveform-canvas__display, .waveform-canvas__envelope { position: absolute; inset: var(--spacing-2); }
+.waveform-canvas__display { z-index: 10; }
+.waveform-canvas__envelope { z-index: 20; }
+
+
+/* --- SAĞ SÜTUN: EFEKT PANELİ --- */
+.effects-analysis-panel { overflow: hidden; }
+.effects-panel__content { position: relative; flex-grow: 1; min-height: 0; }
+.effects-panel__view { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; flex-direction: column; transition: transform 300ms cubic-bezier(0.4, 0, 0.2, 1); background-color: var(--color-background); }
+.effects-panel__view--entering { transform: translateX(100%); }
+.effects-panel__view--exiting { transform: translateX(-100%); }
+.effects-panel__list { flex-grow: 1; padding: var(--spacing-2); display: flex; flex-direction: column; gap: var(--spacing-2); overflow-y: auto; }
+.effects-panel__footer { padding: var(--spacing-3); border-top: 1px solid var(--color-border); flex-shrink: 0; }
+.effects-panel__add-btn { width: 100%; display: flex; align-items: center; justify-content: center; gap: var(--spacing-2); padding: var(--spacing-2) 0; font-size: var(--font-size-sm); font-weight: 600; background-color: var(--color-surface); color: var(--color-accent-primary); border-radius: var(--border-radius-md); transition: background-color var(--transition-speed); }
+.effects-panel__add-btn:hover { background-color: var(--color-surface-raised); }
+.effect-slot { display: flex; align-items: center; justify-content: space-between; padding: var(--spacing-2) var(--spacing-3); border-radius: var(--border-radius-md); background-color: var(--color-surface); cursor: pointer; border: 1px solid transparent; transition: all var(--transition-speed); }
+.effect-slot:hover { background-color: var(--color-surface-raised); border-color: var(--color-border); }
+.effect-slot__info { display: flex; align-items: center; gap: var(--spacing-3); min-width: 0; }
+.effect-slot__name { font-size: var(--font-size-sm); font-weight: 500; color: var(--color-text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.effect-slot__name--bypassed { color: var(--color-text-muted); text-decoration: line-through; }
+.effect-slot__actions { display: flex; align-items: center; gap: var(--spacing-2); flex-shrink: 0; }
+.effect-slot__remove-btn { color: var(--color-text-muted); opacity: 0; transition: all var(--transition-speed); }
+.effect-slot:hover .effect-slot__remove-btn { opacity: 1; }
+.effect-slot__remove-btn:hover { color: var(--color-accent-danger); }
+.effect-slot__drag-handle { color: var(--color-border); cursor: ns-resize; }
+
+/* --- EFEKT TARAYICISI --- */
+.effect-browser { display: flex; flex-direction: column; height: 100%; }
+.effect-browser__header { display: flex; align-items: center; gap: var(--spacing-3); padding: var(--spacing-3); border-bottom: 1px solid var(--color-border); background-color: var(--color-surface-1); }
+.effect-browser__back-btn { display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 50%; background-color: var(--color-surface-2); color: var(--color-text-primary); transition: background-color var(--transition-fast); }
+.effect-browser__back-btn:hover { background-color: var(--color-surface-raised); }
+.effect-browser__search-input { flex-grow: 1; background: transparent; border: none; outline: none; color: var(--color-text-primary); }
+.effect-browser__list { flex-grow: 1; overflow-y: auto; padding: var(--spacing-2); }
+.effect-browser__category-title { font-size: var(--font-size-xs); font-weight: 700; color: var(--color-accent); text-transform: uppercase; letter-spacing: 0.1em; padding: var(--spacing-3) var(--spacing-3) var(--spacing-2); }
+.effect-browser__item { width: 100%; text-align: left; display: block; padding: var(--spacing-2) var(--spacing-3); font-size: var(--font-size-sm); font-weight: 500; border-radius: var(--border-radius-md); transition: background-color var(--transition-fast); }
+.effect-browser__item:hover { background-color: var(--color-primary); color: var(--color-background); }

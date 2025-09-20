@@ -1,9 +1,7 @@
-// src/lib/core/nodes/PluginNodeFactory.js - GÜNCELLENMİŞ
 
 import * as Tone from 'tone';
 import { pluginRegistry } from '../../../config/pluginConfig';
-// YENİ: setParamSmoothly fonksiyonunu import ediyoruz
-import { setParamSmoothly, createSidechainRouter } from '../../utils/audioUtils';
+import { setParamSmoothly } from '../../utils/audioUtils';
 
 export const PluginNodeFactory = {
   create(fxData) {
@@ -27,11 +25,9 @@ export const PluginNodeFactory = {
         output: node,
         updateParam: (param, value) => {
           try {
-            // GÜNCELLENDİ: Doğrudan atama yerine yumuşak geçiş fonksiyonu kullanılıyor.
             if (node[param] && typeof node[param].value !== 'undefined') {
               setParamSmoothly(node[param], value);
             } else {
-              // `set` metodu genellikle rampa gerektirmeyen ayarlar içindir.
               node.set({ [param]: value });
             }
           } catch (e) { console.warn(`'${pluginDef.type}' için '${param}' güncellenemedi:`, e); }
@@ -40,14 +36,13 @@ export const PluginNodeFactory = {
       };
     },
 
-    // Compressor ve MultiBand builder'larınız zaten iyi durumda, onları olduğu gibi bırakabiliriz.
     Compressor: (fxData, pluginDef) => {
       const compressor = new Tone.Compressor(fxData.settings);
       
       return {
         input: compressor,
         output: compressor,
-        sidechainInput: compressor,
+        sidechainInput: compressor, // For potential sidechaining
         updateParam: (param, value) => {
           try {
             if (param !== 'sidechainSource') {
@@ -65,8 +60,9 @@ export const PluginNodeFactory = {
       };
     },
     
+    // REHBER ADIM 5: MultiBand builder'ı granüler güncellemeleri destekleyecek şekilde güncellendi.
     MultiBand: (fxData, pluginDef) => {
-      const bandNodes = [];
+      const bandNodes = new Map();
       const input = new Tone.Gain();
       const output = new Tone.Gain();
       let lastNode = input;
@@ -79,7 +75,8 @@ export const PluginNodeFactory = {
         lastNode.connect(filter);
         lastNode = filter;
 
-        bandNodes.push({ id: band.id || bandNodes.length, node: filter });
+        // Bandı ID'si ile Map'e kaydediyoruz ki kolayca bulabilelim.
+        bandNodes.set(band.id, filter);
         
         if (!band.active) {
           filter.type = 'allpass';
@@ -91,54 +88,50 @@ export const PluginNodeFactory = {
       return {
         input: input,
         output: output,
+        // Bu fonksiyon artık tüm bandları tek seferde güncelliyor.
         updateParam: (param, value) => {
             if (param === 'bands' && Array.isArray(value)) {
-                value.forEach((bandData, index) => {
-                    const bandToUpdate = bandNodes[index];
-                    if (bandToUpdate && bandToUpdate.node && bandData) {
-                        const node = bandToUpdate.node;
-                        
-                        if (node.frequency.value !== bandData.frequency) {
-                            node.frequency.rampTo(bandData.frequency, 0.01);
-                        }
-                        if (node.gain.value !== bandData.gain) {
-                            node.gain.rampTo(bandData.gain, 0.01);
-                        }
-                        if (node.Q.value !== bandData.q) {
-                            node.Q.value = bandData.q;
-                        }
+                value.forEach((bandData) => {
+                    const nodeToUpdate = bandNodes.get(bandData.id);
+                    if (nodeToUpdate && bandData) {
+                        if (nodeToUpdate.frequency.value !== bandData.frequency) nodeToUpdate.frequency.rampTo(bandData.frequency, 0.01);
+                        if (nodeToUpdate.gain.value !== bandData.gain) nodeToUpdate.gain.rampTo(bandData.gain, 0.01);
+                        if (nodeToUpdate.Q.value !== bandData.q) nodeToUpdate.Q.value = bandData.q;
                     }
                 });
             }
         },
+        // YENİ: Tek bir bandın tek bir parametresini güncelleyen fonksiyon.
+        updateBandParam: (bandId, param, value) => {
+          const node = bandNodes.get(bandId);
+          if (node) {
+            if (node[param] && typeof node[param].value !== 'undefined') {
+              setParamSmoothly(node[param], value);
+            } else {
+              console.warn(`MultiBand EQ: Geçersiz parametre '${param}'`);
+            }
+          }
+        },
         dispose: () => {
             input.dispose();
             output.dispose();
-            bandNodes.forEach(b => b.node.dispose());
+            bandNodes.forEach(node => node.dispose());
         },
       };
     },
 
-    // GÜNCELLEME: Rehberin 2. Adımında belirtilen Sidechain Compressor builder'ı eklendi.
     SidechainCompressor: (fxData, pluginDef) => {
       const compressor = new Tone.Compressor(fxData.settings);
-      // Sidechain sinyalini almak için ayrı bir giriş noktası oluşturuyoruz.
       const sidechainInput = new Tone.Gain();
-
-      // Sidechain sinyalini compressor'ın "tetikleyici" girişine bağlıyoruz.
       sidechainInput.connect(compressor.sidechain);
 
       return {
         input: compressor,
         output: compressor,
-        sidechainInput: sidechainInput, // Bu giriş, AudioEngine tarafından yönlendirilecek.
+        sidechainInput: sidechainInput,
         updateParam: (param, value) => {
           try {
-            // Sidechain kaynağı değişirse, bu AudioEngine seviyesinde ele alınmalıdır.
-            if (param === 'sidechainSource') {
-              console.log(`Sidechain source changed to: ${value}. Re-routing needed.`);
-              return;
-            }
+            if (param === 'sidechainSource') return;
             if (compressor[param] && typeof compressor[param].value !== 'undefined') {
               setParamSmoothly(compressor[param], value);
             } else {

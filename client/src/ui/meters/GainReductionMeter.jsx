@@ -1,10 +1,9 @@
-import React, { useState } from 'react'; // useState'i import et
+import React, { useState } from 'react';
 
 const METER_HEIGHT_PX = 140;
 const MAX_GR_DB = 24;
 
 export const GainReductionMeter = ({ dbValue = 0 }) => {
-  // YENİ: Tooltip'in görünürlüğünü kontrol eden state
   const [isTooltipVisible, setIsTooltipVisible] = useState(false);
 
   const percentage = (Math.abs(dbValue) / MAX_GR_DB) * 100;
@@ -14,11 +13,9 @@ export const GainReductionMeter = ({ dbValue = 0 }) => {
   return (
     <div 
       className="flex flex-col items-center gap-2 relative"
-      // YENİ: Fare olayları
       onMouseEnter={() => setIsTooltipVisible(true)}
       onMouseLeave={() => setIsTooltipVisible(false)}
     >
-      {/* YENİ: Tooltip */}
       {isTooltipVisible && (
         <div className="absolute -top-7 bg-gray-950 text-white text-xs font-bold px-2 py-1 rounded shadow-lg">
           {dbValue.toFixed(1)} dB

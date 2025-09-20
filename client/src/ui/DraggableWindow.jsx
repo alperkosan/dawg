@@ -10,10 +10,15 @@ function DraggableWindow({
   const [isAnimatingOut, setIsAnimatingOut] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
   const headerRef = useRef(null);
+  const [headerHeight, setHeaderHeight] = useState(38); // Varsayılan bir yükseklik
 
   useEffect(() => {
     // Bileşen ilk render olduğunda animasyonlu giriş için
     const timer = setTimeout(() => setIsMounted(true), 10);
+    // Header'ın gerçek yüksekliğini ölç
+    if (headerRef.current) {
+      setHeaderHeight(headerRef.current.offsetHeight);
+    }
     return () => clearTimeout(timer);
   }, []);
 
@@ -22,26 +27,34 @@ function DraggableWindow({
     setTimeout(onClose, 150); // Animasyonun bitmesini bekle
   };
 
-  // RND bileşenine uygulanacak dinamik stil
   const rndStyle = {
-    // Animasyonlar için
     opacity: (isMounted && !isAnimatingOut) ? 1 : 0,
     transform: (isMounted && !isAnimatingOut) ? 'scale(1)' : 'scale(0.95)',
     transition: 'opacity 150ms ease-out, transform 150ms ease-out',
-    // zIndex, prop'tan geliyor
     zIndex,
-    overflow: "auto"
+    // ÖNEMLİ: Ana konteyner flexbox olmalı
+    display: 'flex',
+    flexDirection: 'column'
+  };
+
+  // İçerik (children) için yeni prop'lar oluşturuyoruz
+  const contentStyle = {
+    // Kalan tüm alanı doldur
+    flexGrow: 1,
+    // Taşmayı engellemek ve scroll'u içeriğe bırakmak için
+    overflow: 'hidden',
+    // Yüksekliği dinamik olarak hesapla
+    height: `calc(100% - ${headerHeight}px)`
   };
 
   return (
     <Rnd
-      // 'window-base' sınıfı, tüm temel stil ve layout'u yönetir.
-      className="window-base" 
+      className="window-base-new" // Çakışmayı önlemek için yeni bir sınıf adı
       style={rndStyle}
       size={isMaximized ? { width: '100%', height: '100%' } : size}
       position={isMaximized ? { x: 0, y: 0 } : position}
       minWidth={minSize.width} minHeight={minSize.height}
-      dragHandleClassName="window-header" // Sadece header'dan sürükle
+      dragHandleClassName="window-header"
       onMouseDown={onFocus}
       onDragStop={(e, d) => !isMaximized && onPositionChange({ x: d.x, y: d.y })}
       onResizeStop={(e, direction, ref, delta, pos) => {
@@ -50,8 +63,7 @@ function DraggableWindow({
           onPositionChange(pos);
         }
       }}
-      // Pencerelerin ana içerik alanının dışına taşmasını engelle
-      bounds="parent" 
+      bounds="parent"
     >
       {/* Header */}
       <header ref={headerRef} className="window-header">
@@ -59,8 +71,7 @@ function DraggableWindow({
         <WindowControls {...{ onMinimize, onMaximize, onClose: handleClose, isMaximized }} />
       </header>
       {/* İçerik */}
-      {/* 'window-content' sınıfı, içeriğin header'dan taşmamasını ve kalan alanı doldurmasını sağlar */}
-      <div className="window-content">
+      <div className="window-content-new" style={contentStyle}>
         {children}
       </div>
     </Rnd>
@@ -68,4 +79,3 @@ function DraggableWindow({
 }
 
 export default React.memo(DraggableWindow);
-

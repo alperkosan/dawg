@@ -8,10 +8,12 @@ export class MixerStrip {
   constructor(trackData) {
     this.id = trackData.id;
     this.type = trackData.type;
+    // REHBER ADIM 5: Orijinal track verisini saklıyoruz ki EQ efektini bulabilelim.
+    this.trackData = trackData;
     this.isDisposed = false;
     this.inputGain = new Tone.Gain(1);
     this.inputMeter = new Tone.Meter(); 
-    this.panner = this.type !== MIXER_TRACK_TYPES.MASTER ? new Tone.Panner(trackData.pan || 0) : null; // GÜNCELLENDİ
+    this.panner = this.type !== MIXER_TRACK_TYPES.MASTER ? new Tone.Panner(trackData.pan || 0) : null;
     this.fader = new Tone.Volume(trackData.volume ?? 0);
     this.soloGain = new Tone.Gain(1);
     this.muteGain = new Tone.Gain(1);
@@ -23,6 +25,7 @@ export class MixerStrip {
   }
 
   buildSignalChain(trackData, masterInput, busInputs) {
+    this.trackData = trackData; // Veriyi güncel tut
     if (this.isDisposed) return;
     this.inputGain.disconnect();
     this.clearChain();
@@ -61,6 +64,21 @@ export class MixerStrip {
     console.log(`✅ [MixerStrip: ${this.id}] Sinyal zinciri başarıyla kuruldu.`);
   }
 
+  // REHBER ADIM 5: Yeni EQ güncelleme metodu
+  updateChannelEQ(bandId, param, value) {
+    if (this.isDisposed) return;
+
+    // 1. Kanalın insert'leri arasından MultiBandEQ'yu bul.
+    const eqEffectData = this.trackData.insertEffects.find(fx => fx.type === 'MultiBandEQ');
+    if (eqEffectData) {
+        // 2. Efekt düğümünü (node) Map'ten al.
+        const eqNode = this.effectNodes.get(eqEffectData.id);
+        // 3. Düğümün granüler güncelleme fonksiyonunu çağır.
+        if (eqNode && eqNode.updateBandParam) {
+            eqNode.updateBandParam(bandId, param, value);
+        }
+    }
+  }
   setupOutputRouting(trackData, masterInput, busInputs) {
     this.outputGain.disconnect();
     

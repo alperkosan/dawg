@@ -1,25 +1,21 @@
 import ChannelRack from '../features/channel_rack/ChannelRack';
-import Mixer from '../features/mixer/Mixer';
-import InstrumentEditor from '../features/sample_editor/InstrumentEditor';
+// import Mixer from '../features/mixer/Mixer'; // <-- 1. ESKİ MİKSERİ SİLİN VEYA YORUM SATIRI YAPIN
+import { AdvancedMixer } from '../features/mixer_v2/AdvancedMixer'; // <-- 2. YENİ MİKSERİ IMPORT EDİN
+import SampleEditorV2 from '../features/sample_editor_v3/SampleEditorV3';
 import PianoRoll from '../features/piano_roll_v2/components/PianoRoll';
 import ArrangementPanel from '../features/arrangement/ArrangementPanel';
 import KeybindingsPanel from '../features/key_bindings/KeybindingsPanel';
-import { ThemeEditor } from '../features/theme_editor/ThemeEditor'; // YENİ: Tema Editörünü import et
+import { ThemeEditor } from '../features/theme_editor/ThemeEditor';
 
 export const panelRegistry = {
   'channel-rack': ChannelRack,
-  'mixer': Mixer,
-  'sample-editor': InstrumentEditor,
+  'mixer': AdvancedMixer, // <-- 3. ESKİ MİKSERİ YENİSİYLE DEĞİŞTİRİN
+  'sample-editor': SampleEditorV2,
   'piano-roll': PianoRoll,
   'keybindings': KeybindingsPanel,
-  'arrangement': ArrangementPanel, // YENİ: ArrangementPanel'i kaydet
-  'theme-editor': ThemeEditor, // YENİ: Tema Editörünü kaydet
+  'arrangement': ArrangementPanel,
+  'theme-editor': ThemeEditor,
 };
-
-const CHANNEL_WIDTH = 112; 
-const GAP_X = 16;
-const BORDER_WIDTH = 8;
-const PANEL_PADDING_X = 32;
 
 export const panelDefinitions = {
   'arrangement': {
@@ -35,17 +31,14 @@ export const panelDefinitions = {
     minSize: { width: 600, height: 250 },
   },
   'mixer': {
-    title: 'Mixer',
-    initialSize: {
-      width: 850, // Genişliği biraz arttıralım
-      height: 630
-    },
-    initialPos: { x: 40, y: 40 },
-    minSize: { width: 400, height: 350 },
-    disableResizing: true,
+    title: 'Mixer V2', // <-- 4. BAŞLIĞI GÜNCELLEYİN (İsteğe Bağlı)
+    title: 'Piano Roll',
+    initialSize: { width: 1000, height: 500 },
+    initialPos: { x: 60, y: 80 },
+    minSize: { width: 600, height: 300 },
   },
   'sample-editor': {
-    title: 'Sample Editor',
+    title: 'Sample Editor V3',
     initialSize: { width: 800, height: 585 },
     initialPos: { x: 50, y: 60 },
     minSize: { width: 800, height: 585 },
