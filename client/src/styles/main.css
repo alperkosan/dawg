@@ -14,6 +14,7 @@
 @import url('./components/_window.css');
 @import url('./components/_volumeKnob.css');
 @import url('./components/_fileTreeNode.css');
+@import url('./components/_addEffectMenu.css'); /* YENİ SATIR */
 
 /* 4. Özellik Stilleri */
 @import url('./features/_startupScreen.css');

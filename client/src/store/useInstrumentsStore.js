@@ -96,22 +96,21 @@ export const useInstrumentsStore = create((set, get) => ({
 
     if (!AudioContextService || !updatedInstrument) return;
 
-    // ARAYÜZ <-> MOTOR İLETİŞİM HATTI ONARILDI
     if (shouldReconcile) {
-      // Ses buffer'ını kalıcı olarak değiştiren ağır işlemler (reverse, normalize vb.)
       console.log(`[STORE->ENGINE] Reconcile komutu gönderiliyor: ${instrumentId}`);
       set(state => ({ processingEffects: { ...state.processingEffects, [instrumentId]: true } }));
       
+      // DÜZELTME: Ses motorundan dönen yeni buffer'ı yakalıyoruz.
       const newBuffer = AudioContextService.reconcileInstrument(instrumentId, updatedInstrument);
       
+      // YENİ: Yakaladığımız yeni buffer'ı panellerin state'ine yazıyoruz.
+      // Bu, WaveformV3'ün anında güncellenmesini tetikleyecek!
       if (usePanelsStore.getState().editingInstrumentId === instrumentId) {
         usePanelsStore.getState().setEditorBuffer(newBuffer);
       }
       
       set(state => ({ processingEffects: { ...state.processingEffects, [instrumentId]: false } }));
     } else {
-      // Zarf (envelope) gibi anlık, kalıcı olmayan parametre değişiklikleri
-      console.log(`[STORE->ENGINE] Parametre güncelleme komutu gönderiliyor: ${instrumentId}`);
       AudioContextService.updateInstrumentParameters(instrumentId, updatedInstrument);
     }
   },

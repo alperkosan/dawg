@@ -1,7 +1,8 @@
 /* ==========================================================================
-   Sample Editor V3 - Stil Dosyası ("Workbench" Tasarımı)
+   Sample Editor V3 - Stil Dosyası (Esnek Layout Düzeltmesi)
    ========================================================================== */
 
+/* --- ANA YERLEŞİM (LAYOUT) --- */
 .sample-editor-v3-container {
   width: 100%;
   height: 100%;
@@ -10,12 +11,17 @@
   padding: var(--spacing-4);
   gap: var(--spacing-4);
   background-color: var(--color-surface);
+  /* KALDIRILDI: Bu sabit kural esnekliği engelliyordu. */
+  /* min-height: 600px; */
 }
 
-/* --- ÜST BÖLÜM: WORKBENCH (TEZGAH) --- */
+/* ==========================================================================
+   ÜST BÖLÜM: WORKBENCH (TEZGAH)
+   ========================================================================== */
+
 .waveform-workbench {
-  flex-grow: 1;
-  min-height: 200px;
+  flex-grow: 1; /* Mevcut alana göre esnek büyü */
+  min-height: 200px; /* Çok fazla küçülmesini engelle */
   background-color: var(--color-background);
   border-radius: var(--border-radius-lg);
   display: flex;
@@ -23,56 +29,166 @@
   border: 1px solid var(--color-border);
 }
 
+/* --- SOL DİKEY ARAÇ ÇUBUĞU --- */
 .waveform-workbench__toolbar {
-  display: flex;
+  display: grid;
   flex-direction: column;
   gap: var(--spacing-2);
   padding: var(--spacing-3);
   background-color: var(--color-surface-1);
   border-right: 1px solid var(--color-border);
+  flex-shrink: 0;
 }
+
 .workbench-action {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: var(--spacing-1);
-  width: 56px;
+  width: 60px;
   height: 56px;
   border-radius: var(--border-radius-md);
   background-color: var(--color-surface-2);
-  color: var(--color-text-muted);
+  color: var(--color-text-secondary);
   font-size: 10px;
   font-weight: 500;
   transition: all var(--transition-fast);
+  cursor: pointer;
+  border: none;
 }
+
 .workbench-action:hover {
   background-color: var(--color-surface-raised);
   color: var(--color-text-primary);
 }
+
 .workbench-action--active {
   background-color: var(--color-primary);
   color: var(--color-background-deep);
   font-weight: 700;
 }
 
+/* --- SAĞ ANA BÖLÜM - DÜZELTME --- */
+.waveform-workbench__main {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  /* DÜZELTME: Net boyutlandırma */
+  width: calc(100% - 80px);
+  height: 100%;
+}
+
+/* --- YATAY ARAÇ ÇUBUĞU --- */
+.waveform-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacing-2);
+  background-color: var(--color-surface-1);
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+  height: 48px; /* DÜZELTME: Sabit yükseklik */
+}
+
+.waveform-toolbar__group {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+}
+
+.workbench-tool, 
+.workbench-action-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  padding: var(--spacing-2) var(--spacing-3);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  border-radius: var(--border-radius-md);
+  transition: all var(--transition-fast);
+  border: none;
+  cursor: pointer;
+}
+
+.workbench-tool {
+  color: var(--color-text-secondary);
+  background-color: transparent;
+}
+
+.workbench-tool:hover {
+  background-color: var(--color-surface-2);
+  color: var(--color-text-primary);
+}
+
+.workbench-tool.active {
+  background-color: var(--color-primary);
+  color: var(--color-background-deep);
+  font-weight: 700;
+}
+
+.workbench-action-btn {
+  color: var(--color-text-primary);
+  background-color: var(--color-surface-2);
+}
+
+.workbench-action-btn:hover {
+  background-color: var(--color-surface-raised);
+}
+
+/* --- WAVEFORM CANVAS KONTEYNER - KRİTİK DÜZELTME --- */
 .waveform-workbench__canvas {
   flex-grow: 1;
   position: relative;
-  padding: var(--spacing-2);
-}
-.waveform-workbench__display, .waveform-workbench__envelope {
-  position: absolute;
-  inset: var(--spacing-2);
-}
-.waveform-workbench__display { z-index: 10; }
-.waveform-workbench__envelope { z-index: 20; }
-.waveform-workbench__placeholder {
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  width: 100%; height: 100%; color: var(--color-text-secondary); gap: var(--spacing-2);
+  /* DÜZELTME: Canvas için net boyutlar */
+  width: 100%;
+  height: calc(100% - 48px); /* Toolbar yüksekliğini çıkar */
+  min-height: 200px;
+  overflow: hidden;
 }
 
-/* --- ALT BÖLÜM: CONTROL DECK (KONTROL PANELİ) --- */
+/* DÜZELTME: WaveformV3 için özel konteyner stilleri */
+.waveform-v3-container {
+  width: 100% !important;
+  height: 100% !important;
+  position: relative;
+  background-color: var(--color-background);
+  border-radius: var(--border-radius-md);
+  overflow: hidden;
+  /* DÜZELTME: Flexbox yerine absolute positioning */
+  display: block;
+}
+
+.waveform-v3-canvas {
+  width: 100% !important;
+  height: 100% !important;
+  display: block !important;
+  /* DÜZELTME: Canvas boyutlandırma */
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+/* --- PLACEHOLDER İÇİN DÜZELTME --- */
+.waveform-workbench__placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  color: var(--color-text-secondary);
+  gap: var(--spacing-2);
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1;
+}
+
+/* ==========================================================================
+   ALT BÖLÜM: CONTROL DECK (KONTROL PANELİ)
+   ========================================================================== */
 .control-deck {
   flex-shrink: 0;
   height: 220px;
@@ -83,17 +199,20 @@
   flex-direction: column;
   overflow: hidden;
 }
+
 .control-deck__tabs {
   display: flex;
   flex-shrink: 0;
   border-bottom: 1px solid var(--color-border);
   background-color: var(--color-surface-1);
 }
+
 .control-deck__content {
   flex-grow: 1;
   min-height: 0;
   padding: var(--spacing-4);
 }
+
 .main-settings-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -101,46 +220,235 @@
   align-items: center;
   justify-items: center;
 }
+
 .main-settings-grid__group {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: var(--spacing-3);
 }
+
 .main-settings-grid__group-title {
-  font-size: var(--font-size-xs); font-weight: 700; color: var(--color-text-secondary);
-  text-transform: uppercase; letter-spacing: 0.1em;
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
 }
 
-/* Efektler sekmesi için stiller (önceki tasarımdan alındı ve uyarlandı) */
-.effects-panel { height: 100%; width: 100%; }
-.effects-panel__content { position: relative; height: 100%; }
-.effects-panel__view { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; flex-direction: column; transition: transform 300ms cubic-bezier(0.4, 0, 0.2, 1); background-color: var(--color-background); }
-.effects-panel__view--entering { transform: translateX(100%); }
-.effects-panel__view--exiting { transform: translateX(-100%); }
-.effects-panel__list { flex-grow: 1; padding: var(--spacing-2); display: flex; flex-direction: column; gap: var(--spacing-2); overflow-y: auto; }
-.effects-panel__footer { padding: var(--spacing-2); border-top: 1px solid var(--color-border); flex-shrink: 0; }
-.effects-panel__add-btn { width: 100%; display: flex; align-items: center; justify-content: center; gap: var(--spacing-2); padding: var(--spacing-2) 0; font-size: var(--font-size-sm); font-weight: 600; background-color: var(--color-surface); color: var(--color-accent-primary); border-radius: var(--border-radius-md); transition: background-color var(--transition-speed); }
-.effects-panel__add-btn:hover { background-color: var(--color-surface-raised); }
+/* --- EFEKT PANELİ STİLLERİ --- */
+.effects-panel {
+  height: 100%;
+  width: 100%;
+}
 
-/* --- ORTA SÜTUN: WAVEFORM CANVAS --- */
-.waveform-workbench__canvas {
-  flex-grow: 1;
+.effects-panel__content {
   position: relative;
-  /* ÖNEMLİ: Padding'i kaldırıyoruz, çünkü wavesurfer kendi canvas'ını dolduracak */
-}
-.waveform-workbench__placeholder {
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  width: 100%; height: 100%; color: var(--color-text-secondary); gap: var(--spacing-2);
+  height: 100%;
 }
 
-/* YENİ: WaveformV3 için stiller */
-.waveform-v3-container {
+.effects-panel__view {
+  position: absolute;
+  top: 0;
+  left: 0;
   width: 100%;
   height: 100%;
-  padding: var(--spacing-4);
+  display: flex;
+  flex-direction: column;
+  transition: transform 300ms ease;
+  background-color: var(--color-background);
 }
-.waveform-v3-canvas {
+
+.effects-panel__view--entering {
+  transform: translateX(100%);
+}
+
+.effects-panel__view--exiting {
+  transform: translateX(-100%);
+}
+
+.effects-panel__list {
+  flex-grow: 1;
+  padding: var(--spacing-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  overflow-y: auto;
+}
+
+.effects-panel__footer {
+  padding: var(--spacing-2);
+  border-top: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.effects-panel__add-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-2);
+  padding: var(--spacing-2) 0;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  background-color: var(--color-surface);
+  color: var(--color-accent-primary);
+  border-radius: var(--border-radius-md);
+  transition: background-color var(--transition-speed);
+  border: none;
+  cursor: pointer;
+}
+
+.effects-panel__add-btn:hover {
+  background-color: var(--color-surface-raised);
+}
+
+/* ==========================================================================
+   RESPONSİVE DÜZELTMELER
+   ========================================================================== */
+
+/* Küçük ekranlar için */
+@media (max-width: 768px) {
+  .sample-editor-v3-container {
+    padding: var(--spacing-2);
+    gap: var(--spacing-2);
+  }
+  
+  .waveform-workbench {
+    min-height: 250px;
+    height: calc(100vh - 350px);
+  }
+  
+  .waveform-workbench__toolbar {
+    width: 60px;
+    padding: var(--spacing-2);
+  }
+  
+  .workbench-action {
+    width: 44px;
+    height: 44px;
+    font-size: 8px;
+  }
+}
+
+/* ==========================================================================
+   YENİ: EffectsRack Stilleri
+   ========================================================================== */
+
+.effects-rack {
   width: 100%;
   height: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-3);
+  padding: var(--spacing-3);
+  overflow-x: auto;
+  /* Scrollbar stili */
+  scrollbar-color: var(--color-surface-3) transparent;
+  scrollbar-width: thin;
+}
+.effects-rack::-webkit-scrollbar { height: 6px; }
+.effects-rack::-webkit-scrollbar-track { background: transparent; }
+.effects-rack::-webkit-scrollbar-thumb { background-color: var(--color-surface-3); border-radius: 3px; }
+
+.effects-rack__add-btn {
+  flex-shrink: 0;
+  width: 100px;
+  height: 100%;
+  border: 2px dashed var(--color-border);
+  border-radius: var(--border-radius-lg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-muted);
+  transition: all var(--transition-fast);
+}
+.effects-rack__add-btn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  background-color: var(--color-surface-1);
+}
+
+/* --- YENİ: EffectSlotV2 --- */
+.effect-slot-v2 {
+  flex-shrink: 0;
+  width: 120px;
+  height: 100%;
+  background-color: var(--color-surface-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius-lg);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  transition: box-shadow var(--transition-fast);
+  cursor: grab;
+}
+.effect-slot-v2:active {
+  cursor: grabbing;
+  box-shadow: var(--shadow-glow);
+}
+
+.effect-slot-v2__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--spacing-2);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.effect-slot-v2__title {
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.effect-slot-v2__header-buttons {
+  display: flex;
+  align-items: center;
+}
+.effect-slot-v2__icon-btn {
+  padding: var(--spacing-1);
+  color: var(--color-text-muted);
+  border-radius: 50%;
+}
+.effect-slot-v2__icon-btn:hover {
+  background-color: var(--color-surface-2);
+  color: var(--color-text-primary);
+}
+.effect-slot-v2__icon-btn.active {
+  color: var(--color-accent-secondary);
+}
+
+.effect-slot-v2__body {
+  flex-grow: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-2) 0;
+}
+
+.effect-slot-v2__remove-btn {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background-color: var(--color-background);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transform: scale(0.8);
+  transition: all var(--transition-fast);
+}
+.effect-slot-v2:hover .effect-slot-v2__remove-btn {
+  opacity: 1;
+  transform: scale(1);
+}
+.effect-slot-v2__remove-btn:hover {
+  background-color: var(--color-accent-danger);
+  color: var(--color-text-inverse);
 }

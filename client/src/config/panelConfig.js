@@ -38,11 +38,14 @@ export const panelDefinitions = {
     minSize: { width: 600, height: 300 },
   },
   'sample-editor': {
-    title: 'Sample Editor V3',
-    initialSize: { width: 800, height: 585 },
+    title: 'Sample Editor',
+    // YENİ: Varsayılan yüksekliği azalttık (~%40 değil ama makul bir seviyeye çektik)
+    initialSize: { width: 800, height: 595 },
     initialPos: { x: 50, y: 60 },
-    minSize: { width: 800, height: 585 },
-    disableResizing: true,
+    // YENİ: Artık daha fazla küçültülebilir
+    minSize: { width: 550, height: 595 },
+    // YENİ: Yeniden boyutlandırma kilidi kaldırıldı!
+    // disableResizing: true, <-- BU SATIRI SİLDİK
   },
   'piano-roll': {
     title: 'Piano Roll',

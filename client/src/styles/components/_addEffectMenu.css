@@ -1,0 +1,116 @@
+/* ==========================================================================
+   Bileşen: AddEffectMenu (Yeniden Tasarlandı)
+   ========================================================================== */
+
+.add-effect-menu {
+  position: fixed;
+  z-index: 1000;
+  width: 256px;
+  background: rgba(30, 30, 30, 0.7);
+  backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(58, 58, 58, 0.5);
+  border-radius: var(--border-radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: var(--spacing-2);
+  transition: opacity 150ms ease-out;
+  display: flex;
+  flex-direction: column;
+}
+
+/* --- Arama Çubuğu --- */
+.add-effect-menu__search-container {
+  position: relative;
+  flex-shrink: 0;
+  margin-bottom: var(--spacing-2);
+}
+.add-effect-menu__search-icon {
+  position: absolute;
+  top: 50%;
+  left: var(--spacing-3);
+  transform: translateY(-50%);
+  color: var(--color-text-muted);
+  pointer-events: none;
+}
+.add-effect-menu__search-input {
+  width: 100%;
+  background-color: var(--color-surface-1);
+  border-radius: var(--border-radius-md);
+  border: 1px solid var(--color-border);
+  padding: var(--spacing-2) var(--spacing-3) var(--spacing-2) 36px; /* İkon için boşluk */
+  color: var(--color-text-primary);
+  font-size: var(--font-size-md);
+}
+.add-effect-menu__search-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-primary);
+}
+.add-effect-menu__clear-btn {
+  position: absolute;
+  top: 50%;
+  right: var(--spacing-2);
+  transform: translateY(-50%);
+  color: var(--color-text-muted);
+}
+
+/* --- Kategori Listesi --- */
+.add-effect-menu__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+  max-height: 400px;
+}
+.add-effect-menu__item {
+  position: relative;
+}
+.add-effect-menu__item-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacing-2) var(--spacing-3);
+  border-radius: var(--border-radius-sm);
+  cursor: default;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+  transition: all var(--transition-fast);
+}
+.add-effect-menu__item:hover > .add-effect-menu__item-content {
+  background-color: var(--color-surface-2);
+  color: var(--color-text-primary);
+}
+
+/* --- Alt Menü --- */
+.add-effect-menu__submenu {
+  position: absolute;
+  top: calc(var(--spacing-2) * -1);
+  width: 256px;
+  background-color: inherit;
+  backdrop-filter: inherit;
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: var(--spacing-2);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  /* YENİ: Alt menünün her zaman en üstte kalmasını sağlar */
+  z-index: 1001; 
+}
+.add-effect-menu__submenu.left-full { left: 100%; }
+.add-effect-menu__submenu.right-full { right: 100%; }
+
+.add-effect-menu__plugin-btn {
+  width: 100%;
+  text-align: left;
+  padding: var(--spacing-2) var(--spacing-3);
+  border-radius: var(--border-radius-sm);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  transition: all var(--transition-fast);
+}
+.add-effect-menu__plugin-btn:hover {
+  background-color: var(--color-primary);
+  color: var(--color-background-deep);
+  font-weight: 700;
+}
