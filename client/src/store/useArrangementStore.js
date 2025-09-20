@@ -1,7 +1,11 @@
 import { create } from 'zustand';
 import { initialInstruments } from '../config/initialData';
 import { AudioContextService } from '../lib/services/AudioContextService';
+import { usePlaybackStore } from './usePlaybackStore';
 
+// =========================================================================
+// === BAŞLANGIÇ VERİLERİ (HATA DÜZELTMESİ: TANIMLAMALAR YUKARI TAŞINDI) ===
+// =========================================================================
 const initialPatternData = initialInstruments.reduce((acc, inst) => {
   acc[inst.id] = inst.notes;
   return acc;
@@ -33,7 +37,33 @@ const initialClips = [{
 }];
 
 
-export const useArrangementStore = create((set, get) => ({
+// =========================================================================
+// === MERKEZİ ORKESTRA ŞEFİ (MIDDLEWARE) ===
+// =========================================================================
+const arrangementStoreOrchestrator = (config) => (set, get, api) => {
+  const store = config(set, get, api);
+
+  const originalUpdatePatternNotes = store.updatePatternNotes;
+  store.updatePatternNotes = (...args) => {
+    originalUpdatePatternNotes(...args);
+    console.log("[Orchestrator] Notalar değişti, döngü uzunluğu güncelleniyor.");
+    usePlaybackStore.getState().updateLoopLength();
+  };
+
+  const originalSetActivePatternId = store.setActivePatternId;
+  store.setActivePatternId = (...args) => {
+    originalSetActivePatternId(...args);
+    console.log("[Orchestrator] Aktif pattern değişti, döngü uzunluğu güncelleniyor.");
+    usePlaybackStore.getState().updateLoopLength();
+  };
+
+  return store;
+};
+
+// =========================================================================
+// === STORE TANIMLAMASI ===
+// =========================================================================
+export const useArrangementStore = create(arrangementStoreOrchestrator((set, get) => ({
   patterns: initialPatterns,
   patternOrder: initialPatternOrder,
   tracks: initialTracks,
@@ -46,7 +76,6 @@ export const useArrangementStore = create((set, get) => ({
   
   setActivePatternId: (patternId) => {
     set({ activePatternId: patternId });
-    // Aktif pattern değiştiğinde, ses motorunun notaları yeniden zamanlaması gerekir.
     AudioContextService?.reschedule();
   },
 
@@ -90,4 +119,4 @@ export const useArrangementStore = create((set, get) => ({
     }
   },
 
-}));
+})));

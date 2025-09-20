@@ -304,22 +304,44 @@ class AudioEngine {
     }
   }
 
-  start() {
+  // === YENİ: Döngü aralığını anlık olarak güncelleyen fonksiyon ===
+  updateLoopRange(startStep, endStep) {
+    if (!this.isReady) return;
+    
+    const sixteenthNoteDuration = Tone.Time('16n').toSeconds();
+    const loopStartSeconds = sixteenthNoteDuration * startStep;
+    const loopEndSeconds = sixteenthNoteDuration * endStep;
+
+    Tone.Transport.loopStart = loopStartSeconds;
+    Tone.Transport.loopEnd = loopEndSeconds;
+    
+    console.log(`[AudioEngine] Döngü aralığı güncellendi: ${startStep} -> ${endStep}`);
+  }
+
+  start(startStep = 0) {
     if (Tone.context.state !== 'running') Tone.context.resume();
-    if (Tone.Transport.state === PLAYBACK_STATES.PLAYING) return; // GÜNCELLENDİ
+    if (Tone.Transport.state === PLAYBACK_STATES.PLAYING) return;
 
     this.reschedule();
+
+    // 1. Çalmayı başlatmadan ÖNCE transport'un pozisyonunu ayarla
+    const startTimeSeconds = Tone.Time('16n').toSeconds() * startStep;
+    Tone.Transport.seconds = startTimeSeconds;
+
+    // 2. Zamanlayıcıyı ve çalmayı başlat
     timeManager.start(this.playbackMode, this.activePatternId, useArrangementStore.getState());
-    Tone.Transport.start();
-    this.callbacks.setPlaybackState?.(PLAYBACK_STATES.PLAYING); // GÜNCELLENDİ
+    Tone.Transport.start(); // Tone.js artık ayarlanan yerden başlayacak
+    
+    this.callbacks.setPlaybackState?.(PLAYBACK_STATES.PLAYING);
     this._startAnimationLoop();
+    console.log(`[AudioEngine] Çalma ${startStep}. adımdan başlatıldı.`);
   }
   
   resume() {
-    if (Tone.Transport.state === PLAYBACK_STATES.PAUSED) { // GÜNCELLENDİ
+    if (Tone.Transport.state === PLAYBACK_STATES.PAUSED) {
       Tone.Transport.start();
       timeManager.resume();
-      this.callbacks.setPlaybackState?.(PLAYBACK_STATES.PLAYING); // GÜNCELLENDİ
+      this.callbacks.setPlaybackState?.(PLAYBACK_STATES.PLAYING);
       this._startAnimationLoop();
     }
   }

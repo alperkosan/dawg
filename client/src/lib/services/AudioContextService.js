@@ -143,9 +143,15 @@ export class AudioContextService {
   static reschedule(...args) { this.getAudioEngine()?.reschedule(...args); }
 
   /**
-   * Çalmayı başlatır.
+   * Çalmayı başlatır. Opsiyonel olarak bir başlangıç adımı alabilir.
+   * @param {number} [startStep=0] - Çalmanın başlayacağı 16'lık nota adımı.
    */
   static start(...args) { this.getAudioEngine()?.start(...args); }
+
+  /**
+   * Duraklatılmış çalmayı devam ettirir.
+   */
+  static resume(...args) { this.getAudioEngine()?.resume(...args); }
 
   /**
    * Çalmayı durdurur ve başa sarar.
@@ -157,10 +163,6 @@ export class AudioContextService {
    */
   static pause(...args) { this.getAudioEngine()?.pause(...args); }
   
-  /**
-   * Duraklatılmış çalmayı devam ettirir.
-   */
-  static resume(...args) { this.getAudioEngine()?.resume(...args); }
 
   /**
    * Projenin BPM'ini (tempo) değiştirir.
@@ -179,6 +181,11 @@ export class AudioContextService {
    * @param {number} step - Gidilecek step (16'lık nota) numarası.
    */
   static jumpToStep(...args) { this.getAudioEngine()?.jumpToStep(...args); }
+
+  /**
+   * YENİ: Çalma döngüsünün başlangıç ve bitiş noktalarını günceller.
+   */
+  static updateLoopRange(...args) { this.getAudioEngine()?.updateLoopRange(...args); }
 
   /**
    * Bir notayı anlık olarak dinlemek için çalar (tuşa basma).

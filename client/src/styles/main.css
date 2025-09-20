@@ -25,12 +25,4 @@
 @import url('./features/_stepGrid.css');
 @import url('./features/_pianoRollMiniView.css');
 @import url('./features/_mixer.css');
-
-/* --- YENİ: BİLEŞEN BAZLI PIANO ROLL STİLLERİ --- */
-@import url('./features/piano_roll/components/PianoRoll.css');
-@import url('./features/piano_roll/components/PianoRollToolbar.css');
-@import url('./features/piano_roll/components/PianoKeyboard.css');
-@import url('./features/piano_roll/components/TimelineRuler.css');
-@import url('./features/piano_roll/components/PianoRollGrid.css');
-@import url('./features/piano_roll/components/EnhancedVelocityLane.css');
-
+@import url('../features/piano_roll_v2/styles/PianoRoll.css');

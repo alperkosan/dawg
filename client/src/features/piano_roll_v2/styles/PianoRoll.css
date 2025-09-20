@@ -1,0 +1,457 @@
+/* ... (dosyanın üst kısmı aynı kalır) ... */
+.prv2-container {
+  width: 100%; height: 100%; display: flex; flex-direction: column;
+  background-color: var(--color-background); color: var(--color-text-primary);
+  overflow: hidden; position: relative;
+}
+.prv2-main-scroll-area {
+  grid-row: 2; grid-column: 2;
+  position: relative;
+  overflow: auto; /* HEM YATAY HEM DİKEY SCROLL BURADAN YÖNETİLİYOR */
+  z-index: 10;
+}
+
+.prv2-scroll-content {
+  position: relative;
+  height: fit-content;
+}
+.prv2-layout-grid {
+  flex-grow: 1;
+  min-height: 0;
+  display: grid;
+  /* Satırlar: Cetvel, Esnek İçerik Alanı, Boyutlandırma Çubuğu */
+  grid-template-rows: 32px 1fr auto; 
+  /* Sütunlar: Klavye/Etiketler, Esnek İçerik Alanı */
+  grid-template-columns: 80px 1fr;
+}
+
+.prv2-main-grid {
+  flex-grow: 1; /* Vurgu alanı yokken tüm alanı kapla, varken kalan alanı kapla */
+  display: grid;
+  grid-template-columns: 80px 1fr;
+  grid-template-rows: 32px 1fr;
+  min-height: 0; /* İçindeki scroll alanının doğru çalışması için kritik */
+}
+.prv2-timeline-area {
+  grid-row: 1; grid-column: 2;
+  position: relative;
+  overflow: hidden;
+  background-color: var(--color-surface-1);
+  z-index: 20;
+}
+.prv2-placeholder {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  width: 100%; height: 100%; color: var(--color-text-secondary);
+  background-color: var(--color-surface-1);
+}
+.prv2-placeholder__icon { opacity: 0.5; margin-bottom: var(--spacing-4); }
+.prv2-placeholder__title { font-size: var(--font-size-xl); font-weight: bold; }
+.prv2-placeholder__text { font-size: var(--font-size-md); }
+
+.prv2-corner {
+  grid-row: 1; grid-column: 1;
+  background-color: var(--color-surface-1);
+  border-right: 1px solid var(--color-background);
+  border-bottom: 1px solid var(--color-background);
+  z-index: 30;
+}
+.prv2-ruler-container, .prv2-keyboard-container {
+  overflow: hidden; position: relative; background-color: var(--color-surface-1); z-index: 20;
+}
+.prv2-grid-area-container {
+  grid-column: 2; grid-row: 2; overflow: auto; position: relative; z-index: 10;
+}
+.prv2-grid-area__content { position: relative; }
+.prv2-grid-canvas { position: absolute; inset: 0; pointer-events: none; z-index: 1;}
+.prv2-ruler__content { /* Bu, içindeki asıl kayan kısımdır */
+  will-change: transform;
+}
+.prv2-ruler__marker {
+  position: absolute; height: 100%; border-left: 1px solid var(--color-border);
+}
+.prv2-ruler__label {
+  position: absolute; padding-left: var(--spacing-1); font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+.prv2-keyboard-area {
+  grid-row: 2; grid-column: 1;
+  position: relative;
+  overflow: hidden;
+  background-color: var(--color-surface-1);
+  z-index: 20;
+}
+.prv2-keyboard-content { /* Bu, içindeki asıl kayan kısımdır */
+  will-change: transform;
+}
+.prv2-keyboard__content {
+  position: relative; width: 100%; border-right: 1px solid var(--color-background);
+  will-change: transform;
+}
+.prv2-keyboard__key {
+  display: flex; align-items: center; padding: 0 var(--spacing-2);
+  width: 100%; user-select: none; border-bottom: 1px solid var(--color-background);
+}
+.prv2-keyboard__key--white { background-color: var(--color-surface-2); }
+.prv2-keyboard__key--white:hover { background-color: var(--color-surface-3); }
+.prv2-keyboard__key--black { background-color: var(--color-background-deep); padding-left: var(--spacing-4); }
+.prv2-keyboard__key--black:hover { background-color: var(--color-surface-1); }
+.prv2-keyboard__key--playing,
+.prv2-keyboard__key--white.prv2-keyboard__key--playing:hover {
+  background-color: var(--color-primary);
+  color: var(--color-text-inverse);
+}
+
+.prv2-keyboard__key--playing .prv2-keyboard__label {
+  color: var(--color-text-inverse);
+}
+
+/* ==========================================================================
+   NOTA VE ETKİLEŞİM STİLLERİ - GÜNCELLENDİ
+   ========================================================================== */
+.prv2-notes-container {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  pointer-events: none; /* Kapsayıcının kendisi olayları yakalamasın */
+}
+
+.prv2-note {
+  position: absolute;
+  background-color: var(--color-accent-secondary);
+  border: 1px solid rgba(0,0,0,0.4);
+  border-radius: var(--border-radius-sm);
+  opacity: var(--note-velocity-opacity, 1);
+  transition: background-color 100ms, border-color 100ms, opacity 100ms, transform 50ms;
+  display: flex;
+  align-items: center;
+  padding: 0 var(--spacing-2);
+  pointer-events: auto; /* Notanın kendisi olayları yakalasın */
+}
+
+.prv2-note--selected {
+  background-color: var(--color-primary);
+  border: 1px solid white;
+  box-shadow: 0 0 12px 0 var(--color-primary);
+  z-index: 15;
+}
+
+.prv2-note--preview {
+  background-color: rgba(0, 163, 255, 0.5);
+  border: 1px dashed var(--color-primary);
+  z-index: 20;
+}
+/* ==========================================================================
+   NOTA YENİDEN BOYUTLANDIRMA (ÇOK KRİTİK DÜZELTME)
+   ========================================================================== */
+
+.prv2-note__resize-handle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 8px; /* Tıklama alanını genişlet */
+  /* YENİ: İmlecin değişmesini sağlayan en önemli kural! */
+  cursor: ew-resize; 
+  /* YENİ: Notanın kendisinden daha üst katmanda olmasını sağlar */
+  z-index: 16; 
+}
+
+/* Sadece notanın üzerine gelindiğinde hafif bir arka plan göster (isteğe bağlı) */
+.prv2-note:hover .prv2-note__resize-handle {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+/* ==========================================================================
+   NOTA ETİKETİ STİLİ (KRİTİK DÜZELTME)
+   ========================================================================== */
+.prv2-note__label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-background-deep);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* YENİ: Etiketin fare olaylarını çalmasını engeller */
+  pointer-events: none; 
+  user-select: none;
+}
+
+.prv2-note--selected .prv2-note__label {
+    color: var(--color-background-deep);
+}
+
+.prv2-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacing-2) var(--spacing-4);
+  background-color: var(--color-surface-1);
+  border-bottom: 1px solid var(--color-background);
+  flex-shrink: 0;
+}
+
+.prv2-tool-group {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+}
+
+.prv2-tool-group__icon {
+  color: var(--color-text-secondary);
+}
+
+.prv2-toolbar-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--border-radius-sm);
+  background-color: var(--color-surface-2);
+  color: var(--color-text-secondary);
+  transition: all var(--transition-speed);
+}
+.prv2-toolbar-btn:hover {
+  background-color: var(--color-surface-3);
+  color: var(--color-text-primary);
+}
+.prv2-toolbar-btn--active {
+  background-color: var(--color-accent-primary);
+  color: var(--color-text-inverse);
+  box-shadow: var(--shadow-glow);
+}
+
+.prv2-toolbar-select {
+  background-color: var(--color-surface-2);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius-sm);
+  padding: var(--spacing-1) var(--spacing-2);
+  font-size: var(--font-size-sm);
+  outline: none;
+}
+
+.prv2-toolbar-zoom-label {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  width: 40px;
+  text-align: center;
+}
+
+/* ==========================================================================
+   MINIMAP - Konumu Güncellendi
+   ========================================================================== */
+
+@keyframes fadeInMinimap {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(-10px); /* YENİ: Yukarıdan gelme efekti */
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.prv2-minimap {
+  position: absolute;
+  /* === GÜNCELLEME: Konum sağ üste alındı === */
+  top: var(--spacing-3);
+  right: var(--spacing-3);
+  z-index: 40;
+  background-color: var(--color-surface-1);
+  border-radius: var(--border-radius-lg);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  transition: box-shadow 300ms ease, border-color 300ms ease;
+  animation: fadeInMinimap 300ms cubic-bezier(0.4, 0, 0.2, 1) backwards;
+}
+
+.prv2-minimap:hover {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 15px 0 rgba(0, 163, 255, 0.4);
+}
+
+.prv2-minimap__header {
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  background-color: rgba(18, 18, 18, 0.5);
+  backdrop-filter: blur(5px);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.prv2-minimap__canvas {
+  display: block;
+  cursor: pointer;
+  width: 220px;
+  height: 120px;
+  box-shadow: inset 0 2px 4px rgba(0,0,0,0.5);
+}
+
+/* ==========================================================================
+   YENİ: TILE (KARO) YÜKLEME EFEKTİ
+   ========================================================================== */
+
+/* Karoların yumuşakça belirmesi için bir animasyon tanımlıyoruz */
+@keyframes tileFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Her bir karo kanvasına uygulanacak stil */
+.prv2-grid-tile {
+  position: absolute;
+  pointer-events: none; /* Fare olaylarını engellememesi için */
+  /* Animasyonu burada uyguluyoruz */
+  animation: tileFadeIn 150ms ease-out forwards;
+}
+
+/* ==========================================================================
+   PLAYHEAD
+   ========================================================================== */
+
+.prv2-playhead {
+  position: absolute;
+  top: 0;
+  left: 0; /* Başlangıç pozisyonu */
+  width: 2px;
+  background-color: var(--color-primary);
+  box-shadow: var(--shadow-glow);
+  /* Diğer elemanların tıklanmasını engellememesi için */
+  pointer-events: none; 
+  /* Performans için GPU katmanına taşı */
+  will-change: transform;
+  /* Notaların üzerinde, ama menüler gibi şeylerin altında */
+  z-index: 25; 
+}
+
+/* ==========================================================================
+   SEÇİM DİKDÖRTGENİ (MARQUEE)
+   ========================================================================== */
+.prv2-marquee {
+  position: absolute;
+  border: 1px solid var(--color-primary);
+  background-color: rgba(0, 163, 255, 0.2);
+  pointer-events: none; /* Fare olaylarını yakalamasın */
+  z-index: 50; /* Her şeyin üzerinde görünsün */
+  border-radius: var(--border-radius-sm);
+}
+
+.prv2-ruler__loop-region {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background-color: rgba(0, 163, 255, 0.25);
+  border-left: 1px solid rgba(0, 163, 255, 0.8);
+  border-right: 1px solid rgba(0, 163, 255, 0.8);
+  z-index: 5;
+  pointer-events: none; /* Tıklama olaylarının arkadaki cetvele gitmesini sağlar */
+}
+
+.prv2-velocity-lane {
+  display: flex; /* Ana yapı flex kalabilir */
+  background-color: var(--color-surface-1);
+  flex-shrink: 0;
+  position: relative; /* İçerideki absolute konumlandırma için */
+}
+
+.prv2-velocity-label-area {
+  grid-row: 3; grid-column: 1;
+  background-color: var(--color-surface-1);
+  border-top: 1px solid var(--color-background);
+  border-right: 1px solid var(--color-background);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--font-size-sm);
+  font-weight: bold;
+  color: var(--color-text-secondary);
+}
+
+.prv2-velocity-lane__label {
+  width: 80px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--color-background);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--font-size-sm);
+  font-weight: bold;
+  color: var(--color-text-secondary);
+  z-index: 2; /* Content'in üzerinde kalması için */
+}
+
+/* YENİ: Content için bir sarmalayıcı (wrapper) ekledik */
+.prv2-velocity-lane__content-wrapper {
+  flex-grow: 1;
+  height: 100%;
+  overflow: hidden; /* Dışarı taşan kısımları gizle */
+  position: relative;
+}
+
+/* Bu, transform ile hareket ettirilecek olan asıl içerik */
+.prv2-velocity-lane__content {
+  position: relative;
+  height: 100%;
+  will-change: transform; /* Tarayıcıya transform olacağını bildir */
+}
+
+.prv2-velocity-bar {
+  position: absolute;
+  bottom: 0;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  cursor: ns-resize;
+}
+
+.prv2-velocity-bar__bar {
+  width: 60%;
+  background-color: var(--color-accent-secondary);
+  border-top-left-radius: 2px;
+  border-top-right-radius: 2px;
+  transition: background-color 100ms ease;
+}
+.prv2-velocity-bar:hover .prv2-velocity-bar__bar {
+  background-color: var(--color-primary);
+}
+.prv2-velocity-bar__bar--selected {
+  background-color: var(--color-primary);
+  box-shadow: 0 0 8px var(--color-primary);
+}
+
+.prv2-resizable-handle-vertical {
+  grid-row: 3; grid-column: 2;
+  height: 8px;
+  background-color: var(--color-surface-1);
+  cursor: ns-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.prv2-resizable-handle-vertical .prv2-resizable-handle__grip {
+    width: 40px; height: 4px; background-color: var(--color-border); border-radius: 2px;
+}
+
+
+/* Velocity Lane'in kendisi artık scroll container'ın içinde */
+.prv2-velocity-lane-content {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  background-color: var(--color-surface-1);
+}

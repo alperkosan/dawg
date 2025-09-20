@@ -3,7 +3,7 @@ import { useArrangementStore } from './useArrangementStore';
 import { calculateAudioLoopLength, calculateUIRackLength, calculatePatternLoopLength } from '../lib/utils/patternUtils';
 import { initialInstruments } from '../config/initialData';
 import { AudioContextService } from '../lib/services/AudioContextService';
-import { PLAYBACK_MODES, PLAYBACK_STATES } from '../config/constants'; // GÜNCELLENDİ
+import { PLAYBACK_MODES, PLAYBACK_STATES } from '../config/constants';
 
 const initialPatternData = initialInstruments.reduce((acc, inst) => {
   acc[inst.id] = inst.notes;
@@ -24,10 +24,14 @@ export const usePlaybackStore = create((set, get) => ({
   loopLength: initialUiRackLength,
   audioLoopLength: initialAudioLoopLength,
 
+  loopStartStep: 0,
+  loopEndStep: initialAudioLoopLength, // Başlangıçta tüm pattern'ı kapsasın
+
   updateLoopLength: () => {
     const { playbackMode } = get();
     const { clips, patterns, activePatternId } = useArrangementStore.getState();
 
+    // === HATA DÜZELTMESİ: Eksik parametreler eklendi ===
     const newAudioLoopLength = calculateAudioLoopLength(playbackMode, {
       patterns,
       activePatternId,
@@ -35,13 +39,22 @@ export const usePlaybackStore = create((set, get) => ({
     });
     
     const newUiRackLength = calculateUIRackLength(newAudioLoopLength);
-
     set({
       audioLoopLength: newAudioLoopLength,
-      loopLength: newUiRackLength
+      loopLength: newUiRackLength,
+      loopStartStep: 0, // Aktif pattern değiştiğinde döngüyü başa al
+      loopEndStep: newAudioLoopLength,
     });
     
+    // Yeni toplam uzunluğu ses motoruna bildir
+    AudioContextService.updateLoopRange(0, newAudioLoopLength);
     console.log(`[PlaybackStore] Döngü uzunlukları güncellendi: Audio(${newAudioLoopLength}), UI(${newUiRackLength})`);
+  },
+
+  // === YENİ: Döngü aralığını güncelleyen ve ses motorunu bilgilendiren aksiyon ===
+  setLoopRange: (startStep, endStep) => {
+    set({ loopStartStep: startStep, loopEndStep: endStep });
+    AudioContextService.updateLoopRange(startStep, endStep);
   },
   
   setPlaybackState: (state) => set({ playbackState: state }),
@@ -86,18 +99,22 @@ export const usePlaybackStore = create((set, get) => ({
 
   handlePlay: () => {
     if (!AudioContextService) return;
-    const { playbackMode } = get();
-    const activePatternId = useArrangementStore.getState().activePatternId;
-    AudioContextService.start(playbackMode, activePatternId); 
+    
+    // === GÜNCELLEME: Döngü başlangıç adımını alıyoruz ===
+    const { playbackState, loopStartStep } = get();
+
+    // Sadece durdurulmuş durumdayken baştan başlatma işlemini yap
+    if (playbackState === PLAYBACK_STATES.STOPPED) {
+        AudioContextService.start(loopStartStep);
+    } else {
+        // Duraklatılmışsa, sadece devam et
+        AudioContextService.resume();
+    }
   },
 
   handlePause: () => {
-    const { playbackState } = get();
-    if (playbackState === PLAYBACK_STATES.PLAYING) { // GÜNCELLENDİ
-      AudioContextService?.pause();
-    } else if (playbackState === PLAYBACK_STATES.PAUSED) { // GÜNCELLENDİ
-      AudioContextService?.resume();
-    }
+    // Bu fonksiyon artık sadece duraklatma işini yapıyor
+    AudioContextService?.pause();
   },
 
   handleStop: () => {
