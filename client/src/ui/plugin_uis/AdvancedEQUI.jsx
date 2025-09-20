@@ -44,19 +44,28 @@ const getGainColor = (gain) => {
     return `hsl(${hue}, 100%, 55%)`;
 };
 
+
 export const AdvancedEQUI = ({ effect, onChange, trackId }) => {
   const { bands } = effect.settings;
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
-
-  const [canvasDims, setCanvasDims] = useState({ width: 0, height: 0 });
-  const [tooltip, setTooltip] = useState({ visible: false, x: 0, y: 0, freq: 0, db: 0 });
-  const [activeBandIndex, setActiveBandIndex] = useState(null);
-  const [draggedBand, setDraggedBand] = useState(null);
   
-  const responseCurve = useMemo(() => {
-    if (!bands || bands.length === 0) return [];
-    return EQCalculations.generateResponseCurve(bands, SAMPLE_RATE, 150);
+  const [canvasDims, setCanvasDims] = useState({ width: 0, height: 0 });
+  const [tooltip, setTooltip] = useState({ visible: false, x: 0, y: 0, freq: 0, db: 0, activeIndex: -1 });
+
+  // === ÇÖZÜMÜN KALBİ: Tüm dinamik veriler artık useRef'te ===
+  const drawDataRef = useRef({
+      bands: [],
+      responseCurve: [],
+      activeBandIndex: -1,
+      draggedBand: null, // { index, startY, startQ }
+  });
+
+  // Props (bands) her değiştiğinde, çizim verisini sessizce güncelle.
+  // Bu, preset değişikliklerinin anında yansımasını sağlar.
+  useEffect(() => {
+    drawDataRef.current.bands = bands;
+    drawDataRef.current.responseCurve = EQCalculations.generateResponseCurve(bands, SAMPLE_RATE, 150);
   }, [bands]);
 
   useLayoutEffect(() => {
@@ -70,9 +79,10 @@ export const AdvancedEQUI = ({ effect, onChange, trackId }) => {
     return () => observer.disconnect();
   }, []);
 
+  // === TEK VE KESİNTİSİZ ÇİZİM DÖNGÜSÜ ===
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || canvasDims.width === 0 || canvasDims.height === 0) return;
+    if (!canvas || canvasDims.width === 0) return;
     
     const dpr = window.devicePixelRatio || 1;
     canvas.width = canvasDims.width * dpr;
@@ -80,27 +90,23 @@ export const AdvancedEQUI = ({ effect, onChange, trackId }) => {
     const ctx = canvas.getContext('2d');
     ctx.scale(dpr, dpr);
 
-    const animationFrameId = requestAnimationFrame(function draw() {
+    let animationFrameId;
+    const drawLoop = () => {
+        const { bands, responseCurve, activeBandIndex, draggedBand } = drawDataRef.current;
         const { width, height } = canvasDims;
+
         ctx.clearRect(0, 0, width, height);
         ctx.fillStyle = 'rgba(0,0,0,0.2)';
         ctx.fillRect(0, 0, width, height);
+        
         const gridColor = 'rgba(255, 255, 255, 0.05)';
         ctx.strokeStyle = gridColor;
         ctx.lineWidth = 1;
-        [30, 100, 300, 1000, 3000, 10000].forEach(f => {
-            const x = freqToX(f, width);
-            ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height); ctx.stroke();
-        });
-        [-12, -6, 0, 6, 12].forEach(db => {
-            const y = dbToY(db, height);
-            ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke();
-        });
-        if (responseCurve.length > 0) {
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
-            ctx.lineWidth = 2.5;
-            ctx.shadowColor = 'rgba(255, 255, 255, 0.5)';
-            ctx.shadowBlur = 8;
+        [30, 100, 300, 1000, 3000, 10000].forEach(f => { ctx.beginPath(); ctx.moveTo(freqToX(f, width), 0); ctx.lineTo(freqToX(f, width), height); ctx.stroke(); });
+        [-12, -6, 0, 6, 12].forEach(db => { ctx.beginPath(); ctx.moveTo(0, dbToY(db, height)); ctx.lineTo(width, dbToY(db, height)); ctx.stroke(); });
+        
+        if (responseCurve && responseCurve.length > 0) {
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)'; ctx.lineWidth = 2.5; ctx.shadowColor = 'rgba(255, 255, 255, 0.5)'; ctx.shadowBlur = 8;
             ctx.beginPath();
             responseCurve.forEach((point, index) => {
                 const x = freqToX(point.frequency, width);
@@ -110,49 +116,32 @@ export const AdvancedEQUI = ({ effect, onChange, trackId }) => {
             ctx.stroke();
             ctx.shadowBlur = 0;
         }
-        bands.forEach((band, index) => {
-            if (!band || !band.active) return;
-            const x = freqToX(band.frequency, width);
-            const y = dbToY(band.gain, height);
-            const isActive = index === activeBandIndex || index === draggedBand?.index;
-            if (isActive) {
-                ctx.beginPath();
-                ctx.arc(x, y, NODE_HIT_RADIUS, 0, 2 * Math.PI);
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
-                ctx.fill();
-            }
-            ctx.beginPath();
-            ctx.arc(x, y, 8, 0, 2 * Math.PI);
-            ctx.fillStyle = getGainColor(band.gain);
-            ctx.fill();
-        });
-        requestAnimationFrame(draw);
-    });
+        
+        if(bands) {
+            bands.forEach((band, index) => {
+                if (!band || !band.active) return;
+                const x = freqToX(band.frequency, width);
+                const y = dbToY(band.gain, height);
+                const isActive = index === activeBandIndex || index === draggedBand?.index;
+                if (isActive) { ctx.beginPath(); ctx.arc(x, y, NODE_HIT_RADIUS, 0, 2 * Math.PI); ctx.fillStyle = 'rgba(255, 255, 255, 0.2)'; ctx.fill(); }
+                ctx.beginPath(); ctx.arc(x, y, 8, 0, 2 * Math.PI); ctx.fillStyle = getGainColor(band.gain); ctx.fill();
+            });
+        }
+        animationFrameId = requestAnimationFrame(drawLoop);
+    };
 
+    drawLoop();
     return () => cancelAnimationFrame(animationFrameId);
-  }, [canvasDims, bands, responseCurve, activeBandIndex, draggedBand]);
+  }, [canvasDims]); // Bu effect SADECE boyutlar değiştiğinde yeniden başlar.
 
   const findBandAtPosition = useCallback((mouseX, mouseY) => {
-    let hitIndex = -1;
-    let minDistance = Infinity;
-    if (!bands) return -1;
-    bands.forEach((band, index) => {
-        if (!band || !band.active) return;
+    return drawDataRef.current.bands.findIndex(band => {
+        if (!band || !band.active) return false;
         const bandX = freqToX(band.frequency, canvasDims.width);
         const bandY = dbToY(band.gain, canvasDims.height);
-        const distance = Math.hypot(mouseX - bandX, mouseY - bandY);
-        if (distance < NODE_HIT_RADIUS && distance < minDistance) {
-            minDistance = distance;
-            hitIndex = index;
-        }
+        return Math.hypot(mouseX - bandX, mouseY - bandY) < NODE_HIT_RADIUS;
     });
-    return hitIndex;
-  }, [bands, canvasDims]);
-  
-  // *** ONARIM BÖLGESİ BAŞLANGICI ***
-
-  // ONARIM: `handleMouseUp` ve `handleDragMove` fonksiyonları artık `useCallback` içinde değil.
-  // Bunun yerine, `handleMouseDown` içinde anlık olarak oluşturulacaklar.
+  }, [canvasDims]);
 
   const handleMouseDown = useCallback((e) => {
     const rect = containerRef.current.getBoundingClientRect();
@@ -161,92 +150,93 @@ export const AdvancedEQUI = ({ effect, onChange, trackId }) => {
     const hitIndex = findBandAtPosition(mouseX, mouseY);
 
     if (hitIndex !== -1) {
-        const band = bands[hitIndex];
-        if (band) {
-            e.preventDefault();
-            e.stopPropagation();
+        e.preventDefault(); e.stopPropagation();
 
-            const dragStartInfo = { index: hitIndex, startY: mouseY, startQ: band.q };
-            setDraggedBand(dragStartInfo);
+        const band = drawDataRef.current.bands[hitIndex];
+        drawDataRef.current.draggedBand = { index: hitIndex, startY: mouseY, startQ: band.q };
 
-            // ONARIM: Sürükleme ve bırakma fonksiyonlarını `mousedown` anında burada tanımlıyoruz.
-            // Bu, 'stale closure' sorununu tamamen çözer.
-            const handleDragMoveForThisInstance = (moveEvent) => {
-                // `onChange`'e fonksiyonel bir güncelleme göndererek, `bands`'in
-                // en güncel halini kullanmasını sağlıyoruz ve bağımlılıklardan kurtuluyoruz.
-                onChange('bands', (prevBands) => {
-                    const updatedBands = [...prevBands];
-                    const bandToUpdate = updatedBands[dragStartInfo.index];
-                    if (!bandToUpdate) return prevBands;
+        const handleDragMove = (moveEvent) => {
+            const currentRect = containerRef.current?.getBoundingClientRect();
+            if (!currentRect) return;
 
-                    const currentMouseX = moveEvent.clientX - rect.left;
-                    const currentMouseY = moveEvent.clientY - rect.top;
-                    let updatedBand = { ...bandToUpdate };
+            const currentMouseX = moveEvent.clientX - currentRect.left;
+            const currentMouseY = moveEvent.clientY - currentRect.top;
+            
+            // Sadece REF'i güncelle, RENDER TETİKLENMEZ!
+            const { bands, draggedBand } = drawDataRef.current;
+            const bandToUpdate = bands[draggedBand.index];
+            
+            let updatedBand = { ...bandToUpdate };
+            if (moveEvent.altKey) {
+                const deltaY = (draggedBand.startY - currentMouseY) * Q_SENSITIVITY;
+                updatedBand.q = Math.max(0.1, Math.min(18, draggedBand.startQ + deltaY));
+            } else {
+                updatedBand.frequency = xToFreq(currentMouseX, currentRect.width);
+                updatedBand.gain = yToDb(currentMouseY, currentRect.height);
+            }
+            const updatedBands = [...bands];
+            updatedBands[draggedBand.index] = updatedBand;
+            
+            drawDataRef.current.bands = updatedBands;
+            drawDataRef.current.responseCurve = EQCalculations.generateResponseCurve(updatedBands, SAMPLE_RATE, 150);
+        };
 
-                    if (moveEvent.altKey) {
-                        const deltaY = (dragStartInfo.startY - currentMouseY) * Q_SENSITIVITY;
-                        updatedBand.q = Math.max(0.1, Math.min(18, dragStartInfo.startQ + deltaY));
-                    } else {
-                        updatedBand.frequency = xToFreq(currentMouseX, rect.width);
-                        updatedBand.gain = yToDb(currentMouseY, rect.height);
-                    }
-                    updatedBands[dragStartInfo.index] = updatedBand;
-                    return updatedBands;
-                });
-            };
+        const handleMouseUp = () => {
+            document.removeEventListener('mousemove', handleDragMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+            
+            // Sadece şimdi, bittiğinde, global store'u güncelle.
+            onChange('bands', [...drawDataRef.current.bands]);
+            drawDataRef.current.draggedBand = null;
+        };
 
-            const handleMouseUpForThisInstance = () => {
-                setDraggedBand(null);
-                window.removeEventListener('mousemove', handleDragMoveForThisInstance);
-                window.removeEventListener('mouseup', handleMouseUpForThisInstance);
-            };
-
-            window.addEventListener('mousemove', handleDragMoveForThisInstance);
-            window.addEventListener('mouseup', handleMouseUpForThisInstance);
-        }
+        document.addEventListener('mousemove', handleDragMove);
+        document.addEventListener('mouseup', handleMouseUp);
     }
-  }, [bands, findBandAtPosition, onChange]); // Bağımlılıklar artık çok daha basit ve güvenli.
-
-  // *** ONARIM BÖLGESİ SONU ***
+  }, [findBandAtPosition, onChange]);
 
   const handleMouseMove = useCallback((e) => {
-    if (draggedBand) return;
+    if (drawDataRef.current.draggedBand) return;
     const rect = containerRef.current.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
     const freq = xToFreq(mouseX, rect.width);
     const db = yToDb(mouseY, rect.height);
-    setTooltip({ visible: true, x: mouseX, y: mouseY, freq, db });
-    setActiveBandIndex(findBandAtPosition(mouseX, mouseY));
-  }, [canvasDims.width, findBandAtPosition, draggedBand]);
+    const activeIndex = findBandAtPosition(mouseX, mouseY);
+    setTooltip({ visible: true, x: mouseX, y: mouseY, freq, db, activeIndex });
+    drawDataRef.current.activeBandIndex = activeIndex;
+  }, [canvasDims.width, findBandAtPosition]);
   
+  const handleMouseLeave = useCallback(() => {
+    setTooltip(t => ({...t, visible: false, activeIndex: -1}));
+    drawDataRef.current.activeBandIndex = -1;
+  }, []);
+
   const handleWheel = useCallback((e) => {
-    if (activeBandIndex !== null) {
-        e.preventDefault();
-        const band = bands[activeBandIndex];
-        if (band) {
-            const changeAmount = -e.deltaY * Q_SENSITIVITY;
-            const newQ = band.q + changeAmount * (band.q * 0.5 + 0.1);
-            const clampedQ = Math.max(0.1, Math.min(18, newQ));
-            onChange('bands', (prevBands) => {
-                const updatedBands = [...prevBands];
-                updatedBands[activeBandIndex] = { ...band, q: clampedQ };
-                return updatedBands;
-            });
-        }
-    }
-  }, [activeBandIndex, bands, onChange]);
+      const activeIndex = drawDataRef.current.activeBandIndex;
+      if (activeIndex !== -1) {
+          e.preventDefault();
+          const band = drawDataRef.current.bands[activeIndex];
+          if(!band) return;
+          const changeAmount = -e.deltaY * Q_SENSITIVITY;
+          const newQ = band.q + changeAmount * (band.q * 0.5 + 0.1);
+          const clampedQ = Math.max(0.1, Math.min(18, newQ));
+          
+          const updatedBands = [...drawDataRef.current.bands];
+          updatedBands[activeIndex] = { ...band, q: clampedQ };
+          
+          drawDataRef.current.bands = updatedBands;
+          drawDataRef.current.responseCurve = EQCalculations.generateResponseCurve(updatedBands, SAMPLE_RATE, 150);
+          onChange('bands', updatedBands);
+      }
+  }, [onChange]);
 
   useEffect(() => {
-    const containerElement = containerRef.current;
-    if (containerElement) {
-        containerElement.addEventListener('wheel', handleWheel, { passive: false });
+    const el = containerRef.current;
+    if (el) {
+        el.addEventListener('wheel', handleWheel, { passive: false });
+        return () => el.removeEventListener('wheel', handleWheel);
     }
-    return () => {
-        if (containerElement) {
-            containerElement.removeEventListener('wheel', handleWheel);
-        }
-    };
   }, [handleWheel]);
 
   const handleDoubleClick = useCallback((e) => {
@@ -254,16 +244,22 @@ export const AdvancedEQUI = ({ effect, onChange, trackId }) => {
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
     const hitIndex = findBandAtPosition(mouseX, mouseY);
+    const currentBands = drawDataRef.current.bands;
 
+    let updatedBands;
     if (hitIndex !== -1) {
-        onChange('bands', bands.filter((_, i) => i !== hitIndex));
+        updatedBands = currentBands.filter((_, i) => i !== hitIndex);
     } else {
         const newFreq = xToFreq(mouseX, rect.width);
         const newGain = yToDb(mouseY, rect.height);
         const newBand = { id: `band-${Date.now()}`, type: 'peaking', frequency: newFreq, gain: newGain, q: 1.5, active: true };
-        onChange('bands', [...bands, newBand]);
+        updatedBands = [...currentBands, newBand];
     }
-  }, [bands, onChange, findBandAtPosition]);
+    
+    drawDataRef.current.bands = updatedBands;
+    drawDataRef.current.responseCurve = EQCalculations.generateResponseCurve(updatedBands, SAMPLE_RATE, 150);
+    onChange('bands', updatedBands);
+  }, [onChange, findBandAtPosition]);
 
   return (
     <div className="w-full h-full flex flex-col items-center justify-center gap-2">
@@ -272,19 +268,19 @@ export const AdvancedEQUI = ({ effect, onChange, trackId }) => {
         className="w-full h-full relative cursor-crosshair touch-none bg-gray-900 rounded-lg border border-white/10"
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
-        onMouseLeave={() => { setTooltip({ visible: false }); setActiveBandIndex(null); }}
+        onMouseLeave={handleMouseLeave}
         onDoubleClick={handleDoubleClick}
       >
         <canvas ref={canvasRef} style={{ width: '100%', height: '100%', display: 'block' }} />
-        {tooltip.visible && !draggedBand && (
+        {tooltip.visible && !drawDataRef.current.draggedBand && (
           <div
             className="absolute bg-black/80 text-white text-xs rounded p-1.5 pointer-events-none shadow-lg backdrop-blur-sm"
             style={{ left: tooltip.x + 15, top: tooltip.y + 15 }}
           >
             <div className="font-bold">{Math.round(tooltip.freq)} Hz</div>
             <div className="text-gray-400">{tooltip.db.toFixed(1)} dB</div>
-            {activeBandIndex !== -1 && bands[activeBandIndex] && (
-              <div className="text-cyan-400 mt-1">Q: {bands[activeBandIndex].q.toFixed(2)}</div>
+            {tooltip.activeIndex !== -1 && drawDataRef.current.bands[tooltip.activeIndex] && (
+              <div className="text-cyan-400 mt-1">Q: {drawDataRef.current.bands[tooltip.activeIndex].q.toFixed(2)}</div>
             )}
           </div>
         )}

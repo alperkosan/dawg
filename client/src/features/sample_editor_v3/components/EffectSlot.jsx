@@ -3,6 +3,7 @@ import { useDrag, useDrop } from 'react-dnd';
 import { Power, Settings, Trash2 } from 'lucide-react';
 import VolumeKnob from '../../../ui/VolumeKnob';
 import { useMixerStore } from '../../../store/useMixerStore';
+import { usePanelsStore } from '../../../store/usePanelsStore';
 
 const DND_TYPE = 'EFFECT_SLOT';
 
@@ -64,7 +65,7 @@ export const EffectSlot = ({ effect, trackId, index, moveEffect }) => {
             min={0}
             max={100}
             defaultValue={100}
-            size={48}
+            size={32}
             unit="%"
           />
         )}

@@ -1,4 +1,77 @@
 // src/store/useMixerStore.js - YENİDEN YAPILANDIRILMIŞ (Olay Tabanlı Mimari + UI State)
+/**
+ * Bir efektin A/B durumunu değiştirir.
+ * @param {object} fx - Mevcut efekt objesi.
+ * @returns {object} - Güncellenmiş efekt objesi.
+ */
+const _handleABToggle = (fx) => {
+  const abState = fx.abState || { isB: false, a: { ...fx.settings }, b: { ...fx.settings } };
+  const nextIsB = !abState.isB;
+  
+  // Geçiş yapmadan önce mevcut, değiştirilmiş ayarları doğru slota kaydet.
+  const stateToSave = { ...fx.settings };
+  if (abState.isB) {
+    abState.b = stateToSave;
+  } else {
+    abState.a = stateToSave;
+  }
+
+  // Yeni durumu yükle.
+  const newStateToLoad = nextIsB ? abState.b : abState.a;
+  return { ...fx, settings: newStateToLoad, abState: { ...abState, isB: nextIsB } };
+};
+
+/**
+ * Bir efektin A durumunu B durumuna kopyalar.
+ * @param {object} fx - Mevcut efekt objesi.
+ * @returns {object} - Güncellenmiş efekt objesi.
+ */
+const _handleABCopy = (fx) => {
+    const abState = fx.abState || { isB: false, a: { ...fx.settings }, b: { ...fx.settings } };
+    // A/B'nin hangi durumda olduğuna bakmaksızın, o anki aktif ayarları (fx.settings) A'ya,
+    // sonra da A'yı B'ye kopyalamak en güvenli yoldur.
+    abState.a = { ...fx.settings };
+    abState.b = { ...fx.settings };
+    return { ...fx, abState: { ...abState } };
+};
+
+/**
+ * Normal bir parametre değişikliğini yönetir.
+ * @param {object} fx - Mevcut efekt objesi.
+ * @param {string|object} paramOrSettings - Değişecek parametre veya ayarlar objesi.
+ * @param {*} value - Parametrenin yeni değeri.
+ * @returns {{updatedFx: object, needsRebuild: boolean}} - Güncellenmiş efekt ve sinyal zincirinin yeniden kurulup kurulmayacağı.
+ */
+const _handleParamChange = (fx, paramOrSettings, value) => {
+    let needsRebuild = false;
+    let newSettings = { ...fx.settings };
+    let newFx = { ...fx };
+
+    if (typeof paramOrSettings === 'string') {
+        if (paramOrSettings === 'bypass' || paramOrSettings === 'sidechainSource') {
+            needsRebuild = true;
+        }
+        if (paramOrSettings === 'bypass') {
+            newFx.bypass = value;
+        } else {
+            // === HATA DÜZELTMESİ BURADA ===
+            // Gelen 'value' bir fonksiyon mu diye kontrol et (örn: setBands(prevBands => ...))
+            // Eğer öyleyse, mevcut state'i (newSettings[paramOrSettings]) argüman olarak kullanarak çalıştır.
+            // Değilse, değeri doğrudan ata.
+            const previousValue = newSettings[paramOrSettings];
+            newSettings[paramOrSettings] = typeof value === 'function' ? value(previousValue) : value;
+            newFx.settings = newSettings;
+        }
+    } else { // Gelen bir obje ise (tüm ayarlar, yani bir PRESET)
+        if (fx.settings.sidechainSource !== paramOrSettings.sidechainSource) {
+            needsRebuild = true;
+        }
+        newSettings = paramOrSettings;
+        newFx.settings = newSettings;
+    }
+    
+    return { updatedFx: newFx, needsRebuild };
+};
 
 import { create } from 'zustand';
 import { AudioContextService } from '../lib/services/AudioContextService';
@@ -6,7 +79,7 @@ import { initialMixerTracks } from '../config/initialData';
 import { pluginRegistry } from '../config/pluginConfig';
 import { v4 as uuidv4 } from 'uuid';
 
-// REHBER ADIM 2.2: Varsayılan EQ ayarları eklendi [cite: 227-229]
+// REHBER ADIM 2.2: Varsayılan EQ ayarları eklendi
 const DEFAULT_EQ_SETTINGS = {
   hi: { frequency: 8000, gain: 0, q: 0.7, type: 'highshelf' },
   hiMid: { frequency: 3000, gain: 0, q: 1.0, type: 'peaking'},
@@ -21,7 +94,7 @@ export const useMixerStore = create((set, get) => ({
   soloedChannels: new Set(),
   mutedChannels: new Set(),
 
-  // REHBER ADIM 2.1: Yeni UI state yönetimi nesnesi eklendi [cite: 151-157]
+  // REHBER ADIM 2.1: Yeni UI state yönetimi nesnesi eklendi
   mixerUIState: {
     expandedChannels: new Set(),
     visibleEQs: new Set(),
@@ -57,10 +130,8 @@ export const useMixerStore = create((set, get) => ({
     }));
     AudioContextService?.updateMixerParam(trackId, param, value);
   },
-   // ... Diğer mevcut eylemleriniz ...
 
-
-  // REHBER ADIM 2.1: Yeni UI Eylemleri [cite: 159, 175, 192, 208, 216]
+  // REHBER ADIM 2.1: Yeni UI Eylemleri
   toggleChannelExpansion: (trackId) => {
     set(state => {
       const newExpanded = new Set(state.mixerUIState.expandedChannels);
@@ -85,7 +156,7 @@ export const useMixerStore = create((set, get) => ({
     });
   },
   
-  // REHBER ADIM 2.2: Yeni EQ güncelleme fonksiyonu [cite: 230-251]
+  // REHBER ADIM 2.2: Yeni EQ güncelleme fonksiyonu
   updateChannelEQ: (trackId, band, param, value) => {
       set(state => ({
           mixerTracks: state.mixerTracks.map(track => {
@@ -100,9 +171,6 @@ export const useMixerStore = create((set, get) => ({
       // Değişikliği ses motoruna bildir
       AudioContextService?.updateChannelEQ(trackId, band, param, value);
   },
-
-
-  // ... (handleMixerEffectAdd, remove, change, reorder vb. diğer fonksiyonlarınız burada yer alacak) ...
 
   handleMixerEffectAdd: (trackId, effectType) => {
     const pluginDef = pluginRegistry[effectType];
@@ -158,23 +226,21 @@ export const useMixerStore = create((set, get) => ({
     set(state => ({
       mixerTracks: state.mixerTracks.map(track => {
         if (track.id === trackId) {
-          const newTrack = {
-            ...track,
+          const newTrack = { ...track,
             insertEffects: track.insertEffects.map(fx => {
               if (fx.id === effectId) {
-                if (typeof paramOrSettings === 'string') {
-                    if (paramOrSettings === 'bypass' || paramOrSettings === 'sidechainSource') {
-                        needsRebuild = true;
-                    }
-                    const newSettings = { ...fx.settings, [paramOrSettings]: value };
-                    return paramOrSettings === 'bypass' ? { ...fx, bypass: value } : { ...fx, settings: newSettings };
+                // Özel komutları kontrol et
+                if (paramOrSettings === '__toggle_ab_state') {
+                  return _handleABToggle(fx);
                 }
-                else {
-                    if (fx.settings.sidechainSource !== paramOrSettings.sidechainSource) {
-                        needsRebuild = true;
-                    }
-                    return { ...fx, settings: { ...fx.settings, ...paramOrSettings } };
+                if (paramOrSettings === '__copy_a_to_b') {
+                  return _handleABCopy(fx);
                 }
+                
+                // Normal parametre değişikliği için yardımcımızı kullan
+                const result = _handleParamChange(fx, paramOrSettings, value);
+                needsRebuild = needsRebuild || result.needsRebuild;
+                return result.updatedFx;
               }
               return fx;
             })
@@ -185,9 +251,10 @@ export const useMixerStore = create((set, get) => ({
         return track;
       })
     }));
-
+    
+    // Ses motoruna komut gönder
     if (needsRebuild) {
-        AudioContextService?.rebuildSignalChain(trackId, newTrackState);
+        AudioContextService?.rebuildSignalChain(trackId, newTrackState); 
     } else {
         AudioContextService?.updateEffectParam(trackId, effectId, paramOrSettings, value);
     }

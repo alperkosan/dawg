@@ -3,68 +3,89 @@ import ReactDOM from 'react-dom';
 import { ChevronRight, Search, X } from 'lucide-react';
 import { pluginRegistry } from '../config/pluginConfig';
 
-// Tek bir kategori ve onun alt menüsünü yöneten bileşen
+// YENİ: Portal'da render edilecek alt menü bileşeni
+const SubMenu = ({ parentRef, plugins, onSelect, onClose }) => {
+    const subMenuRef = useRef(null);
+    const [position, setPosition] = useState({ top: 0, left: 0 });
+
+    useLayoutEffect(() => {
+        if (parentRef.current && subMenuRef.current) {
+            const parentRect = parentRef.current.getBoundingClientRect();
+            const subMenuRect = subMenuRef.current.getBoundingClientRect();
+            const viewportWidth = window.innerWidth;
+
+            let left = parentRect.right;
+            // Eğer sağa açılırsa ekranın dışına taşacaksa, sola aç
+            if (parentRect.right + subMenuRect.width > viewportWidth) {
+                left = parentRect.left - subMenuRect.width;
+            }
+
+            setPosition({ top: parentRect.top, left });
+        }
+    }, [parentRef]);
+
+    return ReactDOM.createPortal(
+        <ul
+            ref={subMenuRef}
+            className="add-effect-menu__submenu" // Stiller aynı kalacak
+            style={{ top: `${position.top}px`, left: `${position.left}px` }}
+        >
+            {plugins.map(plugin => (
+                <li key={plugin.type}>
+                    <button
+                        onClick={() => onSelect(plugin.type)}
+                        className="add-effect-menu__plugin-btn"
+                    >
+                        <span>{plugin.type}</span>
+                    </button>
+                </li>
+            ))}
+        </ul>,
+        document.body
+    );
+};
+
+
 const MenuItem = ({ category, plugins, onSelect }) => {
     const itemRef = useRef(null);
     const [isSubMenuOpen, setIsSubMenuOpen] = useState(false);
-    const [subMenuPositionClass, setSubMenuPositionClass] = useState('left-full');
-    
-    // YENİ: Zamanlayıcıyı saklamak için bir ref
-    const closeTimerRef = useRef(null);
+    const timerRef = useRef(null);
 
-    // Mouse bir menü öğesinin (ana veya alt) üzerine geldiğinde
     const handleMouseEnter = () => {
-        // Kapanmak üzere olan bir zamanlayıcı varsa onu iptal et
-        clearTimeout(closeTimerRef.current);
-
-        if (itemRef.current) {
-            const parentRect = itemRef.current.getBoundingClientRect();
-            const viewportWidth = window.innerWidth;
-            const subMenuWidth = 256;
-            
-            if (parentRect.right + subMenuWidth > viewportWidth) {
-                setSubMenuPositionClass('right-full');
-            } else {
-                setSubMenuPositionClass('left-full');
-            }
-        }
-        // Alt menüyü hemen aç
+        clearTimeout(timerRef.current);
         setIsSubMenuOpen(true);
     };
-    
-    // Mouse bir menü öğesinden (ana veya alt) ayrıldığında
+
     const handleMouseLeave = () => {
-        // Alt menüyü 150ms sonra kapatmak için bir zamanlayıcı başlat
-        closeTimerRef.current = setTimeout(() => {
+        timerRef.current = setTimeout(() => {
             setIsSubMenuOpen(false);
-        }, 150);
+        }, 150); // Hafif bir gecikme ile kapanmasını sağla
     };
 
     return (
-        <li ref={itemRef} onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave} className="add-effect-menu__item">
+        <li 
+            ref={itemRef} 
+            onMouseEnter={handleMouseEnter} 
+            onMouseLeave={handleMouseLeave} 
+            className="add-effect-menu__item"
+        >
             <div className="add-effect-menu__item-content">
                 <span>{category}</span>
                 <ChevronRight size={16} className="text-gray-500" />
             </div>
             {isSubMenuOpen && (
-                <ul className={`add-effect-menu__submenu ${subMenuPositionClass}`}>
-                    {plugins.map(plugin => (
-                        <li key={plugin.type}>
-                            <button
-                                onClick={() => onSelect(plugin.type)}
-                                className="add-effect-menu__plugin-btn"
-                            >
-                                <span>{plugin.type}</span>
-                            </button>
-                        </li>
-                    ))}
-                </ul>
+                <SubMenu 
+                    parentRef={itemRef} 
+                    plugins={plugins} 
+                    onSelect={onSelect}
+                    onClose={() => setIsSubMenuOpen(false)}
+                />
             )}
         </li>
     );
 };
 
-// Ana AddEffectMenu bileşeninin geri kalanı aynı
+// Ana bileşende değişiklik yok, sadece MenuItem'ı kullanıyor
 export function AddEffectMenu({ onSelect, onClose, x, y }) {
   const menuRef = useRef(null);
   const [position, setPosition] = useState({ top: y, left: x, opacity: 0 });

@@ -1,10 +1,9 @@
 import React from 'react';
-import PluginContainer from '../plugin_system/PluginContainer';
 import { ProfessionalKnob } from '../plugin_system/PluginControls';
 
 export const PitchShifterUI = ({ trackId, effect, onChange, definition }) => {
   
-  // --- AKILLI ARAYÜZ MANTIĞI ---
+  // YENİ: Akıllı arayüz mantığı
   // Bu fonksiyon, UI'dan gelen 0-100 aralığındaki değeri,
   // ses motorunun beklediği 0-1 aralığına çevirir.
   const handleMixChange = (uiValue) => {
@@ -32,7 +31,7 @@ export const PitchShifterUI = ({ trackId, effect, onChange, definition }) => {
         unit="s"
         precision={3}
       />
-      {/* --- DÜZELTİLMİŞ KULLANIM --- */}
+      {/* DÜZELTİLMİŞ KULLANIM */}
       <ProfessionalKnob
         label="Mix"
         // Değeri UI için 100 ile çarpıyoruz.

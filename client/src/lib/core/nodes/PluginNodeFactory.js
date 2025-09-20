@@ -1,4 +1,3 @@
-
 import * as Tone from 'tone';
 import { pluginRegistry } from '../../../config/pluginConfig';
 import { setParamSmoothly } from '../../utils/audioUtils';

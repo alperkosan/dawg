@@ -19,7 +19,7 @@ function WorkspacePanel() {
   const { handleMixerEffectChange } = useMixerStore.getState();
   const pianoRollInstrument = instruments.find(i => i.id === pianoRollInstrumentId);
   const editingInstrument = instruments.find(i => i.id === editingInstrumentId);
-  
+
   const baseZIndex = 10;
 
   return (
@@ -29,6 +29,8 @@ function WorkspacePanel() {
       {/* 'workspace__main-content' flex-grow: 1 ile geri kalan alanı kaplayacak */}
       <div className="workspace__main-content"> 
         {Object.values(panels).map(panel => {
+          const isMaximized = fullscreenPanel === panel.id;
+
           if (fullscreenPanel && fullscreenPanel !== panel.id) return null;
           if (!panel.isOpen || panel.isMinimized) return null;
 
@@ -51,7 +53,10 @@ function WorkspacePanel() {
               handleMixerEffectChange(track.id, effect.id, param, value);
             };
             
-            panelDef = { minSize: { width: 350, height: 200 }, ...panelDef };
+            panelDef = { 
+              minSize: definition.minSize || { width: 350, height: 200 },
+              initialSize: definition.initialSize || { width: 450, height: 300 }
+            };
 
             PanelContent = (
               <PluginContainer effect={effect} definition={definition} onChange={handlePluginChange}>
@@ -79,8 +84,6 @@ function WorkspacePanel() {
               id={panel.id}
               title={panel.title}
               position={panel.position}
-              size={panel.size}
-              minSize={panelDef?.minSize}
               zIndex={baseZIndex + panelStack.indexOf(panel.id)}
               onPositionChange={(newPos) => updatePanelState(panel.id, { position: newPos })}
               onSizeChange={(newSize) => updatePanelState(panel.id, { size: newSize })}
@@ -88,7 +91,9 @@ function WorkspacePanel() {
               onClose={() => togglePanel(panel.id)}
               onMinimize={() => handleMinimize(panel.id, panel.title)}
               onMaximize={() => handleMaximize(panel.id)}
-              isMaximized={fullscreenPanel === panel.id}
+              isMaximized={isMaximized}
+              size={isMaximized ? { width: '100%', height: '100%' } : (panel.size || panelDef.initialSize)}
+              minSize={panelDef?.minSize}
             >
               {PanelContent}
             </DraggableWindow>

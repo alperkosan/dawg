@@ -4,6 +4,7 @@
  * tüm eklentilerde kullanılacak standart, profesyonel ve yeniden kullanılabilir
  * kontrol bileşenlerini (Knob, Fader, Button) içerir.
  */
+// --- Profesyonel Knob Bileşeni ---
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { PluginColorPalette, PluginAnimations } from './PluginDesignSystem';
 
@@ -16,6 +17,7 @@ export const ProfessionalKnob = ({
   const dragStartRef = useRef({ y: 0, value: 0 });
 
   const valueToAngle = useCallback((val) => {
+    if (typeof val !== 'number') return -135; // Sayısal değilse başlangıç pozisyonu
     const valueInRange = Math.max(min, Math.min(max, val));
     let normalizedValue;
     if (logarithmic) {
@@ -25,19 +27,16 @@ export const ProfessionalKnob = ({
     }
     return -135 + Math.max(0, Math.min(1, normalizedValue)) * 270;
   }, [min, max, logarithmic]);
-  
-  const angleToValue = useCallback((angle, startY, currentY) => {
-    const deltaY = startY - currentY;
-    const sensitivity = 200; // Düşük değer daha hassas yapar
-    const change = (deltaY / sensitivity) * (max-min);
-    return dragStartRef.current.value + change;
-  }, [min, max]);
-
 
   const formatValue = useCallback((val) => {
+    // --- KRİTİK DÜZELTME BURADA ---
+    // Değerin bir sayı olup olmadığını kontrol et. Değilse, olduğu gibi göster.
+    if (typeof val !== 'number' || isNaN(val)) {
+      return val;
+    }
     return `${val.toFixed(precision)}${unit}`;
   }, [precision, unit]);
-
+  
   const handleMouseMove = useCallback((e) => {
     const deltaY = dragStartRef.current.y - e.clientY;
     const range = max - min;
@@ -59,6 +58,7 @@ export const ProfessionalKnob = ({
   }, [handleMouseMove]);
   
   const handleMouseDown = useCallback((e) => {
+    if(typeof value !== 'number') return; // Sayısal olmayan değerlerde sürüklemeyi engelle
     e.preventDefault(); setIsDragging(true);
     dragStartRef.current = { y: e.clientY, value };
     document.body.style.cursor = 'ns-resize';
@@ -75,7 +75,7 @@ export const ProfessionalKnob = ({
         style={{ width: size, height: size }}
         className="relative flex items-center justify-center cursor-ns-resize"
         onMouseDown={handleMouseDown}
-        onDoubleClick={() => onChange?.(defaultValue)}
+        onDoubleClick={() => typeof value === 'number' && onChange?.(defaultValue)}
       >
         <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="transform -rotate-90">
           <circle cx={size/2} cy={size/2} r={size/2 - 4} stroke="#333" strokeWidth="4" fill="none" strokeDasharray={`${Math.PI * (size - 8) * 0.75} ${Math.PI * (size - 8) * 0.25}`} transform={`rotate(135 ${size/2} ${size/2})`} />
@@ -87,6 +87,8 @@ export const ProfessionalKnob = ({
     </div>
   );
 };
+
+
 
 export const ProfessionalFader = ({
   value, min = -60, max = 6, onChange, height = '100%', isActive

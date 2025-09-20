@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import WaveformDisplay from '../sample_editor/WaveformDisplay';
+import WaveformDisplay from '../sample_editor_v3/WaveformDisplay';
 import { Loader2, Play, Pause, AlertTriangle } from 'lucide-react';
 import { usePreviewPlayerStore } from '../../store/usePreviewPlayerStore';
 

@@ -1,0 +1,145 @@
+/* ==========================================================================
+   Bileşen: PresetManager v3 (Premium & Entegre Tasarım)
+   ========================================================================== */
+
+/* Plugin başlığının içindeki ana kontrol alanı */
+.plugin-header__controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+/* --- Sol Taraf: Preset Seçim Butonu ve Plugin Adı --- */
+.plugin-header__title-section {
+  display: flex;
+  align-items: center; /* DİKEYDE HİZALAMA */
+  gap: var(--spacing-3);
+}
+
+.plugin-body {
+  padding: var(--spacing-4);
+  flex-grow: 1;
+  min-height: 0;
+  position: relative;
+}
+
+/* POWER BUTONU - ARTIK BAŞLIKTA */
+.plugin-bypass-button {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-speed);
+}
+.plugin-bypass-button[data-active="true"] {
+  background-color: var(--color-accent-secondary);
+  color: var(--color-background-deep);
+  box-shadow: 0 0 10px var(--color-accent-secondary);
+}
+.plugin-bypass-button[data-active="false"] {
+  background-color: var(--color-surface-3);
+  color: var(--color-text-muted);
+}
+
+.preset-button {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  padding: var(--spacing-1) 0; /* Sadece dikey padding */
+  background-color: transparent;
+  border: none;
+  border-radius: var(--border-radius-md);
+  transition: all var(--transition-speed);
+}
+.preset-button:hover {
+  color: var(--color-accent-primary);
+}
+.preset-button__name {
+  max-width: 120px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.preset-button__chevron {
+  transition: transform var(--transition-speed);
+}
+.preset-button--open .preset-button__chevron {
+  transform: rotate(180deg);
+}
+
+/* --- Sağ Taraf: A/B ve Aksiyon Butonları --- */
+.preset-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+}
+
+.ab-toggle {
+  display: flex;
+  align-items: center;
+  background-color: rgba(0,0,0,0.3);
+  border-radius: var(--border-radius-md);
+  padding: 2px;
+  border: 1px solid var(--color-border);
+}
+.ab-button {
+  padding: 4px 10px;
+  font-size: var(--font-size-xs);
+  font-family: var(--font-display);
+  font-weight: 700;
+  border-radius: var(--border-radius-sm);
+  transition: all var(--transition-speed);
+  color: var(--color-text-muted);
+}
+.ab-button--active {
+  background-color: #f59e0b; /* Amber 500 */
+  color: var(--color-background-deep);
+  text-shadow: 0 0 2px rgba(0,0,0,0.5);
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.6);
+}
+
+.preset-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  color: var(--color-text-secondary);
+  background-color: transparent;
+  border: none;
+  border-radius: 50%;
+  transition: all var(--transition-speed);
+}
+.preset-action-btn:hover {
+  background-color: var(--color-surface-3);
+  color: var(--color-text-primary);
+}
+
+.preset-manager__menu {
+  position: fixed;
+  width: 224px;
+  background: rgba(30, 30, 30, 0.8);
+  backdrop-filter: blur(15px);
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: var(--spacing-1);
+  max-height: 240px;
+  overflow-y: auto;
+  z-index: 9999;
+}
+.preset-manager__menu-category {font-size: var(--font-size-xs); font-weight: 700; color: var(--color-text-secondary); text-transform: uppercase; padding: var(--spacing-2) var(--spacing-2) var(--spacing-1);}
+.preset-manager__menu-item {width: 100%; text-align: left; font-size: var(--font-size-sm); padding: var(--spacing-2); border-radius: var(--border-radius-sm); color: var(--color-text-primary); transition: all var(--transition-speed);}
+.preset-manager__menu-item:hover {background-color: var(--color-accent-primary); color: var(--color-text-inverse);}
+.preset-manager__user-item {display: flex; align-items: center; justify-content: space-between; width: 100%; border-radius: var(--border-radius-sm);}
+.preset-manager__user-item:hover {background-color: var(--color-accent-primary); color: var(--color-text-inverse);}
+.preset-manager__user-item-button {flex-grow: 1; text-align: left; padding: var(--spacing-2);}
+.preset-manager__delete-btn {padding: var(--spacing-2); opacity: 0;}
+.preset-manager__user-item:hover .preset-manager__delete-btn {opacity: 1;}
+.preset-manager__delete-btn:hover {color: var(--color-accent-danger);}

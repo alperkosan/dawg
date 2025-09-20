@@ -39,6 +39,11 @@ export const PluginSpacing = {
   xxl: '3rem',   // 48px
 };
 
+// Standardized spacing system [cite: 119]
+export const PluginSpacingHeader = {
+  padding: "2.5rem"
+};
+
 // Typography system for plugins [cite: 130]
 export const PluginTypography = {
   title: {

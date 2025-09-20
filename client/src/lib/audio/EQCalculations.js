@@ -34,7 +34,7 @@ export class EQCalculations {
         a2 = 1 - alpha / A;
         break;
       case 'lowshelf':
-        // Düzeltilmiş ve doğru Lowshelf formülü [cite: 571-579]
+        // Düzeltilmiş ve doğru Lowshelf formülü
         b0 = A * ((A + 1) - (A - 1) * cos_w0 + 2 * Math.sqrt(A) * alpha);
         b1 = 2 * A * ((A - 1) - (A + 1) * cos_w0);
         b2 = A * ((A + 1) - (A - 1) * cos_w0 - 2 * Math.sqrt(A) * alpha);
@@ -43,7 +43,7 @@ export class EQCalculations {
         a2 = (A + 1) + (A - 1) * cos_w0 - 2 * Math.sqrt(A) * alpha;
         break;
       case 'highshelf':
-        // Düzeltilmiş ve doğru Highshelf formülü [cite: 581-589]
+        // Düzeltilmiş ve doğru Highshelf formülü
         b0 = A * ((A + 1) + (A - 1) * cos_w0 + 2 * Math.sqrt(A) * alpha);
         b1 = -2 * A * ((A - 1) + (A + 1) * cos_w0);
         b2 = A * ((A + 1) + (A - 1) * cos_w0 - 2 * Math.sqrt(A) * alpha);
