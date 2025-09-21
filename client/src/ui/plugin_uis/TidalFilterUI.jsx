@@ -1,6 +1,10 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { MeteringService } from '../../lib/core/MeteringService';
 import { ProfessionalKnob } from '../plugin_system/PluginControls';
+import { useMixerStore } from '../../store/useMixerStore';
 import { SignalVisualizer } from '../SignalVisualizer';
+
+
 import * as Tone from 'tone';
 
 // Animated Filter Sweep Visualizer

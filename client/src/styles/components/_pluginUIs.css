@@ -1,5 +1,5 @@
 /* ==========================================================================
-   Premium Plugin UI Stilleri v5 - Geliştirilmiş Tasarım Sistemi
+   Premium Plugin UI Stilleri v6 - Komplet Tasarım Sistemi
    ========================================================================== */
 
 /* --- 1. TEMEL LAYOUT SİSTEMİ --- */
@@ -46,7 +46,7 @@
   cursor: ns-resize;
 }
 
-.professional-fader_track {
+.professional-fader__track {
   background: linear-gradient(to bottom, 
     var(--color-surface-3) 0%, 
     var(--color-surface-2) 50%, 
@@ -55,9 +55,11 @@
   border: 1px solid var(--color-border);
   position: relative;
   overflow: hidden;
+  width: 24px;
+  height: 100%;
 }
 
-.professional-fader_track::before {
+.professional-fader__track::before {
   content: '';
   position: absolute;
   inset: 0;
@@ -68,7 +70,11 @@
   pointer-events: none;
 }
 
-.professional-fader_handle {
+.professional-fader__handle {
+  position: absolute;
+  width: 32px;
+  height: 28px;
+  left: -4px;
   background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
   border: 2px solid var(--color-border);
   border-radius: 6px;
@@ -77,10 +83,9 @@
   box-shadow: 
     0 2px 4px rgba(0, 0, 0, 0.1), 
     inset 0 1px 0 rgba(255, 255, 255, 0.3);
-  position: relative;
 }
 
-.professional-fader_handle::before {
+.professional-fader__handle::before {
   content: '';
   position: absolute;
   top: 50%;
@@ -92,7 +97,7 @@
   border-radius: 1px;
 }
 
-.professional-fader_handle:hover {
+.professional-fader__handle:hover {
   border-color: var(--color-accent-primary);
   box-shadow: 
     0 3px 8px rgba(0, 0, 0, 0.15), 
@@ -101,7 +106,7 @@
   transform: scale(1.05);
 }
 
-.professional-fader_handle--dragging {
+.professional-fader__handle--dragging {
   border-color: var(--color-accent-primary);
   box-shadow: 
     0 4px 12px rgba(0, 0, 0, 0.2), 
@@ -110,7 +115,7 @@
   transform: scale(1.1);
 }
 
-/* --- 4. VİZUALİZER KONTEYNERLERI --- */
+/* --- 4. VİZUALİZER KONTEYNERLARI --- */
 .signal-visualizer-container {
   width: 100%;
   height: 100%;
@@ -239,7 +244,530 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.2);
 }
 
-/* --- 7. ANİMASYONLAR --- */
+/* --- 7. PLUGIN ÖZEL STİLLER --- */
+
+/* === COMPRESSOR UI === */
+.compressor-needle {
+  transition: transform 75ms ease-out;
+  transform-origin: bottom center;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+}
+
+.vintage-gr-meter {
+  position: relative;
+  background: radial-gradient(circle at 50% 100%, #1a1a1a 0%, #000 100%);
+  border: 2px solid #d97706;
+  border-bottom: none;
+  overflow: hidden;
+}
+
+.vintage-gr-meter::before {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 50%;
+  background: linear-gradient(to top, rgba(217, 119, 6, 0.1) 0%, transparent 100%);
+}
+
+/* === EQ UI === */
+.eq-canvas-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: var(--border-radius-lg);
+  overflow: hidden;
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.eq-node {
+  transition: all 150ms ease;
+  cursor: grab;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+}
+
+.eq-node:hover {
+  transform: scale(1.2);
+  filter: drop-shadow(0 0 10px currentColor);
+}
+
+.eq-node:active {
+  cursor: grabbing;
+  transform: scale(1.1);
+}
+
+.eq-band-control {
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: var(--border-radius-lg);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  transition: all var(--transition-speed);
+}
+
+.eq-band-control--active {
+  border-color: #3b82f6;
+  background: rgba(59, 130, 246, 0.1);
+  box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+}
+
+/* === REVERB UI === */
+.reverb-particle {
+  border-radius: 50%;
+  filter: blur(0.5px);
+  animation: float 3s ease-in-out infinite;
+  box-shadow: 0 0 10px currentColor;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px) scale(1); }
+  50% { transform: translateY(-10px) scale(1.1); }
+}
+
+.acoustic-space-container {
+  background: radial-gradient(circle at center, 
+    rgba(15, 23, 42, 0.8) 0%, 
+    rgba(0, 0, 0, 0.9) 100%);
+  border: 1px solid rgba(100, 150, 200, 0.3);
+  position: relative;
+  overflow: hidden;
+}
+
+.acoustic-space-container::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: 
+    repeating-linear-gradient(45deg, 
+      transparent 0px, 
+      transparent 10px, 
+      rgba(255,255,255,0.02) 10px, 
+      rgba(255,255,255,0.02) 11px);
+}
+
+/* === DELAY UI === */
+.echo-visualization {
+  background: linear-gradient(135deg, #0a0f1e 0%, #1a0f2e 100%);
+  position: relative;
+  overflow: hidden;
+}
+
+.echo-ripple {
+  position: absolute;
+  border: 2px solid;
+  border-radius: 50%;
+  pointer-events: none;
+  animation: rippleExpand 2s ease-out forwards;
+}
+
+@keyframes rippleExpand {
+  0% {
+    transform: scale(0);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(4);
+    opacity: 0;
+  }
+}
+
+.ping-pong-visualizer {
+  background: linear-gradient(to right, 
+    rgba(34, 211, 238, 0.1) 0%, 
+    transparent 50%, 
+    rgba(34, 211, 238, 0.1) 100%);
+}
+
+.ping-pong-ball {
+  background: radial-gradient(circle at 30% 30%, #ffffff, #22d3ee);
+  border-radius: 50%;
+  box-shadow: 
+    0 0 20px #22d3ee,
+    inset -5px -5px 10px rgba(0,0,0,0.3);
+  animation: pingPongGlow 1s ease-in-out infinite alternate;
+}
+
+@keyframes pingPongGlow {
+  0% { box-shadow: 0 0 20px #22d3ee; }
+  100% { box-shadow: 0 0 30px #22d3ee, 0 0 10px #ffffff; }
+}
+
+/* === SATURATOR UI === */
+.tube-glow-container {
+  background: radial-gradient(ellipse at center, 
+    rgba(40, 20, 10, 0.9) 0%, 
+    rgba(20, 10, 5, 0.9) 100%);
+  position: relative;
+  overflow: hidden;
+}
+
+.tube-outline {
+  border: 3px solid rgba(255, 140, 0, 0.8);
+  border-radius: 20px;
+  position: absolute;
+  background: linear-gradient(to bottom, 
+    rgba(255, 140, 0, 0.1) 0%, 
+    rgba(255, 100, 0, 0.2) 100%);
+}
+
+.tube-filament {
+  background: linear-gradient(to bottom, 
+    rgba(255, 200, 100, 0.9) 0%, 
+    rgba(255, 150, 0, 0.9) 100%);
+  border-radius: 2px;
+  box-shadow: 0 0 20px currentColor;
+  animation: filamentFlicker 2s ease-in-out infinite;
+}
+
+@keyframes filamentFlicker {
+  0%, 100% { opacity: 0.8; transform: scaleY(1); }
+  50% { opacity: 1; transform: scaleY(1.05); }
+}
+
+.saturation-glow {
+  animation: pulseGlow 2s ease-in-out infinite;
+}
+
+.drive-meter-segment {
+  transition: all 100ms ease-out;
+  border-radius: 2px;
+}
+
+.drive-meter-segment--active {
+  box-shadow: 0 0 8px currentColor;
+}
+
+/* === CHORUS UI === */
+.galaxy-container {
+  background: radial-gradient(circle at center, 
+    rgba(15, 15, 40, 0.9) 0%, 
+    rgba(5, 5, 20, 0.9) 100%);
+  position: relative;
+  overflow: hidden;
+}
+
+.chorus-particle {
+  border-radius: 50%;
+  box-shadow: 0 0 10px currentColor;
+  animation: chorusFloat 4s ease-in-out infinite;
+}
+
+@keyframes chorusFloat {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  25% { transform: translateY(-5px) rotate(90deg); }
+  50% { transform: translateY(0px) rotate(180deg); }
+  75% { transform: translateY(5px) rotate(270deg); }
+}
+
+.constellation-pattern {
+  border: 1px solid rgba(147, 51, 234, 0.6);
+  border-radius: 50%;
+  transition: all 200ms ease;
+}
+
+.constellation-pattern:hover {
+  border-color: rgba(147, 51, 234, 1);
+  box-shadow: 0 0 15px rgba(147, 51, 234, 0.5);
+}
+
+/* === FILTER UI === */
+.filter-sweep-container {
+  background: linear-gradient(135deg, #0a1419 0%, #051419 100%);
+  position: relative;
+}
+
+.filter-cutoff-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #ef4444;
+  box-shadow: 0 0 10px #ef4444;
+  animation: cutoffPulse 2s ease-in-out infinite;
+}
+
+@keyframes cutoffPulse {
+  0%, 100% { opacity: 0.8; box-shadow: 0 0 10px #ef4444; }
+  50% { opacity: 1; box-shadow: 0 0 20px #ef4444; }
+}
+
+.lfo-wave-container {
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: var(--border-radius-sm);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+}
+
+/* === PHASER UI === */
+.vortex-container {
+  background: radial-gradient(circle at center, 
+    rgba(10, 20, 40, 0.9) 0%, 
+    rgba(5, 10, 20, 0.9) 100%);
+  position: relative;
+  overflow: hidden;
+}
+
+.vortex-ring {
+  border-radius: 50%;
+  border: 2px solid;
+  position: absolute;
+  animation: vortexSpin 8s linear infinite;
+}
+
+@keyframes vortexSpin {
+  0% { transform: rotate(0deg) scale(1); }
+  50% { transform: rotate(180deg) scale(1.1); }
+  100% { transform: rotate(360deg) scale(1); }
+}
+
+.intensity-meter-bar {
+  background: linear-gradient(to top, 
+    #4338ca 0%, 
+    #6366f1 50%, 
+    #8b5cf6 100%);
+  border-radius: 4px;
+  transition: all 200ms ease;
+}
+
+.intensity-meter-bar--active {
+  box-shadow: 0 0 12px currentColor;
+}
+
+/* === BITCRUSHER UI === */
+.bitcrusher-ui-v2 {
+  background: linear-gradient(135deg, #450a0a 0%, #7f1d1d 100%);
+}
+
+.bitcrusher-ui-v2__visualizer {
+  width: 300px;
+  height: 200px;
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: var(--border-radius-lg);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  position: relative;
+  overflow: hidden;
+}
+
+.bitcrusher-ui-v2__visualizer canvas {
+  width: 100%;
+  height: 100%;
+}
+
+.bitcrusher-ui-v2__visualizer::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: 
+    repeating-linear-gradient(0deg, 
+      transparent 0px, 
+      transparent 8px, 
+      rgba(239, 68, 68, 0.1) 8px, 
+      rgba(239, 68, 68, 0.1) 9px);
+}
+
+/* === PITCH SHIFTER UI === */
+.pitch-shifter-ui-v2 {
+  background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%);
+}
+
+.pitch-shifter-ui-v2__center-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-4);
+  flex: 1;
+}
+
+.pitch-shifter-ui-v2__side-controls {
+  display: flex;
+  gap: var(--spacing-4);
+}
+
+.pitch-shifter-ui-v2 .signal-visualizer-container {
+  width: 300px;
+  height: 150px;
+  border: 1px solid rgba(139, 92, 246, 0.3);
+}
+
+/* === AUTO PANNER UI === */
+.orbit-visualizer {
+  background: radial-gradient(circle at center, 
+    rgba(5, 5, 20, 0.9) 0%, 
+    rgba(0, 0, 0, 0.9) 100%);
+  position: relative;
+  overflow: hidden;
+}
+
+.orbit-path {
+  border: 2px dashed rgba(100, 200, 255, 0.3);
+  border-radius: 50%;
+  position: absolute;
+  animation: orbitPathPulse 4s ease-in-out infinite;
+}
+
+@keyframes orbitPathPulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 0.6; }
+}
+
+.orbit-object {
+  background: radial-gradient(circle at 30% 30%, #ffffff, #00ffff);
+  border-radius: 50%;
+  box-shadow: 0 0 20px #00ffff;
+  position: absolute;
+  animation: orbitGlow 2s ease-in-out infinite alternate;
+}
+
+@keyframes orbitGlow {
+  0% { box-shadow: 0 0 20px #00ffff; }
+  100% { box-shadow: 0 0 30px #00ffff, 0 0 10px #ffffff; }
+}
+
+.orbit-trail {
+  background: rgba(0, 255, 255, 0.3);
+  border-radius: 50%;
+  position: absolute;
+  animation: trailFade 1s ease-out forwards;
+}
+
+@keyframes trailFade {
+  0% { opacity: 0.8; transform: scale(1); }
+  100% { opacity: 0; transform: scale(0.5); }
+}
+
+/* === ATMOS MACHINE UI === */
+.atmos-container {
+  background: linear-gradient(135deg, #111827 0%, #1f2937 100%);
+  border-radius: var(--border-radius-lg);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  position: relative;
+  overflow: hidden;
+}
+
+.atmos-particle {
+  border-radius: 50%;
+  position: absolute;
+  animation: atmosFloat 6s ease-in-out infinite;
+  filter: blur(1px);
+}
+
+@keyframes atmosFloat {
+  0%, 100% { transform: translateY(0px) scale(1); opacity: 0.8; }
+  33% { transform: translateY(-20px) scale(1.2); opacity: 1; }
+  66% { transform: translateY(10px) scale(0.8); opacity: 0.6; }
+}
+
+/* === GHOST LFO UI === */
+.ghost-lfo-container {
+  background: linear-gradient(135deg, #581c87 0%, #6b21a8 100%);
+}
+
+.spectral-waveform {
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: var(--border-radius-lg);
+  border: 1px solid rgba(147, 51, 234, 0.3);
+  position: relative;
+  overflow: hidden;
+}
+
+.ghost-rate-button {
+  border: 1px solid rgba(147, 51, 234, 0.5);
+  border-radius: var(--border-radius-lg);
+  transition: all 200ms ease;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.ghost-rate-button:hover {
+  border-color: rgba(147, 51, 234, 0.7);
+  background: rgba(147, 51, 234, 0.1);
+}
+
+.ghost-rate-button--active {
+  border-color: rgba(147, 51, 234, 1);
+  background: rgba(147, 51, 234, 0.3);
+  box-shadow: 0 0 20px rgba(147, 51, 234, 0.3);
+}
+
+.paranormal-activity-meter {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+}
+
+.activity-bar {
+  width: 12px;
+  height: 32px;
+  background: #581c87;
+  border-radius: 2px;
+  transition: all 200ms ease;
+}
+
+.activity-bar--active {
+  background: #a855f7;
+  box-shadow: 0 0 12px rgba(168, 85, 247, 0.5);
+  animation: activityPulse 1s ease-in-out infinite alternate;
+}
+
+@keyframes activityPulse {
+  0% { opacity: 1; }
+  100% { opacity: 0.6; }
+}
+
+/* === SAMPLE MORPH UI === */
+.sample-morph-container {
+  background: linear-gradient(135deg, #020617 0%, #0c4a6e 100%);
+}
+
+.morph-laboratory {
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: var(--border-radius-xl);
+  border: 1px solid rgba(6, 182, 212, 0.2);
+  position: relative;
+  overflow: hidden;
+}
+
+.morph-mode-button {
+  border: 1px solid rgba(6, 182, 212, 0.5);
+  border-radius: var(--border-radius-lg);
+  transition: all 200ms ease;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.morph-mode-button:hover {
+  border-color: rgba(6, 182, 212, 0.7);
+}
+
+.morph-mode-button--active {
+  border-color: rgba(6, 182, 212, 1);
+  background: rgba(6, 182, 212, 0.2);
+  box-shadow: 0 0 20px rgba(6, 182, 212, 0.3);
+}
+
+.chaos-matrix {
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: var(--border-radius-lg);
+  border: 1px solid rgba(6, 182, 212, 0.3);
+  position: relative;
+  cursor: crosshair;
+}
+
+.chaos-crosshair {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border: 2px solid #06b6d4;
+  border-radius: 50%;
+  background: rgba(6, 182, 212, 0.2);
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 15px rgba(6, 182, 212, 0.5);
+  animation: crosshairPulse 2s ease-in-out infinite;
+}
+
+@keyframes crosshairPulse {
+  0%, 100% { transform: translate(-50%, -50%) scale(1); }
+  50% { transform: translate(-50%, -50%) scale(1.2); }
+}
+
+/* --- 8. ANİMASYONLAR --- */
 @keyframes peakFlash {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.7; }
@@ -259,53 +787,6 @@
 @keyframes rotateHue {
   0% { filter: hue-rotate(0deg); }
   100% { filter: hue-rotate(360deg); }
-}
-
-/* --- 8. PLUGIN ÖZEL STİLLER --- */
-
-/* Compressor Needle Animation */
-.compressor-needle {
-  transition: transform 75ms ease-out;
-  transform-origin: bottom center;
-  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
-}
-
-/* Reverb Particle Effects */
-.reverb-particle {
-  border-radius: 50%;
-  filter: blur(0.5px);
-  animation: float 3s ease-in-out infinite;
-}
-
-@keyframes float {
-  0%, 100% { transform: translateY(0px); }
-  50% { transform: translateY(-10px); }
-}
-
-/* EQ Node Styles */
-.eq-node {
-  transition: all 150ms ease;
-  cursor: grab;
-}
-
-.eq-node:hover {
-  transform: scale(1.2);
-  filter: drop-shadow(0 0 10px currentColor);
-}
-
-.eq-node:active {
-  cursor: grabbing;
-  transform: scale(1.1);
-}
-
-/* Saturation Glow Effect */
-.saturation-glow {
-  animation: pulseGlow 2s ease-in-out infinite;
-}
-
-/* Filter Sweep Animation */
-.filter-sweep {
-  animation: sweepEffect 4s ease-in-out infinite;
 }
 
 @keyframes sweepEffect {
@@ -328,6 +809,19 @@
   .level-meter {
     min-height: 80px;
   }
+
+  .eq-canvas-container,
+  .reverb-particle,
+  .echo-visualization,
+  .tube-glow-container,
+  .galaxy-container,
+  .vortex-container,
+  .orbit-visualizer,
+  .atmos-container,
+  .spectral-waveform,
+  .morph-laboratory {
+    min-height: 120px;
+  }
 }
 
 /* --- 10. DARK MODE ENHANCEMENTLERİ --- */
@@ -337,7 +831,7 @@
     border-color: rgba(255, 255, 255, 0.15);
   }
   
-  .professional-fader_handle {
+  .professional-fader__handle {
     background: linear-gradient(135deg, #374151 0%, #1f2937 100%);
     border-color: rgba(255, 255, 255, 0.2);
   }
@@ -345,24 +839,359 @@
 
 /* --- 11. PERFORMANS OPTİMİZASYONLARI --- */
 .professional-knob,
-.professional-fader_handle,
+.professional-fader__handle,
 .level-meter_bar,
-.plugin-control-button {
+.plugin-control-button,
+.eq-node,
+.reverb-particle,
+.chorus-particle,
+.vortex-ring,
+.orbit-object,
+.atmos-particle,
+.ghost-rate-button,
+.morph-mode-button {
   will-change: transform;
   backface-visibility: hidden;
   transform: translateZ(0);
 }
 
 /* GPU acceleration for animations */
-.reverb-particle,
+.tube-filament,
 .saturation-glow,
-.filter-sweep {
+.filter-sweep,
+.echo-ripple,
+.ping-pong-ball,
+.orbit-trail,
+.chaos-crosshair {
   transform: translateZ(0);
-  will-change: transform, filter;
+  will-change: transform, filter, opacity;
 }
 
 /* Smooth scrolling for plugin containers */
 .plugin-container {
   scroll-behavior: smooth;
   -webkit-overflow-scrolling: touch;
+}
+
+/* --- 12. ÖZEL PLUGIN KOMBİNASYONLARI --- */
+
+/* Compressor + EQ Combo */
+.plugin-combo--compressor-eq {
+  background: linear-gradient(135deg, 
+    rgba(239, 68, 68, 0.1) 0%, 
+    rgba(59, 130, 246, 0.1) 100%);
+}
+
+/* Delay + Reverb Combo */
+.plugin-combo--delay-reverb {
+  background: linear-gradient(135deg, 
+    rgba(147, 51, 234, 0.1) 0%, 
+    rgba(59, 130, 246, 0.1) 100%);
+}
+
+/* Saturation + Filter Combo */
+.plugin-combo--saturation-filter {
+  background: linear-gradient(135deg, 
+    rgba(245, 158, 11, 0.1) 0%, 
+    rgba(16, 185, 129, 0.1) 100%);
+}
+
+/* --- 13. ACCESSIBILITY ENHANCEMENTLERİ --- */
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .professional-knob,
+  .professional-fader__handle,
+  .plugin-control-button {
+    border-width: 2px;
+    border-color: #ffffff;
+  }
+  
+  .signal-visualizer-container,
+  .level-meter {
+    border-width: 2px;
+    border-color: #ffffff;
+  }
+}
+
+/* Reduced motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  .professional-knob,
+  .professional-fader__handle,
+  .level-meter_bar,
+  .plugin-control-button,
+  .eq-node,
+  .reverb-particle,
+  .chorus-particle,
+  .vortex-ring,
+  .orbit-object,
+  .atmos-particle,
+  .tube-filament,
+  .saturation-glow,
+  .echo-ripple,
+  .ping-pong-ball,
+  .orbit-trail,
+  .chaos-crosshair {
+    animation: none;
+    transition: none;
+  }
+}
+
+/* Focus indicators for keyboard navigation */
+.professional-knob:focus,
+.professional-fader:focus,
+.plugin-control-button:focus,
+.eq-node:focus,
+.ghost-rate-button:focus,
+.morph-mode-button:focus {
+  outline: 2px solid var(--color-accent-primary);
+  outline-offset: 2px;
+}
+
+/* --- 14. PLUGIN ÖZEL İKON VE SEMBOLLER --- */
+
+/* Compressor ratio indicator */
+.compressor-ratio-indicator::before {
+  content: '';
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  background: linear-gradient(45deg, transparent 40%, #ef4444 40%, #ef4444 60%, transparent 60%);
+  margin-right: 4px;
+}
+
+/* EQ frequency markers */
+.eq-frequency-marker {
+  position: relative;
+}
+
+.eq-frequency-marker::after {
+  content: attr(data-frequency);
+  position: absolute;
+  bottom: -20px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.5);
+  font-family: monospace;
+}
+
+/* Delay time sync indicator */
+.delay-sync-indicator {
+  position: relative;
+}
+
+.delay-sync-indicator--synced::before {
+  content: '♪';
+  position: absolute;
+  top: -15px;
+  right: -10px;
+  color: #10b981;
+  font-size: 14px;
+  animation: syncPulse 1s ease-in-out infinite;
+}
+
+@keyframes syncPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(1.2); }
+}
+
+/* Saturation warmth indicator */
+.saturation-warmth-indicator {
+  background: linear-gradient(90deg, 
+    #3b82f6 0%, 
+    #10b981 25%, 
+    #f59e0b 50%, 
+    #ef4444 75%, 
+    #dc2626 100%);
+  height: 4px;
+  border-radius: 2px;
+  position: relative;
+}
+
+.saturation-warmth-indicator::after {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: var(--warmth-position, 50%);
+  width: 8px;
+  height: 8px;
+  background: white;
+  border-radius: 50%;
+  transform: translateX(-50%);
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.8);
+}
+
+/* --- 15. PLUGIN HEADER ENHANCEMENTLERİ --- */
+
+.plugin-header-enhanced {
+  background: linear-gradient(135deg, 
+    rgba(0, 0, 0, 0.4) 0%, 
+    rgba(0, 0, 0, 0.2) 100%);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  position: relative;
+}
+
+.plugin-header-enhanced::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, 
+    transparent 0%, 
+    rgba(255, 255, 255, 0.3) 50%, 
+    transparent 100%);
+}
+
+.plugin-type-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.plugin-type-badge--dynamics { background: rgba(239, 68, 68, 0.2); border-color: rgba(239, 68, 68, 0.3); }
+.plugin-type-badge--eq { background: rgba(59, 130, 246, 0.2); border-color: rgba(59, 130, 246, 0.3); }
+.plugin-type-badge--modulation { background: rgba(147, 51, 234, 0.2); border-color: rgba(147, 51, 234, 0.3); }
+.plugin-type-badge--delay { background: rgba(16, 185, 129, 0.2); border-color: rgba(16, 185, 129, 0.3); }
+.plugin-type-badge--distortion { background: rgba(245, 158, 11, 0.2); border-color: rgba(245, 158, 11, 0.3); }
+
+/* --- 16. TOOLTIP VE BILGI PANELLERİ --- */
+
+.plugin-tooltip {
+  position: absolute;
+  background: rgba(0, 0, 0, 0.9);
+  color: white;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  pointer-events: none;
+  z-index: 1000;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity 200ms ease, transform 200ms ease;
+}
+
+.plugin-tooltip--visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.plugin-info-panel {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: var(--border-radius-lg);
+  padding: var(--spacing-3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  margin-top: var(--spacing-4);
+}
+
+.plugin-info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: var(--spacing-4);
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.plugin-info-item {
+  text-align: center;
+}
+
+.plugin-info-item__label {
+  display: block;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 10px;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.plugin-info-item__value {
+  color: rgba(255, 255, 255, 0.9);
+  font-weight: 600;
+  font-family: monospace;
+}
+
+/* --- 17. ÖZEL SCROLLBAR STİLLERİ --- */
+
+.plugin-container::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.plugin-container::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+}
+
+.plugin-container::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  transition: background 200ms ease;
+}
+
+.plugin-container::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.4);
+}
+
+/* --- 18. FINAL ENHANCEMENTS --- */
+
+/* Plugin loading state */
+.plugin-loading {
+  position: relative;
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.plugin-loading::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, 
+    transparent 0%, 
+    rgba(255, 255, 255, 0.1) 50%, 
+    transparent 100%);
+  animation: shimmer 2s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+/* Plugin bypass overlay */
+.plugin-bypassed {
+  position: relative;
+}
+
+.plugin-bypassed::before {
+  content: 'BYPASSED';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(-15deg);
+  background: rgba(239, 68, 68, 0.9);
+  color: white;
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-weight: bold;
+  font-size: 14px;
+  z-index: 100;
+  pointer-events: none;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+/* Final touch - subtle glow for active plugins */
+.plugin-container--active {
+  box-shadow: 0 0 40px rgba(var(--plugin-color, 59, 130, 246), 0.1);
 }

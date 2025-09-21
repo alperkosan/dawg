@@ -1,3 +1,10 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { MeteringService } from '../../lib/core/MeteringService';
+import { ProfessionalKnob } from '../plugin_system/PluginControls';
+import { useMixerStore } from '../../store/useMixerStore';
+import { SignalVisualizer } from '../SignalVisualizer';
+
+
 export const GhostLFOUI = ({ trackId, effect, onChange, definition }) => {
   const { rate, stretch, atmosphere, glitch, wet } = effect.settings;
   

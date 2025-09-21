@@ -1,6 +1,7 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ProfessionalKnob } from '../plugin_system/PluginControls';
 import { SignalVisualizer } from '../SignalVisualizer';
+
 
 // 3D Acoustic Space Visualizer
 const AcousticSpaceVisualizer = ({ decay, preDelay, wet, trackId }) => {
