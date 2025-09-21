@@ -1,6 +1,7 @@
 /* ==========================================================================
-   Giriş Ekranı Stilleri (_startupScreen.css)
+   DAWG Giriş Ekranı Stilleri (_startupScreen.css) - Tema Entegrasyonu
    ========================================================================== */
+
 .startup-screen {
   height: 100vh;
   width: 100vw;
@@ -11,49 +12,267 @@
   background-color: var(--color-background);
   color: var(--color-text-primary);
   text-align: center;
+  position: relative;
+  overflow: hidden;
+  font-family: var(--font-body);
+}
+
+.startup-screen__background {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+}
+
+.startup-screen__grid {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-image: linear-gradient(
+      rgba(255, 215, 0, 0.03) 1px,
+      transparent 1px
+    ),
+    linear-gradient(90deg, rgba(255, 215, 0, 0.03) 1px, transparent 1px);
+  background-size: 40px 40px;
+  animation: gridMove 20s linear infinite;
+}
+
+.startup-screen__accent-line {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--color-accent-primary) 20%,
+    var(--color-accent-secondary) 50%,
+    var(--color-accent-primary) 80%,
+    transparent 100%
+  );
+  animation: accentPulse 3s ease-in-out infinite;
+}
+
+@keyframes gridMove {
+  0% {
+    transform: translate(0, 0);
+  }
+  100% {
+    transform: translate(40px, 40px);
+  }
+}
+
+@keyframes accentPulse {
+  0%,
+  100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 0.8;
+  }
 }
 
 .startup-screen__content {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--spacing-5);
+  gap: var(--spacing-6);
+  z-index: 2;
+  position: relative;
+  opacity: 0;
+  transform: translateY(20px);
+  transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.startup-screen__content.loaded {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.startup-screen__header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-4);
 }
 
 .startup-screen__logo {
+  width: 100px;
+  height: 100px;
+  background-color: var(--color-surface-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius-lg);
   display: flex;
   align-items: center;
-  gap: var(--spacing-4);
-  color: var(--color-accent-secondary);
+  justify-content: center;
+  color: var(--color-accent-primary);
+  transition: all var(--transition-speed) ease;
+  box-shadow: var(--shadow-md);
+}
+
+.startup-screen__logo:hover {
+  transform: scale(1.05);
+  background-color: var(--color-surface-2);
+  box-shadow: var(--shadow-glow);
 }
 
 .startup-screen__title {
   font-family: var(--font-display);
-  font-weight: 500;
-  font-size: 48px;
+  font-weight: 700;
+  font-size: 3rem;
+  color: var(--color-text-heading);
+  margin: 0;
+  letter-spacing: -0.02em;
+  text-shadow: 0 0 20px rgba(255, 215, 0, 0.3);
 }
 
 .startup-screen__subtitle {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  align-items: center;
+}
+
+.startup-screen__tagline {
   font-size: var(--font-size-lg);
+  font-weight: 600;
+  color: var(--color-accent-secondary);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.startup-screen__description {
+  font-size: var(--font-size-md);
   color: var(--color-text-secondary);
   max-width: 400px;
+  line-height: 1.5;
+}
+
+.startup-screen__features {
+  display: flex;
+  gap: var(--spacing-5);
+  margin: var(--spacing-4) 0;
+}
+
+.startup-screen__feature {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-2);
+  padding: var(--spacing-4);
+  background-color: var(--color-surface-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius-lg);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  min-width: 140px;
+  transition: all var(--transition-speed) ease;
+  box-shadow: var(--shadow-sm);
+}
+
+.startup-screen__feature:hover {
+  transform: translateY(-2px);
+  background-color: var(--color-surface-2);
+  border-color: var(--color-accent-primary);
+  box-shadow: var(--shadow-md);
+}
+
+.startup-screen__feature-icon {
+  width: 40px;
+  height: 40px;
+  background-color: var(--color-surface-2);
+  border-radius: var(--border-radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-accent-primary);
+  transition: all var(--transition-speed) ease;
+}
+
+.startup-screen__feature:hover .startup-screen__feature-icon {
+  background-color: var(--color-accent-primary);
+  color: var(--color-text-inverse);
+  transform: scale(1.1);
 }
 
 .startup-screen__button {
   display: flex;
   align-items: center;
   gap: var(--spacing-3);
-  padding: var(--spacing-3) var(--spacing-5);
+  padding: var(--spacing-4) var(--spacing-6);
   background-color: var(--color-accent-primary);
   color: var(--color-text-inverse);
   font-size: var(--font-size-lg);
-  font-weight: 700;
-  border-radius: var(--border-radius-md);
+  font-weight: 600;
+  border: none;
+  border-radius: var(--border-radius-lg);
   cursor: pointer;
-  transition: transform var(--transition-speed), box-shadow var(--transition-speed);
+  transition: all var(--transition-speed) ease;
+  box-shadow: var(--shadow-md);
+  position: relative;
+  overflow: hidden;
 }
 
 .startup-screen__button:hover {
-  transform: scale(1.05);
+  transform: translateY(-2px);
+  background-color: var(--color-accent-secondary);
   box-shadow: var(--shadow-glow);
+}
+
+.startup-screen__button:active {
+  transform: translateY(0);
+  box-shadow: var(--shadow-sm);
+}
+
+.startup-screen__button-accent {
+  position: absolute;
+  right: var(--spacing-3);
+  color: var(--color-accent-secondary);
+  animation: zapPulse 2s ease-in-out infinite;
+}
+
+@keyframes zapPulse {
+  0%,
+  100% {
+    opacity: 0.5;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .startup-screen__title {
+    font-size: 2.5rem;
+  }
+
+  .startup-screen__features {
+    flex-direction: column;
+    gap: var(--spacing-3);
+  }
+
+  .startup-screen__feature {
+    min-width: auto;
+    width: 100%;
+    max-width: 280px;
+  }
+
+  .startup-screen__logo {
+    width: 80px;
+    height: 80px;
+  }
+
+  .startup-screen__content {
+    gap: var(--spacing-5);
+    padding: 0 var(--spacing-4);
+  }
 }
