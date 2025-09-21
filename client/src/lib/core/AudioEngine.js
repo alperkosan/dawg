@@ -368,7 +368,7 @@ class AudioEngine {
     this.callbacks.setPlaybackState?.(PLAYBACK_STATES.PAUSED); // GÜNCELLENDİ
     this._stopAnimationLoop();
   }
-  
+
   setBpm(newBpm) {
     Tone.Transport.bpm.value = newBpm;
     this.reschedule();
