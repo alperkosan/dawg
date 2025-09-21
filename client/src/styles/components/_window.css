@@ -35,5 +35,11 @@
 .window-content-new {
   /* Bu alanın tüm davranışları artık DraggableWindow.jsx içindeki inline style ile yönetiliyor. */
   /* Bu, başlık yüksekliğini dinamik olarak hesaba katmamızı sağlar. */
-  padding: var(--spacing-1); 
+  padding: var(--spacing-1);
+}
+
+.window-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
 }
