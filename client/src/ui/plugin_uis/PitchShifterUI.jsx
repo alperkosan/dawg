@@ -1,26 +1,28 @@
 import React from 'react';
 import { ProfessionalKnob } from '../plugin_system/PluginControls';
-import { SignalVisualizer } from '../SignalVisualizer'; // Yeni bileşenimizi import ediyoruz
+import { SignalVisualizer } from '../SignalVisualizer';
 
 export const PitchShifterUI = ({ trackId, effect, onChange }) => {
+  const { pitch, windowSize, wet } = effect.settings;
+
+  // Pitch değerine göre renk gradyanı oluştur
+  const pitchColor = `hsl(${200 - pitch * 10}, 100%, 60%)`;
+
   return (
     <div className="pitch-shifter-ui-v2 plugin-content-layout">
       <ProfessionalKnob
-        label="Pitch" value={effect.settings.pitch} onChange={(val) => onChange('pitch', val)}
-        min={-12} max={12} defaultValue={0} size={100} unit=" st" precision={0}
+        label="Pitch" value={pitch} onChange={(val) => onChange('pitch', Math.round(val))}
+        min={-12} max={12} defaultValue={0} size={100} unit="st" precision={0}
       />
       <div className="pitch-shifter-ui-v2__center-stack">
-        
-        {/* ESKİ CANVAS YERİNE ARTIK BU KADAR BASİT! */}
         <SignalVisualizer 
           meterId={`${trackId}-waveform`} 
           type="scope"
-          color="#ec4899" /* Pembe */
+          color={pitchColor}
         />
-        
         <div className="pitch-shifter-ui-v2__side-controls">
-            <ProfessionalKnob label="Quality" value={effect.settings.windowSize} onChange={(val) => onChange('windowSize', val)} min={0.01} max={0.4} defaultValue={0.1} size={64} unit="s" precision={3} />
-            <ProfessionalKnob label="Mix" value={effect.settings.wet * 100} onChange={(val) => onChange('wet', val/100)} min={0} max={100} defaultValue={100} size={64} unit="%" precision={0} />
+            <ProfessionalKnob label="Quality" value={windowSize} onChange={(val) => onChange('windowSize', val)} min={0.01} max={0.4} defaultValue={0.1} size={64} unit="s" precision={3} />
+            <ProfessionalKnob label="Mix" value={wet * 100} onChange={(val) => onChange('wet', val/100)} min={0} max={100} defaultValue={100} size={64} unit="%" precision={0} />
         </div>
       </div>
     </div>

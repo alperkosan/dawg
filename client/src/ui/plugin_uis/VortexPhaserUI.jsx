@@ -1,44 +1,33 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ProfessionalKnob } from '../plugin_system/PluginControls';
+import { SignalVisualizer } from '../SignalVisualizer';
+import { MeteringService } from '../../lib/core/MeteringService';
 
-export const VortexPhaserUI = ({ effect, onChange }) => {
-  const canvasRef = useRef(null);
-  const { frequency, octaves } = effect.settings;
+export const VortexPhaserUI = ({ trackId, effect, onChange }) => {
+    const { frequency, octaves, wet } = effect.settings;
+    const [inputLevel, setInputLevel] = useState(-60);
 
-  useEffect(() => {
-    // StardustChorus ile aynı görselleştirme mantığını kullanabiliriz
-    const canvas = canvasRef.current; if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    let frameId;
-    let time = 0;
-    const draw = () => {
-        const { width, height } = canvas.getBoundingClientRect();
-        if(width === 0) { frameId = requestAnimationFrame(draw); return; }
-        canvas.width = width; canvas.height = height;
-        ctx.strokeStyle = '#ec4899'; ctx.lineWidth = 2;
-        ctx.shadowColor = '#ec4899'; ctx.shadowBlur = 8;
-        ctx.beginPath();
-        for (let x = 0; x < width; x++) {
-            const angle = (x / width) * 4 * Math.PI * frequency + time;
-            const y = height / 2 + Math.sin(angle) * (height / 2 * (octaves / 8));
-            if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-        }
-        ctx.stroke();
-        time += 0.05;
-        frameId = requestAnimationFrame(draw);
-    };
-    draw();
-    return () => cancelAnimationFrame(frameId);
-  }, [frequency, octaves]);
+    useEffect(() => {
+        const meterId = `${trackId}-input`;
+        const handleLevel = (db) => setInputLevel(db);
+        MeteringService.subscribe(meterId, handleLevel);
+        return () => MeteringService.unsubscribe(meterId, handleLevel);
+    }, [trackId]);
+    
+    // Sinyal gücüne göre renk ve parlaklığı ayarla
+    const normalizedGain = (Math.max(-60, inputLevel) + 60) / 66;
+    const color = `rgba(236, 72, 153, ${0.4 + normalizedGain * 0.6})`;
 
-  return (
-    <div className="modulation-ui">
-      <ProfessionalKnob label="Depth" value={effect.settings.octaves} onChange={(val) => onChange('octaves', val)} min={1} max={8} defaultValue={3} unit=" oct" precision={1} size={80} />
-      <div className="flex flex-col items-center gap-4">
-        <ProfessionalKnob label="Rate" value={effect.settings.frequency} onChange={(val) => onChange('frequency', val)} min={0.1} max={8} defaultValue={0.5} unit=" Hz" precision={2} size={110} />
-        <canvas ref={canvasRef} className="lfo-visualizer" />
-      </div>
-      <ProfessionalKnob label="Mix" value={effect.settings.wet * 100} onChange={(val) => onChange('wet', val / 100)} min={0} max={100} defaultValue={50} unit="%" precision={0} size={80} />
-    </div>
-  );
+    return (
+        <div className="phaser-ui-v2 plugin-content-layout">
+            <ProfessionalKnob label="Depth" value={octaves} onChange={(v) => onChange('octaves', v)} min={1} max={8} defaultValue={3} unit="oct" precision={1} size={80} />
+            <div className="phaser-ui-v2__visualizer">
+                <SignalVisualizer meterId={`${trackId}-fft`} type="spectrum" color={color} />
+            </div>
+            <div className="phaser-ui-v2__side-controls">
+                <ProfessionalKnob label="Rate" value={frequency} onChange={(v) => onChange('frequency', v)} min={0.1} max={8} defaultValue={0.5} unit="Hz" precision={2} size={70} />
+                <ProfessionalKnob label="Mix" value={wet * 100} onChange={(v) => onChange('wet', v / 100)} min={0} max={100} defaultValue={50} unit="%" precision={0} size={70} />
+            </div>
+        </div>
+    );
 };

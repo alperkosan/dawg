@@ -1,15 +1,12 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ProfessionalKnob } from '../plugin_system/PluginControls';
 import { MeteringService } from '../../lib/core/MeteringService';
 
 const LfoPulsar = ({ rate, depth, gain }) => {
-  // Gelen gain değerini 0-1 arasına normalize et
   const normalizedGain = (Math.max(-60, gain) + 60) / 66;
-  
   const pulsarStyle = {
     '--pulsar-duration': `${1 / rate}s`,
     '--pulsar-size': `${50 + depth * 50}%`,
-    // Sinyal gücüne göre opaklık ve parlaklığı ayarla
     '--pulsar-opacity': `${0.3 + normalizedGain * 0.7}`,
     '--pulsar-brightness': `${1 + normalizedGain * 0.5}`,
   };
@@ -20,7 +17,6 @@ export const StardustChorusUI = ({ trackId, effect, onChange }) => {
   const { frequency, depth, wet } = effect.settings;
   const [inputLevel, setInputLevel] = useState(-60);
 
-  // MeteringService'e abone ol
   useEffect(() => {
     const meterId = `${trackId}-input`;
     const handleLevel = (db) => setInputLevel(db);
