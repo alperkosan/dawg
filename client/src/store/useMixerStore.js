@@ -223,21 +223,47 @@ export const useMixerStore = create((set, get) => ({
     let newTrackState;
     let needsRebuild = false;
 
+    // --- DEĞİŞİKLİK BURADA: Yeni özel komutu yakala ---
+    if (paramOrSettings === '__update_band_param') {
+      const { bandId, param, newValue } = value;
+      
+      // 1. State'i verimli bir şekilde güncelle
+      set(state => ({
+        mixerTracks: state.mixerTracks.map(track => {
+          if (track.id === trackId) {
+            return {
+              ...track,
+              insertEffects: track.insertEffects.map(fx => {
+                if (fx.id === effectId) {
+                  const newBands = fx.settings.bands.map(b => 
+                    b.id === bandId ? { ...b, [param]: newValue } : b
+                  );
+                  return { ...fx, settings: { ...fx.settings, bands: newBands } };
+                }
+                return fx;
+              })
+            };
+          }
+          return track;
+        })
+      }));
+      
+      // 2. Ses motoruna spesifik komutu gönder
+      AudioContextService?.updateEffectBandParam(trackId, effectId, bandId, param, newValue);
+      return; // Fonksiyonu burada sonlandır.
+    }
+    // --- DEĞİŞİKLİK SONU ---
+
+    // Geri kalan normal parametre değişiklikleri için mevcut mantık devam eder
     set(state => ({
       mixerTracks: state.mixerTracks.map(track => {
         if (track.id === trackId) {
           const newTrack = { ...track,
             insertEffects: track.insertEffects.map(fx => {
               if (fx.id === effectId) {
-                // Özel komutları kontrol et
-                if (paramOrSettings === '__toggle_ab_state') {
-                  return _handleABToggle(fx);
-                }
-                if (paramOrSettings === '__copy_a_to_b') {
-                  return _handleABCopy(fx);
-                }
+                if (paramOrSettings === '__toggle_ab_state') return _handleABToggle(fx);
+                if (paramOrSettings === '__copy_a_to_b') return _handleABCopy(fx);
                 
-                // Normal parametre değişikliği için yardımcımızı kullan
                 const result = _handleParamChange(fx, paramOrSettings, value);
                 needsRebuild = needsRebuild || result.needsRebuild;
                 return result.updatedFx;
@@ -252,7 +278,6 @@ export const useMixerStore = create((set, get) => ({
       })
     }));
     
-    // Ses motoruna komut gönder
     if (needsRebuild) {
         AudioContextService?.rebuildSignalChain(trackId, newTrackState); 
     } else {

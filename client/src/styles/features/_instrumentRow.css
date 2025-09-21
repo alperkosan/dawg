@@ -28,9 +28,9 @@
 }
 
 /* === HOVER & SELECTED STATES === */
-.instrument-row:hover:not(.instrument-row--muted) {
-  background-color: var(--color-surface-2) !important;
-  transform: translateX(2px);
+
+.instrument-row:hover:not(.muted) .instrument-row__icon {
+  color: var(--color-primary);
 }
 
 .instrument-row--selected {

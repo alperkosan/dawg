@@ -57,8 +57,7 @@ function StartupScreen({ onStart }) {
 
         <button onClick={onStart} className="startup-screen__button">
           <Play size={20} />
-          <span>Stüdyoya Başla</span>
-          <Zap size={16} className="startup-screen__button-accent" />
+          <span>Stüdyoya Gir</span>
         </button>
       </div>
     </div>

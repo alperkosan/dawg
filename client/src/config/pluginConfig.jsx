@@ -26,8 +26,8 @@ export const pluginRegistry = {
   'Saturator': {
     type: 'Saturator', category: 'The Texture Lab', story: "Sese analog bir lambanın sıcaklığını katar.",
     toneNode: 'Distortion', uiComponent: SaturatorUI,
-    initialSize: { width: 520, height: 400 },
-    minSize: { width: 520, height: 400 },
+    initialSize: { width: 750, height: 700 },
+    minSize: { width: 750, height: 700 },
     defaultSettings: { distortion: 0.4, wet: 1.0 },
     presets: [
       { name: 'Bant Sıcaklığı', settings: { distortion: 0.25, wet: 0.8 } },
@@ -37,8 +37,8 @@ export const pluginRegistry = {
   'Compressor': {
     type: 'Compressor', category: 'The Dynamics Forge', story: "Kozmik Atölye'nin presi.",
     toneNode: 'Compressor', uiComponent: AdvancedCompressorUI,
-    initialSize: { width: 570, height: 625 },
-    minSize: { width: 570, height: 625 },
+    initialSize: { width: 570, height: 665 },
+    minSize: { width: 570, height: 665 },
     defaultSettings: { threshold: -24, ratio: 4, attack: 0.01, release: 0.1, knee: 12, wet: 1.0 },
     presets: [
       { name: 'Yumuşak Vokal Kontrolü', settings: { threshold: -18, ratio: 3, attack: 0.005, release: 0.2, knee: 15, wet: 1.0 } },
@@ -49,19 +49,29 @@ export const pluginRegistry = {
   'MultiBandEQ': {
     type: 'MultiBandEQ', category: 'The Spectral Weave', story: "Sesin tayfını, bir heykeltıraş gibi biçimlendir.",
     toneNode: 'MultiBand', uiComponent: AdvancedEQUI,
-    initialSize: { width: 600, height: 530 },
-    minSize: { width: 600, height: 530 },
-    defaultSettings: { bands: [ { id: 1, type: 'lowshelf', frequency: 120, gain: 0, q: 0.71, active: true }, { id: 2, type: 'peaking', frequency: 1000, gain: 0, q: 1.5, active: true }, { id: 3, type: 'highshelf', frequency: 8000, gain: 0, q: 0.71, active: true }, ], wet: 1.0, },
+    initialSize: { width: 810, height: 620 },
+    minSize: { width: 810, height: 620 },
+    // --- DEĞİŞİKLİK BURADA ---
+    // Her banda benzersiz ve kalıcı bir 'id' eklendi.
+    defaultSettings: {
+      bands: [
+        { id: 'band-low', type: 'lowshelf', frequency: 120, gain: 0, q: 0.71, active: true },
+        { id: 'band-mid', type: 'peaking', frequency: 1000, gain: 0, q: 1.5, active: true },
+        { id: 'band-high', type: 'highshelf', frequency: 8000, gain: 0, q: 0.71, active: true },
+      ],
+      wet: 1.0,
+    },
+    // --- DEĞİŞİKLİK SONU ---
     presets: [
-        { name: 'Vokal Parlaklığı', settings: { bands: [ { id: 1, type: 'peaking', frequency: 4000, gain: 2, q: 1.5, active: true }, { id: 2, type: 'highshelf', frequency: 10000, gain: 1, q: 0.71, active: true } ] } },
-        { name: 'Bass Gücü', settings: { bands: [ { id: 1, type: 'peaking', frequency: 80, gain: 3, q: 1.2, active: true }, { id: 2, type: 'peaking', frequency: 400, gain: -2, q: 2, active: true } ] } },
+        { name: 'Vokal Parlaklığı', settings: { bands: [ { id: 'band-1', type: 'peaking', frequency: 4000, gain: 2, q: 1.5, active: true }, { id: 'band-2', type: 'highshelf', frequency: 10000, gain: 1, q: 0.71, active: true } ] } },
+        { name: 'Bass Gücü', settings: { bands: [ { id: 'band-1', type: 'peaking', frequency: 80, gain: 3, q: 1.2, active: true }, { id: 'band-2', type: 'peaking', frequency: 400, gain: -2, q: 2, active: true } ] } },
     ]
   },
   'SidechainCompressor': {
     type: 'SidechainCompressor', category: 'The Dynamics Forge', story: "Bir sesin ritmini, diğerini ezmek için kullanır.",
     toneNode: 'SidechainCompressor', uiComponent: AdvancedCompressorUI,
-    initialSize: { width: 550, height: 380 },
-    minSize: { width: 480, height: 320 },
+    initialSize: { width: 680, height: 690 },
+    minSize: { width: 680, height: 690 },
     defaultSettings: { threshold: -12, ratio: 4, attack: 0.003, release: 0.1, knee: 30, sidechainSource: null, wet: 1.0 },
     presets: [
         { name: 'Klasik Pump', settings: { threshold: -20, ratio: 8, attack: 0.005, release: 0.1, knee: 10, sidechainSource: null, wet: 1.0 } },
@@ -115,8 +125,8 @@ export const pluginRegistry = {
   'StardustChorus': {
     type: 'StardustChorus', category: 'Modulation Machines', story: "Sesi, yıldız tozundan bir bulutla sarmalar.",
     toneNode: 'Chorus', uiComponent: StardustChorusUI,
-    initialSize: { width: 630, height: 420 },
-    minSize: { width: 630, height: 420 },
+    initialSize: { width: 630, height: 670 },
+    minSize: { width: 630, height: 670 },
     defaultSettings: { frequency: 1.5, delayTime: 3.5, depth: 0.7, wet: 0.5 },
     presets: [
       { name: 'Hafif Işıltı', settings: { frequency: 0.8, delayTime: 4.5, depth: 0.5, wet: 0.4 } },
@@ -170,8 +180,8 @@ export const pluginRegistry = {
   'AtmosMachine': {
     type: 'AtmosMachine', category: 'Yaratıcı Efektler', story: "Sıradan bir sesi, yaşayan, nefes alan bir atmosfere dönüştür.",
     toneNode: 'AtmosChain', uiComponent: AtmosMachineUI,
-    initialSize: { width: 350, height: 320 },
-    minSize: { width: 300, height: 300 },
+    initialSize: { width: 550, height: 400 },
+    minSize: { width: 550, height: 400 },
     defaultSettings: { size: 0.3, movement: 0.2, width: 0.5, character: 0.1, wet: 1.0 },
     presets: [
       { name: 'Uzay Mekiği', settings: { size: 0.8, movement: 0.1, width: 1.0, character: 0.1, wet: 1.0 } },

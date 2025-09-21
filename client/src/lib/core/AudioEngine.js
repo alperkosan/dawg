@@ -326,6 +326,10 @@ class AudioEngine {
     console.log(`[AudioEngine] Döngü aralığı güncellendi: ${startStep} -> ${endStep}`);
   }
 
+  updateEffectBandParam = (trackId, effectId, bandId, param, value) => {
+    this.mixerStrips.get(trackId)?.updateEffectBandParam(effectId, bandId, param, value);
+  }
+
   start(startStep = 0) {
     if (Tone.context.state !== 'running') Tone.context.resume();
     if (Tone.Transport.state === PLAYBACK_STATES.PLAYING) return;

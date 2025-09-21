@@ -1,6 +1,5 @@
 import React from 'react';
 import { useMixerStore } from '../../store/useMixerStore';
-// shallow import'una artık gerek yok
 import { FaderV2 } from './components/FaderV2';
 import { LevelMeterV2 } from './components/LevelMeterV2';
 import { EQControlsV2 } from './components/EQControlsV2';

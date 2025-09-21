@@ -12,7 +12,6 @@ import StepGrid from './StepGrid';
 import PianoRollMiniView from './PianoRollMiniView';
 import InteractiveTimeline from './InteractiveTimeline';
 import { PlusCircle } from 'lucide-react';
-import './ChannelRack.css'; // Yeni birleşik CSS dosyasını import ediyoruz
 
 const STEP_WIDTH = 16;
 

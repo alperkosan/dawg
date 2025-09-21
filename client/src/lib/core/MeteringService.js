@@ -24,7 +24,7 @@ const createBuffer = (meterId, type = 'spectrum') => {
   return dataBuffers.get(meterId);
 };
 
-// Veri yumuşatma fonksiyonu
+// Veri yumuşatma fonksiyonu (SADECE DİZİLER İÇİN)
 const smoothData = (buffer, newData, smoothingFactor = 0.15) => {
   if (!buffer.smoothedData || buffer.smoothedData.length !== newData.length) {
     buffer.smoothedData = new Float32Array(newData);
@@ -38,7 +38,7 @@ const smoothData = (buffer, newData, smoothingFactor = 0.15) => {
   return buffer.smoothedData;
 };
 
-// Peak detection ve hold
+// Peak detection ve hold (SADECE DİZİLER İÇİN)
 const processPeaks = (buffer, data) => {
   const currentPeak = Math.max(...data.map(Math.abs));
   if (currentPeak > buffer.peakHold) {
@@ -69,9 +69,7 @@ const subscribe = (meterId, callback, config = {}) => {
   }
   subscribers.get(meterId).add(callback);
   
-  // Buffer oluştur
   createBuffer(meterId, config.type || 'spectrum');
-  
   manageMeteringLifecycle();
   
   return () => unsubscribe(meterId, callback);
@@ -94,26 +92,38 @@ const publish = (meterId, rawData, config = {}) => {
   const buffer = createBuffer(meterId, config.type);
   const now = performance.now();
   
-  // Throttling - max 60 FPS
   if (now - buffer.lastUpdate < 16.67) return;
   buffer.lastUpdate = now;
   
-  let processedData = rawData;
-  
-  // Veri tipine göre işle
-  if (config.smooth !== false) {
-    processedData = smoothData(buffer, rawData, config.smoothingFactor);
+  // === HATA DÜZELTME BÖLGESİ BAŞLANGICI ===
+  let processedData;
+  let peak;
+
+  // Gelen verinin DİZİ mi yoksa TEK SAYI mı olduğunu kontrol et
+  if (Array.isArray(rawData) || rawData instanceof Float32Array) {
+    // DİZİ İSE: Mevcut spektrum/dalga formu mantığını kullan
+    processedData = rawData;
+    if (config.smooth !== false) {
+      processedData = smoothData(buffer, rawData, config.smoothingFactor);
+    }
+    peak = processPeaks(buffer, processedData);
+  } else if (typeof rawData === 'number' && isFinite(rawData)) {
+    // SAYI İSE (dB seviyeleri): Sayılar için özel, daha basit bir mantık kullan
+    processedData = rawData; // Veriyi olduğu gibi işle
+    peak = rawData; // Seviye ölçer için "peak", o anki değerin kendisidir.
+    // ÖNEMLİ: smoothData veya processPeaks burada ÇAĞRILMAZ!
+  } else {
+    // Geçersiz veri tipi, işlemi durdur.
+    return;
   }
-  
-  // Peak detection
-  const peak = processPeaks(buffer, processedData);
-  
+  // === HATA DÜZELTME BÖLGESİ SONU ===
+
   // Abonelere gönder
   subscribers.get(meterId).forEach(callback => {
     try {
       callback({
         data: processedData,
-        peak,
+        peak, // Her iki durumda da tutarlı bir peak değeri gönderiliyor.
         timestamp: now,
         type: buffer.type
       });
@@ -123,11 +133,10 @@ const publish = (meterId, rawData, config = {}) => {
   });
 };
 
-// Gelişmiş debug bilgileri
 const getDebugInfo = () => ({
   activeMeters: subscribers.size,
   totalSubscribers: Array.from(subscribers.values()).reduce((sum, set) => sum + set.size, 0),
-  bufferMemory: dataBuffers.size * BUFFER_SIZE * 4, // bytes
+  bufferMemory: dataBuffers.size * BUFFER_SIZE * 4,
   isActive: isMeteringActive
 });
 
@@ -136,8 +145,6 @@ export const MeteringService = {
   unsubscribe,
   publish,
   getDebugInfo,
-  
-  // Yeni: Batch publishing için
   publishBatch: (updates) => {
     updates.forEach(({ meterId, data, config }) => {
       publish(meterId, data, config);

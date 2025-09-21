@@ -2,7 +2,6 @@ import React, { useMemo } from 'react';
 import { useMixerStore } from '../../store/useMixerStore';
 import { MixerChannelV2 } from './MixerChannelV2';
 import { MasterSection } from './components/MasterSection';
-import './MixerV2.css';
 
 // 'export' kelimesini buradan kaldırdık
 const AdvancedMixerComponent = () => {

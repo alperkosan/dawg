@@ -353,11 +353,21 @@ export const AdvancedEQUI = ({ trackId, effect, onChange }) => {
     onChange('bands', newBands);
   };
 
+  // --- DEĞİŞİKLİK BURADA ---
+  // Bu fonksiyon artık tüm 'bands' dizisini göndermek yerine,
+  // özel bir komut ve değiştirilen bandın bilgileriyle 'onChange'i çağırıyor.
   const handleBandParamChange = (index, param, value) => {
-    const newBands = [...bands];
-    newBands[index] = { ...newBands[index], [param]: value };
-    handleBandChange(newBands);
+    const bandId = bands[index]?.id;
+    if (!bandId) return; // Güvenlik kontrolü
+    
+    // Değişikliği daha verimli bir formatta gönderiyoruz
+    onChange('__update_band_param', {
+      bandId,
+      param,
+      value
+    });
   };
+  // --- DEĞİŞİKLİK SONU ---
 
   const handleRemoveBand = (index) => {
     const newBands = bands.filter((_, i) => i !== index);

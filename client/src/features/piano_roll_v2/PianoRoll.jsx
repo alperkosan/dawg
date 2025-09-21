@@ -8,7 +8,6 @@ import { PianoRollGrid } from './components/PianoRollGrid';
 import { TimelineRuler } from './components/TimelineRuler';
 import { PianoKeyboard } from './components/PianoKeyboard';
 import { VirtualNotesRenderer } from './components/VirtualNotesRenderer';
-import './styles/PianoRoll.css';
 
 function PianoRoll({ instrument }) {
   const scrollContainerRef = useRef(null);

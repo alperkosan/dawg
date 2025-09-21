@@ -144,5 +144,40 @@ export const PluginNodeFactory = {
         },
       };
     },
+
+    AtmosChain: (fxData, pluginDef) => {
+      const { size, movement, width, character, wet } = fxData.settings;
+      
+      const input = new Tone.Gain();
+      const output = new Tone.Gain();
+      const panner = new Tone.AutoPanner(`${movement * 5}n`).start();
+      const reverb = new Tone.Reverb(size * 4);
+      const vibrato = new Tone.Vibrato(movement * 10, character * 0.5);
+      const stereoWidener = new Tone.StereoWidener(width);
+      const wetDry = new Tone.WetDry(wet);
+
+      // Sinyal Zinciri: input -> vibrato -> panner -> reverb -> stereoWidener -> wet -> output
+      input.chain(vibrato, panner, reverb, stereoWidener, wetDry, output);
+      input.connect(wetDry.dry); // Dry sinyali de bağla
+
+      return {
+        input: input,
+        output: output,
+        updateParam: (param, value) => {
+          try {
+            switch(param) {
+              case 'size': reverb.decay = value * 4; break;
+              case 'movement': panner.frequency.value = value * 5; vibrato.frequency.value = value * 10; break;
+              case 'width': stereoWidener.width.value = value; break;
+              case 'character': vibrato.depth.value = value * 0.5; break;
+              case 'wet': wetDry.wet.value = value; break;
+            }
+          } catch (e) { console.warn(`'AtmosMachine' için '${param}' güncellenemedi:`, e); }
+        },
+        dispose: () => {
+          [input, output, panner, reverb, vibrato, stereoWidener, wetDry].forEach(n => n.dispose());
+        },
+      };
+    },
   }
 };

@@ -57,6 +57,7 @@ export class AudioContextService {
   static updateLoopRange(...args) { this.getAudioEngine()?.updateLoopRange(...args); }
   static auditionNoteOn(...args) { this.getAudioEngine()?.auditionNoteOn(...args); }
   static auditionNoteOff(...args) { this.getAudioEngine()?.auditionNoteOff(...args); }
+  static updateEffectBandParam(...args) { this.getAudioEngine()?.updateEffectBandParam(...args); }
 
   // REHBER ADIM 4.2: Yeni EQ Kontrol Fonksiyonları Eklendi [cite: 435-455]
   /**

@@ -94,6 +94,15 @@ export class MixerStrip {
       this.sendNodes.set(send.busId, sendGain);
     });
   }
+
+  updateEffectBandParam(effectId, bandId, param, value) {
+    const effectNode = this.effectNodes.get(effectId);
+    if (effectNode?.updateBandParam) {
+      try {
+        effectNode.updateBandParam(bandId, param, value);
+      } catch (error) { console.error(`EQ band parametresi güncelleme hatası (${effectId}):`, error); }
+    }
+  }
   updateParam(param, value) {
     if (this.isDisposed) return;
     try {
