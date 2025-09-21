@@ -1,6 +1,5 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { Clock } from 'lucide-react';
-// CSS import'u artık gerekli değil, stiller main.css üzerinden geliyor.
 
 const InteractiveTimeline = ({
   loopLength,
@@ -14,7 +13,55 @@ const InteractiveTimeline = ({
   const STEP_WIDTH = 16;
   const totalBars = Math.ceil(loopLength / 16);
 
-  const handleMouseMove = useCallback((e) => {
+  // === DÜZELTME 1: Tıklama ve sürükleme mantığını birleştiren tek bir fonksiyon ===
+  const handleInteraction = useCallback((e) => {
+    if (!timelineRef.current) return;
+    const rect = timelineRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const step = Math.max(0, Math.min(loopLength - 1, Math.floor(x / STEP_WIDTH)));
+    
+    // Hem anlık tıklama hem de sürükleme sırasında pozisyonu güncelle
+    onJumpToPosition?.(step);
+
+    // Hover bilgisini de güncelle
+    const bar = Math.floor(step / 16) + 1;
+    const beat = Math.floor((step % 16) / 4) + 1;
+    const tick = (step % 4) + 1;
+    setHoverInfo({ x, step, bar, beat, tick, position: `${bar}:${beat}:${tick}` });
+  }, [loopLength, onJumpToPosition]);
+
+  const handleMouseLeave = () => {
+    setHoverInfo(null);
+    setIsDragging(false); // Sürükleme dışarıda biterse durumu sıfırla
+  };
+
+  // === DÜZELTME 2: Fare olay yöneticileri artık daha basit ve güvenilir ===
+  const handleMouseDown = (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    setIsDragging(true);
+    
+    // Tıklama anında pozisyonu anında güncelle
+    handleInteraction(e);
+
+    const handleMouseMove = (moveEvent) => {
+      // Sadece sürükleme aktifken pozisyonu güncelle
+      handleInteraction(moveEvent);
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+    
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  };
+  
+  // Hover efektini yöneten ayrı bir fonksiyon
+   const handleMouseMoveForHover = useCallback((e) => {
+    if (isDragging) return; // Sürükleme yapılıyorsa bu fonksiyon çalışmasın
     if (!timelineRef.current) return;
     const rect = timelineRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left;
@@ -25,29 +72,11 @@ const InteractiveTimeline = ({
 
     if (step >= 0 && step < loopLength) {
       setHoverInfo({ x, step, bar, beat, tick, position: `${bar}:${beat}:${tick}` });
-      if (isDragging) {
-        onJumpToPosition?.(step);
-      }
     } else {
       setHoverInfo(null);
     }
-  }, [loopLength, isDragging, onJumpToPosition]);
+  }, [loopLength, isDragging]);
 
-  const handleMouseLeave = () => {
-    setHoverInfo(null);
-    setIsDragging(false);
-  };
-
-  const handleMouseDown = (e) => {
-    if (e.button !== 0) return;
-    setIsDragging(true);
-    // MouseMove'u tetikleyerek anında atlama sağla
-    handleMouseMove(e);
-  };
-
-  const handleMouseUp = () => {
-    setIsDragging(false);
-  };
 
   const renderMarkers = () => {
     const markers = [];
@@ -74,7 +103,7 @@ const InteractiveTimeline = ({
     <div className="timeline">
       <div className="timeline__header">
         <div className="timeline__position-display">
-          {hoverInfo ? (
+          {hoverInfo && !isDragging ? (
             <span className="timeline__position-display--hover">
               <Clock size={14} /> {hoverInfo.position}
             </span>
@@ -86,10 +115,9 @@ const InteractiveTimeline = ({
       <div
         ref={timelineRef}
         className="timeline__track"
-        onMouseMove={handleMouseMove}
+        onMouseMove={handleMouseMoveForHover}
         onMouseLeave={handleMouseLeave}
         onMouseDown={handleMouseDown}
-        onMouseUp={handleMouseUp}
       >
         {renderMarkers()}
         {hoverInfo && (

@@ -1,3 +1,5 @@
+// src/lib/core/AudioEngine.js
+
 import * as Tone from 'tone';
 import { timeManager } from './UnifiedTimeManager';
 import { InstrumentNode } from './nodes/InstrumentNode.js';
@@ -8,7 +10,7 @@ import { useInstrumentsStore } from '../../store/useInstrumentsStore';
 import { PlaybackAnimatorService } from './PlaybackAnimatorService';
 import { cloneBuffer, normalizeBuffer, reverseBuffer, reversePolarity, removeDCOffset } from '../utils/audioUtils';
 import { memoize } from 'lodash';
-import { MIXER_TRACK_TYPES, PLAYBACK_MODES, PLAYBACK_STATES } from '../../config/constants'; // GÜNCELLENDİ
+import { MIXER_TRACK_TYPES, PLAYBACK_MODES, PLAYBACK_STATES } from '../../config/constants';
 
 const memoizedProcessBuffer = memoize(
   (originalBuffer, instData) => {
@@ -34,9 +36,21 @@ class AudioEngine {
     this.originalAudioBuffers = new Map();
     this.scheduledEventIds = new Map();
     this.isReady = false;
+
+    // =====================================================================
+    // === HATA DÜZELTMESİ BURADA ===
+    // TimeManager'dan gelen her pozisyon güncellemesini alıp
+    // App -> Store'a gönderen ana callback'e iletiyoruz.
+    // =====================================================================
+    timeManager.onPositionUpdate = (position, step) => {
+      this.callbacks.setTransportPosition?.(position.formatted, step);
+    };
+
     console.log("🔊 Atomik Ses Motoru v4.0 (Yönlendirme Düzeltildi) Başlatıldı.");
   }
 
+  // ... dosyanın geri kalanında hiçbir değişiklik yapmana gerek yok ...
+  
   // REHBER ADIM 5: Yeni EQ güncelleme metodu
   updateChannelEQ(trackId, bandId, param, value) {
       const strip = this.mixerStrips.get(trackId);
@@ -52,7 +66,7 @@ class AudioEngine {
 
     mixerTrackData.forEach(track => this.createMixerStrip(track));
 
-    const masterTrackData = mixerTrackData.find(t => t.type === MIXER_TRACK_TYPES.MASTER); // GÜNCELLENDİ
+    const masterTrackData = mixerTrackData.find(t => t.type === MIXER_TRACK_TYPES.MASTER);
     if (masterTrackData) {
       this.masterStrip = this.mixerStrips.get(masterTrackData.id);
       this.masterStrip.outputGain.toDestination();
@@ -111,7 +125,6 @@ class AudioEngine {
         return;
       }
       
-      // Önce tüm kanalların kendi iç zincirlerini kur
       mixerTrackData.forEach(trackData => {
           const strip = this.mixerStrips.get(trackData.id);
           if (strip) {
@@ -119,7 +132,6 @@ class AudioEngine {
           }
       });
       
-      // SONRA, kanallar arası bağlantıları (sidechain gibi) kur
       mixerTrackData.forEach(trackData => {
           const strip = this.mixerStrips.get(trackData.id);
           strip.effectNodes.forEach((fxNode, fxId) => {
@@ -128,7 +140,6 @@ class AudioEngine {
                   const sourceStrip = this.mixerStrips.get(fxData.settings.sidechainSource);
                   if (sourceStrip && fxNode.sidechainInput) {
                       console.log(`🔗 [SIDECHAIN] Yönlendiriliyor: ${sourceStrip.id} -> ${strip.id}`);
-                      // Kaynak kanalın ÇIKIŞINI, hedef efektin sidechain GİRİŞİNE bağla
                       sourceStrip.outputGain.connect(fxNode.sidechainInput);
                   }
               }
@@ -139,7 +150,7 @@ class AudioEngine {
   prepareBusInputs() {
     const busInputs = new Map();
     this.mixerStrips.forEach(strip => {
-      if (strip.type === MIXER_TRACK_TYPES.BUS) { // GÜNCELLENDİ
+      if (strip.type === MIXER_TRACK_TYPES.BUS) {
         busInputs.set(strip.id, strip.inputGain);
       }
     });
@@ -256,7 +267,7 @@ class AudioEngine {
       console.warn('⚠️ [RESCHEDULE] Aktif pattern bulunamadı.');
       return;
     }
-    if (this.playbackMode !== PLAYBACK_MODES.PATTERN) { // GÜNCELLENDİ
+    if (this.playbackMode !== PLAYBACK_MODES.PATTERN) {
       console.log('ℹ️ [RESCHEDULE] Song modunda, pattern zamanlaması atlanıyor.');
       return;
     }
@@ -290,7 +301,7 @@ class AudioEngine {
     const timeInSeconds = Tone.Time(`${barNumber - 1}:0:0`).toSeconds();
     timeManager.jumpToBar(barNumber);
     
-    if (Tone.Transport.state !== PLAYBACK_STATES.PLAYING) { // GÜNCELLENDİ
+    if (Tone.Transport.state !== PLAYBACK_STATES.PLAYING) {
         const step = timeInSeconds / Tone.Time('16n').toSeconds();
         const positionObject = timeManager._calculateBBTPosition(timeInSeconds);
         this.callbacks.setTransportPosition?.(positionObject.formatted, step); 
@@ -305,14 +316,13 @@ class AudioEngine {
   jumpToStep(step) {
     const time = Tone.Time('16n').toSeconds() * step;
     Tone.Transport.seconds = time;
-    if (Tone.Transport.state !== PLAYBACK_STATES.PLAYING) { // GÜNCELLENDİ
+    if (Tone.Transport.state !== PLAYBACK_STATES.PLAYING) {
       const loopEnd = timeManager.loopInfo.lengthInSeconds;
       if (loopEnd > 0) PlaybackAnimatorService.publish(time / loopEnd);
-      this.callbacks.setTransportPosition?.(timeManager._calculateBBTPosition(time), step);
+      this.callbacks.setTransportPosition?.(timeManager._calculateBBTPosition(time).formatted, step);
     }
   }
 
-  // === YENİ: Döngü aralığını anlık olarak güncelleyen fonksiyon ===
   updateLoopRange(startStep, endStep) {
     if (!this.isReady) return;
     
@@ -342,13 +352,11 @@ class AudioEngine {
 
     this.reschedule();
 
-    // 1. Çalmayı başlatmadan ÖNCE transport'un pozisyonunu ayarla
     const startTimeSeconds = Tone.Time('16n').toSeconds() * startStep;
     Tone.Transport.seconds = startTimeSeconds;
 
-    // 2. Zamanlayıcıyı ve çalmayı başlat
     timeManager.start(this.playbackMode, this.activePatternId, useArrangementStore.getState());
-    Tone.Transport.start(); // Tone.js artık ayarlanan yerden başlayacak
+    Tone.Transport.start();
     
     this.callbacks.setPlaybackState?.(PLAYBACK_STATES.PLAYING);
     this._startAnimationLoop();
@@ -367,7 +375,7 @@ class AudioEngine {
   stop() {
     Tone.Transport.stop();
     timeManager.stop();
-    this.callbacks.setPlaybackState?.(PLAYBACK_STATES.STOPPED); // GÜNCELLENDİ
+    this.callbacks.setPlaybackState?.(PLAYBACK_STATES.STOPPED);
     this._stopAnimationLoop();
     PlaybackAnimatorService.publish(0);
   }
@@ -375,7 +383,7 @@ class AudioEngine {
   pause() {
     Tone.Transport.pause();
     timeManager.pause();
-    this.callbacks.setPlaybackState?.(PLAYBACK_STATES.PAUSED); // GÜNCELLENDİ
+    this.callbacks.setPlaybackState?.(PLAYBACK_STATES.PAUSED);
     this._stopAnimationLoop();
   }
 
@@ -391,7 +399,7 @@ class AudioEngine {
     if (this.animationFrameId) cancelAnimationFrame(this.animationFrameId);
     const animate = () => {
       const loopEnd = timeManager.loopInfo.lengthInSeconds;
-      if (loopEnd > 0 && Tone.Transport.state === PLAYBACK_STATES.PLAYING) { // GÜNCELLENDİ
+      if (loopEnd > 0 && Tone.Transport.state === PLAYBACK_STATES.PLAYING) {
         PlaybackAnimatorService.publish(Tone.Transport.seconds / loopEnd);
       }
       this.animationFrameId = requestAnimationFrame(animate);

@@ -100,17 +100,20 @@ export const usePlaybackStore = create((set, get) => ({
   handlePlay: () => {
     if (!AudioContextService) return;
     
-    // === GÜNCELLEME: Döngü başlangıç adımını alıyoruz ===
-    const { playbackState, loopStartStep } = get();
+    // === DÜZELTME BURADA ===
+    // 'loopStartStep' yerine, o anki güncel pozisyon olan 'transportStep'i alıyoruz.
+    const { playbackState, transportStep } = get();
 
     // Sadece durdurulmuş durumdayken baştan başlatma işlemini yap
     if (playbackState === PLAYBACK_STATES.STOPPED) {
-        AudioContextService.start(loopStartStep);
+        // Ses motoruna, döngü başından değil, GÜNCEL POZİSYONDAN başlamasını söylüyoruz.
+        AudioContextService.start(transportStep);
     } else {
         // Duraklatılmışsa, sadece devam et
         AudioContextService.resume();
     }
   },
+
 
   handlePause: () => {
     // Bu fonksiyon artık sadece duraklatma işini yapıyor

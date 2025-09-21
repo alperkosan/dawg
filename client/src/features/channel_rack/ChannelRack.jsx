@@ -23,7 +23,7 @@ export default function ChannelRack() {
   
   const playheadRef = useRef(null);
   const scrollContainerRef = useRef(null);
-  const timelineRef = useRef(null);
+  const timelineContainerRef = useRef(null); // Timeline'ın dış sarmalayıcısı için ref
   const instrumentListRef = useRef(null);
 
   const activePattern = patterns[activePatternId];
@@ -33,15 +33,17 @@ export default function ChannelRack() {
     const container = scrollContainerRef.current;
     if (!container) return;
 
+    // Scroll olaylarını senkronize etme fonksiyonu
     const syncScroll = () => {
-      if (timelineRef.current) {
-        timelineRef.current.scrollLeft = container.scrollLeft;
+      if (timelineContainerRef.current) {
+        timelineContainerRef.current.scrollLeft = container.scrollLeft;
       }
       if (instrumentListRef.current) {
         instrumentListRef.current.scrollTop = container.scrollTop;
       }
     };
 
+    // Playhead pozisyonunu güncelleme fonksiyonu
     const updatePlayhead = (progress) => {
       if (playheadRef.current) {
         const position = progress * audioLoopLength * STEP_WIDTH;
@@ -71,10 +73,9 @@ export default function ChannelRack() {
   }, [activePatternId, activePattern]);
 
   const totalGridWidth = loopLength * STEP_WIDTH;
-  const totalContentHeight = (instruments.length + 1) * 64; // +1 for add row
+  const totalContentHeight = (instruments.length + 1) * 64;
 
   return (
-    // Ana konteyner artık %100 yer kaplıyor
     <div className="channel-rack-layout">
       {/* KÖŞE */}
       <div className="channel-rack-layout__corner">
@@ -92,16 +93,16 @@ export default function ChannelRack() {
               onEditClick={() => handleEditInstrument(inst)}
             />
           ))}
-          <div className="channel-rack__add-row" onClick={() => togglePanel('file-browser')}>
-            <PlusCircle size={20} className="channel-rack__add-row-icon" />
-            <span className="channel-rack__add-row-text">Add...</span>
+          <div className="instrument-row instrument-row--add" onClick={() => togglePanel('file-browser')}>
+            <PlusCircle size={20} />
+            <span>Add...</span>
           </div>
         </div>
       </div>
 
       {/* ZAMAN CETVELİ */}
-      <div ref={timelineRef} className="channel-rack-layout__timeline">
-        <div style={{ width: totalGridWidth }}>
+      <div ref={timelineContainerRef} className="channel-rack-layout__timeline">
+        <div style={{ width: totalGridWidth, height: '100%' }}>
           <InteractiveTimeline
             loopLength={loopLength}
             currentPosition={transportStep}
@@ -113,9 +114,9 @@ export default function ChannelRack() {
       {/* ANA GRID ALANI (KAYDIRILABİLİR) */}
       <div ref={scrollContainerRef} className="channel-rack-layout__grid-scroll-area">
         <div style={{ width: totalGridWidth, height: totalContentHeight }} className="channel-rack-layout__grid-content">
-          <div ref={playheadRef} className="channel-rack__playhead" style={{ height: totalContentHeight }} />
+          <div ref={playheadRef} className="channel-rack-layout__playhead" style={{ height: totalContentHeight }} />
           {instruments.map(inst => (
-            <div key={inst.id} className="channel-rack__grid-row">
+            <div key={inst.id} className="channel-rack-layout__grid-row">
               {inst.pianoRoll ? (
                 <PianoRollMiniView notes={activePattern?.data[inst.id] || []} patternLength={loopLength} onNoteClick={() => openPianoRollForInstrument(inst)} />
               ) : (
@@ -123,7 +124,7 @@ export default function ChannelRack() {
               )}
             </div>
           ))}
-          <div className="channel-rack__grid-row" />
+          <div className="channel-rack-layout__grid-row" />
         </div>
       </div>
     </div>
