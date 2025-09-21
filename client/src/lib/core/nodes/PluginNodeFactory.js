@@ -1,6 +1,7 @@
 import * as Tone from 'tone';
 import { pluginRegistry } from '../../../config/pluginConfig';
 import { setParamSmoothly } from '../../utils/audioUtils';
+import { BassEnhancer808Node } from './BassEnhancer808Node';
 
 export const PluginNodeFactory = {
   create(fxData) {
@@ -226,5 +227,26 @@ export const PluginNodeFactory = {
         },
       };
     },
+    BassEnhancer808: (fxData, pluginDef) => {
+      const enhancer = new BassEnhancer808Node(fxData.settings);
+      
+      return {
+        input: enhancer.input,
+        output: enhancer.output,
+        sidechainInput: null,
+        
+        updateParam: (param, value) => {
+          try {
+            const currentSettings = { ...fxData.settings, [param]: value };
+            enhancer.updateParams(currentSettings);
+            fxData.settings[param] = value;
+          } catch (e) {
+            console.warn(`BassEnhancer808 için '${param}' güncellenemedi:`, e);
+          }
+        },
+        
+        dispose: () => enhancer.dispose()
+      };
+    }
   }
 };

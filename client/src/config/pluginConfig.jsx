@@ -16,6 +16,7 @@ import { FeedbackDelayUI } from '../ui/plugin_uis/FeedbackDelayUI.jsx';
 import { AtmosMachineUI } from '../ui/plugin_uis/AtmosMachineUI.jsx';
 import { GhostLFOUI } from '../ui/plugin_uis/GhostLFOUI.jsx';
 import { SampleMorphUI } from '../ui/plugin_uis/SampleMorphUI.jsx';
+import { BassEnhancer808UI } from '../ui/plugin_uis/BassEnhancer808UI';
 
 /**
  * @file pluginConfig.jsx
@@ -210,4 +211,58 @@ export const pluginRegistry = {
           { name: 'Ters Yankı', settings: { mode: 'reverse', retrigger: 0.2, grainSize: 0.5, sliceLength: 1.0, wet: 1.0 } },
       ]
   },
+  'BassEnhancer808': {
+    type: 'BassEnhancer808',
+    name: '808 Bass Enhancer',
+    description: 'Next-generation multiband 808 bass processing suite',
+    category: 'dynamics',
+    toneNode: 'BassEnhancer808',
+    uiComponent: BassEnhancer808UI,
+    defaultSettings: {
+      saturation: 0.3,
+      compression: 0.4,
+      subBoost: 0.6,
+      punch: 0.5,
+      warmth: 0.3,
+      wet: 1.0
+    },
+    presets: [
+      { 
+        name: 'Sub Monster', 
+        settings: { saturation: 0.2, compression: 0.6, subBoost: 0.9, punch: 0.7, warmth: 0.4 }
+      },
+      { 
+        name: 'Trap Knock', 
+        settings: { saturation: 0.5, compression: 0.8, subBoost: 0.5, punch: 0.9, warmth: 0.3 }
+      },
+      { 
+        name: 'Drill Bass', 
+        settings: { saturation: 0.7, compression: 0.5, subBoost: 0.4, punch: 0.8, warmth: 0.6 }
+      },
+      { 
+        name: 'Future Bass', 
+        settings: { saturation: 0.4, compression: 0.3, subBoost: 0.7, punch: 0.4, warmth: 0.8 }
+      },
+      { 
+        name: 'Phonk Heavy', 
+        settings: { saturation: 0.8, compression: 0.9, subBoost: 0.6, punch: 1.0, warmth: 0.2 }
+      },
+      { 
+        name: 'Lofi Warm', 
+        settings: { saturation: 0.6, compression: 0.3, subBoost: 0.5, punch: 0.2, warmth: 0.9 }
+      },
+      { 
+        name: 'UK Drill', 
+        settings: { saturation: 0.9, compression: 0.7, subBoost: 0.3, punch: 0.9, warmth: 0.1 }
+      }
+    ],
+    parameters: [
+      { id: 'saturation', name: 'Saturation', min: 0, max: 1, default: 0.3, unit: '%' },
+      { id: 'compression', name: 'Compression', min: 0, max: 1, default: 0.4, unit: '%' },
+      { id: 'subBoost', name: 'Sub Boost', min: 0, max: 1, default: 0.6, unit: '%' },
+      { id: 'punch', name: 'Punch', min: 0, max: 1, default: 0.5, unit: '%' },
+      { id: 'warmth', name: 'Warmth', min: 0, max: 1, default: 0.3, unit: '%' },
+      { id: 'wet', name: 'Mix', min: 0, max: 1, default: 1.0, unit: '%' }
+    ]
+  }
 };

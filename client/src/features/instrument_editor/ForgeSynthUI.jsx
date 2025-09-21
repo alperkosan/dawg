@@ -45,8 +45,7 @@ const ModulationMatrix = ({ modMatrix, instrument }) => {
     );
 };
 
-
-// Mevcut bileşenler ve ana bileşen güncellendi
+// Ana Editör Bileşeni - LFO KONTROL DÜZELTMESİ
 export const ForgeSynthUI = ({ instrument }) => {
     if (!instrument || instrument.type !== 'synth' || !instrument.synthParams) {
         return <div className="p-4 text-center">Geçerli bir synth enstrümanı değil.</div>;
@@ -66,6 +65,9 @@ export const ForgeSynthUI = ({ instrument }) => {
 
     const { oscillator, envelope, filter, lfo1, lfo2, modMatrix } = instrument.synthParams;
 
+    // YARDIMCI FONKSİYON: "8n" gibi bir string'den 8 sayısını güvenle alır
+    const getRateValue = (freqString) => parseInt(freqString, 10) || 0;
+
     return (
         <div className="forge-synth-container forge-synth-container--v2">
             <header className="forge-synth-header">
@@ -76,7 +78,6 @@ export const ForgeSynthUI = ({ instrument }) => {
                 </div>
             </header>
 
-            {/* ANA KONTROL ALANI - ARTIK KAYDIRILABİLİR */}
             <main className="forge-synth-main forge-synth-main--v2">
                 
                 {/* --- 1. SATIR: Kaynak, Filtre ve Görselleştirme --- */}
@@ -115,15 +116,17 @@ export const ForgeSynthUI = ({ instrument }) => {
                     <div className="synth-module">
                          <h3 className="synth-module__title">LFO 1</h3>
                         <div className="synth-module__knob-group--small">
-                            <ProfessionalKnob label="Rate" value={Tone.Time(lfo1.frequency).toFrequency()} onChange={v => handleParamChange('lfo1.frequency', `${v}n`)} min={1} max={32} unit="n" size={56} />
-                            <ProfessionalKnob label="Depth" value={lfo1.amplitude} onChange={v => handleParamChange('lfo1.amplitude', v)} min={0} max={1} size={56} />
+                            {/* === DÜZELTME BURADA === */}
+                            <ProfessionalKnob label="Rate" value={getRateValue(lfo1.frequency)} onChange={v => handleParamChange('lfo1.frequency', `${Math.round(v)}n`)} min={1} max={32} defaultValue={8} unit="n" size={56} />
+                            <ProfessionalKnob label="Depth" value={lfo1.amplitude} onChange={v => handleParamChange('lfo1.amplitude', v)} min={0} max={1} defaultValue={1} size={56} />
                         </div>
                     </div>
                     <div className="synth-module">
                          <h3 className="synth-module__title">LFO 2</h3>
                         <div className="synth-module__knob-group--small">
-                            <ProfessionalKnob label="Rate" value={Tone.Time(lfo2.frequency).toFrequency()} onChange={v => handleParamChange('lfo2.frequency', `${v}n`)} min={1} max={32} unit="n" size={56} />
-                            <ProfessionalKnob label="Depth" value={lfo2.amplitude} onChange={v => handleParamChange('lfo2.amplitude', v)} min={0} max={1} size={56} />
+                            {/* === DÜZELTME BURADA === */}
+                            <ProfessionalKnob label="Rate" value={getRateValue(lfo2.frequency)} onChange={v => handleParamChange('lfo2.frequency', `${Math.round(v)}n`)} min={1} max={32} defaultValue={2} unit="n" size={56} />
+                            <ProfessionalKnob label="Depth" value={lfo2.amplitude} onChange={v => handleParamChange('lfo2.amplitude', v)} min={0} max={1} defaultValue={1} size={56} />
                         </div>
                     </div>
                 </div>

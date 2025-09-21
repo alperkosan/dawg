@@ -9,6 +9,7 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { PluginColorPalette, PluginAnimations } from './PluginDesignSystem';
 
 // --- Profesyonel Knob Bileşeni ---
+// --- Profesyonel Knob Bileşeni - DAHA SAĞLAM ---
 export const ProfessionalKnob = ({
   label, value = 0, min = 0, max = 100, defaultValue = 50, onChange,
   size = 60, unit = '', precision = 0, logarithmic = false, className = ''
@@ -17,7 +18,7 @@ export const ProfessionalKnob = ({
   const dragStartRef = useRef({ y: 0, value: 0 });
 
   const valueToAngle = useCallback((val) => {
-    if (typeof val !== 'number') return -135; // Sayısal değilse başlangıç pozisyonu
+    if (typeof val !== 'number') return -135;
     const valueInRange = Math.max(min, Math.min(max, val));
     let normalizedValue;
     if (logarithmic) {
@@ -58,7 +59,10 @@ export const ProfessionalKnob = ({
   }, [handleMouseMove]);
   
   const handleMouseDown = useCallback((e) => {
-    if(typeof value !== 'number') return; // Sayısal olmayan değerlerde sürüklemeyi engelle
+    // --- KRİTİK DÜZELTME BURADA ---
+    // Sadece değer sayısal ise sürüklemeye izin ver
+    if(typeof value !== 'number') return;
+    
     e.preventDefault(); setIsDragging(true);
     dragStartRef.current = { y: e.clientY, value };
     document.body.style.cursor = 'ns-resize';
@@ -87,8 +91,6 @@ export const ProfessionalKnob = ({
     </div>
   );
 };
-
-
 
 export const ProfessionalFader = ({
   value, min = -60, max = 6, onChange, height = '100%', isActive

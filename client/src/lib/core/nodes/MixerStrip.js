@@ -166,7 +166,7 @@ export class MixerStrip {
   }
 
   setupEffectMetering(effectId, effectNode, effectType) {
-    if (effectType !== 'Compressor') return;
+    if (effectType !== 'Compressor' || effectType !== 'BassEnhancer808') return;
     const meterId = `${this.id}-${effectId}`;
     const eventId = Tone.Transport.scheduleRepeat(() => {
         if (this.isDisposed) return;
