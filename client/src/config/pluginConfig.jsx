@@ -26,8 +26,8 @@ export const pluginRegistry = {
   'Saturator': {
     type: 'Saturator', category: 'The Texture Lab', story: "Sese analog bir lambanın sıcaklığını katar.",
     toneNode: 'Distortion', uiComponent: SaturatorUI,
-    initialSize: { width: 420, height: 400 },
-    minSize: { width: 380, height: 400 },
+    initialSize: { width: 520, height: 400 },
+    minSize: { width: 520, height: 400 },
     defaultSettings: { distortion: 0.4, wet: 1.0 },
     presets: [
       { name: 'Bant Sıcaklığı', settings: { distortion: 0.25, wet: 0.8 } },
@@ -82,8 +82,8 @@ export const pluginRegistry = {
   'PingPongDelay': {
     type: 'PingPongDelay', category: 'The Spacetime Chamber', story: "Sesin iki boyut arasında sektirildiği stereo gecikme.",
     toneNode: 'PingPongDelay', uiComponent: DelayUI,
-    initialSize: { width: 560, height: 280 },
-    minSize: { width: 560, height: 250 },
+    initialSize: { width: 640, height: 430 },
+    minSize: { width: 640, height: 430 },
     defaultSettings: { delayTime: '8n', feedback: 0.3, wet: 0.35 },
     presets: [
       { name: 'Genişletici', settings: { delayTime: '16n', feedback: 0.2, wet: 0.4 } },
@@ -93,8 +93,8 @@ export const pluginRegistry = {
   'FeedbackDelay': {
     type: 'FeedbackDelay', category: 'The Spacetime Chamber', story: "Klasik bir teyp yankısı gibi mono gecikme.",
     toneNode: 'FeedbackDelay', uiComponent: FeedbackDelayUI,
-    initialSize: { width: 560, height: 280 },
-    minSize: { width: 560, height: 250 },
+    initialSize: { width: 615, height: 410 },
+    minSize: { width: 615, height: 410 },
     defaultSettings: { delayTime: '4n.', feedback: 0.4, wet: 0.4 },
     presets: [
         { name: 'Hafif Tokat', settings: { delayTime: 0.12, feedback: 0.15, wet: 0.3 } },
@@ -159,8 +159,8 @@ export const pluginRegistry = {
   'PitchShifter': {
     type: 'PitchShifter', category: 'The Texture Lab', story: "Sesin DNA'sıyla oynayarak onu bir deve veya cüceye dönüştürür.",
     toneNode: 'PitchShift', uiComponent: PitchShifterUI,
-    initialSize: { width: 450, height: 280 },
-    minSize: { width: 400, height: 250 },
+    initialSize: { width: 600, height: 530 },
+    minSize: { width: 600, height: 530 },
     defaultSettings: { pitch: 0, windowSize: 0.1, wet: 1.0 },
     presets: [
       { name: 'Oktav Altı', settings: { pitch: -12, wet: 0.6, windowSize: 0.1 } },
