@@ -23,7 +23,7 @@ export default function ChannelRack() {
   
   const playheadRef = useRef(null);
   const scrollContainerRef = useRef(null);
-  const timelineContainerRef = useRef(null); // Timeline'ın dış sarmalayıcısı için ref
+  const timelineContainerRef = useRef(null);
   const instrumentListRef = useRef(null);
 
   const activePattern = patterns[activePatternId];
@@ -33,7 +33,6 @@ export default function ChannelRack() {
     const container = scrollContainerRef.current;
     if (!container) return;
 
-    // Scroll olaylarını senkronize etme fonksiyonu
     const syncScroll = () => {
       if (timelineContainerRef.current) {
         timelineContainerRef.current.scrollLeft = container.scrollLeft;
@@ -43,7 +42,6 @@ export default function ChannelRack() {
       }
     };
 
-    // Playhead pozisyonunu güncelleme fonksiyonu
     const updatePlayhead = (progress) => {
       if (playheadRef.current) {
         const position = progress * audioLoopLength * STEP_WIDTH;
@@ -59,6 +57,32 @@ export default function ChannelRack() {
       PlaybackAnimatorService.unsubscribe(updatePlayhead);
     };
   }, [audioLoopLength]);
+
+  // =====================================================================
+  // === YENİ EKLENEN KOD BLOĞU BURASI ===
+  // Bu useEffect, sol paneldeki tekerlek hareketini sağ panele yönlendirir.
+  // =====================================================================
+  useEffect(() => {
+    const instrumentContainer = instrumentListRef.current;
+    const mainScrollContainer = scrollContainerRef.current;
+
+    if (!instrumentContainer || !mainScrollContainer) return;
+
+    const handleWheelOnInstrumentList = (e) => {
+      // Varsayılan davranışı engelle (bazen sayfanın kaymasına neden olabilir)
+      e.preventDefault();
+      // Ana scroll alanının dikey kaydırma pozisyonunu tekerlek hareketi kadar değiştir
+      mainScrollContainer.scrollTop += e.deltaY;
+    };
+
+    // Olay dinleyicisini ekle
+    instrumentContainer.addEventListener('wheel', handleWheelOnInstrumentList);
+
+    // Bileşen kaldırıldığında olay dinleyicisini temizle
+    return () => {
+      instrumentContainer.removeEventListener('wheel', handleWheelOnInstrumentList);
+    };
+  }, []); // Bu effect'in sadece bir kez çalışması yeterlidir
 
   const handleNoteToggle = useCallback((instrumentId, step) => {
     if (!activePattern) return;
@@ -76,13 +100,12 @@ export default function ChannelRack() {
   const totalContentHeight = (instruments.length + 1) * 64;
 
   return (
+    // ... JSX yapısında herhangi bir değişiklik yok ...
     <div className="channel-rack-layout">
-      {/* KÖŞE */}
       <div className="channel-rack-layout__corner">
         Pattern: {activePattern?.name || '...'}
       </div>
 
-      {/* ENSTRÜMAN LİSTESİ */}
       <div ref={instrumentListRef} className="channel-rack-layout__instruments">
         <div style={{ height: totalContentHeight }}>
           {instruments.map(inst => (
@@ -100,7 +123,6 @@ export default function ChannelRack() {
         </div>
       </div>
 
-      {/* ZAMAN CETVELİ */}
       <div ref={timelineContainerRef} className="channel-rack-layout__timeline">
         <div style={{ width: totalGridWidth, height: '100%' }}>
           <InteractiveTimeline
@@ -111,7 +133,6 @@ export default function ChannelRack() {
         </div>
       </div>
       
-      {/* ANA GRID ALANI (KAYDIRILABİLİR) */}
       <div ref={scrollContainerRef} className="channel-rack-layout__grid-scroll-area">
         <div style={{ width: totalGridWidth, height: totalContentHeight }} className="channel-rack-layout__grid-content">
           <div ref={playheadRef} className="channel-rack-layout__playhead" style={{ height: totalContentHeight }} />
