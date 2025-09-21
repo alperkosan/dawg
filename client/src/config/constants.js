@@ -57,4 +57,5 @@ export const PANEL_IDS = Object.freeze({
   SAMPLE_EDITOR: 'sample-editor',
   KEYBINDINGS: 'keybindings',
   THEME_EDITOR: 'theme-editor',
+  SYNTH_EDITOR: 'synth-editor',
 });

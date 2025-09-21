@@ -77,40 +77,59 @@ export const usePanelsStore = create((set, get) => ({
   },
 
   handleEditInstrument: async (instrument) => {
-    if (!instrument || instrument.type !== INSTRUMENT_TYPES.SAMPLE) return;
+    if (!instrument) return;
+    
+    // --- DEĞİŞİKLİK BURADA ---
+    // Artık her enstrüman tipi için spesifik bir panel ID'si belirliyoruz.
+    // Bu yapı, gelecekte yeni synth'ler eklemeyi çok kolaylaştıracak.
+    let panelId;
+    switch (instrument.type) {
+        case INSTRUMENT_TYPES.SYNTH:
+            // İleride burada 'if (instrument.synthEngine === 'forge_v1')' gibi
+            // kontrollerle farklı synth editörleri açabilirsiniz.
+            panelId = 'instrument-editor-forgesynth'; 
+            break;
+        case INSTRUMENT_TYPES.SAMPLE:
+            panelId = PANEL_IDS.SAMPLE_EDITOR;
+            break;
+        default:
+            console.warn(`Bilinmeyen enstrüman tipi için editör açılamadı: ${instrument.type}`);
+            return;
+    }
+    // --- DEĞİŞİKLİK SONU ---
+
     const state = get();
-    if (state.editingInstrumentId === instrument.id && state.panels[PANEL_IDS.SAMPLE_EDITOR].isOpen) {
-      get().togglePanel(PANEL_IDS.SAMPLE_EDITOR);
+    // panelId'nin var olup olmadığını kontrol et
+    if (!state.panels[panelId]) {
+        console.error(`Panel tanımı bulunamadı: ${panelId}`);
+        return;
+    }
+
+    const isAlreadyOpen = state.editingInstrumentId === instrument.id && state.panels[panelId]?.isOpen;
+
+    if (isAlreadyOpen) {
+      get().togglePanel(panelId);
       return;
     }
-    try {
-      // --- LOG 1: Ses motorundan buffer istiyoruz ---
-      console.log(`[LOG 1] AudioContextService'ten buffer isteniyor: ${instrument.id}`);
-      const buffer = await AudioContextService?.requestInstrumentBuffer(instrument.id);
-
-      // --- LOG 2: Gelen buffer'ı kontrol edelim ---
-      if (!buffer) {
-        console.error(`[LOG 2 - HATA] Buffer alınamadı. Enstrüman: ${instrument.name}`);
-        alert(`"${instrument.name}" için ses verisi bulunamadı.`);
-        return;
-      }
-      console.log(`[LOG 2 - BAŞARILI] Buffer alındı. Süre: ${buffer.duration.toFixed(2)}s, Kanal Sayısı: ${buffer.numberOfChannels}`);
-      
-      const newPosition = getNextCascadePosition(get().panels);
-      set({
-        editorBuffer: buffer, // <<< ÖNEMLİ OLAN SATIR BU
-        editingInstrumentId: instrument.id,
-        panels: {
-          ...state.panels,
-          [PANEL_IDS.SAMPLE_EDITOR]: { ...state.panels[PANEL_IDS.SAMPLE_EDITOR], title: `Editor: ${instrument.name}`, isOpen: true, isMinimized: false, position: newPosition }
+    
+    if (instrument.type === INSTRUMENT_TYPES.SAMPLE) {
+        const buffer = await AudioContextService?.requestInstrumentBuffer(instrument.id);
+        if (!buffer) {
+            alert(`"${instrument.name}" için ses verisi bulunamadı.`);
+            return;
         }
-      });
-      // --- LOG 3: State güncellendi mi? ---
-      console.log('[LOG 3] usePanelsStore state güncellendi. editorBuffer artık dolu olmalı.');
-      get().bringPanelToFront(PANEL_IDS.SAMPLE_EDITOR);
-    } catch (error) {
-      console.error(`[LOG - KRİTİK HATA] Sample Editor açılamadı (${instrument.name}):`, error);
+        set({ editorBuffer: buffer });
     }
+
+    const newPosition = getNextCascadePosition(get().panels);
+    set(state => ({
+      editingInstrumentId: instrument.id,
+      panels: {
+        ...state.panels,
+        [panelId]: { ...state.panels[panelId], title: `Editor: ${instrument.name}`, isOpen: true, isMinimized: false, position: newPosition }
+      }
+    }));
+    get().bringPanelToFront(panelId);
   },
 
   openPianoRollForInstrument: (instrument) => {

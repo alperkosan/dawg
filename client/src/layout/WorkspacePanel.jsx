@@ -1,3 +1,5 @@
+// src/layout/WorkspacePanel.jsx
+
 import React, { Suspense } from 'react';
 import DraggableWindow from '../ui/DraggableWindow';
 import FileBrowserPanel from '../features/file_browser/FileBrowserPanel';
@@ -59,7 +61,7 @@ function WorkspacePanel() {
             };
 
             PanelContent = (
-              <PluginContainer effect={effect} definition={definition} onChange={handlePluginChange}>
+              <PluginContainer trackId={track.id} effect={effect} definition={definition}>
                 <Suspense fallback={<div className="p-4">Loading UI...</div>}>
                   <PluginUIComponent trackId={track.id} effect={effect} onChange={handlePluginChange} definition={definition} />
                 </Suspense>
@@ -74,6 +76,15 @@ function WorkspacePanel() {
             if (panel.id === 'piano-roll') {
               componentProps.instrument = pianoRollInstrument;
             }
+            
+            // ======================================================
+            // === EKLENECEK KOD BURASI ===
+            // Bu blok, synth editörüne doğru enstrümanı gönderir.
+            // ======================================================
+            if (panel.id === 'instrument-editor-forgesynth') {
+              componentProps.instrument = editingInstrument;
+            }
+            // ======================================================
             
             PanelContent = <PanelComponent {...componentProps} />;
           }
@@ -105,4 +116,3 @@ function WorkspacePanel() {
 }
 
 export default WorkspacePanel;
-

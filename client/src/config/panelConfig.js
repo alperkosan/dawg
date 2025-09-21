@@ -6,6 +6,7 @@ import PianoRoll from '../features/piano_roll_v2/components/PianoRoll';
 import ArrangementPanel from '../features/arrangement/ArrangementPanel';
 import KeybindingsPanel from '../features/key_bindings/KeybindingsPanel';
 import { ThemeEditor } from '../features/theme_editor/ThemeEditor';
+import { ForgeSynthUI } from '../features/instrument_editor/ForgeSynthUI';
 
 export const panelRegistry = {
   'channel-rack': ChannelRack,
@@ -15,6 +16,7 @@ export const panelRegistry = {
   'keybindings': KeybindingsPanel,
   'arrangement': ArrangementPanel,
   'theme-editor': ThemeEditor,
+  'instrument-editor-forgesynth': ForgeSynthUI, 
 };
 
 export const panelDefinitions = {
@@ -64,5 +66,11 @@ export const panelDefinitions = {
     initialSize: { width: 450, height: 550 },
     initialPos: { x: 80, y: 120 },
     minSize: { width: 400, height: 500 },
-  }
+  },
+  'instrument-editor-forgesynth': {
+    title: 'ForgeSynth v1',
+    initialSize: { width: 600, height: 280 },
+    initialPos: { x: 80, y: 90 },
+    minSize: { width: 500, height: 250 },
+  },
 };

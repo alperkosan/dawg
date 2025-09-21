@@ -27,5 +27,6 @@
 @import url("./features/_interactiveTimeline.css");
 @import url("./features/_stepGrid.css");
 @import url("./features/_pianoRollMiniView.css");
+@import url("./features/instrument_editor/ForgeSynthUI.css");
 @import url("../features/mixer_v2/MixerV2.css");
 @import url("../features/piano_roll_v2/styles/PianoRoll.css");

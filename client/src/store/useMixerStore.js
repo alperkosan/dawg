@@ -225,18 +225,20 @@ export const useMixerStore = create((set, get) => ({
 
     // --- DEĞİŞİKLİK BURADA: Yeni özel komutu yakala ---
     if (paramOrSettings === '__update_band_param') {
-      const { bandId, param, newValue } = value;
+      const { bandId, param, value: newValue } = value;
       
-      // 1. State'i verimli bir şekilde güncelle
+      console.log(`🎛️ Store: Band güncelleme - ${bandId}.${param} = ${newValue}`);
+      
+      // 1. State'i verimli şekilde güncelle
       set(state => ({
         mixerTracks: state.mixerTracks.map(track => {
           if (track.id === trackId) {
             return {
               ...track,
               insertEffects: track.insertEffects.map(fx => {
-                if (fx.id === effectId) {
-                  const newBands = fx.settings.bands.map(b => 
-                    b.id === bandId ? { ...b, [param]: newValue } : b
+                if (fx.id === effectId && fx.type === 'MultiBandEQ') {
+                  const newBands = fx.settings.bands.map(band => 
+                    band.id === bandId ? { ...band, [param]: newValue } : band
                   );
                   return { ...fx, settings: { ...fx.settings, bands: newBands } };
                 }
@@ -250,7 +252,7 @@ export const useMixerStore = create((set, get) => ({
       
       // 2. Ses motoruna spesifik komutu gönder
       AudioContextService?.updateEffectBandParam(trackId, effectId, bandId, param, newValue);
-      return; // Fonksiyonu burada sonlandır.
+      return; // ⚠️ Fonksiyonu burada sonlandır
     }
     // --- DEĞİŞİKLİK SONU ---
 

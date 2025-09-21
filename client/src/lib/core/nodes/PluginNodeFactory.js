@@ -68,13 +68,14 @@ export const PluginNodeFactory = {
       
       (fxData.settings.bands || []).forEach(band => {
         const filter = new Tone.BiquadFilter({
-            frequency: band.frequency, gain: band.gain, Q: band.q, type: band.type,
+            frequency: band.frequency, 
+            gain: band.gain, 
+            Q: band.q, 
+            type: band.type,
         });
         
         lastNode.connect(filter);
         lastNode = filter;
-
-        // Bandı ID'si ile Map'e kaydediyoruz ki kolayca bulabilelim.
         bandNodes.set(band.id, filter);
         
         if (!band.active) {
@@ -87,30 +88,76 @@ export const PluginNodeFactory = {
       return {
         input: input,
         output: output,
-        // Bu fonksiyon artık tüm bandları tek seferde güncelliyor.
+        
+        // Tüm bantları tek seferde güncelleyen mevcut metod
         updateParam: (param, value) => {
             if (param === 'bands' && Array.isArray(value)) {
                 value.forEach((bandData) => {
                     const nodeToUpdate = bandNodes.get(bandData.id);
                     if (nodeToUpdate && bandData) {
-                        if (nodeToUpdate.frequency.value !== bandData.frequency) nodeToUpdate.frequency.rampTo(bandData.frequency, 0.01);
-                        if (nodeToUpdate.gain.value !== bandData.gain) nodeToUpdate.gain.rampTo(bandData.gain, 0.01);
-                        if (nodeToUpdate.Q.value !== bandData.q) nodeToUpdate.Q.value = bandData.q;
+                        if (nodeToUpdate.frequency.value !== bandData.frequency) 
+                            nodeToUpdate.frequency.rampTo(bandData.frequency, 0.01);
+                        if (nodeToUpdate.gain.value !== bandData.gain) 
+                            nodeToUpdate.gain.rampTo(bandData.gain, 0.01);
+                        if (nodeToUpdate.Q.value !== bandData.q) 
+                            nodeToUpdate.Q.value = bandData.q;
+                        if (nodeToUpdate.type !== bandData.type)
+                            nodeToUpdate.type = bandData.type;
                     }
                 });
             }
         },
-        // YENİ: Tek bir bandın tek bir parametresini güncelleyen fonksiyon.
+        
+        // 🆕 YENİ: Tek bir bandın tek bir parametresini güncelleyen metod
         updateBandParam: (bandId, param, value) => {
           const node = bandNodes.get(bandId);
-          if (node) {
-            if (node[param] && typeof node[param].value !== 'undefined') {
-              setParamSmoothly(node[param], value);
-            } else {
-              console.warn(`MultiBand EQ: Geçersiz parametre '${param}'`);
+          if (!node) {
+            console.warn(`EQ Band bulunamadı: ${bandId}`);
+            return;
+          }
+          
+          try {
+            switch (param) {
+              case 'frequency':
+                if (node.frequency && typeof value === 'number') {
+                  node.frequency.rampTo(Math.max(20, Math.min(20000, value)), 0.01);
+                }
+                break;
+              case 'gain':
+                if (node.gain && typeof value === 'number') {
+                  node.gain.rampTo(Math.max(-18, Math.min(18, value)), 0.01);
+                }
+                break;
+              case 'q':
+                if (node.Q && typeof value === 'number') {
+                  node.Q.value = Math.max(0.1, Math.min(18, value));
+                }
+                break;
+              case 'type':
+                if (typeof value === 'string' && ['lowshelf', 'peaking', 'highshelf'].includes(value)) {
+                  node.type = value;
+                }
+                break;
+              case 'active':
+                if (typeof value === 'boolean') {
+                  if (value) {
+                    // Band'i aktif et - orijinal tipini geri yükle
+                    // Bu bilgiyi saklamak gerekebilir
+                  } else {
+                    // Band'i deaktif et
+                    node.type = 'allpass';
+                    node.gain.value = 0;
+                  }
+                }
+                break;
+              default:
+                console.warn(`Bilinmeyen EQ parametresi: ${param}`);
             }
+          } catch (error) {
+            console.error(`EQ parametresi güncelleme hatası (${bandId}, ${param}):`, error);
           }
         },
+        
         dispose: () => {
             input.dispose();
             output.dispose();

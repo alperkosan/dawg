@@ -99,8 +99,13 @@ export class MixerStrip {
     const effectNode = this.effectNodes.get(effectId);
     if (effectNode?.updateBandParam) {
       try {
+        console.log(`🎛️ EQ Update: ${effectId} > Band ${bandId} > ${param} = ${value}`);
         effectNode.updateBandParam(bandId, param, value);
-      } catch (error) { console.error(`EQ band parametresi güncelleme hatası (${effectId}):`, error); }
+      } catch (error) { 
+        console.error(`EQ band parametresi güncelleme hatası (${effectId}):`, error); 
+      }
+    } else {
+      console.warn(`EQ updateBandParam metodu bulunamadı: ${effectId}`);
     }
   }
   updateParam(param, value) {

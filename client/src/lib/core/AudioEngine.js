@@ -327,9 +327,15 @@ class AudioEngine {
   }
 
   updateEffectBandParam = (trackId, effectId, bandId, param, value) => {
-    this.mixerStrips.get(trackId)?.updateEffectBandParam(effectId, bandId, param, value);
+    console.log(`🔊 AudioEngine: EQ güncelleme - ${trackId}/${effectId}/${bandId}.${param} = ${value}`);
+    
+    const strip = this.mixerStrips.get(trackId);
+    if (strip) {
+      strip.updateEffectBandParam(effectId, bandId, param, value);
+    } else {
+      console.warn(`Track bulunamadı: ${trackId}`);
+    }
   }
-
   start(startStep = 0) {
     if (Tone.context.state !== 'running') Tone.context.resume();
     if (Tone.Transport.state === PLAYBACK_STATES.PLAYING) return;

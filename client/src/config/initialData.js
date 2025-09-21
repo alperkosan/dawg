@@ -58,7 +58,29 @@ export const initialInstruments = [
   { id: 'inst-4', name: 'Hi-Hat', type: INSTRUMENT_TYPES.SAMPLE, url: '/audio/hihat.wav', notes: notes.hiHat, mixerTrackId: 'track-4', isMuted: false, cutItself: false },
   { id: 'inst-5', name: 'Open Hat', type: INSTRUMENT_TYPES.SAMPLE, url: '/audio/openhat.wav', notes: notes.openHat, mixerTrackId: 'track-5', isMuted: false, cutItself: true },
   { id: 'inst-6', name: '808', type: INSTRUMENT_TYPES.SAMPLE, url: '/audio/808.wav', notes: notes.eight08, mixerTrackId: 'track-6', isMuted: false, cutItself: true, pianoRoll: true },
-  { id: 'inst-7', name: 'Piano', type: INSTRUMENT_TYPES.SYNTH, notes: notes.piano, mixerTrackId: 'track-7', isMuted: false, synthParams: { oscillator: { type: 'fatsquare' }, envelope: { attack: 0.01, decay: 1.5, sustain: 0.1, release: 0.8 } }, pianoRoll: true }
+  { 
+    id: 'inst-7', 
+    name: 'Piano', 
+    type: INSTRUMENT_TYPES.SYNTH, 
+    notes: notes.piano, 
+    mixerTrackId: 'track-7', 
+    isMuted: false, 
+    pianoRoll: true,
+    synthParams: { 
+      oscillator: { type: 'fatsquare' }, 
+      envelope: { attack: 0.01, decay: 1.5, sustain: 0.1, release: 0.8 },
+      filter: { type: 'lowpass', frequency: 1500, rolloff: -24, Q: 1 },
+      // YENİ: İki LFO için ayrı ayarlar
+      lfo1: { type: 'sine', min: 400, max: 2000, frequency: '8n', amplitude: 1 },
+      lfo2: { type: 'triangle', min: -1, max: 1, frequency: '2n', amplitude: 1 },
+      // YENİ: Modülasyon Matrisi Tanımlaması
+      modMatrix: [
+        { id: 'slot1', source: 'lfo1', destination: 'filterFreq', amount: 0.65 },
+        { id: 'slot2', source: 'lfo2', destination: 'pan', amount: 0.4 },
+        { id: 'slot3', source: 'none', destination: 'none', amount: 0 },
+      ]
+    } 
+  }
 ];
 
 export const initialMixerTracks = [

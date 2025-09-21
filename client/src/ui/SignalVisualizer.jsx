@@ -29,11 +29,14 @@ const drawingModes = {
     const { width, height, color } = config;
     const barWidth = width / data.data.length;
     
-    // Gradient oluştur
+    // 🔧 CSS Variable desteği için hex renge çevir
+    const resolvedColor = color.startsWith('#') ? color : '#00E5B5';
+    
+    // Gradient oluştur - hex renk kullan
     const gradient = ctx.createLinearGradient(0, height, 0, 0);
-    gradient.addColorStop(0, color + '80');
-    gradient.addColorStop(0.5, color + 'CC');
-    gradient.addColorStop(1, color);
+    gradient.addColorStop(0, resolvedColor + '80');
+    gradient.addColorStop(0.5, resolvedColor + 'CC');
+    gradient.addColorStop(1, resolvedColor);
     
     ctx.fillStyle = gradient;
     
@@ -106,6 +109,7 @@ export const SignalVisualizer = ({
   const animationFrameId = useRef(null);
   const [isVisible, setIsVisible] = useState(true);
   const [debugInfo, setDebugInfo] = useState(null);
+  const [resolvedColor, setResolvedColor] = useState(color);
   
   // Performance monitoring
   const performanceRef = useRef({
@@ -113,6 +117,48 @@ export const SignalVisualizer = ({
     lastFpsUpdate: 0,
     fps: 0
   });
+
+  // 🔧 CSS Variable'ı gerçek renge çevir
+  const resolveColor = useCallback((colorValue) => {
+    if (typeof colorValue !== 'string') {
+      return '#00E5B5'; // Fallback
+    }
+
+    if (colorValue.startsWith('var(')) {
+      try {
+        // CSS variable'ı parse et: var(--color-primary) -> --color-primary
+        const varName = colorValue.slice(4, -1).trim();
+        const computedStyle = getComputedStyle(document.documentElement);
+        const resolvedValue = computedStyle.getPropertyValue(varName).trim();
+        
+        if (resolvedValue) {
+          // RGB değerini hex'e çevir
+          if (resolvedValue.startsWith('rgb')) {
+            const rgb = resolvedValue.match(/\d+/g);
+            if (rgb && rgb.length >= 3) {
+              const hex = '#' + rgb.slice(0, 3).map(x => {
+                const hex = parseInt(x).toString(16);
+                return hex.length === 1 ? '0' + hex : hex;
+              }).join('');
+              return hex;
+            }
+          }
+          return resolvedValue.startsWith('#') ? resolvedValue : '#00E5B5';
+        }
+      } catch (error) {
+        console.warn('CSS variable çözümlenemiyor:', colorValue, error);
+      }
+      return '#00E5B5'; // Fallback
+    }
+    
+    return colorValue; // Zaten geçerli bir renk
+  }, []);
+
+  // Renk değiştiğinde çözümle
+  useEffect(() => {
+    const resolved = resolveColor(color);
+    setResolvedColor(resolved);
+  }, [color, resolveColor]);
 
   const drawFrame = useCallback((visualData) => {
     const canvas = canvasRef.current;
@@ -146,10 +192,19 @@ export const SignalVisualizer = ({
       
       // Yatay çizgiler
       for (let i = 1; i < 4; i++) {
-        const y = (i / 4) * rect.height;
+        const pos = (i / 4) * rect.height;
         ctx.beginPath();
-        ctx.moveTo(0, y);
-        ctx.lineTo(rect.width, y);
+        ctx.moveTo(0, pos);
+        ctx.lineTo(rect.width, pos);
+        ctx.stroke();
+      }
+      
+      // Dikey çizgiler
+      for (let i = 1; i < 4; i++) {
+        const pos = (i / 4) * rect.width;
+        ctx.beginPath();
+        ctx.moveTo(pos, 0);
+        ctx.lineTo(pos, rect.height);
         ctx.stroke();
       }
       
@@ -160,16 +215,27 @@ export const SignalVisualizer = ({
     const drawConfig = {
       width: rect.width,
       height: rect.height,
-      color,
+      color: resolvedColor, // 🔧 Çözümlenmiş rengi kullan
       ...config
     };
 
     if (drawingModes[type]) {
-      drawingModes[type](ctx, visualData, drawConfig);
+      try {
+        drawingModes[type](ctx, visualData, drawConfig);
+      } catch (error) {
+        console.error('SignalVisualizer çizim hatası:', error);
+        // Fallback - basit çizgi çiz
+        ctx.strokeStyle = resolvedColor;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(0, rect.height / 2);
+        ctx.lineTo(rect.width, rect.height / 2);
+        ctx.stroke();
+      }
     }
 
     // Peak indicator
-    if (config.showPeak && visualData.peak > 0.1) {
+    if (config.showPeak && visualData.peak && visualData.peak > 0.1) {
       const peakY = rect.height * (1 - visualData.peak);
       ctx.strokeStyle = '#ff4444';
       ctx.lineWidth = 2;
@@ -190,18 +256,32 @@ export const SignalVisualizer = ({
       if (config.showDebug) {
         setDebugInfo({
           fps: performanceRef.current.fps,
-          dataLength: visualData.data.length,
-          peak: visualData.peak.toFixed(3)
+          dataLength: visualData.data ? visualData.data.length : 0,
+          peak: visualData.peak ? visualData.peak.toFixed(3) : '0.000'
         });
       }
     }
-  }, [type, color, config, isVisible]);
+  }, [type, resolvedColor, config, isVisible]);
 
   useEffect(() => {
     if (!meterId) return;
 
     const handleData = (visualData) => {
-      drawFrame(visualData);
+      // Veri format kontrolü
+      if (!visualData || typeof visualData !== 'object') {
+        console.warn('SignalVisualizer: Geçersiz veri formatı:', visualData);
+        return;
+      }
+
+      // Veri yapısını normalize et
+      const normalizedData = {
+        data: visualData.data || visualData || [],
+        peak: visualData.peak || 0,
+        timestamp: visualData.timestamp || Date.now(),
+        type: visualData.type || type
+      };
+
+      drawFrame(normalizedData);
     };
 
     const unsubscribe = MeteringService.subscribe(meterId, handleData, {
@@ -227,6 +307,15 @@ export const SignalVisualizer = ({
     return () => observer.disconnect();
   }, []);
 
+  // Cleanup
+  useEffect(() => {
+    return () => {
+      if (animationFrameId.current) {
+        cancelAnimationFrame(animationFrameId.current);
+      }
+    };
+  }, []);
+
   return (
     <div className={`signal-visualizer-container ${className}`} style={style}>
       <canvas 
@@ -242,9 +331,10 @@ export const SignalVisualizer = ({
           color: 'white',
           padding: '4px 8px',
           fontSize: '10px',
-          borderRadius: '4px'
+          borderRadius: '4px',
+          fontFamily: 'monospace'
         }}>
-          FPS: {debugInfo.fps} | Peak: {debugInfo.peak}
+          FPS: {debugInfo.fps} | Peak: {debugInfo.peak} | Len: {debugInfo.dataLength}
         </div>
       )}
     </div>
