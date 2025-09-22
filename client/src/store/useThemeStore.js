@@ -1,3 +1,4 @@
+// src/store/useThemeStore.js - Değişiklik yok.
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { v4 as uuidv4 } from 'uuid';
@@ -36,7 +37,6 @@ const createTheme = (name, colors, styles) => ({
   }
 });
 
-// Artık varsayılan tema "Ghetto Star"
 const defaultThemes = [
   createTheme('Ghetto Star', 
     { 
@@ -50,7 +50,6 @@ const defaultThemes = [
       '--border-radius': '4px' 
     }
   ),
-  // Gelecekte eklenebilecek başka bir tema örneği
   createTheme('8-Bit Night', 
     { primary: '#4ade80', accent: '#fb923c', background: '#1e293b', surface: '#334155', text: '#e2e8f0', border: '#475569' },
     { '--border-radius': '0px' }

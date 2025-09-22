@@ -1,5 +1,5 @@
-// lib/services/AudioContextService.js - Enhanced Native Version
-// DAWG - Enhanced Audio Context Service - Store Integration & Pattern Management
+// lib/services/AudioContextService.js - ENHANCED VERSION FOR NATIVE ENGINE
+// DAWG - Enhanced Audio Context Service - Complete Store Integration
 
 import { useArrangementStore } from '../../store/useArrangementStore';
 import { useInstrumentsStore } from '../../store/useInstrumentsStore';
@@ -11,6 +11,7 @@ import { PatternData } from '../core/NativeAudioEngine';
 export class AudioContextService {
   static instance = null;
   static audioEngine = null;
+  static isSubscriptionsSetup = false;
   
   // =================== SINGLETON PATTERN ===================
   
@@ -25,9 +26,12 @@ export class AudioContextService {
     this.audioEngine = engine;
     
     // Setup store subscriptions for reactive updates
-    this._setupStoreSubscriptions();
+    if (!this.isSubscriptionsSetup) {
+      this._setupStoreSubscriptions();
+      this.isSubscriptionsSetup = true;
+    }
     
-    console.log("✅ AudioContextService: Native Audio Engine v2.0 registered");
+    console.log("✅ AudioContextService: Native Audio Engine v2.1 registered");
     return engine;
   }
   
@@ -41,42 +45,76 @@ export class AudioContextService {
   // =================== STORE INTEGRATION ===================
 
   static _setupStoreSubscriptions() {
+    let prevArrangementState = null;
+    let prevPlaybackState = null;
+    let prevMixerState = null;
+    let prevInstrumentsState = null;
+
     // Subscribe to arrangement changes
-    useArrangementStore.subscribe((state, prevState) => {
-      if (state.activePatternId !== prevState.activePatternId) {
+    useArrangementStore.subscribe((state) => {
+      if (!prevArrangementState) {
+        prevArrangementState = state;
+        return;
+      }
+
+      if (state.activePatternId !== prevArrangementState.activePatternId) {
         this._onActivePatternChanged(state.activePatternId);
       }
       
-      if (state.patterns !== prevState.patterns) {
+      if (state.patterns !== prevArrangementState.patterns) {
         this._onPatternsUpdated(state.patterns);
       }
+
+      prevArrangementState = state;
     });
 
     // Subscribe to playback changes
-    usePlaybackStore.subscribe((state, prevState) => {
-      if (state.bpm !== prevState.bpm) {
+    usePlaybackStore.subscribe((state) => {
+      if (!prevPlaybackState) {
+        prevPlaybackState = state;
+        return;
+      }
+
+      if (state.bpm !== prevPlaybackState.bpm) {
         this.setBPM(state.bpm);
       }
       
-      if (state.masterVolume !== prevState.masterVolume) {
+      if (state.masterVolume !== prevPlaybackState.masterVolume) {
         this.setMasterVolume(state.masterVolume);
       }
+
+      prevPlaybackState = state;
     });
 
     // Subscribe to mixer changes
-    useMixerStore.subscribe((state, prevState) => {
-      // Handle mixer track updates
-      if (state.mixerTracks !== prevState.mixerTracks) {
-        this._onMixerTracksUpdated(state.mixerTracks, prevState.mixerTracks);
+    useMixerStore.subscribe((state) => {
+      if (!prevMixerState) {
+        prevMixerState = state;
+        return;
       }
+
+      if (state.mixerTracks !== prevMixerState.mixerTracks) {
+        this._onMixerTracksUpdated(state.mixerTracks, prevMixerState.mixerTracks);
+      }
+
+      prevMixerState = state;
     });
 
     // Subscribe to instrument changes
-    useInstrumentsStore.subscribe((state, prevState) => {
-      if (state.instruments !== prevState.instruments) {
-        this._onInstrumentsUpdated(state.instruments, prevState.instruments);
+    useInstrumentsStore.subscribe((state) => {
+      if (!prevInstrumentsState) {
+        prevInstrumentsState = state;
+        return;
       }
+
+      if (state.instruments !== prevInstrumentsState.instruments) {
+        this._onInstrumentsUpdated(state.instruments, prevInstrumentsState.instruments);
+      }
+
+      prevInstrumentsState = state;
     });
+
+    console.log('🔗 Store subscriptions setup complete');
   }
 
   // =================== PATTERN MANAGEMENT ===================
@@ -94,6 +132,12 @@ export class AudioContextService {
     if (pattern) {
       const patternData = new PatternData(pattern.id, pattern.name, pattern.data);
       engine.patterns.set(newPatternId, patternData);
+    }
+
+    // Update playback manager
+    if (engine.playbackManager) {
+      engine.playbackManager.activePatternId = newPatternId;
+      engine.playbackManager._updateLoopSettings();
     }
 
     // Reschedule if playing
@@ -125,14 +169,14 @@ export class AudioContextService {
 
     // Find added instruments
     const prevIds = new Set(prevInstruments.map(inst => inst.id));
-    const newInstruments_ = newInstruments.filter(inst => !prevIds.has(inst.id));
+    const addedInstruments = newInstruments.filter(inst => !prevIds.has(inst.id));
     
     // Find removed instruments
     const currentIds = new Set(newInstruments.map(inst => inst.id));
     const removedInstruments = prevInstruments.filter(inst => !currentIds.has(inst.id));
 
     // Create new instruments
-    newInstruments_.forEach(async (instData) => {
+    addedInstruments.forEach(async (instData) => {
       try {
         await this.createInstrument(instData);
       } catch (error) {
@@ -156,9 +200,11 @@ export class AudioContextService {
 
   static _hasInstrumentChanged(newInst, prevInst) {
     // Check if significant parameters have changed
-    return JSON.stringify(newInst.synthParams) !== JSON.stringify(prevInst.synthParams) ||
-           newInst.isMuted !== prevInst.isMuted ||
-           JSON.stringify(newInst.precomputed) !== JSON.stringify(prevInst.precomputed);
+    const synthParamsChanged = JSON.stringify(newInst.synthParams) !== JSON.stringify(prevInst.synthParams);
+    const mutedChanged = newInst.isMuted !== prevInst.isMuted;
+    const precomputedChanged = JSON.stringify(newInst.precomputed) !== JSON.stringify(prevInst.precomputed);
+    
+    return synthParamsChanged || mutedChanged || precomputedChanged;
   }
 
   // =================== MIXER MANAGEMENT ===================
@@ -285,7 +331,6 @@ export class AudioContextService {
 
       const instrument = await engine.createInstrument(instrumentData);
       
-      // Update store to reflect creation
       console.log(`✅ Instrument created: ${instrumentData.name}`);
       return instrument;
       
@@ -364,25 +409,23 @@ export class AudioContextService {
   }
   
   static setLoop(startStep, endStep) { 
-    // Update transport loop in engine
     const engine = this.getAudioEngine();
-    if (engine?.transport) {
-      engine.transport.setLoopPoints(startStep, endStep);
+    if (engine?.playbackManager) {
+      engine.playbackManager.setLoopPoints(startStep, endStep);
     }
   }
   
   static jumpToStep(step) { 
     const engine = this.getAudioEngine();
-    if (engine?.transport) {
-      engine.transport.setPosition(step);
+    if (engine?.playbackManager) {
+      engine.playbackManager.jumpToStep(step);
     }
   }
   
   static jumpToBar(bar) { 
     const engine = this.getAudioEngine();
-    if (engine?.transport) {
-      const stepInBar = 16; // Assuming 16 steps per bar
-      engine.transport.setPosition((bar - 1) * stepInBar);
+    if (engine?.playbackManager) {
+      engine.playbackManager.jumpToBar(bar);
     }
   }
 
@@ -503,7 +546,6 @@ export class AudioContextService {
     console.log(`🔄 [RECONCILE] Processing ${instrumentId}...`, updatedInstData.precomputed);
 
     // For sample instruments, we might need to reprocess the buffer
-    // This is a simplified version - you might want to implement actual buffer processing
     const originalBuffer = engine.sampleBuffers.get(instrumentId);
     if (!originalBuffer) {
       console.error(`❌ [RECONCILE] Original buffer not found: ${instrumentId}`);
@@ -515,7 +557,6 @@ export class AudioContextService {
     
     if (updatedInstData.precomputed) {
       // Here you would apply the processing effects
-      // For now, we'll just return the original buffer
       console.log(`✅ [RECONCILE] ${instrumentId} buffer updated`);
     }
 
@@ -540,7 +581,6 @@ export class AudioContextService {
     console.log(`🎛️ AudioContextService: EQ band update - ${trackId}/${effectId}/${bandId}.${param} = ${value}`);
     
     // For now, delegate to updateEffectParam
-    // In a full implementation, you'd handle multi-band effects specially
     this.updateEffectParam(trackId, effectId, `${bandId}_${param}`, value);
   }
 
@@ -548,12 +588,10 @@ export class AudioContextService {
     console.log(`🔗 Rebuilding signal chain for: ${trackId}`);
     
     // In the native engine, this happens automatically when effects are added/removed
-    // But we can trigger a rebuild if needed
     const engine = this.getAudioEngine();
     const channel = engine?.mixerChannels?.get(trackId);
     
-    if (channel) {
-      // Rebuild the channel's effect chain
+    if (channel && channel._rebuildEffectChain) {
       channel._rebuildEffectChain();
     }
   }
@@ -583,7 +621,7 @@ export class AudioContextService {
 
     const stats = engine.getEngineStats();
     return {
-      engineType: 'Native AudioWorklet Engine v2.0',
+      engineType: 'Native AudioWorklet Engine v2.1',
       audioLatency: `${stats.audioContext.totalLatency.toFixed(1)}ms`,
       instrumentCount: stats.instruments.total,
       mixerChannelCount: stats.mixerChannels,
@@ -733,6 +771,55 @@ export class AudioContextService {
     };
   }
 
+  // =================== LEGACY COMPATIBILITY ===================
+  
+  static fullSync(instrumentData, mixerTrackData, arrangementData) {
+    console.warn('⚠️ fullSync is deprecated in Native Engine v2.1');
+    return Promise.resolve();
+  }
+  
+  static removeInstrument(instrumentId) { 
+    console.warn('⚠️ removeInstrument is deprecated - use disposeInstrument instead');
+    return this.disposeInstrument(instrumentId);
+  }
+  
+  static async requestInstrumentBuffer(instrumentId) { 
+    const engine = this.getAudioEngine();
+    return engine?.sampleBuffers?.get(instrumentId) || null;
+  }
+  
+  static updateLoopRange(startStep, endStep) {
+    return this.setLoop(startStep, endStep);
+  }
+
+  static updateChannelEQ(trackId, band, param, value) {
+    // Simplified EQ update for compatibility
+    this.setChannelEQ(trackId, band, 1000, value, 1);
+  }
+
+  static resetChannelEQ(trackId) {
+    const engine = this.getAudioEngine();
+    const channel = engine?.mixerChannels?.get(trackId);
+    
+    if (channel) {
+      // Reset all EQ bands to 0
+      ['low', 'mid', 'high'].forEach(band => {
+        channel.setEQBand(band, 0);
+      });
+    }
+  }
+
+  static updateMasterEQ(band, param, value) {
+    const engine = this.getAudioEngine();
+    if (engine?.masterMixer) {
+      const paramName = `${band}Gain`;
+      const param = engine.masterMixer.parameters.get(paramName);
+      if (param) {
+        param.setTargetAtTime(value, engine.audioContext.currentTime, 0.02);
+      }
+    }
+  }
+
   // =================== DEBUGGING & DEVELOPMENT ===================
   
   static logEngineState() {
@@ -794,57 +881,5 @@ export class AudioContextService {
 
     console.groupEnd();
     return true;
-  }
-
-  // =================== LEGACY COMPATIBILITY ===================
-  
-  // These methods provide compatibility with the old engine interface
-  static fullSync(instrumentData, mixerTrackData, arrangementData) {
-    console.warn('⚠️ fullSync is deprecated in Native Engine v2.0');
-    // The new engine handles this through store subscriptions
-    return Promise.resolve();
-  }
-  
-  static removeInstrument(instrumentId) { 
-    console.warn('⚠️ removeInstrument is deprecated - use disposeInstrument instead');
-    return this.disposeInstrument(instrumentId);
-  }
-  
-  static async requestInstrumentBuffer(instrumentId) { 
-    console.warn('⚠️ requestInstrumentBuffer not applicable in Native Engine v2.0');
-    const engine = this.getAudioEngine();
-    return engine?.sampleBuffers?.get(instrumentId) || null;
-  }
-  
-  static updateLoopRange(startStep, endStep) {
-    return this.setLoop(startStep, endStep);
-  }
-
-  static updateChannelEQ(trackId, band, param, value) {
-    // Simplified EQ update for compatibility
-    this.setChannelEQ(trackId, band, 1000, value, 1);
-  }
-
-  static resetChannelEQ(trackId) {
-    const engine = this.getAudioEngine();
-    const channel = engine?.mixerChannels?.get(trackId);
-    
-    if (channel) {
-      // Reset all EQ bands to 0
-      ['low', 'mid', 'high'].forEach(band => {
-        channel.setEQBand(band, 0);
-      });
-    }
-  }
-
-  static updateMasterEQ(band, param, value) {
-    const engine = this.getAudioEngine();
-    if (engine?.masterMixer) {
-      const paramName = `${band}Gain`;
-      const param = engine.masterMixer.parameters.get(paramName);
-      if (param) {
-        param.setTargetAtTime(value, engine.audioContext.currentTime, 0.02);
-      }
-    }
   }
 }

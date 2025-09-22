@@ -384,23 +384,25 @@ export class PlaybackManager {
             // Schedule note on
             this.transport.scheduleEvent(
                 noteTime,
-                () => {
+                // --- DEĞİŞİKLİK BURADA ---
+                // Callback artık transport'tan gelen hassas 'scheduledTime'ı alıyor.
+                (scheduledTime) => {
                     instrument.triggerNote(
                         note.pitch || 'C4',
                         note.velocity || 1,
-                        this.audioEngine.audioContext.currentTime,
+                        scheduledTime, // Hatanın kaynağı olan 'currentTime' yerine bunu kullanıyoruz.
                         noteDuration
                     );
                 },
                 { type: 'noteOn', instrumentId, note }
             );
 
-            // Schedule note off if it's a sustained note
+            // Note off zamanlamasında bir değişiklik yok, zaten doğru çalışıyor.
             if (note.duration && note.duration !== 'trigger') {
                 this.transport.scheduleEvent(
                     noteTime + noteDuration,
-                    () => {
-                        instrument.releaseNote(note.pitch || 'C4');
+                    (scheduledTime) => { // Bu callback de güncellenmeli
+                        instrument.releaseNote(note.pitch || 'C4', scheduledTime);
                     },
                     { type: 'noteOff', instrumentId, note }
                 );

@@ -1,7 +1,9 @@
+// src/store/useFileBrowserStore.js - Değişiklik Yok, sadece Tone.js bağımlılığı kalmadı.
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
-import { FILE_SYSTEM_TYPES } from '../config/constants'; // GÜNCELLENDİ
+import { FILE_SYSTEM_TYPES } from '../config/constants';
 
+// Bir düğümü ağaç yapısı içinde ID'sine göre bulan yardımcı fonksiyon.
 const findNode = (node, nodeId) => {
     if (node.id === nodeId) return node;
     if (node.children) {
@@ -13,6 +15,7 @@ const findNode = (node, nodeId) => {
     return null;
 };
 
+// Bir düğümü ağaçtan kaldıran yardımcı fonksiyon.
 const removeNode = (parent, nodeId) => {
     if (!parent.children) return parent;
     parent.children = parent.children.filter(child => child.id !== nodeId);
@@ -23,20 +26,29 @@ const removeNode = (parent, nodeId) => {
 const initialFileTree = {
     id: 'root',
     name: 'Kullanıcı Dosyaları',
-    type: FILE_SYSTEM_TYPES.FOLDER, // GÜNCELLENDİ
+    type: FILE_SYSTEM_TYPES.FOLDER,
     children: [
         {
-            id: 'folder-1',
+            id: 'folder-samples',
             name: 'Samples',
-            type: FILE_SYSTEM_TYPES.FOLDER, // GÜNCELLENDİ
+            type: FILE_SYSTEM_TYPES.FOLDER,
             children: [
-                { id: 'file-1', type: FILE_SYSTEM_TYPES.FILE, name: 'kick.wav', url: '/audio/kick.wav' }, // GÜNCELLENDİ
-                { id: 'file-2', type: FILE_SYSTEM_TYPES.FILE, name: 'snare.wav', url: '/audio/snare.wav' }, // GÜNCELLENDİ
+                { id: `file-${uuidv4()}`, type: FILE_SYSTEM_TYPES.FILE, name: 'kick.wav', url: '/audio/kick.wav' },
+                { id: `file-${uuidv4()}`, type: FILE_SYSTEM_TYPES.FILE, name: 'snare.wav', url: '/audio/snare.wav' },
+                { id: `file-${uuidv4()}`, type: FILE_SYSTEM_TYPES.FILE, name: 'hihat.wav', url: '/audio/hihat.wav' },
+                { id: `file-${uuidv4()}`, type: FILE_SYSTEM_TYPES.FILE, name: 'clap.wav', url: '/audio/clap.wav' },
             ],
         },
+        {
+            id: 'folder-loops',
+            name: 'Loops',
+            type: FILE_SYSTEM_TYPES.FOLDER,
+            children: [],
+        }
     ],
 };
 
+// Sadece ses dosyalarına ve MIDI dosyalarına izin ver.
 const ALLOWED_FILE_TYPES = ['audio/', 'video/midi', 'audio/midi'];
 
 export const useFileBrowserStore = create((set) => ({
@@ -50,7 +62,7 @@ export const useFileBrowserStore = create((set) => ({
       const newTree = JSON.parse(JSON.stringify(state.fileTree));
       const parentNode = findNode(newTree, parentId);
 
-      if (parentNode && parentNode.type === FILE_SYSTEM_TYPES.FOLDER) { // GÜNCELLENDİ
+      if (parentNode && parentNode.type === FILE_SYSTEM_TYPES.FOLDER) {
         let newName = 'Yeni Klasör';
         let counter = 2;
         while (parentNode.children.some(child => child.name === newName)) {
@@ -59,7 +71,7 @@ export const useFileBrowserStore = create((set) => ({
         parentNode.children.push({
           id: uuidv4(),
           name: newName,
-          type: FILE_SYSTEM_TYPES.FOLDER, // GÜNCELLENDİ
+          type: FILE_SYSTEM_TYPES.FOLDER,
           children: [],
         });
       }
@@ -98,14 +110,18 @@ export const useFileBrowserStore = create((set) => ({
       const newTree = JSON.parse(JSON.stringify(state.fileTree));
       const parentNode = findNode(newTree, parentId);
 
-      if (parentNode && parentNode.type === FILE_SYSTEM_TYPES.FOLDER) { // GÜNCELLENDİ
+      if (parentNode && parentNode.type === FILE_SYSTEM_TYPES.FOLDER) {
         validFiles.forEach(file => {
-          parentNode.children.push({
-            id: uuidv4(),
-            name: file.name,
-            type: FILE_SYSTEM_TYPES.FILE, // GÜNCELLENDİ
-            url: URL.createObjectURL(file),
-          });
+          // Aynı isimde bir dosya zaten var mı diye kontrol et.
+          if (!parentNode.children.some(child => child.name === file.name)) {
+            parentNode.children.push({
+              id: uuidv4(),
+              name: file.name,
+              type: FILE_SYSTEM_TYPES.FILE,
+              // Tarayıcının hafızasında geçici bir URL oluştur.
+              url: URL.createObjectURL(file), 
+            });
+          }
         });
       }
       return { fileTree: newTree };

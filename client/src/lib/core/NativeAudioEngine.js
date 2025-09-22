@@ -3,6 +3,8 @@ import { ImprovedWorkletManager } from '../audio/ImprovedWorkletManager.js';
 import { PlaybackManager } from './PlaybackManager.js';
 import { NativeTimeUtils } from '../utils/NativeTimeUtils.js';
 import { setGlobalAudioContext } from '../utils/audioUtils.js';
+// HATA DÜZELTMESİ 2: Eksik olan NativeSamplerNode sınıfını import ediyoruz.
+import { NativeSamplerNode } from './nodes/NativeSamplerNode.js';
 
 export class NativeAudioEngine {
     constructor(callbacks = {}) {
@@ -436,10 +438,10 @@ export class NativeAudioEngine {
             let instrument;
 
             if (instrumentData.type === 'sample') {
-                instrument = new NativeSampleInstrument(
+                // HATA DÜZELTMESİ 2: NativeSampleInstrument -> NativeSamplerNode olarak değiştirildi.
+                instrument = new NativeSamplerNode(
                     instrumentData,
                     this.sampleBuffers.get(instrumentData.id),
-                    this.workletManager,
                     this.audioContext
                 );
             } else if (instrumentData.type === 'synth') {
@@ -452,7 +454,11 @@ export class NativeAudioEngine {
                 throw new Error(`Unknown instrument type: ${instrumentData.type}`);
             }
 
-            await instrument.initialize();
+            // Synth'lerin asenkron bir initialize metodu olabilir.
+            if (typeof instrument.initialize === 'function') {
+              await instrument.initialize();
+            }
+            
             this.instruments.set(instrumentData.id, instrument);
 
             // Connect to mixer channel
@@ -479,6 +485,8 @@ export class NativeAudioEngine {
         // Default bus channels
         this._createMixerChannel('bus-1', 'Reverb Bus', { type: 'bus' });
         this._createMixerChannel('bus-2', 'Delay Bus', { type: 'bus' });
+        this._createMixerChannel('bus-3', 'Drum Bus', { type: 'bus' });
+
 
         // Default instrument channels
         for (let i = 1; i <= 16; i++) {
@@ -500,11 +508,13 @@ export class NativeAudioEngine {
                 }
             );
 
+            // HATA DÜZELTMESİ 1: workletManager'ı NativeMixerChannel'a iletiyoruz.
             const channel = new NativeMixerChannel(
                 id,
                 name,
                 mixerNode,
                 this.audioContext,
+                this.workletManager, // EKLENDİ
                 options
             );
 
@@ -680,7 +690,7 @@ export class NativeAudioEngine {
         const channel = this.mixerChannels.get(channelId);
 
         if (instrument && channel) {
-            instrument.connect(channel.input);
+            instrument.output.connect(channel.input);
             console.log(`🔗 Connected: ${instrumentId} -> ${channelId}`);
         }
     }
@@ -689,6 +699,9 @@ export class NativeAudioEngine {
         this.instruments.forEach(instrument => {
             if (instrument.allNotesOff) {
                 instrument.allNotesOff();
+            }
+             if (instrument.stopAll) {
+                instrument.stopAll();
             }
         });
     }
@@ -731,7 +744,7 @@ export class NativeAudioEngine {
         // Dispose instruments
         this.instruments.forEach((instrument, id) => {
             try {
-                instrument.dispose();
+                if(instrument.dispose) instrument.dispose();
             } catch (error) {
                 console.error(`❌ Error disposing instrument ${id}:`, error);
             }
@@ -772,7 +785,7 @@ class NativeSynthInstrument {
         this.audioContext = audioContext;
 
         this.workletNode = null;
-        this.outputGain = null;
+        this.output = null;
         this.parameters = new Map();
         this.activeNotes = new Set();
     }
@@ -790,10 +803,10 @@ class NativeSynthInstrument {
         );
 
         this.workletNode = node;
-        this.outputGain = this.audioContext.createGain();
-        this.outputGain.gain.value = 0.8;
+        this.output = this.audioContext.createGain();
+        this.output.gain.value = 0.8;
 
-        this.workletNode.connect(this.outputGain);
+        this.workletNode.connect(this.output);
 
         // Setup parameters
         ['pitch', 'gate', 'velocity', 'detune', 'filterFreq', 'filterQ',
@@ -875,21 +888,13 @@ class NativeSynthInstrument {
         return this.activeNotes.size;
     }
 
-    connect(destination) {
-        this.outputGain.connect(destination);
-    }
-
-    disconnect() {
-        this.outputGain.disconnect();
-    }
-
     dispose() {
         this.allNotesOff();
         if (this.workletNode) {
             this.workletNode.disconnect();
         }
-        if (this.outputGain) {
-            this.outputGain.disconnect();
+        if (this.output) {
+            this.output.disconnect();
         }
     }
 }
@@ -897,11 +902,12 @@ class NativeSynthInstrument {
 // =================== NATIVE MIXER CHANNEL CLASS ===================
 
 class NativeMixerChannel {
-    constructor(id, name, mixerNode, audioContext, options = {}) {
+    constructor(id, name, mixerNode, audioContext, workletManager, options = {}) {
         this.id = id;
         this.name = name;
         this.mixerNode = mixerNode;
         this.audioContext = audioContext;
+        this.workletManager = workletManager; // EKLENDİ
         this.isMaster = options.isMaster || false;
         this.type = options.type || 'track';
 
@@ -995,7 +1001,8 @@ class NativeMixerChannel {
             const effectId = `${this.id}_effect_${Date.now()}`;
             
             // Create effect using worklet
-            const { node } = await this.workletManager?.createWorkletNode(
+            // HATA DÜZELTMESİ 1: Artık this.workletManager'a erişebiliyoruz.
+            const workletResult = await this.workletManager?.createWorkletNode(
                 'effects-processor',
                 {
                     processorOptions: {
@@ -1004,6 +1011,12 @@ class NativeMixerChannel {
                     }
                 }
             );
+
+            if (!workletResult) {
+                throw new Error("Worklet node could not be created.");
+            }
+            
+            const { node } = workletResult;
 
             const effect = new NativeEffect(effectId, effectType, node, settings);
             this.effects.set(effectId, effect);

@@ -9,48 +9,47 @@ const defaultNote = (time, pitch = 'C4', velocity = 1.0, duration = '16n') => ({
   time, pitch, velocity, duration
 });
 
-// --- Pattern 1: Modern Trap (140 BPM) ---
+// --- DÜZELTME: Anahtar isimleri (keys) standart hale getirildi (boşluksuz, küçük harf) ---
 const trapNotes = {
   kick: [0, 6, 10, 16, 22, 26, 32, 38, 42, 48, 54, 58].map(t => defaultNote(t, 'C4', 1.0)),
   snare: [8, 24, 40, 56].map(t => defaultNote(t, 'C4', 0.9)),
-  hihat: Array.from({ length: 32 }).map((_, i) => defaultNote(i * 2, 'F#4', 0.6 + Math.random() * 0.1)),
+  'hi-hat': Array.from({ length: 32 }).map((_, i) => defaultNote(i * 2, 'F#4', 0.6 + Math.random() * 0.1)),
   openhat: [4, 20, 36, 52].map(t => defaultNote(t, 'G#4', 0.7, '8n')),
-  wobbleBass: [
+  wobblebass: [
     { t: 0, p: 'C2', d: '2n' }, { t: 8, p: 'C2', d: '4n' }, { t: 12, p: 'G#1', d: '4n' },
     { t: 16, p: 'G1', d: '2n' }, { t: 24, p: 'G1', d: '4n' }, { t: 28, p: 'F1', d: '4n' },
   ].map(n => defaultNote(n.t, n.p, 1.0, n.d)),
-  pluckLead: [
+  plucklead: [
     { t: 0, p: 'G4' }, { t: 2, p: 'C5' }, { t: 4, p: 'D#5' }, { t: 6, p: 'G5' },
     { t: 16, p: 'F4' }, { t: 18, p: 'G#4' }, { t: 20, p: 'C5' }, { t: 22, p: 'F5' },
   ].map(n => defaultNote(n.t, n.p, 0.8, '8n')),
-  etherealPad: [
+  etherealpad: [
       {t: 0, p: 'G#3', d: '1n'}, {t: 16, p: 'G3', d: '1n'}, {t: 32, p: 'F3', d: '1n'}, {t: 48, p: 'D#3', d: '1n'}
   ].map(n => defaultNote(n.t, n.p, 0.7, n.d))
 };
 
-// --- Pattern 2: Classic House (124 BPM) ---
 const houseNotes = {
     kick: [0, 4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60].map(t => defaultNote(t, 'C4', 1.0)),
     clap: [8, 24, 40, 56].map(t => defaultNote(t, 'C4', 0.9)),
-    offbeatHat: [2, 6, 10, 14, 18, 22, 26, 30, 34, 38, 42, 46, 50, 54, 58, 62].map(t => defaultNote(t, 'F#4', 0.7)),
-    chicagoPiano: [
+    offbeathat: [2, 6, 10, 14, 18, 22, 26, 30, 34, 38, 42, 46, 50, 54, 58, 62].map(t => defaultNote(t, 'F#4', 0.7)),
+    chicagopiano: [
         {t: 0, p: 'A#3', d: '8n'}, {t: 2, p: 'C4', d: '8n'}, {t: 4, p: 'D#4', d: '8n'}, {t: 6, p: 'G4', d: '8n'},
         {t: 16, p: 'G#3', d: '8n'}, {t: 18, p: 'C4', d: '8n'}, {t: 20, p: 'D4', d: '8n'}, {t: 22, p: 'F4', d: '8n'},
     ].map(n => defaultNote(n.t, n.p, 0.85, n.d)),
-    deepBass: [
+    deepbass: [
         {t: 0, p: 'D#2', d: '4n'}, {t: 4, p: 'D#2', d: '4n'}, {t: 8, p: 'D#2', d: '4n'}, {t: 12, p: 'D#2', d: '4n'},
     ].map(n => defaultNote(n.t, n.p, 1.0, n.d))
 };
 
-// --- Pattern 3: Ambient Cinematic (90 BPM) ---
 const ambientNotes = {
-    evolvingPad: [{t: 0, p: 'C3', d: '16n'}].map(n => defaultNote(n.t, n.p, 0.8, n.d)), // 4 bar'lık tek nota
-    crystalKeys: [
+    evolvingpad: [{t: 0, p: 'C3', d: '16n'}].map(n => defaultNote(n.t, n.p, 0.8, n.d)),
+    crystalkeys: [
         {t: 0, p: 'G5'}, {t: 8, p: 'C5'}, {t: 16, p: 'D#5'}, {t: 28, p: 'A#4'},
         {t: 32, p: 'F5'}, {t: 40, p: 'G4'}, {t: 48, p: 'C5'}, {t: 60, p: 'G5'},
     ].map(n => defaultNote(n.t, n.p, 0.7, '2n')),
-    subBassDrone: [{t: 0, p: 'C1', d: '16n'}].map(n => defaultNote(n.t, n.p, 1.0, n.d))
+    subbassdrone: [{t: 0, p: 'C1', d: '16n'}].map(n => defaultNote(n.t, n.p, 1.0, n.d))
 };
+
 
 // =========================================================================
 // === FORGESYNTH PRESET KÜTÜPHANESİ ===
@@ -168,30 +167,27 @@ const forgeSynthPresets = {
 // =========================================================================
 
 export const initialInstruments = [
+  // --- DÜZELTME: Gereksiz `notes` özellikleri kaldırıldı ---
   // --- Ritim (Samples) ---
-  { id: 'inst-1', name: 'Kick', type: INSTRUMENT_TYPES.SAMPLE, url: '/audio/kick.wav', notes: trapNotes.kick, mixerTrackId: 'track-1', pianoRoll: false },
-  { id: 'inst-2', name: 'Snare', type: INSTRUMENT_TYPES.SAMPLE, url: '/audio/snare.wav', notes: trapNotes.snare, mixerTrackId: 'track-2', pianoRoll: false },
-  { id: 'inst-3', name: 'Clap', type: INSTRUMENT_TYPES.SAMPLE, url: '/audio/clap.wav', notes: houseNotes.clap, mixerTrackId: 'track-3', pianoRoll: false },
-  { id: 'inst-4', name: 'Hi-Hat', type: INSTRUMENT_TYPES.SAMPLE, url: '/audio/hihat.wav', notes: trapNotes.hihat, mixerTrackId: 'track-4', pianoRoll: false },
-  { id: 'inst-5', name: 'Offbeat Hat', type: INSTRUMENT_TYPES.SAMPLE, url: '/audio/openhat.wav', notes: houseNotes.offbeatHat, mixerTrackId: 'track-5', pianoRoll: false, cutItself: true },
+  { id: 'inst-1', name: 'Kick', type: INSTRUMENT_TYPES.SAMPLE, url: '/audio/kick.wav', mixerTrackId: 'track-1', pianoRoll: false },
+  { id: 'inst-2', name: 'Snare', type: INSTRUMENT_TYPES.SAMPLE, url: '/audio/snare.wav', mixerTrackId: 'track-2', pianoRoll: false },
+  { id: 'inst-3', name: 'Clap', type: INSTRUMENT_TYPES.SAMPLE, url: '/audio/clap.wav', mixerTrackId: 'track-3', pianoRoll: false },
+  { id: 'inst-4', name: 'Hi-Hat', type: INSTRUMENT_TYPES.SAMPLE, url: '/audio/hihat.wav', mixerTrackId: 'track-4', pianoRoll: false },
+  { id: 'inst-5', name: 'Offbeat Hat', type: INSTRUMENT_TYPES.SAMPLE, url: '/audio/openhat.wav', mixerTrackId: 'track-5', pianoRoll: false, cutItself: true },
 
   // --- Bass (Synth & Sample) ---
-  { id: 'inst-6', name: 'Wobble Bass', type: INSTRUMENT_TYPES.SYNTH, notes: trapNotes.wobbleBass, mixerTrackId: 'track-6', pianoRoll: true, synthParams: forgeSynthPresets['Wobble Bass'] },
-  { id: 'inst-7', name: 'Deep Bass', type: INSTRUMENT_TYPES.SYNTH, notes: houseNotes.deepBass, mixerTrackId: 'track-7', pianoRoll: true, synthParams: forgeSynthPresets['Deep Bass'] },
-  { id: 'inst-8', name: 'Sub Bass Drone', type: INSTRUMENT_TYPES.SYNTH, notes: ambientNotes.subBassDrone, mixerTrackId: 'track-8', pianoRoll: true, synthParams: forgeSynthPresets['Sub Bass Drone'] },
+  { id: 'inst-6', name: 'Wobble Bass', type: INSTRUMENT_TYPES.SYNTH, mixerTrackId: 'track-6', pianoRoll: true, synthParams: forgeSynthPresets['Wobble Bass'] },
+  { id: 'inst-7', name: 'Deep Bass', type: INSTRUMENT_TYPES.SYNTH, mixerTrackId: 'track-7', pianoRoll: true, synthParams: forgeSynthPresets['Deep Bass'] },
+  { id: 'inst-8', name: 'Sub Bass Drone', type: INSTRUMENT_TYPES.SYNTH, mixerTrackId: 'track-8', pianoRoll: true, synthParams: forgeSynthPresets['Sub Bass Drone'] },
 
   // --- Melodi & Armoni (Synth'ler) ---
-  { id: 'inst-9', name: 'Pluck Lead', type: INSTRUMENT_TYPES.SYNTH, notes: trapNotes.pluckLead, mixerTrackId: 'track-9', pianoRoll: true, synthParams: forgeSynthPresets['Pluck Lead'] },
-  { id: 'inst-10', name: 'Ethereal Pad', type: INSTRUMENT_TYPES.SYNTH, notes: trapNotes.etherealPad, mixerTrackId: 'track-10', pianoRoll: true, synthParams: forgeSynthPresets['Ethereal Pad'] },
-  { id: 'inst-11', name: 'Chicago Piano', type: INSTRUMENT_TYPES.SYNTH, notes: houseNotes.chicagoPiano, mixerTrackId: 'track-11', pianoRoll: true, synthParams: forgeSynthPresets['Chicago Piano'] },
+  { id: 'inst-9', name: 'Pluck Lead', type: INSTRUMENT_TYPES.SYNTH, mixerTrackId: 'track-9', pianoRoll: true, synthParams: forgeSynthPresets['Pluck Lead'] },
+  { id: 'inst-10', name: 'Ethereal Pad', type: INSTRUMENT_TYPES.SYNTH, mixerTrackId: 'track-10', pianoRoll: true, synthParams: forgeSynthPresets['Ethereal Pad'] },
+  { id: 'inst-11', name: 'Chicago Piano', type: INSTRUMENT_TYPES.SYNTH, mixerTrackId: 'track-11', pianoRoll: true, synthParams: forgeSynthPresets['Chicago Piano'] },
   
   // --- Sinematik (Synth'ler) ---
-  { id: 'inst-12', name: 'Evolving Pad', type: INSTRUMENT_TYPES.SYNTH, notes: ambientNotes.evolvingPad, mixerTrackId: 'track-12', pianoRoll: true, synthParams: forgeSynthPresets['Evolving Pad'] },
-  { id: 'inst-13', name: 'Crystal Keys', type: INSTRUMENT_TYPES.SYNTH, notes: ambientNotes.crystalKeys, mixerTrackId: 'track-13', pianoRoll: true, synthParams: forgeSynthPresets['Crystal Keys'] },
-  
-  // === BU İKİ SATIRI SİL VEYA YORUM SATIRI YAP ===
-  // { id: 'inst-14', name: 'Vocal Chop', type: INSTRUMENT_TYPES.SAMPLE, url: '/audio/vocal.wav', notes: [], mixerTrackId: 'track-14', pianoRoll: true },
-  // { id: 'inst-15', name: 'Impact FX', type: INSTRUMENT_TYPES.SAMPLE, url: '/audio/impact.wav', notes: [], mixerTrackId: 'track-15', pianoRoll: false },
+  { id: 'inst-12', name: 'Evolving Pad', type: INSTRUMENT_TYPES.SYNTH, mixerTrackId: 'track-12', pianoRoll: true, synthParams: forgeSynthPresets['Evolving Pad'] },
+  { id: 'inst-13', name: 'Crystal Keys', type: INSTRUMENT_TYPES.SYNTH, mixerTrackId: 'track-13', pianoRoll: true, synthParams: forgeSynthPresets['Crystal Keys'] },
 ];
 
 export const initialMixerTracks = [

@@ -160,36 +160,57 @@ export class NativeTransportSystem {
     // =================== SCHEDULING CORE ===================
 
     scheduler() {
-        while (this.nextTickTime < this.audioContext.currentTime + this.scheduleAheadTime) {
+        // Ses motorunun mevcut zamanının biraz ilerisine kadar olan olayları planla
+        const scheduleUntil = this.audioContext.currentTime + this.scheduleAheadTime;
+
+        while (this.nextTickTime < scheduleUntil) {
+            // 1. UI ve pozisyon güncellemeleri için tick olayını tetikle
             this.scheduleCurrentTick(this.nextTickTime);
+
+            // 2. ANA DÜZELTME: Zamanlanmış nota olaylarını işle
+            this.processScheduledEvents(this.nextTickTime);
+            
+            // 3. Bir sonraki tick'e ilerle
             this.nextTick();
         }
     }
 
     scheduleCurrentTick(time) {
-        // Position callback
+        // Bu fonksiyon artık sadece UI güncellemelerinden sorumlu
         this.triggerCallback('tick', {
             time: time,
             position: this.currentTick,
             formatted: this.formatPosition(this.currentTick)
         });
 
-        // Beat ve bar callbacks
         if (this.currentTick % this.ppq === 0) {
             const beat = Math.floor(this.currentTick / this.ppq) % this.timeSignature[0];
             this.triggerCallback('beat', { time, beat });
-
             if (beat === 0) {
                 const bar = Math.floor(this.currentTick / (this.ppq * this.timeSignature[0]));
                 this.triggerCallback('bar', { time, bar });
             }
         }
+    }
 
-        // Pattern events'leri schedule et
-        this.schedulePatternEvents(time);
-
-        // Generic scheduled events
-        this.processScheduledEvents(time);
+    // YENİ VE DOĞRU ÇALIŞAN processScheduledEvents METODU
+    processScheduledEvents(tickTime) {
+        // O anki tick zamanına denk gelen tüm notaları bul
+        for (const [scheduledTime, events] of this.scheduledEvents.entries()) {
+            // Zamanı gelen notaları işle
+            if (scheduledTime <= tickTime) {
+                events.forEach(event => {
+                    try {
+                        // Callback'i, olması gereken hassas zamanla çağır
+                        event.callback(scheduledTime, event.data);
+                    } catch (error) {
+                        console.error('❌ Scheduled event error:', error);
+                    }
+                });
+                // İşlenen notaları listeden sil
+                this.scheduledEvents.delete(scheduledTime);
+            }
+        }
     }
 
     nextTick() {

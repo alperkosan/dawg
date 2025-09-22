@@ -1,8 +1,7 @@
 // src/lib/core/nodes/NativeSamplerNode.js - ANINDA SUSTURMA YETENEĞİ EKLENDİ VE TONE.JS KALDIRILDI
 
-// GÜNCELLENDİ: Tone.js yerine kendi zamanlama aracımızı ve store'u import ediyoruz.
-import { NativeTimeUtils } from '../utils/NativeTimeUtils';
-import { usePlaybackStore } from '../../store/usePlaybackStore';
+import { NativeTimeUtils } from '../../utils/NativeTimeUtils';
+import { usePlaybackStore } from '../../../store/usePlaybackStore';
 
 export class NativeSamplerNode {
   constructor(instrumentData, audioBuffer, audioContext) {
@@ -29,8 +28,10 @@ export class NativeSamplerNode {
 
     if (this.pianoRoll) {
       const midiNoteC4 = 60;
-      const targetMidi = this.pitchToMidi(pitch);
+      // --- DÜZELTME BURADA: pitch'in tanımsız olma ihtimaline karşı 'C4' varsayılanı ekleniyor.
+      const targetMidi = this.pitchToMidi(pitch || 'C4'); 
       const semitoneShift = targetMidi - midiNoteC4;
+      // playbackRate'in her zaman geçerli bir sayı olmasını garantiliyoruz.
       source.playbackRate.setValueAtTime(Math.pow(2, semitoneShift / 12), startTime);
     }
 
@@ -78,12 +79,21 @@ export class NativeSamplerNode {
   }
 
   pitchToMidi(pitch) {
+    // Eğer pitch null veya undefined ise, hemen varsayılan değeri döndür.
+    if (!pitch) return 60; 
+
     const noteNames = { C: 0, 'C#': 1, D: 2, 'D#': 3, E: 4, F: 5, 'F#': 6, G: 7, 'G#': 8, A: 9, 'A#': 10, B: 11 };
     const match = pitch.match(/([A-G]#?)(-?\d+)/);
     if (!match) return 60;
+    
     const noteName = match[1];
     const octave = parseInt(match[2], 10);
-    return (octave + 1) * 12 + noteNames[noteName];
+    const noteValue = noteNames[noteName];
+
+    // Eğer nota ismi haritada bulunamazsa, tanımsız değerle hesaplama yapmasını engelle.
+    if (noteValue === undefined) return 60;
+
+    return (octave + 1) * 12 + noteValue;
   }
 
   releaseNote() {}
