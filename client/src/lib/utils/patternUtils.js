@@ -1,74 +1,100 @@
-/**
- * @file patternUtils.js
- * @description Döngü uzunluklarını hesaplamak için merkezi ve standart yardımcı fonksiyonlar.
- */
-
-/**
- * Tek bir pattern içindeki notalara göre döngü uzunluğunu ADIM cinsinden hesaplar.
- * @param {object} pattern - { id, name, data: { instId: [notes] } } yapısındaki pattern objesi.
- * @returns {number} 16'nın katı olarak hesaplanmış döngü uzunluğu (adım sayısı).
- */
-export const calculatePatternLoopLength = (pattern) => {
-  if (!pattern?.data) return 16; // Varsayılan 1 bar (16 adım)
-
-  let lastStep = 0;
-  Object.values(pattern.data).forEach(notes => {
-    if (Array.isArray(notes) && notes.length > 0) {
-      const maxTime = Math.max(...notes.map(note => note.time));
-      if (maxTime > lastStep) {
-        lastStep = maxTime;
+export const EnhancedPatternUtils = {
+  // ✅ NEW: Smart loop calculation based on content density
+  calculateSmartLoopLength: (pattern, mode = 'auto') => {
+    if (!pattern?.data) return 16;
+    
+    let noteCount = 0;
+    let lastNoteTime = 0;
+    let density = 0;
+    
+    Object.values(pattern.data).forEach(notes => {
+      if (Array.isArray(notes)) {
+        noteCount += notes.length;
+        notes.forEach(note => {
+          lastNoteTime = Math.max(lastNoteTime, note.time || 0);
+        });
       }
+    });
+    
+    density = noteCount / Math.max(lastNoteTime, 1);
+    
+    switch (mode) {
+      case 'tight':
+        // Minimum loop that contains all content
+        return Math.max(16, Math.ceil(lastNoteTime / 16) * 16);
+        
+      case 'extended':
+        // Add extra space for breathing room
+        return Math.max(32, Math.ceil(lastNoteTime / 16) * 16 + 16);
+        
+      case 'auto':
+      default:
+        // Smart calculation based on density
+        if (density > 2) {
+          return Math.max(16, Math.ceil(lastNoteTime / 16) * 16);
+        } else {
+          return Math.max(32, Math.ceil(lastNoteTime / 16) * 16 + 16);
+        }
     }
-  });
+  },
 
-  const requiredBars = Math.floor(lastStep / 16) + 1;
-  return Math.max(4, requiredBars) * 16; // Minimum 4 bar (64 adım) varsayalım
-};
+  // ✅ NEW: Calculate song sections
+  calculateSongSections: (clips) => {
+    if (!Array.isArray(clips) || clips.length === 0) {
+      return [{ name: 'Empty', start: 0, end: 64, type: 'empty' }];
+    }
+    
+    const sections = [];
+    let currentPos = 0;
+    
+    // Sort clips by start time
+    const sortedClips = [...clips].sort((a, b) => (a.startTime || 0) - (b.startTime || 0));
+    
+    sortedClips.forEach((clip, index) => {
+      const clipStart = (clip.startTime || 0) * 16;
+      const clipEnd = clipStart + ((clip.duration || 4) * 16);
+      
+      // Add gap if there's space before this clip
+      if (clipStart > currentPos) {
+        sections.push({
+          name: 'Gap',
+          start: currentPos,
+          end: clipStart,
+          type: 'gap'
+        });
+      }
+      
+      // Add the clip section
+      sections.push({
+        name: clip.name || `Clip ${index + 1}`,
+        start: clipStart,
+        end: clipEnd,
+        type: 'clip',
+        clipId: clip.id,
+        patternId: clip.patternId
+      });
+      
+      currentPos = Math.max(currentPos, clipEnd);
+    });
+    
+    return sections;
+  },
 
-/**
- * Aranjmandaki en son klibin bitiş zamanına göre döngü uzunluğunu ADIM cinsinden hesaplar.
- * @param {Array} clips - Aranjmandaki klipleri içeren dizi.
- * @returns {number} - 16'nın katı olarak hesaplanmış döngü uzunluğu.
- */
-export const calculateArrangementLoopLength = (clips) => {
-  if (!Array.isArray(clips) || clips.length === 0) {
-    return 64; // Varsayılan 4 bar (64 adım)
+  // ✅ NEW: Find optimal loop points
+  findOptimalLoopPoints: (content, contentType = 'pattern') => {
+    if (contentType === 'pattern') {
+      const length = calculatePatternLoopLength(content);
+      return { start: 0, end: length };
+    } else {
+      // Song mode - find natural loop points
+      const sections = EnhancedPatternUtils.calculateSongSections(content);
+      const totalLength = Math.max(...sections.map(s => s.end));
+      
+      // Look for power-of-2 loop points that make musical sense
+      const candidates = [16, 32, 64, 128, 256];
+      const bestLength = candidates.find(len => len >= totalLength) || totalLength;
+      
+      return { start: 0, end: bestLength };
+    }
   }
-
-  let lastBar = 0;
-  clips.forEach(clip => {
-    const clipEndBar = (clip.startTime || 0) + (clip.duration || 0);
-    if (clipEndBar > lastBar) {
-      lastBar = clipEndBar;
-    }
-  });
-
-  const requiredBars = Math.ceil(lastBar / 4) * 4;
-  return Math.max(4, requiredBars) * 16; // Adım sayısını döndür
-};
-
-/**
- * === KAYIP FONKSİYON (GÜÇLENDİRİLEREK GERİ GELDİ) ===
- * Projenin o anki moduna göre doğru ses döngüsü uzunluğunu hesaplayan ana fonksiyon.
- * @param {string} mode - 'pattern' veya 'song'.
- * @param {object} data - Gerekli verileri içeren obje: { patterns, activePatternId, clips }.
- * @returns {number} - Adım cinsinden hesaplanmış ses motoru döngü uzunluğu.
- */
-export const calculateAudioLoopLength = (mode, data) => {
-    if (mode === 'song') {
-        return calculateArrangementLoopLength(data.clips);
-    }
-    // Varsayılan olarak ve 'pattern' modunda
-    const activePattern = data.patterns?.[data.activePatternId];
-    return calculatePatternLoopLength(activePattern);
-};
-
-
-/**
- * Channel Rack gibi UI bileşenlerinde gösterilecek uzunluğu hesaplar.
- * @param {number} audioLoopLengthInSteps - Adım cinsinden ses döngüsü uzunluğu.
- * @returns {number} - UI'da gösterilecek toplam adım sayısı.
- */
-export const calculateUIRackLength = (audioLoopLengthInSteps) => {
-  return audioLoopLengthInSteps + 16; // Her zaman fazladan 1 bar boşluk bırak
 };

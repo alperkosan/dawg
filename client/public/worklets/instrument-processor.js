@@ -83,6 +83,14 @@ class InstrumentProcessor extends AudioWorkletProcessor {
         case 'setParam':
           // Real-time parameter changes (if needed)
           break;
+
+        case 'automation':
+          this.applyAutomation(data.parameter, data.value, data.time);
+          break;
+          
+        case 'scheduleAutomation':
+          this.scheduleAutomationEvent(data.parameter, data.value, data.time);
+          break;
           
         default:
           console.warn(`Unknown message type: ${type}`);
@@ -161,6 +169,29 @@ class InstrumentProcessor extends AudioWorkletProcessor {
   stopPatternPlayback() {
     this.isPatternPlaying = false;
     this.allNotesOff();
+  }
+
+  applyAutomation(parameter, value, time) {
+    const param = this.parameters.get(parameter);
+    if (param) {
+      if (time) {
+        param.setTargetAtTime(value, time, 0.01);
+      } else {
+        param.value = value;
+      }
+    }
+  }
+
+  scheduleAutomationEvent(parameter, value, time) {
+    // Schedule future automation events
+    const delay = (time - currentTime) * 1000;
+    if (delay > 0) {
+      setTimeout(() => {
+        this.applyAutomation(parameter, value);
+      }, delay);
+    } else {
+      this.applyAutomation(parameter, value);
+    }
   }
 
   process(inputs, outputs, parameters) {

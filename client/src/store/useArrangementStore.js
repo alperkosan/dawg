@@ -73,11 +73,6 @@ export const useArrangementStore = create(arrangementStoreOrchestrator((set, get
   zoomX: 1,
 
   // --- Eylemler ---
-  
-  setActivePatternId: (patternId) => {
-    set({ activePatternId: patternId });
-    AudioContextService?.reschedule();
-  },
 
   nextPattern: () => {
     const { patternOrder, activePatternId } = get();
@@ -118,5 +113,60 @@ export const useArrangementStore = create(arrangementStoreOrchestrator((set, get
         });
     }
   },
+  // ✅ NEW: Playback-aware pattern switching
+  setActivePatternId: (patternId) => {
+    const currentState = get();
+    if (currentState.activePatternId === patternId) return;
+    
+    set({ activePatternId: patternId });
+    
+    // Update playback if in pattern mode
+    const playbackState = usePlaybackStore.getState();
+    if (playbackState.playbackMode === PLAYBACK_MODES.PATTERN) {
+      // Update loop settings for new pattern
+      playbackState.updateLoopSettings();
+      
+      // Reschedule if playing
+      if (playbackState.playbackState === PLAYBACK_STATES.PLAYING) {
+        AudioContextService.schedulePatternContent();
+      }
+    }
+    
+    console.log(`🎯 Active pattern changed: ${patternId}`);
+  },
 
+  // ✅ NEW: Smart clip manipulation
+  addClipWithPlayback: (clipData) => {
+    const currentState = get();
+    const newClip = {
+      id: `clip_${Date.now()}`,
+      ...clipData
+    };
+    
+    set({
+      clips: [...currentState.clips, newClip]
+    });
+    
+    // Update song loop if in song mode
+    const playbackState = usePlaybackStore.getState();
+    if (playbackState.playbackMode === PLAYBACK_MODES.SONG) {
+      playbackState.updateLoopSettings();
+    }
+    
+    return newClip;
+  },
+
+  // ✅ NEW: Pattern length calculation
+  getPatternPlaybackLength: (patternId) => {
+    const pattern = get().patterns[patternId];
+    if (!pattern) return 64;
+    
+    return calculatePatternLoopLength(pattern);
+  },
+
+  // ✅ NEW: Song length calculation  
+  getSongPlaybackLength: () => {
+    const clips = get().clips;
+    return calculateAudioLoopLength('song', { clips });
+  }
 })));
