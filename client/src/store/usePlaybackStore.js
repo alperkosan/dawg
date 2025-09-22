@@ -1,3 +1,5 @@
+// src/store/usePlaybackStore.js - Play Tuşu Düzeltmesi
+
 import { create } from 'zustand';
 import { useArrangementStore } from './useArrangementStore';
 import { calculateAudioLoopLength, calculateUIRackLength, calculatePatternLoopLength } from '../lib/utils/patternUtils';
@@ -11,47 +13,39 @@ const initialPatternData = initialInstruments.reduce((acc, inst) => {
 }, {});
 
 const initialActivePattern = { id: 'pattern-1', name: 'Pattern 1', data: initialPatternData };
-
 const initialAudioLoopLength = calculatePatternLoopLength(initialActivePattern);
 const initialUiRackLength = calculateUIRackLength(initialAudioLoopLength);
 
 export const usePlaybackStore = create((set, get) => ({
-  playbackState: PLAYBACK_STATES.STOPPED, // GÜNCELLENDİ
+  playbackState: PLAYBACK_STATES.STOPPED,
   bpm: 60,
   masterVolume: 0,
   transportPosition: '1:1:00',
-  playbackMode: PLAYBACK_MODES.PATTERN, // GÜNCELLENDİ
+  playbackMode: PLAYBACK_MODES.PATTERN,
   loopLength: initialUiRackLength,
   audioLoopLength: initialAudioLoopLength,
-
   loopStartStep: 0,
-  loopEndStep: initialAudioLoopLength, // Başlangıçta tüm pattern'ı kapsasın
+  loopEndStep: initialAudioLoopLength,
 
   updateLoopLength: () => {
+    // ... (bu fonksiyon aynı kalıyor) ...
     const { playbackMode } = get();
     const { clips, patterns, activePatternId } = useArrangementStore.getState();
-
-    // === HATA DÜZELTMESİ: Eksik parametreler eklendi ===
     const newAudioLoopLength = calculateAudioLoopLength(playbackMode, {
       patterns,
       activePatternId,
       clips,
     });
-    
     const newUiRackLength = calculateUIRackLength(newAudioLoopLength);
     set({
       audioLoopLength: newAudioLoopLength,
       loopLength: newUiRackLength,
-      loopStartStep: 0, // Aktif pattern değiştiğinde döngüyü başa al
+      loopStartStep: 0,
       loopEndStep: newAudioLoopLength,
     });
-    
-    // Yeni toplam uzunluğu ses motoruna bildir
     AudioContextService.updateLoopRange(0, newAudioLoopLength);
-    console.log(`[PlaybackStore] Döngü uzunlukları güncellendi: Audio(${newAudioLoopLength}), UI(${newUiRackLength})`);
   },
 
-  // === YENİ: Döngü aralığını güncelleyen ve ses motorunu bilgilendiren aksiyon ===
   setLoopRange: (startStep, endStep) => {
     set({ loopStartStep: startStep, loopEndStep: endStep });
     AudioContextService.updateLoopRange(startStep, endStep);
@@ -64,7 +58,6 @@ export const usePlaybackStore = create((set, get) => ({
     if (typeof position === 'object' && position !== null && position.hasOwnProperty('formatted')) {
       positionString = position.formatted;
     } else if (typeof position === 'object') {
-      console.warn("setTransportPosition beklenmedik bir obje aldı:", position);
       positionString = 'HATA'; 
     }
     set({
@@ -74,17 +67,16 @@ export const usePlaybackStore = create((set, get) => ({
   },
 
   setPlaybackMode: (mode) => {
-      const currentState = get();
-      if (currentState.playbackMode === mode) return;
-
-      set({ playbackMode: mode });
-      get().updateLoopLength();
-      
-      const isPlaying = currentState.playbackState === PLAYBACK_STATES.PLAYING || currentState.playbackState === PLAYBACK_STATES.PAUSED; // GÜNCELLENDİ
-      if (AudioContextService && isPlaying) {
-        AudioContextService.reschedule();
-      }
-    },
+    // ... (bu fonksiyon aynı kalıyor) ...
+    const currentState = get();
+    if (currentState.playbackMode === mode) return;
+    set({ playbackMode: mode });
+    get().updateLoopLength();
+    const isPlaying = currentState.playbackState === PLAYBACK_STATES.PLAYING || currentState.playbackState === PLAYBACK_STATES.PAUSED;
+    if (AudioContextService && isPlaying) {
+      AudioContextService.reschedule();
+    }
+  },
 
   handleBpmChange: (newBpm) => {
     const clampedBpm = Math.max(40, Math.min(300, newBpm));
@@ -97,26 +89,21 @@ export const usePlaybackStore = create((set, get) => ({
     AudioContextService?.setMasterVolume(newVolume);
   },
 
+  // --- DÜZELTME BURADA ---
   handlePlay: () => {
     if (!AudioContextService) return;
-    
-    // === DÜZELTME BURADA ===
-    // 'loopStartStep' yerine, o anki güncel pozisyon olan 'transportStep'i alıyoruz.
     const { playbackState, transportStep } = get();
-
-    // Sadece durdurulmuş durumdayken baştan başlatma işlemini yap
+    
+    // Hatalı `AudioContextService.start` çağrısını, doğru olan `AudioContextService.play` ile değiştiriyoruz.
     if (playbackState === PLAYBACK_STATES.STOPPED) {
-        // Ses motoruna, döngü başından değil, GÜNCEL POZİSYONDAN başlamasını söylüyoruz.
-        AudioContextService.start(transportStep);
+        AudioContextService.play(transportStep);
     } else {
-        // Duraklatılmışsa, sadece devam et
         AudioContextService.resume();
     }
   },
-
+  // --- DÜZELTME SONU ---
 
   handlePause: () => {
-    // Bu fonksiyon artık sadece duraklatma işini yapıyor
     AudioContextService?.pause();
   },
 

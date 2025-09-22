@@ -1,111 +1,110 @@
-import React, { useState, useEffect } from 'react';
-import * as Tone from 'tone';
-import AudioEngine from './lib/core/AudioEngine';
-import WorkspacePanel from './layout/WorkspacePanel';
-import StartupScreen from './components/StartUpScreen';
+// src/App.jsx - TONE.JS'TEN %100 ARINDIRILMIŞ FİNAL VERSİYON
+
+import React, { useState, useEffect, useRef } from 'react';
+
+// Bileşenler
+import StartupScreen from './components/StartUpScreen'; 
 import { ThemeProvider } from './components/ThemeProvider';
-import MainToolbar from './features/main_toolbar/MainToolbar';
 import TopToolbar from './features/top_toolbar/TopToolbar';
+import MainToolbar from './features/main_toolbar/MainToolbar';
+import WorkspacePanel from './layout/WorkspacePanel';
 import Taskbar from './features/taskbar/Taskbar';
-import { KeybindingService, destroyKeybindings } from './lib/core/KeybindingService';
-import { usePlaybackStore } from './store/usePlaybackStore';
-import { useInstrumentsStore } from './store/useInstrumentsStore';
-import { useMixerStore } from './store/useMixerStore';
-import { useArrangementStore } from './store/useArrangementStore';
-import { usePanelsStore } from './store/usePanelsStore';
+
+// Motor ve Servisler
+import { NativeAudioEngine } from './lib/core/NativeAudioEngine';
 import { AudioContextService } from './lib/services/AudioContextService';
-import { keymap } from './config/keymapConfig';
-import { commandManager } from './lib/commands/CommandManager';
+import { NativeAudioContextManager } from './lib/core/NativeAudioContextManager'; // Context Manager'ı import et
 
-// AppContent artık sadece layout'u yönetiyor, gereksiz prop'lar yok.
-function AppContent() {
-  useEffect(() => {
-    // Merkezi Klavye Kısayol Servisini Başlat
-    const actions = {
-      TOGGLE_PLAY_PAUSE: () => {
-        const { playbackState, handlePause, handlePlay } = usePlaybackStore.getState();
-        if (playbackState === 'playing') {
-          handlePause();
-        } else {
-          handlePlay();
-        }
-      },
-      STOP: () => {
-        usePlaybackStore.getState().handleStop();
-      },
-      OPEN_CHANNEL_RACK: () => usePanelsStore.getState().togglePanel('channel-rack'),
-      OPEN_MIXER: () => usePanelsStore.getState().togglePanel('mixer'),
-      OPEN_PIANO_ROLL: () => usePanelsStore.getState().togglePanel('piano-roll'),
-      UNDO: () => commandManager.undo(),
-      REDO: () => commandManager.redo(),
-    };
-    
-    KeybindingService(keymap, actions);
-    return () => destroyKeybindings();
-  }, []);
+// Store'lar
+import { useInstrumentsStore } from './store/useInstrumentsStore';
+import { usePlaybackStore } from './store/usePlaybackStore';
 
-  // Tüm layout, BEM ve merkezi CSS'e uygun olarak yeniden düzenlendi.
-  // Tailwind sınıfları tamamen kaldırıldı.
-  return (
-    <div className="app-container">
-      <TopToolbar />
-      <MainToolbar />
-      <main className="app-main">
-        <WorkspacePanel />
-      </main>
-      <Taskbar />
+// ... (LoadingScreen ve ErrorScreen bileşenleri aynı kalabilir) ...
+const LoadingScreen = ({ message }) => (
+    <div className="fixed inset-0 bg-gray-900 flex items-center justify-center text-white">
+        <div className="text-center">
+            <div className="animate-spin rounded-full h-24 w-24 border-b-2 border-green-400 mx-auto mb-4"></div>
+            <h2 className="text-xl font-bold">{message}</h2>
+        </div>
     </div>
-  );
-}
+);
+const ErrorScreen = ({ message }) => (
+    <div className="fixed inset-0 bg-red-900 text-white p-8">Hata: {message}</div>
+);
+
 
 function App() {
-  const [isAudioInitialized, setIsAudioInitialized] = useState(false);
+  const [appStatus, setAppStatus] = useState('pending'); // 'pending', 'initializing', 'running', 'error'
+  const [error, setError] = useState(null);
+  
+  // AudioContext'i App state'inde tutacağız
+  const audioContextRef = useRef(null);
 
-  const initializeAudio = async () => {
-    if (AudioContextService.getAudioEngine()) return;
+  const handleStart = async () => {
+    // Eğer context zaten varsa (örneğin bir hatadan sonra tekrar denendiğinde), tekrar oluşturma
+    if (audioContextRef.current && audioContextRef.current.state === 'running') {
+        setAppStatus('running');
+        return;
+    }
 
+    setAppStatus('initializing');
     try {
-      await Tone.start();
-      console.log("AudioContext başlatıldı.");
-      
-      const engine = new AudioEngine({
+      // 1. KULLANICI ETKİLEŞİMİ ANINDA NATIVE AUDIO CONTEXT OLUŞTUR
+      const context = new (window.AudioContext || window.webkitAudioContext)();
+      await context.resume();
+      audioContextRef.current = context;
+      console.log('✅ Native AudioContext kullanıcı etkileşimiyle oluşturuldu ve başlatıldı!');
+
+      // 2. Bu hazır context'i kullanarak motoru ve diğer her şeyi kur
+      const engine = new NativeAudioEngine({
         setPlaybackState: usePlaybackStore.getState().setPlaybackState,
         setTransportPosition: usePlaybackStore.getState().setTransportPosition,
       });
+      
+      // 3. Motoru ve servisi bu context ile initialize et
+      await AudioContextService.setAudioEngine(engine);
+      await engine.initializeWithContext(context); // Motora context'i paslayan yeni bir metod
 
-      const initialBpm = usePlaybackStore.getState().bpm;
-      engine.setBpm(initialBpm);
+      // 4. Verileri senkronize et
+      const instrumentData = useInstrumentsStore.getState().instruments;
+      for (const instData of instrumentData) {
+        await engine.createInstrument(instData);
+      }
       
-      AudioContextService.setAudioEngine(engine);
-      
-      // Motoru, store'lardaki başlangıç verileriyle senkronize et
-      await engine.fullSync(
-        useInstrumentsStore.getState().instruments,
-        useMixerStore.getState().mixerTracks,
-        useArrangementStore.getState()
-      );
-      
-      setIsAudioInitialized(true);
+      // 5. Uygulamayı çalıştır
+      setAppStatus('running');
 
-    } catch (error){
-      console.error("Ses motoru başlatılamadı:", error);
+    } catch (err) {
+      console.error('❌ Uygulama başlatma başarısız:', err);
+      setError(err.message);
+      setAppStatus('error');
     }
   };
 
-  useEffect(() => {
-    // Component kaldırıldığında motoru temizle
-    return () => AudioContextService.getAudioEngine()?.dispose();
-  }, []);
+  if (appStatus === 'pending') {
+    return <StartupScreen onStart={handleStart} />;
+  }
 
-  if (!isAudioInitialized) {
-    return <StartupScreen onStart={initializeAudio} />;
+  if (appStatus === 'initializing') {
+    return <LoadingScreen message="Stüdyo Hazırlanıyor..." />;
+  }
+  
+  if (appStatus === 'error') {
+    return <ErrorScreen message={error} />;
   }
 
   return (
     <ThemeProvider>
-      <AppContent />
+      <div className="app-container">
+        <TopToolbar />
+        <MainToolbar />
+        <main className="app-main">
+          <WorkspacePanel />
+        </main>
+        <Taskbar />
+      </div>
     </ThemeProvider>
   );
-}
+};
 
 export default App;

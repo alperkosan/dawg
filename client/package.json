@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
+    "test:audioworklet": "vite --open='/?test=audioworklet'",
     "preview": "vite preview",
     "tailwind:init": "tailwindcss init -p"
   },

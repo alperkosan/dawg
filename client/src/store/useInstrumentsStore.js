@@ -59,6 +59,30 @@ export const useInstrumentsStore = create((set, get) => ({
     AudioContextService?.createInstrument(newInstrument);
   },
 
+  handleAddNewSynth: () => {
+    const { instruments } = get();
+    const newSynth = {
+      id: `synth-${uuidv4()}`,
+      name: `Synth ${instruments.length + 1}`,
+      type: 'synth',
+      synthParams: {
+        oscillator: { type: 'sawtooth', detune: 0 },
+        envelope: { attack: 0.01, decay: 0.3, sustain: 0.7, release: 1 },
+        filter: { frequency: 1000, Q: 1, type: 'lowpass' }
+      },
+      settings: { 
+        lowLatency: true, // AudioWorklet kullan
+        customDSP: true 
+      },
+      mixerTrackId: getNextAvailableTrack(),
+      isMuted: false,
+      notes: []
+    };
+
+    set({ instruments: [...instruments, newSynth] });
+    AudioContextService?.createInstrument(newSynth);
+  },
+
   handleToggleInstrumentMute: (instrumentId) => {
     let isMuted = false;
     set(state => ({
