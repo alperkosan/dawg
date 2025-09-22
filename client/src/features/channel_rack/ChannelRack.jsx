@@ -28,35 +28,24 @@ export default function ChannelRack() {
 
   const activePattern = patterns[activePatternId];
 
-  // Playhead animasyonu ve scroll senkronizasyonu
+  // --- YENİ VE GELİŞMİŞ PLAYHEAD MANTIĞI ---
   useEffect(() => {
-    const container = scrollContainerRef.current;
-    if (!container) return;
-
-    const syncScroll = () => {
-      if (timelineContainerRef.current) {
-        timelineContainerRef.current.scrollLeft = container.scrollLeft;
-      }
-      if (instrumentListRef.current) {
-        instrumentListRef.current.scrollTop = container.scrollTop;
-      }
-    };
-
-    const updatePlayhead = (progress) => {
+    // Bu fonksiyon, animasyon servisinden gelen 0-1 arası değeri
+    // piksel pozisyonuna çevirir.
+    const updatePlayheadPosition = (progress) => {
       if (playheadRef.current) {
-        const position = progress * audioLoopLength * STEP_WIDTH;
+        // loopLength, UI'daki toplam adım sayısını temsil eder
+        const position = progress * loopLength * STEP_WIDTH;
         playheadRef.current.style.transform = `translateX(${position}px)`;
       }
     };
 
-    container.addEventListener('scroll', syncScroll);
-    PlaybackAnimatorService.subscribe(updatePlayhead);
-
-    return () => {
-      container.removeEventListener('scroll', syncScroll);
-      PlaybackAnimatorService.unsubscribe(updatePlayhead);
-    };
-  }, [audioLoopLength]);
+    // Servise abone ol
+    PlaybackAnimatorService.subscribe(updatePlayheadPosition);
+    
+    // Bileşen kaldırıldığında abonelikten çık
+    return () => PlaybackAnimatorService.unsubscribe(updatePlayheadPosition);
+  }, [loopLength]); // loopLength değiştiğinde bu effect yeniden çalışır
 
   // =====================================================================
   // === YENİ EKLENEN KOD BLOĞU BURASI ===

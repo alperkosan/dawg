@@ -1,408 +1,439 @@
-// client/src/lib/core/NativeTransportSystem.js
+// lib/core/NativeTransportSystem.js
+// DAWG - Native Transport System - ToneJS'siz tam native implementasyon
+
 export class NativeTransportSystem {
-  constructor(audioContextManager) {
-    this.audioContextManager = audioContextManager;
-    this.context = audioContextManager.context;
-    
-    // Transport state
-    this.isPlaying = false;
-    this.isPaused = false;
-    this.bpm = 120;
-    this.timeSignature = [4, 4]; // [numerator, denominator]
-    
-    // Timing
-    this.startTime = 0;
-    this.pauseTime = 0;
-    this.currentPosition = 0; // in 16th notes
-    this.loopStart = 0; // in 16th notes
-    this.loopEnd = 64; // in 16th notes (4 bars)
-    this.isLooping = true;
-    
-    // Scheduling
-    this.scheduledEvents = new Map();
-    this.nextEventId = 0;
-    this.scheduleAheadTime = 25.0; // How far ahead to schedule events (ms)
-    this.lookAhead = 25.0; // How frequently to call scheduling function (ms)
-    this.timerWorker = null;
-    
-    // Callbacks
-    this.onPositionChange = null;
-    this.onBeatChange = null;
-    this.onBarChange = null;
-    this.onStateChange = null;
-    
-    // Performance metrics
-    this.stats = {
-      actualBPM: 0,
-      drift: 0,
-      eventsScheduled: 0,
-      missedEvents: 0
-    };
+    constructor(audioContext) {
+        this.audioContext = audioContext;
 
-    this.setupTimerWorker();
-    console.log('🚀 Native Transport System initialized');
-  }
+        // Transport durumu
+        this.isPlaying = false;
+        this.position = 0; // bar-beat-sixteenth formatında
+        this.bpm = 120;
+        this.timeSignature = [4, 4]; // 4/4 time signature
 
-  // BPM and timing calculations
-  setBPM(newBPM) {
-    const clampedBPM = Math.max(60, Math.min(200, newBPM));
-    this.bpm = clampedBPM;
-    console.log(`🎵 BPM set to: ${this.bpm}`);
-    
-    if (this.onBeatChange) {
-      this.onBeatChange({ bpm: this.bpm });
-    }
-  }
+        // Zamanlama
+        this.ppq = 96; // pulses per quarter note (MIDI standart)
+        this.currentTick = 0;
+        this.nextTickTime = 0;
+        this.lookAhead = 25.0; // 25ms lookahead
+        this.scheduleAheadTime = 0.1; // 100ms scheduling window
 
-  getBPM() {
-    return this.bpm;
-  }
+        // Event callbacks
+        this.callbacks = new Map();
+        this.scheduledEvents = new Map(); // time -> events
 
-  // Convert between time units
-  beatsPerSecond() {
-    return this.bpm / 60;
-  }
+        // Timer
+        this.timerWorker = null;
+        this.schedulerRunning = false;
 
-  secondsPerBeat() {
-    return 60 / this.bpm;
-  }
+        // Pattern scheduling
+        this.patterns = new Map();
+        this.activePatterns = new Set();
+        this.nextPatternEventTime = Infinity;
 
-  secondsPer16thNote() {
-    return this.secondsPerBeat() / 4;
-  }
+        // Swing ve groove
+        this.swingFactor = 0; // 0-1, 0 = straight, 1 = full swing
+        this.groove = null;
 
-  stepsToSeconds(steps) {
-    return steps * this.secondsPer16thNote();
-  }
+        this.initializeWorkerTimer();
 
-  secondsToSteps(seconds) {
-    return seconds / this.secondsPer16thNote();
-  }
-
-  // Position management
-  setPosition(step) {
-    this.currentPosition = Math.max(0, step);
-    if (this.onPositionChange) {
-      this.onPositionChange(this.getPositionInfo());
-    }
-  }
-
-  getPosition() {
-    if (!this.isPlaying) {
-      return this.currentPosition;
+        console.log('🎵 NativeTransportSystem initialized');
     }
 
-    const elapsedTime = this.context.currentTime - this.startTime;
-    const elapsedSteps = this.secondsToSteps(elapsedTime);
-    let position = elapsedSteps;
+    // =================== TIMER INITIALIZATION ===================
 
-    // Handle looping
-    if (this.isLooping && this.loopEnd > this.loopStart) {
-      const loopLength = this.loopEnd - this.loopStart;
-      if (position >= this.loopEnd) {
-        position = this.loopStart + ((position - this.loopStart) % loopLength);
-      }
+    initializeWorkerTimer() {
+        // Web Worker kullanarak daha stabil timing
+        const workerScript = `
+            let timerID = null;
+            let interval = 25; // 25ms default
+
+            self.onmessage = function(e) {
+                if (e.data === 'start') {
+                    timerID = setInterval(() => {
+                        postMessage('tick');
+                    }, interval);
+                } else if (e.data === 'stop') {
+                    clearInterval(timerID);
+                } else if (e.data.interval) {
+                    interval = e.data.interval;
+                }
+            };
+        `;
+
+        const blob = new Blob([workerScript], { type: 'application/javascript' });
+        this.timerWorker = new Worker(URL.createObjectURL(blob));
+
+        this.timerWorker.onmessage = () => {
+            if (this.isPlaying) {
+                this.scheduler();
+            }
+        };
     }
 
-    return position;
-  }
+    // =================== BASIC TRANSPORT CONTROLS ===================
 
-  getPositionInfo() {
-    const position = this.getPosition();
-    const bar = Math.floor(position / 16) + 1;
-    const beat = Math.floor((position % 16) / 4) + 1;
-    const sixteenth = (position % 4) + 1;
-    
-    return {
-      position,
-      bar,
-      beat,
-      sixteenth,
-      formatted: `${bar}:${beat}:${Math.floor(sixteenth)}`
-    };
-  }
+    start(when = null) {
+        if (this.isPlaying) return;
 
-  // Transport controls
-  start(fromStep = null) {
-    if (this.isPlaying) {
-      this.stop();
+        const startTime = when || this.audioContext.currentTime;
+        this.isPlaying = true;
+        this.nextTickTime = startTime;
+        this.schedulerRunning = true;
+
+        this.timerWorker.postMessage('start');
+
+        this.triggerCallback('start', { time: startTime, position: this.position });
+        console.log(`▶️ Transport started at ${startTime.toFixed(3)}s`);
+
+        return this;
     }
 
-    const startStep = fromStep !== null ? fromStep : this.currentPosition;
-    this.currentPosition = startStep;
-    this.startTime = this.context.currentTime;
-    this.pauseTime = 0;
-    this.isPlaying = true;
-    this.isPaused = false;
+    stop(when = null) {
+        if (!this.isPlaying) return;
 
-    this.startScheduling();
-    
-    console.log(`▶️ Transport started from step ${startStep}`);
-    
-    if (this.onStateChange) {
-      this.onStateChange({ 
-        isPlaying: true, 
-        isPaused: false, 
-        position: startStep 
-      });
+        const stopTime = when || this.audioContext.currentTime;
+        this.isPlaying = false;
+        this.schedulerRunning = false;
+
+        this.timerWorker.postMessage('stop');
+
+        // Aktif pattern'ları durdur
+        this.activePatterns.forEach(patternId => {
+            this.stopPattern(patternId, stopTime);
+        });
+
+        this.triggerCallback('stop', { time: stopTime, position: this.position });
+        console.log(`⏹️ Transport stopped at ${stopTime.toFixed(3)}s`);
+
+        return this;
     }
-  }
 
-  pause() {
-    if (!this.isPlaying || this.isPaused) return;
-
-    this.isPaused = true;
-    this.pauseTime = this.context.currentTime;
-    this.currentPosition = this.getPosition();
-    
-    this.stopScheduling();
-    this.clearScheduledEvents();
-
-    console.log(`⏸️ Transport paused at step ${this.currentPosition}`);
-    
-    if (this.onStateChange) {
-      this.onStateChange({ 
-        isPlaying: true, 
-        isPaused: true, 
-        position: this.currentPosition 
-      });
+    pause(when = null) {
+        const pauseTime = when || this.audioContext.currentTime;
+        this.stop(pauseTime);
+        this.triggerCallback('pause', { time: pauseTime, position: this.position });
+        console.log(`⏸️ Transport paused at position ${this.formatPosition(this.position)}`);
+        return this;
     }
-  }
 
-  resume() {
-    if (!this.isPlaying || !this.isPaused) return;
+    // =================== POSITION & TIMING ===================
 
-    const pausedDuration = this.pauseTime - this.startTime;
-    this.startTime = this.context.currentTime - pausedDuration;
-    this.isPaused = false;
-    
-    this.startScheduling();
+    getPosition() {
+        if (!this.isPlaying) return this.position;
 
-    console.log(`▶️ Transport resumed from step ${this.currentPosition}`);
-    
-    if (this.onStateChange) {
-      this.onStateChange({ 
-        isPlaying: true, 
-        isPaused: false, 
-        position: this.currentPosition 
-      });
+        const elapsed = this.audioContext.currentTime - this.nextTickTime + this.getSecondsPerTick();
+        const ticksElapsed = Math.floor(elapsed / this.getSecondsPerTick());
+        return this.position + ticksElapsed;
     }
-  }
 
-  stop() {
-    this.isPlaying = false;
-    this.isPaused = false;
-    this.currentPosition = 0;
-    this.startTime = 0;
-    this.pauseTime = 0;
-    
-    this.stopScheduling();
-    this.clearScheduledEvents();
+    setPosition(position) {
+        this.position = position;
+        this.currentTick = position;
 
-    console.log('⏹️ Transport stopped');
-    
-    if (this.onStateChange) {
-      this.onStateChange({ 
-        isPlaying: false, 
-        isPaused: false, 
-        position: 0 
-      });
-    }
-  }
-
-  // Loop management
-  setLoop(startStep, endStep) {
-    this.loopStart = Math.max(0, startStep);
-    this.loopEnd = Math.max(this.loopStart + 1, endStep);
-    console.log(`🔄 Loop set: ${this.loopStart} - ${this.loopEnd}`);
-  }
-
-  setLooping(enabled) {
-    this.isLooping = enabled;
-    console.log(`🔄 Looping ${enabled ? 'enabled' : 'disabled'}`);
-  }
-
-  // Event scheduling system
-  scheduleEvent(callback, time, data = {}) {
-    const eventId = this.nextEventId++;
-    const event = {
-      id: eventId,
-      callback,
-      time,
-      data,
-      scheduled: false
-    };
-
-    this.scheduledEvents.set(eventId, event);
-    return eventId;
-  }
-
-  cancelScheduledEvent(eventId) {
-    return this.scheduledEvents.delete(eventId);
-  }
-
-  clearScheduledEvents() {
-    this.scheduledEvents.clear();
-  }
-
-  // Pattern scheduling
-  schedulePattern(pattern, instrumentCallback) {
-    this.clearScheduledEvents();
-    
-    Object.entries(pattern).forEach(([instrumentId, notes]) => {
-      if (!Array.isArray(notes)) return;
-      
-      notes.forEach(note => {
-        const noteTime = this.stepsToSeconds(note.time);
-        
-        this.scheduleEvent(
-          (time, eventData) => {
-            instrumentCallback(eventData.instrumentId, eventData.note, time);
-          },
-          noteTime,
-          { instrumentId, note }
-        );
-      });
-    });
-
-    console.log(`📋 Pattern scheduled: ${this.scheduledEvents.size} events`);
-  }
-
-  // Timer worker for precise scheduling
-  setupTimerWorker() {
-    // Create a simple timer worker using setTimeout
-    // In production, you'd use a proper Web Worker for better timing
-    this.timerWorker = {
-      start: () => {
-        this.schedulerInterval = setInterval(() => {
-          this.scheduler();
-        }, this.lookAhead);
-      },
-      stop: () => {
-        if (this.schedulerInterval) {
-          clearInterval(this.schedulerInterval);
-          this.schedulerInterval = null;
+        if (this.isPlaying) {
+            this.nextTickTime = this.audioContext.currentTime;
         }
-      }
-    };
-  }
 
-  startScheduling() {
-    if (this.timerWorker) {
-      this.timerWorker.start();
+        this.triggerCallback('position', { position: this.position });
+        console.log(`🎯 Position set to ${this.formatPosition(position)}`);
+        return this;
     }
-  }
 
-  stopScheduling() {
-    if (this.timerWorker) {
-      this.timerWorker.stop();
-    }
-  }
-
-  // Main scheduler function
-  scheduler() {
-    if (!this.isPlaying || this.isPaused) return;
-
-    const currentTime = this.context.currentTime;
-    const currentPosition = this.getPosition();
-    
-    // Schedule events that are coming up
-    this.scheduledEvents.forEach((event, eventId) => {
-      if (event.scheduled) return;
-      
-      const eventAbsoluteTime = this.startTime + event.time;
-      
-      if (eventAbsoluteTime < currentTime + (this.scheduleAheadTime / 1000)) {
-        try {
-          event.callback(eventAbsoluteTime, event.data);
-          event.scheduled = true;
-          this.stats.eventsScheduled++;
-        } catch (error) {
-          console.error('❌ Scheduler event error:', error);
-          this.stats.missedEvents++;
+    setBPM(bpm) {
+        if (bpm < 60 || bpm > 200) {
+            console.warn('⚠️ BPM out of reasonable range (60-200)');
         }
-      }
-    });
 
-    // Clean up old events
-    const cutoffTime = currentTime - 1; // Keep events for 1 second
-    this.scheduledEvents.forEach((event, eventId) => {
-      if (event.scheduled && this.startTime + event.time < cutoffTime) {
-        this.scheduledEvents.delete(eventId);
-      }
-    });
-
-    // Update position
-    if (this.onPositionChange) {
-      this.onPositionChange(this.getPositionInfo());
+        this.bpm = bpm;
+        this.triggerCallback('bpm', { bpm: this.bpm });
+        console.log(`🎼 BPM set to ${bpm}`);
+        return this;
     }
 
-    // Handle looping
-    if (this.isLooping && currentPosition >= this.loopEnd) {
-      const overshoot = currentPosition - this.loopEnd;
-      const newPosition = this.loopStart + overshoot;
-      
-      // Reset start time to handle loop
-      this.startTime = currentTime - this.stepsToSeconds(newPosition - this.loopStart);
-      this.currentPosition = newPosition;
-      
-      // Reschedule all events for the new loop
-      this.reschedulePendingEvents();
-    }
-  }
-
-  reschedulePendingEvents() {
-    // Reset all unscheduled events
-    this.scheduledEvents.forEach(event => {
-      if (!event.scheduled) {
-        event.scheduled = false;
-      }
-    });
-  }
-
-  // Performance monitoring
-  updateStats() {
-    // Calculate actual BPM based on timing
-    // This would measure actual vs intended timing
-    this.stats.actualBPM = this.bpm; // Simplified for now
-    this.stats.drift = 0; // Calculate timing drift
-  }
-
-  getStats() {
-    this.updateStats();
-    return { ...this.stats };
-  }
-
-  // Utility methods
-  jumpTo(step) {
-    const wasPlaying = this.isPlaying;
-    
-    if (wasPlaying) {
-      this.pause();
-    }
-    
-    this.setPosition(step);
-    
-    if (wasPlaying) {
-      this.start(step);
-    }
-  }
-
-  jumpToBar(barNumber) {
-    const step = (barNumber - 1) * 16;
-    this.jumpTo(step);
-  }
-
-  // Cleanup
-  dispose() {
-    this.stop();
-    this.stopScheduling();
-    this.clearScheduledEvents();
-    
-    if (this.timerWorker) {
-      this.timerWorker = null;
+    setTimeSignature(numerator, denominator = 4) {
+        this.timeSignature = [numerator, denominator];
+        console.log(`🎼 Time signature set to ${numerator}/${denominator}`);
+        return this;
     }
 
-    console.log('🗑️ Native Transport System disposed');
-  }
+    // =================== SCHEDULING CORE ===================
+
+    scheduler() {
+        while (this.nextTickTime < this.audioContext.currentTime + this.scheduleAheadTime) {
+            this.scheduleCurrentTick(this.nextTickTime);
+            this.nextTick();
+        }
+    }
+
+    scheduleCurrentTick(time) {
+        // Position callback
+        this.triggerCallback('tick', {
+            time: time,
+            position: this.currentTick,
+            formatted: this.formatPosition(this.currentTick)
+        });
+
+        // Beat ve bar callbacks
+        if (this.currentTick % this.ppq === 0) {
+            const beat = Math.floor(this.currentTick / this.ppq) % this.timeSignature[0];
+            this.triggerCallback('beat', { time, beat });
+
+            if (beat === 0) {
+                const bar = Math.floor(this.currentTick / (this.ppq * this.timeSignature[0]));
+                this.triggerCallback('bar', { time, bar });
+            }
+        }
+
+        // Pattern events'leri schedule et
+        this.schedulePatternEvents(time);
+
+        // Generic scheduled events
+        this.processScheduledEvents(time);
+    }
+
+    nextTick() {
+        this.currentTick++;
+        this.position = this.currentTick;
+        this.nextTickTime += this.getSecondsPerTick();
+    }
+
+    getSecondsPerTick() {
+        const secondsPerBeat = 60.0 / this.bpm;
+        return secondsPerBeat / this.ppq;
+    }
+
+    // =================== PATTERN SCHEDULING ===================
+
+    schedulePattern(patternId, pattern, startTime = null) {
+        startTime = startTime || this.audioContext.currentTime;
+
+        const processedPattern = this.preprocessPattern(pattern);
+        this.patterns.set(patternId, {
+            ...processedPattern,
+            startTime,
+            originalPattern: pattern
+        });
+
+        this.activePatterns.add(patternId);
+        console.log(`📋 Pattern scheduled: ${patternId} at ${startTime.toFixed(3)}s`);
+
+        return this;
+    }
+
+    stopPattern(patternId, when = null) {
+        const stopTime = when || this.audioContext.currentTime;
+
+        if (this.patterns.has(patternId)) {
+            this.patterns.delete(patternId);
+            this.activePatterns.delete(patternId);
+
+            this.triggerCallback('patternStop', { patternId, time: stopTime });
+            console.log(`⏹️ Pattern stopped: ${patternId}`);
+        }
+
+        return this;
+    }
+
+    schedulePatternEvents(currentTime) {
+        this.activePatterns.forEach(patternId => {
+            const pattern = this.patterns.get(patternId);
+            if (!pattern) return;
+
+            pattern.events.forEach(event => {
+                const eventTime = pattern.startTime + event.time;
+
+                if (Math.abs(eventTime - currentTime) < 0.001) { // 1ms tolerance
+                    this.triggerCallback('patternEvent', {
+                        patternId,
+                        event,
+                        time: currentTime
+                    });
+                }
+            });
+        });
+    }
+
+    preprocessPattern(pattern) {
+        // Pattern'ı schedule edilebilir events'lere çevir
+        const events = [];
+
+        if (Array.isArray(pattern)) {
+            pattern.forEach((note, index) => {
+                if (note && note.time !== undefined) {
+                    events.push({
+                        type: 'note',
+                        time: this.parseTime(note.time),
+                        data: note
+                    });
+                }
+            });
+        }
+
+        return { events, duration: this.calculatePatternDuration(events) };
+    }
+
+    // =================== TIME UTILITIES ===================
+
+    parseTime(timeValue) {
+        if (typeof timeValue === 'number') {
+            return timeValue; // Assume seconds
+        }
+
+        if (typeof timeValue === 'string') {
+            // Parse formats like "1:2:0" (bar:beat:sixteenth)
+            if (timeValue.includes(':')) {
+                const parts = timeValue.split(':').map(Number);
+                const [bar = 0, beat = 0, sixteenth = 0] = parts;
+
+                return this.barBeatSixteenthToSeconds(bar, beat, sixteenth);
+            }
+
+            // Parse note durations like "4n", "8n", "16n"
+            if (timeValue.match(/\d+[ndt]/)) {
+                return this.noteDurationToSeconds(timeValue);
+            }
+        }
+
+        return 0;
+    }
+
+    barBeatSixteenthToSeconds(bar, beat, sixteenth) {
+        const totalSixteenths = (bar * this.timeSignature[0] * 4) + (beat * 4) + sixteenth;
+        const sixteenthDuration = (60 / this.bpm) / 4; // Duration of one sixteenth note
+        return totalSixteenths * sixteenthDuration;
+    }
+
+    noteDurationToSeconds(notation) {
+        // "4n" = quarter note, "8n" = eighth note, etc.
+        const matches = notation.match(/(\d+)([ndt])/);
+        if (!matches) return 0;
+
+        const [, noteValue, type] = matches;
+        let duration = (60 / this.bpm) * (4 / parseInt(noteValue));
+
+        if (type === 't') duration *= 2/3; // Triplet
+        if (type === 'd') duration *= 1.5; // Dotted
+
+        return duration;
+    }
+
+    formatPosition(ticks) {
+        const ticksPerBar = this.ppq * this.timeSignature[0];
+        const bar = Math.floor(ticks / ticksPerBar);
+        const beat = Math.floor((ticks % ticksPerBar) / this.ppq);
+        const sixteenth = Math.floor((ticks % this.ppq) / (this.ppq / 4));
+
+        return `${bar}:${beat}:${sixteenth}`;
+    }
+
+    // =================== EVENT SYSTEM ===================
+
+    on(event, callback) {
+        if (!this.callbacks.has(event)) {
+            this.callbacks.set(event, new Set());
+        }
+        this.callbacks.get(event).add(callback);
+        return this;
+    }
+
+    off(event, callback) {
+        if (this.callbacks.has(event)) {
+            this.callbacks.get(event).delete(callback);
+        }
+        return this;
+    }
+
+    triggerCallback(event, data = {}) {
+        if (this.callbacks.has(event)) {
+            this.callbacks.get(event).forEach(callback => {
+                try {
+                    callback(data);
+                } catch (error) {
+                    console.error(`❌ Transport callback error (${event}):`, error);
+                }
+            });
+        }
+    }
+
+    scheduleEvent(time, callback, data = {}) {
+        const eventId = `event_${Date.now()}_${Math.random()}`;
+
+        if (!this.scheduledEvents.has(time)) {
+            this.scheduledEvents.set(time, []);
+        }
+
+        this.scheduledEvents.get(time).push({
+            id: eventId,
+            callback,
+            data
+        });
+
+        return eventId;
+    }
+
+    processScheduledEvents(currentTime) {
+        this.scheduledEvents.forEach((events, scheduledTime) => {
+            if (Math.abs(scheduledTime - currentTime) < 0.001) {
+                events.forEach(event => {
+                    try {
+                        event.callback(event.data);
+                    } catch (error) {
+                        console.error('❌ Scheduled event error:', error);
+                    }
+                });
+                this.scheduledEvents.delete(scheduledTime);
+            }
+        });
+    }
+
+    // =================== UTILITY METHODS ===================
+
+    calculatePatternDuration(events) {
+        if (events.length === 0) return 0;
+        return Math.max(...events.map(event => event.time + (event.data.duration || 0)));
+    }
+
+    applySwing(time, position) {
+        if (this.swingFactor === 0) return time;
+
+        const sixteenthPosition = position % (this.ppq / 4);
+        if (sixteenthPosition === this.ppq / 8) { // Off-beat sixteenth
+            const swingDelay = (this.getSecondsPerTick() * 2) * this.swingFactor * 0.3;
+            return time + swingDelay;
+        }
+
+        return time;
+    }
+
+    getStats() {
+        return {
+            isPlaying: this.isPlaying,
+            bpm: this.bpm,
+            position: this.getPosition(),
+            formattedPosition: this.formatPosition(this.getPosition()),
+            timeSignature: this.timeSignature,
+            activePatterns: this.activePatterns.size,
+            scheduledEvents: this.scheduledEvents.size,
+            audioLatency: this.audioContext.baseLatency || 'unknown',
+            audioContextState: this.audioContext.state
+        };
+    }
+
+    dispose() {
+        console.log('🗑️ Disposing NativeTransportSystem...');
+
+        this.stop();
+
+        if (this.timerWorker) {
+            this.timerWorker.terminate();
+        }
+
+        this.callbacks.clear();
+        this.scheduledEvents.clear();
+        this.patterns.clear();
+        this.activePatterns.clear();
+
+        console.log('✅ NativeTransportSystem disposed');
+    }
 }

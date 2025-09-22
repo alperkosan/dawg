@@ -1,5 +1,6 @@
 // client/src/lib/services/AudioContextService.js - Native Version
 import { useArrangementStore } from '../../store/useArrangementStore';
+import { NativeTimeUtils } from '../utils/NativeTimeUtils';
 
 export class AudioContextService {
   static instance = null;
@@ -149,6 +150,15 @@ export class AudioContextService {
       engine.schedulePattern(activePattern.data);
       console.log('🔄 Pattern rescheduled');
     }
+  }
+
+  // Time utilities
+  parseTime(timeValue) {
+      return NativeTimeUtils.parseTime(timeValue, this.getCurrentBPM());
+  }
+
+  getCurrentBPM() {
+      return this.audioEngine?.transport?.bpm || 120;
   }
   
   // --- Analysis Data ---

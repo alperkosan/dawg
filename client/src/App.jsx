@@ -1,4 +1,4 @@
-// src/App.jsx - TONE.JS'TEN %100 ARINDIRILMIŞ FİNAL VERSİYON
+// src/App.jsx - preloadSamples Entegrasyonu
 
 import React, { useState, useEffect, useRef } from 'react';
 
@@ -11,9 +11,8 @@ import WorkspacePanel from './layout/WorkspacePanel';
 import Taskbar from './features/taskbar/Taskbar';
 
 // Motor ve Servisler
-import { NativeAudioEngine } from './lib/core/NativeAudioEngine';
 import { AudioContextService } from './lib/services/AudioContextService';
-import { NativeAudioContextManager } from './lib/core/NativeAudioContextManager'; // Context Manager'ı import et
+import { NativeAudioEngine } from './lib/core/NativeAudioEngine'; // ✅
 
 // Store'lar
 import { useInstrumentsStore } from './store/useInstrumentsStore';
@@ -34,14 +33,11 @@ const ErrorScreen = ({ message }) => (
 
 
 function App() {
-  const [appStatus, setAppStatus] = useState('pending'); // 'pending', 'initializing', 'running', 'error'
+  const [appStatus, setAppStatus] = useState('pending');
   const [error, setError] = useState(null);
-  
-  // AudioContext'i App state'inde tutacağız
   const audioContextRef = useRef(null);
 
   const handleStart = async () => {
-    // Eğer context zaten varsa (örneğin bir hatadan sonra tekrar denendiğinde), tekrar oluşturma
     if (audioContextRef.current && audioContextRef.current.state === 'running') {
         setAppStatus('running');
         return;
@@ -49,29 +45,30 @@ function App() {
 
     setAppStatus('initializing');
     try {
-      // 1. KULLANICI ETKİLEŞİMİ ANINDA NATIVE AUDIO CONTEXT OLUŞTUR
       const context = new (window.AudioContext || window.webkitAudioContext)();
       await context.resume();
       audioContextRef.current = context;
       console.log('✅ Native AudioContext kullanıcı etkileşimiyle oluşturuldu ve başlatıldı!');
 
-      // 2. Bu hazır context'i kullanarak motoru ve diğer her şeyi kur
       const engine = new NativeAudioEngine({
         setPlaybackState: usePlaybackStore.getState().setPlaybackState,
         setTransportPosition: usePlaybackStore.getState().setTransportPosition,
       });
       
-      // 3. Motoru ve servisi bu context ile initialize et
       await AudioContextService.setAudioEngine(engine);
-      await engine.initializeWithContext(context); // Motora context'i paslayan yeni bir metod
-
-      // 4. Verileri senkronize et
+      await engine.initializeWithContext(context);
+      
+      // --- YENİ EKLENEN ADIM BURASI ---
+      // Enstrümanları oluşturmadan önce, onlara ait sample'ları yükle.
       const instrumentData = useInstrumentsStore.getState().instruments;
+      await engine.preloadSamples(instrumentData);
+      // --- YENİ ADIM SONU ---
+
+      // Artık sample'lar yüklendiği için enstrümanları oluşturabiliriz.
       for (const instData of instrumentData) {
         await engine.createInstrument(instData);
       }
       
-      // 5. Uygulamayı çalıştır
       setAppStatus('running');
 
     } catch (err) {
@@ -80,6 +77,9 @@ function App() {
       setAppStatus('error');
     }
   };
+
+  // App ilk açıldığında `pending` durumunda kalır ve StartupScreen'i gösterir.
+  // Bu useEffect'e artık gerek yok.
 
   if (appStatus === 'pending') {
     return <StartupScreen onStart={handleStart} />;

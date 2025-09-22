@@ -1,5 +1,6 @@
 // client/src/lib/audio/WorkletInstrument.js
-import * as Tone from 'tone'; // Süre hesaplaması için Tone.Time kullanacağız
+import { WasmMessage } from './WorkletMessageProtocol'; // Yeni protokolü import et
+import { NativeTimeUtils } from '../utils/NativeTimeUtils.js';
 
 export class WorkletInstrument {
   constructor(instrumentData, workletManager) {
@@ -12,31 +13,25 @@ export class WorkletInstrument {
     // Audio nodes
     this.instrumentNode = null;
     this.instrumentNodeId = null;
-    this.outputGain = null;
+    // --- DEĞİŞİKLİK BURADA ---
+    this.output = null; // outputGain, 'output' olarak yeniden adlandırıldı.
     this.effectsChain = [];
     
     // State
     this.isReady = false;
     this.parameters = new Map();
-    this.activeNotes = new Map(); // Note tracking
-    this.patternData = [];
-    
-    // Performance tracking
-    this.noteCount = 0;
-    this.lastNoteTime = 0;
   }
 
   async initialize() {
     try {
       console.log(`🔧 Initializing WorkletInstrument: ${this.name}`);
 
-      // Instrument processor node oluştur
       const { node, nodeId } = await this.workletManager.createWorkletNode(
         'instrument-processor',
         {
-          numberOfInputs: 0,  // Synth olduğu için input yok
+          numberOfInputs: 0,
           numberOfOutputs: 1,
-          outputChannelCount: [2], // Stereo
+          outputChannelCount: [2],
           processorOptions: {
             instrumentId: this.id,
             instrumentName: this.name
@@ -47,17 +42,15 @@ export class WorkletInstrument {
       this.instrumentNode = node;
       this.instrumentNodeId = nodeId;
 
-      // Output gain oluştur (native AudioNode)
-      this.outputGain = this.audioContext.createGain();
-      this.outputGain.gain.value = 0.8; // Default level
+      // --- DEĞİŞİKLİK BURADA ---
+      // Çıkış gain'i oluştur (artık adı 'output')
+      this.output = this.audioContext.createGain();
+      this.output.gain.value = 0.8; // Varsayılan seviye
 
       // Node'ları bağla
-      this.instrumentNode.connect(this.outputGain);
+      this.instrumentNode.connect(this.output);
 
-      // Message port setup
       this.setupMessageHandling();
-
-      // Parameter referansları
       this.setupParameters();
 
       this.isReady = true;
@@ -69,30 +62,18 @@ export class WorkletInstrument {
     }
   }
 
+  // --- YENİ: MERKEZİ KOMUT GÖNDERİCİ ---
+  postCommand(type, data = {}) {
+    if (this.instrumentNode && this.instrumentNode.port) {
+      this.instrumentNode.port.postMessage({ type, data });
+    }
+  }
+
   setupMessageHandling() {
-    // Worklet'ten gelen mesajları işle
     this.instrumentNode.port.onmessage = (event) => {
       const { type, data } = event.data;
-      
-      switch (type) {
-        case 'noteStarted':
-          this.handleNoteStarted(data);
-          break;
-        case 'noteEnded':
-          this.handleNoteEnded(data);
-          break;
-        case 'error':
-          console.error(`❌ WorkletInstrument error (${this.name}):`, data);
-          break;
-        case 'debug':
-          console.log(`🔍 WorkletInstrument debug (${this.name}):`, data);
-          break;
-      }
-    };
-
-    // Error handling
-    this.instrumentNode.onprocessorerror = (event) => {
-      console.error(`❌ Processor error in ${this.name}:`, event);
+      // Gelen mesajları burada yönetmeye devam edebiliriz.
+      // Örneğin: if (type === WasmMessage.PROCESSOR_READY) { ... }
     };
   }
 
@@ -117,69 +98,35 @@ export class WorkletInstrument {
   }
 
   // Note triggering
-  // --- GÜNCELLENMİŞ triggerNote FONKSİYONU ---
   triggerNote(pitch, velocity, time, duration) {
-    if (!this.isReady) {
-      console.warn(`⚠️ WorkletInstrument hazır değil: ${this.name}`);
-      return;
-    }
-
+    if (!this.isReady) return;
     const frequency = this.pitchToFrequency(pitch);
-    const noteId = `note_${this.id}_${Date.now()}`;
+    const durationInSeconds = duration ? NativeTimeUtils.parseTime(duration, 120) : null;
     
-    // Süreyi saniyeye çeviriyoruz. Tone.js'i bu tür hesaplamalar için
-    // bir "yardımcı kütüphane" olarak kullanmak çok pratiktir.
-    const durationInSeconds = duration ? Tone.Time(duration).toSeconds() : null;
-
-    // Worklet'e `noteOn` mesajını tüm bilgilerle gönderiyoruz.
-    this.instrumentNode.port.postMessage({
-      type: 'noteOn',
-      data: {
-        noteId,
-        pitch: frequency,
-        velocity: velocity,
-        time: time || this.audioContext.currentTime, // Eğer zaman belirtilmemişse, şimdiki zamanı kullan
-        duration: durationInSeconds, // Süreyi saniye olarak gönder
-      }
+    this.postCommand(WasmMessage.NOTE_ON, {
+      pitch: frequency,
+      velocity,
+      time: time || this.audioContext.currentTime,
+      duration: durationInSeconds
     });
   }
 
-  releaseNote(pitch, time = this.audioContext.currentTime) {
+  releaseNote(pitch, time) {
     if (!this.isReady) return;
-
-    const frequency = this.pitchToFrequency(pitch);
-
-    // Active notes'tan kaldır
-    const noteToRemove = Array.from(this.activeNotes.entries()).find(
-      ([id, note]) => Math.abs(note.frequency - frequency) < 1
-    );
-
-    if (noteToRemove) {
-      this.activeNotes.delete(noteToRemove[0]);
-    }
-
-    // Worklet'e release message
-    this.instrumentNode.port.postMessage({
-      type: 'noteOff',
-      data: {
-        pitch: frequency,
-        time: time
-      }
+    this.postCommand(WasmMessage.NOTE_OFF, {
+      pitch: this.pitchToFrequency(pitch),
+      time: time || this.audioContext.currentTime
     });
-
-    console.log(`🎵 Note released: ${this.name} - ${pitch} (${frequency.toFixed(1)}Hz)`);
   }
 
   allNotesOff() {
     this.activeNotes.clear();
-    
-    this.instrumentNode.port.postMessage({
-      type: 'allNotesOff',
-      data: { time: this.audioContext.currentTime }
+    this.postCommand(WasmMessage.ALL_NOTES_OFF, { 
+      time: this.audioContext.currentTime 
     });
-
-    console.log(`🔇 All notes off: ${this.name}`);
+    console.log(`🔇 Tüm notalar susturuldu: ${this.name}`);
   }
+
 
   // Parameter updates
   updateParameter(paramName, value, time = this.audioContext.currentTime) {

@@ -1,621 +1,784 @@
-// src/lib/core/NativeAudioEngine.js - Zaman Aşımlı (Timeout) Yükleyici
+// lib/core/NativeAudioEngine.js
+// DAWG - Native Audio Engine - ToneJS'siz tam native implementasyon
 
-import { NativeAudioContextManager } from './NativeAudioContextManager.js';
 import { NativeTransportSystem } from './NativeTransportSystem.js';
 import { WorkletManager } from '../audio/WorkletManager.js';
-import { WorkletInstrument } from '../audio/WorkletInstrument.js';
-import { useArrangementStore } from '../../store/useArrangementStore';
 
 export class NativeAudioEngine {
-  constructor(callbacks = {}) {
-    this.callbacks = callbacks;
-    this.audioContextManager = null;
-    this.transportSystem = null;
-    this.workletManager = null;
-    this.masterMixer = null;
-    this.instruments = new Map();
-    this.mixerChannels = new Map();
-    this.effects = new Map();
-    this.analysisNodes = new Map();
-    this.isInitialized = false;
-    this.masterVolume = 0.8;
-    this.performanceMetrics = {
-      instrumentsCreated: 0,
-      effectsCreated: 0,
-      audioLatency: 0,
-      cpuLoad: 0,
-      memoryUsage: 0
-    };
-    console.log('🚀 Native Audio Engine created');
-  }
+    constructor(callbacks = {}) {
+        // Core systems
+        this.audioContext = null;
+        this.transport = null;
+        this.workletManager = null;
 
-  async initialize() {
-    try {
-      console.log('🎵 Initializing Native Audio Engine...');
-      console.log('🔧 Step 1: Audio Context Manager...');
-      this.audioContextManager = new NativeAudioContextManager({
-        sampleRate: 44100,
-        latencyHint: 'interactive'
-      });
-      await this.audioContextManager.initialize();
-      console.log('🔧 Step 2: Transport System...');
-      this.transportSystem = new NativeTransportSystem(this.audioContextManager);
-      this.transportSystem.onPositionChange = (positionInfo) => {
-        this.callbacks.setTransportPosition?.(positionInfo.formatted, positionInfo.position);
-      };
-      this.transportSystem.onStateChange = (state) => {
-        const playbackState = state.isPlaying ? 
-          (state.isPaused ? 'paused' : 'playing') : 'stopped';
-        this.callbacks.setPlaybackState?.(playbackState);
-      };
-      console.log('🔧 Step 3: WorkletManager...');
-      this.workletManager = new WorkletManager(this.audioContextManager.context);
-      console.log('🔧 Step 4: Loading WorkletProcessors...');
-      await this.loadEssentialWorklets(); // Bu fonksiyonu güncelledik
-      console.log('🔧 Step 5: Master Mixer...');
-      this.setupMasterMixer();
-      console.log('🔧 Step 6: Analysis Nodes...');
-      this.setupAnalysisNodes();
-      this.isInitialized = true;
-      this.updatePerformanceMetrics();
-      console.log('✅ Native Audio Engine initialized successfully');
-      console.log('📊 Engine Stats:', this.getEngineStats());
-      return true;
-    } catch (error) {
-      console.error('❌ Native Audio Engine initialization failed:', error);
-      throw error;
-    }
-  }
+        // Callback functions
+        this.setPlaybackState = callbacks.setPlaybackState || (() => {});
+        this.setTransportPosition = callbacks.setTransportPosition || (() => {});
+        this.onPatternChange = callbacks.onPatternChange || (() => {});
 
-  // ESKİ initialize() METODUNU BU YENİ METODLA DEĞİŞTİRİN
-  async initializeWithContext(nativeAudioContext) {
-    try {
-      console.log('🎵 Native Audio Engine, hazır context ile kuruluyor...');
+        // Audio routing
+        this.masterGain = null;
+        this.compressor = null;
+        this.analyzer = null;
 
-      // 1. Audio Context Manager'ı DIŞARIDAN GELEN CONTEXT ile oluştur
-      console.log('🔧 Step 1: Audio Context Manager...');
-      this.audioContextManager = new NativeAudioContextManager(nativeAudioContext);
-      this.audioContextManager.initialize(); // Sadece kurulum yap, oluşturma
+        // Instruments ve mixing
+        this.instruments = new Map(); // Native instruments
+        this.mixerStrips = new Map(); // Native mixer strips
+        this.effects = new Map(); // Global effects
+        this.sends = new Map(); // Send effects (reverb, delay)
 
-      // 2. Transport System'i kur
-      console.log('🔧 Step 2: Transport System...');
-      this.transportSystem = new NativeTransportSystem(this.audioContextManager);
-      // ... (transport callback'leri aynı kalabilir) ...
+        // Pattern ve sequencing
+        this.patterns = new Map();
+        this.activePatternId = null;
+        this.patternLength = 16; // Default pattern length in steps
+        this.currentStep = 0;
 
-      // 3. WorkletManager'ı DIŞARIDAN GELEN CONTEXT ile oluştur
-      console.log('🔧 Step 3: WorkletManager...');
-      this.workletManager = new WorkletManager(this.audioContextManager.context);
+        // Performance tracking
+        this.metrics = {
+            instrumentsCreated: 0,
+            activeVoices: 0,
+            cpuLoad: 0,
+            audioLatency: 0,
+            dropouts: 0
+        };
 
-      // ... (geri kalan adımlar (4, 5, 6) ve fonksiyonun sonu aynı kalabilir) ...
-      console.log('🔧 Step 4: Loading WorkletProcessors...');
-      await this.loadEssentialWorklets(); // Bu fonksiyonu güncelledik
-      console.log('🔧 Step 5: Master Mixer...');
-      this.setupMasterMixer();
-      console.log('🔧 Step 6: Analysis Nodes...');
-      this.setupAnalysisNodes();
-      this.isInitialized = true;
-      this.updatePerformanceMetrics();
-      console.log('✅ Native Audio Engine initialized successfully');
-      
-      return true;
+        // State
+        this.isInitialized = false;
+        this.engineMode = 'native';
 
-    } catch (error) {
-      console.error('❌ Native Audio Engine initialization failed:', error);
-      throw error;
-    }
-  }
-
-
-  // --- YENİ VE DAHA SAĞLAM YÜKLEYİCİ FONKSİYON ---
-  async loadEssentialWorklets() {
-    const workletsToLoad = [
-      { path: '/worklets/instrument-processor.js', name: 'instrument-processor' },
-      { path: '/worklets/effects-processor.js', name: 'effects-processor' },
-      { path: '/worklets/mixer-processor.js', name: 'mixer-processor' },
-      { path: '/worklets/analysis-processor.js', name: 'analysis-processor' }
-    ];
-
-    const promises = workletsToLoad.map(worklet => 
-      this.workletManager.loadWorklet(worklet.path, worklet.name)
-    );
-
-    // Zaman aşımı (timeout) ile Promise.all'u sarmalıyoruz
-    const timeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error('Worklet yüklemesi 10 saniye içinde zaman aşımına uğradı. Dosyaların public/worklets klasöründe olduğundan emin misiniz?')), 10000)
-    );
-
-    const results = await Promise.race([
-        Promise.allSettled(promises),
-        timeoutPromise
-    ]);
-
-    if (!Array.isArray(results)) {
-        // Bu, timeout'un tetiklendiği anlamına gelir
-        throw new Error("Worklet yüklemesi zaman aşımına uğradı.");
-    }
-    
-    const failedWorklets = results.filter(r => r.status === 'rejected');
-    if (failedWorklets.length > 0) {
-      const errorDetails = failedWorklets.map(f => f.reason.message).join(', ');
-      throw new Error(`Bazı worklet'ler yüklenemedi: ${errorDetails}`);
+        console.log('🎵 NativeAudioEngine constructor completed');
     }
 
-    const successCount = results.length - failedWorklets.length;
-    console.log(`✅ ${successCount}/${results.length} worklets loaded successfully`);
-  }
+    // =================== INITIALIZATION ===================
 
-  // ... (dosyanın geri kalanında değişiklik yok, olduğu gibi bırakabilirsiniz) ...
-  setupMasterMixer() {
-    const context = this.audioContextManager.context;
-    
-    // Master mixer chain
-    this.masterMixer = {
-      input: context.createGain(),
-      compressor: context.createDynamicsCompressor(),
-      eq: {
-        low: context.createBiquadFilter(),
-        mid: context.createBiquadFilter(),
-        high: context.createBiquadFilter()
-      },
-      limiter: context.createDynamicsCompressor(),
-      output: this.audioContextManager.masterGain
-    };
+    async initialize() {
+        try {
+            console.log('🔄 Initializing NativeAudioEngine...');
 
-    // Setup master compressor
-    this.masterMixer.compressor.threshold.value = -12;
-    this.masterMixer.compressor.knee.value = 30;
-    this.masterMixer.compressor.ratio.value = 3;
-    this.masterMixer.compressor.attack.value = 0.003;
-    this.masterMixer.compressor.release.value = 0.25;
+            // 1. Native AudioContext oluştur
+            await this.initializeAudioContext();
 
-    // Setup master EQ
-    this.masterMixer.eq.low.type = 'lowshelf';
-    this.masterMixer.eq.low.frequency.value = 320;
-    this.masterMixer.eq.low.gain.value = 0;
+            // 2. Transport system'ı initialize et
+            this.transport = new NativeTransportSystem(this.audioContext);
+            this.setupTransportCallbacks();
 
-    this.masterMixer.eq.mid.type = 'peaking';
-    this.masterMixer.eq.mid.frequency.value = 1000;
-    this.masterMixer.eq.mid.Q.value = 1;
-    this.masterMixer.eq.mid.gain.value = 0;
+            // 3. WorkletManager'ı initialize et
+            this.workletManager = new WorkletManager(this.audioContext);
+            await this.loadRequiredWorklets();
 
-    this.masterMixer.eq.high.type = 'highshelf';
-    this.masterMixer.eq.high.frequency.value = 3200;
-    this.masterMixer.eq.high.gain.value = 0;
+            // 4. Master audio chain'i kur
+            this.setupMasterAudioChain();
 
-    // Setup master limiter
-    this.masterMixer.limiter.threshold.value = -1;
-    this.masterMixer.limiter.knee.value = 0;
-    this.masterMixer.limiter.ratio.value = 20;
-    this.masterMixer.limiter.attack.value = 0.001;
-    this.masterMixer.limiter.release.value = 0.01;
+            // 5. Default mixer strips oluştur
+            this.createDefaultMixerStrips();
 
-    // Connect master chain
-    this.masterMixer.input
-      .connect(this.masterMixer.compressor)
-      .connect(this.masterMixer.eq.low)
-      .connect(this.masterMixer.eq.mid)
-      .connect(this.masterMixer.eq.high)
-      .connect(this.masterMixer.limiter)
-      .connect(this.masterMixer.output);
+            this.isInitialized = true;
+            console.log('✅ NativeAudioEngine initialized successfully');
 
-    console.log('✅ Master mixer chain established');
-  }
+            return this;
 
-  setupAnalysisNodes() {
-    const context = this.audioContextManager.context;
-    
-    // Master spectrum analyzer
-    this.analysisNodes.set('master-spectrum', {
-      node: context.createAnalyser(),
-      type: 'spectrum',
-      fftSize: 2048
-    });
-
-    // Master waveform analyzer  
-    this.analysisNodes.set('master-waveform', {
-      node: context.createAnalyser(),
-      type: 'waveform',
-      fftSize: 1024
-    });
-
-    // Connect to master mixer output
-    const spectrumNode = this.analysisNodes.get('master-spectrum').node;
-    const waveformNode = this.analysisNodes.get('master-waveform').node;
-    
-    spectrumNode.fftSize = 2048;
-    spectrumNode.smoothingTimeConstant = 0.3;
-    
-    waveformNode.fftSize = 1024;
-    waveformNode.smoothingTimeConstant = 0.8;
-
-    // Connect analyzers
-    this.masterMixer.output.connect(spectrumNode);
-    this.masterMixer.output.connect(waveformNode);
-
-    console.log('✅ Analysis nodes setup complete');
-  }
-
-  // Instrument management
-  async createInstrument(instrumentData) {
-    try {
-      console.log(`🎹 Creating native instrument: ${instrumentData.name}`);
-
-      // Create WorkletInstrument
-      const workletInst = new WorkletInstrument(instrumentData, this.workletManager);
-      await workletInst.initialize();
-
-      // Create mixer channel for this instrument
-      const mixerChannel = this.createMixerChannel(instrumentData.id);
-      
-      // Connect instrument to its mixer channel
-      workletInst.outputGain.connect(mixerChannel.input);
-      
-      // Connect mixer channel to master mixer
-      mixerChannel.output.connect(this.masterMixer.input);
-
-      // Store references
-      this.instruments.set(instrumentData.id, {
-        workletInst,
-        mixerChannel,
-        instrumentData
-      });
-
-      this.performanceMetrics.instrumentsCreated++;
-      console.log(`✅ Native instrument created: ${instrumentData.name}`);
-
-      return workletInst;
-
-    } catch (error) {
-      console.error(`❌ Failed to create native instrument: ${instrumentData.name}`, error);
-      throw error;
-    }
-  }
-
-  createMixerChannel(channelId) {
-    const context = this.audioContextManager.context;
-    
-    const mixerChannel = {
-      id: channelId,
-      input: context.createGain(),
-      volume: context.createGain(),
-      pan: context.createStereoPanner(),
-      eq: {
-        low: context.createBiquadFilter(),
-        mid: context.createBiquadFilter(),
-        high: context.createBiquadFilter()
-      },
-      compressor: context.createDynamicsCompressor(),
-      mute: context.createGain(),
-      solo: context.createGain(),
-      output: context.createGain(),
-      
-      // Analysis
-      meter: context.createAnalyser(),
-      
-      // State
-      isMuted: false,
-      isSoloed: false,
-      volumeLevel: 0.8,
-      panPosition: 0
-    };
-
-    // Setup EQ
-    mixerChannel.eq.low.type = 'lowshelf';
-    mixerChannel.eq.low.frequency.value = 250;
-    mixerChannel.eq.low.gain.value = 0;
-
-    mixerChannel.eq.mid.type = 'peaking';
-    mixerChannel.eq.mid.frequency.value = 1000;
-    mixerChannel.eq.mid.Q.value = 1;
-    mixerChannel.eq.mid.gain.value = 0;
-
-    mixerChannel.eq.high.type = 'highshelf';
-    mixerChannel.eq.high.frequency.value = 4000;
-    mixerChannel.eq.high.gain.value = 0;
-
-    // Setup compressor
-    mixerChannel.compressor.threshold.value = -18;
-    mixerChannel.compressor.knee.value = 2;
-    mixerChannel.compressor.ratio.value = 3;
-    mixerChannel.compressor.attack.value = 0.005;
-    mixerChannel.compressor.release.value = 0.15;
-
-    // Setup meter
-    mixerChannel.meter.fftSize = 256;
-    mixerChannel.meter.smoothingTimeConstant = 0.3;
-
-    // Initial values
-    mixerChannel.volume.gain.value = mixerChannel.volumeLevel;
-    mixerChannel.pan.pan.value = mixerChannel.panPosition;
-    mixerChannel.mute.gain.value = 1;
-    mixerChannel.solo.gain.value = 1;
-
-    // Connect channel chain
-    mixerChannel.input
-      .connect(mixerChannel.volume)
-      .connect(mixerChannel.pan)
-      .connect(mixerChannel.eq.low)
-      .connect(mixerChannel.eq.mid)
-      .connect(mixerChannel.eq.high)
-      .connect(mixerChannel.compressor)
-      .connect(mixerChannel.mute)
-      .connect(mixerChannel.solo)
-      .connect(mixerChannel.output);
-
-    // Connect meter
-    mixerChannel.output.connect(mixerChannel.meter);
-
-    this.mixerChannels.set(channelId, mixerChannel);
-    
-    console.log(`🎛️ Mixer channel created: ${channelId}`);
-    return mixerChannel;
-  }
-
-  // --- YENİ FONKSİYON: RESCHEDULE ---
-  reschedule() {
-    if (!this.isInitialized || !this.transportSystem) return;
-
-    console.log('%c[RESCHEDULE] Notalar yeniden zamanlanıyor...', 'color: lightblue;');
-
-    const { patterns, activePatternId } = useArrangementStore.getState();
-    const activePattern = patterns[activePatternId];
-
-    if (!activePattern) {
-        console.warn('⚠️ Reschedule: Aktif pattern bulunamadı.');
-        this.transportSystem.clearScheduledEvents(); // Mevcut zamanlamayı temizle
-        return;
+        } catch (error) {
+            console.error('❌ NativeAudioEngine initialization failed:', error);
+            throw error;
+        }
     }
 
-    // Transport sistemine, hangi enstrümanın hangi notayı ne zaman çalacağını söyleyen
-    // bir callback fonksiyonu iletiyoruz.
-    this.transportSystem.schedulePattern(activePattern.data, (instrumentId, note, time) => {
-      const instrument = this.instruments.get(instrumentId);
-      if (instrument) {
-        // Worklet'e çalma komutunu gönder
-        instrument.workletInst.triggerNote(note.pitch, note.velocity, time, note.duration);
-      }
-    });
-  }
+    async initializeWithContext(existingContext) {
+        try {
+            console.log('🔄 Initializing NativeAudioEngine with existing context...');
 
-  // Transport controls
-  play(startStep = 0) {
-    // Çalmaya başlamadan ÖNCE notaları zamanla
-    this.reschedule();
-    this.transportSystem.start(startStep);
-  }
+            // Existing context'i kullan
+            this.audioContext = existingContext;
 
-  pause() {
-    this.transportSystem.pause();
-    console.log('⏸️ Playback paused');
-  }
+            // Transport system'ı initialize et
+            this.transport = new NativeTransportSystem(this.audioContext);
+            this.setupTransportCallbacks();
 
-  resume() {
-    this.transportSystem.resume();
-    console.log('▶️ Playback resumed');
-  }
+            // WorkletManager'ı initialize et
+            this.workletManager = new WorkletManager(this.audioContext);
+            await this.loadRequiredWorklets();
 
-  stop() {
-    this.transportSystem.stop();
-    console.log('⏹️ Playback stopped');
-  }
+            // Master audio chain'i kur
+            this.setupMasterAudioChain();
 
-  setBPM(bpm) {
-    this.transportSystem.setBPM(bpm);
-  }
+            // Default mixer strips oluştur
+            this.createDefaultMixerStrips();
 
-  setLoop(startStep, endStep) {
-    this.transportSystem.setLoop(startStep, endStep);
-  }
+            this.isInitialized = true;
+            console.log('✅ NativeAudioEngine initialized with existing context');
 
-  jumpToStep(step) {
-    this.transportSystem.jumpTo(step);
-  }
+            return this;
 
-  jumpToBar(bar) {
-    this.transportSystem.jumpToBar(bar);
-  }
-
-  // Pattern scheduling
-  schedulePattern(patternData) {
-    this.transportSystem.schedulePattern(patternData, (instrumentId, note, time) => {
-      const instrument = this.instruments.get(instrumentId);
-      if (instrument) {
-        instrument.workletInst.triggerNote(note.pitch, note.velocity, time, note.duration);
-      }
-    });
-    
-    console.log(`📋 Pattern scheduled with ${Object.keys(patternData).length} instruments`);
-  }
-
-  // Audio controls
-  auditionNoteOn(instrumentId, pitch, velocity) {
-    const instrument = this.instruments.get(instrumentId);
-    if (instrument) {
-      instrument.workletInst.triggerNote(pitch, velocity);
-      console.log(`🎵 Note ON: ${instrumentId} - ${pitch} @ ${velocity}`);
-    }
-  }
-
-  auditionNoteOff(instrumentId, pitch) {
-    const instrument = this.instruments.get(instrumentId);
-    if (instrument) {
-      instrument.workletInst.releaseNote(pitch);
-      console.log(`🎵 Note OFF: ${instrumentId} - ${pitch}`);
-    }
-  }
-
-  // Mixer controls
-  setChannelVolume(channelId, volume) {
-    const channel = this.mixerChannels.get(channelId);
-    if (channel) {
-      channel.volumeLevel = Math.max(0, Math.min(2, volume));
-      channel.volume.gain.exponentialRampToValueAtTime(
-        channel.volumeLevel || 0.001,
-        this.audioContextManager.currentTime + 0.02
-      );
-    }
-  }
-
-  setChannelPan(channelId, pan) {
-    const channel = this.mixerChannels.get(channelId);
-    if (channel) {
-      channel.panPosition = Math.max(-1, Math.min(1, pan));
-      channel.pan.pan.setValueAtTime(
-        channel.panPosition,
-        this.audioContextManager.currentTime
-      );
-    }
-  }
-
-  setChannelMute(channelId, muted) {
-    const channel = this.mixerChannels.get(channelId);
-    if (channel) {
-      channel.isMuted = muted;
-      channel.mute.gain.exponentialRampToValueAtTime(
-        muted ? 0.001 : 1,
-        this.audioContextManager.currentTime + 0.02
-      );
-    }
-  }
-
-  setChannelEQ(channelId, band, frequency, gain, q) {
-    const channel = this.mixerChannels.get(channelId);
-    if (channel && channel.eq[band]) {
-      const eqBand = channel.eq[band];
-      eqBand.frequency.setValueAtTime(frequency, this.audioContextManager.currentTime);
-      eqBand.gain.setValueAtTime(gain, this.audioContextManager.currentTime);
-      if (q !== undefined) {
-        eqBand.Q.setValueAtTime(q, this.audioContextManager.currentTime);
-      }
-    }
-  }
-
-  setMasterVolume(volume) {
-    this.masterVolume = Math.max(0, Math.min(2, volume));
-    this.audioContextManager.setMasterVolume(this.masterVolume);
-  }
-
-  // Analysis data
-  getAnalysisData(nodeId) {
-    const analysisNode = this.analysisNodes.get(nodeId);
-    if (!analysisNode) return null;
-
-    const analyzer = analysisNode.node;
-    
-    if (analysisNode.type === 'spectrum') {
-      const frequencyData = new Uint8Array(analyzer.frequencyBinCount);
-      analyzer.getByteFrequencyData(frequencyData);
-      return frequencyData;
-    } else if (analysisNode.type === 'waveform') {
-      const waveformData = new Uint8Array(analyzer.fftSize);
-      analyzer.getByteTimeDomainData(waveformData);
-      return waveformData;
+        } catch (error) {
+            console.error('❌ NativeAudioEngine initialization with context failed:', error);
+            throw error;
+        }
     }
 
-    return null;
-  }
+    async initializeAudioContext() {
+        const ContextConstructor = window.AudioContext || window.webkitAudioContext;
+        if (!ContextConstructor) {
+            throw new Error('AudioContext not supported');
+        }
 
-  getChannelMeterData(channelId) {
-    const channel = this.mixerChannels.get(channelId);
-    if (!channel) return null;
-
-    const meterData = new Uint8Array(channel.meter.frequencyBinCount);
-    channel.meter.getByteFrequencyData(meterData);
-    
-    // Calculate RMS
-    let sum = 0;
-    for (let i = 0; i < meterData.length; i++) {
-      sum += meterData[i] * meterData[i];
-    }
-    const rms = Math.sqrt(sum / meterData.length) / 255;
-
-    return {
-      rms,
-      peak: Math.max(...meterData) / 255,
-      spectrum: meterData
-    };
-  }
-
-  // Performance monitoring
-  updatePerformanceMetrics() {
-    this.performanceMetrics = {
-      ...this.performanceMetrics,
-      audioLatency: this.audioContextManager.getStats().totalLatency,
-      instrumentCount: this.instruments.size,
-      mixerChannelCount: this.mixerChannels.size,
-      effectCount: this.effects.size,
-      contextState: this.audioContextManager.context?.state || 'unknown'
-    };
-  }
-
-  getEngineStats() {
-    this.updatePerformanceMetrics();
-    return {
-      isInitialized: this.isInitialized,
-      audioContext: this.audioContextManager.getStats(),
-      transport: this.transportSystem.getStats(),
-      worklets: this.workletManager.getStats(),
-      performance: this.performanceMetrics
-    };
-  }
-
-  // Cleanup
-  dispose() {
-    console.log('🗑️ Disposing Native Audio Engine...');
-
-    // Stop transport
-    if (this.transportSystem) {
-      this.transportSystem.dispose();
-    }
-
-    // Dispose instruments
-    this.instruments.forEach((instrument, id) => {
-      try {
-        instrument.workletInst.dispose();
-      } catch (error) {
-        console.error(`❌ Error disposing instrument ${id}:`, error);
-      }
-    });
-    this.instruments.clear();
-
-    // Dispose mixer channels
-    this.mixerChannels.forEach((channel, id) => {
-      try {
-        channel.input.disconnect();
-        channel.output.disconnect();
-        // Disconnect all nodes in the channel
-        Object.values(channel).forEach(node => {
-          if (node && typeof node.disconnect === 'function') {
-            node.disconnect();
-          }
+        this.audioContext = new ContextConstructor({
+            latencyHint: 'interactive', // Low latency için
+            sampleRate: 48000 // Yüksek kalite için
         });
-      } catch (error) {
-        console.error(`❌ Error disposing mixer channel ${id}:`, error);
-      }
-    });
-    this.mixerChannels.clear();
 
-    // Dispose analysis nodes
-    this.analysisNodes.forEach((analysis, id) => {
-      try {
-        analysis.node.disconnect();
-      } catch (error) {
-        console.error(`❌ Error disposing analysis node ${id}:`, error);
-      }
-    });
-    this.analysisNodes.clear();
+        // Context'i resume et (user gesture gerekebilir)
+        if (this.audioContext.state === 'suspended') {
+            await this.audioContext.resume();
+        }
 
-    // Dispose worklet manager
-    if (this.workletManager) {
-      this.workletManager.disposeAllNodes();
+        console.log(`🎵 AudioContext initialized: ${this.audioContext.sampleRate}Hz, ${this.audioContext.state}`);
     }
 
-    // Dispose audio context manager
-    if (this.audioContextManager) {
-      this.audioContextManager.dispose();
+    async loadRequiredWorklets() {
+        try {
+            console.log('📦 Loading required AudioWorklets...');
+
+            const workletFiles = [
+                { path: '/worklets/instrument-processor.js', name: 'instrument-processor' },
+                { path: '/worklets/effects-processor.js', name: 'effects-processor' },
+                { path: '/worklets/mixer-processor.js', name: 'mixer-processor' }
+            ];
+
+            for (const worklet of workletFiles) {
+                try {
+                    await this.workletManager.loadWorklet(worklet.path, worklet.name);
+                    console.log(`✅ Worklet loaded: ${worklet.name}`);
+                } catch (error) {
+                    console.warn(`⚠️ Worklet load failed: ${worklet.name}`, error);
+                }
+            }
+
+        } catch (error) {
+            console.error('❌ Worklet loading failed:', error);
+            throw error;
+        }
     }
 
-    this.isInitialized = false;
-    console.log('✅ Native Audio Engine disposed');
-  }
+    // =================== MASTER AUDIO CHAIN ===================
+
+    setupMasterAudioChain() {
+        console.log('🔗 Setting up master audio chain...');
+
+        // Master gain
+        this.masterGain = this.audioContext.createGain();
+        this.masterGain.gain.value = 0.8;
+
+        // Compressor for output limiting
+        this.compressor = this.audioContext.createDynamicsCompressor();
+        this.compressor.threshold.value = -12;
+        this.compressor.knee.value = 30;
+        this.compressor.ratio.value = 8;
+        this.compressor.attack.value = 0.001;
+        this.compressor.release.value = 0.1;
+
+        // Analyzer for monitoring
+        this.analyzer = this.audioContext.createAnalyser();
+        this.analyzer.fftSize = 2048;
+        this.analyzer.smoothingTimeConstant = 0.85;
+
+        // Chain connection: masterGain -> compressor -> analyzer -> destination
+        this.masterGain.connect(this.compressor);
+        this.compressor.connect(this.analyzer);
+        this.analyzer.connect(this.audioContext.destination);
+
+        console.log('✅ Master audio chain established');
+    }
+
+    // =================== TRANSPORT CALLBACKS ===================
+
+    setupTransportCallbacks() {
+        // Transport events'lerini UI'a forward et
+        this.transport.on('start', () => {
+            this.setPlaybackState(true);
+            console.log('▶️ Playback started');
+        });
+
+        this.transport.on('stop', () => {
+            this.setPlaybackState(false);
+            console.log('⏹️ Playback stopped');
+        });
+
+        this.transport.on('tick', (data) => {
+            this.setTransportPosition(data.formatted);
+            this.handleTransportTick(data);
+        });
+
+        this.transport.on('bar', (data) => {
+            this.handleBarChange(data);
+        });
+
+        this.transport.on('patternEvent', (data) => {
+            this.handlePatternEvent(data);
+        });
+    }
+
+    handleTransportTick(data) {
+        // Her tick'te pattern'ları process et
+        this.processActivePatterns(data.time, data.position);
+
+        // Step indicator'ı güncelle
+        const stepInPattern = Math.floor(data.position / (this.transport.ppq / 4)) % this.patternLength;
+        if (stepInPattern !== this.currentStep) {
+            this.currentStep = stepInPattern;
+            this.onPatternChange({ currentStep: this.currentStep });
+        }
+    }
+
+    handleBarChange(data) {
+        console.log(`🎼 Bar ${data.bar}`);
+        // Pattern loop'ları ve bar-based events buraya
+    }
+
+    handlePatternEvent(data) {
+        // Pattern'dan gelen events'leri instrument'lara route et
+        const { event } = data;
+
+        if (event.type === 'note' && event.data.instrumentId) {
+            this.playInstrumentNote(
+                event.data.instrumentId,
+                event.data.pitch,
+                event.data.velocity || 1,
+                data.time,
+                event.data.duration
+            );
+        }
+    }
+
+    // =================== INSTRUMENT MANAGEMENT ===================
+
+    async createInstrument(instrumentData) {
+        try {
+            console.log(`🎯 Creating native instrument: ${instrumentData.name}`);
+
+            const instrument = new NativeInstrument(
+                instrumentData,
+                this.workletManager,
+                this.audioContext
+            );
+
+            await instrument.initialize();
+
+            this.instruments.set(instrumentData.id, instrument);
+
+            // Instrument'ı mixer'a connect et
+            this.connectInstrumentToMixer(
+                instrumentData.id,
+                instrumentData.mixerTrackId || 'master'
+            );
+
+            this.metrics.instrumentsCreated++;
+            console.log(`✅ Native instrument created: ${instrumentData.name}`);
+
+            return instrument;
+
+        } catch (error) {
+            console.error(`❌ Instrument creation failed: ${instrumentData.name}`, error);
+            throw error;
+        }
+    }
+
+    connectInstrumentToMixer(instrumentId, mixerTrackId) {
+        const instrument = this.instruments.get(instrumentId);
+        const mixerStrip = this.mixerStrips.get(mixerTrackId);
+
+        if (instrument && mixerStrip) {
+            try {
+                // Instrument output'unu mixer strip'ine bağla
+                instrument.connect(mixerStrip.input);
+                console.log(`🔗 Instrument connected: ${instrumentId} -> ${mixerTrackId}`);
+            } catch (error) {
+                console.error(`❌ Instrument connection failed:`, error);
+            }
+        }
+    }
+
+    playInstrumentNote(instrumentId, pitch, velocity, time, duration) {
+        const instrument = this.instruments.get(instrumentId);
+        if (instrument) {
+            instrument.triggerNote(pitch, velocity, time, duration);
+        }
+    }
+
+    updateInstrumentParameters(instrumentId, updatedData) {
+        const instrument = this.instruments.get(instrumentId);
+        if (instrument && updatedData.synthParams) {
+            instrument.updateParameters(updatedData.synthParams);
+        }
+    }
+
+    // =================== MIXER SYSTEM ===================
+
+    createDefaultMixerStrips() {
+        // Master strip
+        this.createMixerStrip('master', 'Master', { 
+            isMaster: true,
+            output: this.masterGain 
+        });
+
+        // Default instrument strips
+        for (let i = 1; i <= 8; i++) {
+            this.createMixerStrip(`track_${i}`, `Track ${i}`, {
+                output: this.mixerStrips.get('master').input
+            });
+        }
+
+        console.log(`✅ Created ${this.mixerStrips.size} mixer strips`);
+    }
+
+    createMixerStrip(id, name, options = {}) {
+        const strip = new NativeMixerStrip(id, name, this.audioContext, options);
+        this.mixerStrips.set(id, strip);
+        return strip;
+    }
+
+    // =================== PATTERN MANAGEMENT ===================
+
+    loadPattern(patternId, patternData) {
+        this.patterns.set(patternId, {
+            id: patternId,
+            data: patternData,
+            length: patternData.length || this.patternLength
+        });
+
+        console.log(`📋 Pattern loaded: ${patternId}`);
+    }
+
+    setActivePattern(patternId) {
+        if (this.patterns.has(patternId)) {
+            this.activePatternId = patternId;
+            console.log(`🎯 Active pattern set: ${patternId}`);
+        }
+    }
+
+    processActivePatterns(time, position) {
+        if (!this.activePatternId) return;
+
+        const pattern = this.patterns.get(this.activePatternId);
+        if (!pattern) return;
+
+        // Pattern içindeki her instrument için events'leri schedule et
+        Object.entries(pattern.data).forEach(([instrumentId, notes]) => {
+            const instrument = this.instruments.get(instrumentId);
+            if (instrument && Array.isArray(notes)) {
+                this.schedulePatternNotes(instrument, notes, time, position);
+            }
+        });
+    }
+
+    schedulePatternNotes(instrument, notes, currentTime, position) {
+        notes.forEach(note => {
+            if (note && note.time !== undefined) {
+                const noteTime = this.transport.parseTime(note.time);
+                const scheduledTime = currentTime + noteTime;
+
+                // Note'u schedule et
+                instrument.triggerNote(
+                    note.pitch || note.note,
+                    note.velocity || 1,
+                    scheduledTime,
+                    note.duration
+                );
+            }
+        });
+    }
+
+    // =================== PLAYBACK CONTROL ===================
+
+    play() {
+        if (!this.isInitialized) {
+            console.warn('⚠️ Engine not initialized');
+            return;
+        }
+
+        this.transport.start();
+        return this;
+    }
+
+    stop() {
+        if (!this.isInitialized) {
+            console.warn('⚠️ Engine not initialized');
+            return;
+        }
+
+        this.transport.stop();
+        this.stopAllInstruments();
+        return this;
+    }
+
+    pause() {
+        if (!this.isInitialized) {
+            console.warn('⚠️ Engine not initialized');
+            return;
+        }
+
+        this.transport.pause();
+        return this;
+    }
+
+    setBPM(bpm) {
+        if (this.transport) {
+            this.transport.setBPM(bpm);
+        }
+        return this;
+    }
+
+    stopAllInstruments() {
+        this.instruments.forEach(instrument => {
+            instrument.allNotesOff();
+        });
+    }
+
+    // =================== AUDITION (Preview) ===================
+
+    auditionNoteOn(instrumentId, pitch, velocity = 1) {
+        const instrument = this.instruments.get(instrumentId);
+        if (instrument) {
+            instrument.triggerNote(pitch, velocity);
+        }
+    }
+
+    auditionNoteOff(instrumentId, pitch) {
+        const instrument = this.instruments.get(instrumentId);
+        if (instrument) {
+            instrument.releaseNote(pitch);
+        }
+    }
+
+    // =================== EFFECTS SYSTEM ===================
+
+    async addGlobalEffect(effectType, settings = {}) {
+        try {
+            const effectId = `global_${effectType}_${Date.now()}`;
+
+            const { node, nodeId } = await this.workletManager.createWorkletNode(
+                'effects-processor',
+                {
+                    processorOptions: {
+                        effectType,
+                        settings
+                    }
+                }
+            );
+
+            this.effects.set(effectId, {
+                node,
+                nodeId,
+                type: effectType,
+                settings
+            });
+
+            // Effect'i master chain'e ekle (master gain'den önce)
+            this.masterGain.disconnect();
+            this.masterGain.connect(node);
+            node.connect(this.compressor);
+
+            console.log(`🎚️ Global effect added: ${effectType}`);
+            return effectId;
+
+        } catch (error) {
+            console.error(`❌ Failed to add global effect: ${effectType}`, error);
+            throw error;
+        }
+    }
+
+    // =================== PERFORMANCE & MONITORING ===================
+
+    getPerformanceMetrics() {
+        const contextMetrics = this.audioContext ? {
+            state: this.audioContext.state,
+            sampleRate: this.audioContext.sampleRate,
+            currentTime: this.audioContext.currentTime.toFixed(3),
+            baseLatency: this.audioContext.baseLatency?.toFixed(6) || 'unknown'
+        } : {};
+
+        return {
+            ...this.metrics,
+            transport: this.transport?.getStats(),
+            audioContext: contextMetrics,
+            instruments: this.instruments.size,
+            mixerStrips: this.mixerStrips.size,
+            effects: this.effects.size,
+            workletManager: this.workletManager?.getStats()
+        };
+    }
+
+    getAudioAnalysis() {
+        if (!this.analyzer) return null;
+
+        const bufferLength = this.analyzer.frequencyBinCount;
+        const dataArray = new Uint8Array(bufferLength);
+        this.analyzer.getByteFrequencyData(dataArray);
+
+        return {
+            frequencyData: dataArray,
+            bufferLength,
+            sampleRate: this.audioContext.sampleRate
+        };
+    }
+
+    // =================== CLEANUP ===================
+
+    dispose() {
+        console.log('🗑️ Disposing NativeAudioEngine...');
+
+        // Stop playback
+        if (this.transport) {
+            this.transport.dispose();
+        }
+
+        // Dispose instruments
+        this.instruments.forEach((instrument, id) => {
+            try {
+                instrument.dispose();
+            } catch (error) {
+                console.error(`❌ Error disposing instrument ${id}:`, error);
+            }
+        });
+        this.instruments.clear();
+
+        // Dispose mixer strips
+        this.mixerStrips.forEach((strip, id) => {
+            try {
+                strip.dispose();
+            } catch (error) {
+                console.error(`❌ Error disposing mixer strip ${id}:`, error);
+            }
+        });
+        this.mixerStrips.clear();
+
+        // Dispose effects
+        this.effects.forEach((effect, id) => {
+            try {
+                this.workletManager.disposeNode(effect.nodeId);
+            } catch (error) {
+                console.error(`❌ Error disposing effect ${id}:`, error);
+            }
+        });
+        this.effects.clear();
+
+        // Dispose worklet manager
+        if (this.workletManager) {
+            this.workletManager.disposeAllNodes();
+        }
+
+        // Close audio context
+        if (this.audioContext && this.audioContext.state !== 'closed') {
+            this.audioContext.close();
+        }
+
+        console.log('✅ NativeAudioEngine disposed');
+    }
+}
+
+// =================== NATIVE INSTRUMENT CLASS ===================
+
+class NativeInstrument {
+    constructor(instrumentData, workletManager, audioContext) {
+        this.id = instrumentData.id;
+        this.name = instrumentData.name;
+        this.type = instrumentData.type;
+        this.workletManager = workletManager;
+        this.audioContext = audioContext;
+
+        // Audio nodes
+        this.workletNode = null;
+        this.workletNodeId = null;
+        this.outputGain = null;
+
+        // Parameters
+        this.parameters = new Map();
+
+        // State
+        this.isReady = false;
+    }
+
+    async initialize() {
+        try {
+            // Create worklet node
+            const { node, nodeId } = await this.workletManager.createWorkletNode(
+                'instrument-processor',
+                {
+                    numberOfInputs: 0,
+                    numberOfOutputs: 1,
+                    outputChannelCount: [2],
+                    processorOptions: {
+                        instrumentId: this.id,
+                        instrumentName: this.name,
+                        instrumentType: this.type
+                    }
+                }
+            );
+
+            this.workletNode = node;
+            this.workletNodeId = nodeId;
+
+            // Create output gain
+            this.outputGain = this.audioContext.createGain();
+            this.outputGain.gain.value = 0.8;
+
+            // Connect
+            this.workletNode.connect(this.outputGain);
+
+            // Setup parameters
+            this.setupParameters();
+
+            this.isReady = true;
+            console.log(`✅ Native instrument initialized: ${this.name}`);
+
+        } catch (error) {
+            console.error(`❌ Native instrument initialization failed: ${this.name}`, error);
+            throw error;
+        }
+    }
+
+    setupParameters() {
+        // Map AudioWorkletProcessor parameters
+        if (this.workletNode.parameters) {
+            ['pitch', 'gate', 'velocity', 'detune', 'filterFreq', 'filterQ',
+             'attack', 'decay', 'sustain', 'release'].forEach(paramName => {
+                const param = this.workletNode.parameters.get(paramName);
+                if (param) {
+                    this.parameters.set(paramName, param);
+                }
+            });
+        }
+    }
+
+    triggerNote(pitch, velocity = 1, time = null, duration = null) {
+        if (!this.isReady) return;
+
+        time = time || this.audioContext.currentTime;
+
+        this.workletNode.port.postMessage({
+            type: 'noteOn',
+            data: { pitch, velocity, time, duration }
+        });
+    }
+
+    releaseNote(pitch, time = null) {
+        if (!this.isReady) return;
+
+        time = time || this.audioContext.currentTime;
+
+        this.workletNode.port.postMessage({
+            type: 'noteOff',
+            data: { pitch, time }
+        });
+    }
+
+    allNotesOff() {
+        if (!this.isReady) return;
+
+        this.workletNode.port.postMessage({
+            type: 'allNotesOff',
+            data: { time: this.audioContext.currentTime }
+        });
+    }
+
+    updateParameters(params) {
+        Object.entries(params).forEach(([paramName, value]) => {
+            const param = this.parameters.get(paramName);
+            if (param) {
+                param.setTargetAtTime(value, this.audioContext.currentTime, 0.01);
+            }
+        });
+    }
+
+    connect(destination) {
+        this.outputGain.connect(destination);
+    }
+
+    disconnect() {
+        this.outputGain.disconnect();
+    }
+
+    dispose() {
+        if (this.workletNode) {
+            this.workletNode.disconnect();
+        }
+        if (this.outputGain) {
+            this.outputGain.disconnect();
+        }
+        if (this.workletNodeId) {
+            this.workletManager.disposeNode(this.workletNodeId);
+        }
+    }
+}
+
+// =================== NATIVE MIXER STRIP CLASS ===================
+
+class NativeMixerStrip {
+    constructor(id, name, audioContext, options = {}) {
+        this.id = id;
+        this.name = name;
+        this.audioContext = audioContext;
+        this.isMaster = options.isMaster || false;
+
+        // Audio nodes
+        this.input = audioContext.createGain();
+        this.gain = audioContext.createGain();
+        this.eq = this.createEQ();
+        this.output = options.output || null;
+
+        // Default settings
+        this.gain.gain.value = 0.8;
+
+        // Setup signal chain
+        this.setupSignalChain();
+    }
+
+    createEQ() {
+        // Simple 3-band EQ
+        const lowShelf = this.audioContext.createBiquadFilter();
+        const mid = this.audioContext.createBiquadFilter();
+        const highShelf = this.audioContext.createBiquadFilter();
+
+        lowShelf.type = 'lowshelf';
+        lowShelf.frequency.value = 200;
+
+        mid.type = 'peaking';
+        mid.frequency.value = 1000;
+        mid.Q.value = 0.5;
+
+        highShelf.type = 'highshelf';
+        highShelf.frequency.value = 3000;
+
+        // Chain EQ
+        lowShelf.connect(mid);
+        mid.connect(highShelf);
+
+        return { 
+            input: lowShelf, 
+            output: highShelf,
+            low: lowShelf,
+            mid: mid,
+            high: highShelf
+        };
+    }
+
+    setupSignalChain() {
+        // Signal chain: input -> gain -> eq -> output
+        this.input.connect(this.gain);
+        this.gain.connect(this.eq.input);
+
+        if (this.output) {
+            this.eq.output.connect(this.output);
+        }
+    }
+
+    setGain(value) {
+        this.gain.gain.setTargetAtTime(value, this.audioContext.currentTime, 0.01);
+    }
+
+    dispose() {
+        this.input.disconnect();
+        this.gain.disconnect();
+        this.eq.input.disconnect();
+        this.eq.output.disconnect();
+    }
 }

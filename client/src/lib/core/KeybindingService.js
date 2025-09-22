@@ -1,56 +1,64 @@
-/**
- * @file KeybindingService.js
- * @description Global klavye olaylarını dinleyen ve bunları merkezi
- * keymap'teki eylemlerle eşleştiren servis.
- */
-
-// Aktif olan olay dinleyicisini tutar, böylece kaldırabiliriz.
-let keydownListener = null;
+// src/lib/core/MeteringService.js - YENİ VE BASİTLEŞTİRİLMİŞ VERSİYON
 
 /**
- * Gelen keymap ve eylemlerle klavye dinleyicisini başlatır.
- * @param {object} keymap - `keymapConfig.js`'ten gelen yapılandırma.
- * @param {object} actions - Eylem ID'lerini gerçek fonksiyonlarla eşleştiren harita.
+ * @file MeteringService.js
+ * @description Sadece gelen veriyi ilgili abonelere dağıtan,
+ * yüksek performanslı ve pasif bir yayın/abonelik (pub/sub) sistemi.
+ * Bu yapı, ses motorundan gelen veriyi UI bileşenlerine iletmek için kullanılır.
  */
-export const KeybindingService = (keymap, actions) => {
-  // Mevcut bir dinleyici varsa, önce onu kaldır.
-  if (keydownListener) {
-    destroyKeybindings();
+
+const subscribers = new Map();
+
+/**
+ * Belirli bir ölçümleme ID'sine (meterId) bir callback fonksiyonu abone eder.
+ * @param {string} meterId - Benzersiz ölçümleme noktası kimliği (örn: 'track-1-output').
+ * @param {Function} callback - Veri geldiğinde çağrılacak fonksiyon.
+ * @returns {Function} - Aboneliği iptal etmek için çağrılacak bir fonksiyon.
+ */
+const subscribe = (meterId, callback) => {
+  if (!subscribers.has(meterId)) {
+    subscribers.set(meterId, new Set());
   }
-
-  // Hızlı arama için tuşları eylem ID'leriyle eşleştiren bir ters harita oluştur.
-  // Örn: { "Space": "TOGGLE_PLAY_PAUSE", "F9": "OPEN_MIXER" }
-  const reverseKeymap = {};
-  for (const category of Object.values(keymap)) {
-    for (const [actionId, binding] of Object.entries(category.bindings)) {
-      reverseKeymap[binding.default] = actionId;
-    }
-  }
-
-  keydownListener = (event) => {
-    // Kullanıcı bir input alanına yazıyorsa kısa yolları devre dışı bırak.
-    if (['input', 'textarea'].includes(event.target.tagName.toLowerCase())) {
-      return;
-    }
-
-    const actionId = reverseKeymap[event.code];
-    if (actionId && actions[actionId]) {
-      event.preventDefault();
-      actions[actionId]();
-    }
-  };
-
-  window.addEventListener('keydown', keydownListener);
-  console.log('[KeybindingService] Kısayollar başlatıldı.');
+  subscribers.get(meterId).add(callback);
+  
+  // Aboneliği sonlandırmak için bir fonksiyon döndür
+  return () => unsubscribe(meterId, callback);
 };
 
 /**
- * Global klavye dinleyicisini kaldırır.
+ * Bir aboneliği sonlandırır.
+ * @param {string} meterId - Aboneliğin yapıldığı kimlik.
+ * @param {Function} callback - Kaldırılacak fonksiyon.
  */
-export const destroyKeybindings = () => {
-  if (keydownListener) {
-    window.removeEventListener('keydown', keydownListener);
-    keydownListener = null;
-    console.log('[KeybindingService] Kısayollar devre dışı bırakıldı.');
+const unsubscribe = (meterId, callback) => {
+  if (subscribers.has(meterId)) {
+    subscribers.get(meterId).delete(callback);
+    if (subscribers.get(meterId).size === 0) {
+      subscribers.delete(meterId);
+    }
   }
+};
+
+/**
+ * Dışarıdan (genellikle ses motorundan) çağrılır.
+ * Belirli bir ölçümleme noktası için yeni veriyi tüm abonelere yayınlar.
+ * @param {string} meterId - Verinin ait olduğu kimlik.
+ * @param {*} data - Abonelere gönderilecek olan veri (genellikle bir sayı veya dizi).
+ */
+const publish = (meterId, data) => {
+  if (subscribers.has(meterId)) {
+    subscribers.get(meterId).forEach(callback => {
+      try {
+        callback(data);
+      } catch (error) {
+        console.error(`[MeteringService] Callback error for ${meterId}:`, error);
+      }
+    });
+  }
+};
+
+export const MeteringService = {
+  subscribe,
+  unsubscribe,
+  publish,
 };
