@@ -193,21 +193,20 @@ export class NativeTransportSystem {
         }
     }
 
-    // YENİ VE DOĞRU ÇALIŞAN processScheduledEvents METODU
     processScheduledEvents(tickTime) {
-        // O anki tick zamanına denk gelen tüm notaları bul
+        // O anki tick zamanına denk gelen veya geçmiş tüm notaları bul
         for (const [scheduledTime, events] of this.scheduledEvents.entries()) {
             // Zamanı gelen notaları işle
             if (scheduledTime <= tickTime) {
                 events.forEach(event => {
                     try {
-                        // Callback'i, olması gereken hassas zamanla çağır
+                        // Callback'i, olması gereken hassas zamanla ve datayla çağır
                         event.callback(scheduledTime, event.data);
                     } catch (error) {
                         console.error('❌ Scheduled event error:', error);
                     }
                 });
-                // İşlenen notaları listeden sil
+                // İşlenen notaları listeden sil ki tekrar çalınmasınlar
                 this.scheduledEvents.delete(scheduledTime);
             }
         }
@@ -375,37 +374,6 @@ export class NativeTransportSystem {
                 }
             });
         }
-    }
-
-    scheduleEvent(time, callback, data = {}) {
-        const eventId = `event_${Date.now()}_${Math.random()}`;
-
-        if (!this.scheduledEvents.has(time)) {
-            this.scheduledEvents.set(time, []);
-        }
-
-        this.scheduledEvents.get(time).push({
-            id: eventId,
-            callback,
-            data
-        });
-
-        return eventId;
-    }
-
-    processScheduledEvents(currentTime) {
-        this.scheduledEvents.forEach((events, scheduledTime) => {
-            if (Math.abs(scheduledTime - currentTime) < 0.001) {
-                events.forEach(event => {
-                    try {
-                        event.callback(event.data);
-                    } catch (error) {
-                        console.error('❌ Scheduled event error:', error);
-                    }
-                });
-                this.scheduledEvents.delete(scheduledTime);
-            }
-        });
     }
 
     // =================== UTILITY METHODS ===================

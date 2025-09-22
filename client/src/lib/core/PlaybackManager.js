@@ -381,27 +381,25 @@ export class PlaybackManager {
                 NativeTimeUtils.parseTime(note.duration, this.transport.bpm) : 
                 this._stepsToSeconds(1);
 
-            // Schedule note on
+            // Nota AÇMA (Note On) zamanlaması
             this.transport.scheduleEvent(
                 noteTime,
-                // --- DEĞİŞİKLİK BURADA ---
-                // Callback artık transport'tan gelen hassas 'scheduledTime'ı alıyor.
-                (scheduledTime) => {
+                (scheduledTime) => { // Düzeltme: Transport'tan gelen hassas zamanı alıyoruz
                     instrument.triggerNote(
                         note.pitch || 'C4',
                         note.velocity || 1,
-                        scheduledTime, // Hatanın kaynağı olan 'currentTime' yerine bunu kullanıyoruz.
+                        scheduledTime, // ve enstrümana bu hassas zamanı iletiyoruz.
                         noteDuration
                     );
                 },
                 { type: 'noteOn', instrumentId, note }
             );
 
-            // Note off zamanlamasında bir değişiklik yok, zaten doğru çalışıyor.
+            // Nota KAPATMA (Note Off) zamanlaması
             if (note.duration && note.duration !== 'trigger') {
                 this.transport.scheduleEvent(
                     noteTime + noteDuration,
-                    (scheduledTime) => { // Bu callback de güncellenmeli
+                    (scheduledTime) => { // Düzeltme: Aynı hassas zamanı burada da kullanıyoruz
                         instrument.releaseNote(note.pitch || 'C4', scheduledTime);
                     },
                     { type: 'noteOff', instrumentId, note }
@@ -409,6 +407,7 @@ export class PlaybackManager {
             }
         });
     }
+
 
     _schedulePatternAutomation(pattern) {
         // Schedule pattern-level automation

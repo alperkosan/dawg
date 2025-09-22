@@ -498,6 +498,7 @@ export class NativeAudioEngine {
 
     async _createMixerChannel(id, name, options = {}) {
         try {
+            // 1. Mikser kanalı için AudioWorkletNode'u oluşturuyoruz.
             const { node: mixerNode } = await this.workletManager.createWorkletNode(
                 'mixer-processor',
                 {
@@ -508,33 +509,32 @@ export class NativeAudioEngine {
                 }
             );
 
-            // HATA DÜZELTMESİ 1: workletManager'ı NativeMixerChannel'a iletiyoruz.
+            // 2. Kendi NativeMixerChannel sınıfımızı kullanarak yeni bir kanal örneği oluşturuyoruz.
+            //    Bu, ona worklet yöneticisini (workletManager) de ileterek efektlerin
+            //    doğru şekilde oluşturulmasını sağlar.
             const channel = new NativeMixerChannel(
                 id,
                 name,
                 mixerNode,
                 this.audioContext,
-                this.workletManager, // EKLENDİ
+                this.workletManager, // Efekt yönetimi için bu referans kritikti.
                 options
             );
 
+            // 3. Oluşturulan kanalı, motorun ana listesine ekliyoruz.
             this.mixerChannels.set(id, channel);
 
-            // Connect to master if not master itself
-            if (!options.isMaster) {
-                const masterChannel = this.mixerChannels.get('master');
-                if (masterChannel) {
-                    channel.connect(masterChannel.input);
-                } else {
-                    channel.connect(this.masterMixer.input);
-                }
+            // 4. ANA DÜZELTME: Eğer bu kanal Master'ın kendisi DEĞİLSE,
+            //    çıkışını Master kanalının girişine bağlıyoruz. Bu, sesin duyulmasını sağlar.
+            if (!options.isMaster && this.masterMixer?.input) {
+                channel.connect(this.masterMixer.input);
             }
 
             this.metrics.channelsCreated++;
             return channel;
 
         } catch (error) {
-            console.error(`❌ Failed to create mixer channel: ${id}`, error);
+            console.error(`❌ Mikser kanalı oluşturulamadı: ${id}`, error);
             throw error;
         }
     }
