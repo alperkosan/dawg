@@ -18,14 +18,14 @@ function App() {
     setEngineStatus('initializing');
     await initializeAudioSystem();
   };
-  
-  // ✅ FIX: useCallback dependencies düzeltildi
-  const handleRetryInitialization = useCallback(() => {
+
+  const handleRetryInitialization = async () => {
     setEngineStatus('initializing');
     setEngineError(null);
     setInitializationProgress(0);
     initializeAudioSystem();
-  }, []); // Boş dependency array
+  };  
+  
 
   const initializeAudioSystem = async () => {
     try {
