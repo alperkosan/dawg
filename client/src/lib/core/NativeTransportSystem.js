@@ -338,34 +338,31 @@ export class NativeTransportSystem {
             }
         }
     }
+
     nextTick() {
         const secondsPerTick = this.getSecondsPerTick();
-        
-        // Önce tick'i ilerlet
         this.currentTick++;
         this.position = this.currentTick;
         
-        // ✅ DEBUG: Loop kontrolü öncesi bilgi
         const shouldLoop = this.loop && this.currentTick >= this.loopEnd;
         
         if (shouldLoop) {
-            console.log(`🔁 Loop trigger:`);
-            console.log(`   Current tick: ${this.currentTick}, Loop end: ${this.loopEnd}`);
-            console.log(`   Time: ${this.nextTickTime.toFixed(3)}s, Duration: ${((this.currentTick - this.loopStart) * secondsPerTick).toFixed(3)}s`);
-            
+            // ✅ KRİTİK GÜNCELLEME: Döngü gerçekleştiğinde bir olay tetikliyoruz.
+            // Bu, PlaybackManager'a notaları yeniden planlaması için bir sinyal gönderecek.
+            const loopTime = this.nextTickTime;
+            this.triggerCallback('loop', { 
+                time: loopTime, 
+                nextLoopStartTime: loopTime // Bir sonraki döngünün başlangıç zamanı
+            });
+
+            console.log(`🔁 Loop trigger: at ${loopTime.toFixed(3)}s`);
+
             this.currentTick = this.loopStart;
             this.position = this.currentTick;
-            
-            this.triggerCallback('loop', { 
-                time: this.nextTickTime, 
-                fromTick: this.loopEnd - 1, 
-                toTick: this.loopStart 
-            });
         }
         
-        // Zamanı güncelle
         this.nextTickTime += secondsPerTick;
-        
+
         // Bar tracking - sadece bar değiştiğinde log
         const newBar = Math.floor(this.currentTick / this.ticksPerBar);
         if (newBar !== this.currentBar) {

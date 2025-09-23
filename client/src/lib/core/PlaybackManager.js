@@ -9,6 +9,9 @@ export class PlaybackManager {
     constructor(audioEngine) {
         this.audioEngine = audioEngine;
         this.transport = audioEngine.transport;
+
+        // ✅ EKLENDİ: Transport'tan gelen olayları dinlemek için.
+        this._bindTransportEvents();
         
         // Playback state
         this.currentMode = 'pattern'; // 'pattern' | 'song'
@@ -37,6 +40,19 @@ export class PlaybackManager {
         
         console.log('🎵 PlaybackManager initialized');
     }
+
+    /**
+     * @private
+     * Transport'tan gelen temel olayları (döngü gibi) dinler ve
+     * bunlara göre yeniden planlama yapar.
+     */
+    _bindTransportEvents() {
+        this.transport.on('loop', ({ nextLoopStartTime }) => {
+            console.log(`🧠 PlaybackManager received loop event. Rescheduling for ${nextLoopStartTime.toFixed(3)}s`);
+            // Bir sonraki döngünün başlangıç zamanını kullanarak içeriği yeniden planla.
+            this._scheduleContent(nextLoopStartTime);
+        });
+    }    
 
     // =================== MODE MANAGEMENT ===================
 
@@ -381,53 +397,38 @@ export class PlaybackManager {
         });
     }
 
-    _scheduleInstrumentNotes(instrument, notes, instrumentId) {
+    _scheduleInstrumentNotes(instrument, notes, instrumentId, startTime) {
         notes.forEach(note => {
-            // ✅ CRITICAL: Convert note.time (steps) to seconds
             const noteTimeInSteps = note.time || 0;
-            const noteTimeInSeconds = this.transport.stepsToSeconds(noteTimeInSteps);
-            
+            const noteTimeRelativeInSeconds = this.transport.stepsToSeconds(noteTimeInSteps);
+            const noteTimeAbsoluteInSeconds = startTime + noteTimeRelativeInSeconds;
+
             const noteDuration = note.duration ? 
                 NativeTimeUtils.parseTime(note.duration, this.transport.bpm) : 
-                this.transport.stepsToSeconds(1); // Default 1 step duration
+                this.transport.stepsToSeconds(1);
     
-            // ✅ FIXED: Schedule with SECONDS (transport expects seconds)
+            // ✅ DÜZELTME: scheduleEvent'e sadece MUTLAK zamanı gönderiyoruz.
             this.transport.scheduleEvent(
-                noteTimeInSeconds,
+                noteTimeAbsoluteInSeconds,
                 (scheduledTime) => {
-                    try {
-                        instrument.triggerNote(
-                            note.pitch || 'C4',
-                            note.velocity || 1,
-                            scheduledTime,
-                            noteDuration
-                        );
-                        console.log(`🎵 Note scheduled: ${instrumentId} - ${note.pitch} at step ${noteTimeInSteps} (${scheduledTime.toFixed(3)}s)`);
-                    } catch (error) {
-                        console.error(`❌ Note trigger failed: ${instrumentId}`, error);
-                    }
+                    // triggerNote fonksiyonuna da mutlak zamanı veriyoruz.
+                    instrument.triggerNote(note.pitch || 'C4', note.velocity || 1, scheduledTime, noteDuration);
                 },
                 { type: 'noteOn', instrumentId, note, step: noteTimeInSteps }
             );
     
-            // Note release scheduling
             if (note.duration && note.duration !== 'trigger') {
                 this.transport.scheduleEvent(
-                    noteTimeInSeconds + noteDuration,
+                    noteTimeAbsoluteInSeconds + noteDuration,
                     (scheduledTime) => {
-                        try {
-                            instrument.releaseNote(note.pitch || 'C4', scheduledTime);
-                            console.log(`🎵 Note released: ${instrumentId} - ${note.pitch} at ${scheduledTime.toFixed(3)}s`);
-                        } catch (error) {
-                            console.error(`❌ Note release failed: ${instrumentId}`, error);
-                        }
+                        instrument.releaseNote(note.pitch || 'C4', scheduledTime);
                     },
                     { type: 'noteOff', instrumentId, note }
                 );
             }
         });
         
-        console.log(`📋 Scheduled ${notes.length} notes for ${instrumentId}`);
+        console.log(`📋 Scheduled ${notes.length} notes for ${instrumentId} starting at ${startTime.toFixed(3)}s`);
     }
 
 
