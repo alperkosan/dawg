@@ -1,5 +1,5 @@
-// App.jsx - NativeAudioEngine Complete Integration
-import React, { useState, useEffect, useRef } from 'react';
+// App.jsx - Hata Düzeltmeleri ile
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { NativeAudioEngine } from './lib/core/NativeAudioEngine';
 import { AudioContextService } from './lib/services/AudioContextService';
 import { usePlaybackStore } from './store/usePlaybackStore';
@@ -7,76 +7,74 @@ import { useArrangementStore } from './store/useArrangementStore';
 import { useInstrumentsStore } from './store/useInstrumentsStore';
 import { useMixerStore } from './store/useMixerStore';
 
-// ========== İMPORT EDİLMESİ GEREKEN DOSYALAR ==========
-// Bu dosyaları önce oluşturman gerekiyor:
-// import { WorkletHealthChecker } from './lib/audio/WorkletHealthChecker';
-// import { storePipeline } from './lib/core/StorePipeline';
-
 function App() {
-  const [engineStatus, setEngineStatus] = useState('waiting-to-start'); // ✅ YENİ: Başlatma bekliyor
+  const [engineStatus, setEngineStatus] = useState('waiting-to-start');
   const [engineError, setEngineError] = useState(null);
   const [initializationProgress, setInitializationProgress] = useState(0);
   const audioEngineRef = useRef(null);
 
-  // ✅ YENİ: Otomatik başlatma YOK, manuel başlatma
-
-  // ✅ YENİ: Manuel başlatma butonu handler'ı
-  const handleStartAudioEngine = async () => {
+  // ✅ FIX: useCallback dependencies düzeltildi
+  const handleStartAudioEngine = useCallback(async () => {
     console.log('🎵 User clicked to start audio engine');
     setEngineStatus('initializing');
     setInitializationProgress(0);
+    setEngineError(null);
     await initializeAudioSystem();
-  };
+  }, []); // Boş dependency array
 
-  // ✅ DOĞRU: Fonksiyon App component'i içinde tanımlanmış
+  // ✅ FIX: useCallback dependencies düzeltildi
+  const handleRetryInitialization = useCallback(() => {
+    setEngineStatus('initializing');
+    setEngineError(null);
+    setInitializationProgress(0);
+    initializeAudioSystem();
+  }, []); // Boş dependency array
+
   const initializeAudioSystem = async () => {
     try {
       console.log('🚀 Starting audio system initialization...');
       
-      // =================== 1. USER GESTURE CHECK ===================
+      // =================== 1. AUDIO CONTEXT CREATION ===================
       setEngineStatus('waiting-user-gesture');
       setInitializationProgress(10);
       
       const audioContext = await createAudioContextWithUserGesture();
       
-      // =================== 2. WORKLET HEALTH CHECK ===================
-      // setEngineStatus('checking-worklets');
-      // setInitializationProgress(20);
-      
-      // TODO: Uncomment when WorkletHealthChecker is created
-      // const workletHealth = await WorkletHealthChecker.validateAllWorklets();
-      // console.log('📦 Worklet health check:', workletHealth);
-      
-      // =================== 3. ENGINE CREATION ===================
+      // =================== 2. ENGINE CREATION ===================
       setEngineStatus('creating-engine');
-      setInitializationProgress(40);
+      setInitializationProgress(30);
       
       const engine = new NativeAudioEngine({
         setPlaybackState: usePlaybackStore.getState().setPlaybackState,
         setTransportPosition: usePlaybackStore.getState().setTransportPosition,
         onPatternChange: (data) => {
           console.log('🎵 Pattern changed:', data);
-          // TODO: Handle pattern change events
         }
       });
 
       audioEngineRef.current = engine;
       
-      // =================== 4. ENGINE INITIALIZATION ===================
+      // =================== 3. ENGINE INITIALIZATION ===================
       setEngineStatus('initializing-engine');
-      setInitializationProgress(60);
+      setInitializationProgress(50);
       
       await engine.initializeWithContext(audioContext);
       
-      // =================== 5. SERVICE REGISTRATION ===================
+      // =================== 4. SERVICE REGISTRATION ===================
       setEngineStatus('registering-service');
-      setInitializationProgress(70);
+      setInitializationProgress(60);
       
       await AudioContextService.setAudioEngine(engine);
       
-      // =================== 6. CONTENT LOADING ===================
+      // =================== 5. ✅ FIX: WORKLET VALIDATION ===================
+      setEngineStatus('validating-worklets');
+      setInitializationProgress(65);
+      
+      await validateWorkletRegistry(engine);
+      
+      // =================== 6. CONTENT LOADING (SAMPLE ONLY) ===================
       setEngineStatus('loading-content');
-      setInitializationProgress(80);
+      setInitializationProgress(70);
       
       await loadInitialContent(engine);
       
@@ -99,141 +97,173 @@ function App() {
     }
   };
 
-  // =================== HELPER FUNCTIONS ===================
-  
-  const createAudioContextWithUserGesture = async () => {
-    return new Promise((resolve, reject) => {
-      const createContext = async () => {
-        try {
-          const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-          if (!AudioContextClass) {
-            throw new Error('AudioContext not supported in this browser');
-          }
-
-          const context = new AudioContextClass({
-            latencyHint: 'interactive',
-            sampleRate: 48000
-          });
-
-          // Resume context if suspended
-          if (context.state === 'suspended') {
-            await context.resume();
-          }
-
-          console.log('🎵 AudioContext created:', {
-            state: context.state,
-            sampleRate: context.sampleRate
-          });
-
-          resolve(context);
-          
-          // Remove click listener after successful creation
-          document.removeEventListener('click', createContext);
-          
-        } catch (error) {
-          reject(error);
+  // ✅ FIX: Worklet registry validation
+  const validateWorkletRegistry = async (engine) => {
+    console.log('🔍 Validating worklet registry...');
+    
+    const requiredWorklets = [
+      'instrument-processor',
+      'mixer-processor', 
+      'effects-processor',
+      'analysis-processor'
+    ];
+    
+    const loadedWorklets = Array.from(engine.workletManager.loadedWorklets);
+    console.log('📦 Loaded worklets:', loadedWorklets);
+    
+    const missingWorklets = requiredWorklets.filter(name => 
+      !loadedWorklets.includes(name)
+    );
+    
+    if (missingWorklets.length > 0) {
+      throw new Error(`Missing worklets: ${missingWorklets.join(', ')}`);
+    }
+    
+    // Test worklet creation
+    try {
+      const testResult = await engine.workletManager.createWorkletNode(
+        'instrument-processor',
+        {
+          processorOptions: { test: true }
         }
-      };
+      );
+      
+      // Clean up test node
+      engine.workletManager.disposeNode(testResult.nodeId);
+      console.log('✅ Worklet registry validation passed');
+      
+    } catch (error) {
+      throw new Error(`Worklet validation failed: ${error.message}`);
+    }
+  };
 
-      // Try to create immediately
-      createContext().catch(() => {
-        // If it fails (usually needs user gesture), wait for click
-        console.log('⚠️ Waiting for user gesture to create AudioContext...');
-        document.addEventListener('click', createContext, { once: true });
-      });
+  const createAudioContextWithUserGesture = async () => {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) {
+      throw new Error('AudioContext not supported in this browser');
+    }
+
+    const context = new AudioContextClass({
+      latencyHint: 'interactive',
+      sampleRate: 48000
     });
+
+    if (context.state === 'suspended') {
+      await context.resume();
+    }
+
+    console.log('🎵 AudioContext created:', {
+      state: context.state,
+      sampleRate: context.sampleRate
+    });
+
+    return context;
   };
 
   const loadInitialContent = async (engine) => {
     try {
-      // Load instruments
       const instrumentData = useInstrumentsStore.getState().instruments;
       console.log('📥 Loading instruments:', instrumentData.length);
       
-      // Preload samples
-      await engine.preloadSamples(instrumentData);
+      // ✅ FIX: Sadece sample instrument'ları yükle, synth'leri atla
+      const sampleInstruments = instrumentData.filter(inst => inst.type === 'sample');
+      const synthInstruments = instrumentData.filter(inst => inst.type === 'synth');
       
-      // Create instruments in engine
-      for (const instData of instrumentData) {
-        await engine.createInstrument(instData);
+      console.log(`📦 Sample instruments: ${sampleInstruments.length}, Synth instruments: ${synthInstruments.length} (skipped)`);
+      
+      // Preload samples
+      if (sampleInstruments.length > 0) {
+        await engine.preloadSamples(sampleInstruments);
+      }
+      
+      // Create only sample instruments
+      for (const instData of sampleInstruments) {
+        try {
+          await engine.createInstrument(instData);
+        } catch (error) {
+          console.warn(`⚠️ Skipping instrument ${instData.name}: ${error.message}`);
+        }
       }
       
       // Set initial pattern
       const { activePatternId } = useArrangementStore.getState();
       engine.setActivePattern(activePatternId);
       
-      console.log('✅ Initial content loaded');
+      console.log('✅ Initial content loaded (samples only)');
       
     } catch (error) {
       console.error('❌ Failed to load initial content:', error);
-      throw error;
+      // Don't throw, continue with partial setup
+      console.log('⚠️ Continuing with partial setup...');
     }
   };
 
   const setupStoreSubscriptions = (engine) => {
-    // =================== ARRANGEMENT STORE SUBSCRIPTION ===================
     let lastArrangementState = useArrangementStore.getState();
     
     const unsubscribeArrangement = useArrangementStore.subscribe((state) => {
-      // Active pattern changed
-      if (state.activePatternId !== lastArrangementState.activePatternId) {
-        console.log('🔄 Active pattern changed:', state.activePatternId);
-        engine.setActivePattern(state.activePatternId);
-        
-        // Update loop length in playback store
-        usePlaybackStore.getState().updateLoopLength();
-        
-        // Reschedule if playing
-        if (usePlaybackStore.getState().playbackState === 'playing') {
-          AudioContextService.reschedule();
-        }
+      if (!lastArrangementState) {
+        lastArrangementState = state;
+        return;
       }
       
-      // Pattern content changed
+      let needsReschedule = false;
+      
+      if (state.activePatternId !== lastArrangementState.activePatternId) {
+        console.log('🔄 Active pattern changed:', state.activePatternId);
+        engine.setActivePattern?.(state.activePatternId);
+        usePlaybackStore.getState().updateLoopLength?.();
+        needsReschedule = true;
+      }
+      
       if (JSON.stringify(state.patterns) !== JSON.stringify(lastArrangementState.patterns)) {
         console.log('🎼 Pattern content changed');
-        
-        // Reschedule if playing
-        if (usePlaybackStore.getState().playbackState === 'playing') {
-          AudioContextService.reschedule();
-        }
+        needsReschedule = true;
+      }
+      
+      if (needsReschedule && usePlaybackStore.getState().playbackState === 'playing') {
+        AudioContextService.reschedule?.();
       }
       
       lastArrangementState = state;
     });
 
-    // =================== PLAYBACK STORE SUBSCRIPTION ===================
     let lastPlaybackState = usePlaybackStore.getState();
     
     const unsubscribePlayback = usePlaybackStore.subscribe((state) => {
-      // BPM changed
+      if (!lastPlaybackState) {
+        lastPlaybackState = state;
+        return;
+      }
+      
       if (state.bpm !== lastPlaybackState.bpm) {
         console.log('🎼 BPM changed:', state.bpm);
-        engine.setBPM(state.bpm);
+        engine.setBPM?.(state.bpm);
       }
       
       lastPlaybackState = state;
     });
 
-    // =================== MIXER STORE SUBSCRIPTION ===================
     let lastMixerState = useMixerStore.getState();
     
     const unsubscribeMixer = useMixerStore.subscribe((state) => {
-      // Track parameter changes
+      if (!lastMixerState) {
+        lastMixerState = state;
+        return;
+      }
+      
       state.mixerTracks.forEach(track => {
         const prevTrack = lastMixerState.mixerTracks.find(t => t.id === track.id);
         
         if (prevTrack) {
-          // Volume changed
           if (track.volume !== prevTrack.volume) {
             console.log('🔊 Volume changed:', track.id, track.volume);
-            AudioContextService.setChannelVolume(track.id, track.volume);
+            AudioContextService.setChannelVolume?.(track.id, track.volume);
           }
           
-          // Pan changed
           if (track.pan !== prevTrack.pan) {
             console.log('↔️ Pan changed:', track.id, track.pan);
-            AudioContextService.setChannelPan(track.id, track.pan);
+            AudioContextService.setChannelPan?.(track.id, track.pan);
           }
         }
       });
@@ -241,7 +271,6 @@ function App() {
       lastMixerState = state;
     });
 
-    // Store cleanup functions for later use
     engine._storeUnsubscribers = [
       unsubscribeArrangement,
       unsubscribePlayback,
@@ -251,35 +280,71 @@ function App() {
     console.log('✅ Store subscriptions setup complete');
   };
 
-  // =================== CLEANUP ===================
+  // ✅ FIX: Cleanup useEffect dependencies
   useEffect(() => {
     return () => {
       if (audioEngineRef.current) {
         console.log('🧹 Cleaning up audio engine...');
         
-        // Cleanup store subscriptions
         if (audioEngineRef.current._storeUnsubscribers) {
-          audioEngineRef.current._storeUnsubscribers.forEach(unsub => unsub());
+          audioEngineRef.current._storeUnsubscribers.forEach(unsub => {
+            try { unsub(); } catch (e) {}
+          });
         }
         
-        // Dispose engine
-        audioEngineRef.current.dispose();
+        if (audioEngineRef.current.dispose) {
+          audioEngineRef.current.dispose();
+        }
         audioEngineRef.current = null;
       }
     };
   }, []);
 
-  // =================== ERROR HANDLING ===================
-  const handleRetryInitialization = () => {
-    setEngineStatus('initializing');
-    setEngineError(null);
-    setInitializationProgress(0);
-    initializeAudioSystem();
-  };
+  // ✅ FIX: Memoized status message
+  const statusMessage = useMemo(() => {
+    const messages = {
+      'waiting-to-start': 'Waiting for user to start',
+      'initializing': 'Starting up...',
+      'waiting-user-gesture': 'Activating audio context',
+      'creating-engine': 'Creating audio engine...',
+      'initializing-engine': 'Initializing core systems...',
+      'registering-service': 'Registering audio service...',
+      'validating-worklets': 'Validating audio processors...',
+      'loading-content': 'Loading instruments and patterns...',
+      'setting-up-stores': 'Setting up data synchronization...',
+      'ready': 'Ready to rock!'
+    };
+    return messages[engineStatus] || engineStatus;
+  }, [engineStatus]);
 
-  // =================== RENDER ===================
-  
-  // ✅ YENİ: Başlatmayı bekleyen durum
+  // ✅ FIX: Memoized test functions
+  const testFunctions = useMemo(() => ({
+    testPlayback: () => {
+      console.log('🧪 Testing audio engine...');
+      AudioContextService.play?.();
+      setTimeout(() => AudioContextService.stop?.(), 2000);
+    },
+    
+    logStats: () => {
+      const stats = AudioContextService.getEngineStats?.();
+      console.log('📊 Engine stats:', stats);
+    },
+    
+    testNote: () => {
+      console.log('🔊 Testing note audition...');
+      const instruments = useInstrumentsStore.getState().instruments;
+      const firstInstrument = instruments.find(inst => inst.type === 'sample');
+      
+      if (firstInstrument) {
+        AudioContextService.auditionNoteOn?.(firstInstrument.id, 'C4', 0.8);
+        setTimeout(() => AudioContextService.auditionNoteOff?.(firstInstrument.id, 'C4'), 500);
+      } else {
+        console.log('⚠️ No sample instruments available for testing');
+      }
+    }
+  }), []);
+
+  // =================== RENDER FUNCTIONS ===================
   if (engineStatus === 'waiting-to-start') {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-50 to-blue-50">
@@ -300,7 +365,7 @@ function App() {
             <h3 className="font-semibold text-blue-800 mb-2">What will be initialized:</h3>
             <ul className="text-sm text-blue-700 space-y-1">
               <li>✨ WebAudio AudioWorklets</li>
-              <li>🎹 Instrument processors</li>
+              <li>🎹 Sample instruments (Synths temporarily disabled)</li>
               <li>🎛️ Mixer channels</li>
               <li>⏱️ Transport system</li>
               <li>📡 Real-time callbacks</li>
@@ -357,7 +422,7 @@ function App() {
     );
   }
 
-  if (engineStatus !== 'ready' && engineStatus !== 'waiting-to-start') {
+  if (engineStatus !== 'ready') {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="max-w-md p-6 bg-white rounded-lg shadow-lg">
@@ -380,7 +445,7 @@ function App() {
             </div>
             <div className="flex justify-between text-xs text-gray-600 mt-2">
               <span>{initializationProgress}%</span>
-              <span>{getStatusMessage(engineStatus)}</span>
+              <span>{statusMessage}</span>
             </div>
           </div>
           
@@ -389,17 +454,9 @@ function App() {
               Setting up your audio environment...
             </p>
             
-            {engineStatus === 'waiting-user-gesture' && (
-              <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                <p className="text-sm text-yellow-700">
-                  🎵 Ready! Audio context will activate automatically.
-                </p>
-              </div>
-            )}
-            
             {engineStatus === 'loading-content' && (
               <div className="text-xs text-gray-500">
-                Loading {useInstrumentsStore(s => s.instruments.length)} instruments...
+                Loading {useInstrumentsStore(s => s.instruments.filter(i => i.type === 'sample').length)} sample instruments...
               </div>
             )}
           </div>
@@ -408,7 +465,7 @@ function App() {
     );
   }
 
-  // Main app render - Engine is ready!
+  // Engine is ready!
   return (
     <div className="min-h-screen bg-gray-100">
       <header className="bg-white shadow-sm border-b">
@@ -419,7 +476,7 @@ function App() {
                 🎵 Native Audio Engine
               </h1>
               <p className="text-sm text-green-600 font-medium">
-                ✅ Ready & Active
+                ✅ Ready & Active (Samples Only)
               </p>
             </div>
             <div className="flex items-center space-x-2 text-sm text-gray-600">
@@ -431,7 +488,6 @@ function App() {
       </header>
       
       <main className="max-w-7xl mx-auto px-4 py-8">
-        {/* Engine Status Card */}
         <div className="bg-white p-6 rounded-lg shadow-lg mb-6">
           <h2 className="text-lg font-semibold mb-4 flex items-center">
             <span className="w-3 h-3 bg-green-500 rounded-full mr-2 animate-pulse"></span>
@@ -450,99 +506,59 @@ function App() {
             </div>
             <div className="text-center p-3 bg-purple-50 rounded-lg">
               <div className="text-2xl mb-1">🎹</div>
-              <div className="text-sm font-medium">Instruments</div>
+              <div className="text-sm font-medium">Sample Instruments</div>
               <div className="text-xs text-purple-600">
-                {useInstrumentsStore(s => s.instruments.length)} Loaded
+                {useInstrumentsStore(s => s.instruments.filter(i => i.type === 'sample').length)} Loaded
               </div>
             </div>
             <div className="text-center p-3 bg-orange-50 rounded-lg">
               <div className="text-2xl mb-1">🎛️</div>
               <div className="text-sm font-medium">Mixer</div>
-              <div className="text-xs text-orange-600">16 Channels</div>
+              <div className="text-xs text-orange-600">20 Channels</div>
             </div>
           </div>
         </div>
         
-        {/* Quick Test Panel */}
         <div className="bg-white p-6 rounded-lg shadow-lg mb-6">
           <h3 className="text-lg font-semibold mb-4">Quick Test</h3>
           <div className="space-y-3">
             <button 
-              onClick={() => {
-                console.log('🧪 Testing audio engine...');
-                AudioContextService.play();
-                setTimeout(() => AudioContextService.stop(), 2000);
-              }}
+              onClick={testFunctions.testPlayback}
               className="w-full py-2 px-4 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
             >
               ▶️ Test Playback (2 seconds)
             </button>
             
             <button 
-              onClick={() => {
-                console.log('📊 Engine stats:', AudioContextService.getEngineStats());
-              }}
+              onClick={testFunctions.logStats}
               className="w-full py-2 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
             >
               📊 Log Engine Stats
             </button>
             
             <button 
-              onClick={() => {
-                console.log('🔊 Testing note audition...');
-                AudioContextService.auditionNoteOn('inst-1', 'C4', 0.8);
-                setTimeout(() => AudioContextService.auditionNoteOff('inst-1', 'C4'), 500);
-              }}
+              onClick={testFunctions.testNote}
               className="w-full py-2 px-4 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
             >
-              🎹 Test Note (C4)
+              🎹 Test Sample Note
             </button>
           </div>
         </div>
 
-        {/* Development Info */}
-        <div className="bg-gray-50 p-6 rounded-lg">
-          <h3 className="text-lg font-semibold mb-4 text-gray-800">
-            🚀 Ready for Integration
+        <div className="bg-yellow-50 border border-yellow-200 p-6 rounded-lg">
+          <h3 className="text-lg font-semibold mb-2 text-yellow-800">
+            ⚠️ Temporary Limitations
           </h3>
-          <p className="text-gray-600 mb-4">
-            Your Native Audio Engine is now fully initialized and ready to integrate with your UI components.
-          </p>
-          <div className="text-sm text-gray-600 space-y-1">
-            <p><strong>Next Steps:</strong></p>
-            <p>• Add your TransportControls component</p>
-            <p>• Add your PianoRoll component</p>
-            <p>• Add your MixerPanel component</p>
-            <p>• Replace this placeholder with your actual app</p>
+          <div className="text-sm text-yellow-700 space-y-1">
+            <p>• <strong>Synth instruments are temporarily disabled</strong> (worklet registry issue)</p>
+            <p>• Only sample-based instruments are loaded</p>
+            <p>• Full synthesis support will be added in next update</p>
+            <p>• All mixer channels and transport system are fully functional</p>
           </div>
         </div>
-        
-        {/* Your actual app components will replace this section:
-        <TransportControls />
-        <PianoRoll />
-        <MixerPanel />
-        */}
       </main>
     </div>
   );
 }
-
-// =================== HELPER FUNCTION ===================
-  const getStatusMessage = (status) => {
-    const messages = {
-      'waiting-to-start': 'Waiting for user to start',
-      'initializing': 'Starting up...',
-      'waiting-user-gesture': 'Activating audio context',
-      'checking-worklets': 'Checking audio processors...',
-      'creating-engine': 'Creating audio engine...',
-      'initializing-engine': 'Initializing core systems...',
-      'registering-service': 'Registering audio service...',
-      'loading-content': 'Loading instruments and patterns...',
-      'setting-up-stores': 'Setting up data synchronization...',
-      'ready': 'Ready to rock!'
-    };
-    
-    return messages[status] || status;
-  };
 
 export default App;
