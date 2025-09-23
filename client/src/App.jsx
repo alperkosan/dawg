@@ -523,41 +523,470 @@ function App() {
           </div>
         </div>
         
+        {/* Interface Testing Panel */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6 mb-6">
+
+          {/* Basic Audio Engine Tests */}
+          <div className="bg-white p-6 rounded-lg shadow-lg">
+            <h3 className="text-lg font-semibold mb-4 flex items-center">
+              <span className="w-3 h-3 bg-green-500 rounded-full mr-2"></span>
+              Basic Engine Tests
+            </h3>
+            <div className="space-y-3">
+              <button
+                onClick={testFunctions.testPlayback}
+                className="w-full py-2 px-4 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm"
+              >
+                ▶️ Test Playback (2s)
+              </button>
+
+              <button
+                onClick={testFunctions.logStats}
+                className="w-full py-2 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
+              >
+                📊 Log Engine Stats
+              </button>
+
+              <button
+                onClick={testFunctions.testNote}
+                className="w-full py-2 px-4 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm"
+              >
+                🎹 Test Sample Note
+              </button>
+            </div>
+          </div>
+
+          {/* Timeline Interface Tests */}
+          <div className="bg-white p-6 rounded-lg shadow-lg">
+            <h3 className="text-lg font-semibold mb-4 flex items-center">
+              <span className="w-3 h-3 bg-blue-500 rounded-full mr-2"></span>
+              Timeline Interface
+            </h3>
+            <div className="space-y-3">
+              <button
+                onClick={() => {
+                  console.log('🎯 Testing timeline selection...');
+                  AudioContextService.timeline?.startSelection?.(0);
+                  setTimeout(() => AudioContextService.timeline?.updateSelection?.(16), 100);
+                  setTimeout(() => AudioContextService.timeline?.endSelection?.(true), 200);
+                }}
+                className="w-full py-2 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
+              >
+                🎯 Test Selection (0-16)
+              </button>
+
+              <button
+                onClick={() => {
+                  console.log('⏭️ Testing timeline jump...');
+                  AudioContextService.timeline?.jumpToStep?.(32);
+                }}
+                className="w-full py-2 px-4 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-sm"
+              >
+                ⏭️ Jump to Step 32
+              </button>
+
+              <button
+                onClick={() => {
+                  console.log('📏 Testing timeline scrub...');
+                  AudioContextService.timeline?.startScrub?.(8);
+                  setTimeout(() => AudioContextService.timeline?.updateScrub?.(24), 100);
+                  setTimeout(() => AudioContextService.timeline?.endScrub?.(true), 500);
+                }}
+                className="w-full py-2 px-4 bg-blue-400 text-white rounded-lg hover:bg-blue-500 transition-colors text-sm"
+              >
+                📏 Test Scrubbing
+              </button>
+
+              <button
+                onClick={() => {
+                  const state = AudioContextService.timeline?.getTimelineState?.();
+                  console.log('📊 Timeline State:', state);
+                }}
+                className="w-full py-2 px-4 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors text-sm"
+              >
+                📊 Log Timeline State
+              </button>
+            </div>
+          </div>
+
+          {/* Parameter Interface Tests */}
+          <div className="bg-white p-6 rounded-lg shadow-lg">
+            <h3 className="text-lg font-semibold mb-4 flex items-center">
+              <span className="w-3 h-3 bg-purple-500 rounded-full mr-2"></span>
+              Parameter Control
+            </h3>
+            <div className="space-y-3">
+              <button
+                onClick={() => {
+                  console.log('🔊 Testing master volume...');
+                  AudioContextService.parameters?.set?.('master', 'volume', 0.5);
+                  setTimeout(() => AudioContextService.parameters?.set?.('master', 'volume', 1.0), 1000);
+                }}
+                className="w-full py-2 px-4 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm"
+              >
+                🔊 Test Master Volume
+              </button>
+
+              <button
+                onClick={() => {
+                  console.log('🎛️ Testing channel parameter...');
+                  AudioContextService.parameters?.set?.('mixer-1', 'volume', 0.3);
+                  AudioContextService.parameters?.set?.('mixer-1', 'pan', -0.5);
+                  setTimeout(() => {
+                    AudioContextService.parameters?.set?.('mixer-1', 'volume', 0.8);
+                    AudioContextService.parameters?.set?.('mixer-1', 'pan', 0.5);
+                  }, 1000);
+                }}
+                className="w-full py-2 px-4 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition-colors text-sm"
+              >
+                🎛️ Test Channel Params
+              </button>
+
+              <button
+                onClick={() => {
+                  console.log('📈 Starting parameter recording...');
+                  AudioContextService.parameters?.startRecording?.('mixer-1', 'volume');
+                  let vol = 0;
+                  const interval = setInterval(() => {
+                    vol += 0.1;
+                    AudioContextService.parameters?.set?.('mixer-1', 'volume', vol);
+                    if (vol >= 1) {
+                      clearInterval(interval);
+                      const result = AudioContextService.parameters?.stopRecording?.('mixer-1', 'volume');
+                      console.log('📊 Recording result:', result);
+                    }
+                  }, 100);
+                }}
+                className="w-full py-2 px-4 bg-purple-400 text-white rounded-lg hover:bg-purple-500 transition-colors text-sm"
+              >
+                📈 Test Automation Recording
+              </button>
+
+              <button
+                onClick={() => {
+                  const stats = AudioContextService.parameters?.getPerformanceStats?.();
+                  console.log('⚡ Parameter Performance:', stats);
+                }}
+                className="w-full py-2 px-4 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors text-sm"
+              >
+                ⚡ Log Param Stats
+              </button>
+            </div>
+          </div>
+
+          {/* Loop Manager Tests */}
+          <div className="bg-white p-6 rounded-lg shadow-lg">
+            <h3 className="text-lg font-semibold mb-4 flex items-center">
+              <span className="w-3 h-3 bg-orange-500 rounded-full mr-2"></span>
+              Loop Management
+            </h3>
+            <div className="space-y-3">
+              <button
+                onClick={() => {
+                  console.log('🔄 Testing manual loop...');
+                  AudioContextService.loop?.setManual?.(0, 32, 'test');
+                }}
+                className="w-full py-2 px-4 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors text-sm"
+              >
+                🔄 Set Manual Loop (0-32)
+              </button>
+
+              <button
+                onClick={() => {
+                  console.log('🔄 Testing auto calculation...');
+                  const result = AudioContextService.loop?.recalculate?.();
+                  console.log('📊 Auto Loop Result:', result);
+                }}
+                className="w-full py-2 px-4 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors text-sm"
+              >
+                🔄 Auto Calculate Loop
+              </button>
+
+              <button
+                onClick={() => {
+                  console.log('🎵 Testing pattern-based loop...');
+                  const result = AudioContextService.loop?.calculateFromPattern?.();
+                  console.log('🎵 Pattern Loop Result:', result);
+                }}
+                className="w-full py-2 px-4 bg-orange-400 text-white rounded-lg hover:bg-orange-500 transition-colors text-sm"
+              >
+                🎵 Test Pattern Loop
+              </button>
+
+              <button
+                onClick={() => {
+                  const status = AudioContextService.loop?.getStatus?.();
+                  console.log('📊 Loop Status:', status);
+                }}
+                className="w-full py-2 px-4 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors text-sm"
+              >
+                📊 Log Loop Status
+              </button>
+            </div>
+          </div>
+
+          {/* Pattern Validation Tests */}
+          <div className="bg-white p-6 rounded-lg shadow-lg">
+            <h3 className="text-lg font-semibold mb-4 flex items-center">
+              <span className="w-3 h-3 bg-red-500 rounded-full mr-2"></span>
+              Pattern Validation
+            </h3>
+            <div className="space-y-3">
+              <button
+                onClick={() => {
+                  console.log('🔍 Testing pattern validation...');
+                  const patterns = useArrangementStore.getState().patterns;
+                  const firstPatternId = Object.keys(patterns)[0];
+                  if (firstPatternId) {
+                    AudioContextService.validation?.validatePattern?.(firstPatternId);
+                  } else {
+                    console.log('⚠️ No patterns available to validate');
+                  }
+                }}
+                className="w-full py-2 px-4 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm"
+              >
+                🔍 Validate First Pattern
+              </button>
+
+              <button
+                onClick={() => {
+                  console.log('🔍 Testing validate all patterns...');
+                  AudioContextService.validation?.validateAllPatterns?.('manual-test');
+                }}
+                className="w-full py-2 px-4 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors text-sm"
+              >
+                🔍 Validate All Patterns
+              </button>
+
+              <button
+                onClick={() => {
+                  const results = AudioContextService.validation?.getAllValidationResults?.();
+                  console.log('📊 Validation Results:', results);
+                }}
+                className="w-full py-2 px-4 bg-red-400 text-white rounded-lg hover:bg-red-500 transition-colors text-sm"
+              >
+                📊 Log Validation Results
+              </button>
+
+              <button
+                onClick={() => {
+                  const status = AudioContextService.validation?.getStatus?.();
+                  console.log('📊 Validation Status:', status);
+                }}
+                className="w-full py-2 px-4 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors text-sm"
+              >
+                📊 Log Validation Status
+              </button>
+            </div>
+          </div>
+
+          {/* Performance Monitoring Tests */}
+          <div className="bg-white p-6 rounded-lg shadow-lg">
+            <h3 className="text-lg font-semibold mb-4 flex items-center">
+              <span className="w-3 h-3 bg-teal-500 rounded-full mr-2"></span>
+              Performance Monitor
+            </h3>
+            <div className="space-y-3">
+              <button
+                onClick={() => {
+                  console.log('📊 Starting performance monitoring...');
+                  AudioContextService.performance?.startMonitoring?.(500);
+                }}
+                className="w-full py-2 px-4 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors text-sm"
+              >
+                📊 Start Monitoring (500ms)
+              </button>
+
+              <button
+                onClick={() => {
+                  console.log('📊 Stopping performance monitoring...');
+                  AudioContextService.performance?.stopMonitoring?.();
+                }}
+                className="w-full py-2 px-4 bg-teal-500 text-white rounded-lg hover:bg-teal-600 transition-colors text-sm"
+              >
+                📊 Stop Monitoring
+              </button>
+
+              <button
+                onClick={() => {
+                  const metrics = AudioContextService.performance?.getMetrics?.();
+                  console.log('⚡ Performance Metrics:', metrics);
+                }}
+                className="w-full py-2 px-4 bg-teal-400 text-white rounded-lg hover:bg-teal-500 transition-colors text-sm"
+              >
+                ⚡ Log Current Metrics
+              </button>
+
+              <button
+                onClick={() => {
+                  const report = AudioContextService.performance?.getReport?.();
+                  console.log('📊 Performance Report:', report);
+                }}
+                className="w-full py-2 px-4 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors text-sm"
+              >
+                📊 Get Full Report
+              </button>
+            </div>
+          </div>
+
+        </div>
+
+        {/* Advanced Interface Tests */}
         <div className="bg-white p-6 rounded-lg shadow-lg mb-6">
-          <h3 className="text-lg font-semibold mb-4">Quick Test</h3>
-          <div className="space-y-3">
-            <button 
-              onClick={testFunctions.testPlayback}
-              className="w-full py-2 px-4 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-            >
-              ▶️ Test Playback (2 seconds)
-            </button>
-            
-            <button 
-              onClick={testFunctions.logStats}
-              className="w-full py-2 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              📊 Log Engine Stats
-            </button>
-            
-            <button 
-              onClick={testFunctions.testNote}
-              className="w-full py-2 px-4 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
-            >
-              🎹 Test Sample Note
-            </button>
+          <h3 className="text-lg font-semibold mb-4 flex items-center">
+            <span className="w-3 h-3 bg-indigo-500 rounded-full mr-2"></span>
+            Advanced Interface Tests
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+
+            {/* Batch Operations */}
+            <div className="space-y-2">
+              <h4 className="font-medium text-gray-700 text-sm">Batch Operations</h4>
+              <button
+                onClick={() => {
+                  console.log('🔄 Testing batch parameter updates...');
+                  AudioContextService.interface?.batch?.parameters?.({
+                    'mixer-1': { volume: 0.7, pan: -0.3 },
+                    'mixer-2': { volume: 0.9, pan: 0.2 },
+                    'master': { volume: 0.8 }
+                  });
+                }}
+                className="w-full py-1 px-3 bg-indigo-600 text-white rounded text-xs hover:bg-indigo-700 transition-colors"
+              >
+                🔄 Batch Parameters
+              </button>
+
+              <button
+                onClick={() => {
+                  console.log('🎯 Testing batch timeline ops...');
+                  AudioContextService.interface?.batch?.timeline?.([
+                    { type: 'jump', step: 16 },
+                    { type: 'select', start: 16, end: 48, setAsLoop: true }
+                  ]);
+                }}
+                className="w-full py-1 px-3 bg-indigo-500 text-white rounded text-xs hover:bg-indigo-600 transition-colors"
+              >
+                🎯 Batch Timeline
+              </button>
+            </div>
+
+            {/* Event System */}
+            <div className="space-y-2">
+              <h4 className="font-medium text-gray-700 text-sm">Event System</h4>
+              <button
+                onClick={() => {
+                  console.log('📡 Testing event subscription...');
+                  const unsubscribe = AudioContextService.events?.on?.('parameterChanged', (data) => {
+                    console.log('📡 Parameter Event:', data);
+                  });
+
+                  // Test the event
+                  setTimeout(() => {
+                    AudioContextService.parameters?.set?.('test', 'volume', 0.5);
+                  }, 100);
+
+                  // Cleanup after 3 seconds
+                  setTimeout(() => {
+                    unsubscribe?.();
+                    console.log('📡 Event subscription cleaned up');
+                  }, 3000);
+                }}
+                className="w-full py-1 px-3 bg-indigo-600 text-white rounded text-xs hover:bg-indigo-700 transition-colors"
+              >
+                📡 Test Events
+              </button>
+
+              <button
+                onClick={() => {
+                  const status = AudioContextService.debug?.getEventBusStatus?.();
+                  console.log('📡 Event Bus Status:', status);
+                }}
+                className="w-full py-1 px-3 bg-indigo-500 text-white rounded text-xs hover:bg-indigo-600 transition-colors"
+              >
+                📡 Event Bus Status
+              </button>
+            </div>
+
+            {/* Snapshots */}
+            <div className="space-y-2">
+              <h4 className="font-medium text-gray-700 text-sm">Snapshots</h4>
+              <button
+                onClick={() => {
+                  console.log('📸 Creating snapshot...');
+                  const snapshot = AudioContextService.advanced?.snapshots?.capture?.('Test Snapshot');
+                  console.log('📸 Snapshot created:', snapshot);
+                }}
+                className="w-full py-1 px-3 bg-indigo-600 text-white rounded text-xs hover:bg-indigo-700 transition-colors"
+              >
+                📸 Create Snapshot
+              </button>
+
+              <button
+                onClick={() => {
+                  const snapshots = AudioContextService.advanced?.snapshots?.list?.();
+                  console.log('📸 Available snapshots:', snapshots);
+                  if (snapshots?.length > 0) {
+                    console.log('📸 Restoring latest snapshot...');
+                    AudioContextService.advanced?.snapshots?.restore?.(snapshots[snapshots.length - 1].timestamp);
+                  }
+                }}
+                className="w-full py-1 px-3 bg-indigo-500 text-white rounded text-xs hover:bg-indigo-600 transition-colors"
+              >
+                📸 Restore Latest
+              </button>
+            </div>
+
+            {/* Debug & Health */}
+            <div className="space-y-2">
+              <h4 className="font-medium text-gray-700 text-sm">Debug & Health</h4>
+              <button
+                onClick={() => {
+                  const health = AudioContextService.debug?.healthCheck?.();
+                  console.log('🏥 Health Check:', health);
+                }}
+                className="w-full py-1 px-3 bg-indigo-600 text-white rounded text-xs hover:bg-indigo-700 transition-colors"
+              >
+                🏥 Health Check
+              </button>
+
+              <button
+                onClick={() => {
+                  const status = AudioContextService.debug?.getInterfaceStatus?.();
+                  console.log('🔍 Interface Status:', status);
+                }}
+                className="w-full py-1 px-3 bg-indigo-500 text-white rounded text-xs hover:bg-indigo-600 transition-colors"
+              >
+                🔍 Interface Status
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Console Output Helper */}
+        <div className="bg-gray-50 border border-gray-200 p-6 rounded-lg mb-6">
+          <h3 className="text-lg font-semibold mb-4 flex items-center">
+            <span className="w-3 h-3 bg-gray-500 rounded-full mr-2"></span>
+            Testing Instructions
+          </h3>
+          <div className="text-sm text-gray-700 space-y-2">
+            <p><strong>📝 Console Output:</strong> All test results are logged to browser console (F12 → Console)</p>
+            <p><strong>🔄 Test Sequence:</strong> Start with "Basic Engine Tests" → "Timeline Interface" → "Parameter Control"</p>
+            <p><strong>⚡ Performance Monitor:</strong> Start monitoring before running intensive tests</p>
+            <p><strong>🎯 Interface Testing:</strong> Each section tests specific API interfaces</p>
+            <p><strong>🐛 Debug Tools:</strong> Use "Health Check" and "Interface Status" for troubleshooting</p>
           </div>
         </div>
 
         <div className="bg-yellow-50 border border-yellow-200 p-6 rounded-lg">
           <h3 className="text-lg font-semibold mb-2 text-yellow-800">
-            ⚠️ Temporary Limitations
+            ⚠️ Current System Status
           </h3>
           <div className="text-sm text-yellow-700 space-y-1">
-            <p>• <strong>Synth instruments are temporarily disabled</strong> (worklet registry issue)</p>
-            <p>• Only sample-based instruments are loaded</p>
-            <p>• Full synthesis support will be added in next update</p>
-            <p>• All mixer channels and transport system are fully functional</p>
+            <p>• <strong>✅ Sample instruments:</strong> Fully functional and loaded</p>
+            <p>• <strong>⚠️ Synth instruments:</strong> Temporarily disabled (worklet registry issue)</p>
+            <p>• <strong>✅ Interface APIs:</strong> Timeline, Parameters, Loop Manager ready</p>
+            <p>• <strong>✅ Validation & Performance:</strong> Pattern validation and monitoring active</p>
+            <p>• <strong>🔬 Testing Environment:</strong> Comprehensive interface testing now available</p>
           </div>
         </div>
       </main>
