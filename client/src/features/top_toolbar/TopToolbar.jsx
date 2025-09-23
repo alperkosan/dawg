@@ -18,15 +18,15 @@ function TopToolbar() {
   const { 
       playbackState, bpm, transportPosition, masterVolume, playbackMode 
   } = usePlaybackStore();
-  
+
+  // DÜZELTME: Store'dan doğru fonksiyonları alıyoruz.
   const { 
-      handlePlay, handlePause, handleStop, handleBpmChange, 
+      togglePlayPause, handleStop, handleBpmChange, 
       handleMasterVolumeChange, setPlaybackMode 
   } = usePlaybackStore.getState();
   
   const handlePlayPauseClick = () => {
-    if (playbackState === 'playing') handlePause();
-    else handlePlay();
+    togglePlayPause();
   };
   
   const playButtonClass = `top-toolbar__transport-btn ${playbackState === 'playing' ? 'top-toolbar__transport-btn--playing' : ''}`;
@@ -63,7 +63,8 @@ function TopToolbar() {
           </button>
         )}
         <div className="top-toolbar__mode-toggle">
-            <ModeButton label={PLAYBACK_MODES.PATTERN} mode={PLAYBACK_MODES.SONG} activeMode={playbackMode} onClick={setPlaybackMode} />
+            <ModeButton label="Pattern" mode={PLAYBACK_MODES.PATTERN} activeMode={playbackMode} onClick={setPlaybackMode} />
+            <ModeButton label="Song" mode={PLAYBACK_MODES.SONG} activeMode={playbackMode} onClick={setPlaybackMode} />
         </div>
         <div className="top-toolbar__display">
           <input

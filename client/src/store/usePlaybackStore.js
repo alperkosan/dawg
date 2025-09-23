@@ -1,134 +1,105 @@
+// src/store/usePlaybackStore.js
+// NativeAudioEngine ve modern zamanlama yönetimi ile tamamen yeniden yapılandırıldı.
 import { create } from 'zustand';
-import { useArrangementStore } from './useArrangementStore';
-import { calculateAudioLoopLength, calculateUIRackLength, calculatePatternLoopLength } from '../lib/utils/patternUtils';
-import { initialInstruments } from '../config/initialData';
 import { AudioContextService } from '../lib/services/AudioContextService';
+import { useArrangementStore } from './useArrangementStore';
+import { calculateAudioLoopLength } from '../lib/utils/patternUtils';
 import { PLAYBACK_MODES, PLAYBACK_STATES } from '../config/constants';
 
-const initialPatternData = initialInstruments.reduce((acc, inst) => {
-  acc[inst.id] = inst.notes;
-  return acc;
-}, {});
-
-const initialActivePattern = { id: 'pattern-1', name: 'Pattern 1', data: initialPatternData };
-
-const initialAudioLoopLength = calculatePatternLoopLength(initialActivePattern);
-const initialUiRackLength = calculateUIRackLength(initialAudioLoopLength);
-
 export const usePlaybackStore = create((set, get) => ({
-  playbackState: PLAYBACK_STATES.STOPPED, // GÜNCELLENDİ
-  bpm: 60,
-  masterVolume: 0,
+  // --- TEMEL DURUM (STATE) ---
+  playbackState: PLAYBACK_STATES.STOPPED,
+  playbackMode: PLAYBACK_MODES.PATTERN,
+  bpm: 140,
+  masterVolume: 0.8,
+  
+  // --- ZAMANLAMA BİLGİLERİ ---
+  // Not: transportPosition ve transportStep artık doğrudan App.jsx içindeki
+  // NativeAudioEngine'in callback'i tarafından güncelleniyor.
+  // Bu, UI'ın ses thread'inden gelen en güncel bilgiyle beslenmesini sağlar.
   transportPosition: '1:1:00',
-  playbackMode: PLAYBACK_MODES.PATTERN, // GÜNCELLENDİ
-  loopLength: initialUiRackLength,
-  audioLoopLength: initialAudioLoopLength,
+  transportStep: 0,
 
-  loopStartStep: 0,
-  loopEndStep: initialAudioLoopLength, // Başlangıçta tüm pattern'ı kapsasın
+  // --- DÖNGÜ YÖNETİMİ ---
+  loopEnabled: true,
+  isAutoLoop: true, // Döngü noktalarını içeriğe göre otomatik hesapla
+  // audioLoopLength, UI'da gösterilen döngü uzunluğudur (adımlarla).
+  // Gerçek ses motoru döngüsü saniye cinsinden ayarlanır.
+  audioLoopLength: 64,
 
-  updateLoopLength: () => {
-    const { playbackMode } = get();
-    const { clips, patterns, activePatternId } = useArrangementStore.getState();
+  // ========================================================
+  // === EYLEMLER (ACTIONS) ===
+  // ========================================================
 
-    // === HATA DÜZELTMESİ: Eksik parametreler eklendi ===
-    const newAudioLoopLength = calculateAudioLoopLength(playbackMode, {
-      patterns,
-      activePatternId,
-      clips,
-    });
-    
-    const newUiRackLength = calculateUIRackLength(newAudioLoopLength);
-    set({
-      audioLoopLength: newAudioLoopLength,
-      loopLength: newUiRackLength,
-      loopStartStep: 0, // Aktif pattern değiştiğinde döngüyü başa al
-      loopEndStep: newAudioLoopLength,
-    });
-    
-    // Yeni toplam uzunluğu ses motoruna bildir
-    AudioContextService.updateLoopRange(0, newAudioLoopLength);
-    console.log(`[PlaybackStore] Döngü uzunlukları güncellendi: Audio(${newAudioLoopLength}), UI(${newUiRackLength})`);
-  },
+  // --- OYNATMA KONTROLLERİ ---
+  togglePlayPause: () => {
+    const { playbackState } = get();
+    const engine = AudioContextService.getAudioEngine();
+    if (!engine) return;
 
-  // === YENİ: Döngü aralığını güncelleyen ve ses motorunu bilgilendiren aksiyon ===
-  setLoopRange: (startStep, endStep) => {
-    set({ loopStartStep: startStep, loopEndStep: endStep });
-    AudioContextService.updateLoopRange(startStep, endStep);
-  },
-  
-  setPlaybackState: (state) => set({ playbackState: state }),
-  
-  setTransportPosition: (position, step) => {
-    let positionString = position;
-    if (typeof position === 'object' && position !== null && position.hasOwnProperty('formatted')) {
-      positionString = position.formatted;
-    } else if (typeof position === 'object') {
-      console.warn("setTransportPosition beklenmedik bir obje aldı:", position);
-      positionString = 'HATA'; 
-    }
-    set({
-      transportPosition: positionString,
-      transportStep: step
-    });
-  },
-
-  setPlaybackMode: (mode) => {
-      const currentState = get();
-      if (currentState.playbackMode === mode) return;
-
-      set({ playbackMode: mode });
-      get().updateLoopLength();
-      
-      const isPlaying = currentState.playbackState === PLAYBACK_STATES.PLAYING || currentState.playbackState === PLAYBACK_STATES.PAUSED; // GÜNCELLENDİ
-      if (AudioContextService && isPlaying) {
-        AudioContextService.reschedule();
-      }
-    },
-
-  handleBpmChange: (newBpm) => {
-    const clampedBpm = Math.max(40, Math.min(300, newBpm));
-    set({ bpm: clampedBpm });
-    AudioContextService?.setBpm(clampedBpm);
-  },
-
-  handleMasterVolumeChange: (newVolume) => {
-    set({ masterVolume: newVolume });
-    AudioContextService?.setMasterVolume(newVolume);
-  },
-
-  handlePlay: () => {
-    if (!AudioContextService) return;
-    
-    // === DÜZELTME BURADA ===
-    // 'loopStartStep' yerine, o anki güncel pozisyon olan 'transportStep'i alıyoruz.
-    const { playbackState, transportStep } = get();
-
-    // Sadece durdurulmuş durumdayken baştan başlatma işlemini yap
-    if (playbackState === PLAYBACK_STATES.STOPPED) {
-        // Ses motoruna, döngü başından değil, GÜNCEL POZİSYONDAN başlamasını söylüyoruz.
-        AudioContextService.start(transportStep);
+    if (playbackState === PLAYBACK_STATES.PLAYING) {
+      engine.pause();
     } else {
-        // Duraklatılmışsa, sadece devam et
-        AudioContextService.resume();
+      // Durmuş durumdaysa veya duraklatıldıysa oynatmayı başlat/devam ettir.
+      engine.play();
     }
-  },
-
-
-  handlePause: () => {
-    // Bu fonksiyon artık sadece duraklatma işini yapıyor
-    AudioContextService?.pause();
   },
 
   handleStop: () => {
-    AudioContextService?.stop();
+    const engine = AudioContextService.getAudioEngine();
+    engine?.stop();
   },
 
-  jumpToBar: (barNumber) => {
-    AudioContextService?.jumpToBar(barNumber);
+  // --- MOD VE AYAR YÖNETİMİ ---
+  setPlaybackMode: (mode) => {
+    if (get().playbackMode === mode) return;
+    
+    set({ playbackMode: mode });
+    get().updateLoopLength(); // Yeni moda göre döngü uzunluğunu yeniden hesapla
+    
+    // Ses motoruna da modu bildir.
+    const engine = AudioContextService.getAudioEngine();
+    engine?.setPlaybackMode(mode);
+  },
+  
+  handleBpmChange: (newBpm) => {
+    const clampedBpm = Math.max(60, Math.min(300, newBpm));
+    set({ bpm: clampedBpm });
+    AudioContextService.setBPM(clampedBpm);
   },
 
+  setLoopEnabled: (enabled) => {
+    set({ loopEnabled: enabled });
+    AudioContextService.getAudioEngine()?.setLoopEnabled(enabled);
+  },
+
+  // --- ZAMAN ÇİZELGESİ ETKİLEŞİMİ ---
   jumpToStep: (step) => {
-    AudioContextService?.jumpToStep(step);
+    AudioContextService.getAudioEngine()?.jumpToStep(step);
   },
+
+  // --- DÖNGÜ UZUNLUĞU HESAPLAMA ---
+  /**
+   * Mevcut çalma moduna (Pattern/Song) göre döngü uzunluğunu hesaplar
+   * ve hem bu store'u hem de ses motorunu günceller.
+   */
+  updateLoopLength: () => {
+    const { playbackMode } = get();
+    const arrangementState = useArrangementStore.getState();
+    
+    const newLength = calculateAudioLoopLength(playbackMode, arrangementState);
+    
+    set({ audioLoopLength: newLength });
+
+    // Ses motorundaki döngü noktalarını da güncelle
+    const engine = AudioContextService.getAudioEngine();
+    if (engine && get().isAutoLoop) {
+      engine.setLoopPoints(0, newLength);
+    }
+  },
+  
+  // Bu fonksiyonlar artık doğrudan App.jsx'teki engine callback'i tarafından çağrılır.
+  // Bu sayede UI her zaman en güncel bilgiyi gösterir.
+  setTransportPosition: (position, step) => set({ transportPosition: position, transportStep: step }),
+  setPlaybackState: (state) => set({ playbackState: state }),
 }));

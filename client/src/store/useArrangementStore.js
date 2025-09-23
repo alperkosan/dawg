@@ -1,26 +1,11 @@
+// src/store/useArrangementStore.js
+// NativeAudioEngine entegrasyonu için modernize edildi.
 import { create } from 'zustand';
-import { initialInstruments } from '../config/initialData';
+import { initialPatterns, initialPatternOrder, initialClips, initialInstruments } from '../config/initialData';
 import { AudioContextService } from '../lib/services/AudioContextService';
 import { usePlaybackStore } from './usePlaybackStore';
 
-// =========================================================================
-// === BAŞLANGIÇ VERİLERİ (HATA DÜZELTMESİ: TANIMLAMALAR YUKARI TAŞINDI) ===
-// =========================================================================
-const initialPatternData = initialInstruments.reduce((acc, inst) => {
-  acc[inst.id] = inst.notes;
-  return acc;
-}, {});
-
-const initialPatterns = {
-  'pattern-1': {
-    id: 'pattern-1',
-    name: 'Pattern 1',
-    data: initialPatternData
-  }
-};
-
-const initialPatternOrder = ['pattern-1'];
-
+// Başlangıç verisinden dinamik olarak track'leri oluştur.
 const initialTracks = initialInstruments.map(inst => ({
   id: `track-${inst.id}`,
   instrumentId: inst.id,
@@ -28,69 +13,49 @@ const initialTracks = initialInstruments.map(inst => ({
   height: 60,
 }));
 
-const initialClips = [{
-  id: 'clip-1',
-  patternId: 'pattern-1',
-  trackId: null,
-  startTime: 0,
-  duration: 8,
-}];
-
-
-// =========================================================================
-// === MERKEZİ ORKESTRA ŞEFİ (MIDDLEWARE) ===
-// =========================================================================
+/**
+ * Zustand store'ları arasında iletişimi sağlayan bir "orkestra şefi".
+ * Bir store'daki değişiklik başka bir store'u veya ses motorunu tetikleyecekse,
+ * bu mantık burada merkezi olarak yönetilir.
+ */
 const arrangementStoreOrchestrator = (config) => (set, get, api) => {
   const store = config(set, get, api);
 
+  // Orijinal updatePatternNotes fonksiyonunu sarmala (wrap).
   const originalUpdatePatternNotes = store.updatePatternNotes;
   store.updatePatternNotes = (...args) => {
     originalUpdatePatternNotes(...args);
-    console.log("[Orchestrator] Notalar değişti, döngü uzunluğu güncelleniyor.");
+    // Notalar değiştiğinde, çalma döngüsünün uzunluğu da değişmiş olabilir.
     usePlaybackStore.getState().updateLoopLength();
+    // Ses motorunu yeni notalarla yeniden zamanla.
+    AudioContextService.reschedule();
   };
 
   const originalSetActivePatternId = store.setActivePatternId;
   store.setActivePatternId = (...args) => {
     originalSetActivePatternId(...args);
-    console.log("[Orchestrator] Aktif pattern değişti, döngü uzunluğu güncelleniyor.");
     usePlaybackStore.getState().updateLoopLength();
+    AudioContextService.reschedule();
   };
 
   return store;
 };
 
-// =========================================================================
-// === STORE TANIMLAMASI ===
-// =========================================================================
 export const useArrangementStore = create(arrangementStoreOrchestrator((set, get) => ({
   patterns: initialPatterns,
   patternOrder: initialPatternOrder,
   tracks: initialTracks,
   clips: initialClips,
   activePatternId: 'pattern-1',
-  songLength: 128,
+  songLength: 128, // bar cinsinden
   zoomX: 1,
 
-  // --- Eylemler ---
-  
+  // --- EYLEMLER (ACTIONS) ---
+
   setActivePatternId: (patternId) => {
+    if (get().activePatternId === patternId) return;
     set({ activePatternId: patternId });
-    AudioContextService?.reschedule();
-  },
-
-  nextPattern: () => {
-    const { patternOrder, activePatternId } = get();
-    const currentIndex = patternOrder.indexOf(activePatternId);
-    const nextIndex = (currentIndex + 1) % patternOrder.length;
-    get().setActivePatternId(patternOrder[nextIndex]);
-  },
-
-  previousPattern: () => {
-    const { patternOrder, activePatternId } = get();
-    const currentIndex = patternOrder.indexOf(activePatternId);
-    const prevIndex = (currentIndex - 1 + patternOrder.length) % patternOrder.length;
-    get().setActivePatternId(patternOrder[prevIndex]);
+    // Orkestratör bu eylemi yakalayıp gerekli diğer işlemleri yapacak.
   },
 
   updatePatternNotes: (patternId, instrumentId, newNotes) => {
@@ -104,6 +69,7 @@ export const useArrangementStore = create(arrangementStoreOrchestrator((set, get
       }
       return state;
     });
+     // Orkestratör bu eylemi de yakalayacak.
   },
   
   renameActivePattern: (newName) => {
@@ -119,4 +85,15 @@ export const useArrangementStore = create(arrangementStoreOrchestrator((set, get
     }
   },
 
+  updateClip: (clipId, newParams) => {
+    set(state => ({
+      clips: state.clips.map(clip => 
+        clip.id === clipId ? { ...clip, ...newParams } : clip
+      )
+    }));
+    // Klip değişikliği şarkı uzunluğunu etkileyebilir.
+    usePlaybackStore.getState().updateLoopLength();
+  },
+  
+  setZoomX: (newZoom) => set({ zoomX: Math.max(0.1, Math.min(5, newZoom)) }),
 })));

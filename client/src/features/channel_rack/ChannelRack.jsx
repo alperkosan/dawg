@@ -18,7 +18,7 @@ const STEP_WIDTH = 16;
 export default function ChannelRack() {
   const instruments = useInstrumentsStore(state => state.instruments);
   const { patterns, activePatternId } = useArrangementStore();
-  const { loopLength, audioLoopLength, transportStep, jumpToStep } = usePlaybackStore();
+  const { audioLoopLength, transportStep, jumpToStep } = usePlaybackStore(); // loopLength kaldırıldı, sadece audioLoopLength kullanılıyor.
   const { openPianoRollForInstrument, handleEditInstrument, togglePanel } = usePanelsStore();
   
   const playheadRef = useRef(null);
@@ -42,19 +42,10 @@ export default function ChannelRack() {
       }
     };
 
-    const updatePlayhead = (progress) => {
-      if (playheadRef.current) {
-        const position = progress * audioLoopLength * STEP_WIDTH;
-        playheadRef.current.style.transform = `translateX(${position}px)`;
-      }
-    };
-
     container.addEventListener('scroll', syncScroll);
-    PlaybackAnimatorService.subscribe(updatePlayhead);
 
     return () => {
       container.removeEventListener('scroll', syncScroll);
-      PlaybackAnimatorService.unsubscribe(updatePlayhead);
     };
   }, [audioLoopLength]);
 
@@ -96,7 +87,7 @@ export default function ChannelRack() {
     }
   }, [activePatternId, activePattern]);
 
-  const totalGridWidth = loopLength * STEP_WIDTH;
+  const totalGridWidth = audioLoopLength * STEP_WIDTH; // DÜZELTME: audioLoopLength kullanılıyor.
   const totalContentHeight = (instruments.length + 1) * 64;
 
   return (
@@ -126,7 +117,7 @@ export default function ChannelRack() {
       <div ref={timelineContainerRef} className="channel-rack-layout__timeline">
         <div style={{ width: totalGridWidth, height: '100%' }}>
           <InteractiveTimeline
-            loopLength={loopLength}
+            loopLength={audioLoopLength}
             currentPosition={transportStep}
             onJumpToPosition={jumpToStep}
           />
@@ -139,9 +130,9 @@ export default function ChannelRack() {
           {instruments.map(inst => (
             <div key={inst.id} className="channel-rack-layout__grid-row">
               {inst.pianoRoll ? (
-                <PianoRollMiniView notes={activePattern?.data[inst.id] || []} patternLength={loopLength} onNoteClick={() => openPianoRollForInstrument(inst)} />
+                <PianoRollMiniView notes={activePattern?.data[inst.id] || []} patternLength={audioLoopLength} onNoteClick={() => openPianoRollForInstrument(inst)} />
               ) : (
-                <StepGrid instrumentId={inst.id} notes={activePattern?.data[inst.id] || []} totalSteps={loopLength} onNoteToggle={handleNoteToggle} />
+                <StepGrid instrumentId={inst.id} notes={activePattern?.data[inst.id] || []} totalSteps={audioLoopLength} onNoteToggle={handleNoteToggle} />
               )}
             </div>
           ))}
