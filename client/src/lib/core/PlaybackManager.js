@@ -108,24 +108,27 @@ export class PlaybackManager {
             this.loopEnd = 64;
             return;
         }
-
-        // Calculate pattern length based on notes
+    
+        // ✅ DÜZELTME: Pattern data'dan gerçek uzunluğu hesapla
         let maxStep = 0;
         Object.values(activePattern.data).forEach(notes => {
             if (Array.isArray(notes)) {
                 notes.forEach(note => {
-                    const noteEnd = (note.time || 0) + this._getDurationInSteps(note.duration);
+                    const noteTime = note.time || 0;
+                    const noteDuration = note.duration ? 
+                        this._getDurationInSteps(note.duration) : 1;
+                    const noteEnd = noteTime + noteDuration;
                     maxStep = Math.max(maxStep, noteEnd);
                 });
             }
         });
-
-        // Round up to nearest bar (16 steps)
-        this.patternLength = Math.max(16, Math.ceil(maxStep / 16) * 16);
+    
+        // ✅ KRİTİK DÜZELTME: Pattern minimum 64 step (4 bar) olsun
+        this.patternLength = Math.max(64, Math.ceil(maxStep / 16) * 16);
         this.loopStart = 0;
         this.loopEnd = this.patternLength;
         
-        console.log(`📏 Pattern loop calculated: ${this.loopEnd} steps`);
+        console.log(`📏 Pattern loop calculated: 0 -> ${this.loopEnd} steps (${this.loopEnd/16} bars)`);
     }
 
     _calculateSongLoop() {
@@ -155,11 +158,11 @@ export class PlaybackManager {
 
     _updateTransportLoop() {
         if (this.transport) {
-            const startTime = this._stepsToSeconds(this.loopStart);
-            const endTime = this._stepsToSeconds(this.loopEnd);
-            
-            this.transport.setLoopPoints(startTime, endTime);
+            // ✅ DÜZELTME: Step'leri doğru şekilde transport'a gönder
+            this.transport.setLoopPoints(this.loopStart, this.loopEnd);
             this.transport.setLoopEnabled(this.loopEnabled);
+            
+            console.log(`🔁 Transport loop updated: ${this.loopStart} -> ${this.loopEnd} steps`);
         }
     }
 

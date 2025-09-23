@@ -156,11 +156,15 @@ export class NativeTransportSystem {
     }
 
     setLoopPoints(startStep, endStep) {
-        // Step'leri tick'lere çevir (1 step = 1 sixteenth note = ppq/4 tick)
+        // ✅ DÜZELTME: Step'leri tick'lere çevir (1 step = 1 sixteenth note = ppq/4 tick)
         this.loopStart = startStep * (this.ppq / 4);
         this.loopEnd = endStep * (this.ppq / 4);
         
-        console.log(`🔁 Loop points set: ${startStep} -> ${endStep} steps (${this.loopStart} -> ${this.loopEnd} ticks)`);
+        // ✅ DEBUG: Loop bilgilerini göster
+        console.log(`🔁 Loop points set:`);
+        console.log(`   Steps: ${startStep} -> ${endStep} (${endStep - startStep} steps = ${(endStep - startStep)/16} bars)`);
+        console.log(`   Ticks: ${this.loopStart} -> ${this.loopEnd} (${this.loopEnd - this.loopStart} ticks)`);
+        console.log(`   Seconds: ${(this.loopStart * this.getSecondsPerTick()).toFixed(2)} -> ${(this.loopEnd * this.getSecondsPerTick()).toFixed(2)}`);
         
         // Eğer current position loop dışındaysa, loop başına al
         if (this.currentTick >= this.loopEnd) {
@@ -191,6 +195,26 @@ export class NativeTransportSystem {
         console.log(`🎼 Time signature set to ${numerator}/${denominator}`);
         return this;
     }
+
+    _calculatePatternLengthFromData(patternData) {
+        let maxStep = 0;
+        
+        Object.values(patternData).forEach(notes => {
+            if (Array.isArray(notes)) {
+                notes.forEach(note => {
+                    const noteTime = note.time || 0;
+                    const noteDuration = 1; // Default 1 step
+                    maxStep = Math.max(maxStep, noteTime + noteDuration);
+                });
+            }
+        });
+        
+        // En az 64 step (4 bar), 16'nın katlarına yuvarla
+        const calculatedLength = Math.max(64, Math.ceil(maxStep / 16) * 16);
+        
+        console.log(`📐 Pattern length calculated: ${calculatedLength} steps (${calculatedLength/16} bars) from max step ${maxStep}`);
+        return calculatedLength;
+    }    
 
     // =================== SCHEDULING CORE ===================
     scheduler() {
@@ -274,11 +298,17 @@ export class NativeTransportSystem {
         this.currentTick++;
         this.position = this.currentTick;
         
-        // Sonra loop kontrolü yap
-        if (this.loop && this.currentTick >= this.loopEnd) {
-            console.log(`🔁 Loop completed at tick ${this.currentTick}, returning to ${this.loopStart}`);
+        // ✅ DEBUG: Loop kontrolü öncesi bilgi
+        const shouldLoop = this.loop && this.currentTick >= this.loopEnd;
+        
+        if (shouldLoop) {
+            console.log(`🔁 Loop trigger:`);
+            console.log(`   Current tick: ${this.currentTick}, Loop end: ${this.loopEnd}`);
+            console.log(`   Time: ${this.nextTickTime.toFixed(3)}s, Duration: ${((this.currentTick - this.loopStart) * secondsPerTick).toFixed(3)}s`);
+            
             this.currentTick = this.loopStart;
             this.position = this.currentTick;
+            
             this.triggerCallback('loop', { 
                 time: this.nextTickTime, 
                 fromTick: this.loopEnd - 1, 
@@ -289,10 +319,12 @@ export class NativeTransportSystem {
         // Zamanı güncelle
         this.nextTickTime += secondsPerTick;
         
-        // Bar tracking - ✅ DÜZELTME
+        // Bar tracking - sadece bar değiştiğinde log
         const newBar = Math.floor(this.currentTick / this.ticksPerBar);
         if (newBar !== this.currentBar) {
             this.currentBar = newBar;
+            console.log(`🎼 Bar ${this.currentBar} (tick ${this.currentTick})`);
+            
             this.triggerCallback('bar', { 
                 time: this.nextTickTime, 
                 bar: this.currentBar,
@@ -300,7 +332,6 @@ export class NativeTransportSystem {
             });
         }
     }
-
 
     getSecondsPerTick() {
         const secondsPerBeat = 60.0 / this.bpm;
