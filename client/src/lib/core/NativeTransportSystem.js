@@ -1,5 +1,6 @@
 // lib/core/NativeTransportSystem.js
 // DAWG - Native Transport System - ToneJS'siz tam native implementasyon
+import EventBus from './EventBus'; // YENİ: EventBus'ı import ediyoruz.
 
 export class NativeTransportSystem {
     constructor(audioContext) {
@@ -36,7 +37,8 @@ export class NativeTransportSystem {
         
         // ✅ Initialize worker timer
         this.initializeWorkerTimer();
-        
+        this._setupEventListeners(); // YENİ: Olay dinleyicilerini başlat
+
         console.log('🎵 NativeTransportSystem initialized:');
         console.log(`   PPQ: ${this.ppq} ticks/quarter`);
         console.log(`   Steps per bar: ${this.stepsPerBar}`);
@@ -44,6 +46,15 @@ export class NativeTransportSystem {
         console.log(`   Loop: ${this.loopStartTick} → ${this.loopEndTick} ticks`);
         console.log(`   Loop: ${this.loopStartTick / this.ticksPerStep} → ${this.loopEndTick / this.ticksPerStep} steps`);
     }
+
+    // YENİ: Tüm olay dinleyicilerini tek bir yerden yönetelim.
+    _setupEventListeners() {
+        EventBus.on('PLAY_REQUESTED', () => this.play());
+        EventBus.on('STOP_REQUESTED', () => this.stop());
+        EventBus.on('TEMPO_CHANGED', (payload) => this.setTempo(payload.tempo));
+        // Gelecekte eklenebilecek diğer dinleyiciler:
+        // EventBus.on('SEEK_REQUESTED', (payload) => this.seek(payload.tick));
+    }    
 
     // =================== TIMER INITIALIZATION ===================
 
@@ -285,7 +296,11 @@ export class NativeTransportSystem {
         console.log('🧹 Scheduled events cleared');
     }
 
+    // lib/core/NativeTransportSystem.js içinde scheduleCurrentTick metodunu güncelle
     scheduleCurrentTick(time) {
+        // ⚡ PERFORMANS: Throttled UI updates
+        const now = performance.now();
+        if (now - this.lastUIUpdate > 50) { // 20fps max for UI
         this.triggerCallback('tick', {
             time: time,
             position: this.currentTick,
@@ -293,11 +308,13 @@ export class NativeTransportSystem {
             bar: this.currentBar,
             step: this.ticksToSteps(this.currentTick)
         });
-
-        // Beat callback
+        this.lastUIUpdate = now;
+        }
+        
+        // Beat callback (her zaman trigger et - önemli)
         if (this.currentTick % this.ppq === 0) {
-            const beat = Math.floor(this.currentTick / this.ppq) % this.timeSignature[0];
-            this.triggerCallback('beat', { time, beat, tick: this.currentTick });
+        const beat = Math.floor(this.currentTick / this.ppq) % this.timeSignature[0];
+        this.triggerCallback('beat', { time, beat, tick: this.currentTick });
         }
     }
 

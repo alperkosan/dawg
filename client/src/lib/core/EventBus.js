@@ -1,54 +1,51 @@
+// client/src/lib/core/EventBus.js
+
 /**
- * Uygulama genelinde olay (event) tabanlı iletişim için basit bir Event Bus.
+ * Uygulama genelinde olay tabanlı iletişim için basit bir Event Bus.
  * Farklı modüllerin birbirine doğrudan bağımlı olmadan iletişim kurmasını sağlar.
- * Singleton pattern kullanılarak tek bir instance oluşturulur.
  */
-class EventBus {
+class EventEmitter {
     constructor() {
       this.events = {};
     }
   
     /**
-     * Bir olayı dinlemek için bir callback fonksiyonu kaydeder.
+     * Bir olayı dinlemek için bir dinleyici (callback) ekler.
      * @param {string} eventName - Dinlenecek olayın adı.
-     * @param {function} callback - Olay tetiklendiğinde çalıştırılacak fonksiyon.
-     * @returns {function} - Dinleyiciyi kaldırmak için kullanılabilecek bir fonksiyon.
+     * @param {function} listener - Olay tetiklendiğinde çağrılacak fonksiyon.
      */
-    on(eventName, callback) {
+    on(eventName, listener) {
       if (!this.events[eventName]) {
         this.events[eventName] = [];
       }
-      this.events[eventName].push(callback);
-      
-      // Dinleyiciyi kaldırma fonksiyonu döndür.
-      return () => {
-        this.off(eventName, callback);
-      };
+      this.events[eventName].push(listener);
+    }
+  
+    /**
+     * Bir olayı tetikler ve ilgili tüm dinleyicileri çağırır.
+     * @param {string} eventName - Tetiklenecek olayın adı.
+     * @param {*} payload - Dinleyicilere gönderilecek veri.
+     */
+    emit(eventName, payload) {
+      if (this.events[eventName]) {
+        this.events[eventName].forEach(listener => listener(payload));
+      }
     }
   
     /**
      * Bir olayın dinleyicisini kaldırır.
      * @param {string} eventName - Olayın adı.
-     * @param {function} callback - Kaldırılacak callback fonksiyonu.
+     * @param {function} listenerToRemove - Kaldırılacak dinleyici fonksiyonu.
      */
-    off(eventName, callback) {
+    off(eventName, listenerToRemove) {
       if (!this.events[eventName]) return;
   
       this.events[eventName] = this.events[eventName].filter(
-        (cb) => cb !== callback
+        listener => listener !== listenerToRemove
       );
-    }
-  
-    /**
-     * Bir olayı tetikler ve kayıtlı tüm dinleyicilere veri gönderir.
-     * @param {string} eventName - Tetiklenecek olayın adı.
-     * @param {*} data - Dinleyicilere gönderilecek veri.
-     */
-    emit(eventName, data) {
-      if (!this.events[eventName]) return;
-      this.events[eventName].forEach((callback) => callback(data));
     }
   }
   
-  // Singleton instance'ı export et
-  export const eventBus = new EventBus();
+  // Singleton bir örnek oluşturarak tüm uygulamada aynı EventBus'ın kullanılmasını sağlıyoruz.
+  const EventBus = new EventEmitter();
+  export default EventBus;

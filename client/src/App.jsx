@@ -20,6 +20,8 @@ import { useInstrumentsStore } from './store/useInstrumentsStore';
 import { usePlaybackStore } from './store/usePlaybackStore';
 import { useMixerStore } from './store/useMixerStore';
 import { useArrangementStore } from './store/useArrangementStore';
+import { WorkletHealthChecker } from './lib/audio/WorkletHealthChecker';
+import { storePipeline } from './lib/core/StorePipeline';
 
 const LoadingScreen = ({ message, progress = 0 }) => (
     <div className="fixed inset-0 bg-gray-900 flex items-center justify-center text-white">
@@ -62,6 +64,13 @@ function App() {
   const [loadingMessage, setLoadingMessage] = useState('');
   const audioEngineRef = useRef(null);
 
+  const [engineStatus, setEngineStatus] = useState('initializing');
+  const [engineError, setEngineError] = useState(null);
+  
+  useEffect(() => {
+    initializeAudioSystem();
+  }, []);  
+
   const handleStart = async () => {
     if (audioEngineRef.current?.isInitialized) {
         setAppStatus('running');
@@ -72,106 +81,54 @@ function App() {
     setLoadingProgress(0);
     
     try {
-      // =================== PHASE 1: AUDIO CONTEXT ===================
-      setLoadingMessage('Creating Audio Context...');
-      setLoadingProgress(10);
+      // 1. Worklet sağlık kontrolü
+      setEngineStatus('checking-worklets');
+      const workletHealth = await WorkletHealthChecker.validateAllWorklets();
       
-      const context = new (window.AudioContext || window.webkitAudioContext)({
-        latencyHint: 'interactive',
-        sampleRate: 48000
-      });
+      const unhealthyWorklets = Object.entries(workletHealth)
+        .filter(([_, health]) => !health.healthy);
       
-      await context.resume();
-      console.log('✅ Native AudioContext created and started!');
-
-      // =================== PHASE 2: ENGINE INITIALIZATION ===================
-      setLoadingMessage('Initializing Audio Engine...');
-      setLoadingProgress(25);
+      if (unhealthyWorklets.length > 0) {
+        throw new Error(`Unhealthy worklets: ${unhealthyWorklets.map(([name]) => name).join(', ')}`);
+      }
       
+      // 2. AudioContext oluştur (user gesture gerekebilir)
+      setEngineStatus('creating-context');
+      const audioContext = await createAudioContextWithUserGesture();
+      
+      // 3. Engine'i başlat
+      setEngineStatus('initializing-engine');
       const engine = new NativeAudioEngine({
         setPlaybackState: usePlaybackStore.getState().setPlaybackState,
         setTransportPosition: usePlaybackStore.getState().setTransportPosition,
         onPatternChange: (data) => {
-          // Handle pattern change events if needed
-          console.log('Pattern changed:', data);
+          // Pattern değişikliklerini handle et
+          storePipeline.scheduleUpdate('arrangement', () => {
+            // UI güncellemeleri
+          }, 'normal');
         }
       });
       
-      await engine.initializeWithContext(context);
-      audioEngineRef.current = engine;
-
-      // =================== PHASE 3: SERVICE REGISTRATION ===================
-      setLoadingMessage('Registering Audio Service...');
-      setLoadingProgress(40);
+      await engine.initializeWithContext(audioContext);
       
+      // 4. Service'e kaydet
+      setEngineStatus('registering-service');
       await AudioContextService.setAudioEngine(engine);
-
-      // =================== PHASE 4: SAMPLE PRELOADING ===================
-      setLoadingMessage('Loading Samples...');
-      setLoadingProgress(55);
       
-      const instrumentData = useInstrumentsStore.getState().instruments;
-      await engine.preloadSamples(instrumentData);
-
-      // =================== PHASE 5: MIXER SETUP ===================
-      setLoadingMessage('Setting up Mixer...');
-      setLoadingProgress(70);
+      // 5. Store pipeline'ı aktifleştir
+      setEngineStatus('activating-stores');
+      setupOptimizedStoreSubscriptions(engine);
       
-      const mixerTracks = useMixerStore.getState().mixerTracks;
-      for (const track of mixerTracks) {
-        if (track.type !== 'track') { // Skip regular tracks, they're created by default
-          try {
-            await AudioContextService._createMixerChannel(track);
-          } catch (error) {
-            console.warn(`⚠️ Could not create mixer channel: ${track.name}`, error);
-          }
-        }
-      }
-
-      // =================== PHASE 6: INSTRUMENT CREATION ===================
-      setLoadingMessage('Creating Instruments...');
-      setLoadingProgress(85);
+      // 6. Default content'i yükle
+      setEngineStatus('loading-content');
+      await loadInitialContent(engine);
       
-      for (const instData of instrumentData) {
-        await engine.createInstrument(instData);
-        // Update progress for each instrument
-        const currentInstrument = instrumentData.indexOf(instData) + 1;
-        const instrumentProgress = 85 + (10 * currentInstrument / instrumentData.length);
-        setLoadingProgress(instrumentProgress);
-      }
-
-      // =================== PHASE 7: PATTERN LOADING ===================
-      setLoadingMessage('Loading Patterns...');
-      setLoadingProgress(95);
+      setEngineStatus('ready');
       
-      const arrangementData = useArrangementStore.getState();
-      
-      // ✅ FIXED: Direct PatternData usage without dynamic import
-      Object.entries(arrangementData.patterns).forEach(([patternId, pattern]) => {
-        const patternData = new PatternData(
-          pattern.id, 
-          pattern.name, 
-          pattern.data
-        );
-        engine.patterns.set(patternId, patternData);
-      });
-      
-      engine.activePatternId = arrangementData.activePatternId;
-
-      // =================== FINALIZATION ===================
-      setLoadingMessage('Finalizing...');
-      setLoadingProgress(100);
-      
-      // Small delay to show completion
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      setAppStatus('running');
-      console.log('🎉 Native Audio Engine v2.0 fully initialized!');
-
-    } catch (err) {
-      console.error('❌ Native Engine initialization failed:', err);
-      setError(err.message);
-      setAppStatus('error');
+    } catch (error) {
+      console.error('🚨 Audio system initialization failed:', error);
+      setEngineError(error.message);
+      setEngineStatus('error');
     }
   };
 

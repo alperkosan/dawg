@@ -60,3 +60,7 @@ Bu harita, kod yazarken kendimize sormamız gereken sorular için bir kontrol li
 
 Örnek: PlaybackManager'ın transport.stepsToSeconds() fonksiyonuna ihtiyaç duyması ama NativeTransportSystem'de bu fonksiyonun olmaması, katmanlar arasındaki dilin tutarsız olduğunu gösteriyordu. Katmanların birbirine sunduğu fonksiyonlar ve olaylar (API) en başından net bir şekilde tanımlanmalıdır.
 
+
+
+
+evet, çalışmaya başladığında içerisine boşalttığımız çöpü başarılı bir şekilde öğütebilen ve fişini çekene kadar durmayan bir motorumuz oldu. şimdi arayüzümüzü motora bağlayıp onun gücünü gerektiği yerde gerektiği kadar, konuşarak anlaşarak, kullanıcıyı da ne yaptığını (onun tickine karşılık bizim bbt formatında gösterimimiz, kullanıcıya zoom yaptıkça ticklere yaklaşmasını sağlayacağımız arayüzümüz)  gösterecek hale getireceğiz. öncelikle iç motor fonksiyonlarının tetiklenmelerinin düzeltilmesi daha sonra dışardan gönderilen parametrelere doğru şekilde bağlanmasını sağlayacağız. bu yolda bize bir iyileştirme planı hazırla çekirdekten arayüze doğru katman katman kabloları bağlayarak ilerleyelim.

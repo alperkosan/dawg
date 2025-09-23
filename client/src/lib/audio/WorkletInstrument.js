@@ -67,11 +67,61 @@ export class WorkletInstrument {
   }
 
   setupMessageHandling() {
-    this.instrumentNode.port.onmessage = (event) => {
-      const { type, data } = event.data;
-      // Gelen mesajları burada yönetmeye devam edebiliriz.
-      // Örneğin: if (type === WasmMessage.PROCESSOR_READY) { ... }
+    if (!this.instrumentNode?.port) return;
+    
+    // ⚡ PERFORMANS: Message batching
+    const messageQueue = [];
+    let processingMessages = false;
+    
+    const processMessageQueue = () => {
+      if (processingMessages || messageQueue.length === 0) return;
+      processingMessages = true;
+      
+      // Batch process messages
+      const batch = messageQueue.splice(0, 10); // Max 10 per batch
+      
+      batch.forEach(({ type, data }) => {
+        switch (type) {
+          case 'noteStarted':
+            // UI'ya bildir ama throttle et
+            this.throttledNoteStarted?.(data);
+            break;
+          case 'noteEnded':
+            this.throttledNoteEnded?.(data);
+            break;
+          case 'debug':
+            if (process.env.NODE_ENV === 'development') {
+              console.log(`🎵 ${this.name}:`, data.message);
+            }
+            break;
+        }
+      });
+      
+      processingMessages = false;
+      
+      // Kalan mesajlar varsa devam et
+      if (messageQueue.length > 0) {
+        requestAnimationFrame(processMessageQueue);
+      }
     };
+    
+    this.instrumentNode.port.onmessage = (event) => {
+      messageQueue.push(event.data);
+      
+      if (!processingMessages) {
+        requestAnimationFrame(processMessageQueue);
+      }
+    };
+    
+    // Throttled handlers
+    this.throttledNoteStarted = throttle((data) => {
+      // VU meter update
+      this.emit('noteStarted', data);
+    }, 50);
+    
+    this.throttledNoteEnded = throttle((data) => {
+      this.emit('noteEnded', data);
+    }, 50);
   }
 
   setupParameters() {
