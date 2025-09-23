@@ -238,36 +238,38 @@ export class NativeTransportSystem {
         }
     }
 
-    // ✅ CRITICAL FIX: Tick advancement with proper loop logic
     advanceToNextTick() {
         const secondsPerTick = this.getSecondsPerTick();
-        
-        // Advance time first
-        this.nextTickTime += secondsPerTick;
-        
-        // Then advance tick position
         this.currentTick++;
         
-        // ✅ FIXED: Loop logic - only trigger when actually hitting loop end
         if (this.loop && this.currentTick >= this.loopEndTick) {
-            console.log(`🔁 Loop trigger:`);
-            console.log(`   Current tick: ${this.currentTick}, Loop end: ${this.loopEndTick}`);
-            console.log(`   Time: ${this.nextTickTime.toFixed(3)}s, Duration: ${((this.currentTick - this.loopStartTick) * secondsPerTick).toFixed(3)}s`);
-            
+            const previousTick = this.currentTick;
             this.currentTick = this.loopStartTick;
+            this.nextTickTime = this.audioContext.currentTime;
             
+            // ✅ SADECE EVENT TETİKLE
+            console.log(`🔁 Loop trigger: ${previousTick} -> ${this.currentTick}`);
+            
+            // Scheduled events'leri temizle
+            this.clearScheduledEvents();
+            
+            // Loop event'ini tetikle (PlaybackManager'da dinlenecek)
             this.triggerCallback('loop', { 
-                time: this.nextTickTime, 
-                fromTick: this.loopEndTick - 1, 
-                toTick: this.loopStartTick 
+                time: this.nextTickTime,
+                nextLoopStartTime: this.nextTickTime,
+                fromTick: previousTick - 1, 
+                toTick: this.loopStartTick,
+                needsReschedule: true // ✅ Yeniden schedule gerektiğini belirt
             });
+        } else {
+            this.nextTickTime += secondsPerTick;
         }
         
-        // ✅ FIXED: Bar tracking - only update when crossing bar boundaries
+        // Bar tracking (existing code)
         const newBar = Math.floor(this.currentTick / this.ticksPerBar);
         if (newBar !== this.currentBar) {
             this.currentBar = newBar;
-            console.log(`🎼 Bar ${this.currentBar} (tick ${this.currentTick})`);
+            console.log(`🎼 Bar ${this.currentBar}`);
             
             this.triggerCallback('bar', { 
                 time: this.nextTickTime, 
@@ -359,7 +361,7 @@ export class NativeTransportSystem {
                 fromTick: this.loopEnd - 1, 
                 toTick: this.loopStart 
             });
-            
+
             console.log(`🔁 Loop trigger at ${loopTime.toFixed(3)}s. Signaling for reschedule.`);
             
             this.currentTick = this.loopStart;

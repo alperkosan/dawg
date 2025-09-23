@@ -47,12 +47,98 @@ export class PlaybackManager {
      * bunlara göre yeniden planlama yapar.
      */
     _bindTransportEvents() {
-        this.transport.on('loop', ({ nextLoopStartTime }) => {
-            console.log(`🧠 PlaybackManager received loop event. Rescheduling for ${nextLoopStartTime.toFixed(3)}s`);
-            // Bir sonraki döngünün başlangıç zamanını kullanarak içeriği yeniden planla.
-            this._scheduleContent(nextLoopStartTime);
+        // ✅ MERKEZI LOOP HANDLING - Transport loop event'ini yakala
+        this.transport.on('loop', (data) => {
+            const { nextLoopStartTime, fromTick, toTick, time } = data;
+            
+            console.log(`🧠 PlaybackManager received loop event:`);
+            console.log(`   From tick: ${fromTick} → To tick: ${toTick}`);
+            console.log(`   Next loop start: ${nextLoopStartTime?.toFixed(3) || time?.toFixed(3)}s`);
+            
+            // ✅ MERKEZI RESTART HANDLING
+            this._handleLoopRestart(nextLoopStartTime || time);
         });
-    }    
+
+        // ✅ BONUS: Diğer transport event'leri de merkezi olarak yönet
+        this.transport.on('start', (data) => {
+            console.log('🧠 PlaybackManager: Transport started');
+            this._emit('transportStart', data);
+        });
+
+        this.transport.on('stop', (data) => {
+            console.log('🧠 PlaybackManager: Transport stopped');
+            this._emit('transportStop', data);
+        });
+
+        this.transport.on('pause', (data) => {
+            console.log('🧠 PlaybackManager: Transport paused');
+            this._emit('transportPause', data);
+        });
+
+        this.transport.on('bar', (data) => {
+            // Bar değişikliklerini UI'a bildir
+            this._emit('barChange', data);
+        });
+    }
+
+    /**
+     * ✅ YENİDEN YAPILANDIRILMIŞ: Loop restart handler
+     * @param {number} nextStartTime - Bir sonraki loop'un başlangıç zamanı
+     */
+    _handleLoopRestart(nextStartTime = null) {
+        console.log('🔄 Handling loop restart - rescheduling content');
+        
+        // Mevcut scheduled events'leri temizle
+        this._clearScheduledEvents();
+        
+        // Content'i yeniden schedule et
+        const startTime = nextStartTime || this.transport.audioContext.currentTime;
+        this._scheduleContent(startTime);
+        
+        // ✅ BONUS: Loop restart analytics
+        this._trackLoopRestart();
+        
+        // UI'ı bilgilendir
+        this._emit('loopRestart', {
+            time: startTime,
+            tick: this.transport.currentTick,
+            step: this.transport.ticksToSteps(this.transport.currentTick),
+            mode: this.currentMode,
+            patternId: this.activePatternId
+        });
+        
+        console.log('✅ Loop restart handling complete');
+    }
+
+    /**
+     * ✅ YENİ: Loop restart analytics/tracking
+     * @private
+     */
+    _trackLoopRestart() {
+        if (!this.loopStats) {
+            this.loopStats = {
+                totalLoops: 0,
+                loopsInCurrentSession: 0,
+                lastLoopTime: null,
+                averageLoopInterval: 0
+            };
+        }
+        
+        const now = performance.now();
+        
+        if (this.loopStats.lastLoopTime) {
+            const interval = now - this.loopStats.lastLoopTime;
+            this.loopStats.averageLoopInterval = 
+                (this.loopStats.averageLoopInterval + interval) / 2;
+        }
+        
+        this.loopStats.totalLoops++;
+        this.loopStats.loopsInCurrentSession++;
+        this.loopStats.lastLoopTime = now;
+        
+        // Debug info
+        console.log(`📊 Loop Stats: ${this.loopStats.totalLoops} total, avg interval: ${this.loopStats.averageLoopInterval.toFixed(1)}ms`);
+    }
 
     // =================== MODE MANAGEMENT ===================
 
@@ -117,37 +203,39 @@ export class PlaybackManager {
 
     _calculatePatternLoop() {
         const arrangementStore = useArrangementStore.getState();
-        const activePattern = arrangementStore.patterns[arrangementStore.activePatternId];
+        const activePatternId = arrangementStore.activePatternId;
+        const activePattern = arrangementStore.patterns[activePatternId];
         
-        if (!activePattern) {
+        if (!activePattern || !activePattern.data) {
+            console.warn(`[PlaybackManager] No active pattern or pattern data found for ID: ${activePatternId}. Defaulting to 4 bars.`);
             this.loopStart = 0;
-            this.loopEnd = 64;
+            this.loopEnd = 64; // 4 bar * 16 step/bar
+            this.patternLength = 64;
             return;
         }
     
-        // ✅ CRITICAL FIX: Calculate actual pattern length in STEPS
+        // Pattern içindeki en son notanın bittiği adımı (step) hesapla
         let maxStep = 0;
         Object.values(activePattern.data).forEach(notes => {
             if (Array.isArray(notes)) {
                 notes.forEach(note => {
-                    // ✅ FIXED: note.time is in STEPS (16th note units)
                     const noteTime = note.time || 0;
-                    const noteDuration = note.duration ? 
-                        this._getDurationInSteps(note.duration) : 1;
+                    // Notanın süresini step cinsinden al, varsayılan olarak 1 step (16'lık nota)
+                    const noteDuration = this._getDurationInSteps(note.duration) || 1;
                     const noteEnd = noteTime + noteDuration;
                     maxStep = Math.max(maxStep, noteEnd);
                 });
             }
         });
     
-        // ✅ FIXED: Pattern minimum 64 step (4 bars), round to bar boundaries
+        // Uzunluğu en az 4 bar (64 step) yap ve en yakın bar sayısına yukarı yuvarla.
+        // (1 bar = 16 step)
         this.patternLength = Math.max(64, Math.ceil(maxStep / 16) * 16);
         this.loopStart = 0;
         this.loopEnd = this.patternLength;
         
         console.log(`📏 Pattern loop calculated: 0 → ${this.loopEnd} steps (${this.loopEnd/16} bars)`);
-        console.log(`   Max note step found: ${maxStep}`);
-        console.log(`   Pattern length: ${this.patternLength} steps`);
+        console.log(`   Max note end step found: ${maxStep}`);
     }
 
     _calculateSongLoop() {
@@ -311,37 +399,46 @@ export class PlaybackManager {
     // =================== CONTENT SCHEDULING ===================
 
     /**
-     * @private
-     * ✅ GÜNCELLEME: Fonksiyon artık `startTime` parametresini alıyor.
+     * ✅ DÜZELTME: _scheduleContent'i başlangıç zamanı ile kullan
+     * @param {number} startTime - İçeriğin planlanacağı başlangıç zamanı
      */
-    _scheduleContent(startTime) {
+    _scheduleContent(startTime = null) {
+        const baseTime = startTime || this.transport.audioContext.currentTime;
+        
+        console.log(`📋 Scheduling content from time: ${baseTime.toFixed(3)}s`);
+        
+        // Önceki event'leri temizle (eğer daha önce temizlenmediyse)
         this._clearScheduledEvents();
         
         if (this.currentMode === 'pattern') {
-            this._schedulePatternContent(startTime);
+            this._schedulePatternContent(baseTime);
         } else {
-            this._scheduleSongContent(startTime);
+            this._scheduleSongContent(baseTime);
         }
+        
+        console.log('✅ Content scheduling complete');
     }
 
     /**
-     * @private
-     * ✅ GÜNCELLEME: Fonksiyon artık `startTime` parametresini alıyor ve aşağı iletiyor.
+     * ✅ DÜZELTME: Pattern content scheduling with base time
+     * @param {number} baseTime - Base scheduling time
      */
-    _schedulePatternContent(startTime) {
+    _schedulePatternContent(baseTime) {
         const arrangementStore = useArrangementStore.getState();
-        const activePatternId = useArrangementStore.getState().activePatternId;
-        const activePattern = arrangementStore.patterns[activePatternId];
+        const activePattern = arrangementStore.patterns[arrangementStore.activePatternId];
         
         if (!activePattern) {
             console.warn('⚠️ No active pattern to schedule');
             return;
         }
 
-        console.log(`📋 Scheduling pattern: ${activePattern.name}`);
+        console.log(`📋 Scheduling pattern: ${activePattern.name} from ${baseTime.toFixed(3)}s`);
 
+        // Schedule notes for each instrument
         Object.entries(activePattern.data).forEach(([instrumentId, notes]) => {
-            if (!Array.isArray(notes) || notes.length === 0) return;
+            if (!Array.isArray(notes) || notes.length === 0) {
+                return;
+            }
             
             const instrument = this.audioEngine.instruments.get(instrumentId);
             if (!instrument) {
@@ -349,7 +446,8 @@ export class PlaybackManager {
                 return;
             }
 
-            this._scheduleInstrumentNotes(instrument, notes, instrumentId, startTime);
+            console.log(`   ${instrumentId}: ${notes.length} notes`);
+            this._scheduleInstrumentNotes(instrument, notes, instrumentId, baseTime);
         });
     }
 
@@ -386,44 +484,55 @@ export class PlaybackManager {
     }
 
     /**
-     * @private
-     * ✅ GÜNCELLEME: Fonksiyon artık `startTime` parametresini alıyor.
+     * ✅ DÜZELTME: Instrument notes scheduling with base time
+     * @param {*} instrument - Instrument instance
+     * @param {Array} notes - Notes array
+     * @param {string} instrumentId - Instrument ID
+     * @param {number} baseTime - Base scheduling time
      */
-    _scheduleInstrumentNotes(instrument, notes, instrumentId, startTime) {
-        // Hatanın oluştuğu satırın çalışabilmesi için startTime'ın bir sayı olduğundan emin olalım.
-        if (typeof startTime !== 'number') {
-            console.error('❌ Invalid startTime provided to _scheduleInstrumentNotes. Scheduling aborted.');
-            return;
-        }
-
-        console.log(`📋 Scheduling ${notes.length} notes for ${instrumentId} with start time ${startTime.toFixed(3)}s`);
-        
+    _scheduleInstrumentNotes(instrument, notes, instrumentId, baseTime) {
         notes.forEach(note => {
+            // Note timing calculation
             const noteTimeInSteps = note.time || 0;
-            const noteTimeRelativeInSeconds = this.transport.stepsToSeconds(noteTimeInSteps);
-            const noteTimeAbsoluteInSeconds = startTime + noteTimeRelativeInSeconds;
-
+            const noteTimeInTicks = noteTimeInSteps * this.transport.ticksPerStep;
+            const noteTimeInSeconds = noteTimeInTicks * this.transport.getSecondsPerTick();
+            
+            // ✅ CRITICAL: Base time'dan itibaren hesapla
+            const absoluteTime = baseTime + noteTimeInSeconds;
+            
             const noteDuration = note.duration ? 
                 NativeTimeUtils.parseTime(note.duration, this.transport.bpm) : 
                 this.transport.stepsToSeconds(1);
-    
+
+            // Note on event
             this.transport.scheduleEvent(
-                noteTimeAbsoluteInSeconds,
+                absoluteTime,
                 (scheduledTime) => {
                     try {
-                        instrument.triggerNote(note.pitch || 'C4', note.velocity || 1, scheduledTime, noteDuration);
-                    } catch (e) { console.error(e); }
+                        instrument.triggerNote(
+                            note.pitch || 'C4',
+                            note.velocity || 1,
+                            scheduledTime,
+                            noteDuration
+                        );
+                        console.log(`🎵 Note scheduled: ${instrumentId} - ${note.pitch} at step ${noteTimeInSteps} (${scheduledTime.toFixed(3)}s)`);
+                    } catch (error) {
+                        console.error(`❌ Note trigger failed: ${instrumentId}`, error);
+                    }
                 },
                 { type: 'noteOn', instrumentId, note, step: noteTimeInSteps }
             );
-    
+
+            // Note off event (if needed)
             if (note.duration && note.duration !== 'trigger') {
                 this.transport.scheduleEvent(
-                    noteTimeAbsoluteInSeconds + noteDuration,
+                    absoluteTime + noteDuration,
                     (scheduledTime) => {
                         try {
                             instrument.releaseNote(note.pitch || 'C4', scheduledTime);
-                        } catch (e) { console.error(e); }
+                        } catch (error) {
+                            console.error(`❌ Note release failed: ${instrumentId}`, error);
+                        }
                     },
                     { type: 'noteOff', instrumentId, note }
                 );
@@ -532,12 +641,22 @@ export class PlaybackManager {
         return this.transport.secondsToSteps(seconds);
     }
 
+    /**
+     * @private
+     * "8n", "4n" gibi notasyonları step birimine çevirir.
+     * @param {string} duration - Nota süresi gösterimi (örn: "16n").
+     * @returns {number} Sürenin step cinsinden karşılığı.
+     */
     _getDurationInSteps(duration) {
-        if (!duration) return 1;
+        if (!duration || typeof duration !== 'string') {
+            return 1; // Varsayılan süre 1 step (16'lık nota)
+        }
         
         const bpm = this.transport.bpm || 120;
-        const durationSeconds = NativeTimeUtils.parseTime(duration, bpm);
-        return this._secondsToSteps(durationSeconds);
+        // NativeTimeUtils kullanarak süreyi saniyeye çevir
+        const durationInSeconds = NativeTimeUtils.parseTime(duration, bpm);
+        // Transport'taki yardımcı fonksiyonla saniyeyi step'e çevir
+        return this.transport.secondsToSteps(durationInSeconds);
     }
 
     _clearScheduledEvents() {
@@ -574,6 +693,22 @@ export class PlaybackManager {
             lengthInSeconds: this._stepsToSeconds(this.loopEnd - this.loopStart)
         };
     }
+
+    /**
+     * ✅ BONUS: Playback manager stats'ları al
+     */
+    getStats() {
+        return {
+            mode: this.currentMode,
+            isPlaying: this.isPlaying,
+            isPaused: this.isPaused,
+            currentPosition: this.currentPosition,
+            loopInfo: this.getLoopInfo(),
+            loopStats: this.loopStats,
+            activePatternId: this.activePatternId,
+            scheduledEventsCount: this.transport?.scheduledEvents?.size || 0
+        };
+    }    
 
     // =================== EVENTS ===================
 
