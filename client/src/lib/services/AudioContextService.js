@@ -382,12 +382,15 @@ export class AudioContextService {
       engine.playbackManager.setLoopPoints(startStep, endStep);
     }
   }
-  
-  static jumpToStep(step) { 
+
+  static setLoopFromSelection(startStep, endStep) {
     const engine = this.getAudioEngine();
-    if (engine?.playbackManager) {
-      engine.playbackManager.jumpToStep(step);
-    }
+    engine.playbackManager.setLoopPoints(startStep, endStep);
+  }
+  
+  static jumpToStep(step) {
+    const engine = this.getAudioEngine();
+    engine.playbackManager.jumpToStep(step);
   }
   
   static jumpToBar(bar) { 
