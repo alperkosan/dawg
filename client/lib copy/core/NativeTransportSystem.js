@@ -105,10 +105,13 @@ export class NativeTransportSystem {
 
         this.timerWorker.postMessage('stop');
 
-        // Stop komutu pozisyonu her zaman döngünün başına sıfırlar.
+        // --- DÜZELTME BAŞLANGICI ---
+        // Zamanı ve pozisyonu başa sar. Bu, bir sonraki 'play' komutunun
+        // doğru yerden başlamasını garantiler.
         this.position = this._secondsToTicks(this.loopStart);
         this.currentTick = this.position;
-        this.nextTickTime = this.loopStart; 
+        this.nextTickTime = this.loopStart; // Scheduler'ı da sıfırla.
+        // --- DÜZELTME SONU ---
 
         this.activePatterns.forEach(patternId => {
             this.stopPattern(patternId, stopTime);
@@ -121,17 +124,10 @@ export class NativeTransportSystem {
     }
 
     pause(when = null) {
-        if (!this.isPlaying) return this;
-
         const pauseTime = when || this.audioContext.currentTime;
-        this.isPlaying = false;
-        this.schedulerRunning = false;
-
-        this.timerWorker.postMessage('stop');
-        
-        // Pozisyonu koruyoruz, sıfırlamıyoruz.
-        this.triggerCallback('pause', { time: pauseTime, position: this.getPosition() });
-        console.log(`⏸️ Transport paused at position ${this.formatPosition(this.getPosition())}`);
+        this.stop(pauseTime);
+        this.triggerCallback('pause', { time: pauseTime, position: this.position });
+        console.log(`⏸️ Transport paused at position ${this.formatPosition(this.position)}`);
         return this;
     }
 
@@ -161,16 +157,6 @@ export class NativeTransportSystem {
     setLoopPoints(startTime, endTime) {
         this.loopStart = startTime;
         this.loopEnd = endTime;
-
-        // --- SONSUZ DÖNGÜ DÜZELTMESİ ---
-        // Eğer transport çalarken yeni döngü sonu, mevcut pozisyonun gerisinde kalırsa,
-        // transport'u döngünün başına sıfırlayarak kilitlenmeyi önle.
-        if (this.isPlaying && this.nextTickTime >= this.loopEnd) {
-            console.warn(`[Transport] Döngü sonu, mevcut pozisyonun gerisine ayarlandı. Transport sıfırlanıyor.`);
-            this.nextTickTime = this.loopStart;
-            this.currentTick = this._secondsToTicks(this.loopStart);
-            this.position = this.currentTick;
-        }
     }
 
     setLoopEnabled(enabled) {
