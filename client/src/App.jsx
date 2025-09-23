@@ -13,15 +13,22 @@ function App() {
   const [initializationProgress, setInitializationProgress] = useState(0);
   const audioEngineRef = useRef(null);
 
-  // ✅ FIX: useCallback dependencies düzeltildi
   const handleStartAudioEngine = useCallback(async () => {
-    console.log('🎵 User clicked to start audio engine');
+    console.log('User clicked to start audio engine');
     setEngineStatus('initializing');
     setInitializationProgress(0);
     setEngineError(null);
-    await initializeAudioSystem();
+    
+    // initializeAudioSystem'i doğrudan çağır
+    try {
+      await initializeAudioSystem();
+    } catch (error) {
+      console.error('Audio system failed:', error);
+      setEngineError(error.message);
+      setEngineStatus('error');
+    }
   }, []); // Boş dependency array
-
+  
   // ✅ FIX: useCallback dependencies düzeltildi
   const handleRetryInitialization = useCallback(() => {
     setEngineStatus('initializing');
