@@ -34,11 +34,14 @@ export class NativeTransportSystem {
 
         // YENİ: Loop özellikleri
         this.loop = true;
-        this.loopStart = 0; // Saniye cinsinden
-        this.loopEnd = 4;   // Saniye cinsinden
+        this.loopStart = 0; // Tick cinsinden, saniye değil!
+        this.loopEnd = 64;  // Tick cinsinden, saniye değil!
+
+        this.currentBar = 0;
+        this.ticksPerBar = this.ppq * this.timeSignature[0]; // 96 * 4 = 384 tick/bar
 
         this.initializeWorkerTimer();
-        console.log('🎵 NativeTransportSystem initialized with scheduling');
+        console.log('🎵 NativeTransportSystem initialized - Loop:', this.loopStart, '->', this.loopEnd, 'ticks');
     }
 
     // =================== TIMER INITIALIZATION ===================
@@ -76,14 +79,18 @@ export class NativeTransportSystem {
 
         const startTime = when || this.audioContext.currentTime;
         this.isPlaying = true;
+        
+        // ✅ DÜZELTME: nextTickTime'ı doğru başlat
         this.nextTickTime = startTime;
         this.schedulerRunning = true;
 
+        // ✅ EKLENEN: Başlangıç pozisyonu
+        console.log(`▶️ Transport starting at tick ${this.currentTick}, time ${startTime.toFixed(3)}s`);
+        console.log(`🔁 Loop: ${this.loopStart} -> ${this.loopEnd} ticks (${this.loop ? 'enabled' : 'disabled'})`);
+
         this.timerWorker.postMessage('start');
-
         this.triggerCallback('start', { time: startTime, position: this.position });
-        console.log(`▶️ Transport started at ${startTime.toFixed(3)}s`);
-
+        
         return this;
     }
 
@@ -96,18 +103,17 @@ export class NativeTransportSystem {
 
         this.timerWorker.postMessage('stop');
 
-        // Stop komutu pozisyonu her zaman döngünün başına sıfırlar.
-        this.position = this._secondsToTicks(this.loopStart);
-        this.currentTick = this.position;
-        this.nextTickTime = this.loopStart; 
+        // ✅ DÜZELTME: Stop'ta loop başına dön
+        this.currentTick = this.loopStart;
+        this.position = this.currentTick;
+        this.currentBar = Math.floor(this.currentTick / this.ticksPerBar);
+        this.nextTickTime = stopTime;
 
-        this.activePatterns.forEach(patternId => {
-            this.stopPattern(patternId, stopTime);
-        });
+        // Scheduled events'leri temizle
+        this.clearScheduledEvents();
 
         this.triggerCallback('stop', { time: stopTime, position: this.position });
-        console.log(`⏹️ Transport stopped at ${stopTime.toFixed(3)}s`);
-
+        console.log(`⏹️ Transport stopped, reset to tick ${this.currentTick}`);
         return this;
     }
 
@@ -149,15 +155,19 @@ export class NativeTransportSystem {
         return this;
     }
 
-    setLoopPoints(startTime, endTime) {
-        this.loopStart = startTime;
-        this.loopEnd = endTime;
+    setLoopPoints(startStep, endStep) {
+        // Step'leri tick'lere çevir (1 step = 1 sixteenth note = ppq/4 tick)
+        this.loopStart = startStep * (this.ppq / 4);
+        this.loopEnd = endStep * (this.ppq / 4);
         
-        if (this.isPlaying && this.nextTickTime >= this.loopEnd) {
-            console.warn('[Transport] Loop end behind current position, resetting...');
-            this.nextTickTime = this.loopStart;
-            this.currentTick = this._secondsToTicks(this.loopStart);
+        console.log(`🔁 Loop points set: ${startStep} -> ${endStep} steps (${this.loopStart} -> ${this.loopEnd} ticks)`);
+        
+        // Eğer current position loop dışındaysa, loop başına al
+        if (this.currentTick >= this.loopEnd) {
+            console.warn('[Transport] Current position beyond loop end, resetting to start');
+            this.currentTick = this.loopStart;
             this.position = this.currentTick;
+            this.nextTickTime = this.audioContext.currentTime;
         }
     }
 
@@ -201,23 +211,20 @@ export class NativeTransportSystem {
     clearScheduledEvents() {
         this.scheduledEvents.clear();
         console.log('🧹 Scheduled events cleared');
-    }    
+    }
 
     scheduleCurrentTick(time) {
-        // Bu fonksiyon artık sadece UI güncellemelerinden sorumlu
         this.triggerCallback('tick', {
             time: time,
             position: this.currentTick,
-            formatted: this.formatPosition(this.currentTick)
+            formatted: this.formatPosition(this.currentTick),
+            bar: this.currentBar
         });
 
+        // Beat callback
         if (this.currentTick % this.ppq === 0) {
             const beat = Math.floor(this.currentTick / this.ppq) % this.timeSignature[0];
-            this.triggerCallback('beat', { time, beat });
-            if (beat === 0) {
-                const bar = Math.floor(this.currentTick / (this.ppq * this.timeSignature[0]));
-                this.triggerCallback('bar', { time, bar });
-            }
+            this.triggerCallback('beat', { time, beat, tick: this.currentTick });
         }
     }
 
@@ -263,29 +270,37 @@ export class NativeTransportSystem {
     nextTick() {
         const secondsPerTick = this.getSecondsPerTick();
         
-        const nextTickTimeCandidate = this.nextTickTime + secondsPerTick;
-
-        // Loop kontrolü
-        if (this.loop && nextTickTimeCandidate >= this.loopEnd) {
-            this.triggerCallback('loop', { time: this.loopEnd });
-            const loopDuration = this.loopEnd - this.loopStart;
-            
-            if (loopDuration > 0) {
-                const overflow = nextTickTimeCandidate - this.loopEnd;
-                this.nextTickTime = this.loopStart + (overflow % loopDuration);
-                this.currentTick = this._secondsToTicks(this.loopStart) + 
-                                  this._secondsToTicks(overflow % loopDuration);
-            } else {
-                this.nextTickTime = this.loopStart;
-                this.currentTick = this._secondsToTicks(this.loopStart);
-            }
-        } else {
-            this.nextTickTime = nextTickTimeCandidate;
-            this.currentTick++;
+        // Önce tick'i ilerlet
+        this.currentTick++;
+        this.position = this.currentTick;
+        
+        // Sonra loop kontrolü yap
+        if (this.loop && this.currentTick >= this.loopEnd) {
+            console.log(`🔁 Loop completed at tick ${this.currentTick}, returning to ${this.loopStart}`);
+            this.currentTick = this.loopStart;
+            this.position = this.currentTick;
+            this.triggerCallback('loop', { 
+                time: this.nextTickTime, 
+                fromTick: this.loopEnd - 1, 
+                toTick: this.loopStart 
+            });
         }
         
-        this.position = this.currentTick;
+        // Zamanı güncelle
+        this.nextTickTime += secondsPerTick;
+        
+        // Bar tracking - ✅ DÜZELTME
+        const newBar = Math.floor(this.currentTick / this.ticksPerBar);
+        if (newBar !== this.currentBar) {
+            this.currentBar = newBar;
+            this.triggerCallback('bar', { 
+                time: this.nextTickTime, 
+                bar: this.currentBar,
+                tick: this.currentTick
+            });
+        }
     }
+
 
     getSecondsPerTick() {
         const secondsPerBeat = 60.0 / this.bpm;
@@ -421,6 +436,17 @@ export class NativeTransportSystem {
 
         return `${bar}:${beat}:${sixteenth}`;
     }
+
+    // ✅ DÜZELTME: getCurrentTime
+    getCurrentTime() {
+        return this.audioContext.currentTime;
+    }
+
+    // ✅ DÜZELTME: Tick to seconds conversion
+    getSecondsPerTick() {
+        const secondsPerBeat = 60.0 / this.bpm;
+        return secondsPerBeat / this.ppq;
+    }    
 
     // =================== EVENT SYSTEM ===================
 
