@@ -381,35 +381,46 @@ export class PlaybackManager {
                 NativeTimeUtils.parseTime(note.duration, this.transport.bpm) : 
                 this._stepsToSeconds(1);
     
-            // ❌ SORUN: Transport'un scheduleEvent metodunu çağırmıyor
-            // Bu yüzden notalar hiç çalınmıyor!
+            // ❌ ESKİ HALI: Transport event'i schedule edilmiyordu
+            // instrument.triggerNote(...) // Transport zamanlaması olmadan direkt çağırıyordu
     
-            // ✅ ÇÖZÜM: Transport'a event schedule et
+            // ✅ YENİ HALI: Transport üzerinden zamanla
             this.transport.scheduleEvent(
                 noteTime,
-                (scheduledTime) => { 
-                    // Enstrümana hassas zamanlama ile nota gönder
-                    instrument.triggerNote(
-                        note.pitch || 'C4',
-                        note.velocity || 1,
-                        scheduledTime, 
-                        noteDuration
-                    );
+                (scheduledTime) => { // Düzeltme: Transport'tan gelen hassas zamanı alıyoruz
+                    try {
+                        instrument.triggerNote(
+                            note.pitch || 'C4',
+                            note.velocity || 1,
+                            scheduledTime, // ve enstrümana bu hassas zamanı iletiyoruz.
+                            noteDuration
+                        );
+                        console.log(`🎵 Note scheduled: ${instrumentId} - ${note.pitch} at ${scheduledTime.toFixed(3)}s`);
+                    } catch (error) {
+                        console.error(`❌ Note trigger failed: ${instrumentId}`, error);
+                    }
                 },
                 { type: 'noteOn', instrumentId, note }
             );
     
-            // Note off için ayrı event
+            // Nota KAPATMA (Note Off) zamanlaması
             if (note.duration && note.duration !== 'trigger') {
                 this.transport.scheduleEvent(
                     noteTime + noteDuration,
-                    (scheduledTime) => {
-                        instrument.releaseNote(note.pitch || 'C4', scheduledTime);
+                    (scheduledTime) => { // Düzeltme: Aynı hassas zamanı burada da kullanıyoruz
+                        try {
+                            instrument.releaseNote(note.pitch || 'C4', scheduledTime);
+                            console.log(`🎵 Note released: ${instrumentId} - ${note.pitch} at ${scheduledTime.toFixed(3)}s`);
+                        } catch (error) {
+                            console.error(`❌ Note release failed: ${instrumentId}`, error);
+                        }
                     },
                     { type: 'noteOff', instrumentId, note }
                 );
             }
         });
+        
+        console.log(`📋 Scheduled ${notes.length} notes for ${instrumentId}`);
     }
 
     _schedulePatternAutomation(pattern) {
@@ -526,13 +537,13 @@ export class PlaybackManager {
     }
 
     _clearScheduledEvents() {
-        this.scheduledEvents.clear();
-        this.automationEvents.clear();
-        
-        if (this.transport) {
-            // Clear transport events if method exists
-            this.transport.clearScheduledEvents?.();
+        if (this.transport && this.transport.clearScheduledEvents) {
+            this.transport.clearScheduledEvents();
         }
+        this.scheduledEvents?.clear();
+        this.automationEvents?.clear();
+        
+        console.log('🧹 Playback events cleared');
     }
 
     // =================== STATUS & DEBUG ===================

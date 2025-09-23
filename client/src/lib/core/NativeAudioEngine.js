@@ -434,42 +434,49 @@ export class NativeAudioEngine {
     async createInstrument(instrumentData) {
         try {
             console.log(`🎯 Creating instrument: ${instrumentData.name} (${instrumentData.type})`);
-
+    
             let instrument;
-
+    
             if (instrumentData.type === 'sample') {
-                // HATA DÜZELTMESİ 2: NativeSampleInstrument -> NativeSamplerNode olarak değiştirildi.
+                // ✅ DÜZELTME: NativeSamplerNode artık doğru import edildi
                 instrument = new NativeSamplerNode(
                     instrumentData,
                     this.sampleBuffers.get(instrumentData.id),
                     this.audioContext
                 );
+                
+                console.log(`✅ Sample instrument created: ${instrumentData.name}`);
+                
             } else if (instrumentData.type === 'synth') {
+                // Synth için WorkletInstrument kullan
                 instrument = new NativeSynthInstrument(
                     instrumentData,
                     this.workletManager,
                     this.audioContext
                 );
+    
+                // Synth'lerin asenkron bir initialize metodu olabilir.
+                if (typeof instrument.initialize === 'function') {
+                    await instrument.initialize();
+                }
+                
+                console.log(`✅ Synth instrument created: ${instrumentData.name}`);
+                
             } else {
-                throw new Error(`Unknown instrument type: ${instrumentData.type}`);
-            }
-
-            // Synth'lerin asenkron bir initialize metodu olabilir.
-            if (typeof instrument.initialize === 'function') {
-              await instrument.initialize();
+                throw new Error(`❌ Unknown instrument type: ${instrumentData.type}`);
             }
             
             this.instruments.set(instrumentData.id, instrument);
-
+    
             // Connect to mixer channel
             const channelId = instrumentData.mixerTrackId || 'master';
             this._connectInstrumentToChannel(instrumentData.id, channelId);
-
+    
             this.metrics.instrumentsCreated++;
-            console.log(`✅ Instrument created: ${instrumentData.name}`);
-
+            console.log(`✅ Instrument created and connected: ${instrumentData.name} -> ${channelId}`);
+    
             return instrument;
-
+    
         } catch (error) {
             console.error(`❌ Instrument creation failed: ${instrumentData.name}`, error);
             throw error;
@@ -688,10 +695,36 @@ export class NativeAudioEngine {
     _connectInstrumentToChannel(instrumentId, channelId) {
         const instrument = this.instruments.get(instrumentId);
         const channel = this.mixerChannels.get(channelId);
-
-        if (instrument && channel) {
+    
+        if (!instrument) {
+            console.error(`❌ Instrument not found: ${instrumentId}`);
+            return false;
+        }
+        
+        if (!channel) {
+            console.error(`❌ Mixer channel not found: ${channelId}`);
+            return false;
+        }
+    
+        // Instrument output kontrolü
+        if (!instrument.output) {
+            console.error(`❌ Instrument has no output: ${instrumentId}`);
+            return false;
+        }
+    
+        // Channel input kontrolü  
+        if (!channel.input) {
+            console.error(`❌ Channel has no input: ${channelId}`);
+            return false;
+        }
+    
+        try {
             instrument.output.connect(channel.input);
             console.log(`🔗 Connected: ${instrumentId} -> ${channelId}`);
+            return true;
+        } catch (error) {
+            console.error(`❌ Connection failed: ${instrumentId} -> ${channelId}`, error);
+            return false;
         }
     }
 

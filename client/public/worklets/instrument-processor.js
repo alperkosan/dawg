@@ -57,7 +57,13 @@ class InstrumentProcessor extends AudioWorkletProcessor {
     try {
       switch (type) {
         case 'noteOn':
-          this.triggerNote(data.pitch || data.frequency, data.velocity || 1, data.noteId);
+          // ✅ DÜZELTME: Duration parametresini de al
+          this.triggerNote(
+            data.pitch || data.frequency, 
+            data.velocity || 1, 
+            data.noteId,
+            data.duration // ← Bu parametre eksikti
+          );
           break;
           
         case 'noteOff':
@@ -105,34 +111,40 @@ class InstrumentProcessor extends AudioWorkletProcessor {
 
   triggerNote(frequency, velocity, noteId = null, duration = null) {
     if (this.voices.size >= this.maxPolyphony) {
-      const oldestVoiceId = this.voices.keys().next().value;
-      this.voices.delete(oldestVoiceId);
+        const oldestVoiceId = this.voices.keys().next().value;
+        this.voices.delete(oldestVoiceId);
     }
 
     const voiceData = {
-      id: noteId || `voice_${this.voiceId++}`,
-      frequency,
-      velocity,
-      phase: 0,
-      envelopePhase: 'attack',
-      envelopeValue: 0,
-      envelopeTime: 0,
-      startTime: currentTime, // `currentTime` global bir değişkendir (AudioWorkletGlobalScope)
-      duration: duration, // Nota süresini saniye olarak sakla
-      filterStates: [0, 0, 0, 0]
-    };
-    this.voices.set(voiceData.id, voiceData);
-
-    this.port.postMessage({
-      type: 'noteStarted',
-      data: {
-        noteId: voiceData.id,
+        id: noteId || `voice_${this.voiceId++}`,
         frequency,
         velocity,
-        voiceCount: this.activeVoiceCount
-      }
+        phase: 0,
+        envelopePhase: 'attack',
+        envelopeValue: 0,
+        envelopeTime: 0,
+        startTime: currentTime, // `currentTime` global bir değişkendir (AudioWorkletGlobalScope)
+        duration: duration, // ✅ EKLENEN: Nota süresini saniye olarak sakla
+        filterStates: [0, 0, 0, 0]
+    };
+    
+    this.voices.set(voiceData.id, voiceData);
+
+    // Message gönder
+    this.port.postMessage({
+        type: 'noteStarted',
+        data: {
+            noteId: voiceData.id,
+            frequency,
+            velocity,
+            duration, // ✅ EKLENEN
+            voiceCount: this.voices.size
+        }
     });
+    
+    console.log(`🎵 Worklet note triggered: ${frequency}Hz, duration: ${duration}s`);
   }
+
 
   releaseNote(frequency) {
     // Find voice with matching frequency (within tolerance)
@@ -199,33 +211,33 @@ class InstrumentProcessor extends AudioWorkletProcessor {
     const blockSize = output[0].length;
     
     for (let i = 0; i < blockSize; i++) {
-      let mixedSample = 0;
-      
-      // `currentTime` her process bloğunda güncellenir
-      const sampleTime = currentTime + i / this.sampleRate;
-
-      this.voices.forEach((voice, voiceId) => {
-        // --- YENİ MANTIK ---
-        // Eğer notanın süresi dolduysa ve hala 'release' fazına geçmediyse, şimdi geçir.
-        if (voice.duration && sampleTime >= voice.startTime + voice.duration && voice.envelopePhase !== 'release') {
-          voice.envelopePhase = 'release';
-          voice.envelopeTime = 0; // Release zamanlayıcısını sıfırla
-        }
-        // --- YENİ MANTIK SONU ---
-
-        const sample = this.processVoice(voice, parameters, i);
-        mixedSample += sample;
+        let mixedSample = 0;
         
-        if (voice.envelopePhase === 'off' && voice.envelopeValue < 0.0001) {
-          this.voices.delete(voiceId);
+        const sampleTime = currentTime + i / this.sampleRate;
+
+        this.voices.forEach((voice, voiceId) => {
+            // ✅ YENİ MANTIK: Eğer notanın süresi dolduysa ve hala 'release' fazına geçmediyse, şimdi geçir.
+            if (voice.duration && sampleTime >= voice.startTime + voice.duration && voice.envelopePhase !== 'release') {
+                voice.envelopePhase = 'release';
+                voice.envelopeTime = 0; // Release zamanlayıcısını sıfırla
+                console.log(`🎵 Note duration ended: ${voice.frequency}Hz`);
+            }
+
+            const sample = this.processVoice(voice, parameters, i);
+            mixedSample += sample;
+            
+            // Voice cleanup
+            if (voice.envelopePhase === 'off' && voice.envelopeValue < 0.0001) {
+                this.voices.delete(voiceId);
+                console.log(`🗑️ Voice cleaned up: ${voice.frequency}Hz`);
+            }
+        });
+        
+        const finalSample = Math.tanh(mixedSample);
+        
+        for (let channel = 0; channel < output.length; channel++) {
+            output[channel][i] = finalSample;
         }
-      });
-      
-      const finalSample = Math.tanh(mixedSample); // Basit limiter
-      
-      for (let channel = 0; channel < output.length; channel++) {
-        output[channel][i] = finalSample;
-      }
     }
 
     return true;
