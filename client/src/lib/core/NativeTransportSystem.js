@@ -1,325 +1,106 @@
-// lib/core/NativeTransportSystem.js
-// DAWG - Native Transport System - ToneJS'siz tam native implementasyon
+// NativeTransportSystem.js - CRITICAL TIMING FIXES
 
 export class NativeTransportSystem {
     constructor(audioContext) {
         this.audioContext = audioContext;
-
-        // Transport durumu
+        
+        // ✅ DÜZELTME: Clear timing definitions
         this.isPlaying = false;
-        this.position = 0;
         this.bpm = 120;
         this.timeSignature = [4, 4];
-
-        // Zamanlama
-        this.ppq = 96; // pulses per quarter note
+        
+        // ✅ Timing constants - STEPS vs TICKS vs SECONDS clarification
+        this.ppq = 96; // pulses per quarter note (ticks)
+        this.stepsPerBar = 16; // 16th note steps per bar (4/4 time)
+        this.ticksPerStep = this.ppq / 4; // 24 ticks per step (16th note)
+        this.ticksPerBar = this.ppq * this.timeSignature[0]; // 384 ticks per bar
+        
+        // ✅ Position tracking - ALL IN TICKS
         this.currentTick = 0;
         this.nextTickTime = 0;
-        this.lookAhead = 25.0; // 25ms lookahead
-        this.scheduleAheadTime = 0.1; // 100ms scheduling window
+        this.lookAhead = 25.0;
+        this.scheduleAheadTime = 0.1;
 
-        // Event callbacks
-        this.callbacks = new Map();
-        
-        // ✅ EKLENDİ: Zamanlanmış olaylar için Map
-        this.scheduledEvents = new Map(); // time -> events
-        
-        // Pattern scheduling
-        this.patterns = new Map();
-        this.activePatterns = new Set();
-
-        // Swing ve groove
-        this.swingFactor = 0;
-        this.groove = null;
-
-        // YENİ: Loop özellikleri
+        // ✅ CRITICAL: Loop system - ALL IN TICKS
         this.loop = true;
-        this.loopStart = 0; // Tick cinsinden, saniye değil!
-        this.loopEnd = 64;  // Tick cinsinden, saniye değil!
-
+        this.loopStartTick = 0;
+        this.loopEndTick = 64 * this.ticksPerStep; // 64 steps = 1536 ticks
+        
+        // Bar tracking
         this.currentBar = 0;
-        this.ticksPerBar = this.ppq * this.timeSignature[0]; // 96 * 4 = 384 tick/bar
-
+        
+        this.callbacks = new Map();
+        this.scheduledEvents = new Map();
         this.initializeWorkerTimer();
-        console.log('🎵 NativeTransportSystem initialized - Loop:', this.loopStart, '->', this.loopEnd, 'ticks');
-    }
-
-    // =================== TIMER INITIALIZATION ===================
-
-    initializeWorkerTimer() {
-        const workerScript = `
-            let timerID = null;
-            let interval = 25;
-
-            self.onmessage = function(e) {
-                if (e.data === 'start') {
-                    timerID = setInterval(() => {
-                        postMessage('tick');
-                    }, interval);
-                } else if (e.data === 'stop') {
-                    clearInterval(timerID);
-                }
-            };
-        `;
-
-        const blob = new Blob([workerScript], { type: 'application/javascript' });
-        this.timerWorker = new Worker(URL.createObjectURL(blob));
-
-        this.timerWorker.onmessage = () => {
-            if (this.isPlaying) {
-                this.scheduler();
-            }
-        };
-    }
-
-    // =================== BASIC TRANSPORT CONTROLS ===================
-
-    start(when = null) {
-        if (this.isPlaying) return;
-
-        const startTime = when || this.audioContext.currentTime;
-        this.isPlaying = true;
         
-        // ✅ DÜZELTME: nextTickTime'ı doğru başlat
-        this.nextTickTime = startTime;
-        this.schedulerRunning = true;
-
-        // ✅ EKLENEN: Başlangıç pozisyonu
-        console.log(`▶️ Transport starting at tick ${this.currentTick}, time ${startTime.toFixed(3)}s`);
-        console.log(`🔁 Loop: ${this.loopStart} -> ${this.loopEnd} ticks (${this.loop ? 'enabled' : 'disabled'})`);
-
-        this.timerWorker.postMessage('start');
-        this.triggerCallback('start', { time: startTime, position: this.position });
-        
-        return this;
+        console.log('🎵 NativeTransportSystem initialized:');
+        console.log(`   PPQ: ${this.ppq} ticks/quarter`);
+        console.log(`   Steps per bar: ${this.stepsPerBar}`);
+        console.log(`   Ticks per step: ${this.ticksPerStep}`);
+        console.log(`   Loop: ${this.loopStartTick} → ${this.loopEndTick} ticks`);
+        console.log(`   Loop: ${this.loopStartTick / this.ticksPerStep} → ${this.loopEndTick / this.ticksPerStep} steps`);
     }
 
-    stop(when = null) {
-        if (!this.isPlaying) return this;
-
-        const stopTime = when || this.audioContext.currentTime;
-        this.isPlaying = false;
-        this.schedulerRunning = false;
-
-        this.timerWorker.postMessage('stop');
-
-        // ✅ DÜZELTME: Stop'ta loop başına dön
-        this.currentTick = this.loopStart;
-        this.position = this.currentTick;
-        this.currentBar = Math.floor(this.currentTick / this.ticksPerBar);
-        this.nextTickTime = stopTime;
-
-        // Scheduled events'leri temizle
-        this.clearScheduledEvents();
-
-        this.triggerCallback('stop', { time: stopTime, position: this.position });
-        console.log(`⏹️ Transport stopped, reset to tick ${this.currentTick}`);
-        return this;
-    }
-
-    pause(when = null) {
-        if (!this.isPlaying) return this;
-
-        const pauseTime = when || this.audioContext.currentTime;
-        this.isPlaying = false;
-        this.schedulerRunning = false;
-
-        this.timerWorker.postMessage('stop');
-        
-        // Pozisyonu koruyoruz, sıfırlamıyoruz.
-        this.triggerCallback('pause', { time: pauseTime, position: this.getPosition() });
-        console.log(`⏸️ Transport paused at position ${this.formatPosition(this.getPosition())}`);
-        return this;
-    }
-
-    // =================== POSITION & TIMING ===================
-
-    getPosition() {
-        if (!this.isPlaying) return this.position;
-
-        const elapsed = this.audioContext.currentTime - this.nextTickTime + this.getSecondsPerTick();
-        const ticksElapsed = Math.floor(elapsed / this.getSecondsPerTick());
-        return this.position + ticksElapsed;
-    }
-
-    setPosition(position) {
-        this.position = position;
-        this.currentTick = position;
-
-        if (this.isPlaying) {
-            this.nextTickTime = this.audioContext.currentTime;
-        }
-
-        this.triggerCallback('position', { position: this.position });
-        console.log(`🎯 Position set to ${this.formatPosition(position)}`);
-        return this;
-    }
-
+    // ✅ CRITICAL FIX: Loop points setting with proper conversion
     setLoopPoints(startStep, endStep) {
-        // ✅ DÜZELTME: Step'leri tick'lere çevir (1 step = 1 sixteenth note = ppq/4 tick)
-        this.loopStart = startStep * (this.ppq / 4);
-        this.loopEnd = endStep * (this.ppq / 4);
+        // Convert steps to ticks (1 step = 24 ticks at PPQ=96)
+        this.loopStartTick = startStep * this.ticksPerStep;
+        this.loopEndTick = endStep * this.ticksPerStep;
         
-        // ✅ DEBUG: Loop bilgilerini göster
         console.log(`🔁 Loop points set:`);
-        console.log(`   Steps: ${startStep} -> ${endStep} (${endStep - startStep} steps = ${(endStep - startStep)/16} bars)`);
-        console.log(`   Ticks: ${this.loopStart} -> ${this.loopEnd} (${this.loopEnd - this.loopStart} ticks)`);
-        console.log(`   Seconds: ${(this.loopStart * this.getSecondsPerTick()).toFixed(2)} -> ${(this.loopEnd * this.getSecondsPerTick()).toFixed(2)}`);
+        console.log(`   Steps: ${startStep} → ${endStep} (${endStep - startStep} steps = ${(endStep - startStep)/16} bars)`);
+        console.log(`   Ticks: ${this.loopStartTick} → ${this.loopEndTick} (${this.loopEndTick - this.loopStartTick} ticks)`);
+        console.log(`   Seconds: ${(this.loopStartTick * this.getSecondsPerTick()).toFixed(2)} → ${(this.loopEndTick * this.getSecondsPerTick()).toFixed(2)}`);
         
-        // Eğer current position loop dışındaysa, loop başına al
-        if (this.currentTick >= this.loopEnd) {
+        // Reset position if outside loop
+        if (this.currentTick >= this.loopEndTick) {
             console.warn('[Transport] Current position beyond loop end, resetting to start');
-            this.currentTick = this.loopStart;
-            this.position = this.currentTick;
+            this.currentTick = this.loopStartTick;
             this.nextTickTime = this.audioContext.currentTime;
         }
     }
 
-    setLoopEnabled(enabled) {
-        this.loop = enabled;
-    }
-
-    setBPM(bpm) {
-        if (bpm < 60 || bpm > 200) {
-            console.warn('⚠️ BPM out of reasonable range (60-200)');
-        }
-
-        this.bpm = bpm;
-        this.triggerCallback('bpm', { bpm: this.bpm });
-        console.log(`🎼 BPM set to ${bpm}`);
-        return this;
-    }
-
-    setTimeSignature(numerator, denominator = 4) {
-        this.timeSignature = [numerator, denominator];
-        console.log(`🎼 Time signature set to ${numerator}/${denominator}`);
-        return this;
-    }
-
-    _calculatePatternLengthFromData(patternData) {
-        let maxStep = 0;
-        
-        Object.values(patternData).forEach(notes => {
-            if (Array.isArray(notes)) {
-                notes.forEach(note => {
-                    const noteTime = note.time || 0;
-                    const noteDuration = 1; // Default 1 step
-                    maxStep = Math.max(maxStep, noteTime + noteDuration);
-                });
-            }
-        });
-        
-        // En az 64 step (4 bar), 16'nın katlarına yuvarla
-        const calculatedLength = Math.max(64, Math.ceil(maxStep / 16) * 16);
-        
-        console.log(`📐 Pattern length calculated: ${calculatedLength} steps (${calculatedLength/16} bars) from max step ${maxStep}`);
-        return calculatedLength;
-    }    
-
-    // =================== SCHEDULING CORE ===================
+    // ✅ CRITICAL FIX: Scheduler with proper time conversion
     scheduler() {
         const scheduleUntil = this.audioContext.currentTime + this.scheduleAheadTime;
 
         while (this.nextTickTime < scheduleUntil) {
-            // 1. UI ve pozisyon güncellemeleri için tick olayını tetikle
+            // 1. UI callbacks with position info
             this.scheduleCurrentTick(this.nextTickTime);
-
-            // 2. ❗ EKLENEN KISIM: Zamanlanmış nota olaylarını işle
+            
+            // 2. ✅ FIXED: Process scheduled events at current time
             this.processScheduledEvents(this.nextTickTime);
             
-            this.nextTick();
+            this.advanceToNextTick();
         }
     }
 
-    // ✅ YENİ EKLENEN: Event temizleme
-    clearScheduledEvents() {
-        this.scheduledEvents.clear();
-        console.log('🧹 Scheduled events cleared');
-    }
-
-    scheduleCurrentTick(time) {
-        this.triggerCallback('tick', {
-            time: time,
-            position: this.currentTick,
-            formatted: this.formatPosition(this.currentTick),
-            bar: this.currentBar
-        });
-
-        // Beat callback
-        if (this.currentTick % this.ppq === 0) {
-            const beat = Math.floor(this.currentTick / this.ppq) % this.timeSignature[0];
-            this.triggerCallback('beat', { time, beat, tick: this.currentTick });
-        }
-    }
-
-    /**
-     * Dışarıdan bir olayı belirli bir zamanda çalınmak üzere sıraya alır.
-     * @param {number} time - Olayın saniye cinsinden çalınacağı zaman.
-     * @param {Function} callback - Zamanı geldiğinde çalıştırılacak fonksiyon.
-     * @param {object} data - Callback'e gönderilecek ek veri.
-     * @returns {string} - Zamanlanmış olayın benzersiz ID'si.
-     */
-    scheduleEvent(time, callback, data = {}) {
-        const eventId = `event_${Date.now()}_${Math.random()}`;
-
-        if (!this.scheduledEvents.has(time)) {
-            this.scheduledEvents.set(time, []);
-        }
-
-        this.scheduledEvents.get(time).push({
-            id: eventId,
-            callback,
-            data
-        });
-
-        return eventId;
-    }
-
-    processScheduledEvents(tickTime) {
-        // O anki tick zamanına denk gelen veya geçmiş tüm notaları bul
-        for (const [scheduledTime, events] of this.scheduledEvents.entries()) {
-            if (scheduledTime <= tickTime) {
-                events.forEach(event => {
-                    try {
-                        event.callback(scheduledTime, event.data);
-                    } catch (error) {
-                        console.error('❌ Scheduled event error:', error);
-                    }
-                });
-                this.scheduledEvents.delete(scheduledTime);
-            }
-        }
-    }
-
-    nextTick() {
+    // ✅ CRITICAL FIX: Tick advancement with proper loop logic
+    advanceToNextTick() {
         const secondsPerTick = this.getSecondsPerTick();
         
-        // Önce tick'i ilerlet
+        // Advance time first
+        this.nextTickTime += secondsPerTick;
+        
+        // Then advance tick position
         this.currentTick++;
-        this.position = this.currentTick;
         
-        // ✅ DEBUG: Loop kontrolü öncesi bilgi
-        const shouldLoop = this.loop && this.currentTick >= this.loopEnd;
-        
-        if (shouldLoop) {
+        // ✅ FIXED: Loop logic - only trigger when actually hitting loop end
+        if (this.loop && this.currentTick >= this.loopEndTick) {
             console.log(`🔁 Loop trigger:`);
-            console.log(`   Current tick: ${this.currentTick}, Loop end: ${this.loopEnd}`);
-            console.log(`   Time: ${this.nextTickTime.toFixed(3)}s, Duration: ${((this.currentTick - this.loopStart) * secondsPerTick).toFixed(3)}s`);
+            console.log(`   Current tick: ${this.currentTick}, Loop end: ${this.loopEndTick}`);
+            console.log(`   Time: ${this.nextTickTime.toFixed(3)}s, Duration: ${((this.currentTick - this.loopStartTick) * secondsPerTick).toFixed(3)}s`);
             
-            this.currentTick = this.loopStart;
-            this.position = this.currentTick;
+            this.currentTick = this.loopStartTick;
             
             this.triggerCallback('loop', { 
                 time: this.nextTickTime, 
-                fromTick: this.loopEnd - 1, 
-                toTick: this.loopStart 
+                fromTick: this.loopEndTick - 1, 
+                toTick: this.loopStartTick 
             });
         }
         
-        // Zamanı güncelle
-        this.nextTickTime += secondsPerTick;
-        
-        // Bar tracking - sadece bar değiştiğinde log
+        // ✅ FIXED: Bar tracking - only update when crossing bar boundaries
         const newBar = Math.floor(this.currentTick / this.ticksPerBar);
         if (newBar !== this.currentBar) {
             this.currentBar = newBar;
@@ -333,166 +114,119 @@ export class NativeTransportSystem {
         }
     }
 
+    // ✅ UTILITY: Time conversions
     getSecondsPerTick() {
         const secondsPerBeat = 60.0 / this.bpm;
         return secondsPerBeat / this.ppq;
     }
-
-    _secondsToTicks(seconds) {
-        const secondsPerTick = this.getSecondsPerTick();
-        if (secondsPerTick === 0) return 0;
-        return Math.round(seconds / secondsPerTick);
+    
+    stepsToTicks(steps) {
+        return steps * this.ticksPerStep;
+    }
+    
+    ticksToSteps(ticks) {
+        return ticks / this.ticksPerStep;
+    }
+    
+    stepsToSeconds(steps) {
+        const ticks = this.stepsToTicks(steps);
+        return ticks * this.getSecondsPerTick();
+    }
+    
+    secondsToSteps(seconds) {
+        const ticks = seconds / this.getSecondsPerTick();
+        return this.ticksToSteps(ticks);
     }
 
-    // =================== PATTERN SCHEDULING ===================
+    // ✅ CRITICAL FIX: Event scheduling with proper time conversion
+    scheduleEvent(timeInSeconds, callback, data = {}) {
+        const eventId = `event_${Date.now()}_${Math.random()}`;
 
-    schedulePattern(patternId, pattern, startTime = null) {
-        startTime = startTime || this.audioContext.currentTime;
+        if (!this.scheduledEvents.has(timeInSeconds)) {
+            this.scheduledEvents.set(timeInSeconds, []);
+        }
 
-        const processedPattern = this.preprocessPattern(pattern);
-        this.patterns.set(patternId, {
-            ...processedPattern,
-            startTime,
-            originalPattern: pattern
+        this.scheduledEvents.get(timeInSeconds).push({
+            id: eventId,
+            callback,
+            data
         });
 
-        this.activePatterns.add(patternId);
-        console.log(`📋 Pattern scheduled: ${patternId} at ${startTime.toFixed(3)}s`);
-
-        return this;
+        return eventId;
     }
 
-    stopPattern(patternId, when = null) {
-        const stopTime = when || this.audioContext.currentTime;
-
-        if (this.patterns.has(patternId)) {
-            this.patterns.delete(patternId);
-            this.activePatterns.delete(patternId);
-
-            this.triggerCallback('patternStop', { patternId, time: stopTime });
-            console.log(`⏹️ Pattern stopped: ${patternId}`);
-        }
-
-        return this;
-    }
-
-    schedulePatternEvents(currentTime) {
-        this.activePatterns.forEach(patternId => {
-            const pattern = this.patterns.get(patternId);
-            if (!pattern) return;
-
-            pattern.events.forEach(event => {
-                const eventTime = pattern.startTime + event.time;
-
-                if (Math.abs(eventTime - currentTime) < 0.001) { // 1ms tolerance
-                    this.triggerCallback('patternEvent', {
-                        patternId,
-                        event,
-                        time: currentTime
-                    });
-                }
-            });
-        });
-    }
-
-    preprocessPattern(pattern) {
-        // Pattern'ı schedule edilebilir events'lere çevir
-        const events = [];
-
-        if (Array.isArray(pattern)) {
-            pattern.forEach((note, index) => {
-                if (note && note.time !== undefined) {
-                    events.push({
-                        type: 'note',
-                        time: this.parseTime(note.time),
-                        data: note
-                    });
-                }
-            });
-        }
-
-        return { events, duration: this.calculatePatternDuration(events) };
-    }
-
-    // =================== TIME UTILITIES ===================
-
-    parseTime(timeValue) {
-        if (typeof timeValue === 'number') {
-            return timeValue; // Assume seconds
-        }
-
-        if (typeof timeValue === 'string') {
-            // Parse formats like "1:2:0" (bar:beat:sixteenth)
-            if (timeValue.includes(':')) {
-                const parts = timeValue.split(':').map(Number);
-                const [bar = 0, beat = 0, sixteenth = 0] = parts;
-
-                return this.barBeatSixteenthToSeconds(bar, beat, sixteenth);
-            }
-
-            // Parse note durations like "4n", "8n", "16n"
-            if (timeValue.match(/\d+[ndt]/)) {
-                return this.noteDurationToSeconds(timeValue);
+    processScheduledEvents(currentTime) {
+        // Process events at or before current time
+        for (const [scheduledTime, events] of this.scheduledEvents.entries()) {
+            if (scheduledTime <= currentTime) {
+                events.forEach(event => {
+                    try {
+                        event.callback(scheduledTime, event.data);
+                    } catch (error) {
+                        console.error('❌ Scheduled event error:', error);
+                    }
+                });
+                this.scheduledEvents.delete(scheduledTime);
             }
         }
-
-        return 0;
     }
 
-    barBeatSixteenthToSeconds(bar, beat, sixteenth) {
-        const totalSixteenths = (bar * this.timeSignature[0] * 4) + (beat * 4) + sixteenth;
-        const sixteenthDuration = (60 / this.bpm) / 4; // Duration of one sixteenth note
-        return totalSixteenths * sixteenthDuration;
-    }
-
-    noteDurationToSeconds(notation) {
-        // "4n" = quarter note, "8n" = eighth note, etc.
-        const matches = notation.match(/(\d+)([ndt])/);
-        if (!matches) return 0;
-
-        const [, noteValue, type] = matches;
-        let duration = (60 / this.bpm) * (4 / parseInt(noteValue));
-
-        if (type === 't') duration *= 2/3; // Triplet
-        if (type === 'd') duration *= 1.5; // Dotted
-
-        return duration;
-    }
-
+    // ✅ Position formatting
     formatPosition(ticks) {
-        const ticksPerBar = this.ppq * this.timeSignature[0];
-        const bar = Math.floor(ticks / ticksPerBar);
-        const beat = Math.floor((ticks % ticksPerBar) / this.ppq);
+        const bar = Math.floor(ticks / this.ticksPerBar);
+        const beat = Math.floor((ticks % this.ticksPerBar) / this.ppq);
         const sixteenth = Math.floor((ticks % this.ppq) / (this.ppq / 4));
-
         return `${bar}:${beat}:${sixteenth}`;
     }
 
-    // ✅ DÜZELTME: getCurrentTime
-    getCurrentTime() {
-        return this.audioContext.currentTime;
+    // ✅ Start/Stop methods remain the same
+    start(when = null) {
+        if (this.isPlaying) return;
+
+        const startTime = when || this.audioContext.currentTime;
+        this.isPlaying = true;
+        this.nextTickTime = startTime;
+
+        console.log(`▶️ Transport starting at tick ${this.currentTick} (${this.formatPosition(this.currentTick)}), time ${startTime.toFixed(3)}s`);
+        console.log(`🔁 Loop: ${this.loopStartTick} → ${this.loopEndTick} ticks (${this.loop ? 'enabled' : 'disabled'})`);
+
+        this.timerWorker.postMessage('start');
+        this.triggerCallback('start', { time: startTime, position: this.currentTick });
+        
+        return this;
     }
 
-    // ✅ DÜZELTME: Tick to seconds conversion
-    getSecondsPerTick() {
-        const secondsPerBeat = 60.0 / this.bpm;
-        return secondsPerBeat / this.ppq;
-    }    
+    stop(when = null) {
+        if (!this.isPlaying) return this;
 
-    // =================== EVENT SYSTEM ===================
+        const stopTime = when || this.audioContext.currentTime;
+        this.isPlaying = false;
 
+        this.timerWorker.postMessage('stop');
+
+        // ✅ FIXED: Reset to loop start
+        this.currentTick = this.loopStartTick;
+        this.currentBar = Math.floor(this.currentTick / this.ticksPerBar);
+        this.nextTickTime = stopTime;
+
+        this.clearScheduledEvents();
+        this.triggerCallback('stop', { time: stopTime, position: this.currentTick });
+        
+        console.log(`⏹️ Transport stopped, reset to tick ${this.currentTick} (${this.formatPosition(this.currentTick)})`);
+        return this;
+    }
+
+    clearScheduledEvents() {
+        this.scheduledEvents.clear();
+        console.log('🧹 Scheduled events cleared');
+    }
+
+    // Standard event system methods...
     on(event, callback) {
         if (!this.callbacks.has(event)) {
             this.callbacks.set(event, new Set());
         }
         this.callbacks.get(event).add(callback);
-        return this;
-    }
-
-    off(event, callback) {
-        if (this.callbacks.has(event)) {
-            this.callbacks.get(event).delete(callback);
-        }
         return this;
     }
 
@@ -508,53 +242,19 @@ export class NativeTransportSystem {
         }
     }
 
-    // =================== UTILITY METHODS ===================
+    scheduleCurrentTick(time) {
+        this.triggerCallback('tick', {
+            time: time,
+            position: this.currentTick,
+            formatted: this.formatPosition(this.currentTick),
+            bar: this.currentBar,
+            step: this.ticksToSteps(this.currentTick)
+        });
 
-    calculatePatternDuration(events) {
-        if (events.length === 0) return 0;
-        return Math.max(...events.map(event => event.time + (event.data.duration || 0)));
-    }
-
-    applySwing(time, position) {
-        if (this.swingFactor === 0) return time;
-
-        const sixteenthPosition = position % (this.ppq / 4);
-        if (sixteenthPosition === this.ppq / 8) { // Off-beat sixteenth
-            const swingDelay = (this.getSecondsPerTick() * 2) * this.swingFactor * 0.3;
-            return time + swingDelay;
+        // Beat callback
+        if (this.currentTick % this.ppq === 0) {
+            const beat = Math.floor(this.currentTick / this.ppq) % this.timeSignature[0];
+            this.triggerCallback('beat', { time, beat, tick: this.currentTick });
         }
-
-        return time;
-    }
-
-    getStats() {
-        return {
-            isPlaying: this.isPlaying,
-            bpm: this.bpm,
-            position: this.getPosition(),
-            formattedPosition: this.formatPosition(this.getPosition()),
-            timeSignature: this.timeSignature,
-            activePatterns: this.activePatterns.size,
-            scheduledEvents: this.scheduledEvents.size,
-            audioLatency: this.audioContext.baseLatency || 'unknown',
-            audioContextState: this.audioContext.state
-        };
-    }
-
-    dispose() {
-        console.log('🗑️ Disposing NativeTransportSystem...');
-
-        this.stop();
-
-        if (this.timerWorker) {
-            this.timerWorker.terminate();
-        }
-
-        this.callbacks.clear();
-        this.scheduledEvents.clear();
-        this.patterns.clear();
-        this.activePatterns.clear();
-
-        console.log('✅ NativeTransportSystem disposed');
     }
 }
