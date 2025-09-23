@@ -339,36 +339,50 @@ export class NativeTransportSystem {
         }
     }
 
-    nextTick() {
+    advanceToNextTick() {
         const secondsPerTick = this.getSecondsPerTick();
+        
         this.currentTick++;
         this.position = this.currentTick;
         
         const shouldLoop = this.loop && this.currentTick >= this.loopEnd;
         
         if (shouldLoop) {
-            // ✅ KRİTİK GÜNCELLEME: Döngü gerçekleştiğinde bir olay tetikliyoruz.
-            // Bu, PlaybackManager'a notaları yeniden planlaması için bir sinyal gönderecek.
             const loopTime = this.nextTickTime;
+            
+            // ✅ KRİTİK DÜZELTME:
+            // PlaybackManager'ın beklediği `nextLoopStartTime` alanını veri paketine ekliyoruz.
+            // Değeri, bir sonraki döngünün başlayacağı zamandır (şu anki zaman).
             this.triggerCallback('loop', { 
                 time: loopTime, 
-                nextLoopStartTime: loopTime // Bir sonraki döngünün başlangıç zamanı
+                nextLoopStartTime: loopTime, // <<< BU SATIRI EKLE
+                fromTick: this.loopEnd - 1, 
+                toTick: this.loopStart 
             });
-
-            console.log(`🔁 Loop trigger: at ${loopTime.toFixed(3)}s`);
-
+            
+            console.log(`🔁 Loop trigger at ${loopTime.toFixed(3)}s. Signaling for reschedule.`);
+            
             this.currentTick = this.loopStart;
             this.position = this.currentTick;
+            
+            // Bar takibini loop'tan sonraya taşıyarak sıfırıncı barın doğru loglanmasını sağlayalım
+            const newBar = Math.floor(this.currentTick / this.ticksPerBar);
+            if (newBar !== this.currentBar) {
+                this.currentBar = newBar;
+                this.triggerCallback('bar', { 
+                    time: this.nextTickTime, 
+                    bar: this.currentBar,
+                    tick: this.currentTick
+                });
+            }
         }
         
         this.nextTickTime += secondsPerTick;
-
-        // Bar tracking - sadece bar değiştiğinde log
+        
+        // Bar takibini loop dışına taşıyalım ki her tick'te kontrol edilsin
         const newBar = Math.floor(this.currentTick / this.ticksPerBar);
         if (newBar !== this.currentBar) {
             this.currentBar = newBar;
-            console.log(`🎼 Bar ${this.currentBar} (tick ${this.currentTick})`);
-            
             this.triggerCallback('bar', { 
                 time: this.nextTickTime, 
                 bar: this.currentBar,
@@ -376,6 +390,7 @@ export class NativeTransportSystem {
             });
         }
     }
+
 
     getSecondsPerTick() {
         const secondsPerBeat = 60.0 / this.bpm;
