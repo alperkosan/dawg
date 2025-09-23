@@ -97,6 +97,12 @@ class InstrumentProcessor extends AudioWorkletProcessor {
         case 'scheduleAutomation':
           this.scheduleAutomationEvent(data.parameter, data.value, data.time);
           break;
+
+        case 'dispose':
+          console.log('🗑️ Disposing instrument processor');
+          this.allNotesOff();
+          // Cleanup işlemleri
+          break;          
           
         default:
           console.warn(`Unknown message type: ${type}`);

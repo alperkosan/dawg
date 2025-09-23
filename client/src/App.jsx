@@ -1,5 +1,6 @@
-// App.jsx - Hata Düzeltmeleri ile
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+// client/src/App.jsx
+
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { NativeAudioEngine } from './lib/core/NativeAudioEngine';
 import { AudioContextService } from './lib/services/AudioContextService';
 import { usePlaybackStore } from './store/usePlaybackStore';
@@ -12,6 +13,11 @@ function App() {
   const [engineError, setEngineError] = useState(null);
   const [initializationProgress, setInitializationProgress] = useState(0);
   const audioEngineRef = useRef(null);
+
+  // ✅ DÜZELTME: Hook'u bileşenin en üst seviyesinde ve koşulsuz olarak çağırın.
+  const sampleInstrumentsCount = useInstrumentsStore(s => 
+    s.instruments.filter(i => i.type === 'sample').length
+  );
 
   const handleStartAudioEngine = async () => {
     console.log('User clicked');
@@ -26,7 +32,6 @@ function App() {
     initializeAudioSystem();
   };  
   
-
   const initializeAudioSystem = async () => {
     try {
       console.log('🚀 Starting audio system initialization...');
@@ -453,7 +458,8 @@ function App() {
             
             {engineStatus === 'loading-content' && (
               <div className="text-xs text-gray-500">
-                Loading {useInstrumentsStore(s => s.instruments.filter(i => i.type === 'sample').length)} sample instruments...
+                {/* ✅ DÜZELTME: Hook yerine değişkeni kullanın */}
+                Loading {sampleInstrumentsCount} sample instruments...
               </div>
             )}
           </div>
@@ -505,7 +511,8 @@ function App() {
               <div className="text-2xl mb-1">🎹</div>
               <div className="text-sm font-medium">Sample Instruments</div>
               <div className="text-xs text-purple-600">
-                {useInstrumentsStore(s => s.instruments.filter(i => i.type === 'sample').length)} Loaded
+                {/* ✅ DÜZELTME: Hook yerine değişkeni kullanın */}
+                {sampleInstrumentsCount} Loaded
               </div>
             </div>
             <div className="text-center p-3 bg-orange-50 rounded-lg">
