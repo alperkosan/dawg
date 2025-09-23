@@ -188,39 +188,30 @@ export class PlaybackManager {
     // =================== PLAYBACK CONTROLS ===================
 
     play(startStep = null) {
-        if (this.isPlaying && !this.isPaused) {
-            console.log('⚠️ Already playing');
-            return;
-        }
+        if (this.isPlaying && !this.isPaused) return;
 
         try {
-            // Determine start position
+            const startTime = this.audioEngine.audioContext.currentTime;
+
             if (startStep !== null) {
-                this.currentPosition = startStep;
+                this.jumpToStep(startStep);
             } else if (!this.isPaused) {
                 this.currentPosition = this.loopStart;
+                this.transport.setPosition(this.loopStart);
             }
 
-            console.log(`▶️ Starting playback from step ${this.currentPosition} (${this.currentMode} mode)`);
+            console.log(`▶️ Starting playback from step ${this.currentPosition} at ${startTime.toFixed(3)}s`);
 
-            // ✅ CRITICAL: Update loop settings before scheduling
             this._updateLoopSettings();
-
-            // Schedule content based on mode
-            this._scheduleContent();
-
-            // Start transport
-            this.transport.start();
+            this._scheduleContent(startTime);
+            this.transport.start(startTime);
 
             this.isPlaying = true;
             this.isPaused = false;
-
-            // Notify stores
             usePlaybackStore.getState().setPlaybackState('playing');
-
         } catch (error) {
             console.error('❌ Playback start failed:', error);
-            throw error;
+            this.stop();
         }
     }
 
@@ -265,10 +256,7 @@ export class PlaybackManager {
     }
 
     stop() {
-        if (!this.isPlaying && !this.isPaused) {
-            console.log('⚠️ Already stopped');
-            return;
-        }
+        if (!this.isPlaying && !this.isPaused) return;
 
         try {
             this.transport.stop();
@@ -279,10 +267,7 @@ export class PlaybackManager {
             this.currentPosition = this.loopStart;
             
             console.log('⏹️ Playback stopped');
-            
-            // Notify stores
             usePlaybackStore.getState().setPlaybackState('stopped');
-            
         } catch (error) {
             console.error('❌ Stop failed:', error);
         }
@@ -325,19 +310,28 @@ export class PlaybackManager {
     }
     // =================== CONTENT SCHEDULING ===================
 
-    _scheduleContent() {
+    /**
+     * @private
+     * ✅ GÜNCELLEME: Fonksiyon artık `startTime` parametresini alıyor.
+     */
+    _scheduleContent(startTime) {
         this._clearScheduledEvents();
         
         if (this.currentMode === 'pattern') {
-            this._schedulePatternContent();
+            this._schedulePatternContent(startTime);
         } else {
-            this._scheduleSongContent();
+            this._scheduleSongContent(startTime);
         }
     }
 
-    _schedulePatternContent() {
+    /**
+     * @private
+     * ✅ GÜNCELLEME: Fonksiyon artık `startTime` parametresini alıyor ve aşağı iletiyor.
+     */
+    _schedulePatternContent(startTime) {
         const arrangementStore = useArrangementStore.getState();
-        const activePattern = arrangementStore.patterns[arrangementStore.activePatternId];
+        const activePatternId = useArrangementStore.getState().activePatternId;
+        const activePattern = arrangementStore.patterns[activePatternId];
         
         if (!activePattern) {
             console.warn('⚠️ No active pattern to schedule');
@@ -345,14 +339,9 @@ export class PlaybackManager {
         }
 
         console.log(`📋 Scheduling pattern: ${activePattern.name}`);
-        console.log(`   Pattern data keys: ${Object.keys(activePattern.data)}`);
 
-        // Schedule notes for each instrument
         Object.entries(activePattern.data).forEach(([instrumentId, notes]) => {
-            if (!Array.isArray(notes) || notes.length === 0) {
-                console.log(`   ${instrumentId}: No notes`);
-                return;
-            }
+            if (!Array.isArray(notes) || notes.length === 0) return;
             
             const instrument = this.audioEngine.instruments.get(instrumentId);
             if (!instrument) {
@@ -360,8 +349,7 @@ export class PlaybackManager {
                 return;
             }
 
-            console.log(`   ${instrumentId}: ${notes.length} notes`);
-            this._scheduleInstrumentNotes(instrument, notes, instrumentId);
+            this._scheduleInstrumentNotes(instrument, notes, instrumentId, startTime);
         });
     }
 
@@ -397,7 +385,19 @@ export class PlaybackManager {
         });
     }
 
+    /**
+     * @private
+     * ✅ GÜNCELLEME: Fonksiyon artık `startTime` parametresini alıyor.
+     */
     _scheduleInstrumentNotes(instrument, notes, instrumentId, startTime) {
+        // Hatanın oluştuğu satırın çalışabilmesi için startTime'ın bir sayı olduğundan emin olalım.
+        if (typeof startTime !== 'number') {
+            console.error('❌ Invalid startTime provided to _scheduleInstrumentNotes. Scheduling aborted.');
+            return;
+        }
+
+        console.log(`📋 Scheduling ${notes.length} notes for ${instrumentId} with start time ${startTime.toFixed(3)}s`);
+        
         notes.forEach(note => {
             const noteTimeInSteps = note.time || 0;
             const noteTimeRelativeInSeconds = this.transport.stepsToSeconds(noteTimeInSteps);
@@ -407,12 +407,12 @@ export class PlaybackManager {
                 NativeTimeUtils.parseTime(note.duration, this.transport.bpm) : 
                 this.transport.stepsToSeconds(1);
     
-            // ✅ DÜZELTME: scheduleEvent'e sadece MUTLAK zamanı gönderiyoruz.
             this.transport.scheduleEvent(
                 noteTimeAbsoluteInSeconds,
                 (scheduledTime) => {
-                    // triggerNote fonksiyonuna da mutlak zamanı veriyoruz.
-                    instrument.triggerNote(note.pitch || 'C4', note.velocity || 1, scheduledTime, noteDuration);
+                    try {
+                        instrument.triggerNote(note.pitch || 'C4', note.velocity || 1, scheduledTime, noteDuration);
+                    } catch (e) { console.error(e); }
                 },
                 { type: 'noteOn', instrumentId, note, step: noteTimeInSteps }
             );
@@ -421,16 +421,15 @@ export class PlaybackManager {
                 this.transport.scheduleEvent(
                     noteTimeAbsoluteInSeconds + noteDuration,
                     (scheduledTime) => {
-                        instrument.releaseNote(note.pitch || 'C4', scheduledTime);
+                        try {
+                            instrument.releaseNote(note.pitch || 'C4', scheduledTime);
+                        } catch (e) { console.error(e); }
                     },
                     { type: 'noteOff', instrumentId, note }
                 );
             }
         });
-        
-        console.log(`📋 Scheduled ${notes.length} notes for ${instrumentId} starting at ${startTime.toFixed(3)}s`);
     }
-
 
     _schedulePatternAutomation(pattern) {
         // Schedule pattern-level automation
