@@ -6,10 +6,6 @@ const App = () => {
   const [engineStatus, setEngineStatus] = useState('initializing');
   const [engineError, setEngineError] = useState(null);
   
-  useEffect(() => {
-    initializeAudioSystem();
-  }, []);
-  
   // ⚡ PERFORMANS KRİTİK: Doğru sıra!
   const initializeAudioSystem = async () => {
     try {
@@ -63,4 +59,8 @@ const App = () => {
       setEngineStatus('error');
     }
   };
+
+  useEffect(() => {
+    initializeAudioSystem();
+  }, []);
 };
