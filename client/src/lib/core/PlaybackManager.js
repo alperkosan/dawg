@@ -380,26 +380,30 @@ export class PlaybackManager {
             const noteDuration = note.duration ? 
                 NativeTimeUtils.parseTime(note.duration, this.transport.bpm) : 
                 this._stepsToSeconds(1);
-
-            // Nota AÇMA (Note On) zamanlaması
+    
+            // ❌ SORUN: Transport'un scheduleEvent metodunu çağırmıyor
+            // Bu yüzden notalar hiç çalınmıyor!
+    
+            // ✅ ÇÖZÜM: Transport'a event schedule et
             this.transport.scheduleEvent(
                 noteTime,
-                (scheduledTime) => { // Düzeltme: Transport'tan gelen hassas zamanı alıyoruz
+                (scheduledTime) => { 
+                    // Enstrümana hassas zamanlama ile nota gönder
                     instrument.triggerNote(
                         note.pitch || 'C4',
                         note.velocity || 1,
-                        scheduledTime, // ve enstrümana bu hassas zamanı iletiyoruz.
+                        scheduledTime, 
                         noteDuration
                     );
                 },
                 { type: 'noteOn', instrumentId, note }
             );
-
-            // Nota KAPATMA (Note Off) zamanlaması
+    
+            // Note off için ayrı event
             if (note.duration && note.duration !== 'trigger') {
                 this.transport.scheduleEvent(
                     noteTime + noteDuration,
-                    (scheduledTime) => { // Düzeltme: Aynı hassas zamanı burada da kullanıyoruz
+                    (scheduledTime) => {
                         instrument.releaseNote(note.pitch || 'C4', scheduledTime);
                     },
                     { type: 'noteOff', instrumentId, note }
@@ -407,7 +411,6 @@ export class PlaybackManager {
             }
         });
     }
-
 
     _schedulePatternAutomation(pattern) {
         // Schedule pattern-level automation

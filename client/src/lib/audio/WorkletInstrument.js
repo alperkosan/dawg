@@ -10,55 +10,52 @@ export class WorkletInstrument {
     this.workletManager = workletManager;
     this.audioContext = workletManager.audioContext;
     
-    // Audio nodes
-    this.instrumentNode = null;
-    this.instrumentNodeId = null;
-    // --- DEĞİŞİKLİK BURADA ---
-    this.output = null; // outputGain, 'output' olarak yeniden adlandırıldı.
-    this.effectsChain = [];
+    // ❌ SORUN: Message protocol eksik import
+    // ✅ ÇÖZÜM: Protocol'ü kullan
+    this.messageProtocol = {
+        NOTE_ON: 'noteOn',
+        NOTE_OFF: 'noteOff',
+        ALL_NOTES_OFF: 'allNotesOff'
+    };
     
-    // State
-    this.isReady = false;
+    this.instrumentNode = null;
+    this.output = null;
     this.parameters = new Map();
   }
 
   async initialize() {
     try {
-      console.log(`🔧 Initializing WorkletInstrument: ${this.name}`);
-
-      const { node, nodeId } = await this.workletManager.createWorkletNode(
-        'instrument-processor',
-        {
-          numberOfInputs: 0,
-          numberOfOutputs: 1,
-          outputChannelCount: [2],
-          processorOptions: {
+        let processorOptions = {
             instrumentId: this.id,
             instrumentName: this.name
-          }
+        };
+
+        // Instrument tipine göre farklı parametreler
+        if (this.type === 'synth' && this.synthParams) {
+            processorOptions.synthParams = this.synthParams;
         }
-      );
 
-      this.instrumentNode = node;
-      this.instrumentNodeId = nodeId;
+        const { node, nodeId } = await this.workletManager.createWorkletNode(
+            'instrument-processor',
+            {
+                numberOfInputs: 0,
+                numberOfOutputs: 1,
+                outputChannelCount: [2],
+                processorOptions
+            }
+        );
 
-      // --- DEĞİŞİKLİK BURADA ---
-      // Çıkış gain'i oluştur (artık adı 'output')
-      this.output = this.audioContext.createGain();
-      this.output.gain.value = 0.8; // Varsayılan seviye
+        this.instrumentNode = node;
+        this.output = this.audioContext.createGain();
+        this.output.gain.value = 0.8;
 
-      // Node'ları bağla
-      this.instrumentNode.connect(this.output);
-
-      this.setupMessageHandling();
-      this.setupParameters();
-
-      this.isReady = true;
-      console.log(`✅ WorkletInstrument initialized: ${this.name} (${this.instrumentNodeId})`);
-      
+        this.instrumentNode.connect(this.output);
+        this.setupMessageHandling();
+        
+        console.log(`✅ Worklet instrument ready: ${this.name}`);
+        
     } catch (error) {
-      console.error(`❌ WorkletInstrument initialization failed: ${this.name}`, error);
-      throw error;
+        console.error(`❌ Worklet instrument failed: ${this.name}`, error);
     }
   }
 
@@ -99,16 +96,27 @@ export class WorkletInstrument {
 
   // Note triggering
   triggerNote(pitch, velocity, time, duration) {
-    if (!this.isReady) return;
+    if (!this.instrumentNode || !this.instrumentNode.port) {
+        console.error(`❌ Worklet node not ready: ${this.name}`);
+        return;
+    }
+
     const frequency = this.pitchToFrequency(pitch);
-    const durationInSeconds = duration ? NativeTimeUtils.parseTime(duration, 120) : null;
+    const durationInSeconds = duration ? duration : null;
     
-    this.postCommand(WasmMessage.NOTE_ON, {
-      pitch: frequency,
-      velocity,
-      time: time || this.audioContext.currentTime,
-      duration: durationInSeconds
+    // ❗ KRİTİK: Worklet'e doğru mesaj formatında gönder
+    this.instrumentNode.port.postMessage({
+        type: this.messageProtocol.NOTE_ON,
+        data: {
+            pitch: frequency,
+            velocity,
+            time: time || this.audioContext.currentTime,
+            duration: durationInSeconds,
+            noteId: this.generateNoteId()
+        }
     });
+
+    console.log(`🎵 Note triggered: ${this.name} - ${pitch} at ${time}`);
   }
 
   releaseNote(pitch, time) {

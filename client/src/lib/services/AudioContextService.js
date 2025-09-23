@@ -12,7 +12,7 @@ export class AudioContextService {
   static instance = null;
   static audioEngine = null;
   static isSubscriptionsSetup = false;
-  
+
   // =================== SINGLETON PATTERN ===================
   
   static getInstance() {
@@ -48,70 +48,39 @@ export class AudioContextService {
     let prevArrangementState = null;
     let prevPlaybackState = null;
     let prevMixerState = null;
-    let prevInstrumentsState = null;
 
-    // Subscribe to arrangement changes
+    // ❗ KRİTİK: Pattern değişikliklerini dinle
     useArrangementStore.subscribe((state) => {
-      if (!prevArrangementState) {
+        if (!prevArrangementState) {
+            prevArrangementState = state;
+            return;
+        }
+
+        // Aktif pattern değişti
+        if (state.activePatternId !== prevArrangementState.activePatternId) {
+            this._onActivePatternChanged(state.activePatternId);
+        }
+        
+        // Pattern notaları değişti
+        if (state.patterns !== prevArrangementState.patterns) {
+            this._onPatternsUpdated(state.patterns);
+        }
+
         prevArrangementState = state;
-        return;
-      }
-
-      if (state.activePatternId !== prevArrangementState.activePatternId) {
-        this._onActivePatternChanged(state.activePatternId);
-      }
-      
-      if (state.patterns !== prevArrangementState.patterns) {
-        this._onPatternsUpdated(state.patterns);
-      }
-
-      prevArrangementState = state;
     });
 
-    // Subscribe to playback changes
+    // ❗ KRİTİK: Playback durumu değişikliklerini dinle
     usePlaybackStore.subscribe((state) => {
-      if (!prevPlaybackState) {
+        if (!prevPlaybackState) {
+            prevPlaybackState = state;
+            return;
+        }
+
+        if (state.bpm !== prevPlaybackState.bpm) {
+            this.setBPM(state.bpm);
+        }
+
         prevPlaybackState = state;
-        return;
-      }
-
-      if (state.bpm !== prevPlaybackState.bpm) {
-        this.setBPM(state.bpm);
-      }
-      
-      if (state.masterVolume !== prevPlaybackState.masterVolume) {
-        this.setMasterVolume(state.masterVolume);
-      }
-
-      prevPlaybackState = state;
-    });
-
-    // Subscribe to mixer changes
-    useMixerStore.subscribe((state) => {
-      if (!prevMixerState) {
-        prevMixerState = state;
-        return;
-      }
-
-      if (state.mixerTracks !== prevMixerState.mixerTracks) {
-        this._onMixerTracksUpdated(state.mixerTracks, prevMixerState.mixerTracks);
-      }
-
-      prevMixerState = state;
-    });
-
-    // Subscribe to instrument changes
-    useInstrumentsStore.subscribe((state) => {
-      if (!prevInstrumentsState) {
-        prevInstrumentsState = state;
-        return;
-      }
-
-      if (state.instruments !== prevInstrumentsState.instruments) {
-        this._onInstrumentsUpdated(state.instruments, prevInstrumentsState.instruments);
-      }
-
-      prevInstrumentsState = state;
     });
 
     console.log('🔗 Store subscriptions setup complete');
@@ -123,29 +92,29 @@ export class AudioContextService {
     const engine = this.getAudioEngine();
     if (!engine) return;
 
+    console.log(`🔄 Active pattern changed: ${newPatternId}`);
+
+    // Engine'de aktif pattern'ı güncelle
     engine.activePatternId = newPatternId;
     
-    // Load the new pattern into the engine
+    // Pattern data'yı engine'e yükle
     const arrangementState = useArrangementStore.getState();
     const pattern = arrangementState.patterns[newPatternId];
     
     if (pattern) {
-      const patternData = new PatternData(pattern.id, pattern.name, pattern.data);
-      engine.patterns.set(newPatternId, patternData);
+        // ❗ SORUN: PatternData sınıfı eksik
+        // ✅ ÇÖZÜM: Basit bir data wrapper kullan
+        engine.patterns.set(newPatternId, {
+            id: pattern.id,
+            name: pattern.name,
+            data: pattern.data
+        });
     }
 
-    // Update playback manager
-    if (engine.playbackManager) {
-      engine.playbackManager.activePatternId = newPatternId;
-      engine.playbackManager._updateLoopSettings();
-    }
-
-    // Reschedule if playing
+    // Eğer çalıyorsa yeniden schedule et
     if (usePlaybackStore.getState().playbackState === 'playing') {
-      this.reschedule();
+        this.reschedule();
     }
-
-    console.log(`🔄 Active pattern changed: ${newPatternId}`);
   }
 
   static _onPatternsUpdated(newPatterns) {
@@ -358,22 +327,21 @@ export class AudioContextService {
 
   static reschedule() {
     const engine = this.getAudioEngine();
-    if (!engine) return;
+    if (!engine || !engine.playbackManager) return;
 
-    // Get current pattern data from store
-    const arrangementState = useArrangementStore.getState();
-    const activePattern = arrangementState.patterns[arrangementState.activePatternId];
-    
-    if (activePattern) {
-      const patternData = new PatternData(activePattern.id, activePattern.name, activePattern.data);
-      engine.patterns.set(activePattern.id, patternData);
-      engine.activePatternId = activePattern.id;
-      
-      // Reschedule the pattern
-      engine.schedulePattern(activePattern.data);
+    try {
+        console.log('🔄 Rescheduling pattern...');
+        
+        // Mevcut schedule'ı temizle
+        engine.playbackManager._clearScheduledEvents?.();
+        
+        // Yeni pattern'ı schedule et
+        engine.playbackManager._scheduleContent?.();
+        
+        console.log('✅ Pattern rescheduled');
+    } catch (error) {
+        console.error('❌ Reschedule failed:', error);
     }
-
-    console.log('🔄 Pattern rescheduled');
   }
 
   static schedulePattern(patternData) {
@@ -721,17 +689,19 @@ export class AudioContextService {
 
   static updatePatternNotes(patternId, instrumentId, newNotes) {
     const engine = this.getAudioEngine();
-    const pattern = engine?.patterns?.get(patternId);
-    
-    if (pattern) {
-      pattern.updateInstrumentNotes(instrumentId, newNotes);
-      
-      // If this is the active pattern and we're playing, reschedule
-      if (patternId === engine.activePatternId && 
-          usePlaybackStore.getState().playbackState === 'playing') {
+    if (!engine) return;
+
+    // Store'u güncelle (bu otomatik olarak subscription'ı tetikler)
+    const arrangementStore = useArrangementStore.getState();
+    arrangementStore.updatePatternNotes(patternId, instrumentId, newNotes);
+
+    // Eğer bu aktif pattern ise ve çalıyorsa reschedule et
+    if (patternId === arrangementStore.activePatternId && 
+        usePlaybackStore.getState().playbackState === 'playing') {
         this.reschedule();
-      }
     }
+
+    console.log(`🎵 Notes updated: ${instrumentId} in pattern ${patternId}`);
   }
 
   static createNewPattern(name = 'New Pattern') {

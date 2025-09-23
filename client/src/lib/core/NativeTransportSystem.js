@@ -7,12 +7,12 @@ export class NativeTransportSystem {
 
         // Transport durumu
         this.isPlaying = false;
-        this.position = 0; // bar-beat-sixteenth formatında
+        this.position = 0;
         this.bpm = 120;
-        this.timeSignature = [4, 4]; // 4/4 time signature
+        this.timeSignature = [4, 4];
 
         // Zamanlama
-        this.ppq = 96; // pulses per quarter note (MIDI standart)
+        this.ppq = 96; // pulses per quarter note
         this.currentTick = 0;
         this.nextTickTime = 0;
         this.lookAhead = 25.0; // 25ms lookahead
@@ -20,40 +20,33 @@ export class NativeTransportSystem {
 
         // Event callbacks
         this.callbacks = new Map();
+        
+        // ✅ EKLENDİ: Zamanlanmış olaylar için Map
         this.scheduledEvents = new Map(); // time -> events
-
-        // Timer
-        this.timerWorker = null;
-        this.schedulerRunning = false;
-
+        
         // Pattern scheduling
         this.patterns = new Map();
         this.activePatterns = new Set();
-        this.nextPatternEventTime = Infinity;
 
         // Swing ve groove
-        this.swingFactor = 0; // 0-1, 0 = straight, 1 = full swing
+        this.swingFactor = 0;
         this.groove = null;
 
-        this.scheduledEvents = new Map(); // Bu satırın altına ekleyin
-
-        // YENİ: Döngü (Loop) Özellikleri
+        // YENİ: Loop özellikleri
         this.loop = true;
         this.loopStart = 0; // Saniye cinsinden
-        this.loopEnd = 4;   // Saniye cinsinden (varsayılan)
+        this.loopEnd = 4;   // Saniye cinsinden
 
         this.initializeWorkerTimer();
-
-        console.log('🎵 NativeTransportSystem initialized');
+        console.log('🎵 NativeTransportSystem initialized with scheduling');
     }
 
     // =================== TIMER INITIALIZATION ===================
 
     initializeWorkerTimer() {
-        // Web Worker kullanarak daha stabil timing
         const workerScript = `
             let timerID = null;
-            let interval = 25; // 25ms default
+            let interval = 25;
 
             self.onmessage = function(e) {
                 if (e.data === 'start') {
@@ -62,8 +55,6 @@ export class NativeTransportSystem {
                     }, interval);
                 } else if (e.data === 'stop') {
                     clearInterval(timerID);
-                } else if (e.data.interval) {
-                    interval = e.data.interval;
                 }
             };
         `;
@@ -161,12 +152,9 @@ export class NativeTransportSystem {
     setLoopPoints(startTime, endTime) {
         this.loopStart = startTime;
         this.loopEnd = endTime;
-
-        // --- SONSUZ DÖNGÜ DÜZELTMESİ ---
-        // Eğer transport çalarken yeni döngü sonu, mevcut pozisyonun gerisinde kalırsa,
-        // transport'u döngünün başına sıfırlayarak kilitlenmeyi önle.
+        
         if (this.isPlaying && this.nextTickTime >= this.loopEnd) {
-            console.warn(`[Transport] Döngü sonu, mevcut pozisyonun gerisine ayarlandı. Transport sıfırlanıyor.`);
+            console.warn('[Transport] Loop end behind current position, resetting...');
             this.nextTickTime = this.loopStart;
             this.currentTick = this._secondsToTicks(this.loopStart);
             this.position = this.currentTick;
@@ -195,22 +183,25 @@ export class NativeTransportSystem {
     }
 
     // =================== SCHEDULING CORE ===================
-
     scheduler() {
-        // Ses motorunun mevcut zamanının biraz ilerisine kadar olan olayları planla
         const scheduleUntil = this.audioContext.currentTime + this.scheduleAheadTime;
 
         while (this.nextTickTime < scheduleUntil) {
             // 1. UI ve pozisyon güncellemeleri için tick olayını tetikle
             this.scheduleCurrentTick(this.nextTickTime);
 
-            // 2. ANA DÜZELTME: Zamanlanmış nota olaylarını işle
+            // 2. ❗ EKLENEN KISIM: Zamanlanmış nota olaylarını işle
             this.processScheduledEvents(this.nextTickTime);
             
-            // 3. Bir sonraki tick'e ilerle
             this.nextTick();
         }
     }
+
+    // ✅ YENİ EKLENEN: Event temizleme
+    clearScheduledEvents() {
+        this.scheduledEvents.clear();
+        console.log('🧹 Scheduled events cleared');
+    }    
 
     scheduleCurrentTick(time) {
         // Bu fonksiyon artık sadece UI güncellemelerinden sorumlu
@@ -230,7 +221,6 @@ export class NativeTransportSystem {
         }
     }
 
-    // --- YENİ EKLENECEK FONKSİYON ---
     /**
      * Dışarıdan bir olayı belirli bir zamanda çalınmak üzere sıraya alır.
      * @param {number} time - Olayın saniye cinsinden çalınacağı zaman.
@@ -241,12 +231,10 @@ export class NativeTransportSystem {
     scheduleEvent(time, callback, data = {}) {
         const eventId = `event_${Date.now()}_${Math.random()}`;
 
-        // Eğer bu zaman için daha önce bir olay planlanmadıysa, yeni bir liste oluştur.
         if (!this.scheduledEvents.has(time)) {
             this.scheduledEvents.set(time, []);
         }
 
-        // Yeni olayı listeye ekle.
         this.scheduledEvents.get(time).push({
             id: eventId,
             callback,
@@ -255,54 +243,47 @@ export class NativeTransportSystem {
 
         return eventId;
     }
-    // --- YENİ FONKSİYON SONU ---
 
     processScheduledEvents(tickTime) {
         // O anki tick zamanına denk gelen veya geçmiş tüm notaları bul
         for (const [scheduledTime, events] of this.scheduledEvents.entries()) {
-            // Zamanı gelen notaları işle
             if (scheduledTime <= tickTime) {
                 events.forEach(event => {
                     try {
-                        // Callback'i, olması gereken hassas zamanla ve datayla çağır
                         event.callback(scheduledTime, event.data);
                     } catch (error) {
                         console.error('❌ Scheduled event error:', error);
                     }
                 });
-                // İşlenen notaları listeden sil ki tekrar çalınmasınlar
                 this.scheduledEvents.delete(scheduledTime);
             }
         }
     }
+
     nextTick() {
         const secondsPerTick = this.getSecondsPerTick();
         
-        // 1. Bir sonraki tick'in zamanını HESAPLA ama henüz atama.
         const nextTickTimeCandidate = this.nextTickTime + secondsPerTick;
 
-        // 2. Döngü sonuna gelip gelmediğimizi kontrol et.
+        // Loop kontrolü
         if (this.loop && nextTickTimeCandidate >= this.loopEnd) {
             this.triggerCallback('loop', { time: this.loopEnd });
             const loopDuration = this.loopEnd - this.loopStart;
             
             if (loopDuration > 0) {
-                // 3. Zamanı döngünün başına, taşan kısmı da ekleyerek ayarla.
                 const overflow = nextTickTimeCandidate - this.loopEnd;
                 this.nextTickTime = this.loopStart + (overflow % loopDuration);
-                this.currentTick = this._secondsToTicks(this.loopStart) + this._secondsToTicks(overflow % loopDuration);
+                this.currentTick = this._secondsToTicks(this.loopStart) + 
+                                  this._secondsToTicks(overflow % loopDuration);
             } else {
-                // Döngü süresi 0 ise, sadece başa dön.
                 this.nextTickTime = this.loopStart;
                 this.currentTick = this._secondsToTicks(this.loopStart);
             }
         } else {
-            // 4. Döngüde değilsek, normal şekilde ilerle.
             this.nextTickTime = nextTickTimeCandidate;
             this.currentTick++;
         }
         
-        // 5. Son olarak, pozisyonu güncelle.
         this.position = this.currentTick;
     }
 
