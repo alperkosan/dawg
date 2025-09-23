@@ -13,14 +13,20 @@ import { useMixerStore } from './store/useMixerStore';
 // import { storePipeline } from './lib/core/StorePipeline';
 
 function App() {
-  const [engineStatus, setEngineStatus] = useState('initializing');
+  const [engineStatus, setEngineStatus] = useState('waiting-to-start'); // ✅ YENİ: Başlatma bekliyor
   const [engineError, setEngineError] = useState(null);
   const [initializationProgress, setInitializationProgress] = useState(0);
   const audioEngineRef = useRef(null);
 
-  useEffect(() => {
-    initializeAudioSystem();
-  }, []);
+  // ✅ YENİ: Otomatik başlatma YOK, manuel başlatma
+
+  // ✅ YENİ: Manuel başlatma butonu handler'ı
+  const handleStartAudioEngine = async () => {
+    console.log('🎵 User clicked to start audio engine');
+    setEngineStatus('initializing');
+    setInitializationProgress(0);
+    await initializeAudioSystem();
+  };
 
   // ✅ DOĞRU: Fonksiyon App component'i içinde tanımlanmış
   const initializeAudioSystem = async () => {
@@ -272,84 +278,249 @@ function App() {
   };
 
   // =================== RENDER ===================
+  
+  // ✅ YENİ: Başlatmayı bekleyen durum
+  if (engineStatus === 'waiting-to-start') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-50 to-blue-50">
+        <div className="max-w-lg p-8 bg-white rounded-xl shadow-xl text-center">
+          <div className="mb-6">
+            <div className="w-20 h-20 mx-auto mb-4 bg-gradient-to-r from-purple-500 to-blue-500 rounded-full flex items-center justify-center">
+              <span className="text-3xl text-white">🎵</span>
+            </div>
+            <h1 className="text-3xl font-bold text-gray-800 mb-2">
+              Native Audio Engine
+            </h1>
+            <p className="text-gray-600">
+              High-performance audio system ready to initialize
+            </p>
+          </div>
+          
+          <div className="mb-6 p-4 bg-blue-50 rounded-lg">
+            <h3 className="font-semibold text-blue-800 mb-2">What will be initialized:</h3>
+            <ul className="text-sm text-blue-700 space-y-1">
+              <li>✨ WebAudio AudioWorklets</li>
+              <li>🎹 Instrument processors</li>
+              <li>🎛️ Mixer channels</li>
+              <li>⏱️ Transport system</li>
+              <li>📡 Real-time callbacks</li>
+            </ul>
+          </div>
+          
+          <button
+            onClick={handleStartAudioEngine}
+            className="w-full py-4 px-6 bg-gradient-to-r from-purple-600 to-blue-600 text-white font-semibold rounded-lg hover:from-purple-700 hover:to-blue-700 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105"
+          >
+            🚀 Initialize Audio Engine
+          </button>
+          
+          <p className="text-xs text-gray-500 mt-4">
+            This requires user interaction to enable WebAudio
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   if (engineStatus === 'error') {
     return (
       <div className="min-h-screen flex items-center justify-center bg-red-50">
         <div className="max-w-md p-6 bg-white rounded-lg shadow-lg">
-          <h2 className="text-xl font-bold text-red-600 mb-4">
-            Audio Engine Error
-          </h2>
-          <p className="text-gray-700 mb-4">{engineError}</p>
-          <button
-            onClick={handleRetryInitialization}
-            className="w-full py-2 px-4 bg-red-600 text-white rounded hover:bg-red-700"
-          >
-            Retry Initialization
-          </button>
+          <div className="text-center mb-4">
+            <span className="text-4xl">❌</span>
+            <h2 className="text-xl font-bold text-red-600 mt-2">
+              Audio Engine Error
+            </h2>
+          </div>
+          <div className="mb-4 p-4 bg-red-50 rounded-lg">
+            <p className="text-gray-700 text-sm">{engineError}</p>
+          </div>
+          <div className="space-y-2">
+            <button
+              onClick={handleRetryInitialization}
+              className="w-full py-2 px-4 bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
+            >
+              🔄 Retry Initialization
+            </button>
+            <button
+              onClick={() => {
+                setEngineStatus('waiting-to-start');
+                setEngineError(null);
+              }}
+              className="w-full py-2 px-4 bg-gray-300 text-gray-700 rounded hover:bg-gray-400 transition-colors"
+            >
+              ⬅️ Back to Start
+            </button>
+          </div>
         </div>
       </div>
     );
   }
 
-  if (engineStatus !== 'ready') {
+  if (engineStatus !== 'ready' && engineStatus !== 'waiting-to-start') {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="max-w-md p-6 bg-white rounded-lg shadow-lg">
-          <h2 className="text-xl font-bold text-gray-800 mb-4">
-            Initializing Audio Engine...
-          </h2>
+          <div className="text-center mb-4">
+            <div className="w-16 h-16 mx-auto mb-4 relative">
+              <div className="absolute inset-0 rounded-full border-4 border-blue-200"></div>
+              <div className="absolute inset-0 rounded-full border-4 border-blue-600 border-t-transparent animate-spin"></div>
+            </div>
+            <h2 className="text-xl font-bold text-gray-800">
+              Initializing Audio Engine...
+            </h2>
+          </div>
           
-          <div className="mb-4">
-            <div className="w-full bg-gray-200 rounded-full h-2">
+          <div className="mb-6">
+            <div className="w-full bg-gray-200 rounded-full h-3">
               <div 
-                className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                className="bg-gradient-to-r from-blue-500 to-purple-600 h-3 rounded-full transition-all duration-300"
                 style={{ width: `${initializationProgress}%` }}
               />
             </div>
-            <p className="text-sm text-gray-600 mt-2">
-              {initializationProgress}% - {getStatusMessage(engineStatus)}
-            </p>
+            <div className="flex justify-between text-xs text-gray-600 mt-2">
+              <span>{initializationProgress}%</span>
+              <span>{getStatusMessage(engineStatus)}</span>
+            </div>
           </div>
           
-          {engineStatus === 'waiting-user-gesture' && (
-            <p className="text-sm text-gray-600">
-              Click anywhere to enable audio...
+          <div className="text-center">
+            <p className="text-sm text-gray-600 mb-2">
+              Setting up your audio environment...
             </p>
-          )}
+            
+            {engineStatus === 'waiting-user-gesture' && (
+              <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <p className="text-sm text-yellow-700">
+                  🎵 Ready! Audio context will activate automatically.
+                </p>
+              </div>
+            )}
+            
+            {engineStatus === 'loading-content' && (
+              <div className="text-xs text-gray-500">
+                Loading {useInstrumentsStore(s => s.instruments.length)} instruments...
+              </div>
+            )}
+          </div>
         </div>
       </div>
     );
   }
 
-  // Main app render - replace this with your actual app components
+  // Main app render - Engine is ready!
   return (
     <div className="min-h-screen bg-gray-100">
-      <header className="bg-white shadow-sm">
+      <header className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 py-4">
-          <h1 className="text-2xl font-bold text-gray-900">
-            🎵 Native Audio Engine - Ready!
-          </h1>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">
+                🎵 Native Audio Engine
+              </h1>
+              <p className="text-sm text-green-600 font-medium">
+                ✅ Ready & Active
+              </p>
+            </div>
+            <div className="flex items-center space-x-2 text-sm text-gray-600">
+              <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+              <span>Audio System Online</span>
+            </div>
+          </div>
         </div>
       </header>
       
       <main className="max-w-7xl mx-auto px-4 py-8">
-        {/* Your app components go here */}
-        <div className="bg-white p-6 rounded-lg shadow">
-          <h2 className="text-lg font-semibold mb-4">Engine Status</h2>
-          <div className="space-y-2">
-            <p>✅ Audio Context: Ready</p>
-            <p>✅ Transport System: Active</p>
-            <p>✅ Worklet Manager: Loaded</p>
-            <p>✅ Instruments: {useInstrumentsStore(s => s.instruments.length)} loaded</p>
-            <p>✅ Store Subscriptions: Active</p>
+        {/* Engine Status Card */}
+        <div className="bg-white p-6 rounded-lg shadow-lg mb-6">
+          <h2 className="text-lg font-semibold mb-4 flex items-center">
+            <span className="w-3 h-3 bg-green-500 rounded-full mr-2 animate-pulse"></span>
+            Engine Status
+          </h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="text-center p-3 bg-green-50 rounded-lg">
+              <div className="text-2xl mb-1">🎵</div>
+              <div className="text-sm font-medium">Audio Context</div>
+              <div className="text-xs text-green-600">Active</div>
+            </div>
+            <div className="text-center p-3 bg-blue-50 rounded-lg">
+              <div className="text-2xl mb-1">⚡</div>
+              <div className="text-sm font-medium">Transport</div>
+              <div className="text-xs text-blue-600">Ready</div>
+            </div>
+            <div className="text-center p-3 bg-purple-50 rounded-lg">
+              <div className="text-2xl mb-1">🎹</div>
+              <div className="text-sm font-medium">Instruments</div>
+              <div className="text-xs text-purple-600">
+                {useInstrumentsStore(s => s.instruments.length)} Loaded
+              </div>
+            </div>
+            <div className="text-center p-3 bg-orange-50 rounded-lg">
+              <div className="text-2xl mb-1">🎛️</div>
+              <div className="text-sm font-medium">Mixer</div>
+              <div className="text-xs text-orange-600">16 Channels</div>
+            </div>
           </div>
         </div>
         
-        {/* Add your actual app components here:
+        {/* Quick Test Panel */}
+        <div className="bg-white p-6 rounded-lg shadow-lg mb-6">
+          <h3 className="text-lg font-semibold mb-4">Quick Test</h3>
+          <div className="space-y-3">
+            <button 
+              onClick={() => {
+                console.log('🧪 Testing audio engine...');
+                AudioContextService.play();
+                setTimeout(() => AudioContextService.stop(), 2000);
+              }}
+              className="w-full py-2 px-4 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+            >
+              ▶️ Test Playback (2 seconds)
+            </button>
+            
+            <button 
+              onClick={() => {
+                console.log('📊 Engine stats:', AudioContextService.getEngineStats());
+              }}
+              className="w-full py-2 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              📊 Log Engine Stats
+            </button>
+            
+            <button 
+              onClick={() => {
+                console.log('🔊 Testing note audition...');
+                AudioContextService.auditionNoteOn('inst-1', 'C4', 0.8);
+                setTimeout(() => AudioContextService.auditionNoteOff('inst-1', 'C4'), 500);
+              }}
+              className="w-full py-2 px-4 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+            >
+              🎹 Test Note (C4)
+            </button>
+          </div>
+        </div>
+
+        {/* Development Info */}
+        <div className="bg-gray-50 p-6 rounded-lg">
+          <h3 className="text-lg font-semibold mb-4 text-gray-800">
+            🚀 Ready for Integration
+          </h3>
+          <p className="text-gray-600 mb-4">
+            Your Native Audio Engine is now fully initialized and ready to integrate with your UI components.
+          </p>
+          <div className="text-sm text-gray-600 space-y-1">
+            <p><strong>Next Steps:</strong></p>
+            <p>• Add your TransportControls component</p>
+            <p>• Add your PianoRoll component</p>
+            <p>• Add your MixerPanel component</p>
+            <p>• Replace this placeholder with your actual app</p>
+          </div>
+        </div>
+        
+        {/* Your actual app components will replace this section:
         <TransportControls />
         <PianoRoll />
         <MixerPanel />
-        etc.
         */}
       </main>
     </div>
@@ -357,20 +528,21 @@ function App() {
 }
 
 // =================== HELPER FUNCTION ===================
-const getStatusMessage = (status) => {
-  const messages = {
-    'initializing': 'Starting up...',
-    'waiting-user-gesture': 'Waiting for user interaction',
-    'checking-worklets': 'Checking audio processors...',
-    'creating-engine': 'Creating audio engine...',
-    'initializing-engine': 'Initializing core systems...',
-    'registering-service': 'Registering audio service...',
-    'loading-content': 'Loading instruments and patterns...',
-    'setting-up-stores': 'Setting up data synchronization...',
-    'ready': 'Ready to rock!'
+  const getStatusMessage = (status) => {
+    const messages = {
+      'waiting-to-start': 'Waiting for user to start',
+      'initializing': 'Starting up...',
+      'waiting-user-gesture': 'Activating audio context',
+      'checking-worklets': 'Checking audio processors...',
+      'creating-engine': 'Creating audio engine...',
+      'initializing-engine': 'Initializing core systems...',
+      'registering-service': 'Registering audio service...',
+      'loading-content': 'Loading instruments and patterns...',
+      'setting-up-stores': 'Setting up data synchronization...',
+      'ready': 'Ready to rock!'
+    };
+    
+    return messages[status] || status;
   };
-  
-  return messages[status] || status;
-};
 
 export default App;
