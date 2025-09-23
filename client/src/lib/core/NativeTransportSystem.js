@@ -419,6 +419,49 @@ export class NativeTransportSystem {
 
     // =================== TIME UTILITIES ===================
 
+    /**
+     * Adımları (steps) tick'lere çevirir.
+     * Varsayılan olarak 1 step = 1/16'lık nota = 24 tick (eğer ppq=96 ise).
+     * @param {number} steps - Adım sayısı.
+     * @returns {number} Tick cinsinden değer.
+     */
+    stepsToTicks(steps) {
+        const ticksPerStep = this.ppq / 4; // 16'lık nota başına tick
+        return steps * ticksPerStep;
+    }
+
+    /**
+     * Tick'leri adımlara (steps) çevirir.
+     * @param {number} ticks - Tick sayısı.
+     * @returns {number} Adım cinsinden değer.
+     */
+    ticksToSteps(ticks) {
+        const ticksPerStep = this.ppq / 4;
+        if (ticksPerStep === 0) return 0;
+        return ticks / ticksPerStep;
+    }
+    
+    /**
+     * Adımları (steps) saniyeye çevirir.
+     * @param {number} steps - Adım sayısı.
+     * @returns {number} Saniye cinsinden değer.
+     */
+    stepsToSeconds(steps) {
+        const ticks = this.stepsToTicks(steps);
+        const secondsPerTick = this.getSecondsPerTick();
+        return ticks * secondsPerTick;
+    }
+
+    /**
+     * Saniyeyi adımlara (steps) çevirir. Bu fonksiyon hatanın ana nedenidir.
+     * @param {number} seconds - Saniye değeri.
+     * @returns {number} Adım cinsinden en yakın değer.
+     */
+    secondsToSteps(seconds) {
+        const ticks = this._secondsToTicks(seconds);
+        return this.ticksToSteps(ticks);
+    }
+
     parseTime(timeValue) {
         if (typeof timeValue === 'number') {
             return timeValue; // Assume seconds
