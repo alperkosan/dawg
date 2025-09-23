@@ -4,44 +4,45 @@
 export class NativeTransportSystem {
     constructor(audioContext) {
         this.audioContext = audioContext;
-
-        // Transport durumu
+        
+        // State management
         this.isPlaying = false;
-        this.position = 0;
+        this.isPaused = false; // ✅ ADD: Track pause state explicitly
         this.bpm = 120;
         this.timeSignature = [4, 4];
-
-        // Zamanlama
-        this.ppq = 96; // pulses per quarter note
+        
+        // ✅ Timing constants - STEPS vs TICKS vs SECONDS clarification
+        this.ppq = 96; // pulses per quarter note (ticks)
+        this.stepsPerBar = 16; // 16th note steps per bar (4/4 time)
+        this.ticksPerStep = this.ppq / 4; // 24 ticks per step (16th note)
+        this.ticksPerBar = this.ppq * this.timeSignature[0]; // 384 ticks per bar
+        
+        // ✅ Position tracking - ALL IN TICKS
         this.currentTick = 0;
         this.nextTickTime = 0;
-        this.lookAhead = 25.0; // 25ms lookahead
-        this.scheduleAheadTime = 0.1; // 100ms scheduling window
+        this.lookAhead = 25.0;
+        this.scheduleAheadTime = 0.1;
 
-        // Event callbacks
-        this.callbacks = new Map();
-        
-        // ✅ EKLENDİ: Zamanlanmış olaylar için Map
-        this.scheduledEvents = new Map(); // time -> events
-        
-        // Pattern scheduling
-        this.patterns = new Map();
-        this.activePatterns = new Set();
-
-        // Swing ve groove
-        this.swingFactor = 0;
-        this.groove = null;
-
-        // YENİ: Loop özellikleri
+        // ✅ CRITICAL: Loop system - ALL IN TICKS
         this.loop = true;
-        this.loopStart = 0; // Tick cinsinden, saniye değil!
-        this.loopEnd = 64;  // Tick cinsinden, saniye değil!
-
+        this.loopStartTick = 0;
+        this.loopEndTick = 64 * this.ticksPerStep; // 64 steps = 1536 ticks
+        
+        // Bar tracking
         this.currentBar = 0;
-        this.ticksPerBar = this.ppq * this.timeSignature[0]; // 96 * 4 = 384 tick/bar
-
+        
+        this.callbacks = new Map();
+        this.scheduledEvents = new Map();
+        
+        // ✅ Initialize worker timer
         this.initializeWorkerTimer();
-        console.log('🎵 NativeTransportSystem initialized - Loop:', this.loopStart, '->', this.loopEnd, 'ticks');
+        
+        console.log('🎵 NativeTransportSystem initialized:');
+        console.log(`   PPQ: ${this.ppq} ticks/quarter`);
+        console.log(`   Steps per bar: ${this.stepsPerBar}`);
+        console.log(`   Ticks per step: ${this.ticksPerStep}`);
+        console.log(`   Loop: ${this.loopStartTick} → ${this.loopEndTick} ticks`);
+        console.log(`   Loop: ${this.loopStartTick / this.ticksPerStep} → ${this.loopEndTick / this.ticksPerStep} steps`);
     }
 
     // =================== TIMER INITIALIZATION ===================
@@ -76,54 +77,60 @@ export class NativeTransportSystem {
 
     // =================== BASIC TRANSPORT CONTROLS ===================
 
+    // ✅ Start/Stop methods remain the same
     start(when = null) {
         if (this.isPlaying) return;
 
         const startTime = when || this.audioContext.currentTime;
         this.isPlaying = true;
         
-        // ✅ DÜZELTME: nextTickTime'ı doğru başlat
+        // ✅ CRITICAL FIX: Always start from loop beginning unless explicitly paused
+        if (!this.isPaused) {
+            this.currentTick = this.loopStartTick;
+            this.currentBar = Math.floor(this.currentTick / this.ticksPerBar);
+        }
+        
+        // ✅ CRITICAL FIX: Set nextTickTime to current audio time, not relative to position
         this.nextTickTime = startTime;
-        this.schedulerRunning = true;
 
-        // ✅ EKLENEN: Başlangıç pozisyonu
-        console.log(`▶️ Transport starting at tick ${this.currentTick}, time ${startTime.toFixed(3)}s`);
-        console.log(`🔁 Loop: ${this.loopStart} -> ${this.loopEnd} ticks (${this.loop ? 'enabled' : 'disabled'})`);
+        console.log(`▶️ Transport starting at tick ${this.currentTick} (${this.formatPosition(this.currentTick)}), time ${startTime.toFixed(3)}s`);
+        console.log(`🔁 Loop: ${this.loopStartTick} → ${this.loopEndTick} ticks (${this.loop ? 'enabled' : 'disabled'})`);
 
         this.timerWorker.postMessage('start');
-        this.triggerCallback('start', { time: startTime, position: this.position });
+        this.triggerCallback('start', { time: startTime, position: this.currentTick });
         
         return this;
     }
 
     stop(when = null) {
-        if (!this.isPlaying) return this;
+        if (!this.isPlaying && !this.isPaused) return this;
 
         const stopTime = when || this.audioContext.currentTime;
         this.isPlaying = false;
-        this.schedulerRunning = false;
+        this.isPaused = false; // ✅ CLEAR: Clear pause state on stop
 
         this.timerWorker.postMessage('stop');
 
-        // ✅ DÜZELTME: Stop'ta loop başına dön
-        this.currentTick = this.loopStart;
-        this.position = this.currentTick;
+        // ✅ CRITICAL FIX: Always reset to loop start on stop
+        this.currentTick = this.loopStartTick;
         this.currentBar = Math.floor(this.currentTick / this.ticksPerBar);
-        this.nextTickTime = stopTime;
+        this.nextTickTime = stopTime; // Will be overridden on next start
 
-        // Scheduled events'leri temizle
         this.clearScheduledEvents();
-
-        this.triggerCallback('stop', { time: stopTime, position: this.position });
-        console.log(`⏹️ Transport stopped, reset to tick ${this.currentTick}`);
+        this.triggerCallback('stop', { time: stopTime, position: this.currentTick });
+        
+        console.log(`⏹️ Transport stopped, reset to tick ${this.currentTick} (${this.formatPosition(this.currentTick)})`);
         return this;
     }
 
+    // ✅ CLEANUP: Dispose method
+    // ✅ CRITICAL FIX: Pause state management
     pause(when = null) {
         if (!this.isPlaying) return this;
 
         const pauseTime = when || this.audioContext.currentTime;
         this.isPlaying = false;
+        this.isPaused = true; // ✅ ADD: Track pause state
 
         this.timerWorker.postMessage('stop');
         
@@ -158,21 +165,19 @@ export class NativeTransportSystem {
     }
 
     setLoopPoints(startStep, endStep) {
-        // ✅ DÜZELTME: Step'leri tick'lere çevir (1 step = 1 sixteenth note = ppq/4 tick)
-        this.loopStart = startStep * (this.ppq / 4);
-        this.loopEnd = endStep * (this.ppq / 4);
+        // Convert steps to ticks (1 step = 24 ticks at PPQ=96)
+        this.loopStartTick = startStep * this.ticksPerStep;
+        this.loopEndTick = endStep * this.ticksPerStep;
         
-        // ✅ DEBUG: Loop bilgilerini göster
         console.log(`🔁 Loop points set:`);
-        console.log(`   Steps: ${startStep} -> ${endStep} (${endStep - startStep} steps = ${(endStep - startStep)/16} bars)`);
-        console.log(`   Ticks: ${this.loopStart} -> ${this.loopEnd} (${this.loopEnd - this.loopStart} ticks)`);
-        console.log(`   Seconds: ${(this.loopStart * this.getSecondsPerTick()).toFixed(2)} -> ${(this.loopEnd * this.getSecondsPerTick()).toFixed(2)}`);
+        console.log(`   Steps: ${startStep} → ${endStep} (${endStep - startStep} steps = ${(endStep - startStep)/16} bars)`);
+        console.log(`   Ticks: ${this.loopStartTick} → ${this.loopEndTick} (${this.loopEndTick - this.loopStartTick} ticks)`);
+        console.log(`   Seconds: ${(this.loopStartTick * this.getSecondsPerTick()).toFixed(2)} → ${(this.loopEndTick * this.getSecondsPerTick()).toFixed(2)}`);
         
-        // Eğer current position loop dışındaysa, loop başına al
-        if (this.currentTick >= this.loopEnd) {
+        // Reset position if outside loop
+        if (this.currentTick >= this.loopEndTick) {
             console.warn('[Transport] Current position beyond loop end, resetting to start');
-            this.currentTick = this.loopStart;
-            this.position = this.currentTick;
+            this.currentTick = this.loopStartTick;
             this.nextTickTime = this.audioContext.currentTime;
         }
     }
@@ -223,13 +228,52 @@ export class NativeTransportSystem {
         const scheduleUntil = this.audioContext.currentTime + this.scheduleAheadTime;
 
         while (this.nextTickTime < scheduleUntil) {
-            // 1. UI ve pozisyon güncellemeleri için tick olayını tetikle
+            // 1. UI callbacks with position info
             this.scheduleCurrentTick(this.nextTickTime);
-
-            // 2. ❗ EKLENEN KISIM: Zamanlanmış nota olaylarını işle
+            
+            // 2. ✅ FIXED: Process scheduled events at current time
             this.processScheduledEvents(this.nextTickTime);
             
-            this.nextTick();
+            this.advanceToNextTick();
+        }
+    }
+
+    // ✅ CRITICAL FIX: Tick advancement with proper loop logic
+    advanceToNextTick() {
+        const secondsPerTick = this.getSecondsPerTick();
+        
+        // Advance time first
+        this.nextTickTime += secondsPerTick;
+        
+        // Then advance tick position
+        this.currentTick++;
+        
+        // ✅ FIXED: Loop logic - only trigger when actually hitting loop end
+        if (this.loop && this.currentTick >= this.loopEndTick) {
+            console.log(`🔁 Loop trigger:`);
+            console.log(`   Current tick: ${this.currentTick}, Loop end: ${this.loopEndTick}`);
+            console.log(`   Time: ${this.nextTickTime.toFixed(3)}s, Duration: ${((this.currentTick - this.loopStartTick) * secondsPerTick).toFixed(3)}s`);
+            
+            this.currentTick = this.loopStartTick;
+            
+            this.triggerCallback('loop', { 
+                time: this.nextTickTime, 
+                fromTick: this.loopEndTick - 1, 
+                toTick: this.loopStartTick 
+            });
+        }
+        
+        // ✅ FIXED: Bar tracking - only update when crossing bar boundaries
+        const newBar = Math.floor(this.currentTick / this.ticksPerBar);
+        if (newBar !== this.currentBar) {
+            this.currentBar = newBar;
+            console.log(`🎼 Bar ${this.currentBar} (tick ${this.currentTick})`);
+            
+            this.triggerCallback('bar', { 
+                time: this.nextTickTime, 
+                bar: this.currentBar,
+                tick: this.currentTick
+            });
         }
     }
 
@@ -262,14 +306,15 @@ export class NativeTransportSystem {
      * @param {object} data - Callback'e gönderilecek ek veri.
      * @returns {string} - Zamanlanmış olayın benzersiz ID'si.
      */
-    scheduleEvent(time, callback, data = {}) {
+    // ✅ CRITICAL FIX: Event scheduling with proper time conversion
+    scheduleEvent(timeInSeconds, callback, data = {}) {
         const eventId = `event_${Date.now()}_${Math.random()}`;
 
-        if (!this.scheduledEvents.has(time)) {
-            this.scheduledEvents.set(time, []);
+        if (!this.scheduledEvents.has(timeInSeconds)) {
+            this.scheduledEvents.set(timeInSeconds, []);
         }
 
-        this.scheduledEvents.get(time).push({
+        this.scheduledEvents.get(timeInSeconds).push({
             id: eventId,
             callback,
             data
@@ -278,10 +323,10 @@ export class NativeTransportSystem {
         return eventId;
     }
 
-    processScheduledEvents(tickTime) {
-        // O anki tick zamanına denk gelen veya geçmiş tüm notaları bul
+    processScheduledEvents(currentTime) {
+        // Process events at or before current time
         for (const [scheduledTime, events] of this.scheduledEvents.entries()) {
-            if (scheduledTime <= tickTime) {
+            if (scheduledTime <= currentTime) {
                 events.forEach(event => {
                     try {
                         event.callback(scheduledTime, event.data);
@@ -293,7 +338,6 @@ export class NativeTransportSystem {
             }
         }
     }
-
     nextTick() {
         const secondsPerTick = this.getSecondsPerTick();
         
@@ -426,19 +470,15 @@ export class NativeTransportSystem {
      * @returns {number} Tick cinsinden değer.
      */
     stepsToTicks(steps) {
-        const ticksPerStep = this.ppq / 4; // 16'lık nota başına tick
-        return steps * ticksPerStep;
+        return steps * this.ticksPerStep;
     }
-
     /**
      * Tick'leri adımlara (steps) çevirir.
      * @param {number} ticks - Tick sayısı.
      * @returns {number} Adım cinsinden değer.
      */
     ticksToSteps(ticks) {
-        const ticksPerStep = this.ppq / 4;
-        if (ticksPerStep === 0) return 0;
-        return ticks / ticksPerStep;
+        return ticks / this.ticksPerStep;
     }
     
     /**
@@ -448,8 +488,7 @@ export class NativeTransportSystem {
      */
     stepsToSeconds(steps) {
         const ticks = this.stepsToTicks(steps);
-        const secondsPerTick = this.getSecondsPerTick();
-        return ticks * secondsPerTick;
+        return ticks * this.getSecondsPerTick();
     }
 
     /**
@@ -458,10 +497,9 @@ export class NativeTransportSystem {
      * @returns {number} Adım cinsinden en yakın değer.
      */
     secondsToSteps(seconds) {
-        const ticks = this._secondsToTicks(seconds);
+        const ticks = seconds / this.getSecondsPerTick();
         return this.ticksToSteps(ticks);
     }
-
     parseTime(timeValue) {
         if (typeof timeValue === 'number') {
             return timeValue; // Assume seconds
@@ -505,12 +543,11 @@ export class NativeTransportSystem {
         return duration;
     }
 
+    // ✅ Position formatting
     formatPosition(ticks) {
-        const ticksPerBar = this.ppq * this.timeSignature[0];
-        const bar = Math.floor(ticks / ticksPerBar);
-        const beat = Math.floor((ticks % ticksPerBar) / this.ppq);
+        const bar = Math.floor(ticks / this.ticksPerBar);
+        const beat = Math.floor((ticks % this.ticksPerBar) / this.ppq);
         const sixteenth = Math.floor((ticks % this.ppq) / (this.ppq / 4));
-
         return `${bar}:${beat}:${sixteenth}`;
     }
 
