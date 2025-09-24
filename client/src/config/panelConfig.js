@@ -7,16 +7,22 @@ import ArrangementPanel from '../features/arrangement/ArrangementPanel';
 import KeybindingsPanel from '../features/key_bindings/KeybindingsPanel';
 import { ThemeEditor } from '../features/theme_editor/ThemeEditor';
 import { ForgeSynthUI } from '../features/instrument_editor/ForgeSynthUI';
+import AudioQualitySettings from '../components/AudioQualitySettings';
+import InfinitePianoRoll from '../components/InfinitePianoRoll';
+import InfiniteChannelRack from '../components/InfiniteChannelRack';
 
 export const panelRegistry = {
   'channel-rack': ChannelRack,
-  'mixer': AdvancedMixer, // <-- 3. ESKİ MİKSERİ YENİSİYLE DEĞİŞTİRİN
+  'infinite-channel-rack': InfiniteChannelRack, // NEW: Infinite Canvas Channel Rack
+  'mixer': AdvancedMixer,
   'sample-editor': SampleEditorV2,
   'piano-roll': PianoRoll,
+  'infinite-piano-roll': InfinitePianoRoll, // NEW: Infinite Canvas Piano Roll
   'keybindings': KeybindingsPanel,
   'arrangement': ArrangementPanel,
   'theme-editor': ThemeEditor,
-  'instrument-editor-forgesynth': ForgeSynthUI, 
+  'instrument-editor-forgesynth': ForgeSynthUI,
+  'audio-quality-settings': AudioQualitySettings,
 };
 
 export const panelDefinitions = {
@@ -71,5 +77,23 @@ export const panelDefinitions = {
     initialSize: { width: 600, height: 280 },
     initialPos: { x: 80, y: 90 },
     minSize: { width: 500, height: 250 },
+  },
+  'audio-quality-settings': {
+    title: 'Audio Quality Settings',
+    initialSize: { width: 900, height: 700 },
+    initialPos: { x: 100, y: 50 },
+    minSize: { width: 700, height: 500 },
+  },
+  'infinite-piano-roll': {
+    title: 'Infinite Piano Roll',
+    initialSize: { width: 1200, height: 600 },
+    initialPos: { x: 50, y: 50 },
+    minSize: { width: 800, height: 400 },
+  },
+  'infinite-channel-rack': {
+    title: 'Infinite Channel Rack',
+    initialSize: { width: 1400, height: 500 },
+    initialPos: { x: 30, y: 30 },
+    minSize: { width: 1000, height: 350 },
   },
 };

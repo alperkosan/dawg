@@ -50,6 +50,9 @@ export const useArrangementStore = create(arrangementStoreOrchestrator((set, get
   songLength: 128, // bar cinsinden
   zoomX: 1,
 
+  // Loop regions for infinite canvas
+  loopRegions: [],
+
   // --- EYLEMLER (ACTIONS) ---
 
   setActivePatternId: (patternId) => {
@@ -96,4 +99,34 @@ export const useArrangementStore = create(arrangementStoreOrchestrator((set, get
   },
   
   setZoomX: (newZoom) => set({ zoomX: Math.max(0.1, Math.min(5, newZoom)) }),
+
+  // Loop region management
+  addLoopRegion: (loopRegion) => {
+    set(state => ({
+      loopRegions: [...state.loopRegions, {
+        id: loopRegion.id || `loop_${Date.now()}`,
+        start: loopRegion.start,
+        end: loopRegion.end,
+        name: loopRegion.name || `Loop ${state.loopRegions.length + 1}`,
+        color: loopRegion.color || '#4CAF50',
+        ...loopRegion
+      }]
+    }));
+  },
+
+  updateLoopRegion: (loopId, updates) => {
+    set(state => ({
+      loopRegions: state.loopRegions.map(loop =>
+        loop.id === loopId ? { ...loop, ...updates } : loop
+      )
+    }));
+  },
+
+  deleteLoopRegion: (loopId) => {
+    set(state => ({
+      loopRegions: state.loopRegions.filter(loop => loop.id !== loopId)
+    }));
+  },
+
+  clearLoopRegions: () => set({ loopRegions: [] }),
 })));

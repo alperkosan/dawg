@@ -1,0 +1,348 @@
+/* Infinite Canvas Components - Ultra performanslı UI stilleri */
+
+/* Infinite Piano Roll */
+.infinite-piano-roll {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background: var(--color-bg-primary);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.piano-roll-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    background: var(--color-bg-secondary);
+    border-bottom: 1px solid var(--color-border);
+    min-height: 48px;
+}
+
+.instrument-info h3 {
+    margin: 0;
+    font-size: 16px;
+    color: var(--color-text-primary);
+}
+
+.note-count {
+    font-size: 12px;
+    color: var(--color-text-secondary);
+    margin-left: 8px;
+}
+
+.performance-stats {
+    display: flex;
+    gap: 12px;
+    font-size: 11px;
+    color: var(--color-text-tertiary);
+    font-family: monospace;
+}
+
+.performance-stats span {
+    padding: 2px 6px;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 3px;
+}
+
+.piano-roll-controls {
+    display: flex;
+    gap: 8px;
+}
+
+.piano-roll-controls button {
+    padding: 6px 10px;
+    background: var(--color-bg-tertiary);
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.2s ease;
+}
+
+.piano-roll-controls button:hover {
+    background: var(--color-accent-primary);
+    color: white;
+    border-color: var(--color-accent-primary);
+}
+
+.piano-roll-canvas {
+    flex: 1;
+    position: relative;
+    min-height: 400px;
+}
+
+.piano-roll-instructions {
+    display: flex;
+    gap: 16px;
+    padding: 8px 16px;
+    background: var(--color-bg-tertiary);
+    font-size: 11px;
+    color: var(--color-text-tertiary);
+    border-top: 1px solid var(--color-border);
+}
+
+/* Infinite Channel Rack */
+.infinite-channel-rack {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background: var(--color-bg-primary);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.channel-rack-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    background: var(--color-bg-secondary);
+    border-bottom: 1px solid var(--color-border);
+    min-height: 48px;
+}
+
+.rack-info h3 {
+    margin: 0;
+    font-size: 16px;
+    color: var(--color-text-primary);
+}
+
+.instrument-count {
+    font-size: 12px;
+    color: var(--color-text-secondary);
+    margin-left: 8px;
+}
+
+.mode-indicator {
+    padding: 6px 12px;
+    background: rgba(33, 150, 243, 0.2);
+    border: 1px solid #2196F3;
+    border-radius: 4px;
+    font-size: 12px;
+    color: #2196F3;
+    animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+
+.rack-controls {
+    display: flex;
+    gap: 8px;
+}
+
+.rack-controls button {
+    padding: 6px 10px;
+    background: var(--color-bg-tertiary);
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.2s ease;
+}
+
+.rack-controls button:hover {
+    background: var(--color-accent-primary);
+    color: white;
+    border-color: var(--color-accent-primary);
+}
+
+.rack-controls button.active {
+    background: var(--color-accent-primary);
+    color: white;
+    border-color: var(--color-accent-primary);
+}
+
+.channel-rack-canvas {
+    flex: 1;
+    position: relative;
+    min-height: 400px;
+}
+
+.channel-rack-instructions {
+    display: flex;
+    gap: 16px;
+    padding: 8px 16px;
+    background: var(--color-bg-tertiary);
+    font-size: 11px;
+    color: var(--color-text-tertiary);
+    border-top: 1px solid var(--color-border);
+}
+
+/* Canvas Loading State */
+.canvas-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 200px;
+    color: var(--color-text-secondary);
+    font-size: 14px;
+}
+
+.canvas-loading::before {
+    content: '';
+    width: 20px;
+    height: 20px;
+    border: 2px solid var(--color-accent-primary);
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-right: 12px;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* High DPI Canvas Support */
+canvas {
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: optimize-contrast;
+    image-rendering: crisp-edges;
+    image-rendering: pixelated;
+}
+
+/* Touch Support */
+@media (pointer: coarse) {
+    .piano-roll-controls button,
+    .rack-controls button {
+        padding: 10px 14px;
+        font-size: 16px;
+    }
+
+    .piano-roll-instructions,
+    .channel-rack-instructions {
+        padding: 12px 16px;
+        font-size: 12px;
+    }
+}
+
+/* Dark Theme Adjustments */
+[data-theme="dark"] .infinite-piano-roll,
+[data-theme="dark"] .infinite-channel-rack {
+    background: #1a1a1a;
+}
+
+[data-theme="dark"] .piano-roll-header,
+[data-theme="dark"] .channel-rack-header {
+    background: #222;
+    border-color: #333;
+}
+
+[data-theme="dark"] .performance-stats span {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+/* Light Theme Adjustments */
+[data-theme="light"] .infinite-piano-roll,
+[data-theme="light"] .infinite-channel-rack {
+    background: #ffffff;
+}
+
+[data-theme="light"] .piano-roll-header,
+[data-theme="light"] .channel-rack-header {
+    background: #f8f9fa;
+    border-color: #e5e7eb;
+}
+
+[data-theme="light"] .piano-roll-canvas,
+[data-theme="light"] .channel-rack-canvas {
+    background-color: #f5f5f5 !important;
+}
+
+/* Performance Optimizations */
+.piano-roll-canvas,
+.channel-rack-canvas {
+    contain: layout style paint;
+    will-change: transform;
+}
+
+/* Accessibility */
+@media (prefers-reduced-motion: reduce) {
+    .mode-indicator {
+        animation: none;
+    }
+
+    .canvas-loading::before {
+        animation: none;
+        border-top-color: var(--color-accent-primary);
+    }
+
+    .piano-roll-controls button,
+    .rack-controls button {
+        transition: none;
+    }
+}
+
+/* Focus States */
+.piano-roll-canvas:focus,
+.channel-rack-canvas:focus {
+    outline: 2px solid var(--color-accent-primary);
+    outline-offset: 2px;
+}
+
+/* Selection Indicator for Canvas */
+.canvas-selection {
+    position: absolute;
+    border: 2px dashed var(--color-accent-primary);
+    background: rgba(var(--color-accent-primary-rgb), 0.1);
+    pointer-events: none;
+    z-index: 1000;
+}
+
+/* Zoom Indicator */
+.zoom-indicator {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    padding: 4px 8px;
+    background: rgba(0, 0, 0, 0.7);
+    color: white;
+    border-radius: 4px;
+    font-size: 11px;
+    font-family: monospace;
+    pointer-events: none;
+    z-index: 100;
+}
+
+/* Performance Warning */
+.performance-warning {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    padding: 16px 24px;
+    background: rgba(255, 152, 0, 0.9);
+    color: white;
+    border-radius: 8px;
+    text-align: center;
+    z-index: 1000;
+    font-size: 14px;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .piano-roll-header,
+    .channel-rack-header {
+        flex-direction: column;
+        gap: 8px;
+        align-items: flex-start;
+    }
+
+    .performance-stats {
+        order: -1;
+        align-self: flex-end;
+    }
+
+    .piano-roll-instructions,
+    .channel-rack-instructions {
+        flex-direction: column;
+        gap: 8px;
+    }
+}

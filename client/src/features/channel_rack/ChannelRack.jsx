@@ -40,37 +40,44 @@ export default function ChannelRack() {
   // High-performance playhead artık useOptimizedPlayhead hook'u tarafından yönetiliyor
   // GPU acceleration ve direct DOM manipulation ile smooth hareket
 
-  // Scroll senkronizasyonu - optimized scroll container kullan
+  // Scroll senkronizasyonu - Channel Rack içindeki paneller arası senkronizasyon gerekli
   useEffect(() => {
     const container = optimizedScrollRef.current;
     if (!container) return;
 
     const syncScroll = () => {
+      // Timeline ile horizontal sync (step grid ile timeline senkron olsun)
       if (timelineContainerRef.current) {
         timelineContainerRef.current.scrollLeft = container.scrollLeft;
       }
+      // Instrument list ile vertical sync (instruments ile grid rows senkron olsun)
       if (instrumentListRef.current) {
         instrumentListRef.current.scrollTop = container.scrollTop;
       }
     };
 
-    container.addEventListener('scroll', syncScroll);
+    container.addEventListener('scroll', syncScroll, { passive: true });
 
     return () => {
       container.removeEventListener('scroll', syncScroll);
     };
   }, []);
 
-  // Sol paneldeki tekerlek hareketini sağ panele yönlendirme
+  // Instrument list'teki mouse wheel'i ana scroll'a yönlendirme (UX iyileştirmesi)
   useEffect(() => {
     const instrumentContainer = instrumentListRef.current;
     const mainScrollContainer = optimizedScrollRef.current;
     if (!instrumentContainer || !mainScrollContainer) return;
+
     const handleWheelOnInstrumentList = (e) => {
-      e.preventDefault();
-      mainScrollContainer.scrollTop += e.deltaY;
+      // Sadece vertical scroll'u forward et, horizontal'i normal bırak
+      if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+        e.preventDefault();
+        mainScrollContainer.scrollTop += e.deltaY;
+      }
     };
-    instrumentContainer.addEventListener('wheel', handleWheelOnInstrumentList);
+
+    instrumentContainer.addEventListener('wheel', handleWheelOnInstrumentList, { passive: false });
     return () => {
       instrumentContainer.removeEventListener('wheel', handleWheelOnInstrumentList);
     };

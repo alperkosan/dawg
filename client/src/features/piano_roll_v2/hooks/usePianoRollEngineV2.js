@@ -10,6 +10,7 @@ const TOTAL_KEYS = 12 * 8; // C0 to B7
 export const usePianoRollEngineV2 = (containerRef, loopLength) => {
   const { zoomX, zoomY } = usePianoRollStoreV2();
   const scrollRef = useRef({ x: 0, y: 0 });
+  const [scrollPos, setScrollPos] = useState({ x: 0, y: 0 });
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [, forceUpdate] = useState({}); 
 
@@ -20,7 +21,7 @@ export const usePianoRollEngineV2 = (containerRef, loopLength) => {
     // Infinite scrolling: Dynamic width based on viewport and scroll position
     const minBars = 200; // Minimum 200 bars (3200 steps)
     const baseSteps = minBars * 16; // 16 steps per bar
-    const currentScrollX = scrollRef.current?.x || 0;
+    const currentScrollX = scrollPos.x;
     const viewportWidth = size.width || 1200;
 
     // Calculate how many bars we're scrolled to
@@ -44,7 +45,7 @@ export const usePianoRollEngineV2 = (containerRef, loopLength) => {
       currentBar,
       requiredBars
     };
-  }, [zoomX, zoomY, loopLength, size.width, scrollPos.x]);
+  }, [zoomX, zoomY, loopLength, size.width, scrollRef.current.x]);
 
   useLayoutEffect(() => {
     const container = containerRef.current;
@@ -81,6 +82,14 @@ export const usePianoRollEngineV2 = (containerRef, loopLength) => {
         if (shouldUpdate) {
           setScrollPos({ x: newScrollX, y: newScrollY });
           forceUpdate({});
+        } else {
+          // Update scrollPos even if not forcing component update for consistency
+          setScrollPos(prev => {
+            if (prev.x !== newScrollX || prev.y !== newScrollY) {
+              return { x: newScrollX, y: newScrollY };
+            }
+            return prev;
+          });
         }
         lastScrollTime = now;
       });
@@ -94,6 +103,12 @@ export const usePianoRollEngineV2 = (containerRef, loopLength) => {
     resizeObserver.observe(container);
     container.addEventListener('scroll', handleScroll, { passive: true });
     setSize({ width: container.clientWidth, height: container.clientHeight });
+
+    // Initialize scroll position
+    const initialScrollX = container.scrollLeft || 0;
+    const initialScrollY = container.scrollTop || 0;
+    scrollRef.current = { x: initialScrollX, y: initialScrollY };
+    setScrollPos({ x: initialScrollX, y: initialScrollY });
 
     return () => {
       resizeObserver.disconnect();
@@ -148,17 +163,7 @@ export const usePianoRollEngineV2 = (containerRef, loopLength) => {
     return { x, y, time: converters.xToTime(x), pitch: converters.yToPitch(y) };
   }, [containerRef, converters]);
   
-  // Add scroll tracking for dynamic updates
-  const [scrollPos, setScrollPos] = useState({ x: 0, y: 0 });
-
-  useLayoutEffect(() => {
-    const updateScroll = () => {
-      setScrollPos({ ...scrollRef.current });
-    };
-
-    // Update scroll position immediately
-    updateScroll();
-  }, [scrollRef.current.x, scrollRef.current.y]);
+  // Scroll position tracking is handled in the main useLayoutEffect above
 
   return useMemo(() => ({
     ...dimensions,

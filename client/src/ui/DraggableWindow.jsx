@@ -41,10 +41,12 @@ function DraggableWindow({
   const contentStyle = {
     // Kalan tüm alanı doldur
     flexGrow: 1,
-    // Taşmayı engellemek ve scroll'u içeriğe bırakmak için
-    overflow: 'hidden',
+    // Scroll'u etkinleştir - auto ile ihtiyaç olduğunda scroll bar gösterir
+    overflow: 'auto',
     // Yüksekliği dinamik olarak hesapla
-    height: `calc(100% - ${headerHeight}px)`
+    height: `calc(100% - ${headerHeight}px)`,
+    // Minimum yükseklik belirle ki çok küçük window'larda da scroll çalışsın
+    minHeight: '100px'
   };
 
   return (

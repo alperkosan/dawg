@@ -16,7 +16,9 @@
 @import url("./components/_fileTreeNode.css");
 @import url("./components/_addEffectMenu.css");
 @import url("./components/_pluginUIs.css");
-@import url("./components/_presetManager.css"); /* YENİ SATIRI BURAYA EKLEYİN */
+@import url("./components/_presetManager.css");
+@import url("./components/AudioQualitySettings.css");
+@import url("./components/InfiniteCanvas.css");
 
 /* 4. Özellik Stilleri */
 @import url("./features/_startupScreen.css");

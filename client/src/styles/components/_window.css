@@ -36,6 +36,35 @@
   /* Bu alanın tüm davranışları artık DraggableWindow.jsx içindeki inline style ile yönetiliyor. */
   /* Bu, başlık yüksekliğini dinamik olarak hesaba katmamızı sağlar. */
   padding: var(--spacing-1);
+
+  /* Custom scrollbar styling for better UX */
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-accent-primary) var(--color-bg-tertiary);
+}
+
+/* Webkit scrollbar styling for Chrome/Safari */
+.window-content-new::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.window-content-new::-webkit-scrollbar-track {
+  background: var(--color-bg-tertiary);
+  border-radius: 4px;
+}
+
+.window-content-new::-webkit-scrollbar-thumb {
+  background: var(--color-accent-primary);
+  border-radius: 4px;
+  border: 1px solid var(--color-bg-secondary);
+}
+
+.window-content-new::-webkit-scrollbar-thumb:hover {
+  background: var(--color-accent-secondary);
+}
+
+.window-content-new::-webkit-scrollbar-corner {
+  background: var(--color-bg-tertiary);
 }
 
 .window-controls {
