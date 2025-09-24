@@ -39,48 +39,134 @@ const InfinitePianoRoll = ({
     const activePattern = patternsArray.find(p => p.id === activePatternId);
     const notes = activePattern?.data[currentInstrumentId] || [];
 
-    // Initialize canvas engine
+    // DEBUG: Log data state
+    console.log('🔍 Piano Roll Debug:', {
+        instruments: instruments.length,
+        patterns: patternsArray.length,
+        currentInstrumentId,
+        activePatternId,
+        activePattern: !!activePattern,
+        notes: notes.length,
+        notesData: notes
+    });
+
+    // Initialize canvas engine with unified coordinate system
     useEffect(() => {
         if (!containerRef.current || isInitialized) return;
 
         const engine = new InfiniteGridEngine({
-            cellWidth: 16,       // Step width
-            cellHeight: 20,      // Note height
+            // Unified coordinate system: X=time, Y=pitch
+            cellWidth: 16,       // 16 pixels = 1/16th note (0.25 beats)
+            cellHeight: 20,      // 20 pixels = 1 semitone (MIDI note)
             bufferSize: 100,     // Extended buffer for smooth scrolling
             chunkSize: 1000,     // Notes per chunk
             maxZoom: 8,          // Ultra zoom for precision
-            minZoom: 0.1         // Wide overview
+            minZoom: 0.1,        // Wide overview
+            // Piano coordinate mapping
+            totalPitchRange: 88, // 88 piano keys (A0 to C8)
+            basePitchOffset: 21  // A0 = MIDI 21, maps to Y coordinate 0
         });
 
-        // Override note loading to use our data
+        // Override note loading with unified coordinate system
         engine.getNotesInRange = (startTime, endTime) => {
+            console.log(`🔍 getNotesInRange called: (${startTime}-${endTime})`);
+            console.log('🔍 Current state:', {
+                currentInstrumentId,
+                activePattern: !!activePattern,
+                patternData: activePattern?.data,
+                instrumentData: activePattern?.data?.[currentInstrumentId]
+            });
+
             if (!currentInstrumentId || !activePattern) {
-                console.log('🔍 getNotesInRange: No instrument or pattern');
+                console.log('❌ getNotesInRange: No instrument or pattern');
                 return [];
             }
 
             const instrumentNotes = activePattern.data[currentInstrumentId] || [];
-            const filteredNotes = instrumentNotes.filter(note =>
-                note.time >= startTime && note.time < endTime
-            ).map(note => ({
-                ...note,
-                pitch: noteToPitchIndex(note.pitch || 'C4')
-            }));
+            console.log('🔍 Raw instrument notes:', instrumentNotes);
 
-            console.log(`🔍 getNotesInRange(${startTime}-${endTime}): Found ${filteredNotes.length} notes`, filteredNotes);
+            if (instrumentNotes.length === 0) {
+                console.log('⚠️ No notes found for instrument:', currentInstrumentId);
+                // Create test notes if none exist
+                const testNotes = [
+                    { id: 1, time: 0, pitch: 'C4', duration: 0.25, velocity: 100 },
+                    { id: 2, time: 1, pitch: 'D4', duration: 0.5, velocity: 80 },
+                    { id: 3, time: 2, pitch: 'E4', duration: 0.25, velocity: 120 }
+                ];
+                console.log('🧪 Using test notes:', testNotes);
+                instrumentNotes.push(...testNotes);
+            }
+
+            const filteredNotes = instrumentNotes.filter(note => {
+                // Convert time to beats (assuming tick values, convert to reasonable beats)
+                const timeInBeats = note.time / 16; // More aggressive conversion: /16 instead of /4
+                return timeInBeats >= startTime && timeInBeats < endTime;
+            }).map(note => {
+                // Convert note name to MIDI number, then to grid Y coordinate
+                const midiNote = noteNameToMidi(note.pitch || 'C4');
+                const gridY = midiNote - 21; // A0 (MIDI 21) maps to Y=0
+
+                // Convert time to beats (assuming tick values)
+                const timeInBeats = note.time / 16; // More aggressive conversion: /16 instead of /4
+
+                // Convert duration from string notation to beats
+                let durationInBeats = 0.25; // default
+                if (note.duration === '16n') durationInBeats = 0.25;  // 16th note
+                else if (note.duration === '8n') durationInBeats = 0.5;   // 8th note
+                else if (note.duration === '4n') durationInBeats = 1;     // quarter note
+                else if (typeof note.duration === 'number') durationInBeats = note.duration;
+
+                const convertedNote = {
+                    ...note,
+                    // Use direct coordinate mapping: X=time, Y=pitch
+                    time: timeInBeats,         // X coordinate (in beats)
+                    pitch: gridY,              // Y coordinate (semitones from A0)
+                    duration: durationInBeats, // Duration in beats
+                    velocity: note.velocity || 100, // Default velocity if missing
+                    originalPitch: note.pitch, // Keep original note name
+                    midiNote: midiNote         // Store MIDI number for reference
+                };
+
+                console.log('🎵 Converting note:', note, '→', convertedNote);
+                return convertedNote;
+            });
+
+            console.log(`✅ getNotesInRange(${startTime}-${endTime}): Returning ${filteredNotes.length} notes`, filteredNotes);
             return filteredNotes;
         };
 
-        // Set up drag & drop callbacks
+        // Set up drag & drop callbacks with unified coordinates
         engine.onNoteDrag = (draggedNote, newPosition) => {
             console.log('🎵 Note dragged:', draggedNote.id, 'to:', newPosition);
 
-            // Update note in store
             if (onNoteEdit) {
+                // Convert grid coordinates back to note format
+                const newMidiNote = newPosition.pitch + 21; // Add base offset
+                const newNoteName = midiToNoteName(newMidiNote);
+
                 const updatedNote = {
                     ...draggedNote,
-                    time: newPosition.time,
-                    pitch: pitchIndexToNote(newPosition.pitch)
+                    time: newPosition.time,        // X coordinate = time in beats
+                    pitch: newNoteName,            // Convert Y back to note name
+                    // Remove internal coordinate data
+                    originalPitch: undefined,
+                    midiNote: undefined
+                };
+                onNoteEdit(updatedNote);
+            }
+        };
+
+        // Set up resize callback
+        engine.onNoteResize = (resizedNote, newProperties) => {
+            console.log('📏 Note resized:', resizedNote.id, 'new duration:', newProperties.duration);
+
+            if (onNoteEdit) {
+                const updatedNote = {
+                    ...resizedNote,
+                    duration: newProperties.duration,
+                    // Remove internal coordinate data
+                    originalPitch: undefined,
+                    midiNote: undefined
                 };
                 onNoteEdit(updatedNote);
             }
@@ -136,23 +222,34 @@ const InfinitePianoRoll = ({
         }
     }, [mouseMode, isInitialized]);
 
-    // Sync viewport with canvas engine
+    // Optimized viewport sync - only update when changed
     useEffect(() => {
         if (!engineRef.current || !isInitialized) return;
+
+        let lastX = viewportX;
+        let lastZoom = viewportZoom;
 
         const updateViewport = () => {
             const engine = engineRef.current;
             if (engine && engine.viewport) {
-                setViewportX(engine.viewport.x);
-                setViewportZoom(engine.viewport.zoom);
+                const newX = engine.viewport.x;
+                const newZoom = engine.viewport.zoom;
+
+                // Only update state if values actually changed
+                if (Math.abs(newX - lastX) > 1 || Math.abs(newZoom - lastZoom) > 0.01) {
+                    setViewportX(newX);
+                    setViewportZoom(newZoom);
+                    lastX = newX;
+                    lastZoom = newZoom;
+                }
             }
         };
 
         // Update immediately
         updateViewport();
 
-        // Set up periodic sync (for smooth updates during interaction)
-        const interval = setInterval(updateViewport, 100);
+        // Reduced frequency for performance
+        const interval = setInterval(updateViewport, 50);
 
         return () => clearInterval(interval);
     }, [isInitialized]);
@@ -170,23 +267,44 @@ const InfinitePianoRoll = ({
         return () => clearInterval(interval);
     }, [isInitialized]);
 
-    // Empty space click handler for note creation
+    // Empty space click handler with snap-aware coordinates
     const handleEmptySpaceClick = useCallback((worldX, worldY) => {
-        // Snap to grid
-        const time = Math.floor(worldX / 16) * 0.25; // 16th note grid
-        const pitchIndex = Math.floor(worldY / 20);
-        const pitch = pitchIndexToNote(pitchIndex);
+        if (!engineRef.current) return;
 
-        // Create new note
+        const { cellHeight } = { cellHeight: 20 };
+        const engine = engineRef.current;
+        const snapConfig = engine.snapModes[snapMode] || engine.snapModes['1/16'];
+
+        // Snap X to current snap mode
+        const snapPixels = snapConfig.pixels;
+        const snappedX = Math.round(worldX / snapPixels) * snapPixels;
+
+        // Convert snapped X to time in beats
+        const snapFractions = {
+            '1/1': 4,      // Whole note = 4 beats
+            '1/2': 2,      // Half note = 2 beats
+            '1/4': 1,      // Quarter note = 1 beat
+            '1/8': 0.5,    // 8th note = 0.5 beats
+            '1/16': 0.25,  // 16th note = 0.25 beats
+            '1/32': 0.125  // 32nd note = 0.125 beats
+        };
+        const beatValue = snapFractions[snapMode] || 0.25;
+        const time = (snappedX / snapPixels) * beatValue;
+
+        // Snap Y to semitone (always 20px per semitone)
+        const gridPitch = Math.round(worldY / cellHeight);
+        const midiNote = gridPitch + 21; // A0 = MIDI 21 = grid Y 0
+        const noteName = midiToNoteName(midiNote);
+
         const newNote = {
             id: Date.now(),
-            time,
-            pitch,
-            duration: 0.25, // Default quarter note
+            time: Math.max(0, time), // Ensure time >= 0
+            pitch: noteName,
+            duration: beatValue,     // Duration matches snap mode
             velocity: 100
         };
 
-        console.log('📝 Creating note:', newNote, 'onNoteAdd callback:', !!onNoteAdd);
+        console.log('📝 Creating note:', newNote, 'snap:', snapMode, 'at world:', { worldX, worldY }, 'snapped:', { snappedX, time, gridPitch });
 
         // Try provided callback first, then fallback to direct store update
         if (onNoteAdd) {
@@ -200,7 +318,7 @@ const InfinitePianoRoll = ({
         } else {
             console.warn('⚠️ No callback or store connection - note creation failed');
         }
-    }, [onNoteAdd, currentInstrumentId, activePatternId, notes, updatePatternNotes]);
+    }, [onNoteAdd, currentInstrumentId, activePatternId, notes, updatePatternNotes, snapMode]);
 
     // Piano keyboard handlers
     const handleKeyClick = useCallback((key) => {
@@ -233,23 +351,31 @@ const InfinitePianoRoll = ({
 
     const handleSnapChange = useCallback((newSnapMode) => {
         setSnapMode(newSnapMode);
+        // Update engine grid rendering
+        if (engineRef.current && isInitialized) {
+            engineRef.current.setSnapMode(newSnapMode);
+        }
         console.log('📐 Snap mode changed to:', newSnapMode);
-    }, []);
+    }, [isInitialized]);
 
-    // Note to pitch index conversion (C4 = middle)
-    const noteToPitchIndex = (note) => {
+    // Unified coordinate system: MIDI conversion functions
+    const noteNameToMidi = (noteName) => {
         const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-        const noteName = note.replace(/\d/, '');
-        const octave = parseInt(note.replace(/[^\d]/, '')) || 4;
+        const match = noteName.match(/^([A-G]#?)(\d+)$/);
+        if (!match) return 60; // Default to C4
 
-        const baseIndex = noteNames.indexOf(noteName);
-        return (octave * 12) + baseIndex;
+        const [, note, octaveStr] = match;
+        const octave = parseInt(octaveStr);
+        const noteIndex = noteNames.indexOf(note);
+
+        if (noteIndex === -1) return 60;
+        return (octave + 1) * 12 + noteIndex;
     };
 
-    const pitchIndexToNote = (index) => {
+    const midiToNoteName = (midiNote) => {
         const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-        const octave = Math.floor(index / 12);
-        const noteIndex = index % 12;
+        const octave = Math.floor(midiNote / 12) - 1;
+        const noteIndex = midiNote % 12;
         return `${noteNames[noteIndex]}${octave}`;
     };
 
@@ -258,14 +384,27 @@ const InfinitePianoRoll = ({
         const handleKeyDown = (e) => {
             if (!engineRef.current) return;
 
+            // Don't trigger shortcuts if user is typing in an input
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
             switch (e.key) {
                 case ' ':
                     e.preventDefault();
                     // Toggle playback
+                    if (engineRef.current.playhead.isPlaying) {
+                        engineRef.current.pause();
+                    } else {
+                        engineRef.current.play();
+                    }
+                    break;
+                case 'Escape':
+                    // Stop playback
+                    engineRef.current.stop();
                     break;
                 case 'Delete':
                 case 'Backspace':
                     // Delete selected notes
+                    // TODO: Implement note deletion for selected notes
                     break;
                 case '+':
                 case '=':
@@ -283,6 +422,12 @@ const InfinitePianoRoll = ({
                         engineRef.current.viewport.height / 2,
                         0.8
                     );
+                    break;
+                case 'Home':
+                    // Go to beginning
+                    engineRef.current.stop();
+                    engineRef.current.viewport.x = 0;
+                    engineRef.current.invalidateAll();
                     break;
             }
         };
@@ -345,7 +490,32 @@ const InfinitePianoRoll = ({
                     </div>
                 </div>
 
-                {/* Controls */}
+                {/* Playback Controls */}
+                <div className="piano-roll-playback">
+                    <button
+                        onClick={() => engineRef.current?.play()}
+                        title="Play (Space)"
+                        className="playback-button play"
+                    >
+                        ▶️
+                    </button>
+                    <button
+                        onClick={() => engineRef.current?.pause()}
+                        title="Pause (Space)"
+                        className="playback-button pause"
+                    >
+                        ⏸️
+                    </button>
+                    <button
+                        onClick={() => engineRef.current?.stop()}
+                        title="Stop"
+                        className="playback-button stop"
+                    >
+                        ⏹️
+                    </button>
+                </div>
+
+                {/* View Controls */}
                 <div className="piano-roll-controls">
                     <button
                         onClick={() => engineRef.current?.zoomToPoint(
@@ -384,38 +554,31 @@ const InfinitePianoRoll = ({
                 </div>
             </div>
 
-            {/* Timeline */}
-            <Timeline
-                viewportX={viewportX}
-                viewportWidth={containerRef.current?.clientWidth || 1200}
-                zoom={viewportZoom}
-                snapMode={snapMode}
-                onTimeClick={handleTimeClick}
-                onSnapChange={handleSnapChange}
-                className="piano-roll-timeline"
-            />
-
             {/* Main Content Area */}
-            <div className="piano-roll-main" style={{ display: 'flex', height: '600px' }}>
-                {/* Piano Keyboard (Left Side) */}
+            <div className="piano-roll-main" style={{ display: 'flex', height: '600px', position: 'relative' }}>
+                {/* Piano Keyboard (Left Side) - Fixed position, scales only in height */}
                 <div className="piano-roll-keyboard" style={{
-                    width: '120px',
+                    width: '80px', // Fixed width matching baseWhiteKeyWidth
                     height: '100%',
                     borderRight: '1px solid #555',
-                    overflow: 'auto',
-                    backgroundColor: '#2a2a2a'
+                    overflow: 'hidden', // No scrolling needed
+                    backgroundColor: '#2a2a2a',
+                    position: 'relative'
                 }}>
                     <PianoKeyboard
                         onKeyClick={handleKeyClick}
                         onKeyHover={handleKeyHover}
                         activeNotes={activeKeys}
                         highlightedKeys={highlightedKeys}
-                        baseKeyHeight={12}
-                        baseWhiteKeyWidth={80}
-                        baseBlackKeyWidth={50}
+                        // Fixed dimensions, only height scales
+                        baseKeyHeight={20}        // Match cellHeight from grid (20px per semitone)
+                        baseWhiteKeyWidth={80}    // Fixed width
+                        baseBlackKeyWidth={50}    // Fixed width
                         zoom={viewportZoom}
                         showLabels={true}
                         className="piano-keys"
+                        // Pass viewport offset to sync with grid scrolling
+                        viewportY={engineRef.current?.viewport.y || 0}
                     />
                 </div>
 
@@ -430,6 +593,33 @@ const InfinitePianoRoll = ({
                         overflow: 'hidden'
                     }}
                 />
+
+                {/* Timeline Overlay - Positioned above the canvas */}
+                <div style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: '80px', // Start after keyboard
+                    right: 0,
+                    height: '60px', // Timeline height
+                    zIndex: 100,
+                    pointerEvents: 'none' // Allow clicks through to canvas
+                }}>
+                    <Timeline
+                        viewportX={viewportX}
+                        viewportWidth={(containerRef.current?.clientWidth || 1200) - 80} // Subtract keyboard width
+                        zoom={viewportZoom}
+                        snapMode={snapMode}
+                        onTimeClick={handleTimeClick}
+                        onSnapChange={handleSnapChange}
+                        className="piano-roll-timeline-overlay"
+                        // Unified coordinate system parameters
+                        cellWidth={16}         // 16 pixels = 1/16 note (0.25 beats)
+                        ticksPerQuarter={480}  // Standard MIDI timing
+                        beatsPerBar={4}        // 4/4 time signature
+                        // Make timeline clicks work through overlay
+                        overlayMode={true}
+                    />
+                </div>
             </div>
 
             {/* Mode Styles */}
@@ -486,6 +676,48 @@ const InfinitePianoRoll = ({
 
                 .mode-button.active:hover {
                     background: linear-gradient(135deg, #45a049, #4CAF50);
+                }
+
+                /* Playback Controls */
+                .piano-roll-playback {
+                    display: flex;
+                    align-items: center;
+                    gap: 4px;
+                    padding: 4px 8px;
+                    background: rgba(255, 255, 255, 0.05);
+                    border-radius: 6px;
+                    border: 1px solid rgba(255, 255, 255, 0.1);
+                }
+
+                .playback-button {
+                    padding: 8px 12px;
+                    background: transparent;
+                    border: 1px solid rgba(255, 255, 255, 0.2);
+                    border-radius: 4px;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                    font-size: 16px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    min-width: 36px;
+                    height: 36px;
+                }
+
+                .playback-button:hover {
+                    background: rgba(255, 255, 255, 0.1);
+                    border-color: rgba(255, 255, 255, 0.3);
+                    transform: translateY(-1px);
+                }
+
+                .playback-button.play:hover {
+                    background: rgba(76, 175, 80, 0.2);
+                    border-color: #4CAF50;
+                }
+
+                .playback-button.stop:hover {
+                    background: rgba(244, 67, 54, 0.2);
+                    border-color: #f44336;
                 }
             `}</style>
 

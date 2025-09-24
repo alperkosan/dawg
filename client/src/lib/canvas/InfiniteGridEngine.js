@@ -4,13 +4,24 @@
 export class InfiniteGridEngine {
     constructor(options = {}) {
         this.options = {
-            cellWidth: 16,        // Step width
-            cellHeight: 20,       // Note height
-            bufferSize: 50,       // Cells to render beyond viewport
-            chunkSize: 1000,      // Notes per chunk for memory management
+            cellWidth: 16,        // Base step width (1/16 note = 16px)
+            cellHeight: 20,       // Note height (1 semitone = 20px)
+            bufferSize: 200,      // Pixels to render beyond viewport
+            chunkSize: 4,         // Time range per chunk (in beats)
             maxZoom: 4,           // Maximum zoom level
             minZoom: 0.25,        // Minimum zoom level
             ...options
+        };
+
+        // Grid snap settings
+        this.snapMode = '1/16'; // Current snap mode
+        this.snapModes = {
+            '1/1': { subdivisions: 1, pixels: 64 },   // Whole note = 64px
+            '1/2': { subdivisions: 2, pixels: 32 },   // Half note = 32px
+            '1/4': { subdivisions: 4, pixels: 16 },   // Quarter note = 16px
+            '1/8': { subdivisions: 8, pixels: 8 },    // 8th note = 8px
+            '1/16': { subdivisions: 16, pixels: 4 },  // 16th note = 4px
+            '1/32': { subdivisions: 32, pixels: 2 }   // 32nd note = 2px
         };
 
         // Canvas layers for different elements
@@ -30,12 +41,12 @@ export class InfiniteGridEngine {
             zoom: 1              // Current zoom level
         };
 
-        // Infinite space management
+        // Music timeline bounds - X starts from 0 (no negative time)
         this.world = {
-            minX: -Infinity,     // No left bound
+            minX: 0,             // Timeline starts at 0 (no negative time)
             maxX: Infinity,      // No right bound
-            minY: 0,             // Start at C0
-            maxY: 8 * 12 * this.options.cellHeight, // End at B7
+            minY: 0,             // Start at lowest note (A0)
+            maxY: 88 * this.options.cellHeight, // 88 piano keys (A0 to C8)
             chunks: new Map(),   // Loaded data chunks
             activeChunks: new Set() // Currently visible chunks
         };
@@ -55,11 +66,23 @@ export class InfiniteGridEngine {
             dragStartPos: { x: 0, y: 0 },
             dragCurrentPos: { x: 0, y: 0 },
             selectedNotes: new Set(),
-            dragOffset: { x: 0, y: 0 }
+            dragOffset: { x: 0, y: 0 },
+            // Resize system
+            isResizing: false,
+            resizeNote: null,
+            resizeStartWidth: 0
         };
 
         // Mouse mode system
         this.mouseMode = 'select'; // select, write, delete, slice
+
+        // Playhead system for audio playback visualization
+        this.playhead = {
+            position: 0,        // Current playback position in beats
+            isPlaying: false,   // Is audio currently playing
+            startTime: 0,       // When playback started (timestamp)
+            bpm: 120           // Beats per minute
+        };
 
         this.isInitialized = false;
         this.animationId = null;
@@ -72,7 +95,46 @@ export class InfiniteGridEngine {
         this.setupEventListeners();
         this.startRenderLoop();
         this.isInitialized = true;
-        console.log('🎨 Infinite Grid Engine initialized');
+
+        // Force initial chunk loading and render
+        console.log('🎨 Infinite Grid Engine initialized, loading initial chunks...');
+        this.updateVisibleChunks();
+        this.invalidateAll();
+
+        // Debug: Force render first frame and check if notes are visible
+        setTimeout(() => {
+            console.log('🎨 Force rendering first frame');
+            this.renderFrame();
+
+            // Debug: Check if any chunks have notes
+            let totalNotes = 0;
+            this.world.chunks.forEach((chunk, chunkId) => {
+                totalNotes += chunk.notes.length;
+                console.log(`🔍 Chunk ${chunkId}: ${chunk.notes.length} notes, range: ${chunk.startTime}-${chunk.endTime}`);
+            });
+
+            if (totalNotes > 0) {
+                console.log('🎯 Notes found! Checking rendering coordinates...');
+
+                // Get first note and log its screen position
+                const firstChunk = Array.from(this.world.chunks.values())[0];
+                if (firstChunk && firstChunk.notes.length > 0) {
+                    const note = firstChunk.notes[0];
+                    const x = ((note.time * this.options.cellWidth) / 0.25 * this.viewport.zoom) - this.viewport.x;
+                    const y = (note.pitch * this.options.cellHeight * this.viewport.zoom) - this.viewport.y;
+
+                    console.log('🎯 First note rendering at:', { x, y, viewport: this.viewport, note });
+
+                    // If note is far outside viewport, adjust viewport
+                    if (x < -1000 || x > this.viewport.width + 1000) {
+                        const targetViewportX = (note.time * this.options.cellWidth) / 0.25 * this.viewport.zoom;
+                        this.viewport.x = targetViewportX - 100; // Show note 100px from left edge
+                        console.log('🎯 Adjusting viewport to show notes:', { newX: this.viewport.x });
+                        this.invalidateAll();
+                    }
+                }
+            }
+        }, 200);
     }
 
     createCanvasLayers() {
@@ -128,18 +190,21 @@ export class InfiniteGridEngine {
             mouseDownPos = { x: e.clientX, y: e.clientY };
             hasMoved = false;
 
-            // Check if clicking on a note
-            const clickedNote = this.getNoteAtPosition(worldPos.worldX, worldPos.worldY);
+            // Check if clicking on a note with resize edge detection
+            const noteHit = this.getNoteAtPosition(worldPos.worldX, worldPos.worldY, true);
 
             // Handle different mouse modes
             switch (this.mouseMode) {
                 case 'select':
-                    if (clickedNote && !e.shiftKey) {
+                    if (noteHit && noteHit.isOnResizeEdge) {
+                        // Start note resizing
+                        this.startNoteResize(noteHit.note, worldPos);
+                    } else if (noteHit && !e.shiftKey) {
                         // Start note dragging (both horizontal and vertical)
-                        this.startNoteDrag(clickedNote, worldPos, e, true); // true = allow vertical drag
-                    } else if (clickedNote && e.shiftKey) {
+                        this.startNoteDrag(noteHit.note, worldPos, e, true); // true = allow vertical drag
+                    } else if (noteHit && e.shiftKey) {
                         // Multi-select notes
-                        this.toggleNoteSelection(clickedNote);
+                        this.toggleNoteSelection(noteHit.note);
                     } else {
                         // Start panning
                         isPanning = true;
@@ -150,7 +215,7 @@ export class InfiniteGridEngine {
                     break;
 
                 case 'write':
-                    if (!clickedNote) {
+                    if (!noteHit || !noteHit.note) {
                         // Create new note - do nothing on mousedown, wait for mouseup
                         // Don't start panning in write mode for empty space
                     } else {
@@ -163,19 +228,19 @@ export class InfiniteGridEngine {
                     break;
 
                 case 'delete':
-                    if (clickedNote) {
+                    if (noteHit && noteHit.note) {
                         // Delete note
                         if (this.onNoteDelete) {
-                            this.onNoteDelete(clickedNote);
+                            this.onNoteDelete(noteHit.note);
                         }
                     }
                     break;
 
                 case 'slice':
-                    if (clickedNote) {
+                    if (noteHit && noteHit.note) {
                         // Slice note at position
                         if (this.onNoteSlice) {
-                            this.onNoteSlice(clickedNote, worldPos.worldX);
+                            this.onNoteSlice(noteHit.note, worldPos.worldX);
                         }
                     }
                     break;
@@ -189,7 +254,7 @@ export class InfiniteGridEngine {
             }
         });
 
-        // Mouse move - handle dragging or panning
+        // Mouse move - handle dragging, resizing or panning
         this.container.addEventListener('mousemove', (e) => {
             const rect = this.container.getBoundingClientRect();
             const screenX = e.clientX - rect.left;
@@ -202,6 +267,9 @@ export class InfiniteGridEngine {
             if (this.dragDrop.isDragging) {
                 // Update note drag
                 this.updateNoteDrag(screenX, screenY);
+            } else if (this.dragDrop.isResizing) {
+                // Update note resize
+                this.updateNoteResize(screenX, screenY);
             } else if (isPanning) {
                 // Handle panning
                 const deltaX = e.clientX - lastX;
@@ -210,17 +278,19 @@ export class InfiniteGridEngine {
                 lastX = e.clientX;
                 lastY = e.clientY;
             } else {
-                // Update hover cursor based on mode
+                // Update hover cursor based on mode and position
                 const worldPos = this.screenToWorld(screenX, screenY);
-                const hoveredNote = this.getNoteAtPosition(worldPos.worldX, worldPos.worldY);
-                this.updateCursor(hoveredNote);
+                const noteHit = this.getNoteAtPosition(worldPos.worldX, worldPos.worldY, true);
+                this.updateCursor(noteHit);
             }
         });
 
-        // Mouse up - finish dragging or panning
+        // Mouse up - finish dragging, resizing or panning
         this.container.addEventListener('mouseup', (e) => {
             if (this.dragDrop.isDragging) {
                 this.finishNoteDrag();
+            } else if (this.dragDrop.isResizing) {
+                this.finishNoteResize();
             } else if (isPanning) {
                 isPanning = false;
                 this.container.style.cursor = 'default';
@@ -260,34 +330,46 @@ export class InfiniteGridEngine {
         }
     }
 
-    // Pan the viewport
+    // Pan the viewport with bounds checking
     pan(deltaX, deltaY) {
-        this.viewport.x -= deltaX;
-        this.viewport.y -= deltaY;
+        // Update viewport position
+        const newX = this.viewport.x - deltaX;
+        const newY = this.viewport.y - deltaY;
 
-        // No bounds checking - infinite scroll!
+        // Apply bounds: X >= 0 (no negative time), Y can be any value
+        this.viewport.x = Math.max(this.world.minX, newX);
+        this.viewport.y = newY; // Y can scroll freely
+
         this.updateVisibleChunks();
         this.invalidateAll();
     }
 
-    // Dynamic chunk loading system
+    // Dynamic chunk loading system - time-based chunks
     updateVisibleChunks() {
-        const chunkSize = this.options.chunkSize;
-        const bufferSize = this.options.bufferSize;
+        const chunkSizeBeats = this.options.chunkSize; // Chunk size in beats
+        const bufferPixels = this.options.bufferSize;
 
-        // Calculate visible chunk range
-        const startChunkX = Math.floor((this.viewport.x - bufferSize) / chunkSize);
-        const endChunkX = Math.ceil((this.viewport.x + this.viewport.width + bufferSize) / chunkSize);
+        // Convert viewport pixels to time (beats)
+        const snapConfig = this.snapModes['1/16'] || { pixels: 4 };
+        const pixelsPerBeat = (snapConfig.pixels * 4) * this.viewport.zoom; // 16px per 1/16, 4 sixteenths per beat
+
+        const viewportStartTime = this.viewport.x / pixelsPerBeat;
+        const viewportEndTime = (this.viewport.x + this.viewport.width) / pixelsPerBeat;
+        const bufferTime = bufferPixels / pixelsPerBeat;
+
+        // Calculate visible chunk range in beats
+        const startChunkIndex = Math.floor((viewportStartTime - bufferTime) / chunkSizeBeats);
+        const endChunkIndex = Math.ceil((viewportEndTime + bufferTime) / chunkSizeBeats);
 
         const newActiveChunks = new Set();
 
         // Load visible chunks
-        for (let chunkX = startChunkX; chunkX <= endChunkX; chunkX++) {
-            const chunkId = `chunk_${chunkX}`;
+        for (let chunkIndex = startChunkIndex; chunkIndex <= endChunkIndex; chunkIndex++) {
+            const chunkId = `chunk_${chunkIndex}`;
             newActiveChunks.add(chunkId);
 
             if (!this.world.chunks.has(chunkId)) {
-                this.loadChunk(chunkX);
+                this.loadTimeChunk(chunkIndex);
             }
         }
 
@@ -301,28 +383,35 @@ export class InfiniteGridEngine {
         this.world.activeChunks = newActiveChunks;
     }
 
-    // Load chunk data (notes in specific range)
-    loadChunk(chunkX) {
-        const chunkId = `chunk_${chunkX}`;
-        const startTime = chunkX * this.options.chunkSize;
-        const endTime = (chunkX + 1) * this.options.chunkSize;
+    // Load time-based chunk data (notes in specific time range)
+    loadTimeChunk(chunkIndex) {
+        const chunkId = `chunk_${chunkIndex}`;
+        const chunkSizeBeats = this.options.chunkSize;
 
-        // Simulate loading notes in this time range
+        const startTime = Math.max(0, chunkIndex * chunkSizeBeats); // Don't go below 0
+        const endTime = (chunkIndex + 1) * chunkSizeBeats;
+
+        // Load notes in this time range
+        const notes = this.getNotesInRange(startTime, endTime);
+
         const chunk = {
             startTime,
             endTime,
-            notes: this.getNotesInRange(startTime, endTime),
+            notes,
             loaded: true
         };
 
         this.world.chunks.set(chunkId, chunk);
-        console.log(`📦 Loaded chunk ${chunkId}: ${chunk.notes.length} notes`);
+    }
+
+    // Legacy method for backwards compatibility
+    loadChunk(chunkIndex) {
+        this.loadTimeChunk(chunkIndex);
     }
 
     // Unload distant chunk
     unloadChunk(chunkId) {
         this.world.chunks.delete(chunkId);
-        console.log(`🗑️ Unloaded chunk ${chunkId}`);
     }
 
     // Get notes in specific time range (connect to your data store)
@@ -334,9 +423,10 @@ export class InfiniteGridEngine {
 
     // === DRAG & DROP METHODS ===
 
-    // Find note at world position
-    getNoteAtPosition(worldX, worldY) {
+    // Find note at world position with resize edge detection
+    getNoteAtPosition(worldX, worldY, checkResizeEdge = false) {
         const { cellWidth, cellHeight } = this.options;
+        const resizeEdgeWidth = 8; // 8 pixels from right edge for resize detection
 
         // Check all active chunks for notes
         for (let chunkId of this.world.activeChunks) {
@@ -344,19 +434,33 @@ export class InfiniteGridEngine {
             if (!chunk || !chunk.loaded) continue;
 
             for (let note of chunk.notes) {
-                const noteX = note.time * cellWidth;
+                // Convert time to world X (time * cellWidth / 0.25 because 0.25 = 16th note)
+                const noteX = (note.time * cellWidth) / 0.25;
                 const noteY = note.pitch * cellHeight;
-                const noteW = (note.duration || 0.25) * cellWidth;
+                const noteW = ((note.duration || 0.25) * cellWidth) / 0.25;
                 const noteH = cellHeight;
 
                 // Check if world position is inside note bounds
                 if (worldX >= noteX && worldX <= noteX + noteW &&
                     worldY >= noteY && worldY <= noteY + noteH) {
+
+                    // If checking resize edge, return additional info
+                    if (checkResizeEdge) {
+                        const distanceFromRightEdge = (noteX + noteW) - worldX;
+                        const isOnResizeEdge = distanceFromRightEdge <= resizeEdgeWidth / this.viewport.zoom;
+
+                        return {
+                            note,
+                            isOnResizeEdge,
+                            noteRect: { x: noteX, y: noteY, width: noteW, height: noteH }
+                        };
+                    }
+
                     return note;
                 }
             }
         }
-        return null;
+        return checkResizeEdge ? null : null;
     }
 
     // Start dragging a note
@@ -367,8 +471,8 @@ export class InfiniteGridEngine {
         this.dragDrop.dragCurrentPos = { ...worldPos };
         this.dragDrop.allowVertical = allowVertical; // Store vertical drag permission
 
-        // Calculate drag offset from note origin
-        const noteX = note.time * this.options.cellWidth;
+            // Calculate drag offset from note origin
+        const noteX = (note.time * this.options.cellWidth) / 0.25; // Convert beats to pixels
         const noteY = note.pitch * this.options.cellHeight;
         this.dragDrop.dragOffset = {
             x: worldPos.worldX - noteX,
@@ -385,37 +489,96 @@ export class InfiniteGridEngine {
         console.log(`🎵 Started dragging note: ${note.id} (vertical: ${allowVertical})`);
     }
 
-    // Update note drag position
+    // Start resizing a note
+    startNoteResize(note, worldPos) {
+        this.dragDrop.isResizing = true;
+        this.dragDrop.resizeNote = note;
+        this.dragDrop.dragStartPos = { ...worldPos };
+        this.dragDrop.resizeStartWidth = note.duration || 0.25;
+
+        this.container.style.cursor = 'ew-resize';
+        console.log(`📏 Started resizing note: ${note.id}`);
+    }
+
+    // Update note drag position with snap-aware positioning
     updateNoteDrag(screenX, screenY) {
         if (!this.dragDrop.isDragging) return;
 
         const worldPos = this.screenToWorld(screenX, screenY);
         this.dragDrop.dragCurrentPos = worldPos;
 
-        // Snap to grid
-        const { cellWidth, cellHeight } = this.options;
-        const snappedTime = Math.round((worldPos.worldX - this.dragDrop.dragOffset.x) / cellWidth) * (cellWidth / cellWidth);
-        const snappedPitch = Math.round((worldPos.worldY - this.dragDrop.dragOffset.y) / cellHeight);
+        // Snap to current grid mode
+        const { cellHeight } = this.options;
+        const snapConfig = this.snapModes[this.snapMode] || this.snapModes['1/16'];
+
+        // Snap X to current snap mode
+        const adjustedX = worldPos.worldX - this.dragDrop.dragOffset.x;
+        const snappedX = Math.round(adjustedX / snapConfig.pixels) * snapConfig.pixels;
+
+        // Snap Y to semitone
+        const adjustedY = worldPos.worldY - this.dragDrop.dragOffset.y;
+        const snappedY = Math.round(adjustedY / cellHeight) * cellHeight;
+
+        // Store snapped positions for visual feedback
+        this.dragDrop.snappedPos = {
+            x: Math.max(0, snappedX), // Don't allow negative time
+            y: snappedY
+        };
 
         // Update visual feedback
         this.invalidateLayer('selection');
     }
 
-    // Finish note drag
+    // Update note resize
+    updateNoteResize(screenX, screenY) {
+        if (!this.dragDrop.isResizing) return;
+
+        const worldPos = this.screenToWorld(screenX, screenY);
+        const { cellWidth } = this.options;
+        const snapConfig = this.snapModes[this.snapMode] || this.snapModes['1/16'];
+
+        // Calculate new width based on mouse position
+        const noteStartX = (this.dragDrop.resizeNote.time * cellWidth) / 0.25;
+        const newWidth = Math.max(snapConfig.pixels, worldPos.worldX - noteStartX);
+
+        // Snap new width to grid
+        const snappedWidth = Math.round(newWidth / snapConfig.pixels) * snapConfig.pixels;
+
+        // Store snapped width for visual feedback
+        this.dragDrop.newWidth = snappedWidth;
+
+        // Update visual feedback
+        this.invalidateLayer('selection');
+    }
+
+    // Finish note drag with snap-aware positioning
     finishNoteDrag() {
         if (!this.dragDrop.isDragging) return;
 
-        const { cellWidth, cellHeight } = this.options;
-        const worldPos = this.dragDrop.dragCurrentPos;
+        const { cellHeight } = this.options;
         const originalNote = this.dragDrop.draggedNote;
+        const snapConfig = this.snapModes[this.snapMode] || this.snapModes['1/16'];
 
-        // Calculate new position with grid snapping
-        const newTime = Math.max(0, Math.round((worldPos.worldX - this.dragDrop.dragOffset.x) / cellWidth) * 0.25);
+        // Use pre-calculated snapped position
+        const snappedPos = this.dragDrop.snappedPos || { x: 0, y: 0 };
+
+        // Convert snapped X to time in beats based on current snap mode
+        const snapFractions = {
+            '1/1': 4,      // Whole note = 4 beats
+            '1/2': 2,      // Half note = 2 beats
+            '1/4': 1,      // Quarter note = 1 beat
+            '1/8': 0.5,    // 8th note = 0.5 beats
+            '1/16': 0.25,  // 16th note = 0.25 beats
+            '1/32': 0.125  // 32nd note = 0.125 beats
+        };
+        const beatValue = snapFractions[this.snapMode] || 0.25;
+        const newTime = Math.max(0, (snappedPos.x / snapConfig.pixels) * beatValue);
 
         // Only change pitch if vertical dragging is allowed
         let newPitch = originalNote.pitch;
         if (this.dragDrop.allowVertical) {
-            newPitch = Math.max(0, Math.round((worldPos.worldY - this.dragDrop.dragOffset.y) / cellHeight));
+            const gridPitch = snappedPos.y / cellHeight;
+            newPitch = Math.max(0, gridPitch);
         }
 
         // Call external callback for note update
@@ -431,9 +594,44 @@ export class InfiniteGridEngine {
         this.dragDrop.isDragging = false;
         this.dragDrop.draggedNote = null;
         this.dragDrop.allowVertical = false;
+        this.dragDrop.snappedPos = null;
         this.container.style.cursor = 'default';
 
-        console.log('✅ Finished dragging note to:', { time: newTime, pitch: newPitch, vertical: this.dragDrop.allowVertical });
+        console.log('✅ Finished dragging note to:', { time: newTime, pitch: newPitch, snap: this.snapMode });
+    }
+
+    // Finish note resize with snap-aware sizing
+    finishNoteResize() {
+        if (!this.dragDrop.isResizing) return;
+
+        const originalNote = this.dragDrop.resizeNote;
+        const snapConfig = this.snapModes[this.snapMode] || this.snapModes['1/16'];
+        const newWidthPixels = this.dragDrop.newWidth || snapConfig.pixels;
+
+        // Convert width pixels to duration in beats
+        const snapFractions = {
+            '1/1': 4,      // Whole note = 4 beats
+            '1/2': 2,      // Half note = 2 beats
+            '1/4': 1,      // Quarter note = 1 beat
+            '1/8': 0.5,    // 8th note = 0.5 beats
+            '1/16': 0.25,  // 16th note = 0.25 beats
+            '1/32': 0.125  // 32nd note = 0.125 beats
+        };
+        const beatValue = snapFractions[this.snapMode] || 0.25;
+        const newDuration = Math.max(beatValue, (newWidthPixels / snapConfig.pixels) * beatValue);
+
+        // Call external callback for note update
+        if (this.onNoteResize) {
+            this.onNoteResize(originalNote, { duration: newDuration });
+        }
+
+        // Reset resize state
+        this.dragDrop.isResizing = false;
+        this.dragDrop.resizeNote = null;
+        this.dragDrop.newWidth = null;
+        this.container.style.cursor = 'default';
+
+        console.log('✅ Finished resizing note to duration:', newDuration, 'beats');
     }
 
     // Toggle note selection
@@ -455,19 +653,25 @@ export class InfiniteGridEngine {
     }
 
     // Update cursor based on current mode and hovered element
-    updateCursor(hoveredNote) {
+    updateCursor(noteHit) {
         switch (this.mouseMode) {
             case 'select':
-                this.container.style.cursor = hoveredNote ? 'pointer' : 'default';
+                if (noteHit && noteHit.isOnResizeEdge) {
+                    this.container.style.cursor = 'ew-resize';
+                } else if (noteHit && noteHit.note) {
+                    this.container.style.cursor = 'pointer';
+                } else {
+                    this.container.style.cursor = 'default';
+                }
                 break;
             case 'write':
-                this.container.style.cursor = hoveredNote ? 'not-allowed' : 'crosshair';
+                this.container.style.cursor = (noteHit && noteHit.note) ? 'not-allowed' : 'crosshair';
                 break;
             case 'delete':
-                this.container.style.cursor = hoveredNote ? 'pointer' : 'default';
+                this.container.style.cursor = (noteHit && noteHit.note) ? 'pointer' : 'default';
                 break;
             case 'slice':
-                this.container.style.cursor = hoveredNote ? 'text' : 'default';
+                this.container.style.cursor = (noteHit && noteHit.note) ? 'text' : 'default';
                 break;
             default:
                 this.container.style.cursor = 'default';
@@ -534,49 +738,112 @@ export class InfiniteGridEngine {
         this.performance.renderTime = performance.now() - startTime;
     }
 
-    // Render grid background
+    // Set snap mode for grid rendering
+    setSnapMode(mode) {
+        if (this.snapModes[mode]) {
+            this.snapMode = mode;
+            this.invalidateLayer('background');
+            console.log(`📐 Grid snap mode changed to: ${mode}`);
+        }
+    }
+
+    // Render dynamic grid background based on snap mode
     renderBackground() {
         const ctx = this.layers.background.ctx;
-        const { cellWidth, cellHeight } = this.options;
+        const { cellHeight } = this.options;
         const { x, y, width, height, zoom } = this.viewport;
 
-        ctx.strokeStyle = '#333333';
-        ctx.lineWidth = 0.5;
+        // Get current snap configuration
+        const snapConfig = this.snapModes[this.snapMode] || this.snapModes['1/16'];
+        const snapPixels = snapConfig.pixels;
 
-        // Draw vertical lines (time grid)
-        const scaledCellWidth = cellWidth * zoom;
-        const startCol = Math.floor(x / scaledCellWidth);
-        const endCol = Math.ceil((x + width) / scaledCellWidth);
+        ctx.clearRect(0, 0, width, height);
 
-        for (let col = startCol; col <= endCol; col++) {
-            const lineX = col * scaledCellWidth - x;
-            ctx.beginPath();
-            ctx.moveTo(lineX, 0);
-            ctx.lineTo(lineX, height);
-            ctx.stroke();
+        // Draw vertical grid lines (time/beat grid) based on snap mode
+        const scaledSnapWidth = snapPixels * zoom;
+
+        // Major grid lines (beats) - every 4 subdivisions for most modes
+        ctx.strokeStyle = '#444444';
+        ctx.lineWidth = 1;
+
+        const majorInterval = snapPixels * 4; // Every beat (4 subdivisions)
+        const scaledMajorWidth = majorInterval * zoom;
+        const startMajorCol = Math.floor(x / scaledMajorWidth);
+        const endMajorCol = Math.ceil((x + width) / scaledMajorWidth);
+
+        for (let col = startMajorCol; col <= endMajorCol; col++) {
+            const lineX = col * scaledMajorWidth - x;
+            if (lineX >= 0 && lineX <= width) {
+                ctx.beginPath();
+                ctx.moveTo(lineX, 0);
+                ctx.lineTo(lineX, height);
+                ctx.stroke();
+            }
         }
 
-        // Draw horizontal lines (pitch grid)
+        // Minor grid lines (snap subdivisions)
+        ctx.strokeStyle = '#2a2a2a';
+        ctx.lineWidth = 0.5;
+
+        const startCol = Math.floor(x / scaledSnapWidth);
+        const endCol = Math.ceil((x + width) / scaledSnapWidth);
+
+        for (let col = startCol; col <= endCol; col++) {
+            const lineX = col * scaledSnapWidth - x;
+            if (lineX >= 0 && lineX <= width) {
+                // Skip major grid line positions
+                const isMajorLine = (col * snapPixels) % majorInterval === 0;
+                if (!isMajorLine) {
+                    ctx.beginPath();
+                    ctx.moveTo(lineX, 0);
+                    ctx.lineTo(lineX, height);
+                    ctx.stroke();
+                }
+            }
+        }
+
+        // Draw horizontal lines (pitch grid) - always semitones
+        ctx.strokeStyle = '#2a2a2a';
+        ctx.lineWidth = 0.5;
+
         const scaledCellHeight = cellHeight * zoom;
         const startRow = Math.floor(y / scaledCellHeight);
         const endRow = Math.ceil((y + height) / scaledCellHeight);
 
         for (let row = startRow; row <= endRow; row++) {
             const lineY = row * scaledCellHeight - y;
-            ctx.beginPath();
-            ctx.moveTo(0, lineY);
-            ctx.lineTo(width, lineY);
-            ctx.stroke();
+            if (lineY >= 0 && lineY <= height) {
+                // Emphasize octave lines (every 12 semitones)
+                const isOctave = row % 12 === 0;
+                ctx.strokeStyle = isOctave ? '#444444' : '#2a2a2a';
+                ctx.lineWidth = isOctave ? 1 : 0.5;
+
+                ctx.beginPath();
+                ctx.moveTo(0, lineY);
+                ctx.lineTo(width, lineY);
+                ctx.stroke();
+            }
         }
     }
 
-    // Render notes from visible chunks
+    // Get note color based on velocity (0-127)
+    getNoteColor(velocity = 100) {
+        // Normalize velocity to 0-1 range
+        const normalizedVelocity = Math.max(0, Math.min(127, velocity)) / 127;
+
+        // Color scheme: Dark to bright green based on velocity
+        const baseHue = 120; // Green hue
+        const saturation = 70 + (normalizedVelocity * 30); // 70-100% saturation
+        const lightness = 35 + (normalizedVelocity * 25);  // 35-60% lightness
+
+        return `hsl(${baseHue}, ${saturation}%, ${lightness}%)`;
+    }
+
+    // Render notes from visible chunks with velocity-based colors
     renderNotes() {
         const ctx = this.layers.notes.ctx;
         const { cellWidth, cellHeight } = this.options;
         const { zoom } = this.viewport;
-
-        ctx.fillStyle = '#4CAF50';
 
         let totalNotes = 0;
         let renderedNotes = 0;
@@ -585,35 +852,124 @@ export class InfiniteGridEngine {
         this.world.activeChunks.forEach(chunkId => {
             const chunk = this.world.chunks.get(chunkId);
             if (!chunk || !chunk.loaded) {
-                console.log(`🎨 Chunk ${chunkId} not loaded`);
                 return;
             }
 
-            console.log(`🎨 Rendering chunk ${chunkId} with ${chunk.notes.length} notes`);
             totalNotes += chunk.notes.length;
 
             chunk.notes.forEach(note => {
-                const x = (note.time * cellWidth * zoom) - this.viewport.x;
+                // Convert time to pixels: time (in beats) * pixels per 16th note / 0.25
+                const x = ((note.time * cellWidth) / 0.25 * zoom) - this.viewport.x;
                 const y = (note.pitch * cellHeight * zoom) - this.viewport.y;
-                const w = (note.duration || 0.25) * cellWidth * zoom;
+                const w = ((note.duration || 0.25) * cellWidth / 0.25) * zoom;
                 const h = cellHeight * zoom - 1;
 
                 // Only render if visible
                 if (x + w >= 0 && x <= this.viewport.width &&
                     y + h >= 0 && y <= this.viewport.height) {
+
+                    // Set color based on velocity
+                    const velocity = note.velocity || 100;
+                    ctx.fillStyle = this.getNoteColor(velocity);
+
+                    // Draw main note body
                     ctx.fillRect(x, y, w, h);
+
+                    // Draw subtle border for better definition
+                    ctx.strokeStyle = 'rgba(0, 0, 0, 0.2)';
+                    ctx.lineWidth = 0.5;
+                    ctx.strokeRect(x, y, w, h);
+
+                    // Draw velocity indicator (small bar at left edge)
+                    const velocityHeight = (velocity / 127) * h;
+                    ctx.fillStyle = `rgba(255, 255, 255, ${0.2 + (velocity / 127) * 0.3})`;
+                    ctx.fillRect(x, y + h - velocityHeight, 2, velocityHeight);
+
                     renderedNotes++;
-                    console.log(`🎨 Rendered note at (${x.toFixed(1)}, ${y.toFixed(1)}) size ${w.toFixed(1)}x${h.toFixed(1)}`);
+                    // console.log(`🎨 Rendered note at (${x.toFixed(1)}, ${y.toFixed(1)}) size ${w.toFixed(1)}x${h.toFixed(1)}, velocity: ${velocity}`);
                 }
             });
         });
 
-        console.log(`🎨 renderNotes: ${totalNotes} total, ${renderedNotes} rendered, ${this.world.activeChunks.size} active chunks`);
+        // console.log(`🎨 renderNotes: ${totalNotes} total, ${renderedNotes} rendered, ${this.world.activeChunks.size} active chunks`);
     }
 
-    // Render playhead
+    // Playhead controls
+    play() {
+        if (!this.playhead.isPlaying) {
+            this.playhead.isPlaying = true;
+            this.playhead.startTime = performance.now();
+            console.log('▶️ Playback started at position:', this.playhead.position);
+        }
+    }
+
+    pause() {
+        if (this.playhead.isPlaying) {
+            this.playhead.isPlaying = false;
+            console.log('⏸️ Playback paused at position:', this.playhead.position);
+        }
+    }
+
+    stop() {
+        this.playhead.isPlaying = false;
+        this.playhead.position = 0;
+        console.log('⏹️ Playback stopped');
+    }
+
+    setPlayheadPosition(position) {
+        this.playhead.position = Math.max(0, position);
+        this.playhead.startTime = performance.now();
+        this.invalidateLayer('playhead');
+    }
+
+    // Render playhead - the vertical line showing current play position
     renderPlayhead() {
-        // Implementation for playhead rendering
+        const ctx = this.layers.playhead.ctx;
+        const { zoom } = this.viewport;
+
+        // Clear playhead layer
+        ctx.clearRect(0, 0, this.viewport.width, this.viewport.height);
+
+        // Update playhead position if playing
+        if (this.playhead.isPlaying) {
+            const currentTime = performance.now();
+            const elapsedSeconds = (currentTime - this.playhead.startTime) / 1000;
+            const elapsedBeats = (elapsedSeconds * this.playhead.bpm) / 60;
+            this.playhead.position += elapsedBeats * 0.016; // Rough frame compensation
+            this.playhead.startTime = currentTime;
+        }
+
+        // Convert playhead position (beats) to screen X coordinate
+        const snapConfig = this.snapModes['1/16'] || { pixels: 4 };
+        const playheadX = (this.playhead.position / 0.25) * snapConfig.pixels * zoom - this.viewport.x;
+
+        // Only draw if playhead is visible
+        if (playheadX >= 0 && playheadX <= this.viewport.width) {
+            // Draw playhead line
+            ctx.strokeStyle = '#FF6B6B';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([]);
+
+            ctx.beginPath();
+            ctx.moveTo(playheadX, 0);
+            ctx.lineTo(playheadX, this.viewport.height);
+            ctx.stroke();
+
+            // Draw playhead triangle at top
+            ctx.fillStyle = '#FF6B6B';
+            ctx.beginPath();
+            ctx.moveTo(playheadX - 6, 0);
+            ctx.lineTo(playheadX + 6, 0);
+            ctx.lineTo(playheadX, 12);
+            ctx.closePath();
+            ctx.fill();
+
+            // Draw time display
+            const timeText = `${this.playhead.position.toFixed(2)}`;
+            ctx.fillStyle = '#FF6B6B';
+            ctx.font = '10px Arial';
+            ctx.fillText(timeText, playheadX + 8, 10);
+        }
     }
 
     // Render selection
@@ -634,7 +990,8 @@ export class InfiniteGridEngine {
                 // Check if note is selected
                 if (!this.dragDrop.selectedNotes.has(note.id)) return;
 
-                let noteX = note.time * cellWidth;
+                // Convert time to world coordinates
+                let noteX = (note.time * cellWidth) / 0.25; // time in beats * pixels per 16th
                 let noteY = note.pitch * cellHeight;
 
                 // If this note is being dragged, use drag position
@@ -650,7 +1007,7 @@ export class InfiniteGridEngine {
 
                 const x = (noteX * zoom) - this.viewport.x;
                 const y = (noteY * zoom) - this.viewport.y;
-                const w = (note.duration || 0.25) * cellWidth * zoom;
+                const w = ((note.duration || 0.25) * cellWidth / 0.25) * zoom;
                 const h = cellHeight * zoom - 1;
 
                 // Only render if visible
@@ -668,6 +1025,22 @@ export class InfiniteGridEngine {
                     if (this.dragDrop.isDragging && this.dragDrop.draggedNote?.id === note.id) {
                         ctx.fillStyle = 'rgba(255, 215, 0, 0.3)';
                         ctx.fillRect(x, y, w, h);
+                    }
+
+                    // Resize ghost effect
+                    if (this.dragDrop.isResizing && this.dragDrop.resizeNote?.id === note.id && this.dragDrop.newWidth) {
+                        const newW = this.dragDrop.newWidth * zoom;
+
+                        // Draw resize preview
+                        ctx.strokeStyle = '#FFD700';
+                        ctx.lineWidth = 2;
+                        ctx.setLineDash([3, 3]);
+                        ctx.strokeRect(x, y, newW, h);
+                        ctx.setLineDash([]);
+
+                        // Draw resize handle
+                        ctx.fillStyle = '#FFD700';
+                        ctx.fillRect(x + newW - 2, y, 4, h);
                     }
                 }
             });

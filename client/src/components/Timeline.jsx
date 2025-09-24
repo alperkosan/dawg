@@ -10,18 +10,21 @@ const Timeline = ({
     snapMode = '1/16',
     onTimeClick,
     onSnapChange,
-    className = ""
+    className = "",
+    cellWidth = 16,  // Grid cell width for alignment
+    overlayMode = false  // New prop for overlay positioning
 }) => {
-    // Convert pixels to musical time
-    const pixelsPerTick = zoom * (16 / 60); // 16px per 1/32 note = 60 ticks
-    const pixelsPerBeat = ticksPerQuarter * pixelsPerTick;
+    // Convert pixels to musical time - aligned with grid engine
+    // cellWidth = pixels per 16th note (0.25 beats)
+    const pixelsPerSixteenth = cellWidth * zoom;
+    const pixelsPerBeat = pixelsPerSixteenth * 4; // 4 sixteenths per beat
     const pixelsPerBar = beatsPerBar * pixelsPerBeat;
 
-    // Calculate visible time range
-    const startTick = Math.floor(viewportX / pixelsPerTick);
-    const endTick = Math.ceil((viewportX + viewportWidth) / pixelsPerTick);
-    const startBar = Math.floor(startTick / (ticksPerQuarter * beatsPerBar));
-    const endBar = Math.ceil(endTick / (ticksPerQuarter * beatsPerBar));
+    // Calculate visible time range based on beats (not ticks)
+    const startBeat = Math.floor(viewportX / pixelsPerBeat);
+    const endBeat = Math.ceil((viewportX + viewportWidth) / pixelsPerBeat);
+    const startBar = Math.floor(startBeat / beatsPerBar);
+    const endBar = Math.ceil(endBeat / beatsPerBar);
 
     // Snap mode options
     const snapModes = [
@@ -40,18 +43,17 @@ const Timeline = ({
 
         // Bar markers (major)
         for (let bar = startBar - 1; bar <= endBar + 1; bar++) {
-            const barTick = bar * ticksPerQuarter * beatsPerBar;
-            const x = barTick * pixelsPerTick - viewportX;
+            const barBeat = bar * beatsPerBar;
+            const x = barBeat * pixelsPerBeat - viewportX;
 
             if (x >= -100 && x <= viewportWidth + 100) {
                 markerList.push({
                     type: 'bar',
                     x,
                     label: `${bar + 1}`,
-                    tick: barTick,
+                    beat: barBeat,
                     bar: bar + 1,
-                    beat: 1,
-                    tickInBeat: 0
+                    barBeat: 1
                 });
             }
         }
@@ -61,34 +63,32 @@ const Timeline = ({
             for (let beat = 1; beat <= beatsPerBar; beat++) {
                 if (beat === 1) continue; // Skip first beat (already marked as bar)
 
-                const beatTick = (bar * ticksPerQuarter * beatsPerBar) + ((beat - 1) * ticksPerQuarter);
-                const x = beatTick * pixelsPerTick - viewportX;
+                const totalBeat = (bar * beatsPerBar) + (beat - 1);
+                const x = totalBeat * pixelsPerBeat - viewportX;
 
                 if (x >= -50 && x <= viewportWidth + 50) {
                     markerList.push({
                         type: 'beat',
                         x,
                         label: `${beat}`,
-                        tick: beatTick,
+                        beat: totalBeat,
                         bar: bar + 1,
-                        beat,
-                        tickInBeat: 0
+                        barBeat: beat
                     });
                 }
             }
         }
 
         return markerList;
-    }, [viewportX, viewportWidth, zoom, startBar, endBar, pixelsPerTick, ticksPerQuarter, beatsPerBar]);
+    }, [viewportX, viewportWidth, zoom, startBar, endBar, pixelsPerBeat, ticksPerQuarter, beatsPerBar]);
 
-    // Convert tick to Bar:Beat:Tick format
-    const formatTime = (tick) => {
-        const totalBeats = Math.floor(tick / ticksPerQuarter);
-        const bar = Math.floor(totalBeats / beatsPerBar) + 1;
-        const beat = (totalBeats % beatsPerBar) + 1;
-        const tickInBeat = tick % ticksPerQuarter;
+    // Convert beat position to Bar:Beat format
+    const formatTime = (beatPosition) => {
+        const bar = Math.floor(beatPosition / beatsPerBar) + 1;
+        const beat = (beatPosition % beatsPerBar) + 1;
+        const sixteenth = Math.floor((beatPosition % 1) * 4) + 1;
 
-        return `${bar}:${beat}:${String(tickInBeat).padStart(3, '0')}`;
+        return `${bar}:${beat}:${sixteenth}`;
     };
 
     const handleTimelineClick = (e) => {
@@ -97,62 +97,81 @@ const Timeline = ({
         const rect = e.currentTarget.getBoundingClientRect();
         const clickX = e.clientX - rect.left;
         const worldX = clickX + viewportX;
-        const clickTick = Math.round(worldX / pixelsPerTick);
+        const clickBeat = worldX / pixelsPerBeat;
 
-        // Snap to current snap mode
-        const currentSnapMode = snapModes.find(mode => mode.name === snapMode);
-        const snappedTick = Math.round(clickTick / currentSnapMode.ticks) * currentSnapMode.ticks;
+        // Snap to current snap mode (convert to beat fractions)
+        const snapFractions = {
+            '1/1': 1,
+            '1/2': 0.5,
+            '1/4': 0.25,
+            '1/8': 0.125,
+            '1/16': 0.0625,
+            '1/32': 0.03125
+        };
+        const snapFraction = snapFractions[snapMode] || 0.0625;
+        const snappedBeat = Math.round(clickBeat / snapFraction) * snapFraction;
 
         onTimeClick({
-            tick: snappedTick,
-            time: formatTime(snappedTick),
-            bar: Math.floor(snappedTick / (ticksPerQuarter * beatsPerBar)) + 1,
-            beat: Math.floor((snappedTick % (ticksPerQuarter * beatsPerBar)) / ticksPerQuarter) + 1,
-            tickInBeat: snappedTick % ticksPerQuarter
+            beat: snappedBeat,
+            time: formatTime(snappedBeat),
+            bar: Math.floor(snappedBeat / beatsPerBar) + 1,
+            barBeat: (snappedBeat % beatsPerBar) + 1,
+            sixteenth: Math.floor((snappedBeat % 1) * 4) + 1
         });
     };
 
     return (
-        <div className={`timeline ${className}`}>
-            {/* Timeline Header with Controls */}
-            <div className="timeline-header">
-                <div className="time-display">
-                    <span className="current-time">
-                        {formatTime(Math.round(viewportX / pixelsPerTick))}
-                    </span>
-                </div>
+        <div className={`timeline ${className}`} style={{
+            ...(overlayMode && {
+                background: 'rgba(51, 51, 51, 0.9)',
+                backdropFilter: 'blur(4px)',
+                borderBottom: '1px solid rgba(85, 85, 85, 0.8)'
+            })
+        }}>
+            {/* Timeline Header with Controls - Hide in overlay mode */}
+            {!overlayMode && (
+                <div className="timeline-header">
+                    <div className="time-display">
+                        <span className="current-time">
+                            {formatTime(viewportX / pixelsPerBeat)}
+                        </span>
+                    </div>
 
-                <div className="snap-controls">
-                    <label>Snap:</label>
-                    <select
-                        value={snapMode}
-                        onChange={(e) => onSnapChange?.(e.target.value)}
-                        className="snap-selector"
-                    >
-                        {snapModes.map(mode => (
-                            <option key={mode.name} value={mode.name}>
-                                {mode.label} ({mode.name})
-                            </option>
-                        ))}
-                    </select>
-                </div>
+                    <div className="snap-controls">
+                        <label>Snap:</label>
+                        <select
+                            value={snapMode}
+                            onChange={(e) => onSnapChange?.(e.target.value)}
+                            className="snap-selector"
+                        >
+                            {snapModes.map(mode => (
+                                <option key={mode.name} value={mode.name}>
+                                    {mode.label} ({mode.name})
+                                </option>
+                            ))}
+                        </select>
+                    </div>
 
-                <div className="timeline-info">
-                    <span>PPQ: {ticksPerQuarter}</span>
-                    <span>Zoom: {(zoom * 100).toFixed(0)}%</span>
+                    <div className="timeline-info">
+                        <span>PPQ: {ticksPerQuarter}</span>
+                        <span>Zoom: {(zoom * 100).toFixed(0)}%</span>
+                    </div>
                 </div>
-            </div>
+            )}
 
             {/* Timeline SVG */}
             <svg
                 width={viewportWidth}
-                height={60}
+                height={overlayMode ? 60 : 60} // Full height in overlay mode
                 className="timeline-svg"
                 onClick={handleTimelineClick}
-                style={{ cursor: 'pointer' }}
+                style={{
+                    cursor: 'pointer',
+                    pointerEvents: overlayMode ? 'auto' : 'auto' // Enable clicks in overlay
+                }}
             >
-                {/* Background */}
-                <rect width="100%" height="100%" fill="#2a2a2a" />
+                {/* Background - Transparent in overlay mode */}
+                <rect width="100%" height="100%" fill={overlayMode ? "rgba(42, 42, 42, 0.3)" : "#2a2a2a"} />
 
                 {/* Timeline markers */}
                 {markers.map((marker, index) => (
@@ -182,8 +201,16 @@ const Timeline = ({
 
                 {/* Current snap grid preview */}
                 {zoom > 0.5 && (() => {
-                    const currentSnapMode = snapModes.find(mode => mode.name === snapMode);
-                    const snapPixels = currentSnapMode.ticks * pixelsPerTick;
+                    const snapFractions = {
+                        '1/1': 1,
+                        '1/2': 0.5,
+                        '1/4': 0.25,
+                        '1/8': 0.125,
+                        '1/16': 0.0625,
+                        '1/32': 0.03125
+                    };
+                    const snapFraction = snapFractions[snapMode] || 0.0625;
+                    const snapPixels = snapFraction * pixelsPerBeat;
                     const startSnapIndex = Math.floor(viewportX / snapPixels);
                     const endSnapIndex = Math.ceil((viewportX + viewportWidth) / snapPixels);
 

@@ -7,17 +7,18 @@ const PianoKeyboard = ({
     onKeyHover,
     activeNotes = new Set(),
     highlightedKeys = new Set(),
-    baseKeyHeight = 20,  // Base height for zoom = 1
+    baseKeyHeight = 20,  // Base height for zoom = 1 (matches grid cellHeight)
     baseWhiteKeyWidth = 12,
     baseBlackKeyWidth = 8,
     zoom = 1,           // Zoom level from canvas
     showLabels = true,
+    viewportY = 0,      // Y scroll offset from grid engine
     className = ""
 }) => {
-    // Calculate responsive dimensions based on zoom
-    const keyHeight = Math.max(2, Math.floor(baseKeyHeight * zoom));
-    const whiteKeyWidth = Math.max(30, Math.floor(baseWhiteKeyWidth * Math.sqrt(zoom) * 4)); // Less aggressive scaling for width
-    const blackKeyWidth = Math.max(20, Math.floor(baseBlackKeyWidth * Math.sqrt(zoom) * 4));
+    // Calculate responsive dimensions - width stays fixed, only height scales with zoom
+    const keyHeight = Math.max(4, baseKeyHeight * zoom); // Scale height with zoom
+    const whiteKeyWidth = baseWhiteKeyWidth; // Fixed width regardless of zoom
+    const blackKeyWidth = baseBlackKeyWidth; // Fixed width regardless of zoom
 
     // Adaptive label visibility and sizing
     const shouldShowLabels = showLabels && zoom > 0.3;  // Hide labels when too zoomed out
@@ -80,11 +81,21 @@ const PianoKeyboard = ({
     const totalWidth = whiteKeys.length * whiteKeyWidth;
 
     return (
-        <div className={`piano-keyboard ${className}`} style={{ position: 'relative' }}>
+        <div className={`piano-keyboard ${className}`} style={{
+            position: 'relative',
+            width: `${whiteKeyWidth}px`, // Fixed width
+            height: '100%',
+            overflow: 'hidden',
+            backgroundColor: '#2a2a2a'
+        }}>
             <svg
-                width={totalWidth}
-                height={keyHeight * whiteKeys.length}
-                style={{ display: 'block' }}
+                width={whiteKeyWidth}
+                height={88 * keyHeight} // 88 piano keys total, scales with zoom
+                style={{
+                    display: 'block',
+                    // Offset SVG by viewport Y to sync with grid scrolling
+                    transform: `translateY(${-viewportY}px)`
+                }}
                 onMouseLeave={handleKeyLeave}
             >
                 {/* Render white keys first */}
@@ -93,12 +104,16 @@ const PianoKeyboard = ({
                     const isHighlighted = highlightedKeys.has(key.midi);
                     const isHovered = hoveredKey?.midi === key.midi;
 
+                    // Grid coordinate system: A0 (MIDI 21) = Y position 0
+                    const gridY = key.midi - 21;
+                    const yPos = gridY * keyHeight;
+
                     return (
                         <g key={key.id}>
-                            {/* White key background - Vertical layout (high to low) */}
+                            {/* White key background - Grid-aligned positioning */}
                             <rect
                                 x={0}
-                                y={(whiteKeys.length - 1 - index) * keyHeight}
+                                y={yPos}
                                 width={whiteKeyWidth - 0.5}
                                 height={keyHeight - 0.5}
                                 fill={isActive ? '#4CAF50' : isHighlighted ? '#2196F3' : isHovered ? '#f5f5f5' : '#ffffff'}
@@ -113,7 +128,7 @@ const PianoKeyboard = ({
                             {shouldShowLabels && keyHeight >= 8 && (
                                 <text
                                     x={whiteKeyWidth/2}
-                                    y={(whiteKeys.length - 1 - index) * keyHeight + keyHeight/2 + 2}
+                                    y={yPos + keyHeight/2 + 2}
                                     textAnchor="middle"
                                     fontSize={labelFontSize}
                                     fill="#666"
@@ -128,17 +143,17 @@ const PianoKeyboard = ({
 
                 {/* Render black keys on top */}
                 {blackKeys.map((key) => {
-                    // Find corresponding white key position for black key placement
-                    const whiteKeyIndex = whiteKeys.findIndex(wk => wk.midi === key.midi - 1);
-                    const yPos = (whiteKeys.length - 1 - whiteKeyIndex) * keyHeight - (keyHeight / 2);
-
                     const isActive = activeNotes.has(key.midi);
                     const isHighlighted = highlightedKeys.has(key.midi);
                     const isHovered = hoveredKey?.midi === key.midi;
 
+                    // Grid coordinate system: A0 (MIDI 21) = Y position 0
+                    const gridY = key.midi - 21;
+                    const yPos = gridY * keyHeight;
+
                     return (
                         <g key={key.id}>
-                            {/* Black key background - Vertical layout */}
+                            {/* Black key background - Grid-aligned positioning */}
                             <rect
                                 x={whiteKeyWidth - blackKeyWidth}
                                 y={yPos}
