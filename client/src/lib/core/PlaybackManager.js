@@ -251,32 +251,40 @@ export class PlaybackManager {
     }
 
     /**
-     * ✅ YENİDEN YAPILANDIRILMIŞ: Loop restart handler
+     * ✅ FIXED: Loop restart handler with immediate position sync
      * @param {number} nextStartTime - Bir sonraki loop'un başlangıç zamanı
      */
     _handleLoopRestart(nextStartTime = null) {
-        console.log('🔄 Handling loop restart - rescheduling content');
-        
+        console.log('🔄 Handling loop restart - immediate position sync');
+
+        // ✅ CRITICAL: Immediately sync position to loop start for high BPM accuracy
+        this.currentPosition = this.loopStart;
+
+        // ✅ CRITICAL: Force transport position to loop start immediately
+        if (this.transport.setPosition) {
+            this.transport.setPosition(this.loopStart);
+        }
+
         // Mevcut scheduled events'leri temizle
         this._clearScheduledEvents();
-        
+
         // Content'i yeniden schedule et
         const startTime = nextStartTime || this.transport.audioContext.currentTime;
         this._scheduleContent(startTime, 'loop-restart', true); // Force immediate scheduling for loop restart
-        
+
         // ✅ BONUS: Loop restart analytics
         this._trackLoopRestart();
-        
-        // UI'ı bilgilendir
+
+        // UI'ı bilgilendir - use corrected position
         this._emit('loopRestart', {
             time: startTime,
-            tick: this.transport.currentTick,
-            step: this.transport.ticksToSteps(this.transport.currentTick),
+            tick: this.loopStart * this.transport.ticksPerStep,
+            step: this.loopStart,
             mode: this.currentMode,
             patternId: this.activePatternId
         });
-        
-        console.log('✅ Loop restart handling complete');
+
+        console.log(`✅ Loop restart complete - position synced to step ${this.loopStart}`);
     }
 
     /**
@@ -577,12 +585,17 @@ export class PlaybackManager {
         try {
             this.transport.stop();
             this._clearScheduledEvents();
-            
+
             this.isPlaying = false;
             this.isPaused = false;
             this.currentPosition = this.loopStart;
-            
-            console.log('⏹️ Playback stopped');
+
+            // ✅ FIX: Reset transport position to loop start when stopping
+            if (this.transport.setPosition) {
+                this.transport.setPosition(this.loopStart);
+            }
+
+            console.log(`⏹️ Playback stopped and reset to step ${this.loopStart}`);
             usePlaybackStore.getState().setPlaybackState('stopped');
         } catch (error) {
             console.error('❌ Stop failed:', error);
@@ -646,10 +659,21 @@ export class PlaybackManager {
     }
 
     getCurrentPosition() {
-        if (this.isPlaying && this.transport) {
-            // Get current position from transport
-            return this.transport.ticksToSteps?.(this.transport.currentTick) || this.currentPosition;
+        if (this.isPlaying && !this.isPaused && this.transport) {
+            // ✅ FIX: Get accurate current position from transport during playback
+            const transportStep = this.transport.ticksToSteps?.(this.transport.currentTick);
+            if (transportStep !== undefined) {
+                // ✅ CRITICAL: Ensure position stays within loop bounds for accurate display
+                const loopLength = this.loopEnd - this.loopStart;
+                if (loopLength > 0) {
+                    const relativeStep = (transportStep - this.loopStart) % loopLength;
+                    return this.loopStart + Math.max(0, relativeStep);
+                }
+                return transportStep;
+            }
         }
+        // ✅ FIX: When not playing, always return the stored position
+        // (which should be loop start after stop, or manually set position)
         return this.currentPosition;
     }
     // =================== CONTENT SCHEDULING ===================
