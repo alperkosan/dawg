@@ -55,12 +55,6 @@ export class NativeTransportSystem {
         this.initializeWorkerTimer();
         this._setupEventListeners(); // YENİ: Olay dinleyicilerini başlat
 
-        console.log('🎵 NativeTransportSystem initialized:');
-        console.log(`   PPQ: ${this.ppq} ticks/quarter`);
-        console.log(`   Steps per bar: ${this.stepsPerBar}`);
-        console.log(`   Ticks per step: ${this.ticksPerStep}`);
-        console.log(`   Loop: ${this.loopStartTick} → ${this.loopEndTick} ticks`);
-        console.log(`   Loop: ${this.loopStartTick / this.ticksPerStep} → ${this.loopEndTick / this.ticksPerStep} steps`);
     }
 
     // YENİ: Tüm olay dinleyicilerini tek bir yerden yönetelim.
@@ -99,7 +93,6 @@ export class NativeTransportSystem {
             }
         };
 
-        console.log('⏱️ Worker timer initialized');
     }
 
     // =================== BASIC TRANSPORT CONTROLS ===================
@@ -115,18 +108,14 @@ export class NativeTransportSystem {
         if (!this.isPaused) {
             this.currentTick = this.loopStartTick;
             this.currentBar = Math.floor(this.currentTick / this.ticksPerBar);
-            console.log(`▶️ Transport starting fresh from loop beginning`);
         } else {
             // ✅ CRITICAL FIX: When resuming from pause, clear pause state
             this.isPaused = false;
-            console.log(`▶️ Transport resuming from pause at current position`);
         }
 
         // ✅ CRITICAL FIX: Set nextTickTime to current audio time, not relative to position
         this.nextTickTime = startTime;
 
-        console.log(`▶️ Transport starting at tick ${this.currentTick} (${this.formatPosition(this.currentTick)}), time ${startTime.toFixed(3)}s`);
-        console.log(`🔁 Loop: ${this.loopStartTick} → ${this.loopEndTick} ticks (${this.loop ? 'enabled' : 'disabled'})`);
 
         this.timerWorker.postMessage('start');
         this.triggerCallback('start', { time: startTime, position: this.currentTick });
@@ -151,7 +140,6 @@ export class NativeTransportSystem {
         this.clearScheduledEvents();
         this.triggerCallback('stop', { time: stopTime, position: this.currentTick });
 
-        console.log(`⏹️ Transport stopped, reset to tick ${this.currentTick} (${this.formatPosition(this.currentTick)})`);
         return this;
     }
 
@@ -168,7 +156,6 @@ export class NativeTransportSystem {
 
         // Keep current position, don't reset
         this.triggerCallback('pause', { time: pauseTime, position: this.currentTick });
-        console.log(`⏸️ Transport paused at position ${this.formatPosition(this.currentTick)}`);
         return this;
     }
 
@@ -192,16 +179,13 @@ export class NativeTransportSystem {
         }
 
         this.triggerCallback('position', { position: this.currentTick, step: step });
-        console.log(`🎯 Position set to ${this.formatPosition(this.currentTick)} (step ${step})`);
         return this;
     }
 
     setLoopPoints(startStep, endStep) {
-        console.log(`🔍 DEBUG: Transport setLoopPoints called with: ${startStep} → ${endStep} steps`);
 
         // ⚡ OPTIMIZATION: Check cache validity first
         if (this._isLoopCacheValid(startStep, endStep)) {
-            console.log(`⚡ Using cached loop calculation: ${startStep} → ${endStep} steps`);
             return;
         }
 
@@ -213,20 +197,13 @@ export class NativeTransportSystem {
         this.loopStart = this.loopStartTick;
         this.loopEnd = this.loopEndTick;
 
-        console.log(`🔍 DEBUG: Converted to ticks: ${this.loopStartTick} → ${this.loopEndTick} ticks`);
-        console.log(`🔍 DEBUG: Loop enabled: ${this.loop}`);
 
         // ⚡ OPTIMIZATION: Update cache
         this._updateLoopCache(startStep, endStep);
 
-        console.log(`🔁 Loop points set:`);
-        console.log(`   Steps: ${startStep} → ${endStep} (${endStep - startStep} steps = ${(endStep - startStep)/16} bars)`);
-        console.log(`   Ticks: ${this.loopStartTick} → ${this.loopEndTick} (${this.loopEndTick - this.loopStartTick} ticks)`);
-        console.log(`   Seconds: ${(this.loopStartTick * this.getSecondsPerTick()).toFixed(2)} → ${(this.loopEndTick * this.getSecondsPerTick()).toFixed(2)}`);
 
         // Reset position if outside loop
         if (this.currentTick >= this.loopEndTick) {
-            console.warn('[Transport] Current position beyond loop end, resetting to start');
             this.currentTick = this.loopStartTick;
             this.nextTickTime = this.audioContext.currentTime;
         }
@@ -238,7 +215,6 @@ export class NativeTransportSystem {
 
     setBPM(bpm) {
         if (bpm < 60 || bpm > 200) {
-            console.warn('⚠️ BPM out of reasonable range (60-200)');
         }
 
         // Store old BPM for timing adjustment
@@ -259,11 +235,9 @@ export class NativeTransportSystem {
             const currentTime = this.audioContext.currentTime;
             this.nextTickTime = currentTime;
 
-            console.log(`🎼 BPM changed ${oldBpm} → ${bpm} during playback, recalibrated timing`);
         }
 
         this.triggerCallback('bpm', { bpm: this.bpm, oldBpm, wasPlaying });
-        console.log(`🎼 BPM set to ${bpm}`);
         return this;
     }
 
@@ -274,7 +248,6 @@ export class NativeTransportSystem {
         }
 
         this.timeSignature = [numerator, denominator];
-        console.log(`🎼 Time signature set to ${numerator}/${denominator}`);
         return this;
     }
 
@@ -294,7 +267,6 @@ export class NativeTransportSystem {
         // En az 64 step (4 bar), 16'nın katlarına yuvarla
         const calculatedLength = Math.max(64, Math.ceil(maxStep / 16) * 16);
 
-        console.log(`📐 Pattern length calculated: ${calculatedLength} steps (${calculatedLength/16} bars) from max step ${maxStep}`);
         return calculatedLength;
     }
 
@@ -314,7 +286,6 @@ export class NativeTransportSystem {
     }
 
     advanceToNextTick() {
-        console.log(`🔍 DEBUG: advanceToNextTick (method 1) called - currentTick: ${this.currentTick}`);
         const secondsPerTick = this.getSecondsPerTick();
         this.currentTick++;
 
@@ -324,7 +295,6 @@ export class NativeTransportSystem {
             this.nextTickTime = this.audioContext.currentTime;
 
             // ✅ SADECE EVENT TETİKLE
-            console.log(`🔁 Loop trigger (method 1): ${previousTick} -> ${this.currentTick} (loopEnd: ${this.loopEndTick})`);
 
             // Scheduled events'leri temizle
             this.clearScheduledEvents();
@@ -345,7 +315,6 @@ export class NativeTransportSystem {
         const newBar = Math.floor(this.currentTick / this.ticksPerBar);
         if (newBar !== this.currentBar) {
             this.currentBar = newBar;
-            console.log(`🎼 Bar ${this.currentBar}`);
 
             this.triggerCallback('bar', {
                 time: this.nextTickTime,
@@ -358,7 +327,6 @@ export class NativeTransportSystem {
     // ✅ YENİ EKLENEN: Event temizleme
     clearScheduledEvents() {
         this.scheduledEvents.clear();
-        console.log('🧹 Scheduled events cleared');
     }
 
     // lib/core/NativeTransportSystem.js içinde scheduleCurrentTick metodunu güncelle
@@ -415,7 +383,6 @@ export class NativeTransportSystem {
                     try {
                         event.callback(scheduledTime, event.data);
                     } catch (error) {
-                        console.error('❌ Scheduled event error:', error);
                     }
                 });
                 this.scheduledEvents.delete(scheduledTime);
@@ -442,7 +409,6 @@ export class NativeTransportSystem {
         });
 
         this.activePatterns.add(patternId);
-        console.log(`📋 Pattern scheduled: ${patternId} at ${startTime.toFixed(3)}s`);
 
         return this;
     }
@@ -455,7 +421,6 @@ export class NativeTransportSystem {
             this.activePatterns.delete(patternId);
 
             this.triggerCallback('patternStop', { patternId, time: stopTime });
-            console.log(`⏹️ Pattern stopped: ${patternId}`);
         }
 
         return this;
@@ -623,7 +588,6 @@ export class NativeTransportSystem {
                 try {
                     callback(data);
                 } catch (error) {
-                    console.error(`❌ Transport callback error (${event}):`, error);
                 }
             });
         }
@@ -682,16 +646,13 @@ export class NativeTransportSystem {
         cache.cachedLoopSeconds = cache.cachedLoopTicks * this.getSecondsPerTick();
         cache.cacheValid = true;
 
-        console.log(`⚡ Loop cache updated: ${startStep} → ${endStep} steps (${cache.cachedLoopSeconds.toFixed(2)}s)`);
     }
 
     _invalidateLoopCache() {
         this.loopCache.cacheValid = false;
-        console.log(`⚡ Loop cache invalidated`);
     }
 
     dispose() {
-        console.log('🗑️ Disposing NativeTransportSystem...');
 
         this.stop();
 
@@ -702,6 +663,5 @@ export class NativeTransportSystem {
         this.callbacks.clear();
         this.scheduledEvents.clear();
 
-        console.log('✅ NativeTransportSystem disposed');
     }
 }

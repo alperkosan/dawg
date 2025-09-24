@@ -15,6 +15,8 @@ export const usePlaybackStore = create((set, get) => ({
   transportStep: 0,
   loopEnabled: true,
   audioLoopLength: 64,
+  loopStartStep: 0,
+  loopEndStep: 64,
 
   // ============================================
   // === ACTIONS (MOTOR BAĞLANTILARI BURADA) ===
@@ -100,10 +102,23 @@ export const usePlaybackStore = create((set, get) => ({
   
   // Bu fonksiyonlar App.jsx'teki callback'ler tarafından çağrıldığı için dokunmuyoruz.
   setTransportPosition: (position, step) => {
-    console.log('🎯 Store setTransportPosition called:', { position, step });
     set({ transportPosition: position, transportStep: step });
   },
   setPlaybackState: (state) => set({ playbackState: state }),
+
+  // Loop Range Controls
+  setLoopRange: (startStep, endStep) => {
+    set({
+      loopStartStep: Math.max(0, startStep),
+      loopEndStep: Math.max(startStep + 1, endStep)
+    });
+
+    // Audio engine'e loop noktalarını gönder
+    const engine = AudioContextService.getAudioEngine();
+    if (engine) {
+      engine.setLoopPoints(startStep, endStep);
+    }
+  },
 
   // YENİ: Master Volume için eylem
   handleMasterVolumeChange: (volume) => {

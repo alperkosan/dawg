@@ -23,7 +23,6 @@ class SchedulingOptimizer {
         // Cancel any pending schedule
         if (this.pendingSchedule) {
             clearTimeout(this.pendingSchedule);
-            console.log(`🔄 Debounced schedule request: ${this.lastScheduleReason} → ${reason}`);
         }
 
         this.lastScheduleReason = reason;
@@ -31,7 +30,6 @@ class SchedulingOptimizer {
 
         // Schedule new callback with debounce
         this.pendingSchedule = setTimeout(() => {
-            console.log(`⚡ Executing debounced schedule #${this.scheduleCount}: ${reason}`);
             callback();
             this.pendingSchedule = null;
         }, this.scheduleDebounceTime);
@@ -42,7 +40,6 @@ class SchedulingOptimizer {
             clearTimeout(this.pendingSchedule);
             this.pendingSchedule = null;
         }
-        console.log(`🚀 Force executing schedule: ${reason}`);
         callback();
     }
 
@@ -93,7 +90,6 @@ export class PlaybackManager {
         this.automationEvents = new Map();
         this.nextEventTime = Infinity;
         
-        console.log('🎵 PlaybackManager initialized');
     }
 
     /**
@@ -106,9 +102,6 @@ export class PlaybackManager {
         this.transport.on('loop', (data) => {
             const { nextLoopStartTime, fromTick, toTick, time } = data;
             
-            console.log(`🧠 PlaybackManager received loop event:`);
-            console.log(`   From tick: ${fromTick} → To tick: ${toTick}`);
-            console.log(`   Next loop start: ${nextLoopStartTime?.toFixed(3) || time?.toFixed(3)}s`);
             
             // ✅ MERKEZI RESTART HANDLING
             this._handleLoopRestart(nextLoopStartTime || time);
@@ -116,12 +109,10 @@ export class PlaybackManager {
 
         // ✅ BONUS: Diğer transport event'leri de merkezi olarak yönet
         this.transport.on('start', (data) => {
-            console.log('🧠 PlaybackManager: Transport started');
             this._emit('transportStart', data);
         });
 
         this.transport.on('stop', (data) => {
-            console.log('🧠 PlaybackManager: Transport stopped');
 
             // ✅ FIX: Reset position tracker and emit accurate position
             this.positionTracker.clearCache();
@@ -134,14 +125,12 @@ export class PlaybackManager {
                 bbt: position.bbt,
                 formatted: position.bbt
             };
-            console.log('🎯 Emitting precise positionUpdate on stop:', positionData);
             this._emit('positionUpdate', positionData);
 
             this._emit('transportStop', data);
         });
 
         this.transport.on('pause', (data) => {
-            console.log('🧠 PlaybackManager: Transport paused');
 
             // ✅ FIX: Get accurate position from PositionTracker and preserve it
             const position = this.positionTracker.getDisplayPosition();
@@ -154,7 +143,6 @@ export class PlaybackManager {
                 formatted: position.display
             };
 
-            console.log('🎯 Emitting clean positionUpdate on pause:', positionData);
             this._emit('positionUpdate', positionData);
 
             this._emit('transportPause', data);
@@ -168,12 +156,10 @@ export class PlaybackManager {
         // ✅ BPM değişikliklerini dinle ve smooth transition sağla
         this.transport.on('bpm', (data) => {
             const { bpm, oldBpm, wasPlaying } = data;
-            console.log(`🧠 PlaybackManager received BPM change: ${oldBpm} → ${bpm}`);
 
             if (wasPlaying) {
                 // BPM değişikliği sırasında playback devam ediyorsa,
                 // yeniden scheduling YAP ama loop pozisyonunu KORUMA
-                console.log(`🎼 Rescheduling for BPM change during playback`);
                 this._scheduleContent(null, 'bpm-change', true);
             }
 
@@ -204,7 +190,6 @@ export class PlaybackManager {
             this._handleNoteModified(data);
         });
 
-        console.log('🔗 Global event listeners bound to PlaybackManager');
     }
 
     /**
@@ -217,11 +202,9 @@ export class PlaybackManager {
         // Only handle active pattern changes
         const arrangementStore = useArrangementStore.getState();
         if (patternId !== arrangementStore.activePatternId) {
-            console.log(`🎵 Pattern ${patternId} changed but not active, ignoring`);
             return;
         }
 
-        console.log(`🎵 Central pattern change handler: ${patternId} - ${changeType}`);
 
         // Pattern structure changes require full reschedule
         if (['structure-change', 'pattern-switch'].includes(changeType)) {
@@ -240,11 +223,9 @@ export class PlaybackManager {
         const arrangementStore = useArrangementStore.getState();
         if (patternId !== arrangementStore.activePatternId) return;
 
-        console.log(`🎵 Note added: ${instrumentId} at step ${note.time}`);
 
         // ✅ CRITICAL: Only immediate scheduling during playback, no full reschedule
         if (this.isPlaying && !this.isPaused) {
-            console.log(`🚀 Immediate scheduling for new note during playback`);
             this._scheduleNewNotesImmediate([{ instrumentId, note }]);
         }
         // No else clause - we DON'T want full reschedule for single note additions
@@ -260,7 +241,6 @@ export class PlaybackManager {
         const arrangementStore = useArrangementStore.getState();
         if (patternId !== arrangementStore.activePatternId) return;
 
-        console.log(`🎵 Note removed from pattern ${patternId}`);
 
         // Note removal requires minimal handling during playback
         // The note will simply not be scheduled in next loop iteration
@@ -276,7 +256,6 @@ export class PlaybackManager {
         const arrangementStore = useArrangementStore.getState();
         if (patternId !== arrangementStore.activePatternId) return;
 
-        console.log(`🎵 Note modified: ${instrumentId} at step ${note.time}`);
 
         // For note modifications, treat as remove + add
         if (this.isPlaying && !this.isPaused) {
@@ -289,7 +268,6 @@ export class PlaybackManager {
      * @param {number} nextStartTime - Bir sonraki loop'un başlangıç zamanı
      */
     _handleLoopRestart(nextStartTime = null) {
-        console.log('🔄 Handling loop restart - immediate position sync');
 
         // ✅ CRITICAL: Immediately sync position to loop start for high BPM accuracy
         this.currentPosition = this.loopStart;
@@ -318,7 +296,6 @@ export class PlaybackManager {
             patternId: this.activePatternId
         });
 
-        console.log(`✅ Loop restart complete - position synced to step ${this.loopStart}`);
     }
 
     /**
@@ -348,7 +325,6 @@ export class PlaybackManager {
         this.loopStats.lastLoopTime = now;
         
         // Debug info
-        console.log(`📊 Loop Stats: ${this.loopStats.totalLoops} total, avg interval: ${this.loopStats.averageLoopInterval.toFixed(1)}ms`);
     }
 
     // =================== MODE MANAGEMENT ===================
@@ -364,7 +340,6 @@ export class PlaybackManager {
         this.currentMode = mode;
         this._updateLoopSettings();
         
-        console.log(`🔄 Playback mode changed to: ${mode}`);
         
         if (wasPlaying) {
             this.play();
@@ -386,19 +361,16 @@ export class PlaybackManager {
         this._updateTransportLoop();
 
         // ⚡ OPTIMIZATION: Detailed loop logging only when needed (removed duplicate)
-        console.log(`📏 Loop points calculated: ${this.loopStart} -> ${this.loopEnd} steps`);
     }
 
     enableAutoLoop() {
         this.isAutoLoop = true;
         this._updateLoopSettings();
-        console.log('🔄 Auto loop enabled');
     }
 
     setLoopEnabled(enabled) {
         this.loopEnabled = enabled;
         this._updateTransportLoop();
-        console.log(`🔁 Loop ${enabled ? 'enabled' : 'disabled'}`);
     }
 
     _updateLoopSettings() {
@@ -434,15 +406,12 @@ export class PlaybackManager {
         const activePattern = arrangementStore.patterns[activePatternId];
         
         if (!activePattern || !activePattern.data) {
-            console.warn(`[PlaybackManager] No active pattern or pattern data found for ID: ${activePatternId}. Defaulting to 4 bars.`);
             this.loopStart = 0;
             this.loopEnd = 64; // 4 bar * 16 step/bar
             this.patternLength = 64;
             return;
         }
     
-        console.log(`🔍 DEBUG: Calculating loop for pattern: ${activePatternId}`);
-        console.log(`🔍 DEBUG: Pattern data keys:`, Object.keys(activePattern.data));
 
         // Pattern içindeki en son notanın bittiği adımı (step) hesapla
         let maxStep = 0;
@@ -466,8 +435,6 @@ export class PlaybackManager {
             }
         });
 
-        console.log(`🔍 DEBUG: Instrument analysis:`, instrumentDetails);
-        console.log(`🔍 DEBUG: Overall maxStep found: ${maxStep}`);
     
         // Uzunluğu en az 4 bar (64 step) yap ve en yakın bar sayısına yukarı yuvarla.
         // (1 bar = 16 step)
@@ -475,8 +442,6 @@ export class PlaybackManager {
         this.loopStart = 0;
         this.loopEnd = this.patternLength;
         
-        console.log(`📏 Pattern loop calculated: 0 → ${this.loopEnd} steps (${this.loopEnd/16} bars)`);
-        console.log(`   Max note end step found: ${maxStep} → rounded to ${this.patternLength} steps`);
     }
 
     _calculateSongLoop() {
@@ -501,22 +466,14 @@ export class PlaybackManager {
         this.loopStart = 0;
         this.loopEnd = this.songLength * 16; // Convert bars to steps
         
-        console.log(`📏 Song loop calculated: ${this.songLength} bars (${this.loopEnd} steps)`);
     }
 
     _updateTransportLoop() {
         if (this.transport) {
-            console.log(`🔍 DEBUG: Setting transport loop points: ${this.loopStart} -> ${this.loopEnd} steps`);
-            console.log(`🔍 DEBUG: Transport loop enabled: ${this.loopEnabled}`);
-
             // ✅ DÜZELTME: Step'leri doğru şekilde transport'a gönder
             this.transport.setLoopPoints(this.loopStart, this.loopEnd);
             this.transport.setLoopEnabled(this.loopEnabled);
-
-            // ⚡ OPTIMIZATION: Reduce duplicate logging - only log if loop points actually changed
-            console.log(`🔁 Transport loop synced: ${this.loopStart} -> ${this.loopEnd} steps`);
         } else {
-            console.warn(`🔍 DEBUG: No transport available to set loop points`);
         }
     }
 
@@ -527,7 +484,6 @@ export class PlaybackManager {
 
         // ✅ CRITICAL FIX: If resuming from pause, use resume() instead
         if (this.isPaused && startStep === null) {
-            console.log(`🔄 Redirecting to resume() since already paused`);
             return this.resume();
         }
 
@@ -547,7 +503,6 @@ export class PlaybackManager {
             }
             // Otherwise, keep current position (whether paused or manually set)
 
-            console.log(`▶️ Starting playback from step ${this.currentPosition} at ${startTime.toFixed(3)}s`);
 
             this._updateLoopSettingsImmediate(); // Force immediate loop update for playback start
             this._scheduleContent(startTime, 'playback-start', true); // Force immediate scheduling for playback start
@@ -557,14 +512,12 @@ export class PlaybackManager {
             this.isPaused = false;
             usePlaybackStore.getState().setPlaybackState('playing');
         } catch (error) {
-            console.error('❌ Playback start failed:', error);
             this.stop();
         }
     }
 
     pause() {
         if (!this.isPlaying || this.isPaused) {
-            console.log('⚠️ Not playing or already paused');
             return;
         }
 
@@ -575,19 +528,16 @@ export class PlaybackManager {
             this.transport.pause();
             this.isPaused = true;
 
-            console.log(`⏸️ Playback paused at step ${this.currentPosition.toFixed(2)} (position preserved)`);
 
             // Notify stores
             usePlaybackStore.getState().setPlaybackState('paused');
 
         } catch (error) {
-            console.error('❌ Pause failed:', error);
         }
     }
 
     resume() {
         if (!this.isPaused) {
-            console.log('⚠️ Not paused');
             return;
         }
 
@@ -600,7 +550,6 @@ export class PlaybackManager {
             this.isPlaying = true;
             this.isPaused = false;
 
-            console.log(`▶️ Playback resumed from step ${this.currentPosition.toFixed(2)}`);
 
             // ✅ CRITICAL FIX: Reschedule content from current position
             this._scheduleContent(startTime, 'resume', true);
@@ -609,7 +558,6 @@ export class PlaybackManager {
             usePlaybackStore.getState().setPlaybackState('playing');
 
         } catch (error) {
-            console.error('❌ Resume failed:', error);
         }
     }
 
@@ -629,10 +577,8 @@ export class PlaybackManager {
                 this.transport.setPosition(this.loopStart);
             }
 
-            console.log(`⏹️ Playback stopped and reset to step ${this.loopStart}`);
             usePlaybackStore.getState().setPlaybackState('stopped');
         } catch (error) {
-            console.error('❌ Stop failed:', error);
         }
     }
 
@@ -658,10 +604,8 @@ export class PlaybackManager {
             step: targetStep,
             formatted: this._formatPosition(targetStep)
         };
-        console.log('🎯 Emitting positionUpdate on jumpToStep:', positionData);
         this._emit('positionUpdate', positionData);
 
-        console.log(`🎯 Jumped to step ${targetStep} (playing: ${this.isPlaying})`);
     }
 
     jumpToBar(bar) {
@@ -675,10 +619,6 @@ export class PlaybackManager {
      * @deprecated Use EventBus.emit('NOTE_ADDED', data) instead
      */
     onPatternChanged(patternId, reason = 'pattern-edit', addedNotes = null) {
-        console.warn(`⚠️ DEPRECATED: onPatternChanged called for pattern ${patternId} with reason: ${reason}. Use EventBus instead.`);
-        if (addedNotes) {
-            console.warn(`⚠️ ${addedNotes.length} notes were passed but ignored due to deprecation.`);
-        }
 
         // Only log for debugging, don't actually process
         // This prevents double-scheduling issues
@@ -689,7 +629,6 @@ export class PlaybackManager {
      * Called when switching between different patterns
      */
     onActivePatternChanged(newPatternId, reason = 'pattern-switch') {
-        console.log(`🎵 Active pattern switched to ${newPatternId}: ${reason}`);
 
         // Pattern switches need immediate scheduling to prevent audio gaps
         this._scheduleContent(null, `active-pattern-${reason}`, true);
@@ -711,14 +650,12 @@ export class PlaybackManager {
                 const relativeStep = (position.stepFloat - this.loopStart) % loopLength;
                 const boundedStep = this.loopStart + Math.max(0, relativeStep);
 
-                console.log(`🎯 Live position: tick=${position.tick} step=${position.stepFloat.toFixed(3)} bounded=${boundedStep.toFixed(3)}`);
                 return boundedStep;
             }
             return position.stepFloat;
         }
 
         // For stopped/paused states, use stored position
-        console.log(`🎯 Position: ${this.currentPosition} (state: ${this.isPlaying ? 'playing' : 'stopped'})`);
         return this.currentPosition;
     }
     // =================== CONTENT SCHEDULING ===================
@@ -733,7 +670,6 @@ export class PlaybackManager {
         const scheduleCallback = () => {
             const baseTime = startTime || this.transport.audioContext.currentTime;
 
-            console.log(`📋 Scheduling content from time: ${baseTime.toFixed(3)}s (reason: ${reason})`);
 
             // Önceki event'leri temizle (eğer daha önce temizlenmediyse)
             this._clearScheduledEvents();
@@ -744,7 +680,6 @@ export class PlaybackManager {
                 this._scheduleSongContent(baseTime);
             }
 
-            console.log('✅ Content scheduling complete');
         };
 
         // Use debounced scheduling unless forced
@@ -764,11 +699,9 @@ export class PlaybackManager {
         const activePattern = arrangementStore.patterns[arrangementStore.activePatternId];
         
         if (!activePattern) {
-            console.warn('⚠️ No active pattern to schedule');
             return;
         }
 
-        console.log(`📋 Scheduling pattern: ${activePattern.name} from ${baseTime.toFixed(3)}s`);
 
         // Schedule notes for each instrument
         Object.entries(activePattern.data).forEach(([instrumentId, notes]) => {
@@ -778,11 +711,9 @@ export class PlaybackManager {
             
             const instrument = this.audioEngine.instruments.get(instrumentId);
             if (!instrument) {
-                console.warn(`⚠️ Instrument not found: ${instrumentId}`);
                 return;
             }
 
-            console.log(`   ${instrumentId}: ${notes.length} notes`);
             this._scheduleInstrumentNotes(instrument, notes, instrumentId, baseTime);
         });
     }
@@ -792,7 +723,6 @@ export class PlaybackManager {
         const clips = arrangementStore.clips || [];
         const patterns = arrangementStore.patterns || {};
         
-        console.log(`🎬 Scheduling song: ${clips.length} clips`);
 
         clips.forEach(clip => {
             const pattern = patterns[clip.patternId];
@@ -873,9 +803,7 @@ export class PlaybackManager {
                             scheduledTime,
                             noteDuration
                         );
-                        console.log(`🎵 Note scheduled: ${instrumentId} - ${note.pitch} at step ${noteTimeInSteps} (${scheduledTime.toFixed(3)}s) [currentStep: ${currentStep.toFixed(2)}]`);
                     } catch (error) {
-                        console.error(`❌ Note trigger failed: ${instrumentId}`, error);
                     }
                 },
                 { type: 'noteOn', instrumentId, note, step: noteTimeInSteps }
@@ -889,7 +817,6 @@ export class PlaybackManager {
                         try {
                             instrument.releaseNote(note.pitch || 'C4', scheduledTime);
                         } catch (error) {
-                            console.error(`❌ Note release failed: ${instrumentId}`, error);
                         }
                     },
                     { type: 'noteOff', instrumentId, note }
@@ -949,7 +876,6 @@ export class PlaybackManager {
                 this._applyEffectAutomation(id, parameter, event.value);
                 break;
             default:
-                console.warn(`⚠️ Unknown automation target: ${targetId}`);
         }
     }
 
@@ -965,7 +891,6 @@ export class PlaybackManager {
                 channel.setPan(value);
                 break;
             default:
-                console.warn(`⚠️ Unknown mixer parameter: ${parameter}`);
         }
     }
 
@@ -1040,12 +965,10 @@ export class PlaybackManager {
         const currentTick = this.transport.currentTick;
         const currentStep = this.transport.ticksToSteps(currentTick);
 
-        console.log(`🚀 Immediate note scheduling - current step: ${currentStep.toFixed(2)}`);
 
         addedNotes.forEach(({ instrumentId, note }) => {
             const instrument = this.audioEngine.instruments.get(instrumentId);
             if (!instrument) {
-                console.warn(`⚠️ Instrument not found for immediate scheduling: ${instrumentId}`);
                 return;
             }
 
@@ -1061,11 +984,9 @@ export class PlaybackManager {
             if (relativeNoteStep > relativeCurrentStep) {
                 // Note is later in current loop - schedule for current loop
                 nextPlayStep = noteStep;
-                console.log(`📍 Note will play in current loop at step ${noteStep}`);
             } else {
                 // Note is earlier in loop - schedule for next loop iteration
                 nextPlayStep = noteStep + loopLength;
-                console.log(`📍 Note will play in next loop at step ${nextPlayStep}`);
             }
 
             // Convert to absolute time
@@ -1090,17 +1011,13 @@ export class PlaybackManager {
                                 scheduledTime,
                                 noteDuration
                             );
-                            console.log(`🎵 Immediate note: ${instrumentId} - ${note.pitch} at ${scheduledTime.toFixed(3)}s`);
                         } catch (error) {
-                            console.error(`❌ Immediate note trigger failed: ${instrumentId}`, error);
                         }
                     },
                     { type: 'noteOn', instrumentId, note, step: nextPlayStep, immediate: true }
                 );
 
-                console.log(`⚡ Scheduled immediate note: ${instrumentId} at step ${nextPlayStep} (${absoluteTime.toFixed(3)}s)`);
             } else {
-                console.log(`⏰ Note time passed, will play next loop: ${instrumentId} at step ${nextPlayStep}`);
             }
         });
     }
@@ -1110,7 +1027,6 @@ export class PlaybackManager {
             this.transport.clearScheduledEvents();
         }
 
-        console.log('🧹 Playback events cleared');
     }
 
     // =================== STATUS & DEBUG ===================
@@ -1182,7 +1098,6 @@ export class PlaybackManager {
                 try {
                     callback(data);
                 } catch (error) {
-                    console.error(`❌ Event callback error (${event}):`, error);
                 }
             });
         }

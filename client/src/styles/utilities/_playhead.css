@@ -1,0 +1,84 @@
+/* ==========================================================================
+   Centralized Playhead Styles - Consolidated from multiple files
+   ========================================================================== */
+
+/* Common playhead variables - already defined in index.css */
+/* --playhead-color: #00ff88; */
+/* --playhead-shadow: rgba(0, 255, 136, 0.4); */
+
+/* Base playhead styles */
+.playhead {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 2px;
+  background-color: var(--playhead-color);
+  box-shadow: var(--playhead-shadow);
+  pointer-events: none;
+  will-change: transform;
+  z-index: 25;
+  transform: translateZ(0); /* GPU acceleration */
+  backface-visibility: hidden;
+}
+
+/* Playhead for piano roll v2 */
+.prv2-playhead {
+  height: 100%; /* Full height container */
+}
+
+/* Playhead for timeline */
+.timeline-playhead {
+  height: 100%;
+  background: var(--playhead-color);
+  box-shadow: 0 0 4px var(--playhead-shadow);
+}
+
+.timeline-playhead::before {
+  content: '';
+  position: absolute;
+  top: -4px;
+  left: -3px;
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 4px solid var(--playhead-color);
+}
+
+/* Playhead for channel rack */
+.channel-rack-layout__playhead {
+  height: 100%;
+}
+
+/* Animation classes */
+.playhead--smooth {
+  transition: transform 0.1s linear;
+}
+
+.playhead--css-animated {
+  animation-fill-mode: forwards;
+  animation-timing-function: linear;
+}
+
+.playhead--performance-optimized {
+  /* Already included in base .playhead class */
+}
+
+/* Animation keyframes */
+@keyframes playheadMove {
+  from {
+    transform: translateX(0px);
+  }
+  to {
+    transform: translateX(var(--playhead-distance));
+  }
+}
+
+/* Reduced motion accessibility */
+@media (prefers-reduced-motion: reduce) {
+  .playhead--smooth,
+  .playhead--css-animated {
+    transition: none !important;
+    animation: none !important;
+  }
+}

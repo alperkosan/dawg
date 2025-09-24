@@ -36,7 +36,7 @@ export const VirtualNotesRenderer = ({ notes, selectedNotes = new Set(), engine,
   }, [engine?.scroll?.x, engine?.scroll?.y]);
 
   const visibleNotes = useMemo(() => {
-    // === OPTIMIZED: Less aggressive dependency updates during scroll ===
+    // === ULTRA OPTIMIZED: Extreme throttling during scroll for performance ===
     if (!engine?.scroll || !engine?.size) {
       return notes || [];
     }
@@ -59,9 +59,9 @@ export const VirtualNotesRenderer = ({ notes, selectedNotes = new Set(), engine,
     });
   }, [
     notes,
-    // OPTIMIZED: Throttle scroll position updates for better performance
-    Math.floor((engine?.scroll?.x || 0) / 100),
-    Math.floor((engine?.scroll?.y || 0) / 100),
+    // ULTRA AGGRESSIVE: Throttle scroll position updates to 400px chunks for massive performance gain
+    Math.floor((engine?.scroll?.x || 0) / 400),
+    Math.floor((engine?.scroll?.y || 0) / 400),
     engine?.size?.width,
     engine?.size?.height,
     engine?.getNoteRect
@@ -95,6 +95,24 @@ export const VirtualNotesRenderer = ({ notes, selectedNotes = new Set(), engine,
             disableTransitions={isScrolling}
           />
       ))}
+
+      {/* Marquee selection visualization */}
+      {interaction?.type === 'marquee' && interaction.startPos && interaction.currentPos && (
+        <div
+          className="prv2-marquee-selection"
+          style={{
+            position: 'absolute',
+            left: Math.min(interaction.startPos.x, interaction.currentPos.x),
+            top: Math.min(interaction.startPos.y, interaction.currentPos.y),
+            width: Math.abs(interaction.currentPos.x - interaction.startPos.x),
+            height: Math.abs(interaction.currentPos.y - interaction.startPos.y),
+            border: '1px dashed #4A9EFF',
+            backgroundColor: 'rgba(74, 158, 255, 0.1)',
+            pointerEvents: 'none',
+            zIndex: 1000
+          }}
+        />
+      )}
     </div>
   );
 };

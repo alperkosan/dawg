@@ -5,76 +5,98 @@ import { usePianoRollEngineV2 } from './hooks/usePianoRollEngineV2';
 import { useNoteInteractionsV2 } from './hooks/useNoteInteractionsV2';
 import { usePlaybackStore } from '../../store/usePlaybackStore';
 import { PianoRollGrid } from './components/PianoRollGrid';
-import { PrecisionGrid, GridDebugInfo } from './components/PrecisionGrid';
+import { PrecisionGrid } from './components/PrecisionGrid';
 import { EnhancedTimelineRuler } from './components/EnhancedTimelineRuler';
 import { PianoKeyboard } from './components/PianoKeyboard';
 import { VirtualNotesRenderer } from './components/VirtualNotesRenderer';
-import { useMotorPrecisionNotes } from './hooks/useMotorPrecisionNotes';
+import { PlayheadOptimized } from './components/PlayheadOptimized';
 import { Toolbar } from './components/Toolbar';
 import { VelocityLane } from './components/VelocityLane';
 import { usePianoRollStoreV2 } from './store/usePianoRollStoreV2';
-import './styles/precision-grid.css';
+import { createWheelZoomHandler } from '../../lib/utils/zoomHandler';
 import './styles/enhanced-timeline.css';
 
 function PianoRoll({ instrument }) {
   const scrollContainerRef = useRef(null);
-  const rulerContentRef = useRef(null);
-  const keyboardContentRef = useRef(null);
-  const velocityLaneContentRef = useRef(null);
   const { loopLength } = usePlaybackStore();
-  const { showVelocityLane, velocityLaneHeight } = usePianoRollStoreV2();
+  // Optimize state selectors to prevent unnecessary re-renders
+  const showVelocityLane = usePianoRollStoreV2(state => state.showVelocityLane);
+  const velocityLaneHeight = usePianoRollStoreV2(state => state.velocityLaneHeight);
+  const zoomX = usePianoRollStoreV2(state => state.zoomX);
+  const setZoomX = usePianoRollStoreV2(state => state.setZoomX);
+
+  // Create standardized zoom handler
+  const handleZoom = createWheelZoomHandler(setZoomX, 0.1, 5);
 
   const engine = usePianoRollEngineV2(scrollContainerRef, loopLength);
   const interactions = useNoteInteractionsV2(instrument?.id, engine);
 
-  // Motor precision note system
-  const motorNotes = useMotorPrecisionNotes(instrument?.id, engine, instrument?.notes || []);
 
-  // Optimized scroll sync without re-renders
+  // Unified scroll system - sync all containers with playback optimization
   useEffect(() => {
-    const scrollContainer = scrollContainerRef.current;
-    if (!scrollContainer) return;
+    const gridContainer = scrollContainerRef.current;
+    const rulerContainer = document.querySelector('.prv2-ruler-container');
+    const keyboardContainer = document.querySelector('.prv2-keyboard-container');
+    const velocityContainer = document.querySelector('.prv2-velocity-lane');
 
-    let animationId = null;
-    let lastScrollLeft = 0;
-    let lastScrollTop = 0;
+    if (!gridContainer) return;
 
-    const syncScrollPosition = () => {
-      const { scrollLeft, scrollTop } = scrollContainer;
-
-      if (scrollLeft !== lastScrollLeft || scrollTop !== lastScrollTop) {
-        if (rulerContentRef.current) {
-          rulerContentRef.current.style.transform = `translate3d(${-scrollLeft}px, 0, 0)`;
-        }
-        if (keyboardContentRef.current) {
-          keyboardContentRef.current.style.transform = `translate3d(0, ${-scrollTop}px, 0)`;
-        }
-        if (velocityLaneContentRef.current) {
-          velocityLaneContentRef.current.style.transform = `translate3d(${-scrollLeft}px, 0, 0)`;
-        }
-
-        lastScrollLeft = scrollLeft;
-        lastScrollTop = scrollTop;
-      }
-    };
+    let lastScrollTime = 0;
+    const throttleDelay = 16; // ~60fps max for scroll sync
 
     const handleScroll = () => {
-      if (!animationId) {
-        animationId = requestAnimationFrame(() => {
-          syncScrollPosition();
-          animationId = null;
-        });
+      const now = Date.now();
+      if (now - lastScrollTime < throttleDelay) return; // Throttle scroll sync
+      lastScrollTime = now;
+
+      const { scrollLeft, scrollTop } = gridContainer;
+
+      // Sync horizontal scroll for ruler and velocity lane
+      if (rulerContainer) rulerContainer.scrollLeft = scrollLeft;
+      if (velocityContainer) velocityContainer.scrollLeft = scrollLeft;
+
+      // Sync vertical scroll for keyboard
+      if (keyboardContainer) keyboardContainer.scrollTop = scrollTop;
+    };
+
+    // Reverse sync: Timeline scroll affects Grid
+    const handleRulerScroll = () => {
+      const { scrollLeft } = rulerContainer;
+      if (gridContainer && gridContainer.scrollLeft !== scrollLeft) {
+        gridContainer.scrollLeft = scrollLeft;
       }
     };
 
-    scrollContainer.addEventListener('scroll', handleScroll, { passive: true });
-    syncScrollPosition(); // Initial sync
+    gridContainer.addEventListener('scroll', handleScroll, { passive: true });
+
+    // Add timeline reverse sync
+    if (rulerContainer) {
+      rulerContainer.addEventListener('scroll', handleRulerScroll, { passive: true });
+    }
+
+    // Non-passive wheel event for zoom
+    const handleWheel = (e) => {
+      const newZoom = handleZoom(e, zoomX);
+
+      if (newZoom !== zoomX) {
+        // Scroll container'ın otomatik scroll yapmasını engelle
+        gridContainer.style.overflow = 'hidden';
+        setTimeout(() => {
+          gridContainer.style.overflow = 'auto';
+        }, 50);
+      }
+    };
+
+    gridContainer.addEventListener('wheel', handleWheel, { passive: false });
 
     return () => {
-      scrollContainer.removeEventListener('scroll', handleScroll);
-      if (animationId) cancelAnimationFrame(animationId);
+      gridContainer.removeEventListener('scroll', handleScroll);
+      gridContainer.removeEventListener('wheel', handleWheel);
+      if (rulerContainer) {
+        rulerContainer.removeEventListener('scroll', handleRulerScroll);
+      }
     };
-  }, []);
+  }, [zoomX, setZoomX]);
   
   if (!instrument) {
     return (
@@ -95,53 +117,61 @@ function PianoRoll({ instrument }) {
           : '32px 1fr auto'
       }}>
         <div className="prv2-corner" />
+
+        {/* Fixed Timeline - no transform needed */}
         <div className="prv2-ruler-container">
-          <div ref={rulerContentRef}>
-            <EnhancedTimelineRuler engine={engine} />
-          </div>
+          <EnhancedTimelineRuler engine={engine} instrument={instrument} />
         </div>
+
+        {/* Fixed Keyboard - no transform needed */}
         <div className="prv2-keyboard-container">
-          <div ref={keyboardContentRef}><PianoKeyboard engine={engine} /></div>
+          <PianoKeyboard engine={engine} />
         </div>
+
         <div
           ref={scrollContainerRef}
           className="prv2-grid-area-container"
           onMouseDown={interactions.onMouseDown}
           onMouseMove={interactions.onMouseMove}
           onMouseUp={interactions.onMouseUp}
+          onContextMenu={(e) => e.preventDefault()}
         >
-          {/* Legacy grid with proper props */}
-          <PianoRollGrid
-            engine={engine}
-            scroll={engine.scroll}
-            size={engine.size}
-          />
-
-          {/* Motor precision grid overlay */}
-          <PrecisionGrid
-            engine={engine}
-            width={engine.gridWidth || 1600}
-            height={engine.gridHeight || 1920}
-            showMotorPrecision={motorNotes.selectedNotes.length > 0}
-          />
-
-          {/* Enhanced notes renderer with motor precision */}
-          <VirtualNotesRenderer
-            notes={interactions.notes}
-            selectedNotes={interactions.selectedNotes || new Set()}
-            engine={engine}
-            interaction={interactions.interaction}
-            motorPrecision={motorNotes}
-            onResizeStart={interactions.onResizeStart}
-          />
-
-          {/* Debug info for motor precision */}
-          {process.env.NODE_ENV === 'development' && motorNotes.selectedNotes.length > 0 && (
-            <GridDebugInfo
-              precisionGrid={motorNotes.precisionGrid}
+          {/* Infinite scroll wrapper with dynamic width */}
+          <div
+            style={{
+              width: engine.gridWidth || 1600,
+              height: engine.gridHeight || 1920,
+              position: 'relative'
+            }}
+          >
+            {/* Legacy grid with proper props */}
+            <PianoRollGrid
               engine={engine}
+              scroll={engine.scroll}
+              size={engine.size}
             />
-          )}
+
+            {/* Standard grid overlay */}
+            <PrecisionGrid
+              engine={engine}
+              width={engine.gridWidth || 1600}
+              height={engine.gridHeight || 1920}
+              showBeatPattern={true}
+            />
+
+            {/* Enhanced notes renderer */}
+            <VirtualNotesRenderer
+              notes={interactions.notes}
+              selectedNotes={interactions.selectedNotes || new Set()}
+              engine={engine}
+              interaction={interactions.interaction}
+              onResizeStart={interactions.onResizeStart}
+            />
+
+            {/* Playhead overlay - positioned absolutely in grid */}
+            <PlayheadOptimized engine={engine} />
+          </div>
+
         </div>
 
         {/* Velocity Lane */}
@@ -151,18 +181,14 @@ function PianoRoll({ instrument }) {
               <span>Velocity</span>
             </div>
             <div className="prv2-velocity-lane" style={{ height: velocityLaneHeight }}>
-              <div className="prv2-velocity-lane__content-wrapper">
-                <div ref={velocityLaneContentRef}>
-                  <VelocityLane
-                    notes={interactions.notes}
-                    selectedNotes={interactions.selectedNotes || new Set()}
-                    engine={engine}
-                    height={velocityLaneHeight}
-                    onVelocityChange={interactions.handleVelocityChange}
-                    onNoteSelect={interactions.handleNoteSelectFromLane}
-                  />
-                </div>
-              </div>
+              <VelocityLane
+                notes={interactions.notes}
+                selectedNotes={interactions.selectedNotes || new Set()}
+                engine={engine}
+                height={velocityLaneHeight}
+                onVelocityChange={interactions.handleVelocityChange}
+                onNoteSelect={interactions.handleNoteSelectFromLane}
+              />
             </div>
           </>
         )}

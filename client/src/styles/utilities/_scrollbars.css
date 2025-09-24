@@ -1,0 +1,60 @@
+/* ==========================================================================
+   Centralized Scrollbar Styles - Consolidated from multiple files
+   ========================================================================== */
+
+/* Base scrollbar styles - using CSS variables for consistency */
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-surface-3) var(--color-surface-1);
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: var(--color-surface-1);
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--color-surface-3);
+  border-radius: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-secondary);
+}
+
+/* Thin scrollbar variant */
+.custom-scrollbar--thin {
+  scrollbar-width: thin;
+}
+
+.custom-scrollbar--thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+/* Hidden scrollbar but keep functionality */
+.custom-scrollbar--hidden {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge */
+}
+
+.custom-scrollbar--hidden::-webkit-scrollbar {
+  display: none; /* Chrome/Safari */
+}
+
+/* Accent colored scrollbar for special areas */
+.custom-scrollbar--accent {
+  scrollbar-color: var(--color-accent-primary) var(--color-surface-1);
+}
+
+.custom-scrollbar--accent::-webkit-scrollbar-thumb {
+  background: var(--color-accent-primary);
+}
+
+.custom-scrollbar--accent::-webkit-scrollbar-thumb:hover {
+  background: var(--color-accent-secondary);
+}

@@ -1,23 +1,22 @@
 // components/PrecisionGrid.jsx
-// Motor hassasiyetli layered grid rendering sistemi
+// Simple layered grid rendering system
 
 import React, { useMemo, useCallback } from 'react';
-import { PrecisionGrid as PrecisionGridEngine } from '../utils/precisionGrid';
 import { usePlaybackStore } from '../../../store/usePlaybackStore';
+import { usePianoRollStoreV2 } from '../store/usePianoRollStoreV2';
 
 export const PrecisionGrid = ({
   engine,
   width,
   height,
   className = '',
-  showMotorPrecision = false
+  showBeatPattern = true
 }) => {
   const { bpm } = usePlaybackStore();
+  // Optimize state selectors - only listen to grid-related changes
+  const gridSnapValue = usePianoRollStoreV2(state => state.gridSnapValue);
+  const zoomX = usePianoRollStoreV2(state => state.zoomX);
 
-  // Precision grid engine instance
-  const precisionGrid = useMemo(() => {
-    return new PrecisionGridEngine(bpm);
-  }, [bpm]);
 
   // Optimized viewport calculation - only render visible area
   const viewportInfo = useMemo(() => {
@@ -175,12 +174,6 @@ export const PrecisionGrid = ({
     return isWhiteKey ? '#4b5563' : '#374151'; // More visible keys
   };
 
-  // Simplified motor precision (if needed)
-  const renderMotorLines = useCallback(() => {
-    if (!showMotorPrecision) return null;
-    // Simplified version - only render if user specifically requests motor precision
-    return null; // Disable for performance
-  }, [showMotorPrecision]);
 
   // Removed old renderPitchLines - now using optimized renderHorizontalLines
 
@@ -244,53 +237,8 @@ export const PrecisionGrid = ({
         </g>
       </g>
 
-      {/* Motor precision lines (debug mode - disabled for performance) */}
-      {showMotorPrecision && (
-        <g className="motor-precision-lines">
-          {renderMotorLines()}
-        </g>
-      )}
 
-      {/* Grid info overlay (for debugging) */}
-      {showMotorPrecision && (
-        <text
-          x={10}
-          y={20}
-          fill="#ffffff"
-          fontSize="12"
-          fontFamily="monospace"
-          opacity="0.7"
-        >
-          BPM: {bpm} | PPQ: {precisionGrid.ppq} | Zoom: {engine?.dimensions?.stepWidth || engine?.stepWidth || 40}px/step
-        </text>
-      )}
     </svg>
   );
 };
 
-// Grid info component for debugging
-export const GridDebugInfo = ({ precisionGrid, engine }) => {
-  const debugInfo = precisionGrid.getDebugInfo();
-
-  return (
-    <div className="grid-debug-info" style={{
-      position: 'absolute',
-      top: 10,
-      right: 10,
-      background: 'rgba(0,0,0,0.8)',
-      color: '#ffffff',
-      padding: '8px',
-      borderRadius: '4px',
-      fontSize: '11px',
-      fontFamily: 'monospace',
-      zIndex: 1000
-    }}>
-      <div>BPM: {debugInfo.bpm}</div>
-      <div>PPQ: {debugInfo.ppq}</div>
-      <div>UI Precision: {debugInfo.uiPrecision}</div>
-      <div>Ticks/Step: {debugInfo.ticksPerStep}</div>
-      <div>Step Width: {engine?.dimensions?.stepWidth || engine?.stepWidth || 40}px</div>
-      <div>Zoom: {((engine?.dimensions?.stepWidth || engine?.stepWidth || 40) / 40).toFixed(2)}x</div>
-    </div>
-  );
-};

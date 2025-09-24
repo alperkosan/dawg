@@ -1,0 +1,35 @@
+/* ==========================================================================
+   Utilities Index - Import all utility classes
+   ========================================================================== */
+
+@import url("./_common.css");
+@import url("./_playhead.css");
+@import url("./_scrollbars.css");
+
+/* Usage Instructions:
+ *
+ * Common utilities:
+ * - .gpu-optimized - Force GPU acceleration
+ * - .scroll-optimized - Optimize scrolling performance
+ * - .no-select - Prevent text selection
+ * - .transition-smooth - Smooth transitions
+ * - .transition-fast - Fast transitions
+ * - .scrollbar-hidden - Hide scrollbar but keep functionality
+ * - .hover-lift - Lift effect on hover
+ * - .hover-glow - Glow effect on hover
+ * - .scrolling - Disable transitions during scroll
+ *
+ * Playhead:
+ * - .playhead - Base playhead styles
+ * - .prv2-playhead - Piano roll specific playhead
+ * - .timeline-playhead - Timeline specific playhead
+ * - .channel-rack-layout__playhead - Channel rack specific playhead
+ * - .playhead--smooth - Smooth animated playhead
+ * - .playhead--css-animated - CSS animation based playhead
+ *
+ * Scrollbars:
+ * - .custom-scrollbar - Default themed scrollbar
+ * - .custom-scrollbar--thin - Thin scrollbar variant
+ * - .custom-scrollbar--hidden - Hidden but functional scrollbar
+ * - .custom-scrollbar--accent - Accent colored scrollbar
+ */

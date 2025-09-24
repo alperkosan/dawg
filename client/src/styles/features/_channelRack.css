@@ -41,6 +41,8 @@
   z-index: 20;
   background-color: var(--color-surface-1);
   border-right: 1px solid var(--color-border);
+  /* Scroll utility sınıfları için hazır */
+  overflow: hidden;
 }
 
 .channel-rack-layout__timeline {
@@ -48,12 +50,14 @@
   z-index: 20;
   background-color: var(--color-surface-1);
   border-bottom: 1px solid var(--color-border);
+  overflow: hidden;
 }
 
 .channel-rack-layout__grid-scroll-area {
   grid-column: 2; grid-row: 2;
   overflow: auto; /* BU ALAN KAYDIRMANIN MERKEZİDİR */
   z-index: 10;
+  /* Merkezi utility sınıfları */
 }
 
 .channel-rack-layout__grid-content {
@@ -62,16 +66,8 @@
 
 /* Oynatma Çubuğu (Playhead) */
 .channel-rack-layout__playhead {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 2px;
-  background-color: var(--color-primary);
-  box-shadow: var(--shadow-glow);
-  z-index: 25;
-  pointer-events: none;
-  transform: translateX(0);
-  will-change: transform;
+  /* Using centralized playhead styles from utilities/_playhead.css */
+  height: 100%; /* Channel rack specific height */
 }
 
 /* Grid Satırları */

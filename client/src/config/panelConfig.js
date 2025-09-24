@@ -8,16 +8,12 @@ import KeybindingsPanel from '../features/key_bindings/KeybindingsPanel';
 import { ThemeEditor } from '../features/theme_editor/ThemeEditor';
 import { ForgeSynthUI } from '../features/instrument_editor/ForgeSynthUI';
 import AudioQualitySettings from '../components/AudioQualitySettings';
-import InfinitePianoRoll from '../components/InfinitePianoRoll';
-import InfiniteChannelRack from '../components/InfiniteChannelRack';
 
 export const panelRegistry = {
   'channel-rack': ChannelRack,
-  'infinite-channel-rack': InfiniteChannelRack, // NEW: Infinite Canvas Channel Rack
   'mixer': AdvancedMixer,
   'sample-editor': SampleEditorV2,
   'piano-roll': PianoRoll,
-  'infinite-piano-roll': InfinitePianoRoll, // NEW: Infinite Canvas Piano Roll
   'keybindings': KeybindingsPanel,
   'arrangement': ArrangementPanel,
   'theme-editor': ThemeEditor,
@@ -83,17 +79,5 @@ export const panelDefinitions = {
     initialSize: { width: 900, height: 700 },
     initialPos: { x: 100, y: 50 },
     minSize: { width: 700, height: 500 },
-  },
-  'infinite-piano-roll': {
-    title: 'Infinite Piano Roll',
-    initialSize: { width: 1200, height: 600 },
-    initialPos: { x: 50, y: 50 },
-    minSize: { width: 800, height: 400 },
-  },
-  'infinite-channel-rack': {
-    title: 'Infinite Channel Rack',
-    initialSize: { width: 1400, height: 500 },
-    initialPos: { x: 30, y: 30 },
-    minSize: { width: 1000, height: 350 },
   },
 };

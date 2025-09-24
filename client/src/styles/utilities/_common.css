@@ -1,0 +1,62 @@
+/* ==========================================================================
+   Common Utility Classes - Consolidated from multiple files
+   ========================================================================== */
+
+/* Performance optimizations (used across multiple components) */
+.gpu-optimized {
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  perspective: 1000px;
+  will-change: transform;
+}
+
+/* Scroll optimizations */
+.scroll-optimized {
+  will-change: scroll-position;
+  -webkit-overflow-scrolling: touch;
+  contain: layout style paint;
+  scroll-behavior: auto;
+}
+
+/* Text selection prevention */
+.no-select {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+
+/* Common transition patterns */
+.transition-smooth {
+  transition: all var(--transition-speed) cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.transition-fast {
+  transition: all 100ms ease;
+}
+
+/* Hide scrollbars while keeping functionality */
+.scrollbar-hidden {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge */
+}
+
+.scrollbar-hidden::-webkit-scrollbar {
+  display: none; /* Chrome/Safari */
+}
+
+/* Common hover effects */
+.hover-lift:hover {
+  transform: translateY(-1px);
+}
+
+.hover-glow:hover {
+  box-shadow: var(--shadow-glow);
+}
+
+/* Disable transitions during scroll (performance) */
+.scrolling,
+.scrolling * {
+  transition: none !important;
+  animation: none !important;
+}

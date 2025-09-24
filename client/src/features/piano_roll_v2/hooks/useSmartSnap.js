@@ -3,7 +3,13 @@ import { useMemo, useCallback } from 'react';
 import { usePianoRollStoreV2 } from '../store/usePianoRollStoreV2';
 import * as Tone from 'tone';
 
-const notationToSeconds = (notation) => Tone.Time(notation).toSeconds();
+const notationToSeconds = (notation) => {
+  try {
+    return Tone.Time(notation).toSeconds();
+  } catch (error) {
+    return 0.25; // Fallback: 16th note at 120 BPM
+  }
+};
 
 /**
  * Snap modu (hard/soft), zoom seviyesi ve kullanıcı seçimini hesaba katarak
@@ -11,41 +17,53 @@ const notationToSeconds = (notation) => Tone.Time(notation).toSeconds();
  */
 export const useSmartSnap = (engine) => {
   // === GÜNCELLEME: Artık 'snapMode'u da store'dan okuyoruz ===
-  const { gridSnapValue, zoomX, snapMode } = usePianoRollStoreV2();
+  // Optimize state selectors - separate selectors for better caching
+  const gridSnapValue = usePianoRollStoreV2(state => state.gridSnapValue);
+  const zoomX = usePianoRollStoreV2(state => state.zoomX);
+  const snapMode = usePianoRollStoreV2(state => state.snapMode);
 
   const effectiveSnapValue = useMemo(() => {
-    const userChoiceInSeconds = notationToSeconds(gridSnapValue);
-    const stepWidth = 40 * zoomX;
+    // Kullanıcının seçtiği snap değerini her zaman kullan
+    // Zoom seviyesi ne olursa olsun, kullanıcı 1/32 seçtiyse 1/32 snap yap
+    return gridSnapValue;
+  }, [gridSnapValue]);
 
-    let finestVisibleSnap = '4n';
-    if (stepWidth > 8) finestVisibleSnap = '8n';
-    if (stepWidth > 12) finestVisibleSnap = '16n';
-    if (stepWidth > 30) finestVisibleSnap = '32n';
-    
-    const finestVisibleInSeconds = notationToSeconds(finestVisibleSnap);
-
-    return userChoiceInSeconds > finestVisibleInSeconds ? gridSnapValue : finestVisibleSnap;
-  }, [gridSnapValue, zoomX]);
-
-  // === GÜNCELLEME: snapTime fonksiyonu artık iki modu da destekliyor ===
-  const snapTime = useCallback((time) => {
+  // === IMPROVED: Smart magnetic snap for better mouse tracking ===
+  const snapTime = useCallback((time, options = {}) => {
+    const { isResizing = false, previousValue = null } = options;
     const snapSteps = notationToSeconds(effectiveSnapValue) / notationToSeconds('16n');
-    if (snapSteps <= 0) return time; // Sıfıra bölünme hatasını engelle
+
+
+    if (snapSteps <= 0) return time;
 
     const snappedTime = Math.round(time / snapSteps) * snapSteps;
+    const distance = Math.abs(time - snappedTime);
 
-    // Eğer mod 'soft' ise, manyetik davranışı uygula
     if (snapMode === 'soft') {
-      const distance = Math.abs(time - snappedTime);
-      const threshold = snapSteps * 0.25; // %25'lik bir çekim alanı
-      
-      // Sadece eşik değerinin içindeyse yapış, değilse serbest bırak
-      return distance <= threshold ? snappedTime : time;
+      // IMPROVED: Adaptive threshold based on context
+      let threshold = snapSteps * 0.4; // Increased from 0.25 - wider magnetic area
+
+      // During resize, make snap more forgiving
+      if (isResizing) {
+        threshold = snapSteps * 0.6; // Even wider during resize
+
+        // Hysteresis: Once snapped, harder to unsnap
+        if (previousValue !== null && Math.abs(previousValue - snappedTime) < 0.001) {
+          threshold = snapSteps * 0.3; // Sticky behavior
+        }
+      }
+
+      const result = distance <= threshold ? snappedTime : time;
+      return result;
     }
 
-    // Değilse ('hard' moddaysa), her zaman yapış
+    // Hard mode: Always snap in hard mode, even during resize
+    if (snapMode === 'hard') {
+      return snappedTime;
+    }
+
+
     return snappedTime;
-    
   }, [effectiveSnapValue, snapMode]);
 
   return { snapTime, effectiveSnapValue, snapMode };

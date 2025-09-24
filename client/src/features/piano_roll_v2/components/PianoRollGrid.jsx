@@ -4,7 +4,7 @@ import { GridTile } from './GridTile';
 
 const TILE_WIDTH = 512;
 const TILE_HEIGHT = 512;
-const TILE_BUFFER = 1; // === YENİ: Etrafta render edilecek ekstra karo sırası sayısı ===
+const TILE_BUFFER = 1;
 
 export const PianoRollGrid = React.memo(({ engine, scroll, size }) => {
   const visibleTiles = useMemo(() => {
@@ -13,28 +13,45 @@ export const PianoRollGrid = React.memo(({ engine, scroll, size }) => {
 
     const tiles = [];
     
-    // === GÜNCELLEME: Hesaplamalara tampon bölgeyi ekliyoruz ===
+    // FIXED: Use dynamic gridWidth instead of fixed values
+    const maxCols = Math.ceil(gridWidth / TILE_WIDTH);
+    const maxRows = Math.ceil(gridHeight / TILE_HEIGHT);
+    
     const startCol = Math.max(0, Math.floor(scroll.x / TILE_WIDTH) - TILE_BUFFER);
-    const endCol = Math.min(Math.ceil(gridWidth / TILE_WIDTH), Math.ceil((scroll.x + size.width) / TILE_WIDTH) + TILE_BUFFER);
+    const endCol = Math.min(maxCols, Math.ceil((scroll.x + size.width) / TILE_WIDTH) + TILE_BUFFER);
     const startRow = Math.max(0, Math.floor(scroll.y / TILE_HEIGHT) - TILE_BUFFER);
-    const endRow = Math.min(Math.ceil(gridHeight / TILE_HEIGHT), Math.ceil((scroll.y + size.height) / TILE_HEIGHT) + TILE_BUFFER);
+    const endRow = Math.min(maxRows, Math.ceil((scroll.y + size.height) / TILE_HEIGHT) + TILE_BUFFER);
+
 
     for (let row = startRow; row < endRow; row++) {
       for (let col = startCol; col < endCol; col++) {
-        tiles.push({
-          key: `${row}-${col}`,
-          x: col * TILE_WIDTH,
-          y: row * TILE_HEIGHT,
-          width: TILE_WIDTH,
-          height: TILE_HEIGHT,
-        });
+        // FIXED: Ensure tiles don't exceed grid boundaries
+        const tileX = col * TILE_WIDTH;
+        const tileY = row * TILE_HEIGHT;
+        const tileWidth = Math.min(TILE_WIDTH, gridWidth - tileX);
+        const tileHeight = Math.min(TILE_HEIGHT, gridHeight - tileY);
+        
+        if (tileWidth > 0 && tileHeight > 0) {
+          tiles.push({
+            key: `${row}-${col}`,
+            x: tileX,
+            y: tileY,
+            width: tileWidth,
+            height: tileHeight,
+          });
+        }
       }
     }
+    
     return tiles;
-  }, [scroll, size, engine]);
+  }, [scroll, size, engine.gridWidth, engine.gridHeight]);
 
   return (
-    <div className="prv2-grid-area__content" style={{ width: engine.gridWidth, height: engine.gridHeight }}>
+    <div className="prv2-grid-area__content" style={{ 
+      width: engine.gridWidth, 
+      height: engine.gridHeight,
+      position: 'relative' // Ensure proper positioning context
+    }}>
       {visibleTiles.map(tile => (
         <GridTile
           key={tile.key}

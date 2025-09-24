@@ -18,13 +18,18 @@ const Select = ({ value, onChange, options }) => (
 const ToolGroup = ({ children }) => <div className="prv2-tool-group">{children}</div>;
 
 export const Toolbar = () => {
-    const {
-        activeTool, setActiveTool,
-        gridSnapValue, setGridSnapValue,
-        snapMode, toggleSnapMode, // snapMode ve toggleSnapMode'u alıyoruz
-        zoomX, zoomIn, zoomOut,
-        showVelocityLane, toggleVelocityLane
-    } = usePianoRollStoreV2();
+    // Optimize state selectors - separate each selector for minimal re-renders
+    const activeTool = usePianoRollStoreV2(state => state.activeTool);
+    const setActiveTool = usePianoRollStoreV2(state => state.setActiveTool);
+    const gridSnapValue = usePianoRollStoreV2(state => state.gridSnapValue);
+    const setGridSnapValue = usePianoRollStoreV2(state => state.setGridSnapValue);
+    const snapMode = usePianoRollStoreV2(state => state.snapMode);
+    const toggleSnapMode = usePianoRollStoreV2(state => state.toggleSnapMode);
+    const zoomX = usePianoRollStoreV2(state => state.zoomX);
+    const zoomIn = usePianoRollStoreV2(state => state.zoomIn);
+    const zoomOut = usePianoRollStoreV2(state => state.zoomOut);
+    const showVelocityLane = usePianoRollStoreV2(state => state.showVelocityLane);
+    const toggleVelocityLane = usePianoRollStoreV2(state => state.toggleVelocityLane);
 
     const snapOptions = [
         { value: '32n', label: '1/32' },

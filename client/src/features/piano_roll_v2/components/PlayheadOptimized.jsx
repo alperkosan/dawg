@@ -1,16 +1,15 @@
 // src/features/piano_roll_v2/components/PlayheadOptimized.jsx
 // Optimized Playhead Component - Uses PositionTracker and PlayheadRenderer
 
-import React, { useRef, useEffect } from 'react';
-import { usePlaybackStore } from '../../../store/usePlaybackStore';
+import React, { useRef, useEffect, useCallback } from 'react';
+import { useGlobalPlayhead } from '../../../hooks/useGlobalPlayhead';
 import { PlayheadRenderer } from '../../../lib/core/PlayheadRenderer.js';
-import { AudioContextService } from '../../../lib/services/AudioContextService';
 
 export const PlayheadOptimized = React.memo(({ engine }) => {
   const playheadRef = useRef(null);
   const rendererRef = useRef(null);
 
-  const { playbackState } = usePlaybackStore();
+  const { currentStep, playbackState } = useGlobalPlayhead();
 
   // Initialize renderer
   useEffect(() => {
@@ -21,7 +20,6 @@ export const PlayheadOptimized = React.memo(({ engine }) => {
       engine.stepWidth
     );
 
-    console.log('🎯 PlayheadOptimized: Renderer initialized');
 
     // Cleanup
     return () => {
@@ -32,6 +30,11 @@ export const PlayheadOptimized = React.memo(({ engine }) => {
     };
   }, [engine.stepWidth]);
 
+  // Position callback using currentStep from useGlobalPlayhead
+  const getPositionCallback = useCallback(() => {
+    return isNaN(currentStep) || currentStep === undefined ? 0 : currentStep;
+  }, [currentStep]);
+
   // Handle playback state changes
   useEffect(() => {
     const renderer = rendererRef.current;
@@ -39,24 +42,13 @@ export const PlayheadOptimized = React.memo(({ engine }) => {
 
     switch (playbackState) {
       case 'playing':
-        // Start animation loop with position callback
-        renderer.startAnimation(() => {
-          const audioEngine = AudioContextService.getAudioEngine();
-          const playbackManager = audioEngine?.playbackManager;
-
-          if (playbackManager?.positionTracker) {
-            const position = playbackManager.positionTracker.getCurrentPosition();
-            return position.stepFloat;
-          }
-
-          return 0;
-        });
+        // Start smooth animation using global playhead
+        renderer.startAnimation(getPositionCallback);
         break;
 
       case 'stopped':
         renderer.stopAnimation();
         renderer.reset();
-        console.log('🎯 PlayheadOptimized: Reset to position 0');
         break;
 
       case 'paused':
@@ -65,8 +57,7 @@ export const PlayheadOptimized = React.memo(({ engine }) => {
         break;
     }
 
-    console.log(`🎯 PlayheadOptimized: State changed to ${playbackState}`);
-  }, [playbackState]);
+  }, [playbackState, getPositionCallback]);
 
   // Handle step width changes
   useEffect(() => {

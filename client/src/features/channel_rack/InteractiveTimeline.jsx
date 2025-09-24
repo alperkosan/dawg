@@ -95,9 +95,12 @@ const InteractiveTimeline = ({
     return markers;
   };
 
-  const currentBar = Math.floor(currentPosition / 16) + 1;
-  const currentBeat = Math.floor((currentPosition % 16) / 4) + 1;
-  const currentTick = Math.floor(currentPosition % 4) + 1;
+  // Safety check for invalid currentPosition
+  const safeCurrentPosition = isNaN(currentPosition) || currentPosition === undefined ? 0 : currentPosition;
+
+  const currentBar = Math.floor(safeCurrentPosition / 16) + 1;
+  const currentBeat = Math.floor((safeCurrentPosition % 16) / 4) + 1;
+  const currentTick = Math.floor(safeCurrentPosition % 4) + 1;
 
   return (
     <div className="timeline">

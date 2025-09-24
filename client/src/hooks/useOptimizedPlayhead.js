@@ -2,16 +2,16 @@
 // High-Performance Playhead Hook - Uses PositionTracker and PlayheadRenderer
 
 import { useRef, useEffect, useCallback } from 'react';
-import { usePlaybackStore } from '../store/usePlaybackStore';
+import { useGlobalPlayhead } from './useGlobalPlayhead';
 import { PlayheadRenderer } from '../lib/core/PlayheadRenderer.js';
-import { AudioContextService } from '../lib/services/AudioContextService';
 
 export const useOptimizedPlayhead = (stepWidth = 16) => {
   const playheadRef = useRef(null);
   const rendererRef = useRef(null);
   const scrollContainerRef = useRef(null);
 
-  const { playbackState } = usePlaybackStore();
+  const { currentStep, playbackState } = useGlobalPlayhead();
+
 
   // Initialize renderer when DOM is ready
   useEffect(() => {
@@ -20,37 +20,25 @@ export const useOptimizedPlayhead = (stepWidth = 16) => {
     // Create renderer instance
     rendererRef.current = new PlayheadRenderer(playheadRef.current, stepWidth);
 
-    console.log('🎯 useOptimizedPlayhead: Renderer initialized with stepWidth:', stepWidth);
-
     // Cleanup
     return () => {
       if (rendererRef.current) {
         rendererRef.current.dispose();
         rendererRef.current = null;
-        console.log('🎯 useOptimizedPlayhead: Renderer disposed');
       }
     };
   }, [stepWidth]);
 
-  // Get current position from PositionTracker
+  // Use currentStep from global playhead - MUCH simpler!
   const getPositionCallback = useCallback(() => {
-    const audioEngine = AudioContextService.getAudioEngine();
-    const playbackManager = audioEngine?.playbackManager;
-
-    if (playbackManager?.positionTracker) {
-      const position = playbackManager.positionTracker.getCurrentPosition();
-      return position.stepFloat || 0;
-    }
-
-    return 0;
-  }, []);
+    const safeStep = isNaN(currentStep) || currentStep === undefined ? 0 : currentStep;
+    return safeStep;
+  }, [currentStep]);
 
   // Handle playback state changes
   useEffect(() => {
     const renderer = rendererRef.current;
     if (!renderer) return;
-
-    console.log(`🎯 useOptimizedPlayhead: State changed to ${playbackState}`);
 
     switch (playbackState) {
       case 'playing':
@@ -128,7 +116,6 @@ export const useOptimizedPlayhead = (stepWidth = 16) => {
   const jumpToPosition = useCallback((step) => {
     if (rendererRef.current) {
       rendererRef.current.setPosition(step);
-      console.log(`🎯 useOptimizedPlayhead: Jumped to step ${step}`);
     }
 
     // Auto-scroll to new position

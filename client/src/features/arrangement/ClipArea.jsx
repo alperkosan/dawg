@@ -1,6 +1,5 @@
 import { useArrangementStore } from '../../store/useArrangementStore';
 import { Clip } from './Clip';
-import { usePlaybackAnimator } from '../../hooks/usePlaybackAnimator';
 // KALDIRILDI: Artık bu store'a ihtiyacımız yok.
 // import { useInstrumentsStore } from '../../store/useInstrumentsStore';
 import ChannelContextMenu from '../../components/ChannelContextMenu';

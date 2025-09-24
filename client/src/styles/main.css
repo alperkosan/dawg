@@ -7,10 +7,13 @@
 @import url("./base/_variables.css");
 @import url("./base/_base.css");
 
-/* 2. Layout Stilleri */
+/* 2. Utilities - Centralized common styles */
+@import url("./utilities/_index.css");
+
+/* 3. Layout Stilleri */
 @import url("./layout/_layout.css");
 
-/* 3. Bileşen Stilleri */
+/* 4. Bileşen Stilleri */
 @import url("./components/_window.css");
 @import url("./components/_volumeKnob.css");
 @import url("./components/_fileTreeNode.css");
@@ -18,10 +21,8 @@
 @import url("./components/_pluginUIs.css");
 @import url("./components/_presetManager.css");
 @import url("./components/AudioQualitySettings.css");
-@import url("./components/InfiniteCanvas.css");
-@import url("../components/piano_roll/PianoRoll.css");
 
-/* 4. Özellik Stilleri */
+/* 5. Özellik Stilleri */
 @import url("./features/_startupScreen.css");
 @import url("./features/_workspace.css");
 @import url("./features/_taskbar.css");

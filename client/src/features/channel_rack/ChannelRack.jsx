@@ -3,9 +3,8 @@ import { useInstrumentsStore } from '../../store/useInstrumentsStore';
 import { useArrangementStore } from '../../store/useArrangementStore';
 import { usePlaybackStore } from '../../store/usePlaybackStore';
 import { usePanelsStore } from '../../store/usePanelsStore';
-import { usePlayheadTracking } from '../../hooks/useEngineState';
+import { useGlobalPlayhead } from '../../hooks/useGlobalPlayhead';
 import { useOptimizedPlayhead } from '../../hooks/useOptimizedPlayhead';
-import '../../styles/playhead-animations.css';
 import { commandManager } from '../../lib/commands/CommandManager';
 import { AddNoteCommand } from '../../lib/commands/AddNoteCommand';
 import { DeleteNoteCommand } from '../../lib/commands/DeleteNoteCommand';
@@ -14,6 +13,7 @@ import StepGrid from './StepGrid';
 import PianoRollMiniView from './PianoRollMiniView';
 import InteractiveTimeline from './InteractiveTimeline';
 import { PlusCircle } from 'lucide-react';
+import { createScrollSynchronizer, createWheelForwarder } from '../../lib/utils/scrollSync';
 
 const STEP_WIDTH = 16;
 
@@ -24,7 +24,7 @@ export default function ChannelRack() {
   const { openPianoRollForInstrument, handleEditInstrument, togglePanel } = usePanelsStore();
 
   // Motor durumu ve playhead takibi için optimize edilmiş hook
-  const { currentStep } = usePlayheadTracking();
+  const { currentStep } = useGlobalPlayhead();
 
   // High-performance playhead için optimize edilmiş hook
   const {
@@ -42,45 +42,19 @@ export default function ChannelRack() {
 
   // Scroll senkronizasyonu - Channel Rack içindeki paneller arası senkronizasyon gerekli
   useEffect(() => {
-    const container = optimizedScrollRef.current;
-    if (!container) return;
+    const syncTargets = [
+      { ref: timelineContainerRef, axis: 'x' },    // Timeline horizontal sync
+      { ref: instrumentListRef, axis: 'y' }        // Instrument list vertical sync
+    ];
 
-    const syncScroll = () => {
-      // Timeline ile horizontal sync (step grid ile timeline senkron olsun)
-      if (timelineContainerRef.current) {
-        timelineContainerRef.current.scrollLeft = container.scrollLeft;
-      }
-      // Instrument list ile vertical sync (instruments ile grid rows senkron olsun)
-      if (instrumentListRef.current) {
-        instrumentListRef.current.scrollTop = container.scrollTop;
-      }
-    };
-
-    container.addEventListener('scroll', syncScroll, { passive: true });
-
-    return () => {
-      container.removeEventListener('scroll', syncScroll);
-    };
+    const cleanup = createScrollSynchronizer(optimizedScrollRef, syncTargets);
+    return cleanup;
   }, []);
 
   // Instrument list'teki mouse wheel'i ana scroll'a yönlendirme (UX iyileştirmesi)
   useEffect(() => {
-    const instrumentContainer = instrumentListRef.current;
-    const mainScrollContainer = optimizedScrollRef.current;
-    if (!instrumentContainer || !mainScrollContainer) return;
-
-    const handleWheelOnInstrumentList = (e) => {
-      // Sadece vertical scroll'u forward et, horizontal'i normal bırak
-      if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
-        e.preventDefault();
-        mainScrollContainer.scrollTop += e.deltaY;
-      }
-    };
-
-    instrumentContainer.addEventListener('wheel', handleWheelOnInstrumentList, { passive: false });
-    return () => {
-      instrumentContainer.removeEventListener('wheel', handleWheelOnInstrumentList);
-    };
+    const cleanup = createWheelForwarder(instrumentListRef, optimizedScrollRef, 'y');
+    return cleanup;
   }, []);
 
   const handleNoteToggle = useCallback((instrumentId, step) => {
@@ -99,7 +73,7 @@ export default function ChannelRack() {
   const totalContentHeight = (instruments.length + 1) * 64;
 
   return (
-    <div className="channel-rack-layout">
+    <div className="channel-rack-layout no-select">
       <div className="channel-rack-layout__corner">
         Pattern: {activePattern?.name || '...'}
       </div>
@@ -130,7 +104,7 @@ export default function ChannelRack() {
       </div>
       <div ref={optimizedScrollRef} className="channel-rack-layout__grid-scroll-area">
         <div style={{ width: totalGridWidth, height: totalContentHeight }} className="channel-rack-layout__grid-content">
-          <div ref={playheadRef} className="channel-rack-layout__playhead playhead--optimized" style={{ height: totalContentHeight }} />
+          <div ref={playheadRef} className="channel-rack-layout__playhead playhead playhead--performance-optimized" style={{ height: totalContentHeight }} />
           {instruments.map(inst => (
             <div key={inst.id} className="channel-rack-layout__grid-row">
               {inst.pianoRoll ? (

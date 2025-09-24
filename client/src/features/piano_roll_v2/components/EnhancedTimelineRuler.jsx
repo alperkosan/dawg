@@ -1,36 +1,53 @@
 // components/EnhancedTimelineRuler.jsx
-// Piano roll için gelişmiş timeline + pozisyon göstergesi
+// Piano roll için gelişmiş timeline + pozisyon göstergesi - Dynamic Width Fix
 
 import React, { useMemo, useState, useCallback, useRef } from 'react';
 import { usePlaybackStore } from '../../../store/usePlaybackStore';
-import { usePlayheadTracking } from '../../../hooks/useEngineState';
+import { useGlobalPlayhead } from '../../../hooks/useGlobalPlayhead';
+import { useArrangementStore } from '../../../store/useArrangementStore';
+import { createTimelineZoomHandler } from '../../../lib/utils/zoomHandler';
 
-export const EnhancedTimelineRuler = ({ engine }) => {
+export const EnhancedTimelineRuler = ({ engine, instrument }) => {
   const rulerRef = useRef(null);
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState(null);
   const [hoverPosition, setHoverPosition] = useState(null);
 
   const { loopStartStep, loopEndStep, setLoopRange, audioLoopLength } = usePlaybackStore();
-  const { currentStep, playbackState } = usePlayheadTracking();
+  const { currentStep, playbackState } = useGlobalPlayhead();
 
-  // Bar markers with viewport-based rendering for infinite scroll
+  // ULTRA OPTIMIZED: Fixed viewport width - no dynamic calculations during playback
+  const timelineWidth = useMemo(() => {
+    const viewportWidth = engine.size?.width || 1200;
+    // Always use viewport width - no expansion during playback for performance
+    return viewportWidth;
+  }, [
+    engine.size?.width
+    // REMOVED scroll dependencies for playback performance
+  ]);
+
+  // PERFORMANCE CRITICAL: Reduce marker rendering during playback
   const markers = useMemo(() => {
+    // Skip complex calculations during playback for performance
+    if (playbackState === 'playing') {
+      return []; // No markers during playback - critical performance fix
+    }
+
     const result = [];
     const stepWidth = engine.dimensions?.stepWidth || engine.stepWidth || 40;
-    const gridWidth = engine.dimensions?.gridWidth || engine.gridWidth || 1600;
     const barWidth = stepWidth * 16; // 16 steps per bar
 
     if (barWidth <= 0) return [];
 
-    // Calculate viewport range with some buffer
-    const scrollX = engine.viewport?.x || 0;
-    const viewportWidth = window.innerWidth;
-    const bufferBars = 10; // Extra bars on each side
+    // Calculate viewport range with minimal buffer
+    const scrollX = engine.scroll?.x || 0;
+    const viewportWidth = engine.size?.width || 1200;
+    const bufferBars = 3; // Reduced buffer for performance
 
-    const startBar = Math.max(0, Math.floor((scrollX - bufferBars * barWidth) / barWidth));
-    const endBar = Math.ceil((scrollX + viewportWidth + bufferBars * barWidth) / barWidth);
-    const totalBarsToRender = Math.min(endBar - startBar, Math.ceil(gridWidth / barWidth) + 20);
+    const startBar = Math.max(0, Math.floor(scrollX / barWidth));
+    const endBar = Math.ceil((scrollX + viewportWidth) / barWidth);
+
+    const totalBarsToRender = Math.min(endBar - startBar + 1, 20); // Max 20 markers
 
     for (let i = 0; i < totalBarsToRender; i++) {
       const barIndex = startBar + i;
@@ -38,7 +55,8 @@ export const EnhancedTimelineRuler = ({ engine }) => {
       const barNumber = barIndex + 1;
 
       // Only include visible markers
-      if (x >= scrollX - bufferBars * barWidth && x <= scrollX + viewportWidth + bufferBars * barWidth) {
+      if (x >= scrollX - bufferBars * barWidth &&
+          x <= scrollX + viewportWidth + bufferBars * barWidth) {
         result.push({
           x,
           label: barNumber,
@@ -48,34 +66,48 @@ export const EnhancedTimelineRuler = ({ engine }) => {
     }
 
     return result;
-  }, [engine.dimensions?.stepWidth, engine.stepWidth, engine.dimensions?.gridWidth, engine.gridWidth, engine.viewport?.x]);
+  }, [
+    engine.dimensions?.stepWidth,
+    engine.stepWidth,
+    engine.scroll?.x,
+    engine.size?.width,
+    playbackState // Add playback state to disable during play
+  ]);
 
-  // Beat subdivision markers (viewport-based)
+  // PERFORMANCE CRITICAL: Disable beat markers during playback
   const beatMarkers = useMemo(() => {
+    // Disable beat markers during playback for maximum performance
+    if (playbackState === 'playing') {
+      return []; // No beat markers during playback - critical performance fix
+    }
+
     const result = [];
     const stepWidth = engine.dimensions?.stepWidth || engine.stepWidth || 40;
     const beatWidth = stepWidth * 4; // 4 steps per beat
 
-    if (beatWidth < 20) return []; // Don't show if too small
+    if (beatWidth < 30) return []; // Higher threshold to show fewer markers
 
-    // Only render beats in viewport
-    const scrollX = engine.viewport?.x || 0;
-    const viewportWidth = window.innerWidth;
-    const bufferBeats = 20;
+    // Only render beats in viewport with minimal buffer
+    const scrollX = engine.scroll?.x || 0;
+    const viewportWidth = engine.size?.width || 1200;
+    const bufferBeats = 5; // Reduced buffer for performance
 
-    const startBeat = Math.max(0, Math.floor((scrollX - bufferBeats * beatWidth) / beatWidth));
-    const endBeat = Math.ceil((scrollX + viewportWidth + bufferBeats * beatWidth) / beatWidth);
+    const startBeat = Math.max(0, Math.floor(scrollX / beatWidth));
+    const endBeat = Math.ceil((scrollX + viewportWidth) / beatWidth);
 
-    for (let i = startBeat; i < endBeat; i++) {
-      const x = i * beatWidth;
-      const barNumber = Math.floor(i / 4) + 1;
-      const beatNumber = (i % 4) + 1;
+    const maxBeatsToRender = Math.min(endBeat - startBeat + 1, 50); // Max 50 beat markers
+
+    for (let i = 0; i < maxBeatsToRender; i++) {
+      const beatIndex = startBeat + i;
+      const x = beatIndex * beatWidth;
+      const barNumber = Math.floor(beatIndex / 4) + 1;
+      const beatNumber = (beatIndex % 4) + 1;
 
       // Skip if it's a bar line
       if (beatNumber === 1) continue;
 
       // Only include visible beats
-      if (x >= scrollX - bufferBeats * beatWidth && x <= scrollX + viewportWidth + bufferBeats * beatWidth) {
+      if (x >= scrollX && x <= scrollX + viewportWidth) {
         result.push({
           x,
           barNumber,
@@ -86,7 +118,13 @@ export const EnhancedTimelineRuler = ({ engine }) => {
     }
 
     return result;
-  }, [engine.dimensions?.stepWidth, engine.stepWidth, engine.viewport?.x]);
+  }, [
+    engine.dimensions?.stepWidth,
+    engine.stepWidth,
+    engine.scroll?.x,
+    engine.size?.width,
+    playbackState // Add playback state to disable during play
+  ]);
 
   // Convert pixel position to musical time
   const pixelToMusicalTime = useCallback((pixelX) => {
@@ -105,7 +143,7 @@ export const EnhancedTimelineRuler = ({ engine }) => {
 
     const rect = rulerRef.current.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
-    const adjustedX = mouseX + engine.viewport?.x || 0;
+    const adjustedX = mouseX + (engine.scroll?.x || 0);
 
     const musicalTime = pixelToMusicalTime(adjustedX);
     const currentStep = Math.round(musicalTime.step);
@@ -121,26 +159,34 @@ export const EnhancedTimelineRuler = ({ engine }) => {
         setLoopRange(newStart, newEnd);
       }
     }
-  }, [engine.viewport?.x || 0, pixelToMusicalTime, setLoopRange, isDragging, dragStart]);
+  }, [engine.scroll?.x, pixelToMusicalTime, setLoopRange, isDragging, dragStart]);
 
-  // Mouse handlers
+  // Mouse handlers - fixed drag interaction
   const handleMouseDown = useCallback((e) => {
-    if (e.button !== 0) return;
+    if (e.button !== 0) return; // Only left mouse button
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    // Start drag immediately
     handleInteraction(e, true);
 
     const handleMouseMove = (moveEvent) => {
+      moveEvent.preventDefault();
       handleInteraction(moveEvent, false);
     };
 
-    const handleMouseUp = () => {
+    const handleMouseUp = (upEvent) => {
+      upEvent.preventDefault();
       setIsDragging(false);
       setDragStart(null);
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
     };
 
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
+    // Use document instead of window for better compatibility
+    document.addEventListener('mousemove', handleMouseMove, { passive: false });
+    document.addEventListener('mouseup', handleMouseUp, { passive: false });
   }, [handleInteraction]);
 
   // Hover position tracking
@@ -149,51 +195,70 @@ export const EnhancedTimelineRuler = ({ engine }) => {
 
     const rect = rulerRef.current.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
-    const adjustedX = mouseX + engine.viewport?.x || 0;
+    const adjustedX = mouseX + (engine.scroll?.x || 0);
 
     const musicalTime = pixelToMusicalTime(adjustedX);
     setHoverPosition(musicalTime);
-  }, [engine.viewport?.x || 0, pixelToMusicalTime, isDragging]);
+  }, [engine.scroll?.x, pixelToMusicalTime, isDragging]);
 
   const handleMouseLeave = useCallback(() => {
     setHoverPosition(null);
   }, []);
 
-  // Double click to reset loop
+  // Get arrangement store for accessing notes
+  const { patterns, activePatternId } = useArrangementStore();
+
+  // Double click to set loop range from first note to last note
   const handleDoubleClick = useCallback(() => {
-    setLoopRange(0, audioLoopLength);
-  }, [setLoopRange, audioLoopLength]);
+    if (!instrument?.id || !activePatternId) {
+      // Fallback - reset to full loop
+      setLoopRange(0, audioLoopLength);
+      return;
+    }
+
+    const notes = patterns[activePatternId]?.data[instrument.id] || [];
+
+    if (notes.length === 0) {
+      // No notes - reset to full loop
+      setLoopRange(0, audioLoopLength);
+      return;
+    }
+
+    // Find the earliest start time and latest end time
+    let earliestStart = Infinity;
+    let latestEnd = -Infinity;
+
+    notes.forEach(note => {
+      const startTime = note.time || 0;
+      const duration = note.duration || 1;
+      const endTime = startTime + duration;
+
+      earliestStart = Math.min(earliestStart, startTime);
+      latestEnd = Math.max(latestEnd, endTime);
+    });
+
+    // Convert to steps and set loop range
+    const startStep = Math.floor(earliestStart);
+    const endStep = Math.ceil(latestEnd);
+
+
+    setLoopRange(startStep, endStep);
+  }, [setLoopRange, audioLoopLength, instrument?.id, activePatternId, patterns]);
+
+  // Create timeline-specific zoom handler
+  const handleZoom = createTimelineZoomHandler(
+    rulerRef,
+    (zoom) => engine.setZoom && engine.setZoom(zoom),
+    (scrollX) => engine.setViewport && engine.setViewport({ x: scrollX }),
+    0.1,
+    5
+  );
 
   // Zoom functionality with mouse wheel
   const handleWheel = useCallback((e) => {
-    if (e.ctrlKey || e.metaKey) {
-      e.preventDefault();
-
-      // Get mouse position relative to ruler
-      const rect = rulerRef.current?.getBoundingClientRect();
-      if (!rect) return;
-
-      const mouseX = e.clientX - rect.left;
-      const currentScrollX = engine.viewport?.x || 0;
-      const worldMouseX = mouseX + currentScrollX;
-
-      // Calculate zoom change
-      const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
-      const currentZoom = engine.viewport?.zoom || 1;
-      const newZoom = Math.max(0.1, Math.min(5, currentZoom * zoomFactor));
-
-      // Update engine zoom if method exists
-      if (engine.setZoom) {
-        engine.setZoom(newZoom);
-      }
-
-      // Calculate new scroll position to keep mouse position stable
-      const newScrollX = worldMouseX - mouseX * (newZoom / currentZoom);
-      if (engine.setViewport) {
-        engine.setViewport({ x: newScrollX });
-      }
-    }
-  }, [engine]);
+    const currentZoom = engine.viewport?.zoom || 1;
+    handleZoom(e, currentZoom);
+  }, [engine, handleZoom]);
 
   // Pan functionality with middle mouse button
   const [isPanning, setIsPanning] = useState(false);
@@ -205,10 +270,10 @@ export const EnhancedTimelineRuler = ({ engine }) => {
       setIsPanning(true);
       setPanStart({
         x: e.clientX,
-        scrollX: engine.viewport?.x || 0
+        scrollX: engine.scroll?.x || 0
       });
     }
-  }, [engine.viewport?.x]);
+  }, [engine.scroll?.x]);
 
   const handlePanMove = useCallback((e) => {
     if (isPanning && panStart) {
@@ -233,20 +298,6 @@ export const EnhancedTimelineRuler = ({ engine }) => {
     return currentStep * stepWidth;
   }, [currentStep, engine.dimensions?.stepWidth, engine.stepWidth]);
 
-  // Dynamic timeline width for infinite scrolling
-  const timelineWidth = useMemo(() => {
-    const scrollX = engine.viewport?.x || 0;
-    const viewportWidth = window.innerWidth;
-    const stepWidth = engine.dimensions?.stepWidth || engine.stepWidth || 40;
-    const barWidth = stepWidth * 16;
-
-    // Calculate how many bars we need to show
-    const visibleBars = Math.ceil(viewportWidth / barWidth);
-    const scrolledBars = Math.ceil(scrollX / barWidth);
-    const totalBarsNeeded = scrolledBars + visibleBars + 50; // Extra buffer
-
-    return totalBarsNeeded * barWidth;
-  }, [engine.viewport?.x, engine.dimensions?.stepWidth, engine.stepWidth]);
 
   return (
     <div className="enhanced-timeline-ruler">
@@ -267,45 +318,47 @@ export const EnhancedTimelineRuler = ({ engine }) => {
         )}
       </div>
 
-      {/* Main ruler area */}
+      {/* Main ruler area - OPTIMIZED: Fixed viewport width with transform */}
       <div
         ref={rulerRef}
         className="timeline-ruler-content"
         style={{
-          width: timelineWidth,
+          width: '100%', // Fixed to viewport width - NO MORE 20k+ px!
+          minWidth: '100%',
+          position: 'relative',
+          overflow: 'hidden', // Hide content outside viewport
           cursor: isDragging ? 'ew-resize' : isPanning ? 'grabbing' : 'crosshair'
         }}
-        onMouseDown={(e) => {
-          handlePanStart(e);
-          handleMouseDown(e);
-        }}
-        onMouseMove={(e) => {
-          handlePanMove(e);
-          handleMouseMove(e);
-        }}
-        onMouseUp={handlePanEnd}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}
         onDoubleClick={handleDoubleClick}
         onWheel={handleWheel}
       >
-        {/* Bar markers */}
+        {/* Bar markers - OPTIMIZED: Positioned relative to scroll */}
         {markers.map(marker => (
           <div
             key={`bar-${marker.label}`}
             className="timeline-bar-marker"
-            style={{ left: marker.x }}
+            style={{
+              left: marker.x - (engine.scroll?.x || 0), // Offset by scroll position
+              position: 'absolute'
+            }}
           >
             <div className="bar-line" />
             <span className="bar-label">{marker.label}</span>
           </div>
         ))}
 
-        {/* Beat markers */}
-        {beatMarkers.map((marker, index) => (
+        {/* Beat markers - OPTIMIZED: Positioned relative to scroll */}
+        {beatMarkers.map((marker) => (
           <div
             key={`beat-${marker.barNumber}-${marker.beatNumber}`}
             className="timeline-beat-marker"
-            style={{ left: marker.x }}
+            style={{
+              left: marker.x - (engine.scroll?.x || 0), // Offset by scroll position
+              position: 'absolute'
+            }}
           >
             <div className="beat-line" />
             <span className="beat-label">{marker.beatNumber}</span>
@@ -324,19 +377,42 @@ export const EnhancedTimelineRuler = ({ engine }) => {
           <div className="loop-end-handle" />
         </div>
 
-        {/* Playhead indicator */}
-        {playbackState === 'playing' && (
+        {/* Playhead indicator - DISABLED during playback to prevent double rendering with PlayheadOptimized */}
+        {playbackState !== 'playing' && (
           <div
             className="timeline-playhead"
-            style={{ left: playheadPosition }}
+            style={{
+              left: playheadPosition - (engine.scroll?.x || 0), // Offset by scroll position
+              position: 'absolute'
+            }}
           />
         )}
 
-        {/* Hover cursor */}
+        {/* Loop range visualization - OPTIMIZED: Positioned relative to scroll */}
+        {loopStartStep !== null && loopEndStep !== null && loopEndStep > loopStartStep && (
+          <div
+            className="timeline-loop-range"
+            style={{
+              left: loopStartStep * (engine.dimensions?.stepWidth || engine.stepWidth || 40) - (engine.scroll?.x || 0),
+              width: (loopEndStep - loopStartStep) * (engine.dimensions?.stepWidth || engine.stepWidth || 40),
+              background: 'rgba(74, 222, 128, 0.2)',
+              border: '1px solid rgba(74, 222, 128, 0.5)',
+              height: '100%',
+              position: 'absolute',
+              top: 0,
+              pointerEvents: 'none'
+            }}
+          />
+        )}
+
+        {/* Hover cursor - OPTIMIZED: Positioned relative to scroll */}
         {hoverPosition && !isDragging && (
           <div
             className="timeline-hover-cursor"
-            style={{ left: hoverPosition.step * (engine.dimensions?.stepWidth || engine.stepWidth || 40) }}
+            style={{
+              left: hoverPosition.step * (engine.dimensions?.stepWidth || engine.stepWidth || 40) - (engine.scroll?.x || 0),
+              position: 'absolute'
+            }}
           />
         )}
       </div>

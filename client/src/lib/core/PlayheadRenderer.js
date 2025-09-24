@@ -14,7 +14,6 @@ export class PlayheadRenderer {
         // Setup element for optimal rendering
         this._setupElement();
 
-        console.log('🎯 PlayheadRenderer initialized:', { stepWidth });
     }
 
     /**
@@ -43,10 +42,10 @@ export class PlayheadRenderer {
     updatePosition(stepPosition) {
         if (!this.element) return;
 
-        // Skip update if position hasn't changed enough (sub-pixel optimization)
+        // ULTRA AGGRESSIVE: Skip update if position hasn't changed enough for Piano Roll performance
         const pixelPosition = stepPosition * this.stepWidth;
-        if (Math.abs(pixelPosition - this.lastPosition) < 0.5) {
-            return;
+        if (Math.abs(pixelPosition - this.lastPosition) < 5) {
+            return; // Skip updates smaller than 5px - critical for Piano Roll performance
         }
 
         // Direct transform without transitions
@@ -65,7 +64,6 @@ export class PlayheadRenderer {
         this.element.style.transform = `translate3d(${pixelPosition}px, 0, 0)`;
         this.lastPosition = pixelPosition;
 
-        console.log(`🎯 Playhead set to position: ${stepPosition} steps (${pixelPosition}px)`);
     }
 
     /**
@@ -87,7 +85,6 @@ export class PlayheadRenderer {
         };
 
         this.rafId = requestAnimationFrame(animate);
-        console.log('🎯 Playhead animation started');
     }
 
     /**
@@ -101,7 +98,6 @@ export class PlayheadRenderer {
             this.rafId = null;
         }
 
-        console.log('🎯 Playhead animation stopped');
     }
 
     /**

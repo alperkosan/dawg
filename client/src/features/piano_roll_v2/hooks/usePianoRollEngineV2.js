@@ -8,11 +8,16 @@ const RULER_HEIGHT = 32;
 const TOTAL_KEYS = 12 * 8; // C0 to B7
 
 export const usePianoRollEngineV2 = (containerRef, loopLength) => {
-  const { zoomX, zoomY } = usePianoRollStoreV2();
+  // Optimize state selectors - only listen to zoom changes
+  const zoomX = usePianoRollStoreV2(state => state.zoomX);
+  const zoomY = usePianoRollStoreV2(state => state.zoomY);
   const scrollRef = useRef({ x: 0, y: 0 });
   const [scrollPos, setScrollPos] = useState({ x: 0, y: 0 });
   const [size, setSize] = useState({ width: 0, height: 0 });
-  const [, forceUpdate] = useState({}); 
+  const [, forceUpdate] = useState({});
+  
+  // FIXED: Add invisible content div reference for scroll area
+  const invisibleContentRef = useRef(null);
 
   const dimensions = useMemo(() => {
     const keyHeight = 20 * zoomY;
@@ -45,7 +50,37 @@ export const usePianoRollEngineV2 = (containerRef, loopLength) => {
       currentBar,
       requiredBars
     };
-  }, [zoomX, zoomY, loopLength, size.width, scrollRef.current.x]);
+  }, [zoomX, zoomY, loopLength, size.width, scrollPos.x]);
+
+  // FIXED: Update scroll container's scrollable area
+  useLayoutEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    // Create or update invisible content div to define scroll area
+    let invisibleContent = invisibleContentRef.current;
+    if (!invisibleContent) {
+      invisibleContent = document.createElement('div');
+      invisibleContent.style.cssText = `
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: ${dimensions.gridWidth}px;
+        height: ${dimensions.gridHeight}px;
+        pointer-events: none;
+        visibility: hidden;
+        z-index: -1;
+      `;
+      container.appendChild(invisibleContent);
+      invisibleContentRef.current = invisibleContent;
+    } else {
+      // Update size
+      invisibleContent.style.width = `${dimensions.gridWidth}px`;
+      invisibleContent.style.height = `${dimensions.gridHeight}px`;
+    }
+
+
+  }, [dimensions.gridWidth, dimensions.gridHeight, containerRef]);
 
   useLayoutEffect(() => {
     const container = containerRef.current;
@@ -53,7 +88,7 @@ export const usePianoRollEngineV2 = (containerRef, loopLength) => {
 
     let rafId = null;
     let lastScrollTime = 0;
-    const throttleDelay = 16; // 60fps
+    const throttleDelay = 33; // ~30fps - Aggressive throttling for Piano Roll performance
 
     const handleScroll = () => {
       const now = Date.now();
@@ -70,27 +105,24 @@ export const usePianoRollEngineV2 = (containerRef, loopLength) => {
 
         scrollRef.current = { x: newScrollX, y: newScrollY };
 
-        // Check if we need to extend the grid (when scrolled to 80% of current width)
-        const scrollThreshold = dimensions.gridWidth * 0.8;
-        const shouldExtend = newScrollX > scrollThreshold;
-
-        // Force update if significant scroll change or if we need to extend
+        // ULTRA AGGRESSIVE: Only update on major scroll changes for performance
         const scrollDeltaX = Math.abs(newScrollX - oldScrollX);
         const scrollDeltaY = Math.abs(newScrollY - oldScrollY);
-        const shouldUpdate = scrollDeltaX > 100 || scrollDeltaY > 100 || shouldExtend;
+        const shouldUpdate = scrollDeltaX > 200 || scrollDeltaY > 200; // Doubled threshold
 
         if (shouldUpdate) {
           setScrollPos({ x: newScrollX, y: newScrollY });
           forceUpdate({});
         } else {
-          // Update scrollPos even if not forcing component update for consistency
+          // Still update scrollPos for consistency but don't force re-render
           setScrollPos(prev => {
-            if (prev.x !== newScrollX || prev.y !== newScrollY) {
+            if (Math.abs(prev.x - newScrollX) > 50 || Math.abs(prev.y - newScrollY) > 50) {
               return { x: newScrollX, y: newScrollY };
             }
             return prev;
           });
         }
+
         lastScrollTime = now;
       });
     };
@@ -114,13 +146,18 @@ export const usePianoRollEngineV2 = (containerRef, loopLength) => {
       resizeObserver.disconnect();
       container.removeEventListener('scroll', handleScroll);
       if (rafId) cancelAnimationFrame(rafId);
+      
+      // Clean up invisible content
+      if (invisibleContentRef.current && container.contains(invisibleContentRef.current)) {
+        container.removeChild(invisibleContentRef.current);
+        invisibleContentRef.current = null;
+      }
     };
-  }, [containerRef]);
+  }, [containerRef, dimensions]);
 
-  // === HATA DÜZELTMESİ: Gerekli fonksiyonlar artık dışarıya aktarılıyor ===
   const converters = useMemo(() => {
     const pitchToIndex = (pitch) => {
-      if (!pitch) return 0; // Güvenlik kontrolü
+      if (!pitch) return 0;
       const noteName = pitch.replace(/[\d-]/g, '');
       const octave = parseInt(pitch.replace(/[^\d-]/g, ''), 10) || 0;
       const noteIndex = NOTES.indexOf(noteName);
@@ -148,7 +185,6 @@ export const usePianoRollEngineV2 = (containerRef, loopLength) => {
         const width = Math.max(4, durationInSteps * dimensions.stepWidth - 1);
         return { x, y, width, height: dimensions.keyHeight - 1 };
       },
-      // Kısayol yöneticisinin ihtiyaç duyduğu fonksiyonları buraya ekliyoruz
       pitchToIndex,
       indexToPitch,
     };
@@ -162,8 +198,6 @@ export const usePianoRollEngineV2 = (containerRef, loopLength) => {
     const y = e.clientY - rect.top + scrollRef.current.y;
     return { x, y, time: converters.xToTime(x), pitch: converters.yToPitch(y) };
   }, [containerRef, converters]);
-  
-  // Scroll position tracking is handled in the main useLayoutEffect above
 
   return useMemo(() => ({
     ...dimensions,

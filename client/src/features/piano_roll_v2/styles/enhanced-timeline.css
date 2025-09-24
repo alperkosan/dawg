@@ -1,5 +1,5 @@
 /* enhanced-timeline.css */
-/* Enhanced timeline ruler styles */
+/* Enhanced timeline ruler styles - FIXED for infinite scroll */
 
 .enhanced-timeline-ruler {
   position: relative;
@@ -10,7 +10,14 @@
   );
   border-bottom: 1px solid #4a5568;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
-  overflow: hidden;
+  overflow: visible; /* FIXED: Allow content to extend beyond container */
+  width: 100%; /* Take full width of parent container */
+
+  /* Prevent text selection on timeline elements */
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
 }
 
 /* Position display */
@@ -56,11 +63,13 @@
   ) !important;
 }
 
-/* Main ruler area */
+/* Main ruler area - FIXED for infinite scroll */
 .timeline-ruler-content {
   position: relative;
   height: 100%;
-  min-width: 100%;
+  /* The width is now set dynamically via inline style from component */
+  overflow: visible;
+  will-change: transform; /* Optimize for transform animations */
 }
 
 /* Bar markers */
@@ -68,6 +77,7 @@
   position: absolute;
   height: 100%;
   pointer-events: none;
+  will-change: transform; /* Optimize marker positioning */
 }
 
 .bar-line {
@@ -95,6 +105,7 @@
     0 0 4px rgba(255, 255, 255, 0.2);
   pointer-events: none;
   letter-spacing: 0.02em;
+  white-space: nowrap; /* Prevent label wrapping */
 }
 
 /* Beat markers */
@@ -102,6 +113,7 @@
   position: absolute;
   height: 100%;
   pointer-events: none;
+  will-change: transform;
 }
 
 .beat-line {
@@ -127,6 +139,7 @@
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
   pointer-events: none;
   letter-spacing: 0.01em;
+  white-space: nowrap;
 }
 
 /* Loop region */
@@ -138,6 +151,7 @@
   border-top: none;
   border-bottom: none;
   pointer-events: none;
+  will-change: transform;
 }
 
 .loop-start-handle,
@@ -159,26 +173,13 @@
 
 /* Playhead indicator */
 .timeline-playhead {
-  position: absolute;
-  top: 0;
-  width: 2px;
-  height: 100%;
-  background: #ff0000;
+  /* Using centralized playhead styles from utilities/_playhead.css */
+  background: var(--playhead-color) !important;
   z-index: 5;
-  pointer-events: none;
-  box-shadow: 0 0 4px rgba(255, 0, 0, 0.5);
 }
 
 .timeline-playhead::before {
-  content: '';
-  position: absolute;
-  top: -4px;
-  left: -3px;
-  width: 0;
-  height: 0;
-  border-left: 4px solid transparent;
-  border-right: 4px solid transparent;
-  border-top: 4px solid #ff0000;
+  border-top-color: var(--playhead-color);
 }
 
 /* Hover cursor */
@@ -190,6 +191,7 @@
   background: rgba(0, 255, 255, 0.8);
   z-index: 3;
   pointer-events: none;
+  will-change: transform;
 }
 
 /* Interactive states */
@@ -200,6 +202,44 @@
 .timeline-ruler-content:not(:hover) .timeline-hover-cursor {
   opacity: 0;
   transition: opacity 0.2s ease;
+}
+
+/* Performance optimizations */
+.timeline-bar-marker,
+.timeline-beat-marker,
+.timeline-loop-region,
+.timeline-playhead,
+.timeline-hover-cursor {
+  transform: translateZ(0); /* Force GPU acceleration */
+  backface-visibility: hidden; /* Prevent flickering */
+}
+
+/* FIXED: Ensure scroll container allows infinite scrolling */
+.prv2-grid-area-container {
+  position: relative;
+  overflow: auto;
+  /* Remove any max-width or width constraints */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.3) rgba(0, 0, 0, 0.1);
+}
+
+.prv2-grid-area-container::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.prv2-grid-area-container::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 4px;
+}
+
+.prv2-grid-area-container::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
+}
+
+.prv2-grid-area-container::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.5);
 }
 
 /* Responsive adjustments */

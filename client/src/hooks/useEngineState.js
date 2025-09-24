@@ -48,7 +48,6 @@ export const useEngineState = (options = {}) => {
     if (!trackTick) return;
 
     const { step, tick, position } = data;
-    console.log('🎵 Transport tick received:', { step, tick, position });
 
     setEngineState(prev => ({
       ...prev,
@@ -60,7 +59,6 @@ export const useEngineState = (options = {}) => {
   const handleTransportLoop = useCallback((data) => {
     if (!trackLoop) return;
 
-    console.log('🔄 Loop detected in useEngineState:', data);
     // Loop event'lerini ilgilenen component'lere bildir
   }, [trackLoop]);
 
@@ -79,7 +77,6 @@ export const useEngineState = (options = {}) => {
     const { transport, isConnected } = checkEngineConnection();
 
     if (!isConnected || !transport) {
-      console.warn('useEngineState: Engine not available');
       return;
     }
 
