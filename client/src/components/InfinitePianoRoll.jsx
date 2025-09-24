@@ -5,12 +5,10 @@ import { useInstrumentsStore } from '../store/useInstrumentsStore';
 import { useArrangementStore } from '../store/useArrangementStore';
 import PianoKeyboard from './PianoKeyboard';
 import Timeline from './Timeline';
+import HtmlNoteElement from './HtmlNoteElement';
 
 const InfinitePianoRoll = ({
     instrumentId = null, // Will use first available instrument if not provided
-    onNoteAdd,
-    onNoteEdit,
-    onNoteDelete,
     className = ""
 }) => {
     const containerRef = useRef(null);
@@ -18,6 +16,11 @@ const InfinitePianoRoll = ({
     const [isInitialized, setIsInitialized] = useState(false);
     const [performanceStats, setPerformanceStats] = useState({});
     const [mouseMode, setMouseMode] = useState('select'); // select, write, delete, slice
+
+    // Hybrid system state
+    const [renderMode, setRenderMode] = useState('hybrid'); // 'canvas', 'html', 'hybrid'
+    const [selectedNotes, setSelectedNotes] = useState(new Set());
+    const [visibleNotes, setVisibleNotes] = useState([]);
 
     // Timeline and keyboard states
     const [snapMode, setSnapMode] = useState('1/16');
@@ -29,6 +32,27 @@ const InfinitePianoRoll = ({
     // Store connections
     const { instruments } = useInstrumentsStore();
     const { patterns, activePatternId, updatePatternNotes } = useArrangementStore();
+
+    // MIDI conversion functions - defined first
+    const noteNameToMidi = (noteName) => {
+        const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+        const match = noteName.match(/^([A-G]#?)(\d+)$/);
+        if (!match) return 60; // Default to C4
+
+        const [, note, octaveStr] = match;
+        const octave = parseInt(octaveStr);
+        const noteIndex = noteNames.indexOf(note);
+
+        if (noteIndex === -1) return 60;
+        return (octave + 1) * 12 + noteIndex;
+    };
+
+    const midiToNoteName = (midiNote) => {
+        const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+        const octave = Math.floor(midiNote / 12) - 1;
+        const noteIndex = midiNote % 12;
+        return `${noteNames[noteIndex]}${octave}`;
+    };
 
     // Use provided instrumentId or first available instrument
     const currentInstrumentId = instrumentId || (instruments.length > 0 ? instruments[0].id : null);
@@ -55,16 +79,25 @@ const InfinitePianoRoll = ({
         if (!containerRef.current || isInitialized) return;
 
         const engine = new InfiniteGridEngine({
-            // Unified coordinate system: X=time, Y=pitch
-            cellWidth: 16,       // 16 pixels = 1/16th note (0.25 beats)
-            cellHeight: 20,      // 20 pixels = 1 semitone (MIDI note)
-            bufferSize: 100,     // Extended buffer for smooth scrolling
-            chunkSize: 1000,     // Notes per chunk
-            maxZoom: 8,          // Ultra zoom for precision
-            minZoom: 0.1,        // Wide overview
-            // Piano coordinate mapping
-            totalPitchRange: 88, // 88 piano keys (A0 to C8)
-            basePitchOffset: 21  // A0 = MIDI 21, maps to Y coordinate 0
+            // FL Studio inspired coordinate system: X=time, Y=pitch
+            cellWidth: 12,       // 12 pixels = 1/16th note (daha sık grid)
+            cellHeight: 12,      // 12 pixels = 1 semitone (daha kompakt)
+            bufferSize: 200,     // FL Studio tarzı geniş buffer
+            chunkSize: 256,      // FL Studio optimal chunk size (64-256)
+            maxZoom: 16,         // FL Studio ultra zoom seviyesi
+            minZoom: 0.05,       // 562 bar görüntülemek için ultra wide
+            // 10 oktav piano mapping (C0 to B9)
+            totalPitchRange: 120, // 10 oktav = 120 semitone
+            basePitchOffset: 12,  // C0 = MIDI 12, maps to Y coordinate 0
+            // Hybrid system optimization
+            hybridMode: renderMode === 'hybrid',
+            renderNotesToCanvas: renderMode === 'canvas',
+            // FL Studio performans optimizasyonları
+            useWebGL: true,       // Hardware acceleration
+            enableVirtualization: true, // Sadece görünen alanı render et
+            maxVisibleBars: 562,  // FL Studio maximum bar limit
+            renderBatchSize: 128, // Render batch optimization
+            cullOffscreenNotes: renderMode === 'canvas'
         });
 
         // Override note loading with unified coordinate system
@@ -98,36 +131,43 @@ const InfinitePianoRoll = ({
             }
 
             const filteredNotes = instrumentNotes.filter(note => {
-                // Convert time to beats (assuming tick values, convert to reasonable beats)
-                const timeInBeats = note.time / 16; // More aggressive conversion: /16 instead of /4
+                // CONSISTENT: note.time is already in beats, no conversion needed
+                const timeInBeats = typeof note.time === 'number' ? note.time : 0;
                 return timeInBeats >= startTime && timeInBeats < endTime;
             }).map(note => {
-                // Convert note name to MIDI number, then to grid Y coordinate
+                // 10 oktav MIDI mapping: C0(12) - B9(131)
                 const midiNote = noteNameToMidi(note.pitch || 'C4');
-                const gridY = midiNote - 21; // A0 (MIDI 21) maps to Y=0
+                const gridY = midiNote - 12; // C0 (MIDI 12) maps to Y=0 (10 oktav başlangıcı)
 
-                // Convert time to beats (assuming tick values)
-                const timeInBeats = note.time / 16; // More aggressive conversion: /16 instead of /4
+                // CONSISTENT: note.time is already in beats
+                const timeInBeats = typeof note.time === 'number' ? note.time : 0;
 
-                // Convert duration from string notation to beats
-                let durationInBeats = 0.25; // default
-                if (note.duration === '16n') durationInBeats = 0.25;  // 16th note
-                else if (note.duration === '8n') durationInBeats = 0.5;   // 8th note
-                else if (note.duration === '4n') durationInBeats = 1;     // quarter note
-                else if (typeof note.duration === 'number') durationInBeats = note.duration;
+                // FL Studio duration mapping
+                let durationInBeats = note.duration || 0.25; // Use stored duration if numeric
+                if (typeof note.duration === 'string') {
+                    if (note.duration === '32n') durationInBeats = 0.125;  // 32nd note
+                    else if (note.duration === '16n') durationInBeats = 0.25;  // 16th note
+                    else if (note.duration === '8n') durationInBeats = 0.5;   // 8th note
+                    else if (note.duration === '4n') durationInBeats = 1;     // quarter note
+                    else if (note.duration === '2n') durationInBeats = 2;     // half note
+                    else if (note.duration === '1n') durationInBeats = 4;     // whole note
+                }
 
                 const convertedNote = {
                     ...note,
-                    // Use direct coordinate mapping: X=time, Y=pitch
-                    time: timeInBeats,         // X coordinate (in beats)
-                    pitch: gridY,              // Y coordinate (semitones from A0)
+                    // CONSISTENT coordinate mapping: time in beats, pitch in grid Y
+                    time: timeInBeats,         // X coordinate (in beats, no conversion)
+                    pitch: gridY,              // Y coordinate (10 oktav: 0-119)
                     duration: durationInBeats, // Duration in beats
-                    velocity: note.velocity || 100, // Default velocity if missing
-                    originalPitch: note.pitch, // Keep original note name
-                    midiNote: midiNote         // Store MIDI number for reference
+                    velocity: note.velocity || 100,
+                    originalPitch: note.pitch,
+                    midiNote: midiNote,
+                    // FL Studio optimization flags
+                    isVisible: true,
+                    chunkId: Math.floor(timeInBeats / 4)
                 };
 
-                console.log('🎵 Converting note:', note, '→', convertedNote);
+                console.log('🎵 Loading note:', note, '→ grid:', convertedNote);
                 return convertedNote;
             });
 
@@ -135,24 +175,39 @@ const InfinitePianoRoll = ({
             return filteredNotes;
         };
 
-        // Set up drag & drop callbacks with unified coordinates
+        // FL Studio tarzı drag & drop with 10 octave support
         engine.onNoteDrag = (draggedNote, newPosition) => {
-            console.log('🎵 Note dragged:', draggedNote.id, 'to:', newPosition);
+            console.log('🎵 FL Note dragged:', draggedNote.id, 'to:', newPosition);
 
-            if (onNoteEdit) {
-                // Convert grid coordinates back to note format
-                const newMidiNote = newPosition.pitch + 21; // Add base offset
+            // Direct store update - no callback needed
+            if (currentInstrumentId && activePatternId) {
+                const newMidiNote = Math.max(12, Math.min(131, newPosition.pitch + 12));
                 const newNoteName = midiToNoteName(newMidiNote);
 
                 const updatedNote = {
                     ...draggedNote,
-                    time: newPosition.time,        // X coordinate = time in beats
-                    pitch: newNoteName,            // Convert Y back to note name
+                    time: Math.max(0, newPosition.time),
+                    pitch: newNoteName,
                     // Remove internal coordinate data
                     originalPitch: undefined,
-                    midiNote: undefined
+                    midiNote: undefined,
+                    chunkId: undefined,
+                    isVisible: undefined
                 };
-                onNoteEdit(updatedNote);
+
+                // Update in store
+                const currentNotes = notes || [];
+                const updatedNotes = currentNotes.map(n =>
+                    n.id === draggedNote.id ? updatedNote : n
+                );
+                updatePatternNotes(activePatternId, currentInstrumentId, updatedNotes);
+
+                // Force immediate render after drag
+                setTimeout(() => {
+                    if (engineRef.current && engineRef.current.forceImmediateRender) {
+                        engineRef.current.forceImmediateRender();
+                    }
+                }, 10); // Small delay to ensure state update
             }
         };
 
@@ -160,7 +215,8 @@ const InfinitePianoRoll = ({
         engine.onNoteResize = (resizedNote, newProperties) => {
             console.log('📏 Note resized:', resizedNote.id, 'new duration:', newProperties.duration);
 
-            if (onNoteEdit) {
+            // Direct store update
+            if (currentInstrumentId && activePatternId) {
                 const updatedNote = {
                     ...resizedNote,
                     duration: newProperties.duration,
@@ -168,7 +224,19 @@ const InfinitePianoRoll = ({
                     originalPitch: undefined,
                     midiNote: undefined
                 };
-                onNoteEdit(updatedNote);
+
+                const currentNotes = notes || [];
+                const updatedNotes = currentNotes.map(n =>
+                    n.id === resizedNote.id ? updatedNote : n
+                );
+                updatePatternNotes(activePatternId, currentInstrumentId, updatedNotes);
+
+                // Force immediate render after resize
+                setTimeout(() => {
+                    if (engineRef.current && engineRef.current.forceImmediateRender) {
+                        engineRef.current.forceImmediateRender();
+                    }
+                }, 10);
             }
         };
 
@@ -180,8 +248,19 @@ const InfinitePianoRoll = ({
         // Set up delete callback
         engine.onNoteDelete = (note) => {
             console.log('🗑️ Deleting note:', note.id);
-            if (onNoteDelete) {
-                onNoteDelete(note);
+
+            // Direct store update
+            if (currentInstrumentId && activePatternId) {
+                const currentNotes = notes || [];
+                const updatedNotes = currentNotes.filter(n => n.id !== note.id);
+                updatePatternNotes(activePatternId, currentInstrumentId, updatedNotes);
+
+                // Force immediate render after delete
+                setTimeout(() => {
+                    if (engineRef.current && engineRef.current.forceImmediateRender) {
+                        engineRef.current.forceImmediateRender();
+                    }
+                }, 10);
             }
         };
 
@@ -205,14 +284,71 @@ const InfinitePianoRoll = ({
         };
     }, []);
 
-    // Update notes when data changes
+    // Previous notes tracking için useRef'i component seviyesinde tanımla
+    const previousNotesRef = useRef(null);
+
+    // Hybrid system: Calculate visible notes for HTML rendering
+    const calculateVisibleNotes = useCallback(() => {
+        if (!engineRef.current || renderMode === 'canvas') return [];
+
+        const engine = engineRef.current;
+        const { x, y, width, height, zoom } = engine.viewport;
+        const { cellWidth, cellHeight } = engine.options;
+
+        // Calculate visible time range
+        const pixelsPerBeat = cellWidth * 4;
+        const startTime = (x / zoom) / pixelsPerBeat;
+        const endTime = ((x + width) / zoom) / pixelsPerBeat;
+
+        // Calculate visible pitch range
+        const startPitch = Math.floor((y / zoom) / cellHeight);
+        const endPitch = Math.ceil(((y + height) / zoom) / cellHeight);
+
+        // Filter notes within visible range
+        return notes.filter(note => {
+            const noteTime = typeof note.time === 'number' ? note.time : 0;
+            const notePitch = typeof note.pitch === 'string' ?
+                noteNameToMidi(note.pitch) - 12 : note.pitch; // Convert to grid coordinates
+
+            return noteTime >= startTime &&
+                   noteTime <= endTime &&
+                   notePitch >= startPitch &&
+                   notePitch <= endPitch;
+        });
+    }, [notes, renderMode, noteNameToMidi]);
+
+    // Update visible notes when viewport changes
+    useEffect(() => {
+        if (renderMode !== 'canvas') {
+            const visible = calculateVisibleNotes();
+            setVisibleNotes(visible);
+        }
+    }, [viewportX, viewportZoom, notes, renderMode, calculateVisibleNotes]);
+
+    // FL Studio tarzı instant note updates
     useEffect(() => {
         if (!engineRef.current || !isInitialized) return;
 
-        // Force reload all chunks with new data
-        engineRef.current.world.chunks.clear();
-        engineRef.current.updateVisibleChunks();
-        engineRef.current.invalidateAll();
+        const engine = engineRef.current;
+
+        // Always force update when notes change - immediate feedback is priority
+        console.log('🔄 FL Studio: Note data changed, forcing immediate update');
+
+        // Clear ALL chunks to force complete re-render
+        if (engine.world && engine.world.chunks) {
+            engine.world.chunks.clear();
+        }
+
+        // Force immediate chunk reload
+        engine.updateVisibleChunks();
+
+        // Force complete re-render for instant feedback
+        engine.invalidateAll();
+
+        // Store current state
+        previousNotesRef.current = [...notes];
+
+        console.log('✅ FL Studio: Forced render complete, notes:', notes.length);
     }, [notes, isInitialized, currentInstrumentId, activePattern]);
 
     // Update engine mouse mode when state changes
@@ -222,36 +358,62 @@ const InfinitePianoRoll = ({
         }
     }, [mouseMode, isInitialized]);
 
-    // Optimized viewport sync - only update when changed
+    // FL Studio tarzı ultra-optimized viewport sync
     useEffect(() => {
         if (!engineRef.current || !isInitialized) return;
 
         let lastX = viewportX;
         let lastZoom = viewportZoom;
+        let frameRequest = null;
+        let isUpdating = false;
 
         const updateViewport = () => {
+            if (isUpdating) return;
+
             const engine = engineRef.current;
             if (engine && engine.viewport) {
                 const newX = engine.viewport.x;
                 const newZoom = engine.viewport.zoom;
 
-                // Only update state if values actually changed
-                if (Math.abs(newX - lastX) > 1 || Math.abs(newZoom - lastZoom) > 0.01) {
+                // FL Studio precision: daha hassas threshold
+                const xDiff = Math.abs(newX - lastX);
+                const zoomDiff = Math.abs(newZoom - lastZoom);
+
+                if (xDiff > 0.5 || zoomDiff > 0.005) {
+                    isUpdating = true;
+
+                    // Direct state update (React 18 auto-batches)
                     setViewportX(newX);
                     setViewportZoom(newZoom);
+
                     lastX = newX;
                     lastZoom = newZoom;
+
+                    // FL Studio: 562 bar desteği için extended range tracking
+                    const currentBar = Math.floor(newX / (4 * 12)); // 12px per beat
+                    if (currentBar > 562) {
+                        console.warn('🚨 FL: Beyond 562 bar limit:', currentBar);
+                    }
+
+                    setTimeout(() => { isUpdating = false; }, 16); // 60fps throttle
                 }
             }
         };
 
-        // Update immediately
-        updateViewport();
+        // RAF-based updates for smooth 60fps
+        const rafUpdate = () => {
+            updateViewport();
+            frameRequest = requestAnimationFrame(rafUpdate);
+        };
 
-        // Reduced frequency for performance
-        const interval = setInterval(updateViewport, 50);
+        updateViewport(); // Initial update
+        frameRequest = requestAnimationFrame(rafUpdate);
 
-        return () => clearInterval(interval);
+        return () => {
+            if (frameRequest) {
+                cancelAnimationFrame(frameRequest);
+            }
+        };
     }, [isInitialized]);
 
     // Performance monitoring
@@ -267,58 +429,142 @@ const InfinitePianoRoll = ({
         return () => clearInterval(interval);
     }, [isInitialized]);
 
-    // Empty space click handler with snap-aware coordinates
+    // FL Studio tarzı empty space click handler with CONSISTENT positioning
     const handleEmptySpaceClick = useCallback((worldX, worldY) => {
         if (!engineRef.current) return;
 
-        const { cellHeight } = { cellHeight: 20 };
         const engine = engineRef.current;
-        const snapConfig = engine.snapModes[snapMode] || engine.snapModes['1/16'];
+        const { cellHeight, cellWidth } = engine.options;
+        const { zoom } = engine.viewport;
 
-        // Snap X to current snap mode
-        const snapPixels = snapConfig.pixels;
-        const snappedX = Math.round(worldX / snapPixels) * snapPixels;
+        // CONSISTENT: Convert pixel position to beats
+        // worldX is in pixels, we need beats
+        const pixelsPerBeat = cellWidth * 4 * zoom; // 12px * 4 = 48px per beat at zoom=1
+        const timeInBeats = worldX / pixelsPerBeat;
 
-        // Convert snapped X to time in beats
+        // Snap to grid based on snap mode
         const snapFractions = {
-            '1/1': 4,      // Whole note = 4 beats
-            '1/2': 2,      // Half note = 2 beats
-            '1/4': 1,      // Quarter note = 1 beat
-            '1/8': 0.5,    // 8th note = 0.5 beats
-            '1/16': 0.25,  // 16th note = 0.25 beats
-            '1/32': 0.125  // 32nd note = 0.125 beats
+            '1/1': 4,       // Whole note = 4 beats
+            '1/2': 2,       // Half note = 2 beats
+            '1/4': 1,       // Quarter note = 1 beat
+            '1/8': 0.5,     // 8th note = 0.5 beats
+            '1/16': 0.25,   // 16th note = 0.25 beats
+            '1/32': 0.125,  // 32nd note = 0.125 beats
+            '1/64': 0.0625  // 64th note = 0.0625 beats
         };
-        const beatValue = snapFractions[snapMode] || 0.25;
-        const time = (snappedX / snapPixels) * beatValue;
+        const snapSize = snapFractions[snapMode] || 0.25;
 
-        // Snap Y to semitone (always 20px per semitone)
-        const gridPitch = Math.round(worldY / cellHeight);
-        const midiNote = gridPitch + 21; // A0 = MIDI 21 = grid Y 0
+        // Snap time to grid
+        const snappedTime = Math.round(timeInBeats / snapSize) * snapSize;
+
+        // CONSISTENT: Convert Y pixel to MIDI note
+        const gridPitch = Math.round(worldY / (cellHeight * zoom));
+        const midiNote = Math.max(12, Math.min(131, gridPitch + 12)); // C0-B9 range
         const noteName = midiToNoteName(midiNote);
 
+        // Create note with CONSISTENT time value (in beats)
         const newNote = {
-            id: Date.now(),
-            time: Math.max(0, time), // Ensure time >= 0
+            id: Date.now() + Math.random(),
+            time: Math.max(0, Math.min(562 * 4, snappedTime)), // Clamp to 562 bars
             pitch: noteName,
-            duration: beatValue,     // Duration matches snap mode
+            duration: snapSize, // Duration matches snap grid
             velocity: 100
         };
 
-        console.log('📝 Creating note:', newNote, 'snap:', snapMode, 'at world:', { worldX, worldY }, 'snapped:', { snappedX, time, gridPitch });
+        console.log('📝 FL Creating note:', newNote, 'snap:', snapMode);
 
-        // Try provided callback first, then fallback to direct store update
-        if (onNoteAdd) {
-            onNoteAdd(newNote);
-        } else if (currentInstrumentId && activePatternId) {
-            // Direct store update
+        // Direct store update - no callbacks
+        if (currentInstrumentId && activePatternId) {
             const currentNotes = notes || [];
             const updatedNotes = [...currentNotes, newNote];
             updatePatternNotes(activePatternId, currentInstrumentId, updatedNotes);
-            console.log('📝 Note added directly to store:', newNote);
+            console.log('📝 FL Note added at time:', newNote.time);
+
+            // Hybrid: Force immediate render only if canvas mode
+            if (renderMode === 'canvas' && engineRef.current && engineRef.current.forceImmediateRender) {
+                engineRef.current.forceImmediateRender();
+            }
         } else {
-            console.warn('⚠️ No callback or store connection - note creation failed');
+            console.warn('⚠️ FL Studio: No pattern or instrument selected');
         }
-    }, [onNoteAdd, currentInstrumentId, activePatternId, notes, updatePatternNotes, snapMode]);
+    }, [currentInstrumentId, activePatternId, notes, updatePatternNotes, snapMode, renderMode]);
+
+    // HTML Note Handlers for Hybrid System
+    const handleHtmlNoteDragStart = useCallback((note, _event) => {
+        console.log('🎵 HTML Note drag start:', note.id);
+        setSelectedNotes(new Set([note.id]));
+    }, []);
+
+    const handleHtmlNoteDrag = useCallback((note, position) => {
+        // Convert pixel position back to beats and pitch
+        if (!engineRef.current) return;
+
+        const { cellWidth, cellHeight } = engineRef.current.options;
+        const { zoom } = engineRef.current.viewport;
+        const pixelsPerBeat = cellWidth * 4;
+
+        const newTime = position.x / (pixelsPerBeat * zoom);
+        const newPitch = Math.round(position.y / (cellHeight * zoom));
+
+        // Snap to grid
+        const snapFractions = {
+            '1/64': 0.0625,
+            '1/32': 0.125,
+            '1/16': 0.25,
+            '1/8': 0.5,
+            '1/4': 1,
+            '1': 4
+        };
+        const snapSize = snapFractions[snapMode] || 0.25;
+        const snappedTime = Math.round(newTime / snapSize) * snapSize;
+
+        // Update note in real-time (optimistic update)
+        const updatedNote = {
+            ...note,
+            time: Math.max(0, snappedTime),
+            pitch: Math.max(0, Math.min(119, newPitch))
+        };
+
+        // Visual feedback - update visible notes immediately
+        setVisibleNotes(prev =>
+            prev.map(n => n.id === note.id ? updatedNote : n)
+        );
+    }, [snapMode]);
+
+    const handleHtmlNoteDragEnd = useCallback((note, _event) => {
+        console.log('🎵 HTML Note drag end:', note.id);
+
+        // Commit changes to store
+        if (currentInstrumentId && activePatternId) {
+            const currentNotes = notes || [];
+            const draggedNote = visibleNotes.find(n => n.id === note.id);
+
+            if (draggedNote) {
+                const newMidiNote = Math.max(12, Math.min(131, draggedNote.pitch + 12));
+                const newNoteName = midiToNoteName(newMidiNote);
+
+                const updatedNotes = currentNotes.map(n =>
+                    n.id === note.id ? {
+                        ...n,
+                        time: draggedNote.time,
+                        pitch: newNoteName
+                    } : n
+                );
+
+                updatePatternNotes(activePatternId, currentInstrumentId, updatedNotes);
+            }
+        }
+    }, [currentInstrumentId, activePatternId, notes, visibleNotes, midiToNoteName, updatePatternNotes]);
+
+    const handleHtmlNoteDelete = useCallback((note) => {
+        console.log('🗑️ HTML Note delete:', note.id);
+
+        if (currentInstrumentId && activePatternId) {
+            const currentNotes = notes || [];
+            const updatedNotes = currentNotes.filter(n => n.id !== note.id);
+            updatePatternNotes(activePatternId, currentInstrumentId, updatedNotes);
+        }
+    }, [currentInstrumentId, activePatternId, notes, updatePatternNotes]);
 
     // Piano keyboard handlers
     const handleKeyClick = useCallback((key) => {
@@ -358,26 +604,6 @@ const InfinitePianoRoll = ({
         console.log('📐 Snap mode changed to:', newSnapMode);
     }, [isInitialized]);
 
-    // Unified coordinate system: MIDI conversion functions
-    const noteNameToMidi = (noteName) => {
-        const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-        const match = noteName.match(/^([A-G]#?)(\d+)$/);
-        if (!match) return 60; // Default to C4
-
-        const [, note, octaveStr] = match;
-        const octave = parseInt(octaveStr);
-        const noteIndex = noteNames.indexOf(note);
-
-        if (noteIndex === -1) return 60;
-        return (octave + 1) * 12 + noteIndex;
-    };
-
-    const midiToNoteName = (midiNote) => {
-        const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-        const octave = Math.floor(midiNote / 12) - 1;
-        const noteIndex = midiNote % 12;
-        return `${noteNames[noteIndex]}${octave}`;
-    };
 
     // Keyboard shortcuts
     useEffect(() => {
@@ -554,71 +780,190 @@ const InfinitePianoRoll = ({
                 </div>
             </div>
 
-            {/* Main Content Area */}
-            <div className="piano-roll-main" style={{ display: 'flex', height: '600px', position: 'relative' }}>
-                {/* Piano Keyboard (Left Side) - Fixed position, scales only in height */}
-                <div className="piano-roll-keyboard" style={{
-                    width: '80px', // Fixed width matching baseWhiteKeyWidth
-                    height: '100%',
-                    borderRight: '1px solid #555',
-                    overflow: 'hidden', // No scrolling needed
-                    backgroundColor: '#2a2a2a',
-                    position: 'relative'
+            {/* Main Content Area - FL Studio Layout */}
+            <div className="piano-roll-workspace" style={{
+                display: 'flex',
+                flexDirection: 'column',
+                height: '600px',
+                position: 'relative',
+                border: '1px solid #333'
+            }}>
+                {/* Timeline Header - Fixed at top */}
+                <div className="piano-roll-timeline-container" style={{
+                    display: 'flex',
+                    height: '40px',
+                    borderBottom: '1px solid #444',
+                    backgroundColor: '#252525'
                 }}>
-                    <PianoKeyboard
-                        onKeyClick={handleKeyClick}
-                        onKeyHover={handleKeyHover}
-                        activeNotes={activeKeys}
-                        highlightedKeys={highlightedKeys}
-                        // Fixed dimensions, only height scales
-                        baseKeyHeight={20}        // Match cellHeight from grid (20px per semitone)
-                        baseWhiteKeyWidth={80}    // Fixed width
-                        baseBlackKeyWidth={50}    // Fixed width
-                        zoom={viewportZoom}
-                        showLabels={true}
-                        className="piano-keys"
-                        // Pass viewport offset to sync with grid scrolling
-                        viewportY={engineRef.current?.viewport.y || 0}
-                    />
+                    {/* Empty corner space above keyboard */}
+                    <div style={{
+                        width: '80px',
+                        height: '40px',
+                        backgroundColor: '#1a1a1a',
+                        borderRight: '1px solid #444',
+                        borderBottom: '1px solid #444'
+                    }} />
+
+                    {/* Timeline */}
+                    <div style={{
+                        flex: 1,
+                        height: '40px',
+                        position: 'relative',
+                        overflow: 'hidden'
+                    }}>
+                        <Timeline
+                            viewportX={viewportX}
+                            viewportWidth={(containerRef.current?.clientWidth || 1200) - 80}
+                            zoom={viewportZoom}
+                            snapMode={snapMode}
+                            onTimeClick={handleTimeClick}
+                            onSnapChange={handleSnapChange}
+                            className="piano-roll-timeline"
+                            // FL Studio coordinate system parameters
+                            cellWidth={12}         // 12 pixels = 1/16 note (FL compact)
+                            ticksPerQuarter={480}  // Standard MIDI timing
+                            beatsPerBar={4}        // 4/4 time signature
+                            maxBars={562}          // FL Studio 562 bar limit
+                            // FL Studio extended snap modes
+                            supportedSnaps={['1/1', '1/2', '1/4', '1/8', '1/16', '1/32', '1/64']}
+                            // Performance optimizations
+                            virtualizeRuler={true} // Only render visible ruler marks
+                            overlayMode={false}
+                            // 10 octave support
+                            totalPitchRange={120}  // 10 octaves = 120 semitones
+                        />
+                    </div>
                 </div>
 
-                {/* Canvas Container (Right Side) */}
-                <div
-                    ref={containerRef}
-                    className="piano-roll-canvas"
-                    style={{
-                        position: 'relative',
-                        flex: 1,
-                        backgroundColor: '#1a1a1a',
-                        overflow: 'hidden'
-                    }}
-                />
-
-                {/* Timeline Overlay - Positioned above the canvas */}
-                <div style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: '80px', // Start after keyboard
-                    right: 0,
-                    height: '60px', // Timeline height
-                    zIndex: 100,
-                    pointerEvents: 'none' // Allow clicks through to canvas
+                {/* Main Content Area */}
+                <div className="piano-roll-content" style={{
+                    display: 'flex',
+                    flex: 1,
+                    position: 'relative'
                 }}>
-                    <Timeline
-                        viewportX={viewportX}
-                        viewportWidth={(containerRef.current?.clientWidth || 1200) - 80} // Subtract keyboard width
-                        zoom={viewportZoom}
-                        snapMode={snapMode}
-                        onTimeClick={handleTimeClick}
-                        onSnapChange={handleSnapChange}
-                        className="piano-roll-timeline-overlay"
-                        // Unified coordinate system parameters
-                        cellWidth={16}         // 16 pixels = 1/16 note (0.25 beats)
-                        ticksPerQuarter={480}  // Standard MIDI timing
-                        beatsPerBar={4}        // 4/4 time signature
-                        // Make timeline clicks work through overlay
-                        overlayMode={true}
-                    />
+                    {/* Piano Keyboard (Left Side) */}
+                    <div className="piano-roll-keyboard" style={{
+                        width: '80px',
+                        height: '100%',
+                        borderRight: '1px solid #444',
+                        overflow: 'hidden',
+                        backgroundColor: '#2a2a2a',
+                        position: 'relative'
+                    }}>
+                        <PianoKeyboard
+                            onKeyClick={handleKeyClick}
+                            onKeyHover={handleKeyHover}
+                            activeNotes={activeKeys}
+                            highlightedKeys={highlightedKeys}
+                            // FL Studio compact dimensions for 10 octaves
+                            baseKeyHeight={12}        // Match FL cellHeight (12px per semitone)
+                            baseWhiteKeyWidth={80}    // Fixed width
+                            baseBlackKeyWidth={50}    // Fixed width
+                            zoom={viewportZoom}
+                            showLabels={true}
+                            className="piano-keys"
+                            // 10 oktav range: C0-B9 (MIDI 12-131)
+                            startNote={12}            // C0 = MIDI 12
+                            endNote={131}             // B9 = MIDI 131
+                            totalOctaves={10}         // 10 full octaves
+                            // FL Studio viewport sync
+                            viewportY={engineRef.current?.viewport.y || 0}
+                            // Performance: only render visible keys
+                            virtualizeKeys={true}
+                            visibleRange={60}         // 5 octaves visible at once
+                        />
+                    </div>
+
+                    {/* Hybrid Container (Right Side) */}
+                    <div
+                        className="piano-roll-hybrid-container"
+                        style={{
+                            position: 'relative',
+                            flex: 1,
+                            backgroundColor: '#1a1a1a',
+                            overflow: 'hidden'
+                        }}
+                    >
+                        {/* Canvas Layer - Grid only in hybrid mode */}
+                        <div
+                            ref={containerRef}
+                            className="piano-roll-canvas"
+                            style={{
+                                position: 'absolute',
+                                top: 0,
+                                left: 0,
+                                width: '100%',
+                                height: '100%',
+                                zIndex: 1
+                            }}
+                        />
+
+                        {/* HTML Notes Layer - Only in hybrid/html mode */}
+                        {(renderMode === 'hybrid' || renderMode === 'html') && (
+                            <div
+                                className="piano-roll-html-notes"
+                                style={{
+                                    position: 'absolute',
+                                    top: 0,
+                                    left: 0,
+                                    width: '100%',
+                                    height: '100%',
+                                    zIndex: 10,
+                                    pointerEvents: renderMode === 'html' ? 'auto' : 'none', // Canvas handles events in hybrid
+                                    transform: `translate(${-viewportX}px, ${-engineRef.current?.viewport.y || 0}px)`
+                                }}
+                            >
+                                {visibleNotes.map(note => (
+                                    <HtmlNoteElement
+                                        key={note.id}
+                                        note={{
+                                            ...note,
+                                            pitch: typeof note.pitch === 'string' ?
+                                                noteNameToMidi(note.pitch) - 12 : note.pitch
+                                        }}
+                                        isSelected={selectedNotes.has(note.id)}
+                                        onDragStart={handleHtmlNoteDragStart}
+                                        onDrag={handleHtmlNoteDrag}
+                                        onDragEnd={handleHtmlNoteDragEnd}
+                                        onDelete={handleHtmlNoteDelete}
+                                        cellWidth={12}
+                                        cellHeight={12}
+                                        zoom={viewportZoom}
+                                    />
+                                ))}
+                            </div>
+                        )}
+
+                        {/* Render Mode Toggle (Dev) */}
+                        {process.env.NODE_ENV === 'development' && (
+                            <div style={{
+                                position: 'absolute',
+                                top: '10px',
+                                right: '10px',
+                                zIndex: 1000,
+                                display: 'flex',
+                                gap: '4px'
+                            }}>
+                                {['canvas', 'hybrid', 'html'].map(mode => (
+                                    <button
+                                        key={mode}
+                                        onClick={() => setRenderMode(mode)}
+                                        style={{
+                                            padding: '4px 8px',
+                                            fontSize: '10px',
+                                            backgroundColor: renderMode === mode ? '#4CAF50' : '#333',
+                                            color: 'white',
+                                            border: 'none',
+                                            borderRadius: '2px',
+                                            cursor: 'pointer'
+                                        }}
+                                    >
+                                        {mode}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
 

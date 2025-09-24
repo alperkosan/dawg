@@ -16,6 +16,9 @@ export const useNoteInteractionsV2 = (instrumentId, engine) => {
   const { patterns, updatePatternNotes } = useArrangementStore();
   const { activePatternId } = useArrangementStore.getState();
   const { activeTool, lastUsedDuration, setLastUsedDuration } = usePianoRollStoreV2();
+
+  // Son seçilen/resize edilen notanın uzunluğunu takip et
+  const [defaultNoteDuration, setDefaultNoteDuration] = useState('4n'); // İlk nota bir beat
   const { bpm } = usePlaybackStore.getState();
 
   const notes = patterns[activePatternId]?.data[instrumentId] || [];
@@ -53,11 +56,16 @@ export const useNoteInteractionsV2 = (instrumentId, engine) => {
         if (isShiftKey) {
             newSelection.has(noteId) ? newSelection.delete(noteId) : newSelection.add(noteId);
         } else {
+            // Seçilen notanın uzunluğunu default olarak ayarla
+            const selectedNote = notes.find(n => n.id === noteId);
+            if (selectedNote) {
+                setDefaultNoteDuration(selectedNote.duration);
+            }
             return new Set([noteId]);
         }
         return newSelection;
     });
-  }, []);
+  }, [notes]);
 
   useEffect(() => {
     const handlerDependencies = {
@@ -114,12 +122,13 @@ export const useNoteInteractionsV2 = (instrumentId, engine) => {
           setSelectedNotes(new Set(notesToDrag));
           setInteraction({ type: 'drag', startPos: gridPos, noteIds: notesToDrag, originalNotes: new Map([[clickedNote.id, { ...clickedNote }]]) });
         } else {
+          // Mouse down ile direkt nota oluştur - mouse move ile resize yok
           const snappedTime = snapTime(gridPos.time);
-          const newNote = { id: generateNoteId(), time: snappedTime, pitch: gridPos.pitch, duration: lastUsedDuration, velocity: 0.8 };
+          const newNote = { id: generateNoteId(), time: snappedTime, pitch: gridPos.pitch, duration: defaultNoteDuration, velocity: 0.8 };
           handleNotesChange([...notes, newNote]);
           setSelectedNotes(new Set([newNote.id]));
           audio.preview(newNote.pitch, newNote.velocity);
-          setInteraction({ type: 'create', noteId: newNote.id, startGridPos: { ...gridPos, time: snappedTime } });
+          // Create interaction kaldırıldı - direkt nota oluştur ve bitir
         }
         break;
       case 'selection':
@@ -164,27 +173,7 @@ export const useNoteInteractionsV2 = (instrumentId, engine) => {
           interaction.deleted.add(noteToDelete.id);
         }
         break;
-      case 'create':
-        const timeDiff = gridPos.time - interaction.startGridPos.time;
-        const snappedTimeDiff = snapTime(timeDiff);
-        
-        const sixteenthNoteSeconds = NativeTimeUtils.parseTime('16n', bpm);
-        const durationInSeconds = sixteenthNoteSeconds * snappedTimeDiff;
-        const minDurationSeconds = NativeTimeUtils.parseTime(effectiveSnapValue, bpm);
-
-        // === HATA DÜZELTMESİ BURADA ===
-        // Sürenin, izin verilen en küçük snap değerinden daha az olmamasını sağlıyoruz.
-        const finalDurationInSeconds = Math.max(minDurationSeconds, durationInSeconds);
-        const finalSteps = finalDurationInSeconds / sixteenthNoteSeconds;
-        
-        // Paydanın asla 0 olmamasını garantiliyoruz.
-        const noteValue = 16 / Math.max(0.001, finalSteps);
-        const newDurationNotation = `${noteValue}n`;
-        // === DÜZELTME SONU ===
-
-        handleNotesChange(notes.map(n => n.id === interaction.noteId ? { ...n, duration: newDurationNotation } : n));
-        setLastUsedDuration(newDurationNotation);
-        break;
+      // 'create' case kaldırıldı - artık mouse move ile resize yok
       case 'drag':
         const deltaTime = gridPos.time - interaction.startPos.time;
         const snappedDeltaTime = snapTime(deltaTime);
@@ -202,7 +191,7 @@ export const useNoteInteractionsV2 = (instrumentId, engine) => {
         setInteraction(prev => ({ ...prev, currentPos: gridPos }));
         break;
     }
-  }, [interaction, engine, notes, handleNotesChange, setLastUsedDuration, snapTime, effectiveSnapValue, bpm]);
+  }, [interaction, engine, notes, handleNotesChange, snapTime]);
 
   const onMouseUp = useCallback(() => {
     audio.stopAllPreviews();
@@ -254,12 +243,25 @@ export const useNoteInteractionsV2 = (instrumentId, engine) => {
       animationId = requestAnimationFrame(() => {
         const deltaX = moveEvent.clientX - startX;
         const deltaSteps = deltaX / (engine?.stepWidth || 40);
-        const newDurationSteps = Math.max(0.05, originalDurationSteps + deltaSteps); // Min 1/32 note (very short)
+        const newDurationSteps = Math.max(0.05, originalDurationSteps + deltaSteps); // Min 1/32 note
         const snappedTotalSteps = snapTime(newDurationSteps);
-        const finalSteps = Math.max(0.05, snappedTotalSteps); // Allow very short notes
+        const finalSteps = Math.max(0.05, snappedTotalSteps); // Min duration
 
-        const noteValue = 16 / Math.max(0.001, finalSteps);
-        const newDurationNotation = `${noteValue}n`;
+        // Notasyon hesabı - maksimum uzunluk kısıtlaması kaldırıldı
+        let newDurationNotation;
+        if (finalSteps >= 64) {
+          // 4 bar ve üstü için bar notasyonu kullan
+          const bars = finalSteps / 16;
+          newDurationNotation = `${bars}m`;
+        } else if (finalSteps >= 16) {
+          // 1-4 bar arası
+          const wholeNotes = finalSteps / 16;
+          newDurationNotation = `${wholeNotes}n`;
+        } else {
+          // Normal notasyon (1/64 ile 1 whole note arası)
+          const noteValue = Math.max(1, 16 / finalSteps);
+          newDurationNotation = `${noteValue}n`;
+        }
 
         const currentState = useArrangementStore.getState();
         const currentNotes = currentState.patterns[currentState.activePatternId]?.data[instrumentId] || [];
@@ -273,6 +275,9 @@ export const useNoteInteractionsV2 = (instrumentId, engine) => {
               : n
           )
         );
+
+        // Resize edilen notanın uzunluğunu default olarak ayarla
+        setDefaultNoteDuration(newDurationNotation);
 
         lastUpdateTime = now;
       });

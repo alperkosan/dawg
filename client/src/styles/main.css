@@ -19,6 +19,7 @@
 @import url("./components/_presetManager.css");
 @import url("./components/AudioQualitySettings.css");
 @import url("./components/InfiniteCanvas.css");
+@import url("../components/piano_roll/PianoRoll.css");
 
 /* 4. Özellik Stilleri */
 @import url("./features/_startupScreen.css");

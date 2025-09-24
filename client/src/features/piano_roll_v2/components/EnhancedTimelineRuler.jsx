@@ -24,7 +24,7 @@ export const EnhancedTimelineRuler = ({ engine }) => {
     if (barWidth <= 0) return [];
 
     // Calculate viewport range with some buffer
-    const scrollX = engine.scroll?.x || 0;
+    const scrollX = engine.viewport?.x || 0;
     const viewportWidth = window.innerWidth;
     const bufferBars = 10; // Extra bars on each side
 
@@ -48,7 +48,7 @@ export const EnhancedTimelineRuler = ({ engine }) => {
     }
 
     return result;
-  }, [engine.dimensions?.stepWidth, engine.stepWidth, engine.dimensions?.gridWidth, engine.gridWidth, engine.scroll?.x]);
+  }, [engine.dimensions?.stepWidth, engine.stepWidth, engine.dimensions?.gridWidth, engine.gridWidth, engine.viewport?.x]);
 
   // Beat subdivision markers (viewport-based)
   const beatMarkers = useMemo(() => {
@@ -59,7 +59,7 @@ export const EnhancedTimelineRuler = ({ engine }) => {
     if (beatWidth < 20) return []; // Don't show if too small
 
     // Only render beats in viewport
-    const scrollX = engine.scroll?.x || 0;
+    const scrollX = engine.viewport?.x || 0;
     const viewportWidth = window.innerWidth;
     const bufferBeats = 20;
 
@@ -86,7 +86,7 @@ export const EnhancedTimelineRuler = ({ engine }) => {
     }
 
     return result;
-  }, [engine.dimensions?.stepWidth, engine.stepWidth, engine.scroll?.x]);
+  }, [engine.dimensions?.stepWidth, engine.stepWidth, engine.viewport?.x]);
 
   // Convert pixel position to musical time
   const pixelToMusicalTime = useCallback((pixelX) => {
@@ -105,7 +105,7 @@ export const EnhancedTimelineRuler = ({ engine }) => {
 
     const rect = rulerRef.current.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
-    const adjustedX = mouseX + engine.scroll.x;
+    const adjustedX = mouseX + engine.viewport?.x || 0;
 
     const musicalTime = pixelToMusicalTime(adjustedX);
     const currentStep = Math.round(musicalTime.step);
@@ -121,7 +121,7 @@ export const EnhancedTimelineRuler = ({ engine }) => {
         setLoopRange(newStart, newEnd);
       }
     }
-  }, [engine.scroll.x, pixelToMusicalTime, setLoopRange, isDragging, dragStart]);
+  }, [engine.viewport?.x || 0, pixelToMusicalTime, setLoopRange, isDragging, dragStart]);
 
   // Mouse handlers
   const handleMouseDown = useCallback((e) => {
@@ -149,11 +149,11 @@ export const EnhancedTimelineRuler = ({ engine }) => {
 
     const rect = rulerRef.current.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
-    const adjustedX = mouseX + engine.scroll.x;
+    const adjustedX = mouseX + engine.viewport?.x || 0;
 
     const musicalTime = pixelToMusicalTime(adjustedX);
     setHoverPosition(musicalTime);
-  }, [engine.scroll.x, pixelToMusicalTime, isDragging]);
+  }, [engine.viewport?.x || 0, pixelToMusicalTime, isDragging]);
 
   const handleMouseLeave = useCallback(() => {
     setHoverPosition(null);
@@ -164,11 +164,89 @@ export const EnhancedTimelineRuler = ({ engine }) => {
     setLoopRange(0, audioLoopLength);
   }, [setLoopRange, audioLoopLength]);
 
+  // Zoom functionality with mouse wheel
+  const handleWheel = useCallback((e) => {
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+
+      // Get mouse position relative to ruler
+      const rect = rulerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+
+      const mouseX = e.clientX - rect.left;
+      const currentScrollX = engine.viewport?.x || 0;
+      const worldMouseX = mouseX + currentScrollX;
+
+      // Calculate zoom change
+      const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
+      const currentZoom = engine.viewport?.zoom || 1;
+      const newZoom = Math.max(0.1, Math.min(5, currentZoom * zoomFactor));
+
+      // Update engine zoom if method exists
+      if (engine.setZoom) {
+        engine.setZoom(newZoom);
+      }
+
+      // Calculate new scroll position to keep mouse position stable
+      const newScrollX = worldMouseX - mouseX * (newZoom / currentZoom);
+      if (engine.setViewport) {
+        engine.setViewport({ x: newScrollX });
+      }
+    }
+  }, [engine]);
+
+  // Pan functionality with middle mouse button
+  const [isPanning, setIsPanning] = useState(false);
+  const [panStart, setPanStart] = useState(null);
+
+  const handlePanStart = useCallback((e) => {
+    if (e.button === 1) { // Middle mouse button
+      e.preventDefault();
+      setIsPanning(true);
+      setPanStart({
+        x: e.clientX,
+        scrollX: engine.viewport?.x || 0
+      });
+    }
+  }, [engine.viewport?.x]);
+
+  const handlePanMove = useCallback((e) => {
+    if (isPanning && panStart) {
+      e.preventDefault();
+      const deltaX = e.clientX - panStart.x;
+      const newScrollX = panStart.scrollX - deltaX;
+
+      if (engine.setViewport) {
+        engine.setViewport({ x: Math.max(0, newScrollX) });
+      }
+    }
+  }, [isPanning, panStart, engine]);
+
+  const handlePanEnd = useCallback(() => {
+    setIsPanning(false);
+    setPanStart(null);
+  }, []);
+
   // Playhead position
   const playheadPosition = useMemo(() => {
     const stepWidth = engine.dimensions?.stepWidth || engine.stepWidth || 40;
     return currentStep * stepWidth;
   }, [currentStep, engine.dimensions?.stepWidth, engine.stepWidth]);
+
+  // Dynamic timeline width for infinite scrolling
+  const timelineWidth = useMemo(() => {
+    const scrollX = engine.viewport?.x || 0;
+    const viewportWidth = window.innerWidth;
+    const stepWidth = engine.dimensions?.stepWidth || engine.stepWidth || 40;
+    const barWidth = stepWidth * 16;
+
+    // Calculate how many bars we need to show
+    const visibleBars = Math.ceil(viewportWidth / barWidth);
+    const scrolledBars = Math.ceil(scrollX / barWidth);
+    const totalBarsNeeded = scrolledBars + visibleBars + 50; // Extra buffer
+
+    return totalBarsNeeded * barWidth;
+  }, [engine.viewport?.x, engine.dimensions?.stepWidth, engine.stepWidth]);
 
   return (
     <div className="enhanced-timeline-ruler">
@@ -194,13 +272,21 @@ export const EnhancedTimelineRuler = ({ engine }) => {
         ref={rulerRef}
         className="timeline-ruler-content"
         style={{
-          width: engine.dimensions?.gridWidth || engine.gridWidth || 16000, // Large default width
-          cursor: isDragging ? 'ew-resize' : 'crosshair'
+          width: timelineWidth,
+          cursor: isDragging ? 'ew-resize' : isPanning ? 'grabbing' : 'crosshair'
         }}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
+        onMouseDown={(e) => {
+          handlePanStart(e);
+          handleMouseDown(e);
+        }}
+        onMouseMove={(e) => {
+          handlePanMove(e);
+          handleMouseMove(e);
+        }}
+        onMouseUp={handlePanEnd}
         onMouseLeave={handleMouseLeave}
         onDoubleClick={handleDoubleClick}
+        onWheel={handleWheel}
       >
         {/* Bar markers */}
         {markers.map(marker => (

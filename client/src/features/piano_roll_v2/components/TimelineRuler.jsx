@@ -12,17 +12,27 @@ export const TimelineRuler = ({ engine }) => {
     const result = [];
     const barWidth = engine.stepWidth * 16;
     if (barWidth <= 0) return [];
-    const totalBars = Math.ceil(engine.gridWidth / barWidth);
-    for (let i = 0; i < totalBars; i++) {
-      result.push({ x: i * barWidth, label: i + 1 });
+
+    // Görünür alanı hesapla
+    const viewportWidth = engine.viewport?.width || 1200;
+    const scrollX = engine.viewport?.x || 0;
+
+    // Görünür alanın başlangıç ve bitişindeki bar indekslerini hesapla
+    const startBar = Math.floor(scrollX / barWidth);
+    const endBar = Math.ceil((scrollX + viewportWidth) / barWidth) + 1; // Biraz fazla render et
+
+    for (let i = startBar; i <= endBar; i++) {
+      if (i >= 0) { // Negatif bar numaralarını engelle
+        result.push({ x: i * barWidth, label: i + 1 });
+      }
     }
     return result;
-  }, [engine.gridWidth, engine.stepWidth]);
+  }, [engine.stepWidth, engine.viewport?.x, engine.viewport?.width]);
 
   const handleInteraction = useCallback((e, isMouseDown = false) => {
     if (!rulerRef.current) return;
     const rect = rulerRef.current.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left + engine.scroll.x; // Scroll offset eklendi
+    const mouseX = e.clientX - rect.left + (engine.viewport?.x || 0); // Scroll offset eklendi
 
     // Pixel pozisyonunu step'e çevir
     const currentStep = Math.round(mouseX / engine.dimensions.stepWidth);
@@ -63,7 +73,7 @@ export const TimelineRuler = ({ engine }) => {
     <div
       ref={rulerRef}
       className="prv2-ruler__content"
-      style={{ width: engine.gridWidth, cursor: 'text' }}
+      style={{ width: '100%', cursor: 'text' }}
       onMouseDown={handleMouseDown}
       onDoubleClick={handleDoubleClick} // Olay yöneticisini ekliyoruz
     >

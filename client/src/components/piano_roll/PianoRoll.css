@@ -1,0 +1,365 @@
+/* ============ Piano Roll CSS Styles ============ */
+/* src/components/piano_roll/PianoRoll.module.css */
+
+.piano-roll {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  background-color: #1a1a1a;
+  border: 1px solid #333;
+  font-family: 'Arial', sans-serif;
+  user-select: none;
+  overflow: hidden;
+}
+
+/* ============ Toolbar Styles ============ */
+.piano-roll-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 12px;
+  background: linear-gradient(135deg, #2a2a2a 0%, #333 100%);
+  border-bottom: 1px solid #444;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  z-index: 10;
+  min-height: 40px;
+}
+
+.toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.toolbar-group label {
+  color: #ccc;
+  font-size: 12px;
+  font-weight: 500;
+  margin-right: 4px;
+}
+
+.toolbar-group select {
+  background: #333;
+  color: #ccc;
+  border: 1px solid #555;
+  border-radius: 3px;
+  padding: 4px 8px;
+  font-size: 12px;
+  min-width: 60px;
+}
+
+.toolbar-group select:focus {
+  border-color: #4a9eff;
+  outline: none;
+}
+
+.toolbar-group button {
+  background: linear-gradient(135deg, #333 0%, #444 100%);
+  color: #ccc;
+  border: 1px solid #555;
+  border-radius: 3px;
+  padding: 6px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-width: 60px;
+}
+
+.toolbar-group button:hover {
+  background: linear-gradient(135deg, #444 0%, #555 100%);
+  border-color: #666;
+}
+
+.toolbar-group button:active {
+  background: linear-gradient(135deg, #222 0%, #333 100%);
+}
+
+.toolbar-group button.recording {
+  background: linear-gradient(135deg, #ff4444 0%, #cc3333 100%);
+  color: #fff;
+  font-weight: bold;
+  animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.toolbar-group span {
+  color: #ccc;
+  font-size: 12px;
+  font-weight: 500;
+  min-width: 40px;
+  text-align: center;
+}
+
+/* ============ Main Content Layout ============ */
+.piano-roll-content {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  background-color: #1a1a1a;
+}
+
+/* ============ Piano Keys Styles ============ */
+.piano-keys {
+  background: linear-gradient(to right, #2a2a2a 0%, #333 100%);
+  border-right: 2px solid #444;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 2px 0 4px rgba(0, 0, 0, 0.3);
+  z-index: 5;
+}
+
+.piano-key {
+  transition: background-color 0.1s ease, transform 0.1s ease;
+  border: 1px solid #444;
+  box-sizing: border-box;
+  position: absolute;
+}
+
+.piano-key:hover {
+  transform: translateX(2px);
+  background-color: #4a9eff !important;
+}
+
+.piano-key:active {
+  transform: translateX(0);
+  background-color: #ff6b35 !important;
+}
+
+.piano-key.white {
+  background: linear-gradient(to right, #666 0%, #777 50%, #666 100%);
+  color: #000;
+  z-index: 1;
+}
+
+.piano-key.black {
+  background: linear-gradient(to right, #222 0%, #333 50%, #222 100%);
+  color: #ccc;
+  z-index: 2;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.piano-key.active {
+  background: linear-gradient(to right, #ff6b35 0%, #ff8c42 50%, #ff6b35 100%) !important;
+  color: #fff !important;
+  box-shadow: 0 0 8px rgba(255, 107, 53, 0.6);
+  transform: translateX(1px);
+}
+
+.key-name {
+  font-size: 8px;
+  font-weight: 500;
+  pointer-events: none;
+  text-shadow: 1px 1px 1px rgba(0, 0, 0, 0.5);
+}
+
+/* ============ Canvas Area ============ */
+.canvas-container {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background-color: #1a1a1a;
+}
+
+.piano-roll canvas {
+  display: block;
+  cursor: default;
+  background-color: #1a1a1a;
+}
+
+.piano-roll canvas:hover {
+  cursor: crosshair;
+}
+
+/* ============ Scrollbars ============ */
+.canvas-container::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+.canvas-container::-webkit-scrollbar-track {
+  background: #1a1a1a;
+  border-radius: 6px;
+}
+
+.canvas-container::-webkit-scrollbar-thumb {
+  background: linear-gradient(135deg, #444 0%, #555 100%);
+  border-radius: 6px;
+  border: 1px solid #333;
+}
+
+.canvas-container::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(135deg, #555 0%, #666 100%);
+}
+
+.canvas-container::-webkit-scrollbar-corner {
+  background: #1a1a1a;
+}
+
+/* ============ Zoom Controls ============ */
+.zoom-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.zoom-controls button {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  font-size: 14px;
+}
+
+/* ============ Recording Indicator ============ */
+.recording-indicator {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(0, 0, 0, 0.8);
+  padding: 6px 12px;
+  border-radius: 20px;
+  color: #fff;
+  font-size: 12px;
+  font-weight: bold;
+  z-index: 20;
+}
+
+.recording-dot {
+  width: 8px;
+  height: 8px;
+  background: #ff0000;
+  border-radius: 50%;
+  animation: pulse 1s infinite;
+}
+
+/* ============ Selection Rectangle ============ */
+.selection-rect {
+  position: absolute;
+  border: 2px dashed #00ff00;
+  background: rgba(0, 255, 0, 0.1);
+  pointer-events: none;
+  z-index: 15;
+}
+
+/* ============ Note Styles (for HTML-based notes if needed) ============ */
+.piano-note {
+  position: absolute;
+  background: linear-gradient(135deg, #4a9eff 0%, #2980b9 100%);
+  border: 1px solid #2980b9;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: all 0.1s ease;
+  user-select: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.piano-note:hover {
+  background: linear-gradient(135deg, #5dade2 0%, #3498db 100%);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  z-index: 10;
+}
+
+.piano-note.selected {
+  background: linear-gradient(135deg, #ff6b35 0%, #ff4500 100%);
+  border-color: #ff4500;
+  box-shadow: 0 0 8px rgba(255, 107, 53, 0.6);
+}
+
+.piano-note.recording {
+  background: linear-gradient(135deg, #ff0000 0%, #cc0000 100%);
+  border-color: #cc0000;
+  animation: recordingPulse 0.5s infinite;
+}
+
+@keyframes recordingPulse {
+  0%, 100% { 
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% { 
+    transform: scale(1.05);
+    opacity: 0.8;
+  }
+}
+
+/* ============ Responsive Adjustments ============ */
+@media (max-width: 1024px) {
+  .piano-roll-toolbar {
+    gap: 8px;
+    padding: 6px 8px;
+  }
+  
+  .toolbar-group {
+    gap: 4px;
+  }
+  
+  .toolbar-group button {
+    padding: 4px 8px;
+    min-width: 50px;
+  }
+  
+  .piano-keys {
+    min-width: 80px;
+  }
+}
+
+@media (max-width: 768px) {
+  .piano-roll-toolbar {
+    flex-wrap: wrap;
+    min-height: auto;
+  }
+  
+  .toolbar-group label {
+    display: none;
+  }
+  
+  .piano-keys {
+    min-width: 60px;
+  }
+  
+  .key-name {
+    font-size: 7px;
+  }
+}
+
+/* ============ Dark Theme Variants ============ */
+.piano-roll.dark {
+  background-color: #0d1117;
+  border-color: #21262d;
+}
+
+.piano-roll.dark .piano-roll-toolbar {
+  background: linear-gradient(135deg, #161b22 0%, #21262d 100%);
+  border-color: #30363d;
+}
+
+.piano-roll.dark .piano-keys {
+  background: linear-gradient(to right, #161b22 0%, #21262d 100%);
+  border-color: #30363d;
+}
+
+.piano-roll.dark .piano-key.white {
+  background: linear-gradient(to right, #484f58 0%, #656c76 50%, #484f58 100%);
+}
+
+.piano-roll.dark .piano-key.black {
+  background: linear-gradient(to right, #161b22 0%, #21262d 50%, #161b22 100%);
+}
+
+/* ============ High DPI Support ============ */
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+  .piano-roll canvas {
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: crisp-edges;
+  }
+}

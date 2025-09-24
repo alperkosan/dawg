@@ -132,6 +132,7 @@ function PianoRoll({ instrument }) {
             engine={engine}
             interaction={interactions.interaction}
             motorPrecision={motorNotes}
+            onResizeStart={interactions.onResizeStart}
           />
 
           {/* Debug info for motor precision */}

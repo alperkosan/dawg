@@ -4,25 +4,49 @@
 export class InfiniteGridEngine {
     constructor(options = {}) {
         this.options = {
-            cellWidth: 16,        // Base step width (1/16 note = 16px)
-            cellHeight: 20,       // Note height (1 semitone = 20px)
+            cellWidth: 12,        // FL Studio compact: 1/16 note = 12px
+            cellHeight: 12,       // FL Studio compact: 1 semitone = 12px
             bufferSize: 200,      // Pixels to render beyond viewport
             chunkSize: 4,         // Time range per chunk (in beats)
-            maxZoom: 4,           // Maximum zoom level
-            minZoom: 0.25,        // Minimum zoom level
+            maxZoom: 16,          // FL Studio ultra zoom
+            minZoom: 0.01,        // FL Studio: 10 oktav gözükene kadar zoom out
+            // FL Studio specific
+            maxVisibleBars: 562,  // Maximum bar visibility
+            totalOctaves: 10,     // 10 octave piano roll
+            autoGridLOD: true,    // Automatic grid level of detail
             ...options
         };
 
-        // Grid snap settings
-        this.snapMode = '1/16'; // Current snap mode
+        // FL Studio dynamic grid system
+        this.snapMode = '1/16';
+
+        // FL Studio grid levels based on zoom - MUST BE DEFINED BEFORE calculateGridLOD
+        this.gridLevels = [
+            { zoom: [8, 16], grid: '1/64', majorLine: 4, label: '1/64' },
+            { zoom: [4, 8], grid: '1/32', majorLine: 4, label: '1/32' },
+            { zoom: [2, 4], grid: '1/16', majorLine: 4, label: '1/16' },
+            { zoom: [1, 2], grid: '1/8', majorLine: 4, label: '1/8' },
+            { zoom: [0.5, 1], grid: '1/4', majorLine: 4, label: 'Beat' },
+            { zoom: [0.25, 0.5], grid: '1', majorLine: 4, label: 'Bar' },
+            { zoom: [0.1, 0.25], grid: '4', majorLine: 4, label: '4 Bars' },
+            { zoom: [0.05, 0.1], grid: '8', majorLine: 8, label: '8 Bars' },
+            { zoom: [0.01, 0.05], grid: '16', majorLine: 16, label: '16 Bars' }
+        ];
+
         this.snapModes = {
-            '1/1': { subdivisions: 1, pixels: 64 },   // Whole note = 64px
-            '1/2': { subdivisions: 2, pixels: 32 },   // Half note = 32px
-            '1/4': { subdivisions: 4, pixels: 16 },   // Quarter note = 16px
-            '1/8': { subdivisions: 8, pixels: 8 },    // 8th note = 8px
-            '1/16': { subdivisions: 16, pixels: 4 },  // 16th note = 4px
-            '1/32': { subdivisions: 32, pixels: 2 }   // 32nd note = 2px
+            '1/64': { subdivisions: 64, pixels: this.options.cellWidth / 4 },
+            '1/32': { subdivisions: 32, pixels: this.options.cellWidth / 2 },
+            '1/16': { subdivisions: 16, pixels: this.options.cellWidth },
+            '1/8': { subdivisions: 8, pixels: this.options.cellWidth * 2 },
+            '1/4': { subdivisions: 4, pixels: this.options.cellWidth * 4 },
+            '1': { subdivisions: 1, pixels: this.options.cellWidth * 16 },
+            '4': { subdivisions: 0.25, pixels: this.options.cellWidth * 64 },
+            '8': { subdivisions: 0.125, pixels: this.options.cellWidth * 128 },
+            '16': { subdivisions: 0.0625, pixels: this.options.cellWidth * 256 }
         };
+
+        // Initialize grid LOD after gridLevels is defined
+        this.gridLOD = this.calculateGridLOD(1); // Default zoom = 1
 
         // Canvas layers for different elements
         this.layers = {
@@ -33,22 +57,31 @@ export class InfiniteGridEngine {
             ui: null             // UI elements (rulers, etc)
         };
 
-        // Viewport tracking
+        // FL Studio viewport with keyboard visibility tracking
         this.viewport = {
             x: 0, y: 0,          // Top-left position
             width: 1200,         // Viewport width
             height: 800,         // Viewport height
-            zoom: 1              // Current zoom level
+            zoom: 1,             // Current zoom level
+            // FL Studio specific
+            visibleOctaves: 5,   // Currently visible octaves
+            keyboardScrollY: 0,  // Vertical scroll for keyboard
+            maxScrollX: 562 * 4 * this.options.cellWidth * 16, // 562 bars limit
+            autoScroll: true,    // Auto-scroll during playback
+            smoothScroll: true   // Smooth scrolling animation
         };
 
-        // Music timeline bounds - X starts from 0 (no negative time)
+        // FL Studio world bounds - 10 octaves, 562 bars
         this.world = {
-            minX: 0,             // Timeline starts at 0 (no negative time)
-            maxX: Infinity,      // No right bound
-            minY: 0,             // Start at lowest note (A0)
-            maxY: 88 * this.options.cellHeight, // 88 piano keys (A0 to C8)
+            minX: 0,             // Timeline starts at 0
+            maxX: 562 * 4 * this.options.cellWidth * 16, // 562 bars max
+            minY: 0,             // C0 (MIDI 12)
+            maxY: 120 * this.options.cellHeight, // 10 octaves (120 semitones)
             chunks: new Map(),   // Loaded data chunks
-            activeChunks: new Set() // Currently visible chunks
+            activeChunks: new Set(), // Currently visible chunks
+            // FL Studio optimization
+            visibleBars: 10,     // Currently visible bar count
+            gridDensity: 16      // Current grid line density
         };
 
         // Performance tracking
@@ -309,36 +342,106 @@ export class InfiniteGridEngine {
         });
     }
 
-    // Zoom to specific point
+    // FL Studio: Zoom with intelligent limits
     zoomToPoint(mouseX, mouseY, zoomFactor) {
-        const newZoom = Math.max(this.options.minZoom,
-                        Math.min(this.options.maxZoom, this.viewport.zoom * zoomFactor));
+        const oldZoom = this.viewport.zoom;
 
-        if (newZoom !== this.viewport.zoom) {
+        // FL Studio: Calculate keyboard visibility
+        const keyboardRange = this.calculateKeyboardRange();
+        const { cellHeight, totalOctaves } = this.options;
+
+        // Calculate minimum zoom where all octaves are visible
+        const minZoomForFullKeyboard = this.viewport.height / (totalOctaves * 12 * cellHeight);
+
+        // FL Studio: Dynamic zoom limits based on content
+        let effectiveMinZoom = this.options.minZoom;
+        let effectiveMaxZoom = this.options.maxZoom;
+
+        // Limit minimum zoom to show all keyboard
+        if (!keyboardRange.canScroll) {
+            effectiveMinZoom = Math.max(minZoomForFullKeyboard, this.options.minZoom);
+        }
+
+        const newZoom = Math.max(effectiveMinZoom,
+                        Math.min(effectiveMaxZoom, oldZoom * zoomFactor));
+
+        if (newZoom !== oldZoom) {
             // Calculate world position of mouse
-            const worldX = (mouseX + this.viewport.x) / this.viewport.zoom;
-            const worldY = (mouseY + this.viewport.y) / this.viewport.zoom;
+            const worldX = (mouseX + this.viewport.x) / oldZoom;
+            const worldY = (mouseY + this.viewport.y) / oldZoom;
 
             // Update zoom
             this.viewport.zoom = newZoom;
 
+            // FL Studio: Update grid LOD
+            this.gridLOD = this.calculateGridLOD(newZoom);
+
             // Recalculate viewport position to keep mouse point fixed
-            this.viewport.x = worldX * this.viewport.zoom - mouseX;
-            this.viewport.y = worldY * this.viewport.zoom - mouseY;
+            this.viewport.x = worldX * newZoom - mouseX;
+            this.viewport.y = worldY * newZoom - mouseY;
+
+            // FL Studio: Constrain Y to keyboard bounds if all octaves visible
+            if (newZoom <= minZoomForFullKeyboard) {
+                this.viewport.y = 0; // Reset Y when all octaves visible
+            } else {
+                // Allow Y scrolling but limit to keyboard range
+                const maxY = Math.max(0, (totalOctaves * 12 * cellHeight * newZoom) - this.viewport.height);
+                this.viewport.y = Math.max(0, Math.min(maxY, this.viewport.y));
+            }
+
+            // FL Studio: Constrain X to max bars
+            const maxX = this.world.maxX * newZoom - this.viewport.width;
+            this.viewport.x = Math.max(0, Math.min(maxX, this.viewport.x));
+
+            // Update keyboard scroll position
+            this.viewport.keyboardScrollY = this.viewport.y;
+
+            console.log(`🔍 FL Zoom: ${oldZoom.toFixed(3)} → ${newZoom.toFixed(3)}, Grid: ${this.gridLOD.label}, Visible bars: ${this.world.visibleBars}`);
 
             this.invalidateAll();
         }
     }
 
-    // Pan the viewport with bounds checking
+    // FL Studio: Pan with intelligent bounds
     pan(deltaX, deltaY) {
+        const { cellHeight, totalOctaves } = this.options;
+        const { zoom, height, width } = this.viewport;
+
         // Update viewport position
         const newX = this.viewport.x - deltaX;
         const newY = this.viewport.y - deltaY;
 
-        // Apply bounds: X >= 0 (no negative time), Y can be any value
-        this.viewport.x = Math.max(this.world.minX, newX);
-        this.viewport.y = newY; // Y can scroll freely
+        // FL Studio: X bounds - 0 to 562 bars
+        const maxX = Math.max(0, this.world.maxX - width);
+        this.viewport.x = Math.max(0, Math.min(maxX, newX));
+
+        // FL Studio: Y bounds based on keyboard visibility
+        const keyboardRange = this.calculateKeyboardRange();
+
+        if (keyboardRange.canScroll) {
+            // Allow Y scrolling within keyboard bounds
+            const totalHeight = totalOctaves * 12 * cellHeight * zoom;
+            const maxY = Math.max(0, totalHeight - height);
+            this.viewport.y = Math.max(0, Math.min(maxY, newY));
+            this.viewport.keyboardScrollY = this.viewport.y;
+        } else {
+            // All octaves visible - no Y scroll
+            this.viewport.y = 0;
+            this.viewport.keyboardScrollY = 0;
+        }
+
+        // FL Studio: Update visible bar count
+        const pixelsPerBar = this.options.cellWidth * 16 * zoom;
+        this.world.visibleBars = Math.ceil(width / pixelsPerBar);
+
+        // FL Studio: Auto-adjust grid LOD if needed
+        if (this.options.autoGridLOD) {
+            const newLOD = this.calculateGridLOD(zoom);
+            if (newLOD !== this.gridLOD) {
+                this.gridLOD = newLOD;
+                console.log(`📊 FL: Grid LOD changed to ${newLOD.label}`);
+            }
+        }
 
         this.updateVisibleChunks();
         this.invalidateAll();
@@ -471,9 +574,11 @@ export class InfiniteGridEngine {
         this.dragDrop.dragCurrentPos = { ...worldPos };
         this.dragDrop.allowVertical = allowVertical; // Store vertical drag permission
 
-            // Calculate drag offset from note origin
-        const noteX = (note.time * this.options.cellWidth) / 0.25; // Convert beats to pixels
-        const noteY = note.pitch * this.options.cellHeight;
+            // CONSISTENT: Calculate drag offset from note origin
+        // time is in beats, convert to pixels (1 beat = cellWidth * 4 pixels)
+        const pixelsPerBeat = this.options.cellWidth * 4;
+        const noteX = note.time * pixelsPerBeat * this.viewport.zoom;
+        const noteY = note.pitch * this.options.cellHeight * this.viewport.zoom;
         this.dragDrop.dragOffset = {
             x: worldPos.worldX - noteX,
             y: worldPos.worldY - noteY
@@ -551,40 +656,52 @@ export class InfiniteGridEngine {
         this.invalidateLayer('selection');
     }
 
-    // Finish note drag with snap-aware positioning
+    // Finish note drag with CORRECT positioning
     finishNoteDrag() {
         if (!this.dragDrop.isDragging) return;
 
-        const { cellHeight } = this.options;
+        const { cellHeight, cellWidth } = this.options;
         const originalNote = this.dragDrop.draggedNote;
-        const snapConfig = this.snapModes[this.snapMode] || this.snapModes['1/16'];
 
-        // Use pre-calculated snapped position
-        const snappedPos = this.dragDrop.snappedPos || { x: 0, y: 0 };
+        // Get final mouse position
+        const finalPos = this.dragDrop.dragCurrentPos;
 
-        // Convert snapped X to time in beats based on current snap mode
+        // CORRECT: Convert world position to beats
+        // World position is already adjusted for viewport
+        const pixelsPerBeat = cellWidth * 4; // No zoom here, worldX already accounts for it
+        const newTime = Math.max(0, (finalPos.worldX - this.dragDrop.dragOffset.x) / pixelsPerBeat);
+
+        // Snap to grid
         const snapFractions = {
-            '1/1': 4,      // Whole note = 4 beats
-            '1/2': 2,      // Half note = 2 beats
-            '1/4': 1,      // Quarter note = 1 beat
-            '1/8': 0.5,    // 8th note = 0.5 beats
-            '1/16': 0.25,  // 16th note = 0.25 beats
-            '1/32': 0.125  // 32nd note = 0.125 beats
+            '1/64': 0.0625,
+            '1/32': 0.125,
+            '1/16': 0.25,
+            '1/8': 0.5,
+            '1/4': 1,
+            '1': 4
         };
-        const beatValue = snapFractions[this.snapMode] || 0.25;
-        const newTime = Math.max(0, (snappedPos.x / snapConfig.pixels) * beatValue);
+        const snapSize = snapFractions[this.snapMode] || 0.25;
+        const snappedTime = Math.round(newTime / snapSize) * snapSize;
 
         // Only change pitch if vertical dragging is allowed
         let newPitch = originalNote.pitch;
         if (this.dragDrop.allowVertical) {
-            const gridPitch = snappedPos.y / cellHeight;
-            newPitch = Math.max(0, gridPitch);
+            // CORRECT: Convert world Y to grid pitch
+            const gridPitch = (finalPos.worldY - this.dragDrop.dragOffset.y) / cellHeight;
+            newPitch = Math.max(0, Math.min(119, Math.round(gridPitch))); // Clamp to 10 octaves
         }
+
+        console.log('🎯 Drag finished:', {
+            originalTime: originalNote.time,
+            newTime: snappedTime,
+            originalPitch: originalNote.pitch,
+            newPitch: newPitch
+        });
 
         // Call external callback for note update
         if (this.onNoteDrag) {
             this.onNoteDrag(originalNote, {
-                time: newTime,
+                time: snappedTime,
                 pitch: newPitch,
                 verticalChanged: this.dragDrop.allowVertical
             });
@@ -595,9 +712,14 @@ export class InfiniteGridEngine {
         this.dragDrop.draggedNote = null;
         this.dragDrop.allowVertical = false;
         this.dragDrop.snappedPos = null;
+        this.dragDrop.selectedNotes.clear();
         this.container.style.cursor = 'default';
 
-        console.log('✅ Finished dragging note to:', { time: newTime, pitch: newPitch, snap: this.snapMode });
+        // Clear selection layer and force full re-render to remove ghosts
+        this.invalidateLayer('selection');
+        this.invalidateAll(); // Force complete re-render
+
+        console.log('✅ Finished dragging note to:', { time: snappedTime, pitch: newPitch, snap: this.snapMode });
     }
 
     // Finish note resize with snap-aware sizing
@@ -717,23 +839,39 @@ export class InfiniteGridEngine {
         this.animationId = requestAnimationFrame(render);
     }
 
-    // Render single frame
+    // FL Studio optimized render frame
     renderFrame() {
         if (!this.isInitialized) return;
 
         const startTime = performance.now();
 
-        // Clear canvases
-        Object.values(this.layers).forEach(layer => {
-            layer.ctx.clearRect(0, 0, this.viewport.width, this.viewport.height);
+        // FL Studio trick: Only clear & render what changed
+        const changedLayers = [];
+
+        Object.entries(this.layers).forEach(([name, layer]) => {
+            if (layer.needsUpdate) {
+                layer.ctx.clearRect(0, 0, this.viewport.width, this.viewport.height);
+                changedLayers.push(name);
+                layer.needsUpdate = false;
+            }
         });
 
-        // Render layers in order
-        this.renderBackground();
-        this.renderNotes();
-        this.renderPlayhead();
-        this.renderSelection();
-        this.renderUI();
+        // Skip render if nothing changed (unless dragging)
+        if (changedLayers.length === 0 && !this.dragDrop.isDragging) {
+            return;
+        }
+
+        // Render only changed layers (FL Studio optimization)
+        if (changedLayers.includes('background')) this.renderBackground();
+        if (changedLayers.includes('notes')) this.renderNotes();
+        if (changedLayers.includes('playhead')) this.renderPlayhead();
+        if (changedLayers.includes('selection')) this.renderSelection();
+        if (changedLayers.includes('ui')) this.renderUI();
+
+        // Always render selection during drag for feedback
+        if (this.dragDrop.isDragging && !changedLayers.includes('selection')) {
+            this.renderSelection();
+        }
 
         this.performance.renderTime = performance.now() - startTime;
     }
@@ -747,57 +885,154 @@ export class InfiniteGridEngine {
         }
     }
 
-    // Render dynamic grid background based on snap mode
+    // FL Studio: Calculate grid level of detail based on zoom
+    calculateGridLOD(zoom) {
+        for (let level of this.gridLevels) {
+            if (zoom >= level.zoom[0] && zoom < level.zoom[1]) {
+                return level;
+            }
+        }
+        return this.gridLevels[4]; // Default to beat grid
+    }
+
+    // FL Studio: Calculate visible range for keyboard
+    calculateKeyboardRange() {
+        const { y, height, zoom } = this.viewport;
+        const { cellHeight, totalOctaves } = this.options;
+
+        const totalHeight = totalOctaves * 12 * cellHeight * zoom;
+        const viewportHeight = height;
+
+        // Check if all octaves fit in viewport
+        if (totalHeight <= viewportHeight) {
+            // All octaves visible - no scroll needed
+            return {
+                canScroll: false,
+                visibleOctaves: totalOctaves,
+                startOctave: 0,
+                endOctave: totalOctaves
+            };
+        } else {
+            // Need scrolling
+            const visibleOctaves = Math.floor(viewportHeight / (12 * cellHeight * zoom));
+            const startNote = Math.floor(y / (cellHeight * zoom));
+            const startOctave = Math.floor(startNote / 12);
+
+            return {
+                canScroll: true,
+                visibleOctaves: visibleOctaves,
+                startOctave: startOctave,
+                endOctave: Math.min(startOctave + visibleOctaves, totalOctaves)
+            };
+        }
+    }
+
+    // FL Studio: Auto-adjust zoom to fit keyboard
+    fitKeyboardToView() {
+        const { height } = this.viewport;
+        const { cellHeight, totalOctaves } = this.options;
+
+        const totalKeyboardHeight = totalOctaves * 12 * cellHeight;
+        const requiredZoom = height / totalKeyboardHeight;
+
+        // Clamp to min zoom
+        this.viewport.zoom = Math.max(this.options.minZoom, requiredZoom);
+        this.gridLOD = this.calculateGridLOD(this.viewport.zoom);
+
+        console.log(`🎹 FL: Keyboard fitted to view, zoom: ${this.viewport.zoom.toFixed(3)}`);
+    }
+
+    // FL Studio dynamic grid rendering
     renderBackground() {
         const ctx = this.layers.background.ctx;
         const { cellHeight } = this.options;
         const { x, y, width, height, zoom } = this.viewport;
 
-        // Get current snap configuration
-        const snapConfig = this.snapModes[this.snapMode] || this.snapModes['1/16'];
-        const snapPixels = snapConfig.pixels;
+        // Update visible bar count
+        const pixelsPerBeat = this.options.cellWidth * 4 * zoom;
+        const pixelsPerBar = pixelsPerBeat * 4;
+        this.world.visibleBars = Math.floor(width / pixelsPerBar);
 
         ctx.clearRect(0, 0, width, height);
 
-        // Draw vertical grid lines (time/beat grid) based on snap mode
-        const scaledSnapWidth = snapPixels * zoom;
-
-        // Major grid lines (beats) - every 4 subdivisions for most modes
-        ctx.strokeStyle = '#444444';
+        // FL Studio ULTRA OPTIMIZATION: Adaptive grid rendering (no LOD needed)
+        ctx.strokeStyle = '#333333';
         ctx.lineWidth = 1;
 
-        const majorInterval = snapPixels * 4; // Every beat (4 subdivisions)
-        const scaledMajorWidth = majorInterval * zoom;
-        const startMajorCol = Math.floor(x / scaledMajorWidth);
-        const endMajorCol = Math.ceil((x + width) / scaledMajorWidth);
+        // Calculate optimal line spacing based on zoom
+        const minLineDistance = 8; // FL Studio: minimum 8px between lines
+        const basePixelsPerBeat = this.options.cellWidth * 4; // 48px per beat at zoom=1
+        const currentPixelsPerBeat = basePixelsPerBeat * zoom;
 
-        for (let col = startMajorCol; col <= endMajorCol; col++) {
-            const lineX = col * scaledMajorWidth - x;
-            if (lineX >= 0 && lineX <= width) {
-                ctx.beginPath();
-                ctx.moveTo(lineX, 0);
-                ctx.lineTo(lineX, height);
-                ctx.stroke();
-            }
+        // FL Studio adaptive intervals (bars shown as: 1, 53, 70, 86...)
+        let interval, labelEvery, showSubdivisions;
+
+        if (currentPixelsPerBeat < minLineDistance) {
+            // Ultra zoom out: only major bars every 16-32 beats
+            interval = Math.ceil(minLineDistance / currentPixelsPerBeat) * 16;
+            labelEvery = interval;
+            showSubdivisions = false;
+        } else if (currentPixelsPerBeat < minLineDistance * 2) {
+            // Major bars every 4-8 beats
+            interval = Math.ceil(minLineDistance / currentPixelsPerBeat) * 4;
+            labelEvery = interval;
+            showSubdivisions = false;
+        } else if (currentPixelsPerBeat < minLineDistance * 4) {
+            // Bars every 1-2 beats
+            interval = Math.max(1, Math.ceil(minLineDistance / currentPixelsPerBeat));
+            labelEvery = interval * 4; // Label every 4th bar
+            showSubdivisions = false;
+        } else {
+            // Normal zoom: beats + subdivisions
+            interval = 0.25; // Quarter note subdivisions
+            labelEvery = 4; // Label every bar
+            showSubdivisions = currentPixelsPerBeat > minLineDistance * 8;
         }
 
-        // Minor grid lines (snap subdivisions)
-        ctx.strokeStyle = '#2a2a2a';
-        ctx.lineWidth = 0.5;
+        // Calculate visible range in beats
+        const startBeat = Math.floor((x / zoom) / basePixelsPerBeat / interval) * interval;
+        const endBeat = Math.ceil(((x + width) / zoom) / basePixelsPerBeat / interval) * interval;
 
-        const startCol = Math.floor(x / scaledSnapWidth);
-        const endCol = Math.ceil((x + width) / scaledSnapWidth);
+        // FL Studio: Render only visible lines (max ~30-50 lines total)
+        const maxLines = Math.min(50, Math.ceil(width / minLineDistance));
+        const step = Math.max(interval, (endBeat - startBeat) / maxLines);
 
-        for (let col = startCol; col <= endCol; col++) {
-            const lineX = col * scaledSnapWidth - x;
-            if (lineX >= 0 && lineX <= width) {
-                // Skip major grid line positions
-                const isMajorLine = (col * snapPixels) % majorInterval === 0;
-                if (!isMajorLine) {
-                    ctx.beginPath();
-                    ctx.moveTo(lineX, 0);
-                    ctx.lineTo(lineX, height);
-                    ctx.stroke();
+        for (let beat = startBeat; beat <= endBeat; beat += step) {
+            const lineX = (beat * basePixelsPerBeat * zoom) - x;
+
+            if (lineX >= -1 && lineX <= width + 1) {
+                // Major line every labelEvery
+                const isMajor = (beat % labelEvery) === 0;
+
+                ctx.strokeStyle = isMajor ? '#555555' : '#333333';
+                ctx.lineWidth = isMajor ? 1.5 : 0.8;
+
+                ctx.beginPath();
+                ctx.moveTo(Math.round(lineX), 0);
+                ctx.lineTo(Math.round(lineX), height);
+                ctx.stroke();
+
+                // FL Studio bar numbers (1, 53, 70, 86 pattern)
+                if (isMajor && beat > 0 && currentPixelsPerBeat > minLineDistance * 2) {
+                    const barNumber = Math.round(beat / 4) + 1;
+                    ctx.fillStyle = '#888888';
+                    ctx.font = '11px -apple-system, BlinkMacSystemFont, sans-serif';
+                    ctx.fillText(`${barNumber}`, lineX + 3, 14);
+                }
+
+                // Subdivisions only when zoomed enough
+                if (showSubdivisions && interval >= 1) {
+                    for (let sub = 0.25; sub < 1; sub += 0.25) {
+                        const subLineX = ((beat + sub) * basePixelsPerBeat * zoom) - x;
+                        if (subLineX >= 0 && subLineX <= width) {
+                            ctx.strokeStyle = '#2a2a2a';
+                            ctx.lineWidth = 0.5;
+                            ctx.beginPath();
+                            ctx.moveTo(Math.round(subLineX), 0);
+                            ctx.lineTo(Math.round(subLineX), height);
+                            ctx.stroke();
+                        }
+                    }
                 }
             }
         }
@@ -841,6 +1076,11 @@ export class InfiniteGridEngine {
 
     // Render notes from visible chunks with velocity-based colors
     renderNotes() {
+        // Skip note rendering in hybrid mode - HTML handles notes
+        if (this.options.hybridMode && !this.options.renderNotesToCanvas) {
+            return;
+        }
+
         const ctx = this.layers.notes.ctx;
         const { cellWidth, cellHeight } = this.options;
         const { zoom } = this.viewport;
@@ -858,10 +1098,12 @@ export class InfiniteGridEngine {
             totalNotes += chunk.notes.length;
 
             chunk.notes.forEach(note => {
-                // Convert time to pixels: time (in beats) * pixels per 16th note / 0.25
-                const x = ((note.time * cellWidth) / 0.25 * zoom) - this.viewport.x;
+                // CONSISTENT: time is in beats, convert to pixels
+                // 1 beat = cellWidth * 4 pixels (at zoom=1)
+                const pixelsPerBeat = cellWidth * 4;
+                const x = (note.time * pixelsPerBeat * zoom) - this.viewport.x;
                 const y = (note.pitch * cellHeight * zoom) - this.viewport.y;
-                const w = ((note.duration || 0.25) * cellWidth / 0.25) * zoom;
+                const w = ((note.duration || 0.25) * pixelsPerBeat) * zoom;
                 const h = cellHeight * zoom - 1;
 
                 // Only render if visible
@@ -1063,12 +1305,10 @@ export class InfiniteGridEngine {
         }
     }
 
-    // Invalidate specific layer for re-rendering
+    // FL Studio: Mark layer for re-render (don't clear immediately)
     invalidateLayer(layerName) {
-        // Force re-render of specific layer
         if (this.layers[layerName]) {
-            const ctx = this.layers[layerName].ctx;
-            ctx.clearRect(0, 0, this.viewport.width, this.viewport.height);
+            this.layers[layerName].needsUpdate = true;
         }
     }
 
@@ -1078,6 +1318,25 @@ export class InfiniteGridEngine {
         Object.keys(this.layers).forEach(layerName => {
             this.invalidateLayer(layerName);
         });
+    }
+
+    // FL Studio: Force immediate render (bypass RAF)
+    forceImmediateRender() {
+        console.log('⚡ FL Studio: Force immediate render');
+
+        // Clear all chunks to force reload
+        this.world.chunks.clear();
+
+        // Update visible chunks immediately
+        this.updateVisibleChunks();
+
+        // Invalidate all layers
+        this.invalidateAll();
+
+        // Force render frame immediately (bypass RAF)
+        this.renderFrame();
+
+        console.log('⚡ FL Studio: Immediate render complete');
     }
 
     // Handle container resize
