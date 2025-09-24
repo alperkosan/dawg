@@ -5,6 +5,7 @@ import { NativeTimeUtils } from '../utils/NativeTimeUtils.js';
 import { usePlaybackStore } from '../../store/usePlaybackStore';
 import { useArrangementStore } from '../../store/useArrangementStore';
 import EventBus from './EventBus.js';
+import { PositionTracker } from './PositionTracker.js';
 
 /**
  * ⚡ PERFORMANCE OPTIMIZATION: Debounced Scheduling System
@@ -57,6 +58,9 @@ export class PlaybackManager {
 
         // ⚡ OPTIMIZATION: Initialize scheduling optimizer
         this.schedulingOptimizer = new SchedulingOptimizer();
+
+        // ✅ NEW: Initialize position tracker
+        this.positionTracker = new PositionTracker(this.transport);
 
         // ✅ EKLENDİ: Transport'tan gelen olayları dinlemek için.
         this._bindTransportEvents();
@@ -119,12 +123,19 @@ export class PlaybackManager {
         this.transport.on('stop', (data) => {
             console.log('🧠 PlaybackManager: Transport stopped');
 
-            // ✅ FIX: Immediately update position to loop start on stop
+            // ✅ FIX: Reset position tracker and emit accurate position
+            this.positionTracker.clearCache();
             this.currentPosition = this.loopStart;
-            this._emit('positionUpdate', {
-                step: this.loopStart,
-                formatted: this._formatPosition(this.loopStart)
-            });
+
+            const position = this.positionTracker.jumpToStep(this.loopStart);
+            const positionData = {
+                step: position.step,
+                tick: position.tick,
+                bbt: position.bbt,
+                formatted: position.bbt
+            };
+            console.log('🎯 Emitting precise positionUpdate on stop:', positionData);
+            this._emit('positionUpdate', positionData);
 
             this._emit('transportStop', data);
         });
@@ -132,13 +143,19 @@ export class PlaybackManager {
         this.transport.on('pause', (data) => {
             console.log('🧠 PlaybackManager: Transport paused');
 
-            // ✅ FIX: Update position on pause (keep current position)
-            const currentStep = this.transport.ticksToSteps(this.transport.currentTick);
-            this.currentPosition = currentStep;
-            this._emit('positionUpdate', {
-                step: currentStep,
-                formatted: this._formatPosition(currentStep)
-            });
+            // ✅ FIX: Get accurate position from PositionTracker and preserve it
+            const position = this.positionTracker.getDisplayPosition();
+            this.currentPosition = position.stepFloat;
+
+            const positionData = {
+                step: position.stepFloat,
+                tick: position.tick,
+                bbt: position.bbt,
+                formatted: position.display
+            };
+
+            console.log('🎯 Emitting clean positionUpdate on pause:', positionData);
+            this._emit('positionUpdate', positionData);
 
             this._emit('transportPause', data);
         });
@@ -637,10 +654,12 @@ export class PlaybackManager {
         }
 
         // ✅ FIX: Emit position update for UI
-        this._emit('positionUpdate', {
+        const positionData = {
             step: targetStep,
             formatted: this._formatPosition(targetStep)
-        });
+        };
+        console.log('🎯 Emitting positionUpdate on jumpToStep:', positionData);
+        this._emit('positionUpdate', positionData);
 
         console.log(`🎯 Jumped to step ${targetStep} (playing: ${this.isPlaying})`);
     }
@@ -682,25 +701,24 @@ export class PlaybackManager {
     }
 
     getCurrentPosition() {
-        // ✅ FIX: Always use stored position unless actively playing
-        if (this.isPlaying && !this.isPaused && this.transport) {
-            // Get real-time position from transport during active playback
-            const transportStep = this.transport.ticksToSteps?.(this.transport.currentTick);
-            if (transportStep !== undefined) {
-                // Keep position within loop bounds for accurate display
-                const loopLength = this.loopEnd - this.loopStart;
-                if (loopLength > 0) {
-                    const relativeStep = (transportStep - this.loopStart) % loopLength;
-                    const boundedPosition = this.loopStart + Math.max(0, relativeStep);
-                    console.log(`🎯 Transport position: ${transportStep.toFixed(2)} -> bounded: ${boundedPosition.toFixed(2)}`);
-                    return boundedPosition;
-                }
-                return transportStep;
+        // ✅ NEW: Use PositionTracker for accurate position management
+        const position = this.positionTracker.getCurrentPosition();
+
+        // During active playback, ensure loop bounds
+        if (this.isPlaying && !this.isPaused) {
+            const loopLength = this.loopEnd - this.loopStart;
+            if (loopLength > 0) {
+                const relativeStep = (position.stepFloat - this.loopStart) % loopLength;
+                const boundedStep = this.loopStart + Math.max(0, relativeStep);
+
+                console.log(`🎯 Live position: tick=${position.tick} step=${position.stepFloat.toFixed(3)} bounded=${boundedStep.toFixed(3)}`);
+                return boundedStep;
             }
+            return position.stepFloat;
         }
 
-        // ✅ CRITICAL: When stopped, paused, or no transport data, use stored position
-        console.log(`🎯 Using stored position: ${this.currentPosition} (playing: ${this.isPlaying}, paused: ${this.isPaused})`);
+        // For stopped/paused states, use stored position
+        console.log(`🎯 Position: ${this.currentPosition} (state: ${this.isPlaying ? 'playing' : 'stopped'})`);
         return this.currentPosition;
     }
     // =================== CONTENT SCHEDULING ===================

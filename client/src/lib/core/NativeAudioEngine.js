@@ -143,6 +143,8 @@ export class NativeAudioEngine {
     _setupPlaybackManagerCallbacks() {
         // Connect playback manager events to engine callbacks
         this.playbackManager.on('positionUpdate', (data) => {
+            console.log('🎯 PlaybackManager positionUpdate received:', data);
+            console.log('🎯 Calling setTransportPosition with:', data.formatted, data.step);
             this.setTransportPosition(data.formatted, data.step);
         });
 
@@ -387,13 +389,18 @@ export class NativeAudioEngine {
 
         this.transport.on('tick', (data) => {
             // Update current position in playback manager
-            if (this.playbackManager) {
-                this.playbackManager.currentPosition = this.playbackManager._secondsToSteps(data.time);
-            }
+            if (this.playbackManager?.positionTracker) {
+                // ✅ FIX: Use clean display position from PositionTracker
+                const position = this.playbackManager.positionTracker.getDisplayPosition();
+                this.playbackManager.currentPosition = position.stepFloat;
 
-            // Convert tick to step for UI consistency
-            const currentStep = data.step || this.transport.ticksToSteps(data.position);
-            this.setTransportPosition(data.formatted, currentStep);
+                // Send clean formatted position to UI
+                this.setTransportPosition(position.display, position.stepFloat);
+            } else {
+                // Fallback to original behavior
+                const currentStep = data.step || this.transport.ticksToSteps(data.position);
+                this.setTransportPosition(data.formatted, currentStep);
+            }
         });
 
         this.transport.on('bar', (data) => {

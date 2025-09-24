@@ -29,8 +29,11 @@ export const usePlaybackStore = create((set, get) => ({
     // Duruma göre motorun ilgili fonksiyonunu çağır
     if (playbackState === PLAYBACK_STATES.PLAYING) {
       engine.pause();
+    } else if (playbackState === PLAYBACK_STATES.PAUSED) {
+      // ✅ FIX: Use resume() for paused state
+      engine.resume();
     } else {
-      // Durmuş veya duraklatılmışsa, play() her ikisini de yönetir.
+      // Only for stopped state, use play()
       engine.play();
     }
   },
@@ -96,7 +99,10 @@ export const usePlaybackStore = create((set, get) => ({
   },
   
   // Bu fonksiyonlar App.jsx'teki callback'ler tarafından çağrıldığı için dokunmuyoruz.
-  setTransportPosition: (position, step) => set({ transportPosition: position, transportStep: step }),
+  setTransportPosition: (position, step) => {
+    console.log('🎯 Store setTransportPosition called:', { position, step });
+    set({ transportPosition: position, transportStep: step });
+  },
   setPlaybackState: (state) => set({ playbackState: state }),
 
   // YENİ: Master Volume için eylem

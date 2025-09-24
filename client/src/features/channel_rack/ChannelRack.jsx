@@ -4,7 +4,7 @@ import { useArrangementStore } from '../../store/useArrangementStore';
 import { usePlaybackStore } from '../../store/usePlaybackStore';
 import { usePanelsStore } from '../../store/usePanelsStore';
 import { usePlayheadTracking } from '../../hooks/useEngineState';
-import { useSmoothPlayhead } from '../../hooks/useSmoothPlayhead';
+import { useOptimizedPlayhead } from '../../hooks/useOptimizedPlayhead';
 import '../../styles/playhead-animations.css';
 import { commandManager } from '../../lib/commands/CommandManager';
 import { AddNoteCommand } from '../../lib/commands/AddNoteCommand';
@@ -24,24 +24,25 @@ export default function ChannelRack() {
   const { openPianoRollForInstrument, handleEditInstrument, togglePanel } = usePanelsStore();
 
   // Motor durumu ve playhead takibi için optimize edilmiş hook
-  const { currentStep, jumpToStep } = usePlayheadTracking();
+  const { currentStep } = usePlayheadTracking();
 
-  // Smooth playhead animasyonu için optimize edilmiş hook
+  // High-performance playhead için optimize edilmiş hook
   const {
     playheadRef,
-    scrollContainerRef: smoothScrollRef
-  } = useSmoothPlayhead(STEP_WIDTH);
+    scrollContainerRef: optimizedScrollRef,
+    jumpToPosition
+  } = useOptimizedPlayhead(STEP_WIDTH);
   const timelineContainerRef = useRef(null);
   const instrumentListRef = useRef(null);
 
   const activePattern = patterns[activePatternId];
 
-  // Smooth playhead artık useSmoothPlayhead hook'u tarafından yönetiliyor
-  // Eski manual playhead yönetimi kaldırıldı - hook otomatik olarak hallediyor
+  // High-performance playhead artık useOptimizedPlayhead hook'u tarafından yönetiliyor
+  // GPU acceleration ve direct DOM manipulation ile smooth hareket
 
-  // Scroll senkronizasyonu - smooth scroll container kullan
+  // Scroll senkronizasyonu - optimized scroll container kullan
   useEffect(() => {
-    const container = smoothScrollRef.current;
+    const container = optimizedScrollRef.current;
     if (!container) return;
 
     const syncScroll = () => {
@@ -63,7 +64,7 @@ export default function ChannelRack() {
   // Sol paneldeki tekerlek hareketini sağ panele yönlendirme
   useEffect(() => {
     const instrumentContainer = instrumentListRef.current;
-    const mainScrollContainer = smoothScrollRef.current;
+    const mainScrollContainer = optimizedScrollRef.current;
     if (!instrumentContainer || !mainScrollContainer) return;
     const handleWheelOnInstrumentList = (e) => {
       e.preventDefault();
@@ -116,13 +117,13 @@ export default function ChannelRack() {
           <InteractiveTimeline
             loopLength={audioLoopLength}
             currentPosition={currentStep}
-            onJumpToPosition={jumpToStep}
+            onJumpToPosition={jumpToPosition}
           />
         </div>
       </div>
-      <div ref={smoothScrollRef} className="channel-rack-layout__grid-scroll-area">
+      <div ref={optimizedScrollRef} className="channel-rack-layout__grid-scroll-area">
         <div style={{ width: totalGridWidth, height: totalContentHeight }} className="channel-rack-layout__grid-content">
-          <div ref={playheadRef} className="channel-rack-layout__playhead playhead--smooth playhead--performance-optimized" style={{ height: totalContentHeight }} />
+          <div ref={playheadRef} className="channel-rack-layout__playhead playhead--optimized" style={{ height: totalContentHeight }} />
           {instruments.map(inst => (
             <div key={inst.id} className="channel-rack-layout__grid-row">
               {inst.pianoRoll ? (
