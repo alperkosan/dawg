@@ -25,7 +25,7 @@ export const usePianoRollStoreV2 = create(
       activeTool: 'pencil',
       gridSnapValue: '16n',
       snapMode: 'hard',
-      lastUsedDuration: '16n',
+      lastUsedDuration: '32n', // Default to 32nd note for shorter notes
       zoomX: 1,
       zoomY: 1,
       velocityLaneHeight: 100, // Başlangıç yüksekliği

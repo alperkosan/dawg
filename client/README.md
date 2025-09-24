@@ -1,20 +1,148 @@
-# React + Vite
+Elbette! Projenizin kalitesini ve mimarisini yansıtan, hem geliştiricilerin hem de yapay zeka modellerinin anlayabileceği kadar net ve detaylı bir README.md dosyası hazırladım. Bu dosya, projenizin temel felsefesini, çalışma mantığını ve teknik yapısını kapsamlı bir şekilde açıklamaktadır.
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Proje DAWG: Modern Web Tabanlı Dijital Ses İşleme İstasyonu
+DAWG (Digital Audio Workstation by Gemini), tamamen modern web teknolojileri kullanılarak sıfırdan inşa edilmiş, yüksek performanslı bir dijital ses işleme istasyonudur. React, Zustand ve Web Audio API'nin en güçlü özelliklerini bir araya getirerek, tarayıcıda profesyonel kalitede müzik prodüksiyonu deneyimi sunmayı hedefler.
 
-Currently, two official plugins are available:
+✨ Teknik Felsefe ve Mimari Yaklaşım
+Bu proje, üç temel prensip üzerine kurulmuştur:
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+Ses Motoru ve Arayüzün Ayrıştırılması (Decoupling): Ses üreten ve işleyen NativeAudioEngine, kullanıcı arayüzünden (React bileşenleri) tamamen soyutlanmıştır. İletişim, yalnızca iyi tanımlanmış servisler (AudioContextService) ve store'lar üzerinden kurulur. Bu, ses motorunda bir takılmanın arayüzü, arayüzdeki bir render sorununun ise sesi asla etkilememesini sağlar.
 
-## Expanding the ESLint configuration
+State'in Tek Doğruluk Kaynağı Olması (Single Source of Truth): Uygulamanın tüm durumu (çalma pozisyonu, mikser seviyeleri, pattern verileri vb.) Zustand store'ları içinde yönetilir. Bileşenler bu store'lara abone olur ve motor bu store'lardan beslenir. Bu, öngörülebilir ve kolayca hata ayıklanabilir bir veri akışı yaratır.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+Olay Tabanlı ve Reaktif İletişim: Sistem, kullanıcı eylemlerine ve motor güncellemelerine reaktif olarak yanıt verir. Bir komut (Command) veya olay, sistemin ilgili parçalarını zincirleme bir reaksiyonla günceller.
+
+🤖 AI Modeli İçin Çalışma Diagramı ve Veri Akışı
+Bu bölüm, projenin içsel çalışma mantığını bir yapay zeka modelinin anlayabileceği şekilde şemalaştırır. Sistemde iki ana veri akış yönü vardır:
+
+1. Akış: Kullanıcı Etkileşiminden Ses Motoruna (UI → Engine)
+Bu akış, kullanıcının bir butona tıklaması gibi bir eylemle başlar ve ses motorunda bir değişikliğe neden olur.
+
+Örnek: "Play" Butonuna Basılması
+
+1. [Kullanıcı Arayüzü]
+   TopToolbar.jsx'teki <button> tıklandı.
+     |
+     v
+2. [Zustand Store Eylemi]
+   usePlaybackStore.getState().togglePlayPause() çağrıldı.
+     |
+     v
+3. [Merkezi Servis Katmanı]
+   togglePlayPause() fonksiyonu, AudioContextService.getAudioEngine() üzerinden
+   ses motoru örneğine erişir ve .play() metodunu çağırır.
+     |
+     v
+4. [Çekirdek Ses Motoru]
+   NativeAudioEngine.play() metodu tetiklenir.
+     |
+     v
+5. [Alt Sistemler]
+   a) PlaybackManager.play() mevcut duruma göre oynatmayı başlatır.
+   b) NativeTransportSystem.start() zamanlayıcıyı (worker timer) başlatır.
+   c) PlaybackManager, aktif pattern'deki notaları zamanlama için transport'a gönderir.
+2. Akış: Ses Motorundan Kullanıcı Arayüzüne (Engine → UI)
+Bu akış, ses motorunun kendi iç durumundaki bir değişikliği (zamanın ilerlemesi gibi) arayüze yansıtmasıdır.
+
+Örnek: Playhead Pozisyonunun Güncellenmesi
+
+1. [Çekirdek Zamanlayıcı]
+   NativeTransportSystem içindeki Worker Timer, periyodik olarak 'tick' olayı yayınlar.
+     |
+     v
+2. [Çekirdek Ses Motoru]
+   NativeAudioEngine, bu 'tick' olayını dinler ve constructor'da aldığı
+   this.setTransportPosition() callback fonksiyonunu o anki adım (step)
+   bilgisiyle çağırır.
+     |
+     v
+3. [Başlatma & Bağlantı Noktası]
+   Bu callback, App.jsx'te motor başlatılırken usePlaybackStore.getState().setTransportPosition
+   olarak tanımlanmıştır.
+     |
+     v
+4. [Zustand Store Güncellemesi]
+   usePlaybackStore içindeki 'transportStep' ve 'transportPosition' state'leri
+   yeni değerlerle güncellenir.
+     |
+     v
+5. [Kullanıcı Arayüzü]
+   a) ChannelRack.jsx, usePlaybackStore'a abone olduğu için güncellemeyi alır.
+   b) useEffect, 'transportStep' bağımlılığındaki değişikliği fark eder.
+   c) playheadRef.current.style.transform'i yeni pozisyona göre güncelleyerek
+      playhead'i ekranda hareket ettirir.
+🚀 Teknolojiler
+Çerçeve (Framework): React 18+
+
+Ses Motoru: Native Web Audio API & AudioWorklets
+
+Durum Yönetimi (State Management): Zustand
+
+Stil (Styling): Tailwind CSS & CSS Değişkenleri (Temalama için)
+
+Sürükle & Bırak (Drag & Drop): React DnD
+
+Dil (Language): JavaScript (ES6+)
+
+Paketleyici (Bundler): Vite
+
+📂 Proje Yapısı
+Proje, sorumlulukların net bir şekilde ayrıldığı modüler bir klasör yapısına sahiptir:
+
+/src
+|
+|-- components/       # Genel, yeniden kullanılabilir React bileşenleri (örn: DebugPanel)
+|-- config/           # Proje genelindeki konfigürasyonlar (paneller, plugin'ler, sabitler)
+|-- features/         # Ana özellik modülleri (channel_rack, mixer_v2, piano_roll_v2 vb.)
+|-- hooks/            # Yeniden kullanılabilir React hook'ları
+|-- layout/           # Ana uygulama yerleşimini yöneten bileşenler (WorkspacePanel)
+|-- lib/              # Uygulamanın çekirdek mantığı
+|   |-- audio/        # AudioWorklet'ler ve sesle ilgili yardımcı sınıflar
+|   |-- commands/     # Geri Al/Yinele (Undo/Redo) için komut deseni implementasyonu
+|   |-- core/         # NativeAudioEngine ve alt sistemleri (Transport, PlaybackManager)
+|   |-- interfaces/   # Motorun farklı yetenekleri için üst düzey API'ler
+|   |-- services/     # Uygulama genelinde erişilen singleton servisler (AudioContextService)
+|   `-- utils/        # Genel yardımcı fonksiyonlar (zamanlama, matematik vb.)
+|-- store/            # Tüm Zustand store tanımları
+|-- styles/           # Global CSS ve stil parçaları
+`-- ui/               # Daha karmaşık, paylaşılan UI bileşenleri (Plugin'ler, pencereler)
+🛠️ Kurulum ve Başlatma
+Bağımlılıkları Yükleyin:
+
+Bash
+
+npm install
+Geliştirme Sunucusunu Başlatın:
+
+Bash
+
+npm run dev
+Uygulamayı tarayıcınızda http://localhost:5173 (veya terminalde belirtilen port) adresinde açın.
+
+🌟 Temel Özellikler
+Düşük Gecikmeli Ses Motoru: Tüm ses işlemleri, ana thread'i tıkamayan AudioWorklet'ler üzerinde çalışır.
+
+Pattern ve Song Modu: Hem döngüsel pattern tabanlı çalmayı hem de zaman çizelgesi üzerinde doğrusal şarkı düzenlemesini destekler.
+
+Modüler Plugin Sistemi: Yeni ses efektleri (plugin'ler) kolayca sisteme eklenebilir ve yönetilebilir.
+
+Geri Al/Yinele Desteği: Command deseni kullanılarak yapılan işlemler (nota ekleme/silme) geri alınabilir.
+
+Dinamik Pencere Yönetimi: Sürüklenip yeniden boyutlandırılabilen panel sistemi.
+
+Temalama Desteği: CSS Değişkenleri sayesinde uygulamanın görünümü anlık olarak değiştirilebilir.
+
+🗺️ Gelecek Planları (Roadmap)
+MIDI Kayıt: Klavyeden canlı MIDI girişi ve kaydı.
+
+Otomasyon Klipleri: Mikser ve efekt parametreleri için zaman çizelgesinde otomasyon çizimi.
+
+WebAssembly (WASM): C++ ile yazılmış yüksek performanslı DSP (Sinyal İşleme) kütüphanelerinin entegrasyonu.
+
+Proje Kaydetme/Yükleme: Proje durumunu dosyaya veya buluta kaydetme.
 
 
-
-
-
+----------------------------------------------
 Diyagramın Yorumlanması
 Bu diyagram, modern ve temiz bir ses uygulaması mimarisini gösteriyor. Katmanlar arasındaki sorumluluk ayrımı çok net:
 

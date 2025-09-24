@@ -280,8 +280,9 @@ export class NativeAudioEngine {
             return;
         }
 
-        this.playbackManager._scheduleContent();
-        console.log('🔄 Pattern rescheduled');
+        // ⚡ OPTIMIZATION: Use debounced scheduling instead of immediate reschedule
+        this.playbackManager._scheduleContent(null, 'pattern-schedule', false);
+        console.log('🔄 Pattern scheduling requested');
     }
 
     // =================== EXISTING METHODS (Enhanced) ===================
@@ -389,8 +390,10 @@ export class NativeAudioEngine {
             if (this.playbackManager) {
                 this.playbackManager.currentPosition = this.playbackManager._secondsToSteps(data.time);
             }
-            
-            this.setTransportPosition(data.formatted, data.position);
+
+            // Convert tick to step for UI consistency
+            const currentStep = data.step || this.transport.ticksToSteps(data.position);
+            this.setTransportPosition(data.formatted, currentStep);
         });
 
         this.transport.on('bar', (data) => {

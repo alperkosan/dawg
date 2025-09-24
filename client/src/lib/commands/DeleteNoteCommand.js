@@ -1,7 +1,7 @@
 import { Command } from './Command';
 import { useArrangementStore } from '../../store/useArrangementStore';
 import { usePlaybackStore } from '../../store/usePlaybackStore';
-import { AudioContextService } from '../services/AudioContextService';
+import EventBus from '../core/EventBus.js';
 
 /**
  * Bir notayı silen ve bu işlemi geri alabilen komut.
@@ -25,7 +25,13 @@ export class DeleteNoteCommand extends Command {
 
     useArrangementStore.getState().updatePatternNotes(activePatternId, this.instrumentId, newNotes);
     usePlaybackStore.getState().updateLoopLength();
-    AudioContextService.getAudioEngine()?.reschedule();
+
+    // ✅ FIX: Notify PlaybackManager via EventBus
+    EventBus.emit('NOTE_REMOVED', {
+      patternId: activePatternId,
+      instrumentId: this.instrumentId,
+      noteId: this.note.id
+    });
   }
 
   /**
@@ -40,7 +46,13 @@ export class DeleteNoteCommand extends Command {
 
     useArrangementStore.getState().updatePatternNotes(activePatternId, this.instrumentId, newNotes);
     usePlaybackStore.getState().updateLoopLength();
-    AudioContextService.getAudioEngine()?.reschedule();
+
+    // ✅ FIX: Notify PlaybackManager via EventBus (undo = add back)
+    EventBus.emit('NOTE_ADDED', {
+      patternId: activePatternId,
+      instrumentId: this.instrumentId,
+      note: this.note
+    });  
   }
 
   getDescription() {

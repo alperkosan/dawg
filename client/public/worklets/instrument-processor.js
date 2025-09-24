@@ -1,4 +1,125 @@
 // public/worklets/instrument-processor.js
+
+// ⚡ OPTIMIZATION: Pre-calculated frequency lookup table
+// Covers C0 to B8 (108 semitones) for instant note-to-frequency conversion
+const FREQUENCY_TABLE = (() => {
+  const table = new Map();
+  const A4_FREQ = 440.0;
+  const A4_MIDI = 69;
+
+  // Calculate frequencies for all MIDI notes (0-127)
+  for (let midi = 0; midi <= 127; midi++) {
+    const freq = A4_FREQ * Math.pow(2, (midi - A4_MIDI) / 12);
+    table.set(midi, freq);
+  }
+
+  // Add note name mappings for common usage
+  const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+  for (let octave = 0; octave <= 8; octave++) {
+    for (let note = 0; note < 12; note++) {
+      const noteName = noteNames[note] + octave;
+      const midiNote = octave * 12 + note + 12; // C0 = MIDI 12
+      if (midiNote <= 127) {
+        table.set(noteName, table.get(midiNote));
+      }
+    }
+  }
+
+  console.log('⚡ Frequency lookup table initialized with', table.size, 'entries');
+  return table;
+})();
+
+// ⚡ OPTIMIZATION: Voice Pool for efficient voice management
+class VoicePool {
+  constructor(poolSize = 16) {
+    this.poolSize = poolSize;
+    this.availableVoices = [];
+    this.usedVoices = new Set();
+
+    // Pre-allocate voice objects to avoid GC during audio processing
+    for (let i = 0; i < poolSize; i++) {
+      this.availableVoices.push(this.createVoiceObject(i));
+    }
+
+    console.log(`⚡ Voice pool initialized with ${poolSize} voices`);
+  }
+
+  createVoiceObject(id) {
+    return {
+      id: `pool_voice_${id}`,
+      frequency: 0,
+      velocity: 0,
+      phase: 0,
+      envelopePhase: 'release',
+      envelopeTime: 0,
+      envelopeValue: 0,
+      duration: null,
+      startTime: 0,
+      isActive: false
+    };
+  }
+
+  acquire() {
+    if (this.availableVoices.length === 0) {
+      // Pool exhausted, steal oldest voice
+      const oldestVoice = this.findOldestVoice();
+      if (oldestVoice) {
+        this.release(oldestVoice);
+      } else {
+        // Fallback: create temporary voice
+        console.warn('⚠️ Voice pool exhausted, creating temporary voice');
+        return this.createVoiceObject('temp_' + Date.now());
+      }
+    }
+
+    const voice = this.availableVoices.pop();
+    voice.isActive = true;
+    this.usedVoices.add(voice);
+    return voice;
+  }
+
+  release(voice) {
+    if (this.usedVoices.has(voice)) {
+      // Reset voice to default state
+      voice.frequency = 0;
+      voice.velocity = 0;
+      voice.phase = 0;
+      voice.envelopePhase = 'release';
+      voice.envelopeTime = 0;
+      voice.envelopeValue = 0;
+      voice.duration = null;
+      voice.startTime = 0;
+      voice.isActive = false;
+
+      this.usedVoices.delete(voice);
+      this.availableVoices.push(voice);
+    }
+  }
+
+  findOldestVoice() {
+    let oldest = null;
+    let oldestTime = Infinity;
+
+    for (const voice of this.usedVoices) {
+      if (voice.startTime < oldestTime) {
+        oldestTime = voice.startTime;
+        oldest = voice;
+      }
+    }
+
+    return oldest;
+  }
+
+  getStats() {
+    return {
+      poolSize: this.poolSize,
+      available: this.availableVoices.length,
+      used: this.usedVoices.size,
+      utilization: (this.usedVoices.size / this.poolSize * 100).toFixed(1) + '%'
+    };
+  }
+}
+
 class InstrumentProcessor extends AudioWorkletProcessor {
   static get parameterDescriptors() {
     return [
@@ -17,12 +138,13 @@ class InstrumentProcessor extends AudioWorkletProcessor {
 
   constructor(options) {
     super();
-    
+
     // Instrument info
     this.instrumentId = options?.processorOptions?.instrumentId || 'unknown';
     this.instrumentName = options?.processorOptions?.instrumentName || 'Unnamed';
-    
-    // Polyphonic voices
+
+    // ⚡ OPTIMIZATION: Voice pool management for better performance
+    this.voicePool = new VoicePool(16); // Pre-allocate 16 voices
     this.voices = new Map();
     this.voiceId = 0;
     this.maxPolyphony = 8;
@@ -116,25 +238,28 @@ class InstrumentProcessor extends AudioWorkletProcessor {
   }
 
   triggerNote(frequency, velocity, noteId = null, duration = null) {
-    if (this.voices.size >= this.maxPolyphony) {
-        const oldestVoiceId = this.voices.keys().next().value;
-        this.voices.delete(oldestVoiceId);
+    // ⚡ OPTIMIZATION: Use voice pool instead of manual polyphony management
+    const voice = this.voicePool.acquire();
+
+    // ⚡ OPTIMIZATION: Use frequency lookup table if input is note name
+    let actualFrequency = frequency;
+    if (typeof frequency === 'string') {
+      actualFrequency = FREQUENCY_TABLE.get(frequency) || frequency;
     }
 
-    const voiceData = {
-        id: noteId || `voice_${this.voiceId++}`,
-        frequency,
-        velocity,
-        phase: 0,
-        envelopePhase: 'attack',
-        envelopeValue: 0,
-        envelopeTime: 0,
-        startTime: currentTime, // `currentTime` global bir değişkendir (AudioWorkletGlobalScope)
-        duration: duration, // ✅ EKLENEN: Nota süresini saniye olarak sakla
-        filterStates: [0, 0, 0, 0]
-    };
-    
-    this.voices.set(voiceData.id, voiceData);
+    // Configure voice with note data
+    voice.id = noteId || `voice_${this.voiceId++}`;
+    voice.frequency = actualFrequency;
+    voice.velocity = velocity;
+    voice.phase = 0;
+    voice.envelopePhase = 'attack';
+    voice.envelopeValue = 0;
+    voice.envelopeTime = 0;
+    voice.startTime = currentTime;
+    voice.duration = duration;
+    voice.filterStates = [0, 0, 0, 0];
+
+    this.voices.set(voice.id, voice);
 
     // Message gönder
     this.port.postMessage({
@@ -232,10 +357,11 @@ class InstrumentProcessor extends AudioWorkletProcessor {
             const sample = this.processVoice(voice, parameters, i);
             mixedSample += sample;
             
-            // Voice cleanup
+            // ⚡ OPTIMIZATION: Voice cleanup with pool management
             if (voice.envelopePhase === 'off' && voice.envelopeValue < 0.0001) {
                 this.voices.delete(voiceId);
-                console.log(`🗑️ Voice cleaned up: ${voice.frequency}Hz`);
+                this.voicePool.release(voice);
+                console.log(`🗑️ Voice cleaned up: ${voice.frequency}Hz (pool: ${this.voicePool.getStats().utilization})`);
             }
         });
         

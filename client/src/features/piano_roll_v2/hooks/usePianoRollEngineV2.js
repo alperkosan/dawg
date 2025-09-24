@@ -16,30 +16,89 @@ export const usePianoRollEngineV2 = (containerRef, loopLength) => {
   const dimensions = useMemo(() => {
     const keyHeight = 20 * zoomY;
     const stepWidth = 40 * zoomX;
-    const totalSteps = loopLength * 4;
+
+    // Infinite scrolling: Dynamic width based on viewport and scroll position
+    const minBars = 200; // Minimum 200 bars (3200 steps)
+    const baseSteps = minBars * 16; // 16 steps per bar
+    const currentScrollX = scrollRef.current?.x || 0;
+    const viewportWidth = size.width || 1200;
+
+    // Calculate how many bars we're scrolled to
+    const currentBar = Math.floor(currentScrollX / (stepWidth * 16));
+    const requiredBars = Math.max(minBars, currentBar + 50); // Always have 50 bars ahead
+    const totalSteps = requiredBars * 16;
+
     const gridWidth = totalSteps * stepWidth;
     const gridHeight = TOTAL_KEYS * keyHeight;
-    return { keyHeight, stepWidth, gridWidth, gridHeight, totalKeys: TOTAL_KEYS, keyboardWidth: KEYBOARD_WIDTH, rulerHeight: RULER_HEIGHT };
-  }, [zoomX, zoomY, loopLength]);
+
+    return {
+      keyHeight,
+      stepWidth,
+      gridWidth,
+      gridHeight,
+      totalKeys: TOTAL_KEYS,
+      keyboardWidth: KEYBOARD_WIDTH,
+      rulerHeight: RULER_HEIGHT,
+      totalSteps,
+      loopSteps: loopLength * 4,
+      currentBar,
+      requiredBars
+    };
+  }, [zoomX, zoomY, loopLength, size.width, scrollPos.x]);
 
   useLayoutEffect(() => {
     const container = containerRef.current;
     if (!container) return;
+
+    let rafId = null;
+    let lastScrollTime = 0;
+    const throttleDelay = 16; // 60fps
+
     const handleScroll = () => {
-      scrollRef.current = { x: container.scrollLeft, y: container.scrollTop };
-      forceUpdate({});
+      const now = Date.now();
+      if (now - lastScrollTime < throttleDelay) return;
+
+      if (rafId) cancelAnimationFrame(rafId);
+
+      rafId = requestAnimationFrame(() => {
+        const newScrollX = container.scrollLeft;
+        const newScrollY = container.scrollTop;
+
+        const oldScrollX = scrollRef.current.x;
+        const oldScrollY = scrollRef.current.y;
+
+        scrollRef.current = { x: newScrollX, y: newScrollY };
+
+        // Check if we need to extend the grid (when scrolled to 80% of current width)
+        const scrollThreshold = dimensions.gridWidth * 0.8;
+        const shouldExtend = newScrollX > scrollThreshold;
+
+        // Force update if significant scroll change or if we need to extend
+        const scrollDeltaX = Math.abs(newScrollX - oldScrollX);
+        const scrollDeltaY = Math.abs(newScrollY - oldScrollY);
+        const shouldUpdate = scrollDeltaX > 100 || scrollDeltaY > 100 || shouldExtend;
+
+        if (shouldUpdate) {
+          setScrollPos({ x: newScrollX, y: newScrollY });
+          forceUpdate({});
+        }
+        lastScrollTime = now;
+      });
     };
+
     const resizeObserver = new ResizeObserver(entries => {
       const { width, height } = entries[0].contentRect;
       setSize({ width, height });
     });
+
     resizeObserver.observe(container);
     container.addEventListener('scroll', handleScroll, { passive: true });
     setSize({ width: container.clientWidth, height: container.clientHeight });
-    
+
     return () => {
       resizeObserver.disconnect();
       container.removeEventListener('scroll', handleScroll);
+      if (rafId) cancelAnimationFrame(rafId);
     };
   }, [containerRef]);
 
@@ -89,11 +148,23 @@ export const usePianoRollEngineV2 = (containerRef, loopLength) => {
     return { x, y, time: converters.xToTime(x), pitch: converters.yToPitch(y) };
   }, [containerRef, converters]);
   
+  // Add scroll tracking for dynamic updates
+  const [scrollPos, setScrollPos] = useState({ x: 0, y: 0 });
+
+  useLayoutEffect(() => {
+    const updateScroll = () => {
+      setScrollPos({ ...scrollRef.current });
+    };
+
+    // Update scroll position immediately
+    updateScroll();
+  }, [scrollRef.current.x, scrollRef.current.y]);
+
   return useMemo(() => ({
     ...dimensions,
     scroll: scrollRef.current,
     size,
     ...converters,
     mouseToGrid,
-  }), [dimensions, size, converters, mouseToGrid, scrollRef.current]);
+  }), [dimensions, size, converters, mouseToGrid, scrollPos]);
 };

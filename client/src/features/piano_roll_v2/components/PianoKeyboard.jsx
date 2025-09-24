@@ -1,10 +1,11 @@
 // src/features/piano_roll_v2/components/PianoKeyboard.jsx
-import React, { useMemo, useState, useCallback } from 'react';
+import React, { useMemo, useState, useCallback, useRef, useEffect } from 'react';
 import { NOTES } from '../store/usePianoRollStoreV2';
 import { AudioContextService } from '../../../lib/services/AudioContextService';
 
 export const PianoKeyboard = React.memo(({ engine, instrumentId }) => {
   const [playingNotes, setPlayingNotes] = useState(new Set());
+  const playingNotesRef = useRef(new Set());
 
   const keys = useMemo(() => {
     const keyData = [];
@@ -23,17 +24,49 @@ export const PianoKeyboard = React.memo(({ engine, instrumentId }) => {
   }, [engine.totalKeys]);
 
   const handleMouseDown = useCallback((pitch) => {
-    AudioContextService.auditionNoteOn(instrumentId, pitch, 0.8);
-    setPlayingNotes(prev => new Set(prev).add(pitch));
+    if (!playingNotesRef.current.has(pitch)) {
+      AudioContextService.auditionNoteOn(instrumentId, pitch, 0.8);
+      playingNotesRef.current.add(pitch);
+      setPlayingNotes(prev => new Set(prev).add(pitch));
+    }
   }, [instrumentId]);
 
   const handleMouseUp = useCallback((pitch) => {
-    AudioContextService.auditionNoteOff(instrumentId, pitch);
-    setPlayingNotes(prev => {
-      const newSet = new Set(prev);
-      newSet.delete(pitch);
-      return newSet;
-    });
+    if (playingNotesRef.current.has(pitch)) {
+      AudioContextService.auditionNoteOff(instrumentId, pitch);
+      playingNotesRef.current.delete(pitch);
+      setPlayingNotes(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(pitch);
+        return newSet;
+      });
+    }
+  }, [instrumentId]);
+
+  // Stop all notes when component unmounts or instrumentId changes
+  useEffect(() => {
+    return () => {
+      // Stop all playing notes when cleanup
+      playingNotesRef.current.forEach(pitch => {
+        AudioContextService.auditionNoteOff(instrumentId, pitch);
+      });
+      playingNotesRef.current.clear();
+    };
+  }, [instrumentId]);
+
+  // Global mouseup listener to prevent stuck notes
+  useEffect(() => {
+    const handleGlobalMouseUp = () => {
+      // Stop all currently playing notes
+      playingNotesRef.current.forEach(pitch => {
+        AudioContextService.auditionNoteOff(instrumentId, pitch);
+      });
+      playingNotesRef.current.clear();
+      setPlayingNotes(new Set());
+    };
+
+    document.addEventListener('mouseup', handleGlobalMouseUp);
+    return () => document.removeEventListener('mouseup', handleGlobalMouseUp);
   }, [instrumentId]);
 
   return (

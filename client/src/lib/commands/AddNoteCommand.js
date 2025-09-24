@@ -1,7 +1,7 @@
 import { Command } from './Command';
 import { useArrangementStore } from '../../store/useArrangementStore';
 import { usePlaybackStore } from '../../store/usePlaybackStore';
-import { AudioContextService } from '../services/AudioContextService';
+import EventBus from '../core/EventBus.js';
 
 /**
  * Bir enstrümana yeni bir nota ekleyen ve bu işlemi geri alabilen komut.
@@ -27,26 +27,28 @@ export class AddNoteCommand extends Command {
     const activePatternId = useArrangementStore.getState().activePatternId;
     if (!activePatternId) return;
 
+    // Get current notes for this instrument
+    const currentNotes = useArrangementStore.getState().patterns[activePatternId].data[this.instrumentId] || [];
+
     // Geri alma (undo) işlemi için notayı burada oluşturup sınıf içinde saklıyoruz.
-    this.note = { 
-      id: `note_${this.step}_${Date.now()}_${Math.random().toString(36).substring(7)}`, 
-      time: this.step, 
-      pitch: 'C4', 
-      velocity: 1.0, 
-      duration: '16n' 
+    this.note = {
+      id: `note_${this.step}_${Date.now()}_${Math.random().toString(36).substring(7)}`,
+      time: this.step,
+      pitch: 'C4',
+      velocity: 1.0,
+      duration: '16n'
     };
 
-    const currentNotes = useArrangementStore.getState().patterns[activePatternId].data[this.instrumentId] || [];
     const newNotes = [...currentNotes, this.note];
-    
-    // 1. State'i Güncelle (Zustand)
     useArrangementStore.getState().updatePatternNotes(activePatternId, this.instrumentId, newNotes);
-    
-    // 2. Döngü uzunluğunu kontrol et ve gerekirse güncelle
     usePlaybackStore.getState().updateLoopLength();
 
-    // 3. Ses Motoruna Değişikliği Bildir (Notaları yeniden zamanla)
-    AudioContextService.getAudioEngine()?.reschedule();
+    // ✅ CRITICAL FIX: Notify PlaybackManager via EventBus
+    EventBus.emit('NOTE_ADDED', {
+      patternId: activePatternId,
+      instrumentId: this.instrumentId,
+      note: this.note
+    });
   }
 
   /**
@@ -58,15 +60,15 @@ export class AddNoteCommand extends Command {
 
     const currentNotes = useArrangementStore.getState().patterns[activePatternId].data[this.instrumentId] || [];
     const newNotes = currentNotes.filter(note => note.id !== this.note.id);
-    
-    // 1. State'i Güncelle
     useArrangementStore.getState().updatePatternNotes(activePatternId, this.instrumentId, newNotes);
-    
-    // 2. Döngü uzunluğunu kontrol et
     usePlaybackStore.getState().updateLoopLength();
 
-    // 3. Ses Motoruna Bildir
-    AudioContextService.getAudioEngine()?.reschedule();
+    // ✅ FIX: Notify PlaybackManager via EventBus
+    EventBus.emit('NOTE_REMOVED', {
+      patternId: activePatternId,
+      instrumentId: this.instrumentId,
+      noteId: this.note.id
+    });
   }
 
   /**

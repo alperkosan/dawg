@@ -1,48 +1,46 @@
 // src/features/piano_roll_v2/components/Playhead.jsx
 import React, { useRef, useEffect } from 'react';
 import { usePlaybackStore } from '../../../store/usePlaybackStore';
-import { PlaybackAnimatorService } from '../../../lib/core/PlaybackAnimatorService';
+// KALDIRILDI: Artık bu servise ihtiyacımız yok. Hatanın ana kaynağı buydu.
+// import { PlaybackAnimatorService } from '../../../lib/core/PlaybackAnimatorService';
 
 export const Playhead = React.memo(({ engine }) => {
   const playheadRef = useRef(null);
-  // `playbackState`'e ek olarak, duraklatıldığındaki konumu bilmek için `transportStep`'i de alıyoruz.
-  const { playbackState, transportStep, audioLoopLength } = usePlaybackStore();
+  
+  // GÜNCELLENDİ: Sadece store'dan gelen verileri kullanacağız.
+  const { playbackState, transportStep } = usePlaybackStore();
 
-  // Bu effect, 'playing' durumundaki akıcı animasyondan sorumlu.
+  // GÜNCELLENDİ: İki ayrı useEffect'i tek bir merkezi useEffect'te birleştiriyoruz.
+  // Bu hook, tüm çalma durumlarını (playing, paused, stopped) yönetir.
   useEffect(() => {
-    const updatePlayheadPosition = (progress) => {
-      // Sadece ve sadece çalma durumundaysa animasyon servisinden gelen veriyi kullan
-      if (playheadRef.current && playbackState === 'playing') {
-        const position = progress * audioLoopLength * engine.stepWidth;
-        playheadRef.current.style.transform = `translateX(${position}px)`;
-      }
-    };
+    const playhead = playheadRef.current;
+    if (!playhead) return;
 
-    PlaybackAnimatorService.subscribe(updatePlayheadPosition);
-    return () => PlaybackAnimatorService.unsubscribe(updatePlayheadPosition);
-  }, [playbackState, engine.stepWidth, audioLoopLength]);
-
-  // Bu effect, 'stopped' ve 'paused' gibi statik durumlardan sorumlu.
-  useEffect(() => {
-    if (!playheadRef.current) return;
-
+    // Durum 'stopped' ise, playhead'i anında başa al.
     if (playbackState === 'stopped') {
-      // Durdurulduğunda pozisyonu sıfırla
-      playheadRef.current.style.transform = `translateX(0px)`;
-    } else if (playbackState === 'paused') {
-      // Duraklatıldığında, en son bilinen adıma göre pozisyonu ayarla
-      const position = transportStep * engine.stepWidth;
-      playheadRef.current.style.transform = `translateX(${position}px)`;
+      playhead.style.transform = 'translateX(0px)';
+      return;
     }
-  }, [playbackState, transportStep, engine.stepWidth]);
 
-  // HATA DÜZELTMESİ: Bileşenin kaybolmasına neden olan `if` bloğu kaldırıldı.
-  // Playhead artık her zaman render ediliyor ve pozisyonu `useEffect`'ler tarafından yönetiliyor.
+    // Durum 'playing' veya 'paused' ise, anlık pozisyonu store'dan gelen
+    // `transportStep` değerine göre hesapla.
+    const newXPosition = transportStep * engine.stepWidth;
+    playhead.style.transform = `translateX(${newXPosition}px)`;
+
+  }, [playbackState, transportStep, engine.stepWidth]); // Bu değerler değiştiğinde effect yeniden çalışır.
+
+
+  // HATA DÜZELTMESİ: Playhead artık her durumda render ediliyor.
+  // Pozisyonu yukarıdaki useEffect tarafından yönetiliyor.
   return (
     <div 
       ref={playheadRef} 
       className="prv2-playhead" 
-      style={{ height: engine.gridHeight }} 
+      style={{ 
+        height: engine.gridHeight,
+        // Yüksek performans için tarayıcıya ipucu veriyoruz.
+        willChange: 'transform' 
+      }} 
     />
   );
 });

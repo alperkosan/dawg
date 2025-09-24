@@ -1,5 +1,4 @@
 // src/store/usePlaybackStore.js
-// NativeAudioEngine ve modern zamanlama yönetimi ile tamamen yeniden yapılandırıldı.
 import { create } from 'zustand';
 import { AudioContextService } from '../lib/services/AudioContextService';
 import { useArrangementStore } from './useArrangementStore';
@@ -7,29 +6,19 @@ import { calculateAudioLoopLength } from '../lib/utils/patternUtils';
 import { PLAYBACK_MODES, PLAYBACK_STATES } from '../config/constants';
 
 export const usePlaybackStore = create((set, get) => ({
-  // --- TEMEL DURUM (STATE) ---
+  // --- STATE (Değişiklik yok) ---
   playbackState: PLAYBACK_STATES.STOPPED,
   playbackMode: PLAYBACK_MODES.PATTERN,
   bpm: 140,
   masterVolume: 0.8,
-  
-  // --- ZAMANLAMA BİLGİLERİ ---
-  // Not: transportPosition ve transportStep artık doğrudan App.jsx içindeki
-  // NativeAudioEngine'in callback'i tarafından güncelleniyor.
-  // Bu, UI'ın ses thread'inden gelen en güncel bilgiyle beslenmesini sağlar.
   transportPosition: '1:1:00',
   transportStep: 0,
-
-  // --- DÖNGÜ YÖNETİMİ ---
   loopEnabled: true,
-  isAutoLoop: true, // Döngü noktalarını içeriğe göre otomatik hesapla
-  // audioLoopLength, UI'da gösterilen döngü uzunluğudur (adımlarla).
-  // Gerçek ses motoru döngüsü saniye cinsinden ayarlanır.
   audioLoopLength: 64,
 
-  // ========================================================
-  // === EYLEMLER (ACTIONS) ===
-  // ========================================================
+  // ============================================
+  // === ACTIONS (MOTOR BAĞLANTILARI BURADA) ===
+  // ============================================
 
   // --- OYNATMA KONTROLLERİ ---
   togglePlayPause: () => {
@@ -37,10 +26,11 @@ export const usePlaybackStore = create((set, get) => ({
     const engine = AudioContextService.getAudioEngine();
     if (!engine) return;
 
+    // Duruma göre motorun ilgili fonksiyonunu çağır
     if (playbackState === PLAYBACK_STATES.PLAYING) {
       engine.pause();
     } else {
-      // Durmuş durumdaysa veya duraklatıldıysa oynatmayı başlat/devam ettir.
+      // Durmuş veya duraklatılmışsa, play() her ikisini de yönetir.
       engine.play();
     }
   },
@@ -55,17 +45,17 @@ export const usePlaybackStore = create((set, get) => ({
     if (get().playbackMode === mode) return;
     
     set({ playbackMode: mode });
-    get().updateLoopLength(); // Yeni moda göre döngü uzunluğunu yeniden hesapla
+    get().updateLoopLength();
     
-    // Ses motoruna da modu bildir.
-    const engine = AudioContextService.getAudioEngine();
-    engine?.setPlaybackMode(mode);
+    // Motorun çalma modunu güncelle
+    AudioContextService.getAudioEngine()?.setPlaybackMode(mode);
   },
   
   handleBpmChange: (newBpm) => {
     const clampedBpm = Math.max(60, Math.min(300, newBpm));
     set({ bpm: clampedBpm });
-    AudioContextService.setBPM(clampedBpm);
+    // Motorun BPM'ini güncelle
+    AudioContextService.getAudioEngine()?.setBPM(clampedBpm);
   },
 
   setLoopEnabled: (enabled) => {
@@ -78,28 +68,40 @@ export const usePlaybackStore = create((set, get) => ({
     AudioContextService.getAudioEngine()?.jumpToStep(step);
   },
 
-  // --- DÖNGÜ UZUNLUĞU HESAPLAMA ---
-  /**
-   * Mevcut çalma moduna (Pattern/Song) göre döngü uzunluğunu hesaplar
-   * ve hem bu store'u hem de ses motorunu günceller.
-   */
+  // --- DÖNGÜ UZUNLUĞU HESAPLAMA (Değişiklik yok) ---
   updateLoopLength: () => {
     const { playbackMode } = get();
+    // DİKKAT: Artık arrangement verisini doğrudan alıyoruz
     const arrangementState = useArrangementStore.getState();
+    const activePattern = arrangementState.patterns[arrangementState.activePatternId];
     
-    const newLength = calculateAudioLoopLength(playbackMode, arrangementState);
+    // calculateAudioLoopLength fonksiyonuna doğru veriyi gönderiyoruz
+    const newLength = calculateAudioLoopLength(
+        playbackMode, 
+        { pattern: activePattern, clips: arrangementState.clips },
+        get().bpm
+    );
     
     set({ audioLoopLength: newLength });
-
-    // Ses motorundaki döngü noktalarını da güncelle
+    
+    // ⚡ OPTIMIZATION: Use PlaybackManager's debounced loop update instead of direct call
     const engine = AudioContextService.getAudioEngine();
-    if (engine && get().isAutoLoop) {
-      engine.setLoopPoints(0, newLength);
+    if (engine?.playbackManager) {
+      // Trigger debounced loop recalculation through PlaybackManager
+      engine.playbackManager._updateLoopSettings();
+    } else {
+      // Fallback to direct call if PlaybackManager not available
+      engine?.setLoopPoints(0, newLength);
     }
   },
   
-  // Bu fonksiyonlar artık doğrudan App.jsx'teki engine callback'i tarafından çağrılır.
-  // Bu sayede UI her zaman en güncel bilgiyi gösterir.
+  // Bu fonksiyonlar App.jsx'teki callback'ler tarafından çağrıldığı için dokunmuyoruz.
   setTransportPosition: (position, step) => set({ transportPosition: position, transportStep: step }),
   setPlaybackState: (state) => set({ playbackState: state }),
+
+  // YENİ: Master Volume için eylem
+  handleMasterVolumeChange: (volume) => {
+    set({ masterVolume: volume });
+    AudioContextService.getAudioEngine()?.setMasterVolume(volume);
+  }
 }));

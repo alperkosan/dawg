@@ -3,7 +3,9 @@ import { useInstrumentsStore } from '../../store/useInstrumentsStore';
 import { useArrangementStore } from '../../store/useArrangementStore';
 import { usePlaybackStore } from '../../store/usePlaybackStore';
 import { usePanelsStore } from '../../store/usePanelsStore';
-import { PlaybackAnimatorService } from '../../lib/core/PlaybackAnimatorService';
+import { usePlayheadTracking } from '../../hooks/useEngineState';
+import { useSmoothPlayhead } from '../../hooks/useSmoothPlayhead';
+import '../../styles/playhead-animations.css';
 import { commandManager } from '../../lib/commands/CommandManager';
 import { AddNoteCommand } from '../../lib/commands/AddNoteCommand';
 import { DeleteNoteCommand } from '../../lib/commands/DeleteNoteCommand';
@@ -18,19 +20,28 @@ const STEP_WIDTH = 16;
 export default function ChannelRack() {
   const instruments = useInstrumentsStore(state => state.instruments);
   const { patterns, activePatternId } = useArrangementStore();
-  const { audioLoopLength, transportStep, jumpToStep } = usePlaybackStore(); // loopLength kaldırıldı, sadece audioLoopLength kullanılıyor.
+  const { audioLoopLength } = usePlaybackStore();
   const { openPianoRollForInstrument, handleEditInstrument, togglePanel } = usePanelsStore();
-  
-  const playheadRef = useRef(null);
-  const scrollContainerRef = useRef(null);
+
+  // Motor durumu ve playhead takibi için optimize edilmiş hook
+  const { currentStep, playbackState, jumpToStep } = usePlayheadTracking();
+
+  // Smooth playhead animasyonu için optimize edilmiş hook
+  const {
+    playheadRef,
+    scrollContainerRef: smoothScrollRef
+  } = useSmoothPlayhead(STEP_WIDTH);
   const timelineContainerRef = useRef(null);
   const instrumentListRef = useRef(null);
 
   const activePattern = patterns[activePatternId];
 
-  // Playhead animasyonu ve scroll senkronizasyonu
+  // Smooth playhead artık useSmoothPlayhead hook'u tarafından yönetiliyor
+  // Eski manual playhead yönetimi kaldırıldı - hook otomatik olarak hallediyor
+
+  // Scroll senkronizasyonu - smooth scroll container kullan
   useEffect(() => {
-    const container = scrollContainerRef.current;
+    const container = smoothScrollRef.current;
     if (!container) return;
 
     const syncScroll = () => {
@@ -47,33 +58,22 @@ export default function ChannelRack() {
     return () => {
       container.removeEventListener('scroll', syncScroll);
     };
-  }, [audioLoopLength]);
+  }, []);
 
-  // =====================================================================
-  // === YENİ EKLENEN KOD BLOĞU BURASI ===
-  // Bu useEffect, sol paneldeki tekerlek hareketini sağ panele yönlendirir.
-  // =====================================================================
+  // Sol paneldeki tekerlek hareketini sağ panele yönlendirme
   useEffect(() => {
     const instrumentContainer = instrumentListRef.current;
-    const mainScrollContainer = scrollContainerRef.current;
-
+    const mainScrollContainer = smoothScrollRef.current;
     if (!instrumentContainer || !mainScrollContainer) return;
-
     const handleWheelOnInstrumentList = (e) => {
-      // Varsayılan davranışı engelle (bazen sayfanın kaymasına neden olabilir)
       e.preventDefault();
-      // Ana scroll alanının dikey kaydırma pozisyonunu tekerlek hareketi kadar değiştir
       mainScrollContainer.scrollTop += e.deltaY;
     };
-
-    // Olay dinleyicisini ekle
     instrumentContainer.addEventListener('wheel', handleWheelOnInstrumentList);
-
-    // Bileşen kaldırıldığında olay dinleyicisini temizle
     return () => {
       instrumentContainer.removeEventListener('wheel', handleWheelOnInstrumentList);
     };
-  }, []); // Bu effect'in sadece bir kez çalışması yeterlidir
+  }, []);
 
   const handleNoteToggle = useCallback((instrumentId, step) => {
     if (!activePattern) return;
@@ -87,16 +87,14 @@ export default function ChannelRack() {
     }
   }, [activePatternId, activePattern]);
 
-  const totalGridWidth = audioLoopLength * STEP_WIDTH; // DÜZELTME: audioLoopLength kullanılıyor.
+  const totalGridWidth = audioLoopLength * STEP_WIDTH;
   const totalContentHeight = (instruments.length + 1) * 64;
 
   return (
-    // ... JSX yapısında herhangi bir değişiklik yok ...
     <div className="channel-rack-layout">
       <div className="channel-rack-layout__corner">
         Pattern: {activePattern?.name || '...'}
       </div>
-
       <div ref={instrumentListRef} className="channel-rack-layout__instruments">
         <div style={{ height: totalContentHeight }}>
           {instruments.map(inst => (
@@ -113,20 +111,18 @@ export default function ChannelRack() {
           </div>
         </div>
       </div>
-
       <div ref={timelineContainerRef} className="channel-rack-layout__timeline">
         <div style={{ width: totalGridWidth, height: '100%' }}>
           <InteractiveTimeline
             loopLength={audioLoopLength}
-            currentPosition={transportStep}
+            currentPosition={currentStep}
             onJumpToPosition={jumpToStep}
           />
         </div>
       </div>
-      
-      <div ref={scrollContainerRef} className="channel-rack-layout__grid-scroll-area">
+      <div ref={smoothScrollRef} className="channel-rack-layout__grid-scroll-area">
         <div style={{ width: totalGridWidth, height: totalContentHeight }} className="channel-rack-layout__grid-content">
-          <div ref={playheadRef} className="channel-rack-layout__playhead" style={{ height: totalContentHeight }} />
+          <div ref={playheadRef} className="channel-rack-layout__playhead playhead--smooth playhead--performance-optimized" style={{ height: totalContentHeight }} />
           {instruments.map(inst => (
             <div key={inst.id} className="channel-rack-layout__grid-row">
               {inst.pianoRoll ? (

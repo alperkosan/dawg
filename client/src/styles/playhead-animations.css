@@ -1,0 +1,44 @@
+/* CSS animations for smooth playhead movement */
+
+@keyframes playheadMove {
+  from {
+    transform: translateX(0px);
+  }
+  to {
+    transform: translateX(var(--playhead-distance));
+  }
+}
+
+.playhead--smooth {
+  transition: transform 0.1s linear;
+  will-change: transform;
+}
+
+.playhead--css-animated {
+  animation-fill-mode: forwards;
+  animation-timing-function: linear;
+}
+
+.playhead--performance-optimized {
+  /* GPU acceleration için */
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  perspective: 1000px;
+
+  /* Smooth rendering */
+  image-rendering: optimizeSpeed;
+  image-rendering: -webkit-optimize-contrast;
+
+  /* Anti-aliasing */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Reduced motion için accessibility */
+@media (prefers-reduced-motion: reduce) {
+  .playhead--smooth,
+  .playhead--css-animated {
+    transition: none !important;
+    animation: none !important;
+  }
+}

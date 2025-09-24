@@ -1,8 +1,17 @@
 /* ... (dosyanın üst kısmı aynı kalır) ... */
 .prv2-container {
-  width: 100%; height: 100%; display: flex; flex-direction: column;
-  background-color: var(--color-background); color: var(--color-text-primary);
-  overflow: hidden; position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(135deg,
+    #1a202c 0%,
+    #2d3748 100%
+  );
+  color: var(--color-text-primary);
+  overflow: hidden;
+  position: relative;
+  font-family: 'SF Pro Text', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
 }
 .prv2-main-scroll-area {
   grid-row: 2; grid-column: 2;
@@ -59,12 +68,48 @@
   overflow: hidden; position: relative; background-color: var(--color-surface-1); z-index: 20;
 }
 .prv2-grid-area-container {
-  grid-column: 2; grid-row: 2; overflow: auto; position: relative; z-index: 10;
+  grid-column: 2;
+  grid-row: 2;
+  overflow: auto;
+  position: relative;
+  z-index: 10;
+  /* Performance optimizations */
+  will-change: scroll-position;
+  transform: translateZ(0); /* Force GPU layer */
+  scroll-behavior: auto; /* Disable smooth scrolling for performance */
+  /* Enable hardware acceleration */
+  -webkit-overflow-scrolling: touch;
+  /* Optimize repaints */
+  contain: layout style paint;
+}
+
+/* === SCROLL OPTIMIZATION: Disable transitions during scroll === */
+.prv2-notes-container--scrolling,
+.prv2-notes-container--scrolling * {
+  transition: none !important;
+  animation: none !important;
+}
+
+.prv2-note--no-transitions {
+  transition: none !important;
+  animation: none !important;
+}
+
+.prv2-notes-container {
+  transition: opacity 0.2s ease;
+}
+
+.prv2-notes-container--scrolling {
+  /* Slightly reduce opacity during scroll for visual feedback */
+  opacity: 0.95;
 }
 .prv2-grid-area__content { position: relative; }
 .prv2-grid-canvas { position: absolute; inset: 0; pointer-events: none; z-index: 1;}
-.prv2-ruler__content { /* Bu, içindeki asıl kayan kısımdır */
+.prv2-ruler-content-wrapper {
+  position: relative;
+  overflow: hidden;
   will-change: transform;
+  transform: translateZ(0); /* Force GPU layer */
 }
 .prv2-ruler__marker {
   position: absolute; height: 100%; border-left: 1px solid var(--color-border);
@@ -82,27 +127,90 @@
 }
 .prv2-keyboard-content { /* Bu, içindeki asıl kayan kısımdır */
   will-change: transform;
+  transform: translateZ(0); /* Force GPU layer */
+  backface-visibility: hidden; /* Optimization */
 }
 .prv2-keyboard__content {
   position: relative; width: 100%; border-right: 1px solid var(--color-background);
   will-change: transform;
 }
 .prv2-keyboard__key {
-  display: flex; align-items: center; padding: 0 var(--spacing-2);
-  width: 100%; user-select: none; border-bottom: 1px solid var(--color-background);
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  width: 100%;
+  user-select: none;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
 }
-.prv2-keyboard__key--white { background-color: var(--color-surface-2); }
-.prv2-keyboard__key--white:hover { background-color: var(--color-surface-3); }
-.prv2-keyboard__key--black { background-color: var(--color-background-deep); padding-left: var(--spacing-4); }
-.prv2-keyboard__key--black:hover { background-color: var(--color-surface-1); }
+
+.prv2-keyboard__key--white {
+  background: linear-gradient(to right,
+    #f7fafc 0%,
+    #edf2f7 50%,
+    #e2e8f0 100%
+  );
+  color: #2d3748;
+  border-right: 1px solid rgba(0, 0, 0, 0.1);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+.prv2-keyboard__key--white:hover {
+  background: linear-gradient(to right,
+    #edf2f7 0%,
+    #e2e8f0 50%,
+    #cbd5e0 100%
+  );
+}
+
+.prv2-keyboard__key--black {
+  background: linear-gradient(to right,
+    #1a202c 0%,
+    #2d3748 50%,
+    #4a5568 100%
+  );
+  color: #e2e8f0;
+  padding-left: 16px;
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.prv2-keyboard__key--black:hover {
+  background: linear-gradient(to right,
+    #2d3748 0%,
+    #4a5568 50%,
+    #718096 100%
+  );
+}
+
 .prv2-keyboard__key--playing,
 .prv2-keyboard__key--white.prv2-keyboard__key--playing:hover {
-  background-color: var(--color-primary);
-  color: var(--color-text-inverse);
+  background: linear-gradient(135deg,
+    #ff6b35 0%,
+    #ff4500 100%
+  ) !important;
+  color: white !important;
+  box-shadow:
+    0 0 12px rgba(255, 107, 53, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3) !important;
+  transform: translateX(2px);
 }
 
 .prv2-keyboard__key--playing .prv2-keyboard__label {
-  color: var(--color-text-inverse);
+  color: white;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.prv2-keyboard__label {
+  font-size: 10px;
+  font-weight: 600;
+  font-family: 'SF Pro Text', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  opacity: 0.8;
+  pointer-events: none;
+  letter-spacing: 0.02em;
 }
 
 /* ==========================================================================
@@ -117,28 +225,68 @@
 
 .prv2-note {
   position: absolute;
-  background-color: var(--color-accent-secondary);
-  border: 1px solid rgba(0,0,0,0.4);
-  border-radius: var(--border-radius-sm);
-  opacity: var(--note-velocity-opacity, 1);
-  transition: background-color 100ms, border-color 100ms, opacity 100ms, transform 50ms;
+  background: linear-gradient(135deg,
+    var(--note-base-color, #4a9eff),
+    color-mix(in srgb, var(--note-base-color, #4a9eff) 80%, #000)
+  );
+  border: 1px solid color-mix(in srgb, var(--note-base-color, #4a9eff) 60%, #000);
+  border-radius: 4px;
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
   display: flex;
   align-items: center;
-  padding: 0 var(--spacing-2);
-  pointer-events: auto; /* Notanın kendisi olayları yakalasın */
+  padding: 0 6px;
+  pointer-events: auto;
+  min-height: 16px;
+  overflow: hidden;
+  cursor: pointer;
 }
 
 .prv2-note--selected {
-  background-color: var(--color-primary);
-  border: 1px solid white;
-  box-shadow: 0 0 12px 0 var(--color-primary);
+  background: linear-gradient(135deg,
+    #ff6b35,
+    #ff4500
+  ) !important;
+  border: 2px solid #ffffff !important;
+  box-shadow:
+    0 0 16px rgba(255, 107, 53, 0.6),
+    0 2px 8px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3) !important;
   z-index: 15;
+  transform: scale(1.02);
 }
 
 .prv2-note--preview {
-  background-color: rgba(0, 163, 255, 0.5);
-  border: 1px dashed var(--color-primary);
+  background: linear-gradient(135deg,
+    rgba(74, 158, 255, 0.7),
+    rgba(74, 158, 255, 0.5)
+  );
+  border: 2px dashed #4a9eff;
+  box-shadow:
+    0 0 12px rgba(74, 158, 255, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
   z-index: 20;
+}
+
+.prv2-note--ghost {
+  background: linear-gradient(135deg,
+    var(--note-ghost-color, rgba(255, 255, 255, 0.15)),
+    rgba(255, 255, 255, 0.05)
+  );
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: none;
+  opacity: 0.6;
+}
+
+/* Hover effects */
+.prv2-note:hover:not(.prv2-note--selected):not(.prv2-note--ghost) {
+  transform: translateY(-1px);
+  box-shadow:
+    0 2px 6px rgba(0, 0, 0, 0.4),
+    0 0 8px color-mix(in srgb, var(--note-base-color, #4a9eff) 50%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
 }
 /* ==========================================================================
    NOTA YENİDEN BOYUTLANDIRMA (ÇOK KRİTİK DÜZELTME)
@@ -147,37 +295,66 @@
 .prv2-note__resize-handle {
   position: absolute;
   top: 0;
-  right: 0;
+  right: -2px;
   bottom: 0;
-  width: 8px; /* Tıklama alanını genişlet */
-  /* YENİ: İmlecin değişmesini sağlayan en önemli kural! */
-  cursor: ew-resize; 
-  /* YENİ: Notanın kendisinden daha üst katmanda olmasını sağlar */
-  z-index: 16; 
+  width: 12px;
+  cursor: ew-resize;
+  z-index: 16;
+  opacity: 0;
+  transition: opacity 150ms ease;
+  background: linear-gradient(to right,
+    transparent 0%,
+    rgba(255, 255, 255, 0.15) 50%,
+    rgba(255, 255, 255, 0.25) 100%
+  );
+  border-radius: 0 4px 4px 0;
 }
 
-/* Sadece notanın üzerine gelindiğinde hafif bir arka plan göster (isteğe bağlı) */
 .prv2-note:hover .prv2-note__resize-handle {
-  background-color: rgba(255, 255, 255, 0.1);
+  opacity: 1;
+}
+
+.prv2-note__resize-handle:hover {
+  background: linear-gradient(to right,
+    transparent 0%,
+    rgba(255, 255, 255, 0.25) 50%,
+    rgba(255, 255, 255, 0.4) 100%
+  );
+}
+
+.prv2-note__resize-handle:active {
+  background: linear-gradient(to right,
+    transparent 0%,
+    rgba(74, 158, 255, 0.4) 50%,
+    rgba(74, 158, 255, 0.6) 100%
+  );
 }
 
 /* ==========================================================================
    NOTA ETİKETİ STİLİ (KRİTİK DÜZELTME)
    ========================================================================== */
 .prv2-note__label {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
-  color: var(--color-background-deep);
+  font-family: 'SF Pro Text', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  color: rgba(255, 255, 255, 0.9);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  /* YENİ: Etiketin fare olaylarını çalmasını engeller */
-  pointer-events: none; 
+  pointer-events: none;
   user-select: none;
+  letter-spacing: 0.02em;
 }
 
 .prv2-note--selected .prv2-note__label {
-    color: var(--color-background-deep);
+  color: rgba(255, 255, 255, 1);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+}
+
+.prv2-note--ghost .prv2-note__label {
+  color: rgba(255, 255, 255, 0.6);
+  text-shadow: none;
 }
 
 .prv2-toolbar {

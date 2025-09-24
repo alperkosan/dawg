@@ -1,44 +1,99 @@
 // src/features/piano_roll_v2/components/VirtualNotesRenderer.jsx
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { Note } from './Note';
 
-const RENDER_BUFFER = 200; // Görünür alanın dışına render edilecek ekstra piksel
+const RENDER_BUFFER = 400; // Increased buffer for smoother scrolling
+const SCROLL_END_DELAY = 150; // ms to detect scroll end
 
-export const VirtualNotesRenderer = ({ notes, selectedNotes, engine, interaction, onResizeStart }) => {
-  const visibleNotes = useMemo(() => {
-    // === PERFORMANS İÇİN KRİTİK BAĞIMLILIK GÜNCELLEMESİ ===
-    // Artık sadece scroll pozisyonu ve boyutlar değiştiğinde bu pahalı filtreleme işlemi çalışacak.
-    // 'engine' nesnesinin tamamına bağımlı değiliz.
-    const viewBounds = {
-      left: engine.scroll.x - RENDER_BUFFER,
-      right: engine.scroll.x + engine.size.width + RENDER_BUFFER,
-      top: engine.scroll.y - RENDER_BUFFER,
-      bottom: engine.scroll.y + engine.size.height + RENDER_BUFFER,
+export const VirtualNotesRenderer = ({ notes, selectedNotes = new Set(), engine, interaction, onResizeStart }) => {
+  const [isScrolling, setIsScrolling] = useState(false);
+  const scrollTimeoutRef = useRef(null);
+  const lastScrollRef = useRef({ x: 0, y: 0 });
+
+  // Detect scroll end for smoother note transitions
+  useEffect(() => {
+    const currentScroll = { x: engine?.scroll?.x || 0, y: engine?.scroll?.y || 0 };
+
+    if (currentScroll.x !== lastScrollRef.current.x || currentScroll.y !== lastScrollRef.current.y) {
+      setIsScrolling(true);
+
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
+      }
+
+      scrollTimeoutRef.current = setTimeout(() => {
+        setIsScrolling(false);
+      }, SCROLL_END_DELAY);
+
+      lastScrollRef.current = currentScroll;
+    }
+
+    return () => {
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
+      }
     };
-    
-    return notes.filter(note => {
+  }, [engine?.scroll?.x, engine?.scroll?.y]);
+
+  const visibleNotes = useMemo(() => {
+    // === OPTIMIZED: Less aggressive dependency updates during scroll ===
+    if (!engine?.scroll || !engine?.size) {
+      return notes || [];
+    }
+
+    const viewBounds = {
+      left: (engine.scroll.x || 0) - RENDER_BUFFER,
+      right: (engine.scroll.x || 0) + (engine.size.width || 0) + RENDER_BUFFER,
+      top: (engine.scroll.y || 0) - RENDER_BUFFER,
+      bottom: (engine.scroll.y || 0) + (engine.size.height || 0) + RENDER_BUFFER,
+    };
+
+    return (notes || []).filter(note => {
+      if (!engine.getNoteRect) return true;
       const rect = engine.getNoteRect(note);
+      if (!rect) return false;
       return (
         rect.x < viewBounds.right && rect.x + rect.width > viewBounds.left &&
         rect.y < viewBounds.bottom && rect.y + rect.height > viewBounds.top
       );
     });
-  }, [notes, engine.scroll.x, engine.scroll.y, engine.size.width, engine.size.height, engine.getNoteRect]);
+  }, [
+    notes,
+    // OPTIMIZED: Throttle scroll position updates for better performance
+    Math.floor((engine?.scroll?.x || 0) / 100),
+    Math.floor((engine?.scroll?.y || 0) / 100),
+    engine?.size?.width,
+    engine?.size?.height,
+    engine?.getNoteRect
+  ]);
 
   return (
-    <div className="prv2-notes-container">
+    <div
+      className={`prv2-notes-container ${isScrolling ? 'prv2-notes-container--scrolling' : ''}`}
+      style={{
+        // OPTIMIZED: Disable transitions during scroll for smoother performance
+        transition: isScrolling ? 'none' : undefined
+      }}
+    >
       {visibleNotes.map(note => (
         <Note
           key={note.id}
           note={note}
-          isSelected={selectedNotes.has(note.id)}
+          isSelected={selectedNotes?.has?.(note.id) || false}
           isPreview={interaction?.previewNotes?.some(p => p.id === note.id)}
           engine={engine}
           onResizeStart={onResizeStart}
+          disableTransitions={isScrolling} // Pass scroll state to individual notes
         />
       ))}
       {interaction?.previewNotes?.map(note => (
-          <Note key={`preview-${note.id}`} note={note} isPreview={true} engine={engine} />
+          <Note
+            key={`preview-${note.id}`}
+            note={note}
+            isPreview={true}
+            engine={engine}
+            disableTransitions={isScrolling}
+          />
       ))}
     </div>
   );

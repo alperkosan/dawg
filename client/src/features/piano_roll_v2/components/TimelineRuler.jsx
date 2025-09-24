@@ -22,8 +22,10 @@ export const TimelineRuler = ({ engine }) => {
   const handleInteraction = useCallback((e, isMouseDown = false) => {
     if (!rulerRef.current) return;
     const rect = rulerRef.current.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left;
-    const currentStep = Math.round(engine.xToTime(mouseX));
+    const mouseX = e.clientX - rect.left + engine.scroll.x; // Scroll offset eklendi
+
+    // Pixel pozisyonunu step'e çevir
+    const currentStep = Math.round(mouseX / engine.dimensions.stepWidth);
 
     if (isMouseDown) {
       startStepRef.current = currentStep;

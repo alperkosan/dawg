@@ -37,6 +37,20 @@ export class NativeTransportSystem {
         this.patterns = new Map(); // EKLENDİ
         this.activePatterns = new Set(); // EKLENDİ
 
+        // UI update throttling
+        this.lastUIUpdate = 0;
+
+        // ⚡ OPTIMIZATION: Loop calculation caching
+        this.loopCache = {
+            lastBpm: null,
+            lastLoopStart: null,
+            lastLoopEnd: null,
+            lastTimeSignature: null,
+            cachedLoopSeconds: null,
+            cachedLoopTicks: null,
+            cacheValid: false
+        };
+
         // ✅ Initialize worker timer
         this.initializeWorkerTimer();
         this._setupEventListeners(); // YENİ: Olay dinleyicilerini başlat
@@ -101,6 +115,11 @@ export class NativeTransportSystem {
         if (!this.isPaused) {
             this.currentTick = this.loopStartTick;
             this.currentBar = Math.floor(this.currentTick / this.ticksPerBar);
+            console.log(`▶️ Transport starting fresh from loop beginning`);
+        } else {
+            // ✅ CRITICAL FIX: When resuming from pause, clear pause state
+            this.isPaused = false;
+            console.log(`▶️ Transport resuming from pause at current position`);
         }
 
         // ✅ CRITICAL FIX: Set nextTickTime to current audio time, not relative to position
@@ -178,9 +197,27 @@ export class NativeTransportSystem {
     }
 
     setLoopPoints(startStep, endStep) {
+        console.log(`🔍 DEBUG: Transport setLoopPoints called with: ${startStep} → ${endStep} steps`);
+
+        // ⚡ OPTIMIZATION: Check cache validity first
+        if (this._isLoopCacheValid(startStep, endStep)) {
+            console.log(`⚡ Using cached loop calculation: ${startStep} → ${endStep} steps`);
+            return;
+        }
+
         // Convert steps to ticks (1 step = 24 ticks at PPQ=96)
         this.loopStartTick = startStep * this.ticksPerStep;
         this.loopEndTick = endStep * this.ticksPerStep;
+
+        // ✅ FIX: Also set the tick-based properties for the duplicate loop logic
+        this.loopStart = this.loopStartTick;
+        this.loopEnd = this.loopEndTick;
+
+        console.log(`🔍 DEBUG: Converted to ticks: ${this.loopStartTick} → ${this.loopEndTick} ticks`);
+        console.log(`🔍 DEBUG: Loop enabled: ${this.loop}`);
+
+        // ⚡ OPTIMIZATION: Update cache
+        this._updateLoopCache(startStep, endStep);
 
         console.log(`🔁 Loop points set:`);
         console.log(`   Steps: ${startStep} → ${endStep} (${endStep - startStep} steps = ${(endStep - startStep)/16} bars)`);
@@ -204,13 +241,38 @@ export class NativeTransportSystem {
             console.warn('⚠️ BPM out of reasonable range (60-200)');
         }
 
+        // Store old BPM for timing adjustment
+        const oldBpm = this.bpm;
+        const wasPlaying = this.isPlaying;
+
+        // ⚡ OPTIMIZATION: Invalidate loop cache when BPM changes
+        if (this.bpm !== bpm) {
+            this._invalidateLoopCache();
+        }
+
         this.bpm = bpm;
-        this.triggerCallback('bpm', { bpm: this.bpm });
+
+        // 🎯 CRITICAL: Adjust timing if playing to maintain smooth playback
+        if (wasPlaying && oldBpm !== bpm) {
+            // Recalibrate nextTickTime based on new BPM
+            // Current position should remain the same, but timing intervals change
+            const currentTime = this.audioContext.currentTime;
+            this.nextTickTime = currentTime;
+
+            console.log(`🎼 BPM changed ${oldBpm} → ${bpm} during playback, recalibrated timing`);
+        }
+
+        this.triggerCallback('bpm', { bpm: this.bpm, oldBpm, wasPlaying });
         console.log(`🎼 BPM set to ${bpm}`);
         return this;
     }
 
     setTimeSignature(numerator, denominator = 4) {
+        // ⚡ OPTIMIZATION: Invalidate loop cache when time signature changes
+        if (JSON.stringify(this.timeSignature) !== JSON.stringify([numerator, denominator])) {
+            this._invalidateLoopCache();
+        }
+
         this.timeSignature = [numerator, denominator];
         console.log(`🎼 Time signature set to ${numerator}/${denominator}`);
         return this;
@@ -252,6 +314,7 @@ export class NativeTransportSystem {
     }
 
     advanceToNextTick() {
+        console.log(`🔍 DEBUG: advanceToNextTick (method 1) called - currentTick: ${this.currentTick}`);
         const secondsPerTick = this.getSecondsPerTick();
         this.currentTick++;
 
@@ -261,7 +324,7 @@ export class NativeTransportSystem {
             this.nextTickTime = this.audioContext.currentTime;
 
             // ✅ SADECE EVENT TETİKLE
-            console.log(`🔁 Loop trigger: ${previousTick} -> ${this.currentTick}`);
+            console.log(`🔁 Loop trigger (method 1): ${previousTick} -> ${this.currentTick} (loopEnd: ${this.loopEndTick})`);
 
             // Scheduled events'leri temizle
             this.clearScheduledEvents();
@@ -300,9 +363,9 @@ export class NativeTransportSystem {
 
     // lib/core/NativeTransportSystem.js içinde scheduleCurrentTick metodunu güncelle
     scheduleCurrentTick(time) {
-        // ⚡ PERFORMANS: Throttled UI updates
+        // ⚡ PERFORMANS: Throttled UI updates - 60fps for smooth playhead
         const now = performance.now();
-        if (now - this.lastUIUpdate > 50) { // 20fps max for UI
+        if (now - this.lastUIUpdate > 16.67) { // 60fps for smooth UI
         this.triggerCallback('tick', {
             time: time,
             position: this.currentTick,
@@ -358,64 +421,6 @@ export class NativeTransportSystem {
                 this.scheduledEvents.delete(scheduledTime);
             }
         }
-    }
-
-    advanceToNextTick() {
-        const secondsPerTick = this.getSecondsPerTick();
-
-        this.currentTick++;
-        this.position = this.currentTick;
-
-        const shouldLoop = this.loop && this.currentTick >= this.loopEnd;
-
-        if (shouldLoop) {
-            const loopTime = this.nextTickTime;
-
-            // ✅ KRİTİK DÜZELTME:
-            // PlaybackManager'ın beklediği `nextLoopStartTime` alanını veri paketine ekliyoruz.
-            // Değeri, bir sonraki döngünün başlayacağı zamandır (şu anki zaman).
-            this.triggerCallback('loop', {
-                time: loopTime,
-                nextLoopStartTime: loopTime, // <<< BU SATIRI EKLE
-                fromTick: this.loopEnd - 1,
-                toTick: this.loopStart
-            });
-
-            console.log(`🔁 Loop trigger at ${loopTime.toFixed(3)}s. Signaling for reschedule.`);
-
-            this.currentTick = this.loopStart;
-            this.position = this.currentTick;
-
-            // Bar takibini loop'tan sonraya taşıyarak sıfırıncı barın doğru loglanmasını sağlayalım
-            const newBar = Math.floor(this.currentTick / this.ticksPerBar);
-            if (newBar !== this.currentBar) {
-                this.currentBar = newBar;
-                this.triggerCallback('bar', {
-                    time: this.nextTickTime,
-                    bar: this.currentBar,
-                    tick: this.currentTick
-                });
-            }
-        }
-
-        this.nextTickTime += secondsPerTick;
-
-        // Bar takibini loop dışına taşıyalım ki her tick'te kontrol edilsin
-        const newBar = Math.floor(this.currentTick / this.ticksPerBar);
-        if (newBar !== this.currentBar) {
-            this.currentBar = newBar;
-            this.triggerCallback('bar', {
-                time: this.nextTickTime,
-                bar: this.currentBar,
-                tick: this.currentTick
-            });
-        }
-    }
-
-
-    getSecondsPerTick() {
-        const secondsPerBeat = 60.0 / this.bpm;
-        return secondsPerBeat / this.ppq;
     }
 
     _secondsToTicks(seconds) {
@@ -480,7 +485,7 @@ export class NativeTransportSystem {
         const events = [];
 
         if (Array.isArray(pattern)) {
-            pattern.forEach((note, index) => {
+            pattern.forEach((note) => {
                 if (note && note.time !== undefined) {
                     events.push({
                         type: 'note',
@@ -655,6 +660,34 @@ export class NativeTransportSystem {
             audioLatency: this.audioContext.baseLatency || 'unknown',
             audioContextState: this.audioContext.state
         };
+    }
+
+    // ⚡ OPTIMIZATION: Loop cache helper methods
+    _isLoopCacheValid(startStep, endStep) {
+        const cache = this.loopCache;
+        return cache.cacheValid &&
+               cache.lastBpm === this.bpm &&
+               cache.lastLoopStart === startStep &&
+               cache.lastLoopEnd === endStep &&
+               JSON.stringify(cache.lastTimeSignature) === JSON.stringify(this.timeSignature);
+    }
+
+    _updateLoopCache(startStep, endStep) {
+        const cache = this.loopCache;
+        cache.lastBpm = this.bpm;
+        cache.lastLoopStart = startStep;
+        cache.lastLoopEnd = endStep;
+        cache.lastTimeSignature = [...this.timeSignature];
+        cache.cachedLoopTicks = this.loopEndTick - this.loopStartTick;
+        cache.cachedLoopSeconds = cache.cachedLoopTicks * this.getSecondsPerTick();
+        cache.cacheValid = true;
+
+        console.log(`⚡ Loop cache updated: ${startStep} → ${endStep} steps (${cache.cachedLoopSeconds.toFixed(2)}s)`);
+    }
+
+    _invalidateLoopCache() {
+        this.loopCache.cacheValid = false;
+        console.log(`⚡ Loop cache invalidated`);
     }
 
     dispose() {

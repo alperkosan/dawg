@@ -1,48 +1,5 @@
 import { INSTRUMENT_TYPES, MIXER_TRACK_TYPES } from './constants';
 
-// Environment detection for test vs production
-const isTestEnvironment = () => {
-  return typeof process !== 'undefined' &&
-         (process.env.NODE_ENV === 'test' ||
-          process.env.VITEST === 'true' ||
-          typeof window === 'undefined' ||
-          (typeof global !== 'undefined' && global.expect) ||
-          (typeof jest !== 'undefined'));
-};
-
-// Mock audio data URL for tests (minimal valid WAV)
-const MOCK_AUDIO_URL = 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N+QQAoUXrTp66hVFApGn+DyvmQeAjKJ0/HNeSsFJHfH8N+QQAoUXrTp66hVFApGn+DyvmQeAjKJ0/HNeSs=';
-
-// Audio URL resolver for different environments
-const getAudioUrl = (filename) => {
-  if (isTestEnvironment()) {
-    // Return mock audio data URL for tests
-    return MOCK_AUDIO_URL;
-  }
-  // Production environment
-  return `/audio/${filename}`;
-};
-
-// Test-friendly configuration
-const getTestConfig = () => {
-  if (isTestEnvironment()) {
-    return {
-      enableAudioValidation: false,
-      skipAudioLoading: true,
-      useMockAudio: true,
-      reducedInstrumentCount: true
-    };
-  }
-  return {
-    enableAudioValidation: true,
-    skipAudioLoading: false,
-    useMockAudio: false,
-    reducedInstrumentCount: false
-  };
-};
-
-export const testConfig = getTestConfig();
-
 // =========================================================================
 // === NOTA ve PATTERN ÜRETİM MERKEZİ ===
 // =========================================================================
@@ -92,7 +49,6 @@ const ambientNotes = {
     ].map(n => defaultNote(n.t, n.p, 0.7, '2n')),
     subbassdrone: [{t: 0, p: 'C1', d: '16n'}].map(n => defaultNote(n.t, n.p, 1.0, n.d))
 };
-
 
 // =========================================================================
 // === FORGESYNTH PRESET KÜTÜPHANESİ ===
@@ -211,14 +167,13 @@ const forgeSynthPresets = {
 
 // Create instruments with environment-aware configuration
 const createInstruments = () => {
-  const config = getTestConfig();
   const baseInstruments = [
     // --- Ritim (Samples) ---
-    { id: 'inst-1', name: 'Kick', type: INSTRUMENT_TYPES.SAMPLE, url: getAudioUrl('kick.wav'), mixerTrackId: 'track-1', pianoRoll: false },
-    { id: 'inst-2', name: 'Snare', type: INSTRUMENT_TYPES.SAMPLE, url: getAudioUrl('snare.wav'), mixerTrackId: 'track-2', pianoRoll: false },
-    { id: 'inst-3', name: 'Clap', type: INSTRUMENT_TYPES.SAMPLE, url: getAudioUrl('clap.wav'), mixerTrackId: 'track-3', pianoRoll: false },
-    { id: 'inst-4', name: 'Hi-Hat', type: INSTRUMENT_TYPES.SAMPLE, url: getAudioUrl('hihat.wav'), mixerTrackId: 'track-4', pianoRoll: false },
-    { id: 'inst-5', name: 'Offbeat Hat', type: INSTRUMENT_TYPES.SAMPLE, url: getAudioUrl('openhat.wav'), mixerTrackId: 'track-5', pianoRoll: false, cutItself: true },
+    { id: 'inst-1', name: 'Kick', type: INSTRUMENT_TYPES.SAMPLE, url: '/audio/kick.wav', mixerTrackId: 'track-1', pianoRoll: false },
+    { id: 'inst-2', name: 'Snare', type: INSTRUMENT_TYPES.SAMPLE, url: '/audio/snare.wav', mixerTrackId: 'track-2', pianoRoll: false },
+    { id: 'inst-3', name: 'Clap', type: INSTRUMENT_TYPES.SAMPLE, url: '/audio/clap.wav', mixerTrackId: 'track-3', pianoRoll: false },
+    { id: 'inst-4', name: 'Hi-Hat', type: INSTRUMENT_TYPES.SAMPLE, url: '/audio/hihat.wav', mixerTrackId: 'track-4', pianoRoll: false },
+    { id: 'inst-5', name: 'Offbeat Hat', type: INSTRUMENT_TYPES.SAMPLE, url: '/audio/openhat.wav', mixerTrackId: 'track-5', pianoRoll: false, cutItself: true },
 
     // --- Bass (Synth & Sample) ---
     { id: 'inst-6', name: 'Wobble Bass', type: INSTRUMENT_TYPES.SYNTH, mixerTrackId: 'track-6', pianoRoll: true, synthParams: forgeSynthPresets['Wobble Bass'] },
@@ -235,11 +190,6 @@ const createInstruments = () => {
     { id: 'inst-13', name: 'Crystal Keys', type: INSTRUMENT_TYPES.SYNTH, mixerTrackId: 'track-13', pianoRoll: true, synthParams: forgeSynthPresets['Crystal Keys'] },
   ];
 
-  // In test environment, return reduced set for faster testing
-  if (config.reducedInstrumentCount) {
-    return baseInstruments.slice(0, 5); // Only sample instruments for tests
-  }
-
   return baseInstruments;
 };
 
@@ -247,7 +197,6 @@ export const initialInstruments = createInstruments();
 
 // Create mixer tracks with environment-aware configuration
 const createMixerTracks = () => {
-  const config = getTestConfig();
   const baseTracks = [
   // ... Master ve Bus Kanalları aynı ...
   { id: 'master', name: 'Master', type: MIXER_TRACK_TYPES.MASTER, volume: 0, pan: 0, insertEffects: [], sends: [] },
@@ -278,16 +227,10 @@ const createMixerTracks = () => {
     ...Array.from({ length: 11 }, (_, i) => ({ id: `track-${14 + i}`, name: `Insert ${14 + i}`, type: MIXER_TRACK_TYPES.TRACK, volume: 0, pan: 0, insertEffects: [], sends: [] })),
   ];
 
-  // In test environment, return simplified mixer configuration
-  if (config.reducedInstrumentCount) {
-    return baseTracks.slice(0, 8); // Master + 3 buses + first 5 tracks
-  }
-
   return baseTracks;
 };
 
 export const initialMixerTracks = createMixerTracks();
-
 
 // =========================================================================
 // === BAŞLANGIÇ PATTERN & ARANJMAN VERİLERİ ===
@@ -306,8 +249,6 @@ const createInitialPatternData = (notesObject) => {
 
 // Create patterns with environment-aware configuration
 const createPatterns = () => {
-  const config = getTestConfig();
-
   // Farklı müzik tarzları için başlangıç pattern'leri oluştur
   const trapPatternData = createInitialPatternData(trapNotes);
   const housePatternData = createInitialPatternData(houseNotes);
@@ -315,19 +256,11 @@ const createPatterns = () => {
   const emptyPatternData = createInitialPatternData({});
 
   const basePatterns = {
-    'pattern-1': { id: 'pattern-1', name: 'Trap Beat', data: trapPatternData },
+    'pattern-1': { id: 'pattern-1', name: 'pattern-1', data: trapPatternData },
     'pattern-2': { id: 'pattern-2', name: 'House Groove', data: housePatternData },
     'pattern-3': { id: 'pattern-3', name: 'Ambient Mood', data: ambientPatternData },
     'pattern-4': { id: 'pattern-4', name: 'Empty Pattern', data: emptyPatternData },
   };
-
-  // In test environment, return simplified patterns
-  if (config.reducedInstrumentCount) {
-    return {
-      'pattern-1': { id: 'pattern-1', name: 'Test Pattern', data: emptyPatternData },
-      'pattern-2': { id: 'pattern-2', name: 'Test Pattern 2', data: emptyPatternData },
-    };
-  }
 
   return basePatterns;
 };
@@ -336,25 +269,10 @@ export const initialPatterns = createPatterns();
 
 // Create pattern order and clips with environment-aware configuration
 const createPatternOrder = () => {
-  const config = getTestConfig();
-
-  if (config.reducedInstrumentCount) {
-    return ['pattern-1', 'pattern-2'];
-  }
-
   return ['pattern-1', 'pattern-2', 'pattern-3', 'pattern-4'];
 };
 
 const createClips = () => {
-  const config = getTestConfig();
-
-  if (config.reducedInstrumentCount) {
-    return [
-      { id: 'clip-1', patternId: 'pattern-1', trackId: null, startTime: 0, duration: 4 },
-      { id: 'clip-2', patternId: 'pattern-2', trackId: null, startTime: 4, duration: 4 },
-    ];
-  }
-
   return [
     { id: 'clip-1', patternId: 'pattern-1', trackId: null, startTime: 0, duration: 4 },
     { id: 'clip-2', patternId: 'pattern-2', trackId: null, startTime: 4, duration: 4 },
