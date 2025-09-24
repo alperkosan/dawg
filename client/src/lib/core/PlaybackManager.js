@@ -492,22 +492,18 @@ export class PlaybackManager {
         try {
             const startTime = this.audioEngine.audioContext.currentTime;
 
-            // ✅ CRITICAL FIX: Smart position handling
+            // ✅ FIX: Improved position handling - maintain current position unless explicitly changed
             if (startStep !== null) {
                 // If explicitly requested to jump to a position
-                if (!this.isPaused || startStep !== 0) {
-                    // Only jump if not paused OR jumping to non-zero position
-                    this.jumpToStep(startStep);
-                }
-                // If paused and startStep=0, ignore the jump (keep pause position)
-            } else if (!this.isPaused) {
-                // Fresh start from beginning
-                this.currentPosition = this.loopStart;
-                if (this.currentPosition !== this.transport.ticksToSteps(this.transport.currentTick)) {
+                this.jumpToStep(startStep);
+            } else if (!this.isPaused && this.currentPosition === this.loopStart) {
+                // Only reset to loop start if we're not paused AND we're already at the beginning
+                // This prevents resetting when user has manually set position via jumpToStep
+                if (this.transport.setPosition) {
                     this.transport.setPosition(this.loopStart);
                 }
             }
-            // If paused and no explicit position, keep current position
+            // Otherwise, keep current position (whether paused or manually set)
 
             console.log(`▶️ Starting playback from step ${this.currentPosition} at ${startTime.toFixed(3)}s`);
 
@@ -598,17 +594,19 @@ export class PlaybackManager {
     jumpToStep(step) {
         const targetStep = Math.max(0, Math.min(step, this.loopEnd - 1));
         this.currentPosition = targetStep;
-        
+
+        // ✅ FIX: Always update transport position, whether playing or not
+        if (this.transport.setPosition) {
+            this.transport.setPosition(targetStep);
+        }
+
         if (this.isPlaying) {
-            // Transport should handle position jumping
-            this.transport.setPosition?.(targetStep);
-            
-            // Reschedule from new position
+            // Reschedule from new position when playing
             this._clearScheduledEvents();
             this._scheduleContent(null, 'jump-to-step', false); // Allow debouncing for jump operations
         }
-        
-        console.log(`🎯 Jumped to step ${targetStep}`);
+
+        console.log(`🎯 Jumped to step ${targetStep} (playing: ${this.isPlaying})`);
     }
 
     jumpToBar(bar) {
