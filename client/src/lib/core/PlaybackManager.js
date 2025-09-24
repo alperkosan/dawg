@@ -118,11 +118,28 @@ export class PlaybackManager {
 
         this.transport.on('stop', (data) => {
             console.log('🧠 PlaybackManager: Transport stopped');
+
+            // ✅ FIX: Immediately update position to loop start on stop
+            this.currentPosition = this.loopStart;
+            this._emit('positionUpdate', {
+                step: this.loopStart,
+                formatted: this._formatPosition(this.loopStart)
+            });
+
             this._emit('transportStop', data);
         });
 
         this.transport.on('pause', (data) => {
             console.log('🧠 PlaybackManager: Transport paused');
+
+            // ✅ FIX: Update position on pause (keep current position)
+            const currentStep = this.transport.ticksToSteps(this.transport.currentTick);
+            this.currentPosition = currentStep;
+            this._emit('positionUpdate', {
+                step: currentStep,
+                formatted: this._formatPosition(currentStep)
+            });
+
             this._emit('transportPause', data);
         });
 
@@ -535,13 +552,13 @@ export class PlaybackManager {
         }
 
         try {
-            // ✅ CRITICAL FIX: Sync current position before pausing
+            // ✅ FIX: Sync current position before pausing (keep current position, don't reset)
             this.currentPosition = this.transport.ticksToSteps(this.transport.currentTick);
 
             this.transport.pause();
             this.isPaused = true;
 
-            console.log(`⏸️ Playback paused at step ${this.currentPosition.toFixed(2)}`);
+            console.log(`⏸️ Playback paused at step ${this.currentPosition.toFixed(2)} (position preserved)`);
 
             // Notify stores
             usePlaybackStore.getState().setPlaybackState('paused');
@@ -619,6 +636,12 @@ export class PlaybackManager {
             this._scheduleContent(null, 'jump-to-step', false); // Allow debouncing for jump operations
         }
 
+        // ✅ FIX: Emit position update for UI
+        this._emit('positionUpdate', {
+            step: targetStep,
+            formatted: this._formatPosition(targetStep)
+        });
+
         console.log(`🎯 Jumped to step ${targetStep} (playing: ${this.isPlaying})`);
     }
 
@@ -659,21 +682,25 @@ export class PlaybackManager {
     }
 
     getCurrentPosition() {
+        // ✅ FIX: Always use stored position unless actively playing
         if (this.isPlaying && !this.isPaused && this.transport) {
-            // ✅ FIX: Get accurate current position from transport during playback
+            // Get real-time position from transport during active playback
             const transportStep = this.transport.ticksToSteps?.(this.transport.currentTick);
             if (transportStep !== undefined) {
-                // ✅ CRITICAL: Ensure position stays within loop bounds for accurate display
+                // Keep position within loop bounds for accurate display
                 const loopLength = this.loopEnd - this.loopStart;
                 if (loopLength > 0) {
                     const relativeStep = (transportStep - this.loopStart) % loopLength;
-                    return this.loopStart + Math.max(0, relativeStep);
+                    const boundedPosition = this.loopStart + Math.max(0, relativeStep);
+                    console.log(`🎯 Transport position: ${transportStep.toFixed(2)} -> bounded: ${boundedPosition.toFixed(2)}`);
+                    return boundedPosition;
                 }
                 return transportStep;
             }
         }
-        // ✅ FIX: When not playing, always return the stored position
-        // (which should be loop start after stop, or manually set position)
+
+        // ✅ CRITICAL: When stopped, paused, or no transport data, use stored position
+        console.log(`🎯 Using stored position: ${this.currentPosition} (playing: ${this.isPlaying}, paused: ${this.isPaused})`);
         return this.currentPosition;
     }
     // =================== CONTENT SCHEDULING ===================
@@ -952,6 +979,18 @@ export class PlaybackManager {
 
     _secondsToSteps(seconds) {
         return this.transport.secondsToSteps(seconds);
+    }
+
+    /**
+     * ✅ NEW: Format position for UI display
+     * @param {number} step - Position in steps
+     * @returns {string} Formatted position string
+     */
+    _formatPosition(step) {
+        const bar = Math.floor(step / 16) + 1;
+        const beat = Math.floor((step % 16) / 4) + 1;
+        const subBeat = (step % 4) + 1;
+        return `${bar}:${beat}:${subBeat}`;
     }
 
     /**

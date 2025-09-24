@@ -24,7 +24,7 @@ export default function ChannelRack() {
   const { openPianoRollForInstrument, handleEditInstrument, togglePanel } = usePanelsStore();
 
   // Motor durumu ve playhead takibi için optimize edilmiş hook
-  const { currentStep, playbackState, jumpToStep } = usePlayheadTracking();
+  const { currentStep, jumpToStep } = usePlayheadTracking();
 
   // Smooth playhead animasyonu için optimize edilmiş hook
   const {

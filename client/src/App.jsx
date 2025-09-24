@@ -56,8 +56,6 @@ function App() {
       // Başlangıç verilerini (sample'lar, enstrümanlar) motora yüklüyoruz.
       console.log('📥 Başlangıç verileri yükleniyor...');
       const instruments = useInstrumentsStore.getState().instruments;
-      const mixerTracks = useMixerStore.getState().mixerTracks;
-      const patterns = useArrangementStore.getState().patterns;
       
       // ⚡ DEBUG: Log sample instruments for troubleshooting
       const sampleInstruments = instruments.filter(inst => inst.type === 'sample');
