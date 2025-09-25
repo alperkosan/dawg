@@ -1,5 +1,5 @@
 // src/features/piano_roll_v2/PianoRoll.jsx
-import React, { useRef, useEffect, useReducer } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { Music } from 'lucide-react';
 import { usePianoRollEngineV2 } from './hooks/usePianoRollEngineV2';
 import { useNoteInteractionsV2 } from './hooks/useNoteInteractionsV2';
@@ -24,8 +24,8 @@ function PianoRoll({ instrument }) {
   const rulerContentRef = useRef(null);
   const keyboardContentRef = useRef(null);
 
-  // Force update için reducer
-  const [, forceUpdate] = useReducer(x => x + 1, 0);
+  // Scroll state to trigger child re-renders
+  const [scrollVersion, setScrollVersion] = useState(0);
   
   const showVelocityLane = usePianoRollStoreV2(state => state.showVelocityLane);
   const velocityLaneHeight = usePianoRollStoreV2(state => state.velocityLaneHeight);
@@ -54,8 +54,8 @@ function PianoRoll({ instrument }) {
         engine.scroll.x = scrollLeft;
         engine.scroll.y = scrollTop;
       }
-      // Re-render tetikle
-      forceUpdate();
+      // Re-render tetikle - state değişikliği ile child bileşenler de re-render olur
+      setScrollVersion(prev => prev + 1);
     };
 
     // Senkronizasyonu başlat ve cleanup fonksiyonunu al.
@@ -63,20 +63,67 @@ function PianoRoll({ instrument }) {
 
     // Component unmount olduğunda dinleyicileri kaldır.
     return cleanup;
-  }, [engine, forceUpdate]); // Engine değiştiğinde yeniden çalıştır
+  }, [engine]); // Engine değiştiğinde yeniden çalıştır
 
   useEffect(() => {
     const gridContainer = scrollContainerRef.current;
     if (!gridContainer) return;
-    const handleWheel = (e) => {
-      if (e.ctrlKey || e.metaKey) {
-        e.preventDefault();
-        handleZoom(e, zoomX);
-      }
+    
+    // Ana grid container için wheel handler
+    const handleGridWheel = (e) => {
+        if (e.ctrlKey || e.metaKey) {
+            e.preventDefault();
+            handleZoom(e, zoomX);
+        }
     };
-    gridContainer.addEventListener('wheel', handleWheel, { passive: false });
-    return () => gridContainer.removeEventListener('wheel', handleWheel);
-  }, [handleZoom, zoomX]);
+    
+    // Cetvel ve klavye için wheel handler
+    const handleRulerKeyboardWheel = (e) => {
+        if (e.ctrlKey || e.metaKey) {
+            e.preventDefault();
+            handleZoom(e, zoomX);
+            
+            // Zoom sonrası scroll pozisyonlarını manuel senkronize et
+            if (gridContainer) {
+                const scrollLeft = gridContainer.scrollLeft;
+                const scrollTop = gridContainer.scrollTop;
+                
+                if (rulerContentRef.current) {
+                    rulerContentRef.current.style.transform = 
+                        `translate3d(-${scrollLeft}px, 0, 0)`;
+                }
+                if (keyboardContentRef.current) {
+                    keyboardContentRef.current.style.transform = 
+                        `translate3d(0, -${scrollTop}px, 0)`;
+                }
+            }
+        }
+    };
+    
+    // Grid container'a listener ekle
+    gridContainer.addEventListener('wheel', handleGridWheel, { passive: false });
+    
+    // Cetvel ve klavye container'larına da listener ekle
+    const rulerContainer = document.querySelector('.prv2-ruler-container');
+    const keyboardContainer = document.querySelector('.prv2-keyboard-container');
+    
+    if (rulerContainer) {
+        rulerContainer.addEventListener('wheel', handleRulerKeyboardWheel, { passive: false });
+    }
+    if (keyboardContainer) {
+        keyboardContainer.addEventListener('wheel', handleRulerKeyboardWheel, { passive: false });
+    }
+    
+    return () => {
+        gridContainer.removeEventListener('wheel', handleGridWheel);
+        if (rulerContainer) {
+            rulerContainer.removeEventListener('wheel', handleRulerKeyboardWheel);
+        }
+        if (keyboardContainer) {
+            keyboardContainer.removeEventListener('wheel', handleRulerKeyboardWheel);
+        }
+    };
+}, [handleZoom, zoomX]);
   
   if (!instrument) {
     return (
@@ -100,12 +147,12 @@ function PianoRoll({ instrument }) {
         
         {/* --- Cetvel artık bir sarmalayıcı içinde --- */}
         <div className="prv2-ruler-container">
-          <EnhancedTimelineRuler engine={engine} contentRef={rulerContentRef} />
+          <EnhancedTimelineRuler key={scrollVersion} engine={engine} contentRef={rulerContentRef} />
         </div>
-        
+
         {/* --- Klavye artık bir sarmalayıcı içinde --- */}
         <div className="prv2-keyboard-container">
-          <PianoKeyboard engine={engine} instrumentId={instrument.id} contentRef={keyboardContentRef} />
+          <PianoKeyboard key={scrollVersion} engine={engine} instrumentId={instrument.id} contentRef={keyboardContentRef} />
         </div>
         
         <div

@@ -12,18 +12,18 @@ export const PrecisionGrid = React.memo(({ engine }) => {
   
   // --- YENİ: Sadeleştirilmiş ve daha doğru Viewport Hesaplaması ---
   const visibleRange = useMemo(() => {
-    // Görünür alanın dışına bir miktar tampon (buffer) ekleyerek,
-    // hızlı kaydırmalarda çizgilerin kaybolmasını engelliyoruz.
-    const bufferX = size.width * 0.2;
-    const bufferY = size.height * 0.2;
+    // Zoom seviyesine göre dinamik buffer
+    const zoomFactor = engine.stepWidth / 40; // Base step width = 40
+    const dynamicBuffer = Math.min(size.width * 0.5, size.width * 0.2 * zoomFactor);
     
     return {
-      startX: scroll.x - bufferX,
-      endX: scroll.x + size.width + bufferX,
-      startY: scroll.y - bufferY,
-      endY: scroll.y + size.height + bufferY,
+        startX: Math.max(0, scroll.x - dynamicBuffer),
+        endX: Math.min(gridWidth, scroll.x + size.width + dynamicBuffer),
+        startY: Math.max(0, scroll.y - dynamicBuffer),
+        endY: Math.min(gridHeight, scroll.y + size.height + dynamicBuffer),
     };
-  }, [scroll.x, scroll.y, size.width, size.height]);
+  }, [scroll.x, scroll.y, size.width, size.height, engine.stepWidth, gridWidth, gridHeight]);
+
   
   // --- YENİ: Sadece görünür dikey çizgileri hesaplayan optimize edilmiş mantık ---
   const verticalLines = useMemo(() => {

@@ -11,46 +11,62 @@
  * @param {Array<{ref: React.RefObject, axis: 'x'|'y'|'both'}>} targets - Pozisyonları senkronize edilecek hedef alanlar.
  * @returns {function} Olay dinleyicilerini temizleyen bir cleanup fonksiyonu.
  */
-export const createScrollSynchronizer = (sourceRef, targets, onScroll) => {
+export const createScrollSynchronizer = (sourceRef, targets, onScrollChange) => {
   let isSyncing = false;
+  let rafId = null;
 
   const handleScroll = () => {
-    if (!sourceRef.current || isSyncing) return;
-    isSyncing = true;
+      if (!sourceRef.current || isSyncing) return;
+      
+      // Önceki frame'i iptal et
+      if (rafId) cancelAnimationFrame(rafId);
+      
+      rafId = requestAnimationFrame(() => {
+          isSyncing = true;
+          const { scrollLeft, scrollTop } = sourceRef.current;
 
-    requestAnimationFrame(() => {
-      const { scrollLeft, scrollTop } = sourceRef.current;
+          targets.forEach(({ ref, axis = 'both' }) => {
+              if (ref.current) {
+                  // Her iki ekseni tek transform'da birleştir
+                  let transformX = 0;
+                  let transformY = 0;
+                  
+                  if (axis === 'x' || axis === 'both') {
+                      transformX = -scrollLeft;
+                  }
+                  if (axis === 'y' || axis === 'both') {
+                      transformY = -scrollTop;
+                  }
+                  
+                  // Tek bir transform ataması yap
+                  ref.current.style.transform = 
+                      `translate3d(${transformX}px, ${transformY}px, 0)`;
+              }
+          });
 
-      // Callback ile scroll pozisyonunu bildir
-      if (onScroll) {
-        onScroll(scrollLeft, scrollTop);
-      }
-
-      targets.forEach(({ ref, axis = 'both' }) => {
-        if (ref.current) {
-          if ((axis === 'x' || axis === 'both') && ref.current.scrollLeft !== scrollLeft) {
-            // CSS transform kullanarak daha performanslı güncelleme
-            ref.current.style.transform = `translateX(-${scrollLeft}px)`;
+          // Callback varsa çağır
+          if (onScrollChange) {
+              onScrollChange(scrollLeft, scrollTop);
           }
-          if ((axis === 'y' || axis === 'both') && ref.current.scrollTop !== scrollTop) {
-             ref.current.style.transform = `translateY(-${scrollTop}px)`;
-          }
-        }
+          
+          isSyncing = false;
       });
-      isSyncing = false;
-    });
   };
 
   const sourceElement = sourceRef.current;
   if (sourceElement) {
-    sourceElement.addEventListener('scroll', handleScroll, { passive: true });
+      sourceElement.addEventListener('scroll', handleScroll, { passive: true });
+      // İlk senkronizasyonu yap
+      handleScroll();
   }
 
-  // Geriye, olay dinleyicisini kaldıran bir fonksiyon döndürürüz.
   return () => {
-    if (sourceElement) {
-      sourceElement.removeEventListener('scroll', handleScroll);
-    }
+      if (sourceElement) {
+          sourceElement.removeEventListener('scroll', handleScroll);
+      }
+      if (rafId) {
+          cancelAnimationFrame(rafId);
+      }
   };
 };
 

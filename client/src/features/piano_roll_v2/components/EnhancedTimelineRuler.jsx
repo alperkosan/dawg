@@ -81,14 +81,6 @@ export const EnhancedTimelineRuler = React.memo(({ engine, contentRef }) => {
         className="timeline-ruler-content"
         style={{ width: engine.gridWidth }}
       >
-        <div
-          className="timeline-loop-region"
-          style={{
-            left: loopStartStep * engine.stepWidth,
-            width: (loopEndStep - loopStartStep) * engine.stepWidth
-          }}
-        />
-
         {markers.bars.map(marker => (
           <div key={`bar-${marker.label}`} className="timeline-bar-marker" style={{ transform: `translateX(${marker.x}px)` }}>
             <div className="bar-line" />
