@@ -178,4 +178,50 @@ export const usePanelsStore = create((set, get) => ({
     });
     get().bringPanelToFront(PANEL_IDS.PIANO_ROLL);
   },
+
+  // Plugin/Effect panel toggle fonksiyonu
+  togglePluginPanel: (effect, track) => {
+    console.log('🔌 togglePluginPanel:', effect, track);
+
+    // For now, just log the action - this would typically open a plugin UI
+    // In a full implementation, this would:
+    // 1. Check if plugin panel is already open for this effect
+    // 2. Create/update plugin panel state
+    // 3. Open the appropriate plugin UI component
+
+    // Temporary implementation - could open a generic effect editor
+    const panelId = `effect-${effect.id}`;
+    const state = get();
+
+    if (state.panels[panelId]?.isOpen) {
+      // Close if already open
+      set(state => ({
+        panels: {
+          ...state.panels,
+          [panelId]: { ...state.panels[panelId], isOpen: false }
+        }
+      }));
+    } else {
+      // Open new plugin panel
+      const newPosition = getNextCascadePosition(state.panels);
+      set(state => ({
+        panels: {
+          ...state.panels,
+          [panelId]: {
+            id: panelId,
+            type: 'plugin', // ✅ CRITICAL: This type is needed for WorkspacePanel routing
+            title: `${effect.type} - ${track.name || 'Track'}`,
+            isOpen: true,
+            isMinimized: false,
+            position: newPosition,
+            size: { width: 400, height: 300 },
+            effectId: effect.id,
+            trackId: track.id
+          }
+        }
+      }));
+
+      get().bringPanelToFront(panelId);
+    }
+  },
 }));

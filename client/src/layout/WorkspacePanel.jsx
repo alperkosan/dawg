@@ -41,15 +41,33 @@ function WorkspacePanel() {
           const componentProps = { key: panel.id };
 
           if (panel.type === 'plugin') {
+            console.log('🔌 Rendering plugin panel:', panel);
             const track = mixerTracks.find(t => t.id === panel.trackId);
             const effect = track?.insertEffects.find(fx => fx.id === panel.effectId);
-            
-            if (!track || !effect) return null; 
+
+            console.log('🔌 Track found:', track);
+            console.log('🔌 Effect found:', effect);
+
+            if (!track || !effect) {
+              console.warn('⚠️ Track or effect not found for plugin panel:', panel);
+              // Auto-close the orphaned panel
+              setTimeout(() => {
+                console.log('🗑️ Auto-closing orphaned plugin panel:', panel.id);
+                togglePanel(panel.id);
+              }, 100);
+              return null;
+            }
 
             const definition = pluginRegistry[effect.type];
             const PluginUIComponent = definition?.uiComponent;
 
-            if (!PluginUIComponent) return <div>Plugin UI for {effect.type} not found.</div>;
+            console.log('🔌 Plugin definition:', definition);
+            console.log('🔌 UI Component:', PluginUIComponent);
+
+            if (!PluginUIComponent) {
+              console.warn('⚠️ Plugin UI component not found for:', effect.type);
+              return <div>Plugin UI for {effect.type} not found.</div>;
+            }
 
             const handlePluginChange = (param, value) => {
               handleMixerEffectChange(track.id, effect.id, param, value);

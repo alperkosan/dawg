@@ -441,4 +441,14 @@ export const TimelineRuler = ({
 
         {/* Playhead */}
         <div
-          className="absolute top-0 bottom-0 w-0.5 bg-green-400 shadow-lg z-10 pointer-events-none
+          className="absolute top-0 bottom-0 w-0.5 bg-green-400 shadow-lg z-10 pointer-events-none"
+          style={{
+            left: `${(currentStep / lengthInSteps) * 100}%`
+          }}
+        />
+      </div>
+    </div>
+  );
+};
+
+export default PlaybackControls;

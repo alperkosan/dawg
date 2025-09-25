@@ -1,6 +1,8 @@
 // src/features/piano_roll_v2/components/VirtualNotesRenderer.jsx
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { Note } from './Note';
+import { getViewport, releaseViewport } from '../../../lib/utils/objectPool';
+import { trackScrollEvent, trackNoteUpdate } from '../../../lib/utils/performanceMonitor';
 
 const RENDER_BUFFER = 400; // Increased buffer for smoother scrolling
 const SCROLL_END_DELAY = 150; // ms to detect scroll end
@@ -16,6 +18,7 @@ export const VirtualNotesRenderer = ({ notes, selectedNotes = new Set(), engine,
 
     if (currentScroll.x !== lastScrollRef.current.x || currentScroll.y !== lastScrollRef.current.y) {
       setIsScrolling(true);
+      trackScrollEvent(); // Track scroll performance
 
       if (scrollTimeoutRef.current) {
         clearTimeout(scrollTimeoutRef.current);
@@ -41,22 +44,29 @@ export const VirtualNotesRenderer = ({ notes, selectedNotes = new Set(), engine,
       return notes || [];
     }
 
-    const viewBounds = {
-      left: (engine.scroll.x || 0) - RENDER_BUFFER,
-      right: (engine.scroll.x || 0) + (engine.size.width || 0) + RENDER_BUFFER,
-      top: (engine.scroll.y || 0) - RENDER_BUFFER,
-      bottom: (engine.scroll.y || 0) + (engine.size.height || 0) + RENDER_BUFFER,
-    };
+    // Use pooled viewport object to reduce GC pressure
+    const viewBounds = getViewport(
+      (engine.scroll.x || 0) - RENDER_BUFFER,
+      (engine.scroll.x || 0) + (engine.size.width || 0) + RENDER_BUFFER,
+      (engine.scroll.y || 0) - RENDER_BUFFER,
+      (engine.scroll.y || 0) + (engine.size.height || 0) + RENDER_BUFFER
+    );
 
-    return (notes || []).filter(note => {
-      if (!engine.getNoteRect) return true;
-      const rect = engine.getNoteRect(note);
-      if (!rect) return false;
-      return (
-        rect.x < viewBounds.right && rect.x + rect.width > viewBounds.left &&
-        rect.y < viewBounds.bottom && rect.y + rect.height > viewBounds.top
-      );
-    });
+    try {
+      return (notes || []).filter(note => {
+        if (!engine.getNoteRect) return true;
+        const rect = engine.getNoteRect(note);
+        if (!rect) return false;
+        return (
+          rect.x < viewBounds.right && rect.x + rect.width > viewBounds.left &&
+          rect.y < viewBounds.bottom && rect.y + rect.height > viewBounds.top
+        );
+      });
+    } finally {
+      // Always return pooled object
+      releaseViewport(viewBounds);
+      trackNoteUpdate(); // Track note rendering performance
+    }
   }, [
     notes,
     // ULTRA AGGRESSIVE: Throttle scroll position updates to 400px chunks for massive performance gain

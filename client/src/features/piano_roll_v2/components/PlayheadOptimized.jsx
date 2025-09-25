@@ -4,6 +4,7 @@
 import React, { useRef, useEffect, useCallback } from 'react';
 import { useGlobalPlayhead } from '../../../hooks/useGlobalPlayhead';
 import { PlayheadRenderer } from '../../../lib/core/PlayheadRenderer.js';
+import { trackPlayheadUpdate } from '../../../lib/utils/performanceMonitor';
 
 export const PlayheadOptimized = React.memo(({ engine }) => {
   const playheadRef = useRef(null);
@@ -32,6 +33,7 @@ export const PlayheadOptimized = React.memo(({ engine }) => {
 
   // Position callback using currentStep from useGlobalPlayhead
   const getPositionCallback = useCallback(() => {
+    trackPlayheadUpdate(); // Track playhead performance
     return isNaN(currentStep) || currentStep === undefined ? 0 : currentStep;
   }, [currentStep]);
 
@@ -69,7 +71,7 @@ export const PlayheadOptimized = React.memo(({ engine }) => {
   return (
     <div
       ref={playheadRef}
-      className="prv2-playhead-optimized"
+      className="prv2-playhead prv2-playhead-optimized"
       style={{
         position: 'absolute',
         top: 0,
@@ -79,8 +81,10 @@ export const PlayheadOptimized = React.memo(({ engine }) => {
         backgroundColor: '#ff0000',
         zIndex: 100,
         pointerEvents: 'none',
-        // Optimize for performance
+        // ULTRA AGGRESSIVE: Composite-only transforms
+        contain: 'strict',
         willChange: 'transform',
+        transform: 'translate3d(0, 0, 0)',
         backfaceVisibility: 'hidden'
       }}
     />

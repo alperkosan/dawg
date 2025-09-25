@@ -11,7 +11,6 @@ export const EnhancedTimelineRuler = ({ engine, instrument }) => {
   const rulerRef = useRef(null);
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState(null);
-  const [hoverPosition, setHoverPosition] = useState(null);
 
   const { loopStartStep, loopEndStep, setLoopRange, audioLoopLength } = usePlaybackStore();
   const { currentStep, playbackState } = useGlobalPlayhead();
@@ -28,11 +27,7 @@ export const EnhancedTimelineRuler = ({ engine, instrument }) => {
 
   // PERFORMANCE CRITICAL: Reduce marker rendering during playback
   const markers = useMemo(() => {
-    // Skip complex calculations during playback for performance
-    if (playbackState === 'playing') {
-      return []; // No markers during playback - critical performance fix
-    }
-
+    // SMARTER: Only skip markers if there would be too many during playback
     const result = [];
     const stepWidth = engine.dimensions?.stepWidth || engine.stepWidth || 40;
     const barWidth = stepWidth * 16; // 16 steps per bar
@@ -42,14 +37,20 @@ export const EnhancedTimelineRuler = ({ engine, instrument }) => {
     // Calculate viewport range with minimal buffer
     const scrollX = engine.scroll?.x || 0;
     const viewportWidth = engine.size?.width || 1200;
-    const bufferBars = 3; // Reduced buffer for performance
 
     const startBar = Math.max(0, Math.floor(scrollX / barWidth));
     const endBar = Math.ceil((scrollX + viewportWidth) / barWidth);
+    const totalBarsToRender = endBar - startBar + 1;
 
-    const totalBarsToRender = Math.min(endBar - startBar + 1, 20); // Max 20 markers
+    // SMART: Skip markers only if too many would be rendered during playback
+    if (playbackState === 'playing' && totalBarsToRender > 10) {
+      return []; // Only hide if more than 10 bars would be rendered
+    }
 
-    for (let i = 0; i < totalBarsToRender; i++) {
+    const bufferBars = 3; // Reduced buffer for performance
+    const maxBarsToRender = Math.min(totalBarsToRender, 20); // Max 20 markers
+
+    for (let i = 0; i < maxBarsToRender; i++) {
       const barIndex = startBar + i;
       const x = barIndex * barWidth;
       const barNumber = barIndex + 1;
@@ -76,11 +77,6 @@ export const EnhancedTimelineRuler = ({ engine, instrument }) => {
 
   // PERFORMANCE CRITICAL: Disable beat markers during playback
   const beatMarkers = useMemo(() => {
-    // Disable beat markers during playback for maximum performance
-    if (playbackState === 'playing') {
-      return []; // No beat markers during playback - critical performance fix
-    }
-
     const result = [];
     const stepWidth = engine.dimensions?.stepWidth || engine.stepWidth || 40;
     const beatWidth = stepWidth * 4; // 4 steps per beat
@@ -90,12 +86,17 @@ export const EnhancedTimelineRuler = ({ engine, instrument }) => {
     // Only render beats in viewport with minimal buffer
     const scrollX = engine.scroll?.x || 0;
     const viewportWidth = engine.size?.width || 1200;
-    const bufferBeats = 5; // Reduced buffer for performance
 
     const startBeat = Math.max(0, Math.floor(scrollX / beatWidth));
     const endBeat = Math.ceil((scrollX + viewportWidth) / beatWidth);
+    const totalBeatsToRender = endBeat - startBeat + 1;
 
-    const maxBeatsToRender = Math.min(endBeat - startBeat + 1, 50); // Max 50 beat markers
+    // SMART: Disable beat markers during playback only if too many would be rendered
+    if (playbackState === 'playing' && totalBeatsToRender > 20) {
+      return []; // Only hide if more than 20 beats would be rendered
+    }
+
+    const maxBeatsToRender = Math.min(totalBeatsToRender, 50); // Max 50 beat markers
 
     for (let i = 0; i < maxBeatsToRender; i++) {
       const beatIndex = startBeat + i;
@@ -189,20 +190,9 @@ export const EnhancedTimelineRuler = ({ engine, instrument }) => {
     document.addEventListener('mouseup', handleMouseUp, { passive: false });
   }, [handleInteraction]);
 
-  // Hover position tracking
-  const handleMouseMove = useCallback((e) => {
-    if (!rulerRef.current || isDragging) return;
-
-    const rect = rulerRef.current.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left;
-    const adjustedX = mouseX + (engine.scroll?.x || 0);
-
-    const musicalTime = pixelToMusicalTime(adjustedX);
-    setHoverPosition(musicalTime);
-  }, [engine.scroll?.x, pixelToMusicalTime, isDragging]);
-
+  // Mouse leave handler for cleanup
   const handleMouseLeave = useCallback(() => {
-    setHoverPosition(null);
+    // Cleanup any drag state if needed
   }, []);
 
   // Get arrangement store for accessing notes
@@ -301,22 +291,6 @@ export const EnhancedTimelineRuler = ({ engine, instrument }) => {
 
   return (
     <div className="enhanced-timeline-ruler">
-      {/* Position display */}
-      <div className="timeline-position-display">
-        {hoverPosition ? (
-          <span className="position-hover">
-            📍 {hoverPosition.formatted} (Bar {hoverPosition.bar})
-          </span>
-        ) : playbackState === 'playing' ? (
-          <span className="position-current">
-            ▶️ {pixelToMusicalTime(playheadPosition).formatted}
-          </span>
-        ) : (
-          <span className="position-default">
-            🎼 Piano Roll Timeline
-          </span>
-        )}
-      </div>
 
       {/* Main ruler area - OPTIMIZED: Fixed viewport width with transform */}
       <div
@@ -330,7 +304,6 @@ export const EnhancedTimelineRuler = ({ engine, instrument }) => {
           cursor: isDragging ? 'ew-resize' : isPanning ? 'grabbing' : 'crosshair'
         }}
         onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}
         onDoubleClick={handleDoubleClick}
         onWheel={handleWheel}
@@ -405,16 +378,7 @@ export const EnhancedTimelineRuler = ({ engine, instrument }) => {
           />
         )}
 
-        {/* Hover cursor - OPTIMIZED: Positioned relative to scroll */}
-        {hoverPosition && !isDragging && (
-          <div
-            className="timeline-hover-cursor"
-            style={{
-              left: hoverPosition.step * (engine.dimensions?.stepWidth || engine.stepWidth || 40) - (engine.scroll?.x || 0),
-              position: 'absolute'
-            }}
-          />
-        )}
+        {/* Hover cursor removed - BBT display moved to top toolbar */}
       </div>
     </div>
   );

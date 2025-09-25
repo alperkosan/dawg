@@ -777,6 +777,300 @@ export class AudioContextService {
   // =================== CLEANUP ===================
 
   /**
+   * Update mixer parameter (volume, pan, etc.)
+   * Direct bridge to audio engine
+   */
+  static updateMixerParam(trackId, param, value) {
+    console.log('🎛️ AudioContextService.updateMixerParam:', trackId, param, value);
+
+    if (!this.audioEngine) {
+      console.warn('⚠️ No audio engine available');
+      return;
+    }
+
+    // Use the audio engine's specific mixer methods
+    if (param === 'volume' && this.audioEngine.setChannelVolume) {
+      // Convert dB to linear (knob sends dB -60 to +6, engine expects linear 0-2)
+      const linearValue = this.dbToLinear(value);
+      console.log('🔊 Setting channel volume via audio engine:', trackId, `${value}dB → ${linearValue.toFixed(3)} linear`);
+      this.audioEngine.setChannelVolume(trackId, linearValue);
+    } else if (param === 'pan' && this.audioEngine.setChannelPan) {
+      // Pan is already in correct range (-1 to +1)
+      console.log('🔄 Setting channel pan via audio engine:', trackId, value);
+      this.audioEngine.setChannelPan(trackId, value);
+    } else if (param.startsWith('eq.') && this.audioEngine.setChannelEQ) {
+      // Handle EQ parameters like 'eq.highGain'
+      const eqParam = param.split('.')[1];
+      console.log('🎚️ Setting channel EQ via audio engine:', trackId, eqParam, value);
+      this.audioEngine.setChannelEQ(trackId, eqParam, value);
+    } else {
+      console.warn('⚠️ Unknown mixer parameter or missing audio engine method:', param);
+    }
+  }
+
+  // =================== EFFECTS MANAGEMENT ===================
+
+  /**
+   * Rebuild signal chain for a track with new effects configuration
+   */
+  static async rebuildSignalChain(trackId, trackState) {
+    console.log('🔗 AudioContextService.rebuildSignalChain:', trackId, trackState);
+
+    if (!this.audioEngine || !this.audioEngine.mixerChannels) {
+      console.warn('⚠️ No audio engine or mixer channels available');
+      return;
+    }
+
+    const channel = this.audioEngine.mixerChannels.get(trackId);
+    if (!channel) {
+      console.warn('⚠️ No mixer channel found for trackId:', trackId);
+      return;
+    }
+
+    try {
+      // ✅ SAFETY: Fade out during chain rebuild to avoid pops/clicks
+      const originalGain = channel.output ? channel.output.gain.value : 1;
+      if (channel.output && channel.output.gain) {
+        channel.output.gain.setTargetAtTime(0, this.audioEngine.audioContext.currentTime, 0.01);
+      }
+
+      // Clear existing effects with better error handling
+      if (channel.effects) {
+        const effectsToDispose = Array.from(channel.effects.values());
+        for (const effect of effectsToDispose) {
+          try {
+            if (effect.node) {
+              effect.node.disconnect();
+            }
+            if (effect.dispose) {
+              effect.dispose();
+            }
+          } catch (disposeError) {
+            console.warn('⚠️ Error disposing effect:', effect.id, disposeError);
+          }
+        }
+        channel.effects.clear();
+      }
+
+      // Rebuild signal chain: mixerNode -> effects -> analyzer -> output
+      if (channel.mixerNode && channel.analyzer && channel.output) {
+        // Disconnect all first
+        try {
+          channel.mixerNode.disconnect();
+          channel.analyzer.disconnect();
+        } catch (disconnectError) {
+          console.warn('⚠️ Disconnect warning (expected):', disconnectError.message);
+        }
+
+        // Add new effects from trackState
+        if (trackState.insertEffects && trackState.insertEffects.length > 0) {
+          await this._buildEffectChain(channel, trackState.insertEffects);
+        } else {
+          // No effects: direct connection
+          channel.mixerNode.connect(channel.analyzer);
+        }
+
+        // Always connect analyzer to output
+        channel.analyzer.connect(channel.output);
+      }
+
+      // ✅ SAFETY: Fade back in after rebuild
+      setTimeout(() => {
+        if (channel.output && channel.output.gain) {
+          channel.output.gain.setTargetAtTime(originalGain, this.audioEngine.audioContext.currentTime, 0.02);
+        }
+      }, 50);
+
+      console.log('✅ Signal chain rebuilt successfully for:', trackId);
+    } catch (error) {
+      console.error('❌ Error rebuilding signal chain:', error);
+      // ✅ SAFETY: Always restore gain even on error
+      if (channel.output && channel.output.gain) {
+        channel.output.gain.setTargetAtTime(originalGain, this.audioEngine.audioContext.currentTime, 0.02);
+      }
+    }
+  }
+
+  /**
+   * Build effect chain for a channel
+   */
+  static async _buildEffectChain(channel, effects) {
+    for (const effectConfig of effects) {
+      if (effectConfig.bypass) {
+        continue; // Skip bypassed effects
+      }
+
+      try {
+        const effectId = await channel.addEffect(effectConfig.type, effectConfig.settings);
+        console.log('✅ Added effect to channel:', effectConfig.type, effectId);
+      } catch (error) {
+        console.error('❌ Error adding effect:', effectConfig.type, error);
+      }
+    }
+  }
+
+  /**
+   * Update effect parameter
+   */
+  static updateEffectParam(trackId, effectId, param, value) {
+    console.log('🎛️ AudioContextService.updateEffectParam:', trackId, effectId, param, value);
+
+    if (!this.audioEngine || !this.audioEngine.mixerChannels) {
+      console.warn('⚠️ No audio engine or mixer channels available');
+      return;
+    }
+
+    const channel = this.audioEngine.mixerChannels.get(trackId);
+    if (!channel || !channel.effects) {
+      console.warn('⚠️ No mixer channel or effects found for trackId:', trackId);
+      return;
+    }
+
+    // Find the effect and update parameter
+    const effect = Array.from(channel.effects.values()).find(fx => fx.id === effectId);
+    if (effect && effect.updateParameter) {
+      effect.updateParameter(param, value);
+      console.log('✅ Updated effect parameter:', effectId, param, value);
+    } else {
+      console.warn('⚠️ Effect not found or no updateParameter method:', effectId);
+    }
+  }
+
+  // =================== SAMPLE EDITOR INTEGRATION ===================
+
+  /**
+   * Preview sample with effects applied
+   */
+  static previewSample(instrumentId, trackId, velocity = 0.8) {
+    console.log('🔊 AudioContextService.previewSample:', instrumentId, trackId);
+
+    if (!this.audioEngine) {
+      console.warn('⚠️ No audio engine available');
+      return;
+    }
+
+    // Use audition system for preview
+    if (this.audioEngine.auditionNoteOn) {
+      this.audioEngine.auditionNoteOn(instrumentId, 'C4', velocity);
+    }
+  }
+
+  /**
+   * Stop sample preview
+   */
+  static stopSamplePreview(instrumentId) {
+    console.log('🔇 AudioContextService.stopSamplePreview:', instrumentId);
+
+    if (!this.audioEngine) {
+      console.warn('⚠️ No audio engine available');
+      return;
+    }
+
+    if (this.audioEngine.auditionNoteOff) {
+      this.audioEngine.auditionNoteOff(instrumentId, 'C4');
+    }
+  }
+
+  /**
+   * Apply real-time processing to instrument
+   */
+  static updateInstrumentParams(instrumentId, params) {
+    console.log('🎚️ AudioContextService.updateInstrumentParams:', instrumentId, params);
+
+    if (!this.audioEngine || !this.audioEngine.instruments) {
+      console.warn('⚠️ No audio engine or instruments available');
+      return;
+    }
+
+    const instrument = this.audioEngine.instruments.get(instrumentId);
+    if (instrument && instrument.updateParameters) {
+      instrument.updateParameters(params);
+      console.log('✅ Updated instrument parameters:', instrumentId);
+    } else {
+      console.warn('⚠️ Instrument not found or no updateParameters method:', instrumentId);
+    }
+  }
+
+  /**
+   * Request instrument buffer for sample editor
+   */
+  static async requestInstrumentBuffer(instrumentId) {
+    console.log('🎵 AudioContextService.requestInstrumentBuffer:', instrumentId);
+
+    if (!this.audioEngine) {
+      console.warn('⚠️ No audio engine available');
+      return null;
+    }
+
+    // Check if instrument exists
+    const instrument = this.audioEngine.instruments.get(instrumentId);
+    if (!instrument) {
+      console.warn('⚠️ Instrument not found:', instrumentId);
+      return null;
+    }
+
+    // For sample instruments, return the buffer
+    if (instrument.buffer) {
+      console.log('✅ Returning instrument buffer:', instrumentId);
+      return instrument.buffer;
+    }
+
+    // Check in sample buffers cache
+    if (this.audioEngine.sampleBuffers && this.audioEngine.sampleBuffers.has(instrumentId)) {
+      const buffer = this.audioEngine.sampleBuffers.get(instrumentId);
+      console.log('✅ Returning cached sample buffer:', instrumentId);
+      return buffer;
+    }
+
+    console.warn('⚠️ No buffer found for instrument:', instrumentId);
+    return null;
+  }
+
+  /**
+   * Set instrument mute state
+   */
+  static setInstrumentMute(instrumentId, isMuted) {
+    console.log('🔇 AudioContextService.setInstrumentMute:', instrumentId, isMuted);
+
+    if (!this.audioEngine || !this.audioEngine.instruments) {
+      console.warn('⚠️ No audio engine or instruments available');
+      return;
+    }
+
+    const instrument = this.audioEngine.instruments.get(instrumentId);
+    if (!instrument) {
+      console.warn('⚠️ Instrument not found:', instrumentId);
+      return;
+    }
+
+    // For instruments with output nodes, control the gain
+    if (instrument.output && instrument.output.gain) {
+      if (isMuted) {
+        // Store current volume before muting
+        if (!instrument._unmutedVolume) {
+          instrument._unmutedVolume = instrument.output.gain.value;
+        }
+        instrument.output.gain.setTargetAtTime(0, this.audioEngine.audioContext.currentTime, 0.02);
+        console.log('🔇 Muted instrument:', instrumentId);
+      } else {
+        // Restore previous volume
+        const volume = instrument._unmutedVolume || 0.8;
+        instrument.output.gain.setTargetAtTime(volume, this.audioEngine.audioContext.currentTime, 0.02);
+        console.log('🔊 Unmuted instrument:', instrumentId, 'volume:', volume);
+      }
+    } else {
+      console.warn('⚠️ Instrument has no output gain control:', instrumentId);
+    }
+  }
+
+  /**
+   * Convert dB to linear value
+   */
+  static dbToLinear(db) {
+    return Math.pow(10, db / 20);
+  }
+
+  /**
    * Cleanup and disposal
    */
   static dispose() {

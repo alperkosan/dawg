@@ -54,7 +54,7 @@ export const Note = React.memo(({ note, isSelected, isGhost, isPreview, ghostCol
           className="prv2-note__label"
           draggable={false}
           onDragStart={(e) => e.preventDefault()}
-          onSelectStart={(e) => e.preventDefault()}
+          style={{ userSelect: 'none' }}
         >
           {note.pitch}
         </span>

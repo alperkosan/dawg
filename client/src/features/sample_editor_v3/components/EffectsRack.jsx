@@ -11,9 +11,15 @@ export const EffectsRack = ({ track }) => {
   const [addEffectMenu, setAddEffectMenu] = useState(null);
 
   const handleSelectEffect = (effectType) => {
+    console.log('🎛️ Adding effect:', effectType, 'to track:', track.id);
     const newEffect = handleMixerEffectAdd(track.id, effectType);
+    console.log('🎛️ New effect created:', newEffect);
+
     if (newEffect) {
+      console.log('🔌 Opening plugin panel for effect:', newEffect.id);
       togglePluginPanel(newEffect, track);
+    } else {
+      console.error('❌ Failed to create effect');
     }
     setAddEffectMenu(null);
   };

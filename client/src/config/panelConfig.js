@@ -1,6 +1,6 @@
 import ChannelRack from '../features/channel_rack/ChannelRack';
 // import Mixer from '../features/mixer/Mixer'; // <-- 1. ESKİ MİKSERİ SİLİN VEYA YORUM SATIRI YAPIN
-import { AdvancedMixer } from '../features/mixer_v2/AdvancedMixer'; // <-- 2. YENİ MİKSERİ IMPORT EDİN
+import MixerV3 from '../features/mixer_v3/MixerV3'; // <-- 2. YENİ MİKSERİ IMPORT EDİN
 import SampleEditorV2 from '../features/sample_editor_v3/SampleEditorV3';
 import PianoRoll from '../features/piano_roll_v2/PianoRoll';
 import ArrangementPanel from '../features/arrangement/ArrangementPanel';
@@ -11,7 +11,7 @@ import AudioQualitySettings from '../components/AudioQualitySettings';
 
 export const panelRegistry = {
   'channel-rack': ChannelRack,
-  'mixer': AdvancedMixer,
+  'mixer': MixerV3,
   'sample-editor': SampleEditorV2,
   'piano-roll': PianoRoll,
   'keybindings': KeybindingsPanel,
@@ -35,7 +35,7 @@ export const panelDefinitions = {
     minSize: { width: 600, height: 250 },
   },
   'mixer': {
-    title: 'Mixer V2', // <-- 4. BAŞLIĞI GÜNCELLEYİN (İsteğe Bağlı)
+    title: 'Mixer V3', // <-- 4. BAŞLIĞI GÜNCELLEYİN (İsteğe Bağlı)
     initialSize: { width: 1000, height: 500 },
     initialPos: { x: 60, y: 80 },
     minSize: { width: 600, height: 300 },

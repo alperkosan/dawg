@@ -12,6 +12,11 @@
   overflow: hidden;
   position: relative;
   font-family: 'SF Pro Text', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+
+  /* ULTRA AGGRESSIVE: Root containment for entire Piano Roll */
+  contain: strict;
+  will-change: transform;
+  transform: translateZ(0);
 }
 .prv2-main-scroll-area {
   grid-row: 2; grid-column: 2;
@@ -29,9 +34,13 @@
   min-height: 0;
   display: grid;
   /* Satırlar: Cetvel, Esnek İçerik Alanı, Boyutlandırma Çubuğu */
-  grid-template-rows: 32px 1fr auto; 
+  grid-template-rows: 32px 1fr auto;
   /* Sütunlar: Klavye/Etiketler, Esnek İçerik Alanı */
   grid-template-columns: 80px 1fr;
+
+  /* CRITICAL: Grid containment for layout isolation */
+  contain: layout style;
+  will-change: transform;
 }
 
 .prv2-main-grid {
@@ -79,8 +88,8 @@
   scroll-behavior: auto; /* Disable smooth scrolling for performance */
   /* Enable hardware acceleration */
   -webkit-overflow-scrolling: touch;
-  /* Optimize repaints */
-  contain: layout style paint;
+  /* ULTRA AGGRESSIVE: Strict containment for scroll container */
+  contain: strict;
 }
 
 /* === SCROLL OPTIMIZATION: Disable transitions during scroll === */
@@ -124,6 +133,11 @@
   overflow: hidden;
   background-color: var(--color-surface-1);
   z-index: 20;
+
+  /* CRITICAL: Keyboard containment */
+  contain: strict;
+  will-change: transform;
+  transform: translateZ(0);
 }
 .prv2-keyboard-content { /* Bu, içindeki asıl kayan kısımdır */
   will-change: transform;
@@ -145,6 +159,10 @@
   transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
   overflow: hidden;
+
+  /* Individual key containment */
+  contain: layout style;
+  will-change: transform;
 }
 
 .prv2-keyboard__key--white {
@@ -221,6 +239,11 @@
   inset: 0;
   z-index: 10;
   pointer-events: none; /* Kapsayıcının kendisi olayları yakalamasın */
+
+  /* CRITICAL: Notes container isolation */
+  contain: layout style paint;
+  will-change: transform;
+  transform: translateZ(0);
 }
 
 .prv2-note {
@@ -242,6 +265,11 @@
   min-height: 16px;
   overflow: hidden;
   cursor: pointer;
+
+  /* CRITICAL: Individual note containment */
+  contain: layout style;
+  will-change: transform;
+  transform: translateZ(0);
 }
 
 .prv2-note--selected {
@@ -508,11 +536,16 @@
   background-color: var(--color-primary);
   box-shadow: var(--shadow-glow);
   /* Diğer elemanların tıklanmasını engellememesi için */
-  pointer-events: none; 
+  pointer-events: none;
   /* Performans için GPU katmanına taşı */
   will-change: transform;
   /* Notaların üzerinde, ama menüler gibi şeylerin altında */
-  z-index: 25; 
+  z-index: 25;
+
+  /* CRITICAL: Playhead composite-only animations */
+  contain: layout style paint;
+  transform: translateZ(0);
+  backface-visibility: hidden;
 }
 
 /* ==========================================================================
@@ -543,6 +576,11 @@
   background-color: var(--color-surface-1);
   flex-shrink: 0;
   position: relative; /* İçerideki absolute konumlandırma için */
+
+  /* Velocity lane containment */
+  contain: layout style;
+  will-change: transform;
+  transform: translateZ(0);
 }
 
 .prv2-velocity-label-area {
@@ -594,6 +632,10 @@
   align-items: flex-end;
   justify-content: center;
   cursor: ns-resize;
+
+  /* Individual velocity bar containment */
+  contain: layout style;
+  will-change: transform;
 }
 
 .prv2-velocity-bar__bar {

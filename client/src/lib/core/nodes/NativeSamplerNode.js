@@ -11,10 +11,11 @@ export class NativeSamplerNode {
         this.context = audioContext;
         this.pianoRoll = instrumentData.pianoRoll;
         this.cutItself = instrumentData.cutItself;
+        this.pitchOffset = instrumentData.pitchOffset || 0;
         this.output = this.context.createGain();
-        
+
         this.activeSources = new Set();
-        
+
         console.log(`✅ NativeSamplerNode created: ${this.name}`);
     }
 
@@ -33,8 +34,14 @@ export class NativeSamplerNode {
         if (this.pianoRoll) {
             const midiNoteC4 = 60;
             // Pitch'in tanımsız olma ihtimaline karşı 'C4' varsayılanı ekleniyor.
-            const targetMidi = this.pitchToMidi(pitch || 'C4'); 
-            const semitoneShift = targetMidi - midiNoteC4;
+            const targetMidi = this.pitchToMidi(pitch || 'C4');
+            let semitoneShift = targetMidi - midiNoteC4;
+
+            // Add pitch offset if set
+            if (this.pitchOffset) {
+                semitoneShift += this.pitchOffset;
+            }
+
             // playbackRate'in her zaman geçerli bir sayı olmasını garantiliyoruz.
             source.playbackRate.setValueAtTime(Math.pow(2, semitoneShift / 12), startTime);
         }
@@ -140,5 +147,35 @@ export class NativeSamplerNode {
     // ✅ EKLENEN: Voice count for debugging
     getActiveVoiceCount() {
         return this.activeSources.size;
+    }
+
+    // ✅ EKLENEN: Parameter update for real-time control
+    updateParameters(params) {
+        console.log(`🎛️ NativeSamplerNode.updateParameters:`, this.name, params);
+
+        if (params.volume !== undefined) {
+            // Update main volume
+            if (this.output) {
+                const linearValue = this.dbToLinear(params.volume);
+                this.output.gain.setTargetAtTime(linearValue, this.context.currentTime, 0.02);
+                console.log(`🔊 Updated sampler volume: ${params.volume}dB → ${linearValue.toFixed(3)}`);
+            }
+        }
+
+        if (params.pitchOffset !== undefined) {
+            // Store pitch offset for new notes (can't change existing notes)
+            this.pitchOffset = params.pitchOffset;
+            console.log(`🎵 Updated sampler pitch offset: ${params.pitchOffset} semitones`);
+        }
+
+        if (params.cutItself !== undefined) {
+            this.cutItself = params.cutItself;
+            console.log(`✂️ Updated cutItself: ${params.cutItself}`);
+        }
+    }
+
+    // ✅ UTILITY: Convert dB to linear
+    dbToLinear(db) {
+        return Math.pow(10, db / 20);
     }
 }

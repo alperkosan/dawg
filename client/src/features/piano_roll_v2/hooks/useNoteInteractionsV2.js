@@ -51,7 +51,10 @@ export const useNoteInteractionsV2 = (instrumentId, engine) => {
   useEffect(() => { notesRef.current = notes; }, [notes]);
 
   const playingNotesRef = useRef(new Set());
-  
+
+  // Mouse move throttle ref for performance
+  const mouseMoveThrottleRef = useRef(0);
+
   const handleNotesChange = useCallback((newNotes) => {
     if (instrumentId && activePatternId) {
       notesRef.current = newNotes;
@@ -210,6 +213,13 @@ export const useNoteInteractionsV2 = (instrumentId, engine) => {
 
   const onMouseMove = useCallback((e) => {
     if (!interaction || !e || !engine) return;
+
+    // AGGRESSIVE THROTTLING: Throttle mouse move events to 16ms (~60fps max)
+    const now = Date.now();
+    if (mouseMoveThrottleRef.current && now - mouseMoveThrottleRef.current < 16) {
+      return;
+    }
+    mouseMoveThrottleRef.current = now;
 
     const gridPos = engine.mouseToGrid(e);
     if (!gridPos || !isFinite(gridPos.x) || !isFinite(gridPos.y) || !isFinite(gridPos.time)) {

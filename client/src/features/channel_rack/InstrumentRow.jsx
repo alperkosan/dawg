@@ -7,9 +7,11 @@ import { Music, Piano, Volume2, VolumeX, SlidersHorizontal } from 'lucide-react'
 import VolumeKnob from '../../ui/VolumeKnob';
 
 const InstrumentRow = ({ instrument, onPianoRollClick, onEditClick }) => {
-  const { updateInstrument } = useInstrumentsStore.getState();
-  const { setTrackName, handleMixerParamChange, setActiveChannelId } = useMixerStore.getState(); // setActiveChannelId eklendi
-  const togglePanel = usePanelsStore(state => state.togglePanel); // togglePanel eklendi
+  const updateInstrument = useInstrumentsStore(state => state.updateInstrument);
+  const setTrackName = useMixerStore(state => state.setTrackName);
+  const handleMixerParamChange = useMixerStore(state => state.handleMixerParamChange);
+  const setActiveChannelId = useMixerStore(state => state.setActiveChannelId);
+  const togglePanel = usePanelsStore(state => state.togglePanel);
 
   const mixerTrack = useMixerStore(state => 
     state.mixerTracks.find(t => t.id === instrument.mixerTrackId)
@@ -77,12 +79,18 @@ const InstrumentRow = ({ instrument, onPianoRollClick, onEditClick }) => {
       <div className="instrument-row__controls">
         <VolumeKnob
           label="Pan" size={28} value={mixerTrack.pan}
-          onChange={(val) => handleMixerParamChange(mixerTrack.id, 'pan', val)}
+          onChange={(val) => {
+            console.log('🎚️ Pan change:', mixerTrack.id, 'pan', val);
+            handleMixerParamChange(mixerTrack.id, 'pan', val);
+          }}
           min={-1} max={1} defaultValue={0}
         />
         <VolumeKnob
           label="Vol" size={28} value={mixerTrack.volume}
-          onChange={(val) => handleMixerParamChange(mixerTrack.id, 'volume', val)}
+          onChange={(val) => {
+            console.log('🎚️ Volume change:', mixerTrack.id, 'volume', val);
+            handleMixerParamChange(mixerTrack.id, 'volume', val);
+          }}
           min={-60} max={6} defaultValue={0}
         />
       </div>
@@ -90,9 +98,9 @@ const InstrumentRow = ({ instrument, onPianoRollClick, onEditClick }) => {
       <div className="instrument-row__actions">
         <button
           className={muteButtonClasses}
-          onClick={(e) => { 
-              e.stopPropagation(); 
-              useInstrumentsStore.getState().handleToggleInstrumentMute(instrument.id); 
+          onClick={(e) => {
+              e.stopPropagation();
+              useInstrumentsStore.getState().handleToggleInstrumentMute(instrument.id);
           }}
           title={isMuted ? "Unmute" : "Mute"}
         >

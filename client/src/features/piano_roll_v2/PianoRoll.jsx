@@ -14,7 +14,9 @@ import { Toolbar } from './components/Toolbar';
 import { VelocityLane } from './components/VelocityLane';
 import { usePianoRollStoreV2 } from './store/usePianoRollStoreV2';
 import { createWheelZoomHandler } from '../../lib/utils/zoomHandler';
+import { addPerformanceOverlay } from '../../lib/utils/performanceMonitor';
 import './styles/enhanced-timeline.css';
+import './styles/composite-optimizations.css';
 
 function PianoRoll({ instrument }) {
   const scrollContainerRef = useRef(null);
@@ -31,72 +33,51 @@ function PianoRoll({ instrument }) {
   const engine = usePianoRollEngineV2(scrollContainerRef, loopLength);
   const interactions = useNoteInteractionsV2(instrument?.id, engine);
 
+  // Add performance monitoring overlay in development
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'development' && scrollContainerRef.current) {
+      const cleanup = addPerformanceOverlay(document.body);
+      return cleanup;
+    }
+  }, []);
 
-  // Unified scroll system - sync all containers with playback optimization
+
+  // Zoom handling for wheel events (scroll sync moved to engine)
   useEffect(() => {
     const gridContainer = scrollContainerRef.current;
-    const rulerContainer = document.querySelector('.prv2-ruler-container');
-    const keyboardContainer = document.querySelector('.prv2-keyboard-container');
-    const velocityContainer = document.querySelector('.prv2-velocity-lane');
-
     if (!gridContainer) return;
 
-    let lastScrollTime = 0;
-    const throttleDelay = 16; // ~60fps max for scroll sync
-
-    const handleScroll = () => {
-      const now = Date.now();
-      if (now - lastScrollTime < throttleDelay) return; // Throttle scroll sync
-      lastScrollTime = now;
-
-      const { scrollLeft, scrollTop } = gridContainer;
-
-      // Sync horizontal scroll for ruler and velocity lane
-      if (rulerContainer) rulerContainer.scrollLeft = scrollLeft;
-      if (velocityContainer) velocityContainer.scrollLeft = scrollLeft;
-
-      // Sync vertical scroll for keyboard
-      if (keyboardContainer) keyboardContainer.scrollTop = scrollTop;
-    };
-
-    // Reverse sync: Timeline scroll affects Grid
-    const handleRulerScroll = () => {
-      const { scrollLeft } = rulerContainer;
-      if (gridContainer && gridContainer.scrollLeft !== scrollLeft) {
-        gridContainer.scrollLeft = scrollLeft;
-      }
-    };
-
-    gridContainer.addEventListener('scroll', handleScroll, { passive: true });
-
-    // Add timeline reverse sync
-    if (rulerContainer) {
-      rulerContainer.addEventListener('scroll', handleRulerScroll, { passive: true });
-    }
+    let zoomThrottle = 0;
 
     // Non-passive wheel event for zoom
     const handleWheel = (e) => {
+      // PERFORMANCE: Skip zoom during heavy interactions to avoid audio disruption
+      if (!e.ctrlKey && !e.metaKey) {
+        return; // Only zoom with Ctrl/Cmd held
+      }
+
+      // THROTTLE: Prevent rapid zoom events that could disrupt audio
+      const now = Date.now();
+      if (now - zoomThrottle < 50) { // 50ms throttle for zoom during playback
+        return;
+      }
+      zoomThrottle = now;
+
+      e.preventDefault();
+      e.stopPropagation();
+
       const newZoom = handleZoom(e, zoomX);
 
-      if (newZoom !== zoomX) {
-        // Scroll container'ın otomatik scroll yapmasını engelle
-        gridContainer.style.overflow = 'hidden';
-        setTimeout(() => {
-          gridContainer.style.overflow = 'auto';
-        }, 50);
-      }
+      // FIXED: No DOM manipulation during playback - just update state
+      // This prevents audio engine interruption
     };
 
     gridContainer.addEventListener('wheel', handleWheel, { passive: false });
 
     return () => {
-      gridContainer.removeEventListener('scroll', handleScroll);
       gridContainer.removeEventListener('wheel', handleWheel);
-      if (rulerContainer) {
-        rulerContainer.removeEventListener('scroll', handleRulerScroll);
-      }
     };
-  }, [zoomX, setZoomX]);
+  }, [handleZoom, zoomX]);
   
   if (!instrument) {
     return (

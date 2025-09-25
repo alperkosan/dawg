@@ -1,11 +1,11 @@
 // src/features/piano_roll_v2/hooks/useSmartSnap.js
 import { useMemo, useCallback } from 'react';
 import { usePianoRollStoreV2 } from '../store/usePianoRollStoreV2';
-import * as Tone from 'tone';
+import { NativeTimeUtils } from '../../../lib/utils/NativeTimeUtils';
 
 const notationToSeconds = (notation) => {
   try {
-    return Tone.Time(notation).toSeconds();
+    return NativeTimeUtils.parseTime(notation, 120); // Default 120 BPM
   } catch (error) {
     return 0.25; // Fallback: 16th note at 120 BPM
   }

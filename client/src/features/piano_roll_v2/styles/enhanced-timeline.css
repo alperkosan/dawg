@@ -13,6 +13,11 @@
   overflow: visible; /* FIXED: Allow content to extend beyond container */
   width: 100%; /* Take full width of parent container */
 
+  /* ULTRA AGGRESSIVE: CSS containment for performance isolation */
+  contain: strict;
+  will-change: transform;
+  transform: translateZ(0);
+
   /* Prevent text selection on timeline elements */
   -webkit-user-select: none;
   -moz-user-select: none;
@@ -20,48 +25,7 @@
   user-select: none;
 }
 
-/* Position display */
-.timeline-position-display {
-  position: absolute;
-  top: 4px;
-  left: 12px;
-  z-index: 10;
-  background: linear-gradient(135deg,
-    rgba(74, 158, 255, 0.9),
-    rgba(74, 158, 255, 0.7)
-  );
-  color: #ffffff;
-  padding: 3px 8px;
-  border-radius: 4px;
-  font-size: 10px;
-  font-family: 'SF Pro Text', -apple-system, BlinkMacSystemFont, system-ui, monospace;
-  font-weight: 600;
-  line-height: 1;
-  pointer-events: none;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-  backdrop-filter: blur(4px);
-}
-
-.position-hover {
-  background: linear-gradient(135deg,
-    rgba(0, 255, 255, 0.9),
-    rgba(0, 255, 255, 0.7)
-  ) !important;
-}
-
-.position-current {
-  background: linear-gradient(135deg,
-    rgba(0, 255, 0, 0.9),
-    rgba(0, 255, 0, 0.7)
-  ) !important;
-}
-
-.position-default {
-  background: linear-gradient(135deg,
-    rgba(74, 85, 104, 0.9),
-    rgba(74, 85, 104, 0.7)
-  ) !important;
-}
+/* Position display removed - BBT display moved to top toolbar */
 
 /* Main ruler area - FIXED for infinite scroll */
 .timeline-ruler-content {
@@ -69,7 +33,12 @@
   height: 100%;
   /* The width is now set dynamically via inline style from component */
   overflow: visible;
-  will-change: transform; /* Optimize for transform animations */
+
+  /* ULTRA AGGRESSIVE: Full containment isolation */
+  contain: strict;
+  will-change: transform;
+  transform: translateZ(0);
+  backface-visibility: hidden;
 }
 
 /* Bar markers */
@@ -182,27 +151,7 @@
   border-top-color: var(--playhead-color);
 }
 
-/* Hover cursor */
-.timeline-hover-cursor {
-  position: absolute;
-  top: 0;
-  width: 1px;
-  height: 100%;
-  background: rgba(0, 255, 255, 0.8);
-  z-index: 3;
-  pointer-events: none;
-  will-change: transform;
-}
-
-/* Interactive states */
-.timeline-ruler-content:hover .timeline-hover-cursor {
-  opacity: 1;
-}
-
-.timeline-ruler-content:not(:hover) .timeline-hover-cursor {
-  opacity: 0;
-  transition: opacity 0.2s ease;
-}
+/* Hover cursor removed - BBT display moved to top toolbar */
 
 /* Performance optimizations */
 .timeline-bar-marker,
@@ -221,6 +170,11 @@
   /* Remove any max-width or width constraints */
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.3) rgba(0, 0, 0, 0.1);
+
+  /* CRITICAL: Strict containment for scroll performance */
+  contain: strict;
+  will-change: scroll-position, transform;
+  transform: translateZ(0);
 }
 
 .prv2-grid-area-container::-webkit-scrollbar {

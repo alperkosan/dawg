@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useEffect } from 'react';
-import * as Tone from 'tone';
+import { NativeTimeUtils } from '../../lib/utils/NativeTimeUtils';
 
 // MIDI nota numarasını "C4" gibi bir dizeye çevirir.
 const pitchToMidi = (pitch) => {
@@ -9,10 +9,10 @@ const pitchToMidi = (pitch) => {
     return (octave + 1) * 12 + (noteNames[noteName] || 0);
 };
 
-// Tone.js duration string'ini 16'lık nota adımlarına çevirir.
+// Native duration string'ini 16'lık nota adımlarına çevirir.
 const getDurationInSteps = (duration) => {
     try {
-        return Tone.Time(duration).toSeconds() / Tone.Time('16n').toSeconds();
+        return NativeTimeUtils.parseTime(duration, 120) / NativeTimeUtils.parseTime('16n', 120);
     } catch {
         return 1; // Hata durumunda varsayılan
     }

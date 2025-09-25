@@ -1,7 +1,8 @@
 // src/features/piano_roll_v2/hooks/usePianoRollEngineV2.js
 import { useState, useMemo, useLayoutEffect, useCallback, useRef } from 'react';
-import * as Tone from 'tone';
 import { usePianoRollStoreV2, NOTES } from '../store/usePianoRollStoreV2';
+import { getRectangle, releaseRectangle } from '../../../lib/utils/objectPool';
+import { NativeTimeUtils } from '../../../lib/utils/NativeTimeUtils';
 
 const KEYBOARD_WIDTH = 80;
 const RULER_HEIGHT = 32;
@@ -105,6 +106,18 @@ export const usePianoRollEngineV2 = (containerRef, loopLength) => {
 
         scrollRef.current = { x: newScrollX, y: newScrollY };
 
+        // COMBINED: Handle scroll sync here to avoid duplicate handlers
+        const rulerContainer = document.querySelector('.prv2-ruler-container');
+        const keyboardContainer = document.querySelector('.prv2-keyboard-container');
+        const velocityContainer = document.querySelector('.prv2-velocity-lane');
+
+        // Sync horizontal scroll for ruler and velocity lane
+        if (rulerContainer) rulerContainer.scrollLeft = newScrollX;
+        if (velocityContainer) velocityContainer.scrollLeft = newScrollX;
+
+        // Sync vertical scroll for keyboard
+        if (keyboardContainer) keyboardContainer.scrollTop = newScrollY;
+
         // ULTRA AGGRESSIVE: Only update on major scroll changes for performance
         const scrollDeltaX = Math.abs(newScrollX - oldScrollX);
         const scrollDeltaY = Math.abs(newScrollY - oldScrollY);
@@ -181,9 +194,18 @@ export const usePianoRollEngineV2 = (containerRef, loopLength) => {
       getNoteRect: (note) => {
         const x = timeToX(note.time);
         const y = (TOTAL_KEYS - 1 - pitchToIndex(note.pitch)) * dimensions.keyHeight;
-        const durationInSteps = Tone.Time(note.duration).toSeconds() / Tone.Time('16n').toSeconds();
+        // Replace Tone.js with native time calculation
+        const durationInSteps = NativeTimeUtils.parseTime(note.duration, 120) / NativeTimeUtils.parseTime('16n', 120);
         const width = Math.max(4, durationInSteps * dimensions.stepWidth - 1);
-        return { x, y, width, height: dimensions.keyHeight - 1 };
+
+        // Use pooled rectangle object to reduce GC pressure
+        const rect = getRectangle(x, y, width, dimensions.keyHeight - 1);
+
+        // Return a copy since we'll immediately release the pooled object
+        const result = { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+        releaseRectangle(rect);
+
+        return result;
       },
       pitchToIndex,
       indexToPitch,

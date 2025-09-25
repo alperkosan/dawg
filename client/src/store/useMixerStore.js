@@ -5,12 +5,23 @@ import { v4 as uuidv4 } from 'uuid';
 import { AudioContextService } from '../lib/services/AudioContextService';
 import { initialMixerTracks } from '../config/initialData';
 import { pluginRegistry } from '../config/pluginConfig';
+import { usePanelsStore } from './usePanelsStore';
 
 export const useMixerStore = create((set, get) => ({
   mixerTracks: initialMixerTracks,
   activeChannelId: 'master',
   soloedChannels: new Set(),
   mutedChannels: new Set(),
+
+  // ✅ SAFETY: Rate limiting for effect operations
+  _effectOperationTimestamps: new Map(),
+  _effectOperationCooldown: 100, // 100ms cooldown between operations
+
+  // Send channels for routing audio to effects
+  sendChannels: [
+    { id: 'send1', name: 'Reverb', type: 'send', masterLevel: 0, pan: 0 },
+    { id: 'send2', name: 'Delay', type: 'send', masterLevel: 0, pan: 0 }
+  ],
 
   // Mikser arayüzünün durumunu (örn. hangi kanalın genişletildiği) tutan ayrı bir nesne.
   // Bu, ses state'i ile UI state'ini birbirinden ayırır.
@@ -43,14 +54,24 @@ export const useMixerStore = create((set, get) => ({
     });
   },
 
+  toggleChannelSends: (trackId) => {
+    set(state => {
+      const newVisible = new Set(state.mixerUIState.visibleSends);
+      newVisible.has(trackId) ? newVisible.delete(trackId) : newVisible.add(trackId);
+      return { mixerUIState: { ...state.mixerUIState, visibleSends: newVisible } };
+    });
+  },
+
   // --- SES MOTORU EYLEMLERİ ---
 
   toggleMute: (trackId) => {
     const newMutedChannels = new Set(get().mutedChannels);
     newMutedChannels.has(trackId) ? newMutedChannels.delete(trackId) : newMutedChannels.add(trackId);
     set({ mutedChannels: newMutedChannels });
-    // SES MOTORUNA KOMUT GÖNDER
-    AudioContextService.setMuteState(trackId, newMutedChannels.has(trackId));
+    // SES MOTORUNA KOMUT GÖNDER (sadece mevcut metodları çağır)
+    if (AudioContextService.setMuteState) {
+      AudioContextService.setMuteState(trackId, newMutedChannels.has(trackId));
+    }
   },
 
   toggleSolo: (trackId) => {
@@ -58,23 +79,60 @@ export const useMixerStore = create((set, get) => ({
     const newSoloedChannels = new Set(soloedChannels);
     newSoloedChannels.has(trackId) ? newSoloedChannels.delete(trackId) : newSoloedChannels.add(trackId);
     set({ soloedChannels: newSoloedChannels });
-    // SES MOTORUNA KOMUT GÖNDER
-    AudioContextService.setSoloState(newSoloedChannels);
+    // SES MOTORUNA KOMUT GÖNDER (sadece mevcut metodları çağır)
+    if (AudioContextService.setSoloState) {
+      AudioContextService.setSoloState(newSoloedChannels);
+    }
   },
 
   handleMixerParamChange: (trackId, param, value) => {
     set(state => ({
-      mixerTracks: state.mixerTracks.map(track =>
-        track.id === trackId ? { ...track, [param]: value } : track
-      )
+      mixerTracks: state.mixerTracks.map(track => {
+        if (track.id === trackId) {
+          // Handle nested parameters (e.g., 'eq.highGain')
+          if (param.includes('.')) {
+            const [parent, child] = param.split('.');
+            return {
+              ...track,
+              [parent]: {
+                ...track[parent],
+                [child]: value
+              }
+            };
+          }
+          return { ...track, [param]: value };
+        }
+        return track;
+      })
     }));
-    // SES MOTORUNA KOMUT GÖNDER
-    AudioContextService.updateMixerParam(trackId, param, value);
+    // SES MOTORUNA KOMUT GÖNDER (sadece mevcut metodları çağır)
+    if (AudioContextService.updateMixerParam) {
+      AudioContextService.updateMixerParam(trackId, param, value);
+    } else {
+      console.warn('⚠️ AudioContextService.updateMixerParam not found! Track:', trackId, param, value);
+      // Fallback: Try to access audio engine directly
+      const audioEngine = AudioContextService.getAudioEngine();
+      if (audioEngine && audioEngine.updateMixerParam) {
+        audioEngine.updateMixerParam(trackId, param, value);
+      }
+    }
   },
 
   handleMixerEffectAdd: (trackId, effectType) => {
+    // ✅ SAFETY: Rate limiting to prevent rapid-fire effect operations
+    const now = Date.now();
+    const lastOperation = get()._effectOperationTimestamps.get(trackId);
+
+    if (lastOperation && (now - lastOperation) < get()._effectOperationCooldown) {
+      console.warn('⚠️ Effect operation rate limited for track:', trackId);
+      return null;
+    }
+
     const pluginDef = pluginRegistry[effectType];
-    if (!pluginDef) return null;
+    if (!pluginDef) {
+      console.error('❌ Plugin definition not found for:', effectType);
+      return null;
+    }
 
     const newEffect = {
       id: `fx-${uuidv4()}`,
@@ -93,12 +151,21 @@ export const useMixerStore = create((set, get) => ({
         }
         return track;
       });
-      return { mixerTracks: newTracks };
+      // ✅ SAFETY: Update rate limiting timestamp
+      const newTimestamps = new Map(state._effectOperationTimestamps);
+      newTimestamps.set(trackId, now);
+
+      return {
+        mixerTracks: newTracks,
+        _effectOperationTimestamps: newTimestamps
+      };
     });
 
     // SES MOTORUNA KOMUT GÖNDER: Sinyal zincirini yeniden kur.
-    if (newTrackState) {
-        AudioContextService.rebuildSignalChain(trackId, newTrackState);
+    if (newTrackState && AudioContextService.rebuildSignalChain) {
+        AudioContextService.rebuildSignalChain(trackId, newTrackState).catch(error => {
+          console.error('❌ Failed to rebuild signal chain:', error);
+        });
     }
     return newEffect;
   },
@@ -115,9 +182,21 @@ export const useMixerStore = create((set, get) => ({
         return track;
       })
     }));
+
     // SES MOTORUNA KOMUT GÖNDER
-    if (newTrackState) {
-        AudioContextService.rebuildSignalChain(trackId, newTrackState);
+    if (newTrackState && AudioContextService.rebuildSignalChain) {
+        AudioContextService.rebuildSignalChain(trackId, newTrackState).catch(error => {
+          console.error('❌ Failed to rebuild signal chain:', error);
+        });
+    }
+
+    // ✅ FIX: Close related plugin panel when effect is removed
+    const panelId = `effect-${effectId}`;
+    const panelsState = usePanelsStore.getState();
+
+    if (panelsState.panels[panelId]?.isOpen) {
+      console.log('🔌 Closing plugin panel for removed effect:', panelId);
+      panelsState.togglePanel(panelId);
     }
   },
 
@@ -157,9 +236,9 @@ export const useMixerStore = create((set, get) => ({
     
     const updatedTrack = get().mixerTracks.find(t => t.id === trackId);
 
-    if (needsRebuild) {
-        AudioContextService.rebuildSignalChain(trackId, updatedTrack); 
-    } else {
+    if (needsRebuild && AudioContextService.rebuildSignalChain) {
+        AudioContextService.rebuildSignalChain(trackId, updatedTrack);
+    } else if (AudioContextService.updateEffectParam) {
         AudioContextService.updateEffectParam(trackId, effectId, paramOrSettings, value);
     }
   },
@@ -181,8 +260,10 @@ export const useMixerStore = create((set, get) => ({
     });
     
     // SES MOTORUNA KOMUT GÖNDER
-    if (newTrackState) {
-        AudioContextService.rebuildSignalChain(trackId, newTrackState);
+    if (newTrackState && AudioContextService.rebuildSignalChain) {
+        AudioContextService.rebuildSignalChain(trackId, newTrackState).catch(error => {
+          console.error('❌ Failed to rebuild signal chain:', error);
+        });
     }
   },
 
@@ -192,5 +273,73 @@ export const useMixerStore = create((set, get) => ({
         track.id === trackId ? { ...track, name: newName } : track
       )
     }));
+  },
+
+  // --- SEND CHANNEL ACTIONS ---
+
+  addSendChannel: (sendChannel) => {
+    const newSend = {
+      id: uuidv4(),
+      type: 'send',
+      masterLevel: 0,
+      pan: 0,
+      ...sendChannel
+    };
+    set(state => ({
+      sendChannels: [...state.sendChannels, newSend]
+    }));
+    return newSend.id;
+  },
+
+  removeSendChannel: (sendId) => {
+    set(state => {
+      // Remove send from sendChannels array
+      const newSendChannels = state.sendChannels.filter(send => send.id !== sendId);
+
+      // Remove send data from all tracks
+      const newMixerTracks = state.mixerTracks.map(track => {
+        const newSends = { ...track.sends };
+        delete newSends[sendId];
+        delete newSends[`${sendId}_muted`];
+        return { ...track, sends: newSends };
+      });
+
+      return {
+        sendChannels: newSendChannels,
+        mixerTracks: newMixerTracks
+      };
+    });
+    // Notify audio engine
+    if (AudioContextService.removeSendChannel) {
+      AudioContextService.removeSendChannel(sendId);
+    }
+  },
+
+  updateSendChannel: (sendId, updates) => {
+    set(state => ({
+      sendChannels: state.sendChannels.map(send =>
+        send.id === sendId ? { ...send, ...updates } : send
+      )
+    }));
+    // Notify audio engine
+    if (AudioContextService.updateSendChannel) {
+      AudioContextService.updateSendChannel(sendId, updates);
+    }
+  },
+
+  handleSendChange: (trackId, sendParam, value) => {
+    set(state => ({
+      mixerTracks: state.mixerTracks.map(track => {
+        if (track.id === trackId) {
+          const newSends = { ...track.sends, [sendParam]: value };
+          return { ...track, sends: newSends };
+        }
+        return track;
+      })
+    }));
+    // Notify audio engine
+    if (AudioContextService.updateSendLevel) {
+      AudioContextService.updateSendLevel(trackId, sendParam, value);
+    }
   },
 }));

@@ -1,0 +1,173 @@
+/* composite-optimizations.css */
+/* ULTRA AGGRESSIVE: Composite-only animations and transforms for Piano Roll */
+
+/* ==========================================================================
+   COMPOSITE LAYER OPTIMIZATION - ALL TRANSFORMS USE GPU
+   ========================================================================== */
+
+/* Force all critical Piano Roll elements onto composite layers */
+.prv2-container *[style*="transform"],
+.prv2-container *[class*="transform"],
+.prv2-note,
+.prv2-playhead,
+.timeline-bar-marker,
+.timeline-beat-marker,
+.timeline-hover-cursor,
+.prv2-velocity-bar,
+.prv2-keyboard__key--playing {
+  /* CRITICAL: Force composite layer creation */
+  transform: translateZ(0);
+  will-change: transform;
+  backface-visibility: hidden;
+  /* Prevent subpixel rendering issues */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ==========================================================================
+   COMPOSITE-ONLY TRANSFORMS - NO LAYOUT/PAINT TRIGGERS
+   ========================================================================== */
+
+/* Ensure playhead only uses composite properties */
+.prv2-playhead {
+  /* NEVER use left/top - always use transform */
+  left: 0 !important;
+  top: 0 !important;
+  /* All movement must be transform-based */
+  transform: translate3d(0, 0, 0);
+}
+
+/* Notes should only animate composite properties */
+.prv2-note {
+  /* Prevent layout thrashing on hover/selection */
+  transform: translate3d(0, 0, 0) scale(1);
+}
+
+.prv2-note--selected {
+  /* Use transform instead of changing borders/shadows for performance */
+  transform: translate3d(0, 0, 0) scale(1.02) !important;
+}
+
+.prv2-note:hover:not(.prv2-note--selected):not(.prv2-note--ghost) {
+  /* Use transform instead of changing position for hover */
+  transform: translate3d(0, -1px, 0) scale(1);
+}
+
+/* ==========================================================================
+   SCROLL OPTIMIZATION - DISABLE EXPENSIVE PROPERTIES DURING SCROLL
+   ========================================================================== */
+
+/* Disable all non-essential animations during scroll */
+.prv2-container--scrolling .prv2-note,
+.prv2-container--scrolling .prv2-keyboard__key {
+  transition: none !important;
+  animation: none !important;
+  /* Keep only essential composite properties active */
+  will-change: transform;
+}
+
+/* ==========================================================================
+   TIMELINE MARKER OPTIMIZATION - VIEWPORT CULLING
+   ========================================================================== */
+
+/* Timeline markers that are outside viewport should be hidden immediately */
+.timeline-bar-marker[data-visible="false"],
+.timeline-beat-marker[data-visible="false"] {
+  /* Use visibility instead of display for better performance */
+  visibility: hidden;
+  /* Don't trigger repaints for hidden markers */
+  will-change: auto;
+  contain: strict;
+}
+
+/* ==========================================================================
+   VELOCITY LANE COMPOSITE OPTIMIZATION
+   ========================================================================== */
+
+.prv2-velocity-bar__bar {
+  /* Ensure height changes don't trigger layout */
+  transform: scaleY(1);
+  transform-origin: bottom;
+  /* Use transform for height animations instead of height property */
+  transition: transform 100ms ease, background-color 100ms ease;
+}
+
+.prv2-velocity-bar__bar[style*="height"] {
+  /* Override inline height styles with transform when possible */
+  height: 100% !important;
+  /* Use scaleY for height changes */
+  transform: scaleY(var(--velocity-scale, 1));
+}
+
+/* ==========================================================================
+   KEYBOARD COMPOSITE OPTIMIZATION
+   ========================================================================== */
+
+.prv2-keyboard__key--playing {
+  /* Use transform for playing animation instead of changing position */
+  transform: translateX(2px) translateZ(0);
+}
+
+/* ==========================================================================
+   GRID OPTIMIZATION - REDUCE PAINT AREAS
+   ========================================================================== */
+
+/* Create separate composite layers for grid lines */
+.prv2-grid-area-container::before,
+.prv2-grid-area-container::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  will-change: transform;
+  contain: strict;
+}
+
+/* ==========================================================================
+   MEMORY OPTIMIZATION - CLEANUP WILL-CHANGE WHEN NOT NEEDED
+   ========================================================================== */
+
+/* Remove will-change from static elements */
+.prv2-toolbar,
+.prv2-toolbar *,
+.prv2-corner,
+.prv2-placeholder * {
+  will-change: auto;
+}
+
+/* ==========================================================================
+   CRITICAL: DISABLE EXPENSIVE CSS DURING PLAYBACK
+   ========================================================================== */
+
+/* When playback is active, disable all non-essential visual effects */
+.prv2-container[data-playback-active="true"] .prv2-note:not(.prv2-note--selected) {
+  box-shadow: none !important;
+  border-radius: 2px !important; /* Reduce complexity */
+}
+
+.prv2-container[data-playback-active="true"] .prv2-keyboard__key {
+  box-shadow: none !important;
+  background: var(--simple-bg, #f7fafc) !important;
+}
+
+/* Timeline markers are now intelligently hidden in JS based on count, not playback state */
+
+/* ==========================================================================
+   PERFORMANCE MONITORING HELPERS
+   ========================================================================== */
+
+/* Add visual indicators for composite layers in development */
+.prv2-container[data-debug-composites="true"] *[style*="transform"] {
+  outline: 1px solid rgba(255, 0, 0, 0.3) !important;
+}
+
+.prv2-container[data-debug-composites="true"] .prv2-note {
+  outline: 1px solid rgba(0, 255, 0, 0.3) !important;
+}
+
+.prv2-container[data-debug-composites="true"] .prv2-playhead {
+  outline: 2px solid rgba(255, 255, 0, 0.8) !important;
+}

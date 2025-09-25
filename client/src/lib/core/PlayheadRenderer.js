@@ -22,8 +22,9 @@ export class PlayheadRenderer {
     _setupElement() {
         if (!this.element) return;
 
-        // Optimize for GPU acceleration and smooth transforms
+        // ULTRA AGGRESSIVE: Composite-only setup
         const style = this.element.style;
+        style.contain = 'strict';
         style.willChange = 'transform';
         style.transform = 'translate3d(0, 0, 0)'; // Force GPU layer
         style.backfaceVisibility = 'hidden';
@@ -33,6 +34,9 @@ export class PlayheadRenderer {
         style.transition = 'none';
         style.transitionProperty = 'none';
         style.transitionDuration = '0s';
+
+        // Prevent any paint/layout triggers
+        style.isolation = 'isolate';
     }
 
     /**
