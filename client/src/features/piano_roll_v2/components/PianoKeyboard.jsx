@@ -3,25 +3,24 @@ import React, { useMemo, useState, useCallback, useRef, useEffect } from 'react'
 import { NOTES } from '../store/usePianoRollStoreV2';
 import { AudioContextService } from '../../../lib/services/AudioContextService';
 
-export const PianoKeyboard = React.memo(({ engine, instrumentId }) => {
+export const PianoKeyboard = React.memo(({ engine, instrumentId, contentRef }) => {
   const [playingNotes, setPlayingNotes] = useState(new Set());
   const playingNotesRef = useRef(new Set());
-  const [scrollY, setScrollY] = useState(0);
-
+  
+  // --- YENİ: Klavye tuşlarının hesaplaması artık sadece motorun
+  // totalKeys değeri değiştiğinde yapılıyor. ---
   const keys = useMemo(() => {
-    const keyData = [];
-    for (let i = 0; i < engine.totalKeys; i++) {
+    return Array.from({ length: engine.totalKeys }, (_, i) => {
       const keyIndex = engine.totalKeys - 1 - i;
       const noteIndex = keyIndex % 12;
       const octave = Math.floor(keyIndex / 12);
       const noteName = NOTES[noteIndex];
-      keyData.push({
+      return {
         pitch: `${noteName}${octave}`,
         isBlack: noteName.includes('#'),
         isC: noteName === 'C',
-      });
-    }
-    return keyData;
+      };
+    });
   }, [engine.totalKeys]);
 
   const handleMouseDown = useCallback((pitch) => {
@@ -44,60 +43,32 @@ export const PianoKeyboard = React.memo(({ engine, instrumentId }) => {
     }
   }, [instrumentId]);
 
-  // Stop all notes when component unmounts or instrumentId changes
-  useEffect(() => {
-    return () => {
-      // Stop all playing notes when cleanup
-      playingNotesRef.current.forEach(pitch => {
-        AudioContextService.auditionNoteOff(instrumentId, pitch);
-      });
-      playingNotesRef.current.clear();
-    };
-  }, [instrumentId]);
-
-  // Global mouseup listener to prevent stuck notes
   useEffect(() => {
     const handleGlobalMouseUp = () => {
-      // Stop all currently playing notes
       playingNotesRef.current.forEach(pitch => {
         AudioContextService.auditionNoteOff(instrumentId, pitch);
       });
       playingNotesRef.current.clear();
       setPlayingNotes(new Set());
     };
-
     document.addEventListener('mouseup', handleGlobalMouseUp);
     return () => document.removeEventListener('mouseup', handleGlobalMouseUp);
   }, [instrumentId]);
 
-  // Direct scroll tracking - fuck the engine complexity
-  useEffect(() => {
-    const container = document.querySelector('.prv2-grid-area-container');
-    if (!container) return;
-
-    const handleScroll = () => {
-      setScrollY(container.scrollTop);
-    };
-
-    container.addEventListener('scroll', handleScroll, { passive: true });
-    return () => container.removeEventListener('scroll', handleScroll);
-  }, []);
-
   return (
+    // --- YENİ: İçerik artık CSS transform ile hareket ettiriliyor ---
     <div
+      ref={contentRef}
       className="prv2-keyboard__content"
       style={{
         height: engine.gridHeight,
-        // DIRECT: Real-time scroll tracking without engine bullshit
-        transform: `translate3d(0, -${scrollY}px, 0)`,
-        willChange: 'transform'
       }}
     >
-      {keys.map((key) => (
+      {keys.map((key, i) => (
         <div
           key={key.pitch}
           className={`prv2-keyboard__key ${key.isBlack ? 'prv2-keyboard__key--black' : 'prv2-keyboard__key--white'} ${playingNotes.has(key.pitch) ? 'prv2-keyboard__key--playing' : ''}`}
-          style={{ height: engine.keyHeight }}
+          style={{ height: engine.keyHeight, top: i * engine.keyHeight, position: 'absolute', width: '100%' }}
           onMouseDown={() => handleMouseDown(key.pitch)}
           onMouseUp={() => handleMouseUp(key.pitch)}
           onMouseLeave={() => playingNotes.has(key.pitch) && handleMouseUp(key.pitch)}

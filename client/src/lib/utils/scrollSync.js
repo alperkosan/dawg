@@ -1,80 +1,96 @@
-// lib/utils/scrollSync.js
-// Common scroll synchronization utilities
+/**
+ * @file scrollSync.js
+ * @description Farklı DOM elemanları arasında scroll pozisyonunu senkronize etmek
+ * ve mouse tekerleği olaylarını yönlendirmek için yardımcı fonksiyonlar.
+ * Bu, Piano Roll gibi karmaşık arayüzlerde performansı yüksek tutmak için kritiktir.
+ */
 
 /**
- * Create a scroll synchronization handler
- * @param {React.RefObject} sourceRef - Main scroll container reference
- * @param {Array<{ref: React.RefObject, axis: 'x'|'y'|'both'}>} targets - Target containers to sync
- * @returns {function} Cleanup function
+ * Bir ana kaydırma alanının pozisyonunu, bir veya daha fazla hedef alana senkronize eder.
+ * @param {React.RefObject} sourceRef - Ana kaydırılabilir alanın referansı.
+ * @param {Array<{ref: React.RefObject, axis: 'x'|'y'|'both'}>} targets - Pozisyonları senkronize edilecek hedef alanlar.
+ * @returns {function} Olay dinleyicilerini temizleyen bir cleanup fonksiyonu.
  */
-export const createScrollSynchronizer = (sourceRef, targets) => {
+export const createScrollSynchronizer = (sourceRef, targets, engine, forceUpdate) => {
+  let isSyncing = false;
+
   const handleScroll = () => {
-    if (!sourceRef.current) return;
+    if (!sourceRef.current || isSyncing) return;
+    isSyncing = true;
 
-    const { scrollLeft, scrollTop } = sourceRef.current;
+    requestAnimationFrame(() => {
+      const { scrollLeft, scrollTop } = sourceRef.current;
 
-    targets.forEach(({ ref, axis = 'both' }) => {
-      if (!ref.current) return;
-
-      if (axis === 'x' || axis === 'both') {
-        ref.current.scrollLeft = scrollLeft;
+      // Engine'in scroll değerlerini güncelle
+      if (engine && engine.scroll) {
+        engine.scroll.x = scrollLeft;
+        engine.scroll.y = scrollTop;
       }
-      if (axis === 'y' || axis === 'both') {
-        ref.current.scrollTop = scrollTop;
+
+      // React bileşenlerini yeniden render etmek için forceUpdate çağır
+      if (forceUpdate) {
+        forceUpdate();
       }
+
+      targets.forEach(({ ref, axis = 'both' }) => {
+        if (ref.current) {
+          if ((axis === 'x' || axis === 'both') && ref.current.scrollLeft !== scrollLeft) {
+            // CSS transform kullanarak daha performanslı güncelleme
+            ref.current.style.transform = `translateX(-${scrollLeft}px)`;
+          }
+          if ((axis === 'y' || axis === 'both') && ref.current.scrollTop !== scrollTop) {
+             ref.current.style.transform = `translateY(-${scrollTop}px)`;
+          }
+        }
+      });
+      isSyncing = false;
     });
   };
 
-  // Add event listener
-  if (sourceRef.current) {
-    sourceRef.current.addEventListener('scroll', handleScroll, { passive: true });
+  const sourceElement = sourceRef.current;
+  if (sourceElement) {
+    sourceElement.addEventListener('scroll', handleScroll, { passive: true });
   }
 
-  // Return cleanup function
+  // Geriye, olay dinleyicisini kaldıran bir fonksiyon döndürürüz.
   return () => {
-    if (sourceRef.current) {
-      sourceRef.current.removeEventListener('scroll', handleScroll);
+    if (sourceElement) {
+      sourceElement.removeEventListener('scroll', handleScroll);
     }
   };
 };
 
 /**
- * Create a wheel event forwarder for synchronized scrolling
- * @param {React.RefObject} sourceRef - Source container
- * @param {React.RefObject} targetRef - Target container that receives wheel events
- * @param {string} axis - Which axis to forward ('x'|'y'|'both')
- * @returns {function} Cleanup function
+ * Bir eleman üzerindeki mouse tekerleği olaylarını başka bir elemana yönlendirir.
+ * Örn: Enstrüman listesi üzerinde tekerleği çevirince ana grid'i kaydırmak için.
+ * @param {React.RefObject} sourceRef - Olayların yakalanacağı kaynak.
+ * @param {React.RefObject} targetRef - Olayların yönlendirileceği hedef.
+ * @param {'x' | 'y'} axis - Hangi eksendeki kaydırmanın yönlendirileceği.
+ * @returns {function} Cleanup fonksiyonu.
  */
 export const createWheelForwarder = (sourceRef, targetRef, axis = 'y') => {
   const handleWheel = (e) => {
-    if (!targetRef.current) return;
-
-    // Only forward vertical wheel events by default (for instrument list -> main grid)
-    if (axis === 'y' && Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+    if (targetRef.current) {
+      // Varsayılan sayfa kaydırmasını engelle
       e.preventDefault();
-      targetRef.current.scrollTop += e.deltaY;
-    } else if (axis === 'x' && Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
-      e.preventDefault();
-      targetRef.current.scrollLeft += e.deltaX;
-    } else if (axis === 'both') {
-      e.preventDefault();
-      targetRef.current.scrollTop += e.deltaY;
-      targetRef.current.scrollLeft += e.deltaX;
+      
+      if (axis === 'y') {
+        targetRef.current.scrollTop += e.deltaY;
+      }
+      if (axis === 'x') {
+        targetRef.current.scrollLeft += e.deltaX;
+      }
     }
   };
-
-  // Add event listener
-  if (sourceRef.current) {
-    sourceRef.current.addEventListener('wheel', handleWheel, { passive: false });
+  
+  const sourceElement = sourceRef.current;
+  if (sourceElement) {
+    sourceElement.addEventListener('wheel', handleWheel, { passive: false });
   }
 
-  // Return cleanup function
   return () => {
-    if (sourceRef.current) {
-      sourceRef.current.removeEventListener('wheel', handleWheel);
+    if (sourceElement) {
+      sourceElement.removeEventListener('wheel', handleWheel);
     }
   };
 };
-
-// Note: useScrollSync hook would require React import
-// For now, use createScrollSynchronizer and createWheelForwarder directly in components
