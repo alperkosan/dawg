@@ -40,16 +40,27 @@ function PianoRoll({ instrument }) {
   // --- YENİ: Scroll Senkronizasyon Etkisi ---
   useEffect(() => {
     if (!scrollContainerRef.current) return;
-    
+
     // Hedefleri tanımla: ana grid'in scroll'u, cetveli ve klavyeyi kontrol edecek.
     const syncTargets = [
       { ref: rulerContentRef, axis: 'x' },
       { ref: keyboardContentRef, axis: 'y' }
     ];
 
+    // Scroll pozisyonu değiştiğinde çağrılacak callback
+    const handleScrollChange = (scrollLeft, scrollTop) => {
+      // Engine'in scroll değerlerini güncelle
+      if (engine && engine.scroll) {
+        engine.scroll.x = scrollLeft;
+        engine.scroll.y = scrollTop;
+      }
+      // Re-render tetikle
+      forceUpdate();
+    };
+
     // Senkronizasyonu başlat ve cleanup fonksiyonunu al.
-    const cleanup = createScrollSynchronizer(scrollContainerRef, syncTargets, engine, forceUpdate);
-    
+    const cleanup = createScrollSynchronizer(scrollContainerRef, syncTargets, handleScrollChange);
+
     // Component unmount olduğunda dinleyicileri kaldır.
     return cleanup;
   }, [engine, forceUpdate]); // Engine değiştiğinde yeniden çalıştır

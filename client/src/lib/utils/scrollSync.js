@@ -11,7 +11,7 @@
  * @param {Array<{ref: React.RefObject, axis: 'x'|'y'|'both'}>} targets - Pozisyonları senkronize edilecek hedef alanlar.
  * @returns {function} Olay dinleyicilerini temizleyen bir cleanup fonksiyonu.
  */
-export const createScrollSynchronizer = (sourceRef, targets, engine, forceUpdate) => {
+export const createScrollSynchronizer = (sourceRef, targets, onScroll) => {
   let isSyncing = false;
 
   const handleScroll = () => {
@@ -21,15 +21,9 @@ export const createScrollSynchronizer = (sourceRef, targets, engine, forceUpdate
     requestAnimationFrame(() => {
       const { scrollLeft, scrollTop } = sourceRef.current;
 
-      // Engine'in scroll değerlerini güncelle
-      if (engine && engine.scroll) {
-        engine.scroll.x = scrollLeft;
-        engine.scroll.y = scrollTop;
-      }
-
-      // React bileşenlerini yeniden render etmek için forceUpdate çağır
-      if (forceUpdate) {
-        forceUpdate();
+      // Callback ile scroll pozisyonunu bildir
+      if (onScroll) {
+        onScroll(scrollLeft, scrollTop);
       }
 
       targets.forEach(({ ref, axis = 'both' }) => {
