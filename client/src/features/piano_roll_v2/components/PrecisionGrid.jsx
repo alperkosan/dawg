@@ -18,77 +18,99 @@ export const PrecisionGrid = ({
   const zoomX = usePianoRollStoreV2(state => state.zoomX);
 
 
-  // Optimized viewport calculation - only render visible area
+  // ULTRA OPTIMIZED: Virtual viewport calculation with offset support
   const viewportInfo = useMemo(() => {
-    const { scroll } = engine || { scroll: { x: 0, y: 0 } };
+    // CRITICAL: Early return if engine is not ready
+    if (!engine || !engine.scroll || !engine.size) {
+      return {
+        startX: 0, endX: 0, startY: 0, endY: 0,
+        renderStartX: 0, renderEndX: 0,
+        stepWidth: 40, keyHeight: 20,
+        virtualOffsetX: 0, virtualScrollX: 0
+      };
+    }
+
+    const { scroll } = engine;
     const stepWidth = engine?.dimensions?.stepWidth || engine?.stepWidth || 40;
     const keyHeight = engine?.dimensions?.keyHeight || engine?.keyHeight || 20;
+    const virtualOffsetX = engine?.virtualOffsetX || 0;
     const safeWidth = width || 0;
     const safeHeight = height || 0;
 
-    // Minimal buffer to avoid pop-in, but keep it small for performance
-    const bufferX = stepWidth * 2; // Only 2 steps buffer
-    const bufferY = keyHeight * 2; // Only 2 keys buffer
+    // Smart buffer based on zoom level and step size
+    const bufferX = Math.max(stepWidth * 2, safeWidth * 0.1); // Adaptive buffer
+    const bufferY = Math.max(keyHeight * 2, safeHeight * 0.1);
+
+    // Virtual scroll position with offset compensation
+    const virtualScrollX = (scroll?.x || 0) + virtualOffsetX;
 
     return {
-      // Horizontal viewport (time)
-      startX: (scroll?.x || 0) - bufferX,
-      endX: (scroll?.x || 0) + safeWidth + bufferX,
-      // Vertical viewport (pitch)
+      // Virtual horizontal viewport (absolute time coordinates)
+      startX: virtualScrollX - bufferX,
+      endX: virtualScrollX + safeWidth + bufferX,
+      // Vertical viewport (pitch) - unchanged
       startY: (scroll?.y || 0) - bufferY,
       endY: (scroll?.y || 0) + safeHeight + bufferY,
+      // Grid-relative coordinates for rendering
+      renderStartX: -bufferX,
+      renderEndX: safeWidth + bufferX,
       stepWidth,
-      keyHeight
+      keyHeight,
+      virtualOffsetX,
+      virtualScrollX
     };
   }, [
-    Math.floor((engine?.scroll?.x || 0) / 50), // Less aggressive throttling
-    Math.floor((engine?.scroll?.y || 0) / 50),
-    engine?.dimensions?.stepWidth,
+    Math.floor(((engine?.scroll?.x || 0) + (engine?.virtualOffsetX || 0)) / (engine?.stepWidth * 4 || 160)), // 4-step precision
+    Math.floor((engine?.scroll?.y || 0) / 80), // 4-key precision
     engine?.stepWidth,
-    engine?.dimensions?.keyHeight,
     engine?.keyHeight,
+    engine?.virtualOffsetX,
     width,
     height
   ]);
 
-  // Generate only visible vertical grid lines (time) - FIXED: Use absolute positioning like timeline
+  // HYPER OPTIMIZED: Virtual coordinate grid lines
   const verticalLines = useMemo(() => {
-    const { startX, endX, stepWidth } = viewportInfo;
+    const { startX, endX, stepWidth, renderStartX, renderEndX } = viewportInfo;
     const lines = [];
 
-    // Calculate which steps are visible
+    // Calculate which steps are visible in absolute coordinates
     const startStep = Math.floor(startX / stepWidth);
     const endStep = Math.ceil(endX / stepWidth);
 
     for (let step = startStep; step <= endStep; step++) {
-      const x = step * stepWidth;
+      const absoluteX = step * stepWidth;
 
-      // Only add if actually in viewport
-      if (x >= startX && x <= endX) {
-        // Determine line type based on musical divisions - more visible
+      // Convert to grid-relative coordinate
+      const renderX = absoluteX - viewportInfo.virtualScrollX;
+
+      // Only render if within visible bounds
+      if (renderX >= renderStartX && renderX <= renderEndX) {
+        // Determine line type based on musical divisions
         let type = 'sixteenths';
-        let opacity = 0.4; // Increased from 0.2
+        let opacity = 0.4;
         let strokeWidth = 0.5;
 
         if (step % 64 === 0) { // Every 4 bars
           type = 'bars';
-          opacity = 1.0; // Increased from 0.8
-          strokeWidth = 2.5; // Increased from 2
+          opacity = 1.0;
+          strokeWidth = 2.5;
         } else if (step % 16 === 0) { // Every bar
           type = 'bars';
-          opacity = 0.8; // Increased from 0.6
-          strokeWidth = 2; // Increased from 1.5
+          opacity = 0.8;
+          strokeWidth = 2;
         } else if (step % 4 === 0) { // Every beat
           type = 'beats';
-          opacity = 0.6; // Increased from 0.4
-          strokeWidth = 1.2; // Increased from 1
+          opacity = 0.6;
+          strokeWidth = 1.2;
         }
 
         lines.push({
-          x: x - startX, // Viewport-relative positioning for SVG optimization
+          x: renderX, // Grid-relative coordinate for efficient rendering
           type,
           opacity,
-          strokeWidth
+          strokeWidth,
+          step // For debugging/optimization
         });
       }
     }
@@ -224,14 +246,14 @@ export const PrecisionGrid = ({
         opacity="0.3"
       />
 
-      {/* Grid container with proper positioning - SYNCHRONIZED */}
-      <g transform={`translate(${viewportInfo.startX}, ${viewportInfo.startY})`}>
-        {/* Optimized Horizontal Lines (Pitch) */}
+      {/* ULTRA PERFORMANT: No transforms - direct coordinate rendering */}
+      <g>
+        {/* Optimized Horizontal Lines (Pitch) - Y offset handled in line calculation */}
         <g className="horizontal-grid-lines">
           {renderHorizontalLines()}
         </g>
 
-        {/* Optimized Vertical Lines (Time) */}
+        {/* Optimized Vertical Lines (Time) - X offset handled in line calculation */}
         <g className="vertical-grid-lines">
           {renderVerticalLines()}
         </g>

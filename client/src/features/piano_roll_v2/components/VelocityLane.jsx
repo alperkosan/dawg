@@ -2,6 +2,10 @@
 import React, { memo, useCallback, forwardRef } from 'react';
 
 const VelocityBar = memo(({ note, isSelected, engine, height, onVelocityChange, onNoteSelect }) => {
+  // CRITICAL: Early return if essential props are missing
+  if (!note || !engine || !engine.getNoteRect) {
+    return null;
+  }
   const handleMouseDown = useCallback((e) => {
     e.stopPropagation();
     
@@ -35,12 +39,17 @@ const VelocityBar = memo(({ note, isSelected, engine, height, onVelocityChange, 
   const noteRect = engine.getNoteRect(note);
   const barClasses = `prv2-velocity-bar__bar ${isSelected ? 'prv2-velocity-bar__bar--selected' : ''}`;
 
+  // CRITICAL FIX: Don't render if noteRect is null (outside visible window)
+  if (!noteRect) {
+    return null;
+  }
+
   return (
     <div
       className="prv2-velocity-bar"
       style={{
         transform: `translateX(${noteRect.x}px)`,
-        width: engine.stepWidth,
+        width: engine.stepWidth || 40,
       }}
       onMouseDown={handleMouseDown}
       title={`Velocity: ${Math.round(note.velocity * 127)}`}
@@ -52,15 +61,28 @@ const VelocityBar = memo(({ note, isSelected, engine, height, onVelocityChange, 
 
 // === GÜNCELLEME: Bileşeni forwardRef ile sarmalıyoruz ===
 export const VelocityLane = memo(forwardRef(({ notes, selectedNotes, engine, height, onVelocityChange, onNoteSelect }, ref) => {
-  if (height <= 20) return null;
+  // CRITICAL: Early return if essential props are missing
+  if (!notes || !engine || !engine.gridWidth || height <= 20) {
+    return null;
+  }
 
   return (
-    <div className="prv2-velocity-lane-content" style={{ height, width: engine.gridWidth }}>
+    <div
+      className="prv2-velocity-lane-content"
+      style={{
+        height,
+        width: engine.gridWidth || 1600,
+        position: 'relative',
+        transform: `translate3d(-${engine.virtualOffsetX || 0}px, 0, 0)`,
+        willChange: 'transform',
+        contain: 'layout style paint'
+      }}
+    >
       {notes.map(note => (
         <VelocityBar
           key={note.id}
           note={note}
-          isSelected={selectedNotes.has(note.id)}
+          isSelected={selectedNotes?.has?.(note.id) || false}
           engine={engine}
           height={height}
           onVelocityChange={onVelocityChange}

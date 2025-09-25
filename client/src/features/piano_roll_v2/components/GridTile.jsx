@@ -1,8 +1,15 @@
 // src/features/piano_roll_v2/components/GridTile.jsx
 import React, { useRef, useEffect, memo } from 'react';
+// Store'dan LOD seviyelerini ve hook'u import ediyoruz
+import { usePianoRollStoreV2, LOD_LEVELS } from '../store/usePianoRollStoreV2';
 
-// Bu çizim fonksiyonu artık en ince ayrıntıyı bile hesaba katıyor.
-const drawTile = (ctx, engine, tileX, tileY, tileWidth, tileHeight) => {
+/**
+ * Grid'in bir parçasını (tile) çizen ve LOD'a göre detay seviyesini ayarlayan bileşen.
+ * @param {object} engine - Piano roll motoru verileri.
+ * @param {number} lod - Mevcut detay seviyesi (Level of Detail).
+ */
+const drawTile = (ctx, engine, tileX, tileY, tileWidth, tileHeight, lod) => {
+    // Tema renklerini CSS değişkenlerinden dinamik olarak alır.
     const themeColors = {
         background: getComputedStyle(document.documentElement).getPropertyValue('--color-surface-1').trim(),
         blackKeyRow: getComputedStyle(document.documentElement).getPropertyValue('--color-background').trim(),
@@ -15,76 +22,71 @@ const drawTile = (ctx, engine, tileX, tileY, tileWidth, tileHeight) => {
 
     ctx.fillStyle = themeColors.background;
     ctx.fillRect(0, 0, tileWidth, tileHeight);
-    ctx.translate(-tileX, -tileY);
-    
-    // Siyah tuş satırları
-    ctx.fillStyle = themeColors.blackKeyRow;
-    const blackKeyIndexes = new Set([1, 3, 6, 8, 10]);
-    for (let i = 0; i < totalKeys; i++) {
-        const keyIndex = (totalKeys - 1 - i) % 12;
-        if (blackKeyIndexes.has(keyIndex)) {
-            const y = i * keyHeight;
-            if (y + keyHeight >= tileY && y <= tileY + tileHeight) {
-                ctx.fillRect(tileX, y, tileWidth, keyHeight);
+
+    // En uzak zoom seviyesinde görsel karmaşayı azaltmak için siyah tuş sıralarını gizle.
+    if (lod !== LOD_LEVELS.OVERVIEW) {
+        ctx.translate(-tileX, -tileY);
+        ctx.fillStyle = themeColors.blackKeyRow;
+        const blackKeyIndexes = new Set([1, 3, 6, 8, 10]);
+        for (let i = 0; i < totalKeys; i++) {
+            const keyIndex = (totalKeys - 1 - i) % 12;
+            if (blackKeyIndexes.has(keyIndex)) {
+                const y = i * keyHeight;
+                if (y + keyHeight >= tileY && y <= tileY + tileHeight) {
+                    ctx.fillRect(tileX, y, tileWidth, keyHeight);
+                }
             }
         }
+        ctx.translate(tileX, tileY);
     }
-
-    // === SNAP UYUMLULUĞU İÇİN NİHAİ ÇİZİM MANTIĞI ===
+    
+    ctx.translate(-tileX, -tileY);
+    
+    // Dikey çizgiler (Zaman) LOD'a göre çizilir
     const barStep = 16;
     const beatStep = 4;
-    const sixteenthStep = 1;
-    const thirtySecondStep = 0.5; // En küçük birimimiz
-
-    // Döngüyü en küçük birim olan 1/32'lik adımlarla (0.5) çalıştır
-    for (let i = 0; i <= gridWidth / stepWidth; i += thirtySecondStep) {
+    
+    for (let i = 0; i <= gridWidth / stepWidth; i += 0.5) { // 1/32'lik adımlar için 0.5
         const x = i * stepWidth;
 
-        // Sadece bu karonun alanına giren çizgilerle ilgilen
         if (x >= tileX && x < tileX + tileWidth) {
-            ctx.beginPath();
+            let shouldDraw = false;
             
-            // Çizgi tipini ve kalınlığını belirle (en kalından en inceye doğru)
             if (i % barStep === 0) {
                 ctx.strokeStyle = themeColors.gridBar;
                 ctx.lineWidth = 1;
-            } else if (i % beatStep === 0) {
+                shouldDraw = true;
+            } else if (lod !== LOD_LEVELS.OVERVIEW && i % beatStep === 0) {
                 ctx.strokeStyle = themeColors.gridBeat;
                 ctx.lineWidth = 0.75;
-            } else if (i % sixteenthStep === 0 && stepWidth > 12) {
+                shouldDraw = true;
+            } else if (lod === LOD_LEVELS.NORMAL && i % 1 === 0) {
                 ctx.strokeStyle = themeColors.gridSubdivision;
                 ctx.lineWidth = 0.5;
-            } else if (stepWidth > 30) { // 1/32'lik çizgiler
+                shouldDraw = true;
+            } else if (lod === LOD_LEVELS.DETAILED && i % 0.5 === 0) {
                 ctx.strokeStyle = themeColors.gridSubdivision;
                 ctx.lineWidth = 0.25;
-            } else {
-                continue; // Çizilecek bir şey yoksa döngünün sonraki adımına geç
+                shouldDraw = true;
             }
             
-            ctx.moveTo(x, tileY);
-            ctx.lineTo(x, tileY + tileHeight);
-            ctx.stroke();
+            if (shouldDraw) {
+                ctx.beginPath();
+                ctx.moveTo(x, tileY);
+                ctx.lineTo(x, tileY + tileHeight);
+                ctx.stroke();
+            }
         }
     }
 
-    // Yatay çizgiler (Pitch)
-    ctx.strokeStyle = themeColors.gridBeat;
-    ctx.lineWidth = 0.5;
-    for (let i = 1; i < totalKeys; i++) {
-        const y = i * keyHeight;
-        if (y >= tileY && y <= tileY + tileHeight) {
-            ctx.beginPath();
-            ctx.moveTo(tileX, y);
-            ctx.lineTo(tileX + tileWidth, y);
-            ctx.stroke();
-        }
-    }
-    
     ctx.translate(tileX, tileY);
 };
 
 export const GridTile = memo(({ engine, x, y, width, height }) => {
     const canvasRef = useRef(null);
+    // Mevcut LOD seviyesini store'dan alıyoruz. Bu hook, bileşenin
+    // zoom değiştikçe otomatik olarak yeniden render olmasını sağlar.
+    const lod = usePianoRollStoreV2(state => state.getLODLevel());
 
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -97,9 +99,10 @@ export const GridTile = memo(({ engine, x, y, width, height }) => {
         const ctx = canvas.getContext('2d');
         ctx.scale(dpr, dpr);
 
-        drawTile(ctx, engine, x, y, width, height);
+        // Çizim fonksiyonuna o anki LOD seviyesini iletiyoruz.
+        drawTile(ctx, engine, x, y, width, height, lod);
         
-    }, [engine, x, y, width, height]);
+    }, [engine, x, y, width, height, lod]); // lod'u bağımlılık dizisine ekledik.
 
     return (
         <canvas

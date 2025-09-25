@@ -13,11 +13,27 @@ export const SCALES = {
   'Chromatic': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
 };
 
+// YENİ: LOD seviyelerini ve eşiklerini tanımlıyoruz
+export const LOD_LEVELS = {
+  DETAILED: 'detailed',       // En yakın zoom, 1/32'lik gridler
+  NORMAL: 'normal',           // Standart görünüm, 1/16'lık gridler
+  SIMPLIFIED: 'simplified',     // Uzak görünüm, sadece beat ve bar'lar
+  OVERVIEW: 'overview',         // En uzak, sadece ana bar'lar
+};
+
+const getLODLevelFromZoom = (zoomX) => {
+    if (zoomX >= 2.0) return LOD_LEVELS.DETAILED;   // 200% ve üzeri - tüm detaylar
+    if (zoomX >= 1.0) return LOD_LEVELS.NORMAL;     // 100-199% - standart görünüm
+    if (zoomX >= 0.5) return LOD_LEVELS.SIMPLIFIED; // 50-99% - basitleştirilmiş
+    return LOD_LEVELS.OVERVIEW;                     // 50% altı - sadana ana hatlar
+};
+
+
 const clamp = (value, min, max) => Math.max(min, Math.min(value, max));
 
 export const usePianoRollStoreV2 = create(
   persist(
-    (set) => ({
+    (set, get) => ({
       // State
       scale: { root: 'C', type: 'Minor' },
       showScaleHighlighting: true,
@@ -25,10 +41,10 @@ export const usePianoRollStoreV2 = create(
       activeTool: 'pencil',
       gridSnapValue: '16n',
       snapMode: 'hard',
-      lastUsedDuration: '32n', // Default to 32nd note for shorter notes
+      lastUsedDuration: '32n',
       zoomX: 1,
       zoomY: 1,
-      velocityLaneHeight: 100, // Başlangıç yüksekliği
+      velocityLaneHeight: 100,
       showVelocityLane: true,
       
       // Actions
@@ -40,22 +56,52 @@ export const usePianoRollStoreV2 = create(
       toggleSnapMode: () => set(state => ({ snapMode: state.snapMode === 'hard' ? 'soft' : 'hard' })),
       setLastUsedDuration: (duration) => set({ lastUsedDuration: duration }),
       
-      // === YENİ VE GÜNCELLENMİŞ ZOOM AKSİYONLARI ===
-      setZoomX: (newZoomX) => set({ zoomX: clamp(newZoomX, 0.1, 20) }), // Maksimum zoom artırıldı
-      setZoomY: (newZoomY) => set({ zoomY: clamp(newZoomY, 0.5, 5) }),
-      zoomIn: () => set(state => ({ zoomX: clamp(state.zoomX * 1.25, 0.1, 20) })),
-      zoomOut: () => set(state => ({ zoomX: clamp(state.zoomX / 1.25, 0.1, 20) })),
-      setVelocityLaneHeight: (height) => set({ 
-          velocityLaneHeight: clamp(height, 20, 300), // Min 20px, Max 300px
-          showVelocityLane: height > 20 
-      }),
-      toggleVelocityLane: () => set(state => {
-        const newShowState = !state.showVelocityLane;
-        return { 
-            showVelocityLane: newShowState,
-            velocityLaneHeight: newShowState ? 100 : 0
-        };
-      }),      
+      setZoomX: (newZoomX) => {
+        const clampedZoom = clamp(newZoomX, 0.1, 20);
+        console.log('[STORE DEBUG] setZoomX', { from: get().zoomX, to: clampedZoom });
+        set({ zoomX: clampedZoom });
+      },
+      setZoomY: (newZoomY) => {
+        const clampedZoom = clamp(newZoomY, 0.5, 5);
+        console.log('[STORE DEBUG] setZoomY', { from: get().zoomY, to: clampedZoom });
+        set({ zoomY: clampedZoom });
+      },
+      zoomIn: () => {
+        const currentZoom = get().zoomX;
+        const newZoom = clamp(currentZoom * 1.25, 0.1, 20);
+        console.log('[STORE DEBUG] zoomIn', { from: currentZoom, to: newZoom });
+        set({ zoomX: newZoom });
+      },
+      zoomOut: () => {
+        const currentZoom = get().zoomX;
+        const newZoom = clamp(currentZoom / 1.25, 0.1, 20);
+        console.log('[STORE DEBUG] zoomOut', { from: currentZoom, to: newZoom });
+        set({ zoomX: newZoom });
+      },
+      setVelocityLaneHeight: (height) => {
+        const clampedHeight = clamp(height, 20, 300);
+        const showLane = height > 20;
+        console.log('[STORE DEBUG] setVelocityLaneHeight', { height: clampedHeight, show: showLane });
+        set({
+          velocityLaneHeight: clampedHeight,
+          showVelocityLane: showLane
+        });
+      },
+      toggleVelocityLane: () => {
+        const currentState = get();
+        const newShowState = !currentState.showVelocityLane;
+        const newHeight = newShowState ? 100 : 0;
+        console.log('[STORE DEBUG] toggleVelocityLane', { from: currentState.showVelocityLane, to: newShowState });
+        set({
+          showVelocityLane: newShowState,
+          velocityLaneHeight: newHeight
+        });
+      },
+
+      // YENİ: LOD seviyesini hesaplayan ve tüm bileşenlerin kullanacağı merkezi seçici (selector)
+      getLODLevel: () => {
+        return getLODLevelFromZoom(get().zoomX);
+      },
     }),
     {
       name: 'soundforge-pianoroll-v2-settings',
@@ -67,7 +113,7 @@ export const usePianoRollStoreV2 = create(
         snapMode: state.snapMode,
         velocityLaneHeight: state.velocityLaneHeight,
         showVelocityLane: state.showVelocityLane,
-        zoomX: state.zoomX, // Zoom seviyesini de kaydet
+        zoomX: state.zoomX,
         zoomY: state.zoomY,
       })
     }

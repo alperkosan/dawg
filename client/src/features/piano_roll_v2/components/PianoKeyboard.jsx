@@ -6,6 +6,7 @@ import { AudioContextService } from '../../../lib/services/AudioContextService';
 export const PianoKeyboard = React.memo(({ engine, instrumentId }) => {
   const [playingNotes, setPlayingNotes] = useState(new Set());
   const playingNotesRef = useRef(new Set());
+  const [scrollY, setScrollY] = useState(0);
 
   const keys = useMemo(() => {
     const keyData = [];
@@ -69,8 +70,29 @@ export const PianoKeyboard = React.memo(({ engine, instrumentId }) => {
     return () => document.removeEventListener('mouseup', handleGlobalMouseUp);
   }, [instrumentId]);
 
+  // Direct scroll tracking - fuck the engine complexity
+  useEffect(() => {
+    const container = document.querySelector('.prv2-grid-area-container');
+    if (!container) return;
+
+    const handleScroll = () => {
+      setScrollY(container.scrollTop);
+    };
+
+    container.addEventListener('scroll', handleScroll, { passive: true });
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, []);
+
   return (
-    <div className="prv2-keyboard__content" style={{ height: engine.gridHeight }}>
+    <div
+      className="prv2-keyboard__content"
+      style={{
+        height: engine.gridHeight,
+        // DIRECT: Real-time scroll tracking without engine bullshit
+        transform: `translate3d(0, -${scrollY}px, 0)`,
+        willChange: 'transform'
+      }}
+    >
       {keys.map((key) => (
         <div
           key={key.pitch}

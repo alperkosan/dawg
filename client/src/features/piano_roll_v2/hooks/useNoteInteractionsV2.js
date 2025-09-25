@@ -57,6 +57,13 @@ export const useNoteInteractionsV2 = (instrumentId, engine) => {
 
   const handleNotesChange = useCallback((newNotes) => {
     if (instrumentId && activePatternId) {
+      // STABILIZATION: Prevent rapid-fire updates with simple throttle
+      const now = Date.now();
+      if (handleNotesChange._lastUpdate && now - handleNotesChange._lastUpdate < 16) {
+        return; // Block updates faster than 60fps
+      }
+      handleNotesChange._lastUpdate = now;
+
       notesRef.current = newNotes;
       updatePatternNotes(activePatternId, instrumentId, newNotes);
     }
@@ -117,14 +124,25 @@ export const useNoteInteractionsV2 = (instrumentId, engine) => {
 
   const findNoteAtPosition = useCallback((x, y, noteSource) => {
       return noteSource.find(note => {
+          if (!engine || !engine.getNoteRect) return false;
           const rect = engine.getNoteRect(note);
+          // CRITICAL: Check if rect is null (note outside visible area)
+          if (!rect) return false;
           return x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height;
       });
   }, [engine]);
 
   const onMouseDown = useCallback((e) => {
-    // Güvenlik kontrolleri - interaction'ları engellemeyi önle
-    if (!e || !engine || !engine.mouseToGrid) {
+    console.log('[DEBUG] onMouseDown started', {
+      hasEngine: !!engine,
+      hasMouseToGrid: !!engine?.mouseToGrid,
+      hasScroll: !!engine?.scroll,
+      hasSize: !!engine?.size
+    });
+
+    // CRITICAL: Comprehensive safety checks to prevent freezes
+    if (!e || !engine || !engine.mouseToGrid || !engine.scroll || !engine.size) {
+      console.log('[DEBUG] onMouseDown early return - missing dependencies');
       return;
     }
 
@@ -136,11 +154,25 @@ export const useNoteInteractionsV2 = (instrumentId, engine) => {
     }
 
     const gridPos = engine.mouseToGrid(e);
+    console.log('[COORD DEBUG] mouseToGrid:', {
+      clientX: e.clientX,
+      clientY: e.clientY,
+      scrollX: engine.scroll?.x,
+      scrollY: engine.scroll?.y,
+      virtualOffsetX: engine.virtualOffsetX,
+      stepWidth: engine.stepWidth,
+      gridPos,
+      engineValid: !!engine
+    });
+
     if (!gridPos || !isFinite(gridPos.x) || !isFinite(gridPos.y) || !isFinite(gridPos.time)) {
+      console.log('[DEBUG] invalid grid position, returning');
       return;
     }
 
+    console.log('[DEBUG] Finding note at position:', gridPos.x, gridPos.y, 'notes count:', notes.length);
     const clickedNote = findNoteAtPosition(gridPos.x, gridPos.y, notes);
+    console.log('[DEBUG] Found note:', clickedNote?.id || 'none');
 
     // Prevent context menu and handle right-click delete
     if (e.button === 2) {
@@ -161,9 +193,12 @@ export const useNoteInteractionsV2 = (instrumentId, engine) => {
       return;
     }
 
+    console.log('[DEBUG] Active tool:', activeTool, 'Processing interaction...');
+
     switch (activeTool) {
       case 'pencil':
         if (clickedNote) {
+          console.log('[DEBUG] Pencil mode - dragging existing note:', clickedNote.id);
           audio.preview(clickedNote.pitch, clickedNote.velocity);
           const notesToDrag = [clickedNote.id];
           setSelectedNotes(new Set(notesToDrag));
@@ -171,12 +206,15 @@ export const useNoteInteractionsV2 = (instrumentId, engine) => {
           setDefaultNoteDuration(clickedNote.duration);
           setInteraction({ type: 'drag', startPos: gridPos, noteIds: notesToDrag, originalNotes: new Map([[clickedNote.id, { ...clickedNote }]]) });
         } else {
+          console.log('[DEBUG] Pencil mode - creating new note at:', gridPos.time, gridPos.pitch);
           // Mouse down ile direkt nota oluştur - mouse move ile resize yok
           const snappedTime = snapTime(gridPos.time);
           const newNote = { id: generateNoteId(), time: snappedTime, pitch: gridPos.pitch, duration: defaultNoteDuration, velocity: 0.8 };
+          console.log('[DEBUG] New note created:', newNote.id, 'adding to notes array');
           handleNotesChange([...notes, newNote]);
           setSelectedNotes(new Set([newNote.id]));
           audio.preview(newNote.pitch, newNote.velocity);
+          console.log('[DEBUG] Note creation complete');
           // Create interaction kaldırıldı - direkt nota oluştur ve bitir
         }
         break;
@@ -212,14 +250,20 @@ export const useNoteInteractionsV2 = (instrumentId, engine) => {
   }, [engine, notes, activeTool, selectedNotes, handleNotesChange, audio, snapTime, findNoteAtPosition]);
 
   const onMouseMove = useCallback((e) => {
-    if (!interaction || !e || !engine) return;
+    // CRITICAL: Early exit if any dependency is missing
+    if (!interaction || !e || !engine || !engine.mouseToGrid || !engine.scroll || !engine.size) {
+      if (interaction) console.log('[DEBUG] onMouseMove blocked - missing engine dependencies');
+      return;
+    }
 
-    // AGGRESSIVE THROTTLING: Throttle mouse move events to 16ms (~60fps max)
+    // AGGRESSIVE THROTTLING: Throttle mouse move events to 33ms (~30fps) for stability
     const now = Date.now();
-    if (mouseMoveThrottleRef.current && now - mouseMoveThrottleRef.current < 16) {
+    if (mouseMoveThrottleRef.current && now - mouseMoveThrottleRef.current < 33) {
       return;
     }
     mouseMoveThrottleRef.current = now;
+
+    console.log('[DEBUG] onMouseMove processing', interaction.type);
 
     const gridPos = engine.mouseToGrid(e);
     if (!gridPos || !isFinite(gridPos.x) || !isFinite(gridPos.y) || !isFinite(gridPos.time)) {
@@ -246,10 +290,29 @@ export const useNoteInteractionsV2 = (instrumentId, engine) => {
           const newPitch = engine.yToPitch(newNoteY);
           return { ...original, time: Math.max(0, original.time + snappedDeltaTime), pitch: newPitch };
         }).filter(Boolean);
-        setInteraction(prev => ({ ...prev, previewNotes }));
+        // PERFORMANCE: Only update if preview notes actually changed
+        setInteraction(prev => {
+          if (prev.previewNotes &&
+              prev.previewNotes.length === previewNotes.length &&
+              prev.previewNotes.every((note, i) =>
+                note.time === previewNotes[i].time &&
+                note.pitch === previewNotes[i].pitch
+              )) {
+            return prev; // No change, avoid re-render
+          }
+          return { ...prev, previewNotes };
+        });
         break;
       case 'marquee':
-        setInteraction(prev => ({ ...prev, currentPos: gridPos }));
+        // PERFORMANCE: Only update marquee position if it actually moved significantly
+        setInteraction(prev => {
+          if (prev.currentPos &&
+              Math.abs(prev.currentPos.x - gridPos.x) < 2 &&
+              Math.abs(prev.currentPos.y - gridPos.y) < 2) {
+            return prev; // Small movements don't need updates
+          }
+          return { ...prev, currentPos: gridPos };
+        });
         break;
     }
   }, [interaction, engine, notes, handleNotesChange, snapTime]);
