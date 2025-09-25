@@ -1,6 +1,6 @@
 /**
  * @file useScrollSync.js
- * @description V3 için optimize edilmiş scroll synchronization hook'u
+ * @description Fixed scroll synchronization for timeline and keyboard
  */
 import { useRef, useLayoutEffect, useCallback, useMemo } from 'react';
 import { rafThrottle } from '../utils/performance';
@@ -12,16 +12,17 @@ export const useScrollSync = (mainContainerRef, syncTargets = []) => {
     lastScrollX: 0,
     lastScrollY: 0,
     rafId: null,
+    isInitialized: false,
   });
 
   const setScroll = usePianoRollV3Store(state => state.setScroll);
 
-  // Optimize edilmiş scroll handler
+  // Optimized sync handler with proper transform directions
   const throttledSyncHandler = useMemo(() => {
     return rafThrottle((scrollX, scrollY) => {
       const syncState = syncStateRef.current;
 
-      // Değişiklik var mı kontrol et
+      // Check if there's an actual change
       if (syncState.lastScrollX === scrollX && syncState.lastScrollY === scrollY) {
         return;
       }
@@ -30,38 +31,36 @@ export const useScrollSync = (mainContainerRef, syncTargets = []) => {
       syncState.lastScrollY = scrollY;
       syncState.isSyncing = true;
 
-      // Store'u güncelle
+      // Update store
       setScroll(scrollX, scrollY);
 
-      // Sync target'ları güncelle
-      syncTargets.forEach(({ ref, axis = 'both', transform = 'translate3d' }) => {
+      // Update sync targets with proper directions
+      syncTargets.forEach(({ ref, axis = 'both' }) => {
         if (!ref.current) return;
 
-        let transformX = 0;
-        let transformY = 0;
+        let transformValue = '';
 
-        if (axis === 'x' || axis === 'both') {
-          transformX = -scrollX;
-        }
-        if (axis === 'y' || axis === 'both') {
-          transformY = -scrollY;
-        }
-
-        // GPU accelerated transform kullan
-        if (transform === 'translate3d') {
-          ref.current.style.transform = `translate3d(${transformX}px, ${transformY}px, 0)`;
-        } else {
-          // Fallback için translateX/translateY
-          if (axis === 'x') {
-            ref.current.style.transform = `translateX(${transformX}px)`;
-          } else if (axis === 'y') {
-            ref.current.style.transform = `translateY(${transformY}px)`;
-          } else {
-            ref.current.style.transform = `translate(${transformX}px, ${transformY}px)`;
-          }
+        // Apply proper negative transforms for sync
+        switch(axis) {
+          case 'x':
+            // Timeline - moves opposite to scroll direction
+            transformValue = `translate3d(${-scrollX}px, 0, 0)`;
+            break;
+          case 'y':
+            // Keyboard - moves opposite to scroll direction
+            transformValue = `translate3d(0, ${-scrollY}px, 0)`;
+            break;
+          case 'both':
+            transformValue = `translate3d(${-scrollX}px, ${-scrollY}px, 0)`;
+            break;
+          default:
+            return;
         }
 
-        // Will-change özelliğini optimize et
+        // Apply transform
+        ref.current.style.transform = transformValue;
+
+        // Optimize rendering
         if (!ref.current.style.willChange) {
           ref.current.style.willChange = 'transform';
         }
@@ -82,28 +81,38 @@ export const useScrollSync = (mainContainerRef, syncTargets = []) => {
     throttledSyncHandler(scrollLeft, scrollTop);
   }, [throttledSyncHandler]);
 
-  // Wheel event handler (sync için)
+  // Wheel event handler for horizontal scrolling
   const handleWheel = useCallback((e) => {
-    // Sadece sync için wheel handling - zoom zaten engine'de handle ediliyor
-    if (e.ctrlKey || e.metaKey) return; // Zoom events'i skip et
+    // Skip if zooming
+    if (e.ctrlKey || e.metaKey) return;
 
-    // Horizontal scrolling support
-    if (e.shiftKey && Math.abs(e.deltaX) < Math.abs(e.deltaY)) {
+    const container = mainContainerRef.current;
+    if (!container) return;
+
+    // Horizontal scrolling with Shift+Wheel
+    if (e.shiftKey && Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
       e.preventDefault();
-      const container = mainContainerRef.current;
-      if (container) {
-        container.scrollLeft += e.deltaY;
-      }
+      
+      // Use smooth scrolling for better UX
+      const newScrollLeft = container.scrollLeft + e.deltaY;
+      container.scrollLeft = Math.max(0, Math.min(newScrollLeft, container.scrollWidth - container.clientWidth));
+      
+      // Manually trigger sync for immediate response
+      throttledSyncHandler(container.scrollLeft, container.scrollTop);
     }
-  }, [mainContainerRef]);
+  }, [mainContainerRef, throttledSyncHandler]);
 
-  // Touch gesture support (mobile)
+  // Touch gesture support for mobile
   const touchStateRef = useRef({
     startX: 0,
     startY: 0,
     startScrollX: 0,
     startScrollY: 0,
     isTracking: false,
+    lastTouchX: 0,
+    lastTouchY: 0,
+    velocityX: 0,
+    velocityY: 0,
   });
 
   const handleTouchStart = useCallback((e) => {
@@ -116,9 +125,13 @@ export const useScrollSync = (mainContainerRef, syncTargets = []) => {
     touchStateRef.current = {
       startX: touch.clientX,
       startY: touch.clientY,
+      lastTouchX: touch.clientX,
+      lastTouchY: touch.clientY,
       startScrollX: container.scrollLeft,
       startScrollY: container.scrollTop,
       isTracking: true,
+      velocityX: 0,
+      velocityY: 0,
     };
   }, [mainContainerRef]);
 
@@ -132,23 +145,89 @@ export const useScrollSync = (mainContainerRef, syncTargets = []) => {
     if (!container) return;
 
     const touchState = touchStateRef.current;
+    
+    // Calculate movement
     const deltaX = touchState.startX - touch.clientX;
     const deltaY = touchState.startY - touch.clientY;
 
-    container.scrollLeft = touchState.startScrollX + deltaX;
-    container.scrollTop = touchState.startScrollY + deltaY;
-  }, [mainContainerRef]);
+    // Calculate velocity for momentum scrolling
+    touchState.velocityX = touch.clientX - touchState.lastTouchX;
+    touchState.velocityY = touch.clientY - touchState.lastTouchY;
+    touchState.lastTouchX = touch.clientX;
+    touchState.lastTouchY = touch.clientY;
+
+    // Apply scroll
+    const newScrollX = Math.max(0, Math.min(
+      touchState.startScrollX + deltaX,
+      container.scrollWidth - container.clientWidth
+    ));
+    const newScrollY = Math.max(0, Math.min(
+      touchState.startScrollY + deltaY,
+      container.scrollHeight - container.clientHeight
+    ));
+
+    container.scrollLeft = newScrollX;
+    container.scrollTop = newScrollY;
+
+    // Sync immediately for responsive feel
+    throttledSyncHandler(newScrollX, newScrollY);
+  }, [mainContainerRef, throttledSyncHandler]);
 
   const handleTouchEnd = useCallback(() => {
-    touchStateRef.current.isTracking = false;
-  }, []);
+    const touchState = touchStateRef.current;
+    if (!touchState.isTracking) return;
+
+    touchState.isTracking = false;
+
+    // Optional: Add momentum scrolling
+    const container = mainContainerRef.current;
+    if (container && (Math.abs(touchState.velocityX) > 5 || Math.abs(touchState.velocityY) > 5)) {
+      // Simple momentum animation
+      let momentumX = touchState.velocityX * 10;
+      let momentumY = touchState.velocityY * 10;
+      const friction = 0.95;
+
+      const animateMomentum = () => {
+        if (Math.abs(momentumX) > 0.5 || Math.abs(momentumY) > 0.5) {
+          container.scrollLeft -= momentumX;
+          container.scrollTop -= momentumY;
+          momentumX *= friction;
+          momentumY *= friction;
+          requestAnimationFrame(animateMomentum);
+        }
+      };
+
+      requestAnimationFrame(animateMomentum);
+    }
+  }, [mainContainerRef]);
 
   // Setup event listeners
   useLayoutEffect(() => {
     const container = mainContainerRef.current;
     if (!container) return;
 
-    // Scroll sync setup
+    // Ensure containers are properly set up
+    syncTargets.forEach(({ ref, axis }) => {
+      if (ref.current) {
+        // Set initial styles
+        ref.current.style.position = 'relative';
+        ref.current.style.willChange = 'transform';
+        
+        // Ensure proper overflow on parent containers
+        const parent = ref.current.parentElement;
+        if (parent) {
+          if (axis === 'x') {
+            parent.style.overflowX = 'hidden';
+            parent.style.overflowY = 'visible';
+          } else if (axis === 'y') {
+            parent.style.overflowY = 'hidden';
+            parent.style.overflowX = 'visible';
+          }
+        }
+      }
+    });
+
+    // Add scroll listener
     container.addEventListener('scroll', handleScroll, { passive: true });
     container.addEventListener('wheel', handleWheel, { passive: false });
 
@@ -157,11 +236,26 @@ export const useScrollSync = (mainContainerRef, syncTargets = []) => {
     container.addEventListener('touchmove', handleTouchMove, { passive: false });
     container.addEventListener('touchend', handleTouchEnd, { passive: true });
 
-    // İlk sync
-    const initialScrollX = container.scrollLeft;
-    const initialScrollY = container.scrollTop;
-    if (initialScrollX > 0 || initialScrollY > 0) {
-      throttledSyncHandler(initialScrollX, initialScrollY);
+    // Initialize with current scroll position
+    if (!syncStateRef.current.isInitialized) {
+      const initialScrollX = container.scrollLeft || 0;
+      const initialScrollY = container.scrollTop || 0;
+      
+      if (initialScrollX > 0 || initialScrollY > 0) {
+        throttledSyncHandler(initialScrollX, initialScrollY);
+      } else {
+        // Ensure initial sync even at 0,0
+        syncTargets.forEach(({ ref, axis }) => {
+          if (ref.current) {
+            ref.current.style.transform = 
+              axis === 'x' ? 'translate3d(0, 0, 0)' :
+              axis === 'y' ? 'translate3d(0, 0, 0)' :
+              'translate3d(0, 0, 0)';
+          }
+        });
+      }
+      
+      syncStateRef.current.isInitialized = true;
     }
 
     // Cleanup
@@ -172,13 +266,15 @@ export const useScrollSync = (mainContainerRef, syncTargets = []) => {
       container.removeEventListener('touchmove', handleTouchMove);
       container.removeEventListener('touchend', handleTouchEnd);
 
-      // RAF cleanup
-      throttledSyncHandler.cancel?.();
+      // Cancel any pending RAF
+      if (throttledSyncHandler.cancel) {
+        throttledSyncHandler.cancel();
+      }
 
-      // Will-change cleanup
+      // Reset will-change on cleanup
       syncTargets.forEach(({ ref }) => {
         if (ref.current) {
-          ref.current.style.willChange = 'auto';
+          ref.current.style.willChange = '';
         }
       });
     };
@@ -193,7 +289,7 @@ export const useScrollSync = (mainContainerRef, syncTargets = []) => {
     syncTargets,
   ]);
 
-  // Programatic scroll methods
+  // Programmatic scroll methods
   const scrollTo = useCallback((x, y, smooth = false) => {
     const container = mainContainerRef.current;
     if (!container) return;
@@ -208,11 +304,17 @@ export const useScrollSync = (mainContainerRef, syncTargets = []) => {
       container.scrollLeft = x;
       container.scrollTop = y;
     }
-  }, [mainContainerRef]);
+
+    // Immediately sync for programmatic scrolls
+    throttledSyncHandler(x, y);
+  }, [mainContainerRef, throttledSyncHandler]);
 
   const scrollBy = useCallback((deltaX, deltaY, smooth = false) => {
     const container = mainContainerRef.current;
     if (!container) return;
+
+    const newX = container.scrollLeft + deltaX;
+    const newY = container.scrollTop + deltaY;
 
     if (smooth) {
       container.scrollBy({
@@ -221,12 +323,14 @@ export const useScrollSync = (mainContainerRef, syncTargets = []) => {
         behavior: 'smooth'
       });
     } else {
-      container.scrollLeft += deltaX;
-      container.scrollTop += deltaY;
+      container.scrollLeft = newX;
+      container.scrollTop = newY;
     }
-  }, [mainContainerRef]);
 
-  // Scroll to specific grid position
+    throttledSyncHandler(newX, newY);
+  }, [mainContainerRef, throttledSyncHandler]);
+
+  // Grid-specific scroll helpers
   const scrollToStep = useCallback((step, smooth = false) => {
     const container = mainContainerRef.current;
     if (!container) return;
@@ -245,16 +349,47 @@ export const useScrollSync = (mainContainerRef, syncTargets = []) => {
     scrollTo(container.scrollLeft, y, smooth);
   }, [scrollTo]);
 
+  const centerOnNote = useCallback((step, key, smooth = true) => {
+    const container = mainContainerRef.current;
+    if (!container) return;
+
+    const grid = usePianoRollV3Store.getState().grid;
+    const viewport = usePianoRollV3Store.getState().viewport;
+
+    // Calculate center positions
+    const noteX = step * grid.stepWidth;
+    const noteY = key * grid.keyHeight;
+    
+    const targetX = noteX - (viewport.width / 2) + (grid.stepWidth / 2);
+    const targetY = noteY - (viewport.height / 2) + (grid.keyHeight / 2);
+
+    scrollTo(
+      Math.max(0, targetX),
+      Math.max(0, targetY),
+      smooth
+    );
+  }, [scrollTo]);
+
   return {
+    // Scroll methods
     scrollTo,
     scrollBy,
     scrollToStep,
     scrollToKey,
+    centerOnNote,
 
-    // Debug info
+    // State getters
     getCurrentScroll: () => ({
       x: syncStateRef.current.lastScrollX,
       y: syncStateRef.current.lastScrollY,
     }),
+
+    // Force sync (useful for initialization)
+    forceSync: () => {
+      const container = mainContainerRef.current;
+      if (container) {
+        throttledSyncHandler(container.scrollLeft, container.scrollTop);
+      }
+    },
   };
 };

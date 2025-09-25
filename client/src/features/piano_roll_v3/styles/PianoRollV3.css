@@ -1,6 +1,6 @@
 /**
- * Piano Roll V3 Styles
- * Infinite scroll + LOD optimized styling
+ * Enhanced Piano Roll V3 Styles
+ * Infinite scroll + LOD optimized + Full interaction support
  */
 
 /* === MAIN CONTAINER === */
@@ -14,130 +14,160 @@
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
+/* === TOOLBAR === */
+.piano-roll-v3__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: linear-gradient(180deg, #2a2a2a 0%, #222 100%);
+  border-bottom: 1px solid #444;
+  z-index: 100;
+}
+
+.piano-roll-v3__tool-palette {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: rgba(0,0,0,0.3);
+  border-radius: 4px;
+}
+
+.piano-roll-v3__tool-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  color: rgba(255,255,255,0.7);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.piano-roll-v3__tool-button:hover {
+  background: rgba(255,255,255,0.1);
+  color: #fff;
+}
+
+.piano-roll-v3__tool-button.active {
+  background: #4a9eff;
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(74, 158, 255, 0.3);
+}
+
+.piano-roll-v3__toolbar-spacer {
+  flex: 1;
+}
+
+.piano-roll-v3__zoom-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  background: rgba(0,0,0,0.3);
+  border-radius: 4px;
+}
+
+.piano-roll-v3__zoom-controls button {
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  color: rgba(255,255,255,0.7);
+  cursor: pointer;
+  border-radius: 3px;
+  font-size: 16px;
+  line-height: 1;
+  transition: all 0.2s ease;
+}
+
+.piano-roll-v3__zoom-controls button:hover {
+  background: rgba(255,255,255,0.1);
+  color: #fff;
+}
+
+.piano-roll-v3__zoom-controls span {
+  min-width: 50px;
+  text-align: center;
+  font-size: 12px;
+  color: rgba(255,255,255,0.8);
+}
+
 /* === LAYOUT GRID === */
 .piano-roll-v3__layout {
   display: grid;
-  grid-template-columns: auto 1fr;
+  grid-template-columns: 80px 1fr;
   grid-template-rows: 32px 1fr auto;
-  height: 100%;
+  flex: 1;
   gap: 0;
+  overflow: hidden;
 }
 
 .piano-roll-v3__corner {
   background: #2a2a2a;
   border-right: 1px solid #444;
   border-bottom: 1px solid #444;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.piano-roll-v3__corner-button {
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  color: rgba(255,255,255,0.6);
+  cursor: pointer;
+  border-radius: 3px;
+  font-size: 16px;
+  transition: all 0.2s ease;
+}
+
+.piano-roll-v3__corner-button:hover {
+  background: rgba(255,255,255,0.1);
+  color: #fff;
 }
 
 /* === TIMELINE === */
-.piano-roll-v3__timeline {
-  background: linear-gradient(180deg, #3a3a3a 0%, #2a2a2a 100%);
+.piano-roll-v3__timeline-container {
+  overflow: hidden; /* Critical: Hide overflow for transform sync */
   border-bottom: 1px solid #444;
   position: relative;
+}
+
+.piano-roll-v3__timeline-content {
+  position: relative;
+  height: 100%;
+  will-change: transform; /* GPU optimization */
+  transform: translateZ(0); /* Force GPU layer */
+}
+
+.piano-roll-v3__timeline {
+  background: linear-gradient(180deg, #3a3a3a 0%, #2a2a2a 100%);
+  position: relative;
+  height: 100%;
   user-select: none;
 }
 
-.piano-roll-v3__timeline-bg {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: inherit;
-}
-
-.piano-roll-v3__timeline-marker {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  pointer-events: none;
-}
-
-.piano-roll-v3__timeline-line {
-  width: 1px;
-  height: 100%;
-  background: rgba(255, 255, 255, 0.3);
-}
-
-.piano-roll-v3__timeline-marker--bar .piano-roll-v3__timeline-line {
-  background: rgba(255, 255, 255, 0.6);
-  width: 2px;
-}
-
-.piano-roll-v3__timeline-marker--beat .piano-roll-v3__timeline-line {
-  background: rgba(255, 255, 255, 0.4);
-}
-
-.piano-roll-v3__timeline-label {
-  position: absolute;
-  top: 4px;
-  font-size: 10px;
-  font-weight: 500;
-  color: rgba(255, 255, 255, 0.8);
-  background: rgba(0, 0, 0, 0.5);
-  padding: 1px 4px;
-  border-radius: 2px;
-  white-space: nowrap;
-}
-
-.piano-roll-v3__loop-region {
-  pointer-events: none;
-  border-radius: 2px;
-}
-
-.piano-roll-v3__playhead {
-  box-shadow: 0 0 4px rgba(255, 68, 68, 0.5);
-}
-
 /* === KEYBOARD === */
-.piano-roll-v3__keyboard {
-  background: #2a2a2a;
+.piano-roll-v3__keyboard-container {
+  overflow: hidden; /* Critical: Hide overflow for transform sync */
   border-right: 1px solid #444;
   position: relative;
 }
 
-.piano-roll-v3__key {
-  border-bottom: 1px solid rgba(0, 0, 0, 0.2);
-  border-right: 1px solid rgba(255, 255, 255, 0.1);
-  transition: all 0.1s ease;
-  will-change: transform, background-color;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding-right: 8px;
+.piano-roll-v3__keyboard-content {
+  position: relative;
+  width: 100%;
+  will-change: transform; /* GPU optimization */
+  transform: translateZ(0); /* Force GPU layer */
 }
 
-.piano-roll-v3__key--white {
-  background: linear-gradient(90deg, #f8f8f8 0%, #e8e8e8 100%);
-  color: #333;
-  border-bottom: 1px solid #ddd;
-}
-
-.piano-roll-v3__key--black {
-  background: linear-gradient(90deg, #333 0%, #222 100%);
-  color: #fff;
-  border-bottom: 1px solid #111;
-}
-
-.piano-roll-v3__key:hover {
-  transform: scale(1.02);
-  filter: brightness(1.1);
-}
-
-.piano-roll-v3__key--active {
-  background: linear-gradient(90deg, #4a9eff 0%, #357abd 100%);
-  color: #fff;
-  box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.3);
-}
-
-.piano-roll-v3__key-label {
-  font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
-  font-size: 10px;
-  font-weight: 600;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-}
-
-/* === MAIN GRID AREA === */
+/* === MAIN CONTAINER === */
 .piano-roll-v3__main-container {
   position: relative;
   overflow: auto;
@@ -147,8 +177,8 @@
 }
 
 .piano-roll-v3__main-container::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 12px;
+  height: 12px;
 }
 
 .piano-roll-v3__main-container::-webkit-scrollbar-track {
@@ -157,150 +187,219 @@
 
 .piano-roll-v3__main-container::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.2);
-  border-radius: 4px;
+  border-radius: 6px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
 
 .piano-roll-v3__main-container::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.3);
 }
 
-.piano-roll-v3__virtual-content {
-  position: relative;
-  will-change: transform;
-}
-
-/* === GRID === */
-.piano-roll-v3__grid {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  pointer-events: none;
-}
-
-.piano-roll-v3__grid-pattern {
-  opacity: 0.1;
-}
-
-.piano-roll-v3__grid-line {
-  background: rgba(255, 255, 255, 0.1);
-}
-
-.piano-roll-v3__grid-line--bar {
-  background: rgba(255, 255, 255, 0.3);
-}
-
-.piano-roll-v3__grid-line--beat {
-  background: rgba(255, 255, 255, 0.2);
-}
-
-.piano-roll-v3__grid-line--octave {
-  background: rgba(255, 255, 255, 0.4);
-}
-
-.piano-roll-v3__grid-line--black-key {
+.piano-roll-v3__main-container::-webkit-scrollbar-corner {
   background: rgba(255, 255, 255, 0.05);
 }
 
-.piano-roll-v3__grid-line--white-key {
-  background: rgba(255, 255, 255, 0.1);
+/* === NOTES === */
+.piano-roll-v3__notes-container {
+  z-index: 10;
 }
 
-.piano-roll-v3__beat-label,
-.piano-roll-v3__note-label {
-  font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
-  font-size: 10px;
-  pointer-events: none;
-  user-select: none;
-}
-
-/* === RESPONSIVE & PERFORMANCE === */
-
-/* Mobile optimizations */
-@media (max-width: 768px) {
-  .piano-roll-v3__timeline-label {
-    font-size: 9px;
-  }
-
-  .piano-roll-v3__key-label {
-    font-size: 9px;
-  }
-
-  .piano-roll-v3__keyboard {
-    min-width: 60px;
-  }
-}
-
-/* High DPI displays */
-@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
-  .piano-roll-v3__grid-line {
-    background: rgba(255, 255, 255, 0.15);
-  }
-
-  .piano-roll-v3__timeline-line {
-    background: rgba(255, 255, 255, 0.4);
-  }
-}
-
-/* Reduced motion preferences */
-@media (prefers-reduced-motion: reduce) {
-  .piano-roll-v3__key {
-    transition: none;
-  }
-
-  .piano-roll-v3__main-container {
-    scroll-behavior: auto !important;
-  }
-}
-
-/* === LOADING & PERFORMANCE STATES === */
-.piano-roll-v3--loading {
-  pointer-events: none;
-}
-
-.piano-roll-v3--loading::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 24px;
-  height: 24px;
-  margin: -12px 0 0 -12px;
-  border: 2px solid rgba(255, 255, 255, 0.2);
-  border-top-color: #4a9eff;
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-  z-index: 1000;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-/* Performance hints */
-.piano-roll-v3__grid,
-.piano-roll-v3__virtual-content,
-.piano-roll-v3__timeline,
-.piano-roll-v3__keyboard {
+.piano-roll-v3__note {
+  will-change: transform, background-color;
   contain: layout style paint;
 }
 
-/* GPU acceleration hints */
-.piano-roll-v3__key--active,
-.piano-roll-v3__playhead {
-  will-change: transform, opacity;
+.piano-roll-v3__note-velocity {
+  pointer-events: none;
+  opacity: 0.3;
 }
 
-/* === DEBUG STYLES === */
-.piano-roll-v3--debug .piano-roll-v3__virtual-content {
-  outline: 1px dashed rgba(255, 0, 0, 0.3);
+.piano-roll-v3__note-resize-left,
+.piano-roll-v3__note-resize-right {
+  opacity: 0;
+  transition: opacity 0.2s ease;
 }
 
-.piano-roll-v3--debug .piano-roll-v3__grid {
-  outline: 1px dashed rgba(0, 255, 0, 0.3);
+.piano-roll-v3__note:hover .piano-roll-v3__note-resize-left,
+.piano-roll-v3__note:hover .piano-roll-v3__note-resize-right {
+  opacity: 1;
 }
 
-.piano-roll-v3--debug .piano-roll-v3__keyboard {
-  outline: 1px dashed rgba(0, 0, 255, 0.3);
+.piano-roll-v3__selection-box {
+  z-index: 100;
+  pointer-events: none;
+  animation: selection-pulse 0.5s ease infinite;
+}
+
+@keyframes selection-pulse {
+  0%, 100% { opacity: 0.8; }
+  50% { opacity: 0.6; }
+}
+
+/* === VELOCITY LANE === */
+.piano-roll-v3__velocity-corner {
+  background: #2a2a2a;
+  border-right: 1px solid #444;
+  border-top: 1px solid #444;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.6);
+}
+
+.piano-roll-v3__velocity-lane {
+  background: #252525;
+  border-top: 1px solid #444;
+  min-height: 120px;
+  position: relative;
+}
+
+/* === STATUS BAR === */
+.piano-roll-v3__status-bar {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 4px 12px;
+  background: #222;
+  border-top: 1px solid #444;
+  font-size: 11px;
+  color: rgba(255,255,255,0.7);
+}
+
+.piano-roll-v3__status-section {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.piano-roll-v3__status-section strong {
+  color: #fff;
+  font-weight: 500;
+}
+
+/* === LOADING STATE === */
+.piano-roll-v3__placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  height: 100%;
+  color: rgba(255,255,255,0.5);
+}
+
+.piano-roll-v3__placeholder-icon {
+  opacity: 0.3;
+}
+
+.piano-roll-v3__placeholder h3 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 300;
+  color: rgba(255,255,255,0.8);
+}
+
+.piano-roll-v3__placeholder p {
+  margin: 0;
+  font-size: 14px;
+}
+
+/* === CURSOR STATES === */
+.piano-roll-v3[data-tool="pencil"] .piano-roll-v3__main-container {
+  cursor: crosshair;
+}
+
+.piano-roll-v3[data-tool="eraser"] .piano-roll-v3__main-container {
+  cursor: not-allowed;
+}
+
+.piano-roll-v3[data-tool="split"] .piano-roll-v3__main-container {
+  cursor: col-resize;
+}
+
+/* === PERFORMANCE OPTIMIZATIONS === */
+.piano-roll-v3--scrolling .piano-roll-v3__note {
+  will-change: transform;
+  transition: none;
+}
+
+.piano-roll-v3--scrolling .piano-roll-v3__grid-line {
+  opacity: 0.5;
+}
+
+/* LOD-based optimizations */
+.piano-roll-v3[data-lod="ultra_simplified"] .piano-roll-v3__note-velocity,
+.piano-roll-v3[data-lod="ultra_simplified"] .piano-roll-v3__note-label {
+  display: none;
+}
+
+.piano-roll-v3[data-lod="simplified"] .piano-roll-v3__note-label {
+  display: none;
+}
+
+/* === DEBUG INFO === */
+.piano-roll-v3__debug-info {
+  position: absolute;
+  bottom: 40px;
+  right: 12px;
+  padding: 8px 12px;
+  background: rgba(0,0,0,0.9);
+  border: 1px solid rgba(0,255,0,0.3);
+  border-radius: 4px;
+  font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+  font-size: 10px;
+  color: #0f0;
+  pointer-events: none;
+  z-index: 9999;
+}
+
+.piano-roll-v3__debug-info > div {
+  margin: 2px 0;
+}
+
+/* === RESPONSIVE === */
+@media (max-width: 768px) {
+  .piano-roll-v3__toolbar {
+    padding: 6px 8px;
+  }
+
+  .piano-roll-v3__tool-button {
+    width: 28px;
+    height: 28px;
+  }
+
+  .piano-roll-v3__layout {
+    grid-template-columns: 60px 1fr;
+  }
+
+  .piano-roll-v3__status-bar {
+    font-size: 10px;
+    padding: 3px 8px;
+  }
+}
+
+/* === ANIMATION === */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.piano-roll-v3__note {
+  animation: fadeIn 0.2s ease;
+}
+
+/* === HIGH DPI === */
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+  .piano-roll-v3__grid-line {
+    transform: translateZ(0);
+    backface-visibility: hidden;
+  }
+  
+  .piano-roll-v3__note {
+    transform: translateZ(0);
+    backface-visibility: hidden;
+  }
 }

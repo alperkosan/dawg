@@ -1,6 +1,7 @@
+
 /**
- * @file VirtualizedTimeline.jsx
- * @description Infinite scroll destekli virtualized timeline ruler
+ * @file VirtualizedTimeline.jsx - FIXED VERSION
+ * @description Timeline with proper scroll viewport handling
  */
 import React, { memo, useMemo, useCallback } from 'react';
 import { LOD_LEVELS } from '../store/usePianoRollV3Store';
@@ -31,31 +32,33 @@ const TimelineMarker = memo(({ x, type, label, isVisible, onClick }) => {
   );
 });
 
-const VirtualizedTimeline = memo(({ engine, onSeek }) => {
+export const VirtualizedTimeline = memo(({ engine, onSeek }) => {
   const { virtualGrid, performance, viewport, grid, coordUtils } = engine;
 
-  // Timeline markers'ı LOD bazlı olarak optimize et
+  // Timeline markers with FIXED positioning (no scroll offset subtraction!)
   const timelineMarkers = useMemo(() => {
     const { verticalLines } = virtualGrid;
     const lodLevel = performance.lodLevel;
 
     return verticalLines
       .filter(line => {
-        // LOD bazlı filtreleme
+        // LOD-based filtering
         if (lodLevel === LOD_LEVELS.ULTRA_SIMPLIFIED) {
-          return line.type === 'bar' && line.step % 256 === 0; // Her 16 bar'da bir
+          return line.type === 'bar' && line.step % 256 === 0;
         }
         if (lodLevel === LOD_LEVELS.SIMPLIFIED) {
-          return line.type === 'bar' && line.step % 64 === 0; // Her 4 bar'da bir
+          return line.type === 'bar' && line.step % 64 === 0;
         }
         if (lodLevel === LOD_LEVELS.NORMAL) {
-          return line.type === 'bar'; // Her bar
+          return line.type === 'bar';
         }
-        return line.type === 'bar' || line.type === 'beat'; // Bar + beat
+        return line.type === 'bar' || line.type === 'beat';
       })
       .map(line => {
-        const x = line.x - viewport.scrollX;
-        const isVisible = x > -50 && x < viewport.width + 50;
+        // IMPORTANT: Don't subtract viewport.scrollX here!
+        // The timeline content is already being transformed by useScrollSync
+        const x = line.x;
+        const isVisible = x >= viewport.scrollX - 50 && x <= viewport.scrollX + viewport.width + 50;
 
         let label = '';
         if (line.type === 'bar') {
@@ -81,32 +84,31 @@ const VirtualizedTimeline = memo(({ engine, onSeek }) => {
 
     const rect = e.currentTarget.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
+    // Add viewport.scrollX to get absolute position
     const step = coordUtils.pxToStep(viewport.scrollX + clickX);
 
     onSeek(step);
   }, [onSeek, coordUtils, viewport.scrollX]);
 
-  // Playhead position
+  // Playhead position (absolute, not relative)
   const playheadPosition = useMemo(() => {
-    // Bu gerçek playback store'dan gelecek
-    const currentStep = 0; // usePlaybackStore(state => state.currentStep);
-    return coordUtils.stepToPx(currentStep) - viewport.scrollX;
-  }, [coordUtils, viewport.scrollX]);
+    const currentStep = 0; // This will come from playback store
+    return coordUtils.stepToPx(currentStep);
+  }, [coordUtils]);
 
-  // Loop region
+  // Loop region (absolute positions)
   const loopRegion = useMemo(() => {
-    // Bu gerçek playback store'dan gelecek
-    const loopStart = 0;   // usePlaybackStore(state => state.loopStart);
-    const loopEnd = 256;   // usePlaybackStore(state => state.loopEnd);
+    const loopStart = 0;
+    const loopEnd = 256;
 
-    const startX = coordUtils.stepToPx(loopStart) - viewport.scrollX;
-    const endX = coordUtils.stepToPx(loopEnd) - viewport.scrollX;
+    const startX = coordUtils.stepToPx(loopStart);
+    const endX = coordUtils.stepToPx(loopEnd);
 
     return {
       startX,
       endX,
       width: endX - startX,
-      isVisible: startX < viewport.width && endX > 0,
+      isVisible: endX >= viewport.scrollX && startX <= viewport.scrollX + viewport.width,
     };
   }, [coordUtils, viewport.scrollX, viewport.width]);
 
@@ -117,7 +119,7 @@ const VirtualizedTimeline = memo(({ engine, onSeek }) => {
       style={{
         position: 'relative',
         height: '32px',
-        overflow: 'hidden',
+        overflow: 'visible', // Allow content to be visible
         cursor: 'pointer',
         userSelect: 'none',
       }}
@@ -143,18 +145,18 @@ const VirtualizedTimeline = memo(({ engine, onSeek }) => {
       )}
 
       {/* Timeline markers */}
-      {timelineMarkers.map(marker => (
+      {timelineMarkers.filter(m => m.isVisible).map(marker => (
         <TimelineMarker
           key={`timeline-${marker.step}`}
           x={marker.x}
           type={marker.type}
           label={marker.label}
-          isVisible={marker.isVisible}
+          isVisible={true}
         />
       ))}
 
       {/* Playhead */}
-      {playheadPosition > -2 && playheadPosition < viewport.width + 2 && (
+      {playheadPosition >= viewport.scrollX && playheadPosition <= viewport.scrollX + viewport.width && (
         <div
           className="piano-roll-v3__playhead"
           style={{
@@ -170,13 +172,13 @@ const VirtualizedTimeline = memo(({ engine, onSeek }) => {
         />
       )}
 
-      {/* Time display (detailed modes) */}
+      {/* Time display */}
       {(performance.lodLevel === LOD_LEVELS.DETAILED ||
         performance.lodLevel === LOD_LEVELS.ULTRA_DETAILED) && (
         <div
           className="piano-roll-v3__time-display"
           style={{
-            position: 'absolute',
+            position: 'fixed',
             right: 8,
             top: 4,
             fontSize: '11px',
@@ -185,6 +187,7 @@ const VirtualizedTimeline = memo(({ engine, onSeek }) => {
             padding: '2px 6px',
             borderRadius: '3px',
             pointerEvents: 'none',
+            zIndex: 10,
           }}
         >
           {Math.floor(viewport.scrollX / (64 * grid.stepWidth)) + 1}:
@@ -194,7 +197,3 @@ const VirtualizedTimeline = memo(({ engine, onSeek }) => {
     </div>
   );
 });
-
-VirtualizedTimeline.displayName = 'VirtualizedTimeline';
-
-export default VirtualizedTimeline;
