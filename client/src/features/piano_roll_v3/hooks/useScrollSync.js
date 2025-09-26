@@ -31,8 +31,10 @@ export const useScrollSync = (mainContainerRef, syncTargets = []) => {
       syncState.lastScrollY = scrollY;
       syncState.isSyncing = true;
 
-      // Update store
-      setScroll(scrollX, scrollY);
+      // Update store only if not already syncing to prevent loops
+      if (!syncState.isSyncing) {
+        setScroll(scrollX, scrollY);
+      }
 
       // Update sync targets with proper directions
       syncTargets.forEach(({ ref, axis = 'both' }) => {

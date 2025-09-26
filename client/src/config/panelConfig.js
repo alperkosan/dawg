@@ -2,7 +2,7 @@ import ChannelRack from '../features/channel_rack/ChannelRack';
 // import Mixer from '../features/mixer/Mixer'; // <-- 1. ESKİ MİKSERİ SİLİN VEYA YORUM SATIRI YAPIN
 import MixerV3 from '../features/mixer_v3/MixerV3'; // <-- 2. YENİ MİKSERİ IMPORT EDİN
 import SampleEditorV2 from '../features/sample_editor_v3/SampleEditorV3';
-import PianoRoll from '../features/piano_roll_v3/PianoRollV3';
+import PianoRoll from '../features/piano_roll_v5/PianoRoll';
 import ArrangementPanel from '../features/arrangement/ArrangementPanel';
 import KeybindingsPanel from '../features/key_bindings/KeybindingsPanel';
 import { ThemeEditor } from '../features/theme_editor/ThemeEditor';

@@ -1,5 +1,4 @@
 // client/src/lib/audio/WorkletManager.js
-import * as Tone from 'tone';
 
 export class WorkletManager {
   constructor(audioContext = null) {

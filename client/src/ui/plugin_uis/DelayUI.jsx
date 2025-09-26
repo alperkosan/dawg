@@ -3,7 +3,6 @@ import { MeteringService } from '../../lib/core/MeteringService';
 import { ProfessionalKnob } from '../plugin_system/PluginControls';
 import { useMixerStore } from '../../store/useMixerStore';
 import { SignalVisualizer } from '../SignalVisualizer';
-import * as Tone from 'tone';
 
 // Time Division Options
 const timeOptions = [

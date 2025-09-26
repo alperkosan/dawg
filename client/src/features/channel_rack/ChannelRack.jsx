@@ -5,7 +5,7 @@ import { usePlaybackStore } from '../../store/usePlaybackStore';
 import { usePanelsStore } from '../../store/usePanelsStore';
 import { useGlobalPlayhead } from '../../hooks/useGlobalPlayhead';
 import { useOptimizedPlayhead } from '../../hooks/useOptimizedPlayhead';
-import { commandManager } from '../../lib/commands/CommandManager';
+import commandManager from '../../lib/commands/CommandManager';
 import { AddNoteCommand } from '../../lib/commands/AddNoteCommand';
 import { DeleteNoteCommand } from '../../lib/commands/DeleteNoteCommand';
 import InstrumentRow from './InstrumentRow';

@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { ProfessionalKnob } from '../plugin_system/PluginControls';
-import * as Tone from 'tone';
 
 // Görselleştirme için Canvas Bileşeni
 const TapeEchoVisualizer = ({ delayTime, feedback, wet }) => {

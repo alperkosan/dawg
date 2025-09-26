@@ -1,7 +1,6 @@
 import React from 'react';
 import { ProfessionalKnob } from '../../ui/plugin_system/PluginControls';
 import { useInstrumentsStore } from '../../store/useInstrumentsStore';
-import * as Tone from 'tone';
 import { SignalVisualizer } from '../../ui/SignalVisualizer';
 
 // === YENİ: MODÜLASYON MATRİSİ ARAYÜZ BİLEŞENİ ===

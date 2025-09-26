@@ -1,4 +1,3 @@
-
 /**
  * @file VirtualizedTimeline.jsx - FIXED VERSION
  * @description Timeline with proper scroll viewport handling
@@ -32,7 +31,7 @@ const TimelineMarker = memo(({ x, type, label, isVisible, onClick }) => {
   );
 });
 
-export const VirtualizedTimeline = memo(({ engine, onSeek }) => {
+const VirtualizedTimeline = memo(({ engine, onSeek }) => {
   const { virtualGrid, performance, viewport, grid, coordUtils } = engine;
 
   // Timeline markers with FIXED positioning (no scroll offset subtraction!)
@@ -197,3 +196,7 @@ export const VirtualizedTimeline = memo(({ engine, onSeek }) => {
     </div>
   );
 });
+
+VirtualizedTimeline.displayName = 'VirtualizedTimeline';
+
+export default VirtualizedTimeline;

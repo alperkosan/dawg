@@ -1,6 +1,5 @@
 // src/hooks/useWaveformLoader.js
 import { useState, useEffect } from 'react';
-import * as Tone from 'tone';
 
 export const useWaveformLoader = (url) => {
     const [buffer, setBuffer] = useState(null);

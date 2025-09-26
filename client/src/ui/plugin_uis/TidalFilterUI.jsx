@@ -5,8 +5,6 @@ import { useMixerStore } from '../../store/useMixerStore';
 import { SignalVisualizer } from '../SignalVisualizer';
 
 
-import * as Tone from 'tone';
-
 // Animated Filter Sweep Visualizer
 const FilterSweepVisualizer = ({ frequency, baseFrequency, octaves, wet }) => {
   const canvasRef = useRef(null);

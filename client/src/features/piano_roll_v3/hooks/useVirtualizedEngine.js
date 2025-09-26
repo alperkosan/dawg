@@ -1,15 +1,15 @@
 /**
  * @file useVirtualizedEngine.js
- * @description Infinite scroll ve LOD destekli virtualized rendering engine
+ * @description Fixed virtualized rendering engine with proper calculations
  */
 import { useRef, useCallback, useLayoutEffect, useMemo } from 'react';
 import { usePianoRollV3Store } from '../store/usePianoRollV3Store';
 import { throttle } from '../utils/performance';
 
-// Note mapping - MIDI note sayısından pitch string'e
+// Note mapping
 const NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const getNoteInfo = (keyIndex) => {
-  const midiNote = 108 - keyIndex; // C8'den C0'a
+  const midiNote = 108 - keyIndex; // C8 to C0
   const octave = Math.floor(midiNote / 12);
   const noteIndex = midiNote % 12;
   return {
@@ -23,7 +23,6 @@ const getNoteInfo = (keyIndex) => {
 export const useVirtualizedEngine = (containerRef) => {
   const scrollRef = useRef({ x: 0, y: 0 });
   const rafRef = useRef(null);
-  const lastUpdateRef = useRef(0);
 
   // Store selectors
   const viewport = usePianoRollV3Store(state => state.viewport);
@@ -37,12 +36,12 @@ export const useVirtualizedEngine = (containerRef) => {
   const getVisibleRange = usePianoRollV3Store(state => state.getVisibleRange);
   const getTotalGridSize = usePianoRollV3Store(state => state.getTotalGridSize);
 
-  // Throttled scroll handler - performans için
+  // Throttled scroll handler
   const throttledScrollHandler = useMemo(
     () => throttle((scrollLeft, scrollTop) => {
       scrollRef.current = { x: scrollLeft, y: scrollTop };
       setScroll(scrollLeft, scrollTop);
-    }, 16), // 60fps
+    }, 16),
     [setScroll]
   );
 
@@ -71,9 +70,10 @@ export const useVirtualizedEngine = (containerRef) => {
     if (!rect) return;
 
     const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
-    const newZoomX = viewport.zoomX * zoomFactor;
+    const currentZoomX = viewport.zoomX || 1;
+    const newZoomX = currentZoomX * zoomFactor;
 
-    // Zoom center hesaplama
+    // Calculate zoom center
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
 
@@ -82,9 +82,9 @@ export const useVirtualizedEngine = (containerRef) => {
 
     setZoom(newZoomX);
 
-    // Zoom sonrası scroll pozisyonunu ayarla
+    // Adjust scroll position after zoom
     requestAnimationFrame(() => {
-      const newStepWidth = grid.stepWidth * (newZoomX / viewport.zoomX);
+      const newStepWidth = grid.stepWidth * (newZoomX / currentZoomX);
       const newScrollX = beforeZoomStep * newStepWidth - mouseX;
       const newScrollY = beforeZoomKey * grid.keyHeight - mouseY;
 
@@ -93,9 +93,9 @@ export const useVirtualizedEngine = (containerRef) => {
         containerRef.current.scrollTop = Math.max(0, newScrollY);
       }
     });
-  }, [viewport.zoomX, viewport.scrollX, viewport.scrollY, grid.stepWidth, grid.keyHeight, setZoom, containerRef]);
+  }, [viewport, grid, setZoom, containerRef]);
 
-  // DOM setup
+  // Setup DOM event listeners
   useLayoutEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -108,7 +108,7 @@ export const useVirtualizedEngine = (containerRef) => {
     container.addEventListener('scroll', handleScroll, { passive: true });
     container.addEventListener('wheel', handleWheel, { passive: false });
 
-    // İlk boyut hesaplama
+    // Initial size calculation
     const rect = container.getBoundingClientRect();
     setViewportSize(rect.width, rect.height);
 
@@ -122,52 +122,83 @@ export const useVirtualizedEngine = (containerRef) => {
     };
   }, [handleResize, handleScroll, handleWheel, setViewportSize]);
 
-  // Virtual grid hesaplamaları
+  // Virtual grid calculations - FIXED
   const virtualGrid = useMemo(() => {
     const range = getVisibleRange();
     const totalSize = getTotalGridSize();
 
-    // Görünür grid çizgileri
+    // Initialize arrays
     const verticalLines = [];
     const horizontalLines = [];
 
-    // LOD'a göre grid çizgilerini hesapla
-    const stepInterval = performance.lodLevel === 'ultra_simplified' ? 64 :
-                        performance.lodLevel === 'simplified' ? 16 :
-                        performance.lodLevel === 'normal' ? 4 : 1;
+    // Calculate step interval based on LOD
+    let stepInterval = 1;
+    if (performance.lodLevel === 'ultra_simplified') {
+      stepInterval = 64; // Only bars
+    } else if (performance.lodLevel === 'simplified') {
+      stepInterval = 16; // Bars and beats
+    } else if (performance.lodLevel === 'normal') {
+      stepInterval = 4; // Quarter beats
+    }
 
-    // Dikey çizgiler (time grid)
-    for (let step = Math.floor(range.startX / stepInterval) * stepInterval;
-         step <= range.endX;
-         step += stepInterval) {
+    // Generate vertical lines (time grid)
+    const startStep = Math.max(0, Math.floor(range.startX / stepInterval) * stepInterval);
+    const endStep = Math.min(grid.dynamicBars * 64, Math.ceil(range.endX / stepInterval) * stepInterval);
+
+    for (let step = startStep; step <= endStep; step += stepInterval) {
       const x = step * grid.stepWidth;
-      const isBarLine = step % 64 === 0; // 4 beats * 16 steps
+      const isBarLine = step % 64 === 0;
       const isBeatLine = step % 16 === 0;
+      const isSubBeatLine = step % 4 === 0;
+
+      // Determine line type
+      let lineType = 'step';
+      if (isBarLine) lineType = 'bar';
+      else if (isBeatLine) lineType = 'beat';
+      else if (isSubBeatLine) lineType = 'sub-beat';
 
       verticalLines.push({
         x,
-        type: isBarLine ? 'bar' : isBeatLine ? 'beat' : 'step',
+        type: lineType,
         step,
         bar: Math.floor(step / 64) + 1,
         beat: Math.floor((step % 64) / 16) + 1,
       });
     }
 
-    // Yatay çizgiler (key grid)
+    // Generate horizontal lines (key grid)
     const keyInterval = performance.lodLevel === 'ultra_simplified' ? 12 :
-                       performance.lodLevel === 'simplified' ? 6 : 1;
+                       performance.lodLevel === 'simplified' ? 3 : 1;
 
-    for (let key = Math.floor(range.startY / keyInterval) * keyInterval;
-         key <= range.endY;
-         key += keyInterval) {
+    const startKey = Math.max(0, Math.floor(range.startY / keyInterval) * keyInterval);
+    const endKey = Math.min(grid.totalKeys, Math.ceil(range.endY / keyInterval) * keyInterval);
+
+    for (let key = startKey; key <= endKey; key += keyInterval) {
       const y = key * grid.keyHeight;
       const noteInfo = getNoteInfo(key);
 
       horizontalLines.push({
         y,
         key,
-        ...noteInfo,
+        pitch: noteInfo.pitch,
+        isBlack: noteInfo.isBlack,
+        isC: noteInfo.isC,
         isOctaveLine: noteInfo.isC,
+      });
+    }
+
+    // Debug log
+    if (verticalLines.length === 0 || horizontalLines.length === 0) {
+      console.warn('Grid calculation issue:', {
+        range,
+        verticalCount: verticalLines.length,
+        horizontalCount: horizontalLines.length,
+        stepInterval,
+        keyInterval,
+        startStep,
+        endStep,
+        startKey,
+        endKey
       });
     }
 
@@ -182,15 +213,15 @@ export const useVirtualizedEngine = (containerRef) => {
       },
       totalSize,
     };
-  }, [performance.lodLevel, grid.stepWidth, grid.keyHeight, getVisibleRange, getTotalGridSize]);
+  }, [performance.lodLevel, grid, getVisibleRange, getTotalGridSize]);
 
-  // Koordinat dönüşüm fonksiyonları
+  // Coordinate transformation utilities
   const coordUtils = useMemo(() => ({
-    // Pixel to step/key
+    // Pixel to grid coordinates
     pxToStep: (px) => Math.floor(px / grid.stepWidth),
     pxToKey: (px) => Math.floor(px / grid.keyHeight),
 
-    // Step/key to pixel
+    // Grid to pixel coordinates
     stepToPx: (step) => step * grid.stepWidth,
     keyToPx: (key) => key * grid.keyHeight,
 
@@ -224,7 +255,7 @@ export const useVirtualizedEngine = (containerRef) => {
     // Actions
     setZoom,
 
-    // Current scroll position (for real-time updates)
+    // Current scroll position
     getCurrentScroll: () => scrollRef.current,
 
     // Force update trigger

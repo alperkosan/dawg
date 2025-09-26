@@ -1,8 +1,10 @@
-
 /**
- * @file VirtualizedKeyboard.jsx - FIXED VERSION
- * @description Keyboard with proper scroll viewport handling
+ * @file VirtualizedKeyboard.jsx
+ * @description Fixed keyboard component with proper scroll sync
  */
+import React, { memo, useMemo, useCallback, useState } from 'react';
+import { LOD_LEVELS } from '../store/usePianoRollV3Store';
+
 const PianoKey = memo(({
   noteInfo,
   y,
@@ -24,6 +26,7 @@ const PianoKey = memo(({
 
   const showLabel = (lodLevel === LOD_LEVELS.DETAILED || lodLevel === LOD_LEVELS.ULTRA_DETAILED) &&
                    noteInfo.isC;
+  const keyOpacity = noteInfo.isBlack ? 0.8 : 1;
 
   return (
     <div
@@ -34,6 +37,7 @@ const PianoKey = memo(({
         top: y,
         width,
         height: height - 1,
+        opacity: keyOpacity,
         cursor: 'pointer',
         borderBottom: '1px solid rgba(255,255,255,0.1)',
       }}
@@ -63,11 +67,13 @@ const PianoKey = memo(({
   );
 });
 
-export const VirtualizedKeyboard = memo(({ engine, onNotePreview, instrumentId }) => {
-  const { virtualGrid, performance, viewport, grid, coordUtils } = engine;
-  const [activeNotes, setActiveNotes] = React.useState(new Set());
+PianoKey.displayName = 'PianoKey';
 
-  // Visible keys with FIXED positioning
+const VirtualizedKeyboard = memo(({ engine, onNotePreview, instrumentId }) => {
+  const { virtualGrid, performance, viewport, grid, coordUtils } = engine;
+  const [activeNotes, setActiveNotes] = useState(new Set());
+
+  // Visible keys with FIXED positioning (no viewport offset subtraction!)
   const visibleKeys = useMemo(() => {
     const { horizontalLines } = virtualGrid;
     const lodLevel = performance.lodLevel;
@@ -75,6 +81,7 @@ export const VirtualizedKeyboard = memo(({ engine, onNotePreview, instrumentId }
     return horizontalLines.map(line => {
       const noteInfo = coordUtils.getNoteInfo(line.key);
       // IMPORTANT: Don't subtract viewport.scrollY here!
+      // The keyboard content is already being transformed by useScrollSync
       const y = line.y;
       const isVisible = y >= viewport.scrollY - grid.keyHeight && 
                        y <= viewport.scrollY + viewport.height + grid.keyHeight;
@@ -82,9 +89,9 @@ export const VirtualizedKeyboard = memo(({ engine, onNotePreview, instrumentId }
       // LOD-based filtering
       let shouldRender = true;
       if (lodLevel === LOD_LEVELS.ULTRA_SIMPLIFIED) {
-        shouldRender = noteInfo.isC && (line.key % 12 === 0);
+        shouldRender = noteInfo.isC && (line.key % 12 === 0); // Only C notes, 1 octave spacing
       } else if (lodLevel === LOD_LEVELS.SIMPLIFIED) {
-        shouldRender = noteInfo.isC || !noteInfo.isBlack;
+        shouldRender = noteInfo.isC || !noteInfo.isBlack; // C notes + white keys
       }
 
       return {
@@ -116,7 +123,7 @@ export const VirtualizedKeyboard = memo(({ engine, onNotePreview, instrumentId }
     onNotePreview(noteInfo.pitch, false, instrumentId);
   }, [onNotePreview, instrumentId, activeNotes]);
 
-  // Global mouse up cleanup
+  // Global mouse up handler for cleanup
   React.useEffect(() => {
     const handleGlobalMouseUp = () => {
       if (activeNotes.size === 0) return;
@@ -145,12 +152,15 @@ export const VirtualizedKeyboard = memo(({ engine, onNotePreview, instrumentId }
       style={{
         position: 'relative',
         width: keyboardWidth,
-        height: '100%', // Full height of content
-        overflow: 'visible', // Allow content to be visible
+        height: '100%',
+        overflow: 'visible',
         backgroundColor: '#2a2a2a',
         borderRight: '1px solid #444',
       }}
     >
+      {/* Keyboard background */}
+      <div className="piano-roll-v3__keyboard-bg" />
+
       {/* Piano keys */}
       {visibleKeys.filter(key => key.isVisible).map(key => (
         <PianoKey
@@ -167,12 +177,12 @@ export const VirtualizedKeyboard = memo(({ engine, onNotePreview, instrumentId }
         />
       ))}
 
-      {/* Octave separators */}
+      {/* Octave separators (detailed modes) */}
       {(performance.lodLevel === LOD_LEVELS.DETAILED ||
         performance.lodLevel === LOD_LEVELS.ULTRA_DETAILED) && (
         <div className="piano-roll-v3__octave-separators">
           {visibleKeys
-            .filter(key => key.isVisible && key.noteInfo.isC && key.noteInfo.pitch.endsWith('0'))
+            .filter(key => key.isVisible && key.noteInfo.isC && key.noteInfo.pitch.includes('0'))
             .map(key => (
               <div
                 key={`octave-${key.key}`}
@@ -191,12 +201,12 @@ export const VirtualizedKeyboard = memo(({ engine, onNotePreview, instrumentId }
         </div>
       )}
 
-      {/* Active indicator */}
+      {/* Active notes indicator */}
       {activeNotes.size > 0 && (
         <div
           className="piano-roll-v3__active-indicator"
           style={{
-            position: 'fixed',
+            position: 'absolute',
             top: 4,
             right: 4,
             width: '8px',
@@ -204,15 +214,42 @@ export const VirtualizedKeyboard = memo(({ engine, onNotePreview, instrumentId }
             borderRadius: '50%',
             backgroundColor: '#00ff88',
             pointerEvents: 'none',
-            zIndex: 10,
+            animation: 'pulse 1s ease infinite',
           }}
         />
+      )}
+
+      {/* Scroll position indicator (ultra detailed mode) */}
+      {performance.lodLevel === LOD_LEVELS.ULTRA_DETAILED && (
+        <div
+          className="piano-roll-v3__scroll-indicator"
+          style={{
+            position: 'absolute',
+            right: 2,
+            top: 8,
+            bottom: 8,
+            width: '4px',
+            backgroundColor: 'rgba(255,255,255,0.1)',
+            borderRadius: '2px',
+          }}
+        >
+          <div
+            style={{
+              position: 'absolute',
+              top: `${(viewport.scrollY / (grid.totalKeys * grid.keyHeight)) * 100}%`,
+              width: '100%',
+              height: `${(viewport.height / (grid.totalKeys * grid.keyHeight)) * 100}%`,
+              backgroundColor: 'rgba(255,255,255,0.5)',
+              borderRadius: '2px',
+              minHeight: '20px',
+            }}
+          />
+        </div>
       )}
     </div>
   );
 });
 
-VirtualizedTimeline.displayName = 'VirtualizedTimeline';
 VirtualizedKeyboard.displayName = 'VirtualizedKeyboard';
 
-export { VirtualizedTimeline, VirtualizedKeyboard };
+export default VirtualizedKeyboard;

@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import * as Tone from 'tone';
 
 export const AudioWorkletTest = () => {
   const [testStatus, setTestStatus] = useState('not-started');

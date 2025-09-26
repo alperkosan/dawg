@@ -13,18 +13,16 @@ class CommandManager {
 
   /**
    * Yeni bir komutu çalıştırır ve geçmişe ekler.
-   * @param {import('./Command').Command} command - Çalıştırılacak komut nesnesi.
+   * @param {Command} command - Çalıştırılacak komut nesnesi.
    */
   execute(command) {
     command.execute();
     this.history.push(command);
 
-    // Geçmiş boyutu sınırı aştıysa en eski komutu sil
     if (this.history.length > this.maxHistorySize) {
       this.history.shift();
     }
 
-    // Yeni bir komut çalıştırıldığında, ileri alma yığını temizlenir.
     this.redoStack = [];
     console.log(`Executed: ${command.getDescription()}`);
   }
@@ -61,4 +59,5 @@ class CommandManager {
 }
 
 // Projenin her yerinden aynı yöneticiye erişebilmek için tek bir örnek (instance) oluşturuyoruz.
-export const commandManager = new CommandManager();
+const commandManager = new CommandManager();
+export default commandManager;

@@ -30,10 +30,10 @@ export const VIEWPORT_CONFIG = {
 };
 
 const getLODFromZoom = (zoomX) => {
-  if (zoomX < 0.1) return LOD_LEVELS.ULTRA_SIMPLIFIED;
-  if (zoomX < 0.4) return LOD_LEVELS.SIMPLIFIED;
-  if (zoomX < 1.0) return LOD_LEVELS.NORMAL;
-  if (zoomX < 2.5) return LOD_LEVELS.DETAILED;
+  if (zoomX < 0.25) return LOD_LEVELS.ULTRA_SIMPLIFIED;
+  if (zoomX < 0.5) return LOD_LEVELS.SIMPLIFIED;
+  if (zoomX < 1.5) return LOD_LEVELS.NORMAL;
+  if (zoomX < 3.0) return LOD_LEVELS.DETAILED;
   return LOD_LEVELS.ULTRA_DETAILED;
 };
 
@@ -45,8 +45,8 @@ export const usePianoRollV3Store = create(
       height: 0,
       scrollX: 0,
       scrollY: 0,
-      zoomX: 1.0,
-      zoomY: 1.0,
+      zoomX: 1.0,  // Başlangıç zoom %100
+      zoomY: 1.0,  // Başlangıç zoom %100
       maxScrollX: 0,
       maxScrollY: 0,
     },
@@ -215,34 +215,48 @@ export const usePianoRollV3Store = create(
       get().clearChunkCache(); // Clear cache on zoom change
     },
 
-    // Virtualization with chunk loading
+    // Virtualization hesaplamaları - FIXED
     updateVirtualization: () => {
       const { viewport, grid, virtualization } = get();
 
-      const startX = Math.floor(viewport.scrollX / grid.stepWidth) -
-                     Math.ceil(virtualization.renderPadding / grid.stepWidth);
-      const endX = Math.ceil((viewport.scrollX + viewport.width) / grid.stepWidth) +
-                   Math.ceil(virtualization.renderPadding / grid.stepWidth);
+      // Add safety checks
+      if (!viewport.width || !viewport.height) {
+        console.warn('Viewport not initialized');
+        return;
+      }
 
-      const startY = Math.floor(viewport.scrollY / grid.keyHeight) -
-                     Math.ceil(virtualization.renderPadding / grid.keyHeight);
-      const endY = Math.ceil((viewport.scrollY + viewport.height) / grid.keyHeight) +
-                   Math.ceil(virtualization.renderPadding / grid.keyHeight);
+      // Calculate visible range with padding
+      const padding = virtualization.renderPadding || 200;
+      
+      const startX = Math.max(0, 
+        Math.floor((viewport.scrollX - padding) / grid.stepWidth)
+      );
+      const endX = Math.min(
+        grid.dynamicBars * 64,
+        Math.ceil((viewport.scrollX + viewport.width + padding) / grid.stepWidth)
+      );
+
+      const startY = Math.max(0,
+        Math.floor((viewport.scrollY - padding) / grid.keyHeight)
+      );
+      const endY = Math.min(
+        grid.totalKeys,
+        Math.ceil((viewport.scrollY + viewport.height + padding) / grid.keyHeight)
+      );
+
+      // Ensure we have a valid range
+      if (endX <= startX || endY <= startY) {
+        console.warn('Invalid virtualization range:', { startX, endX, startY, endY });
+        return;
+      }
 
       set(state => ({
         virtualization: {
           ...state.virtualization,
-          visibleStartX: Math.max(0, startX),
-          visibleEndX: Math.min(grid.dynamicBars * 64, endX),
-          visibleStartY: Math.max(0, startY),
-          visibleEndY: Math.min(grid.totalKeys, endY),
-        },
-        performance: {
-          ...state.performance,
-          renderStats: {
-            ...state.performance.renderStats,
-            gridLines: (endX - startX) + (endY - startY),
-          }
+          visibleStartX: startX,
+          visibleEndX: endX,
+          visibleStartY: startY,
+          visibleEndY: endY,
         }
       }));
     },
@@ -551,7 +565,7 @@ export const usePianoRollV3Store = create(
 
     // === UTILITIES ===
     scrollEndTimer: null,
-
+    
     zoomIn: () => {
       const currentZoom = get().viewport.zoomX;
       get().setZoom(currentZoom * 1.25);
@@ -565,13 +579,7 @@ export const usePianoRollV3Store = create(
     setTool: (tool) => {
       set(state => ({
         ui: { ...state.ui, selectedTool: tool }
-      }));
-    },
-
-    toggleVelocityLane: () => {
-      set(state => ({
-        ui: { ...state.ui, showVelocityLane: !state.ui.showVelocityLane }
-      }));
+      }))
     },
 
     // === GETTERS ===

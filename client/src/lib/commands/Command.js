@@ -24,6 +24,8 @@ export class Command {
    * @returns {string}
    */
   getDescription() {
-    return 'Bilinmeyen komut';
+    // Önce elle atadığımız 'name' özelliğini kontrol et,
+    // yoksa constructor'ın ismini kullan, o da yoksa 'Bilinmeyen komut' de.
+    return this.name || this.constructor.name || 'Bilinmeyen komut';
   }
 }
