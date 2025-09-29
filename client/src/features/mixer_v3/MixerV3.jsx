@@ -25,6 +25,7 @@ const MixerV3 = () => {
   const [selectedEffectsTrack, setSelectedEffectsTrack] = useState(null);
   const [showActivePanel, setShowActivePanel] = useState(true);
 
+  // Simple store subscription to avoid infinite loop
   const {
     mixerTracks,
     activeChannelId,
@@ -39,8 +40,10 @@ const MixerV3 = () => {
     masterTracks: mixerTracks.filter(t => t.type === 'master'),
   }), [mixerTracks]);
 
-  const activeTrack = useMixerStore(state =>
-    state.mixerTracks.find(t => t.id === activeChannelId)
+  // Get active track from already subscribed mixerTracks
+  const activeTrack = useMemo(() =>
+    mixerTracks.find(t => t.id === activeChannelId),
+    [mixerTracks, activeChannelId]
   );
 
   const handleSendClick = (sendId) => {

@@ -1,13 +1,20 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { useMixerStore } from '../../../store/useMixerStore';
 import VolumeKnob from './VolumeKnob';
 
-const EQSection = ({ trackId }) => {
+const EQSection = React.memo(({ trackId }) => {
+  // Simple store subscription to avoid infinite loop
   const track = useMixerStore(state =>
     state.mixerTracks.find(t => t.id === trackId)
   );
 
-  const { handleMixerParamChange } = useMixerStore.getState();
+  // Get stable reference to store action
+  const storeActions = useMemo(() => {
+    const state = useMixerStore.getState();
+    return {
+      handleMixerParamChange: state.handleMixerParamChange
+    };
+  }, []);
 
   if (!track) return null;
 
@@ -27,7 +34,7 @@ const EQSection = ({ trackId }) => {
         <span className="eq-section__title">EQ</span>
         <button
           className="eq-section__bypass"
-          onClick={() => handleMixerParamChange(trackId, 'eqBypassed', !track.eqBypassed)}
+          onClick={() => storeActions.handleMixerParamChange(trackId, 'eqBypassed', !track.eqBypassed)}
           title="Bypass EQ"
         >
           {track.eqBypassed ? 'OFF' : 'ON'}
@@ -40,7 +47,7 @@ const EQSection = ({ trackId }) => {
           <div className="eq-band__header">HIGH</div>
           <VolumeKnob
             value={eq.highGain}
-            onChange={(value) => handleMixerParamChange(trackId, 'eq.highGain', value)}
+            onChange={(value) => storeActions.handleMixerParamChange(trackId, 'eq.highGain', value)}
             min={-15}
             max={15}
             size="mini"
@@ -49,7 +56,7 @@ const EQSection = ({ trackId }) => {
           />
           <VolumeKnob
             value={eq.highFreq}
-            onChange={(value) => handleMixerParamChange(trackId, 'eq.highFreq', value)}
+            onChange={(value) => storeActions.handleMixerParamChange(trackId, 'eq.highFreq', value)}
             min={5000}
             max={20000}
             size="mini"
@@ -63,7 +70,7 @@ const EQSection = ({ trackId }) => {
           <div className="eq-band__header">MID</div>
           <VolumeKnob
             value={eq.midGain}
-            onChange={(value) => handleMixerParamChange(trackId, 'eq.midGain', value)}
+            onChange={(value) => storeActions.handleMixerParamChange(trackId, 'eq.midGain', value)}
             min={-15}
             max={15}
             size="mini"
@@ -72,7 +79,7 @@ const EQSection = ({ trackId }) => {
           />
           <VolumeKnob
             value={eq.midFreq}
-            onChange={(value) => handleMixerParamChange(trackId, 'eq.midFreq', value)}
+            onChange={(value) => storeActions.handleMixerParamChange(trackId, 'eq.midFreq', value)}
             min={200}
             max={8000}
             size="mini"
@@ -81,7 +88,7 @@ const EQSection = ({ trackId }) => {
           />
           <VolumeKnob
             value={eq.midQ}
-            onChange={(value) => handleMixerParamChange(trackId, 'eq.midQ', value)}
+            onChange={(value) => storeActions.handleMixerParamChange(trackId, 'eq.midQ', value)}
             min={0.1}
             max={10}
             size="mini"
@@ -95,7 +102,7 @@ const EQSection = ({ trackId }) => {
           <div className="eq-band__header">LOW</div>
           <VolumeKnob
             value={eq.lowGain}
-            onChange={(value) => handleMixerParamChange(trackId, 'eq.lowGain', value)}
+            onChange={(value) => storeActions.handleMixerParamChange(trackId, 'eq.lowGain', value)}
             min={-15}
             max={15}
             size="mini"
@@ -104,7 +111,7 @@ const EQSection = ({ trackId }) => {
           />
           <VolumeKnob
             value={eq.lowFreq}
-            onChange={(value) => handleMixerParamChange(trackId, 'eq.lowFreq', value)}
+            onChange={(value) => storeActions.handleMixerParamChange(trackId, 'eq.lowFreq', value)}
             min={20}
             max={500}
             size="mini"
@@ -115,6 +122,9 @@ const EQSection = ({ trackId }) => {
       </div>
     </div>
   );
-};
+});
+
+// Define display name for React.memo
+EQSection.displayName = 'EQSection';
 
 export default EQSection;

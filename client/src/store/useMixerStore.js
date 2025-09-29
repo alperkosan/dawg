@@ -17,6 +17,11 @@ export const useMixerStore = create((set, get) => ({
   _effectOperationTimestamps: new Map(),
   _effectOperationCooldown: 100, // 100ms cooldown between operations
 
+  // ✅ PERFORMANCE: Level meter rate limiting
+  _levelMeterUpdateTimestamp: 0,
+  _levelMeterUpdateInterval: 16, // ~60fps for level meters
+  levelMeterData: new Map(), // Store level data separately from UI state
+
   // Send channels for routing audio to effects
   sendChannels: [
     { id: 'send1', name: 'Reverb', type: 'send', masterLevel: 0, pan: 0 },
@@ -325,6 +330,31 @@ export const useMixerStore = create((set, get) => ({
     if (AudioContextService.updateSendChannel) {
       AudioContextService.updateSendChannel(sendId, updates);
     }
+  },
+
+  // ✅ PERFORMANCE: Throttled level meter updates
+  updateLevelMeterData: (trackId, levelData) => {
+    const now = Date.now();
+    const state = get();
+
+    // Rate limiting - only update if enough time has passed
+    if (now - state._levelMeterUpdateTimestamp < state._levelMeterUpdateInterval) {
+      return;
+    }
+
+    set(state => {
+      const newLevelMeterData = new Map(state.levelMeterData);
+      newLevelMeterData.set(trackId, {
+        peak: levelData.peak || 0,
+        rms: levelData.rms || 0,
+        timestamp: now
+      });
+
+      return {
+        levelMeterData: newLevelMeterData,
+        _levelMeterUpdateTimestamp: now
+      };
+    });
   },
 
   handleSendChange: (trackId, sendParam, value) => {

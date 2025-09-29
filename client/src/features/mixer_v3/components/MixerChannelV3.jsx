@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useMixerStore } from '../../../store/useMixerStore';
 import FaderV3 from './FaderV3';
 import EQSection from './EQSection';
@@ -17,24 +17,27 @@ import {
   Filter
 } from 'lucide-react';
 
-const MixerChannelV3 = ({ trackId, onSendClick, onEffectsClick, isActive, onClick }) => {
+const MixerChannelV3 = React.memo(({ trackId, onSendClick, onEffectsClick, isActive, onClick }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [showEQ, setShowEQ] = useState(false);
   const [showSends, setShowSends] = useState(false);
 
-  // Routing visual cues
+  // Simple store subscriptions to avoid infinite loop
   const activeChannelId = useMixerStore(state => state.activeChannelId);
-  const isRoutingTarget = activeChannelId && activeChannelId !== trackId;
-
   const track = useMixerStore(state =>
     state.mixerTracks.find(t => t.id === trackId)
   );
+  const isRoutingTarget = activeChannelId && activeChannelId !== trackId;
 
-  const {
-    handleMixerParamChange,
-    toggleMute,
-    toggleSolo
-  } = useMixerStore.getState();
+  // Get stable references to store actions
+  const storeActions = useMemo(() => {
+    const state = useMixerStore.getState();
+    return {
+      handleMixerParamChange: state.handleMixerParamChange,
+      toggleMute: state.toggleMute,
+      toggleSolo: state.toggleSolo
+    };
+  }, []);
 
   if (!track) return null;
 
@@ -84,7 +87,7 @@ const MixerChannelV3 = ({ trackId, onSendClick, onEffectsClick, isActive, onClic
       <div className="mixer-channel-v3__input-section">
         <VolumeKnob
           value={track.inputGain || 0}
-          onChange={(value) => handleMixerParamChange(trackId, 'inputGain', value)}
+          onChange={(value) => storeActions.handleMixerParamChange(trackId, 'inputGain', value)}
           label="GAIN"
           min={-30}
           max={30}
@@ -123,7 +126,7 @@ const MixerChannelV3 = ({ trackId, onSendClick, onEffectsClick, isActive, onClic
         <div className="mixer-channel-v3__fader-section">
           <FaderV3
             value={track.volume}
-            onChange={(value) => handleMixerParamChange(trackId, 'volume', value)}
+            onChange={(value) => storeActions.handleMixerParamChange(trackId, 'volume', value)}
             showValue={true}
           />
         </div>
@@ -133,7 +136,7 @@ const MixerChannelV3 = ({ trackId, onSendClick, onEffectsClick, isActive, onClic
       <div className="mixer-channel-v3__pan-section">
         <VolumeKnob
           value={track.pan || 0}
-          onChange={(value) => handleMixerParamChange(trackId, 'pan', value)}
+          onChange={(value) => storeActions.handleMixerParamChange(trackId, 'pan', value)}
           label="PAN"
           min={-100}
           max={100}
@@ -148,7 +151,7 @@ const MixerChannelV3 = ({ trackId, onSendClick, onEffectsClick, isActive, onClic
           className={`mixer-channel-v3__mute-btn ${track.muted ? 'mixer-channel-v3__mute-btn--active' : ''}`}
           onClick={(e) => {
             e.stopPropagation();
-            toggleMute(trackId);
+            storeActions.toggleMute(trackId);
           }}
           title="Mute"
         >
@@ -159,7 +162,7 @@ const MixerChannelV3 = ({ trackId, onSendClick, onEffectsClick, isActive, onClic
           className={`mixer-channel-v3__solo-btn ${track.solo ? 'mixer-channel-v3__solo-btn--active' : ''}`}
           onClick={(e) => {
             e.stopPropagation();
-            toggleSolo(trackId);
+            storeActions.toggleSolo(trackId);
           }}
           title="Solo"
         >
@@ -220,7 +223,7 @@ const MixerChannelV3 = ({ trackId, onSendClick, onEffectsClick, isActive, onClic
           className={`mixer-channel-v3__rec-btn ${track.armed ? 'mixer-channel-v3__rec-btn--active' : ''}`}
           onClick={(e) => {
             e.stopPropagation();
-            handleMixerParamChange(trackId, 'armed', !track.armed);
+            storeActions.handleMixerParamChange(trackId, 'armed', !track.armed);
           }}
           title="Arm for recording"
         >
@@ -229,6 +232,9 @@ const MixerChannelV3 = ({ trackId, onSendClick, onEffectsClick, isActive, onClic
       </div>
     </div>
   );
-};
+});
+
+// Define comparison function for React.memo
+MixerChannelV3.displayName = 'MixerChannelV3';
 
 export default MixerChannelV3;
