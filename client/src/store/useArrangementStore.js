@@ -62,14 +62,30 @@ export const useArrangementStore = create(arrangementStoreOrchestrator((set, get
   },
 
   updatePatternNotes: (patternId, instrumentId, newNotes) => {
+    console.log('🔄 updatePatternNotes called:', { patternId, instrumentId, newNotesCount: newNotes.length });
+
     set(state => {
       const newPatterns = { ...state.patterns };
       const targetPattern = newPatterns[patternId];
+
+      console.log('📋 Before update:', {
+        patternExists: !!targetPattern,
+        currentData: targetPattern?.data?.[instrumentId]?.length || 0
+      });
+
       if (targetPattern) {
         const newData = { ...targetPattern.data, [instrumentId]: newNotes };
         newPatterns[patternId] = { ...targetPattern, data: newData };
+
+        console.log('✅ After update:', {
+          newDataCount: newData[instrumentId]?.length || 0,
+          totalInstruments: Object.keys(newData).length
+        });
+
         return { patterns: newPatterns };
       }
+
+      console.warn('❌ Pattern not found:', patternId);
       return state;
     });
      // Orkestratör bu eylemi de yakalayacak.

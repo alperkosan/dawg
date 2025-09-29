@@ -1,0 +1,258 @@
+/* Piano Roll v7 Toolbar - Authentic Zenith Design */
+
+.prv7-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 44px;
+  padding: 0 var(--spacing-4);
+  background-color: var(--color-surface-1);
+  border-bottom: 1px solid var(--color-border);
+  font-family: var(--font-body);
+  font-size: var(--font-size-sm);
+  flex-shrink: 0;
+  z-index: 40;
+}
+
+/* Toolbar Groups */
+.prv7-toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+}
+
+/* Brand */
+.prv7-brand {
+  display: flex;
+  align-items: center;
+  margin-right: var(--spacing-4);
+}
+
+.prv7-brand-text {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--font-size-md);
+  color: var(--color-text-primary);
+  letter-spacing: -0.5px;
+}
+
+/* Tool Group */
+.prv7-tool-group {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-1);
+}
+
+.prv7-tool-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-2);
+  border-radius: var(--border-radius-md);
+  color: var(--color-text-secondary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all var(--transition-speed) ease;
+  width: 36px;
+  height: 36px;
+}
+
+.prv7-tool-btn:hover {
+  color: var(--color-text-primary);
+  background-color: var(--color-surface-2);
+}
+
+.prv7-tool-btn--active {
+  color: var(--color-accent-primary);
+  background-color: var(--color-surface-3);
+}
+
+/* Transport Controls */
+.prv7-transport-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--border-radius-md);
+  color: var(--color-text-secondary);
+  background-color: var(--color-surface-2);
+  border: none;
+  cursor: pointer;
+  transition: all var(--transition-speed) ease;
+}
+
+.prv7-transport-btn:hover {
+  background-color: var(--color-surface-3);
+  color: var(--color-text-primary);
+}
+
+.prv7-transport-btn--playing {
+  color: var(--color-text-inverse);
+  background-color: var(--color-accent-primary);
+  box-shadow: var(--shadow-glow);
+}
+
+.prv7-transport-btn--recording {
+  color: var(--color-text-inverse);
+  background-color: var(--color-accent-danger);
+}
+
+/* Settings */
+.prv7-setting-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+}
+
+.prv7-setting-label {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.prv7-select {
+  background-color: var(--color-surface-2);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius-sm);
+  padding: var(--spacing-1) var(--spacing-2);
+  font-size: var(--font-size-sm);
+  font-family: var(--font-body);
+  cursor: pointer;
+  outline: none;
+  transition: all var(--transition-speed) ease;
+  min-width: 80px;
+}
+
+.prv7-select:hover,
+.prv7-select:focus {
+  border-color: var(--color-accent-primary);
+  background-color: var(--color-surface-3);
+}
+
+/* Zoom Controls */
+.prv7-zoom-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--border-radius-sm);
+  color: var(--color-text-secondary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all var(--transition-speed) ease;
+}
+
+.prv7-zoom-btn:hover {
+  color: var(--color-text-primary);
+  background-color: var(--color-surface-2);
+}
+
+.prv7-zoom-value {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-primary);
+  min-width: 40px;
+  text-align: center;
+  font-weight: 500;
+  margin: 0 var(--spacing-1);
+}
+
+/* Quantize Dropdown */
+.prv7-quantize-dropdown {
+  position: relative;
+}
+
+.prv7-quantize-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-2);
+  background: transparent;
+  border: none;
+  border-radius: var(--border-radius-md);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-speed) ease;
+  width: 36px;
+  height: 36px;
+}
+
+.prv7-quantize-btn:hover {
+  background-color: var(--color-surface-2);
+  color: var(--color-text-primary);
+}
+
+.prv7-quantize-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius-md);
+  padding: var(--spacing-2);
+  min-width: 120px;
+  z-index: 1000;
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+}
+
+.prv7-quantize-option {
+  display: block;
+  width: 100%;
+  padding: var(--spacing-2);
+  background: transparent;
+  border: none;
+  border-radius: var(--border-radius-sm);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  transition: all var(--transition-speed) ease;
+  font-size: var(--font-size-sm);
+  font-family: var(--font-body);
+  text-align: left;
+}
+
+.prv7-quantize-option:hover {
+  background: var(--color-surface-2);
+  color: var(--color-accent-primary);
+}
+
+/* Selection Info Styles */
+.prv7-selection-info {
+  display: flex;
+  align-items: center;
+  padding: 6px 12px;
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: var(--border-radius-md);
+  backdrop-filter: blur(8px);
+  animation: fadeInScale 0.2s ease-out;
+}
+
+.prv7-selection-count {
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+  color: #3b82f6;
+  white-space: nowrap;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  font-family: var(--font-mono);
+}
+
+/* Animation for selection info */
+@keyframes fadeInScale {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}

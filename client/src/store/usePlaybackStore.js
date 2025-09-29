@@ -7,6 +7,7 @@ import { PLAYBACK_MODES, PLAYBACK_STATES } from '../config/constants';
 
 export const usePlaybackStore = create((set, get) => ({
   // --- STATE (Değişiklik yok) ---
+  isPlaying: false,
   playbackState: PLAYBACK_STATES.STOPPED,
   playbackMode: PLAYBACK_MODES.PATTERN,
   bpm: 140,
@@ -15,12 +16,25 @@ export const usePlaybackStore = create((set, get) => ({
   transportStep: 0,
   loopEnabled: true,
   audioLoopLength: 64,
-  loopStartStep: 0,
-  loopEndStep: 64,
+  currentStep: 0,     // Oynatma çubuğunun mevcut konumu (step cinsinden)
+  loopStartStep: 64, // Döngünün başlangıcı (varsayılan olarak 5. bar)
+  loopEndStep: 128,   // Döngünün bitişi (varsayılan olarak 9. bar)
 
   // ============================================
   // === ACTIONS (MOTOR BAĞLANTILARI BURADA) ===
   // ============================================
+
+  // --- EYLEMLER (ACTIONS) ---
+  togglePlay: () => set(state => ({ isPlaying: !state.isPlaying })),
+  
+  setCurrentStep: (step) => set({ currentStep: step }),
+  
+  setLoopRegion: (startStep, endStep) => {
+    // Başlangıcın sondan büyük olmamasını sağla
+    const newStart = Math.min(startStep, endStep);
+    const newEnd = Math.max(startStep, endStep);
+    set({ loopStartStep: newStart, loopEndStep: newEnd });
+  },
 
   // --- OYNATMA KONTROLLERİ ---
   togglePlayPause: () => {

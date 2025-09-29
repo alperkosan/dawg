@@ -13,7 +13,6 @@ import StepGrid from './StepGrid';
 import PianoRollMiniView from './PianoRollMiniView';
 import InteractiveTimeline from './InteractiveTimeline';
 import { PlusCircle } from 'lucide-react';
-import { createScrollSynchronizer, createWheelForwarder } from '../../lib/utils/scrollSync';
 
 const STEP_WIDTH = 16;
 
@@ -32,45 +31,77 @@ export default function ChannelRack() {
     scrollContainerRef: optimizedScrollRef,
     jumpToPosition
   } = useOptimizedPlayhead(STEP_WIDTH);
-  const timelineContainerRef = useRef(null);
+
   const instrumentListRef = useRef(null);
+  const timelineContainerRef = useRef(null);
 
   const activePattern = patterns[activePatternId];
 
   // High-performance playhead artık useOptimizedPlayhead hook'u tarafından yönetiliyor
   // GPU acceleration ve direct DOM manipulation ile smooth hareket
 
-  // Scroll senkronizasyonu - Channel Rack içindeki paneller arası senkronizasyon gerekli
+  // Custom scroll synchronization for Channel Rack
   useEffect(() => {
-    const syncTargets = [
-      { ref: timelineContainerRef, axis: 'x' },    // Timeline horizontal sync
-      { ref: instrumentListRef, axis: 'y' }        // Instrument list vertical sync
-    ];
+    const mainGrid = optimizedScrollRef.current;
+    const instrumentsList = instrumentListRef.current;
+    const timeline = timelineContainerRef.current;
 
-    const cleanup = createScrollSynchronizer(optimizedScrollRef, syncTargets);
-    return cleanup;
-  }, []);
+    if (!mainGrid || !instrumentsList || !timeline) return;
 
-  // Instrument list'teki mouse wheel'i ana scroll'a yönlendirme (UX iyileştirmesi)
-  useEffect(() => {
-    const cleanup = createWheelForwarder(instrumentListRef, optimizedScrollRef, 'y');
-    return cleanup;
+    let isInstrumentsScrolling = false;
+    let isMainScrolling = false;
+
+    // Main grid scroll -> sync instruments vertically and timeline horizontally
+    const handleMainScroll = () => {
+      if (isInstrumentsScrolling) return;
+      isMainScrolling = true;
+
+      instrumentsList.scrollTop = mainGrid.scrollTop;
+      timeline.scrollLeft = mainGrid.scrollLeft;
+
+      requestAnimationFrame(() => {
+        isMainScrolling = false;
+      });
+    };
+
+    // Instruments scroll -> sync main grid vertically
+    const handleInstrumentsScroll = () => {
+      if (isMainScrolling) return;
+      isInstrumentsScrolling = true;
+
+      mainGrid.scrollTop = instrumentsList.scrollTop;
+
+      requestAnimationFrame(() => {
+        isInstrumentsScrolling = false;
+      });
+    };
+
+    mainGrid.addEventListener('scroll', handleMainScroll, { passive: true });
+    instrumentsList.addEventListener('scroll', handleInstrumentsScroll, { passive: true });
+
+    return () => {
+      mainGrid.removeEventListener('scroll', handleMainScroll);
+      instrumentsList.removeEventListener('scroll', handleInstrumentsScroll);
+    };
   }, []);
 
   const handleNoteToggle = useCallback((instrumentId, step) => {
-    if (!activePattern) return;
-    const currentNotes = activePattern.data[instrumentId] || [];
-    const existingNote = currentNotes.find(note => note.time === step);
-    
-    if (existingNote) {
-      commandManager.execute(new DeleteNoteCommand(instrumentId, existingNote));
-    } else {
-      commandManager.execute(new AddNoteCommand(instrumentId, step));
+    try {
+      if (!activePattern) return;
+      const currentNotes = activePattern.data[instrumentId] || [];
+      const existingNote = currentNotes.find(note => note.time === step);
+
+      if (existingNote) {
+        commandManager.execute(new DeleteNoteCommand(instrumentId, existingNote));
+      } else {
+        commandManager.execute(new AddNoteCommand(instrumentId, step));
+      }
+    } catch (error) {
+      console.error('Error toggling note:', error);
     }
   }, [activePatternId, activePattern]);
 
-  const totalGridWidth = audioLoopLength * STEP_WIDTH;
-  const totalContentHeight = (instruments.length + 1) * 64;
+  const totalContentHeight = Math.max(64, (instruments.length + 1) * 64);
 
   return (
     <div className="channel-rack-layout no-select">
@@ -94,7 +125,7 @@ export default function ChannelRack() {
         </div>
       </div>
       <div ref={timelineContainerRef} className="channel-rack-layout__timeline">
-        <div style={{ width: totalGridWidth, height: '100%' }}>
+        <div style={{ width: audioLoopLength * STEP_WIDTH, height: '100%' }}>
           <InteractiveTimeline
             loopLength={audioLoopLength}
             currentPosition={currentStep}
@@ -103,14 +134,30 @@ export default function ChannelRack() {
         </div>
       </div>
       <div ref={optimizedScrollRef} className="channel-rack-layout__grid-scroll-area">
-        <div style={{ width: totalGridWidth, height: totalContentHeight }} className="channel-rack-layout__grid-content">
-          <div ref={playheadRef} className="channel-rack-layout__playhead playhead playhead--performance-optimized" style={{ height: totalContentHeight }} />
+        <div style={{ width: audioLoopLength * STEP_WIDTH, height: totalContentHeight }} className="channel-rack-layout__grid-content">
+          <div
+            ref={playheadRef}
+            className="channel-rack-layout__playhead playhead playhead--performance-optimized"
+            style={{
+              height: totalContentHeight,
+              pointerEvents: 'none'
+            }}
+          />
           {instruments.map(inst => (
             <div key={inst.id} className="channel-rack-layout__grid-row">
               {inst.pianoRoll ? (
-                <PianoRollMiniView notes={activePattern?.data[inst.id] || []} patternLength={audioLoopLength} onNoteClick={() => openPianoRollForInstrument(inst)} />
+                <PianoRollMiniView
+                  notes={activePattern?.data[inst.id] || []}
+                  patternLength={audioLoopLength}
+                  onNoteClick={() => openPianoRollForInstrument(inst)}
+                />
               ) : (
-                <StepGrid instrumentId={inst.id} notes={activePattern?.data[inst.id] || []} totalSteps={audioLoopLength} onNoteToggle={handleNoteToggle} />
+                <StepGrid
+                  instrumentId={inst.id}
+                  notes={activePattern?.data[inst.id] || []}
+                  totalSteps={audioLoopLength}
+                  onNoteToggle={handleNoteToggle}
+                />
               )}
             </div>
           ))}

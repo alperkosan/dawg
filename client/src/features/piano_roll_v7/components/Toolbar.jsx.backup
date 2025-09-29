@@ -1,0 +1,137 @@
+import React, { useState } from 'react';
+import { MousePointer, Edit3, Eraser, Scissors, ZoomIn, ZoomOut, Settings } from 'lucide-react';
+import './Toolbar.css';
+
+const regularSnapOptions = {
+    "Bar": 16,
+    "1/2": 8,
+    "1/4 (Beat)": 4,
+    "1/8": 2,
+    "1/16": 1,
+    "1/32": 0.5
+};
+
+const tripletSnapOptions = {
+    "1/4T": "2.67T", // Triplet quarter
+    "1/8T": "1.33T", // Triplet eighth
+    "1/16T": "0.67T" // Triplet sixteenth
+};
+
+const tools = [
+    { id: 'select', label: 'Select', icon: MousePointer, hotkey: 'V' },
+    { id: 'pencil', label: 'Pencil', icon: Edit3, hotkey: 'B' },
+    { id: 'eraser', label: 'Eraser', icon: Eraser, hotkey: 'E' },
+    { id: 'slice', label: 'Slice', icon: Scissors, hotkey: 'C' }
+];
+
+function Toolbar({
+    snapValue,
+    onSnapChange,
+    activeTool = 'select',
+    onToolChange,
+    zoom = 1.0,
+    onZoomChange
+}) {
+    const [showQuantizeMenu, setShowQuantizeMenu] = useState(false);
+
+    return (
+        <div className="prv7-toolbar">
+            {/* Sol Grup - Ana Araçlar */}
+            <div className="prv7-toolbar-group">
+                <div className="prv7-brand">
+                    <span className="prv7-brand-text">Piano Roll</span>
+                </div>
+
+                <div className="prv7-tool-group">
+                    {tools.map(tool => {
+                        const Icon = tool.icon;
+                        return (
+                            <button
+                                key={tool.id}
+                                className={`prv7-tool-btn ${activeTool === tool.id ? 'prv7-tool-btn--active' : ''}`}
+                                onClick={() => onToolChange?.(tool.id)}
+                                title={`${tool.label} (${tool.hotkey})`}
+                            >
+                                <Icon size={18} />
+                            </button>
+                        );
+                    })}
+                </div>
+            </div>
+
+
+            {/* Sağ Grup - Ayarlar ve Görünüm */}
+            <div className="prv7-toolbar-group">
+                {/* Snap Ayarları */}
+                <div className="prv7-setting-item">
+                    <label htmlFor="snap-select" className="prv7-setting-label">Snap:</label>
+                    <select
+                        id="snap-select"
+                        value={snapValue}
+                        onChange={(e) => {
+                            const value = e.target.value;
+                            if (value.endsWith('T')) {
+                                onSnapChange?.(value); // Triplet string value
+                            } else {
+                                onSnapChange?.(parseFloat(value)); // Regular numeric value
+                            }
+                        }}
+                        className="prv7-select"
+                    >
+                        <optgroup label="Regular">
+                            {Object.entries(regularSnapOptions).map(([label, value]) => (
+                                <option key={value} value={value}>{label}</option>
+                            ))}
+                        </optgroup>
+                        <optgroup label="Triplets">
+                            {Object.entries(tripletSnapOptions).map(([label, value]) => (
+                                <option key={value} value={value}>{label}</option>
+                            ))}
+                        </optgroup>
+                    </select>
+                </div>
+
+                {/* Zoom Kontrolü */}
+                <div className="prv7-setting-item">
+                    <button
+                        className="prv7-zoom-btn"
+                        onClick={() => onZoomChange?.(Math.max(0.1, zoom - 0.1))}
+                        title="Zoom Out (-)"
+                    >
+                        <ZoomOut size={16} />
+                    </button>
+                    <span className="prv7-zoom-value">{Math.round(zoom * 100)}%</span>
+                    <button
+                        className="prv7-zoom-btn"
+                        onClick={() => onZoomChange?.(Math.min(5.0, zoom + 0.1))}
+                        title="Zoom In (+)"
+                    >
+                        <ZoomIn size={16} />
+                    </button>
+                </div>
+
+                {/* Quantize */}
+                <div className="prv7-setting-item">
+                    <div className="prv7-quantize-dropdown">
+                        <button
+                            className="prv7-quantize-btn"
+                            onClick={() => setShowQuantizeMenu(!showQuantizeMenu)}
+                            title="Quantize selected notes (Q)"
+                        >
+                            <Settings size={16} />
+                        </button>
+                        {showQuantizeMenu && (
+                            <div className="prv7-quantize-menu">
+                                <button className="prv7-quantize-option">Start Time</button>
+                                <button className="prv7-quantize-option">End Time</button>
+                                <button className="prv7-quantize-option">Both</button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+export default Toolbar;

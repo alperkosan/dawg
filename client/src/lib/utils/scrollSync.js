@@ -17,39 +17,49 @@ export const createScrollSynchronizer = (sourceRef, targets, onScrollChange) => 
 
   const handleScroll = () => {
       if (!sourceRef.current || isSyncing) return;
-      
+
       // Önceki frame'i iptal et
-      if (rafId) cancelAnimationFrame(rafId);
-      
+      if (rafId) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+
       rafId = requestAnimationFrame(() => {
-          isSyncing = true;
-          const { scrollLeft, scrollTop } = sourceRef.current;
+          try {
+            isSyncing = true;
+            const sourceElement = sourceRef.current;
+            if (!sourceElement) return;
 
-          targets.forEach(({ ref, axis = 'both' }) => {
-              if (ref.current) {
-                  // Her iki ekseni tek transform'da birleştir
-                  let transformX = 0;
-                  let transformY = 0;
-                  
-                  if (axis === 'x' || axis === 'both') {
-                      transformX = -scrollLeft;
-                  }
-                  if (axis === 'y' || axis === 'both') {
-                      transformY = -scrollTop;
-                  }
-                  
-                  // Tek bir transform ataması yap
-                  ref.current.style.transform = 
-                      `translate3d(${transformX}px, ${transformY}px, 0)`;
-              }
-          });
+            const { scrollLeft, scrollTop } = sourceElement;
 
-          // Callback varsa çağır
-          if (onScrollChange) {
-              onScrollChange(scrollLeft, scrollTop);
+            targets.forEach(({ ref, axis = 'both' }) => {
+                if (ref.current) {
+                    // Her iki ekseni tek transform'da birleştir
+                    let transformX = 0;
+                    let transformY = 0;
+
+                    if (axis === 'x' || axis === 'both') {
+                        transformX = -scrollLeft;
+                    }
+                    if (axis === 'y' || axis === 'both') {
+                        transformY = -scrollTop;
+                    }
+
+                    // Tek bir transform ataması yap
+                    ref.current.style.transform =
+                        `translate3d(${transformX}px, ${transformY}px, 0)`;
+                }
+            });
+
+            // Callback varsa çağır
+            if (onScrollChange && typeof onScrollChange === 'function') {
+                onScrollChange(scrollLeft, scrollTop);
+            }
+          } catch (error) {
+            console.error('Scroll synchronization error:', error);
+          } finally {
+            isSyncing = false;
           }
-          
-          isSyncing = false;
       });
   };
 
@@ -80,19 +90,30 @@ export const createScrollSynchronizer = (sourceRef, targets, onScrollChange) => 
  */
 export const createWheelForwarder = (sourceRef, targetRef, axis = 'y') => {
   const handleWheel = (e) => {
-    if (targetRef.current) {
+    try {
+      const target = targetRef.current;
+      if (!target) return;
+
       // Varsayılan sayfa kaydırmasını engelle
       e.preventDefault();
-      
-      if (axis === 'y') {
-        targetRef.current.scrollTop += e.deltaY;
+
+      if (axis === 'y' && typeof e.deltaY === 'number') {
+        const currentScrollTop = target.scrollTop;
+        const maxScrollTop = target.scrollHeight - target.clientHeight;
+        const newScrollTop = Math.max(0, Math.min(maxScrollTop, currentScrollTop + e.deltaY));
+        target.scrollTop = newScrollTop;
       }
-      if (axis === 'x') {
-        targetRef.current.scrollLeft += e.deltaX;
+      if (axis === 'x' && typeof e.deltaX === 'number') {
+        const currentScrollLeft = target.scrollLeft;
+        const maxScrollLeft = target.scrollWidth - target.clientWidth;
+        const newScrollLeft = Math.max(0, Math.min(maxScrollLeft, currentScrollLeft + e.deltaX));
+        target.scrollLeft = newScrollLeft;
       }
+    } catch (error) {
+      console.error('Wheel forwarding error:', error);
     }
   };
-  
+
   const sourceElement = sourceRef.current;
   if (sourceElement) {
     sourceElement.addEventListener('wheel', handleWheel, { passive: false });
