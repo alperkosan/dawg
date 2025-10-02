@@ -21,7 +21,8 @@ export class NativeTransportSystem {
         // ✅ Position tracking - ALL IN TICKS
         this.currentTick = 0;
         this.nextTickTime = 0;
-        this.lookAhead = 25.0;
+        // ⚡ OPTIMIZED: Reduced look-ahead frequency for better performance
+        this.lookAhead = 50.0; // Increased from 25ms to 50ms
         this.scheduleAheadTime = 0.1;
 
         // ✅ CRITICAL: Loop system - ALL IN TICKS
@@ -159,6 +160,7 @@ export class NativeTransportSystem {
         return this;
     }
 
+
     // =================== POSITION & TIMING ===================
 
     getPosition() {
@@ -181,6 +183,7 @@ export class NativeTransportSystem {
         this.triggerCallback('position', { position: this.currentTick, step: step });
         return this;
     }
+
 
     setLoopPoints(startStep, endStep) {
 

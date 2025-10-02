@@ -3,6 +3,16 @@ import { NativeTimeUtils } from '../../lib/utils/NativeTimeUtils';
 
 // MIDI nota numarasını "C4" gibi bir dizeye çevirir.
 const pitchToMidi = (pitch) => {
+    // ✅ FIX: Handle both string and number pitch values
+    if (typeof pitch === 'number') {
+        return pitch; // Already MIDI number
+    }
+
+    if (typeof pitch !== 'string') {
+        console.warn('⚠️ Invalid pitch type:', typeof pitch, pitch);
+        return 60; // Default to C4
+    }
+
     const noteNames = { C: 0, 'C#': 1, D: 2, 'D#': 3, E: 4, F: 5, 'F#': 6, G: 7, 'G#': 8, A: 9, 'A#': 10, B: 11 };
     const noteName = pitch.replace(/[0-9-]/g, '');
     const octave = parseInt(pitch.replace(/[^0-9-]/g, '')) || 4;

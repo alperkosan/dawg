@@ -56,6 +56,8 @@ export function useNoteInteractionsV2(
     const [isSelectingArea, setIsSelectingArea] = useState(false);
     const [selectionArea, setSelectionArea] = useState(null);
     const [previewNote, setPreviewNote] = useState(null);
+    const [slicePreview, setSlicePreview] = useState(null); // { x: number, noteId: string }
+    const [sliceRange, setSliceRange] = useState(null); // { x: number, startY: number, endY: number, time: number, startPitch: number, endPitch: number }
     const [selectedNoteIds, setSelectedNoteIds] = useState(new Set());
     const [tempNotes, setTempNotes] = useState([]); // Real-time drag için geçici notalar
 
@@ -139,12 +141,11 @@ export function useNoteInteractionsV2(
         return currentNotes.find(note => {
             const noteEndTime = note.startTime + note.length;
 
-            // Daha geniş time tolerance - notanın başında/sonunda da yakalar
-            const timeBuffer = Math.max(0.1, note.length * 0.05); // Note uzunluğunun %5'i veya minimum 0.1
-            const timeOverlap = time >= (note.startTime - timeBuffer) && time <= (noteEndTime + timeBuffer);
+            // ✅ CONTAINED TIME TOLERANCE - Only within note boundaries
+            const timeOverlap = time >= note.startTime && time <= noteEndTime;
 
-            // Daha geniş pitch tolerance - tam nota yüksekliğini kapsar
-            const pitchMatch = Math.abs(note.pitch - pitch) < 1.0; // 0.5'ten 1.0'a artırdım
+            // ✅ CONTAINED PITCH TOLERANCE - Only within note height
+            const pitchMatch = Math.abs(note.pitch - pitch) < 0.6; // Contained within note area
 
             return timeOverlap && pitchMatch;
         });
@@ -174,24 +175,23 @@ export function useNoteInteractionsV2(
         const handleWidth = 8;
         const handleOffset = 5;
 
-        // Improved interaction area - daha büyük ve kullanıcı dostu
-        const handleToleranceX = Math.max(20, Math.min(35, noteWidth * 0.15)); // Daha geniş X tolerance
-        const handleToleranceY = keyHeight * 1.2; // Y tolerance notanın üstünde/altında da kapsar
+        // ✅ CONTAINED INTERACTION AREA - Only within note bounds, but efficient coverage
+        const handleToleranceY = 0; // No Y tolerance - stay within note height
 
-        // Improved resize zones - no overlap, clear boundaries
-        const resizeZoneWidth = Math.max(15, noteWidth * 0.2); // Minimum 15px, max 20% of note
+        // ✅ EFFICIENT RESIZE ZONES - Cover more of note area but stay contained
+        const resizeZoneWidth = Math.max(8, noteWidth * 0.35); // 35% of note width, min 8px
 
-        // Left handle (start time resize) - nota başından itibaren
-        const leftAreaX1 = noteX - handleToleranceX; // Tolerance sol tarafta
-        const leftAreaX2 = noteX + resizeZoneWidth; // Nota içine 20% kadar
-        const leftAreaY1 = noteY - handleToleranceY;
-        const leftAreaY2 = noteY + noteHeight + handleToleranceY;
+        // Left handle (start time resize) - contained within note start area
+        const leftAreaX1 = noteX; // Start exactly at note boundary
+        const leftAreaX2 = noteX + resizeZoneWidth; // Cover 35% from start
+        const leftAreaY1 = noteY; // Exact note top
+        const leftAreaY2 = noteY + noteHeight; // Exact note bottom
 
-        // Right handle (end time/length resize) - nota sonundan itibaren
-        const rightAreaX1 = noteX + noteWidth - resizeZoneWidth; // Nota içinde son 20%
-        const rightAreaX2 = noteX + noteWidth + handleToleranceX; // Tolerance sağ tarafta
-        const rightAreaY1 = noteY - handleToleranceY;
-        const rightAreaY2 = noteY + noteHeight + handleToleranceY;
+        // Right handle (end time/length resize) - contained within note end area
+        const rightAreaX1 = noteX + noteWidth - resizeZoneWidth; // Cover 35% from end
+        const rightAreaX2 = noteX + noteWidth; // End exactly at note boundary
+        const rightAreaY1 = noteY; // Exact note top
+        const rightAreaY2 = noteY + noteHeight; // Exact note bottom
 
         // Debug zones
         console.log('🔧 Resize zones debug:', {
@@ -200,8 +200,8 @@ export function useNoteInteractionsV2(
             leftZone: { x1: leftAreaX1, x2: leftAreaX2, width: leftAreaX2 - leftAreaX1 },
             rightZone: { x1: rightAreaX1, x2: rightAreaX2, width: rightAreaX2 - rightAreaX1 },
             overlap: leftAreaX2 > rightAreaX1 ? 'OVERLAP!' : 'OK',
-            toleranceX: handleToleranceX,
-            resizeZoneWidth
+            resizeZoneWidth,
+            containment: 'WITHIN_NOTE_BOUNDS'
         });
 
         // Resize priority: check handles first, then fallback to move
@@ -270,6 +270,190 @@ export function useNoteInteractionsV2(
 
         console.log('🗑️ Notes deleted:', noteIds);
     }, [notes, updatePatternStore]);
+
+    // Slice note - Split note into two at given time position
+    const sliceNote = useCallback((note, sliceTime) => {
+        if (!note || sliceTime <= note.startTime || sliceTime >= (note.startTime + note.length)) {
+            console.warn('🔪 Invalid slice position:', { sliceTime, note });
+            return;
+        }
+
+        const snappedSliceTime = snapValue > 0 ? snapToGrid(sliceTime, snapValue) : sliceTime;
+        const minNoteLength = 0.25; // Minimum note length (1/16th step)
+
+        // Calculate new note lengths
+        const firstNoteLength = snappedSliceTime - note.startTime;
+        const secondNoteStart = snappedSliceTime;
+        const secondNoteLength = (note.startTime + note.length) - snappedSliceTime;
+
+        // ✅ IMPROVED VALIDATION: Check against minimum note length
+        if (firstNoteLength < minNoteLength || secondNoteLength < minNoteLength) {
+            console.warn('🔪 Slice would create notes too small:', {
+                firstLength: firstNoteLength,
+                secondLength: secondNoteLength,
+                minLength: minNoteLength,
+                originalLength: note.length
+            });
+            return;
+        }
+
+        // Create first note (original start to slice point)
+        const firstNote = {
+            ...note,
+            length: firstNoteLength
+        };
+
+        // Create second note (slice point to original end)
+        const secondNote = {
+            ...note,
+            id: `note_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
+            startTime: secondNoteStart,
+            length: secondNoteLength
+        };
+
+        // Update pattern store - replace original with two new notes
+        const currentNotes = notes();
+        const updatedNotes = currentNotes
+            .filter(n => n.id !== note.id) // Remove original
+            .concat([firstNote, secondNote]); // Add both pieces
+
+        updatePatternStore(updatedNotes);
+
+        // Select both new notes
+        setSelectedNoteIds(new Set([firstNote.id, secondNote.id]));
+
+        console.log('🔪 Note sliced:', {
+            original: note,
+            sliceTime: snappedSliceTime,
+            firstNote,
+            secondNote
+        });
+    }, [notes, updatePatternStore, snapValue, snapToGrid]);
+
+    // Advanced slice - returns array of new notes without updating store
+    const sliceNoteAdvanced = useCallback((note, sliceTime) => {
+        if (!note || sliceTime <= note.startTime || sliceTime >= (note.startTime + note.length)) {
+            return null;
+        }
+
+        const snappedSliceTime = snapValue > 0 ? snapToGrid(sliceTime, snapValue) : sliceTime;
+        const minNoteLength = 0.25; // Minimum note length (1/16th step)
+
+        // Calculate new note lengths
+        const firstNoteLength = snappedSliceTime - note.startTime;
+        const secondNoteStart = snappedSliceTime;
+        const secondNoteLength = (note.startTime + note.length) - snappedSliceTime;
+
+        // ✅ IMPROVED VALIDATION: Check against minimum note length
+        if (firstNoteLength < minNoteLength || secondNoteLength < minNoteLength) {
+            return null;
+        }
+
+        // Create first note (original start to slice point)
+        const firstNote = {
+            ...note,
+            length: firstNoteLength
+        };
+
+        // Create second note (slice point to original end)
+        const secondNote = {
+            ...note,
+            id: `note_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
+            startTime: secondNoteStart,
+            length: secondNoteLength
+        };
+
+        return [firstNote, secondNote];
+    }, [snapValue, snapToGrid]);
+
+    // ✅ PITCH RANGE SLICE: Slice notes within pitch range at specific time
+    const performPitchRangeSlice = useCallback((sliceTime, startPitch, endPitch) => {
+        const currentNotes = notes();
+
+        // Find all notes at slice time within pitch range
+        const affectedNotes = currentNotes.filter(note => {
+            const noteStart = note.startTime;
+            const noteEnd = note.startTime + note.length;
+            const notePitch = note.pitch;
+
+            // Note must contain the slice time AND be within pitch range
+            return (sliceTime > noteStart && sliceTime < noteEnd) &&
+                   (notePitch >= Math.min(startPitch, endPitch) &&
+                    notePitch <= Math.max(startPitch, endPitch));
+        });
+
+        if (affectedNotes.length === 0) {
+            console.warn('🔪 No notes found at slice time within pitch range');
+            return;
+        }
+
+        const snappedSliceTime = snapValue > 0 ? snapToGrid(sliceTime, snapValue) : sliceTime;
+        const minNoteLength = 0.25; // Minimum note length
+
+        // Slice each affected note
+        const allNewNotes = [];
+        const notesToRemove = [];
+
+        affectedNotes.forEach(note => {
+            const noteStart = note.startTime;
+            const noteEnd = note.startTime + note.length;
+
+            // Validate slice position
+            if (snappedSliceTime <= noteStart || snappedSliceTime >= noteEnd) {
+                allNewNotes.push(note); // Keep original if slice is outside
+                return;
+            }
+
+            const firstNoteLength = snappedSliceTime - noteStart;
+            const secondNoteLength = noteEnd - snappedSliceTime;
+
+            // Check minimum lengths
+            if (firstNoteLength < minNoteLength || secondNoteLength < minNoteLength) {
+                console.warn('🔪 Slice would create notes too small for note:', note.id);
+                allNewNotes.push(note); // Keep original
+                return;
+            }
+
+            // Mark for removal and create two new notes
+            notesToRemove.push(note.id);
+
+            // First note (start to slice point)
+            allNewNotes.push({
+                ...note,
+                length: firstNoteLength
+            });
+
+            // Second note (slice point to end)
+            allNewNotes.push({
+                ...note,
+                id: `note_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
+                startTime: snappedSliceTime,
+                length: secondNoteLength
+            });
+        });
+
+        // Update pattern store
+        const remainingNotes = currentNotes.filter(note =>
+            !notesToRemove.includes(note.id)
+        );
+
+        const finalNotes = [...remainingNotes, ...allNewNotes];
+        updatePatternStore(finalNotes);
+
+        // Select all new note pieces
+        const newNoteIds = allNewNotes
+            .filter(note => !remainingNotes.find(rn => rn.id === note.id)) // Only truly new notes
+            .map(note => note.id);
+
+        setSelectedNoteIds(new Set(newNoteIds));
+
+        console.log('🔪 Pitch range slice completed:', {
+            sliceTime: snappedSliceTime,
+            pitchRange: `${Math.min(startPitch, endPitch)} - ${Math.max(startPitch, endPitch)}`,
+            affectedNotes: affectedNotes.length,
+            newNotes: allNewNotes.length
+        });
+    }, [notes, updatePatternStore, snapValue, snapToGrid]);
 
     // Selection operations
     const selectNote = useCallback((noteId, addToSelection = false) => {
@@ -383,6 +567,37 @@ export function useNoteInteractionsV2(
             if (foundNote) {
                 deleteNotes([foundNote.id]);
             }
+        } else if (activeTool === 'slice') {
+            if (foundNote) {
+                // ✅ VERTICAL SLICE RANGE MODE: Start pitch range selection at time position
+                const { stepWidth, keyHeight } = engine.dimensions || {};
+                if (stepWidth && keyHeight) {
+                    const sliceX = coords.time * stepWidth;
+                    const startY = coords.y; // Raw screen Y coordinate
+
+                    setSliceRange({
+                        x: sliceX,
+                        startY,
+                        endY: startY, // Initially same position
+                        time: coords.time,
+                        startPitch: coords.pitch,
+                        endPitch: coords.pitch,
+                        isDragging: true
+                    });
+
+                    setDragState({
+                        type: 'slicing',
+                        startCoords: coords,
+                        targetNote: foundNote
+                    });
+
+                    console.log('🔪 Vertical slice range started:', {
+                        time: coords.time,
+                        startPitch: coords.pitch,
+                        note: foundNote.id
+                    });
+                }
+            }
         }
     }, [
         getCoordinatesFromEvent,
@@ -393,6 +608,8 @@ export function useNoteInteractionsV2(
         selectNote,
         notes,
         deleteNotes,
+        sliceNote,
+        sliceNoteAdvanced,
         currentInstrument
     ]);
 
@@ -416,11 +633,53 @@ export function useNoteInteractionsV2(
             e.currentTarget.style.cursor = 'crosshair';
         } else if (activeTool === 'eraser') {
             e.currentTarget.style.cursor = 'not-allowed';
+        } else if (activeTool === 'slice') {
+            e.currentTarget.style.cursor = foundNote ? 'col-resize' : 'default';
+
+            // ✅ SLICE PREVIEW: Show slice line when hovering over note
+            if (foundNote) {
+                const { stepWidth } = engine.dimensions || {};
+                if (stepWidth) {
+                    const sliceX = coords.time * stepWidth;
+                    setSlicePreview({ x: sliceX, noteId: foundNote.id });
+                }
+            } else {
+                setSlicePreview(null);
+            }
         } else {
             e.currentTarget.style.cursor = 'default';
+            setSlicePreview(null); // Clear slice preview for other tools
         }
 
-        if (dragState?.type === 'moving') {
+        if (dragState?.type === 'slicing') {
+            // ✅ VERTICAL SLICE RANGE DRAGGING: Update pitch range while dragging
+            if (sliceRange) {
+                const endY = coords.y; // Raw screen Y coordinate
+                const endPitch = coords.pitch;
+
+                // Calculate pitch range boundaries (always start to end direction)
+                const actualStartY = Math.min(sliceRange.startY, endY);
+                const actualEndY = Math.max(sliceRange.startY, endY);
+                const actualStartPitch = Math.max(sliceRange.startPitch, endPitch); // Higher pitch = lower Y
+                const actualEndPitch = Math.min(sliceRange.startPitch, endPitch);   // Lower pitch = higher Y
+
+                setSliceRange({
+                    ...sliceRange,
+                    endY,
+                    endPitch,
+                    actualStartY,
+                    actualEndY,
+                    actualStartPitch,
+                    actualEndPitch
+                });
+
+                console.log('🔪 Vertical slice range updated:', {
+                    time: sliceRange.time,
+                    pitchRange: `${actualEndPitch} - ${actualStartPitch}`,
+                    height: actualStartPitch - actualEndPitch
+                });
+            }
+        } else if (dragState?.type === 'moving') {
             // Calculate deltas
             const deltaTime = coords.time - dragState.startCoords.time;
             const deltaPitch = coords.pitch - dragState.startCoords.pitch;
@@ -544,8 +803,26 @@ export function useNoteInteractionsV2(
 
     // Mouse up handler
     const handleMouseUp = useCallback((e) => {
+        // Finalize slice range operation
+        if (dragState?.type === 'slicing' && sliceRange) {
+            const { actualStartPitch, actualEndPitch, time } = sliceRange;
+
+            // Perform pitch range slice if range was created
+            if (actualStartPitch && actualEndPitch && actualStartPitch !== actualEndPitch) {
+                performPitchRangeSlice(time, actualStartPitch, actualEndPitch);
+            } else {
+                // Single point slice if no range was created
+                const targetNote = dragState.targetNote;
+                if (targetNote) {
+                    sliceNote(targetNote, time);
+                }
+            }
+
+            // Clear slice range
+            setSliceRange(null);
+        }
         // Finalize drag operations
-        if (dragState?.type === 'moving' && tempNotes.length > 0) {
+        else if (dragState?.type === 'moving' && tempNotes.length > 0) {
             // Commit temporary notes to pattern store
             updatePatternStore(tempNotes);
             setTempNotes([]); // Clear temporary notes
@@ -587,8 +864,10 @@ export function useNoteInteractionsV2(
         setIsSelectingArea(false);
         setSelectionArea(null);
         setPreviewNote(null);
+        setSlicePreview(null);
+        setSliceRange(null); // ✅ Clear slice range
         setTempNotes([]); // Clear temporary notes
-    }, [isSelectingArea, selectionArea, notes, selectNote, dragState, tempNotes, updatePatternStore]);
+    }, [isSelectingArea, selectionArea, notes, selectNote, dragState, tempNotes, updatePatternStore, performPitchRangeSlice, sliceNote, sliceRange]);
 
     // Key down handler
     const handleKeyDown = useCallback((e) => {
@@ -603,6 +882,7 @@ export function useNoteInteractionsV2(
             const currentNotes = notes();
             setSelectedNoteIds(new Set(currentNotes.map(note => note.id)));
         }
+        // Note: Spacebar handling will be added to PianoRoll.jsx component level
     }, [selectedNoteIds, deleteNotes, deselectAll, notes]);
 
     return {
@@ -618,6 +898,8 @@ export function useNoteInteractionsV2(
         isSelectingArea,
         selectionArea,
         previewNote,
+        slicePreview,
+        sliceRange,
 
         // Data
         notes: notes(),
@@ -627,6 +909,13 @@ export function useNoteInteractionsV2(
         updateNote,
         deleteNotes,
         selectNote,
-        deselectAll
+        deselectAll,
+        updateNoteVelocity: (noteId, velocity) => {
+            const currentNotes = notes();
+            const note = currentNotes.find(n => n.id === noteId);
+            if (note) {
+                updateNote(noteId, { velocity: Math.max(0.01, Math.min(1.0, velocity)) });
+            }
+        }
     };
 }

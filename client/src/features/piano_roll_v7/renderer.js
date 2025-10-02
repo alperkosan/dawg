@@ -16,6 +16,9 @@ export function drawPianoRoll(ctx, engine) {
     drawGrid(ctx, engine);
     drawNotes(ctx, engine); // Premium note rendering
     drawSelectionArea(ctx, engine); // Selection area overlay
+    drawSlicePreview(ctx, engine); // ✅ SLICE PREVIEW
+    drawSliceRange(ctx, engine); // ✅ SLICE RANGE
+    drawPlayhead(ctx, engine); // ✅ PLAYHEAD
     drawTimeline(ctx, engine);
     drawKeyboard(ctx, engine);
     drawCornerAndBorders(ctx, engine);
@@ -440,6 +443,243 @@ function drawSelectionArea(ctx, engine) {
     // Bottom-right corner
     ctx.fillRect(x + width - cornerSize, y + height - 2, cornerSize, 2);
     ctx.fillRect(x + width - 2, y + height - cornerSize, 2, cornerSize);
+
+    ctx.restore();
+}
+
+function drawPlayhead(ctx, engine) {
+    const { viewport, dimensions, playhead } = engine;
+    if (!playhead || playhead.position == null) return;
+
+    ctx.save();
+
+    // Translate to timeline area (skip keyboard area and ruler)
+    ctx.translate(KEYBOARD_WIDTH, RULER_HEIGHT);
+
+    // Clip to timeline area
+    ctx.beginPath();
+    ctx.rect(0, 0, viewport.width - KEYBOARD_WIDTH, viewport.height - RULER_HEIGHT);
+    ctx.clip();
+
+    // Apply scroll offset
+    ctx.translate(-viewport.scrollX, 0); // Only horizontal scroll for playhead
+
+    const { stepWidth } = dimensions;
+    const playheadX = playhead.position * stepWidth;
+
+    // Only draw if playhead is in visible area
+    const playheadScreenX = playheadX - viewport.scrollX;
+    if (playheadScreenX < -5 || playheadScreenX > viewport.width - KEYBOARD_WIDTH + 5) {
+        ctx.restore();
+        return;
+    }
+
+    // ✅ FL Studio style playhead
+    const playheadColor = playhead.isPlaying ? '#00ff88' : '#ffaa00'; // Green when playing, orange when stopped
+    const lineWidth = 2;
+    const arrowSize = 8;
+
+    // Main vertical line
+    ctx.strokeStyle = playheadColor;
+    ctx.lineWidth = lineWidth;
+    ctx.globalAlpha = 0.9;
+
+    // Add glow effect when playing
+    if (playhead.isPlaying) {
+        ctx.shadowColor = playheadColor;
+        ctx.shadowBlur = 8;
+    }
+
+    ctx.beginPath();
+    ctx.moveTo(playheadX, 0);
+    ctx.lineTo(playheadX, viewport.height - RULER_HEIGHT);
+    ctx.stroke();
+
+    // Reset shadow
+    ctx.shadowBlur = 0;
+
+    // Arrow indicator at top
+    ctx.fillStyle = playheadColor;
+    ctx.beginPath();
+    ctx.moveTo(playheadX, 0);
+    ctx.lineTo(playheadX - arrowSize/2, arrowSize);
+    ctx.lineTo(playheadX + arrowSize/2, arrowSize);
+    ctx.closePath();
+    ctx.fill();
+
+    // Position text (optional, for debug)
+    if (playhead.isPlaying) {
+        ctx.fillStyle = playheadColor;
+        ctx.font = '10px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(`${playhead.position.toFixed(1)}`, playheadX, arrowSize + 15);
+    }
+
+    ctx.restore();
+}
+
+// ✅ SLICE PREVIEW - Show slice line when hovering with slice tool
+function drawSlicePreview(ctx, engine) {
+    const { slicePreview, viewport, dimensions } = engine;
+    if (!slicePreview || !viewport || !dimensions) return;
+
+    ctx.save();
+
+    // Translate to grid area (skip keyboard and ruler)
+    ctx.translate(KEYBOARD_WIDTH, RULER_HEIGHT);
+
+    // Clip to grid area
+    ctx.beginPath();
+    ctx.rect(0, 0, viewport.width - KEYBOARD_WIDTH, viewport.height - RULER_HEIGHT);
+    ctx.clip();
+
+    // Apply scroll offset
+    ctx.translate(-viewport.scrollX, -viewport.scrollY);
+
+    const sliceX = slicePreview.x;
+
+    // Only draw if slice line is in visible area
+    const sliceScreenX = sliceX - viewport.scrollX;
+    if (sliceScreenX < -5 || sliceScreenX > viewport.width - KEYBOARD_WIDTH + 5) {
+        ctx.restore();
+        return;
+    }
+
+    // ✅ FL Studio style slice line
+    const sliceColor = '#ff6b35'; // Orange slice line
+    const lineWidth = 2;
+
+    // Main vertical slice line with glow
+    ctx.strokeStyle = sliceColor;
+    ctx.lineWidth = lineWidth;
+    ctx.globalAlpha = 0.8;
+
+    // Glow effect
+    ctx.shadowColor = sliceColor;
+    ctx.shadowBlur = 6;
+
+    ctx.beginPath();
+    ctx.moveTo(sliceX, viewport.scrollY);
+    ctx.lineTo(sliceX, viewport.scrollY + viewport.height - RULER_HEIGHT);
+    ctx.stroke();
+
+    // Reset shadow
+    ctx.shadowBlur = 0;
+
+    // Add small indicator at mouse level
+    ctx.fillStyle = sliceColor;
+    ctx.globalAlpha = 1.0;
+    const indicatorSize = 6;
+
+    // Draw diamond indicator
+    ctx.beginPath();
+    ctx.moveTo(sliceX, viewport.scrollY + 50); // Arbitrary Y position for indicator
+    ctx.lineTo(sliceX - indicatorSize/2, viewport.scrollY + 50 - indicatorSize/2);
+    ctx.lineTo(sliceX, viewport.scrollY + 50 - indicatorSize);
+    ctx.lineTo(sliceX + indicatorSize/2, viewport.scrollY + 50 - indicatorSize/2);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.restore();
+}
+
+// ✅ SLICE RANGE - Show slice range selection (90 degree slice length)
+function drawSliceRange(ctx, engine) {
+    const { sliceRange, viewport, dimensions } = engine;
+    if (!sliceRange || !viewport || !dimensions) return;
+
+    ctx.save();
+
+    // Translate to grid area (skip keyboard and ruler)
+    ctx.translate(KEYBOARD_WIDTH, RULER_HEIGHT);
+
+    // Clip to grid area
+    ctx.beginPath();
+    ctx.rect(0, 0, viewport.width - KEYBOARD_WIDTH, viewport.height - RULER_HEIGHT);
+    ctx.clip();
+
+    // Apply scroll offset
+    ctx.translate(-viewport.scrollX, -viewport.scrollY);
+
+    // Calculate actual range boundaries
+    const { actualStartX, actualEndX } = sliceRange;
+    const rangeStartX = actualStartX || Math.min(sliceRange.startX, sliceRange.endX);
+    const rangeEndX = actualEndX || Math.max(sliceRange.startX, sliceRange.endX);
+    const rangeWidth = rangeEndX - rangeStartX;
+
+    // Only draw if range has meaningful width
+    if (rangeWidth < 2) {
+        ctx.restore();
+        return;
+    }
+
+    // ✅ FL Studio style slice range - 90 degree pattern
+    const rangeColor = '#ff6b35'; // Orange for slice range
+    const patternHeight = viewport.height - RULER_HEIGHT;
+
+    // Semi-transparent background fill
+    ctx.fillStyle = rangeColor;
+    ctx.globalAlpha = 0.15;
+    ctx.fillRect(rangeStartX, viewport.scrollY, rangeWidth, patternHeight);
+
+    // ✅ 90-degree diagonal pattern overlay
+    ctx.strokeStyle = rangeColor;
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = 0.4;
+
+    const patternSpacing = 8; // Distance between diagonal lines
+    const patternAngle = Math.PI / 4; // 45 degrees (creates 90 degree pattern)
+
+    ctx.beginPath();
+
+    // Draw diagonal lines across the range
+    for (let offset = -patternHeight; offset < rangeWidth + patternHeight; offset += patternSpacing) {
+        const startX = rangeStartX + offset;
+        const startY = viewport.scrollY;
+        const endX = startX + Math.cos(patternAngle) * patternHeight;
+        const endY = startY + Math.sin(patternAngle) * patternHeight;
+
+        // Only draw lines that intersect with the range
+        if (endX >= rangeStartX && startX <= rangeEndX) {
+            ctx.moveTo(Math.max(startX, rangeStartX), startY);
+            ctx.lineTo(Math.min(endX, rangeEndX), Math.min(endY, startY + patternHeight));
+        }
+    }
+
+    ctx.stroke();
+
+    // Range boundary lines
+    ctx.strokeStyle = rangeColor;
+    ctx.lineWidth = 2;
+    ctx.globalAlpha = 0.8;
+
+    // Left boundary
+    ctx.beginPath();
+    ctx.moveTo(rangeStartX, viewport.scrollY);
+    ctx.lineTo(rangeStartX, viewport.scrollY + patternHeight);
+    ctx.stroke();
+
+    // Right boundary
+    ctx.beginPath();
+    ctx.moveTo(rangeEndX, viewport.scrollY);
+    ctx.lineTo(rangeEndX, viewport.scrollY + patternHeight);
+    ctx.stroke();
+
+    // Range info text
+    if (rangeWidth > 40) {
+        const rangeTimeWidth = (sliceRange.actualEndTime || sliceRange.endTime) -
+                              (sliceRange.actualStartTime || sliceRange.startTime);
+
+        ctx.fillStyle = rangeColor;
+        ctx.globalAlpha = 1.0;
+        ctx.font = 'bold 12px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(
+            `${rangeTimeWidth.toFixed(2)} steps`,
+            rangeStartX + rangeWidth / 2,
+            viewport.scrollY + 25
+        );
+    }
 
     ctx.restore();
 }

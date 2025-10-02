@@ -7,6 +7,15 @@
 class EventEmitter {
     constructor() {
       this.events = {};
+      // ⚡ PERFORMANCE: Throttling for high-frequency events
+      this.throttledEvents = new Map();
+      this.throttleSettings = {
+        'positionUpdate': 16,  // 60fps for position updates
+        'levelMeter': 33,      // 30fps for level meters
+        'NOTE_ADDED': 50,      // 20fps for note operations
+        'NOTE_REMOVED': 50,
+        'NOTE_MODIFIED': 50
+      };
     }
   
     /**
@@ -22,14 +31,34 @@ class EventEmitter {
     }
   
     /**
-     * Bir olayı tetikler ve ilgili tüm dinleyicileri çağırır.
+     * ⚡ OPTIMIZED: Throttled emit for high-frequency events
      * @param {string} eventName - Tetiklenecek olayın adı.
      * @param {*} payload - Dinleyicilere gönderilecek veri.
      */
     emit(eventName, payload) {
-      if (this.events[eventName]) {
-        this.events[eventName].forEach(listener => listener(payload));
+      if (!this.events[eventName]) return;
+
+      // Check if this event should be throttled
+      const throttleMs = this.throttleSettings[eventName];
+      if (throttleMs) {
+        const now = Date.now();
+        const lastEmit = this.throttledEvents.get(eventName) || 0;
+
+        if (now - lastEmit < throttleMs) {
+          return; // Skip this emit due to throttling
+        }
+
+        this.throttledEvents.set(eventName, now);
       }
+
+      // Emit the event
+      this.events[eventName].forEach(listener => {
+        try {
+          listener(payload);
+        } catch (error) {
+          console.warn(`EventBus: Error in listener for ${eventName}:`, error);
+        }
+      });
     }
   
     /**

@@ -34,26 +34,28 @@ function StartupScreen({ onStart }) {
           </div>
         </div>
 
-        <div className="startup-screen__features">
-          <div className="startup-screen__feature">
-            <div className="startup-screen__feature-icon">
-              <Volume2 size={18} />
+        {/*
+          <div className="startup-screen__features">
+            <div className="startup-screen__feature">
+              <div className="startup-screen__feature-icon">
+                <Volume2 size={18} />
+              </div>
+              <span>Gelişmiş Ses İşleme</span>
             </div>
-            <span>Gelişmiş Ses İşleme</span>
-          </div>
-          <div className="startup-screen__feature">
-            <div className="startup-screen__feature-icon">
-              <Headphones size={18} />
+            <div className="startup-screen__feature">
+              <div className="startup-screen__feature-icon">
+                <Headphones size={18} />
+              </div>
+              <span>Gerçek Zamanlı Monitörleme</span>
             </div>
-            <span>Gerçek Zamanlı Monitörleme</span>
-          </div>
-          <div className="startup-screen__feature">
-            <div className="startup-screen__feature-icon">
-              <Mic size={18} />
+            <div className="startup-screen__feature">
+              <div className="startup-screen__feature-icon">
+                <Mic size={18} />
+              </div>
+              <span>Çoklu Kayıt Desteği</span>
             </div>
-            <span>Çoklu Kayıt Desteği</span>
           </div>
-        </div>
+        */}
 
         <button onClick={onStart} className="startup-screen__button">
           <Play size={20} />

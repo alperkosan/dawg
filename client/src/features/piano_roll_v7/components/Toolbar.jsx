@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { MousePointer, Edit3, Eraser, Scissors, ZoomIn, ZoomOut, Settings } from 'lucide-react';
+import { MousePointer, Edit3, Eraser, Scissors } from 'lucide-react';
 import './Toolbar.css';
 
 const regularSnapOptions = {
@@ -37,44 +37,61 @@ function Toolbar({
 
     return (
         <div className="prv7-toolbar">
-            {/* Sol Grup - Ana Araçlar */}
+            {/* Sol Grup - Sadece Essential Tools */}
             <div className="prv7-toolbar-group">
                 <div className="prv7-brand">
                     <span className="prv7-brand-text">Piano Roll</span>
                 </div>
 
+                {/* Essential tools - Select, Pencil, Eraser, Slice */}
                 <div className="prv7-tool-group">
-                    {tools.map(tool => {
-                        const Icon = tool.icon;
-                        return (
-                            <button
-                                key={tool.id}
-                                className={`prv7-tool-btn ${activeTool === tool.id ? 'prv7-tool-btn--active' : ''}`}
-                                onClick={() => onToolChange?.(tool.id)}
-                                title={`${tool.label} (${tool.hotkey})`}
-                            >
-                                <Icon size={18} />
-                            </button>
-                        );
-                    })}
+                    <button
+                        className={`prv7-tool-btn ${activeTool === 'select' ? 'prv7-tool-btn--active' : ''}`}
+                        onClick={() => onToolChange?.('select')}
+                        title="Select (V)"
+                    >
+                        <MousePointer size={18} />
+                    </button>
+                    <button
+                        className={`prv7-tool-btn ${activeTool === 'pencil' ? 'prv7-tool-btn--active' : ''}`}
+                        onClick={() => onToolChange?.('pencil')}
+                        title="Pencil (B)"
+                    >
+                        <Edit3 size={18} />
+                    </button>
+                    <button
+                        className={`prv7-tool-btn ${activeTool === 'eraser' ? 'prv7-tool-btn--active' : ''}`}
+                        onClick={() => onToolChange?.('eraser')}
+                        title="Eraser (E)"
+                    >
+                        <Eraser size={18} />
+                    </button>
+                    <button
+                        className={`prv7-tool-btn ${activeTool === 'slice' ? 'prv7-tool-btn--active' : ''}`}
+                        onClick={() => onToolChange?.('slice')}
+                        title="Slice (C)"
+                    >
+                        <Scissors size={18} />
+                    </button>
                 </div>
             </div>
 
 
             {/* Orta Grup - Selection Info */}
-            {selectedCount > 0 && (
-                <div className="prv7-toolbar-group">
+            <div className="prv7-toolbar-group prv7-toolbar-center">
+                {/* Selection Info */}
+                {selectedCount > 0 && (
                     <div className="prv7-selection-info">
                         <span className="prv7-selection-count">
                             {selectedCount} note{selectedCount !== 1 ? 's' : ''} selected
                         </span>
                     </div>
-                </div>
-            )}
+                )}
+            </div>
 
-            {/* Sağ Grup - Ayarlar ve Görünüm */}
+            {/* Sağ Grup - Sadece Essential Settings */}
             <div className="prv7-toolbar-group">
-                {/* Snap Ayarları */}
+                {/* Snap Ayarları - Only essential setting */}
                 <div className="prv7-setting-item">
                     <label htmlFor="snap-select" className="prv7-setting-label">Snap:</label>
                     <select
@@ -101,45 +118,6 @@ function Toolbar({
                             ))}
                         </optgroup>
                     </select>
-                </div>
-
-                {/* Zoom Kontrolü */}
-                <div className="prv7-setting-item">
-                    <button
-                        className="prv7-zoom-btn"
-                        onClick={() => onZoomChange?.(Math.max(0.1, zoom - 0.1))}
-                        title="Zoom Out (-)"
-                    >
-                        <ZoomOut size={16} />
-                    </button>
-                    <span className="prv7-zoom-value">{Math.round(zoom * 100)}%</span>
-                    <button
-                        className="prv7-zoom-btn"
-                        onClick={() => onZoomChange?.(Math.min(5.0, zoom + 0.1))}
-                        title="Zoom In (+)"
-                    >
-                        <ZoomIn size={16} />
-                    </button>
-                </div>
-
-                {/* Quantize */}
-                <div className="prv7-setting-item">
-                    <div className="prv7-quantize-dropdown">
-                        <button
-                            className="prv7-quantize-btn"
-                            onClick={() => setShowQuantizeMenu(!showQuantizeMenu)}
-                            title="Quantize selected notes (Q)"
-                        >
-                            <Settings size={16} />
-                        </button>
-                        {showQuantizeMenu && (
-                            <div className="prv7-quantize-menu">
-                                <button className="prv7-quantize-option">Start Time</button>
-                                <button className="prv7-quantize-option">End Time</button>
-                                <button className="prv7-quantize-option">Both</button>
-                            </div>
-                        )}
-                    </div>
                 </div>
             </div>
         </div>

@@ -47,13 +47,25 @@ export const useOptimizedPlayhead = (stepWidth = 16) => {
         break;
 
       case 'stopped':
-        // Stop animation and reset to 0
+        // Stop animation but keep current position (don't auto-reset)
         renderer.stopAnimation();
-        renderer.reset();
 
-        // Auto-scroll to start
-        if (scrollContainerRef.current) {
-          scrollContainerRef.current.scrollTo({ left: 0, behavior: 'smooth' });
+        // Set to current position from unified system
+        const currentPosition = getPositionCallback();
+        renderer.setPosition(currentPosition);
+
+        console.log('🎯 useOptimizedPlayhead STOPPED: setting position to', currentPosition);
+
+        // Auto-scroll to current position (not always to start)
+        if (scrollContainerRef.current && currentPosition !== undefined) {
+          const targetX = currentPosition * stepWidth;
+          const containerWidth = scrollContainerRef.current.offsetWidth;
+          const targetScrollLeft = targetX - containerWidth / 2;
+
+          scrollContainerRef.current.scrollTo({
+            left: Math.max(0, targetScrollLeft),
+            behavior: 'smooth'
+          });
         }
         break;
 
@@ -62,7 +74,7 @@ export const useOptimizedPlayhead = (stepWidth = 16) => {
         renderer.stopAnimation();
         break;
     }
-  }, [playbackState, getPositionCallback]);
+  }, [playbackState, getPositionCallback, stepWidth]);
 
   // Update step width if changed
   useEffect(() => {

@@ -3,8 +3,10 @@ import { usePianoRollEngine } from './usePianoRollEngine';
 import { useNoteInteractionsV2 } from './hooks/useNoteInteractionsV2';
 import { drawPianoRoll } from './renderer';
 import Toolbar from './components/Toolbar';
+import VelocityLane from './components/VelocityLane';
 import { usePanelsStore } from '../../store/usePanelsStore';
 import { useInstrumentsStore } from '../../store/useInstrumentsStore';
+import { useTransportControls, useTransportPosition } from '../../hooks/useTransportManager.js';
 import './PianoRoll_v5.css';
 
 function PianoRoll() {
@@ -15,6 +17,10 @@ function PianoRoll() {
     // Toolbar state
     const [activeTool, setActiveTool] = useState('select');
     const [zoom, setZoom] = useState(1.0);
+
+    // ✅ UNIFIED TRANSPORT SYSTEM
+    const { togglePlayPause } = useTransportControls();
+    const { position, isPlaying, playbackState } = useTransportPosition();
 
     // Get data from persistent stores
     const pianoRollInstrumentId = usePanelsStore(state => state.pianoRollInstrumentId);
@@ -46,7 +52,7 @@ function PianoRoll() {
             ctx.scale(dpr, dpr);
         }
 
-        // V2 Hook - Basit data yapısı
+        // V2 Hook - Basit data yapısı + Playhead
         const engineWithData = {
             ...engine,
             snapValue,
@@ -55,11 +61,19 @@ function PianoRoll() {
             hoveredNoteId: noteInteractions.hoveredNoteId,
             selectionArea: noteInteractions.selectionArea,
             isSelectingArea: noteInteractions.isSelectingArea,
-            previewNote: noteInteractions.previewNote
+            previewNote: noteInteractions.previewNote,
+            slicePreview: noteInteractions.slicePreview, // ✅ SLICE PREVIEW
+            sliceRange: noteInteractions.sliceRange, // ✅ SLICE RANGE
+            // ✅ PLAYHEAD DATA
+            playhead: {
+                position,
+                isPlaying,
+                playbackState
+            }
         };
         drawPianoRoll(ctx, engineWithData);
 
-    }, [engine, snapValue, noteInteractions]);
+    }, [engine, snapValue, noteInteractions, position, isPlaying, playbackState]);
 
     // Toolbar handlers
     const handleToolChange = (tool) => {
@@ -69,6 +83,15 @@ function PianoRoll() {
     const handleZoomChange = (newZoom) => {
         setZoom(newZoom);
     };
+
+    // ✅ VELOCITY LANE HANDLER
+    const handleNoteVelocityChange = (noteId, newVelocity) => {
+        // Update note velocity via note interactions
+        noteInteractions.updateNoteVelocity?.(noteId, newVelocity);
+    };
+
+    // ✅ REMOVED: Global keyboard shortcuts now handled by TransportManager
+    // No need for component-level spacebar handling
 
     return (
         <div className="prv5-container">
@@ -134,6 +157,16 @@ function PianoRoll() {
                     <div>Tool: {activeTool}</div>
                 </div>
             </div>
+
+            {/* ✅ VELOCITY LANE */}
+            <VelocityLane
+                notes={noteInteractions.notes}
+                selectedNoteIds={Array.from(noteInteractions.selectedNoteIds)}
+                onNoteVelocityChange={handleNoteVelocityChange}
+                dimensions={engine.dimensions}
+                viewport={engine.viewport}
+                activeTool={activeTool}
+            />
         </div>
     );
 }

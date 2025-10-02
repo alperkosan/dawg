@@ -34,6 +34,11 @@ export const PlaybackControls = () => {
 
   const { activePatternId, patterns } = useArrangementStore();
 
+  // ✅ DEBUG: Log state changes
+  useEffect(() => {
+    console.log('🎛️ PlaybackControls state:', { playbackState, bpm, loopEnabled });
+  }, [playbackState, bpm, loopEnabled]);
+
   // =================== MAIN TRANSPORT CONTROLS ===================
 
   const TransportButtons = () => (
@@ -41,10 +46,14 @@ export const PlaybackControls = () => {
       {/* Stop */}
       <button
         onClick={handleStop}
-        className="p-2 rounded bg-gray-700 hover:bg-gray-600 transition-colors"
+        className={`p-2 rounded transition-colors ${
+          playbackState === PLAYBACK_STATES.STOPPED
+            ? 'bg-orange-600 text-white shadow-lg'
+            : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+        }`}
         title="Stop"
       >
-        <Square size={18} className="text-gray-300" />
+        <Square size={18} />
       </button>
 
       {/* Play/Pause */}
@@ -53,9 +62,17 @@ export const PlaybackControls = () => {
         className={`p-3 rounded-lg transition-all duration-200 ${
           playbackState === PLAYBACK_STATES.PLAYING
             ? 'bg-red-600 hover:bg-red-700 shadow-lg'
+            : playbackState === PLAYBACK_STATES.PAUSED
+            ? 'bg-yellow-600 hover:bg-yellow-700 shadow-lg'
             : 'bg-green-600 hover:bg-green-700 shadow-lg'
         }`}
-        title={playbackState === PLAYBACK_STATES.PLAYING ? 'Pause' : 'Play'}
+        title={
+          playbackState === PLAYBACK_STATES.PLAYING
+            ? 'Pause'
+            : playbackState === PLAYBACK_STATES.PAUSED
+            ? 'Resume'
+            : 'Play'
+        }
       >
         {playbackState === PLAYBACK_STATES.PLAYING ? (
           <Pause size={20} className="text-white" />

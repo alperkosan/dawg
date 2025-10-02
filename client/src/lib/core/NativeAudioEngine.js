@@ -224,6 +224,7 @@ export class NativeAudioEngine {
         return this;
     }
 
+
     jumpToBar(bar) {
         if (this.playbackManager) {
             this.playbackManager.jumpToBar(bar);
@@ -350,18 +351,18 @@ export class NativeAudioEngine {
 
     _setupTransportCallbacks() {
         this.transport.on('start', () => {
-            this.setPlaybackState('playing');
+            // this.setPlaybackState('playing'); // ✅ Handled by PlaybackController
             this._startPerformanceMonitoring();
         });
 
         this.transport.on('stop', () => {
-            this.setPlaybackState('stopped');
+            // this.setPlaybackState('stopped'); // ✅ Handled by PlaybackController
             this._stopPerformanceMonitoring();
             this._stopAllInstruments();
         });
 
         this.transport.on('pause', () => {
-            this.setPlaybackState('paused');
+            // this.setPlaybackState('paused'); // ✅ Handled by PlaybackController
         });
 
         this.transport.on('tick', (data) => {

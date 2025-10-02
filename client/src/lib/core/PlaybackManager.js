@@ -269,13 +269,15 @@ export class PlaybackManager {
      */
     _handleLoopRestart(nextStartTime = null) {
 
-        // ✅ CRITICAL: Immediately sync position to loop start for high BPM accuracy
-        this.currentPosition = this.loopStart;
+        // ✅ CONSISTENT: Reset to 0 for consistent behavior (can be loopStart later)
+        this.currentPosition = 0;
 
-        // ✅ CRITICAL: Force transport position to loop start immediately
+        // ✅ CONSISTENT: Force transport position to 0 immediately
         if (this.transport.setPosition) {
-            this.transport.setPosition(this.loopStart);
+            this.transport.setPosition(0);
         }
+
+        console.log('🎵 Loop restart: Reset to position 0 (consistent behavior)');
 
         // Mevcut scheduled events'leri temizle
         this._clearScheduledEvents();
@@ -480,29 +482,35 @@ export class PlaybackManager {
     // =================== PLAYBACK CONTROLS ===================
 
     play(startStep = null) {
+        console.log('PlaybackManager.play() called with startStep:', startStep);
         if (this.isPlaying && !this.isPaused) return;
-
-        // ✅ CRITICAL FIX: If resuming from pause, use resume() instead
-        if (this.isPaused && startStep === null) {
-            return this.resume();
-        }
 
         try {
             const startTime = this.audioEngine.audioContext.currentTime;
 
-            // ✅ FIX: Improved position handling - maintain current position unless explicitly changed
-            if (startStep !== null) {
-                // If explicitly requested to jump to a position
-                this.jumpToStep(startStep);
-            } else if (!this.isPaused && this.currentPosition === this.loopStart) {
-                // Only reset to loop start if we're not paused AND we're already at the beginning
-                // This prevents resetting when user has manually set position via jumpToStep
-                if (this.transport.setPosition) {
-                    this.transport.setPosition(this.loopStart);
-                }
-            }
-            // Otherwise, keep current position (whether paused or manually set)
+            // ✅ SIMPLIFIED POSITION LOGIC: Clear and predictable
+            let playPosition = this.currentPosition; // Default to current position
 
+            if (startStep !== null) {
+                // EXPLICIT POSITION: Jump to requested position
+                console.log(`🎵 Play with explicit position: ${startStep}`);
+                playPosition = startStep;
+                this.jumpToStep(startStep);
+            } else if (this.isPaused) {
+                // RESUME: Keep exact current position, don't reset
+                console.log(`🎵 Resume from pause at position: ${this.currentPosition}`);
+                playPosition = this.currentPosition;
+            } else {
+                // FRESH START: Use current position (may have been set by timeline click)
+                console.log(`🎵 Fresh start from position: ${this.currentPosition}`);
+                playPosition = this.currentPosition;
+            }
+
+            // ✅ CRITICAL: Always ensure transport position matches our intended position
+            if (this.transport.setPosition) {
+                this.transport.setPosition(playPosition);
+                console.log(`🎵 Transport position set to: ${playPosition}`);
+            }
 
             this._updateLoopSettingsImmediate(); // Force immediate loop update for playback start
             this._scheduleContent(startTime, 'playback-start', true); // Force immediate scheduling for playback start
@@ -510,7 +518,7 @@ export class PlaybackManager {
 
             this.isPlaying = true;
             this.isPaused = false;
-            usePlaybackStore.getState().setPlaybackState('playing');
+            // usePlaybackStore.getState().setPlaybackState('playing'); // ✅ Handled by PlaybackController
         } catch (error) {
             this.stop();
         }
@@ -530,7 +538,7 @@ export class PlaybackManager {
 
 
             // Notify stores
-            usePlaybackStore.getState().setPlaybackState('paused');
+            // usePlaybackStore.getState().setPlaybackState('paused'); // ✅ Handled by PlaybackController
 
         } catch (error) {
         }
@@ -555,7 +563,7 @@ export class PlaybackManager {
             this._scheduleContent(startTime, 'resume', true);
 
             // Notify stores
-            usePlaybackStore.getState().setPlaybackState('playing');
+            // usePlaybackStore.getState().setPlaybackState('playing'); // ✅ Handled by PlaybackController
 
         } catch (error) {
         }
@@ -570,14 +578,18 @@ export class PlaybackManager {
 
             this.isPlaying = false;
             this.isPaused = false;
-            this.currentPosition = this.loopStart;
 
-            // ✅ FIX: Reset transport position to loop start when stopping
+            // ✅ CONSISTENT: Always reset to 0 on stop for predictable behavior
+            this.currentPosition = 0;
+
+            // ✅ CONSISTENT: Reset transport position to 0 when stopping
             if (this.transport.setPosition) {
-                this.transport.setPosition(this.loopStart);
+                this.transport.setPosition(0);
             }
 
-            usePlaybackStore.getState().setPlaybackState('stopped');
+            console.log('🎵 Stop: Reset to position 0 (consistent behavior)');
+
+            // usePlaybackStore.getState().setPlaybackState('stopped'); // ✅ Handled by PlaybackController
         } catch (error) {
         }
     }
@@ -585,28 +597,35 @@ export class PlaybackManager {
     // =================== POSITION MANAGEMENT ===================
 
     jumpToStep(step) {
+        // ✅ SIMPLIFIED: Always immediate jump, regardless of state
         const targetStep = Math.max(0, Math.min(step, this.loopEnd - 1));
+
+        console.log(`🎵 PlaybackManager.jumpToStep(${step} -> ${targetStep}) - immediate jump`);
+
+        // ALWAYS set position immediately
         this.currentPosition = targetStep;
 
-        // ✅ FIX: Always update transport position, whether playing or not
         if (this.transport.setPosition) {
             this.transport.setPosition(targetStep);
         }
 
+        // Clear any scheduled events to prevent conflicts
+        this._clearScheduledEvents();
+
+        // If playing, reschedule from new position
         if (this.isPlaying) {
-            // Reschedule from new position when playing
-            this._clearScheduledEvents();
-            this._scheduleContent(null, 'jump-to-step', false); // Allow debouncing for jump operations
+            this._scheduleContent(null, 'position-jump', false);
         }
 
-        // ✅ FIX: Emit position update for UI
+        // ✅ IMMEDIATE: Emit position update for UI sync
         const positionData = {
             step: targetStep,
             formatted: this._formatPosition(targetStep)
         };
         this._emit('positionUpdate', positionData);
-
     }
+
+    // ✅ REMOVED: Smart jump complexity - now using simple immediate jump only
 
     jumpToBar(bar) {
         const targetStep = (bar - 1) * 16; // 16 steps per bar

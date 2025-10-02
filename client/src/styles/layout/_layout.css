@@ -96,6 +96,18 @@
   box-shadow: var(--shadow-glow);
 }
 
+.top-toolbar__transport-btn--paused {
+  color: var(--color-text-inverse);
+  background-color: #eab308; /* Yellow for paused */
+  box-shadow: 0 0 8px rgba(234, 179, 8, 0.4);
+}
+
+.top-toolbar__transport-btn--stopped {
+  color: var(--color-text-inverse);
+  background-color: #f97316; /* Orange for stopped */
+  box-shadow: 0 0 8px rgba(249, 115, 22, 0.4);
+}
+
 /* PAT / SONG Butonları */
 .top-toolbar__mode-toggle {
   display: flex;

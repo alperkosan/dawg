@@ -14,26 +14,45 @@ const initialTracks = initialInstruments.map(inst => ({
 }));
 
 /**
+ * ⚡ OPTIMIZED: Throttled orchestrator to prevent excessive heavy operations
  * Zustand store'ları arasında iletişimi sağlayan bir "orkestra şefi".
- * Bir store'daki değişiklik başka bir store'u veya ses motorunu tetikleyecekse,
- * bu mantık burada merkezi olarak yönetilir.
  */
 const arrangementStoreOrchestrator = (config) => (set, get, api) => {
   const store = config(set, get, api);
+
+  // Throttling for heavy operations
+  let updateLoopLengthTimeout = null;
+  let rescheduleTimeout = null;
+
+  const throttledUpdateLoopLength = () => {
+    if (updateLoopLengthTimeout) return; // Already scheduled
+    updateLoopLengthTimeout = setTimeout(() => {
+      usePlaybackStore.getState().updateLoopLength();
+      updateLoopLengthTimeout = null;
+    }, 50); // 50ms throttle
+  };
+
+  const throttledReschedule = () => {
+    if (rescheduleTimeout) return; // Already scheduled
+    rescheduleTimeout = setTimeout(() => {
+      AudioContextService.reschedule();
+      rescheduleTimeout = null;
+    }, 100); // 100ms throttle
+  };
 
   // Orijinal updatePatternNotes fonksiyonunu sarmala (wrap).
   const originalUpdatePatternNotes = store.updatePatternNotes;
   store.updatePatternNotes = (...args) => {
     originalUpdatePatternNotes(...args);
-    // Notalar değiştiğinde, çalma döngüsünün uzunluğu da değişmiş olabilir.
-    usePlaybackStore.getState().updateLoopLength();
-    // Ses motorunu yeni notalarla yeniden zamanla.
-    AudioContextService.reschedule();
+    // Throttled heavy operations
+    throttledUpdateLoopLength();
+    throttledReschedule();
   };
 
   const originalSetActivePatternId = store.setActivePatternId;
   store.setActivePatternId = (...args) => {
     originalSetActivePatternId(...args);
+    // Immediate for pattern changes (more critical)
     usePlaybackStore.getState().updateLoopLength();
     AudioContextService.reschedule();
   };

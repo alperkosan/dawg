@@ -40,10 +40,13 @@ function App() {
 
     try {
       // === KRİTİK BAĞLANTI NOKTASI ===
-      // Motoru oluştururken, store'ların eylemlerini "callback" olarak motora veriyoruz.
-      // Bu, motordan store'a tek yönlü veri akışını sağlar.
+      // ✅ NEW UNIFIED SYSTEM: Motor artık PlaybackController üzerinden state yönetir
+      // Geçici olarak eski callbacks'leri sessiz kılıyoruz
       const engine = new NativeAudioEngine({
-        setPlaybackState: usePlaybackStore.getState().setPlaybackState,
+        setPlaybackState: (state) => {
+          // ✅ Deprecated - Now handled by PlaybackController
+          // console.log('Motor state change (handled by controller):', state);
+        },
         setTransportPosition: usePlaybackStore.getState().setTransportPosition,
       });
 

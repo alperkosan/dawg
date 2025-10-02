@@ -1,10 +1,21 @@
 // src/store/usePlaybackStore.js
+// ✅ MIGRATION: Re-export new unified system
+export { usePlaybackStore } from './usePlaybackStoreV2';
+
+/*
+// DEPRECATED - Old implementation moved to usePlaybackStoreV2.js
+// This file now serves as a migration bridge
+
 import { create } from 'zustand';
 import { AudioContextService } from '../lib/services/AudioContextService';
 import { useArrangementStore } from './useArrangementStore';
 import { calculateAudioLoopLength } from '../lib/utils/patternUtils';
 import { PLAYBACK_MODES, PLAYBACK_STATES } from '../config/constants';
 
+*/
+
+// LEGACY CODE - COMMENTED OUT
+/*
 export const usePlaybackStore = create((set, get) => ({
   // --- STATE (Değişiklik yok) ---
   isPlaying: false,
@@ -17,6 +28,10 @@ export const usePlaybackStore = create((set, get) => ({
   loopEnabled: true,
   audioLoopLength: 64,
   currentStep: 0,     // Oynatma çubuğunun mevcut konumu (step cinsinden)
+  startPosition: 0,   // Stop halinde playhead'in göstereceği başlangıç pozisyonu
+  pausePosition: 0,   // Pause yapıldığında playhead'in durduğu pozisyon
+  stopPosition: 0,    // Stop yapıldığında motor'un durduğu pozisyon
+  lastStopTime: 0,    // Son stop butonuna basılma zamanı (double-stop detection için)
   loopStartStep: 64, // Döngünün başlangıcı (varsayılan olarak 5. bar)
   loopEndStep: 128,   // Döngünün bitişi (varsayılan olarak 9. bar)
 
@@ -27,7 +42,19 @@ export const usePlaybackStore = create((set, get) => ({
   // --- EYLEMLER (ACTIONS) ---
   togglePlay: () => set(state => ({ isPlaying: !state.isPlaying })),
   
-  setCurrentStep: (step) => set({ currentStep: step }),
+  setCurrentStep: (step) => {
+    const { playbackState } = get();
+    // Playing halinde her currentStep update'inde, bu pozisyonu potansiyel pause pozisyonu olarak kaydet
+    if (playbackState === PLAYBACK_STATES.PLAYING) {
+      set({ currentStep: step, pausePosition: step });
+    } else {
+      set({ currentStep: step });
+    }
+  },
+
+  setStartPosition: (step) => set({ startPosition: step }),
+
+  setPausePosition: (step) => set({ pausePosition: step }),
   
   setLoopRegion: (startStep, endStep) => {
     // Başlangıcın sondan büyük olmamasını sağla
@@ -38,7 +65,7 @@ export const usePlaybackStore = create((set, get) => ({
 
   // --- OYNATMA KONTROLLERİ ---
   togglePlayPause: () => {
-    const { playbackState } = get();
+    const { playbackState, startPosition, pausePosition } = get();
     const engine = AudioContextService.getAudioEngine();
     if (!engine) return;
 
@@ -46,15 +73,46 @@ export const usePlaybackStore = create((set, get) => ({
     if (playbackState === PLAYBACK_STATES.PLAYING) {
       engine.pause();
     } else if (playbackState === PLAYBACK_STATES.PAUSED) {
-      // ✅ FIX: Use resume() for paused state
-      engine.resume();
+      // ✅ FIX: Pause halinde pausePosition'dan devam et
+      // Eğer pause halinde manual pozisyon değişikliği yapıldıysa
+      if (pausePosition !== undefined && pausePosition !== null) {
+        engine.play(pausePosition); // Pause pozisyonundan başla
+      } else {
+        engine.resume(); // Normal resume
+      }
     } else {
-      // Only for stopped state, use play()
-      engine.play();
+      // ✅ FIX: Stop halinde startPosition'dan başlat
+      // Stop halinde UI playhead ile motor position senkronizasyonu
+      console.log('togglePlayPause from stopped state:', { startPosition, pausePosition });
+      if (startPosition !== undefined && startPosition !== null) {
+        console.log('Playing from startPosition:', startPosition);
+        engine.play(startPosition); // Explicit start position
+      } else {
+        console.log('Playing from default position (0)');
+        engine.play(); // Default start
+      }
     }
   },
 
   handleStop: () => {
+    const { lastStopTime, loopStartStep } = get();
+    const now = Date.now();
+    const timeSinceLastStop = now - lastStopTime;
+
+    // Double-stop detection: 500ms içinde iki kere stop basılırsa
+    if (timeSinceLastStop < 500 && lastStopTime > 0) {
+      // Loop varsa loop başına, yoksa 0'a git
+      const resetPosition = loopStartStep > 0 ? loopStartStep : 0;
+      set({ startPosition: resetPosition, lastStopTime: now });
+    } else {
+      // İlk stop: loop başına git (eğer loop varsa)
+      if (loopStartStep > 0) {
+        set({ startPosition: loopStartStep, lastStopTime: now });
+      } else {
+        set({ lastStopTime: now });
+      }
+    }
+
     const engine = AudioContextService.getAudioEngine();
     engine?.stop();
   },
@@ -84,7 +142,38 @@ export const usePlaybackStore = create((set, get) => ({
 
   // --- ZAMAN ÇİZELGESİ ETKİLEŞİMİ ---
   jumpToStep: (step) => {
+    const { playbackState } = get();
+
+    // Stop halinde start pozisyonunu güncelle
+    if (playbackState === PLAYBACK_STATES.STOPPED) {
+      console.log('jumpToStep in stopped state: setting startPosition to', step);
+      set({ startPosition: step });
+    }
+
+    // Pause halinde pause pozisyonunu güncelle
+    if (playbackState === PLAYBACK_STATES.PAUSED) {
+      set({ pausePosition: step });
+    }
+
     AudioContextService.getAudioEngine()?.jumpToStep(step);
+  },
+
+  // ✅ NEW: Motor'un gerçek pozisyonunu al
+  getCurrentMotorPosition: () => {
+    const engine = AudioContextService.getAudioEngine();
+    if (!engine?.playbackManager) {
+      console.log('getCurrentMotorPosition: No playbackManager');
+      return 0;
+    }
+
+    try {
+      const position = engine.playbackManager.getCurrentPosition();
+      console.log('getCurrentMotorPosition:', { position, isPlaying: engine.playbackManager.isPlaying });
+      return position;
+    } catch (error) {
+      console.warn('Error getting motor position:', error);
+      return 0;
+    }
   },
 
   // --- DÖNGÜ UZUNLUĞU HESAPLAMA (Değişiklik yok) ---
@@ -118,7 +207,27 @@ export const usePlaybackStore = create((set, get) => ({
   setTransportPosition: (position, step) => {
     set({ transportPosition: position, transportStep: step });
   },
-  setPlaybackState: (state) => set({ playbackState: state }),
+  setPlaybackState: (state) => {
+    const { currentStep, playbackState: prevState } = get();
+
+    // Pause'a geçiliyorsa currentStep'i pause position olarak kaydet
+    if (state === PLAYBACK_STATES.PAUSED && prevState === PLAYBACK_STATES.PLAYING) {
+      // Audio engine'den direkt pozisyonu al
+      const engine = AudioContextService.getAudioEngine();
+      const actualPosition = engine?.transport?.ticksToSteps?.(engine.transport.currentTick) || currentStep;
+      set({ pausePosition: actualPosition });
+    }
+
+    // Stop'a geçiliyorsa currentStep'i stop position olarak kaydet
+    if (state === PLAYBACK_STATES.STOPPED && (prevState === PLAYBACK_STATES.PLAYING || prevState === PLAYBACK_STATES.PAUSED)) {
+      const engine = AudioContextService.getAudioEngine();
+      const actualPosition = engine?.transport?.ticksToSteps?.(engine.transport.currentTick) || currentStep;
+      console.log('Setting stop position:', actualPosition);
+      set({ stopPosition: actualPosition });
+    }
+
+    set({ playbackState: state });
+  },
 
   // Loop Range Controls
   setLoopRange: (startStep, endStep) => {
@@ -140,3 +249,4 @@ export const usePlaybackStore = create((set, get) => ({
     AudioContextService.getAudioEngine()?.setMasterVolume(volume);
   }
 }));
+*/

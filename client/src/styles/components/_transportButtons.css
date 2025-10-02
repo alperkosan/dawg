@@ -1,0 +1,73 @@
+/* ==========================================================================
+   Transport Buttons - Unified Transport System
+   ========================================================================== */
+
+/* Base transport button styles */
+.transport-btn {
+  position: relative;
+  transition: all 0.2s ease;
+}
+
+/* Transport button state indicators */
+.transport-btn::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: transparent;
+  transition: all 0.2s ease;
+}
+
+/* Playing state - green indicator */
+.transport-btn--playing::after {
+  background: var(--color-accent-primary);
+  box-shadow: 0 0 8px var(--color-accent-primary);
+}
+
+/* Paused state - yellow indicator */
+.transport-btn--paused::after {
+  background: #fbbf24;
+  box-shadow: 0 0 8px #fbbf24;
+}
+
+/* Stopped state - red indicator */
+.transport-btn--stopped::after {
+  background: #ef4444;
+  box-shadow: 0 0 8px #ef4444;
+}
+
+/* Button active states */
+.transport-btn--playing {
+  background: rgba(var(--color-accent-primary-rgb), 0.1);
+  border-color: var(--color-accent-primary);
+}
+
+.transport-btn--paused {
+  background: rgba(251, 191, 36, 0.1);
+  border-color: #fbbf24;
+}
+
+.transport-btn--stopped {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: #ef4444;
+}
+
+/* Hover effects */
+.transport-btn:hover::after {
+  transform: scale(1.2);
+}
+
+.transport-btn--playing:hover {
+  background: rgba(var(--color-accent-primary-rgb), 0.2);
+}
+
+.transport-btn--paused:hover {
+  background: rgba(251, 191, 36, 0.2);
+}
+
+.transport-btn--stopped:hover {
+  background: rgba(239, 68, 68, 0.2);
+}

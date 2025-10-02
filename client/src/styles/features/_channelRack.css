@@ -48,6 +48,7 @@
   grid-column: 2; grid-row: 1;
   z-index: 20;
   background-color: var(--color-surface-1);
+  position: relative;
   border-bottom: 1px solid var(--color-border);
 }
 
@@ -55,6 +56,7 @@
   grid-column: 2; grid-row: 2;
   overflow: auto; /* BU ALAN KAYDIRMANIN MERKEZİDİR */
   z-index: 10;
+  cursor: crosshair;
   /* Merkezi utility sınıfları */
 }
 
@@ -88,3 +90,62 @@
   background-color: var(--color-surface-2);
   color: var(--color-accent-primary);
 }
+
+/* ==========================================================================
+   FL Studio Style Compact Playhead
+   ========================================================================== */
+
+.channel-rack-layout__compact-playhead {
+  /* GPU acceleration for smooth movement */
+  transform: translateZ(0);
+  will-change: transform;
+}
+
+/* Timeline click area for better UX */
+.channel-rack-layout__timeline-click-area {
+  transition: background-color 0.2s ease;
+  user-select: none;
+  cursor: crosshair;
+}
+
+.channel-rack-layout__timeline-click-area:hover {
+  background-color: rgba(0, 255, 136, 0.03);
+}
+
+/* Smooth playhead animation when jumping to position */
+.channel-rack-layout__compact-playhead--jumping {
+  transition: transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94) !important;
+}
+
+/* Playback state indicators */
+.channel-rack-layout__compact-playhead--playing {
+  animation: playhead-pulse 2s ease-in-out infinite;
+}
+
+.channel-rack-layout__compact-playhead--stopped {
+  background-color: #ffaa00 !important;
+  box-shadow: 0 0 8px rgba(255, 170, 0, 0.6) !important;
+}
+
+.channel-rack-layout__compact-playhead--stopped > div {
+  border-top-color: #ffaa00 !important;
+}
+
+
+@keyframes playhead-pulse {
+  0%, 100% {
+    box-shadow: 0 0 8px rgba(0, 255, 136, 0.6);
+  }
+  50% {
+    box-shadow: 0 0 12px rgba(0, 255, 136, 0.9), 0 0 20px rgba(0, 255, 136, 0.3);
+  }
+}
+
+
+@keyframes preview-flash {
+  0% { opacity: 0; }
+  50% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+
