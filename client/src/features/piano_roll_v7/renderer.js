@@ -583,7 +583,7 @@ function drawSlicePreview(ctx, engine) {
     ctx.restore();
 }
 
-// ✅ SLICE RANGE - Show slice range selection (90 degree slice length)
+// ✅ VERTICAL SLICE RANGE - Show pitch range selection at slice line
 function drawSliceRange(ctx, engine) {
     const { sliceRange, viewport, dimensions } = engine;
     if (!sliceRange || !viewport || !dimensions) return;
@@ -601,83 +601,107 @@ function drawSliceRange(ctx, engine) {
     // Apply scroll offset
     ctx.translate(-viewport.scrollX, -viewport.scrollY);
 
-    // Calculate actual range boundaries
-    const { actualStartX, actualEndX } = sliceRange;
-    const rangeStartX = actualStartX || Math.min(sliceRange.startX, sliceRange.endX);
-    const rangeEndX = actualEndX || Math.max(sliceRange.startX, sliceRange.endX);
-    const rangeWidth = rangeEndX - rangeStartX;
+    // Calculate vertical range boundaries
+    const { actualStartY, actualEndY, x } = sliceRange;
+    const rangeStartY = actualStartY || Math.min(sliceRange.startY, sliceRange.endY);
+    const rangeEndY = actualEndY || Math.max(sliceRange.startY, sliceRange.endY);
+    const rangeHeight = rangeEndY - rangeStartY;
+    const sliceX = x;
 
-    // Only draw if range has meaningful width
-    if (rangeWidth < 2) {
+    // Only draw if range has meaningful height
+    if (rangeHeight < 4) {
         ctx.restore();
         return;
     }
 
-    // ✅ FL Studio style slice range - 90 degree pattern
+    // ✅ FL Studio style vertical slice range - 90 degree pattern
     const rangeColor = '#ff6b35'; // Orange for slice range
-    const patternHeight = viewport.height - RULER_HEIGHT;
+    const rangeWidth = 60; // Fixed width for the range indicator
+
+    // Adjust Y positions relative to viewport
+    const adjustedStartY = rangeStartY - viewport.scrollY;
+    const adjustedEndY = rangeEndY - viewport.scrollY;
+    const adjustedHeight = adjustedEndY - adjustedStartY;
 
     // Semi-transparent background fill
     ctx.fillStyle = rangeColor;
-    ctx.globalAlpha = 0.15;
-    ctx.fillRect(rangeStartX, viewport.scrollY, rangeWidth, patternHeight);
+    ctx.globalAlpha = 0.2;
+    ctx.fillRect(sliceX - rangeWidth/2, adjustedStartY, rangeWidth, adjustedHeight);
 
-    // ✅ 90-degree diagonal pattern overlay
+    // ✅ 90-degree diagonal pattern overlay (vertical version)
     ctx.strokeStyle = rangeColor;
     ctx.lineWidth = 1;
     ctx.globalAlpha = 0.4;
 
     const patternSpacing = 8; // Distance between diagonal lines
-    const patternAngle = Math.PI / 4; // 45 degrees (creates 90 degree pattern)
+    const patternAngle = Math.PI / 4; // 45 degrees
 
     ctx.beginPath();
 
-    // Draw diagonal lines across the range
-    for (let offset = -patternHeight; offset < rangeWidth + patternHeight; offset += patternSpacing) {
-        const startX = rangeStartX + offset;
-        const startY = viewport.scrollY;
-        const endX = startX + Math.cos(patternAngle) * patternHeight;
-        const endY = startY + Math.sin(patternAngle) * patternHeight;
+    // Draw diagonal lines across the range (vertical pattern)
+    for (let offset = -rangeWidth; offset < adjustedHeight + rangeWidth; offset += patternSpacing) {
+        const startY = adjustedStartY + offset;
+        const startX = sliceX - rangeWidth/2;
+        const endY = startY + Math.sin(patternAngle) * rangeWidth;
+        const endX = startX + Math.cos(patternAngle) * rangeWidth;
 
         // Only draw lines that intersect with the range
-        if (endX >= rangeStartX && startX <= rangeEndX) {
-            ctx.moveTo(Math.max(startX, rangeStartX), startY);
-            ctx.lineTo(Math.min(endX, rangeEndX), Math.min(endY, startY + patternHeight));
+        if (endY >= adjustedStartY && startY <= adjustedEndY) {
+            ctx.moveTo(startX, Math.max(startY, adjustedStartY));
+            ctx.lineTo(Math.min(endX, sliceX + rangeWidth/2), Math.min(endY, adjustedEndY));
         }
     }
 
     ctx.stroke();
 
-    // Range boundary lines
+    // Vertical slice line (main slice position)
+    ctx.strokeStyle = rangeColor;
+    ctx.lineWidth = 3;
+    ctx.globalAlpha = 0.9;
+
+    ctx.beginPath();
+    ctx.moveTo(sliceX, viewport.scrollY);
+    ctx.lineTo(sliceX, viewport.scrollY + viewport.height - RULER_HEIGHT);
+    ctx.stroke();
+
+    // Range boundary lines (horizontal)
     ctx.strokeStyle = rangeColor;
     ctx.lineWidth = 2;
     ctx.globalAlpha = 0.8;
 
-    // Left boundary
+    // Top boundary
     ctx.beginPath();
-    ctx.moveTo(rangeStartX, viewport.scrollY);
-    ctx.lineTo(rangeStartX, viewport.scrollY + patternHeight);
+    ctx.moveTo(sliceX - rangeWidth/2, adjustedStartY);
+    ctx.lineTo(sliceX + rangeWidth/2, adjustedStartY);
     ctx.stroke();
 
-    // Right boundary
+    // Bottom boundary
     ctx.beginPath();
-    ctx.moveTo(rangeEndX, viewport.scrollY);
-    ctx.lineTo(rangeEndX, viewport.scrollY + patternHeight);
+    ctx.moveTo(sliceX - rangeWidth/2, adjustedEndY);
+    ctx.lineTo(sliceX + rangeWidth/2, adjustedEndY);
     ctx.stroke();
 
     // Range info text
-    if (rangeWidth > 40) {
-        const rangeTimeWidth = (sliceRange.actualEndTime || sliceRange.endTime) -
-                              (sliceRange.actualStartTime || sliceRange.startTime);
+    if (adjustedHeight > 30) {
+        const { actualStartPitch, actualEndPitch } = sliceRange;
+        const pitchRange = Math.abs((actualStartPitch || sliceRange.startPitch) -
+                                  (actualEndPitch || sliceRange.endPitch));
 
         ctx.fillStyle = rangeColor;
         ctx.globalAlpha = 1.0;
-        ctx.font = 'bold 12px monospace';
+        ctx.font = 'bold 10px monospace';
         ctx.textAlign = 'center';
+
+        // Background for text readability
+        const textY = adjustedStartY + adjustedHeight / 2;
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        ctx.fillRect(sliceX - 25, textY - 8, 50, 16);
+
+        ctx.fillStyle = rangeColor;
         ctx.fillText(
-            `${rangeTimeWidth.toFixed(2)} steps`,
-            rangeStartX + rangeWidth / 2,
-            viewport.scrollY + 25
+            `${Math.round(pitchRange)} notes`,
+            sliceX,
+            textY + 4
         );
     }
 
