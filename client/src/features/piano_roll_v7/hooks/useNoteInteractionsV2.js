@@ -323,10 +323,13 @@ export function useNoteInteractionsV2(
         setSelectedNoteIds(new Set([firstNote.id, secondNote.id]));
 
         console.log('🔪 Note sliced:', {
-            original: note,
+            original: { id: note.id, startTime: note.startTime, length: note.length },
             sliceTime: snappedSliceTime,
-            firstNote,
-            secondNote
+            firstNote: { id: firstNote.id, startTime: firstNote.startTime, length: firstNote.length },
+            secondNote: { id: secondNote.id, startTime: secondNote.startTime, length: secondNote.length },
+            totalLengthBefore: note.length,
+            totalLengthAfter: firstNote.length + secondNote.length,
+            conserved: Math.abs(note.length - (firstNote.length + secondNote.length)) < 0.001
         });
     }, [notes, updatePatternStore, snapValue, snapToGrid]);
 
@@ -451,7 +454,21 @@ export function useNoteInteractionsV2(
             sliceTime: snappedSliceTime,
             pitchRange: `${Math.min(startPitch, endPitch)} - ${Math.max(startPitch, endPitch)}`,
             affectedNotes: affectedNotes.length,
-            newNotes: allNewNotes.length
+            newNotes: allNewNotes.length,
+            lengthConservation: affectedNotes.map(note => {
+                const newNotesForThis = allNewNotes.filter(n =>
+                    n.pitch === note.pitch &&
+                    n.startTime >= note.startTime &&
+                    n.startTime < note.startTime + note.length
+                );
+                const totalNewLength = newNotesForThis.reduce((sum, n) => sum + n.length, 0);
+                return {
+                    originalId: note.id,
+                    originalLength: note.length,
+                    newPiecesLength: totalNewLength,
+                    conserved: Math.abs(note.length - totalNewLength) < 0.001
+                };
+            })
         });
     }, [notes, updatePatternStore, snapValue, snapToGrid]);
 

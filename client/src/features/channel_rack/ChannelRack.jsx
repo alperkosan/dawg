@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useCallback, useState } from 'react';
+import React, { useRef, useEffect, useCallback, useState, memo, useMemo } from 'react';
 import { useInstrumentsStore } from '../../store/useInstrumentsStore';
 import { useArrangementStore } from '../../store/useArrangementStore';
 import { usePanelsStore } from '../../store/usePanelsStore';
@@ -11,6 +11,7 @@ import StepGrid from './StepGrid';
 import PianoRollMiniView from './PianoRollMiniView';
 import InteractiveTimeline from './InteractiveTimeline';
 import { PlusCircle } from 'lucide-react';
+import { uiUpdateManager, UPDATE_PRIORITIES, UPDATE_FREQUENCIES } from '../../lib/core/UIUpdateManager.js';
 
 const STEP_WIDTH = 16;
 
@@ -22,10 +23,22 @@ const calculateStep = (clickX, stepWidth, maxStep) => {
   return Math.max(0, Math.min(maxStep, finalStep));
 };
 
-export default function ChannelRack() {
-  const instruments = useInstrumentsStore(state => state.instruments);
-  const { patterns, activePatternId } = useArrangementStore();
-  const { openPianoRollForInstrument, handleEditInstrument, togglePanel } = usePanelsStore();
+// ✅ Simple direct selectors - avoid object creation
+const selectInstruments = (state) => state.instruments;
+const selectPatterns = (state) => state.patterns;
+const selectActivePatternId = (state) => state.activePatternId;
+const selectOpenPianoRoll = (state) => state.openPianoRollForInstrument;
+const selectHandleEditInstrument = (state) => state.handleEditInstrument;
+const selectTogglePanel = (state) => state.togglePanel;
+
+function ChannelRack() {
+  // ✅ Direct selectors - no object creation in selectors
+  const instruments = useInstrumentsStore(selectInstruments);
+  const patterns = useArrangementStore(selectPatterns);
+  const activePatternId = useArrangementStore(selectActivePatternId);
+  const openPianoRollForInstrument = usePanelsStore(selectOpenPianoRoll);
+  const handleEditInstrument = usePanelsStore(selectHandleEditInstrument);
+  const togglePanel = usePanelsStore(selectTogglePanel);
 
   // ✅ UNIFIED TRANSPORT SYSTEM
   const { position, displayPosition, playbackState, isPlaying } = useTransportPosition();
@@ -52,46 +65,41 @@ export default function ChannelRack() {
   const instrumentListRef = useRef(null);
   const timelineContainerRef = useRef(null);
 
-  const activePattern = patterns[activePatternId];
+  // ✅ Memoize expensive calculations
+  const activePattern = useMemo(() => patterns[activePatternId], [patterns, activePatternId]);
 
   // High-performance playhead artık useOptimizedPlayhead hook'u tarafından yönetiliyor
   // GPU acceleration ve direct DOM manipulation ile smooth hareket
 
-  // Custom scroll synchronization for Channel Rack
-  useEffect(() => {
+  // ✅ Optimized scroll synchronization handlers with useCallback
+  const handleMainScroll = useCallback(() => {
     const mainGrid = scrollContainerRef.current;
     const instrumentsList = instrumentListRef.current;
     const timeline = timelineContainerRef.current;
 
     if (!mainGrid || !instrumentsList || !timeline) return;
 
-    let isInstrumentsScrolling = false;
-    let isMainScrolling = false;
+    // Sync instruments vertically and timeline horizontally
+    instrumentsList.scrollTop = mainGrid.scrollTop;
+    timeline.scrollLeft = mainGrid.scrollLeft;
+  }, []);
 
-    // Main grid scroll -> sync instruments vertically and timeline horizontally
-    const handleMainScroll = () => {
-      if (isInstrumentsScrolling) return;
-      isMainScrolling = true;
+  const handleInstrumentsScroll = useCallback(() => {
+    const mainGrid = scrollContainerRef.current;
+    const instrumentsList = instrumentListRef.current;
 
-      instrumentsList.scrollTop = mainGrid.scrollTop;
-      timeline.scrollLeft = mainGrid.scrollLeft;
+    if (!mainGrid || !instrumentsList) return;
 
-      requestAnimationFrame(() => {
-        isMainScrolling = false;
-      });
-    };
+    // Sync main grid vertically
+    mainGrid.scrollTop = instrumentsList.scrollTop;
+  }, []);
 
-    // Instruments scroll -> sync main grid vertically
-    const handleInstrumentsScroll = () => {
-      if (isMainScrolling) return;
-      isInstrumentsScrolling = true;
+  // Custom scroll synchronization for Channel Rack
+  useEffect(() => {
+    const mainGrid = scrollContainerRef.current;
+    const instrumentsList = instrumentListRef.current;
 
-      mainGrid.scrollTop = instrumentsList.scrollTop;
-
-      requestAnimationFrame(() => {
-        isInstrumentsScrolling = false;
-      });
-    };
+    if (!mainGrid || !instrumentsList) return;
 
     mainGrid.addEventListener('scroll', handleMainScroll, { passive: true });
     instrumentsList.addEventListener('scroll', handleInstrumentsScroll, { passive: true });
@@ -100,7 +108,7 @@ export default function ChannelRack() {
       mainGrid.removeEventListener('scroll', handleMainScroll);
       instrumentsList.removeEventListener('scroll', handleInstrumentsScroll);
     };
-  }, []);
+  }, [handleMainScroll, handleInstrumentsScroll]);
 
   const handleNoteToggle = useCallback((instrumentId, step) => {
     try {
@@ -296,3 +304,6 @@ export default function ChannelRack() {
     </div>
   );
 }
+
+// ✅ Memoize the entire component to prevent unnecessary re-renders
+export default memo(ChannelRack);

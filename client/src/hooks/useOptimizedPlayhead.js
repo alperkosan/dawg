@@ -4,6 +4,7 @@
 import { useRef, useEffect, useCallback } from 'react';
 import { useGlobalPlayhead } from './useGlobalPlayhead';
 import { PlayheadRenderer } from '../lib/core/PlayheadRenderer.js';
+import { uiUpdateManager, UPDATE_PRIORITIES, UPDATE_FREQUENCIES } from '../lib/core/UIUpdateManager.js';
 
 export const useOptimizedPlayhead = (stepWidth = 16) => {
   const playheadRef = useRef(null);
@@ -83,44 +84,43 @@ export const useOptimizedPlayhead = (stepWidth = 16) => {
     }
   }, [stepWidth]);
 
-  // Auto-scroll during playback (optimized)
+  // Auto-scroll during playback (optimized with UIUpdateManager)
   useEffect(() => {
     if (playbackState !== 'playing' || !scrollContainerRef.current || !rendererRef.current) {
       return;
     }
 
-    let rafId = null;
+    console.log('🎯 useOptimizedPlayhead: Starting UIUpdateManager-based auto-scroll');
 
-    const updateScroll = () => {
-      const container = scrollContainerRef.current;
-      if (!container) return;
+    // Subscribe to UIUpdateManager for auto-scroll
+    const unsubscribe = uiUpdateManager.subscribe(
+      'playhead-auto-scroll',
+      (currentTime, frameTime) => {
+        const container = scrollContainerRef.current;
+        if (!container) return;
 
-      const currentStep = getPositionCallback();
-      const playheadX = currentStep * stepWidth;
-      const containerWidth = container.offsetWidth;
-      const scrollLeft = container.scrollLeft;
-      const playheadRightEdge = playheadX + stepWidth;
+        const currentStep = getPositionCallback();
+        const playheadX = currentStep * stepWidth;
+        const containerWidth = container.offsetWidth;
+        const scrollLeft = container.scrollLeft;
+        const playheadRightEdge = playheadX + stepWidth;
 
-      // Auto-scroll if playhead is out of view
-      if (playheadRightEdge > scrollLeft + containerWidth || playheadX < scrollLeft) {
-        const targetScrollLeft = playheadX - containerWidth / 2;
-        container.scrollTo({
-          left: Math.max(0, targetScrollLeft),
-          behavior: 'smooth'
-        });
-      }
-
-      if (playbackState === 'playing') {
-        rafId = requestAnimationFrame(updateScroll);
-      }
-    };
-
-    rafId = requestAnimationFrame(updateScroll);
+        // Auto-scroll if playhead is out of view
+        if (playheadRightEdge > scrollLeft + containerWidth || playheadX < scrollLeft) {
+          const targetScrollLeft = playheadX - containerWidth / 2;
+          container.scrollTo({
+            left: Math.max(0, targetScrollLeft),
+            behavior: 'smooth'
+          });
+        }
+      },
+      UPDATE_PRIORITIES.LOW, // Lower priority than playhead rendering
+      UPDATE_FREQUENCIES.MEDIUM // Don't need to scroll as frequently
+    );
 
     return () => {
-      if (rafId) {
-        cancelAnimationFrame(rafId);
-      }
+      unsubscribe();
+      console.log('🎯 useOptimizedPlayhead: Stopped UIUpdateManager-based auto-scroll');
     };
   }, [playbackState, stepWidth, getPositionCallback]);
 

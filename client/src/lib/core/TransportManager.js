@@ -11,6 +11,7 @@
  */
 
 import { PLAYBACK_STATES } from '../../config/constants.js';
+import { uiUpdateManager, UPDATE_PRIORITIES, UPDATE_FREQUENCIES } from './UIUpdateManager.js';
 
 // Precise step calculation to avoid floating point errors
 const calculateStep = (clickX, stepWidth, maxStep) => {
@@ -51,6 +52,9 @@ export class TransportManager {
     this.audioEngine = audioEngine;
     this.subscribers = new Set();
     this.positionTimer = null;
+    this.positionTrackingSubscription = null;
+    this._needsUIRefresh = false;
+    this.uiUpdateUnsubscribe = null;
 
     // UI element references - tüm transport UI'ları buradan yönetilecek
     this.transportButtons = new Map(); // button-id -> element
@@ -59,8 +63,94 @@ export class TransportManager {
 
     this._bindAudioEvents();
     this._setupGlobalKeyboardShortcuts();
+    this._setupUIUpdateManager();
 
     console.log('🎚️ TransportManager: Unified system initialized');
+  }
+
+  // =================== UI UPDATE MANAGER SETUP ===================
+
+  /**
+   * ✅ SETUP UI UPDATE MANAGER INTEGRATION
+   */
+  _setupUIUpdateManager() {
+    // Subscribe to position updates with HIGH priority
+    this.uiUpdateUnsubscribe = uiUpdateManager.subscribe(
+      'transport-position',
+      this._handleUIUpdate.bind(this),
+      UPDATE_PRIORITIES.HIGH,
+      UPDATE_FREQUENCIES.MEDIUM // 30fps for smooth but efficient updates
+    );
+
+    console.log('🎨 TransportManager: Subscribed to UIUpdateManager');
+  }
+
+  /**
+   * ✅ HANDLE UI UPDATES FROM MANAGER
+   */
+  _handleUIUpdate(currentTime, frameTime) {
+    // Only update if playing or if UI needs refresh
+    if (!this.state.isPlaying && !this._needsUIRefresh) return;
+
+    // Get position from audio engine (cached)
+    if (this.audioEngine?.transport) {
+      const newPosition = this.audioEngine.transport.ticksToSteps(
+        this.audioEngine.transport.currentTick
+      );
+
+      // ✅ PRECISION: Only update if significant change
+      if (Math.abs(newPosition - this.state.currentPosition) > 0.05) {
+        this.state.currentPosition = newPosition;
+        this.state.lastUpdateTime = Date.now();
+
+        // Update all UI elements with batched updates
+        this._updateAllPlayheadsBatched();
+        this._updateAllTimelinesBatched();
+        this._emitPositionUpdate();
+      }
+    }
+
+    // Reset UI refresh flag
+    this._needsUIRefresh = false;
+  }
+
+  /**
+   * ✅ BATCHED PLAYHEAD UPDATES
+   */
+  _updateAllPlayheadsBatched() {
+    const displayPosition = this.state.ghostPosition ?? this.state.currentPosition;
+
+    for (const [id, playhead] of this.playheadElements) {
+      const { element, stepWidth } = playhead;
+      const pixelPosition = displayPosition * stepWidth;
+
+      // Queue batched style update instead of direct DOM manipulation
+      uiUpdateManager.queueStyleUpdate(element, {
+        transform: `translate3d(${pixelPosition}px, 0, 0)`
+      });
+    }
+  }
+
+  /**
+   * ✅ BATCHED TIMELINE UPDATES
+   */
+  _updateAllTimelinesBatched() {
+    // Timeline updates are less frequent, can be batched too
+    for (const [id, timeline] of this.timelineElements) {
+      const { element, updateCallback } = timeline;
+
+      if (updateCallback) {
+        // Call timeline's update callback
+        updateCallback(this.state.currentPosition, this.state.ghostPosition);
+      }
+    }
+  }
+
+  /**
+   * ✅ REQUEST UI REFRESH
+   */
+  _requestUIRefresh() {
+    this._needsUIRefresh = true;
   }
 
   // =================== CORE TRANSPORT COMMANDS ===================
@@ -93,8 +183,8 @@ export class TransportManager {
       this.state.playbackState = PLAYBACK_STATES.PLAYING;
       this.state.lastUpdateTime = Date.now();
 
-      // Start position tracking
-      this._startPositionTracking();
+      // Start position tracking via UIUpdateManager
+      this._startPositionTrackingNew();
 
       // Update ALL UI elements
       this._updateAllTransportUI('play');
@@ -122,7 +212,7 @@ export class TransportManager {
       this.state.playbackState = PLAYBACK_STATES.PAUSED;
       this.state.lastUpdateTime = Date.now();
 
-      this._stopPositionTracking();
+      this._stopPositionTrackingNew();
       this._updateAllTransportUI('pause');
       this._emitStateChange('pause');
 
@@ -158,7 +248,7 @@ export class TransportManager {
       // Clear ghost position for clean stop state
       this.clearGhostPosition();
 
-      this._stopPositionTracking();
+      this._stopPositionTrackingNew();
       this._updateAllTransportUI('stop');
       this._emitStateChange('stop');
       this._emitPositionUpdate();
@@ -219,8 +309,8 @@ export class TransportManager {
     }
 
     if (updateUI) {
-      this._updateAllPlayheads();
-      this._updateAllTimelines();
+      this._updateAllPlayheadsBatched();
+      this._updateAllTimelinesBatched();
     }
 
     this._emitPositionUpdate();
@@ -231,13 +321,13 @@ export class TransportManager {
    */
   setGhostPosition(position) {
     this.state.ghostPosition = position;
-    this._updateAllPlayheads(); // Update ghost playheads
+    this._updateAllPlayheadsBatched(); // Update ghost playheads
     this._emitGhostUpdate();
   }
 
   clearGhostPosition() {
     this.state.ghostPosition = null;
-    this._updateAllPlayheads();
+    this._updateAllPlayheadsBatched();
     this._emitGhostUpdate();
   }
 
@@ -293,10 +383,10 @@ export class TransportManager {
     }
 
     // Update all playheads
-    this._updateAllPlayheads();
+    this._updateAllPlayheadsBatched();
 
     // Update all timelines
-    this._updateAllTimelines();
+    this._updateAllTimelinesBatched();
   }
 
   /**
@@ -335,14 +425,6 @@ export class TransportManager {
     }
   }
 
-  /**
-   * ✅ UPDATE ALL PLAYHEADS
-   */
-  _updateAllPlayheads() {
-    for (const [id] of this.playheadElements) {
-      this._updatePlayhead(id);
-    }
-  }
 
   /**
    * ✅ UPDATE SINGLE PLAYHEAD
@@ -364,14 +446,6 @@ export class TransportManager {
     element.classList.toggle('playhead--stopped', this.state.playbackState === PLAYBACK_STATES.STOPPED);
   }
 
-  /**
-   * ✅ UPDATE ALL TIMELINES
-   */
-  _updateAllTimelines() {
-    for (const [id] of this.timelineElements) {
-      this._updateTimeline(id);
-    }
-  }
 
   /**
    * ✅ UPDATE SINGLE TIMELINE
@@ -469,59 +543,53 @@ export class TransportManager {
 
   // =================== POSITION TRACKING ===================
 
-  _startPositionTracking() {
-    if (this.positionTimer) return;
+  _startPositionTrackingNew() {
+    if (this.positionTrackingSubscription) return;
 
-    // ✅ PERFORMANCE OPTIMIZED - Throttled position updates
-    let lastUpdateTime = 0;
-    const updateThrottle = 16.67; // ~60fps (instead of RAF which can be 120fps+)
-    let frameSkipCounter = 0;
+    console.log('🎚️ Starting UIUpdateManager-based position tracking');
 
-    const update = (currentTime) => {
-      if (!this.state.isPlaying || this.state.isUserScrubbing) {
-        this._stopPositionTracking();
-        return;
-      }
-
-      // ✅ THROTTLE: Skip frames for performance
-      if (currentTime - lastUpdateTime < updateThrottle) {
-        this.positionTimer = requestAnimationFrame(update);
-        return;
-      }
-
-      // ✅ FRAME SKIP: Update every 2nd frame to reduce CPU load
-      frameSkipCounter++;
-      if (frameSkipCounter % 2 !== 0) {
-        this.positionTimer = requestAnimationFrame(update);
-        return;
-      }
-
-      lastUpdateTime = currentTime;
-
-      // Get position from audio engine (cached)
-      if (this.audioEngine?.transport) {
-        const newPosition = this.audioEngine.transport.ticksToSteps(
-          this.audioEngine.transport.currentTick
-        );
-
-        // ✅ PRECISION: Only update if significant change
-        if (Math.abs(newPosition - this.state.currentPosition) > 0.05) {
-          this.state.currentPosition = newPosition;
-          this._updateAllPlayheads();
-          this._emitPositionUpdate();
-        }
-      }
-
-      this.positionTimer = requestAnimationFrame(update);
-    };
-
-    this.positionTimer = requestAnimationFrame(update);
+    // Subscribe to UIUpdateManager with HIGH priority for transport
+    this.positionTrackingSubscription = this.uiUpdateManager.subscribe(
+      'transport-position-tracking',
+      (currentTime, frameTime) => {
+        this._updatePositionFromAudio();
+      },
+      UPDATE_PRIORITIES.HIGH,
+      UPDATE_FREQUENCIES.HIGH
+    );
   }
 
-  _stopPositionTracking() {
-    if (this.positionTimer) {
-      cancelAnimationFrame(this.positionTimer);
-      this.positionTimer = null;
+  _stopPositionTrackingNew() {
+    if (this.positionTrackingSubscription) {
+      this.positionTrackingSubscription(); // Call unsubscribe function
+      this.positionTrackingSubscription = null;
+      console.log('🎚️ Stopped UIUpdateManager-based position tracking');
+    }
+  }
+
+  /**
+   * ✅ UPDATE POSITION FROM AUDIO ENGINE
+   * Called by UIUpdateManager subscription
+   */
+  _updatePositionFromAudio() {
+    if (!this.state.isPlaying || this.state.isUserScrubbing) return;
+
+    // Get position from audio engine (cached)
+    if (this.audioEngine?.transport) {
+      const newPosition = this.audioEngine.transport.ticksToSteps(
+        this.audioEngine.transport.currentTick
+      );
+
+      // ✅ PRECISION: Only update if significant change
+      if (Math.abs(newPosition - this.state.currentPosition) > 0.05) {
+        this.state.currentPosition = newPosition;
+        this.state.lastUpdateTime = Date.now();
+
+        // Update all UI elements with batched updates
+        this._updateAllPlayheadsBatched();
+        this._updateAllTimelinesBatched();
+        this._emitPositionUpdate();
+      }
     }
   }
 
@@ -677,7 +745,7 @@ export class TransportManager {
    * ✅ CLEANUP
    */
   destroy() {
-    this._stopPositionTracking();
+    this._stopPositionTrackingNew();
 
     // Cleanup timeline event listeners
     for (const [id, timeline] of this.timelineElements) {

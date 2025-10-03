@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, memo, useCallback, useMemo } from 'react';
 import { useInstrumentsStore } from '../../store/useInstrumentsStore';
 import { useMixerStore } from '../../store/useMixerStore';
 import { usePanelsStore } from '../../store/usePanelsStore'; // Panelleri açmak için eklendi
@@ -6,61 +6,88 @@ import ChannelContextMenu from '../../components/ChannelContextMenu';
 import { Music, Piano, Volume2, VolumeX, SlidersHorizontal } from 'lucide-react';
 import VolumeKnob from '../../ui/VolumeKnob';
 
-const InstrumentRow = ({ instrument, onPianoRollClick, onEditClick }) => {
-  const updateInstrument = useInstrumentsStore(state => state.updateInstrument);
-  const setTrackName = useMixerStore(state => state.setTrackName);
-  const handleMixerParamChange = useMixerStore(state => state.handleMixerParamChange);
-  const setActiveChannelId = useMixerStore(state => state.setActiveChannelId);
-  const togglePanel = usePanelsStore(state => state.togglePanel);
+// ✅ Direct property selectors - no object creation
+const selectUpdateInstrument = (state) => state.updateInstrument;
+const selectSetTrackName = (state) => state.setTrackName;
+const selectHandleMixerParamChange = (state) => state.handleMixerParamChange;
+const selectSetActiveChannelId = (state) => state.setActiveChannelId;
+const selectTogglePanel = (state) => state.togglePanel;
 
-  const mixerTrack = useMixerStore(state => 
-    state.mixerTracks.find(t => t.id === instrument.mixerTrackId)
+const InstrumentRow = ({ instrument, onPianoRollClick, onEditClick }) => {
+  // ✅ Direct selectors - no object creation in selectors
+  const updateInstrument = useInstrumentsStore(selectUpdateInstrument);
+  const setTrackName = useMixerStore(selectSetTrackName);
+  const handleMixerParamChange = useMixerStore(selectHandleMixerParamChange);
+  const setActiveChannelId = useMixerStore(selectSetActiveChannelId);
+  const togglePanel = usePanelsStore(selectTogglePanel);
+
+  // ✅ Memoize expensive mixerTrack lookup with stable selector
+  const mixerTrack = useMixerStore(
+    useMemo(() =>
+      (state) => state.mixerTracks.find(t => t.id === instrument.mixerTrackId)
+    , [instrument.mixerTrackId])
   );
   
   const [contextMenu, setContextMenu] = useState(null);
 
   if (!instrument || !mixerTrack) return null;
 
-  const isMuted = instrument.isMuted;
-  const isSelected = usePanelsStore.getState().pianoRollInstrumentId === instrument.id;
+  // ✅ Memoize computed values
+  const isMuted = useMemo(() => instrument.isMuted, [instrument.isMuted]);
+  const isSelected = useMemo(() =>
+    usePanelsStore.getState().pianoRollInstrumentId === instrument.id,
+    [instrument.id]
+  );
 
-  const handleContextMenu = (e) => {
+  // ✅ Memoized event handlers
+  const handleContextMenu = useCallback((e) => {
     e.preventDefault();
     e.stopPropagation();
     setContextMenu({ x: e.clientX, y: e.clientY });
-  };
+  }, []);
 
-  const openMixerAndFocus = (e) => {
+  const openMixerAndFocus = useCallback((e) => {
     e.stopPropagation();
     setActiveChannelId(mixerTrack.id);
     togglePanel('mixer');
-  };
+  }, [mixerTrack.id, setActiveChannelId, togglePanel]);
 
-  const getContextMenuOptions = () => [
-    {
-      label: 'Rename',
-      action: () => {
-        const newName = prompt('Enter new name:', instrument.name);
-        if (newName && newName.trim()) {
-          const trimmedName = newName.trim();
-          updateInstrument(instrument.id, { name: trimmedName });
-          setTrackName(mixerTrack.id, trimmedName);
-        }
-      }
-    },
+  const handleRename = useCallback(() => {
+    const newName = prompt('Enter new name:', instrument.name);
+    if (newName && newName.trim()) {
+      const trimmedName = newName.trim();
+      updateInstrument(instrument.id, { name: trimmedName });
+      setTrackName(mixerTrack.id, trimmedName);
+    }
+  }, [instrument.name, instrument.id, mixerTrack.id, updateInstrument, setTrackName]);
+
+  const getContextMenuOptions = useCallback(() => [
+    { label: 'Rename', action: handleRename },
     { label: 'Show in Mixer', action: openMixerAndFocus },
     // ... diğer context menu seçenekleri ...
-  ];
-  
-  // Dinamik olarak CSS sınıflarını oluşturuyoruz
-  const rowClasses = `
-    instrument-row 
+  ], [handleRename, openMixerAndFocus]);
+
+  // ✅ Memoized computed classes and styles
+  const rowClasses = useMemo(() => `
+    instrument-row
     ${isMuted ? 'instrument-row--muted' : ''}
     ${isSelected ? 'instrument-row--selected' : ''}
-  `;
-  const muteButtonClasses = `instrument-row__action-btn ${isMuted ? 'instrument-row__action-btn--active' : ''}`;
-  const pianoButtonClasses = `instrument-row__action-btn ${instrument.pianoRoll ? 'instrument-row__action-btn--active' : ''}`;
-  const iconStyle = { '--instrument-color': mixerTrack.color || 'var(--color-surface-3)' };
+  `, [isMuted, isSelected]);
+
+  const muteButtonClasses = useMemo(() =>
+    `instrument-row__action-btn ${isMuted ? 'instrument-row__action-btn--active' : ''}`,
+    [isMuted]
+  );
+
+  const pianoButtonClasses = useMemo(() =>
+    `instrument-row__action-btn ${instrument.pianoRoll ? 'instrument-row__action-btn--active' : ''}`,
+    [instrument.pianoRoll]
+  );
+
+  const iconStyle = useMemo(() =>
+    ({ '--instrument-color': mixerTrack.color || 'var(--color-surface-3)' }),
+    [mixerTrack.color]
+  );
 
   return (
     <div className={rowClasses} onContextMenu={handleContextMenu}>
@@ -134,4 +161,5 @@ const InstrumentRow = ({ instrument, onPianoRollClick, onEditClick }) => {
   );
 };
 
-export default InstrumentRow;
+// ✅ Memoize component to prevent unnecessary re-renders
+export default memo(InstrumentRow);

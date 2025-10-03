@@ -1,5 +1,6 @@
 // lib/core/PlaybackController.js
 import { PLAYBACK_STATES } from '../../config/constants';
+import { uiUpdateManager, UPDATE_PRIORITIES, UPDATE_FREQUENCIES } from './UIUpdateManager.js';
 
 /**
  * Simple EventEmitter implementation for browser
@@ -80,6 +81,7 @@ export class PlaybackController extends SimpleEventEmitter {
 
     this.audioEngine = audioEngine;
     this.rafId = null;
+    this.positionLoopSubscription = null;
     this.subscribers = new Set();
 
     // Motor event bindings
@@ -352,27 +354,28 @@ export class PlaybackController extends SimpleEventEmitter {
   // =================== POSITION UPDATES ===================
 
   _startPositionLoop() {
-    if (this.rafId) return;
+    if (this.positionLoopSubscription) return;
 
-    const loop = () => {
-      if (!this.state.isPlaying) {
-        this._stopPositionLoop();
-        return;
-      }
+    console.log('🎵 PlaybackController: Starting UIUpdateManager-based position loop');
 
-      // Motor'dan pozisyon al
-      this._updatePositionFromMotor();
-
-      this.rafId = requestAnimationFrame(loop);
-    };
-
-    this.rafId = requestAnimationFrame(loop);
+    // Subscribe to UIUpdateManager with NORMAL priority
+    this.positionLoopSubscription = uiUpdateManager.subscribe(
+      'playback-controller-position-loop',
+      (currentTime, frameTime) => {
+        if (this.state.isPlaying) {
+          this._updatePositionFromMotor();
+        }
+      },
+      UPDATE_PRIORITIES.NORMAL,
+      UPDATE_FREQUENCIES.HIGH
+    );
   }
 
   _stopPositionLoop() {
-    if (this.rafId) {
-      cancelAnimationFrame(this.rafId);
-      this.rafId = null;
+    if (this.positionLoopSubscription) {
+      this.positionLoopSubscription(); // Call unsubscribe function
+      this.positionLoopSubscription = null;
+      console.log('🎵 PlaybackController: Stopped UIUpdateManager-based position loop');
     }
   }
 

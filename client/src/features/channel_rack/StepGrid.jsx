@@ -3,8 +3,14 @@ import React from 'react';
 
 const StepButton = ({ isActive, onClick }) => {
   const buttonClasses = `step-grid__button ${isActive ? 'step-grid__button--active' : ''}`;
+
+  const handleClick = (e) => {
+    e.stopPropagation(); // ✅ Prevent event bubbling to timeline click handler
+    onClick();
+  };
+
   return (
-    <div className={buttonClasses} onClick={onClick}>
+    <div className={buttonClasses} onClick={handleClick}>
       <div className="step-grid__button-indicator" />
     </div>
   );

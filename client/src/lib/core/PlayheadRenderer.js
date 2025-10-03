@@ -1,11 +1,14 @@
 // lib/core/PlayheadRenderer.js
+import { uiUpdateManager, UPDATE_PRIORITIES, UPDATE_FREQUENCIES } from './UIUpdateManager.js';
+
 export class PlayheadRenderer {
     constructor(playheadElement, stepWidth) {
         this.element = playheadElement;
         this.stepWidth = stepWidth;
         this.isAnimating = false;
-        this.rafId = null;
+        this.subscriptionId = null;
         this.lastPosition = -1;
+        this.getPositionCallback = null;
         if (this.element) this.element.style.willChange = 'transform';
     }
 
@@ -26,18 +29,35 @@ export class PlayheadRenderer {
 
     startAnimation(getPositionCallback) {
         if (this.isAnimating) return;
+
         this.isAnimating = true;
-        const animate = () => {
-            if (!this.isAnimating) return;
-            this.updatePosition(getPositionCallback());
-            this.rafId = requestAnimationFrame(animate);
-        };
-        this.rafId = requestAnimationFrame(animate);
+        this.getPositionCallback = getPositionCallback;
+
+        console.log('🎨 PlayheadRenderer: Starting UIUpdateManager-based animation');
+
+        // Subscribe to UIUpdateManager with HIGH priority for smooth playhead
+        this.subscriptionId = uiUpdateManager.subscribe(
+            `playhead-${Date.now()}`, // Unique ID for this playhead
+            (currentTime, frameTime) => {
+                if (this.isAnimating && this.getPositionCallback) {
+                    this.updatePosition(this.getPositionCallback());
+                }
+            },
+            UPDATE_PRIORITIES.HIGH,
+            UPDATE_FREQUENCIES.REALTIME
+        );
     }
 
     stopAnimation() {
         this.isAnimating = false;
-        if (this.rafId) cancelAnimationFrame(this.rafId);
+
+        if (this.subscriptionId) {
+            this.subscriptionId(); // Call unsubscribe function
+            this.subscriptionId = null;
+            console.log('🎨 PlayheadRenderer: Stopped UIUpdateManager-based animation');
+        }
+
+        this.getPositionCallback = null;
     }
     
     reset() {

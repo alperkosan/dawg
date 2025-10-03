@@ -1,5 +1,6 @@
 // lib/core/PlaybackEngine.js
 import { PLAYBACK_STATES } from '../../config/constants.js';
+import { uiUpdateManager, UPDATE_PRIORITIES, UPDATE_FREQUENCIES } from './UIUpdateManager.js';
 
 /**
  * 🎵 UNIFIED PLAYBACK ENGINE
@@ -40,6 +41,7 @@ export class PlaybackEngine {
     this.audioEngine = audioEngine;
     this.subscribers = new Set();
     this.positionTimer = null;
+    this.positionTrackingSubscription = null;
 
     // Initialize
     this._bindAudioEvents();
@@ -270,36 +272,47 @@ export class PlaybackEngine {
   // =================== POSITION TRACKING ===================
 
   _startPositionTracking() {
-    if (this.positionTimer) return;
+    if (this.positionTrackingSubscription) return;
 
-    const update = () => {
-      if (!this.state.isPlaying || this.state.isUserScrubbing) {
-        this._stopPositionTracking();
-        return;
-      }
+    console.log('🎵 PlaybackEngine: Starting UIUpdateManager-based position tracking');
 
-      // Get position from audio engine
-      if (this.audioEngine?.transport) {
-        const newPosition = this.audioEngine.transport.ticksToSteps(
-          this.audioEngine.transport.currentTick
-        );
-
-        if (Math.abs(newPosition - this.state.currentPosition) > 0.01) {
-          this.state.currentPosition = newPosition;
-          this._emitPositionUpdate();
-        }
-      }
-
-      this.positionTimer = requestAnimationFrame(update);
-    };
-
-    this.positionTimer = requestAnimationFrame(update);
+    // Subscribe to UIUpdateManager with NORMAL priority (lower than TransportManager)
+    this.positionTrackingSubscription = uiUpdateManager.subscribe(
+      'playback-engine-position-tracking',
+      (currentTime, frameTime) => {
+        this._updatePositionFromAudio();
+      },
+      UPDATE_PRIORITIES.NORMAL,
+      UPDATE_FREQUENCIES.HIGH
+    );
   }
 
   _stopPositionTracking() {
-    if (this.positionTimer) {
-      cancelAnimationFrame(this.positionTimer);
-      this.positionTimer = null;
+    if (this.positionTrackingSubscription) {
+      this.positionTrackingSubscription(); // Call unsubscribe function
+      this.positionTrackingSubscription = null;
+      console.log('🎵 PlaybackEngine: Stopped UIUpdateManager-based position tracking');
+    }
+  }
+
+  /**
+   * ✅ UPDATE POSITION FROM AUDIO ENGINE
+   * Called by UIUpdateManager subscription
+   */
+  _updatePositionFromAudio() {
+    if (!this.state.isPlaying || this.state.isUserScrubbing) return;
+
+    // Get position from audio engine
+    if (this.audioEngine?.transport) {
+      const newPosition = this.audioEngine.transport.ticksToSteps(
+        this.audioEngine.transport.currentTick
+      );
+
+      if (Math.abs(newPosition - this.state.currentPosition) > 0.01) {
+        this.state.currentPosition = newPosition;
+        this.state.lastUpdateTime = Date.now();
+        this._emitPositionUpdate();
+      }
     }
   }
 

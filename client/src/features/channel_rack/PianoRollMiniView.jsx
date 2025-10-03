@@ -117,15 +117,20 @@ export default function PianoRollMiniView({ notes = [], patternLength, onNoteCli
     
   }, [notes, patternLength, noteRange]);
 
+  const handleClick = (e) => {
+    e.stopPropagation(); // ✅ Prevent event bubbling to timeline click handler
+    onNoteClick();
+  };
+
   return (
-    <div 
+    <div
       ref={containerRef}
       className="pr-mini-view"
-      onClick={onNoteClick}
+      onClick={handleClick}
       title="Click to open Piano Roll"
     >
-      <canvas 
-        ref={canvasRef} 
+      <canvas
+        ref={canvasRef}
         className="pr-mini-view__canvas"
       />
     </div>

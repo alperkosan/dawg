@@ -498,7 +498,7 @@ function drawPlayhead(ctx, engine) {
     // Reset shadow
     ctx.shadowBlur = 0;
 
-    // Arrow indicator at top
+    /* Arrow indicator at top
     ctx.fillStyle = playheadColor;
     ctx.beginPath();
     ctx.moveTo(playheadX, 0);
@@ -514,6 +514,7 @@ function drawPlayhead(ctx, engine) {
         ctx.textAlign = 'center';
         ctx.fillText(`${playhead.position.toFixed(1)}`, playheadX, arrowSize + 15);
     }
+    */
 
     ctx.restore();
 }

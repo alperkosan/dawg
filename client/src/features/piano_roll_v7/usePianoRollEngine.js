@@ -1,6 +1,7 @@
 // src/features/piano_roll_v5/usePianoRollEngine.js
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {usePlaybackStore} from '../../store/usePlaybackStore';
+import { uiUpdateManager, UPDATE_PRIORITIES, UPDATE_FREQUENCIES } from '../../lib/core/UIUpdateManager.js';
 
 // --- SABİTLER VE LİMİTLER ---
 const RULER_HEIGHT = 30;
@@ -45,35 +46,43 @@ export function usePianoRollEngine(containerRef) {
     }, [containerRef]);
 
     useEffect(() => {
-        let animationFrameId;
-        const animate = () => {
-            const vp = viewportRef.current;
-            let needsRender = false;
-            const dx = vp.targetScrollX - vp.scrollX;
-            const dy = vp.targetScrollY - vp.scrollY;
-            const dZoomX = vp.targetZoomX - vp.zoomX;
-            const dZoomY = vp.targetZoomY - vp.zoomY;
+        console.log('🎹 PianoRoll: Starting UIUpdateManager-based viewport animation');
 
-            if (Math.abs(dx) > 0.1) { vp.scrollX += dx * SMOOTHNESS; needsRender = true; } 
-            else { vp.scrollX = vp.targetScrollX; }
+        // Subscribe to UIUpdateManager for smooth viewport animations
+        const unsubscribe = uiUpdateManager.subscribe(
+            'piano-roll-viewport-animation',
+            (currentTime, frameTime) => {
+                const vp = viewportRef.current;
+                let needsRender = false;
+                const dx = vp.targetScrollX - vp.scrollX;
+                const dy = vp.targetScrollY - vp.scrollY;
+                const dZoomX = vp.targetZoomX - vp.zoomX;
+                const dZoomY = vp.targetZoomY - vp.zoomY;
 
-            if (Math.abs(dy) > 0.1) { vp.scrollY += dy * SMOOTHNESS; needsRender = true; } 
-            else { vp.scrollY = vp.targetScrollY; }
+                if (Math.abs(dx) > 0.1) { vp.scrollX += dx * SMOOTHNESS; needsRender = true; }
+                else { vp.scrollX = vp.targetScrollX; }
 
-            if (Math.abs(dZoomX) > 0.001) { vp.zoomX += dZoomX * SMOOTHNESS; needsRender = true; } 
-            else { vp.zoomX = vp.targetZoomX; }
+                if (Math.abs(dy) > 0.1) { vp.scrollY += dy * SMOOTHNESS; needsRender = true; }
+                else { vp.scrollY = vp.targetScrollY; }
 
-            if (Math.abs(dZoomY) > 0.001) { vp.zoomY += dZoomY * SMOOTHNESS; needsRender = true; } 
-            else { vp.zoomY = vp.targetZoomY; }
+                if (Math.abs(dZoomX) > 0.001) { vp.zoomX += dZoomX * SMOOTHNESS; needsRender = true; }
+                else { vp.zoomX = vp.targetZoomX; }
 
-            if (needsRender) {
-                setRenderTrigger(Date.now()); // Use timestamp to guarantee re-render
-            }
+                if (Math.abs(dZoomY) > 0.001) { vp.zoomY += dZoomY * SMOOTHNESS; needsRender = true; }
+                else { vp.zoomY = vp.targetZoomY; }
 
-            animationFrameId = requestAnimationFrame(animate);
+                if (needsRender) {
+                    setRenderTrigger(Date.now()); // Use timestamp to guarantee re-render
+                }
+            },
+            UPDATE_PRIORITIES.NORMAL,
+            UPDATE_FREQUENCIES.REALTIME
+        );
+
+        return () => {
+            unsubscribe();
+            console.log('🎹 PianoRoll: Stopped UIUpdateManager-based viewport animation');
         };
-        animate();
-        return () => cancelAnimationFrame(animationFrameId);
     }, []);
 
     const handleWheel = useCallback((e) => {
