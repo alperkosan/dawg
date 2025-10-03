@@ -1070,6 +1070,107 @@ export class AudioContextService {
     return Math.pow(10, db / 20);
   }
 
+  // ========================================
+  // === INSTRUMENT MANAGEMENT ===
+  // ========================================
+
+  /**
+   * Create a new instrument in the audio engine
+   * @param {Object} instrument - Instrument data
+   */
+  static createInstrument(instrument) {
+    if (!this.audioEngine) {
+      console.warn('⚠️ AudioContextService: Cannot create instrument - audio engine not ready');
+      return;
+    }
+
+    try {
+      // For now, just log the instrument creation
+      // TODO: Implement actual audio engine instrument creation
+      console.log('🎵 AudioContextService: Creating instrument:', instrument.name, instrument.type);
+
+      // If the audio engine has an instrument creation method, call it here
+      if (this.audioEngine.createInstrument) {
+        return this.audioEngine.createInstrument(instrument);
+      }
+    } catch (error) {
+      console.error('❌ AudioContextService: Failed to create instrument:', error);
+    }
+  }
+
+  /**
+   * Update instrument parameters
+   * @param {string} instrumentId - Instrument ID
+   * @param {Object} params - Updated parameters
+   */
+  static updateInstrumentParameters(instrumentId, params) {
+    if (!this.audioEngine) {
+      console.warn('⚠️ AudioContextService: Cannot update instrument - audio engine not ready');
+      return;
+    }
+
+    try {
+      console.log('🎚️ AudioContextService: Updating instrument parameters:', instrumentId);
+
+      // If the audio engine has parameter update method, call it here
+      if (this.audioEngine.updateInstrumentParameters) {
+        return this.audioEngine.updateInstrumentParameters(instrumentId, params);
+      }
+    } catch (error) {
+      console.error('❌ AudioContextService: Failed to update instrument parameters:', error);
+    }
+  }
+
+  /**
+   * Set instrument mute state
+   * @param {string} instrumentId - Instrument ID
+   * @param {boolean} isMuted - Mute state
+   */
+  static setInstrumentMute(instrumentId, isMuted) {
+    if (!this.audioEngine) {
+      console.warn('⚠️ AudioContextService: Cannot set mute - audio engine not ready');
+      return;
+    }
+
+    try {
+      console.log('🔇 AudioContextService: Setting instrument mute:', instrumentId, isMuted);
+
+      // If the audio engine has mute method, call it here
+      if (this.audioEngine.setInstrumentMute) {
+        return this.audioEngine.setInstrumentMute(instrumentId, isMuted);
+      }
+    } catch (error) {
+      console.error('❌ AudioContextService: Failed to set instrument mute:', error);
+    }
+  }
+
+  /**
+   * Reconcile instrument (rebuild buffer with effects)
+   * @param {string} instrumentId - Instrument ID
+   * @param {Object} instrumentData - Updated instrument data
+   */
+  static async reconcileInstrument(instrumentId, instrumentData) {
+    if (!this.audioEngine) {
+      console.warn('⚠️ AudioContextService: Cannot reconcile instrument - audio engine not ready');
+      return null;
+    }
+
+    try {
+      console.log('🔄 AudioContextService: Reconciling instrument:', instrumentId);
+
+      // If the audio engine has reconcile method, call it here
+      if (this.audioEngine.reconcileInstrument) {
+        return await this.audioEngine.reconcileInstrument(instrumentId, instrumentData);
+      }
+
+      // Return a mock buffer for now
+      return null;
+    } catch (error) {
+      console.error('❌ AudioContextService: Failed to reconcile instrument:', error);
+      return null;
+    }
+  }
+
   /**
    * Cleanup and disposal
    */

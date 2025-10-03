@@ -13,7 +13,14 @@ const selectHandleMixerParamChange = (state) => state.handleMixerParamChange;
 const selectSetActiveChannelId = (state) => state.setActiveChannelId;
 const selectTogglePanel = (state) => state.togglePanel;
 
-const InstrumentRow = ({ instrument, onPianoRollClick, onEditClick }) => {
+const InstrumentRow = ({
+  instrument,
+  index = 0,
+  isSelected = false,
+  onPianoRollClick,
+  onEditClick,
+  onToggleSelection
+}) => {
   // ✅ Direct selectors - no object creation in selectors
   const updateInstrument = useInstrumentsStore(selectUpdateInstrument);
   const setTrackName = useMixerStore(selectSetTrackName);
@@ -34,7 +41,7 @@ const InstrumentRow = ({ instrument, onPianoRollClick, onEditClick }) => {
 
   // ✅ Memoize computed values
   const isMuted = useMemo(() => instrument.isMuted, [instrument.isMuted]);
-  const isSelected = useMemo(() =>
+  const isPianoRollSelected = useMemo(() =>
     usePanelsStore.getState().pianoRollInstrumentId === instrument.id,
     [instrument.id]
   );
@@ -45,6 +52,14 @@ const InstrumentRow = ({ instrument, onPianoRollClick, onEditClick }) => {
     e.stopPropagation();
     setContextMenu({ x: e.clientX, y: e.clientY });
   }, []);
+
+  const handleRowClick = useCallback((e) => {
+    if (e.ctrlKey || e.metaKey) {
+      // Multi-select with Ctrl/Cmd
+      e.preventDefault();
+      onToggleSelection?.();
+    }
+  }, [onToggleSelection]);
 
   const openMixerAndFocus = useCallback((e) => {
     e.stopPropagation();
@@ -71,8 +86,9 @@ const InstrumentRow = ({ instrument, onPianoRollClick, onEditClick }) => {
   const rowClasses = useMemo(() => `
     instrument-row
     ${isMuted ? 'instrument-row--muted' : ''}
-    ${isSelected ? 'instrument-row--selected' : ''}
-  `, [isMuted, isSelected]);
+    ${isPianoRollSelected ? 'instrument-row--selected' : ''}
+    ${isSelected ? 'instrument-row--channel-selected' : ''}
+  `, [isMuted, isPianoRollSelected, isSelected]);
 
   const muteButtonClasses = useMemo(() =>
     `instrument-row__action-btn ${isMuted ? 'instrument-row__action-btn--active' : ''}`,
@@ -90,7 +106,7 @@ const InstrumentRow = ({ instrument, onPianoRollClick, onEditClick }) => {
   );
 
   return (
-    <div className={rowClasses} onContextMenu={handleContextMenu}>
+    <div className={rowClasses} onContextMenu={handleContextMenu} onClick={handleRowClick}>
       <div className="instrument-row__info" onClick={onEditClick} title="Open Sample/Synth Editor">
         <div className="instrument-row__icon" style={iconStyle}>
           <Music size={18} />

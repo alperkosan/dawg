@@ -1,5 +1,4 @@
 import React, { useState, useRef, useCallback } from 'react';
-import { Clock } from 'lucide-react';
 
 const InteractiveTimeline = ({
   loopLength,
@@ -98,23 +97,8 @@ const InteractiveTimeline = ({
   // Safety check for invalid currentPosition
   const safeCurrentPosition = isNaN(currentPosition) || currentPosition === undefined ? 0 : currentPosition;
 
-  const currentBar = Math.floor(safeCurrentPosition / 16) + 1;
-  const currentBeat = Math.floor((safeCurrentPosition % 16) / 4) + 1;
-  const currentTick = Math.floor(safeCurrentPosition % 4) + 1;
-
   return (
     <div className="timeline">
-      <div className="timeline__header">
-        <div className="timeline__position-display">
-          {hoverInfo && !isDragging ? (
-            <span className="timeline__position-display--hover">
-              <Clock size={14} /> {hoverInfo.position}
-            </span>
-          ) : (
-            <span>{`${currentBar}:${currentBeat}:${currentTick}`}</span>
-          )}
-        </div>
-      </div>
       <div
         ref={timelineRef}
         className="timeline__track"

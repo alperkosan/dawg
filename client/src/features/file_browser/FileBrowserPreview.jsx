@@ -1,15 +1,18 @@
 import React, { useEffect } from 'react';
 import WaveformDisplay from '../sample_editor_v3/WaveformDisplay';
-import { Loader2, Play, Pause, AlertTriangle } from 'lucide-react';
+import { Loader2, Play, Pause, AlertTriangle, Plus } from 'lucide-react';
 import { usePreviewPlayerStore } from '../../store/usePreviewPlayerStore';
+import { useInstrumentsStore } from '../../store/useInstrumentsStore';
 
 export function FileBrowserPreview({ fileNode }) {
   const { url, name } = fileNode || {};
   
-  const { 
-      isPlaying, playingUrl, loadingUrl, waveformBuffer, 
-      error, selectFileForPreview, playPreview 
+  const {
+      isPlaying, playingUrl, loadingUrl, waveformBuffer,
+      error, selectFileForPreview, playPreview
   } = usePreviewPlayerStore();
+
+  const handleAddNewInstrument = useInstrumentsStore(state => state.handleAddNewInstrument);
 
   useEffect(() => {
     selectFileForPreview(fileNode?.type === 'file' ? fileNode.url : null);
@@ -29,6 +32,12 @@ export function FileBrowserPreview({ fileNode }) {
   const isCurrentlyPlaying = isPlaying && playingUrl === url;
   const isLoading = loadingUrl === url;
 
+  const handleAddToChannelRack = () => {
+    if (fileNode && fileNode.type === 'file') {
+      handleAddNewInstrument({ name: fileNode.name, url: fileNode.url });
+    }
+  };
+
   return (
     <div className="preview">
       <p className="preview__info" title={name}>{name}</p>
@@ -46,13 +55,23 @@ export function FileBrowserPreview({ fileNode }) {
         {waveformBuffer && (
           <>
             <WaveformDisplay buffer={waveformBuffer} className="preview__waveform" />
-            <button
-              onClick={() => playPreview(url)}
-              className="preview__play-button"
-              title={isCurrentlyPlaying ? "Stop" : "Play"}
-            >
-              {isCurrentlyPlaying ? <Pause size={20} /> : <Play size={20} />}
-            </button>
+            <div className="preview__controls">
+              <button
+                onClick={() => playPreview(url)}
+                className="preview__play-button"
+                title={isCurrentlyPlaying ? "Stop" : "Play"}
+              >
+                {isCurrentlyPlaying ? <Pause size={20} /> : <Play size={20} />}
+              </button>
+              <button
+                onClick={handleAddToChannelRack}
+                className="preview__add-button"
+                title="Add to Channel Rack"
+              >
+                <Plus size={16} />
+                Add
+              </button>
+            </div>
           </>
         )}
       </div>

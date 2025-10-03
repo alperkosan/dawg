@@ -55,6 +55,7 @@ export const PANEL_IDS = Object.freeze({
   MIXER: 'mixer',
   PIANO_ROLL: 'piano-roll',
   SAMPLE_EDITOR: 'sample-editor',
+  FILE_BROWSER: 'file-browser',
   KEYBINDINGS: 'keybindings',
   THEME_EDITOR: 'theme-editor',
   SYNTH_EDITOR: 'synth-editor',

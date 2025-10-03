@@ -1,17 +1,58 @@
 import React, { useRef, useEffect, useCallback, useState, memo, useMemo } from 'react';
+import { useDrop } from 'react-dnd';
 import { useInstrumentsStore } from '../../store/useInstrumentsStore';
 import { useArrangementStore } from '../../store/useArrangementStore';
 import { usePanelsStore } from '../../store/usePanelsStore';
+import { shallow } from 'zustand/shallow';
+import { useMixerStore } from '../../store/useMixerStore';
 import { useTransportPosition, useTransportTimeline, useTransportPlayhead } from '../../hooks/useTransportManager.js';
 import commandManager from '../../lib/commands/CommandManager';
 import { AddNoteCommand } from '../../lib/commands/AddNoteCommand';
 import { DeleteNoteCommand } from '../../lib/commands/DeleteNoteCommand';
+import { DND_TYPES } from '../../config/constants';
+import { storeManager } from '../../store/StoreManager';
+
+// ✅ PERFORMANCE: Throttle utility for scroll events
+const throttle = (func, delay) => {
+  let timeoutId;
+  let lastExecTime = 0;
+  return function (...args) {
+    const currentTime = Date.now();
+
+    if (currentTime - lastExecTime > delay) {
+      func.apply(this, args);
+      lastExecTime = currentTime;
+    } else {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        func.apply(this, args);
+        lastExecTime = Date.now();
+      }, delay - (currentTime - lastExecTime));
+    }
+  };
+};
+import { Copy, X } from 'lucide-react';
 import InstrumentRow from './InstrumentRow';
 import StepGrid from './StepGrid';
 import PianoRollMiniView from './PianoRollMiniView';
 import InteractiveTimeline from './InteractiveTimeline';
-import { PlusCircle } from 'lucide-react';
-import { uiUpdateManager, UPDATE_PRIORITIES, UPDATE_FREQUENCIES } from '../../lib/core/UIUpdateManager.js';
+// ✅ PERFORMANCE: Lazy-loaded icons to reduce initial bundle size
+const Icon = memo(({ name, size = 20, ...props }) => {
+  const [IconComponent, setIconComponent] = useState(null);
+
+  useEffect(() => {
+    import('lucide-react').then((icons) => {
+      setIconComponent(() => icons[name]);
+    });
+  }, [name]);
+
+  if (!IconComponent) {
+    // Placeholder while loading
+    return <div className="icon-placeholder" style={{ width: size, height: size }} />;
+  }
+
+  return <IconComponent size={size} {...props} />;
+});
 
 const STEP_WIDTH = 16;
 
@@ -23,22 +64,49 @@ const calculateStep = (clickX, stepWidth, maxStep) => {
   return Math.max(0, Math.min(maxStep, finalStep));
 };
 
-// ✅ Simple direct selectors - avoid object creation
-const selectInstruments = (state) => state.instruments;
-const selectPatterns = (state) => state.patterns;
-const selectActivePatternId = (state) => state.activePatternId;
-const selectOpenPianoRoll = (state) => state.openPianoRollForInstrument;
-const selectHandleEditInstrument = (state) => state.handleEditInstrument;
-const selectTogglePanel = (state) => state.togglePanel;
+
+// ✅ PERFORMANCE: Cached selector functions to prevent infinite loops
+const selectInstrumentsData = (state) => state;
+const selectArrangementData = (state) => state;
+const selectPanelsData = (state) => state;
 
 function ChannelRack() {
-  // ✅ Direct selectors - no object creation in selectors
-  const instruments = useInstrumentsStore(selectInstruments);
-  const patterns = useArrangementStore(selectPatterns);
-  const activePatternId = useArrangementStore(selectActivePatternId);
-  const openPianoRollForInstrument = usePanelsStore(selectOpenPianoRoll);
-  const handleEditInstrument = usePanelsStore(selectHandleEditInstrument);
-  const togglePanel = usePanelsStore(selectTogglePanel);
+  // ✅ PERFORMANCE: Batched store subscriptions with shallow equality
+  const instrumentsData = useInstrumentsStore(selectInstrumentsData, shallow);
+
+  const arrangementData = useArrangementStore(selectArrangementData, shallow);
+  const panelsData = usePanelsStore(selectPanelsData, shallow);
+
+  // ✅ PERFORMANCE: Destructure from full state objects
+  const {
+    instruments,
+    channelOrder,
+    channelGroups,
+    selectedChannels,
+    channelViewMode,
+    initializeChannelOrder,
+    reorderChannels,
+    toggleChannelSelection,
+    setChannelViewMode,
+    handleAddNewInstrument
+  } = instrumentsData;
+
+  const {
+    patterns,
+    activePatternId,
+    patternOrder,
+    setActivePatternId,
+    createPattern,
+    duplicatePattern,
+    deletePattern,
+    renamePattern
+  } = arrangementData;
+
+  const {
+    openPianoRollForInstrument,
+    handleEditInstrument,
+    togglePanel
+  } = panelsData;
 
   // ✅ UNIFIED TRANSPORT SYSTEM
   const { position, displayPosition, playbackState, isPlaying } = useTransportPosition();
@@ -50,6 +118,7 @@ function ChannelRack() {
   // Refs for UI element registration
   const timelineRef = useRef(null);
   const playheadRef = useRef(null);
+  const patternDropdownRef = useRef(null);
 
   // Audio loop length hesaplama
   const audioLoopLength = 64; // TODO: Get from arrangement/pattern
@@ -57,42 +126,113 @@ function ChannelRack() {
   // State for smooth compact playhead animation
   const [isJumping, setIsJumping] = useState(false);
 
-  // Scroll container ref (for timeline scrolling)
+  // State for pattern dropdown
+  const [isPatternDropdownOpen, setIsPatternDropdownOpen] = useState(false);
+
+  // Refs
   const scrollContainerRef = useRef(null);
-
-
-
   const instrumentListRef = useRef(null);
   const timelineContainerRef = useRef(null);
+
+  // ✅ Initialize StoreManager and channel order on mount
+  useEffect(() => {
+    // Register stores with StoreManager
+    storeManager.registerStores({
+      useInstrumentsStore,
+      useArrangementStore,
+      useMixerStore,
+      usePanelsStore
+    });
+
+    initializeChannelOrder();
+
+    // Initialize pattern instruments (backwards compatibility via StoreManager)
+    storeManager.initializePatternInstruments();
+  }, [initializeChannelOrder]);
+
+  // ✅ FL Studio Style: Add button allows creating new instruments only
+  // All existing channels are always visible, so no need for "available instruments" logic
+  const canCreateNewInstrument = useMemo(() => {
+    return true; // FL Studio always allows creating new instruments
+  }, []);
+
+  // ✅ Click outside to close pattern dropdown
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (patternDropdownRef.current && !patternDropdownRef.current.contains(event.target)) {
+        setIsPatternDropdownOpen(false);
+      }
+    };
+
+    if (isPatternDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [isPatternDropdownOpen]);
 
   // ✅ Memoize expensive calculations
   const activePattern = useMemo(() => patterns[activePatternId], [patterns, activePatternId]);
 
+  // ✅ PERFORMANCE: Pre-compute instruments lookup map - O(1) access
+  const instrumentsMap = useMemo(() =>
+    new Map(instruments.map(inst => [inst.id, inst])), [instruments]
+  );
+
+  // ✅ FL Studio Style: All channels are always visible
+  const allChannels = useMemo(() => {
+    return instruments; // All instruments/channels are always visible
+  }, [instruments]);
+
+  // ✅ FL Studio Style: Global channel order (not pattern-specific)
+  const globalChannelOrder = useMemo(() => {
+    return channelOrder.length > 0 ? channelOrder : instruments.map(inst => inst.id);
+  }, [channelOrder, instruments]);
+
+  // ✅ PERFORMANCE: Simplified to flat view only - O(n) optimized
+  const organizedContent = useMemo(() => {
+    // Always use flat mode with global channel order
+    if (globalChannelOrder.length === 0) {
+      return { type: 'instruments', data: allChannels };
+    }
+
+    const orderedChannels = globalChannelOrder.map(id =>
+      instrumentsMap.get(id)
+    ).filter(Boolean);
+
+    return { type: 'instruments', data: orderedChannels };
+  }, [instrumentsMap, globalChannelOrder, allChannels]);
+
   // High-performance playhead artık useOptimizedPlayhead hook'u tarafından yönetiliyor
   // GPU acceleration ve direct DOM manipulation ile smooth hareket
 
-  // ✅ Optimized scroll synchronization handlers with useCallback
-  const handleMainScroll = useCallback(() => {
-    const mainGrid = scrollContainerRef.current;
-    const instrumentsList = instrumentListRef.current;
-    const timeline = timelineContainerRef.current;
+  // ✅ PERFORMANCE: Throttled scroll handlers for 60fps (16ms)
+  const handleMainScroll = useCallback(
+    throttle(() => {
+      const mainGrid = scrollContainerRef.current;
+      const instrumentsList = instrumentListRef.current;
+      const timeline = timelineContainerRef.current;
 
-    if (!mainGrid || !instrumentsList || !timeline) return;
+      if (!mainGrid || !instrumentsList || !timeline) return;
 
-    // Sync instruments vertically and timeline horizontally
-    instrumentsList.scrollTop = mainGrid.scrollTop;
-    timeline.scrollLeft = mainGrid.scrollLeft;
-  }, []);
+      // Sync instruments vertically and timeline horizontally
+      instrumentsList.scrollTop = mainGrid.scrollTop;
+      timeline.scrollLeft = mainGrid.scrollLeft;
+    }, 16), // 60fps throttling
+    []
+  );
 
-  const handleInstrumentsScroll = useCallback(() => {
-    const mainGrid = scrollContainerRef.current;
-    const instrumentsList = instrumentListRef.current;
+  const handleInstrumentsScroll = useCallback(
+    throttle(() => {
+      const mainGrid = scrollContainerRef.current;
+      const instrumentsList = instrumentListRef.current;
 
-    if (!mainGrid || !instrumentsList) return;
+      if (!mainGrid || !instrumentsList) return;
 
-    // Sync main grid vertically
-    mainGrid.scrollTop = instrumentsList.scrollTop;
-  }, []);
+      // Sync main grid vertically
+      mainGrid.scrollTop = instrumentsList.scrollTop;
+    }, 16), // 60fps throttling
+    []
+  );
 
   // Custom scroll synchronization for Channel Rack
   useEffect(() => {
@@ -104,9 +244,23 @@ function ChannelRack() {
     mainGrid.addEventListener('scroll', handleMainScroll, { passive: true });
     instrumentsList.addEventListener('scroll', handleInstrumentsScroll, { passive: true });
 
+    // ✅ SCROLL FIX: Wheel event delegation from instruments panel to main grid
+    const handleWheelDelegation = (e) => {
+      e.preventDefault();
+      // Forward wheel event to main grid for synchronized scrolling
+      mainGrid.scrollBy({
+        top: e.deltaY,
+        left: e.deltaX,
+        behavior: 'auto'
+      });
+    };
+
+    instrumentsList.addEventListener('wheel', handleWheelDelegation, { passive: false });
+
     return () => {
       mainGrid.removeEventListener('scroll', handleMainScroll);
       instrumentsList.removeEventListener('scroll', handleInstrumentsScroll);
+      instrumentsList.removeEventListener('wheel', handleWheelDelegation);
     };
   }, [handleMainScroll, handleInstrumentsScroll]);
 
@@ -126,8 +280,15 @@ function ChannelRack() {
     }
   }, [activePatternId, activePattern]);
 
-  const totalContentHeight = Math.max(64, (instruments.length + 1) * 64);
+  // ✅ Get all visible instruments for grid rendering (simplified for flat view)
+  const visibleInstruments = useMemo(() => {
+    return organizedContent.data;
+  }, [organizedContent]);
 
+  // ✅ Calculate content height for flat view
+  const totalContentHeight = useMemo(() => {
+    return Math.max(64, (organizedContent.data.length + 1) * 64); // +1 for add button
+  }, [organizedContent]);
 
   // ✅ UNIFIED: Timeline interaction via TransportManager
   const handleTimelineClickInternal = useCallback((e) => {
@@ -151,26 +312,187 @@ function ChannelRack() {
     jumpToPosition(targetStep); // No await needed
   }, [jumpToPosition, audioLoopLength, playbackState]);
 
+  // ✅ Prevent timeline click on grid rows (only allow on empty areas)
+  const handleGridRowClick = useCallback((e) => {
+    e.stopPropagation(); // Prevent timeline click when clicking on grid rows
+  }, []);
+
+  // ✅ Drop zone for new samples/instruments
+  const [{ isOver, canDrop }, dropRef] = useDrop({
+    accept: DND_TYPES.SOUND_SOURCE,
+    drop: (item) => {
+      console.log('🎵 Sample dropped:', item);
+      handleAddNewInstrument(item);
+    },
+    collect: (monitor) => ({
+      isOver: monitor.isOver(),
+      canDrop: monitor.canDrop(),
+    })
+  });
+
+  // ✅ Pattern management handlers
+  const handlePatternChange = useCallback((patternId) => {
+    setActivePatternId(patternId);
+    setIsPatternDropdownOpen(false);
+  }, [setActivePatternId]);
+
+  const handleCreatePattern = useCallback(() => {
+    const newPatternId = createPattern();
+    setActivePatternId(newPatternId);
+    setIsPatternDropdownOpen(false);
+  }, [createPattern, setActivePatternId]);
+
+  const handleDuplicatePattern = useCallback(() => {
+    const newPatternId = duplicatePattern(activePatternId);
+    if (newPatternId) {
+      setActivePatternId(newPatternId);
+    }
+    setIsPatternDropdownOpen(false);
+  }, [duplicatePattern, activePatternId, setActivePatternId]);
+
+  const handleDeletePattern = useCallback(() => {
+    if (patternOrder.length > 1) {
+      deletePattern(activePatternId);
+    }
+    setIsPatternDropdownOpen(false);
+  }, [deletePattern, activePatternId, patternOrder.length]);
+
+  const handleRenamePattern = useCallback(() => {
+    const currentPattern = patterns[activePatternId];
+    const newName = prompt('Enter new pattern name:', currentPattern?.name || '');
+    if (newName && newName.trim()) {
+      renamePattern(activePatternId, newName.trim());
+    }
+    setIsPatternDropdownOpen(false);
+  }, [renamePattern, activePatternId, patterns]);
+
 
 
   return (
-    <div className="channel-rack-layout no-select">
+    <div
+      ref={dropRef}
+      className={`channel-rack-layout no-select ${isOver && canDrop ? 'channel-rack-layout--drop-active' : ''}`}
+    >
+      {/* Drop overlay */}
+      {isOver && canDrop && (
+        <div className="channel-rack-layout__drop-overlay">
+          <div className="channel-rack-layout__drop-indicator">
+            <Icon name="Upload" size={48} />
+            <h3>Drop sample to create new instrument</h3>
+            <p>Sample will be added as a new channel</p>
+          </div>
+        </div>
+      )}
+
       <div className="channel-rack-layout__corner">
-        Pattern: {activePattern?.name || '...'}
+        <div className="channel-rack-layout__corner-left">
+          <div className="channel-rack-layout__pattern-selector" ref={patternDropdownRef}>
+            <button
+              className="channel-rack-layout__pattern-button"
+              onClick={() => setIsPatternDropdownOpen(!isPatternDropdownOpen)}
+            >
+              <span>{activePattern?.name || '...'}</span>
+              <Icon name="ChevronDown" size={14} />
+            </button>
+
+            {isPatternDropdownOpen && (
+              <div className="channel-rack-layout__pattern-dropdown">
+                <div className="channel-rack-layout__pattern-list">
+                  {patternOrder.map((patternId) => (
+                    <button
+                      key={patternId}
+                      className={`channel-rack-layout__pattern-item ${
+                        patternId === activePatternId ? 'channel-rack-layout__pattern-item--active' : ''
+                      }`}
+                      onClick={() => handlePatternChange(patternId)}
+                    >
+                      {patterns[patternId]?.name || patternId}
+                    </button>
+                  ))}
+                </div>
+                <div className="channel-rack-layout__pattern-actions">
+                  <button
+                    className="channel-rack-layout__pattern-action"
+                    onClick={handleCreatePattern}
+                    title="Create New Pattern"
+                  >
+                    <Icon name="Plus" size={14} />
+                    New
+                  </button>
+                  <button
+                    className="channel-rack-layout__pattern-action"
+                    onClick={handleDuplicatePattern}
+                    title="Duplicate Pattern"
+                  >
+                    <Copy size={14} />
+                    Duplicate
+                  </button>
+                  <button
+                    className="channel-rack-layout__pattern-action"
+                    onClick={handleRenamePattern}
+                    title="Rename Pattern"
+                  >
+                    Rename
+                  </button>
+                  {patternOrder.length > 1 && (
+                    <button
+                      className="channel-rack-layout__pattern-action channel-rack-layout__pattern-action--danger"
+                      onClick={handleDeletePattern}
+                      title="Delete Pattern"
+                    >
+                      <X size={14} />
+                      Delete
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="channel-rack-layout__corner-right">
+          <div className="channel-rack-layout__pattern-management">
+            <button
+              className="channel-rack-layout__mgmt-btn"
+              onClick={handleCreatePattern}
+              title="New Pattern"
+            >
+              <Icon name="Plus" size={14} />
+            </button>
+            <button
+              className="channel-rack-layout__mgmt-btn"
+              onClick={handleDuplicatePattern}
+              title="Duplicate Pattern"
+            >
+              <Icon name="Copy" size={14} />
+            </button>
+            <button
+              className="channel-rack-layout__mgmt-btn"
+              onClick={handleRenamePattern}
+              title="Rename Pattern"
+            >
+              <Icon name="Edit3" size={14} />
+            </button>
+          </div>
+        </div>
       </div>
       <div ref={instrumentListRef} className="channel-rack-layout__instruments">
         <div style={{ height: totalContentHeight }}>
-          {instruments.map(inst => (
+          {/* Flat view (instruments only) */}
+          {organizedContent.data.map((inst, index) => (
             <InstrumentRow
               key={inst.id}
               instrument={inst}
+              index={index}
+              isSelected={selectedChannels.includes(inst.id)}
               onPianoRollClick={() => openPianoRollForInstrument(inst)}
               onEditClick={() => handleEditInstrument(inst)}
+              onToggleSelection={() => toggleChannelSelection(inst.id)}
             />
           ))}
+          {/* FL Studio Style: Simple Add Channel Button */}
           <div className="instrument-row instrument-row--add" onClick={() => togglePanel('file-browser')}>
-            <PlusCircle size={20} />
-            <span>Add...</span>
+            <Icon name="PlusCircle" size={20} />
+            <span>Add Channel...</span>
           </div>
         </div>
       </div>
@@ -280,8 +602,8 @@ function ChannelRack() {
       </div>
       <div ref={scrollContainerRef} className="channel-rack-layout__grid-scroll-area" onClick={handleTimelineClickInternal}>
         <div style={{ width: audioLoopLength * STEP_WIDTH, height: totalContentHeight }} className="channel-rack-layout__grid-content">
-          {instruments.map(inst => (
-            <div key={inst.id} className="channel-rack-layout__grid-row">
+          {visibleInstruments.map((inst, index) => (
+            <div key={inst.id} className="channel-rack-layout__grid-row" onClick={handleGridRowClick}>
               {inst.pianoRoll ? (
                 <PianoRollMiniView
                   notes={activePattern?.data[inst.id] || []}
@@ -298,7 +620,7 @@ function ChannelRack() {
               )}
             </div>
           ))}
-          <div className="channel-rack-layout__grid-row" />
+          <div className="channel-rack-layout__grid-row" onClick={handleGridRowClick} />
         </div>
       </div>
     </div>

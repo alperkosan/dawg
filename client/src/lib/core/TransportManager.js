@@ -549,7 +549,7 @@ export class TransportManager {
     console.log('🎚️ Starting UIUpdateManager-based position tracking');
 
     // Subscribe to UIUpdateManager with HIGH priority for transport
-    this.positionTrackingSubscription = this.uiUpdateManager.subscribe(
+    this.positionTrackingSubscription = uiUpdateManager.subscribe(
       'transport-position-tracking',
       (currentTime, frameTime) => {
         this._updatePositionFromAudio();

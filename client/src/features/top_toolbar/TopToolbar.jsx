@@ -1,8 +1,19 @@
-import React, { useRef, useEffect } from 'react';
-import { Play, Pause, Square, Wind } from 'lucide-react';
+import React, { useRef, useEffect, useState } from 'react';
+import { Play, Pause, Square, Wind, Repeat } from 'lucide-react';
 import VolumeKnob from '../../ui/VolumeKnob';
 import { useTransportControls, useTransportButton } from '../../hooks/useTransportManager.js';
 import { PLAYBACK_MODES, PLAYBACK_STATES } from '../../config/constants';
+
+// Format position for display (bar:beat:tick format)
+const formatPosition = (position) => {
+  // Convert step position to bar:beat:tick format
+  const step = Math.floor(position || 0);
+  const bar = Math.floor(step / 16) + 1;
+  const beat = Math.floor((step % 16) / 4) + 1;
+  const tick = (step % 4) + 1;
+
+  return `${bar}:${beat}:${tick}`;
+};
 
 const ModeButton = ({ label, mode, activeMode, onClick }) => {
     const isActive = activeMode === mode;
@@ -15,12 +26,16 @@ const ModeButton = ({ label, mode, activeMode, onClick }) => {
 };
 
 function TopToolbar() {
+  // ✅ Local playback mode state (until integrated with transport system)
+  const [playbackMode, setPlaybackMode] = useState(PLAYBACK_MODES.PATTERN);
+
   // ✅ UNIFIED TRANSPORT SYSTEM
   const {
     isPlaying,
     playbackState,
     bpm,
     loopEnabled,
+    currentPosition,
     isReady,
     setBPM,
     setLoopEnabled
@@ -106,10 +121,26 @@ function TopToolbar() {
         >
           <Square size={18} />
         </button>
+        <button
+            title={loopEnabled ? "Disable Loop" : "Enable Loop"}
+            onClick={() => setLoopEnabled(!loopEnabled)}
+            className={`top-toolbar__transport-btn transport-btn ${loopEnabled ? 'transport-btn--active' : ''}`}
+        >
+          <Repeat size={18} />
+        </button>
         <div className="top-toolbar__mode-toggle">
-            {/* TODO: Integrate playback modes with new system */}
-            <ModeButton label="Pattern" mode={PLAYBACK_MODES.PATTERN} activeMode={PLAYBACK_MODES.PATTERN} onClick={() => {}} />
-            <ModeButton label="Song" mode={PLAYBACK_MODES.SONG} activeMode={PLAYBACK_MODES.PATTERN} onClick={() => {}} />
+            <ModeButton
+              label="Pattern"
+              mode={PLAYBACK_MODES.PATTERN}
+              activeMode={playbackMode}
+              onClick={setPlaybackMode}
+            />
+            <ModeButton
+              label="Song"
+              mode={PLAYBACK_MODES.SONG}
+              activeMode={playbackMode}
+              onClick={setPlaybackMode}
+            />
         </div>
         <div className="top-toolbar__display">
           <input
@@ -120,8 +151,7 @@ function TopToolbar() {
           />
           <span className="top-toolbar__bpm-label">BPM</span>
           <div className="top-toolbar__transport-pos">
-            {/* TODO: Add position display from new system */}
-            00:00:00
+            {formatPosition(currentPosition || 0)}
           </div>
         </div>
       </div>

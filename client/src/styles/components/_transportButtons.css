@@ -71,3 +71,19 @@
 .transport-btn--stopped:hover {
   background: rgba(239, 68, 68, 0.2);
 }
+
+/* Loop/repeat button active state */
+.transport-btn--active {
+  background: rgba(var(--color-accent-primary-rgb), 0.15);
+  border-color: var(--color-accent-primary);
+  color: var(--color-accent-primary);
+}
+
+.transport-btn--active::after {
+  background: var(--color-accent-primary);
+  box-shadow: 0 0 8px var(--color-accent-primary);
+}
+
+.transport-btn--active:hover {
+  background: rgba(var(--color-accent-primary-rgb), 0.25);
+}

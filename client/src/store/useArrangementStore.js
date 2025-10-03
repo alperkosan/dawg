@@ -72,6 +72,11 @@ export const useArrangementStore = create(arrangementStoreOrchestrator((set, get
   // Loop regions for infinite canvas
   loopRegions: [],
 
+  // ========================================================
+  // === PATTERN MANAGEMENT ===
+  // ========================================================
+  nextPatternNumber: 5, // For creating pattern-5, pattern-6, etc.
+
   // --- EYLEMLER (ACTIONS) ---
 
   setActivePatternId: (patternId) => {
@@ -164,4 +169,171 @@ export const useArrangementStore = create(arrangementStoreOrchestrator((set, get
   },
 
   clearLoopRegions: () => set({ loopRegions: [] }),
+
+  // ========================================================
+  // === PATTERN MANAGEMENT ACTIONS ===
+  // ========================================================
+
+  /**
+   * Create a new empty pattern
+   */
+  createPattern: (name) => {
+    const state = get();
+    const newPatternId = `pattern-${state.nextPatternNumber}`;
+    const patternName = name || newPatternId;
+
+    // FL Studio Style: Patterns only contain note data
+    const newPattern = {
+      id: newPatternId,
+      name: patternName,
+      data: {}, // Empty pattern data (notes only)
+      settings: {
+        length: 64, // Default pattern length
+        quantization: '16n'
+      }
+    };
+
+    set(state => ({
+      patterns: { ...state.patterns, [newPatternId]: newPattern },
+      patternOrder: [...state.patternOrder, newPatternId],
+      nextPatternNumber: state.nextPatternNumber + 1
+    }));
+
+    return newPatternId;
+  },
+
+  /**
+   * Duplicate an existing pattern
+   */
+  duplicatePattern: (sourcePatternId, newName) => {
+    const state = get();
+    const sourcePattern = state.patterns[sourcePatternId];
+
+    if (!sourcePattern) return null;
+
+    const newPatternId = `pattern-${state.nextPatternNumber}`;
+    const patternName = newName || `${sourcePattern.name} Copy`;
+
+    // FL Studio Style: Only copy note data, not instrument ownership
+    const newPattern = {
+      id: newPatternId,
+      name: patternName,
+      data: JSON.parse(JSON.stringify(sourcePattern.data)), // Deep copy note data only
+      settings: { ...sourcePattern.settings } // Copy pattern settings
+    };
+
+    set(state => ({
+      patterns: { ...state.patterns, [newPatternId]: newPattern },
+      patternOrder: [...state.patternOrder, newPatternId],
+      nextPatternNumber: state.nextPatternNumber + 1
+    }));
+
+    return newPatternId;
+  },
+
+  /**
+   * Delete a pattern
+   */
+  deletePattern: (patternId) => {
+    const state = get();
+
+    // Don't delete if it's the only pattern
+    if (state.patternOrder.length <= 1) return false;
+
+    // If deleting active pattern, switch to first available
+    const newActivePattern = state.activePatternId === patternId
+      ? state.patternOrder.find(id => id !== patternId)
+      : state.activePatternId;
+
+    set(state => {
+      const newPatterns = { ...state.patterns };
+      delete newPatterns[patternId];
+
+      return {
+        patterns: newPatterns,
+        patternOrder: state.patternOrder.filter(id => id !== patternId),
+        activePatternId: newActivePattern
+      };
+    });
+
+    return true;
+  },
+
+  /**
+   * Rename a pattern
+   */
+  renamePattern: (patternId, newName) => {
+    set(state => ({
+      patterns: {
+        ...state.patterns,
+        [patternId]: {
+          ...state.patterns[patternId],
+          name: newName
+        }
+      }
+    }));
+  },
+
+  /**
+   * Reorder patterns
+   */
+  reorderPatterns: (fromIndex, toIndex) => {
+    set(state => {
+      const newOrder = [...state.patternOrder];
+      const [movedItem] = newOrder.splice(fromIndex, 1);
+      newOrder.splice(toIndex, 0, movedItem);
+      return { patternOrder: newOrder };
+    });
+  },
+
+  /**
+   * FL Studio Style: Patterns don't own instruments
+   * This function is deprecated - all instruments are always visible
+   */
+  addInstrumentToPattern: (patternId, instrument) => {
+    // FL Studio Logic: Do nothing, all instruments are always visible
+    // Only initialize empty data for the instrument if it doesn't exist
+    set(state => {
+      const pattern = state.patterns[patternId];
+      if (!pattern) return state;
+
+      if (!pattern.data[instrument.id]) {
+        const newPattern = {
+          ...pattern,
+          data: { ...pattern.data, [instrument.id]: [] }
+        };
+
+        return {
+          patterns: { ...state.patterns, [patternId]: newPattern }
+        };
+      }
+
+      return state;
+    });
+  },
+
+  /**
+   * FL Studio Style: Clear pattern data for an instrument
+   * Instruments remain visible, just clear their notes in this pattern
+   */
+  clearInstrumentPatternData: (patternId, instrumentId) => {
+    set(state => {
+      const pattern = state.patterns[patternId];
+      if (!pattern) return state;
+
+      const newData = { ...pattern.data };
+      newData[instrumentId] = []; // Clear notes but keep instrument visible
+
+      const newPattern = {
+        ...pattern,
+        data: newData
+      };
+
+      return {
+        patterns: { ...state.patterns, [patternId]: newPattern }
+      };
+    });
+  },
+
+
 })));

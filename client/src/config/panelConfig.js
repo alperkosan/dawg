@@ -8,12 +8,14 @@ import KeybindingsPanel from '../features/key_bindings/KeybindingsPanel';
 import { ThemeEditor } from '../features/theme_editor/ThemeEditor';
 import { ForgeSynthUI } from '../features/instrument_editor/ForgeSynthUI';
 import AudioQualitySettings from '../components/AudioQualitySettings';
+import FileBrowserPanel from '../features/file_browser/FileBrowserPanel';
 
 export const panelRegistry = {
   'channel-rack': ChannelRack,
   'mixer': MixerV3,
   'sample-editor': SampleEditorV2,
   'piano-roll': PianoRoll,
+  'file-browser': FileBrowserPanel,
   'keybindings': KeybindingsPanel,
   'arrangement': ArrangementPanel,
   'theme-editor': ThemeEditor,
@@ -55,6 +57,12 @@ export const panelDefinitions = {
     initialSize: { width: 1000, height: 500 },
     initialPos: { x: 60, y: 80 },
     minSize: { width: 600, height: 300 },
+  },
+  'file-browser': {
+    title: 'File Browser',
+    initialSize: { width: 400, height: 600 },
+    initialPos: { x: 40, y: 40 },
+    minSize: { width: 300, height: 400 },
   },
   'keybindings': {
     title: 'Klavye Kısayolları',

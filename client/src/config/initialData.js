@@ -255,11 +255,32 @@ const createPatterns = () => {
   const ambientPatternData = createInitialPatternData(ambientNotes);
   const emptyPatternData = createInitialPatternData({});
 
+  // FL Studio Style: Patterns only contain note data, no instrument ownership
   const basePatterns = {
-    'pattern-1': { id: 'pattern-1', name: 'pattern-1', data: trapPatternData },
-    'pattern-2': { id: 'pattern-2', name: 'House Groove', data: housePatternData },
-    'pattern-3': { id: 'pattern-3', name: 'Ambient Mood', data: ambientPatternData },
-    'pattern-4': { id: 'pattern-4', name: 'Empty Pattern', data: emptyPatternData },
+    'pattern-1': {
+      id: 'pattern-1',
+      name: 'Trap Beat',
+      data: trapPatternData,
+      settings: { length: 64, quantization: '16n' }
+    },
+    'pattern-2': {
+      id: 'pattern-2',
+      name: 'House Groove',
+      data: housePatternData,
+      settings: { length: 64, quantization: '16n' }
+    },
+    'pattern-3': {
+      id: 'pattern-3',
+      name: 'Ambient Mood',
+      data: ambientPatternData,
+      settings: { length: 64, quantization: '16n' }
+    },
+    'pattern-4': {
+      id: 'pattern-4',
+      name: 'Empty Pattern',
+      data: emptyPatternData,
+      settings: { length: 64, quantization: '16n' }
+    },
   };
 
   return basePatterns;
