@@ -3,6 +3,7 @@ import { useDrop } from 'react-dnd';
 import { useInstrumentsStore } from '../../store/useInstrumentsStore';
 import { useArrangementStore } from '../../store/useArrangementStore';
 import { usePanelsStore } from '../../store/usePanelsStore';
+import { usePlaybackStore } from '../../store/usePlaybackStore';
 import { shallow } from 'zustand/shallow';
 import { useMixerStore } from '../../store/useMixerStore';
 import { useTransportPosition, useTransportTimeline, useTransportPlayhead } from '../../hooks/useTransportManager.js';
@@ -11,31 +12,15 @@ import { AddNoteCommand } from '../../lib/commands/AddNoteCommand';
 import { DeleteNoteCommand } from '../../lib/commands/DeleteNoteCommand';
 import { DND_TYPES } from '../../config/constants';
 import { storeManager } from '../../store/StoreManager';
+import { createMultiScrollSync, createWheelForwarder } from '../../lib/utils/scrollSync';
 
-// ✅ PERFORMANCE: Throttle utility for scroll events
-const throttle = (func, delay) => {
-  let timeoutId;
-  let lastExecTime = 0;
-  return function (...args) {
-    const currentTime = Date.now();
-
-    if (currentTime - lastExecTime > delay) {
-      func.apply(this, args);
-      lastExecTime = currentTime;
-    } else {
-      clearTimeout(timeoutId);
-      timeoutId = setTimeout(() => {
-        func.apply(this, args);
-        lastExecTime = Date.now();
-      }, delay - (currentTime - lastExecTime));
-    }
-  };
-};
-import { Copy, X } from 'lucide-react';
+// ✅ PERFORMANCE: Local throttle utility removed - now using optimized scroll utilities
+import { Copy, X, Download } from 'lucide-react';
 import InstrumentRow from './InstrumentRow';
 import StepGrid from './StepGrid';
 import PianoRollMiniView from './PianoRollMiniView';
 import InteractiveTimeline from './InteractiveTimeline';
+import AudioExportPanel from '../../components/AudioExportPanel';
 // ✅ PERFORMANCE: Lazy-loaded icons to reduce initial bundle size
 const Icon = memo(({ name, size = 20, ...props }) => {
   const [IconComponent, setIconComponent] = useState(null);
@@ -129,6 +114,9 @@ function ChannelRack() {
   // State for pattern dropdown
   const [isPatternDropdownOpen, setIsPatternDropdownOpen] = useState(false);
 
+  // State for audio export panel
+  const [isExportPanelOpen, setIsExportPanelOpen] = useState(false);
+
   // Refs
   const scrollContainerRef = useRef(null);
   const instrumentListRef = useRef(null);
@@ -136,12 +124,13 @@ function ChannelRack() {
 
   // ✅ Initialize StoreManager and channel order on mount
   useEffect(() => {
-    // Register stores with StoreManager
+    // ✅ PERFORMANCE: Register all stores with StoreManager including playback
     storeManager.registerStores({
       useInstrumentsStore,
       useArrangementStore,
       useMixerStore,
-      usePanelsStore
+      usePanelsStore,
+      usePlaybackStore
     });
 
     initializeChannelOrder();
@@ -202,67 +191,53 @@ function ChannelRack() {
     return { type: 'instruments', data: orderedChannels };
   }, [instrumentsMap, globalChannelOrder, allChannels]);
 
-  // High-performance playhead artık useOptimizedPlayhead hook'u tarafından yönetiliyor
-  // GPU acceleration ve direct DOM manipulation ile smooth hareket
-
-  // ✅ PERFORMANCE: Throttled scroll handlers for 60fps (16ms)
-  const handleMainScroll = useCallback(
-    throttle(() => {
-      const mainGrid = scrollContainerRef.current;
-      const instrumentsList = instrumentListRef.current;
-      const timeline = timelineContainerRef.current;
-
-      if (!mainGrid || !instrumentsList || !timeline) return;
-
-      // Sync instruments vertically and timeline horizontally
-      instrumentsList.scrollTop = mainGrid.scrollTop;
-      timeline.scrollLeft = mainGrid.scrollLeft;
-    }, 16), // 60fps throttling
-    []
-  );
-
-  const handleInstrumentsScroll = useCallback(
-    throttle(() => {
-      const mainGrid = scrollContainerRef.current;
-      const instrumentsList = instrumentListRef.current;
-
-      if (!mainGrid || !instrumentsList) return;
-
-      // Sync main grid vertically
-      mainGrid.scrollTop = instrumentsList.scrollTop;
-    }, 16), // 60fps throttling
-    []
-  );
-
-  // Custom scroll synchronization for Channel Rack
+  // ✅ PERFORMANCE OPTIMIZED: High-performance scroll synchronization using optimized utilities
   useEffect(() => {
     const mainGrid = scrollContainerRef.current;
     const instrumentsList = instrumentListRef.current;
+    const timeline = timelineContainerRef.current;
 
-    if (!mainGrid || !instrumentsList) return;
+    if (!mainGrid || !instrumentsList || !timeline) return;
 
-    mainGrid.addEventListener('scroll', handleMainScroll, { passive: true });
-    instrumentsList.addEventListener('scroll', handleInstrumentsScroll, { passive: true });
+    console.log('🔄 ChannelRack: Setting up optimized scroll synchronization');
 
-    // ✅ SCROLL FIX: Wheel event delegation from instruments panel to main grid
-    const handleWheelDelegation = (e) => {
-      e.preventDefault();
-      // Forward wheel event to main grid for synchronized scrolling
-      mainGrid.scrollBy({
-        top: e.deltaY,
-        left: e.deltaX,
-        behavior: 'auto'
-      });
-    };
+    // ✅ PERFORMANCE: Use optimized multi-target scroll sync
+    const scrollSyncCleanup = createMultiScrollSync(
+      { current: mainGrid },
+      [
+        // High priority: Timeline (critical for user feedback)
+        { ref: { current: timeline }, axis: 'x', priority: 'high', method: 'scroll' },
+        // Normal priority: Instruments list (less critical)
+        { ref: { current: instrumentsList }, axis: 'y', priority: 'normal', method: 'scroll' }
+      ],
+      {
+        throttleMs: 8, // ~120fps for ultra-smooth sync
+        debugMode: false // Set to true for performance debugging
+      }
+    );
 
-    instrumentsList.addEventListener('wheel', handleWheelDelegation, { passive: false });
+    // ✅ PERFORMANCE: Use optimized wheel forwarder with momentum
+    const wheelForwarderCleanup = createWheelForwarder(
+      { current: instrumentsList },
+      { current: mainGrid },
+      'both', // Allow both x and y wheel forwarding
+      {
+        throttleMs: 8,
+        enableMomentum: true,
+        momentumDecay: 0.92, // Slightly more responsive
+        maxDelta: 120, // Prevent excessive jumps
+        debugMode: false
+      }
+    );
+
+    console.log('🔄 ChannelRack: Optimized scroll sync initialized');
 
     return () => {
-      mainGrid.removeEventListener('scroll', handleMainScroll);
-      instrumentsList.removeEventListener('scroll', handleInstrumentsScroll);
-      instrumentsList.removeEventListener('wheel', handleWheelDelegation);
+      scrollSyncCleanup();
+      wheelForwarderCleanup();
+      console.log('🔄 ChannelRack: Optimized scroll sync cleaned up');
     };
-  }, [handleMainScroll, handleInstrumentsScroll]);
+  }, []); // Empty deps - setup once
 
   const handleNoteToggle = useCallback((instrumentId, step) => {
     try {
@@ -365,8 +340,6 @@ function ChannelRack() {
     }
     setIsPatternDropdownOpen(false);
   }, [renamePattern, activePatternId, patterns]);
-
-
 
   return (
     <div
@@ -471,6 +444,13 @@ function ChannelRack() {
               title="Rename Pattern"
             >
               <Icon name="Edit3" size={14} />
+            </button>
+            <button
+              className="channel-rack-layout__mgmt-btn channel-rack-layout__mgmt-btn--export"
+              onClick={() => setIsExportPanelOpen(true)}
+              title="Export Audio"
+            >
+              <Download size={14} />
             </button>
           </div>
         </div>
@@ -623,6 +603,12 @@ function ChannelRack() {
           <div className="channel-rack-layout__grid-row" onClick={handleGridRowClick} />
         </div>
       </div>
+
+      {/* Audio Export Panel */}
+      <AudioExportPanel
+        isOpen={isExportPanelOpen}
+        onClose={() => setIsExportPanelOpen(false)}
+      />
     </div>
   );
 }

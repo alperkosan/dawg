@@ -183,6 +183,38 @@ export class NativeAudioEngine {
         return this;
     }
 
+    /**
+     * Set instrument mute state
+     * @param {string} instrumentId - Instrument ID
+     * @param {boolean} isMuted - Mute state
+     */
+    setInstrumentMute(instrumentId, isMuted) {
+        const instrument = this.instruments.get(instrumentId);
+        if (!instrument) {
+            console.warn(`⚠️ NativeAudioEngine: Instrument ${instrumentId} not found for mute operation`);
+            return this;
+        }
+
+        try {
+            // Set mute state on the instrument
+            if (instrument.setMute && typeof instrument.setMute === 'function') {
+                instrument.setMute(isMuted);
+            } else if (instrument.output) {
+                // Fallback: control gain for mute/unmute
+                const gainValue = isMuted ? 0 : (instrument.volume || 1);
+                if (instrument.output.gain) {
+                    instrument.output.gain.setValueAtTime(gainValue, this.audioContext.currentTime);
+                }
+            }
+
+            console.log(`🔇 NativeAudioEngine: Instrument ${instrumentId} ${isMuted ? 'muted' : 'unmuted'}`);
+        } catch (error) {
+            console.error(`❌ NativeAudioEngine: Failed to set mute for instrument ${instrumentId}:`, error);
+        }
+
+        return this;
+    }
+
     // =================== ✅ NEW: MODE & LOOP MANAGEMENT ===================
 
     setPlaybackMode(mode) {

@@ -82,6 +82,18 @@
   color: var(--color-text-on-accent);
 }
 
+/* Export button special styling */
+.channel-rack-layout__mgmt-btn--export {
+  background: var(--color-accent-secondary);
+  color: var(--color-text-on-accent);
+}
+
+.channel-rack-layout__mgmt-btn--export:hover {
+  background: var(--color-accent-primary);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 255, 136, 0.2);
+}
+
 /* ==========================================================================
    Pattern Selector
    ========================================================================== */

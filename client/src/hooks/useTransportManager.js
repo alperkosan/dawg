@@ -34,7 +34,7 @@ export const useTransportManager = (options = {}) => {
 
   const transportManagerRef = useRef(null);
 
-  // Initialize transport manager and subscribe
+  // ✅ MEMORY LEAK FIX: Enhanced cleanup for transport manager subscription
   useEffect(() => {
     let isMounted = true;
     let unsubscribe;
@@ -46,30 +46,38 @@ export const useTransportManager = (options = {}) => {
 
         transportManagerRef.current = transportManager;
 
-        // Subscribe to all events
+        // Subscribe to all events with error boundary
         unsubscribe = transportManager.subscribe((event) => {
-          if (!isMounted) return;
+          // ✅ MEMORY LEAK FIX: Double-check mount status
+          if (!isMounted) {
+            console.warn('🎚️ Received event after component unmounted, ignoring');
+            return;
+          }
 
-          if (event.type === 'state-change') {
-            setState(prev => ({
-              ...prev,
-              ...event.state,
-              isReady: true
-            }));
-          } else if (event.type === 'position-update' && trackPosition) {
-            setState(prev => ({
-              ...prev,
-              currentPosition: event.position
-            }));
-          } else if (event.type === 'ghost-position-change' && trackGhost) {
-            setState(prev => ({
-              ...prev,
-              ghostPosition: event.ghostPosition
-            }));
+          try {
+            if (event.type === 'state-change') {
+              setState(prev => ({
+                ...prev,
+                ...event.state,
+                isReady: true
+              }));
+            } else if (event.type === 'position-update' && trackPosition) {
+              setState(prev => ({
+                ...prev,
+                currentPosition: event.position
+              }));
+            } else if (event.type === 'ghost-position-change' && trackGhost) {
+              setState(prev => ({
+                ...prev,
+                ghostPosition: event.ghostPosition
+              }));
+            }
+          } catch (error) {
+            console.error('🎚️ Error in transport event handler:', error);
           }
         });
 
-        console.log('🎚️ useTransportManager initialized');
+        console.log('🎚️ useTransportManager initialized with enhanced cleanup');
       } catch (error) {
         console.error('🎚️ Failed to initialize transport manager:', error);
       }
@@ -79,7 +87,16 @@ export const useTransportManager = (options = {}) => {
 
     return () => {
       isMounted = false;
-      if (unsubscribe) unsubscribe();
+      if (unsubscribe) {
+        try {
+          unsubscribe();
+          console.log('🎚️ useTransportManager subscription cleaned up');
+        } catch (error) {
+          console.error('🎚️ Error during subscription cleanup:', error);
+        }
+      }
+      // ✅ MEMORY LEAK FIX: Clear ref to prevent stale references
+      transportManagerRef.current = null;
     };
   }, [trackPosition, trackGhost]);
 

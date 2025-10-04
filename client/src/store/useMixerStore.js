@@ -5,7 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { AudioContextService } from '../lib/services/AudioContextService';
 import { initialMixerTracks } from '../config/initialData';
 import { pluginRegistry } from '../config/pluginConfig';
-import { usePanelsStore } from './usePanelsStore';
+import { storeManager } from './StoreManager';
 
 export const useMixerStore = create((set, get) => ({
   mixerTracks: initialMixerTracks,
@@ -195,14 +195,9 @@ export const useMixerStore = create((set, get) => ({
         });
     }
 
-    // ✅ FIX: Close related plugin panel when effect is removed
+    // ✅ PERFORMANCE: Use StoreManager for panel cleanup
     const panelId = `effect-${effectId}`;
-    const panelsState = usePanelsStore.getState();
-
-    if (panelsState.panels[panelId]?.isOpen) {
-      console.log('🔌 Closing plugin panel for removed effect:', panelId);
-      panelsState.togglePanel(panelId);
-    }
+    storeManager.togglePanelIfOpen(panelId);
   },
 
   handleMixerEffectChange: (trackId, effectId, paramOrSettings, value) => {

@@ -4,6 +4,7 @@ import MixerV3 from '../features/mixer_v3/MixerV3'; // <-- 2. YENİ MİKSERİ IM
 import SampleEditorV2 from '../features/sample_editor_v3/SampleEditorV3';
 import PianoRoll from '../features/piano_roll_v7/PianoRoll';
 import ArrangementPanel from '../features/arrangement/ArrangementPanel';
+import ArrangementWorkspace from '../features/arrangement_workspace/ArrangementWorkspace';
 import KeybindingsPanel from '../features/key_bindings/KeybindingsPanel';
 import { ThemeEditor } from '../features/theme_editor/ThemeEditor';
 import { ForgeSynthUI } from '../features/instrument_editor/ForgeSynthUI';
@@ -18,6 +19,7 @@ export const panelRegistry = {
   'file-browser': FileBrowserPanel,
   'keybindings': KeybindingsPanel,
   'arrangement': ArrangementPanel,
+  'arrangement-workspace': ArrangementWorkspace,
   'theme-editor': ThemeEditor,
   'instrument-editor-forgesynth': ForgeSynthUI,
   'audio-quality-settings': AudioQualitySettings,
@@ -29,6 +31,13 @@ export const panelDefinitions = {
     initialSize: { width: 1400, height: 600 },
     initialPos: { x: 20, y: 10 },
     minSize: { width: 800, height: 400 },
+  },
+  'arrangement-workspace': {
+    title: 'Arrangement Workspace',
+    initialSize: { width: 1600, height: 800 },
+    initialPos: { x: 10, y: 5 },
+    minSize: { width: 1200, height: 600 },
+    isFullscreen: true, // Fullscreen mode for workspace
   },
   'channel-rack': {
     title: 'Channel Rack',

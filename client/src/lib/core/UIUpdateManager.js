@@ -51,10 +51,16 @@ export class UIUpdateManager {
       classUpdates: []
     };
 
+    // ✅ PERFORMANCE: Pre-allocated arrays to avoid GC pressure
+    this._activeSubscribersCache = [];
+    this._updatesToProcessCache = [];
+    this._sortedSubscribersCache = [];
+    this._isDevelopment = process.env.NODE_ENV === 'development';
+
     // Bind methods
     this._updateLoop = this._updateLoop.bind(this);
 
-    console.log('🎨 UIUpdateManager initialized');
+    console.log('🎨 UIUpdateManager initialized with performance optimizations');
   }
 
   // =================== SUBSCRIPTION MANAGEMENT ===================
@@ -149,7 +155,7 @@ export class UIUpdateManager {
   }
 
   /**
-   * Main update loop
+   * ✅ PERFORMANCE OPTIMIZED: Main update loop with reduced allocations
    */
   _updateLoop(currentTime = performance.now()) {
     if (!this.isRunning) return;
@@ -167,37 +173,44 @@ export class UIUpdateManager {
     }
 
     try {
-      // Get active subscribers sorted by priority
-      const activeSubscribers = Array.from(this.subscribers.entries())
-        .filter(([id, subscriber]) => subscriber.active)
-        .sort(([,a], [,b]) => b.priority - a.priority);
+      // ✅ PERFORMANCE: Use cached arrays to avoid allocations
+      this._activeSubscribersCache.length = 0;
+      this._updatesToProcessCache.length = 0;
+      this._sortedSubscribersCache.length = 0;
 
-      // Process updates with frequency throttling
-      const updatesToProcess = [];
+      // ✅ PERFORMANCE: Single pass to collect active subscribers and filter by frequency
+      for (const [id, subscriber] of this.subscribers) {
+        if (!subscriber.active) continue;
 
-      for (const [id, subscriber] of activeSubscribers) {
-        const { frequency, lastUpdateTime } = subscriber;
-
-        // Check if enough time has passed for this subscriber
-        if (currentTime - lastUpdateTime >= frequency) {
-          updatesToProcess.push([id, subscriber]);
+        // Check frequency throttling in same pass
+        if (currentTime - subscriber.lastUpdateTime >= subscriber.frequency) {
+          this._updatesToProcessCache.push([id, subscriber]);
           subscriber.lastUpdateTime = currentTime;
         }
       }
 
+      // ✅ PERFORMANCE: In-place sort instead of creating new array
+      this._updatesToProcessCache.sort(([,a], [,b]) => b.priority - a.priority);
+
       // Execute updates in priority order
-      for (const [id, subscriber] of updatesToProcess) {
+      for (let i = 0; i < this._updatesToProcessCache.length; i++) {
+        const [id, subscriber] = this._updatesToProcessCache[i];
+
         try {
-          const updateStartTime = performance.now();
+          let updateStartTime;
+          if (this._isDevelopment) {
+            updateStartTime = performance.now();
+          }
 
           // Call subscriber update function
           subscriber.callback(currentTime, frameTime);
 
-          const updateDuration = performance.now() - updateStartTime;
-
-          // Warn about slow updates (>5ms)
-          if (updateDuration > 5) {
-            console.warn(`🎨 Slow update detected: ${id} took ${updateDuration.toFixed(2)}ms`);
+          // ✅ PERFORMANCE: Only measure performance in development
+          if (this._isDevelopment) {
+            const updateDuration = performance.now() - updateStartTime;
+            if (updateDuration > 5) {
+              console.warn(`🎨 Slow update detected: ${id} took ${updateDuration.toFixed(2)}ms`);
+            }
           }
 
         } catch (error) {
@@ -213,10 +226,12 @@ export class UIUpdateManager {
       console.error('🎨 Critical error in update loop:', error);
     }
 
-    // Update performance metrics
-    const frameDuration = performance.now() - frameStartTime;
-    this.metrics.totalUpdateTime += frameDuration;
-    this.metrics.averageFrameTime = this.metrics.totalUpdateTime / this.metrics.frameCount;
+    // ✅ PERFORMANCE: Only calculate detailed metrics in development
+    if (this._isDevelopment) {
+      const frameDuration = performance.now() - frameStartTime;
+      this.metrics.totalUpdateTime += frameDuration;
+      this.metrics.averageFrameTime = this.metrics.totalUpdateTime / this.metrics.frameCount;
+    }
 
     // Schedule next frame
     this.rafId = requestAnimationFrame(this._updateLoop);
@@ -246,29 +261,39 @@ export class UIUpdateManager {
   }
 
   /**
-   * Process all batched updates
+   * ✅ PERFORMANCE OPTIMIZED: Process all batched updates with error boundaries
    */
   _processBatchedUpdates() {
+    const { domUpdates, styleUpdates, classUpdates } = this.batchedUpdates;
+
+    // ✅ PERFORMANCE: Use traditional for loops for better performance
     // Process DOM updates
-    for (const { element, property, value } of this.batchedUpdates.domUpdates) {
+    for (let i = 0; i < domUpdates.length; i++) {
+      const { element, property, value } = domUpdates[i];
       try {
         element[property] = value;
       } catch (error) {
-        console.error('🎨 DOM update error:', error);
+        if (this._isDevelopment) {
+          console.error('🎨 DOM update error:', error);
+        }
       }
     }
 
     // Process style updates
-    for (const { element, styles } of this.batchedUpdates.styleUpdates) {
+    for (let i = 0; i < styleUpdates.length; i++) {
+      const { element, styles } = styleUpdates[i];
       try {
         Object.assign(element.style, styles);
       } catch (error) {
-        console.error('🎨 Style update error:', error);
+        if (this._isDevelopment) {
+          console.error('🎨 Style update error:', error);
+        }
       }
     }
 
     // Process class updates
-    for (const { element, classesToAdd, classesToRemove } of this.batchedUpdates.classUpdates) {
+    for (let i = 0; i < classUpdates.length; i++) {
+      const { element, classesToAdd, classesToRemove } = classUpdates[i];
       try {
         if (classesToRemove.length > 0) {
           element.classList.remove(...classesToRemove);
@@ -277,14 +302,16 @@ export class UIUpdateManager {
           element.classList.add(...classesToAdd);
         }
       } catch (error) {
-        console.error('🎨 Class update error:', error);
+        if (this._isDevelopment) {
+          console.error('🎨 Class update error:', error);
+        }
       }
     }
 
-    // Clear batches
-    this.batchedUpdates.domUpdates.length = 0;
-    this.batchedUpdates.styleUpdates.length = 0;
-    this.batchedUpdates.classUpdates.length = 0;
+    // ✅ PERFORMANCE: Fast array clearing by setting length
+    domUpdates.length = 0;
+    styleUpdates.length = 0;
+    classUpdates.length = 0;
   }
 
   // =================== PERFORMANCE MONITORING ===================

@@ -12,12 +12,13 @@ class StoreManager {
   /**
    * Register stores for orchestration
    */
-  registerStores({ useInstrumentsStore, useArrangementStore, useMixerStore, usePanelsStore }) {
+  registerStores({ useInstrumentsStore, useArrangementStore, useMixerStore, usePanelsStore, usePlaybackStore }) {
     this.stores = {
       instruments: useInstrumentsStore,
       arrangement: useArrangementStore,
       mixer: useMixerStore,
-      panels: usePanelsStore
+      panels: usePanelsStore,
+      playback: usePlaybackStore
     };
     this.initialized = true;
   }
@@ -80,6 +81,90 @@ class StoreManager {
   initializePatternInstruments() {
     // FL Studio Logic: Do nothing - all instruments are always visible
     console.log('🎵 FL Studio Mode: All instruments are globally visible');
+  }
+
+  /**
+   * ✅ PERFORMANCE: Centralized loop length update to prevent cascade updates
+   */
+  updateLoopLength() {
+    if (!this.initialized || !this.stores.playback) return;
+
+    try {
+      // Single source of truth - call playback store's updateLoopLength once
+      this.stores.playback.getState().updateLoopLength();
+    } catch (error) {
+      console.warn('Could not update loop length:', error);
+    }
+  }
+
+  /**
+   * ✅ PERFORMANCE: Find unused mixer track
+   */
+  findUnusedMixerTrack() {
+    if (!this.initialized || !this.stores.mixer || !this.stores.instruments) return null;
+
+    try {
+      const { mixerTracks } = this.stores.mixer.getState();
+      const { instruments } = this.stores.instruments.getState();
+
+      return mixerTracks.find(track =>
+        track.type === 'track' && !instruments.some(inst => inst.mixerTrackId === track.id)
+      );
+    } catch (error) {
+      console.warn('Could not find unused mixer track:', error);
+      return null;
+    }
+  }
+
+  /**
+   * ✅ PERFORMANCE: Centralized instrument creation with all side effects
+   */
+  createInstrumentWithSideEffects(instrument, mixerTrackId, trackName) {
+    if (!this.initialized) return;
+
+    try {
+      // 1. Create mixer track name (single call)
+      if (this.stores.mixer && mixerTrackId && trackName) {
+        this.stores.mixer.getState().setTrackName(mixerTrackId, trackName);
+      }
+
+      // 2. Add to active pattern (single call)
+      this.addInstrumentToActivePattern(instrument);
+    } catch (error) {
+      console.warn('Could not complete instrument creation side effects:', error);
+    }
+  }
+
+  /**
+   * ✅ PERFORMANCE: Centralized panel buffer update
+   */
+  updatePanelBuffer(instrumentId, newBuffer) {
+    if (!this.initialized || !this.stores.panels) return;
+
+    try {
+      const panelsState = this.stores.panels.getState();
+      if (panelsState.editingInstrumentId === instrumentId) {
+        panelsState.setEditorBuffer(newBuffer);
+      }
+    } catch (error) {
+      console.warn('Could not update panel buffer:', error);
+    }
+  }
+
+  /**
+   * ✅ PERFORMANCE: Centralized panel toggle for effect cleanup
+   */
+  togglePanelIfOpen(panelId) {
+    if (!this.initialized || !this.stores.panels) return;
+
+    try {
+      const panelsState = this.stores.panels.getState();
+      if (panelsState.panels[panelId]?.isOpen) {
+        panelsState.togglePanel(panelId);
+      }
+    } catch (error) {
+      console.warn('Could not toggle panel:', error);
+    }
   }
 
   /**

@@ -3,6 +3,7 @@
 import { create } from 'zustand';
 import { initialPatterns, initialPatternOrder, initialClips, initialInstruments } from '../config/initialData';
 import { AudioContextService } from '../lib/services/AudioContextService';
+import { storeManager } from './StoreManager';
 import { usePlaybackStore } from './usePlaybackStore';
 
 // Başlangıç verisinden dinamik olarak track'leri oluştur.
@@ -27,7 +28,8 @@ const arrangementStoreOrchestrator = (config) => (set, get, api) => {
   const throttledUpdateLoopLength = () => {
     if (updateLoopLengthTimeout) return; // Already scheduled
     updateLoopLengthTimeout = setTimeout(() => {
-      usePlaybackStore.getState().updateLoopLength();
+      // ✅ PERFORMANCE: Use StoreManager for loop length updates
+      storeManager.updateLoopLength();
       updateLoopLengthTimeout = null;
     }, 50); // 50ms throttle
   };
@@ -169,6 +171,179 @@ export const useArrangementStore = create(arrangementStoreOrchestrator((set, get
   },
 
   clearLoopRegions: () => set({ loopRegions: [] }),
+
+  // ========================================================
+  // === AUDIO CLIP INTEGRATION (FL Studio-style) ===
+  // ========================================================
+
+  /**
+   * Add exported pattern as audio clip to arrangement
+   */
+  addAudioClip: (audioClipData) => {
+    const { patternId, audioBuffer, instrumentId, startTime = 0, trackId } = audioClipData;
+
+    const newClip = {
+      id: `audio_clip_${Date.now()}`,
+      type: 'audio',
+      patternId,
+      instrumentId, // Audio instrument created from exported pattern
+      trackId: trackId || `track-${patternId}`,
+      startTime,
+      duration: audioBuffer.duration,
+      audioBuffer,
+      originalPattern: patternId,
+      isFromExport: true,
+      color: '#f5a623', // Orange color for exported audio clips
+      name: `${patternId} (Audio)`,
+      metadata: {
+        exportedAt: Date.now(),
+        sampleRate: audioBuffer.sampleRate,
+        channels: audioBuffer.numberOfChannels
+      }
+    };
+
+    set(state => ({
+      clips: [...state.clips, newClip]
+    }));
+
+    console.log(`🎵 Added audio clip from pattern ${patternId}:`, newClip);
+
+    // Update song length if necessary
+    usePlaybackStore.getState().updateLoopLength();
+
+    return newClip.id;
+  },
+
+  /**
+   * Replace pattern clips with audio clip (FL Studio freeze workflow)
+   */
+  replacePatternWithAudio: (patternId, audioClipData) => {
+    set(state => {
+      // Remove all pattern-based clips for this pattern
+      const filteredClips = state.clips.filter(clip =>
+        !(clip.type === 'pattern' && clip.patternId === patternId)
+      );
+
+      // Add the new audio clip
+      const audioClip = {
+        id: `frozen_${patternId}_${Date.now()}`,
+        type: 'audio',
+        patternId,
+        instrumentId: audioClipData.instrumentId,
+        trackId: audioClipData.trackId || `track-${patternId}`,
+        startTime: audioClipData.startTime || 0,
+        duration: audioClipData.audioBuffer.duration,
+        audioBuffer: audioClipData.audioBuffer,
+        originalPattern: patternId,
+        isFromExport: true,
+        isFrozen: true,
+        color: '#4a90e2', // Blue color for frozen clips
+        name: `${patternId} (Frozen)`,
+        metadata: {
+          frozenAt: Date.now(),
+          cpuSavings: audioClipData.cpuSavings,
+          sampleRate: audioClipData.audioBuffer.sampleRate,
+          channels: audioClipData.audioBuffer.numberOfChannels
+        }
+      };
+
+      return { clips: [...filteredClips, audioClip] };
+    });
+
+    console.log(`🧊 Replaced pattern ${patternId} with frozen audio clip`);
+    usePlaybackStore.getState().updateLoopLength();
+  },
+
+  /**
+   * Create audio clips from batch exported patterns
+   */
+  addBatchAudioClips: (exportResults) => {
+    const newClips = [];
+
+    exportResults.forEach((result, index) => {
+      if (result.success && result.result.exportFiles.length > 0) {
+        const { patternId } = result;
+        const exportFile = result.result.exportFiles[0];
+
+        const audioClip = {
+          id: `batch_audio_${patternId}_${Date.now()}`,
+          type: 'audio',
+          patternId,
+          instrumentId: result.result.instrumentId,
+          trackId: `track-${patternId}`,
+          startTime: index * 8, // Spread clips across timeline
+          duration: exportFile.duration || 4,
+          audioBuffer: exportFile.buffer,
+          originalPattern: patternId,
+          isFromExport: true,
+          isBatchExport: true,
+          color: '#7ed321', // Green for batch exports
+          name: `${patternId} (Batch)`,
+          metadata: {
+            batchExportedAt: Date.now(),
+            cpuSavings: result.result.cpuSavings,
+            batchIndex: index
+          }
+        };
+
+        newClips.push(audioClip);
+      }
+    });
+
+    if (newClips.length > 0) {
+      set(state => ({
+        clips: [...state.clips, ...newClips]
+      }));
+
+      console.log(`🎵 Added ${newClips.length} audio clips from batch export`);
+      usePlaybackStore.getState().updateLoopLength();
+    }
+
+    return newClips.map(clip => clip.id);
+  },
+
+  /**
+   * Get all audio clips created from pattern exports
+   */
+  getExportedAudioClips: () => {
+    return get().clips.filter(clip =>
+      clip.type === 'audio' && clip.isFromExport
+    );
+  },
+
+  /**
+   * Unfreeze pattern (restore original MIDI pattern, remove audio clip)
+   */
+  unfreezePattern: (patternId) => {
+    set(state => ({
+      clips: state.clips.filter(clip =>
+        !(clip.type === 'audio' && clip.patternId === patternId && clip.isFrozen)
+      )
+    }));
+
+    console.log(`🔥 Unfroze pattern ${patternId}`);
+    usePlaybackStore.getState().updateLoopLength();
+  },
+
+  /**
+   * Convert audio clip back to pattern (opposite of freeze)
+   */
+  convertAudioClipToPattern: (clipId) => {
+    const clip = get().clips.find(c => c.id === clipId);
+    if (!clip || clip.type !== 'audio' || !clip.originalPattern) {
+      console.warn(`Cannot convert clip ${clipId} to pattern`);
+      return;
+    }
+
+    // Remove audio clip
+    set(state => ({
+      clips: state.clips.filter(c => c.id !== clipId)
+    }));
+
+    // The original pattern should still exist in patterns store
+    console.log(`🔄 Converted audio clip ${clipId} back to pattern ${clip.originalPattern}`);
+    usePlaybackStore.getState().updateLoopLength();
+  },
 
   // ========================================================
   // === PATTERN MANAGEMENT ACTIONS ===

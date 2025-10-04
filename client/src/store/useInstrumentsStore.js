@@ -3,9 +3,7 @@
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
 import { initialInstruments } from '../config/initialData';
-import { useMixerStore } from './useMixerStore';
 import { AudioContextService } from '../lib/services/AudioContextService';
-import { usePanelsStore } from './usePanelsStore';
 import { storeManager } from './StoreManager';
 
 export const useInstrumentsStore = create((set, get) => ({
@@ -38,7 +36,6 @@ export const useInstrumentsStore = create((set, get) => ({
    */
   handleAddNewInstrument: (sample) => {
     const { instruments } = get();
-    const mixerTracks = useMixerStore.getState().mixerTracks;
 
     const baseName = sample.name.split('.')[0].replace(/_/g, ' ');
     let newName = baseName;
@@ -47,15 +44,13 @@ export const useInstrumentsStore = create((set, get) => ({
     while (instruments.some(inst => inst.name === newName)) {
         newName = `${baseName} ${counter++}`;
     }
-    
-    // Boş bir mixer kanalı bul.
-    const firstUnusedTrack = mixerTracks.find(track => 
-        track.type === 'track' && !instruments.some(inst => inst.mixerTrackId === track.id)
-    );
-    
+
+    // ✅ PERFORMANCE: Use StoreManager to find unused mixer track
+    const firstUnusedTrack = storeManager.findUnusedMixerTrack();
+
     if (!firstUnusedTrack) {
         // Modern UI'lar için alert yerine daha iyi bir bildirim sistemi düşünülebilir.
-        console.error("Boş mixer kanalı kalmadı!"); 
+        console.error("Boş mixer kanalı kalmadı!");
         return;
     }
 
@@ -102,10 +97,9 @@ export const useInstrumentsStore = create((set, get) => ({
 
     // Auto-assign to detected group
     get().addInstrumentToGroup(newInstrument.id, targetGroupId);
-    useMixerStore.getState().setTrackName(firstUnusedTrack.id, newName);
 
-    // Add to active pattern as well (via StoreManager)
-    storeManager.addInstrumentToActivePattern(newInstrument);
+    // ✅ PERFORMANCE: Use StoreManager for all side effects
+    storeManager.createInstrumentWithSideEffects(newInstrument, firstUnusedTrack.id, newName);
 
     // SES MOTORUNA KOMUT GÖNDER: Yeni enstrümanı oluştur.
     AudioContextService.createInstrument(newInstrument);
@@ -167,9 +161,8 @@ export const useInstrumentsStore = create((set, get) => ({
         const newBuffer = await AudioContextService.reconcileInstrument(instrumentId, updatedInstrument);
         
         // Sample Editor açıksa, güncellenmiş buffer'ı anında göster.
-        if (usePanelsStore.getState().editingInstrumentId === instrumentId) {
-          usePanelsStore.getState().setEditorBuffer(newBuffer);
-        }
+        // ✅ PERFORMANCE: Use StoreManager for panel updates
+        storeManager.updatePanelBuffer(instrumentId, newBuffer);
       } catch (error) {
         console.error(`[STORE] Reconcile işlemi başarısız oldu: ${instrumentId}`, error);
       } finally {

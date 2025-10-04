@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, Suspense } from 'react';
+import React, { useState, useEffect, useRef, Suspense, useCallback, useMemo } from 'react';
 
 // Core Systems
 import { NativeAudioEngine } from './lib/core/NativeAudioEngine';
@@ -30,8 +30,24 @@ function App() {
   // Ses motoru nesnesini re-render'lar arasında kaybetmemek için useRef kullanıyoruz.
   const audioEngineRef = useRef(null);
 
-  // 2. Ses motorunu başlatan ana fonksiyon
-  const initializeAudioSystem = async () => {
+  // ✅ PERFORMANCE: Memoize store callbacks to prevent recreation
+  const audioEngineCallbacks = useMemo(() => ({
+    setPlaybackState: (state) => {
+      // ✅ Deprecated - Now handled by PlaybackController
+      // console.log('Motor state change (handled by controller):', state);
+    },
+    setTransportPosition: usePlaybackStore.getState().setTransportPosition,
+  }), []); // Empty deps - these callbacks don't need to change
+
+  // ✅ PERFORMANCE: Memoize store getter functions to prevent repeated getState calls
+  const storeGetters = useMemo(() => ({
+    getInstruments: () => useInstrumentsStore.getState().instruments,
+    getActivePatternId: () => useArrangementStore.getState().activePatternId,
+    getBPM: () => usePlaybackStore.getState().bpm
+  }), []); // Empty deps - these getters don't change
+
+  // 2. ✅ PERFORMANCE: Optimized audio system initialization
+  const initializeAudioSystem = useCallback(async () => {
     // Zaten hazır veya başlatılıyorsa tekrar başlatma
     if (engineStatus === 'ready' || engineStatus === 'initializing') return;
 
@@ -39,16 +55,8 @@ function App() {
     console.log('🚀 Ses sistemi başlatılıyor...');
 
     try {
-      // === KRİTİK BAĞLANTI NOKTASI ===
-      // ✅ NEW UNIFIED SYSTEM: Motor artık PlaybackController üzerinden state yönetir
-      // Geçici olarak eski callbacks'leri sessiz kılıyoruz
-      const engine = new NativeAudioEngine({
-        setPlaybackState: (state) => {
-          // ✅ Deprecated - Now handled by PlaybackController
-          // console.log('Motor state change (handled by controller):', state);
-        },
-        setTransportPosition: usePlaybackStore.getState().setTransportPosition,
-      });
+      // ✅ PERFORMANCE: Use memoized callbacks
+      const engine = new NativeAudioEngine(audioEngineCallbacks);
 
       await engine.initialize();
       audioEngineRef.current = engine;
@@ -56,10 +64,10 @@ function App() {
       // Motoru, uygulama genelinde erişilebilir olan servisimize kaydediyoruz.
       await AudioContextService.setAudioEngine(engine);
 
-      // Başlangıç verilerini (sample'lar, enstrümanlar) motora yüklüyoruz.
+      // ✅ PERFORMANCE: Use fresh store data with memoized getters
       console.log('📥 Başlangıç verileri yükleniyor...');
-      const instruments = useInstrumentsStore.getState().instruments;
-      
+      const instruments = storeGetters.getInstruments();
+
       // ⚡ DEBUG: Log sample instruments for troubleshooting
       const sampleInstruments = instruments.filter(inst => inst.type === 'sample');
       console.log('🔍 Sample instruments to load:', sampleInstruments.map(inst => ({ id: inst.id, name: inst.name, url: inst.url })));
@@ -77,10 +85,10 @@ function App() {
           console.error(`❌ Failed to create instrument ${inst.name}:`, error);
         }
       }
-      
-      // Motorun başlangıç pattern'ini ve BPM'ini store'lardan almasını sağlıyoruz.
-      engine.setActivePattern(useArrangementStore.getState().activePatternId);
-      engine.setBPM(usePlaybackStore.getState().bpm);
+
+      // ✅ PERFORMANCE: Get fresh data but with memoized getters
+      engine.setActivePattern(storeGetters.getActivePatternId());
+      engine.setBPM(storeGetters.getBPM());
 
       setEngineStatus('ready');
       console.log('✅ Ses sistemi başarıyla başlatıldı ve hazır!');
@@ -90,12 +98,19 @@ function App() {
       setEngineError(error.message);
       setEngineStatus('error');
     }
-  };
+  }, [engineStatus, audioEngineCallbacks, storeGetters]); // ✅ PERFORMANCE: Minimal dependencies
   
-  // 3. Component yok olduğunda motoru temizleyen useEffect
+  // 3. ✅ MEMORY LEAK FIX: Component yok olduğunda motoru ve transport manager'ı temizleyen useEffect
   useEffect(() => {
     // Bu return fonksiyonu, component unmount edildiğinde çalışır.
     return () => {
+      // ✅ MEMORY LEAK FIX: Cleanup TransportManager singleton
+      import('./lib/core/TransportManagerSingleton.js').then(({ default: TransportManagerSingleton }) => {
+        TransportManagerSingleton.cleanup();
+      }).catch(error => {
+        console.warn('Transport cleanup failed:', error);
+      });
+
       if (audioEngineRef.current) {
         audioEngineRef.current.dispose();
         audioEngineRef.current = null;
@@ -104,8 +119,8 @@ function App() {
     };
   }, []); // Boş dependency array, sadece bir kez çalışmasını sağlar.
 
-  // 4. Arayüzü motorun durumuna göre render etme
-  const renderContent = () => {
+  // 4. ✅ PERFORMANCE: Memoized render content to prevent unnecessary re-renders
+  const renderContent = useCallback(() => {
     switch (engineStatus) {
       case 'initializing':
         return <StartupScreen onStart={() => {}} />; // Veya bir yükleniyor ekranı
@@ -141,7 +156,7 @@ function App() {
         // Kullanıcının "Başlat" butonuna tıklamasını bekleyen ekran
         return <StartupScreen onStart={initializeAudioSystem} />;
     }
-  };
+  }, [engineStatus, engineError, initializeAudioSystem]); // ✅ PERFORMANCE: Minimal dependencies
 
   return <>{renderContent()}</>;
 }

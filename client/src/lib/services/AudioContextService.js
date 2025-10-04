@@ -1026,42 +1026,6 @@ export class AudioContextService {
     return null;
   }
 
-  /**
-   * Set instrument mute state
-   */
-  static setInstrumentMute(instrumentId, isMuted) {
-    console.log('🔇 AudioContextService.setInstrumentMute:', instrumentId, isMuted);
-
-    if (!this.audioEngine || !this.audioEngine.instruments) {
-      console.warn('⚠️ No audio engine or instruments available');
-      return;
-    }
-
-    const instrument = this.audioEngine.instruments.get(instrumentId);
-    if (!instrument) {
-      console.warn('⚠️ Instrument not found:', instrumentId);
-      return;
-    }
-
-    // For instruments with output nodes, control the gain
-    if (instrument.output && instrument.output.gain) {
-      if (isMuted) {
-        // Store current volume before muting
-        if (!instrument._unmutedVolume) {
-          instrument._unmutedVolume = instrument.output.gain.value;
-        }
-        instrument.output.gain.setTargetAtTime(0, this.audioEngine.audioContext.currentTime, 0.02);
-        console.log('🔇 Muted instrument:', instrumentId);
-      } else {
-        // Restore previous volume
-        const volume = instrument._unmutedVolume || 0.8;
-        instrument.output.gain.setTargetAtTime(volume, this.audioEngine.audioContext.currentTime, 0.02);
-        console.log('🔊 Unmuted instrument:', instrumentId, 'volume:', volume);
-      }
-    } else {
-      console.warn('⚠️ Instrument has no output gain control:', instrumentId);
-    }
-  }
 
   /**
    * Convert dB to linear value

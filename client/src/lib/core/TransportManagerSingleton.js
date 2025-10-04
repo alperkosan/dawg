@@ -50,13 +50,20 @@ class TransportManagerSingleton {
     }
   }
 
-  // Force recreation (for testing/development)
+  // ✅ MEMORY LEAK FIX: Comprehensive reset with cleanup
   reset() {
     if (this.instance) {
       this.instance.destroy();
     }
     this.instance = null;
     this.initPromise = null;
+    console.log('🎚️ TransportManagerSingleton reset - memory cleaned');
+  }
+
+  // ✅ MEMORY LEAK FIX: Global cleanup for app shutdown
+  cleanup() {
+    this.reset();
+    console.log('🎚️ TransportManagerSingleton cleanup completed');
   }
 }
 

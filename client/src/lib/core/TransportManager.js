@@ -56,6 +56,10 @@ export class TransportManager {
     this._needsUIRefresh = false;
     this.uiUpdateUnsubscribe = null;
 
+    // ✅ MEMORY LEAK FIX: Store cleanup functions
+    this.keyboardCleanup = null;
+    this.isDestroyed = false;
+
     // UI element references - tüm transport UI'ları buradan yönetilecek
     this.transportButtons = new Map(); // button-id -> element
     this.playheadElements = new Map(); // playhead-id -> element
@@ -361,9 +365,19 @@ export class TransportManager {
   }
 
   /**
-   * ✅ UNREGISTER UI ELEMENTS
+   * ✅ UNREGISTER UI ELEMENTS - MEMORY LEAK FIXED
    */
   unregisterElement(id) {
+    // ✅ MEMORY LEAK FIX: Clean up timeline event listeners
+    const timeline = this.timelineElements.get(id);
+    if (timeline && timeline.handlers) {
+      const { element, handlers } = timeline;
+      element.removeEventListener('click', handlers.handleClick);
+      element.removeEventListener('mousemove', handlers.handleMouseMove);
+      element.removeEventListener('mouseleave', handlers.handleMouseLeave);
+      console.log(`🎚️ Cleaned up timeline event listeners for: ${id}`);
+    }
+
     this.transportButtons.delete(id);
     this.playheadElements.delete(id);
     this.timelineElements.delete(id);
@@ -518,10 +532,13 @@ export class TransportManager {
   // =================== KEYBOARD SHORTCUTS ===================
 
   /**
-   * ✅ GLOBAL KEYBOARD SHORTCUTS
+   * ✅ GLOBAL KEYBOARD SHORTCUTS - MEMORY LEAK FIXED
    */
   _setupGlobalKeyboardShortcuts() {
-    document.addEventListener('keydown', (e) => {
+    const keydownHandler = (e) => {
+      // ✅ MEMORY LEAK FIX: Check if destroyed
+      if (this.isDestroyed) return;
+
       // Don't interfere with text inputs
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
         return;
@@ -538,7 +555,14 @@ export class TransportManager {
           this.stop();
           break;
       }
-    });
+    };
+
+    document.addEventListener('keydown', keydownHandler);
+
+    // ✅ MEMORY LEAK FIX: Store cleanup function
+    this.keyboardCleanup = () => {
+      document.removeEventListener('keydown', keydownHandler);
+    };
   }
 
   // =================== POSITION TRACKING ===================
@@ -742,10 +766,28 @@ export class TransportManager {
   }
 
   /**
-   * ✅ CLEANUP
+   * ✅ CLEANUP - COMPREHENSIVE MEMORY LEAK FIXES
    */
   destroy() {
+    // ✅ MEMORY LEAK FIX: Mark as destroyed to prevent further operations
+    this.isDestroyed = true;
+
+    // ✅ MEMORY LEAK FIX: Stop all tracking subscriptions
     this._stopPositionTrackingNew();
+
+    // ✅ MEMORY LEAK FIX: Cleanup UIUpdateManager subscription
+    if (this.uiUpdateUnsubscribe) {
+      this.uiUpdateUnsubscribe();
+      this.uiUpdateUnsubscribe = null;
+      console.log('🎚️ UIUpdateManager subscription cleaned up');
+    }
+
+    // ✅ MEMORY LEAK FIX: Cleanup keyboard shortcuts
+    if (this.keyboardCleanup) {
+      this.keyboardCleanup();
+      this.keyboardCleanup = null;
+      console.log('🎚️ Keyboard shortcuts cleaned up');
+    }
 
     // Cleanup timeline event listeners
     for (const [id, timeline] of this.timelineElements) {
@@ -757,13 +799,14 @@ export class TransportManager {
       }
     }
 
+    // ✅ MEMORY LEAK FIX: Clear all references
     this.transportButtons.clear();
     this.playheadElements.clear();
     this.timelineElements.clear();
     this.subscribers.clear();
     this.audioEngine = null;
 
-    console.log('🎚️ TransportManager destroyed');
+    console.log('🎚️ TransportManager destroyed - all memory leaks fixed');
   }
 
   // =================== OPTIMISTIC UPDATES FOR ZERO-LATENCY UI ===================
