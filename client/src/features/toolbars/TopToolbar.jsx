@@ -53,13 +53,6 @@ function TopToolbar() {
     playbackState === PLAYBACK_STATES.STOPPED ? 'transport-btn--stopped' : ''
   }`;
 
-  console.log('🎛️ TopToolbar state:', {
-    playbackState,
-    isPlaying,
-    playButtonClass: playButtonClass.includes('--playing') ? 'playing' :
-                     playButtonClass.includes('--paused') ? 'paused' : 'none',
-    stopButtonClass: stopButtonClass.includes('--stopped') ? 'stopped' : 'none'
-  });
 
   return (
     <header className="top-toolbar">
@@ -67,15 +60,6 @@ function TopToolbar() {
         <div className="top-toolbar__logo">
           <Wind size={24} className="text-[var(--color-accent-primary)]" />
           <h1 className="top-toolbar__logo-title">SoundForge</h1>
-        </div>
-        <div className="top-toolbar__master-knob-wrapper">
-            <Knob
-              label="Master"
-              size={32}
-              value={0.8} // TODO: Get from new system
-              onChange={() => {}} // TODO: Integrate with new system
-              defaultValue={0} min={-60} max={6}
-            />
         </div>
       </div>
 
@@ -133,7 +117,20 @@ function TopToolbar() {
       </div>
 
       <div className="toolbar__group" style={{ width: '200px', justifyContent: 'flex-end' }}>
-        {/* Sağ taraf boş */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Knob
+            size={28}
+            value={0.8}
+            onChange={() => {}}
+            min={0}
+            max={1}
+            defaultValue={0.8}
+            precision={2}
+            showValue={false}
+            aria-label="Master Volume"
+          />
+          <span style={{ fontSize: '10px', fontWeight: 800, color: 'var(--color-text-muted)', letterSpacing: '0.1em' }}>M</span>
+        </div>
       </div>
     </header>
   );

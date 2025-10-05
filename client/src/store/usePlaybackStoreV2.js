@@ -46,11 +46,6 @@ export const usePlaybackStore = create((set, get) => ({
 
     // Controller events subscription
     const unsubscribe = controller.subscribe((data) => {
-      console.log('🏪 Store receiving controller update:', {
-        playbackState: data.state.playbackState,
-        isPlaying: data.state.isPlaying,
-        reason: data.reason
-      });
 
       set({
         isPlaying: data.state.isPlaying,
@@ -63,9 +58,16 @@ export const usePlaybackStore = create((set, get) => ({
       });
     });
 
-    // ✅ FIX: Position update subscription (for real-time playhead movement)
+    // ✅ FIX: Position update subscription (throttled to 30Hz for performance)
+    let lastPositionUpdate = 0;
+    const POSITION_UPDATE_INTERVAL = 33.33; // ~30fps (sufficient for visual feedback)
+
     controller.on('position-update', (data) => {
+      const now = performance.now();
+      if (now - lastPositionUpdate < POSITION_UPDATE_INTERVAL) return;
+
       set({ currentStep: data.position });
+      lastPositionUpdate = now;
     });
 
     // Ghost position subscription
@@ -90,7 +92,6 @@ export const usePlaybackStore = create((set, get) => ({
 
   // Primary controls
   togglePlayPause: async () => {
-    console.log('🏪 Store.togglePlayPause called');
     const controller = await get()._initController();
     if (!controller) {
       console.error('🏪 No controller available for togglePlayPause');
@@ -100,7 +101,6 @@ export const usePlaybackStore = create((set, get) => ({
   },
 
   handleStop: async () => {
-    console.log('🏪 Store.handleStop called');
     const controller = await get()._initController();
     if (!controller) {
       console.error('🏪 No controller available for handleStop');
@@ -167,7 +167,6 @@ export const usePlaybackStore = create((set, get) => ({
     const controller = await get()._initController();
     if (controller?.playbackManager) {
       controller.playbackManager.jumpToStep(step);
-      console.log(`🎯 Transport position set: ${position} (step ${step})`);
     }
   },
 
@@ -178,19 +177,16 @@ export const usePlaybackStore = create((set, get) => ({
   // =============== ARRANGEMENT INTEGRATION ===============
 
   setPlaybackMode: async (mode) => {
-    console.log(`🎵 Playback mode changing: ${get().playbackMode} → ${mode}`);
 
     // ✅ Get controller first
     let controller = get()._controller;
     if (!controller) {
-      console.log('🎵 Controller not initialized yet, initializing now...');
       controller = await get()._initController();
     }
 
     // ✅ CRITICAL: Stop playback first (before any state changes)
     const wasPlaying = get().isPlaying;
     if (wasPlaying && controller) {
-      console.log('🎵 Stopping playback before mode change...');
       await controller.stop();
       // Wait a tick for events to propagate
       await new Promise(resolve => setTimeout(resolve, 10));
@@ -199,7 +195,6 @@ export const usePlaybackStore = create((set, get) => ({
     // ✅ Update mode in PlaybackManager
     const playbackManager = controller?.audioEngine?.playbackManager;
     if (playbackManager) {
-      console.log(`🎵 Setting PlaybackManager.currentMode to: ${mode}`);
       playbackManager.currentMode = mode;
     }
 
@@ -213,7 +208,6 @@ export const usePlaybackStore = create((set, get) => ({
 
     get().updateLoopLength();
 
-    console.log(`🎵 Playback mode changed to: ${mode}, isPlaying: ${get().isPlaying}`);
   },
 
   updateLoopLength: () => {

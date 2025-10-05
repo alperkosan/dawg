@@ -9,6 +9,7 @@ function DraggableWindow({
 }) {
   const [isAnimatingOut, setIsAnimatingOut] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   const headerRef = useRef(null);
   const [headerHeight, setHeaderHeight] = useState(38); // Varsayılan bir yükseklik
 
@@ -51,14 +52,19 @@ function DraggableWindow({
 
   return (
     <Rnd
-      className="window-base-new" // Çakışmayı önlemek için yeni bir sınıf adı
+      className={`window-base-new ${isDragging ? 'is-dragging' : ''}`}
       style={rndStyle}
       size={isMaximized ? { width: '100%', height: '100%' } : size}
       position={isMaximized ? { x: 0, y: 0 } : position}
       minWidth={minSize.width} minHeight={minSize.height}
       dragHandleClassName="window-header"
+      enableUserSelectHack={false}
       onMouseDown={onFocus}
-      onDragStop={(e, d) => !isMaximized && onPositionChange({ x: d.x, y: d.y })}
+      onDragStart={() => setIsDragging(true)}
+      onDragStop={(e, d) => {
+        setIsDragging(false);
+        !isMaximized && onPositionChange({ x: d.x, y: d.y });
+      }}
       onResizeStop={(e, direction, ref, delta, pos) => {
         if (!isMaximized) {
           onSizeChange({ width: parseInt(ref.style.width, 10), height: parseInt(ref.style.height, 10) });

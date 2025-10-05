@@ -69,7 +69,6 @@ export class TransportManager {
     this._setupGlobalKeyboardShortcuts();
     this._setupUIUpdateManager();
 
-    console.log('🎚️ TransportManager: Unified system initialized');
   }
 
   // =================== UI UPDATE MANAGER SETUP ===================
@@ -86,7 +85,6 @@ export class TransportManager {
       UPDATE_FREQUENCIES.MEDIUM // 30fps for smooth but efficient updates
     );
 
-    console.log('🎨 TransportManager: Subscribed to UIUpdateManager');
   }
 
   /**
@@ -163,10 +161,8 @@ export class TransportManager {
    * ✅ UNIFIED PLAY
    */
   async play(startPosition = null) {
-    console.log(`🎚️ TransportManager.play(${startPosition})`);
 
     if (this.state.isPlaying) {
-      console.log('🎚️ Already playing');
       return false;
     }
 
@@ -205,7 +201,6 @@ export class TransportManager {
    * ✅ UNIFIED PAUSE
    */
   async pause() {
-    console.log('🎚️ TransportManager.pause()');
 
     if (!this.state.isPlaying) return false;
 
@@ -231,7 +226,6 @@ export class TransportManager {
    * ✅ UNIFIED STOP - Smart behavior with double-click reset
    */
   async stop() {
-    console.log('🎚️ TransportManager.stop()');
 
     try {
       const now = Date.now();
@@ -244,7 +238,6 @@ export class TransportManager {
 
       // ✅ CONSISTENT STOP BEHAVIOR - Always reset to 0 for predictable behavior
       this.state.currentPosition = 0;
-      console.log('🎚️ Stop: Reset to position 0 (consistent behavior)');
 
       this.state.lastStopTime = now;
       this.state.lastUpdateTime = Date.now();
@@ -268,7 +261,6 @@ export class TransportManager {
    * ✅ SMART TOGGLE
    */
   async togglePlayPause() {
-    console.log(`🎚️ TransportManager.togglePlayPause() - current: ${this.state.playbackState}`);
 
     switch (this.state.playbackState) {
       case PLAYBACK_STATES.PLAYING:
@@ -289,27 +281,15 @@ export class TransportManager {
   jumpToPosition(position, options = {}) {
     const { updateUI = true } = options; // Removed smooth parameter - always immediate
 
-    console.log(`🎚️ TransportManager.jumpToPosition(${position}) precision:`, {
-      inputPosition: position,
-      newPosition: Math.max(0, position),
-      beforeState: this.state.currentPosition
-    });
 
     const oldPosition = this.state.currentPosition;
     const newPosition = Math.max(0, position);
     this.state.currentPosition = newPosition;
 
-    console.log(`🎚️ Position updated:`, {
-      from: oldPosition,
-      to: newPosition,
-      changed: oldPosition !== newPosition
-    });
 
     // ✅ SIMPLIFIED: Always immediate jump, no smooth complexity
     if (this.audioEngine?.playbackManager) {
-      console.log(`🎚️ Updating audio engine position to: ${newPosition} (immediate)`);
       this.audioEngine.playbackManager.jumpToStep(newPosition); // No await - fire and forget
-      console.log(`🎚️ Audio engine position updated`);
     }
 
     if (updateUI) {
@@ -341,7 +321,6 @@ export class TransportManager {
    * ✅ REGISTER TRANSPORT BUTTON
    */
   registerTransportButton(id, element, type) {
-    console.log(`🎚️ Registering transport button: ${id} (${type})`);
     this.transportButtons.set(id, { element, type });
     this._updateTransportButton(id);
   }
@@ -350,7 +329,6 @@ export class TransportManager {
    * ✅ REGISTER PLAYHEAD
    */
   registerPlayhead(id, element, stepWidth = 16) {
-    console.log(`🎚️ Registering playhead: ${id}`);
     this.playheadElements.set(id, { element, stepWidth });
     this._updatePlayhead(id);
   }
@@ -359,7 +337,6 @@ export class TransportManager {
    * ✅ REGISTER TIMELINE
    */
   registerTimeline(id, element, config = {}) {
-    console.log(`🎚️ Registering timeline: ${id}`);
     this.timelineElements.set(id, { element, ...config });
     this._setupTimelineInteraction(id);
   }
@@ -375,7 +352,6 @@ export class TransportManager {
       element.removeEventListener('click', handlers.handleClick);
       element.removeEventListener('mousemove', handlers.handleMouseMove);
       element.removeEventListener('mouseleave', handlers.handleMouseLeave);
-      console.log(`🎚️ Cleaned up timeline event listeners for: ${id}`);
     }
 
     this.transportButtons.delete(id);
@@ -389,7 +365,6 @@ export class TransportManager {
    * ✅ UPDATE ALL TRANSPORT UI
    */
   _updateAllTransportUI(action) {
-    console.log(`🎚️ Updating all transport UI for: ${action}`);
 
     // Update all transport buttons
     for (const [id] of this.transportButtons) {
@@ -490,18 +465,8 @@ export class TransportManager {
       const exactStep = clickX / stepWidth;
       const targetStep = calculateStep(clickX, stepWidth, audioLoopLength - 1);
 
-      console.log(`🎚️ TransportManager timeline precision:`, {
-        clickX,
-        exactStep,
-        targetStep,
-        stepWidth,
-        audioLoopLength,
-        roundingDiff: exactStep - targetStep,
-        preciseCalculation: true
-      });
 
       // ✅ UNIFIED: Use jumpToPosition for consistency
-      console.log(`🎚️ Timeline click: Using unified jumpToPosition to ${targetStep} (${this.state.playbackState})`);
 
       // Use the unified jumpToPosition method (no await for fire-and-forget)
       this.jumpToPosition(targetStep, { updateUI: true });
@@ -570,7 +535,6 @@ export class TransportManager {
   _startPositionTrackingNew() {
     if (this.positionTrackingSubscription) return;
 
-    console.log('🎚️ Starting UIUpdateManager-based position tracking');
 
     // Subscribe to UIUpdateManager with HIGH priority for transport
     this.positionTrackingSubscription = uiUpdateManager.subscribe(
@@ -587,7 +551,6 @@ export class TransportManager {
     if (this.positionTrackingSubscription) {
       this.positionTrackingSubscription(); // Call unsubscribe function
       this.positionTrackingSubscription = null;
-      console.log('🎚️ Stopped UIUpdateManager-based position tracking');
     }
   }
 
@@ -621,7 +584,6 @@ export class TransportManager {
 
   _bindAudioEvents() {
     // Note: We use manual state management to avoid conflicts
-    console.log('🎚️ Audio engine events bound (manual state management)');
   }
 
   // =================== EVENT SYSTEM ===================
@@ -650,11 +612,6 @@ export class TransportManager {
       timestamp: Date.now()
     };
 
-    console.log(`🎚️ TransportManager event (${reason}):`, {
-      playbackState: this.state.playbackState,
-      isPlaying: this.state.isPlaying,
-      currentPosition: this.state.currentPosition
-    });
 
     this.subscribers.forEach(callback => {
       try {
@@ -736,7 +693,6 @@ export class TransportManager {
     }
 
     this._emitStateChange('bpm-change');
-    console.log(`🎚️ BPM set to: ${this.state.bpm}`);
   }
 
   setLoopRange(start, end) {
@@ -750,7 +706,6 @@ export class TransportManager {
     }
 
     this._emitStateChange('loop-change');
-    console.log(`🎚️ Loop range set: ${start} - ${end}`);
   }
 
   setLoopEnabled(enabled) {
@@ -762,7 +717,6 @@ export class TransportManager {
     }
 
     this._emitStateChange('loop-change');
-    console.log(`🎚️ Loop enabled: ${enabled}`);
   }
 
   /**
@@ -779,14 +733,12 @@ export class TransportManager {
     if (this.uiUpdateUnsubscribe) {
       this.uiUpdateUnsubscribe();
       this.uiUpdateUnsubscribe = null;
-      console.log('🎚️ UIUpdateManager subscription cleaned up');
     }
 
     // ✅ MEMORY LEAK FIX: Cleanup keyboard shortcuts
     if (this.keyboardCleanup) {
       this.keyboardCleanup();
       this.keyboardCleanup = null;
-      console.log('🎚️ Keyboard shortcuts cleaned up');
     }
 
     // Cleanup timeline event listeners
@@ -806,7 +758,6 @@ export class TransportManager {
     this.subscribers.clear();
     this.audioEngine = null;
 
-    console.log('🎚️ TransportManager destroyed - all memory leaks fixed');
   }
 
   // =================== OPTIMISTIC UPDATES FOR ZERO-LATENCY UI ===================
@@ -819,7 +770,6 @@ export class TransportManager {
     this.previousState = { ...this.state };
     Object.assign(this.state, updates);
     this._emitStateChange('optimistic-update');
-    console.log('🎚️ TransportManager: Optimistic update', updates);
   }
 
   /**
@@ -830,7 +780,6 @@ export class TransportManager {
     this.previousState = null;
     Object.assign(this.state, motorState);
     this._emitStateChange('motor-confirmed');
-    console.log('🎚️ TransportManager: Motor confirmed state', motorState);
   }
 
   /**
@@ -841,7 +790,6 @@ export class TransportManager {
       this.state = { ...this.previousState };
       this.previousState = null;
       this._emitStateChange('optimistic-rollback');
-      console.log('🎚️ TransportManager: Rolled back optimistic update');
     }
   }
 
@@ -872,6 +820,5 @@ export class TransportManager {
     this.state = { ...this.state, ...motorState };
     this.previousState = null;
     this._emitStateChange('force-sync');
-    console.log('🎚️ TransportManager: Force synced to motor', motorState);
   }
 }

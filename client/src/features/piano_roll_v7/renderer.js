@@ -5,20 +5,34 @@ const RULER_HEIGHT = 30;
 const KEYBOARD_WIDTH = 80;
 const NOTES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
+// Export drawPlayhead for separate playhead layer rendering
+export { drawPlayhead };
+
+// Main rendering function (backward compatible)
 export function drawPianoRoll(ctx, engine) {
+    drawPianoRollStatic(ctx, engine);
+
+    // Draw playhead if playback data exists
+    if (engine.playhead || engine.isPlaying !== undefined) {
+        drawPlayhead(ctx, engine);
+    }
+}
+
+// Static rendering (everything except playhead) - for performance optimization
+export function drawPianoRollStatic(ctx, engine) {
     const { viewport } = engine;
     if (!viewport || viewport.width === 0 || viewport.height === 0) return;
 
     ctx.fillStyle = '#181A20';
     ctx.fillRect(0, 0, viewport.width, viewport.height);
 
-    // Draw layers
+    // Draw all layers EXCEPT playhead
     drawGrid(ctx, engine);
     drawNotes(ctx, engine); // Premium note rendering
     drawSelectionArea(ctx, engine); // Selection area overlay
     drawSlicePreview(ctx, engine); // ✅ SLICE PREVIEW
     drawSliceRange(ctx, engine); // ✅ SLICE RANGE
-    drawPlayhead(ctx, engine); // ✅ PLAYHEAD
+    // REMOVED: drawPlayhead(ctx, engine); - Now rendered separately for performance
     drawTimeline(ctx, engine);
     drawKeyboard(ctx, engine);
     drawCornerAndBorders(ctx, engine);

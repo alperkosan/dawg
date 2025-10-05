@@ -29,7 +29,6 @@ class DelayProcessor extends AudioWorkletProcessor {
     ];
     this.writeIndex = [0, 0];
 
-    console.log(`🎚️ ${this.effectType} initialized at ${this.sampleRate}Hz`);
 
     this.port.onmessage = (event) => {
       this.handleMessage(event.data);

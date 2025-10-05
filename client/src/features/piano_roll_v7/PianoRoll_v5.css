@@ -39,6 +39,16 @@
   height: 100%;
 }
 
+/* Multi-layer canvas system for performance optimization */
+.prv5-canvas-main {
+  z-index: 1; /* Static layer: grid, notes, keyboard, timeline */
+}
+
+.prv5-canvas-playhead {
+  z-index: 2; /* Playhead layer: only playhead rendering at 60Hz */
+  pointer-events: none; /* Allow mouse events to pass through to main canvas */
+}
+
 .prv5-debug-overlay {
   position: absolute;
   top: 10px;

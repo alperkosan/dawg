@@ -170,4 +170,15 @@ function VelocityLane({
     );
 }
 
-export default VelocityLane;
+// Memoize component to prevent unnecessary re-renders during playback
+export default React.memo(VelocityLane, (prevProps, nextProps) => {
+    // Custom comparison for performance
+    return (
+        prevProps.notes === nextProps.notes &&
+        prevProps.selectedNoteIds === nextProps.selectedNoteIds &&
+        prevProps.activeTool === nextProps.activeTool &&
+        prevProps.onNoteVelocityChange === nextProps.onNoteVelocityChange &&
+        prevProps.dimensions === nextProps.dimensions &&
+        prevProps.viewport === nextProps.viewport
+    );
+});

@@ -120,22 +120,34 @@ const InstrumentRow = ({
       </div>
 
       <div className="instrument-row__controls">
-        <Knob
-          label="Pan" size={28} value={mixerTrack.pan}
-          onChange={(val) => {
-            console.log('🎚️ Pan change:', mixerTrack.id, 'pan', val);
-            handleMixerParamChange(mixerTrack.id, 'pan', val);
-          }}
-          min={-1} max={1} defaultValue={0}
-        />
-        <Knob
-          label="Vol" size={28} value={mixerTrack.volume}
-          onChange={(val) => {
-            console.log('🎚️ Volume change:', mixerTrack.id, 'volume', val);
-            handleMixerParamChange(mixerTrack.id, 'volume', val);
-          }}
-          min={-60} max={6} defaultValue={0}
-        />
+        <div className="instrument-row__control-item">
+          <Knob
+            size={24}
+            value={mixerTrack.pan}
+            onChange={(val) => handleMixerParamChange(mixerTrack.id, 'pan', val)}
+            min={-1}
+            max={1}
+            defaultValue={0}
+            precision={2}
+            showValue={false}
+            aria-label="Pan"
+          />
+          <span className="instrument-row__control-label">P</span>
+        </div>
+        <div className="instrument-row__control-item">
+          <Knob
+            size={24}
+            value={mixerTrack.volume}
+            onChange={(val) => handleMixerParamChange(mixerTrack.id, 'volume', val)}
+            min={-60}
+            max={6}
+            defaultValue={0}
+            precision={1}
+            showValue={false}
+            aria-label="Volume"
+          />
+          <span className="instrument-row__control-label">V</span>
+        </div>
       </div>
 
       <div className="instrument-row__actions">

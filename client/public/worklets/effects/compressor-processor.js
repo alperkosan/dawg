@@ -37,7 +37,6 @@ class CompressorProcessor extends AudioWorkletProcessor {
       }
     ];
 
-    console.log(`🎚️ ${this.effectType} initialized at ${this.sampleRate}Hz`);
 
     this.port.onmessage = (event) => {
       this.handleMessage(event.data);

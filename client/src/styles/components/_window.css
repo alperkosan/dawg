@@ -7,10 +7,28 @@
   position: absolute;
   border-radius: var(--border-radius-lg);
   background: rgba(30, 30, 30, 0.7);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(10px) saturate(150%);
+  -webkit-backdrop-filter: blur(10px) saturate(150%);
   border: 1px solid rgba(58, 58, 58, 0.5);
   box-shadow: var(--shadow-lg);
+  will-change: transform;
+  contain: layout style paint;
+}
+
+/* Disable expensive effects during drag - CRITICAL for audio performance */
+.window-base-new.is-dragging {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  background: rgba(30, 30, 30, 0.85);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+  transition: none !important;
+}
+
+.window-base-new.is-dragging *,
+.window-base-new.is-dragging *::before,
+.window-base-new.is-dragging *::after {
+  transition: none !important;
+  animation: none !important;
 }
 
 .window-header {
@@ -19,11 +37,13 @@
   align-items: center;
   padding: var(--spacing-2) var(--spacing-3);
   cursor: move;
-  flex-shrink: 0; /* Header'ın küçülmesini engelle */
+  flex-shrink: 0;
   background: rgba(18, 18, 18, 0.5);
   border-bottom: 1px solid rgba(58, 58, 58, 0.5);
   border-top-left-radius: var(--border-radius-lg);
   border-top-right-radius: var(--border-radius-lg);
+  will-change: transform;
+  transform: translateZ(0);
 }
 
 .window-title {

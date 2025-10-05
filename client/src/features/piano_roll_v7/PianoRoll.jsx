@@ -1,7 +1,8 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useMemo } from 'react';
 import { usePianoRollEngine } from './usePianoRollEngine';
 import { useNoteInteractionsV2 } from './hooks/useNoteInteractionsV2';
-import { drawPianoRoll } from './renderer';
+import { drawPianoRollStatic, drawPlayhead } from './renderer';
+import { uiUpdateManager, UPDATE_PRIORITIES, UPDATE_FREQUENCIES } from '@/lib/core/UIUpdateManager';
 import Toolbar from './components/Toolbar';
 import VelocityLane from './components/VelocityLane';
 import { usePanelsStore } from '@/store/usePanelsStore';
@@ -12,18 +13,25 @@ import './PianoRoll_v5.css';
 function PianoRoll() {
     const containerRef = useRef(null);
     const canvasRef = useRef(null);
+    const playheadCanvasRef = useRef(null); // NEW: Separate playhead layer
     const { snapValue, setSnapValue, ...engine } = usePianoRollEngine(containerRef);
 
     // Toolbar state
     const [activeTool, setActiveTool] = useState('select');
     const [zoom, setZoom] = useState(1.0);
 
-    // ✅ UNIFIED TRANSPORT SYSTEM - Single source of truth
+    // ✅ UNIFIED TRANSPORT SYSTEM - Separate subscriptions but stable references
     const togglePlayPause = usePlaybackStore(state => state.togglePlayPause);
     const playbackMode = usePlaybackStore(state => state.playbackMode);
-    const position = usePlaybackStore(state => playbackMode === 'pattern' ? state.currentStep : 0);
     const isPlaying = usePlaybackStore(state => state.isPlaying);
     const playbackState = usePlaybackStore(state => state.playbackState);
+    const currentStep = usePlaybackStore(state => state.currentStep);
+
+    // Memoize position calculation to prevent re-renders
+    const position = useMemo(
+        () => playbackMode === 'pattern' ? currentStep : 0,
+        [playbackMode, currentStep]
+    );
 
     // Get data from persistent stores
     const pianoRollInstrumentId = usePanelsStore(state => state.pianoRollInstrumentId);
@@ -55,28 +63,65 @@ function PianoRoll() {
             ctx.scale(dpr, dpr);
         }
 
-        // V2 Hook - Basit data yapısı + Playhead
+        // Static data (everything except playhead)
         const engineWithData = {
             ...engine,
             snapValue,
-            notes: noteInteractions.notes, // V2 Hook'dan direkt array
+            notes: noteInteractions.notes,
             selectedNoteIds: noteInteractions.selectedNoteIds,
             hoveredNoteId: noteInteractions.hoveredNoteId,
             selectionArea: noteInteractions.selectionArea,
             isSelectingArea: noteInteractions.isSelectingArea,
             previewNote: noteInteractions.previewNote,
-            slicePreview: noteInteractions.slicePreview, // ✅ SLICE PREVIEW
-            sliceRange: noteInteractions.sliceRange, // ✅ SLICE RANGE
-            // ✅ PLAYHEAD DATA
-            playhead: {
-                position,
-                isPlaying,
-                playbackState
-            }
+            slicePreview: noteInteractions.slicePreview,
+            sliceRange: noteInteractions.sliceRange
         };
-        drawPianoRoll(ctx, engineWithData);
+        drawPianoRollStatic(ctx, engineWithData);
 
-    }, [engine, snapValue, noteInteractions, position, isPlaying, playbackState, playbackMode]);
+    }, [engine, snapValue, noteInteractions]); // REMOVED: position, isPlaying, playbackState
+
+    // Playhead canvas - fast rendering via UIUpdateManager
+    useEffect(() => {
+        if (!isPlaying) {
+            const canvas = playheadCanvasRef.current;
+            const ctx = canvas?.getContext('2d');
+            if (ctx) {
+                const rect = canvas.getBoundingClientRect();
+                ctx.clearRect(0, 0, rect.width, rect.height);
+            }
+            return;
+        }
+
+        const unsubscribe = uiUpdateManager.subscribe(
+            'piano-roll-playhead',
+            () => {
+                const canvas = playheadCanvasRef.current;
+                const ctx = canvas?.getContext('2d');
+                if (!ctx || !engine.viewport.width) return;
+
+                const dpr = window.devicePixelRatio || 1;
+                const rect = canvas.getBoundingClientRect();
+
+                if (canvas.width !== rect.width * dpr || canvas.height !== rect.height * dpr) {
+                    canvas.width = rect.width * dpr;
+                    canvas.height = rect.height * dpr;
+                    ctx.scale(dpr, dpr);
+                }
+
+                ctx.clearRect(0, 0, rect.width, rect.height);
+
+                drawPlayhead(ctx, {
+                    viewport: engine.viewport,
+                    dimensions: engine.dimensions,
+                    playhead: { position, isPlaying, playbackState }
+                });
+            },
+            UPDATE_PRIORITIES.HIGH,
+            UPDATE_FREQUENCIES.REALTIME
+        );
+
+        return unsubscribe;
+    }, [isPlaying, engine.viewport, engine.dimensions, position, playbackState]);
 
     // Toolbar handlers
     const handleToolChange = (tool) => {
@@ -92,6 +137,12 @@ function PianoRoll() {
         // Update note velocity via note interactions
         noteInteractions.updateNoteVelocity?.(noteId, newVelocity);
     };
+
+    // Memoize selectedNoteIds array to prevent VelocityLane re-renders
+    const selectedNoteIdsArray = useMemo(
+        () => Array.from(noteInteractions.selectedNoteIds),
+        [noteInteractions.selectedNoteIds]
+    );
 
     // ✅ REMOVED: Global keyboard shortcuts now handled by TransportManager
     // No need for component-level spacebar handling
@@ -150,7 +201,8 @@ function PianoRoll() {
                 onContextMenu={(e) => e.preventDefault()}
                 tabIndex={0}
             >
-                <canvas ref={canvasRef} className="prv5-canvas" />
+                <canvas ref={canvasRef} className="prv5-canvas prv5-canvas-main" />
+                <canvas ref={playheadCanvasRef} className="prv5-canvas prv5-canvas-playhead" />
                 <div className="prv5-debug-overlay">
                     <div>Scroll: {Math.round(engine.viewport.scrollX)}, {Math.round(engine.viewport.scrollY)}</div>
                     <div>Zoom: {engine.viewport.zoomX.toFixed(2)}x, {engine.viewport.zoomY.toFixed(2)}y</div>
@@ -164,7 +216,7 @@ function PianoRoll() {
             {/* ✅ VELOCITY LANE */}
             <VelocityLane
                 notes={noteInteractions.notes}
-                selectedNoteIds={Array.from(noteInteractions.selectedNoteIds)}
+                selectedNoteIds={selectedNoteIdsArray}
                 onNoteVelocityChange={handleNoteVelocityChange}
                 dimensions={engine.dimensions}
                 viewport={engine.viewport}

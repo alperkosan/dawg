@@ -1,6 +1,6 @@
 // Piano Roll v7 Note Interactions Hook V2 - Sıfırdan tasarım
 // ArrangementStore merkezli, işlevsellik odaklı
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useArrangementStore } from '@/store/useArrangementStore';
 import { samplePreview } from '../utils/samplePreview';
 
@@ -83,18 +83,21 @@ export function useNoteInteractionsV2(
         }));
     }, [currentInstrument]);
 
+    // Memoize converted notes to avoid expensive recalculations on every mouse move
+    const convertedNotes = useMemo(() => {
+        const storedNotes = getPatternNotes();
+        return convertToPianoRollFormat(storedNotes);
+    }, [getPatternNotes, convertToPianoRollFormat]);
+
     // Get notes in Piano Roll format for display
     const notes = useCallback(() => {
-        const storedNotes = getPatternNotes();
-        const baseNotes = convertToPianoRollFormat(storedNotes);
-
         // Drag sırasında geçici notaları kullan
         if (tempNotes.length > 0) {
             return tempNotes;
         }
 
-        return baseNotes;
-    }, [getPatternNotes, convertToPianoRollFormat, tempNotes]);
+        return convertedNotes;
+    }, [convertedNotes, tempNotes]);
 
     // Update pattern store with Piano Roll native format
     const updatePatternStore = useCallback((pianoRollNotes) => {

@@ -314,7 +314,6 @@ export class NativeAudioEngine {
             
             const workletConfigs = [
                 { path: '/worklets/instrument-processor.js', name: 'instrument-processor' },
-                { path: '/worklets/effects-processor.js', name: 'effects-processor' },
                 { path: '/worklets/mixer-processor.js', name: 'mixer-processor' },
                 { path: '/worklets/analysis-processor.js', name: 'analysis-processor' }
             ];

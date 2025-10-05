@@ -45,7 +45,6 @@ export class PlaybackEngine {
 
     // Initialize
     this._bindAudioEvents();
-    console.log('🎵 PlaybackEngine initialized');
   }
 
   // =================== CORE COMMANDS ===================
@@ -54,26 +53,18 @@ export class PlaybackEngine {
    * ✅ PLAY - Single unified play command
    */
   async play(startPosition = null) {
-    console.log(`🎵 PlaybackEngine.play(${startPosition}) - state before:`, {
-      currentPosition: this.state.currentPosition,
-      playbackState: this.state.playbackState,
-      isPlaying: this.state.isPlaying
-    });
 
     // Early return if already playing
     if (this.state.isPlaying) {
-      console.log('🎵 Already playing, ignoring');
       return false;
     }
 
     try {
       // Set position if specified
       if (startPosition !== null) {
-        console.log(`🎵 Setting position from ${this.state.currentPosition} to ${startPosition}`);
         this.state.currentPosition = Math.max(0, startPosition);
       }
 
-      console.log(`🎵 Starting audio engine from position: ${this.state.currentPosition}`);
       // Start audio engine
       await this.audioEngine.playbackManager.play(this.state.currentPosition);
 
@@ -99,10 +90,8 @@ export class PlaybackEngine {
    * ✅ PAUSE - Unified pause command
    */
   async pause() {
-    console.log('🎵 PlaybackEngine.pause()');
 
     if (!this.state.isPlaying) {
-      console.log('🎵 Not playing, ignoring pause');
       return false;
     }
 
@@ -132,7 +121,6 @@ export class PlaybackEngine {
    * ✅ STOP - Smart behavior with double-click reset (matching TransportManager)
    */
   async stop() {
-    console.log('🎵 PlaybackEngine.stop()');
 
     try {
       const now = Date.now();
@@ -151,10 +139,8 @@ export class PlaybackEngine {
       // ✅ STOP BEHAVIOR - Reset to zero on every stop
       if (this.state.loopEnabled && this.state.loopStart > 0) {
         this.state.currentPosition = this.state.loopStart;
-        console.log('🎵 Stop: Reset to loop start');
       } else {
         this.state.currentPosition = 0;
-        console.log('🎵 Stop: Reset to zero');
       }
 
       this.state.lastStopTime = now;
@@ -175,24 +161,16 @@ export class PlaybackEngine {
    * ✅ TOGGLE - Smart toggle based on current state
    */
   async togglePlayPause() {
-    console.log(`🎵 PlaybackEngine.togglePlayPause() - current state:`, {
-      playbackState: this.state.playbackState,
-      currentPosition: this.state.currentPosition,
-      isPlaying: this.state.isPlaying
-    });
 
     switch (this.state.playbackState) {
       case PLAYBACK_STATES.PLAYING:
-        console.log('🎵 PLAYING → PAUSE');
         return await this.pause();
 
       case PLAYBACK_STATES.PAUSED:
-        console.log('🎵 PAUSED → PLAY (resume)');
         return await this.play(); // Resume from current position
 
       case PLAYBACK_STATES.STOPPED:
       default:
-        console.log(`🎵 STOPPED → PLAY from position: ${this.state.currentPosition}`);
         return await this.play(this.state.currentPosition);
     }
   }
@@ -205,18 +183,12 @@ export class PlaybackEngine {
   async jumpToPosition(position, options = {}) {
     const { smooth = true } = options;
 
-    console.log(`🎵 PlaybackEngine.jumpToPosition(${position}) - current state:`, {
-      currentPosition: this.state.currentPosition,
-      playbackState: this.state.playbackState,
-      isPlaying: this.state.isPlaying
-    });
 
     // Clamp position
     const newPosition = Math.max(0, position);
 
     // Update position immediately
     this.state.currentPosition = newPosition;
-    console.log(`🎵 Position updated to: ${newPosition}`);
 
     // If playing, update audio engine
     if (this.state.isPlaying && this.audioEngine?.playbackManager) {
@@ -274,7 +246,6 @@ export class PlaybackEngine {
   _startPositionTracking() {
     if (this.positionTrackingSubscription) return;
 
-    console.log('🎵 PlaybackEngine: Starting UIUpdateManager-based position tracking');
 
     // Subscribe to UIUpdateManager with NORMAL priority (lower than TransportManager)
     this.positionTrackingSubscription = uiUpdateManager.subscribe(
@@ -291,7 +262,6 @@ export class PlaybackEngine {
     if (this.positionTrackingSubscription) {
       this.positionTrackingSubscription(); // Call unsubscribe function
       this.positionTrackingSubscription = null;
-      console.log('🎵 PlaybackEngine: Stopped UIUpdateManager-based position tracking');
     }
   }
 
@@ -323,7 +293,6 @@ export class PlaybackEngine {
 
     // Note: Motor events are now managed internally by manual state updates
     // This prevents conflicts between manual state and motor events
-    console.log('🎵 Audio events bound (manual state management)');
   }
 
   // =================== EVENT SYSTEM ===================
@@ -353,11 +322,6 @@ export class PlaybackEngine {
       timestamp: Date.now()
     };
 
-    console.log(`🎵 PlaybackEngine event (${reason}):`, {
-      playbackState: this.state.playbackState,
-      isPlaying: this.state.isPlaying,
-      currentPosition: this.state.currentPosition
-    });
 
     this.subscribers.forEach(callback => {
       try {
@@ -423,6 +387,5 @@ export class PlaybackEngine {
     this._stopPositionTracking();
     this.subscribers.clear();
     this.audioEngine = null;
-    console.log('🎵 PlaybackEngine destroyed');
   }
 }

@@ -112,7 +112,6 @@ export class PlaybackController extends SimpleEventEmitter {
   }
 
   _handleMotorEvent(eventType) {
-    console.log(`🎵 Motor event: ${eventType}`);
 
     switch (eventType) {
       case 'started':
@@ -157,7 +156,6 @@ export class PlaybackController extends SimpleEventEmitter {
    * ✅ UNIFIED PLAY - Tek play fonksiyonu
    */
   async play(startPosition = null) {
-    console.log(`🎵 PlaybackController.play(${startPosition})`);
 
     if (this.state.isPlaying) return false;
 
@@ -187,7 +185,6 @@ export class PlaybackController extends SimpleEventEmitter {
    * ✅ UNIFIED PAUSE
    */
   async pause() {
-    console.log('🎵 PlaybackController.pause()');
 
     if (!this.state.isPlaying) return false;
 
@@ -211,7 +208,6 @@ export class PlaybackController extends SimpleEventEmitter {
    * ✅ UNIFIED STOP - Smart behavior with double-click reset
    */
   async stop() {
-    console.log('🎵 PlaybackController.stop()');
 
     try {
       const now = Date.now();
@@ -227,10 +223,8 @@ export class PlaybackController extends SimpleEventEmitter {
       // ✅ STOP BEHAVIOR - Reset to zero on every stop
       if (this.state.loopEnabled && this.state.loopStart > 0) {
         this.state.currentPosition = this.state.loopStart;
-        console.log('🎵 Stop: Reset to loop start');
       } else {
         this.state.currentPosition = 0;
-        console.log('🎵 Stop: Reset to zero');
       }
 
       this.state.lastStopTime = now;
@@ -272,7 +266,6 @@ export class PlaybackController extends SimpleEventEmitter {
       autoPlay = false
     } = options;
 
-    console.log(`🎵 Jump to position: ${position} (smooth: ${smooth})`);
 
     // User scrubbing başlat
     this.state.isUserScrubbing = true;
@@ -356,7 +349,6 @@ export class PlaybackController extends SimpleEventEmitter {
   _startPositionLoop() {
     if (this.positionLoopSubscription) return;
 
-    console.log('🎵 PlaybackController: Starting UIUpdateManager-based position loop');
 
     // Subscribe to UIUpdateManager with NORMAL priority
     this.positionLoopSubscription = uiUpdateManager.subscribe(
@@ -375,7 +367,6 @@ export class PlaybackController extends SimpleEventEmitter {
     if (this.positionLoopSubscription) {
       this.positionLoopSubscription(); // Call unsubscribe function
       this.positionLoopSubscription = null;
-      console.log('🎵 PlaybackController: Stopped UIUpdateManager-based position loop');
     }
   }
 
@@ -389,12 +380,6 @@ export class PlaybackController extends SimpleEventEmitter {
       timestamp: Date.now()
     };
 
-    console.log(`🎵 PlaybackController state change (${reason}):`, {
-      playbackState: stateSnapshot.playbackState,
-      isPlaying: stateSnapshot.isPlaying,
-      currentPosition: stateSnapshot.currentPosition,
-      reason
-    });
 
     // ✅ Emit to event listeners (EventEmitter)
     this.emit('state-change', eventData);

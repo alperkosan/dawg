@@ -35,8 +35,6 @@ class SaturatorProcessor extends AudioWorkletProcessor {
 
     this.oversample = 2;
 
-    console.log(`🎚️ ${this.effectType} initialized at ${this.sampleRate}Hz`);
-
     this.port.onmessage = (event) => {
       this.handleMessage(event.data);
     };

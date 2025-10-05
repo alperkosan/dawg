@@ -278,7 +278,6 @@ export class PlaybackManager {
             this.transport.setPosition(0);
         }
 
-        console.log('🎵 Loop restart: Reset to position 0 (consistent behavior)');
 
         // Mevcut scheduled events'leri temizle
         this._clearScheduledEvents();
@@ -335,14 +334,12 @@ export class PlaybackManager {
     setPlaybackMode(mode) {
         if (this.currentMode === mode) return;
 
-        console.log(`🎵 PlaybackManager: Mode changing ${this.currentMode} → ${mode}`);
 
         this.currentMode = mode;
         this._updateLoopSettings();
 
         // ✅ FIX: If playing, reschedule content for new mode (don't stop/restart)
         if (this.isPlaying) {
-            console.log(`🎵 Rescheduling content for mode: ${mode}`);
             this._scheduleContent(null, `mode-change-${mode}`, true);
         }
     }
@@ -481,7 +478,6 @@ export class PlaybackManager {
     // =================== PLAYBACK CONTROLS ===================
 
     play(startStep = null) {
-        console.log('PlaybackManager.play() called with startStep:', startStep);
         if (this.isPlaying && !this.isPaused) return;
 
         try {
@@ -492,23 +488,19 @@ export class PlaybackManager {
 
             if (startStep !== null) {
                 // EXPLICIT POSITION: Jump to requested position
-                console.log(`🎵 Play with explicit position: ${startStep}`);
                 playPosition = startStep;
                 this.jumpToStep(startStep);
             } else if (this.isPaused) {
                 // RESUME: Keep exact current position, don't reset
-                console.log(`🎵 Resume from pause at position: ${this.currentPosition}`);
                 playPosition = this.currentPosition;
             } else {
                 // FRESH START: Use current position (may have been set by timeline click)
-                console.log(`🎵 Fresh start from position: ${this.currentPosition}`);
                 playPosition = this.currentPosition;
             }
 
             // ✅ CRITICAL: Always ensure transport position matches our intended position
             if (this.transport.setPosition) {
                 this.transport.setPosition(playPosition);
-                console.log(`🎵 Transport position set to: ${playPosition}`);
             }
 
             this._updateLoopSettingsImmediate(); // Force immediate loop update for playback start
@@ -584,7 +576,6 @@ export class PlaybackManager {
                 this.transport.setPosition(0);
             }
 
-            console.log('🎵 Stop: Reset to position 0');
 
             // Update UI position
             const { usePlaybackStore } = require('../../store/usePlaybackStoreV2');
@@ -602,7 +593,6 @@ export class PlaybackManager {
         // ✅ SIMPLIFIED: Always immediate jump, regardless of state
         const targetStep = Math.max(0, Math.min(step, this.loopEnd - 1));
 
-        console.log(`🎵 PlaybackManager.jumpToStep(${step} -> ${targetStep}) - immediate jump`);
 
         // ALWAYS set position immediately
         this.currentPosition = targetStep;
@@ -691,16 +681,13 @@ export class PlaybackManager {
         const scheduleCallback = () => {
             const baseTime = startTime || this.transport.audioContext.currentTime;
 
-            console.log(`🎵 _scheduleContent - currentMode: ${this.currentMode}, reason: ${reason}`);
 
             // Önceki event'leri temizle (eğer daha önce temizlenmediyse)
             this._clearScheduledEvents();
 
             if (this.currentMode === 'pattern') {
-                console.log('🎵 Scheduling PATTERN content');
                 this._schedulePatternContent(baseTime);
             } else {
-                console.log('🎵 Scheduling SONG content');
                 try {
                     this._scheduleSongContent(baseTime);
                 } catch (error) {
@@ -751,8 +738,6 @@ export class PlaybackManager {
         const workspaceStore = useArrangementWorkspaceStore.getState();
         const arrangement = workspaceStore.getActiveArrangement();
 
-        console.log('🎵 _scheduleSongContent called');
-        console.log('🎵 Arrangement:', arrangement);
 
         if (!arrangement) {
             console.warn('🎵 No active arrangement for song mode');
@@ -768,10 +753,6 @@ export class PlaybackManager {
         const soloTracks = tracks.filter(t => t.solo);
         const hasSolo = soloTracks.length > 0;
 
-        console.log(`🎵 Scheduling song content: ${clips.length} clips from arrangement "${arrangement.name}"`);
-        console.log('🎵 Clips:', clips);
-        console.log('🎵 Available patterns:', Object.keys(patterns));
-        console.log(`🎵 Track routing: ${hasSolo ? `${soloTracks.length} solo` : 'normal'}, muted tracks will be skipped`);
 
         if (clips.length === 0) {
             console.warn('🎵 ⚠️ No clips in arrangement - song mode will play silently (playhead still moves)');
@@ -788,13 +769,11 @@ export class PlaybackManager {
 
             // Skip if track is muted
             if (track.muted) {
-                console.log(`🎵 Skipping clip ${clip.id} on muted track ${track.name}`);
                 return;
             }
 
             // If any track is solo, only play clips on solo tracks
             if (hasSolo && !track.solo) {
-                console.log(`🎵 Skipping clip ${clip.id} on non-solo track ${track.name}`);
                 return;
             }
             // ✅ Handle different clip types: 'pattern' or 'audio'
@@ -815,7 +794,6 @@ export class PlaybackManager {
                 const clipDurationBeats = clip.duration || pattern.length || 4; // Use pattern length if available
                 const clipDurationSteps = clipDurationBeats * 4;
 
-                console.log(`🎵 Scheduling pattern clip ${clip.id}: pattern ${clip.patternId} at step ${clipStartStep}, duration: ${clipDurationBeats} beats (${clipDurationSteps} steps)`);
 
                 // Schedule pattern notes with clip timing offset
                 Object.entries(pattern.data).forEach(([instrumentId, notes]) => {
@@ -870,11 +848,9 @@ export class PlaybackManager {
 
         // Skip if in the past (no looping for audio clips in song mode)
         if (absoluteTime < baseTime) {
-            console.log(`🎵 Audio clip ${clip.id} is in the past, skipping`);
             return;
         }
 
-        console.log(`🎵 Scheduling audio clip ${clip.id} at beat ${clipStartBeats} (${absoluteTime.toFixed(3)}s)`);
 
         // Schedule audio playback
         this.transport.scheduleEvent(
@@ -967,7 +943,6 @@ export class PlaybackManager {
 
         source.start(time, offset, duration);
 
-        console.log(`🎵 Playing audio clip at ${time.toFixed(3)}s (rate: ${playbackRate.toFixed(2)}x, gain: ${gainDb.toFixed(1)}dB, offset: ${offset.toFixed(2)}s)`);
     }
 
     /**
