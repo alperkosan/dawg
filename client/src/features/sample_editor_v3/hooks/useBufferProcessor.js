@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { BufferProcessor } from '../../../lib/audio/BufferProcessing';
+import { BufferProcessor } from '@/lib/audio/BufferProcessing';
 
 export const useBufferProcessor = () => {
   const [isProcessing, setIsProcessing] = useState(false);

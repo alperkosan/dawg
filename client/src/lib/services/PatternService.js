@@ -1,8 +1,8 @@
 // lib/services/PatternService.js - ENHANCED FOR NATIVE ENGINE
 // DAWG - Enhanced Pattern Service - Native AudioWorklet Integration
 
-import { useArrangementStore } from '../../store/useArrangementStore';
-import { usePlaybackStore } from '../../store/usePlaybackStore';
+import { useArrangementStore } from '@/store/useArrangementStore';
+import { usePlaybackStore } from '@/store/usePlaybackStore';
 import { AudioContextService } from './AudioContextService';
 import { NativeTimeUtils } from '../utils/NativeTimeUtils';
 import { calculatePatternLoopLength, analyzePatternDensity } from '../utils/patternUtils';

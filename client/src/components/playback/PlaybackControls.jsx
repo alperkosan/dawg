@@ -7,9 +7,9 @@ import {
   Repeat, Clock, Radio, Music, Film,
   Volume2, Settings, Zap, Target
 } from 'lucide-react';
-import { usePlaybackStore } from '../../store/usePlaybackStore';
-import { useArrangementStore } from '../../store/useArrangementStore';
-import { PLAYBACK_MODES, PLAYBACK_STATES } from '../../config/constants';
+import { usePlaybackStore } from '@/store/usePlaybackStore';
+import { useArrangementStore } from '@/store/useArrangementStore';
+import { PLAYBACK_MODES, PLAYBACK_STATES } from '@/config/constants';
 
 export const PlaybackControls = () => {
   const {

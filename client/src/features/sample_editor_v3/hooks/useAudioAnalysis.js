@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { MLAudioAnalysis } from '../../../lib/audio/MLAudioAnalysis';
+import { MLAudioAnalysis } from '@/lib/audio/MLAudioAnalysis';
 
 export const useAudioAnalysis = () => {
   const [analysis, setAnalysis] = useState(null);

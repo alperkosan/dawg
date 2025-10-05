@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { ImageOff, RotateCcw, Waves, ArrowLeftRight } from 'lucide-react';
 import { WaveformV3 } from './WaveformV3';
 import { WaveformToolbar } from './WaveformToolbar';
-import { useInstrumentsStore } from '../../../store/useInstrumentsStore'; // store'u import ediyoruz
+import { useInstrumentsStore } from '@/store/useInstrumentsStore'; // store'u import ediyoruz
 
 // Dikey araç çubuğu için buton bileşeni
 const WorkbenchAction = ({ label, icon: Icon, isActive, onClick }) => (

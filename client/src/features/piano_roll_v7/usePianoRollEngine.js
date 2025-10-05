@@ -1,7 +1,7 @@
 // src/features/piano_roll_v5/usePianoRollEngine.js
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import {usePlaybackStore} from '../../store/usePlaybackStore';
-import { uiUpdateManager, UPDATE_PRIORITIES, UPDATE_FREQUENCIES } from '../../lib/core/UIUpdateManager.js';
+import {usePlaybackStore} from '@/store/usePlaybackStore';
+import { uiUpdateManager, UPDATE_PRIORITIES, UPDATE_FREQUENCIES } from '@/lib/core/UIUpdateManager.js';
 
 // --- SABİTLER VE LİMİTLER ---
 const RULER_HEIGHT = 30;

@@ -9,7 +9,7 @@
  * 4. ZERO-LATENCY COMMANDS - Transport komutları direkt motor'a
  */
 
-import { PLAYBACK_STATES } from '../../config/constants.js';
+import { PLAYBACK_STATES } from '@/config/constants.js';
 
 export class AudioEngineTransportBridge {
   constructor(audioEngine, transportManager) {

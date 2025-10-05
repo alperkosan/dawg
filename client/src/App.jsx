@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef, Suspense, useCallback, useMemo } fr
 // Core Systems
 import { NativeAudioEngine } from './lib/core/NativeAudioEngine';
 import { AudioContextService } from './lib/services/AudioContextService';
+import { visualizationEngine } from './lib/visualization/VisualizationEngine';
 
 // Stores
 import { usePlaybackStore } from './store/usePlaybackStore';
@@ -10,10 +11,27 @@ import { useArrangementStore } from './store/useArrangementStore';
 import { useInstrumentsStore } from './store/useInstrumentsStore';
 import { useMixerStore } from './store/useMixerStore';
 
+// Helper: Create demo audio buffer (sine wave for testing)
+const createDemoAudioBuffer = (audioContext, frequency = 440, duration = 2) => {
+  const sampleRate = audioContext.sampleRate;
+  const bufferLength = sampleRate * duration;
+  const buffer = audioContext.createBuffer(1, bufferLength, sampleRate);
+  const channelData = buffer.getChannelData(0);
+
+  // Generate sine wave with fade out
+  for (let i = 0; i < bufferLength; i++) {
+    const t = i / sampleRate;
+    const fadeOut = Math.max(0, 1 - (t / duration) * 0.3); // Gentle fade
+    channelData[i] = Math.sin(2 * Math.PI * frequency * t) * 0.5 * fadeOut;
+  }
+
+  return buffer;
+};
+
 // UI Components
 import StartupScreen from './components/StartUpScreen'; // Başlangıç ekranı
-import TopToolbar from './features/top_toolbar/TopToolbar';
-import MainToolbar from './features/main_toolbar/MainToolbar';
+import TopToolbar from './features/toolbars/TopToolbar';
+import MainToolbar from './features/toolbars/MainToolbar';
 import WorkspacePanel from './layout/WorkspacePanel';
 import { ThemeProvider } from './components/ThemeProvider';
 import Taskbar from './features/taskbar/Taskbar';
@@ -64,6 +82,10 @@ function App() {
       // Motoru, uygulama genelinde erişilebilir olan servisimize kaydediyoruz.
       await AudioContextService.setAudioEngine(engine);
 
+      // ✅ Initialize VisualizationEngine
+      visualizationEngine.init(engine.audioContext);
+      console.log('✅ VisualizationEngine initialized');
+
       // ✅ PERFORMANCE: Use fresh store data with memoized getters
       console.log('📥 Başlangıç verileri yükleniyor...');
       const instruments = storeGetters.getInstruments();
@@ -89,6 +111,29 @@ function App() {
       // ✅ PERFORMANCE: Get fresh data but with memoized getters
       engine.setActivePattern(storeGetters.getActivePatternId());
       engine.setBPM(storeGetters.getBPM());
+
+      // 🎵 Create demo audio sample for testing fade/gain controls
+      console.log('🎵 Creating demo audio sample...');
+      const demoBuffer = createDemoAudioBuffer(engine.audioContext, 440, 2);
+      const demoInstrument = {
+        id: 'demo-sample',
+        name: 'Demo Audio',
+        type: 'sample',
+        audioBuffer: demoBuffer,
+        mixerTrackId: 'track-14', // Assuming we have spare mixer tracks
+        pianoRoll: false
+      };
+
+      // Add demo instrument to store and engine
+      useInstrumentsStore.getState().instruments.push(demoInstrument);
+
+      // Register demo sample in audio engine
+      try {
+        await engine.createInstrument(demoInstrument);
+        console.log('✅ Demo audio sample created and registered in engine');
+      } catch (error) {
+        console.error('❌ Failed to register demo sample in engine:', error);
+      }
 
       setEngineStatus('ready');
       console.log('✅ Ses sistemi başarıyla başlatıldı ve hazır!');

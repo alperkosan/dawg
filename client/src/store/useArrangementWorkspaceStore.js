@@ -27,7 +27,22 @@ const createInitialArrangement = (id, name) => ({
     { id: 'track-7', name: 'Track 7', color: '#fc5c65', height: 60, muted: false, solo: false, locked: false, volume: 1.0, pan: 0 },
     { id: 'track-8', name: 'Track 8', color: '#26de81', height: 60, muted: false, solo: false, locked: false, volume: 1.0, pan: 0 },
   ],
-  clips: [],
+  clips: [
+    // Demo audio clip for testing fade/gain controls
+    {
+      id: 'demo-audio-clip',
+      type: 'audio',
+      sampleId: 'demo-sample', // Will be created in instruments store
+      trackId: 'track-2',
+      startTime: 4, // Start at beat 4 (bar 2)
+      duration: 8, // 8 beats (2 bars)
+      color: '#f59e0b',
+      name: 'Demo Audio',
+      fadeIn: 0.5, // 0.5 beat fade in
+      fadeOut: 1.0, // 1 beat fade out
+      gain: -1.4 // -1.4 dB
+    }
+  ],
   tempo: 140,
   timeSignature: [4, 4],
   length: 128, // bars
@@ -360,6 +375,58 @@ export const useArrangementWorkspaceStore = create((set, get) => ({
   },
 
   /**
+   * Toggle track mute
+   */
+  toggleTrackMute: (trackId) => {
+    const activeArrangementId = get().activeArrangementId;
+    const arrangement = get().arrangements[activeArrangementId];
+    if (!arrangement) return;
+
+    const updatedTracks = arrangement.tracks.map(track =>
+      track.id === trackId ? { ...track, muted: !track.muted } : track
+    );
+
+    set(state => ({
+      arrangements: {
+        ...state.arrangements,
+        [activeArrangementId]: {
+          ...state.arrangements[activeArrangementId],
+          tracks: updatedTracks,
+          modified: Date.now()
+        }
+      }
+    }));
+
+    console.log(`🎵 Toggled mute for track: ${trackId}`);
+  },
+
+  /**
+   * Toggle track solo
+   */
+  toggleTrackSolo: (trackId) => {
+    const activeArrangementId = get().activeArrangementId;
+    const arrangement = get().arrangements[activeArrangementId];
+    if (!arrangement) return;
+
+    const updatedTracks = arrangement.tracks.map(track =>
+      track.id === trackId ? { ...track, solo: !track.solo } : track
+    );
+
+    set(state => ({
+      arrangements: {
+        ...state.arrangements,
+        [activeArrangementId]: {
+          ...state.arrangements[activeArrangementId],
+          tracks: updatedTracks,
+          modified: Date.now()
+        }
+      }
+    }));
+
+    console.log(`🎵 Toggled solo for track: ${trackId}`);
+  },
+
+  /**
    * Update track properties
    */
   updateTrack: (trackId, updates) => {
@@ -391,11 +458,19 @@ export const useArrangementWorkspaceStore = create((set, get) => ({
       id: `clip-${Date.now()}`,
       type: clipData.type || 'pattern', // 'pattern' or 'audio'
       patternId: clipData.patternId,
+      sampleId: clipData.sampleId, // For audio clips
       trackId: clipData.trackId,
       startTime: clipData.startTime || 0,
       duration: clipData.duration || 4,
       color: clipData.color || '#00ff88',
       name: clipData.name || 'Clip',
+      // Audio clip specific properties
+      fadeIn: clipData.fadeIn || 0, // Fade in duration in beats
+      fadeOut: clipData.fadeOut || 0, // Fade out duration in beats
+      gain: clipData.gain !== undefined ? clipData.gain : 0, // Gain in dB (-inf to +12)
+      playbackRate: clipData.playbackRate || 1.0, // Playback speed multiplier (0.5 = half speed, 2.0 = double speed)
+      originalDuration: clipData.originalDuration || clipData.duration, // Original duration before time stretch
+      sampleOffset: clipData.sampleOffset || 0, // Offset in beats - where to start playing in the audio buffer
       ...clipData
     };
 
@@ -751,6 +826,37 @@ export const useArrangementWorkspaceStore = create((set, get) => ({
     }
 
     return filtered;
+  },
+
+  // =================== GETTERS ===================
+
+  /**
+   * Get active arrangement
+   * @returns {Object|null} Active arrangement object
+   */
+  getActiveArrangement: () => {
+    const state = get();
+    return state.arrangements[state.activeArrangementId] || null;
+  },
+
+  /**
+   * Get active arrangement clips with pattern data
+   * @returns {Array} Array of clips with pattern references
+   */
+  getActiveArrangementClips: () => {
+    const state = get();
+    const arrangement = state.arrangements[state.activeArrangementId];
+    return arrangement?.clips || [];
+  },
+
+  /**
+   * Get active arrangement tracks
+   * @returns {Array} Array of tracks
+   */
+  getActiveArrangementTracks: () => {
+    const state = get();
+    const arrangement = state.arrangements[state.activeArrangementId];
+    return arrangement?.tracks || [];
   }
 }));
 

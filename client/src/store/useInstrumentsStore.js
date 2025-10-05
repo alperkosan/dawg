@@ -2,8 +2,8 @@
 // NativeAudioEngine ve AudioContextService ile tam entegre, olay tabanlı mimari.
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
-import { initialInstruments } from '../config/initialData';
-import { AudioContextService } from '../lib/services/AudioContextService';
+import { initialInstruments } from '@/config/initialData';
+import { AudioContextService } from '@/lib/services/AudioContextService';
 import { storeManager } from './StoreManager';
 
 export const useInstrumentsStore = create((set, get) => ({

@@ -7,7 +7,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import TransportManagerSingleton from '../lib/core/TransportManagerSingleton.js';
+import TransportManagerSingleton from '@/lib/core/TransportManagerSingleton.js';
 
 /**
  * ✅ MAIN TRANSPORT HOOK

@@ -1,8 +1,8 @@
 // hooks/useEngineState.js
 // Ortak kullanılabilir motor durumu takip hook'u
 import { useState, useEffect, useCallback } from 'react';
-import { AudioContextService } from '../lib/services/AudioContextService';
-import { usePlaybackStore } from '../store/usePlaybackStore';
+import { AudioContextService } from '@/lib/services/AudioContextService';
+import { usePlaybackStore } from '@/store/usePlaybackStore';
 
 /**
  * Motor durumunu ve transport olaylarını takip eden hook

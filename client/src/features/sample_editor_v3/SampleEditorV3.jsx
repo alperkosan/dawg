@@ -1,7 +1,7 @@
 import React from 'react';
-import { useInstrumentsStore } from '../../store/useInstrumentsStore';
-import { usePanelsStore } from '../../store/usePanelsStore';
-import { useMixerStore } from '../../store/useMixerStore';
+import { useInstrumentsStore } from '@/store/useInstrumentsStore';
+import { usePanelsStore } from '@/store/usePanelsStore';
+import { useMixerStore } from '@/store/useMixerStore';
 
 import { WaveformWorkbench } from './components/WaveformWorkbench';
 import { ControlDeck } from './components/ControlDeck';

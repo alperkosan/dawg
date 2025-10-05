@@ -1,9 +1,9 @@
 import React, { useRef } from 'react';
 import { useDrag, useDrop } from 'react-dnd';
 import { Power, Settings, Trash2 } from 'lucide-react';
-import VolumeKnob from '../../../ui/VolumeKnob';
-import { useMixerStore } from '../../../store/useMixerStore';
-import { usePanelsStore } from '../../../store/usePanelsStore';
+import { Knob } from '@/components/controls';
+import { useMixerStore } from '@/store/useMixerStore';
+import { usePanelsStore } from '@/store/usePanelsStore';
 
 const DND_TYPE = 'EFFECT_SLOT';
 
@@ -58,7 +58,7 @@ export const EffectSlot = ({ effect, trackId, index, moveEffect }) => {
       </div>
       <div className="effect-slot-v2__body">
         {hasMixControl && (
-          <VolumeKnob
+          <Knob
             label="Mix"
             value={(effect.settings.wet || 0) * 100}
             onChange={(val) => handleMixerEffectChange(trackId, effect.id, 'wet', val / 100)}

@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { useThemeStore } from '../store/useThemeStore';
+import { useThemeStore } from '@/store/useThemeStore';
 
 export const ThemeProvider = ({ children }) => {
   const activeTheme = useThemeStore(state => state.getActiveTheme());

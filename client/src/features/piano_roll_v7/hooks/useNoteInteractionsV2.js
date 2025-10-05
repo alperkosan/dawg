@@ -1,7 +1,7 @@
 // Piano Roll v7 Note Interactions Hook V2 - Sıfırdan tasarım
 // ArrangementStore merkezli, işlevsellik odaklı
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useArrangementStore } from '../../../store/useArrangementStore';
+import { useArrangementStore } from '@/store/useArrangementStore';
 import { samplePreview } from '../utils/samplePreview';
 
 const RULER_HEIGHT = 30;

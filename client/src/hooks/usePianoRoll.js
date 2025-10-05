@@ -1,13 +1,13 @@
 // src/hooks/usePianoRoll.js
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { useArrangementStore } from '../store/useArrangementStore';
-import { usePlaybackStore } from '../store/usePlaybackStore';
-import { PatternService } from '../lib/services/PatternService';
-import { AudioContextService } from '../lib/services/AudioContextService';
-import { pianoRollUtils } from '../lib/utils/pianoRollUtils';
-import { commandManager } from '../lib/commands/CommandManager';
-import { AddNoteCommand } from '../lib/commands/AddNoteCommand';
-import { DeleteNoteCommand } from '../lib/commands/DeleteNoteCommand';
+import { useArrangementStore } from '@/store/useArrangementStore';
+import { usePlaybackStore } from '@/store/usePlaybackStore';
+import { PatternService } from '@/lib/services/PatternService';
+import { AudioContextService } from '@/lib/services/AudioContextService';
+import { pianoRollUtils } from '@/lib/utils/pianoRollUtils';
+import { commandManager } from '@/lib/commands/CommandManager';
+import { AddNoteCommand } from '@/lib/commands/AddNoteCommand';
+import { DeleteNoteCommand } from '@/lib/commands/DeleteNoteCommand';
 
 export const usePianoRoll = (instrumentId) => {
   // State

@@ -1,6 +1,6 @@
 import { Command } from './Command';
-import { useArrangementStore } from '../../store/useArrangementStore';
-import { usePlaybackStore } from '../../store/usePlaybackStore';
+import { useArrangementStore } from '@/store/useArrangementStore';
+import { usePlaybackStore } from '@/store/usePlaybackStore';
 import EventBus from '../core/EventBus.js';
 
 /**

@@ -1,7 +1,7 @@
 import React from 'react';
 import { SlidersHorizontal, AudioLines, Music, Edit } from 'lucide-react';
-import { usePanelsStore } from '../../store/usePanelsStore';
-import { PANEL_IDS } from '../../config/constants'; // GÜNCELLENDİ
+import { usePanelsStore } from '@/store/usePanelsStore';
+import { PANEL_IDS } from '@/config/constants'; // GÜNCELLENDİ
 
 const panelIcons = {
   'channel-rack': AudioLines,

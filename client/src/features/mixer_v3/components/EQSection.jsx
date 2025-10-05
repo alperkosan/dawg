@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { useMixerStore } from '../../../store/useMixerStore';
+import { useMixerStore } from '@/store/useMixerStore';
 import VolumeKnob from './VolumeKnob';
 
 const EQSection = React.memo(({ trackId }) => {

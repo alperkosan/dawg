@@ -1,0 +1,178 @@
+.webgl-viz-test {
+  padding: 20px;
+  background: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 100%);
+  min-height: 100vh;
+  color: #fff;
+}
+
+.webgl-viz-header {
+  margin-bottom: 40px;
+}
+
+.webgl-viz-header h2 {
+  margin: 0 0 20px 0;
+  font-size: 28px;
+  background: linear-gradient(90deg, #00ff88, #3498db);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.webgl-viz-controls {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.webgl-viz-controls button {
+  background: linear-gradient(135deg, #2a2a2a, #1a1a1a);
+  border: 1px solid #00ff88;
+  border-radius: 8px;
+  padding: 12px 20px;
+  color: #00ff88;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s;
+  position: relative;
+  overflow: hidden;
+}
+
+.webgl-viz-controls button::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(0, 255, 136, 0.2), transparent);
+  transition: left 0.5s;
+}
+
+.webgl-viz-controls button:hover::before {
+  left: 100%;
+}
+
+.webgl-viz-controls button:hover {
+  border-color: #00ff88;
+  box-shadow: 0 0 20px rgba(0, 255, 136, 0.3);
+  transform: translateY(-2px);
+}
+
+.webgl-viz-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(600px, 1fr));
+  gap: 24px;
+}
+
+.webgl-viz-empty {
+  text-align: center;
+  padding: 100px 20px;
+  color: #666;
+}
+
+.webgl-viz-empty p:first-child {
+  font-size: 24px;
+  margin-bottom: 12px;
+}
+
+.webgl-viz-empty p:last-child {
+  font-size: 14px;
+}
+
+.webgl-viz-card {
+  background: linear-gradient(135deg, #1a1a1a, #0a0a0a);
+  border: 1px solid #333;
+  border-radius: 12px;
+  overflow: hidden;
+  transition: all 0.3s;
+}
+
+.webgl-viz-card:hover {
+  border-color: #00ff88;
+  box-shadow: 0 8px 32px rgba(0, 255, 136, 0.1);
+  transform: translateY(-4px);
+}
+
+.webgl-viz-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.3);
+  border-bottom: 1px solid #333;
+}
+
+.webgl-viz-card-info h3 {
+  margin: 0 0 6px 0;
+  font-size: 18px;
+  color: #00ff88;
+}
+
+.webgl-viz-card-info p {
+  margin: 0;
+  font-size: 12px;
+  color: #888;
+}
+
+.webgl-viz-card-remove {
+  background: none;
+  border: none;
+  color: #e74c3c;
+  font-size: 24px;
+  cursor: pointer;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+
+.webgl-viz-card-remove:hover {
+  background: rgba(231, 76, 60, 0.2);
+  transform: rotate(90deg);
+}
+
+.webgl-viz-card-canvas {
+  width: 100%;
+  height: 300px;
+  display: block;
+  background: #000;
+  cursor: crosshair;
+}
+
+.webgl-viz-card-footer {
+  padding: 16px 20px;
+  display: flex;
+  gap: 12px;
+  background: rgba(0, 0, 0, 0.3);
+  border-top: 1px solid #333;
+}
+
+.webgl-badge {
+  background: rgba(0, 255, 136, 0.1);
+  border: 1px solid rgba(0, 255, 136, 0.3);
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 11px;
+  color: #00ff88;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Animation for canvas */
+@keyframes pulse {
+  0%, 100% {
+    box-shadow: inset 0 0 20px rgba(0, 255, 136, 0.1);
+  }
+  50% {
+    box-shadow: inset 0 0 40px rgba(0, 255, 136, 0.2);
+  }
+}
+
+.webgl-viz-card:hover .webgl-viz-card-canvas {
+  animation: pulse 2s ease-in-out infinite;
+}

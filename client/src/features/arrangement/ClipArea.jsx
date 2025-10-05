@@ -1,11 +1,11 @@
-import { useArrangementStore } from '../../store/useArrangementStore';
+import { useArrangementStore } from '@/store/useArrangementStore';
 import { Clip } from './Clip';
 // KALDIRILDI: Artık bu store'a ihtiyacımız yok.
-// import { useInstrumentsStore } from '../../store/useInstrumentsStore';
-import ChannelContextMenu from '../../components/ChannelContextMenu';
+// import { useInstrumentsStore } from '@/store/useInstrumentsStore';
+import ChannelContextMenu from '@/components/ChannelContextMenu';
 import { useState, useRef } from 'react';
 // GÜNCELLENDİ: Playback modunu ve loopLength'i okumak için store'u import ediyoruz
-import { usePlaybackStore } from '../../store/usePlaybackStore';
+import { usePlaybackStore } from '@/store/usePlaybackStore';
 
 export function ClipArea() {
     const { clips, tracks, zoomX, songLength, patterns, splitPatternClip } = useArrangementStore();

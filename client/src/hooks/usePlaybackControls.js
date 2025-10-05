@@ -1,7 +1,7 @@
 // hooks/usePlaybackControls.js
 import { useState, useEffect, useCallback } from 'react';
-import { AudioContextService } from '../lib/services/AudioContextService.js';
-import { PlaybackEngine } from '../lib/core/PlaybackEngine.js';
+import { AudioContextService } from '@/lib/services/AudioContextService.js';
+import { PlaybackEngine } from '@/lib/core/PlaybackEngine.js';
 
 /**
  * 🎵 UNIFIED PLAYBACK CONTROLS HOOK

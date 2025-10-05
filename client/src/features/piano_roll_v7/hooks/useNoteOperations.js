@@ -1,8 +1,8 @@
 // Piano Roll v7 Note Operations with ArrangementStore Integration
 import { useCallback, useEffect, useRef, useMemo } from 'react';
-import { useArrangementStore } from '../../../store/useArrangementStore';
+import { useArrangementStore } from '@/store/useArrangementStore';
 import { useNoteStore } from '../useNoteStore';
-import commandManager from '../../../lib/commands/CommandManager';
+import commandManager from '@/lib/commands/CommandManager';
 import { PianoRollAddNoteCommand } from '../commands/PianoRollAddNoteCommand';
 
 // Helper function to convert note names to MIDI pitch

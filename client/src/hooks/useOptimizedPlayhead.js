@@ -3,8 +3,8 @@
 
 import { useRef, useEffect, useCallback } from 'react';
 import { useGlobalPlayhead } from './useGlobalPlayhead';
-import { PlayheadRenderer } from '../lib/core/PlayheadRenderer.js';
-import { uiUpdateManager, UPDATE_PRIORITIES, UPDATE_FREQUENCIES } from '../lib/core/UIUpdateManager.js';
+import { PlayheadRenderer } from '@/lib/core/PlayheadRenderer.js';
+import { uiUpdateManager, UPDATE_PRIORITIES, UPDATE_FREQUENCIES } from '@/lib/core/UIUpdateManager.js';
 
 export const useOptimizedPlayhead = (stepWidth = 16) => {
   const playheadRef = useRef(null);

@@ -9,12 +9,14 @@
  */
 
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { useArrangementWorkspaceStore } from '../../store/useArrangementWorkspaceStore';
-import { useArrangementStore } from '../../store/useArrangementStore';
-import { usePlaybackStore } from '../../store/usePlaybackStore';
+import { useArrangementWorkspaceStore } from '@/store/useArrangementWorkspaceStore';
+import { useArrangementStore } from '@/store/useArrangementStore';
+import { useInstrumentsStore } from '@/store/useInstrumentsStore';
+import { usePlaybackStore } from '@/store/usePlaybackStoreV2';
 import { useArrangementEngine } from './hooks/useArrangementEngine';
 import { usePatternInteraction } from './hooks/usePatternInteraction';
 import { drawArrangement } from './renderers/arrangementRenderer';
+import { TrackHeaderOverlay } from './components/TrackHeaderOverlay';
 import { Plus, Play, Pause, Square, ZoomIn, ZoomOut } from 'lucide-react';
 
 const ArrangementCanvas = ({ arrangement }) => {
@@ -32,11 +34,22 @@ const ArrangementCanvas = ({ arrangement }) => {
     updateClip,
     addClip,
     deleteClip,
+    selectClips,
+    toggleTrackMute,
+    toggleTrackSolo,
     zoom: zoomFromStore
   } = useArrangementWorkspaceStore();
 
   const { patterns } = useArrangementStore();
-  const { isPlaying, transportPosition, togglePlay, stop } = usePlaybackStore();
+  const { instruments } = useInstrumentsStore();
+
+  // ✅ PERFORMANCE: Only subscribe to position updates in song mode
+  const playbackMode = usePlaybackStore(state => state.playbackMode);
+  const isPlaying = usePlaybackStore(state => state.isPlaying);
+  const currentStep = usePlaybackStore(state => playbackMode === 'song' ? state.currentStep : 0);
+  const togglePlay = usePlaybackStore(state => state.togglePlayPause);
+  const stop = usePlaybackStore(state => state.handleStop);
+  const setTransportPosition = usePlaybackStore(state => state.setTransportPosition);
 
   const engine = useArrangementEngine(containerRef, arrangement);
 
@@ -55,10 +68,34 @@ const ArrangementCanvas = ({ arrangement }) => {
   const [selectedClips, setSelectedClips] = useState([]);
   const [isDragging, setIsDragging] = useState(false);
   const [draggedClip, setDraggedClip] = useState(null);
+  const [dropPreview, setDropPreview] = useState(null); // Pattern library drop preview
+  const [isAltKeyPressed, setIsAltKeyPressed] = useState(false); // Track Alt key for stretch mode indicator
 
-  // Keyboard shortcuts
+  // Playback mode handler - Song mode için arrangement çalma
+  useEffect(() => {
+    if (playbackMode === 'song') {
+      console.log('🎵 Song mode active - Arrangement clips:', {
+        clipCount: clips.length,
+        clips: clips.map(c => ({
+          id: c.id,
+          patternId: c.patternId,
+          startTime: c.startTime,
+          duration: c.duration,
+          trackId: c.trackId
+        }))
+      });
+      // TODO: Schedule arrangement clips to audio engine
+    }
+  }, [playbackMode, clips]);
+
+  // Keyboard shortcuts and Alt key tracking
   useEffect(() => {
     const handleKeyDown = (e) => {
+      // Track Alt key for stretch mode
+      if (e.key === 'Alt') {
+        setIsAltKeyPressed(true);
+      }
+
       // Cmd+D / Ctrl+D - Duplicate
       if ((e.metaKey || e.ctrlKey) && e.key === 'd' && selectedClips.length > 0) {
         e.preventDefault();
@@ -84,8 +121,19 @@ const ArrangementCanvas = ({ arrangement }) => {
       }
     };
 
+    const handleKeyUp = (e) => {
+      // Track Alt key release
+      if (e.key === 'Alt') {
+        setIsAltKeyPressed(false);
+      }
+    };
+
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
   }, [selectedClips, clips, addClip, deleteClip]);
 
   // Canvas rendering loop
@@ -109,24 +157,58 @@ const ArrangementCanvas = ({ arrangement }) => {
       tracks,
       clips,
       selectedClips,
+      patterns, // Pattern data for mini view
+      instruments, // Audio samples for waveform rendering
       playhead: {
-        position: transportPosition,
-        isPlaying
+        // Only show playhead position in song mode
+        position: playbackMode === 'song' ? currentStep : 0,
+        isPlaying: playbackMode === 'song' && isPlaying
       },
-      patternInteraction: patternInteraction.interactionState
+      patternInteraction: patternInteraction.interactionState,
+      dropPreview
     };
 
     drawArrangement(ctx, engineWithData);
-  }, [engine, gridSize, tracks, clips, selectedClips, transportPosition, isPlaying, patternInteraction.interactionState]);
+  }, [engine, gridSize, tracks, clips, selectedClips, patterns, instruments, currentStep, isPlaying, playbackMode, patternInteraction.interactionState, dropPreview]);
 
   // Mouse handlers for pattern interaction
   const handleCanvasMouseDown = useCallback((e) => {
     const rect = canvasRef.current.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+
+    const TRACK_HEADER_WIDTH = 150;
+    const TIMELINE_HEIGHT = 40;
+    const PIXELS_PER_BEAT = 32;
+
+    // Timeline click detection
+    if (mouseY < TIMELINE_HEIGHT && mouseX > TRACK_HEADER_WIDTH) {
+      // Clicked on timeline - stop propagation to prevent panning
+      e.stopPropagation();
+      const scrollX = engine.viewport?.scrollX || 0;
+      const zoomX = engine.viewport?.zoomX || 1;
+      const relativeX = mouseX - TRACK_HEADER_WIDTH;
+      const worldX = (scrollX + relativeX) / zoomX;
+      const beatPosition = worldX / PIXELS_PER_BEAT;
+
+      // Convert beat to bar:beat:tick format (4 beats per bar, 480 ticks per beat)
+      const bar = Math.floor(beatPosition / 4);
+      const beat = Math.floor(beatPosition % 4);
+      const tick = Math.floor((beatPosition % 1) * 480);
+      const transportPos = `${bar + 1}:${beat + 1}:${tick}`;
+      const step = Math.floor(beatPosition * 4); // Convert to 16th note steps
+
+      setTransportPosition(transportPos, step);
+      console.log(`🎯 Timeline clicked: Beat ${beatPosition.toFixed(2)} → ${transportPos} (step ${step})`);
+      return;
+    }
 
     const interaction = patternInteraction.handleMouseDown(e, rect);
 
     if (interaction) {
-      // Pattern interaction başladı
+      // Pattern/audio clip interaction started - prevent canvas panning
+      e.stopPropagation();
+
       if (e.shiftKey) {
         setSelectedClips(prev => [...prev, interaction.clip.id]);
       } else {
@@ -134,11 +216,17 @@ const ArrangementCanvas = ({ arrangement }) => {
       }
       setIsDragging(true);
     } else {
-      // Boş alana tıklandı
+      // Empty area clicked - allow canvas panning (don't stopPropagation)
+      // Unless Alt key is pressed for time stretch mode
+      if (e.altKey) {
+        // Alt key pressed but no clip - still prevent panning for UX clarity
+        e.stopPropagation();
+      }
+
       setSelectedClips([]);
       setIsDragging(false);
     }
-  }, [patternInteraction]);
+  }, [patternInteraction, engine.viewport, setTransportPosition]);
 
   const handleCanvasMouseMove = useCallback((e) => {
     if (!isDragging) {
@@ -154,12 +242,18 @@ const ArrangementCanvas = ({ arrangement }) => {
       return;
     }
 
+    // Clip interaction in progress - prevent canvas panning
+    e.stopPropagation();
+
     const rect = canvasRef.current.getBoundingClientRect();
     patternInteraction.handleMouseMove(e, rect);
   }, [isDragging, patternInteraction, engine.viewport]);
 
-  const handleCanvasMouseUp = useCallback(() => {
+  const handleCanvasMouseUp = useCallback((e) => {
     if (!isDragging) return;
+
+    // Clip interaction finished - prevent canvas panning events
+    e?.stopPropagation();
 
     const result = patternInteraction.handleMouseUp();
 
@@ -198,14 +292,103 @@ const ArrangementCanvas = ({ arrangement }) => {
     setDraggedClip(null);
   }, [isDragging, patternInteraction, updateClip, addClip, patterns]);
 
-  // Drag and drop handlers for patterns from library
+  // Drag and drop handlers for patterns and audio from library
   const handleCanvasDrop = useCallback((e) => {
     e.preventDefault();
+    setDropPreview(null); // Clear preview
 
     try {
       const data = JSON.parse(e.dataTransfer.getData('text/plain'));
 
+      const rect = canvasRef.current.getBoundingClientRect();
+      const x = e.clientX - rect.left + engine.viewport.scrollX;
+      const y = e.clientY - rect.top + engine.viewport.scrollY;
+
+      const TRACK_HEADER_WIDTH = 150;
+      const TIMELINE_HEIGHT = 40;
+      const PIXELS_PER_BEAT = 32;
+
+      // Calculate which track and time position
+      const relativeY = y - TIMELINE_HEIGHT;
+      const relativeX = x - TRACK_HEADER_WIDTH;
+
+      const trackIndex = Math.floor(relativeY / engine.dimensions.trackHeight);
+      const beatPosition = Math.max(0, relativeX / (PIXELS_PER_BEAT * engine.viewport.zoomX));
+      const snappedBeat = patternInteraction.snapToGrid(beatPosition);
+
+      // Ensure track exists at this index (auto-create if virtual)
+      const trackId = ensureTrackAtIndex(trackIndex);
+
+      if (!trackId) return;
+
       if (data.type === 'pattern' && data.patternId) {
+        // Get pattern data
+        const pattern = patterns?.[data.patternId];
+
+        // Convert pattern length from steps to beats (1 beat = 4 steps)
+        const patternLengthBeats = pattern?.length ? pattern.length / 4 : 4;
+
+        // Create clip from pattern
+        const newClipId = addClip({
+          type: 'pattern',
+          patternId: data.patternId,
+          trackId,
+          startTime: snappedBeat,
+          duration: patternLengthBeats,
+          name: pattern?.name || 'Pattern',
+          color: pattern?.color
+        });
+
+        console.log(`🎵 Dropped pattern on track ${trackIndex + 1} at beat ${snappedBeat.toFixed(2)}`);
+
+        // ✅ Select the newly created clip for potential immediate editing
+        if (newClipId) {
+          selectClips([newClipId], false);
+        }
+      } else if (data.type === 'audio' && data.sampleId) {
+        // Create audio clip from sample
+        // Default duration: 4 beats (will be adjusted based on actual audio length later)
+        const defaultDuration = 4;
+
+        const newClipId = addClip({
+          type: 'audio',
+          sampleId: data.sampleId,
+          trackId,
+          startTime: snappedBeat,
+          duration: defaultDuration,
+          name: data.sampleName || 'Audio Clip',
+          color: '#f59e0b' // Orange color for audio clips
+        });
+
+        console.log(`🎵 Dropped audio sample on track ${trackIndex + 1} at beat ${snappedBeat.toFixed(2)}`);
+
+        // ✅ Select the newly created clip
+        if (newClipId) {
+          selectClips([newClipId], false);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to handle drop:', error);
+    }
+  }, [engine, ensureTrackAtIndex, addClip, patterns, patternInteraction, selectClips]);
+
+  const handleDragLeave = useCallback((e) => {
+    // Only clear if leaving canvas completely
+    if (e.currentTarget === e.target) {
+      setDropPreview(null);
+    }
+  }, []);
+
+  const handleCanvasDragOver = useCallback((e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+
+    // Show drop preview
+    try {
+      const data = e.dataTransfer.types.includes('text/plain') ?
+        JSON.parse(e.dataTransfer.getData('text/plain')) : null;
+
+      if (data?.type === 'pattern' && data?.patternId) {
         const rect = canvasRef.current.getBoundingClientRect();
         const x = e.clientX - rect.left + engine.viewport.scrollX;
         const y = e.clientY - rect.top + engine.viewport.scrollY;
@@ -214,43 +397,53 @@ const ArrangementCanvas = ({ arrangement }) => {
         const TIMELINE_HEIGHT = 40;
         const PIXELS_PER_BEAT = 32;
 
-        // Calculate which track and time position
         const relativeY = y - TIMELINE_HEIGHT;
         const relativeX = x - TRACK_HEADER_WIDTH;
 
         const trackIndex = Math.floor(relativeY / engine.dimensions.trackHeight);
         const beatPosition = Math.max(0, relativeX / (PIXELS_PER_BEAT * engine.viewport.zoomX));
+        const snappedBeat = patternInteraction.snapToGrid(beatPosition);
 
-        // Ensure track exists at this index (auto-create if virtual)
-        const trackId = ensureTrackAtIndex(trackIndex);
+        const pattern = patterns?.[data.patternId];
 
-        if (trackId) {
-          // Get pattern data
-          const pattern = patterns?.[data.patternId];
+        // Convert pattern length from steps to beats
+        const patternLengthBeats = pattern?.length ? pattern.length / 4 : 4;
 
-          // Create clip from pattern
-          addClip({
-            type: 'pattern',
-            patternId: data.patternId,
-            trackId,
-            startTime: Math.floor(beatPosition), // Snap to beat
-            duration: pattern?.length || 4,
-            name: pattern?.name || 'Pattern',
-            color: pattern?.color
-          });
+        setDropPreview({
+          type: 'pattern',
+          trackIndex,
+          startBeat: snappedBeat,
+          duration: patternLengthBeats,
+          color: pattern?.color || '#00ff88'
+        });
+      } else if (data?.type === 'audio' && data?.sampleId) {
+        const rect = canvasRef.current.getBoundingClientRect();
+        const x = e.clientX - rect.left + engine.viewport.scrollX;
+        const y = e.clientY - rect.top + engine.viewport.scrollY;
 
-          console.log(`🎵 Dropped pattern on track ${trackIndex + 1} at beat ${beatPosition.toFixed(2)}`);
-        }
+        const TRACK_HEADER_WIDTH = 150;
+        const TIMELINE_HEIGHT = 40;
+        const PIXELS_PER_BEAT = 32;
+
+        const relativeY = y - TIMELINE_HEIGHT;
+        const relativeX = x - TRACK_HEADER_WIDTH;
+
+        const trackIndex = Math.floor(relativeY / engine.dimensions.trackHeight);
+        const beatPosition = Math.max(0, relativeX / (PIXELS_PER_BEAT * engine.viewport.zoomX));
+        const snappedBeat = patternInteraction.snapToGrid(beatPosition);
+
+        setDropPreview({
+          type: 'audio',
+          trackIndex,
+          startBeat: snappedBeat,
+          duration: 4, // Default 4 beats for audio
+          color: '#f59e0b' // Orange for audio clips
+        });
       }
-    } catch (error) {
-      console.error('Failed to handle drop:', error);
+    } catch (err) {
+      // Ignore parse errors during drag
     }
-  }, [engine, ensureTrackAtIndex, addClip, patterns]);
-
-  const handleCanvasDragOver = useCallback((e) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'copy';
-  }, []);
+  }, [engine, patternInteraction, patterns]);
 
   // Zoom controls - viewport merkezini koruyarak zoom yap
   const handleZoomIn = useCallback(() => {
@@ -335,12 +528,51 @@ const ArrangementCanvas = ({ arrangement }) => {
           onMouseUp={handleCanvasMouseUp}
           onDrop={handleCanvasDrop}
           onDragOver={handleCanvasDragOver}
+          onDragLeave={handleDragLeave}
           style={{
             width: '100%',
             height: '100%',
             display: 'block'
           }}
         />
+
+        {/* Track Header Overlay */}
+        <TrackHeaderOverlay
+          tracks={tracks}
+          virtualTrackCount={engine.dimensions.virtualTrackCount}
+          trackHeight={engine.dimensions.trackHeight}
+          scrollY={engine.viewport.scrollY}
+          onToggleMute={toggleTrackMute}
+          onToggleSolo={toggleTrackSolo}
+          onTrackColorChange={(trackId, color) => {
+            // TODO: Implement color change
+            console.log('Color change:', trackId, color);
+          }}
+        />
+
+        {/* Time Stretch Mode Indicator */}
+        {isAltKeyPressed && (
+          <div style={{
+            position: 'absolute',
+            bottom: 10,
+            right: 10,
+            background: 'rgba(100, 200, 255, 0.9)',
+            color: '#000',
+            padding: '6px 12px',
+            borderRadius: '4px',
+            fontSize: '11px',
+            fontWeight: 'bold',
+            pointerEvents: 'none',
+            zIndex: 1000,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
+          }}>
+            <span style={{ fontSize: '14px' }}>⏱️</span>
+            TIME STRETCH MODE
+          </div>
+        )}
       </div>
 
       {/* Controls */}

@@ -4,9 +4,9 @@ import { useNoteInteractionsV2 } from './hooks/useNoteInteractionsV2';
 import { drawPianoRoll } from './renderer';
 import Toolbar from './components/Toolbar';
 import VelocityLane from './components/VelocityLane';
-import { usePanelsStore } from '../../store/usePanelsStore';
-import { useInstrumentsStore } from '../../store/useInstrumentsStore';
-import { useTransportControls, useTransportPosition } from '../../hooks/useTransportManager.js';
+import { usePanelsStore } from '@/store/usePanelsStore';
+import { useInstrumentsStore } from '@/store/useInstrumentsStore';
+import { usePlaybackStore } from '@/store/usePlaybackStoreV2';
 import './PianoRoll_v5.css';
 
 function PianoRoll() {
@@ -18,9 +18,12 @@ function PianoRoll() {
     const [activeTool, setActiveTool] = useState('select');
     const [zoom, setZoom] = useState(1.0);
 
-    // ✅ UNIFIED TRANSPORT SYSTEM
-    const { togglePlayPause } = useTransportControls();
-    const { position, isPlaying, playbackState } = useTransportPosition();
+    // ✅ UNIFIED TRANSPORT SYSTEM - Single source of truth
+    const togglePlayPause = usePlaybackStore(state => state.togglePlayPause);
+    const playbackMode = usePlaybackStore(state => state.playbackMode);
+    const position = usePlaybackStore(state => playbackMode === 'pattern' ? state.currentStep : 0);
+    const isPlaying = usePlaybackStore(state => state.isPlaying);
+    const playbackState = usePlaybackStore(state => state.playbackState);
 
     // Get data from persistent stores
     const pianoRollInstrumentId = usePanelsStore(state => state.pianoRollInstrumentId);
@@ -73,7 +76,7 @@ function PianoRoll() {
         };
         drawPianoRoll(ctx, engineWithData);
 
-    }, [engine, snapValue, noteInteractions, position, isPlaying, playbackState]);
+    }, [engine, snapValue, noteInteractions, position, isPlaying, playbackState, playbackMode]);
 
     // Toolbar handlers
     const handleToolChange = (tool) => {

@@ -19,10 +19,10 @@ import {
   Volume2, VolumeX, Lock, Unlock, Plus, Minus,
   Music, Activity, MoreHorizontal, Repeat
 } from 'lucide-react';
-import { useArrangementWorkspaceStore } from '../../../store/useArrangementWorkspaceStore';
-import { useArrangementStore } from '../../../store/useArrangementStore';
-import { usePlaybackStore } from '../../../store/usePlaybackStore';
-import CanvasInteractionConfig, { getLODLevel, getSnapValue } from '../../../config/canvasInteractionConfig';
+import { useArrangementWorkspaceStore } from '@/store/useArrangementWorkspaceStore';
+import { useArrangementStore } from '@/store/useArrangementStore';
+import { usePlaybackStore } from '@/store/usePlaybackStore';
+import CanvasInteractionConfig, { getLODLevel, getSnapValue } from '@/config/canvasInteractionConfig';
 
 const ArrangementCanvas = ({ arrangement }) => {
   const {

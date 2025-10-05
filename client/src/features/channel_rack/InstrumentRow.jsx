@@ -1,10 +1,10 @@
 import React, { useState, memo, useCallback, useMemo } from 'react';
-import { useInstrumentsStore } from '../../store/useInstrumentsStore';
-import { useMixerStore } from '../../store/useMixerStore';
-import { usePanelsStore } from '../../store/usePanelsStore'; // Panelleri açmak için eklendi
-import ChannelContextMenu from '../../components/ChannelContextMenu';
+import { useInstrumentsStore } from '@/store/useInstrumentsStore';
+import { useMixerStore } from '@/store/useMixerStore';
+import { usePanelsStore } from '@/store/usePanelsStore'; // Panelleri açmak için eklendi
+import ChannelContextMenu from '@/components/ChannelContextMenu';
 import { Music, Piano, Volume2, VolumeX, SlidersHorizontal } from 'lucide-react';
-import VolumeKnob from '../../ui/VolumeKnob';
+import { Knob } from '@/components/controls';
 
 // ✅ Direct property selectors - no object creation
 const selectUpdateInstrument = (state) => state.updateInstrument;
@@ -120,7 +120,7 @@ const InstrumentRow = ({
       </div>
 
       <div className="instrument-row__controls">
-        <VolumeKnob
+        <Knob
           label="Pan" size={28} value={mixerTrack.pan}
           onChange={(val) => {
             console.log('🎚️ Pan change:', mixerTrack.id, 'pan', val);
@@ -128,7 +128,7 @@ const InstrumentRow = ({
           }}
           min={-1} max={1} defaultValue={0}
         />
-        <VolumeKnob
+        <Knob
           label="Vol" size={28} value={mixerTrack.volume}
           onChange={(val) => {
             console.log('🎚️ Volume change:', mixerTrack.id, 'volume', val);

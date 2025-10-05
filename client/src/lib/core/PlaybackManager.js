@@ -2,8 +2,9 @@
 // DAWG - Enhanced Playback System with Song/Pattern Modes
 
 import { NativeTimeUtils } from '../utils/NativeTimeUtils.js';
-import { usePlaybackStore } from '../../store/usePlaybackStore';
-import { useArrangementStore } from '../../store/useArrangementStore';
+import { usePlaybackStore } from '@/store/usePlaybackStore';
+import { useArrangementStore } from '@/store/useArrangementStore';
+import { useArrangementWorkspaceStore } from '@/store/useArrangementWorkspaceStore';
 import EventBus from './EventBus.js';
 import { PositionTracker } from './PositionTracker.js';
 
@@ -333,18 +334,16 @@ export class PlaybackManager {
 
     setPlaybackMode(mode) {
         if (this.currentMode === mode) return;
-        
-        const wasPlaying = this.isPlaying;
-        if (wasPlaying) {
-            this.stop();
-        }
-        
+
+        console.log(`🎵 PlaybackManager: Mode changing ${this.currentMode} → ${mode}`);
+
         this.currentMode = mode;
         this._updateLoopSettings();
-        
-        
-        if (wasPlaying) {
-            this.play();
+
+        // ✅ FIX: If playing, reschedule content for new mode (don't stop/restart)
+        if (this.isPlaying) {
+            console.log(`🎵 Rescheduling content for mode: ${mode}`);
+            this._scheduleContent(null, `mode-change-${mode}`, true);
         }
     }
 
@@ -579,15 +578,18 @@ export class PlaybackManager {
             this.isPlaying = false;
             this.isPaused = false;
 
-            // ✅ CONSISTENT: Always reset to 0 on stop for predictable behavior
+            // ✅ DAW STANDARD: Always reset to 0 on stop
             this.currentPosition = 0;
-
-            // ✅ CONSISTENT: Reset transport position to 0 when stopping
             if (this.transport.setPosition) {
                 this.transport.setPosition(0);
             }
 
-            console.log('🎵 Stop: Reset to position 0 (consistent behavior)');
+            console.log('🎵 Stop: Reset to position 0');
+
+            // Update UI position
+            const { usePlaybackStore } = require('../../store/usePlaybackStoreV2');
+            const playbackStore = usePlaybackStore.getState();
+            playbackStore.set({ transportPosition: '1:1:0', transportStep: 0 });
 
             // usePlaybackStore.getState().setPlaybackState('stopped'); // ✅ Handled by PlaybackController
         } catch (error) {
@@ -689,14 +691,21 @@ export class PlaybackManager {
         const scheduleCallback = () => {
             const baseTime = startTime || this.transport.audioContext.currentTime;
 
+            console.log(`🎵 _scheduleContent - currentMode: ${this.currentMode}, reason: ${reason}`);
 
             // Önceki event'leri temizle (eğer daha önce temizlenmediyse)
             this._clearScheduledEvents();
 
             if (this.currentMode === 'pattern') {
+                console.log('🎵 Scheduling PATTERN content');
                 this._schedulePatternContent(baseTime);
             } else {
-                this._scheduleSongContent(baseTime);
+                console.log('🎵 Scheduling SONG content');
+                try {
+                    this._scheduleSongContent(baseTime);
+                } catch (error) {
+                    console.error('🎵 ❌ Error in _scheduleSongContent:', error);
+                }
             }
 
         };
@@ -737,34 +746,228 @@ export class PlaybackManager {
         });
     }
 
-    _scheduleSongContent() {
+    _scheduleSongContent(baseTime) {
+        // ✅ NEW: Use arrangement workspace store for song mode
+        const workspaceStore = useArrangementWorkspaceStore.getState();
+        const arrangement = workspaceStore.getActiveArrangement();
+
+        console.log('🎵 _scheduleSongContent called');
+        console.log('🎵 Arrangement:', arrangement);
+
+        if (!arrangement) {
+            console.warn('🎵 No active arrangement for song mode');
+            return;
+        }
+
+        const clips = arrangement.clips || [];
+        const tracks = arrangement.tracks || [];
         const arrangementStore = useArrangementStore.getState();
-        const clips = arrangementStore.clips || [];
         const patterns = arrangementStore.patterns || {};
-        
+
+        // ✅ Check for solo tracks
+        const soloTracks = tracks.filter(t => t.solo);
+        const hasSolo = soloTracks.length > 0;
+
+        console.log(`🎵 Scheduling song content: ${clips.length} clips from arrangement "${arrangement.name}"`);
+        console.log('🎵 Clips:', clips);
+        console.log('🎵 Available patterns:', Object.keys(patterns));
+        console.log(`🎵 Track routing: ${hasSolo ? `${soloTracks.length} solo` : 'normal'}, muted tracks will be skipped`);
+
+        if (clips.length === 0) {
+            console.warn('🎵 ⚠️ No clips in arrangement - song mode will play silently (playhead still moves)');
+            // Don't return - allow playback to continue silently so playhead still moves
+        }
 
         clips.forEach(clip => {
-            const pattern = patterns[clip.patternId];
-            if (!pattern) return;
+            // ✅ Check track mute/solo state
+            const track = tracks.find(t => t.id === clip.trackId);
+            if (!track) {
+                console.warn(`🎵 Track not found for clip ${clip.id}`);
+                return;
+            }
 
-            const clipStartStep = (clip.startTime || 0) * 16; // Convert bars to steps
+            // Skip if track is muted
+            if (track.muted) {
+                console.log(`🎵 Skipping clip ${clip.id} on muted track ${track.name}`);
+                return;
+            }
 
-            // Schedule pattern notes with clip timing offset
-            Object.entries(pattern.data).forEach(([instrumentId, notes]) => {
-                if (!Array.isArray(notes) || notes.length === 0) return;
-                
-                const instrument = this.audioEngine.instruments.get(instrumentId);
-                if (!instrument) return;
+            // If any track is solo, only play clips on solo tracks
+            if (hasSolo && !track.solo) {
+                console.log(`🎵 Skipping clip ${clip.id} on non-solo track ${track.name}`);
+                return;
+            }
+            // ✅ Handle different clip types: 'pattern' or 'audio'
+            if (clip.type === 'audio') {
+                // Schedule audio sample clip
+                this._scheduleAudioClip(clip, baseTime);
+            } else {
+                // Schedule pattern clip (default)
+                const pattern = patterns[clip.patternId];
+                if (!pattern) {
+                    console.warn(`🎵 Pattern ${clip.patternId} not found for clip ${clip.id}`);
+                    return;
+                }
 
-                // Offset notes by clip start time
-                const offsetNotes = notes.map(note => ({
-                    ...note,
-                    time: (note.time || 0) + clipStartStep
-                }));
+                // Convert clip startTime and duration to steps (16th notes)
+                // 1 beat = 4 sixteenth notes
+                const clipStartStep = Math.floor((clip.startTime || 0) * 4);
+                const clipDurationBeats = clip.duration || pattern.length || 4; // Use pattern length if available
+                const clipDurationSteps = clipDurationBeats * 4;
 
-                this._scheduleInstrumentNotes(instrument, offsetNotes, instrumentId);
-            });
+                console.log(`🎵 Scheduling pattern clip ${clip.id}: pattern ${clip.patternId} at step ${clipStartStep}, duration: ${clipDurationBeats} beats (${clipDurationSteps} steps)`);
+
+                // Schedule pattern notes with clip timing offset
+                Object.entries(pattern.data).forEach(([instrumentId, notes]) => {
+                    if (!Array.isArray(notes) || notes.length === 0) return;
+
+                    const instrument = this.audioEngine.instruments.get(instrumentId);
+                    if (!instrument) {
+                        console.warn(`🎵 Instrument ${instrumentId} not found`);
+                        return;
+                    }
+
+                    // Filter and offset notes by clip start time and duration
+                    const offsetNotes = notes
+                        .filter(note => {
+                            // Only include notes within clip duration
+                            const noteTime = note.time || 0;
+                            return noteTime < clipDurationSteps;
+                        })
+                        .map(note => ({
+                            ...note,
+                            time: (note.time || 0) + clipStartStep
+                        }));
+
+                    if (offsetNotes.length > 0) {
+                        this._scheduleInstrumentNotes(instrument, offsetNotes, instrumentId, baseTime);
+                    }
+                });
+            }
         });
+    }
+
+    /**
+     * ✅ NEW: Schedule audio sample clip
+     * @param {Object} clip - Audio clip with sample data
+     * @param {number} baseTime - Base scheduling time
+     */
+    _scheduleAudioClip(clip, baseTime) {
+        if (!clip.audioBuffer && !clip.sampleId) {
+            console.warn(`🎵 Audio clip ${clip.id} has no audio buffer or sample ID`);
+            return;
+        }
+
+        // Convert clip startTime (in beats) to seconds
+        const clipStartBeats = clip.startTime || 0;
+        const clipStartSeconds = clipStartBeats * (60 / this.transport.bpm); // beats to seconds
+
+        // Calculate absolute time
+        const currentStep = this.transport.ticksToSteps(this.transport.currentTick);
+        const currentPositionInSeconds = currentStep * this.transport.stepsToSeconds(1);
+        const relativeTime = clipStartSeconds - currentPositionInSeconds;
+        let absoluteTime = baseTime + relativeTime;
+
+        // Skip if in the past (no looping for audio clips in song mode)
+        if (absoluteTime < baseTime) {
+            console.log(`🎵 Audio clip ${clip.id} is in the past, skipping`);
+            return;
+        }
+
+        console.log(`🎵 Scheduling audio clip ${clip.id} at beat ${clipStartBeats} (${absoluteTime.toFixed(3)}s)`);
+
+        // Schedule audio playback
+        this.transport.scheduleEvent(
+            absoluteTime,
+            (scheduledTime) => {
+                try {
+                    // If clip has audioBuffer, play it directly
+                    if (clip.audioBuffer) {
+                        this._playAudioBuffer(clip.audioBuffer, scheduledTime, clip);
+                    }
+                    // Otherwise, try to get sample from instruments store
+                    else if (clip.sampleId) {
+                        const instrument = this.audioEngine.instruments.get(clip.sampleId);
+                        if (instrument && instrument.audioBuffer) {
+                            this._playAudioBuffer(instrument.audioBuffer, scheduledTime, clip);
+                        } else {
+                            console.warn(`🎵 Sample ${clip.sampleId} not found or has no audio buffer`);
+                        }
+                    }
+                } catch (error) {
+                    console.error(`🎵 Error playing audio clip ${clip.id}:`, error);
+                }
+            },
+            { type: 'audioClip', clipId: clip.id, startTime: clipStartBeats }
+        );
+    }
+
+    /**
+     * ✅ NEW: Play audio buffer at scheduled time
+     * @param {AudioBuffer} audioBuffer - Audio buffer to play
+     * @param {number} time - Scheduled time
+     * @param {Object} clip - Clip data for volume/pan settings
+     */
+    _playAudioBuffer(audioBuffer, time, clip = {}) {
+        const context = this.audioEngine.audioContext;
+        const source = context.createBufferSource();
+        source.buffer = audioBuffer;
+
+        // Apply playback rate (time stretch)
+        const playbackRate = clip.playbackRate || 1.0;
+        source.playbackRate.value = playbackRate;
+
+        // Create gain node for volume control
+        const gainNode = context.createGain();
+
+        // Apply gain (dB to linear conversion)
+        const gainDb = clip.gain || 0;
+        const gainLinear = Math.pow(10, gainDb / 20);
+        const volumeLinear = clip.volume !== undefined ? clip.volume : 1.0;
+        gainNode.gain.value = volumeLinear * gainLinear;
+
+        // Apply fade in/out envelope
+        const fadeIn = clip.fadeIn || 0; // in beats
+        const fadeOut = clip.fadeOut || 0; // in beats
+        const fadeInSeconds = fadeIn * (60 / this.transport.bpm);
+        const fadeOutSeconds = fadeOut * (60 / this.transport.bpm);
+        const clipDurationSeconds = clip.duration * (60 / this.transport.bpm);
+
+        if (fadeInSeconds > 0) {
+            gainNode.gain.setValueAtTime(0, time);
+            gainNode.gain.linearRampToValueAtTime(volumeLinear * gainLinear, time + fadeInSeconds);
+        }
+
+        if (fadeOutSeconds > 0 && clipDurationSeconds) {
+            const fadeOutStartTime = time + clipDurationSeconds - fadeOutSeconds;
+            gainNode.gain.setValueAtTime(volumeLinear * gainLinear, fadeOutStartTime);
+            gainNode.gain.linearRampToValueAtTime(0, time + clipDurationSeconds);
+        }
+
+        // Create panner for stereo positioning (if needed)
+        let outputNode = gainNode;
+        if (clip.pan !== undefined && clip.pan !== 0) {
+            const panNode = context.createStereoPanner();
+            panNode.pan.value = clip.pan;
+            gainNode.connect(panNode);
+            outputNode = panNode;
+        }
+
+        // Connect to master output
+        outputNode.connect(this.audioEngine.masterGain || context.destination);
+
+        // Play with sample offset and duration
+        // Convert sample offset from beats to seconds
+        const sampleOffsetBeats = clip.sampleOffset || 0;
+        const sampleOffsetSeconds = sampleOffsetBeats * (60 / this.transport.bpm);
+        const offset = sampleOffsetSeconds;
+
+        // Duration in seconds (accounting for playback rate)
+        const duration = clip.duration ? (clip.duration * 60 / this.transport.bpm) : undefined;
+
+        source.start(time, offset, duration);
+
+        console.log(`🎵 Playing audio clip at ${time.toFixed(3)}s (rate: ${playbackRate.toFixed(2)}x, gain: ${gainDb.toFixed(1)}dB, offset: ${offset.toFixed(2)}s)`);
     }
 
     /**

@@ -1,5 +1,5 @@
 // lib/core/PlaybackController.js
-import { PLAYBACK_STATES } from '../../config/constants';
+import { PLAYBACK_STATES } from '@/config/constants';
 import { uiUpdateManager, UPDATE_PRIORITIES, UPDATE_FREQUENCIES } from './UIUpdateManager.js';
 
 /**
@@ -383,6 +383,12 @@ export class PlaybackController extends SimpleEventEmitter {
 
   _emitStateChange(reason) {
     const stateSnapshot = { ...this.state };
+    const eventData = {
+      state: stateSnapshot,
+      reason,
+      timestamp: Date.now()
+    };
+
     console.log(`🎵 PlaybackController state change (${reason}):`, {
       playbackState: stateSnapshot.playbackState,
       isPlaying: stateSnapshot.isPlaying,
@@ -390,10 +396,16 @@ export class PlaybackController extends SimpleEventEmitter {
       reason
     });
 
-    this.emit('state-change', {
-      state: stateSnapshot,
-      reason,
-      timestamp: Date.now()
+    // ✅ Emit to event listeners (EventEmitter)
+    this.emit('state-change', eventData);
+
+    // ✅ Notify direct subscribers (for stores)
+    this.subscribers.forEach(callback => {
+      try {
+        callback(eventData);
+      } catch (error) {
+        console.error('Error in subscriber callback:', error);
+      }
     });
   }
 

@@ -10,7 +10,7 @@
  * - Tüm timeline interactions
  */
 
-import { PLAYBACK_STATES } from '../../config/constants.js';
+import { PLAYBACK_STATES } from '@/config/constants.js';
 import { uiUpdateManager, UPDATE_PRIORITIES, UPDATE_FREQUENCIES } from './UIUpdateManager.js';
 
 // Precise step calculation to avoid floating point errors

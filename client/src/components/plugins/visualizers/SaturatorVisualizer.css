@@ -1,0 +1,62 @@
+.saturator-visualizer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: #0a0a0a;
+  border-radius: 8px;
+}
+
+.saturator-viz-section {
+  position: relative;
+}
+
+.saturator-viz-label {
+  position: absolute;
+  top: 8px;
+  left: 12px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: rgba(255, 255, 255, 0.4);
+  font-weight: 600;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.saturator-viz-canvas {
+  width: 100%;
+  height: 120px;
+  display: block;
+  border-radius: 6px;
+  background: #000;
+}
+
+.saturator-viz-stats {
+  display: flex;
+  justify-content: space-around;
+  padding: 8px;
+  background: rgba(255, 140, 0, 0.1);
+  border-radius: 6px;
+  border: 1px solid rgba(255, 140, 0, 0.2);
+}
+
+.saturator-stat {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.saturator-stat span:first-child {
+  color: rgba(255, 255, 255, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-size: 10px;
+}
+
+.saturator-stat-value {
+  color: #ff8c00;
+  font-weight: 600;
+  font-family: 'Monaco', monospace;
+}

@@ -901,8 +901,9 @@ export class AudioContextService {
       }
 
       try {
-        const effectId = await channel.addEffect(effectConfig.type, effectConfig.settings);
-        console.log('✅ Added effect to channel:', effectConfig.type, effectId);
+        // Pass the store's effect ID to maintain consistency
+        const effectId = await channel.addEffect(effectConfig.type, effectConfig.settings, effectConfig.id);
+        console.log('✅ Added effect to channel:', effectConfig.type, 'Store ID:', effectConfig.id, 'Engine ID:', effectId);
       } catch (error) {
         console.error('❌ Error adding effect:', effectConfig.type, error);
       }
@@ -934,6 +935,31 @@ export class AudioContextService {
     } else {
       console.warn('⚠️ Effect not found or no updateParameter method:', effectId);
     }
+  }
+
+  /**
+   * Get effect node for visualization
+   */
+  static getEffectNode(trackId, effectId) {
+    if (!this.audioEngine || !this.audioEngine.mixerChannels) {
+      console.warn('⚠️ No audio engine or mixer channels available');
+      return null;
+    }
+
+    const channel = this.audioEngine.mixerChannels.get(trackId);
+    if (!channel || !channel.effects) {
+      console.warn('⚠️ No mixer channel or effects found for trackId:', trackId);
+      return null;
+    }
+
+    // Find the effect and return its audio node
+    const effect = Array.from(channel.effects.values()).find(fx => fx.id === effectId);
+    if (effect && effect.node) {
+      return effect.node;
+    }
+
+    console.warn('⚠️ Effect node not found:', trackId, effectId);
+    return null;
   }
 
   // =================== SAMPLE EDITOR INTEGRATION ===================

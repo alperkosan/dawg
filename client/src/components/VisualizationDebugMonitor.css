@@ -1,0 +1,132 @@
+.viz-debug-toggle {
+  position: fixed;
+  top: 10px;
+  right: 10px;
+  width: 40px;
+  height: 40px;
+  background: rgba(0, 0, 0, 0.8);
+  border: 1px solid #333;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 20px;
+  cursor: pointer;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.viz-debug-toggle:hover {
+  background: rgba(0, 0, 0, 0.9);
+  transform: scale(1.1);
+}
+
+.viz-debug-monitor {
+  position: fixed;
+  top: 10px;
+  right: 10px;
+  width: 280px;
+  background: rgba(0, 0, 0, 0.95);
+  border: 1px solid #333;
+  border-radius: 8px;
+  color: #fff;
+  font-family: 'Monaco', 'Menlo', monospace;
+  font-size: 12px;
+  z-index: 10000;
+  backdrop-filter: blur(10px);
+}
+
+.viz-debug-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid #333;
+}
+
+.viz-debug-header h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.viz-debug-header button {
+  background: none;
+  border: none;
+  color: #888;
+  font-size: 20px;
+  cursor: pointer;
+  padding: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.viz-debug-header button:hover {
+  background: #333;
+  color: #fff;
+}
+
+.viz-debug-content {
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.viz-debug-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.viz-debug-section h4 {
+  margin: 0 0 8px 0;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #888;
+  border-bottom: 1px solid #222;
+  padding-bottom: 4px;
+}
+
+.viz-stat {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0;
+}
+
+.viz-stat span:first-child {
+  color: #aaa;
+}
+
+.viz-stat span:last-child {
+  font-weight: 600;
+  font-family: 'SF Mono', 'Monaco', monospace;
+}
+
+/* Scrollbar */
+.viz-debug-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.viz-debug-content::-webkit-scrollbar-track {
+  background: #1a1a1a;
+}
+
+.viz-debug-content::-webkit-scrollbar-thumb {
+  background: #444;
+  border-radius: 3px;
+}
+
+.viz-debug-content::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}

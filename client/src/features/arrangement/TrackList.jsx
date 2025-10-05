@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
-import { useArrangementStore } from '../../store/useArrangementStore';
-import { useInstrumentsStore } from '../../store/useInstrumentsStore';
-import { useMixerStore } from '../../store/useMixerStore';
-import { usePanelsStore } from '../../store/usePanelsStore';
+import { useArrangementStore } from '@/store/useArrangementStore';
+import { useInstrumentsStore } from '@/store/useInstrumentsStore';
+import { useMixerStore } from '@/store/useMixerStore';
+import { usePanelsStore } from '@/store/usePanelsStore';
 import { Music, Volume2, Mic, SlidersHorizontal } from 'lucide-react';
-import VolumeKnob from '../../ui/VolumeKnob';
+import { Knob } from '@/components/controls';
 import EffectSwitch from '../../ui/EffectSwitch';
 
 /**
@@ -79,8 +79,8 @@ const TrackHeader = ({ arrangementTrack, audioEngineRef }) => {
 
             <div className="flex items-center gap-2 shrink-0">
                 <EffectSwitch isActive={!instrument.isMuted} onClick={() => handleToggleInstrumentMute(instrument.id)} />
-                <VolumeKnob size={24} label="Pan" value={mixerTrack.pan} onChange={(val) => handleMixerParamChange(mixerTrack.id, 'pan', val, audioEngineRef.current)} min={-1} max={1} defaultValue={0} />
-                <VolumeKnob size={24} label="Vol" value={mixerTrack.volume} onChange={(val) => handleMixerParamChange(mixerTrack.id, 'volume', val, audioEngineRef.current)} min={-60} max={6} defaultValue={0} />
+                <Knob size={24} label="Pan" value={mixerTrack.pan} onChange={(val) => handleMixerParamChange(mixerTrack.id, 'pan', val, audioEngineRef.current)} min={-1} max={1} defaultValue={0} />
+                <Knob size={24} label="Vol" value={mixerTrack.volume} onChange={(val) => handleMixerParamChange(mixerTrack.id, 'volume', val, audioEngineRef.current)} min={-60} max={6} defaultValue={0} />
             </div>
         </div>
     );

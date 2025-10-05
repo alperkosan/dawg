@@ -1,7 +1,7 @@
 import React from 'react';
-import { ProfessionalKnob } from '../../ui/plugin_system/PluginControls';
-import { useInstrumentsStore } from '../../store/useInstrumentsStore';
-import { SignalVisualizer } from '../../ui/SignalVisualizer';
+import { Knob } from '@/components/controls';
+import { useInstrumentsStore } from '@/store/useInstrumentsStore';
+import { SignalVisualizer } from '@/components/common/SignalVisualizer';
 
 // === YENİ: MODÜLASYON MATRİSİ ARAYÜZ BİLEŞENİ ===
 const ModulationMatrix = ({ modMatrix, instrument }) => {
@@ -35,7 +35,7 @@ const ModulationMatrix = ({ modMatrix, instrument }) => {
                             {destinations.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
                         </select>
                         <div className="mod-matrix__amount">
-                            <ProfessionalKnob value={slot.amount} onChange={(v) => handleMatrixChange(index, 'amount', v)} min={-1} max={1} defaultValue={0} precision={2} size={40} />
+                            <Knob value={slot.amount} onChange={(v) => handleMatrixChange(index, 'amount', v)} min={-1} max={1} defaultValue={0} precision={2} size={40} />
                         </div>
                     </div>
                 ))}
@@ -90,8 +90,8 @@ export const ForgeSynthUI = ({ instrument }) => {
                                    <option value="fatsawtooth">Fat Saw</option><option value="fatsquare">Fat Square</option><option value="fattriangle">Fat Triangle</option><option value="sawtooth">Sawtooth</option><option value="square">Square</option><option value="triangle">Triangle</option><option value="sine">Sine</option>
                                 </select>
                             </div>
-                            <ProfessionalKnob label="Cutoff" value={filter.frequency} onChange={v => handleParamChange('filter.frequency', v)} min={20} max={15000} defaultValue={3000} unit="Hz" precision={0} size={56} logarithmic />
-                            <ProfessionalKnob label="Resonance" value={filter.Q} onChange={v => handleParamChange('filter.Q', v)} min={0.1} max={10} defaultValue={1} precision={2} size={56} />
+                            <Knob label="Cutoff" value={filter.frequency} onChange={v => handleParamChange('filter.frequency', v)} min={20} max={15000} defaultValue={3000} unit="Hz" precision={0} size={56} logarithmic />
+                            <Knob label="Resonance" value={filter.Q} onChange={v => handleParamChange('filter.Q', v)} min={0.1} max={10} defaultValue={1} precision={2} size={56} />
                         </div>
                     </div>
                     <div className="synth-module synth-module--visualizer">
@@ -103,10 +103,10 @@ export const ForgeSynthUI = ({ instrument }) => {
                 <div className="synth-module">
                      <h3 className="synth-module__title">AMP ENVELOPE</h3>
                     <div className="synth-module__knob-group">
-                        <ProfessionalKnob label="Attack" value={envelope.attack} onChange={v => handleParamChange('envelope.attack', v)} min={0.005} max={2} unit="s" precision={3} size={56} />
-                        <ProfessionalKnob label="Decay" value={envelope.decay} onChange={v => handleParamChange('envelope.decay', v)} min={0.01} max={2} unit="s" precision={2} size={56} />
-                        <ProfessionalKnob label="Sustain" value={envelope.sustain} onChange={v => handleParamChange('envelope.sustain', v)} min={0} max={1} precision={2} size={56} />
-                        <ProfessionalKnob label="Release" value={envelope.release} onChange={v => handleParamChange('envelope.release', v)} min={0.01} max={5} unit="s" precision={2} size={56} />
+                        <Knob label="Attack" value={envelope.attack} onChange={v => handleParamChange('envelope.attack', v)} min={0.005} max={2} unit="s" precision={3} size={56} />
+                        <Knob label="Decay" value={envelope.decay} onChange={v => handleParamChange('envelope.decay', v)} min={0.01} max={2} unit="s" precision={2} size={56} />
+                        <Knob label="Sustain" value={envelope.sustain} onChange={v => handleParamChange('envelope.sustain', v)} min={0} max={1} precision={2} size={56} />
+                        <Knob label="Release" value={envelope.release} onChange={v => handleParamChange('envelope.release', v)} min={0.01} max={5} unit="s" precision={2} size={56} />
                     </div>
                 </div>
 
@@ -116,16 +116,16 @@ export const ForgeSynthUI = ({ instrument }) => {
                          <h3 className="synth-module__title">LFO 1</h3>
                         <div className="synth-module__knob-group--small">
                             {/* === DÜZELTME BURADA === */}
-                            <ProfessionalKnob label="Rate" value={getRateValue(lfo1.frequency)} onChange={v => handleParamChange('lfo1.frequency', `${Math.round(v)}n`)} min={1} max={32} defaultValue={8} unit="n" size={56} />
-                            <ProfessionalKnob label="Depth" value={lfo1.amplitude} onChange={v => handleParamChange('lfo1.amplitude', v)} min={0} max={1} defaultValue={1} size={56} />
+                            <Knob label="Rate" value={getRateValue(lfo1.frequency)} onChange={v => handleParamChange('lfo1.frequency', `${Math.round(v)}n`)} min={1} max={32} defaultValue={8} unit="n" size={56} />
+                            <Knob label="Depth" value={lfo1.amplitude} onChange={v => handleParamChange('lfo1.amplitude', v)} min={0} max={1} defaultValue={1} size={56} />
                         </div>
                     </div>
                     <div className="synth-module">
                          <h3 className="synth-module__title">LFO 2</h3>
                         <div className="synth-module__knob-group--small">
                             {/* === DÜZELTME BURADA === */}
-                            <ProfessionalKnob label="Rate" value={getRateValue(lfo2.frequency)} onChange={v => handleParamChange('lfo2.frequency', `${Math.round(v)}n`)} min={1} max={32} defaultValue={2} unit="n" size={56} />
-                            <ProfessionalKnob label="Depth" value={lfo2.amplitude} onChange={v => handleParamChange('lfo2.amplitude', v)} min={0} max={1} defaultValue={1} size={56} />
+                            <Knob label="Rate" value={getRateValue(lfo2.frequency)} onChange={v => handleParamChange('lfo2.frequency', `${Math.round(v)}n`)} min={1} max={32} defaultValue={2} unit="n" size={56} />
+                            <Knob label="Depth" value={lfo2.amplitude} onChange={v => handleParamChange('lfo2.amplitude', v)} min={0} max={1} defaultValue={1} size={56} />
                         </div>
                     </div>
                 </div>

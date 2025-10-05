@@ -7,8 +7,8 @@
 
 import React, { useState, useRef, useCallback, useMemo } from 'react';
 import { FileAudio, Zap, Snowflake } from 'lucide-react';
-import { audioExportManager, EXPORT_FORMATS, QUALITY_PRESETS, EXPORT_TYPES, FL_PRESETS } from '../lib/audio/AudioExportManager';
-import { useArrangementStore } from '../store/useArrangementStore';
+import { audioExportManager, EXPORT_FORMATS, QUALITY_PRESETS, EXPORT_TYPES, FL_PRESETS } from '@/lib/audio/AudioExportManager';
+import { useArrangementStore } from '@/store/useArrangementStore';
 import './AudioExportPanel.css';
 
 const AudioExportPanel = ({ isOpen, onClose }) => {

@@ -1,18 +1,17 @@
 import React, { useRef, useEffect, useCallback, useState, memo, useMemo } from 'react';
 import { useDrop } from 'react-dnd';
-import { useInstrumentsStore } from '../../store/useInstrumentsStore';
-import { useArrangementStore } from '../../store/useArrangementStore';
-import { usePanelsStore } from '../../store/usePanelsStore';
-import { usePlaybackStore } from '../../store/usePlaybackStore';
+import { useInstrumentsStore } from '@/store/useInstrumentsStore';
+import { useArrangementStore } from '@/store/useArrangementStore';
+import { usePanelsStore } from '@/store/usePanelsStore';
+import { usePlaybackStore } from '@/store/usePlaybackStoreV2';
 import { shallow } from 'zustand/shallow';
-import { useMixerStore } from '../../store/useMixerStore';
-import { useTransportPosition, useTransportTimeline, useTransportPlayhead } from '../../hooks/useTransportManager.js';
-import commandManager from '../../lib/commands/CommandManager';
-import { AddNoteCommand } from '../../lib/commands/AddNoteCommand';
-import { DeleteNoteCommand } from '../../lib/commands/DeleteNoteCommand';
-import { DND_TYPES } from '../../config/constants';
-import { storeManager } from '../../store/StoreManager';
-import { createMultiScrollSync, createWheelForwarder } from '../../lib/utils/scrollSync';
+import { useMixerStore } from '@/store/useMixerStore';
+import commandManager from '@/lib/commands/CommandManager';
+import { AddNoteCommand } from '@/lib/commands/AddNoteCommand';
+import { DeleteNoteCommand } from '@/lib/commands/DeleteNoteCommand';
+import { DND_TYPES } from '@/config/constants';
+import { storeManager } from '@/store/StoreManager';
+import { createMultiScrollSync, createWheelForwarder } from '@/lib/utils/scrollSync';
 
 // ✅ PERFORMANCE: Local throttle utility removed - now using optimized scroll utilities
 import { Copy, X, Download } from 'lucide-react';
@@ -20,7 +19,7 @@ import InstrumentRow from './InstrumentRow';
 import StepGrid from './StepGrid';
 import PianoRollMiniView from './PianoRollMiniView';
 import InteractiveTimeline from './InteractiveTimeline';
-import AudioExportPanel from '../../components/AudioExportPanel';
+import AudioExportPanel from '@/components/AudioExportPanel';
 // ✅ PERFORMANCE: Lazy-loaded icons to reduce initial bundle size
 const Icon = memo(({ name, size = 20, ...props }) => {
   const [IconComponent, setIconComponent] = useState(null);
@@ -93,10 +92,21 @@ function ChannelRack() {
     togglePanel
   } = panelsData;
 
-  // ✅ UNIFIED TRANSPORT SYSTEM
-  const { position, displayPosition, playbackState, isPlaying } = useTransportPosition();
-  const { jumpToPosition, setGhostPosition, clearGhostPosition } = useTransportTimeline(STEP_WIDTH, 64);
-  const { ghostPosition, registerPlayheadElement } = useTransportPlayhead(STEP_WIDTH);
+  // ✅ UNIFIED STATE from PlaybackStore - Single source of truth
+  const playbackMode = usePlaybackStore(state => state.playbackMode);
+  const playbackState = usePlaybackStore(state => state.playbackState);
+  const isPlaying = usePlaybackStore(state => state.isPlaying);
+  const position = usePlaybackStore(state => playbackMode === 'pattern' ? state.currentStep : 0);
+  const jumpToPosition = usePlaybackStore(state => state.jumpToStep);
+  const setTransportPosition = usePlaybackStore(state => state.setTransportPosition);
+
+  // ✅ Conditional position - only track in pattern mode
+  const channelRackPosition = playbackMode === 'pattern' ? position : 0;
+  const displayPosition = position;
+
+  // Ghost position state (local to channel rack)
+  const [ghostPosition, setGhostPosition] = useState(null);
+  const clearGhostPosition = () => setGhostPosition(null);
 
   // ✅ Position tracking with actual position (not ghost)
 
@@ -483,44 +493,46 @@ function ChannelRack() {
             currentPosition={displayPosition}
             onJumpToPosition={jumpToPosition}
           />
-          {/* FL Studio style compact playhead with click interaction */}
-          <div
-            className={`channel-rack-layout__compact-playhead ${
-              isPlaying ? 'channel-rack-layout__compact-playhead--playing' : ''
-            } ${
-              isJumping ? 'channel-rack-layout__compact-playhead--jumping' : ''
-            } ${
-              playbackState === 'stopped' ? 'channel-rack-layout__compact-playhead--stopped' : ''
-            }`}
-            style={{
-              transform: `translateX(${position * STEP_WIDTH}px)`,
-              position: 'absolute',
-              top: 0,
-              bottom: 0,
-              width: '2px',
-              backgroundColor: '#00ff88',
-              zIndex: 100,
-              pointerEvents: 'none',
-              boxShadow: '0 0 8px rgba(0, 255, 136, 0.6)',
-              transition: 'transform 50ms linear',
-              willChange: 'transform'
-            }}
-          >
-            {/* Compact playhead indicator arrow */}
+          {/* FL Studio style compact playhead - only in pattern mode */}
+          {playbackMode === 'pattern' && (
             <div
+              className={`channel-rack-layout__compact-playhead ${
+                isPlaying ? 'channel-rack-layout__compact-playhead--playing' : ''
+              } ${
+                isJumping ? 'channel-rack-layout__compact-playhead--jumping' : ''
+              } ${
+                playbackState === 'stopped' ? 'channel-rack-layout__compact-playhead--stopped' : ''
+              }`}
               style={{
+                transform: `translateX(${channelRackPosition * STEP_WIDTH}px)`,
                 position: 'absolute',
-                top: '-2px',
-                left: '-3px',
-                width: 0,
-                height: 0,
-                borderLeft: '4px solid transparent',
-                borderRight: '4px solid transparent',
-                borderTop: '6px solid #00ff88',
-                filter: 'drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3))'
+                top: 0,
+                bottom: 0,
+                width: '2px',
+                backgroundColor: '#00ff88',
+                zIndex: 100,
+                pointerEvents: 'none',
+                boxShadow: '0 0 8px rgba(0, 255, 136, 0.6)',
+                transition: 'transform 50ms linear',
+                willChange: 'transform'
               }}
-            />
-          </div>
+            >
+              {/* Compact playhead indicator arrow */}
+              <div
+                style={{
+                  position: 'absolute',
+                  top: '-2px',
+                  left: '-3px',
+                  width: 0,
+                  height: 0,
+                  borderLeft: '4px solid transparent',
+                  borderRight: '4px solid transparent',
+                  borderTop: '6px solid #00ff88',
+                  filter: 'drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3))'
+                }}
+              />
+            </div>
+          )}
           {/* Interactive timeline area - FL Studio style */}
           <div
             className="channel-rack-layout__timeline-click-area"

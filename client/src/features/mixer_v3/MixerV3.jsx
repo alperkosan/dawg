@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { useMixerStore } from '../../store/useMixerStore';
-import { usePanelsStore } from '../../store/usePanelsStore';
+import { useMixerStore } from '@/store/useMixerStore';
+import { usePanelsStore } from '@/store/usePanelsStore';
 import {
   SlidersHorizontal,
   Route,

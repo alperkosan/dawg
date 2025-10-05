@@ -1,0 +1,515 @@
+/* EFFECTS RACK - FL Studio Inspired Effects Panel */
+
+.effects-rack {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  background: #0f0f0f;
+}
+
+.effects-rack--empty {
+  align-items: center;
+  justify-content: center;
+}
+
+.effects-rack__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 40px 20px;
+  text-align: center;
+}
+
+.effects-rack__empty p {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #666;
+}
+
+.effects-rack__empty span {
+  font-size: 12px;
+  color: #444;
+}
+
+/* =================== HEADER =================== */
+
+.effects-rack__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 12px 16px;
+  background: linear-gradient(180deg, #1a1a1a, #141414);
+  border-bottom: 1px solid #1a1a1a;
+  flex-shrink: 0;
+}
+
+.effects-rack__title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.effects-rack__color {
+  width: 4px;
+  height: 32px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.effects-rack__info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.effects-rack__info h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.effects-rack__info span {
+  font-size: 11px;
+  color: #666;
+}
+
+.effects-rack__add-btn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 4px;
+  color: #4a9eff;
+  cursor: pointer;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.effects-rack__add-btn:hover {
+  background: #2a4a6a;
+  border-color: #4a9eff;
+  box-shadow: 0 0 8px rgba(74, 158, 255, 0.3);
+}
+
+/* =================== ADD MENU =================== */
+
+.effects-rack__add-menu {
+  width: 100%;
+  background: #1a1a1a;
+  border-bottom: 1px solid #0a0a0a;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  animation: slideDown 0.2s ease;
+  max-height: 400px;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+
+.effects-rack__add-menu::-webkit-scrollbar {
+  width: 6px;
+}
+
+.effects-rack__add-menu::-webkit-scrollbar-track {
+  background: #0a0a0a;
+}
+
+.effects-rack__add-menu::-webkit-scrollbar-thumb {
+  background: #333;
+  border-radius: 3px;
+}
+
+.effects-rack__add-menu::-webkit-scrollbar-thumb:hover {
+  background: #444;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.effects-rack__add-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: #0f0f0f;
+  border: 1px solid #222;
+  border-radius: 4px;
+  color: #999;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-align: left;
+}
+
+.effects-rack__add-item:hover {
+  background: #1a1a1a;
+  border-color: #4a9eff;
+  color: #fff;
+}
+
+.effects-rack__add-item:hover .effects-rack__add-item-category {
+  color: #4a9eff;
+}
+
+.effects-rack__add-item-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.effects-rack__add-item-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.effects-rack__add-item-category {
+  font-size: 10px;
+  color: #555;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color 0.15s;
+}
+
+/* =================== EFFECTS LIST =================== */
+
+.effects-rack__list {
+  flex: 1;
+  width: 100%;
+  overflow-y: auto;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.effects-rack__no-effects {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 60px 20px;
+  text-align: center;
+  flex: 1;
+}
+
+.effects-rack__no-effects p {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #666;
+}
+
+.effects-rack__no-effects span {
+  font-size: 12px;
+  color: #555;
+  background: #1a1a1a;
+  padding: 6px 12px;
+  border-radius: 4px;
+  border: 1px solid #222;
+}
+
+/* =================== EFFECT ITEM =================== */
+
+.effects-rack__item {
+  background: linear-gradient(180deg, #1a1a1a, #141414);
+  border: 1px solid #222;
+  border-radius: 6px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: all 0.15s;
+}
+
+.effects-rack__item:hover {
+  border-color: #333;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.effects-rack__item--disabled {
+  opacity: 0.5;
+}
+
+.effects-rack__item-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.effects-rack__drag-handle {
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #444;
+  cursor: grab;
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+.effects-rack__drag-handle:active {
+  cursor: grabbing;
+}
+
+.effects-rack__drag-handle:hover {
+  color: #666;
+}
+
+.effects-rack__item-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.effects-rack__item-info svg {
+  flex-shrink: 0;
+  color: #4a9eff;
+}
+
+.effects-rack__item-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.effects-rack__item-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.effects-rack__power-btn,
+.effects-rack__expand-btn,
+.effects-rack__delete-btn {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #0f0f0f;
+  border: 1px solid #222;
+  border-radius: 3px;
+  color: #666;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.effects-rack__power-btn:hover,
+.effects-rack__expand-btn:hover {
+  background: #1a1a1a;
+  border-color: #333;
+  color: #999;
+}
+
+.effects-rack__power-btn.active {
+  background: #22c55e;
+  border-color: #16a34a;
+  color: #fff;
+}
+
+.effects-rack__delete-btn:hover {
+  background: #3f1a1a;
+  border-color: #ef4444;
+  color: #ef4444;
+}
+
+.effects-rack__expand-btn svg {
+  transition: transform 0.2s;
+}
+
+/* =================== MIX CONTROL =================== */
+
+.effects-rack__mix-control {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 4px;
+}
+
+.effects-rack__mix-control label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: #666;
+  letter-spacing: 0.5px;
+}
+
+.effects-rack__mix-slider-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.effects-rack__mix-slider {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: #0a0a0a;
+  outline: none;
+  -webkit-appearance: none;
+}
+
+.effects-rack__mix-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #4a9eff;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.effects-rack__mix-slider::-webkit-slider-thumb:hover {
+  background: #5aa9ff;
+  box-shadow: 0 0 8px rgba(74, 158, 255, 0.6);
+}
+
+.effects-rack__mix-value {
+  font-size: 11px;
+  font-weight: 600;
+  color: #4a9eff;
+  min-width: 40px;
+  text-align: right;
+  font-family: 'Courier New', monospace;
+}
+
+/* =================== PARAMETERS =================== */
+
+.effects-rack__params {
+  padding-top: 8px;
+  border-top: 1px solid #1a1a1a;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  animation: expandParams 0.2s ease;
+}
+
+@keyframes expandParams {
+  from {
+    opacity: 0;
+    max-height: 0;
+  }
+  to {
+    opacity: 1;
+    max-height: 200px;
+  }
+}
+
+.effects-rack__param {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.effects-rack__param label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: #666;
+  letter-spacing: 0.5px;
+}
+
+.effects-rack__settings-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: #0f0f0f;
+  border: 1px solid #222;
+  border-radius: 4px;
+  color: #999;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.effects-rack__settings-btn:hover {
+  background: #1a1a1a;
+  border-color: #4a9eff;
+  color: #4a9eff;
+}
+
+/* =================== ROUTING =================== */
+
+.effects-rack__routing {
+  width: 100%;
+  padding: 12px 16px;
+  background: #0a0a0a;
+  border-top: 1px solid #1a1a1a;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+
+.effects-rack__routing-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: #666;
+  letter-spacing: 0.5px;
+}
+
+.effects-rack__routing-value {
+  font-size: 12px;
+  font-weight: 500;
+  color: #4a9eff;
+}
+
+/* =================== SCROLLBAR =================== */
+
+.effects-rack__list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.effects-rack__list::-webkit-scrollbar-track {
+  background: #0a0a0a;
+}
+
+.effects-rack__list::-webkit-scrollbar-thumb {
+  background: #222;
+  border-radius: 4px;
+}
+
+.effects-rack__list::-webkit-scrollbar-thumb:hover {
+  background: #333;
+}

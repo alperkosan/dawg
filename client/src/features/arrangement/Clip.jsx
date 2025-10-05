@@ -1,6 +1,6 @@
 import React from 'react';
 import { Rnd } from 'react-rnd';
-import { useArrangementStore } from '../../store/useArrangementStore';
+import { useArrangementStore } from '@/store/useArrangementStore';
 
 // GÜNCELLENDİ: onContextMenu prop'unu alıyor
 export function Clip({ clip, barWidth, zoomX, track, trackIndex, onContextMenu }) {

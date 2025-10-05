@@ -1,8 +1,8 @@
 import React, { useEffect } from 'react';
 import WaveformDisplay from '../sample_editor_v3/WaveformDisplay';
 import { Loader2, Play, Pause, AlertTriangle, Plus } from 'lucide-react';
-import { usePreviewPlayerStore } from '../../store/usePreviewPlayerStore';
-import { useInstrumentsStore } from '../../store/useInstrumentsStore';
+import { usePreviewPlayerStore } from '@/store/usePreviewPlayerStore';
+import { useInstrumentsStore } from '@/store/useInstrumentsStore';
 
 export function FileBrowserPreview({ fileNode }) {
   const { url, name } = fileNode || {};

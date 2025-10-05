@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { useMixerStore } from '../../../store/useMixerStore';
+import { useMixerStore } from '@/store/useMixerStore';
 import FaderV3 from './FaderV3';
 import EQSection from './EQSection';
 import SendsSection from './SendsSection';

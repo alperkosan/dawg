@@ -88,30 +88,77 @@ class EffectsProcessor extends AudioWorkletProcessor {
     const delayTime = this.getParameterValue(parameters.delayTime, sampleIndex);
     const feedback = this.getParameterValue(parameters.feedback, sampleIndex);
     const mix = this.getParameterValue(parameters.mix, sampleIndex);
-    
+
     const drySample = sample;
-    
-    // 1. Distortion/Saturation
-    sample = this.applySaturation(sample, drive);
-    
-    // 2. Tone control
-    sample = this.applyToneControl(sample, tone);
-    
-    // 3. Delay effect
-    const delayedSample = this.applyDelay(sample, delayTime, feedback);
-    
-    // 4. Mix dry/wet
-    sample = drySample * (1 - mix) + delayedSample * mix;
-    
-    // 5. Output level
+    let wetSample = sample;
+
+    // Process based on effect type
+    switch (this.effectType) {
+      case 'Saturator':
+        wetSample = this.applySaturation(wetSample, drive);
+        break;
+
+      case 'Delay':
+      case 'FeedbackDelay':
+        wetSample = this.applyDelay(wetSample, delayTime, feedback);
+        break;
+
+      case 'Reverb':
+        // Simple reverb using multiple delays
+        wetSample = this.applyReverb(wetSample, delayTime, feedback);
+        break;
+
+      case 'Compressor':
+      case 'SidechainCompressor':
+        wetSample = this.applyCompressor(wetSample, drive, tone);
+        break;
+
+      case 'MultiBandEQ':
+        wetSample = this.applyToneControl(wetSample, tone);
+        break;
+
+      case 'TidalFilter':
+        wetSample = this.applyToneControl(wetSample, tone);
+        wetSample = this.applyResonance(wetSample, feedback);
+        break;
+
+      case 'StardustChorus':
+      case 'VortexPhaser':
+        wetSample = this.applyModulation(wetSample, delayTime * 0.01, tone);
+        break;
+
+      case 'ArcadeCrusher':
+        wetSample = this.applyBitCrush(wetSample, drive);
+        break;
+
+      case 'PitchShifter':
+        // Simple pitch shift approximation
+        wetSample = wetSample * (1 + (tone - 0.5) * 0.2);
+        break;
+
+      case 'BassEnhancer808':
+        wetSample = this.applyBassBoost(wetSample, drive);
+        break;
+
+      default:
+        // Generic effect chain for unknown types
+        wetSample = this.applySaturation(wetSample, drive);
+        wetSample = this.applyToneControl(wetSample, tone);
+        wetSample = this.applyDelay(wetSample, delayTime, feedback);
+    }
+
+    // Mix dry/wet
+    sample = drySample * (1 - mix) + wetSample * mix;
+
+    // Output level
     sample *= level;
-    
-    // 6. DC blocker
+
+    // DC blocker
     sample = this.dcBlock(sample);
-    
-    // 7. Final limiting
+
+    // Final limiting
     sample = this.softLimit(sample);
-    
+
     return sample;
   }
 
@@ -222,6 +269,54 @@ class EffectsProcessor extends AudioWorkletProcessor {
     const rc = 1 / (2 * Math.PI * cutoffFreq);
     const dt = 1 / this.sampleRate;
     return rc / (rc + dt);
+  }
+
+  applyReverb(sample, time, feedback) {
+    // Simple multi-tap delay reverb
+    const tap1 = this.applyDelay(sample, time * 0.7, feedback * 0.3);
+    const tap2 = this.applyDelay(sample, time * 1.2, feedback * 0.25);
+    const tap3 = this.applyDelay(sample, time * 1.8, feedback * 0.2);
+    return (tap1 + tap2 + tap3) * 0.33;
+  }
+
+  applyCompressor(sample, threshold, ratio) {
+    // Simple soft-knee compressor
+    const absLevel = Math.abs(sample);
+    const thresholdNorm = 0.3 + threshold * 0.4; // 0.3 to 0.7
+    const ratioNorm = 1 + ratio * 3; // 1:1 to 4:1
+
+    if (absLevel > thresholdNorm) {
+      const excess = absLevel - thresholdNorm;
+      const compressed = thresholdNorm + excess / ratioNorm;
+      return Math.sign(sample) * compressed;
+    }
+    return sample;
+  }
+
+  applyModulation(sample, depth, rate) {
+    // Simple chorus/flanger using modulated delay
+    const lfoValue = Math.sin(this.delayWriteIndex * rate * 0.001);
+    const modulatedDelay = depth * (1 + lfoValue * 0.5);
+    return this.applyDelay(sample, modulatedDelay, 0.3);
+  }
+
+  applyBitCrush(sample, bits) {
+    // Bit depth reduction for lo-fi effect
+    const bitDepth = Math.max(1, Math.floor(bits * 8)); // 1-80 bits
+    const steps = Math.pow(2, bitDepth);
+    return Math.floor(sample * steps) / steps;
+  }
+
+  applyBassBoost(sample, amount) {
+    // Simple bass boost using lowpass + mix
+    const boosted = this.applyToneControl(sample, 0.2); // Dark tone = bass
+    return sample + boosted * amount * 0.5;
+  }
+
+  applyResonance(sample, resonance) {
+    // Simple resonant peak
+    const feedback = resonance * 0.8;
+    return sample + this.toneFilterState[0] * feedback;
   }
 
   getParameterValue(param, sampleIndex) {

@@ -1,7 +1,7 @@
 // src/store/useFileBrowserStore.js - Değişiklik Yok, sadece Tone.js bağımlılığı kalmadı.
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
-import { FILE_SYSTEM_TYPES } from '../config/constants';
+import { FILE_SYSTEM_TYPES } from '@/config/constants';
 
 // Bir düğümü ağaç yapısı içinde ID'sine göre bulan yardımcı fonksiyon.
 const findNode = (node, nodeId) => {

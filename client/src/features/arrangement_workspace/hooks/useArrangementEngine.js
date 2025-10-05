@@ -9,7 +9,7 @@
  */
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { uiUpdateManager, UPDATE_PRIORITIES, UPDATE_FREQUENCIES } from '../../../lib/core/UIUpdateManager.js';
+import { uiUpdateManager, UPDATE_PRIORITIES, UPDATE_FREQUENCIES } from '@/lib/core/UIUpdateManager.js';
 
 // Constants
 const TRACK_HEADER_WIDTH = 150;
@@ -169,27 +169,57 @@ export function useArrangementEngine(containerRef, arrangement) {
     if (ctrlKey) {
       e.preventDefault();
 
-      // Zoom
+      // Zoom factor
       const zoomFactor = 1 - deltaY * 0.005;
       const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, vp.zoomX * zoomFactor));
 
+      // Mouse position in canvas space
       const mouseX = offsetX - TRACK_HEADER_WIDTH;
-      const worldX = (vp.scrollX + mouseX) / vp.zoomX;
-      const newScrollX = (worldX * newZoom) - mouseX;
+      const mouseY = offsetY - TIMELINE_HEIGHT;
 
-      // Direct update for zoom (no smoothing)
+      // Calculate world coordinate under mouse (using CURRENT values)
+      const worldX = (vp.scrollX + mouseX) / vp.zoomX;
+      const worldY = (vp.scrollY + mouseY) / vp.zoomX; // Y zoom aynı X ile
+
+      // Calculate new scroll position
+      let newScrollX = (worldX * newZoom) - mouseX;
+      let newScrollY = (worldY * newZoom) - mouseY;
+
+      // Calculate max scroll bounds
+      const totalWidth = dimensions.totalWidth * newZoom;
+      const totalHeight = dimensions.totalHeight; // Y zoom yok, sabit
+      const maxScrollX = Math.max(0, totalWidth - (viewportSize.width - TRACK_HEADER_WIDTH));
+      const maxScrollY = Math.max(0, totalHeight - (viewportSize.height - TIMELINE_HEIGHT));
+
+      // Clamp scroll values
+      newScrollX = Math.max(0, Math.min(maxScrollX, newScrollX));
+      newScrollY = Math.max(0, Math.min(maxScrollY, newScrollY));
+
+      // Direct update for zoom (disable smooth animation during zoom)
       vp.scrollX = newScrollX;
+      vp.scrollY = newScrollY;
       vp.zoomX = newZoom;
       vp.targetScrollX = newScrollX;
+      vp.targetScrollY = newScrollY;
       vp.targetZoomX = newZoom;
 
+      // Immediate render trigger with timestamp
       setRenderTrigger(Date.now());
     } else {
-      // Scroll
-      vp.targetScrollX = Math.max(0, vp.targetScrollX + deltaX);
-      vp.targetScrollY = Math.max(0, vp.targetScrollY + deltaY);
+      // Normal scroll
+      vp.targetScrollX += deltaX;
+      vp.targetScrollY += deltaY;
+
+      // Clamp scroll targets
+      const totalWidth = dimensions.totalWidth * vp.targetZoomX;
+      const totalHeight = dimensions.totalHeight;
+      const maxScrollX = Math.max(0, totalWidth - (viewportSize.width - TRACK_HEADER_WIDTH));
+      const maxScrollY = Math.max(0, totalHeight - (viewportSize.height - TIMELINE_HEIGHT));
+
+      vp.targetScrollX = Math.max(0, Math.min(maxScrollX, vp.targetScrollX));
+      vp.targetScrollY = Math.max(0, Math.min(maxScrollY, vp.targetScrollY));
     }
-  }, []);
+  }, [dimensions, viewportSize]);
 
   // Setup wheel event listener with passive: false
   useEffect(() => {

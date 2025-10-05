@@ -9,9 +9,9 @@
  */
 
 import React, { useRef, useEffect, useCallback, useState, useMemo } from 'react';
-import { useArrangementWorkspaceStore } from '../../../store/useArrangementWorkspaceStore';
-import { useArrangementStore } from '../../../store/useArrangementStore';
-import { usePlaybackStore } from '../../../store/usePlaybackStore';
+import { useArrangementWorkspaceStore } from '@/store/useArrangementWorkspaceStore';
+import { useArrangementStore } from '@/store/useArrangementStore';
+import { usePlaybackStore } from '@/store/usePlaybackStore';
 import { Plus, Play, Pause, Square, ZoomIn, ZoomOut } from 'lucide-react';
 
 const ArrangementCanvasRenderer = ({ arrangement }) => {

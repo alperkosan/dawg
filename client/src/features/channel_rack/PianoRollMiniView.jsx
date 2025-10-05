@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useEffect } from 'react';
-import { NativeTimeUtils } from '../../lib/utils/NativeTimeUtils';
+import { NativeTimeUtils } from '@/lib/utils/NativeTimeUtils';
 
 // MIDI nota numarasını "C4" gibi bir dizeye çevirir.
 const pitchToMidi = (pitch) => {

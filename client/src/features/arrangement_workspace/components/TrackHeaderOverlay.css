@@ -1,0 +1,72 @@
+/* Track Header Overlay Styles */
+
+.track-header-overlay {
+  overflow: hidden;
+}
+
+.track-header-controls {
+  background: transparent;
+  transition: background-color 0.15s ease;
+}
+
+.track-header-controls:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* Track buttons */
+.track-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 1px solid #444;
+  background: #1a1a1a;
+  color: #888;
+  font-size: 10px;
+  font-weight: 600;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  padding: 0;
+}
+
+.track-btn:hover {
+  background: #252525;
+  border-color: #666;
+  color: #aaa;
+}
+
+/* Mute button */
+.track-btn-mute.active {
+  background: #ef4444;
+  border-color: #ef4444;
+  color: white;
+}
+
+.track-btn-mute.active:hover {
+  background: #dc2626;
+  border-color: #dc2626;
+}
+
+/* Solo button */
+.track-btn-solo.active {
+  background: #eab308;
+  border-color: #eab308;
+  color: white;
+}
+
+.track-btn-solo.active:hover {
+  background: #ca8a04;
+  border-color: #ca8a04;
+}
+
+/* Track color indicator */
+.track-color-indicator {
+  opacity: 0.8;
+  transition: opacity 0.15s ease;
+}
+
+.track-color-indicator:hover {
+  opacity: 1;
+}

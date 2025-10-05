@@ -1,7 +1,7 @@
 // src/store/usePreviewPlayerStore.js
 // Tone.js bağımlılığı kaldırıldı, Native Web Audio API ve kendi audioUtils'lerimiz kullanılıyor.
 import { create } from 'zustand';
-import { decodeAudioData, setGlobalAudioContext } from '../lib/utils/audioUtils';
+import { decodeAudioData, setGlobalAudioContext } from '@/lib/utils/audioUtils';
 
 let audioContext = null;
 let previewSource = null;

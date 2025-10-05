@@ -1,7 +1,7 @@
 // src/store/usePlaybackStoreV2.js
 import { create } from 'zustand';
-import { PLAYBACK_MODES, PLAYBACK_STATES } from '../config/constants';
-import PlaybackControllerSingleton from '../lib/core/PlaybackControllerSingleton.js';
+import { PLAYBACK_MODES, PLAYBACK_STATES } from '@/config/constants';
+import PlaybackControllerSingleton from '@/lib/core/PlaybackControllerSingleton.js';
 
 /**
  * ✅ V2 PLAYBACK STORE - Unified System Bridge
@@ -61,6 +61,11 @@ export const usePlaybackStore = create((set, get) => ({
         loopStartStep: data.state.loopStart,
         loopEndStep: data.state.loopEnd
       });
+    });
+
+    // ✅ FIX: Position update subscription (for real-time playhead movement)
+    controller.on('position-update', (data) => {
+      set({ currentStep: data.position });
     });
 
     // Ghost position subscription
@@ -154,8 +159,16 @@ export const usePlaybackStore = create((set, get) => ({
   },
 
   // Transport legacy
-  setTransportPosition: (position, step) => {
+  setTransportPosition: async (position, step) => {
+    // Update UI state
     set({ transportPosition: position, transportStep: step });
+
+    // Update PlaybackManager position
+    const controller = await get()._initController();
+    if (controller?.playbackManager) {
+      controller.playbackManager.jumpToStep(step);
+      console.log(`🎯 Transport position set: ${position} (step ${step})`);
+    }
   },
 
   setPlaybackState: (state) => {
@@ -165,8 +178,42 @@ export const usePlaybackStore = create((set, get) => ({
   // =============== ARRANGEMENT INTEGRATION ===============
 
   setPlaybackMode: async (mode) => {
-    set({ playbackMode: mode });
+    console.log(`🎵 Playback mode changing: ${get().playbackMode} → ${mode}`);
+
+    // ✅ Get controller first
+    let controller = get()._controller;
+    if (!controller) {
+      console.log('🎵 Controller not initialized yet, initializing now...');
+      controller = await get()._initController();
+    }
+
+    // ✅ CRITICAL: Stop playback first (before any state changes)
+    const wasPlaying = get().isPlaying;
+    if (wasPlaying && controller) {
+      console.log('🎵 Stopping playback before mode change...');
+      await controller.stop();
+      // Wait a tick for events to propagate
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+
+    // ✅ Update mode in PlaybackManager
+    const playbackManager = controller?.audioEngine?.playbackManager;
+    if (playbackManager) {
+      console.log(`🎵 Setting PlaybackManager.currentMode to: ${mode}`);
+      playbackManager.currentMode = mode;
+    }
+
+    // ✅ Update store state (after controller updated)
+    set({
+      playbackMode: mode,
+      isPlaying: false,
+      playbackState: PLAYBACK_STATES.STOPPED,
+      currentStep: 0
+    });
+
     get().updateLoopLength();
+
+    console.log(`🎵 Playback mode changed to: ${mode}, isPlaying: ${get().isPlaying}`);
   },
 
   updateLoopLength: () => {

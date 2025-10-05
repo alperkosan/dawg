@@ -1,7 +1,7 @@
 import React from 'react';
 // HATA DÜZELTMESİ: 'Glue' ikonu 'Combine' olarak değiştirildi.
 import { MousePointer, Scissors, Pencil, Combine, ZoomIn, ZoomOut, Grid } from 'lucide-react';
-import { useArrangementStore } from '../../store/useArrangementStore';
+import { useArrangementStore } from '@/store/useArrangementStore';
 
 const ToolButton = ({ label, icon: Icon, toolId, activeTool, onClick }) => (
     <button onClick={onClick} title={label} className={`p-2 rounded-md transition-colors ${activeTool === toolId ? 'bg-indigo-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'}`}>

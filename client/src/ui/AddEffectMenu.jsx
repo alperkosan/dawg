@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useLayoutEffect, useState, useMemo } from 'react';
 import ReactDOM from 'react-dom';
 import { ChevronRight, Search, X } from 'lucide-react';
-import { pluginRegistry } from '../config/pluginConfig';
+import { pluginRegistry } from '@/config/pluginConfig';
 
 // YENİ: Portal'da render edilecek alt menü bileşeni
 const SubMenu = ({ parentRef, plugins, onSelect, onClose }) => {

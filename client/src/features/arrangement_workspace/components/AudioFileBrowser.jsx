@@ -16,7 +16,7 @@ import {
   FileAudio, Search, Filter, Grid, List, MoreVertical,
   Tag, Download, Trash2, Copy, Edit3, Music
 } from 'lucide-react';
-import { useArrangementWorkspaceStore } from '../../../store/useArrangementWorkspaceStore';
+import { useArrangementWorkspaceStore } from '@/store/useArrangementWorkspaceStore';
 
 const AudioFileBrowser = () => {
   const {

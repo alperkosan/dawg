@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { RealtimeEffectsEngine } from '../../../lib/audio/RealtimeEffects';
+import { RealtimeEffectsEngine } from '@/lib/audio/RealtimeEffects';
 
 export const useRealtimeEffects = (buffer) => {
   const [engine, setEngine] = useState(null);

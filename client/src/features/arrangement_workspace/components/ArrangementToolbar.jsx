@@ -12,7 +12,7 @@ import React from 'react';
 import {
   Grid, MousePointer, Scissors
 } from 'lucide-react';
-import { useArrangementWorkspaceStore } from '../../../store/useArrangementWorkspaceStore';
+import { useArrangementWorkspaceStore } from '@/store/useArrangementWorkspaceStore';
 
 const ArrangementToolbar = ({ arrangement }) => {
   // Store state

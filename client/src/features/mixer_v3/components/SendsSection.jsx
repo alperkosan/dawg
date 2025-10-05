@@ -1,5 +1,5 @@
 import React from 'react';
-import { useMixerStore } from '../../../store/useMixerStore';
+import { useMixerStore } from '@/store/useMixerStore';
 import VolumeKnob from './VolumeKnob';
 import { ExternalLink } from 'lucide-react';
 import './eq-sends-styles.css';

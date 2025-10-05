@@ -1,5 +1,5 @@
 import React from 'react';
-import { keymap } from '../../config/keymapConfig'; // Merkezi yapılandırmayı import et
+import { keymap } from '@/config/keymapConfig'; // Merkezi yapılandırmayı import et
 
 /**
  * keymapConfig.js dosyasını okuyarak tüm klavye kısayollarını

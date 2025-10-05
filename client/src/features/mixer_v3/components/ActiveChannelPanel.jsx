@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { useMixerStore } from '../../../store/useMixerStore';
-import { pluginRegistry } from '../../../config/pluginConfig';
+import { useMixerStore } from '@/store/useMixerStore';
+import { pluginRegistry } from '@/config/pluginConfig';
 import {
   Volume2,
   VolumeX,

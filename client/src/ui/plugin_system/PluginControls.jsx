@@ -16,6 +16,14 @@ export const ProfessionalKnob = ({
 }) => {
   const [isDragging, setIsDragging] = useState(false);
   const dragStartRef = useRef({ y: 0, value: 0 });
+  const rafRef = useRef(null);
+  const latestEventRef = useRef({ clientY: 0, shiftKey: false });
+  const onChangeRef = useRef(onChange);
+
+  // Keep onChange ref up to date
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
 
   const valueToAngle = useCallback((val) => {
     if (typeof val !== 'number') return -135;
@@ -30,30 +38,48 @@ export const ProfessionalKnob = ({
   }, [min, max, logarithmic]);
 
   const formatValue = useCallback((val) => {
-    // --- KRİTİK DÜZELTME BURADA ---
-    // Değerin bir sayı olup olmadığını kontrol et. Değilse, olduğu gibi göster.
     if (typeof val !== 'number' || isNaN(val)) {
       return val;
     }
     return `${val.toFixed(precision)}${unit}`;
   }, [precision, unit]);
-  
+
+  // Stable function that doesn't change on re-render
   const handleMouseMove = useCallback((e) => {
-    const deltaY = dragStartRef.current.y - e.clientY;
-    const range = max - min;
-    const sensitivity = logarithmic ? 0.002 : (e.shiftKey ? 0.001 : 0.005);
-    let newValue;
-    if(logarithmic) {
+    // Store latest event data
+    latestEventRef.current = { clientY: e.clientY, shiftKey: e.shiftKey };
+
+    // Only schedule if not already scheduled
+    if (rafRef.current !== null) return;
+
+    rafRef.current = requestAnimationFrame(() => {
+      const deltaY = dragStartRef.current.y - latestEventRef.current.clientY;
+      const range = max - min;
+      const sensitivity = logarithmic ? 0.002 : (latestEventRef.current.shiftKey ? 0.001 : 0.005);
+
+      let newValue;
+      if (logarithmic) {
         const factor = Math.pow(1.01, -deltaY);
         newValue = dragStartRef.current.value * factor;
-    } else {
+      } else {
         newValue = dragStartRef.current.value + (deltaY * range * sensitivity);
-    }
-    onChange?.(Math.max(min, Math.min(max, newValue)));
-  }, [min, max, onChange, logarithmic]);
+      }
+
+      onChangeRef.current?.(Math.max(min, Math.min(max, newValue)));
+      rafRef.current = null;
+    });
+  }, [min, max, logarithmic]); // Remove onChange from deps!
 
   const handleMouseUp = useCallback(() => {
-    setIsDragging(false); document.body.style.cursor = 'default';
+    setIsDragging(false);
+    document.body.style.cursor = 'default';
+
+    // Cancel any pending RAF
+    if (rafRef.current !== null) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+
     window.removeEventListener('mousemove', handleMouseMove);
     window.removeEventListener('mouseup', handleMouseUp);
   }, [handleMouseMove]);

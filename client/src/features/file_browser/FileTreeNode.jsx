@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { useDrag } from 'react-dnd';
 import { Folder, FileAudio, ChevronRight } from 'lucide-react';
-import { usePreviewPlayerStore } from '../../store/usePreviewPlayerStore';
-import { DND_TYPES, FILE_SYSTEM_TYPES } from '../../config/constants'; // GÜNCELLENDİ
+import { usePreviewPlayerStore } from '@/store/usePreviewPlayerStore';
+import { DND_TYPES, FILE_SYSTEM_TYPES } from '@/config/constants'; // GÜNCELLENDİ
 
 const DraggableFileNode = ({ node, onContextMenu, children }) => {
     const [{ isDragging }, drag] = useDrag(() => ({

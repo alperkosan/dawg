@@ -1,5 +1,5 @@
 import React from 'react';
-import { useMixerStore } from '../../../store/useMixerStore';
+import { useMixerStore } from '@/store/useMixerStore';
 import FaderV3 from './FaderV3';
 import VolumeKnob from './VolumeKnob';
 import { Volume2, VolumeX, Headphones } from 'lucide-react';

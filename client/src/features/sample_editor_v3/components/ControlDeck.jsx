@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { SlidersHorizontal, Sparkles, Settings, Play, Square } from 'lucide-react';
-import TabButton from '../../../ui/TabButton';
-import VolumeKnob from '../../../ui/VolumeKnob';
+import TabButton from '@/components/common/TabButton';
+import { Knob } from '@/components/controls';
 import EffectSwitch from '../../../ui/EffectSwitch';
 import { EffectsRack } from './EffectsRack'; // Yeni raf sistemimizi import ediyoruz
-import { AudioContextService } from '../../../lib/services/AudioContextService';
+import { AudioContextService } from '@/lib/services/AudioContextService';
 
 export const ControlDeck = ({ instrument, track, onParamChange }) => {
   const [activeTab, setActiveTab] = useState('main');
@@ -58,7 +58,7 @@ export const ControlDeck = ({ instrument, track, onParamChange }) => {
           <div className="main-settings-grid">
             <div className="main-settings-grid__group">
               <h4 className="main-settings-grid__group-title">Seviye</h4>
-              <VolumeKnob
+              <Knob
                 label="Gain"
                 value={instrument.volume ?? 0}
                 onChange={v => handleParamChangeWithEngine('volume', v)}
@@ -70,7 +70,7 @@ export const ControlDeck = ({ instrument, track, onParamChange }) => {
             </div>
             <div className="main-settings-grid__group">
               <h4 className="main-settings-grid__group-title">Ton</h4>
-              <VolumeKnob
+              <Knob
                 label="Pitch"
                 value={instrument.pitchOffset ?? 0}
                 onChange={v => handleParamChangeWithEngine('pitchOffset', v)}

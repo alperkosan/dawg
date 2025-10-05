@@ -1,8 +1,8 @@
 // src/store/useArrangementStore.js
 // NativeAudioEngine entegrasyonu için modernize edildi.
 import { create } from 'zustand';
-import { initialPatterns, initialPatternOrder, initialClips, initialInstruments } from '../config/initialData';
-import { AudioContextService } from '../lib/services/AudioContextService';
+import { initialPatterns, initialPatternOrder, initialClips, initialInstruments } from '@/config/initialData';
+import { AudioContextService } from '@/lib/services/AudioContextService';
 import { storeManager } from './StoreManager';
 import { usePlaybackStore } from './usePlaybackStore';
 

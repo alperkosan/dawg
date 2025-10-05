@@ -15,11 +15,14 @@ import {
   Search, Filter, Layout, Maximize2, Settings,
   Play, Pause, SkipBack, SkipForward, Clock
 } from 'lucide-react';
-import { useArrangementWorkspaceStore } from '../../store/useArrangementWorkspaceStore';
+import { useArrangementWorkspaceStore } from '@/store/useArrangementWorkspaceStore';
+import { useArrangementStore } from '@/store/useArrangementStore';
 import { ArrangementTabs } from './components/ArrangementTabs';
 import { PatternLibrary } from './components/PatternLibrary';
+import RenderDialog from './components/RenderDialog';
 import { ArrangementCanvas } from './ArrangementCanvas';
 import { ArrangementToolbar } from './components/ArrangementToolbar';
+import { useAudioRenderer } from '../../hooks/useAudioRenderer';
 import './ArrangementWorkspace.css';
 
 const ArrangementWorkspace = () => {
@@ -38,9 +41,16 @@ const ArrangementWorkspace = () => {
     setPanelWidth
   } = useArrangementWorkspaceStore();
 
+  // Additional stores
+  const { patterns } = useArrangementStore();
+
+  // Audio renderer hook
+  const { renderPattern, renderTrack, isRendering } = useAudioRenderer();
+
   // Local state
   const [showArrangementMenu, setShowArrangementMenu] = useState(false);
   const [isResizingLeft, setIsResizingLeft] = useState(false);
+  const [renderDialog, setRenderDialog] = useState({ isOpen: false, options: {} });
 
   // Get active arrangement
   const activeArrangement = arrangements[activeArrangementId];
@@ -114,30 +124,6 @@ const ArrangementWorkspace = () => {
 
         {/* Workspace Info & Controls */}
         <div className="arrangement-workspace__header-right">
-          {/* Arrangement Info */}
-          {activeArrangement && (
-            <div className="arrangement-workspace__info">
-              <div className="arrangement-workspace__info-item">
-                <Clock size={14} />
-                <span>{activeArrangement.name}</span>
-              </div>
-              <div className="arrangement-workspace__info-divider">|</div>
-              <div className="arrangement-workspace__info-item">
-                <span>{activeArrangement.tracks.length} tracks</span>
-              </div>
-              <div className="arrangement-workspace__info-item">
-                <span>{activeArrangement.clips.length} clips</span>
-              </div>
-              <div className="arrangement-workspace__info-divider">|</div>
-              <div className="arrangement-workspace__info-item">
-                <span>{activeArrangement.length} bars</span>
-              </div>
-              <div className="arrangement-workspace__info-item">
-                <span>{activeArrangement.tempo} BPM</span>
-              </div>
-            </div>
-          )}
-
           <button
             className="arrangement-workspace__btn"
             onClick={() => setShowArrangementMenu(!showArrangementMenu)}
@@ -238,6 +224,33 @@ const ArrangementWorkspace = () => {
           </div>
         </div>
       )}
+
+      {/* Render Dialog */}
+      <RenderDialog
+        isOpen={renderDialog.isOpen}
+        onClose={() => setRenderDialog({ isOpen: false, options: {} })}
+        renderOptions={renderDialog.options}
+        onRender={async (settings) => {
+          const { renderType, ...options } = settings;
+
+          if (renderType === 'pattern') {
+            return await renderPattern(
+              renderDialog.options.patternId,
+              patterns,
+              options
+            );
+          } else if (renderType === 'track') {
+            return await renderTrack(
+              renderDialog.options.trackId,
+              activeArrangement?.clips || [],
+              patterns,
+              options
+            );
+          }
+
+          return { success: false, error: 'Unknown render type' };
+        }}
+      />
 
       {/* Global Mouse Event Handlers */}
       <div

@@ -1,6 +1,6 @@
 // client/src/components/debug/PerformanceMonitor.jsx
 import React, { useState, useEffect } from 'react';
-import { AudioContextService } from '../../lib/services/AudioContextService';
+import { AudioContextService } from '@/lib/services/AudioContextService';
 
 export const PerformanceMonitor = () => {
   const [metrics, setMetrics] = useState({});

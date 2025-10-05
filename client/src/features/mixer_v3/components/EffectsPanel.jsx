@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { useMixerStore } from '../../../store/useMixerStore';
-import { pluginRegistry } from '../../../config/pluginConfig';
+import { useMixerStore } from '@/store/useMixerStore';
+import { pluginRegistry } from '@/config/pluginConfig';
 import {
   Plus,
   Trash2,

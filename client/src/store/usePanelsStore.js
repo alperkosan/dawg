@@ -1,10 +1,10 @@
 // src/store/usePanelsStore.js
 // Ses motorundan bağımsız, sadece UI panellerini yönetir.
 import { create } from 'zustand';
-import { panelDefinitions } from '../config/panelConfig';
-import { getNextCascadePosition } from '../lib/utils/windowManager';
-import { AudioContextService } from '../lib/services/AudioContextService';
-import { INSTRUMENT_TYPES, PANEL_IDS } from '../config/constants';
+import { panelDefinitions } from '@/config/panelConfig';
+import { getNextCascadePosition } from '@/lib/utils/windowManager';
+import { AudioContextService } from '@/lib/services/AudioContextService';
+import { INSTRUMENT_TYPES, PANEL_IDS } from '@/config/constants';
 
 // Başlangıç durumunu panel tanımlarından dinamik olarak oluştur.
 const initialPanelsState = Object.keys(panelDefinitions).reduce((acc, id) => {

@@ -1,6 +1,6 @@
 // hooks/usePlaybackController.js
 import { useState, useEffect, useCallback, useRef } from 'react';
-import PlaybackControllerSingleton from '../lib/core/PlaybackControllerSingleton.js';
+import PlaybackControllerSingleton from '@/lib/core/PlaybackControllerSingleton.js';
 
 /**
  * ✅ UNIFIED PLAYBACK HOOK

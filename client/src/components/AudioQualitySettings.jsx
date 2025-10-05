@@ -11,7 +11,7 @@ import {
     Monitor,
     Headphones
 } from 'lucide-react';
-import AudioQualityManager, { AUDIO_QUALITY_PRESETS } from '../lib/config/AudioQualityConfig';
+import AudioQualityManager, { AUDIO_QUALITY_PRESETS } from '@/lib/config/AudioQualityConfig';
 
 const AudioQualitySettings = ({ onSettingsChange, currentEngine = null }) => {
     const [qualityManager] = useState(() => new AudioQualityManager());

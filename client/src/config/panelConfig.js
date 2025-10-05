@@ -1,24 +1,21 @@
-import ChannelRack from '../features/channel_rack/ChannelRack';
-// import Mixer from '../features/mixer/Mixer'; // <-- 1. ESKİ MİKSERİ SİLİN VEYA YORUM SATIRI YAPIN
-import MixerV3 from '../features/mixer_v3/MixerV3'; // <-- 2. YENİ MİKSERİ IMPORT EDİN
-import SampleEditorV2 from '../features/sample_editor_v3/SampleEditorV3';
-import PianoRoll from '../features/piano_roll_v7/PianoRoll';
-import ArrangementPanel from '../features/arrangement/ArrangementPanel';
-import ArrangementWorkspace from '../features/arrangement_workspace/ArrangementWorkspace';
-import KeybindingsPanel from '../features/key_bindings/KeybindingsPanel';
-import { ThemeEditor } from '../features/theme_editor/ThemeEditor';
-import { ForgeSynthUI } from '../features/instrument_editor/ForgeSynthUI';
-import AudioQualitySettings from '../components/AudioQualitySettings';
-import FileBrowserPanel from '../features/file_browser/FileBrowserPanel';
+import ChannelRack from '@/features/channel_rack/ChannelRack';
+import Mixer from '@/features/mixer/Mixer'; // Zenith Mixer - FL Studio inspired
+import SampleEditorV2 from '@/features/sample_editor_v3/SampleEditorV3';
+import PianoRoll from '@/features/piano_roll_v7/PianoRoll';
+import ArrangementWorkspace from '@/features/arrangement_workspace/ArrangementWorkspace';
+import KeybindingsPanel from '@/features/key_bindings/KeybindingsPanel';
+import { ThemeEditor } from '@/features/theme_editor/ThemeEditor';
+import { ForgeSynthUI } from '@/features/instrument_editor/ForgeSynthUI';
+import AudioQualitySettings from '@/components/AudioQualitySettings';
+import FileBrowserPanel from '@/features/file_browser/FileBrowserPanel';
 
 export const panelRegistry = {
   'channel-rack': ChannelRack,
-  'mixer': MixerV3,
+  'mixer': Mixer,
   'sample-editor': SampleEditorV2,
   'piano-roll': PianoRoll,
   'file-browser': FileBrowserPanel,
   'keybindings': KeybindingsPanel,
-  'arrangement': ArrangementPanel,
   'arrangement-workspace': ArrangementWorkspace,
   'theme-editor': ThemeEditor,
   'instrument-editor-forgesynth': ForgeSynthUI,
@@ -26,30 +23,24 @@ export const panelRegistry = {
 };
 
 export const panelDefinitions = {
-  'arrangement': {
-    title: 'Arrangement',
-    initialSize: { width: 1400, height: 600 },
-    initialPos: { x: 20, y: 10 },
-    minSize: { width: 800, height: 400 },
-  },
   'arrangement-workspace': {
     title: 'Arrangement Workspace',
-    initialSize: { width: 1600, height: 800 },
+    initialSize: { width: 900, height: 400 },
     initialPos: { x: 10, y: 5 },
-    minSize: { width: 1200, height: 600 },
+    minSize: { width: 900, height: 600 },
     isFullscreen: true, // Fullscreen mode for workspace
   },
   'channel-rack': {
     title: 'Channel Rack',
-    initialSize: { width: 1200, height: 400 },
+    initialSize: { width: 900, height: 400 },
     initialPos: { x: 30, y: 20 },
     minSize: { width: 600, height: 250 },
   },
   'mixer': {
-    title: 'Mixer V3', // <-- 4. BAŞLIĞI GÜNCELLEYİN (İsteğe Bağlı)
-    initialSize: { width: 1000, height: 500 },
+    title: 'Mixer',
+    initialSize: { width: 1000, height: 600 },
     initialPos: { x: 60, y: 80 },
-    minSize: { width: 600, height: 300 },
+    minSize: { width: 700, height: 400 },
   },
   'sample-editor': {
     title: 'Sample Editor',
@@ -63,7 +54,7 @@ export const panelDefinitions = {
   },
   'piano-roll': {
     title: 'Piano Roll',
-    initialSize: { width: 1000, height: 500 },
+    initialSize: { width: 900, height: 500 },
     initialPos: { x: 60, y: 80 },
     minSize: { width: 600, height: 300 },
   },

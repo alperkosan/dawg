@@ -1,9 +1,9 @@
 import React, { useRef, useState } from 'react';
 import { Plus, Upload } from 'lucide-react';
 import { FileTreeNode } from './FileTreeNode';
-import ChannelContextMenu from '../../components/ChannelContextMenu';
+import ChannelContextMenu from '@/components/ChannelContextMenu';
 import { FileBrowserPreview } from './FileBrowserPreview';
-import { useFileBrowserStore } from '../../store/useFileBrowserStore';
+import { useFileBrowserStore } from '@/store/useFileBrowserStore';
 
 export default function FileBrowserPanel() {
     const { 

@@ -1,7 +1,7 @@
-import { Command } from '../../../lib/commands/Command';
-import { useArrangementStore } from '../../../store/useArrangementStore';
-import { usePlaybackStore } from '../../../store/usePlaybackStore';
-import EventBus from '../../../lib/core/EventBus.js';
+import { Command } from '@/lib/commands/Command';
+import { useArrangementStore } from '@/store/useArrangementStore';
+import { usePlaybackStore } from '@/store/usePlaybackStore';
+import EventBus from '@/lib/core/EventBus.js';
 
 /**
  * Piano Roll için nota ekleme komutu - daha detaylı nota özellikleri ile

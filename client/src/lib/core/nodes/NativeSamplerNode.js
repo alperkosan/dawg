@@ -1,7 +1,7 @@
 // src/lib/core/nodes/NativeSamplerNode.js - TONE.JS BAĞIMLILIĞI KALDIRILDI VE DÜZELTME
 
 import { NativeTimeUtils } from '../../utils/NativeTimeUtils';
-import { usePlaybackStore } from '../../../store/usePlaybackStore';
+import { usePlaybackStore } from '@/store/usePlaybackStore';
 
 export class NativeSamplerNode {
     constructor(instrumentData, audioBuffer, audioContext) {

@@ -1,22 +1,22 @@
 import React from 'react';
 
 // Tüm plugin arayüzlerini import et
-import { AdvancedCompressorUI } from '../ui/plugin_uis/AdvancedCompressorUI.jsx';
-import { ReverbUI } from '../ui/plugin_uis/ReverbUI';
-import { AdvancedEQUI } from '../ui/plugin_uis/AdvancedEQUI.jsx';
-import { DelayUI } from '../ui/plugin_uis/DelayUI.jsx';
-import { SaturatorUI } from '../ui/plugin_uis/SaturatorUI.jsx';
-import { TidalFilterUI } from '../ui/plugin_uis/TidalFilterUI.jsx';
-import { StardustChorusUI } from '../ui/plugin_uis/StardustChorusUI.jsx';
-import { VortexPhaserUI } from '../ui/plugin_uis/VortexPhaserUI.jsx';
-import { OrbitPannerUI } from '../ui/plugin_uis/OrbitPannerUI.jsx';
-import { ArcadeCrusherUI } from '../ui/plugin_uis/ArcadeCrusherUI.jsx';
-import { PitchShifterUI } from '../ui/plugin_uis/PitchShifterUI.jsx';
-import { FeedbackDelayUI } from '../ui/plugin_uis/FeedbackDelayUI.jsx';
-import { AtmosMachineUI } from '../ui/plugin_uis/AtmosMachineUI.jsx';
-import { GhostLFOUI } from '../ui/plugin_uis/GhostLFOUI.jsx';
-import { SampleMorphUI } from '../ui/plugin_uis/SampleMorphUI.jsx';
-import { BassEnhancer808UI } from '../ui/plugin_uis/BassEnhancer808UI';
+import { AdvancedCompressorUI } from '@/components/plugins/effects/AdvancedCompressorUI.jsx';
+import { ReverbUI } from '@/components/plugins/effects/ReverbUI';
+import { AdvancedEQUI } from '@/components/plugins/effects/AdvancedEQUI.jsx';
+import { DelayUI } from '@/components/plugins/effects/DelayUI.jsx';
+import { SaturatorUIWithWebGL as SaturatorUI } from '@/components/plugins/effects/SaturatorUIWithWebGL.jsx';
+import { TidalFilterUI } from '@/components/plugins/effects/TidalFilterUI.jsx';
+import { StardustChorusUI } from '@/components/plugins/effects/StardustChorusUI.jsx';
+import { VortexPhaserUI } from '@/components/plugins/effects/VortexPhaserUI.jsx';
+import { OrbitPannerUI } from '@/components/plugins/effects/OrbitPannerUI.jsx';
+import { ArcadeCrusherUI } from '@/components/plugins/effects/ArcadeCrusherUI.jsx';
+import { PitchShifterUI } from '@/components/plugins/effects/PitchShifterUI.jsx';
+import { FeedbackDelayUI } from '@/components/plugins/effects/FeedbackDelayUI.jsx';
+import { AtmosMachineUI } from '@/components/plugins/effects/AtmosMachineUI.jsx';
+import { GhostLFOUI } from '@/components/plugins/effects/GhostLFOUI.jsx';
+import { SampleMorphUI } from '@/components/plugins/effects/SampleMorphUI.jsx';
+import { BassEnhancer808UI } from '@/components/plugins/effects/BassEnhancer808UI';
 
 /**
  * @file pluginConfig.jsx

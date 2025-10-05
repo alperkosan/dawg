@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useMixerStore } from '../../../store/useMixerStore';
+import { useMixerStore } from '@/store/useMixerStore';
 import {
   Plus,
   Trash2,

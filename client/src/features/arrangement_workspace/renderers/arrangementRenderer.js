@@ -12,19 +12,53 @@ const TIMELINE_HEIGHT = 40;
 const PIXELS_PER_BEAT = 32;
 const BEATS_PER_BAR = 4;
 
+// Helper: Convert pitch string (e.g., "C4") to MIDI note number
+function midiNoteToNumber(pitch) {
+  const noteMap = { 'C': 0, 'C#': 1, 'D': 2, 'D#': 3, 'E': 4, 'F': 5, 'F#': 6, 'G': 7, 'G#': 8, 'A': 9, 'A#': 10, 'B': 11 };
+  const match = pitch.match(/^([A-G]#?)(\d+)$/);
+  if (!match) return 60; // Default to C4
+  const [, note, octave] = match;
+  return (parseInt(octave) + 1) * 12 + noteMap[note];
+}
+
+// Helper: Parse Tone.js duration to beats (assuming 4/4 time)
+function parseDuration(duration) {
+  if (typeof duration === 'number') return duration;
+
+  const durationMap = {
+    '1n': 4,     // whole note
+    '2n': 2,     // half note
+    '4n': 1,     // quarter note
+    '8n': 0.5,   // eighth note
+    '16n': 0.25, // sixteenth note
+    '32n': 0.125 // thirty-second note
+  };
+
+  // Handle triplets (e.g., '8t')
+  if (duration.endsWith('t')) {
+    const base = durationMap[duration.replace('t', 'n')] || 1;
+    return base * (2 / 3);
+  }
+
+  return durationMap[duration] || 0.5;
+}
+
 function drawGhostPreview(ctx, engine) {
   const { viewport, dimensions, patternInteraction, tracks } = engine;
 
   if (!patternInteraction || !patternInteraction.ghostPosition) return;
 
-  const { ghostPosition, clip, mode, currentStartTime, currentDuration } = patternInteraction;
+  const { ghostPosition, clip, mode, currentStartTime, currentDuration, targetTrackIndex } = patternInteraction;
 
   if (!clip) return;
 
-  const track = tracks.find(t => t.id === clip.trackId);
-  if (!track) return;
-
-  const trackIndex = tracks.indexOf(track);
+  // ✅ Use target track index for ghost preview if moving, otherwise use original
+  let trackIndex = targetTrackIndex;
+  if (trackIndex === null || trackIndex === undefined) {
+    const track = tracks.find(t => t.id === clip.trackId);
+    if (!track) return;
+    trackIndex = tracks.indexOf(track);
+  }
 
   ctx.save();
   ctx.translate(TRACK_HEADER_WIDTH, TIMELINE_HEIGHT);
@@ -34,7 +68,7 @@ function drawGhostPreview(ctx, engine) {
   ctx.translate(-viewport.scrollX, -viewport.scrollY);
 
   if (mode === 'move' || mode === 'resize-left') {
-    // Ghost preview için yeni pozisyon
+    // Ghost preview için yeni pozisyon (hem X hem Y)
     const ghostX = currentStartTime * PIXELS_PER_BEAT * viewport.zoomX;
     const ghostY = trackIndex * dimensions.trackHeight + 4;
     const ghostWidth = currentDuration * PIXELS_PER_BEAT * viewport.zoomX;
@@ -105,6 +139,47 @@ function drawGhostPreview(ctx, engine) {
   ctx.restore();
 }
 
+function drawDropPreview(ctx, engine) {
+  const { viewport, dimensions, dropPreview } = engine;
+
+  if (!dropPreview) return;
+
+  const { trackIndex, startBeat, duration, color } = dropPreview;
+
+  ctx.save();
+  ctx.translate(TRACK_HEADER_WIDTH, TIMELINE_HEIGHT);
+  ctx.beginPath();
+  ctx.rect(0, 0, viewport.width - TRACK_HEADER_WIDTH, viewport.height - TIMELINE_HEIGHT);
+  ctx.clip();
+  ctx.translate(-viewport.scrollX, -viewport.scrollY);
+
+  const x = startBeat * PIXELS_PER_BEAT * viewport.zoomX;
+  const y = trackIndex * dimensions.trackHeight + 4;
+  const width = duration * PIXELS_PER_BEAT * viewport.zoomX;
+  const height = dimensions.trackHeight - 8;
+
+  // Ghost outline with dashed border
+  ctx.strokeStyle = color || '#00ff88';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([8, 4]);
+  ctx.strokeRect(x, y, width, height);
+  ctx.setLineDash([]);
+
+  // Semi-transparent fill
+  ctx.fillStyle = `${color || '#00ff88'}20`;
+  ctx.fillRect(x, y, width, height);
+
+  // Snap grid line
+  ctx.strokeStyle = `${color || '#00ff88'}60`;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(x, 0);
+  ctx.lineTo(x, dimensions.totalHeight);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
 export function drawArrangement(ctx, engine) {
   const { viewport, dimensions } = engine;
   if (!viewport || viewport.width === 0 || viewport.height === 0) return;
@@ -117,6 +192,7 @@ export function drawArrangement(ctx, engine) {
   drawGrid(ctx, engine);
   drawClips(ctx, engine);
   drawGhostPreview(ctx, engine);
+  drawDropPreview(ctx, engine);
   drawPlayhead(ctx, engine);
   drawTimeline(ctx, engine);
   drawTrackHeaders(ctx, engine);
@@ -226,7 +302,7 @@ function drawGrid(ctx, engine) {
 }
 
 function drawClips(ctx, engine) {
-  const { viewport, dimensions, clips, tracks, selectedClips } = engine;
+  const { viewport, dimensions, clips, tracks, selectedClips, patterns, instruments, patternInteraction } = engine;
 
   ctx.save();
   ctx.translate(TRACK_HEADER_WIDTH, TIMELINE_HEIGHT);
@@ -267,17 +343,47 @@ function drawClips(ctx, engine) {
     const clipHeight = dimensions.trackHeight - 8;
 
     const isSelected = selectedClips?.includes(clip.id);
+    const borderRadius = 4; // Rounded corners
 
-    // Clip background
+    // Helper function for rounded rectangle
+    const roundRect = (ctx, x, y, width, height, radius) => {
+      ctx.beginPath();
+      ctx.moveTo(x + radius, y);
+      ctx.lineTo(x + width - radius, y);
+      ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+      ctx.lineTo(x + width, y + height - radius);
+      ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+      ctx.lineTo(x + radius, y + height);
+      ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+      ctx.lineTo(x, y + radius);
+      ctx.quadraticCurveTo(x, y, x + radius, y);
+      ctx.closePath();
+    };
+
+    // Clip background with rounded corners
+    roundRect(ctx, x, y, clipWidth, clipHeight, borderRadius);
     ctx.fillStyle = clip.color || track.color || '#00ff88';
     ctx.globalAlpha = clip.type === 'pattern' ? 0.6 : 0.8;
-    ctx.fillRect(x, y, clipWidth, clipHeight);
+    ctx.fill();
     ctx.globalAlpha = 1;
 
-    // Clip border
-    ctx.strokeStyle = isSelected ? '#00ff88' : '#000';
-    ctx.lineWidth = isSelected ? 3 : 1;
-    ctx.strokeRect(x, y, clipWidth, clipHeight);
+    // Clip border with subtle shadow
+    if (isSelected) {
+      // Selection glow
+      ctx.shadowColor = '#00ff88';
+      ctx.shadowBlur = 8;
+      ctx.strokeStyle = '#00ff88';
+      ctx.lineWidth = 2;
+      roundRect(ctx, x, y, clipWidth, clipHeight, borderRadius);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+    } else {
+      // Normal border with subtle depth
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.4)';
+      ctx.lineWidth = 1;
+      roundRect(ctx, x, y, clipWidth, clipHeight, borderRadius);
+      ctx.stroke();
+    }
 
     // Clip name (only if wide enough)
     if (clipWidth > 40) {
@@ -293,18 +399,439 @@ function drawClips(ctx, engine) {
       ctx.restore();
     }
 
-    // Pattern preview (only if zoomed in)
-    if (clip.type === 'pattern' && viewport.zoomX > 0.5 && clipWidth > 60) {
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
-      ctx.lineWidth = 1;
-      const previewLines = Math.min(16, Math.floor(clipWidth / 8));
-      for (let j = 0; j < previewLines; j++) {
-        const lineX = x + (clipWidth / previewLines) * j;
-        const lineHeight = Math.random() * (clipHeight * 0.6);
+    // Audio waveform visualization
+    if (clip.type === 'audio' && instruments && clipWidth > 40) {
+      const instrument = instruments.find(inst => inst.id === clip.sampleId);
+      const audioBuffer = instrument?.audioBuffer;
+
+      if (audioBuffer) {
+        ctx.save();
         ctx.beginPath();
-        ctx.moveTo(lineX, y + clipHeight - 4);
-        ctx.lineTo(lineX, y + clipHeight - 4 - lineHeight);
+        ctx.rect(x + 2, y + 20, clipWidth - 4, clipHeight - 24);
+        ctx.clip();
+
+        // Draw waveform
+        const waveformHeight = clipHeight - 24;
+        const waveformY = y + 20 + waveformHeight / 2;
+
+        // Get audio data (use first channel for simplicity)
+        const channelData = audioBuffer.getChannelData(0);
+        const sampleRate = audioBuffer.sampleRate;
+
+        // Calculate sample offset (in samples, not beats)
+        const sampleOffsetBeats = clip.sampleOffset || 0;
+        const playbackRate = clip.playbackRate || 1.0;
+
+        // Convert clip duration (beats) to sample count
+        // We need to account for playback rate when calculating visible samples
+        const beatsToSeconds = (beats) => (beats * 60) / 140; // Assuming 140 BPM
+        const clipDurationSeconds = beatsToSeconds(clip.duration);
+        const offsetSeconds = beatsToSeconds(sampleOffsetBeats);
+
+        // Total samples to display (accounting for playback rate)
+        const totalSamplesToDisplay = Math.floor((clipDurationSeconds * sampleRate) / playbackRate);
+        const sampleOffsetInSamples = Math.floor((offsetSeconds * sampleRate) / playbackRate);
+
+        const samplesPerPixel = Math.max(1, totalSamplesToDisplay / clipWidth);
+
+        // Calculate fade and gain parameters
+        const fadeInBeats = clip.fadeIn || 0;
+        const fadeOutBeats = clip.fadeOut || 0;
+        const gainDb = clip.gain || 0;
+        const gainLinear = Math.pow(10, gainDb / 20); // Convert dB to linear
+
+        const fadeInWidth = fadeInBeats * PIXELS_PER_BEAT * viewport.zoomX;
+        const fadeOutWidth = fadeOutBeats * PIXELS_PER_BEAT * viewport.zoomX;
+
+        // Draw smooth filled waveform
+        ctx.beginPath();
+
+        // Top half of waveform
+        for (let i = 0; i < clipWidth; i++) {
+          const startSample = Math.floor(sampleOffsetInSamples + (i * samplesPerPixel));
+          const endSample = Math.min(startSample + samplesPerPixel, channelData.length);
+
+          let min = 1.0;
+          let max = -1.0;
+
+          for (let j = startSample; j < endSample; j++) {
+            if (j >= 0 && j < channelData.length) {
+              const sample = channelData[j];
+              if (sample < min) min = sample;
+              if (sample > max) max = sample;
+            }
+          }
+
+          // Apply gain
+          min *= gainLinear;
+          max *= gainLinear;
+
+          // Apply fade envelope
+          let fadeMultiplier = 1.0;
+          if (i < fadeInWidth) {
+            fadeMultiplier = i / fadeInWidth;
+          } else if (i > clipWidth - fadeOutWidth) {
+            fadeMultiplier = (clipWidth - i) / fadeOutWidth;
+          }
+
+          min *= fadeMultiplier;
+          max *= fadeMultiplier;
+
+          const maxY = waveformY - (max * waveformHeight / 2);
+
+          if (i === 0) {
+            ctx.moveTo(x + 2, maxY);
+          } else {
+            ctx.lineTo(x + 2 + i, maxY);
+          }
+        }
+
+        // Bottom half of waveform (reverse)
+        for (let i = clipWidth - 1; i >= 0; i--) {
+          const startSample = Math.floor(sampleOffsetInSamples + (i * samplesPerPixel));
+          const endSample = Math.min(startSample + samplesPerPixel, channelData.length);
+
+          let min = 1.0;
+
+          for (let j = startSample; j < endSample; j++) {
+            if (j >= 0 && j < channelData.length) {
+              const sample = channelData[j];
+              if (sample < min) min = sample;
+            }
+          }
+
+          min *= gainLinear;
+
+          let fadeMultiplier = 1.0;
+          if (i < fadeInWidth) {
+            fadeMultiplier = i / fadeInWidth;
+          } else if (i > clipWidth - fadeOutWidth) {
+            fadeMultiplier = (clipWidth - i) / fadeOutWidth;
+          }
+
+          min *= fadeMultiplier;
+
+          const minY = waveformY - (min * waveformHeight / 2);
+          ctx.lineTo(x + 2 + i, minY);
+        }
+
+        ctx.closePath();
+
+        // Fill with gradient
+        const waveGradient = ctx.createLinearGradient(x, y + 20, x, y + 20 + waveformHeight);
+        waveGradient.addColorStop(0, 'rgba(255, 255, 255, 0.4)');
+        waveGradient.addColorStop(0.5, 'rgba(255, 255, 255, 0.6)');
+        waveGradient.addColorStop(1, 'rgba(255, 255, 255, 0.4)');
+        ctx.fillStyle = waveGradient;
+        ctx.fill();
+
+        // Stroke outline
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+        ctx.lineWidth = 1;
         ctx.stroke();
+
+        // Draw smooth fade overlays with better curves
+        if (fadeInWidth > 0) {
+          const gradient = ctx.createLinearGradient(x + 2, 0, x + 2 + fadeInWidth, 0);
+          gradient.addColorStop(0, 'rgba(255, 180, 80, 0.35)');
+          gradient.addColorStop(0.3, 'rgba(255, 200, 100, 0.25)');
+          gradient.addColorStop(0.7, 'rgba(255, 220, 120, 0.1)');
+          gradient.addColorStop(1, 'rgba(255, 200, 100, 0)');
+          ctx.fillStyle = gradient;
+
+          // Rounded fade region
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(x + 2, y + 20, fadeInWidth, waveformHeight);
+          ctx.clip();
+          ctx.fillRect(x + 2, y + 20, fadeInWidth, waveformHeight);
+          ctx.restore();
+
+          // Fade curve line indicator
+          ctx.strokeStyle = 'rgba(255, 180, 80, 0.6)';
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.moveTo(x + 2, y + 20 + waveformHeight);
+          ctx.quadraticCurveTo(x + 2 + fadeInWidth * 0.3, y + 20 + waveformHeight * 0.7, x + 2 + fadeInWidth, y + 20);
+          ctx.stroke();
+        }
+
+        if (fadeOutWidth > 0) {
+          const gradient = ctx.createLinearGradient(x + clipWidth - fadeOutWidth - 2, 0, x + clipWidth - 2, 0);
+          gradient.addColorStop(0, 'rgba(100, 150, 255, 0)');
+          gradient.addColorStop(0.3, 'rgba(120, 170, 255, 0.1)');
+          gradient.addColorStop(0.7, 'rgba(100, 150, 255, 0.25)');
+          gradient.addColorStop(1, 'rgba(80, 140, 255, 0.35)');
+          ctx.fillStyle = gradient;
+
+          // Rounded fade region
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(x + clipWidth - fadeOutWidth - 2, y + 20, fadeOutWidth, waveformHeight);
+          ctx.clip();
+          ctx.fillRect(x + clipWidth - fadeOutWidth - 2, y + 20, fadeOutWidth, waveformHeight);
+          ctx.restore();
+
+          // Fade curve line indicator
+          ctx.strokeStyle = 'rgba(80, 140, 255, 0.6)';
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.moveTo(x + clipWidth - fadeOutWidth - 2, y + 20);
+          ctx.quadraticCurveTo(x + clipWidth - fadeOutWidth * 0.7 - 2, y + 20 + waveformHeight * 0.3, x + clipWidth - 2, y + 20 + waveformHeight);
+          ctx.stroke();
+        }
+
+        // Draw gain indicator
+        if (gainDb !== 0) {
+          ctx.fillStyle = gainDb > 0 ? 'rgba(255, 100, 100, 0.9)' : 'rgba(200, 200, 200, 0.9)';
+          ctx.font = '10px Inter, system-ui, sans-serif';
+          ctx.textAlign = 'right';
+          ctx.textBaseline = 'top';
+          ctx.fillText(`${gainDb > 0 ? '+' : ''}${gainDb.toFixed(1)}dB`, x + clipWidth - 6, y + 22);
+        }
+
+        // Draw playback rate indicator (time stretch)
+        if (playbackRate !== 1.0) {
+          ctx.fillStyle = 'rgba(100, 200, 255, 0.9)';
+          ctx.font = 'bold 10px Inter, system-ui, sans-serif';
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'top';
+          const ratePercent = (playbackRate * 100).toFixed(0);
+          ctx.fillText(`${ratePercent}%`, x + 6, y + 22);
+
+          // Draw stretch indicator icon
+          ctx.strokeStyle = 'rgba(100, 200, 255, 0.6)';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(x + 6, y + clipHeight - 8);
+          ctx.lineTo(x + 12, y + clipHeight - 8);
+          ctx.moveTo(x + 9, y + clipHeight - 11);
+          ctx.lineTo(x + 9, y + clipHeight - 5);
+          ctx.stroke();
+        }
+
+        // Center line
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x + 2, waveformY);
+        ctx.lineTo(x + clipWidth - 2, waveformY);
+        ctx.stroke();
+
+        ctx.restore();
+
+        // Draw interactive handles at actual fade/gain positions
+        const handleRadius = 5;
+
+        // Check if this clip is being interacted with
+        const isInteracting = patternInteraction?.clip?.id === clip.id;
+        const interactionMode = patternInteraction?.mode;
+
+        // Get fade values (use interaction state if dragging, otherwise use clip values)
+        const activeFadeIn = (isInteracting && interactionMode === 'fade-in' && patternInteraction.fadeIn !== undefined)
+          ? patternInteraction.fadeIn
+          : fadeInBeats;
+        const activeFadeOut = (isInteracting && interactionMode === 'fade-out' && patternInteraction.fadeOut !== undefined)
+          ? patternInteraction.fadeOut
+          : fadeOutBeats;
+
+        const activeFadeInWidth = activeFadeIn * PIXELS_PER_BEAT * viewport.zoomX;
+        const activeFadeOutWidth = activeFadeOut * PIXELS_PER_BEAT * viewport.zoomX;
+
+        // Fade-in handle - positioned at fade-in endpoint
+        if (clipWidth > 80 && activeFadeIn > 0) {
+          const fadeInEndX = x + 2 + activeFadeInWidth;
+          const isDragging = isInteracting && interactionMode === 'fade-in';
+
+          ctx.beginPath();
+          ctx.arc(fadeInEndX, y + 8, handleRadius, 0, Math.PI * 2);
+          ctx.fillStyle = isDragging ? 'rgba(255, 220, 120, 1)' : 'rgba(255, 180, 80, 0.95)';
+          ctx.fill();
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+          ctx.lineWidth = isDragging ? 3 : 2;
+          ctx.stroke();
+
+          // Tooltip showing fade-in value (only when dragging)
+          if (isDragging) {
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+            ctx.fillRect(fadeInEndX - 28, y - 20, 56, 18);
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 11px Inter, system-ui, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(`${activeFadeIn.toFixed(2)}♩`, fadeInEndX, y - 11);
+          }
+        } else if (clipWidth > 80) {
+          // Show handle at start if no fade
+          const isDragging = isInteracting && interactionMode === 'fade-in';
+          ctx.beginPath();
+          ctx.arc(x + 8, y + 8, handleRadius - 1, 0, Math.PI * 2);
+          ctx.fillStyle = isDragging ? 'rgba(255, 220, 120, 0.7)' : 'rgba(255, 180, 80, 0.5)';
+          ctx.fill();
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        }
+
+        // Fade-out handle - positioned at fade-out start point
+        if (clipWidth > 80 && activeFadeOut > 0) {
+          const fadeOutStartX = x + clipWidth - 2 - activeFadeOutWidth;
+          const isDragging = isInteracting && interactionMode === 'fade-out';
+
+          ctx.beginPath();
+          ctx.arc(fadeOutStartX, y + 8, handleRadius, 0, Math.PI * 2);
+          ctx.fillStyle = isDragging ? 'rgba(120, 180, 255, 1)' : 'rgba(80, 140, 255, 0.95)';
+          ctx.fill();
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+          ctx.lineWidth = isDragging ? 3 : 2;
+          ctx.stroke();
+
+          // Tooltip showing fade-out value (only when dragging)
+          if (isDragging) {
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+            ctx.fillRect(fadeOutStartX - 28, y - 20, 56, 18);
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 11px Inter, system-ui, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(`${activeFadeOut.toFixed(2)}♩`, fadeOutStartX, y - 11);
+          }
+        } else if (clipWidth > 80) {
+          // Show handle at end if no fade
+          const isDragging = isInteracting && interactionMode === 'fade-out';
+          ctx.beginPath();
+          ctx.arc(x + clipWidth - 8, y + 8, handleRadius - 1, 0, Math.PI * 2);
+          ctx.fillStyle = isDragging ? 'rgba(120, 180, 255, 0.7)' : 'rgba(80, 140, 255, 0.5)';
+          ctx.fill();
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        }
+
+        // Gain handle (bottom-center)
+        if (clipWidth > 60) {
+          // Get active gain value (use interaction state if dragging)
+          const activeGain = (isInteracting && interactionMode === 'gain' && patternInteraction.gain !== undefined)
+            ? patternInteraction.gain
+            : gainDb;
+          const isDragging = isInteracting && interactionMode === 'gain';
+
+          ctx.beginPath();
+          ctx.arc(x + clipWidth / 2, y + clipHeight - 8, handleRadius, 0, Math.PI * 2);
+          ctx.fillStyle = isDragging ? 'rgba(255, 220, 120, 1)' : (activeGain !== 0 ? 'rgba(255, 200, 100, 0.95)' : 'rgba(150, 150, 150, 0.7)');
+          ctx.fill();
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+          ctx.lineWidth = isDragging ? 3 : (activeGain !== 0 ? 2 : 1);
+          ctx.stroke();
+
+          // Small arrows on gain handle
+          ctx.strokeStyle = 'rgba(0, 0, 0, 0.7)';
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          // Up arrow
+          ctx.moveTo(x + clipWidth / 2, y + clipHeight - 10);
+          ctx.lineTo(x + clipWidth / 2 - 2, y + clipHeight - 8);
+          ctx.moveTo(x + clipWidth / 2, y + clipHeight - 10);
+          ctx.lineTo(x + clipWidth / 2 + 2, y + clipHeight - 8);
+          // Down arrow
+          ctx.moveTo(x + clipWidth / 2, y + clipHeight - 6);
+          ctx.lineTo(x + clipWidth / 2 - 2, y + clipHeight - 8);
+          ctx.moveTo(x + clipWidth / 2, y + clipHeight - 6);
+          ctx.lineTo(x + clipWidth / 2 + 2, y + clipHeight - 8);
+          ctx.stroke();
+
+          // Tooltip showing gain value (only when dragging)
+          if (isDragging) {
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+            ctx.fillRect(x + clipWidth / 2 - 30, y + clipHeight + 2, 60, 18);
+            ctx.fillStyle = activeGain > 0 ? '#ffaa66' : (activeGain < 0 ? '#66aaff' : '#fff');
+            ctx.font = 'bold 11px Inter, system-ui, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(`${activeGain > 0 ? '+' : ''}${activeGain.toFixed(1)}dB`, x + clipWidth / 2, y + clipHeight + 11);
+          }
+        }
+      }
+    }
+
+    // Pattern notes mini view
+    if (clip.type === 'pattern' && patterns && clipWidth > 40) {
+      const pattern = patterns[clip.patternId];
+
+      if (pattern) {
+        // Extract all notes from pattern data (instrument-based structure)
+        let allNotes = [];
+
+        if (pattern.notes && Array.isArray(pattern.notes)) {
+          // New format: direct notes array
+          allNotes = pattern.notes;
+        } else if (pattern.data && typeof pattern.data === 'object') {
+          // Old format: data per instrument (time in 16th note units, need to convert to beats)
+          const patternLength = pattern.settings?.length || 64; // In 16th notes
+          Object.values(pattern.data).forEach(instrumentNotes => {
+            if (Array.isArray(instrumentNotes)) {
+              allNotes = allNotes.concat(instrumentNotes.map(note => ({
+                note: typeof note.pitch === 'string' ? midiNoteToNumber(note.pitch) : note.note || 60,
+                time: (note.time || 0) * 0.25, // Convert 16th note units to beats (1 beat = 4 sixteenths)
+                duration: typeof note.duration === 'string' ? parseDuration(note.duration) : ((note.duration || 1) * 0.25),
+                velocity: note.velocity || 0.8
+              })));
+            }
+          });
+        }
+
+      if (allNotes.length > 0) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(x + 2, y + 20, clipWidth - 4, clipHeight - 24);
+        ctx.clip();
+
+        // Find min/max MIDI notes for scaling
+        const midiNotes = allNotes.map(n => n.note);
+        const minNote = Math.min(...midiNotes);
+        const maxNote = Math.max(...midiNotes);
+        const noteRange = maxNote - minNote || 12;
+
+        // Pattern length from settings or default (convert from 16th notes to beats if needed)
+        const patternLengthIn16ths = pattern.settings?.length || pattern.length || 64;
+        const patternLength = patternLengthIn16ths * 0.25; // Convert to beats
+
+        // Draw each note as a mini rectangle
+        allNotes.forEach(note => {
+          const noteStartBeat = note.time;
+          const noteEndBeat = note.time + note.duration;
+
+          // Calculate position relative to clip
+          const relativeStart = noteStartBeat - (clip.startTime % patternLength);
+          const relativeEnd = noteEndBeat - (clip.startTime % patternLength);
+
+          // Loop pattern if needed
+          const loopCount = Math.ceil(clip.duration / patternLength);
+
+          for (let loop = 0; loop < loopCount; loop++) {
+            const loopOffset = loop * patternLength;
+            const noteX = x + (relativeStart + loopOffset) * PIXELS_PER_BEAT * viewport.zoomX;
+            const noteWidth = (noteEndBeat - noteStartBeat) * PIXELS_PER_BEAT * viewport.zoomX;
+
+            // Only draw if visible
+            if (noteX + noteWidth >= x && noteX <= x + clipWidth) {
+              const normalizedNote = (note.note - minNote) / noteRange;
+              const noteY = y + clipHeight - 6 - (normalizedNote * (clipHeight - 28));
+              const noteHeight = 3;
+
+              ctx.fillStyle = `rgba(255, 255, 255, ${0.4 + note.velocity * 0.4})`;
+              ctx.fillRect(
+                Math.max(noteX, x + 2),
+                noteY,
+                Math.min(noteWidth, x + clipWidth - noteX),
+                noteHeight
+              );
+            }
+          }
+        });
+
+        ctx.restore();
+      }
       }
     }
   });
@@ -315,7 +842,10 @@ function drawClips(ctx, engine) {
 function drawPlayhead(ctx, engine) {
   const { viewport, dimensions, playhead } = engine;
 
-  if (!playhead) return;
+  if (!playhead) {
+    console.warn('🎵 No playhead data in engine');
+    return;
+  }
 
   ctx.save();
   ctx.translate(TRACK_HEADER_WIDTH, TIMELINE_HEIGHT);
@@ -323,7 +853,15 @@ function drawPlayhead(ctx, engine) {
   ctx.rect(0, 0, viewport.width - TRACK_HEADER_WIDTH, viewport.height - TIMELINE_HEIGHT);
   ctx.clip();
 
-  const playheadX = (playhead.position / 480) * PIXELS_PER_BEAT * viewport.zoomX - viewport.scrollX;
+  // playhead.position is currentStep (16th note steps)
+  // Convert steps to beats: 1 beat = 4 sixteenth notes
+  const beatPosition = playhead.position / 4;
+  const playheadX = beatPosition * PIXELS_PER_BEAT * viewport.zoomX - viewport.scrollX;
+
+  // Debug only when position changes significantly (disabled to reduce console spam)
+  // if (playhead.position % 16 === 0) {
+  //   console.log(`🎵 Arrangement playhead at step ${playhead.position}, beat ${beatPosition}, x: ${playheadX}`);
+  // }
 
   if (playheadX >= 0 && playheadX <= viewport.width - TRACK_HEADER_WIDTH) {
     ctx.strokeStyle = '#00ff88';
@@ -377,7 +915,7 @@ function drawTimeline(ctx, engine) {
     ctx.lineWidth = isMajor ? 2 : 1;
     ctx.stroke();
 
-    if (isMajor && beat > 0) {
+    if (isMajor) {
       const barNumber = Math.floor(beat / BEATS_PER_BAR) + 1;
       ctx.fillStyle = '#999';
       ctx.fillText(barNumber.toString(), x + 4, 4);

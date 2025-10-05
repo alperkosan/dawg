@@ -1,5 +1,5 @@
 import React from 'react';
-import { useThemeStore } from '../../store/useThemeStore';
+import { useThemeStore } from '@/store/useThemeStore';
 import { Download, Upload } from 'lucide-react';
 
 // Renk seçici bileşeni, artık kendi font boyutunu temadan alıyor

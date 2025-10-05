@@ -2,9 +2,9 @@
 // NativeAudioEngine ile tam entegre, olay tabanlı ve UI state yönetimli modern mixer store.
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
-import { AudioContextService } from '../lib/services/AudioContextService';
-import { initialMixerTracks } from '../config/initialData';
-import { pluginRegistry } from '../config/pluginConfig';
+import { AudioContextService } from '@/lib/services/AudioContextService';
+import { initialMixerTracks } from '@/config/initialData';
+import { pluginRegistry } from '@/config/pluginConfig';
 import { storeManager } from './StoreManager';
 
 export const useMixerStore = create((set, get) => ({
@@ -200,6 +200,35 @@ export const useMixerStore = create((set, get) => ({
     storeManager.togglePanelIfOpen(panelId);
   },
 
+  handleMixerEffectToggle: (trackId, effectId) => {
+    let currentBypass = false;
+
+    set(state => {
+      const newTracks = state.mixerTracks.map(track => {
+        if (track.id === trackId) {
+          return {
+            ...track,
+            insertEffects: track.insertEffects.map(fx => {
+              if (fx.id === effectId) {
+                currentBypass = fx.bypass;
+                return { ...fx, bypass: !fx.bypass };
+              }
+              return fx;
+            })
+          };
+        }
+        return track;
+      });
+      return { mixerTracks: newTracks };
+    });
+
+    const updatedTrack = get().mixerTracks.find(t => t.id === trackId);
+
+    if (AudioContextService.rebuildSignalChain) {
+      AudioContextService.rebuildSignalChain(trackId, updatedTrack);
+    }
+  },
+
   handleMixerEffectChange: (trackId, effectId, paramOrSettings, value) => {
     let needsRebuild = false;
 
@@ -233,7 +262,7 @@ export const useMixerStore = create((set, get) => ({
       });
       return { mixerTracks: newTracks };
     });
-    
+
     const updatedTrack = get().mixerTracks.find(t => t.id === trackId);
 
     if (needsRebuild && AudioContextService.rebuildSignalChain) {

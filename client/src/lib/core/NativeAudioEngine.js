@@ -5,6 +5,8 @@ import { NativeTimeUtils } from '../utils/NativeTimeUtils.js';
 import { setGlobalAudioContext } from '../utils/audioUtils.js';
 // HATA DÜZELTMESİ 2: Eksik olan NativeSamplerNode sınıfını import ediyoruz.
 import { NativeSamplerNode } from './nodes/NativeSamplerNode.js';
+// NEW: Modular effect registry
+import { effectRegistry } from '../audio/EffectRegistry.js';
 
 export class NativeAudioEngine {
     constructor(callbacks = {}) {
@@ -453,9 +455,11 @@ export class NativeAudioEngine {
     
             if (instrumentData.type === 'sample') {
                 // ✅ DÜZELTME: NativeSamplerNode artık doğru import edildi
+                // Use audioBuffer from instrumentData if available (for demo/generated samples)
+                const audioBuffer = instrumentData.audioBuffer || this.sampleBuffers.get(instrumentData.id);
                 instrument = new NativeSamplerNode(
                     instrumentData,
-                    this.sampleBuffers.get(instrumentData.id),
+                    audioBuffer,
                     this.audioContext
                 );
                 
@@ -579,11 +583,11 @@ export class NativeAudioEngine {
 
     setMasterVolume(volume) {
         if (this.masterLimiter) {
-            this.masterLimiter.gain.setTargetAtTime(
-                volume,
-                this.audioContext.currentTime,
-                0.02
-            );
+            const now = this.audioContext.currentTime;
+            const param = this.masterLimiter.gain;
+            param.cancelScheduledValues(now);
+            param.setValueAtTime(param.value, now);
+            param.linearRampToValueAtTime(volume, now + 0.015);
         }
     }
 
@@ -986,7 +990,10 @@ class NativeMixerChannel {
         this.volume = Math.max(0, Math.min(2, volume));
         const param = this.parameters.get('gain');
         if (param) {
-            param.setTargetAtTime(this.volume, this.audioContext.currentTime, 0.02);
+            const now = this.audioContext.currentTime;
+            param.cancelScheduledValues(now);
+            param.setValueAtTime(param.value, now);
+            param.linearRampToValueAtTime(this.volume, now + 0.015);
         }
     }
 
@@ -994,7 +1001,10 @@ class NativeMixerChannel {
         this.pan = Math.max(-1, Math.min(1, pan));
         const param = this.parameters.get('pan');
         if (param) {
-            param.setTargetAtTime(this.pan, this.audioContext.currentTime, 0.02);
+            const now = this.audioContext.currentTime;
+            param.cancelScheduledValues(now);
+            param.setValueAtTime(param.value, now);
+            param.linearRampToValueAtTime(this.pan, now + 0.015);
         }
     }
 
@@ -1003,7 +1013,10 @@ class NativeMixerChannel {
         const gainValue = muted ? 0 : this.volume;
         const param = this.parameters.get('gain');
         if (param) {
-            param.setTargetAtTime(gainValue, this.audioContext.currentTime, 0.02);
+            const now = this.audioContext.currentTime;
+            param.cancelScheduledValues(now);
+            param.setValueAtTime(param.value, now);
+            param.linearRampToValueAtTime(gainValue, now + 0.015);
         }
     }
 
@@ -1020,33 +1033,30 @@ class NativeMixerChannel {
         const param = this.parameters.get(paramName);
         if (param) {
             const dbGain = Math.max(-18, Math.min(18, gain));
-            param.setTargetAtTime(dbGain, this.audioContext.currentTime, 0.02);
+            const now = this.audioContext.currentTime;
+            param.cancelScheduledValues(now);
+            param.setValueAtTime(param.value, now);
+            param.linearRampToValueAtTime(dbGain, now + 0.015);
         }
     }
 
     // =================== EFFECTS MANAGEMENT ===================
 
-    async addEffect(effectType, settings = {}) {
+    async addEffect(effectType, settings = {}, customEffectId = null) {
         try {
-            const effectId = `${this.id}_effect_${Date.now()}`;
-            
-            // Create effect using worklet
-            // HATA DÜZELTMESİ 1: Artık this.workletManager'a erişebiliyoruz.
-            const workletResult = await this.workletManager?.createWorkletNode(
-                'effects-processor',
-                {
-                    processorOptions: {
-                        effectType,
-                        settings
-                    }
-                }
+            // Use custom ID if provided (from store), otherwise generate one
+            const effectId = customEffectId || `${this.id}_effect_${Date.now()}`;
+
+            // NEW: Use EffectRegistry to create modular effect node
+            const node = await effectRegistry.createEffectNode(
+                effectType,
+                this.audioContext,
+                settings
             );
 
-            if (!workletResult) {
-                throw new Error("Worklet node could not be created.");
+            if (!node) {
+                throw new Error(`Effect node could not be created: ${effectType}`);
             }
-            
-            const { node } = workletResult;
 
             const effect = new NativeEffect(effectId, effectType, node, settings);
             this.effects.set(effectId, effect);
@@ -1054,9 +1064,11 @@ class NativeMixerChannel {
             // Rebuild signal chain with new effect
             this._rebuildEffectChain();
 
+            console.log(`✅ Added modular effect: ${effectType} (${effectId})`);
             return effectId;
 
         } catch (error) {
+            console.error(`❌ Failed to add effect: ${effectType}`, error);
             throw error;
         }
     }
@@ -1160,34 +1172,51 @@ class NativeEffect {
         this.settings = settings;
         this.bypass = false;
 
-        // Setup parameters if available
+        // Setup parameters if available - NEW: Dynamic parameter detection
         this.parameters = new Map();
         if (node.parameters) {
-            ['drive', 'tone', 'level', 'delayTime', 'feedback', 'mix'].forEach(paramName => {
+            // Get all available parameters from the node
+            const paramNames = [];
+            for (const [name] of node.parameters) {
+                paramNames.push(name);
+            }
+
+            // Register all available parameters
+            paramNames.forEach(paramName => {
                 const param = node.parameters.get(paramName);
                 if (param) {
                     this.parameters.set(paramName, param);
                 }
             });
+
+            console.log(`📊 Effect ${type} registered ${paramNames.length} parameters:`, paramNames);
         }
     }
 
     updateParameter(paramName, value) {
         const param = this.parameters.get(paramName);
         if (param) {
-            param.setTargetAtTime(value, param.context.currentTime, 0.01);
+            // OPTIMIZED: Use linearRampToValueAtTime for smoother, cheaper updates
+            const audioContext = this.node.context;
+            if (audioContext && audioContext.currentTime !== undefined) {
+                const now = audioContext.currentTime;
+
+                // Cancel any scheduled changes to avoid glitches
+                param.cancelScheduledValues(now);
+
+                // Use linear ramp for smooth transition (cheaper than setTargetAtTime)
+                param.setValueAtTime(param.value, now);
+                param.linearRampToValueAtTime(value, now + 0.015); // 15ms ramp
+            } else {
+                // Fallback: set value directly
+                param.value = value;
+            }
         }
 
-        // Also update internal settings
+        // Update internal settings
         this.settings[paramName] = value;
 
-        // Send message to worklet if needed
-        if (this.node.port) {
-            this.node.port.postMessage({
-                type: 'updateSettings',
-                data: { [paramName]: value }
-            });
-        }
+        // REMOVED: postMessage to worklet - AudioParam already handles this automatically
     }
 
     setBypass(bypassed) {

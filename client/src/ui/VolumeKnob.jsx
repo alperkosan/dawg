@@ -14,6 +14,14 @@ function VolumeKnob({
   const [isDragging, setIsDragging] = useState(false);
   const [displayValue, setDisplayValue] = useState(value);
   const dragStartInfo = useRef({ y: 0, value: 0 });
+  const rafRef = useRef(null);
+  const latestEventRef = useRef({ clientY: 0, shiftKey: false });
+  const onChangeRef = useRef(onChange);
+
+  // Keep onChange ref updated
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
 
   const valueToAngle = (val) => {
     const range = max - min;
@@ -23,17 +31,33 @@ function VolumeKnob({
   };
 
   const handleMouseMove = useCallback((e) => {
-    const deltaY = dragStartInfo.current.y - e.clientY;
-    const range = max - min;
-    const sensitivity = e.shiftKey ? 1000 : 200;
-    const newValue = dragStartInfo.current.value + (deltaY / sensitivity) * range;
-    const clampedValue = Math.max(min, Math.min(max, newValue));
-    onChange(clampedValue);
-  }, [min, max, onChange]);
+    // Store latest event data
+    latestEventRef.current = { clientY: e.clientY, shiftKey: e.shiftKey };
+
+    // Only schedule if not already scheduled
+    if (rafRef.current !== null) return;
+
+    rafRef.current = requestAnimationFrame(() => {
+      const deltaY = dragStartInfo.current.y - latestEventRef.current.clientY;
+      const range = max - min;
+      const sensitivity = latestEventRef.current.shiftKey ? 1000 : 200;
+      const newValue = dragStartInfo.current.value + (deltaY / sensitivity) * range;
+      const clampedValue = Math.max(min, Math.min(max, newValue));
+      onChangeRef.current(clampedValue);
+      rafRef.current = null;
+    });
+  }, [min, max]); // Remove onChange from deps!
 
   const handleMouseUp = useCallback(() => {
     setIsDragging(false);
     document.body.style.cursor = 'default';
+
+    // Cleanup RAF
+    if (rafRef.current !== null) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+
     window.removeEventListener('mousemove', handleMouseMove);
     window.removeEventListener('mouseup', handleMouseUp);
   }, [handleMouseMove]);

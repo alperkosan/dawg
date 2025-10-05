@@ -2,13 +2,14 @@
 
 import React, { Suspense } from 'react';
 import DraggableWindow from '../ui/DraggableWindow';
-import FileBrowserPanel from '../features/file_browser/FileBrowserPanel';
-import { usePanelsStore } from '../store/usePanelsStore';
-import { useInstrumentsStore } from '../store/useInstrumentsStore';
-import { useMixerStore } from '../store/useMixerStore';
-import { panelRegistry, panelDefinitions } from '../config/panelConfig';
-import { pluginRegistry } from '../config/pluginConfig';
-import PluginContainer from '../ui/plugin_system/PluginContainer';
+import FileBrowserPanel from '@/features/file_browser/FileBrowserPanel';
+import { usePanelsStore } from '@/store/usePanelsStore';
+import { useInstrumentsStore } from '@/store/useInstrumentsStore';
+import { useMixerStore } from '@/store/useMixerStore';
+import { panelRegistry, panelDefinitions } from '@/config/panelConfig';
+import { pluginRegistry } from '@/config/pluginConfig';
+import PluginContainer from '@/components/plugins/container/PluginContainer';
+import { AudioContextService } from '@/lib/services/AudioContextService';
 
 function WorkspacePanel() {
   const {
@@ -72,16 +73,25 @@ function WorkspacePanel() {
             const handlePluginChange = (param, value) => {
               handleMixerEffectChange(track.id, effect.id, param, value);
             };
-            
-            panelDef = { 
+
+            panelDef = {
               minSize: definition.minSize || { width: 350, height: 200 },
               initialSize: definition.initialSize || { width: 450, height: 300 }
             };
 
+            // Get the effect node for visualization
+            const effectNode = AudioContextService.getEffectNode(track.id, effect.id);
+
             PanelContent = (
               <PluginContainer trackId={track.id} effect={effect} definition={definition}>
                 <Suspense fallback={<div className="p-4">Loading UI...</div>}>
-                  <PluginUIComponent trackId={track.id} effect={effect} onChange={handlePluginChange} definition={definition} />
+                  <PluginUIComponent
+                    trackId={track.id}
+                    effect={effect}
+                    effectNode={effectNode}
+                    onChange={handlePluginChange}
+                    definition={definition}
+                  />
                 </Suspense>
               </PluginContainer>
             );
