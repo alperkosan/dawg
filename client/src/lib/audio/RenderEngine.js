@@ -185,8 +185,15 @@ export class RenderEngine {
   async _renderInstrumentNotes(patternData, offlineContext, audioEngine, options) {
     const instrumentBuffers = [];
 
+    console.log('🎬 DEBUG: patternData received:', patternData);
+    console.log('🎬 DEBUG: patternData entries:', Object.entries(patternData));
+
     for (const [instrumentId, notes] of Object.entries(patternData)) {
-      if (!notes || notes.length === 0) continue;
+      console.log(`🎬 DEBUG: Processing instrument ${instrumentId}, notes:`, notes);
+      if (!notes || notes.length === 0) {
+        console.log(`🎬 DEBUG: Skipping instrument ${instrumentId} - no notes`);
+        continue;
+      }
 
       try {
         const instrumentBuffer = await this._renderSingleInstrument(
@@ -198,17 +205,21 @@ export class RenderEngine {
         );
 
         if (instrumentBuffer) {
+          console.log(`🎬 Successfully rendered instrument ${instrumentId} with ${notes.length} notes`);
           instrumentBuffers.push({
             instrumentId,
             buffer: instrumentBuffer,
             notes: notes.length
           });
+        } else {
+          console.warn(`🎬 Instrument ${instrumentId} returned null buffer`);
         }
       } catch (error) {
         console.warn(`🎬 Failed to render instrument ${instrumentId}:`, error);
       }
     }
 
+    console.log(`🎬 DEBUG: Total instrument buffers created: ${instrumentBuffers.length}`);
     return instrumentBuffers;
   }
 
@@ -249,36 +260,49 @@ export class RenderEngine {
    * Schedule a note for offline rendering
    */
   async _scheduleNoteForOfflineRender(instrument, note, offlineContext, destination, options) {
-    const { time, velocity = 1.0, duration = 1.0 } = note;
+    // Support both 'time' and 'startTime', 'duration' and 'length'
+    const noteTime = note.startTime ?? note.time ?? 0;
 
-    // Convert step time to seconds (assuming 16 steps per beat, 140 BPM)
+    // Velocity is already normalized 0-1 in our system (not MIDI 0-127)
+    const noteVelocity = note.velocity ?? 1;
+
+    // Duration can be Tone.js notation ('16n', '4n', etc.) or beats number
+    const rawDuration = note.length ?? note.duration ?? 1;
+    const noteDurationBeats = this._durationToBeats(rawDuration);
+
+    // Convert beat time to seconds (assuming 140 BPM)
     const bpm = 140; // TODO: Get from project/pattern settings
-    const stepsPerBeat = 16;
     const secondsPerBeat = 60 / bpm;
-    const secondsPerStep = secondsPerBeat / stepsPerBeat;
-    const startTime = time * secondsPerStep;
-    const noteLength = duration * secondsPerStep;
+    const startTime = noteTime * secondsPerBeat;
+    const noteLength = noteDurationBeats * secondsPerBeat;
 
-    if (instrument.type === 'sample' && instrument.audioBuffer) {
+    // Get instrument type (handle both synth and sampler)
+    const instrumentType = instrument.type || (instrument.audioBuffer || instrument.buffer ? 'sample' : 'unknown');
+
+    console.log(`🎬 Scheduling note: type=${instrumentType}, time=${startTime.toFixed(3)}s, duration=${noteLength.toFixed(3)}s (${noteDurationBeats} beats), velocity=${noteVelocity.toFixed(2)}`);
+
+    if ((instrument.type === 'sample' || instrumentType === 'sample') && (instrument.audioBuffer || instrument.buffer)) {
       // Handle sample instruments
       const source = offlineContext.createBufferSource();
-      source.buffer = instrument.audioBuffer;
+      source.buffer = instrument.audioBuffer || instrument.buffer;
 
       // Apply velocity
       const gainNode = offlineContext.createGain();
-      gainNode.gain.setValueAtTime(velocity, startTime);
+      gainNode.gain.setValueAtTime(noteVelocity, startTime);
       source.connect(gainNode);
       gainNode.connect(destination);
 
       // Schedule playback
       source.start(startTime);
 
-      // Stop after note duration (for pitched samples)
-      if (noteLength < instrument.audioBuffer.duration) {
+      // For drum samples, let them play naturally
+      // For pitched samples or if duration is specified, stop after noteLength
+      const buffer = instrument.audioBuffer || instrument.buffer;
+      if (noteLength < buffer.duration) {
         source.stop(startTime + noteLength);
       }
 
-    } else if (instrument.type === 'synth') {
+    } else if (instrument.type === 'synth' || instrumentType === 'synth') {
       // Handle synthesizer instruments
       await this._renderSynthNote(instrument, note, offlineContext, destination, startTime, noteLength);
     }
@@ -292,9 +316,26 @@ export class RenderEngine {
     const oscillator = offlineContext.createOscillator();
     const gainNode = offlineContext.createGain();
 
-    // Set frequency (C4 = 261.63 Hz as base, adjust by pitch)
-    const baseFreq = 261.63;
-    const frequency = baseFreq * Math.pow(2, (note.pitch || 0) / 12);
+    // Convert pitch to MIDI number if it's a string
+    let midiNote = 60; // Default to C4
+    const pitchValue = note.pitch ?? note.note;
+
+    if (typeof pitchValue === 'string') {
+      // Parse note name like 'C4', 'G#2', 'Bb3'
+      midiNote = this._noteNameToMidi(pitchValue);
+    } else if (typeof pitchValue === 'number') {
+      midiNote = pitchValue;
+    }
+
+    // Convert MIDI to frequency (A4 = 440 Hz = MIDI 69)
+    const frequency = 440 * Math.pow(2, (midiNote - 69) / 12);
+
+    // Validate values before setting
+    if (!isFinite(frequency) || !isFinite(startTime)) {
+      console.error('🎬 Invalid frequency or startTime:', { frequency, startTime, midiNote, pitchValue, note });
+      return;
+    }
+
     oscillator.frequency.setValueAtTime(frequency, startTime);
 
     // Set waveform
@@ -304,30 +345,51 @@ export class RenderEngine {
     oscillator.connect(gainNode);
     gainNode.connect(destination);
 
-    // Apply ADSR envelope
+    // Apply ADSR envelope with validation
     const envelope = instrument.envelope || { attack: 0.01, decay: 0.1, sustain: 0.7, release: 0.2 };
-    const velocity = note.velocity || 1.0;
+
+    // Normalize velocity (MIDI 0-127 → 0-1)
+    let velocity = (note.velocity ?? 100) / 127;
+    velocity = Math.max(0, Math.min(1, velocity)); // Clamp 0-1
+
+    // Validate envelope values
+    const attack = Math.max(0, envelope.attack || 0.01);
+    const decay = Math.max(0, envelope.decay || 0.1);
+    const sustain = Math.max(0, Math.min(1, envelope.sustain || 0.7));
+    const release = Math.max(0, envelope.release || 0.2);
+
+    // Validate duration
+    const safeDuration = Math.max(0.01, duration || 0.1);
+
+    // Validate all time values
+    const attackTime = startTime + attack;
+    const decayTime = attackTime + decay;
+    const sustainEndTime = startTime + safeDuration - release;
+    const endTime = startTime + safeDuration;
+
+    if (!isFinite(velocity) || !isFinite(attackTime) || !isFinite(decayTime) || !isFinite(sustainEndTime) || !isFinite(endTime)) {
+      console.error('🎬 Invalid envelope values:', { velocity, attack, decay, sustain, release, duration: safeDuration, startTime });
+      return;
+    }
 
     // Attack
     gainNode.gain.setValueAtTime(0, startTime);
-    gainNode.gain.linearRampToValueAtTime(velocity, startTime + envelope.attack);
+    gainNode.gain.linearRampToValueAtTime(velocity, attackTime);
 
     // Decay
-    gainNode.gain.linearRampToValueAtTime(
-      velocity * envelope.sustain,
-      startTime + envelope.attack + envelope.decay
-    );
+    gainNode.gain.linearRampToValueAtTime(velocity * sustain, decayTime);
 
     // Sustain (hold level)
-    const sustainEndTime = startTime + duration - envelope.release;
-    gainNode.gain.setValueAtTime(velocity * envelope.sustain, sustainEndTime);
+    if (sustainEndTime > decayTime) {
+      gainNode.gain.setValueAtTime(velocity * sustain, sustainEndTime);
+    }
 
     // Release
-    gainNode.gain.linearRampToValueAtTime(0, startTime + duration);
+    gainNode.gain.linearRampToValueAtTime(0, endTime);
 
     // Schedule oscillator
     oscillator.start(startTime);
-    oscillator.stop(startTime + duration);
+    oscillator.stop(endTime);
   }
 
   // =================== MIXING & POST-PROCESSING ===================
@@ -363,29 +425,36 @@ export class RenderEngine {
    * Calculate pattern length in samples
    */
   _calculatePatternLength(patternData) {
-    console.log(`🎬 DEBUG: _calculatePatternLength called with:`, patternData);
+    // Use pattern settings length if available (in beats)
+    const patternLengthBeats = patternData?.settings?.length;
 
+    if (patternLengthBeats && patternLengthBeats > 0) {
+      const bpm = 140; // TODO: Get from project settings
+      const secondsPerBeat = 60 / bpm;
+      const totalSeconds = patternLengthBeats * secondsPerBeat;
+      const lengthInSamples = Math.ceil(totalSeconds * this.sampleRate);
+      console.log(`🎬 Using pattern settings length: ${patternLengthBeats} beats = ${totalSeconds}s = ${lengthInSamples} samples`);
+      return Math.max(lengthInSamples, 1);
+    }
+
+    // Fallback: calculate from notes
     let maxTime = 0;
-
-    // Find the latest note time across all instruments
     const patternDataObj = patternData?.data || {};
-    console.log(`🎬 DEBUG: Pattern data object:`, patternDataObj);
 
     for (const [instrumentId, notes] of Object.entries(patternDataObj)) {
-      console.log(`🎬 DEBUG: Checking instrument ${instrumentId}, notes:`, notes);
-
       if (!Array.isArray(notes)) continue;
 
       for (const note of notes) {
-        const noteEndTime = note.time + (note.duration || 1);
+        // Support both 'time' and 'startTime' for backwards compatibility
+        const noteStartTime = note.startTime ?? note.time ?? 0;
+        const noteDuration = note.length ?? note.duration ?? 1;
+        const noteEndTime = noteStartTime + noteDuration;
         maxTime = Math.max(maxTime, noteEndTime);
       }
     }
 
-    console.log(`🎬 DEBUG: Max time found: ${maxTime} steps`);
-
     // Convert steps to samples (add some padding)
-    const bpm = 140; // TODO: Get from project settings
+    const bpm = 140;
     const stepsPerBeat = 16;
     const secondsPerBeat = 60 / bpm;
     const secondsPerStep = secondsPerBeat / stepsPerBeat;
@@ -395,18 +464,57 @@ export class RenderEngine {
     const paddingSteps = 4;
     const totalSteps = Math.max(maxTime + paddingSteps, minPatternSteps);
 
-    console.log(`🎬 DEBUG: Total steps: ${totalSteps}, seconds per step: ${secondsPerStep}`);
-
     const totalSeconds = totalSteps * secondsPerStep;
     const lengthInSamples = Math.ceil(totalSeconds * this.sampleRate);
 
-    console.log(`🎬 DEBUG: Total seconds: ${totalSeconds}, length in samples: ${lengthInSamples}`);
+    console.log(`🎬 Calculated from notes: ${totalSteps} steps = ${totalSeconds}s = ${lengthInSamples} samples`);
 
-    // Ensure minimum of 1 frame for OfflineAudioContext
-    const finalLength = Math.max(lengthInSamples, 1);
-    console.log(`🎬 DEBUG: Final length: ${finalLength}`);
+    return Math.max(lengthInSamples, 1);
+  }
 
-    return finalLength;
+  /**
+   * Convert Tone.js duration notation to beats (e.g., '16n' -> 0.25, '4n' -> 1, '2n' -> 2)
+   */
+  _durationToBeats(duration) {
+    if (typeof duration === 'number') return duration;
+    if (!duration || typeof duration !== 'string') return 1;
+
+    // Tone.js notation: '1n' = whole note = 4 beats, '2n' = half = 2 beats, '4n' = quarter = 1 beat, '8n' = eighth = 0.5, '16n' = sixteenth = 0.25
+    const match = duration.match(/^(\d+)n$/);
+    if (!match) {
+      console.warn(`🎬 Invalid duration notation: ${duration}, defaulting to 1 beat`);
+      return 1;
+    }
+
+    const division = parseInt(match[1]);
+    // whole note = 4 beats in 4/4 time
+    return 4 / division;
+  }
+
+  /**
+   * Convert note name to MIDI number (e.g., 'C4' -> 60, 'A4' -> 69)
+   */
+  _noteNameToMidi(noteName) {
+    const noteMap = { 'C': 0, 'C#': 1, 'Db': 1, 'D': 2, 'D#': 3, 'Eb': 3, 'E': 4, 'F': 5, 'F#': 6, 'Gb': 6, 'G': 7, 'G#': 8, 'Ab': 8, 'A': 9, 'A#': 10, 'Bb': 10, 'B': 11 };
+
+    // Parse note name like 'C4', 'G#2', 'Bb3'
+    const match = noteName.match(/^([A-G][#b]?)(-?\d+)$/);
+    if (!match) {
+      console.warn(`🎬 Invalid note name: ${noteName}, defaulting to C4`);
+      return 60;
+    }
+
+    const note = match[1];
+    const octave = parseInt(match[2]);
+
+    const noteOffset = noteMap[note];
+    if (noteOffset === undefined) {
+      console.warn(`🎬 Unknown note: ${note}, defaulting to C4`);
+      return 60;
+    }
+
+    // MIDI: C4 = 60, so C0 = 12, C(-1) = 0
+    return (octave + 1) * 12 + noteOffset;
   }
 
   /**

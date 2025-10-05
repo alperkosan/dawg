@@ -229,21 +229,18 @@ export const useArrangementStore = create(arrangementStoreOrchestrator((set, get
         id: `frozen_${patternId}_${Date.now()}`,
         type: 'audio',
         patternId,
-        instrumentId: audioClipData.instrumentId,
+        assetId: audioClipData.assetId,
         trackId: audioClipData.trackId || `track-${patternId}`,
         startTime: audioClipData.startTime || 0,
-        duration: audioClipData.audioBuffer.duration,
-        audioBuffer: audioClipData.audioBuffer,
+        duration: audioClipData.duration,
         originalPattern: patternId,
         isFromExport: true,
         isFrozen: true,
-        color: '#4a90e2', // Blue color for frozen clips
-        name: `${patternId} (Frozen)`,
+        color: audioClipData.color || '#4a90e2',
+        name: audioClipData.name || `${patternId} (Frozen)`,
         metadata: {
           frozenAt: Date.now(),
-          cpuSavings: audioClipData.cpuSavings,
-          sampleRate: audioClipData.audioBuffer.sampleRate,
-          channels: audioClipData.audioBuffer.numberOfChannels
+          cpuSavings: audioClipData.cpuSavings
         }
       };
 

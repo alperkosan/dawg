@@ -176,12 +176,28 @@ export class AudioExportManager {
       fadeOut: settings.fadeOut
     });
 
-    // Convert to desired format
+    // For freeze operations, skip file download and just return buffer
+    if (settings.type === EXPORT_TYPES.FREEZE) {
+      const fileInfo = {
+        filename: `${patternData.name || 'pattern'}_frozen.wav`,
+        buffer: processedAudio,
+        duration: processedAudio.duration,
+        sampleRate: processedAudio.sampleRate,
+        type: 'audio/wav'
+      };
+      console.log(`🧊 Freeze: Skipping download, buffer ready for instrument creation`);
+      return [fileInfo];
+    }
+
+    // For other export types, convert and download
     const audioBlob = await this._convertToFormat(processedAudio, settings.format, settings.quality);
 
     // Save file
     const filename = `${patternData.name || 'pattern'}_${Date.now()}.${this._getFileExtension(settings.format)}`;
     const fileInfo = await this.fileManager.saveAudioFile(audioBlob, filename);
+
+    // Add buffer to fileInfo for freeze/instrument creation
+    fileInfo.buffer = processedAudio;
 
     return [fileInfo];
   }
@@ -335,14 +351,22 @@ export class AudioExportManager {
       const exportSettings = {
         ...FL_PRESETS.FREEZE,
         quality: QUALITY_PRESETS[exportQuality],
+        onProgress: exportOptions.onProgress,
         ...exportOptions
       };
+
+      if (exportOptions.onProgress) {
+        exportOptions.onProgress({ message: 'Rendering pattern audio...', percent: 10 });
+      }
 
       const exportResult = await this.exportPattern(patternId, exportSettings);
 
       // Step 2: Create audio asset from exported audio (if requested)
       let assetId = null;
       if (createInstrument && exportResult.length > 0) {
+        if (exportOptions.onProgress) {
+          exportOptions.onProgress({ message: 'Creating audio asset...', percent: 60 });
+        }
         assetId = await this._createInstrumentFromExport(exportResult[0], patternId);
       }
 
@@ -354,6 +378,9 @@ export class AudioExportManager {
       // Step 4: Optionally create arrangement clip (without replacing pattern)
       let clipId = null;
       if (!replaceOriginal && createInstrument && assetId && exportResult.length > 0) {
+        if (exportOptions.onProgress) {
+          exportOptions.onProgress({ message: 'Adding to arrangement...', percent: 90 });
+        }
         clipId = await this._createArrangementClip(patternId, assetId, exportResult[0]);
       }
 
@@ -454,22 +481,29 @@ export class AudioExportManager {
   /**
    * Replace pattern content with audio clip
    */
-  async _replacePatternWithAudio(patternId, instrumentId, exportResult) {
-    console.log(`🔄 Replacing pattern ${patternId} with audio instrument ${instrumentId}`);
+  async _replacePatternWithAudio(patternId, assetId, exportResult) {
+    console.log(`🔄 Replacing pattern ${patternId} with audio asset ${assetId}`);
 
     try {
       // Import arrangement store dynamically to avoid circular imports
       const { useArrangementStore } = await import('../../store/useArrangementStore');
 
-      if (exportResult && exportResult.audioBuffer) {
-        // Create audio clip data
+      if (exportResult && exportResult.buffer) {
+        // Get BPM to calculate duration in beats
+        const BPM = 140; // TODO: Get from transport
+        const beatsPerSecond = BPM / 60;
+        const durationBeats = exportResult.buffer.duration * beatsPerSecond;
+
+        // Create audio clip data with assetId
         const audioClipData = {
-          patternId,
-          instrumentId,
-          audioBuffer: exportResult.audioBuffer,
+          type: 'audio',
+          assetId: assetId,
+          name: `Frozen ${patternId}`,
+          duration: durationBeats,
           cpuSavings: { estimatedSavings: '60-80%' },
           startTime: 0,
-          trackId: `track-${patternId}`
+          trackId: `track-${patternId}`,
+          color: '#4a90e2'
         };
 
         // Use arrangement store to replace pattern with audio clip

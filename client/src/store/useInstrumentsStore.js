@@ -59,6 +59,8 @@ export const useInstrumentsStore = create((set, get) => ({
         name: newName,
         type: 'sample',
         url: sample.url,
+        assetId: sample.assetId, // For frozen patterns or asset-based samples
+        audioBuffer: sample.audioBuffer, // For frozen patterns without URL
         notes: [],
         mixerTrackId: firstUnusedTrack.id,
         // Varsayılan zarf (envelope) ve ön-hesaplama (precomputed) ayarları

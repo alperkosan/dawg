@@ -128,6 +128,41 @@ class AudioAssetManager {
   }
 
   /**
+   * Add pre-loaded asset (e.g., from pattern export)
+   * @param {object} assetData - { id, name, buffer, url, type, metadata }
+   */
+  async addAsset(assetData) {
+    const { id, name, buffer, url, type, metadata } = assetData;
+
+    if (!buffer) {
+      throw new Error('AudioBuffer is required');
+    }
+
+    // Store asset
+    this.assets.set(id, {
+      buffer: buffer,
+      url: url || null,
+      metadata: {
+        name: name || 'Audio Asset',
+        type: type || 'audio',
+        ...metadata
+      }
+    });
+
+    console.log(`📦 Added asset ${id} to cache`);
+
+    // Add to instruments store if needed
+    if (metadata?.addToInstruments !== false) {
+      await this._addToInstrumentsStore(id, buffer, { name, ...metadata });
+    }
+
+    // Notify listeners
+    this._notifyListeners(id, buffer);
+
+    return id;
+  }
+
+  /**
    * Get cached asset by ID
    */
   getAsset(assetId) {
@@ -207,23 +242,30 @@ class AudioAssetManager {
 
       const store = useInstrumentsStore.getState();
 
-      // Check if already exists by URL (instruments store uses URL)
+      // Check if already exists by assetId or URL
       const asset = this.getAsset(assetId);
-      if (!asset || !asset.url) {
-        console.warn(`🎹 No URL for asset ${assetId}, cannot add to instruments`);
+      if (!asset) {
+        console.warn(`🎹 Asset ${assetId} not found in cache`);
         return;
       }
 
-      const existingInstrument = store.instruments.find(inst => inst.url === asset.url);
+      // For frozen patterns or generated audio, use assetId. For file-based audio, use URL
+      const identifier = asset.url || assetId;
+
+      const existingInstrument = store.instruments.find(inst =>
+        inst.url === identifier || inst.assetId === assetId
+      );
       if (existingInstrument) {
-        console.log(`🎹 Instrument already exists for URL ${asset.url}`);
+        console.log(`🎹 Instrument already exists for ${identifier}`);
         return;
       }
 
       // Create sample object for handleAddNewInstrument
       const sampleData = {
-        name: metadata.name || 'Audio Sample',
-        url: asset.url
+        name: metadata.name || asset.metadata?.name || 'Audio Sample',
+        url: identifier,
+        assetId: assetId, // Include assetId for frozen patterns
+        audioBuffer: audioBuffer // Include buffer directly for frozen patterns without URL
       };
 
       // Use existing handleAddNewInstrument function

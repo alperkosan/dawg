@@ -117,7 +117,16 @@ const AudioExportPanel = ({ isOpen, onClose }) => {
       setIsExporting(true);
       setExportProgress({ status: 'preparing', pattern: patternId, message: 'Freezing pattern...' });
 
-      const result = await audioExportManager.freezePattern(patternId);
+      const result = await audioExportManager.freezePattern(patternId, {
+        onProgress: (progress) => {
+          setExportProgress({
+            status: 'rendering',
+            pattern: patternId,
+            message: progress.message || 'Rendering audio...',
+            progress: progress.percent
+          });
+        }
+      });
 
       setExportProgress({
         status: 'completed',
@@ -165,11 +174,19 @@ const AudioExportPanel = ({ isOpen, onClose }) => {
   const handlePatternToAudio = useCallback(async (patternId, options = {}) => {
     try {
       setIsExporting(true);
-      setExportProgress({ status: 'preparing', pattern: patternId, message: 'Converting to audio...' });
+      setExportProgress({ status: 'preparing', pattern: patternId, message: 'Scheduling pattern notes...' });
 
       const result = await audioExportManager.patternToAudioWorkflow(patternId, {
         replaceOriginal: false,
         createInstrument: true,
+        onProgress: (progress) => {
+          setExportProgress({
+            status: 'rendering',
+            pattern: patternId,
+            message: progress.message || 'Rendering audio...',
+            progress: progress.percent
+          });
+        },
         ...options
       });
 
@@ -211,7 +228,9 @@ const AudioExportPanel = ({ isOpen, onClose }) => {
 
     switch (exportProgress.status) {
       case 'preparing':
-        return `Preparing ${exportProgress.pattern}...`;
+        return exportProgress.message || `Preparing ${exportProgress.pattern}...`;
+      case 'rendering':
+        return exportProgress.message || 'Rendering audio...';
       case 'batch-preparing':
         return `Preparing batch export of ${exportProgress.count} patterns...`;
       case 'completed':
@@ -288,10 +307,10 @@ const AudioExportPanel = ({ isOpen, onClose }) => {
           <h4 className="audio-export-panel__section-title">🎛️ FL Studio Workflow</h4>
           <div className="audio-export-panel__fl-buttons">
             <button
-              onClick={() => handleFreezePattern(activePatternId)}
+              onClick={() => handlePatternToAudio(activePatternId, { replaceOriginal: true })}
               disabled={isExporting || !activePatternId}
               className="audio-export-panel__btn audio-export-panel__btn--freeze"
-              title="Freeze pattern to reduce CPU load"
+              title="Freeze pattern to reduce CPU load - replaces pattern with audio"
             >
               <Snowflake size={16} />
               Freeze Pattern
@@ -319,7 +338,11 @@ const AudioExportPanel = ({ isOpen, onClose }) => {
           </div>
 
           <div className="audio-export-panel__fl-info">
-            <small>💡 FL Studio workflow: Export patterns as audio to reduce CPU load and create reusable audio clips</small>
+            <small>
+              💡 <strong>Freeze:</strong> Pattern'i audio'ya çevirip yerine koy (CPU tasarrufu)<br/>
+              💡 <strong>Pattern → Audio:</strong> Audio sample oluştur + arrangement'a ekle (pattern'i değiştirmez)<br/>
+              💡 <strong>Quick Mixdown:</strong> Yüksek kaliteli dosya export et (download)
+            </small>
           </div>
         </div>
 
@@ -363,8 +386,23 @@ const AudioExportPanel = ({ isOpen, onClose }) => {
             exportProgress.status === 'error' ? 'audio-export-panel__progress--error' :
             (exportProgress.status.includes('completed') ? 'audio-export-panel__progress--success' : '')
           }`}>
-            <div>{getProgressMessage()}</div>
-            {isExporting && (
+            <div className="audio-export-panel__progress-message">
+              {getProgressMessage()}
+              {exportProgress.progress !== undefined && (
+                <span style={{ marginLeft: '8px', fontWeight: 'bold' }}>
+                  {Math.round(exportProgress.progress)}%
+                </span>
+              )}
+            </div>
+            {exportProgress.progress !== undefined && exportProgress.status === 'rendering' && (
+              <div className="audio-export-panel__progress-bar">
+                <div
+                  className="audio-export-panel__progress-bar-fill"
+                  style={{ width: `${exportProgress.progress}%` }}
+                />
+              </div>
+            )}
+            {isExporting && !exportProgress.progress && (
               <div className="audio-export-panel__spinner">⏳</div>
             )}
           </div>
