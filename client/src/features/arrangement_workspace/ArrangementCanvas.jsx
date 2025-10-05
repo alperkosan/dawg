@@ -19,6 +19,7 @@ import { usePatternInteraction } from './hooks/usePatternInteraction';
 import { drawArrangement } from './renderers/arrangementRenderer';
 import { TrackHeaderOverlay } from './components/TrackHeaderOverlay';
 import { Plus, Play, Pause, Square, ZoomIn, ZoomOut } from 'lucide-react';
+import { audioAssetManager } from '@/lib/audio/AudioAssetManager';
 
 const ArrangementCanvas = ({ arrangement }) => {
   const containerRef = useRef(null);
@@ -33,12 +34,16 @@ const ArrangementCanvas = ({ arrangement }) => {
     addTrack,
     ensureTrackAtIndex,
     updateClip,
+    updateClipInstance,
     addClip,
     deleteClip,
     selectClips,
     toggleTrackMute,
     toggleTrackSolo,
-    zoom: zoomFromStore
+    zoom: zoomFromStore,
+    makeClipUnique,
+    getInstanceClipCount,
+    audioInstances
   } = useArrangementWorkspaceStore();
 
   const { patterns } = useArrangementStore();
@@ -72,6 +77,10 @@ const ArrangementCanvas = ({ arrangement }) => {
   const [dropPreview, setDropPreview] = useState(null); // Pattern library drop preview
   const [isAltKeyPressed, setIsAltKeyPressed] = useState(false); // Track Alt key for stretch mode indicator
   const [contextMenu, setContextMenu] = useState(null); // Right-click context menu
+  const [marqueeSelection, setMarqueeSelection] = useState(null); // Marquee selection box { startX, startY, currentX, currentY }
+  const [isRightClickDelete, setIsRightClickDelete] = useState(false); // Right-click delete mode
+  const [deletedClipsInSession, setDeletedClipsInSession] = useState(new Set()); // Track deleted clips during right-click drag
+  const [lastDuplicateAction, setLastDuplicateAction] = useState(null); // Track last Ctrl+B action for sequential duplication
 
   // Playback mode handler - Song mode için arrangement çalma
   useEffect(() => {
@@ -89,6 +98,30 @@ const ArrangementCanvas = ({ arrangement }) => {
       // TODO: Schedule arrangement clips to audio engine
     }
   }, [playbackMode, clips]);
+
+  // Subscribe to audio asset loading events for auto-refresh and duration update
+  useEffect(() => {
+    const unsubscribe = audioAssetManager.subscribe((assetId, buffer) => {
+      console.log('🎨 Audio asset loaded, updating clip duration:', assetId);
+
+      // Find clips using this asset and update their duration
+      const audioClips = clips.filter(clip => clip.assetId === assetId);
+      audioClips.forEach(clip => {
+        // Calculate duration in beats (assuming 140 BPM)
+        const BPM = 140;
+        const beatsPerSecond = BPM / 60;
+        const durationInBeats = buffer.duration * beatsPerSecond;
+
+        // Update clip duration
+        updateClip(clip.id, { duration: durationInBeats });
+      });
+
+      // Force canvas re-render
+      engine.render?.();
+    });
+
+    return unsubscribe;
+  }, [engine, clips, updateClip]);
 
   // Keyboard shortcuts and Alt key tracking
   useEffect(() => {
@@ -115,6 +148,94 @@ const ArrangementCanvas = ({ arrangement }) => {
         });
       }
 
+      // Ctrl+B / Cmd+B - Sequential duplication with memory
+      if ((e.metaKey || e.ctrlKey) && e.key === 'b' && selectedClips.length > 0) {
+        e.preventDefault();
+
+        // Grid size to beat conversion
+        const gridSizeMap = {
+          '1/1': 4, '1/2': 2, '1/4': 1, '1/8': 0.5, '1/16': 0.25, '1/32': 0.125
+        };
+        const gridInterval = gridSizeMap[gridSize] || 1;
+
+        // Check if this is a continuation of previous Ctrl+B
+        const selectedClipObjects = selectedClips.map(id => clips.find(c => c.id === id)).filter(Boolean);
+        let clipTemplate = null;
+        let baseTime = 0;
+
+        if (lastDuplicateAction &&
+            lastDuplicateAction.newClipIds.length === selectedClips.length &&
+            lastDuplicateAction.newClipIds.every(id => selectedClips.includes(id))) {
+          // Continuing sequential duplication - use saved clip template
+          clipTemplate = lastDuplicateAction.clipTemplate;
+          baseTime = lastDuplicateAction.lastEndTime;
+        } else {
+          // New duplication sequence - create clip template from selected clips
+          // Find the clip that ends last (startTime + duration)
+          const lastEndingClip = selectedClipObjects.reduce((max, clip) => {
+            const clipEnd = clip.startTime + clip.duration;
+            const maxEnd = max.startTime + max.duration;
+            return clipEnd > maxEnd ? clip : max;
+          }, selectedClipObjects[0]);
+
+          baseTime = lastEndingClip.startTime + lastEndingClip.duration;
+
+          // Create clip template (pure data, no IDs but preserve instanceId for sharing)
+          const firstClipTime = selectedClipObjects[0].startTime;
+          clipTemplate = selectedClipObjects.map(clip => ({
+            offsetTime: clip.startTime - firstClipTime,
+            clipData: {
+              type: clip.type,
+              patternId: clip.patternId,
+              sampleId: clip.sampleId,
+              assetId: clip.assetId,
+              audioUrl: clip.audioUrl,
+              instanceId: clip.instanceId, // Preserve instance for shared properties
+              trackId: clip.trackId,
+              duration: clip.duration,
+              name: clip.name,
+              color: clip.color
+            }
+          }));
+        }
+
+        // Place directly after the end of the last clip (no grid snapping for tighter placement)
+        const targetTime = baseTime;
+
+        const newClipIds = [];
+        let maxEndTime = targetTime;
+
+        clipTemplate.forEach(template => {
+          // Create new clip from template
+          const newClipId = addClip({
+            ...template.clipData,
+            startTime: targetTime + template.offsetTime,
+            id: undefined // Let store generate new ID
+          });
+
+          if (newClipId) {
+            newClipIds.push(newClipId);
+            // Track the end time of the last clip in this duplication
+            const clipEnd = targetTime + template.offsetTime + template.clipData.duration;
+            if (clipEnd > maxEndTime) {
+              maxEndTime = clipEnd;
+            }
+          }
+        });
+
+        // Save duplication memory with clip template (no clip references)
+        setLastDuplicateAction({
+          clipTemplate: clipTemplate,
+          newClipIds: newClipIds,
+          lastEndTime: maxEndTime  // Save end time for next sequential duplication
+        });
+
+        // Select the newly created clips for next duplication
+        if (newClipIds.length > 0) {
+          setSelectedClips(newClipIds);
+        }
+      }
+
       // Delete / Backspace - Delete selected clips
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedClips.length > 0 && !e.metaKey && !e.ctrlKey) {
         e.preventDefault();
@@ -136,7 +257,7 @@ const ArrangementCanvas = ({ arrangement }) => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [selectedClips, clips, addClip, deleteClip]);
+  }, [selectedClips, clips, addClip, deleteClip, gridSize, lastDuplicateAction]);
 
   // Canvas rendering loop
   useEffect(() => {
@@ -161,23 +282,23 @@ const ArrangementCanvas = ({ arrangement }) => {
       selectedClips,
       patterns, // Pattern data for mini view
       instruments, // Audio samples for waveform rendering
+      audioInstances, // Shared audio instance properties
       playhead: {
         // Only show playhead position in song mode
         position: playbackMode === 'song' ? currentStep : 0,
         isPlaying: playbackMode === 'song' && isPlaying
       },
       patternInteraction: patternInteraction.interactionState,
-      dropPreview
+      dropPreview,
+      marqueeSelection,
+      isRightClickDelete
     };
 
     drawArrangement(ctx, engineWithData);
-  }, [engine, gridSize, tracks, clips, selectedClips, patterns, instruments, currentStep, isPlaying, playbackMode, patternInteraction.interactionState, dropPreview]);
+  }, [engine, gridSize, tracks, clips, selectedClips, patterns, instruments, audioInstances, currentStep, isPlaying, playbackMode, patternInteraction.interactionState, dropPreview, marqueeSelection, isRightClickDelete]);
 
   // Mouse handlers for pattern interaction
   const handleCanvasMouseDown = useCallback((e) => {
-    // Ignore right-click - handled by onContextMenu
-    if (e.button === 2) return;
-
     const rect = canvasRef.current.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
@@ -185,6 +306,24 @@ const ArrangementCanvas = ({ arrangement }) => {
     const TRACK_HEADER_WIDTH = 150;
     const TIMELINE_HEIGHT = 40;
     const PIXELS_PER_BEAT = 32;
+
+    // Right-click - delete mode
+    if (e.button === 2) {
+      e.stopPropagation();
+      setIsRightClickDelete(true);
+      setDeletedClipsInSession(new Set());
+
+      // Check if we're over a clip and delete it immediately
+      const worldX = mouseX + engine.viewport.scrollX;
+      const worldY = mouseY + engine.viewport.scrollY;
+      const clickedClip = patternInteraction.getClipAtPosition(worldX, worldY);
+
+      if (clickedClip) {
+        deleteClip(clickedClip.id);
+        setDeletedClipsInSession(new Set([clickedClip.id]));
+      }
+      return;
+    }
 
     // Timeline click detection
     if (mouseY < TIMELINE_HEIGHT && mouseX > TRACK_HEADER_WIDTH) {
@@ -214,6 +353,9 @@ const ArrangementCanvas = ({ arrangement }) => {
       // Pattern/audio clip interaction started - prevent canvas panning
       e.stopPropagation();
 
+      // Reset duplicate memory when interacting with clips
+      setLastDuplicateAction(null);
+
       if (e.shiftKey) {
         setSelectedClips(prev => [...prev, interaction.clip.id]);
       } else {
@@ -221,26 +363,102 @@ const ArrangementCanvas = ({ arrangement }) => {
       }
       setIsDragging(true);
     } else {
-      // Empty area clicked - allow canvas panning (don't stopPropagation)
-      // Unless Alt key is pressed for time stretch mode
-      if (e.altKey) {
-        // Alt key pressed but no clip - still prevent panning for UX clarity
-        e.stopPropagation();
-      }
+      // Empty area clicked - start marquee selection
+      e.stopPropagation();
+
+      // Calculate world position relative to canvas area (excluding headers)
+      const canvasX = mouseX - TRACK_HEADER_WIDTH;
+      const canvasY = mouseY - TIMELINE_HEIGHT;
+      const worldX = canvasX + engine.viewport.scrollX;
+      const worldY = canvasY + engine.viewport.scrollY;
+
+      setMarqueeSelection({
+        startX: worldX,
+        startY: worldY,
+        currentX: worldX,
+        currentY: worldY
+      });
 
       setSelectedClips([]);
       setIsDragging(false);
     }
-  }, [patternInteraction, engine.viewport, setTransportPosition]);
+  }, [patternInteraction, engine.viewport, setTransportPosition, deleteClip]);
 
   const handleCanvasMouseMove = useCallback((e) => {
+    const rect = canvasRef.current.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+
+    const TRACK_HEADER_WIDTH = 150;
+    const TIMELINE_HEIGHT = 40;
+    const PIXELS_PER_BEAT = 32;
+
+    // Right-click delete mode - delete clips as we hover over them
+    if (isRightClickDelete) {
+      e.stopPropagation();
+
+      const worldX = mouseX + engine.viewport.scrollX;
+      const worldY = mouseY + engine.viewport.scrollY;
+      const hoveredClip = patternInteraction.getClipAtPosition(worldX, worldY);
+
+      if (hoveredClip && !deletedClipsInSession.has(hoveredClip.id)) {
+        deleteClip(hoveredClip.id);
+        setDeletedClipsInSession(prev => new Set([...prev, hoveredClip.id]));
+      }
+
+      // Set cursor to indicate delete mode
+      if (canvasRef.current) {
+        canvasRef.current.style.cursor = 'not-allowed';
+      }
+      return;
+    }
+
+    // Marquee selection
+    if (marqueeSelection) {
+      e.stopPropagation();
+
+      // Calculate world position relative to canvas area (excluding headers)
+      const canvasX = mouseX - TRACK_HEADER_WIDTH;
+      const canvasY = mouseY - TIMELINE_HEIGHT;
+      const worldX = canvasX + engine.viewport.scrollX;
+      const worldY = canvasY + engine.viewport.scrollY;
+
+      setMarqueeSelection(prev => ({
+        ...prev,
+        currentX: worldX,
+        currentY: worldY
+      }));
+
+      // Calculate which clips are inside marquee
+      const minX = Math.min(marqueeSelection.startX, worldX);
+      const maxX = Math.max(marqueeSelection.startX, worldX);
+      const minY = Math.min(marqueeSelection.startY, worldY);
+      const maxY = Math.max(marqueeSelection.startY, worldY);
+
+      const selectedClipIds = clips.filter(clip => {
+        const track = tracks.find(t => t.id === clip.trackId);
+        if (!track) return false;
+
+        const trackIndex = tracks.indexOf(track);
+        const clipX = (clip.startTime * PIXELS_PER_BEAT * engine.viewport.zoomX);
+        const clipY = (trackIndex * engine.dimensions.trackHeight);
+        const clipWidth = (clip.duration * PIXELS_PER_BEAT * engine.viewport.zoomX);
+        const clipHeight = engine.dimensions.trackHeight;
+
+        // Check if clip intersects with marquee
+        return !(clipX + clipWidth < minX || clipX > maxX || clipY + clipHeight < minY || clipY > maxY);
+      }).map(clip => clip.id);
+
+      setSelectedClips(selectedClipIds);
+      return;
+    }
+
     if (!isDragging) {
       // Sadece cursor güncelle
-      const rect = canvasRef.current.getBoundingClientRect();
-      const mouseX = e.clientX - rect.left + engine.viewport.scrollX;
-      const mouseY = e.clientY - rect.top + engine.viewport.scrollY;
+      const worldX = mouseX + engine.viewport.scrollX;
+      const worldY = mouseY + engine.viewport.scrollY;
 
-      const cursor = patternInteraction.getCursorStyle(mouseX, mouseY);
+      const cursor = patternInteraction.getCursorStyle(worldX, worldY);
       if (canvasRef.current) {
         canvasRef.current.style.cursor = cursor;
       }
@@ -249,12 +467,26 @@ const ArrangementCanvas = ({ arrangement }) => {
 
     // Clip interaction in progress - prevent canvas panning
     e.stopPropagation();
-
-    const rect = canvasRef.current.getBoundingClientRect();
     patternInteraction.handleMouseMove(e, rect);
-  }, [isDragging, patternInteraction, engine.viewport]);
+  }, [isDragging, patternInteraction, engine.viewport, isRightClickDelete, deletedClipsInSession, deleteClip, marqueeSelection, clips, tracks, engine.dimensions.trackHeight]);
 
   const handleCanvasMouseUp = useCallback((e) => {
+    // Right-click delete mode - exit
+    if (isRightClickDelete) {
+      setIsRightClickDelete(false);
+      setDeletedClipsInSession(new Set());
+      if (canvasRef.current) {
+        canvasRef.current.style.cursor = 'default';
+      }
+      return;
+    }
+
+    // Marquee selection - finalize
+    if (marqueeSelection) {
+      setMarqueeSelection(null);
+      return;
+    }
+
     if (!isDragging) return;
 
     // Clip interaction finished - prevent canvas panning events
@@ -288,14 +520,14 @@ const ArrangementCanvas = ({ arrangement }) => {
           });
         }
       } else if (result.updates) {
-        // Move or resize
+        // Regular clip update
         updateClip(result.clip.id, result.updates);
       }
     }
 
     setIsDragging(false);
     setDraggedClip(null);
-  }, [isDragging, patternInteraction, updateClip, addClip, patterns]);
+  }, [isDragging, patternInteraction, updateClip, addClip, patterns, isRightClickDelete, marqueeSelection]);
 
   // Drag and drop handlers for patterns and audio from library
   const handleCanvasDrop = useCallback((e) => {
@@ -373,41 +605,46 @@ const ArrangementCanvas = ({ arrangement }) => {
           selectClips([newClipId], false);
         }
       } else if (data.name && data.url) {
-        // File browser sample drop (direct from file browser)
-        const defaultDuration = 4;
+        // File browser sample drop - use AudioAssetManager for centralized loading
+        const assetId = audioAssetManager.generateAssetId(data.url);
 
-        // Create a temporary sample ID from the URL
-        const sampleId = `file-${data.url.replace(/[^a-zA-Z0-9]/g, '-')}`;
+        // Always try to load asset (returns immediately if cached)
+        // Note: Duration update is handled by the useEffect subscription to audioAssetManager
+        audioAssetManager.loadAsset(data.url, {
+          name: data.name,
+          source: 'file-browser',
+          type: 'audio'
+        }).catch(error => {
+          console.error('Failed to load audio asset:', error);
+        });
 
-        // Check if this audio file is already loaded as an instrument
-        let existingInstrument = instruments.find(inst => inst.id === sampleId);
+        // Check if already cached to set correct initial duration
+        const existingAsset = audioAssetManager.getAsset(assetId);
+        let initialDuration = 4;
 
-        if (!existingInstrument) {
-          // Create a temporary instrument for this audio file
-          // This allows the renderer to access the audioBuffer
-          const newSample = {
-            id: sampleId,
-            name: data.name,
-            url: data.url,
-            type: 'audio'
-          };
-          handleAddNewInstrument(newSample);
+        if (existingAsset?.buffer) {
+          const BPM = 140;
+          const beatsPerSecond = BPM / 60;
+          initialDuration = existingAsset.buffer.duration * beatsPerSecond;
         }
 
+        // Create clip
         const newClipId = addClip({
           type: 'audio',
-          sampleId, // Use generated ID so renderer can find it
-          audioUrl: data.url, // Keep URL for reference
+          assetId, // Use centralized asset ID
+          audioUrl: data.url,
           trackId,
           startTime: snappedBeat,
-          duration: defaultDuration,
+          duration: initialDuration,
           name: data.name,
-          color: '#f59e0b' // Orange color for audio clips
+          color: '#f59e0b',
+          fadeIn: 0, // No fade by default
+          fadeOut: 0, // No fade by default
+          gain: 0 // 0 dB gain
         });
 
         console.log(`🎵 Dropped file browser sample "${data.name}" on track ${trackIndex + 1} at beat ${snappedBeat.toFixed(2)}`);
 
-        // ✅ Select the newly created clip
         if (newClipId) {
           selectClips([newClipId], false);
         }
@@ -415,7 +652,7 @@ const ArrangementCanvas = ({ arrangement }) => {
     } catch (error) {
       console.error('Failed to handle drop:', error);
     }
-  }, [engine, ensureTrackAtIndex, addClip, patterns, patternInteraction, selectClips, instruments, handleAddNewInstrument]);
+  }, [engine, ensureTrackAtIndex, addClip, patterns, patternInteraction, selectClips]);
 
   const handleDragLeave = useCallback((e) => {
     // Only clear if leaving canvas completely
@@ -523,7 +760,7 @@ const ArrangementCanvas = ({ arrangement }) => {
               setContextMenu({
                 x: e.clientX,
                 y: e.clientY,
-                clipId: clickedClip.id
+                clip: clickedClip
               });
             }
           }}
@@ -604,6 +841,30 @@ const ArrangementCanvas = ({ arrangement }) => {
               }}
               onClick={(e) => e.stopPropagation()}
             >
+              {/* Make Unique - only show for shared audio instances */}
+              {contextMenu.clip?.instanceId && getInstanceClipCount(contextMenu.clip.instanceId) > 1 && (
+                <div
+                  style={{
+                    padding: '8px 12px',
+                    cursor: 'pointer',
+                    color: '#4ecdc4',
+                    fontSize: '13px',
+                    borderRadius: '2px',
+                    transition: 'background 0.1s'
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = '#3a3a3a'}
+                  onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    makeClipUnique(contextMenu.clip.id);
+                    setContextMenu(null);
+                  }}
+                >
+                  Make Unique
+                </div>
+              )}
+
+              {/* Delete */}
               <div
                 style={{
                   padding: '8px 12px',
@@ -617,7 +878,7 @@ const ArrangementCanvas = ({ arrangement }) => {
                 onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                 onClick={(e) => {
                   e.stopPropagation();
-                  deleteClip(contextMenu.clipId);
+                  deleteClip(contextMenu.clip.id);
                   setContextMenu(null);
                 }}
               >

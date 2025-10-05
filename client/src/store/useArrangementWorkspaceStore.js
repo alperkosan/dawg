@@ -70,6 +70,21 @@ export const useArrangementWorkspaceStore = create((set, get) => ({
   activeArrangementId: 'arr-1',
   nextArrangementNumber: 2,
 
+  // Audio instance system - shared properties for clips from same audio
+  audioInstances: {
+    // 'instance-id': {
+    //   assetId: 'asset-id',
+    //   duration: 4,
+    //   fadeIn: 0,
+    //   fadeOut: 0,
+    //   gain: 0,
+    //   sampleOffset: 0,
+    //   playbackRate: 1.0,
+    //   name: 'audio.wav',
+    //   color: '#f59e0b'
+    // }
+  },
+
   // Workspace layout
   leftPanelWidth: 300,
   rightPanelWidth: 350,
@@ -453,28 +468,67 @@ export const useArrangementWorkspaceStore = create((set, get) => ({
    */
   addClip: (clipData) => {
     const activeArrangementId = get().activeArrangementId;
+    const state = get();
+
+    // Generate unique clip ID
+    const uniqueId = `clip-${Date.now()}_${Math.random().toString(36).substring(2, 11)}_${performance.now()}`;
+
+    // Extract id from clipData to ensure it doesn't override our uniqueId
+    const { id: _ignoredId, ...clipDataWithoutId } = clipData;
+
+    let instanceId = null;
+    let newInstances = { ...state.audioInstances };
+
+    // For audio clips, handle instance system
+    if (clipData.type === 'audio' && clipData.assetId) {
+      // Check if we should use existing instance or create new one
+      if (clipData.instanceId) {
+        // Explicit instance ID provided (e.g., from duplication)
+        instanceId = clipData.instanceId;
+      } else {
+        // Check if an instance already exists for this asset
+        const existingInstance = Object.entries(state.audioInstances).find(
+          ([_, inst]) => inst.assetId === clipData.assetId
+        );
+
+        if (existingInstance) {
+          // Reuse existing instance
+          instanceId = existingInstance[0];
+        } else {
+          // Create new instance (only for buffer reference, color, and name)
+          instanceId = `instance-${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+          newInstances[instanceId] = {
+            assetId: clipData.assetId,
+            name: clipData.name || 'Audio',
+            color: clipData.color || '#f59e0b'
+          };
+        }
+      }
+    }
 
     const newClip = {
-      id: `clip-${Date.now()}`,
-      type: clipData.type || 'pattern', // 'pattern' or 'audio'
+      id: uniqueId,
+      type: clipData.type || 'pattern',
       patternId: clipData.patternId,
-      sampleId: clipData.sampleId, // For audio clips
+      sampleId: clipData.sampleId,
+      assetId: clipData.assetId,
+      audioUrl: clipData.audioUrl,
+      instanceId: instanceId, // Link to shared instance (for buffer reference only)
       trackId: clipData.trackId,
       startTime: clipData.startTime || 0,
+      // All audio properties are clip-specific
       duration: clipData.duration || 4,
-      color: clipData.color || '#00ff88',
-      name: clipData.name || 'Clip',
-      // Audio clip specific properties
-      fadeIn: clipData.fadeIn || 0, // Fade in duration in beats
-      fadeOut: clipData.fadeOut || 0, // Fade out duration in beats
-      gain: clipData.gain !== undefined ? clipData.gain : 0, // Gain in dB (-inf to +12)
-      playbackRate: clipData.playbackRate || 1.0, // Playback speed multiplier (0.5 = half speed, 2.0 = double speed)
-      originalDuration: clipData.originalDuration || clipData.duration, // Original duration before time stretch
-      sampleOffset: clipData.sampleOffset || 0, // Offset in beats - where to start playing in the audio buffer
-      ...clipData
+      fadeIn: clipData.fadeIn || 0,
+      fadeOut: clipData.fadeOut || 0,
+      gain: clipData.gain || 0,
+      sampleOffset: clipData.sampleOffset || 0,
+      playbackRate: clipData.playbackRate || 1.0,
+      color: instanceId ? newInstances[instanceId].color : (clipData.color || '#00ff88'),
+      name: instanceId ? newInstances[instanceId].name : (clipData.name || 'Clip')
     };
 
     set(state => ({
+      audioInstances: newInstances,
       arrangements: {
         ...state.arrangements,
         [activeArrangementId]: {
@@ -485,7 +539,7 @@ export const useArrangementWorkspaceStore = create((set, get) => ({
       }
     }));
 
-    console.log(`🎵 Added clip: ${newClip.name}`);
+    console.log(`🎵 Added clip: ${newClip.name}${instanceId ? ` (instance: ${instanceId})` : ''}`);
     return newClip.id;
   },
 
@@ -857,6 +911,94 @@ export const useArrangementWorkspaceStore = create((set, get) => ({
     const state = get();
     const arrangement = state.arrangements[state.activeArrangementId];
     return arrangement?.tracks || [];
+  },
+
+  // =================== AUDIO INSTANCE MANAGEMENT ===================
+
+  /**
+   * Update audio instance properties (affects all clips sharing this instance)
+   */
+  updateClipInstance: (instanceId, updates) => {
+    set(state => ({
+      audioInstances: {
+        ...state.audioInstances,
+        [instanceId]: {
+          ...state.audioInstances[instanceId],
+          ...updates
+        }
+      }
+    }));
+
+    console.log(`🎵 Updated instance: ${instanceId}`, updates);
+  },
+
+  /**
+   * Make clip unique - create new instance for this clip
+   */
+  makeClipUnique: (clipId) => {
+    const state = get();
+    const activeArrangementId = state.activeArrangementId;
+    const arrangement = state.arrangements[activeArrangementId];
+    const clip = arrangement.clips.find(c => c.id === clipId);
+
+    if (!clip || !clip.instanceId) {
+      console.warn('Clip not found or is not an audio instance');
+      return;
+    }
+
+    const oldInstance = state.audioInstances[clip.instanceId];
+    if (!oldInstance) {
+      console.warn('Instance not found');
+      return;
+    }
+
+    // Create new instance with same properties
+    const newInstanceId = `instance-${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+    const newInstance = { ...oldInstance };
+
+    set(state => ({
+      audioInstances: {
+        ...state.audioInstances,
+        [newInstanceId]: newInstance
+      },
+      arrangements: {
+        ...state.arrangements,
+        [activeArrangementId]: {
+          ...state.arrangements[activeArrangementId],
+          clips: state.arrangements[activeArrangementId].clips.map(c =>
+            c.id === clipId ? { ...c, instanceId: newInstanceId } : c
+          ),
+          modified: Date.now()
+        }
+      }
+    }));
+
+    console.log(`🎵 Made clip unique: ${clipId} → new instance: ${newInstanceId}`);
+  },
+
+  /**
+   * Get instance for clip
+   */
+  getClipInstance: (clipId) => {
+    const state = get();
+    const activeArrangementId = state.activeArrangementId;
+    const arrangement = state.arrangements[activeArrangementId];
+    const clip = arrangement.clips.find(c => c.id === clipId);
+
+    if (clip?.instanceId) {
+      return state.audioInstances[clip.instanceId];
+    }
+    return null;
+  },
+
+  /**
+   * Count clips sharing an instance
+   */
+  getInstanceClipCount: (instanceId) => {
+    const state = get();
+    const activeArrangementId = state.activeArrangementId;
+    const arrangement = state.arrangements[activeArrangementId];
+    return arrangement.clips.filter(c => c.instanceId === instanceId).length;
   }
 }));
 

@@ -60,6 +60,7 @@ export function useNoteInteractionsV2(
     const [sliceRange, setSliceRange] = useState(null); // { x: number, startY: number, endY: number, time: number, startPitch: number, endPitch: number }
     const [selectedNoteIds, setSelectedNoteIds] = useState(new Set());
     const [tempNotes, setTempNotes] = useState([]); // Real-time drag için geçici notalar
+    const [lastDuplicateAction, setLastDuplicateAction] = useState(null); // Track last Ctrl+B action for sequential duplication
 
     // ArrangementStore integration
     const { patterns, activePatternId, updatePatternNotes } = useArrangementStore();
@@ -227,16 +228,20 @@ export function useNoteInteractionsV2(
     }, [engine]);
 
     // Add new note
-    const addNote = useCallback((time, pitch, length = 1) => {
+    const addNote = useCallback((time, pitch, length = 1, velocity = 100) => {
         if (!currentInstrument) return;
 
         const snappedTime = snapValue > 0 ? snapToGrid(time, snapValue) : time;
+
+        // Generate unique ID with timestamp + random + counter for same-millisecond safety
+        const uniqueId = `note_${Date.now()}_${Math.random().toString(36).substring(2, 11)}_${performance.now()}`;
+
         const newNote = {
-            id: `note_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
+            id: uniqueId,
             startTime: Math.max(0, snappedTime),
             pitch: Math.max(0, Math.min(127, Math.round(pitch))),
             length: length,
-            velocity: 100,
+            velocity: velocity,
             instrumentId: currentInstrument.id
         };
 
@@ -533,7 +538,8 @@ export function useNoteInteractionsV2(
                         originalNote: { ...foundNote }
                     });
                 } else {
-                    // Start moving
+                    // Start moving - reset duplicate memory
+                    setLastDuplicateAction(null);
                     if (!selectedNoteIds.has(foundNote.id)) {
                         selectNote(foundNote.id, e.ctrlKey || e.metaKey);
                     }
@@ -901,9 +907,92 @@ export function useNoteInteractionsV2(
             e.preventDefault();
             const currentNotes = notes();
             setSelectedNoteIds(new Set(currentNotes.map(note => note.id)));
+        } else if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
+            // Ctrl+B / Cmd+B - Sequential duplication with memory
+            e.preventDefault();
+            if (selectedNoteIds.size > 0) {
+                const currentNotes = notes();
+                const selectedNotes = currentNotes.filter(note => selectedNoteIds.has(note.id));
+
+                // Check if this is a continuation of previous Ctrl+B
+                let patternTemplate = null;
+                let baseTime = 0;
+
+                if (lastDuplicateAction &&
+                    lastDuplicateAction.newNoteIds.length === selectedNoteIds.size &&
+                    lastDuplicateAction.newNoteIds.every(id => selectedNoteIds.has(id))) {
+                    // Continuing sequential duplication - use saved pattern template
+                    patternTemplate = lastDuplicateAction.patternTemplate;
+                    baseTime = lastDuplicateAction.lastEndTime;
+                } else {
+                    // New duplication sequence - create pattern template from selected notes
+                    // Find the note that ends last (startTime + length)
+                    const lastEndingNote = selectedNotes.reduce((max, note) => {
+                        const noteTime = typeof note.startTime === 'number' ? note.startTime : 0;
+                        const noteLength = typeof note.length === 'number' ? note.length : 0;
+                        const noteEnd = noteTime + noteLength;
+
+                        const maxTime = typeof max.startTime === 'number' ? max.startTime : 0;
+                        const maxLength = typeof max.length === 'number' ? max.length : 0;
+                        const maxEnd = maxTime + maxLength;
+
+                        return noteEnd > maxEnd ? note : max;
+                    }, selectedNotes[0]);
+
+                    const lastNoteEnd = (typeof lastEndingNote.startTime === 'number' ? lastEndingNote.startTime : 0) +
+                                       (typeof lastEndingNote.length === 'number' ? lastEndingNote.length : 0);
+                    baseTime = lastNoteEnd;
+
+                    // Create pattern template (pure data, no IDs)
+                    const firstNoteTime = typeof selectedNotes[0].startTime === 'number' ? selectedNotes[0].startTime : 0;
+                    patternTemplate = selectedNotes.map(note => ({
+                        offsetTime: (typeof note.startTime === 'number' ? note.startTime : 0) - firstNoteTime,
+                        pitch: typeof note.pitch === 'number' ? note.pitch : stringToPitch(note.pitch),
+                        length: typeof note.length === 'number' ? note.length : durationToLength(note.length),
+                        velocity: note.velocity || 100
+                    }));
+                }
+
+                // Place directly after the end of the last note (no grid snapping for tighter placement)
+                const targetTime = baseTime;
+
+                const newNoteIds = [];
+                let maxEndTime = targetTime;
+
+                patternTemplate.forEach(template => {
+                    // Create new note from template with velocity
+                    const newNote = addNote(
+                        targetTime + template.offsetTime,
+                        template.pitch,
+                        template.length,
+                        template.velocity
+                    );
+
+                    if (newNote) {
+                        newNoteIds.push(newNote.id);
+                        // Track the end time of the last note in this duplication
+                        const noteEnd = targetTime + template.offsetTime + template.length;
+                        if (noteEnd > maxEndTime) {
+                            maxEndTime = noteEnd;
+                        }
+                    }
+                });
+
+                // Save duplication memory with pattern template (no note references)
+                setLastDuplicateAction({
+                    patternTemplate: patternTemplate,
+                    newNoteIds: newNoteIds,
+                    lastEndTime: maxEndTime  // Save end time for next sequential duplication
+                });
+
+                // Select the newly created notes for next duplication
+                if (newNoteIds.length > 0) {
+                    setSelectedNoteIds(new Set(newNoteIds));
+                }
+            }
         }
         // Note: Spacebar handling will be added to PianoRoll.jsx component level
-    }, [selectedNoteIds, deleteNotes, deselectAll, notes]);
+    }, [selectedNoteIds, deleteNotes, deselectAll, notes, snapValue, addNote, lastDuplicateAction]);
 
     return {
         // Event handlers

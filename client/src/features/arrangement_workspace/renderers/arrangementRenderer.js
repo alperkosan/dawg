@@ -7,6 +7,8 @@
  * - Clip intersection check
  */
 
+import { audioAssetManager } from '../../../lib/audio/AudioAssetManager';
+
 const TRACK_HEADER_WIDTH = 150;
 const TIMELINE_HEIGHT = 40;
 const PIXELS_PER_BEAT = 32;
@@ -180,6 +182,53 @@ function drawDropPreview(ctx, engine) {
   ctx.restore();
 }
 
+function drawMarqueeSelection(ctx, engine) {
+  const { viewport, marqueeSelection } = engine;
+  if (!marqueeSelection) return;
+
+  ctx.save();
+  ctx.translate(TRACK_HEADER_WIDTH, TIMELINE_HEIGHT);
+  ctx.beginPath();
+  ctx.rect(0, 0, viewport.width - TRACK_HEADER_WIDTH, viewport.height - TIMELINE_HEIGHT);
+  ctx.clip();
+  ctx.translate(-viewport.scrollX, -viewport.scrollY);
+
+  const { startX, startY, currentX, currentY } = marqueeSelection;
+
+  const x = Math.min(startX, currentX);
+  const y = Math.min(startY, currentY);
+  const width = Math.abs(currentX - startX);
+  const height = Math.abs(currentY - startY);
+
+  // Draw selection box
+  ctx.fillStyle = 'rgba(100, 200, 255, 0.15)';
+  ctx.fillRect(x, y, width, height);
+
+  ctx.strokeStyle = 'rgba(100, 200, 255, 0.6)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x + 0.5, y + 0.5, width, height);
+
+  ctx.restore();
+}
+
+function drawRightClickDeleteMode(ctx, engine) {
+  const { viewport, isRightClickDelete } = engine;
+  if (!isRightClickDelete) return;
+
+  // Draw overlay indicator for delete mode
+  ctx.save();
+  ctx.fillStyle = 'rgba(255, 0, 0, 0.05)';
+  ctx.fillRect(0, 0, viewport.width, viewport.height);
+
+  // Draw text indicator
+  ctx.fillStyle = 'rgba(255, 80, 80, 0.9)';
+  ctx.font = 'bold 14px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('DELETE MODE - Drag over clips to delete', viewport.width / 2, 20);
+
+  ctx.restore();
+}
+
 export function drawArrangement(ctx, engine) {
   const { viewport, dimensions } = engine;
   if (!viewport || viewport.width === 0 || viewport.height === 0) return;
@@ -193,6 +242,8 @@ export function drawArrangement(ctx, engine) {
   drawClips(ctx, engine);
   drawGhostPreview(ctx, engine);
   drawDropPreview(ctx, engine);
+  drawMarqueeSelection(ctx, engine);
+  drawRightClickDeleteMode(ctx, engine);
   drawPlayhead(ctx, engine);
   drawTimeline(ctx, engine);
   drawTrackHeaders(ctx, engine);
@@ -399,20 +450,26 @@ function drawClips(ctx, engine) {
       ctx.restore();
     }
 
-    // Audio waveform visualization
-    if (clip.type === 'audio' && clipWidth > 40) {
-      // Try to find audio buffer from sampleId or audioUrl
+    // Audio waveform visualization (always show for audio clips)
+    if (clip.type === 'audio') {
       let audioBuffer = null;
 
-      if (clip.sampleId && instruments) {
+      // Priority 1: Check AudioAssetManager (centralized system)
+      if (clip.assetId) {
+        const asset = audioAssetManager.getAsset(clip.assetId);
+        audioBuffer = asset?.buffer;
+      }
+
+      // Priority 2: Check instruments (legacy)
+      if (!audioBuffer && clip.sampleId && instruments) {
         const instrument = instruments.find(inst => inst.id === clip.sampleId);
         audioBuffer = instrument?.audioBuffer;
-      } else if (clip.audioUrl) {
-        // For direct file browser drops, we need to load the audio
-        // For now, just show placeholder text
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
-        ctx.font = '12px monospace';
-        ctx.fillText('Loading...', x + 8, y + clipHeight / 2);
+      }
+
+      // Priority 3: Check by URL (fallback)
+      if (!audioBuffer && clip.audioUrl) {
+        const asset = audioAssetManager.getAssetByUrl(clip.audioUrl);
+        audioBuffer = asset?.buffer;
       }
 
       if (audioBuffer) {
@@ -429,36 +486,40 @@ function drawClips(ctx, engine) {
         const channelData = audioBuffer.getChannelData(0);
         const sampleRate = audioBuffer.sampleRate;
 
-        // Calculate sample offset (in samples, not beats)
-        const sampleOffsetBeats = clip.sampleOffset || 0;
-        const playbackRate = clip.playbackRate || 1.0;
-
-        // Convert clip duration (beats) to sample count
-        // We need to account for playback rate when calculating visible samples
-        const beatsToSeconds = (beats) => (beats * 60) / 140; // Assuming 140 BPM
-        const clipDurationSeconds = beatsToSeconds(clip.duration);
-        const offsetSeconds = beatsToSeconds(sampleOffsetBeats);
-
-        // Total samples to display (accounting for playback rate)
-        const totalSamplesToDisplay = Math.floor((clipDurationSeconds * sampleRate) / playbackRate);
-        const sampleOffsetInSamples = Math.floor((offsetSeconds * sampleRate) / playbackRate);
-
-        const samplesPerPixel = Math.max(1, totalSamplesToDisplay / clipWidth);
-
-        // Calculate fade and gain parameters
+        // All properties are clip-specific now (instance system not used for properties)
         const fadeInBeats = clip.fadeIn || 0;
         const fadeOutBeats = clip.fadeOut || 0;
         const gainDb = clip.gain || 0;
+        const sampleOffsetBeats = clip.sampleOffset || 0;
+        const playbackRate = clip.playbackRate || 1.0;
+        const clipDuration = clip.duration;
+
         const gainLinear = Math.pow(10, gainDb / 20); // Convert dB to linear
+
+        // Convert durations to seconds
+        const beatsToSeconds = (beats) => (beats * 60) / 140; // Assuming 140 BPM
+        const clipDurationSeconds = beatsToSeconds(clipDuration);
+        const audioDurationSeconds = audioBuffer.duration;
+        const offsetSeconds = beatsToSeconds(sampleOffsetBeats);
+
+        // Calculate actual audio width in pixels (might be less than clip width)
+        const audioLengthBeats = (audioDurationSeconds * 140) / 60; // Convert audio duration to beats
+        const audioWidthPixels = Math.min(clipWidth, audioLengthBeats * PIXELS_PER_BEAT * viewport.zoomX);
+
+        // Total samples to display
+        const totalSamplesToDisplay = Math.floor((audioDurationSeconds * sampleRate) / playbackRate);
+        const sampleOffsetInSamples = Math.floor((offsetSeconds * sampleRate) / playbackRate);
+
+        const samplesPerPixel = Math.max(1, totalSamplesToDisplay / audioWidthPixels);
 
         const fadeInWidth = fadeInBeats * PIXELS_PER_BEAT * viewport.zoomX;
         const fadeOutWidth = fadeOutBeats * PIXELS_PER_BEAT * viewport.zoomX;
 
-        // Draw smooth filled waveform
+        // Draw smooth filled waveform (only for actual audio length)
         ctx.beginPath();
 
         // Top half of waveform
-        for (let i = 0; i < clipWidth; i++) {
+        for (let i = 0; i < audioWidthPixels; i++) {
           const startSample = Math.floor(sampleOffsetInSamples + (i * samplesPerPixel));
           const endSample = Math.min(startSample + samplesPerPixel, channelData.length);
 
@@ -481,8 +542,8 @@ function drawClips(ctx, engine) {
           let fadeMultiplier = 1.0;
           if (i < fadeInWidth) {
             fadeMultiplier = i / fadeInWidth;
-          } else if (i > clipWidth - fadeOutWidth) {
-            fadeMultiplier = (clipWidth - i) / fadeOutWidth;
+          } else if (i > audioWidthPixels - fadeOutWidth) {
+            fadeMultiplier = (audioWidthPixels - i) / fadeOutWidth;
           }
 
           min *= fadeMultiplier;
@@ -498,7 +559,7 @@ function drawClips(ctx, engine) {
         }
 
         // Bottom half of waveform (reverse)
-        for (let i = clipWidth - 1; i >= 0; i--) {
+        for (let i = audioWidthPixels - 1; i >= 0; i--) {
           const startSample = Math.floor(sampleOffsetInSamples + (i * samplesPerPixel));
           const endSample = Math.min(startSample + samplesPerPixel, channelData.length);
 
@@ -516,8 +577,8 @@ function drawClips(ctx, engine) {
           let fadeMultiplier = 1.0;
           if (i < fadeInWidth) {
             fadeMultiplier = i / fadeInWidth;
-          } else if (i > clipWidth - fadeOutWidth) {
-            fadeMultiplier = (clipWidth - i) / fadeOutWidth;
+          } else if (i > audioWidthPixels - fadeOutWidth) {
+            fadeMultiplier = (audioWidthPixels - i) / fadeOutWidth;
           }
 
           min *= fadeMultiplier;

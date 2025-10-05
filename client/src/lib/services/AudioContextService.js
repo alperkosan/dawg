@@ -5,6 +5,7 @@ import { TimelineSelectionAPI } from '../interfaces/TimelineSelectionAPI';
 import { RealtimeParameterSync } from '../interfaces/RealtimeParameterSync';
 import { DynamicLoopManager } from '../interfaces/DynamicLoopManager';
 import EventBus from '../core/EventBus';
+import { audioAssetManager } from '../audio/AudioAssetManager';
 
 export class AudioContextService {
   static instance = null;
@@ -31,16 +32,22 @@ export class AudioContextService {
 
   static async setAudioEngine(engine) {
     this.audioEngine = engine;
-    
+
+    // Initialize AudioAssetManager with AudioContext
+    if (engine?.audioContext) {
+      audioAssetManager.setAudioContext(engine.audioContext);
+      console.log("✅ AudioAssetManager initialized");
+    }
+
     // Initialize interface layer
     await this.initializeInterfaceLayer();
-    
+
     // Setup store subscriptions for reactive updates
     if (!this.isSubscriptionsSetup) {
       this._setupStoreSubscriptions();
       this.isSubscriptionsSetup = true;
     }
-    
+
     console.log("✅ AudioContextService v3.0: Native Engine + Interface Layer ready");
     return engine;
   };

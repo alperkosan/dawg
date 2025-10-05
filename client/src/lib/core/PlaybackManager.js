@@ -7,6 +7,7 @@ import { useArrangementStore } from '@/store/useArrangementStore';
 import { useArrangementWorkspaceStore } from '@/store/useArrangementWorkspaceStore';
 import EventBus from './EventBus.js';
 import { PositionTracker } from './PositionTracker.js';
+import { audioAssetManager } from '@/lib/audio/AudioAssetManager';
 
 /**
  * ⚡ PERFORMANCE OPTIMIZATION: Debounced Scheduling System
@@ -831,10 +832,38 @@ export class PlaybackManager {
      * @param {number} baseTime - Base scheduling time
      */
     _scheduleAudioClip(clip, baseTime) {
-        if (!clip.audioBuffer && !clip.sampleId) {
-            console.warn(`🎵 Audio clip ${clip.id} has no audio buffer or sample ID`);
+        console.log('🎵 _scheduleAudioClip called:', { clipId: clip.id, assetId: clip.assetId, type: clip.type });
+
+        // Get audio buffer from various sources
+        let audioBuffer = null;
+
+        // Priority 1: Check AudioAssetManager (modern system with assetId)
+        if (clip.assetId) {
+            const asset = audioAssetManager.getAsset(clip.assetId);
+            audioBuffer = asset?.buffer;
+            console.log('🎵 Asset lookup:', { assetId: clip.assetId, found: !!asset, hasBuffer: !!audioBuffer });
+        }
+
+        // Priority 2: Direct audioBuffer (legacy)
+        if (!audioBuffer && clip.audioBuffer) {
+            audioBuffer = clip.audioBuffer;
+            console.log('🎵 Using direct audioBuffer');
+        }
+
+        // Priority 3: Try to get sample from instruments store (legacy)
+        if (!audioBuffer && clip.sampleId) {
+            const instrument = this.audioEngine.instruments.get(clip.sampleId);
+            audioBuffer = instrument?.audioBuffer;
+            console.log('🎵 Instrument lookup:', { sampleId: clip.sampleId, found: !!instrument });
+        }
+
+        if (!audioBuffer) {
+            console.warn(`🎵 Audio clip ${clip.id} has no audio buffer (assetId: ${clip.assetId}, sampleId: ${clip.sampleId})`);
             return;
         }
+
+        console.log('🎵 Audio buffer found, scheduling playback');
+
 
         // Convert clip startTime (in beats) to seconds
         const clipStartBeats = clip.startTime || 0;
@@ -846,30 +875,31 @@ export class PlaybackManager {
         const relativeTime = clipStartSeconds - currentPositionInSeconds;
         let absoluteTime = baseTime + relativeTime;
 
+        console.log('🎵 Timing calculation:', {
+            clipStartBeats,
+            clipStartSeconds,
+            currentStep,
+            currentPositionInSeconds,
+            relativeTime,
+            baseTime,
+            absoluteTime,
+            willSkip: absoluteTime < baseTime
+        });
+
         // Skip if in the past (no looping for audio clips in song mode)
         if (absoluteTime < baseTime) {
+            console.log('🎵 Skipping clip - in the past');
             return;
         }
 
-
         // Schedule audio playback
+        console.log('🎵 Calling transport.scheduleEvent at', absoluteTime);
         this.transport.scheduleEvent(
             absoluteTime,
             (scheduledTime) => {
+                console.log('🎵 scheduleEvent callback fired at', scheduledTime);
                 try {
-                    // If clip has audioBuffer, play it directly
-                    if (clip.audioBuffer) {
-                        this._playAudioBuffer(clip.audioBuffer, scheduledTime, clip);
-                    }
-                    // Otherwise, try to get sample from instruments store
-                    else if (clip.sampleId) {
-                        const instrument = this.audioEngine.instruments.get(clip.sampleId);
-                        if (instrument && instrument.audioBuffer) {
-                            this._playAudioBuffer(instrument.audioBuffer, scheduledTime, clip);
-                        } else {
-                            console.warn(`🎵 Sample ${clip.sampleId} not found or has no audio buffer`);
-                        }
-                    }
+                    this._playAudioBuffer(audioBuffer, scheduledTime, clip);
                 } catch (error) {
                     console.error(`🎵 Error playing audio clip ${clip.id}:`, error);
                 }
@@ -885,6 +915,8 @@ export class PlaybackManager {
      * @param {Object} clip - Clip data for volume/pan settings
      */
     _playAudioBuffer(audioBuffer, time, clip = {}) {
+        console.log('🎵 _playAudioBuffer called:', { time, clipId: clip.id, duration: clip.duration, gain: clip.gain });
+
         const context = this.audioEngine.audioContext;
         const source = context.createBufferSource();
         source.buffer = audioBuffer;
@@ -901,6 +933,8 @@ export class PlaybackManager {
         const gainLinear = Math.pow(10, gainDb / 20);
         const volumeLinear = clip.volume !== undefined ? clip.volume : 1.0;
         gainNode.gain.value = volumeLinear * gainLinear;
+
+        console.log('🎵 Gain setup:', { gainDb, gainLinear, volumeLinear, finalGain: gainNode.gain.value });
 
         // Apply fade in/out envelope
         const fadeIn = clip.fadeIn || 0; // in beats
@@ -930,7 +964,10 @@ export class PlaybackManager {
         }
 
         // Connect to master output
-        outputNode.connect(this.audioEngine.masterGain || context.destination);
+        const destination = this.audioEngine.masterGain || context.destination;
+        console.log('🎵 Connecting to:', destination);
+        source.connect(gainNode);
+        outputNode.connect(destination);
 
         // Play with sample offset and duration
         // Convert sample offset from beats to seconds
@@ -941,8 +978,9 @@ export class PlaybackManager {
         // Duration in seconds (accounting for playback rate)
         const duration = clip.duration ? (clip.duration * 60 / this.transport.bpm) : undefined;
 
+        console.log('🎵 Starting source:', { time, offset, duration, currentTime: context.currentTime });
         source.start(time, offset, duration);
-
+        console.log('🎵 Source started successfully');
     }
 
     /**

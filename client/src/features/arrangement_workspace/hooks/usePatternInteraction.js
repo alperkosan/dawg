@@ -210,7 +210,7 @@ export function usePatternInteraction(engine, clips, tracks, gridSize, snapMode,
       currentDuration: clip.duration,
       ghostPosition: null,
       isStretchMode,
-      // Store original fade/gain values for handle interactions
+      // Store original fade/gain values for handle interactions (all clip-specific)
       originalFadeIn: clip.fadeIn || 0,
       originalFadeOut: clip.fadeOut || 0,
       originalGain: clip.gain || 0
@@ -252,7 +252,11 @@ export function usePatternInteraction(engine, clips, tracks, gridSize, snapMode,
       };
     } else if (interactionState.mode === 'resize-right') {
       // Loop/extend pattern OR time-stretch audio (Alt key)
-      const newDuration = Math.max(0.25, interactionState.originalDuration + deltaBeat);
+      const gridSizeMap = {
+        '1/1': 4, '1/2': 2, '1/4': 1, '1/8': 0.5, '1/16': 0.25, '1/32': 0.125
+      };
+      const minDuration = gridSizeMap[gridSize] || 1; // Min 1 grid step
+      const newDuration = Math.max(minDuration, interactionState.originalDuration + deltaBeat);
       const snappedDuration = snapToGrid(newDuration);
 
       updates = {
@@ -270,8 +274,12 @@ export function usePatternInteraction(engine, clips, tracks, gridSize, snapMode,
       }
     } else if (interactionState.mode === 'resize-left') {
       // Trim from left OR time-stretch from left (Alt key)
+      const gridSizeMap = {
+        '1/1': 4, '1/2': 2, '1/4': 1, '1/8': 0.5, '1/16': 0.25, '1/32': 0.125
+      };
+      const minDuration = gridSizeMap[gridSize] || 1; // Min 1 grid step
       const newStartTime = Math.max(0, interactionState.originalStartTime + deltaBeat);
-      const newDuration = Math.max(0.25, interactionState.originalDuration - deltaBeat);
+      const newDuration = Math.max(minDuration, interactionState.originalDuration - deltaBeat);
       const snappedStartTime = snapToGrid(newStartTime);
       const actualDelta = snappedStartTime - interactionState.originalStartTime;
 
