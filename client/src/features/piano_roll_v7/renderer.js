@@ -38,7 +38,7 @@ export function drawPianoRollStatic(ctx, engine) {
     drawCornerAndBorders(ctx, engine);
 }
 
-function drawGrid(ctx, { viewport, dimensions, lod, snapValue }) {
+function drawGrid(ctx, { viewport, dimensions, lod, snapValue, qualityLevel = 'high' }) {
     ctx.save();
     ctx.translate(KEYBOARD_WIDTH, RULER_HEIGHT);
     ctx.beginPath();
@@ -48,7 +48,10 @@ function drawGrid(ctx, { viewport, dimensions, lod, snapValue }) {
 
     const { stepWidth, keyHeight } = dimensions;
 
-    if (lod < 3) {
+    // ⚡ ADAPTIVE: Skip black keys in low quality mode
+    const skipBlackKeys = qualityLevel === 'low' && lod >= 2;
+
+    if (lod < 3 && !skipBlackKeys) {
         ctx.fillStyle = '#202229';
         const { startKey, endKey } = viewport.visibleKeys;
         for (let i = startKey; i <= endKey; i++) {
@@ -72,20 +75,25 @@ function drawGrid(ctx, { viewport, dimensions, lod, snapValue }) {
         gridStepIncrement = parseFloat(snapValue.replace('T', ''));
     }
 
+    // ⚡ ADAPTIVE: Increase LOD aggressiveness in low quality mode
+    const qualityLodBoost = qualityLevel === 'low' ? 1 : (qualityLevel === 'medium' ? 0.5 : 0);
+
     // LOD bazlı minimum grid increment'i - triplet için agresif azaltma
     let lodStepIncrement = 1;
     if (isTripletSnap) {
         // Triplet mode: Daha erken ve agresif azaltma
-        if (lod >= 4) lodStepIncrement = 16; // Sadece bar'lar
-        else if (lod >= 3) lodStepIncrement = 8; // Yarım nota seviyesi
-        else if (lod >= 2) lodStepIncrement = 4; // Beat seviyesi
-        else if (lod >= 1) lodStepIncrement = gridStepIncrement * 2; // Her ikinci triplet
+        const effectiveLod = lod + qualityLodBoost;
+        if (effectiveLod >= 4) lodStepIncrement = 16; // Sadece bar'lar
+        else if (effectiveLod >= 3) lodStepIncrement = 8; // Yarım nota seviyesi
+        else if (effectiveLod >= 2) lodStepIncrement = 4; // Beat seviyesi
+        else if (effectiveLod >= 1) lodStepIncrement = gridStepIncrement * 2; // Her ikinci triplet
         else lodStepIncrement = gridStepIncrement; // Tüm triplet'ler
     } else {
         // Regular mode - daha agresif LOD azaltması
-        if (lod >= 4) lodStepIncrement = 16; // Sadece bar'lar
-        else if (lod >= 3) lodStepIncrement = Math.max(8, gridStepIncrement * 4); // Yarım nota seviyesi
-        else if (lod >= 2) lodStepIncrement = Math.max(4, gridStepIncrement * 2); // Beat seviyesi
+        const effectiveLod = lod + qualityLodBoost;
+        if (effectiveLod >= 4) lodStepIncrement = 16; // Sadece bar'lar
+        else if (effectiveLod >= 3) lodStepIncrement = Math.max(8, gridStepIncrement * 4); // Yarım nota seviyesi
+        else if (effectiveLod >= 2) lodStepIncrement = Math.max(4, gridStepIncrement * 2); // Beat seviyesi
         else lodStepIncrement = gridStepIncrement; // Tüm grid'ler
     }
 

@@ -37,7 +37,21 @@ export class UIUpdateManager {
       totalUpdateTime: 0,
       averageFrameTime: 0,
       droppedFrames: 0,
-      lastFrameTime: 0
+      lastFrameTime: 0,
+      currentFps: 60
+    };
+
+    // ⚡ ADAPTIVE PERFORMANCE
+    this.adaptiveMode = {
+      enabled: true,
+      currentQuality: 'high', // 'high', 'medium', 'low'
+      fpsHistory: [],
+      fpsCheckInterval: 60, // Check every 60 frames (~1 second)
+      thresholds: {
+        high: 55,   // Above 55 FPS = high quality
+        medium: 40, // 40-55 FPS = medium quality
+        low: 25     // Below 25 FPS = low quality
+      }
     };
 
     // Frame throttling
@@ -87,7 +101,6 @@ export class UIUpdateManager {
       ...options
     });
 
-    console.log(`🎨 Subscribed: ${id} (priority: ${priority}, frequency: ${frequency}ms)`);
 
     // Start loop if not running
     if (!this.isRunning) {
@@ -101,9 +114,7 @@ export class UIUpdateManager {
    * Unsubscribe from updates
    */
   unsubscribe(id) {
-    if (this.subscribers.delete(id)) {
-      console.log(`🎨 Unsubscribed: ${id}`);
-    }
+    this.subscribers.delete(id);
 
     // Stop loop if no subscribers
     if (this.subscribers.size === 0 && this.isRunning) {
@@ -134,7 +145,6 @@ export class UIUpdateManager {
     this.metrics.frameCount = 0;
     this.metrics.lastFrameTime = performance.now();
 
-    console.log('🎨 UIUpdateManager started');
     this._updateLoop();
   }
 
@@ -151,7 +161,6 @@ export class UIUpdateManager {
       this.rafId = null;
     }
 
-    console.log('🎨 UIUpdateManager stopped');
   }
 
   /**
@@ -226,11 +235,19 @@ export class UIUpdateManager {
       console.error('🎨 Critical error in update loop:', error);
     }
 
-    // ✅ PERFORMANCE: Only calculate detailed metrics in development
-    if (this._isDevelopment) {
-      const frameDuration = performance.now() - frameStartTime;
-      this.metrics.totalUpdateTime += frameDuration;
-      this.metrics.averageFrameTime = this.metrics.totalUpdateTime / this.metrics.frameCount;
+    // ✅ PERFORMANCE: Calculate FPS and adaptive quality
+    const frameDuration = performance.now() - frameStartTime;
+    this.metrics.totalUpdateTime += frameDuration;
+    this.metrics.averageFrameTime = this.metrics.totalUpdateTime / this.metrics.frameCount;
+
+    // Calculate current FPS
+    if (frameTime > 0) {
+      this.metrics.currentFps = 1000 / frameTime;
+    }
+
+    // ⚡ ADAPTIVE PERFORMANCE: Adjust quality based on FPS
+    if (this.adaptiveMode.enabled && this.metrics.frameCount % this.adaptiveMode.fpsCheckInterval === 0) {
+      this._adjustQualityLevel();
     }
 
     // Schedule next frame
@@ -314,6 +331,67 @@ export class UIUpdateManager {
     classUpdates.length = 0;
   }
 
+  // =================== ADAPTIVE PERFORMANCE ===================
+
+  /**
+   * ⚡ ADAPTIVE PERFORMANCE: Adjust quality level based on FPS
+   */
+  _adjustQualityLevel() {
+    const fps = this.metrics.currentFps;
+    const { thresholds } = this.adaptiveMode;
+    let newQuality = this.adaptiveMode.currentQuality;
+
+    // Determine quality level based on FPS
+    if (fps >= thresholds.high) {
+      newQuality = 'high';
+    } else if (fps >= thresholds.medium) {
+      newQuality = 'medium';
+    } else if (fps < thresholds.low) {
+      newQuality = 'low';
+    }
+
+    // Only update if quality changed
+    if (newQuality !== this.adaptiveMode.currentQuality) {
+      const oldQuality = this.adaptiveMode.currentQuality;
+      this.adaptiveMode.currentQuality = newQuality;
+
+      // Notify subscribers about quality change
+      this._notifyQualityChange(newQuality, oldQuality, fps);
+
+      if (this._isDevelopment) {
+        console.log(`⚡ Adaptive Performance: ${oldQuality} → ${newQuality} (${fps.toFixed(1)} FPS)`);
+      }
+    }
+  }
+
+  /**
+   * Notify subscribers about quality changes via custom event
+   */
+  _notifyQualityChange(newQuality, oldQuality, fps) {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('ui-quality-change', {
+        detail: { quality: newQuality, oldQuality, fps }
+      }));
+    }
+  }
+
+  /**
+   * Get current quality level
+   */
+  getQualityLevel() {
+    return this.adaptiveMode.currentQuality;
+  }
+
+  /**
+   * Enable/disable adaptive performance
+   */
+  setAdaptiveMode(enabled) {
+    this.adaptiveMode.enabled = enabled;
+    if (this._isDevelopment) {
+      console.log(`⚡ Adaptive Performance ${enabled ? 'enabled' : 'disabled'}`);
+    }
+  }
+
   // =================== PERFORMANCE MONITORING ===================
 
   /**
@@ -325,7 +403,8 @@ export class UIUpdateManager {
       isRunning: this.isRunning,
       subscriberCount: this.subscribers.size,
       activeSubscribers: Array.from(this.subscribers.values()).filter(s => s.active).length,
-      fps: this.metrics.frameCount > 0 ? 1000 / this.metrics.averageFrameTime : 0
+      fps: this.metrics.frameCount > 0 ? 1000 / this.metrics.averageFrameTime : 0,
+      qualityLevel: this.adaptiveMode.currentQuality
     };
   }
 

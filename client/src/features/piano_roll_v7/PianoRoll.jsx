@@ -3,6 +3,7 @@ import { usePianoRollEngine } from './usePianoRollEngine';
 import { useNoteInteractionsV2 } from './hooks/useNoteInteractionsV2';
 import { drawPianoRollStatic, drawPlayhead } from './renderer';
 import { uiUpdateManager, UPDATE_PRIORITIES, UPDATE_FREQUENCIES } from '@/lib/core/UIUpdateManager';
+import { performanceMonitor } from '@/utils/PerformanceMonitor';
 import Toolbar from './components/Toolbar';
 import VelocityLane from './components/VelocityLane';
 import { usePanelsStore } from '@/store/usePanelsStore';
@@ -19,6 +20,31 @@ function PianoRoll() {
     // Toolbar state
     const [activeTool, setActiveTool] = useState('select');
     const [zoom, setZoom] = useState(1.0);
+
+    // Performance monitoring
+    const [fps, setFps] = useState(60);
+    const [showPerf, setShowPerf] = useState(false);
+    const [qualityLevel, setQualityLevel] = useState('high');
+
+    useEffect(() => {
+        const interval = setInterval(() => {
+            const metrics = performanceMonitor.getMetrics();
+            setFps(metrics.currentFps);
+        }, 100); // Update FPS display 10 times per second
+
+        return () => clearInterval(interval);
+    }, []);
+
+    // ⚡ ADAPTIVE PERFORMANCE: Listen for quality changes
+    useEffect(() => {
+        const handleQualityChange = (event) => {
+            const { quality } = event.detail;
+            setQualityLevel(quality);
+        };
+
+        window.addEventListener('ui-quality-change', handleQualityChange);
+        return () => window.removeEventListener('ui-quality-change', handleQualityChange);
+    }, []);
 
     // ✅ UNIFIED TRANSPORT SYSTEM - Separate subscriptions but stable references
     const togglePlayPause = usePlaybackStore(state => state.togglePlayPause);
@@ -74,11 +100,12 @@ function PianoRoll() {
             isSelectingArea: noteInteractions.isSelectingArea,
             previewNote: noteInteractions.previewNote,
             slicePreview: noteInteractions.slicePreview,
-            sliceRange: noteInteractions.sliceRange
+            sliceRange: noteInteractions.sliceRange,
+            qualityLevel // Pass quality level to renderer
         };
         drawPianoRollStatic(ctx, engineWithData);
 
-    }, [engine, snapValue, noteInteractions]); // REMOVED: position, isPlaying, playbackState
+    }, [engine, snapValue, noteInteractions, qualityLevel]); // Added: qualityLevel
 
     // Playhead canvas - fast rendering via UIUpdateManager
     useEffect(() => {
@@ -121,7 +148,7 @@ function PianoRoll() {
         );
 
         return unsubscribe;
-    }, [isPlaying, engine.viewport, engine.dimensions, position, playbackState]);
+    }, [isPlaying, position, playbackState]); // REMOVED: engine.viewport, engine.dimensions (they change every frame)
 
     // Toolbar handlers
     const handleToolChange = (tool) => {
@@ -204,12 +231,28 @@ function PianoRoll() {
                 <canvas ref={canvasRef} className="prv5-canvas prv5-canvas-main" />
                 <canvas ref={playheadCanvasRef} className="prv5-canvas prv5-canvas-playhead" />
                 <div className="prv5-debug-overlay">
+                    <div style={{
+                        fontSize: '14px',
+                        fontWeight: 'bold',
+                        color: fps >= 55 ? '#00ff88' : fps >= 40 ? '#ffaa00' : '#ff4444'
+                    }}>
+                        FPS: {fps}
+                    </div>
                     <div>Scroll: {Math.round(engine.viewport.scrollX)}, {Math.round(engine.viewport.scrollY)}</div>
                     <div>Zoom: {engine.viewport.zoomX.toFixed(2)}x, {engine.viewport.zoomY.toFixed(2)}y</div>
-                    <div>LOD: {engine.lod}</div>
+                    <div>LOD: {engine.lod} | Quality: <span style={{
+                        color: qualityLevel === 'high' ? '#00ff88' : qualityLevel === 'medium' ? '#ffaa00' : '#ff4444',
+                        fontWeight: 'bold'
+                    }}>{qualityLevel.toUpperCase()}</span></div>
                     <div>Instrument: {currentInstrument ? `${currentInstrument.name} (${currentInstrument.type})` : 'None'}</div>
                     <div>Pattern: V2 ({noteInteractions.notes.length} notes)</div>
                     <div>Tool: {activeTool}</div>
+                    {showPerf && (
+                        <div style={{ marginTop: '8px', borderTop: '1px solid #444', paddingTop: '4px' }}>
+                            <div>Min: {Math.round(performanceMonitor.metrics.minFps)} | Max: {Math.round(performanceMonitor.metrics.maxFps)}</div>
+                            <div>Dropped: {performanceMonitor.metrics.droppedFrames}</div>
+                        </div>
+                    )}
                 </div>
             </div>
 

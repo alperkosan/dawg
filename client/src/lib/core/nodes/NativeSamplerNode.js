@@ -64,7 +64,6 @@ export class NativeSamplerNode {
                 
                 if (isFinite(durationInSeconds) && durationInSeconds > 0) {
                     source.stop(startTime + durationInSeconds);
-                    console.log(`🎵 Sample scheduled to stop in ${durationInSeconds.toFixed(3)}s`);
                 }
             } catch (e) { 
                 console.warn(`[NativeSamplerNode] Geçersiz süre formatı: ${duration}`, e);
@@ -79,10 +78,7 @@ export class NativeSamplerNode {
             this.activeSources.delete(source);
             gainNode.disconnect();
             source.disconnect();
-            console.log(`🗑️ Sample source cleaned up: ${this.name}`);
         };
-        
-        console.log(`🎵 Sample triggered: ${this.name} - ${pitch} at ${startTime.toFixed(3)}s`);
     }
 
     // ✅ DÜZELTME: Anında susturma yeteneği

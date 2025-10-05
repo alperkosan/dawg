@@ -351,7 +351,6 @@ class InstrumentProcessor extends AudioWorkletProcessor {
             if (voice.duration && sampleTime >= voice.startTime + voice.duration && voice.envelopePhase !== 'release') {
                 voice.envelopePhase = 'release';
                 voice.envelopeTime = 0; // Release zamanlayıcısını sıfırla
-                console.log(`🎵 Note duration ended: ${voice.frequency}Hz`);
             }
 
             const sample = this.processVoice(voice, parameters, i);
@@ -361,7 +360,6 @@ class InstrumentProcessor extends AudioWorkletProcessor {
             if (voice.envelopePhase === 'off' && voice.envelopeValue < 0.0001) {
                 this.voices.delete(voiceId);
                 this.voicePool.release(voice);
-                console.log(`🗑️ Voice cleaned up: ${voice.frequency}Hz (pool: ${this.voicePool.getStats().utilization})`);
             }
         });
         

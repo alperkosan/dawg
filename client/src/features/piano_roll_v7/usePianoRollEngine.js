@@ -25,6 +25,8 @@ export function usePianoRollEngine(containerRef) {
         scrollX: 0, scrollY: 0, zoomX: 1.0, zoomY: 1.0,
         targetScrollX: 0, targetScrollY: 0, targetZoomX: 1.0, targetZoomY: 1.0
     });
+
+    const hasSetInitialScrollRef = useRef(false);
     
     const [, setRenderTrigger] = useState(0);
     const isPanningRef = useRef(false);
@@ -39,6 +41,27 @@ export function usePianoRollEngine(containerRef) {
         const resizeObserver = new ResizeObserver(entries => {
             const { width, height } = entries[0].contentRect;
             setViewportSize({ width, height });
+
+            // Set initial scroll to C4 (MIDI note 60) on first load
+            if (!hasSetInitialScrollRef.current && width > 0 && height > 0) {
+                const C4_MIDI_NOTE = 60;
+                const keyHeight = BASE_KEY_HEIGHT * viewportRef.current.zoomY;
+                const totalHeight = TOTAL_KEYS * keyHeight;
+
+                // Calculate Y position of C4 (piano keys are inverted: 127 at top, 0 at bottom)
+                const c4YPosition = (127 - C4_MIDI_NOTE) * keyHeight;
+
+                // Center C4 in viewport
+                const initialScrollY = c4YPosition - ((height - RULER_HEIGHT) / 2);
+                const maxScrollY = Math.max(0, totalHeight - (height - RULER_HEIGHT));
+                const clampedScrollY = Math.max(0, Math.min(maxScrollY, initialScrollY));
+
+                viewportRef.current.scrollY = clampedScrollY;
+                viewportRef.current.targetScrollY = clampedScrollY;
+                hasSetInitialScrollRef.current = true;
+
+                setRenderTrigger(Date.now());
+            }
         });
         resizeObserver.observe(container);
         setViewportSize({ width: container.clientWidth, height: container.clientHeight });
