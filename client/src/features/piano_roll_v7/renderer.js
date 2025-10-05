@@ -108,6 +108,12 @@ function drawGrid(ctx, { viewport, dimensions, lod, snapValue, qualityLevel = 'h
     }
     const startLine = Math.floor(startStep / effectiveStepIncrement) * effectiveStepIncrement;
 
+    // ⚡ PERFORMANCE: Batch grid lines by type to reduce draw calls
+    const barLines = [];
+    const beatLines = [];
+    const snapLines = [];
+    const otherLines = [];
+
     // Precision-safe loop için integer counter kullan
     const startCounter = Math.floor(startLine / effectiveStepIncrement);
     const endCounter = Math.ceil(endStep / effectiveStepIncrement);
@@ -123,13 +129,9 @@ function drawGrid(ctx, { viewport, dimensions, lod, snapValue, qualityLevel = 'h
         const isSnapGridLine = Math.abs(step % gridStepIncrement) < 0.01;
 
         if (isBar) {
-            // Bar lines - en kalın ve belirgin
-            ctx.strokeStyle = `rgba(180, 188, 208, ${lod > 2 ? 0.4 : 0.7})`;
-            ctx.lineWidth = lod > 2 ? 1.2 : 1.5;
+            barLines.push(x);
         } else if (isBeat && gridStepIncrement <= 4 && !isTripletSnap && lod < 3) {
-            // Beat lines - orta kalınlık (sadece LOD < 3'te, küçük snap'lerde ve triplet değilse)
-            ctx.strokeStyle = `rgba(100, 110, 140, ${lod > 2 ? 0.3 : 0.5})`;
-            ctx.lineWidth = 0.8;
+            beatLines.push(x);
         } else if (isSnapGridLine) {
             // Snap grid lines - triplet mode'da LOD-aware hierarchy
             if (isTripletSnap) {
@@ -141,13 +143,9 @@ function drawGrid(ctx, { viewport, dimensions, lod, snapValue, qualityLevel = 'h
 
                 // Triplet beat hierarchy
                 if (isTripletBeat) {
-                    // Triplet beat positions - her LOD'da göster
-                    ctx.strokeStyle = `rgba(140, 150, 170, ${lod > 2 ? 0.6 : 0.9})`;
-                    ctx.lineWidth = lod > 2 ? 1.1 : 1.4;
+                    snapLines.push(x);
                 } else if (lod < 2) {
-                    // Triplet subdivision lines - sadece LOD < 2'de
-                    ctx.strokeStyle = `rgba(120, 130, 150, 0.3)`;
-                    ctx.lineWidth = 0.7;
+                    snapLines.push(x);
                 } else {
                     // Yüksek LOD'da triplet subdivision'ları skip et
                     continue;
@@ -155,62 +153,87 @@ function drawGrid(ctx, { viewport, dimensions, lod, snapValue, qualityLevel = 'h
             } else {
                 // Regular snap grid lines - LOD bazlı filtreleme
                 if (lod >= 3 && gridStepIncrement < 4) {
-                    // Yüksek LOD'da küçük snap grid'leri skip et
                     continue;
                 } else if (lod >= 2 && gridStepIncrement < 2) {
-                    // Orta LOD'da çok küçük snap grid'leri skip et
                     continue;
                 }
-                ctx.strokeStyle = `rgba(120, 130, 150, ${lod > 2 ? 0.2 : 0.4})`;
-                ctx.lineWidth = 0.6;
+                snapLines.push(x);
             }
-            ctx.setLineDash([]);
         } else {
             // Diğer grid lines - LOD bazlı aggressive filtreleme
             if (isTripletSnap && lod >= 2) {
-                // Triplet mode'da yüksek LOD'larda skip
                 continue;
             } else if (!isTripletSnap && lod >= 3) {
-                // Regular mode'da yüksek LOD'larda skip
                 continue;
-            } else if (isTripletSnap) {
-                // Triplet mode'da düşük LOD'da çok ince çizgiler
-                ctx.strokeStyle = `rgba(80, 88, 112, 0.05)`;
-                ctx.lineWidth = 0.1;
-            } else {
-                // Regular mode - LOD'a göre azalan görünürlük
-                if (lod >= 2) {
-                    ctx.strokeStyle = `rgba(80, 88, 112, 0.05)`;
-                    ctx.lineWidth = 0.2;
-                } else {
-                    ctx.strokeStyle = `rgba(80, 88, 112, 0.3)`;
-                    ctx.lineWidth = 0.4;
-                }
             }
-            ctx.setLineDash([]);
+            otherLines.push(x);
         }
+    }
 
-        
+    // ⚡ PERFORMANCE: Draw all lines of same type in one batch
+    const gridHeight = dimensions.totalHeight;
+
+    // Draw bar lines (thickest)
+    if (barLines.length > 0) {
         ctx.beginPath();
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, dimensions.totalHeight);
+        ctx.strokeStyle = `rgba(180, 188, 208, ${lod > 2 ? 0.4 : 0.7})`;
+        ctx.lineWidth = lod > 2 ? 1.2 : 1.5;
+        for (const x of barLines) {
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, gridHeight);
+        }
         ctx.stroke();
+    }
 
-        // Reset line dash for next iteration
-        ctx.setLineDash([]);
+    // Draw beat lines
+    if (beatLines.length > 0) {
+        ctx.beginPath();
+        ctx.strokeStyle = `rgba(100, 110, 140, ${lod > 2 ? 0.3 : 0.5})`;
+        ctx.lineWidth = 0.8;
+        for (const x of beatLines) {
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, gridHeight);
+        }
+        ctx.stroke();
+    }
+
+    // Draw snap lines
+    if (snapLines.length > 0) {
+        ctx.beginPath();
+        ctx.strokeStyle = `rgba(120, 130, 150, ${lod > 2 ? 0.2 : 0.4})`;
+        ctx.lineWidth = 0.6;
+        for (const x of snapLines) {
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, gridHeight);
+        }
+        ctx.stroke();
+    }
+
+    // Draw other lines (thinnest)
+    if (otherLines.length > 0) {
+        ctx.beginPath();
+        ctx.strokeStyle = `rgba(80, 88, 112, ${lod >= 2 ? 0.05 : 0.3})`;
+        ctx.lineWidth = lod >= 2 ? 0.2 : 0.4;
+        for (const x of otherLines) {
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, gridHeight);
+        }
+        ctx.stroke();
     }
     
+    // ⚡ PERFORMANCE: Batch horizontal grid lines
     if (lod < 3) {
         const { startKey, endKey } = viewport.visibleKeys;
+        ctx.beginPath();
         ctx.strokeStyle = `rgba(100, 116, 139, ${lod < 2 ? 0.3 : 0.2})`;
         ctx.lineWidth = 0.5;
+        const gridWidth = dimensions.totalWidth;
         for (let key = startKey; key <= endKey; key++) {
             const y = key * keyHeight;
-            ctx.beginPath();
             ctx.moveTo(0, y);
-            ctx.lineTo(dimensions.totalWidth, y);
-            ctx.stroke();
+            ctx.lineTo(gridWidth, y);
         }
+        ctx.stroke();
     }
     ctx.restore();
 }
@@ -264,31 +287,57 @@ function drawTimeline(ctx, { viewport, dimensions, lod, snapValue }) {
 
     // Timeline loop - sadece integer step'lerle
     const startTimelineStep = Math.floor(startStep / timelineStepIncrement) * timelineStepIncrement;
+    // ⚡ PERFORMANCE: Batch timeline bar/beat lines
+    const timelineBarLines = [];
+    const timelineBeatLines = [];
+    const timelineLabels = [];
+
     for (let step = startTimelineStep; step < endStep; step += timelineStepIncrement) {
         const x = step * dimensions.stepWidth;
         const isBar = step % 16 === 0;
         const isBeat = step % 4 === 0;
         if (isBar) {
             const barNumber = step / 16 + 1;
-            ctx.strokeStyle = `rgba(148, 163, 184, ${lod > 2 ? 0.4 : 0.8})`;
-            ctx.lineWidth = lod > 2 ? 0.8 : 1.2;
-            ctx.beginPath();
-            ctx.moveTo(x, RULER_HEIGHT - (lod > 1 ? 8 : 12));
-            ctx.lineTo(x, RULER_HEIGHT);
-            ctx.stroke();
+            timelineBarLines.push(x);
             if (barNumber % barIncrement === 0) {
-                ctx.font = lod < 1 ? '12px sans-serif' : lod < 2 ? '10px sans-serif' : '9px sans-serif';
-                ctx.fillStyle = `rgba(226, 232, 240, ${lod > 2 ? 0.7 : 1.0})`;
-                ctx.fillText(barNumber, x + 5, RULER_HEIGHT - 9);
+                timelineLabels.push({ x, text: barNumber });
             }
         } else if (isBeat && lod < 2 && timelineStepIncrement <= 4) {
-            // Beat lines - sadece küçük snap değerlerinde göster
-            ctx.strokeStyle = 'rgba(100, 116, 139, 0.6)';
-            ctx.lineWidth = 0.5;
-            ctx.beginPath();
+            timelineBeatLines.push(x);
+        }
+    }
+
+    // Draw bar lines
+    if (timelineBarLines.length > 0) {
+        ctx.beginPath();
+        ctx.strokeStyle = `rgba(148, 163, 184, ${lod > 2 ? 0.4 : 0.8})`;
+        ctx.lineWidth = lod > 2 ? 0.8 : 1.2;
+        const barLineY = RULER_HEIGHT - (lod > 1 ? 8 : 12);
+        for (const x of timelineBarLines) {
+            ctx.moveTo(x, barLineY);
+            ctx.lineTo(x, RULER_HEIGHT);
+        }
+        ctx.stroke();
+    }
+
+    // Draw beat lines
+    if (timelineBeatLines.length > 0) {
+        ctx.beginPath();
+        ctx.strokeStyle = 'rgba(100, 116, 139, 0.6)';
+        ctx.lineWidth = 0.5;
+        for (const x of timelineBeatLines) {
             ctx.moveTo(x, RULER_HEIGHT - 5);
             ctx.lineTo(x, RULER_HEIGHT);
-            ctx.stroke();
+        }
+        ctx.stroke();
+    }
+
+    // Draw labels (can't batch text)
+    if (timelineLabels.length > 0) {
+        ctx.font = lod < 1 ? '12px sans-serif' : lod < 2 ? '10px sans-serif' : '9px sans-serif';
+        ctx.fillStyle = `rgba(226, 232, 240, ${lod > 2 ? 0.7 : 1.0})`;
+        for (const { x, text } of timelineLabels) {
+            ctx.fillText(text, x + 5, RULER_HEIGHT - 9);
         }
     }
     ctx.restore();
@@ -325,18 +374,19 @@ function drawKeyboard(ctx, { viewport, dimensions, lod }) {
         }
     }
 
+    // ⚡ PERFORMANCE: Batch keyboard borders
     if (lod < 3) {
         const { startKey, endKey } = viewport.visibleKeys;
         const alpha = lod === 2 ? 0.5 : 1;
+        ctx.beginPath();
         ctx.strokeStyle = `rgba(74, 85, 104, ${alpha})`;
         ctx.lineWidth = lod === 2 ? 0.5 : 1;
         for (let key = startKey; key <= endKey; key++) {
             const y = key * dimensions.keyHeight;
-            ctx.beginPath();
             ctx.moveTo(0, y);
             ctx.lineTo(KEYBOARD_WIDTH, y);
-            ctx.stroke();
         }
+        ctx.stroke();
     }
     ctx.restore();
 }

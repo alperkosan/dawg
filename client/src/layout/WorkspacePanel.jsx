@@ -133,6 +133,7 @@ function WorkspacePanel() {
               isMaximized={isMaximized}
               size={isMaximized ? { width: '100%', height: '100%' } : (panel.size || panelDef.initialSize)}
               minSize={panelDef?.minSize}
+              onContextMenu={(e) => e.preventDefault()}
             >
               {PanelContent}
             </DraggableWindow>

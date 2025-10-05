@@ -17,7 +17,9 @@ import { createMultiScrollSync, createWheelForwarder } from '@/lib/utils/scrollS
 import { Copy, X, Download } from 'lucide-react';
 import InstrumentRow from './InstrumentRow';
 import StepGrid from './StepGrid';
+import StepGridCanvas from './StepGridCanvas'; // ⚡ NEW: Canvas-based grid
 import PianoRollMiniView from './PianoRollMiniView';
+import PianoRollMiniViewC4 from './PianoRollMiniViewC4'; // ⚡ NEW: C4-level preview
 import InteractiveTimeline from './InteractiveTimeline';
 import AudioExportPanel from '@/components/AudioExportPanel';
 // ✅ PERFORMANCE: Lazy-loaded icons to reduce initial bundle size
@@ -115,9 +117,6 @@ function ChannelRack() {
   const playheadRef = useRef(null);
   const patternDropdownRef = useRef(null);
 
-  // Audio loop length hesaplama
-  const audioLoopLength = 64; // TODO: Get from arrangement/pattern
-
   // State for smooth compact playhead animation
   const [isJumping, setIsJumping] = useState(false);
 
@@ -171,6 +170,29 @@ function ChannelRack() {
 
   // ✅ Memoize expensive calculations
   const activePattern = useMemo(() => patterns[activePatternId], [patterns, activePatternId]);
+
+  // ⚡ DYNAMIC PATTERN LENGTH: Calculate based on actual note data
+  const audioLoopLength = useMemo(() => {
+    if (!activePattern || !activePattern.data) return 64;
+
+    // Find maximum note position across all instruments in this pattern
+    let maxNoteTime = 0;
+    Object.values(activePattern.data).forEach(notes => {
+      if (!Array.isArray(notes)) return;
+      notes.forEach(note => {
+        if (note.time > maxNoteTime) {
+          maxNoteTime = note.time;
+        }
+      });
+    });
+
+    // Round up to next bar (16 steps) + 2 empty bars for editing space
+    const minLength = 64; // Minimum 4 bars
+    const paddedLength = maxNoteTime + 32; // Add 2 bars padding
+    const roundedLength = Math.ceil(paddedLength / 16) * 16; // Round to bar
+
+    return Math.max(minLength, roundedLength);
+  }, [activePattern]);
 
   // ✅ PERFORMANCE: Pre-compute instruments lookup map - O(1) access
   const instrumentsMap = useMemo(() =>
@@ -477,6 +499,7 @@ function ChannelRack() {
               onPianoRollClick={() => openPianoRollForInstrument(inst)}
               onEditClick={() => handleEditInstrument(inst)}
               onToggleSelection={() => toggleChannelSelection(inst.id)}
+              patternNotes={activePattern?.data[inst.id] || []}
             />
           ))}
           {/* FL Studio Style: Simple Add Channel Button */}
@@ -603,7 +626,7 @@ function ChannelRack() {
                   onNoteClick={() => openPianoRollForInstrument(inst)}
                 />
               ) : (
-                <StepGrid
+                <StepGridCanvas
                   instrumentId={inst.id}
                   notes={activePattern?.data[inst.id] || []}
                   totalSteps={audioLoopLength}

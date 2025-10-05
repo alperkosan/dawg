@@ -400,9 +400,20 @@ function drawClips(ctx, engine) {
     }
 
     // Audio waveform visualization
-    if (clip.type === 'audio' && instruments && clipWidth > 40) {
-      const instrument = instruments.find(inst => inst.id === clip.sampleId);
-      const audioBuffer = instrument?.audioBuffer;
+    if (clip.type === 'audio' && clipWidth > 40) {
+      // Try to find audio buffer from sampleId or audioUrl
+      let audioBuffer = null;
+
+      if (clip.sampleId && instruments) {
+        const instrument = instruments.find(inst => inst.id === clip.sampleId);
+        audioBuffer = instrument?.audioBuffer;
+      } else if (clip.audioUrl) {
+        // For direct file browser drops, we need to load the audio
+        // For now, just show placeholder text
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+        ctx.font = '12px monospace';
+        ctx.fillText('Loading...', x + 8, y + clipHeight / 2);
+      }
 
       if (audioBuffer) {
         ctx.save();

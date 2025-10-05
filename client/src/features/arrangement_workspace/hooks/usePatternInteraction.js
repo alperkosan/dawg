@@ -438,6 +438,7 @@ export function usePatternInteraction(engine, clips, tracks, gridSize, snapMode,
     getCursorStyle,
     snapToGrid,
     beatToPixel,
-    pixelToBeat
+    pixelToBeat,
+    getClipAtPosition: findClipAtPosition
   };
 }

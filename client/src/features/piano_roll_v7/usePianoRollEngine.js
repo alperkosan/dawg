@@ -236,7 +236,8 @@ export function usePianoRollEngine(containerRef) {
 
     const visibleSteps = useMemo(() => {
         if (!dimensions.stepWidth) return { startStep: 0, endStep: 0 };
-        const buffer = 10;
+        // ⚡ PERFORMANCE: Minimal buffer (1 step each side) for edge cases only
+        const buffer = 1;
         const start = Math.floor(viewportData.scrollX / dimensions.stepWidth) - buffer;
         const end = Math.ceil((viewportData.scrollX + viewportSize.width) / dimensions.stepWidth) + buffer;
         return {
@@ -247,7 +248,8 @@ export function usePianoRollEngine(containerRef) {
 
     const visibleKeys = useMemo(() => {
         if (!dimensions.keyHeight) return { startKey: 0, endKey: 0 };
-        const buffer = 5;
+        // ⚡ PERFORMANCE: Minimal buffer (1 key each side) for edge cases only
+        const buffer = 1;
         const start = Math.floor(viewportData.scrollY / dimensions.keyHeight) - buffer;
         const end = Math.ceil((viewportData.scrollY + viewportSize.height) / dimensions.keyHeight) + buffer;
         return {

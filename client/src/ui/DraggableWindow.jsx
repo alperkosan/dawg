@@ -5,7 +5,8 @@ import WindowControls from './WindowControls';
 function DraggableWindow({
   id, title, children, position, size, onPositionChange, onSizeChange,
   minSize = { width: 200, height: 150 },
-  zIndex = 'auto', onFocus, onClose, onMinimize, onMaximize, isMaximized
+  zIndex = 'auto', onFocus, onClose, onMinimize, onMaximize, isMaximized,
+  onContextMenu
 }) {
   const [isAnimatingOut, setIsAnimatingOut] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
@@ -72,6 +73,7 @@ function DraggableWindow({
         }
       }}
       bounds="parent"
+      onContextMenu={onContextMenu}
     >
       {/* Header */}
       <header ref={headerRef} className="window-header">

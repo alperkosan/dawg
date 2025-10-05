@@ -19,7 +19,8 @@ const InstrumentRow = ({
   isSelected = false,
   onPianoRollClick,
   onEditClick,
-  onToggleSelection
+  onToggleSelection,
+  patternNotes = [] // ⚡ NEW: Pattern notes for mini sequencer preview
 }) => {
   // ✅ Direct selectors - no object creation in selectors
   const updateInstrument = useInstrumentsStore(selectUpdateInstrument);
@@ -104,6 +105,7 @@ const InstrumentRow = ({
     ({ '--instrument-color': mixerTrack.color || 'var(--color-surface-3)' }),
     [mixerTrack.color]
   );
+
 
   return (
     <div className={rowClasses} onContextMenu={handleContextMenu} onClick={handleRowClick}>

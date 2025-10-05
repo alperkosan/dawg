@@ -9,6 +9,7 @@
  */
 
 import React, { useRef, useEffect, useState, useCallback } from 'react';
+import ReactDOM from 'react-dom';
 import { useArrangementWorkspaceStore } from '@/store/useArrangementWorkspaceStore';
 import { useArrangementStore } from '@/store/useArrangementStore';
 import { useInstrumentsStore } from '@/store/useInstrumentsStore';
@@ -41,7 +42,7 @@ const ArrangementCanvas = ({ arrangement }) => {
   } = useArrangementWorkspaceStore();
 
   const { patterns } = useArrangementStore();
-  const { instruments } = useInstrumentsStore();
+  const { instruments, handleAddNewInstrument } = useInstrumentsStore();
 
   // ✅ PERFORMANCE: Only subscribe to position updates in song mode
   const playbackMode = usePlaybackStore(state => state.playbackMode);
@@ -70,6 +71,7 @@ const ArrangementCanvas = ({ arrangement }) => {
   const [draggedClip, setDraggedClip] = useState(null);
   const [dropPreview, setDropPreview] = useState(null); // Pattern library drop preview
   const [isAltKeyPressed, setIsAltKeyPressed] = useState(false); // Track Alt key for stretch mode indicator
+  const [contextMenu, setContextMenu] = useState(null); // Right-click context menu
 
   // Playback mode handler - Song mode için arrangement çalma
   useEffect(() => {
@@ -173,6 +175,9 @@ const ArrangementCanvas = ({ arrangement }) => {
 
   // Mouse handlers for pattern interaction
   const handleCanvasMouseDown = useCallback((e) => {
+    // Ignore right-click - handled by onContextMenu
+    if (e.button === 2) return;
+
     const rect = canvasRef.current.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
@@ -298,7 +303,8 @@ const ArrangementCanvas = ({ arrangement }) => {
     setDropPreview(null); // Clear preview
 
     try {
-      const data = JSON.parse(e.dataTransfer.getData('text/plain'));
+      const dataText = e.dataTransfer.getData('text/plain');
+      const data = JSON.parse(dataText);
 
       const rect = canvasRef.current.getBoundingClientRect();
       const x = e.clientX - rect.left + engine.viewport.scrollX;
@@ -366,11 +372,50 @@ const ArrangementCanvas = ({ arrangement }) => {
         if (newClipId) {
           selectClips([newClipId], false);
         }
+      } else if (data.name && data.url) {
+        // File browser sample drop (direct from file browser)
+        const defaultDuration = 4;
+
+        // Create a temporary sample ID from the URL
+        const sampleId = `file-${data.url.replace(/[^a-zA-Z0-9]/g, '-')}`;
+
+        // Check if this audio file is already loaded as an instrument
+        let existingInstrument = instruments.find(inst => inst.id === sampleId);
+
+        if (!existingInstrument) {
+          // Create a temporary instrument for this audio file
+          // This allows the renderer to access the audioBuffer
+          const newSample = {
+            id: sampleId,
+            name: data.name,
+            url: data.url,
+            type: 'audio'
+          };
+          handleAddNewInstrument(newSample);
+        }
+
+        const newClipId = addClip({
+          type: 'audio',
+          sampleId, // Use generated ID so renderer can find it
+          audioUrl: data.url, // Keep URL for reference
+          trackId,
+          startTime: snappedBeat,
+          duration: defaultDuration,
+          name: data.name,
+          color: '#f59e0b' // Orange color for audio clips
+        });
+
+        console.log(`🎵 Dropped file browser sample "${data.name}" on track ${trackIndex + 1} at beat ${snappedBeat.toFixed(2)}`);
+
+        // ✅ Select the newly created clip
+        if (newClipId) {
+          selectClips([newClipId], false);
+        }
       }
     } catch (error) {
       console.error('Failed to handle drop:', error);
     }
-  }, [engine, ensureTrackAtIndex, addClip, patterns, patternInteraction, selectClips]);
+  }, [engine, ensureTrackAtIndex, addClip, patterns, patternInteraction, selectClips, instruments, handleAddNewInstrument]);
 
   const handleDragLeave = useCallback((e) => {
     // Only clear if leaving canvas completely
@@ -382,68 +427,7 @@ const ArrangementCanvas = ({ arrangement }) => {
   const handleCanvasDragOver = useCallback((e) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'copy';
-
-    // Show drop preview
-    try {
-      const data = e.dataTransfer.types.includes('text/plain') ?
-        JSON.parse(e.dataTransfer.getData('text/plain')) : null;
-
-      if (data?.type === 'pattern' && data?.patternId) {
-        const rect = canvasRef.current.getBoundingClientRect();
-        const x = e.clientX - rect.left + engine.viewport.scrollX;
-        const y = e.clientY - rect.top + engine.viewport.scrollY;
-
-        const TRACK_HEADER_WIDTH = 150;
-        const TIMELINE_HEIGHT = 40;
-        const PIXELS_PER_BEAT = 32;
-
-        const relativeY = y - TIMELINE_HEIGHT;
-        const relativeX = x - TRACK_HEADER_WIDTH;
-
-        const trackIndex = Math.floor(relativeY / engine.dimensions.trackHeight);
-        const beatPosition = Math.max(0, relativeX / (PIXELS_PER_BEAT * engine.viewport.zoomX));
-        const snappedBeat = patternInteraction.snapToGrid(beatPosition);
-
-        const pattern = patterns?.[data.patternId];
-
-        // Convert pattern length from steps to beats
-        const patternLengthBeats = pattern?.length ? pattern.length / 4 : 4;
-
-        setDropPreview({
-          type: 'pattern',
-          trackIndex,
-          startBeat: snappedBeat,
-          duration: patternLengthBeats,
-          color: pattern?.color || '#00ff88'
-        });
-      } else if (data?.type === 'audio' && data?.sampleId) {
-        const rect = canvasRef.current.getBoundingClientRect();
-        const x = e.clientX - rect.left + engine.viewport.scrollX;
-        const y = e.clientY - rect.top + engine.viewport.scrollY;
-
-        const TRACK_HEADER_WIDTH = 150;
-        const TIMELINE_HEIGHT = 40;
-        const PIXELS_PER_BEAT = 32;
-
-        const relativeY = y - TIMELINE_HEIGHT;
-        const relativeX = x - TRACK_HEADER_WIDTH;
-
-        const trackIndex = Math.floor(relativeY / engine.dimensions.trackHeight);
-        const beatPosition = Math.max(0, relativeX / (PIXELS_PER_BEAT * engine.viewport.zoomX));
-        const snappedBeat = patternInteraction.snapToGrid(beatPosition);
-
-        setDropPreview({
-          type: 'audio',
-          trackIndex,
-          startBeat: snappedBeat,
-          duration: 4, // Default 4 beats for audio
-          color: '#f59e0b' // Orange for audio clips
-        });
-      }
-    } catch (err) {
-      // Ignore parse errors during drag
-    }
-  }, [engine, patternInteraction, patterns]);
+  }, []);
 
   // Zoom controls - viewport merkezini koruyarak zoom yap
   const handleZoomIn = useCallback(() => {
@@ -526,6 +510,23 @@ const ArrangementCanvas = ({ arrangement }) => {
           onMouseDown={handleCanvasMouseDown}
           onMouseMove={handleCanvasMouseMove}
           onMouseUp={handleCanvasMouseUp}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            const rect = canvasRef.current.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left + engine.viewport.scrollX;
+            const mouseY = e.clientY - rect.top + engine.viewport.scrollY;
+
+            // Find clip at mouse position
+            const clickedClip = patternInteraction.getClipAtPosition(mouseX, mouseY);
+
+            if (clickedClip) {
+              setContextMenu({
+                x: e.clientX,
+                y: e.clientY,
+                clipId: clickedClip.id
+              });
+            }
+          }}
           onDrop={handleCanvasDrop}
           onDragOver={handleCanvasDragOver}
           onDragLeave={handleDragLeave}
@@ -572,6 +573,59 @@ const ArrangementCanvas = ({ arrangement }) => {
             <span style={{ fontSize: '14px' }}>⏱️</span>
             TIME STRETCH MODE
           </div>
+        )}
+
+        {/* Context Menu - Rendered via Portal to body */}
+        {contextMenu && ReactDOM.createPortal(
+          <>
+            <div
+              style={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                zIndex: 9999
+              }}
+              onClick={() => setContextMenu(null)}
+            />
+            <div
+              style={{
+                position: 'fixed',
+                top: contextMenu.y,
+                left: contextMenu.x,
+                background: '#2a2a2a',
+                border: '1px solid #444',
+                borderRadius: '4px',
+                padding: '4px',
+                zIndex: 10000,
+                boxShadow: '0 2px 8px rgba(0,0,0,0.5)',
+                minWidth: '120px'
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div
+                style={{
+                  padding: '8px 12px',
+                  cursor: 'pointer',
+                  color: '#ff5555',
+                  fontSize: '13px',
+                  borderRadius: '2px',
+                  transition: 'background 0.1s'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.background = '#3a3a3a'}
+                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  deleteClip(contextMenu.clipId);
+                  setContextMenu(null);
+                }}
+              >
+                Delete Clip
+              </div>
+            </div>
+          </>,
+          document.body
         )}
       </div>
 

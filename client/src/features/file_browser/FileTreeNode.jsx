@@ -5,14 +5,30 @@ import { usePreviewPlayerStore } from '@/store/usePreviewPlayerStore';
 import { DND_TYPES, FILE_SYSTEM_TYPES } from '@/config/constants'; // GÜNCELLENDİ
 
 const DraggableFileNode = ({ node, onContextMenu, children }) => {
-    const [{ isDragging }, drag] = useDrag(() => ({
-        type: DND_TYPES.SOUND_SOURCE, // GÜNCELLENDİ
-        item: { name: node.name, url: node.url },
-        collect: (monitor) => ({ isDragging: !!monitor.isDragging() }),
-    }), [node.name, node.url]);
+    const [isDragging, setIsDragging] = React.useState(false);
+
+    // Use native HTML5 drag for compatibility with both React DND and native drop zones
+    const handleDragStart = (e) => {
+        setIsDragging(true);
+        e.dataTransfer.effectAllowed = 'copy';
+        e.dataTransfer.setData('text/plain', JSON.stringify({
+            name: node.name,
+            url: node.url
+        }));
+    };
+
+    const handleDragEnd = () => {
+        setIsDragging(false);
+    };
 
     return (
-        <div ref={drag} onContextMenu={(e) => onContextMenu(e, node)} style={{ opacity: isDragging ? 0.5 : 1, cursor: 'grab' }}>
+        <div
+            onContextMenu={(e) => onContextMenu(e, node)}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+            draggable
+            style={{ opacity: isDragging ? 0.5 : 1, cursor: 'grab' }}
+        >
             {children}
         </div>
     );
