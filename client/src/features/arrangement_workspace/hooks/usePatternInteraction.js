@@ -213,7 +213,8 @@ export function usePatternInteraction(engine, clips, tracks, gridSize, snapMode,
       // Store original fade/gain values for handle interactions (all clip-specific)
       originalFadeIn: clip.fadeIn || 0,
       originalFadeOut: clip.fadeOut || 0,
-      originalGain: clip.gain || 0
+      originalGain: clip.gain || 0,
+      originalSampleOffset: clip.sampleOffset || 0
     });
 
     return { clip, type: interactionType };
@@ -297,8 +298,8 @@ export function usePatternInteraction(engine, clips, tracks, gridSize, snapMode,
           updates.playbackRate = originalDur / updates.currentDuration;
         } else {
           // Normal trim mode: adjust sample offset
-          const currentOffset = interactionState.clip.sampleOffset || 0;
-          updates.sampleOffset = currentOffset + actualDelta;
+          const originalOffset = interactionState.originalSampleOffset || 0;
+          updates.sampleOffset = Math.max(0, originalOffset + actualDelta);
         }
       }
     } else if (interactionState.mode === 'fade-in') {

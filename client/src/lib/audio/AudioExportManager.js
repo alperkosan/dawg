@@ -9,6 +9,7 @@ import { AudioContextService } from '../services/AudioContextService';
 import { AudioProcessor } from './AudioProcessor';
 import { FileManager } from './FileManager';
 import { RenderEngine } from './RenderEngine';
+import { audioAssetManager } from './AudioAssetManager';
 
 // Export formats and quality presets
 export const EXPORT_FORMATS = {
@@ -339,26 +340,26 @@ export class AudioExportManager {
 
       const exportResult = await this.exportPattern(patternId, exportSettings);
 
-      // Step 2: Create instrument from exported audio (if requested)
-      let instrumentId = null;
+      // Step 2: Create audio asset from exported audio (if requested)
+      let assetId = null;
       if (createInstrument && exportResult.length > 0) {
-        instrumentId = await this._createInstrumentFromExport(exportResult[0], patternId);
+        assetId = await this._createInstrumentFromExport(exportResult[0], patternId);
       }
 
       // Step 3: Replace original pattern (if requested)
-      if (replaceOriginal && instrumentId && exportResult.length > 0) {
-        await this._replacePatternWithAudio(patternId, instrumentId, exportResult[0]);
+      if (replaceOriginal && assetId && exportResult.length > 0) {
+        await this._replacePatternWithAudio(patternId, assetId, exportResult[0]);
       }
 
       // Step 4: Optionally create arrangement clip (without replacing pattern)
       let clipId = null;
-      if (!replaceOriginal && createInstrument && instrumentId && exportResult.length > 0) {
-        clipId = await this._createArrangementClip(patternId, instrumentId, exportResult[0]);
+      if (!replaceOriginal && createInstrument && assetId && exportResult.length > 0) {
+        clipId = await this._createArrangementClip(patternId, assetId, exportResult[0]);
       }
 
       return {
         exportFiles: exportResult,
-        instrumentId,
+        assetId,
         clipId,
         originalPatternId: patternId,
         workflow: 'pattern-to-audio',
@@ -417,30 +418,35 @@ export class AudioExportManager {
   }
 
   /**
-   * Create instrument from exported audio file
+   * Create audio asset from exported audio file
    */
   async _createInstrumentFromExport(exportedFile, originalPatternId) {
     try {
-      // Import the exported file as a new instrument
-      const instrumentId = `frozen_${originalPatternId}_${Date.now()}`;
+      // Create asset ID
+      const assetId = `asset-frozen-${originalPatternId}-${Date.now()}`;
+      const name = `Frozen ${originalPatternId}`;
 
-      // Use FileManager to create instrument
-      const instrumentData = await this.fileManager.createInstrumentFromFile(
-        exportedFile.buffer,
-        {
-          id: instrumentId,
-          name: `Frozen ${originalPatternId}`,
-          type: 'sample',
-          tags: ['frozen', 'pattern-export'],
-          originalPattern: originalPatternId
+      // Add to AudioAssetManager (no download, just add to project)
+      await audioAssetManager.addAsset({
+        id: assetId,
+        name: name,
+        buffer: exportedFile.buffer,
+        url: null, // No URL, it's a generated buffer
+        type: 'audio',
+        metadata: {
+          frozen: true,
+          originalPattern: originalPatternId,
+          sampleRate: exportedFile.buffer.sampleRate,
+          duration: exportedFile.buffer.duration,
+          numberOfChannels: exportedFile.buffer.numberOfChannels
         }
-      );
+      });
 
-      console.log(`🎹 Created instrument ${instrumentId} from frozen pattern`);
-      return instrumentId;
+      console.log(`🎹 Created audio asset ${assetId} from frozen pattern`);
+      return assetId;
 
     } catch (error) {
-      console.error('🎹 Failed to create instrument from export:', error);
+      console.error('🎹 Failed to create asset from export:', error);
       throw error;
     }
   }
@@ -481,25 +487,48 @@ export class AudioExportManager {
   /**
    * Create arrangement clip from exported pattern audio
    */
-  async _createArrangementClip(patternId, instrumentId, exportResult) {
-    console.log(`🎵 Creating arrangement clip for pattern ${patternId}`);
+  async _createArrangementClip(patternId, assetId, exportResult) {
+    console.log(`🎵 Creating arrangement clip for pattern ${patternId} with asset ${assetId}`);
 
     try {
-      // Import arrangement store dynamically to avoid circular imports
-      const { useArrangementStore } = await import('../../store/useArrangementStore');
+      // Import arrangement workspace store dynamically to avoid circular imports
+      const { useArrangementWorkspaceStore } = await import('../../store/useArrangementWorkspaceStore');
 
-      if (exportResult && exportResult.audioBuffer) {
-        // Create audio clip data
+      if (exportResult && exportResult.buffer) {
+        // Get BPM to calculate duration in beats
+        const BPM = 140; // TODO: Get from transport
+        const beatsPerSecond = BPM / 60;
+        const durationBeats = exportResult.buffer.duration * beatsPerSecond;
+
+        // Create audio clip data with assetId
         const audioClipData = {
-          patternId,
-          instrumentId,
-          audioBuffer: exportResult.audioBuffer,
+          type: 'audio',
+          assetId: assetId,
+          name: `Frozen ${patternId}`,
           startTime: 0, // Place at beginning of arrangement
-          trackId: `track-${patternId}`
+          duration: durationBeats,
+          color: '#f59e0b'
         };
 
-        // Use arrangement store to add audio clip
-        const clipId = useArrangementStore.getState().addAudioClip(audioClipData);
+        // Find first available track or create new one
+        const store = useArrangementWorkspaceStore.getState();
+        const arrangement = store.getActiveArrangement();
+
+        if (!arrangement) {
+          console.warn('🎵 No active arrangement');
+          return null;
+        }
+
+        // Get first track or create new one
+        let trackId = arrangement.tracks.length > 0 ? arrangement.tracks[0].id : null;
+        if (!trackId) {
+          trackId = store.addTrack();
+        }
+
+        audioClipData.trackId = trackId;
+
+        // Add clip to arrangement
+        const clipId = store.addClip(audioClipData);
 
         console.log(`🎵 Created arrangement clip ${clipId} for pattern ${patternId}`);
         return clipId;

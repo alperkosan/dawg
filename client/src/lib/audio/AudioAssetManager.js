@@ -41,7 +41,14 @@ class AudioAssetManager {
 
     // Return cached asset if available
     if (this.assets.has(assetId)) {
-      return this.assets.get(assetId).buffer;
+      const cachedAsset = this.assets.get(assetId);
+
+      // If loading from file browser but not yet added to instruments, add it now
+      if (metadata.source === 'file-browser') {
+        this._addToInstrumentsStore(assetId, cachedAsset.buffer, metadata);
+      }
+
+      return cachedAsset.buffer;
     }
 
     // Return ongoing loading promise if already loading
@@ -67,8 +74,16 @@ class AudioAssetManager {
    * Internal: Load and decode audio file
    */
   async _loadAudioFile(url, assetId, metadata) {
+    // If AudioContext not set, try to get it from AudioContextService
     if (!this.audioContext) {
-      throw new Error('AudioContext not initialized. Call setAudioContext first.');
+      const { AudioContextService } = await import('../services/AudioContextService');
+      const engine = AudioContextService.getAudioEngine();
+      if (engine?.audioContext) {
+        this.audioContext = engine.audioContext;
+        console.log('📦 AudioContext initialized from AudioContextService');
+      } else {
+        throw new Error('AudioContext not initialized. Call setAudioContext first or ensure AudioContextService is running.');
+      }
     }
 
     try {
@@ -94,6 +109,13 @@ class AudioAssetManager {
       });
 
       console.log(`✅ Audio asset loaded: ${assetId}`, metadata);
+
+      // Add to instruments store if loaded from file browser
+      console.log('🔍 Checking if should add to instruments:', { source: metadata.source, shouldAdd: metadata.source === 'file-browser' });
+      if (metadata.source === 'file-browser') {
+        console.log('🎹 Calling _addToInstrumentsStore');
+        this._addToInstrumentsStore(assetId, audioBuffer, metadata);
+      }
 
       // Notify listeners that asset was loaded
       this._notifyListeners(assetId, audioBuffer);
@@ -173,6 +195,44 @@ class AudioAssetManager {
         console.error('Error in AudioAssetManager listener:', error);
       }
     });
+  }
+
+  /**
+   * Add loaded audio to instruments store (for Samples panel)
+   */
+  async _addToInstrumentsStore(assetId, audioBuffer, metadata) {
+    try {
+      // Dynamically import to avoid circular dependencies
+      const { useInstrumentsStore } = await import('../../store/useInstrumentsStore');
+
+      const store = useInstrumentsStore.getState();
+
+      // Check if already exists by URL (instruments store uses URL)
+      const asset = this.getAsset(assetId);
+      if (!asset || !asset.url) {
+        console.warn(`🎹 No URL for asset ${assetId}, cannot add to instruments`);
+        return;
+      }
+
+      const existingInstrument = store.instruments.find(inst => inst.url === asset.url);
+      if (existingInstrument) {
+        console.log(`🎹 Instrument already exists for URL ${asset.url}`);
+        return;
+      }
+
+      // Create sample object for handleAddNewInstrument
+      const sampleData = {
+        name: metadata.name || 'Audio Sample',
+        url: asset.url
+      };
+
+      // Use existing handleAddNewInstrument function
+      store.handleAddNewInstrument(sampleData);
+
+      console.log(`🎹 Added instrument for "${sampleData.name}" to Samples panel`);
+    } catch (error) {
+      console.error('Failed to add instrument to store:', error);
+    }
   }
 }
 

@@ -502,25 +502,34 @@ function drawClips(ctx, engine) {
         const audioDurationSeconds = audioBuffer.duration;
         const offsetSeconds = beatsToSeconds(sampleOffsetBeats);
 
-        // Calculate actual audio width in pixels (might be less than clip width)
-        const audioLengthBeats = (audioDurationSeconds * 140) / 60; // Convert audio duration to beats
-        const audioWidthPixels = Math.min(clipWidth, audioLengthBeats * PIXELS_PER_BEAT * viewport.zoomX);
+        // Calculate offset in pixels (empty space at the beginning)
+        const offsetWidthPixels = sampleOffsetBeats * PIXELS_PER_BEAT * viewport.zoomX;
 
-        // Total samples to display
+        // Calculate actual audio width in pixels (remaining space after offset)
+        const availableWidth = Math.max(0, clipWidth - offsetWidthPixels);
+        const audioLengthBeats = (audioDurationSeconds * 140) / 60; // Convert audio duration to beats
+        const audioWidthPixels = Math.min(availableWidth, audioLengthBeats * PIXELS_PER_BEAT * viewport.zoomX);
+
+        // Total samples to display (always from start of audio buffer, no offset applied to sample reading)
         const totalSamplesToDisplay = Math.floor((audioDurationSeconds * sampleRate) / playbackRate);
-        const sampleOffsetInSamples = Math.floor((offsetSeconds * sampleRate) / playbackRate);
 
         const samplesPerPixel = Math.max(1, totalSamplesToDisplay / audioWidthPixels);
 
         const fadeInWidth = fadeInBeats * PIXELS_PER_BEAT * viewport.zoomX;
         const fadeOutWidth = fadeOutBeats * PIXELS_PER_BEAT * viewport.zoomX;
 
-        // Draw smooth filled waveform (only for actual audio length)
+        // Draw empty/transparent area for offset (if any)
+        if (offsetWidthPixels > 0) {
+          ctx.fillStyle = 'rgba(50, 50, 50, 0.3)'; // Dark transparent for empty area
+          ctx.fillRect(x + 2, y + 20, offsetWidthPixels, clipHeight - 24);
+        }
+
+        // Draw smooth filled waveform (only for actual audio length, offset by offsetWidthPixels)
         ctx.beginPath();
 
-        // Top half of waveform
+        // Top half of waveform (always read from start of buffer, offset is visual only)
         for (let i = 0; i < audioWidthPixels; i++) {
-          const startSample = Math.floor(sampleOffsetInSamples + (i * samplesPerPixel));
+          const startSample = Math.floor(i * samplesPerPixel);
           const endSample = Math.min(startSample + samplesPerPixel, channelData.length);
 
           let min = 1.0;
@@ -552,15 +561,15 @@ function drawClips(ctx, engine) {
           const maxY = waveformY - (max * waveformHeight / 2);
 
           if (i === 0) {
-            ctx.moveTo(x + 2, maxY);
+            ctx.moveTo(x + 2 + offsetWidthPixels, maxY);
           } else {
-            ctx.lineTo(x + 2 + i, maxY);
+            ctx.lineTo(x + 2 + offsetWidthPixels + i, maxY);
           }
         }
 
         // Bottom half of waveform (reverse)
         for (let i = audioWidthPixels - 1; i >= 0; i--) {
-          const startSample = Math.floor(sampleOffsetInSamples + (i * samplesPerPixel));
+          const startSample = Math.floor(i * samplesPerPixel);
           const endSample = Math.min(startSample + samplesPerPixel, channelData.length);
 
           let min = 1.0;
@@ -584,7 +593,7 @@ function drawClips(ctx, engine) {
           min *= fadeMultiplier;
 
           const minY = waveformY - (min * waveformHeight / 2);
-          ctx.lineTo(x + 2 + i, minY);
+          ctx.lineTo(x + 2 + offsetWidthPixels + i, minY);
         }
 
         ctx.closePath();
