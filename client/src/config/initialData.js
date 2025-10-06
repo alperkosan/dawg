@@ -50,6 +50,91 @@ const ambientNotes = {
     subbassdrone: [{t: 0, p: 'C1', d: '16n'}].map(n => defaultNote(n.t, n.p, 1.0, n.d))
 };
 
+// 🎵 90 BPM Old-School Boom Bap Beats
+const boomBapNotes = {
+  kick: [0, 12, 16, 28, 32, 44, 48, 60].map(t => defaultNote(t, 'C4', 1.0, '8n')),
+  snare: [8, 24, 40, 56].map(t => defaultNote(t, 'C4', 0.95, '8n')),
+  clap: [8, 24, 40, 56].map(t => defaultNote(t, 'C4', 0.6, '16n')),
+  'hi-hat': [
+    ...Array.from({ length: 16 }).map((_, i) => {
+      const t = i * 4;
+      const isSwung = i % 2 === 1;
+      return defaultNote(t + (isSwung ? 1 : 0), 'F#4', isSwung ? 0.4 : 0.7, '16n');
+    })
+  ],
+  offbeathat: [6, 14, 22, 30, 38, 46, 54, 62].map(t => defaultNote(t, 'G#4', 0.65, '8n')),
+  drillbass: [
+    { t: 0, p: 'A1', d: '4n' }, { t: 8, p: 'A1', d: '8n' }, { t: 12, p: 'D2', d: '8n' },
+    { t: 16, p: 'G1', d: '4n' }, { t: 24, p: 'G1', d: '8n' }, { t: 28, p: 'C2', d: '8n' },
+    { t: 32, p: 'F1', d: '4n' }, { t: 40, p: 'F1', d: '8n' }, { t: 44, p: 'A#1', d: '8n' },
+    { t: 48, p: 'G1', d: '4n' }, { t: 56, p: 'D2', d: '8n' }, { t: 60, p: 'E2', d: '8n' },
+  ].map(n => defaultNote(n.t, n.p, 0.9, n.d)),
+  glidesynth: [
+    { t: 0, p: 'A3', d: '2n' }, { t: 4, p: 'C4', d: '8n' }, { t: 6, p: 'D4', d: '8n' },
+    { t: 16, p: 'G3', d: '2n' }, { t: 20, p: 'A#3', d: '8n' }, { t: 22, p: 'C4', d: '8n' },
+    { t: 32, p: 'F3', d: '2n' }, { t: 36, p: 'A3', d: '8n' }, { t: 38, p: 'C4', d: '8n' },
+    { t: 48, p: 'G3', d: '1n' },
+  ].map(n => defaultNote(n.t, n.p, 0.7, n.d)),
+  chordstab: [
+    { t: 0, p: 'A2' }, { t: 0, p: 'C3' }, { t: 0, p: 'E3' }, { t: 0, p: 'A3' },
+    { t: 16, p: 'G2' }, { t: 16, p: 'A#2' }, { t: 16, p: 'D3' }, { t: 16, p: 'G3' },
+    { t: 32, p: 'F2' }, { t: 32, p: 'A2' }, { t: 32, p: 'C3' }, { t: 32, p: 'F3' },
+    { t: 48, p: 'G2' }, { t: 48, p: 'D3' }, { t: 48, p: 'G3' },
+  ].map(n => defaultNote(n.t, n.p, 0.75, '2n'))
+};
+
+const jazzHopNotes = {
+  kick: [0, 10, 16, 26, 32, 42, 48, 58].map(t => defaultNote(t, 'C4', 0.95, '8n')),
+  snare: [8, 24, 40, 56].map(t => defaultNote(t, 'C4', 0.9, '8n')),
+  'hi-hat': Array.from({ length: 64 }).map((_, i) => {
+    const swing = i % 3 === 2 ? 1 : 0;
+    return defaultNote(i + swing, 'F#4', (i % 4 === 0 ? 0.8 : 0.35), '16n');
+  }),
+  offbeathat: [7, 15, 23, 31, 39, 47, 55, 63].map(t => defaultNote(t, 'G#4', 0.5, '16n')),
+  hyperbass: [
+    { t: 0, p: 'D2', d: '4n' }, { t: 6, p: 'A1', d: '8n' }, { t: 10, p: 'D2', d: '16n' },
+    { t: 16, p: 'C2', d: '4n' }, { t: 22, p: 'G1', d: '8n' }, { t: 26, p: 'C2', d: '16n' },
+    { t: 32, p: 'A#1', d: '4n' }, { t: 38, p: 'F1', d: '8n' }, { t: 42, p: 'A#1', d: '16n' },
+    { t: 48, p: 'C2', d: '2n' }, { t: 56, p: 'E2', d: '8n' }, { t: 60, p: 'G2', d: '8n' },
+  ].map(n => defaultNote(n.t, n.p, 0.88, n.d)),
+  retrosynth: [
+    { t: 0, p: 'D4', d: '8n' }, { t: 4, p: 'F4', d: '8n' }, { t: 8, p: 'A4', d: '4n' },
+    { t: 16, p: 'C4', d: '8n' }, { t: 20, p: 'E4', d: '8n' }, { t: 24, p: 'G4', d: '4n' },
+    { t: 32, p: 'A#3', d: '8n' }, { t: 36, p: 'D4', d: '8n' }, { t: 40, p: 'F4', d: '4n' },
+    { t: 48, p: 'C4', d: '2n' }, { t: 56, p: 'E4', d: '8n' },
+  ].map(n => defaultNote(n.t, n.p, 0.65, n.d)),
+  bellchord: [
+    { t: 0, p: 'D3' }, { t: 0, p: 'F#3' }, { t: 0, p: 'A3' }, { t: 0, p: 'D4' },
+    { t: 32, p: 'C3' }, { t: 32, p: 'E3' }, { t: 32, p: 'G3' }, { t: 32, p: 'C4' },
+  ].map(n => defaultNote(n.t, n.p, 0.7, '1n'))
+};
+
+const lofiNotes = {
+  kick: [0, 12, 16, 28, 32, 44, 48, 60].map(t => defaultNote(t, 'C4', 0.88, '8n')),
+  snare: [8, 24, 40, 56].map(t => defaultNote(t, 'C4', 0.75, '8n')),
+  'hi-hat': Array.from({ length: 32 }).map((_, i) =>
+    defaultNote(i * 2 + (i % 2 === 1 ? 1 : 0), 'F#4', i % 4 === 0 ? 0.6 : 0.3, '16n')
+  ),
+  bedroombass: [
+    { t: 0, p: 'E2', d: '2n' }, { t: 8, p: 'E2', d: '8n' },
+    { t: 16, p: 'C2', d: '2n' }, { t: 24, p: 'C2', d: '8n' },
+    { t: 32, p: 'A1', d: '2n' }, { t: 40, p: 'A1', d: '8n' },
+    { t: 48, p: 'D2', d: '1n' },
+  ].map(n => defaultNote(n.t, n.p, 0.85, n.d)),
+  vocalchop: [
+    { t: 2, p: 'E4', d: '16n' }, { t: 4, p: 'G4', d: '16n' }, { t: 6, p: 'B4', d: '8n' },
+    { t: 18, p: 'C4', d: '16n' }, { t: 20, p: 'E4', d: '16n' }, { t: 22, p: 'G4', d: '8n' },
+    { t: 34, p: 'A3', d: '16n' }, { t: 36, p: 'C4', d: '16n' }, { t: 38, p: 'E4', d: '8n' },
+    { t: 50, p: 'D4', d: '16n' }, { t: 52, p: 'F#4', d: '16n' }, { t: 54, p: 'A4', d: '8n' },
+  ].map(n => defaultNote(n.t, n.p, 0.68, n.d)),
+  sparklearp: [
+    { t: 0, p: 'E5', d: '16n' }, { t: 4, p: 'B4', d: '16n' }, { t: 8, p: 'G4', d: '16n' }, { t: 12, p: 'E4', d: '16n' },
+    { t: 16, p: 'C5', d: '16n' }, { t: 20, p: 'G4', d: '16n' }, { t: 24, p: 'E4', d: '16n' }, { t: 28, p: 'C4', d: '16n' },
+    { t: 32, p: 'A4', d: '16n' }, { t: 36, p: 'E4', d: '16n' }, { t: 40, p: 'C4', d: '16n' }, { t: 44, p: 'A3', d: '16n' },
+    { t: 48, p: 'D5', d: '16n' }, { t: 52, p: 'A4', d: '16n' }, { t: 56, p: 'F#4', d: '16n' }, { t: 60, p: 'D4', d: '16n' },
+  ].map(n => defaultNote(n.t, n.p, 0.55, n.d))
+};
+
 // =========================================================================
 // === FORGESYNTH PRESET KÜTÜPHANESİ ===
 // =========================================================================
@@ -158,6 +243,137 @@ const forgeSynthPresets = {
           { id: 'slot2', source: 'none', destination: 'none', amount: 0 },
           { id: 'slot3', source: 'none', destination: 'none', amount: 0 },
       ]
+  },
+  // ✨ NEW: Modern Synth Presets
+  'Drill Bass': {
+    oscillator: { type: 'fatsawtooth' },
+    envelope: { attack: 0.005, decay: 0.3, sustain: 0.6, release: 0.4 },
+    filter: { type: 'lowpass', frequency: 150, rolloff: -24, Q: 2.5 },
+    filterEnv: { attack: 0.01, decay: 0.2, sustain: 0.4, release: 0.3, baseFrequency: 150, octaves: 3 },
+    lfo1: { type: 'square', frequency: '16n', amplitude: 1, min: 80, max: 400 },
+    lfo2: { type: 'sine', frequency: '4n', amplitude: 1, min: -0.15, max: 0.15 },
+    modMatrix: [
+      { id: 'slot1', source: 'lfo1', destination: 'filterFreq', amount: 0.6 },
+      { id: 'slot2', source: 'lfo2', destination: 'pan', amount: 0.7 },
+      { id: 'slot3', source: 'none', destination: 'none', amount: 0 },
+    ]
+  },
+  'Glide Synth': {
+    oscillator: { type: 'square' },
+    envelope: { attack: 0.08, decay: 0.5, sustain: 0.3, release: 0.8 },
+    filter: { type: 'lowpass', frequency: 600, rolloff: -12, Q: 2 },
+    filterEnv: { attack: 0.15, decay: 0.4, sustain: 0.5, release: 0.6, baseFrequency: 600, octaves: 5 },
+    lfo1: { type: 'sine', frequency: '4n', amplitude: 1, min: 400, max: 1200 },
+    lfo2: { type: 'triangle', frequency: '2n', amplitude: 1, min: -30, max: 30 },
+    modMatrix: [
+      { id: 'slot1', source: 'lfo1', destination: 'filterFreq', amount: 0.5 },
+      { id: 'slot2', source: 'lfo2', destination: 'oscPitch', amount: 0.3 },
+      { id: 'slot3', source: 'none', destination: 'none', amount: 0 },
+    ]
+  },
+  'Chord Stab': {
+    oscillator: { type: 'fatsquare' },
+    envelope: { attack: 0.01, decay: 0.6, sustain: 0.2, release: 0.5 },
+    filter: { type: 'highpass', frequency: 300, rolloff: -12, Q: 1 },
+    filterEnv: { attack: 0.02, decay: 0.4, sustain: 0.3, release: 0.4, baseFrequency: 300, octaves: 4 },
+    lfo1: { type: 'sine', frequency: '8n', amplitude: 1, min: 200, max: 800 },
+    lfo2: { type: 'sine', frequency: '16n', amplitude: 1, min: 0.7, max: 1 },
+    modMatrix: [
+      { id: 'slot1', source: 'lfo1', destination: 'filterFreq', amount: 0.4 },
+      { id: 'slot2', source: 'lfo2', destination: 'volume', amount: 0.3 },
+      { id: 'slot3', source: 'none', destination: 'none', amount: 0 },
+    ]
+  },
+  'Scream Synth': {
+    oscillator: { type: 'fatsawtooth' },
+    envelope: { attack: 0.001, decay: 0.15, sustain: 0.8, release: 0.2 },
+    filter: { type: 'bandpass', frequency: 1500, rolloff: -24, Q: 6 },
+    filterEnv: { attack: 0.005, decay: 0.1, sustain: 0.7, release: 0.15, baseFrequency: 1500, octaves: 6 },
+    lfo1: { type: 'square', frequency: '32n', amplitude: 1, min: 800, max: 3000 },
+    lfo2: { type: 'sine', frequency: '8n', amplitude: 1, min: -0.3, max: 0.3 },
+    modMatrix: [
+      { id: 'slot1', source: 'lfo1', destination: 'filterFreq', amount: 0.9 },
+      { id: 'slot2', source: 'lfo2', destination: 'pan', amount: 1 },
+      { id: 'slot3', source: 'none', destination: 'none', amount: 0 },
+    ]
+  },
+  'Hyper Bass': {
+    oscillator: { type: 'fatsawtooth' },
+    envelope: { attack: 0.01, decay: 0.2, sustain: 0.7, release: 0.3 },
+    filter: { type: 'lowpass', frequency: 200, rolloff: -24, Q: 3 },
+    filterEnv: { attack: 0.02, decay: 0.15, sustain: 0.6, release: 0.25, baseFrequency: 200, octaves: 4 },
+    lfo1: { type: 'sawtooth', frequency: '16n', amplitude: 1, min: 100, max: 600 },
+    lfo2: { type: 'square', frequency: '8n', amplitude: 1, min: -50, max: 50 },
+    modMatrix: [
+      { id: 'slot1', source: 'lfo1', destination: 'filterFreq', amount: 0.7 },
+      { id: 'slot2', source: 'lfo2', destination: 'oscPitch', amount: 0.4 },
+      { id: 'slot3', source: 'none', destination: 'none', amount: 0 },
+    ]
+  },
+  'Sparkle Arp': {
+    oscillator: { type: 'fattriangle' },
+    envelope: { attack: 0.005, decay: 0.3, sustain: 0.1, release: 0.4 },
+    filter: { type: 'highpass', frequency: 800, rolloff: -12, Q: 1.5 },
+    filterEnv: { attack: 0.01, decay: 0.2, sustain: 0.2, release: 0.3, baseFrequency: 800, octaves: 5 },
+    lfo1: { type: 'sine', frequency: '16n', amplitude: 1, min: 500, max: 2000 },
+    lfo2: { type: 'triangle', frequency: '4n', amplitude: 1, min: 0.8, max: 1 },
+    modMatrix: [
+      { id: 'slot1', source: 'lfo1', destination: 'filterFreq', amount: 0.6 },
+      { id: 'slot2', source: 'lfo2', destination: 'volume', amount: 0.2 },
+      { id: 'slot3', source: 'none', destination: 'none', amount: 0 },
+    ]
+  },
+  'Bell Chord': {
+    oscillator: { type: 'sine' },
+    envelope: { attack: 0.02, decay: 2.0, sustain: 0.3, release: 2.5 },
+    filter: { type: 'highpass', frequency: 600, rolloff: -12, Q: 1 },
+    filterEnv: { attack: 0.03, decay: 1.5, sustain: 0.4, release: 2.0, baseFrequency: 600, octaves: 4 },
+    lfo1: { type: 'sine', frequency: '1m', amplitude: 1, min: 400, max: 1000 },
+    lfo2: { type: 'sine', frequency: '2m', amplitude: 1, min: 0.9, max: 1 },
+    modMatrix: [
+      { id: 'slot1', source: 'lfo1', destination: 'filterFreq', amount: 0.3 },
+      { id: 'slot2', source: 'lfo2', destination: 'volume', amount: 0.1 },
+      { id: 'slot3', source: 'none', destination: 'none', amount: 0 },
+    ]
+  },
+  'Bedroom Bass': {
+    oscillator: { type: 'fatsawtooth' },
+    envelope: { attack: 0.01, decay: 0.3, sustain: 0.7, release: 0.4 },
+    filter: { type: 'lowpass', frequency: 250, rolloff: -24, Q: 2 },
+    filterEnv: { attack: 0.02, decay: 0.25, sustain: 0.6, release: 0.35, baseFrequency: 250, octaves: 3.5 },
+    lfo1: { type: 'sine', frequency: '8n', amplitude: 1, min: 150, max: 500 },
+    lfo2: { type: 'triangle', frequency: '4n', amplitude: 1, min: -0.2, max: 0.2 },
+    modMatrix: [
+      { id: 'slot1', source: 'lfo1', destination: 'filterFreq', amount: 0.5 },
+      { id: 'slot2', source: 'lfo2', destination: 'pan', amount: 0.6 },
+      { id: 'slot3', source: 'none', destination: 'none', amount: 0 },
+    ]
+  },
+  'Vocal Chop': {
+    oscillator: { type: 'fatsquare' },
+    envelope: { attack: 0.005, decay: 0.1, sustain: 0.5, release: 0.15 },
+    filter: { type: 'bandpass', frequency: 1000, rolloff: -12, Q: 4 },
+    filterEnv: { attack: 0.01, decay: 0.08, sustain: 0.4, release: 0.12, baseFrequency: 1000, octaves: 4 },
+    lfo1: { type: 'square', frequency: '16n', amplitude: 1, min: 600, max: 1800 },
+    lfo2: { type: 'sine', frequency: '8n', amplitude: 1, min: 0.6, max: 1 },
+    modMatrix: [
+      { id: 'slot1', source: 'lfo1', destination: 'filterFreq', amount: 0.8 },
+      { id: 'slot2', source: 'lfo2', destination: 'volume', amount: 0.4 },
+      { id: 'slot3', source: 'none', destination: 'none', amount: 0 },
+    ]
+  },
+  'Retro Synth': {
+    oscillator: { type: 'square' },
+    envelope: { attack: 0.02, decay: 0.4, sustain: 0.6, release: 0.6 },
+    filter: { type: 'lowpass', frequency: 800, rolloff: -12, Q: 2 },
+    filterEnv: { attack: 0.03, decay: 0.3, sustain: 0.5, release: 0.5, baseFrequency: 800, octaves: 4 },
+    lfo1: { type: 'sawtooth', frequency: '8t', amplitude: 1, min: 500, max: 1500 },
+    lfo2: { type: 'sine', frequency: '2n', amplitude: 1, min: -0.15, max: 0.15 },
+    modMatrix: [
+      { id: 'slot1', source: 'lfo1', destination: 'filterFreq', amount: 0.5 },
+      { id: 'slot2', source: 'lfo2', destination: 'pan', amount: 0.7 },
+      { id: 'slot3', source: 'none', destination: 'none', amount: 0 },
+    ]
   }
 };
 
@@ -168,26 +384,28 @@ const forgeSynthPresets = {
 // Create instruments with environment-aware configuration
 const createInstruments = () => {
   const baseInstruments = [
-    // --- Ritim (Samples) ---
-    { id: 'inst-1', name: 'Kick', type: INSTRUMENT_TYPES.SAMPLE, url: '/audio/kick.wav', mixerTrackId: 'track-1', pianoRoll: false },
-    { id: 'inst-2', name: 'Snare', type: INSTRUMENT_TYPES.SAMPLE, url: '/audio/snare.wav', mixerTrackId: 'track-2', pianoRoll: false },
-    { id: 'inst-3', name: 'Clap', type: INSTRUMENT_TYPES.SAMPLE, url: '/audio/clap.wav', mixerTrackId: 'track-3', pianoRoll: false },
-    { id: 'inst-4', name: 'Hi-Hat', type: INSTRUMENT_TYPES.SAMPLE, url: '/audio/hihat.wav', mixerTrackId: 'track-4', pianoRoll: false },
-    { id: 'inst-5', name: 'Offbeat Hat', type: INSTRUMENT_TYPES.SAMPLE, url: '/audio/openhat.wav', mixerTrackId: 'track-5', pianoRoll: false, cutItself: true },
+    // --- Ritim (Samples) - Hepsinde kullanılıyor ---
+    { id: 'inst-1', name: 'Kick', type: INSTRUMENT_TYPES.SAMPLE, url: '/audio/kick.wav', mixerTrackId: 'track-1', pianoRoll: false, effectChain: [] },
+    { id: 'inst-2', name: 'Snare', type: INSTRUMENT_TYPES.SAMPLE, url: '/audio/snare.wav', mixerTrackId: 'track-2', pianoRoll: false, effectChain: [] },
+    { id: 'inst-3', name: 'Clap', type: INSTRUMENT_TYPES.SAMPLE, url: '/audio/clap.wav', mixerTrackId: 'track-3', pianoRoll: false, effectChain: [] },
+    { id: 'inst-4', name: 'Hi-Hat', type: INSTRUMENT_TYPES.SAMPLE, url: '/audio/hihat.wav', mixerTrackId: 'track-4', pianoRoll: false, effectChain: [] },
+    { id: 'inst-5', name: 'Offbeat Hat', type: INSTRUMENT_TYPES.SAMPLE, url: '/audio/openhat.wav', mixerTrackId: 'track-5', pianoRoll: false, cutItself: true, effectChain: [] },
 
-    // --- Bass (Synth & Sample) ---
-    { id: 'inst-6', name: 'Wobble Bass', type: INSTRUMENT_TYPES.SYNTH, mixerTrackId: 'track-6', pianoRoll: true, synthParams: forgeSynthPresets['Wobble Bass'] },
-    { id: 'inst-7', name: 'Deep Bass', type: INSTRUMENT_TYPES.SYNTH, mixerTrackId: 'track-7', pianoRoll: true, synthParams: forgeSynthPresets['Deep Bass'] },
-    { id: 'inst-8', name: 'Sub Bass Drone', type: INSTRUMENT_TYPES.SYNTH, mixerTrackId: 'track-8', pianoRoll: true, synthParams: forgeSynthPresets['Sub Bass Drone'] },
+    // ✨ NEW: Modern Bass Synths
+    { id: 'inst-6', name: 'Drill Bass', type: INSTRUMENT_TYPES.SYNTH, mixerTrackId: 'track-6', pianoRoll: true, synthParams: forgeSynthPresets['Drill Bass'], effectChain: [] },
+    { id: 'inst-7', name: 'Hyper Bass', type: INSTRUMENT_TYPES.SYNTH, mixerTrackId: 'track-7', pianoRoll: true, synthParams: forgeSynthPresets['Hyper Bass'], effectChain: [] },
+    { id: 'inst-8', name: 'Bedroom Bass', type: INSTRUMENT_TYPES.SYNTH, mixerTrackId: 'track-8', pianoRoll: true, synthParams: forgeSynthPresets['Bedroom Bass'], effectChain: [] },
 
-    // --- Melodi & Armoni (Synth'ler) ---
-    { id: 'inst-9', name: 'Pluck Lead', type: INSTRUMENT_TYPES.SYNTH, mixerTrackId: 'track-9', pianoRoll: true, synthParams: forgeSynthPresets['Pluck Lead'] },
-    { id: 'inst-10', name: 'Ethereal Pad', type: INSTRUMENT_TYPES.SYNTH, mixerTrackId: 'track-10', pianoRoll: true, synthParams: forgeSynthPresets['Ethereal Pad'] },
-    { id: 'inst-11', name: 'Chicago Piano', type: INSTRUMENT_TYPES.SYNTH, mixerTrackId: 'track-11', pianoRoll: true, synthParams: forgeSynthPresets['Chicago Piano'] },
+    // ✨ NEW: Modern Lead & Melodic Synths
+    { id: 'inst-9', name: 'Glide Synth', type: INSTRUMENT_TYPES.SYNTH, mixerTrackId: 'track-9', pianoRoll: true, synthParams: forgeSynthPresets['Glide Synth'], effectChain: [] },
+    { id: 'inst-10', name: 'Scream Synth', type: INSTRUMENT_TYPES.SYNTH, mixerTrackId: 'track-10', pianoRoll: true, synthParams: forgeSynthPresets['Scream Synth'], effectChain: [] },
+    { id: 'inst-11', name: 'Vocal Chop', type: INSTRUMENT_TYPES.SYNTH, mixerTrackId: 'track-11', pianoRoll: true, synthParams: forgeSynthPresets['Vocal Chop'], effectChain: [] },
 
-    // --- Sinematik (Synth'ler) ---
-    { id: 'inst-12', name: 'Evolving Pad', type: INSTRUMENT_TYPES.SYNTH, mixerTrackId: 'track-12', pianoRoll: true, synthParams: forgeSynthPresets['Evolving Pad'] },
-    { id: 'inst-13', name: 'Crystal Keys', type: INSTRUMENT_TYPES.SYNTH, mixerTrackId: 'track-13', pianoRoll: true, synthParams: forgeSynthPresets['Crystal Keys'] },
+    // ✨ NEW: Modern Texture & Harmony Synths
+    { id: 'inst-12', name: 'Chord Stab', type: INSTRUMENT_TYPES.SYNTH, mixerTrackId: 'track-12', pianoRoll: true, synthParams: forgeSynthPresets['Chord Stab'], effectChain: [] },
+    { id: 'inst-13', name: 'Sparkle Arp', type: INSTRUMENT_TYPES.SYNTH, mixerTrackId: 'track-13', pianoRoll: true, synthParams: forgeSynthPresets['Sparkle Arp'], effectChain: [] },
+    { id: 'inst-14', name: 'Bell Chord', type: INSTRUMENT_TYPES.SYNTH, mixerTrackId: 'track-14', pianoRoll: true, synthParams: forgeSynthPresets['Bell Chord'], effectChain: [] },
+    { id: 'inst-15', name: 'Retro Synth', type: INSTRUMENT_TYPES.SYNTH, mixerTrackId: 'track-15', pianoRoll: true, synthParams: forgeSynthPresets['Retro Synth'], effectChain: [] },
   ];
 
   return baseInstruments;
@@ -210,21 +428,20 @@ const createMixerTracks = () => {
   { id: 'track-3', name: 'Clap', type: MIXER_TRACK_TYPES.TRACK, volume: -4, pan: 0, color: '#ef4444', output: 'bus-3', insertEffects: [], sends: { 'send1': -15, 'send2': -30 } },
   { id: 'track-4', name: 'Hi-Hat', type: MIXER_TRACK_TYPES.TRACK, volume: -10, pan: -15, color: '#f59e0b', output: 'bus-3', insertEffects: [], sends: {}, inputGain: 0, eq: { highGain: 0, highFreq: 12000, midGain: 0, midFreq: 2500, midQ: 1, lowGain: 0, lowFreq: 80 } },
   { id: 'track-5', name: 'Offbeat Hat', type: MIXER_TRACK_TYPES.TRACK, volume: -12, pan: 10, color: '#f59e0b', output: 'bus-3', insertEffects: [], sends: { 'send1': -24, 'send2': -35 }, inputGain: 0, eq: { highGain: 0, highFreq: 12000, midGain: 0, midFreq: 2500, midQ: 1, lowGain: 0, lowFreq: 80 } },
-  { id: 'track-6', name: 'Wobble Bass', type: MIXER_TRACK_TYPES.TRACK, volume: -6, pan: 0, color: '#a855f7', insertEffects: [{ id: 'fx-wobble-sat', type: 'Saturator', settings: { distortion: 0.5, wet: 0.8 }, bypass: false }], sends: {}, inputGain: 0, eq: { highGain: 0, highFreq: 12000, midGain: 0, midFreq: 2500, midQ: 1, lowGain: 0, lowFreq: 80 } },
-  { id: 'track-7', name: 'Deep Bass', type: MIXER_TRACK_TYPES.TRACK, volume: -5, pan: 0, color: '#a855f7', insertEffects: [], sends: [] },
-  { id: 'track-8', name: 'Sub Bass Drone', type: MIXER_TRACK_TYPES.TRACK, volume: -8, pan: 0, color: '#a855f7', insertEffects: [], sends: [] },
-  { id: 'track-9', name: 'Pluck Lead', type: MIXER_TRACK_TYPES.TRACK, volume: -12, pan: 0, color: '#ec4899', insertEffects: [], sends: { 'send1': -25, 'send2': -12 } },
-  { id: 'track-10', name: 'Ethereal Pad', type: MIXER_TRACK_TYPES.TRACK, volume: -15, pan: 0, color: '#ec4899', insertEffects: [], sends: { 'send1': -9, 'send2': -20 } },
-  { id: 'track-11', name: 'Chicago Piano', type: MIXER_TRACK_TYPES.TRACK, volume: -9, pan: 0, color: '#ec4899', insertEffects: [], sends: { 'send1': -18, 'send2': -25 } },
-  { id: 'track-12', name: 'Evolving Pad', type: MIXER_TRACK_TYPES.TRACK, volume: -18, pan: 0, color: '#6366f1', insertEffects: [], sends: { 'send1': -6, 'send2': -22 } },
-  { id: 'track-13', name: 'Crystal Keys', type: MIXER_TRACK_TYPES.TRACK, volume: -14, pan: 0, color: '#6366f1', insertEffects: [], sends: { 'send1': -12, 'send2': -18 } },
+  // ✨ Updated for modern instruments
+  { id: 'track-6', name: 'Drill Bass', type: MIXER_TRACK_TYPES.TRACK, volume: -5, pan: 0, color: '#a855f7', insertEffects: [], sends: {} },
+  { id: 'track-7', name: 'Hyper Bass', type: MIXER_TRACK_TYPES.TRACK, volume: -6, pan: 0, color: '#a855f7', insertEffects: [], sends: {} },
+  { id: 'track-8', name: 'Bedroom Bass', type: MIXER_TRACK_TYPES.TRACK, volume: -7, pan: 0, color: '#a855f7', insertEffects: [], sends: {} },
+  { id: 'track-9', name: 'Glide Synth', type: MIXER_TRACK_TYPES.TRACK, volume: -10, pan: 0, color: '#ec4899', insertEffects: [], sends: { 'send1': -20, 'send2': -15 } },
+  { id: 'track-10', name: 'Scream Synth', type: MIXER_TRACK_TYPES.TRACK, volume: -11, pan: 0, color: '#ec4899', insertEffects: [], sends: { 'send1': -18, 'send2': -12 } },
+  { id: 'track-11', name: 'Vocal Chop', type: MIXER_TRACK_TYPES.TRACK, volume: -9, pan: 0, color: '#ec4899', insertEffects: [], sends: { 'send1': -15, 'send2': -20 } },
+  { id: 'track-12', name: 'Chord Stab', type: MIXER_TRACK_TYPES.TRACK, volume: -8, pan: 0, color: '#6366f1', insertEffects: [], sends: { 'send1': -22, 'send2': -25 } },
+  { id: 'track-13', name: 'Sparkle Arp', type: MIXER_TRACK_TYPES.TRACK, volume: -12, pan: 0, color: '#6366f1', insertEffects: [], sends: { 'send1': -10, 'send2': -18 } },
+  { id: 'track-14', name: 'Bell Chord', type: MIXER_TRACK_TYPES.TRACK, volume: -14, pan: 0, color: '#10b981', insertEffects: [], sends: { 'send1': -8, 'send2': -15 } },
+  { id: 'track-15', name: 'Retro Synth', type: MIXER_TRACK_TYPES.TRACK, volume: -10, pan: 0, color: '#10b981', insertEffects: [], sends: { 'send1': -16, 'send2': -20 } },
 
-  // === BU İKİ SATIRI SİL VEYA YORUM SATIRI YAP ===
-  // { id: 'track-14', name: 'Vocal Chop', type: MIXER_TRACK_TYPES.TRACK, volume: -16, pan: 0, color: '#10b981', insertEffects: [], sends: [{ busId: 'bus-2', level: -15 }] },
-  // { id: 'track-15', name: 'Impact FX', type: MIXER_TRACK_TYPES.TRACK, volume: -20, pan: 0, color: '#64748b', insertEffects: [], sends: [{ busId: 'bus-1', level: -3 }] },
-  
     // --- Kullanılmayan boş kanallar ---
-    ...Array.from({ length: 11 }, (_, i) => ({ id: `track-${14 + i}`, name: `Insert ${14 + i}`, type: MIXER_TRACK_TYPES.TRACK, volume: 0, pan: 0, insertEffects: [], sends: [] })),
+    ...Array.from({ length: 9 }, (_, i) => ({ id: `track-${16 + i}`, name: `Insert ${16 + i}`, type: MIXER_TRACK_TYPES.TRACK, volume: 0, pan: 0, insertEffects: [], sends: [] })),
   ];
 
   return baseTracks;
@@ -249,35 +466,35 @@ const createInitialPatternData = (notesObject) => {
 
 // Create patterns with environment-aware configuration
 const createPatterns = () => {
-  // Farklı müzik tarzları için başlangıç pattern'leri oluştur
-  const trapPatternData = createInitialPatternData(trapNotes);
-  const housePatternData = createInitialPatternData(houseNotes);
-  const ambientPatternData = createInitialPatternData(ambientNotes);
+  // 🎵 Old-school boom bap patterns at 90 BPM
+  const boomBapPatternData = createInitialPatternData(boomBapNotes);
+  const jazzHopPatternData = createInitialPatternData(jazzHopNotes);
+  const lofiPatternData = createInitialPatternData(lofiNotes);
   const emptyPatternData = createInitialPatternData({});
 
   // FL Studio Style: Patterns only contain note data, no instrument ownership
   const basePatterns = {
     'pattern-1': {
       id: 'pattern-1',
-      name: 'Trap Beat',
-      data: trapPatternData,
+      name: '🎹 Classic Boom Bap',
+      data: boomBapPatternData,
       settings: { length: 64, quantization: '16n' }
     },
     'pattern-2': {
       id: 'pattern-2',
-      name: 'House Groove',
-      data: housePatternData,
+      name: '🎷 Jazz Hop',
+      data: jazzHopPatternData,
       settings: { length: 64, quantization: '16n' }
     },
     'pattern-3': {
       id: 'pattern-3',
-      name: 'Ambient Mood',
-      data: ambientPatternData,
+      name: '🌙 Lo-fi Vibes',
+      data: lofiPatternData,
       settings: { length: 64, quantization: '16n' }
     },
     'pattern-4': {
       id: 'pattern-4',
-      name: 'Empty Pattern',
+      name: '📝 Empty Canvas',
       data: emptyPatternData,
       settings: { length: 64, quantization: '16n' }
     },

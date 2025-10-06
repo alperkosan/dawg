@@ -2,6 +2,7 @@
 
 import { NativeTimeUtils } from '../../utils/NativeTimeUtils';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
+import { EffectFactory } from '../../audio/effects';
 
 export class NativeSamplerNode {
     constructor(instrumentData, audioBuffer, audioContext) {
@@ -12,9 +13,19 @@ export class NativeSamplerNode {
         this.pianoRoll = instrumentData.pianoRoll;
         this.cutItself = instrumentData.cutItself;
         this.pitchOffset = instrumentData.pitchOffset || 0;
-        this.output = this.context.createGain();
+
+        // ✅ NEW: Effect chain support
+        this.effectChain = [];
+        this.effectChainActive = false;
+        this.internalOutput = this.context.createGain(); // Direct audio output
+        this.output = this.internalOutput; // Public output (may be last effect or internalOutput)
 
         this.activeSources = new Set();
+
+        // ✅ NEW: Initialize effect chain if provided
+        if (instrumentData.effectChain && instrumentData.effectChain.length > 0) {
+            this.setEffectChain(instrumentData.effectChain);
+        }
 
         console.log(`✅ NativeSamplerNode created: ${this.name}`);
     }
@@ -48,9 +59,9 @@ export class NativeSamplerNode {
 
         const gainNode = this.context.createGain();
         gainNode.gain.setValueAtTime(velocity || 0.8, startTime);
-        
+
         source.connect(gainNode);
-        gainNode.connect(this.output);
+        gainNode.connect(this.internalOutput); // ✅ Changed to internalOutput (effect chain start)
 
         source.start(startTime);
         
@@ -173,5 +184,59 @@ export class NativeSamplerNode {
     // ✅ UTILITY: Convert dB to linear
     dbToLinear(db) {
         return Math.pow(10, db / 20);
+    }
+
+    // ✅ NEW: Set or update effect chain
+    setEffectChain(effectChainData) {
+        console.log(`🎛️ NativeSamplerNode.setEffectChain:`, this.name, effectChainData);
+
+        // Disconnect old effect chain
+        if (this.effectChain.length > 0) {
+            this.effectChain.forEach(effect => {
+                try {
+                    effect.disconnect();
+                } catch (e) {
+                    console.warn('Error disconnecting effect:', e);
+                }
+            });
+            this.effectChain = [];
+        }
+
+        // Reset to direct connection
+        this.internalOutput.disconnect();
+
+        if (!effectChainData || effectChainData.length === 0) {
+            // No effects, connect directly to output
+            this.output = this.internalOutput;
+            this.effectChainActive = false;
+            return;
+        }
+
+        // Build effect chain
+        let currentNode = this.internalOutput;
+
+        for (const effectData of effectChainData) {
+            try {
+                const effect = EffectFactory.deserialize(effectData, this.context);
+                if (!effect) {
+                    console.warn(`Failed to create effect: ${effectData.type}`);
+                    continue;
+                }
+
+                // Connect current node to effect input
+                currentNode.connect(effect.inputNode);
+                currentNode = effect.outputNode;
+
+                this.effectChain.push(effect);
+                console.log(`🎛️ Added effect: ${effect.name} (${effect.type})`);
+            } catch (error) {
+                console.error(`Error creating effect ${effectData.type}:`, error);
+            }
+        }
+
+        // Final output is the last effect's output
+        this.output = currentNode;
+        this.effectChainActive = true;
+        console.log(`✅ Effect chain set for ${this.name}: ${this.effectChain.length} effects`);
     }
 }

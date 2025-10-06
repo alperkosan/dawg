@@ -142,6 +142,7 @@ class InstrumentProcessor extends AudioWorkletProcessor {
     // Instrument info
     this.instrumentId = options?.processorOptions?.instrumentId || 'unknown';
     this.instrumentName = options?.processorOptions?.instrumentName || 'Unnamed';
+    this.isOfflineRendering = options?.processorOptions?.isOfflineRendering || false;
 
     // ⚡ OPTIMIZATION: Voice pool management for better performance
     this.voicePool = new VoicePool(16); // Pre-allocate 16 voices
@@ -160,12 +161,32 @@ class InstrumentProcessor extends AudioWorkletProcessor {
     // Performance tracking
     this.processedSamples = 0;
     this.activeVoiceCount = 0;
+
+    // ✅ Time tracking for offline rendering
+    this.currentTime = 0;
     
     // Message handling
     this.port.onmessage = (event) => {
       this.handleMessage(event.data);
     };
-    
+
+    // ✅ OFFLINE RENDERING: Schedule notes immediately if provided
+    if (this.isOfflineRendering && options?.processorOptions?.offlineNotes) {
+      const offlineNotes = options.processorOptions.offlineNotes;
+      console.log(`🎬 Scheduling ${offlineNotes.length} offline notes for ${this.instrumentName}`);
+
+      offlineNotes.forEach(note => {
+        this.triggerNote(
+          note.pitch,
+          note.velocity,
+          note.noteId,
+          note.duration,
+          note.delay
+        );
+        console.log(`🎬 Offline note scheduled: ${note.pitch} at delay=${note.delay.toFixed(3)}s, dur=${note.duration.toFixed(3)}s`);
+      });
+    }
+
     console.log(`🎵 InstrumentProcessor initialized: ${this.instrumentName} (${this.instrumentId})`);
     this.port.postMessage({
       type: 'debug',
@@ -179,12 +200,13 @@ class InstrumentProcessor extends AudioWorkletProcessor {
     try {
       switch (type) {
         case 'noteOn':
-          // ✅ DÜZELTME: Duration parametresini de al
+          // ✅ DÜZELTME: Duration ve delay parametrelerini al
           this.triggerNote(
-            data.pitch || data.frequency, 
-            data.velocity || 1, 
+            data.pitch || data.frequency,
+            data.velocity || 1,
             data.noteId,
-            data.duration // ← Bu parametre eksikti
+            data.duration, // Note duration
+            data.delay || 0 // Delay before starting (for offline rendering)
           );
           break;
           
@@ -237,7 +259,7 @@ class InstrumentProcessor extends AudioWorkletProcessor {
     }
   }
 
-  triggerNote(frequency, velocity, noteId = null, duration = null) {
+  triggerNote(frequency, velocity, noteId = null, duration = null, delay = 0) {
     // ⚡ OPTIMIZATION: Use voice pool instead of manual polyphony management
     const voice = this.voicePool.acquire();
 
@@ -252,10 +274,10 @@ class InstrumentProcessor extends AudioWorkletProcessor {
     voice.frequency = actualFrequency;
     voice.velocity = velocity;
     voice.phase = 0;
-    voice.envelopePhase = 'attack';
+    voice.envelopePhase = delay > 0 ? 'waiting' : 'attack'; // ✅ Add waiting phase for delayed notes
     voice.envelopeValue = 0;
     voice.envelopeTime = 0;
-    voice.startTime = currentTime;
+    voice.startTime = this.currentTime + delay; // ✅ Schedule note to start after delay
     voice.duration = duration;
     voice.filterStates = [0, 0, 0, 0];
 
@@ -265,7 +287,7 @@ class InstrumentProcessor extends AudioWorkletProcessor {
     this.port.postMessage({
         type: 'noteStarted',
         data: {
-            noteId: voiceData.id,
+            noteId: voice.id,
             frequency,
             velocity,
             duration, // ✅ EKLENEN
@@ -327,7 +349,7 @@ class InstrumentProcessor extends AudioWorkletProcessor {
 
   scheduleAutomationEvent(parameter, value, time) {
     // Schedule future automation events
-    const delay = (time - currentTime) * 1000;
+    const delay = (time - this.currentTime) * 1000;
     if (delay > 0) {
       setTimeout(() => {
         this.applyAutomation(parameter, value);
@@ -340,13 +362,20 @@ class InstrumentProcessor extends AudioWorkletProcessor {
   process(inputs, outputs, parameters) {
     const output = outputs[0];
     const blockSize = output[0].length;
-    
+
     for (let i = 0; i < blockSize; i++) {
         let mixedSample = 0;
-        
-        const sampleTime = currentTime + i / this.sampleRate;
+
+        const sampleTime = this.currentTime + i / this.sampleRate;
 
         this.voices.forEach((voice, voiceId) => {
+            // ✅ Check if note should start playing (transition from waiting to attack)
+            if (voice.envelopePhase === 'waiting' && sampleTime >= voice.startTime) {
+                voice.envelopePhase = 'attack';
+                voice.envelopeTime = 0;
+                console.log(`▶️ Note started playing: ${voice.frequency}Hz at time=${sampleTime.toFixed(3)}s (scheduled=${voice.startTime.toFixed(3)}s)`);
+            }
+
             // ✅ YENİ MANTIK: Eğer notanın süresi dolduysa ve hala 'release' fazına geçmediyse, şimdi geçir.
             if (voice.duration && sampleTime >= voice.startTime + voice.duration && voice.envelopePhase !== 'release') {
                 voice.envelopePhase = 'release';
@@ -369,6 +398,10 @@ class InstrumentProcessor extends AudioWorkletProcessor {
             output[channel][i] = finalSample;
         }
     }
+
+    // ✅ Update current time for next process call
+    this.currentTime += blockSize / this.sampleRate;
+    this.processedSamples += blockSize;
 
     return true;
   }
@@ -409,8 +442,13 @@ class InstrumentProcessor extends AudioWorkletProcessor {
   processEnvelope(voice, attack, decay, sustain, release) {
     const dt = 1 / this.sampleRate;
     voice.envelopeTime += dt;
-    
+
     switch (voice.envelopePhase) {
+      case 'waiting':
+        // ✅ Wait until scheduled start time (for offline rendering with delays)
+        voice.envelopeValue = 0;
+        break;
+
       case 'attack':
         voice.envelopeValue = voice.envelopeTime / attack;
         if (voice.envelopeValue >= 1) {

@@ -66,6 +66,7 @@ export const useInstrumentsStore = create((set, get) => ({
         // Varsayılan zarf (envelope) ve ön-hesaplama (precomputed) ayarları
         envelope: { attack: 0.01, decay: 0.1, sustain: 1.0, release: 1.0 },
         precomputed: {},
+        effectChain: [], // ✅ NEW: Effect chain for this instrument
         isMuted: false,
         cutItself: false, // Bir nota çalarken öncekini sustur
         pianoRoll: true, // Bu enstrüman piano roll'da gösterilebilir mi?

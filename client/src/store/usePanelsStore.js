@@ -28,12 +28,15 @@ export const usePanelsStore = create((set, get) => ({
   
   // Editörler için özel state'ler
   editingInstrumentId: null, // Hangi enstrümanın düzenlendiği
+  editingClipId: null, // Hangi audio clip'in düzenlendiği (arrangement'tan)
   editorBuffer: null,      // Sample Editor için anlık AudioBuffer
+  editorClipData: null, // Sample Editor için clip metadata (name, color, etc.)
   pianoRollInstrumentId: null,
 
   // --- EYLEMLER (ACTIONS) ---
 
   setEditorBuffer: (buffer) => set({ editorBuffer: buffer }),
+  setEditorClipData: (clipData) => set({ editorClipData: clipData }),
   
   // Minimize edilmiş panellerin listesini güncelleyen özel fonksiyon.
   _updateMinimizedPanels: () => {

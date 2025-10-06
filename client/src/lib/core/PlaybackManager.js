@@ -91,7 +91,10 @@ export class PlaybackManager {
         this.scheduledEvents = new Map();
         this.automationEvents = new Map();
         this.nextEventTime = Infinity;
-        
+
+        // ✅ FIX: Track active audio sources for proper stop handling
+        this.activeAudioSources = [];
+
     }
 
     /**
@@ -481,6 +484,11 @@ export class PlaybackManager {
     play(startStep = null) {
         if (this.isPlaying && !this.isPaused) return;
 
+        // ✅ FIX: If paused, use resume() instead of restarting
+        if (this.isPaused && startStep === null) {
+            return this.resume();
+        }
+
         try {
             const startTime = this.audioEngine.audioContext.currentTime;
 
@@ -491,9 +499,6 @@ export class PlaybackManager {
                 // EXPLICIT POSITION: Jump to requested position
                 playPosition = startStep;
                 this.jumpToStep(startStep);
-            } else if (this.isPaused) {
-                // RESUME: Keep exact current position, don't reset
-                playPosition = this.currentPosition;
             } else {
                 // FRESH START: Use current position (may have been set by timeline click)
                 playPosition = this.currentPosition;
@@ -526,6 +531,17 @@ export class PlaybackManager {
             this.currentPosition = this.transport.ticksToSteps(this.transport.currentTick);
 
             this.transport.pause();
+
+            // ✅ FIX: Pause all active audio sources (frozen clips, audio clips)
+            this.activeAudioSources.forEach(source => {
+                try {
+                    source.stop();
+                } catch (e) {
+                    // Source may already be stopped
+                }
+            });
+            this.activeAudioSources = [];
+
             this.isPaused = true;
 
 
@@ -566,6 +582,17 @@ export class PlaybackManager {
 
         try {
             this.transport.stop();
+
+            // ✅ FIX: Stop all active audio sources (frozen clips, audio clips)
+            this.activeAudioSources.forEach(source => {
+                try {
+                    source.stop();
+                } catch (e) {
+                    // Source may already be stopped
+                }
+            });
+            this.activeAudioSources = [];
+
             this._clearScheduledEvents();
 
             this.isPlaying = false;
@@ -867,44 +894,61 @@ export class PlaybackManager {
 
         // Convert clip startTime (in beats) to seconds
         const clipStartBeats = clip.startTime || 0;
+        const clipEndBeats = clipStartBeats + (clip.duration || 4);
         const clipStartSeconds = clipStartBeats * (60 / this.transport.bpm); // beats to seconds
+        const clipEndSeconds = clipEndBeats * (60 / this.transport.bpm);
 
         // Calculate absolute time
         const currentStep = this.transport.ticksToSteps(this.transport.currentTick);
+        const currentPositionBeats = currentStep / 4; // steps to beats
         const currentPositionInSeconds = currentStep * this.transport.stepsToSeconds(1);
-        const relativeTime = clipStartSeconds - currentPositionInSeconds;
-        let absoluteTime = baseTime + relativeTime;
+
+        // ✅ FIX: Check if we're in the middle of the clip (resume scenario)
+        const isWithinClip = currentPositionBeats >= clipStartBeats && currentPositionBeats < clipEndBeats;
+        let absoluteTime;
+        let offset = 0; // Audio buffer offset for resume
+
+        if (isWithinClip) {
+            // ✅ RESUME: Start clip immediately with offset
+            absoluteTime = baseTime;
+            offset = currentPositionInSeconds - clipStartSeconds; // How far into the clip we are
+            console.log('🎵 Resume: Playing clip from offset', offset.toFixed(3), 's');
+        } else {
+            // ✅ NORMAL: Schedule clip at its start time
+            const relativeTime = clipStartSeconds - currentPositionInSeconds;
+            absoluteTime = baseTime + relativeTime;
+
+            // Skip if in the past
+            if (absoluteTime < baseTime) {
+                console.log('🎵 Skipping clip - already finished');
+                return;
+            }
+        }
 
         console.log('🎵 Timing calculation:', {
             clipStartBeats,
-            clipStartSeconds,
-            currentStep,
+            clipEndBeats,
+            currentPositionBeats,
             currentPositionInSeconds,
-            relativeTime,
             baseTime,
             absoluteTime,
-            willSkip: absoluteTime < baseTime
+            offset,
+            isWithinClip
         });
 
-        // Skip if in the past (no looping for audio clips in song mode)
-        if (absoluteTime < baseTime) {
-            console.log('🎵 Skipping clip - in the past');
-            return;
-        }
-
         // Schedule audio playback
-        console.log('🎵 Calling transport.scheduleEvent at', absoluteTime);
+        console.log('🎵 Calling transport.scheduleEvent at', absoluteTime, 'with offset', offset);
         this.transport.scheduleEvent(
             absoluteTime,
             (scheduledTime) => {
                 console.log('🎵 scheduleEvent callback fired at', scheduledTime);
                 try {
-                    this._playAudioBuffer(audioBuffer, scheduledTime, clip);
+                    this._playAudioBuffer(audioBuffer, scheduledTime, clip, offset);
                 } catch (error) {
                     console.error(`🎵 Error playing audio clip ${clip.id}:`, error);
                 }
             },
-            { type: 'audioClip', clipId: clip.id, startTime: clipStartBeats }
+            { type: 'audioClip', clipId: clip.id, startTime: clipStartBeats, offset }
         );
     }
 
@@ -913,9 +957,10 @@ export class PlaybackManager {
      * @param {AudioBuffer} audioBuffer - Audio buffer to play
      * @param {number} time - Scheduled time
      * @param {Object} clip - Clip data for volume/pan settings
+     * @param {number} resumeOffset - Offset in seconds for resume (default 0)
      */
-    _playAudioBuffer(audioBuffer, time, clip = {}) {
-        console.log('🎵 _playAudioBuffer called:', { time, clipId: clip.id, duration: clip.duration, gain: clip.gain });
+    _playAudioBuffer(audioBuffer, time, clip = {}, resumeOffset = 0) {
+        console.log('🎵 _playAudioBuffer called:', { time, clipId: clip.id, duration: clip.duration, gain: clip.gain, resumeOffset });
 
         const context = this.audioEngine.audioContext;
         const source = context.createBufferSource();
@@ -973,14 +1018,31 @@ export class PlaybackManager {
         // Convert sample offset from beats to seconds
         const sampleOffsetBeats = clip.sampleOffset || 0;
         const sampleOffsetSeconds = sampleOffsetBeats * (60 / this.transport.bpm);
-        const offset = sampleOffsetSeconds;
 
-        // Duration in seconds (accounting for playback rate)
-        const duration = clip.duration ? (clip.duration * 60 / this.transport.bpm) : undefined;
+        // ✅ FIX: Combine resume offset with clip's sample offset
+        const totalOffset = resumeOffset + sampleOffsetSeconds;
 
-        console.log('🎵 Starting source:', { time, offset, duration, currentTime: context.currentTime });
-        source.start(time, offset, duration);
+        // Duration in seconds (accounting for playback rate and resume offset)
+        let duration = clip.duration ? (clip.duration * 60 / this.transport.bpm) : undefined;
+        if (duration && resumeOffset > 0) {
+            // ✅ Reduce duration by resume offset (we're starting partway through)
+            duration = Math.max(0, duration - resumeOffset);
+        }
+
+        console.log('🎵 Starting source:', { time, totalOffset, duration, resumeOffset, sampleOffsetSeconds, currentTime: context.currentTime });
+        source.start(time, totalOffset, duration);
         console.log('🎵 Source started successfully');
+
+        // ✅ FIX: Track this source so it can be stopped later
+        this.activeAudioSources.push(source);
+
+        // ✅ FIX: Auto-cleanup when source finishes playing
+        source.onended = () => {
+            const index = this.activeAudioSources.indexOf(source);
+            if (index > -1) {
+                this.activeAudioSources.splice(index, 1);
+            }
+        };
     }
 
     /**

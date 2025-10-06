@@ -6,15 +6,31 @@
  */
 
 import { AudioContextService } from '../services/AudioContextService';
+import {
+  getCurrentBPM,
+  getCurrentSampleRate,
+  stepsToBeat,
+  beatsToSeconds,
+  midiToFrequency,
+  STEPS_PER_BEAT,
+  BEATS_PER_BAR,
+  RENDER_CONFIG,
+  SYNTH_CONFIG,
+  DEFAULT_BIT_DEPTH
+} from './audioRenderConfig';
+import { EffectFactory } from './effects';
 
 export class RenderEngine {
   constructor() {
     this.isRendering = false;
     this.renderQueue = [];
-    this.sampleRate = 44100;
-    this.maxRenderTime = 300; // 5 minutes max render time
+    this.sampleRate = getCurrentSampleRate();
+    this.maxRenderTime = RENDER_CONFIG.MAX_RENDER_TIME;
 
-    console.log('🎬 RenderEngine initialized');
+    console.log('🎬 RenderEngine initialized', {
+      sampleRate: this.sampleRate,
+      maxRenderTime: this.maxRenderTime
+    });
   }
 
   // =================== PATTERN RENDERING ===================
@@ -48,7 +64,7 @@ export class RenderEngine {
       console.log(`🎬 DEBUG: Pattern data:`, patternData);
 
       // SAFETY: Ensure minimum render length
-      const minRenderLength = sampleRate * 2; // Minimum 2 seconds
+      const minRenderLength = sampleRate * RENDER_CONFIG.MIN_RENDER_TIME;
       if (renderLength < minRenderLength) {
         console.warn(`🎬 Pattern too short (${renderLength} frames), using minimum length: ${minRenderLength}`);
         renderLength = minRenderLength;
@@ -57,7 +73,7 @@ export class RenderEngine {
       // FINAL SAFETY: Absolute minimum
       if (renderLength <= 0) {
         console.error(`🎬 CRITICAL: Invalid render length ${renderLength}, forcing to minimum`);
-        renderLength = sampleRate * 4; // 4 seconds fallback
+        renderLength = sampleRate * RENDER_CONFIG.MIN_RENDER_TIME * 2; // 2x minimum as fallback
       }
 
       const renderDuration = renderLength / sampleRate;
@@ -74,7 +90,7 @@ export class RenderEngine {
       // ULTIMATE SAFETY CHECK
       if (!renderLength || renderLength <= 0 || !Number.isFinite(renderLength)) {
         console.error(`🎬 FATAL: Invalid renderLength: ${renderLength}, using emergency fallback`);
-        renderLength = sampleRate * 4; // 4 seconds emergency fallback
+        renderLength = sampleRate * RENDER_CONFIG.DEFAULT_PATTERN_LENGTH_BARS; // Default pattern length emergency fallback
       }
 
       const offlineContext = new OfflineAudioContext(2, renderLength, sampleRate);
@@ -85,12 +101,12 @@ export class RenderEngine {
         throw new Error('Audio engine not available');
       }
 
-      // Render each instrument's notes
+      // Render each instrument's notes (pass full patternData for instrument lookup)
       const instrumentBuffers = await this._renderInstrumentNotes(
         patternData.data,
         offlineContext,
         audioEngine,
-        { includeEffects, startTime, endTime }
+        { includeEffects, startTime, endTime, patternData }
       );
 
       // Mix all instrument buffers
@@ -101,7 +117,7 @@ export class RenderEngine {
 
       // Apply post-processing
       if (fadeOut) {
-        this._applyFadeOut(finalBuffer, 0.1); // 100ms fade out
+        this._applyFadeOut(finalBuffer, RENDER_CONFIG.DEFAULT_FADE_OUT);
       }
 
       // Render offline context
@@ -201,7 +217,8 @@ export class RenderEngine {
           notes,
           offlineContext,
           audioEngine,
-          options
+          options,
+          options.patternData // Pass patternData for instrument lookup
         );
 
         if (instrumentBuffer) {
@@ -226,7 +243,7 @@ export class RenderEngine {
   /**
    * Render single instrument's notes
    */
-  async _renderSingleInstrument(instrumentId, notes, offlineContext, audioEngine, options) {
+  async _renderSingleInstrument(instrumentId, notes, offlineContext, audioEngine, options, patternData) {
     // Get instrument from audio engine
     const instrument = audioEngine.instruments.get(instrumentId);
     if (!instrument) {
@@ -234,26 +251,119 @@ export class RenderEngine {
       return null;
     }
 
-    // Create instrument buffer for offline rendering
+    // ✅ FIX: Get full instrument params from patternData (passed from AudioExportManager)
+    const instrumentStore = patternData.instruments?.[instrumentId];
+
+    console.log(`🎬 Instrument lookup for ${instrumentId}:`, {
+      found: !!instrumentStore,
+      hasInstrumentsData: !!patternData.instruments,
+      totalInstruments: Object.keys(patternData.instruments || {}).length,
+      searchingFor: instrumentId,
+      instrumentType: instrument.type
+    });
+
+    // Create destination for this instrument
     const gainNode = offlineContext.createGain();
     gainNode.connect(offlineContext.destination);
 
-    // Schedule all notes
-    for (const note of notes) {
-      try {
-        await this._scheduleNoteForOfflineRender(
-          instrument,
-          note,
-          offlineContext,
-          gainNode,
-          options
-        );
-      } catch (error) {
-        console.warn(`🎬 Failed to schedule note:`, error);
-      }
-    }
+    // ✅ NEW APPROACH: Use AudioWorklet for synth rendering (same as realtime)
+    if (instrument.type === 'synth' && instrumentStore?.synthParams) {
+      console.log(`🎬 Using AudioWorklet processor for synth: ${instrument.name}`);
 
-    return gainNode;
+      // Load worklet module if not already loaded
+      if (!offlineContext._workletLoaded) {
+        try {
+          await offlineContext.audioWorklet.addModule('/worklets/instrument-processor.js');
+          offlineContext._workletLoaded = true;
+          console.log(`🎬 Loaded AudioWorklet processor for offline rendering`);
+        } catch (error) {
+          console.error(`🎬 Failed to load AudioWorklet:`, error);
+          // Fallback to old rendering method
+          return await this._renderSingleInstrumentLegacy(instrumentId, notes, offlineContext, audioEngine, options, patternData);
+        }
+      }
+
+      // ✅ IMPROVED: Prepare all notes upfront for processorOptions
+      const preparedNotes = notes.map(note => {
+        const noteTimeSteps = note.startTime ?? note.time ?? 0;
+        const noteTimeBeats = stepsToBeat(noteTimeSteps);
+        const rawDuration = note.length ?? note.duration ?? 1;
+        const noteDurationBeats = this._durationToBeats(rawDuration);
+        const bpm = getCurrentBPM();
+        const startTime = beatsToSeconds(noteTimeBeats, bpm);
+        const noteLength = beatsToSeconds(noteDurationBeats, bpm);
+        const velocity = note.velocity ?? 1;
+        const pitch = note.pitch ?? note.note;
+
+        return {
+          pitch,
+          velocity,
+          delay: startTime,
+          duration: noteLength,
+          noteId: `${instrumentId}_${noteTimeSteps}`
+        };
+      });
+
+      console.log(`🎬 Prepared ${preparedNotes.length} notes for ${instrument.name}`);
+
+      // Create AudioWorkletNode with synthParams AND notes
+      const workletNode = new AudioWorkletNode(offlineContext, 'instrument-processor', {
+        processorOptions: {
+          instrumentId,
+          instrumentName: instrument.name,
+          synthParams: instrumentStore.synthParams,
+          offlineNotes: preparedNotes, // ✅ Send notes at initialization
+          isOfflineRendering: true // ✅ Flag to indicate offline mode
+        }
+      });
+
+      // ✅ NEW: Apply effect chain if instrument has effects
+      let audioOutput = workletNode;
+      if (instrumentStore?.effectChain && instrumentStore.effectChain.length > 0) {
+        console.log(`🎬 Applying ${instrumentStore.effectChain.length} effects to ${instrument.name}`);
+        audioOutput = await this._applyEffectChain(instrumentStore.effectChain, workletNode, offlineContext);
+      }
+
+      audioOutput.connect(gainNode);
+
+      // ✅ CRITICAL: Keep worklet node reference so it doesn't get garbage collected
+      offlineContext._activeWorklets = offlineContext._activeWorklets || [];
+      offlineContext._activeWorklets.push(workletNode);
+
+      console.log(`🎬 Worklet processor created for ${instrument.name} with ${preparedNotes.length} pre-scheduled notes`);
+
+      return gainNode;
+
+    } else {
+      // Use legacy rendering for samples
+      // ✅ NEW: Apply effect chain for sample instruments
+      let sampleDestination = gainNode;
+      if (instrumentStore?.effectChain && instrumentStore.effectChain.length > 0) {
+        console.log(`🎬 Applying ${instrumentStore.effectChain.length} effects to sample ${instrument.name}`);
+
+        // Create intermediate node for effects
+        const effectInput = offlineContext.createGain();
+        const effectOutput = await this._applyEffectChain(instrumentStore.effectChain, effectInput, offlineContext);
+        effectOutput.connect(gainNode);
+        sampleDestination = effectInput;
+      }
+
+      for (const note of notes) {
+        try {
+          await this._scheduleNoteForOfflineRender(
+            instrument,
+            note,
+            offlineContext,
+            sampleDestination,
+            options
+          );
+        } catch (error) {
+          console.warn(`🎬 Failed to schedule note:`, error);
+        }
+      }
+
+      return gainNode;
+    }
   }
 
   /**
@@ -261,7 +371,9 @@ export class RenderEngine {
    */
   async _scheduleNoteForOfflineRender(instrument, note, offlineContext, destination, options) {
     // Support both 'time' and 'startTime', 'duration' and 'length'
-    const noteTime = note.startTime ?? note.time ?? 0;
+    // NOTE: time is in STEPS (16 steps per bar), convert to beats
+    const noteTimeSteps = note.startTime ?? note.time ?? 0;
+    const noteTimeBeats = stepsToBeat(noteTimeSteps);
 
     // Velocity is already normalized 0-1 in our system (not MIDI 0-127)
     const noteVelocity = note.velocity ?? 1;
@@ -270,11 +382,10 @@ export class RenderEngine {
     const rawDuration = note.length ?? note.duration ?? 1;
     const noteDurationBeats = this._durationToBeats(rawDuration);
 
-    // Convert beat time to seconds (assuming 140 BPM)
-    const bpm = 140; // TODO: Get from project/pattern settings
-    const secondsPerBeat = 60 / bpm;
-    const startTime = noteTime * secondsPerBeat;
-    const noteLength = noteDurationBeats * secondsPerBeat;
+    // Convert beat time to seconds using current BPM
+    const bpm = getCurrentBPM();
+    const startTime = beatsToSeconds(noteTimeBeats, bpm);
+    const noteLength = beatsToSeconds(noteDurationBeats, bpm);
 
     // Get instrument type (handle both synth and sampler)
     const instrumentType = instrument.type || (instrument.audioBuffer || instrument.buffer ? 'sample' : 'unknown');
@@ -312,13 +423,27 @@ export class RenderEngine {
    * Render synthesizer note
    */
   async _renderSynthNote(instrument, note, offlineContext, destination, startTime, duration) {
-    // Basic oscillator synthesis for offline rendering
-    const oscillator = offlineContext.createOscillator();
-    const gainNode = offlineContext.createGain();
+    // ✅ FIX: Create multiple oscillators for richer sound (like worklet processor)
+    const oscillator1 = offlineContext.createOscillator();
+    const oscillator2 = offlineContext.createOscillator(); // For mixing
+    const gainNode1 = offlineContext.createGain();
+    const gainNode2 = offlineContext.createGain();
+    const mixGain = offlineContext.createGain();
 
     // Convert pitch to MIDI number if it's a string
     let midiNote = 60; // Default to C4
     const pitchValue = note.pitch ?? note.note;
+
+    console.log(`🎬 DEBUG Synth note pitch:`, { pitchValue, noteObj: note });
+    console.log(`🎬 DEBUG Instrument params:`, {
+      name: instrument.name,
+      type: instrument.type,
+      waveform: instrument.waveform,
+      envelope: instrument.envelope,
+      filter: instrument.filter,
+      lfo: instrument.lfo,
+      allParams: instrument
+    });
 
     if (typeof pitchValue === 'string') {
       // Parse note name like 'C4', 'G#2', 'Bb3'
@@ -327,8 +452,10 @@ export class RenderEngine {
       midiNote = pitchValue;
     }
 
-    // Convert MIDI to frequency (A4 = 440 Hz = MIDI 69)
-    const frequency = 440 * Math.pow(2, (midiNote - 69) / 12);
+    // Convert MIDI to frequency using config
+    const frequency = midiToFrequency(midiNote);
+
+    console.log(`🎬 DEBUG Synth conversion:`, { pitchValue, midiNote, frequency });
 
     // Validate values before setting
     if (!isFinite(frequency) || !isFinite(startTime)) {
@@ -336,27 +463,58 @@ export class RenderEngine {
       return;
     }
 
-    oscillator.frequency.setValueAtTime(frequency, startTime);
+    // ✅ FIX: Set frequencies for both oscillators
+    oscillator1.frequency.setValueAtTime(frequency, startTime);
+    oscillator2.frequency.setValueAtTime(frequency, startTime);
 
-    // Set waveform
-    oscillator.type = instrument.waveform || 'sine';
+    // ✅ FIX: Set waveforms (mix like worklet: sawtooth 70% + sine 30%)
+    const mainWaveform = instrument.waveform || SYNTH_CONFIG.oscillator.defaultType;
+    oscillator1.type = mainWaveform;
+    oscillator2.type = 'sine'; // Always sine for warmth
 
-    // Connect audio graph
-    oscillator.connect(gainNode);
-    gainNode.connect(destination);
+    // ✅ FIX: Set mix gains (like worklet processor line 397)
+    gainNode1.gain.setValueAtTime(0.7, startTime);  // Main waveform 70%
+    gainNode2.gain.setValueAtTime(0.3, startTime);  // Sine 30%
 
-    // Apply ADSR envelope with validation
-    const envelope = instrument.envelope || { attack: 0.01, decay: 0.1, sustain: 0.7, release: 0.2 };
+    // ✅ FIX: Add filter if instrument has filter params
+    let filterNode = null;
+    if (instrument.filter && instrument.filter.frequency) {
+      filterNode = offlineContext.createBiquadFilter();
+      filterNode.type = instrument.filter.type || 'lowpass';
+      filterNode.frequency.setValueAtTime(instrument.filter.frequency, startTime);
+      filterNode.Q.setValueAtTime(instrument.filter.Q || 1, startTime);
 
-    // Normalize velocity (MIDI 0-127 → 0-1)
-    let velocity = (note.velocity ?? 100) / 127;
-    velocity = Math.max(0, Math.min(1, velocity)); // Clamp 0-1
+      console.log(`🎬 Added filter: ${filterNode.type} @ ${instrument.filter.frequency}Hz Q=${instrument.filter.Q || 1}`);
+    }
 
-    // Validate envelope values
-    const attack = Math.max(0, envelope.attack || 0.01);
-    const decay = Math.max(0, envelope.decay || 0.1);
-    const sustain = Math.max(0, Math.min(1, envelope.sustain || 0.7));
-    const release = Math.max(0, envelope.release || 0.2);
+    // ✅ FIX: Connect audio graph with mixed oscillators
+    // oscillator1 (main) -> gainNode1 -> mixGain
+    // oscillator2 (sine) -> gainNode2 -> mixGain
+    // mixGain -> filter (optional) -> destination
+    oscillator1.connect(gainNode1);
+    oscillator2.connect(gainNode2);
+    gainNode1.connect(mixGain);
+    gainNode2.connect(mixGain);
+
+    if (filterNode) {
+      mixGain.connect(filterNode);
+      filterNode.connect(destination);
+    } else {
+      mixGain.connect(destination);
+    }
+
+    // Apply ADSR envelope with config defaults
+    const envelope = instrument.envelope || {};
+
+    // Velocity is already normalized 0-1 in our system
+    let velocity = note.velocity ?? 1;
+    velocity = Math.max(0, Math.min(SYNTH_CONFIG.oscillator.maxGain, velocity));
+
+    // Validate envelope values using config
+    const attack = Math.max(SYNTH_CONFIG.envelope.attack.min, envelope.attack || SYNTH_CONFIG.envelope.attack.default);
+    const decay = Math.max(SYNTH_CONFIG.envelope.decay.min, envelope.decay || SYNTH_CONFIG.envelope.decay.default);
+    const sustain = Math.max(SYNTH_CONFIG.envelope.sustain.min, Math.min(SYNTH_CONFIG.envelope.sustain.max, envelope.sustain ?? SYNTH_CONFIG.envelope.sustain.default));
+    const release = Math.max(SYNTH_CONFIG.envelope.release.min, envelope.release || SYNTH_CONFIG.envelope.release.default);
 
     // Validate duration
     const safeDuration = Math.max(0.01, duration || 0.1);
@@ -372,24 +530,32 @@ export class RenderEngine {
       return;
     }
 
+    // ✅ FIX: Apply envelope to mixGain (not individual gains)
+    // Multiply by 0.3 for voice level (like worklet processor line 406)
+    const voiceLevel = 0.3;
+
     // Attack
-    gainNode.gain.setValueAtTime(0, startTime);
-    gainNode.gain.linearRampToValueAtTime(velocity, attackTime);
+    mixGain.gain.setValueAtTime(0, startTime);
+    mixGain.gain.linearRampToValueAtTime(velocity * voiceLevel, attackTime);
 
     // Decay
-    gainNode.gain.linearRampToValueAtTime(velocity * sustain, decayTime);
+    mixGain.gain.linearRampToValueAtTime(velocity * sustain * voiceLevel, decayTime);
 
     // Sustain (hold level)
     if (sustainEndTime > decayTime) {
-      gainNode.gain.setValueAtTime(velocity * sustain, sustainEndTime);
+      mixGain.gain.setValueAtTime(velocity * sustain * voiceLevel, sustainEndTime);
     }
 
     // Release
-    gainNode.gain.linearRampToValueAtTime(0, endTime);
+    mixGain.gain.linearRampToValueAtTime(0, endTime);
 
-    // Schedule oscillator
-    oscillator.start(startTime);
-    oscillator.stop(endTime);
+    // ✅ FIX: Schedule both oscillators
+    oscillator1.start(startTime);
+    oscillator1.stop(endTime);
+    oscillator2.start(startTime);
+    oscillator2.stop(endTime);
+
+    console.log(`🎬 Synth scheduled: ${instrument.name || 'Synth'} freq=${frequency.toFixed(1)}Hz time=${startTime.toFixed(3)}s dur=${safeDuration.toFixed(3)}s vel=${velocity.toFixed(2)}`);
   }
 
   // =================== MIXING & POST-PROCESSING ===================
@@ -425,20 +591,8 @@ export class RenderEngine {
    * Calculate pattern length in samples
    */
   _calculatePatternLength(patternData) {
-    // Use pattern settings length if available (in beats)
-    const patternLengthBeats = patternData?.settings?.length;
-
-    if (patternLengthBeats && patternLengthBeats > 0) {
-      const bpm = 140; // TODO: Get from project settings
-      const secondsPerBeat = 60 / bpm;
-      const totalSeconds = patternLengthBeats * secondsPerBeat;
-      const lengthInSamples = Math.ceil(totalSeconds * this.sampleRate);
-      console.log(`🎬 Using pattern settings length: ${patternLengthBeats} beats = ${totalSeconds}s = ${lengthInSamples} samples`);
-      return Math.max(lengthInSamples, 1);
-    }
-
-    // Fallback: calculate from notes
-    let maxTime = 0;
+    // Calculate from notes (ALWAYS - ignore pattern.settings.length as it's unreliable)
+    let maxTimeBeats = 0;
     const patternDataObj = patternData?.data || {};
 
     for (const [instrumentId, notes] of Object.entries(patternDataObj)) {
@@ -446,28 +600,28 @@ export class RenderEngine {
 
       for (const note of notes) {
         // Support both 'time' and 'startTime' for backwards compatibility
-        const noteStartTime = note.startTime ?? note.time ?? 0;
-        const noteDuration = note.length ?? note.duration ?? 1;
-        const noteEndTime = noteStartTime + noteDuration;
-        maxTime = Math.max(maxTime, noteEndTime);
+        // NOTE: time is in STEPS, convert to beats using config
+        const noteStartTimeSteps = note.startTime ?? note.time ?? 0;
+        const noteStartTimeBeats = stepsToBeat(noteStartTimeSteps);
+        const rawDuration = note.length ?? note.duration ?? 1;
+        const noteDuration = this._durationToBeats(rawDuration);
+        const noteEndTimeBeats = noteStartTimeBeats + noteDuration;
+        maxTimeBeats = Math.max(maxTimeBeats, noteEndTimeBeats);
       }
     }
 
-    // Convert steps to samples (add some padding)
-    const bpm = 140;
-    const stepsPerBeat = 16;
-    const secondsPerBeat = 60 / bpm;
-    const secondsPerStep = secondsPerBeat / stepsPerBeat;
+    // Add padding and round to nearest bar using config
+    const totalBeats = Math.ceil((maxTimeBeats + RENDER_CONFIG.PATTERN_LENGTH_PADDING) / BEATS_PER_BAR) * BEATS_PER_BAR;
 
-    // If no notes found, use minimum pattern length (1 bar = 16 steps)
-    const minPatternSteps = 16;
-    const paddingSteps = 4;
-    const totalSteps = Math.max(maxTime + paddingSteps, minPatternSteps);
+    // If no notes, use default from config
+    const finalBeats = Math.max(totalBeats, RENDER_CONFIG.DEFAULT_PATTERN_LENGTH_BARS * BEATS_PER_BAR);
 
-    const totalSeconds = totalSteps * secondsPerStep;
+    // Convert beats to samples using current BPM
+    const bpm = getCurrentBPM();
+    const totalSeconds = beatsToSeconds(finalBeats, bpm);
     const lengthInSamples = Math.ceil(totalSeconds * this.sampleRate);
 
-    console.log(`🎬 Calculated from notes: ${totalSteps} steps = ${totalSeconds}s = ${lengthInSamples} samples`);
+    console.log(`🎬 Calculated from notes: ${finalBeats} beats (${finalBeats / BEATS_PER_BAR} bars) @ ${bpm} BPM = ${totalSeconds.toFixed(2)}s = ${lengthInSamples} samples`);
 
     return Math.max(lengthInSamples, 1);
   }
@@ -572,6 +726,46 @@ export class RenderEngine {
       includeEffects: true,
       fadeOut: false // No fade for mastering
     });
+  }
+
+  /**
+   * ✅ NEW: Apply effect chain to audio node
+   * Creates effect instances and connects them in series
+   * @param {Array} effectChainData - Serialized effect chain from instrument store
+   * @param {AudioNode} inputNode - Source audio node
+   * @param {AudioContext} context - Audio context (offline or realtime)
+   * @returns {AudioNode} Final output node of effect chain
+   */
+  async _applyEffectChain(effectChainData, inputNode, context) {
+    if (!effectChainData || effectChainData.length === 0) {
+      return inputNode;
+    }
+
+    let currentNode = inputNode;
+
+    for (const effectData of effectChainData) {
+      try {
+        // Create effect instance from serialized data
+        const effect = EffectFactory.deserialize(effectData, context);
+
+        if (!effect) {
+          console.warn(`🎬 Failed to create effect: ${effectData.type}`);
+          continue;
+        }
+
+        // Connect current node to effect input
+        currentNode.connect(effect.inputNode);
+
+        // Effect output becomes the new current node
+        currentNode = effect.outputNode;
+
+        console.log(`🎬 Applied effect: ${effect.name} (${effect.type})`);
+      } catch (error) {
+        console.error(`🎬 Error applying effect ${effectData.type}:`, error);
+      }
+    }
+
+    return currentNode;
   }
 }
 

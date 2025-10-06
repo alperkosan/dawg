@@ -10,30 +10,18 @@ import { AudioProcessor } from './AudioProcessor';
 import { FileManager } from './FileManager';
 import { RenderEngine } from './RenderEngine';
 import { audioAssetManager } from './AudioAssetManager';
+import {
+  EXPORT_FORMATS,
+  EXPORT_TYPES,
+  QUALITY_PRESETS,
+  getCurrentBPM,
+  secondsToBeats,
+  calculateCpuSavings,
+  CPU_CONFIG
+} from './audioRenderConfig';
 
-// Export formats and quality presets
-export const EXPORT_FORMATS = {
-  WAV: 'audio/wav',
-  MP3: 'audio/mpeg',
-  OGG: 'audio/ogg',
-  FLAC: 'audio/flac'
-};
-
-export const QUALITY_PRESETS = {
-  DEMO: { sampleRate: 22050, bitDepth: 16, quality: 0.7 },
-  STANDARD: { sampleRate: 44100, bitDepth: 16, quality: 0.8 },
-  HIGH: { sampleRate: 48000, bitDepth: 24, quality: 0.9 },
-  STUDIO: { sampleRate: 96000, bitDepth: 32, quality: 1.0 }
-};
-
-export const EXPORT_TYPES = {
-  PATTERN: 'pattern',           // Single pattern export
-  CHANNELS: 'channels',         // Split by channels/instruments
-  STEMS: 'stems',              // Grouped stems (drums, bass, etc.)
-  ARRANGEMENT: 'arrangement',   // Full arrangement
-  SELECTION: 'selection',       // Selected time range
-  FREEZE: 'freeze'             // FL Studio-style freeze (replace pattern with audio)
-};
+// Re-export for external use
+export { EXPORT_FORMATS, EXPORT_TYPES, QUALITY_PRESETS };
 
 // FL Studio-style quick export presets
 export const FL_PRESETS = {
@@ -109,6 +97,23 @@ export class AudioExportManager {
       if (!patternData) {
         throw new Error(`Pattern ${patternId} not found`);
       }
+
+      // ✅ FIX: Collect all instrument data upfront to avoid store access during render
+      const { useInstrumentsStore } = await import('../../store/useInstrumentsStore');
+      const { instruments } = useInstrumentsStore.getState();
+
+      const relevantInstruments = {};
+      Object.keys(patternData.data || {}).forEach(instrumentId => {
+        const inst = instruments.find(i => i.id === instrumentId);
+        if (inst) {
+          relevantInstruments[instrumentId] = inst;
+        }
+      });
+
+      console.log(`🎵 Collected ${Object.keys(relevantInstruments).length} instrument definitions for rendering`);
+
+      // Attach instruments to patternData for rendering
+      patternData.instruments = relevantInstruments;
 
       // Choose export strategy based on type
       switch (settings.type) {
@@ -416,7 +421,7 @@ export class AudioExportManager {
         results.push({ patternId, success: true, result });
 
         // Add small delay to prevent overwhelming system
-        await new Promise(resolve => setTimeout(resolve, 100));
+        await new Promise(resolve => setTimeout(resolve, CPU_CONFIG.batchProcessingDelay));
       } catch (error) {
         results.push({ patternId, success: false, error: error.message });
       }
@@ -483,35 +488,69 @@ export class AudioExportManager {
    */
   async _replacePatternWithAudio(patternId, assetId, exportResult) {
     console.log(`🔄 Replacing pattern ${patternId} with audio asset ${assetId}`);
+    console.log('🔄 exportResult:', exportResult);
 
     try {
-      // Import arrangement store dynamically to avoid circular imports
-      const { useArrangementStore } = await import('../../store/useArrangementStore');
+      // Import arrangement workspace store (used by playback)
+      const { useArrangementWorkspaceStore } = await import('../../store/useArrangementWorkspaceStore');
+      const workspaceStore = useArrangementWorkspaceStore.getState();
+      const arrangement = workspaceStore.getActiveArrangement();
 
-      if (exportResult && exportResult.buffer) {
-        // Get BPM to calculate duration in beats
-        const BPM = 140; // TODO: Get from transport
-        const beatsPerSecond = BPM / 60;
-        const durationBeats = exportResult.buffer.duration * beatsPerSecond;
-
-        // Create audio clip data with assetId
-        const audioClipData = {
-          type: 'audio',
-          assetId: assetId,
-          name: `Frozen ${patternId}`,
-          duration: durationBeats,
-          cpuSavings: { estimatedSavings: '60-80%' },
-          startTime: 0,
-          trackId: `track-${patternId}`,
-          color: '#4a90e2'
-        };
-
-        // Use arrangement store to replace pattern with audio clip
-        useArrangementStore.getState().replacePatternWithAudio(patternId, audioClipData);
-
-        console.log(`🧊 Successfully replaced pattern ${patternId} with frozen audio clip`);
-        return true;
+      if (!arrangement) {
+        console.error('🔄 No active arrangement');
+        return false;
       }
+
+      if (!exportResult || !exportResult.buffer) {
+        console.error('🔄 No buffer in exportResult:', exportResult);
+        return false;
+      }
+
+      // Get BPM to calculate duration in beats
+      const BPM = getCurrentBPM();
+      const durationBeats = secondsToBeats(exportResult.buffer.duration, BPM);
+
+      console.log(`🔄 Duration calculation: ${exportResult.buffer.duration}s @ ${BPM} BPM = ${durationBeats} beats`);
+
+      // Find track ID and startTime from existing pattern clips
+      const existingPatternClip = arrangement.clips.find(c => c.patternId === patternId);
+      const trackId = existingPatternClip?.trackId || (arrangement.tracks[0]?.id || 'track-1');
+      const originalStartTime = existingPatternClip?.startTime || 0;
+
+      console.log(`🔄 Original pattern clip startTime: ${originalStartTime} beats`);
+
+      // Remove all pattern-based clips for this pattern
+      const patternClipsToDelete = arrangement.clips.filter(clip =>
+        clip.type === 'pattern' && clip.patternId === patternId
+      );
+
+      patternClipsToDelete.forEach(clip => {
+        workspaceStore.deleteClip(clip.id);
+      });
+
+      // Create and add new frozen audio clip (preserve original startTime!)
+      const audioClipData = {
+        type: 'audio',
+        patternId,
+        assetId: assetId,
+        trackId: trackId,
+        startTime: originalStartTime,
+        duration: durationBeats,
+        originalPattern: patternId,
+        isFromExport: true,
+        isFrozen: true,
+        color: '#4a90e2',
+        name: `Frozen ${patternId}`,
+        metadata: {
+          frozenAt: Date.now(),
+          cpuSavings: { estimatedSavings: '60-80%' }
+        }
+      };
+
+      workspaceStore.addClip(audioClipData);
+
+      console.log(`🧊 Successfully replaced pattern ${patternId} with frozen audio clip in arrangement`);
+      return true;
     } catch (error) {
       console.error('🔄 Failed to replace pattern with audio:', error);
       return false;
@@ -530,9 +569,8 @@ export class AudioExportManager {
 
       if (exportResult && exportResult.buffer) {
         // Get BPM to calculate duration in beats
-        const BPM = 140; // TODO: Get from transport
-        const beatsPerSecond = BPM / 60;
-        const durationBeats = exportResult.buffer.duration * beatsPerSecond;
+        const BPM = getCurrentBPM();
+        const durationBeats = secondsToBeats(exportResult.buffer.duration, BPM);
 
         // Create audio clip data with assetId
         const audioClipData = {
@@ -577,16 +615,16 @@ export class AudioExportManager {
    * Calculate CPU savings from freezing pattern
    */
   async _calculateCpuSavings(patternId) {
-    // Estimate CPU savings based on:
-    // - Number of instruments in pattern
-    // - Number of effects
-    // - Complexity of synthesis
-
-    // Simplified calculation for now
-    return {
-      estimatedSavings: '60-80%',
-      reason: 'Converted MIDI + effects to single audio sample'
-    };
+    try {
+      const patternData = await this._getPatternData(patternId);
+      return calculateCpuSavings(patternData);
+    } catch (error) {
+      console.warn('🎵 Could not calculate CPU savings:', error);
+      return {
+        estimatedSavings: `${CPU_CONFIG.freezeSavingsPercent.min}-${CPU_CONFIG.freezeSavingsPercent.max}%`,
+        reason: 'Converted MIDI + synthesis to single audio sample'
+      };
+    }
   }
 
   // =================== UTILITY METHODS ===================

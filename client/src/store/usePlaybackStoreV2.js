@@ -16,7 +16,7 @@ export const usePlaybackStore = create((set, get) => ({
   isPlaying: false,
   playbackState: PLAYBACK_STATES.STOPPED,
   playbackMode: PLAYBACK_MODES.PATTERN,
-  bpm: 140,
+  bpm: 90,
   masterVolume: 0.8,
   transportPosition: '1:1:00',
   transportStep: 0,

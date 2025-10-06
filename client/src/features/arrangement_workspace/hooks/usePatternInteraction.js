@@ -439,11 +439,25 @@ export function usePatternInteraction(engine, clips, tracks, gridSize, snapMode,
     return 'default';
   }, [editMode, findClipAtPosition, detectInteractionType]);
 
+  // ✅ Double-click handler - open audio clips in sample editor
+  const handleDoubleClick = useCallback((e, canvasRect) => {
+    const mouseX = e.clientX - canvasRect.left + engine.viewport.scrollX;
+    const mouseY = e.clientY - canvasRect.top + engine.viewport.scrollY;
+
+    const clickedClip = findClipAtPosition(mouseX, mouseY);
+
+    if (!clickedClip) return null;
+
+    console.log('🎵 Double-clicked clip:', clickedClip);
+    return clickedClip;
+  }, [engine.viewport, findClipAtPosition]);
+
   return {
     interactionState,
     handleMouseDown,
     handleMouseMove,
     handleMouseUp,
+    handleDoubleClick,
     getCursorStyle,
     snapToGrid,
     beatToPixel,

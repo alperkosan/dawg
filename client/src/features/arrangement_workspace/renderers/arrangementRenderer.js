@@ -505,10 +505,10 @@ function drawClips(ctx, engine) {
         // Calculate offset in pixels (empty space at the beginning)
         const offsetWidthPixels = sampleOffsetBeats * PIXELS_PER_BEAT * viewport.zoomX;
 
-        // Calculate actual audio width in pixels (remaining space after offset)
-        const availableWidth = Math.max(0, clipWidth - offsetWidthPixels);
+        // Calculate actual audio width in pixels based on audio buffer duration (not clip duration!)
+        // This ensures waveform doesn't stretch when clip is resized
         const audioLengthBeats = (audioDurationSeconds * 140) / 60; // Convert audio duration to beats
-        const audioWidthPixels = Math.min(availableWidth, audioLengthBeats * PIXELS_PER_BEAT * viewport.zoomX);
+        const audioWidthPixels = audioLengthBeats * PIXELS_PER_BEAT * viewport.zoomX;
 
         // Total samples to display (always from start of audio buffer, no offset applied to sample reading)
         const totalSamplesToDisplay = Math.floor((audioDurationSeconds * sampleRate) / playbackRate);

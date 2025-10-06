@@ -14,6 +14,7 @@ import { useArrangementWorkspaceStore } from '@/store/useArrangementWorkspaceSto
 import { useArrangementStore } from '@/store/useArrangementStore';
 import { useInstrumentsStore } from '@/store/useInstrumentsStore';
 import { usePlaybackStore } from '@/store/usePlaybackStoreV2';
+import { usePanelsStore } from '@/store/usePanelsStore';
 import { useArrangementEngine } from './hooks/useArrangementEngine';
 import { usePatternInteraction } from './hooks/usePatternInteraction';
 import { drawArrangement } from './renderers/arrangementRenderer';
@@ -48,6 +49,7 @@ const ArrangementCanvas = ({ arrangement }) => {
 
   const { patterns } = useArrangementStore();
   const { instruments, handleAddNewInstrument } = useInstrumentsStore();
+  const { togglePanel, setEditorBuffer, setEditorClipData } = usePanelsStore();
 
   // ✅ PERFORMANCE: Only subscribe to position updates in song mode
   const playbackMode = usePlaybackStore(state => state.playbackMode);
@@ -666,6 +668,60 @@ const ArrangementCanvas = ({ arrangement }) => {
     e.dataTransfer.dropEffect = 'copy';
   }, []);
 
+  // ✅ Double-click handler - open audio clips in sample editor
+  const handleCanvasDoubleClick = useCallback(async (e) => {
+    const rect = canvasRef.current.getBoundingClientRect();
+    const clickedClip = patternInteraction.handleDoubleClick(e, rect);
+
+    if (!clickedClip) return;
+
+    // Only handle audio clips (frozen patterns or audio samples)
+    if (clickedClip.type !== 'audio') {
+      console.log('🎵 Double-clicked non-audio clip, ignoring');
+      return;
+    }
+
+    console.log('🎵 Opening audio clip in Sample Editor:', clickedClip);
+
+    // Get audio buffer from asset manager
+    let audioBuffer = null;
+
+    if (clickedClip.assetId) {
+      const asset = audioAssetManager.getAsset(clickedClip.assetId);
+      audioBuffer = asset?.buffer;
+    } else if (clickedClip.sampleId) {
+      // Legacy: Find instrument with this sample
+      const instrument = instruments.find(inst => inst.id === clickedClip.sampleId);
+      if (instrument?.buffer) {
+        audioBuffer = instrument.buffer;
+      }
+    }
+
+    if (!audioBuffer) {
+      console.warn('🎵 No audio buffer found for clip:', clickedClip);
+      return;
+    }
+
+    // Set buffer and clip metadata for sample editor
+    setEditorBuffer(audioBuffer);
+    setEditorClipData({
+      id: clickedClip.id,
+      name: clickedClip.name || 'Audio Clip',
+      color: clickedClip.color || '#f59e0b',
+      duration: clickedClip.duration,
+      startTime: clickedClip.startTime,
+      type: 'audio-clip' // Flag to indicate this is from arrangement, not an instrument
+    });
+
+    // Open sample editor panel
+    const { panels } = usePanelsStore.getState();
+    if (!panels['sample-editor']?.isOpen) {
+      togglePanel('sample-editor');
+    }
+
+    console.log('🎵 Sample editor opened with audio clip:', clickedClip.name, audioBuffer.duration.toFixed(2), 's');
+  }, [patternInteraction, instruments, setEditorBuffer, setEditorClipData, togglePanel]);
+
   // Zoom controls - viewport merkezini koruyarak zoom yap
   const handleZoomIn = useCallback(() => {
     if (!engine.viewportRef?.current) return;
@@ -747,6 +803,7 @@ const ArrangementCanvas = ({ arrangement }) => {
           onMouseDown={handleCanvasMouseDown}
           onMouseMove={handleCanvasMouseMove}
           onMouseUp={handleCanvasMouseUp}
+          onDoubleClick={handleCanvasDoubleClick}
           onContextMenu={(e) => {
             e.preventDefault();
             const rect = canvasRef.current.getBoundingClientRect();

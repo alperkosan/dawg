@@ -218,6 +218,8 @@ export const useArrangementStore = create(arrangementStoreOrchestrator((set, get
    * Replace pattern clips with audio clip (FL Studio freeze workflow)
    */
   replacePatternWithAudio: (patternId, audioClipData) => {
+    console.log(`🧊 replacePatternWithAudio called with:`, { patternId, audioClipData });
+
     set(state => {
       // Remove all pattern-based clips for this pattern
       const filteredClips = state.clips.filter(clip =>
@@ -243,6 +245,8 @@ export const useArrangementStore = create(arrangementStoreOrchestrator((set, get
           cpuSavings: audioClipData.cpuSavings
         }
       };
+
+      console.log(`🧊 Created audioClip:`, audioClip);
 
       return { clips: [...filteredClips, audioClip] };
     });

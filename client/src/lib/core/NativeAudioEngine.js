@@ -7,6 +7,8 @@ import { setGlobalAudioContext } from '../utils/audioUtils.js';
 import { NativeSamplerNode } from './nodes/NativeSamplerNode.js';
 // NEW: Modular effect registry
 import { effectRegistry } from '../audio/EffectRegistry.js';
+// ✅ NEW: Effect chain support
+import { EffectFactory } from '../audio/effects/index.js';
 
 export class NativeAudioEngine {
     constructor(callbacks = {}) {
@@ -819,9 +821,15 @@ class NativeSynthInstrument {
         this.audioContext = audioContext;
 
         this.workletNode = null;
-        this.output = null;
+        this.internalOutput = null; // ✅ NEW: Direct worklet output
+        this.output = null; // ✅ Public output (may be last effect or internalOutput)
         this.parameters = new Map();
         this.activeNotes = new Set();
+
+        // ✅ NEW: Effect chain support
+        this.effectChain = [];
+        this.effectChainActive = false;
+        this.effectChainData = instrumentData.effectChain || [];
     }
 
     async initialize() {
@@ -837,10 +845,16 @@ class NativeSynthInstrument {
         );
 
         this.workletNode = node;
-        this.output = this.audioContext.createGain();
-        this.output.gain.value = 0.8;
+        this.internalOutput = this.audioContext.createGain();
+        this.internalOutput.gain.value = 0.8;
+        this.output = this.internalOutput; // Default: direct connection
 
-        this.workletNode.connect(this.output);
+        this.workletNode.connect(this.internalOutput);
+
+        // ✅ NEW: Initialize effect chain if provided
+        if (this.effectChainData && this.effectChainData.length > 0) {
+            this.setEffectChain(this.effectChainData);
+        }
 
         // Setup parameters
         ['pitch', 'gate', 'velocity', 'detune', 'filterFreq', 'filterQ',
@@ -858,6 +872,15 @@ class NativeSynthInstrument {
 
         const frequency = this._pitchToFrequency(pitch);
         const noteId = `${pitch}_${time}`;
+
+        console.log(`🎹 [REALTIME] Synth triggerNote:`, {
+            instrument: this.name || this.id,
+            pitch,
+            frequency: frequency.toFixed(2) + 'Hz',
+            velocity: velocity.toFixed(3),
+            duration: duration ? duration.toFixed(3) + 's' : 'infinite',
+            time: time.toFixed(3) + 's'
+        });
 
         this.workletNode.port.postMessage({
             type: 'noteOn',
@@ -926,9 +949,75 @@ class NativeSynthInstrument {
         if (this.workletNode) {
             this.workletNode.disconnect();
         }
+        // ✅ NEW: Dispose effect chain
+        if (this.effectChain.length > 0) {
+            this.effectChain.forEach(effect => {
+                try {
+                    effect.disconnect();
+                } catch (e) {
+                    console.warn('Error disconnecting effect:', e);
+                }
+            });
+        }
         if (this.output) {
             this.output.disconnect();
         }
+    }
+
+    // ✅ NEW: Set or update effect chain
+    setEffectChain(effectChainData) {
+        console.log(`🎛️ NativeSynthInstrument.setEffectChain:`, this.name, effectChainData);
+
+        // Disconnect old effect chain
+        if (this.effectChain.length > 0) {
+            this.effectChain.forEach(effect => {
+                try {
+                    effect.disconnect();
+                } catch (e) {
+                    console.warn('Error disconnecting effect:', e);
+                }
+            });
+            this.effectChain = [];
+        }
+
+        // Reset to direct connection
+        if (this.internalOutput) {
+            this.internalOutput.disconnect();
+        }
+
+        if (!effectChainData || effectChainData.length === 0) {
+            // No effects, connect directly to output
+            this.output = this.internalOutput;
+            this.effectChainActive = false;
+            return;
+        }
+
+        // Build effect chain
+        let currentNode = this.internalOutput;
+
+        for (const effectData of effectChainData) {
+            try {
+                const effect = EffectFactory.deserialize(effectData, this.audioContext);
+                if (!effect) {
+                    console.warn(`Failed to create effect: ${effectData.type}`);
+                    continue;
+                }
+
+                // Connect current node to effect input
+                currentNode.connect(effect.inputNode);
+                currentNode = effect.outputNode;
+
+                this.effectChain.push(effect);
+                console.log(`🎛️ Added effect: ${effect.name} (${effect.type})`);
+            } catch (error) {
+                console.error(`Error creating effect ${effectData.type}:`, error);
+            }
+        }
+
+        // Final output is the last effect's output
+        this.output = currentNode;
+        this.effectChainActive = true;
+        console.log(`✅ Effect chain set for ${this.name}: ${this.effectChain.length} effects`);
     }
 }
 
