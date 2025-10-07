@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, Suspense, useCallback, useMemo } fr
 import { NativeAudioEngine } from './lib/core/NativeAudioEngine';
 import { AudioContextService } from './lib/services/AudioContextService';
 import { visualizationEngine } from './lib/visualization/VisualizationEngine';
+import { initializeTimelineController } from './lib/core/TimelineControllerSingleton';
 
 // Stores
 import { usePlaybackStore } from './store/usePlaybackStore';
@@ -79,12 +80,48 @@ function App() {
       await engine.initialize();
       audioEngineRef.current = engine;
 
+      // Load AudioWorklet processors for effects
+      console.log('🎛️ Loading AudioWorklet processors...');
+      const workletProcessors = [
+        'compressor-processor',
+        'saturator-processor',
+        'multiband-eq-processor',
+        'bass-enhancer-808-processor',
+        'delay-processor',
+        'feedback-delay-processor',
+        'reverb-processor',
+        'atmos-machine-processor',
+        'stardust-chorus-processor',
+        'vortex-phaser-processor',
+        'tidal-filter-processor',
+        'ghost-lfo-processor',
+        'orbit-panner-processor',
+        'arcade-crusher-processor',
+        'pitch-shifter-processor',
+        'sample-morph-processor',
+        'sidechain-compressor-processor'
+      ];
+
+      for (const processor of workletProcessors) {
+        try {
+          await engine.audioContext.audioWorklet.addModule(`/worklets/effects/${processor}.js`);
+          console.log(`✅ Loaded: ${processor}`);
+        } catch (error) {
+          console.warn(`⚠️ Failed to load ${processor}:`, error.message);
+        }
+      }
+
       // Motoru, uygulama genelinde erişilebilir olan servisimize kaydediyoruz.
       await AudioContextService.setAudioEngine(engine);
 
       // ✅ Initialize VisualizationEngine
       visualizationEngine.init(engine.audioContext);
       console.log('✅ VisualizationEngine initialized');
+
+      // ✅ Initialize TimelineController with current BPM from store
+      const currentBPM = storeGetters.getBPM();
+      initializeTimelineController(engine, currentBPM);
+      console.log('🎯 TimelineController initialized with BPM:', currentBPM);
 
       // ✅ PERFORMANCE: Use fresh store data with memoized getters
       console.log('📥 Başlangıç verileri yükleniyor...');
@@ -154,6 +191,13 @@ function App() {
         TransportManagerSingleton.cleanup();
       }).catch(error => {
         console.warn('Transport cleanup failed:', error);
+      });
+
+      // ✅ Cleanup TimelineController singleton
+      import('./lib/core/TimelineControllerSingleton.js').then(({ destroyTimelineController }) => {
+        destroyTimelineController();
+      }).catch(error => {
+        console.warn('Timeline controller cleanup failed:', error);
       });
 
       if (audioEngineRef.current) {

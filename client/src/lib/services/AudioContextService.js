@@ -59,6 +59,10 @@ export class AudioContextService {
     return this.audioEngine;
   };
 
+  static getAudioContext() {
+    return this.audioEngine?.audioContext || null;
+  };
+
   // =================== INTERFACE LAYER INITIALIZATION ===================
 
   static async initializeInterfaceLayer() {

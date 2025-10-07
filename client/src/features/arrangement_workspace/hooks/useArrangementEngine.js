@@ -163,27 +163,31 @@ export function useArrangementEngine(containerRef, arrangement) {
 
   // Mouse wheel handler
   const handleWheel = useCallback((e) => {
+    // ✅ CRITICAL: Prevent browser back/forward navigation on horizontal scroll
+    e.preventDefault();
+
     const { deltaX, deltaY, ctrlKey, offsetX, offsetY } = e;
     const vp = viewportRef.current;
 
     if (ctrlKey) {
-      e.preventDefault();
-
       // Zoom factor
       const zoomFactor = 1 - deltaY * 0.005;
       const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, vp.zoomX * zoomFactor));
 
-      // Mouse position in canvas space
-      const mouseX = offsetX - TRACK_HEADER_WIDTH;
-      const mouseY = offsetY - TIMELINE_HEIGHT;
+      // Mouse position in canvas space (screen pixels)
+      const mouseScreenX = offsetX - TRACK_HEADER_WIDTH;
+      const mouseScreenY = offsetY - TIMELINE_HEIGHT;
 
-      // Calculate world coordinate under mouse (using CURRENT values)
-      const worldX = (vp.scrollX + mouseX) / vp.zoomX;
-      const worldY = (vp.scrollY + mouseY) / vp.zoomX; // Y zoom aynı X ile
+      // Calculate world coordinate under mouse (beats cinsinden, zoom'dan bağımsız)
+      // scrollX + mouseScreenX = zoomed pixel position
+      // Divide by (PIXELS_PER_BEAT * zoom) to get beats
+      const PIXELS_PER_BEAT = 32;
+      const worldBeatsX = (vp.scrollX + mouseScreenX) / (PIXELS_PER_BEAT * vp.zoomX);
+      const worldBeatsY = (vp.scrollY + mouseScreenY) / (PIXELS_PER_BEAT * vp.zoomX);
 
-      // Calculate new scroll position
-      let newScrollX = (worldX * newZoom) - mouseX;
-      let newScrollY = (worldY * newZoom) - mouseY;
+      // Calculate new scroll position to keep same world coordinate under mouse
+      let newScrollX = (worldBeatsX * PIXELS_PER_BEAT * newZoom) - mouseScreenX;
+      let newScrollY = (worldBeatsY * PIXELS_PER_BEAT * newZoom) - mouseScreenY;
 
       // Calculate max scroll bounds
       const totalWidth = dimensions.totalWidth * newZoom;

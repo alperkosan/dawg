@@ -282,7 +282,6 @@ export class PlaybackManager {
             this.transport.setPosition(0);
         }
 
-
         // Mevcut scheduled events'leri temizle
         this._clearScheduledEvents();
 
@@ -762,13 +761,16 @@ export class PlaybackManager {
     }
 
     _scheduleSongContent(baseTime) {
+        console.log('🎵 _scheduleSongContent called, baseTime:', baseTime);
+
         // ✅ NEW: Use arrangement workspace store for song mode
         const workspaceStore = useArrangementWorkspaceStore.getState();
         const arrangement = workspaceStore.getActiveArrangement();
 
+        console.log('🎵 Arrangement:', arrangement ? 'found' : 'NOT FOUND');
 
         if (!arrangement) {
-            console.warn('🎵 No active arrangement for song mode');
+            console.warn('🎵 ❌ No active arrangement for song mode');
             return;
         }
 
@@ -776,6 +778,12 @@ export class PlaybackManager {
         const tracks = arrangement.tracks || [];
         const arrangementStore = useArrangementStore.getState();
         const patterns = arrangementStore.patterns || {};
+
+        console.log('🎵 Song mode scheduling:', {
+            clipsCount: clips.length,
+            tracksCount: tracks.length,
+            patternsCount: Object.keys(patterns).length
+        });
 
         // ✅ Check for solo tracks
         const soloTracks = tracks.filter(t => t.solo);
@@ -787,34 +795,53 @@ export class PlaybackManager {
             // Don't return - allow playback to continue silently so playhead still moves
         }
 
-        clips.forEach(clip => {
+        clips.forEach((clip, index) => {
+            console.log(`🎵 Processing clip ${index}:`, {
+                id: clip.id,
+                type: clip.type,
+                patternId: clip.patternId,
+                startTime: clip.startTime,
+                duration: clip.duration,
+                trackId: clip.trackId
+            });
+
             // ✅ Check track mute/solo state
             const track = tracks.find(t => t.id === clip.trackId);
             if (!track) {
-                console.warn(`🎵 Track not found for clip ${clip.id}`);
+                console.warn(`🎵 ❌ Track not found for clip ${clip.id}`);
                 return;
             }
 
             // Skip if track is muted
             if (track.muted) {
+                console.log(`🎵 ⏭️ Skipping clip ${clip.id} - track muted`);
                 return;
             }
 
             // If any track is solo, only play clips on solo tracks
             if (hasSolo && !track.solo) {
+                console.log(`🎵 ⏭️ Skipping clip ${clip.id} - not on solo track`);
                 return;
             }
+
             // ✅ Handle different clip types: 'pattern' or 'audio'
             if (clip.type === 'audio') {
+                console.log(`🎵 📢 Scheduling AUDIO clip ${clip.id}`);
                 // Schedule audio sample clip
                 this._scheduleAudioClip(clip, baseTime);
             } else {
+                console.log(`🎵 🎹 Scheduling PATTERN clip ${clip.id}, patternId: ${clip.patternId}`);
                 // Schedule pattern clip (default)
                 const pattern = patterns[clip.patternId];
                 if (!pattern) {
-                    console.warn(`🎵 Pattern ${clip.patternId} not found for clip ${clip.id}`);
+                    console.warn(`🎵 ❌ Pattern ${clip.patternId} not found for clip ${clip.id}`);
                     return;
                 }
+
+                console.log(`🎵 Pattern found:`, {
+                    patternId: clip.patternId,
+                    instrumentCount: Object.keys(pattern.data || {}).length
+                });
 
                 // Convert clip startTime and duration to steps (16th notes)
                 // 1 beat = 4 sixteenth notes
@@ -822,16 +849,27 @@ export class PlaybackManager {
                 const clipDurationBeats = clip.duration || pattern.length || 4; // Use pattern length if available
                 const clipDurationSteps = clipDurationBeats * 4;
 
+                console.log(`🎵 Clip timing:`, {
+                    clipStartStep,
+                    clipDurationBeats,
+                    clipDurationSteps
+                });
+
 
                 // Schedule pattern notes with clip timing offset
                 Object.entries(pattern.data).forEach(([instrumentId, notes]) => {
-                    if (!Array.isArray(notes) || notes.length === 0) return;
+                    if (!Array.isArray(notes) || notes.length === 0) {
+                        console.log(`🎵 ⏭️ No notes for instrument ${instrumentId}`);
+                        return;
+                    }
 
                     const instrument = this.audioEngine.instruments.get(instrumentId);
                     if (!instrument) {
-                        console.warn(`🎵 Instrument ${instrumentId} not found`);
+                        console.warn(`🎵 ❌ Instrument ${instrumentId} not found`);
                         return;
                     }
+
+                    console.log(`🎵 🎸 Processing instrument ${instrumentId}, ${notes.length} notes`);
 
                     // Filter and offset notes by clip start time and duration
                     const offsetNotes = notes
@@ -845,12 +883,17 @@ export class PlaybackManager {
                             time: (note.time || 0) + clipStartStep
                         }));
 
+                    console.log(`🎵 → ${offsetNotes.length} notes after filtering and offset`);
+
                     if (offsetNotes.length > 0) {
+                        console.log(`🎵 ✅ Scheduling ${offsetNotes.length} notes for instrument ${instrumentId}`);
                         this._scheduleInstrumentNotes(instrument, offsetNotes, instrumentId, baseTime);
                     }
                 });
             }
         });
+
+        console.log('🎵 _scheduleSongContent completed');
     }
 
     /**
@@ -880,12 +923,28 @@ export class PlaybackManager {
         // Priority 3: Try to get sample from instruments store (legacy)
         if (!audioBuffer && clip.sampleId) {
             const instrument = this.audioEngine.instruments.get(clip.sampleId);
-            audioBuffer = instrument?.audioBuffer;
-            console.log('🎵 Instrument lookup:', { sampleId: clip.sampleId, found: !!instrument });
+            if (instrument) {
+                // Check NativeSamplerNode for buffer
+                audioBuffer = instrument.audioBuffer || instrument.buffer;
+                console.log('🎵 Instrument lookup:', {
+                    sampleId: clip.sampleId,
+                    found: !!instrument,
+                    hasAudioBuffer: !!instrument.audioBuffer,
+                    hasBuffer: !!instrument.buffer,
+                    finalBuffer: !!audioBuffer
+                });
+            } else {
+                console.warn(`🎵 Instrument ${clip.sampleId} not found in instruments store`);
+            }
         }
 
         if (!audioBuffer) {
-            console.warn(`🎵 Audio clip ${clip.id} has no audio buffer (assetId: ${clip.assetId}, sampleId: ${clip.sampleId})`);
+            console.warn(`🎵 ❌ Audio clip ${clip.id} has no audio buffer`, {
+                assetId: clip.assetId,
+                sampleId: clip.sampleId,
+                hasDirectBuffer: !!clip.audioBuffer,
+                availableInstruments: Array.from(this.audioEngine.instruments.keys())
+            });
             return;
         }
 
@@ -1053,8 +1112,9 @@ export class PlaybackManager {
      * @param {number} baseTime - Base scheduling time
      */
     _scheduleInstrumentNotes(instrument, notes, instrumentId, baseTime) {
-        // ✅ CRITICAL FIX: Get current transport position for relative scheduling
-        const currentStep = this.transport.ticksToSteps(this.transport.currentTick);
+        // ✅ FIX: Use PlaybackManager's currentPosition, not transport.currentTick
+        // (transport may lag behind after jumpToStep)
+        const currentStep = this.currentPosition; // ✅ Use our accurate position
         const currentPositionInSeconds = currentStep * this.transport.stepsToSeconds(1);
 
         notes.forEach(note => {
@@ -1324,6 +1384,18 @@ export class PlaybackManager {
             this.transport.clearScheduledEvents();
         }
 
+        // ✅ CRITICAL: Stop all active audio sources to prevent doubling
+        if (this.activeAudioSources && this.activeAudioSources.length > 0) {
+            console.log(`🔇 Stopping ${this.activeAudioSources.length} active audio sources`);
+            this.activeAudioSources.forEach(source => {
+                try {
+                    source.stop();
+                } catch (e) {
+                    // Source may already be stopped
+                }
+            });
+            this.activeAudioSources = [];
+        }
     }
 
     // =================== STATUS & DEBUG ===================

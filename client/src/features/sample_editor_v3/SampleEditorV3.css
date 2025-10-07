@@ -2,44 +2,6 @@
    Sample Editor V3 - Stil Dosyası (Esnek Layout Düzeltmesi)
    ========================================================================== */
 
-/* --- PREVIEW CONTROLS --- */
-.control-deck__preview {
-  display: flex;
-  justify-content: center;
-  padding: var(--spacing-3);
-  border-bottom: 1px solid var(--color-border);
-}
-
-.control-deck__preview-btn {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-2);
-  padding: var(--spacing-2) var(--spacing-4);
-  background: var(--color-accent-primary);
-  color: white;
-  border: none;
-  border-radius: var(--border-radius-md);
-  font-size: var(--font-size-sm);
-  font-weight: 600;
-  cursor: pointer;
-  transition: all var(--transition-speed);
-  min-width: 80px;
-}
-
-.control-deck__preview-btn:hover {
-  background: var(--color-accent-secondary);
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-md);
-}
-
-.control-deck__preview-btn.playing {
-  background: var(--color-accent-danger);
-}
-
-.control-deck__preview-btn.playing:hover {
-  background: #dc2626;
-}
-
 /* --- ANA YERLEŞİM (LAYOUT) --- */
 .sample-editor-v3-container {
   width: 100%;
@@ -229,7 +191,6 @@
    ========================================================================== */
 .control-deck {
   flex-shrink: 0;
-  height: 220px;
   background-color: var(--color-background);
   border-radius: var(--border-radius-lg);
   border: 1px solid var(--color-border);

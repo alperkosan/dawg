@@ -9,13 +9,27 @@ import VelocityLane from './components/VelocityLane';
 import { usePanelsStore } from '@/store/usePanelsStore';
 import { useInstrumentsStore } from '@/store/useInstrumentsStore';
 import { usePlaybackStore } from '@/store/usePlaybackStoreV2';
+import { getTimelineController } from '@/lib/core/TimelineControllerSingleton';
+import { getToolManager } from '@/lib/piano-roll-tools';
 import './PianoRoll_v5.css';
 
 function PianoRoll() {
     const containerRef = useRef(null);
     const canvasRef = useRef(null);
     const playheadCanvasRef = useRef(null); // NEW: Separate playhead layer
-    const { snapValue, setSnapValue, ...engine } = usePianoRollEngine(containerRef);
+
+    // ✅ UNIFIED TRANSPORT SYSTEM - Get playback controls first
+    const togglePlayPause = usePlaybackStore(state => state.togglePlayPause);
+    const playbackMode = usePlaybackStore(state => state.playbackMode);
+    const isPlaying = usePlaybackStore(state => state.isPlaying);
+    const playbackState = usePlaybackStore(state => state.playbackState);
+    const currentStep = usePlaybackStore(state => state.currentStep);
+    const setTransportPosition = usePlaybackStore(state => state.setTransportPosition);
+
+    // Pass transport position setter to engine for timeline interaction
+    const { snapValue, setSnapValue, ...engine } = usePianoRollEngine(containerRef, {
+        setTransportPosition
+    });
 
     // Toolbar state
     const [activeTool, setActiveTool] = useState('select');
@@ -25,6 +39,35 @@ function PianoRoll() {
     const [fps, setFps] = useState(60);
     const [showPerf, setShowPerf] = useState(false);
     const [qualityLevel, setQualityLevel] = useState('high');
+
+    // ✅ GHOST PLAYHEAD STATE
+    const [ghostPosition, setGhostPosition] = useState(null);
+
+    // ✅ TOOL MANAGER - Subscribe to tool changes
+    useEffect(() => {
+        const toolManager = getToolManager();
+
+        // Set initial tool
+        setActiveTool(toolManager.getActiveTool());
+
+        // Subscribe to tool changes
+        const unsubscribe = toolManager.subscribe((toolType) => {
+            setActiveTool(toolType);
+        });
+
+        return unsubscribe;
+    }, []);
+
+    // ✅ KEYBOARD SHORTCUTS - Handle Alt + key for tools
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            const toolManager = getToolManager();
+            toolManager.handleKeyPress(e);
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, []);
 
     useEffect(() => {
         const interval = setInterval(() => {
@@ -45,13 +88,6 @@ function PianoRoll() {
         window.addEventListener('ui-quality-change', handleQualityChange);
         return () => window.removeEventListener('ui-quality-change', handleQualityChange);
     }, []);
-
-    // ✅ UNIFIED TRANSPORT SYSTEM - Separate subscriptions but stable references
-    const togglePlayPause = usePlaybackStore(state => state.togglePlayPause);
-    const playbackMode = usePlaybackStore(state => state.playbackMode);
-    const isPlaying = usePlaybackStore(state => state.isPlaying);
-    const playbackState = usePlaybackStore(state => state.playbackState);
-    const currentStep = usePlaybackStore(state => state.currentStep);
 
     // Memoize position calculation to prevent re-renders
     const position = useMemo(
@@ -75,6 +111,71 @@ function PianoRoll() {
         currentInstrument
     );
 
+    // ✅ REGISTER PIANO ROLL TIMELINE with TimelineController
+    useEffect(() => {
+        if (!containerRef.current || !engine.dimensions.stepWidth) return;
+
+        try {
+            const timelineController = getTimelineController();
+
+            // Calculate ruler element bounds (top 30px of container)
+            const RULER_HEIGHT = 30;
+            const KEYBOARD_WIDTH = 80;
+
+            // ✅ Custom position calculation for piano roll (accounts for scroll/zoom)
+            // Use latest engine state by accessing it from component scope (not closure)
+            const calculatePosition = (mouseX, mouseY) => {
+                // Only handle clicks in timeline ruler area
+                if (mouseY > RULER_HEIGHT) {
+                    return null; // Not in ruler
+                }
+
+                // Subtract keyboard width
+                const timelineX = mouseX - KEYBOARD_WIDTH;
+                if (timelineX < 0) {
+                    return null; // In keyboard area
+                }
+
+                // ✅ Get latest viewport and dimensions (engine is in component scope, always fresh)
+                const viewport = engine.viewport;
+                const stepWidth = engine.dimensions?.stepWidth;
+                if (!viewport || !stepWidth) return null;
+
+                // Account for scroll (already in screen pixels)
+                const worldX = viewport.scrollX + timelineX;
+
+                // Convert pixels to steps using current stepWidth (includes zoom)
+                const step = Math.floor(worldX / stepWidth);
+
+                return Math.max(0, Math.min(engine.dimensions.totalSteps - 1, step));
+            };
+
+            // Register piano roll timeline for ghost playhead
+            timelineController.registerTimeline('piano-roll-timeline', {
+                element: containerRef.current,
+                stepWidth: engine.dimensions.stepWidth,
+                totalSteps: engine.dimensions.totalSteps,
+                onPositionChange: null, // Position updates handled by playback store
+                onGhostPositionChange: (pos) => {
+                    setGhostPosition(pos);
+                },
+                enableGhostPosition: true,
+                enableRangeSelection: false,
+                calculatePosition // ✅ Custom calculation for viewport scroll/zoom
+            });
+
+            console.log('✅ Piano Roll timeline registered');
+
+            return () => {
+                timelineController.unregisterTimeline('piano-roll-timeline');
+                console.log('🧹 Piano Roll timeline cleanup');
+            };
+        } catch (error) {
+            console.warn('Failed to register Piano Roll timeline:', error);
+        }
+        // ✅ FIX: Empty deps - only register once, calculatePosition uses latest engine from scope
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []); // Only register once on mount
 
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -101,11 +202,13 @@ function PianoRoll() {
             previewNote: noteInteractions.previewNote,
             slicePreview: noteInteractions.slicePreview,
             sliceRange: noteInteractions.sliceRange,
-            qualityLevel // Pass quality level to renderer
+            qualityLevel, // Pass quality level to renderer
+            ghostPosition, // ✅ Pass ghost position for hover preview
+            activeTool // ✅ Pass active tool for visual feedback
         };
         drawPianoRollStatic(ctx, engineWithData);
 
-    }, [engine, snapValue, noteInteractions, qualityLevel]); // Added: qualityLevel
+    }, [engine, snapValue, noteInteractions, qualityLevel, ghostPosition, activeTool]); // Added: activeTool
 
     // Playhead canvas - fast rendering via UIUpdateManager
     useEffect(() => {
@@ -188,6 +291,7 @@ function PianoRoll() {
             <div
                 ref={containerRef}
                 className="prv5-canvas-container"
+                data-tool={activeTool}
                 onWheel={engine.eventHandlers.onWheel}
                 onMouseDown={(e) => {
                     const rect = e.currentTarget.getBoundingClientRect();

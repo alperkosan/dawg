@@ -46,16 +46,28 @@ export const usePlaybackStore = create((set, get) => ({
 
     // Controller events subscription
     const unsubscribe = controller.subscribe((data) => {
+      const currentState = get();
 
-      set({
+      // ✅ Only update BPM if it actually changed AND it's not the initial sync
+      // This prevents controller's initial state from overriding store's BPM
+      const updates = {
         isPlaying: data.state.isPlaying,
         playbackState: data.state.playbackState,
         currentStep: data.state.currentPosition,
-        bpm: data.state.bpm,
         loopEnabled: data.state.loopEnabled,
         loopStartStep: data.state.loopStart,
         loopEndStep: data.state.loopEnd
-      });
+      };
+
+      // Only update BPM if:
+      // 1. Controller's BPM is different from store's BPM
+      // 2. AND this is not an 'init' event (which happens on first subscribe)
+      if (data.type !== 'init' && data.state.bpm !== currentState.bpm) {
+        console.log('🎵 BPM changed from controller:', currentState.bpm, '→', data.state.bpm);
+        updates.bpm = data.state.bpm;
+      }
+
+      set(updates);
     });
 
     // ✅ FIX: Position update subscription (throttled to 30Hz for performance)
@@ -192,10 +204,10 @@ export const usePlaybackStore = create((set, get) => ({
       await new Promise(resolve => setTimeout(resolve, 10));
     }
 
-    // ✅ Update mode in PlaybackManager
+    // ✅ Update mode in PlaybackManager (use setter for proper scheduling)
     const playbackManager = controller?.audioEngine?.playbackManager;
     if (playbackManager) {
-      playbackManager.currentMode = mode;
+      playbackManager.setPlaybackMode(mode);
     }
 
     // ✅ Update store state (after controller updated)

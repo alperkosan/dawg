@@ -31,6 +31,34 @@
   cursor: grab;
 }
 
+/* Tool-specific cursors */
+.prv5-canvas-container[data-tool="select"] {
+  cursor: default;
+}
+
+.prv5-canvas-container[data-tool="paintBrush"] {
+  cursor: crosshair;
+}
+
+.prv5-canvas-container[data-tool="eraser"] {
+  cursor: not-allowed;
+}
+
+.prv5-canvas-container[data-tool="chopper"],
+.prv5-canvas-container[data-tool="strumizer"],
+.prv5-canvas-container[data-tool="arpeggiator"],
+.prv5-canvas-container[data-tool="flam"] {
+  cursor: pointer;
+}
+
+.prv5-canvas-container[data-tool="randomizer"] {
+  cursor: help;
+}
+
+.prv5-canvas-container[data-tool="flip"] {
+  cursor: move;
+}
+
 .prv5-canvas {
   position: absolute;
   top: 0;

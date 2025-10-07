@@ -21,7 +21,7 @@ export class PremiumNoteRenderer {
     }
 
     // Premium note rendering with advanced visuals
-    renderNote(ctx, note, dimensions, viewport, isSelected = false, isHovered = false) {
+    renderNote(ctx, note, dimensions, viewport, isSelected = false, isHovered = false, isEraserTarget = false) {
         const { stepWidth, keyHeight } = dimensions;
 
         // Calculate note position and size - ensure it fills grid cells completely
@@ -58,11 +58,21 @@ export class PremiumNoteRenderer {
 
         ctx.save();
 
-        // Premium note styling based on velocity and pitch
-        const alpha = 0.85 + (note.velocity / 127) * 0.15;
-        const baseHue = note.hue || ((note.pitch * 2.8) % 360);
-        const saturation = note.saturation || (60 + (note.velocity / 127) * 40);
-        const lightness = note.brightness || (45 + (note.velocity / 127) * 25);
+        // ✅ ERASER TARGET OVERRIDE - Red warning color
+        let alpha, baseHue, saturation, lightness;
+
+        if (isEraserTarget) {
+            alpha = 0.9;
+            baseHue = 0; // Red
+            saturation = 80;
+            lightness = 50;
+        } else {
+            // Premium note styling based on velocity and pitch
+            alpha = 0.85 + (note.velocity / 127) * 0.15;
+            baseHue = note.hue || ((note.pitch * 2.8) % 360);
+            saturation = note.saturation || (60 + (note.velocity / 127) * 40);
+            lightness = note.brightness || (45 + (note.velocity / 127) * 25);
+        }
 
         // Create premium gradient
         const gradient = this.createPremiumGradient(ctx, x, y, width, height, {
@@ -71,7 +81,7 @@ export class PremiumNoteRenderer {
             lightness,
             alpha,
             isSelected,
-            isHovered
+            isHovered: isEraserTarget ? false : isHovered // Disable normal hover if eraser target
         });
 
         // Main note body with subtle 3D effect - aligned to grid
@@ -301,7 +311,7 @@ export class PremiumNoteRenderer {
     }
 
     // Render multiple notes efficiently
-    renderNotes(ctx, notes, dimensions, viewport, selectedNoteIds, hoveredNoteId) {
+    renderNotes(ctx, notes, dimensions, viewport, selectedNoteIds, hoveredNoteId, activeTool = 'select') {
         // Sort notes by pitch (render lower notes first for proper layering)
         const sortedNotes = [...notes].sort((a, b) => b.pitch - a.pitch);
 
@@ -309,7 +319,10 @@ export class PremiumNoteRenderer {
             const isSelected = selectedNoteIds.has(note.id);
             const isHovered = hoveredNoteId === note.id;
 
-            this.renderNote(ctx, note, dimensions, viewport, isSelected, isHovered);
+            // ✅ ERASER TOOL FEEDBACK - Red highlight for hovered note
+            const isEraserTarget = activeTool === 'eraser' && isHovered;
+
+            this.renderNote(ctx, note, dimensions, viewport, isSelected, isHovered, isEraserTarget);
         });
     }
 

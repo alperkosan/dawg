@@ -19,9 +19,9 @@ export class BaseEffect {
     // Parameters (to be defined by subclasses)
     this.parameters = {};
 
-    // Audio nodes (created by subclasses)
-    this.inputNode = null;
-    this.outputNode = null;
+    // Create input/output gain nodes for effect routing
+    this.inputNode = context.createGain();
+    this.outputNode = context.createGain();
 
     console.log(`✨ Created effect: ${this.name} (${this.type})`);
   }

@@ -64,6 +64,12 @@ export const ControlDeck = ({ instrument, track, onParamChange }) => {
       if (audioInstrument && typeof audioInstrument.setEffectChain === 'function') {
         audioInstrument.setEffectChain(updatedChain);
         console.log('✅ Effect chain updated in audio engine');
+
+        // CRITICAL: Reconnect instrument output to track after effect chain change
+        if (instrument.mixerTrackId) {
+          audioEngine.reconnectInstrumentToTrack(instrument.id, instrument.mixerTrackId);
+          console.log('✅ Instrument reconnected to track after effect chain update');
+        }
       }
     }
   };
@@ -83,6 +89,11 @@ export const ControlDeck = ({ instrument, track, onParamChange }) => {
       const audioInstrument = audioEngine.instruments.get(instrument.id);
       if (audioInstrument && typeof audioInstrument.setEffectChain === 'function') {
         audioInstrument.setEffectChain(updatedChain);
+
+        // CRITICAL: Reconnect instrument output to track after effect chain change
+        if (instrument.mixerTrackId) {
+          audioEngine.reconnectInstrumentToTrack(instrument.id, instrument.mixerTrackId);
+        }
       }
     }
   };
@@ -113,24 +124,27 @@ export const ControlDeck = ({ instrument, track, onParamChange }) => {
       const audioInstrument = audioEngine.instruments.get(instrument.id);
       if (audioInstrument && typeof audioInstrument.setEffectChain === 'function') {
         audioInstrument.setEffectChain(updatedChain);
+
+        // CRITICAL: Reconnect instrument output to track after effect chain change
+        if (instrument.mixerTrackId) {
+          audioEngine.reconnectInstrumentToTrack(instrument.id, instrument.mixerTrackId);
+        }
       }
     }
   };
 
   const getDefaultEffectParameters = (effectType) => {
-    // Get default parameters from EffectFactory
-    const audioContext = AudioContextService.getAudioContext();
-    if (!audioContext) return {};
-
-    try {
-      const effect = EffectFactory.createEffect(audioContext, effectType);
-      if (effect) {
-        const params = effect.getParametersState();
-        effect.disconnect(); // Clean up
-        return params;
-      }
-    } catch (error) {
-      console.warn('Failed to get default parameters:', error);
+    // Get default parameters directly from EffectFactory definition
+    const workletDef = EffectFactory.workletEffects[effectType];
+    if (workletDef && workletDef.params) {
+      const params = {};
+      Object.keys(workletDef.params).forEach(key => {
+        params[key] = {
+          ...workletDef.params[key],
+          value: workletDef.params[key].defaultValue
+        };
+      });
+      return params;
     }
 
     return {};
@@ -140,19 +154,7 @@ export const ControlDeck = ({ instrument, track, onParamChange }) => {
     <div className="control-deck">
       <div className="control-deck__tabs">
         <TabButton label="Ana Ayarlar" icon={Settings} isActive={activeTab === 'main'} onClick={() => setActiveTab('main')} />
-        <TabButton label="Real-Time Efektler" icon={Sparkles} isActive={activeTab === 'effects'} onClick={() => setActiveTab('effects')} />
-      </div>
-
-      {/* Preview Controls */}
-      <div className="control-deck__preview">
-        <button
-          className={`control-deck__preview-btn ${isPlaying ? 'playing' : ''}`}
-          onClick={handlePreview}
-          title={isPlaying ? 'Stop Preview' : 'Preview Sample'}
-        >
-          {isPlaying ? <Square size={16} /> : <Play size={16} />}
-          {isPlaying ? 'Stop' : 'Preview'}
-        </button>
+        <TabButton label="Efektler" icon={Sparkles} isActive={activeTab === 'effects'} onClick={() => setActiveTab('effects')} />
       </div>
 
       <div className="control-deck__content">

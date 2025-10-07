@@ -244,6 +244,7 @@ export function drawArrangement(ctx, engine) {
   drawDropPreview(ctx, engine);
   drawMarqueeSelection(ctx, engine);
   drawRightClickDeleteMode(ctx, engine);
+  drawGhostPlayhead(ctx, engine); // ✅ GHOST PLAYHEAD (hover preview)
   drawPlayhead(ctx, engine);
   drawTimeline(ctx, engine);
   drawTrackHeaders(ctx, engine);
@@ -496,8 +497,11 @@ function drawClips(ctx, engine) {
 
         const gainLinear = Math.pow(10, gainDb / 20); // Convert dB to linear
 
+        // Get current BPM from engine (fallback to 140 if not provided)
+        const currentBPM = engine.bpm || 140;
+
         // Convert durations to seconds
-        const beatsToSeconds = (beats) => (beats * 60) / 140; // Assuming 140 BPM
+        const beatsToSeconds = (beats) => (beats * 60) / currentBPM;
         const clipDurationSeconds = beatsToSeconds(clipDuration);
         const audioDurationSeconds = audioBuffer.duration;
         const offsetSeconds = beatsToSeconds(sampleOffsetBeats);
@@ -507,7 +511,7 @@ function drawClips(ctx, engine) {
 
         // Calculate actual audio width in pixels based on audio buffer duration (not clip duration!)
         // This ensures waveform doesn't stretch when clip is resized
-        const audioLengthBeats = (audioDurationSeconds * 140) / 60; // Convert audio duration to beats
+        const audioLengthBeats = (audioDurationSeconds * currentBPM) / 60; // Convert audio duration to beats
         const audioWidthPixels = audioLengthBeats * PIXELS_PER_BEAT * viewport.zoomX;
 
         // Total samples to display (always from start of audio buffer, no offset applied to sample reading)
@@ -724,6 +728,24 @@ function drawClips(ctx, engine) {
           const fadeInEndX = x + 2 + activeFadeInWidth;
           const isDragging = isInteracting && interactionMode === 'fade-in';
 
+          // Fade curve visualization
+          ctx.save();
+          const gradient = ctx.createLinearGradient(x + 2, 0, fadeInEndX, 0);
+          gradient.addColorStop(0, 'rgba(255, 180, 80, 0.05)');
+          gradient.addColorStop(1, 'rgba(255, 180, 80, 0.25)');
+          ctx.fillStyle = gradient;
+          ctx.fillRect(x + 2, y + 2, activeFadeInWidth, clipHeight - 4);
+          ctx.restore();
+
+          // Fade curve line
+          ctx.strokeStyle = 'rgba(255, 180, 80, 0.6)';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(x + 2, y + clipHeight - 4);
+          ctx.lineTo(fadeInEndX, y + 4);
+          ctx.stroke();
+
+          // Handle
           ctx.beginPath();
           ctx.arc(fadeInEndX, y + 8, handleRadius, 0, Math.PI * 2);
           ctx.fillStyle = isDragging ? 'rgba(255, 220, 120, 1)' : 'rgba(255, 180, 80, 0.95)';
@@ -732,25 +754,23 @@ function drawClips(ctx, engine) {
           ctx.lineWidth = isDragging ? 3 : 2;
           ctx.stroke();
 
-          // Tooltip showing fade-in value (only when dragging)
-          if (isDragging) {
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
-            ctx.fillRect(fadeInEndX - 28, y - 20, 56, 18);
-            ctx.fillStyle = '#fff';
-            ctx.font = 'bold 11px Inter, system-ui, sans-serif';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(`${activeFadeIn.toFixed(2)}♩`, fadeInEndX, y - 11);
-          }
+          // Always show value label when fade exists
+          ctx.fillStyle = isDragging ? 'rgba(0, 0, 0, 0.9)' : 'rgba(0, 0, 0, 0.7)';
+          ctx.fillRect(fadeInEndX - 30, y - 22, 60, 20);
+          ctx.fillStyle = '#fff';
+          ctx.font = isDragging ? 'bold 11px Inter, system-ui, sans-serif' : '10px Inter, system-ui, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(`IN ${activeFadeIn.toFixed(2)}♩`, fadeInEndX, y - 12);
         } else if (clipWidth > 80) {
           // Show handle at start if no fade
           const isDragging = isInteracting && interactionMode === 'fade-in';
           ctx.beginPath();
           ctx.arc(x + 8, y + 8, handleRadius - 1, 0, Math.PI * 2);
-          ctx.fillStyle = isDragging ? 'rgba(255, 220, 120, 0.7)' : 'rgba(255, 180, 80, 0.5)';
+          ctx.fillStyle = isDragging ? 'rgba(255, 220, 120, 0.7)' : 'rgba(255, 180, 80, 0.4)';
           ctx.fill();
-          ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
-          ctx.lineWidth = 1;
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+          ctx.lineWidth = isDragging ? 2 : 1;
           ctx.stroke();
         }
 
@@ -759,6 +779,24 @@ function drawClips(ctx, engine) {
           const fadeOutStartX = x + clipWidth - 2 - activeFadeOutWidth;
           const isDragging = isInteracting && interactionMode === 'fade-out';
 
+          // Fade curve visualization
+          ctx.save();
+          const gradient = ctx.createLinearGradient(fadeOutStartX, 0, x + clipWidth - 2, 0);
+          gradient.addColorStop(0, 'rgba(80, 140, 255, 0.25)');
+          gradient.addColorStop(1, 'rgba(80, 140, 255, 0.05)');
+          ctx.fillStyle = gradient;
+          ctx.fillRect(fadeOutStartX, y + 2, activeFadeOutWidth, clipHeight - 4);
+          ctx.restore();
+
+          // Fade curve line
+          ctx.strokeStyle = 'rgba(80, 140, 255, 0.6)';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(fadeOutStartX, y + 4);
+          ctx.lineTo(x + clipWidth - 2, y + clipHeight - 4);
+          ctx.stroke();
+
+          // Handle
           ctx.beginPath();
           ctx.arc(fadeOutStartX, y + 8, handleRadius, 0, Math.PI * 2);
           ctx.fillStyle = isDragging ? 'rgba(120, 180, 255, 1)' : 'rgba(80, 140, 255, 0.95)';
@@ -767,25 +805,23 @@ function drawClips(ctx, engine) {
           ctx.lineWidth = isDragging ? 3 : 2;
           ctx.stroke();
 
-          // Tooltip showing fade-out value (only when dragging)
-          if (isDragging) {
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
-            ctx.fillRect(fadeOutStartX - 28, y - 20, 56, 18);
-            ctx.fillStyle = '#fff';
-            ctx.font = 'bold 11px Inter, system-ui, sans-serif';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(`${activeFadeOut.toFixed(2)}♩`, fadeOutStartX, y - 11);
-          }
+          // Always show value label when fade exists
+          ctx.fillStyle = isDragging ? 'rgba(0, 0, 0, 0.9)' : 'rgba(0, 0, 0, 0.7)';
+          ctx.fillRect(fadeOutStartX - 30, y - 22, 60, 20);
+          ctx.fillStyle = '#fff';
+          ctx.font = isDragging ? 'bold 11px Inter, system-ui, sans-serif' : '10px Inter, system-ui, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(`OUT ${activeFadeOut.toFixed(2)}♩`, fadeOutStartX, y - 12);
         } else if (clipWidth > 80) {
           // Show handle at end if no fade
           const isDragging = isInteracting && interactionMode === 'fade-out';
           ctx.beginPath();
           ctx.arc(x + clipWidth - 8, y + 8, handleRadius - 1, 0, Math.PI * 2);
-          ctx.fillStyle = isDragging ? 'rgba(120, 180, 255, 0.7)' : 'rgba(80, 140, 255, 0.5)';
+          ctx.fillStyle = isDragging ? 'rgba(120, 180, 255, 0.7)' : 'rgba(80, 140, 255, 0.4)';
           ctx.fill();
-          ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
-          ctx.lineWidth = 1;
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+          ctx.lineWidth = isDragging ? 2 : 1;
           ctx.stroke();
         }
 
@@ -960,6 +996,47 @@ function drawPlayhead(ctx, engine) {
     ctx.lineTo(playheadX, 8);
     ctx.closePath();
     ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+// ✅ GHOST PLAYHEAD - Show preview position on hover
+function drawGhostPlayhead(ctx, engine) {
+  const { viewport, dimensions, ghostPosition } = engine;
+
+  if (ghostPosition == null || ghostPosition === undefined) {
+    return;
+  }
+
+  ctx.save();
+  ctx.translate(TRACK_HEADER_WIDTH, TIMELINE_HEIGHT);
+  ctx.beginPath();
+  ctx.rect(0, 0, viewport.width - TRACK_HEADER_WIDTH, viewport.height - TIMELINE_HEIGHT);
+  ctx.clip();
+
+  // ghostPosition is in steps (16th notes)
+  // Convert steps to beats: 1 beat = 4 sixteenth notes
+  const beatPosition = ghostPosition / 4;
+  const ghostX = beatPosition * PIXELS_PER_BEAT * viewport.zoomX - viewport.scrollX;
+
+  if (ghostX >= 0 && ghostX <= viewport.width - TRACK_HEADER_WIDTH) {
+    // Semi-transparent green ghost playhead
+    ctx.strokeStyle = 'rgba(0, 255, 136, 0.5)';
+    ctx.lineWidth = 2;
+    ctx.globalAlpha = 0.6;
+
+    // Add subtle glow
+    ctx.shadowColor = 'rgba(0, 255, 136, 0.5)';
+    ctx.shadowBlur = 6;
+
+    ctx.beginPath();
+    ctx.moveTo(ghostX, 0);
+    ctx.lineTo(ghostX, viewport.height - TIMELINE_HEIGHT);
+    ctx.stroke();
+
+    // Reset shadow
+    ctx.shadowBlur = 0;
   }
 
   ctx.restore();

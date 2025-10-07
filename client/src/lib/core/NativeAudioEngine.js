@@ -705,32 +705,58 @@ export class NativeAudioEngine {
 
     // =================== UTILITY METHODS ===================
 
+    // Public method to reconnect instrument after effect chain change
+    reconnectInstrumentToTrack(instrumentId, trackId) {
+        console.log(`🔄 Reconnecting instrument ${instrumentId} to track ${trackId}`);
+
+        const instrument = this.instruments.get(instrumentId);
+        const channel = this.mixerChannels.get(trackId);
+
+        if (!instrument || !channel) {
+            console.warn('Cannot reconnect: instrument or channel not found');
+            return false;
+        }
+
+        // Disconnect old output if exists
+        try {
+            instrument.output.disconnect();
+            console.log('✅ Disconnected old output');
+        } catch (e) {
+            // May not be connected, ignore
+        }
+
+        // Reconnect new output
+        return this._connectInstrumentToChannel(instrumentId, trackId);
+    }
+
     _connectInstrumentToChannel(instrumentId, channelId) {
         const instrument = this.instruments.get(instrumentId);
         const channel = this.mixerChannels.get(channelId);
-    
+
         if (!instrument) {
             return false;
         }
-        
+
         if (!channel) {
             return false;
         }
-    
+
         // Instrument output kontrolü
         if (!instrument.output) {
             return false;
         }
-    
-        // Channel input kontrolü  
+
+        // Channel input kontrolü
         if (!channel.input) {
             return false;
         }
-    
+
         try {
             instrument.output.connect(channel.input);
+            console.log(`✅ Connected instrument ${instrumentId} output to channel ${channelId}`);
             return true;
         } catch (error) {
+            console.error(`❌ Failed to connect instrument to channel:`, error);
             return false;
         }
     }

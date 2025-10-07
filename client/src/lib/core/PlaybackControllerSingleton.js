@@ -52,10 +52,28 @@ class PlaybackControllerSingleton {
       throw new Error('AudioEngine not available for PlaybackController');
     }
 
-    const controller = new PlaybackController(audioEngine);
-    console.log('🎵 PlaybackController singleton created successfully');
+    // ✅ Get initial BPM from store (will be 90 or user's saved value)
+    const initialBPM = await this._getInitialBPM();
+
+    const controller = new PlaybackController(audioEngine, initialBPM);
+    console.log('🎵 PlaybackController singleton created with BPM:', initialBPM);
 
     return controller;
+  }
+
+  /**
+   * Get initial BPM from PlaybackStore
+   */
+  static async _getInitialBPM() {
+    try {
+      const { usePlaybackStore } = await import('@/store/usePlaybackStoreV2');
+      const bpm = usePlaybackStore.getState().bpm;
+      console.log('🎵 Retrieved initial BPM from store:', bpm);
+      return bpm || 90; // Default to 90 if not set
+    } catch (error) {
+      console.warn('Could not get initial BPM from store, using default:', error);
+      return 90; // Default BPM
+    }
   }
 
   /**

@@ -49,7 +49,7 @@ class SimpleEventEmitter {
  */
 
 export class PlaybackController extends SimpleEventEmitter {
-  constructor(audioEngine) {
+  constructor(audioEngine, initialBPM = 140) {
     super();
 
     // Tek kaynak state
@@ -62,7 +62,7 @@ export class PlaybackController extends SimpleEventEmitter {
       currentPosition: 0,  // Her zaman step cinsinden, motor ile senkron
 
       // Transport settings
-      bpm: 140,
+      bpm: initialBPM, // ✅ Use initial BPM from parameter
       loopStart: 0,
       loopEnd: 64,
       loopEnabled: true,

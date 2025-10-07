@@ -20,7 +20,8 @@ import StepGrid from './StepGrid';
 import StepGridCanvas from './StepGridCanvas'; // ⚡ NEW: Canvas-based grid
 import PianoRollMiniView from './PianoRollMiniView';
 import PianoRollMiniViewC4 from './PianoRollMiniViewC4'; // ⚡ NEW: C4-level preview
-import InteractiveTimeline from './InteractiveTimeline';
+import UnifiedTimeline from './UnifiedTimeline'; // ✅ NEW: Unified timeline system
+// import InteractiveTimeline from './InteractiveTimeline'; // ⚠️ DEPRECATED - kept for reference
 import AudioExportPanel from '@/components/AudioExportPanel';
 // ✅ PERFORMANCE: Lazy-loaded icons to reduce initial bundle size
 const Icon = memo(({ name, size = 20, ...props }) => {
@@ -99,7 +100,6 @@ function ChannelRack() {
   const playbackState = usePlaybackStore(state => state.playbackState);
   const isPlaying = usePlaybackStore(state => state.isPlaying);
   const position = usePlaybackStore(state => playbackMode === 'pattern' ? state.currentStep : 0);
-  const jumpToPosition = usePlaybackStore(state => state.jumpToStep);
   const setTransportPosition = usePlaybackStore(state => state.setTransportPosition);
 
   // ✅ Conditional position - only track in pattern mode
@@ -297,27 +297,24 @@ function ChannelRack() {
     return Math.max(64, (organizedContent.data.length + 1) * 64); // +1 for add button
   }, [organizedContent]);
 
-  // ✅ UNIFIED: Timeline interaction via TransportManager
+  // ⚠️ DEPRECATED: This handler is now replaced by TimelineController
+  // Kept for fallback if TimelineController is not available
   const handleTimelineClickInternal = useCallback((e) => {
-    // ✅ OPTIMIZED - Allow position changes in all states (fire-and-forget)
+    console.warn('⚠️ Using legacy timeline click handler - TimelineController should handle this');
 
     const rect = e.currentTarget.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
-    const exactStep = clickX / STEP_WIDTH;
     const targetStep = calculateStep(clickX, STEP_WIDTH, audioLoopLength - 1);
 
-    console.log(`🎯 Timeline click precision:`, {
-      clickX,
-      exactStep,
-      targetStep,
-      stepWidth: STEP_WIDTH,
-      roundingDiff: exactStep - targetStep,
-      preciseCalculation: true
-    });
+    // Fallback to legacy behavior
+    const beatPosition = targetStep / 4;
+    const bar = Math.floor(beatPosition / 4);
+    const beat = Math.floor(beatPosition % 4);
+    const tick = Math.floor((beatPosition % 1) * 480);
+    const transportPos = `${bar + 1}:${beat + 1}:${tick}`;
 
-    // ✅ OPTIMIZED - Fire-and-forget for 0ms UI latency
-    jumpToPosition(targetStep); // No await needed
-  }, [jumpToPosition, audioLoopLength, playbackState]);
+    setTransportPosition(transportPos, targetStep);
+  }, [setTransportPosition, audioLoopLength]);
 
   // ✅ Prevent timeline click on grid rows (only allow on empty areas)
   const handleGridRowClick = useCallback((e) => {
@@ -511,10 +508,10 @@ function ChannelRack() {
       </div>
       <div ref={timelineContainerRef} className="channel-rack-layout__timeline">
         <div style={{ width: audioLoopLength * STEP_WIDTH, height: '100%' }}>
-          <InteractiveTimeline
+          <UnifiedTimeline
             loopLength={audioLoopLength}
             currentPosition={displayPosition}
-            onJumpToPosition={jumpToPosition}
+            onPositionChange={null} // ✅ TimelineController handles store updates now
           />
           {/* FL Studio style compact playhead - only in pattern mode */}
           {playbackMode === 'pattern' && (
@@ -528,6 +525,8 @@ function ChannelRack() {
               }`}
               style={{
                 transform: `translateX(${channelRackPosition * STEP_WIDTH}px)`,
+                // ⚡ Animation controlled by TimelineController (smooth during playback, instant during seek)
+                transition: isJumping ? 'none' : 'transform 0.1s linear',
                 position: 'absolute',
                 top: 0,
                 bottom: 0,
@@ -566,9 +565,10 @@ function ChannelRack() {
               width: `${audioLoopLength * STEP_WIDTH}px`,
               bottom: 0,
               zIndex: 99,
-              cursor: 'crosshair' // Always allow timeline interaction
+              cursor: 'crosshair', // Always allow timeline interaction
+              pointerEvents: 'none' // ✅ Let clicks pass through to UnifiedTimeline
             }}
-            onClick={handleTimelineClickInternal}
+            // onClick={handleTimelineClickInternal} // ⚠️ REMOVED - TimelineController handles this
             onMouseMove={(e) => {
               // ✅ OPTIMIZED - Always show ghost position for better UX
               const rect = e.currentTarget.getBoundingClientRect();
@@ -615,7 +615,7 @@ function ChannelRack() {
 
         </div>
       </div>
-      <div ref={scrollContainerRef} className="channel-rack-layout__grid-scroll-area" onClick={handleTimelineClickInternal}>
+      <div ref={scrollContainerRef} className="channel-rack-layout__grid-scroll-area" /* Legacy onClick removed - TimelineController handles this */>
         <div style={{ width: audioLoopLength * STEP_WIDTH, height: totalContentHeight }} className="channel-rack-layout__grid-content">
           {visibleInstruments.map((inst, index) => (
             <div key={inst.id} className="channel-rack-layout__grid-row" onClick={handleGridRowClick}>

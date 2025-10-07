@@ -26,12 +26,13 @@ export function drawPianoRollStatic(ctx, engine) {
     ctx.fillStyle = '#181A20';
     ctx.fillRect(0, 0, viewport.width, viewport.height);
 
-    // Draw all layers EXCEPT playhead
+    // Draw all layers EXCEPT main playhead
     drawGrid(ctx, engine);
     drawNotes(ctx, engine); // Premium note rendering
     drawSelectionArea(ctx, engine); // Selection area overlay
     drawSlicePreview(ctx, engine); // ✅ SLICE PREVIEW
     drawSliceRange(ctx, engine); // ✅ SLICE RANGE
+    drawGhostPlayhead(ctx, engine); // ✅ GHOST PLAYHEAD (hover preview)
     // REMOVED: drawPlayhead(ctx, engine); - Now rendered separately for performance
     drawTimeline(ctx, engine);
     drawKeyboard(ctx, engine);
@@ -396,6 +397,7 @@ function drawNotes(ctx, engine) {
     const notes = engine.notes || [];
     const selectedNoteIds = engine.selectedNoteIds || new Set();
     const hoveredNoteId = engine.hoveredNoteId || null;
+    const activeTool = engine.activeTool || 'select';
 
     // Don't render if no notes
     if (notes.length === 0) return;
@@ -414,12 +416,12 @@ function drawNotes(ctx, engine) {
         engine.dimensions,
         engine.viewport,
         selectedNoteIds,
-        hoveredNoteId
+        hoveredNoteId,
+        activeTool
     );
 
     // Render preview note if exists
     if (engine.previewNote) {
-        console.log("🎨 Rendering preview note:", engine.previewNote);
         premiumNoteRenderer.renderPreviewNote(
             ctx,
             engine.previewNote,
@@ -587,6 +589,57 @@ function drawPlayhead(ctx, engine) {
         ctx.fillText(`${playhead.position.toFixed(1)}`, playheadX, arrowSize + 15);
     }
     */
+
+    ctx.restore();
+}
+
+// ✅ GHOST PLAYHEAD - Show preview position on hover
+function drawGhostPlayhead(ctx, engine) {
+    const { viewport, dimensions, ghostPosition } = engine;
+    if (ghostPosition == null || ghostPosition === undefined) return;
+
+    ctx.save();
+
+    // Translate to timeline area (skip keyboard area and ruler)
+    ctx.translate(KEYBOARD_WIDTH, RULER_HEIGHT);
+
+    // Clip to timeline area
+    ctx.beginPath();
+    ctx.rect(0, 0, viewport.width - KEYBOARD_WIDTH, viewport.height - RULER_HEIGHT);
+    ctx.clip();
+
+    // Apply scroll offset
+    ctx.translate(-viewport.scrollX, 0); // Only horizontal scroll for ghost playhead
+
+    const { stepWidth } = dimensions;
+    const ghostX = ghostPosition * stepWidth;
+
+    // Only draw if ghost is in visible area (ghostX is already in world coordinates)
+    if (ghostX < viewport.scrollX - 5 || ghostX > viewport.scrollX + viewport.width - KEYBOARD_WIDTH + 5) {
+        ctx.restore();
+        return;
+    }
+
+    // ✅ Ghost playhead style - Semi-transparent green
+    const ghostColor = 'rgba(0, 255, 136, 0.5)';
+    const lineWidth = 2;
+
+    // Main vertical line
+    ctx.strokeStyle = ghostColor;
+    ctx.lineWidth = lineWidth;
+    ctx.globalAlpha = 0.6;
+
+    // Add subtle glow
+    ctx.shadowColor = ghostColor;
+    ctx.shadowBlur = 6;
+
+    ctx.beginPath();
+    ctx.moveTo(ghostX, 0);
+    ctx.lineTo(ghostX, viewport.height - RULER_HEIGHT);
+    ctx.stroke();
+
+    // Reset shadow
+    ctx.shadowBlur = 0;
 
     ctx.restore();
 }

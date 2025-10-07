@@ -21,11 +21,14 @@ import { drawArrangement } from './renderers/arrangementRenderer';
 import { TrackHeaderOverlay } from './components/TrackHeaderOverlay';
 import { Plus, Play, Pause, Square, ZoomIn, ZoomOut } from 'lucide-react';
 import { audioAssetManager } from '@/lib/audio/AudioAssetManager';
+import { getTimelineController } from '@/lib/core/TimelineControllerSingleton';
 
 const ArrangementCanvas = ({ arrangement }) => {
   const containerRef = useRef(null);
   const canvasRef = useRef(null);
   const scrollContainerRef = useRef(null);
+
+  const bpm = usePlaybackStore(state => state.bpm); // Get current BPM
 
   const {
     gridSize,
@@ -83,23 +86,85 @@ const ArrangementCanvas = ({ arrangement }) => {
   const [isRightClickDelete, setIsRightClickDelete] = useState(false); // Right-click delete mode
   const [deletedClipsInSession, setDeletedClipsInSession] = useState(new Set()); // Track deleted clips during right-click drag
   const [lastDuplicateAction, setLastDuplicateAction] = useState(null); // Track last Ctrl+B action for sequential duplication
+  const [ghostPosition, setGhostPosition] = useState(null); // ✅ GHOST PLAYHEAD STATE
+
+  // ✅ REGISTER ARRANGEMENT TIMELINE with TimelineController
+  useEffect(() => {
+    if (!containerRef.current) return;
+
+    try {
+      const timelineController = getTimelineController();
+
+      // Calculate timeline ruler dimensions
+      const TRACK_HEADER_WIDTH = 150;
+      const TIMELINE_HEIGHT = 40;
+      const PIXELS_PER_BEAT = 32;
+
+      // ✅ Custom position calculation for arrangement (accounts for scroll/zoom)
+      // Use latest engine state by accessing it from component scope (not closure)
+      const calculatePosition = (mouseX, mouseY) => {
+        // Only handle clicks in timeline ruler area
+        if (mouseY > TIMELINE_HEIGHT) {
+          return null; // Not in timeline
+        }
+
+        // Subtract track header width
+        const timelineX = mouseX - TRACK_HEADER_WIDTH;
+        if (timelineX < 0) {
+          return null; // In track header area
+        }
+
+        // ✅ Get latest viewport (engine is in component scope, always fresh)
+        const viewport = engine.viewport;
+        if (!viewport) return null;
+
+        // Account for scroll (scroll is already in zoomed pixels)
+        const worldX = timelineX + viewport.scrollX;
+
+        // Convert pixels to beats (considering zoom)
+        const pixelsPerBeatZoomed = PIXELS_PER_BEAT * viewport.zoomX;
+        const beatPosition = worldX / pixelsPerBeatZoomed;
+        const step = Math.floor(beatPosition * 4); // 4 steps per beat
+
+        return Math.max(0, Math.min(511, step)); // Clamp to valid range
+      };
+
+      // Register arrangement timeline for ghost playhead
+      timelineController.registerTimeline('arrangement-timeline', {
+        element: containerRef.current,
+        stepWidth: PIXELS_PER_BEAT / 4, // Convert beats to steps (16th notes)
+        totalSteps: 512, // 128 bars * 4 beats * 4 steps
+        onPositionChange: null, // Position updates handled by playback store
+        onGhostPositionChange: (pos) => {
+          setGhostPosition(pos);
+        },
+        enableGhostPosition: true,
+        enableRangeSelection: false,
+        calculatePosition // ✅ Custom calculation for viewport scroll/zoom
+      });
+
+      console.log('✅ Arrangement timeline registered');
+
+      return () => {
+        timelineController.unregisterTimeline('arrangement-timeline');
+        console.log('🧹 Arrangement timeline cleanup');
+      };
+    } catch (error) {
+      console.warn('Failed to register Arrangement timeline:', error);
+    }
+    // ✅ FIX: Empty deps - only register once, calculatePosition uses latest engine from scope
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only register once on mount
 
   // Playback mode handler - Song mode için arrangement çalma
-  useEffect(() => {
-    if (playbackMode === 'song') {
-      console.log('🎵 Song mode active - Arrangement clips:', {
-        clipCount: clips.length,
-        clips: clips.map(c => ({
-          id: c.id,
-          patternId: c.patternId,
-          startTime: c.startTime,
-          duration: c.duration,
-          trackId: c.trackId
-        }))
-      });
-      // TODO: Schedule arrangement clips to audio engine
-    }
-  }, [playbackMode, clips]);
+  // ✅ DISABLED: This was causing infinite restart loop
+  // Clip changes during playback are now handled by real-time scheduling
+  // useEffect(() => {
+  //   if (playbackMode === 'song' && isPlaying) {
+  //     // Only restart if clip count changes (add/remove), not on every render
+  //     // This would need a ref to track previous clip count
+  //   }
+  // }, [playbackMode, clips.length, isPlaying]);
 
   // Subscribe to audio asset loading events for auto-refresh and duration update
   useEffect(() => {
@@ -109,9 +174,8 @@ const ArrangementCanvas = ({ arrangement }) => {
       // Find clips using this asset and update their duration
       const audioClips = clips.filter(clip => clip.assetId === assetId);
       audioClips.forEach(clip => {
-        // Calculate duration in beats (assuming 140 BPM)
-        const BPM = 140;
-        const beatsPerSecond = BPM / 60;
+        // Calculate duration in beats using current BPM
+        const beatsPerSecond = bpm / 60;
         const durationInBeats = buffer.duration * beatsPerSecond;
 
         // Update clip duration
@@ -285,6 +349,7 @@ const ArrangementCanvas = ({ arrangement }) => {
       patterns, // Pattern data for mini view
       instruments, // Audio samples for waveform rendering
       audioInstances, // Shared audio instance properties
+      bpm, // ✅ Pass current BPM for waveform timing calculations
       playhead: {
         // Only show playhead position in song mode
         position: playbackMode === 'song' ? currentStep : 0,
@@ -293,11 +358,12 @@ const ArrangementCanvas = ({ arrangement }) => {
       patternInteraction: patternInteraction.interactionState,
       dropPreview,
       marqueeSelection,
-      isRightClickDelete
+      isRightClickDelete,
+      ghostPosition // ✅ Pass ghost position for hover preview
     };
 
     drawArrangement(ctx, engineWithData);
-  }, [engine, gridSize, tracks, clips, selectedClips, patterns, instruments, audioInstances, currentStep, isPlaying, playbackMode, patternInteraction.interactionState, dropPreview, marqueeSelection, isRightClickDelete]);
+  }, [engine, gridSize, tracks, clips, selectedClips, patterns, instruments, audioInstances, bpm, currentStep, isPlaying, playbackMode, patternInteraction.interactionState, dropPreview, marqueeSelection, isRightClickDelete, ghostPosition]);
 
   // Mouse handlers for pattern interaction
   const handleCanvasMouseDown = useCallback((e) => {
@@ -336,16 +402,22 @@ const ArrangementCanvas = ({ arrangement }) => {
       const relativeX = mouseX - TRACK_HEADER_WIDTH;
       const worldX = (scrollX + relativeX) / zoomX;
       const beatPosition = worldX / PIXELS_PER_BEAT;
-
-      // Convert beat to bar:beat:tick format (4 beats per bar, 480 ticks per beat)
-      const bar = Math.floor(beatPosition / 4);
-      const beat = Math.floor(beatPosition % 4);
-      const tick = Math.floor((beatPosition % 1) * 480);
-      const transportPos = `${bar + 1}:${beat + 1}:${tick}`;
       const step = Math.floor(beatPosition * 4); // Convert to 16th note steps
 
-      setTransportPosition(transportPos, step);
-      console.log(`🎯 Timeline clicked: Beat ${beatPosition.toFixed(2)} → ${transportPos} (step ${step})`);
+      // ✅ UNIFIED TIMELINE CONTROL: Use TimelineController for consistent behavior
+      try {
+        const timelineController = getTimelineController();
+        timelineController.seekTo(step);
+      } catch (error) {
+        console.warn('TimelineController not available, using fallback:', error);
+
+        // Fallback to legacy behavior
+        const bar = Math.floor(beatPosition / 4);
+        const beat = Math.floor(beatPosition % 4);
+        const tick = Math.floor((beatPosition % 1) * 480);
+        const transportPos = `${bar + 1}:${beat + 1}:${tick}`;
+        setTransportPosition(transportPos, step);
+      }
       return;
     }
 

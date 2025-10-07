@@ -2,14 +2,15 @@
 // DAWG - Enhanced Playback Controls with Song/Pattern Mode Support
 
 import React, { useState, useEffect } from 'react';
-import { 
-  Play, Pause, Square, SkipBack, SkipForward, 
+import {
+  Play, Pause, Square, SkipBack, SkipForward,
   Repeat, Clock, Radio, Music, Film,
   Volume2, Settings, Zap, Target
 } from 'lucide-react';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
 import { useArrangementStore } from '@/store/useArrangementStore';
 import { PLAYBACK_MODES, PLAYBACK_STATES } from '@/config/constants';
+import { getTimelineController } from '@/lib/core/TimelineControllerSingleton';
 
 export const PlaybackControls = () => {
   const {
@@ -41,52 +42,82 @@ export const PlaybackControls = () => {
 
   // =================== MAIN TRANSPORT CONTROLS ===================
 
-  const TransportButtons = () => (
-    <div className="flex items-center space-x-2">
-      {/* Stop */}
-      <button
-        onClick={handleStop}
-        className={`p-2 rounded transition-colors ${
-          playbackState === PLAYBACK_STATES.STOPPED
-            ? 'bg-orange-600 text-white shadow-lg'
-            : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
-        }`}
-        title="Stop"
-      >
-        <Square size={18} />
-      </button>
+  const TransportButtons = () => {
+    // ✅ UNIFIED TRANSPORT: Use TimelineController for consistent behavior
+    const handleUnifiedStop = async () => {
+      try {
+        const timelineController = getTimelineController();
+        await timelineController.stop();
+      } catch (error) {
+        console.warn('TimelineController not available, using fallback:', error);
+        handleStop();
+      }
+    };
 
-      {/* Play/Pause */}
-      <button
-        onClick={togglePlayPause}
-        className={`p-3 rounded-lg transition-all duration-200 ${
-          playbackState === PLAYBACK_STATES.PLAYING
-            ? 'bg-red-600 hover:bg-red-700 shadow-lg'
-            : playbackState === PLAYBACK_STATES.PAUSED
-            ? 'bg-yellow-600 hover:bg-yellow-700 shadow-lg'
-            : 'bg-green-600 hover:bg-green-700 shadow-lg'
-        }`}
-        title={
-          playbackState === PLAYBACK_STATES.PLAYING
-            ? 'Pause'
-            : playbackState === PLAYBACK_STATES.PAUSED
-            ? 'Resume'
-            : 'Play'
-        }
-      >
-        {playbackState === PLAYBACK_STATES.PLAYING ? (
-          <Pause size={20} className="text-white" />
-        ) : (
-          <Play size={20} className="text-white ml-0.5" />
-        )}
-      </button>
+    const handleUnifiedPlayPause = async () => {
+      try {
+        const timelineController = getTimelineController();
+        await timelineController.togglePlayPause();
+      } catch (error) {
+        console.warn('TimelineController not available, using fallback:', error);
+        togglePlayPause();
+      }
+    };
+
+    return (
+      <div className="flex items-center space-x-2">
+        {/* Stop */}
+        <button
+          onClick={handleUnifiedStop}
+          className={`p-2 rounded transition-colors ${
+            playbackState === PLAYBACK_STATES.STOPPED
+              ? 'bg-orange-600 text-white shadow-lg'
+              : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+          }`}
+          title="Stop"
+        >
+          <Square size={18} />
+        </button>
+
+        {/* Play/Pause */}
+        <button
+          onClick={handleUnifiedPlayPause}
+          className={`p-3 rounded-lg transition-all duration-200 ${
+            playbackState === PLAYBACK_STATES.PLAYING
+              ? 'bg-red-600 hover:bg-red-700 shadow-lg'
+              : playbackState === PLAYBACK_STATES.PAUSED
+              ? 'bg-yellow-600 hover:bg-yellow-700 shadow-lg'
+              : 'bg-green-600 hover:bg-green-700 shadow-lg'
+          }`}
+          title={
+            playbackState === PLAYBACK_STATES.PLAYING
+              ? 'Pause'
+              : playbackState === PLAYBACK_STATES.PAUSED
+              ? 'Resume'
+              : 'Play'
+          }
+        >
+          {playbackState === PLAYBACK_STATES.PLAYING ? (
+            <Pause size={20} className="text-white" />
+          ) : (
+            <Play size={20} className="text-white ml-0.5" />
+          )}
+        </button>
 
       {/* Previous/Next Bar */}
       <div className="flex space-x-1">
         <button
           onClick={() => {
-            const currentBar = Math.floor(transportPosition.split(':')[0]) || 1;
-            jumpToBar(Math.max(1, currentBar - 1));
+            try {
+              const timelineController = getTimelineController();
+              const currentPosition = timelineController.getCurrentPosition();
+              const currentBar = Math.floor(currentPosition / 16);
+              const previousBarStep = Math.max(0, currentBar - 1) * 16;
+              timelineController.seekTo(previousBarStep);
+            } catch (error) {
+              const currentBar = Math.floor(transportPosition.split(':')[0]) || 1;
+              jumpToBar(Math.max(1, currentBar - 1));
+            }
           }}
           className="p-2 rounded bg-gray-700 hover:bg-gray-600 transition-colors"
           title="Previous Bar"
@@ -95,8 +126,16 @@ export const PlaybackControls = () => {
         </button>
         <button
           onClick={() => {
-            const currentBar = Math.floor(transportPosition.split(':')[0]) || 1;
-            jumpToBar(currentBar + 1);
+            try {
+              const timelineController = getTimelineController();
+              const currentPosition = timelineController.getCurrentPosition();
+              const currentBar = Math.floor(currentPosition / 16);
+              const nextBarStep = (currentBar + 1) * 16;
+              timelineController.seekTo(nextBarStep);
+            } catch (error) {
+              const currentBar = Math.floor(transportPosition.split(':')[0]) || 1;
+              jumpToBar(currentBar + 1);
+            }
           }}
           className="p-2 rounded bg-gray-700 hover:bg-gray-600 transition-colors"
           title="Next Bar"
@@ -105,7 +144,8 @@ export const PlaybackControls = () => {
         </button>
       </div>
     </div>
-  );
+    );
+  };
 
   // =================== MODE SELECTOR ===================
 

@@ -303,22 +303,20 @@ export function usePatternInteraction(engine, clips, tracks, gridSize, snapMode,
         }
       }
     } else if (interactionState.mode === 'fade-in') {
-      // Fade-in handle drag (horizontal only)
+      // Fade-in handle drag (horizontal only, no snap - audio property not grid-aligned)
       const newFadeIn = Math.max(0, Math.min(interactionState.originalFadeIn + deltaBeat, interactionState.clip.duration));
-      const snappedFadeIn = snapToGrid(newFadeIn);
 
       updates = {
-        fadeIn: snappedFadeIn,
-        ghostPosition: { beat: interactionState.clip.startTime + snappedFadeIn, type: 'fade-in' }
+        fadeIn: newFadeIn,
+        ghostPosition: { beat: interactionState.clip.startTime + newFadeIn, type: 'fade-in' }
       };
     } else if (interactionState.mode === 'fade-out') {
-      // Fade-out handle drag (horizontal only, reversed)
+      // Fade-out handle drag (horizontal only, reversed, no snap - audio property not grid-aligned)
       const newFadeOut = Math.max(0, Math.min(interactionState.originalFadeOut - deltaBeat, interactionState.clip.duration));
-      const snappedFadeOut = snapToGrid(newFadeOut);
 
       updates = {
-        fadeOut: snappedFadeOut,
-        ghostPosition: { beat: interactionState.clip.startTime + interactionState.clip.duration - snappedFadeOut, type: 'fade-out' }
+        fadeOut: newFadeOut,
+        ghostPosition: { beat: interactionState.clip.startTime + interactionState.clip.duration - newFadeOut, type: 'fade-out' }
       };
     } else if (interactionState.mode === 'gain') {
       // Gain handle drag (vertical only)

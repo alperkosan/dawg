@@ -74,6 +74,12 @@
   background-color: var(--color-surface-3);
 }
 
+.prv7-tool-btn--disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
 /* Transport Controls */
 .prv7-transport-controls {
   display: flex;

@@ -17,7 +17,8 @@ import {
   getCurrentBPM,
   secondsToBeats,
   calculateCpuSavings,
-  CPU_CONFIG
+  CPU_CONFIG,
+  BEATS_PER_BAR
 } from './audioRenderConfig';
 
 // Re-export for external use
@@ -506,11 +507,15 @@ export class AudioExportManager {
         return false;
       }
 
-      // Get BPM to calculate duration in beats
-      const BPM = getCurrentBPM();
-      const durationBeats = secondsToBeats(exportResult.buffer.duration, BPM);
+      // Get pattern data to determine actual bar length
+      const patternData = await this._getPatternData(patternId);
+      const patternBarLength = patternData?.settings?.barLength || 4; // Default 4 bars if not set
 
-      console.log(`🔄 Duration calculation: ${exportResult.buffer.duration}s @ ${BPM} BPM = ${durationBeats} beats`);
+      // Calculate duration from pattern bar length (not from audio buffer duration)
+      const durationBeats = patternBarLength * BEATS_PER_BAR;
+
+      console.log(`🔄 Pattern bar length: ${patternBarLength} bars = ${durationBeats} beats`);
+      console.log(`🔄 Audio buffer duration: ${exportResult.buffer.duration}s (ignored for clip length)`);
 
       // Find track ID and startTime from existing pattern clips
       const existingPatternClip = arrangement.clips.find(c => c.patternId === patternId);
@@ -568,21 +573,17 @@ export class AudioExportManager {
       const { useArrangementWorkspaceStore } = await import('../../store/useArrangementWorkspaceStore');
 
       if (exportResult && exportResult.buffer) {
-        // Get BPM to calculate duration in beats
-        const BPM = getCurrentBPM();
-        const durationBeats = secondsToBeats(exportResult.buffer.duration, BPM);
+        // Get pattern data to determine actual bar length
+        const patternData = await this._getPatternData(patternId);
+        const patternBarLength = patternData?.settings?.barLength || 4; // Default 4 bars if not set
 
-        // Create audio clip data with assetId
-        const audioClipData = {
-          type: 'audio',
-          assetId: assetId,
-          name: `Frozen ${patternId}`,
-          startTime: 0, // Place at beginning of arrangement
-          duration: durationBeats,
-          color: '#f59e0b'
-        };
+        // Calculate duration from pattern bar length (not from audio buffer duration)
+        const durationBeats = patternBarLength * BEATS_PER_BAR;
 
-        // Find first available track or create new one
+        console.log(`🎵 Pattern bar length: ${patternBarLength} bars = ${durationBeats} beats`);
+        console.log(`🎵 Audio buffer duration: ${exportResult.buffer.duration}s (ignored for clip length)`);
+
+        // Get store and arrangement
         const store = useArrangementWorkspaceStore.getState();
         const arrangement = store.getActiveArrangement();
 
@@ -591,18 +592,45 @@ export class AudioExportManager {
           return null;
         }
 
-        // Get first track or create new one
-        let trackId = arrangement.tracks.length > 0 ? arrangement.tracks[0].id : null;
-        if (!trackId) {
-          trackId = store.addTrack();
+        // Find a good placement position
+        // Look for last clip end time, or start at 0
+        let startTime = 0;
+        let trackId = null;
+
+        if (arrangement.clips.length > 0) {
+          // Find the last ending clip
+          const lastClip = arrangement.clips.reduce((latest, clip) => {
+            const clipEnd = clip.startTime + clip.duration;
+            const latestEnd = latest.startTime + latest.duration;
+            return clipEnd > latestEnd ? clip : latest;
+          });
+
+          // Place new clip right after the last one on the same track
+          startTime = lastClip.startTime + lastClip.duration;
+          trackId = lastClip.trackId;
+        } else {
+          // No clips, use first track or create one
+          trackId = arrangement.tracks.length > 0 ? arrangement.tracks[0].id : null;
+          if (!trackId) {
+            trackId = store.addTrack();
+          }
         }
 
-        audioClipData.trackId = trackId;
+        // Create audio clip data with assetId
+        const audioClipData = {
+          type: 'audio',
+          assetId: assetId,
+          trackId: trackId,
+          name: `${patternData?.name || patternId}`,
+          startTime: startTime,
+          duration: durationBeats,
+          color: '#f59e0b'
+        };
 
         // Add clip to arrangement
         const clipId = store.addClip(audioClipData);
 
-        console.log(`🎵 Created arrangement clip ${clipId} for pattern ${patternId}`);
+        console.log(`🎵 Created arrangement clip ${clipId} at ${startTime} beats on track ${trackId}`);
         return clipId;
       }
     } catch (error) {

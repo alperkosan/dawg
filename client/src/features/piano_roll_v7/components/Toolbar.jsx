@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { MousePointer, Edit3, Eraser, Scissors } from 'lucide-react';
+import { MousePointer, Edit3, Eraser, Scissors, Music, Zap, Guitar, Shuffle, FlipHorizontal2 } from 'lucide-react';
+import { getToolManager, TOOL_TYPES } from '@/lib/piano-roll-tools';
 import './Toolbar.css';
 
 const regularSnapOptions = {
@@ -18,10 +19,15 @@ const tripletSnapOptions = {
 };
 
 const tools = [
-    { id: 'select', label: 'Select', icon: MousePointer, hotkey: 'V' },
-    { id: 'pencil', label: 'Pencil', icon: Edit3, hotkey: 'B' },
-    { id: 'eraser', label: 'Eraser', icon: Eraser, hotkey: 'E' },
-    { id: 'slice', label: 'Slice', icon: Scissors, hotkey: 'C' }
+    { id: TOOL_TYPES.SELECT, label: 'Select', icon: MousePointer, hotkey: 'V' },
+    { id: TOOL_TYPES.PAINT_BRUSH, label: 'Paint', icon: Edit3, hotkey: 'B' },
+    { id: TOOL_TYPES.ERASER, label: 'Eraser', icon: Eraser, hotkey: 'E' },
+    { id: TOOL_TYPES.CHOPPER, label: 'Chopper', icon: Scissors, hotkey: 'C', requiresSelection: true },
+    { id: TOOL_TYPES.STRUMIZER, label: 'Strum', icon: Guitar, hotkey: 'S', requiresSelection: true },
+    { id: TOOL_TYPES.ARPEGGIATOR, label: 'Arpeggio', icon: Music, hotkey: 'A', requiresSelection: true },
+    { id: TOOL_TYPES.FLAM, label: 'Flam', icon: Zap, hotkey: 'F', requiresSelection: true },
+    { id: TOOL_TYPES.RANDOMIZER, label: 'Randomize', icon: Shuffle, hotkey: 'R', requiresSelection: true },
+    { id: TOOL_TYPES.FLIP, label: 'Flip', icon: FlipHorizontal2, hotkey: 'L', requiresSelection: true }
 ];
 
 function Toolbar({
@@ -43,36 +49,29 @@ function Toolbar({
                     <span className="prv7-brand-text">Piano Roll</span>
                 </div>
 
-                {/* Essential tools - Select, Pencil, Eraser, Slice */}
+                {/* All tools */}
                 <div className="prv7-tool-group">
-                    <button
-                        className={`prv7-tool-btn ${activeTool === 'select' ? 'prv7-tool-btn--active' : ''}`}
-                        onClick={() => onToolChange?.('select')}
-                        title="Select (V)"
-                    >
-                        <MousePointer size={18} />
-                    </button>
-                    <button
-                        className={`prv7-tool-btn ${activeTool === 'pencil' ? 'prv7-tool-btn--active' : ''}`}
-                        onClick={() => onToolChange?.('pencil')}
-                        title="Pencil (B)"
-                    >
-                        <Edit3 size={18} />
-                    </button>
-                    <button
-                        className={`prv7-tool-btn ${activeTool === 'eraser' ? 'prv7-tool-btn--active' : ''}`}
-                        onClick={() => onToolChange?.('eraser')}
-                        title="Eraser (E)"
-                    >
-                        <Eraser size={18} />
-                    </button>
-                    <button
-                        className={`prv7-tool-btn ${activeTool === 'slice' ? 'prv7-tool-btn--active' : ''}`}
-                        onClick={() => onToolChange?.('slice')}
-                        title="Slice (C)"
-                    >
-                        <Scissors size={18} />
-                    </button>
+                    {tools.map(tool => {
+                        const Icon = tool.icon;
+                        const isDisabled = tool.requiresSelection && selectedCount === 0;
+
+                        return (
+                            <button
+                                key={tool.id}
+                                className={`prv7-tool-btn ${activeTool === tool.id ? 'prv7-tool-btn--active' : ''} ${isDisabled ? 'prv7-tool-btn--disabled' : ''}`}
+                                onClick={() => {
+                                    if (!isDisabled) {
+                                        const toolManager = getToolManager();
+                                        toolManager.setActiveTool(tool.id);
+                                    }
+                                }}
+                                title={`${tool.label} (Alt+${tool.hotkey})${tool.requiresSelection ? '\nRequires selection' : ''}`}
+                                disabled={isDisabled}
+                            >
+                                <Icon size={18} />
+                            </button>
+                        );
+                    })}
                 </div>
             </div>
 

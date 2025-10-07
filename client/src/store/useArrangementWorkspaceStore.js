@@ -27,22 +27,7 @@ const createInitialArrangement = (id, name) => ({
     { id: 'track-7', name: 'Track 7', color: '#fc5c65', height: 60, muted: false, solo: false, locked: false, volume: 1.0, pan: 0 },
     { id: 'track-8', name: 'Track 8', color: '#26de81', height: 60, muted: false, solo: false, locked: false, volume: 1.0, pan: 0 },
   ],
-  clips: [
-    // Demo audio clip for testing fade/gain controls
-    {
-      id: 'demo-audio-clip',
-      type: 'audio',
-      sampleId: 'demo-sample', // Will be created in instruments store
-      trackId: 'track-2',
-      startTime: 4, // Start at beat 4 (bar 2)
-      duration: 8, // 8 beats (2 bars)
-      color: '#f59e0b',
-      name: 'Demo Audio',
-      fadeIn: 0.5, // 0.5 beat fade in
-      fadeOut: 1.0, // 1 beat fade out
-      gain: -1.4 // -1.4 dB
-    }
-  ],
+  clips: [],
   tempo: 140,
   timeSignature: [4, 4],
   length: 128, // bars
@@ -540,6 +525,10 @@ export const useArrangementWorkspaceStore = create((set, get) => ({
     }));
 
     console.log(`🎵 Added clip: ${newClip.name}${instanceId ? ` (instance: ${instanceId})` : ''}`);
+
+    // ✅ Notify PlaybackManager to reschedule if in song mode and playing
+    get()._notifyPlaybackScheduleChange('clip-added');
+
     return newClip.id;
   },
 
@@ -561,6 +550,14 @@ export const useArrangementWorkspaceStore = create((set, get) => ({
         }
       }
     }));
+
+    // ✅ Notify playback if timing-critical properties changed
+    const timingProps = ['duration', 'startTime', 'fadeIn', 'fadeOut'];
+    const hasTimingChange = Object.keys(updates).some(key => timingProps.includes(key));
+
+    if (hasTimingChange) {
+      get()._notifyPlaybackScheduleChange('clip-updated');
+    }
   },
 
   /**
@@ -587,6 +584,9 @@ export const useArrangementWorkspaceStore = create((set, get) => ({
     }));
 
     console.log(`🎵 Deleted clip: ${clipId}`);
+
+    // ✅ Notify PlaybackManager to reschedule if in song mode and playing
+    get()._notifyPlaybackScheduleChange('clip-deleted');
   },
 
   /**
@@ -999,6 +999,51 @@ export const useArrangementWorkspaceStore = create((set, get) => ({
     const activeArrangementId = state.activeArrangementId;
     const arrangement = state.arrangements[activeArrangementId];
     return arrangement.clips.filter(c => c.instanceId === instanceId).length;
+  },
+
+  // =================== INTERNAL HELPERS ===================
+
+  /**
+   * Notify PlaybackManager to reschedule when clips change
+   * @private
+   */
+  _notifyPlaybackScheduleChange: (reason = 'clips-changed') => {
+    try {
+      import('../lib/services/AudioContextService').then(({ AudioContextService }) => {
+        const audioEngine = AudioContextService.getAudioEngine();
+        if (audioEngine?.playbackManager) {
+          const playbackManager = audioEngine.playbackManager;
+
+          // Only handle if in song mode
+          if (playbackManager.currentMode === 'song') {
+            if (playbackManager.isPlaying) {
+              // ✅ IMMEDIATE: Stop active sources and reschedule from current position
+              console.log(`🔄 Clip ${reason} during playback - immediate reschedule from current position`);
+
+              const currentPos = playbackManager.getCurrentPosition();
+
+              // Stop all active sources to prevent overlap
+              playbackManager._clearScheduledEvents();
+
+              // Reschedule from current position with small lookahead
+              const audioContext = audioEngine.audioContext;
+              const startTime = audioContext.currentTime + 0.01; // 10ms lookahead
+
+              // Force immediate scheduling from current position
+              playbackManager._scheduleContent(startTime, reason, true);
+
+              console.log(`✅ Rescheduled from step ${currentPos}`);
+            } else {
+              // ✅ SAFE: Not playing, just clear for next play
+              console.log(`🔄 Clip ${reason} while stopped - cleared`);
+              playbackManager._clearScheduledEvents();
+            }
+          }
+        }
+      });
+    } catch (error) {
+      console.warn('Failed to notify PlaybackManager:', error);
+    }
   }
 }));
 

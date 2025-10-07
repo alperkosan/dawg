@@ -3,9 +3,13 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useArrangementStore } from '@/store/useArrangementStore';
 import { samplePreview } from '../utils/samplePreview';
+import { getToolManager, TOOL_TYPES } from '@/lib/piano-roll-tools';
 
 const RULER_HEIGHT = 30;
 const KEYBOARD_WIDTH = 80;
+
+// Debug mode - set to false for production
+const DEBUG_MODE = false;
 
 // Helper: MIDI pitch to note name
 function pitchToString(midiPitch) {
@@ -198,15 +202,17 @@ export function useNoteInteractionsV2(
         const rightAreaY2 = noteY + noteHeight; // Exact note bottom
 
         // Debug zones
-        console.log('🔧 Resize zones debug:', {
-            noteGeometry: { x: noteX, y: noteY, width: noteWidth, height: noteHeight },
-            mouse: { worldX, worldY },
-            leftZone: { x1: leftAreaX1, x2: leftAreaX2, width: leftAreaX2 - leftAreaX1 },
-            rightZone: { x1: rightAreaX1, x2: rightAreaX2, width: rightAreaX2 - rightAreaX1 },
-            overlap: leftAreaX2 > rightAreaX1 ? 'OVERLAP!' : 'OK',
-            resizeZoneWidth,
-            containment: 'WITHIN_NOTE_BOUNDS'
-        });
+        if (DEBUG_MODE) {
+            console.log('🔧 Resize zones debug:', {
+                noteGeometry: { x: noteX, y: noteY, width: noteWidth, height: noteHeight },
+                mouse: { worldX, worldY },
+                leftZone: { x1: leftAreaX1, x2: leftAreaX2, width: leftAreaX2 - leftAreaX1 },
+                rightZone: { x1: rightAreaX1, x2: rightAreaX2, width: rightAreaX2 - rightAreaX1 },
+                overlap: leftAreaX2 > rightAreaX1 ? 'OVERLAP!' : 'OK',
+                resizeZoneWidth,
+                containment: 'WITHIN_NOTE_BOUNDS'
+            });
+        }
 
         // Resize priority: check handles first, then fallback to move
         const leftHit = worldX >= leftAreaX1 && worldX <= leftAreaX2 &&
@@ -249,7 +255,7 @@ export function useNoteInteractionsV2(
         const currentNotes = notes();
         updatePatternStore([...currentNotes, newNote]);
 
-        console.log('➕ Note added:', newNote);
+        if (DEBUG_MODE) console.log('➕ Note added:', newNote);
         return newNote;
     }, [currentInstrument, snapValue, notes, updatePatternStore]);
 
@@ -260,7 +266,7 @@ export function useNoteInteractionsV2(
             note.id === noteId ? { ...note, ...updates } : note
         );
         updatePatternStore(updatedNotes);
-        console.log('📝 Note updated:', noteId, updates);
+        if (DEBUG_MODE) console.log('📝 Note updated:', noteId, updates);
     }, [notes, updatePatternStore]);
 
     // Delete notes
@@ -276,13 +282,13 @@ export function useNoteInteractionsV2(
             return newSet;
         });
 
-        console.log('🗑️ Notes deleted:', noteIds);
+        if (DEBUG_MODE) console.log('🗑️ Notes deleted:', noteIds);
     }, [notes, updatePatternStore]);
 
     // Slice note - Split note into two at given time position
     const sliceNote = useCallback((note, sliceTime) => {
         if (!note || sliceTime <= note.startTime || sliceTime >= (note.startTime + note.length)) {
-            console.warn('🔪 Invalid slice position:', { sliceTime, note });
+            if (DEBUG_MODE) console.warn('🔪 Invalid slice position:', { sliceTime, note });
             return;
         }
 
@@ -296,7 +302,7 @@ export function useNoteInteractionsV2(
 
         // ✅ IMPROVED VALIDATION: Check against minimum note length
         if (firstNoteLength < minNoteLength || secondNoteLength < minNoteLength) {
-            console.warn('🔪 Slice would create notes too small:', {
+            if (DEBUG_MODE) console.warn('🔪 Slice would create notes too small:', {
                 firstLength: firstNoteLength,
                 secondLength: secondNoteLength,
                 minLength: minNoteLength,
@@ -330,7 +336,7 @@ export function useNoteInteractionsV2(
         // Select both new notes
         setSelectedNoteIds(new Set([firstNote.id, secondNote.id]));
 
-        console.log('🔪 Note sliced:', {
+        if (DEBUG_MODE) console.log('🔪 Note sliced:', {
             original: { id: note.id, startTime: note.startTime, length: note.length },
             sliceTime: snappedSliceTime,
             firstNote: { id: firstNote.id, startTime: firstNote.startTime, length: firstNote.length },
@@ -394,7 +400,7 @@ export function useNoteInteractionsV2(
         });
 
         if (affectedNotes.length === 0) {
-            console.warn('🔪 No notes found at slice time within pitch range');
+            if (DEBUG_MODE) console.warn('🔪 No notes found at slice time within pitch range');
             return;
         }
 
@@ -420,7 +426,7 @@ export function useNoteInteractionsV2(
 
             // Check minimum lengths
             if (firstNoteLength < minNoteLength || secondNoteLength < minNoteLength) {
-                console.warn('🔪 Slice would create notes too small for note:', note.id);
+                if (DEBUG_MODE) console.warn('🔪 Slice would create notes too small for note:', note.id);
                 allNewNotes.push(note); // Keep original
                 return;
             }
@@ -458,7 +464,7 @@ export function useNoteInteractionsV2(
 
         setSelectedNoteIds(new Set(newNoteIds));
 
-        console.log('🔪 Pitch range slice completed:', {
+        if (DEBUG_MODE) console.log('🔪 Pitch range slice completed:', {
             sliceTime: snappedSliceTime,
             pitchRange: `${Math.min(startPitch, endPitch)} - ${Math.max(startPitch, endPitch)}`,
             affectedNotes: affectedNotes.length,
@@ -498,8 +504,11 @@ export function useNoteInteractionsV2(
         const coords = getCoordinatesFromEvent(e);
         const foundNote = findNoteAtPosition(coords.time, coords.pitch);
 
+        const toolManager = getToolManager();
+        const currentTool = toolManager.getActiveTool();
 
-        if (activeTool === 'pencil') {
+        // ✅ PAINT BRUSH TOOL - Draw notes by clicking or dragging
+        if (currentTool === TOOL_TYPES.PAINT_BRUSH) {
             if (!foundNote) {
                 // Add new note
                 const newNote = addNote(coords.time, coords.pitch);
@@ -511,7 +520,15 @@ export function useNoteInteractionsV2(
                     );
                 }
             }
-        } else if (activeTool === 'select') {
+        }
+        // ✅ ERASER TOOL - Delete notes on click
+        else if (currentTool === TOOL_TYPES.ERASER) {
+            if (foundNote) {
+                deleteNotes([foundNote.id]);
+            }
+        }
+        // ✅ SELECT TOOL - Standard selection and manipulation
+        else if (currentTool === TOOL_TYPES.SELECT) {
             if (foundNote) {
                 // Check for resize handle first
                 const resizeHandle = getResizeHandle(coords.x, coords.y, foundNote);
@@ -523,12 +540,14 @@ export function useNoteInteractionsV2(
                         selectNote(foundNote.id, false);
                     }
 
-                    console.log('🎯 Resize started:', {
-                        handle: resizeHandle,
-                        noteId: foundNote.id,
-                        originalNote: foundNote,
-                        coords
-                    });
+                    if (DEBUG_MODE) {
+                        console.log('🎯 Resize started:', {
+                            handle: resizeHandle,
+                            noteId: foundNote.id,
+                            originalNote: foundNote,
+                            coords
+                        });
+                    }
 
                     setDragState({
                         type: 'resizing',
@@ -617,11 +636,13 @@ export function useNoteInteractionsV2(
                         targetNote: foundNote
                     });
 
-                    console.log('🔪 Vertical slice range started:', {
-                        time: coords.time,
-                        startPitch: coords.pitch,
-                        note: foundNote.id
-                    });
+                    if (DEBUG_MODE) {
+                        console.log('🔪 Vertical slice range started:', {
+                            time: coords.time,
+                            startPitch: coords.pitch,
+                            note: foundNote.id
+                        });
+                    }
                 }
             }
         }
@@ -642,23 +663,46 @@ export function useNoteInteractionsV2(
     // Mouse move handler
     const handleMouseMove = useCallback((e) => {
         const coords = getCoordinatesFromEvent(e);
+        const toolManager = getToolManager();
+        const currentTool = toolManager.getActiveTool();
 
         // Update hover with cursor feedback
         const foundNote = findNoteAtPosition(coords.time, coords.pitch);
         setHoveredNoteId(foundNote?.id || null);
 
+        // ✅ PAINT BRUSH PREVIEW - Show ghost note where user will draw
+        if (currentTool === TOOL_TYPES.PAINT_BRUSH && !foundNote) {
+            const snappedTime = snapToGrid(coords.time, snapValue);
+            const { stepWidth } = engine.dimensions || {};
+
+            if (stepWidth && coords.pitch >= 0 && coords.pitch <= 127) {
+                setPreviewNote({
+                    pitch: coords.pitch,
+                    startTime: snappedTime,
+                    length: 1, // Default length
+                    velocity: 0.8,
+                    isPreview: true
+                });
+            } else {
+                setPreviewNote(null);
+            }
+        } else if (currentTool !== TOOL_TYPES.PAINT_BRUSH) {
+            setPreviewNote(null);
+        }
+
+        // ✅ ERASER HIGHLIGHT - Highlight note that will be deleted
+        if (currentTool === TOOL_TYPES.ERASER && foundNote) {
+            e.currentTarget.style.cursor = 'not-allowed';
+        }
+
         // Cursor feedback for better UX
-        if (foundNote && activeTool === 'select') {
+        if (foundNote && currentTool === TOOL_TYPES.SELECT) {
             const resizeHandle = getResizeHandle(coords.x, coords.y, foundNote);
             if (resizeHandle) {
                 e.currentTarget.style.cursor = 'ew-resize';
             } else {
                 e.currentTarget.style.cursor = 'move';
             }
-        } else if (activeTool === 'pencil') {
-            e.currentTarget.style.cursor = 'crosshair';
-        } else if (activeTool === 'eraser') {
-            e.currentTarget.style.cursor = 'not-allowed';
         } else if (activeTool === 'slice') {
             e.currentTarget.style.cursor = foundNote ? 'col-resize' : 'default';
 
@@ -699,11 +743,13 @@ export function useNoteInteractionsV2(
                     actualEndPitch
                 });
 
-                console.log('🔪 Vertical slice range updated:', {
-                    time: sliceRange.time,
-                    pitchRange: `${actualEndPitch} - ${actualStartPitch}`,
-                    height: actualStartPitch - actualEndPitch
-                });
+                if (DEBUG_MODE) {
+                    console.log('🔪 Vertical slice range updated:', {
+                        time: sliceRange.time,
+                        pitchRange: `${actualEndPitch} - ${actualStartPitch}`,
+                        height: actualStartPitch - actualEndPitch
+                    });
+                }
             }
         } else if (dragState?.type === 'moving') {
             // Calculate deltas
@@ -897,6 +943,80 @@ export function useNoteInteractionsV2(
 
     // Key down handler
     const handleKeyDown = useCallback((e) => {
+        // ✅ TOOL EXECUTION - Execute active tool on selected notes
+        const toolManager = getToolManager();
+        const currentTool = toolManager.getActiveTool();
+
+        // Pattern generation tools require selection
+        if (selectedNoteIds.size > 0 && e.altKey) {
+            const currentNotes = notes();
+            const selectedNotes = currentNotes.filter(note => selectedNoteIds.has(note.id));
+
+            // Convert to tool format
+            const toolNotes = selectedNotes.map(note => ({
+                id: note.id,
+                pitch: note.pitch,
+                time: note.startTime,
+                duration: note.length,
+                velocity: note.velocity
+            }));
+
+            let result = null;
+
+            // Execute tool based on current tool and key
+            if (currentTool === TOOL_TYPES.CHOPPER && (e.key === 'c' || e.key === 'C')) {
+                e.preventDefault();
+                const tool = toolManager.getTool(TOOL_TYPES.CHOPPER);
+                result = tool.chopNotes(toolNotes);
+            } else if (currentTool === TOOL_TYPES.STRUMIZER && (e.key === 's' || e.key === 'S')) {
+                e.preventDefault();
+                const tool = toolManager.getTool(TOOL_TYPES.STRUMIZER);
+                result = tool.strumNotes(toolNotes);
+            } else if (currentTool === TOOL_TYPES.ARPEGGIATOR && (e.key === 'a' || e.key === 'A')) {
+                e.preventDefault();
+                const tool = toolManager.getTool(TOOL_TYPES.ARPEGGIATOR);
+                result = tool.arpeggiate(toolNotes);
+            } else if (currentTool === TOOL_TYPES.FLAM && (e.key === 'f' || e.key === 'F')) {
+                e.preventDefault();
+                const tool = toolManager.getTool(TOOL_TYPES.FLAM);
+                result = tool.flamNotes(toolNotes);
+            } else if (currentTool === TOOL_TYPES.RANDOMIZER && (e.key === 'r' || e.key === 'R')) {
+                e.preventDefault();
+                const tool = toolManager.getTool(TOOL_TYPES.RANDOMIZER);
+                result = tool.randomizeNotes(toolNotes);
+            } else if (currentTool === TOOL_TYPES.FLIP && (e.key === 'l' || e.key === 'L')) {
+                e.preventDefault();
+                const tool = toolManager.getTool(TOOL_TYPES.FLIP);
+                result = tool.flipNotes(toolNotes);
+            }
+
+            // Apply tool result
+            if (result && result.action === 'replace') {
+                // Delete original notes
+                deleteNotes(Array.from(selectedNoteIds));
+
+                // Add new notes from tool
+                const newNoteIds = [];
+                result.notes.forEach(toolNote => {
+                    const newNote = addNote(
+                        toolNote.time,
+                        toolNote.pitch,
+                        toolNote.duration,
+                        toolNote.velocity
+                    );
+                    if (newNote) {
+                        newNoteIds.push(newNote.id);
+                    }
+                });
+
+                // Select new notes
+                if (newNoteIds.length > 0) {
+                    setSelectedNoteIds(new Set(newNoteIds));
+                }
+                return; // Tool executed, don't process other keys
+            }
+        }
+
         if (e.key === 'Delete' || e.key === 'Backspace') {
             if (selectedNoteIds.size > 0) {
                 deleteNotes(Array.from(selectedNoteIds));

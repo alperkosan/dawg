@@ -2,6 +2,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {usePlaybackStore} from '@/store/usePlaybackStore';
 import { uiUpdateManager, UPDATE_PRIORITIES, UPDATE_FREQUENCIES } from '@/lib/core/UIUpdateManager.js';
+import { getTimelineController } from '@/lib/core/TimelineControllerSingleton';
 
 // --- SABİTLER VE LİMİTLER ---
 const RULER_HEIGHT = 30;
@@ -17,7 +18,7 @@ const MIN_ZOOM_Y = 1.0;
 const MAX_ZOOM_Y = 2.5;
 const SMOOTHNESS = 0.2; // Yumuşaklık faktörü
 
-export function usePianoRollEngine(containerRef) {
+export function usePianoRollEngine(containerRef, playbackControls = {}) {
     const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
     const [snapValue, setSnapValue] = useState(1); // 1 = 1/16, 4 = 1/4 etc.
 
@@ -27,13 +28,16 @@ export function usePianoRollEngine(containerRef) {
     });
 
     const hasSetInitialScrollRef = useRef(false);
-    
+
     const [, setRenderTrigger] = useState(0);
     const isPanningRef = useRef(false);
     const lastMousePosRef = useRef({ x: 0, y: 0 });
     const isSettingLoopRef = useRef(false);
     const loopStartPointRef = useRef(0);
     const { setLoopRegion } = usePlaybackStore.getState();
+
+    // Transport position setter from parent
+    const { setTransportPosition } = playbackControls;
 
     useEffect(() => {
         const container = containerRef.current;
@@ -157,12 +161,31 @@ export function usePianoRollEngine(containerRef) {
         const { offsetY, offsetX, button } = e;
         const vp = viewportRef.current;
         if (offsetY <= RULER_HEIGHT && button === 0) {
-            isSettingLoopRef.current = true;
             const mouseX = offsetX - KEYBOARD_WIDTH;
             const worldX = (vp.scrollX + mouseX) / vp.zoomX;
             const step = Math.floor(worldX / BASE_STEP_WIDTH);
-            loopStartPointRef.current = step;
-            setLoopRegion(step, step + 1);
+
+            // ✅ UNIFIED TIMELINE CONTROL: Use TimelineController for consistent behavior
+            try {
+                const timelineController = getTimelineController();
+                timelineController.seekTo(step);
+            } catch (error) {
+                console.warn('TimelineController not available, using fallback:', error);
+
+                // Fallback to legacy behavior
+                if (setTransportPosition) {
+                    const beatPosition = step / 4;
+                    const bar = Math.floor(beatPosition / 4);
+                    const beat = Math.floor(beatPosition % 4);
+                    const tick = Math.floor((beatPosition % 1) * 480);
+                    const transportPos = `${bar + 1}:${beat + 1}:${tick}`;
+                    setTransportPosition(transportPos, step);
+                } else {
+                    isSettingLoopRef.current = true;
+                    loopStartPointRef.current = step;
+                    setLoopRegion(step, step + 1);
+                }
+            }
             return;
         }
         if (button === 1) {
@@ -170,7 +193,7 @@ export function usePianoRollEngine(containerRef) {
             lastMousePosRef.current = { x: e.clientX, y: e.clientY };
             e.target.style.cursor = 'grabbing';
         }
-    }, [setLoopRegion]);
+    }, [setLoopRegion, setTransportPosition]);
 
     const handleMouseMove = useCallback((e) => {
         const vp = viewportRef.current;
