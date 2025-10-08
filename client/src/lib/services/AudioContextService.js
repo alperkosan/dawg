@@ -1212,4 +1212,53 @@ export class AudioContextService {
 
     console.log('✅ AudioContextService disposed');
   }
+
+  // =================== VISUALIZATION SUPPORT ===================
+
+  /**
+   * Get effect audio node for visualization
+   * @param {string} trackId - Track ID
+   * @param {string} effectId - Effect ID
+   * @returns {AudioNode|null} The effect's audio node or null
+   */
+  static getEffectAudioNode(trackId, effectId) {
+    if (!this.audioEngine || !this.audioEngine.mixerChannels) {
+      console.warn('⚠️ No audio engine available');
+      return null;
+    }
+
+    const channel = this.audioEngine.mixerChannels.get(trackId);
+    if (!channel || !channel.effects) {
+      console.warn('⚠️ No mixer channel found for trackId:', trackId);
+      return null;
+    }
+
+    const effect = channel.effects.get(effectId);
+    if (!effect || !effect.node) {
+      console.warn('⚠️ Effect not found:', effectId);
+      return null;
+    }
+
+    return effect.node;
+  }
+
+  /**
+   * Get channel audio node for visualization
+   * @param {string} trackId - Track ID
+   * @returns {AudioNode|null} The channel's output node or null
+   */
+  static getChannelAudioNode(trackId) {
+    if (!this.audioEngine || !this.audioEngine.mixerChannels) {
+      console.warn('⚠️ No audio engine available');
+      return null;
+    }
+
+    const channel = this.audioEngine.mixerChannels.get(trackId);
+    if (!channel) {
+      console.warn('⚠️ No mixer channel found for trackId:', trackId);
+      return null;
+    }
+
+    return channel.output;
+  }
 };

@@ -11,7 +11,6 @@ import TransportManagerSingleton from './lib/core/TransportManagerSingleton';
 import { usePlaybackStore } from './store/usePlaybackStore';
 import { useArrangementStore } from './store/useArrangementStore';
 import { useInstrumentsStore } from './store/useInstrumentsStore';
-import { useMixerStore } from './store/useMixerStore';
 
 // Helper: Create demo audio buffer (sine wave for testing)
 const createDemoAudioBuffer = (audioContext, frequency = 440, duration = 2) => {
@@ -149,29 +148,6 @@ function App() {
       // ✅ PERFORMANCE: Get fresh data but with memoized getters
       engine.setActivePattern(storeGetters.getActivePatternId());
       engine.setBPM(storeGetters.getBPM());
-
-      // 🎵 Create demo audio sample for testing fade/gain controls
-      console.log('🎵 Creating demo audio sample...');
-      const demoBuffer = createDemoAudioBuffer(engine.audioContext, 440, 2);
-      const demoInstrument = {
-        id: 'demo-sample',
-        name: 'Demo Audio',
-        type: 'sample',
-        audioBuffer: demoBuffer,
-        mixerTrackId: 'track-14', // Assuming we have spare mixer tracks
-        pianoRoll: false
-      };
-
-      // Add demo instrument to store and engine
-      useInstrumentsStore.getState().instruments.push(demoInstrument);
-
-      // Register demo sample in audio engine
-      try {
-        await engine.createInstrument(demoInstrument);
-        console.log('✅ Demo audio sample created and registered in engine');
-      } catch (error) {
-        console.error('❌ Failed to register demo sample in engine:', error);
-      }
 
       setEngineStatus('ready');
       console.log('✅ Ses sistemi başarıyla başlatıldı ve hazır!');

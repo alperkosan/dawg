@@ -26,21 +26,56 @@ export class TubeGlowVisualizer extends AnimatedPluginVisualizer {
     this.tubeHeightRatio = 0.8;
     this.filamentCount = 3;
     this.glowLayers = 5;
+
+    // Audio analysis
+    this.analyser = null; // Will be set by PluginVisualizerAPI
+    this.audioBuffer = null;
+  }
+
+  /**
+   * Get real-time audio level from analyser
+   */
+  getAudioLevel() {
+    if (!this.analyser) return -60;
+
+    if (!this.audioBuffer) {
+      this.audioBuffer = new Float32Array(this.analyser.fftSize);
+    }
+
+    this.analyser.getFloatTimeDomainData(this.audioBuffer);
+
+    // Calculate RMS (Root Mean Square) for audio level
+    let sum = 0;
+    for (let i = 0; i < this.audioBuffer.length; i++) {
+      sum += this.audioBuffer[i] * this.audioBuffer[i];
+    }
+    const rms = Math.sqrt(sum / this.audioBuffer.length);
+
+    // Convert to dB scale (-60 to 0)
+    const db = 20 * Math.log10(Math.max(rms, 0.00001));
+    return Math.max(-60, Math.min(0, db));
   }
 
   /**
    * Main animated render function
    */
   onRenderAnimated(ctx, timestamp, deltaTime, params) {
-    const { drive = 50, mix = 1, tone = 0.5, inputLevel = 0 } = params;
+    const { drive = 50, mix = 1, tone = 0.5 } = params;
 
     // Clear canvas
     this.clear('rgba(10, 14, 26, 0.95)');
 
-    // Calculate intensity
+    // 🎵 Get real-time audio level from analyser
+    const realInputLevel = this.getAudioLevel();
+
+    // Calculate intensity from audio input
     const distortion = drive / 100;
-    const normalizedInput = Math.max(0, Math.min(1, (inputLevel + 60) / 60));
-    const intensity = normalizedInput * distortion * mix;
+    const normalizedInput = Math.max(0, Math.min(1, (realInputLevel + 60) / 60));
+
+    // Combine input level with drive for visual intensity
+    // Use drive as minimum base + input level for dynamics
+    const baseIntensity = Math.max(distortion * 0.3, normalizedInput);
+    const intensity = baseIntensity * distortion * mix;
 
     // Canvas center
     const centerX = this.canvasWidth / 2;

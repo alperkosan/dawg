@@ -170,6 +170,51 @@ export class BasePluginVisualizer {
   }
 
   /**
+   * Update canvas reference (used when canvas is recreated)
+   */
+  updateCanvas(newCanvas) {
+    if (!newCanvas) {
+      console.warn(`[${this.id}] updateCanvas called with null canvas`);
+      return;
+    }
+
+    console.log(`🔄 [${this.id}] Updating canvas reference`);
+
+    const oldCanvas = this.canvas;
+    this.canvas = newCanvas;
+
+    // Reinitialize rendering context
+    if (this.renderMode === 'webgl') {
+      this.gl = this.canvas.getContext('webgl2') || this.canvas.getContext('webgl');
+      if (!this.gl) {
+        console.warn(`[${this.id}] WebGL not available, falling back to canvas`);
+        this.renderMode = 'canvas';
+        this.ctx = this.canvas.getContext('2d');
+      }
+    } else {
+      this.ctx = this.canvas.getContext('2d');
+    }
+
+    // Trigger resize handling
+    this.handleCanvasResize();
+
+    // Call custom handler if exists
+    this.onCanvasUpdate?.(oldCanvas, newCanvas);
+
+    // Request immediate render
+    this.needsRender = true;
+
+    console.log(`✅ [${this.id}] Canvas reference updated successfully`);
+  }
+
+  /**
+   * Override: Called when canvas is updated
+   */
+  onCanvasUpdate(oldCanvas, newCanvas) {
+    // Override in child class if needed
+  }
+
+  /**
    * Request re-render on next frame
    */
   requestRender() {

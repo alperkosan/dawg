@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { MeteringService } from '@/lib/core/MeteringService';
+import React, { useState, useMemo } from 'react';
+import { AudioContextService } from '@/lib/services/AudioContextService';
 import { TubeGlowVisualizer, HarmonicVisualizer } from '@/lib/visualization/plugin-visualizers';
 import { ProfessionalKnob } from '../container/PluginControls';
 import { PluginCanvas } from '../common/PluginCanvas';
@@ -79,27 +79,22 @@ export const SaturatorUI = ({ trackId, effect, onChange }) => {
   console.log('🎨 [SATURATOR V2 WITH GRACE PERIOD] Component mounted/rendered', effect.id);
 
   const { distortion, wet } = effect.settings;
-  const [inputLevel, setInputLevel] = useState(-60);
   const [saturationType, setSaturationType] = useState('tube');
-
-  // Subscribe to input level metering
-  useEffect(() => {
-    const meterId = `${trackId}-input`;
-    const handleLevel = (data) => setInputLevel(data.peak || -60);
-    const unsubscribe = MeteringService.subscribe(meterId, handleLevel);
-    return unsubscribe;
-  }, [trackId]);
 
   // Plugin ID for visualizers
   const pluginId = effect.id || `saturator-${trackId}`;
+
+  // 🎵 Get audio node for real-time visualization
+  const audioNode = useMemo(() => {
+    return AudioContextService.getEffectAudioNode(trackId, effect.id);
+  }, [trackId, effect.id]);
 
   // ⚡ FIX: Memoize params objects to prevent unnecessary updates
   const tubeGlowParams = useMemo(() => ({
     drive: distortion * 100,
     mix: wet,
-    tone: 0.5,
-    inputLevel
-  }), [distortion, wet, inputLevel]);
+    tone: 0.5
+  }), [distortion, wet]);
 
   const harmonicParams = useMemo(() => ({
     drive: distortion * 100,
@@ -118,6 +113,7 @@ export const SaturatorUI = ({ trackId, effect, onChange }) => {
             visualizerClass={TubeGlowVisualizer}
             priority="normal"
             params={tubeGlowParams}
+            audioNode={audioNode}
           />
         </div>
       </div>

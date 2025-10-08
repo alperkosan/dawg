@@ -1,4 +1,11 @@
 /* src/index.css */
+
+/* ==========================================================================
+  ZENITH DESIGN SYSTEM
+  Import DAWG's unified design language
+  ========================================================================== */
+@import './styles/zenith.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

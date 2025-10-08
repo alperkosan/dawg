@@ -1,0 +1,533 @@
+/**
+ * ZENITH DESIGN SYSTEM
+ * DAWG's unified visual language
+ *
+ * "Where Audio Engineering Meets Visual Excellence"
+ */
+
+/* ============================================
+   CSS CUSTOM PROPERTIES (Design Tokens)
+   ============================================ */
+
+:root {
+  /* =================== COLORS =================== */
+
+  /* Base Colors - Inspired by Analog Gear */
+  --zenith-bg-primary: #0A0E1A;
+  --zenith-bg-secondary: #151922;
+  --zenith-bg-tertiary: #1E242F;
+
+  /* Accent Colors - Signal Flow */
+  --zenith-accent-hot: #FF6B35;
+  --zenith-accent-warm: #FFB627;
+  --zenith-accent-cool: #4ECDC4;
+  --zenith-accent-cold: #556FB5;
+
+  /* Semantic Colors */
+  --zenith-success: #10B981;
+  --zenith-warning: #F59E0B;
+  --zenith-error: #EF4444;
+  --zenith-info: #3B82F6;
+
+  /* Plugin-Specific Palettes */
+  --saturator-primary: #FF8C00;
+  --compressor-primary: #9333EA;
+  --eq-primary: #06B6D4;
+  --reverb-primary: #8B5CF6;
+  --delay-primary: #10B981;
+
+  /* Text Hierarchy */
+  --zenith-text-primary: #FFFFFF;
+  --zenith-text-secondary: #A1A8B5;
+  --zenith-text-tertiary: #6B7280;
+  --zenith-text-disabled: #4B5563;
+
+  /* Borders & Dividers */
+  --zenith-border-strong: rgba(255, 255, 255, 0.2);
+  --zenith-border-medium: rgba(255, 255, 255, 0.1);
+  --zenith-border-subtle: rgba(255, 255, 255, 0.05);
+
+  /* Overlays & Shadows */
+  --zenith-overlay-light: rgba(255, 255, 255, 0.05);
+  --zenith-overlay-medium: rgba(255, 255, 255, 0.1);
+  --zenith-overlay-heavy: rgba(0, 0, 0, 0.5);
+
+  --zenith-shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.3);
+  --zenith-shadow-md: 0 4px 8px rgba(0, 0, 0, 0.4);
+  --zenith-shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.5);
+  --zenith-shadow-xl: 0 16px 32px rgba(0, 0, 0, 0.6);
+
+  /* =================== TYPOGRAPHY =================== */
+
+  /* Font Families */
+  --zenith-font-primary: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --zenith-font-mono: 'JetBrains Mono', 'Fira Code', 'Menlo', 'Monaco', monospace;
+
+  /* Font Sizes */
+  --zenith-text-xs: 0.625rem;
+  --zenith-text-sm: 0.75rem;
+  --zenith-text-base: 0.875rem;
+  --zenith-text-lg: 1rem;
+  --zenith-text-xl: 1.25rem;
+  --zenith-text-2xl: 1.5rem;
+  --zenith-text-3xl: 2rem;
+
+  /* Font Weights */
+  --zenith-weight-normal: 400;
+  --zenith-weight-medium: 500;
+  --zenith-weight-semibold: 600;
+  --zenith-weight-bold: 700;
+
+  /* Line Heights */
+  --zenith-leading-tight: 1.25;
+  --zenith-leading-normal: 1.5;
+  --zenith-leading-relaxed: 1.75;
+
+  /* Letter Spacing */
+  --zenith-tracking-tight: -0.025em;
+  --zenith-tracking-normal: 0;
+  --zenith-tracking-wide: 0.025em;
+
+  /* =================== SPACING =================== */
+
+  --zenith-space-0: 0;
+  --zenith-space-1: 0.25rem;
+  --zenith-space-2: 0.5rem;
+  --zenith-space-3: 0.75rem;
+  --zenith-space-4: 1rem;
+  --zenith-space-5: 1.25rem;
+  --zenith-space-6: 1.5rem;
+  --zenith-space-8: 2rem;
+  --zenith-space-10: 2.5rem;
+  --zenith-space-12: 3rem;
+  --zenith-space-16: 4rem;
+  --zenith-space-20: 5rem;
+
+  /* Component Spacing */
+  --zenith-padding-control: var(--zenith-space-3);
+  --zenith-padding-panel: var(--zenith-space-4);
+  --zenith-padding-modal: var(--zenith-space-6);
+
+  --zenith-gap-tight: var(--zenith-space-2);
+  --zenith-gap-normal: var(--zenith-space-4);
+  --zenith-gap-relaxed: var(--zenith-space-6);
+
+  /* Border Radius */
+  --zenith-radius-sm: 0.25rem;
+  --zenith-radius-md: 0.5rem;
+  --zenith-radius-lg: 0.75rem;
+  --zenith-radius-xl: 1rem;
+  --zenith-radius-full: 9999px;
+
+  /* =================== ANIMATION =================== */
+
+  /* Easing Curves */
+  --zenith-ease-linear: linear;
+  --zenith-ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --zenith-ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --zenith-ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --zenith-ease-bounce: cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  --zenith-ease-smooth: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+
+  /* Duration Scale */
+  --zenith-duration-instant: 50ms;
+  --zenith-duration-fast: 100ms;
+  --zenith-duration-normal: 200ms;
+  --zenith-duration-slow: 300ms;
+  --zenith-duration-slower: 500ms;
+
+  /* =================== ICONS =================== */
+
+  --zenith-icon-xs: 12px;
+  --zenith-icon-sm: 16px;
+  --zenith-icon-md: 20px;
+  --zenith-icon-lg: 24px;
+  --zenith-icon-xl: 32px;
+}
+
+/* ============================================
+   TYPOGRAPHY STYLES
+   ============================================ */
+
+.zenith-h1 {
+  font-size: var(--zenith-text-3xl);
+  font-weight: var(--zenith-weight-bold);
+  line-height: var(--zenith-leading-tight);
+  letter-spacing: var(--zenith-tracking-tight);
+  color: var(--zenith-text-primary);
+}
+
+.zenith-h2 {
+  font-size: var(--zenith-text-2xl);
+  font-weight: var(--zenith-weight-semibold);
+  line-height: var(--zenith-leading-tight);
+  color: var(--zenith-text-primary);
+}
+
+.zenith-h3 {
+  font-size: var(--zenith-text-xl);
+  font-weight: var(--zenith-weight-semibold);
+  line-height: var(--zenith-leading-normal);
+  color: var(--zenith-text-primary);
+}
+
+.zenith-body {
+  font-size: var(--zenith-text-base);
+  font-weight: var(--zenith-weight-normal);
+  line-height: var(--zenith-leading-normal);
+  color: var(--zenith-text-primary);
+}
+
+.zenith-label {
+  font-size: var(--zenith-text-xs);
+  font-weight: var(--zenith-weight-medium);
+  line-height: var(--zenith-leading-tight);
+  letter-spacing: var(--zenith-tracking-wide);
+  text-transform: uppercase;
+  color: var(--zenith-text-secondary);
+}
+
+.zenith-value {
+  font-family: var(--zenith-font-mono);
+  font-size: var(--zenith-text-lg);
+  font-weight: var(--zenith-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--zenith-text-primary);
+}
+
+/* ============================================
+   TRANSITION UTILITIES
+   ============================================ */
+
+.zenith-transition {
+  transition: all var(--zenith-duration-normal) var(--zenith-ease-in-out);
+}
+
+.zenith-transition-colors {
+  transition: background-color var(--zenith-duration-fast) var(--zenith-ease-out),
+              border-color var(--zenith-duration-fast) var(--zenith-ease-out),
+              color var(--zenith-duration-fast) var(--zenith-ease-out);
+}
+
+.zenith-transition-transform {
+  transition: transform var(--zenith-duration-normal) var(--zenith-ease-smooth);
+}
+
+.zenith-transition-opacity {
+  transition: opacity var(--zenith-duration-fast) var(--zenith-ease-out);
+}
+
+/* ============================================
+   FOCUS STATES (Accessibility)
+   ============================================ */
+
+.zenith-focus-ring:focus-visible {
+  outline: 2px solid var(--zenith-accent-cool);
+  outline-offset: 2px;
+  border-radius: var(--zenith-radius-sm);
+}
+
+*:focus-visible {
+  outline: 2px solid var(--zenith-accent-cool);
+  outline-offset: 2px;
+}
+
+*:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* ============================================
+   ANIMATIONS
+   ============================================ */
+
+@keyframes zenith-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@keyframes zenith-glow {
+  0%, 100% { box-shadow: 0 0 20px var(--zenith-accent-warm); }
+  50% { box-shadow: 0 0 40px var(--zenith-accent-hot); }
+}
+
+@keyframes zenith-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes zenith-bounce {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+}
+
+@keyframes zenith-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes zenith-slide-up {
+  from { transform: translateY(10px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+/* Animation Utility Classes */
+.zenith-animate-pulse {
+  animation: zenith-pulse 2s ease-in-out infinite;
+}
+
+.zenith-animate-glow {
+  animation: zenith-glow 2s ease-in-out infinite;
+}
+
+.zenith-animate-fade-in {
+  animation: zenith-fade-in var(--zenith-duration-normal) var(--zenith-ease-out);
+}
+
+.zenith-animate-slide-up {
+  animation: zenith-slide-up var(--zenith-duration-normal) var(--zenith-ease-out);
+}
+
+/* ============================================
+   PLUGIN-SPECIFIC THEMES
+   ============================================ */
+
+[data-plugin="saturator"] {
+  --plugin-primary: var(--saturator-primary);
+  --plugin-glow: rgba(255, 140, 0, 0.5);
+}
+
+[data-plugin="compressor"] {
+  --plugin-primary: var(--compressor-primary);
+  --plugin-glow: rgba(147, 51, 234, 0.5);
+}
+
+[data-plugin="eq"] {
+  --plugin-primary: var(--eq-primary);
+  --plugin-glow: rgba(6, 182, 212, 0.5);
+}
+
+[data-plugin="reverb"] {
+  --plugin-primary: var(--reverb-primary);
+  --plugin-glow: rgba(139, 92, 246, 0.5);
+}
+
+[data-plugin="delay"] {
+  --plugin-primary: var(--delay-primary);
+  --plugin-glow: rgba(16, 185, 129, 0.5);
+}
+
+/* ============================================
+   CONTAINER LAYOUTS
+   ============================================ */
+
+.zenith-plugin-container {
+  background: var(--zenith-bg-primary);
+  border-radius: var(--zenith-radius-lg);
+  overflow: hidden;
+}
+
+.zenith-plugin-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--zenith-padding-control);
+  background: var(--zenith-bg-secondary);
+  border-bottom: 1px solid var(--zenith-border-subtle);
+}
+
+.zenith-plugin-grid {
+  display: grid;
+  gap: var(--zenith-gap-normal);
+  padding: var(--zenith-padding-panel);
+}
+
+/* Grid Layouts */
+.zenith-grid-2col {
+  grid-template-columns: 2fr 1fr;
+}
+
+.zenith-grid-3col {
+  grid-template-columns: 2fr 1fr 1fr;
+}
+
+.zenith-grid-equal {
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+/* ============================================
+   UTILITY CLASSES
+   ============================================ */
+
+/* Flex utilities */
+.zenith-flex {
+  display: flex;
+}
+
+.zenith-flex-col {
+  display: flex;
+  flex-direction: column;
+}
+
+.zenith-items-center {
+  align-items: center;
+}
+
+.zenith-justify-center {
+  justify-content: center;
+}
+
+.zenith-justify-between {
+  justify-content: space-between;
+}
+
+.zenith-gap-2 {
+  gap: var(--zenith-gap-tight);
+}
+
+.zenith-gap-4 {
+  gap: var(--zenith-gap-normal);
+}
+
+/* Spacing utilities */
+.zenith-p-2 {
+  padding: var(--zenith-space-2);
+}
+
+.zenith-p-4 {
+  padding: var(--zenith-space-4);
+}
+
+.zenith-m-2 {
+  margin: var(--zenith-space-2);
+}
+
+.zenith-m-4 {
+  margin: var(--zenith-space-4);
+}
+
+/* Background utilities */
+.zenith-bg-primary {
+  background-color: var(--zenith-bg-primary);
+}
+
+.zenith-bg-secondary {
+  background-color: var(--zenith-bg-secondary);
+}
+
+.zenith-bg-tertiary {
+  background-color: var(--zenith-bg-tertiary);
+}
+
+/* Border utilities */
+.zenith-border {
+  border: 1px solid var(--zenith-border-medium);
+}
+
+.zenith-border-subtle {
+  border: 1px solid var(--zenith-border-subtle);
+}
+
+.zenith-rounded {
+  border-radius: var(--zenith-radius-md);
+}
+
+.zenith-rounded-lg {
+  border-radius: var(--zenith-radius-lg);
+}
+
+/* Text utilities */
+.zenith-text-primary {
+  color: var(--zenith-text-primary);
+}
+
+.zenith-text-secondary {
+  color: var(--zenith-text-secondary);
+}
+
+.zenith-text-center {
+  text-align: center;
+}
+
+/* Shadow utilities */
+.zenith-shadow-sm {
+  box-shadow: var(--zenith-shadow-sm);
+}
+
+.zenith-shadow-md {
+  box-shadow: var(--zenith-shadow-md);
+}
+
+.zenith-shadow-lg {
+  box-shadow: var(--zenith-shadow-lg);
+}
+
+/* ============================================
+   RESPONSIVE UTILITIES
+   ============================================ */
+
+@media (max-width: 768px) {
+  .zenith-plugin-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .zenith-grid-2col,
+  .zenith-grid-3col {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ============================================
+   PERFORMANCE OPTIMIZATIONS
+   ============================================ */
+
+/* Will-change hints for frequently animated elements */
+.zenith-will-change-transform {
+  will-change: transform;
+}
+
+.zenith-will-change-opacity {
+  will-change: opacity;
+}
+
+/* Hardware acceleration for smooth animations */
+.zenith-gpu-accelerated {
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+/* ============================================
+   ACCESSIBILITY ENHANCEMENTS
+   ============================================ */
+
+/* Screen reader only content */
+.zenith-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* Reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ============================================
+   DARK MODE (Future-proofing)
+   ============================================ */
+
+@media (prefers-color-scheme: light) {
+  /* DAWG is dark-mode only by design, but keeping for future */
+  /* :root { ... light theme tokens ... } */
+}

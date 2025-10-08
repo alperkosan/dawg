@@ -49,12 +49,29 @@ class PluginVisualizerAPIClass {
       return this.visualizers.get(pluginId).visualizer;
     }
 
+    // Extract config early for grace period check
+    const {
+      canvas,
+      visualizer: VisualizerClass,
+      priority = 'normal',
+      params = {},
+      meterId = null,
+      meterConfig = {},
+      audioNode = null
+    } = config;
+
     // Check grace period cache (React StrictMode compatibility)
     if (this.gracePeriodCache.has(pluginId)) {
       console.log(`[PluginVisualizerAPI] ⚡ Re-using cached visualizer for ${pluginId} (StrictMode)`);
       const cached = this.gracePeriodCache.get(pluginId);
       clearTimeout(cached.timeout);
       this.gracePeriodCache.delete(pluginId);
+
+      // Update canvas reference if it changed (critical for StrictMode)
+      if (canvas && cached.visualizer.canvas !== canvas) {
+        console.log(`[PluginVisualizerAPI] 🔄 Canvas changed during cache restore, updating...`);
+        cached.visualizer.updateCanvas(canvas);
+      }
 
       // Re-register cached instance with VisualizationEngine
       visualizationEngine.registerVisualizer(
@@ -74,15 +91,6 @@ class PluginVisualizerAPIClass {
       return cached.visualizer;
     }
 
-    const {
-      canvas,
-      visualizer: VisualizerClass,
-      priority = 'normal',
-      params = {},
-      meterId = null,
-      meterConfig = {}
-    } = config;
-
     if (!canvas) {
       console.error(`[PluginVisualizerAPI] No canvas provided for ${pluginId}`);
       return null;
@@ -100,6 +108,19 @@ class PluginVisualizerAPIClass {
       canvas,
       priority
     });
+
+    // 🎵 Connect audio analyser if audioNode provided
+    if (audioNode) {
+      try {
+        const analyser = visualizationEngine.getAnalyser(pluginId, audioNode, 'waveform');
+        if (analyser) {
+          visualizerInstance.analyser = analyser;
+          console.log(`🔊 Connected analyser to visualizer: ${pluginId}`);
+        }
+      } catch (error) {
+        console.error(`❌ Failed to connect analyser for ${pluginId}:`, error);
+      }
+    }
 
     // Initialize visualizer
     visualizerInstance.init().then(() => {
