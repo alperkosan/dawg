@@ -76,6 +76,8 @@ const SaturationType = ({ currentType, onTypeChange }) => {
 
 // === MAIN SATURATOR UI V2 (FIXED) ===
 export const SaturatorUI = ({ trackId, effect, onChange }) => {
+  console.log('🎨 [SATURATOR V2 WITH GRACE PERIOD] Component mounted/rendered', effect.id);
+
   const { distortion, wet } = effect.settings;
   const [inputLevel, setInputLevel] = useState(-60);
   const [saturationType, setSaturationType] = useState('tube');
