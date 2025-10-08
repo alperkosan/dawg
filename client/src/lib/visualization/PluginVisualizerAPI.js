@@ -23,6 +23,11 @@ class PluginVisualizerAPIClass {
 
     // Audio data subscriptions
     this.audioSubscriptions = new Map(); // pluginId → unsubscribe function
+
+    // Grace period cache for React StrictMode compatibility
+    // Prevents re-initialization when component unmount→remount during StrictMode
+    this.gracePeriodCache = new Map(); // pluginId → { visualizer, timeout }
+    this.GRACE_PERIOD_MS = 100; // 100ms window for re-registration
   }
 
   /**
@@ -38,9 +43,35 @@ class PluginVisualizerAPIClass {
    * @returns {object} Visualizer instance
    */
   register(pluginId, config) {
+    // Check if already registered
     if (this.visualizers.has(pluginId)) {
       console.warn(`[PluginVisualizerAPI] Plugin ${pluginId} already registered`);
       return this.visualizers.get(pluginId).visualizer;
+    }
+
+    // Check grace period cache (React StrictMode compatibility)
+    if (this.gracePeriodCache.has(pluginId)) {
+      console.log(`[PluginVisualizerAPI] ⚡ Re-using cached visualizer for ${pluginId} (StrictMode)`);
+      const cached = this.gracePeriodCache.get(pluginId);
+      clearTimeout(cached.timeout);
+      this.gracePeriodCache.delete(pluginId);
+
+      // Re-register cached instance with VisualizationEngine
+      visualizationEngine.registerVisualizer(
+        pluginId,
+        cached.visualizer,
+        cached.priority
+      );
+
+      // Restore to main registry
+      this.visualizers.set(pluginId, {
+        visualizer: cached.visualizer,
+        params: cached.params,
+        meterId: cached.meterId
+      });
+
+      console.log(`🔄 Plugin visualizer restored from cache: ${pluginId}`);
+      return cached.visualizer;
     }
 
     const {
@@ -112,23 +143,42 @@ class PluginVisualizerAPIClass {
       return;
     }
 
-    // Unsubscribe from audio data
-    const unsubscribe = this.audioSubscriptions.get(pluginId);
-    if (unsubscribe) {
-      unsubscribe();
-      this.audioSubscriptions.delete(pluginId);
-    }
+    // Remove from main registry
+    this.visualizers.delete(pluginId);
 
     // Unregister from VisualizationEngine
     visualizationEngine.unregisterVisualizer(pluginId);
 
-    // Cleanup visualizer
-    entry.visualizer.destroy();
+    // ⚡ GRACE PERIOD: Cache instance for 100ms (React StrictMode compatibility)
+    // If re-registered within this window, re-use instead of destroying
+    const timeout = setTimeout(() => {
+      // Grace period expired - permanently destroy
+      console.log(`[PluginVisualizerAPI] Grace period expired for ${pluginId} - destroying`);
 
-    // Remove from registry
-    this.visualizers.delete(pluginId);
+      // Unsubscribe from audio data
+      const unsubscribe = this.audioSubscriptions.get(pluginId);
+      if (unsubscribe) {
+        unsubscribe();
+        this.audioSubscriptions.delete(pluginId);
+      }
 
-    console.log(`🗑️ Plugin visualizer unregistered: ${pluginId}`);
+      // Cleanup visualizer
+      entry.visualizer.destroy();
+
+      // Remove from grace period cache
+      this.gracePeriodCache.delete(pluginId);
+    }, this.GRACE_PERIOD_MS);
+
+    // Store in grace period cache
+    this.gracePeriodCache.set(pluginId, {
+      visualizer: entry.visualizer,
+      params: entry.params,
+      meterId: entry.meterId,
+      priority: entry.visualizer.priority,
+      timeout
+    });
+
+    console.log(`🗑️ Plugin visualizer unregistered: ${pluginId} (grace period: ${this.GRACE_PERIOD_MS}ms)`);
   }
 
   /**

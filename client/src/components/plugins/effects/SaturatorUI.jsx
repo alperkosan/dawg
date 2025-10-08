@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { MeteringService } from '@/lib/core/MeteringService';
-import { PluginVisualizerAPI } from '@/lib/visualization/PluginVisualizerAPI';
 import { TubeGlowVisualizer, HarmonicVisualizer } from '@/lib/visualization/plugin-visualizers';
 import { ProfessionalKnob } from '../container/PluginControls';
+import { PluginCanvas } from '../common/PluginCanvas';
 
 /**
  * SATURATOR UI V2 - FIXED
@@ -71,57 +71,6 @@ const SaturationType = ({ currentType, onTypeChange }) => {
         ))}
       </div>
     </div>
-  );
-};
-
-/**
- * OPTIMIZED PluginCanvas Wrapper
- * - Uses useMemo for params stability
- * - Only updates on actual value changes
- */
-const PluginCanvas = ({ pluginId, visualizerClass, params, priority = 'normal' }) => {
-  const canvasRef = useRef(null);
-  const visualizerRef = useRef(null);
-
-  // Register visualizer once
-  useEffect(() => {
-    if (!canvasRef.current) return;
-
-    visualizerRef.current = PluginVisualizerAPI.register(pluginId, {
-      canvas: canvasRef.current,
-      visualizer: visualizerClass,
-      priority,
-      params
-    });
-
-    return () => {
-      PluginVisualizerAPI.unregister(pluginId);
-    };
-  }, [pluginId, visualizerClass, priority]);
-
-  // ⚡ FIX: Only update params when VALUES change (not reference)
-  const prevParamsRef = useRef(params);
-
-  useEffect(() => {
-    if (!visualizerRef.current) return;
-
-    // Deep compare: only update if values actually changed
-    const paramsChanged = Object.keys(params).some(
-      key => params[key] !== prevParamsRef.current[key]
-    );
-
-    if (paramsChanged) {
-      PluginVisualizerAPI.updateParams(pluginId, params);
-      prevParamsRef.current = params;
-    }
-  }, [pluginId, params]);
-
-  return (
-    <canvas
-      ref={canvasRef}
-      className="w-full h-full"
-      style={{ display: 'block' }}
-    />
   );
 };
 
