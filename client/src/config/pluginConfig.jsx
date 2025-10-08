@@ -2,10 +2,8 @@ import React from 'react';
 
 // Tüm plugin arayüzlerini import et
 import { AdvancedCompressorUI } from '@/components/plugins/effects/AdvancedCompressorUI.jsx';
-import { ReverbUI } from '@/components/plugins/effects/ReverbUI';
 import { AdvancedEQUI } from '@/components/plugins/effects/AdvancedEQUI.jsx';
-import { DelayUI } from '@/components/plugins/effects/DelayUI.jsx';
-import { SaturatorUIWithWebGL as SaturatorUI } from '@/components/plugins/effects/SaturatorUIWithWebGL.jsx';
+import { SaturatorUI } from '@/components/plugins/effects/SaturatorUI.jsx';
 import { TidalFilterUI } from '@/components/plugins/effects/TidalFilterUI.jsx';
 import { StardustChorusUI } from '@/components/plugins/effects/StardustChorusUI.jsx';
 import { VortexPhaserUI } from '@/components/plugins/effects/VortexPhaserUI.jsx';
@@ -17,6 +15,8 @@ import { AtmosMachineUI } from '@/components/plugins/effects/AtmosMachineUI.jsx'
 import { GhostLFOUI } from '@/components/plugins/effects/GhostLFOUI.jsx';
 import { SampleMorphUI } from '@/components/plugins/effects/SampleMorphUI.jsx';
 import { BassEnhancer808UI } from '@/components/plugins/effects/BassEnhancer808UI';
+import { ModernReverbUI } from '@/components/plugins/effects/ModernReverbUI';
+import { ModernDelayUI } from '@/components/plugins/effects/ModernDelayUI';
 
 /**
  * @file pluginConfig.jsx
@@ -77,28 +77,6 @@ export const pluginRegistry = {
     presets: [
         { name: 'Klasik Pump', settings: { threshold: -20, ratio: 8, attack: 0.005, release: 0.1, knee: 10, sidechainSource: null, wet: 1.0 } },
         { name: 'Subtle Bass Ducking', settings: { threshold: -15, ratio: 3, attack: 0.01, release: 0.2, knee: 15, sidechainSource: null, wet: 1.0 } },
-    ]
-  },
-  'Reverb': {
-    type: 'Reverb', category: 'The Spacetime Chamber', story: "Unutulmuş bir tapınağın yankı odası.",
-    toneNode: 'Reverb', uiComponent: ReverbUI,
-    initialSize: { width: 455, height: 360 },
-    minSize: { width: 455, height: 360 },
-    defaultSettings: { decay: 2.5, preDelay: 0.01, wet: 0.4 },
-    presets: [
-      { name: 'Küçük Oda', settings: { decay: 0.8, preDelay: 0.005, wet: 0.3 } },
-      { name: 'Geniş Salon', settings: { decay: 6, preDelay: 0.03, wet: 0.35 } },
-    ]
-  },
-  'PingPongDelay': {
-    type: 'PingPongDelay', category: 'The Spacetime Chamber', story: "Sesin iki boyut arasında sektirildiği stereo gecikme.",
-    toneNode: 'PingPongDelay', uiComponent: DelayUI,
-    initialSize: { width: 640, height: 430 },
-    minSize: { width: 640, height: 430 },
-    defaultSettings: { delayTime: '8n', feedback: 0.3, wet: 0.35 },
-    presets: [
-      { name: 'Genişletici', settings: { delayTime: '16n', feedback: 0.2, wet: 0.4 } },
-      { name: 'Ritmik Yankı', settings: { delayTime: '8n.', feedback: 0.5, wet: 0.3 } },
     ]
   },
   'FeedbackDelay': {
@@ -263,6 +241,70 @@ export const pluginRegistry = {
       { id: 'punch', name: 'Punch', min: 0, max: 1, default: 0.5, unit: '%' },
       { id: 'warmth', name: 'Warmth', min: 0, max: 1, default: 0.3, unit: '%' },
       { id: 'wet', name: 'Mix', min: 0, max: 1, default: 1.0, unit: '%' }
+    ]
+  },
+  'ModernReverb': {
+    type: 'ModernReverb',
+    name: 'Modern Reverb',
+    description: 'Professional algorithmic reverb with early reflections',
+    category: 'The Spacetime Chamber',
+    story: 'Freeverb algoritması ile profesyonel reverb motoru',
+    toneNode: 'ModernReverb',
+    uiComponent: ModernReverbUI,
+    initialSize: { width: 680, height: 720 },
+    minSize: { width: 680, height: 720 },
+    defaultSettings: {
+      size: 0.7,
+      decay: 2.5,
+      damping: 0.5,
+      width: 1.0,
+      preDelay: 0.02,
+      wet: 0.35,
+      earlyLateMix: 0.5,
+      diffusion: 0.7,
+      modDepth: 0.3,
+      modRate: 0.5
+    },
+    presets: [
+      { name: 'Room', settings: { size: 0.35, decay: 0.8, damping: 0.4, wet: 0.25, earlyLateMix: 0.4 } },
+      { name: 'Hall', settings: { size: 0.65, decay: 2.5, damping: 0.5, wet: 0.35, earlyLateMix: 0.5 } },
+      { name: 'Cathedral', settings: { size: 0.9, decay: 6.0, damping: 0.7, wet: 0.45, earlyLateMix: 0.7 } },
+      { name: 'Plate', settings: { size: 0.5, decay: 1.8, damping: 0.2, wet: 0.4, earlyLateMix: 0.3, diffusion: 0.9 } },
+      { name: 'Vocal', settings: { size: 0.45, decay: 1.5, damping: 0.6, wet: 0.3, earlyLateMix: 0.45 } },
+      { name: 'Ambient', settings: { size: 0.95, decay: 10.0, damping: 0.8, wet: 0.6, earlyLateMix: 0.8, diffusion: 0.9 } }
+    ]
+  },
+  'ModernDelay': {
+    type: 'ModernDelay',
+    name: 'Modern Delay',
+    description: 'Professional multi-tap stereo delay engine',
+    category: 'The Spacetime Chamber',
+    story: 'Multi-tap stereo delay - Ping-pong, filtre ve saturasyon',
+    toneNode: 'ModernDelay',
+    uiComponent: ModernDelayUI,
+    initialSize: { width: 680, height: 760 },
+    minSize: { width: 680, height: 760 },
+    defaultSettings: {
+      timeLeft: 0.375,
+      timeRight: 0.5,
+      feedbackLeft: 0.4,
+      feedbackRight: 0.4,
+      pingPong: 0.0,
+      wet: 0.35,
+      filterFreq: 8000,
+      filterQ: 1.0,
+      saturation: 0.0,
+      modDepth: 0.0,
+      modRate: 0.5,
+      diffusion: 0.0,
+      width: 1.0
+    },
+    presets: [
+      { name: 'Slapback', settings: { timeLeft: 0.08, timeRight: 0.085, feedbackLeft: 0.15, feedbackRight: 0.15, pingPong: 0.0, wet: 0.25, saturation: 0.2 } },
+      { name: 'Ping-Pong', settings: { timeLeft: 0.375, timeRight: 0.5, feedbackLeft: 0.5, feedbackRight: 0.5, pingPong: 0.9, wet: 0.4, diffusion: 0.3 } },
+      { name: 'Dub', settings: { timeLeft: 0.5, timeRight: 0.75, feedbackLeft: 0.7, feedbackRight: 0.7, pingPong: 0.6, wet: 0.5, filterFreq: 2000, saturation: 0.4, diffusion: 0.5 } },
+      { name: 'Ambient', settings: { timeLeft: 1.2, timeRight: 1.5, feedbackLeft: 0.8, feedbackRight: 0.8, pingPong: 0.3, wet: 0.6, filterFreq: 5000, diffusion: 0.8, modDepth: 0.02 } },
+      { name: 'Tape', settings: { timeLeft: 0.425, timeRight: 0.425, feedbackLeft: 0.55, feedbackRight: 0.55, pingPong: 0.0, wet: 0.35, filterFreq: 4000, saturation: 0.5, modDepth: 0.01, diffusion: 0.2 } }
     ]
   }
 };

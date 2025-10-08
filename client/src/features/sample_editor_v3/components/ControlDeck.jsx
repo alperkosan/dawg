@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { SlidersHorizontal, Sparkles, Settings, Play, Square } from 'lucide-react';
 import TabButton from '@/components/common/TabButton';
 import { Knob } from '@/components/controls';
-import EffectSwitch from '../../../ui/EffectSwitch';
+import EffectSwitch from '@/components/controls/base/EffectSwitch';
 import { EffectsRack } from './EffectsRack'; // Yeni raf sistemimizi import ediyoruz
 import EffectsPanel from './EffectsPanel'; // Yeni efekt panelimiz
 import { AudioContextService } from '@/lib/services/AudioContextService';

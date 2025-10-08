@@ -925,8 +925,6 @@ export class AudioContextService {
    * Update effect parameter
    */
   static updateEffectParam(trackId, effectId, param, value) {
-    console.log('🎛️ AudioContextService.updateEffectParam:', trackId, effectId, param, value);
-
     if (!this.audioEngine || !this.audioEngine.mixerChannels) {
       console.warn('⚠️ No audio engine or mixer channels available');
       return;
@@ -940,11 +938,32 @@ export class AudioContextService {
 
     // Find the effect and update parameter
     const effect = Array.from(channel.effects.values()).find(fx => fx.id === effectId);
-    if (effect && effect.updateParameter) {
+    if (!effect) {
+      console.warn('⚠️ Effect not found:', effectId);
+      return;
+    }
+
+    // ⚡ MultiBandEQ V2: Send bands array via message port (with throttle)
+    if (effect.type === 'MultiBandEQ' && param === 'bands') {
+      if (effect.node && effect.node.port) {
+        // Throttle: Max 60 updates/sec (16ms)
+        const now = performance.now();
+        if (!effect._lastBandUpdate || (now - effect._lastBandUpdate) >= 16) {
+          effect._lastBandUpdate = now;
+          effect.node.port.postMessage({
+            type: 'updateBands',
+            bands: value
+          });
+        }
+      } else {
+        console.warn('[MultiBandEQV2] No port found on effect node:', effect);
+      }
+    }
+    // Standard AudioParam updates
+    else if (effect.updateParameter) {
       effect.updateParameter(param, value);
-      console.log('✅ Updated effect parameter:', effectId, param, value);
     } else {
-      console.warn('⚠️ Effect not found or no updateParameter method:', effectId);
+      console.warn('[AudioContextService] No updateParameter method for:', effect.type, param);
     }
   }
 

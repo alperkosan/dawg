@@ -9,6 +9,8 @@ import { WaveshaperEffect } from './WaveshaperEffect.js';
 import { DelayEffect } from './DelayEffect.js';
 import { ReverbEffect } from './ReverbEffect.js';
 import { WorkletEffect } from './WorkletEffect.js';
+import { ModernReverbEffect } from './ModernReverbEffect.js';
+import { ModernDelayEffect } from './ModernDelayEffect.js';
 
 export class EffectFactory {
   // Worklet-based effects parameter definitions
@@ -162,7 +164,9 @@ export class EffectFactory {
   static effectTypes = {
     waveshaper: WaveshaperEffect,
     delay: DelayEffect,
-    reverb: ReverbEffect
+    reverb: ReverbEffect,
+    'modern-reverb': ModernReverbEffect,
+    'modern-delay': ModernDelayEffect
   };
 
   /**
@@ -224,7 +228,9 @@ export class EffectFactory {
     const descriptions = {
       waveshaper: 'Distortion and saturation for aggressive sound design',
       delay: 'Echo effect with feedback and ping-pong',
-      reverb: 'Room and hall simulation for spatial depth'
+      reverb: 'Room and hall simulation for spatial depth',
+      'modern-reverb': 'Professional algorithmic reverb with Freeverb engine and early reflections',
+      'modern-delay': 'Multi-tap stereo delay with ping-pong, filtering, and modulation'
     };
     return descriptions[type] || '';
   }
@@ -256,6 +262,24 @@ export class EffectFactory {
         { name: 'Small Room', params: ReverbEffect.presetSmallRoom() },
         { name: 'Large Hall', params: ReverbEffect.presetLargeHall() },
         { name: 'Vocal', params: ReverbEffect.presetVocal() }
+      );
+    } else if (type === 'modern-reverb') {
+      presets.push(
+        { name: 'Small Room', params: ModernReverbEffect.presetSmallRoom() },
+        { name: 'Medium Hall', params: ModernReverbEffect.presetMediumHall() },
+        { name: 'Large Cathedral', params: ModernReverbEffect.presetLargeCathedral() },
+        { name: 'Plate', params: ModernReverbEffect.presetPlate() },
+        { name: 'Vocal', params: ModernReverbEffect.presetVocal() },
+        { name: 'Drum', params: ModernReverbEffect.presetDrum() },
+        { name: 'Ambient', params: ModernReverbEffect.presetAmbient() }
+      );
+    } else if (type === 'modern-delay') {
+      presets.push(
+        { name: 'Slapback', params: ModernDelayEffect.presetSlapback() },
+        { name: 'Ping Pong', params: ModernDelayEffect.presetPingPong() },
+        { name: 'Dub Echo', params: ModernDelayEffect.presetDubEcho() },
+        { name: 'Ambient', params: ModernDelayEffect.presetAmbient() },
+        { name: 'Tape Echo', params: ModernDelayEffect.presetTapeEcho() }
       );
     }
 

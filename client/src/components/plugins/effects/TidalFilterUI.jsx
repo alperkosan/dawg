@@ -4,6 +4,29 @@ import { ProfessionalKnob } from '../container/PluginControls';
 import { useMixerStore } from '@/store/useMixerStore';
 import { SignalVisualizer } from '../../common/SignalVisualizer';
 
+// Musical time notation to frequency converter
+const timeToFrequency = (timeNotation) => {
+  if (typeof timeNotation === 'number') return timeNotation;
+
+  // Assuming 120 BPM as default tempo
+  const tempo = 120;
+  const quarterNoteFreq = tempo / 60; // Hz
+
+  const timeMap = {
+    '1n': quarterNoteFreq / 4,
+    '2n': quarterNoteFreq / 2,
+    '4n': quarterNoteFreq,
+    '8n': quarterNoteFreq * 2,
+    '16n': quarterNoteFreq * 4,
+    '32n': quarterNoteFreq * 8,
+    '2t': (quarterNoteFreq / 2) * (3/2),
+    '4t': quarterNoteFreq * (3/2),
+    '8t': (quarterNoteFreq * 2) * (3/2),
+    '16t': (quarterNoteFreq * 4) * (3/2)
+  };
+
+  return timeMap[timeNotation] || quarterNoteFreq;
+};
 
 // Animated Filter Sweep Visualizer
 const FilterSweepVisualizer = ({ frequency, baseFrequency, octaves, wet }) => {
@@ -35,9 +58,7 @@ const FilterSweepVisualizer = ({ frequency, baseFrequency, octaves, wet }) => {
       ctx.fillRect(0, 0, width, height);
       
       // Calculate LFO position
-      const lfoRate = typeof frequency === 'string' 
-        ? Tone.Time(frequency).toFrequency() 
-        : frequency;
+      const lfoRate = timeToFrequency(frequency);
       const lfoPhase = Math.sin(time * 0.001 * lfoRate * 2 * Math.PI);
       
       // Current filter frequency
@@ -181,11 +202,9 @@ const LFORateVisualizer = ({ frequency }) => {
       canvas.height = height;
       
       ctx.clearRect(0, 0, width, height);
-      
-      const lfoRate = typeof frequency === 'string' 
-        ? Tone.Time(frequency).toFrequency() 
-        : frequency;
-      
+
+      const lfoRate = timeToFrequency(frequency);
+
       // Draw LFO waveform
       ctx.strokeStyle = '#fbbf24';
       ctx.lineWidth = 2;

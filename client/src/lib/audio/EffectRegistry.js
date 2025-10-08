@@ -53,13 +53,14 @@ export class EffectRegistry {
       ]
     });
 
-    // MultiBandEQ
+    // MultiBandEQ V2 - Message-based dynamic bands
     this.register('MultiBandEQ', {
-      workletPath: '/worklets/effects/multiband-eq-processor.js',
-      processorName: 'multiband-eq-processor',
+      workletPath: '/worklets/effects/multiband-eq-processor-v2.js',
+      processorName: 'multiband-eq-processor-v2',
       parameters: [
-        { name: 'wet', defaultValue: 1.0, minValue: 0, maxValue: 1 }
-        // Band parameters are passed via settings object
+        { name: 'wet', defaultValue: 1.0, minValue: 0, maxValue: 1 },
+        { name: 'output', defaultValue: 1.0, minValue: 0, maxValue: 2 }
+        // Bands array is sent via worklet.port.postMessage()
       ]
     });
 
@@ -225,6 +226,45 @@ export class EffectRegistry {
         { name: 'attack', defaultValue: 0.003, minValue: 0.0001, maxValue: 1 },
         { name: 'release', defaultValue: 0.25, minValue: 0.001, maxValue: 3 },
         { name: 'wet', defaultValue: 1.0, minValue: 0, maxValue: 1 }
+      ]
+    });
+
+    // ModernReverb
+    this.register('ModernReverb', {
+      workletPath: '/worklets/effects/modern-reverb-processor.js',
+      processorName: 'modern-reverb-processor',
+      parameters: [
+        { name: 'size', defaultValue: 0.7, minValue: 0.0, maxValue: 1.0 },
+        { name: 'decay', defaultValue: 2.5, minValue: 0.1, maxValue: 15.0 },
+        { name: 'damping', defaultValue: 0.5, minValue: 0.0, maxValue: 1.0 },
+        { name: 'width', defaultValue: 1.0, minValue: 0.0, maxValue: 1.0 },
+        { name: 'preDelay', defaultValue: 0.02, minValue: 0.0, maxValue: 0.2 },
+        { name: 'wet', defaultValue: 0.35, minValue: 0.0, maxValue: 1.0 },
+        { name: 'earlyLateMix', defaultValue: 0.5, minValue: 0.0, maxValue: 1.0 },
+        { name: 'diffusion', defaultValue: 0.7, minValue: 0.0, maxValue: 1.0 },
+        { name: 'modDepth', defaultValue: 0.3, minValue: 0.0, maxValue: 1.0 },
+        { name: 'modRate', defaultValue: 0.5, minValue: 0.1, maxValue: 2.0 }
+      ]
+    });
+
+    // ModernDelay
+    this.register('ModernDelay', {
+      workletPath: '/worklets/effects/modern-delay-processor.js',
+      processorName: 'modern-delay-processor',
+      parameters: [
+        { name: 'timeLeft', defaultValue: 0.375, minValue: 0.001, maxValue: 4.0 },
+        { name: 'timeRight', defaultValue: 0.5, minValue: 0.001, maxValue: 4.0 },
+        { name: 'feedbackLeft', defaultValue: 0.4, minValue: 0.0, maxValue: 1.0 },
+        { name: 'feedbackRight', defaultValue: 0.4, minValue: 0.0, maxValue: 1.0 },
+        { name: 'pingPong', defaultValue: 0.0, minValue: 0.0, maxValue: 1.0 },
+        { name: 'wet', defaultValue: 0.35, minValue: 0.0, maxValue: 1.0 },
+        { name: 'filterFreq', defaultValue: 8000, minValue: 100, maxValue: 20000 },
+        { name: 'filterQ', defaultValue: 1.0, minValue: 0.1, maxValue: 20.0 },
+        { name: 'saturation', defaultValue: 0.0, minValue: 0.0, maxValue: 1.0 },
+        { name: 'modDepth', defaultValue: 0.0, minValue: 0.0, maxValue: 0.05 },
+        { name: 'modRate', defaultValue: 0.5, minValue: 0.1, maxValue: 5.0 },
+        { name: 'diffusion', defaultValue: 0.0, minValue: 0.0, maxValue: 1.0 },
+        { name: 'width', defaultValue: 1.0, minValue: 0.0, maxValue: 2.0 }
       ]
     });
 

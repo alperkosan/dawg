@@ -1,57 +1,79 @@
 // lib/core/TimelineControllerSingleton.js
-/**
- * 🎯 TIMELINE CONTROLLER SINGLETON
- *
- * Global singleton instance for unified timeline control
- * Used across all panels (Channel Rack, Piano Roll, Arrangement)
- */
-
+import { BaseSingleton } from './singletons/BaseSingleton.js';
+import { AudioContextService } from '../services/AudioContextService.js';
 import { TimelineController } from './TimelineController.js';
 
-let timelineControllerInstance = null;
-
 /**
- * Initialize the global timeline controller
- * Called once during app initialization with the audio engine
+ * TIMELINE CONTROLLER SINGLETON
+ *
+ * Global singleton instance for unified timeline control.
+ * Used across all panels (Channel Rack, Piano Roll, Arrangement).
+ *
+ * @extends BaseSingleton
+ * @example
+ * const timeline = await TimelineControllerSingleton.getInstance();
+ * timeline.jumpToStep(16);
  */
+class TimelineControllerSingleton extends BaseSingleton {
+  /**
+   * Create TimelineController instance
+   * @override
+   * @private
+   */
+  static async _createInstance() {
+    console.log('🎯 Creating TimelineController singleton...');
+
+    const audioEngine = AudioContextService.getAudioEngine();
+    if (!audioEngine) {
+      throw new Error('AudioEngine not available for TimelineController');
+    }
+
+    // Get initial BPM from store
+    const initialBPM = await this._getInitialBPM();
+
+    const controller = new TimelineController(audioEngine, initialBPM);
+    console.log('🎯 TimelineController singleton created with BPM:', initialBPM);
+
+    return controller;
+  }
+
+  /**
+   * Get initial BPM from PlaybackStore
+   * @private
+   */
+  static async _getInitialBPM() {
+    try {
+      const { usePlaybackStore } = await import('@/store/usePlaybackStoreV2');
+      const bpm = usePlaybackStore.getState().bpm;
+      return bpm || 140; // Default to 140 if not set
+    } catch (error) {
+      console.warn('Could not get initial BPM from store, using default:', error);
+      return 140; // Default BPM for Timeline
+    }
+  }
+}
+
+// Legacy function exports for backward compatibility
 export function initializeTimelineController(audioEngine, initialBPM = 140) {
-  if (timelineControllerInstance) {
-    console.warn('⚠️ TimelineController already initialized');
-    return timelineControllerInstance;
-  }
-
-  console.log('🎯 Initializing TimelineController singleton with BPM:', initialBPM);
-  timelineControllerInstance = new TimelineController(audioEngine, initialBPM);
-
-  return timelineControllerInstance;
+  console.warn('⚠️ initializeTimelineController() is deprecated, use TimelineControllerSingleton.getInstance() instead');
+  return TimelineControllerSingleton.getInstance();
 }
 
-/**
- * Get the global timeline controller instance
- * Throws if not initialized
- */
 export function getTimelineController() {
-  if (!timelineControllerInstance) {
-    throw new Error('TimelineController not initialized. Call initializeTimelineController() first.');
+  const instance = TimelineControllerSingleton.getInstanceSync();
+  if (!instance) {
+    throw new Error('TimelineController not initialized. Call TimelineControllerSingleton.getInstance() first.');
   }
-  return timelineControllerInstance;
+  return instance;
 }
 
-/**
- * Destroy the global timeline controller
- * Called during app cleanup
- */
 export function destroyTimelineController() {
-  if (timelineControllerInstance) {
-    console.log('🎯 Destroying TimelineController singleton');
-    timelineControllerInstance.destroy();
-    timelineControllerInstance = null;
-  }
+  console.warn('⚠️ destroyTimelineController() is deprecated, use TimelineControllerSingleton.reset() instead');
+  TimelineControllerSingleton.reset();
 }
 
-/**
- * Check if timeline controller is initialized
- */
 export function isTimelineControllerInitialized() {
-  return timelineControllerInstance !== null;
+  return TimelineControllerSingleton.isReady();
 }
+
+export default TimelineControllerSingleton;

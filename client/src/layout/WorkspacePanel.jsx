@@ -1,7 +1,7 @@
 // src/layout/WorkspacePanel.jsx
 
 import React, { Suspense } from 'react';
-import DraggableWindow from '../ui/DraggableWindow';
+import DraggableWindow from '@/components/layout/DraggableWindow';
 import FileBrowserPanel from '@/features/file_browser/FileBrowserPanel';
 import { usePanelsStore } from '@/store/usePanelsStore';
 import { useInstrumentsStore } from '@/store/useInstrumentsStore';
@@ -42,28 +42,17 @@ function WorkspacePanel() {
           const componentProps = { key: panel.id };
 
           if (panel.type === 'plugin') {
-            console.log('🔌 Rendering plugin panel:', panel);
             const track = mixerTracks.find(t => t.id === panel.trackId);
             const effect = track?.insertEffects.find(fx => fx.id === panel.effectId);
 
-            console.log('🔌 Track found:', track);
-            console.log('🔌 Effect found:', effect);
-
             if (!track || !effect) {
-              console.warn('⚠️ Track or effect not found for plugin panel:', panel);
               // Auto-close the orphaned panel
-              setTimeout(() => {
-                console.log('🗑️ Auto-closing orphaned plugin panel:', panel.id);
-                togglePanel(panel.id);
-              }, 100);
+              setTimeout(() => togglePanel(panel.id), 100);
               return null;
             }
 
             const definition = pluginRegistry[effect.type];
             const PluginUIComponent = definition?.uiComponent;
-
-            console.log('🔌 Plugin definition:', definition);
-            console.log('🔌 UI Component:', PluginUIComponent);
 
             if (!PluginUIComponent) {
               console.warn('⚠️ Plugin UI component not found for:', effect.type);

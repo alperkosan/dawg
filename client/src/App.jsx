@@ -4,7 +4,8 @@ import React, { useState, useEffect, useRef, Suspense, useCallback, useMemo } fr
 import { NativeAudioEngine } from './lib/core/NativeAudioEngine';
 import { AudioContextService } from './lib/services/AudioContextService';
 import { visualizationEngine } from './lib/visualization/VisualizationEngine';
-import { initializeTimelineController } from './lib/core/TimelineControllerSingleton';
+import TimelineControllerSingleton from './lib/core/TimelineControllerSingleton';
+import TransportManagerSingleton from './lib/core/TransportManagerSingleton';
 
 // Stores
 import { usePlaybackStore } from './store/usePlaybackStore';
@@ -120,7 +121,7 @@ function App() {
 
       // ✅ Initialize TimelineController with current BPM from store
       const currentBPM = storeGetters.getBPM();
-      initializeTimelineController(engine, currentBPM);
+      await TimelineControllerSingleton.getInstance();
       console.log('🎯 TimelineController initialized with BPM:', currentBPM);
 
       // ✅ PERFORMANCE: Use fresh store data with memoized getters
@@ -186,19 +187,9 @@ function App() {
   useEffect(() => {
     // Bu return fonksiyonu, component unmount edildiğinde çalışır.
     return () => {
-      // ✅ MEMORY LEAK FIX: Cleanup TransportManager singleton
-      import('./lib/core/TransportManagerSingleton.js').then(({ default: TransportManagerSingleton }) => {
-        TransportManagerSingleton.cleanup();
-      }).catch(error => {
-        console.warn('Transport cleanup failed:', error);
-      });
-
-      // ✅ Cleanup TimelineController singleton
-      import('./lib/core/TimelineControllerSingleton.js').then(({ destroyTimelineController }) => {
-        destroyTimelineController();
-      }).catch(error => {
-        console.warn('Timeline controller cleanup failed:', error);
-      });
+      // ✅ MEMORY LEAK FIX: Cleanup singletons using new API
+      TransportManagerSingleton.reset();
+      TimelineControllerSingleton.reset();
 
       if (audioEngineRef.current) {
         audioEngineRef.current.dispose();

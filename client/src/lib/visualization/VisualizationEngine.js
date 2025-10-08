@@ -350,9 +350,12 @@ class VisualizationEngine {
 
         const renderStart = performance.now();
 
-        // Render visualizer
+        // Get params from visualizer instance
+        const params = viz.instance.lastParams || {};
+
+        // Render visualizer with params
         try {
-          viz.instance.render?.(timestamp);
+          viz.instance.render?.(timestamp, params);
           viz.lastRender = timestamp;
         } catch (error) {
           console.error(`Render error for ${effectId}:`, error);

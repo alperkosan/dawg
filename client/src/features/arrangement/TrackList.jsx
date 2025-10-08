@@ -5,7 +5,7 @@ import { useMixerStore } from '@/store/useMixerStore';
 import { usePanelsStore } from '@/store/usePanelsStore';
 import { Music, Volume2, Mic, SlidersHorizontal } from 'lucide-react';
 import { Knob } from '@/components/controls';
-import EffectSwitch from '../../ui/EffectSwitch';
+import EffectSwitch from '@/components/controls/base/EffectSwitch';
 
 /**
  * Tek bir kanalın başlığını (header) render eden alt bileşen.

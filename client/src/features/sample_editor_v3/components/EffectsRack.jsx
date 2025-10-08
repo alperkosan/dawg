@@ -2,7 +2,7 @@ import React, { useState, useCallback } from 'react';
 import { Plus } from 'lucide-react';
 import { useMixerStore } from '@/store/useMixerStore';
 import { usePanelsStore } from '@/store/usePanelsStore';
-import { AddEffectMenu } from '../../../ui/AddEffectMenu';
+import { AddEffectMenu } from '@/components/effects/AddEffectMenu';
 import { EffectSlot } from './EffectSlot';
 
 export const EffectsRack = ({ track }) => {

@@ -55,7 +55,12 @@ class VoicePool {
       envelopeValue: 0,
       duration: null,
       startTime: 0,
-      isActive: false
+      isActive: false,
+      // ⚡ OPTIMIZATION: Filter state and cached coefficients per voice
+      filterStates: [0, 0, 0, 0],
+      filterCoeffs: { b0: 0, b1: 0, b2: 0, a1: 0, a2: 0 }, // Pre-normalized
+      cachedFilterFreq: 0,
+      cachedFilterQ: 0
     };
   }
 
@@ -295,7 +300,7 @@ class InstrumentProcessor extends AudioWorkletProcessor {
         }
     });
     
-    console.log(`🎵 Worklet note triggered: ${frequency}Hz, duration: ${duration}s`);
+    // Note triggered (log removed for performance)
   }
 
 
@@ -373,7 +378,7 @@ class InstrumentProcessor extends AudioWorkletProcessor {
             if (voice.envelopePhase === 'waiting' && sampleTime >= voice.startTime) {
                 voice.envelopePhase = 'attack';
                 voice.envelopeTime = 0;
-                console.log(`▶️ Note started playing: ${voice.frequency}Hz at time=${sampleTime.toFixed(3)}s (scheduled=${voice.startTime.toFixed(3)}s)`);
+                // Note started (log removed for performance)
             }
 
             // ✅ YENİ MANTIK: Eğer notanın süresi dolduysa ve hala 'release' fazına geçmediyse, şimdi geçir.
@@ -485,38 +490,56 @@ class InstrumentProcessor extends AudioWorkletProcessor {
     return voice.envelopeValue;
   }
 
+  // ⚡ OPTIMIZATION: Apply filter with coefficient caching per voice
   applyFilter(sample, voice, parameters, sampleIndex) {
     const freq = this.getParameterValue(parameters.filterFreq, sampleIndex);
     const Q = this.getParameterValue(parameters.filterQ, sampleIndex);
-    
-    // Biquad lowpass filter coefficients
-    const omega = 2 * Math.PI * freq / this.sampleRate;
-    const alpha = Math.sin(omega) / (2 * Q);
-    const cos_omega = Math.cos(omega);
-    
-    const b0 = (1 - cos_omega) / 2;
-    const b1 = 1 - cos_omega;
-    const b2 = (1 - cos_omega) / 2;
-    const a0 = 1 + alpha;
-    const a1 = -2 * cos_omega;
-    const a2 = 1 - alpha;
-    
-    // Apply biquad filter
+
+    // ⚡ OPTIMIZATION: Only recalculate coefficients if parameters changed
+    if (freq !== voice.cachedFilterFreq || Q !== voice.cachedFilterQ) {
+      this.updateVoiceFilterCoeffs(voice, freq, Q);
+      voice.cachedFilterFreq = freq;
+      voice.cachedFilterQ = Q;
+    }
+
+    // ⚡ OPTIMIZATION: Apply biquad filter using cached coefficients
     const output = (
-      b0 * sample + 
-      b1 * voice.filterStates[0] + 
-      b2 * voice.filterStates[1] -
-      a1 * voice.filterStates[2] - 
-      a2 * voice.filterStates[3]
-    ) / a0;
-    
+      voice.filterCoeffs.b0 * sample +
+      voice.filterCoeffs.b1 * voice.filterStates[0] +
+      voice.filterCoeffs.b2 * voice.filterStates[1] -
+      voice.filterCoeffs.a1 * voice.filterStates[2] -
+      voice.filterCoeffs.a2 * voice.filterStates[3]
+    );
+
     // Update filter states
     voice.filterStates[1] = voice.filterStates[0];
     voice.filterStates[0] = sample;
     voice.filterStates[3] = voice.filterStates[2];
     voice.filterStates[2] = output;
-    
+
     return output;
+  }
+
+  // ⚡ OPTIMIZATION: Calculate and cache filter coefficients for a specific voice
+  updateVoiceFilterCoeffs(voice, freq, Q) {
+    const omega = 2 * Math.PI * freq / this.sampleRate;
+    const sinOmega = Math.sin(omega);
+    const cosOmega = Math.cos(omega);
+    const alpha = sinOmega / (2 * Q);
+
+    const b0 = (1 - cosOmega) / 2;
+    const b1 = 1 - cosOmega;
+    const b2 = (1 - cosOmega) / 2;
+    const a0 = 1 + alpha;
+    const a1 = -2 * cosOmega;
+    const a2 = 1 - alpha;
+
+    // Store pre-normalized coefficients
+    voice.filterCoeffs.b0 = b0 / a0;
+    voice.filterCoeffs.b1 = b1 / a0;
+    voice.filterCoeffs.b2 = b2 / a0;
+    voice.filterCoeffs.a1 = a1 / a0;
+    voice.filterCoeffs.a2 = a2 / a0;
   }
 
   applyMasterProcessing(sample) {

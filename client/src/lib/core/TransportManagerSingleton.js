@@ -1,71 +1,49 @@
 // lib/core/TransportManagerSingleton.js
-/**
- * 🎚️ TRANSPORT MANAGER SINGLETON
- *
- * Tüm uygulama boyunca tek instance - maximum coordination
- */
-
-import { TransportManager } from './TransportManager.js';
+import { BaseSingleton } from './singletons/BaseSingleton.js';
 import { AudioContextService } from '../services/AudioContextService.js';
+import { TransportManager } from './TransportManager.js';
 
-class TransportManagerSingleton {
-  constructor() {
-    this.instance = null;
-    this.initPromise = null;
-  }
+/**
+ * TRANSPORT MANAGER SINGLETON
+ *
+ * Global singleton for transport coordination across the application.
+ * Maximum coordination with unified instance management.
+ *
+ * @extends BaseSingleton
+ * @example
+ * const transport = await TransportManagerSingleton.getInstance();
+ * transport.startTransport();
+ */
+class TransportManagerSingleton extends BaseSingleton {
+  /**
+   * Create TransportManager instance
+   * @override
+   * @private
+   */
+  static async _createInstance() {
+    console.log('🎚️ Creating TransportManager singleton...');
 
-  async getInstance() {
-    if (this.instance) {
-      return this.instance;
+    // Get audio engine
+    const audioEngine = AudioContextService.getAudioEngine();
+    if (!audioEngine) {
+      throw new Error('AudioEngine not available for TransportManager');
     }
 
-    if (this.initPromise) {
-      return this.initPromise;
-    }
+    // Create transport manager
+    const manager = new TransportManager(audioEngine);
 
-    this.initPromise = this._createInstance();
-    return this.initPromise;
+    console.log('🎚️ TransportManager singleton created successfully');
+    return manager;
   }
 
-  async _createInstance() {
-    try {
-      console.log('🎚️ Creating TransportManager singleton...');
-
-      // Get audio engine
-      const audioEngine = AudioContextService.getAudioEngine();
-      if (!audioEngine) {
-        console.warn('🎚️ Audio engine not available');
-        return null;
-      }
-
-      // Create transport manager
-      this.instance = new TransportManager(audioEngine);
-
-      console.log('🎚️ TransportManager singleton created successfully');
-      return this.instance;
-    } catch (error) {
-      console.error('🎚️ Failed to create TransportManager:', error);
-      this.initPromise = null;
-      return null;
-    }
-  }
-
-  // ✅ MEMORY LEAK FIX: Comprehensive reset with cleanup
-  reset() {
-    if (this.instance) {
-      this.instance.destroy();
-    }
-    this.instance = null;
-    this.initPromise = null;
-    console.log('🎚️ TransportManagerSingleton reset - memory cleaned');
-  }
-
-  // ✅ MEMORY LEAK FIX: Global cleanup for app shutdown
-  cleanup() {
+  /**
+   * @deprecated Use reset() instead
+   */
+  static cleanup() {
+    console.warn('⚠️ TransportManagerSingleton.cleanup() is deprecated, use reset() instead');
     this.reset();
-    console.log('🎚️ TransportManagerSingleton cleanup completed');
   }
 }
 
-// Export singleton
-export default new TransportManagerSingleton();
+// Export as static class (new pattern)
+export default TransportManagerSingleton;

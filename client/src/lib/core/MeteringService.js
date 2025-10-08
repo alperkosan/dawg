@@ -55,11 +55,9 @@ const manageMeteringLifecycle = () => {
 
   if (totalSubscribers > 0 && !isMeteringActive) {
     isMeteringActive = true;
-    console.log('[MeteringService] Enhanced metering activated');
   } else if (totalSubscribers === 0 && isMeteringActive) {
     isMeteringActive = false;
     dataBuffers.clear();
-    console.log('[MeteringService] Metering deactivated, buffers cleared');
   }
 };
 

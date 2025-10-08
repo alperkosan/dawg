@@ -263,13 +263,18 @@ export const SignalVisualizer = ({
     }
   }, [type, resolvedColor, config, isVisible]);
 
+  // ⚡ Store drawFrame in ref to avoid re-subscription
+  const drawFrameRef = useRef(drawFrame);
+  useEffect(() => {
+    drawFrameRef.current = drawFrame;
+  }, [drawFrame]);
+
   useEffect(() => {
     if (!meterId) return;
 
     const handleData = (visualData) => {
       // Veri format kontrolü
       if (!visualData || typeof visualData !== 'object') {
-        console.warn('SignalVisualizer: Geçersiz veri formatı:', visualData);
         return;
       }
 
@@ -281,7 +286,8 @@ export const SignalVisualizer = ({
         type: visualData.type || type
       };
 
-      drawFrame(normalizedData);
+      // Use ref to get latest drawFrame without re-subscribing
+      drawFrameRef.current(normalizedData);
     };
 
     const unsubscribe = MeteringService.subscribe(meterId, handleData, {
@@ -291,7 +297,7 @@ export const SignalVisualizer = ({
     });
 
     return unsubscribe;
-  }, [meterId, drawFrame, type, config.smooth, config.smoothingFactor]);
+  }, [meterId, type, config.smooth, config.smoothingFactor]);
 
   // Visibility observer for performance
   useEffect(() => {
