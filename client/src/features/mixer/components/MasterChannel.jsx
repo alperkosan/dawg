@@ -11,41 +11,15 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { useMixerStore } from '@/store/useMixerStore';
 import { Volume2, VolumeX, Activity } from 'lucide-react';
+import { Fader } from '@/components/controls/base/Fader';
 import './MasterChannel.css';
 
 export const MasterChannel = ({ track, isActive, onClick }) => {
-  const [isDraggingFader, setIsDraggingFader] = useState(false);
-  const faderRef = useRef(null);
-
   const {
     handleMixerParamChange,
     toggleMute
   } = useMixerStore();
 
-  // Fader drag handling
-  const handleFaderMouseDown = useCallback((e) => {
-    e.preventDefault();
-    setIsDraggingFader(true);
-
-    const handleMouseMove = (e) => {
-      if (!faderRef.current) return;
-      const rect = faderRef.current.getBoundingClientRect();
-      const y = Math.max(0, Math.min(1, 1 - (e.clientY - rect.top) / rect.height));
-      const db = (y * 12) - 60; // -60dB to +12dB
-      handleMixerParamChange(track.id, 'volume', db);
-    };
-
-    const handleMouseUp = () => {
-      setIsDraggingFader(false);
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-    };
-
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
-  }, [track.id, handleMixerParamChange]);
-
-  // Calculate fader position
   const volume = track.volume !== undefined ? track.volume : 0;
   const faderPosition = (volume + 60) / 72;
 
@@ -96,18 +70,19 @@ export const MasterChannel = ({ track, isActive, onClick }) => {
 
       {/* Fader */}
       <div className="master-channel__fader-container">
-        <div
-          ref={faderRef}
-          className="master-channel__fader-track"
-          onMouseDown={handleFaderMouseDown}
-        >
-          <div
-            className="master-channel__fader-thumb"
-            style={{ bottom: `${faderPosition * 100}%` }}
-          >
-            <div className="master-channel__fader-line" />
-          </div>
-        </div>
+        <Fader
+          value={volume}
+          min={-60}
+          max={12}
+          defaultValue={0}
+          onChange={(value) => handleMixerParamChange(track.id, 'volume', value)}
+          height={120}
+          width={40}
+          variant="mixer"
+          showValue={false}
+          unit="dB"
+          precision={1}
+        />
       </div>
 
       {/* Volume Display */}

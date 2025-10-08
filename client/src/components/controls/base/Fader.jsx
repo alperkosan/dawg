@@ -53,12 +53,18 @@ export const Fader = ({
 
   // Calculate value from Y position
   const calculateValue = useCallback((clientY) => {
-    if (!trackRef.current) return value;
+    if (!trackRef.current) return min;
 
     const rect = trackRef.current.getBoundingClientRect();
-    const pos = 100 - Math.max(0, Math.min(100, ((clientY - rect.top) / rect.height) * 100));
-    return min + (pos / 100) * (max - min);
-  }, [min, max, value]);
+    // Calculate percentage from top (0% = top, 100% = bottom)
+    const pixelFromTop = clientY - rect.top;
+    const percentFromTop = Math.max(0, Math.min(100, (pixelFromTop / rect.height) * 100));
+
+    // Invert: top = max value, bottom = min value
+    const percentValue = 100 - percentFromTop;
+
+    return min + (percentValue / 100) * (max - min);
+  }, [min, max]);
 
   // Mouse move handler with RAF throttling
   const handleMouseMove = useCallback((e) => {

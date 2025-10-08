@@ -15,7 +15,6 @@
 
 /* 4. Bileşen Stilleri */
 @import url("./components/_window.css");
-@import url("./components/_volumeKnob.css");
 @import url("./components/_fileTreeNode.css");
 @import url("./components/_addEffectMenu.css");
 @import url("./components/_pluginUIs.css");
@@ -33,5 +32,3 @@
 @import url("./features/_stepGrid.css");
 @import url("./features/_pianoRollMiniView.css");
 @import url("./features/instrument_editor/ForgeSynthUI.css");
-@import url("../features/mixer_v3/MixerV3.css");
-@import url("../features/mixer_v3/components/eq-sends-styles.css");

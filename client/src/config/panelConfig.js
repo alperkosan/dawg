@@ -1,5 +1,5 @@
 import ChannelRack from '@/features/channel_rack/ChannelRack';
-import Mixer from '@/features/mixer/Mixer'; // Zenith Mixer - FL Studio inspired
+import Mixer from '@/features/mixer/Mixer'; // Zenith Mixer with premium base controls
 import SampleEditorV2 from '@/features/sample_editor_v3/SampleEditorV3';
 import PianoRoll from '@/features/piano_roll_v7/PianoRoll';
 import ArrangementWorkspace from '@/features/arrangement_workspace/ArrangementWorkspace';
