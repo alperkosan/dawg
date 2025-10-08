@@ -1,6 +1,6 @@
 import React from 'react';
 import { useMixerStore } from '@/store/useMixerStore';
-import VolumeKnob from './VolumeKnob';
+import { Knob } from '@/components/controls/base/Knob';
 import { ExternalLink } from 'lucide-react';
 import './eq-sends-styles.css';
 
@@ -47,14 +47,19 @@ const SendsSection = ({ trackId, onSendClick }) => {
               </div>
 
               <div className="send-control__knob">
-                <VolumeKnob
-                  value={sendValue}
-                  onChange={(value) => handleSendChange(trackId, sendChannel.id, value)}
+                <Knob
                   label={`S${index + 1}`}
+                  value={sendValue}
                   min={-60}
                   max={12}
-                  size="mini"
+                  defaultValue={-60}
+                  onChange={(value) => handleSendChange(trackId, sendChannel.id, value)}
+                  size={28}
+                  unit="dB"
+                  precision={1}
+                  variant="mixer"
                   disabled={sendMuted}
+                  showValue={false}
                 />
               </div>
 

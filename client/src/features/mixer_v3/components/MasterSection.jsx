@@ -1,7 +1,7 @@
 import React from 'react';
 import { useMixerStore } from '@/store/useMixerStore';
 import FaderV3 from './FaderV3';
-import VolumeKnob from './VolumeKnob';
+import { Knob } from '@/components/controls/base/Knob';
 import { Volume2, VolumeX, Headphones } from 'lucide-react';
 
 const MasterSection = ({ trackId, isActive, onClick }) => {
@@ -57,14 +57,17 @@ const MasterSection = ({ trackId, isActive, onClick }) => {
       <div className="master-section-v3__controls">
         {/* Master Pan */}
         <div className="master-section-v3__pan">
-          <VolumeKnob
+          <Knob
             value={track.pan || 0}
             onChange={(value) => handleMixerParamChange(trackId, 'pan', value)}
             label="BAL"
             min={-100}
             max={100}
-            size="small"
-            bipolar={true}
+            defaultValue={0}
+            size={40}
+            variant="mixer"
+            unit=""
+            precision={0}
           />
         </div>
 

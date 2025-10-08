@@ -1,9 +1,9 @@
 import React, { useState, useMemo } from 'react';
 import { useMixerStore } from '@/store/useMixerStore';
-import FaderV3 from './FaderV3';
+import { Fader } from '@/components/controls/base/Fader';
+import { Knob } from '@/components/controls/base/Knob';
 import EQSection from './EQSection';
 import SendsSection from './SendsSection';
-import VolumeKnob from './VolumeKnob';
 import {
   Volume2,
   VolumeX,
@@ -85,13 +85,17 @@ const MixerChannelV3 = React.memo(({ trackId, onSendClick, onEffectsClick, isAct
 
       {/* Input Gain */}
       <div className="mixer-channel-v3__input-section">
-        <VolumeKnob
-          value={track.inputGain || 0}
-          onChange={(value) => storeActions.handleMixerParamChange(trackId, 'inputGain', value)}
+        <Knob
           label="GAIN"
+          value={track.inputGain || 0}
           min={-30}
           max={30}
-          size="small"
+          defaultValue={0}
+          onChange={(value) => storeActions.handleMixerParamChange(trackId, 'inputGain', value)}
+          size={40}
+          unit="dB"
+          precision={1}
+          variant="mixer"
         />
       </div>
 
@@ -124,24 +128,35 @@ const MixerChannelV3 = React.memo(({ trackId, onSendClick, onEffectsClick, isAct
         </div>
 
         <div className="mixer-channel-v3__fader-section">
-          <FaderV3
+          <Fader
             value={track.volume}
+            min={-60}
+            max={12}
+            defaultValue={0}
             onChange={(value) => storeActions.handleMixerParamChange(trackId, 'volume', value)}
+            height={120}
+            width={40}
+            variant="mixer"
             showValue={true}
+            unit="dB"
+            precision={1}
           />
         </div>
       </div>
 
       {/* Pan Control */}
       <div className="mixer-channel-v3__pan-section">
-        <VolumeKnob
-          value={track.pan || 0}
-          onChange={(value) => storeActions.handleMixerParamChange(trackId, 'pan', value)}
+        <Knob
           label="PAN"
+          value={track.pan || 0}
           min={-100}
           max={100}
-          size="small"
-          bipolar={true}
+          defaultValue={0}
+          onChange={(value) => storeActions.handleMixerParamChange(trackId, 'pan', value)}
+          size={40}
+          unit=""
+          precision={0}
+          variant="mixer"
         />
       </div>
 

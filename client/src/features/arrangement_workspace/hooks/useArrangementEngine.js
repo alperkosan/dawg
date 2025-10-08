@@ -178,16 +178,14 @@ export function useArrangementEngine(containerRef, arrangement) {
       const mouseScreenX = offsetX - TRACK_HEADER_WIDTH;
       const mouseScreenY = offsetY - TIMELINE_HEIGHT;
 
-      // Calculate world coordinate under mouse (beats cinsinden, zoom'dan bağımsız)
-      // scrollX + mouseScreenX = zoomed pixel position
-      // Divide by (PIXELS_PER_BEAT * zoom) to get beats
-      const PIXELS_PER_BEAT = 32;
-      const worldBeatsX = (vp.scrollX + mouseScreenX) / (PIXELS_PER_BEAT * vp.zoomX);
-      const worldBeatsY = (vp.scrollY + mouseScreenY) / (PIXELS_PER_BEAT * vp.zoomX);
+      // Calculate world coordinate under mouse in current zoom space
+      const worldX = vp.scrollX + mouseScreenX;
+      const worldY = vp.scrollY + mouseScreenY;
 
-      // Calculate new scroll position to keep same world coordinate under mouse
-      let newScrollX = (worldBeatsX * PIXELS_PER_BEAT * newZoom) - mouseScreenX;
-      let newScrollY = (worldBeatsY * PIXELS_PER_BEAT * newZoom) - mouseScreenY;
+      // Scale world coordinate by zoom ratio to keep it under mouse
+      const zoomRatio = newZoom / vp.zoomX;
+      let newScrollX = (worldX * zoomRatio) - mouseScreenX;
+      let newScrollY = (worldY * zoomRatio) - mouseScreenY;
 
       // Calculate max scroll bounds
       const totalWidth = dimensions.totalWidth * newZoom;

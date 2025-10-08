@@ -11,7 +11,7 @@ import {
   Route,
   MoreVertical
 } from 'lucide-react';
-import VolumeKnob from './VolumeKnob';
+import { Knob } from '@/components/controls/base/Knob';
 import './SendRoutingPanel.css';
 
 const SendRoutingPanel = ({ onClose }) => {
@@ -120,22 +120,29 @@ const SendRoutingPanel = ({ onClose }) => {
                 {/* Send Master Controls */}
                 <div className="send-channel-item__master">
                   <div className="send-master-controls">
-                    <VolumeKnob
+                    <Knob
                       value={sendChannel.masterLevel || 0}
                       onChange={(value) => updateSendChannel(sendChannel.id, { masterLevel: value })}
                       label="LEVEL"
                       min={-60}
                       max={12}
-                      size="small"
+                      defaultValue={-60}
+                      size={40}
+                      variant="mixer"
+                      unit="dB"
+                      precision={1}
                     />
-                    <VolumeKnob
+                    <Knob
                       value={sendChannel.pan || 0}
                       onChange={(value) => updateSendChannel(sendChannel.id, { pan: value })}
                       label="PAN"
                       min={-100}
                       max={100}
-                      size="small"
-                      bipolar={true}
+                      defaultValue={0}
+                      size={40}
+                      variant="mixer"
+                      unit=""
+                      precision={0}
                     />
                   </div>
                 </div>
@@ -163,13 +170,17 @@ const SendRoutingPanel = ({ onClose }) => {
 
                             <div className="send-routing-row__controls">
                               <div className="send-routing-row__knob">
-                                <VolumeKnob
+                                <Knob
                                   value={sendValue}
                                   onChange={(value) => handleSendChange(track.id, sendChannel.id, value)}
                                   label="SEND"
                                   min={-60}
                                   max={12}
-                                  size="mini"
+                                  defaultValue={-60}
+                                  size={28}
+                                  variant="mixer"
+                                  unit="dB"
+                                  precision={1}
                                   disabled={sendMuted}
                                 />
                               </div>

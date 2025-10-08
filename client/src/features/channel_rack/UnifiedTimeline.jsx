@@ -81,6 +81,19 @@ const UnifiedTimeline = React.memo(({
         });
       };
 
+      // ✅ Custom position calculation accounting for scroll
+      const calculatePosition = (mouseX, mouseY) => {
+        // Get timeline scroll offset
+        const scrollLeft = timelineRef.current?.scrollLeft || 0;
+
+        // Account for scroll
+        const adjustedX = mouseX + scrollLeft;
+
+        // Convert to step
+        const step = Math.floor(adjustedX / STEP_WIDTH);
+        return Math.max(0, Math.min(loopLength - 1, step));
+      };
+
       // Register this timeline
       timelineController.registerTimeline('channel-rack-timeline', {
         element: timelineRef.current,
@@ -89,7 +102,8 @@ const UnifiedTimeline = React.memo(({
         onPositionChange: handlePositionChange, // ✅ Main playhead updates
         onGhostPositionChange: handleGhostPositionChange, // ✅ Ghost playhead updates (separate!)
         enableGhostPosition: true,
-        enableRangeSelection: false
+        enableRangeSelection: false,
+        calculatePosition // ✅ Custom calculation with scroll offset
       });
 
       setIsRegistered(true);
@@ -185,49 +199,49 @@ const UnifiedTimeline = React.memo(({
         {/* ✅ Ghost playhead with hover indicator */}
         {localGhostPosition !== null && (
           <>
-            {/* Vertical ghost playhead line */}
-            <div
-              style={{
-                position: 'absolute',
-                left: `${localGhostPosition * STEP_WIDTH}px`,
-                top: 0,
-                bottom: 0,
-                width: '2px',
-                backgroundColor: 'rgba(0, 255, 136, 0.5)',
-                boxShadow: '0 0 6px rgba(0, 255, 136, 0.4)',
-                pointerEvents: 'none',
-                zIndex: 98
-              }}
-            />
-            {/* Step highlight background */}
-            <div
-              style={{
-                position: 'absolute',
-                left: `${localGhostPosition * STEP_WIDTH}px`,
-                top: 0,
-                bottom: 0,
-                width: `${STEP_WIDTH}px`,
-                backgroundColor: 'rgba(0, 255, 136, 0.08)',
-                pointerEvents: 'none',
-                zIndex: 1
-              }}
-            />
-            {/* Position tooltip */}
-            <div
-              style={{
-                position: 'absolute',
-                left: `${localGhostPosition * STEP_WIDTH}px`,
-                top: '-24px',
-                transform: 'translateX(-50%)',
-                padding: '2px 6px',
-                backgroundColor: 'rgba(0, 0, 0, 0.8)',
-                color: '#00ff88',
-                fontSize: '11px',
-                fontFamily: 'monospace',
-                borderRadius: '3px',
-                pointerEvents: 'none',
-                zIndex: 101,
-                whiteSpace: 'nowrap',
+              {/* Vertical ghost playhead line */}
+              <div
+                style={{
+                  position: 'absolute',
+                  left: `${localGhostPosition * STEP_WIDTH}px`,
+                  top: 0,
+                  bottom: 0,
+                  width: '2px',
+                  backgroundColor: 'rgba(0, 255, 136, 0.5)',
+                  boxShadow: '0 0 6px rgba(0, 255, 136, 0.4)',
+                  pointerEvents: 'none',
+                  zIndex: 98
+                }}
+              />
+              {/* Step highlight background */}
+              <div
+                style={{
+                  position: 'absolute',
+                  left: `${localGhostPosition * STEP_WIDTH}px`,
+                  top: 0,
+                  bottom: 0,
+                  width: `${STEP_WIDTH}px`,
+                  backgroundColor: 'rgba(0, 255, 136, 0.08)',
+                  pointerEvents: 'none',
+                  zIndex: 1
+                }}
+              />
+              {/* Position tooltip */}
+              <div
+                style={{
+                  position: 'absolute',
+                  left: `${localGhostPosition * STEP_WIDTH}px`,
+                  top: '-24px',
+                  transform: 'translateX(-50%)',
+                  padding: '2px 6px',
+                  backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                  color: '#00ff88',
+                  fontSize: '11px',
+                  fontFamily: 'monospace',
+                  borderRadius: '3px',
+                  pointerEvents: 'none',
+                  zIndex: 101,
+                  whiteSpace: 'nowrap',
                 border: '1px solid rgba(0, 255, 136, 0.3)'
               }}
             >

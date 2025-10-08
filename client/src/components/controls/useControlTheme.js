@@ -58,6 +58,17 @@ export const useControlTheme = (variant = 'default') => {
         indicator: '#22c55e',
         border: colors.borderSubtle,
       },
+      mixer: {
+        background: colors.surface,
+        backgroundHover: colors.surfaceRaised,
+        track: 'rgba(255, 255, 255, 0.1)',
+        fill: colors.primary,
+        fillGlow: `${colors.primary}60`,
+        text: colors.text,
+        textMuted: colors.textMuted,
+        indicator: '#ffffff',
+        border: 'rgba(255, 255, 255, 0.2)',
+      },
     };
 
     return {

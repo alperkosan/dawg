@@ -19,7 +19,7 @@ import {
   Copy,
   Star
 } from 'lucide-react';
-import VolumeKnob from './VolumeKnob';
+import { Knob } from '@/components/controls/base/Knob';
 import './ActiveChannelPanel.css';
 
 const ActiveChannelPanel = () => {
@@ -170,13 +170,17 @@ const ActiveChannelPanel = () => {
               {sendChannels.map(send => (
                 <div key={send.id} className="send-target">
                   <span className="send-target__name">{send.name}</span>
-                  <VolumeKnob
+                  <Knob
                     value={activeTrack.sends?.[send.id] || 0}
                     onChange={(value) => handleSendChange(activeChannelId, send.id, value)}
                     label=""
                     min={-60}
                     max={12}
-                    size="mini"
+                    defaultValue={-60}
+                    size={28}
+                    variant="mixer"
+                    unit="dB"
+                    precision={1}
                   />
                 </div>
               ))}
@@ -211,30 +215,41 @@ const ActiveChannelPanel = () => {
         <div className="control-section">
           <h4>Channel Strip</h4>
           <div className="channel-controls">
-            <VolumeKnob
+            <Knob
               value={activeTrack.inputGain || 0}
               onChange={(value) => handleMixerParamChange(activeChannelId, 'inputGain', value)}
               label="GAIN"
               min={-30}
               max={30}
-              size="normal"
+              defaultValue={0}
+              size={60}
+              variant="mixer"
+              unit="dB"
+              precision={1}
             />
-            <VolumeKnob
+            <Knob
               value={activeTrack.pan || 0}
               onChange={(value) => handleMixerParamChange(activeChannelId, 'pan', value)}
               label="PAN"
               min={-100}
               max={100}
-              size="normal"
-              bipolar={true}
+              defaultValue={0}
+              size={60}
+              variant="mixer"
+              unit=""
+              precision={0}
             />
-            <VolumeKnob
+            <Knob
               value={activeTrack.volume || 0}
               onChange={(value) => handleMixerParamChange(activeChannelId, 'volume', value)}
               label="VOLUME"
               min={-60}
               max={6}
-              size="normal"
+              defaultValue={-60}
+              size={60}
+              variant="mixer"
+              unit="dB"
+              precision={1}
             />
           </div>
         </div>
@@ -297,32 +312,41 @@ const ActiveChannelPanel = () => {
         <div className="control-section">
           <h4>EQ</h4>
           <div className="eq-controls-compact">
-            <VolumeKnob
+            <Knob
               value={activeTrack.eq?.highGain || 0}
               onChange={(value) => handleMixerParamChange(activeChannelId, 'eq.highGain', value)}
               label="HIGH"
               min={-15}
               max={15}
-              size="small"
-              bipolar={true}
+              defaultValue={0}
+              size={40}
+              variant="mixer"
+              unit="dB"
+              precision={1}
             />
-            <VolumeKnob
+            <Knob
               value={activeTrack.eq?.midGain || 0}
               onChange={(value) => handleMixerParamChange(activeChannelId, 'eq.midGain', value)}
               label="MID"
               min={-15}
               max={15}
-              size="small"
-              bipolar={true}
+              defaultValue={0}
+              size={40}
+              variant="mixer"
+              unit="dB"
+              precision={1}
             />
-            <VolumeKnob
+            <Knob
               value={activeTrack.eq?.lowGain || 0}
               onChange={(value) => handleMixerParamChange(activeChannelId, 'eq.lowGain', value)}
               label="LOW"
               min={-15}
               max={15}
-              size="small"
-              bipolar={true}
+              defaultValue={0}
+              size={40}
+              variant="mixer"
+              unit="dB"
+              precision={1}
             />
           </div>
         </div>

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useMixerStore } from '@/store/useMixerStore';
 import { X, Plus, Trash2, Settings } from 'lucide-react';
-import VolumeKnob from './VolumeKnob';
+import { Knob } from '@/components/controls/base/Knob';
 import FaderV3 from './FaderV3';
 
 const SendsPanel = ({ selectedSend, onClose, onSendChange }) => {
@@ -110,14 +110,17 @@ const SendsPanel = ({ selectedSend, onClose, onSendChange }) => {
 
                   {/* Send parameters */}
                   <div className="send-item__params">
-                    <VolumeKnob
+                    <Knob
                       value={send.pan || 0}
                       onChange={(value) => updateSendChannel(send.id, { pan: value })}
                       label="PAN"
                       min={-100}
                       max={100}
-                      size="small"
-                      bipolar={true}
+                      defaultValue={0}
+                      size={40}
+                      variant="mixer"
+                      unit=""
+                      precision={0}
                     />
                   </div>
                 </div>
@@ -138,12 +141,16 @@ const SendsPanel = ({ selectedSend, onClose, onSendChange }) => {
                             <div className="track-send__name" title={track.name}>
                               {track.name.slice(0, 4)}
                             </div>
-                            <VolumeKnob
+                            <Knob
                               value={sendLevel}
                               onChange={(value) => onSendChange?.(send.id, value)}
                               min={-60}
                               max={12}
-                              size="mini"
+                              defaultValue={-60}
+                              size={28}
+                              variant="mixer"
+                              unit="dB"
+                              precision={1}
                               disabled={sendMuted}
                             />
                             <button
