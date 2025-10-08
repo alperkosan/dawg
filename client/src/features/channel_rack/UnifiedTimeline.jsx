@@ -265,8 +265,8 @@ const UnifiedTimeline = React.memo(({
             bottom: 0,
             left: 0, // ✅ Important: start from left
             width: '2px',
-            backgroundColor: '#00ff88',
-            boxShadow: '0 0 8px rgba(0, 255, 136, 0.6)',
+            backgroundColor: 'var(--zenith-accent-cool)',
+            boxShadow: '0 0 8px var(--zenith-accent-cool)',
             zIndex: 99,
             willChange: 'transform' // ✅ Performance hint
           }}
@@ -282,7 +282,7 @@ const UnifiedTimeline = React.memo(({
               height: 0,
               borderLeft: '4px solid transparent',
               borderRight: '4px solid transparent',
-              borderTop: '6px solid #00ff88',
+              borderTop: '6px solid var(--zenith-accent-cool)',
               filter: 'drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3))'
             }}
           />

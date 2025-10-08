@@ -20,6 +20,13 @@ export default function StepGridCanvas({ instrumentId, notes, totalSteps, onNote
     const ctx = canvas.getContext('2d');
     const dpr = window.devicePixelRatio || 1;
 
+    // 🎨 Get Zenith design tokens from CSS
+    const computedStyle = getComputedStyle(document.documentElement);
+    const accentCool = computedStyle.getPropertyValue('--zenith-accent-cool').trim();
+    const accentCoolRgb = computedStyle.getPropertyValue('--zenith-accent-cool-rgb').trim();
+    const borderSubtle = computedStyle.getPropertyValue('--zenith-border-subtle').trim();
+    const overlayLight = computedStyle.getPropertyValue('--zenith-overlay-light').trim();
+
     // Set canvas size
     const width = totalSteps * STEP_WIDTH;
     const height = ROW_HEIGHT;
@@ -37,7 +44,7 @@ export default function StepGridCanvas({ instrumentId, notes, totalSteps, onNote
 
     // ⚡ PERFORMANCE: Batch background grid drawing
     ctx.beginPath();
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.02)';
+    ctx.fillStyle = overlayLight;
 
     // Draw bar backgrounds (every 16 steps)
     for (let bar = 0; bar < Math.ceil(totalSteps / 16); bar++) {
@@ -47,7 +54,7 @@ export default function StepGridCanvas({ instrumentId, notes, totalSteps, onNote
 
     // ⚡ PERFORMANCE: Batch beat dividers
     ctx.beginPath();
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+    ctx.strokeStyle = borderSubtle;
     ctx.lineWidth = 1;
 
     for (let beat = 0; beat < totalSteps / 4; beat++) {
@@ -59,7 +66,7 @@ export default function StepGridCanvas({ instrumentId, notes, totalSteps, onNote
 
     // ⚡ PERFORMANCE: Batch bar dividers (thicker)
     ctx.beginPath();
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+    ctx.strokeStyle = `rgba(${accentCoolRgb}, 0.1)`;
     ctx.lineWidth = 2;
 
     for (let bar = 0; bar < Math.ceil(totalSteps / 16); bar++) {
@@ -80,20 +87,20 @@ export default function StepGridCanvas({ instrumentId, notes, totalSteps, onNote
     for (let slot = 0; slot < totalSteps / 4; slot++) {
       const x = slot * slotSize + 2;
       const gradient = ctx.createLinearGradient(x, noteY, x, noteY + noteSlotHeight);
-      gradient.addColorStop(0, 'rgba(255, 255, 255, 0.03)');
-      gradient.addColorStop(0.5, 'rgba(255, 255, 255, 0.06)');
-      gradient.addColorStop(1, 'rgba(255, 255, 255, 0.03)');
+      gradient.addColorStop(0, overlayLight);
+      gradient.addColorStop(0.5, overlayLight);
+      gradient.addColorStop(1, overlayLight);
       ctx.fillStyle = gradient;
       ctx.fillRect(x, noteY, noteSlotWidth, noteSlotHeight);
 
       // Subtle border around each slot
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+      ctx.strokeStyle = borderSubtle;
       ctx.lineWidth = 1;
       ctx.strokeRect(x + 0.5, noteY + 0.5, noteSlotWidth - 1, noteSlotHeight - 1);
     }
 
     // Draw mini-step dividers within each slot with subtle style
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+    ctx.strokeStyle = `rgba(${accentCoolRgb}, 0.12)`;
     ctx.lineWidth = 1;
     ctx.beginPath();
     for (let slot = 0; slot < totalSteps / 4; slot++) {
@@ -115,11 +122,11 @@ export default function StepGridCanvas({ instrumentId, notes, totalSteps, onNote
       const ghostWidth = miniStepWidth - 2;
 
       // Ghost preview with low opacity
-      ctx.fillStyle = 'rgba(0, 255, 136, 0.2)';
+      ctx.fillStyle = `rgba(${accentCoolRgb}, 0.2)`;
       ctx.fillRect(ghostX, noteY + 1, ghostWidth, noteSlotHeight - 2);
 
       // Ghost border
-      ctx.strokeStyle = 'rgba(0, 255, 136, 0.4)';
+      ctx.strokeStyle = `rgba(${accentCoolRgb}, 0.4)`;
       ctx.lineWidth = 1;
       ctx.setLineDash([2, 2]);
       ctx.strokeRect(ghostX + 0.5, noteY + 1.5, ghostWidth - 1, noteSlotHeight - 3);
@@ -141,13 +148,13 @@ export default function StepGridCanvas({ instrumentId, notes, totalSteps, onNote
 
       // Gradient fill for notes
       const noteGradient = ctx.createLinearGradient(noteX, noteY, noteX, noteY + noteSlotHeight);
-      noteGradient.addColorStop(0, '#00ffaa');
-      noteGradient.addColorStop(0.5, '#00ff88');
-      noteGradient.addColorStop(1, '#00dd77');
+      noteGradient.addColorStop(0, accentCool);
+      noteGradient.addColorStop(0.5, accentCool);
+      noteGradient.addColorStop(1, accentCool);
 
       // Glow effect
       ctx.shadowBlur = 12;
-      ctx.shadowColor = 'rgba(0, 255, 136, 0.6)';
+      ctx.shadowColor = `rgba(${accentCoolRgb}, 0.6)`;
       ctx.fillStyle = noteGradient;
       ctx.fillRect(noteX, noteY + 1, noteWidth, noteSlotHeight - 2);
 
@@ -160,7 +167,7 @@ export default function StepGridCanvas({ instrumentId, notes, totalSteps, onNote
       ctx.fillRect(noteX, noteY + 1, noteWidth, noteSlotHeight * 0.3);
 
       // Border
-      ctx.strokeStyle = 'rgba(0, 255, 136, 0.8)';
+      ctx.strokeStyle = `rgba(${accentCoolRgb}, 0.8)`;
       ctx.lineWidth = 1;
       ctx.strokeRect(noteX + 0.5, noteY + 1.5, noteWidth - 1, noteSlotHeight - 3);
     });
