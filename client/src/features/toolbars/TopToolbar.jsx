@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Play, Pause, Square, Wind, Repeat } from 'lucide-react';
 import { Knob } from '@/components/controls';
 import { PLAYBACK_MODES, PLAYBACK_STATES } from '@/config/constants';
-import { usePlaybackStore } from '@/store/usePlaybackStoreV2';
+import { usePlaybackStore } from '@/store/usePlaybackStore';
 import { AudioContextService } from '@/lib/services/AudioContextService';
 
 // Format position for display (bar:beat:tick format)

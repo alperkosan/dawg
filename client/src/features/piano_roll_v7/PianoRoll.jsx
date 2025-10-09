@@ -8,7 +8,7 @@ import Toolbar from './components/Toolbar';
 import VelocityLane from './components/VelocityLane';
 import { usePanelsStore } from '@/store/usePanelsStore';
 import { useInstrumentsStore } from '@/store/useInstrumentsStore';
-import { usePlaybackStore } from '@/store/usePlaybackStoreV2';
+import { usePlaybackStore } from '@/store/usePlaybackStore';
 import { getTimelineController } from '@/lib/core/TimelineControllerSingleton';
 import { getToolManager } from '@/lib/piano-roll-tools';
 import './PianoRoll_v5.css';

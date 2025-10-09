@@ -3,7 +3,7 @@ import { useDrop } from 'react-dnd';
 import { useInstrumentsStore } from '@/store/useInstrumentsStore';
 import { useArrangementStore } from '@/store/useArrangementStore';
 import { usePanelsStore } from '@/store/usePanelsStore';
-import { usePlaybackStore } from '@/store/usePlaybackStoreV2';
+import { usePlaybackStore } from '@/store/usePlaybackStore';
 import { shallow } from 'zustand/shallow';
 import { useMixerStore } from '@/store/useMixerStore';
 import commandManager from '@/lib/commands/CommandManager';

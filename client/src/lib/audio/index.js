@@ -13,11 +13,9 @@ export { FileManager } from './FileManager.js';
 
 // Worklet Management
 export { ImprovedWorkletManager } from './ImprovedWorkletManager.js';
-export { WorkletMessageProtocol } from './WorkletMessageProtocol.js';
 
 // Effects
 export { EffectRegistry } from './EffectRegistry.js';
-export { EffectPresetManager } from './EffectPresetManager.js';
 export * from './effects';
 
 // Asset Management

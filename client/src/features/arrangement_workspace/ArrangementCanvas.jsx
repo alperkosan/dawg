@@ -13,7 +13,7 @@ import ReactDOM from 'react-dom';
 import { useArrangementWorkspaceStore } from '@/store/useArrangementWorkspaceStore';
 import { useArrangementStore } from '@/store/useArrangementStore';
 import { useInstrumentsStore } from '@/store/useInstrumentsStore';
-import { usePlaybackStore } from '@/store/usePlaybackStoreV2';
+import { usePlaybackStore } from '@/store/usePlaybackStore';
 import { usePanelsStore } from '@/store/usePanelsStore';
 import { useArrangementEngine } from './hooks/useArrangementEngine';
 import { usePatternInteraction } from './hooks/usePatternInteraction';

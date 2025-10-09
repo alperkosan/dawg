@@ -43,7 +43,7 @@ class TimelineControllerSingleton extends BaseSingleton {
    */
   static async _getInitialBPM() {
     try {
-      const { usePlaybackStore } = await import('@/store/usePlaybackStoreV2');
+      const { usePlaybackStore } = await import('@/store/usePlaybackStore');
       const bpm = usePlaybackStore.getState().bpm;
       return bpm || 140; // Default to 140 if not set
     } catch (error) {

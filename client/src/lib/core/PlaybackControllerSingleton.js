@@ -43,7 +43,7 @@ class PlaybackControllerSingleton extends BaseSingleton {
    */
   static async _getInitialBPM() {
     try {
-      const { usePlaybackStore } = await import('@/store/usePlaybackStoreV2');
+      const { usePlaybackStore } = await import('@/store/usePlaybackStore');
       const bpm = usePlaybackStore.getState().bpm;
       console.log('🎵 Retrieved initial BPM from store:', bpm);
       return bpm || 90; // Default to 90 if not set

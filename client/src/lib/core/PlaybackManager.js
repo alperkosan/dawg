@@ -614,7 +614,7 @@ export class PlaybackManager {
 
 
             // Update UI position
-            const { usePlaybackStore } = require('../../store/usePlaybackStoreV2');
+            const { usePlaybackStore } = require('../../store/usePlaybackStore');
             const playbackStore = usePlaybackStore.getState();
             playbackStore.set({ transportPosition: '1:1:0', transportStep: 0 });
 

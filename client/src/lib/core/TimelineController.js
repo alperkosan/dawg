@@ -300,7 +300,7 @@ export class TimelineController {
   _notifyStores(step) {
     try {
       // Import PlaybackStore dynamically to avoid circular dependencies
-      import('@/store/usePlaybackStoreV2').then(({ usePlaybackStore }) => {
+      import('@/store/usePlaybackStore').then(({ usePlaybackStore }) => {
         const store = usePlaybackStore.getState();
 
         // Convert step to bar:beat:tick format
