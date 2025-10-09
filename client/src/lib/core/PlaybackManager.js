@@ -374,6 +374,12 @@ export class PlaybackManager {
         this._updateTransportLoop();
     }
 
+    setBPM(bpm) {
+        if (this.transport && this.transport.setBPM) {
+            this.transport.setBPM(bpm);
+        }
+    }
+
     _updateLoopSettings() {
         if (!this.isAutoLoop) return;
 
@@ -591,6 +597,9 @@ export class PlaybackManager {
                 }
             });
             this.activeAudioSources = [];
+
+            // ✅ NEW: Flush all effect tails (delay, reverb, etc.)
+            this._flushAllEffects();
 
             this._clearScheduledEvents();
 
@@ -1291,6 +1300,40 @@ export class PlaybackManager {
         const beat = Math.floor((step % 16) / 4) + 1;
         const subBeat = (step % 4) + 1;
         return `${bar}:${beat}:${subBeat}`;
+    }
+
+    /**
+     * ✅ NEW: Flush all effect tails when playback stops
+     * Sends flush message to all worklet-based effects (delay, reverb, etc.)
+     * @private
+     */
+    _flushAllEffects() {
+        if (!this.audioEngine || !this.audioEngine.mixerChannels) return;
+
+        // Iterate through all mixer channels
+        this.audioEngine.mixerChannels.forEach((channel, channelId) => {
+            if (!channel.effects) return;
+
+            // Flush each effect in the channel
+            channel.effects.forEach((effect, effectId) => {
+                try {
+                    // NativeEffect uses effect.node.port
+                    if (effect.node && effect.node.port) {
+                        effect.node.port.postMessage({ type: 'flush' });
+                    }
+                    // WorkletEffect uses effect.workletNode.port
+                    else if (effect.workletNode && effect.workletNode.port) {
+                        effect.workletNode.port.postMessage({ type: 'flush' });
+                    }
+                    // Try direct reset method if available
+                    else if (effect.reset && typeof effect.reset === 'function') {
+                        effect.reset();
+                    }
+                } catch (e) {
+                    // Silent fail - effect may not support flushing
+                }
+            });
+        });
     }
 
     /**

@@ -61,7 +61,8 @@ class ModernDelayProcessor extends AudioWorkletProcessor {
         this.settings = { ...this.settings, ...data };
       } else if (type === 'bypass') {
         this.bypassed = data.bypassed;
-      } else if (type === 'reset') {
+      } else if (type === 'reset' || type === 'flush') {
+        // Clear all delay buffers for clean stop
         this.delayBufferLeft.fill(0);
         this.delayBufferRight.fill(0);
         this.filterStateLeft = 0;

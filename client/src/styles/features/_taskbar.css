@@ -8,14 +8,14 @@
   left: 0;
   right: 0;
   height: 40px;
-  background-color: rgba(17, 17, 17, 0.8); /* Arkaplanın yarı saydam hali */
+  background-color: var(--zenith-overlay-heavy); /* Arkaplanın yarı saydam hali */
   backdrop-filter: blur(10px);
   display: flex;
   align-items: center;
   padding: 0 var(--spacing-2);
   gap: var(--spacing-2);
   z-index: 50;
-  border-top: 1px solid var(--color-border);
+  border-top: 1px solid var(--zenith-border-medium);
 }
 
 .taskbar__item {
@@ -25,14 +25,14 @@
   height: 32px;
   padding: 0 var(--spacing-3);
   border-radius: var(--border-radius-sm);
-  background-color: var(--color-surface-2);
-  color: var(--color-text-primary);
+  background-color: var(--zenith-bg-tertiary);
+  color: var(--zenith-text-primary);
   font-size: var(--font-size-sm);
   transition: all var(--transition-speed);
   cursor: pointer;
 }
 
 .taskbar__item:hover {
-  background-color: var(--color-accent-primary);
-  color: var(--color-text-inverse);
+  background-color: var(--zenith-accent-cool);
+  color: var(--zenith-text-primary);
 }

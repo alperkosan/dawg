@@ -1,5 +1,5 @@
 /**
- * KNOB CONTROL
+ * PROFESSIONAL KNOB CONTROL
  *
  * Modern, performant rotary knob with RAF throttling
  *
@@ -8,7 +8,11 @@
  * - Shift for fine control
  * - Double-click to reset
  * - Logarithmic/linear scaling
- * - Theme-aware
+ * - Ghost value support (visual feedback lag)
+ * - Category-based theming
+ * - Size variants (small, medium, large)
+ * - Custom color override
+ * - Custom value formatting
  * - ARIA accessible
  * - Zero memory leaks
  */
@@ -24,7 +28,17 @@ export const Knob = ({
   defaultValue = 50,
   onChange,
   onChangeEnd,
-  size = 60,
+
+  // NEW: Enhanced props
+  ghostValue,              // Ghost value for visual feedback lag
+  color,                   // Override theme color
+  sizeVariant = 'medium',  // 'small' | 'medium' | 'large'
+  valueFormatter,          // Custom format function
+  showGhostValue = true,   // Toggle ghost value display
+  category,                // Plugin category for theming
+
+  // Legacy props (maintained for compatibility)
+  size: legacySize,        // Old size prop (number)
   unit = '',
   precision = 0,
   logarithmic = false,
@@ -34,7 +48,18 @@ export const Knob = ({
   className = '',
 }) => {
   const [isDragging, setIsDragging] = useState(false);
-  const { colors, styles } = useControlTheme(variant);
+  const { colors, styles } = useControlTheme(variant, category);
+
+  // Size variants (or use legacy size if provided)
+  const sizeMap = {
+    small: 60,
+    medium: 80,
+    large: 100,
+  };
+  const knobSize = legacySize || sizeMap[sizeVariant];
+
+  // Color priority: prop > theme > default
+  const knobColor = color || colors.fill;
 
   // Refs for RAF optimization (prevent stacking)
   const dragStartRef = useRef({ y: 0, value: 0 });
@@ -64,11 +89,12 @@ export const Knob = ({
     return -135 + Math.max(0, Math.min(1, normalizedValue)) * 270;
   }, [min, max, logarithmic]);
 
-  // Format display value
+  // Format display value (use custom formatter if provided)
   const formatValue = useCallback((val) => {
     if (typeof val !== 'number' || isNaN(val)) return val;
+    if (valueFormatter) return valueFormatter(val);
     return `${val.toFixed(precision)}${unit}`;
-  }, [precision, unit]);
+  }, [precision, unit, valueFormatter]);
 
   // Mouse move handler (stable, doesn't change on re-render)
   const handleMouseMove = useCallback((e) => {
@@ -137,11 +163,15 @@ export const Knob = ({
   }, [value, defaultValue, disabled, onChange, onChangeEnd]);
 
   const angle = valueToAngle(value);
-  const arcLength = Math.PI * (size - 8);
+  const ghostAngle = ghostValue !== undefined ? valueToAngle(ghostValue) : angle;
+  const arcLength = Math.PI * (knobSize - 8);
+
+  // Determine if ghost value should be shown
+  const showGhost = showGhostValue && ghostValue !== undefined && ghostValue !== value;
 
   return (
     <div
-      className={`inline-flex flex-col items-center gap-1 select-none ${className}`}
+      className={`flex flex-col items-center gap-1 select-none ${className}`}
       role="slider"
       aria-label={label}
       aria-valuenow={value}
@@ -162,36 +192,53 @@ export const Knob = ({
 
       {/* Knob SVG */}
       <div
-        style={{ width: size, height: size }}
+        style={{ width: knobSize, height: knobSize }}
         className={`relative flex items-center justify-center ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-ns-resize'}`}
         onMouseDown={handleMouseDown}
         onDoubleClick={handleDoubleClick}
       >
-        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="transform -rotate-90">
+        <svg width={knobSize} height={knobSize} viewBox={`0 0 ${knobSize} ${knobSize}`} className="transform -rotate-90">
           {/* Track (background arc) */}
           <circle
-            cx={size / 2}
-            cy={size / 2}
-            r={size / 2 - 4}
+            cx={knobSize / 2}
+            cy={knobSize / 2}
+            r={knobSize / 2 - 4}
             stroke={colors.track}
             strokeWidth="4"
             fill="none"
             strokeDasharray={`${arcLength * 0.75} ${arcLength * 0.25}`}
-            transform={`rotate(135 ${size / 2} ${size / 2})`}
+            transform={`rotate(135 ${knobSize / 2} ${knobSize / 2})`}
           />
+
+          {/* Ghost value arc (behind main arc) */}
+          {showGhost && (
+            <circle
+              cx={knobSize / 2}
+              cy={knobSize / 2}
+              r={knobSize / 2 - 4}
+              stroke={`${knobColor}40`}
+              strokeWidth="3"
+              fill="none"
+              strokeDasharray={arcLength}
+              strokeDashoffset={arcLength * (1 - (((ghostAngle + 135) / 270) * 0.75))}
+              strokeLinecap="round"
+              transform={`rotate(135 ${knobSize / 2} ${knobSize / 2})`}
+              opacity="0.4"
+            />
+          )}
 
           {/* Fill (active arc) */}
           <circle
-            cx={size / 2}
-            cy={size / 2}
-            r={size / 2 - 4}
-            stroke={colors.fill}
+            cx={knobSize / 2}
+            cy={knobSize / 2}
+            r={knobSize / 2 - 4}
+            stroke={knobColor}
             strokeWidth="4"
             fill="none"
             strokeDasharray={arcLength}
             strokeDashoffset={arcLength * (1 - (((angle + 135) / 270) * 0.75))}
             strokeLinecap="round"
-            transform={`rotate(135 ${size / 2} ${size / 2})`}
+            transform={`rotate(135 ${knobSize / 2} ${knobSize / 2})`}
             style={{
               transition: isDragging ? 'none' : 'stroke-dashoffset 0.1s ease-out',
               filter: `drop-shadow(0 0 4px ${colors.fillGlow})`,
@@ -203,11 +250,11 @@ export const Knob = ({
         <div
           className="absolute w-1 rounded-full"
           style={{
-            height: size * 0.3,
-            top: size * 0.15,
-            backgroundColor: colors.indicator,
+            height: knobSize * 0.3,
+            top: knobSize * 0.15,
+            backgroundColor: knobColor,
             transform: `rotate(${angle}deg)`,
-            transformOrigin: `50% ${size * 0.35}px`,
+            transformOrigin: `50% ${knobSize * 0.35}px`,
             transition: isDragging ? 'none' : 'transform 0.1s ease-out',
           }}
         />

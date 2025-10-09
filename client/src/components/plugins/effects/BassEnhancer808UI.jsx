@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ProfessionalKnob } from '../container/PluginControls';
 import { MeteringService } from '@/lib/core/MeteringService';
 import { SignalVisualizer } from '../../common/SignalVisualizer';
+import { useGhostValue } from '@/hooks/useAudioPlugin';
 
 // === 808 HARMONIK ANALİZÖRÜ ===
 const HarmonicAnalyzer808 = ({ saturation, compression, subBoost }) => {
@@ -464,15 +465,23 @@ const CompressionMeter808 = ({ gainReduction, inputLevel }) => {
 
 // === ANA 808 BASS ENHANCER UI ===
 export const BassEnhancer808UI = ({ trackId, effect, onChange, definition }) => {
-  const { 
-    saturation = 0.3, 
-    compression = 0.4, 
-    subBoost = 0.6, 
-    punch = 0.5, 
-    warmth = 0.3, 
-    wet = 1.0 
+  const {
+    saturation = 0.3,
+    compression = 0.4,
+    subBoost = 0.6,
+    punch = 0.5,
+    warmth = 0.3,
+    wet = 1.0
   } = effect.settings;
-  
+
+  // Ghost values for parameter feedback
+  const ghostSaturation = useGhostValue(saturation, 400);
+  const ghostCompression = useGhostValue(compression, 400);
+  const ghostSubBoost = useGhostValue(subBoost, 400);
+  const ghostPunch = useGhostValue(punch, 400);
+  const ghostWarmth = useGhostValue(warmth, 400);
+  const ghostWet = useGhostValue(wet, 400);
+
   const [inputLevel, setInputLevel] = useState(0);
   const [gainReduction, setGainReduction] = useState(0);
   const [presetMode, setPresetMode] = useState('custom');

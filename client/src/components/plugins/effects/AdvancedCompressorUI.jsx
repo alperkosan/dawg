@@ -1,191 +1,536 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { MeteringService } from '@/lib/core/MeteringService';
-import { ProfessionalKnob } from '../container/PluginControls';
-import { useMixerStore } from '@/store/useMixerStore';
-import { SignalVisualizer } from '../../common/SignalVisualizer';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { Knob, ModeSelector, ExpandablePanel } from '@/components/controls';
+import { useAudioPlugin, useGhostValue, useCanvasVisualization } from '@/hooks/useAudioPlugin';
+import { COMPRESSOR_MODES, getCompressorModeParameters } from '@/config/presets';
 
-// CompressionCurve bileşeni, esnek alanda doğru çalışması için güncellendi.
+/**
+ * COMPRESSOR V2.0 - REDESIGNED WITH ENHANCED COMPONENTS
+ *
+ * "The Dynamics Forge" - Precise, powerful dynamic control
+ *
+ * Features:
+ * - Enhanced component library (Knob, Slider, ModeSelector, ExpandablePanel, Meter)
+ * - Category theming ('dynamics-forge' - blue palette)
+ * - Ghost value feedback (400ms visual lag)
+ * - Mode-based workflow (6 compression presets)
+ * - Real-time gain reduction visualization
+ * - Progressive disclosure (manual controls)
+ * - Compression curve visualizer
+ *
+ * Design Philosophy:
+ * - "One knob, infinite possibilities" via modes
+ * - Visual feedback at every step
+ * - Category-based color identity
+ */
+
+// ============================================================================
+// COMPRESSION CURVE VISUALIZER
+// ============================================================================
+
 const CompressionCurve = ({ threshold, ratio, knee }) => {
-    const canvasRef = useRef(null);
-    const containerRef = useRef(null);
+  const drawCurve = useCallback((ctx, width, height) => {
+    // Clear
+    ctx.fillStyle = 'rgba(10, 10, 15, 0.3)';
+    ctx.fillRect(0, 0, width, height);
 
-    const drawCurve = (ctx, width, height) => {
-        ctx.clearRect(0, 0, width, height);
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
-        ctx.lineWidth = 1;
-        for (let i = 0; i <= 4; i++) {
-            const pos = (i / 4) * width;
-            ctx.beginPath(); ctx.moveTo(pos, 0); ctx.lineTo(pos, height); ctx.stroke();
-            ctx.beginPath(); ctx.moveTo(0, pos); ctx.lineTo(width, pos); ctx.stroke();
-        }
-        ctx.strokeStyle = '#22c55e';
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        const dbToPixel = (db) => width - ((db + 60) / 60) * width;
-        const outputDbToPixel = (db) => height - ((db + 60) / 60) * height;
-        for (let inputDb = -60; inputDb <= 0; inputDb += 0.5) {
-            const inputOverThreshold = inputDb - threshold;
-            let outputDb = inputDb;
-            if (inputOverThreshold > knee / 2) {
-                outputDb = threshold + inputOverThreshold / ratio;
-            } else if (inputOverThreshold > -knee / 2) {
-                const x = inputOverThreshold + knee / 2;
-                outputDb = inputDb - ((ratio - 1) * Math.pow(x, 2) / (2 * knee * ratio));
-            }
-            const x = dbToPixel(inputDb);
-            const y = outputDbToPixel(outputDb);
-            if (inputDb === -60) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-        }
-        ctx.stroke();
-        ctx.strokeStyle = '#ef4444';
-        ctx.setLineDash([3, 3]);
-        const thresholdX = dbToPixel(threshold);
-        ctx.beginPath(); ctx.moveTo(thresholdX, 0); ctx.lineTo(thresholdX, height); ctx.stroke();
-        ctx.setLineDash([]);
-    };
+    // Grid
+    ctx.strokeStyle = 'rgba(0, 168, 232, 0.08)'; // dynamics-forge blue
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= 4; i++) {
+      const pos = (i / 4) * width;
+      ctx.beginPath();
+      ctx.moveTo(pos, 0);
+      ctx.lineTo(pos, height);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(0, pos);
+      ctx.lineTo(width, pos);
+      ctx.stroke();
+    }
 
-    useEffect(() => {
-        const canvas = canvasRef.current;
-        const container = containerRef.current;
-        if (!canvas || !container) return;
+    // Diagonal reference line (1:1)
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([2, 2]);
+    ctx.beginPath();
+    ctx.moveTo(0, height);
+    ctx.lineTo(width, 0);
+    ctx.stroke();
+    ctx.setLineDash([]);
 
-        const observer = new ResizeObserver(entries => {
-            const { width, height } = entries[0].contentRect;
-            if (width > 0 && height > 0) {
-                canvas.width = width;
-                canvas.height = height;
-                drawCurve(canvas.getContext('2d'), width, height);
-            }
-        });
-        observer.observe(container);
+    // Compression Curve
+    ctx.strokeStyle = '#00A8E8'; // dynamics-forge primary
+    ctx.lineWidth = 3;
+    ctx.beginPath();
 
-        // İlk render'da çizimi yap
-        const { width, height } = container.getBoundingClientRect();
-        if (width > 0 && height > 0) {
-            canvas.width = width;
-            canvas.height = height;
-            drawCurve(canvas.getContext('2d'), width, height);
-        }
-        
-        return () => observer.disconnect();
-    }, []);
+    const dbToPixel = (db) => width - ((db + 60) / 60) * width;
+    const outputDbToPixel = (db) => height - ((db + 60) / 60) * height;
 
-    // threshold, ratio, knee her değiştiğinde yeniden çiz
-    useEffect(() => {
-        const canvas = canvasRef.current;
-        if (canvas) {
-            drawCurve(canvas.getContext('2d'), canvas.width, canvas.height);
-        }
-    }, [threshold, ratio, knee]);
+    for (let inputDb = -60; inputDb <= 0; inputDb += 0.5) {
+      const inputOverThreshold = inputDb - threshold;
+      let outputDb = inputDb;
 
-    return (
-        <div ref={containerRef} className="w-full h-full relative">
-            <canvas ref={canvasRef} className="absolute top-0 left-0" />
-        </div>
-    );
-};
+      if (inputOverThreshold > knee / 2) {
+        outputDb = threshold + inputOverThreshold / ratio;
+      } else if (inputOverThreshold > -knee / 2) {
+        const x = inputOverThreshold + knee / 2;
+        outputDb = inputDb - ((ratio - 1) * Math.pow(x, 2) / (2 * knee * ratio));
+      }
 
-// Vintage GR Meter (Değişiklik yok)
-const VintageGRMeter = ({ gainReduction }) => {
-  const needleAngle = (Math.abs(gainReduction) / 24) * 180;
+      const x = dbToPixel(inputDb);
+      const y = outputDbToPixel(outputDb);
+      if (inputDb === -60) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+
+    // Curve glow
+    ctx.shadowBlur = 15;
+    ctx.shadowColor = '#00A8E8';
+    ctx.strokeStyle = 'rgba(0, 168, 232, 0.5)';
+    ctx.lineWidth = 5;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // Threshold line
+    ctx.strokeStyle = '#ef4444';
+    ctx.setLineDash([3, 3]);
+    const thresholdX = dbToPixel(threshold);
+    ctx.beginPath();
+    ctx.moveTo(thresholdX, 0);
+    ctx.lineTo(thresholdX, height);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Threshold label
+    ctx.font = 'bold 9px monospace';
+    ctx.fillStyle = '#ef4444';
+    ctx.textAlign = 'left';
+    ctx.fillText(`${threshold.toFixed(0)}dB`, thresholdX + 5, 15);
+
+    // Axis labels
+    ctx.font = '8px monospace';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+    ctx.textAlign = 'center';
+    ctx.fillText('Input (dB)', width / 2, height - 5);
+    ctx.save();
+    ctx.translate(10, height / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.fillText('Output (dB)', 0, 0);
+    ctx.restore();
+  }, [threshold, ratio, knee]);
+
+  const { containerRef, canvasRef } = useCanvasVisualization(drawCurve, [threshold, ratio, knee]);
+
   return (
-    <div className="relative w-24 h-12 bg-black rounded-t-full border-2 border-amber-600 overflow-hidden shrink-0">
-      <div className="absolute inset-0">
-        {[0, -3, -6, -12, -20].map((db) => {
-          const angle = (Math.abs(db) / 24) * 180;
-          return ( <div key={db} className="absolute w-px h-3 bg-amber-300 origin-bottom" style={{ left: '50%', bottom: 0, transform: `translateX(-50%) rotate(${angle - 90}deg) translateY(-12px)`}} /> );
-        })}
-      </div>
-      <div className="compressor-needle absolute w-px h-10 bg-red-500 origin-bottom" style={{ left: '50%', bottom: 0, transform: `translateX(-50%) rotate(${Math.min(180, needleAngle) - 90}deg)` }} />
-      <div className="absolute w-2 h-2 bg-red-500 rounded-full bottom-0 left-1/2 transform -translate-x-1/2" />
-      <div className="absolute bottom-0 left-0 text-[8px] text-amber-300 transform -rotate-45 origin-bottom-left">0</div>
-      <div className="absolute bottom-0 right-0 text-[8px] text-amber-300 transform rotate-45 origin-bottom-right">-20</div>
+    <div ref={containerRef} className="w-full h-full bg-black/50 rounded-xl border border-[#00A8E8]/20">
+      <canvas ref={canvasRef} className="w-full h-full" />
     </div>
   );
 };
 
-export const AdvancedCompressorUI = ({ trackId, effect, onChange, definition }) => {
-  const [gainReduction, setGainReduction] = useState(0);
-  const allTracks = useMixerStore(state => state.mixerTracks);
-  const sidechainSources = allTracks.filter(t => t.id !== trackId && t.type !== 'master');
-  
-  // === DÜZELTME 2: Metering Service'ten gelen veri doğru şekilde işleniyor ===
-  useEffect(() => {
-    const grMeterId = `${trackId}-${effect.id}`;
-    
-    // Gelen veri artık bir obje değil, doğrudan bir sayı (dbValue)
-    const handleGR = (dbValue) => {
-        if (typeof dbValue === 'number' && isFinite(dbValue)) {
-            setGainReduction(dbValue);
-        }
-    };
-    
-    // Subscribe olurken artık `{ type: 'level' }` gibi bir config'e gerek yok.
-    const unsubGR = MeteringService.subscribe(grMeterId, handleGR);
-    
-    return () => unsubGR();
-  }, [trackId, effect.id]);
+// ============================================================================
+// GAIN REDUCTION METER (Circular)
+// ============================================================================
 
-  const isSidechain = definition.type === 'SidechainCompressor';
+const GainReductionMeter = ({ gainReduction }) => {
+  const absGR = Math.abs(gainReduction);
+  const percentage = Math.min((absGR / 20) * 100, 100);
+
+  // Color based on GR amount
+  let color = '#00A8E8'; // Blue (gentle)
+  if (absGR > 12) color = '#ef4444'; // Red (heavy)
+  else if (absGR > 6) color = '#f59e0b'; // Amber (moderate)
 
   return (
-    // === DÜZELTME 1: Ana kapsayıcıya Flexbox eklendi ===
-    <div className="w-full h-full p-6 bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 flex flex-col gap-4">
-      
-      {/* Header: Bu bölümün boyutu sabit kalmalı */}
-      <div className="flex items-center justify-between flex-shrink-0">
-        <div className="flex items-center gap-4">
-          <VintageGRMeter gainReduction={gainReduction} />
-          <div>
-            <div className="text-lg font-bold text-white">{definition.type}</div>
-            <div className="text-xs text-amber-400 font-mono">
-              GR: {gainReduction.toFixed(1)}dB
+    <div className="flex flex-col items-center gap-3">
+      {/* Circular meter */}
+      <div className="relative w-44 h-44">
+        <svg viewBox="0 0 100 100" className="transform -rotate-90">
+          {/* Background circle */}
+          <circle
+            cx="50"
+            cy="50"
+            r="42"
+            fill="none"
+            stroke="rgba(0, 168, 232, 0.1)"
+            strokeWidth="6"
+          />
+          {/* GR arc */}
+          <circle
+            cx="50"
+            cy="50"
+            r="42"
+            fill="none"
+            stroke={color}
+            strokeWidth="6"
+            strokeDasharray={`${percentage * 2.639} 263.9`}
+            strokeLinecap="round"
+            style={{ transition: 'stroke 0.3s ease' }}
+          />
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <div className="text-5xl font-black text-white tabular-nums" style={{ color }}>
+            {absGR.toFixed(1)}
+          </div>
+          <div className="text-xs text-white/50 uppercase tracking-wider font-bold mt-1">dB GR</div>
+        </div>
+      </div>
+
+      {/* Scale markers */}
+      <div className="flex justify-between w-full px-4 text-[9px] text-white/40 font-mono">
+        <span>0</span>
+        <span>-6</span>
+        <span>-12</span>
+        <span>-20</span>
+      </div>
+    </div>
+  );
+};
+
+// ============================================================================
+// MAIN COMPONENT
+// ============================================================================
+
+export const AdvancedCompressorUI = ({ trackId, effect, onChange }) => {
+  const {
+    threshold = -24,
+    ratio = 4,
+    attack = 0.01,
+    release = 0.1,
+    knee = 12,
+    autoMakeup = 1
+  } = effect.settings;
+
+  const [selectedMode, setSelectedMode] = useState('vocal-control');
+  const [amount, setAmount] = useState(50);
+  const [gainReduction, setGainReduction] = useState(0);
+
+  // Ghost values (400ms lag for smooth visual feedback)
+  const ghostAmount = useGhostValue(amount, 400);
+  const ghostThreshold = useGhostValue(threshold, 400);
+  const ghostRatio = useGhostValue(ratio, 400);
+  const ghostAttack = useGhostValue(attack * 1000, 400);
+  const ghostRelease = useGhostValue(release * 1000, 400);
+  const ghostKnee = useGhostValue(knee, 400);
+
+  // Prepare modes for ModeSelector component
+  const modes = Object.values(COMPRESSOR_MODES).map(mode => ({
+    id: mode.id,
+    label: mode.name,
+    icon: mode.icon,
+    description: mode.description
+  }));
+
+  const currentMode = COMPRESSOR_MODES[selectedMode];
+
+  // Store onChange in ref
+  const onChangeRef = useRef(onChange);
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
+
+  // Handle mode change
+  const handleModeChange = (modeId) => {
+    setSelectedMode(modeId);
+  };
+
+  // Apply mode + amount
+  useEffect(() => {
+    const params = getCompressorModeParameters(selectedMode, amount);
+    if (!params) return;
+
+    Object.entries(params).forEach(([key, value]) => {
+      // Convert boolean autoMakeup to number (0 or 1) for worklet
+      if (key === 'autoMakeup') {
+        onChangeRef.current(key, value ? 1 : 0);
+      } else {
+        onChangeRef.current(key, value);
+      }
+    });
+  }, [selectedMode, amount]);
+
+  // Use standardized audio plugin hook
+  const { plugin } = useAudioPlugin(trackId, effect.id, {
+    fftSize: 2048,
+    updateMetrics: false
+  });
+
+  // GR Metering - Listen to worklet messages
+  useEffect(() => {
+    const audioNode = plugin?.audioNode?.workletNode;
+    if (!audioNode?.port) return;
+
+    const handleMessage = (event) => {
+      const { type, gr } = event.data;
+      if (type === 'metering') {
+        if (typeof gr === 'number' && isFinite(gr)) {
+          setGainReduction(gr);
+        }
+      }
+    };
+
+    audioNode.port.onmessage = handleMessage;
+
+    return () => {
+      if (audioNode?.port) {
+        audioNode.port.onmessage = null;
+      }
+    };
+  }, [plugin]);
+
+  return (
+    <div className="w-full h-full bg-gradient-to-br from-black via-neutral-950 to-black p-4 flex gap-4 overflow-hidden">
+
+      {/* ===== LEFT PANEL: Mode Selection ===== */}
+      <div className="w-[240px] flex-shrink-0 flex flex-col gap-4">
+
+        {/* Plugin Header */}
+        <div className="bg-gradient-to-r from-[#001829] to-[#1a1a1a] rounded-xl px-4 py-3 border border-[#00A8E8]/30">
+          <div className="flex items-center gap-3">
+            <div className="text-2xl">{currentMode?.icon || '🎚️'}</div>
+            <div className="flex-1">
+              <div className="text-sm font-black text-[#00A8E8] tracking-wider uppercase">
+                Compressor
+              </div>
+              <div className="text-[9px] text-[#00B8F8]/70">The Dynamics Forge</div>
             </div>
           </div>
         </div>
-        {isSidechain && (
-          <select 
-            value={effect.settings.sidechainSource || 'none'} 
-            onChange={(e) => onChange('sidechainSource', e.target.value === 'none' ? null : e.target.value)}
-            className="bg-gray-700 border border-gray-600 rounded px-3 py-1 text-sm text-white"
-          >
-            <option value="none">No Sidechain</option>
-            {sidechainSources.map(track => 
-              <option key={track.id} value={track.id}>{track.name}</option>
-            )}
-          </select>
-        )}
-      </div>
-      
-      {/* Main Controls: Bu bölümün de boyutu sabit kalmalı */}
-      <div className="grid grid-cols-5 gap-6 flex-shrink-0">
-        <ProfessionalKnob label="Threshold" value={effect.settings.threshold} onChange={(v) => onChange('threshold', v)} min={-60} max={0} defaultValue={-24} unit="dB" precision={1} size={70} />
-        <ProfessionalKnob label="Ratio" value={effect.settings.ratio} onChange={(v) => onChange('ratio', v)} min={1} max={20} defaultValue={4} unit=":1" precision={1} size={70} />
-        <ProfessionalKnob label="Attack" value={effect.settings.attack * 1000} onChange={(v) => onChange('attack', v / 1000)} min={0.1} max={100} defaultValue={10} unit="ms" precision={1} size={70} logarithmic />
-        <ProfessionalKnob label="Release" value={effect.settings.release * 1000} onChange={(v) => onChange('release', v / 1000)} min={10} max={1000} defaultValue={100} unit="ms" precision={0} size={70} logarithmic />
-        <ProfessionalKnob label="Knee" value={effect.settings.knee} onChange={(v) => onChange('knee', v)} min={0} max={30} defaultValue={10} unit="dB" precision={1} size={70} />
-      </div>
-      
-      {/* Visual Analysis: Bu bölüm artık esnek ve kalan alanı dolduruyor */}
-      <div className="grid grid-cols-2 gap-4 flex-grow min-h-0">
-        <div className="bg-black/20 rounded-lg p-3 border border-white/10 flex flex-col">
-          <div className="text-xs text-gray-400 mb-2 flex-shrink-0">Compression Curve</div>
-          <div className="flex-grow min-h-0">
-            <CompressionCurve threshold={effect.settings.threshold} ratio={effect.settings.ratio} knee={effect.settings.knee} />
+
+        {/* Mode Selector */}
+        <ModeSelector
+          modes={modes}
+          activeMode={selectedMode}
+          onChange={handleModeChange}
+          orientation="vertical"
+          category="dynamics-forge"
+          className="flex-1"
+        />
+
+        {/* Quick Info */}
+        <div className="bg-gradient-to-br from-[#001829]/50 to-black/50 rounded-xl p-3 border border-[#00A8E8]/10">
+          <div className="text-[9px] text-[#00B8F8]/70 font-bold uppercase tracking-wider mb-2">
+            Current Mode
           </div>
-        </div>
-        <div className="bg-black/20 rounded-lg p-3 border border-white/10 flex flex-col">
-          <div className="text-xs text-gray-400 mb-2 flex-shrink-0">Input Signal</div>
-          <div className="flex-grow min-h-0">
-             <SignalVisualizer meterId={`${trackId}-input`} type="scope" color="#22c55e" config={{ showPeak: true, smooth: true }} />
+          <div className="text-[10px] text-white/60 leading-relaxed">
+            {currentMode?.description || 'Select a mode above'}
           </div>
         </div>
       </div>
-      
-      {/* Mix Control: Bu bölüm de sabit boyutlu */}
-      <div className="flex justify-center flex-shrink-0">
-        <ProfessionalKnob label="Mix" value={effect.settings.wet * 100} onChange={(v) => onChange('wet', v/100)} min={0} max={100} defaultValue={100} unit="%" precision={0} size={60} />
+
+      {/* ===== CENTER PANEL: GR Meter + Amount Control ===== */}
+      <div className="flex-1 flex flex-col gap-4 min-w-0 overflow-y-auto pr-2">
+
+        {/* Compression Curve Visualizer */}
+        <div className="h-[180px]">
+          <CompressionCurve threshold={threshold} ratio={ratio} knee={knee} />
+        </div>
+
+        {/* GR Meter + Amount Knob */}
+        <div className="flex-1 bg-gradient-to-br from-black/50 to-[#001829]/30 rounded-xl p-6 border border-[#00A8E8]/20 flex items-center justify-center gap-12">
+
+          {/* Gain Reduction Meter */}
+          <GainReductionMeter gainReduction={gainReduction} />
+
+          {/* Divider */}
+          <div className="h-48 w-px bg-gradient-to-b from-transparent via-[#00A8E8]/30 to-transparent" />
+
+          {/* Amount Knob */}
+          <Knob
+            label="AMOUNT"
+            value={amount}
+            ghostValue={ghostAmount}
+            onChange={setAmount}
+            min={0}
+            max={100}
+            defaultValue={50}
+            sizeVariant="large"
+            category="dynamics-forge"
+            valueFormatter={(v) => `${v.toFixed(0)}%`}
+          />
+        </div>
+
+        {/* Manual Controls (Expandable) */}
+        <ExpandablePanel
+          title="Manual Control"
+          icon="⚙️"
+          category="dynamics-forge"
+          defaultExpanded={false}
+        >
+          <div className="grid grid-cols-5 gap-6 p-4">
+
+            {/* Threshold */}
+            <Knob
+              label="THRESHOLD"
+              value={threshold}
+              ghostValue={ghostThreshold}
+              onChange={(val) => onChange('threshold', val)}
+              min={-60}
+              max={0}
+              defaultValue={-24}
+              sizeVariant="medium"
+              category="dynamics-forge"
+              valueFormatter={(v) => `${v.toFixed(1)} dB`}
+            />
+
+            {/* Ratio */}
+            <Knob
+              label="RATIO"
+              value={ratio}
+              ghostValue={ghostRatio}
+              onChange={(val) => onChange('ratio', val)}
+              min={1}
+              max={20}
+              defaultValue={4}
+              sizeVariant="medium"
+              category="dynamics-forge"
+              valueFormatter={(v) => `${v.toFixed(1)}:1`}
+            />
+
+            {/* Attack */}
+            <Knob
+              label="ATTACK"
+              value={attack * 1000}
+              ghostValue={ghostAttack}
+              onChange={(val) => onChange('attack', val / 1000)}
+              min={0.1}
+              max={100}
+              defaultValue={10}
+              sizeVariant="medium"
+              category="dynamics-forge"
+              valueFormatter={(v) => `${v.toFixed(1)} ms`}
+            />
+
+            {/* Release */}
+            <Knob
+              label="RELEASE"
+              value={release * 1000}
+              ghostValue={ghostRelease}
+              onChange={(val) => onChange('release', val / 1000)}
+              min={10}
+              max={1000}
+              defaultValue={100}
+              sizeVariant="medium"
+              category="dynamics-forge"
+              valueFormatter={(v) => `${v.toFixed(0)} ms`}
+            />
+
+            {/* Knee */}
+            <Knob
+              label="KNEE"
+              value={knee}
+              ghostValue={ghostKnee}
+              onChange={(val) => onChange('knee', val)}
+              min={0}
+              max={30}
+              defaultValue={12}
+              sizeVariant="medium"
+              category="dynamics-forge"
+              valueFormatter={(v) => `${v.toFixed(1)} dB`}
+            />
+          </div>
+
+          {/* Auto Makeup Toggle */}
+          <div className="px-4 pb-4 pt-2 border-t border-[#00A8E8]/10">
+            <label className="flex items-center gap-3 cursor-pointer group">
+              <input
+                type="checkbox"
+                checked={autoMakeup === 1}
+                onChange={(e) => onChange('autoMakeup', e.target.checked ? 1 : 0)}
+                className="w-4 h-4 rounded border-[#00A8E8]/30 bg-black/50 checked:bg-[#00A8E8] checked:border-[#00A8E8] transition-all"
+              />
+              <div>
+                <div className="text-xs font-medium text-white group-hover:text-[#00A8E8] transition-colors">
+                  Auto Makeup Gain
+                </div>
+                <div className="text-[10px] text-white/40">
+                  Automatically compensate for gain reduction
+                </div>
+              </div>
+            </label>
+          </div>
+        </ExpandablePanel>
       </div>
+
+      {/* ===== RIGHT PANEL: Stats & Info ===== */}
+      <div className="w-[200px] flex-shrink-0 flex flex-col gap-4 overflow-y-auto pr-2">
+
+        {/* Processing Stats */}
+        <div className="bg-gradient-to-br from-black/50 to-[#001829]/30 rounded-xl p-4 border border-[#00A8E8]/10">
+          <div className="text-[9px] text-[#00B8F8]/70 uppercase tracking-wider mb-3 font-bold">
+            Processing
+          </div>
+          <div className="space-y-2.5">
+            <div className="flex justify-between items-center text-[10px]">
+              <span className="text-white/50">Mode</span>
+              <span className="text-[#00A8E8] text-[9px] font-medium">
+                {currentMode?.name}
+              </span>
+            </div>
+            <div className="flex justify-between items-center text-[10px]">
+              <span className="text-white/50">Amount</span>
+              <span className="text-[#00A8E8] font-mono font-bold tabular-nums">
+                {amount.toFixed(0)}%
+              </span>
+            </div>
+            <div className="pt-2 border-t border-[#00A8E8]/10">
+              <div className="flex justify-between items-center text-[10px]">
+                <span className="text-white/50">Threshold</span>
+                <span className="text-[#00B8F8] font-mono font-bold tabular-nums">
+                  {threshold.toFixed(1)}dB
+                </span>
+              </div>
+            </div>
+            <div className="flex justify-between items-center text-[10px]">
+              <span className="text-white/50">Ratio</span>
+              <span className="text-[#00B8F8] font-mono font-bold tabular-nums">
+                {ratio.toFixed(1)}:1
+              </span>
+            </div>
+            <div className="flex justify-between items-center text-[10px]">
+              <span className="text-white/50">Attack</span>
+              <span className="text-[#00B8F8] font-mono font-bold tabular-nums">
+                {(attack * 1000).toFixed(1)}ms
+              </span>
+            </div>
+            <div className="flex justify-between items-center text-[10px]">
+              <span className="text-white/50">Release</span>
+              <span className="text-[#00B8F8] font-mono font-bold tabular-nums">
+                {(release * 1000).toFixed(0)}ms
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* How It Works */}
+        <div className="flex-1 bg-gradient-to-br from-[#001829]/20 to-black/50 rounded-xl p-4 border border-[#00A8E8]/10">
+          <div className="text-[9px] text-[#00B8F8]/70 font-bold uppercase tracking-wider mb-3">
+            How It Works
+          </div>
+          <div className="text-[9px] text-white/50 leading-relaxed space-y-2">
+            <p>
+              <span className="text-[#00A8E8] font-bold">Mode:</span> Select compression style
+            </p>
+            <p>
+              <span className="text-[#00B8F8] font-bold">Amount:</span> Adjust compression intensity
+            </p>
+            <p>
+              <span className="text-[#00C8F8] font-bold">GR Meter:</span> Watch gain reduction in real-time
+            </p>
+            <p className="text-white/30 italic pt-2 text-[8px]">
+              💡 Start with a mode, then adjust amount to taste
+            </p>
+          </div>
+        </div>
+
+        {/* Category Badge */}
+        <div className="bg-gradient-to-r from-[#001829] to-[#1a1a1a] rounded-lg px-3 py-2 border border-[#00A8E8]/20 text-center">
+          <div className="text-[8px] text-[#00B8F8]/50 uppercase tracking-wider">Category</div>
+          <div className="text-[10px] text-[#00A8E8] font-bold">The Dynamics Forge</div>
+        </div>
+      </div>
+
     </div>
   );
 };

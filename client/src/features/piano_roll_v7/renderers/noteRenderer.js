@@ -22,6 +22,7 @@ export class PremiumNoteRenderer {
 
     // Premium note rendering with advanced visuals
     renderNote(ctx, note, dimensions, viewport, isSelected = false, isHovered = false, isEraserTarget = false) {
+        const styles = getComputedStyle(document.documentElement);
         const { stepWidth, keyHeight } = dimensions;
 
         // Calculate note position and size - ensure it fills grid cells completely
@@ -164,6 +165,7 @@ export class PremiumNoteRenderer {
 
     // Premium note border with depth
     renderNoteBorder(ctx, x, y, width, height, style) {
+        const styles = getComputedStyle(document.documentElement);
         const borderHue = style.hue;
         const borderAlpha = style.isSelected ? 0.9 : 0.6;
         const borderWidth = style.isSelected ? 2 : 1;
@@ -183,20 +185,23 @@ export class PremiumNoteRenderer {
         // Refined selection effects - more elegant
         if (style.isSelected) {
             // Subtle outer selection border
-            ctx.strokeStyle = 'rgba(59, 130, 246, 0.8)'; // Blue with transparency
+            const accentCool = styles.getPropertyValue('--zenith-accent-cool').trim();
+            ctx.strokeStyle = accentCool || 'rgba(59, 130, 246, 0.8)';
             ctx.lineWidth = 2;
             ctx.setLineDash([]);
             this.drawRoundedRect(ctx, x - 1, y - 1, width + 2, height + 2, 3.5);
             ctx.stroke();
 
             // Gentle selection glow
-            ctx.shadowColor = 'rgba(59, 130, 246, 0.3)';
+            const accentCoolFaded = styles.getPropertyValue('--zenith-accent-cool-faded').trim();
+            ctx.shadowColor = accentCoolFaded || 'rgba(59, 130, 246, 0.3)';
             ctx.shadowBlur = 4;
             ctx.shadowOffsetX = 0;
             ctx.shadowOffsetY = 0;
 
             // Inner accent border
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+            const textPrimary = styles.getPropertyValue('--zenith-text-primary').trim();
+            ctx.strokeStyle = textPrimary || 'rgba(255, 255, 255, 0.6)';
             ctx.lineWidth = 1;
             this.drawRoundedRect(ctx, x + 0.5, y + 0.5, width - 1, height - 1, 2.5);
             ctx.stroke();
@@ -205,7 +210,8 @@ export class PremiumNoteRenderer {
 
             // Minimal corner indicators (only top corners)
             const cornerSize = 4;
-            ctx.fillStyle = 'rgba(59, 130, 246, 0.9)';
+            const accentCoolBright = styles.getPropertyValue('--zenith-accent-cool').trim();
+            ctx.fillStyle = accentCoolBright || 'rgba(59, 130, 246, 0.9)';
             // Top-left corner dot
             ctx.fillRect(x - 1, y - 1, cornerSize, 1);
             ctx.fillRect(x - 1, y - 1, 1, cornerSize);
@@ -293,7 +299,10 @@ export class PremiumNoteRenderer {
     renderNoteContent(ctx, note, x, y, width, height) {
         if (width < 50 || height < 20) return;
 
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        const styles = getComputedStyle(document.documentElement);
+        const textPrimary = styles.getPropertyValue('--zenith-text-primary').trim();
+
+        ctx.fillStyle = textPrimary || 'rgba(255, 255, 255, 0.9)';
         ctx.font = '10px Inter, sans-serif';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
@@ -305,7 +314,8 @@ export class PremiumNoteRenderer {
         // Velocity (if space allows)
         if (width > 80) {
             ctx.font = '8px Inter, sans-serif';
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+            const textSecondary = styles.getPropertyValue('--zenith-text-secondary').trim();
+            ctx.fillStyle = textSecondary || 'rgba(255, 255, 255, 0.7)';
             ctx.fillText(`v${note.velocity}`, x + 8, y + height * 0.7);
         }
     }
@@ -380,7 +390,9 @@ export class PremiumNoteRenderer {
 
         // Preview label (optional for larger notes)
         if (width > 30 && height > 16) {
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+            const styles = getComputedStyle(document.documentElement);
+            const textPrimary = styles.getPropertyValue('--zenith-text-primary').trim();
+            ctx.fillStyle = textPrimary || 'rgba(255, 255, 255, 0.8)';
             ctx.font = '9px Inter, sans-serif';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
@@ -407,13 +419,16 @@ export class PremiumNoteRenderer {
 
     // Render resize handles for selected notes
     renderResizeHandles(ctx, x, y, width, height) {
+        const styles = getComputedStyle(document.documentElement);
         const handleSize = 10; // Increased size for better usability
         const handleWidth = 5; // Increased width
         const handleOffset = 3;
 
         // Left resize handle (start time)
-        ctx.fillStyle = '#3b82f6';
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+        const accentCool = styles.getPropertyValue('--zenith-accent-cool').trim();
+        const textPrimary = styles.getPropertyValue('--zenith-text-primary').trim();
+        ctx.fillStyle = accentCool || '#3b82f6';
+        ctx.strokeStyle = textPrimary || 'rgba(255, 255, 255, 0.9)';
         ctx.lineWidth = 1;
 
         const leftHandleX = x - handleOffset;
@@ -431,7 +446,8 @@ export class PremiumNoteRenderer {
         ctx.strokeRect(rightHandleX, rightHandleY, handleWidth, handleSize);
 
         // Visual indicator lines (grip lines)
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+        const textPrimaryBright = styles.getPropertyValue('--zenith-text-primary').trim();
+        ctx.strokeStyle = textPrimaryBright || 'rgba(255, 255, 255, 0.8)';
         ctx.lineWidth = 1;
 
         // Left handle grip lines

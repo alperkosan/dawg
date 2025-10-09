@@ -59,12 +59,12 @@ export default function PianoRollMiniView({ notes = [], patternLength, onNoteCli
     const container = containerRef.current;
     if (!canvas || !container) return;
     
-    // --- TEMA ENTEGRASYONU ---
-    // CSS'den renkleri dinamik olarak al
+    // --- ZENITH TEMA ENTEGRASYONU ---
+    // CSS'den Zenith design tokens'ları dinamik olarak al
     const styles = getComputedStyle(container);
-    const noteColor = styles.getPropertyValue('--color-accent-primary');
-    const gridColor = styles.getPropertyValue('--color-surface-3');
-    const textColor = styles.getPropertyValue('--color-text-secondary');
+    const noteColor = styles.getPropertyValue('--zenith-accent-cool').trim();
+    const gridColor = styles.getPropertyValue('--zenith-border-subtle').trim();
+    const textColor = styles.getPropertyValue('--zenith-text-secondary').trim();
 
     const ctx = canvas.getContext('2d');
     const dpr = window.devicePixelRatio || 1;

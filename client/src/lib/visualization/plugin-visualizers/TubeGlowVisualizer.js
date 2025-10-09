@@ -65,17 +65,23 @@ export class TubeGlowVisualizer extends AnimatedPluginVisualizer {
     // Clear canvas
     this.clear('rgba(10, 14, 26, 0.95)');
 
+    // Validate canvas dimensions
+    if (!isFinite(this.canvasWidth) || !isFinite(this.canvasHeight) ||
+        this.canvasWidth <= 0 || this.canvasHeight <= 0) {
+      return;
+    }
+
     // 🎵 Get real-time audio level from analyser
     const realInputLevel = this.getAudioLevel();
 
     // Calculate intensity from audio input
-    const distortion = drive / 100;
+    const distortion = Math.max(0, Math.min(1.5, drive / 100));
     const normalizedInput = Math.max(0, Math.min(1, (realInputLevel + 60) / 60));
 
     // Combine input level with drive for visual intensity
     // Use drive as minimum base + input level for dynamics
     const baseIntensity = Math.max(distortion * 0.3, normalizedInput);
-    const intensity = baseIntensity * distortion * mix;
+    const intensity = Math.max(0, Math.min(1, baseIntensity * distortion * mix));
 
     // Canvas center
     const centerX = this.canvasWidth / 2;
@@ -87,6 +93,11 @@ export class TubeGlowVisualizer extends AnimatedPluginVisualizer {
     const tubeX = centerX - tubeWidth / 2;
     const tubeY = centerY - tubeHeight / 2;
 
+    // Validate tube dimensions
+    if (!isFinite(tubeWidth) || !isFinite(tubeHeight) || tubeWidth <= 0 || tubeHeight <= 0) {
+      return;
+    }
+
     // Draw tube outline
     this.drawRoundedRect(tubeX, tubeY, tubeWidth, tubeHeight, 20, {
       strokeColor: 'rgba(255, 140, 0, 0.8)',
@@ -94,34 +105,41 @@ export class TubeGlowVisualizer extends AnimatedPluginVisualizer {
     });
 
     // Draw multiple glow layers
-    const glowIntensity = 0.3 + intensity * 0.7;
+    const glowIntensity = Math.max(0, Math.min(1, 0.3 + intensity * 0.7));
     const glowRadius = tubeHeight * 0.3 * glowIntensity;
 
-    for (let i = 0; i < this.glowLayers; i++) {
-      const radius = glowRadius * (1 + i * 0.3);
-      const alpha = (0.4 - i * 0.06) * intensity;
-      const hue = 20 + intensity * 30;
+    // Validate glow radius before creating gradients
+    if (isFinite(glowRadius) && glowRadius > 0) {
+      for (let i = 0; i < this.glowLayers; i++) {
+        const radius = glowRadius * (1 + i * 0.3);
+        const alpha = Math.max(0, Math.min(1, (0.4 - i * 0.06) * intensity));
+        const hue = Math.max(0, Math.min(360, 20 + intensity * 30));
 
-      const gradient = ctx.createRadialGradient(
-        centerX, centerY, 0,
-        centerX, centerY, radius
-      );
+        // Additional safety check for radius
+        if (isFinite(radius) && radius > 0) {
+          const gradient = ctx.createRadialGradient(
+            centerX, centerY, 0,
+            centerX, centerY, radius
+          );
 
-      gradient.addColorStop(0, `hsla(${hue}, 100%, 60%, ${alpha})`);
-      gradient.addColorStop(1, `hsla(${hue}, 60%, 40%, 0)`);
+          gradient.addColorStop(0, `hsla(${hue}, 100%, 60%, ${alpha})`);
+          gradient.addColorStop(1, `hsla(${hue}, 60%, 40%, 0)`);
 
-      ctx.fillStyle = gradient;
-      ctx.fillRect(0, 0, this.canvasWidth, this.canvasHeight);
+          ctx.fillStyle = gradient;
+          ctx.fillRect(0, 0, this.canvasWidth, this.canvasHeight);
+        }
+      }
     }
 
     // Draw animated filaments
     for (let i = 0; i < this.filamentCount; i++) {
       const x = centerX + (i - 1) * (tubeWidth * 0.15);
       const flickerOffset = this.getSineWave(0.05, i * Math.PI / 3) * 2;
-      const filamentIntensity = 0.8 + intensity * 0.2;
+      const filamentIntensity = Math.max(0, Math.min(1, 0.8 + intensity * 0.2));
+      const hue = Math.max(0, Math.min(360, 40 + intensity * 20));
 
-      ctx.strokeStyle = `hsla(${40 + intensity * 20}, 100%, 80%, ${filamentIntensity})`;
-      ctx.lineWidth = 2 + intensity * 3;
+      ctx.strokeStyle = `hsla(${hue}, 100%, 80%, ${filamentIntensity})`;
+      ctx.lineWidth = Math.max(1, 2 + intensity * 3);
       ctx.shadowColor = ctx.strokeStyle;
       ctx.shadowBlur = 10 + intensity * 20;
       ctx.lineCap = 'round';

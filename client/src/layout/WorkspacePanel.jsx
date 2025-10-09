@@ -43,7 +43,7 @@ function WorkspacePanel() {
 
           if (panel.type === 'plugin') {
             const track = mixerTracks.find(t => t.id === panel.trackId);
-            const effect = track?.insertEffects.find(fx => fx.id === panel.effectId);
+            const effect = track?.insertEffects?.find(fx => fx.id === panel.effectId) || track?.effects?.find(fx => fx.id === panel.effectId);
 
             if (!track || !effect) {
               // Auto-close the orphaned panel

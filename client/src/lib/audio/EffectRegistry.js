@@ -18,17 +18,23 @@ export class EffectRegistry {
    * Register all available effects with their worklet paths and parameter definitions
    */
   registerEffects() {
-    // Saturator
+    // Saturator v2.0
     this.register('Saturator', {
       workletPath: '/worklets/effects/saturator-processor.js',
       processorName: 'saturator-processor',
       parameters: [
         { name: 'distortion', defaultValue: 0.4, minValue: 0, maxValue: 1.5 },
-        { name: 'wet', defaultValue: 1.0, minValue: 0, maxValue: 1 }
+        { name: 'wet', defaultValue: 1.0, minValue: 0, maxValue: 1 },
+        // v2.0 parameters
+        { name: 'autoGain', defaultValue: 1, minValue: 0, maxValue: 1 },
+        { name: 'lowCutFreq', defaultValue: 0, minValue: 0, maxValue: 500 },
+        { name: 'highCutFreq', defaultValue: 20000, minValue: 2000, maxValue: 20000 },
+        { name: 'tone', defaultValue: 0, minValue: -12, maxValue: 12 },
+        { name: 'headroom', defaultValue: 0, minValue: -12, maxValue: 12 }
       ]
     });
 
-    // Compressor
+    // Compressor (Single-band with upward compression)
     this.register('Compressor', {
       workletPath: '/worklets/effects/compressor-processor.js',
       processorName: 'compressor-processor',
@@ -38,20 +44,44 @@ export class EffectRegistry {
         { name: 'attack', defaultValue: 0.003, minValue: 0.0001, maxValue: 1 },
         { name: 'release', defaultValue: 0.25, minValue: 0.001, maxValue: 3 },
         { name: 'knee', defaultValue: 30, minValue: 0, maxValue: 40 },
+        { name: 'wet', defaultValue: 1.0, minValue: 0, maxValue: 1 },
+        { name: 'upwardRatio', defaultValue: 2, minValue: 1, maxValue: 20 },
+        { name: 'upwardDepth', defaultValue: 0, minValue: 0, maxValue: 1 }
+      ]
+    });
+
+    // OTT - Over The Top Multiband Compressor
+    this.register('OTT', {
+      workletPath: '/worklets/effects/multiband-compressor-processor.js',
+      processorName: 'multiband-compressor-processor',
+      parameters: [
+        { name: 'depth', defaultValue: 0.5, minValue: 0, maxValue: 1 },
+        { name: 'time', defaultValue: 0.5, minValue: 0, maxValue: 10 },
+        { name: 'lowUpRatio', defaultValue: 3, minValue: 1, maxValue: 20 },
+        { name: 'lowDownRatio', defaultValue: 3, minValue: 1, maxValue: 20 },
+        { name: 'lowGain', defaultValue: 0, minValue: -24, maxValue: 24 },
+        { name: 'midUpRatio', defaultValue: 3, minValue: 1, maxValue: 20 },
+        { name: 'midDownRatio', defaultValue: 3, minValue: 1, maxValue: 20 },
+        { name: 'midGain', defaultValue: 0, minValue: -24, maxValue: 24 },
+        { name: 'highUpRatio', defaultValue: 3, minValue: 1, maxValue: 20 },
+        { name: 'highDownRatio', defaultValue: 3, minValue: 1, maxValue: 20 },
+        { name: 'highGain', defaultValue: 0, minValue: -24, maxValue: 24 },
         { name: 'wet', defaultValue: 1.0, minValue: 0, maxValue: 1 }
       ]
     });
 
-    // Reverb
-    this.register('Reverb', {
-      workletPath: '/worklets/effects/reverb-processor.js',
-      processorName: 'reverb-processor',
+    // Transient Designer
+    this.register('TransientDesigner', {
+      workletPath: '/worklets/effects/transient-designer-processor.js',
+      processorName: 'transient-designer-processor',
       parameters: [
-        { name: 'decay', defaultValue: 2.5, minValue: 0.1, maxValue: 15 },
-        { name: 'preDelay', defaultValue: 0.01, minValue: 0, maxValue: 0.2 },
-        { name: 'wet', defaultValue: 0.3, minValue: 0, maxValue: 1 }
+        { name: 'attack', defaultValue: 0, minValue: -12, maxValue: 12 },
+        { name: 'sustain', defaultValue: 0, minValue: -12, maxValue: 12 },
+        { name: 'mix', defaultValue: 1.0, minValue: 0, maxValue: 1 }
       ]
     });
+
+    // ❌ REMOVED: Old Reverb (replaced by ModernReverb)
 
     // MultiBandEQ V2 - Message-based dynamic bands
     this.register('MultiBandEQ', {
@@ -64,29 +94,8 @@ export class EffectRegistry {
       ]
     });
 
-    // Delay
-    this.register('Delay', {
-      workletPath: '/worklets/effects/delay-processor.js',
-      processorName: 'delay-processor',
-      parameters: [
-        { name: 'delayTime', defaultValue: 0.3, minValue: 0, maxValue: 2 },
-        { name: 'feedback', defaultValue: 0.3, minValue: 0, maxValue: 0.95 },
-        { name: 'wet', defaultValue: 0.3, minValue: 0, maxValue: 1 }
-      ]
-    });
-
-    // FeedbackDelay
-    this.register('FeedbackDelay', {
-      workletPath: '/worklets/effects/feedback-delay-processor.js',
-      processorName: 'feedback-delay-processor',
-      parameters: [
-        { name: 'delayTime', defaultValue: 0.3, minValue: 0, maxValue: 2 },
-        { name: 'feedback', defaultValue: 0.5, minValue: 0, maxValue: 0.95 },
-        { name: 'tone', defaultValue: 0.5, minValue: 0, maxValue: 1 },
-        { name: 'stereoOffset', defaultValue: 0, minValue: -0.5, maxValue: 0.5 },
-        { name: 'wet', defaultValue: 0.3, minValue: 0, maxValue: 1 }
-      ]
-    });
+    // ❌ REMOVED: Old Delay (replaced by ModernDelay)
+    // ❌ REMOVED: FeedbackDelay (replaced by ModernDelay)
 
     // TidalFilter
     this.register('TidalFilter', {
@@ -164,44 +173,9 @@ export class EffectRegistry {
       ]
     });
 
-    // AtmosMachine
-    this.register('AtmosMachine', {
-      workletPath: '/worklets/effects/atmos-machine-processor.js',
-      processorName: 'atmos-machine-processor',
-      parameters: [
-        { name: 'size', defaultValue: 0.5, minValue: 0, maxValue: 1 },
-        { name: 'movement', defaultValue: 0.5, minValue: 0, maxValue: 1 },
-        { name: 'character', defaultValue: 0.5, minValue: 0, maxValue: 1 },
-        { name: 'stereoWidth', defaultValue: 0.7, minValue: 0, maxValue: 1 },
-        { name: 'wet', defaultValue: 0.5, minValue: 0, maxValue: 1 }
-      ]
-    });
-
-    // GhostLFO
-    this.register('GhostLFO', {
-      workletPath: '/worklets/effects/ghost-lfo-processor.js',
-      processorName: 'ghost-lfo-processor',
-      parameters: [
-        { name: 'rate', defaultValue: 0.5, minValue: 0.01, maxValue: 20 },
-        { name: 'stretch', defaultValue: 0.5, minValue: 0, maxValue: 1 },
-        { name: 'atmosphere', defaultValue: 0.3, minValue: 0, maxValue: 1 },
-        { name: 'glitch', defaultValue: 0.1, minValue: 0, maxValue: 1 },
-        { name: 'wet', defaultValue: 1.0, minValue: 0, maxValue: 1 }
-      ]
-    });
-
-    // SampleMorph
-    this.register('SampleMorph', {
-      workletPath: '/worklets/effects/sample-morph-processor.js',
-      processorName: 'sample-morph-processor',
-      parameters: [
-        { name: 'grainSize', defaultValue: 0.2, minValue: 0.01, maxValue: 1 },
-        { name: 'overlap', defaultValue: 0.1, minValue: 0, maxValue: 1 },
-        { name: 'randomness', defaultValue: 0, minValue: 0, maxValue: 1 },
-        { name: 'retrigger', defaultValue: 0, minValue: 0, maxValue: 1 },
-        { name: 'wet', defaultValue: 1.0, minValue: 0, maxValue: 1 }
-      ]
-    });
+    // ❌ REMOVED: AtmosMachine (overlaps with ModernReverb)
+    // ❌ REMOVED: GhostLFO (unclear purpose, no use case)
+    // ❌ REMOVED: SampleMorph (advanced granular, too complex)
 
     // BassEnhancer808
     this.register('BassEnhancer808', {
@@ -216,18 +190,7 @@ export class EffectRegistry {
       ]
     });
 
-    // SidechainCompressor
-    this.register('SidechainCompressor', {
-      workletPath: '/worklets/effects/sidechain-compressor-processor.js',
-      processorName: 'sidechain-compressor-processor',
-      parameters: [
-        { name: 'threshold', defaultValue: -24, minValue: -60, maxValue: 0 },
-        { name: 'ratio', defaultValue: 4, minValue: 1, maxValue: 20 },
-        { name: 'attack', defaultValue: 0.003, minValue: 0.0001, maxValue: 1 },
-        { name: 'release', defaultValue: 0.25, minValue: 0.001, maxValue: 3 },
-        { name: 'wet', defaultValue: 1.0, minValue: 0, maxValue: 1 }
-      ]
-    });
+    // ❌ REMOVED: SidechainCompressor (will be integrated into main Compressor)
 
     // ModernReverb
     this.register('ModernReverb', {

@@ -102,7 +102,7 @@ const InstrumentRow = ({
   );
 
   const iconStyle = useMemo(() =>
-    ({ '--instrument-color': mixerTrack.color || 'var(--color-surface-3)' }),
+    ({ '--instrument-color': mixerTrack.color || 'var(--zenith-bg-tertiary)' }),
     [mixerTrack.color]
   );
 

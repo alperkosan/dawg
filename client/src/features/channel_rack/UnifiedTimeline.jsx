@@ -74,11 +74,8 @@ const UnifiedTimeline = React.memo(({
 
       // ✅ Separate callback for ghost position updates
       const handleGhostPositionChange = (ghostPosition) => {
-        // ✅ Only update state if value actually changed (prevents unnecessary re-renders)
-        setLocalGhostPosition(prev => {
-          if (prev === ghostPosition) return prev; // No change, no re-render
-          return ghostPosition;
-        });
+        // ✅ Always update to allow null (hide ghost) even if prev was null
+        setLocalGhostPosition(ghostPosition);
       };
 
       // ✅ Custom position calculation accounting for scroll
@@ -196,8 +193,8 @@ const UnifiedTimeline = React.memo(({
         {/* Bar and beat markers */}
         {renderMarkers()}
 
-        {/* ✅ Ghost playhead with hover indicator */}
-        {localGhostPosition !== null && (
+        {/* ✅ Ghost playhead with hover indicator - only show when hovering */}
+        {localGhostPosition !== null && localGhostPosition !== currentPosition && (
           <>
               {/* Vertical ghost playhead line */}
               <div

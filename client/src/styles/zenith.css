@@ -29,6 +29,11 @@
   --zenith-error: #EF4444;
   --zenith-info: #3B82F6;
 
+  /* RGB Variants for Canvas Rendering (rgba support) */
+  --zenith-accent-cool-rgb: 78, 205, 196;
+  --zenith-success-rgb: 16, 185, 129;
+  --zenith-error-rgb: 239, 68, 68;
+
   /* Plugin-Specific Palettes */
   --saturator-primary: #FF8C00;
   --compressor-primary: #9333EA;

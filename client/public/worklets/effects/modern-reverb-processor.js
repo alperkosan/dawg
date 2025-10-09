@@ -90,6 +90,15 @@ class ModernReverbProcessor extends AudioWorkletProcessor {
         this.settings = { ...this.settings, ...data };
       } else if (type === 'bypass') {
         this.bypassed = data.bypassed;
+      } else if (type === 'reset' || type === 'flush') {
+        // Clear all reverb buffers for clean stop
+        this.combFilters.forEach(comb => {
+          comb.buffer.fill(0);
+          comb.filterState = 0;
+        });
+        this.allpassFilters.forEach(ap => ap.buffer.fill(0));
+        this.earlyReflections.forEach(er => er.buffer.fill(0));
+        this.preDelayBuffer.fill(0);
       }
     };
   }

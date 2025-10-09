@@ -28,3 +28,7 @@ export * from './audioRenderConfig.js';
 
 // Utilities
 export * from './EQCalculations.js';
+
+// Plugin System (v2.0 - Standardized Architecture)
+export { BaseAudioPlugin } from './BaseAudioPlugin.js';
+export { PresetManager, createPresetManager } from './PresetManager.js';

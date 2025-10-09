@@ -6,10 +6,10 @@
 .window-base-new {
   position: absolute;
   border-radius: var(--border-radius-lg);
-  background: rgba(30, 30, 30, 0.7);
+  background: var(--zenith-overlay-heavy);
   backdrop-filter: blur(10px) saturate(150%);
   -webkit-backdrop-filter: blur(10px) saturate(150%);
-  border: 1px solid rgba(58, 58, 58, 0.5);
+  border: 1px solid var(--zenith-border-subtle);
   box-shadow: var(--shadow-lg);
   will-change: transform;
   contain: layout style paint;
@@ -19,7 +19,7 @@
 .window-base-new.is-dragging {
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
-  background: rgba(30, 30, 30, 0.85);
+  background: var(--zenith-overlay-heavy);
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
   transition: none !important;
 }
@@ -38,8 +38,8 @@
   padding: var(--spacing-2) var(--spacing-3);
   cursor: move;
   flex-shrink: 0;
-  background: rgba(18, 18, 18, 0.5);
-  border-bottom: 1px solid rgba(58, 58, 58, 0.5);
+  background: var(--zenith-overlay-heavy);
+  border-bottom: 1px solid var(--zenith-border-subtle);
   border-top-left-radius: var(--border-radius-lg);
   border-top-right-radius: var(--border-radius-lg);
   will-change: transform;
@@ -49,7 +49,7 @@
 .window-title {
   font-weight: 600;
   font-size: var(--font-size-md);
-  color: var(--color-text-primary);
+  color: var(--zenith-text-primary);
 }
 
 .window-content-new {
@@ -59,7 +59,7 @@
 
   /* Custom scrollbar styling for better UX */
   scrollbar-width: thin;
-  scrollbar-color: var(--color-accent-primary) var(--color-bg-tertiary);
+  scrollbar-color: var(--zenith-accent-cool) var(--zenith-bg-tertiary);
 }
 
 /* Webkit scrollbar styling for Chrome/Safari */
@@ -69,22 +69,22 @@
 }
 
 .window-content-new::-webkit-scrollbar-track {
-  background: var(--color-bg-tertiary);
+  background: var(--zenith-bg-tertiary);
   border-radius: 4px;
 }
 
 .window-content-new::-webkit-scrollbar-thumb {
-  background: var(--color-accent-primary);
+  background: var(--zenith-accent-cool);
   border-radius: 4px;
-  border: 1px solid var(--color-bg-secondary);
+  border: 1px solid var(--zenith-bg-secondary);
 }
 
 .window-content-new::-webkit-scrollbar-thumb:hover {
-  background: var(--color-accent-secondary);
+  background: var(--zenith-accent-warm);
 }
 
 .window-content-new::-webkit-scrollbar-corner {
-  background: var(--color-bg-tertiary);
+  background: var(--zenith-bg-tertiary);
 }
 
 .window-controls {

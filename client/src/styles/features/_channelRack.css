@@ -118,7 +118,16 @@
   cursor: pointer;
   transition: all 0.2s ease;
   min-width: 120px;
+  max-width: 180px;
   justify-content: space-between;
+}
+
+.channel-rack-layout__pattern-button > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
 }
 
 .channel-rack-layout__pattern-button:hover {
@@ -156,6 +165,9 @@
   cursor: pointer;
   transition: background-color 0.2s ease;
   border-bottom: 1px solid var(--zenith-border-medium);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .channel-rack-layout__pattern-item:hover {

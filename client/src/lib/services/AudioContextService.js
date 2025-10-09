@@ -553,6 +553,12 @@ export class AudioContextService {
     return this.parameters.set(`mixer-${channelId}`, 'mute', muted);
   }
 
+  static setMasterVolume(volume) {
+    if (this.audioEngine?.setMasterVolume) {
+      this.audioEngine.setMasterVolume(volume);
+    }
+  }
+
   static auditionNoteOn(instrumentId, pitch, velocity) {
     return this.audioEngine?.auditionNoteOn(instrumentId, pitch, velocity) || null;
   }

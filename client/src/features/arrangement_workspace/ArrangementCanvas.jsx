@@ -17,7 +17,8 @@ import { usePlaybackStore } from '@/store/usePlaybackStoreV2';
 import { usePanelsStore } from '@/store/usePanelsStore';
 import { useArrangementEngine } from './hooks/useArrangementEngine';
 import { usePatternInteraction } from './hooks/usePatternInteraction';
-import { drawArrangement } from './renderers/arrangementRenderer';
+import { drawArrangement, drawPlayhead } from './renderers/arrangementRenderer';
+import { uiUpdateManager, UPDATE_PRIORITIES, UPDATE_FREQUENCIES } from '@/lib/core/UIUpdateManager';
 import { TrackHeaderOverlay } from './components/TrackHeaderOverlay';
 import { Plus, Play, Pause, Square, ZoomIn, ZoomOut } from 'lucide-react';
 import { audioAssetManager } from '@/lib/audio/AudioAssetManager';
@@ -26,6 +27,7 @@ import { getTimelineController } from '@/lib/core/TimelineControllerSingleton';
 const ArrangementCanvas = ({ arrangement }) => {
   const containerRef = useRef(null);
   const canvasRef = useRef(null);
+  const playheadCanvasRef = useRef(null); // ✅ Separate canvas for playhead
   const scrollContainerRef = useRef(null);
 
   const bpm = usePlaybackStore(state => state.bpm); // Get current BPM
@@ -325,7 +327,7 @@ const ArrangementCanvas = ({ arrangement }) => {
     };
   }, [selectedClips, clips, addClip, deleteClip, gridSize, lastDuplicateAction]);
 
-  // Canvas rendering loop
+  // ✅ OPTIMIZED: Static canvas rendering (no playhead)
   useEffect(() => {
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext('2d');
@@ -350,11 +352,6 @@ const ArrangementCanvas = ({ arrangement }) => {
       instruments, // Audio samples for waveform rendering
       audioInstances, // Shared audio instance properties
       bpm, // ✅ Pass current BPM for waveform timing calculations
-      playhead: {
-        // Only show playhead position in song mode
-        position: playbackMode === 'song' ? currentStep : 0,
-        isPlaying: playbackMode === 'song' && isPlaying
-      },
       patternInteraction: patternInteraction.interactionState,
       dropPreview,
       marqueeSelection,
@@ -363,7 +360,65 @@ const ArrangementCanvas = ({ arrangement }) => {
     };
 
     drawArrangement(ctx, engineWithData);
-  }, [engine, gridSize, tracks, clips, selectedClips, patterns, instruments, audioInstances, bpm, currentStep, isPlaying, playbackMode, patternInteraction.interactionState, dropPreview, marqueeSelection, isRightClickDelete, ghostPosition]);
+  }, [engine, gridSize, tracks, clips, selectedClips, patterns, instruments, audioInstances, bpm, patternInteraction.interactionState, dropPreview, marqueeSelection, isRightClickDelete, ghostPosition]); // ✅ REMOVED: currentStep, isPlaying, playbackMode
+
+  // ✅ Store engine ref for playhead rendering (avoid stale closure)
+  const engineRef = useRef(engine);
+  useEffect(() => {
+    engineRef.current = engine;
+  }, [engine]);
+
+  // ✅ OPTIMIZED: Separate playhead rendering with UIUpdateManager
+  useEffect(() => {
+    if (playbackMode !== 'song' || !isPlaying) {
+      const canvas = playheadCanvasRef.current;
+      const ctx = canvas?.getContext('2d');
+      if (ctx) {
+        const rect = canvas.getBoundingClientRect();
+        ctx.clearRect(0, 0, rect.width, rect.height);
+      }
+      return;
+    }
+
+    const unsubscribe = uiUpdateManager.subscribe(
+      'arrangement-playhead',
+      () => {
+        const canvas = playheadCanvasRef.current;
+        const ctx = canvas?.getContext('2d');
+        const currentEngine = engineRef.current; // ✅ Use ref to get latest engine
+        if (!ctx || !currentEngine.viewport.width) return;
+
+        const dpr = window.devicePixelRatio || 1;
+        const rect = canvas.getBoundingClientRect();
+
+        if (canvas.width !== rect.width * dpr || canvas.height !== rect.height * dpr) {
+          canvas.width = rect.width * dpr;
+          canvas.height = rect.height * dpr;
+          ctx.scale(dpr, dpr);
+        }
+
+        ctx.clearRect(0, 0, rect.width, rect.height);
+
+        // ✅ Get position from store directly to avoid stale closure
+        const currentPosition = usePlaybackStore.getState().currentStep;
+        const currentPlaybackMode = usePlaybackStore.getState().playbackMode;
+        const currentIsPlaying = usePlaybackStore.getState().isPlaying;
+
+        drawPlayhead(ctx, {
+          viewport: currentEngine.viewport, // ✅ Use latest viewport
+          dimensions: currentEngine.dimensions, // ✅ Use latest dimensions
+          playhead: {
+            position: currentPlaybackMode === 'song' ? currentPosition : 0,
+            isPlaying: currentPlaybackMode === 'song' && currentIsPlaying
+          }
+        });
+      },
+      UPDATE_PRIORITIES.HIGH,
+      UPDATE_FREQUENCIES.REALTIME
+    );
+
+    return unsubscribe;
+  }, [playbackMode, isPlaying]); // ✅ Only re-subscribe on play/stop or mode change
 
   // Mouse handlers for pattern interaction
   const handleCanvasMouseDown = useCallback((e) => {
@@ -900,6 +955,21 @@ const ArrangementCanvas = ({ arrangement }) => {
             width: '100%',
             height: '100%',
             display: 'block'
+          }}
+        />
+
+        {/* ✅ OPTIMIZED: Separate playhead canvas for smooth 60fps rendering */}
+        <canvas
+          ref={playheadCanvasRef}
+          className="arrangement-canvas-optimized__canvas"
+          style={{
+            width: '100%',
+            height: '100%',
+            display: 'block',
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            pointerEvents: 'none' // Don't interfere with mouse events
           }}
         />
 

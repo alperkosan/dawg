@@ -102,23 +102,16 @@ function ChannelRack() {
   const position = usePlaybackStore(state => playbackMode === 'pattern' ? state.currentStep : 0);
   const setTransportPosition = usePlaybackStore(state => state.setTransportPosition);
 
-  // ✅ Conditional position - only track in pattern mode
-  const channelRackPosition = playbackMode === 'pattern' ? position : 0;
+  // ✅ Display position for UnifiedTimeline
   const displayPosition = position;
 
-  // Ghost position state (local to channel rack)
-  const [ghostPosition, setGhostPosition] = useState(null);
-  const clearGhostPosition = () => setGhostPosition(null);
-
   // ✅ Position tracking with actual position (not ghost)
+  // ❌ REMOVED: Legacy ghost position state - now handled by UnifiedTimeline
+  // ❌ REMOVED: channelRackPosition - no longer needed (compact playhead removed)
+  // ❌ REMOVED: isJumping state - no longer needed (compact playhead removed)
 
   // Refs for UI element registration
-  const timelineRef = useRef(null);
-  const playheadRef = useRef(null);
   const patternDropdownRef = useRef(null);
-
-  // State for smooth compact playhead animation
-  const [isJumping, setIsJumping] = useState(false);
 
   // State for pattern dropdown
   const [isPatternDropdownOpen, setIsPatternDropdownOpen] = useState(false);
@@ -513,104 +506,8 @@ function ChannelRack() {
             currentPosition={displayPosition}
             onPositionChange={null} // ✅ TimelineController handles store updates now
           />
-          {/* FL Studio style compact playhead - only in pattern mode */}
-          {playbackMode === 'pattern' && (
-            <div
-              className={`channel-rack-layout__compact-playhead ${
-                isPlaying ? 'channel-rack-layout__compact-playhead--playing' : ''
-              } ${
-                isJumping ? 'channel-rack-layout__compact-playhead--jumping' : ''
-              } ${
-                playbackState === 'stopped' ? 'channel-rack-layout__compact-playhead--stopped' : ''
-              }`}
-              style={{
-                transform: `translateX(${channelRackPosition * STEP_WIDTH}px)`,
-                // ⚡ Animation controlled by TimelineController (smooth during playback, instant during seek)
-                transition: isJumping ? 'none' : 'transform 0.1s linear',
-                position: 'absolute',
-                top: 0,
-                bottom: 0,
-                width: '2px',
-                backgroundColor: '#00ff88',
-                zIndex: 100,
-                pointerEvents: 'none',
-                boxShadow: '0 0 8px rgba(0, 255, 136, 0.6)',
-                transition: 'transform 50ms linear',
-                willChange: 'transform'
-              }}
-            >
-              {/* Compact playhead indicator arrow */}
-              <div
-                style={{
-                  position: 'absolute',
-                  top: '-2px',
-                  left: '-3px',
-                  width: 0,
-                  height: 0,
-                  borderLeft: '4px solid transparent',
-                  borderRight: '4px solid transparent',
-                  borderTop: '6px solid #00ff88',
-                  filter: 'drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3))'
-                }}
-              />
-            </div>
-          )}
-          {/* Interactive timeline area - FL Studio style */}
-          <div
-            className="channel-rack-layout__timeline-click-area"
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              width: `${audioLoopLength * STEP_WIDTH}px`,
-              bottom: 0,
-              zIndex: 99,
-              cursor: 'crosshair', // Always allow timeline interaction
-              pointerEvents: 'none' // ✅ Let clicks pass through to UnifiedTimeline
-            }}
-            // onClick={handleTimelineClickInternal} // ⚠️ REMOVED - TimelineController handles this
-            onMouseMove={(e) => {
-              // ✅ OPTIMIZED - Always show ghost position for better UX
-              const rect = e.currentTarget.getBoundingClientRect();
-              const hoverX = e.clientX - rect.left;
-              const hoverStep = calculateStep(hoverX, STEP_WIDTH, audioLoopLength - 1);
-              setGhostPosition(hoverStep);
-            }}
-            onMouseLeave={() => {
-              clearGhostPosition();
-            }}
-          />
-
-          {/* Ghost playhead on hover - Always visible for better UX */}
-          {ghostPosition !== null && (
-            <div
-              style={{
-                position: 'absolute',
-                top: 0,
-                bottom: 0,
-                left: `${ghostPosition * STEP_WIDTH}px`,
-                width: '1px',
-                backgroundColor: 'rgba(0, 255, 136, 0.4)',
-                zIndex: 97,
-                pointerEvents: 'none',
-                transition: 'left 0.1s ease'
-              }}
-            >
-              <div
-                style={{
-                  position: 'absolute',
-                  top: '-2px',
-                  left: '-3px',
-                  width: 0,
-                  height: 0,
-                  borderLeft: '4px solid transparent',
-                  borderRight: '4px solid transparent',
-                  borderTop: '6px solid rgba(0, 255, 136, 0.4)',
-                  filter: 'drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3))'
-                }}
-              />
-            </div>
-          )}
+          {/* ❌ REMOVED: Compact playhead - UnifiedTimeline handles all playhead rendering */}
+          {/* ❌ REMOVED: Legacy ghost playhead interaction area - UnifiedTimeline handles this now */}
 
 
         </div>

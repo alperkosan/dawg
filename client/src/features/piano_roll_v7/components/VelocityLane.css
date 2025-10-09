@@ -4,8 +4,8 @@
   display: flex;
   width: 100%;
   height: 100px;
-  background-color: var(--color-surface-1);
-  border-top: 1px solid var(--color-border);
+  background-color: var(--zenith-bg-primary);
+  border-top: 1px solid var(--zenith-border-medium);
   position: relative;
   flex-shrink: 0;
 }
@@ -15,12 +15,12 @@
   align-items: center;
   justify-content: center;
   width: 80px; /* Same as KEYBOARD_WIDTH */
-  background-color: var(--color-surface-2);
-  border-right: 1px solid var(--color-border);
+  background-color: var(--zenith-bg-secondary);
+  border-right: 1px solid var(--zenith-border-medium);
   font-family: var(--font-body);
   font-size: var(--font-size-xs);
   font-weight: 600;
-  color: var(--color-text-secondary);
+  color: var(--zenith-text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.5px;
   flex-shrink: 0;
@@ -29,13 +29,13 @@
 .velocity-lane-canvas {
   flex: 1;
   display: block;
-  background-color: var(--color-surface-1);
+  background-color: var(--zenith-bg-primary);
   cursor: pointer;
   user-select: none;
 }
 
 .velocity-lane-canvas:hover {
-  background-color: var(--color-surface-1-hover, var(--color-surface-1));
+  background-color: var(--zenith-bg-primary);
 }
 
 /* Responsive adjustments */

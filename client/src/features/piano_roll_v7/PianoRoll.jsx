@@ -210,6 +210,12 @@ function PianoRoll() {
 
     }, [engine, snapValue, noteInteractions, qualityLevel, ghostPosition, activeTool]); // Added: activeTool
 
+    // ✅ Store engine ref for playhead rendering (avoid stale closure)
+    const engineRef = useRef(engine);
+    useEffect(() => {
+        engineRef.current = engine;
+    }, [engine]);
+
     // Playhead canvas - fast rendering via UIUpdateManager
     useEffect(() => {
         if (!isPlaying) {
@@ -227,7 +233,8 @@ function PianoRoll() {
             () => {
                 const canvas = playheadCanvasRef.current;
                 const ctx = canvas?.getContext('2d');
-                if (!ctx || !engine.viewport.width) return;
+                const currentEngine = engineRef.current; // ✅ Use ref to get latest engine
+                if (!ctx || !currentEngine.viewport.width) return;
 
                 const dpr = window.devicePixelRatio || 1;
                 const rect = canvas.getBoundingClientRect();
@@ -240,10 +247,18 @@ function PianoRoll() {
 
                 ctx.clearRect(0, 0, rect.width, rect.height);
 
+                // ✅ Get position from store directly to avoid stale closure
+                const currentPosition = usePlaybackStore.getState().currentStep;
+                const currentPlaybackState = usePlaybackStore.getState().playbackState;
+
                 drawPlayhead(ctx, {
-                    viewport: engine.viewport,
-                    dimensions: engine.dimensions,
-                    playhead: { position, isPlaying, playbackState }
+                    viewport: currentEngine.viewport, // ✅ Use latest viewport
+                    dimensions: currentEngine.dimensions, // ✅ Use latest dimensions
+                    playhead: {
+                        position: currentPosition,
+                        isPlaying: currentPlaybackState === 'playing',
+                        playbackState: currentPlaybackState
+                    }
                 });
             },
             UPDATE_PRIORITIES.HIGH,
@@ -251,7 +266,7 @@ function PianoRoll() {
         );
 
         return unsubscribe;
-    }, [isPlaying, position, playbackState]); // REMOVED: engine.viewport, engine.dimensions (they change every frame)
+    }, [isPlaying]); // ✅ OPTIMIZED: Only re-subscribe when play/stop state changes
 
     // Toolbar handlers
     const handleToolChange = (tool) => {

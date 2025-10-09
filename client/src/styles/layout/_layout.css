@@ -6,7 +6,7 @@
   height: 100vh;
   width: 100vw;
   overflow: hidden;
-  background: var(--color-background);
+  background: var(--zenith-bg-secondary);
 }
 
 .app-main {
@@ -26,8 +26,8 @@
   justify-content: space-between;
   height: 52px;
   padding: 0 var(--spacing-4);
-  background-color: var(--color-background);
-  border-bottom: 1px solid var(--color-surface-2);
+  background-color: var(--zenith-bg-secondary);
+  border-bottom: 1px solid var(--zenith-border-medium);
   flex-shrink: 0;
 }
 
@@ -46,9 +46,9 @@
   justify-content: space-between;
   height: 44px;
   padding: 0 var(--spacing-4);
-  background-color: var(--color-surface-1);
-  border-bottom: 1px solid var(--color-background);
-  box-shadow: var(--shadow-md);
+  background-color: var(--zenith-bg-tertiary);
+  border-bottom: 1px solid var(--zenith-bg-secondary);
+  box-shadow: var(--zenith-shadow-md);
   z-index: 40;
   flex-shrink: 0;
 }
@@ -64,7 +64,7 @@
   display: flex;
   align-items: center;
   gap: var(--spacing-2);
-  color: var(--color-text-primary);
+  color: var(--zenith-text-primary);
 }
 
 .top-toolbar__logo-title {
@@ -82,36 +82,36 @@
   width: 36px;
   height: 36px;
   border-radius: var(--border-radius-md);
-  color: var(--color-text-secondary);
-  background-color: var(--color-surface-2);
+  color: var(--zenith-text-secondary);
+  background-color: var(--zenith-border-medium);
   transition: all var(--transition-speed) ease;
 }
 .top-toolbar__transport-btn:hover {
-  background-color: var(--color-surface-3);
-  color: var(--color-text-primary);
+  background-color: var(--zenith-bg-tertiary);
+  color: var(--zenith-text-primary);
 }
 .top-toolbar__transport-btn--playing {
-  color: var(--color-text-inverse);
-  background-color: var(--color-accent-primary);
-  box-shadow: var(--shadow-glow);
+  color: var(--zenith-text-primary);
+  background-color: var(--zenith-accent-cool);
+  box-shadow: var(--zenith-shadow-lg);
 }
 
 .top-toolbar__transport-btn--paused {
-  color: var(--color-text-inverse);
-  background-color: #eab308; /* Yellow for paused */
-  box-shadow: 0 0 8px rgba(234, 179, 8, 0.4);
+  color: var(--zenith-text-primary);
+  background-color: var(--zenith-warning); /* Yellow for paused */
+  box-shadow: 0 0 8px rgba(var(--zenith-warning-rgb), 0.4);
 }
 
 .top-toolbar__transport-btn--stopped {
-  color: var(--color-text-inverse);
-  background-color: #f97316; /* Orange for stopped */
-  box-shadow: 0 0 8px rgba(249, 115, 22, 0.4);
+  color: var(--zenith-text-primary);
+  background-color: var(--zenith-error); /* Orange for stopped */
+  box-shadow: 0 0 8px rgba(var(--zenith-error-rgb), 0.4);
 }
 
 /* PAT / SONG Butonları */
 .top-toolbar__mode-toggle {
   display: flex;
-  background-color: var(--color-surface-1);
+  background-color: var(--zenith-bg-tertiary);
   border-radius: var(--border-radius-md);
   padding: var(--spacing-1);
 }
@@ -125,18 +125,18 @@
 }
 
 .top-toolbar__mode-btn--active {
-  background-color: var(--color-accent-secondary);
-  color: var(--color-text-inverse);
-  box-shadow: 0 1px 4px rgba(0, 229, 181, 0.2);
+  background-color: var(--zenith-accent-warm);
+  color: var(--zenith-text-primary);
+  box-shadow: 0 1px 4px rgba(var(--zenith-accent-warm-rgb), 0.2);
 }
 
 /* BPM ve Zaman Göstergesi */
 .top-toolbar__display {
   display: flex;
   align-items: center;
-  background-color: var(--color-surface-1);
+  background-color: var(--zenith-bg-tertiary);
   border-radius: var(--border-radius-md);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--zenith-border-medium);
   overflow: hidden;
 }
 .top-toolbar__bpm-input {
@@ -148,14 +148,14 @@
   font-weight: 500;
   padding: var(--spacing-2) 0;
   outline: none;
-  color: var(--color-text-primary);
+  color: var(--zenith-text-primary);
 }
 .top-toolbar__bpm-label {
   font-size: var(--font-size-xs);
   font-weight: 700;
   padding: 0 var(--spacing-3);
-  color: var(--color-text-secondary);
-  background-color: var(--color-surface-2);
+  color: var(--zenith-text-secondary);
+  background-color: var(--zenith-bg-secondary);
   align-self: stretch; /* Dikeyde tüm alanı kapla */
   display: flex;
   align-items: center;
@@ -167,8 +167,8 @@
   font-size: var(--font-size-lg);
   font-weight: 500;
   text-align: center;
-  color: var(--color-accent-secondary);
-  border-left: 1px solid var(--color-border);
+  color: var(--zenith-accent-warm);
+  border-left: 1px solid var(--zenith-border-medium);
 }
 
 
@@ -176,24 +176,24 @@
 .main-toolbar__button {
   padding: var(--spacing-2);
   border-radius: var(--border-radius-md);
-  color: var(--color-text-secondary);
+  color: var(--zenith-text-secondary);
   transition: all var(--transition-speed) ease;
 }
 .main-toolbar__button:hover {
-  color: var(--color-text-primary);
-  background-color: var(--color-surface-2);
+  color: var(--zenith-text-primary);
+  background-color: var(--zenith-border-medium);
 }
 .main-toolbar__button--active {
-  color: var(--color-accent-primary);
-  background-color: var(--color-surface-3);
+  color: var(--zenith-accent-cool);
+  background-color: var(--zenith-bg-tertiary);
 }
 .main-toolbar__theme-selector {
-  background-color: var(--color-surface-2);
-  color: var(--color-text-primary);
+  background-color: var(--zenith-border-medium);
+  color: var(--zenith-text-primary);
   font-size: var(--font-size-sm);
   padding: var(--spacing-1) var(--spacing-2);
   border-radius: var(--border-radius-sm);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--zenith-border-medium);
   outline: none;
 }
 

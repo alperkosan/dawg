@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { MeteringService } from '@/lib/core/MeteringService';
 import { ProfessionalKnob } from '../container/PluginControls';
 import { useMixerStore } from '@/store/useMixerStore';
 import { SignalVisualizer } from '../../common/SignalVisualizer';
+import { useCanvasVisualization, useGhostValue } from '@/hooks/useAudioPlugin';
 
 // Musical time notation to frequency converter
 const timeToFrequency = (timeNotation) => {
@@ -30,120 +31,110 @@ const timeToFrequency = (timeNotation) => {
 
 // Animated Filter Sweep Visualizer
 const FilterSweepVisualizer = ({ frequency, baseFrequency, octaves, wet }) => {
-  const canvasRef = useRef(null);
-  
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    
-    const ctx = canvas.getContext('2d');
-    let animationFrameId;
-    let time = 0;
-    
-    const animate = () => {
-      const { width, height } = canvas.getBoundingClientRect();
-      if (width === 0) {
-        animationFrameId = requestAnimationFrame(animate);
-        return;
-      }
-      
-      canvas.width = width;
-      canvas.height = height;
-      
-      // Clear with gradient background
-      const bgGradient = ctx.createLinearGradient(0, 0, 0, height);
-      bgGradient.addColorStop(0, 'rgba(15, 15, 25, 0.9)');
-      bgGradient.addColorStop(1, 'rgba(5, 5, 15, 0.9)');
-      ctx.fillStyle = bgGradient;
-      ctx.fillRect(0, 0, width, height);
-      
-      // Calculate LFO position
-      const lfoRate = timeToFrequency(frequency);
-      const lfoPhase = Math.sin(time * 0.001 * lfoRate * 2 * Math.PI);
-      
-      // Current filter frequency
-      const currentFreq = baseFrequency * Math.pow(2, lfoPhase * octaves);
-      const freqPosition = Math.log(currentFreq / 20) / Math.log(20000 / 20);
-      
-      // Draw frequency spectrum background
-      ctx.strokeStyle = 'rgba(100, 150, 200, 0.3)';
-      ctx.lineWidth = 1;
-      for (let i = 0; i < 10; i++) {
-        const x = (i / 9) * width;
-        ctx.beginPath();
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, height);
-        ctx.stroke();
-      }
-      
-      // Draw filter response curve
-      ctx.strokeStyle = '#00ff88';
-      ctx.lineWidth = 3;
-      ctx.shadowColor = '#00ff88';
-      ctx.shadowBlur = 10;
-      
+  const timeRef = useRef(0);
+
+  const drawFilterSweep = useCallback((ctx, width, height) => {
+    const time = timeRef.current;
+
+    // Clear with gradient background
+    const bgGradient = ctx.createLinearGradient(0, 0, 0, height);
+    bgGradient.addColorStop(0, 'rgba(15, 15, 25, 0.9)');
+    bgGradient.addColorStop(1, 'rgba(5, 5, 15, 0.9)');
+    ctx.fillStyle = bgGradient;
+    ctx.fillRect(0, 0, width, height);
+
+    // Calculate LFO position
+    const lfoRate = timeToFrequency(frequency);
+    const lfoPhase = Math.sin(time * 0.001 * lfoRate * 2 * Math.PI);
+
+    // Current filter frequency
+    const currentFreq = baseFrequency * Math.pow(2, lfoPhase * octaves);
+    const freqPosition = Math.log(currentFreq / 20) / Math.log(20000 / 20);
+
+    // Draw frequency spectrum background
+    ctx.strokeStyle = 'rgba(100, 150, 200, 0.3)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 10; i++) {
+      const x = (i / 9) * width;
       ctx.beginPath();
-      for (let x = 0; x < width; x++) {
-        const freq = 20 * Math.pow(20000 / 20, x / width);
-        let response = 1;
-        
-        // Simple low-pass filter response simulation
-        if (freq > currentFreq) {
-          const ratio = freq / currentFreq;
-          response = 1 / Math.sqrt(1 + Math.pow(ratio, 4)); // 24dB/oct slope
-        }
-        
-        const y = height - (response * height * 0.8 * wet);
-        
-        if (x === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, height);
+      ctx.stroke();
+    }
+
+    // Draw filter response curve
+    ctx.strokeStyle = '#00ff88';
+    ctx.lineWidth = 3;
+    ctx.shadowColor = '#00ff88';
+    ctx.shadowBlur = 10;
+
+    ctx.beginPath();
+    for (let x = 0; x < width; x++) {
+      const freq = 20 * Math.pow(20000 / 20, x / width);
+      let response = 1;
+
+      // Simple low-pass filter response simulation
+      if (freq > currentFreq) {
+        const ratio = freq / currentFreq;
+        response = 1 / Math.sqrt(1 + Math.pow(ratio, 4)); // 24dB/oct slope
       }
-      ctx.stroke();
-      ctx.shadowBlur = 0;
-      
-      // Draw current frequency indicator
-      const cutoffX = freqPosition * width;
-      ctx.strokeStyle = '#ff4444';
-      ctx.lineWidth = 2;
-      ctx.setLineDash([5, 5]);
-      ctx.beginPath();
-      ctx.moveTo(cutoffX, 0);
-      ctx.lineTo(cutoffX, height);
-      ctx.stroke();
-      ctx.setLineDash([]);
-      
-      // Frequency label
-      ctx.fillStyle = '#ff4444';
-      ctx.font = '12px monospace';
-      ctx.fillText(`${currentFreq.toFixed(0)}Hz`, cutoffX + 5, 20);
-      
-      // Draw LFO wave
-      const lfoHeight = 40;
-      const lfoY = height - lfoHeight - 10;
-      
-      ctx.strokeStyle = 'rgba(255, 255, 100, 0.8)';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      
-      for (let x = 0; x < width; x++) {
-        const phase = (x / width) * 4 * Math.PI + time * 0.001 * lfoRate * 2 * Math.PI;
-        const lfoValue = Math.sin(phase);
-        const y = lfoY + lfoValue * (lfoHeight / 2 - 5);
-        
-        if (x === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
-      }
-      ctx.stroke();
-      
-      time += 16;
-      animationFrameId = requestAnimationFrame(animate);
-    };
-    
-    animate();
-    return () => cancelAnimationFrame(animationFrameId);
+
+      const y = height - (response * height * 0.8 * wet);
+
+      if (x === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // Draw current frequency indicator
+    const cutoffX = freqPosition * width;
+    ctx.strokeStyle = '#ff4444';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 5]);
+    ctx.beginPath();
+    ctx.moveTo(cutoffX, 0);
+    ctx.lineTo(cutoffX, height);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Frequency label
+    ctx.fillStyle = '#ff4444';
+    ctx.font = '12px monospace';
+    ctx.fillText(`${currentFreq.toFixed(0)}Hz`, cutoffX + 5, 20);
+
+    // Draw LFO wave
+    const lfoHeight = 40;
+    const lfoY = height - lfoHeight - 10;
+
+    ctx.strokeStyle = 'rgba(255, 255, 100, 0.8)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+
+    for (let x = 0; x < width; x++) {
+      const phase = (x / width) * 4 * Math.PI + time * 0.001 * lfoRate * 2 * Math.PI;
+      const lfoValue = Math.sin(phase);
+      const y = lfoY + lfoValue * (lfoHeight / 2 - 5);
+
+      if (x === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+
+    // Update time for next frame
+    timeRef.current += 16;
   }, [frequency, baseFrequency, octaves, wet]);
-  
-  return <canvas ref={canvasRef} className="w-full h-full" />;
+
+  const { containerRef, canvasRef } = useCanvasVisualization(
+    drawFilterSweep,
+    [frequency, baseFrequency, octaves, wet]
+  );
+
+  return (
+    <div ref={containerRef} className="w-full h-full">
+      <canvas ref={canvasRef} className="w-full h-full" />
+    </div>
+  );
 };
 
 // Filter Type Selector
@@ -181,61 +172,56 @@ const FilterTypeSelector = ({ currentType, onTypeChange }) => {
 
 // LFO Rate Visualizer
 const LFORateVisualizer = ({ frequency }) => {
-  const canvasRef = useRef(null);
-  
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    
-    const ctx = canvas.getContext('2d');
-    let animationFrameId;
-    let time = 0;
-    
-    const animate = () => {
-      const { width, height } = canvas.getBoundingClientRect();
-      if (width === 0) {
-        animationFrameId = requestAnimationFrame(animate);
-        return;
-      }
-      
-      canvas.width = width;
-      canvas.height = height;
-      
-      ctx.clearRect(0, 0, width, height);
+  const timeRef = useRef(0);
 
-      const lfoRate = timeToFrequency(frequency);
+  const drawLFO = useCallback((ctx, width, height) => {
+    const time = timeRef.current;
 
-      // Draw LFO waveform
-      ctx.strokeStyle = '#fbbf24';
-      ctx.lineWidth = 2;
-      ctx.shadowColor = '#fbbf24';
-      ctx.shadowBlur = 5;
-      
-      ctx.beginPath();
-      for (let x = 0; x < width; x++) {
-        const phase = (x / width) * 4 * Math.PI * lfoRate + time * 0.001 * lfoRate * 2 * Math.PI;
-        const y = height / 2 + Math.sin(phase) * (height / 2 - 10);
-        
-        if (x === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
-      }
-      ctx.stroke();
-      ctx.shadowBlur = 0;
-      
-      time += 16;
-      animationFrameId = requestAnimationFrame(animate);
-    };
-    
-    animate();
-    return () => cancelAnimationFrame(animationFrameId);
+    ctx.clearRect(0, 0, width, height);
+
+    const lfoRate = timeToFrequency(frequency);
+
+    // Draw LFO waveform
+    ctx.strokeStyle = '#fbbf24';
+    ctx.lineWidth = 2;
+    ctx.shadowColor = '#fbbf24';
+    ctx.shadowBlur = 5;
+
+    ctx.beginPath();
+    for (let x = 0; x < width; x++) {
+      const phase = (x / width) * 4 * Math.PI * lfoRate + time * 0.001 * lfoRate * 2 * Math.PI;
+      const y = height / 2 + Math.sin(phase) * (height / 2 - 10);
+
+      if (x === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // Update time for next frame
+    timeRef.current += 16;
   }, [frequency]);
-  
-  return <canvas ref={canvasRef} className="w-full h-8" />;
+
+  const { containerRef, canvasRef } = useCanvasVisualization(
+    drawLFO,
+    [frequency]
+  );
+
+  return (
+    <div ref={containerRef} className="w-full h-8">
+      <canvas ref={canvasRef} className="w-full h-full" />
+    </div>
+  );
 };
 
 export const TidalFilterUI = ({ trackId, effect, onChange }) => {
   const { frequency, baseFrequency, octaves, wet } = effect.settings;
   const [filterType, setFilterType] = useState('lowpass');
+
+  // Ghost values for parameter feedback
+  const ghostBaseFrequency = useGhostValue(baseFrequency, 400);
+  const ghostOctaves = useGhostValue(octaves, 400);
+  const ghostWet = useGhostValue(wet, 400);
   
   const timeOptions = [
     { value: '4n', label: '1/4' },

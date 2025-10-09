@@ -10,7 +10,7 @@
   flex-direction: column;
   padding: var(--spacing-4);
   gap: var(--spacing-4);
-  background-color: var(--color-surface);
+  background-color: var(--zenith-bg-primary);
   /* KALDIRILDI: Bu sabit kural esnekliği engelliyordu. */
   /* min-height: 600px; */
 }
@@ -22,11 +22,11 @@
 .waveform-workbench {
   flex-grow: 1; /* Mevcut alana göre esnek büyü */
   min-height: 200px; /* Çok fazla küçülmesini engelle */
-  background-color: var(--color-background);
+  background-color: var(--zenith-bg-secondary);
   border-radius: var(--border-radius-lg);
   display: flex;
   overflow: hidden;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--zenith-border-subtle);
 }
 
 /* --- SOL DİKEY ARAÇ ÇUBUĞU --- */
@@ -35,8 +35,8 @@
   flex-direction: column;
   gap: var(--spacing-2);
   padding: var(--spacing-3);
-  background-color: var(--color-surface-1);
-  border-right: 1px solid var(--color-border);
+  background-color: var(--zenith-bg-tertiary);
+  border-right: 1px solid var(--zenith-border-subtle);
   flex-shrink: 0;
 }
 
@@ -49,8 +49,8 @@
   width: 60px;
   height: 56px;
   border-radius: var(--border-radius-md);
-  background-color: var(--color-surface-2);
-  color: var(--color-text-secondary);
+  background-color: var(--zenith-bg-secondary);
+  color: var(--zenith-text-secondary);
   font-size: 10px;
   font-weight: 500;
   transition: all var(--transition-fast);
@@ -59,13 +59,13 @@
 }
 
 .workbench-action:hover {
-  background-color: var(--color-surface-raised);
-  color: var(--color-text-primary);
+  background-color: var(--zenith-bg-tertiary);
+  color: var(--zenith-text-primary);
 }
 
 .workbench-action--active {
-  background-color: var(--color-primary);
-  color: var(--color-background-deep);
+  background-color: var(--zenith-accent-cool);
+  color: var(--zenith-text-primary);
   font-weight: 700;
 }
 
@@ -86,8 +86,8 @@
   align-items: center;
   justify-content: space-between;
   padding: var(--spacing-2);
-  background-color: var(--color-surface-1);
-  border-bottom: 1px solid var(--color-border);
+  background-color: var(--zenith-bg-tertiary);
+  border-bottom: 1px solid var(--zenith-border-subtle);
   flex-shrink: 0;
   height: 48px; /* DÜZELTME: Sabit yükseklik */
 }
@@ -113,28 +113,28 @@
 }
 
 .workbench-tool {
-  color: var(--color-text-secondary);
+  color: var(--zenith-text-secondary);
   background-color: transparent;
 }
 
 .workbench-tool:hover {
-  background-color: var(--color-surface-2);
-  color: var(--color-text-primary);
+  background-color: var(--zenith-bg-secondary);
+  color: var(--zenith-text-primary);
 }
 
 .workbench-tool.active {
-  background-color: var(--color-primary);
-  color: var(--color-background-deep);
+  background-color: var(--zenith-accent-cool);
+  color: var(--zenith-text-primary);
   font-weight: 700;
 }
 
 .workbench-action-btn {
-  color: var(--color-text-primary);
-  background-color: var(--color-surface-2);
+  color: var(--zenith-text-primary);
+  background-color: var(--zenith-bg-secondary);
 }
 
 .workbench-action-btn:hover {
-  background-color: var(--color-surface-raised);
+  background-color: var(--zenith-bg-tertiary);
 }
 
 /* --- WAVEFORM CANVAS KONTEYNER - KRİTİK DÜZELTME --- */
@@ -153,7 +153,7 @@
   width: 100% !important;
   height: 100% !important;
   position: relative;
-  background-color: var(--color-background);
+  background-color: var(--zenith-bg-secondary);
   border-radius: var(--border-radius-md);
   overflow: hidden;
   /* DÜZELTME: Flexbox yerine absolute positioning */
@@ -178,7 +178,7 @@
   justify-content: center;
   width: 100%;
   height: 100%;
-  color: var(--color-text-secondary);
+  color: var(--zenith-text-secondary);
   gap: var(--spacing-2);
   position: absolute;
   top: 0;
@@ -191,9 +191,9 @@
    ========================================================================== */
 .control-deck {
   flex-shrink: 0;
-  background-color: var(--color-background);
+  background-color: var(--zenith-bg-secondary);
   border-radius: var(--border-radius-lg);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--zenith-border-subtle);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -202,8 +202,8 @@
 .control-deck__tabs {
   display: flex;
   flex-shrink: 0;
-  border-bottom: 1px solid var(--color-border);
-  background-color: var(--color-surface-1);
+  border-bottom: 1px solid var(--zenith-border-subtle);
+  background-color: var(--zenith-bg-tertiary);
 }
 
 .control-deck__content {
@@ -231,7 +231,7 @@
 .main-settings-grid__group-title {
   font-size: var(--font-size-xs);
   font-weight: 700;
-  color: var(--color-text-secondary);
+  color: var(--zenith-text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.1em;
 }
@@ -277,29 +277,29 @@
   padding: var(--spacing-3);
   overflow-x: auto;
   /* Scrollbar stili */
-  scrollbar-color: var(--color-surface-3) transparent;
+  scrollbar-color: var(--zenith-bg-tertiary) transparent;
   scrollbar-width: thin;
 }
 .effects-rack::-webkit-scrollbar { height: 6px; }
 .effects-rack::-webkit-scrollbar-track { background: transparent; }
-.effects-rack::-webkit-scrollbar-thumb { background-color: var(--color-surface-3); border-radius: 3px; }
+.effects-rack::-webkit-scrollbar-thumb { background-color: var(--zenith-bg-tertiary); border-radius: 3px; }
 
 .effects-rack__add-btn {
   flex-shrink: 0;
   width: 100px;
   height: 100%;
-  border: 2px dashed var(--color-border);
+  border: 2px dashed var(--zenith-border-subtle);
   border-radius: var(--border-radius-lg);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--color-text-muted);
+  color: var(--zenith-text-tertiary);
   transition: all var(--transition-fast);
 }
 .effects-rack__add-btn:hover {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-  background-color: var(--color-surface-1);
+  border-color: var(--zenith-accent-cool);
+  color: var(--zenith-accent-cool);
+  background-color: var(--zenith-bg-tertiary);
 }
 
 /* --- YENİ: EffectSlotV2 --- */
@@ -307,8 +307,8 @@
   flex-shrink: 0;
   width: 120px;
   height: 100%;
-  background-color: var(--color-surface-1);
-  border: 1px solid var(--color-border);
+  background-color: var(--zenith-bg-tertiary);
+  border: 1px solid var(--zenith-border-subtle);
   border-radius: var(--border-radius-lg);
   display: flex;
   flex-direction: column;
@@ -318,7 +318,7 @@
 }
 .effect-slot-v2:active {
   cursor: grabbing;
-  box-shadow: var(--shadow-glow);
+  box-shadow: var(--zenith-shadow-lg);
 }
 
 .effect-slot-v2__header {
@@ -326,12 +326,12 @@
   justify-content: space-between;
   align-items: center;
   padding: var(--spacing-2);
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--zenith-border-subtle);
 }
 .effect-slot-v2__title {
   font-size: var(--font-size-sm);
   font-weight: 700;
-  color: var(--color-text-primary);
+  color: var(--zenith-text-primary);
   /* YENİ EKLENEN KURALLAR */
   white-space: nowrap;    /* Metnin alt satıra kaymasını engelle */
   overflow: hidden;         /* Taşan kısmı gizle */
@@ -345,15 +345,15 @@
 }
 .effect-slot-v2__icon-btn {
   padding: var(--spacing-1);
-  color: var(--color-text-muted);
+  color: var(--zenith-text-tertiary);
   border-radius: 50%;
 }
 .effect-slot-v2__icon-btn:hover {
-  background-color: var(--color-surface-2);
-  color: var(--color-text-primary);
+  background-color: var(--zenith-bg-secondary);
+  color: var(--zenith-text-primary);
 }
 .effect-slot-v2__icon-btn.active {
-  color: var(--color-accent-secondary);
+  color: var(--zenith-success);
 }
 
 .effect-slot-v2__body {
@@ -371,9 +371,9 @@
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background-color: var(--color-background);
-  border: 1px solid var(--color-border);
-  color: var(--color-text-muted);
+  background-color: var(--zenith-bg-secondary);
+  border: 1px solid var(--zenith-border-subtle);
+  color: var(--zenith-text-tertiary);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -386,6 +386,6 @@
   transform: scale(1);
 }
 .effect-slot-v2__remove-btn:hover {
-  background-color: var(--color-accent-danger);
-  color: var(--color-text-inverse);
+  background-color: var(--zenith-error);
+  color: var(--zenith-text-primary);
 }

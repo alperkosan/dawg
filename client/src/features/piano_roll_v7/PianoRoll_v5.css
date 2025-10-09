@@ -5,8 +5,8 @@
   height: 100%;
   display: flex;
   flex-direction: column;
-  background-color: #1a202c; /* Koyu Mavi-Gri Arkaplan */
-  color: #e2e8f0;
+  background-color: var(--zenith-bg-secondary); /* Koyu Mavi-Gri Arkaplan */
+  color: var(--zenith-text-primary);
   overflow: hidden;
   user-select: none; /* Metin seçimini engelle */
 }
@@ -14,8 +14,8 @@
 .prv5-toolbar {
   flex-shrink: 0;
   padding: 8px 12px;
-  background-color: #2d3748;
-  border-bottom: 1px solid #4a5568;
+  background-color: var(--zenith-bg-tertiary);
+  border-bottom: 1px solid var(--zenith-border-strong);
   display: flex;
   align-items: center;
   gap: 16px;
@@ -86,7 +86,7 @@
   border-radius: 4px;
   font-family: monospace;
   font-size: 11px;
-  color: #00ff88;
+  color: var(--zenith-success);
   pointer-events: none;
   line-height: 1.4;
   z-index: 20;
@@ -100,14 +100,14 @@
 
 .prv5-toolbar-group label {
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--zenith-text-secondary);
   font-weight: 500;
 }
 
 .prv5-select, .prv5-button {
-  background-color: #1e293b;
-  color: #e2e8f0;
-  border: 1px solid #4a5568;
+  background-color: var(--zenith-bg-tertiary);
+  color: var(--zenith-text-primary);
+  border: 1px solid var(--zenith-border-strong);
   border-radius: 4px;
   padding: 4px 8px;
   font-size: 12px;
@@ -119,27 +119,27 @@
 }
 
 .prv5-button:hover {
-  background-color: #334155;
+  background-color: var(--zenith-bg-tertiary);
 }
 
 .prv5-button.active {
-  background-color: #2563eb;
-  border-color: #3b82f6;
-  color: white;
+  background-color: var(--zenith-accent-cool);
+  border-color: var(--zenith-accent-cool);
+  color: var(--zenith-text-primary);
 }
 
 .prv5-shortcuts-info {
-  color: #64748b;
+  color: var(--zenith-text-tertiary);
   font-size: 11px;
   margin-left: auto;
 }
 
 .prv5-shortcuts-info kbd {
-  background-color: #334155;
-  color: #e2e8f0;
+  background-color: var(--zenith-bg-tertiary);
+  color: var(--zenith-text-primary);
   padding: 2px 4px;
   border-radius: 3px;
   font-size: 10px;
   font-family: monospace;
-  border: 1px solid #475569;
+  border: 1px solid var(--zenith-border-strong);
 }

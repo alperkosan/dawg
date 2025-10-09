@@ -111,8 +111,8 @@ export default function FileBrowserPanel() {
         >
             {isDragOver && (
                 <div className="file-browser__drop-overlay">
-                    <Upload size={48} className="text-cyan-400" />
-                    <p className="mt-4 text-lg font-semibold text-white">Dosyaları yüklemek için buraya bırakın</p>
+                    <Upload size={48} className="text-[var(--zenith-accent-cool)]" />
+                    <p className="mt-4 text-lg font-semibold text-[var(--zenith-text-primary)]">Dosyaları yüklemek için buraya bırakın</p>
                 </div>
             )}
             <header className="file-browser__header">

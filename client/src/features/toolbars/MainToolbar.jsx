@@ -29,8 +29,8 @@ function MainToolbar() {
     return (
         <nav className="main-toolbar">
             <div className="toolbar__group">
-                 <Palette size={16} className="text-[var(--color-accent-primary)]"/>
-                 <select 
+                 <Palette size={16} className="text-[var(--zenith-accent-cool)]"/>
+                 <select
                     value={activeThemeId}
                     onChange={(e) => setActiveThemeId(e.target.value)}
                     className="main-toolbar__theme-selector"

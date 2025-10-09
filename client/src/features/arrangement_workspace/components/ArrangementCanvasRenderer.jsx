@@ -118,12 +118,13 @@ const ArrangementCanvasRenderer = ({ arrangement }) => {
   const drawTimeline = useCallback((ctx, width) => {
     if (!ctx) return;
 
+    const styles = getComputedStyle(document.documentElement);
     const { startBeat, endBeat } = getVisibleBounds();
 
     ctx.clearRect(0, 0, width, TIMELINE_HEIGHT);
 
     // Background
-    ctx.fillStyle = '#1a1a1a';
+    ctx.fillStyle = styles.getPropertyValue('--zenith-bg-secondary').trim();
     ctx.fillRect(0, 0, width, TIMELINE_HEIGHT);
 
     // Grid lines and labels
@@ -142,14 +143,14 @@ const ArrangementCanvasRenderer = ({ arrangement }) => {
       ctx.beginPath();
       ctx.moveTo(x, isMajor ? 0 : TIMELINE_HEIGHT - 10);
       ctx.lineTo(x, TIMELINE_HEIGHT);
-      ctx.strokeStyle = isMajor ? '#555' : '#333';
+      ctx.strokeStyle = isMajor ? styles.getPropertyValue('--zenith-border-medium').trim() : styles.getPropertyValue('--zenith-border-subtle').trim();
       ctx.lineWidth = isMajor ? 2 : 1;
       ctx.stroke();
 
       // Draw bar number
       if (isMajor && beat > 0) {
         const barNumber = Math.floor(beat / BEATS_PER_BAR) + 1;
-        ctx.fillStyle = '#999';
+        ctx.fillStyle = styles.getPropertyValue('--zenith-text-secondary').trim();
         ctx.fillText(barNumber.toString(), x + 4, 4);
       }
     }
@@ -159,12 +160,13 @@ const ArrangementCanvasRenderer = ({ arrangement }) => {
   const drawTrackHeaders = useCallback((ctx, height) => {
     if (!ctx) return;
 
+    const styles = getComputedStyle(document.documentElement);
     const { startTrack, endTrack } = getVisibleBounds();
 
     ctx.clearRect(0, 0, TRACK_HEADER_WIDTH, height);
 
     // Background
-    ctx.fillStyle = '#1a1a1a';
+    ctx.fillStyle = styles.getPropertyValue('--zenith-bg-secondary').trim();
     ctx.fillRect(0, 0, TRACK_HEADER_WIDTH, height);
 
     for (let i = startTrack; i < endTrack; i++) {
@@ -174,15 +176,15 @@ const ArrangementCanvasRenderer = ({ arrangement }) => {
       const y = i * trackHeight - scrollPosition.y;
 
       // Track background
-      ctx.fillStyle = i % 2 === 0 ? '#1a1a1a' : '#151515';
+      ctx.fillStyle = i % 2 === 0 ? styles.getPropertyValue('--zenith-bg-secondary').trim() : styles.getPropertyValue('--zenith-bg-primary').trim();
       ctx.fillRect(0, y, TRACK_HEADER_WIDTH, trackHeight);
 
       // Track color indicator
-      ctx.fillStyle = track.color || '#00ff88';
+      ctx.fillStyle = track.color || styles.getPropertyValue('--zenith-success').trim();
       ctx.fillRect(0, y, 3, trackHeight);
 
       // Track name
-      ctx.fillStyle = track.muted ? '#555' : '#fff';
+      ctx.fillStyle = track.muted ? styles.getPropertyValue('--zenith-border-medium').trim() : styles.getPropertyValue('--zenith-text-primary').trim();
       ctx.font = '12px Inter, system-ui, sans-serif';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
@@ -196,7 +198,7 @@ const ArrangementCanvasRenderer = ({ arrangement }) => {
       ctx.restore();
 
       // Divider
-      ctx.strokeStyle = '#222';
+      ctx.strokeStyle = styles.getPropertyValue('--zenith-border-subtle').trim();
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(0, y + trackHeight);
@@ -209,6 +211,7 @@ const ArrangementCanvasRenderer = ({ arrangement }) => {
   const drawMainCanvas = useCallback((ctx, width, height) => {
     if (!ctx) return;
 
+    const styles = getComputedStyle(document.documentElement);
     const { startBeat, endBeat, startTrack, endTrack } = getVisibleBounds();
 
     ctx.clearRect(0, 0, width, height);
@@ -221,7 +224,7 @@ const ArrangementCanvasRenderer = ({ arrangement }) => {
       const y = i * trackHeight - scrollPosition.y;
 
       // Track background
-      ctx.fillStyle = i % 2 === 0 ? '#0f0f0f' : '#121212';
+      ctx.fillStyle = i % 2 === 0 ? styles.getPropertyValue('--zenith-bg-primary').trim() : styles.getPropertyValue('--zenith-bg-secondary').trim();
       ctx.fillRect(0, y, width, trackHeight);
 
       // Grid lines (sparse rendering based on zoom)
@@ -243,7 +246,7 @@ const ArrangementCanvasRenderer = ({ arrangement }) => {
         if (x < 0 || x > width) continue;
 
         const isMajor = beat % BEATS_PER_BAR === 0;
-        ctx.strokeStyle = isMajor ? '#333' : '#222';
+        ctx.strokeStyle = isMajor ? styles.getPropertyValue('--zenith-border-medium').trim() : styles.getPropertyValue('--zenith-border-subtle').trim();
         ctx.lineWidth = isMajor ? 1 : 0.5;
         ctx.beginPath();
         ctx.moveTo(x, y);
@@ -252,7 +255,7 @@ const ArrangementCanvasRenderer = ({ arrangement }) => {
       }
 
       // Track divider
-      ctx.strokeStyle = '#1a1a1a';
+      ctx.strokeStyle = styles.getPropertyValue('--zenith-bg-secondary').trim();
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.moveTo(0, y + trackHeight);
@@ -286,19 +289,19 @@ const ArrangementCanvasRenderer = ({ arrangement }) => {
       const isSelected = selectedClips.includes(clip.id);
 
       // Clip background
-      ctx.fillStyle = clip.color || track.color || '#00ff88';
+      ctx.fillStyle = clip.color || track.color || styles.getPropertyValue('--zenith-success').trim();
       ctx.globalAlpha = clip.type === 'pattern' ? 0.6 : 0.8;
       ctx.fillRect(x, y, clipWidth, clipHeight);
       ctx.globalAlpha = 1;
 
       // Clip border
-      ctx.strokeStyle = isSelected ? '#00ff88' : '#000';
+      ctx.strokeStyle = isSelected ? styles.getPropertyValue('--zenith-success').trim() : 'rgba(0, 0, 0, 0.4)';
       ctx.lineWidth = isSelected ? 3 : 1;
       ctx.strokeRect(x, y, clipWidth, clipHeight);
 
       // Clip name (only if wide enough)
       if (clipWidth > 40) {
-        ctx.fillStyle = '#fff';
+        ctx.fillStyle = styles.getPropertyValue('--zenith-text-primary').trim();
         ctx.font = '11px Inter, system-ui, sans-serif';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'top';
@@ -329,7 +332,7 @@ const ArrangementCanvasRenderer = ({ arrangement }) => {
     // Draw playhead
     const playheadX = (transportPosition / 480) * PIXELS_PER_BEAT * zoom.x - scrollPosition.x;
     if (playheadX >= 0 && playheadX <= width) {
-      ctx.strokeStyle = '#00ff88';
+      ctx.strokeStyle = styles.getPropertyValue('--zenith-success').trim();
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.moveTo(playheadX, 0);
@@ -337,7 +340,7 @@ const ArrangementCanvasRenderer = ({ arrangement }) => {
       ctx.stroke();
 
       // Playhead handle
-      ctx.fillStyle = '#00ff88';
+      ctx.fillStyle = styles.getPropertyValue('--zenith-success').trim();
       ctx.beginPath();
       ctx.moveTo(playheadX - 6, 0);
       ctx.lineTo(playheadX + 6, 0);
@@ -572,7 +575,7 @@ const ArrangementCanvasRenderer = ({ arrangement }) => {
           <ZoomOut size={16} />
         </button>
         <span>{Math.round(zoom.x * 100)}%</span>
-        <span style={{ marginLeft: '12px', color: fps < 30 ? '#ff6b6b' : fps < 50 ? '#ffd93d' : '#6bcf7f' }}>
+        <span style={{ marginLeft: '12px', color: fps < 30 ? 'var(--zenith-error)' : fps < 50 ? 'var(--zenith-warning)' : 'var(--zenith-success)' }}>
           {fps} FPS
         </span>
       </div>

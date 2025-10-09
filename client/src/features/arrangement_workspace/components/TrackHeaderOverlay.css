@@ -10,7 +10,7 @@
 }
 
 .track-header-controls:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--zenith-overlay-light);
 }
 
 /* Track buttons */
@@ -20,9 +20,9 @@
   justify-content: center;
   width: 20px;
   height: 20px;
-  border: 1px solid #444;
-  background: #1a1a1a;
-  color: #888;
+  border: 1px solid var(--zenith-border-medium);
+  background: var(--zenith-bg-secondary);
+  color: var(--zenith-text-tertiary);
   font-size: 10px;
   font-weight: 600;
   border-radius: 3px;
@@ -32,33 +32,33 @@
 }
 
 .track-btn:hover {
-  background: #252525;
-  border-color: #666;
-  color: #aaa;
+  background: var(--zenith-bg-tertiary);
+  border-color: var(--zenith-border-strong);
+  color: var(--zenith-text-secondary);
 }
 
 /* Mute button */
 .track-btn-mute.active {
-  background: #ef4444;
-  border-color: #ef4444;
-  color: white;
+  background: var(--zenith-error);
+  border-color: var(--zenith-error);
+  color: var(--zenith-text-primary);
 }
 
 .track-btn-mute.active:hover {
-  background: #dc2626;
-  border-color: #dc2626;
+  background: var(--zenith-error);
+  border-color: var(--zenith-error);
 }
 
 /* Solo button */
 .track-btn-solo.active {
-  background: #eab308;
-  border-color: #eab308;
-  color: white;
+  background: var(--zenith-warning);
+  border-color: var(--zenith-warning);
+  color: var(--zenith-text-primary);
 }
 
 .track-btn-solo.active:hover {
-  background: #ca8a04;
-  border-color: #ca8a04;
+  background: var(--zenith-warning);
+  border-color: var(--zenith-warning);
 }
 
 /* Track color indicator */

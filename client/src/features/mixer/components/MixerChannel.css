@@ -1,9 +1,9 @@
-/* MIXER CHANNEL - FL Studio Inspired Channel Strip */
+/* MIXER CHANNEL - FL Studio Inspired Channel Strip with Zenith Tokens */
 
 .mixer-channel {
   width: 52px;
-  background: linear-gradient(180deg, #1a1a1a 0%, #141414 100%);
-  border: 1px solid #222;
+  background: linear-gradient(180deg, var(--zenith-bg-secondary) 0%, var(--zenith-bg-primary) 100%);
+  border: 1px solid var(--zenith-border-medium);
   border-radius: 4px;
   display: flex;
   flex-direction: column;
@@ -17,14 +17,14 @@
 }
 
 .mixer-channel:hover {
-  background: linear-gradient(180deg, #1e1e1e 0%, #181818 100%);
-  border-color: #333;
+  background: linear-gradient(180deg, var(--zenith-bg-tertiary) 0%, var(--zenith-bg-secondary) 100%);
+  border-color: var(--zenith-border-strong);
 }
 
 .mixer-channel--active {
-  background: linear-gradient(180deg, #2a3a4a 0%, #1a2a3a 100%);
-  border-color: #4a9eff;
-  box-shadow: 0 0 12px rgba(74, 158, 255, 0.3);
+  background: linear-gradient(180deg, rgba(var(--zenith-accent-cool-rgb), 0.25) 0%, rgba(var(--zenith-accent-cool-rgb), 0.15) 100%);
+  border-color: var(--zenith-accent-cool);
+  box-shadow: 0 0 12px rgba(var(--zenith-accent-cool-rgb), 0.3);
 }
 
 /* =================== ACTIVITY INDICATOR =================== */
@@ -55,7 +55,7 @@
 .mixer-channel__name {
   font-size: 10px;
   font-weight: 500;
-  color: #999;
+  color: var(--zenith-text-secondary);
   text-align: center;
   white-space: nowrap;
   overflow: hidden;
@@ -65,7 +65,7 @@
 }
 
 .mixer-channel--active .mixer-channel__name {
-  color: #fff;
+  color: var(--zenith-text-primary);
 }
 
 /* =================== METER =================== */
@@ -73,11 +73,11 @@
 .mixer-channel__meter {
   width: 8px;
   height: 120px;
-  background: #0a0a0a;
+  background: var(--zenith-bg-primary);
   border-radius: 4px;
   position: relative;
   overflow: hidden;
-  border: 1px solid #1a1a1a;
+  border: 1px solid var(--zenith-border-subtle);
 }
 
 .mixer-channel__meter-fill {
@@ -103,11 +103,11 @@
 .mixer-channel__fader-track {
   width: 4px;
   height: 180px;
-  background: linear-gradient(180deg, #1a1a1a, #0f0f0f);
+  background: linear-gradient(180deg, var(--zenith-bg-secondary), var(--zenith-bg-primary));
   border-radius: 2px;
   position: relative;
   cursor: ns-resize;
-  border: 1px solid #222;
+  border: 1px solid var(--zenith-border-medium);
 }
 
 .mixer-channel__fader-thumb {
@@ -116,25 +116,25 @@
   transform: translateX(-50%) translateY(50%);
   width: 20px;
   height: 8px;
-  background: linear-gradient(180deg, #4a9eff, #3a8eef);
+  background: linear-gradient(180deg, var(--zenith-accent-cool), rgba(var(--zenith-accent-cool-rgb), 0.8));
   border-radius: 2px;
   cursor: ns-resize;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--zenith-shadow-md);
   transition: box-shadow 0.15s;
 }
 
 .mixer-channel__fader-thumb:hover {
-  box-shadow: 0 2px 8px rgba(74, 158, 255, 0.6);
+  box-shadow: 0 2px 8px rgba(var(--zenith-accent-cool-rgb), 0.6);
 }
 
 .mixer-channel__fader-thumb:active {
-  background: linear-gradient(180deg, #5aa9ff, #4a9eff);
+  background: linear-gradient(180deg, rgba(var(--zenith-accent-cool-rgb), 1), var(--zenith-accent-cool));
 }
 
 .mixer-channel__fader-line {
   width: 100%;
   height: 2px;
-  background: #fff;
+  background: var(--zenith-text-primary);
   position: absolute;
   top: 50%;
   transform: translateY(-50%);
@@ -146,13 +146,13 @@
 .mixer-channel__volume-label {
   font-size: 9px;
   font-weight: 600;
-  color: #4a9eff;
+  color: var(--zenith-accent-cool);
   text-align: center;
   font-family: 'Courier New', monospace;
-  background: #0a0a0a;
+  background: var(--zenith-bg-primary);
   padding: 2px 4px;
   border-radius: 2px;
-  border: 1px solid #1a1a1a;
+  border: 1px solid var(--zenith-border-subtle);
   min-width: 42px;
 }
 
@@ -170,16 +170,16 @@
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #2a2a2a, #1a1a1a);
-  border: 2px solid #333;
+  background: linear-gradient(135deg, var(--zenith-bg-tertiary), var(--zenith-bg-secondary));
+  border: 2px solid var(--zenith-border-medium);
   position: relative;
   cursor: ns-resize;
   transition: all 0.15s;
 }
 
 .mixer-channel__pan-knob:hover {
-  border-color: #4a9eff;
-  box-shadow: 0 0 8px rgba(74, 158, 255, 0.3);
+  border-color: var(--zenith-accent-cool);
+  box-shadow: 0 0 8px rgba(var(--zenith-accent-cool-rgb), 0.3);
 }
 
 .mixer-channel__pan-indicator {
@@ -189,7 +189,7 @@
   transform-origin: 50% 200%;
   width: 2px;
   height: 8px;
-  background: #4a9eff;
+  background: var(--zenith-accent-cool);
   border-radius: 1px;
   margin-left: -1px;
 }
@@ -197,7 +197,7 @@
 .mixer-channel__pan-label {
   font-size: 9px;
   font-weight: 600;
-  color: #666;
+  color: var(--zenith-text-tertiary);
   font-family: 'Courier New', monospace;
 }
 
@@ -217,33 +217,33 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #0f0f0f;
-  border: 1px solid #222;
+  background: var(--zenith-bg-primary);
+  border: 1px solid var(--zenith-border-medium);
   border-radius: 3px;
-  color: #666;
+  color: var(--zenith-text-tertiary);
   cursor: pointer;
   transition: all 0.15s;
   font-size: 10px;
 }
 
 .mixer-channel__btn:hover {
-  background: #1a1a1a;
-  border-color: #333;
-  color: #999;
+  background: var(--zenith-bg-secondary);
+  border-color: var(--zenith-border-strong);
+  color: var(--zenith-text-secondary);
 }
 
 .mixer-channel__btn--mute.active {
-  background: #ef4444;
-  border-color: #dc2626;
-  color: #fff;
-  box-shadow: 0 0 8px rgba(239, 68, 68, 0.4);
+  background: var(--zenith-error);
+  border-color: var(--zenith-error);
+  color: var(--zenith-text-primary);
+  box-shadow: 0 0 8px rgba(var(--zenith-error-rgb), 0.4);
 }
 
 .mixer-channel__btn--solo.active {
-  background: #f59e0b;
-  border-color: #d97706;
-  color: #fff;
-  box-shadow: 0 0 8px rgba(245, 158, 11, 0.4);
+  background: var(--zenith-warning);
+  border-color: var(--zenith-warning);
+  color: var(--zenith-text-primary);
+  box-shadow: 0 0 8px rgba(var(--zenith-warning-rgb), 0.4);
 }
 
 /* =================== EFFECTS BADGE =================== */
@@ -255,12 +255,12 @@
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: #22c55e;
-  color: #fff;
+  background: var(--zenith-success);
+  color: var(--zenith-text-primary);
   font-size: 9px;
   font-weight: 700;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--zenith-shadow-sm);
 }

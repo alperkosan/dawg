@@ -20,10 +20,12 @@ export function drawPianoRoll(ctx, engine) {
 
 // Static rendering (everything except playhead) - for performance optimization
 export function drawPianoRollStatic(ctx, engine) {
+    const styles = getComputedStyle(document.documentElement);
     const { viewport } = engine;
     if (!viewport || viewport.width === 0 || viewport.height === 0) return;
 
-    ctx.fillStyle = '#181A20';
+    const bgPrimary = styles.getPropertyValue('--zenith-bg-primary').trim();
+    ctx.fillStyle = bgPrimary || '#181A20';
     ctx.fillRect(0, 0, viewport.width, viewport.height);
 
     // Draw all layers EXCEPT main playhead
@@ -40,6 +42,7 @@ export function drawPianoRollStatic(ctx, engine) {
 }
 
 function drawGrid(ctx, { viewport, dimensions, lod, snapValue, qualityLevel = 'high' }) {
+    const styles = getComputedStyle(document.documentElement);
     ctx.save();
     ctx.translate(KEYBOARD_WIDTH, RULER_HEIGHT);
     ctx.beginPath();
@@ -53,7 +56,8 @@ function drawGrid(ctx, { viewport, dimensions, lod, snapValue, qualityLevel = 'h
     const skipBlackKeys = qualityLevel === 'low' && lod >= 2;
 
     if (lod < 3 && !skipBlackKeys) {
-        ctx.fillStyle = '#202229';
+        const bgSecondary = styles.getPropertyValue('--zenith-bg-secondary').trim();
+        ctx.fillStyle = bgSecondary || '#202229';
         const { startKey, endKey } = viewport.visibleKeys;
         for (let i = startKey; i <= endKey; i++) {
             if ([1, 3, 6, 8, 10].includes(i % 12)) {
@@ -177,7 +181,8 @@ function drawGrid(ctx, { viewport, dimensions, lod, snapValue, qualityLevel = 'h
     // Draw bar lines (thickest)
     if (barLines.length > 0) {
         ctx.beginPath();
-        ctx.strokeStyle = `rgba(180, 188, 208, ${lod > 2 ? 0.4 : 0.7})`;
+        const borderStrong = styles.getPropertyValue('--zenith-border-strong').trim();
+        ctx.strokeStyle = borderStrong || `rgba(180, 188, 208, ${lod > 2 ? 0.4 : 0.7})`;
         ctx.lineWidth = lod > 2 ? 1.2 : 1.5;
         for (const x of barLines) {
             ctx.moveTo(x, 0);
@@ -189,7 +194,8 @@ function drawGrid(ctx, { viewport, dimensions, lod, snapValue, qualityLevel = 'h
     // Draw beat lines
     if (beatLines.length > 0) {
         ctx.beginPath();
-        ctx.strokeStyle = `rgba(100, 110, 140, ${lod > 2 ? 0.3 : 0.5})`;
+        const borderMedium = styles.getPropertyValue('--zenith-border-medium').trim();
+        ctx.strokeStyle = borderMedium || `rgba(100, 110, 140, ${lod > 2 ? 0.3 : 0.5})`;
         ctx.lineWidth = 0.8;
         for (const x of beatLines) {
             ctx.moveTo(x, 0);
@@ -201,7 +207,8 @@ function drawGrid(ctx, { viewport, dimensions, lod, snapValue, qualityLevel = 'h
     // Draw snap lines
     if (snapLines.length > 0) {
         ctx.beginPath();
-        ctx.strokeStyle = `rgba(120, 130, 150, ${lod > 2 ? 0.2 : 0.4})`;
+        const borderMedium = styles.getPropertyValue('--zenith-border-medium').trim();
+        ctx.strokeStyle = borderMedium || `rgba(120, 130, 150, ${lod > 2 ? 0.2 : 0.4})`;
         ctx.lineWidth = 0.6;
         for (const x of snapLines) {
             ctx.moveTo(x, 0);
@@ -213,7 +220,8 @@ function drawGrid(ctx, { viewport, dimensions, lod, snapValue, qualityLevel = 'h
     // Draw other lines (thinnest)
     if (otherLines.length > 0) {
         ctx.beginPath();
-        ctx.strokeStyle = `rgba(80, 88, 112, ${lod >= 2 ? 0.05 : 0.3})`;
+        const borderSubtle = styles.getPropertyValue('--zenith-border-subtle').trim();
+        ctx.strokeStyle = borderSubtle || `rgba(80, 88, 112, ${lod >= 2 ? 0.05 : 0.3})`;
         ctx.lineWidth = lod >= 2 ? 0.2 : 0.4;
         for (const x of otherLines) {
             ctx.moveTo(x, 0);
@@ -226,7 +234,8 @@ function drawGrid(ctx, { viewport, dimensions, lod, snapValue, qualityLevel = 'h
     if (lod < 3) {
         const { startKey, endKey } = viewport.visibleKeys;
         ctx.beginPath();
-        ctx.strokeStyle = `rgba(100, 116, 139, ${lod < 2 ? 0.3 : 0.2})`;
+        const borderMedium = styles.getPropertyValue('--zenith-border-medium').trim();
+        ctx.strokeStyle = borderMedium || `rgba(100, 116, 139, ${lod < 2 ? 0.3 : 0.2})`;
         ctx.lineWidth = 0.5;
         const gridWidth = dimensions.totalWidth;
         for (let key = startKey; key <= endKey; key++) {
@@ -240,13 +249,15 @@ function drawGrid(ctx, { viewport, dimensions, lod, snapValue, qualityLevel = 'h
 }
 
 function drawTimeline(ctx, { viewport, dimensions, lod, snapValue }) {
+    const styles = getComputedStyle(document.documentElement);
     ctx.save();
     ctx.translate(KEYBOARD_WIDTH, 0);
     ctx.beginPath();
     ctx.rect(0, 0, viewport.width - KEYBOARD_WIDTH, RULER_HEIGHT);
     ctx.clip();
     ctx.translate(-viewport.scrollX, 0);
-    ctx.fillStyle = '#202229';
+    const bgSecondary = styles.getPropertyValue('--zenith-bg-secondary').trim();
+    ctx.fillStyle = bgSecondary || '#202229';
     ctx.fillRect(0, 0, dimensions.totalWidth, RULER_HEIGHT);
     ctx.textAlign = 'left';
 
@@ -311,7 +322,8 @@ function drawTimeline(ctx, { viewport, dimensions, lod, snapValue }) {
     // Draw bar lines
     if (timelineBarLines.length > 0) {
         ctx.beginPath();
-        ctx.strokeStyle = `rgba(148, 163, 184, ${lod > 2 ? 0.4 : 0.8})`;
+        const borderStrong = styles.getPropertyValue('--zenith-border-strong').trim();
+        ctx.strokeStyle = borderStrong || `rgba(148, 163, 184, ${lod > 2 ? 0.4 : 0.8})`;
         ctx.lineWidth = lod > 2 ? 0.8 : 1.2;
         const barLineY = RULER_HEIGHT - (lod > 1 ? 8 : 12);
         for (const x of timelineBarLines) {
@@ -324,7 +336,8 @@ function drawTimeline(ctx, { viewport, dimensions, lod, snapValue }) {
     // Draw beat lines
     if (timelineBeatLines.length > 0) {
         ctx.beginPath();
-        ctx.strokeStyle = 'rgba(100, 116, 139, 0.6)';
+        const borderMedium = styles.getPropertyValue('--zenith-border-medium').trim();
+        ctx.strokeStyle = borderMedium || 'rgba(100, 116, 139, 0.6)';
         ctx.lineWidth = 0.5;
         for (const x of timelineBeatLines) {
             ctx.moveTo(x, RULER_HEIGHT - 5);
@@ -336,7 +349,8 @@ function drawTimeline(ctx, { viewport, dimensions, lod, snapValue }) {
     // Draw labels (can't batch text)
     if (timelineLabels.length > 0) {
         ctx.font = lod < 1 ? '12px sans-serif' : lod < 2 ? '10px sans-serif' : '9px sans-serif';
-        ctx.fillStyle = `rgba(226, 232, 240, ${lod > 2 ? 0.7 : 1.0})`;
+        const textPrimary = styles.getPropertyValue('--zenith-text-primary').trim();
+        ctx.fillStyle = textPrimary || `rgba(226, 232, 240, ${lod > 2 ? 0.7 : 1.0})`;
         for (const { x, text } of timelineLabels) {
             ctx.fillText(text, x + 5, RULER_HEIGHT - 9);
         }
@@ -345,27 +359,31 @@ function drawTimeline(ctx, { viewport, dimensions, lod, snapValue }) {
 }
 
 function drawKeyboard(ctx, { viewport, dimensions, lod }) {
+    const styles = getComputedStyle(document.documentElement);
     ctx.save();
     ctx.translate(0, RULER_HEIGHT);
     ctx.beginPath();
     ctx.rect(0, 0, KEYBOARD_WIDTH, viewport.height - RULER_HEIGHT);
     ctx.clip();
     ctx.translate(0, -viewport.scrollY);
-    ctx.fillStyle = '#2d3748';
+    const bgTertiary = styles.getPropertyValue('--zenith-bg-tertiary').trim();
+    ctx.fillStyle = bgTertiary || '#2d3748';
     ctx.fillRect(0, 0, KEYBOARD_WIDTH, dimensions.totalHeight);
 
     if (lod < 4) {
         const { startKey, endKey } = viewport.visibleKeys;
+        const bgPrimary = styles.getPropertyValue('--zenith-bg-primary').trim();
+        const textPrimary = styles.getPropertyValue('--zenith-text-primary').trim();
         for (let key = startKey; key <= endKey; key++) {
             const y = key * dimensions.keyHeight;
             const isBlack = [1, 3, 6, 8, 10].includes(key % 12);
-            ctx.fillStyle = isBlack ? '#1a202c' : '#cbd5e1';
+            ctx.fillStyle = isBlack ? (bgPrimary || '#1a202c') : (textPrimary || '#cbd5e1');
             ctx.fillRect(0, y, KEYBOARD_WIDTH, dimensions.keyHeight);
             if (!isBlack && lod < 2 && dimensions.keyHeight >= 12) {
                 const octave = Math.floor((127 - key) / 12);
                 const noteName = NOTES[(127-key) % 12];
                 if (noteName === 'C') {
-                    ctx.fillStyle = '#1a202c';
+                    ctx.fillStyle = bgPrimary || '#1a202c';
                     const fontSize = lod < 1 ? 10 : 8;
                     ctx.font = `${fontSize}px sans-serif`;
                     ctx.textAlign = 'right';
@@ -380,7 +398,8 @@ function drawKeyboard(ctx, { viewport, dimensions, lod }) {
         const { startKey, endKey } = viewport.visibleKeys;
         const alpha = lod === 2 ? 0.5 : 1;
         ctx.beginPath();
-        ctx.strokeStyle = `rgba(74, 85, 104, ${alpha})`;
+        const borderMedium = styles.getPropertyValue('--zenith-border-medium').trim();
+        ctx.strokeStyle = borderMedium || `rgba(74, 85, 104, ${alpha})`;
         ctx.lineWidth = lod === 2 ? 0.5 : 1;
         for (let key = startKey; key <= endKey; key++) {
             const y = key * dimensions.keyHeight;
@@ -438,6 +457,7 @@ function drawSelectionArea(ctx, engine) {
 
     if (!isSelectingArea || !selectionArea) return;
 
+    const styles = getComputedStyle(document.documentElement);
     ctx.save();
     ctx.translate(KEYBOARD_WIDTH, RULER_HEIGHT);
     ctx.beginPath();
@@ -463,9 +483,10 @@ function drawSelectionArea(ctx, engine) {
         return;
     }
     const bgGradient = ctx.createLinearGradient(x, y, x, y + height);
-    bgGradient.addColorStop(0, 'rgba(59, 130, 246, 0.08)'); // Blue-500 with low alpha
-    bgGradient.addColorStop(0.5, 'rgba(59, 130, 246, 0.12)');
-    bgGradient.addColorStop(1, 'rgba(59, 130, 246, 0.08)');
+    const accentCoolFaded = styles.getPropertyValue('--zenith-accent-cool-faded').trim();
+    bgGradient.addColorStop(0, accentCoolFaded || 'rgba(59, 130, 246, 0.08)');
+    bgGradient.addColorStop(0.5, accentCoolFaded || 'rgba(59, 130, 246, 0.12)');
+    bgGradient.addColorStop(1, accentCoolFaded || 'rgba(59, 130, 246, 0.08)');
 
     ctx.fillStyle = bgGradient;
     ctx.fillRect(x, y, width, height);
@@ -475,13 +496,14 @@ function drawSelectionArea(ctx, engine) {
     const dashOffset = (time * 20) % 16; // Animated dash movement
 
     // Outer glow effect
-    ctx.shadowColor = 'rgba(59, 130, 246, 0.4)';
+    ctx.shadowColor = accentCoolFaded || 'rgba(59, 130, 246, 0.4)';
     ctx.shadowBlur = 6;
     ctx.shadowOffsetX = 0;
     ctx.shadowOffsetY = 0;
 
     // Main border - animated dashed line
-    ctx.strokeStyle = 'rgba(59, 130, 246, 0.9)';
+    const accentCool = styles.getPropertyValue('--zenith-accent-cool').trim();
+    ctx.strokeStyle = accentCool || 'rgba(59, 130, 246, 0.9)';
     ctx.lineWidth = 1.5;
     ctx.setLineDash([8, 4]);
     ctx.lineDashOffset = -dashOffset;
@@ -491,7 +513,8 @@ function drawSelectionArea(ctx, engine) {
     ctx.shadowBlur = 0;
 
     // Inner highlight border
-    ctx.strokeStyle = 'rgba(147, 197, 253, 0.6)'; // Blue-300
+    const accentCoolLight = styles.getPropertyValue('--zenith-accent-cool').trim();
+    ctx.strokeStyle = accentCoolLight || 'rgba(147, 197, 253, 0.6)';
     ctx.lineWidth = 0.5;
     ctx.setLineDash([6, 2]);
     ctx.lineDashOffset = -dashOffset * 0.5;
@@ -499,7 +522,8 @@ function drawSelectionArea(ctx, engine) {
 
     // Corner indicators for better visual feedback
     const cornerSize = Math.min(8, width * 0.1, height * 0.1);
-    ctx.fillStyle = 'rgba(59, 130, 246, 0.8)';
+    const accentCoolBright = styles.getPropertyValue('--zenith-accent-cool').trim();
+    ctx.fillStyle = accentCoolBright || 'rgba(59, 130, 246, 0.8)';
     ctx.setLineDash([]); // Reset dash
 
     // Top-left corner
@@ -711,6 +735,7 @@ function drawSlicePreview(ctx, engine) {
 
 // ✅ VERTICAL SLICE RANGE - Show pitch range selection at slice line
 function drawSliceRange(ctx, engine) {
+    const styles = getComputedStyle(document.documentElement);
     const { sliceRange, viewport, dimensions } = engine;
     if (!sliceRange || !viewport || !dimensions) return;
 
@@ -820,7 +845,8 @@ function drawSliceRange(ctx, engine) {
 
         // Background for text readability
         const textY = adjustedStartY + adjustedHeight / 2;
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        const bgOverlay = styles.getPropertyValue('--zenith-bg-overlay').trim();
+        ctx.fillStyle = bgOverlay || 'rgba(0, 0, 0, 0.7)';
         ctx.fillRect(sliceX - 25, textY - 8, 50, 16);
 
         ctx.fillStyle = rangeColor;
@@ -835,9 +861,12 @@ function drawSliceRange(ctx, engine) {
 }
 
 function drawCornerAndBorders(ctx, { viewport }) {
-    ctx.fillStyle = '#2d3748';
+    const styles = getComputedStyle(document.documentElement);
+    const bgTertiary = styles.getPropertyValue('--zenith-bg-tertiary').trim();
+    const borderMedium = styles.getPropertyValue('--zenith-border-medium').trim();
+    ctx.fillStyle = bgTertiary || '#2d3748';
     ctx.fillRect(0, 0, KEYBOARD_WIDTH, RULER_HEIGHT);
-    ctx.strokeStyle = '#4a5568';
+    ctx.strokeStyle = borderMedium || '#4a5568';
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(KEYBOARD_WIDTH, 0);

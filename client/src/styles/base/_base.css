@@ -8,6 +8,11 @@
 *::before,
 *::after {
   box-sizing: border-box;
+  /* Prevent text selection during drag operations */
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
 }
 
 /* 2. Tarayıcı Varsayılanlarını Sıfırla */
@@ -48,5 +53,18 @@ textarea {
   border: none;
   background: none;
   cursor: pointer;
+}
+
+/* 5. Allow text selection in input fields */
+input[type="text"],
+input[type="number"],
+input[type="search"],
+textarea,
+[contenteditable="true"],
+.selectable {
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  -ms-user-select: text;
+  user-select: text;
 }
 

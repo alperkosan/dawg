@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Play, Pause, Square, Wind, Repeat } from 'lucide-react';
 import { Knob } from '@/components/controls';
 import { PLAYBACK_MODES, PLAYBACK_STATES } from '@/config/constants';
 import { usePlaybackStore } from '@/store/usePlaybackStoreV2';
+import { AudioContextService } from '@/lib/services/AudioContextService';
 
 // Format position for display (bar:beat:tick format)
 const formatPosition = (position) => {
@@ -43,6 +44,14 @@ function TopToolbar() {
 
   const isReady = true; // Store is always ready
 
+  // Master volume state
+  const [masterVolume, setMasterVolume] = useState(0.8);
+
+  const handleMasterVolumeChange = (value) => {
+    setMasterVolume(value);
+    AudioContextService.setMasterVolume(value);
+  };
+
 
   // ✅ Dynamic button classes with state-specific indicators
   const playButtonClass = `top-toolbar__transport-btn transport-btn ${
@@ -58,7 +67,7 @@ function TopToolbar() {
     <header className="top-toolbar">
       <div className="toolbar__group">
         <div className="top-toolbar__logo">
-          <Wind size={24} className="text-[var(--color-accent-primary)]" />
+          <Wind size={24} className="text-[var(--zenith-accent-cool)]" />
           <h1 className="top-toolbar__logo-title">SoundForge</h1>
         </div>
       </div>
@@ -120,8 +129,8 @@ function TopToolbar() {
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <Knob
             size={28}
-            value={0.8}
-            onChange={() => {}}
+            value={masterVolume}
+            onChange={handleMasterVolumeChange}
             min={0}
             max={1}
             defaultValue={0.8}
@@ -129,7 +138,7 @@ function TopToolbar() {
             showValue={false}
             aria-label="Master Volume"
           />
-          <span style={{ fontSize: '10px', fontWeight: 800, color: 'var(--color-text-muted)', letterSpacing: '0.1em' }}>M</span>
+          <span style={{ fontSize: '10px', fontWeight: 800, color: 'var(--zenith-text-secondary)', letterSpacing: '0.1em' }}>M</span>
         </div>
       </div>
     </header>

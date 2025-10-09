@@ -11,5 +11,5 @@ export * from './advanced';
 // Specialized controls
 export * from './specialized';
 
-// Theme hook
-export { useControlTheme } from './useControlTheme';
+// Theme system
+export { useControlTheme, getCategoryKey, getCategoryPalettes } from './useControlTheme';

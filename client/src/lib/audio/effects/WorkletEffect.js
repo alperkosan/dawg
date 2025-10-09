@@ -62,6 +62,48 @@ export class WorkletEffect extends BaseEffect {
     }
   }
 
+  /**
+   * Update a single parameter (interface for AudioContextService)
+   * @param {string} name - Parameter name
+   * @param {number} value - Parameter value
+   */
+  updateParameter(name, value) {
+    if (!this.workletNode) {
+      console.warn(`[WorkletEffect] No worklet node available for ${this.name}`);
+      return false;
+    }
+
+    // Try AudioParam first (standard way)
+    if (this.workletNode.parameters) {
+      const param = this.workletNode.parameters.get(name);
+      if (param) {
+        const actualValue = typeof value === 'object' ? value.value : value;
+        console.log(`🔧 [${this.name}] AudioParam ${name}:`, actualValue);
+        // Use setTargetAtTime for smooth parameter changes (20ms ramp)
+        param.setTargetAtTime(actualValue, this.context.currentTime, 0.02);
+        return true;
+      }
+    }
+
+    // Fallback: Try message-based update (for processors without AudioParams)
+    if (this.workletNode.port) {
+      try {
+        const updateData = {
+          type: 'updateParams',
+          [name]: typeof value === 'object' ? value.value : value
+        };
+        console.log(`📨 [${this.name}] Message:`, updateData);
+        this.workletNode.port.postMessage(updateData);
+        return true;
+      } catch (error) {
+        console.warn(`[WorkletEffect] Failed to send message to ${this.name}:`, error);
+      }
+    }
+
+    console.warn(`[WorkletEffect] Parameter "${name}" not found in ${this.name}`);
+    return false;
+  }
+
   disconnect() {
     if (this.workletNode) {
       this.workletNode.disconnect();

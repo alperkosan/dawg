@@ -122,7 +122,7 @@ const defaultThemes = [
   createTheme('Ghetto Star (Zenith)',
     {
       primary: '#FFD700',
-      accent: '#4ECDC4',
+      accent: '#6B8EBF',
       backgroundDeep: '#0A0E1A',
       background: '#151922',
       surface: '#1E242F',
@@ -131,8 +131,16 @@ const defaultThemes = [
       border: 'rgba(255, 255, 255, 0.1)'
     },
     {
-      'accent-cool': '#4ECDC4',
-      'accent-warm': '#FFD700'
+      'bg-primary': '#0A0E1A',
+      'bg-secondary': '#151922',
+      'bg-tertiary': '#1E242F',
+      'accent-hot': '#E74C3C',
+      'accent-warm': '#FFD700',
+      'accent-cool': '#6B8EBF',
+      'accent-cold': '#5A6C8A',
+      'text-primary': '#FFFFFF',
+      'text-secondary': '#A1A8B5',
+      'text-tertiary': '#6B7280'
     }
   ),
   createTheme('8-Bit Night',

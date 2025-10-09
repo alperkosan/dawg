@@ -20,6 +20,7 @@ function VelocityLane({
         const ctx = canvas?.getContext('2d');
         if (!ctx || !dimensions || !viewport) return;
 
+        const styles = getComputedStyle(document.documentElement);
         const dpr = window.devicePixelRatio || 1;
         const rect = canvas.getBoundingClientRect();
 
@@ -30,7 +31,8 @@ function VelocityLane({
         }
 
         // Clear canvas
-        ctx.fillStyle = '#1a1d23';
+        const bgPrimary = styles.getPropertyValue('--zenith-bg-primary').trim();
+        ctx.fillStyle = bgPrimary || '#1a1d23';
         ctx.fillRect(0, 0, rect.width, rect.height);
 
         // Draw velocity bars
@@ -45,6 +47,7 @@ function VelocityLane({
     }, [notes, selectedNoteIds, dimensions, viewport]);
 
     const drawVelocityBars = (ctx, { notes, selectedNoteIds, dimensions, viewport, canvasHeight }) => {
+        const styles = getComputedStyle(document.documentElement);
         const { stepWidth } = dimensions;
 
         // Translate for scroll
@@ -68,13 +71,13 @@ function VelocityLane({
             // Bar color based on selection and velocity
             let barColor;
             if (isSelected) {
-                barColor = '#3b82f6'; // Blue for selected
+                barColor = styles.getPropertyValue('--zenith-accent-cool').trim() || '#3b82f6';
             } else if (velocity > 0.8) {
-                barColor = '#ef4444'; // Red for high velocity
+                barColor = styles.getPropertyValue('--zenith-accent-warm').trim() || '#ef4444';
             } else if (velocity > 0.5) {
-                barColor = '#f59e0b'; // Orange for medium velocity
+                barColor = styles.getPropertyValue('--zenith-accent-warm').trim() || '#f59e0b';
             } else {
-                barColor = '#10b981'; // Green for low velocity
+                barColor = styles.getPropertyValue('--zenith-accent-cool').trim() || '#10b981';
             }
 
             // Draw velocity bar
@@ -84,7 +87,8 @@ function VelocityLane({
 
             // Draw velocity value text
             if (noteWidth > 20) { // Only if bar is wide enough
-                ctx.fillStyle = '#ffffff';
+                const textPrimary = styles.getPropertyValue('--zenith-text-primary').trim();
+                ctx.fillStyle = textPrimary || '#ffffff';
                 ctx.globalAlpha = 0.9;
                 ctx.font = '10px monospace';
                 ctx.textAlign = 'center';
@@ -94,7 +98,8 @@ function VelocityLane({
 
             // Draw resize handles for selected notes
             if (isSelected && activeTool === 'select') {
-                ctx.fillStyle = '#ffffff';
+                const textPrimary = styles.getPropertyValue('--zenith-text-primary').trim();
+                ctx.fillStyle = textPrimary || '#ffffff';
                 ctx.globalAlpha = 1.0;
                 const handleSize = 4;
 

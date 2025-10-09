@@ -1,513 +1,510 @@
 import { useState, useEffect, useRef } from 'react';
-import { ProfessionalKnob } from '../container/PluginControls';
-import { SignalVisualizer } from '../../common/SignalVisualizer';
+import { Knob, ModeSelector } from '@/components/controls';
+import { useGhostValue, useCanvasVisualization } from '@/hooks/useAudioPlugin';
 
 /**
- * MODERN DELAY UI - ZENITH COMPACT DESIGN
+ * MODERN DELAY V2.0 - REDESIGNED WITH ENHANCED COMPONENTS
  *
- * Kompakt, anlamlı görselleştirmelerle profesyonel delay kontrolü
+ * "The Spacetime Chamber" - Professional stereo delay
+ *
+ * Features:
+ * - Enhanced component library (Knob, ModeSelector)
+ * - Category theming ('spacetime-chamber' - purple/cyan palette)
+ * - Ghost value feedback (400ms visual lag)
+ * - Mode-based workflow (5 presets: Slapback/Ping-Pong/Dub/Ambient/Tape)
  * - Real-time ping-pong visualization
- * - Stereo feedback display
  * - Filter frequency curve
- * - Saturation/modulation meters
+ *
+ * Design Philosophy:
+ * - "One knob, infinite possibilities" via modes
+ * - Visual feedback at every step
+ * - Category-based color identity
  */
 
-// Compact Ping-Pong Delay Visualizer
+// ============================================================================
+// PING-PONG VISUALIZER
+// ============================================================================
+
 const PingPongVisualizer = ({ timeLeft, timeRight, feedbackLeft, feedbackRight, pingPong, wet }) => {
-  const canvasRef = useRef(null);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const ctx = canvas.getContext('2d');
-    let animationId;
-    let time = 0;
-
-    const animate = () => {
-      const { width, height } = canvas.getBoundingClientRect();
-      if (width === 0) {
-        animationId = requestAnimationFrame(animate);
-        return;
-      }
-
-      canvas.width = width;
-      canvas.height = height;
-
-      // Dark gradient background
-      const bgGradient = ctx.createLinearGradient(0, 0, 0, height);
-      bgGradient.addColorStop(0, 'rgba(10, 15, 30, 0.95)');
-      bgGradient.addColorStop(1, 'rgba(5, 8, 18, 0.95)');
-      ctx.fillStyle = bgGradient;
-      ctx.fillRect(0, 0, width, height);
-
-      const centerY = height / 2;
-      const leftX = width * 0.2;
-      const rightX = width * 0.8;
-
-      // Draw delay lines
-      const maxTime = Math.max(timeLeft, timeRight, 0.5);
-      const leftDelayX = leftX + (timeLeft / maxTime) * (width * 0.25);
-      const rightDelayX = rightX - (timeRight / maxTime) * (width * 0.25);
-
-      // Left channel
-      ctx.strokeStyle = `rgba(100, 200, 255, ${wet * 0.8})`;
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.moveTo(leftX, centerY);
-      ctx.lineTo(leftDelayX, centerY);
-      ctx.stroke();
-
-      // Right channel
-      ctx.strokeStyle = `rgba(255, 100, 200, ${wet * 0.8})`;
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.moveTo(rightX, centerY);
-      ctx.lineTo(rightDelayX, centerY);
-      ctx.stroke();
-
-      // Ping-pong arrows
-      if (pingPong > 0.1) {
-        const arrowY1 = centerY - 30;
-        const arrowY2 = centerY + 30;
-
-        ctx.strokeStyle = `rgba(255, 255, 100, ${pingPong * 0.7})`;
-        ctx.lineWidth = 2;
-        ctx.setLineDash([5, 5]);
-
-        // Left to right
-        ctx.beginPath();
-        ctx.moveTo(leftDelayX, arrowY1);
-        ctx.lineTo(rightDelayX, arrowY1);
-        ctx.stroke();
-
-        // Right to left
-        ctx.beginPath();
-        ctx.moveTo(rightDelayX, arrowY2);
-        ctx.lineTo(leftDelayX, arrowY2);
-        ctx.stroke();
-
-        ctx.setLineDash([]);
-      }
-
-      // Feedback indicators (animated pulses)
-      const pulsePhase = (time * 0.02) % 1;
-
-      // Left feedback
-      for (let i = 0; i < 3; i++) {
-        const phase = (pulsePhase + i * 0.33) % 1;
-        const radius = 5 + phase * 20;
-        const opacity = (1 - phase) * feedbackLeft * wet;
-
-        ctx.strokeStyle = `rgba(100, 200, 255, ${opacity})`;
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.arc(leftDelayX, centerY, radius, 0, Math.PI * 2);
-        ctx.stroke();
-      }
-
-      // Right feedback
-      for (let i = 0; i < 3; i++) {
-        const phase = (pulsePhase + i * 0.33) % 1;
-        const radius = 5 + phase * 20;
-        const opacity = (1 - phase) * feedbackRight * wet;
-
-        ctx.strokeStyle = `rgba(255, 100, 200, ${opacity})`;
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.arc(rightDelayX, centerY, radius, 0, Math.PI * 2);
-        ctx.stroke();
-      }
-
-      // Delay time labels
-      ctx.fillStyle = 'rgba(100, 200, 255, 0.9)';
-      ctx.font = '11px monospace';
-      ctx.fillText(`L: ${(timeLeft * 1000).toFixed(0)}ms`, leftX, centerY - 40);
-
-      ctx.fillStyle = 'rgba(255, 100, 200, 0.9)';
-      ctx.fillText(`R: ${(timeRight * 1000).toFixed(0)}ms`, rightX - 60, centerY - 40);
-
-      // Feedback percentages
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-      ctx.font = '10px monospace';
-      ctx.fillText(`FB: ${(feedbackLeft * 100).toFixed(0)}%`, leftX, centerY + 50);
-      ctx.fillText(`FB: ${(feedbackRight * 100).toFixed(0)}%`, rightX - 50, centerY + 50);
-
-      time++;
-      animationId = requestAnimationFrame(animate);
-    };
-
-    animate();
-    return () => cancelAnimationFrame(animationId);
-  }, [timeLeft, timeRight, feedbackLeft, feedbackRight, pingPong, wet]);
-
-  return <canvas ref={canvasRef} className="w-full h-full" />;
-};
-
-// Compact Filter Curve Visualizer
-const FilterCurveVisualizer = ({ filterFreq, saturation }) => {
-  const canvasRef = useRef(null);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const ctx = canvas.getContext('2d');
-    const { width, height } = canvas.getBoundingClientRect();
-    canvas.width = width;
-    canvas.height = height;
-
-    // Background
-    ctx.fillStyle = 'rgba(10, 15, 30, 0.5)';
+  const drawPingPong = (ctx, width, height) => {
+    // Dark gradient background
+    const bgGradient = ctx.createLinearGradient(0, 0, 0, height);
+    bgGradient.addColorStop(0, 'rgba(10, 15, 30, 0.95)');
+    bgGradient.addColorStop(1, 'rgba(5, 8, 18, 0.95)');
+    ctx.fillStyle = bgGradient;
     ctx.fillRect(0, 0, width, height);
 
-    // Filter frequency response
-    const gradient = ctx.createLinearGradient(0, height, 0, 0);
-    gradient.addColorStop(0, 'rgba(100, 255, 150, 0.3)');
-    gradient.addColorStop(1, 'rgba(100, 255, 150, 0.7)');
+    const centerY = height / 2;
+    const leftX = width * 0.2;
+    const rightX = width * 0.8;
 
-    ctx.fillStyle = gradient;
+    // Draw delay lines
+    const maxTime = Math.max(timeLeft, timeRight, 0.5);
+    const leftDelayX = leftX + (timeLeft / maxTime) * (width * 0.25);
+    const rightDelayX = rightX - (timeRight / maxTime) * (width * 0.25);
+
+    // Left channel (cyan - spacetime-chamber secondary)
+    ctx.strokeStyle = `rgba(34, 211, 238, ${wet * 0.8})`; // cyan
+    ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.moveTo(0, height);
+    ctx.moveTo(leftX, centerY);
+    ctx.lineTo(leftDelayX, centerY);
+    ctx.stroke();
 
-    for (let x = 0; x <= width; x++) {
-      const freq = 20 * Math.pow(20000 / 20, x / width);
-      let response = 1;
-      if (freq > filterFreq) {
-        const ratio = freq / filterFreq;
-        response = 1 / Math.sqrt(1 + ratio * ratio);
-      }
+    // Right channel (purple - spacetime-chamber primary)
+    ctx.strokeStyle = `rgba(168, 85, 247, ${wet * 0.8})`; // purple
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(rightX, centerY);
+    ctx.lineTo(rightDelayX, centerY);
+    ctx.stroke();
 
-      // Add saturation harmonics
-      if (saturation > 0) {
-        const harmonic = Math.sin(x * 0.1) * saturation * 0.1;
-        response += harmonic;
-      }
+    // Ping-pong arrows
+    if (pingPong > 0.1) {
+      const arrowY1 = centerY - 30;
+      const arrowY2 = centerY + 30;
 
-      const y = height - response * height * 0.8;
-      ctx.lineTo(x, y);
+      ctx.strokeStyle = `rgba(250, 204, 21, ${pingPong * 0.7})`; // yellow accent
+      ctx.lineWidth = 2;
+      ctx.setLineDash([5, 5]);
+
+      // Left to right
+      ctx.beginPath();
+      ctx.moveTo(leftDelayX, arrowY1);
+      ctx.lineTo(rightDelayX, arrowY1);
+      ctx.stroke();
+
+      // Right to left
+      ctx.beginPath();
+      ctx.moveTo(rightDelayX, arrowY2);
+      ctx.lineTo(leftDelayX, arrowY2);
+      ctx.stroke();
+
+      ctx.setLineDash([]);
     }
 
-    ctx.lineTo(width, height);
-    ctx.closePath();
-    ctx.fill();
+    // Feedback indicators (animated pulses)
+    const time = performance.now();
+    const pulsePhase = (time * 0.02) % 1;
 
-    // Cutoff marker
-    const cutoffX = width * Math.log(filterFreq / 20) / Math.log(20000 / 20);
-    ctx.strokeStyle = 'rgba(255, 200, 100, 0.8)';
-    ctx.lineWidth = 2;
-    ctx.setLineDash([4, 4]);
-    ctx.beginPath();
-    ctx.moveTo(cutoffX, 0);
-    ctx.lineTo(cutoffX, height);
-    ctx.stroke();
-    ctx.setLineDash([]);
+    // Left feedback
+    for (let i = 0; i < 3; i++) {
+      const phase = (pulsePhase + i * 0.33) % 1;
+      const radius = 5 + phase * 20;
+      const opacity = (1 - phase) * feedbackLeft * wet;
 
-    ctx.fillStyle = 'rgba(255, 200, 100, 0.9)';
+      ctx.strokeStyle = `rgba(34, 211, 238, ${opacity})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(leftDelayX, centerY, radius, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // Right feedback
+    for (let i = 0; i < 3; i++) {
+      const phase = (pulsePhase + i * 0.33) % 1;
+      const radius = 5 + phase * 20;
+      const opacity = (1 - phase) * feedbackRight * wet;
+
+      ctx.strokeStyle = `rgba(168, 85, 247, ${opacity})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(rightDelayX, centerY, radius, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // Delay time labels
+    ctx.fillStyle = 'rgba(34, 211, 238, 0.9)';
+    ctx.font = '11px monospace';
+    ctx.fillText(`L: ${(timeLeft * 1000).toFixed(0)}ms`, leftX, centerY - 40);
+
+    ctx.fillStyle = 'rgba(168, 85, 247, 0.9)';
+    ctx.fillText(`R: ${(timeRight * 1000).toFixed(0)}ms`, rightX - 60, centerY - 40);
+
+    // Feedback percentages
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
     ctx.font = '10px monospace';
-    ctx.fillText(`${filterFreq.toFixed(0)}Hz`, cutoffX + 3, 12);
+    ctx.fillText(`FB: ${(feedbackLeft * 100).toFixed(0)}%`, leftX, centerY + 50);
+    ctx.fillText(`FB: ${(feedbackRight * 100).toFixed(0)}%`, rightX - 50, centerY + 50);
+  };
 
-  }, [filterFreq, saturation]);
+  const { containerRef, canvasRef } = useCanvasVisualization(
+    drawPingPong,
+    [timeLeft, timeRight, feedbackLeft, feedbackRight, pingPong, wet],
+    { noLoop: false } // Animate for feedback pulses
+  );
 
-  return <canvas ref={canvasRef} className="w-full h-full" />;
+  return (
+    <div ref={containerRef} className="w-full h-full bg-black/50 rounded-xl border border-[#A855F7]/20">
+      <canvas ref={canvasRef} className="w-full h-full" />
+    </div>
+  );
 };
 
-// Compact Preset Button
-const PresetButton = ({ name, active, onClick }) => (
-  <button
-    onClick={onClick}
-    className={`px-3 py-1.5 rounded text-xs font-medium transition-all ${
-      active
-        ? 'bg-purple-500 text-white shadow-lg shadow-purple-500/50'
-        : 'bg-white/5 text-white/60 hover:bg-white/10 hover:text-white/90'
-    }`}
-  >
-    {name}
-  </button>
-);
+// ============================================================================
+// DELAY MODES
+// ============================================================================
+
+const DELAY_MODES = {
+  'slapback': {
+    id: 'slapback',
+    name: 'Slapback',
+    icon: '⚡',
+    description: 'Vintage rockabilly echo',
+    defaults: { timeLeft: 0.08, timeRight: 0.085, feedbackLeft: 0.15, feedbackRight: 0.15, pingPong: 0.0, wet: 0.25 }
+  },
+  'ping-pong': {
+    id: 'ping-pong',
+    name: 'Ping-Pong',
+    icon: '🏓',
+    description: 'Stereo bouncing delay',
+    defaults: { timeLeft: 0.375, timeRight: 0.5, feedbackLeft: 0.5, feedbackRight: 0.5, pingPong: 0.9, wet: 0.4 }
+  },
+  'dub': {
+    id: 'dub',
+    name: 'Dub',
+    icon: '🎛️',
+    description: 'Deep reggae echo',
+    defaults: { timeLeft: 0.5, timeRight: 0.75, feedbackLeft: 0.7, feedbackRight: 0.7, pingPong: 0.6, wet: 0.5, filterFreq: 2000 }
+  },
+  'ambient': {
+    id: 'ambient',
+    name: 'Ambient',
+    icon: '🌌',
+    description: 'Lush atmospheric delay',
+    defaults: { timeLeft: 1.2, timeRight: 1.5, feedbackLeft: 0.8, feedbackRight: 0.8, pingPong: 0.3, wet: 0.6, diffusion: 0.8 }
+  },
+  'tape': {
+    id: 'tape',
+    name: 'Tape',
+    icon: '📼',
+    description: 'Warm analog character',
+    defaults: { timeLeft: 0.425, timeRight: 0.425, feedbackLeft: 0.55, feedbackRight: 0.55, pingPong: 0.0, wet: 0.35, filterFreq: 4000, saturation: 0.5 }
+  }
+};
+
+// ============================================================================
+// MAIN COMPONENT
+// ============================================================================
 
 export const ModernDelayUI = ({ trackId, effect, onChange }) => {
   const {
-    timeLeft,
-    timeRight,
-    feedbackLeft,
-    feedbackRight,
-    pingPong,
-    wet,
-    filterFreq,
-    filterQ,
-    saturation,
-    modDepth,
-    modRate,
-    diffusion,
-    width
+    timeLeft = 0.375,
+    timeRight = 0.5,
+    feedbackLeft = 0.4,
+    feedbackRight = 0.4,
+    pingPong = 0.0,
+    wet = 0.35,
+    filterFreq = 8000,
+    saturation = 0.0,
+    diffusion = 0.0,
+    width = 1.0
   } = effect.settings;
 
-  const [activePreset, setActivePreset] = useState(null);
+  const [selectedMode, setSelectedMode] = useState('slapback');
 
-  const presets = [
-    { name: 'Slapback', settings: { timeLeft: 0.08, timeRight: 0.085, feedbackLeft: 0.15, feedbackRight: 0.15, pingPong: 0.0, wet: 0.25, saturation: 0.2 } },
-    { name: 'Ping-Pong', settings: { timeLeft: 0.375, timeRight: 0.5, feedbackLeft: 0.5, feedbackRight: 0.5, pingPong: 0.9, wet: 0.4, diffusion: 0.3 } },
-    { name: 'Dub', settings: { timeLeft: 0.5, timeRight: 0.75, feedbackLeft: 0.7, feedbackRight: 0.7, pingPong: 0.6, wet: 0.5, filterFreq: 2000, saturation: 0.4 } },
-    { name: 'Ambient', settings: { timeLeft: 1.2, timeRight: 1.5, feedbackLeft: 0.8, feedbackRight: 0.8, pingPong: 0.3, wet: 0.6, diffusion: 0.8, modDepth: 0.02 } },
-    { name: 'Tape', settings: { timeLeft: 0.425, timeRight: 0.425, feedbackLeft: 0.55, feedbackRight: 0.55, pingPong: 0.0, wet: 0.35, filterFreq: 4000, saturation: 0.5, modDepth: 0.01 } }
-  ];
+  // Ghost values (400ms lag for smooth visual feedback)
+  const ghostTimeLeft = useGhostValue(timeLeft * 1000, 400);
+  const ghostTimeRight = useGhostValue(timeRight * 1000, 400);
+  const ghostFeedbackLeft = useGhostValue(feedbackLeft * 100, 400);
+  const ghostWet = useGhostValue(wet * 100, 400);
 
-  const loadPreset = (preset) => {
-    setActivePreset(preset.name);
-    Object.entries(preset.settings).forEach(([key, value]) => {
+  // Prepare modes for ModeSelector component
+  const modes = Object.values(DELAY_MODES).map(mode => ({
+    id: mode.id,
+    label: mode.name,
+    icon: mode.icon,
+    description: mode.description
+  }));
+
+  const currentMode = DELAY_MODES[selectedMode];
+
+  // Handle mode change
+  const handleModeChange = (modeId) => {
+    setSelectedMode(modeId);
+    const mode = DELAY_MODES[modeId];
+    Object.entries(mode.defaults).forEach(([key, value]) => {
       onChange(key, value);
     });
   };
 
   return (
-    <div className="w-full h-full bg-gradient-to-br from-slate-950 via-purple-950/50 to-pink-950/50 p-4 overflow-auto">
-      {/* Compact Header */}
-      <div className="flex items-center justify-between mb-3">
-        <div>
-          <h2 className="text-lg font-bold text-white">Modern Delay</h2>
-          <p className="text-xs text-purple-300/70">Multi-Tap Stereo</p>
-        </div>
-        <div className="text-right text-xs text-white/50">
-          <div>L/R: {(timeLeft * 1000).toFixed(0)} / {(timeRight * 1000).toFixed(0)}ms</div>
-          <div>Mix: {(wet * 100).toFixed(0)}%</div>
-        </div>
-      </div>
+    <div className="w-full h-full bg-gradient-to-br from-black via-neutral-950 to-black p-4 flex gap-4 overflow-hidden">
 
-      {/* Compact Presets */}
-      <div className="flex gap-1.5 flex-wrap mb-3">
-        {presets.map(preset => (
-          <PresetButton
-            key={preset.name}
-            name={preset.name}
-            active={activePreset === preset.name}
-            onClick={() => loadPreset(preset)}
-          />
-        ))}
-      </div>
+      {/* ===== LEFT PANEL: Mode Selection ===== */}
+      <div className="w-[240px] flex-shrink-0 flex flex-col gap-4">
 
-      {/* Main Visualization - Compact */}
-      <div className="bg-black/30 rounded-lg overflow-hidden mb-3 h-32 border border-white/10">
-        <PingPongVisualizer
-          timeLeft={timeLeft}
-          timeRight={timeRight}
-          feedbackLeft={feedbackLeft}
-          feedbackRight={feedbackRight}
-          pingPong={pingPong}
-          wet={wet}
-        />
-      </div>
-
-      {/* Main Controls - Compact Grid */}
-      <div className="grid grid-cols-5 gap-3 mb-3">
-        <div className="flex flex-col items-center">
-          <ProfessionalKnob
-            label="Time L"
-            value={timeLeft * 1000}
-            onChange={(v) => onChange('timeLeft', v / 1000)}
-            min={1}
-            max={4000}
-            defaultValue={375}
-            unit="ms"
-            precision={0}
-            size={65}
-          />
-        </div>
-
-        <div className="flex flex-col items-center">
-          <ProfessionalKnob
-            label="Time R"
-            value={timeRight * 1000}
-            onChange={(v) => onChange('timeRight', v / 1000)}
-            min={1}
-            max={4000}
-            defaultValue={500}
-            unit="ms"
-            precision={0}
-            size={65}
-          />
-        </div>
-
-        <div className="flex flex-col items-center">
-          <ProfessionalKnob
-            label="Feedback"
-            value={feedbackLeft * 100}
-            onChange={(v) => {
-              onChange('feedbackLeft', v / 100);
-              onChange('feedbackRight', v / 100);
-            }}
-            min={0}
-            max={100}
-            defaultValue={40}
-            unit="%"
-            precision={0}
-            size={65}
-          />
-        </div>
-
-        <div className="flex flex-col items-center">
-          <ProfessionalKnob
-            label="PingPong"
-            value={pingPong * 100}
-            onChange={(v) => onChange('pingPong', v / 100)}
-            min={0}
-            max={100}
-            defaultValue={0}
-            unit="%"
-            precision={0}
-            size={65}
-          />
-        </div>
-
-        <div className="flex flex-col items-center">
-          <ProfessionalKnob
-            label="Mix"
-            value={wet * 100}
-            onChange={(v) => onChange('wet', v / 100)}
-            min={0}
-            max={100}
-            defaultValue={35}
-            unit="%"
-            precision={0}
-            size={65}
-          />
-        </div>
-      </div>
-
-      {/* Secondary Controls - Compact */}
-      <div className="grid grid-cols-2 gap-3 mb-3">
-        {/* Left: Filter */}
-        <div className="bg-black/20 rounded-lg p-3 border border-white/10">
-          <h3 className="text-xs font-semibold text-white/70 mb-2">Filter & Character</h3>
-          <div className="grid grid-cols-2 gap-2 mb-2">
-            <div className="flex flex-col items-center">
-              <ProfessionalKnob
-                label="Cutoff"
-                value={filterFreq}
-                onChange={(v) => onChange('filterFreq', v)}
-                min={100}
-                max={20000}
-                defaultValue={8000}
-                unit="Hz"
-                precision={0}
-                size={50}
-              />
+        {/* Plugin Header */}
+        <div className="bg-gradient-to-r from-[#2d1854] to-[#1a1a1a] rounded-xl px-4 py-3 border border-[#A855F7]/30">
+          <div className="flex items-center gap-3">
+            <div className="text-2xl">{currentMode?.icon || '⏱️'}</div>
+            <div className="flex-1">
+              <div className="text-sm font-black text-[#A855F7] tracking-wider uppercase">
+                Modern Delay
+              </div>
+              <div className="text-[9px] text-[#22D3EE]/70">The Spacetime Chamber</div>
             </div>
+          </div>
+        </div>
 
-            <div className="flex flex-col items-center">
-              <ProfessionalKnob
-                label="Saturate"
-                value={saturation * 100}
-                onChange={(v) => onChange('saturation', v / 100)}
+        {/* Mode Selector */}
+        <ModeSelector
+          modes={modes}
+          activeMode={selectedMode}
+          onChange={handleModeChange}
+          orientation="vertical"
+          category="spacetime-chamber"
+          className="flex-1"
+        />
+
+        {/* Quick Info */}
+        <div className="bg-gradient-to-br from-[#2d1854]/50 to-black/50 rounded-xl p-3 border border-[#A855F7]/10">
+          <div className="text-[9px] text-[#22D3EE]/70 font-bold uppercase tracking-wider mb-2">
+            Current Mode
+          </div>
+          <div className="text-[10px] text-white/60 leading-relaxed">
+            {currentMode?.description || 'Select a mode above'}
+          </div>
+        </div>
+      </div>
+
+      {/* ===== CENTER PANEL: Visualization + Controls ===== */}
+      <div className="flex-1 flex flex-col gap-4 min-w-0 overflow-y-auto pr-2">
+
+        {/* Ping-Pong Visualizer */}
+        <div className="h-[200px]">
+          <PingPongVisualizer
+            timeLeft={timeLeft}
+            timeRight={timeRight}
+            feedbackLeft={feedbackLeft}
+            feedbackRight={feedbackRight}
+            pingPong={pingPong}
+            wet={wet}
+          />
+        </div>
+
+        {/* Main Controls */}
+        <div className="bg-gradient-to-br from-black/50 to-[#2d1854]/30 rounded-xl p-6 border border-[#A855F7]/20">
+          <div className="grid grid-cols-4 gap-6">
+
+            {/* Time Left */}
+            <Knob
+              label="TIME L"
+              value={timeLeft * 1000}
+              ghostValue={ghostTimeLeft}
+              onChange={(val) => onChange('timeLeft', val / 1000)}
+              min={1}
+              max={4000}
+              defaultValue={375}
+              sizeVariant="medium"
+              category="spacetime-chamber"
+              valueFormatter={(v) => `${v.toFixed(0)} ms`}
+            />
+
+            {/* Time Right */}
+            <Knob
+              label="TIME R"
+              value={timeRight * 1000}
+              ghostValue={ghostTimeRight}
+              onChange={(val) => onChange('timeRight', val / 1000)}
+              min={1}
+              max={4000}
+              defaultValue={500}
+              sizeVariant="medium"
+              category="spacetime-chamber"
+              valueFormatter={(v) => `${v.toFixed(0)} ms`}
+            />
+
+            {/* Feedback */}
+            <Knob
+              label="FEEDBACK"
+              value={feedbackLeft * 100}
+              ghostValue={ghostFeedbackLeft}
+              onChange={(val) => {
+                onChange('feedbackLeft', val / 100);
+                onChange('feedbackRight', val / 100);
+              }}
+              min={0}
+              max={100}
+              defaultValue={40}
+              sizeVariant="medium"
+              category="spacetime-chamber"
+              valueFormatter={(v) => `${v.toFixed(0)}%`}
+            />
+
+            {/* Mix */}
+            <Knob
+              label="MIX"
+              value={wet * 100}
+              ghostValue={ghostWet}
+              onChange={(val) => onChange('wet', val / 100)}
+              min={0}
+              max={100}
+              defaultValue={35}
+              sizeVariant="medium"
+              category="spacetime-chamber"
+              valueFormatter={(v) => `${v.toFixed(0)}%`}
+            />
+          </div>
+        </div>
+
+        {/* Secondary Controls */}
+        <div className="grid grid-cols-2 gap-4">
+          {/* Stereo & Ping-Pong */}
+          <div className="bg-black/30 rounded-xl p-4 border border-[#A855F7]/10">
+            <div className="text-[10px] text-[#22D3EE]/70 font-bold uppercase tracking-wider mb-3">
+              Stereo
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <Knob
+                label="PING-PONG"
+                value={pingPong * 100}
+                onChange={(val) => onChange('pingPong', val / 100)}
                 min={0}
                 max={100}
                 defaultValue={0}
-                unit="%"
-                precision={0}
-                size={50}
+                sizeVariant="small"
+                category="spacetime-chamber"
+                valueFormatter={(v) => `${v.toFixed(0)}%`}
               />
-            </div>
-          </div>
-          <div className="h-16">
-            <FilterCurveVisualizer filterFreq={filterFreq} saturation={saturation} />
-          </div>
-        </div>
-
-        {/* Right: Advanced */}
-        <div className="bg-black/20 rounded-lg p-3 border border-white/10">
-          <h3 className="text-xs font-semibold text-white/70 mb-2">Advanced</h3>
-          <div className="grid grid-cols-3 gap-2">
-            <div className="flex flex-col items-center">
-              <ProfessionalKnob
-                label="Width"
+              <Knob
+                label="WIDTH"
                 value={width * 100}
-                onChange={(v) => onChange('width', v / 100)}
+                onChange={(val) => onChange('width', val / 100)}
                 min={0}
                 max={200}
                 defaultValue={100}
-                unit="%"
-                precision={0}
-                size={50}
+                sizeVariant="small"
+                category="spacetime-chamber"
+                valueFormatter={(v) => `${v.toFixed(0)}%`}
               />
             </div>
+          </div>
 
-            <div className="flex flex-col items-center">
-              <ProfessionalKnob
-                label="Diffuse"
-                value={diffusion * 100}
-                onChange={(v) => onChange('diffusion', v / 100)}
+          {/* Color */}
+          <div className="bg-black/30 rounded-xl p-4 border border-[#A855F7]/10">
+            <div className="text-[10px] text-[#22D3EE]/70 font-bold uppercase tracking-wider mb-3">
+              Color
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <Knob
+                label="FILTER"
+                value={filterFreq}
+                onChange={(val) => onChange('filterFreq', val)}
+                min={100}
+                max={20000}
+                defaultValue={8000}
+                logarithmic={true}
+                sizeVariant="small"
+                category="spacetime-chamber"
+                valueFormatter={(v) => {
+                  if (v >= 1000) return `${(v / 1000).toFixed(1)} kHz`;
+                  return `${v.toFixed(0)} Hz`;
+                }}
+              />
+              <Knob
+                label="SATURATE"
+                value={saturation * 100}
+                onChange={(val) => onChange('saturation', val / 100)}
                 min={0}
                 max={100}
                 defaultValue={0}
-                unit="%"
-                precision={0}
-                size={50}
-              />
-            </div>
-
-            <div className="flex flex-col items-center">
-              <ProfessionalKnob
-                label="Filter Q"
-                value={filterQ}
-                onChange={(v) => onChange('filterQ', v)}
-                min={0.1}
-                max={20}
-                defaultValue={1}
-                unit=""
-                precision={1}
-                size={50}
+                sizeVariant="small"
+                category="spacetime-chamber"
+                valueFormatter={(v) => `${v.toFixed(0)}%`}
               />
             </div>
           </div>
         </div>
-      </div>
 
-      {/* Modulation - Compact */}
-      <div className="bg-black/20 rounded-lg p-3 mb-3 border border-white/10">
-        <h3 className="text-xs font-semibold text-white/70 mb-2">Modulation</h3>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="flex flex-col items-center">
-            <ProfessionalKnob
-              label="Depth"
-              value={modDepth * 1000}
-              onChange={(v) => onChange('modDepth', v / 1000)}
-              min={0}
-              max={50}
-              defaultValue={0}
-              unit="ms"
-              precision={1}
-              size={50}
-            />
-          </div>
-
-          <div className="flex flex-col items-center">
-            <ProfessionalKnob
-              label="Rate"
-              value={modRate}
-              onChange={(v) => onChange('modRate', v)}
-              min={0.1}
-              max={5}
-              defaultValue={0.5}
-              unit="Hz"
-              precision={1}
-              size={50}
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Signal Analyzer - Compact */}
-      <div className="bg-black/20 rounded-lg p-3 border border-white/10">
-        <h3 className="text-xs font-semibold text-white/70 mb-2">Output</h3>
-        <div className="h-16">
-          <SignalVisualizer
-            meterId={`${trackId}-delay`}
-            type="spectrum"
-            color="#a855f7"
-            config={{ showGrid: false, smooth: true }}
+        {/* Diffusion */}
+        <div className="bg-black/30 rounded-xl p-4 border border-[#A855F7]/10">
+          <Knob
+            label="DIFFUSION"
+            value={diffusion * 100}
+            onChange={(val) => onChange('diffusion', val / 100)}
+            min={0}
+            max={100}
+            defaultValue={0}
+            sizeVariant="small"
+            category="spacetime-chamber"
+            valueFormatter={(v) => `${v.toFixed(0)}%`}
           />
         </div>
       </div>
+
+      {/* ===== RIGHT PANEL: Stats & Info ===== */}
+      <div className="w-[200px] flex-shrink-0 flex flex-col gap-4 overflow-y-auto pr-2">
+
+        {/* Processing Stats */}
+        <div className="bg-gradient-to-br from-black/50 to-[#2d1854]/30 rounded-xl p-4 border border-[#A855F7]/10">
+          <div className="text-[9px] text-[#22D3EE]/70 uppercase tracking-wider mb-3 font-bold">
+            Processing
+          </div>
+          <div className="space-y-2.5">
+            <div className="flex justify-between items-center text-[10px]">
+              <span className="text-white/50">Mode</span>
+              <span className="text-[#A855F7] text-[9px] font-medium">
+                {currentMode?.name}
+              </span>
+            </div>
+            <div className="pt-2 border-t border-[#A855F7]/10">
+              <div className="flex justify-between items-center text-[10px]">
+                <span className="text-white/50">Time L</span>
+                <span className="text-[#22D3EE] font-mono font-bold tabular-nums">
+                  {(timeLeft * 1000).toFixed(0)}ms
+                </span>
+              </div>
+            </div>
+            <div className="flex justify-between items-center text-[10px]">
+              <span className="text-white/50">Time R</span>
+              <span className="text-[#A855F7] font-mono font-bold tabular-nums">
+                {(timeRight * 1000).toFixed(0)}ms
+              </span>
+            </div>
+            <div className="flex justify-between items-center text-[10px]">
+              <span className="text-white/50">Feedback</span>
+              <span className="text-[#22D3EE] font-mono font-bold tabular-nums">
+                {(feedbackLeft * 100).toFixed(0)}%
+              </span>
+            </div>
+            <div className="flex justify-between items-center text-[10px]">
+              <span className="text-white/50">Mix</span>
+              <span className="text-[#A855F7] font-mono font-bold tabular-nums">
+                {(wet * 100).toFixed(0)}%
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* How It Works */}
+        <div className="flex-1 bg-gradient-to-br from-[#2d1854]/20 to-black/50 rounded-xl p-4 border border-[#A855F7]/10">
+          <div className="text-[9px] text-[#22D3EE]/70 font-bold uppercase tracking-wider mb-3">
+            How It Works
+          </div>
+          <div className="text-[9px] text-white/50 leading-relaxed space-y-2">
+            <p>
+              <span className="text-[#22D3EE] font-bold">Time:</span> Delay duration per channel
+            </p>
+            <p>
+              <span className="text-[#A855F7] font-bold">Feedback:</span> Number of repeats
+            </p>
+            <p>
+              <span className="text-[#FACC15] font-bold">Ping-Pong:</span> Stereo bounce amount
+            </p>
+            <p className="text-white/30 italic pt-2 text-[8px]">
+              💡 Watch the delay lines dance in real-time
+            </p>
+          </div>
+        </div>
+
+        {/* Category Badge */}
+        <div className="bg-gradient-to-r from-[#2d1854] to-[#1a1a1a] rounded-lg px-3 py-2 border border-[#A855F7]/20 text-center">
+          <div className="text-[8px] text-[#22D3EE]/50 uppercase tracking-wider">Category</div>
+          <div className="text-[10px] text-[#A855F7] font-bold">The Spacetime Chamber</div>
+        </div>
+      </div>
+
     </div>
   );
 };

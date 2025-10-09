@@ -20,6 +20,7 @@ import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { EQCalculations } from '@/lib/audio/EQCalculations';
 import { SignalVisualizer } from '../../common/SignalVisualizer';
 import { ProfessionalKnob } from '../container/PluginControls';
+import { useGhostValue } from '@/hooks/useAudioPlugin';
 import {
   Plus, Power, Grid, Copy, Save, Maximize2,
   Volume2, VolumeX, Headphones, BarChart3,
@@ -863,6 +864,10 @@ const ProfessionalBandControl = React.memo(({
 // 🎨 Main Professional EQ UI Component
 export const AdvancedEQUI = ({ trackId, effect, onChange }) => {
   const { bands } = effect.settings;
+
+  // Ghost values for visual feedback
+  const ghostBands = useGhostValue(bands, 400);
+
   const [activeBandIndex, setActiveBandIndex] = useState(-1);
   const [showSpectrum, setShowSpectrum] = useState(true);
   const [soloedBand, setSoloedBand] = useState(null);

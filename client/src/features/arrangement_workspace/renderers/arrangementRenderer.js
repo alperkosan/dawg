@@ -50,6 +50,7 @@ function drawGhostPreview(ctx, engine) {
 
   if (!patternInteraction || !patternInteraction.ghostPosition) return;
 
+  const styles = getComputedStyle(document.documentElement);
   const { ghostPosition, clip, mode, currentStartTime, currentDuration, targetTrackIndex } = patternInteraction;
 
   if (!clip) return;
@@ -69,6 +70,9 @@ function drawGhostPreview(ctx, engine) {
   ctx.clip();
   ctx.translate(-viewport.scrollX, -viewport.scrollY);
 
+  // ✅ Declare successRgb outside if blocks so it's available in all branches
+  const successRgb = styles.getPropertyValue('--zenith-success-rgb').trim();
+
   if (mode === 'move' || mode === 'resize-left') {
     // Ghost preview için yeni pozisyon (hem X hem Y)
     const ghostX = currentStartTime * PIXELS_PER_BEAT * viewport.zoomX;
@@ -77,14 +81,14 @@ function drawGhostPreview(ctx, engine) {
     const ghostHeight = dimensions.trackHeight - 8;
 
     // Ghost outline
-    ctx.strokeStyle = '#00ff88';
+    ctx.strokeStyle = styles.getPropertyValue('--zenith-success').trim();
     ctx.lineWidth = 2;
     ctx.setLineDash([5, 5]);
     ctx.strokeRect(ghostX, ghostY, ghostWidth, ghostHeight);
     ctx.setLineDash([]);
 
     // Snap grid line
-    ctx.strokeStyle = 'rgba(0, 255, 136, 0.5)';
+    ctx.strokeStyle = `rgba(${successRgb}, 0.5)`;
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(ghostX, 0);
@@ -103,10 +107,10 @@ function drawGhostPreview(ctx, engine) {
     const extensionWidth = ghostWidth - originalWidth;
 
     if (extensionWidth > 0) {
-      ctx.fillStyle = 'rgba(0, 255, 136, 0.2)';
+      ctx.fillStyle = `rgba(${successRgb}, 0.2)`;
       ctx.fillRect(extensionX, ghostY, extensionWidth, ghostHeight);
 
-      ctx.strokeStyle = '#00ff88';
+      ctx.strokeStyle = styles.getPropertyValue('--zenith-success').trim();
       ctx.lineWidth = 2;
       ctx.setLineDash([5, 5]);
       ctx.strokeRect(extensionX, ghostY, extensionWidth, ghostHeight);
@@ -114,7 +118,7 @@ function drawGhostPreview(ctx, engine) {
     }
 
     // Snap line at end
-    ctx.strokeStyle = 'rgba(0, 255, 136, 0.5)';
+    ctx.strokeStyle = `rgba(${successRgb}, 0.5)`;
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(ghostX + ghostWidth, 0);
@@ -124,7 +128,7 @@ function drawGhostPreview(ctx, engine) {
     // Split line preview
     const splitX = ghostPosition.beat * PIXELS_PER_BEAT * viewport.zoomX;
 
-    ctx.strokeStyle = '#ff6b6b';
+    ctx.strokeStyle = styles.getPropertyValue('--zenith-error').trim();
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(splitX, trackIndex * dimensions.trackHeight);
@@ -132,7 +136,7 @@ function drawGhostPreview(ctx, engine) {
     ctx.stroke();
 
     // Split indicator
-    ctx.fillStyle = '#ff6b6b';
+    ctx.fillStyle = styles.getPropertyValue('--zenith-error').trim();
     ctx.beginPath();
     ctx.arc(splitX, trackIndex * dimensions.trackHeight + dimensions.trackHeight / 2, 4, 0, Math.PI * 2);
     ctx.fill();
@@ -146,6 +150,7 @@ function drawDropPreview(ctx, engine) {
 
   if (!dropPreview) return;
 
+  const styles = getComputedStyle(document.documentElement);
   const { trackIndex, startBeat, duration, color } = dropPreview;
 
   ctx.save();
@@ -161,18 +166,19 @@ function drawDropPreview(ctx, engine) {
   const height = dimensions.trackHeight - 8;
 
   // Ghost outline with dashed border
-  ctx.strokeStyle = color || '#00ff88';
+  const defaultColor = styles.getPropertyValue('--zenith-success').trim();
+  ctx.strokeStyle = color || defaultColor;
   ctx.lineWidth = 2;
   ctx.setLineDash([8, 4]);
   ctx.strokeRect(x, y, width, height);
   ctx.setLineDash([]);
 
   // Semi-transparent fill
-  ctx.fillStyle = `${color || '#00ff88'}20`;
+  ctx.fillStyle = `${color || defaultColor}20`;
   ctx.fillRect(x, y, width, height);
 
   // Snap grid line
-  ctx.strokeStyle = `${color || '#00ff88'}60`;
+  ctx.strokeStyle = `${color || defaultColor}60`;
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(x, 0);
@@ -185,6 +191,9 @@ function drawDropPreview(ctx, engine) {
 function drawMarqueeSelection(ctx, engine) {
   const { viewport, marqueeSelection } = engine;
   if (!marqueeSelection) return;
+
+  const styles = getComputedStyle(document.documentElement);
+  const accentCoolRgb = styles.getPropertyValue('--zenith-accent-cool-rgb').trim();
 
   ctx.save();
   ctx.translate(TRACK_HEADER_WIDTH, TIMELINE_HEIGHT);
@@ -201,10 +210,10 @@ function drawMarqueeSelection(ctx, engine) {
   const height = Math.abs(currentY - startY);
 
   // Draw selection box
-  ctx.fillStyle = 'rgba(100, 200, 255, 0.15)';
+  ctx.fillStyle = `rgba(${accentCoolRgb}, 0.15)`;
   ctx.fillRect(x, y, width, height);
 
-  ctx.strokeStyle = 'rgba(100, 200, 255, 0.6)';
+  ctx.strokeStyle = `rgba(${accentCoolRgb}, 0.6)`;
   ctx.lineWidth = 1;
   ctx.strokeRect(x + 0.5, y + 0.5, width, height);
 
@@ -216,12 +225,15 @@ function drawRightClickDeleteMode(ctx, engine) {
   if (!isRightClickDelete) return;
 
   // Draw overlay indicator for delete mode
+  const styles = getComputedStyle(document.documentElement);
+  const errorRgb = styles.getPropertyValue('--zenith-error-rgb').trim();
+
   ctx.save();
-  ctx.fillStyle = 'rgba(255, 0, 0, 0.05)';
+  ctx.fillStyle = `rgba(${errorRgb}, 0.05)`;
   ctx.fillRect(0, 0, viewport.width, viewport.height);
 
   // Draw text indicator
-  ctx.fillStyle = 'rgba(255, 80, 80, 0.9)';
+  ctx.fillStyle = styles.getPropertyValue('--zenith-error').trim();
   ctx.font = 'bold 14px sans-serif';
   ctx.textAlign = 'center';
   ctx.fillText('DELETE MODE - Drag over clips to delete', viewport.width / 2, 20);
@@ -229,15 +241,18 @@ function drawRightClickDeleteMode(ctx, engine) {
   ctx.restore();
 }
 
+// ✅ OPTIMIZED: Static rendering (everything except playhead)
 export function drawArrangement(ctx, engine) {
   const { viewport, dimensions } = engine;
   if (!viewport || viewport.width === 0 || viewport.height === 0) return;
 
+  const styles = getComputedStyle(document.documentElement);
+
   // Clear canvas
-  ctx.fillStyle = '#0f0f0f';
+  ctx.fillStyle = styles.getPropertyValue('--zenith-bg-primary').trim();
   ctx.fillRect(0, 0, viewport.width, viewport.height);
 
-  // Draw layers in order
+  // Draw layers in order (EXCLUDING playhead for separate rendering)
   drawGrid(ctx, engine);
   drawClips(ctx, engine);
   drawGhostPreview(ctx, engine);
@@ -245,13 +260,18 @@ export function drawArrangement(ctx, engine) {
   drawMarqueeSelection(ctx, engine);
   drawRightClickDeleteMode(ctx, engine);
   drawGhostPlayhead(ctx, engine); // ✅ GHOST PLAYHEAD (hover preview)
-  drawPlayhead(ctx, engine);
+  // ❌ REMOVED: drawPlayhead(ctx, engine); - Now rendered separately for performance
   drawTimeline(ctx, engine);
   drawTrackHeaders(ctx, engine);
 }
 
+// ✅ EXPORT: Separate playhead rendering for optimization
+export { drawPlayhead };
+
 function drawGrid(ctx, engine) {
   const { viewport, dimensions, lod, gridSize, tracks } = engine;
+
+  const styles = getComputedStyle(document.documentElement);
 
   ctx.save();
   ctx.translate(TRACK_HEADER_WIDTH, TIMELINE_HEIGHT);
@@ -266,7 +286,7 @@ function drawGrid(ctx, engine) {
   // Draw track backgrounds (virtual tracks dahil)
   for (let i = startTrack; i < endTrack && i < dimensions.virtualTrackCount; i++) {
     const y = i * dimensions.trackHeight;
-    ctx.fillStyle = i % 2 === 0 ? '#0f0f0f' : '#121212';
+    ctx.fillStyle = i % 2 === 0 ? styles.getPropertyValue('--zenith-bg-primary').trim() : styles.getPropertyValue('--zenith-bg-secondary').trim();
     ctx.fillRect(0, y, dimensions.totalWidth, dimensions.trackHeight);
   }
 
@@ -342,7 +362,7 @@ function drawGrid(ctx, engine) {
   // Draw track dividers
   for (let i = startTrack; i <= endTrack && i < tracks.length; i++) {
     const y = i * dimensions.trackHeight;
-    ctx.strokeStyle = '#1a1a1a';
+    ctx.strokeStyle = styles.getPropertyValue('--zenith-bg-secondary').trim();
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(0, y);
@@ -355,6 +375,8 @@ function drawGrid(ctx, engine) {
 
 function drawClips(ctx, engine) {
   const { viewport, dimensions, clips, tracks, selectedClips, patterns, instruments, patternInteraction } = engine;
+
+  const styles = getComputedStyle(document.documentElement);
 
   ctx.save();
   ctx.translate(TRACK_HEADER_WIDTH, TIMELINE_HEIGHT);
@@ -414,7 +436,7 @@ function drawClips(ctx, engine) {
 
     // Clip background with rounded corners
     roundRect(ctx, x, y, clipWidth, clipHeight, borderRadius);
-    ctx.fillStyle = clip.color || track.color || '#00ff88';
+    ctx.fillStyle = clip.color || track.color || styles.getPropertyValue('--zenith-success').trim();
     ctx.globalAlpha = clip.type === 'pattern' ? 0.6 : 0.8;
     ctx.fill();
     ctx.globalAlpha = 1;
@@ -422,9 +444,9 @@ function drawClips(ctx, engine) {
     // Clip border with subtle shadow
     if (isSelected) {
       // Selection glow
-      ctx.shadowColor = '#00ff88';
+      ctx.shadowColor = styles.getPropertyValue('--zenith-success').trim();
       ctx.shadowBlur = 8;
-      ctx.strokeStyle = '#00ff88';
+      ctx.strokeStyle = styles.getPropertyValue('--zenith-success').trim();
       ctx.lineWidth = 2;
       roundRect(ctx, x, y, clipWidth, clipHeight, borderRadius);
       ctx.stroke();
@@ -439,7 +461,7 @@ function drawClips(ctx, engine) {
 
     // Clip name (only if wide enough)
     if (clipWidth > 40) {
-      ctx.fillStyle = '#fff';
+      ctx.fillStyle = styles.getPropertyValue('--zenith-text-primary').trim();
       ctx.font = '11px Inter, system-ui, sans-serif';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
@@ -757,7 +779,7 @@ function drawClips(ctx, engine) {
           // Always show value label when fade exists
           ctx.fillStyle = isDragging ? 'rgba(0, 0, 0, 0.9)' : 'rgba(0, 0, 0, 0.7)';
           ctx.fillRect(fadeInEndX - 30, y - 22, 60, 20);
-          ctx.fillStyle = '#fff';
+          ctx.fillStyle = styles.getPropertyValue('--zenith-text-primary').trim();
           ctx.font = isDragging ? 'bold 11px Inter, system-ui, sans-serif' : '10px Inter, system-ui, sans-serif';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
@@ -808,7 +830,7 @@ function drawClips(ctx, engine) {
           // Always show value label when fade exists
           ctx.fillStyle = isDragging ? 'rgba(0, 0, 0, 0.9)' : 'rgba(0, 0, 0, 0.7)';
           ctx.fillRect(fadeOutStartX - 30, y - 22, 60, 20);
-          ctx.fillStyle = '#fff';
+          ctx.fillStyle = styles.getPropertyValue('--zenith-text-primary').trim();
           ctx.font = isDragging ? 'bold 11px Inter, system-ui, sans-serif' : '10px Inter, system-ui, sans-serif';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
@@ -861,7 +883,7 @@ function drawClips(ctx, engine) {
           if (isDragging) {
             ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
             ctx.fillRect(x + clipWidth / 2 - 30, y + clipHeight + 2, 60, 18);
-            ctx.fillStyle = activeGain > 0 ? '#ffaa66' : (activeGain < 0 ? '#66aaff' : '#fff');
+            ctx.fillStyle = activeGain > 0 ? styles.getPropertyValue('--zenith-accent-warm').trim() : (activeGain < 0 ? styles.getPropertyValue('--zenith-accent-cool').trim() : styles.getPropertyValue('--zenith-text-primary').trim());
             ctx.font = 'bold 11px Inter, system-ui, sans-serif';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
@@ -964,6 +986,8 @@ function drawPlayhead(ctx, engine) {
     return;
   }
 
+  const styles = getComputedStyle(document.documentElement);
+
   ctx.save();
   ctx.translate(TRACK_HEADER_WIDTH, TIMELINE_HEIGHT);
   ctx.beginPath();
@@ -981,7 +1005,7 @@ function drawPlayhead(ctx, engine) {
   // }
 
   if (playheadX >= 0 && playheadX <= viewport.width - TRACK_HEADER_WIDTH) {
-    ctx.strokeStyle = '#00ff88';
+    ctx.strokeStyle = styles.getPropertyValue('--zenith-success').trim();
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(playheadX, 0);
@@ -989,7 +1013,7 @@ function drawPlayhead(ctx, engine) {
     ctx.stroke();
 
     // Playhead handle
-    ctx.fillStyle = '#00ff88';
+    ctx.fillStyle = styles.getPropertyValue('--zenith-success').trim();
     ctx.beginPath();
     ctx.moveTo(playheadX - 6, 0);
     ctx.lineTo(playheadX + 6, 0);
@@ -1009,6 +1033,9 @@ function drawGhostPlayhead(ctx, engine) {
     return;
   }
 
+  const styles = getComputedStyle(document.documentElement);
+  const successRgb = styles.getPropertyValue('--zenith-success-rgb').trim();
+
   ctx.save();
   ctx.translate(TRACK_HEADER_WIDTH, TIMELINE_HEIGHT);
   ctx.beginPath();
@@ -1022,12 +1049,12 @@ function drawGhostPlayhead(ctx, engine) {
 
   if (ghostX >= 0 && ghostX <= viewport.width - TRACK_HEADER_WIDTH) {
     // Semi-transparent green ghost playhead
-    ctx.strokeStyle = 'rgba(0, 255, 136, 0.5)';
+    ctx.strokeStyle = `rgba(${successRgb}, 0.5)`;
     ctx.lineWidth = 2;
     ctx.globalAlpha = 0.6;
 
     // Add subtle glow
-    ctx.shadowColor = 'rgba(0, 255, 136, 0.5)';
+    ctx.shadowColor = `rgba(${successRgb}, 0.5)`;
     ctx.shadowBlur = 6;
 
     ctx.beginPath();
@@ -1046,13 +1073,15 @@ function drawTimeline(ctx, engine) {
   const { viewport } = engine;
   const { start: startBeat, end: endBeat } = viewport.visibleBeats;
 
+  const styles = getComputedStyle(document.documentElement);
+
   ctx.save();
   ctx.translate(TRACK_HEADER_WIDTH, 0);
   ctx.beginPath();
   ctx.rect(0, 0, viewport.width - TRACK_HEADER_WIDTH, TIMELINE_HEIGHT);
   ctx.clip();
 
-  ctx.fillStyle = '#1a1a1a';
+  ctx.fillStyle = styles.getPropertyValue('--zenith-bg-secondary').trim();
   ctx.fillRect(0, 0, viewport.width - TRACK_HEADER_WIDTH, TIMELINE_HEIGHT);
 
   ctx.font = '10px Inter, system-ui, sans-serif';
@@ -1069,13 +1098,13 @@ function drawTimeline(ctx, engine) {
     ctx.beginPath();
     ctx.moveTo(x, isMajor ? 0 : TIMELINE_HEIGHT - 10);
     ctx.lineTo(x, TIMELINE_HEIGHT);
-    ctx.strokeStyle = isMajor ? '#555' : '#333';
+    ctx.strokeStyle = isMajor ? styles.getPropertyValue('--zenith-border-medium').trim() : styles.getPropertyValue('--zenith-border-subtle').trim();
     ctx.lineWidth = isMajor ? 2 : 1;
     ctx.stroke();
 
     if (isMajor) {
       const barNumber = Math.floor(beat / BEATS_PER_BAR) + 1;
-      ctx.fillStyle = '#999';
+      ctx.fillStyle = styles.getPropertyValue('--zenith-text-secondary').trim();
       ctx.fillText(barNumber.toString(), x + 4, 4);
     }
   }
@@ -1087,13 +1116,15 @@ function drawTrackHeaders(ctx, engine) {
   const { viewport, dimensions, tracks } = engine;
   const { start: startTrack, end: endTrack } = viewport.visibleTracks;
 
+  const styles = getComputedStyle(document.documentElement);
+
   ctx.save();
   ctx.translate(0, TIMELINE_HEIGHT);
   ctx.beginPath();
   ctx.rect(0, 0, TRACK_HEADER_WIDTH, viewport.height - TIMELINE_HEIGHT);
   ctx.clip();
 
-  ctx.fillStyle = '#1a1a1a';
+  ctx.fillStyle = styles.getPropertyValue('--zenith-bg-secondary').trim();
   ctx.fillRect(0, 0, TRACK_HEADER_WIDTH, viewport.height - TIMELINE_HEIGHT);
 
   // Virtual track rendering - görünen range'deki tüm track'ler (var olsun ya da olmasın)
@@ -1101,7 +1132,7 @@ function drawTrackHeaders(ctx, engine) {
     const y = i * dimensions.trackHeight - viewport.scrollY;
 
     // Track background
-    ctx.fillStyle = i % 2 === 0 ? '#1a1a1a' : '#151515';
+    ctx.fillStyle = i % 2 === 0 ? styles.getPropertyValue('--zenith-bg-secondary').trim() : styles.getPropertyValue('--zenith-bg-primary').trim();
     ctx.fillRect(0, y, TRACK_HEADER_WIDTH, dimensions.trackHeight);
 
     // Gerçek track var mı?
@@ -1109,11 +1140,11 @@ function drawTrackHeaders(ctx, engine) {
 
     if (track) {
       // Real track - color indicator
-      ctx.fillStyle = track.color || '#00ff88';
+      ctx.fillStyle = track.color || styles.getPropertyValue('--zenith-success').trim();
       ctx.fillRect(0, y, 3, dimensions.trackHeight);
 
       // Track name
-      ctx.fillStyle = track.muted ? '#555' : '#fff';
+      ctx.fillStyle = track.muted ? styles.getPropertyValue('--zenith-border-medium').trim() : styles.getPropertyValue('--zenith-text-primary').trim();
       ctx.font = '12px Inter, system-ui, sans-serif';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
@@ -1126,10 +1157,10 @@ function drawTrackHeaders(ctx, engine) {
       ctx.restore();
     } else {
       // Virtual empty track - placeholder
-      ctx.fillStyle = '#333';
+      ctx.fillStyle = styles.getPropertyValue('--zenith-border-medium').trim();
       ctx.fillRect(0, y, 2, dimensions.trackHeight);
 
-      ctx.fillStyle = '#444';
+      ctx.fillStyle = styles.getPropertyValue('--zenith-text-tertiary').trim();
       ctx.font = '11px Inter, system-ui, sans-serif';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
@@ -1137,7 +1168,7 @@ function drawTrackHeaders(ctx, engine) {
     }
 
     // Divider
-    ctx.strokeStyle = '#222';
+    ctx.strokeStyle = styles.getPropertyValue('--zenith-border-subtle').trim();
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(0, y + dimensions.trackHeight);

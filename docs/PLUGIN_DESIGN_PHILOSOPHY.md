@@ -8,6 +8,64 @@ Bu doküman, DAWG'da plugin geliştirme için mimari standartları, tasarım pre
 
 ---
 
+## 🎨 **CORE PRINCIPLE: Mode-Based Design Philosophy**
+
+### "One Knob, Infinite Possibilities"
+
+Modern plugin tasarımında en önemli prensiplerimizden biri: **Karmaşıklığı saklayın, gücü ortaya çıkarın.**
+
+#### Tasarım Yaklaşımı
+
+```
+┌─────────────────────────────────────────────┐
+│  TRADITIONAL APPROACH (BAD)                 │
+│  - 10+ parametreyle kullanıcıyı boğmak     │
+│  - Hangi parametrenin ne yaptığı belirsiz  │
+│  - Deneme yanılma gerektiren workflow      │
+└─────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────┐
+│  MODE-BASED APPROACH (GOOD) ✓               │
+│  1. Kullanım senaryolarını belirle         │
+│  2. Her senaryo için preset mode oluştur  │
+│  3. Tek bir "Amount" knob ile kontrol et   │
+│  4. Advanced kullanıcılar için detaylara  │
+│     erişim sun (expandable panel)          │
+└─────────────────────────────────────────────┘
+```
+
+#### Örnek: Saturator Mode Design
+
+**USE CASES → MODES → SINGLE CONTROL**
+
+```javascript
+// Kullanıcı düşünüyor: "Vokalimi daha sıcak yapmak istiyorum"
+Mode: "Vocal Warmth"
+├─ Character: Toasty (even harmonics)
+├─ Frequency: Wide (balanced)
+├─ Filtering: Low Cut 80Hz, High Cut OFF
+├─ Tone: +2dB (slight brighten)
+└─ Amount Knob: 0-100% → tüm parametreleri dengeli şekilde artır
+
+// Kullanıcı düşünüyor: "808'imi daha güçlü yapmak istiyorum"
+Mode: "Bass Power"
+├─ Character: Distress (compression + saturation)
+├─ Frequency: Transformer (bass focused)
+├─ Filtering: Low Cut OFF, High Cut 8kHz
+├─ Tone: -3dB (darken)
+└─ Amount Knob: 0-100% → bass'e özel saturasyon profili
+```
+
+#### Mode-Based Design Rules
+
+1. **Maximum 6-8 modes** - Kullanıcıyı boğma
+2. **Self-explanatory names** - "Warm Tape" ✓, "Mode 3" ✗
+3. **Visual feedback** - Her mode'un rengi/ikonu farklı
+4. **Single master control** - Amount/Intensity/Drive
+5. **Progressive disclosure** - Advanced settings gizli, istenirse açılır
+
+---
+
 ## 🏆 Benchmark: Softube Dr. Punch Knuckles Saturator
 
 ### Industry Standard Özellikler
