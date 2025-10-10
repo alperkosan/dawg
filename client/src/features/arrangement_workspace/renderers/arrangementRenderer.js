@@ -9,7 +9,7 @@
  */
 
 import { audioAssetManager } from '../../../lib/audio/AudioAssetManager';
-import { getWaveformCache } from './WaveformCache';
+import { getSmartWaveformCache } from '../../../lib/rendering';
 
 const TRACK_HEADER_WIDTH = 150;
 const TIMELINE_HEIGHT = 40;
@@ -498,34 +498,35 @@ function drawClips(ctx, engine) {
       }
 
       if (audioBuffer) {
-        // Get waveform cache
-        const waveformCache = getWaveformCache();
+        // Get smart waveform cache (v2.0 with width tolerance & debouncing)
+        const waveformCache = getSmartWaveformCache();
 
-        // Calculate LOD based on clip width
+        // Calculate dimensions
         const waveformWidth = Math.round(clipWidth - 4);
         const waveformHeight = Math.round(clipHeight - 24);
-        const lod = waveformCache.calculateLOD(waveformWidth);
         const currentBPM = engine.bpm || 140;
 
-        // Try to get cached waveform
-        let waveformCanvas = waveformCache.get(clip.id, clip, waveformWidth, waveformHeight, currentBPM, lod);
+        // Prepare viewport for renderer
+        const viewport = { bpm: currentBPM };
 
-        // If not cached, render and cache it
-        if (!waveformCanvas) {
-          waveformCanvas = waveformCache.renderWaveform(
-            audioBuffer,
-            clip,
-            waveformWidth,
-            waveformHeight,
-            currentBPM,
-            lod,
-            styles
-          );
-          waveformCache.set(clip.id, clip, waveformWidth, waveformHeight, currentBPM, lod, waveformCanvas);
-        }
+        // Prepare dimensions for renderer (waveform area within clip)
+        const waveformDimensions = {
+          x: x + 2,
+          y: y + 20,
+          width: waveformWidth,
+          height: waveformHeight
+        };
 
-        // Blit cached waveform to main canvas (FAST!)
-        ctx.drawImage(waveformCanvas, x + 2, y + 20);
+        // Render and cache waveform using SmartWaveformCache
+        // This handles: width tolerance, debouncing, nearby cache lookup
+        waveformCache.renderAndCache(
+          ctx,
+          audioBuffer,
+          clip,
+          waveformDimensions,
+          viewport,
+          false // not immediate - allow debouncing
+        );
 
         // Extract clip properties for overlay rendering
         const fadeInBeats = clip.fadeIn || 0;

@@ -422,7 +422,7 @@ export class WaveformRenderer {
     ctx.fill();
 
     // Stroke outline
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)');
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
     ctx.lineWidth = 1;
     ctx.stroke();
 
