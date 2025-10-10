@@ -128,14 +128,14 @@ const ArrangementCanvas = ({ arrangement }) => {
         const beatPosition = worldX / pixelsPerBeatZoomed;
         const step = Math.floor(beatPosition * 4); // 4 steps per beat
 
-        return Math.max(0, Math.min(511, step)); // Clamp to valid range
+        return Math.max(0, Math.min(15983, step)); // Clamp to valid range (999 bars)
       };
 
       // Register arrangement timeline for ghost playhead
       timelineController.registerTimeline('arrangement-timeline', {
         element: containerRef.current,
         stepWidth: PIXELS_PER_BEAT / 4, // Convert beats to steps (16th notes)
-        totalSteps: 512, // 128 bars * 4 beats * 4 steps
+        totalSteps: 15984, // 999 bars * 4 beats * 4 steps
         onPositionChange: null, // Position updates handled by playback store
         onGhostPositionChange: (pos) => {
           setGhostPosition(pos);

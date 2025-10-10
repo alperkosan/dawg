@@ -68,7 +68,7 @@ const ArrangementCanvasRenderer = ({ arrangement }) => {
   const [draggedClip, setDraggedClip] = useState(null);
 
   // Calculate dimensions
-  const totalBars = arrangement?.length || 128;
+  const totalBars = arrangement?.length || 999;
   const totalBeats = totalBars * BEATS_PER_BAR;
   const totalWidth = totalBeats * PIXELS_PER_BEAT * zoom.x;
   const tracks = arrangement?.tracks || [];

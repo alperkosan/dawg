@@ -104,7 +104,7 @@ export function useArrangementEngine(containerRef, arrangement) {
 
   // Calculate dimensions (infinite tracks)
   const dimensions = useMemo(() => {
-    const totalBars = arrangement?.length || 128;
+    const totalBars = arrangement?.length || 999;
     const totalBeats = totalBars * BEATS_PER_BAR;
     const trackHeight = 60;
     const tracks = arrangement?.tracks || [];
