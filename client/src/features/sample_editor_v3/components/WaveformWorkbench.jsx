@@ -15,12 +15,15 @@ const WorkbenchAction = ({ label, icon: Icon, isActive, onClick }) => (
 export const WaveformWorkbench = ({ instrument, buffer }) => {
   const [activeTool, setActiveTool] = useState('select');
   const [selection, setSelection] = useState(null); // { start, end } in seconds
-  const precomputed = instrument.precomputed || {};
-  
+
+  // Null check for instrument and precomputed
+  const precomputed = instrument?.precomputed || {};
+
   // onPrecomputedChange'i doğrudan store'dan alarak oluşturuyoruz
   const { updateInstrument } = useInstrumentsStore.getState();
   const onPrecomputedChange = (param, value) => {
-    const newPrecomputed = { ...instrument.precomputed, [param]: value };
+    if (!instrument?.id) return;
+    const newPrecomputed = { ...(instrument.precomputed || {}), [param]: value };
     updateInstrument(instrument.id, { precomputed: newPrecomputed }, true);
   };
 
