@@ -87,18 +87,21 @@ const BandControl = ({ label, color, range, upRatio, downRatio, gain, onUpRatioC
       </div>
 
       {/* Bottom Row: Gain Slider - Full Width */}
-      <div className="pl-[60px]">
-        <CompactSlider
-          label="GAIN"
-          value={gain}
-          onChange={onGainChange}
-          min={-12}
-          max={12}
-          defaultValue={0}
-          color={color}
-          unit="dB"
-          precision={1}
-        />
+      <div className="flex items-center gap-3">
+        <div className="w-12 flex-shrink-0" />
+        <div className="flex-1 min-w-0">
+          <CompactSlider
+            label="GAIN"
+            value={gain}
+            onChange={onGainChange}
+            min={-12}
+            max={12}
+            defaultValue={0}
+            color={color}
+            unit="dB"
+            precision={1}
+          />
+        </div>
       </div>
     </div>
   );
