@@ -69,6 +69,11 @@ const ArrangementCanvas = ({ arrangement }) => {
   const tracks = arrangement?.tracks || [];
   const clips = arrangement?.clips || [];
 
+  // Zoom state for CSS transform optimization
+  const [isZooming, setIsZooming] = useState(false);
+  const zoomSettleTimerRef = useRef(null);
+  const ZOOM_SETTLE_DELAY = 300; // ms
+
   const patternInteraction = usePatternInteraction(
     engine,
     clips,
@@ -853,6 +858,12 @@ const ArrangementCanvas = ({ arrangement }) => {
   const handleZoomIn = useCallback(() => {
     if (!engine.viewportRef?.current) return;
 
+    // Mark as zooming for blur effect
+    setIsZooming(true);
+    if (zoomSettleTimerRef.current) {
+      clearTimeout(zoomSettleTimerRef.current);
+    }
+
     const vp = engine.viewportRef.current;
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return;
@@ -879,10 +890,21 @@ const ArrangementCanvas = ({ arrangement }) => {
     }
 
     setZoom(newZoom, vp.zoomY);
-  }, [engine, setZoom, containerRef]);
+
+    // Schedule zoom settle for crisp re-render
+    zoomSettleTimerRef.current = setTimeout(() => {
+      setIsZooming(false);
+    }, ZOOM_SETTLE_DELAY);
+  }, [engine, setZoom, containerRef, ZOOM_SETTLE_DELAY]);
 
   const handleZoomOut = useCallback(() => {
     if (!engine.viewportRef?.current) return;
+
+    // Mark as zooming for blur effect
+    setIsZooming(true);
+    if (zoomSettleTimerRef.current) {
+      clearTimeout(zoomSettleTimerRef.current);
+    }
 
     const vp = engine.viewportRef.current;
     const rect = containerRef.current?.getBoundingClientRect();
@@ -912,7 +934,12 @@ const ArrangementCanvas = ({ arrangement }) => {
     }
 
     setZoom(newZoom, vp.zoomY);
-  }, [engine, setZoom, containerRef]);
+
+    // Schedule zoom settle for crisp re-render
+    zoomSettleTimerRef.current = setTimeout(() => {
+      setIsZooming(false);
+    }, ZOOM_SETTLE_DELAY);
+  }, [engine, setZoom, containerRef, ZOOM_SETTLE_DELAY]);
 
   return (
     <div className="arrangement-canvas-optimized">
@@ -954,7 +981,9 @@ const ArrangementCanvas = ({ arrangement }) => {
           style={{
             width: '100%',
             height: '100%',
-            display: 'block'
+            display: 'block',
+            filter: isZooming ? 'blur(1px)' : 'blur(0px)',
+            transition: 'filter 0.1s ease-out'
           }}
         />
 
