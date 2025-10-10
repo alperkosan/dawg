@@ -1003,11 +1003,8 @@ export const AdvancedEQUI = ({ trackId, effect, onChange }) => {
         {/* Header */}
         <div className="flex items-center justify-between mb-3">
           <div>
-            <h2 className="text-xl font-bold flex items-center gap-2" style={{ color: COLORS.text.accent }}>
+            <h2 className="text-xl font-bold" style={{ color: COLORS.text.accent }}>
               Zenith EQ Pro
-              <span className="text-[10px] px-2 py-0.5 rounded" style={{ background: COLORS.bg.surface, color: COLORS.text.muted }}>
-                PROFESSIONAL
-              </span>
             </h2>
             <p className="text-xs" style={{ color: COLORS.text.muted }}>
               Parametric Equalizer · {bands.length} Bands Active
