@@ -584,8 +584,8 @@ const ProfessionalEQCanvas = React.memo(({
       {/* Enhanced Tooltip */}
       {tooltip.visible && (
         <div
-          className="absolute pointer-events-none"
           style={{
+            position: 'absolute',
             left: tooltip.x,
             top: Math.max(10, tooltip.y - 70),
             transform: 'translateX(-50%)',
@@ -599,7 +599,8 @@ const ProfessionalEQCanvas = React.memo(({
             color: COLORS.text.primary,
             boxShadow: '0 4px 16px rgba(0, 0, 0, 0.5)',
             zIndex: 10,
-            minWidth: '120px'
+            minWidth: '120px',
+            pointerEvents: 'none'
           }}
         >
           {tooltip.bandInfo ? (
