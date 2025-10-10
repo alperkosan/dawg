@@ -84,8 +84,8 @@ export const pluginRegistry = {
     story: "Over the top - Xfer OTT'den ilham alan multiband compression gücü.",
     toneNode: 'OTT',
     uiComponent: OTTUI,
-    initialSize: { width: 1300, height: 780 },
-    minSize: { width: 1200, height: 780 },
+    initialSize: { width: 1300, height: 800 },
+    minSize: { width: 1200, height: 800 },
     defaultSettings: {
       depth: 0.5,
       time: 0.5,

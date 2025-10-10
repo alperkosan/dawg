@@ -921,6 +921,48 @@ const ghostDrive = useGhostValue(drive, 400); // 400ms lag
 
 ---
 
+#### Rule 7: No Hardcoded Configuration Values
+**Prensip:** Tüm konfigürasyon değerleri merkezi config dosyalarında tanımlanmalı
+
+> "Sistemin hiçbir yerinde statik ayarlar kullanmayacağız"
+
+**❌ YANLIŞ:**
+```javascript
+// Component içinde hardcoded değerler
+function OTTUI() {
+  return (
+    <div className="min-h-[800px]"> {/* ❌ Hardcoded */}
+      ...
+    </div>
+  );
+}
+```
+
+**✅ DOĞRU:**
+```javascript
+// pluginConfig.jsx içinde merkezi tanım
+export const pluginRegistry = {
+  'OTT': {
+    initialSize: { width: 1300, height: 800 },
+    minSize: { width: 1200, height: 800 }, // ✅ Centralized
+    ...
+  }
+}
+```
+
+**Neden:**
+- Single source of truth
+- Kolay bakım ve güncelleme
+- Tutarlılık garantisi
+- Test edilebilirlik
+
+**Merkezi Config Dosyaları:**
+- `/client/src/config/pluginConfig.jsx` - Plugin ayarları, boyutlar, varsayılan değerler
+- `/client/src/config/presets/` - Preset tanımları
+- `/client/src/styles/zenith.css` - CSS değişkenleri, renkler, spacing
+
+---
+
 ### Naming Conventions
 
 #### File Naming
