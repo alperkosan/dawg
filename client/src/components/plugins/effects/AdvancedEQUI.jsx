@@ -19,6 +19,7 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { EQCalculations } from '@/lib/audio/EQCalculations';
 import { Knob, Button, Toggle, ModeSelector } from '@/components/controls';
+import { SignalVisualizer } from '@/components/common/SignalVisualizer';
 import { useAudioPlugin, useGhostValue } from '@/hooks/useAudioPlugin';
 import {
   Plus, Power, Grid, Copy, Save, Maximize2,
