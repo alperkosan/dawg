@@ -48,43 +48,46 @@ const CompactSlider = ({ label, value, onChange, min, max, defaultValue, color, 
 // Band Control - Compact & Enhanced
 const BandControl = ({ label, color, range, upRatio, downRatio, gain, onUpRatioChange, onDownRatioChange, onGainChange }) => {
   return (
-    <div className="flex items-start gap-3 py-2">
-      {/* Label */}
-      <div className="w-12 flex-shrink-0 pt-1">
-        <div className="text-[9px] font-bold tracking-wider" style={{ color }}>
-          {label}
+    <div className="flex flex-col gap-2 py-2">
+      {/* Top Row: Label + UP/DN Ratios */}
+      <div className="flex items-start gap-3">
+        {/* Label */}
+        <div className="w-12 flex-shrink-0 pt-1">
+          <div className="text-[9px] font-bold tracking-wider" style={{ color }}>
+            {label}
+          </div>
+          <div className="text-[7px] text-white/30 mt-0.5">{range}</div>
         </div>
-        <div className="text-[7px] text-white/30 mt-0.5">{range}</div>
+
+        {/* Up/Down Ratio Sliders */}
+        <div className="flex-1 min-w-0 flex flex-col gap-2">
+          <CompactSlider
+            label="UP"
+            value={upRatio}
+            onChange={onUpRatioChange}
+            min={1}
+            max={20}
+            defaultValue={3}
+            color={color}
+            unit=":1"
+            precision={1}
+          />
+          <CompactSlider
+            label="DN"
+            value={downRatio}
+            onChange={onDownRatioChange}
+            min={1}
+            max={20}
+            defaultValue={3}
+            color={color}
+            unit=":1"
+            precision={1}
+          />
+        </div>
       </div>
 
-      {/* Up/Down Ratio Sliders - Aligned */}
-      <div className="flex-1 min-w-0 flex flex-col gap-2">
-        <CompactSlider
-          label="UP"
-          value={upRatio}
-          onChange={onUpRatioChange}
-          min={1}
-          max={20}
-          defaultValue={3}
-          color={color}
-          unit=":1"
-          precision={1}
-        />
-        <CompactSlider
-          label="DN"
-          value={downRatio}
-          onChange={onDownRatioChange}
-          min={1}
-          max={20}
-          defaultValue={3}
-          color={color}
-          unit=":1"
-          precision={1}
-        />
-      </div>
-
-      {/* Gain Control - Right Aligned */}
-      <div className="w-28 flex-shrink-0">
+      {/* Bottom Row: Gain Slider - Full Width */}
+      <div className="pl-[60px]">
         <CompactSlider
           label="GAIN"
           value={gain}
