@@ -506,8 +506,11 @@ function drawClips(ctx, engine) {
         const waveformHeight = Math.round(clipHeight - 24);
         const currentBPM = engine.bpm || 140;
 
-        // Prepare viewport for renderer
-        const viewport = { bpm: currentBPM };
+        // Prepare viewport for renderer (include zoomX for zoom detection)
+        const renderViewport = {
+          bpm: currentBPM,
+          zoomX: engine.viewport.zoomX  // Critical for zoom optimization
+        };
 
         // Prepare dimensions for renderer (waveform area within clip)
         const waveformDimensions = {
@@ -518,14 +521,14 @@ function drawClips(ctx, engine) {
         };
 
         // Render and cache waveform using SmartWaveformCache
-        // This handles: width tolerance, debouncing, nearby cache lookup
+        // This handles: width tolerance, debouncing, nearby cache lookup, zoom optimization
         waveformCache.renderAndCache(
           ctx,
           audioBuffer,
           clip,
           waveformDimensions,
-          viewport,
-          false // not immediate - allow debouncing
+          renderViewport,
+          false // not immediate - allow debouncing and zoom optimization
         );
 
         // Extract clip properties for overlay rendering
@@ -534,8 +537,8 @@ function drawClips(ctx, engine) {
         const gainDb = clip.gain || 0;
         const playbackRate = clip.playbackRate || 1.0;
 
-        const fadeInWidth = fadeInBeats * PIXELS_PER_BEAT * viewport.zoomX;
-        const fadeOutWidth = fadeOutBeats * PIXELS_PER_BEAT * viewport.zoomX;
+        const fadeInWidth = fadeInBeats * PIXELS_PER_BEAT * engine.viewport.zoomX;
+        const fadeOutWidth = fadeOutBeats * PIXELS_PER_BEAT * engine.viewport.zoomX;
         const _waveformHeight = clipHeight - 24;
 
         // Draw gain indicator overlay

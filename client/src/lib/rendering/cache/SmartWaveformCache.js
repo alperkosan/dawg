@@ -57,10 +57,17 @@ export class SmartWaveformCache {
     this.warmUpQueue = [];
     this.isWarmingUp = false;
 
+    // Zoom state tracking
+    this.isZooming = false;
+    this.zoomSettleTimer = null;
+    this.zoomSettleDelay = 300; // ms - wait for zoom to finish
+    this.lastZoomLevel = null;
+
     log.info('SmartWaveformCache initialized', {
       widthTolerance: WIDTH_TOLERANCE,
       debounceMs: CACHE_UPDATE_DEBOUNCE,
-      maxCacheSize: this.maxCacheSize
+      maxCacheSize: this.maxCacheSize,
+      zoomSettleDelay: this.zoomSettleDelay
     });
   }
 
@@ -180,14 +187,87 @@ export class SmartWaveformCache {
   }
 
   /**
-   * Render and cache waveform with debouncing
-   * Returns cached version immediately if available, schedules update if needed
+   * Notify cache about zoom level change
+   * Detects zoom and triggers settle timer
+   */
+  notifyZoomChange(zoomX) {
+    const zoomChanged = this.lastZoomLevel !== null && Math.abs(zoomX - this.lastZoomLevel) > 0.01;
+
+    if (zoomChanged) {
+      this.isZooming = true;
+
+      // Clear existing settle timer
+      if (this.zoomSettleTimer) {
+        clearTimeout(this.zoomSettleTimer);
+      }
+
+      // Set new settle timer
+      this.zoomSettleTimer = setTimeout(() => {
+        this.isZooming = false;
+        log.debug('Zoom settled, resuming full quality rendering');
+      }, this.zoomSettleDelay);
+    }
+
+    this.lastZoomLevel = zoomX;
+  }
+
+  /**
+   * Render placeholder (fast) during zoom
+   * Just draws a colored rectangle, no audio processing
+   */
+  renderPlaceholder(ctx, dimensions, clip) {
+    const { x, y, width, height } = dimensions;
+
+    // Simple gradient fill
+    const gradient = ctx.createLinearGradient(x, y, x, y + height);
+    gradient.addColorStop(0, 'rgba(150, 150, 150, 0.3)');
+    gradient.addColorStop(0.5, 'rgba(180, 180, 180, 0.5)');
+    gradient.addColorStop(1, 'rgba(150, 150, 150, 0.3)');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(x, y, width, height);
+
+    // Center line
+    ctx.strokeStyle = 'rgba(200, 200, 200, 0.3)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x, y + height / 2);
+    ctx.lineTo(x + width, y + height / 2);
+    ctx.stroke();
+
+    return true;
+  }
+
+  /**
+   * Render and cache waveform with debouncing and zoom awareness
+   * During zoom: renders fast placeholder
+   * After zoom: renders full quality
    */
   async renderAndCache(ctx, audioBuffer, clip, dimensions, viewport, immediate = false) {
     const clipId = clip.id;
     const { width, height } = dimensions;
     const bpm = viewport?.bpm || 140;
+    const zoomX = viewport?.zoomX || 1.0;
 
+    // Update zoom state
+    this.notifyZoomChange(zoomX);
+
+    // If zooming, render placeholder only (ultra-fast)
+    if (this.isZooming && !immediate) {
+      // Try to use cached version if available
+      const cached = this.get(clipId, clip, width, height, bpm, viewport);
+      if (cached) {
+        const blitStart = performance.now();
+        ctx.drawImage(cached.canvas, dimensions.x, dimensions.y);
+        const blitTime = performance.now() - blitStart;
+        this.totalBlitTime += blitTime;
+        return true;
+      }
+
+      // No cache, render placeholder
+      return this.renderPlaceholder(ctx, dimensions, clip);
+    }
+
+    // Not zooming - normal rendering
     // Try to get cached version first
     const cached = this.get(clipId, clip, width, height, bpm, viewport);
 
