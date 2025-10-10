@@ -20,6 +20,7 @@
 export { WaveformRenderer } from './core/WaveformRenderer.js';
 export { PerformanceMonitor } from './core/PerformanceMonitor.js';
 export { RenderQueue } from './core/RenderQueue.js';
+export { ProgressiveAudioLoader, getProgressiveAudioLoader } from './core/ProgressiveAudioLoader.js';
 
 // Smart Caching
 export { SmartWaveformCache, getSmartWaveformCache } from './cache/SmartWaveformCache.js';

@@ -40,7 +40,14 @@ export class WaveformRenderer {
     // Render queue (injected)
     this.renderQueue = options.renderQueue || null;
 
-    log.info('WaveformRenderer initialized', { lodThresholds: this.lodThresholds });
+    // Stereo/multi-channel options
+    this.stereoMode = options.stereoMode || 'merged'; // 'merged' | 'split' | 'left' | 'right'
+    this.stereoChannelHeight = options.stereoChannelHeight || 0.45; // % of total height per channel
+
+    log.info('WaveformRenderer initialized', {
+      lodThresholds: this.lodThresholds,
+      stereoMode: this.stereoMode
+    });
   }
 
   /**
@@ -137,6 +144,56 @@ export class WaveformRenderer {
   }
 
   /**
+   * Determine channel configuration for rendering
+   * @param {AudioBuffer} audioBuffer
+   * @returns {Array<number>} - Channel indices to render
+   */
+  getChannelsToRender(audioBuffer) {
+    if (!audioBuffer) return [0];
+
+    const numChannels = audioBuffer.numberOfChannels;
+
+    switch (this.stereoMode) {
+      case 'left':
+        return [0];
+      case 'right':
+        return numChannels > 1 ? [1] : [0];
+      case 'split':
+        return numChannels > 1 ? [0, 1] : [0];
+      case 'merged':
+      default:
+        // Render all channels merged
+        return Array.from({ length: numChannels }, (_, i) => i);
+    }
+  }
+
+  /**
+   * Get merged channel data (average of all channels)
+   * @param {AudioBuffer} audioBuffer
+   * @returns {Float32Array} - Merged channel data
+   */
+  getMergedChannelData(audioBuffer) {
+    const numChannels = audioBuffer.numberOfChannels;
+    if (numChannels === 1) {
+      return audioBuffer.getChannelData(0);
+    }
+
+    // Average all channels
+    const length = audioBuffer.length;
+    const merged = new Float32Array(length);
+
+    for (let i = 0; i < length; i++) {
+      let sum = 0;
+      for (let ch = 0; ch < numChannels; ch++) {
+        sum += audioBuffer.getChannelData(ch)[i];
+      }
+      merged[i] = sum / numChannels;
+    }
+
+    return merged;
+  }
+
+  /**
    * Render minimal LOD (solid gradient bar, no waveform calculation)
    * Used for extreme zoom out (<50px width)
    */
@@ -178,8 +235,10 @@ export class WaveformRenderer {
     const { x, y, width, height } = dimensions;
     const bpm = viewport?.bpm || 140;
 
-    // Get audio data (first channel for simplicity)
-    const channelData = audioBuffer.getChannelData(0);
+    // Get audio data (merged if stereo/multi-channel)
+    const channelData = this.stereoMode === 'merged' || audioBuffer.numberOfChannels === 1
+      ? this.getMergedChannelData(audioBuffer)
+      : audioBuffer.getChannelData(0);
     const sampleRate = audioBuffer.sampleRate;
 
     // Clip properties
@@ -287,8 +346,10 @@ export class WaveformRenderer {
     const { x, y, width, height } = dimensions;
     const bpm = viewport?.bpm || 140;
 
-    // Get audio data (first channel)
-    const channelData = audioBuffer.getChannelData(0);
+    // Get audio data (merged if stereo/multi-channel)
+    const channelData = this.stereoMode === 'merged' || audioBuffer.numberOfChannels === 1
+      ? this.getMergedChannelData(audioBuffer)
+      : audioBuffer.getChannelData(0);
     const sampleRate = audioBuffer.sampleRate;
 
     // Clip properties
