@@ -9,8 +9,21 @@
  */
 
 import { createLogger, NAMESPACES } from '@/lib/utils/DebugLogger';
+import {
+  calculateRMS,
+  findMinMaxPeak,
+  applyGain,
+  applyFade,
+  beatsToSeconds,
+  calculateSamplesPerPixel,
+  getBufferSlice,
+  getDownsampleFactor,
+  validateAudioBuffer
+} from '../utils/AudioUtils';
 
 const log = createLogger(NAMESPACES.RENDER);
+
+const PIXELS_PER_BEAT = 32; // Match arrangement renderer constant
 
 export class WaveformRenderer {
   constructor(options = {}) {
@@ -153,23 +166,215 @@ export class WaveformRenderer {
   /**
    * Render simple LOD (RMS downsampled)
    * Used for medium zoom (50-300px width)
-   * Implementation in Phase 1
    */
   renderSimple(ctx, audioBuffer, clip, dimensions, viewport) {
-    // TODO: Phase 1 - Implement RMS-based rendering
-    log.warn('Simple LOD not yet implemented, falling back to minimal');
-    return this.renderMinimal(ctx, clip, dimensions);
+    // Validate audio buffer
+    const validation = validateAudioBuffer(audioBuffer);
+    if (!validation.valid) {
+      log.warn('Invalid audio buffer for simple render:', validation.error);
+      return this.renderPlaceholder(ctx, clip, dimensions, { error: true, message: validation.error });
+    }
+
+    const { x, y, width, height } = dimensions;
+    const bpm = viewport?.bpm || 140;
+
+    // Get audio data (first channel for simplicity)
+    const channelData = audioBuffer.getChannelData(0);
+    const sampleRate = audioBuffer.sampleRate;
+
+    // Clip properties
+    const gainDb = clip.gain || 0;
+    const fadeIn = clip.fadeIn || 0;
+    const fadeOut = clip.fadeOut || 0;
+    const clipDuration = clip.duration;
+    const sampleOffset = clip.sampleOffset || 0;
+    const playbackRate = clip.playbackRate || 1.0;
+
+    // Calculate rendering parameters
+    const clipDurationSeconds = beatsToSeconds(clipDuration, bpm);
+    const offsetSeconds = beatsToSeconds(sampleOffset, bpm);
+    const { startSample } = getBufferSlice(audioBuffer, offsetSeconds, clipDurationSeconds);
+
+    const downsampleFactor = getDownsampleFactor('simple'); // 4
+    const samplesPerPixel = calculateSamplesPerPixel(audioBuffer, clipDurationSeconds, width, playbackRate);
+    const rmsWindowSize = Math.max(512, Math.floor(samplesPerPixel));
+
+    // Draw RMS-based waveform
+    ctx.save();
+    ctx.beginPath();
+
+    const waveformY = y + height / 2;
+
+    // Top half (positive RMS)
+    let firstPoint = true;
+    for (let i = 0; i < width; i += downsampleFactor) {
+      const sampleIndex = startSample + Math.floor(i * samplesPerPixel);
+      const rms = calculateRMS(channelData, sampleIndex, rmsWindowSize);
+
+      // Apply gain
+      let amplitude = applyGain(rms, gainDb);
+
+      // Apply fade envelope
+      const position = i / width;
+      const fadeInNorm = fadeIn / clipDuration;
+      const fadeOutNorm = fadeOut / clipDuration;
+      amplitude = applyFade(amplitude, position, fadeInNorm, fadeOutNorm);
+
+      const amplitudeY = waveformY - (amplitude * height / 2);
+
+      if (firstPoint) {
+        ctx.moveTo(x + i, amplitudeY);
+        firstPoint = false;
+      } else {
+        ctx.lineTo(x + i, amplitudeY);
+      }
+    }
+
+    // Bottom half (mirror)
+    for (let i = Math.floor((width - 1) / downsampleFactor) * downsampleFactor; i >= 0; i -= downsampleFactor) {
+      const sampleIndex = startSample + Math.floor(i * samplesPerPixel);
+      const rms = calculateRMS(channelData, sampleIndex, rmsWindowSize);
+
+      let amplitude = applyGain(rms, gainDb);
+      const position = i / width;
+      const fadeInNorm = fadeIn / clipDuration;
+      const fadeOutNorm = fadeOut / clipDuration;
+      amplitude = applyFade(amplitude, position, fadeInNorm, fadeOutNorm);
+
+      const amplitudeY = waveformY + (amplitude * height / 2);
+      ctx.lineTo(x + i, amplitudeY);
+    }
+
+    ctx.closePath();
+
+    // Fill with gradient
+    const gradient = ctx.createLinearGradient(x, y, x, y + height);
+    gradient.addColorStop(0, 'rgba(255, 255, 255, 0.4)');
+    gradient.addColorStop(0.5, 'rgba(255, 255, 255, 0.6)');
+    gradient.addColorStop(1, 'rgba(255, 255, 255, 0.4)');
+    ctx.fillStyle = gradient;
+    ctx.fill();
+
+    // Stroke outline
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // Center line
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x, waveformY);
+    ctx.lineTo(x + width, waveformY);
+    ctx.stroke();
+
+    ctx.restore();
+    return true;
   }
 
   /**
    * Render full LOD (min/max peaks)
    * Used for close zoom (>300px width)
-   * Implementation in Phase 1
    */
   renderFull(ctx, audioBuffer, clip, dimensions, viewport) {
-    // TODO: Phase 1 - Implement full peak rendering
-    log.warn('Full LOD not yet implemented, falling back to minimal');
-    return this.renderMinimal(ctx, clip, dimensions);
+    // Validate audio buffer
+    const validation = validateAudioBuffer(audioBuffer);
+    if (!validation.valid) {
+      log.warn('Invalid audio buffer for full render:', validation.error);
+      return this.renderPlaceholder(ctx, clip, dimensions, { error: true, message: validation.error });
+    }
+
+    const { x, y, width, height } = dimensions;
+    const bpm = viewport?.bpm || 140;
+
+    // Get audio data (first channel)
+    const channelData = audioBuffer.getChannelData(0);
+    const sampleRate = audioBuffer.sampleRate;
+
+    // Clip properties
+    const gainDb = clip.gain || 0;
+    const fadeIn = clip.fadeIn || 0;
+    const fadeOut = clip.fadeOut || 0;
+    const clipDuration = clip.duration;
+    const sampleOffset = clip.sampleOffset || 0;
+    const playbackRate = clip.playbackRate || 1.0;
+
+    // Calculate rendering parameters
+    const clipDurationSeconds = beatsToSeconds(clipDuration, bpm);
+    const offsetSeconds = beatsToSeconds(sampleOffset, bpm);
+    const { startSample } = getBufferSlice(audioBuffer, offsetSeconds, clipDurationSeconds);
+
+    const samplesPerPixel = calculateSamplesPerPixel(audioBuffer, clipDurationSeconds, width, playbackRate);
+
+    // Draw min/max peak waveform
+    ctx.save();
+    ctx.beginPath();
+
+    const waveformY = y + height / 2;
+
+    // Top half (max peaks)
+    for (let i = 0; i < width; i++) {
+      const sampleIndex = startSample + Math.floor(i * samplesPerPixel);
+      const { min, max } = findMinMaxPeak(channelData, sampleIndex, samplesPerPixel);
+
+      // Apply gain
+      let maxVal = applyGain(max, gainDb);
+
+      // Apply fade envelope
+      const position = i / width;
+      const fadeInNorm = fadeIn / clipDuration;
+      const fadeOutNorm = fadeOut / clipDuration;
+      maxVal = applyFade(maxVal, position, fadeInNorm, fadeOutNorm);
+
+      const maxY = waveformY - (maxVal * height / 2);
+
+      if (i === 0) {
+        ctx.moveTo(x + i, maxY);
+      } else {
+        ctx.lineTo(x + i, maxY);
+      }
+    }
+
+    // Bottom half (min peaks, reverse)
+    for (let i = width - 1; i >= 0; i--) {
+      const sampleIndex = startSample + Math.floor(i * samplesPerPixel);
+      const { min, max } = findMinMaxPeak(channelData, sampleIndex, samplesPerPixel);
+
+      let minVal = applyGain(min, gainDb);
+      const position = i / width;
+      const fadeInNorm = fadeIn / clipDuration;
+      const fadeOutNorm = fadeOut / clipDuration;
+      minVal = applyFade(minVal, position, fadeInNorm, fadeOutNorm);
+
+      const minY = waveformY - (minVal * height / 2);
+      ctx.lineTo(x + i, minY);
+    }
+
+    ctx.closePath();
+
+    // Fill with gradient
+    const gradient = ctx.createLinearGradient(x, y, x, y + height);
+    gradient.addColorStop(0, 'rgba(255, 255, 255, 0.4)');
+    gradient.addColorStop(0.5, 'rgba(255, 255, 255, 0.6)');
+    gradient.addColorStop(1, 'rgba(255, 255, 255, 0.4)');
+    ctx.fillStyle = gradient;
+    ctx.fill();
+
+    // Stroke outline
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)');
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // Center line
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x, waveformY);
+    ctx.lineTo(x + width, waveformY);
+    ctx.stroke();
+
+    ctx.restore();
+    return true;
   }
 
   /**
