@@ -23,7 +23,7 @@ import { useAudioPlugin, useGhostValue } from '@/hooks/useAudioPlugin';
  */
 
 // Compact slider wrapper using standard Slider component
-const CompactSlider = ({ label, value, onChange, min, max, defaultValue, color, unit = '', precision = 1 }) => {
+const CompactSlider = ({ label, value, onChange, min, max, defaultValue, color, unit = '', precision = 1, className = '' }) => {
   const ghostValue = useGhostValue(value, 400);
 
   return (
@@ -41,6 +41,7 @@ const CompactSlider = ({ label, value, onChange, min, max, defaultValue, color, 
       precision={precision}
       width="100%"
       showValue={true}
+      className={className}
     />
   );
 };
@@ -100,6 +101,7 @@ const BandControl = ({ label, color, range, upRatio, downRatio, gain, onUpRatioC
             color={color}
             unit="dB"
             precision={1}
+            className="flex w-full"
           />
         </div>
       </div>
