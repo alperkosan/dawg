@@ -1,5 +1,8 @@
 // lib/core/PlayheadRenderer.js
 import { uiUpdateManager, UPDATE_PRIORITIES, UPDATE_FREQUENCIES } from './UIUpdateManager.js';
+import { createLogger, NAMESPACES } from '../utils/DebugLogger.js';
+
+const log = createLogger(NAMESPACES.RENDER);
 
 export class PlayheadRenderer {
     constructor(playheadElement, stepWidth) {
@@ -14,15 +17,15 @@ export class PlayheadRenderer {
 
     updatePosition(stepPosition) {
         if (!this.element) {
-            console.log('🎯 PlayheadRenderer.updatePosition: element not found!');
+            log.warn('updatePosition: element not found!');
             return;
         }
         const pixelPosition = stepPosition * this.stepWidth;
         if (Math.abs(pixelPosition - this.lastPosition) < 0.1) {
-            console.log(`🎯 PlayheadRenderer.updatePosition: skipping sub-pixel update (${pixelPosition} vs ${this.lastPosition})`);
+            log.trace(`updatePosition: skipping sub-pixel update (${pixelPosition} vs ${this.lastPosition})`);
             return; // Sub-pixel güncellemelerini atla
         }
-        console.log(`🎯 PlayheadRenderer.updatePosition: moving from ${this.lastPosition}px to ${pixelPosition}px (step: ${stepPosition})`);
+        log.debug(`updatePosition: moving from ${this.lastPosition}px to ${pixelPosition}px (step: ${stepPosition})`);
         this.element.style.transform = `translate3d(${pixelPosition}px, 0, 0)`;
         this.lastPosition = pixelPosition;
     }
@@ -33,7 +36,7 @@ export class PlayheadRenderer {
         this.isAnimating = true;
         this.getPositionCallback = getPositionCallback;
 
-        console.log('🎨 PlayheadRenderer: Starting UIUpdateManager-based animation');
+        log.info('Starting UIUpdateManager-based animation');
 
         // Subscribe to UIUpdateManager with HIGH priority for smooth playhead
         this.subscriptionId = uiUpdateManager.subscribe(
@@ -54,7 +57,7 @@ export class PlayheadRenderer {
         if (this.subscriptionId) {
             this.subscriptionId(); // Call unsubscribe function
             this.subscriptionId = null;
-            console.log('🎨 PlayheadRenderer: Stopped UIUpdateManager-based animation');
+            log.info('Stopped UIUpdateManager-based animation');
         }
 
         this.getPositionCallback = null;

@@ -13,17 +13,13 @@ import { useArrangementWorkspaceStore } from '@/store/useArrangementWorkspaceSto
 import { useArrangementStore } from '@/store/useArrangementStore';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
 import { Plus, Play, Pause, Square, ZoomIn, ZoomOut } from 'lucide-react';
-import { uiUpdateManager, UPDATE_PRIORITIES, UPDATE_FREQUENCIES } from '@/lib/core/UIUpdateManager';
-import { createLogger, NAMESPACES } from '@/lib/utils/DebugLogger';
-
-const log = createLogger(NAMESPACES.RENDER);
 
 const ArrangementCanvasRenderer = ({ arrangement }) => {
   const canvasRef = useRef(null);
   const timelineCanvasRef = useRef(null);
   const trackHeaderCanvasRef = useRef(null);
   const scrollContainerRef = useRef(null);
-  const subscriptionIdRef = useRef(null);
+  const animationFrameRef = useRef(null);
 
   // Performance tracking
   const lastRenderTime = useRef(0);
@@ -359,64 +355,58 @@ const ArrangementCanvasRenderer = ({ arrangement }) => {
     let frameCount = 0;
     let fpsTime = performance.now();
 
-    // Subscribe to UIUpdateManager
-    const unsubscribe = uiUpdateManager.subscribe(
-      `arrangement-canvas-${Date.now()}`, // Unique ID
-      (currentTime, frameTime) => {
-        // FPS calculation
-        frameCount++;
-        if (currentTime - fpsTime >= 1000) {
-          setFps(frameCount);
-          frameCount = 0;
-          fpsTime = currentTime;
-        }
+    const render = () => {
+      const now = performance.now();
 
-        // Check if we need to render
-        const scrollChanged = scrollPosition.x !== lastScrollPos.current.x ||
-                             scrollPosition.y !== lastScrollPos.current.y;
-        const playheadChanged = Math.abs(transportPosition - lastPlayheadPos.current) > 10;
+      // FPS calculation
+      frameCount++;
+      if (now - fpsTime >= 1000) {
+        setFps(frameCount);
+        frameCount = 0;
+        fpsTime = now;
+      }
 
-        if (isDirtyRef.current || scrollChanged || (isPlaying && playheadChanged)) {
-          const mainCanvas = canvasRef.current;
-          const timelineCanvas = timelineCanvasRef.current;
-          const headerCanvas = trackHeaderCanvasRef.current;
+      // Check if we need to render
+      const scrollChanged = scrollPosition.x !== lastScrollPos.current.x ||
+                           scrollPosition.y !== lastScrollPos.current.y;
+      const playheadChanged = Math.abs(transportPosition - lastPlayheadPos.current) > 10;
 
-          if (mainCanvas && timelineCanvas && headerCanvas) {
-            const mainCtx = mainCanvas.getContext('2d');
-            const timelineCtx = timelineCanvas.getContext('2d');
-            const headerCtx = headerCanvas.getContext('2d');
+      if (isDirtyRef.current || scrollChanged || (isPlaying && playheadChanged)) {
+        const mainCanvas = canvasRef.current;
+        const timelineCanvas = timelineCanvasRef.current;
+        const headerCanvas = trackHeaderCanvasRef.current;
 
-            // Only redraw changed canvases
-            if (scrollChanged || isDirtyRef.current) {
-              drawMainCanvas(mainCtx, mainCanvas.width / (window.devicePixelRatio || 1),
-                            mainCanvas.height / (window.devicePixelRatio || 1));
-              drawTimeline(timelineCtx, timelineCanvas.width / (window.devicePixelRatio || 1));
-              drawTrackHeaders(headerCtx, headerCanvas.height / (window.devicePixelRatio || 1));
-            } else if (isPlaying && playheadChanged) {
-              // Only redraw main canvas for playhead
-              drawMainCanvas(mainCtx, mainCanvas.width / (window.devicePixelRatio || 1),
-                            mainCanvas.height / (window.devicePixelRatio || 1));
-            }
+        if (mainCanvas && timelineCanvas && headerCanvas) {
+          const mainCtx = mainCanvas.getContext('2d');
+          const timelineCtx = timelineCanvas.getContext('2d');
+          const headerCtx = headerCanvas.getContext('2d');
 
-            lastScrollPos.current = { ...scrollPosition };
-            lastPlayheadPos.current = transportPosition;
-            isDirtyRef.current = false;
+          // Only redraw changed canvases
+          if (scrollChanged || isDirtyRef.current) {
+            drawMainCanvas(mainCtx, mainCanvas.width / (window.devicePixelRatio || 1),
+                          mainCanvas.height / (window.devicePixelRatio || 1));
+            drawTimeline(timelineCtx, timelineCanvas.width / (window.devicePixelRatio || 1));
+            drawTrackHeaders(headerCtx, headerCanvas.height / (window.devicePixelRatio || 1));
+          } else if (isPlaying && playheadChanged) {
+            // Only redraw main canvas for playhead
+            drawMainCanvas(mainCtx, mainCanvas.width / (window.devicePixelRatio || 1),
+                          mainCanvas.height / (window.devicePixelRatio || 1));
           }
+
+          lastScrollPos.current = { ...scrollPosition };
+          lastPlayheadPos.current = transportPosition;
+          isDirtyRef.current = false;
         }
-      },
-      UPDATE_PRIORITIES.NORMAL,  // Arrangement is normal priority
-      UPDATE_FREQUENCIES.REALTIME // 60fps rendering
-    );
+      }
 
-    subscriptionIdRef.current = unsubscribe;
+      animationFrameRef.current = requestAnimationFrame(render);
+    };
 
-    log.info('Subscribed to UIUpdateManager');
+    render();
 
     return () => {
-      if (subscriptionIdRef.current) {
-        subscriptionIdRef.current(); // Unsubscribe
-        subscriptionIdRef.current = null;
-        log.info('Unsubscribed from UIUpdateManager');
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
       }
     };
   }, [drawMainCanvas, drawTimeline, drawTrackHeaders, scrollPosition, isPlaying, transportPosition]);
