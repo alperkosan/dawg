@@ -248,27 +248,14 @@ export class SmartWaveformCache {
     const bpm = viewport?.bpm || 140;
     const zoomX = viewport?.zoomX || 1.0;
 
-    // Update zoom state
+    // Update zoom state (for debugging/stats only - not affecting rendering)
     this.notifyZoomChange(zoomX);
 
-    // If zooming, render placeholder only (ultra-fast)
-    if (this.isZooming && !immediate) {
-      // Try to use cached version if available
-      const cached = this.get(clipId, clip, width, height, bpm, viewport);
-      if (cached) {
-        const blitStart = performance.now();
-        ctx.drawImage(cached.canvas, dimensions.x, dimensions.y);
-        const blitTime = performance.now() - blitStart;
-        this.totalBlitTime += blitTime;
-        return true;
-      }
+    // DISABLED: Placeholder rendering during zoom (caused waveform issues)
+    // Instead, rely on CSS blur + debouncing for smooth zoom
+    // if (this.isZooming && !immediate) { ... }
 
-      // No cache, render placeholder
-      return this.renderPlaceholder(ctx, dimensions, clip);
-    }
-
-    // Not zooming - normal rendering
-    // Try to get cached version first
+    // Normal rendering - Try to get cached version first
     const cached = this.get(clipId, clip, width, height, bpm, viewport);
 
     if (cached) {
