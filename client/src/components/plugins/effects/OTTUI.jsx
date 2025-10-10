@@ -39,7 +39,7 @@ const CompactSlider = ({ label, value, onChange, min, max, defaultValue, color, 
       showGhostValue={true}
       unit={unit}
       precision={precision}
-      width={140}
+      width="100%"
       showValue={true}
     />
   );
@@ -48,17 +48,17 @@ const CompactSlider = ({ label, value, onChange, min, max, defaultValue, color, 
 // Band Control - Compact & Enhanced
 const BandControl = ({ label, color, range, upRatio, downRatio, gain, onUpRatioChange, onDownRatioChange, onGainChange }) => {
   return (
-    <div className="flex items-start gap-4 py-2">
+    <div className="flex items-start gap-3 py-2">
       {/* Label */}
-      <div className="w-14 flex-shrink-0 pt-1">
-        <div className="text-[10px] font-bold tracking-wider" style={{ color }}>
+      <div className="w-12 flex-shrink-0 pt-1">
+        <div className="text-[9px] font-bold tracking-wider" style={{ color }}>
           {label}
         </div>
-        <div className="text-[8px] text-white/30 mt-0.5">{range}</div>
+        <div className="text-[7px] text-white/30 mt-0.5">{range}</div>
       </div>
 
       {/* Up/Down Ratio Sliders - Aligned */}
-      <div className="flex-1 flex flex-col gap-2">
+      <div className="flex-1 min-w-0 flex flex-col gap-2">
         <CompactSlider
           label="UP"
           value={upRatio}
@@ -84,7 +84,7 @@ const BandControl = ({ label, color, range, upRatio, downRatio, gain, onUpRatioC
       </div>
 
       {/* Gain Control - Right Aligned */}
-      <div className="w-32 flex-shrink-0">
+      <div className="w-28 flex-shrink-0">
         <CompactSlider
           label="GAIN"
           value={gain}
