@@ -284,23 +284,38 @@ export class SmartWaveformCache {
    */
   renderExact(audioBuffer, clip, width, height, bpm, viewport) {
     const clipId = clip.id;
-    const lod = this.renderer.calculateLOD(width);
+
+    // Validate dimensions (OffscreenCanvas requires positive integers)
+    const validWidth = Math.max(1, Math.round(width));
+    const validHeight = Math.max(1, Math.round(height));
+
+    if (!isFinite(validWidth) || !isFinite(validHeight) || validWidth <= 0 || validHeight <= 0) {
+      log.warn(`Invalid dimensions for clip ${clipId}: ${width}x${height}`);
+      return false;
+    }
+
+    const lod = this.renderer.calculateLOD(validWidth);
 
     // Create offscreen canvas
     let canvas, ctx;
-    if (typeof OffscreenCanvas !== 'undefined') {
-      canvas = new OffscreenCanvas(width, height);
-      ctx = canvas.getContext('2d', { alpha: true, desynchronized: true });
-    } else {
-      canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-      ctx = canvas.getContext('2d', { alpha: true });
+    try {
+      if (typeof OffscreenCanvas !== 'undefined') {
+        canvas = new OffscreenCanvas(validWidth, validHeight);
+        ctx = canvas.getContext('2d', { alpha: true, desynchronized: true });
+      } else {
+        canvas = document.createElement('canvas');
+        canvas.width = validWidth;
+        canvas.height = validHeight;
+        ctx = canvas.getContext('2d', { alpha: true });
+      }
+    } catch (error) {
+      log.error(`Failed to create canvas for clip ${clipId}:`, error, { width: validWidth, height: validHeight });
+      return false;
     }
 
     // Render using WaveformRenderer
     const renderStart = performance.now();
-    const dimensions = { x: 0, y: 0, width, height };
+    const dimensions = { x: 0, y: 0, width: validWidth, height: validHeight };
     const success = this.renderer.render(ctx, audioBuffer, clip, dimensions, viewport);
     const renderTime = performance.now() - renderStart;
 
@@ -311,12 +326,12 @@ export class SmartWaveformCache {
 
     this.totalRenderTime += renderTime;
 
-    // Store in cache
-    this.set(clipId, clip, width, height, bpm, lod, canvas);
+    // Store in cache (use validated dimensions)
+    this.set(clipId, clip, validWidth, validHeight, bpm, lod, canvas);
 
     log.debug(`Rendered and cached clip ${clipId}`, {
-      width,
-      height,
+      width: validWidth,
+      height: validHeight,
       lod,
       renderTime: renderTime.toFixed(2) + 'ms'
     });
