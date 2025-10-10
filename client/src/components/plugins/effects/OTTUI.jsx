@@ -536,7 +536,7 @@ export const OTTUI = ({ trackId, effect, onChange }) => {
   const currentMode = OTT_MODES[selectedMode];
 
   return (
-    <div className="w-full h-full bg-gradient-to-br from-black via-neutral-950 to-black p-3 flex gap-3 overflow-hidden">
+    <div className="w-full h-full min-h-[800px] bg-gradient-to-br from-black via-neutral-950 to-black p-3 flex gap-3 overflow-hidden">
 
       {/* LEFT: Compact Mode Selector */}
       <div className="w-[220px] flex-shrink-0 flex flex-col gap-2 overflow-y-auto">
