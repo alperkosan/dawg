@@ -34,16 +34,15 @@ export class WaveformCache {
 
   /**
    * Calculate LOD (Level of Detail) based on zoom and clip width
-   * LOD 0: Ultra low detail (zoom out far)
-   * LOD 1: Low detail
-   * LOD 2: Medium detail
-   * LOD 3: High detail (zoomed in)
+   * More conservative thresholds to maintain waveform quality
+   * LOD 0: Low detail (zoom out far)
+   * LOD 1: Medium detail
+   * LOD 2: High detail (zoomed in)
    */
   calculateLOD(clipWidthPixels) {
-    if (clipWidthPixels < 50) return 0;      // Ultra tiny clip - minimal detail
-    if (clipWidthPixels < 200) return 1;     // Small clip - low detail
-    if (clipWidthPixels < 800) return 2;     // Medium clip - medium detail
-    return 3;                                 // Large clip - full detail
+    if (clipWidthPixels < 100) return 0;     // Very small clip - low detail
+    if (clipWidthPixels < 400) return 1;     // Medium clip - medium detail
+    return 2;                                 // Large clip - high detail
   }
 
   /**
@@ -202,12 +201,11 @@ export class WaveformCache {
   renderWaveform(audioBuffer, clip, width, height, bpm, lod, styles) {
     const startTime = performance.now();
 
-    // LOD-based downsampling: Skip samples to reduce calculation load
-    // LOD 0: Process every 16th pixel (150MB file -> ~6MB calc)
-    // LOD 1: Process every 4th pixel
-    // LOD 2: Process every 2nd pixel
-    // LOD 3: Process every pixel (full detail)
-    const pixelSkip = lod === 0 ? 16 : lod === 1 ? 4 : lod === 2 ? 2 : 1;
+    // LOD-based downsampling: More conservative ratios for better quality
+    // LOD 0: Process every 4th pixel (zoom out far - still visible waveform)
+    // LOD 1: Process every 2nd pixel (medium zoom - good detail)
+    // LOD 2: Process every pixel (zoom in - full detail)
+    const pixelSkip = lod === 0 ? 4 : lod === 1 ? 2 : 1;
 
     // Create offscreen canvas
     let canvas, ctx;
