@@ -586,9 +586,8 @@ const ProfessionalEQCanvas = React.memo(({
         <div
           style={{
             position: 'absolute',
-            left: tooltip.x,
-            top: Math.max(10, tooltip.y - 70),
-            transform: 'translateX(-50%)',
+            top: '10px',
+            right: '10px',
             background: COLORS.bg.surface,
             border: `1px solid ${COLORS.text.muted}`,
             borderRadius: '8px',
