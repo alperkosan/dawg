@@ -18,9 +18,8 @@
 
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { EQCalculations } from '@/lib/audio/EQCalculations';
-import { SignalVisualizer } from '../../common/SignalVisualizer';
-import { ProfessionalKnob } from '../container/PluginControls';
-import { useGhostValue } from '@/hooks/useAudioPlugin';
+import { Knob, Button, Toggle, ModeSelector } from '@/components/controls';
+import { useAudioPlugin, useGhostValue } from '@/hooks/useAudioPlugin';
 import {
   Plus, Power, Grid, Copy, Save, Maximize2,
   Volume2, VolumeX, Headphones, BarChart3,
@@ -864,6 +863,12 @@ const ProfessionalBandControl = React.memo(({
 // 🎨 Main Professional EQ UI Component
 export const AdvancedEQUI = ({ trackId, effect, onChange }) => {
   const { bands } = effect.settings;
+
+  // Audio plugin hook for real-time analysis
+  const { isPlaying, getFrequencyData } = useAudioPlugin(trackId, effect.id, {
+    fftSize: 8192, // High resolution for EQ work
+    updateMetrics: false
+  });
 
   // Ghost values for visual feedback
   const ghostBands = useGhostValue(bands, 400);

@@ -1,117 +1,47 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { ProfessionalKnob } from '../container/PluginControls';
+import { Knob, Slider, ModeSelector } from '@/components/controls';
 import { OTT_MODES, getOTTModeParameters, OTT_MODE_CATEGORIES } from '@/config/presets';
-import { useAudioPlugin } from '@/hooks/useAudioPlugin';
+import { useAudioPlugin, useGhostValue } from '@/hooks/useAudioPlugin';
 
 /**
- * OTT UI - OVER THE TOP MULTIBAND COMPRESSOR
- * 3-band upward/downward compression
+ * OTT UI V2.0 - REDESIGNED WITH ENHANCED COMPONENTS
+ *
+ * "The Dynamics Forge" - Precise multiband compression
+ *
+ * Features:
+ * - Enhanced component library (Knob, Slider, ModeSelector)
+ * - Category theming ('dynamics-forge' - blue palette)
+ * - Ghost value feedback (400ms visual lag)
+ * - Mode-based workflow (8 presets)
+ * - 3-band spectrum visualization
+ * - Progressive disclosure
+ *
+ * Design Philosophy:
+ * - "Surgical control" via 3-band processing
+ * - Visual feedback at every step
+ * - Category-based color identity
  */
 
-// Ghost Value Hook - Tracks previous value for visual feedback
-const useGhostValue = (value, delay = 300) => {
-  const [ghostValue, setGhostValue] = useState(value);
-  const timeoutRef = useRef(null);
-
-  useEffect(() => {
-    if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    timeoutRef.current = setTimeout(() => {
-      setGhostValue(value);
-    }, delay);
-    return () => clearTimeout(timeoutRef.current);
-  }, [value, delay]);
-
-  return ghostValue;
-};
-
-// Enhanced Slider with Ghost Value & Advanced Interactions
-const EnhancedSlider = ({
-  label,
-  value,
-  onChange,
-  min,
-  max,
-  step = 0.1,
-  defaultValue,
-  color,
-  unit = '',
-  precision = 1,
-  width = 'flex-1'
-}) => {
+// Compact slider wrapper using standard Slider component
+const CompactSlider = ({ label, value, onChange, min, max, defaultValue, color, unit = '', precision = 1 }) => {
   const ghostValue = useGhostValue(value, 400);
-  const [isShiftPressed, setIsShiftPressed] = useState(false);
-  const sliderRef = useRef(null);
-
-  const handleChange = (e) => {
-    const val = parseFloat(e.target.value);
-    onChange(val);
-  };
-
-  const handleDoubleClick = () => {
-    onChange(defaultValue);
-  };
-
-  const handleKeyDown = (e) => {
-    if (e.key === 'Shift') setIsShiftPressed(true);
-  };
-
-  const handleKeyUp = (e) => {
-    if (e.key === 'Shift') setIsShiftPressed(false);
-  };
-
-  useEffect(() => {
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('keyup', handleKeyUp);
-    };
-  }, []);
-
-  const percentage = ((value - min) / (max - min)) * 100;
-  const ghostPercentage = ((ghostValue - min) / (max - min)) * 100;
 
   return (
-    <div className={`${width} flex items-center gap-2 group relative`}>
-      <div className="text-[9px] text-white/50 w-8 uppercase">{label}</div>
-      <div className="flex-1 relative h-3 flex items-center">
-        {/* Ghost value indicator */}
-        {Math.abs(ghostValue - value) > step && (
-          <div
-            className="absolute h-2 w-1 rounded-full transition-all duration-500 ease-out opacity-40"
-            style={{
-              left: `${ghostPercentage}%`,
-              backgroundColor: color,
-              transform: 'translateX(-50%)'
-            }}
-          />
-        )}
-
-        <input
-          ref={sliderRef}
-          type="range"
-          min={min}
-          max={max}
-          step={isShiftPressed ? step / 10 : step}
-          value={value}
-          onChange={handleChange}
-          onDoubleClick={handleDoubleClick}
-          className="w-full h-1 rounded-full appearance-none cursor-pointer transition-all hover:h-1.5"
-          style={{
-            background: `linear-gradient(to right, ${color}40 0%, ${color} ${percentage}%, #ffffff15 ${percentage}%)`,
-          }}
-          title={isShiftPressed ? "Fine tune (Shift)" : "Double-click to reset"}
-        />
-      </div>
-      <div className="text-[9px] text-white/70 w-12 text-right font-mono">
-        {value.toFixed(precision)}{unit}
-      </div>
-
-      {/* Hover tooltip */}
-      <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-black/90 px-2 py-1 rounded text-[8px] text-white/70 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">
-        Shift: Fine • DblClick: Reset
-      </div>
-    </div>
+    <Slider
+      label={label}
+      value={value}
+      onChange={onChange}
+      min={min}
+      max={max}
+      defaultValue={defaultValue}
+      color={color}
+      ghostValue={ghostValue}
+      showGhostValue={true}
+      unit={unit}
+      precision={precision}
+      width={120}
+      showValue={true}
+    />
   );
 };
 
@@ -129,25 +59,23 @@ const BandControl = ({ label, color, range, upRatio, downRatio, gain, onUpRatioC
 
       {/* Up/Down Ratio Sliders - Compact */}
       <div className="flex-1 flex flex-col gap-1.5">
-        <EnhancedSlider
+        <CompactSlider
           label="UP"
           value={upRatio}
           onChange={onUpRatioChange}
           min={1}
           max={20}
-          step={0.1}
           defaultValue={3}
           color={color}
           unit=":1"
           precision={1}
         />
-        <EnhancedSlider
+        <CompactSlider
           label="DN"
           value={downRatio}
           onChange={onDownRatioChange}
           min={1}
           max={20}
-          step={0.1}
           defaultValue={3}
           color={color}
           unit=":1"
@@ -157,13 +85,12 @@ const BandControl = ({ label, color, range, upRatio, downRatio, gain, onUpRatioC
 
       {/* Gain Control - Compact */}
       <div className="w-24">
-        <EnhancedSlider
+        <CompactSlider
           label="GAIN"
           value={gain}
           onChange={onGainChange}
           min={-12}
           max={12}
-          step={0.5}
           defaultValue={0}
           color={color}
           unit="dB"
@@ -455,8 +382,8 @@ const ThreeBandMeter = ({ bands = { low: 0, mid: 0, high: 0 } }) => {
   );
 };
 
-// Collapsible Mode Selector - Compact
-const ModeSelector = ({ currentMode, onModeChange }) => {
+// Collapsible Mode Selector - Compact (OTT-specific)
+const OTTModeSelector = ({ currentMode, onModeChange }) => {
   const [isExpanded, setIsExpanded] = useState(true);
   const modes = Object.values(OTT_MODES);
 
@@ -605,7 +532,7 @@ export const OTTUI = ({ trackId, effect, onChange }) => {
 
       {/* LEFT: Compact Mode Selector */}
       <div className="w-[220px] flex-shrink-0 flex flex-col gap-2 overflow-y-auto">
-        <ModeSelector currentMode={selectedMode} onModeChange={setSelectedMode} />
+        <OTTModeSelector currentMode={selectedMode} onModeChange={setSelectedMode} />
       </div>
 
       {/* CENTER: Hero Controls */}
@@ -633,7 +560,7 @@ export const OTTUI = ({ trackId, effect, onChange }) => {
             {/* DEPTH Knob (Hero Control) */}
             <div className="flex flex-col items-center gap-2">
               <div className="text-[10px] text-orange-300/80 font-bold tracking-widest uppercase">Depth</div>
-              <ProfessionalKnob
+              <Knob
                 label=""
                 value={amount}
                 onChange={setAmount}
@@ -643,6 +570,7 @@ export const OTTUI = ({ trackId, effect, onChange }) => {
                 unit="%"
                 precision={0}
                 size={110}
+                category="dynamics-forge"
               />
               <div className="text-2xl font-black text-orange-400 tabular-nums">{amount}%</div>
               <div className="text-[8px] text-white/30 uppercase tracking-wider">Amount</div>
@@ -651,7 +579,7 @@ export const OTTUI = ({ trackId, effect, onChange }) => {
             {/* TIME Knob */}
             <div className="flex flex-col items-center gap-2">
               <div className="text-[10px] text-orange-300/80 font-bold tracking-widest uppercase">Time</div>
-              <ProfessionalKnob
+              <Knob
                 label=""
                 value={time}
                 onChange={(val) => onChange('time', val)}
@@ -661,6 +589,7 @@ export const OTTUI = ({ trackId, effect, onChange }) => {
                 unit=""
                 precision={2}
                 size={85}
+                category="dynamics-forge"
               />
               <div className="text-lg font-bold text-white tabular-nums">{(time * 100).toFixed(0)}%</div>
               <div className="text-[8px] text-white/30 uppercase tracking-wider">Attack/Release</div>
@@ -727,7 +656,7 @@ export const OTTUI = ({ trackId, effect, onChange }) => {
         {/* Output Gain */}
         <div className="bg-gradient-to-br from-black/50 to-black/30 rounded-lg p-3 border border-white/10">
           <div className="text-[10px] text-white/50 font-semibold tracking-wide uppercase mb-2">Output</div>
-          <ProfessionalKnob
+          <Knob
             label="Mix"
             value={wet}
             onChange={(val) => onChange('wet', val)}
@@ -738,6 +667,7 @@ export const OTTUI = ({ trackId, effect, onChange }) => {
             displayMultiplier={100}
             precision={0}
             size={70}
+            category="dynamics-forge"
           />
         </div>
 
