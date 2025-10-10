@@ -39,7 +39,7 @@ const CompactSlider = ({ label, value, onChange, min, max, defaultValue, color, 
       showGhostValue={true}
       unit={unit}
       precision={precision}
-      width={120}
+      width={140}
       showValue={true}
     />
   );
@@ -48,17 +48,17 @@ const CompactSlider = ({ label, value, onChange, min, max, defaultValue, color, 
 // Band Control - Compact & Enhanced
 const BandControl = ({ label, color, range, upRatio, downRatio, gain, onUpRatioChange, onDownRatioChange, onGainChange }) => {
   return (
-    <div className="flex items-center gap-3 py-1.5">
+    <div className="flex items-start gap-4 py-2">
       {/* Label */}
-      <div className="w-12 flex-shrink-0">
+      <div className="w-14 flex-shrink-0 pt-1">
         <div className="text-[10px] font-bold tracking-wider" style={{ color }}>
           {label}
         </div>
-        <div className="text-[7px] text-white/30">{range}</div>
+        <div className="text-[8px] text-white/30 mt-0.5">{range}</div>
       </div>
 
-      {/* Up/Down Ratio Sliders - Compact */}
-      <div className="flex-1 flex flex-col gap-1.5">
+      {/* Up/Down Ratio Sliders - Aligned */}
+      <div className="flex-1 flex flex-col gap-2">
         <CompactSlider
           label="UP"
           value={upRatio}
@@ -83,8 +83,8 @@ const BandControl = ({ label, color, range, upRatio, downRatio, gain, onUpRatioC
         />
       </div>
 
-      {/* Gain Control - Compact */}
-      <div className="w-24">
+      {/* Gain Control - Right Aligned */}
+      <div className="w-32 flex-shrink-0">
         <CompactSlider
           label="GAIN"
           value={gain}
@@ -604,9 +604,9 @@ export const OTTUI = ({ trackId, effect, onChange }) => {
 
           {/* Band Controls - Compact */}
           <div className="bg-gradient-to-br from-black/40 to-black/20 rounded-lg p-4 border border-orange-500/10">
-            <div className="text-[10px] text-orange-300/70 font-bold uppercase tracking-wider mb-3">Band Control</div>
+            <div className="text-[10px] text-orange-300/70 font-bold uppercase tracking-wider mb-4">Band Control</div>
 
-            <div className="flex flex-col gap-2.5">
+            <div className="flex flex-col gap-3">
               {/* LOW Band */}
               <BandControl
                 label="LOW"
@@ -620,6 +620,9 @@ export const OTTUI = ({ trackId, effect, onChange }) => {
                 onGainChange={(val) => onChange('lowGain', val)}
               />
 
+              {/* Separator */}
+              <div className="h-px bg-white/5" />
+
               {/* MID Band */}
               <BandControl
                 label="MID"
@@ -632,6 +635,9 @@ export const OTTUI = ({ trackId, effect, onChange }) => {
                 onDownRatioChange={(val) => onChange('midDownRatio', val)}
                 onGainChange={(val) => onChange('midGain', val)}
               />
+
+              {/* Separator */}
+              <div className="h-px bg-white/5" />
 
               {/* HIGH Band */}
               <BandControl
