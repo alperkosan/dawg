@@ -1,13 +1,15 @@
 /**
- * ARRANGEMENT RENDERER
+ * ARRANGEMENT RENDERER - OPTIMIZED
  *
  * Piano Roll rendering pattern'i kullanarak optimize edilmiş
  * - Viewport-based rendering
  * - LOD-aware grid drawing
  * - Clip intersection check
+ * - Waveform caching with LOD (150MB file support!)
  */
 
 import { audioAssetManager } from '../../../lib/audio/AudioAssetManager';
+import { getWaveformCache } from './WaveformCache';
 
 const TRACK_HEADER_WIDTH = 150;
 const TIMELINE_HEIGHT = 40;
@@ -473,7 +475,7 @@ function drawClips(ctx, engine) {
       ctx.restore();
     }
 
-    // Audio waveform visualization (always show for audio clips)
+    // Audio waveform visualization with caching (OPTIMIZED!)
     if (clip.type === 'audio') {
       let audioBuffer = null;
 
@@ -496,199 +498,46 @@ function drawClips(ctx, engine) {
       }
 
       if (audioBuffer) {
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(x + 2, y + 20, clipWidth - 4, clipHeight - 24);
-        ctx.clip();
+        // Get waveform cache
+        const waveformCache = getWaveformCache();
 
-        // Draw waveform
-        const waveformHeight = clipHeight - 24;
-        const waveformY = y + 20 + waveformHeight / 2;
+        // Calculate LOD based on clip width
+        const waveformWidth = Math.round(clipWidth - 4);
+        const waveformHeight = Math.round(clipHeight - 24);
+        const lod = waveformCache.calculateLOD(waveformWidth);
+        const currentBPM = engine.bpm || 140;
 
-        // Get audio data (use first channel for simplicity)
-        const channelData = audioBuffer.getChannelData(0);
-        const sampleRate = audioBuffer.sampleRate;
+        // Try to get cached waveform
+        let waveformCanvas = waveformCache.get(clip.id, clip, waveformWidth, waveformHeight, currentBPM, lod);
 
-        // All properties are clip-specific now (instance system not used for properties)
+        // If not cached, render and cache it
+        if (!waveformCanvas) {
+          waveformCanvas = waveformCache.renderWaveform(
+            audioBuffer,
+            clip,
+            waveformWidth,
+            waveformHeight,
+            currentBPM,
+            lod,
+            styles
+          );
+          waveformCache.set(clip.id, clip, waveformWidth, waveformHeight, currentBPM, lod, waveformCanvas);
+        }
+
+        // Blit cached waveform to main canvas (FAST!)
+        ctx.drawImage(waveformCanvas, x + 2, y + 20);
+
+        // Extract clip properties for overlay rendering
         const fadeInBeats = clip.fadeIn || 0;
         const fadeOutBeats = clip.fadeOut || 0;
         const gainDb = clip.gain || 0;
-        const sampleOffsetBeats = clip.sampleOffset || 0;
         const playbackRate = clip.playbackRate || 1.0;
-        const clipDuration = clip.duration;
-
-        const gainLinear = Math.pow(10, gainDb / 20); // Convert dB to linear
-
-        // Get current BPM from engine (fallback to 140 if not provided)
-        const currentBPM = engine.bpm || 140;
-
-        // Convert durations to seconds
-        const beatsToSeconds = (beats) => (beats * 60) / currentBPM;
-        const clipDurationSeconds = beatsToSeconds(clipDuration);
-        const audioDurationSeconds = audioBuffer.duration;
-        const offsetSeconds = beatsToSeconds(sampleOffsetBeats);
-
-        // Calculate offset in pixels (empty space at the beginning)
-        const offsetWidthPixels = sampleOffsetBeats * PIXELS_PER_BEAT * viewport.zoomX;
-
-        // Calculate actual audio width in pixels based on audio buffer duration (not clip duration!)
-        // This ensures waveform doesn't stretch when clip is resized
-        const audioLengthBeats = (audioDurationSeconds * currentBPM) / 60; // Convert audio duration to beats
-        const audioWidthPixels = audioLengthBeats * PIXELS_PER_BEAT * viewport.zoomX;
-
-        // Total samples to display (always from start of audio buffer, no offset applied to sample reading)
-        const totalSamplesToDisplay = Math.floor((audioDurationSeconds * sampleRate) / playbackRate);
-
-        const samplesPerPixel = Math.max(1, totalSamplesToDisplay / audioWidthPixels);
 
         const fadeInWidth = fadeInBeats * PIXELS_PER_BEAT * viewport.zoomX;
         const fadeOutWidth = fadeOutBeats * PIXELS_PER_BEAT * viewport.zoomX;
+        const _waveformHeight = clipHeight - 24;
 
-        // Draw empty/transparent area for offset (if any)
-        if (offsetWidthPixels > 0) {
-          ctx.fillStyle = 'rgba(50, 50, 50, 0.3)'; // Dark transparent for empty area
-          ctx.fillRect(x + 2, y + 20, offsetWidthPixels, clipHeight - 24);
-        }
-
-        // Draw smooth filled waveform (only for actual audio length, offset by offsetWidthPixels)
-        ctx.beginPath();
-
-        // Top half of waveform (always read from start of buffer, offset is visual only)
-        for (let i = 0; i < audioWidthPixels; i++) {
-          const startSample = Math.floor(i * samplesPerPixel);
-          const endSample = Math.min(startSample + samplesPerPixel, channelData.length);
-
-          let min = 1.0;
-          let max = -1.0;
-
-          for (let j = startSample; j < endSample; j++) {
-            if (j >= 0 && j < channelData.length) {
-              const sample = channelData[j];
-              if (sample < min) min = sample;
-              if (sample > max) max = sample;
-            }
-          }
-
-          // Apply gain
-          min *= gainLinear;
-          max *= gainLinear;
-
-          // Apply fade envelope
-          let fadeMultiplier = 1.0;
-          if (i < fadeInWidth) {
-            fadeMultiplier = i / fadeInWidth;
-          } else if (i > audioWidthPixels - fadeOutWidth) {
-            fadeMultiplier = (audioWidthPixels - i) / fadeOutWidth;
-          }
-
-          min *= fadeMultiplier;
-          max *= fadeMultiplier;
-
-          const maxY = waveformY - (max * waveformHeight / 2);
-
-          if (i === 0) {
-            ctx.moveTo(x + 2 + offsetWidthPixels, maxY);
-          } else {
-            ctx.lineTo(x + 2 + offsetWidthPixels + i, maxY);
-          }
-        }
-
-        // Bottom half of waveform (reverse)
-        for (let i = audioWidthPixels - 1; i >= 0; i--) {
-          const startSample = Math.floor(i * samplesPerPixel);
-          const endSample = Math.min(startSample + samplesPerPixel, channelData.length);
-
-          let min = 1.0;
-
-          for (let j = startSample; j < endSample; j++) {
-            if (j >= 0 && j < channelData.length) {
-              const sample = channelData[j];
-              if (sample < min) min = sample;
-            }
-          }
-
-          min *= gainLinear;
-
-          let fadeMultiplier = 1.0;
-          if (i < fadeInWidth) {
-            fadeMultiplier = i / fadeInWidth;
-          } else if (i > audioWidthPixels - fadeOutWidth) {
-            fadeMultiplier = (audioWidthPixels - i) / fadeOutWidth;
-          }
-
-          min *= fadeMultiplier;
-
-          const minY = waveformY - (min * waveformHeight / 2);
-          ctx.lineTo(x + 2 + offsetWidthPixels + i, minY);
-        }
-
-        ctx.closePath();
-
-        // Fill with gradient
-        const waveGradient = ctx.createLinearGradient(x, y + 20, x, y + 20 + waveformHeight);
-        waveGradient.addColorStop(0, 'rgba(255, 255, 255, 0.4)');
-        waveGradient.addColorStop(0.5, 'rgba(255, 255, 255, 0.6)');
-        waveGradient.addColorStop(1, 'rgba(255, 255, 255, 0.4)');
-        ctx.fillStyle = waveGradient;
-        ctx.fill();
-
-        // Stroke outline
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
-        ctx.lineWidth = 1;
-        ctx.stroke();
-
-        // Draw smooth fade overlays with better curves
-        if (fadeInWidth > 0) {
-          const gradient = ctx.createLinearGradient(x + 2, 0, x + 2 + fadeInWidth, 0);
-          gradient.addColorStop(0, 'rgba(255, 180, 80, 0.35)');
-          gradient.addColorStop(0.3, 'rgba(255, 200, 100, 0.25)');
-          gradient.addColorStop(0.7, 'rgba(255, 220, 120, 0.1)');
-          gradient.addColorStop(1, 'rgba(255, 200, 100, 0)');
-          ctx.fillStyle = gradient;
-
-          // Rounded fade region
-          ctx.save();
-          ctx.beginPath();
-          ctx.rect(x + 2, y + 20, fadeInWidth, waveformHeight);
-          ctx.clip();
-          ctx.fillRect(x + 2, y + 20, fadeInWidth, waveformHeight);
-          ctx.restore();
-
-          // Fade curve line indicator
-          ctx.strokeStyle = 'rgba(255, 180, 80, 0.6)';
-          ctx.lineWidth = 1.5;
-          ctx.beginPath();
-          ctx.moveTo(x + 2, y + 20 + waveformHeight);
-          ctx.quadraticCurveTo(x + 2 + fadeInWidth * 0.3, y + 20 + waveformHeight * 0.7, x + 2 + fadeInWidth, y + 20);
-          ctx.stroke();
-        }
-
-        if (fadeOutWidth > 0) {
-          const gradient = ctx.createLinearGradient(x + clipWidth - fadeOutWidth - 2, 0, x + clipWidth - 2, 0);
-          gradient.addColorStop(0, 'rgba(100, 150, 255, 0)');
-          gradient.addColorStop(0.3, 'rgba(120, 170, 255, 0.1)');
-          gradient.addColorStop(0.7, 'rgba(100, 150, 255, 0.25)');
-          gradient.addColorStop(1, 'rgba(80, 140, 255, 0.35)');
-          ctx.fillStyle = gradient;
-
-          // Rounded fade region
-          ctx.save();
-          ctx.beginPath();
-          ctx.rect(x + clipWidth - fadeOutWidth - 2, y + 20, fadeOutWidth, waveformHeight);
-          ctx.clip();
-          ctx.fillRect(x + clipWidth - fadeOutWidth - 2, y + 20, fadeOutWidth, waveformHeight);
-          ctx.restore();
-
-          // Fade curve line indicator
-          ctx.strokeStyle = 'rgba(80, 140, 255, 0.6)';
-          ctx.lineWidth = 1.5;
-          ctx.beginPath();
-          ctx.moveTo(x + clipWidth - fadeOutWidth - 2, y + 20);
-          ctx.quadraticCurveTo(x + clipWidth - fadeOutWidth * 0.7 - 2, y + 20 + waveformHeight * 0.3, x + clipWidth - 2, y + 20 + waveformHeight);
-          ctx.stroke();
-        }
-
-        // Draw gain indicator
+        // Draw gain indicator overlay
         if (gainDb !== 0) {
           ctx.fillStyle = gainDb > 0 ? 'rgba(255, 100, 100, 0.9)' : 'rgba(200, 200, 200, 0.9)';
           ctx.font = '10px Inter, system-ui, sans-serif';
@@ -697,7 +546,7 @@ function drawClips(ctx, engine) {
           ctx.fillText(`${gainDb > 0 ? '+' : ''}${gainDb.toFixed(1)}dB`, x + clipWidth - 6, y + 22);
         }
 
-        // Draw playback rate indicator (time stretch)
+        // Draw playback rate indicator overlay (time stretch)
         if (playbackRate !== 1.0) {
           ctx.fillStyle = 'rgba(100, 200, 255, 0.9)';
           ctx.font = 'bold 10px Inter, system-ui, sans-serif';
@@ -718,6 +567,7 @@ function drawClips(ctx, engine) {
         }
 
         // Center line
+        const waveformY = y + 20 + _waveformHeight / 2;
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
         ctx.lineWidth = 1;
         ctx.beginPath();
