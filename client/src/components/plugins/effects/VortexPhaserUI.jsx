@@ -1,9 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { MeteringService } from '@/lib/core/MeteringService';
-import { ProfessionalKnob } from '../container/PluginControls';
-import { useMixerStore } from '@/store/useMixerStore';
-import { SignalVisualizer } from '../../common/SignalVisualizer';
-import { useCanvasVisualization, useGhostValue } from '@/hooks/useAudioPlugin';
+import { Knob } from '@/components/controls';
+import { useCanvasVisualization, useGhostValue, useAudioPlugin } from '@/hooks/useAudioPlugin';
 
 const VortexVisualizer = ({ frequency, octaves, baseFrequency, inputLevel }) => {
   const timeRef = useRef(0);
@@ -62,18 +59,24 @@ export const VortexPhaserUI = ({ trackId, effect, onChange }) => {
   const { frequency, octaves, baseFrequency, wet } = effect.settings;
   const [inputLevel, setInputLevel] = useState(0);
 
+  // Use audio plugin hook
+  const { plugin, metrics } = useAudioPlugin(trackId, effect.id, {
+    fftSize: 1024,
+    updateMetrics: true
+  });
+
+  // Update input level from metrics
+  useEffect(() => {
+    if (metrics?.inputPeak !== undefined) {
+      setInputLevel((metrics.inputPeak + 60) / 60);
+    }
+  }, [metrics]);
+
   // Ghost values for parameter feedback
   const ghostFrequency = useGhostValue(frequency, 400);
   const ghostOctaves = useGhostValue(octaves, 400);
   const ghostBaseFrequency = useGhostValue(baseFrequency, 400);
   const ghostWet = useGhostValue(wet, 400);
-
-  useEffect(() => {
-    const meterId = `${trackId}-input`;
-    const handleLevel = (data) => setInputLevel((data.peak + 60) / 60);
-    const unsubscribe = MeteringService.subscribe(meterId, handleLevel);
-    return unsubscribe;
-  }, [trackId]);
 
   return (
     <div className="w-full h-full bg-gradient-to-br from-purple-950 via-indigo-950 to-blue-950 p-6">
@@ -112,36 +115,64 @@ export const VortexPhaserUI = ({ trackId, effect, onChange }) => {
 
       {/* Controls */}
       <div className="grid grid-cols-4 gap-6">
-        <ProfessionalKnob
+        <Knob
           label="Rate"
           value={frequency}
           onChange={(v) => onChange('frequency', v)}
-          min={0.1} max={10} defaultValue={0.5}
-          unit="Hz" precision={2} size={75}
+          min={0.1}
+          max={10}
+          defaultValue={0.5}
+          unit="Hz"
+          precision={2}
+          size={75}
+          category="modulation-machines"
+          ghostValue={ghostFrequency}
+          showGhostValue={true}
         />
 
-        <ProfessionalKnob
+        <Knob
           label="Stages"
           value={octaves}
           onChange={(v) => onChange('octaves', Math.round(v))}
-          min={2} max={12} defaultValue={3}
-          precision={0} size={75}
+          min={2}
+          max={12}
+          defaultValue={3}
+          precision={0}
+          size={75}
+          category="modulation-machines"
+          ghostValue={ghostOctaves}
+          showGhostValue={true}
         />
 
-        <ProfessionalKnob
+        <Knob
           label="Center"
           value={baseFrequency}
           onChange={(v) => onChange('baseFrequency', v)}
-          min={200} max={2000} defaultValue={350}
-          unit="Hz" precision={0} size={75} logarithmic
+          min={200}
+          max={2000}
+          defaultValue={350}
+          unit="Hz"
+          precision={0}
+          size={75}
+          logarithmic
+          category="modulation-machines"
+          ghostValue={ghostBaseFrequency}
+          showGhostValue={true}
         />
 
-        <ProfessionalKnob
+        <Knob
           label="Mix"
           value={wet * 100}
           onChange={(v) => onChange('wet', v / 100)}
-          min={0} max={100} defaultValue={50}
-          unit="%" precision={0} size={75}
+          min={0}
+          max={100}
+          defaultValue={50}
+          unit="%"
+          precision={0}
+          size={75}
+          category="modulation-machines"
+          ghostValue={ghostWet * 100}
+          showGhostValue={true}
         />
       </div>
     </div>
