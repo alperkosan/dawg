@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { ProfessionalKnob } from '../container/PluginControls';
-import { MeteringService } from '@/lib/core/MeteringService';
-import { useCanvasVisualization, useGhostValue } from '@/hooks/useAudioPlugin';
+import { Knob } from '@/components/controls';
+import { useCanvasVisualization, useGhostValue, useAudioPlugin } from '@/hooks/useAudioPlugin';
 
 // Galaksi Parçacık Sistemi
 const GalaxyParticleSystem = ({ rate, depth, delayTime, inputLevel }) => {
@@ -90,18 +89,24 @@ export const StardustChorusUI = ({ trackId, effect, onChange }) => {
   const { frequency, delayTime, depth, wet } = effect.settings;
   const [inputLevel, setInputLevel] = useState(0);
 
+  // Use audio plugin hook
+  const { plugin, metrics } = useAudioPlugin(trackId, effect.id, {
+    fftSize: 1024,
+    updateMetrics: true
+  });
+
+  // Update input level from metrics
+  useEffect(() => {
+    if (metrics?.inputPeak !== undefined) {
+      setInputLevel((metrics.inputPeak + 60) / 60);
+    }
+  }, [metrics]);
+
   // Ghost values for parameter feedback
   const ghostFrequency = useGhostValue(frequency, 400);
   const ghostDelayTime = useGhostValue(delayTime, 400);
   const ghostDepth = useGhostValue(depth, 400);
   const ghostWet = useGhostValue(wet, 400);
-
-  useEffect(() => {
-    const meterId = `${trackId}-input`;
-    const handleLevel = (data) => setInputLevel((data.peak + 60) / 60);
-    const unsubscribe = MeteringService.subscribe(meterId, handleLevel);
-    return unsubscribe;
-  }, [trackId]);
 
   return (
     <div className="w-full h-full bg-gradient-to-br from-indigo-950 via-purple-950 to-pink-950 p-6">
@@ -137,33 +142,61 @@ export const StardustChorusUI = ({ trackId, effect, onChange }) => {
       </div>
 
       <div className="grid grid-cols-4 gap-6">
-        <ProfessionalKnob
+        <Knob
           label="Rate"
           value={frequency}
           onChange={(v) => onChange('frequency', v)}
-          min={0.1} max={10} defaultValue={1.5}
-          unit="Hz" precision={2} size={75}
+          min={0.1}
+          max={10}
+          defaultValue={1.5}
+          unit="Hz"
+          precision={2}
+          size={75}
+          category="modulation-machines"
+          ghostValue={ghostFrequency}
+          showGhostValue={true}
         />
-        <ProfessionalKnob
+        <Knob
           label="Delay"
           value={delayTime}
           onChange={(v) => onChange('delayTime', v)}
-          min={1} max={20} defaultValue={3.5}
-          unit="ms" precision={1} size={75}
+          min={1}
+          max={20}
+          defaultValue={3.5}
+          unit="ms"
+          precision={1}
+          size={75}
+          category="modulation-machines"
+          ghostValue={ghostDelayTime}
+          showGhostValue={true}
         />
-        <ProfessionalKnob
+        <Knob
           label="Depth"
           value={depth * 100}
           onChange={(v) => onChange('depth', v / 100)}
-          min={0} max={100} defaultValue={70}
-          unit="%" precision={0} size={75}
+          min={0}
+          max={100}
+          defaultValue={70}
+          unit="%"
+          precision={0}
+          size={75}
+          category="modulation-machines"
+          ghostValue={ghostDepth * 100}
+          showGhostValue={true}
         />
-        <ProfessionalKnob
+        <Knob
           label="Mix"
           value={wet * 100}
           onChange={(v) => onChange('wet', v / 100)}
-          min={0} max={100} defaultValue={50}
-          unit="%" precision={0} size={75}
+          min={0}
+          max={100}
+          defaultValue={50}
+          unit="%"
+          precision={0}
+          size={75}
+          category="modulation-machines"
+          ghostValue={ghostWet * 100}
+          showGhostValue={true}
         />
       </div>
 
