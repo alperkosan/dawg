@@ -1,9 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { MeteringService } from '@/lib/core/MeteringService';
-import { ProfessionalKnob } from '../container/PluginControls';
-import { useMixerStore } from '@/store/useMixerStore';
+import { Knob, ModeSelector } from '@/components/controls';
 import { SignalVisualizer } from '../../common/SignalVisualizer';
-import { useCanvasVisualization, useGhostValue } from '@/hooks/useAudioPlugin';
+import { useCanvasVisualization, useGhostValue, useAudioPlugin } from '@/hooks/useAudioPlugin';
 
 // Musical time notation to frequency converter
 const timeToFrequency = (timeNotation) => {
@@ -218,6 +216,12 @@ export const TidalFilterUI = ({ trackId, effect, onChange }) => {
   const { frequency, baseFrequency, octaves, wet } = effect.settings;
   const [filterType, setFilterType] = useState('lowpass');
 
+  // Use audio plugin hook
+  const { isPlaying, getFrequencyData } = useAudioPlugin(trackId, effect.id, {
+    fftSize: 2048,
+    updateMetrics: false
+  });
+
   // Ghost values for parameter feedback
   const ghostBaseFrequency = useGhostValue(baseFrequency, 400);
   const ghostOctaves = useGhostValue(octaves, 400);
@@ -289,34 +293,56 @@ export const TidalFilterUI = ({ trackId, effect, onChange }) => {
         
         {/* Base Frequency */}
         <div className="flex justify-center">
-          <ProfessionalKnob 
-            label="Cutoff" 
-            value={baseFrequency} 
-            onChange={(val) => onChange('baseFrequency', val)} 
-            min={20} max={10000} defaultValue={400} 
-            unit="Hz" precision={0} size={80} logarithmic
+          <Knob
+            label="Cutoff"
+            value={baseFrequency}
+            onChange={(val) => onChange('baseFrequency', val)}
+            min={20}
+            max={10000}
+            defaultValue={400}
+            unit="Hz"
+            precision={0}
+            size={80}
+            logarithmic
+            category="spectral-weave"
+            ghostValue={ghostBaseFrequency}
+            showGhostValue={true}
           />
         </div>
-        
+
         {/* Modulation Depth */}
         <div className="flex justify-center">
-          <ProfessionalKnob 
-            label="Depth" 
-            value={octaves} 
-            onChange={(val) => onChange('octaves', val)} 
-            min={0} max={8} defaultValue={2} 
-            unit=" oct" precision={1} size={80}
+          <Knob
+            label="Depth"
+            value={octaves}
+            onChange={(val) => onChange('octaves', val)}
+            min={0}
+            max={8}
+            defaultValue={2}
+            unit=" oct"
+            precision={1}
+            size={80}
+            category="spectral-weave"
+            ghostValue={ghostOctaves}
+            showGhostValue={true}
           />
         </div>
-        
+
         {/* Mix */}
         <div className="flex justify-center">
-          <ProfessionalKnob 
-            label="Mix" 
-            value={wet * 100} 
-            onChange={(val) => onChange('wet', val / 100)} 
-            min={0} max={100} defaultValue={100} 
-            unit="%" precision={0} size={80}
+          <Knob
+            label="Mix"
+            value={wet * 100}
+            onChange={(val) => onChange('wet', val / 100)}
+            min={0}
+            max={100}
+            defaultValue={100}
+            unit="%"
+            precision={0}
+            size={80}
+            category="spectral-weave"
+            ghostValue={ghostWet * 100}
+            showGhostValue={true}
           />
         </div>
       </div>
