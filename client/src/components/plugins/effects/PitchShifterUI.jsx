@@ -13,7 +13,7 @@
  */
 
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { Knob } from '@/components/controls';
+import { Knob, ModeSelector } from '@/components/controls';
 import { useAudioPlugin, useGhostValue, useCanvasVisualization } from '@/hooks/useAudioPlugin';
 
 // Pitch Shift Modes
@@ -210,78 +210,7 @@ const PitchSpectrumVisualizer = ({ pitch, wet, inputLevel }) => {
   );
 };
 
-// Mode Selector Component
-const PitchModeSelector = ({ currentMode, onModeChange }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
-
-  const categorized = Object.entries(MODE_CATEGORIES).reduce((acc, [categoryKey, category]) => {
-    acc[categoryKey] = category.modes.map(modeId => PITCH_MODES[modeId]);
-    return acc;
-  }, {});
-
-  const currentModeObj = PITCH_MODES[currentMode];
-
-  return (
-    <div className="flex flex-col gap-2">
-      {/* Collapsed Header */}
-      <button
-        onClick={() => setIsExpanded(!isExpanded)}
-        className="flex items-center gap-3 px-3 py-2.5 bg-gradient-to-r from-orange-950/50 to-amber-950/50 border border-orange-500/30 rounded-lg hover:border-orange-500/50 transition-all group"
-      >
-        <div className="text-2xl">{currentModeObj?.icon}</div>
-        <div className="flex-1 text-left">
-          <div className="text-[10px] text-orange-300/70 uppercase tracking-wider">Mode</div>
-          <div className="text-xs font-bold text-white">{currentModeObj?.name}</div>
-        </div>
-        <div className={`text-xs text-orange-400 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}>
-          ▼
-        </div>
-      </button>
-
-      {/* Expandable Mode List */}
-      <div
-        className={`overflow-hidden transition-all duration-300 ease-in-out ${
-          isExpanded ? 'max-h-[500px] opacity-100' : 'max-h-0 opacity-0'
-        }`}
-      >
-        <div className="flex flex-col gap-3 pt-2">
-          {Object.entries(categorized).map(([category, categoryModes]) => (
-            <div key={category} className="flex flex-col gap-1.5">
-              <div className="text-[9px] text-white/40 uppercase tracking-wider font-medium px-2">
-                {MODE_CATEGORIES[category]?.name || category}
-              </div>
-              <div className="flex flex-col gap-1">
-                {categoryModes.map((mode) => {
-                  const isActive = currentMode === mode.id;
-                  return (
-                    <button
-                      key={mode.id}
-                      onClick={() => {
-                        onModeChange(mode.id);
-                        setIsExpanded(false);
-                      }}
-                      className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all text-left ${
-                        isActive
-                          ? 'bg-orange-500/20 border-orange-500/60 shadow-lg shadow-orange-500/20'
-                          : 'bg-black/20 border-white/10 hover:border-orange-500/30 hover:bg-orange-500/10'
-                      }`}
-                    >
-                      <span className="text-lg">{mode.icon}</span>
-                      <div className="flex-1">
-                        <div className="text-xs font-bold text-white">{mode.name}</div>
-                        <div className="text-[10px] text-white/50">{mode.description}</div>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-};
+// Removed custom PitchModeSelector - now using standard ModeSelector component
 
 // Main Component
 export const PitchShifterUI = ({ trackId, effect, onChange }) => {
@@ -327,8 +256,51 @@ export const PitchShifterUI = ({ trackId, effect, onChange }) => {
     <div className="w-full h-full bg-gradient-to-br from-black via-neutral-950 to-black p-3 flex gap-3">
 
       {/* LEFT: Mode Selector */}
-      <div className="w-[220px] flex-shrink-0 flex flex-col gap-2">
-        <PitchModeSelector currentMode={currentMode} onModeChange={handleModeChange} />
+      <div className="w-[220px] flex-shrink-0 flex flex-col gap-4">
+
+        {/* Plugin Header */}
+        <div className="bg-gradient-to-r from-orange-900/40 to-amber-900/40 rounded-xl px-4 py-3 border border-orange-500/30">
+          <div className="flex items-center gap-3">
+            <div className="text-2xl">🎚️</div>
+            <div className="flex-1">
+              <div className="text-sm font-black text-orange-300 tracking-wider uppercase">
+                Pitch Shifter
+              </div>
+              <div className="text-[9px] text-amber-400/70">The Texture Lab</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Mode Selector */}
+        <ModeSelector
+          modes={Object.values(PITCH_MODES).map(mode => ({
+            id: mode.id,
+            label: mode.name,
+            icon: mode.icon,
+            description: mode.description
+          }))}
+          activeMode={currentMode}
+          onChange={handleModeChange}
+          orientation="vertical"
+          category="texture-lab"
+          className="flex-1"
+        />
+
+        {/* Mode Description */}
+        <div className="bg-gradient-to-br from-orange-900/20 to-black/50 rounded-xl p-4 border border-orange-500/10">
+          <div className="text-[9px] text-orange-300/70 font-bold uppercase tracking-wider mb-2">
+            Mode Info
+          </div>
+          <div className="text-[10px] text-white/70 leading-relaxed">
+            {PITCH_MODES[currentMode].description}
+          </div>
+        </div>
+
+        {/* Category Badge */}
+        <div className="mt-auto bg-gradient-to-r from-orange-900/40 to-amber-900/40 rounded-lg px-3 py-2 border border-orange-500/20 text-center">
+          <div className="text-[8px] text-amber-400/50 uppercase tracking-wider">Category</div>
+          <div className="text-[10px] text-orange-300 font-bold">Texture Lab</div>
+        </div>
       </div>
 
       {/* CENTER: Main Controls */}

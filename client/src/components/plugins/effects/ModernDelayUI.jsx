@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState } from 'react';
 import { Knob, ModeSelector } from '@/components/controls';
 import { useGhostValue, useCanvasVisualization } from '@/hooks/useAudioPlugin';
 
@@ -180,6 +180,13 @@ const DELAY_MODES = {
     icon: '📼',
     description: 'Warm analog character',
     defaults: { timeLeft: 0.425, timeRight: 0.425, feedbackLeft: 0.55, feedbackRight: 0.55, pingPong: 0.0, wet: 0.35, filterFreq: 4000, saturation: 0.5 }
+  },
+  'custom': {
+    id: 'custom',
+    name: 'Custom',
+    icon: '⚙️',
+    description: 'Manual control',
+    defaults: { timeLeft: 0.375, timeRight: 0.5, feedbackLeft: 0.4, feedbackRight: 0.4, pingPong: 0.0, wet: 0.35 }
   }
 };
 
@@ -201,7 +208,7 @@ export const ModernDelayUI = ({ trackId, effect, onChange }) => {
     width = 1.0
   } = effect.settings;
 
-  const [selectedMode, setSelectedMode] = useState('slapback');
+  const [selectedMode, setSelectedMode] = useState('custom');
 
   // Ghost values (400ms lag for smooth visual feedback)
   const ghostTimeLeft = useGhostValue(timeLeft * 1000, 400);

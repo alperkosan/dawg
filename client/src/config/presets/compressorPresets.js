@@ -147,6 +147,30 @@ export const COMPRESSOR_MODES = {
       ratio: { min: 4, max: 7, curve: 'linear' },
       wet: { min: 0.7, max: 1.0, curve: 'linear' }
     }
+  },
+
+  'custom': {
+    id: 'custom',
+    name: 'Custom',
+    icon: '⚙️',
+    color: 'gray',
+    description: 'Manual control',
+    category: 'custom',
+
+    baseParams: {
+      threshold: -24,
+      ratio: 4,
+      attack: 0.01,
+      release: 0.1,
+      knee: 12,
+      autoMakeup: true
+    },
+
+    curves: {
+      threshold: { min: -24, max: -24, curve: 'linear' },
+      ratio: { min: 4, max: 4, curve: 'linear' },
+      wet: { min: 1.0, max: 1.0, curve: 'linear' }
+    }
   }
 };
 

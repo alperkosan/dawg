@@ -1,6 +1,12 @@
 /**
- * TidalFilter Processor
- * State-variable filter with resonance and filter type morphing
+ * TidalFilter Processor v2.0
+ * State-variable filter with smooth filter type morphing
+ *
+ * Features:
+ * - Adjustable cutoff frequency (20Hz - 20kHz)
+ * - Resonance control (0-100%)
+ * - Morphing filter types (LP → BP → HP → Notch)
+ * - Drive with soft saturation
  */
 
 class TidalFilterProcessor extends AudioWorkletProcessor {
@@ -8,7 +14,7 @@ class TidalFilterProcessor extends AudioWorkletProcessor {
     return [
       { name: 'cutoff', defaultValue: 1000, minValue: 20, maxValue: 20000 },
       { name: 'resonance', defaultValue: 0.5, minValue: 0, maxValue: 1 },
-      { name: 'filterType', defaultValue: 0, minValue: 0, maxValue: 1 }, // 0=lowpass, 0.5=bandpass, 1=highpass
+      { name: 'filterType', defaultValue: 0, minValue: 0, maxValue: 1 },
       { name: 'drive', defaultValue: 1.0, minValue: 1, maxValue: 10 },
       { name: 'wet', defaultValue: 1.0, minValue: 0, maxValue: 1 }
     ];
@@ -21,6 +27,7 @@ class TidalFilterProcessor extends AudioWorkletProcessor {
     this.settings = options?.processorOptions?.settings || {};
     this.bypassed = false;
 
+    // Per-channel state-variable filter state
     this.channelState = [
       { low: 0, band: 0, high: 0, notch: 0 },
       { low: 0, band: 0, high: 0, notch: 0 }
@@ -40,6 +47,12 @@ class TidalFilterProcessor extends AudioWorkletProcessor {
     return param.length > 1 ? param[index] : param[0];
   }
 
+  // Soft saturation for drive
+  softSaturate(x) {
+    if (Math.abs(x) < 1) return x;
+    return Math.sign(x) * (1 - Math.exp(-Math.abs(x)));
+  }
+
   processEffect(sample, channel, sampleIndex, parameters) {
     const cutoff = this.getParam(parameters.cutoff, sampleIndex) || 1000;
     const resonance = this.getParam(parameters.resonance, sampleIndex) || 0.5;
@@ -48,22 +61,23 @@ class TidalFilterProcessor extends AudioWorkletProcessor {
 
     const state = this.channelState[channel];
 
-    // Apply drive (soft saturation)
+    // Apply drive with soft saturation
     let driven = sample * drive;
-    if (Math.abs(driven) > 1) {
-      driven = Math.sign(driven) * (1 - Math.exp(-Math.abs(driven)));
+    if (drive > 1.0) {
+      driven = this.softSaturate(driven);
     }
 
-    // State-variable filter
-    const f = 2 * Math.sin(Math.PI * cutoff / this.sampleRate);
+    // State-variable filter coefficients
+    const f = 2 * Math.sin(Math.PI * Math.min(cutoff, this.sampleRate / 2.2) / this.sampleRate);
     const q = 1 - (resonance * 0.95); // Map resonance to Q (0.05 to 1)
 
+    // State-variable filter equations
     state.low += f * state.band;
     state.high = driven - state.low - q * state.band;
     state.band += f * state.high;
     state.notch = state.high + state.low;
 
-    // Morphing between filter types
+    // Smooth morphing between filter types
     let output;
     if (filterType <= 0.33) {
       // Lowpass to Bandpass morph
@@ -79,7 +93,8 @@ class TidalFilterProcessor extends AudioWorkletProcessor {
       output = state.high * (1 - mix) + state.notch * mix;
     }
 
-    return output * 0.5; // Compensate for resonance boost
+    // Compensate for resonance boost
+    return output * 0.5;
   }
 
   process(inputs, outputs, parameters) {

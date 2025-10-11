@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState } from 'react';
 import { Knob, ModeSelector } from '@/components/controls';
 import { useGhostValue, useCanvasVisualization } from '@/hooks/useAudioPlugin';
 
@@ -161,6 +161,13 @@ const REVERB_MODES = {
     icon: '🌌',
     description: 'Infinite soundscape',
     defaults: { size: 0.95, decay: 10.0, damping: 0.8, wet: 0.6, earlyLateMix: 0.8 }
+  },
+  'custom': {
+    id: 'custom',
+    name: 'Custom',
+    icon: '⚙️',
+    description: 'Manual control',
+    defaults: { size: 0.7, decay: 2.5, damping: 0.5, wet: 0.35, earlyLateMix: 0.5 }
   }
 };
 
@@ -182,7 +189,7 @@ export const ModernReverbUI = ({ trackId, effect, onChange }) => {
     modRate = 0.5
   } = effect.settings;
 
-  const [selectedMode, setSelectedMode] = useState('hall');
+  const [selectedMode, setSelectedMode] = useState('custom');
 
   // Ghost values (400ms lag for smooth visual feedback)
   const ghostSize = useGhostValue(size * 100, 400);

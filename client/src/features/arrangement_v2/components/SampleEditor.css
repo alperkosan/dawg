@@ -1,0 +1,321 @@
+/**
+ * 🎛️ SAMPLE EDITOR MODAL STYLES
+ * Zenith theme modal for editing audio clip properties
+ */
+
+/* Overlay backdrop */
+.sample-editor-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(8px);
+  animation: sample-editor-fade-in 0.2s ease;
+}
+
+@keyframes sample-editor-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Modal container */
+.sample-editor-modal {
+  width: 90%;
+  max-width: 700px;
+  max-height: 90vh;
+  background: linear-gradient(135deg, rgba(15, 15, 20, 0.98) 0%, rgba(20, 20, 28, 0.98) 100%);
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.8), 0 0 64px rgba(139, 92, 246, 0.2);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  animation: sample-editor-slide-up 0.3s ease;
+}
+
+@keyframes sample-editor-slide-up {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* Header */
+.sample-editor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  background: rgba(139, 92, 246, 0.1);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.sample-editor-header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.95);
+  letter-spacing: 0.5px;
+}
+
+.sample-editor-close {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.sample-editor-close:hover {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.5);
+  color: rgba(255, 255, 255, 0.95);
+}
+
+/* Waveform section */
+.sample-editor-waveform {
+  padding: 20px;
+  background: rgba(10, 10, 15, 0.6);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.sample-editor-waveform canvas {
+  width: 100%;
+  height: 120px;
+  display: block;
+  border-radius: 8px;
+  background: rgba(15, 15, 20, 0.8);
+  border: 1px solid rgba(139, 92, 246, 0.2);
+}
+
+/* Controls section */
+.sample-editor-controls {
+  flex: 1;
+  padding: 20px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Custom scrollbar */
+.sample-editor-controls::-webkit-scrollbar {
+  width: 8px;
+}
+
+.sample-editor-controls::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.sample-editor-controls::-webkit-scrollbar-thumb {
+  background: rgba(139, 92, 246, 0.4);
+  border-radius: 4px;
+}
+
+.sample-editor-controls::-webkit-scrollbar-thumb:hover {
+  background: rgba(139, 92, 246, 0.6);
+}
+
+/* Individual control */
+.sample-editor-control {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sample-editor-control label {
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.7);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.sample-editor-control input[type="text"] {
+  width: 100%;
+  padding: 10px 12px;
+  background: rgba(15, 15, 20, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.95);
+  font-size: 14px;
+  font-family: inherit;
+  transition: all 0.15s ease;
+}
+
+.sample-editor-control input[type="text"]:focus {
+  outline: none;
+  border-color: rgba(139, 92, 246, 0.5);
+  background: rgba(15, 15, 20, 0.95);
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
+}
+
+.sample-editor-control select {
+  width: 100%;
+  padding: 10px 12px;
+  background: rgba(15, 15, 20, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.95);
+  font-size: 14px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.sample-editor-control select:focus {
+  outline: none;
+  border-color: rgba(139, 92, 246, 0.5);
+  background: rgba(15, 15, 20, 0.95);
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
+}
+
+.sample-editor-control select option {
+  background: rgba(15, 15, 20, 1);
+  color: rgba(255, 255, 255, 0.95);
+}
+
+/* Range slider container */
+.sample-editor-control input[type="range"] {
+  width: 100%;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  outline: none;
+  transition: background 0.15s ease;
+}
+
+.sample-editor-control input[type="range"]:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.sample-editor-control input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 1) 0%, rgba(99, 102, 241, 1) 100%);
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(139, 92, 246, 0.4);
+  transition: all 0.15s ease;
+}
+
+.sample-editor-control input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.1);
+  box-shadow: 0 2px 12px rgba(139, 92, 246, 0.6);
+}
+
+.sample-editor-control input[type="range"]::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 1) 0%, rgba(99, 102, 241, 1) 100%);
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(139, 92, 246, 0.4);
+  transition: all 0.15s ease;
+}
+
+.sample-editor-control input[type="range"]::-moz-range-thumb:hover {
+  transform: scale(1.1);
+  box-shadow: 0 2px 12px rgba(139, 92, 246, 0.6);
+}
+
+.sample-editor-control span {
+  font-size: 13px;
+  color: rgba(139, 92, 246, 0.9);
+  font-weight: 600;
+  text-align: right;
+  min-width: 60px;
+}
+
+/* Actions footer */
+.sample-editor-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 16px 20px;
+  background: rgba(10, 10, 15, 0.6);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.sample-editor-btn {
+  padding: 10px 24px;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  letter-spacing: 0.3px;
+}
+
+.sample-editor-btn-cancel {
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.sample-editor-btn-cancel:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.sample-editor-btn-save {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 1) 0%, rgba(99, 102, 241, 1) 100%);
+  color: rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  box-shadow: 0 2px 8px rgba(139, 92, 246, 0.3);
+}
+
+.sample-editor-btn-save:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.5);
+}
+
+.sample-editor-btn-save:active {
+  transform: translateY(0);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .sample-editor-modal {
+    width: 95%;
+    max-height: 95vh;
+  }
+
+  .sample-editor-waveform canvas {
+    height: 80px;
+  }
+
+  .sample-editor-controls {
+    padding: 16px;
+    gap: 12px;
+  }
+}

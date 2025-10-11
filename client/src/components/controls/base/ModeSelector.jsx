@@ -18,7 +18,9 @@ import { useControlTheme } from '../useControlTheme';
 export const ModeSelector = ({
   modes = [],              // Array of { id, label, icon?, description? }
   activeMode,
+  selectedMode,            // Alias for activeMode (backwards compat)
   onChange,
+  onSelectMode,            // Alias for onChange (backwards compat)
   orientation = 'horizontal', // 'horizontal' | 'vertical'
   compact = false,         // Icon-only mode
   allowDeselect = false,   // Allow clicking active mode to deselect
@@ -32,15 +34,21 @@ export const ModeSelector = ({
   const buttonRefs = useRef({});
   const containerRef = useRef(null);
 
+  // Support both prop names for backwards compatibility
+  const currentMode = selectedMode || activeMode;
+  const handleChange = onSelectMode || onChange;
+
   if (!modes || modes.length === 0) {
     return null;
   }
 
   const handleClick = (modeId) => {
-    if (allowDeselect && activeMode === modeId) {
-      onChange(null);
+    if (!handleChange) return;
+
+    if (allowDeselect && currentMode === modeId) {
+      handleChange(null);
     } else {
-      onChange(modeId);
+      handleChange(modeId);
     }
   };
 
@@ -53,11 +61,11 @@ export const ModeSelector = ({
 
   // Calculate indicator position based on actual button positions
   useEffect(() => {
-    if (!activeMode || !buttonRefs.current[activeMode] || !containerRef.current) {
+    if (!currentMode || !buttonRefs.current[currentMode] || !containerRef.current) {
       return;
     }
 
-    const activeButton = buttonRefs.current[activeMode];
+    const activeButton = buttonRefs.current[currentMode];
     const container = containerRef.current;
 
     const buttonRect = activeButton.getBoundingClientRect();
@@ -90,16 +98,16 @@ export const ModeSelector = ({
         right: '4px',
       });
     }
-  }, [activeMode, modes, orientation, colors.fill]);
+  }, [currentMode, modes, orientation, colors.fill]);
 
   // Update indicator on window resize
   useEffect(() => {
     const updateIndicator = () => {
-      if (!activeMode || !buttonRefs.current[activeMode] || !containerRef.current) {
+      if (!currentMode || !buttonRefs.current[currentMode] || !containerRef.current) {
         return;
       }
 
-      const activeButton = buttonRefs.current[activeMode];
+      const activeButton = buttonRefs.current[currentMode];
       const container = containerRef.current;
 
       const buttonRect = activeButton.getBoundingClientRect();
@@ -122,32 +130,37 @@ export const ModeSelector = ({
 
     window.addEventListener('resize', updateIndicator);
     return () => window.removeEventListener('resize', updateIndicator);
-  }, [activeMode, orientation]);
+  }, [currentMode, orientation]);
 
   return (
     <div
       ref={containerRef}
       className={`mode-selector ${orientation} ${className}`}
       style={{
-        display: 'inline-flex',
+        display: 'flex',
         flexDirection: orientation === 'horizontal' ? 'row' : 'column',
+        flexWrap: orientation === 'horizontal' ? 'wrap' : 'nowrap',
         gap: '2px',
         padding: '4px',
         backgroundColor: colors.track,
         borderRadius: '8px',
         position: 'relative',
+        width: '100%',
+        maxWidth: '100%',
+        overflow: 'hidden',
+        boxSizing: 'border-box',
       }}
       role="radiogroup"
       aria-label="Mode selection"
     >
       {/* Active indicator (animated underline/background) */}
-      {activeMode && indicatorStyle.left !== undefined && (
+      {currentMode && indicatorStyle.left !== undefined && (
         <div style={indicatorStyle} />
       )}
 
       {/* Mode buttons */}
       {modes.map((mode, index) => {
-        const isActive = activeMode === mode.id;
+        const isActive = currentMode === mode.id;
         const isHovered = hoveredMode === mode.id;
 
         return (
@@ -165,13 +178,13 @@ export const ModeSelector = ({
             style={{
               position: 'relative',
               zIndex: 1,
-              padding: compact ? '8px' : '8px 16px',
+              padding: compact ? '8px' : '8px 12px',
               backgroundColor: 'transparent',
               border: 'none',
               borderRadius: '6px',
               cursor: 'pointer',
               color: isActive ? '#fff' : colors.textMuted,
-              fontSize: '12px',
+              fontSize: '11px',
               fontWeight: isActive ? 600 : 500,
               textTransform: 'uppercase',
               letterSpacing: '0.05em',
@@ -180,20 +193,37 @@ export const ModeSelector = ({
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              gap: '6px',
-              minWidth: compact ? 'auto' : '60px',
+              gap: '4px',
+              minWidth: compact ? 'auto' : '50px',
+              maxWidth: '100%',
+              flex: '1 1 auto',
               outline: 'none',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              boxSizing: 'border-box',
               ...(isHovered && !isActive && {
                 color: colors.text,
               }),
             }}
           >
             {mode.icon && (
-              <span className="mode-icon" style={{ fontSize: '14px' }}>
+              <span className="mode-icon" style={{ fontSize: '14px', flexShrink: 0 }}>
                 {mode.icon}
               </span>
             )}
-            {!compact && <span className="mode-label">{mode.label}</span>}
+            {!compact && (
+              <span
+                className="mode-label"
+                style={{
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  minWidth: 0,
+                }}
+              >
+                {mode.label || mode.name}
+              </span>
+            )}
           </button>
         );
       })}

@@ -15,7 +15,7 @@ function MainToolbar() {
     });
 
     const panelButtons = [
-        { id: 'arrangement-workspace', title: 'Arrangement Workspace', icon: Layers },
+        { id: 'arrangement-v2', title: 'Arrangement V2 🎵', icon: Layers },
         { id: 'channel-rack', title: 'Channel Rack', icon: AudioLines },
         { id: 'mixer', title: 'Mixer', icon: SlidersHorizontal },
         { id: 'piano-roll', title: 'Piano Roll', icon: Music },

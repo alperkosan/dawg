@@ -1,6 +1,12 @@
 /**
- * OrbitPanner Processor
- * Auto-panning effect with multiple waveform shapes
+ * OrbitPanner Processor v2.0
+ * Professional auto-panning with multiple waveform shapes
+ *
+ * Features:
+ * - Adjustable LFO rate (0.1-20 Hz)
+ * - Morphing waveform shapes (sine → triangle → square)
+ * - Stereo width control
+ * - Equal power panning law
  */
 
 class OrbitPannerProcessor extends AudioWorkletProcessor {
@@ -8,7 +14,7 @@ class OrbitPannerProcessor extends AudioWorkletProcessor {
     return [
       { name: 'rate', defaultValue: 1.0, minValue: 0.01, maxValue: 20 },
       { name: 'depth', defaultValue: 0.8, minValue: 0, maxValue: 1 },
-      { name: 'shape', defaultValue: 0, minValue: 0, maxValue: 1 }, // 0=sine, 0.5=triangle, 1=square
+      { name: 'shape', defaultValue: 0, minValue: 0, maxValue: 1 },
       { name: 'stereoWidth', defaultValue: 1.0, minValue: 0, maxValue: 2 },
       { name: 'wet', defaultValue: 1.0, minValue: 0, maxValue: 1 }
     ];
@@ -37,21 +43,22 @@ class OrbitPannerProcessor extends AudioWorkletProcessor {
     return param.length > 1 ? param[index] : param[0];
   }
 
+  // Generate LFO with morphing waveform shapes
   generateLFO(phase, shape) {
-    // Sine wave
+    // Sine wave (shape: 0 to 0.33)
     if (shape <= 0.33) {
       return Math.sin(phase);
     }
-    // Triangle wave (morphing from sine)
+    // Triangle wave (shape: 0.33 to 0.66)
     else if (shape <= 0.66) {
-      const mix = (shape - 0.33) * 3;
+      const mix = (shape - 0.33) * 3; // 0 to 1
       const sine = Math.sin(phase);
       const triangle = (2 / Math.PI) * Math.asin(Math.sin(phase));
       return sine * (1 - mix) + triangle * mix;
     }
-    // Square wave (morphing from triangle)
+    // Square wave (shape: 0.66 to 1.0)
     else {
-      const mix = (shape - 0.66) * 3;
+      const mix = (shape - 0.66) * 3; // 0 to 1
       const triangle = (2 / Math.PI) * Math.asin(Math.sin(phase));
       const square = phase % (2 * Math.PI) < Math.PI ? 1 : -1;
       return triangle * (1 - mix) + square * mix;
@@ -83,9 +90,6 @@ class OrbitPannerProcessor extends AudioWorkletProcessor {
 
     const lfoIncrement = (rate / this.sampleRate) * 2 * Math.PI;
 
-    // Ensure we have at least 2 channels for panning
-    const numChannels = Math.max(output.length, 2);
-
     for (let i = 0; i < input[0].length; i++) {
       // Generate LFO value (-1 to 1)
       const lfoValue = this.generateLFO(this.lfoPhase, shape) * depth;
@@ -105,7 +109,7 @@ class OrbitPannerProcessor extends AudioWorkletProcessor {
       }
       monoInput /= input.length;
 
-      // Apply panning
+      // Apply panning with wet/dry mix
       if (output.length >= 1) {
         const wetLeft = monoInput * leftGain;
         const dryLeft = input[0] ? input[0][i] : 0;

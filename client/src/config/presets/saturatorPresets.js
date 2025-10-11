@@ -206,6 +206,31 @@ export const SATURATOR_MODES = {
       tone: { min: 0, max: 2, curve: 'linear' },
       wet: { min: 0, max: 0.9, curve: 'linear' }
     }
+  },
+
+  'custom': {
+    id: 'custom',
+    name: 'Custom',
+    icon: '⚙️',
+    color: 'gray',
+    description: 'Manual control',
+    category: 'custom',
+
+    baseParams: {
+      saturationMode: 'toasty',
+      frequencyMode: 'wide',
+      lowCutFreq: 20,
+      highCutFreq: 20000,
+      tone: 0,
+      autoGain: 1,
+      headroom: 0
+    },
+
+    curves: {
+      distortion: { min: 0.4, max: 0.4, curve: 'linear' },
+      tone: { min: 0, max: 0, curve: 'linear' },
+      wet: { min: 1.0, max: 1.0, curve: 'linear' }
+    }
   }
 };
 

@@ -1,5 +1,3 @@
-import React from 'react';
-
 /**
  * DAWG Plugin Registry - Clean Architecture
  *
@@ -84,8 +82,8 @@ export const pluginRegistry = {
     story: "Over the top - Xfer OTT'den ilham alan multiband compression gücü.",
     toneNode: 'OTT',
     uiComponent: OTTUI,
-    initialSize: { width: 1300, height: 800 },
-    minSize: { width: 1200, height: 800 },
+    initialSize: { width: 1300, height: 920 },
+    minSize: { width: 1200, height: 920 },
     defaultSettings: {
       depth: 0.5,
       time: 0.5,
@@ -128,8 +126,8 @@ export const pluginRegistry = {
   'TidalFilter': {
     type: 'TidalFilter', category: 'The Spectral Weave', story: "Sesin üzerinden gelgit dalgaları gibi geçen ritmik filtre.",
     toneNode: 'AutoFilter', uiComponent: TidalFilterUI,
-    initialSize: { width: 500, height: 280 },
-    minSize: { width: 450, height: 250 },
+    initialSize: { width: 1235, height: 640 },
+    minSize: { width: 1235, height: 640 },
     defaultSettings: { frequency: '8n', baseFrequency: 400, octaves: 2, wet: 1.0 },
     presets: [
       { name: 'Yavaş Süpürme', settings: { frequency: '1n', baseFrequency: 200, octaves: 4, wet: 1.0 } },
@@ -150,8 +148,8 @@ export const pluginRegistry = {
   'VortexPhaser': {
     type: 'VortexPhaser', category: 'Modulation Machines', story: "Sesi, bir girdabın içine çeker.",
     toneNode: 'Phaser', uiComponent: VortexPhaserUI,
-    initialSize: { width: 500, height: 280 },
-    minSize: { width: 450, height: 250 },
+    initialSize: { width: 1170, height: 640 },
+    minSize: { width: 1170, height: 640 },
     defaultSettings: { frequency: 0.5, octaves: 3, baseFrequency: 350, wet: 0.5 },
      presets: [
       { name: 'Yavaş Girdap', settings: { frequency: 0.2, octaves: 5, wet: 0.4, baseFrequency: 400 } },
@@ -161,8 +159,8 @@ export const pluginRegistry = {
   'OrbitPanner': {
     type: 'OrbitPanner', category: 'Modulation Machines', story: "Sesi, stereo alanında yörüngeye oturtur.",
     toneNode: 'AutoPanner', uiComponent: OrbitPannerUI,
-    initialSize: { width: 560, height: 430 },
-    minSize: { width: 560, height: 430 },
+    initialSize: { width: 1160, height: 780 },
+    minSize: { width: 1160, height: 780 },
     defaultSettings: { frequency: '4n', depth: 1, wet: 1.0 },
     presets: [
       { name: 'Yavaş Yörünge', settings: { frequency: '2m', depth: 1, wet: 1.0 } },
@@ -172,8 +170,8 @@ export const pluginRegistry = {
   'ArcadeCrusher': {
     type: 'ArcadeCrusher', category: 'The Texture Lab', story: "Sesi, 8-bit bir video oyunu karakterine dönüştürür.",
     toneNode: 'BitCrusher', uiComponent: ArcadeCrusherUI,
-    initialSize: { width: 600, height: 490 },
-    minSize: { width: 600, height: 490 },
+    initialSize: { width: 1045, height: 566 },
+    minSize: { width: 1045, height: 566 },
     defaultSettings: { bits: 4, wet: 1.0 },
     presets: [
       { name: 'Atari Sesi', settings: { bits: 4, wet: 0.8 } },
@@ -183,8 +181,8 @@ export const pluginRegistry = {
   'PitchShifter': {
     type: 'PitchShifter', category: 'The Texture Lab', story: "Sesin DNA'sıyla oynayarak onu bir deve veya cüceye dönüştürür.",
     toneNode: 'PitchShift', uiComponent: PitchShifterUI,
-    initialSize: { width: 600, height: 530 },
-    minSize: { width: 600, height: 530 },
+    initialSize: { width: 1135, height: 596 },
+    minSize: { width: 1135, height: 596 },
     defaultSettings: { pitch: 0, windowSize: 0.1, wet: 1.0 },
     presets: [
       { name: 'Oktav Altı', settings: { pitch: -12, wet: 0.6, windowSize: 0.1 } },
@@ -251,8 +249,8 @@ export const pluginRegistry = {
     story: "Shape the attack and sustain of any sound - From punchy drums to smooth textures.",
     toneNode: 'TransientDesigner',
     uiComponent: TransientDesignerUI,
-    initialSize: { width: 1100, height: 650 },
-    minSize: { width: 1000, height: 600 },
+    initialSize: { width: 1100, height: 660 },
+    minSize: { width: 1100, height: 660 },
     defaultSettings: {
       attack: 0,
       sustain: 0,

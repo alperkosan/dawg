@@ -202,7 +202,7 @@ export const AdvancedCompressorUI = ({ trackId, effect, onChange }) => {
     autoMakeup = 1
   } = effect.settings;
 
-  const [selectedMode, setSelectedMode] = useState('vocal-control');
+  const [selectedMode, setSelectedMode] = useState('custom');
   const [amount, setAmount] = useState(50);
   const [gainReduction, setGainReduction] = useState(0);
 

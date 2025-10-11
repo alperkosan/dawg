@@ -1,0 +1,117 @@
+/**
+ * 🎨 PATTERN BROWSER STYLES
+ */
+
+.pattern-browser {
+  width: 250px;
+  height: 100%;
+  flex-shrink: 0; /* Don't shrink when space is limited */
+  background: var(--zenith-surface, rgba(15, 15, 20, 0.98));
+  border-right: 1px solid var(--zenith-border, rgba(255, 255, 255, 0.1));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  z-index: 5; /* Below track headers (z-index: 10) but above canvas */
+  pointer-events: none; /* Let drag events pass through */
+}
+
+/* But enable pointer events for interactive children */
+.pattern-browser-header,
+.pattern-browser-list,
+.pattern-browser-item {
+  pointer-events: auto;
+}
+
+.pattern-browser-header {
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.pattern-browser-header h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.pattern-browser-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.pattern-browser-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  margin-bottom: 4px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 6px;
+  cursor: grab;
+  transition: all 0.15s ease;
+}
+
+.pattern-browser-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(139, 92, 246, 0.3);
+  transform: translateX(2px);
+}
+
+.pattern-browser-item:active {
+  cursor: grabbing;
+  transform: scale(0.98);
+}
+
+/* Allow drag events to pass through when dragging */
+.pattern-browser-item[draggable="true"]:active ~ * {
+  pointer-events: none;
+}
+
+.pattern-icon {
+  font-size: 20px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.pattern-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.pattern-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.9);
+  margin-bottom: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pattern-details {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+/* Scrollbar */
+.pattern-browser-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.pattern-browser-list::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.pattern-browser-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+}
+
+.pattern-browser-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}

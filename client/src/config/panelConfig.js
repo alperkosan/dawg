@@ -3,6 +3,7 @@ import Mixer from '@/features/mixer/Mixer'; // Zenith Mixer with premium base co
 import SampleEditorV2 from '@/features/sample_editor_v3/SampleEditorV3';
 import PianoRoll from '@/features/piano_roll_v7/PianoRoll';
 import ArrangementWorkspace from '@/features/arrangement_workspace/ArrangementWorkspace';
+import { ArrangementPanelV2 } from '@/features/arrangement_v2';
 import KeybindingsPanel from '@/features/key_bindings/KeybindingsPanel';
 import { ThemeEditor } from '@/features/theme_editor/ThemeEditor';
 import { ForgeSynthUI } from '@/features/instrument_editor/ForgeSynthUI';
@@ -17,6 +18,7 @@ export const panelRegistry = {
   'file-browser': FileBrowserPanel,
   'keybindings': KeybindingsPanel,
   'arrangement-workspace': ArrangementWorkspace,
+  'arrangement-v2': ArrangementPanelV2,
   'theme-editor': ThemeEditor,
   'instrument-editor-forgesynth': ForgeSynthUI,
   'audio-quality-settings': AudioQualitySettings,
@@ -29,6 +31,13 @@ export const panelDefinitions = {
     initialPos: { x: 10, y: 5 },
     minSize: { width: 900, height: 600 },
     isFullscreen: true, // Fullscreen mode for workspace
+  },
+  'arrangement-v2': {
+    title: 'Arrangement V2 🎵',
+    initialSize: { width: 1200, height: 700 },
+    initialPos: { x: 10, y: 5 },
+    minSize: { width: 800, height: 500 },
+    isFullscreen: true, // Fullscreen mode for arrangement panel
   },
   'channel-rack': {
     title: 'Channel Rack',

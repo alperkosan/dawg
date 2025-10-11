@@ -1,45 +1,167 @@
-import { useState, useEffect, useRef } from 'react';
-import { Knob } from '@/components/controls';
-import { useGhostValue, useCanvasVisualization } from '@/hooks/useAudioPlugin';
-import { MeteringService } from '@/lib/core/MeteringService';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Knob, ModeSelector } from '@/components/controls';
+import { useAudioPlugin, useGhostValue, useCanvasVisualization } from '@/hooks/useAudioPlugin';
 
 /**
- * ORBIT PANNER V2.0 - REDESIGNED WITH ENHANCED COMPONENTS
+ * ORBIT PANNER V2.0 - COMPLETE REDESIGN
  *
- * "The Spacetime Chamber" - Circular auto-panner
+ * "The Spacetime Chamber" - Professional auto-panner with mode presets
  *
  * Features:
- * - Enhanced component library (Knob)
- * - Category theming ('spacetime-chamber' - purple/cyan palette)
- * - Ghost value feedback (400ms visual lag)
+ * - 7 panning modes (circle, figure-8, sine, triangle, random, wide, custom)
  * - Real-time orbit trail visualization
- * - Tempo sync support
+ * - useAudioPlugin hook with metrics
+ * - Ghost value feedback
+ * - 3-panel professional layout
+ * - Category theming: spacetime-chamber (purple/cyan)
  *
  * Design Philosophy:
- * - "Simple controls, complex movement"
- * - Visual feedback at every step
- * - Category-based color identity
+ * - "From gentle sway to extreme motion"
+ * - Visual feedback of stereo position
+ * - Tempo sync support
  */
 
 // ============================================================================
-// ORBIT VISUALIZER
+// PANNER MODES
 // ============================================================================
 
-const OrbitVisualizer = ({ frequency, depth, inputLevel }) => {
+const PANNER_MODES = {
+  'circle': {
+    id: 'circle',
+    name: 'Circle',
+    icon: '⭕',
+    description: 'Smooth circular orbit',
+    settings: {
+      rate: 2,
+      depth: 0.8,
+      shape: 0, // Sine
+      stereoWidth: 1.0,
+      wet: 1.0
+    }
+  },
+  'figure-8': {
+    id: 'figure-8',
+    name: 'Figure-8',
+    icon: '∞',
+    description: 'Complex figure-8 pattern',
+    settings: {
+      rate: 1.5,
+      depth: 0.9,
+      shape: 0.33, // Triangle mix
+      stereoWidth: 1.5,
+      wet: 1.0
+    }
+  },
+  'sine': {
+    id: 'sine',
+    name: 'Sine Wave',
+    icon: '〰️',
+    description: 'Classic L-R sweep',
+    settings: {
+      rate: 1.0,
+      depth: 0.7,
+      shape: 0, // Pure sine
+      stereoWidth: 1.0,
+      wet: 1.0
+    }
+  },
+  'triangle': {
+    id: 'triangle',
+    name: 'Triangle',
+    icon: '△',
+    description: 'Linear sweep',
+    settings: {
+      rate: 0.8,
+      depth: 0.75,
+      shape: 0.5, // Triangle
+      stereoWidth: 1.0,
+      wet: 1.0
+    }
+  },
+  'random': {
+    id: 'random',
+    name: 'Random',
+    icon: '🎲',
+    description: 'Unpredictable movement',
+    settings: {
+      rate: 3,
+      depth: 0.6,
+      shape: 1.0, // Square (abrupt changes)
+      stereoWidth: 1.2,
+      wet: 0.8
+    }
+  },
+  'wide': {
+    id: 'wide',
+    name: 'Wide Stereo',
+    icon: '↔️',
+    description: 'Maximum width',
+    settings: {
+      rate: 0.5,
+      depth: 1.0,
+      shape: 0.25,
+      stereoWidth: 2.0,
+      wet: 1.0
+    }
+  },
+  'custom': {
+    id: 'custom',
+    name: 'Custom',
+    icon: '⚙️',
+    description: 'Manual control',
+    settings: {
+      rate: 1.0,
+      depth: 0.8,
+      shape: 0,
+      stereoWidth: 1.0,
+      wet: 1.0
+    }
+  }
+};
+
+// ============================================================================
+// ORBIT TRAIL VISUALIZER
+// ============================================================================
+
+const OrbitTrailVisualizer = ({ rate, depth, shape, stereoWidth, inputLevel }) => {
   const timeRef = useRef(0);
 
-  const drawOrbit = (ctx, width, height) => {
+  const generateLFO = (phase, shapeValue) => {
+    // Sine wave
+    if (shapeValue <= 0.33) {
+      return Math.sin(phase);
+    }
+    // Triangle wave (morphing from sine)
+    else if (shapeValue <= 0.66) {
+      const mix = (shapeValue - 0.33) * 3;
+      const sine = Math.sin(phase);
+      const triangle = (2 / Math.PI) * Math.asin(Math.sin(phase));
+      return sine * (1 - mix) + triangle * mix;
+    }
+    // Square wave (morphing from triangle)
+    else {
+      const mix = (shapeValue - 0.66) * 3;
+      const triangle = (2 / Math.PI) * Math.asin(Math.sin(phase));
+      const square = phase % (2 * Math.PI) < Math.PI ? 1 : -1;
+      return triangle * (1 - mix) + square * mix;
+    }
+  };
+
+  const drawOrbit = useCallback((ctx, width, height) => {
     const time = timeRef.current;
     const centerX = width / 2;
     const centerY = height / 2;
 
-    // Dark background
-    ctx.fillStyle = 'rgba(5, 5, 20, 0.3)';
+    // Dark background with subtle gradient
+    const bgGradient = ctx.createLinearGradient(0, 0, 0, height);
+    bgGradient.addColorStop(0, 'rgba(10, 5, 25, 0.3)');
+    bgGradient.addColorStop(1, 'rgba(5, 5, 15, 0.3)');
+    ctx.fillStyle = bgGradient;
     ctx.fillRect(0, 0, width, height);
 
-    // Orbit path (purple - spacetime-chamber)
-    const orbitRadius = Math.min(width, height) * 0.35 * depth;
-    ctx.strokeStyle = 'rgba(168, 85, 247, 0.4)'; // purple
+    // Draw orbit path preview
+    const orbitRadius = Math.min(width, height) * 0.35 * depth * stereoWidth;
+    ctx.strokeStyle = 'rgba(168, 85, 247, 0.3)'; // purple
     ctx.lineWidth = 2;
     ctx.setLineDash([5, 5]);
     ctx.beginPath();
@@ -48,29 +170,40 @@ const OrbitVisualizer = ({ frequency, depth, inputLevel }) => {
     ctx.setLineDash([]);
 
     // L/R labels
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-    ctx.font = 'bold 14px monospace';
-    ctx.fillText('L', 20, centerY + 5);
-    ctx.fillText('R', width - 35, centerY + 5);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+    ctx.font = 'bold 16px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('L', 30, centerY + 6);
+    ctx.fillText('R', width - 30, centerY + 6);
 
-    // Center point
-    ctx.fillStyle = 'rgba(168, 85, 247, 0.3)';
+    // Center marker
+    ctx.fillStyle = 'rgba(168, 85, 247, 0.4)';
     ctx.beginPath();
-    ctx.arc(centerX, centerY, 4, 0, Math.PI * 2);
+    ctx.arc(centerX, centerY, 5, 0, Math.PI * 2);
     ctx.fill();
 
-    // Orbital object
-    const angle = time * frequency * 0.002;
-    const objX = centerX + Math.cos(angle) * orbitRadius;
-    const objY = centerY + Math.sin(angle) * orbitRadius;
+    // Draw center line
+    ctx.strokeStyle = 'rgba(100, 100, 150, 0.2)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, centerY);
+    ctx.lineTo(width, centerY);
+    ctx.stroke();
 
-    // Trail (cyan - spacetime-chamber secondary)
-    const trailLength = 50;
+    // Calculate current position
+    const phase = time * rate * 0.002;
+    const lfo = generateLFO(phase, shape) * depth * stereoWidth;
+    const objX = centerX + lfo * (width * 0.4);
+    const objY = centerY;
+
+    // Draw trail
+    const trailLength = 80;
     for (let i = 0; i < trailLength; i++) {
-      const trailAngle = angle - (i * 0.05);
-      const trailX = centerX + Math.cos(trailAngle) * orbitRadius;
-      const trailY = centerY + Math.sin(trailAngle) * orbitRadius;
-      const alpha = (1 - i / trailLength) * inputLevel * 0.5;
+      const trailPhase = phase - (i * 0.03);
+      const trailLfo = generateLFO(trailPhase, shape) * depth * stereoWidth;
+      const trailX = centerX + trailLfo * (width * 0.4);
+      const trailY = centerY;
+      const alpha = (1 - i / trailLength) * inputLevel * 0.6;
 
       ctx.fillStyle = `rgba(34, 211, 238, ${alpha})`; // cyan
       ctx.beginPath();
@@ -78,27 +211,35 @@ const OrbitVisualizer = ({ frequency, depth, inputLevel }) => {
       ctx.fill();
     }
 
-    // Main object (glowing cyan)
+    // Main panner object (glowing cyan)
+    const glowSize = 10 + inputLevel * 8;
     ctx.fillStyle = '#22D3EE';
     ctx.shadowColor = '#22D3EE';
-    ctx.shadowBlur = 15 + inputLevel * 20;
+    ctx.shadowBlur = 20 + inputLevel * 15;
     ctx.beginPath();
-    ctx.arc(objX, objY, 8 + inputLevel * 5, 0, Math.PI * 2);
+    ctx.arc(objX, objY, glowSize, 0, Math.PI * 2);
     ctx.fill();
     ctx.shadowBlur = 0;
 
+    // Draw position indicator lines
+    ctx.strokeStyle = 'rgba(34, 211, 238, 0.4)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(objX, objY - 30);
+    ctx.lineTo(objX, objY + 30);
+    ctx.stroke();
+
     // Update time
     timeRef.current += 16;
-  };
+  }, [rate, depth, shape, stereoWidth, inputLevel]);
 
   const { containerRef, canvasRef } = useCanvasVisualization(
     drawOrbit,
-    [frequency, depth, inputLevel],
-    { noLoop: false } // Animate
+    [rate, depth, shape, stereoWidth, inputLevel]
   );
 
   return (
-    <div ref={containerRef} className="w-full h-full bg-black/50 rounded-xl border border-[#A855F7]/20">
+    <div ref={containerRef} className="w-full h-full">
       <canvas ref={canvasRef} className="w-full h-full" />
     </div>
   );
@@ -110,109 +251,106 @@ const OrbitVisualizer = ({ frequency, depth, inputLevel }) => {
 
 export const OrbitPannerUI = ({ trackId, effect, onChange }) => {
   const {
-    frequency = 2,
-    depth = 1.0,
+    rate = 1.0,
+    depth = 0.8,
+    shape = 0,
+    stereoWidth = 1.0,
     wet = 1.0
   } = effect.settings;
 
-  const [inputLevel, setInputLevel] = useState(0);
-  const [isSynced, setIsSynced] = useState(typeof frequency === 'string');
+  const [selectedMode, setSelectedMode] = useState('custom');
 
-  // Ghost values (400ms lag for smooth visual feedback)
-  const numericFreq = typeof frequency === 'string' ? 2 : frequency;
-  const ghostFrequency = useGhostValue(numericFreq, 400);
+  // Audio plugin hook with metrics
+  const { plugin, metrics, isPlaying, getFrequencyData } = useAudioPlugin(
+    trackId,
+    effect.id,
+    {
+      fftSize: 1024,
+      updateMetrics: true
+    }
+  );
+
+  // Input level from metrics
+  const [inputLevel, setInputLevel] = useState(0);
+  useEffect(() => {
+    if (metrics?.inputPeak !== undefined) {
+      setInputLevel(Math.max(0, Math.min(1, (metrics.inputPeak + 60) / 60)));
+    }
+  }, [metrics]);
+
+  // Ghost values (400ms delay)
+  const ghostRate = useGhostValue(rate, 400);
   const ghostDepth = useGhostValue(depth * 100, 400);
+  const ghostShape = useGhostValue(shape * 100, 400);
+  const ghostStereoWidth = useGhostValue(stereoWidth * 100, 400);
   const ghostWet = useGhostValue(wet * 100, 400);
 
-  // Listen to input level for visualization
-  useEffect(() => {
-    const meterId = `${trackId}-input`;
-    const handleLevel = (data) => setInputLevel((data.peak + 60) / 60);
-    const unsubscribe = MeteringService.subscribe(meterId, handleLevel);
-    return unsubscribe;
-  }, [trackId]);
-
-  // Tempo sync options
-  const timeOptions = [
-    { value: '1n', label: '1/1' },
-    { value: '2n', label: '1/2' },
-    { value: '4n', label: '1/4' },
-    { value: '8n', label: '1/8' },
-    { value: '16n', label: '1/16' }
-  ];
-
-  // Toggle sync mode
-  const toggleSync = () => {
-    if (isSynced) {
-      onChange('frequency', 2);
-      setIsSynced(false);
-    } else {
-      onChange('frequency', '4n');
-      setIsSynced(true);
+  // Mode selection handler
+  const handleModeSelect = useCallback((modeId) => {
+    setSelectedMode(modeId);
+    const mode = PANNER_MODES[modeId];
+    if (mode && mode.settings) {
+      Object.entries(mode.settings).forEach(([key, value]) => {
+        onChange(key, value);
+      });
     }
+  }, [onChange]);
+
+  // Shape name helper
+  const getShapeName = (shapeValue) => {
+    if (shapeValue <= 0.33) return 'Sine';
+    if (shapeValue <= 0.66) return 'Triangle';
+    return 'Square';
   };
 
   return (
-    <div className="w-full h-full bg-gradient-to-br from-black via-neutral-950 to-black p-4 flex gap-4 overflow-hidden">
+    <div className="w-full h-full bg-gradient-to-br from-black via-purple-950/20 to-black p-4 flex gap-4 overflow-hidden">
 
-      {/* ===== LEFT PANEL: Info ===== */}
-      <div className="w-[240px] flex-shrink-0 flex flex-col gap-4">
+      {/* ===== LEFT PANEL: Mode Selector ===== */}
+      <div className="w-[220px] flex-shrink-0 flex flex-col gap-4">
 
         {/* Plugin Header */}
-        <div className="bg-gradient-to-r from-[#2d1854] to-[#1a1a1a] rounded-xl px-4 py-3 border border-[#A855F7]/30">
+        <div className="bg-gradient-to-r from-purple-900/40 to-cyan-900/40 rounded-xl px-4 py-3 border border-purple-500/30">
           <div className="flex items-center gap-3">
             <div className="text-2xl">🌀</div>
             <div className="flex-1">
-              <div className="text-sm font-black text-[#A855F7] tracking-wider uppercase">
+              <div className="text-sm font-black text-purple-300 tracking-wider uppercase">
                 Orbit Panner
               </div>
-              <div className="text-[9px] text-[#22D3EE]/70">The Spacetime Chamber</div>
+              <div className="text-[9px] text-cyan-400/70">Spacetime Chamber</div>
             </div>
           </div>
         </div>
 
-        {/* Sync Mode Toggle */}
-        <div className="bg-gradient-to-br from-[#2d1854]/50 to-black/50 rounded-xl p-4 border border-[#A855F7]/10">
-          <div className="text-[10px] text-[#22D3EE]/70 font-bold uppercase tracking-wider mb-3">
-            Rate Mode
-          </div>
-          <button
-            onClick={toggleSync}
-            className={`w-full px-4 py-3 rounded-lg border-2 transition-all font-bold text-sm ${
-              isSynced
-                ? 'border-[#22D3EE] bg-[#22D3EE]/20 text-[#22D3EE] shadow-lg shadow-[#22D3EE]/20'
-                : 'border-[#A855F7]/50 bg-[#A855F7]/10 text-[#A855F7] hover:border-[#A855F7] hover:bg-[#A855F7]/20'
-            }`}
-          >
-            {isSynced ? '♪ TEMPO SYNC' : '🔓 FREE RATE'}
-          </button>
-        </div>
+        {/* Mode Selector */}
+        <ModeSelector
+          modes={Object.values(PANNER_MODES).map(mode => ({
+            id: mode.id,
+            label: mode.name,
+            icon: mode.icon,
+            description: mode.description
+          }))}
+          activeMode={selectedMode}
+          onChange={handleModeSelect}
+          orientation="vertical"
+          category="spacetime-chamber"
+          className="flex-1"
+        />
 
-        {/* How It Works */}
-        <div className="flex-1 bg-gradient-to-br from-[#2d1854]/20 to-black/50 rounded-xl p-4 border border-[#A855F7]/10">
-          <div className="text-[9px] text-[#22D3EE]/70 font-bold uppercase tracking-wider mb-3">
-            How It Works
+        {/* Mode Description */}
+        <div className="bg-gradient-to-br from-purple-900/20 to-black/50 rounded-xl p-4 border border-purple-500/10">
+          <div className="text-[9px] text-cyan-300/70 font-bold uppercase tracking-wider mb-2">
+            Mode Info
           </div>
-          <div className="text-[9px] text-white/50 leading-relaxed space-y-2">
-            <p>
-              <span className="text-[#22D3EE] font-bold">Rate:</span> Orbit speed (Hz or tempo-synced)
-            </p>
-            <p>
-              <span className="text-[#A855F7] font-bold">Depth:</span> Orbit size (stereo width)
-            </p>
-            <p>
-              <span className="text-[#FACC15] font-bold">Mix:</span> Wet/dry balance
-            </p>
-            <p className="text-white/30 italic pt-2 text-[8px]">
-              💡 Watch the cyan orb orbit around the stereo field
-            </p>
+          <div className="text-[10px] text-white/70 leading-relaxed">
+            {PANNER_MODES[selectedMode].description}
           </div>
         </div>
 
         {/* Category Badge */}
-        <div className="bg-gradient-to-r from-[#2d1854] to-[#1a1a1a] rounded-lg px-3 py-2 border border-[#A855F7]/20 text-center">
-          <div className="text-[8px] text-[#22D3EE]/50 uppercase tracking-wider">Category</div>
-          <div className="text-[10px] text-[#A855F7] font-bold">The Spacetime Chamber</div>
+        <div className="mt-auto bg-gradient-to-r from-purple-900/40 to-cyan-900/40 rounded-lg px-3 py-2 border border-purple-500/20 text-center">
+          <div className="text-[8px] text-cyan-400/50 uppercase tracking-wider">Category</div>
+          <div className="text-[10px] text-purple-300 font-bold">Spacetime Chamber</div>
         </div>
       </div>
 
@@ -220,51 +358,33 @@ export const OrbitPannerUI = ({ trackId, effect, onChange }) => {
       <div className="flex-1 flex flex-col gap-4 min-w-0">
 
         {/* Orbit Visualizer */}
-        <div className="h-[280px]">
-          <OrbitVisualizer
-            frequency={numericFreq}
+        <div className="h-[240px] bg-black/40 rounded-xl border border-purple-500/20 overflow-hidden">
+          <OrbitTrailVisualizer
+            rate={rate}
             depth={depth}
+            shape={shape}
+            stereoWidth={stereoWidth}
             inputLevel={inputLevel}
           />
         </div>
 
         {/* Main Controls */}
-        <div className="bg-gradient-to-br from-black/50 to-[#2d1854]/30 rounded-xl p-6 border border-[#A855F7]/20">
-          <div className="grid grid-cols-3 gap-8">
+        <div className="bg-gradient-to-br from-purple-900/20 to-black/40 rounded-xl p-6 border border-purple-500/20">
+          <div className="grid grid-cols-3 gap-6">
 
-            {/* Rate Control */}
-            <div className="flex flex-col">
-              <div className="text-[10px] text-[#22D3EE]/70 font-bold uppercase tracking-wider mb-3 text-center">
-                Rate
-              </div>
-              {isSynced ? (
-                <select
-                  value={frequency}
-                  onChange={(e) => onChange('frequency', e.target.value)}
-                  className="w-full bg-black/70 border-2 border-[#22D3EE] rounded-lg p-3 text-white text-center font-bold text-lg hover:bg-black/90 transition-all"
-                  style={{ appearance: 'none' }}
-                >
-                  {timeOptions.map(opt => (
-                    <option key={opt.value} value={opt.value} className="bg-gray-900">
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <Knob
-                  label="FREQUENCY"
-                  value={numericFreq}
-                  ghostValue={ghostFrequency}
-                  onChange={(val) => onChange('frequency', val)}
-                  min={0.1}
-                  max={10}
-                  defaultValue={2}
-                  sizeVariant="large"
-                  category="spacetime-chamber"
-                  valueFormatter={(v) => `${v.toFixed(2)} Hz`}
-                />
-              )}
-            </div>
+            {/* Rate */}
+            <Knob
+              label="RATE"
+              value={rate}
+              ghostValue={ghostRate}
+              onChange={(val) => onChange('rate', val)}
+              min={0.1}
+              max={20}
+              defaultValue={1.0}
+              sizeVariant="large"
+              category="spacetime-chamber"
+              valueFormatter={(v) => `${v.toFixed(2)} Hz`}
+            />
 
             {/* Depth */}
             <Knob
@@ -274,8 +394,42 @@ export const OrbitPannerUI = ({ trackId, effect, onChange }) => {
               onChange={(val) => onChange('depth', val / 100)}
               min={0}
               max={100}
-              defaultValue={100}
+              defaultValue={80}
               sizeVariant="large"
+              category="spacetime-chamber"
+              valueFormatter={(v) => `${v.toFixed(0)}%`}
+            />
+
+            {/* Shape */}
+            <Knob
+              label="SHAPE"
+              value={shape * 100}
+              ghostValue={ghostShape}
+              onChange={(val) => onChange('shape', val / 100)}
+              min={0}
+              max={100}
+              defaultValue={0}
+              sizeVariant="large"
+              category="spacetime-chamber"
+              valueFormatter={(v) => getShapeName(v / 100)}
+            />
+          </div>
+        </div>
+
+        {/* Secondary Controls */}
+        <div className="bg-gradient-to-br from-purple-900/20 to-black/40 rounded-xl p-6 border border-purple-500/20">
+          <div className="grid grid-cols-2 gap-6">
+
+            {/* Stereo Width */}
+            <Knob
+              label="WIDTH"
+              value={stereoWidth * 100}
+              ghostValue={ghostStereoWidth}
+              onChange={(val) => onChange('stereoWidth', val / 100)}
+              min={0}
+              max={200}
+              defaultValue={100}
+              sizeVariant="medium"
               category="spacetime-chamber"
               valueFormatter={(v) => `${v.toFixed(0)}%`}
             />
@@ -289,7 +443,7 @@ export const OrbitPannerUI = ({ trackId, effect, onChange }) => {
               min={0}
               max={100}
               defaultValue={100}
-              sizeVariant="large"
+              sizeVariant="medium"
               category="spacetime-chamber"
               valueFormatter={(v) => `${v.toFixed(0)}%`}
             />
@@ -297,87 +451,102 @@ export const OrbitPannerUI = ({ trackId, effect, onChange }) => {
         </div>
 
         {/* Position Indicator */}
-        <div className="bg-black/30 rounded-xl p-4 border border-[#A855F7]/10">
-          <div className="text-[10px] text-[#22D3EE]/70 font-bold uppercase tracking-wider mb-3">
+        <div className="bg-black/30 rounded-xl p-4 border border-purple-500/10">
+          <div className="text-[10px] text-cyan-300/70 font-bold uppercase tracking-wider mb-3">
             Stereo Position
           </div>
           <div className="flex justify-between items-center">
-            <span className="text-sm font-bold text-[#22D3EE]">L</span>
-            <div className="flex-1 mx-4 h-3 bg-gradient-to-r from-[#A855F7]/20 via-[#22D3EE]/20 to-[#A855F7]/20 rounded-full relative border border-[#A855F7]/20">
+            <span className="text-sm font-bold text-cyan-400">L</span>
+            <div className="flex-1 mx-4 h-4 bg-gradient-to-r from-purple-500/20 via-cyan-500/20 to-purple-500/20 rounded-full relative border border-purple-500/20">
               <div
-                className="absolute top-0 w-5 h-3 bg-[#22D3EE] rounded-full transform -translate-x-1/2 shadow-lg shadow-[#22D3EE]/50 transition-all duration-75"
+                className="absolute top-0 w-6 h-4 bg-cyan-400 rounded-full transform -translate-x-1/2 shadow-lg shadow-cyan-400/50 transition-all duration-75"
                 style={{
-                  left: `${50 + Math.sin(Date.now() * 0.001 * numericFreq) * 50 * depth}%`
+                  left: `${50 + Math.sin(Date.now() * 0.001 * rate) * 50 * depth * stereoWidth}%`
                 }}
               />
             </div>
-            <span className="text-sm font-bold text-[#A855F7]">R</span>
+            <span className="text-sm font-bold text-purple-400">R</span>
           </div>
         </div>
       </div>
 
-      {/* ===== RIGHT PANEL: Stats & Info ===== */}
+      {/* ===== RIGHT PANEL: Stats ===== */}
       <div className="w-[200px] flex-shrink-0 flex flex-col gap-4">
 
         {/* Processing Stats */}
-        <div className="bg-gradient-to-br from-black/50 to-[#2d1854]/30 rounded-xl p-4 border border-[#A855F7]/10">
-          <div className="text-[9px] text-[#22D3EE]/70 uppercase tracking-wider mb-3 font-bold">
+        <div className="bg-gradient-to-br from-purple-900/20 to-black/40 rounded-xl p-4 border border-purple-500/10">
+          <div className="text-[9px] text-cyan-300/70 uppercase tracking-wider mb-3 font-bold">
             Processing
           </div>
           <div className="space-y-2.5">
             <div className="flex justify-between items-center text-[10px]">
               <span className="text-white/50">Mode</span>
-              <span className="text-[#A855F7] text-[9px] font-medium">
-                {isSynced ? 'Synced' : 'Free'}
+              <span className="text-purple-300 text-[9px] font-medium">
+                {PANNER_MODES[selectedMode].name}
               </span>
             </div>
-            <div className="pt-2 border-t border-[#A855F7]/10">
+            <div className="pt-2 border-t border-purple-500/10">
               <div className="flex justify-between items-center text-[10px]">
                 <span className="text-white/50">Rate</span>
-                <span className="text-[#22D3EE] font-mono font-bold tabular-nums">
-                  {isSynced ? frequency : `${numericFreq.toFixed(2)} Hz`}
+                <span className="text-cyan-400 font-mono font-bold tabular-nums">
+                  {rate.toFixed(2)} Hz
                 </span>
               </div>
             </div>
             <div className="flex justify-between items-center text-[10px]">
               <span className="text-white/50">Depth</span>
-              <span className="text-[#A855F7] font-mono font-bold tabular-nums">
+              <span className="text-purple-300 font-mono font-bold tabular-nums">
                 {(depth * 100).toFixed(0)}%
               </span>
             </div>
             <div className="flex justify-between items-center text-[10px]">
+              <span className="text-white/50">Shape</span>
+              <span className="text-cyan-400 font-mono font-bold tabular-nums">
+                {getShapeName(shape)}
+              </span>
+            </div>
+            <div className="flex justify-between items-center text-[10px]">
+              <span className="text-white/50">Width</span>
+              <span className="text-purple-300 font-mono font-bold tabular-nums">
+                {(stereoWidth * 100).toFixed(0)}%
+              </span>
+            </div>
+            <div className="flex justify-between items-center text-[10px]">
               <span className="text-white/50">Mix</span>
-              <span className="text-[#22D3EE] font-mono font-bold tabular-nums">
+              <span className="text-cyan-400 font-mono font-bold tabular-nums">
                 {(wet * 100).toFixed(0)}%
               </span>
             </div>
             <div className="flex justify-between items-center text-[10px]">
               <span className="text-white/50">Input</span>
-              <span className="text-[#A855F7] font-mono font-bold tabular-nums">
+              <span className="text-purple-300 font-mono font-bold tabular-nums">
                 {(inputLevel * 100).toFixed(0)}%
               </span>
             </div>
           </div>
         </div>
 
-        {/* Visualization Key */}
-        <div className="flex-1 bg-gradient-to-br from-[#2d1854]/20 to-black/50 rounded-xl p-4 border border-[#A855F7]/10">
-          <div className="text-[9px] text-[#22D3EE]/70 font-bold uppercase tracking-wider mb-3">
-            Visualization
+        {/* Auto-Pan Explanation */}
+        <div className="flex-1 bg-gradient-to-br from-purple-900/10 to-black/40 rounded-xl p-4 border border-purple-500/10">
+          <div className="text-[9px] text-cyan-300/70 font-bold uppercase tracking-wider mb-3">
+            About Auto-Pan
           </div>
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full bg-[#22D3EE] shadow-sm shadow-[#22D3EE]/50"></div>
-              <span className="text-[9px] text-white/60">Panner position</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-0.5 bg-gradient-to-r from-[#22D3EE]/50 to-transparent"></div>
-              <span className="text-[9px] text-white/60">Motion trail</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full border-2 border-[#A855F7]/50 border-dashed"></div>
-              <span className="text-[9px] text-white/60">Orbit path</span>
-            </div>
+          <div className="space-y-2 text-[9px] text-white/50 leading-relaxed">
+            <p>
+              <span className="text-cyan-400 font-bold">Rate:</span> Speed of panning motion
+            </p>
+            <p>
+              <span className="text-purple-300 font-bold">Depth:</span> Amount of movement
+            </p>
+            <p>
+              <span className="text-cyan-400 font-bold">Shape:</span> LFO waveform type (sine/tri/square)
+            </p>
+            <p>
+              <span className="text-purple-300 font-bold">Width:</span> Stereo field expansion
+            </p>
+            <p className="text-white/30 italic pt-2 text-[8px]">
+              💡 Creates movement and depth in the stereo field
+            </p>
           </div>
         </div>
       </div>

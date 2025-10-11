@@ -141,7 +141,7 @@ export const SaturatorUI = ({ trackId, effect, onChange }) => {
     headroom = 0
   } = effect.settings;
 
-  const [selectedMode, setSelectedMode] = useState('vocal-warmth');
+  const [selectedMode, setSelectedMode] = useState('custom');
 
   // Ghost values (400ms lag for smooth visual feedback)
   const ghostDrive = useGhostValue(distortion, 400);

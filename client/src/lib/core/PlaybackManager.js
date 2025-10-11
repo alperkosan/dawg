@@ -5,6 +5,7 @@ import { NativeTimeUtils } from '../utils/NativeTimeUtils.js';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
 import { useArrangementStore } from '@/store/useArrangementStore';
 import { useArrangementWorkspaceStore } from '@/store/useArrangementWorkspaceStore';
+import { useArrangementV2Store } from '@/store/useArrangementV2Store';
 import EventBus from './EventBus.js';
 import { PositionTracker } from './PositionTracker.js';
 import { audioAssetManager } from '@/lib/audio/AudioAssetManager';
@@ -452,9 +453,18 @@ export class PlaybackManager {
     }
 
     _calculateSongLoop() {
-        const arrangementStore = useArrangementStore.getState();
-        const clips = arrangementStore.clips || [];
-        
+        // ✅ Try ArrangementV2Store first (new system), fallback to old system
+        const v2Store = useArrangementV2Store.getState();
+        const v2Clips = v2Store.clips || [];
+
+        let clips;
+        if (v2Clips.length > 0) {
+            clips = v2Clips;
+        } else {
+            const arrangementStore = useArrangementStore.getState();
+            clips = arrangementStore.clips || [];
+        }
+
         if (clips.length === 0) {
             this.loopStart = 0;
             this.loopEnd = 256; // Default song length in steps
@@ -472,7 +482,7 @@ export class PlaybackManager {
         this.songLength = Math.max(16, Math.ceil(lastEnd / 4) * 4); // Round to bars
         this.loopStart = 0;
         this.loopEnd = this.songLength * 16; // Convert bars to steps
-        
+
     }
 
     _updateTransportLoop() {
@@ -772,21 +782,38 @@ export class PlaybackManager {
     _scheduleSongContent(baseTime) {
         console.log('🎵 _scheduleSongContent called, baseTime:', baseTime);
 
-        // ✅ NEW: Use arrangement workspace store for song mode
-        const workspaceStore = useArrangementWorkspaceStore.getState();
-        const arrangement = workspaceStore.getActiveArrangement();
+        // ✅ Try ArrangementV2Store first (new system), fallback to workspace store (old system)
+        const v2Store = useArrangementV2Store.getState();
+        const v2Clips = v2Store.clips || [];
+        const v2Tracks = v2Store.tracks || [];
 
-        console.log('🎵 Arrangement:', arrangement ? 'found' : 'NOT FOUND');
+        let clips, tracks, patterns;
 
-        if (!arrangement) {
-            console.warn('🎵 ❌ No active arrangement for song mode');
-            return;
+        if (v2Clips.length > 0 || v2Tracks.length > 0) {
+            // Use ArrangementV2 (new system)
+            clips = v2Clips;
+            tracks = v2Tracks;
+            const arrangementStore = useArrangementStore.getState();
+            patterns = arrangementStore.patterns || {};
+            console.log('🎵 Using ArrangementV2Store (new system)');
+        } else {
+            // Fallback to workspace store (old system)
+            const workspaceStore = useArrangementWorkspaceStore.getState();
+            const arrangement = workspaceStore.getActiveArrangement();
+
+            console.log('🎵 Arrangement:', arrangement ? 'found' : 'NOT FOUND');
+
+            if (!arrangement) {
+                console.warn('🎵 ❌ No active arrangement for song mode');
+                return;
+            }
+
+            clips = arrangement.clips || [];
+            tracks = arrangement.tracks || [];
+            const arrangementStore = useArrangementStore.getState();
+            patterns = arrangementStore.patterns || {};
+            console.log('🎵 Using ArrangementWorkspaceStore (old system)');
         }
-
-        const clips = arrangement.clips || [];
-        const tracks = arrangement.tracks || [];
-        const arrangementStore = useArrangementStore.getState();
-        const patterns = arrangementStore.patterns || {};
 
         console.log('🎵 Song mode scheduling:', {
             clipsCount: clips.length,
@@ -1076,8 +1103,22 @@ export class PlaybackManager {
             outputNode = panNode;
         }
 
-        // Connect to master output
-        const destination = this.audioEngine.masterGain || context.destination;
+        // ✅ ArrangementV2: Route to track's mixer channel if available
+        let destination = this.audioEngine.masterGain || context.destination;
+
+        if (clip.trackId) {
+            // Try to find ArrangementV2 track channel
+            const trackChannelId = `arr-${clip.trackId}`;
+            const trackChannel = this.audioEngine.mixerChannels.get(trackChannelId);
+
+            if (trackChannel && trackChannel.input) {
+                destination = trackChannel.input;
+                console.log('🎵 Routing to ArrangementV2 track channel:', trackChannelId);
+            } else {
+                console.log('🎵 Track channel not found, using master:', trackChannelId);
+            }
+        }
+
         console.log('🎵 Connecting to:', destination);
         source.connect(gainNode);
         outputNode.connect(destination);

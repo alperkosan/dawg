@@ -1,6 +1,12 @@
 /**
- * VortexPhaser Processor
- * Classic phaser effect with multiple all-pass stages
+ * VortexPhaser Processor v2.0
+ * Professional phaser with multiple all-pass stages
+ *
+ * Features:
+ * - Adjustable stage count (2-12 stages)
+ * - Stereo phase offset for wide imaging
+ * - Smooth LFO modulation
+ * - Feedback control for resonance
  */
 
 class VortexPhaserProcessor extends AudioWorkletProcessor {
@@ -22,6 +28,7 @@ class VortexPhaserProcessor extends AudioWorkletProcessor {
     this.settings = options?.processorOptions?.settings || {};
     this.bypassed = false;
 
+    // Per-channel state
     this.channelState = [
       {
         lfoPhase: 0,
@@ -49,6 +56,7 @@ class VortexPhaserProcessor extends AudioWorkletProcessor {
     return param.length > 1 ? param[index] : param[0];
   }
 
+  // First-order all-pass filter
   processAllpass(sample, state, coefficient) {
     const y = -sample + state.x1 + coefficient * state.y1;
     state.x1 = sample;
@@ -90,7 +98,7 @@ class VortexPhaserProcessor extends AudioWorkletProcessor {
     let processed = sample + state.feedbackSample * feedback;
 
     // Process through all-pass stages
-    for (let i = 0; i < stages; i++) {
+    for (let i = 0; i < Math.min(stages, 12); i++) {
       processed = this.processAllpass(processed, state.allpassStates[i], apCoeff);
     }
 

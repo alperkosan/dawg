@@ -232,6 +232,31 @@ export const OTT_MODES = {
       depth: { min: 0.2, max: 0.6, curve: 'linear' },
       time: { min: 0.7, max: 1.2, curve: 'linear' }
     }
+  },
+
+  'custom': {
+    id: 'custom',
+    name: 'Custom',
+    icon: '⚙️',
+    color: 'gray',
+    description: 'Manual control - preserves current settings',
+    category: 'subtle',
+
+    baseParams: {
+      depth: 0.5,
+      time: 0.5,
+      lowUpRatio: 3,
+      lowDownRatio: 3,
+      lowGain: 0,
+      midUpRatio: 3,
+      midDownRatio: 3,
+      midGain: 0,
+      highUpRatio: 3,
+      highDownRatio: 3,
+      highGain: 0
+    },
+
+    curves: {} // No curves, uses baseParams directly
   }
 };
 

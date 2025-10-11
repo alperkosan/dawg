@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { Slider, ModeSelector } from '@/components/controls';
 import { useAudioPlugin, useGhostValue, useCanvasVisualization } from '@/hooks/useAudioPlugin';
 
@@ -291,6 +291,13 @@ const TRANSIENT_MODES = {
     icon: '🌊',
     description: 'Rounded sub response',
     defaults: { attack: -2, sustain: 3 }
+  },
+  'custom': {
+    id: 'custom',
+    name: 'Custom',
+    icon: '⚙️',
+    description: 'Manual control',
+    defaults: { attack: 0, sustain: 0 }
   }
 };
 
@@ -305,7 +312,7 @@ export const TransientDesignerUI = ({ trackId, effect, onChange }) => {
     mix = 1.0
   } = effect.settings;
 
-  const [selectedMode, setSelectedMode] = useState('punch-drums');
+  const [selectedMode, setSelectedMode] = useState('custom');
 
   // Ghost values (400ms lag for smooth visual feedback)
   const ghostAttack = useGhostValue(attack, 400);

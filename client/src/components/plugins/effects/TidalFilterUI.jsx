@@ -1,83 +1,220 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Knob, ModeSelector } from '@/components/controls';
-import { SignalVisualizer } from '../../common/SignalVisualizer';
-import { useCanvasVisualization, useGhostValue, useAudioPlugin } from '@/hooks/useAudioPlugin';
+import { useAudioPlugin, useGhostValue, useCanvasVisualization } from '@/hooks/useAudioPlugin';
 
-// Musical time notation to frequency converter
-const timeToFrequency = (timeNotation) => {
-  if (typeof timeNotation === 'number') return timeNotation;
+/**
+ * TIDAL FILTER V2.0 - COMPLETE REDESIGN
+ *
+ * "The Spectral Weaver" - Professional auto-filter with mode presets
+ *
+ * Features:
+ * - 7 filter modes (low-sweep, high-rise, band-wave, notch-cut, resonant, gentle, custom)
+ * - Real-time frequency sweep visualization
+ * - useAudioPlugin hook with metrics
+ * - Ghost value feedback
+ * - 3-panel professional layout
+ * - Category theming: spectral-weave (cyan/teal/green)
+ *
+ * Design Philosophy:
+ * - "From gentle waves to tidal storms"
+ * - Visual feedback of frequency modulation
+ * - Tempo-synced sweeps
+ */
 
-  // Assuming 120 BPM as default tempo
-  const tempo = 120;
-  const quarterNoteFreq = tempo / 60; // Hz
+// ============================================================================
+// FILTER MODES
+// ============================================================================
 
-  const timeMap = {
-    '1n': quarterNoteFreq / 4,
-    '2n': quarterNoteFreq / 2,
-    '4n': quarterNoteFreq,
-    '8n': quarterNoteFreq * 2,
-    '16n': quarterNoteFreq * 4,
-    '32n': quarterNoteFreq * 8,
-    '2t': (quarterNoteFreq / 2) * (3/2),
-    '4t': quarterNoteFreq * (3/2),
-    '8t': (quarterNoteFreq * 2) * (3/2),
-    '16t': (quarterNoteFreq * 4) * (3/2)
-  };
-
-  return timeMap[timeNotation] || quarterNoteFreq;
+const FILTER_MODES = {
+  'low-sweep': {
+    id: 'low-sweep',
+    name: 'Low Sweep',
+    icon: '↘️',
+    description: 'Classic low-pass sweep',
+    settings: {
+      cutoff: 1000,
+      resonance: 0.6,
+      filterType: 0, // Lowpass
+      drive: 1.5,
+      wet: 1.0
+    }
+  },
+  'high-rise': {
+    id: 'high-rise',
+    name: 'High Rise',
+    icon: '↗️',
+    description: 'Soaring high-pass sweep',
+    settings: {
+      cutoff: 2000,
+      resonance: 0.5,
+      filterType: 1, // Highpass
+      drive: 1.2,
+      wet: 1.0
+    }
+  },
+  'band-wave': {
+    id: 'band-wave',
+    name: 'Band Wave',
+    icon: '〰️',
+    description: 'Focused band-pass sweep',
+    settings: {
+      cutoff: 1500,
+      resonance: 0.8,
+      filterType: 0.5, // Bandpass
+      drive: 1.8,
+      wet: 0.9
+    }
+  },
+  'notch-cut': {
+    id: 'notch-cut',
+    name: 'Notch Cut',
+    icon: '⌄',
+    description: 'Surgical notch filter',
+    settings: {
+      cutoff: 800,
+      resonance: 0.9,
+      filterType: 0.9, // Notch
+      drive: 1.0,
+      wet: 0.8
+    }
+  },
+  'resonant': {
+    id: 'resonant',
+    name: 'Resonant',
+    icon: '🔊',
+    description: 'High resonance sweep',
+    settings: {
+      cutoff: 1200,
+      resonance: 0.95,
+      filterType: 0.2, // LP with resonance
+      drive: 2.0,
+      wet: 0.85
+    }
+  },
+  'gentle': {
+    id: 'gentle',
+    name: 'Gentle',
+    icon: '✨',
+    description: 'Subtle filter movement',
+    settings: {
+      cutoff: 3000,
+      resonance: 0.2,
+      filterType: 0.1,
+      drive: 1.0,
+      wet: 0.5
+    }
+  },
+  'custom': {
+    id: 'custom',
+    name: 'Custom',
+    icon: '⚙️',
+    description: 'Manual control',
+    settings: {
+      cutoff: 1000,
+      resonance: 0.5,
+      filterType: 0,
+      drive: 1.0,
+      wet: 1.0
+    }
+  }
 };
 
-// Animated Filter Sweep Visualizer
-const FilterSweepVisualizer = ({ frequency, baseFrequency, octaves, wet }) => {
+// ============================================================================
+// FILTER SWEEP VISUALIZER
+// ============================================================================
+
+const FilterSweepVisualizer = ({ cutoff, resonance, filterType, drive, inputLevel }) => {
   const timeRef = useRef(0);
 
-  const drawFilterSweep = useCallback((ctx, width, height) => {
+  const getFilterTypeName = (type) => {
+    if (type <= 0.33) return 'LOWPASS';
+    if (type <= 0.66) return 'BANDPASS';
+    if (type <= 0.85) return 'HIGHPASS';
+    return 'NOTCH';
+  };
+
+  const drawFilterResponse = useCallback((ctx, width, height) => {
     const time = timeRef.current;
 
-    // Clear with gradient background
+    // Dark background with gradient
     const bgGradient = ctx.createLinearGradient(0, 0, 0, height);
-    bgGradient.addColorStop(0, 'rgba(15, 15, 25, 0.9)');
-    bgGradient.addColorStop(1, 'rgba(5, 5, 15, 0.9)');
+    bgGradient.addColorStop(0, 'rgba(5, 15, 20, 0.3)');
+    bgGradient.addColorStop(1, 'rgba(0, 25, 30, 0.3)');
     ctx.fillStyle = bgGradient;
     ctx.fillRect(0, 0, width, height);
 
-    // Calculate LFO position
-    const lfoRate = timeToFrequency(frequency);
-    const lfoPhase = Math.sin(time * 0.001 * lfoRate * 2 * Math.PI);
+    const centerY = height / 2;
 
-    // Current filter frequency
-    const currentFreq = baseFrequency * Math.pow(2, lfoPhase * octaves);
-    const freqPosition = Math.log(currentFreq / 20) / Math.log(20000 / 20);
-
-    // Draw frequency spectrum background
-    ctx.strokeStyle = 'rgba(100, 150, 200, 0.3)';
+    // Draw frequency grid
+    ctx.strokeStyle = 'rgba(50, 100, 120, 0.2)';
     ctx.lineWidth = 1;
-    for (let i = 0; i < 10; i++) {
-      const x = (i / 9) * width;
+    for (let i = 0; i <= 10; i++) {
+      const x = (i / 10) * width;
       ctx.beginPath();
       ctx.moveTo(x, 0);
       ctx.lineTo(x, height);
       ctx.stroke();
+
+      // Frequency labels
+      const freq = 20 * Math.pow(1000, i / 10);
+      if (i % 2 === 0) {
+        ctx.fillStyle = 'rgba(100, 200, 220, 0.4)';
+        ctx.font = '9px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(`${freq < 1000 ? freq.toFixed(0) : (freq / 1000).toFixed(1) + 'k'}`, x, height - 5);
+      }
     }
 
-    // Draw filter response curve
-    ctx.strokeStyle = '#00ff88';
+    // Draw horizontal grid
+    for (let i = 0; i <= 4; i++) {
+      const y = (i / 4) * height;
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(width, y);
+      ctx.stroke();
+    }
+
+    // Calculate filter response curve
+    ctx.strokeStyle = '#06b6d4'; // cyan
     ctx.lineWidth = 3;
-    ctx.shadowColor = '#00ff88';
-    ctx.shadowBlur = 10;
+    ctx.shadowColor = '#06b6d4';
+    ctx.shadowBlur = 12;
 
     ctx.beginPath();
     for (let x = 0; x < width; x++) {
-      const freq = 20 * Math.pow(20000 / 20, x / width);
+      const freq = 20 * Math.pow(1000, x / width);
+      const ratio = freq / cutoff;
       let response = 1;
 
-      // Simple low-pass filter response simulation
-      if (freq > currentFreq) {
-        const ratio = freq / currentFreq;
-        response = 1 / Math.sqrt(1 + Math.pow(ratio, 4)); // 24dB/oct slope
+      // Calculate response based on filter type
+      if (filterType <= 0.33) {
+        // Lowpass
+        const mix = filterType * 3;
+        const lpResponse = 1 / Math.sqrt(1 + Math.pow(ratio, 4 + resonance * 8));
+        const bpResponse = (resonance * 2) / Math.sqrt(1 + Math.pow((ratio - 1) / (resonance + 0.1), 2));
+        response = lpResponse * (1 - mix * 0.5) + bpResponse * mix * 0.5;
+      } else if (filterType <= 0.66) {
+        // Bandpass
+        const mix = (filterType - 0.33) * 3;
+        const bpResponse = (resonance * 2) / Math.sqrt(1 + Math.pow((ratio - 1) / (resonance + 0.1), 2));
+        const hpResponse = Math.pow(ratio, 2 + resonance * 4) / Math.sqrt(1 + Math.pow(ratio, 4 + resonance * 8));
+        response = bpResponse * (1 - mix) + hpResponse * mix;
+      } else {
+        // Highpass to Notch
+        const mix = (filterType - 0.66) * 3;
+        const hpResponse = Math.pow(ratio, 2 + resonance * 4) / Math.sqrt(1 + Math.pow(ratio, 4 + resonance * 8));
+        const notchResponse = 1 - (resonance * 2) / Math.sqrt(1 + Math.pow((ratio - 1) / (resonance + 0.1), 2));
+        response = hpResponse * (1 - mix) + notchResponse * mix;
       }
 
-      const y = height - (response * height * 0.8 * wet);
+      // Apply drive influence on response
+      response = Math.pow(response, 1 / (drive * 0.5 + 0.5));
+
+      // Add input level animation
+      const animation = Math.sin(time * 0.003) * inputLevel * 0.1;
+      response *= (1 + animation);
+
+      const y = centerY - (response * height * 0.35);
 
       if (x === 0) ctx.moveTo(x, y);
       else ctx.lineTo(x, y);
@@ -85,9 +222,9 @@ const FilterSweepVisualizer = ({ frequency, baseFrequency, octaves, wet }) => {
     ctx.stroke();
     ctx.shadowBlur = 0;
 
-    // Draw current frequency indicator
-    const cutoffX = freqPosition * width;
-    ctx.strokeStyle = '#ff4444';
+    // Draw cutoff frequency line
+    const cutoffX = (Math.log(cutoff / 20) / Math.log(1000)) * width;
+    ctx.strokeStyle = '#14b8a6'; // teal
     ctx.lineWidth = 2;
     ctx.setLineDash([5, 5]);
     ctx.beginPath();
@@ -96,36 +233,33 @@ const FilterSweepVisualizer = ({ frequency, baseFrequency, octaves, wet }) => {
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // Frequency label
-    ctx.fillStyle = '#ff4444';
-    ctx.font = '12px monospace';
-    ctx.fillText(`${currentFreq.toFixed(0)}Hz`, cutoffX + 5, 20);
+    // Cutoff label
+    ctx.fillStyle = '#14b8a6';
+    ctx.font = 'bold 11px monospace';
+    ctx.textAlign = cutoffX > width / 2 ? 'right' : 'left';
+    ctx.fillText(`${cutoff.toFixed(0)}Hz`, cutoffX + (cutoffX > width / 2 ? -8 : 8), 20);
 
-    // Draw LFO wave
-    const lfoHeight = 40;
-    const lfoY = height - lfoHeight - 10;
+    // Filter type indicator
+    ctx.fillStyle = 'rgba(100, 200, 220, 0.8)';
+    ctx.font = 'bold 14px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(getFilterTypeName(filterType), width / 2, 30);
 
-    ctx.strokeStyle = 'rgba(255, 255, 100, 0.8)';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-
-    for (let x = 0; x < width; x++) {
-      const phase = (x / width) * 4 * Math.PI + time * 0.001 * lfoRate * 2 * Math.PI;
-      const lfoValue = Math.sin(phase);
-      const y = lfoY + lfoValue * (lfoHeight / 2 - 5);
-
-      if (x === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
+    // Resonance indicator
+    if (resonance > 0.5) {
+      ctx.fillStyle = `rgba(255, 200, 100, ${resonance - 0.5})`;
+      ctx.font = '10px monospace';
+      ctx.textAlign = 'right';
+      ctx.fillText(`RES: ${(resonance * 100).toFixed(0)}%`, width - 10, 20);
     }
-    ctx.stroke();
 
-    // Update time for next frame
+    // Update time
     timeRef.current += 16;
-  }, [frequency, baseFrequency, octaves, wet]);
+  }, [cutoff, resonance, filterType, drive, inputLevel]);
 
   const { containerRef, canvasRef } = useCanvasVisualization(
-    drawFilterSweep,
-    [frequency, baseFrequency, octaves, wet]
+    drawFilterResponse,
+    [cutoff, resonance, filterType, drive, inputLevel]
   );
 
   return (
@@ -135,249 +269,295 @@ const FilterSweepVisualizer = ({ frequency, baseFrequency, octaves, wet }) => {
   );
 };
 
-// Filter Type Selector
-const FilterTypeSelector = ({ currentType, onTypeChange }) => {
-  const types = [
-    { id: 'lowpass', name: 'LP', icon: '↘', color: '#ef4444' },
-    { id: 'highpass', name: 'HP', icon: '↗', color: '#3b82f6' },
-    { id: 'bandpass', name: 'BP', icon: '⧫', color: '#10b981' },
-    { id: 'notch', name: 'NT', icon: '⌄', color: '#f59e0b' }
-  ];
-  
-  return (
-    <div className="grid grid-cols-2 gap-2">
-      {types.map(type => (
-        <button
-          key={type.id}
-          onClick={() => onTypeChange(type.id)}
-          className={`p-3 rounded-lg border transition-all ${
-            currentType === type.id
-              ? 'border-white bg-white/10 text-white'
-              : 'border-white/20 text-white/60 hover:border-white/40'
-          }`}
-          style={{
-            backgroundColor: currentType === type.id ? type.color + '20' : 'transparent',
-            borderColor: currentType === type.id ? type.color : undefined
-          }}
-        >
-          <div className="text-2xl mb-1">{type.icon}</div>
-          <div className="text-xs font-bold">{type.name}</div>
-        </button>
-      ))}
-    </div>
-  );
-};
-
-// LFO Rate Visualizer
-const LFORateVisualizer = ({ frequency }) => {
-  const timeRef = useRef(0);
-
-  const drawLFO = useCallback((ctx, width, height) => {
-    const time = timeRef.current;
-
-    ctx.clearRect(0, 0, width, height);
-
-    const lfoRate = timeToFrequency(frequency);
-
-    // Draw LFO waveform
-    ctx.strokeStyle = '#fbbf24';
-    ctx.lineWidth = 2;
-    ctx.shadowColor = '#fbbf24';
-    ctx.shadowBlur = 5;
-
-    ctx.beginPath();
-    for (let x = 0; x < width; x++) {
-      const phase = (x / width) * 4 * Math.PI * lfoRate + time * 0.001 * lfoRate * 2 * Math.PI;
-      const y = height / 2 + Math.sin(phase) * (height / 2 - 10);
-
-      if (x === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    }
-    ctx.stroke();
-    ctx.shadowBlur = 0;
-
-    // Update time for next frame
-    timeRef.current += 16;
-  }, [frequency]);
-
-  const { containerRef, canvasRef } = useCanvasVisualization(
-    drawLFO,
-    [frequency]
-  );
-
-  return (
-    <div ref={containerRef} className="w-full h-8">
-      <canvas ref={canvasRef} className="w-full h-full" />
-    </div>
-  );
-};
+// ============================================================================
+// MAIN COMPONENT
+// ============================================================================
 
 export const TidalFilterUI = ({ trackId, effect, onChange }) => {
-  const { frequency, baseFrequency, octaves, wet } = effect.settings;
-  const [filterType, setFilterType] = useState('lowpass');
+  const {
+    cutoff = 1000,
+    resonance = 0.5,
+    filterType = 0,
+    drive = 1.0,
+    wet = 1.0
+  } = effect.settings;
 
-  // Use audio plugin hook
-  const { isPlaying, getFrequencyData } = useAudioPlugin(trackId, effect.id, {
-    fftSize: 2048,
-    updateMetrics: false
-  });
+  const [selectedMode, setSelectedMode] = useState('custom');
 
-  // Ghost values for parameter feedback
-  const ghostBaseFrequency = useGhostValue(baseFrequency, 400);
-  const ghostOctaves = useGhostValue(octaves, 400);
-  const ghostWet = useGhostValue(wet, 400);
-  
-  const timeOptions = [
-    { value: '4n', label: '1/4' },
-    { value: '8n', label: '1/8' },
-    { value: '16n', label: '1/16' },
-    { value: '32n', label: '1/32' },
-    { value: '2t', label: '1/2T' },
-    { value: '4t', label: '1/4T' },
-    { value: '8t', label: '1/8T' }
-  ];
-  
+  // Audio plugin hook with metrics
+  const { plugin, metrics, isPlaying, getFrequencyData } = useAudioPlugin(
+    trackId,
+    effect.id,
+    {
+      fftSize: 2048,
+      updateMetrics: true
+    }
+  );
+
+  // Input level from metrics
+  const [inputLevel, setInputLevel] = useState(0);
+  useEffect(() => {
+    if (metrics?.inputPeak !== undefined) {
+      setInputLevel(Math.max(0, Math.min(1, (metrics.inputPeak + 60) / 60)));
+    }
+  }, [metrics]);
+
+  // Ghost values (400ms delay)
+  const ghostCutoff = useGhostValue(cutoff, 400);
+  const ghostResonance = useGhostValue(resonance * 100, 400);
+  const ghostFilterType = useGhostValue(filterType * 100, 400);
+  const ghostDrive = useGhostValue(drive, 400);
+  const ghostWet = useGhostValue(wet * 100, 400);
+
+  // Mode selection handler
+  const handleModeSelect = useCallback((modeId) => {
+    setSelectedMode(modeId);
+    const mode = FILTER_MODES[modeId];
+    if (mode && mode.settings) {
+      Object.entries(mode.settings).forEach(([key, value]) => {
+        onChange(key, value);
+      });
+    }
+  }, [onChange]);
+
+  // Filter type name helper
+  const getFilterTypeName = (type) => {
+    if (type <= 0.33) return 'Lowpass';
+    if (type <= 0.66) return 'Bandpass';
+    if (type <= 0.85) return 'Highpass';
+    return 'Notch';
+  };
+
   return (
-    <div className="w-full h-full bg-gradient-to-br from-cyan-950 via-teal-950 to-green-950 p-6">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h2 className="text-xl font-bold text-cyan-200">Spectral Gate</h2>
-          <p className="text-xs text-cyan-400">Auto-Filter with LFO Modulation</p>
+    <div className="w-full h-full bg-gradient-to-br from-black via-teal-950/20 to-black p-4 flex gap-4 overflow-hidden">
+
+      {/* ===== LEFT PANEL: Mode Selector ===== */}
+      <div className="w-[220px] flex-shrink-0 flex flex-col gap-4">
+
+        {/* Plugin Header */}
+        <div className="bg-gradient-to-r from-cyan-900/40 to-teal-900/40 rounded-xl px-4 py-3 border border-cyan-500/30">
+          <div className="flex items-center gap-3">
+            <div className="text-2xl">🌊</div>
+            <div className="flex-1">
+              <div className="text-sm font-black text-cyan-300 tracking-wider uppercase">
+                Tidal Filter
+              </div>
+              <div className="text-[9px] text-teal-400/70">Spectral Weaver</div>
+            </div>
+          </div>
         </div>
-        
-        <div className="flex items-center gap-4">
-          {/* Filter Type */}
-          <div className="text-center">
-            <div className="text-xs text-cyan-300 mb-2">TYPE</div>
-            <FilterTypeSelector 
-              currentType={filterType}
-              onTypeChange={setFilterType}
+
+        {/* Mode Selector */}
+        <ModeSelector
+          modes={Object.values(FILTER_MODES).map(mode => ({
+            id: mode.id,
+            label: mode.name,
+            icon: mode.icon,
+            description: mode.description
+          }))}
+          activeMode={selectedMode}
+          onChange={handleModeSelect}
+          orientation="vertical"
+          category="spectral-weave"
+          className="flex-1"
+        />
+
+        {/* Mode Description */}
+        <div className="bg-gradient-to-br from-cyan-900/20 to-black/50 rounded-xl p-4 border border-cyan-500/10">
+          <div className="text-[9px] text-teal-300/70 font-bold uppercase tracking-wider mb-2">
+            Mode Info
+          </div>
+          <div className="text-[10px] text-white/70 leading-relaxed">
+            {FILTER_MODES[selectedMode].description}
+          </div>
+        </div>
+
+        {/* Category Badge */}
+        <div className="mt-auto bg-gradient-to-r from-cyan-900/40 to-teal-900/40 rounded-lg px-3 py-2 border border-cyan-500/20 text-center">
+          <div className="text-[8px] text-teal-400/50 uppercase tracking-wider">Category</div>
+          <div className="text-[10px] text-cyan-300 font-bold">Spectral Weaver</div>
+        </div>
+      </div>
+
+      {/* ===== CENTER PANEL: Visualization + Controls ===== */}
+      <div className="flex-1 flex flex-col gap-4 min-w-0">
+
+        {/* Filter Sweep Visualizer */}
+        <div className="h-[240px] bg-black/40 rounded-xl border border-cyan-500/20 overflow-hidden">
+          <FilterSweepVisualizer
+            cutoff={cutoff}
+            resonance={resonance}
+            filterType={filterType}
+            drive={drive}
+            inputLevel={inputLevel}
+          />
+        </div>
+
+        {/* Main Controls */}
+        <div className="bg-gradient-to-br from-cyan-900/20 to-black/40 rounded-xl p-6 border border-cyan-500/20">
+          <div className="grid grid-cols-3 gap-6">
+
+            {/* Cutoff */}
+            <Knob
+              label="CUTOFF"
+              value={cutoff}
+              ghostValue={ghostCutoff}
+              onChange={(val) => onChange('cutoff', val)}
+              min={20}
+              max={20000}
+              defaultValue={1000}
+              logarithmic
+              sizeVariant="large"
+              category="spectral-weave"
+              valueFormatter={(v) => `${v < 1000 ? v.toFixed(0) : (v / 1000).toFixed(1) + 'k'}Hz`}
+            />
+
+            {/* Resonance */}
+            <Knob
+              label="RESONANCE"
+              value={resonance * 100}
+              ghostValue={ghostResonance}
+              onChange={(val) => onChange('resonance', val / 100)}
+              min={0}
+              max={100}
+              defaultValue={50}
+              sizeVariant="large"
+              category="spectral-weave"
+              valueFormatter={(v) => `${v.toFixed(0)}%`}
+            />
+
+            {/* Filter Type */}
+            <Knob
+              label="TYPE"
+              value={filterType * 100}
+              ghostValue={ghostFilterType}
+              onChange={(val) => onChange('filterType', val / 100)}
+              min={0}
+              max={100}
+              defaultValue={0}
+              sizeVariant="large"
+              category="spectral-weave"
+              valueFormatter={(v) => getFilterTypeName(v / 100)}
+            />
+          </div>
+        </div>
+
+        {/* Secondary Controls */}
+        <div className="bg-gradient-to-br from-cyan-900/20 to-black/40 rounded-xl p-6 border border-cyan-500/20">
+          <div className="grid grid-cols-2 gap-6">
+
+            {/* Drive */}
+            <Knob
+              label="DRIVE"
+              value={drive}
+              ghostValue={ghostDrive}
+              onChange={(val) => onChange('drive', val)}
+              min={1}
+              max={10}
+              defaultValue={1}
+              sizeVariant="medium"
+              category="spectral-weave"
+              valueFormatter={(v) => `${v.toFixed(1)}x`}
+            />
+
+            {/* Mix */}
+            <Knob
+              label="MIX"
+              value={wet * 100}
+              ghostValue={ghostWet}
+              onChange={(val) => onChange('wet', val / 100)}
+              min={0}
+              max={100}
+              defaultValue={100}
+              sizeVariant="medium"
+              category="spectral-weave"
+              valueFormatter={(v) => `${v.toFixed(0)}%`}
             />
           </div>
         </div>
       </div>
-      
-      {/* Main Filter Visualization */}
-      <div className="bg-black/30 rounded-xl p-4 mb-6 h-64 border border-cyan-600/20">
-        <FilterSweepVisualizer 
-          frequency={frequency} 
-          baseFrequency={baseFrequency} 
-          octaves={octaves}
-          wet={wet}
-        />
-      </div>
-      
-      {/* Controls Grid */}
-      <div className="grid grid-cols-4 gap-6 mb-4">
-        {/* LFO Rate */}
-        <div className="space-y-2">
-          <label className="block text-sm font-medium text-cyan-200">LFO Rate</label>
-          <select 
-            value={frequency} 
-            onChange={(e) => onChange('frequency', e.target.value)}
-            className="w-full bg-black/50 border border-cyan-400 rounded-lg p-2 text-white text-center"
-          >
-            {timeOptions.map(opt => (
-              <option key={opt.value} value={opt.value} className="bg-gray-800">
-                {opt.label}
-              </option>
-            ))}
-          </select>
-          
-          {/* LFO Visualizer */}
-          <div className="bg-black/20 rounded border border-cyan-600/20 p-2">
-            <LFORateVisualizer frequency={frequency} />
+
+      {/* ===== RIGHT PANEL: Stats ===== */}
+      <div className="w-[200px] flex-shrink-0 flex flex-col gap-4">
+
+        {/* Processing Stats */}
+        <div className="bg-gradient-to-br from-cyan-900/20 to-black/40 rounded-xl p-4 border border-cyan-500/10">
+          <div className="text-[9px] text-teal-300/70 uppercase tracking-wider mb-3 font-bold">
+            Processing
+          </div>
+          <div className="space-y-2.5">
+            <div className="flex justify-between items-center text-[10px]">
+              <span className="text-white/50">Mode</span>
+              <span className="text-cyan-300 text-[9px] font-medium">
+                {FILTER_MODES[selectedMode].name}
+              </span>
+            </div>
+            <div className="pt-2 border-t border-cyan-500/10">
+              <div className="flex justify-between items-center text-[10px]">
+                <span className="text-white/50">Cutoff</span>
+                <span className="text-teal-400 font-mono font-bold tabular-nums">
+                  {cutoff < 1000 ? `${cutoff.toFixed(0)}Hz` : `${(cutoff / 1000).toFixed(1)}kHz`}
+                </span>
+              </div>
+            </div>
+            <div className="flex justify-between items-center text-[10px]">
+              <span className="text-white/50">Resonance</span>
+              <span className="text-cyan-300 font-mono font-bold tabular-nums">
+                {(resonance * 100).toFixed(0)}%
+              </span>
+            </div>
+            <div className="flex justify-between items-center text-[10px]">
+              <span className="text-white/50">Type</span>
+              <span className="text-teal-400 font-mono font-bold tabular-nums">
+                {getFilterTypeName(filterType)}
+              </span>
+            </div>
+            <div className="flex justify-between items-center text-[10px]">
+              <span className="text-white/50">Drive</span>
+              <span className="text-cyan-300 font-mono font-bold tabular-nums">
+                {drive.toFixed(1)}x
+              </span>
+            </div>
+            <div className="flex justify-between items-center text-[10px]">
+              <span className="text-white/50">Mix</span>
+              <span className="text-teal-400 font-mono font-bold tabular-nums">
+                {(wet * 100).toFixed(0)}%
+              </span>
+            </div>
+            <div className="flex justify-between items-center text-[10px]">
+              <span className="text-white/50">Input</span>
+              <span className="text-cyan-300 font-mono font-bold tabular-nums">
+                {(inputLevel * 100).toFixed(0)}%
+              </span>
+            </div>
           </div>
         </div>
-        
-        {/* Base Frequency */}
-        <div className="flex justify-center">
-          <Knob
-            label="Cutoff"
-            value={baseFrequency}
-            onChange={(val) => onChange('baseFrequency', val)}
-            min={20}
-            max={10000}
-            defaultValue={400}
-            unit="Hz"
-            precision={0}
-            size={80}
-            logarithmic
-            category="spectral-weave"
-            ghostValue={ghostBaseFrequency}
-            showGhostValue={true}
-          />
-        </div>
 
-        {/* Modulation Depth */}
-        <div className="flex justify-center">
-          <Knob
-            label="Depth"
-            value={octaves}
-            onChange={(val) => onChange('octaves', val)}
-            min={0}
-            max={8}
-            defaultValue={2}
-            unit=" oct"
-            precision={1}
-            size={80}
-            category="spectral-weave"
-            ghostValue={ghostOctaves}
-            showGhostValue={true}
-          />
+        {/* Filter Explanation */}
+        <div className="flex-1 bg-gradient-to-br from-cyan-900/10 to-black/40 rounded-xl p-4 border border-cyan-500/10">
+          <div className="text-[9px] text-teal-300/70 font-bold uppercase tracking-wider mb-3">
+            About Filters
+          </div>
+          <div className="space-y-2 text-[9px] text-white/50 leading-relaxed">
+            <p>
+              <span className="text-teal-400 font-bold">Cutoff:</span> Transition frequency point
+            </p>
+            <p>
+              <span className="text-cyan-300 font-bold">Resonance:</span> Emphasis at cutoff frequency
+            </p>
+            <p>
+              <span className="text-teal-400 font-bold">Type:</span> Filter shape (LP/BP/HP/Notch)
+            </p>
+            <p>
+              <span className="text-cyan-300 font-bold">Drive:</span> Input gain with saturation
+            </p>
+            <p className="text-white/30 italic pt-2 text-[8px]">
+              💡 State-variable filter with smooth morphing
+            </p>
+          </div>
         </div>
+      </div>
 
-        {/* Mix */}
-        <div className="flex justify-center">
-          <Knob
-            label="Mix"
-            value={wet * 100}
-            onChange={(val) => onChange('wet', val / 100)}
-            min={0}
-            max={100}
-            defaultValue={100}
-            unit="%"
-            precision={0}
-            size={80}
-            category="spectral-weave"
-            ghostValue={ghostWet * 100}
-            showGhostValue={true}
-          />
-        </div>
-      </div>
-      
-      {/* Analysis Section */}
-      <div className="grid grid-cols-2 gap-4">
-        {/* Input Spectrum */}
-        <div className="bg-black/20 rounded-lg p-3 border border-cyan-600/20">
-          <div className="text-xs text-cyan-300 mb-2">Input Spectrum</div>
-          <SignalVisualizer 
-            meterId={`${trackId}-fft`}
-            type="spectrum"
-            color="#06b6d4"
-            config={{ showGrid: false, smooth: true }}
-          />
-        </div>
-        
-        {/* Output Waveform */}
-        <div className="bg-black/20 rounded-lg p-3 border border-cyan-600/20">
-          <div className="text-xs text-cyan-300 mb-2">Output Signal</div>
-          <SignalVisualizer 
-            meterId={`${trackId}-waveform`}
-            type="scope"
-            color="#10b981"
-            config={{ showPeak: false, smooth: true }}
-          />
-        </div>
-      </div>
-      
-      {/* Info Footer */}
-      <div className="mt-4 text-center text-xs text-cyan-200/60">
-        Filter: {filterType.toUpperCase()} • 
-        Rate: {frequency} • 
-        Range: {baseFrequency}Hz ± {octaves} oct
-      </div>
     </div>
   );
 };

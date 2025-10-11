@@ -201,6 +201,12 @@ export class WaveformCache {
   renderWaveform(audioBuffer, clip, width, height, bpm, lod, styles) {
     const startTime = performance.now();
 
+    // Safety check: Ensure valid dimensions
+    if (width <= 0 || height <= 0) {
+      console.warn(`[WaveformCache] Invalid dimensions: ${width}x${height}`);
+      return null;
+    }
+
     // LOD-based downsampling: More conservative ratios for better quality
     // LOD 0: Process every 4th pixel (zoom out far - still visible waveform)
     // LOD 1: Process every 2nd pixel (medium zoom - good detail)
@@ -209,14 +215,19 @@ export class WaveformCache {
 
     // Create offscreen canvas
     let canvas, ctx;
-    if (typeof OffscreenCanvas !== 'undefined') {
-      canvas = new OffscreenCanvas(width, height);
-      ctx = canvas.getContext('2d', { alpha: true, desynchronized: true });
-    } else {
-      canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-      ctx = canvas.getContext('2d', { alpha: true });
+    try {
+      if (typeof OffscreenCanvas !== 'undefined') {
+        canvas = new OffscreenCanvas(width, height);
+        ctx = canvas.getContext('2d', { alpha: true, desynchronized: true });
+      } else {
+        canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        ctx = canvas.getContext('2d', { alpha: true });
+      }
+    } catch (error) {
+      console.error(`[WaveformCache] Failed to create canvas: ${width}x${height}`, error);
+      return null;
     }
 
     // Extract clip properties

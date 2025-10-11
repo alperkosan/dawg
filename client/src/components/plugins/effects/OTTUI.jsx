@@ -485,8 +485,8 @@ export const OTTUI = ({ trackId, effect, onChange }) => {
     wet = 1.0
   } = effect.settings;
 
-  // Mode-based state
-  const [selectedMode, setSelectedMode] = useState('ott-drums');
+  // Mode-based state - Start with 'custom' to preserve defaultSettings
+  const [selectedMode, setSelectedMode] = useState('custom');
   const [amount, setAmount] = useState(50);
   const [bandLevels, setBandLevels] = useState({ low: 0, mid: 0, high: 0 });
 
@@ -496,8 +496,11 @@ export const OTTUI = ({ trackId, effect, onChange }) => {
     onChangeRef.current = onChange;
   }, [onChange]);
 
-  // Apply mode + amount
+  // Apply mode + amount (only when user actively changes mode)
   useEffect(() => {
+    // Don't apply anything if in 'custom' mode
+    if (selectedMode === 'custom') return;
+
     const params = getOTTModeParameters(selectedMode, amount);
     if (!params) return;
 
