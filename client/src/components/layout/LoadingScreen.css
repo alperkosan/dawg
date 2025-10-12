@@ -1,0 +1,46 @@
+/* src/components/layout/LoadingScreen.css */
+
+@keyframes gradient-animation {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.loading-screen-background {
+  background: linear-gradient(-45deg, var(--bg-primary), var(--bg-secondary), var(--bg-tertiary), var(--bg-secondary));
+  background-size: 400% 400%;
+  animation: gradient-animation 15s ease infinite;
+}
+
+@keyframes letter-fade-in {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.zenith-letter {
+  display: inline-block;
+  animation: letter-fade-in 0.5s ease-out forwards;
+  opacity: 0;
+}
+
+.loading-bar-container {
+  width: 200px;
+  height: 8px;
+  background-color: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-top: 2rem;
+}
+
+.loading-bar {
+  width: 100%;
+  height: 100%;
+  background-color: var(--accent-cool);
+  transform-origin: left;
+  animation: loading-progress 2s ease-in-out infinite alternate;
+}
+
+@keyframes loading-progress {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}

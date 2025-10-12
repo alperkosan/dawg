@@ -22,6 +22,7 @@
 import { useState, useCallback, useRef } from 'react';
 import { useArrangementV2Store } from '@/store/useArrangementV2Store';
 import { snapToGrid } from '../renderers/gridRenderer';
+import TransportManagerSingleton from '@/lib/core/TransportManagerSingleton';
 
 // ============================================================================
 // CONSTANTS
@@ -590,7 +591,7 @@ export function useClipInteraction(viewport, tracks, clips, constants, dimension
       const original = state.originalClipStates.get(clipId);
       if (!original) return;
 
-      let newStartTime, newDuration;
+      let newStartTime, newDuration, newSampleOffset;
 
       if (state.resizeHandle === 'left') {
         // Resizing from left: adjust startTime and duration
@@ -612,6 +613,17 @@ export function useClipInteraction(viewport, tracks, clips, constants, dimension
           newDuration = MIN_CLIP_DURATION;
           newStartTime = original.startTime + original.duration - MIN_CLIP_DURATION;
         }
+
+        // For audio clips: adjust sample offset when resizing from left
+        if (clip.type === 'audio') {
+          const currentBPM = TransportManagerSingleton.getBPM?.() || 140;
+          const secondsPerBeat = 60 / currentBPM;
+          const startTimeDelta = newStartTime - original.startTime;
+          const startTimeDeltaSeconds = startTimeDelta * secondsPerBeat;
+
+          newSampleOffset = (clip.sampleOffset || 0) + startTimeDeltaSeconds;
+          newSampleOffset = Math.max(0, newSampleOffset); // Can't be negative
+        }
       } else {
         // Resizing from right: adjust duration only
         newStartTime = original.startTime;
@@ -625,6 +637,9 @@ export function useClipInteraction(viewport, tracks, clips, constants, dimension
         if (newDuration < MIN_CLIP_DURATION) {
           newDuration = MIN_CLIP_DURATION;
         }
+
+        // No sampleOffset change when resizing from right
+        newSampleOffset = clip.sampleOffset;
       }
 
       // Build ghost for this clip
@@ -638,6 +653,7 @@ export function useClipInteraction(viewport, tracks, clips, constants, dimension
         clip,
         newStartTime,
         newDuration,
+        newSampleOffset, // Include for audio clips
         x: worldX,
         y: worldY,
         width,
@@ -662,10 +678,17 @@ export function useClipInteraction(viewport, tracks, clips, constants, dimension
     // Apply changes to all resized clips
     if (resizeGhosts && resizeGhosts.length > 0) {
       resizeGhosts.forEach(ghost => {
-        updateClip(ghost.clipId, {
+        const updates = {
           startTime: ghost.newStartTime,
           duration: ghost.newDuration
-        });
+        };
+
+        // For audio clips, update sampleOffset if changed
+        if (ghost.clip.type === 'audio' && ghost.newSampleOffset !== undefined) {
+          updates.sampleOffset = ghost.newSampleOffset;
+        }
+
+        updateClip(ghost.clipId, updates);
       });
 
       console.log(`Committed resize for ${resizeGhosts.length} clip(s)`);

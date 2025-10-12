@@ -19,16 +19,20 @@ class WaveformCache {
 
   /**
    * Generate cache key from clip properties
+   * Includes sampleOffset to handle split/resize correctly
    */
-  _getCacheKey(clipId, width, height, lod) {
-    return `${clipId}-${width}-${height}-${lod}`;
+  _getCacheKey(clipId, width, height, lod, sampleOffset = 0, duration = 0) {
+    // Round values to avoid cache misses from floating point errors
+    const roundedOffset = Math.round(sampleOffset * 1000) / 1000;
+    const roundedDuration = Math.round(duration * 1000) / 1000;
+    return `${clipId}-${width}-${height}-${lod}-${roundedOffset}-${roundedDuration}`;
   }
 
   /**
    * Get cached waveform canvas
    */
   get(clipId, clip, width, height, bpm, lod) {
-    const key = this._getCacheKey(clipId, width, height, lod);
+    const key = this._getCacheKey(clipId, width, height, lod, clip.sampleOffset, clip.duration);
     const cached = this.cache.get(key);
 
     if (cached) {
@@ -45,7 +49,7 @@ class WaveformCache {
    * Store waveform canvas in cache
    */
   set(clipId, clip, width, height, bpm, lod, canvas) {
-    const key = this._getCacheKey(clipId, width, height, lod);
+    const key = this._getCacheKey(clipId, width, height, lod, clip.sampleOffset, clip.duration);
 
     // Remove oldest if cache is full
     if (this.cache.size >= this.maxSize) {
@@ -58,8 +62,10 @@ class WaveformCache {
 
   /**
    * Render waveform to offscreen canvas
+   * Waveform is rendered based on TIME SCALE (pixels per beat), not clip duration
+   * This ensures waveform doesn't stretch when resizing - it shows the actual audio at that time
    */
-  renderWaveform(audioBuffer, clip, width, height, bpm, lod, styles = {}) {
+  renderWaveform(audioBuffer, clip, width, height, bpm, lod, styles = {}, pixelsPerBeat = 48, zoomX = 1) {
     if (!audioBuffer || width <= 0 || height <= 0) {
       return null;
     }
@@ -75,11 +81,17 @@ class WaveformCache {
     const sampleRate = audioBuffer.sampleRate;
     const duration = audioBuffer.duration;
 
-    // Calculate visible portion based on clip offset
+    // Calculate visible portion based on clip offset and TIME SCALE
     const { sampleOffset = 0 } = clip;
     const startSample = Math.floor(sampleOffset * sampleRate);
+
+    // ✅ FIX: Calculate audio duration from PIXEL WIDTH and TIME SCALE (not clip.duration)
+    // This ensures waveform represents actual time, not stretched to fit clip
     const secondsPerBeat = 60 / bpm;
-    const clipDurationSeconds = clip.duration * secondsPerBeat;
+    const totalPixelsPerBeat = pixelsPerBeat * zoomX;
+    const secondsPerPixel = secondsPerBeat / totalPixelsPerBeat;
+    const clipDurationSeconds = width * secondsPerPixel; // How many seconds of audio fit in this width
+
     const samplesNeeded = Math.floor(clipDurationSeconds * sampleRate);
     const endSample = Math.min(startSample + samplesNeeded, channelData.length);
 

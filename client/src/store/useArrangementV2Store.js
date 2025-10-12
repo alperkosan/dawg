@@ -290,6 +290,9 @@ export const useArrangementV2Store = create((set, get) => ({
     const splitPoint = splitPosition - clip.startTime;
     if (splitPoint <= 0 || splitPoint >= clip.duration) return null;
 
+    // Get current BPM from transport
+    const currentBPM = TransportManagerSingleton.getBPM?.() || 140;
+
     // Create two new clips
     const leftClip = {
       ...clip,
@@ -306,17 +309,27 @@ export const useArrangementV2Store = create((set, get) => ({
 
     // For audio clips, adjust sample offset for right clip
     if (clip.type === 'audio') {
-      const secondsPerBeat = 60 / 140; // TODO: Use actual BPM
-      rightClip.sampleOffset = clip.sampleOffset + (splitPoint * secondsPerBeat);
+      const secondsPerBeat = 60 / currentBPM;
+      const splitTimeInSeconds = splitPoint * secondsPerBeat;
+
+      // Right clip starts from the split point in the audio
+      rightClip.sampleOffset = (clip.sampleOffset || 0) + splitTimeInSeconds;
+
+      // Both clips maintain shared/unique status and reference the same asset
+      // Add references for new clips
+      if (clip.assetId) {
+        audioAssetManager.addAssetReference(clip.assetId); // For leftClip
+        audioAssetManager.addAssetReference(clip.assetId); // For rightClip
+        console.log(`✂️ Split audio clip: ${clip.assetId} (both clips share same asset)`);
+      }
     }
 
-    // Remove original, add two new clips
+    // Remove original clip (decrements reference if audio)
+    get().removeClip(clipId);
+
+    // Add two new clips
     set({
-      clips: [
-        ...get().clips.filter(c => c.id !== clipId),
-        leftClip,
-        rightClip
-      ]
+      clips: [...get().clips, leftClip, rightClip]
     });
 
     get().pushHistory({ type: 'SPLIT_CLIP', originalClip: clip, leftClipId: leftClip.id, rightClipId: rightClip.id });

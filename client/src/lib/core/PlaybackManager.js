@@ -1139,9 +1139,8 @@ export class PlaybackManager {
         outputNode.connect(destination);
 
         // Play with sample offset and duration
-        // Convert sample offset from beats to seconds
-        const sampleOffsetBeats = clip.sampleOffset || 0;
-        const sampleOffsetSeconds = sampleOffsetBeats * (60 / this.transport.bpm);
+        // sampleOffset is already in seconds (set during split/resize)
+        const sampleOffsetSeconds = clip.sampleOffset || 0;
 
         // ✅ FIX: Combine resume offset with clip's sample offset
         const totalOffset = resumeOffset + sampleOffsetSeconds;

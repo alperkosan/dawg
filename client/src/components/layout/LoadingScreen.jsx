@@ -1,6 +1,6 @@
-
 import React from 'react';
 import { useThemeStore } from '../../store/useThemeStore';
+import './LoadingScreen.css';
 
 const LoadingScreen = () => {
   const getActiveTheme = useThemeStore(state => state.getActiveTheme);
@@ -8,22 +8,36 @@ const LoadingScreen = () => {
 
   const style = {
     '--bg-primary': theme.zenith['bg-primary'],
+    '--bg-secondary': theme.zenith['bg-secondary'],
+    '--bg-tertiary': theme.zenith['bg-tertiary'],
     '--text-primary': theme.zenith['text-primary'],
+    '--text-secondary': theme.zenith['text-secondary'],
     '--accent-cool': theme.zenith['accent-cool'],
   };
 
+  const zenithText = "ZENITH";
+
   return (
-    <div style={style} className="w-screen h-screen flex flex-col items-center justify-center bg-[var(--bg-primary)] text-[var(--text-primary)] font-mono">
-      <div className="flex items-center justify-center space-x-4">
-        <div 
-          className="w-8 h-8 border-4 border-t-4 border-t-[var(--accent-cool)] border-[rgba(255,255,255,0.2)] rounded-full animate-spin"
-          style={{ borderTopColor: 'var(--accent-cool)' }}
-        ></div>
-        <h1 className="text-2xl font-bold tracking-wider">ZENITH</h1>
+    <div style={style} className="w-screen h-screen flex flex-col items-center justify-center text-[var(--text-primary)] font-mono loading-screen-background">
+      <div className="text-center">
+        <h1 className="text-4xl font-bold tracking-widest mb-4">
+          {zenithText.split('').map((letter, index) => (
+            <span 
+              key={index} 
+              className="zenith-letter"
+              style={{ animationDelay: `${index * 100}ms` }}
+            >
+              {letter}
+            </span>
+          ))}
+        </h1>
+        <p className="text-sm text-[var(--text-secondary)]">
+          Initializing Audio Engine & Loading Worklets...
+        </p>
       </div>
-      <p className="mt-4 text-sm text-center text-[var(--text-secondary)]">
-        Initializing Audio Engine & Loading Worklets...
-      </p>
+      <div className="loading-bar-container">
+        <div className="loading-bar"></div>
+      </div>
     </div>
   );
 };

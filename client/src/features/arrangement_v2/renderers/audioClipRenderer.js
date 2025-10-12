@@ -45,8 +45,10 @@ const AUDIO_CLIP_COLORS = {
  * @param {boolean} isSelected - Is clip selected
  * @param {number} bpm - Current BPM
  * @param {number} lod - Level of detail (0-4 from useArrangementCanvas)
+ * @param {number} pixelsPerBeat - Pixels per beat (for time scale)
+ * @param {number} zoomX - Horizontal zoom factor
  */
-export function renderAudioClip(ctx, audioBuffer, clip, x, y, width, height, isSelected, bpm = 140, lod = 2) {
+export function renderAudioClip(ctx, audioBuffer, clip, x, y, width, height, isSelected, bpm = 140, lod = 2, pixelsPerBeat = 48, zoomX = 1) {
   // Save context state
   ctx.save();
 
@@ -55,7 +57,7 @@ export function renderAudioClip(ctx, audioBuffer, clip, x, y, width, height, isS
 
   // Draw waveform (if audio buffer is loaded)
   if (audioBuffer) {
-    drawWaveform(ctx, audioBuffer, clip, x, y, width, height, bpm, lod);
+    drawWaveform(ctx, audioBuffer, clip, x, y, width, height, bpm, lod, pixelsPerBeat, zoomX);
   } else {
     // Show loading placeholder
     drawLoadingPlaceholder(ctx, x, y, width, height);
@@ -94,8 +96,9 @@ function drawClipBackground(ctx, x, y, width, height, isSelected) {
 
 /**
  * Draw waveform with LOD and caching
+ * Waveform is time-scale accurate (doesn't stretch when resizing)
  */
-function drawWaveform(ctx, audioBuffer, clip, x, y, width, height, bpm, lod) {
+function drawWaveform(ctx, audioBuffer, clip, x, y, width, height, bpm, lod, pixelsPerBeat, zoomX) {
   // Get waveform cache
   const waveformCache = getWaveformCache();
 
@@ -117,7 +120,9 @@ function drawWaveform(ctx, audioBuffer, clip, x, y, width, height, bpm, lod) {
       waveformHeight,
       bpm,
       waveformLOD,
-      {} // styles (not used in current implementation)
+      {}, // styles (not used in current implementation)
+      pixelsPerBeat,
+      zoomX
     );
 
     // Cache the result

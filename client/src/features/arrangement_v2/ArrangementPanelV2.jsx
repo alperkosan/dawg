@@ -399,7 +399,7 @@ export function ArrangementPanelV2() {
           }
         }
 
-        renderAudioClip(ctx, audioBuffer, clip, x, y, width, clipHeight, isSelected, 140, lod);
+        renderAudioClip(ctx, audioBuffer, clip, x, y, width, clipHeight, isSelected, 140, lod, constants.PIXELS_PER_BEAT, viewport.zoomX);
       } else if (clip.type === 'pattern') {
         // Load pattern data from pattern store
         const pattern = patterns[clip.patternId] || null;
