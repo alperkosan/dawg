@@ -19,20 +19,22 @@ class WaveformCache {
 
   /**
    * Generate cache key from clip properties
-   * Includes sampleOffset to handle split/resize correctly
+   * KEY INSIGHT: Width IS part of the key because canvas size matters
+   * But we also need zoom/ppb to ensure correct time-scale rendering
    */
-  _getCacheKey(clipId, width, height, lod, sampleOffset = 0, duration = 0) {
+  _getCacheKey(clipId, width, height, lod, sampleOffset = 0, zoomX = 1, pixelsPerBeat = 48) {
     // Round values to avoid cache misses from floating point errors
     const roundedOffset = Math.round(sampleOffset * 1000) / 1000;
-    const roundedDuration = Math.round(duration * 1000) / 1000;
-    return `${clipId}-${width}-${height}-${lod}-${roundedOffset}-${roundedDuration}`;
+    const roundedZoom = Math.round(zoomX * 1000) / 1000;
+    const roundedPPB = Math.round(pixelsPerBeat * 10) / 10;
+    return `${clipId}-w${width}-h${height}-lod${lod}-off${roundedOffset}-z${roundedZoom}-ppb${roundedPPB}`;
   }
 
   /**
    * Get cached waveform canvas
    */
-  get(clipId, clip, width, height, bpm, lod) {
-    const key = this._getCacheKey(clipId, width, height, lod, clip.sampleOffset, clip.duration);
+  get(clipId, clip, width, height, bpm, lod, pixelsPerBeat, zoomX) {
+    const key = this._getCacheKey(clipId, width, height, lod, clip.sampleOffset, zoomX, pixelsPerBeat);
     const cached = this.cache.get(key);
 
     if (cached) {
@@ -48,8 +50,8 @@ class WaveformCache {
   /**
    * Store waveform canvas in cache
    */
-  set(clipId, clip, width, height, bpm, lod, canvas) {
-    const key = this._getCacheKey(clipId, width, height, lod, clip.sampleOffset, clip.duration);
+  set(clipId, clip, width, height, bpm, lod, canvas, pixelsPerBeat, zoomX) {
+    const key = this._getCacheKey(clipId, width, height, lod, clip.sampleOffset, zoomX, pixelsPerBeat);
 
     // Remove oldest if cache is full
     if (this.cache.size >= this.maxSize) {
@@ -95,20 +97,44 @@ class WaveformCache {
     const samplesNeeded = Math.floor(clipDurationSeconds * sampleRate);
     const endSample = Math.min(startSample + samplesNeeded, channelData.length);
 
-    // Calculate samples per pixel based on LOD
+    console.log('🎵 Waveform render:', {
+      clipId: clip.id.substring(0, 8),
+      width,
+      sampleOffset,
+      pixelsPerBeat,
+      zoomX,
+      secondsPerPixel: secondsPerPixel.toFixed(4),
+      clipDurationSeconds: clipDurationSeconds.toFixed(2),
+      startSample,
+      endSample,
+      totalSamples: endSample - startSample
+    });
+
+    // ✅ CRITICAL FIX: Calculate samples per pixel based on TIME SCALE, not clip width!
+    // Each pixel represents a fixed amount of time (secondsPerPixel)
+    // So samplesPerPixel = secondsPerPixel * sampleRate
+    const baseSamplesPerPixel = secondsPerPixel * sampleRate;
+
+    // Apply LOD multiplier (more detail when zoomed in)
     let samplesPerPixel;
     switch (lod) {
-      case 0: // Low detail - more samples per pixel
-        samplesPerPixel = Math.max(1, Math.floor((endSample - startSample) / width / 2));
+      case 0: // Low detail - more samples per pixel (zoomed out)
+        samplesPerPixel = Math.max(1, Math.floor(baseSamplesPerPixel * 2));
         break;
       case 1: // Medium detail
-        samplesPerPixel = Math.max(1, Math.floor((endSample - startSample) / width));
+        samplesPerPixel = Math.max(1, Math.floor(baseSamplesPerPixel));
         break;
-      case 2: // High detail - fewer samples per pixel
+      case 2: // High detail - fewer samples per pixel (zoomed in)
       default:
-        samplesPerPixel = Math.max(1, Math.floor((endSample - startSample) / width * 0.5));
+        samplesPerPixel = Math.max(1, Math.floor(baseSamplesPerPixel * 0.5));
         break;
     }
+
+    console.log('🔍 samplesPerPixel calculation:', {
+      baseSamplesPerPixel: baseSamplesPerPixel.toFixed(2),
+      finalSamplesPerPixel: samplesPerPixel,
+      lod
+    });
 
     // Draw waveform
     ctx.fillStyle = styles.waveformColor || 'rgba(167, 139, 250, 0.9)';

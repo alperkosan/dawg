@@ -109,7 +109,9 @@ function drawWaveform(ctx, audioBuffer, clip, x, y, width, height, bpm, lod, pix
 
   // Try to get from cache
   const waveformHeight = height - 16; // Leave space for padding
-  let waveformCanvas = waveformCache.get(clip.id, clip, width, waveformHeight, bpm, waveformLOD);
+  let waveformCanvas = waveformCache.get(clip.id, clip, width, waveformHeight, bpm, waveformLOD, pixelsPerBeat, zoomX);
+
+  const cacheHit = !!waveformCanvas;
 
   // Render if not cached
   if (!waveformCanvas) {
@@ -126,14 +128,31 @@ function drawWaveform(ctx, audioBuffer, clip, x, y, width, height, bpm, lod, pix
     );
 
     // Cache the result
-    waveformCache.set(clip.id, clip, width, waveformHeight, bpm, waveformLOD, waveformCanvas);
+    waveformCache.set(clip.id, clip, width, waveformHeight, bpm, waveformLOD, waveformCanvas, pixelsPerBeat, zoomX);
   }
 
+  // 🐛 DEBUG: Log every waveform draw
+  console.log('🎨 drawWaveform:', {
+    clipId: clip.id.substring(0, 8),
+    clipDuration: clip.duration,
+    clipWidth: width,
+    canvasWidth: waveformCanvas?.width,
+    canvasHeight: waveformCanvas?.height,
+    pixelsPerBeat,
+    zoomX,
+    cacheHit,
+    sampleOffset: clip.sampleOffset || 0,
+    willStretch: waveformCanvas && waveformCanvas.width !== width
+  });
+
   // Draw cached waveform (with safety check)
+  // ✅ CRITICAL: Draw at canvas's actual size to avoid stretching!
   if (waveformCanvas && waveformCanvas.width > 0 && waveformCanvas.height > 0) {
     ctx.save();
     ctx.globalAlpha = 0.8;
-    ctx.drawImage(waveformCanvas, x, y + 8, width, waveformHeight);
+    // Use canvas's actual dimensions, NOT the clip width
+    // This ensures waveform is time-accurate and doesn't stretch
+    ctx.drawImage(waveformCanvas, x, y + 8, waveformCanvas.width, waveformCanvas.height);
     ctx.restore();
   }
 }
