@@ -3,13 +3,14 @@ import { useInstrumentsStore } from '@/store/useInstrumentsStore';
 import { usePanelsStore } from '@/store/usePanelsStore';
 import { useMixerStore } from '@/store/useMixerStore';
 import { useArrangementV2Store } from '@/store/useArrangementV2Store';
+import { audioAssetManager } from '@/lib/audio/AudioAssetManager';
 
 import { WaveformWorkbench } from './components/WaveformWorkbench';
 import { ControlDeck } from './components/ControlDeck';
 
 import './SampleEditorV3.css';
 
-// AudioClipControls: Mixer routing for audio clips
+// AudioClipControls: Mixer routing for audio clips with shared/unique editing
 const AudioClipControls = ({ editorClipData }) => {
   const mixerTracks = useMixerStore(state => state.mixerTracks);
   const updateClip = useArrangementV2Store(state => state.updateClip);
@@ -20,25 +21,130 @@ const AudioClipControls = ({ editorClipData }) => {
   // Get live clip data from store (reactive)
   const liveClip = clips.find(c => c.id === editorClipData.clipId);
 
+  // Determine if this clip is unique or shared
+  const isUnique = liveClip?.isUnique || false;
+
+  // Get all sibling clips (same asset, not unique)
+  const siblingClips = clips.filter(c =>
+    c.assetId === editorClipData.assetId &&
+    !c.isUnique &&
+    c.type === 'audio'
+  );
+  const siblingCount = siblingClips.length;
+
+  // Get effective mixer channel (from asset or unique metadata)
+  let effectiveMixerChannel;
+  if (isUnique && liveClip.uniqueMetadata?.mixerChannelId) {
+    effectiveMixerChannel = liveClip.uniqueMetadata.mixerChannelId;
+  } else if (!isUnique && editorClipData.assetId) {
+    const assetMeta = audioAssetManager.getAssetMetadata(editorClipData.assetId);
+    effectiveMixerChannel = assetMeta?.mixerChannelId;
+  }
+  effectiveMixerChannel = effectiveMixerChannel || 'inherit';
+
   const handleMixerChannelChange = (newChannelId) => {
-    console.log('🎛️ Changing clip mixer channel to:', newChannelId);
+    const channelId = newChannelId === 'inherit' ? null : newChannelId;
+
+    if (isUnique) {
+      // Update only this clip's unique metadata
+      console.log('🎛️ Updating UNIQUE clip mixer channel:', channelId);
+      updateClip(editorClipData.clipId, {
+        uniqueMetadata: {
+          ...liveClip.uniqueMetadata,
+          mixerChannelId: channelId
+        }
+      });
+    } else {
+      // Update asset metadata (affects all sibling clips)
+      console.log(`🎛️ Updating SHARED asset mixer channel (${siblingCount} clips):`, channelId);
+      audioAssetManager.updateAssetMetadata(editorClipData.assetId, {
+        mixerChannelId: channelId
+      });
+
+      // Force re-render by triggering empty update on all sibling clips
+      siblingClips.forEach(clip => {
+        updateClip(clip.id, {});
+      });
+    }
+  };
+
+  const handleMakeUnique = () => {
+    // Copy current asset metadata to clip's unique metadata
+    const assetMeta = audioAssetManager.getAssetMetadata(editorClipData.assetId);
+
     updateClip(editorClipData.clipId, {
-      mixerChannelId: newChannelId || null
+      isUnique: true,
+      uniqueMetadata: {
+        mixerChannelId: assetMeta.mixerChannelId,
+        precomputed: { ...assetMeta.precomputed }
+      }
     });
+
+    console.log('✂️ Made clip unique:', editorClipData.clipId);
+  };
+
+  const handleMakeShared = () => {
+    updateClip(editorClipData.clipId, {
+      isUnique: false,
+      uniqueMetadata: null
+    });
+
+    console.log('🔗 Made clip shared:', editorClipData.clipId);
   };
 
   const currentTrack = tracks.find(t => t.id === editorClipData.trackId);
-  const currentMixerChannel = liveClip?.mixerChannelId || 'inherit';
-
-  console.log('🔍 AudioClipControls state:', {
-    clipId: editorClipData.clipId,
-    initialMixerChannelId: editorClipData.mixerChannelId,
-    liveMixerChannelId: liveClip?.mixerChannelId,
-    currentMixerChannel
-  });
 
   return (
     <div className="p-4" style={{ background: 'rgba(0,0,0,0.3)' }}>
+      {/* Shared/Unique Status Banner */}
+      <div style={{
+        padding: '8px 12px',
+        background: isUnique ? 'rgba(251, 146, 60, 0.1)' : 'rgba(34, 197, 94, 0.1)',
+        border: `1px solid ${isUnique ? 'rgba(251, 146, 60, 0.3)' : 'rgba(34, 197, 94, 0.3)'}`,
+        borderRadius: '6px',
+        marginBottom: '12px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between'
+      }}>
+        <div style={{ fontSize: '12px' }}>
+          {isUnique ? (
+            <>
+              <span style={{ color: '#fb923c', fontWeight: '600' }}>✂️ Unique Clip</span>
+              <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.5)', marginTop: '2px' }}>
+                Changes affect only this clip
+              </div>
+            </>
+          ) : (
+            <>
+              <span style={{ color: '#22c55e', fontWeight: '600' }}>🔗 Shared ({siblingCount} clips)</span>
+              <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.5)', marginTop: '2px' }}>
+                Changes affect all {siblingCount} clips using this audio
+              </div>
+            </>
+          )}
+        </div>
+
+        <button
+          onClick={isUnique ? handleMakeShared : handleMakeUnique}
+          style={{
+            padding: '6px 12px',
+            background: 'rgba(255,255,255,0.1)',
+            border: '1px solid rgba(255,255,255,0.2)',
+            borderRadius: '4px',
+            color: 'white',
+            fontSize: '11px',
+            cursor: 'pointer',
+            fontWeight: '500',
+            transition: 'all 0.2s'
+          }}
+          onMouseEnter={(e) => e.target.style.background = 'rgba(255,255,255,0.15)'}
+          onMouseLeave={(e) => e.target.style.background = 'rgba(255,255,255,0.1)'}
+        >
+          {isUnique ? '🔗 Make Shared' : '✂️ Make Unique'}
+        </button>
+      </div>
+
       <div className="font-bold mb-3 text-gray-300">{editorClipData.name}</div>
 
       <div className="mb-3 text-sm text-gray-400">
@@ -47,10 +153,15 @@ const AudioClipControls = ({ editorClipData }) => {
       </div>
 
       <div className="mt-4">
-        <label className="block text-xs text-gray-400 mb-2">Mixer Channel Routing</label>
+        <label className="block text-xs text-gray-400 mb-2">
+          Mixer Channel Routing
+          {!isUnique && <span style={{ color: '#22c55e', marginLeft: '6px', fontSize: '10px' }}>
+            (affects {siblingCount} clips)
+          </span>}
+        </label>
         <select
-          value={currentMixerChannel}
-          onChange={(e) => handleMixerChannelChange(e.target.value === 'inherit' ? null : e.target.value)}
+          value={effectiveMixerChannel}
+          onChange={(e) => handleMixerChannelChange(e.target.value)}
           style={{
             width: '100%',
             padding: '8px 12px',
@@ -71,9 +182,9 @@ const AudioClipControls = ({ editorClipData }) => {
         </select>
 
         <div className="mt-2 text-xs text-gray-500">
-          {currentMixerChannel === 'inherit'
+          {effectiveMixerChannel === 'inherit'
             ? 'This clip uses the mixer channel of its track.'
-            : 'This clip has a dedicated mixer channel.'}
+            : `This clip uses a dedicated mixer channel.${!isUnique ? ` (shared across ${siblingCount} clips)` : ''}`}
         </div>
       </div>
     </div>

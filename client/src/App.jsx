@@ -31,6 +31,7 @@ const createDemoAudioBuffer = (audioContext, frequency = 440, duration = 2) => {
 
 // UI Components
 import StartupScreen from './components/StartUpScreen'; // Başlangıç ekranı
+import LoadingScreen from './components/layout/LoadingScreen';
 import TopToolbar from './features/toolbars/TopToolbar';
 import MainToolbar from './features/toolbars/MainToolbar';
 import WorkspacePanel from './layout/WorkspacePanel';
@@ -198,7 +199,7 @@ function App() {
   const renderContent = useCallback(() => {
     switch (engineStatus) {
       case 'initializing':
-        return <StartupScreen onStart={() => {}} />; // Veya bir yükleniyor ekranı
+        return <LoadingScreen />;
       case 'error':
         return (
           <div className="w-screen h-screen flex items-center justify-center bg-red-900 text-white">

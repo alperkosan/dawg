@@ -1103,18 +1103,32 @@ export class PlaybackManager {
             outputNode = panNode;
         }
 
-        // ✅ ArrangementV2: Route to mixer channel (clip-specific or track's channel)
+        // ✅ ArrangementV2: Route to mixer channel with inheritance logic
         let destination = this.audioEngine.masterGain || context.destination;
+        let mixerChannelId;
 
-        if (clip.trackId || clip.mixerChannelId) {
-            // Priority 1: Use clip's dedicated mixer channel if specified
-            // Priority 2: Use track's mixer channel
-            const mixerChannelId = clip.mixerChannelId || `arr-${clip.trackId}`;
+        // Determine mixer routing using inheritance
+        if (clip.isUnique && clip.uniqueMetadata?.mixerChannelId) {
+            // Unique clip: use its own routing
+            mixerChannelId = clip.uniqueMetadata.mixerChannelId;
+        } else if (!clip.isUnique && clip.assetId && window.audioAssetManager) {
+            // Shared clip: use asset routing
+            const assetMeta = window.audioAssetManager.getAssetMetadata(clip.assetId);
+            mixerChannelId = assetMeta?.mixerChannelId;
+        }
+
+        // Fallback to track routing or deprecated clip.mixerChannelId
+        if (!mixerChannelId && clip.trackId) {
+            mixerChannelId = clip.mixerChannelId || `arr-${clip.trackId}`;
+        }
+
+        if (mixerChannelId) {
             const mixerChannel = this.audioEngine.mixerChannels.get(mixerChannelId);
 
             if (mixerChannel && mixerChannel.input) {
                 destination = mixerChannel.input;
-                console.log('🎵 ✅ Routing audio clip to mixer channel:', mixerChannelId, clip.mixerChannelId ? '(clip-specific)' : '(track default)');
+                const routeType = clip.isUnique ? 'unique' : (clip.assetId ? 'shared' : 'track');
+                console.log(`🎵 ✅ Routing audio clip to mixer channel: ${mixerChannelId} (${routeType})`);
             } else {
                 console.log('🎵 ⚠️ Mixer channel not found, using master:', mixerChannelId);
             }

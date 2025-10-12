@@ -13,6 +13,7 @@ import { create } from 'zustand';
 import { nanoid } from 'nanoid';
 import TransportManagerSingleton from '@/lib/core/TransportManagerSingleton.js';
 import { AudioContextService } from '@/lib/services/AudioContextService.js';
+import { audioAssetManager } from '@/lib/audio/AudioAssetManager.js';
 
 // ============================================================================
 // HELPERS
@@ -47,7 +48,11 @@ const createAudioClip = (trackId, startTime, assetId, duration, name) => ({
   color: '#8b5cf6',
   muted: false,
   locked: false,
-  mixerChannelId: null // null = inherit from track, otherwise clip-specific channel
+
+  // Shared editing system
+  isUnique: false, // false = inherit from asset metadata, true = independent
+  uniqueMetadata: null, // { mixerChannelId, precomputed } - only used if isUnique = true
+  mixerChannelId: null // DEPRECATED: kept for backward compatibility, will be removed
 });
 
 const createPatternClip = (trackId, startTime, patternId, duration, instrumentId, name) => ({
@@ -207,6 +212,12 @@ export const useArrangementV2Store = create((set, get) => ({
 
   addClip: (clip) => {
     const newClip = { ...clip, id: clip.id || `clip-${nanoid(8)}` };
+
+    // Increment asset reference count for audio clips
+    if (newClip.type === 'audio' && newClip.assetId) {
+      audioAssetManager.addAssetReference(newClip.assetId);
+    }
+
     set({ clips: [...get().clips, newClip] });
     get().pushHistory({ type: 'ADD_CLIP', clipId: newClip.id });
     return newClip.id;
@@ -224,12 +235,26 @@ export const useArrangementV2Store = create((set, get) => ({
 
   removeClip: (clipId) => {
     const clip = get().clips.find(c => c.id === clipId);
+
+    // Decrement asset reference count for audio clips
+    if (clip?.type === 'audio' && clip.assetId) {
+      audioAssetManager.removeAssetReference(clip.assetId);
+    }
+
     set({ clips: get().clips.filter(c => c.id !== clipId) });
     get().pushHistory({ type: 'REMOVE_CLIP', clip });
   },
 
   removeClips: (clipIds) => {
     const clips = get().clips.filter(c => clipIds.includes(c.id));
+
+    // Decrement asset reference counts
+    clips.forEach(clip => {
+      if (clip.type === 'audio' && clip.assetId) {
+        audioAssetManager.removeAssetReference(clip.assetId);
+      }
+    });
+
     set({ clips: get().clips.filter(c => !clipIds.includes(c.id)) });
     get().pushHistory({ type: 'REMOVE_CLIPS', clips });
   },

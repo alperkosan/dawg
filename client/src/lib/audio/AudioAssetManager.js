@@ -14,6 +14,9 @@ class AudioAssetManager {
     this.loadingPromises = new Map(); // Map<assetId, Promise>
     this.audioContext = null;
     this.listeners = new Set(); // Set of callback functions
+
+    // NEW: Asset metadata for shared editing (mixer routing, precomputed, etc.)
+    this.assetMetadata = new Map(); // Map<assetId, { mixerChannelId, precomputed, refCount }>
   }
 
   /**
@@ -197,6 +200,99 @@ class AudioAssetManager {
   clearAll() {
     this.assets.clear();
     this.loadingPromises.clear();
+    this.assetMetadata.clear();
+  }
+
+  // ============================================================================
+  // ASSET METADATA SYSTEM (for shared editing)
+  // ============================================================================
+
+  /**
+   * Get or create asset metadata for shared editing
+   * @param {string} assetId - Asset ID
+   * @returns {object} Metadata object
+   */
+  getAssetMetadata(assetId) {
+    if (!this.assetMetadata.has(assetId)) {
+      this.assetMetadata.set(assetId, {
+        assetId,
+        mixerChannelId: null, // Shared mixer routing
+        precomputed: {
+          normalize: false,
+          reverse: false,
+          reversePolarity: false
+        },
+        refCount: 0 // Number of clips referencing this asset
+      });
+    }
+    return this.assetMetadata.get(assetId);
+  }
+
+  /**
+   * Update asset metadata (affects all clips using this asset)
+   * @param {string} assetId - Asset ID
+   * @param {object} updates - Metadata updates
+   */
+  updateAssetMetadata(assetId, updates) {
+    const metadata = this.getAssetMetadata(assetId);
+    Object.assign(metadata, updates);
+    console.log('📝 Updated asset metadata:', assetId, updates);
+
+    // Notify listeners about metadata change
+    this._notifyMetadataChange(assetId, metadata);
+  }
+
+  /**
+   * Increment reference count (called when clip is created)
+   * @param {string} assetId - Asset ID
+   */
+  addAssetReference(assetId) {
+    const metadata = this.getAssetMetadata(assetId);
+    metadata.refCount++;
+    console.log(`🔗 Asset reference added: ${assetId} (refCount: ${metadata.refCount})`);
+  }
+
+  /**
+   * Decrement reference count (called when clip is deleted)
+   * @param {string} assetId - Asset ID
+   */
+  removeAssetReference(assetId) {
+    const metadata = this.assetMetadata.get(assetId);
+    if (!metadata) return;
+
+    metadata.refCount = Math.max(0, metadata.refCount - 1);
+    console.log(`🔗 Asset reference removed: ${assetId} (refCount: ${metadata.refCount})`);
+
+    // Cleanup if no references remain
+    if (metadata.refCount === 0) {
+      this.assetMetadata.delete(assetId);
+      console.log(`🗑️ Removed unused asset metadata: ${assetId}`);
+    }
+  }
+
+  /**
+   * Get all clips using this asset (for debugging)
+   * @param {string} assetId - Asset ID
+   * @returns {number} Reference count
+   */
+  getAssetRefCount(assetId) {
+    const metadata = this.assetMetadata.get(assetId);
+    return metadata?.refCount || 0;
+  }
+
+  /**
+   * Notify listeners about metadata changes
+   */
+  _notifyMetadataChange(assetId, metadata) {
+    this.listeners.forEach(listener => {
+      try {
+        if (listener.onMetadataChange) {
+          listener.onMetadataChange(assetId, metadata);
+        }
+      } catch (error) {
+        console.error('Error in metadata change listener:', error);
+      }
+    });
   }
 
   /**
@@ -280,3 +376,8 @@ class AudioAssetManager {
 
 // Export singleton instance
 export const audioAssetManager = new AudioAssetManager();
+
+// Make globally accessible for PlaybackManager
+if (typeof window !== 'undefined') {
+  window.audioAssetManager = audioAssetManager;
+}
