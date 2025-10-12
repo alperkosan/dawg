@@ -261,12 +261,25 @@ export const useArrangementV2Store = create((set, get) => ({
 
   updateClip: (clipId, updates) => {
     const oldClip = get().clips.find(c => c.id === clipId);
+    let updatedClip = null;
+
     set({
-      clips: get().clips.map(c =>
-        c.id === clipId ? { ...c, ...updates } : c
-      )
+      clips: get().clips.map(c => {
+        if (c.id === clipId) {
+          updatedClip = { ...c, ...updates };
+          return updatedClip;
+        }
+        return c;
+      })
     });
+
     get().pushHistory({ type: 'UPDATE_CLIP', clipId, oldState: oldClip, newState: updates });
+
+    // ✅ PERFORMANCE FIX: Reschedule only the updated clip
+    const audioEngine = get()._audioEngine;
+    if (audioEngine?.playbackManager && updatedClip) {
+      audioEngine.playbackManager.rescheduleClipEvents(updatedClip);
+    }
   },
 
   duplicateClips: (clipIds, offsetBeats = 0) => {

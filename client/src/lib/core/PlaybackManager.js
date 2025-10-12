@@ -923,13 +923,88 @@ export class PlaybackManager {
 
                     if (offsetNotes.length > 0) {
                         console.log(`🎵 ✅ Scheduling ${offsetNotes.length} notes for instrument ${instrumentId}`);
-                        this._scheduleInstrumentNotes(instrument, offsetNotes, instrumentId, baseTime);
+                        this._scheduleInstrumentNotes(instrument, offsetNotes, instrumentId, baseTime, clip.id);
                     }
                 });
             }
         });
 
         console.log('🎵 _scheduleSongContent completed');
+    }
+
+    /**
+     * ✅ NEW: Reschedule events for a single clip.
+     * This is a performance optimization to avoid rescheduling the entire song.
+     * @param {Object} clip - The full clip object that has been updated.
+     */
+    rescheduleClipEvents(clip) {
+        if (!clip || !clip.id) {
+            console.warn('rescheduleClipEvents: Invalid clip provided.');
+            return;
+        }
+
+        // Step 1: Clear all old events for this clip
+        this._clearClipEvents(clip.id);
+
+        // Step 2: If playing, schedule new events for this clip
+        if (this.isPlaying && !this.isPaused) {
+            const baseTime = this.audioEngine.audioContext.currentTime;
+            
+            console.log(`🎵 Rescheduling events for clip: ${clip.id}`);
+            // Re-use existing scheduling logic, but for a single clip
+            if (clip.type === 'audio') {
+                this._scheduleAudioClip(clip, baseTime);
+            } else if (clip.type === 'pattern') {
+                const arrangementStore = useArrangementStore.getState();
+                const patterns = arrangementStore.patterns || {};
+                const pattern = patterns[clip.patternId];
+
+                if (pattern) {
+                    const clipStartStep = Math.floor((clip.startTime || 0) * 4);
+                    const clipDurationSteps = (clip.duration || 4) * 4;
+
+                    Object.entries(pattern.data).forEach(([instrumentId, notes]) => {
+                        if (!Array.isArray(notes) || notes.length === 0) return;
+                        const instrument = this.audioEngine.instruments.get(instrumentId);
+                        if (!instrument) return;
+
+                        const offsetNotes = notes
+                            .filter(note => (note.time || 0) < clipDurationSteps)
+                            .map(note => ({ ...note, time: (note.time || 0) + clipStartStep }));
+
+                        if (offsetNotes.length > 0) {
+                            this._scheduleInstrumentNotes(instrument, offsetNotes, instrumentId, baseTime, clip.id);
+                        }
+                    });
+                }
+            }
+        }
+    }
+
+    /**
+     * ✅ NEW: Clear all scheduled events and active sources for a specific clipId.
+     * @param {string} clipId
+     */
+    _clearClipEvents(clipId) {
+        if (!this.transport || !clipId) return;
+
+        // 1. Clear scheduled transport events for this clip
+        // This relies on the transport supporting a filter function for clearScheduledEvents
+        // and that events were scheduled with a clipId property.
+        if (this.transport.clearScheduledEvents) {
+            this.transport.clearScheduledEvents(event => event.clipId === clipId);
+        }
+
+        // 2. Stop any currently playing audio sources for this clip
+        const sourcesToStop = this.activeAudioSources.filter(source => source.clipId === clipId);
+        sourcesToStop.forEach(source => {
+            try {
+                source.stop();
+            } catch (e) { /* Already stopped */ }
+        });
+        this.activeAudioSources = this.activeAudioSources.filter(source => source.clipId !== clipId);
+
+        console.log(`🧹 Cleared events and sources for clip: ${clipId}`);
     }
 
     /**
@@ -1060,6 +1135,7 @@ export class PlaybackManager {
         const context = this.audioEngine.audioContext;
         const source = context.createBufferSource();
         source.buffer = audioBuffer;
+        source.clipId = clip.id; // ✅ Associate source with clip for targeted clearing
 
         // Apply playback rate (time stretch)
         const playbackRate = clip.playbackRate || 1.0;
@@ -1169,13 +1245,14 @@ export class PlaybackManager {
     }
 
     /**
-     * ✅ DÜZELTME: Instrument notes scheduling with base time
+     * ✅ DÜZELTME: Instrument notes scheduling with base time and clipId for targeted rescheduling
      * @param {*} instrument - Instrument instance
      * @param {Array} notes - Notes array
      * @param {string} instrumentId - Instrument ID
      * @param {number} baseTime - Base scheduling time
+     * @param {string | null} clipId - The ID of the parent clip for this note, for targeted clearing.
      */
-    _scheduleInstrumentNotes(instrument, notes, instrumentId, baseTime) {
+    _scheduleInstrumentNotes(instrument, notes, instrumentId, baseTime, clipId = null) {
         // ✅ FIX: Use PlaybackManager's currentPosition, not transport.currentTick
         // (transport may lag behind after jumpToStep)
         const currentStep = this.currentPosition; // ✅ Use our accurate position
@@ -1227,7 +1304,7 @@ export class PlaybackManager {
                     } catch (error) {
                     }
                 },
-                { type: 'noteOn', instrumentId, note, step: noteTimeInSteps }
+                { type: 'noteOn', instrumentId, note, step: noteTimeInSteps, clipId }
             );
 
             // Note off event (if needed)
@@ -1240,7 +1317,7 @@ export class PlaybackManager {
                         } catch (error) {
                         }
                     },
-                    { type: 'noteOff', instrumentId, note }
+                    { type: 'noteOff', instrumentId, note, clipId }
                 );
             }
         });
