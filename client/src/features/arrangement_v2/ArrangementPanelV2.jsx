@@ -12,6 +12,8 @@ import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { useArrangementCanvas, useClipInteraction } from './hooks';
 import { useArrangementV2Store } from '@/store/useArrangementV2Store';
 import { useArrangementStore } from '@/store/useArrangementStore';
+import { usePlaybackStore } from '@/store/usePlaybackStore';
+import { usePanelsStore } from '@/store/usePanelsStore';
 import { useTransportManager } from '@/hooks/useTransportManager';
 import { drawGrid, renderAudioClip, renderPatternClip } from './renderers';
 import { TimelineRuler } from './components/TimelineRuler';
@@ -19,9 +21,9 @@ import { TrackHeader } from './components/TrackHeader';
 import { ClipContextMenu } from './components/ClipContextMenu';
 import { ArrangementToolbar } from './components/ArrangementToolbar';
 import { PatternBrowser } from './components/PatternBrowser';
-import { SampleEditor } from './components/SampleEditor';
 import { audioAssetManager } from '@/lib/audio/AudioAssetManager';
 import { uiUpdateManager, UPDATE_PRIORITIES, UPDATE_FREQUENCIES } from '@/lib/core/UIUpdateManager';
+import { getTimelineController } from '@/lib/core/TimelineControllerSingleton';
 import './ArrangementPanelV2.css';
 
 /**
@@ -70,7 +72,9 @@ function convertPatternDataToNotes(pattern) {
     if (Array.isArray(channelNotes)) {
       channelNotes.forEach(noteData => {
         const midiNote = pitchToMIDI(noteData.pitch);
-        const timeInBeats = noteData.time / 16; // Convert steps (16th notes) to beats
+        // noteData.time is in steps (16th note index: 0-63 for 4 bars)
+        // 1 beat = 4 steps (quarter note = 4 sixteenth notes)
+        const timeInBeats = noteData.time / 4; // Convert steps to beats
         const durationInBeats = durationToBeats(noteData.duration);
 
         notes.push({
@@ -142,14 +146,68 @@ export function ArrangementPanelV2() {
   const LEFT_OFFSET = PATTERN_BROWSER_WIDTH + constants.TRACK_HEADER_WIDTH; // Total left sidebar width
 
   // Sample editor state
-  const [sampleEditorClip, setSampleEditorClip] = useState(null);
+  const [sampleEditorOpen, setSampleEditorOpen] = useState(false);
+
+  // Unified playhead/timeline state
+  const [ghostPosition, setGhostPosition] = useState(null);
+  const currentStep = usePlaybackStore(state => state.currentStep);
+  const isPlaying = usePlaybackStore(state => state.isPlaying);
 
   // Clip double-click handler for sample editor
-  const handleClipDoubleClick = useCallback((clip) => {
+  const handleClipDoubleClick = useCallback(async (clip) => {
     // Only open sample editor for audio clips
     if (clip.type === 'audio') {
       console.log('🎵 Opening sample editor for clip:', clip.name);
-      setSampleEditorClip(clip);
+
+      // Load the audio buffer
+      if (clip.assetId) {
+        const asset = audioAssetManager.assets.get(clip.assetId);
+        if (asset?.buffer) {
+          // Convert ToneAudioBuffer to Web Audio API AudioBuffer
+          const webAudioBuffer = asset.buffer.get ? asset.buffer.get() : asset.buffer;
+
+          console.log('🎵 Audio buffer type:', asset.buffer.constructor.name);
+          console.log('🎵 Converted buffer:', webAudioBuffer);
+
+          // Set buffer and clip data in panels store for SampleEditorV3
+          usePanelsStore.getState().setEditorBuffer(webAudioBuffer);
+          usePanelsStore.getState().setEditorClipData({
+            type: 'audio-clip',
+            name: clip.name || 'Audio Clip',
+            assetId: clip.assetId,
+            clipId: clip.id,
+            trackId: clip.trackId,
+            mixerChannelId: clip.mixerChannelId // Include mixer routing info
+          });
+
+          // Open sample editor panel and bring to front
+          const panelsState = usePanelsStore.getState();
+          const sampleEditorPanel = panelsState.panels['sample-editor'];
+
+          console.log('🔍 Panel state before:', {
+            isOpen: sampleEditorPanel?.isOpen,
+            panelStack: panelsState.panelStack
+          });
+
+          if (!sampleEditorPanel?.isOpen) {
+            console.log('📂 Opening sample editor panel...');
+            panelsState.togglePanel('sample-editor');
+            // Wait for next tick to bring to front after toggle completes
+            setTimeout(() => {
+              panelsState.bringPanelToFront('sample-editor');
+              console.log('📂 Brought to front (after toggle)');
+            }, 0);
+          } else {
+            // Already open, bring to front immediately
+            console.log('📂 Bringing to front (already open)...');
+            panelsState.bringPanelToFront('sample-editor');
+          }
+
+          setSampleEditorOpen(true);
+        } else {
+          console.warn('⚠️ Audio buffer not found for assetId:', clip.assetId);
+        }
+      }
     }
   }, []);
 
@@ -203,6 +261,44 @@ export function ArrangementPanelV2() {
       cleanupTransport();
     };
   }, [initializeTransport, cleanupTransport]);
+
+  // Register with unified TimelineController (Single Source of Truth)
+  useEffect(() => {
+    try {
+      const timelineController = getTimelineController();
+
+      const calculatePosition = (mouseX, mouseY) => {
+        // Account for LEFT_OFFSET (pattern browser + track headers) and TOOLBAR_HEIGHT
+        const totalHeaderHeight = TOOLBAR_HEIGHT + constants.TIMELINE_HEIGHT;
+        if (mouseX < LEFT_OFFSET || mouseY < totalHeaderHeight) return null;
+
+        const canvasX = mouseX - LEFT_OFFSET + viewport.scrollX;
+        const beatsPerPixel = 1 / (constants.PIXELS_PER_BEAT * viewport.zoomX);
+        const position = canvasX * beatsPerPixel;
+
+        return Math.max(0, position); // Beats position
+      };
+
+      timelineController.registerTimeline('arrangement-v2-timeline', {
+        element: containerRef.current,
+        stepWidth: constants.PIXELS_PER_BEAT * viewport.zoomX, // Pixels per beat
+        totalSteps: Math.ceil(viewport.width / (constants.PIXELS_PER_BEAT * viewport.zoomX)),
+        onPositionChange: null, // PlaybackStore handles this (Single Source of Truth)
+        onGhostPositionChange: (pos) => setGhostPosition(pos),
+        enableGhostPosition: true,
+        calculatePosition
+      });
+
+      console.log('✅ ArrangementV2 timeline registered with TimelineController');
+
+      return () => {
+        timelineController.unregisterTimeline('arrangement-v2-timeline');
+        console.log('🧹 ArrangementV2 timeline unregistered from TimelineController');
+      };
+    } catch (error) {
+      console.error('❌ Failed to register ArrangementV2 timeline:', error);
+    }
+  }, [viewport.zoomX, viewport.scrollX, viewport.width, constants.PIXELS_PER_BEAT, constants.TIMELINE_HEIGHT]);
 
   // Sync deletion mode with active tool
   useEffect(() => {
@@ -889,32 +985,6 @@ export function ArrangementPanelV2() {
       ctx.fillText('✏️', iconX, iconY);
     }
 
-    // Draw playhead/cursor line
-    if (cursorPosition !== undefined && cursorPosition !== null) {
-      const cursorX = (cursorPosition * constants.PIXELS_PER_BEAT * viewport.zoomX) - viewport.scrollX;
-
-      // Only draw if cursor is visible on screen
-      if (cursorX >= 0 && cursorX <= viewport.width) {
-        // Draw thin vertical line
-        ctx.strokeStyle = 'rgba(239, 68, 68, 0.9)'; // Red playhead
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(cursorX, 0);
-        ctx.lineTo(cursorX, viewport.height);
-        ctx.stroke();
-
-        // Draw playhead indicator at top
-        const playheadSize = 8;
-        ctx.fillStyle = 'rgba(239, 68, 68, 1.0)';
-        ctx.beginPath();
-        ctx.moveTo(cursorX, 0);
-        ctx.lineTo(cursorX - playheadSize, -playheadSize);
-        ctx.lineTo(cursorX + playheadSize, -playheadSize);
-        ctx.closePath();
-        ctx.fill();
-      }
-    }
-
     // Draw pattern drag preview
     if (patternDragPreview) {
       const x = patternDragPreview.x - viewport.scrollX;
@@ -948,8 +1018,60 @@ export function ArrangementPanelV2() {
       ctx.fillText(`${patternDragPreview.startTime.toFixed(2)} beats`, x + 8, y + 4);
     }
 
+    // Draw playhead (unified timeline - Single Source of Truth from PlaybackStore)
+    if (currentStep !== null && currentStep !== undefined) {
+      // currentStep is in steps (16th notes), convert to beats: 1 beat = 4 steps
+      const playheadBeats = currentStep / 4;
+      const playheadX = (playheadBeats * constants.PIXELS_PER_BEAT * viewport.zoomX) - viewport.scrollX;
+
+      // Only draw if playhead is visible on screen
+      if (playheadX >= 0 && playheadX <= viewport.width) {
+        // Playhead line
+        ctx.strokeStyle = isPlaying ? 'rgba(239, 68, 68, 0.9)' : 'rgba(139, 92, 246, 0.7)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(playheadX, 0);
+        ctx.lineTo(playheadX, viewport.height);
+        ctx.stroke();
+
+        // Playhead triangle at top
+        ctx.fillStyle = isPlaying ? 'rgba(239, 68, 68, 0.9)' : 'rgba(139, 92, 246, 0.7)';
+        ctx.beginPath();
+        ctx.moveTo(playheadX, 0);
+        ctx.lineTo(playheadX - 6, 12);
+        ctx.lineTo(playheadX + 6, 12);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+
+    // Draw ghost position (hover preview)
+    if (ghostPosition !== null && ghostPosition !== undefined) {
+      const ghostX = (ghostPosition * constants.PIXELS_PER_BEAT * viewport.zoomX) - viewport.scrollX;
+
+      // Only draw if ghost is visible on screen
+      if (ghostX >= 0 && ghostX <= viewport.width) {
+        // Ghost line (dashed, subtle)
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(ghostX, 0);
+        ctx.lineTo(ghostX, viewport.height);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Time label
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+        ctx.font = '10px Inter, system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        ctx.fillText(`${ghostPosition.toFixed(2)}`, ghostX, 2);
+      }
+    }
+
     ctx.restore();
-  }, [viewport, setupCanvas, marqueeBox, hoveredClipId, hoveredHandle, dragGhosts, resizeGhosts, fadeGhosts, gainGhosts, clips, tracks, selectedClipIds, constants, dimensions, splitPreview, splitRange, drawGhost, cursorPosition, patternDragPreview]);
+  }, [viewport, setupCanvas, marqueeBox, hoveredClipId, hoveredHandle, dragGhosts, resizeGhosts, fadeGhosts, gainGhosts, clips, tracks, selectedClipIds, constants, dimensions, splitPreview, splitRange, drawGhost, patternDragPreview, currentStep, isPlaying, ghostPosition]);
 
   // ============================================================================
   // KEYBOARD SHORTCUTS
@@ -1614,15 +1736,22 @@ export function ArrangementPanelV2() {
     eventHandlers.onMouseLeave(e);
   };
 
+  // Helper: Get container rectangle for drop calculations
+  const getContainerRect = useCallback((event) => {
+    const container = event.currentTarget === document ? containerRef.current : event.currentTarget;
+    if (!container) return null;
+    return container.getBoundingClientRect();
+  }, []);
+
   // Handle pattern drop from pattern browser
   const handlePatternDrop = useCallback((e, patternId) => {
-    console.log('🎹 handlePatternDrop called with patternId:', patternId);
-
     // Clear preview
     setPatternDragPreview(null);
 
     // Calculate drop position
-    const rect = e.currentTarget.getBoundingClientRect();
+    const rect = getContainerRect(e);
+    if (!rect) return;
+
     const screenX = e.clientX - rect.left;
     const screenY = e.clientY - rect.top;
 
@@ -1652,8 +1781,11 @@ export function ArrangementPanelV2() {
       startTime = Math.round(startTime / snapSize) * snapSize;
     }
 
-    // Default pattern duration (4 bars = 16 beats)
-    const duration = 16;
+    // Get pattern duration from pattern data (default 4 bars = 16 beats if not found)
+    // Pattern length is stored in steps (16th notes), convert to beats
+    const pattern = patterns[patternId];
+    const patternLengthInSteps = pattern?.length || 64; // Default 64 steps = 4 bars
+    const duration = patternLengthInSteps / 4; // Convert steps to beats (1 beat = 4 steps)
 
     // Add pattern clip
     addPatternClip(
@@ -1666,22 +1798,16 @@ export function ArrangementPanelV2() {
     );
 
     console.log(`🎹 Added pattern "${patterns[patternId]?.name}" at ${startTime.toFixed(2)} beats on track ${track.name}`);
-  }, [viewport, tracks, dimensions.trackHeight, snapEnabled, snapSize, addPatternClip, patterns]);
+  }, [viewport, tracks, dimensions.trackHeight, snapEnabled, snapSize, addPatternClip, patterns, getContainerRect]);
 
   // Handle audio file and pattern drop
   const handleDrop = useCallback((e) => {
     e.preventDefault();
-    // Don't stop propagation - let it bubble up
-
-    console.log('📦 handleDrop called, dataTransfer types:', e.dataTransfer.types);
 
     try {
       // Check for pattern drop first
       const patternId = e.dataTransfer.getData('application/x-dawg-pattern');
-      console.log('📦 Pattern ID from dataTransfer:', patternId);
-
       if (patternId) {
-        console.log('📦 Calling handlePatternDrop with:', patternId);
         handlePatternDrop(e, patternId);
         return;
       }
@@ -1694,7 +1820,9 @@ export function ArrangementPanelV2() {
       const { name, url } = fileData;
 
       // Calculate drop position
-      const rect = e.currentTarget.getBoundingClientRect();
+      const rect = getContainerRect(e);
+      if (!rect) return;
+
       const screenX = e.clientX - rect.left;
       const screenY = e.clientY - rect.top;
 
@@ -1743,73 +1871,76 @@ export function ArrangementPanelV2() {
     } catch (err) {
       console.error('Failed to handle drop:', err);
     }
-  }, [handlePatternDrop, viewport, tracks, dimensions.trackHeight, snapEnabled, snapSize]);
+  }, [handlePatternDrop, viewport, tracks, dimensions.trackHeight, snapEnabled, snapSize, getContainerRect]);
 
   const handleDragOver = useCallback((e) => {
     e.preventDefault();
-    // Don't stop propagation - let it bubble up
     e.dataTransfer.dropEffect = 'copy';
-
-    console.log('🔄 DragOver called, types:', Array.from(e.dataTransfer.types));
 
     // Check if dragging a pattern
     const types = e.dataTransfer.types;
-    if (types.includes('application/x-dawg-pattern')) {
-      console.log('🔄 DragOver: Pattern detected');
-      // Calculate drag position for preview
-      const rect = e.currentTarget.getBoundingClientRect();
-      const screenX = e.clientX - rect.left;
-      const screenY = e.clientY - rect.top;
+    if (!types.includes('application/x-dawg-pattern')) {
+      setPatternDragPreview(null);
+      return;
+    }
 
-      const totalHeaderHeight = TOOLBAR_HEIGHT + constants.TIMELINE_HEIGHT;
+    // Calculate drag position for preview
+    const rect = getContainerRect(e);
+    if (!rect) return;
 
-      // Only show preview if over valid canvas area
-      if (screenX >= LEFT_OFFSET && screenY >= totalHeaderHeight) {
-        const canvasX = screenX - LEFT_OFFSET + viewport.scrollX;
-        const canvasY = screenY - totalHeaderHeight + viewport.scrollY;
+    const screenX = e.clientX - rect.left;
+    const screenY = e.clientY - rect.top;
 
-        // Find track
-        const trackIndex = Math.floor(canvasY / dimensions.trackHeight);
-        if (trackIndex >= 0 && trackIndex < tracks.length) {
-          const track = tracks[trackIndex];
+    const totalHeaderHeight = TOOLBAR_HEIGHT + constants.TIMELINE_HEIGHT;
 
-          // Calculate start time
-          const zoomX = isFinite(viewport.zoomX) && viewport.zoomX > 0 ? viewport.zoomX : 1;
-          let startTime = canvasX / (constants.PIXELS_PER_BEAT * zoomX);
+    // Only show preview if over valid canvas area
+    if (screenX >= LEFT_OFFSET && screenY >= totalHeaderHeight) {
+      const canvasX = screenX - LEFT_OFFSET + viewport.scrollX;
+      const canvasY = screenY - totalHeaderHeight + viewport.scrollY;
 
-          // Snap to grid if enabled
-          if (snapEnabled) {
-            startTime = Math.round(startTime / snapSize) * snapSize;
-          }
+      // Find track
+      const trackIndex = Math.floor(canvasY / dimensions.trackHeight);
+      if (trackIndex >= 0 && trackIndex < tracks.length) {
+        const track = tracks[trackIndex];
 
-          // Pattern duration (16 beats = 4 bars)
-          const duration = 16;
+        // Calculate start time
+        const zoomX = isFinite(viewport.zoomX) && viewport.zoomX > 0 ? viewport.zoomX : 1;
+        let startTime = canvasX / (constants.PIXELS_PER_BEAT * zoomX);
 
-          // Calculate preview dimensions in world space
-          const worldX = startTime * constants.PIXELS_PER_BEAT * viewport.zoomX;
-          const worldY = trackIndex * dimensions.trackHeight;
-          const width = duration * constants.PIXELS_PER_BEAT * viewport.zoomX;
-          const height = dimensions.trackHeight;
-
-          setPatternDragPreview({
-            patternId: 'preview', // We'll update with actual ID on drop
-            trackId: track.id,
-            startTime,
-            x: worldX,
-            y: worldY,
-            width,
-            height
-          });
-        } else {
-          setPatternDragPreview(null);
+        // Snap to grid if enabled
+        if (snapEnabled) {
+          startTime = Math.round(startTime / snapSize) * snapSize;
         }
+
+        // Get pattern duration from pattern data (default 4 bars = 16 beats if not found)
+        // Pattern length is stored in steps (16th notes), convert to beats
+        const patternData = e.dataTransfer.getData('application/x-dawg-pattern');
+        const pattern = patterns[patternData];
+        const patternLengthInSteps = pattern?.length || 64; // Default 64 steps = 4 bars
+        const duration = patternLengthInSteps / 4; // Convert steps to beats (1 beat = 4 steps)
+
+        // Calculate preview dimensions in world space
+        const worldX = startTime * constants.PIXELS_PER_BEAT * viewport.zoomX;
+        const worldY = trackIndex * dimensions.trackHeight;
+        const width = duration * constants.PIXELS_PER_BEAT * viewport.zoomX;
+        const height = dimensions.trackHeight;
+
+        setPatternDragPreview({
+          patternId: 'preview',
+          trackId: track.id,
+          startTime,
+          x: worldX,
+          y: worldY,
+          width,
+          height
+        });
       } else {
         setPatternDragPreview(null);
       }
     } else {
       setPatternDragPreview(null);
     }
-  }, [viewport, tracks, dimensions.trackHeight, snapEnabled, snapSize]);
+  }, [viewport, tracks, dimensions.trackHeight, snapEnabled, snapSize, patterns, getContainerRect]);
 
   const handleDragLeave = useCallback(() => {
     // Clear preview when leaving the drop zone
@@ -1858,6 +1989,40 @@ export function ArrangementPanelV2() {
       }
     };
   }, [eventHandlers, viewport.zoomX, viewport.zoomY]);
+
+  // Global drag & drop handlers to catch pattern drops anywhere on the page
+  // This ensures pattern drops work even when dragging over other elements (toolbars, etc.)
+  useEffect(() => {
+    const globalDragOver = (e) => {
+      const types = e.dataTransfer?.types;
+      if (!types || !types.includes('application/x-dawg-pattern')) return;
+
+      // Only handle if NOT already inside our container (avoid duplicate handling)
+      const container = containerRef.current;
+      if (container && !container.contains(e.target)) {
+        handleDragOver(e);
+      }
+    };
+
+    const globalDrop = (e) => {
+      const types = e.dataTransfer?.types;
+      if (!types || !types.includes('application/x-dawg-pattern')) return;
+
+      // Only handle if NOT already inside our container (avoid duplicate handling)
+      const container = containerRef.current;
+      if (container && !container.contains(e.target)) {
+        handleDrop(e);
+      }
+    };
+
+    document.addEventListener('dragover', globalDragOver);
+    document.addEventListener('drop', globalDrop);
+
+    return () => {
+      document.removeEventListener('dragover', globalDragOver);
+      document.removeEventListener('drop', globalDrop);
+    };
+  }, [handleDragOver, handleDrop]);
 
   return (
     <div
@@ -1920,7 +2085,8 @@ export function ArrangementPanelV2() {
       >
         <TimelineRuler
           viewport={viewport}
-          cursorPosition={cursorPosition}
+          cursorPosition={currentStep}
+          isPlaying={isPlaying}
           onSeek={handleTimelineSeek}
           height={constants.TIMELINE_HEIGHT}
           markers={markers}
@@ -2123,18 +2289,6 @@ export function ArrangementPanelV2() {
         {activeTool === 'split' && <div style={{ color: '#8b5cf6', fontWeight: 'bold' }}>✂️ SPLIT MODE</div>}
         {activeTool === 'draw' && <div style={{ color: '#22c55e', fontWeight: 'bold' }}>✏️ DRAW MODE</div>}
       </div>
-
-      {/* Sample Editor Modal */}
-      {sampleEditorClip && (
-        <SampleEditor
-          clip={sampleEditorClip}
-          onClose={() => setSampleEditorClip(null)}
-          onUpdate={(updatedClip) => {
-            updateClip(sampleEditorClip.id, updatedClip);
-            setSampleEditorClip(null);
-          }}
-        />
-      )}
     </div>
   );
 }

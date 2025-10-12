@@ -188,29 +188,8 @@ export function TimelineRuler({
       }
     });
 
-    // Draw cursor position indicator (playhead)
-    if (cursorPosition != null) {
-      const cursorX = cursorPosition * pixelsPerBeat - viewport.scrollX;
-
-      if (cursorX >= 0 && cursorX <= rect.width) {
-        // Cursor line - red during playback, purple when stopped
-        ctx.strokeStyle = 'rgba(239, 68, 68, 0.8)'; // Always red to match main playhead
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(cursorX, 0);
-        ctx.lineTo(cursorX, height);
-        ctx.stroke();
-
-        // Cursor handle (triangle at top)
-        ctx.fillStyle = 'rgba(239, 68, 68, 1.0)';
-        ctx.beginPath();
-        ctx.moveTo(cursorX - 6, 0);
-        ctx.lineTo(cursorX + 6, 0);
-        ctx.lineTo(cursorX, 8);
-        ctx.closePath();
-        ctx.fill();
-      }
-    }
+    // ❌ REMOVED: Playhead is now rendered only in main canvas for unified timeline
+    // Timeline ruler only shows bars/beats/markers/loops
 
     // Draw drag ghost preview
     if (dragState) {

@@ -1103,19 +1103,20 @@ export class PlaybackManager {
             outputNode = panNode;
         }
 
-        // ✅ ArrangementV2: Route to track's mixer channel if available
+        // ✅ ArrangementV2: Route to mixer channel (clip-specific or track's channel)
         let destination = this.audioEngine.masterGain || context.destination;
 
-        if (clip.trackId) {
-            // Try to find ArrangementV2 track channel
-            const trackChannelId = `arr-${clip.trackId}`;
-            const trackChannel = this.audioEngine.mixerChannels.get(trackChannelId);
+        if (clip.trackId || clip.mixerChannelId) {
+            // Priority 1: Use clip's dedicated mixer channel if specified
+            // Priority 2: Use track's mixer channel
+            const mixerChannelId = clip.mixerChannelId || `arr-${clip.trackId}`;
+            const mixerChannel = this.audioEngine.mixerChannels.get(mixerChannelId);
 
-            if (trackChannel && trackChannel.input) {
-                destination = trackChannel.input;
-                console.log('🎵 Routing to ArrangementV2 track channel:', trackChannelId);
+            if (mixerChannel && mixerChannel.input) {
+                destination = mixerChannel.input;
+                console.log('🎵 ✅ Routing audio clip to mixer channel:', mixerChannelId, clip.mixerChannelId ? '(clip-specific)' : '(track default)');
             } else {
-                console.log('🎵 Track channel not found, using master:', trackChannelId);
+                console.log('🎵 ⚠️ Mixer channel not found, using master:', mixerChannelId);
             }
         }
 

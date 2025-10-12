@@ -160,8 +160,9 @@ function drawMIDIPreview(ctx, pattern, clip, x, y, width, height, lod) {
   const noteSpan = Math.max(1, maxNote - minNote);
 
   // Calculate time scale (beats to pixels)
-  const patternDuration = clip.duration / (clip.loopCount || 1); // Single pattern duration
-  const timeScale = width / clip.duration;
+  // clip.duration is already in beats (converted from steps in ArrangementPanelV2)
+  const patternDuration = clip.duration / (clip.loopCount || 1); // Single pattern duration in beats
+  const timeScale = width / clip.duration; // Pixels per beat
 
   // LOD-based rendering
   // LOD 0-1: Full detail (draw all notes)

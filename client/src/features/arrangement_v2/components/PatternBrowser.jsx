@@ -15,10 +15,8 @@ export function PatternBrowser() {
   const patternOrder = useArrangementStore(state => state.patternOrder);
 
   const handleDragStart = (e, patternId) => {
-    console.log('🎹 Pattern drag started:', patternId);
     e.dataTransfer.effectAllowed = 'copy';
     e.dataTransfer.setData('application/x-dawg-pattern', patternId);
-    console.log('🎹 Pattern drag data set:', e.dataTransfer.types);
   };
 
   return (

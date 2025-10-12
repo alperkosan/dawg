@@ -88,8 +88,18 @@ function WorkspacePanel() {
           } else {
             const PanelComponent = panelRegistry[panel.id];
             if (!panelDef || !PanelComponent) return null;
-            
-            if (panel.id === 'sample-editor') componentProps.instrument = editingInstrument;
+
+            // Sample Editor: Pass editingInstrument (can be null for audio clip mode)
+            if (panel.id === 'sample-editor') {
+              componentProps.instrument = editingInstrument;
+              console.log('🎨 Rendering Sample Editor:', {
+                panelId: panel.id,
+                isOpen: panel.isOpen,
+                editingInstrument: editingInstrument?.name,
+                zIndex: baseZIndex + panelStack.indexOf(panel.id)
+              });
+            }
+
             if (panel.id === 'piano-roll') {
               componentProps.instrument = pianoRollInstrument;
             }

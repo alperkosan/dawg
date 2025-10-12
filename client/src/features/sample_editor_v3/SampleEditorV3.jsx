@@ -2,11 +2,83 @@ import React from 'react';
 import { useInstrumentsStore } from '@/store/useInstrumentsStore';
 import { usePanelsStore } from '@/store/usePanelsStore';
 import { useMixerStore } from '@/store/useMixerStore';
+import { useArrangementV2Store } from '@/store/useArrangementV2Store';
 
 import { WaveformWorkbench } from './components/WaveformWorkbench';
 import { ControlDeck } from './components/ControlDeck';
 
 import './SampleEditorV3.css';
+
+// AudioClipControls: Mixer routing for audio clips
+const AudioClipControls = ({ editorClipData }) => {
+  const mixerTracks = useMixerStore(state => state.mixerTracks);
+  const updateClip = useArrangementV2Store(state => state.updateClip);
+  const tracks = useArrangementV2Store(state => state.tracks);
+  const clips = useArrangementV2Store(state => state.clips);
+  const instrumentBuffer = usePanelsStore(state => state.editorBuffer);
+
+  // Get live clip data from store (reactive)
+  const liveClip = clips.find(c => c.id === editorClipData.clipId);
+
+  const handleMixerChannelChange = (newChannelId) => {
+    console.log('🎛️ Changing clip mixer channel to:', newChannelId);
+    updateClip(editorClipData.clipId, {
+      mixerChannelId: newChannelId || null
+    });
+  };
+
+  const currentTrack = tracks.find(t => t.id === editorClipData.trackId);
+  const currentMixerChannel = liveClip?.mixerChannelId || 'inherit';
+
+  console.log('🔍 AudioClipControls state:', {
+    clipId: editorClipData.clipId,
+    initialMixerChannelId: editorClipData.mixerChannelId,
+    liveMixerChannelId: liveClip?.mixerChannelId,
+    currentMixerChannel
+  });
+
+  return (
+    <div className="p-4" style={{ background: 'rgba(0,0,0,0.3)' }}>
+      <div className="font-bold mb-3 text-gray-300">{editorClipData.name}</div>
+
+      <div className="mb-3 text-sm text-gray-400">
+        <div>Duration: {instrumentBuffer?.duration.toFixed(2)}s</div>
+        <div>Track: {currentTrack?.name || 'Unknown'}</div>
+      </div>
+
+      <div className="mt-4">
+        <label className="block text-xs text-gray-400 mb-2">Mixer Channel Routing</label>
+        <select
+          value={currentMixerChannel}
+          onChange={(e) => handleMixerChannelChange(e.target.value === 'inherit' ? null : e.target.value)}
+          style={{
+            width: '100%',
+            padding: '8px 12px',
+            background: 'rgba(255,255,255,0.05)',
+            border: '1px solid rgba(255,255,255,0.1)',
+            borderRadius: '6px',
+            color: 'white',
+            fontSize: '13px',
+            cursor: 'pointer'
+          }}
+        >
+          <option value="inherit">🔗 Inherit from Track ({currentTrack?.name})</option>
+          {mixerTracks.map((track) => (
+            <option key={track.id} value={track.id}>
+              {track.name}
+            </option>
+          ))}
+        </select>
+
+        <div className="mt-2 text-xs text-gray-500">
+          {currentMixerChannel === 'inherit'
+            ? 'This clip uses the mixer channel of its track.'
+            : 'This clip has a dedicated mixer channel.'}
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const SampleEditorV3 = ({ instrument }) => {
   const instrumentBuffer = usePanelsStore(state => state.editorBuffer);
@@ -46,7 +118,7 @@ const SampleEditorV3 = ({ instrument }) => {
     updateInstrument(instrument.id, { envelope: newEnvelope }, false);
   };
 
-  // Audio clip mode: show waveform only (read-only)
+  // Audio clip mode: show waveform + mixer routing control
   if (isAudioClipMode) {
     return (
       <div className="sample-editor-v3-container">
@@ -58,11 +130,7 @@ const SampleEditorV3 = ({ instrument }) => {
           readOnly={true}
           clipData={editorClipData}
         />
-        <div className="p-4 text-gray-400 text-sm">
-          <div className="font-bold mb-2">{editorClipData.name}</div>
-          <div>Duration: {instrumentBuffer?.duration.toFixed(2)}s</div>
-          <div className="mt-2 text-xs text-gray-500">Frozen pattern - read only</div>
-        </div>
+        <AudioClipControls editorClipData={editorClipData} />
       </div>
     );
   }

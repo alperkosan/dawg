@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { SlidersHorizontal, Sparkles, Settings, Play, Square } from 'lucide-react';
 import TabButton from '@/components/common/TabButton';
 import { Knob } from '@/components/controls';
@@ -7,13 +7,21 @@ import { EffectsRack } from './EffectsRack'; // Yeni raf sistemimizi import ediy
 import EffectsPanel from './EffectsPanel'; // Yeni efekt panelimiz
 import { AudioContextService } from '@/lib/services/AudioContextService';
 import { useInstrumentsStore } from '@/store/useInstrumentsStore';
+import { useMixerStore } from '@/store/useMixerStore';
 import { EffectFactory } from '@/lib/audio/effects';
 import { v4 as uuidv4 } from 'uuid';
 
 export const ControlDeck = ({ instrument, track, onParamChange }) => {
   const [activeTab, setActiveTab] = useState('main');
   const [isPlaying, setIsPlaying] = useState(false);
+  const [mixerTracks, setMixerTracks] = useState([]);
   const updateInstrument = useInstrumentsStore(state => state.updateInstrument);
+  const allMixerTracks = useMixerStore(state => state.mixerTracks);
+
+  // Load available mixer tracks
+  useEffect(() => {
+    setMixerTracks(allMixerTracks);
+  }, [allMixerTracks]);
 
   const handlePreview = () => {
     if (isPlaying) {
@@ -36,6 +44,29 @@ export const ControlDeck = ({ instrument, track, onParamChange }) => {
     // Update audio engine in real-time
     if (param === 'volume' || param === 'pitchOffset') {
       AudioContextService.updateInstrumentParams(instrument.id, { [param]: value });
+    }
+  };
+
+  // Handle mixer track change
+  const handleMixerTrackChange = (newTrackId) => {
+    console.log('🎛️ Changing mixer track from', instrument.mixerTrackId, 'to', newTrackId);
+
+    // Update instrument in store
+    updateInstrument(instrument.id, { mixerTrackId: newTrackId });
+
+    // Reconnect in audio engine
+    const audioEngine = AudioContextService.getAudioEngine();
+    if (audioEngine) {
+      // Disconnect from old track
+      if (instrument.mixerTrackId) {
+        audioEngine.disconnectInstrumentFromTrack(instrument.id, instrument.mixerTrackId);
+      }
+
+      // Connect to new track
+      if (newTrackId) {
+        audioEngine.reconnectInstrumentToTrack(instrument.id, newTrackId);
+        console.log('✅ Instrument reconnected to new mixer track:', newTrackId);
+      }
     }
   };
 
@@ -160,6 +191,37 @@ export const ControlDeck = ({ instrument, track, onParamChange }) => {
       <div className="control-deck__content">
         {activeTab === 'main' && (
           <div className="main-settings-grid">
+            {/* Mixer Track Selector */}
+            <div className="main-settings-grid__group" style={{ gridColumn: '1 / -1' }}>
+              <h4 className="main-settings-grid__group-title">Routing</h4>
+              <div style={{ padding: '8px', background: 'rgba(0,0,0,0.2)', borderRadius: '8px' }}>
+                <label style={{ display: 'block', fontSize: '11px', color: 'rgba(255,255,255,0.6)', marginBottom: '6px' }}>
+                  Mixer Channel
+                </label>
+                <select
+                  value={instrument.mixerTrackId || ''}
+                  onChange={(e) => handleMixerTrackChange(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '6px 10px',
+                    background: 'rgba(255,255,255,0.05)',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    borderRadius: '6px',
+                    color: 'white',
+                    fontSize: '13px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <option value="">Select Channel...</option>
+                  {mixerTracks.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
             <div className="main-settings-grid__group">
               <h4 className="main-settings-grid__group-title">Seviye</h4>
               <Knob

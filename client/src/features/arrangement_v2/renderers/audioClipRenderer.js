@@ -9,7 +9,7 @@
  * - Zenith theme styling
  */
 
-import { getWaveformCache } from '@/features/arrangement_workspace/renderers/WaveformCache';
+import { getWaveformCache } from './WaveformCache';
 import { ZENITH_COLORS } from './gridRenderer';
 
 // ============================================================================

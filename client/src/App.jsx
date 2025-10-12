@@ -80,9 +80,17 @@ function App() {
       await engine.initialize();
       audioEngineRef.current = engine;
 
-      // Load AudioWorklet processors for effects
+      // Load AudioWorklet processors for effects and mixer
       console.log('🎛️ Loading AudioWorklet processors...');
-      const workletProcessors = [
+
+      // Core processors (in /worklets/)
+      const coreProcessors = [
+        'mixer-processor',
+        'instrument-processor'
+      ];
+
+      // Effect processors (in /worklets/effects/)
+      const effectProcessors = [
         'compressor-processor',
         'saturator-processor',
         'multiband-eq-processor',
@@ -102,7 +110,18 @@ function App() {
         'sidechain-compressor-processor'
       ];
 
-      for (const processor of workletProcessors) {
+      // Load core processors first
+      for (const processor of coreProcessors) {
+        try {
+          await engine.audioContext.audioWorklet.addModule(`/worklets/${processor}.js`);
+          console.log(`✅ Loaded: ${processor}`);
+        } catch (error) {
+          console.warn(`⚠️ Failed to load ${processor}:`, error.message);
+        }
+      }
+
+      // Load effect processors
+      for (const processor of effectProcessors) {
         try {
           await engine.audioContext.audioWorklet.addModule(`/worklets/effects/${processor}.js`);
           console.log(`✅ Loaded: ${processor}`);

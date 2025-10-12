@@ -46,7 +46,8 @@ const createAudioClip = (trackId, startTime, assetId, duration, name) => ({
   name: name || 'Audio Clip',
   color: '#8b5cf6',
   muted: false,
-  locked: false
+  locked: false,
+  mixerChannelId: null // null = inherit from track, otherwise clip-specific channel
 });
 
 const createPatternClip = (trackId, startTime, patternId, duration, instrumentId, name) => ({
