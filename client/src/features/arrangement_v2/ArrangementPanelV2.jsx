@@ -23,7 +23,7 @@ import { ArrangementToolbar } from './components/ArrangementToolbar';
 import { PatternBrowser } from './components/PatternBrowser';
 import { audioAssetManager } from '@/lib/audio/AudioAssetManager';
 import { uiUpdateManager, UPDATE_PRIORITIES, UPDATE_FREQUENCIES } from '@/lib/core/UIUpdateManager';
-import { getTimelineController } from '@/lib/core/TimelineControllerSingleton';
+// import { getTimelineController } from '@/lib/core/TimelineControllerSingleton'; // Disabled - using own interaction system
 import './ArrangementPanelV2.css';
 
 /**
@@ -149,7 +149,7 @@ export function ArrangementPanelV2() {
   const [sampleEditorOpen, setSampleEditorOpen] = useState(false);
 
   // Unified playhead/timeline state
-  const [ghostPosition, setGhostPosition] = useState(null);
+  // const [ghostPosition, setGhostPosition] = useState(null); // Disabled with TimelineController
   const currentStep = usePlaybackStore(state => state.currentStep);
   const isPlaying = usePlaybackStore(state => state.isPlaying);
 
@@ -265,38 +265,28 @@ export function ArrangementPanelV2() {
   // Register with unified TimelineController (Single Source of Truth)
   useEffect(() => {
     try {
-      const timelineController = getTimelineController();
+      // ✅ FIX: Disabled TimelineController registration to prevent scrubbing conflicts
+      // ArrangementV2 has its own clip interaction system (useClipInteraction)
+      // Playhead position comes directly from PlaybackStore (Single Source of Truth)
+      //
+      // timelineController.registerTimeline('arrangement-v2-timeline', {
+      //   element: containerRef.current,
+      //   stepWidth: constants.PIXELS_PER_BEAT * viewport.zoomX,
+      //   totalSteps: Math.ceil(viewport.width / (constants.PIXELS_PER_BEAT * viewport.zoomX)),
+      //   onPositionChange: null,
+      //   onGhostPositionChange: (pos) => setGhostPosition(pos),
+      //   enableGhostPosition: true,
+      //   calculatePosition
+      // });
 
-      const calculatePosition = (mouseX, mouseY) => {
-        // Account for LEFT_OFFSET (pattern browser + track headers) and TOOLBAR_HEIGHT
-        const totalHeaderHeight = TOOLBAR_HEIGHT + constants.TIMELINE_HEIGHT;
-        if (mouseX < LEFT_OFFSET || mouseY < totalHeaderHeight) return null;
-
-        const canvasX = mouseX - LEFT_OFFSET + viewport.scrollX;
-        const beatsPerPixel = 1 / (constants.PIXELS_PER_BEAT * viewport.zoomX);
-        const position = canvasX * beatsPerPixel;
-
-        return Math.max(0, position); // Beats position
-      };
-
-      timelineController.registerTimeline('arrangement-v2-timeline', {
-        element: containerRef.current,
-        stepWidth: constants.PIXELS_PER_BEAT * viewport.zoomX, // Pixels per beat
-        totalSteps: Math.ceil(viewport.width / (constants.PIXELS_PER_BEAT * viewport.zoomX)),
-        onPositionChange: null, // PlaybackStore handles this (Single Source of Truth)
-        onGhostPositionChange: (pos) => setGhostPosition(pos),
-        enableGhostPosition: true,
-        calculatePosition
-      });
-
-      console.log('✅ ArrangementV2 timeline registered with TimelineController');
+      console.log('✅ ArrangementV2 using own interaction system (TimelineController disabled)');
 
       return () => {
-        timelineController.unregisterTimeline('arrangement-v2-timeline');
-        console.log('🧹 ArrangementV2 timeline unregistered from TimelineController');
+        // timelineController.unregisterTimeline('arrangement-v2-timeline');
+        console.log('🧹 ArrangementV2 cleanup');
       };
     } catch (error) {
-      console.error('❌ Failed to register ArrangementV2 timeline:', error);
+      console.error('❌ Failed to setup ArrangementV2:', error);
     }
   }, [viewport.zoomX, viewport.scrollX, viewport.width, constants.PIXELS_PER_BEAT, constants.TIMELINE_HEIGHT]);
 
@@ -1045,33 +1035,14 @@ export function ArrangementPanelV2() {
       }
     }
 
-    // Draw ghost position (hover preview)
-    if (ghostPosition !== null && ghostPosition !== undefined) {
-      const ghostX = (ghostPosition * constants.PIXELS_PER_BEAT * viewport.zoomX) - viewport.scrollX;
-
-      // Only draw if ghost is visible on screen
-      if (ghostX >= 0 && ghostX <= viewport.width) {
-        // Ghost line (dashed, subtle)
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
-        ctx.lineWidth = 1;
-        ctx.setLineDash([4, 4]);
-        ctx.beginPath();
-        ctx.moveTo(ghostX, 0);
-        ctx.lineTo(ghostX, viewport.height);
-        ctx.stroke();
-        ctx.setLineDash([]);
-
-        // Time label
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-        ctx.font = '10px Inter, system-ui, sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'top';
-        ctx.fillText(`${ghostPosition.toFixed(2)}`, ghostX, 2);
-      }
-    }
+    // Ghost position disabled (was part of TimelineController scrubbing system)
+    // if (ghostPosition !== null && ghostPosition !== undefined) {
+    //   const ghostX = (ghostPosition * constants.PIXELS_PER_BEAT * viewport.zoomX) - viewport.scrollX;
+    //   // ... ghost rendering code
+    // }
 
     ctx.restore();
-  }, [viewport, setupCanvas, marqueeBox, hoveredClipId, hoveredHandle, dragGhosts, resizeGhosts, fadeGhosts, gainGhosts, clips, tracks, selectedClipIds, constants, dimensions, splitPreview, splitRange, drawGhost, patternDragPreview, currentStep, isPlaying, ghostPosition]);
+  }, [viewport, setupCanvas, marqueeBox, hoveredClipId, hoveredHandle, dragGhosts, resizeGhosts, fadeGhosts, gainGhosts, clips, tracks, selectedClipIds, constants, dimensions, splitPreview, splitRange, drawGhost, patternDragPreview, currentStep, isPlaying]);
 
   // ============================================================================
   // KEYBOARD SHORTCUTS
@@ -1309,8 +1280,14 @@ export function ArrangementPanelV2() {
   };
 
   const handleTimelineSeek = (beat) => {
+    // ✅ FIX: Don't seek during playback! Only allow seeking when stopped
+    if (isPlaying) {
+      console.log('⚠️ Timeline seek ignored during playback');
+      return;
+    }
+
     setCursorPosition(beat);
-    // TODO: Connect to playback system
+    // TODO: Connect to playback system (seek transport when stopped)
     console.log('Seek to beat:', beat);
   };
 

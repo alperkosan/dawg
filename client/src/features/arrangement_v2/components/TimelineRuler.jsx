@@ -20,6 +20,7 @@ const BEATS_PER_BAR = 4;
 export function TimelineRuler({
   viewport,
   cursorPosition,
+  isPlaying = false,
   onSeek,
   height = 40,
   markers = [],
@@ -270,6 +271,12 @@ export function TimelineRuler({
   // Handle click to seek
   const handleClick = (e) => {
     if (!onSeek) return;
+
+    // ✅ FIX: Don't seek during playback!
+    if (isPlaying) {
+      console.log('⚠️ Timeline click ignored during playback');
+      return;
+    }
 
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left;
