@@ -1,0 +1,61 @@
+kullanım sonucu tecrübelerimden notlar:
+
+plugin hataları:
+-------------------------------------
+transient designer arayüzü patlıyor.
+
+stardust chorus canvası var, efekt entegre değil sanırım.
+
+arcade crusher, 16 bit depth seçildiğinde çok kasıyor. canvas rendering i problemli sanırım
+
+orbit panner, stereo position slider'ı anlamsız.
+
+vortex phaser eklendiğinde tüm ses kesiliyor.
+
+
+mixer hataları:
+--------------------------------------
+master kanalıyla beraber hazır bus kanallarımız en solda listelenmeli. ve etkin hale getirilmeli. master kanalına efekt eklendiğinde tüm master a bağlı seslere uygulanmalı. (mixer kanal bağlantıları gözden geçirilecek.)
+tüm mixer kanalları master kanalından çıkış almıyor sanırım. çünkü master a eklediğim efektler tüm seslere etki etmiyor.
+
+bir mixer kanalı seçtikten sonra tüm diğer kanallarının altına ona bağlayabileceğim bir insert butonu eklenmeli. insert derecesini de ayarlayabilmeliyim.
+
+hihat ve offbeat hat kanallarının pan değerleri bozuk biri L1500 diğeri R1000 gösteriyor. onun inital datadaki değerlerini incele.
+
+ayrıca seçili mixer kanallının hangi kanallara send edildiğini göremiyorum. ayrıca send matrix ve insert butonları bir işe yaramıyor. yeni bir send etmek ve ne kadar send edeceğini ayarlayacak sistem tasarlanacak.
+
+mixer panelinde output kısmında yazan değer doğru değil. ve eklenen efektlerin sıralaması değiştirilemiyor. sıralama değiştirildiğinde fx chain de ona göre güncellenmeli.
+
+mixer panelinde kanal isimleri düzenlenemiyor. düzenleme opsiyonu eklenecek.
+mixer panelinde kanal renkleri değiştirilemiyor. renk değiştirme opsiyonu eklenecek.
+mixer panelinde kanal sessize alma ve solo butonları çalışmıyor. fader ise çok hassas daha uzun ve daha yavaş hareket edebilir. ayrıca tasarımı gerçek bir mixerdeki faderlara benzetilmeye çalışılmalı. + olarak gain değerini gösterdiğimiz dislaye input girilip gain değeri setlenebilmeli.
+
+
+aranje paneli hataları:
+--------------------------------------
+
+öncelikle tema yapımızdan ayrı hardcoded csslerle çalışıyor. bu yüzden tema değiştirdiğimizde aranje paneli tema ile uyumsuz kalıyor. tema yapısına entegre edilmeli.
+patterns listeleniyor fakat freezet pattern ile audio sample export ettiğimde onları göremiyorum kayboluyorlar. audiolar samplelar da listelenmeli.
+
+aranje paneli arkasında sadece "channel rack" açık iken patterns içinden aranje canvasına sürükle bırak yapamıyorum. bu sorun giderilmeli. diğer panelleri de açıp denedim sorun yaratmadı. channel rack'e özel bir sorun bulunmakta. öncelikle bu tespit edilmeli.
+
+boş bir yere çift click yapıp basılı tuttuğumda delete moduna geçmeli ve mouse sürüklediğimde üzerindeki tüm patternleri silebilmeli. bu özellik eklenecek. ayrıca delete moduna geçip sol click basılı tuttuğumda da üzerine geldiğim tüm patternleri silebilmeli. bu hızlı silme özelliği kullanıcı deneyimini arttıracaktır.
+
+audio sample clip için waveform renderinde bir kısıt var sanırım, çok uzun samplelarda bir zoom seviyesinden sonra waveform render edilmiyor. bu sorun giderilmeli. (snare sesinin waveformu kaybolmuyor. 140mblik sample çok güzel şekilde çiziliyor, render ediliyor, hiç kasma yaratmıyor fakat belirli zoom seviyesinden sonra waveform tamamen kayboluyor, sorunu tespit edelim.)
+
+playhead "pattern" modunda iken de hareket ediyor. bu sorun giderilmeli.aranje paneli için playhead sadece "song" modunda hareket etmeli.play halinde ayrıca audio clip resize ettiğimde playhead akmaya devam ediyor fakat tüm sesler releaseAll() yapılıyor gibi davranıyor. akıcı şekilde yeni schedule ile devam etmeli.(audio clip move yaptığımda da aynı sorun)
+
+piano roll hataları:
+--------------------------------------
+
+nota yazımı keyifli ve kolay değil. mouse ile nota yazımı ve silimi çok zor. bu konuda daha iyi bir sistem geliştirilmeli. (örneğin; mouse ile nota yazmak için mouse sol click basılı tutulduğunda notalar yazılabilmeli, mouse sağ click basılı tutulduğunda notalar silinebilmeli. mouse orta click ile sürükle bırak yapılabilmeli.) ayrıca keyboard ile nota yazımı için de bir sistem geliştirilmeli. (örneğin; bilgisayar klavyesindeki belirli tuşlara basıldığında o notalar yazılabilmeli.) ayrıca bilgisayar klavyesindeki belirli tuşlara basıldığında o notalar çalınabilmeli. bu özellikler eklenecek.
+yazılan her nota aynı duration değeriyle yazılıyor ve resize etmek için uğraşmak zorunda kalıyorum. bu konuda daha akıllı bir sistem geliştirilmeli. (örneğin, son select yaptığım ya da son resize ettiğim değer bir sonraki yazacağım notanın duration değeri olabilir.)
+
+ayrıca yeni yazdığım notaların velocity değerleriyle oynayamama gibi bir sorun yaşıyorum. velocity değerini mouse ile wheel yaparak değiştiremiyorum. + olarak velocity değerlerini automation haline getirecek teknikler geliştirmeliyiz. velocity değiştirebilmem için önce notayı select etmemeliyim. bu tık fazlalığına yol açıyor. işlemi uzatıyor. velocity değerini mouse ile hover yaparken wheel yaparak değiştirebilmeliyim. bu özellik eklenecek.
+
+shift wheel ile selected notaların eğer yoksa üzerinde olduğum notanın duration değerini hassas şekilde değiştirebilmeliyim. bu özellik eklenecek.
+
+
+genel değerlendirmem:
+--------------------------------------
+genel olarak yetenekli ve bi noktaya kadar performanslı çalışabilen bir program oluşturabilmişiz. kullanıcı deneyimi zayıf fakat olabildiğince "yapılabilirliğe" kafa yorulduğunu görebiliyorum. kalan eksikleri ve hataları giderdiğimizde kullanması keyifli bir proje haline gelecek gibi hissettiriyor.
