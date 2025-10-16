@@ -1274,6 +1274,11 @@ export function ArrangementPanelV2() {
     e.preventDefault();
     e.stopPropagation();
 
+    // ✅ NEW: Disable context menu during delete mode (right-click is for deleting)
+    if (deletionMode) {
+      return;
+    }
+
     // Get mouse position in canvas coordinates
     const rect = e.currentTarget.getBoundingClientRect();
     const screenX = e.clientX - rect.left;
@@ -1358,13 +1363,21 @@ export function ArrangementPanelV2() {
     // Close context menu on any click
     setContextMenu(null);
 
+    // ✅ NEW: Right-click hold activates delete mode
+    if (e.button === 2) { // Right mouse button
+      e.preventDefault(); // Prevent context menu
+      setDeletionMode(true);
+      console.log('🗑️ Delete mode activated (right-click hold)');
+      return; // Don't process other interactions
+    }
+
     // Cancel deletion mode timer if clicking
     if (deletionTimerRef.current) {
       clearTimeout(deletionTimerRef.current);
       deletionTimerRef.current = null;
     }
 
-    // If in deletion mode and clicking a clip, delete it
+    // If in deletion mode and left-clicking a clip, delete it
     if (deletionMode && e.button === 0) {
       const rect = e.currentTarget.getBoundingClientRect();
       const screenX = e.clientX - rect.left;
@@ -1538,6 +1551,26 @@ export function ArrangementPanelV2() {
   };
 
   const handleCombinedMouseMove = (e) => {
+    // ✅ NEW: Delete clips on drag while in delete mode (right-click held)
+    if (deletionMode && e.buttons === 2) { // Right button held while moving
+      const rect = e.currentTarget.getBoundingClientRect();
+      const screenX = e.clientX - rect.left;
+      const screenY = e.clientY - rect.top;
+
+      const totalHeaderHeight = TOOLBAR_HEIGHT + constants.TIMELINE_HEIGHT;
+      if (screenX >= LEFT_OFFSET && screenY >= totalHeaderHeight) {
+        const canvasX = screenX - LEFT_OFFSET + viewport.scrollX;
+        const canvasY = screenY - totalHeaderHeight + viewport.scrollY;
+        const { findClipAtPosition } = clipInteraction;
+        const clip = findClipAtPosition(canvasX, canvasY);
+
+        if (clip) {
+          removeClips([clip.id]);
+          console.log(`🗑️ Deleted clip while dragging: ${clip.name}`);
+        }
+      }
+    }
+
     handleMouseMove(e);
     eventHandlers.onMouseMove(e);
 
@@ -1656,6 +1689,13 @@ export function ArrangementPanelV2() {
   };
 
   const handleCombinedMouseUp = (e) => {
+    // ✅ NEW: Exit delete mode when right-click is released
+    if (e.button === 2 && deletionMode) {
+      setDeletionMode(false);
+      console.log('✅ Delete mode deactivated (right-click released)');
+      return;
+    }
+
     // Draw mode - create clip on mouse up
     if (activeTool === 'draw' && drawStart && drawGhost) {
       const duration = drawGhost.duration;
