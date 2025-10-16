@@ -90,9 +90,11 @@ export class EffectFactory {
       workletName: 'vortex-phaser-processor',
       displayName: 'Vortex Phaser',
       params: {
-        rate: { label: 'Rate', defaultValue: 0.3, min: 0.05, max: 10, unit: ' Hz' },
-        depth: { label: 'Depth', defaultValue: 0.6, min: 0, max: 1, unit: '' },
-        feedback: { label: 'Feedback', defaultValue: 0.7, min: 0, max: 0.95, unit: '' },
+        rate: { label: 'Rate', defaultValue: 0.5, min: 0.01, max: 10, unit: ' Hz' },
+        depth: { label: 'Depth', defaultValue: 0.7, min: 0, max: 1, unit: '' },
+        stages: { label: 'Stages', defaultValue: 4, min: 2, max: 12, unit: '' },
+        feedback: { label: 'Feedback', defaultValue: 0.5, min: 0, max: 0.95, unit: '' },
+        stereoPhase: { label: 'Stereo Phase', defaultValue: 90, min: 0, max: 180, unit: '°' },
         wet: { label: 'Mix', defaultValue: 0.5, min: 0, max: 1, unit: '' }
       }
     },

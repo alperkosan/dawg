@@ -109,14 +109,14 @@ class MultiBandEQProcessor extends AudioWorkletProcessor {
     return y;
   }
 
-  processEffect(sample, channel, sampleIndex, parameters) {
+  processEffect(sample, channel, parameters) {
     const state = this.channelState[channel];
 
     // Update filter coefficients for all 5 bands
     for (let i = 0; i < 5; i++) {
-      const freq = this.getParam(parameters[`freq${i+1}`], sampleIndex) || [100, 500, 2000, 5000, 10000][i];
-      const gain = this.getParam(parameters[`gain${i+1}`], sampleIndex) || 0;
-      const q = this.getParam(parameters[`q${i+1}`], sampleIndex) || 1.0;
+      const freq = this.getParam(parameters[`freq${i+1}`], 0) || [100, 500, 2000, 5000, 10000][i];
+      const gain = this.getParam(parameters[`gain${i+1}`], 0) || 0;
+      const q = this.getParam(parameters[`q${i+1}`], 0) || 1.0;
 
       this.updateBiquadCoefficients(state.filters[i], freq, gain, q);
     }
@@ -154,7 +154,7 @@ class MultiBandEQProcessor extends AudioWorkletProcessor {
 
       for (let i = 0; i < inputChannel.length; i++) {
         const inputSample = inputChannel[i];
-        const processedSample = this.processEffect(inputSample, channel, i, parameters);
+        const processedSample = this.processEffect(inputSample, channel, parameters);
         outputChannel[i] = dry * inputSample + wet * processedSample;
       }
     }

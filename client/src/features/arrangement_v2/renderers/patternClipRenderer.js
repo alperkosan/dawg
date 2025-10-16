@@ -16,18 +16,37 @@ import { ZENITH_COLORS } from './gridRenderer';
 
 const PIXELS_PER_BEAT = 48;
 
-// Zenith pattern clip colors
-const PATTERN_CLIP_COLORS = {
-  background: 'rgba(59, 130, 246, 0.2)',     // Blue
-  border: 'rgba(59, 130, 246, 0.6)',
-  borderSelected: 'rgba(59, 130, 246, 1)',
-  text: 'rgba(255, 255, 255, 0.9)',
-  notes: 'rgba(96, 165, 250, 0.9)',
-  notesBorder: 'rgba(147, 197, 253, 0.4)',
-  header: 'rgba(30, 64, 175, 0.3)',
-  loopIndicator: 'rgba(96, 165, 250, 0.6)',
-  glowSelected: '0 0 20px rgba(59, 130, 246, 0.6)'
-};
+/**
+ * Generate pattern clip colors from track color
+ */
+function getPatternClipColors(trackColor) {
+  // Parse hex color
+  const hex = trackColor.replace('#', '');
+  const r = parseInt(hex.substring(0, 2), 16);
+  const g = parseInt(hex.substring(2, 4), 16);
+  const b = parseInt(hex.substring(4, 6), 16);
+
+  // Calculate slightly lighter/darker variants
+  const lighten = (val) => Math.min(255, val + 30);
+  const darken = (val) => Math.max(0, val - 30);
+
+  return {
+    background: `rgba(${r}, ${g}, ${b}, 0.15)`,
+    border: `rgba(${r}, ${g}, ${b}, 0.6)`,
+    borderSelected: `rgba(${r}, ${g}, ${b}, 1)`,
+    text: 'rgba(255, 255, 255, 0.9)',
+    notes: `rgba(${r}, ${g}, ${b}, 0.8)`,
+    notesBorder: `rgba(${lighten(r)}, ${lighten(g)}, ${lighten(b)}, 0.4)`,
+    header: `rgba(${darken(r)}, ${darken(g)}, ${darken(b)}, 0.3)`,
+    loopIndicator: `rgba(${r}, ${g}, ${b}, 0.7)`,
+    glowSelected: `0 0 20px rgba(${r}, ${g}, ${b}, 0.6)`,
+    // For gradients
+    gradientTop: `rgba(${r}, ${g}, ${b}, 0.15)`,
+    gradientBottom: `rgba(${r}, ${g}, ${b}, 0.05)`,
+    // For density heatmap
+    densityBase: `rgba(${r}, ${g}, ${b}, 0.3)`
+  };
+}
 
 // MIDI note range (C1 to C7)
 const MIN_MIDI_NOTE = 24;  // C1
@@ -49,30 +68,35 @@ const MIDI_NOTE_RANGE = MAX_MIDI_NOTE - MIN_MIDI_NOTE;
  * @param {number} height - Clip height
  * @param {boolean} isSelected - Is clip selected
  * @param {number} lod - Level of detail (0-4)
+ * @param {Object} track - Track data (for color inheritance)
  */
-export function renderPatternClip(ctx, pattern, clip, x, y, width, height, isSelected, lod = 2) {
+export function renderPatternClip(ctx, pattern, clip, x, y, width, height, isSelected, lod = 2, track = null) {
   // Save context state
   ctx.save();
 
+  // Get colors from track
+  const trackColor = track?.color || '#FFB627';
+  const colors = getPatternClipColors(trackColor);
+
   // Draw clip background
-  drawClipBackground(ctx, x, y, width, height, isSelected);
+  drawClipBackground(ctx, x, y, width, height, isSelected, colors);
 
   // Draw header with pattern name and loop count
   const headerHeight = 18;
-  drawClipHeader(ctx, clip, x, y, width, headerHeight);
+  drawClipHeader(ctx, clip, x, y, width, headerHeight, colors);
 
   // Draw MIDI preview (if pattern has notes and clip is large enough)
   if (pattern && pattern.notes && pattern.notes.length > 0 && height > 30) {
     const previewY = y + headerHeight;
     const previewHeight = height - headerHeight - 4;
-    drawMIDIPreview(ctx, pattern, clip, x, previewY, width, previewHeight, lod);
+    drawMIDIPreview(ctx, pattern, clip, x, previewY, width, previewHeight, lod, colors);
   } else {
     // Show placeholder for empty pattern
-    drawEmptyPatternPlaceholder(ctx, x, y + headerHeight, width, height - headerHeight - 4);
+    drawEmptyPatternPlaceholder(ctx, x, y + headerHeight, width, height - headerHeight - 4, colors);
   }
 
   // Draw clip border
-  drawClipBorder(ctx, x, y, width, height, isSelected);
+  drawClipBorder(ctx, x, y, width, height, isSelected, colors);
 
   // Restore context state
   ctx.restore();
@@ -81,15 +105,15 @@ export function renderPatternClip(ctx, pattern, clip, x, y, width, height, isSel
 /**
  * Draw clip background with gradient
  */
-function drawClipBackground(ctx, x, y, width, height, isSelected) {
+function drawClipBackground(ctx, x, y, width, height, isSelected, colors) {
   // Background fill
-  ctx.fillStyle = PATTERN_CLIP_COLORS.background;
+  ctx.fillStyle = colors.background;
   ctx.fillRect(x, y, width, height);
 
   // Subtle gradient overlay
   const gradient = ctx.createLinearGradient(x, y, x, y + height);
-  gradient.addColorStop(0, 'rgba(59, 130, 246, 0.15)');
-  gradient.addColorStop(1, 'rgba(59, 130, 246, 0.05)');
+  gradient.addColorStop(0, colors.gradientTop);
+  gradient.addColorStop(1, colors.gradientBottom);
   ctx.fillStyle = gradient;
   ctx.fillRect(x, y, width, height);
 }
@@ -97,9 +121,9 @@ function drawClipBackground(ctx, x, y, width, height, isSelected) {
 /**
  * Draw clip header with pattern name and loop count
  */
-function drawClipHeader(ctx, clip, x, y, width, height) {
+function drawClipHeader(ctx, clip, x, y, width, height, colors) {
   // Header background
-  ctx.fillStyle = PATTERN_CLIP_COLORS.header;
+  ctx.fillStyle = colors.header;
   ctx.fillRect(x, y, width, height);
 
   // Draw pattern name
@@ -112,7 +136,7 @@ function drawClipHeader(ctx, clip, x, y, width, height) {
     ctx.clip();
 
     // Pattern name
-    ctx.fillStyle = PATTERN_CLIP_COLORS.text;
+    ctx.fillStyle = colors.text;
     ctx.font = '11px Inter, system-ui, sans-serif';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
@@ -128,7 +152,7 @@ function drawClipHeader(ctx, clip, x, y, width, height) {
     const loopText = `×${clip.loopCount}`;
     ctx.save();
 
-    ctx.fillStyle = PATTERN_CLIP_COLORS.loopIndicator;
+    ctx.fillStyle = colors.loopIndicator;
     ctx.font = 'bold 10px Inter, system-ui, sans-serif';
     ctx.textAlign = 'right';
     ctx.textBaseline = 'top';
@@ -149,7 +173,7 @@ function drawClipHeader(ctx, clip, x, y, width, height) {
 /**
  * Draw MIDI note preview (simplified piano roll)
  */
-function drawMIDIPreview(ctx, pattern, clip, x, y, width, height, lod) {
+function drawMIDIPreview(ctx, pattern, clip, x, y, width, height, lod, colors) {
   const notes = pattern.notes || [];
   if (notes.length === 0) return;
 
@@ -172,10 +196,10 @@ function drawMIDIPreview(ctx, pattern, clip, x, y, width, height, lod) {
 
   if (shouldDrawIndividualNotes) {
     // Draw individual note blocks
-    drawNoteBlocks(ctx, notes, clip, minNote, maxNote, noteSpan, timeScale, patternDuration, x, y, width, height);
+    drawNoteBlocks(ctx, notes, clip, minNote, maxNote, noteSpan, timeScale, patternDuration, x, y, width, height, colors);
   } else {
     // Draw note density heatmap for very zoomed out view
-    drawNoteDensity(ctx, notes, clip, timeScale, x, y, width, height);
+    drawNoteDensity(ctx, notes, clip, timeScale, x, y, width, height, colors);
   }
 
   // Draw note range indicator (only if clip is wide enough)
@@ -187,7 +211,7 @@ function drawMIDIPreview(ctx, pattern, clip, x, y, width, height, lod) {
 /**
  * Draw individual note blocks
  */
-function drawNoteBlocks(ctx, notes, clip, minNote, maxNote, noteSpan, timeScale, patternDuration, x, y, width, height) {
+function drawNoteBlocks(ctx, notes, clip, minNote, maxNote, noteSpan, timeScale, patternDuration, x, y, width, height, colors) {
   ctx.save();
 
   // Setup clipping region
@@ -220,12 +244,12 @@ function drawNoteBlocks(ctx, notes, clip, minNote, maxNote, noteSpan, timeScale,
       const noteHeight = Math.max(2, height / Math.max(12, noteSpan)); // At least 2px
 
       // Draw note block
-      ctx.fillStyle = PATTERN_CLIP_COLORS.notes;
+      ctx.fillStyle = colors.notes;
       ctx.fillRect(noteX, noteY, noteWidth, noteHeight);
 
       // Draw note border (only if large enough)
       if (noteWidth > 4 && noteHeight > 4) {
-        ctx.strokeStyle = PATTERN_CLIP_COLORS.notesBorder;
+        ctx.strokeStyle = colors.notesBorder;
         ctx.lineWidth = 0.5;
         ctx.strokeRect(noteX, noteY, noteWidth, noteHeight);
       }
@@ -238,7 +262,7 @@ function drawNoteBlocks(ctx, notes, clip, minNote, maxNote, noteSpan, timeScale,
 /**
  * Draw note density heatmap (for very zoomed out view)
  */
-function drawNoteDensity(ctx, notes, clip, timeScale, x, y, width, height) {
+function drawNoteDensity(ctx, notes, clip, timeScale, x, y, width, height, colors) {
   const bucketCount = Math.min(width, 50); // Max 50 buckets
   const buckets = new Array(bucketCount).fill(0);
   const patternDuration = clip.duration / (clip.loopCount || 1);
@@ -264,6 +288,12 @@ function drawNoteDensity(ctx, notes, clip, timeScale, x, y, width, height) {
   // Draw density bars
   const bucketWidth = width / bucketCount;
 
+  // Extract RGB from colors.densityBase
+  const rgbaMatch = colors.densityBase.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+  const r = rgbaMatch ? rgbaMatch[1] : 255;
+  const g = rgbaMatch ? rgbaMatch[2] : 182;
+  const b = rgbaMatch ? rgbaMatch[3] : 39;
+
   ctx.save();
   buckets.forEach((density, i) => {
     const intensity = density / maxDensity;
@@ -271,7 +301,7 @@ function drawNoteDensity(ctx, notes, clip, timeScale, x, y, width, height) {
     const barX = x + (i * bucketWidth);
     const barY = y + height - barHeight;
 
-    ctx.fillStyle = `rgba(96, 165, 250, ${0.3 + intensity * 0.5})`;
+    ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${0.3 + intensity * 0.5})`;
     ctx.fillRect(barX, barY, Math.max(1, bucketWidth - 1), barHeight);
   });
   ctx.restore();
@@ -308,7 +338,7 @@ function drawNoteRangeIndicator(ctx, noteRange, x, y, width, height) {
 /**
  * Draw placeholder for empty pattern
  */
-function drawEmptyPatternPlaceholder(ctx, x, y, width, height) {
+function drawEmptyPatternPlaceholder(ctx, x, y, width, height, colors) {
   ctx.save();
 
   ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
@@ -323,18 +353,18 @@ function drawEmptyPatternPlaceholder(ctx, x, y, width, height) {
 /**
  * Draw clip border with selection glow
  */
-function drawClipBorder(ctx, x, y, width, height, isSelected) {
+function drawClipBorder(ctx, x, y, width, height, isSelected, colors) {
   if (isSelected) {
     // Selected border with glow
-    ctx.strokeStyle = PATTERN_CLIP_COLORS.borderSelected;
+    ctx.strokeStyle = colors.borderSelected;
     ctx.lineWidth = 2;
-    ctx.shadowColor = PATTERN_CLIP_COLORS.borderSelected;
+    ctx.shadowColor = colors.borderSelected;
     ctx.shadowBlur = 8;
     ctx.strokeRect(x, y, width, height);
     ctx.shadowBlur = 0; // Reset shadow
   } else {
     // Normal border
-    ctx.strokeStyle = PATTERN_CLIP_COLORS.border;
+    ctx.strokeStyle = colors.border;
     ctx.lineWidth = 1;
     ctx.strokeRect(x, y, width, height);
   }

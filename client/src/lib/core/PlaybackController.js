@@ -139,6 +139,16 @@ export class PlaybackController extends SimpleEventEmitter {
   _updatePositionFromMotor() {
     if (!this.audioEngine?.transport) return;
 
+    // ✅ FIX: Only update position in SONG mode for arrangement panel
+    // In PATTERN mode, playhead should not move in arrangement
+    const playbackManager = this.audioEngine.playbackManager;
+    const currentMode = playbackManager?.getCurrentMode?.() || playbackManager?.currentMode || 'pattern';
+
+    // Skip position updates in pattern mode (arrangement playhead stays still)
+    if (currentMode === 'pattern') {
+      return;
+    }
+
     const newPosition = this.audioEngine.transport.ticksToSteps(
       this.audioEngine.transport.currentTick
     );

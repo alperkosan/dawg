@@ -14,6 +14,7 @@ import { useArrangementV2Store } from '@/store/useArrangementV2Store';
 import { useArrangementStore } from '@/store/useArrangementStore';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
 import { usePanelsStore } from '@/store/usePanelsStore';
+import { useProjectAudioStore } from '@/store/useProjectAudioStore';
 import { useTransportManager } from '@/hooks/useTransportManager';
 import { drawGrid, renderAudioClip, renderPatternClip } from './renderers';
 import { TimelineRuler } from './components/TimelineRuler';
@@ -23,6 +24,7 @@ import { ArrangementToolbar } from './components/ArrangementToolbar';
 import { PatternBrowser } from './components/PatternBrowser';
 import { audioAssetManager } from '@/lib/audio/AudioAssetManager';
 import { uiUpdateManager, UPDATE_PRIORITIES, UPDATE_FREQUENCIES } from '@/lib/core/UIUpdateManager';
+import { getAudioClipDurationBeats } from '@/lib/utils/audioDuration';
 // import { getTimelineController } from '@/lib/core/TimelineControllerSingleton'; // Disabled - using own interaction system
 import './ArrangementPanelV2.css';
 
@@ -262,33 +264,9 @@ export function ArrangementPanelV2() {
     };
   }, [initializeTransport, cleanupTransport]);
 
-  // Register with unified TimelineController (Single Source of Truth)
-  useEffect(() => {
-    try {
-      // ✅ FIX: Disabled TimelineController registration to prevent scrubbing conflicts
-      // ArrangementV2 has its own clip interaction system (useClipInteraction)
-      // Playhead position comes directly from PlaybackStore (Single Source of Truth)
-      //
-      // timelineController.registerTimeline('arrangement-v2-timeline', {
-      //   element: containerRef.current,
-      //   stepWidth: constants.PIXELS_PER_BEAT * viewport.zoomX,
-      //   totalSteps: Math.ceil(viewport.width / (constants.PIXELS_PER_BEAT * viewport.zoomX)),
-      //   onPositionChange: null,
-      //   onGhostPositionChange: (pos) => setGhostPosition(pos),
-      //   enableGhostPosition: true,
-      //   calculatePosition
-      // });
-
-      console.log('✅ ArrangementV2 using own interaction system (TimelineController disabled)');
-
-      return () => {
-        // timelineController.unregisterTimeline('arrangement-v2-timeline');
-        console.log('🧹 ArrangementV2 cleanup');
-      };
-    } catch (error) {
-      console.error('❌ Failed to setup ArrangementV2:', error);
-    }
-  }, [viewport.zoomX, viewport.scrollX, viewport.width, constants.PIXELS_PER_BEAT, constants.TIMELINE_HEIGHT]);
+  // ✅ REMOVED: Empty useEffect that was causing excessive re-render logs
+  // TimelineController is disabled for ArrangementV2 (uses own clip interaction system)
+  // Playhead position comes directly from PlaybackStore (Single Source of Truth)
 
   // Sync deletion mode with active tool
   useEffect(() => {
@@ -389,7 +367,7 @@ export function ArrangementPanelV2() {
           }
         }
 
-        renderAudioClip(ctx, audioBuffer, clip, x, y, width, clipHeight, isSelected, 140, lod, constants.PIXELS_PER_BEAT, viewport.zoomX);
+        renderAudioClip(ctx, audioBuffer, clip, x, y, width, clipHeight, isSelected, 140, lod, constants.PIXELS_PER_BEAT, viewport.zoomX, track);
       } else if (clip.type === 'pattern') {
         // Load pattern data from pattern store
         const pattern = patterns[clip.patternId] || null;
@@ -400,7 +378,7 @@ export function ArrangementPanelV2() {
           notes: convertPatternDataToNotes(pattern)
         } : null;
 
-        renderPatternClip(ctx, patternData, clip, x, y, width, clipHeight, isSelected, lod);
+        renderPatternClip(ctx, patternData, clip, x, y, width, clipHeight, isSelected, lod, track);
       }
     });
 
@@ -1777,19 +1755,84 @@ export function ArrangementPanelV2() {
     console.log(`🎹 Added pattern "${patterns[patternId]?.name}" at ${startTime.toFixed(2)} beats on track ${track.name}`);
   }, [viewport, tracks, dimensions.trackHeight, snapEnabled, snapSize, addPatternClip, patterns, getContainerRect]);
 
+  // Handle project audio drop (from Audio tab - frozen patterns, stems, etc.)
+  const handleProjectAudioDrop = useCallback((e, audioAssetId) => {
+    // Calculate drop position
+    const rect = getContainerRect(e);
+    if (!rect) return;
+
+    const screenX = e.clientX - rect.left;
+    const screenY = e.clientY - rect.top;
+
+    // Skip if over toolbar, timeline or left sidebars
+    const totalHeaderHeight = TOOLBAR_HEIGHT + constants.TIMELINE_HEIGHT;
+    if (screenX < LEFT_OFFSET || screenY < totalHeaderHeight) {
+      return;
+    }
+
+    // Convert to canvas coordinates
+    const canvasX = screenX - LEFT_OFFSET + viewport.scrollX;
+    const canvasY = screenY - totalHeaderHeight + viewport.scrollY;
+
+    // Find track
+    const trackIndex = Math.floor(canvasY / dimensions.trackHeight);
+    if (trackIndex < 0 || trackIndex >= tracks.length) return;
+
+    const track = tracks[trackIndex];
+    if (!track) return;
+
+    // Calculate start time
+    const zoomX = isFinite(viewport.zoomX) && viewport.zoomX > 0 ? viewport.zoomX : 1;
+    let startTime = canvasX / (constants.PIXELS_PER_BEAT * zoomX);
+
+    // Snap to grid if enabled
+    if (snapEnabled) {
+      startTime = Math.round(startTime / snapSize) * snapSize;
+    }
+
+    // Get sample info from ProjectAudioStore
+    const audioSamples = useProjectAudioStore.getState().samples;
+    const sample = audioSamples.find(s => s.assetId === audioAssetId);
+
+    if (!sample) {
+      console.error(`❌ Audio sample not found: ${audioAssetId}`);
+      return;
+    }
+
+    // Use pre-calculated duration from sample metadata
+    const duration = sample.durationBeats || 16; // Default 4 bars if not available
+    const name = sample.name || 'Audio Clip';
+
+    // Add audio clip
+    const addAudioClip = useArrangementV2Store.getState().addAudioClip;
+    addAudioClip(track.id, startTime, audioAssetId, duration, name);
+
+    console.log(`🔊 Added audio clip "${name}" at ${startTime.toFixed(2)} beats on track ${track.name} (${duration.toFixed(2)} beats)`);
+  }, [viewport, tracks, dimensions.trackHeight, snapEnabled, snapSize, getContainerRect]);
+
   // Handle audio file and pattern drop
   const handleDrop = useCallback((e) => {
     e.preventDefault();
+    e.stopPropagation(); // Prevent event from bubbling to parent panels
+    console.log('🎯 ArrangementPanel handleDrop called');
 
     try {
       // Check for pattern drop first
       const patternId = e.dataTransfer.getData('application/x-dawg-pattern');
       if (patternId) {
+        console.log('✅ Pattern drop detected:', patternId);
         handlePatternDrop(e, patternId);
         return;
       }
 
-      // Otherwise, handle audio file drop
+      // Check for project audio drop (from Audio tab)
+      const audioAssetId = e.dataTransfer.getData('application/x-dawg-audio');
+      if (audioAssetId) {
+        handleProjectAudioDrop(e, audioAssetId);
+        return;
+      }
+
+      // Otherwise, handle audio file drop (from FileBrowser)
       const data = e.dataTransfer.getData('text/plain');
       if (!data) return;
 
@@ -1831,16 +1874,42 @@ export function ArrangementPanelV2() {
 
       // Load audio buffer to get duration
       audioAssetManager.loadAsset(url, { name, source: 'file-browser' }).then((buffer) => {
-        const duration = buffer.duration / (60 / 120); // Convert seconds to beats at 120 BPM
-
         // Generate asset ID for storage
         const assetId = audioAssetManager.generateAssetId(url);
+
+        // ✅ Use centralized duration calculation
+        const asset = audioAssetManager.assets.get(assetId);
+        const currentBPM = usePlaybackStore.getState().bpm || 120;
+        const duration = getAudioClipDurationBeats(buffer, asset?.metadata, currentBPM);
+
+        // ✅ NEW: Add to ProjectAudioStore when first used in project
+        // This tracks which audio files are actually part of this project
+        const projectAudioStore = useProjectAudioStore.getState();
+        const existingSample = projectAudioStore.samples.find(s => s.assetId === assetId);
+
+        if (!existingSample) {
+          projectAudioStore.addSample({
+            id: assetId,
+            name: name,
+            assetId: assetId,
+            durationBeats: duration,
+            durationSeconds: buffer.duration,
+            type: 'used-in-project', // Mark as actively used in project
+            createdAt: Date.now(),
+            metadata: {
+              url: url,
+              source: 'file-browser',
+              bpm: currentBPM
+            }
+          });
+          console.log(`📦 Added to project audio library: ${name}`);
+        }
 
         // Add audio clip
         const addAudioClip = useArrangementV2Store.getState().addAudioClip;
         addAudioClip(track.id, startTime, assetId, duration, name);
 
-        console.log(`Added audio clip: ${name} at ${startTime} beats on track ${track.name}`);
+        console.log(`✅ Added audio clip: ${name} at ${startTime} beats on track ${track.name} (${duration.toFixed(2)} beats)`);
       }).catch(err => {
         console.error('Failed to load audio:', err);
       });
@@ -1848,15 +1917,25 @@ export function ArrangementPanelV2() {
     } catch (err) {
       console.error('Failed to handle drop:', err);
     }
-  }, [handlePatternDrop, viewport, tracks, dimensions.trackHeight, snapEnabled, snapSize, getContainerRect]);
+  }, [handlePatternDrop, handleProjectAudioDrop, viewport, tracks, dimensions.trackHeight, snapEnabled, snapSize, getContainerRect]);
 
   const handleDragOver = useCallback((e) => {
     e.preventDefault();
+    e.stopPropagation(); // Prevent event from bubbling to parent panels
     e.dataTransfer.dropEffect = 'copy';
 
-    // Check if dragging a pattern
+    // Check if dragging a pattern or audio
     const types = e.dataTransfer.types;
-    if (!types.includes('application/x-dawg-pattern')) {
+    const isDraggingPattern = types.includes('application/x-dawg-pattern');
+    const isDraggingAudio = types.includes('application/x-dawg-audio');
+
+    if (!isDraggingPattern && !isDraggingAudio) {
+      setPatternDragPreview(null);
+      return;
+    }
+
+    // Only show pattern preview for patterns (audio doesn't need preview)
+    if (!isDraggingPattern) {
       setPatternDragPreview(null);
       return;
     }
@@ -1967,12 +2046,17 @@ export function ArrangementPanelV2() {
     };
   }, [eventHandlers, viewport.zoomX, viewport.zoomY]);
 
-  // Global drag & drop handlers to catch pattern drops anywhere on the page
-  // This ensures pattern drops work even when dragging over other elements (toolbars, etc.)
+  // Global drag & drop handlers to catch pattern/audio drops anywhere on the page
+  // This ensures drops work even when dragging over other elements (toolbars, etc.)
   useEffect(() => {
     const globalDragOver = (e) => {
       const types = e.dataTransfer?.types;
-      if (!types || !types.includes('application/x-dawg-pattern')) return;
+      if (!types) return;
+
+      const isDraggingPattern = types.includes('application/x-dawg-pattern');
+      const isDraggingAudio = types.includes('application/x-dawg-audio');
+
+      if (!isDraggingPattern && !isDraggingAudio) return;
 
       // Only handle if NOT already inside our container (avoid duplicate handling)
       const container = containerRef.current;
@@ -1983,7 +2067,12 @@ export function ArrangementPanelV2() {
 
     const globalDrop = (e) => {
       const types = e.dataTransfer?.types;
-      if (!types || !types.includes('application/x-dawg-pattern')) return;
+      if (!types) return;
+
+      const isDraggingPattern = types.includes('application/x-dawg-pattern');
+      const isDraggingAudio = types.includes('application/x-dawg-audio');
+
+      if (!isDraggingPattern && !isDraggingAudio) return;
 
       // Only handle if NOT already inside our container (avoid duplicate handling)
       const container = containerRef.current;

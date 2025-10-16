@@ -545,10 +545,24 @@ export class NativeAudioEngine {
             // 3. Oluşturulan kanalı, motorun ana listesine ekliyoruz.
             this.mixerChannels.set(id, channel);
 
-            // 4. ANA DÜZELTME: Eğer bu kanal Master'ın kendisi DEĞİLSE,
-            //    çıkışını Master kanalının girişine bağlıyoruz. Bu, sesin duyulmasını sağlar.
-            if (!options.isMaster && this.masterMixer?.input) {
+            // 4. ROUTING FIX: Route all channels through master channel
+            if (options.isMaster) {
+                // Master channel connects to masterMixer (final output chain)
                 channel.connect(this.masterMixer.input);
+                console.log('🔌 Master channel connected to output chain');
+            } else {
+                // All other channels connect to master channel
+                const masterChannel = this.mixerChannels.get('master');
+                if (masterChannel) {
+                    channel.connect(masterChannel.input);
+                    console.log(`🔌 Channel ${id} connected to master channel`);
+                } else {
+                    // Fallback: If master not created yet, connect directly to masterMixer
+                    if (this.masterMixer?.input) {
+                        channel.connect(this.masterMixer.input);
+                        console.log(`⚠️ Channel ${id} connected directly to masterMixer (master channel not ready)`);
+                    }
+                }
             }
 
             this.metrics.channelsCreated++;
@@ -730,26 +744,39 @@ export class NativeAudioEngine {
     }
 
     _connectInstrumentToChannel(instrumentId, channelId) {
+        console.log(`🔌 Attempting to connect instrument ${instrumentId} to channel ${channelId}`);
+
         const instrument = this.instruments.get(instrumentId);
         const channel = this.mixerChannels.get(channelId);
 
         if (!instrument) {
+            console.error(`❌ Instrument not found: ${instrumentId}`);
             return false;
         }
 
         if (!channel) {
+            console.error(`❌ Channel not found: ${channelId}`);
             return false;
         }
 
         // Instrument output kontrolü
         if (!instrument.output) {
+            console.error(`❌ Instrument ${instrumentId} has no output!`);
             return false;
         }
 
         // Channel input kontrolü
         if (!channel.input) {
+            console.error(`❌ Channel ${channelId} has no input!`);
             return false;
         }
+
+        console.log(`🔌 Connecting:`, {
+            instrument: instrumentId,
+            instrumentOutput: instrument.output.constructor.name,
+            channel: channelId,
+            channelInput: channel.input.constructor.name
+        });
 
         try {
             instrument.output.connect(channel.input);

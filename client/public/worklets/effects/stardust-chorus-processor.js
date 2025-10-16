@@ -51,11 +51,11 @@ class StardustChorusProcessor extends AudioWorkletProcessor {
     return param.length > 1 ? param[index] : param[0];
   }
 
-  processEffect(sample, channel, sampleIndex, parameters) {
-    const rate = this.getParam(parameters.rate, sampleIndex) || 1.5;
-    const depth = this.getParam(parameters.depth, sampleIndex) || 0.5;
-    const voices = Math.floor(this.getParam(parameters.voices, sampleIndex) || 3);
-    const stereoWidth = this.getParam(parameters.stereoWidth, sampleIndex) || 0.5;
+  processEffect(sample, channel, parameters) {
+    const rate = this.getParam(parameters.rate, 0) || 1.5;
+    const depth = this.getParam(parameters.depth, 0) || 0.5;
+    const voices = Math.floor(this.getParam(parameters.voices, 0) || 3);
+    const stereoWidth = this.getParam(parameters.stereoWidth, 0) || 0.5;
 
     const state = this.channelState[channel];
     const buffer = state.buffer;
@@ -132,7 +132,7 @@ class StardustChorusProcessor extends AudioWorkletProcessor {
 
       for (let i = 0; i < inputChannel.length; i++) {
         const inputSample = inputChannel[i];
-        const processedSample = this.processEffect(inputSample, channel, i, parameters);
+        const processedSample = this.processEffect(inputSample, channel, parameters);
         outputChannel[i] = dry * inputSample + wet * processedSample;
       }
     }

@@ -352,6 +352,11 @@ export class PlaybackManager {
         return this.currentMode;
     }
 
+    // ✅ Alias for convenience (used by PlaybackController)
+    getCurrentMode() {
+        return this.currentMode;
+    }
+
     // =================== LOOP MANAGEMENT ===================
 
     setLoopPoints(startStep, endStep) {
@@ -1554,17 +1559,38 @@ export class PlaybackManager {
         });
     }
 
-    _clearScheduledEvents() {
+    _clearScheduledEvents(useFade = false) {
         if (this.transport && this.transport.clearScheduledEvents) {
             this.transport.clearScheduledEvents();
         }
 
-        // ✅ CRITICAL: Stop all active audio sources to prevent doubling
+        // ✅ IMPROVED: Fade out active audio sources for smooth transitions
         if (this.activeAudioSources && this.activeAudioSources.length > 0) {
-            console.log(`🔇 Stopping ${this.activeAudioSources.length} active audio sources`);
+            const fadeTime = useFade ? 0.015 : 0; // 15ms fade - fast but smooth (optimized)
+            const currentTime = this.transport?.audioContext?.currentTime || 0;
+
+            console.log(`🔇 Stopping ${this.activeAudioSources.length} active audio sources${useFade ? ' (with fade)' : ''}`);
+
             this.activeAudioSources.forEach(source => {
                 try {
-                    source.stop();
+                    // If source has a gain node, fade it out
+                    if (useFade && source.gainNode && source.gainNode.gain) {
+                        source.gainNode.gain.cancelScheduledValues(currentTime);
+                        source.gainNode.gain.setValueAtTime(source.gainNode.gain.value, currentTime);
+                        source.gainNode.gain.linearRampToValueAtTime(0, currentTime + fadeTime);
+
+                        // Stop after fade completes
+                        setTimeout(() => {
+                            try {
+                                source.stop();
+                            } catch (e) {
+                                // Already stopped
+                            }
+                        }, fadeTime * 1000 + 5); // +5ms buffer (reduced from 10ms)
+                    } else {
+                        // Immediate stop (no fade)
+                        source.stop();
+                    }
                 } catch (e) {
                     // Source may already be stopped
                 }

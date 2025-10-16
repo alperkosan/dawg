@@ -367,13 +367,23 @@ export class AudioExportManager {
 
       const exportResult = await this.exportPattern(patternId, exportSettings);
 
+      // Calculate pattern duration in beats for metadata
+      const patternData = await this._getPatternData(patternId);
+      const patternBarLength = await this._getPatternBarLength(patternData);
+      const durationBeats = patternBarLength * 4; // bars to beats
+
+      console.log(`🎵 Pattern export duration calculation:`);
+      console.log(`   - Pattern length: ${patternData?.length} steps`);
+      console.log(`   - Bar length: ${patternBarLength} bars`);
+      console.log(`   - Duration in beats: ${durationBeats} beats`);
+
       // Step 2: Create audio asset from exported audio (if requested)
       let assetId = null;
       if (createInstrument && exportResult.length > 0) {
         if (exportOptions.onProgress) {
           exportOptions.onProgress({ message: 'Creating audio asset...', percent: 60 });
         }
-        assetId = await this._createInstrumentFromExport(exportResult[0], patternId);
+        assetId = await this._createInstrumentFromExport(exportResult[0], patternId, durationBeats);
       }
 
       // Step 3: Replace original pattern (if requested)
@@ -453,7 +463,7 @@ export class AudioExportManager {
   /**
    * Create audio asset from exported audio file
    */
-  async _createInstrumentFromExport(exportedFile, originalPatternId) {
+  async _createInstrumentFromExport(exportedFile, originalPatternId, durationBeats) {
     try {
       // Create asset ID
       const assetId = `asset-frozen-${originalPatternId}-${Date.now()}`;
@@ -469,13 +479,40 @@ export class AudioExportManager {
         metadata: {
           frozen: true,
           originalPattern: originalPatternId,
+          durationBeats: durationBeats, // ✅ Store beat-based duration
           sampleRate: exportedFile.buffer.sampleRate,
           duration: exportedFile.buffer.duration,
           numberOfChannels: exportedFile.buffer.numberOfChannels
         }
       });
 
-      console.log(`🎹 Created audio asset ${assetId} from frozen pattern`);
+      console.log(`🎹 Created audio asset ${assetId} from frozen pattern (${durationBeats} beats)`);
+
+      // ✅ Add frozen sample to Project Audio Store (for Audio tab in arrangement)
+      try {
+        const { useProjectAudioStore } = await import('../../store/useProjectAudioStore');
+        const projectAudioStore = useProjectAudioStore.getState();
+
+        projectAudioStore.addSample({
+          id: assetId,
+          name: name,
+          assetId: assetId,
+          durationBeats: durationBeats,
+          durationSeconds: exportedFile.buffer.duration,
+          type: 'frozen',
+          originalPattern: originalPatternId,
+          metadata: {
+            sampleRate: exportedFile.buffer.sampleRate,
+            numberOfChannels: exportedFile.buffer.numberOfChannels
+          }
+        });
+
+        console.log(`📦 Added frozen sample to Project Audio Store: ${name}`);
+      } catch (error) {
+        console.error('⚠️ Failed to add frozen sample to Project Audio Store:', error);
+        // Non-critical error, don't throw
+      }
+
       return assetId;
 
     } catch (error) {
@@ -668,6 +705,26 @@ export class AudioExportManager {
   }
 
   /**
+   * Get pattern bar length from pattern data
+   * Pattern length is stored in steps (16th notes), convert to bars
+   */
+  async _getPatternBarLength(patternData) {
+    if (!patternData) {
+      console.warn('⚠️ Pattern data is null/undefined, using default 1 bar');
+      return 1;
+    }
+
+    // Pattern length can be in settings.length or directly in length field
+    const stepLength = patternData.settings?.length || patternData.length || 16;
+
+    // Convert steps to bars (16 steps = 1 bar, 4/4 time signature)
+    const barLength = stepLength / 16;
+
+    console.log(`📏 Pattern bar length: ${barLength} bars (${stepLength} steps) - Pattern:`, patternData.name || 'Unknown');
+    return barLength;
+  }
+
+  /**
    * Get instrument name by ID
    */
   async _getInstrumentName(instrumentId) {
@@ -723,6 +780,14 @@ export class AudioExportManager {
     // TODO: Implement MP3, OGG, FLAC encoding
     const wavBlob = await this.audioProcessor.audioBufferToWav(audioBuffer, quality.bitDepth);
     return wavBlob;
+  }
+
+  /**
+   * ✅ NEW: Convert AudioBuffer to Blob for frozen samples
+   */
+  async _bufferToBlob(audioBuffer) {
+    // Use standard quality for frozen samples
+    return await this.audioProcessor.audioBufferToWav(audioBuffer, 16);
   }
 
   /**

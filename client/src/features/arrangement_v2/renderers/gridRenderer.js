@@ -8,17 +8,24 @@
  */
 
 // ============================================================================
-// ZENITH COLORS
+// ZENITH COLORS - Matching Zenith Design System
 // ============================================================================
 
 export const ZENITH_COLORS = {
-  background: '#0a0a0f',
-  trackLane: 'rgba(20, 20, 30, 0.4)',
-  trackLaneAlt: 'rgba(25, 25, 35, 0.5)',
-  gridLine: 'rgba(255, 255, 255, 0.03)',
-  gridLineBeat: 'rgba(255, 255, 255, 0.08)',
-  gridLineBar: 'rgba(255, 255, 255, 0.15)',
-  trackBorder: 'rgba(255, 255, 255, 0.05)'
+  // Darker background for better contrast with colored clips
+  background: '#060810',  // Darker than zenith-bg-primary for more contrast
+
+  // Track lanes now use track colors (not used directly anymore)
+  trackLane: 'rgba(30, 36, 47, 0.3)',
+  trackLaneAlt: 'rgba(21, 25, 34, 0.5)',
+
+  // Grid lines - slightly more visible for better readability
+  gridLine: 'rgba(255, 255, 255, 0.06)',   // zenith-border-subtle (slightly brighter)
+  gridLineBeat: 'rgba(255, 255, 255, 0.12)', // zenith-border-medium (slightly brighter)
+  gridLineBar: 'rgba(255, 255, 255, 0.25)',  // zenith-border-strong (more visible)
+
+  // Track borders - more prominent
+  trackBorder: 'rgba(255, 255, 255, 0.12)'
 };
 
 // ============================================================================
@@ -53,7 +60,7 @@ export function drawGrid(ctx, width, height, viewport, tracks, snapSize = 0.25) 
 }
 
 /**
- * Draw track lanes with alternating colors
+ * Draw track lanes with track-specific colors
  */
 function drawTrackLanes(ctx, width, height, tracks, offsetY, zoomY) {
   let y = -offsetY;
@@ -68,12 +75,32 @@ function drawTrackLanes(ctx, width, height, tracks, offsetY, zoomY) {
     }
     if (y > height) return;
 
-    // Alternate track colors for visual separation
-    ctx.fillStyle = index % 2 === 0 ? ZENITH_COLORS.trackLane : ZENITH_COLORS.trackLaneAlt;
+    // Use track color with subtle transparency
+    // Convert hex to rgba with alternating opacity for visual separation
+    const trackColor = track.color || '#8b5cf6';
+    const opacity = index % 2 === 0 ? 0.08 : 0.12;
+    const rgba = hexToRgba(trackColor, opacity);
+
+    ctx.fillStyle = rgba;
     ctx.fillRect(0, y, width, trackHeight);
 
     y += trackHeight;
   });
+}
+
+/**
+ * Convert hex color to rgba with opacity
+ */
+function hexToRgba(hex, opacity) {
+  // Remove # if present
+  hex = hex.replace('#', '');
+
+  // Parse hex values
+  const r = parseInt(hex.substring(0, 2), 16);
+  const g = parseInt(hex.substring(2, 4), 16);
+  const b = parseInt(hex.substring(4, 6), 16);
+
+  return `rgba(${r}, ${g}, ${b}, ${opacity})`;
 }
 
 /**

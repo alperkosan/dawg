@@ -119,11 +119,47 @@ export const useFileBrowserStore = create((set) => ({
               name: file.name,
               type: FILE_SYSTEM_TYPES.FILE,
               // Tarayıcının hafızasında geçici bir URL oluştur.
-              url: URL.createObjectURL(file), 
+              url: URL.createObjectURL(file),
             });
           }
         });
       }
+      return { fileTree: newTree };
+    });
+  },
+
+  // ✅ NEW: Add frozen/bounced samples to File Browser
+  addFrozenSample: (sampleData) => {
+    set(state => {
+      const newTree = JSON.parse(JSON.stringify(state.fileTree));
+
+      // Find "Loops" folder
+      let loopsFolder = findNode(newTree, 'folder-loops');
+
+      if (!loopsFolder) {
+        // If Loops folder doesn't exist, create it
+        newTree.children.push({
+          id: 'folder-loops',
+          name: 'Loops',
+          type: FILE_SYSTEM_TYPES.FOLDER,
+          children: []
+        });
+        loopsFolder = newTree.children[newTree.children.length - 1];
+      }
+
+      // Check if sample already exists
+      if (!loopsFolder.children.some(child => child.id === sampleData.id)) {
+        loopsFolder.children.push({
+          id: sampleData.id,
+          name: sampleData.name,
+          type: FILE_SYSTEM_TYPES.FILE,
+          url: sampleData.url,
+          frozen: true,
+          originalPattern: sampleData.originalPattern
+        });
+        console.log(`📁 Added frozen sample to Loops: ${sampleData.name}`);
+      }
+
       return { fileTree: newTree };
     });
   },

@@ -1,54 +1,83 @@
-/* Audio Export Panel Styles */
+/* Audio Export Panel Styles - Zenith Theme Integration */
 .audio-export-panel {
   position: fixed;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 600px;
-  max-height: 80vh;
-  background: #1a1a1a;
-  border: 1px solid #333;
-  border-radius: 8px;
+  width: 750px;
+  max-width: 90vw;
+  max-height: 90vh;
+  background: var(--zenith-bg-primary, #0A0E1A);
+  border: 2px solid var(--zenith-border-strong, rgba(255, 255, 255, 0.2));
+  border-radius: var(--border-radius-lg, 12px);
   overflow: hidden;
-  z-index: 1000;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  z-index: 10000;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.9),
+              0 0 0 1px rgba(255, 255, 255, 0.05);
 }
 
 .audio-export-panel__header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px 20px;
-  background: #333;
-  border-bottom: 1px solid #444;
+  padding: 20px 24px;
+  background: var(--zenith-bg-secondary, #15191E);
+  border-bottom: 1px solid var(--zenith-border-medium, rgba(255, 255, 255, 0.12));
 }
 
 .audio-export-panel__title {
   margin: 0;
-  color: #fff;
-  font-size: 16px;
+  color: var(--zenith-text-primary, #FFFFFF);
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
 }
 
 .audio-export-panel__close {
-  background: none;
-  border: none;
-  color: #ccc;
-  font-size: 20px;
+  background: var(--zenith-bg-tertiary, rgba(255, 255, 255, 0.05));
+  border: 1px solid var(--zenith-border-subtle, rgba(255, 255, 255, 0.08));
+  border-radius: var(--border-radius-md, 6px);
+  color: var(--zenith-text-secondary, rgba(255, 255, 255, 0.7));
+  font-size: 24px;
   cursor: pointer;
-  padding: 0;
-  width: 24px;
-  height: 24px;
+  padding: 4px 8px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
 }
 
 .audio-export-panel__close:hover {
-  color: #fff;
+  background: var(--zenith-bg-hover, rgba(255, 255, 255, 0.1));
+  color: var(--zenith-text-primary, #FFFFFF);
+  border-color: var(--zenith-border-medium, rgba(255, 255, 255, 0.15));
 }
 
 .audio-export-panel__content {
-  padding: 20px;
-  max-height: calc(80vh - 60px);
+  padding: 24px;
+  max-height: calc(90vh - 80px);
   overflow-y: auto;
-  color: #ccc;
+  color: var(--zenith-text-secondary, rgba(255, 255, 255, 0.8));
+}
+
+/* Custom scrollbar for Zenith theme */
+.audio-export-panel__content::-webkit-scrollbar {
+  width: 10px;
+}
+
+.audio-export-panel__content::-webkit-scrollbar-track {
+  background: var(--zenith-bg-secondary, #15191E);
+}
+
+.audio-export-panel__content::-webkit-scrollbar-thumb {
+  background: var(--zenith-border-strong, rgba(255, 255, 255, 0.2));
+  border-radius: 5px;
+}
+
+.audio-export-panel__content::-webkit-scrollbar-thumb:hover {
+  background: var(--zenith-border-strong, rgba(255, 255, 255, 0.3));
 }
 
 .audio-export-panel__section {
@@ -56,10 +85,11 @@
 }
 
 .audio-export-panel__section-title {
-  margin: 0 0 12px 0;
-  color: #fff;
-  font-size: 14px;
+  margin: 0 0 16px 0;
+  color: var(--zenith-text-primary, #FFFFFF);
+  font-size: 15px;
   font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 .audio-export-panel__settings-grid {

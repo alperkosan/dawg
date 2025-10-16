@@ -1,173 +1,159 @@
 /**
- * 🎨 ARRANGEMENT TOOLBAR STYLES
+ * 🎨 ARRANGEMENT TOOLBAR STYLES - ZENITH THEME
+ * Matches Piano Roll v7 toolbar design for consistency
  */
 
 .arr-v2-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 48px;
-  padding: 0 12px;
-  background: rgba(20, 20, 30, 0.95);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(10px);
-  gap: 16px;
+  height: 44px;
+  padding: 0 var(--spacing-4);
+  background-color: var(--zenith-bg-primary);
+  border-bottom: 1px solid var(--zenith-border-medium);
+  font-family: var(--font-body);
+  font-size: var(--font-size-sm);
   flex-shrink: 0;
+  z-index: 40;
 }
 
+/* Toolbar Sections */
 .arr-v2-toolbar-section {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--spacing-3);
 }
 
 .arr-v2-toolbar-section-right {
   margin-left: auto;
 }
 
+/* Tool Groups */
 .arr-v2-toolbar-group {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px;
-  background: rgba(255, 255, 255, 0.03);
-  border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  gap: var(--spacing-1);
+  padding: var(--spacing-1);
+  background-color: var(--zenith-bg-secondary);
+  border-radius: var(--border-radius-lg);
+  border: 1px solid var(--zenith-border-medium);
 }
 
+/* Brand/Title */
+.arr-v2-brand {
+  display: flex;
+  align-items: center;
+  margin-right: var(--spacing-4);
+}
+
+.arr-v2-brand-text {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--font-size-md);
+  color: var(--zenith-text-primary);
+  letter-spacing: -0.5px;
+}
+
+/* Toolbar Buttons */
 .arr-v2-toolbar-btn {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
+  gap: var(--spacing-2);
+  padding: var(--spacing-2) var(--spacing-3);
   background: transparent;
   border: none;
-  border-radius: 4px;
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 13px;
-  font-family: 'Inter', system-ui, sans-serif;
+  border-radius: var(--border-radius-md);
+  color: var(--zenith-text-secondary);
+  font-size: var(--font-size-sm);
+  font-family: var(--font-body);
+  font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all var(--transition-speed) ease;
   white-space: nowrap;
 }
 
 .arr-v2-toolbar-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.9);
+  background: var(--zenith-bg-secondary);
+  color: var(--zenith-text-primary);
 }
 
 .arr-v2-toolbar-btn.active {
-  background: rgba(139, 92, 246, 0.25);
-  color: rgba(255, 255, 255, 1);
-  box-shadow: inset 0 0 0 1px rgba(139, 92, 246, 0.5);
+  background: var(--zenith-bg-tertiary);
+  color: var(--zenith-accent-cool);
 }
 
 .arr-v2-toolbar-btn:active {
   transform: scale(0.97);
 }
 
+/* Button Icons & Labels */
 .arr-v2-toolbar-btn-icon {
-  font-size: 15px;
+  font-size: var(--font-size-md);
   line-height: 1;
   flex-shrink: 0;
 }
 
 .arr-v2-toolbar-btn-label {
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   font-weight: 500;
 }
 
+/* Icon-Only Buttons (for zoom controls) */
 .arr-v2-toolbar-btn-icon-only {
-  padding: 6px 10px;
+  padding: var(--spacing-2);
+  width: 28px;
+  height: 28px;
+  justify-content: center;
 }
 
 .arr-v2-toolbar-btn-icon-only .arr-v2-toolbar-btn-label {
   display: none;
 }
 
-.arr-v2-toolbar-btn-play {
-  background: rgba(34, 197, 94, 0.15);
-  color: rgba(255, 255, 255, 0.9);
-}
-
-.arr-v2-toolbar-btn-play:hover {
-  background: rgba(34, 197, 94, 0.25);
-  color: rgba(255, 255, 255, 1);
-}
-
-.arr-v2-toolbar-btn-play.active {
-  background: rgba(239, 68, 68, 0.25);
-}
-
+/* Select Dropdown */
 .arr-v2-toolbar-select {
-  padding: 4px 8px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 4px;
-  color: rgba(255, 255, 255, 0.9);
-  font-size: 12px;
-  font-family: 'Inter', system-ui, sans-serif;
+  background-color: var(--zenith-bg-secondary);
+  color: var(--zenith-text-primary);
+  border: 1px solid var(--zenith-border-medium);
+  border-radius: var(--border-radius-sm);
+  padding: var(--spacing-1) var(--spacing-2);
+  font-size: var(--font-size-sm);
+  font-family: var(--font-body);
   cursor: pointer;
   outline: none;
-  transition: all 0.15s ease;
+  transition: all var(--transition-speed) ease;
+  min-width: 80px;
 }
 
-.arr-v2-toolbar-select:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.15);
-}
-
+.arr-v2-toolbar-select:hover,
 .arr-v2-toolbar-select:focus {
-  border-color: rgba(139, 92, 246, 0.5);
-  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.15);
+  border-color: var(--zenith-accent-cool);
+  background-color: var(--zenith-bg-tertiary);
 }
 
+/* Zoom Display */
 .arr-v2-toolbar-zoom-display {
-  padding: 4px 10px;
-  font-size: 12px;
-  font-weight: 600;
-  font-family: 'Monaco', 'Menlo', monospace;
-  color: rgba(255, 255, 255, 0.6);
-  min-width: 50px;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  color: var(--zenith-text-primary);
+  min-width: 40px;
   text-align: center;
+  font-weight: 500;
+  margin: 0 var(--spacing-1);
 }
 
-/* BPM Input */
-.arr-v2-toolbar-bpm {
+/* Settings Item */
+.arr-v2-setting-item {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 4px;
-  margin-left: 8px;
+  gap: var(--spacing-2);
 }
 
-.arr-v2-toolbar-bpm-input {
-  width: 50px;
-  padding: 2px 4px;
-  background: transparent;
-  border: none;
-  color: rgba(255, 255, 255, 0.9);
-  font-size: 13px;
-  font-weight: 600;
-  font-family: 'Monaco', 'Menlo', monospace;
-  text-align: center;
-  outline: none;
-}
-
-.arr-v2-toolbar-bpm-input::-webkit-inner-spin-button,
-.arr-v2-toolbar-bpm-input::-webkit-outer-spin-button {
-  opacity: 0.5;
-}
-
-.arr-v2-toolbar-bpm-label {
-  font-size: 10px;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.5);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+.arr-v2-setting-label {
+  font-size: var(--font-size-sm);
+  color: var(--zenith-text-secondary);
+  font-weight: 500;
+  white-space: nowrap;
 }
 
 /* Compact mode for smaller screens */
@@ -177,6 +163,6 @@
   }
 
   .arr-v2-toolbar-btn {
-    padding: 6px 10px;
+    padding: var(--spacing-2);
   }
 }

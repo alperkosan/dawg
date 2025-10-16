@@ -104,11 +104,11 @@ class BassEnhancer808Processor extends AudioWorkletProcessor {
     return y;
   }
 
-  processEffect(sample, channel, sampleIndex, parameters) {
-    const frequency = this.getParam(parameters.frequency, sampleIndex) || 60;
-    const amount = this.getParam(parameters.amount, sampleIndex) || 0.5;
-    const harmonics = this.getParam(parameters.harmonics, sampleIndex) || 0.3;
-    const tightness = this.getParam(parameters.tightness, sampleIndex) || 0.5;
+  processEffect(sample, channel, parameters) {
+    const frequency = this.getParam(parameters.frequency, 0) || 60;
+    const amount = this.getParam(parameters.amount, 0) || 0.5;
+    const harmonics = this.getParam(parameters.harmonics, 0) || 0.3;
+    const tightness = this.getParam(parameters.tightness, 0) || 0.5;
 
     const state = this.channelState[channel];
 
@@ -165,7 +165,7 @@ class BassEnhancer808Processor extends AudioWorkletProcessor {
 
       for (let i = 0; i < inputChannel.length; i++) {
         const inputSample = inputChannel[i];
-        const processedSample = this.processEffect(inputSample, channel, i, parameters);
+        const processedSample = this.processEffect(inputSample, channel, parameters);
         outputChannel[i] = dry * inputSample + wet * processedSample;
       }
     }

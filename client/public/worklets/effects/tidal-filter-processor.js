@@ -53,11 +53,11 @@ class TidalFilterProcessor extends AudioWorkletProcessor {
     return Math.sign(x) * (1 - Math.exp(-Math.abs(x)));
   }
 
-  processEffect(sample, channel, sampleIndex, parameters) {
-    const cutoff = this.getParam(parameters.cutoff, sampleIndex) || 1000;
-    const resonance = this.getParam(parameters.resonance, sampleIndex) || 0.5;
-    const filterType = this.getParam(parameters.filterType, sampleIndex) || 0;
-    const drive = this.getParam(parameters.drive, sampleIndex) || 1.0;
+  processEffect(sample, channel, parameters) {
+    const cutoff = this.getParam(parameters.cutoff, 0) || 1000;
+    const resonance = this.getParam(parameters.resonance, 0) || 0.5;
+    const filterType = this.getParam(parameters.filterType, 0) || 0;
+    const drive = this.getParam(parameters.drive, 0) || 1.0;
 
     const state = this.channelState[channel];
 
@@ -121,7 +121,7 @@ class TidalFilterProcessor extends AudioWorkletProcessor {
 
       for (let i = 0; i < inputChannel.length; i++) {
         const inputSample = inputChannel[i];
-        const processedSample = this.processEffect(inputSample, channel, i, parameters);
+        const processedSample = this.processEffect(inputSample, channel, parameters);
         outputChannel[i] = dry * inputSample + wet * processedSample;
       }
     }

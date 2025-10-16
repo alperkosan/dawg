@@ -18,16 +18,29 @@ import { ZENITH_COLORS } from './gridRenderer';
 
 const PIXELS_PER_BEAT = 48;
 
-// Zenith audio clip colors
-const AUDIO_CLIP_COLORS = {
-  background: 'rgba(139, 92, 246, 0.2)',    // Purple
-  border: 'rgba(139, 92, 246, 0.6)',
-  borderSelected: 'rgba(139, 92, 246, 1)',
-  text: 'rgba(255, 255, 255, 0.9)',
-  waveform: 'rgba(167, 139, 250, 0.9)',
-  fadeOverlay: 'rgba(139, 92, 246, 0.15)',
-  glowSelected: '0 0 20px rgba(139, 92, 246, 0.6)'
-};
+/**
+ * Generate audio clip colors from track color
+ */
+function getAudioClipColors(trackColor) {
+  // Parse hex color
+  const hex = trackColor.replace('#', '');
+  const r = parseInt(hex.substring(0, 2), 16);
+  const g = parseInt(hex.substring(2, 4), 16);
+  const b = parseInt(hex.substring(4, 6), 16);
+
+  return {
+    background: `rgba(${r}, ${g}, ${b}, 0.15)`,
+    border: `rgba(${r}, ${g}, ${b}, 0.6)`,
+    borderSelected: `rgba(${r}, ${g}, ${b}, 1)`,
+    text: 'rgba(255, 255, 255, 0.9)',
+    waveform: `rgba(${r}, ${g}, ${b}, 0.8)`,
+    fadeOverlay: `rgba(${r}, ${g}, ${b}, 0.1)`,
+    glowSelected: `0 0 20px rgba(${r}, ${g}, ${b}, 0.6)`,
+    // For gradients
+    gradientTop: `rgba(${r}, ${g}, ${b}, 0.12)`,
+    gradientBottom: `rgba(${r}, ${g}, ${b}, 0.05)`
+  };
+}
 
 // ============================================================================
 // AUDIO CLIP RENDERER
@@ -47,31 +60,36 @@ const AUDIO_CLIP_COLORS = {
  * @param {number} lod - Level of detail (0-4 from useArrangementCanvas)
  * @param {number} pixelsPerBeat - Pixels per beat (for time scale)
  * @param {number} zoomX - Horizontal zoom factor
+ * @param {Object} track - Track data (for color inheritance)
  */
-export function renderAudioClip(ctx, audioBuffer, clip, x, y, width, height, isSelected, bpm = 140, lod = 2, pixelsPerBeat = 48, zoomX = 1) {
+export function renderAudioClip(ctx, audioBuffer, clip, x, y, width, height, isSelected, bpm = 140, lod = 2, pixelsPerBeat = 48, zoomX = 1, track = null) {
   // Save context state
   ctx.save();
 
+  // Get colors from track
+  const trackColor = track?.color || '#4ECDC4';
+  const colors = getAudioClipColors(trackColor);
+
   // Draw clip background
-  drawClipBackground(ctx, x, y, width, height, isSelected);
+  drawClipBackground(ctx, x, y, width, height, isSelected, colors);
 
   // Draw waveform (if audio buffer is loaded)
   if (audioBuffer) {
-    drawWaveform(ctx, audioBuffer, clip, x, y, width, height, bpm, lod, pixelsPerBeat, zoomX);
+    drawWaveform(ctx, audioBuffer, clip, x, y, width, height, bpm, lod, pixelsPerBeat, zoomX, colors);
   } else {
     // Show loading placeholder
-    drawLoadingPlaceholder(ctx, x, y, width, height);
+    drawLoadingPlaceholder(ctx, x, y, width, height, colors);
   }
 
   // Draw fade overlays
-  drawFadeOverlays(ctx, clip, x, y, width, height, bpm);
+  drawFadeOverlays(ctx, clip, x, y, width, height, bpm, colors);
 
   // Draw clip border
-  drawClipBorder(ctx, x, y, width, height, isSelected);
+  drawClipBorder(ctx, x, y, width, height, isSelected, colors);
 
   // Draw clip name
   if (width > 40) {
-    drawClipName(ctx, clip, x, y, width, height);
+    drawClipName(ctx, clip, x, y, width, height, colors);
   }
 
   // Restore context state
@@ -81,15 +99,15 @@ export function renderAudioClip(ctx, audioBuffer, clip, x, y, width, height, isS
 /**
  * Draw clip background with gradient
  */
-function drawClipBackground(ctx, x, y, width, height, isSelected) {
+function drawClipBackground(ctx, x, y, width, height, isSelected, colors) {
   // Background fill
-  ctx.fillStyle = AUDIO_CLIP_COLORS.background;
+  ctx.fillStyle = colors.background;
   ctx.fillRect(x, y, width, height);
 
   // Subtle gradient overlay
   const gradient = ctx.createLinearGradient(x, y, x, y + height);
-  gradient.addColorStop(0, 'rgba(139, 92, 246, 0.15)');
-  gradient.addColorStop(1, 'rgba(139, 92, 246, 0.05)');
+  gradient.addColorStop(0, colors.gradientTop);
+  gradient.addColorStop(1, colors.gradientBottom);
   ctx.fillStyle = gradient;
   ctx.fillRect(x, y, width, height);
 }
@@ -98,7 +116,13 @@ function drawClipBackground(ctx, x, y, width, height, isSelected) {
  * Draw waveform with LOD and caching
  * Waveform is time-scale accurate (doesn't stretch when resizing)
  */
-function drawWaveform(ctx, audioBuffer, clip, x, y, width, height, bpm, lod, pixelsPerBeat, zoomX) {
+function drawWaveform(ctx, audioBuffer, clip, x, y, width, height, bpm, lod, pixelsPerBeat, zoomX, colors) {
+  // ✅ FIX: Don't render waveform if clip is too small (< 2 pixels)
+  if (width < 2) {
+    // Skip silently - this is expected at extreme zoom levels
+    return;
+  }
+
   // Get waveform cache
   const waveformCache = getWaveformCache();
 
@@ -108,7 +132,8 @@ function drawWaveform(ctx, audioBuffer, clip, x, y, width, height, bpm, lod, pix
   const waveformLOD = lod >= 3 ? 0 : lod >= 1 ? 1 : 2;
 
   // Try to get from cache
-  const waveformHeight = height - 16; // Leave space for padding
+  // ✅ FIX: Ensure waveform height is at least 1 pixel
+  const waveformHeight = Math.max(1, height - 16); // Leave space for padding
   let waveformCanvas = waveformCache.get(clip.id, clip, width, waveformHeight, bpm, waveformLOD, pixelsPerBeat, zoomX);
 
   const cacheHit = !!waveformCanvas;
@@ -127,23 +152,14 @@ function drawWaveform(ctx, audioBuffer, clip, x, y, width, height, bpm, lod, pix
       zoomX
     );
 
-    // Cache the result
-    waveformCache.set(clip.id, clip, width, waveformHeight, bpm, waveformLOD, waveformCanvas, pixelsPerBeat, zoomX);
+    // ✅ FIX: Only cache if render was successful
+    if (waveformCanvas) {
+      waveformCache.set(clip.id, clip, width, waveformHeight, bpm, waveformLOD, waveformCanvas, pixelsPerBeat, zoomX);
+    }
   }
 
-  // 🐛 DEBUG: Log every waveform draw
-  console.log('🎨 drawWaveform:', {
-    clipId: clip.id.substring(0, 8),
-    clipDuration: clip.duration,
-    clipWidth: width,
-    canvasWidth: waveformCanvas?.width,
-    canvasHeight: waveformCanvas?.height,
-    pixelsPerBeat,
-    zoomX,
-    cacheHit,
-    sampleOffset: clip.sampleOffset || 0,
-    willStretch: waveformCanvas && waveformCanvas.width !== width
-  });
+  // ✅ REMOVED: Too verbose for normal operation
+  // Debug logging can be re-enabled if needed for troubleshooting
 
   // Draw cached waveform (with safety check)
   // ✅ CRITICAL: Draw at canvas's actual size to avoid stretching!
@@ -160,7 +176,7 @@ function drawWaveform(ctx, audioBuffer, clip, x, y, width, height, bpm, lod, pix
 /**
  * Draw loading placeholder when audio buffer not loaded
  */
-function drawLoadingPlaceholder(ctx, x, y, width, height) {
+function drawLoadingPlaceholder(ctx, x, y, width, height, colors) {
   ctx.save();
 
   // Loading text
@@ -186,7 +202,7 @@ function drawLoadingPlaceholder(ctx, x, y, width, height) {
 /**
  * Draw fade in/out overlays
  */
-function drawFadeOverlays(ctx, clip, x, y, width, height, bpm) {
+function drawFadeOverlays(ctx, clip, x, y, width, height, bpm, colors) {
   const { fadeIn = 0, fadeOut = 0 } = clip;
 
   if (fadeIn > 0) {
@@ -202,7 +218,7 @@ function drawFadeOverlays(ctx, clip, x, y, width, height, bpm) {
 
     // Fade in triangle indicator (subtle)
     ctx.save();
-    ctx.fillStyle = AUDIO_CLIP_COLORS.fadeOverlay;
+    ctx.fillStyle = colors.fadeOverlay;
     ctx.beginPath();
     ctx.moveTo(x, y);
     ctx.lineTo(x + fadeInWidth, y + height / 2);
@@ -225,7 +241,7 @@ function drawFadeOverlays(ctx, clip, x, y, width, height, bpm) {
 
     // Fade out triangle indicator (subtle)
     ctx.save();
-    ctx.fillStyle = AUDIO_CLIP_COLORS.fadeOverlay;
+    ctx.fillStyle = colors.fadeOverlay;
     ctx.beginPath();
     ctx.moveTo(x + width, y);
     ctx.lineTo(x + width - fadeOutWidth, y + height / 2);
@@ -239,18 +255,18 @@ function drawFadeOverlays(ctx, clip, x, y, width, height, bpm) {
 /**
  * Draw clip border with selection glow
  */
-function drawClipBorder(ctx, x, y, width, height, isSelected) {
+function drawClipBorder(ctx, x, y, width, height, isSelected, colors) {
   if (isSelected) {
     // Selected border with glow
-    ctx.strokeStyle = AUDIO_CLIP_COLORS.borderSelected;
+    ctx.strokeStyle = colors.borderSelected;
     ctx.lineWidth = 2;
-    ctx.shadowColor = AUDIO_CLIP_COLORS.borderSelected;
+    ctx.shadowColor = colors.borderSelected;
     ctx.shadowBlur = 8;
     ctx.strokeRect(x, y, width, height);
     ctx.shadowBlur = 0; // Reset shadow
   } else {
     // Normal border
-    ctx.strokeStyle = AUDIO_CLIP_COLORS.border;
+    ctx.strokeStyle = colors.border;
     ctx.lineWidth = 1;
     ctx.strokeRect(x, y, width, height);
   }
@@ -259,7 +275,7 @@ function drawClipBorder(ctx, x, y, width, height, isSelected) {
 /**
  * Draw clip name with clipping
  */
-function drawClipName(ctx, clip, x, y, width, height) {
+function drawClipName(ctx, clip, x, y, width, height, colors) {
   ctx.save();
 
   // Setup text clipping region
@@ -268,7 +284,7 @@ function drawClipName(ctx, clip, x, y, width, height) {
   ctx.clip();
 
   // Draw text
-  ctx.fillStyle = AUDIO_CLIP_COLORS.text;
+  ctx.fillStyle = colors.text;
   ctx.font = '11px Inter, system-ui, sans-serif';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';

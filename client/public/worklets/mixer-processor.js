@@ -66,6 +66,11 @@ class MixerProcessor extends AudioWorkletProcessor {
         this.sampleRate = globalThis.sampleRate || 44100;
         this.frameCount = 0;
 
+        // ✅ DEBUG
+        this.processCallCount = 0;
+        this.hasReceivedAudio = false;
+        console.log(`🎚️ MixerProcessor created: ${this.stripId} (${this.stripName})`);
+
         // Initialize EQ coefficients
         this.updateEQCoefficients(1, 1, 1, 200, 3000);
     }
@@ -73,6 +78,22 @@ class MixerProcessor extends AudioWorkletProcessor {
     process(inputs, outputs, parameters) {
         const input = inputs[0];
         const output = outputs[0];
+
+        // ✅ DEBUG: Log first few process calls for track-1
+        if (this.stripId === 'track-1' && this.processCallCount < 5) {
+            const hasAudio = input?.[0]?.[0] !== 0;
+            console.log(`🎚️ MixerProcessor[track-1] call #${this.processCallCount}:`, {
+                hasInput: !!input,
+                inputChannels: input?.length,
+                firstSample: input?.[0]?.[0],
+                hasAudio
+            });
+            if (hasAudio && !this.hasReceivedAudio) {
+                console.log('✅ track-1 MixerProcessor RECEIVED AUDIO!');
+                this.hasReceivedAudio = true;
+            }
+        }
+        this.processCallCount++;
 
         if (!input || !input.length || !output || !output.length) {
             return true;

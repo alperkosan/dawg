@@ -68,52 +68,114 @@ class WaveformCache {
    * This ensures waveform doesn't stretch when resizing - it shows the actual audio at that time
    */
   renderWaveform(audioBuffer, clip, width, height, bpm, lod, styles = {}, pixelsPerBeat = 48, zoomX = 1) {
-    if (!audioBuffer || width <= 0 || height <= 0) {
+    // ✅ FIX: Add more robust validation for canvas dimensions
+    if (!audioBuffer) {
+      console.warn('⚠️ renderWaveform: audioBuffer is null');
       return null;
+    }
+
+    if (width <= 0 || height <= 0) {
+      console.warn('⚠️ renderWaveform: invalid dimensions', { width, height });
+      return null;
+    }
+
+    // ✅ FIX: Clamp canvas dimensions to prevent issues with very small or very large canvases
+    const MIN_CANVAS_WIDTH = 1;
+    const MAX_CANVAS_WIDTH = 32767; // Max canvas dimension in most browsers
+    const MIN_CANVAS_HEIGHT = 1;
+    const MAX_CANVAS_HEIGHT = 32767;
+
+    const clampedWidth = Math.max(MIN_CANVAS_WIDTH, Math.min(MAX_CANVAS_WIDTH, Math.floor(width)));
+    const clampedHeight = Math.max(MIN_CANVAS_HEIGHT, Math.min(MAX_CANVAS_HEIGHT, Math.floor(height)));
+
+    // ✅ FIX: Only warn if clamping changed value significantly (not just rounding)
+    const widthDiff = Math.abs(clampedWidth - width);
+    const heightDiff = Math.abs(clampedHeight - height);
+
+    if (widthDiff > 1 || heightDiff > 1) {
+      console.warn('⚠️ renderWaveform: clamped dimensions', {
+        original: { width, height },
+        clamped: { width: clampedWidth, height: clampedHeight }
+      });
     }
 
     // Create offscreen canvas
     const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
+    canvas.width = clampedWidth;
+    canvas.height = clampedHeight;
     const ctx = canvas.getContext('2d');
+
+    if (!ctx) {
+      console.error('❌ renderWaveform: failed to get canvas context');
+      return null;
+    }
 
     // Get audio data
     const channelData = audioBuffer.getChannelData(0); // Use first channel
     const sampleRate = audioBuffer.sampleRate;
-    const duration = audioBuffer.duration;
 
     // Calculate visible portion based on clip offset and TIME SCALE
     const { sampleOffset = 0 } = clip;
     const startSample = Math.floor(sampleOffset * sampleRate);
+
+    // ✅ CRITICAL FIX: Validate sample offset to prevent out-of-bounds access
+    if (startSample < 0 || startSample >= channelData.length) {
+      console.warn('⚠️ renderWaveform: invalid sample offset', {
+        sampleOffset,
+        startSample,
+        channelLength: channelData.length
+      });
+      return null;
+    }
 
     // ✅ FIX: Calculate audio duration from PIXEL WIDTH and TIME SCALE (not clip.duration)
     // This ensures waveform represents actual time, not stretched to fit clip
     const secondsPerBeat = 60 / bpm;
     const totalPixelsPerBeat = pixelsPerBeat * zoomX;
     const secondsPerPixel = secondsPerBeat / totalPixelsPerBeat;
-    const clipDurationSeconds = width * secondsPerPixel; // How many seconds of audio fit in this width
+    const clipDurationSeconds = clampedWidth * secondsPerPixel; // Use clamped width
+
+    // ✅ FIX: Add safety checks for calculation results
+    if (!isFinite(secondsPerPixel) || secondsPerPixel <= 0) {
+      console.warn('⚠️ renderWaveform: invalid time scale calculation', {
+        bpm,
+        pixelsPerBeat,
+        zoomX,
+        secondsPerPixel
+      });
+      return null;
+    }
 
     const samplesNeeded = Math.floor(clipDurationSeconds * sampleRate);
     const endSample = Math.min(startSample + samplesNeeded, channelData.length);
 
-    console.log('🎵 Waveform render:', {
-      clipId: clip.id.substring(0, 8),
-      width,
-      sampleOffset,
-      pixelsPerBeat,
-      zoomX,
-      secondsPerPixel: secondsPerPixel.toFixed(4),
-      clipDurationSeconds: clipDurationSeconds.toFixed(2),
-      startSample,
-      endSample,
-      totalSamples: endSample - startSample
-    });
+    // ✅ FIX: Ensure we have samples to render
+    if (endSample <= startSample) {
+      console.warn('⚠️ renderWaveform: no samples to render', {
+        startSample,
+        endSample,
+        channelLength: channelData.length
+      });
+      return null;
+    }
+
+    // ✅ REMOVED: Too verbose for normal operation
+    // Only log in debug mode if needed
 
     // ✅ CRITICAL FIX: Calculate samples per pixel based on TIME SCALE, not clip width!
     // Each pixel represents a fixed amount of time (secondsPerPixel)
     // So samplesPerPixel = secondsPerPixel * sampleRate
     const baseSamplesPerPixel = secondsPerPixel * sampleRate;
+
+    // ✅ FIX: Validate base samples per pixel
+    if (!isFinite(baseSamplesPerPixel) || baseSamplesPerPixel <= 0) {
+      console.warn('⚠️ renderWaveform: invalid baseSamplesPerPixel', {
+        baseSamplesPerPixel,
+        secondsPerPixel,
+        sampleRate
+      });
+      return null;
+    }
 
     // Apply LOD multiplier (more detail when zoomed in)
     let samplesPerPixel;
@@ -130,43 +192,54 @@ class WaveformCache {
         break;
     }
 
-    console.log('🔍 samplesPerPixel calculation:', {
-      baseSamplesPerPixel: baseSamplesPerPixel.toFixed(2),
-      finalSamplesPerPixel: samplesPerPixel,
-      lod
-    });
+    // ✅ REMOVED: Too verbose for normal operation
 
     // Draw waveform
     ctx.fillStyle = styles.waveformColor || 'rgba(167, 139, 250, 0.9)';
     ctx.strokeStyle = styles.waveformColor || 'rgba(167, 139, 250, 0.9)';
     ctx.lineWidth = 1;
 
-    const centerY = height / 2;
-    const amplitudeScale = height * 0.4; // Use 80% of height
+    const centerY = clampedHeight / 2;
+    const amplitudeScale = clampedHeight * 0.4; // Use 80% of height
 
     ctx.beginPath();
 
-    for (let x = 0; x < width; x++) {
+    // ✅ FIX: Use clamped width for loop
+    for (let x = 0; x < clampedWidth; x++) {
       const sampleIndex = startSample + Math.floor(x * samplesPerPixel);
 
-      if (sampleIndex >= endSample) break;
+      // ✅ FIX: Add bounds checking for sample index
+      if (sampleIndex >= endSample || sampleIndex < 0 || sampleIndex >= channelData.length) {
+        break;
+      }
 
       // Find min/max in this pixel's sample range
       let min = 1;
       let max = -1;
 
       for (let s = 0; s < samplesPerPixel && sampleIndex + s < endSample; s++) {
-        const sample = channelData[sampleIndex + s] || 0;
-        if (sample < min) min = sample;
-        if (sample > max) max = sample;
+        // ✅ FIX: Additional bounds check inside inner loop
+        if (sampleIndex + s < channelData.length) {
+          const sample = channelData[sampleIndex + s] || 0;
+          if (sample < min) min = sample;
+          if (sample > max) max = sample;
+        }
+      }
+
+      // ✅ FIX: Skip drawing if no valid samples were found
+      if (min > max) {
+        continue;
       }
 
       // Draw vertical line from min to max
       const y1 = centerY - min * amplitudeScale;
       const y2 = centerY - max * amplitudeScale;
 
-      ctx.moveTo(x, y1);
-      ctx.lineTo(x, y2);
+      // ✅ FIX: Validate y coordinates before drawing
+      if (isFinite(y1) && isFinite(y2)) {
+        ctx.moveTo(x, y1);
+        ctx.lineTo(x, y2);
+      }
     }
 
     ctx.stroke();

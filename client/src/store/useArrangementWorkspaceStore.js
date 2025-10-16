@@ -1017,26 +1017,27 @@ export const useArrangementWorkspaceStore = create((set, get) => ({
           // Only handle if in song mode
           if (playbackManager.currentMode === 'song') {
             if (playbackManager.isPlaying) {
-              // ✅ IMMEDIATE: Stop active sources and reschedule from current position
-              console.log(`🔄 Clip ${reason} during playback - immediate reschedule from current position`);
+              // ✅ SMOOTH: Fade out active sources and reschedule from current position
+              console.log(`🔄 Clip ${reason} during playback - fast smooth transition`);
 
               const currentPos = playbackManager.getCurrentPosition();
 
-              // Stop all active sources to prevent overlap
-              playbackManager._clearScheduledEvents();
+              // ✅ OPTIMIZED: Fast fade for responsive editing (15ms fade)
+              playbackManager._clearScheduledEvents(true); // true = use fade
 
-              // Reschedule from current position with small lookahead
+              // Reschedule from current position with minimal lookahead
               const audioContext = audioEngine.audioContext;
-              const startTime = audioContext.currentTime + 0.01; // 10ms lookahead
+              const fadeTime = 0.015; // Match optimized fade time (15ms)
+              const startTime = audioContext.currentTime + fadeTime + 0.005; // Wait for fade + 5ms buffer
 
               // Force immediate scheduling from current position
               playbackManager._scheduleContent(startTime, reason, true);
 
-              console.log(`✅ Rescheduled from step ${currentPos}`);
+              console.log(`✅ Rescheduled from step ${currentPos} (fast transition: ${fadeTime * 1000}ms)`);
             } else {
               // ✅ SAFE: Not playing, just clear for next play
               console.log(`🔄 Clip ${reason} while stopped - cleared`);
-              playbackManager._clearScheduledEvents();
+              playbackManager._clearScheduledEvents(false); // No fade when stopped
             }
           }
         }

@@ -45,10 +45,10 @@ class ArcadeCrusherProcessor extends AudioWorkletProcessor {
     return Math.floor(sample / step) * step;
   }
 
-  processEffect(sample, channel, sampleIndex, parameters) {
-    const bitDepth = Math.floor(this.getParam(parameters.bitDepth, sampleIndex) || 8);
-    const sampleRateReduction = Math.floor(this.getParam(parameters.sampleRateReduction, sampleIndex) || 1);
-    const crush = this.getParam(parameters.crush, sampleIndex) || 0.5;
+  processEffect(sample, channel, parameters) {
+    const bitDepth = Math.floor(this.getParam(parameters.bitDepth, 0) || 8);
+    const sampleRateReduction = Math.floor(this.getParam(parameters.sampleRateReduction, 0) || 1);
+    const crush = this.getParam(parameters.crush, 0) || 0.5;
 
     const state = this.channelState[channel];
 
@@ -97,7 +97,7 @@ class ArcadeCrusherProcessor extends AudioWorkletProcessor {
 
       for (let i = 0; i < inputChannel.length; i++) {
         const inputSample = inputChannel[i];
-        const processedSample = this.processEffect(inputSample, channel, i, parameters);
+        const processedSample = this.processEffect(inputSample, channel, parameters);
         outputChannel[i] = dry * inputSample + wet * processedSample;
       }
     }

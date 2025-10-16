@@ -12,6 +12,7 @@
   overflow: hidden;
   background-color: var(--zenith-bg-primary);
   position: relative;
+  /* z-index will be set dynamically by panel stack system */
 }
 
 /* Grid Alanları */
@@ -27,7 +28,6 @@
   background-color: var(--zenith-bg-secondary);
   border-right: 1px solid var(--zenith-border-medium);
   border-bottom: 1px solid var(--zenith-border-medium);
-  z-index: 30;
   /* Allow dropdowns to overflow */
   overflow: visible;
   display: flex;

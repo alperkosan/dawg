@@ -55,9 +55,9 @@ class PitchShifterProcessor extends AudioWorkletProcessor {
     return param.length > 1 ? param[index] : param[0];
   }
 
-  processEffect(sample, channel, sampleIndex, parameters) {
-    const pitch = this.getParam(parameters.pitch, sampleIndex) || 0;
-    const windowSize = this.getParam(parameters.windowSize, sampleIndex) || 0.1;
+  processEffect(sample, channel, parameters) {
+    const pitch = this.getParam(parameters.pitch, 0) || 0;
+    const windowSize = this.getParam(parameters.windowSize, 0) || 0.1;
 
     const state = this.channelState[channel];
     const buffer = state.buffer;
@@ -124,7 +124,7 @@ class PitchShifterProcessor extends AudioWorkletProcessor {
 
       for (let i = 0; i < inputChannel.length; i++) {
         const inputSample = inputChannel[i];
-        const processedSample = this.processEffect(inputSample, channel, i, parameters);
+        const processedSample = this.processEffect(inputSample, channel, parameters);
         outputChannel[i] = dry * inputSample + wet * processedSample;
       }
     }

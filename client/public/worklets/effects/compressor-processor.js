@@ -165,15 +165,15 @@ class CompressorProcessor extends AudioWorkletProcessor {
     return true;
   }
 
-  processEffect(sample, channel, sampleIndex, parameters) {
-    const threshold = this.getParam(parameters.threshold, sampleIndex) || this.settings.threshold || -24;
-    const ratio = this.getParam(parameters.ratio, sampleIndex) || this.settings.ratio || 4;
-    const attack = this.getParam(parameters.attack, sampleIndex) || this.settings.attack || 0.003;
-    const release = this.getParam(parameters.release, sampleIndex) || this.settings.release || 0.25;
-    const knee = this.getParam(parameters.knee, sampleIndex) || this.settings.knee || 30;
-    const upwardRatio = this.getParam(parameters.upwardRatio, sampleIndex) || this.settings.upwardRatio || 2;
-    const upwardDepth = this.getParam(parameters.upwardDepth, sampleIndex) || this.settings.upwardDepth || 0;
-    const autoMakeup = this.getParam(parameters.autoMakeup, sampleIndex) || this.settings.autoMakeup || 0;
+  processEffect(sample, channel, parameters) {
+    const threshold = this.getParam(parameters.threshold, 0) || this.settings.threshold || -24;
+    const ratio = this.getParam(parameters.ratio, 0) || this.settings.ratio || 4;
+    const attack = this.getParam(parameters.attack, 0) || this.settings.attack || 0.003;
+    const release = this.getParam(parameters.release, 0) || this.settings.release || 0.25;
+    const knee = this.getParam(parameters.knee, 0) || this.settings.knee || 30;
+    const upwardRatio = this.getParam(parameters.upwardRatio, 0) || this.settings.upwardRatio || 2;
+    const upwardDepth = this.getParam(parameters.upwardDepth, 0) || this.settings.upwardDepth || 0;
+    const autoMakeup = this.getParam(parameters.autoMakeup, 0) || this.settings.autoMakeup || 0;
 
     const state = this.channelState[channel] || this.channelState[0];
 

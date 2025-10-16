@@ -6,6 +6,7 @@ import { RealtimeParameterSync } from '../interfaces/RealtimeParameterSync';
 import { DynamicLoopManager } from '../interfaces/DynamicLoopManager';
 import EventBus from '../core/EventBus';
 import { audioAssetManager } from '../audio/AudioAssetManager';
+import { effectRegistry } from '../audio/EffectRegistry';
 
 export class AudioContextService {
   static instance = null;
@@ -847,9 +848,13 @@ export class AudioContextService {
     try {
       // ✅ SAFETY: Fade out during chain rebuild to avoid pops/clicks
       const originalGain = channel.output ? channel.output.gain.value : 1;
-      if (channel.output && channel.output.gain) {
-        channel.output.gain.setTargetAtTime(0, this.audioEngine.audioContext.currentTime, 0.01);
-      }
+      console.log('💾 Saving original gain:', originalGain);
+
+      // ⚠️ TEMPORARILY DISABLED: Fade out causes issues with testing
+      // We'll do instant rebuild instead
+      // if (channel.output && channel.output.gain) {
+      //   channel.output.gain.setTargetAtTime(0, this.audioEngine.audioContext.currentTime, 0.01);
+      // }
 
       // Clear existing effects with better error handling
       if (channel.effects) {
@@ -879,24 +884,99 @@ export class AudioContextService {
           console.warn('⚠️ Disconnect warning (expected):', disconnectError.message);
         }
 
-        // Add new effects from trackState
+        // ✅ FIX: Add new effects WITHOUT calling channel's rebuild (avoid double rebuild)
         if (trackState.insertEffects && trackState.insertEffects.length > 0) {
-          await this._buildEffectChain(channel, trackState.insertEffects);
+          // Manually build the chain to avoid channel._rebuildEffectChain()
+          let currentNode = channel.mixerNode;
+          console.log('🔗 Building effect chain for', trackId, 'with', trackState.insertEffects.length, 'effects');
+          console.log('🔗 Starting node:', currentNode.constructor.name);
+
+          for (const effectConfig of trackState.insertEffects) {
+            if (effectConfig.bypass) {
+              console.log('⏭️  Skipping bypassed effect:', effectConfig.type);
+              continue;
+            }
+
+            try {
+              // Create effect node directly
+              const node = await effectRegistry.createEffectNode(
+                effectConfig.type,
+                this.audioEngine.audioContext,
+                effectConfig.settings
+              );
+
+              if (node) {
+                // ✅ Create effect object directly (same structure as NativeEffect)
+                const effect = {
+                  id: effectConfig.id,
+                  type: effectConfig.type,
+                  node: node,
+                  settings: effectConfig.settings,
+                  bypass: false,
+                  parameters: new Map(),
+                  updateParameter: function(paramName, value) {
+                    const param = this.parameters.get(paramName);
+                    if (param) {
+                      const audioContext = this.node.context;
+                      if (audioContext && audioContext.currentTime !== undefined) {
+                        const now = audioContext.currentTime;
+                        param.cancelScheduledValues(now);
+                        param.setValueAtTime(param.value, now);
+                        param.linearRampToValueAtTime(value, now + 0.015);
+                      }
+                    }
+                    this.settings[paramName] = value;
+                  },
+                  dispose: function() {
+                    if (this.node) {
+                      try { this.node.disconnect(); } catch(e) {}
+                    }
+                  }
+                };
+
+                // Setup parameters
+                if (node.parameters) {
+                  for (const [name] of node.parameters) {
+                    const param = node.parameters.get(name);
+                    if (param) {
+                      effect.parameters.set(name, param);
+                    }
+                  }
+                }
+
+                channel.effects.set(effectConfig.id, effect);
+
+                // Connect in chain
+                console.log('🔗 Connecting:', currentNode.constructor.name, '→', effect.node.constructor.name);
+                currentNode.connect(effect.node);
+                currentNode = effect.node;
+
+                console.log('✅ Added effect to chain:', effectConfig.type, effectConfig.id);
+              }
+            } catch (error) {
+              console.error('❌ Error adding effect:', effectConfig.type, error);
+            }
+          }
+
+          // Connect last node to analyzer
+          console.log('🔗 Final connection:', currentNode.constructor.name, '→ analyzer');
+          currentNode.connect(channel.analyzer);
         } else {
           // No effects: direct connection
+          console.log('🔗 No effects, direct connection: mixerNode → analyzer');
           channel.mixerNode.connect(channel.analyzer);
         }
 
         // Always connect analyzer to output
+        console.log('🔗 analyzer → output');
         channel.analyzer.connect(channel.output);
       }
 
-      // ✅ SAFETY: Fade back in after rebuild
-      setTimeout(() => {
-        if (channel.output && channel.output.gain) {
-          channel.output.gain.setTargetAtTime(originalGain, this.audioEngine.audioContext.currentTime, 0.02);
-        }
-      }, 50);
+      // ✅ SAFETY: Restore gain immediately (no fade needed since we didn't fade out)
+      if (channel.output && channel.output.gain && originalGain !== channel.output.gain.value) {
+        console.log('🔊 Restoring gain to:', originalGain);
+        channel.output.gain.setValueAtTime(originalGain, this.audioEngine.audioContext.currentTime);
+      }
 
       console.log('✅ Signal chain rebuilt successfully for:', trackId);
     } catch (error) {
@@ -910,22 +990,8 @@ export class AudioContextService {
 
   /**
    * Build effect chain for a channel
+   * ✅ DEPRECATED: Now handled inline in rebuildSignalChain to avoid double rebuild
    */
-  static async _buildEffectChain(channel, effects) {
-    for (const effectConfig of effects) {
-      if (effectConfig.bypass) {
-        continue; // Skip bypassed effects
-      }
-
-      try {
-        // Pass the store's effect ID to maintain consistency
-        const effectId = await channel.addEffect(effectConfig.type, effectConfig.settings, effectConfig.id);
-        console.log('✅ Added effect to channel:', effectConfig.type, 'Store ID:', effectConfig.id, 'Engine ID:', effectId);
-      } catch (error) {
-        console.error('❌ Error adding effect:', effectConfig.type, error);
-      }
-    }
-  }
 
   /**
    * Update effect parameter

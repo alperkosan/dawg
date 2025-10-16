@@ -10,13 +10,19 @@ arcade crusher, 16 bit depth seçildiğinde çok kasıyor. canvas rendering i pr
 
 orbit panner, stereo position slider'ı anlamsız.
 
-vortex phaser eklendiğinde tüm ses kesiliyor.
+✅ [FIXED 2025-10-16] vortex phaser eklendiğinde tüm ses kesiliyor.
+   Fix: EffectFactory'de eksik parametreler eklendi + all-pass filter algoritması düzeltildi.
+   Detaylar: docs/bugs/VORTEX_PHASER_FIX.md
 
 
 mixer hataları:
 --------------------------------------
-master kanalıyla beraber hazır bus kanallarımız en solda listelenmeli. ve etkin hale getirilmeli. master kanalına efekt eklendiğinde tüm master a bağlı seslere uygulanmalı. (mixer kanal bağlantıları gözden geçirilecek.)
-tüm mixer kanalları master kanalından çıkış almıyor sanırım. çünkü master a eklediğim efektler tüm seslere etki etmiyor.
+✅ [FIXED 2025-10-16] master kanalıyla beraber hazır bus kanallarımız en solda listelenmeli. ve etkin hale getirilmeli. master kanalına efekt eklendiğinde tüm master a bağlı seslere uygulanmalı.
+   Fix: Tüm track'ler master channel'a bağlandı, master channel da output chain'e bağlandı.
+   Detaylar: docs/bugs/MASTER_CHANNEL_ROUTING_FIX.md
+
+✅ [FIXED 2025-10-16] tüm mixer kanalları master kanalından çıkış almıyor sanırım. çünkü master a eklediğim efektler tüm seslere etki etmiyor.
+   Fix: Routing düzeltildi - tracks → master channel → masterMixer → output
 
 bir mixer kanalı seçtikten sonra tüm diğer kanallarının altına ona bağlayabileceğim bir insert butonu eklenmeli. insert derecesini de ayarlayabilmeliyim.
 
@@ -35,7 +41,10 @@ aranje paneli hataları:
 --------------------------------------
 
 öncelikle tema yapımızdan ayrı hardcoded csslerle çalışıyor. bu yüzden tema değiştirdiğimizde aranje paneli tema ile uyumsuz kalıyor. tema yapısına entegre edilmeli.
-patterns listeleniyor fakat freezet pattern ile audio sample export ettiğimde onları göremiyorum kayboluyorlar. audiolar samplelar da listelenmeli.
+
+✅ [FIXED 2025-10-16] patterns listeleniyor fakat freezet pattern ile audio sample export ettiğimde onları göremiyorum kayboluyorlar. audiolar samplelar da listelenmeli.
+   Fix: Frozen pattern'ler artık File Browser'ın "Loops" klasörüne otomatik ekleniyor.
+   Detaylar: docs/bugs/FROZEN_SAMPLES_BROWSER_FIX.md
 
 aranje paneli arkasında sadece "channel rack" açık iken patterns içinden aranje canvasına sürükle bırak yapamıyorum. bu sorun giderilmeli. diğer panelleri de açıp denedim sorun yaratmadı. channel rack'e özel bir sorun bulunmakta. öncelikle bu tespit edilmeli.
 

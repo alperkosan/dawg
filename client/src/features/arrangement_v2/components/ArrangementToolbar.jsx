@@ -34,8 +34,12 @@ export function ArrangementToolbar({
 
   return (
     <div className="arr-v2-toolbar">
-      {/* Left: Tools */}
+      {/* Left: Brand + Tools */}
       <div className="arr-v2-toolbar-section">
+        <div className="arr-v2-brand">
+          <span className="arr-v2-brand-text">Arrangement</span>
+        </div>
+
         <div className="arr-v2-toolbar-group">
           {tools.map(tool => (
             <button
@@ -51,9 +55,10 @@ export function ArrangementToolbar({
         </div>
       </div>
 
-      {/* Center: Snap */}
-      <div className="arr-v2-toolbar-section">
-        <div className="arr-v2-toolbar-group">
+      {/* Right: Snap + Zoom */}
+      <div className="arr-v2-toolbar-section arr-v2-toolbar-section-right">
+        {/* Snap Settings */}
+        <div className="arr-v2-setting-item">
           <button
             className={`arr-v2-toolbar-btn ${snapEnabled ? 'active' : ''}`}
             onClick={onSnapToggle}
@@ -64,25 +69,26 @@ export function ArrangementToolbar({
           </button>
 
           {snapEnabled && (
-            <select
-              className="arr-v2-toolbar-select"
-              value={snapSize}
-              onChange={(e) => onSnapSizeChange(parseFloat(e.target.value))}
-              title="Snap Size"
-            >
-              {snapSizes.map(size => (
-                <option key={size} value={size}>
-                  {size >= 1 ? `${size} beat${size > 1 ? 's' : ''}` : `1/${1/size}`}
-                </option>
-              ))}
-            </select>
+            <>
+              <label htmlFor="snap-select" className="arr-v2-setting-label">Grid:</label>
+              <select
+                id="snap-select"
+                className="arr-v2-toolbar-select"
+                value={snapSize}
+                onChange={(e) => onSnapSizeChange(parseFloat(e.target.value))}
+                title="Snap Size"
+              >
+                {snapSizes.map(size => (
+                  <option key={size} value={size}>
+                    {size >= 1 ? `${size} beat${size > 1 ? 's' : ''}` : `1/${1/size}`}
+                  </option>
+                ))}
+              </select>
+            </>
           )}
         </div>
-      </div>
 
-      {/* Right: Zoom & Transport */}
-      <div className="arr-v2-toolbar-section arr-v2-toolbar-section-right">
-        {/* Zoom */}
+        {/* Zoom Controls */}
         <div className="arr-v2-toolbar-group">
           <button
             className="arr-v2-toolbar-btn arr-v2-toolbar-btn-icon-only"

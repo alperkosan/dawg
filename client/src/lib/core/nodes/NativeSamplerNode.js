@@ -33,6 +33,11 @@ export class NativeSamplerNode {
     triggerNote(pitch, velocity, time, duration) {
         const startTime = time || this.context.currentTime;
 
+        // ✅ DEBUG: Log kick triggers
+        if (this.id === 'inst-1') {
+            console.log('🥁 Kick triggerNote!', { pitch, velocity, hasBuffer: !!this.buffer });
+        }
+
         // ✅ DÜZELTME: cutItself özelliği
         if (this.cutItself) {
             this.stopAll(startTime);

@@ -119,14 +119,14 @@ class SaturatorProcessor extends AudioWorkletProcessor {
     return true;
   }
 
-  processEffect(sample, channel, sampleIndex, parameters) {
-    const distortion = this.getParam(parameters.distortion, sampleIndex) || 0.4;
-    const autoGain = this.getParam(parameters.autoGain, sampleIndex) !== undefined
-      ? this.getParam(parameters.autoGain, sampleIndex) : 1;
-    const lowCutFreq = this.getParam(parameters.lowCutFreq, sampleIndex) || 0;
-    const highCutFreq = this.getParam(parameters.highCutFreq, sampleIndex) || 20000;
-    const tone = this.getParam(parameters.tone, sampleIndex) || 0;
-    const headroom = this.getParam(parameters.headroom, sampleIndex) || 0;
+  processEffect(sample, channel, parameters) {
+    const distortion = this.getParam(parameters.distortion, 0) || 0.4;
+    const autoGain = this.getParam(parameters.autoGain, 0) !== undefined
+      ? this.getParam(parameters.autoGain, 0) : 1;
+    const lowCutFreq = this.getParam(parameters.lowCutFreq, 0) || 0;
+    const highCutFreq = this.getParam(parameters.highCutFreq, 0) || 20000;
+    const tone = this.getParam(parameters.tone, 0) || 0;
+    const headroom = this.getParam(parameters.headroom, 0) || 0;
 
     const drive = 1 + distortion * 9;
     const state = this.channelState[channel] || this.channelState[0];
