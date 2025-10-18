@@ -57,7 +57,7 @@ export class VASynthInstrument extends BaseInstrument {
     }
 
     /**
-     * Play a note (polyphonic)
+     * Play a note (polyphonic or monophonic based on preset)
      */
     noteOn(midiNote, velocity = 100, startTime = null) {
         if (!this._isInitialized) {
@@ -68,30 +68,51 @@ export class VASynthInstrument extends BaseInstrument {
         const time = startTime !== null ? startTime : this.audioContext.currentTime;
 
         try {
-            // ✅ If note is already playing, stop it first (cancel pending timeout)
-            if (this.voices.has(midiNote)) {
-                this.noteOff(midiNote);
+            // ✅ Check if preset is in mono mode
+            const isMono = this.preset?.voiceMode === 'mono';
+
+            if (isMono) {
+                // ✅ MONOPHONIC MODE: Use single shared voice
+                let monoVoice = this.voices.get('mono');
+
+                if (!monoVoice) {
+                    // Create mono voice on first note
+                    monoVoice = new VASynth(this.audioContext);
+                    monoVoice.loadPreset(this.preset);
+                    monoVoice.masterGain.connect(this.masterGain);
+                    this.voices.set('mono', monoVoice);
+                }
+
+                // Trigger note on mono voice (handles portamento/legato internally)
+                monoVoice.noteOn(midiNote, velocity, time);
+                this.activeNotes.set(midiNote, { startTime: time, velocity });
+
+            } else {
+                // ✅ POLYPHONIC MODE: Create separate voice per note
+
+                // If note is already playing, stop it first (cancel pending timeout)
+                if (this.voices.has(midiNote)) {
+                    this.noteOff(midiNote);
+                }
+
+                // Check polyphony limit
+                if (this.voices.size >= this.maxVoices) {
+                    // Voice stealing: stop oldest voice
+                    const oldestNote = Array.from(this.voices.keys())[0];
+                    this.noteOff(oldestNote);
+                }
+
+                // Create new voice for this note
+                const voice = new VASynth(this.audioContext);
+                voice.loadPreset(this.preset);
+                voice.masterGain.connect(this.masterGain);
+
+                // Start note
+                voice.noteOn(midiNote, velocity, time);
+
+                // Store voice
+                this.voices.set(midiNote, voice);
             }
-
-            // Check polyphony limit
-            if (this.voices.size >= this.maxVoices) {
-                // Voice stealing: stop oldest voice
-                const oldestNote = Array.from(this.voices.keys())[0];
-                this.noteOff(oldestNote);
-            }
-
-            // Create new voice
-            const voice = new VASynth(this.audioContext);
-            voice.loadPreset(this.preset);
-
-            // Connect to master output
-            voice.masterGain.connect(this.masterGain);
-
-            // Start note
-            voice.noteOn(midiNote, velocity, time);
-
-            // Store voice
-            this.voices.set(midiNote, voice);
 
             // Track note
             this._trackNoteOn(midiNote, velocity, time);
@@ -110,6 +131,7 @@ export class VASynthInstrument extends BaseInstrument {
         }
 
         const time = stopTime !== null ? stopTime : this.audioContext.currentTime;
+        const isMono = this.preset?.voiceMode === 'mono';
 
         try {
             if (midiNote !== null) {
@@ -119,22 +141,37 @@ export class VASynthInstrument extends BaseInstrument {
                     this.voiceTimeouts.delete(midiNote);
                 }
 
-                // Stop specific note
-                const voice = this.voices.get(midiNote);
+                if (isMono) {
+                    // ✅ MONOPHONIC MODE: Only release if this is the last active note
+                    this.activeNotes.delete(midiNote);
 
-                if (voice) {
-                    voice.noteOff(time);
+                    // If no more notes are pressed, release the mono voice
+                    if (this.activeNotes.size === 0) {
+                        const monoVoice = this.voices.get('mono');
+                        if (monoVoice) {
+                            monoVoice.noteOff(time);
+                        }
+                    }
+                    // Otherwise, keep playing (mono voice handles note transitions)
 
-                    // ✅ Schedule voice disposal after release
-                    const releaseTime = voice.amplitudeEnvelope?.release || 0.5;
-                    const timeoutId = setTimeout(() => {
-                        voice.dispose();
-                        this.voices.delete(midiNote);
-                        this.voiceTimeouts.delete(midiNote);
-                        this._trackNoteOff(midiNote);
-                    }, (releaseTime + 0.1) * 1000);
+                } else {
+                    // ✅ POLYPHONIC MODE: Stop specific voice
+                    const voice = this.voices.get(midiNote);
 
-                    this.voiceTimeouts.set(midiNote, timeoutId);
+                    if (voice) {
+                        voice.noteOff(time);
+
+                        // Schedule voice disposal after release
+                        const releaseTime = voice.amplitudeEnvelope?.releaseTime || 0.5;
+                        const timeoutId = setTimeout(() => {
+                            voice.dispose();
+                            this.voices.delete(midiNote);
+                            this.voiceTimeouts.delete(midiNote);
+                            this._trackNoteOff(midiNote);
+                        }, (releaseTime + 0.1) * 1000);
+
+                        this.voiceTimeouts.set(midiNote, timeoutId);
+                    }
                 }
             } else {
                 // ✅ Stop all notes - cancel all pending timeouts
@@ -146,7 +183,7 @@ export class VASynthInstrument extends BaseInstrument {
                     voice.noteOff(time);
 
                     // Schedule disposal
-                    const releaseTime = voice.amplitudeEnvelope?.release || 0.5;
+                    const releaseTime = voice.amplitudeEnvelope?.releaseTime || 0.5;
                     const timeoutId = setTimeout(() => {
                         voice.dispose();
                     }, (releaseTime + 0.1) * 1000);
@@ -186,7 +223,7 @@ export class VASynthInstrument extends BaseInstrument {
                 voice.noteOff(stopTime);
 
                 // ✅ Schedule voice disposal after release completes
-                const releaseTime = voice.amplitudeEnvelope?.release || 0.5;
+                const releaseTime = voice.amplitudeEnvelope?.releaseTime || 0.5;
                 const timeoutId = setTimeout(() => {
                     voice.dispose();
                     this.voices.delete(midiNote);

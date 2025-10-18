@@ -10,7 +10,7 @@ export class ADSREnvelope {
         this.attack = 0.01;   // 10ms
         this.decay = 0.1;     // 100ms
         this.sustain = 0.7;   // 70%
-        this.release = 0.3;   // 300ms
+        this.releaseTime = 0.3;   // 300ms - renamed to avoid conflict with release() method
 
         // Velocity sensitivity
         this.velocitySensitivity = 0.5; // 0 = no velocity, 1 = full velocity
@@ -75,7 +75,7 @@ export class ADSREnvelope {
         param.setValueAtTime(currentValue, releaseStart);
 
         // Release phase
-        const releaseEnd = releaseStart + this.release;
+        const releaseEnd = releaseStart + this.releaseTime;
         param.linearRampToValueAtTime(0, releaseEnd);
 
         return releaseEnd;
@@ -143,7 +143,7 @@ export class ADSREnvelope {
         param.cancelScheduledValues(releaseStart);
         param.setValueAtTime(currentValue, releaseStart);
 
-        const releaseEnd = releaseStart + this.release;
+        const releaseEnd = releaseStart + this.releaseTime;
         param.exponentialRampToValueAtTime(0.001, releaseEnd);
 
         return releaseEnd;
@@ -156,7 +156,7 @@ export class ADSREnvelope {
         if (attack !== undefined) this.attack = Math.max(0.001, attack);
         if (decay !== undefined) this.decay = Math.max(0.001, decay);
         if (sustain !== undefined) this.sustain = Math.max(0, Math.min(1, sustain));
-        if (release !== undefined) this.release = Math.max(0.001, release);
+        if (release !== undefined) this.releaseTime = Math.max(0.001, release);
         if (velocitySensitivity !== undefined) {
             this.velocitySensitivity = Math.max(0, Math.min(1, velocitySensitivity));
         }
@@ -170,7 +170,7 @@ export class ADSREnvelope {
             attack: this.attack,
             decay: this.decay,
             sustain: this.sustain,
-            release: this.release,
+            release: this.releaseTime,
             velocitySensitivity: this.velocitySensitivity
         };
     }
@@ -193,6 +193,6 @@ export class ADSREnvelope {
      * Calculate total envelope duration including release
      */
     getTotalDurationWithRelease() {
-        return this.attack + this.decay + this.release;
+        return this.attack + this.decay + this.releaseTime;
     }
 }

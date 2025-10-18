@@ -227,9 +227,9 @@ export function useNoteInteractionsV2(
             const timeMargin = 0.05; // 5% of a step
             const timeOverlap = time >= (note.startTime - timeMargin) && time <= (noteEndTime + timeMargin);
 
-            // ✅ PITCH TOLERANCE - Full note height coverage
-            // Changed to 1.0 to cover entire note height plus small margin
-            const pitchMatch = Math.abs(note.pitch - pitch) <= 1.0;
+            // ✅ PITCH TOLERANCE - Exact pitch match only
+            // No tolerance on Y axis - note must be clicked within its exact pitch row
+            const pitchMatch = Math.round(pitch) === note.pitch;
 
             return timeOverlap && pitchMatch;
         });
