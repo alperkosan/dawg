@@ -45,9 +45,13 @@ class MultiTimbralProcessor extends AudioWorkletProcessor {
         });
       });
       
-      // Output to all channels
-      for (let channel = 0; channel < output.length; channel++) {
-        output[channel][i] = mixedSample * 0.1; // Mix level
+      // ✅ Stereo output (currently identical L/R, but preserves stereo capability)
+      // Future: Add per-timbre panning for stereo spread
+      if (output.length >= 2) {
+        output[0][i] = mixedSample * 0.1; // Left
+        output[1][i] = mixedSample * 0.1; // Right
+      } else if (output.length === 1) {
+        output[0][i] = mixedSample * 0.1; // Mono fallback
       }
     }
 

@@ -119,6 +119,9 @@ function ChannelRack() {
   // State for audio export panel
   const [isExportPanelOpen, setIsExportPanelOpen] = useState(false);
 
+  // State for native drag-and-drop visual feedback
+  const [isNativeDragOver, setIsNativeDragOver] = useState(false);
+
   // Refs
   const scrollContainerRef = useRef(null);
   const instrumentListRef = useRef(null);
@@ -327,6 +330,69 @@ function ChannelRack() {
     })
   });
 
+  // ✅ Native HTML5 drag-and-drop support for FileBrowser
+  const handleNativeDragOver = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsNativeDragOver(true); // ✅ Show visual feedback
+  }, []);
+
+  const handleNativeDragEnter = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsNativeDragOver(true);
+  }, []);
+
+  const handleNativeDragLeave = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // Only hide if actually leaving the container (not just entering a child)
+    if (e.currentTarget === e.target || !e.currentTarget.contains(e.relatedTarget)) {
+      setIsNativeDragOver(false);
+    }
+  }, []);
+
+  const handleNativeDrop = useCallback(async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsNativeDragOver(false); // ✅ Hide feedback after drop
+
+    try {
+      // Try to get data from native drag event (FileBrowser uses this)
+      const data = e.dataTransfer.getData('text/plain');
+      if (data) {
+        const fileData = JSON.parse(data);
+        console.log('🎵 Native drag sample dropped from FileBrowser:', fileData);
+
+        // ✅ Load audio buffer before creating instrument
+        const { AudioContextService } = await import('@/lib/services/AudioContextService');
+        const audioContext = AudioContextService.getAudioEngine().audioContext;
+
+        try {
+          // Fetch and decode audio file
+          const response = await fetch(fileData.url);
+          const arrayBuffer = await response.arrayBuffer();
+          const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+          console.log('✅ Audio buffer loaded:', audioBuffer.duration, 'seconds');
+
+          // Convert FileBrowser format to instrument format with buffer
+          handleAddNewInstrument({
+            name: fileData.name,
+            url: fileData.url,
+            audioBuffer: audioBuffer, // ✅ Include loaded audio buffer
+            type: 'audio'
+          });
+        } catch (loadError) {
+          console.error('Failed to load audio file:', loadError);
+          alert(`Failed to load audio file: ${fileData.name}`);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to handle native drop:', error);
+    }
+  }, [handleAddNewInstrument]);
+
   // ✅ Pattern management handlers
   const handlePatternChange = useCallback((patternId) => {
     setActivePatternId(patternId);
@@ -366,10 +432,14 @@ function ChannelRack() {
   return (
     <div
       ref={dropRef}
-      className={`channel-rack-layout no-select ${isOver && canDrop ? 'channel-rack-layout--drop-active' : ''}`}
+      className={`channel-rack-layout no-select ${(isOver && canDrop) || isNativeDragOver ? 'channel-rack-layout--drop-active' : ''}`}
+      onDragOver={handleNativeDragOver}
+      onDragEnter={handleNativeDragEnter}
+      onDragLeave={handleNativeDragLeave}
+      onDrop={handleNativeDrop}
     >
-      {/* Drop overlay */}
-      {isOver && canDrop && (
+      {/* Drop overlay - shows for both React DnD and native HTML5 drag */}
+      {((isOver && canDrop) || isNativeDragOver) && (
         <div className="channel-rack-layout__drop-overlay">
           <div className="channel-rack-layout__drop-indicator">
             <Icon name="Upload" size={48} />

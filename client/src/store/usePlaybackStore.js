@@ -38,6 +38,7 @@ export const usePlaybackStore = create((set, get) => ({
   loopEndStep: 128,
   _controller: null,
   _isInitialized: false,
+  _currentPositionMode: 'pattern', // ✅ Track which mode the current position is for
 
   // =============== INITIALIZATION ===============
   _initController: async () => {
@@ -73,7 +74,13 @@ export const usePlaybackStore = create((set, get) => ({
       controller.on('position-update', (data) => {
         const now = performance.now();
         if (now - lastPositionUpdate < POSITION_UPDATE_INTERVAL) return;
-        set({ currentStep: data.position });
+
+        // ✅ Always update currentStep - components decide whether to use it based on mode
+        // Store now includes mode information for filtering at component level
+        set({
+          currentStep: data.position,
+          _currentPositionMode: data.mode // Track which mode this position is for
+        });
         lastPositionUpdate = now;
       });
 

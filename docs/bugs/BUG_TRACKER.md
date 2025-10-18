@@ -80,19 +80,26 @@
   - `client/src/lib/core/NativeAudioEngine.js:548-566`
 - **Result:** All tracks now route through master channel, enabling full mastering workflow
 
-### 🟡 Send/Insert System Broken
-- **Status:** 🚧 Not Started
+### ✅ Send/Insert System
+- **Status:** Fixed (2025-10-17)
 - **Severity:** 🟡 High
 - **Description:**
-  - "insert butonu" needs to be added under channels
-  - Can't see which channels are being sent to
-  - Send matrix doesn't work
-  - Insert buttons don't work
-  - Need insert level control
-- **Requirements:**
-  - Visual send matrix
-  - Insert level faders
-  - Clear indication of routing
+  - Implemented FL Studio-inspired jack bar system
+  - Visual send routing with color-coded plugs
+  - Insert routing for serial signal chains
+  - Complete audio engine integration
+- **Implementation:**
+  - JackBar component with hover menus
+  - Store actions (addSend, removeSend, updateSendLevel, setTrackOutput)
+  - Audio engine routing (createSend, removeSend, updateSendLevel, setTrackOutput)
+  - NativeMixerChannel send management
+- **Fix Details:** [SEND_INSERT_ROUTING.md](../features/SEND_INSERT_ROUTING.md)
+- **Files Modified:**
+  - `client/src/store/useMixerStore.js`
+  - `client/src/lib/core/NativeAudioEngine.js`
+  - `client/src/features/mixer/components/JackBar.jsx` (NEW)
+  - `client/src/features/mixer/components/JackBar.css` (NEW)
+  - `client/src/features/mixer/components/MixerChannel.jsx`
 
 ### 🟡 Pan Values Incorrect for Hi-Hat Channels
 - **Status:** 🚧 Not Started
@@ -101,14 +108,19 @@
 - **File:** Check initial data/preset loading
 - **Investigation:** Review default pan value normalization
 
-### 🟡 Effect Chain Ordering
-- **Status:** 🚧 Not Started
+### ✅ Effect Chain Ordering
+- **Status:** Fixed (2025-10-17)
 - **Severity:** 🟡 High
-- **Description:** "eklenen efektlerin sıralaması değiştirilemiyor"
-- **Requirements:**
-  - Drag-and-drop reordering
-  - Update FX chain when order changes
-  - Persist order in state
+- **Description:** Implemented drag-and-drop effect reordering with @dnd-kit
+- **Implementation:**
+  - SortableEffectItem component with useSortable hook
+  - DndContext and SortableContext in EffectsRack
+  - Automatic signal chain rebuild on reorder
+  - Visual feedback during drag
+- **Fix Details:** [EFFECT_CHAIN_REORDERING.md](../features/EFFECT_CHAIN_REORDERING.md)
+- **Files Modified:**
+  - `client/src/features/mixer/components/EffectsRack.jsx`
+  - `client/src/features/mixer/components/EffectsRack.css`
 
 ### 🟢 Missing Channel Features
 - **Status:** 🚧 Not Started
@@ -260,26 +272,28 @@
 
 ## Bug Priority Queue
 
-### Sprint 1: Critical Audio/Mixer Issues (Current)
-1. ✅ VortexPhaser audio crash - **COMPLETED**
-2. ✅ Master channel routing - **COMPLETED**
-3. Frozen patterns not visible
-4. Drag-and-drop from Channel Rack
-5. Audio clip editing during playback
+### Sprint 1: Critical Audio/Mixer Issues
+1. ✅ VortexPhaser audio crash - **COMPLETED (2025-10-16)**
+2. ✅ Master channel routing - **COMPLETED (2025-10-16)**
+3. ✅ Frozen patterns not visible - **COMPLETED (2025-10-16)**
+4. ✅ Drag-and-drop from Channel Rack - **COMPLETED (2025-10-17)**
+5. ✅ Audio clip editing during playback - **COMPLETED (2025-10-17)**
+6. ✅ Waveform rendering at extreme zoom - **COMPLETED (2025-10-17)**
+7. ✅ Playhead mode separation - **COMPLETED (2025-10-17)**
+8. ✅ Quick delete mode - **COMPLETED (2025-10-17)**
 
-### Sprint 2: High Priority UX Issues
-1. Transient Designer UI crash
-2. Effect chain reordering
-3. Piano roll velocity editing
-4. Mouse note input UX
-5. Send/Insert system
+### Sprint 2: High Priority UX Issues (Current)
+1. ✅ Transient Designer UI crash - **COMPLETED (2025-10-17)**
+2. ✅ Effect chain reordering - **COMPLETED (2025-10-17)**
+3. ✅ Send/Insert system - **COMPLETED (2025-10-17)**
+4. Piano roll velocity editing
+5. Mouse note input UX
 
 ### Sprint 3: Medium Priority Improvements
 1. Stardust Chorus integration
 2. Arcade Crusher performance
-3. Waveform rendering at zoom
-4. Smart note duration
-5. Playhead mode separation
+3. Smart note duration
+4. Theme integration for arrangement panel
 
 ### Sprint 4: Low Priority Enhancements
 1. Orbit Panner slider clarity

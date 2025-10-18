@@ -20,18 +20,37 @@ class AnalysisProcessor extends AudioWorkletProcessor {
     // Veri gönderme zamanı geldi mi?
     const now = currentTime * 1000; // currentTime saniye cinsindendir
     if (now - this._lastUpdate > this._updateInterval) {
-      const channelData = input[0];
-      let sum = 0;
-      for (let i = 0; i < channelData.length; i++) {
-        sum += channelData[i] * channelData[i];
+      // ✅ Stereo metering: Analyze both channels separately
+      const leftData = input[0];
+      const rightData = input[1] || input[0]; // Fallback to left if mono
+
+      // Calculate RMS for left channel
+      let sumL = 0;
+      for (let i = 0; i < leftData.length; i++) {
+        sumL += leftData[i] * leftData[i];
       }
-      const rms = Math.sqrt(sum / channelData.length);
-      const db = 20 * Math.log10(rms);
-      
+      const rmsL = Math.sqrt(sumL / leftData.length);
+      const dbL = 20 * Math.log10(rmsL);
+
+      // Calculate RMS for right channel
+      let sumR = 0;
+      for (let i = 0; i < rightData.length; i++) {
+        sumR += rightData[i] * rightData[i];
+      }
+      const rmsR = Math.sqrt(sumR / rightData.length);
+      const dbR = 20 * Math.log10(rmsR);
+
+      // Find peak across both channels
+      const peak = Math.max(rmsL, rmsR);
+      const dbPeak = 20 * Math.log10(peak);
+
       this.port.postMessage({
         type: 'meteringData',
         data: {
-          db: isFinite(db) ? db : -144 // -Infinity'ye karşı koruma
+          db: isFinite(dbL) ? dbL : -144, // Legacy mono (left channel)
+          dbL: isFinite(dbL) ? dbL : -144,
+          dbR: isFinite(dbR) ? dbR : -144,
+          peak: isFinite(dbPeak) ? dbPeak : -144
         }
       });
       this._lastUpdate = now;

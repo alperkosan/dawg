@@ -33,15 +33,25 @@ class TransientDesignerProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
 
-    // Transient detection state
-    this.envelope = 0;
-    this.prevEnvelope = 0;
+    // ✅ Per-channel state for stereo independence
+    this.channelState = [
+      {
+        envelope: 0,
+        prevEnvelope: 0,
+        smoothedAttack: 1.0,
+        smoothedSustain: 1.0
+      },
+      {
+        envelope: 0,
+        prevEnvelope: 0,
+        smoothedAttack: 1.0,
+        smoothedSustain: 1.0
+      }
+    ];
+
+    // Shared parameters
     this.envelopeDecay = 0.9995; // Very slow decay for better detection
     this.threshold = 0.001; // Very sensitive threshold
-
-    // Smoothing state
-    this.smoothedAttack = 1.0;
-    this.smoothedSustain = 1.0;
     const smoothingTime = 0.01; // 10ms
     this.smoothingCoeff = Math.exp(-1 / (sampleRate * smoothingTime));
   }
@@ -73,33 +83,36 @@ class TransientDesignerProcessor extends AudioWorkletProcessor {
       const inputChannel = input[channel];
       const outputChannel = output[channel];
 
+      // ✅ Get state for this channel (stereo independence)
+      const state = this.channelState[channel] || this.channelState[0];
+
       for (let i = 0; i < inputChannel.length; i++) {
         const sample = inputChannel[i];
         const absSample = Math.abs(sample);
 
-        // Envelope follower (fast attack, slow release)
-        this.prevEnvelope = this.envelope;
-        if (absSample > this.envelope) {
-          this.envelope = absSample; // Instant attack
+        // Envelope follower (fast attack, slow release) - per channel
+        state.prevEnvelope = state.envelope;
+        if (absSample > state.envelope) {
+          state.envelope = absSample; // Instant attack
         } else {
-          this.envelope *= this.envelopeDecay; // Slow decay
+          state.envelope *= this.envelopeDecay; // Slow decay
         }
 
         // Transient detection: Check rate of change
-        const envelopeRise = this.envelope - this.prevEnvelope;
-        this.isTransient = envelopeRise > this.threshold;
+        const envelopeRise = state.envelope - state.prevEnvelope;
+        const isTransient = envelopeRise > this.threshold;
 
         // Calculate target gain
-        const targetGain = this.isTransient ? transientGain : sustainGain;
+        const targetGain = isTransient ? transientGain : sustainGain;
 
-        // Smooth gain changes
+        // Smooth gain changes - per channel
         let smoothedGain;
-        if (this.isTransient) {
-          this.smoothedAttack += (targetGain - this.smoothedAttack) * (1 - this.smoothingCoeff);
-          smoothedGain = this.smoothedAttack;
+        if (isTransient) {
+          state.smoothedAttack += (targetGain - state.smoothedAttack) * (1 - this.smoothingCoeff);
+          smoothedGain = state.smoothedAttack;
         } else {
-          this.smoothedSustain += (targetGain - this.smoothedSustain) * (1 - this.smoothingCoeff);
-          smoothedGain = this.smoothedSustain;
+          state.smoothedSustain += (targetGain - state.smoothedSustain) * (1 - this.smoothingCoeff);
+          smoothedGain = state.smoothedSustain;
         }
 
         // Apply processing

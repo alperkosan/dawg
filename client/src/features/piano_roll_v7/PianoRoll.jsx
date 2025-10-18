@@ -1,11 +1,14 @@
 import React, { useRef, useEffect, useState, useMemo } from 'react';
 import { usePianoRollEngine } from './usePianoRollEngine';
 import { useNoteInteractionsV2 } from './hooks/useNoteInteractionsV2';
+import { useLoopRegionSelection } from './hooks/useLoopRegionSelection';
 import { drawPianoRollStatic, drawPlayhead } from './renderer';
 import { uiUpdateManager, UPDATE_PRIORITIES, UPDATE_FREQUENCIES } from '@/lib/core/UIUpdateManager';
 import { performanceMonitor } from '@/utils/PerformanceMonitor';
 import Toolbar from './components/Toolbar';
 import VelocityLane from './components/VelocityLane';
+import LoopRegionOverlay from './components/LoopRegionOverlay';
+import ShortcutsPanel from './components/ShortcutsPanel';
 import { usePanelsStore } from '@/store/usePanelsStore';
 import { useInstrumentsStore } from '@/store/useInstrumentsStore';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
@@ -43,6 +46,12 @@ function PianoRoll() {
     // ✅ GHOST PLAYHEAD STATE
     const [ghostPosition, setGhostPosition] = useState(null);
 
+    // ✅ LOOP REGION STATE
+    const [loopRegion, setLoopRegion] = useState(null); // { start: step, end: step }
+
+    // ✅ SHORTCUTS PANEL STATE
+    const [showShortcuts, setShowShortcuts] = useState(false);
+
     // ✅ TOOL MANAGER - Subscribe to tool changes
     useEffect(() => {
         const toolManager = getToolManager();
@@ -58,9 +67,19 @@ function PianoRoll() {
         return unsubscribe;
     }, []);
 
-    // ✅ KEYBOARD SHORTCUTS - Handle Alt + key for tools
+    // ✅ KEYBOARD SHORTCUTS - Handle Alt + key for tools and ? for shortcuts panel
     useEffect(() => {
         const handleKeyDown = (e) => {
+            // ? or H key: Toggle shortcuts panel (only if not in input field)
+            if ((e.key === '?' || e.key === 'h' || e.key === 'H') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+                const target = e.target;
+                if (target.tagName !== 'INPUT' && target.tagName !== 'TEXTAREA') {
+                    setShowShortcuts(prev => !prev);
+                    e.preventDefault();
+                    return;
+                }
+            }
+
             const toolManager = getToolManager();
             toolManager.handleKeyPress(e);
         };
@@ -103,12 +122,16 @@ function PianoRoll() {
         ? instruments.find(inst => inst.id === pianoRollInstrumentId)
         : null;
 
+    // ✅ LOOP REGION HOOK - Timeline selection
+    const loopRegionHook = useLoopRegionSelection(engine, snapValue, loopRegion, setLoopRegion);
+
     // V2 Hook - Sade ve basit, ArrangementStore merkezli
     const noteInteractions = useNoteInteractionsV2(
         engine,
         activeTool,
         snapValue,
-        currentInstrument
+        currentInstrument,
+        loopRegion // ✅ Pass loop region for Ctrl+D sync
     );
 
     // ✅ REGISTER PIANO ROLL TIMELINE with TimelineController
@@ -204,11 +227,12 @@ function PianoRoll() {
             sliceRange: noteInteractions.sliceRange,
             qualityLevel, // Pass quality level to renderer
             ghostPosition, // ✅ Pass ghost position for hover preview
-            activeTool // ✅ Pass active tool for visual feedback
+            activeTool, // ✅ Pass active tool for visual feedback
+            loopRegion // ✅ Pass loop region for timeline rendering
         };
         drawPianoRollStatic(ctx, engineWithData);
 
-    }, [engine, snapValue, noteInteractions, qualityLevel, ghostPosition, activeTool]); // Added: activeTool
+    }, [engine, snapValue, noteInteractions, qualityLevel, ghostPosition, activeTool, loopRegion]); // Added: loopRegion
 
     // ✅ Store engine ref for playhead rendering (avoid stale closure)
     const engineRef = useRef(engine);
@@ -307,7 +331,25 @@ function PianoRoll() {
                 ref={containerRef}
                 className="prv5-canvas-container"
                 data-tool={activeTool}
-                onWheel={engine.eventHandlers.onWheel}
+                onWheel={(e) => {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    const x = e.clientX - rect.left;
+                    const y = e.clientY - rect.top;
+                    const isInGrid = x > 80 && y > 30;
+
+                    // Check if wheel event should be handled by note interactions
+                    if (isInGrid && noteInteractions.handleWheel) {
+                        const handled = noteInteractions.handleWheel(e);
+                        if (handled) {
+                            return; // Event was handled, don't scroll viewport
+                        }
+                    }
+
+                    // Default: viewport scroll
+                    if (engine.eventHandlers?.onWheel) {
+                        engine.eventHandlers.onWheel(e);
+                    }
+                }}
                 onMouseDown={(e) => {
                     const rect = e.currentTarget.getBoundingClientRect();
                     const x = e.clientX - rect.left;
@@ -316,7 +358,11 @@ function PianoRoll() {
                     const isInGrid = x > 80 && y > 30;
 
                     if (isInRuler) {
-                        engine.eventHandlers.onMouseDown?.(e);
+                        // ✅ Try loop region selection first
+                        const handled = loopRegionHook.handleRulerMouseDown(e);
+                        if (!handled) {
+                            engine.eventHandlers.onMouseDown?.(e);
+                        }
                     } else if (isInGrid) {
                         noteInteractions.handleMouseDown(e);
                     }
@@ -329,13 +375,18 @@ function PianoRoll() {
                     const isInGrid = x > 80 && y > 30;
 
                     if (isInRuler) {
-                        engine.eventHandlers.onMouseMove?.(e);
+                        // ✅ Handle loop region dragging
+                        const handled = loopRegionHook.handleRulerMouseMove(e);
+                        if (!handled) {
+                            engine.eventHandlers.onMouseMove?.(e);
+                        }
                     } else if (isInGrid) {
                         noteInteractions.handleMouseMove(e);
                     }
                     // engine.eventHandlers.onMouseMove?.(e); // Bu satır viewport kaymasına neden oluyor
                 }}
                 onMouseUp={(e) => {
+                    loopRegionHook.handleRulerMouseUp();
                     noteInteractions.handleMouseUp(e);
                     engine.eventHandlers.onMouseUp?.(e);
                 }}
@@ -343,12 +394,31 @@ function PianoRoll() {
                     noteInteractions.handleMouseUp(e);
                     engine.eventHandlers.onMouseLeave?.(e);
                 }}
-                onKeyDown={noteInteractions.handleKeyDown}
+                onKeyDown={(e) => {
+                    // Escape: Clear loop region if exists, otherwise deselect notes
+                    if (e.key === 'Escape' && loopRegion) {
+                        loopRegionHook.clearLoopRegion();
+                        e.stopPropagation();
+                        return;
+                    }
+                    noteInteractions.handleKeyDown(e);
+                }}
+                onKeyUp={noteInteractions.handleKeyUp}
                 onContextMenu={(e) => e.preventDefault()}
                 tabIndex={0}
             >
                 <canvas ref={canvasRef} className="prv5-canvas prv5-canvas-main" />
                 <canvas ref={playheadCanvasRef} className="prv5-canvas prv5-canvas-playhead" />
+
+                {/* ✅ LOOP REGION OVERLAY */}
+                {loopRegion && (
+                    <LoopRegionOverlay
+                        loopRegion={loopRegion}
+                        dimensions={engine.dimensions}
+                        viewport={engine.viewport}
+                    />
+                )}
+
                 <div className="prv5-debug-overlay">
                     <div style={{
                         fontSize: '14px',
@@ -380,9 +450,17 @@ function PianoRoll() {
                 notes={noteInteractions.notes}
                 selectedNoteIds={selectedNoteIdsArray}
                 onNoteVelocityChange={handleNoteVelocityChange}
+                onNoteSelect={noteInteractions.selectNote}
+                onDeselectAll={noteInteractions.deselectAll}
                 dimensions={engine.dimensions}
                 viewport={engine.viewport}
                 activeTool={activeTool}
+            />
+
+            {/* ✅ SHORTCUTS PANEL */}
+            <ShortcutsPanel
+                isOpen={showShortcuts}
+                onClose={() => setShowShortcuts(false)}
             />
         </div>
     );

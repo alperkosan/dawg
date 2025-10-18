@@ -53,6 +53,7 @@ export const PANEL_IDS = Object.freeze({
   ARRANGEMENT: 'arrangement',
   CHANNEL_RACK: 'channel-rack',
   MIXER: 'mixer',
+  MIXER_2: 'mixer-2', // NEW: FL Studio style mixer with cable overlay
   PIANO_ROLL: 'piano-roll',
   SAMPLE_EDITOR: 'sample-editor',
   FILE_BROWSER: 'file-browser',

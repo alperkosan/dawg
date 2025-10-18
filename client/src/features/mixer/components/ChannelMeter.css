@@ -1,0 +1,86 @@
+/* CHANNEL METER - Real-time dB visualization */
+
+.channel-meter {
+  position: relative;
+  width: 12px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.channel-meter__bar {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--zenith-border-subtle);
+  border-radius: 2px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column-reverse;
+}
+
+.channel-meter__ghost,
+.channel-meter__rms,
+.channel-meter__peak {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  transition: height 0.05s ease-out, background-color 0.1s ease, opacity 0.15s ease-out;
+  border-radius: 2px 2px 0 0;
+}
+
+.channel-meter__ghost {
+  z-index: 0;
+  pointer-events: none;
+}
+
+.channel-meter__rms {
+  z-index: 1;
+}
+
+.channel-meter__peak {
+  z-index: 2;
+}
+
+/* =================== SCALE MARKERS =================== */
+
+.channel-meter__scale {
+  position: absolute;
+  right: -24px;
+  top: 0;
+  height: 100%;
+  width: 20px;
+  pointer-events: none;
+}
+
+.channel-meter__scale-mark {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: 1px;
+  background: var(--zenith-border-subtle);
+}
+
+.channel-meter__scale-mark span {
+  position: absolute;
+  left: 6px;
+  top: -6px;
+  font-size: 8px;
+  color: var(--zenith-text-secondary);
+  white-space: nowrap;
+}
+
+/* =================== PEAK HOLD (optional enhancement) =================== */
+
+.channel-meter__peak-hold {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: #ef4444;
+  box-shadow: 0 0 4px #ef4444;
+  transition: bottom 0.1s ease-out;
+  z-index: 3;
+}

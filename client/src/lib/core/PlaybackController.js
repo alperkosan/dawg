@@ -139,15 +139,10 @@ export class PlaybackController extends SimpleEventEmitter {
   _updatePositionFromMotor() {
     if (!this.audioEngine?.transport) return;
 
-    // ✅ FIX: Only update position in SONG mode for arrangement panel
-    // In PATTERN mode, playhead should not move in arrangement
+    // ✅ FIXED: Always update position, but include mode in the event
+    // Components can decide whether to use the position based on mode
     const playbackManager = this.audioEngine.playbackManager;
     const currentMode = playbackManager?.getCurrentMode?.() || playbackManager?.currentMode || 'pattern';
-
-    // Skip position updates in pattern mode (arrangement playhead stays still)
-    if (currentMode === 'pattern') {
-      return;
-    }
 
     const newPosition = this.audioEngine.transport.ticksToSteps(
       this.audioEngine.transport.currentTick
@@ -156,7 +151,7 @@ export class PlaybackController extends SimpleEventEmitter {
     // Sadece anlamlı değişiklikte güncelle
     if (Math.abs(newPosition - this.state.currentPosition) > 0.01) {
       this.state.currentPosition = newPosition;
-      this._emitPositionUpdate();
+      this._emitPositionUpdate(currentMode); // ✅ Pass mode to listeners
     }
   }
 
@@ -404,9 +399,18 @@ export class PlaybackController extends SimpleEventEmitter {
     });
   }
 
-  _emitPositionUpdate() {
+  _emitPositionUpdate(mode = null) {
+    // ✅ Include playback mode in position updates
+    // This allows components to filter updates based on their needs:
+    // - Arrangement panel: only uses 'song' mode updates
+    // - Channel Rack: only uses 'pattern' mode updates
+    // - Piano Roll: only uses 'pattern' mode updates
+    const playbackManager = this.audioEngine?.playbackManager;
+    const currentMode = mode || playbackManager?.getCurrentMode?.() || playbackManager?.currentMode || 'pattern';
+
     this.emit('position-update', {
       position: this.state.currentPosition,
+      mode: currentMode,
       timestamp: Date.now()
     });
   }

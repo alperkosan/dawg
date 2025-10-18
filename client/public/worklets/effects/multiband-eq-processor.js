@@ -48,6 +48,15 @@ class MultiBandEQProcessor extends AudioWorkletProcessor {
       { filters: this.createFilters(), history: new Float32Array(10) }
     ];
 
+    // ⚡ OPTIMIZATION: Cache parameters to detect changes
+    this.cachedParams = {
+      freq1: 100, gain1: 0, q1: 1.0,
+      freq2: 500, gain2: 0, q2: 1.0,
+      freq3: 2000, gain3: 0, q3: 1.0,
+      freq4: 5000, gain4: 0, q4: 1.0,
+      freq5: 10000, gain5: 0, q5: 1.0
+    };
+
     this.port.onmessage = (e) => {
       if (e.data.type === 'updateSettings') {
         Object.assign(this.settings, e.data.data);
@@ -112,13 +121,30 @@ class MultiBandEQProcessor extends AudioWorkletProcessor {
   processEffect(sample, channel, parameters) {
     const state = this.channelState[channel];
 
-    // Update filter coefficients for all 5 bands
+    // ⚡ OPTIMIZATION: Only update coefficients when parameters change
+    // Check all 5 bands for parameter changes
     for (let i = 0; i < 5; i++) {
-      const freq = this.getParam(parameters[`freq${i+1}`], 0) || [100, 500, 2000, 5000, 10000][i];
-      const gain = this.getParam(parameters[`gain${i+1}`], 0) || 0;
-      const q = this.getParam(parameters[`q${i+1}`], 0) || 1.0;
+      const bandNum = i + 1;
+      const freq = this.getParam(parameters[`freq${bandNum}`], 0) || [100, 500, 2000, 5000, 10000][i];
+      const gain = this.getParam(parameters[`gain${bandNum}`], 0) || 0;
+      const q = this.getParam(parameters[`q${bandNum}`], 0) || 1.0;
 
-      this.updateBiquadCoefficients(state.filters[i], freq, gain, q);
+      // Only recalculate if parameters changed
+      const freqKey = `freq${bandNum}`;
+      const gainKey = `gain${bandNum}`;
+      const qKey = `q${bandNum}`;
+
+      if (this.cachedParams[freqKey] !== freq ||
+          this.cachedParams[gainKey] !== gain ||
+          this.cachedParams[qKey] !== q) {
+
+        this.cachedParams[freqKey] = freq;
+        this.cachedParams[gainKey] = gain;
+        this.cachedParams[qKey] = q;
+
+        // Recalculate coefficients for this band
+        this.updateBiquadCoefficients(state.filters[i], freq, gain, q);
+      }
     }
 
     // Process through all 5 filters in series

@@ -1,0 +1,169 @@
+/* Mixer Channel Sends - FL Studio Style */
+
+.mixer-channel-sends {
+  display: flex;
+  gap: 4px;
+  padding: 6px 4px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 3px;
+  margin-top: 4px;
+  justify-content: center;
+  align-items: center;
+  min-height: 28px;
+}
+
+.mixer-channel-sends__item {
+  width: 20px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  position: relative;
+  transition: all 0.15s ease;
+  border-radius: 2px;
+}
+
+.mixer-channel-sends__item:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* Arrow Up (No Send) */
+.mixer-channel-sends__arrow {
+  color: #666;
+  transition: color 0.15s ease;
+}
+
+.mixer-channel-sends__item:hover .mixer-channel-sends__arrow {
+  color: #999;
+}
+
+/* Active Send - With Knob */
+.mixer-channel-sends__item--active {
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  width: 20px;
+  height: 24px;
+  overflow: visible;
+}
+
+.mixer-channel-sends__item--active:hover {
+  background: rgba(0, 0, 0, 0.5);
+}
+
+/* Cable - Vertical line going up */
+.mixer-channel-sends__cable {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  width: 3px;
+  height: 80px;
+  background: #22c55e;
+  transform: translateX(-50%);
+  pointer-events: none;
+  opacity: 0.7;
+  box-shadow: 0 0 8px currentColor;
+  z-index: 100;
+  border-radius: 1.5px;
+  animation: cable-pulse 2s ease-in-out infinite;
+}
+
+@keyframes cable-pulse {
+  0%, 100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+
+.mixer-channel-sends__item--active:hover .mixer-channel-sends__cable {
+  opacity: 1;
+  box-shadow: 0 0 12px currentColor;
+}
+
+/* Knob Track - Vertical slider area */
+.mixer-channel-sends__knob-track {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 3px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 1.5px;
+  cursor: ns-resize;
+}
+
+/* Level Knob */
+.mixer-channel-sends__knob {
+  position: absolute;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #22c55e;
+  border: 2px solid rgba(0, 0, 0, 0.4);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
+  cursor: ns-resize;
+  transition: transform 0.05s ease;
+  z-index: 10;
+}
+
+.mixer-channel-sends__knob:hover {
+  transform: translate(-50%, -50%) scale(1.15);
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.5);
+}
+
+.mixer-channel-sends__knob:active {
+  transform: translate(-50%, -50%) scale(0.95);
+}
+
+/* Insert Mode Indicator */
+.mixer-channel-sends__insert-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 6px currentColor;
+  position: relative;
+  z-index: 10;
+}
+
+/* Remove Button (×) */
+.mixer-channel-sends__remove {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: rgba(220, 38, 38, 0.9);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: bold;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 0.15s ease, transform 0.1s ease;
+  cursor: pointer;
+  z-index: 20;
+  pointer-events: none;
+}
+
+.mixer-channel-sends__item--active:hover .mixer-channel-sends__remove {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.mixer-channel-sends__remove:hover {
+  transform: scale(1.1);
+  background: rgba(239, 68, 68, 1);
+}
+
+.mixer-channel-sends__remove:active {
+  transform: scale(0.95);
+}

@@ -2,6 +2,7 @@
 // ArrangementStore merkezli, işlevsellik odaklı
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useArrangementStore } from '@/store/useArrangementStore';
+import { usePlaybackStore } from '@/store/usePlaybackStore';
 import { samplePreview } from '../utils/samplePreview';
 import { getToolManager, TOOL_TYPES } from '@/lib/piano-roll-tools';
 
@@ -10,6 +11,51 @@ const KEYBOARD_WIDTH = 80;
 
 // Debug mode - set to false for production
 const DEBUG_MODE = false;
+
+// ✅ KEYBOARD PIANO MAPPING - Computer keyboard keys to MIDI pitches
+// Uses QWERTY layout as piano keys (2 octaves)
+// Bottom row (ZXCVBNM...) = C4 octave
+// Middle row (ASDFGHJK...) = C5 octave
+// Top row (QWERTYUI...) = C6 octave
+const KEYBOARD_TO_PITCH = {
+    // Bottom row - C4 octave (60-71)
+    'z': 60,  // C4
+    's': 61,  // C#4
+    'x': 62,  // D4
+    'd': 63,  // D#4
+    'c': 64,  // E4
+    'v': 65,  // F4
+    'g': 66,  // F#4
+    'b': 67,  // G4
+    'h': 68,  // G#4
+    'n': 69,  // A4
+    'j': 70,  // A#4
+    'm': 71,  // B4
+
+    // Middle row - C5 octave (72-83)
+    'q': 72,  // C5
+    '2': 73,  // C#5
+    'w': 74,  // D5
+    '3': 75,  // D#5
+    'e': 76,  // E5
+    'r': 77,  // F5
+    '5': 78,  // F#5
+    't': 79,  // G5
+    '6': 80,  // G#5
+    'y': 81,  // A5
+    '7': 82,  // A#5
+    'u': 83,  // B5
+
+    // Top row - C6 octave (84-95)
+    'i': 84,  // C6
+    '9': 85,  // C#6
+    'o': 86,  // D6
+    '0': 87,  // D#6
+    'p': 88,  // E6
+    '[': 89,  // F6
+    '=': 90,  // F#6
+    ']': 91   // G6
+};
 
 // Helper: MIDI pitch to note name
 function pitchToString(midiPitch) {
@@ -52,7 +98,8 @@ export function useNoteInteractionsV2(
     engine,
     activeTool = 'select',
     snapValue = 1,
-    currentInstrument = null
+    currentInstrument = null,
+    loopRegion = null // ✅ Loop region for Ctrl+D sync
 ) {
     // Local state - sadece UI için
     const [dragState, setDragState] = useState(null);
@@ -65,6 +112,10 @@ export function useNoteInteractionsV2(
     const [selectedNoteIds, setSelectedNoteIds] = useState(new Set());
     const [tempNotes, setTempNotes] = useState([]); // Real-time drag için geçici notalar
     const [lastDuplicateAction, setLastDuplicateAction] = useState(null); // Track last Ctrl+B action for sequential duplication
+    const [lastNoteDuration, setLastNoteDuration] = useState(1); // Remember last note duration for smart note creation
+    const [paintDragState, setPaintDragState] = useState(null); // { lastPitch: number, lastTime: number } for continuous painting
+    const [rightClickDragState, setRightClickDragState] = useState(null); // { lastPitch: number, lastTime: number, deletedNotes: Set } for continuous deletion
+    const [activeKeyboardNotes, setActiveKeyboardNotes] = useState(new Map()); // Track keyboard-triggered notes for preview playback
 
     // ArrangementStore integration
     const { patterns, activePatternId, updatePatternNotes } = useArrangementStore();
@@ -149,11 +200,14 @@ export function useNoteInteractionsV2(
         return currentNotes.find(note => {
             const noteEndTime = note.startTime + note.length;
 
-            // ✅ CONTAINED TIME TOLERANCE - Only within note boundaries
-            const timeOverlap = time >= note.startTime && time <= noteEndTime;
+            // ✅ TIME TOLERANCE - Slightly relaxed for easier clicking
+            // Allow small margin at edges for easier interaction
+            const timeMargin = 0.05; // 5% of a step
+            const timeOverlap = time >= (note.startTime - timeMargin) && time <= (noteEndTime + timeMargin);
 
-            // ✅ CONTAINED PITCH TOLERANCE - Only within note height
-            const pitchMatch = Math.abs(note.pitch - pitch) < 0.6; // Contained within note area
+            // ✅ PITCH TOLERANCE - Full note height coverage
+            // Changed to 1.0 to cover entire note height plus small margin
+            const pitchMatch = Math.abs(note.pitch - pitch) <= 1.0;
 
             return timeOverlap && pitchMatch;
         });
@@ -179,15 +233,29 @@ export function useNoteInteractionsV2(
         const noteWidth = Math.max(Math.round(stepWidth) - 1, Math.round(note.length * stepWidth) - 1);
         const noteHeight = Math.round(keyHeight) - 1;
 
-        const handleSize = 15;
-        const handleWidth = 8;
-        const handleOffset = 5;
+        // ✅ SMART RESIZE ZONES - Adaptive based on note width
+        // Ensure resize zones don't overlap and leave space for move area
+        const minMoveArea = 10; // Minimum pixels in middle for moving
+        const maxZoneWidth = (noteWidth - minMoveArea) / 2; // Max zone width without overlap
 
-        // ✅ CONTAINED INTERACTION AREA - Only within note bounds, but efficient coverage
-        const handleToleranceY = 0; // No Y tolerance - stay within note height
+        // Calculate optimal zone width based on note size
+        let resizeZoneWidth;
+        if (noteWidth < 20) {
+            // Very small notes: minimal zones (6px each)
+            resizeZoneWidth = Math.min(6, maxZoneWidth);
+        } else if (noteWidth < 40) {
+            // Small notes: 25% of width, max limited by overlap protection
+            resizeZoneWidth = Math.min(noteWidth * 0.25, maxZoneWidth);
+        } else if (noteWidth < 80) {
+            // Medium notes: 30% of width
+            resizeZoneWidth = Math.min(noteWidth * 0.30, maxZoneWidth);
+        } else {
+            // Large notes: 35% of width, generous resize area
+            resizeZoneWidth = Math.min(noteWidth * 0.35, maxZoneWidth);
+        }
 
-        // ✅ EFFICIENT RESIZE ZONES - Cover more of note area but stay contained
-        const resizeZoneWidth = Math.max(8, noteWidth * 0.35); // 35% of note width, min 8px
+        // Ensure minimum zone width for usability
+        resizeZoneWidth = Math.max(5, resizeZoneWidth);
 
         // Left handle (start time resize) - contained within note start area
         const leftAreaX1 = noteX; // Start exactly at note boundary
@@ -201,18 +269,19 @@ export function useNoteInteractionsV2(
         const rightAreaY1 = noteY; // Exact note top
         const rightAreaY2 = noteY + noteHeight; // Exact note bottom
 
-        // Debug zones
-        if (DEBUG_MODE) {
-            console.log('🔧 Resize zones debug:', {
-                noteGeometry: { x: noteX, y: noteY, width: noteWidth, height: noteHeight },
-                mouse: { worldX, worldY },
-                leftZone: { x1: leftAreaX1, x2: leftAreaX2, width: leftAreaX2 - leftAreaX1 },
-                rightZone: { x1: rightAreaX1, x2: rightAreaX2, width: rightAreaX2 - rightAreaX1 },
-                overlap: leftAreaX2 > rightAreaX1 ? 'OVERLAP!' : 'OK',
-                resizeZoneWidth,
-                containment: 'WITHIN_NOTE_BOUNDS'
-            });
-        }
+        // Debug zones (DISABLED - too verbose)
+        // if (DEBUG_MODE) {
+        //     const moveAreaWidth = noteWidth - (2 * resizeZoneWidth);
+        //     console.log('🔧 Resize zones debug:', {
+        //         noteGeometry: { x: noteX, y: noteY, width: noteWidth, height: noteHeight },
+        //         mouse: { worldX, worldY },
+        //         leftZone: { x1: leftAreaX1, x2: leftAreaX2, width: resizeZoneWidth },
+        //         rightZone: { x1: rightAreaX1, x2: rightAreaX2, width: resizeZoneWidth },
+        //         moveArea: { width: moveAreaWidth, percentage: ((moveAreaWidth / noteWidth) * 100).toFixed(1) + '%' },
+        //         overlap: leftAreaX2 > rightAreaX1 ? '⚠️ OVERLAP!' : '✅ OK',
+        //         strategy: noteWidth < 20 ? 'TINY' : noteWidth < 40 ? 'SMALL' : noteWidth < 80 ? 'MEDIUM' : 'LARGE'
+        //     });
+        // }
 
         // Resize priority: check handles first, then fallback to move
         const leftHit = worldX >= leftAreaX1 && worldX <= leftAreaX2 &&
@@ -507,12 +576,71 @@ export function useNoteInteractionsV2(
         const toolManager = getToolManager();
         const currentTool = toolManager.getActiveTool();
 
-        // ✅ PAINT BRUSH TOOL - Draw notes by clicking or dragging
+        // ✅ RIGHT CLICK - Delete note immediately and start drag-to-delete
+        if (e.button === 2) { // Right mouse button
+            const deletedNotes = new Set();
+            if (foundNote) {
+                deleteNotes([foundNote.id]);
+                deletedNotes.add(foundNote.id);
+                if (DEBUG_MODE) console.log('🗑️ Right click delete:', foundNote.id);
+            }
+
+            // Start drag state for continuous deletion
+            setRightClickDragState({
+                lastPitch: coords.pitch,
+                lastTime: coords.time,
+                deletedNotes, // Track already deleted notes to avoid duplicate calls
+                isDragging: true
+            });
+            return; // Don't proceed with other handlers
+        }
+
+        // ✅ PAINT BRUSH TOOL - Draw notes by clicking or dragging, resize existing notes
         if (currentTool === TOOL_TYPES.PAINT_BRUSH) {
-            if (!foundNote) {
-                // Add new note
-                const newNote = addNote(coords.time, coords.pitch);
+            if (foundNote) {
+                // Check if clicking on resize handle
+                const resizeHandle = getResizeHandle(coords.x, coords.y, foundNote);
+
+                if (resizeHandle) {
+                    // Start resizing existing note (same as select tool)
+                    if (!selectedNoteIds.has(foundNote.id)) {
+                        deselectAll();
+                        selectNote(foundNote.id, false);
+                    }
+
+                    setDragState({
+                        type: 'resizing',
+                        noteId: foundNote.id,
+                        resizeHandle,
+                        startCoords: coords,
+                        originalNote: { ...foundNote }
+                    });
+
+                    if (DEBUG_MODE) console.log('🎨 Paint brush: Resize started', resizeHandle);
+                } else {
+                    // Clicking on note body - preview sound and remember duration
+                    samplePreview.playPitchPreview(
+                        foundNote.pitch,
+                        foundNote.velocity || 100
+                    );
+
+                    // ✅ REMEMBER LAST DURATION - Save clicked note's length for next note
+                    if (foundNote.length > 0) {
+                        setLastNoteDuration(foundNote.length);
+                        if (DEBUG_MODE) console.log('💾 Remembered note duration from paint brush click:', foundNote.length);
+                    }
+                }
+            } else {
+                // Add new note with last used duration
+                const newNote = addNote(coords.time, coords.pitch, lastNoteDuration);
                 if (newNote) {
+                    // Start paint drag state for continuous drawing
+                    setPaintDragState({
+                        lastPitch: coords.pitch,
+                        lastTime: coords.time,
+                        isDragging: true
+                    });
+
                     // Audio preview
                     samplePreview.playPitchPreview(
                         newNote.pitch,
@@ -521,10 +649,18 @@ export function useNoteInteractionsV2(
                 }
             }
         }
-        // ✅ ERASER TOOL - Delete notes on click
+        // ✅ ERASER TOOL - Delete notes on click and drag
         else if (currentTool === TOOL_TYPES.ERASER) {
             if (foundNote) {
                 deleteNotes([foundNote.id]);
+
+                // Start eraser drag state for continuous deletion
+                setPaintDragState({
+                    lastPitch: coords.pitch,
+                    lastTime: coords.time,
+                    isDragging: true,
+                    mode: 'erase'
+                });
             }
         }
         // ✅ SELECT TOOL - Standard selection and manipulation
@@ -559,34 +695,96 @@ export function useNoteInteractionsV2(
                 } else {
                     // Start moving - reset duplicate memory
                     setLastDuplicateAction(null);
-                    if (!selectedNoteIds.has(foundNote.id)) {
-                        selectNote(foundNote.id, e.ctrlKey || e.metaKey);
+
+                    // ✅ REMEMBER LAST DURATION - Save clicked note's length for next note
+                    if (foundNote.length > 0) {
+                        setLastNoteDuration(foundNote.length);
+                        if (DEBUG_MODE) console.log('💾 Remembered note duration from selection:', foundNote.length);
                     }
 
-                setDragState({
-                    type: 'moving',
-                    noteIds: selectedNoteIds.has(foundNote.id) ? Array.from(selectedNoteIds) : [foundNote.id],
-                    startCoords: coords,
-                    originalNotes: new Map()
-                });
+                    // ✅ SHIFT+DRAG TO DUPLICATE - Create copies if Shift is held
+                    const isDuplicating = e.shiftKey;
+                    let duplicatedNoteIds = null;
 
-                // Store original positions
-                const currentNotes = notes();
-                const originalNotes = new Map();
-                const noteIds = selectedNoteIds.has(foundNote.id) ? Array.from(selectedNoteIds) : [foundNote.id];
-                noteIds.forEach(id => {
-                    const note = currentNotes.find(n => n.id === id);
-                    if (note) {
-                        originalNotes.set(id, { startTime: note.startTime, pitch: note.pitch });
+                    // Determine which notes to work with
+                    let workingNoteIds;
+                    if (isDuplicating) {
+                        // ✅ SHIFT+DRAG LOGIC FIX: Only duplicate what you click on
+                        if (selectedNoteIds.size > 0 && selectedNoteIds.has(foundNote.id)) {
+                            // Clicked note is part of selection - duplicate all selected
+                            workingNoteIds = Array.from(selectedNoteIds);
+                            if (DEBUG_MODE) console.log('📋 Shift+Drag: Clicked note IS in selection, duplicating all', selectedNoteIds.size, 'notes');
+                        } else {
+                            // Clicked note is NOT part of selection - duplicate ONLY clicked note
+                            // (Ignore other selected notes - user wants to duplicate what they clicked)
+                            workingNoteIds = [foundNote.id];
+                            if (DEBUG_MODE) console.log('📋 Shift+Drag: Clicked note NOT in selection, duplicating ONLY clicked note');
+                        }
+                    } else {
+                        // Normal move: select note if needed
+                        if (!selectedNoteIds.has(foundNote.id)) {
+                            selectNote(foundNote.id, e.ctrlKey || e.metaKey);
+                        }
+                        workingNoteIds = selectedNoteIds.has(foundNote.id)
+                            ? Array.from(selectedNoteIds)
+                            : [foundNote.id];
                     }
-                });
-                setDragState(prev => ({ ...prev, originalNotes }));
 
-                // Audio preview
-                samplePreview.playPitchPreview(
-                    foundNote.pitch,
-                    foundNote.velocity || 100
-                );
+                    let originalNotesForDrag = new Map();
+
+                    if (isDuplicating) {
+                        // Create duplicates of working notes
+                        const currentNotes = notes();
+                        const notesToDuplicate = currentNotes.filter(n => workingNoteIds.includes(n.id));
+
+                        const newNotes = [];
+                        duplicatedNoteIds = [];
+
+                        notesToDuplicate.forEach(note => {
+                            const uniqueId = `note_${Date.now()}_${Math.random().toString(36).substring(2, 11)}_${performance.now()}`;
+                            const duplicatedNote = {
+                                ...note,
+                                id: uniqueId
+                            };
+                            newNotes.push(duplicatedNote);
+                            duplicatedNoteIds.push(uniqueId);
+
+                            // ✅ Store original position of duplicated note (same as original for now)
+                            originalNotesForDrag.set(uniqueId, { startTime: note.startTime, pitch: note.pitch });
+                        });
+
+                        // Add duplicates to pattern
+                        updatePatternStore([...currentNotes, ...newNotes]);
+
+                        // Select the duplicated notes
+                        setSelectedNoteIds(new Set(duplicatedNoteIds));
+
+                        if (DEBUG_MODE) console.log('📋 Duplicated notes for dragging:', duplicatedNoteIds.length);
+                    } else {
+                        // Normal move: Store original positions
+                        const currentNotes = notes();
+                        const noteIds = selectedNoteIds.has(foundNote.id) ? Array.from(selectedNoteIds) : [foundNote.id];
+                        noteIds.forEach(id => {
+                            const note = currentNotes.find(n => n.id === id);
+                            if (note) {
+                                originalNotesForDrag.set(id, { startTime: note.startTime, pitch: note.pitch });
+                            }
+                        });
+                    }
+
+                    setDragState({
+                        type: 'moving',
+                        noteIds: isDuplicating ? duplicatedNoteIds : (selectedNoteIds.has(foundNote.id) ? Array.from(selectedNoteIds) : [foundNote.id]),
+                        startCoords: coords,
+                        originalNotes: originalNotesForDrag,
+                        isDuplicating // Track if this is a duplicate operation
+                    });
+
+                    // Audio preview
+                    samplePreview.playPitchPreview(
+                        foundNote.pitch,
+                        foundNote.velocity || 100
+                    );
                 }
             } else {
                 // Start area selection
@@ -670,16 +868,41 @@ export function useNoteInteractionsV2(
         const foundNote = findNoteAtPosition(coords.time, coords.pitch);
         setHoveredNoteId(foundNote?.id || null);
 
-        // ✅ PAINT BRUSH PREVIEW - Show ghost note where user will draw
-        if (currentTool === TOOL_TYPES.PAINT_BRUSH && !foundNote) {
+        // ✅ PAINT BRUSH PREVIEW & CONTINUOUS DRAWING - Show ghost note and draw while dragging
+        if (currentTool === TOOL_TYPES.PAINT_BRUSH) {
             const snappedTime = snapToGrid(coords.time, snapValue);
             const { stepWidth } = engine.dimensions || {};
 
-            if (stepWidth && coords.pitch >= 0 && coords.pitch <= 127) {
+            // Continuous drawing while mouse is held down
+            if (paintDragState && paintDragState.mode !== 'erase' && !foundNote) {
+                // Only add note if we moved to a different pitch or time
+                if (coords.pitch !== paintDragState.lastPitch ||
+                    Math.abs(coords.time - paintDragState.lastTime) >= snapValue) {
+
+                    const newNote = addNote(coords.time, coords.pitch, lastNoteDuration);
+                    if (newNote) {
+                        // Update drag state with new position
+                        setPaintDragState({
+                            ...paintDragState,
+                            lastPitch: coords.pitch,
+                            lastTime: coords.time
+                        });
+
+                        // Audio preview
+                        samplePreview.playPitchPreview(
+                            newNote.pitch,
+                            newNote.velocity || 100
+                        );
+                    }
+                }
+            }
+
+            // Show preview note
+            if (!foundNote && stepWidth && coords.pitch >= 0 && coords.pitch <= 127) {
                 setPreviewNote({
                     pitch: coords.pitch,
                     startTime: snappedTime,
-                    length: 1, // Default length
+                    length: lastNoteDuration, // Use last duration for preview
                     velocity: 0.8,
                     isPreview: true
                 });
@@ -690,9 +913,46 @@ export function useNoteInteractionsV2(
             setPreviewNote(null);
         }
 
-        // ✅ ERASER HIGHLIGHT - Highlight note that will be deleted
-        if (currentTool === TOOL_TYPES.ERASER && foundNote) {
-            e.currentTarget.style.cursor = 'not-allowed';
+        // ✅ RIGHT CLICK DRAG - Continuous deletion while right button held
+        if (rightClickDragState && rightClickDragState.isDragging) {
+            if (foundNote && !rightClickDragState.deletedNotes.has(foundNote.id)) {
+                // Only delete if we haven't already deleted this note
+                deleteNotes([foundNote.id]);
+                rightClickDragState.deletedNotes.add(foundNote.id);
+
+                // Update drag state with new position
+                setRightClickDragState({
+                    ...rightClickDragState,
+                    lastPitch: coords.pitch,
+                    lastTime: coords.time
+                });
+
+                if (DEBUG_MODE) console.log('🗑️ Right click drag delete:', foundNote.id);
+            }
+        }
+
+        // ✅ ERASER HIGHLIGHT & CONTINUOUS DELETION - Highlight and delete while dragging
+        if (currentTool === TOOL_TYPES.ERASER) {
+            if (foundNote) {
+                e.currentTarget.style.cursor = 'not-allowed';
+
+                // Continuous deletion while mouse is held down
+                if (paintDragState && paintDragState.mode === 'erase') {
+                    // Only delete if we moved to a different note
+                    if (coords.pitch !== paintDragState.lastPitch ||
+                        Math.abs(coords.time - paintDragState.lastTime) >= snapValue) {
+
+                        deleteNotes([foundNote.id]);
+
+                        // Update drag state with new position
+                        setPaintDragState({
+                            ...paintDragState,
+                            lastPitch: coords.pitch,
+                            lastTime: coords.time
+                        });
+                    }
+                }
+            }
         }
 
         // Cursor feedback for better UX
@@ -901,6 +1161,14 @@ export function useNoteInteractionsV2(
         } else if (dragState?.type === 'resizing' && tempNotes.length > 0) {
             // Commit resized note to pattern store
             updatePatternStore(tempNotes);
+
+            // ✅ REMEMBER LAST DURATION - Save resized note's length for next note
+            const resizedNote = tempNotes.find(n => n.id === dragState.noteId);
+            if (resizedNote && resizedNote.length > 0) {
+                setLastNoteDuration(resizedNote.length);
+                if (DEBUG_MODE) console.log('💾 Remembered note duration:', resizedNote.length);
+            }
+
             setTempNotes([]); // Clear temporary notes
         }
 
@@ -939,10 +1207,108 @@ export function useNoteInteractionsV2(
         setSlicePreview(null);
         setSliceRange(null); // ✅ Clear slice range
         setTempNotes([]); // Clear temporary notes
+        setPaintDragState(null); // ✅ Clear paint/erase drag state
+        setRightClickDragState(null); // ✅ Clear right click drag state
     }, [isSelectingArea, selectionArea, notes, selectNote, dragState, tempNotes, updatePatternStore, performPitchRangeSlice, sliceNote, sliceRange]);
+
+    // ✅ WHEEL HANDLER - Velocity and duration control
+    const handleWheel = useCallback((e) => {
+        const coords = getCoordinatesFromEvent(e);
+        const foundNote = findNoteAtPosition(coords.time, coords.pitch);
+
+        // Shift+Wheel: Change duration of hovered or selected notes
+        if (e.shiftKey && (foundNote || selectedNoteIds.size > 0)) {
+            e.preventDefault();
+            e.stopPropagation();
+
+            const delta = -e.deltaY; // Positive = scroll up = increase
+            const step = 0.25; // 1/16th step increment
+            const change = delta > 0 ? step : -step;
+
+            if (foundNote && !selectedNoteIds.has(foundNote.id)) {
+                // Change hovered note's duration
+                const newLength = Math.max(0.25, foundNote.length + change);
+                updateNote(foundNote.id, { length: newLength });
+                setLastNoteDuration(newLength); // Remember for next note
+                if (DEBUG_MODE) console.log('🎚️ Duration changed (hover):', foundNote.id, newLength);
+            } else if (selectedNoteIds.size > 0) {
+                // Change all selected notes' duration
+                const currentNotes = notes();
+                const updatedNotes = currentNotes.map(note => {
+                    if (selectedNoteIds.has(note.id)) {
+                        const newLength = Math.max(0.25, note.length + change);
+                        return { ...note, length: newLength };
+                    }
+                    return note;
+                });
+                updatePatternStore(updatedNotes);
+
+                // Remember the first selected note's new length
+                const firstSelectedNote = updatedNotes.find(n => selectedNoteIds.has(n.id));
+                if (firstSelectedNote) {
+                    setLastNoteDuration(firstSelectedNote.length);
+                }
+
+                if (DEBUG_MODE) console.log('🎚️ Duration changed (selected):', selectedNoteIds.size, 'notes');
+            }
+
+            return true; // Event handled
+        }
+
+        // Normal Wheel (no modifiers): Change velocity of hovered note
+        if (!e.shiftKey && !e.ctrlKey && !e.metaKey && foundNote) {
+            e.preventDefault();
+            e.stopPropagation();
+
+            const delta = -e.deltaY; // Positive = scroll up = increase
+            const step = 5; // 5% increment (velocity is 0-100)
+            const change = delta > 0 ? step : -step;
+
+            const currentVelocity = foundNote.velocity || 100;
+            const newVelocity = Math.max(1, Math.min(127, currentVelocity + change));
+
+            updateNote(foundNote.id, { velocity: newVelocity });
+
+            if (DEBUG_MODE) console.log('🎵 Velocity changed (hover):', foundNote.id, newVelocity);
+
+            return true; // Event handled
+        }
+
+        return false; // Event not handled, allow viewport scroll
+    }, [getCoordinatesFromEvent, findNoteAtPosition, selectedNoteIds, notes, updateNote, updatePatternStore]);
 
     // Key down handler
     const handleKeyDown = useCallback((e) => {
+        // ✅ KEYBOARD PIANO - Play and optionally record notes with computer keyboard
+        const key = e.key.toLowerCase();
+        const pitch = KEYBOARD_TO_PITCH[key];
+
+        if (pitch !== undefined && currentInstrument) {
+            // Prevent repeat events from key hold
+            if (e.repeat) return;
+
+            e.preventDefault();
+
+            // Play audio preview
+            samplePreview.playPitchPreview(pitch, 100);
+
+            // Track active keyboard note
+            setActiveKeyboardNotes(prev => new Map(prev).set(key, { pitch, startTime: Date.now() }));
+
+            // If Ctrl/Cmd is held, write the note to the pattern
+            if (e.ctrlKey || e.metaKey) {
+                // Get current playback position or use 0
+                const currentTime = usePlaybackStore.getState()?.currentStep || 0;
+                addNote(currentTime, pitch, lastNoteDuration);
+
+                if (DEBUG_MODE) console.log('⌨️ Keyboard note written:', key, pitch, 'at time:', currentTime);
+            } else {
+                if (DEBUG_MODE) console.log('⌨️ Keyboard note played (preview only):', key, pitch);
+            }
+
+            return;
+        }
+
         // ✅ TOOL EXECUTION - Execute active tool on selected notes
         const toolManager = getToolManager();
         const currentTool = toolManager.getActiveTool();
@@ -1027,6 +1393,73 @@ export function useNoteInteractionsV2(
             e.preventDefault();
             const currentNotes = notes();
             setSelectedNoteIds(new Set(currentNotes.map(note => note.id)));
+        } else if ((e.ctrlKey || e.metaKey) && (e.key === 'd' || e.key === 'D')) {
+            // ✅ Ctrl+D / Cmd+D - Smart duplicate with loop region sync
+            e.preventDefault();
+            if (selectedNoteIds.size > 0) {
+                const currentNotes = notes();
+                const selectedNotes = currentNotes.filter(note => selectedNoteIds.has(note.id));
+
+                // Find the rightmost edge of selection
+                const maxEndTime = Math.max(...selectedNotes.map(note =>
+                    (typeof note.startTime === 'number' ? note.startTime : 0) +
+                    (typeof note.length === 'number' ? note.length : 0)
+                ));
+
+                // Find the leftmost start of selection
+                const minStartTime = Math.min(...selectedNotes.map(note =>
+                    typeof note.startTime === 'number' ? note.startTime : 0
+                ));
+
+                let offset;
+
+                // ✅ LOOP REGION SYNC: If loop region is active, use its length
+                if (loopRegion && loopRegion.start !== undefined && loopRegion.end !== undefined) {
+                    // Calculate loop region length
+                    const loopLength = loopRegion.end - loopRegion.start;
+                    offset = loopLength;
+
+                    if (DEBUG_MODE) console.log('📋 Ctrl+D: Using loop region length:', loopLength, 'steps');
+                } else {
+                    // ✅ Default: Calculate offset to next beat (4 steps = 1 beat in standard 16-step bar)
+                    // Round maxEndTime to next beat boundary
+                    const beatsPerBar = 4; // Standard 4/4 time
+                    const stepsPerBeat = 4; // 16 steps / 4 beats
+                    const nextBeat = Math.ceil(maxEndTime / stepsPerBeat) * stepsPerBeat;
+                    offset = nextBeat - minStartTime;
+
+                    if (DEBUG_MODE) console.log('📋 Ctrl+D: Using beat-based offset:', offset, 'steps');
+                }
+
+                const newNoteIds = [];
+                selectedNotes.forEach(note => {
+                    const uniqueId = `note_${Date.now()}_${Math.random().toString(36).substring(2, 11)}_${performance.now()}`;
+                    const duplicatedNote = {
+                        ...note,
+                        id: uniqueId,
+                        startTime: (typeof note.startTime === 'number' ? note.startTime : 0) + offset
+                    };
+
+                    // Add to pattern
+                    const newNote = addNote(
+                        duplicatedNote.startTime,
+                        duplicatedNote.pitch,
+                        duplicatedNote.length,
+                        duplicatedNote.velocity
+                    );
+
+                    if (newNote) {
+                        newNoteIds.push(newNote.id);
+                    }
+                });
+
+                // Select the duplicated notes
+                if (newNoteIds.length > 0) {
+                    setSelectedNoteIds(new Set(newNoteIds));
+                }
+
+                if (DEBUG_MODE) console.log('📋 Ctrl+D: Duplicated', newNoteIds.length, 'notes');
+            }
         } else if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
             // Ctrl+B / Cmd+B - Sequential duplication with memory
             e.preventDefault();
@@ -1112,7 +1545,29 @@ export function useNoteInteractionsV2(
             }
         }
         // Note: Spacebar handling will be added to PianoRoll.jsx component level
-    }, [selectedNoteIds, deleteNotes, deselectAll, notes, snapValue, addNote, lastDuplicateAction]);
+    }, [selectedNoteIds, deleteNotes, deselectAll, notes, snapValue, addNote, lastDuplicateAction, currentInstrument, lastNoteDuration]);
+
+    // ✅ KEY UP HANDLER - Stop keyboard piano preview
+    const handleKeyUp = useCallback((e) => {
+        const key = e.key.toLowerCase();
+        const pitch = KEYBOARD_TO_PITCH[key];
+
+        if (pitch !== undefined) {
+            e.preventDefault();
+
+            // Stop audio preview
+            samplePreview.stopAllPreviews();
+
+            // Remove from active keyboard notes
+            setActiveKeyboardNotes(prev => {
+                const newMap = new Map(prev);
+                newMap.delete(key);
+                return newMap;
+            });
+
+            if (DEBUG_MODE) console.log('⌨️ Keyboard note released:', key, pitch);
+        }
+    }, []);
 
     return {
         // Event handlers
@@ -1120,6 +1575,8 @@ export function useNoteInteractionsV2(
         handleMouseMove,
         handleMouseUp,
         handleKeyDown,
+        handleKeyUp, // ✅ NEW: Key up handler for keyboard piano
+        handleWheel, // ✅ NEW: Wheel handler for velocity and duration control
 
         // State
         hoveredNoteId,

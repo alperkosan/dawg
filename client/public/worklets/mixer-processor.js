@@ -7,6 +7,7 @@ class MixerProcessor extends AudioWorkletProcessor {
         return [
             { name: 'gain', defaultValue: 0.8, minValue: 0, maxValue: 2 },
             { name: 'pan', defaultValue: 0, minValue: -1, maxValue: 1 },
+            { name: 'mono', defaultValue: 0, minValue: 0, maxValue: 1 },
             { name: 'lowGain', defaultValue: 1, minValue: 0, maxValue: 3 },
             { name: 'midGain', defaultValue: 1, minValue: 0, maxValue: 3 },
             { name: 'highGain', defaultValue: 1, minValue: 0, maxValue: 3 },
@@ -79,6 +80,15 @@ class MixerProcessor extends AudioWorkletProcessor {
         const input = inputs[0];
         const output = outputs[0];
 
+        // ✅ DEBUG: Log channel configuration on first call
+        if (this.processCallCount === 0) {
+            console.log(`🎚️ MixerProcessor[${this.stripId}] CHANNEL CONFIG:`, {
+                inputChannels: input?.length || 0,
+                outputChannels: output?.length || 0,
+                stereo: (input?.length === 2 && output?.length === 2) ? '✅ YES' : '❌ NO'
+            });
+        }
+
         // ✅ DEBUG: Log first few process calls for track-1
         if (this.stripId === 'track-1' && this.processCallCount < 5) {
             const hasAudio = input?.[0]?.[0] !== 0;
@@ -127,6 +137,7 @@ class MixerProcessor extends AudioWorkletProcessor {
         // Get other parameters
         const gain = this.getParamValue(parameters.gain, 0);
         const pan = this.getParamValue(parameters.pan, 0);
+        const mono = this.getParamValue(parameters.mono, 0);
         const threshold = this.getParamValue(parameters.compThreshold, 0);
         const ratio = this.getParamValue(parameters.compRatio, 0);
 
@@ -155,12 +166,19 @@ class MixerProcessor extends AudioWorkletProcessor {
             samplesL *= gain;
             samplesR *= gain;
 
-            // Pan processing
+            // Pan processing (equal-power panning law)
             if (pan !== 0) {
-                const tempL = samplesL;
-                const tempR = samplesR;
-                samplesL = tempL * panGainL + tempR * (1 - panGainL);
-                samplesR = tempR * panGainR + tempL * (1 - panGainR);
+                // Sum to mono first, then apply equal-power pan coefficients
+                const monoSum = (samplesL + samplesR) * 0.5;
+                samplesL = monoSum * panGainL;
+                samplesR = monoSum * panGainR;
+            }
+
+            // Mono collapse (if mono button active)
+            if (mono > 0.5) {
+                const monoSum = (samplesL + samplesR) * 0.5;
+                samplesL = monoSum;
+                samplesR = monoSum;
             }
 
             // Output

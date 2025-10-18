@@ -523,6 +523,12 @@ export class NativeAudioEngine {
             const { node: mixerNode } = await this.workletManager.createWorkletNode(
                 'mixer-processor',
                 {
+                    numberOfInputs: 1,
+                    numberOfOutputs: 1,
+                    outputChannelCount: [2],  // ✅ Force stereo output for pan to work
+                    channelCount: 2,          // ✅ Force stereo processing
+                    channelCountMode: 'explicit',  // ✅ Prevent auto-conversion to mono
+                    channelInterpretation: 'speakers',  // ✅ Stereo interpretation
                     processorOptions: {
                         stripId: id,
                         stripName: name
@@ -596,6 +602,21 @@ export class NativeAudioEngine {
         }
     }
 
+    setChannelMono(channelId, mono) {
+        const channel = this.mixerChannels.get(channelId);
+        if (channel) {
+            channel.setMono(mono);
+        }
+    }
+
+    getMeterLevel(channelId) {
+        const channel = this.mixerChannels.get(channelId);
+        if (channel && channel.getMeterLevel) {
+            return channel.getMeterLevel();
+        }
+        return { peak: -60, rms: -60 };
+    }
+
     setMasterVolume(volume) {
         if (this.masterLimiter) {
             const now = this.audioContext.currentTime;
@@ -604,6 +625,93 @@ export class NativeAudioEngine {
             param.setValueAtTime(param.value, now);
             param.linearRampToValueAtTime(volume, now + 0.015);
         }
+    }
+
+    // =================== SEND/INSERT ROUTING ===================
+
+    /**
+     * Create a send from a track to a bus
+     * @param {string} trackId - Source track ID
+     * @param {string} busId - Target bus ID
+     * @param {number} level - Send level (0-1)
+     * @param {boolean} preFader - Send before or after fader
+     */
+    createSend(trackId, busId, level = 0.5, preFader = false) {
+        const sourceChannel = this.mixerChannels.get(trackId);
+        const busChannel = this.mixerChannels.get(busId);
+
+        if (!sourceChannel) {
+            console.error(`❌ Source channel not found: ${trackId}`);
+            return;
+        }
+
+        if (!busChannel) {
+            console.error(`❌ Bus channel not found: ${busId}`);
+            return;
+        }
+
+        // Create send in source channel
+        sourceChannel.createSend(busId, busChannel.input, level, preFader);
+        console.log(`✅ Send created: ${trackId} → ${busId}`);
+    }
+
+    /**
+     * Remove a send from a track
+     * @param {string} trackId - Source track ID
+     * @param {string} busId - Target bus ID
+     */
+    removeSend(trackId, busId) {
+        const sourceChannel = this.mixerChannels.get(trackId);
+
+        if (!sourceChannel) {
+            console.error(`❌ Source channel not found: ${trackId}`);
+            return;
+        }
+
+        sourceChannel.removeSend(busId);
+        console.log(`✅ Send removed: ${trackId} → ${busId}`);
+    }
+
+    /**
+     * Update send level
+     * @param {string} trackId - Source track ID
+     * @param {string} busId - Target bus ID
+     * @param {number} level - New send level (0-1)
+     */
+    updateSendLevel(trackId, busId, level) {
+        const sourceChannel = this.mixerChannels.get(trackId);
+
+        if (!sourceChannel) {
+            console.error(`❌ Source channel not found: ${trackId}`);
+            return;
+        }
+
+        sourceChannel.updateSendLevel(busId, level);
+        console.log(`✅ Send level updated: ${trackId} → ${busId} (${level})`);
+    }
+
+    /**
+     * Set track output routing (insert)
+     * @param {string} trackId - Source track ID
+     * @param {string} targetId - Target track/bus/master ID
+     */
+    setTrackOutput(trackId, targetId) {
+        const sourceChannel = this.mixerChannels.get(trackId);
+        const targetChannel = this.mixerChannels.get(targetId);
+
+        if (!sourceChannel) {
+            console.error(`❌ Source channel not found: ${trackId}`);
+            return;
+        }
+
+        if (!targetChannel) {
+            console.error(`❌ Target channel not found: ${targetId}`);
+            return;
+        }
+
+        // Reconnect source channel output to target channel input
+        sourceChannel.reconnectOutput(targetChannel.input);
+        console.log(`✅ Track output routed: ${trackId} → ${targetId}`);
     }
 
     // =================== AUDITION (PREVIEW) ===================
@@ -889,6 +997,12 @@ class NativeSynthInstrument {
         const { node } = await this.workletManager.createWorkletNode(
             'instrument-processor',
             {
+                numberOfInputs: 0,  // ✅ No external inputs (generates audio)
+                numberOfOutputs: 1,
+                outputChannelCount: [2],  // ✅ Force stereo output
+                channelCount: 2,          // ✅ Force stereo processing
+                channelCountMode: 'explicit',  // ✅ Prevent auto-conversion to mono
+                channelInterpretation: 'speakers',  // ✅ Stereo interpretation
                 processorOptions: {
                     instrumentId: this.id,
                     instrumentName: this.name,
@@ -900,6 +1014,12 @@ class NativeSynthInstrument {
         this.workletNode = node;
         this.internalOutput = this.audioContext.createGain();
         this.internalOutput.gain.value = 0.8;
+
+        // ✅ Force stereo on output gain node (preserve stereo from worklet)
+        this.internalOutput.channelCount = 2;
+        this.internalOutput.channelCountMode = 'explicit';
+        this.internalOutput.channelInterpretation = 'speakers';
+
         this.output = this.internalOutput; // Default: direct connection
 
         this.workletNode.connect(this.internalOutput);
@@ -1089,7 +1209,15 @@ class NativeMixerChannel {
         // Audio nodes
         this.input = this.mixerNode;
         this.output = this.audioContext.createGain();
+
+        // ✅ Force stereo on output gain node (preserve pan from worklet)
+        this.output.channelCount = 2;
+        this.output.channelCountMode = 'explicit';
+        this.output.channelInterpretation = 'speakers';
+
         this.analyzer = this.audioContext.createAnalyser();
+        this.analyzer.channelCount = 2; // ✅ Analyzer should also be stereo
+        this.analyzer.channelCountMode = 'explicit';
 
         // Parameters
         this.parameters = new Map([
@@ -1146,6 +1274,9 @@ class NativeMixerChannel {
             param.cancelScheduledValues(now);
             param.setValueAtTime(param.value, now);
             param.linearRampToValueAtTime(this.pan, now + 0.015);
+            // Removed excessive logging (throttled by RAF in UI already)
+        } else {
+            console.error(`❌ ${this.name}: Pan parameter is NULL!`);
         }
     }
 
@@ -1158,13 +1289,30 @@ class NativeMixerChannel {
             param.cancelScheduledValues(now);
             param.setValueAtTime(param.value, now);
             param.linearRampToValueAtTime(gainValue, now + 0.015);
+            console.log(`✅ ${this.name}: Mute=${muted}, gain=${gainValue}`);
+        } else {
+            console.error(`❌ ${this.name}: Gain parameter is NULL!`);
         }
     }
 
     setSolo(soloed, isAnySoloed) {
         this.isSoloed = soloed;
         const shouldMute = isAnySoloed && !soloed;
+        console.log(`🎧 ${this.name}: setSolo(${soloed}, ${isAnySoloed}) → shouldMute=${shouldMute}`);
         this.setMute(shouldMute);
+    }
+
+    setMono(mono) {
+        this.isMono = mono;
+        const param = this.parameters.get('mono');
+        if (param) {
+            const now = this.audioContext.currentTime;
+            param.cancelScheduledValues(now);
+            param.setValueAtTime(mono ? 1 : 0, now);
+            console.log(`📻 ${this.name}: Mono=${mono}`);
+        } else {
+            console.warn(`⚠️ ${this.name}: Mono parameter not available`);
+        }
     }
 
     // =================== EQ CONTROLS ===================
@@ -1276,6 +1424,80 @@ class NativeMixerChannel {
         return { peak: peakDb, rms: rmsDb };
     }
 
+    // =================== SEND ROUTING ===================
+
+    /**
+     * Create a send from this channel to a bus
+     * @param {string} busId - Target bus ID
+     * @param {AudioNode} busInput - Target bus input node
+     * @param {number} level - Send level (0-1)
+     * @param {boolean} preFader - Send before or after fader
+     */
+    createSend(busId, busInput, level = 0.5, preFader = false) {
+        // Create send gain node
+        const sendGain = this.audioContext.createGain();
+        sendGain.gain.value = level;
+
+        // Determine tap point (pre or post fader)
+        const tapPoint = preFader ? this.mixerNode : this.analyzer;
+
+        // Connect: tapPoint -> sendGain -> busInput
+        tapPoint.connect(sendGain);
+        sendGain.connect(busInput);
+
+        // Store send info
+        this.sends.set(busId, {
+            busId,
+            gainNode: sendGain,
+            level,
+            preFader,
+            tapPoint
+        });
+
+        console.log(`🔌 Send created: ${this.id} → ${busId} (level: ${level}, ${preFader ? 'pre' : 'post'}-fader)`);
+    }
+
+    /**
+     * Remove a send from this channel
+     * @param {string} busId - Target bus ID
+     */
+    removeSend(busId) {
+        const send = this.sends.get(busId);
+        if (send) {
+            // Disconnect send
+            send.gainNode.disconnect();
+            this.sends.delete(busId);
+            console.log(`🔌 Send removed: ${this.id} → ${busId}`);
+        }
+    }
+
+    /**
+     * Update send level
+     * @param {string} busId - Target bus ID
+     * @param {number} level - New send level (0-1)
+     */
+    updateSendLevel(busId, level) {
+        const send = this.sends.get(busId);
+        if (send) {
+            send.level = level;
+            const now = this.audioContext.currentTime;
+            send.gainNode.gain.cancelScheduledValues(now);
+            send.gainNode.gain.setValueAtTime(send.gainNode.gain.value, now);
+            send.gainNode.gain.linearRampToValueAtTime(level, now + 0.015);
+            console.log(`🔊 Send level updated: ${this.id} → ${busId} (level: ${level})`);
+        }
+    }
+
+    /**
+     * Reconnect output to a different destination (insert routing)
+     * @param {AudioNode} destination - New destination node
+     */
+    reconnectOutput(destination) {
+        this.output.disconnect();
+        this.output.connect(destination);
+        console.log(`🔌 Output reconnected: ${this.id} → ${destination}`);
+    }
+
     // =================== CONNECTION ===================
 
     connect(destination) {
@@ -1299,7 +1521,49 @@ class NativeMixerChannel {
         if (this.analyzer) {
             this.analyzer.disconnect();
         }
-        
+
+    }
+
+    // =================== METERING ===================
+
+    getMeterLevel() {
+        if (!this.analyzer) {
+            return { peak: -60, rms: -60 };
+        }
+
+        const bufferLength = this.analyzer.frequencyBinCount;
+        const dataArray = new Uint8Array(bufferLength);
+
+        // Get time domain data (waveform)
+        this.analyzer.getByteTimeDomainData(dataArray);
+
+        // Calculate peak and RMS
+        let peak = 0;
+        let sum = 0;
+
+        for (let i = 0; i < bufferLength; i++) {
+            // Convert from 0-255 to -1 to +1
+            const normalized = (dataArray[i] - 128) / 128;
+            const abs = Math.abs(normalized);
+
+            if (abs > peak) {
+                peak = abs;
+            }
+
+            sum += normalized * normalized;
+        }
+
+        const rms = Math.sqrt(sum / bufferLength);
+
+        // Convert to dB (20 * log10(value))
+        // Add small epsilon to avoid log(0)
+        const peakDb = peak > 0.00001 ? 20 * Math.log10(peak) : -60;
+        const rmsDb = rms > 0.00001 ? 20 * Math.log10(rms) : -60;
+
+        return {
+            peak: Math.max(-60, Math.min(12, peakDb)),
+            rms: Math.max(-60, Math.min(12, rmsDb))
+        };
     }
 }
 

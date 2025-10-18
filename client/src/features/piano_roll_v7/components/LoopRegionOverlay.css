@@ -1,0 +1,71 @@
+/* Loop Region Overlay - Zenith Theme */
+
+.loop-region-overlay {
+    position: absolute;
+    pointer-events: none;
+    z-index: 5; /* Above grid, below notes */
+}
+
+.loop-region-overlay__fill {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: var(--zenith-accent-cool);
+    opacity: 0.08;
+    pointer-events: none;
+}
+
+.loop-region-overlay__border-left,
+.loop-region-overlay__border-right {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--zenith-accent-cool);
+    pointer-events: none;
+    box-shadow: 0 0 8px var(--zenith-accent-cool);
+}
+
+.loop-region-overlay__border-left {
+    left: 0;
+}
+
+.loop-region-overlay__border-right {
+    right: 0;
+}
+
+/* Timeline ruler highlight */
+.timeline-ruler__loop-region {
+    position: absolute;
+    height: 100%;
+    background: var(--zenith-accent-cool);
+    opacity: 0.2;
+    pointer-events: none;
+    border-left: 2px solid var(--zenith-accent-cool);
+    border-right: 2px solid var(--zenith-accent-cool);
+}
+
+/* Loop region handles for resizing */
+.loop-region-handle {
+    position: absolute;
+    width: 8px;
+    height: 100%;
+    cursor: ew-resize;
+    background: var(--zenith-accent-cool);
+    opacity: 0.6;
+    transition: opacity 0.15s ease;
+}
+
+.loop-region-handle:hover {
+    opacity: 1;
+}
+
+.loop-region-handle--left {
+    left: -4px;
+}
+
+.loop-region-handle--right {
+    right: -4px;
+}

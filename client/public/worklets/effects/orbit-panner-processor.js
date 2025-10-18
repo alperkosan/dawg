@@ -102,24 +102,22 @@ class OrbitPannerProcessor extends AudioWorkletProcessor {
       const leftGain = Math.cos(panAngle);
       const rightGain = Math.sin(panAngle);
 
-      // Get mono input (mix if stereo)
-      let monoInput = 0;
-      for (let ch = 0; ch < input.length; ch++) {
-        monoInput += input[ch][i];
-      }
-      monoInput /= input.length;
+      // ✅ Stereo preservation: Process L/R independently, apply auto-pan to combined signal
+      const inputLeft = input[0] ? input[0][i] : 0;
+      const inputRight = input[1] ? input[1][i] : inputLeft;
 
-      // Apply panning with wet/dry mix
+      // Create auto-panned stereo image from input
+      const monoSum = (inputLeft + inputRight) * 0.5; // Combine for panning
+      const wetLeft = monoSum * leftGain;
+      const wetRight = monoSum * rightGain;
+
+      // Mix dry (original stereo) with wet (auto-panned)
       if (output.length >= 1) {
-        const wetLeft = monoInput * leftGain;
-        const dryLeft = input[0] ? input[0][i] : 0;
-        output[0][i] = dry * dryLeft + wet * wetLeft;
+        output[0][i] = dry * inputLeft + wet * wetLeft;
       }
 
       if (output.length >= 2) {
-        const wetRight = monoInput * rightGain;
-        const dryRight = input[1] ? input[1][i] : (input[0] ? input[0][i] : 0);
-        output[1][i] = dry * dryRight + wet * wetRight;
+        output[1][i] = dry * inputRight + wet * wetRight;
       }
 
       // Update LFO phase

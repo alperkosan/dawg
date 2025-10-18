@@ -8,6 +8,8 @@ function VelocityLane({
     notes = [],
     selectedNoteIds = [],
     onNoteVelocityChange,
+    onNoteSelect,
+    onDeselectAll,
     dimensions,
     viewport,
     activeTool = 'select'
@@ -132,12 +134,27 @@ function VelocityLane({
             return clickTime >= note.startTime && clickTime <= (note.startTime + note.length);
         });
 
-        if (clickedNote && selectedNoteIds.includes(clickedNote.id)) {
-            // Start velocity drag
+        if (clickedNote) {
+            // ✅ SELECT NOTE - If not already selected, select it
+            const isAlreadySelected = selectedNoteIds.includes(clickedNote.id);
+
+            if (!isAlreadySelected) {
+                // Select note (with Ctrl/Cmd for multi-select)
+                onNoteSelect?.(clickedNote.id, e.ctrlKey || e.metaKey);
+            } else if (!e.ctrlKey && !e.metaKey && selectedNoteIds.length > 1) {
+                // If clicking on already selected note without modifier and multiple selected,
+                // select only this one
+                onDeselectAll?.();
+                onNoteSelect?.(clickedNote.id, false);
+            }
+
+            // ✅ START VELOCITY DRAG - For selected notes
             const startVelocity = clickedNote.velocity || 0.7;
             const startY = clickY;
+            let hasMoved = false;
 
             const handleMouseMove = (moveEvent) => {
+                hasMoved = true;
                 const currentY = moveEvent.clientY - rect.top;
                 const deltaY = startY - currentY; // Inverted: up = increase velocity
                 const velocityChange = deltaY / rect.height; // Normalize to 0-1 range
@@ -153,8 +170,13 @@ function VelocityLane({
 
             document.addEventListener('mousemove', handleMouseMove);
             document.addEventListener('mouseup', handleMouseUp);
+        } else {
+            // ✅ DESELECT ALL - Clicking on empty area
+            if (!e.ctrlKey && !e.metaKey) {
+                onDeselectAll?.();
+            }
         }
-    }, [activeTool, notes, selectedNoteIds, dimensions, viewport, onNoteVelocityChange]);
+    }, [activeTool, notes, selectedNoteIds, dimensions, viewport, onNoteVelocityChange, onNoteSelect, onDeselectAll]);
 
     return (
         <div className="velocity-lane">
@@ -183,6 +205,8 @@ export default React.memo(VelocityLane, (prevProps, nextProps) => {
         prevProps.selectedNoteIds === nextProps.selectedNoteIds &&
         prevProps.activeTool === nextProps.activeTool &&
         prevProps.onNoteVelocityChange === nextProps.onNoteVelocityChange &&
+        prevProps.onNoteSelect === nextProps.onNoteSelect &&
+        prevProps.onDeselectAll === nextProps.onDeselectAll &&
         prevProps.dimensions === nextProps.dimensions &&
         prevProps.viewport === nextProps.viewport
     );

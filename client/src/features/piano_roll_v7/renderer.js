@@ -16,6 +16,11 @@ export function drawPianoRoll(ctx, engine) {
     if (engine.playhead || engine.isPlaying !== undefined) {
         drawPlayhead(ctx, engine);
     }
+
+    // Draw loop region if exists
+    if (engine.loopRegion) {
+        drawLoopRegionOnTimeline(ctx, engine);
+    }
 }
 
 // Static rendering (everything except playhead) - for performance optimization
@@ -355,6 +360,73 @@ function drawTimeline(ctx, { viewport, dimensions, lod, snapValue }) {
             ctx.fillText(text, x + 5, RULER_HEIGHT - 9);
         }
     }
+    ctx.restore();
+}
+
+// ✅ LOOP REGION ON TIMELINE - Visual indicator on ruler
+function drawLoopRegionOnTimeline(ctx, engine) {
+    const { loopRegion, viewport, dimensions } = engine;
+    if (!loopRegion || !dimensions) return;
+
+    const styles = getComputedStyle(document.documentElement);
+    const { stepWidth } = dimensions;
+    const { start, end } = loopRegion;
+
+    ctx.save();
+    ctx.translate(KEYBOARD_WIDTH, 0);
+
+    // Calculate positions
+    const startX = (start * stepWidth) - viewport.scrollX;
+    const endX = (end * stepWidth) - viewport.scrollX;
+    const width = endX - startX;
+
+    // Only render if visible
+    if (endX < 0 || startX > viewport.width - KEYBOARD_WIDTH) {
+        ctx.restore();
+        return;
+    }
+
+    // Clamp to visible area
+    const visibleStartX = Math.max(0, startX);
+    const visibleEndX = Math.min(viewport.width - KEYBOARD_WIDTH, endX);
+    const visibleWidth = visibleEndX - visibleStartX;
+
+    if (visibleWidth > 0) {
+        // Fill
+        const accentCool = styles.getPropertyValue('--zenith-accent-cool').trim();
+        ctx.fillStyle = accentCool || '#3b82f6';
+        ctx.globalAlpha = 0.15;
+        ctx.fillRect(visibleStartX, 0, visibleWidth, RULER_HEIGHT);
+
+        // Borders
+        ctx.globalAlpha = 0.8;
+        ctx.strokeStyle = accentCool || '#3b82f6';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+
+        // Left border (if visible)
+        if (startX >= 0 && startX <= viewport.width - KEYBOARD_WIDTH) {
+            ctx.moveTo(startX, 0);
+            ctx.lineTo(startX, RULER_HEIGHT);
+        }
+
+        // Right border (if visible)
+        if (endX >= 0 && endX <= viewport.width - KEYBOARD_WIDTH) {
+            ctx.moveTo(endX, 0);
+            ctx.lineTo(endX, RULER_HEIGHT);
+        }
+
+        ctx.stroke();
+
+        // Top line
+        ctx.globalAlpha = 0.4;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(visibleStartX, 0);
+        ctx.lineTo(visibleEndX, 0);
+        ctx.stroke();
+    }
+
     ctx.restore();
 }
 

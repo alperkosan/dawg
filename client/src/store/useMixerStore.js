@@ -12,6 +12,7 @@ export const useMixerStore = create((set, get) => ({
   activeChannelId: 'master',
   soloedChannels: new Set(),
   mutedChannels: new Set(),
+  monoChannels: new Set(), // ✅ Channels forced to mono output
 
   // ✅ SAFETY: Rate limiting for effect operations
   _effectOperationTimestamps: new Map(),
@@ -80,13 +81,23 @@ export const useMixerStore = create((set, get) => ({
   },
 
   toggleSolo: (trackId) => {
-    const { soloedChannels } = get();
+    const { soloedChannels, mutedChannels } = get();
     const newSoloedChannels = new Set(soloedChannels);
     newSoloedChannels.has(trackId) ? newSoloedChannels.delete(trackId) : newSoloedChannels.add(trackId);
     set({ soloedChannels: newSoloedChannels });
-    // SES MOTORUNA KOMUT GÖNDER (sadece mevcut metodları çağır)
+    // SES MOTORUNA KOMUT GÖNDER - mutedChannels'ı da gönder ki restore edebilsin
     if (AudioContextService.setSoloState) {
-      AudioContextService.setSoloState(newSoloedChannels);
+      AudioContextService.setSoloState(newSoloedChannels, mutedChannels);
+    }
+  },
+
+  toggleMono: (trackId) => {
+    const newMonoChannels = new Set(get().monoChannels);
+    newMonoChannels.has(trackId) ? newMonoChannels.delete(trackId) : newMonoChannels.add(trackId);
+    set({ monoChannels: newMonoChannels });
+    // Send to audio engine
+    if (AudioContextService.setMonoState) {
+      AudioContextService.setMonoState(trackId, newMonoChannels.has(trackId));
     }
   },
 
@@ -304,6 +315,118 @@ export const useMixerStore = create((set, get) => ({
     }));
   },
 
+  setTrackColor: (trackId, newColor) => {
+    set(state => ({
+      mixerTracks: state.mixerTracks.map(track =>
+        track.id === trackId ? { ...track, color: newColor } : track
+      )
+    }));
+  },
+
+  addTrack: (type = 'track') => {
+    const { mixerTracks } = get();
+    const tracksOfType = mixerTracks.filter(t => t.type === type);
+    const nextNumber = tracksOfType.length + 1;
+
+    const newTrack = {
+      id: `${type}-${uuidv4()}`,
+      name: type === 'bus' ? `Bus ${nextNumber}` : `Track ${nextNumber}`,
+      type: type,
+      volume: 0,
+      pan: 0,
+      isMuted: false,
+      isSolo: false,
+      color: type === 'bus' ? '#f59e0b' : '#3b82f6',
+      output: 'master',
+      sends: [],
+      insertEffects: [],
+      eq: {
+        enabled: false,
+        lowGain: 0,
+        midGain: 0,
+        highGain: 0
+      }
+    };
+
+    set(state => ({
+      mixerTracks: [...state.mixerTracks, newTrack],
+      activeChannelId: newTrack.id
+    }));
+
+    // Notify audio engine to create new channel
+    const audioEngine = AudioContextService.getAudioEngine();
+    if (audioEngine && audioEngine.createMixerChannel) {
+      audioEngine.createMixerChannel(newTrack);
+    }
+
+    console.log(`✅ ${type} added: ${newTrack.name} (${newTrack.id})`);
+    return newTrack.id;
+  },
+
+  removeTrack: (trackId) => {
+    const { mixerTracks } = get();
+    const track = mixerTracks.find(t => t.id === trackId);
+
+    if (!track) {
+      console.warn(`⚠️ Track ${trackId} not found`);
+      return;
+    }
+
+    if (track.type === 'master') {
+      console.error('❌ Cannot remove master channel');
+      return;
+    }
+
+    // Check if any tracks are routed to this track (insert routing)
+    const dependentTracks = mixerTracks.filter(t => t.output === trackId);
+    if (dependentTracks.length > 0) {
+      // Reroute dependent tracks to master
+      dependentTracks.forEach(t => {
+        console.log(`⚠️ Rerouting ${t.name} from ${trackId} to master`);
+      });
+    }
+
+    // Remove sends to this track from all other tracks
+    const tracksWithSends = mixerTracks.filter(t => {
+      const sends = t.sends || [];
+      return sends.some(s => s.busId === trackId);
+    });
+
+    set(state => {
+      const newTracks = state.mixerTracks
+        .filter(t => t.id !== trackId)
+        .map(t => {
+          // Reroute output if it was going to removed track
+          let newTrack = { ...t };
+          if (t.output === trackId) {
+            newTrack.output = 'master';
+          }
+          // Remove sends to removed track
+          const sends = t.sends || [];
+          newTrack.sends = sends.filter(s => s.busId !== trackId);
+          return newTrack;
+        });
+
+      // If removed track was active, select master
+      const newActiveId = state.activeChannelId === trackId
+        ? 'master'
+        : state.activeChannelId;
+
+      return {
+        mixerTracks: newTracks,
+        activeChannelId: newActiveId
+      };
+    });
+
+    // Notify audio engine to remove channel
+    const audioEngine = AudioContextService.getAudioEngine();
+    if (audioEngine && audioEngine.removeMixerChannel) {
+      audioEngine.removeMixerChannel(trackId);
+    }
+
+    console.log(`✅ Track removed: ${trackId}`);
+  },
+
   // --- SEND CHANNEL ACTIONS ---
 
   addSendChannel: (sendChannel) => {
@@ -395,5 +518,201 @@ export const useMixerStore = create((set, get) => ({
     if (AudioContextService.updateSendLevel) {
       AudioContextService.updateSendLevel(trackId, sendParam, value);
     }
+  },
+
+  // =================== SEND/INSERT ROUTING ACTIONS ===================
+
+  /**
+   * Add a send from a track to a bus
+   * @param {string} trackId - Source track ID
+   * @param {string} busId - Target bus ID
+   * @param {number} level - Send level (0-1)
+   * @param {boolean} preFader - Send before or after fader
+   */
+  addSend: (trackId, busId, level = 0.5, preFader = false) => {
+    // ✅ SAFETY: Check for send loops before adding
+    const { mixerTracks } = get();
+
+    const wouldCreateSendLoop = (sourceId, targetId) => {
+      const visited = new Set();
+
+      const checkSendPath = (currentId) => {
+        if (currentId === sourceId) return true; // Loop detected!
+        if (visited.has(currentId)) return false;
+        visited.add(currentId);
+
+        const currentTrack = mixerTracks.find(t => t.id === currentId);
+        if (!currentTrack) return false;
+
+        // Check all sends from current track
+        const sends = currentTrack.sends || [];
+        for (const send of sends) {
+          if (checkSendPath(send.busId)) return true;
+        }
+
+        return false;
+      };
+
+      return checkSendPath(targetId);
+    };
+
+    // Check for loops
+    if (wouldCreateSendLoop(trackId, busId)) {
+      console.error(`❌ Cannot add send: ${trackId} → ${busId} would create a feedback loop!`);
+      return;
+    }
+
+    set(state => {
+      const newTracks = state.mixerTracks.map(track => {
+        if (track.id === trackId) {
+          const sends = track.sends || [];
+          // Check if send already exists
+          const existingSend = sends.find(s => s.busId === busId);
+          if (existingSend) {
+            console.warn(`⚠️ Send from ${trackId} to ${busId} already exists`);
+            return track;
+          }
+          // Add new send
+          return {
+            ...track,
+            sends: [...sends, { busId, level, preFader }]
+          };
+        }
+        return track;
+      });
+      return { mixerTracks: newTracks };
+    });
+
+    // Notify audio engine to create send routing
+    const audioEngine = AudioContextService.getAudioEngine();
+    if (audioEngine && audioEngine.createSend) {
+      audioEngine.createSend(trackId, busId, level, preFader);
+    }
+
+    console.log(`✅ Send added: ${trackId} → ${busId} (level: ${level}, preFader: ${preFader})`);
+  },
+
+  /**
+   * Remove a send from a track
+   * @param {string} trackId - Source track ID
+   * @param {string} busId - Target bus ID
+   */
+  removeSend: (trackId, busId) => {
+    set(state => {
+      const newTracks = state.mixerTracks.map(track => {
+        if (track.id === trackId) {
+          const sends = track.sends || [];
+          return {
+            ...track,
+            sends: sends.filter(s => s.busId !== busId)
+          };
+        }
+        return track;
+      });
+      return { mixerTracks: newTracks };
+    });
+
+    // Notify audio engine to remove send routing
+    const audioEngine = AudioContextService.getAudioEngine();
+    if (audioEngine && audioEngine.removeSend) {
+      audioEngine.removeSend(trackId, busId);
+    }
+
+    console.log(`✅ Send removed: ${trackId} → ${busId}`);
+  },
+
+  /**
+   * Update send level
+   * @param {string} trackId - Source track ID
+   * @param {string} busId - Target bus ID
+   * @param {number} level - New send level (0-1)
+   */
+  updateSendLevel: (trackId, busId, level) => {
+    set(state => {
+      const newTracks = state.mixerTracks.map(track => {
+        if (track.id === trackId) {
+          const sends = track.sends || [];
+          return {
+            ...track,
+            sends: sends.map(s => s.busId === busId ? { ...s, level } : s)
+          };
+        }
+        return track;
+      });
+      return { mixerTracks: newTracks };
+    });
+
+    // Notify audio engine to update send level
+    const audioEngine = AudioContextService.getAudioEngine();
+    if (audioEngine && audioEngine.updateSendLevel) {
+      audioEngine.updateSendLevel(trackId, busId, level);
+    }
+
+    console.log(`✅ Send level updated: ${trackId} → ${busId} (level: ${level})`);
+  },
+
+  /**
+   * Toggle send pre/post fader mode
+   * @param {string} trackId - Source track ID
+   * @param {string} busId - Target bus ID
+   */
+  toggleSendPreFader: (trackId, busId) => {
+    let newPreFaderValue = false;
+
+    set(state => {
+      const newTracks = state.mixerTracks.map(track => {
+        if (track.id === trackId) {
+          const sends = track.sends || [];
+          return {
+            ...track,
+            sends: sends.map(s => {
+              if (s.busId === busId) {
+                newPreFaderValue = !s.preFader;
+                return { ...s, preFader: newPreFaderValue };
+              }
+              return s;
+            })
+          };
+        }
+        return track;
+      });
+      return { mixerTracks: newTracks };
+    });
+
+    // Notify audio engine to rebuild send routing
+    const audioEngine = AudioContextService.getAudioEngine();
+    if (audioEngine && audioEngine.updateSendPreFader) {
+      audioEngine.updateSendPreFader(trackId, busId, newPreFaderValue);
+    }
+
+    console.log(`✅ Send pre/post updated: ${trackId} → ${busId} (preFader: ${newPreFaderValue})`);
+  },
+
+  /**
+   * Set track output routing (insert)
+   * @param {string} trackId - Source track ID
+   * @param {string} targetId - Target track/bus ID (null for master)
+   */
+  setTrackOutput: (trackId, targetId) => {
+    set(state => {
+      const newTracks = state.mixerTracks.map(track => {
+        if (track.id === trackId) {
+          return {
+            ...track,
+            output: targetId || 'master'
+          };
+        }
+        return track;
+      });
+      return { mixerTracks: newTracks };
+    });
+
+    // Notify audio engine to reroute output
+    const audioEngine = AudioContextService.getAudioEngine();
+    if (audioEngine && audioEngine.setTrackOutput) {
+      audioEngine.setTrackOutput(trackId, targetId || 'master');
+    }
+
+    console.log(`✅ Track output set: ${trackId} → ${targetId || 'master'}`);
   },
 }));

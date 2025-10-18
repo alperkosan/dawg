@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Play, Pause, Square, Wind, Repeat } from 'lucide-react';
 import { Knob } from '@/components/controls';
+import { CPUMonitor } from '@/components/monitors/CPUMonitor';
 import { PLAYBACK_MODES, PLAYBACK_STATES } from '@/config/constants';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
 import { AudioContextService } from '@/lib/services/AudioContextService';
@@ -125,7 +126,8 @@ function TopToolbar() {
         </div>
       </div>
 
-      <div className="toolbar__group" style={{ width: '200px', justifyContent: 'flex-end' }}>
+      <div className="toolbar__group" style={{ width: '280px', justifyContent: 'flex-end', gap: '12px' }}>
+        <CPUMonitor />
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <Knob
             size={28}

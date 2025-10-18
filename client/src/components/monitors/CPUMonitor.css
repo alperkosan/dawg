@@ -1,0 +1,72 @@
+/* CPU Monitor Styles */
+
+.cpu-monitor {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: var(--zenith-bg-tertiary);
+  border: 1px solid var(--zenith-border-subtle);
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  min-width: 100px;
+}
+
+.cpu-monitor__icon {
+  flex-shrink: 0;
+  transition: color 0.2s ease;
+}
+
+.cpu-monitor__bar-container {
+  position: relative;
+  flex: 1;
+  height: 8px;
+  background: var(--zenith-bg-secondary);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.cpu-monitor__bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  background: var(--zenith-success);
+  transition: width 0.15s ease, background-color 0.2s ease;
+  border-radius: 2px;
+}
+
+.cpu-monitor__bar--warning {
+  background: var(--zenith-warning);
+}
+
+.cpu-monitor__bar--critical {
+  background: var(--zenith-danger);
+  animation: cpu-pulse 0.5s ease-in-out infinite alternate;
+}
+
+@keyframes cpu-pulse {
+  from {
+    opacity: 0.8;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.cpu-monitor__value {
+  flex-shrink: 0;
+  min-width: 32px;
+  text-align: right;
+  color: var(--zenith-text-secondary);
+  transition: color 0.2s ease;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Hover state */
+.cpu-monitor:hover {
+  background: var(--zenith-bg-quaternary);
+  border-color: var(--zenith-border-medium);
+}

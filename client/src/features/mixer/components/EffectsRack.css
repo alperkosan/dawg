@@ -261,6 +261,15 @@
   opacity: 0.5;
 }
 
+/* ✅ Dragging state */
+.effects-rack__item--dragging {
+  opacity: 0.5;
+  cursor: grabbing !important;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
+  transform: scale(1.02);
+  z-index: 1000;
+}
+
 .effects-rack__item-header {
   display: flex;
   align-items: center;
@@ -271,6 +280,7 @@
   width: 16px;
   height: 16px;
   display: flex;
+  cursor: grab;
   align-items: center;
   justify-content: center;
   color: var(--zenith-border-strong);

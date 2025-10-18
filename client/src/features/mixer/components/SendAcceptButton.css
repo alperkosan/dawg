@@ -1,0 +1,144 @@
+/* SEND ACCEPT BUTTON - Compact FL Studio style */
+
+.send-accept {
+  position: absolute;
+  bottom: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 15;
+}
+
+/* =================== DISCONNECTED - COMPACT ARROW =================== */
+
+.send-accept__arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1.5px solid;
+  border-radius: 4px;
+  color: var(--zenith-text-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
+  padding: 0;
+}
+
+.send-accept__arrow:hover {
+  background: rgba(0, 0, 0, 0.5);
+  color: var(--zenith-accent-cool);
+  transform: scale(1.1);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+
+/* =================== CONNECTED - ULTRA COMPACT =================== */
+
+.send-accept__connected {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+
+/* Tiny triangle on top */
+.send-accept__disconnect-triangle {
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-bottom: 6px solid;
+  background: transparent;
+  cursor: pointer;
+  transition: all 0.12s;
+  padding: 0;
+  margin-bottom: -1px;
+  z-index: 2;
+  opacity: 0.85;
+}
+
+.send-accept__disconnect-triangle:hover {
+  opacity: 1;
+  transform: scale(1.2);
+  filter: drop-shadow(0 0 3px currentColor);
+}
+
+/* Compact knob container */
+.send-accept__knob-container {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 3px;
+  padding: 2px;
+}
+
+/* Thin cable */
+.send-accept__cable {
+  width: 2px;
+  height: 6px;
+  border-radius: 1px;
+  box-shadow: 0 0 4px currentColor;
+  animation: cableGlow 2s ease-in-out infinite;
+}
+
+@keyframes cableGlow {
+  0%, 100% {
+    opacity: 0.7;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Compact level display */
+.send-accept__level {
+  font-size: 8px;
+  font-weight: 700;
+  color: var(--zenith-text-primary);
+  text-align: center;
+  min-width: 24px;
+  padding: 1px 3px;
+  background: rgba(0, 0, 0, 0.5);
+  border-radius: 2px;
+  margin-top: 1px;
+  line-height: 1;
+}
+
+/* Pre/Post fader toggle */
+.send-accept__pre-post {
+  font-size: 7px;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+  padding: 2px 4px;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: all 0.15s;
+  margin-top: 1px;
+  border: 1px solid;
+}
+
+.send-accept__pre-post.pre {
+  background: rgba(234, 179, 8, 0.2);
+  border-color: #eab308;
+  color: #fbbf24;
+}
+
+.send-accept__pre-post.pre:hover {
+  background: rgba(234, 179, 8, 0.3);
+  box-shadow: 0 0 4px #eab308;
+}
+
+.send-accept__pre-post.post {
+  background: rgba(59, 130, 246, 0.2);
+  border-color: #3b82f6;
+  color: #60a5fa;
+}
+
+.send-accept__pre-post.post:hover {
+  background: rgba(59, 130, 246, 0.3);
+  box-shadow: 0 0 4px #3b82f6;
+}

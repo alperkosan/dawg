@@ -1,5 +1,5 @@
 import ChannelRack from '@/features/channel_rack/ChannelRack';
-import Mixer from '@/features/mixer/Mixer'; // Zenith Mixer with premium base controls
+import Mixer from '@/features/mixer/Mixer'; // FL Studio style mixer with cable routing
 import SampleEditorV2 from '@/features/sample_editor_v3/SampleEditorV3';
 import PianoRoll from '@/features/piano_roll_v7/PianoRoll';
 import { ArrangementPanelV2 } from '@/features/arrangement_v2';
@@ -11,7 +11,7 @@ import FileBrowserPanel from '@/features/file_browser/FileBrowserPanel';
 
 export const panelRegistry = {
   'channel-rack': ChannelRack,
-  'mixer': Mixer,
+  'mixer': Mixer, // ✅ Now uses Mixer_2 (FL Studio style)
   'sample-editor': SampleEditorV2,
   'piano-roll': PianoRoll,
   'file-browser': FileBrowserPanel,
@@ -38,9 +38,9 @@ export const panelDefinitions = {
   },
   'mixer': {
     title: 'Mixer',
-    initialSize: { width: 1000, height: 600 },
-    initialPos: { x: 60, y: 80 },
-    minSize: { width: 700, height: 400 },
+    initialSize: { width: 1200, height: 750 },
+    initialPos: { x: 50, y: 60 },
+    minSize: { width: 900, height: 600 },
   },
   'sample-editor': {
     title: 'Sample Editor',

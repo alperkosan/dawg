@@ -153,7 +153,13 @@ export function ArrangementPanelV2() {
   // Unified playhead/timeline state
   // const [ghostPosition, setGhostPosition] = useState(null); // Disabled with TimelineController
   const currentStep = usePlaybackStore(state => state.currentStep);
+  const currentPositionMode = usePlaybackStore(state => state._currentPositionMode);
+  const playbackMode = usePlaybackStore(state => state.playbackMode);
   const isPlaying = usePlaybackStore(state => state.isPlaying);
+
+  // ✅ FIX: Only use position updates in song mode for arrangement panel
+  // In pattern mode, the playhead should not move
+  const effectiveCurrentStep = playbackMode === 'song' ? currentStep : 0;
 
   // Clip double-click handler for sample editor
   const handleClipDoubleClick = useCallback(async (clip) => {
@@ -987,9 +993,10 @@ export function ArrangementPanelV2() {
     }
 
     // Draw playhead (unified timeline - Single Source of Truth from PlaybackStore)
-    if (currentStep !== null && currentStep !== undefined) {
-      // currentStep is in steps (16th notes), convert to beats: 1 beat = 4 steps
-      const playheadBeats = currentStep / 4;
+    // ✅ FIX: Use effectiveCurrentStep which only updates in song mode
+    if (effectiveCurrentStep !== null && effectiveCurrentStep !== undefined) {
+      // effectiveCurrentStep is in steps (16th notes), convert to beats: 1 beat = 4 steps
+      const playheadBeats = effectiveCurrentStep / 4;
       const playheadX = (playheadBeats * constants.PIXELS_PER_BEAT * viewport.zoomX) - viewport.scrollX;
 
       // Only draw if playhead is visible on screen
@@ -1020,7 +1027,7 @@ export function ArrangementPanelV2() {
     // }
 
     ctx.restore();
-  }, [viewport, setupCanvas, marqueeBox, hoveredClipId, hoveredHandle, dragGhosts, resizeGhosts, fadeGhosts, gainGhosts, clips, tracks, selectedClipIds, constants, dimensions, splitPreview, splitRange, drawGhost, patternDragPreview, currentStep, isPlaying]);
+  }, [viewport, setupCanvas, marqueeBox, hoveredClipId, hoveredHandle, dragGhosts, resizeGhosts, fadeGhosts, gainGhosts, clips, tracks, selectedClipIds, constants, dimensions, splitPreview, splitRange, drawGhost, patternDragPreview, effectiveCurrentStep, isPlaying]);
 
   // ============================================================================
   // KEYBOARD SHORTCUTS
@@ -2191,7 +2198,7 @@ export function ArrangementPanelV2() {
       >
         <TimelineRuler
           viewport={viewport}
-          cursorPosition={currentStep}
+          cursorPosition={effectiveCurrentStep}
           isPlaying={isPlaying}
           onSeek={handleTimelineSeek}
           height={constants.TIMELINE_HEIGHT}

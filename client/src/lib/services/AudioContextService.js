@@ -810,19 +810,107 @@ export class AudioContextService {
     if (param === 'volume' && this.audioEngine.setChannelVolume) {
       // Convert dB to linear (knob sends dB -60 to +6, engine expects linear 0-2)
       const linearValue = this.dbToLinear(value);
-      console.log('🔊 Setting channel volume via audio engine:', trackId, `${value}dB → ${linearValue.toFixed(3)} linear`);
+      // Removed excessive logging (throttled by RAF already)
       this.audioEngine.setChannelVolume(trackId, linearValue);
     } else if (param === 'pan' && this.audioEngine.setChannelPan) {
       // Pan is already in correct range (-1 to +1)
-      console.log('🔄 Setting channel pan via audio engine:', trackId, value);
+      // Removed excessive logging (throttled by RAF already)
       this.audioEngine.setChannelPan(trackId, value);
     } else if (param.startsWith('eq.') && this.audioEngine.setChannelEQ) {
       // Handle EQ parameters like 'eq.highGain'
       const eqParam = param.split('.')[1];
-      console.log('🎚️ Setting channel EQ via audio engine:', trackId, eqParam, value);
+      // Removed excessive logging (throttled by RAF already)
       this.audioEngine.setChannelEQ(trackId, eqParam, value);
     } else {
       console.warn('⚠️ Unknown mixer parameter or missing audio engine method:', param);
+    }
+  }
+
+  /**
+   * Set mute state for a channel
+   */
+  static setMuteState(trackId, muted) {
+    console.log('🔇 AudioContextService.setMuteState:', trackId, muted);
+
+    if (!this.audioEngine) {
+      console.warn('⚠️ No audio engine available');
+      return;
+    }
+
+    if (this.audioEngine.setChannelMute) {
+      this.audioEngine.setChannelMute(trackId, muted);
+    } else {
+      console.warn('⚠️ Audio engine missing setChannelMute method');
+    }
+  }
+
+  /**
+   * Set mono state for a channel
+   */
+  static setMonoState(trackId, mono) {
+    console.log('📻 AudioContextService.setMonoState:', trackId, mono);
+
+    if (!this.audioEngine) {
+      console.warn('⚠️ No audio engine available');
+      return;
+    }
+
+    if (this.audioEngine.setChannelMono) {
+      this.audioEngine.setChannelMono(trackId, mono);
+    } else {
+      console.warn('⚠️ Audio engine missing setChannelMono method');
+    }
+  }
+
+  /**
+   * Set solo state for channels
+   * @param {Set} soloedChannels - Set of channel IDs that are soloed
+   * @param {Set} mutedChannels - Set of channel IDs that are manually muted (from store)
+   */
+  static setSoloState(soloedChannels, mutedChannels = new Set()) {
+    console.log('🎧 AudioContextService.setSoloState:', {
+      soloed: Array.from(soloedChannels),
+      muted: Array.from(mutedChannels)
+    });
+
+    if (!this.audioEngine) {
+      console.warn('⚠️ No audio engine available');
+      return;
+    }
+
+    // Use MixerChannel's setSolo method if available
+    if (this.audioEngine.mixerChannels) {
+      const isAnySoloed = soloedChannels.size > 0;
+
+      this.audioEngine.mixerChannels.forEach((channel, channelId) => {
+        // NEVER mute master channel
+        if (channel.isMaster || channelId === 'master') {
+          console.log(`  Channel ${channelId}: SKIP (master channel never mutes)`);
+          return;
+        }
+
+        const isSoloed = soloedChannels.has(channelId);
+
+        // Use MixerChannel's built-in setSolo method
+        if (channel.setSolo && typeof channel.setSolo === 'function') {
+          console.log(`  Channel ${channelId}: setSolo(${isSoloed}, ${isAnySoloed})`);
+          channel.setSolo(isSoloed, isAnySoloed);
+        } else {
+          // Fallback to manual mute control
+          if (isAnySoloed) {
+            const shouldMute = !isSoloed;
+            if (this.audioEngine.setChannelMute) {
+              this.audioEngine.setChannelMute(channelId, shouldMute);
+            }
+          } else {
+            // No solo, restore original mute state
+            const isManuallyMuted = mutedChannels.has(channelId);
+            if (this.audioEngine.setChannelMute) {
+              this.audioEngine.setChannelMute(channelId, isManuallyMuted);
+            }
+          }
+        }
+      });
     }
   }
 

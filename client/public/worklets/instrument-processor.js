@@ -169,7 +169,10 @@ class InstrumentProcessor extends AudioWorkletProcessor {
 
     // ✅ Time tracking for offline rendering
     this.currentTime = 0;
-    
+
+    // ✅ Debug: Track if we've logged channel config
+    this.hasLoggedChannelConfig = false;
+
     // Message handling
     this.port.onmessage = (event) => {
       this.handleMessage(event.data);
@@ -368,6 +371,16 @@ class InstrumentProcessor extends AudioWorkletProcessor {
     const output = outputs[0];
     const blockSize = output[0].length;
 
+    // ✅ DEBUG: Log channel configuration on first call
+    if (!this.hasLoggedChannelConfig && output) {
+      console.log(`🎹 InstrumentProcessor[${this.instrumentId}] CHANNEL CONFIG:`, {
+        outputChannels: output?.length || 0,
+        stereo: (output?.length === 2) ? '✅ YES' : '❌ NO',
+        instrumentName: this.instrumentName
+      });
+      this.hasLoggedChannelConfig = true;
+    }
+
     for (let i = 0; i < blockSize; i++) {
         let mixedSample = 0;
 
@@ -398,9 +411,16 @@ class InstrumentProcessor extends AudioWorkletProcessor {
         });
         
         const finalSample = Math.tanh(mixedSample);
-        
-        for (let channel = 0; channel < output.length; channel++) {
-            output[channel][i] = finalSample;
+
+        // ✅ Output stereo signal (currently identical L/R, but preserves stereo capability for mixer pan)
+        // Note: Even though both channels are identical, this ensures we're outputting TRUE stereo
+        // so the downstream mixer can properly apply stereo panning
+        if (output.length >= 2) {
+            output[0][i] = finalSample; // Left channel
+            output[1][i] = finalSample; // Right channel
+        } else if (output.length === 1) {
+            // Fallback for mono output (shouldn't happen with our config)
+            output[0][i] = finalSample;
         }
     }
 

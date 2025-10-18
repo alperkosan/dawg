@@ -9,20 +9,20 @@ import { INSTRUMENT_TYPES, PANEL_IDS } from '@/config/constants';
 // Başlangıç durumunu panel tanımlarından dinamik olarak oluştur.
 const initialPanelsState = Object.keys(panelDefinitions).reduce((acc, id) => {
   const def = panelDefinitions[id];
-  acc[id] = { 
-    id, 
-    title: def.title, 
-    isOpen: id === PANEL_IDS.CHANNEL_RACK, // Başlangıçta sadece Channel Rack açık
-    isMinimized: false, 
-    position: def.initialPos, 
-    size: def.initialSize 
+  acc[id] = {
+    id,
+    title: def.title,
+    isOpen: id === PANEL_IDS.CHANNEL_RACK || id === PANEL_IDS.MIXER_2, // Channel Rack ve Mixer_2 açık
+    isMinimized: false,
+    position: def.initialPos,
+    size: def.initialSize
   };
   return acc;
 }, {});
 
 export const usePanelsStore = create((set, get) => ({
   panels: initialPanelsState,
-  panelStack: [PANEL_IDS.CHANNEL_RACK], // Hangi panelin en üstte olduğunu takip eder
+  panelStack: [PANEL_IDS.CHANNEL_RACK, PANEL_IDS.MIXER_2], // Hangi panelin en üstte olduğunu takip eder
   fullscreenPanel: null,
   minimizedPanels: [],
   
