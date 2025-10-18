@@ -1,0 +1,73 @@
+/* Knob Control Styles */
+
+.knob {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  user-select: none;
+}
+
+.knob__control {
+  cursor: ns-resize;
+  position: relative;
+  transition: transform 0.15s ease;
+}
+
+.knob__control:hover {
+  transform: scale(1.05);
+}
+
+.knob__control--dragging {
+  cursor: ns-resize;
+  transform: scale(1.1);
+}
+
+.knob__arc {
+  filter: drop-shadow(0 0 4px currentColor);
+  transition: stroke-width 0.15s ease;
+}
+
+.knob__control:hover .knob__arc {
+  stroke-width: 5;
+}
+
+.knob__indicator {
+  filter: drop-shadow(0 0 3px currentColor);
+}
+
+.knob__label {
+  font-size: 11px;
+  color: #888;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.knob__value {
+  font-size: 12px;
+  color: #e0e0e0;
+  font-weight: 600;
+  font-family: 'Courier New', monospace;
+  min-width: 60px;
+  text-align: center;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+/* Size variants */
+.knob--small .knob__control svg {
+  width: 48px;
+  height: 48px;
+}
+
+.knob--medium .knob__control svg {
+  width: 64px;
+  height: 64px;
+}
+
+.knob--large .knob__control svg {
+  width: 80px;
+  height: 80px;
+}

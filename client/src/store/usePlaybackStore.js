@@ -1,6 +1,7 @@
 // src/store/usePlaybackStore.js
 import { create } from 'zustand';
 import { PLAYBACK_MODES, PLAYBACK_STATES } from '@/config/constants';
+import { initialSettings } from '@/config/initialData';
 import PlaybackControllerSingleton from '@/lib/core/PlaybackControllerSingleton.js';
 
 /**
@@ -26,7 +27,7 @@ export const usePlaybackStore = create((set, get) => ({
   isPlaying: false,
   playbackState: PLAYBACK_STATES.STOPPED,
   playbackMode: PLAYBACK_MODES.PATTERN,
-  bpm: 90,
+  bpm: initialSettings.bpm,  // ✅ Use initial BPM from config (140)
   masterVolume: 0.8,
   transportPosition: '1:1:00',
   transportStep: 0,

@@ -21,6 +21,7 @@ export const PLAYBACK_MODES = Object.freeze({
 export const INSTRUMENT_TYPES = Object.freeze({
   SAMPLE: 'sample',
   SYNTH: 'synth',
+  VASYNTH: 'vasynth',  // Native Web Audio Virtual Analog Synth
 });
 
 // --- Mikser Kanal Tipleri ---

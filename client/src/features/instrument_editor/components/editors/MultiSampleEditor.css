@@ -1,0 +1,193 @@
+/* Multi-Sample Editor Styles */
+
+.multisample-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.multisample-editor__section {
+  background: #2a2a2a;
+  border-radius: 8px;
+  padding: 16px;
+  border: 1px solid #3a3a3a;
+}
+
+.multisample-editor__section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #e0e0e0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 12px;
+}
+
+/* Sample List */
+.multisample-editor__sample-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.multisample-editor__sample {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  transition: all 0.15s ease;
+}
+
+.multisample-editor__sample:hover {
+  background: rgba(0, 0, 0, 0.3);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.multisample-editor__sample-icon {
+  font-size: 20px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(107, 142, 191, 0.1);
+  border-radius: 6px;
+}
+
+.multisample-editor__sample-info {
+  flex: 1;
+}
+
+.multisample-editor__sample-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: #e0e0e0;
+  margin-bottom: 2px;
+}
+
+.multisample-editor__sample-meta {
+  font-size: 11px;
+  color: #666;
+  font-family: 'Courier New', monospace;
+}
+
+.multisample-editor__sample-action {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: #888;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.multisample-editor__sample-action:hover {
+  background: #6B8EBF;
+  color: white;
+  border-color: #6B8EBF;
+}
+
+/* Keyboard Map */
+.multisample-editor__keyboard-map {
+  min-height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.multisample-editor__keyboard-map-hint {
+  font-size: 13px;
+  color: #666;
+}
+
+/* Info */
+.multisample-editor__info {
+  font-size: 13px;
+  line-height: 1.6;
+  color: #888;
+}
+
+.multisample-editor__info p {
+  margin-bottom: 8px;
+}
+
+.multisample-editor__info p:last-child {
+  margin-bottom: 0;
+}
+
+/* Preview Keyboard */
+.multisample-editor__keyboard {
+  position: relative;
+  height: 80px;
+  display: flex;
+  gap: 2px;
+}
+
+.multisample-editor__key {
+  flex: 1;
+  min-width: 30px;
+  position: relative;
+  cursor: pointer;
+  transition: all 0.1s ease;
+  border: none;
+  outline: none;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 8px;
+}
+
+.multisample-editor__key--white {
+  background: linear-gradient(to bottom, #fafafa, #e0e0e0);
+  border: 1px solid #999;
+  border-radius: 0 0 4px 4px;
+  z-index: 1;
+}
+
+.multisample-editor__key--white:hover {
+  background: linear-gradient(to bottom, #fff, #f0f0f0);
+}
+
+.multisample-editor__key--white:active,
+.multisample-editor__key--white.multisample-editor__key--active {
+  background: linear-gradient(to bottom, #e0e0e0, #d0d0d0);
+}
+
+.multisample-editor__key--black {
+  position: absolute;
+  width: 24px;
+  height: 50px;
+  background: linear-gradient(to bottom, #2a2a2a, #1a1a1a);
+  border: 1px solid #000;
+  border-radius: 0 0 3px 3px;
+  z-index: 2;
+}
+
+.multisample-editor__key--black:hover {
+  background: linear-gradient(to bottom, #3a3a3a, #2a2a2a);
+}
+
+.multisample-editor__key--black:active,
+.multisample-editor__key--black.multisample-editor__key--active {
+  background: linear-gradient(to bottom, #1a1a1a, #0a0a0a);
+}
+
+/* Position black keys */
+.multisample-editor__key--black:nth-of-type(2) { left: calc((100% / 7) * 1 - 12px); }
+.multisample-editor__key--black:nth-of-type(4) { left: calc((100% / 7) * 2 - 12px); }
+.multisample-editor__key--black:nth-of-type(7) { left: calc((100% / 7) * 4 - 12px); }
+.multisample-editor__key--black:nth-of-type(9) { left: calc((100% / 7) * 5 - 12px); }
+.multisample-editor__key--black:nth-of-type(11) { left: calc((100% / 7) * 6 - 12px); }
+
+.multisample-editor__key-label {
+  font-size: 10px;
+  color: #666;
+  font-weight: 600;
+}

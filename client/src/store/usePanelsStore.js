@@ -105,11 +105,23 @@ export const usePanelsStore = create((set, get) => ({
   // Bir enstrümanı düzenlemek için ilgili editör panelini açar.
   handleEditInstrument: async (instrument) => {
     if (!instrument) return;
-    
+
+    // ✅ NEW: Use unified Instrument Editor Panel
+    const { default: useInstrumentEditorStore } = await import('./useInstrumentEditorStore');
+    const editorStore = useInstrumentEditorStore.getState();
+
+    // Open the instrument editor with this instrument
+    editorStore.openEditor(instrument.id, instrument);
+
+    console.log('🎹 Opening Instrument Editor for:', instrument.name);
+    return;
+
+    // ⚠️ LEGACY CODE BELOW (kept for reference, but not executed)
+    /*
     let panelId;
     switch (instrument.type) {
         case INSTRUMENT_TYPES.SYNTH:
-            panelId = 'instrument-editor-forgesynth'; 
+            panelId = 'instrument-editor-forgesynth';
             break;
         case INSTRUMENT_TYPES.SAMPLE:
             panelId = PANEL_IDS.SAMPLE_EDITOR;
@@ -131,6 +143,7 @@ export const usePanelsStore = create((set, get) => ({
       get().bringPanelToFront(panelId);
       return;
     }
+    */
     
     // Eğer bir sample ise, ses motorundan buffer'ını iste.
     if (instrument.type === INSTRUMENT_TYPES.SAMPLE) {

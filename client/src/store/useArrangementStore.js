@@ -67,7 +67,7 @@ export const useArrangementStore = create(arrangementStoreOrchestrator((set, get
   patternOrder: initialPatternOrder,
   tracks: initialTracks,
   clips: initialClips,
-  activePatternId: 'pattern-1',
+  activePatternId: 'pattern1',  // ✅ First pattern from initialData (Trap)
   songLength: 128, // bar cinsinden
   zoomX: 1,
 

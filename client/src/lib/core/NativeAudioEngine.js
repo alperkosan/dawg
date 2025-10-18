@@ -9,6 +9,8 @@ import { NativeSamplerNode } from './nodes/NativeSamplerNode.js';
 import { effectRegistry } from '../audio/EffectRegistry.js';
 // ✅ NEW: Effect chain support
 import { EffectFactory } from '../audio/effects/index.js';
+// ✅ NEW: Centralized instrument system
+import { InstrumentFactory } from '../audio/instruments/index.js';
 
 export class NativeAudioEngine {
     constructor(callbacks = {}) {
@@ -393,11 +395,18 @@ export class NativeAudioEngine {
         this.transport.on('stop', () => {
             // this.setPlaybackState('stopped'); // ✅ Handled by PlaybackController
             this._stopPerformanceMonitoring();
-            this._stopAllInstruments();
+            // Note: Don't call _stopAllInstruments here - it's called from PlaybackManager.stop()
+            // to avoid double-stopping during normal loop behavior
         });
 
         this.transport.on('pause', () => {
             // this.setPlaybackState('paused'); // ✅ Handled by PlaybackController
+            // On pause: gently release all notes (no instant stop)
+            this.instruments.forEach(instrument => {
+                if (instrument.allNotesOff) {
+                    instrument.allNotesOff();
+                }
+            });
         });
 
         this.transport.on('tick', (data) => {
@@ -451,49 +460,63 @@ export class NativeAudioEngine {
 
     async createInstrument(instrumentData) {
         try {
-    
             let instrument;
-    
-            if (instrumentData.type === 'sample') {
-                // ✅ DÜZELTME: NativeSamplerNode artık doğru import edildi
-                // Use audioBuffer from instrumentData if available (for demo/generated samples)
+
+            // ✅ NEW: Try to use InstrumentFactory for multi-sampled instruments and VASynth
+            const isMultiSampled = instrumentData.multiSamples && instrumentData.multiSamples.length > 0;
+            const isVASynth = instrumentData.type === 'vasynth';
+
+            if (isMultiSampled || isVASynth) {
+                // Use new centralized instrument system
+                console.log(`🎹 Creating ${instrumentData.name} using InstrumentFactory...`);
+                instrument = await InstrumentFactory.createPlaybackInstrument(
+                    instrumentData,
+                    this.audioContext,
+                    { useCache: true }
+                );
+
+                if (!instrument) {
+                    throw new Error(`InstrumentFactory failed to create ${instrumentData.name}`);
+                }
+
+            } else if (instrumentData.type === 'sample') {
+                // ✅ Legacy: Single-sample instruments (drums, etc.)
                 const audioBuffer = instrumentData.audioBuffer || this.sampleBuffers.get(instrumentData.id);
                 instrument = new NativeSamplerNode(
                     instrumentData,
                     audioBuffer,
                     this.audioContext
                 );
-                
-                
+
             } else if (instrumentData.type === 'synth') {
-                // Synth için WorkletInstrument kullan
+                // ✅ Legacy: ForgeSynth instruments
                 instrument = new NativeSynthInstrument(
                     instrumentData,
                     this.workletManager,
                     this.audioContext
                 );
-    
-                // Synth'lerin asenkron bir initialize metodu olabilir.
+
                 if (typeof instrument.initialize === 'function') {
                     await instrument.initialize();
                 }
-                
-                
+
             } else {
                 throw new Error(`❌ Unknown instrument type: ${instrumentData.type}`);
             }
-            
+
             this.instruments.set(instrumentData.id, instrument);
-    
+
             // Connect to mixer channel
             const channelId = instrumentData.mixerTrackId || 'master';
             this._connectInstrumentToChannel(instrumentData.id, channelId);
-    
+
             this.metrics.instrumentsCreated++;
-    
+            console.log(`✅ Instrument created: ${instrumentData.name} (${instrumentData.type})`);
+
             return instrument;
-    
+
         } catch (error) {
+            console.error(`❌ Failed to create instrument ${instrumentData.name}:`, error);
             throw error;
         }
     }

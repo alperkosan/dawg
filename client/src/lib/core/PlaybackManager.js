@@ -603,6 +603,17 @@ export class PlaybackManager {
         try {
             this.transport.stop();
 
+            // ✅ PANIC: Stop all instruments immediately (no release)
+            this.audioEngine.instruments.forEach((instrument) => {
+                try {
+                    if (typeof instrument.stopAll === 'function') {
+                        instrument.stopAll(); // VASynth, Sampler instant stop
+                    }
+                } catch (e) {
+                    console.error('Error stopping instrument:', e);
+                }
+            });
+
             // ✅ FIX: Stop all active audio sources (frozen clips, audio clips)
             this.activeAudioSources.forEach(source => {
                 try {

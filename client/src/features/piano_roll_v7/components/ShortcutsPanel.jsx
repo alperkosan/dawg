@@ -46,10 +46,11 @@ const SHORTCUTS_DATA = {
         { keys: ['Escape'], description: 'Clear loop region' },
     ],
     'Keyboard Piano': [
-        { keys: ['ZXCVBNM...'], description: 'Play notes (C4 octave - preview only)' },
-        { keys: ['QWERTYUI...'], description: 'Play notes (C5 octave - preview only)' },
-        { keys: ['Ctrl/Cmd', 'Z/X/C...'], description: 'Record notes to pattern (at playback position)' },
-        { keys: ['2,3,5,6,7,9,0'], description: 'Black keys (sharps/flats)' },
+        { keys: ['Piano Icon (Toolbar)'], description: 'Toggle keyboard piano mode ON/OFF' },
+        { keys: ['ZXCVBNM...'], description: 'Play notes (C4 octave) - MODE MUST BE ON' },
+        { keys: ['QWERTYUI...'], description: 'Play notes (C5 octave) - MODE MUST BE ON' },
+        { keys: ['2,3,5,6,7,9,0'], description: 'Black keys (sharps/flats) - MODE MUST BE ON' },
+        { keys: [''], description: 'When OFF: Keys work as shortcuts (Ctrl+D, etc.)' },
     ],
     'Delete': [
         { keys: ['Delete / Backspace'], description: 'Delete selected notes' },

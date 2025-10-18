@@ -37,6 +37,7 @@ import MainToolbar from './features/toolbars/MainToolbar';
 import WorkspacePanel from './layout/WorkspacePanel';
 import { ThemeProvider } from './components/ThemeProvider';
 import Taskbar from './features/taskbar/Taskbar';
+import InstrumentEditorPanel from './features/instrument_editor/InstrumentEditorPanel';
 
 // ENUMs and Constants
 import { PLAYBACK_STATES } from './config/constants';
@@ -224,6 +225,8 @@ function App() {
                 </Suspense>
               </main>
               <Taskbar />
+              {/* Instrument Editor Panel */}
+              <InstrumentEditorPanel />
             </div>
           </ThemeProvider>
         );

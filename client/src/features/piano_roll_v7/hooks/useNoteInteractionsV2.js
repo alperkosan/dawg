@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useArrangementStore } from '@/store/useArrangementStore';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
-import { samplePreview } from '../utils/samplePreview';
+import { getPreviewManager } from '@/lib/audio/preview';
 import { getToolManager, TOOL_TYPES } from '@/lib/piano-roll-tools';
 
 const RULER_HEIGHT = 30;
@@ -13,48 +13,61 @@ const KEYBOARD_WIDTH = 80;
 const DEBUG_MODE = false;
 
 // ✅ KEYBOARD PIANO MAPPING - Computer keyboard keys to MIDI pitches
-// Uses QWERTY layout as piano keys (2 octaves)
-// Bottom row (ZXCVBNM...) = C4 octave
-// Middle row (ASDFGHJK...) = C5 octave
-// Top row (QWERTYUI...) = C6 octave
+// 3 octaves starting from C4 (MIDI 60-95)
+// Piano-style layout: white keys on letter keys, black keys on number/upper row
 const KEYBOARD_TO_PITCH = {
-    // Bottom row - C4 octave (60-71)
-    'z': 60,  // C4
-    's': 61,  // C#4
-    'x': 62,  // D4
-    'd': 63,  // D#4
-    'c': 64,  // E4
-    'v': 65,  // F4
-    'g': 66,  // F#4
-    'b': 67,  // G4
-    'h': 68,  // G#4
-    'n': 69,  // A4
-    'j': 70,  // A#4
-    'm': 71,  // B4
+    // ===== OCTAVE 1: C4-B4 (MIDI 60-71) =====
+    // Bottom row: ZXCVBNM
+    'z': 60,   // C4
+    'x': 62,   // D4
+    'c': 64,   // E4
+    'v': 65,   // F4
+    'b': 67,   // G4
+    'n': 69,   // A4
+    'm': 71,   // B4
+    ',': 72,   // C5
 
-    // Middle row - C5 octave (72-83)
-    'q': 72,  // C5
-    '2': 73,  // C#5
-    'w': 74,  // D5
-    '3': 75,  // D#5
-    'e': 76,  // E5
-    'r': 77,  // F5
-    '5': 78,  // F#5
-    't': 79,  // G5
-    '6': 80,  // G#5
-    'y': 81,  // A5
-    '7': 82,  // A#5
-    'u': 83,  // B5
+    // Black keys for octave 1 (between white keys)
+    's': 61,   // C#4 (between Z-X)
+    'd': 63,   // D#4 (between X-C)
+    'g': 66,   // F#4 (between V-B)
+    'h': 68,   // G#4 (between B-N)
+    'j': 70,   // A#4 (between N-M)
 
-    // Top row - C6 octave (84-95)
-    'i': 84,  // C6
-    '9': 85,  // C#6
-    'o': 86,  // D6
-    '0': 87,  // D#6
-    'p': 88,  // E6
-    '[': 89,  // F6
-    '=': 90,  // F#6
-    ']': 91   // G6
+    // ===== OCTAVE 2: C5-B5 (MIDI 72-83) =====
+    // Middle row: ASDFGHJKL
+    'a': 72,   // C5
+    'f': 77,   // F5
+    'k': 84,   // C6
+    'l': 86,   // D6
+    ';': 88,   // E6
+
+    // Black keys for octave 2
+    'w': 73,   // C#5
+    'e': 75,   // D#5
+    't': 78,   // F#5
+    'y': 80,   // G#5
+    'u': 82,   // A#5
+
+    // ===== OCTAVE 3: C6-B6 (MIDI 84-95) =====
+    // Top row: QWERTYUIOP
+    'q': 84,   // C6
+    'r': 89,   // F6
+    'i': 96,   // C7
+    'o': 98,   // D7
+    'p': 100,  // E7
+    '[': 101,  // F7
+    ']': 103,  // G7
+
+    // Black keys for octave 3
+    '2': 85,   // C#6
+    '3': 87,   // D#6
+    '5': 90,   // F#6
+    '6': 92,   // G#6
+    '7': 94,   // A#6
+    '9': 97,   // C#7
+    '0': 99,   // D#7
+    '=': 102   // F#7
 };
 
 // Helper: MIDI pitch to note name
@@ -94,12 +107,21 @@ function snapToGrid(value, snapValue) {
     return Math.round(value / snapValue) * snapValue;
 }
 
+// Helper: Play preview using PreviewManager
+function playPreview(pitch, velocity = 100, duration = 0.15) {
+    const previewManager = getPreviewManager();
+    if (previewManager) {
+        previewManager.previewNote(pitch, velocity, duration);
+    }
+}
+
 export function useNoteInteractionsV2(
     engine,
     activeTool = 'select',
     snapValue = 1,
     currentInstrument = null,
-    loopRegion = null // ✅ Loop region for Ctrl+D sync
+    loopRegion = null, // ✅ Loop region for Ctrl+D sync
+    keyboardPianoMode = false // ✅ Keyboard piano mode toggle
 ) {
     // Local state - sadece UI için
     const [dragState, setDragState] = useState(null);
@@ -619,7 +641,7 @@ export function useNoteInteractionsV2(
                     if (DEBUG_MODE) console.log('🎨 Paint brush: Resize started', resizeHandle);
                 } else {
                     // Clicking on note body - preview sound and remember duration
-                    samplePreview.playPitchPreview(
+                    playPreview(
                         foundNote.pitch,
                         foundNote.velocity || 100
                     );
@@ -642,7 +664,7 @@ export function useNoteInteractionsV2(
                     });
 
                     // Audio preview
-                    samplePreview.playPitchPreview(
+                    playPreview(
                         newNote.pitch,
                         newNote.velocity || 100
                     );
@@ -781,7 +803,7 @@ export function useNoteInteractionsV2(
                     });
 
                     // Audio preview
-                    samplePreview.playPitchPreview(
+                    playPreview(
                         foundNote.pitch,
                         foundNote.velocity || 100
                     );
@@ -889,7 +911,7 @@ export function useNoteInteractionsV2(
                         });
 
                         // Audio preview
-                        samplePreview.playPitchPreview(
+                        playPreview(
                             newNote.pitch,
                             newNote.velocity || 100
                         );
@@ -1197,7 +1219,10 @@ export function useNoteInteractionsV2(
         }
 
         // Stop audio preview
-        samplePreview.stopAllPreviews();
+        const previewManager = getPreviewManager();
+        if (previewManager) {
+            previewManager.stopPreview();
+        }
 
         // Clear states
         setDragState(null);
@@ -1218,8 +1243,13 @@ export function useNoteInteractionsV2(
 
         // Shift+Wheel: Change duration of hovered or selected notes
         if (e.shiftKey && (foundNote || selectedNoteIds.size > 0)) {
-            e.preventDefault();
-            e.stopPropagation();
+            // Try to prevent default (may fail in passive listeners)
+            try {
+                e.preventDefault();
+                e.stopPropagation();
+            } catch (err) {
+                // Passive listener - can't prevent default
+            }
 
             const delta = -e.deltaY; // Positive = scroll up = increase
             const step = 0.25; // 1/16th step increment
@@ -1257,8 +1287,7 @@ export function useNoteInteractionsV2(
 
         // Normal Wheel (no modifiers): Change velocity of hovered note
         if (!e.shiftKey && !e.ctrlKey && !e.metaKey && foundNote) {
-            e.preventDefault();
-            e.stopPropagation();
+            // Note: Can't preventDefault in passive listener, but we return true to signal handled
 
             const delta = -e.deltaY; // Positive = scroll up = increase
             const step = 5; // 5% increment (velocity is 0-100)
@@ -1279,34 +1308,29 @@ export function useNoteInteractionsV2(
 
     // Key down handler
     const handleKeyDown = useCallback((e) => {
-        // ✅ KEYBOARD PIANO - Play and optionally record notes with computer keyboard
         const key = e.key.toLowerCase();
-        const pitch = KEYBOARD_TO_PITCH[key];
 
-        if (pitch !== undefined && currentInstrument) {
-            // Prevent repeat events from key hold
-            if (e.repeat) return;
+        // ✅ KEYBOARD PIANO MODE - Only active when mode is ON
+        // This prevents conflicts with shortcuts
+        if (keyboardPianoMode && currentInstrument) {
+            const pitch = KEYBOARD_TO_PITCH[key];
 
-            e.preventDefault();
+            if (pitch !== undefined) {
+                // Prevent repeat events from key hold
+                if (e.repeat) return;
 
-            // Play audio preview
-            samplePreview.playPitchPreview(pitch, 100);
+                e.preventDefault();
 
-            // Track active keyboard note
-            setActiveKeyboardNotes(prev => new Map(prev).set(key, { pitch, startTime: Date.now() }));
+                // Play audio preview using PreviewManager
+                playPreview(pitch, 100);
 
-            // If Ctrl/Cmd is held, write the note to the pattern
-            if (e.ctrlKey || e.metaKey) {
-                // Get current playback position or use 0
-                const currentTime = usePlaybackStore.getState()?.currentStep || 0;
-                addNote(currentTime, pitch, lastNoteDuration);
+                // Track active keyboard note
+                setActiveKeyboardNotes(prev => new Map(prev).set(key, { pitch, startTime: Date.now() }));
 
-                if (DEBUG_MODE) console.log('⌨️ Keyboard note written:', key, pitch, 'at time:', currentTime);
-            } else {
-                if (DEBUG_MODE) console.log('⌨️ Keyboard note played (preview only):', key, pitch);
+                if (DEBUG_MODE) console.log('⌨️ Keyboard note played:', key, pitch);
+
+                return; // Don't process any other keys in piano mode
             }
-
-            return;
         }
 
         // ✅ TOOL EXECUTION - Execute active tool on selected notes
@@ -1396,6 +1420,7 @@ export function useNoteInteractionsV2(
         } else if ((e.ctrlKey || e.metaKey) && (e.key === 'd' || e.key === 'D')) {
             // ✅ Ctrl+D / Cmd+D - Smart duplicate with loop region sync
             e.preventDefault();
+
             if (selectedNoteIds.size > 0) {
                 const currentNotes = notes();
                 const selectedNotes = currentNotes.filter(note => selectedNoteIds.has(note.id));
@@ -1421,37 +1446,48 @@ export function useNoteInteractionsV2(
 
                     if (DEBUG_MODE) console.log('📋 Ctrl+D: Using loop region length:', loopLength, 'steps');
                 } else {
-                    // ✅ Default: Calculate offset to next beat (4 steps = 1 beat in standard 16-step bar)
-                    // Round maxEndTime to next beat boundary
-                    const beatsPerBar = 4; // Standard 4/4 time
-                    const stepsPerBeat = 4; // 16 steps / 4 beats
-                    const nextBeat = Math.ceil(maxEndTime / stepsPerBeat) * stepsPerBeat;
-                    offset = nextBeat - minStartTime;
+                    // ✅ Default: Place after the selection ends (next beat boundary)
+                    // Round maxEndTime to next beat boundary, then calculate offset from selection start
+                    const stepsPerBeat = 4; // 16 steps / 4 beats = 4 steps per beat
+                    const nextBeatStart = Math.ceil(maxEndTime / stepsPerBeat) * stepsPerBeat;
 
-                    if (DEBUG_MODE) console.log('📋 Ctrl+D: Using beat-based offset:', offset, 'steps');
+                    // Offset should be: where the copy starts minus where the original starts
+                    offset = nextBeatStart - minStartTime;
+
+                    if (DEBUG_MODE) console.log('📋 Ctrl+D: Beat-based offset', {
+                        minStartTime,
+                        maxEndTime,
+                        nextBeatStart,
+                        offset
+                    });
                 }
 
                 const newNoteIds = [];
+                const duplicatedNotes = [];
+
                 selectedNotes.forEach(note => {
                     const uniqueId = `note_${Date.now()}_${Math.random().toString(36).substring(2, 11)}_${performance.now()}`;
+                    const newStartTime = (typeof note.startTime === 'number' ? note.startTime : 0) + offset;
+
                     const duplicatedNote = {
                         ...note,
                         id: uniqueId,
-                        startTime: (typeof note.startTime === 'number' ? note.startTime : 0) + offset
+                        startTime: newStartTime
                     };
 
-                    // Add to pattern
-                    const newNote = addNote(
-                        duplicatedNote.startTime,
-                        duplicatedNote.pitch,
-                        duplicatedNote.length,
-                        duplicatedNote.velocity
-                    );
+                    duplicatedNotes.push(duplicatedNote);
+                    newNoteIds.push(uniqueId);
 
-                    if (newNote) {
-                        newNoteIds.push(newNote.id);
-                    }
+                    if (DEBUG_MODE) console.log('📋 Duplicating note:', {
+                        original: { id: note.id, startTime: note.startTime, pitch: note.pitch },
+                        offset,
+                        newStartTime,
+                        duplicated: { id: uniqueId, startTime: newStartTime, pitch: note.pitch }
+                    });
                 });
+
+                // Add all duplicated notes at once without snapping
+                updatePatternStore([...currentNotes, ...duplicatedNotes]);
 
                 // Select the duplicated notes
                 if (newNoteIds.length > 0) {
@@ -1549,6 +1585,9 @@ export function useNoteInteractionsV2(
 
     // ✅ KEY UP HANDLER - Stop keyboard piano preview
     const handleKeyUp = useCallback((e) => {
+        // Only process keyboard piano keys if mode is active
+        if (!keyboardPianoMode) return;
+
         const key = e.key.toLowerCase();
         const pitch = KEYBOARD_TO_PITCH[key];
 
@@ -1556,7 +1595,10 @@ export function useNoteInteractionsV2(
             e.preventDefault();
 
             // Stop audio preview
-            samplePreview.stopAllPreviews();
+            const previewManager = getPreviewManager();
+            if (previewManager) {
+                previewManager.stopPreview();
+            }
 
             // Remove from active keyboard notes
             setActiveKeyboardNotes(prev => {
@@ -1567,7 +1609,7 @@ export function useNoteInteractionsV2(
 
             if (DEBUG_MODE) console.log('⌨️ Keyboard note released:', key, pitch);
         }
-    }, []);
+    }, [keyboardPianoMode]);
 
     return {
         // Event handlers

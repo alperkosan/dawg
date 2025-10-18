@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { MousePointer, Edit3, Eraser, Scissors, Music, Zap, Guitar, Shuffle, FlipHorizontal2 } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { MousePointer, Edit3, Eraser, Scissors, Music, Zap, Guitar, Shuffle, FlipHorizontal2, Piano } from 'lucide-react';
 import { getToolManager, TOOL_TYPES } from '@/lib/piano-roll-tools';
 import './Toolbar.css';
 
@@ -37,9 +37,33 @@ function Toolbar({
     onToolChange,
     zoom = 1.0,
     onZoomChange,
-    selectedCount = 0
+    selectedCount = 0,
+    keyboardPianoMode = false,
+    onKeyboardPianoModeChange,
+    keyboardPianoSettings = { baseOctave: 4, scale: 'chromatic' },
+    onKeyboardPianoSettingsChange
 }) {
     const [showQuantizeMenu, setShowQuantizeMenu] = useState(false);
+    const [showPianoSettings, setShowPianoSettings] = useState(false);
+    const pianoButtonRef = useRef(null);
+
+    // Close settings dropdown on click outside
+    useEffect(() => {
+        if (!showPianoSettings) return;
+
+        const handleClickOutside = (e) => {
+            if (pianoButtonRef.current && !pianoButtonRef.current.contains(e.target)) {
+                // Check if click is inside the dropdown
+                const dropdown = document.querySelector('.prv7-piano-settings-menu');
+                if (!dropdown || !dropdown.contains(e.target)) {
+                    setShowPianoSettings(false);
+                }
+            }
+        };
+
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, [showPianoSettings]);
 
     return (
         <div className="prv7-toolbar">
@@ -90,6 +114,78 @@ function Toolbar({
 
             {/* Sağ Grup - Sadece Essential Settings */}
             <div className="prv7-toolbar-group">
+                {/* Keyboard Piano Mode Toggle */}
+                <div style={{ position: 'relative', marginRight: '12px' }}>
+                    <button
+                        ref={pianoButtonRef}
+                        className={`prv7-tool-btn ${keyboardPianoMode ? 'prv7-tool-btn--active' : ''}`}
+                        onClick={() => onKeyboardPianoModeChange?.(!keyboardPianoMode)}
+                        onContextMenu={(e) => {
+                            e.preventDefault();
+                            setShowPianoSettings(!showPianoSettings);
+                        }}
+                        title={`Left: Toggle Piano Mode | Right: Settings\nBase: C${keyboardPianoSettings.baseOctave} | Scale: ${keyboardPianoSettings.scale}`}
+                    >
+                        <Piano size={18} />
+                    </button>
+
+                    {/* Piano Settings Dropdown */}
+                    {showPianoSettings && (
+                        <div
+                            className="prv7-piano-settings-menu"
+                            style={{
+                                position: 'absolute',
+                                top: '100%',
+                                right: 0,
+                                marginTop: '4px',
+                                background: 'var(--zenith-bg-elevated, #2a2a2a)',
+                                border: '1px solid var(--zenith-border, #444)',
+                                borderRadius: '6px',
+                                padding: '12px',
+                                minWidth: '200px',
+                                zIndex: 1000,
+                                boxShadow: '0 4px 12px rgba(0,0,0,0.3)'
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <div style={{ marginBottom: '12px' }}>
+                                <label style={{ display: 'block', fontSize: '12px', marginBottom: '4px', color: 'var(--zenith-text-secondary, #aaa)' }}>
+                                    Base Octave
+                                </label>
+                                <select
+                                    value={keyboardPianoSettings.baseOctave}
+                                    onChange={(e) => onKeyboardPianoSettingsChange?.({ ...keyboardPianoSettings, baseOctave: parseInt(e.target.value) })}
+                                    className="prv7-select"
+                                    style={{ width: '100%' }}
+                                >
+                                    <option value="2">C2 (Low)</option>
+                                    <option value="3">C3</option>
+                                    <option value="4">C4 (Middle C)</option>
+                                    <option value="5">C5</option>
+                                    <option value="6">C6 (High)</option>
+                                </select>
+                            </div>
+
+                            <div>
+                                <label style={{ display: 'block', fontSize: '12px', marginBottom: '4px', color: 'var(--zenith-text-secondary, #aaa)' }}>
+                                    Scale
+                                </label>
+                                <select
+                                    value={keyboardPianoSettings.scale}
+                                    onChange={(e) => onKeyboardPianoSettingsChange?.({ ...keyboardPianoSettings, scale: e.target.value })}
+                                    className="prv7-select"
+                                    style={{ width: '100%' }}
+                                >
+                                    <option value="chromatic">Chromatic (All notes)</option>
+                                    <option value="major">Major Scale</option>
+                                    <option value="minor">Natural Minor</option>
+                                    <option value="pentatonic">Pentatonic</option>
+                                </select>
+                            </div>
+                        </div>
+                    )}
+                </div>
+
                 {/* Snap Ayarları - Only essential setting */}
                 <div className="prv7-setting-item">
                     <label htmlFor="snap-select" className="prv7-setting-label">Snap:</label>

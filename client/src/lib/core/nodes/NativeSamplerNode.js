@@ -97,16 +97,32 @@ export class NativeSamplerNode {
         };
     }
 
-    // ✅ DÜZELTME: Anında susturma yeteneği
-    stopAll(time = 0) {
-        const stopTime = time || this.context.currentTime;
-        console.log(`🛑 Stopping all samples: ${this.name} (${this.activeSources.size} active)`);
-        
+    // ✅ Release all notes gracefully (for pause)
+    allNotesOff(time = null) {
+        const stopTime = time !== null ? time : this.context.currentTime;
+        console.log(`🎹 NativeSampler allNotesOff: ${this.name} (${this.activeSources.size} active)`);
+
+        // For samples, allNotesOff is same as stopAll (no release envelope)
         this.activeSources.forEach(source => {
             try {
                 source.stop(stopTime);
-            } catch(e) { 
-                // Zaten durmuş olabilir, hatayı yoksay
+            } catch(e) {
+                // Already stopped, ignore error
+            }
+        });
+        this.activeSources.clear();
+    }
+
+    // ✅ PANIC: Instant stop (for emergency stop button)
+    stopAll(time = 0) {
+        const stopTime = time || this.context.currentTime;
+        console.log(`🛑 NativeSampler stopAll: ${this.name} (${this.activeSources.size} active)`);
+
+        this.activeSources.forEach(source => {
+            try {
+                source.stop(stopTime);
+            } catch(e) {
+                // Already stopped, ignore error
             }
         });
         this.activeSources.clear();

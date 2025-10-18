@@ -1,0 +1,123 @@
+/* Drum Sampler Editor Styles */
+
+.drumsampler-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.drumsampler-editor__section {
+  background: #2a2a2a;
+  border-radius: 8px;
+  padding: 16px;
+  border: 1px solid #3a3a3a;
+}
+
+.drumsampler-editor__section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #e0e0e0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 12px;
+}
+
+/* Sample Card */
+.drumsampler-editor__sample-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.drumsampler-editor__sample-icon {
+  font-size: 32px;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(212, 162, 89, 0.1);
+  border-radius: 8px;
+}
+
+.drumsampler-editor__sample-info {
+  flex: 1;
+}
+
+.drumsampler-editor__sample-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #e0e0e0;
+  margin-bottom: 4px;
+}
+
+.drumsampler-editor__sample-path {
+  font-size: 11px;
+  color: #666;
+  font-family: 'Courier New', monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.drumsampler-editor__preview-btn {
+  padding: 8px 16px;
+  background: #D4A259;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.drumsampler-editor__preview-btn:hover {
+  background: #e0b06a;
+  transform: translateY(-1px);
+}
+
+.drumsampler-editor__preview-btn:active {
+  transform: translateY(0);
+}
+
+/* Waveform */
+.drumsampler-editor__waveform {
+  height: 120px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.drumsampler-editor__waveform-placeholder {
+  font-size: 13px;
+  color: #666;
+}
+
+/* Controls */
+.drumsampler-editor__controls {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Info */
+.drumsampler-editor__info {
+  font-size: 13px;
+  line-height: 1.6;
+  color: #888;
+}
+
+.drumsampler-editor__info p {
+  margin-bottom: 8px;
+}
+
+.drumsampler-editor__info p:last-child {
+  margin-bottom: 0;
+}

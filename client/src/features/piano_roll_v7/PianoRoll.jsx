@@ -52,6 +52,13 @@ function PianoRoll() {
     // ✅ SHORTCUTS PANEL STATE
     const [showShortcuts, setShowShortcuts] = useState(false);
 
+    // ✅ KEYBOARD PIANO MODE STATE
+    const [keyboardPianoMode, setKeyboardPianoMode] = useState(false);
+    const [keyboardPianoSettings, setKeyboardPianoSettings] = useState({
+        baseOctave: 4, // C4 = MIDI 60
+        scale: 'chromatic' // chromatic, major, minor, etc.
+    });
+
     // ✅ TOOL MANAGER - Subscribe to tool changes
     useEffect(() => {
         const toolManager = getToolManager();
@@ -122,6 +129,26 @@ function PianoRoll() {
         ? instruments.find(inst => inst.id === pianoRollInstrumentId)
         : null;
 
+    // ✅ Setup PreviewManager for all instrument types
+    useEffect(() => {
+        if (!currentInstrument) return;
+
+        // Use unified PreviewManager for all instrument types
+        Promise.all([
+            import('@/lib/audio/preview'),
+            import('@/lib/services/AudioContextService')
+        ]).then(([{ getPreviewManager }, { AudioContextService }]) => {
+            const audioEngine = AudioContextService.getAudioEngine();
+            if (audioEngine?.audioContext) {
+                const previewManager = getPreviewManager(audioEngine.audioContext);
+                previewManager.setInstrument(currentInstrument);
+                console.log('✅ Preview ready:', currentInstrument.name, `(${currentInstrument.type})`);
+            }
+        }).catch(err => {
+            console.error('Failed to setup preview:', err);
+        });
+    }, [currentInstrument]);
+
     // ✅ LOOP REGION HOOK - Timeline selection
     const loopRegionHook = useLoopRegionSelection(engine, snapValue, loopRegion, setLoopRegion);
 
@@ -131,7 +158,8 @@ function PianoRoll() {
         activeTool,
         snapValue,
         currentInstrument,
-        loopRegion // ✅ Pass loop region for Ctrl+D sync
+        loopRegion, // ✅ Pass loop region for Ctrl+D sync
+        keyboardPianoMode // ✅ Pass keyboard piano mode
     );
 
     // ✅ REGISTER PIANO ROLL TIMELINE with TimelineController
@@ -326,6 +354,10 @@ function PianoRoll() {
                 zoom={zoom}
                 onZoomChange={handleZoomChange}
                 selectedCount={noteInteractions.selectedNoteIds.size} // V2 Hook'dan
+                keyboardPianoMode={keyboardPianoMode}
+                onKeyboardPianoModeChange={setKeyboardPianoMode}
+                keyboardPianoSettings={keyboardPianoSettings}
+                onKeyboardPianoSettingsChange={setKeyboardPianoSettings}
             />
             <div
                 ref={containerRef}
@@ -341,11 +373,13 @@ function PianoRoll() {
                     if (isInGrid && noteInteractions.handleWheel) {
                         const handled = noteInteractions.handleWheel(e);
                         if (handled) {
-                            return; // Event was handled, don't scroll viewport
+                            // Event was handled by note interactions (e.g., velocity change)
+                            // Don't pass to viewport scroll
+                            return;
                         }
                     }
 
-                    // Default: viewport scroll
+                    // Default: viewport scroll (only if note interactions didn't handle it)
                     if (engine.eventHandlers?.onWheel) {
                         engine.eventHandlers.onWheel(e);
                     }

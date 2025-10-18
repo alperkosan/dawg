@@ -167,11 +167,18 @@ function ChannelRack() {
   // ✅ Memoize expensive calculations
   const activePattern = useMemo(() => patterns[activePatternId], [patterns, activePatternId]);
 
-  // ⚡ DYNAMIC PATTERN LENGTH: Calculate based on actual note data
+  // ⚡ DYNAMIC PATTERN LENGTH: Use pattern.length if defined, otherwise calculate
   const audioLoopLength = useMemo(() => {
-    if (!activePattern || !activePattern.data) return 64;
+    if (!activePattern) return 64;
 
-    // Find maximum note position across all instruments in this pattern
+    // ✅ Use explicit pattern length if defined
+    if (activePattern.length && typeof activePattern.length === 'number') {
+      return activePattern.length;
+    }
+
+    // Fallback: Calculate based on note data
+    if (!activePattern.data) return 64;
+
     let maxNoteTime = 0;
     Object.values(activePattern.data).forEach(notes => {
       if (!Array.isArray(notes)) return;
@@ -182,10 +189,9 @@ function ChannelRack() {
       });
     });
 
-    // Round up to next bar (16 steps) + 2 empty bars for editing space
+    // Round up to next bar (16 steps)
     const minLength = 64; // Minimum 4 bars
-    const paddedLength = maxNoteTime + 32; // Add 2 bars padding
-    const roundedLength = Math.ceil(paddedLength / 16) * 16; // Round to bar
+    const roundedLength = Math.ceil((maxNoteTime + 1) / 16) * 16; // +1 to include last note
 
     return Math.max(minLength, roundedLength);
   }, [activePattern]);
@@ -584,24 +590,31 @@ function ChannelRack() {
       </div>
       <div ref={scrollContainerRef} className="channel-rack-layout__grid-scroll-area" /* Legacy onClick removed - TimelineController handles this */>
         <div style={{ width: audioLoopLength * STEP_WIDTH, height: totalContentHeight }} className="channel-rack-layout__grid-content">
-          {visibleInstruments.map((inst, index) => (
+          {visibleInstruments.map((inst, index) => {
+            // ✅ Check if notes have pitches other than C5
+            const notes = activePattern?.data[inst.id] || [];
+            const hasNonC5Notes = notes.some(note => note.pitch && note.pitch !== 'C5');
+            const showPianoRoll = inst.pianoRoll || hasNonC5Notes;
+
+            return (
             <div key={inst.id} className="channel-rack-layout__grid-row" onClick={handleGridRowClick}>
-              {inst.pianoRoll ? (
+              {showPianoRoll ? (
                 <PianoRollMiniView
-                  notes={activePattern?.data[inst.id] || []}
+                  notes={notes}
                   patternLength={audioLoopLength}
                   onNoteClick={() => openPianoRollForInstrument(inst)}
                 />
               ) : (
                 <StepGridCanvas
                   instrumentId={inst.id}
-                  notes={activePattern?.data[inst.id] || []}
+                  notes={notes}
                   totalSteps={audioLoopLength}
                   onNoteToggle={handleNoteToggle}
                 />
               )}
             </div>
-          ))}
+            );
+          })}
           <div className="channel-rack-layout__grid-row" onClick={handleGridRowClick} />
         </div>
       </div>
