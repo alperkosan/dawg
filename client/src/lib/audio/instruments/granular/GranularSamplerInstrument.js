@@ -128,7 +128,7 @@ export class GranularSamplerInstrument extends BaseInstrument {
             return;
         }
 
-        console.log(`🎵 noteOn: ${midiNote}, vel: ${velocity}, mode: ${this.continuousMode ? 'continuous' : 'one-shot'}`);
+        // Debug: console.log(`🎵 noteOn: ${midiNote}, vel: ${velocity}, mode: ${this.continuousMode ? 'continuous' : 'one-shot'}`);
 
         if (this.continuousMode) {
             // Continuous emission mode - start grain stream
@@ -152,11 +152,11 @@ export class GranularSamplerInstrument extends BaseInstrument {
         const when = releaseTime !== null ? releaseTime : this.audioContext.currentTime;
 
         if (!this.activeNotes.has(midiNote)) {
-            console.log(`⚠️ noteOff: Note ${midiNote} not active (already released?)`);
+            // Debug: console.log(`⚠️ noteOff: Note ${midiNote} not active (already released?)`);
             return;
         }
 
-        console.log(`🔇 noteOff: ${midiNote} at ${when.toFixed(3)}s (now: ${this.audioContext.currentTime.toFixed(3)}s)`);
+        // Debug: console.log(`🔇 noteOff: ${midiNote} at ${when.toFixed(3)}s (now: ${this.audioContext.currentTime.toFixed(3)}s)`);
 
         const noteData = this.activeNotes.get(midiNote);
 
@@ -194,12 +194,7 @@ export class GranularSamplerInstrument extends BaseInstrument {
             gain: this.params.gain * (velocity / 127)
         };
 
-        console.log(`📦 Continuous note params:`, {
-            grainSize: noteParams.grainSize,
-            grainDensity: noteParams.grainDensity,
-            pitch: noteParams.pitch,
-            gain: noteParams.gain
-        });
+        // Debug: console.log(`📦 Continuous note params:`, { grainSize: noteParams.grainSize, grainDensity: noteParams.grainDensity, pitch: noteParams.pitch, gain: noteParams.gain });
 
         noteScheduler.updateParams(noteParams);
         noteScheduler.startEmitting();
@@ -299,7 +294,23 @@ export class GranularSamplerInstrument extends BaseInstrument {
      * @param {Object} params - Parameters to update
      */
     updateParams(params) {
-        this.params = { ...this.params, ...params };
+        // ✅ OPTIMIZATION: Auto-scale grain density based on polyphony
+        // When playing chords, reduce density to prevent CPU spikes
+        if (params.grainDensity !== undefined) {
+            const polyphonyScale = Math.max(0.5, 1 - (this.activeNotes.size / this.maxPolyphony) * 0.4);
+            const adjustedDensity = params.grainDensity * polyphonyScale;
+
+            this.params = {
+                ...this.params,
+                ...params,
+                grainDensity: adjustedDensity
+            };
+
+            // Debug: console.log(`🎚️ Grain density auto-scaled: ${params.grainDensity} → ${adjustedDensity.toFixed(1)} (polyphony: ${this.activeNotes.size}/${this.maxPolyphony})`);
+        } else {
+            this.params = { ...this.params, ...params };
+        }
+
         this._updateSchedulerParams();
 
         // Update master gain

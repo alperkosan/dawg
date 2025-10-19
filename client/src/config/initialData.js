@@ -148,8 +148,8 @@ const boomBapPattern = {
     { t: 0, p: 'C3', d: '1n' }, { t: 0, p: 'E3', d: '1n' }, { t: 0, p: 'G3', d: '1n' },
     { t: 64, p: 'C3', d: '1n' }, { t: 64, p: 'E3', d: '1n' }, { t: 64, p: 'G3', d: '1n' },
     // Bar 9-16: A minor (subtle shift)
-    { t: 128, p: 'A2', d: '1n' }, { t: 128, p: 'C3', d: '1n' }, { t: 128, p: 'E3', d: '1n' },
-    { t: 192, p: 'A2', d: '1n' }, { t: 192, p: 'C3', d: '1n' }, { t: 192, p: 'E3', d: '1n' }
+    { t: 128, p: 'A3', d: '1n' }, { t: 128, p: 'C4', d: '1n' }, { t: 128, p: 'E4', d: '1n' },
+    { t: 192, p: 'A3', d: '1n' }, { t: 192, p: 'C4', d: '1n' }, { t: 192, p: 'E4', d: '1n' }
   ].map(n => note(n.t, n.p, 30, n.d)), // Very quiet, just atmosphere
 };
 
@@ -167,8 +167,8 @@ const cloudRapPattern = {
   ],
   openhat: [6, 14, 22, 30, 38, 46, 54, 62].map(t => note(t, 'G#4', 60, '4n')),
   warmpad: [
-    { t: 0, p: 'C3', d: '1n' }, { t: 0, p: 'E3', d: '1n' }, { t: 0, p: 'G3', d: '1n' },
-    { t: 32, p: 'A2', d: '1n' }, { t: 32, p: 'C3', d: '1n' }, { t: 32, p: 'E3', d: '1n' },
+    { t: 0, p: 'C4', d: '1n' }, { t: 0, p: 'E4', d: '1n' }, { t: 0, p: 'G4', d: '1n' },
+    { t: 32, p: 'A3', d: '1n' }, { t: 32, p: 'C4', d: '1n' }, { t: 32, p: 'E4', d: '1n' },
   ].map(n => note(n.t, n.p, 60, n.d)),
   'e.piano': [
     { t: 2, p: 'C5', d: '2n' }, { t: 8, p: 'E5', d: '4n' }, { t: 14, p: 'G5', d: '8n' },
@@ -177,10 +177,10 @@ const cloudRapPattern = {
     { t: 50, p: 'G4', d: '1n' },
   ].map(n => note(n.t, n.p, 70, n.d)),
   bass: [
-    { t: 0, p: 'C2', d: '1n' },
-    { t: 16, p: 'A1', d: '1n' },
-    { t: 32, p: 'F1', d: '1n' },
-    { t: 48, p: 'G1', d: '1n' },
+    { t: 0, p: 'C4', d: '1n' },
+    { t: 16, p: 'A3', d: '1n' },
+    { t: 32, p: 'F3', d: '1n' },
+    { t: 48, p: 'G3', d: '1n' },
   ].map(n => note(n.t, n.p, 75, n.d))
 };
 

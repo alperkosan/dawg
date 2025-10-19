@@ -80,7 +80,7 @@ export class BaseInstrument {
         const midiVelocity = Math.round(velocity * 127);
         const startTime = time !== null ? time : this.audioContext.currentTime;
 
-        console.log(`🎵 triggerNote: ${pitch} (MIDI ${midiNote}), vel: ${velocity.toFixed(2)}, duration: ${duration ? duration.toFixed(3) + 's' : 'null'}, time: ${startTime.toFixed(3)}s (now: ${this.audioContext.currentTime.toFixed(3)}s)`);
+        // Debug: console.log(`🎵 triggerNote: ${pitch} (MIDI ${midiNote}), vel: ${velocity.toFixed(2)}, duration: ${duration ? duration.toFixed(3) + 's' : 'null'}, time: ${startTime.toFixed(3)}s (now: ${this.audioContext.currentTime.toFixed(3)}s)`);
 
         this.noteOn(midiNote, midiVelocity, startTime);
 
@@ -100,7 +100,7 @@ export class BaseInstrument {
     releaseNote(pitch, time = null) {
         const midiNote = this.pitchToMidi(pitch);
         const stopTime = time !== null ? time : this.audioContext.currentTime;
-        console.log(`📍 releaseNote: ${pitch} (MIDI ${midiNote}) at ${stopTime.toFixed(3)}s (now: ${this.audioContext.currentTime.toFixed(3)}s)`);
+        // Debug: console.log(`📍 releaseNote: ${pitch} (MIDI ${midiNote}) at ${stopTime.toFixed(3)}s (now: ${this.audioContext.currentTime.toFixed(3)}s)`);
         this.noteOff(midiNote, stopTime);
     }
 
