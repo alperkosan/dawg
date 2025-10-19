@@ -1172,8 +1172,9 @@ export class PlaybackManager {
 
         // Create panner for stereo positioning (if needed)
         let outputNode = gainNode;
+        let panNode = null; // ✅ LEAK FIX: Track panNode for cleanup
         if (clip.pan !== undefined && clip.pan !== 0) {
-            const panNode = context.createStereoPanner();
+            panNode = context.createStereoPanner();
             panNode.pan.value = clip.pan;
             gainNode.connect(panNode);
             outputNode = panNode;
@@ -1227,12 +1228,31 @@ export class PlaybackManager {
 
         source.start(time, totalOffset, duration);
 
-        // ✅ FIX: Track this source so it can be stopped later
-        this.activeAudioSources.push(source);
+        // ✅ LEAK FIX: Track all audio nodes for proper cleanup
+        const audioNodeGroup = {
+            source,
+            gainNode,
+            panNode,
+            destination: outputNode,
+            clipId: clip.id
+        };
+        this.activeAudioSources.push(audioNodeGroup);
 
-        // ✅ FIX: Auto-cleanup when source finishes playing
+        // ✅ LEAK FIX: Disconnect ALL nodes when source finishes
         source.onended = () => {
-            const index = this.activeAudioSources.indexOf(source);
+            try {
+                // Disconnect all nodes to free memory
+                source.disconnect();
+                gainNode.disconnect();
+                if (panNode) {
+                    panNode.disconnect();
+                }
+            } catch (e) {
+                // Already disconnected
+            }
+
+            // Remove from tracking
+            const index = this.activeAudioSources.findIndex(item => item.source === source);
             if (index > -1) {
                 this.activeAudioSources.splice(index, 1);
             }

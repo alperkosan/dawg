@@ -1,6 +1,8 @@
 // Premium Note Renderer for Piano Roll v7
 // Zenith design system ile uyumlu, premium hissi uyandıran note görünümleri
 
+import { globalStyleCache } from '../../../lib/rendering/StyleCache.js';
+
 export class PremiumNoteRenderer {
     constructor() {
         this.animationCache = new Map();
@@ -22,7 +24,7 @@ export class PremiumNoteRenderer {
 
     // Premium note rendering with advanced visuals
     renderNote(ctx, note, dimensions, viewport, isSelected = false, isHovered = false, isEraserTarget = false) {
-        const styles = getComputedStyle(document.documentElement);
+        // ✅ OPTIMIZED: Using StyleCache
         const { stepWidth, keyHeight } = dimensions;
 
         // Calculate note position and size - ensure it fills grid cells completely
@@ -165,7 +167,7 @@ export class PremiumNoteRenderer {
 
     // Premium note border with depth
     renderNoteBorder(ctx, x, y, width, height, style) {
-        const styles = getComputedStyle(document.documentElement);
+        // ✅ OPTIMIZED: Using StyleCache
         const borderHue = style.hue;
         const borderAlpha = style.isSelected ? 0.9 : 0.6;
         const borderWidth = style.isSelected ? 2 : 1;
@@ -185,7 +187,7 @@ export class PremiumNoteRenderer {
         // Refined selection effects - more elegant
         if (style.isSelected) {
             // Subtle outer selection border
-            const accentCool = styles.getPropertyValue('--zenith-accent-cool').trim();
+            const accentCool = globalStyleCache.get('--zenith-accent-cool');
             ctx.strokeStyle = accentCool || 'rgba(59, 130, 246, 0.8)';
             ctx.lineWidth = 2;
             ctx.setLineDash([]);
@@ -193,14 +195,14 @@ export class PremiumNoteRenderer {
             ctx.stroke();
 
             // Gentle selection glow
-            const accentCoolFaded = styles.getPropertyValue('--zenith-accent-cool-faded').trim();
+            const accentCoolFaded = globalStyleCache.get('--zenith-accent-cool-faded');
             ctx.shadowColor = accentCoolFaded || 'rgba(59, 130, 246, 0.3)';
             ctx.shadowBlur = 4;
             ctx.shadowOffsetX = 0;
             ctx.shadowOffsetY = 0;
 
             // Inner accent border
-            const textPrimary = styles.getPropertyValue('--zenith-text-primary').trim();
+            const textPrimary = globalStyleCache.get('--zenith-text-primary');
             ctx.strokeStyle = textPrimary || 'rgba(255, 255, 255, 0.6)';
             ctx.lineWidth = 1;
             this.drawRoundedRect(ctx, x + 0.5, y + 0.5, width - 1, height - 1, 2.5);
@@ -210,7 +212,7 @@ export class PremiumNoteRenderer {
 
             // Minimal corner indicators (only top corners)
             const cornerSize = 4;
-            const accentCoolBright = styles.getPropertyValue('--zenith-accent-cool').trim();
+            const accentCoolBright = globalStyleCache.get('--zenith-accent-cool');
             ctx.fillStyle = accentCoolBright || 'rgba(59, 130, 246, 0.9)';
             // Top-left corner dot
             ctx.fillRect(x - 1, y - 1, cornerSize, 1);
@@ -299,8 +301,8 @@ export class PremiumNoteRenderer {
     renderNoteContent(ctx, note, x, y, width, height) {
         if (width < 50 || height < 20) return;
 
-        const styles = getComputedStyle(document.documentElement);
-        const textPrimary = styles.getPropertyValue('--zenith-text-primary').trim();
+        // ✅ OPTIMIZED: Using StyleCache
+        const textPrimary = globalStyleCache.get('--zenith-text-primary');
 
         ctx.fillStyle = textPrimary || 'rgba(255, 255, 255, 0.9)';
         ctx.font = '10px Inter, sans-serif';
@@ -314,7 +316,7 @@ export class PremiumNoteRenderer {
         // Velocity (if space allows)
         if (width > 80) {
             ctx.font = '8px Inter, sans-serif';
-            const textSecondary = styles.getPropertyValue('--zenith-text-secondary').trim();
+            const textSecondary = globalStyleCache.get('--zenith-text-secondary');
             ctx.fillStyle = textSecondary || 'rgba(255, 255, 255, 0.7)';
             ctx.fillText(`v${note.velocity}`, x + 8, y + height * 0.7);
         }
@@ -390,8 +392,8 @@ export class PremiumNoteRenderer {
 
         // Preview label (optional for larger notes)
         if (width > 30 && height > 16) {
-            const styles = getComputedStyle(document.documentElement);
-            const textPrimary = styles.getPropertyValue('--zenith-text-primary').trim();
+            // ✅ OPTIMIZED: Using StyleCache
+            const textPrimary = globalStyleCache.get('--zenith-text-primary');
             ctx.fillStyle = textPrimary || 'rgba(255, 255, 255, 0.8)';
             ctx.font = '9px Inter, sans-serif';
             ctx.textAlign = 'center';
@@ -419,14 +421,14 @@ export class PremiumNoteRenderer {
 
     // Render resize handles for selected notes
     renderResizeHandles(ctx, x, y, width, height) {
-        const styles = getComputedStyle(document.documentElement);
+        // ✅ OPTIMIZED: Using StyleCache
         const handleSize = 10; // Increased size for better usability
         const handleWidth = 5; // Increased width
         const handleOffset = 3;
 
         // Left resize handle (start time)
-        const accentCool = styles.getPropertyValue('--zenith-accent-cool').trim();
-        const textPrimary = styles.getPropertyValue('--zenith-text-primary').trim();
+        const accentCool = globalStyleCache.get('--zenith-accent-cool');
+        const textPrimary = globalStyleCache.get('--zenith-text-primary');
         ctx.fillStyle = accentCool || '#3b82f6';
         ctx.strokeStyle = textPrimary || 'rgba(255, 255, 255, 0.9)';
         ctx.lineWidth = 1;
@@ -446,7 +448,7 @@ export class PremiumNoteRenderer {
         ctx.strokeRect(rightHandleX, rightHandleY, handleWidth, handleSize);
 
         // Visual indicator lines (grip lines)
-        const textPrimaryBright = styles.getPropertyValue('--zenith-text-primary').trim();
+        const textPrimaryBright = globalStyleCache.get('--zenith-text-primary');
         ctx.strokeStyle = textPrimaryBright || 'rgba(255, 255, 255, 0.8)';
         ctx.lineWidth = 1;
 

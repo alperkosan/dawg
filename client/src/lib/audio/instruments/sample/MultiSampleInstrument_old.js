@@ -4,8 +4,6 @@
  * Features:
  * - Automatically selects nearest sample for each note
  * - Minimal pitch shifting (better sound quality)
- * - Voice pooling with intelligent voice stealing
- * - Polyphony limiting for CPU efficiency
  * - Velocity layers support (future)
  * - Round-robin support (future)
  *
@@ -15,8 +13,6 @@
  */
 
 import { BaseInstrument } from '../base/BaseInstrument.js';
-import { VoicePool } from '../base/VoicePool.js';
-import { SampleVoice } from './SampleVoice.js';
 
 export class MultiSampleInstrument extends BaseInstrument {
     constructor(instrumentData, audioContext, sampleBuffers) {
@@ -31,9 +27,7 @@ export class MultiSampleInstrument extends BaseInstrument {
 
         // Playback settings
         this.maxPolyphony = 32;
-
-        // ✅ NEW: Voice pooling for CPU efficiency and voice stealing
-        this.voicePool = null;
+        this.activeSources = new Map(); // midiNote -> { source, gainNode }
 
         // Master output
         this.masterGain = null;
@@ -49,29 +43,12 @@ export class MultiSampleInstrument extends BaseInstrument {
             this.masterGain.gain.setValueAtTime(0.8, this.audioContext.currentTime);
             this.output = this.masterGain;
 
-            // ✅ NEW: Create voice pool with pre-allocated voices
-            this.voicePool = new VoicePool(
-                this.audioContext,
-                SampleVoice,
-                this.maxPolyphony
-            );
-
-            // Initialize all voices
-            this.voicePool.voices.forEach(voice => {
-                voice.initialize();
-            });
-
-            // Connect all voices to master
-            this.voicePool.voices.forEach(voice => {
-                voice.output.connect(this.masterGain);
-            });
-
             // Build sample map
             this.sampleMap = this._buildSampleMap();
 
             this._isInitialized = true;
 
-            console.log(`🎹 MultiSample initialized: ${this.name} (${this.multiSamples.length} samples, ${this.maxPolyphony} voices)`);
+            console.log(`🎹 MultiSample initialized: ${this.name} (${this.multiSamples.length} samples)`);
 
         } catch (error) {
             console.error(`❌ MultiSample init failed: ${this.name}:`, error);
@@ -158,22 +135,53 @@ export class MultiSampleInstrument extends BaseInstrument {
         }
 
         try {
-            // ✅ NEW: Allocate voice from pool (with voice stealing if needed)
-            const voice = this.voicePool.allocate(midiNote, true); // true = allow polyphony
-
-            if (!voice) {
-                console.warn(`${this.name}: No voice available for note ${midiNote}`);
-                return;
+            // Stop existing note if playing
+            if (this.activeSources.has(midiNote)) {
+                this.noteOff(midiNote, time);
             }
 
-            // Calculate frequency for the note
-            const frequency = this.midiToFrequency(midiNote);
+            // Create buffer source
+            const source = this.audioContext.createBufferSource();
+            source.buffer = mapping.buffer;
 
-            // ✅ NEW: Trigger voice with sample data
-            voice.trigger(midiNote, velocity, frequency, time, mapping);
+            // Calculate playback rate for pitch shifting
+            // Formula: playbackRate = 2^(semitones/12)
+            const playbackRate = Math.pow(2, mapping.pitchShift / 12);
+            source.playbackRate.setValueAtTime(playbackRate, time);
+
+            // Create gain node for velocity
+            const gainNode = this.audioContext.createGain();
+            const velocityGain = (velocity / 127) * 0.8;
+            gainNode.gain.setValueAtTime(0, time);
+
+            // Quick attack envelope
+            gainNode.gain.linearRampToValueAtTime(velocityGain, time + 0.005);
+
+            // Connect: source -> gain -> master
+            source.connect(gainNode);
+            gainNode.connect(this.masterGain);
+
+            // Start playback
+            source.start(time);
+
+            // Store active source
+            this.activeSources.set(midiNote, { source, gainNode, startTime: time });
 
             // Track note
             this._trackNoteOn(midiNote, velocity, time);
+
+            // Auto-cleanup when finished
+            source.onended = () => {
+                if (this.activeSources.get(midiNote)?.source === source) {
+                    this.activeSources.delete(midiNote);
+                    this._trackNoteOff(midiNote);
+                }
+                try {
+                    gainNode.disconnect();
+                } catch (e) {
+                    // Already disconnected
+                }
+            };
 
         } catch (error) {
             console.error(`❌ MultiSample noteOn failed:`, error);
@@ -189,16 +197,42 @@ export class MultiSampleInstrument extends BaseInstrument {
         }
 
         const time = stopTime !== null ? stopTime : this.audioContext.currentTime;
+        const releaseTime = 0.15; // Quick release
 
         try {
             if (midiNote !== null) {
-                // ✅ NEW: Release specific note via voice pool
-                this.voicePool.release(midiNote, time);
-                this._trackNoteOff(midiNote);
+                // Stop specific note
+                const active = this.activeSources.get(midiNote);
+
+                if (active) {
+                    const { source, gainNode } = active;
+
+                    // Apply release envelope
+                    gainNode.gain.cancelScheduledValues(time);
+                    gainNode.gain.setValueAtTime(gainNode.gain.value, time);
+                    gainNode.gain.linearRampToValueAtTime(0, time + releaseTime);
+
+                    // Stop source after release
+                    source.stop(time + releaseTime);
+                }
             } else {
-                // ✅ NEW: Release all notes via voice pool
-                this.voicePool.releaseAll(time);
-                this.activeNotes.clear();
+                // Stop all notes
+                this.activeSources.forEach(({ source, gainNode }, note) => {
+                    try {
+                        gainNode.gain.cancelScheduledValues(time);
+                        gainNode.gain.setValueAtTime(gainNode.gain.value, time);
+                        gainNode.gain.linearRampToValueAtTime(0, time + releaseTime);
+                        source.stop(time + releaseTime);
+                    } catch (e) {
+                        // Source may already be stopped
+                    }
+                });
+
+                // Clear all active sources after release
+                setTimeout(() => {
+                    this.activeSources.clear();
+                    this.activeNotes.clear();
+                }, (releaseTime + 0.1) * 1000);
             }
 
         } catch (error) {
@@ -212,11 +246,19 @@ export class MultiSampleInstrument extends BaseInstrument {
     stopAll() {
         if (!this._isInitialized) return;
 
-        console.log(`🛑 MultiSample stopAll: ${this.name} (${this.voicePool.activeVoices.size} active)`);
+        console.log(`🛑 MultiSample stopAll: ${this.name} (${this.activeSources.size} active)`);
 
-        // ✅ NEW: Stop all voices immediately via voice pool
-        this.voicePool.stopAll();
+        // Immediately stop all sources without release
+        this.activeSources.forEach(({ source, gainNode }) => {
+            try {
+                source.stop();
+                gainNode.disconnect();
+            } catch (e) {
+                // Already stopped/disconnected
+            }
+        });
 
+        this.activeSources.clear();
         this.activeNotes.clear();
         this._isPlaying = false;
     }
@@ -238,11 +280,16 @@ export class MultiSampleInstrument extends BaseInstrument {
      * Cleanup
      */
     dispose() {
-        // ✅ NEW: Dispose voice pool
-        if (this.voicePool) {
-            this.voicePool.dispose();
-            this.voicePool = null;
-        }
+        // Stop all active sources
+        this.activeSources.forEach(({ source }) => {
+            try {
+                source.stop();
+            } catch (e) {
+                // Already stopped
+            }
+        });
+
+        this.activeSources.clear();
 
         // Disconnect master gain
         if (this.masterGain) {
@@ -269,8 +316,7 @@ export class MultiSampleInstrument extends BaseInstrument {
             supportsAftertouch: false,
             maxVoices: this.maxPolyphony,
             multiSampled: true,
-            sampleCount: this.multiSamples.length,
-            hasVoiceStealing: true // ✅ NEW: Supports voice stealing
+            sampleCount: this.multiSamples.length
         };
     }
 
@@ -306,8 +352,7 @@ export class MultiSampleInstrument extends BaseInstrument {
         return {
             ...this.getDebugInfo(),
             multiSamples: this.multiSamples.length,
-            activeVoices: this.voicePool?.activeVoices.size || 0, // ✅ NEW: Voice pool count
-            maxVoices: this.maxPolyphony,
+            activeSources: this.activeSources.size,
             sampleMapSize: this.sampleMap?.size || 0,
             samples: this.multiSamples.map(s => ({
                 note: s.note,

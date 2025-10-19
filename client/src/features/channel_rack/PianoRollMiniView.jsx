@@ -1,5 +1,6 @@
 import React, { useMemo, useRef, useEffect } from 'react';
 import { NativeTimeUtils } from '@/lib/utils/NativeTimeUtils';
+import { globalStyleCache } from '@/lib/rendering/StyleCache';
 
 // MIDI nota numarasını "C4" gibi bir dizeye çevirir.
 const pitchToMidi = (pitch) => {
@@ -39,9 +40,16 @@ const getDurationInSteps = (note) => {
     return 1;
 };
 
-export default function PianoRollMiniView({ notes = [], patternLength, onNoteClick }) {
+export default function PianoRollMiniView({ notes = [], patternLength, onNoteClick, scrollX = 0, viewportWidth = 1000 }) {
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
+
+  // ⚡ PERFORMANCE: Calculate viewport bounds for rendering
+  const STEP_WIDTH = 16;
+  const bufferSteps = 32;
+  const visibleSteps = Math.ceil(viewportWidth / STEP_WIDTH);
+  const startStep = Math.max(0, Math.floor(scrollX / STEP_WIDTH) - bufferSteps);
+  const endStep = Math.min(patternLength, startStep + visibleSteps + bufferSteps * 2);
 
   // Görüntülenecek nota aralığını hesapla
   const noteRange = useMemo(() => {
@@ -70,42 +78,57 @@ export default function PianoRollMiniView({ notes = [], patternLength, onNoteCli
     const container = containerRef.current;
     if (!canvas || !container) return;
     
-    // --- ZENITH TEMA ENTEGRASYONU ---
-    // CSS'den Zenith design tokens'ları dinamik olarak al
-    const styles = getComputedStyle(container);
-    const noteColor = styles.getPropertyValue('--zenith-accent-cool').trim();
-    const gridColor = styles.getPropertyValue('--zenith-border-subtle').trim();
-    const textColor = styles.getPropertyValue('--zenith-text-secondary').trim();
+    // ⚡ PERFORMANCE: Use StyleCache instead of getComputedStyle
+    const noteColor = globalStyleCache.get('--zenith-accent-cool');
+    const gridColor = globalStyleCache.get('--zenith-border-subtle');
+    const textColor = globalStyleCache.get('--zenith-text-secondary');
 
     const ctx = canvas.getContext('2d');
     const dpr = window.devicePixelRatio || 1;
     const rect = container.getBoundingClientRect();
-    
-    canvas.width = rect.width * dpr;
-    canvas.height = rect.height * dpr;
-    ctx.scale(dpr, dpr);
-    
-    const width = rect.width;
+
+    // ⚡ PERFORMANCE: Only create canvas for visible viewport + buffer
+    const viewportSteps = endStep - startStep;
+    const stepWidth = STEP_WIDTH;
+    const width = viewportSteps * stepWidth;
     const height = rect.height;
+
+    canvas.width = width * dpr;
+    canvas.height = height * dpr;
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+    ctx.scale(dpr, dpr);
 
     // Arka planı temizle (artık CSS'den geliyor ama canvas için de yapmak iyi bir pratik)
     ctx.clearRect(0, 0, width, height);
     
-    // Arka plan grid'i (bar çizgileri)
+    // ⚡ PERFORMANCE: Draw grid only for visible bars
     ctx.strokeStyle = gridColor;
     ctx.lineWidth = 1;
-    const barStepWidth = 16 * (width / patternLength);
-    for (let i = 1; i * barStepWidth < width; i++) {
-        ctx.beginPath();
-        ctx.moveTo(i * barStepWidth, 0);
-        ctx.lineTo(i * barStepWidth, height);
-        ctx.stroke();
+    const startBar = Math.floor(startStep / 16);
+    const endBar = Math.ceil(endStep / 16);
+    for (let bar = startBar; bar <= endBar; bar++) {
+        const barX = (bar * 16 - startStep) * stepWidth;
+        if (barX >= 0 && barX <= width) {
+            ctx.beginPath();
+            ctx.moveTo(barX, 0);
+            ctx.lineTo(barX, height);
+            ctx.stroke();
+        }
     }
     
     if (notes.length > 0) {
       const pitchRange = Math.max(1, noteRange.max - noteRange.min);
-      
+
+      // ⚡ PERFORMANCE: Only draw notes in visible viewport
       notes.forEach(note => {
+        const noteTime = note.time;
+        const noteDuration = getDurationInSteps(note);
+        const noteEndTime = noteTime + noteDuration;
+
+        // Skip notes completely outside viewport
+        if (noteEndTime < startStep || noteTime > endStep) return;
+
         const midi = pitchToMidi(note.pitch);
         // ✅ FIX: Y coordinate calculation - higher pitch should be at top (lower y)
         // Normalize pitch position: 0 = lowest pitch (bottom), 1 = highest pitch (top)
@@ -114,9 +137,9 @@ export default function PianoRollMiniView({ notes = [], patternLength, onNoteCli
         const y = height * (1 - normalizedPitch);
         const noteHeight = Math.max(1, height / pitchRange);
 
-        const stepWidth = width / patternLength;
-        const x = note.time * stepWidth;
-        const noteWidth = getDurationInSteps(note) * stepWidth; // ✅ Pass entire note object
+        // ⚡ PERFORMANCE: Offset note position by startStep
+        const x = (noteTime - startStep) * stepWidth;
+        const noteWidth = noteDuration * stepWidth;
 
         ctx.fillStyle = noteColor;
         ctx.fillRect(x, y, Math.max(1, noteWidth - 1), noteHeight);
@@ -130,7 +153,7 @@ export default function PianoRollMiniView({ notes = [], patternLength, onNoteCli
       ctx.fillText('Click to open Piano Roll', width / 2, height / 2);
     }
     
-  }, [notes, patternLength, noteRange]);
+  }, [notes, patternLength, noteRange, scrollX, viewportWidth, startStep, endStep]);
 
   const handleClick = (e) => {
     e.stopPropagation(); // ✅ Prevent event bubbling to timeline click handler
@@ -147,6 +170,10 @@ export default function PianoRollMiniView({ notes = [], patternLength, onNoteCli
       <canvas
         ref={canvasRef}
         className="pr-mini-view__canvas"
+        style={{
+          position: 'absolute',
+          left: `${startStep * STEP_WIDTH}px`,
+        }}
       />
     </div>
   );

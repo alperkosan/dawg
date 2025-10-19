@@ -86,7 +86,9 @@ export class NativeTransportSystem {
         `;
 
         const blob = new Blob([workerScript], { type: 'application/javascript' });
-        this.timerWorker = new Worker(URL.createObjectURL(blob));
+        // ✅ LEAK FIX: Store blob URL for cleanup
+        this.workerBlobUrl = URL.createObjectURL(blob);
+        this.timerWorker = new Worker(this.workerBlobUrl);
 
         this.timerWorker.onmessage = () => {
             if (this.isPlaying) {
@@ -391,6 +393,32 @@ export class NativeTransportSystem {
                 this.scheduledEvents.delete(scheduledTime);
             }
         }
+
+        // ✅ LEAK FIX: Clean stale events (older than 5 seconds)
+        // This prevents unbounded growth due to timing precision issues
+        const staleThreshold = currentTime - 5.0;
+        for (const [scheduledTime] of this.scheduledEvents.entries()) {
+            if (scheduledTime < staleThreshold) {
+                this.scheduledEvents.delete(scheduledTime);
+            }
+        }
+    }
+
+    // ✅ LEAK FIX: Add method to clear scheduled events
+    clearScheduledEvents(predicate = null) {
+        if (predicate) {
+            // Remove events matching predicate
+            for (const [time, events] of this.scheduledEvents.entries()) {
+                const filtered = events.filter(e => !predicate(e.data));
+                if (filtered.length === 0) {
+                    this.scheduledEvents.delete(time);
+                } else {
+                    this.scheduledEvents.set(time, filtered);
+                }
+            }
+        } else {
+            this.scheduledEvents.clear();
+        }
     }
 
     _secondsToTicks(seconds) {
@@ -656,15 +684,29 @@ export class NativeTransportSystem {
     }
 
     dispose() {
-
+        // ✅ LEAK FIX: Comprehensive cleanup
         this.stop();
 
+        // Cleanup worker timer
         if (this.timerWorker) {
+            this.timerWorker.postMessage('stop'); // Stop internal timer first
             this.timerWorker.terminate();
+            this.timerWorker = null;
         }
 
+        // ✅ LEAK FIX: Revoke blob URL
+        if (this.workerBlobUrl) {
+            URL.revokeObjectURL(this.workerBlobUrl);
+            this.workerBlobUrl = null;
+        }
+
+        // Clear data structures
         this.callbacks.clear();
         this.scheduledEvents.clear();
 
+        // Nullify references
+        this.audioContext = null;
+
+        console.log('🗑️ NativeTransportSystem disposed');
     }
 }
