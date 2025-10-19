@@ -20,6 +20,7 @@
 @import url("./components/_pluginUIs.css");
 @import url("./components/_presetManager.css");
 @import url("./components/AudioQualitySettings.css");
+@import url("../components/AudioQualitySettings_v2.css");
 @import url("./components/_transportButtons.css");
 
 /* 5. Özellik Stilleri */

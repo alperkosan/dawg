@@ -1011,22 +1011,8 @@ export class PlaybackManager {
     _clearClipEvents(clipId) {
         if (!this.transport || !clipId) return;
 
-        // 1. Clear scheduled transport events for this clip
-        // This relies on the transport supporting a filter function for clearScheduledEvents
-        // and that events were scheduled with a clipId property.
-        if (this.transport.clearScheduledEvents) {
-            this.transport.clearScheduledEvents(event => event.clipId === clipId);
-        }
-
-        // 2. Stop any currently playing audio sources for this clip
-        const sourcesToStop = this.activeAudioSources.filter(source => source.clipId === clipId);
-        sourcesToStop.forEach(source => {
-            try {
-                source.stop();
-            } catch (e) { /* Already stopped */ }
-        });
-        this.activeAudioSources = this.activeAudioSources.filter(source => source.clipId !== clipId);
-
+        // ✅ REFACTOR: Delegate to AudioClipScheduler
+        this.audioClipScheduler.clearClipEvents(clipId);
     }
 
     /**
@@ -1658,38 +1644,8 @@ export class PlaybackManager {
             this.transport.clearScheduledEvents();
         }
 
-        // ✅ IMPROVED: Fade out active audio sources for smooth transitions
-        if (this.activeAudioSources && this.activeAudioSources.length > 0) {
-            const fadeTime = useFade ? 0.015 : 0; // 15ms fade - fast but smooth (optimized)
-            const currentTime = this.transport?.audioContext?.currentTime || 0;
-
-
-            this.activeAudioSources.forEach(source => {
-                try {
-                    // If source has a gain node, fade it out
-                    if (useFade && source.gainNode && source.gainNode.gain) {
-                        source.gainNode.gain.cancelScheduledValues(currentTime);
-                        source.gainNode.gain.setValueAtTime(source.gainNode.gain.value, currentTime);
-                        source.gainNode.gain.linearRampToValueAtTime(0, currentTime + fadeTime);
-
-                        // Stop after fade completes
-                        setTimeout(() => {
-                            try {
-                                source.stop();
-                            } catch (e) {
-                                // Already stopped
-                            }
-                        }, fadeTime * 1000 + 5); // +5ms buffer (reduced from 10ms)
-                    } else {
-                        // Immediate stop (no fade)
-                        source.stop();
-                    }
-                } catch (e) {
-                    // Source may already be stopped
-                }
-            });
-            this.activeAudioSources = [];
-        }
+        // ✅ REFACTOR: Delegate audio source cleanup to AudioClipScheduler
+        this.audioClipScheduler.stopAll(useFade);
     }
 
     // =================== STATUS & DEBUG ===================

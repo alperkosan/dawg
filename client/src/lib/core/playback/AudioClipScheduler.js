@@ -59,12 +59,12 @@ export class AudioClipScheduler {
 
         // Convert clip startTime (in beats) to seconds
         const clipStartBeats = clip.startTime || 0;
-        const clipStartSeconds = this.transport.beatsToSeconds(clipStartBeats);
+        const clipStartSeconds = clipStartBeats * (60 / this.transport.bpm); // beats to seconds
         const absoluteStartTime = baseTime + clipStartSeconds;
 
         // Calculate duration
         const clipDurationBeats = clip.duration || (audioBuffer.duration * (this.transport.bpm / 60));
-        const clipDurationSeconds = this.transport.beatsToSeconds(clipDurationBeats);
+        const clipDurationSeconds = clipDurationBeats * (60 / this.transport.bpm); // beats to seconds
 
         // Get clip offset (where to start playing in the buffer)
         const clipOffset = clip.offset || 0; // in seconds

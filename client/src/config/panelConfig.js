@@ -7,6 +7,7 @@ import KeybindingsPanel from '@/features/key_bindings/KeybindingsPanel';
 import { ThemeEditor } from '@/features/theme_editor/ThemeEditor';
 import { ForgeSynthUI } from '@/features/instrument_editor/ForgeSynthUI';
 import AudioQualitySettings from '@/components/AudioQualitySettings';
+import AudioQualitySettings_v2 from '@/components/AudioQualitySettings_v2';
 import FileBrowserPanel from '@/features/file_browser/FileBrowserPanel';
 
 export const panelRegistry = {
@@ -19,7 +20,8 @@ export const panelRegistry = {
   'arrangement-v2': ArrangementPanelV2,
   'theme-editor': ThemeEditor,
   'instrument-editor-forgesynth': ForgeSynthUI,
-  'audio-quality-settings': AudioQualitySettings,
+  'audio-quality-settings': AudioQualitySettings_v2, // ✅ V2 with modern design
+  'audio-quality-settings-v1': AudioQualitySettings, // Legacy version
 };
 
 export const panelDefinitions = {
