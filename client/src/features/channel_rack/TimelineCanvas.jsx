@@ -231,8 +231,9 @@ const TimelineCanvas = React.memo(({
 
       // ✅ Custom position calculation accounting for scroll
       const calculatePosition = (mouseX, mouseY) => {
-        // Get timeline scroll offset
-        const scrollLeft = containerRef.current?.scrollLeft || 0;
+        // ⚡ IMPORTANT: Use scrollX from parent (not containerRef.scrollLeft)
+        // Timeline container doesn't scroll - parent scroll container does!
+        const scrollLeft = scrollX || 0;
 
         // Account for scroll
         const adjustedX = mouseX + scrollLeft;
@@ -265,7 +266,7 @@ const TimelineCanvas = React.memo(({
     } catch (error) {
       console.error('Failed to register TimelineCanvas:', error);
     }
-  }, []); // Only run once on mount
+  }, [scrollX, loopLength]); // ⚡ Update when scrollX changes (needed for calculatePosition)
 
   // ✅ SEPARATE EFFECT: Update loop length if it changes
   useEffect(() => {
