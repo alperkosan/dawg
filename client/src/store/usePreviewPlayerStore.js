@@ -99,6 +99,8 @@ const loadAudioBuffer = async (url, set, get) => {
         loadingUrl: null,
         currentFileUrl: url
       });
+      // ✅ FIX: Ensure state update completes before .then() callback
+      await Promise.resolve();
       return;
     }
 
@@ -240,15 +242,64 @@ export const usePreviewPlayerStore = create((set, get) => ({
       bufferToPlay = getFromCache(url);
 
       if (!bufferToPlay) {
-        console.warn('[PreviewPlayer] Buffer not ready, loading first...');
-        // Buffer'ı yükle ve otomatik çal
+        console.log('[PreviewPlayer] Buffer not ready, loading first...');
+        // ✅ FIX: Load and auto-play WITHOUT recursive call
         set({ loadingUrl: url, error: null });
         loadAudioBuffer(url, set, get).then(() => {
-          // Yükleme bitince otomatik çal
+          // Yükleme bitince otomatik çal (direkt, recursive call yok!)
           const newState = get();
-          if (newState.waveformBuffer && newState.currentFileUrl === url) {
-            get().playPreview(url);
+          const loadedBuffer = newState.waveformBuffer;
+
+          console.log('[PreviewPlayer] Load complete:', {
+            requestedUrl: url,
+            currentUrl: newState.currentFileUrl,
+            hasBuffer: !!loadedBuffer,
+            match: newState.currentFileUrl === url
+          });
+
+          // ✅ FIX: Distinguish between load failure and URL change
+          if (!loadedBuffer) {
+            console.error('[PreviewPlayer] Buffer load failed for:', url);
+            return;
           }
+
+          if (newState.currentFileUrl !== url) {
+            console.log('[PreviewPlayer] URL changed during load, skipping auto-play for:', url);
+            return;
+          }
+
+          // Direkt çal - playPreview'i tekrar çağırma!
+          try {
+            const context = getAudioContext();
+
+            // Önceki preview'ı durdur
+            if (previewSource) {
+              previewSource.stop();
+              previewSource.disconnect();
+              previewSource = null;
+            }
+
+            previewSource = context.createBufferSource();
+            previewSource.buffer = loadedBuffer;
+            previewSource.connect(context.destination);
+
+            previewSource.onended = () => {
+              const currentState = get();
+              if (currentState.playingUrl === url) {
+                set({ isPlaying: false, playingUrl: null });
+              }
+              previewSource = null;
+            };
+
+            previewSource.start(0);
+            set({ isPlaying: true, playingUrl: url });
+            console.log(`[PreviewPlayer] Auto-playing after load: ${url}`);
+          } catch (err) {
+            console.error('[PreviewPlayer] Auto-play failed:', err);
+            set({ error: 'Playback failed', isPlaying: false });
+          }
+        }).catch(err => {
+          console.error('[PreviewPlayer] Load failed:', err);
         });
         return;
       }

@@ -107,9 +107,19 @@ class StoreManager {
       const { mixerTracks } = this.stores.mixer.getState();
       const { instruments } = this.stores.instruments.getState();
 
-      return mixerTracks.find(track =>
-        track.type === 'track' && !instruments.some(inst => inst.mixerTrackId === track.id)
-      );
+      // ✅ DEBUG: Log track usage
+      const usedTrackIds = instruments.map(inst => inst.mixerTrackId);
+      const availableTracks = mixerTracks.filter(track => track.type === 'track');
+      const unusedTracks = availableTracks.filter(track => !usedTrackIds.includes(track.id));
+
+      console.log('🎛️ Mixer Track Usage:', {
+        total: availableTracks.length,
+        used: usedTrackIds.length,
+        available: unusedTracks.length,
+        unusedTrackIds: unusedTracks.map(t => t.id)
+      });
+
+      return unusedTracks[0] || null;
     } catch (error) {
       console.warn('Could not find unused mixer track:', error);
       return null;
@@ -124,8 +134,15 @@ class StoreManager {
 
     try {
       // 1. Create mixer track name (single call)
+      // ✅ FIX: Don't rename master/bus channels, only regular tracks
       if (this.stores.mixer && mixerTrackId && trackName) {
-        this.stores.mixer.getState().setTrackName(mixerTrackId, trackName);
+        const { mixerTracks } = this.stores.mixer.getState();
+        const track = mixerTracks.find(t => t.id === mixerTrackId);
+
+        // Only rename if it's a regular track, not master or bus
+        if (track && track.type === 'track') {
+          this.stores.mixer.getState().setTrackName(mixerTrackId, trackName);
+        }
       }
 
       // 2. Add to active pattern (single call)

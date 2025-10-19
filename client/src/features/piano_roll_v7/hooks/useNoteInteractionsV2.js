@@ -108,7 +108,9 @@ function snapToGrid(value, snapValue) {
 }
 
 // Helper: Play preview using PreviewManager
-function playPreview(pitch, velocity = 100, duration = 0.15) {
+// duration = null means sustain until stopNote is called (for keyboard piano)
+// duration = number means auto-stop after that duration (for mouse clicks)
+function playPreview(pitch, velocity = 100, duration = null) {
     const previewManager = getPreviewManager();
     if (previewManager) {
         previewManager.previewNote(pitch, velocity, duration);
@@ -139,15 +141,23 @@ export function useNoteInteractionsV2(
     const [rightClickDragState, setRightClickDragState] = useState(null); // { lastPitch: number, lastTime: number, deletedNotes: Set } for continuous deletion
     const [activeKeyboardNotes, setActiveKeyboardNotes] = useState(new Map()); // Track keyboard-triggered notes for preview playback
 
-    // ArrangementStore integration
-    const { patterns, activePatternId, updatePatternNotes } = useArrangementStore();
+    // ✅ PERFORMANCE: Use individual selectors instead of object/array selector
+    // This prevents "getSnapshot should be cached" warnings and infinite loops
+    const activePatternId = useArrangementStore(state => state.activePatternId);
+    const patterns = useArrangementStore(state => state.patterns);
+    const updatePatternNotes = useArrangementStore(state => state.updatePatternNotes);
 
-    // Get current pattern notes for instrument
-    const getPatternNotes = useCallback(() => {
+    // Derive storedNotes from patterns using useMemo (stable reference)
+    const storedNotes = useMemo(() => {
         if (!activePatternId || !currentInstrument) return [];
         const pattern = patterns[activePatternId];
         return pattern?.data?.[currentInstrument.id] || [];
     }, [patterns, activePatternId, currentInstrument]);
+
+    // Get current pattern notes for instrument
+    const getPatternNotes = useCallback(() => {
+        return storedNotes;
+    }, [storedNotes]);
 
     // Convert stored format to Piano Roll format for display
     const convertToPianoRollFormat = useCallback((storedNotes) => {
@@ -643,7 +653,8 @@ export function useNoteInteractionsV2(
                     // Clicking on note body - preview sound and remember duration
                     playPreview(
                         foundNote.pitch,
-                        foundNote.velocity || 100
+                        foundNote.velocity || 100,
+                        0.15 // Short duration for mouse clicks
                     );
 
                     // ✅ REMEMBER LAST DURATION - Save clicked note's length for next note
@@ -666,7 +677,8 @@ export function useNoteInteractionsV2(
                     // Audio preview
                     playPreview(
                         newNote.pitch,
-                        newNote.velocity || 100
+                        newNote.velocity || 100,
+                        0.15 // Short duration for mouse clicks
                     );
                 }
             }
@@ -805,7 +817,8 @@ export function useNoteInteractionsV2(
                     // Audio preview
                     playPreview(
                         foundNote.pitch,
-                        foundNote.velocity || 100
+                        foundNote.velocity || 100,
+                        0.15 // Short duration for mouse clicks
                     );
                 }
             } else {
@@ -913,7 +926,8 @@ export function useNoteInteractionsV2(
                         // Audio preview
                         playPreview(
                             newNote.pitch,
-                            newNote.velocity || 100
+                            newNote.velocity || 100,
+                            0.15 // Short duration for mouse clicks
                         );
                     }
                 }
@@ -1594,10 +1608,10 @@ export function useNoteInteractionsV2(
         if (pitch !== undefined) {
             e.preventDefault();
 
-            // Stop audio preview
+            // ✅ POLYPHONY FIX: Stop only the specific note, not all notes
             const previewManager = getPreviewManager();
-            if (previewManager) {
-                previewManager.stopPreview();
+            if (previewManager && previewManager.stopNote) {
+                previewManager.stopNote(pitch);
             }
 
             // Remove from active keyboard notes

@@ -19,13 +19,24 @@ const pitchToMidi = (pitch) => {
     return (octave + 1) * 12 + (noteNames[noteName] || 0);
 };
 
-// Native duration string'ini 16'lık nota adımlarına çevirir.
-const getDurationInSteps = (duration) => {
-    try {
-        return NativeTimeUtils.parseTime(duration, 120) / NativeTimeUtils.parseTime('16n', 120);
-    } catch {
-        return 1; // Hata durumunda varsayılan
+// Duration'ı step'lere çevir - hem number (length) hem string (duration) destekler
+const getDurationInSteps = (note) => {
+    // ✅ NEW FORMAT: If note has 'length' property (number), use it directly
+    if (typeof note.length === 'number') {
+        return note.length;
     }
+
+    // ✅ LEGACY FORMAT: If note has 'duration' property (string like "4n"), parse it
+    if (note.duration) {
+        try {
+            return NativeTimeUtils.parseTime(note.duration, 120) / NativeTimeUtils.parseTime('16n', 120);
+        } catch {
+            return 1; // Default on error
+        }
+    }
+
+    // ✅ FALLBACK: Default to 1 step
+    return 1;
 };
 
 export default function PianoRollMiniView({ notes = [], patternLength, onNoteClick }) {
@@ -96,15 +107,19 @@ export default function PianoRollMiniView({ notes = [], patternLength, onNoteCli
       
       notes.forEach(note => {
         const midi = pitchToMidi(note.pitch);
-        const y = height - ((midi - noteRange.min) / pitchRange) * height;
+        // ✅ FIX: Y coordinate calculation - higher pitch should be at top (lower y)
+        // Normalize pitch position: 0 = lowest pitch (bottom), 1 = highest pitch (top)
+        const normalizedPitch = (midi - noteRange.min) / pitchRange;
+        // Invert for canvas coordinates (y=0 is top)
+        const y = height * (1 - normalizedPitch);
         const noteHeight = Math.max(1, height / pitchRange);
 
         const stepWidth = width / patternLength;
         const x = note.time * stepWidth;
-        const noteWidth = getDurationInSteps(note.duration) * stepWidth;
-        
+        const noteWidth = getDurationInSteps(note) * stepWidth; // ✅ Pass entire note object
+
         ctx.fillStyle = noteColor;
-        ctx.fillRect(x, y - noteHeight, Math.max(1, noteWidth - 1), noteHeight);
+        ctx.fillRect(x, y, Math.max(1, noteWidth - 1), noteHeight);
       });
     } else {
       // Nota olmadığında gösterilecek yazı

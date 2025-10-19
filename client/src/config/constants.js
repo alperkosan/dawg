@@ -22,6 +22,7 @@ export const INSTRUMENT_TYPES = Object.freeze({
   SAMPLE: 'sample',
   SYNTH: 'synth',
   VASYNTH: 'vasynth',  // Native Web Audio Virtual Analog Synth
+  GRANULAR: 'granular', // Granular Synthesis Sampler
 });
 
 // --- Mikser Kanal Tipleri ---

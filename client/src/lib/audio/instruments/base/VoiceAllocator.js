@@ -54,7 +54,8 @@ export class VoiceAllocator {
 
         if (!this.monoVoice || !this.monoVoice.isActive) {
             // First note or voice was released - allocate new voice
-            this.monoVoice = this.pool.allocate(midiNote);
+            // ✅ Pass allowPolyphony=false for mono mode (re-trigger same voice)
+            this.monoVoice = this.pool.allocate(midiNote, false);
 
             if (!this.monoVoice) {
                 console.warn('VoiceAllocator: Failed to allocate mono voice');
@@ -100,8 +101,8 @@ export class VoiceAllocator {
      * Each note gets its own voice
      */
     handlePolyNoteOn(midiNote, velocity, frequency, time) {
-        // Allocate voice from pool
-        const voice = this.pool.allocate(midiNote);
+        // ✅ CRITICAL FIX: Pass allowPolyphony=true to enable multiple voices for same note
+        const voice = this.pool.allocate(midiNote, true);
 
         if (!voice) {
             console.warn(`VoiceAllocator: Failed to allocate voice for note ${midiNote}`);

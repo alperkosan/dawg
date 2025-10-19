@@ -462,11 +462,12 @@ export class NativeAudioEngine {
         try {
             let instrument;
 
-            // ✅ NEW: Try to use InstrumentFactory for multi-sampled instruments and VASynth
+            // ✅ NEW: Try to use InstrumentFactory for multi-sampled instruments, VASynth, and Granular
             const isMultiSampled = instrumentData.multiSamples && instrumentData.multiSamples.length > 0;
             const isVASynth = instrumentData.type === 'vasynth';
+            const isGranular = instrumentData.type === 'granular';
 
-            if (isMultiSampled || isVASynth) {
+            if (isMultiSampled || isVASynth || isGranular) {
                 // Use new centralized instrument system
                 console.log(`🎹 Creating ${instrumentData.name} using InstrumentFactory...`);
                 instrument = await InstrumentFactory.createPlaybackInstrument(
@@ -533,8 +534,8 @@ export class NativeAudioEngine {
         this._createMixerChannel('bus-3', 'Drum Bus', { type: 'bus' });
 
 
-        // Default instrument channels
-        for (let i = 1; i <= 16; i++) {
+        // Default instrument channels (increased to 24 to accommodate all instruments)
+        for (let i = 1; i <= 24; i++) {
             this._createMixerChannel(`track-${i}`, `Track ${i}`, { type: 'track' });
         }
 
@@ -872,6 +873,29 @@ export class NativeAudioEngine {
 
         // Reconnect new output
         return this._connectInstrumentToChannel(instrumentId, trackId);
+    }
+
+    /**
+     * Update instrument parameters (called from store)
+     * @param {string} instrumentId - Instrument ID
+     * @param {Object} params - Updated parameters
+     */
+    updateInstrumentParameters(instrumentId, params) {
+        console.log(`🎚️ Updating instrument parameters: ${instrumentId}`, params);
+
+        // If mixerTrackId changed, re-route the instrument
+        if (params.mixerTrackId) {
+            console.log(`🔌 Re-routing ${instrumentId} to ${params.mixerTrackId}`);
+            return this.reconnectInstrumentToTrack(instrumentId, params.mixerTrackId);
+        }
+
+        // Other parameter updates can be handled here
+        const instrument = this.instruments.get(instrumentId);
+        if (instrument && instrument.updateParameters) {
+            instrument.updateParameters(params);
+        }
+
+        return true;
     }
 
     _connectInstrumentToChannel(instrumentId, channelId) {

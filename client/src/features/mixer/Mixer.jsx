@@ -14,6 +14,7 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useMixerStore } from '@/store/useMixerStore';
+import { useMixerUIStore } from '@/store/useMixerUIStore';
 import {
   SlidersHorizontal,
   Plus,
@@ -30,15 +31,17 @@ const Mixer = () => {
   const [showAddMenu, setShowAddMenu] = useState(false);
   const addMenuRef = useRef(null);
 
-  const {
-    mixerTracks,
-    activeChannelId,
-    setActiveChannelId,
-    addTrack,
-    removeTrack,
-    toggleMute,
-    toggleSolo
-  } = useMixerStore();
+  // ✅ PERFORMANCE: Separate audio state from UI state
+  // Audio state - subscribe to specific values only
+  const mixerTracks = useMixerStore(state => state.mixerTracks);
+  const addTrack = useMixerStore(state => state.addTrack);
+  const removeTrack = useMixerStore(state => state.removeTrack);
+  const toggleMute = useMixerStore(state => state.toggleMute);
+  const toggleSolo = useMixerStore(state => state.toggleSolo);
+
+  // UI state - subscribe to specific values only
+  const activeChannelId = useMixerUIStore(state => state.activeChannelId);
+  const setActiveChannelId = useMixerUIStore(state => state.setActiveChannelId);
 
   // Close add menu when clicking outside
   useEffect(() => {

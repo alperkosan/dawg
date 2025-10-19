@@ -14,6 +14,7 @@ import { useInstrumentsStore } from '@/store/useInstrumentsStore';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
 import { getTimelineController } from '@/lib/core/TimelineControllerSingleton';
 import { getToolManager } from '@/lib/piano-roll-tools';
+import { getTransportManagerSync } from '@/lib/core/TransportManagerSingleton';
 import './PianoRoll_v5.css';
 
 function PianoRoll() {
@@ -74,9 +75,27 @@ function PianoRoll() {
         return unsubscribe;
     }, []);
 
+    // ✅ NOTIFY TRANSPORT MANAGER and TOOL MANAGER when keyboard piano mode changes
+    useEffect(() => {
+        const transportManager = getTransportManagerSync();
+        if (transportManager) {
+            transportManager.setKeyboardPianoMode(keyboardPianoMode);
+        }
+
+        const toolManager = getToolManager();
+        if (toolManager) {
+            toolManager.setKeyboardPianoMode(keyboardPianoMode);
+        }
+    }, [keyboardPianoMode]);
+
     // ✅ KEYBOARD SHORTCUTS - Handle Alt + key for tools and ? for shortcuts panel
     useEffect(() => {
         const handleKeyDown = (e) => {
+            // ✅ IGNORE ALL SHORTCUTS when keyboard piano mode is active
+            if (keyboardPianoMode) {
+                return;
+            }
+
             // ? or H key: Toggle shortcuts panel (only if not in input field)
             if ((e.key === '?' || e.key === 'h' || e.key === 'H') && !e.ctrlKey && !e.metaKey && !e.altKey) {
                 const target = e.target;
@@ -93,7 +112,7 @@ function PianoRoll() {
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, []);
+    }, [keyboardPianoMode]);
 
     useEffect(() => {
         const interval = setInterval(() => {
@@ -134,19 +153,38 @@ function PianoRoll() {
         if (!currentInstrument) return;
 
         // Use unified PreviewManager for all instrument types
-        Promise.all([
-            import('@/lib/audio/preview'),
-            import('@/lib/services/AudioContextService')
-        ]).then(([{ getPreviewManager }, { AudioContextService }]) => {
-            const audioEngine = AudioContextService.getAudioEngine();
-            if (audioEngine?.audioContext) {
-                const previewManager = getPreviewManager(audioEngine.audioContext);
-                previewManager.setInstrument(currentInstrument);
-                console.log('✅ Preview ready:', currentInstrument.name, `(${currentInstrument.type})`);
+        let cancelled = false;
+
+        const setupPreview = async () => {
+            try {
+                const [{ getPreviewManager }, { AudioContextService }] = await Promise.all([
+                    import('@/lib/audio/preview'),
+                    import('@/lib/services/AudioContextService')
+                ]);
+
+                if (cancelled) return;
+
+                const audioEngine = AudioContextService.getAudioEngine();
+                if (audioEngine?.audioContext) {
+                    const previewManager = getPreviewManager(audioEngine.audioContext);
+                    await previewManager.setInstrument(currentInstrument); // ✅ AWAIT the async call
+
+                    if (!cancelled) {
+                        console.log('✅ Preview ready:', currentInstrument.name, `(${currentInstrument.type})`);
+                    }
+                }
+            } catch (err) {
+                if (!cancelled) {
+                    console.error('Failed to setup preview:', err);
+                }
             }
-        }).catch(err => {
-            console.error('Failed to setup preview:', err);
-        });
+        };
+
+        setupPreview();
+
+        return () => {
+            cancelled = true;
+        };
     }, [currentInstrument]);
 
     // ✅ LOOP REGION HOOK - Timeline selection

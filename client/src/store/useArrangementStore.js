@@ -67,7 +67,7 @@ export const useArrangementStore = create(arrangementStoreOrchestrator((set, get
   patternOrder: initialPatternOrder,
   tracks: initialTracks,
   clips: initialClips,
-  activePatternId: 'pattern1',  // ✅ First pattern from initialData (Trap)
+  activePatternId: 'pattern2',  // ✅ Boom Bap showcase pattern (16 bars)
   songLength: 128, // bar cinsinden
   zoomX: 1,
 
@@ -88,26 +88,13 @@ export const useArrangementStore = create(arrangementStoreOrchestrator((set, get
   },
 
   updatePatternNotes: (patternId, instrumentId, newNotes) => {
-    console.log('🔄 updatePatternNotes called:', { patternId, instrumentId, newNotesCount: newNotes.length });
-
     set(state => {
       const newPatterns = { ...state.patterns };
       const targetPattern = newPatterns[patternId];
 
-      console.log('📋 Before update:', {
-        patternExists: !!targetPattern,
-        currentData: targetPattern?.data?.[instrumentId]?.length || 0
-      });
-
       if (targetPattern) {
         const newData = { ...targetPattern.data, [instrumentId]: newNotes };
         newPatterns[patternId] = { ...targetPattern, data: newData };
-
-        console.log('✅ After update:', {
-          newDataCount: newData[instrumentId]?.length || 0,
-          totalInstruments: Object.keys(newData).length
-        });
-
         return { patterns: newPatterns };
       }
 

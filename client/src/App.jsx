@@ -42,6 +42,13 @@ import InstrumentEditorPanel from './features/instrument_editor/InstrumentEditor
 // ENUMs and Constants
 import { PLAYBACK_STATES } from './config/constants';
 
+// ✅ PERFORMANCE: Load performance helpers in development
+if (import.meta.env.DEV) {
+  import('./utils/performanceHelpers').then(() => {
+    console.log('🚀 Performance helpers loaded! Try: window.performanceHelpers.runPerformanceTest()');
+  });
+}
+
 function App() {
   // 1. Motorun durumunu takip etmek için state'ler
   // 'idle': Başlamamış, 'initializing': Başlatılıyor, 'ready': Hazır, 'error': Hata

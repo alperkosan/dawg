@@ -33,10 +33,10 @@ const initialFileTree = {
             name: 'Samples',
             type: FILE_SYSTEM_TYPES.FOLDER,
             children: [
-                { id: `file-${uuidv4()}`, type: FILE_SYSTEM_TYPES.FILE, name: 'kick.wav', url: '/audio/kick.wav' },
-                { id: `file-${uuidv4()}`, type: FILE_SYSTEM_TYPES.FILE, name: 'snare.wav', url: '/audio/snare.wav' },
-                { id: `file-${uuidv4()}`, type: FILE_SYSTEM_TYPES.FILE, name: 'hihat.wav', url: '/audio/hihat.wav' },
-                { id: `file-${uuidv4()}`, type: FILE_SYSTEM_TYPES.FILE, name: 'clap.wav', url: '/audio/clap.wav' },
+                { id: `file-${uuidv4()}`, type: FILE_SYSTEM_TYPES.FILE, name: 'kick.wav', url: '/audio/samples/drums/kick.wav' },
+                { id: `file-${uuidv4()}`, type: FILE_SYSTEM_TYPES.FILE, name: 'snare.wav', url: '/audio/samples/drums/snare.wav' },
+                { id: `file-${uuidv4()}`, type: FILE_SYSTEM_TYPES.FILE, name: 'hihat.wav', url: '/audio/samples/drums/hihat.wav' },
+                { id: `file-${uuidv4()}`, type: FILE_SYSTEM_TYPES.FILE, name: 'clap.wav', url: '/audio/samples/drums/clap.wav' },
             ],
         },
         {

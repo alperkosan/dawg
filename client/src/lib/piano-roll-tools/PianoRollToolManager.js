@@ -90,6 +90,7 @@ export const TOOL_INFO = {
 class PianoRollToolManager {
   constructor() {
     this.activeTool = TOOL_TYPES.SELECT;
+    this.keyboardPianoModeActive = false; // ✅ Track keyboard piano mode
     this.toolSettings = {
       [TOOL_TYPES.PAINT_BRUSH]: {
         velocity: 0.8,
@@ -180,6 +181,11 @@ class PianoRollToolManager {
    * Handle keyboard shortcuts
    */
   handleKeyPress(e) {
+    // ✅ IGNORE SHORTCUTS when keyboard piano mode is active
+    if (this.keyboardPianoModeActive) {
+      return false;
+    }
+
     if (!e.altKey) return false;
 
     const key = e.key.toLowerCase();
@@ -194,6 +200,14 @@ class PianoRollToolManager {
     }
 
     return false;
+  }
+
+  /**
+   * ✅ SET KEYBOARD PIANO MODE
+   * When active, tool shortcuts are disabled
+   */
+  setKeyboardPianoMode(active) {
+    this.keyboardPianoModeActive = active;
   }
 
   /**

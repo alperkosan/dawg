@@ -63,6 +63,12 @@
   padding: var(--spacing-2);
 }
 
+/* ✅ FIX: Preview container */
+.file-browser__preview {
+  flex-shrink: 0;
+  /* Preview component itself (.preview) handles its own height */
+}
+
 /* <<< ÇÖZÜM 1: GÖRÜNMEYEN DOSYA YÜKLEME INPUT'U >>> */
 /* Bu kural, ham <input> elementini güvenilir bir şekilde gizler. */
 .file-browser__upload-input {

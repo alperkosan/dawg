@@ -1,9 +1,10 @@
 /**
- * SEND ACCEPT BUTTON
+ * SEND ACCEPT BUTTON V3
  *
- * Target-based send routing - appears below each channel
- * Shows "Accept send from [active channel]" button
- * FL Studio style with integrated disconnect triangle
+ * NEW LOGIC:
+ * - Shows active track's sends UNDER the target inserts they're connected to
+ * - Shows "Connect" button under ALL other available inserts
+ * - When you change active track, display updates to show that track's sends
  */
 
 import React from 'react';
@@ -15,21 +16,24 @@ import './SendAcceptButton.css';
 export const SendAcceptButton = ({ targetTrack, sourceTrack }) => {
   const { addSend, removeSend, updateSendLevel, toggleSendPreFader } = useMixerStore();
 
-  // Don't show if:
-  // 1. No source (nothing selected)
-  // 2. Source is master (master cannot send)
-  // 3. Target is same as source (can't send to self)
-  // 4. Target is master (cannot receive sends - it's final output)
-  if (!sourceTrack ||
-      sourceTrack.type === 'master' ||
-      sourceTrack.id === targetTrack.id ||
-      targetTrack.type === 'master') {
+  // Don't show for master (master cannot receive sends)
+  if (targetTrack.type === 'master') {
     return null;
   }
 
-  // Check if send exists
-  const sends = Array.isArray(sourceTrack.sends) ? sourceTrack.sends : [];
-  const existingSend = sends.find(s => s.busId === targetTrack.id);
+  // Can't send to self
+  if (!sourceTrack || sourceTrack.id === targetTrack.id) {
+    return null;
+  }
+
+  // Master can't send
+  if (sourceTrack.type === 'master') {
+    return null;
+  }
+
+  // ✅ NEW LOGIC: Check if ACTIVE track is sending to THIS target
+  const activeSends = Array.isArray(sourceTrack.sends) ? sourceTrack.sends : [];
+  const existingSend = activeSends.find(s => s.busId === targetTrack.id);
   const isConnected = !!existingSend;
 
   const handleConnect = (e) => {
@@ -51,61 +55,74 @@ export const SendAcceptButton = ({ targetTrack, sourceTrack }) => {
     toggleSendPreFader(sourceTrack.id, targetTrack.id);
   };
 
-  return (
-    <div className="send-accept">
-      {isConnected ? (
-        /* Connected: Show knob with triangle on top */
-        <div className="send-accept__connected">
-          {/* Disconnect triangle - positioned on top of knob */}
-          <button
-            className="send-accept__disconnect-triangle"
-            onClick={handleDisconnect}
-            title="Disconnect send"
-            style={{ borderBottomColor: sourceTrack.color || '#60a5fa' }}
-          />
-
-          {/* Knob container with cable indicator */}
-          <div className="send-accept__knob-container">
-            <div
-              className="send-accept__cable"
-              style={{ backgroundColor: sourceTrack.color || '#60a5fa' }}
+  // ✅ CONNECTED: Show send controls with active track's send data
+  if (isConnected) {
+    return (
+      <div className="send-accept-container">
+        <div className="send-accept">
+          <div className="send-accept__connected">
+            {/* Disconnect triangle */}
+            <button
+              className="send-accept__disconnect-triangle"
+              onClick={handleDisconnect}
+              title={`Disconnect from ${targetTrack.name}`}
+              style={{ borderBottomColor: sourceTrack.color || '#60a5fa' }}
             />
-            <Knob
-              value={existingSend.level * 100}
-              min={0}
-              max={100}
-              onChange={handleLevelChange}
-              size={24}
-              showValue={false}
-              variant="mixer"
-            />
-          </div>
 
-          {/* Level percentage */}
-          <div className="send-accept__level">
-            {Math.round(existingSend.level * 100)}
-          </div>
+            {/* Knob container with cable indicator */}
+            <div className="send-accept__knob-container">
+              <div
+                className="send-accept__cable"
+                style={{ backgroundColor: sourceTrack.color || '#60a5fa' }}
+              />
+              <Knob
+                value={existingSend.level * 100}
+                min={0}
+                max={100}
+                onChange={handleLevelChange}
+                size={24}
+                showValue={false}
+                variant="mixer"
+              />
+            </div>
 
-          {/* Pre/Post fader toggle */}
-          <button
-            className={`send-accept__pre-post ${existingSend.preFader ? 'pre' : 'post'}`}
-            onClick={handlePreFaderToggle}
-            title={existingSend.preFader ? 'Pre-fader (before volume)' : 'Post-fader (after volume)'}
-          >
-            {existingSend.preFader ? 'PRE' : 'POST'}
-          </button>
+            {/* Level percentage */}
+            <div className="send-accept__level">
+              {Math.round(existingSend.level * 100)}
+            </div>
+
+            {/* Pre/Post fader toggle */}
+            <button
+              className={`send-accept__pre-post ${existingSend.preFader ? 'pre' : 'post'}`}
+              onClick={handlePreFaderToggle}
+              title={existingSend.preFader ? 'Pre-fader (before volume)' : 'Post-fader (after volume)'}
+            >
+              {existingSend.preFader ? 'PRE' : 'POST'}
+            </button>
+
+            {/* Target track name label */}
+            <div className="send-accept__source-label" title={targetTrack.name}>
+              {targetTrack.name}
+            </div>
+          </div>
         </div>
-      ) : (
-        /* Not connected: Show arrow up icon */
+      </div>
+    );
+  }
+
+  // ✅ NOT CONNECTED: Show connect button
+  return (
+    <div className="send-accept-container">
+      <div className="send-accept">
         <button
           className="send-accept__arrow"
           onClick={handleConnect}
-          title={`Send from ${sourceTrack.name}`}
+          title={`Send to ${targetTrack.name}`}
           style={{ borderColor: sourceTrack.color || '#60a5fa' }}
         >
           <ArrowUp size={12} strokeWidth={2.5} />
         </button>
-      )}
+      </div>
     </div>
   );
 };

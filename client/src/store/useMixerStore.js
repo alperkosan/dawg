@@ -8,8 +8,10 @@ import { pluginRegistry } from '@/config/pluginConfig';
 import { storeManager } from './StoreManager';
 
 export const useMixerStore = create((set, get) => ({
+  // ========================================================
+  // === AUDIO STATE (affects audio engine) ===
+  // ========================================================
   mixerTracks: initialMixerTracks,
-  activeChannelId: 'master',
   soloedChannels: new Set(),
   mutedChannels: new Set(),
   monoChannels: new Set(), // ✅ Channels forced to mono output
@@ -29,44 +31,9 @@ export const useMixerStore = create((set, get) => ({
     { id: 'send2', name: 'Delay', type: 'send', masterLevel: 0, pan: 0 }
   ],
 
-  // Mikser arayüzünün durumunu (örn. hangi kanalın genişletildiği) tutan ayrı bir nesne.
-  // Bu, ses state'i ile UI state'ini birbirinden ayırır.
-  mixerUIState: {
-    expandedChannels: new Set(),
-    visibleEQs: new Set(),
-    visibleSends: new Set(),
-  },
-
   // ========================================================
   // === EYLEMLER (ACTIONS) ===
   // ========================================================
-
-  // --- UI EYLEMLERİ ---
-  setActiveChannelId: (trackId) => set({ activeChannelId: trackId }),
-  
-  toggleChannelExpansion: (trackId) => {
-    set(state => {
-      const newExpanded = new Set(state.mixerUIState.expandedChannels);
-      newExpanded.has(trackId) ? newExpanded.delete(trackId) : newExpanded.add(trackId);
-      return { mixerUIState: { ...state.mixerUIState, expandedChannels: newExpanded } };
-    });
-  },
-
-  toggleChannelEQ: (trackId) => {
-    set(state => {
-      const newVisible = new Set(state.mixerUIState.visibleEQs);
-      newVisible.has(trackId) ? newVisible.delete(trackId) : newVisible.add(trackId);
-      return { mixerUIState: { ...state.mixerUIState, visibleEQs: newVisible } };
-    });
-  },
-
-  toggleChannelSends: (trackId) => {
-    set(state => {
-      const newVisible = new Set(state.mixerUIState.visibleSends);
-      newVisible.has(trackId) ? newVisible.delete(trackId) : newVisible.add(trackId);
-      return { mixerUIState: { ...state.mixerUIState, visibleSends: newVisible } };
-    });
-  },
 
   // --- SES MOTORU EYLEMLERİ ---
 

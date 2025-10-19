@@ -15,6 +15,9 @@ export class PreviewManager {
     this.currentNote = null;
     this.fileSource = null; // For file preview
 
+    // ✅ POLYPHONY: Track multiple active notes for keyboard piano
+    this.activeNotes = new Map(); // Map<midiNote, { velocity, startTime }>
+
     // Output routing
     this.output = this.audioContext.createGain();
     this.output.gain.value = 0.7; // Preview volume
@@ -65,13 +68,15 @@ export class PreviewManager {
       return;
     }
 
-    // Stop previous preview
-    this.stopPreview();
-
     // Convert pitch to MIDI if string
     const midiNote = typeof pitch === 'string'
       ? this.previewInstrument.pitchToMidi(pitch)
       : pitch;
+
+    // ✅ POLYPHONY FIX: Don't stop ALL notes, only stop the SAME note if re-triggering
+    if (this.activeNotes.has(midiNote)) {
+      this.stopNote(midiNote);
+    }
 
     // Start note
     try {
@@ -79,10 +84,16 @@ export class PreviewManager {
       this.isPlaying = true;
       this.currentNote = midiNote;
 
+      // ✅ Track active note for polyphony
+      this.activeNotes.set(midiNote, {
+        velocity,
+        startTime: Date.now()
+      });
+
       // Auto-stop if duration specified
       if (duration !== null) {
         setTimeout(() => {
-          this.stopPreview();
+          this.stopNote(midiNote);
         }, duration * 1000);
       }
     } catch (error) {
@@ -91,24 +102,49 @@ export class PreviewManager {
   }
 
   /**
-   * Stop current preview
+   * Stop a specific note
+   * @param {number} midiNote - MIDI note number to stop
+   */
+  stopNote(midiNote) {
+    if (!this.previewInstrument) return;
+
+    try {
+      this.previewInstrument.noteOff(midiNote);
+      this.activeNotes.delete(midiNote);
+
+      // Update playing state
+      if (this.activeNotes.size === 0) {
+        this.isPlaying = false;
+      }
+    } catch (error) {
+      // Silent fail - instrument might be disposed
+    }
+  }
+
+  /**
+   * Stop current preview (all notes)
    */
   stopPreview() {
     // Stop instrument preview
     if (this.isPlaying && this.previewInstrument) {
       try {
-        // For VASynth and other polyphonic instruments, use stopAll() for instant cleanup
-        // This prevents voice stacking when rapidly triggering preview notes
+        // ✅ POLYPHONY FIX: Use stopAll() for emergency stop (cleanup)
+        // This is for when changing instruments or disposing
         if (typeof this.previewInstrument.stopAll === 'function') {
           this.previewInstrument.stopAll();
-        } else if (this.currentNote !== null) {
-          // Fallback for simple instruments
-          this.previewInstrument.noteOff(this.currentNote);
+        } else {
+          // Fallback: stop all tracked notes
+          this.activeNotes.forEach((_, midiNote) => {
+            this.previewInstrument.noteOff(midiNote);
+          });
         }
       } catch (error) {
         // Silent fail - instrument might be disposed
       }
     }
+
+    // Clear all active notes
+    this.activeNotes.clear();
 
     // Stop file preview
     if (this.fileSource) {

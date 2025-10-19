@@ -47,3 +47,20 @@ class TransportManagerSingleton extends BaseSingleton {
 
 // Export as static class (new pattern)
 export default TransportManagerSingleton;
+
+/**
+ * Convenience function to get TransportManager instance
+ * @returns {Promise<TransportManager>} TransportManager instance
+ */
+export async function getTransportManager() {
+  return await TransportManagerSingleton.getInstance();
+}
+
+/**
+ * Synchronous getter - returns null if not initialized
+ * Use this only if you're sure the instance exists
+ * @returns {TransportManager|null}
+ */
+export function getTransportManagerSync() {
+  return TransportManagerSingleton._instance;
+}

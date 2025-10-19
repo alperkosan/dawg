@@ -60,6 +60,9 @@ export class TransportManager {
     this.keyboardCleanup = null;
     this.isDestroyed = false;
 
+    // ✅ KEYBOARD PIANO MODE: When active, disable global shortcuts
+    this.keyboardPianoModeActive = false;
+
     // UI element references - tüm transport UI'ları buradan yönetilecek
     this.transportButtons = new Map(); // button-id -> element
     this.playheadElements = new Map(); // playhead-id -> element
@@ -504,6 +507,11 @@ export class TransportManager {
       // ✅ MEMORY LEAK FIX: Check if destroyed
       if (this.isDestroyed) return;
 
+      // ✅ IGNORE SHORTCUTS when keyboard piano mode is active
+      if (this.keyboardPianoModeActive) {
+        return;
+      }
+
       // Don't interfere with text inputs
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
         return;
@@ -717,6 +725,18 @@ export class TransportManager {
     }
 
     this._emitStateChange('loop-change');
+  }
+
+  /**
+   * ✅ KEYBOARD PIANO MODE CONTROL
+   * When keyboard piano mode is active, global shortcuts are disabled
+   */
+  setKeyboardPianoMode(active) {
+    this.keyboardPianoModeActive = active;
+  }
+
+  getKeyboardPianoMode() {
+    return this.keyboardPianoModeActive;
   }
 
   /**

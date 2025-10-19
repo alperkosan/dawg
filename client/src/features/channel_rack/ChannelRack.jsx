@@ -23,6 +23,7 @@ import PianoRollMiniViewC4 from './PianoRollMiniViewC4'; // ⚡ NEW: C4-level pr
 import UnifiedTimeline from './UnifiedTimeline'; // ✅ NEW: Unified timeline system
 // import InteractiveTimeline from './InteractiveTimeline'; // ⚠️ DEPRECATED - kept for reference
 import AudioExportPanel from '@/components/AudioExportPanel';
+import InstrumentPicker from './InstrumentPicker'; // ✅ NEW: Instrument selection UI
 // ✅ PERFORMANCE: Lazy-loaded icons to reduce initial bundle size
 const Icon = memo(({ name, size = 20, ...props }) => {
   const [IconComponent, setIconComponent] = useState(null);
@@ -118,6 +119,9 @@ function ChannelRack() {
 
   // State for audio export panel
   const [isExportPanelOpen, setIsExportPanelOpen] = useState(false);
+
+  // ✅ NEW: State for instrument picker
+  const [isInstrumentPickerOpen, setIsInstrumentPickerOpen] = useState(false);
 
   // State for native drag-and-drop visual feedback
   const [isNativeDragOver, setIsNativeDragOver] = useState(false);
@@ -568,10 +572,10 @@ function ChannelRack() {
               patternNotes={activePattern?.data[inst.id] || []}
             />
           ))}
-          {/* FL Studio Style: Simple Add Channel Button */}
-          <div className="instrument-row instrument-row--add" onClick={() => togglePanel('file-browser')}>
+          {/* ✅ NEW: Instrument Picker Button */}
+          <div className="instrument-row instrument-row--add" onClick={() => setIsInstrumentPickerOpen(true)}>
             <Icon name="PlusCircle" size={20} />
-            <span>Add Channel...</span>
+            <span>Add Instrument...</span>
           </div>
         </div>
       </div>
@@ -624,6 +628,17 @@ function ChannelRack() {
         isOpen={isExportPanelOpen}
         onClose={() => setIsExportPanelOpen(false)}
       />
+
+      {/* ✅ NEW: Instrument Picker */}
+      {isInstrumentPickerOpen && (
+        <InstrumentPicker
+          onSelectInstrument={(instrumentData) => {
+            handleAddNewInstrument(instrumentData);
+            setIsInstrumentPickerOpen(false);
+          }}
+          onClose={() => setIsInstrumentPickerOpen(false)}
+        />
+      )}
     </div>
   );
 }

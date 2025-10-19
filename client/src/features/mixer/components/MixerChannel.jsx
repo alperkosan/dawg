@@ -10,7 +10,7 @@
  * - Send Accept Button (target-based routing)
  */
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, memo } from 'react';
 import { useMixerStore } from '@/store/useMixerStore';
 import { Volume2, VolumeX, Headphones, Radio } from 'lucide-react';
 import { Fader } from '@/components/controls/base/Fader';
@@ -20,10 +20,11 @@ import { InsertRoutingSelector } from './InsertRoutingSelector';
 import { SendAcceptButton } from './SendAcceptButton';
 import './MixerChannel.css';
 
-export const MixerChannel = ({ track, allTracks, isActive, isMaster, onClick, activeTrack }) => {
+const MixerChannelComponent = ({ track, allTracks, isActive, isMaster, onClick, activeTrack }) => {
   const [isEditingName, setIsEditingName] = useState(false);
   const [editedName, setEditedName] = useState(track.name);
   const [showColorPicker, setShowColorPicker] = useState(false);
+  const [pickerPosition, setPickerPosition] = useState({ top: 0, left: 0 });
   const colorPickerRef = useRef(null);
   const colorBarRef = useRef(null);
 
@@ -212,6 +213,11 @@ export const MixerChannel = ({ track, allTracks, isActive, isMaster, onClick, ac
             <div
               ref={colorPickerRef}
               className="mixer-channel-2__color-picker"
+              style={{
+                position: 'fixed',
+                top: `${pickerPosition.top}px`,
+                left: `${pickerPosition.left}px`
+              }}
             >
               <div className="mixer-channel-2__color-grid">
                 {presetColors.map(color => (
@@ -342,5 +348,40 @@ export const MixerChannel = ({ track, allTracks, isActive, isMaster, onClick, ac
     </div>
   );
 };
+
+// ✅ PERFORMANCE: Memoize component with custom equality check
+// Only re-render when these specific props change
+export const MixerChannel = memo(MixerChannelComponent, (prevProps, nextProps) => {
+  // Return true if props are equal (skip re-render)
+  // Return false if props are different (do re-render)
+
+  // ✅ CRITICAL: Check activeTrack.sends changes (for SendAcceptButton reactivity)
+  const prevActiveSends = prevProps.activeTrack?.sends || [];
+  const nextActiveSends = nextProps.activeTrack?.sends || [];
+  const activeSendsChanged = prevActiveSends.length !== nextActiveSends.length ||
+    JSON.stringify(prevActiveSends) !== JSON.stringify(nextActiveSends);
+
+  return (
+    prevProps.track.id === nextProps.track.id &&
+    prevProps.track.volume === nextProps.track.volume &&
+    prevProps.track.pan === nextProps.track.pan &&
+    prevProps.track.name === nextProps.track.name &&
+    prevProps.track.color === nextProps.track.color &&
+    prevProps.track.muted === nextProps.track.muted &&
+    prevProps.track.solo === nextProps.track.solo &&
+    prevProps.track.output === nextProps.track.output &&
+    prevProps.isActive === nextProps.isActive &&
+    prevProps.isMaster === nextProps.isMaster &&
+    // ✅ CRITICAL FIX: Check activeTrack changes for SendAcceptButton updates
+    prevProps.activeTrack?.id === nextProps.activeTrack?.id &&
+    !activeSendsChanged && // Re-render when active track's sends change
+    // Deep comparison for arrays/objects
+    JSON.stringify(prevProps.track.insertEffects) === JSON.stringify(nextProps.track.insertEffects) &&
+    JSON.stringify(prevProps.track.sends) === JSON.stringify(nextProps.track.sends) &&
+    JSON.stringify(prevProps.track.eq) === JSON.stringify(nextProps.track.eq)
+  );
+});
+
+MixerChannel.displayName = 'MixerChannel';
 
 export default MixerChannel;

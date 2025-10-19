@@ -80,6 +80,8 @@ export class BaseInstrument {
         const midiVelocity = Math.round(velocity * 127);
         const startTime = time !== null ? time : this.audioContext.currentTime;
 
+        console.log(`🎵 triggerNote: ${pitch} (MIDI ${midiNote}), vel: ${velocity.toFixed(2)}, duration: ${duration ? duration.toFixed(3) + 's' : 'null'}, time: ${startTime.toFixed(3)}s (now: ${this.audioContext.currentTime.toFixed(3)}s)`);
+
         this.noteOn(midiNote, midiVelocity, startTime);
 
         // Store for potential noteOff
@@ -98,6 +100,7 @@ export class BaseInstrument {
     releaseNote(pitch, time = null) {
         const midiNote = this.pitchToMidi(pitch);
         const stopTime = time !== null ? time : this.audioContext.currentTime;
+        console.log(`📍 releaseNote: ${pitch} (MIDI ${midiNote}) at ${stopTime.toFixed(3)}s (now: ${this.audioContext.currentTime.toFixed(3)}s)`);
         this.noteOff(midiNote, stopTime);
     }
 
@@ -240,11 +243,21 @@ export class BaseInstrument {
     }
 
     /**
-     * Convert pitch string to MIDI note number
-     * @param {string} pitch - Note pitch (e.g., 'C4', 'A#3', 'Db2')
+     * Convert pitch string or MIDI number to MIDI note number
+     * @param {string|number} pitch - Note pitch (e.g., 'C4', 'A#3', 'Db2') or MIDI number
      * @returns {number} MIDI note number (0-127)
      */
     pitchToMidi(pitch) {
+        // ✅ NEW: If already a number, validate and return it
+        if (typeof pitch === 'number') {
+            const midiNote = Math.max(0, Math.min(127, Math.round(pitch)));
+            if (pitch !== midiNote) {
+                console.warn(`MIDI note out of range: ${pitch}, clamped to ${midiNote}`);
+            }
+            return midiNote;
+        }
+
+        // ✅ LEGACY: Parse string format
         const noteMap = {
             'C': 0, 'C#': 1, 'Db': 1, 'D': 2, 'D#': 3, 'Eb': 3,
             'E': 4, 'F': 5, 'F#': 6, 'Gb': 6, 'G': 7, 'G#': 8,

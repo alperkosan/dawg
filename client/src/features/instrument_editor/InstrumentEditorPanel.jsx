@@ -7,9 +7,11 @@
 import { useEffect } from 'react';
 import useInstrumentEditorStore from '../../store/useInstrumentEditorStore';
 import { useInstrumentsStore } from '../../store/useInstrumentsStore';
+import { useMixerStore } from '../../store/useMixerStore';
 import VASynthEditor from './components/editors/VASynthEditor';
 import MultiSampleEditor from './components/editors/MultiSampleEditor';
 import DrumSamplerEditor from './components/editors/DrumSamplerEditor';
+import { GranularSamplerUI } from '@/components/instruments/granular';
 import './InstrumentEditorPanel.css';
 
 const InstrumentEditorPanel = () => {
@@ -30,6 +32,21 @@ const InstrumentEditorPanel = () => {
   } = useInstrumentEditorStore();
 
   const getInstrument = useInstrumentsStore((state) => state.getInstrument);
+  const updateInstrument = useInstrumentsStore((state) => state.updateInstrument);
+
+  // Get mixer tracks for routing selector
+  const mixerTracks = useMixerStore(state => state.mixerTracks);
+
+  // Handle mixer channel change
+  const handleMixerChannelChange = (newChannelId) => {
+    if (!instrumentId) return;
+
+    // Update instrument's mixerTrackId in store
+    updateInstrument(instrumentId, { mixerTrackId: newChannelId });
+
+    // Update editor state (use updateParameter instead of updateField)
+    useInstrumentEditorStore.getState().updateParameter('mixerTrackId', newChannelId);
+  };
 
   // Update instrument data when instrument changes
   useEffect(() => {
@@ -98,6 +115,10 @@ const InstrumentEditorPanel = () => {
       }
     }
 
+    if (type === 'granular') {
+      return <GranularSamplerUI instrumentId={instrumentId} />;
+    }
+
     if (type === 'synth') {
       // TODO: ForgeSynthEditor
       return (
@@ -137,11 +158,26 @@ const InstrumentEditorPanel = () => {
               {instrumentData.type === 'vasynth' && '🎹'}
               {instrumentData.type === 'sample' && (instrumentData.multiSamples ? '🎵' : '🥁')}
               {instrumentData.type === 'synth' && '🎛️'}
+              {instrumentData.type === 'granular' && '🌾'}
             </div>
             <div className="instrument-editor-panel__name">
               <div className="instrument-editor-panel__name-primary">{instrumentData.name}</div>
               <div className="instrument-editor-panel__name-secondary">
-                {instrumentData.mixerTrackId}
+                {/* Mixer Channel Selector */}
+                <select
+                  className="instrument-editor-panel__mixer-select"
+                  value={instrumentData.mixerTrackId || 'master'}
+                  onChange={(e) => handleMixerChannelChange(e.target.value)}
+                  title="Select mixer channel"
+                >
+                  {mixerTracks
+                    .filter(track => track.type === 'track' || track.type === 'bus' || track.type === 'master')
+                    .map(track => (
+                      <option key={track.id} value={track.id}>
+                        {track.type === 'master' ? '🎛️' : track.type === 'bus' ? '🔀' : '🎚️'} {track.name}
+                      </option>
+                    ))}
+                </select>
                 {isDirty && <span className="instrument-editor-panel__dirty"> • Modified</span>}
               </div>
             </div>

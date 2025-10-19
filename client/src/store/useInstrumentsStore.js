@@ -34,10 +34,17 @@ export const useInstrumentsStore = create((set, get) => ({
    * Yeni bir sample tabanlı enstrüman oluşturur, state'i günceller ve ses motoruna bildirir.
    * @param {object} sample - File browser'dan gelen sample bilgisi.
    */
-  handleAddNewInstrument: (sample) => {
+  handleAddNewInstrument: (instrumentData) => {
     const { instruments } = get();
 
-    const baseName = sample.name.split('.')[0].replace(/_/g, ' ');
+    // ✅ NEW: Support both old format (FileBrowser sample) and new format (InstrumentPicker preset)
+    const isPreset = instrumentData.type && (instrumentData.type === 'sample' || instrumentData.type === 'vasynth');
+
+    // Extract name
+    const baseName = isPreset
+      ? instrumentData.name
+      : instrumentData.name.split('.')[0].replace(/_/g, ' ');
+
     let newName = baseName;
     let counter = 2;
     // Aynı isimde başka bir enstrüman varsa, ismin sonuna sayı ekle.
@@ -45,31 +52,42 @@ export const useInstrumentsStore = create((set, get) => ({
         newName = `${baseName} ${counter++}`;
     }
 
-    // ✅ PERFORMANCE: Use StoreManager to find unused mixer track
-    const firstUnusedTrack = storeManager.findUnusedMixerTrack();
+    // ✅ PERFORMANCE: Use StoreManager to find unused mixer track (only if not already specified)
+    let mixerTrackId = instrumentData.mixerTrackId;
 
-    if (!firstUnusedTrack) {
-        // Modern UI'lar için alert yerine daha iyi bir bildirim sistemi düşünülebilir.
-        console.error("Boş mixer kanalı kalmadı!");
-        return;
+    if (!mixerTrackId) {
+      const firstUnusedTrack = storeManager.findUnusedMixerTrack();
+
+      if (!firstUnusedTrack) {
+          // ✅ FALLBACK: If no tracks available, assign to master instead of failing
+          console.warn("⚠️ Boş mixer kanalı kalmadı! Master kanalına yönlendiriliyor...");
+          mixerTrackId = 'master';
+      } else {
+          mixerTrackId = firstUnusedTrack.id;
+      }
     }
 
+    // ✅ Build instrument based on type
     const newInstrument = {
-        id: `inst-${uuidv4()}`,
+        id: instrumentData.id || `inst-${uuidv4()}`,
         name: newName,
-        type: 'sample',
-        url: sample.url,
-        assetId: sample.assetId, // For frozen patterns or asset-based samples
-        audioBuffer: sample.audioBuffer, // For frozen patterns without URL
+        type: instrumentData.type || 'sample',
+        color: instrumentData.color || '#888888',
         notes: [],
-        mixerTrackId: firstUnusedTrack.id,
-        // Varsayılan zarf (envelope) ve ön-hesaplama (precomputed) ayarları
+        mixerTrackId,
         envelope: { attack: 0.01, decay: 0.1, sustain: 1.0, release: 1.0 },
         precomputed: {},
-        effectChain: [], // ✅ NEW: Effect chain for this instrument
+        effectChain: [],
         isMuted: false,
-        cutItself: false, // Bir nota çalarken öncekini sustur
-        pianoRoll: true, // Bu enstrüman piano roll'da gösterilebilir mi?
+        cutItself: false,
+        pianoRoll: true,
+        // Type-specific fields
+        ...(instrumentData.url && { url: instrumentData.url }),
+        ...(instrumentData.multiSamples && { multiSamples: instrumentData.multiSamples }),
+        ...(instrumentData.presetName && { presetName: instrumentData.presetName }),
+        ...(instrumentData.baseNote && { baseNote: instrumentData.baseNote }),
+        ...(instrumentData.assetId && { assetId: instrumentData.assetId }),
+        ...(instrumentData.audioBuffer && { audioBuffer: instrumentData.audioBuffer })
     };
 
     // ✅ AUTO-GROUP ASSIGNMENT: Detect instrument type and assign to appropriate group
@@ -102,7 +120,7 @@ export const useInstrumentsStore = create((set, get) => ({
     get().addInstrumentToGroup(newInstrument.id, targetGroupId);
 
     // ✅ PERFORMANCE: Use StoreManager for all side effects
-    storeManager.createInstrumentWithSideEffects(newInstrument, firstUnusedTrack.id, newName);
+    storeManager.createInstrumentWithSideEffects(newInstrument, mixerTrackId, newName);
 
     // SES MOTORUNA KOMUT GÖNDER: Yeni enstrümanı oluştur.
     AudioContextService.createInstrument(newInstrument);

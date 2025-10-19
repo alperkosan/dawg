@@ -1,4 +1,25 @@
 import React, { useRef, useEffect } from 'react';
+import { NativeTimeUtils } from '@/lib/utils/NativeTimeUtils';
+
+// Duration'ı step'lere çevir - hem number (length) hem string (duration) destekler
+const getDurationInSteps = (note) => {
+    // ✅ NEW FORMAT: If note has 'length' property (number), use it directly
+    if (typeof note.length === 'number') {
+        return note.length;
+    }
+
+    // ✅ LEGACY FORMAT: If note has 'duration' property (string like "4n"), parse it
+    if (note.duration) {
+        try {
+            return NativeTimeUtils.parseTime(note.duration, 120) / NativeTimeUtils.parseTime('16n', 120);
+        } catch {
+            return 1; // Default on error
+        }
+    }
+
+    // ✅ FALLBACK: Default to 1 step
+    return 1;
+};
 
 /**
  * ⚡ Mini Piano Roll Preview - All notes displayed at C4 level in 1/4 grid
@@ -75,14 +96,16 @@ export default function PianoRollMiniViewC4({ notes = [], patternLength, onNoteC
 
       notes.forEach(note => {
         const x = note.time * stepWidth;
-        const noteWidth = Math.max(stepWidth * 0.8, 2); // Min 2px width
+        // ✅ FIX: Use actual note duration instead of fixed width
+        const noteLengthInSteps = getDurationInSteps(note);
+        const noteWidth = Math.max(noteLengthInSteps * stepWidth - 1, 2); // Min 2px width, -1 for gap
 
         // Note with glow
         ctx.shadowBlur = 6;
         ctx.shadowColor = '#00ff88';
         ctx.fillStyle = '#00ff88';
         ctx.fillRect(
-          x + stepWidth * 0.1,
+          x,
           noteY - noteHeight / 2,
           noteWidth,
           noteHeight
@@ -93,7 +116,7 @@ export default function PianoRollMiniViewC4({ notes = [], patternLength, onNoteC
         ctx.strokeStyle = '#00ff88';
         ctx.lineWidth = 1;
         ctx.strokeRect(
-          x + stepWidth * 0.1,
+          x,
           noteY - noteHeight / 2,
           noteWidth,
           noteHeight

@@ -1,11 +1,21 @@
-/* SEND ACCEPT BUTTON - Compact FL Studio style */
+/* SEND ACCEPT BUTTON - Compact FL Studio style with stacking support */
 
-.send-accept {
+/* Container for all sends (stacked vertically) */
+.send-accept-container {
   position: absolute;
   bottom: 4px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 15;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  align-items: center;
+}
+
+/* Individual send element */
+.send-accept {
+  position: relative;
 }
 
 /* =================== DISCONNECTED - COMPACT ARROW =================== */
@@ -141,4 +151,22 @@
 .send-accept__pre-post.post:hover {
   background: rgba(59, 130, 246, 0.3);
   box-shadow: 0 0 4px #3b82f6;
+}
+
+/* Source track name label (for stacked sends) */
+.send-accept__source-label {
+  font-size: 7px;
+  font-weight: 700;
+  color: var(--zenith-text-secondary);
+  text-align: center;
+  padding: 2px 4px;
+  background: rgba(0, 0, 0, 0.6);
+  border-radius: 2px;
+  margin-top: 2px;
+  max-width: 50px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1;
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }

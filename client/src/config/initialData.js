@@ -52,34 +52,105 @@ const trapPattern = {
 };
 
 // =========================================================================
-// 💎 PATTERN 2: BOOM BAP (140 BPM)
-// Classic breakbeat style, jazzy samples
+// 💎 PATTERN 2: BOOM BAP (90 BPM) - 16 BARS SHOWCASE
+// Classic 90s NY style: dusty drums, jazzy loops, minimal arrangement
+// Think: Pete Rock, DJ Premier, J Dilla vibes
 // =========================================================================
 const boomBapPattern = {
-  kick: [0, 12, 16, 28, 32, 44, 48, 60].map(t => note(t, 'C4', 100, '8n')),
-  snare: [8, 24, 40, 56].map(t => note(t, 'C4', 95, '8n')),
-  rim: [4, 20, 36, 52].map(t => note(t, 'C4', 70, '16n')), // Boom bap rim shots
+  // === DRUMS (16 bars) - Classic 90s breakbeat style ===
+  kick: [
+    // Bar 1-8: Classic boom bap pattern (heavy kick on 1 and 3)
+    0, 16, 32, 48, 64, 80, 96, 112,
+    // Bar 9-16: Variation with occasional doubles
+    128, 140, 144, 160, 176, 188, 192, 208, 224, 236, 240
+  ].map(t => note(t, 'C4', 100, '8n')),
+
+  snare: [
+    // Bar 1-16: Classic backbeat (always on 2 and 4)
+    8, 24, 40, 56, 72, 88, 104, 120,
+    136, 152, 168, 184, 200, 216, 232, 248
+  ].map(t => note(t, 'C4', 90, '8n')),
+
+  rim: [
+    // Bar 1-8: Ghost notes (subtle)
+    6, 14, 22, 30, 38, 46, 54, 62,
+    70, 78, 86, 94, 102, 110, 118, 126,
+    // Bar 9-16: Slightly more active but still sparse
+    134, 142, 150, 158, 166, 174, 182, 190,
+    198, 206, 214, 222, 230, 238, 246, 254
+  ].map(t => note(t, 'C4', 50, '32n')), // Quiet ghost notes
+
   'hi-hat': [
-    // Swung hi-hats
-    ...Array.from({ length: 32 }).map((_, i) => {
-      const swing = i % 2 === 1 ? 1 : 0;
-      const velocity = i % 4 === 0 ? 75 : 40;
-      return note(i * 2 + swing, 'F#4', velocity, '16n');
-    })
-  ],
-  perc: [7, 15, 23, 31, 39, 47, 55, 63].map(t => note(t, 'C4', 55)), // Subtle texture
+    // Bar 1-8: Sparse, open hi-hats only (90s minimal style)
+    4, 12, 20, 28, 36, 44, 52, 60,
+    68, 76, 84, 92, 100, 108, 116, 124,
+    // Bar 9-16: Slightly more closed hats
+    132, 136, 140, 144, 148, 152, 156, 160,
+    164, 168, 172, 176, 180, 184, 188, 192,
+    196, 200, 204, 208, 212, 216, 220, 224,
+    228, 232, 236, 240, 244, 248, 252
+  ].map((t, i) => note(t, i < 16 ? 'G#4' : 'F#4', i < 16 ? 60 : 45, '8n')),
+
+  perc: [
+    // Minimal shaker/texture (very sparse, 90s lofi style)
+    15, 31, 47, 63, 79, 95, 111, 127,
+    143, 159, 175, 191, 207, 223, 239, 255
+  ].map(t => note(t, 'C4', 40)),
+
+  // === PIANO SAMPLED (Jazzy loop - 16 bars, 90s style) ===
   'piano(sampled)': [
-    { t: 0, p: 'C4', d: '4n' }, { t: 4, p: 'E4', d: '4n' }, { t: 8, p: 'G4', d: '4n' }, { t: 12, p: 'B3', d: '4n' },
-    { t: 16, p: 'A3', d: '4n' }, { t: 20, p: 'C4', d: '4n' }, { t: 24, p: 'E4', d: '4n' }, { t: 28, p: 'G3', d: '4n' },
-    { t: 32, p: 'F3', d: '4n' }, { t: 36, p: 'A3', d: '4n' }, { t: 40, p: 'C4', d: '4n' }, { t: 44, p: 'E4', d: '4n' },
-    { t: 48, p: 'G3', d: '2n' }, { t: 56, p: 'B3', d: '4n' }, { t: 60, p: 'D4', d: '4n' },
-  ].map(n => note(n.t, n.p, 85, n.d)),
-  bass: [
-    { t: 0, p: 'C2', d: '4n' }, { t: 8, p: 'C2', d: '8n' }, { t: 12, p: 'E2', d: '8n' },
-    { t: 16, p: 'A1', d: '4n' }, { t: 24, p: 'A1', d: '8n' }, { t: 28, p: 'C2', d: '8n' },
-    { t: 32, p: 'F1', d: '4n' }, { t: 40, p: 'F1', d: '8n' }, { t: 44, p: 'A1', d: '8n' },
-    { t: 48, p: 'G1', d: '4n' }, { t: 56, p: 'B1', d: '8n' }, { t: 60, p: 'D2', d: '8n' },
-  ].map(n => note(n.t, n.p, 90, n.d))
+    // Bar 1-4: Simple 2-bar loop (like a sampled vinyl)
+    { t: 0, p: 'C3', d: '2n' }, { t: 0, p: 'E3', d: '2n' }, { t: 0, p: 'G3', d: '2n' },
+    { t: 8, p: 'E3', d: '4n' }, { t: 12, p: 'G3', d: '4n' },
+    { t: 16, p: 'A2', d: '2n' }, { t: 16, p: 'C3', d: '2n' }, { t: 16, p: 'E3', d: '2n' },
+    { t: 24, p: 'C3', d: '4n' }, { t: 28, p: 'E3', d: '4n' },
+
+    { t: 32, p: 'F2', d: '2n' }, { t: 32, p: 'A2', d: '2n' }, { t: 32, p: 'C3', d: '2n' },
+    { t: 40, p: 'A2', d: '4n' }, { t: 44, p: 'C3', d: '4n' },
+    { t: 48, p: 'G2', d: '2n' }, { t: 48, p: 'B2', d: '2n' }, { t: 48, p: 'D3', d: '2n' },
+    { t: 56, p: 'B2', d: '4n' }, { t: 60, p: 'D3', d: '4n' },
+
+    // Bar 5-8: Exact same loop (like looped sample)
+    { t: 64, p: 'C3', d: '2n' }, { t: 64, p: 'E3', d: '2n' }, { t: 64, p: 'G3', d: '2n' },
+    { t: 72, p: 'E3', d: '4n' }, { t: 76, p: 'G3', d: '4n' },
+    { t: 80, p: 'A2', d: '2n' }, { t: 80, p: 'C3', d: '2n' }, { t: 80, p: 'E3', d: '2n' },
+    { t: 88, p: 'C3', d: '4n' }, { t: 92, p: 'E3', d: '4n' },
+
+    { t: 96, p: 'F2', d: '2n' }, { t: 96, p: 'A2', d: '2n' }, { t: 96, p: 'C3', d: '2n' },
+    { t: 104, p: 'A2', d: '4n' }, { t: 108, p: 'C3', d: '4n' },
+    { t: 112, p: 'G2', d: '2n' }, { t: 112, p: 'B2', d: '2n' }, { t: 112, p: 'D3', d: '2n' },
+    { t: 120, p: 'B2', d: '4n' }, { t: 124, p: 'D3', d: '4n' },
+
+    // Bar 9-12: Loop again (repetitive, hypnotic)
+    { t: 128, p: 'C3', d: '2n' }, { t: 128, p: 'E3', d: '2n' }, { t: 128, p: 'G3', d: '2n' },
+    { t: 136, p: 'E3', d: '4n' }, { t: 140, p: 'G3', d: '4n' },
+    { t: 144, p: 'A2', d: '2n' }, { t: 144, p: 'C3', d: '2n' }, { t: 144, p: 'E3', d: '2n' },
+    { t: 152, p: 'C3', d: '4n' }, { t: 156, p: 'E3', d: '4n' },
+
+    { t: 160, p: 'F2', d: '2n' }, { t: 160, p: 'A2', d: '2n' }, { t: 160, p: 'C3', d: '2n' },
+    { t: 168, p: 'A2', d: '4n' }, { t: 172, p: 'C3', d: '4n' },
+    { t: 176, p: 'G2', d: '2n' }, { t: 176, p: 'B2', d: '2n' }, { t: 176, p: 'D3', d: '2n' },
+    { t: 184, p: 'B2', d: '4n' }, { t: 188, p: 'D3', d: '4n' },
+
+    // Bar 13-16: Final loop with slight variation (fade out vibe)
+    { t: 192, p: 'C3', d: '2n' }, { t: 192, p: 'E3', d: '2n' }, { t: 192, p: 'G3', d: '2n' },
+    { t: 200, p: 'E3', d: '4n' },
+    { t: 208, p: 'A2', d: '2n' }, { t: 208, p: 'C3', d: '2n' }, { t: 208, p: 'E3', d: '2n' },
+    { t: 216, p: 'C3', d: '4n' },
+    { t: 224, p: 'F2', d: '2n' }, { t: 224, p: 'A2', d: '2n' }, { t: 224, p: 'C3', d: '2n' },
+    { t: 232, p: 'A2', d: '4n' },
+    { t: 240, p: 'G2', d: '1n' }, { t: 240, p: 'B2', d: '1n' }, { t: 240, p: 'D3', d: '1n' }
+  ].map(n => note(n.t, n.p, 70, n.d)), // Lower velocity for lofi vibe
+
+  // === WARM PAD (Subtle atmospheric - 16 bars) ===
+  warmpad: [
+    // Bar 1-8: C major (long sustain, barely there)
+    { t: 0, p: 'C3', d: '1n' }, { t: 0, p: 'E3', d: '1n' }, { t: 0, p: 'G3', d: '1n' },
+    { t: 64, p: 'C3', d: '1n' }, { t: 64, p: 'E3', d: '1n' }, { t: 64, p: 'G3', d: '1n' },
+    // Bar 9-16: A minor (subtle shift)
+    { t: 128, p: 'A2', d: '1n' }, { t: 128, p: 'C3', d: '1n' }, { t: 128, p: 'E3', d: '1n' },
+    { t: 192, p: 'A2', d: '1n' }, { t: 192, p: 'C3', d: '1n' }, { t: 192, p: 'E3', d: '1n' }
+  ].map(n => note(n.t, n.p, 30, n.d)), // Very quiet, just atmosphere
 };
 
 // =========================================================================
@@ -306,9 +377,33 @@ export const initialInstruments = [
   { id: '808bass', name: '808 Bass', type: INSTRUMENT_TYPES.VASYNTH, color: '#9370DB', presetName: '808 Bass', mixerTrackId: 'track-14' },
   { id: 'classiclead', name: 'Classic Lead', type: INSTRUMENT_TYPES.VASYNTH, color: '#F08080', presetName: 'Classic Lead', mixerTrackId: 'track-15' },
   { id: 'pluck', name: 'Pluck', type: INSTRUMENT_TYPES.VASYNTH, color: '#DDA0DD', presetName: 'Pluck', mixerTrackId: 'track-16' },
-  { id: 'warmpad', name: 'Warm Pad', type: INSTRUMENT_TYPES.VASYNTH, color: '#D8BFD8', presetName: 'Warm Pad', mixerTrackId: 'track-1' },
-  { id: 'strings', name: 'Strings', type: INSTRUMENT_TYPES.VASYNTH, color: '#E6E6FA', presetName: 'Strings', mixerTrackId: 'track-2' },
-  { id: 'bellsynth', name: 'Bell Synth', type: INSTRUMENT_TYPES.VASYNTH, color: '#B0E0E6', presetName: 'Bell Synth', mixerTrackId: 'track-3' }
+  { id: 'warmpad', name: 'Warm Pad', type: INSTRUMENT_TYPES.VASYNTH, color: '#D8BFD8', presetName: 'Warm Pad', mixerTrackId: 'track-17' },
+  { id: 'strings', name: 'Strings', type: INSTRUMENT_TYPES.VASYNTH, color: '#E6E6FA', presetName: 'Strings', mixerTrackId: 'track-18' },
+  { id: 'bellsynth', name: 'Bell Synth', type: INSTRUMENT_TYPES.VASYNTH, color: '#B0E0E6', presetName: 'Bell Synth', mixerTrackId: 'track-19' },
+
+  // === GRANULAR SAMPLER ===
+  {
+    id: 'solstice-grain',
+    name: 'Solstice Grain',
+    type: INSTRUMENT_TYPES.GRANULAR,
+    color: '#FF6EC7',
+    mixerTrackId: 'track-20',
+    url: '/audio/samples/instruments/piano/C4.ogg', // Using piano sample for testing
+    baseNote: 60, // C4
+    params: {
+      grainSize: 80,          // ms - smooth grain length
+      grainDensity: 12,       // grains/second - ✅ REDUCED from 25 to 12 for performance
+      samplePosition: 0.3,    // 0-1 - start position in sample
+      positionRandom: 0.15,   // 0-1 - add movement
+      pitch: 0,               // semitones
+      pitchRandom: 2,         // semitones - subtle pitch variation
+      grainEnvelope: 'hann',  // smooth envelope
+      reverse: 0.1,           // 10% chance of reverse grains
+      spread: 0.7,            // wide stereo spread
+      mix: 1.0,               // 100% wet
+      gain: 0.8               // master gain
+    }
+  }
 ];
 
 // =========================================================================
@@ -337,7 +432,7 @@ export const initialPatterns = {
   pattern2: {
     id: 'pattern2',
     name: 'Boom Bap',
-    length: 64,
+    length: 256, // ✅ 16 bars (16 * 16 steps)
     color: '#4ECDC4',
     data: {
       kick: boomBapPattern.kick,
@@ -346,6 +441,7 @@ export const initialPatterns = {
       'hi-hat': boomBapPattern['hi-hat'],
       perc: boomBapPattern.perc,
       'piano(sampled)': boomBapPattern['piano(sampled)'],
+      warmpad: boomBapPattern.warmpad,
       bass: boomBapPattern.bass
     }
   },
@@ -386,10 +482,32 @@ export const initialPatterns = {
 // =========================================================================
 // 🎚️ MIXER CONFIGURATION
 // =========================================================================
-export const initialMixerTracks = initialInstruments.map((inst, index) => ({
+
+// Master channel definition
+const masterChannel = {
+  id: 'master',
+  name: 'Master',
+  type: MIXER_TRACK_TYPES.MASTER,
+  volume: -6,
+  pan: 0,
+  muted: false,
+  solo: false,
+  insertEffects: [],
+  sends: [],
+  output: null,
+  eq: {
+    enabled: false,
+    lowGain: 0,
+    midGain: 0,
+    highGain: 0
+  }
+};
+
+// Instrument tracks
+const instrumentTracks = initialInstruments.map((inst, index) => ({
   id: inst.mixerTrackId,  // ✅ Use mixerTrackId (track-1, track-2, etc.)
   name: inst.name,
-  type: MIXER_TRACK_TYPES.INSTRUMENT,
+  type: MIXER_TRACK_TYPES.TRACK,  // ✅ FIX: Use TRACK instead of INSTRUMENT
   instrumentId: inst.id,  // Keep instrument ID for reference
   volume: inst.id.includes('bass') || inst.id === 'kick' || inst.id === '808' ? -3 :
           inst.id === 'hi-hat' ? -12 :
@@ -397,22 +515,26 @@ export const initialMixerTracks = initialInstruments.map((inst, index) => ({
   pan: 0,
   muted: false,
   solo: false,
-  effects: [],
-  sends: {}
+  insertEffects: [],
+  sends: [],
+  output: 'master',
+  eq: {
+    enabled: false,
+    lowGain: 0,
+    midGain: 0,
+    highGain: 0
+  }
 }));
 
+// ✅ FIX: Include master channel in mixer tracks
+export const initialMixerTracks = [
+  masterChannel,
+  ...instrumentTracks
+];
+
 export const initialMixer = {
-  master: {
-    id: 'master',
-    name: 'Master',
-    type: MIXER_TRACK_TYPES.MASTER,
-    volume: -6,
-    pan: 0,
-    muted: false,
-    solo: false,
-    effects: []
-  },
-  tracks: initialMixerTracks
+  master: masterChannel,
+  tracks: instrumentTracks
 };
 
 // =========================================================================
@@ -440,7 +562,7 @@ export const initialArrangement = {
 // ⚙️ PROJECT SETTINGS
 // =========================================================================
 export const initialSettings = {
-  bpm: 140,
+  bpm: 90, // ✅ Classic 90s boom bap tempo
   timeSignature: { numerator: 4, denominator: 4 },
   swing: 0
 };

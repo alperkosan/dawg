@@ -36,15 +36,18 @@ export class VoicePool {
      * Allocate a voice for a note
      *
      * @param {number} midiNote - MIDI note number
+     * @param {boolean} allowPolyphony - If true, allows multiple voices for same note (default: true)
      * @returns {BaseVoice|null} Allocated voice or null if failed
      */
-    allocate(midiNote) {
-        // Check if note already playing (re-trigger case)
-        if (this.activeVoices.has(midiNote)) {
-            // Return existing voice for re-trigger
+    allocate(midiNote, allowPolyphony = true) {
+        // ✅ CRITICAL FIX: Only check for re-trigger if polyphony is disabled (mono mode)
+        // In poly mode, multiple instances of the same note should each get their own voice
+        if (!allowPolyphony && this.activeVoices.has(midiNote)) {
+            // Mono mode: Return existing voice for re-trigger
             return this.activeVoices.get(midiNote);
         }
 
+        // ✅ POLYPHONY FIX: In poly mode, always allocate a new voice even if same note is playing
         // Try to get a free voice
         let voice = this.freeVoices.pop();
 
@@ -60,6 +63,10 @@ export class VoicePool {
 
         // Reset and activate voice
         voice.reset();
+
+        // ✅ POLYPHONY FIX: In poly mode with same note, we need to track multiple voices
+        // For now, we'll keep the Map but the last allocation wins (not ideal but functional)
+        // TODO: Consider using Array<{note, voice}> for true polyphony tracking
         this.activeVoices.set(midiNote, voice);
 
         return voice;
