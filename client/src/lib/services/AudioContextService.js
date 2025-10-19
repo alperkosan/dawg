@@ -980,13 +980,8 @@ export class AudioContextService {
           console.log('🔗 Starting node:', currentNode.constructor.name);
 
           for (const effectConfig of trackState.insertEffects) {
-            if (effectConfig.bypass) {
-              console.log('⏭️  Skipping bypassed effect:', effectConfig.type);
-              continue;
-            }
-
             try {
-              // Create effect node directly
+              // ✅ OPTIMIZATION: Create all effects (even bypassed ones) for instant toggle
               const node = await effectRegistry.createEffectNode(
                 effectConfig.type,
                 this.audioEngine.audioContext,
@@ -994,13 +989,13 @@ export class AudioContextService {
               );
 
               if (node) {
-                // ✅ Create effect object directly (same structure as NativeEffect)
+                // ✅ Create effect object with bypass state
                 const effect = {
                   id: effectConfig.id,
                   type: effectConfig.type,
                   node: node,
                   settings: effectConfig.settings,
-                  bypass: false,
+                  bypass: effectConfig.bypass || false,
                   parameters: new Map(),
                   updateParameter: function(paramName, value) {
                     const param = this.parameters.get(paramName);
@@ -1034,12 +1029,15 @@ export class AudioContextService {
 
                 channel.effects.set(effectConfig.id, effect);
 
-                // Connect in chain
-                console.log('🔗 Connecting:', currentNode.constructor.name, '→', effect.node.constructor.name);
-                currentNode.connect(effect.node);
-                currentNode = effect.node;
-
-                console.log('✅ Added effect to chain:', effectConfig.type, effectConfig.id);
+                // ✅ BYPASS OPTIMIZATION: Only connect to signal chain if NOT bypassed
+                if (!effectConfig.bypass) {
+                  console.log('🔗 Connecting:', currentNode.constructor.name, '→', effect.node.constructor.name);
+                  currentNode.connect(effect.node);
+                  currentNode = effect.node;
+                  console.log('✅ Added effect to chain:', effectConfig.type, effectConfig.id);
+                } else {
+                  console.log('⏭️  Effect created but bypassed (disconnected):', effectConfig.type);
+                }
               }
             } catch (error) {
               console.error('❌ Error adding effect:', effectConfig.type, error);
@@ -1082,6 +1080,97 @@ export class AudioContextService {
    */
 
   /**
+   * ✅ OPTIMIZATION: Toggle effect bypass without full chain rebuild
+   * Disconnects worklet when bypassed to save CPU
+   */
+  static toggleEffectBypass(trackId, effectId, bypass) {
+    if (!this.audioEngine || !this.audioEngine.mixerChannels) {
+      console.warn('⚠️ No audio engine or mixer channels available');
+      return;
+    }
+
+    const channel = this.audioEngine.mixerChannels.get(trackId);
+    if (!channel || !channel.effects) {
+      console.warn('⚠️ No mixer channel or effects found for trackId:', trackId);
+      return;
+    }
+
+    const effect = channel.effects.get(effectId);
+    if (!effect) {
+      console.warn('⚠️ Effect not found:', effectId);
+      return;
+    }
+
+    // If already in desired bypass state, do nothing
+    if (effect.bypass === bypass) {
+      return;
+    }
+
+    console.log(`🔄 Toggling bypass for ${effect.type} (${effectId}): ${effect.bypass} → ${bypass}`);
+
+    // Update bypass state
+    effect.bypass = bypass;
+
+    // Get all effects in order from store
+    const trackState = this.getTrackState(trackId);
+    if (!trackState || !trackState.insertEffects) {
+      console.warn('⚠️ Cannot get track state for bypass toggle');
+      return;
+    }
+
+    // Rebuild signal chain efficiently
+    try {
+      // Disconnect all effects first
+      channel.mixerNode.disconnect();
+      channel.effects.forEach(fx => {
+        try { fx.node.disconnect(); } catch(e) {}
+      });
+      if (channel.analyzer) {
+        try { channel.analyzer.disconnect(); } catch(e) {}
+      }
+
+      // Reconnect chain with updated bypass states
+      let currentNode = channel.mixerNode;
+
+      trackState.insertEffects.forEach(effectConfig => {
+        const fx = channel.effects.get(effectConfig.id);
+        if (fx && !fx.bypass) {
+          currentNode.connect(fx.node);
+          currentNode = fx.node;
+        }
+      });
+
+      // Connect to analyzer and output
+      currentNode.connect(channel.analyzer);
+      channel.analyzer.connect(channel.output);
+
+      console.log(`✅ Bypass toggled successfully - effect ${bypass ? 'DISCONNECTED' : 'CONNECTED'}`);
+    } catch (error) {
+      console.error('❌ Error toggling bypass:', error);
+      // Fallback: full rebuild
+      this.rebuildSignalChain(trackId, trackState);
+    }
+  }
+
+  /**
+   * Helper to get track state from mixer store
+   */
+  static getTrackState(trackId) {
+    // Import dynamically to avoid circular dependency
+    try {
+      // Access via StoreManager if available
+      if (typeof window !== 'undefined') {
+        const { useMixerStore } = require('../store/useMixerStore.js');
+        const state = useMixerStore.getState();
+        return state.mixerTracks?.find(t => t.id === trackId);
+      }
+    } catch (error) {
+      console.warn('⚠️ Could not access mixer store:', error);
+    }
+    return null;
+  }
+
+  /**
    * Update effect parameter
    */
   static updateEffectParam(trackId, effectId, param, value) {
@@ -1100,6 +1189,12 @@ export class AudioContextService {
     const effect = Array.from(channel.effects.values()).find(fx => fx.id === effectId);
     if (!effect) {
       console.warn('⚠️ Effect not found:', effectId);
+      return;
+    }
+
+    // ⚡ SPECIAL CASE: Bypass parameter - use optimized bypass toggle
+    if (param === 'bypass') {
+      this.toggleEffectBypass(trackId, effectId, value);
       return;
     }
 

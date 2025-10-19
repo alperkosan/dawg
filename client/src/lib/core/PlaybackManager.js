@@ -10,6 +10,13 @@ import EventBus from './EventBus.js';
 import { PositionTracker } from './PositionTracker.js';
 import { audioAssetManager } from '@/lib/audio/AudioAssetManager';
 
+// ✅ NEW: Modular scheduler system
+import {
+    NoteScheduler,
+    AutomationScheduler,
+    AudioClipScheduler
+} from './playback/index.js';
+
 /**
  * ⚡ PERFORMANCE OPTIMIZATION: Debounced Scheduling System
  * Prevents excessive rescheduling when multiple notes are added/removed rapidly
@@ -62,6 +69,11 @@ export class PlaybackManager {
         // ✅ NEW: Initialize position tracker
         this.positionTracker = new PositionTracker(this.transport);
 
+        // ✅ REFACTOR: Initialize modular schedulers
+        this.noteScheduler = new NoteScheduler(this.transport, this.audioEngine);
+        this.automationScheduler = new AutomationScheduler(this.transport, this.audioEngine);
+        this.audioClipScheduler = new AudioClipScheduler(this.transport, this.audioEngine);
+
         // ✅ EKLENDİ: Transport'tan gelen olayları dinlemek için.
         this._bindTransportEvents();
 
@@ -93,8 +105,8 @@ export class PlaybackManager {
         this.automationEvents = new Map();
         this.nextEventTime = Infinity;
 
-        // ✅ FIX: Track active audio sources for proper stop handling
-        this.activeAudioSources = [];
+        // ✅ REFACTOR: activeAudioSources moved to AudioClipScheduler
+        // Access via: this.audioClipScheduler.getActiveSources()
 
     }
 
@@ -255,7 +267,6 @@ export class PlaybackManager {
                     // Stop the note if it's currently playing
                     if (typeof instrument.releaseNote === 'function') {
                         instrument.releaseNote(note.pitch);
-                        console.log(`🔇 Stopped removed note: ${note.pitch} on ${instrumentId}`);
                     }
                 } catch (e) {
                     console.error('Error stopping removed note:', e);
@@ -290,7 +301,6 @@ export class PlaybackManager {
     _handleLoopRestart(nextStartTime = null) {
         // ✅ OPTIMIZATION: Prevent duplicate scheduling if already pending
         if (this.schedulingOptimizer.isSchedulePending()) {
-            console.log('⏭️ Skipping loop restart - scheduling already pending');
             return;
         }
 
@@ -575,15 +585,8 @@ export class PlaybackManager {
 
             this.transport.pause();
 
-            // ✅ FIX: Pause all active audio sources (frozen clips, audio clips)
-            this.activeAudioSources.forEach(source => {
-                try {
-                    source.stop();
-                } catch (e) {
-                    // Source may already be stopped
-                }
-            });
-            this.activeAudioSources = [];
+            // ✅ REFACTOR: Stop all active audio sources via AudioClipScheduler
+            this.audioClipScheduler.stopAll();
 
             this.isPaused = true;
 
@@ -648,17 +651,9 @@ export class PlaybackManager {
                 }
             });
 
-            console.log(`🛑 Stop optimization: ${stoppedCount} stopped, ${skippedCount} skipped (not playing)`);
 
-            // ✅ FIX: Stop all active audio sources (frozen clips, audio clips)
-            this.activeAudioSources.forEach(source => {
-                try {
-                    source.stop();
-                } catch (e) {
-                    // Source may already be stopped
-                }
-            });
-            this.activeAudioSources = [];
+            // ✅ REFACTOR: Stop all active audio sources via AudioClipScheduler
+            this.audioClipScheduler.stopAll();
 
             // ✅ NEW: Flush all effect tails (delay, reverb, etc.)
             this._flushAllEffects();
@@ -806,7 +801,6 @@ export class PlaybackManager {
             const scheduleEndTime = performance.now();
             const scheduleDuration = (scheduleEndTime - scheduleStartTime).toFixed(2);
 
-            console.log(`⚡ Scheduling completed: ${scheduledNotes} notes, ${scheduledInstruments} instruments in ${scheduleDuration}ms (reason: ${reason})`);
         };
 
         // Use debounced scheduling unless forced
@@ -826,18 +820,11 @@ export class PlaybackManager {
         const activePattern = arrangementStore.patterns[arrangementStore.activePatternId];
 
         if (!activePattern) {
-            console.warn('🎵 No active pattern found for scheduling');
             return { totalNotes: 0, instrumentCount: 0 };
         }
 
         const instrumentCount = Object.keys(activePattern.data).length;
         const totalNotes = Object.values(activePattern.data).reduce((sum, notes) => sum + (notes?.length || 0), 0);
-
-        console.log('🎵 Scheduling pattern content:', {
-            patternId: arrangementStore.activePatternId,
-            instrumentCount,
-            totalNotes
-        });
 
         // Schedule notes for each instrument
         Object.entries(activePattern.data).forEach(([instrumentId, notes]) => {
@@ -847,11 +834,9 @@ export class PlaybackManager {
 
             const instrument = this.audioEngine.instruments.get(instrumentId);
             if (!instrument) {
-                console.warn(`🎵 Instrument not found: ${instrumentId}`);
                 return;
             }
 
-            console.log(`🎵 Scheduling ${notes.length} notes for instrument: ${instrumentId}`);
             this._scheduleInstrumentNotes(instrument, notes, instrumentId, baseTime);
         });
 
@@ -860,7 +845,6 @@ export class PlaybackManager {
     }
 
     _scheduleSongContent(baseTime) {
-        console.log('🎵 _scheduleSongContent called, baseTime:', baseTime);
 
         // ✅ Try ArrangementV2Store first (new system), fallback to workspace store (old system)
         const v2Store = useArrangementV2Store.getState();
@@ -875,16 +859,13 @@ export class PlaybackManager {
             tracks = v2Tracks;
             const arrangementStore = useArrangementStore.getState();
             patterns = arrangementStore.patterns || {};
-            console.log('🎵 Using ArrangementV2Store (new system)');
         } else {
             // Fallback to workspace store (old system)
             const workspaceStore = useArrangementWorkspaceStore.getState();
             const arrangement = workspaceStore.getActiveArrangement();
 
-            console.log('🎵 Arrangement:', arrangement ? 'found' : 'NOT FOUND');
 
             if (!arrangement) {
-                console.warn('🎵 ❌ No active arrangement for song mode');
                 return { totalNotes: 0, instrumentCount: 0 };
             }
 
@@ -892,14 +873,7 @@ export class PlaybackManager {
             tracks = arrangement.tracks || [];
             const arrangementStore = useArrangementStore.getState();
             patterns = arrangementStore.patterns || {};
-            console.log('🎵 Using ArrangementWorkspaceStore (old system)');
         }
-
-        console.log('🎵 Song mode scheduling:', {
-            clipsCount: clips.length,
-            tracksCount: tracks.length,
-            patternsCount: Object.keys(patterns).length
-        });
 
         // ✅ Check for solo tracks
         const soloTracks = tracks.filter(t => t.solo);
@@ -907,57 +881,36 @@ export class PlaybackManager {
 
 
         if (clips.length === 0) {
-            console.warn('🎵 ⚠️ No clips in arrangement - song mode will play silently (playhead still moves)');
             // Don't return - allow playback to continue silently so playhead still moves
         }
 
         clips.forEach((clip, index) => {
-            console.log(`🎵 Processing clip ${index}:`, {
-                id: clip.id,
-                type: clip.type,
-                patternId: clip.patternId,
-                startTime: clip.startTime,
-                duration: clip.duration,
-                trackId: clip.trackId
-            });
-
             // ✅ Check track mute/solo state
             const track = tracks.find(t => t.id === clip.trackId);
             if (!track) {
-                console.warn(`🎵 ❌ Track not found for clip ${clip.id}`);
                 return;
             }
 
             // Skip if track is muted
             if (track.muted) {
-                console.log(`🎵 ⏭️ Skipping clip ${clip.id} - track muted`);
                 return;
             }
 
             // If any track is solo, only play clips on solo tracks
             if (hasSolo && !track.solo) {
-                console.log(`🎵 ⏭️ Skipping clip ${clip.id} - not on solo track`);
                 return;
             }
 
             // ✅ Handle different clip types: 'pattern' or 'audio'
             if (clip.type === 'audio') {
-                console.log(`🎵 📢 Scheduling AUDIO clip ${clip.id}`);
                 // Schedule audio sample clip
                 this._scheduleAudioClip(clip, baseTime);
             } else {
-                console.log(`🎵 🎹 Scheduling PATTERN clip ${clip.id}, patternId: ${clip.patternId}`);
                 // Schedule pattern clip (default)
                 const pattern = patterns[clip.patternId];
                 if (!pattern) {
-                    console.warn(`🎵 ❌ Pattern ${clip.patternId} not found for clip ${clip.id}`);
                     return;
                 }
-
-                console.log(`🎵 Pattern found:`, {
-                    patternId: clip.patternId,
-                    instrumentCount: Object.keys(pattern.data || {}).length
-                });
 
                 // Convert clip startTime and duration to steps (16th notes)
                 // 1 beat = 4 sixteenth notes
@@ -965,17 +918,9 @@ export class PlaybackManager {
                 const clipDurationBeats = clip.duration || pattern.length || 4; // Use pattern length if available
                 const clipDurationSteps = clipDurationBeats * 4;
 
-                console.log(`🎵 Clip timing:`, {
-                    clipStartStep,
-                    clipDurationBeats,
-                    clipDurationSteps
-                });
-
-
                 // Schedule pattern notes with clip timing offset
                 Object.entries(pattern.data).forEach(([instrumentId, notes]) => {
                     if (!Array.isArray(notes) || notes.length === 0) {
-                        console.log(`🎵 ⏭️ No notes for instrument ${instrumentId}`);
                         return;
                     }
 
@@ -985,7 +930,6 @@ export class PlaybackManager {
                         return;
                     }
 
-                    console.log(`🎵 🎸 Processing instrument ${instrumentId}, ${notes.length} notes`);
 
                     // Filter and offset notes by clip start time and duration
                     const offsetNotes = notes
@@ -999,17 +943,14 @@ export class PlaybackManager {
                             time: (note.time || 0) + clipStartStep
                         }));
 
-                    console.log(`🎵 → ${offsetNotes.length} notes after filtering and offset`);
 
                     if (offsetNotes.length > 0) {
-                        console.log(`🎵 ✅ Scheduling ${offsetNotes.length} notes for instrument ${instrumentId}`);
                         this._scheduleInstrumentNotes(instrument, offsetNotes, instrumentId, baseTime, clip.id);
                     }
                 });
             }
         });
 
-        console.log('🎵 _scheduleSongContent completed');
 
         // ✅ Return basic metrics (song mode is complex, return clip count as approximation)
         return { totalNotes: clips.length * 10, instrumentCount: tracks.length };
@@ -1033,7 +974,6 @@ export class PlaybackManager {
         if (this.isPlaying && !this.isPaused) {
             const baseTime = this.audioEngine.audioContext.currentTime;
             
-            console.log(`🎵 Rescheduling events for clip: ${clip.id}`);
             // Re-use existing scheduling logic, but for a single clip
             if (clip.type === 'audio') {
                 this._scheduleAudioClip(clip, baseTime);
@@ -1087,7 +1027,6 @@ export class PlaybackManager {
         });
         this.activeAudioSources = this.activeAudioSources.filter(source => source.clipId !== clipId);
 
-        console.log(`🧹 Cleared events and sources for clip: ${clipId}`);
     }
 
     /**
@@ -1096,7 +1035,11 @@ export class PlaybackManager {
      * @param {number} baseTime - Base scheduling time
      */
     _scheduleAudioClip(clip, baseTime) {
-        console.log('🎵 _scheduleAudioClip called:', { clipId: clip.id, assetId: clip.assetId, type: clip.type });
+        // ✅ REFACTOR: Delegate to AudioClipScheduler
+        return this.audioClipScheduler.scheduleAudioClip(clip, baseTime);
+
+        // LEGACY CODE (moved to AudioClipScheduler):
+        /*
 
         // Get audio buffer from various sources
         let audioBuffer = null;
@@ -1105,13 +1048,11 @@ export class PlaybackManager {
         if (clip.assetId) {
             const asset = audioAssetManager.getAsset(clip.assetId);
             audioBuffer = asset?.buffer;
-            console.log('🎵 Asset lookup:', { assetId: clip.assetId, found: !!asset, hasBuffer: !!audioBuffer });
         }
 
         // Priority 2: Direct audioBuffer (legacy)
         if (!audioBuffer && clip.audioBuffer) {
             audioBuffer = clip.audioBuffer;
-            console.log('🎵 Using direct audioBuffer');
         }
 
         // Priority 3: Try to get sample from instruments store (legacy)
@@ -1120,7 +1061,6 @@ export class PlaybackManager {
             if (instrument) {
                 // Check NativeSamplerNode for buffer
                 audioBuffer = instrument.audioBuffer || instrument.buffer;
-                console.log('🎵 Instrument lookup:', {
                     sampleId: clip.sampleId,
                     found: !!instrument,
                     hasAudioBuffer: !!instrument.audioBuffer,
@@ -1128,12 +1068,10 @@ export class PlaybackManager {
                     finalBuffer: !!audioBuffer
                 });
             } else {
-                console.warn(`🎵 Instrument ${clip.sampleId} not found in instruments store`);
             }
         }
 
         if (!audioBuffer) {
-            console.warn(`🎵 ❌ Audio clip ${clip.id} has no audio buffer`, {
                 assetId: clip.assetId,
                 sampleId: clip.sampleId,
                 hasDirectBuffer: !!clip.audioBuffer,
@@ -1142,7 +1080,6 @@ export class PlaybackManager {
             return;
         }
 
-        console.log('🎵 Audio buffer found, scheduling playback');
 
 
         // Convert clip startTime (in beats) to seconds
@@ -1165,7 +1102,6 @@ export class PlaybackManager {
             // ✅ RESUME: Start clip immediately with offset
             absoluteTime = baseTime;
             offset = currentPositionInSeconds - clipStartSeconds; // How far into the clip we are
-            console.log('🎵 Resume: Playing clip from offset', offset.toFixed(3), 's');
         } else {
             // ✅ NORMAL: Schedule clip at its start time
             const relativeTime = clipStartSeconds - currentPositionInSeconds;
@@ -1173,12 +1109,10 @@ export class PlaybackManager {
 
             // Skip if in the past
             if (absoluteTime < baseTime) {
-                console.log('🎵 Skipping clip - already finished');
                 return;
             }
         }
 
-        console.log('🎵 Timing calculation:', {
             clipStartBeats,
             clipEndBeats,
             currentPositionBeats,
@@ -1190,19 +1124,18 @@ export class PlaybackManager {
         });
 
         // Schedule audio playback
-        console.log('🎵 Calling transport.scheduleEvent at', absoluteTime, 'with offset', offset);
         this.transport.scheduleEvent(
             absoluteTime,
             (scheduledTime) => {
-                console.log('🎵 scheduleEvent callback fired at', scheduledTime);
                 try {
                     this._playAudioBuffer(audioBuffer, scheduledTime, clip, offset);
                 } catch (error) {
-                    console.error(`🎵 Error playing audio clip ${clip.id}:`, error);
                 }
             },
             { type: 'audioClip', clipId: clip.id, startTime: clipStartBeats, offset }
         );
+        */
+        // END LEGACY CODE - Now handled by AudioClipScheduler
     }
 
     /**
@@ -1213,7 +1146,6 @@ export class PlaybackManager {
      * @param {number} resumeOffset - Offset in seconds for resume (default 0)
      */
     _playAudioBuffer(audioBuffer, time, clip = {}, resumeOffset = 0) {
-        console.log('🎵 _playAudioBuffer called:', { time, clipId: clip.id, duration: clip.duration, gain: clip.gain, resumeOffset });
 
         const context = this.audioEngine.audioContext;
         const source = context.createBufferSource();
@@ -1233,7 +1165,6 @@ export class PlaybackManager {
         const volumeLinear = clip.volume !== undefined ? clip.volume : 1.0;
         gainNode.gain.value = volumeLinear * gainLinear;
 
-        console.log('🎵 Gain setup:', { gainDb, gainLinear, volumeLinear, finalGain: gainNode.gain.value });
 
         // Apply fade in/out envelope
         const fadeIn = clip.fadeIn || 0; // in beats
@@ -1287,13 +1218,10 @@ export class PlaybackManager {
             if (mixerChannel && mixerChannel.input) {
                 destination = mixerChannel.input;
                 const routeType = clip.isUnique ? 'unique' : (clip.assetId ? 'shared' : 'track');
-                console.log(`🎵 ✅ Routing audio clip to mixer channel: ${mixerChannelId} (${routeType})`);
             } else {
-                console.log('🎵 ⚠️ Mixer channel not found, using master:', mixerChannelId);
             }
         }
 
-        console.log('🎵 Connecting to:', destination);
         source.connect(gainNode);
         outputNode.connect(destination);
 
@@ -1311,9 +1239,7 @@ export class PlaybackManager {
             duration = Math.max(0, duration - resumeOffset);
         }
 
-        console.log('🎵 Starting source:', { time, totalOffset, duration, resumeOffset, sampleOffsetSeconds, currentTime: context.currentTime });
         source.start(time, totalOffset, duration);
-        console.log('🎵 Source started successfully');
 
         // ✅ FIX: Track this source so it can be stopped later
         this.activeAudioSources.push(source);
@@ -1336,6 +1262,9 @@ export class PlaybackManager {
      * @param {string | null} clipId - The ID of the parent clip for this note, for targeted clearing.
      */
     _scheduleInstrumentNotes(instrument, notes, instrumentId, baseTime, clipId = null) {
+        // ✅ REFACTOR: Delegate to NoteScheduler for simple cases
+        // Complex loop-aware scheduling still handled here for now (TODO: move to NoteScheduler)
+
         // ✅ FIX: Use PlaybackManager's currentPosition, not transport.currentTick
         // (transport may lag behind after jumpToStep)
         const currentStep = this.currentPosition; // ✅ Use our accurate position
@@ -1419,13 +1348,11 @@ export class PlaybackManager {
                     pitch: note.pitch || 'C4'
                 };
 
-                console.log(`📅 Scheduling noteOff for ${noteMetadata.pitch} at ${(absoluteTime + noteDuration).toFixed(3)}s (duration: ${noteDuration.toFixed(3)}s)`);
 
                 this.transport.scheduleEvent(
                     absoluteTime + noteDuration,
                     (scheduledTime) => {
                         try {
-                            console.log(`⏰ Executing scheduled noteOff for ${noteMetadata.pitch} at ${scheduledTime.toFixed(3)}s`);
                             // ✅ GUARD: Only release if this is still the right note instance
                             // Check if there's a newer note with same pitch that started after us
                             instrument.releaseNote(noteMetadata.pitch, scheduledTime);
@@ -1440,23 +1367,14 @@ export class PlaybackManager {
     }
 
     _schedulePatternAutomation(pattern) {
-        // Schedule pattern-level automation
-        // This would include things like pattern-specific mixer changes, effects automation, etc.
-        if (pattern.automation) {
-            Object.entries(pattern.automation).forEach(([targetId, automationData]) => {
-                this._scheduleAutomationEvents(targetId, automationData);
-            });
-        }
+        // ✅ REFACTOR: Delegate to AutomationScheduler
+        this.automationScheduler.schedulePatternAutomation(pattern);
     }
 
     _scheduleSongAutomation() {
-        // Schedule song-level automation
+        // ✅ REFACTOR: Delegate to AutomationScheduler
         const arrangementStore = useArrangementStore.getState();
-        if (arrangementStore.automation) {
-            Object.entries(arrangementStore.automation).forEach(([targetId, automationData]) => {
-                this._scheduleAutomationEvents(targetId, automationData);
-            });
-        }
+        this.automationScheduler.scheduleSongAutomation(arrangementStore);
     }
 
     _scheduleAutomationEvents(targetId, automationData) {
@@ -1696,10 +1614,8 @@ export class PlaybackManager {
                     );
                 }
 
-                console.log(`🎵 Immediate note scheduled: ${note.pitch} at step ${nextPlayStep}, duration ${noteDuration.toFixed(3)}s, noteOff: ${shouldScheduleNoteOff}`);
 
             } else {
-                console.log(`⏭️ Note ${note.pitch} skipped - already in the past`);
             }
         });
     }
@@ -1734,7 +1650,6 @@ export class PlaybackManager {
         });
 
         if (stoppedCount > 0) {
-            console.log(`🔇 Stopped active notes on ${stoppedCount} instruments`);
         }
     }
 
@@ -1748,7 +1663,6 @@ export class PlaybackManager {
             const fadeTime = useFade ? 0.015 : 0; // 15ms fade - fast but smooth (optimized)
             const currentTime = this.transport?.audioContext?.currentTime || 0;
 
-            console.log(`🔇 Stopping ${this.activeAudioSources.length} active audio sources${useFade ? ' (with fade)' : ''}`);
 
             this.activeAudioSources.forEach(source => {
                 try {

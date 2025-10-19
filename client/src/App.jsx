@@ -38,6 +38,7 @@ import WorkspacePanel from './layout/WorkspacePanel';
 import { ThemeProvider } from './components/ThemeProvider';
 import Taskbar from './features/taskbar/Taskbar';
 import InstrumentEditorPanel from './features/instrument_editor/InstrumentEditorPanel';
+import { PerformanceOverlay } from './components/debug/PerformanceOverlay';
 
 // ENUMs and Constants
 import { PLAYBACK_STATES } from './config/constants';
@@ -234,6 +235,8 @@ function App() {
               <Taskbar />
               {/* Instrument Editor Panel */}
               <InstrumentEditorPanel />
+              {/* ✅ NEW: Performance Overlay (Ctrl+Shift+P to toggle) */}
+              <PerformanceOverlay performanceMonitor={audioEngineRef.current?.performanceMonitor} />
             </div>
           </ThemeProvider>
         );

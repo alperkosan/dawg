@@ -11,6 +11,8 @@ import { effectRegistry } from '../audio/EffectRegistry.js';
 import { EffectFactory } from '../audio/effects/index.js';
 // ✅ NEW: Centralized instrument system
 import { InstrumentFactory } from '../audio/instruments/index.js';
+// ✅ NEW: Performance monitoring
+import { PerformanceMonitor } from './PerformanceMonitor.js';
 
 export class NativeAudioEngine {
     constructor(callbacks = {}) {
@@ -19,7 +21,8 @@ export class NativeAudioEngine {
         this.transport = null;
         this.workletManager = null;
         this.playbackManager = null; // ✅ NEW: Advanced playback management
-        
+        this.performanceMonitor = null; // ✅ NEW: Performance monitoring
+
         // =================== CALLBACK FUNCTIONS ===================
         this.setPlaybackState = callbacks.setPlaybackState || (() => {});
         this.setTransportPosition = callbacks.setTransportPosition || (() => {});
@@ -131,8 +134,10 @@ export class NativeAudioEngine {
         this.playbackManager = new PlaybackManager(this);
         this._setupPlaybackManagerCallbacks();
 
-        // 6. Initialize Performance Monitoring
-        this._initializePerformanceMonitoring();
+        // 6. ✅ NEW: Initialize Performance Monitoring
+        this.performanceMonitor = new PerformanceMonitor(this);
+        this.performanceMonitor.start(); // Auto-start monitoring
+        console.log('✅ Performance monitoring initialized and started');
 
         this.isInitialized = true;
     }
