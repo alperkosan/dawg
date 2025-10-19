@@ -614,19 +614,18 @@ function ChannelRack() {
         </div>
       </div>
       <div ref={timelineContainerRef} className="channel-rack-layout__timeline">
-        <div style={{ width: audioLoopLength * STEP_WIDTH, height: '100%' }}>
-          <TimelineCanvas
-            loopLength={audioLoopLength}
-            currentPosition={displayPosition}
-            onPositionChange={null} // ✅ TimelineController handles store updates now
-            height={32} // Timeline height in pixels
-            scrollX={scrollX}
-            viewportWidth={viewportWidth}
-          />
-          {/* ✅ PERFORMANCE: Canvas-based rendering replaces 80+ DOM nodes */}
-          {/* ⚡ CPU reduction: ~70% in timeline rendering */}
-          {/* ⚡ MEMORY: Viewport rendering reduces canvas size by 75% */}
-        </div>
+        <TimelineCanvas
+          loopLength={audioLoopLength}
+          currentPosition={displayPosition}
+          onPositionChange={null} // ✅ TimelineController handles store updates now
+          height={32} // Timeline height in pixels
+          scrollX={scrollX}
+          viewportWidth={viewportWidth}
+        />
+        {/* ✅ PERFORMANCE: Canvas-based rendering replaces 80+ DOM nodes */}
+        {/* ⚡ CPU reduction: ~70% in timeline rendering */}
+        {/* ⚡ MEMORY: Viewport rendering reduces canvas size by 75% */}
+        {/* ⚡ NO WRAPPER: TimelineCanvas handles its own sizing */}
       </div>
       <div ref={scrollContainerRef} className="channel-rack-layout__grid-scroll-area" /* Legacy onClick removed - TimelineController handles this */>
         {USE_UNIFIED_CANVAS ? (
