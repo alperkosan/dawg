@@ -286,7 +286,7 @@ function ChannelRack() {
     };
   }, []); // Empty deps - setup once
 
-  // ⚡ PERFORMANCE: Track scroll position for viewport rendering
+  // ⚡ PERFORMANCE: Track scroll position and viewport size for rendering
   useEffect(() => {
     const mainGrid = scrollContainerRef.current;
     if (!mainGrid) return;
@@ -302,12 +302,17 @@ function ChannelRack() {
       setScrollX(mainGrid.scrollLeft);
     };
 
+    // ✅ FIX: Use ResizeObserver instead of window resize (for panel resize)
+    const resizeObserver = new ResizeObserver(() => {
+      updateViewport();
+    });
+
     mainGrid.addEventListener('scroll', handleScroll, { passive: true });
-    window.addEventListener('resize', updateViewport, { passive: true });
+    resizeObserver.observe(mainGrid);
 
     return () => {
       mainGrid.removeEventListener('scroll', handleScroll);
-      window.removeEventListener('resize', updateViewport);
+      resizeObserver.disconnect();
     };
   }, []);
 
@@ -621,6 +626,8 @@ function ChannelRack() {
           height={32} // Timeline height in pixels
           scrollX={scrollX}
           viewportWidth={viewportWidth}
+          activePattern={activePattern} // ✅ For note preview on seek
+          instruments={visibleInstruments} // ✅ For note preview on seek
         />
         {/* ✅ PERFORMANCE: Canvas-based rendering replaces 80+ DOM nodes */}
         {/* ⚡ CPU reduction: ~70% in timeline rendering */}

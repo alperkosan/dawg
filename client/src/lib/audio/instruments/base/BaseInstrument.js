@@ -80,7 +80,18 @@ export class BaseInstrument {
         const midiVelocity = Math.round(velocity * 127);
         const startTime = time !== null ? time : this.audioContext.currentTime;
 
-        // Debug: console.log(`🎵 triggerNote: ${pitch} (MIDI ${midiNote}), vel: ${velocity.toFixed(2)}, duration: ${duration ? duration.toFixed(3) + 's' : 'null'}, time: ${startTime.toFixed(3)}s (now: ${this.audioContext.currentTime.toFixed(3)}s)`);
+        // 🐛 DEBUG: Always log for timeline preview debugging
+        console.log(`🎵 ${this.name}.triggerNote:`, {
+            pitch,
+            midiNote,
+            velocity: velocity.toFixed(2),
+            midiVelocity,
+            duration: duration ? duration.toFixed(3) + 's' : 'null',
+            startTime: startTime.toFixed(3) + 's',
+            now: this.audioContext.currentTime.toFixed(3) + 's',
+            isInitialized: this._isInitialized,
+            hasBuffer: this.sampleBuffer ? 'YES' : 'NO'
+        });
 
         this.noteOn(midiNote, midiVelocity, startTime);
 

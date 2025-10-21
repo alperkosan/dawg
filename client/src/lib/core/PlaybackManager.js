@@ -237,14 +237,32 @@ export class PlaybackManager {
     _handleNoteAdded(data) {
         const { patternId, instrumentId, note } = data;
 
+        console.log('🎵 PlaybackManager._handleNoteAdded:', {
+            patternId,
+            instrumentId,
+            note,
+            isPlaying: this.isPlaying,
+            isPaused: this.isPaused
+        });
+
         // Only handle active pattern
         const arrangementStore = useArrangementStore.getState();
-        if (patternId !== arrangementStore.activePatternId) return;
+        if (patternId !== arrangementStore.activePatternId) {
+            console.log('⚠️ Note added to inactive pattern, ignoring');
+            return;
+        }
 
-
-        // ✅ CRITICAL: Only immediate scheduling during playback, no full reschedule
-        if (this.isPlaying && !this.isPaused) {
-            this._scheduleNewNotesImmediate([{ instrumentId, note }]);
+        // ✅ CRITICAL: Schedule during active playback (not paused)
+        // When paused, notes are added to pattern data and will play when resumed
+        if (this.isPlaying) {
+            if (this.isPaused) {
+                console.log('⏸️ Paused - note added to pattern, will play when resumed');
+            } else {
+                console.log('✅ Playback active - scheduling note immediately');
+                this._scheduleNewNotesImmediate([{ instrumentId, note }]);
+            }
+        } else {
+            console.log('⏹️ Stopped - note will play when playback starts');
         }
         // No else clause - we DON'T want full reschedule for single note additions
     }
@@ -1531,12 +1549,28 @@ export class PlaybackManager {
      * @param {Array} addedNotes - Array of newly added notes with their instrument IDs
      */
     _scheduleNewNotesImmediate(addedNotes) {
-        if (!this.isPlaying || this.isPaused) return;
+        console.log('🎼 _scheduleNewNotesImmediate called:', {
+            isPlaying: this.isPlaying,
+            isPaused: this.isPaused,
+            addedNotes
+        });
+
+        if (!this.isPlaying || this.isPaused) {
+            console.log('⚠️ Not playing or paused, skipping immediate schedule');
+            return;
+        }
 
         const currentTime = this.transport.audioContext.currentTime;
         const currentTick = this.transport.currentTick;
         const currentStep = this.transport.ticksToSteps(currentTick);
 
+        console.log('📍 Current position:', {
+            currentTime,
+            currentTick,
+            currentStep,
+            loopStart: this.loopStart,
+            loopEnd: this.loopEnd
+        });
 
         addedNotes.forEach(({ instrumentId, note }) => {
             const instrument = this.audioEngine.instruments.get(instrumentId);
@@ -1567,8 +1601,21 @@ export class PlaybackManager {
             const loopStartTime = currentTime - (currentTick * this.transport.getSecondsPerTick());
             const absoluteTime = loopStartTime + noteTimeInSeconds;
 
+            console.log('🎯 Scheduling note:', {
+                instrumentId,
+                noteStep,
+                nextPlayStep,
+                relativeCurrentStep,
+                relativeNoteStep,
+                absoluteTime,
+                currentTime,
+                willSchedule: absoluteTime > currentTime
+            });
+
             // Schedule the note
             if (absoluteTime > currentTime) {
+                console.log('✅ Passed time check, scheduling note...');
+
                 // ✅ FIX: Calculate note duration properly
                 let noteDuration;
                 if (typeof note.length === 'number') {
@@ -1584,10 +1631,25 @@ export class PlaybackManager {
                     noteDuration = this.transport.stepsToSeconds(1);
                 }
 
+                console.log('🎼 Scheduling with:', {
+                    pitch: note.pitch || 'C4',
+                    velocity: note.velocity || 1,
+                    duration: noteDuration,
+                    absoluteTime,
+                    instrumentId
+                });
+
                 // ✅ FIX: Schedule noteOn
                 this.transport.scheduleEvent(
                     absoluteTime,
                     (scheduledTime) => {
+                        console.log('🔊 TRIGGERING NOTE NOW:', {
+                            instrumentId,
+                            pitch: note.pitch || 'C4',
+                            scheduledTime,
+                            actualTime: this.transport.audioContext.currentTime
+                        });
+
                         try {
                             instrument.triggerNote(
                                 note.pitch || 'C4',
@@ -1595,12 +1657,15 @@ export class PlaybackManager {
                                 scheduledTime,
                                 noteDuration
                             );
+                            console.log('✅ Note triggered successfully');
                         } catch (error) {
-                            console.error('Error in immediate noteOn:', error);
+                            console.error('❌ Error in immediate noteOn:', error);
                         }
                     },
                     { type: 'noteOn', instrumentId, note, step: nextPlayStep, immediate: true }
                 );
+
+                console.log('📝 scheduleEvent called');
 
                 // ✅ CRITICAL FIX: Schedule noteOff to prevent stuck notes!
                 const shouldScheduleNoteOff = (typeof note.length === 'number' && note.length > 0) ||
@@ -1619,9 +1684,12 @@ export class PlaybackManager {
                         { type: 'noteOff', instrumentId, note, step: nextPlayStep, immediate: true }
                     );
                 }
-
-
             } else {
+                console.log('⚠️ FAILED time check - note in past:', {
+                    absoluteTime,
+                    currentTime,
+                    diff: absoluteTime - currentTime
+                });
             }
         });
     }

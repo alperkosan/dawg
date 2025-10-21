@@ -1,4 +1,4 @@
-/* Drum Sampler Editor Styles */
+/* Drum Sampler Editor Styles - Zenith Design System */
 
 .drumsampler-editor {
   display: flex;
@@ -7,16 +7,16 @@
 }
 
 .drumsampler-editor__section {
-  background: #2a2a2a;
+  background: var(--zenith-bg-tertiary, #2a2a2a);
   border-radius: 8px;
   padding: 16px;
-  border: 1px solid #3a3a3a;
+  border: 1px solid var(--zenith-border-subtle, #3a3a3a);
 }
 
 .drumsampler-editor__section-title {
   font-size: 13px;
   font-weight: 600;
-  color: #e0e0e0;
+  color: var(--zenith-text-primary, #e0e0e0);
   text-transform: uppercase;
   letter-spacing: 0.5px;
   margin-bottom: 12px;
@@ -28,9 +28,9 @@
   align-items: center;
   gap: 12px;
   padding: 16px;
-  background: rgba(0, 0, 0, 0.2);
+  background: var(--zenith-overlay-subtle, rgba(0, 0, 0, 0.2));
   border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--zenith-border-subtle, rgba(255, 255, 255, 0.05));
 }
 
 .drumsampler-editor__sample-icon {
@@ -40,7 +40,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(212, 162, 89, 0.1);
+  background: var(--zenith-overlay-accent-warm, rgba(212, 162, 89, 0.1));
   border-radius: 8px;
 }
 
@@ -51,13 +51,13 @@
 .drumsampler-editor__sample-name {
   font-size: 14px;
   font-weight: 600;
-  color: #e0e0e0;
+  color: var(--zenith-text-primary, #e0e0e0);
   margin-bottom: 4px;
 }
 
 .drumsampler-editor__sample-path {
   font-size: 11px;
-  color: #666;
+  color: var(--zenith-text-muted, #666);
   font-family: 'Courier New', monospace;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -66,7 +66,7 @@
 
 .drumsampler-editor__preview-btn {
   padding: 8px 16px;
-  background: #D4A259;
+  background: var(--zenith-accent-warm, #D4A259);
   color: white;
   border: none;
   border-radius: 6px;
@@ -77,7 +77,7 @@
 }
 
 .drumsampler-editor__preview-btn:hover {
-  background: #e0b06a;
+  background: var(--zenith-accent-warm-hover, #e0b06a);
   transform: translateY(-1px);
 }
 
@@ -88,7 +88,7 @@
 /* Waveform */
 .drumsampler-editor__waveform {
   height: 120px;
-  background: rgba(0, 0, 0, 0.3);
+  background: var(--zenith-overlay-medium, rgba(0, 0, 0, 0.3));
   border-radius: 6px;
   display: flex;
   align-items: center;
@@ -97,21 +97,21 @@
 
 .drumsampler-editor__waveform-placeholder {
   font-size: 13px;
-  color: #666;
+  color: var(--zenith-text-muted, #666);
 }
 
 /* Controls */
 .drumsampler-editor__controls {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 20px;
 }
 
 /* Info */
 .drumsampler-editor__info {
   font-size: 13px;
   line-height: 1.6;
-  color: #888;
+  color: var(--zenith-text-tertiary, #888);
 }
 
 .drumsampler-editor__info p {
@@ -120,4 +120,39 @@
 
 .drumsampler-editor__info p:last-child {
   margin-bottom: 0;
+}
+
+/* Toggle Buttons */
+.drumsampler-editor__toggle {
+  flex: 1;
+  padding: 10px 16px;
+  background: var(--zenith-overlay-subtle, rgba(255, 255, 255, 0.05));
+  border: 1px solid var(--zenith-border-subtle, #3a3a3a);
+  border-radius: 6px;
+  color: var(--zenith-text-secondary, #b0b0b0);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.drumsampler-editor__toggle:hover {
+  background: var(--zenith-overlay-medium, rgba(255, 255, 255, 0.1));
+  border-color: var(--zenith-accent-cool, #6B8EBF);
+  color: var(--zenith-text-primary, #e0e0e0);
+}
+
+.drumsampler-editor__toggle--active {
+  background: var(--zenith-accent-cool, #6B8EBF);
+  border-color: var(--zenith-accent-cool, #6B8EBF);
+  color: white;
+  box-shadow: 0 0 8px var(--zenith-overlay-accent-cool, rgba(107, 142, 191, 0.4));
+}
+
+.drumsampler-editor__toggle--active:hover {
+  background: var(--zenith-accent-cool-hover, #7a9fd0);
 }

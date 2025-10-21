@@ -101,20 +101,40 @@ export class AudioExportManager {
 
       // ✅ FIX: Collect all instrument data upfront to avoid store access during render
       const { useInstrumentsStore } = await import('../../store/useInstrumentsStore');
+      const { useMixerStore } = await import('../../store/useMixerStore');
       const { instruments } = useInstrumentsStore.getState();
+      const { mixerTracks } = useMixerStore.getState();
+
+      console.log(`🎛️ Mixer store state:`, {
+        hasMixerTracks: !!mixerTracks,
+        trackCount: mixerTracks?.length || 0
+      });
 
       const relevantInstruments = {};
+      const relevantMixerTracks = {};
+
       Object.keys(patternData.data || {}).forEach(instrumentId => {
         const inst = instruments.find(i => i.id === instrumentId);
         if (inst) {
           relevantInstruments[instrumentId] = inst;
+
+          // Also collect mixer track for this instrument
+          const mixerTrackId = inst.mixerTrackId;
+          if (mixerTrackId && Array.isArray(mixerTracks) && !relevantMixerTracks[mixerTrackId]) {
+            const mixerTrack = mixerTracks.find(t => t.id === mixerTrackId);
+            if (mixerTrack) {
+              relevantMixerTracks[mixerTrackId] = mixerTrack;
+            }
+          }
         }
       });
 
       console.log(`🎵 Collected ${Object.keys(relevantInstruments).length} instrument definitions for rendering`);
+      console.log(`🎛️ Collected ${Object.keys(relevantMixerTracks).length} mixer tracks for rendering`);
 
-      // Attach instruments to patternData for rendering
+      // Attach instruments and mixer tracks to patternData for rendering
       patternData.instruments = relevantInstruments;
+      patternData.mixerTracks = relevantMixerTracks;
 
       // Choose export strategy based on type
       switch (settings.type) {
@@ -570,12 +590,24 @@ export class AudioExportManager {
         workspaceStore.deleteClip(clip.id);
       });
 
+      // Get arrangement track to find its mixer channel
+      const arrangementTrack = arrangement.tracks.find(t => t.id === trackId);
+      const mixerChannelId = arrangementTrack?.channelId || null;
+
+      console.log(`🎛️ Audio clip routing:`, {
+        trackId,
+        mixerChannelId,
+        arrangementTrack,
+        hasArrangementTrack: !!arrangementTrack
+      });
+
       // Create and add new frozen audio clip (preserve original startTime!)
       const audioClipData = {
         type: 'audio',
         patternId,
         assetId: assetId,
         trackId: trackId,
+        channelId: mixerChannelId, // ✅ Add mixer channel for audio routing
         startTime: originalStartTime,
         duration: durationBeats,
         originalPattern: patternId,
@@ -589,9 +621,13 @@ export class AudioExportManager {
         }
       };
 
-      workspaceStore.addClip(audioClipData);
+      const newClip = workspaceStore.addClip(audioClipData);
 
-      console.log(`🧊 Successfully replaced pattern ${patternId} with frozen audio clip in arrangement`);
+      console.log(`🧊 Successfully replaced pattern ${patternId} with frozen audio clip:`, {
+        clipId: newClip?.id || 'unknown',
+        channelId: audioClipData.channelId,
+        trackId: audioClipData.trackId
+      });
       return true;
     } catch (error) {
       console.error('🔄 Failed to replace pattern with audio:', error);
@@ -653,11 +689,18 @@ export class AudioExportManager {
           }
         }
 
+        // Get arrangement track to find its mixer channel
+        const arrangementTrack = arrangement.tracks.find(t => t.id === trackId);
+        const mixerChannelId = arrangementTrack?.channelId || null;
+
+        console.log(`🎛️ Audio clip routing: trackId=${trackId}, mixerChannelId=${mixerChannelId}`);
+
         // Create audio clip data with assetId
         const audioClipData = {
           type: 'audio',
           assetId: assetId,
           trackId: trackId,
+          channelId: mixerChannelId, // ✅ Add mixer channel for audio routing
           name: `${patternData?.name || patternId}`,
           startTime: startTime,
           duration: durationBeats,

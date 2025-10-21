@@ -166,13 +166,21 @@ export class StyleCache {
             }, 250); // Debounce 250ms
         });
 
-        // Invalidate on theme change (MutationObserver on document.documentElement)
+        // ✅ PRIMARY: Listen to custom themeChanged event (most reliable)
+        window.addEventListener('themeChanged', () => {
+            console.log('🎨 StyleCache: themeChanged event received, invalidating cache');
+            this.invalidate();
+        });
+
+        // ✅ FALLBACK: Invalidate on theme change (MutationObserver on document.documentElement)
+        // Kept for backwards compatibility if themeChanged event is not fired
         const observer = new MutationObserver((mutations) => {
             for (const mutation of mutations) {
                 if (mutation.type === 'attributes' &&
                     (mutation.attributeName === 'class' ||
                      mutation.attributeName === 'data-theme' ||
                      mutation.attributeName === 'style')) {
+                    console.log('🎨 StyleCache: MutationObserver detected theme change');
                     this.invalidate();
                     break;
                 }

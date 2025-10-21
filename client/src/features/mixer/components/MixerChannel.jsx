@@ -16,7 +16,6 @@ import { Volume2, VolumeX, Headphones, Radio } from 'lucide-react';
 import { Fader } from '@/components/controls/base/Fader';
 import { Knob } from '@/components/controls/base/Knob';
 import { ChannelMeter } from './ChannelMeter';
-import { InsertRoutingSelector } from './InsertRoutingSelector';
 import { SendAcceptButton } from './SendAcceptButton';
 import './MixerChannel.css';
 

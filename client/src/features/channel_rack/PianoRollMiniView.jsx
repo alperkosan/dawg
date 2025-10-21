@@ -87,10 +87,9 @@ export default function PianoRollMiniView({ notes = [], patternLength, onNoteCli
     const dpr = window.devicePixelRatio || 1;
     const rect = container.getBoundingClientRect();
 
-    // ⚡ PERFORMANCE: Only create canvas for visible viewport + buffer
-    const viewportSteps = endStep - startStep;
+    // ✅ FIX: Canvas should be viewport width (not viewport + buffer)
     const stepWidth = STEP_WIDTH;
-    const width = viewportSteps * stepWidth;
+    const width = viewportWidth; // Use viewport width directly
     const height = rect.height;
 
     canvas.width = width * dpr;
@@ -108,7 +107,7 @@ export default function PianoRollMiniView({ notes = [], patternLength, onNoteCli
     const startBar = Math.floor(startStep / 16);
     const endBar = Math.ceil(endStep / 16);
     for (let bar = startBar; bar <= endBar; bar++) {
-        const barX = (bar * 16 - startStep) * stepWidth;
+        const barX = (bar * 16) * stepWidth - scrollX; // ✅ FIX: Offset by scroll
         if (barX >= 0 && barX <= width) {
             ctx.beginPath();
             ctx.moveTo(barX, 0);
@@ -137,8 +136,8 @@ export default function PianoRollMiniView({ notes = [], patternLength, onNoteCli
         const y = height * (1 - normalizedPitch);
         const noteHeight = Math.max(1, height / pitchRange);
 
-        // ⚡ PERFORMANCE: Offset note position by startStep
-        const x = (noteTime - startStep) * stepWidth;
+        // ⚡ FIX: Offset note position by scroll instead of startStep
+        const x = noteTime * stepWidth - scrollX;
         const noteWidth = noteDuration * stepWidth;
 
         ctx.fillStyle = noteColor;
@@ -172,7 +171,8 @@ export default function PianoRollMiniView({ notes = [], patternLength, onNoteCli
         className="pr-mini-view__canvas"
         style={{
           position: 'absolute',
-          left: `${startStep * STEP_WIDTH}px`,
+          left: 0, // ✅ FIX: Canvas stays fixed, drawings are offset by scroll
+          top: 0,
         }}
       />
     </div>

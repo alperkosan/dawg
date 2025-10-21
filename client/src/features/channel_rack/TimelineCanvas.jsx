@@ -25,6 +25,8 @@ const TimelineCanvas = React.memo(({
   height = 32, // Timeline height in pixels
   scrollX = 0, // ⚡ NEW: Scroll position for viewport rendering
   viewportWidth = 1000, // ⚡ NEW: Viewport width for viewport rendering
+  activePattern = null, // ✅ NEW: For note preview on seek
+  instruments = [], // ✅ NEW: For note preview on seek
 }) => {
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
@@ -33,22 +35,72 @@ const TimelineCanvas = React.memo(({
 
   const [isRegistered, setIsRegistered] = useState(false);
   const [localGhostPosition, setLocalGhostPosition] = useState(null);
+  const [themeVersion, setThemeVersion] = useState(0); // Force re-render on theme change
+  const renderTimelineRef = useRef(null); // Store render function for theme change
+
+  // ✅ Listen for theme changes and fullscreen - AGGRESSIVE: Call render immediately
+  useEffect(() => {
+    const handleThemeChange = () => {
+      console.log('🎨 Theme changed - re-rendering timeline canvas IMMEDIATELY');
+
+      // Method 1: Increment version to trigger useCallback recreation
+      setThemeVersion(v => v + 1);
+
+      // Method 2: Force immediate render (don't wait for React reconciliation)
+      if (renderTimelineRef.current) {
+        // Wait one frame for StyleCache to update
+        requestAnimationFrame(() => {
+          renderTimelineRef.current();
+        });
+      }
+    };
+
+    const handleFullscreenChange = () => {
+      console.log('🖥️ Fullscreen changed - re-rendering timeline canvas');
+
+      // Re-render canvas when fullscreen changes
+      if (renderTimelineRef.current) {
+        requestAnimationFrame(() => {
+          renderTimelineRef.current();
+        });
+      }
+    };
+
+    window.addEventListener('themeChanged', handleThemeChange);
+
+    // Listen to fullscreen change events (all browser prefixes)
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+    document.addEventListener('mozfullscreenchange', handleFullscreenChange);
+    document.addEventListener('MSFullscreenChange', handleFullscreenChange);
+
+    return () => {
+      window.removeEventListener('themeChanged', handleThemeChange);
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('MSFullscreenChange', handleFullscreenChange);
+    };
+  }, []);
 
   const STEP_WIDTH = 16;
   const totalBars = Math.ceil(loopLength / 16);
 
-  // ⚡ PERFORMANCE: Calculate viewport bounds for rendering
+  // ✅ FIX: Canvas should be full viewport width, not viewport + buffer
+  // Canvas stays fixed, drawings are offset by scroll
+  const canvasWidth = viewportWidth;
+
+  // Calculate visible range for culling
   const bufferSteps = 32;
-  const visibleSteps = Math.ceil(viewportWidth / STEP_WIDTH);
   const startStep = Math.max(0, Math.floor(scrollX / STEP_WIDTH) - bufferSteps);
-  const endStep = Math.min(loopLength, startStep + visibleSteps + bufferSteps * 2);
-  const viewportSteps = endStep - startStep;
-  const canvasWidth = viewportSteps * STEP_WIDTH;
+  const endStep = Math.min(loopLength, Math.ceil((scrollX + viewportWidth) / STEP_WIDTH) + bufferSteps);
 
   // ✅ CANVAS RENDERING - Batch draw all markers
   const renderTimeline = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+
+    console.log('🎨 TimelineCanvas: Rendering with theme version', themeVersion);
 
     const ctx = canvas.getContext('2d');
     const dpr = window.devicePixelRatio || 1;
@@ -83,7 +135,7 @@ const TimelineCanvas = React.memo(({
 
     // Draw bar lines and beat lines - only visible
     for (let bar = startBar; bar <= endBar && bar < totalBars; bar++) {
-      const barX = (bar * 16 - startStep) * STEP_WIDTH;
+      const barX = (bar * 16) * STEP_WIDTH - scrollX; // ✅ FIX: Offset by scroll, not startStep
 
       // Bar line (thick)
       ctx.strokeStyle = barLineColor;
@@ -111,7 +163,7 @@ const TimelineCanvas = React.memo(({
     ctx.textBaseline = 'top';
 
     for (let bar = startBar; bar <= endBar && bar < totalBars; bar++) {
-      const barX = (bar * 16 - startStep) * STEP_WIDTH;
+      const barX = (bar * 16) * STEP_WIDTH - scrollX; // ✅ FIX: Offset by scroll, not startStep
       const label = `${bar + 1}`;
 
       // Measure text
@@ -136,38 +188,20 @@ const TimelineCanvas = React.memo(({
     ctx.lineTo(canvasWidth, height - 0.5);
     ctx.stroke();
 
-  }, [canvasWidth, height, loopLength, totalBars, startStep, endStep, scrollX, viewportWidth]);
+  }, [canvasWidth, height, loopLength, totalBars, startStep, endStep, scrollX, viewportWidth, themeVersion]); // ✅ THEME: Re-render on theme change
+
+  // ✅ Store renderTimeline in ref for immediate theme change access
+  useEffect(() => {
+    renderTimelineRef.current = renderTimeline;
+  }, [renderTimeline]);
 
   // ✅ Initial render and on loop length change
   useEffect(() => {
     renderTimeline();
   }, [renderTimeline]);
 
-  // ✅ Re-render on theme change (StyleCache auto-invalidates)
-  useEffect(() => {
-    const handleThemeChange = () => {
-      renderTimeline();
-    };
-
-    // Listen for theme changes (StyleCache invalidation)
-    const observer = new MutationObserver((mutations) => {
-      for (const mutation of mutations) {
-        if (mutation.type === 'attributes' &&
-            (mutation.attributeName === 'class' ||
-             mutation.attributeName === 'data-theme')) {
-          handleThemeChange();
-          break;
-        }
-      }
-    });
-
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ['class', 'data-theme']
-    });
-
-    return () => observer.disconnect();
-  }, [renderTimeline]);
+  // ⚠️ REMOVED: Old theme change listener (replaced by themeVersion state + event listener)
+  // Previous implementation used MutationObserver, now using custom 'themeChanged' event
 
   // ✅ REGISTER TIMELINE with TimelineController
   useEffect(() => {
@@ -196,7 +230,9 @@ const TimelineCanvas = React.memo(({
 
         // ✅ Update main playhead position
         if (playheadRef.current) {
-          const pixelX = position * STEP_WIDTH;
+          // Get current scroll position from parent
+          const currentScrollX = containerRef.current?.parentElement?.scrollLeft || 0;
+          const pixelX = position * STEP_WIDTH - currentScrollX; // ✅ FIX: Offset by scroll
 
           if (shouldAnimate) {
             playheadRef.current.style.transition = 'transform 0.1s linear';
@@ -220,7 +256,9 @@ const TimelineCanvas = React.memo(({
         // Update ghost playhead position
         if (ghostPlayheadRef.current) {
           if (ghostPosition !== null) {
-            const pixelX = ghostPosition * STEP_WIDTH;
+            // Get current scroll position from parent
+            const currentScrollX = containerRef.current?.parentElement?.scrollLeft || 0;
+            const pixelX = ghostPosition * STEP_WIDTH - currentScrollX; // ✅ FIX: Offset by scroll
             ghostPlayheadRef.current.style.transform = `translateX(${pixelX}px)`;
             ghostPlayheadRef.current.style.opacity = '1';
           } else {
@@ -231,16 +269,141 @@ const TimelineCanvas = React.memo(({
 
       // ✅ Custom position calculation accounting for scroll
       const calculatePosition = (mouseX, mouseY) => {
-        // ⚡ IMPORTANT: Use scrollX from parent (not containerRef.scrollLeft)
-        // Timeline container doesn't scroll - parent scroll container does!
-        const scrollLeft = scrollX || 0;
+        // ⚡ IMPORTANT: Use current scrollX value (not from closure)
+        // Get fresh scrollX from parent container
+        const parentScroll = containerRef.current?.parentElement?.scrollLeft || 0;
 
         // Account for scroll
-        const adjustedX = mouseX + scrollLeft;
+        const adjustedX = mouseX + parentScroll;
 
         // Convert to step
-        const step = Math.floor(adjustedX / STEP_WIDTH);
-        return Math.max(0, Math.min(loopLength - 1, step));
+        const exactStep = adjustedX / STEP_WIDTH;
+        const step = Math.floor(exactStep);
+        const clampedStep = Math.max(0, Math.min(loopLength - 1, step));
+
+        // 🐛 DEBUG: Log position calculation
+        console.log(`🖱️ calculatePosition:`, {
+          mouseX,
+          parentScroll,
+          adjustedX,
+          exactStep: exactStep.toFixed(2),
+          flooredStep: step,
+          clampedStep,
+          STEP_WIDTH
+        });
+
+        return clampedStep;
+      };
+
+      // ✅ NEW: Preview notes at seek position (one-shot playback)
+      const handleSeek = async (position) => {
+        try {
+          const timelineController = getTimelineController();
+          const audioEngine = timelineController.audioEngine;
+
+          if (!audioEngine?.audioContext) {
+            console.warn('⚠️ AudioContext not available');
+            return;
+          }
+
+          const isPlaying = timelineController.getState().isPlaying;
+
+          // ✅ If already playing, notes will play automatically at new position
+          if (isPlaying) {
+            console.log(`🎵 Timeline seek to ${position} (playing - notes will trigger automatically)`);
+            return;
+          }
+
+          // ✅ If stopped, trigger one-shot preview of notes at this position
+          if (!activePattern || !instruments || instruments.length === 0) {
+            console.log('⏭️ No pattern or instruments for preview');
+            return;
+          }
+
+          console.log(`🎵 Timeline seek to step ${position} (stopped - triggering note preview)`);
+
+          // ✅ Ensure AudioContext is running
+          if (audioEngine.audioContext.state === 'suspended') {
+            console.log('🔊 AudioContext suspended, resuming...');
+            await audioEngine.audioContext.resume();
+          }
+
+          console.log(`🔊 AudioContext state: ${audioEngine.audioContext.state}`);
+
+          const currentTime = audioEngine.audioContext.currentTime;
+          let notesTriggered = 0;
+
+          // Find and trigger all notes at this position
+          instruments.forEach(instrument => {
+            const instrumentNotes = activePattern.data?.[instrument.id] || [];
+
+            // 🐛 DEBUG: Log all notes for this instrument
+            console.log(`📋 ${instrument.name} all notes:`, instrumentNotes.map(n => n.time));
+
+            const notesAtPosition = instrumentNotes.filter(note => note.time === position);
+
+            // 🐛 DEBUG: Show what we're looking for vs what we found
+            console.log(`🔍 Looking for notes at step ${position}:`, {
+              instrument: instrument.name,
+              foundCount: notesAtPosition.length,
+              allNoteTimes: instrumentNotes.map(n => n.time).slice(0, 10) // First 10 notes
+            });
+
+            console.log(`🎹 Instrument ${instrument.name}:`, {
+              hasNotes: notesAtPosition.length,
+              hasInstrumentInstance: audioEngine.instruments?.has(instrument.id),
+              notes: notesAtPosition.map(n => ({ time: n.time, pitch: n.pitch, velocity: n.velocity }))
+            });
+
+            if (notesAtPosition.length > 0 && audioEngine.instruments?.has(instrument.id)) {
+              const instrumentInstance = audioEngine.instruments.get(instrument.id);
+
+              notesAtPosition.forEach(note => {
+                try {
+                  // ✅ FIX: Convert pitch to MIDI number if it's a string
+                  let pitch = note.pitch || 60;
+                  if (typeof pitch === 'string') {
+                    // Simple pitch string to MIDI conversion
+                    const pitchMap = {
+                      'C': 0, 'C#': 1, 'D': 2, 'D#': 3, 'E': 4, 'F': 5,
+                      'F#': 6, 'G': 7, 'G#': 8, 'A': 9, 'A#': 10, 'B': 11
+                    };
+                    const noteName = pitch.replace(/[0-9-]/g, '');
+                    const octave = parseInt(pitch.replace(/[^0-9-]/g, '')) || 4;
+                    pitch = (octave + 1) * 12 + (pitchMap[noteName] || 0);
+                  }
+
+                  // ✅ FIX: Boost velocity for preview (make it louder and more noticeable)
+                  // Original velocity is 0-127, normalize and boost to 0.9-1.0 range
+                  const originalVelocity = (note.velocity || 100) / 127;
+                  const velocity = Math.min(1.0, originalVelocity * 1.3); // 30% boost, max 1.0
+                  const duration = 0.3; // 300ms preview
+
+                  console.log(`🔊 TRIGGERING:`, {
+                    instrument: instrument.name,
+                    originalPitch: note.pitch,
+                    midiPitch: pitch,
+                    velocity,
+                    duration,
+                    currentTime
+                  });
+
+                  instrumentInstance.triggerNote(pitch, velocity, currentTime, duration);
+                  console.log(`✅ Triggered successfully`);
+                  notesTriggered++;
+                } catch (err) {
+                  console.error(`❌ Failed to trigger note for ${instrument.name}:`, err);
+                }
+              });
+            } else if (notesAtPosition.length > 0) {
+              console.warn(`⚠️ Notes found but no instrument instance for ${instrument.name}`);
+            }
+          });
+
+          console.log(`🎵 Triggered ${notesTriggered} note(s) at step ${position}`);
+        } catch (error) {
+          console.error('❌ Timeline seek preview error:', error);
+        }
       };
 
       // Register this timeline
@@ -250,6 +413,7 @@ const TimelineCanvas = React.memo(({
         totalSteps: loopLength,
         onPositionChange: handlePositionChange,
         onGhostPositionChange: handleGhostPositionChange,
+        onSeek: handleSeek, // ✅ NEW: Preview notes on seek
         enableGhostPosition: true,
         enableRangeSelection: false,
         calculatePosition
@@ -266,7 +430,8 @@ const TimelineCanvas = React.memo(({
     } catch (error) {
       console.error('Failed to register TimelineCanvas:', error);
     }
-  }, [scrollX, loopLength]); // ⚡ Update when scrollX changes (needed for calculatePosition)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // ✅ FIX: Only register/unregister once on mount/unmount (calculatePosition uses closure)
 
   // ✅ SEPARATE EFFECT: Update loop length if it changes
   useEffect(() => {
@@ -300,7 +465,8 @@ const TimelineCanvas = React.memo(({
         style={{
           display: 'block',
           position: 'absolute',
-          left: `${startStep * STEP_WIDTH}px`,
+          left: 0, // ✅ FIX: Canvas stays fixed, drawings are offset by scroll
+          top: 0,
           width: `${canvasWidth}px`,
           height: `${height}px`,
           imageRendering: 'crisp-edges',
@@ -313,7 +479,7 @@ const TimelineCanvas = React.memo(({
         className="timeline__playhead timeline__playhead--main"
         title={`Position: ${currentPosition}`}
         style={{
-          transform: `translateX(${currentPosition * STEP_WIDTH}px)`,
+          transform: `translateX(${currentPosition * STEP_WIDTH - scrollX}px)`, // ✅ FIX: Offset by scroll
           transition: 'transform 0.1s linear',
           pointerEvents: 'none',
           position: 'absolute',
@@ -343,37 +509,50 @@ const TimelineCanvas = React.memo(({
         />
       </div>
 
-      {/* Ghost Playhead (hover preview) */}
+      {/* Ghost Playhead (hover preview) - Enhanced styling */}
       {localGhostPosition !== null && (
         <div
           ref={ghostPlayheadRef}
           className="timeline__playhead timeline__playhead--ghost"
           style={{
-            transform: `translateX(${localGhostPosition * STEP_WIDTH}px)`,
-            transition: 'none',
+            transform: `translateX(${localGhostPosition * STEP_WIDTH - scrollX}px)`,
+            transition: 'opacity 0.15s ease-out, transform 0.05s linear',
             pointerEvents: 'none',
             position: 'absolute',
             top: 0,
             bottom: 0,
             left: 0,
             width: '2px',
-            backgroundColor: 'var(--zenith-accent-cool)',
-            opacity: 0.4,
+            background: `linear-gradient(to bottom,
+              transparent 0%,
+              rgba(var(--zenith-accent-cool-rgb), 0.3) 10%,
+              rgba(var(--zenith-accent-cool-rgb), 0.6) 50%,
+              rgba(var(--zenith-accent-cool-rgb), 0.3) 90%,
+              transparent 100%
+            )`,
+            boxShadow: `
+              0 0 6px rgba(var(--zenith-accent-cool-rgb), 0.5),
+              0 0 12px rgba(var(--zenith-accent-cool-rgb), 0.3),
+              inset 0 0 2px rgba(255, 255, 255, 0.4)
+            `,
+            opacity: 0.9,
             zIndex: 98,
+            filter: 'blur(0.3px)',
           }}
         >
-          {/* Ghost playhead triangle */}
+          {/* Ghost playhead triangle - Enhanced */}
           <div
             style={{
               position: 'absolute',
-              top: '-2px',
-              left: '-3px',
+              top: '-3px',
+              left: '-4px',
               width: 0,
               height: 0,
-              borderLeft: '4px solid transparent',
-              borderRight: '4px solid transparent',
-              borderTop: '6px solid var(--zenith-accent-cool)',
-              opacity: 0.6,
+              borderLeft: '5px solid transparent',
+              borderRight: '5px solid transparent',
+              borderTop: `7px solid rgba(var(--zenith-accent-cool-rgb), 0.8)`,
+              opacity: 1,
+              filter: 'drop-shadow(0 1px 3px rgba(var(--zenith-accent-cool-rgb), 0.6))',
             }}
           />
         </div>

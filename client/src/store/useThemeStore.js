@@ -119,6 +119,7 @@ const createTheme = (name, colors, zenithOverrides = {}) => ({
 
 // Default theme presets with Zenith integration
 const defaultThemes = [
+  // =================== ORIGINAL THEMES ===================
   createTheme('Ghetto Star (Zenith)',
     {
       primary: '#FFD700',
@@ -143,6 +144,7 @@ const defaultThemes = [
       'text-tertiary': '#6B7280'
     }
   ),
+
   createTheme('8-Bit Night',
     {
       primary: '#4ade80',
@@ -166,6 +168,7 @@ const defaultThemes = [
       'radius-xl': '0px'
     }
   ),
+
   createTheme('Analog Warmth',
     {
       primary: '#FF8C00',
@@ -186,6 +189,322 @@ const defaultThemes = [
       'text-primary': '#FFE6D5',
       'text-secondary': '#C9A68A'
     }
+  ),
+
+  // =================== NEW USER THEMES ===================
+
+  createTheme('Cyberpunk Neon',
+    {
+      primary: '#FF00FF',
+      accent: '#00FFFF',
+      backgroundDeep: '#0A0014',
+      background: '#1A0028',
+      surface: '#2D1044',
+      text: '#E0E0FF',
+      textMuted: '#B090D0',
+      border: 'rgba(255, 0, 255, 0.3)'
+    },
+    {
+      'bg-primary': '#0A0014',
+      'bg-secondary': '#1A0028',
+      'bg-tertiary': '#2D1044',
+      'accent-hot': '#FF00FF',
+      'accent-warm': '#FF00AA',
+      'accent-cool': '#00FFFF',
+      'accent-cold': '#0088FF',
+      'text-primary': '#E0E0FF',
+      'text-secondary': '#B090D0',
+      'text-tertiary': '#8060A0'
+    }
+  ),
+
+  createTheme('Ocean Deep',
+    {
+      primary: '#1E90FF',
+      accent: '#00CED1',
+      backgroundDeep: '#001429',
+      background: '#002142',
+      surface: '#003D5C',
+      text: '#E0F7FF',
+      textMuted: '#8FC5D9',
+      border: 'rgba(30, 144, 255, 0.2)'
+    },
+    {
+      'bg-primary': '#001429',
+      'bg-secondary': '#002142',
+      'bg-tertiary': '#003D5C',
+      'accent-hot': '#FF6B6B',
+      'accent-warm': '#FFA500',
+      'accent-cool': '#00CED1',
+      'accent-cold': '#1E90FF',
+      'text-primary': '#E0F7FF',
+      'text-secondary': '#8FC5D9',
+      'text-tertiary': '#5A8FA3'
+    }
+  ),
+
+  createTheme('Forest Twilight',
+    {
+      primary: '#32CD32',
+      accent: '#9ACD32',
+      backgroundDeep: '#0A1A0A',
+      background: '#152815',
+      surface: '#1F3D1F',
+      text: '#E8F5E8',
+      textMuted: '#A8D5A8',
+      border: 'rgba(50, 205, 50, 0.2)'
+    },
+    {
+      'bg-primary': '#0A1A0A',
+      'bg-secondary': '#152815',
+      'bg-tertiary': '#1F3D1F',
+      'accent-hot': '#FF6347',
+      'accent-warm': '#FFD700',
+      'accent-cool': '#32CD32',
+      'accent-cold': '#2E8B57',
+      'text-primary': '#E8F5E8',
+      'text-secondary': '#A8D5A8',
+      'text-tertiary': '#6B946B'
+    }
+  ),
+
+  createTheme('Sunset Vibes',
+    {
+      primary: '#FF6B35',
+      accent: '#F7931E',
+      backgroundDeep: '#1A0A05',
+      background: '#2D1410',
+      surface: '#3D241D',
+      text: '#FFE5D9',
+      textMuted: '#DBAC9A',
+      border: 'rgba(255, 107, 53, 0.2)'
+    },
+    {
+      'bg-primary': '#1A0A05',
+      'bg-secondary': '#2D1410',
+      'bg-tertiary': '#3D241D',
+      'accent-hot': '#FF6B35',
+      'accent-warm': '#F7931E',
+      'accent-cool': '#FFB627',
+      'accent-cold': '#E08E45',
+      'text-primary': '#FFE5D9',
+      'text-secondary': '#DBAC9A',
+      'text-tertiary': '#B58A77'
+    }
+  ),
+
+  createTheme('Arctic Minimal',
+    {
+      primary: '#E0F7FF',
+      accent: '#87CEEB',
+      backgroundDeep: '#0D1418',
+      background: '#151E24',
+      surface: '#1F2B33',
+      text: '#FFFFFF',
+      textMuted: '#B0C4D0',
+      border: 'rgba(135, 206, 235, 0.2)'
+    },
+    {
+      'bg-primary': '#0D1418',
+      'bg-secondary': '#151E24',
+      'bg-tertiary': '#1F2B33',
+      'accent-hot': '#FF6B6B',
+      'accent-warm': '#FFD93D',
+      'accent-cool': '#87CEEB',
+      'accent-cold': '#4682B4',
+      'text-primary': '#FFFFFF',
+      'text-secondary': '#B0C4D0',
+      'text-tertiary': '#7A8E9E'
+    }
+  ),
+
+  createTheme('Midnight Purple',
+    {
+      primary: '#9D4EDD',
+      accent: '#C77DFF',
+      backgroundDeep: '#10002B',
+      background: '#240046',
+      surface: '#3C096C',
+      text: '#E0AAFF',
+      textMuted: '#C77DFF',
+      border: 'rgba(157, 78, 221, 0.2)'
+    },
+    {
+      'bg-primary': '#10002B',
+      'bg-secondary': '#240046',
+      'bg-tertiary': '#3C096C',
+      'accent-hot': '#FF006E',
+      'accent-warm': '#FF5A9D',
+      'accent-cool': '#C77DFF',
+      'accent-cold': '#9D4EDD',
+      'text-primary': '#E0AAFF',
+      'text-secondary': '#C77DFF',
+      'text-tertiary': '#9D4EDD'
+    }
+  ),
+
+  createTheme('Retro Miami',
+    {
+      primary: '#FF1493',
+      accent: '#00D9FF',
+      backgroundDeep: '#1A0520',
+      background: '#2D0A3D',
+      surface: '#44145A',
+      text: '#FFE0F7',
+      textMuted: '#E0A0D9',
+      border: 'rgba(255, 20, 147, 0.3)'
+    },
+    {
+      'bg-primary': '#1A0520',
+      'bg-secondary': '#2D0A3D',
+      'bg-tertiary': '#44145A',
+      'accent-hot': '#FF1493',
+      'accent-warm': '#FF6EC7',
+      'accent-cool': '#00D9FF',
+      'accent-cold': '#8A2BE2',
+      'text-primary': '#FFE0F7',
+      'text-secondary': '#E0A0D9',
+      'text-tertiary': '#B870C9'
+    }
+  ),
+
+  createTheme('Desert Heat',
+    {
+      primary: '#FFB627',
+      accent: '#FF7F50',
+      backgroundDeep: '#1A1105',
+      background: '#2D1F0A',
+      surface: '#3D2F14',
+      text: '#FFEFD5',
+      textMuted: '#D4B896',
+      border: 'rgba(255, 182, 39, 0.2)'
+    },
+    {
+      'bg-primary': '#1A1105',
+      'bg-secondary': '#2D1F0A',
+      'bg-tertiary': '#3D2F14',
+      'accent-hot': '#FF4500',
+      'accent-warm': '#FFB627',
+      'accent-cool': '#FF7F50',
+      'accent-cold': '#CD853F',
+      'text-primary': '#FFEFD5',
+      'text-secondary': '#D4B896',
+      'text-tertiary': '#A8906E'
+    }
+  ),
+
+  createTheme('Matrix Code',
+    {
+      primary: '#00FF41',
+      accent: '#00D936',
+      backgroundDeep: '#000000',
+      background: '#0A0F0A',
+      surface: '#0F1A0F',
+      text: '#00FF41',
+      textMuted: '#00B82E',
+      border: 'rgba(0, 255, 65, 0.2)'
+    },
+    {
+      'bg-primary': '#000000',
+      'bg-secondary': '#0A0F0A',
+      'bg-tertiary': '#0F1A0F',
+      'accent-hot': '#FF0000',
+      'accent-warm': '#FFFF00',
+      'accent-cool': '#00FF41',
+      'accent-cold': '#00D936',
+      'text-primary': '#00FF41',
+      'text-secondary': '#00B82E',
+      'text-tertiary': '#008C22',
+      'font-primary': "'Courier New', 'Courier', monospace"
+    }
+  ),
+
+  createTheme('Lavender Dreams',
+    {
+      primary: '#E6B8FF',
+      accent: '#D4A5FF',
+      backgroundDeep: '#1A0D28',
+      background: '#2D1A3D',
+      surface: '#3D2852',
+      text: '#F5E6FF',
+      textMuted: '#D4B8E6',
+      border: 'rgba(230, 184, 255, 0.2)'
+    },
+    {
+      'bg-primary': '#1A0D28',
+      'bg-secondary': '#2D1A3D',
+      'bg-tertiary': '#3D2852',
+      'accent-hot': '#FF69B4',
+      'accent-warm': '#FFB3D9',
+      'accent-cool': '#D4A5FF',
+      'accent-cold': '#B08BD9',
+      'text-primary': '#F5E6FF',
+      'text-secondary': '#D4B8E6',
+      'text-tertiary': '#B090C9'
+    }
+  ),
+
+  createTheme('Anime Vibes',
+    {
+      primary: '#FF1744',
+      accent: '#E040FB',
+      backgroundDeep: '#0D0012',
+      background: '#1A0A1F',
+      surface: '#2A1633',
+      text: '#F5E6FF',
+      textMuted: '#C9A8D9',
+      border: 'rgba(224, 64, 251, 0.25)'
+    },
+    {
+      // Deep dark backgrounds with purple/black gradient feel
+      'bg-primary': '#0D0012',      // Near black with purple tint
+      'bg-secondary': '#1A0A1F',    // Very dark purple-black
+      'bg-tertiary': '#2A1633',     // Dark purple surface
+
+      // Vibrant accent colors - anime style pop
+      'accent-hot': '#FF1744',      // Bright red - energy/action
+      'accent-warm': '#FF4081',     // Pink-red - playful
+      'accent-cool': '#E040FB',     // Vivid purple - main theme
+      'accent-cold': '#7C4DFF',     // Deep purple - shadows
+
+      // Text with purple tint for anime aesthetic
+      'text-primary': '#F5E6FF',    // Off-white with purple tint
+      'text-secondary': '#C9A8D9',  // Muted purple
+      'text-tertiary': '#9575B8',   // Darker purple
+
+      // Semantic colors with anime flair
+      'success': '#00E676',         // Bright green
+      'warning': '#FFEA00',         // Bright yellow
+      'error': '#FF1744',           // Bright red (matches accent-hot)
+      'info': '#E040FB',            // Purple (matches accent-cool)
+
+      // Borders with glow effect feel
+      'border-strong': 'rgba(224, 64, 251, 0.4)',
+      'border-medium': 'rgba(224, 64, 251, 0.25)',
+      'border-subtle': 'rgba(224, 64, 251, 0.1)',
+
+      // Enhanced shadows for depth (anime cel-shading inspired)
+      'shadow-sm': '0 2px 6px rgba(224, 64, 251, 0.2)',
+      'shadow-md': '0 4px 12px rgba(224, 64, 251, 0.25)',
+      'shadow-lg': '0 8px 24px rgba(224, 64, 251, 0.3)',
+      'shadow-xl': '0 16px 48px rgba(224, 64, 251, 0.4)',
+
+      // Overlays with purple tint
+      'overlay-light': 'rgba(224, 64, 251, 0.08)',
+      'overlay-medium': 'rgba(224, 64, 251, 0.15)',
+      'overlay-heavy': 'rgba(13, 0, 18, 0.7)',
+
+      // Smooth radius for modern anime UI
+      'radius-sm': '0.375rem',
+      'radius-md': '0.5rem',
+      'radius-lg': '0.75rem',
+      'radius-xl': '1rem',
+
+      // Smooth animations
+      'duration-fast': '120ms',
+      'duration-normal': '250ms',
+      'duration-slow': '350ms'
+    }
   )
 ];
 
@@ -200,7 +519,12 @@ export const useThemeStore = create(
         return themes.find(t => t.id === activeThemeId) || themes[0];
       },
 
-      setActiveThemeId: (themeId) => set({ activeThemeId: themeId }),
+      setActiveThemeId: (themeId) => {
+        set({ activeThemeId: themeId });
+        // ✅ Dispatch custom event for canvas re-rendering
+        window.dispatchEvent(new CustomEvent('themeChanged', { detail: { themeId } }));
+        console.log('🎨 Theme changed event dispatched:', themeId);
+      },
 
       addTheme: (newTheme) => set(state => ({
         themes: [...state.themes, createTheme(

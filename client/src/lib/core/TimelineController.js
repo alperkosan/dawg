@@ -200,12 +200,14 @@ export class TimelineController {
    * @param {boolean} options.immediate - UI instant update (default: true)
    * @param {boolean} options.smooth - Smooth jump with pause-resume (default: true)
    * @param {boolean} options.updateMotor - Actually update motor (default: true)
+   * @param {string} options.timelineId - Timeline ID that triggered the seek (for onSeek callback)
    */
   async seekTo(position, options = {}) {
     const {
       immediate = true,      // UI instant update
       smooth = true,         // ✅ NEW: Smooth jump with pause-resume (default ON)
-      updateMotor = true     // Actually update motor
+      updateMotor = true,    // Actually update motor
+      timelineId = null      // ✅ NEW: Timeline ID for onSeek callback
     } = options;
 
     const clampedPosition = Math.max(0, position);
@@ -221,7 +223,19 @@ export class TimelineController {
       this._updateAllTimelinesPosition();
     }
 
-    // 2. SMOOTH MOTOR UPDATE with pause-resume
+    // 2. CALL onSeek CALLBACK (for note preview on timeline click)
+    if (timelineId) {
+      const timeline = this.timelines.get(timelineId);
+      if (timeline?.onSeek) {
+        try {
+          timeline.onSeek(clampedPosition);
+        } catch (error) {
+          console.error('🎯 TimelineController: onSeek callback error:', error);
+        }
+      }
+    }
+
+    // 3. SMOOTH MOTOR UPDATE with pause-resume
     if (updateMotor) {
       if (smooth && this.state.isPlaying) {
         // ✅ SMOOTH JUMP: Pause → Jump → Resume
@@ -239,7 +253,7 @@ export class TimelineController {
       }
     }
 
-    // 3. NOTIFY STORES (for backwards compatibility)
+    // 4. NOTIFY STORES (for backwards compatibility)
     this._notifyStores(clampedPosition);
 
     // Reset interaction mode after a frame
@@ -466,6 +480,7 @@ export class TimelineController {
       totalSteps = 64,
       onPositionChange = null,
       onGhostPositionChange = null, // ✅ FIX: Add ghost callback parameter
+      onSeek = null, // ✅ NEW: Callback when user seeks to a position (for note preview)
       enableGhostPosition = true,
       enableRangeSelection = false,
       calculatePosition = null // ✅ Custom position calculation (for viewport scroll/zoom)
@@ -477,6 +492,7 @@ export class TimelineController {
       totalSteps,
       onPositionChange,
       onGhostPositionChange, // ✅ FIX: Store ghost callback
+      onSeek, // ✅ NEW: Store seek callback
       enableGhostPosition,
       enableRangeSelection,
       calculatePosition, // ✅ Store custom calculation
@@ -546,7 +562,7 @@ export class TimelineController {
 
       const targetStep = getPositionFromMouse(e);
       if (targetStep !== null && targetStep !== undefined) {
-        this.seekTo(targetStep);
+        this.seekTo(targetStep, { timelineId: id }); // ✅ Pass timeline ID for onSeek callback
       }
     };
 

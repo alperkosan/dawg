@@ -35,6 +35,32 @@ const ROW_HEIGHT = 64;
 const BUFFER_STEPS = 32;
 const BUFFER_ROWS = 2;
 
+// ✅ UTILITY: Convert pitch to MIDI number
+const pitchToMidi = (pitch) => {
+  if (typeof pitch === 'number') return pitch;
+  if (typeof pitch !== 'string') return 72; // ✅ FIX: Default C5 (not C4)
+
+  const noteNames = { C: 0, 'C#': 1, D: 2, 'D#': 3, E: 4, F: 5, 'F#': 6, G: 7, 'G#': 8, A: 9, 'A#': 10, B: 11 };
+  const noteName = pitch.replace(/[0-9-]/g, '');
+  const octave = parseInt(pitch.replace(/[^0-9-]/g, '')) || 4;
+  return (octave + 1) * 12 + (noteNames[noteName] || 0);
+};
+
+// ✅ UTILITY: Convert Tone.js duration to step count
+const durationToSteps = (duration) => {
+  if (typeof duration === 'number') return duration; // Already in steps
+  if (typeof duration !== 'string') return 1; // Default 1 step
+
+  // Tone.js notation: "4n" = quarter note, "8n" = eighth note, etc.
+  const match = duration.match(/(\d+)n/);
+  if (!match) return 1;
+
+  const noteValue = parseInt(match[1]);
+  // 4n = 1 beat = 4 steps, 8n = 0.5 beat = 2 steps, 16n = 1 step
+  const stepsPerBeat = 4;
+  return Math.max(1, Math.round((4 / noteValue) * stepsPerBeat));
+};
+
 const UnifiedGridCanvas = React.memo(({
   instruments = [],
   notesData = {}, // { instrumentId: [notes...] }
@@ -49,6 +75,71 @@ const UnifiedGridCanvas = React.memo(({
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
   const [hoveredCell, setHoveredCell] = useState(null); // { row, step }
+  const [themeVersion, setThemeVersion] = useState(0); // Force re-render on theme change
+  const renderRef = useRef(null); // Store render function for immediate theme change
+
+  // ✅ Listen for theme changes and fullscreen - AGGRESSIVE: Call render immediately
+  useEffect(() => {
+    const handleThemeChange = () => {
+      console.log('🎨 Theme changed - re-rendering grid canvas IMMEDIATELY');
+
+      // Method 1: Increment version to trigger useCallback recreation
+      setThemeVersion(v => v + 1);
+
+      // Method 2: Force immediate render (don't wait for React reconciliation)
+      if (renderRef.current) {
+        // Wait one frame for StyleCache to update
+        requestAnimationFrame(() => {
+          renderRef.current();
+        });
+      }
+    };
+
+    const handleFullscreenChange = () => {
+      console.log('🖥️ Fullscreen changed - re-rendering grid canvas');
+
+      // Re-render canvas when fullscreen changes (viewport size changes)
+      if (renderRef.current) {
+        requestAnimationFrame(() => {
+          renderRef.current();
+        });
+      }
+    };
+
+    // Listen to custom theme change event
+    window.addEventListener('themeChanged', handleThemeChange);
+
+    // Listen to fullscreen change events (all browser prefixes)
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+    document.addEventListener('mozfullscreenchange', handleFullscreenChange);
+    document.addEventListener('MSFullscreenChange', handleFullscreenChange);
+
+    return () => {
+      window.removeEventListener('themeChanged', handleThemeChange);
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('MSFullscreenChange', handleFullscreenChange);
+    };
+  }, []);
+
+  // ✅ UTILITY: Detect if instrument should use step sequencer mode
+  // Step sequencer: all notes are C4 or C5 (standard drum programming)
+  // Mini preview: notes with other pitches (melodic instruments)
+  const isStepSequencerMode = useCallback((notes) => {
+    if (notes.length === 0) return true; // Default to step sequencer for empty
+
+    const C4_MIDI = 60;
+    const C5_MIDI = 72;
+
+    // Check if all notes are C4 or C5
+    return notes.every(note => {
+      const pitch = note.pitch !== undefined && note.pitch !== null ? note.pitch : C5_MIDI;
+      const midi = pitchToMidi(pitch);
+      return midi === C4_MIDI || midi === C5_MIDI;
+    });
+  }, []);
 
   // ⚡ Calculate visible bounds (virtual rendering) - MEMOIZED
   const visibleBounds = useMemo(() => {
@@ -113,8 +204,32 @@ const UnifiedGridCanvas = React.memo(({
     const borderStrong = globalStyleCache.get('--zenith-border-strong') || 'rgba(180, 188, 208, 0.7)';
     const accentCool = globalStyleCache.get('--zenith-accent-cool') || '#00d9ff';
 
-    // Parse RGB from accent color for gradients
-    const accentCoolRgb = accentCool.match(/\d+/g)?.join(', ') || '0, 217, 255';
+    // ✅ THEME-SAFE: Try to get pre-computed RGB values first, fallback to hex parsing
+    let accentCoolRgb = globalStyleCache.get('--zenith-accent-cool-rgb');
+
+    if (!accentCoolRgb || accentCoolRgb.includes('var(')) {
+      // Parse RGB from hex color (fallback)
+      const hexMatch = accentCool.match(/#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})/);
+      if (hexMatch) {
+        const hex = hexMatch[1];
+        if (hex.length === 3) {
+          // Convert 3-digit hex to 6-digit
+          const r = parseInt(hex[0] + hex[0], 16);
+          const g = parseInt(hex[1] + hex[1], 16);
+          const b = parseInt(hex[2] + hex[2], 16);
+          accentCoolRgb = `${r}, ${g}, ${b}`;
+        } else {
+          // 6-digit hex
+          const r = parseInt(hex.substring(0, 2), 16);
+          const g = parseInt(hex.substring(2, 4), 16);
+          const b = parseInt(hex.substring(4, 6), 16);
+          accentCoolRgb = `${r}, ${g}, ${b}`;
+        }
+      } else {
+        // Ultimate fallback
+        accentCoolRgb = '0, 217, 255';
+      }
+    }
 
     // Clear background
     ctx.fillStyle = bgPrimary;
@@ -174,12 +289,26 @@ const UnifiedGridCanvas = React.memo(({
 
     ctx.stroke();
 
-    // === LAYER 3: MINI-STEP DIVIDERS ===
+    // === CONSTANTS: Shared values for step sequencer rendering ===
+    const noteSlotY = ROW_HEIGHT * 0.3;
+    const noteSlotHeight = ROW_HEIGHT * 0.4;
+
+    // === LAYER 3: MINI-STEP DIVIDERS (STEP SEQUENCER ONLY) ===
+    // ✅ FIX: Only draw mini-step dividers for rows using step sequencer mode (C5-only)
+
     ctx.beginPath();
     ctx.strokeStyle = borderSubtle;
     ctx.lineWidth = 1;
 
     for (let row = startRow; row < endRow; row++) {
+      const instrument = instruments[row];
+      if (!instrument) continue;
+
+      const notes = notesData[instrument.id] || [];
+
+      // Skip mini-step dividers for mini preview mode
+      if (!isStepSequencerMode(notes)) continue;
+
       const y = row * ROW_HEIGHT - scrollY;
 
       for (let slot = Math.floor(startStep / 4); slot <= Math.ceil(endStep / 4); slot++) {
@@ -197,12 +326,18 @@ const UnifiedGridCanvas = React.memo(({
 
     ctx.stroke();
 
-    // === LAYER 4: NOTE SLOTS (1/4 grid) ===
-    const noteSlotY = ROW_HEIGHT * 0.3;
-    const noteSlotHeight = ROW_HEIGHT * 0.4;
-
+    // === LAYER 4: NOTE SLOTS (STEP SEQUENCER ONLY) ===
+    // ✅ FIX: Only draw note slots for rows using step sequencer mode (C5-only)
     ctx.fillStyle = 'rgba(255, 255, 255, 0.02)';
     for (let row = startRow; row < endRow; row++) {
+      const instrument = instruments[row];
+      if (!instrument) continue;
+
+      const notes = notesData[instrument.id] || [];
+
+      // Skip note slots for mini preview mode
+      if (!isStepSequencerMode(notes)) continue;
+
       const rowY = row * ROW_HEIGHT - scrollY;
       const slotY = rowY + noteSlotY;
 
@@ -216,70 +351,160 @@ const UnifiedGridCanvas = React.memo(({
       }
     }
 
-    // === LAYER 5: NOTES (BATCH BY INSTRUMENT) ===
+    // === LAYER 5: NOTES - ADAPTIVE MODE (STEP SEQUENCER vs MINI PREVIEW) ===
     for (let row = startRow; row < endRow; row++) {
       const instrument = instruments[row];
       if (!instrument) continue;
 
       const notes = notesData[instrument.id] || [];
+      if (notes.length === 0) continue;
+
       const rowY = row * ROW_HEIGHT - scrollY;
-      const noteY = rowY + noteSlotY;
 
-      notes.forEach(note => {
-        const step = note.time;
-        if (step < startStep || step > endStep) return; // Cull
+      // ✅ ADAPTIVE: Detect mode based on pitch range
+      const isMiniPreview = !isStepSequencerMode(notes);
 
-        const slot = Math.floor(step / 4);
-        const slotX = slot * 4 * STEP_WIDTH - scrollX + 2;
-        const positionInSlot = step % 4;
-        const miniStepWidth = STEP_WIDTH;
-        const noteX = slotX + positionInSlot * miniStepWidth + 1;
-        const noteWidth = miniStepWidth - 2;
+      if (isMiniPreview) {
+        // === MINI PREVIEW MODE: Show all pitches ===
+        let minPitch = 127, maxPitch = 0;
+        notes.forEach(note => {
+          const midi = pitchToMidi(note.pitch || C5_MIDI);
+          if (midi < minPitch) minPitch = midi;
+          if (midi > maxPitch) maxPitch = midi;
+        });
 
-        // Gradient
-        const gradient = ctx.createLinearGradient(noteX, noteY, noteX, noteY + noteSlotHeight);
-        gradient.addColorStop(0, accentCool);
-        gradient.addColorStop(1, accentCool);
+        const pitchPadding = 4;
+        minPitch = Math.max(0, minPitch - pitchPadding);
+        maxPitch = Math.min(127, maxPitch + pitchPadding);
+        const pitchRange = Math.max(1, maxPitch - minPitch);
 
-        // Glow
-        ctx.shadowBlur = 12;
-        ctx.shadowColor = `rgba(${accentCoolRgb}, 0.6)`;
-        ctx.fillStyle = gradient;
-        ctx.fillRect(noteX, noteY + 1, noteWidth, noteSlotHeight - 2);
+        const previewY = rowY + 5;
+        const previewHeight = ROW_HEIGHT - 10;
 
-        // Highlight
         ctx.shadowBlur = 0;
-        const highlight = ctx.createLinearGradient(noteX, noteY, noteX, noteY + noteSlotHeight * 0.3);
-        highlight.addColorStop(0, 'rgba(255, 255, 255, 0.4)');
-        highlight.addColorStop(1, 'rgba(255, 255, 255, 0)');
-        ctx.fillStyle = highlight;
-        ctx.fillRect(noteX, noteY + 1, noteWidth, noteSlotHeight * 0.3);
 
-        // Border
-        ctx.strokeStyle = `rgba(${accentCoolRgb}, 0.8)`;
-        ctx.lineWidth = 1;
-        ctx.strokeRect(noteX + 0.5, noteY + 1.5, noteWidth - 1, noteSlotHeight - 3);
-      });
+        let notesRendered = 0;
+        notes.forEach(note => {
+          const step = note.time;
+          const duration = durationToSteps(note.duration); // ✅ FIX: Convert "8n" to steps
+
+          // ✅ FIX: Check viewport visibility with duration (note end position)
+          const noteEndStep = step + duration;
+          if (noteEndStep < startStep || step > endStep) return;
+
+          const pitch = note.pitch !== undefined && note.pitch !== null ? note.pitch : C5_MIDI;
+          const midi = pitchToMidi(pitch);
+          const normalizedPitch = (midi - minPitch) / pitchRange;
+          const noteY = previewY + previewHeight * (1 - normalizedPitch);
+          const noteHeight = Math.max(2, previewHeight / pitchRange);
+
+          const noteX = step * STEP_WIDTH - scrollX + 1;
+          const noteWidth = duration * STEP_WIDTH - 2;
+
+          ctx.fillStyle = accentCool;
+          ctx.fillRect(noteX, noteY, noteWidth, noteHeight);
+          notesRendered++;
+        });
+
+      } else {
+        // === STEP SEQUENCER MODE: C5-only grid view ===
+        const noteY = rowY + noteSlotY;
+
+        notes.forEach(note => {
+          const step = note.time;
+          if (step < startStep || step > endStep) return;
+
+          const slot = Math.floor(step / 4);
+          const slotX = slot * 4 * STEP_WIDTH - scrollX + 2;
+          const positionInSlot = step % 4;
+          const miniStepWidth = STEP_WIDTH;
+          const noteX = slotX + positionInSlot * miniStepWidth + 1;
+          const noteWidth = miniStepWidth - 2;
+
+          // Gradient
+          const gradient = ctx.createLinearGradient(noteX, noteY, noteX, noteY + noteSlotHeight);
+          gradient.addColorStop(0, accentCool);
+          gradient.addColorStop(1, accentCool);
+
+          // Glow
+          ctx.shadowBlur = 12;
+          ctx.shadowColor = `rgba(${accentCoolRgb}, 0.6)`;
+          ctx.fillStyle = gradient;
+          ctx.fillRect(noteX, noteY + 1, noteWidth, noteSlotHeight - 2);
+
+          // Highlight
+          ctx.shadowBlur = 0;
+          const highlight = ctx.createLinearGradient(noteX, noteY, noteX, noteY + noteSlotHeight * 0.3);
+          highlight.addColorStop(0, 'rgba(255, 255, 255, 0.4)');
+          highlight.addColorStop(1, 'rgba(255, 255, 255, 0)');
+          ctx.fillStyle = highlight;
+          ctx.fillRect(noteX, noteY + 1, noteWidth, noteSlotHeight * 0.3);
+
+          // Border
+          ctx.strokeStyle = `rgba(${accentCoolRgb}, 0.8)`;
+          ctx.lineWidth = 1;
+          ctx.strokeRect(noteX + 0.5, noteY + 1.5, noteWidth - 1, noteSlotHeight - 3);
+        });
+
+        ctx.shadowBlur = 0;
+      }
     }
 
-    // === LAYER 6: HOVER OVERLAY ===
-    if (hoveredCell && hoveredCell.row >= startRow && hoveredCell.row < endRow) {
-      const { row, step } = hoveredCell;
-      const rowY = row * ROW_HEIGHT - scrollY;
-      const hoverY = rowY + noteSlotY;
-      const slot = Math.floor(step / 4);
-      const slotX = slot * 4 * STEP_WIDTH - scrollX + 2;
-      const positionInSlot = step % 4;
-      const noteX = slotX + positionInSlot * STEP_WIDTH + 1;
-      const noteWidth = STEP_WIDTH - 2;
+    // === LAYER 6: GHOST NOTE (HOVER OVERLAY - STEP SEQUENCER ONLY) ===
+    if (hoveredCell) {
+      const { row, step, instrumentId } = hoveredCell;
+      const instrument = instruments[row];
 
-      // Ghost preview
-      ctx.shadowBlur = 0;
-      ctx.strokeStyle = `rgba(${accentCoolRgb}, 0.4)`;
-      ctx.lineWidth = 2;
-      ctx.setLineDash([4, 4]);
-      ctx.strokeRect(noteX + 0.5, hoverY + 1.5, noteWidth - 1, noteSlotHeight - 3);
-      ctx.setLineDash([]);
+      if (instrument && row >= startRow && row < endRow) {
+        const notes = notesData[instrumentId] || [];
+
+        // Only show ghost note in step sequencer mode
+        if (isStepSequencerMode(notes) && step >= startStep && step <= endStep) {
+          // Check if note already exists at this position
+          const noteExists = notes.some(n => n.time === step);
+
+          if (!noteExists) {
+            // Draw ghost note (semi-transparent)
+            const rowY = row * ROW_HEIGHT - scrollY;
+            const noteY = rowY + noteSlotY;
+
+            const slot = Math.floor(step / 4);
+            const slotX = slot * 4 * STEP_WIDTH - scrollX + 2;
+            const positionInSlot = step % 4;
+            const miniStepWidth = STEP_WIDTH;
+            const noteX = slotX + positionInSlot * miniStepWidth + 1;
+            const noteWidth = miniStepWidth - 2;
+
+            // Ghost note style - High contrast for dark backgrounds
+            // Multi-layer glow for visibility
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = `rgba(${accentCoolRgb}, 0.6)`;
+
+            // Brighter fill with gradient for depth
+            const ghostGradient = ctx.createLinearGradient(noteX, noteY, noteX, noteY + noteSlotHeight);
+            ghostGradient.addColorStop(0, `rgba(${accentCoolRgb}, 0.35)`);
+            ghostGradient.addColorStop(0.5, `rgba(${accentCoolRgb}, 0.45)`);
+            ghostGradient.addColorStop(1, `rgba(${accentCoolRgb}, 0.35)`);
+            ctx.fillStyle = ghostGradient;
+            ctx.fillRect(noteX, noteY + 1, noteWidth, noteSlotHeight - 2);
+
+            // Stronger border with double glow effect
+            ctx.shadowBlur = 8;
+            ctx.shadowColor = `rgba(${accentCoolRgb}, 0.8)`;
+            ctx.strokeStyle = `rgba(${accentCoolRgb}, 0.9)`;
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([3, 2]); // Dashed border (longer dashes)
+            ctx.strokeRect(noteX + 0.5, noteY + 1.5, noteWidth - 1, noteSlotHeight - 3);
+            ctx.setLineDash([]); // Reset dash
+
+            // Add inner highlight for extra visibility
+            ctx.shadowBlur = 0;
+            ctx.strokeStyle = `rgba(255, 255, 255, 0.2)`;
+            ctx.lineWidth = 1;
+            ctx.strokeRect(noteX + 2, noteY + 3, noteWidth - 4, noteSlotHeight - 6);
+          }
+        }
+      }
     }
 
     ctx.shadowBlur = 0;
@@ -302,7 +527,14 @@ const UnifiedGridCanvas = React.memo(({
     viewportHeight,
     hoveredCell,
     visibleBounds, // ⚡ OPTIMIZATION: Only re-render when visible bounds change
+    isStepSequencerMode, // ✅ Mode detection function
+    themeVersion, // ✅ THEME: Re-render when theme changes
   ]);
+
+  // ✅ Store render function in ref for immediate theme change access
+  useEffect(() => {
+    renderRef.current = render;
+  }, [render]);
 
   // ⚡ PERFORMANCE: Throttled re-render using RAF
   useEffect(() => {
@@ -353,7 +585,7 @@ const UnifiedGridCanvas = React.memo(({
     setHoveredCell(null);
   }, []);
 
-  // Click handler
+  // Click handler - Adaptive: Note toggle for step sequencer, piano roll for mini preview
   const handleClick = useCallback((e) => {
     const rect = canvasRef.current.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
@@ -362,10 +594,41 @@ const UnifiedGridCanvas = React.memo(({
     const cell = getInteractionCell(mouseX, mouseY);
     if (!cell) return;
 
-    if (onNoteToggle) {
-      onNoteToggle(cell.instrumentId, cell.step);
+    const { row, step, instrumentId } = cell;
+    const instrument = instruments[row];
+    if (!instrument) return;
+
+    const notes = notesData[instrumentId] || [];
+
+    // Check mode based on pitch range
+    const isMiniPreview = !isStepSequencerMode(notes);
+
+    // 🐛 DEBUG: Log click detection
+    console.log('🖱️ Click on:', instrument.name, {
+      notes: notes.length,
+      samplePitches: notes.slice(0, 3).map(n => n.pitch),
+      mode: isMiniPreview ? 'Mini Preview' : 'Step Sequencer',
+      willDo: isMiniPreview ? 'Open Piano Roll' : 'Toggle Note'
+    });
+
+    if (isMiniPreview) {
+      // === MINI PREVIEW MODE: Open piano roll ===
+      console.log('🎹 Mini Preview Click - Opening piano roll for:', instrument.name, instrumentId);
+      if (onInstrumentClick) {
+        onInstrumentClick(instrumentId);
+      } else {
+        console.warn('⚠️ onInstrumentClick not provided!');
+      }
+    } else {
+      // === STEP SEQUENCER MODE: Toggle note ===
+      console.log('🥁 Step Sequencer Click - Toggle note:', instrument.name, 'step:', step);
+      if (onNoteToggle) {
+        onNoteToggle(instrumentId, step);
+      } else {
+        console.warn('⚠️ onNoteToggle not provided!');
+      }
     }
-  }, [getInteractionCell, onNoteToggle]);
+  }, [getInteractionCell, instruments, notesData, onInstrumentClick, onNoteToggle, isStepSequencerMode]);
 
   return (
     <div

@@ -51,6 +51,66 @@
   flex-direction: column;
 }
 
+/* Search Bar */
+.instrument-picker__search {
+  position: relative;
+  padding: 12px 16px;
+  border-bottom: 1px solid #333;
+  background: #151515;
+}
+
+.instrument-picker__search-icon {
+  position: absolute;
+  left: 28px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #666;
+  pointer-events: none;
+}
+
+.instrument-picker__search-input {
+  width: 100%;
+  padding: 8px 32px 8px 36px;
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 13px;
+  outline: none;
+  transition: all 0.2s;
+}
+
+.instrument-picker__search-input:focus {
+  border-color: #4a9eff;
+  background: #222;
+}
+
+.instrument-picker__search-input::placeholder {
+  color: #666;
+}
+
+.instrument-picker__search-clear {
+  position: absolute;
+  right: 28px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: #999;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.instrument-picker__search-clear:hover {
+  background: #333;
+  color: #fff;
+}
+
 /* Categories */
 .instrument-picker__categories {
   display: flex;
@@ -149,6 +209,17 @@
   padding: 12px 0 0 28px;
 }
 
+.instrument-picker__preset-wrapper {
+  position: relative;
+  display: flex;
+  gap: 4px;
+}
+
+.instrument-picker__preset-wrapper.previewing .instrument-picker__preset {
+  border-color: #4ecdc4;
+  background: rgba(78, 205, 196, 0.1);
+}
+
 .instrument-picker__preset {
   display: flex;
   align-items: center;
@@ -162,6 +233,7 @@
   text-align: left;
   font-size: 13px;
   color: #ddd;
+  flex: 1;
 }
 
 .instrument-picker__preset:hover {
@@ -171,6 +243,30 @@
 }
 
 .instrument-picker__preset:active {
+  transform: translateY(0);
+}
+
+.instrument-picker__preset-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: #4ecdc4;
+  flex-shrink: 0;
+}
+
+.instrument-picker__preset-preview:hover {
+  background: rgba(78, 205, 196, 0.1);
+  border-color: #4ecdc4;
+  transform: translateY(-1px);
+}
+
+.instrument-picker__preset-preview:active {
   transform: translateY(0);
 }
 
@@ -187,6 +283,21 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Empty State */
+.instrument-picker__empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  text-align: center;
+}
+
+.instrument-picker__empty p {
+  color: #666;
+  font-size: 14px;
+  margin: 0;
 }
 
 /* Footer */

@@ -262,13 +262,85 @@ export class RenderEngine {
       instrumentType: instrument.type
     });
 
-    // Create destination for this instrument
-    const gainNode = offlineContext.createGain();
-    gainNode.connect(offlineContext.destination);
+    // ✅ NEW: Get mixer track for this instrument
+    const mixerTrackId = instrumentStore?.mixerTrackId;
+    const mixerTrack = mixerTrackId ? patternData.mixerTracks?.[mixerTrackId] : null;
 
-    // ✅ NEW APPROACH: Use AudioWorklet for synth rendering (same as realtime)
-    if (instrument.type === 'synth' && instrumentStore?.synthParams) {
-      console.log(`🎬 Using AudioWorklet processor for synth: ${instrument.name}`);
+    console.log(`🎛️ Mixer track lookup for ${instrumentId}:`, {
+      mixerTrackId,
+      found: !!mixerTrack,
+      hasMixerTracks: !!patternData.mixerTracks,
+      totalTracks: Object.keys(patternData.mixerTracks || {}).length
+    });
+
+    // ✅ IMPROVED: Create offline mixer channel with full processing (gain, pan, EQ)
+    // First create a simple gain node as the instrument's output
+    const instrumentOutputNode = offlineContext.createGain();
+    instrumentOutputNode.gain.setValueAtTime(1.0, offlineContext.currentTime);
+
+    // Then route it through offline mixer channel (applies mixer settings)
+    const mixerOutputNode = this._createOfflineMixerChannel(offlineContext, instrumentOutputNode, mixerTrack);
+
+    // Finally connect to offline context destination
+    mixerOutputNode.connect(offlineContext.destination);
+
+    // Use instrumentOutputNode as the target for instrument rendering
+    const gainNode = instrumentOutputNode;
+
+    // ✅ VASYNTH RENDERING: VASynth has its own rendering path
+    if (instrument.type === 'vasynth') {
+      console.log(`🎹 Rendering VASynth instrument: ${instrument.name} with ${notes.length} notes`);
+
+      // Import VASynth classes
+      const { VASynth } = await import('./synth/VASynth.js');
+      const { getPreset } = await import('./synth/presets.js');
+
+      // Get preset name from instrument data
+      const presetName = instrumentStore?.presetName || instrument.data?.presetName;
+      if (!presetName) {
+        console.warn(`🎹 No preset found for VASynth ${instrument.name}`);
+        return gainNode;
+      }
+
+      const preset = getPreset(presetName);
+      if (!preset) {
+        console.warn(`🎹 Preset not found: ${presetName}`);
+        return gainNode;
+      }
+
+      // Create VASynth instance in offline context
+      const vaSynth = new VASynth(offlineContext);
+      vaSynth.loadPreset(preset);
+      vaSynth.masterGain.connect(gainNode);
+
+      console.log(`🎹 Created VASynth with preset: ${presetName}`);
+
+      // Schedule all notes
+      for (const note of notes) {
+        try {
+          await this._scheduleVASynthNote(
+            vaSynth,
+            note,
+            offlineContext,
+            options
+          );
+        } catch (error) {
+          console.warn(`🎬 Failed to schedule VASynth note:`, error);
+        }
+      }
+
+      console.log(`🎹 Successfully scheduled ${notes.length} VASynth notes`);
+      return gainNode;
+    }
+    // ✅ WORKLET-BASED SYNTH RENDERING: For legacy synth instruments
+    else if (instrument.type === 'synth') {
+      const hasSynthParams = instrumentStore?.synthParams || instrumentStore?.oscillators;
+
+      if (!hasSynthParams) {
+        console.warn(`🎬 No synth params found for ${instrument.name}`);
+        return gainNode;
+      }
+      console.log(`🎬 Using rendering for ${instrument.type}: ${instrument.name}`, { hasSynthParams, hasInstrumentStore: !!instrumentStore });
 
       // Load worklet module if not already loaded
       if (!offlineContext._workletLoaded) {
@@ -334,7 +406,9 @@ export class RenderEngine {
 
       return gainNode;
 
-    } else {
+    }
+    // ✅ SAMPLE INSTRUMENTS: Use legacy rendering
+    else {
       // Use legacy rendering for samples
       // ✅ NEW: Apply effect chain for sample instruments
       let sampleDestination = gainNode;
@@ -392,7 +466,96 @@ export class RenderEngine {
 
     console.log(`🎬 Scheduling note: type=${instrumentType}, time=${startTime.toFixed(3)}s, duration=${noteLength.toFixed(3)}s (${noteDurationBeats} beats), velocity=${noteVelocity.toFixed(2)}`);
 
-    if ((instrument.type === 'sample' || instrumentType === 'sample') && (instrument.audioBuffer || instrument.buffer)) {
+    // Debug: Check instrument structure
+    console.log(`🎬 DEBUG: Instrument details:`, {
+      name: instrument.name,
+      type: instrument.type,
+      hasAudioBuffer: !!instrument.audioBuffer,
+      hasBuffer: !!instrument.buffer,
+      hasSamples: !!instrument.samples,
+      hasSampleMap: !!instrument.sampleMap,
+      hasData: !!instrument.data,
+      allKeys: Object.keys(instrument)
+    });
+
+    // ✅ MULTI-SAMPLE INSTRUMENTS (Piano, etc.)
+    // Multi-sample instruments have sampleMap with different samples per note
+    if (instrument.sampleMap && instrument.sampleMap.size > 0) {
+      console.log(`🎹 Rendering multi-sample instrument: ${instrument.name} for note ${note.pitch}`);
+
+      // Convert note name to MIDI number if needed
+      let midiNote;
+      if (typeof note.pitch === 'string') {
+        midiNote = this._noteNameToMidi(note.pitch);
+        console.log(`  Converted note name "${note.pitch}" to MIDI ${midiNote}`);
+      } else if (typeof note.pitch === 'number') {
+        midiNote = note.pitch;
+      } else {
+        console.error(`❌ Invalid pitch format: ${note.pitch} (type: ${typeof note.pitch})`);
+        return;
+      }
+
+      // Get the sample mapping for this specific MIDI note
+      const mapping = instrument.sampleMap.get(midiNote);
+
+      if (!mapping || !mapping.buffer) {
+        console.warn(`⚠️ No sample mapping found for MIDI note ${midiNote} (${note.pitch}) in ${instrument.name}`);
+        console.warn(`  Available mappings:`, Array.from(instrument.sampleMap.keys()).slice(0, 10));
+        return;
+      }
+
+      console.log(`  Using sample: baseNote=${mapping.baseNote}, pitchShift=${mapping.pitchShift} semitones`);
+
+      // Create buffer source
+      const source = offlineContext.createBufferSource();
+      source.buffer = mapping.buffer;
+
+      // Apply pitch shift (playbackRate)
+      const playbackRate = Math.pow(2, mapping.pitchShift / 12);
+      source.playbackRate.setValueAtTime(playbackRate, startTime);
+
+      // Apply velocity
+      const gainNode = offlineContext.createGain();
+      gainNode.gain.setValueAtTime(noteVelocity, startTime);
+      source.connect(gainNode);
+      gainNode.connect(destination);
+
+      // Apply instrument parameters if available
+      if (instrument.data) {
+        // Additional pitch adjustment from instrument settings
+        if (instrument.data.pitch !== undefined && instrument.data.pitch !== 0) {
+          const additionalPitchShift = Math.pow(2, instrument.data.pitch / 12);
+          source.playbackRate.setValueAtTime(playbackRate * additionalPitchShift, startTime);
+        }
+
+        // Pan if available
+        if (instrument.data.pan !== undefined && instrument.data.pan !== 0) {
+          const panNode = offlineContext.createStereoPanner();
+          panNode.pan.setValueAtTime(instrument.data.pan, startTime);
+          gainNode.disconnect();
+          gainNode.connect(panNode);
+          panNode.connect(destination);
+        }
+      }
+
+      // Schedule playback
+      source.start(startTime);
+
+      // Stop after note length (for polyphonic instruments like piano, respect note duration)
+      if (noteLength < mapping.buffer.duration) {
+        source.stop(startTime + noteLength);
+      } else {
+        // Let sample play naturally if note is longer than sample
+        source.stop(startTime + mapping.buffer.duration);
+      }
+
+      console.log(`  ✅ Multi-sample note scheduled: ${startTime.toFixed(3)}s, duration=${noteLength.toFixed(3)}s, velocity=${noteVelocity.toFixed(2)}`);
+    }
+    // ✅ SINGLE-SAMPLE INSTRUMENTS (Drums, etc.)
+    // Single sample instruments use the same buffer for all notes
+    else if ((instrument.type === 'sample' || instrumentType === 'sample') && (instrument.audioBuffer || instrument.buffer)) {
+      console.log(`🥁 Rendering single-sample instrument: ${instrument.name}`);
+
       // Handle sample instruments
       const source = offlineContext.createBufferSource();
       source.buffer = instrument.audioBuffer || instrument.buffer;
@@ -417,6 +580,50 @@ export class RenderEngine {
       // Handle synthesizer instruments
       await this._renderSynthNote(instrument, note, offlineContext, destination, startTime, noteLength);
     }
+  }
+
+  /**
+   * Schedule VASynth note for offline rendering
+   */
+  async _scheduleVASynthNote(vaSynth, note, offlineContext, options) {
+    // Convert note timing from steps to seconds
+    const noteTimeSteps = note.startTime ?? note.time ?? 0;
+    const noteTimeBeats = stepsToBeat(noteTimeSteps);
+
+    let noteVelocity = note.velocity ?? 1;
+    const rawDuration = note.length ?? note.duration ?? 1;
+    const noteDurationBeats = this._durationToBeats(rawDuration);
+
+    const bpm = getCurrentBPM();
+    const startTime = beatsToSeconds(noteTimeBeats, bpm);
+    const noteLength = beatsToSeconds(noteDurationBeats, bpm);
+
+    // Get MIDI note number
+    const pitchValue = note.pitch ?? note.note;
+    let midiNote = 60; // Default C4
+
+    if (typeof pitchValue === 'string') {
+      midiNote = this._noteNameToMidi(pitchValue);
+    } else if (typeof pitchValue === 'number') {
+      midiNote = pitchValue;
+    }
+
+    // Convert velocity to MIDI velocity (0-127)
+    // Handle both normalized (0-1) and MIDI format (0-127)
+    let midiVelocity;
+    if (noteVelocity <= 1) {
+      // Normalized format (0-1)
+      midiVelocity = Math.round(noteVelocity * 127);
+    } else {
+      // Already in MIDI format (0-127)
+      midiVelocity = Math.min(127, Math.max(0, Math.round(noteVelocity)));
+    }
+
+    console.log(`🎹 Scheduling VASynth note: MIDI=${midiNote}, vel=${midiVelocity}, time=${startTime.toFixed(3)}s, duration=${noteLength.toFixed(3)}s`);
+
+    // Schedule note on and note off
+    vaSynth.noteOn(midiNote, midiVelocity, startTime);
+    vaSynth.noteOff(midiNote, startTime + noteLength);
   }
 
   /**
@@ -765,6 +972,95 @@ export class RenderEngine {
       }
     }
 
+    return currentNode;
+  }
+
+  /**
+   * Create offline mixer channel with basic processing
+   * Applies: Gain, Pan, 3-band EQ (without complex FX like reverb/delay)
+   *
+   * @param {AudioContext} offlineContext - Offline audio context
+   * @param {AudioNode} sourceNode - Input audio node
+   * @param {Object} mixerTrack - Mixer track settings from store
+   * @returns {AudioNode} - Output node after mixer processing
+   */
+  _createOfflineMixerChannel(offlineContext, sourceNode, mixerTrack) {
+    if (!mixerTrack) {
+      console.warn('🎛️ No mixer track provided, bypassing mixer processing');
+      return sourceNode;
+    }
+
+    console.log(`🎛️ Creating offline mixer channel:`, {
+      trackId: mixerTrack.id,
+      trackName: mixerTrack.name,
+      gain: mixerTrack.gain,
+      pan: mixerTrack.pan
+    });
+
+    let currentNode = sourceNode;
+
+    // 1. GAIN (Volume)
+    const gainNode = offlineContext.createGain();
+    const gainValue = mixerTrack.gain !== undefined ? mixerTrack.gain : 0.8;
+    gainNode.gain.setValueAtTime(gainValue, offlineContext.currentTime);
+    currentNode.connect(gainNode);
+    currentNode = gainNode;
+    console.log(`  ✅ Gain: ${gainValue.toFixed(2)}`);
+
+    // 2. PAN (Stereo positioning)
+    if (mixerTrack.pan !== undefined && mixerTrack.pan !== 0) {
+      const panNode = offlineContext.createStereoPanner();
+      panNode.pan.setValueAtTime(mixerTrack.pan, offlineContext.currentTime);
+      currentNode.connect(panNode);
+      currentNode = panNode;
+      console.log(`  ✅ Pan: ${mixerTrack.pan.toFixed(2)}`);
+    }
+
+    // 3. 3-BAND EQ (Low/Mid/High)
+    const hasEQ = (mixerTrack.lowGain && mixerTrack.lowGain !== 0) ||
+                  (mixerTrack.midGain && mixerTrack.midGain !== 0) ||
+                  (mixerTrack.highGain && mixerTrack.highGain !== 0);
+
+    if (hasEQ) {
+      // Low shelf (bass)
+      if (mixerTrack.lowGain !== undefined && mixerTrack.lowGain !== 0) {
+        const lowShelf = offlineContext.createBiquadFilter();
+        lowShelf.type = 'lowshelf';
+        lowShelf.frequency.setValueAtTime(200, offlineContext.currentTime);
+        lowShelf.gain.setValueAtTime(mixerTrack.lowGain, offlineContext.currentTime);
+        currentNode.connect(lowShelf);
+        currentNode = lowShelf;
+        console.log(`  ✅ Low EQ: ${mixerTrack.lowGain.toFixed(1)} dB`);
+      }
+
+      // Peaking (mids)
+      if (mixerTrack.midGain !== undefined && mixerTrack.midGain !== 0) {
+        const midPeak = offlineContext.createBiquadFilter();
+        midPeak.type = 'peaking';
+        midPeak.frequency.setValueAtTime(1000, offlineContext.currentTime);
+        midPeak.Q.setValueAtTime(1, offlineContext.currentTime);
+        midPeak.gain.setValueAtTime(mixerTrack.midGain, offlineContext.currentTime);
+        currentNode.connect(midPeak);
+        currentNode = midPeak;
+        console.log(`  ✅ Mid EQ: ${mixerTrack.midGain.toFixed(1)} dB`);
+      }
+
+      // High shelf (treble)
+      if (mixerTrack.highGain !== undefined && mixerTrack.highGain !== 0) {
+        const highShelf = offlineContext.createBiquadFilter();
+        highShelf.type = 'highshelf';
+        highShelf.frequency.setValueAtTime(5000, offlineContext.currentTime);
+        highShelf.gain.setValueAtTime(mixerTrack.highGain, offlineContext.currentTime);
+        currentNode.connect(highShelf);
+        currentNode = highShelf;
+        console.log(`  ✅ High EQ: ${mixerTrack.highGain.toFixed(1)} dB`);
+      }
+    }
+
+    // TODO: Complex FX (reverb, delay, compression) can be added here later
+    // For now, we skip them to keep rendering fast and simple
+
+    console.log(`🎛️ Offline mixer channel created for ${mixerTrack.name}`);
     return currentNode;
   }
 }

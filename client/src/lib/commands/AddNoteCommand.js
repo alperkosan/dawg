@@ -30,13 +30,35 @@ export class AddNoteCommand extends Command {
     // Get current notes for this instrument
     const currentNotes = useArrangementStore.getState().patterns[activePatternId].data[this.instrumentId] || [];
 
+    // ✅ SMART PITCH DETECTION: Use existing note's pitch if available
+    // This ensures new notes match the instrument's configured pitch
+    let defaultPitch = 'C4'; // Fallback
+    let defaultVelocity = 1.0;
+    let defaultDuration = '16n';
+
+    if (currentNotes.length > 0) {
+      // Use pitch, velocity, and duration from the first existing note
+      const firstNote = currentNotes[0];
+      defaultPitch = firstNote.pitch || 'C4';
+      defaultVelocity = firstNote.velocity !== undefined ? firstNote.velocity : 1.0;
+      defaultDuration = firstNote.duration || '16n';
+
+      console.log(`📝 AddNoteCommand: Using template from existing notes:`, {
+        pitch: defaultPitch,
+        velocity: defaultVelocity,
+        duration: defaultDuration
+      });
+    } else {
+      console.log(`📝 AddNoteCommand: No existing notes, using defaults for ${this.instrumentId}`);
+    }
+
     // Geri alma (undo) işlemi için notayı burada oluşturup sınıf içinde saklıyoruz.
     this.note = {
       id: `note_${this.step}_${Date.now()}_${Math.random().toString(36).substring(7)}`,
       time: this.step,
-      pitch: 'C4',
-      velocity: 1.0,
-      duration: '16n'
+      pitch: defaultPitch,
+      velocity: defaultVelocity,
+      duration: defaultDuration
     };
 
     const newNotes = [...currentNotes, this.note];
@@ -44,6 +66,12 @@ export class AddNoteCommand extends Command {
     usePlaybackStore.getState().updateLoopLength();
 
     // ✅ CRITICAL FIX: Notify PlaybackManager via EventBus
+    console.log('📝 AddNoteCommand - Emitting NOTE_ADDED:', {
+      patternId: activePatternId,
+      instrumentId: this.instrumentId,
+      note: this.note,
+      totalNotes: newNotes.length
+    });
     EventBus.emit('NOTE_ADDED', {
       patternId: activePatternId,
       instrumentId: this.instrumentId,

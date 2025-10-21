@@ -260,16 +260,28 @@
 
 /* FL Studio Style: Simple Add Channel Button */
 .instrument-row--add {
+  display: flex;
+  align-items: center;
   justify-content: center;
   gap: var(--spacing-2);
+  height: 64px;
   cursor: pointer;
   color: var(--zenith-text-secondary);
   transition: all 0.2s ease;
+  border-bottom: 1px solid var(--zenith-border-medium);
+  background: var(--zenith-bg-secondary);
+  font-size: 14px;
+  font-weight: 500;
 }
 
 .instrument-row--add:hover {
   background-color: var(--zenith-bg-tertiary);
   color: var(--zenith-accent-cool);
+  border-color: var(--zenith-accent-cool);
+}
+
+.instrument-row--add:active {
+  transform: scale(0.98);
 }
 
 /* ==========================================================================

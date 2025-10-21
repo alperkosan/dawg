@@ -1,11 +1,16 @@
 /**
- * SingleSampleInstrument - Simple one-shot sample player
+ * SingleSampleInstrument - Advanced one-shot sample player
  *
  * For instruments with a single audio file (kick, snare, hi-hat, etc.)
  * Supports:
  * - Polyphonic playback
- * - Pitch shifting (playbackRate)
- * - Velocity (gain)
+ * - Pitch shifting (playbackRate + pitch parameter)
+ * - Velocity + instrument gain
+ * - Pan (stereo positioning)
+ * - Loop with start/end points
+ * - Sample trim (start/end)
+ * - ADSR envelope
+ * - Filter (lowpass/highpass/bandpass)
  */
 
 import { BaseInstrument } from '../base/BaseInstrument.js';
@@ -55,11 +60,28 @@ export class SingleSampleInstrument extends BaseInstrument {
      */
     noteOn(midiNote, velocity = 100, startTime = null) {
         if (!this._isInitialized || !this.sampleBuffer) {
-            console.warn(`SingleSample not ready: ${this.name}`);
+            console.warn(`❌ SingleSample not ready: ${this.name}`, {
+                isInitialized: this._isInitialized,
+                hasSampleBuffer: !!this.sampleBuffer
+            });
             return;
         }
 
         const when = startTime !== null ? startTime : this.audioContext.currentTime;
+
+        console.log(`🥁 ${this.name}.noteOn:`, {
+            midiNote,
+            velocity,
+            when: when.toFixed(3) + 's',
+            params: {
+                pitch: this.data.pitch || 0,
+                gain: this.data.gain || 1,
+                pan: this.data.pan || 0,
+                loop: this.data.loop,
+                loopStart: this.data.loopStart,
+                loopEnd: this.data.loopEnd
+            }
+        });
 
         try {
             // Stop existing note at same pitch (re-trigger)
@@ -71,28 +93,89 @@ export class SingleSampleInstrument extends BaseInstrument {
             const source = this.audioContext.createBufferSource();
             source.buffer = this.sampleBuffer;
 
-            // Calculate pitch shift (playback rate)
-            const pitchShift = midiNote - this.baseNote; // semitones
-            const playbackRate = Math.pow(2, pitchShift / 12);
+            // Apply loop settings
+            if (this.data.loop) {
+                source.loop = true;
+                const duration = this.sampleBuffer.duration;
+                source.loopStart = (this.data.loopStart || 0) * duration;
+                source.loopEnd = (this.data.loopEnd || 1) * duration;
+                console.log(`🔁 Loop enabled: ${source.loopStart.toFixed(3)}s - ${source.loopEnd.toFixed(3)}s`);
+            }
+
+            // Calculate pitch shift (combine base note shift + pitch parameter)
+            const baseShift = midiNote - this.baseNote; // semitones
+            const pitchParam = this.data.pitch || 0; // additional pitch shift from UI
+            const totalPitchShift = baseShift + pitchParam;
+            const playbackRate = Math.pow(2, totalPitchShift / 12);
             source.playbackRate.setValueAtTime(playbackRate, when);
 
-            // Create gain node for velocity
+            // Create gain node for velocity + instrument gain
             const gainNode = this.audioContext.createGain();
-            const gainValue = Math.max(0, Math.min(1, velocity / 127));
-            gainNode.gain.setValueAtTime(gainValue, when);
+            const velocityGain = Math.max(0, Math.min(1, velocity / 127));
+            const instrumentGain = this.data.gain || 1;
+            const totalGain = velocityGain * instrumentGain;
+            gainNode.gain.setValueAtTime(totalGain, when);
 
-            // Connect: source -> gain -> master
+            // Apply ADSR envelope if defined
+            if (this.data.attack || this.data.decay || this.data.sustain !== undefined || this.data.release) {
+                const attack = (this.data.attack || 0) / 1000; // ms to seconds
+                const decay = (this.data.decay || 0) / 1000;
+                const sustain = this.data.sustain !== undefined ? this.data.sustain / 100 : 1;
+                const release = (this.data.release || 50) / 1000;
+
+                // Attack
+                gainNode.gain.setValueAtTime(0, when);
+                gainNode.gain.linearRampToValueAtTime(totalGain, when + attack);
+
+                // Decay to sustain
+                if (decay > 0) {
+                    gainNode.gain.linearRampToValueAtTime(totalGain * sustain, when + attack + decay);
+                }
+            }
+
+            // Create panner for stereo positioning
+            let lastNode = gainNode;
+            if (this.data.pan !== undefined && this.data.pan !== 0) {
+                const panner = this.audioContext.createStereoPanner();
+                panner.pan.setValueAtTime(this.data.pan, when);
+                gainNode.connect(panner);
+                lastNode = panner;
+            }
+
+            // Create filter if defined
+            if (this.data.filterType && this.data.filterCutoff) {
+                const filter = this.audioContext.createBiquadFilter();
+                filter.type = this.data.filterType || 'lowpass';
+                filter.frequency.setValueAtTime(this.data.filterCutoff || 20000, when);
+                filter.Q.setValueAtTime(this.data.filterResonance || 1, when);
+
+                lastNode.connect(filter);
+                lastNode = filter;
+            }
+
+            // Connect: source -> gain (-> envelope) (-> pan) (-> filter) -> master
             source.connect(gainNode);
-            gainNode.connect(this.masterGain);
+            lastNode.connect(this.masterGain);
 
-            // Start playback
-            source.start(when);
+            // Apply sample start/end (trim)
+            const sampleStart = (this.data.sampleStart || 0) * this.sampleBuffer.duration;
+            const sampleEnd = (this.data.sampleEnd || 1) * this.sampleBuffer.duration;
+            const offset = sampleStart;
+            const duration = sampleEnd - sampleStart;
+
+            // Start playback with offset and duration
+            if (this.data.loop) {
+                source.start(when, offset); // Loop indefinitely
+            } else {
+                source.start(when, offset, duration); // One-shot with trim
+            }
 
             // Track active source
             this.activeSources.set(midiNote, {
                 source,
                 gainNode,
-                startTime: when
+                startTime: when,
+                panner: lastNode !== gainNode ? lastNode : null
             });
 
             // Auto-cleanup when finished
@@ -100,6 +183,9 @@ export class SingleSampleInstrument extends BaseInstrument {
                 if (this.activeSources.get(midiNote)?.source === source) {
                     this.activeSources.delete(midiNote);
                     gainNode.disconnect();
+                    if (lastNode !== gainNode) {
+                        lastNode.disconnect();
+                    }
                 }
             };
 
@@ -130,12 +216,15 @@ export class SingleSampleInstrument extends BaseInstrument {
             if (activeSource) {
                 const { source, gainNode } = activeSource;
 
-                // Quick fade out to avoid clicks
-                gainNode.gain.setValueAtTime(gainNode.gain.value, when);
-                gainNode.gain.linearRampToValueAtTime(0, when + 0.01);
+                // Apply release envelope if defined
+                const release = (this.data.release || 50) / 1000;
 
-                // Stop source
-                source.stop(when + 0.01);
+                // Fade out with release time
+                gainNode.gain.setValueAtTime(gainNode.gain.value, when);
+                gainNode.gain.linearRampToValueAtTime(0, when + release);
+
+                // Stop source after release
+                source.stop(when + release);
 
                 // Cleanup
                 this.activeSources.delete(midiNote);
@@ -156,12 +245,13 @@ export class SingleSampleInstrument extends BaseInstrument {
      */
     stopAll() {
         const now = this.audioContext.currentTime;
+        const release = (this.data.release || 50) / 1000;
 
         for (const [midiNote, { source, gainNode }] of this.activeSources) {
             try {
                 gainNode.gain.setValueAtTime(gainNode.gain.value, now);
-                gainNode.gain.linearRampToValueAtTime(0, now + 0.01);
-                source.stop(now + 0.01);
+                gainNode.gain.linearRampToValueAtTime(0, now + release);
+                source.stop(now + release);
             } catch (error) {
                 // Already stopped
             }

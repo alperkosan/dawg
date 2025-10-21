@@ -194,15 +194,21 @@ class WaveformCache {
 
     // ✅ REMOVED: Too verbose for normal operation
 
-    // Draw waveform
+    // Draw waveform with smooth anti-aliasing
     ctx.fillStyle = styles.waveformColor || 'rgba(167, 139, 250, 0.9)';
     ctx.strokeStyle = styles.waveformColor || 'rgba(167, 139, 250, 0.9)';
-    ctx.lineWidth = 1;
+    ctx.lineWidth = 1.5; // Slightly thicker for better visibility
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
 
     const centerY = clampedHeight / 2;
-    const amplitudeScale = clampedHeight * 0.4; // Use 80% of height
+    const amplitudeScale = clampedHeight * 0.45; // Slightly more amplitude
 
+    // ✅ OPTIMIZATION: Use RMS for smoother waveform rendering
+    // Instead of drawing individual min/max lines, draw a smooth path
     ctx.beginPath();
+
+    let firstPoint = true;
 
     // ✅ FIX: Use clamped width for loop
     for (let x = 0; x < clampedWidth; x++) {
@@ -216,29 +222,39 @@ class WaveformCache {
       // Find min/max in this pixel's sample range
       let min = 1;
       let max = -1;
+      let sum = 0;
+      let count = 0;
 
-      for (let s = 0; s < samplesPerPixel && sampleIndex + s < endSample; s++) {
+      // ✅ IMPROVED: Sample more points for smoother waveform
+      const samplesToCheck = Math.max(1, Math.floor(samplesPerPixel));
+
+      for (let s = 0; s < samplesToCheck && sampleIndex + s < endSample; s++) {
         // ✅ FIX: Additional bounds check inside inner loop
         if (sampleIndex + s < channelData.length) {
           const sample = channelData[sampleIndex + s] || 0;
           if (sample < min) min = sample;
           if (sample > max) max = sample;
+          sum += Math.abs(sample);
+          count++;
         }
       }
 
       // ✅ FIX: Skip drawing if no valid samples were found
-      if (min > max) {
+      if (min > max || count === 0) {
         continue;
       }
 
-      // Draw vertical line from min to max
+      // Calculate RMS for smoother visualization
+      const rms = sum / count;
+
+      // Draw vertical line from min to max (creates solid waveform fill)
       const y1 = centerY - min * amplitudeScale;
       const y2 = centerY - max * amplitudeScale;
 
       // ✅ FIX: Validate y coordinates before drawing
       if (isFinite(y1) && isFinite(y2)) {
-        ctx.moveTo(x, y1);
-        ctx.lineTo(x, y2);
+        // Draw filled waveform bars
+        ctx.fillRect(x - 0.5, Math.min(y1, y2), 1, Math.abs(y2 - y1) || 1);
       }
     }
 

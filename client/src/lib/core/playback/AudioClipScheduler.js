@@ -83,7 +83,24 @@ export class AudioClipScheduler {
                     }
 
                     // Connect to destination (mixer channel or master)
+                    console.log(`🔍 Getting destination for clip ${clip.id}:`, {
+                        clipChannelId: clip.channelId,
+                        clipTrackId: clip.trackId,
+                        clipType: clip.type
+                    });
+
                     const destination = this._getClipDestination(clip);
+
+                    console.log(`🔍 Destination node:`, {
+                        destination,
+                        isAudioNode: destination instanceof AudioNode,
+                        nodeType: destination?.constructor?.name
+                    });
+
+                    if (!destination || !(destination instanceof AudioNode)) {
+                        throw new Error(`Invalid destination node for clip ${clip.id}`);
+                    }
+
                     source.connect(destination);
 
                     // Start playback
@@ -118,14 +135,29 @@ export class AudioClipScheduler {
     _getClipDestination(clip) {
         // Check if clip has assigned mixer channel
         if (clip.channelId) {
-            const channel = this.audioEngine.mixerChannels.get(clip.channelId);
+            const channel = this.audioEngine.mixerChannels?.get(clip.channelId);
             if (channel && channel.input) {
+                console.log(`🎵 Audio clip routed to mixer channel: ${clip.channelId}`);
                 return channel.input;
             }
         }
 
-        // Default to master output
-        return this.audioEngine.masterMixer || this.transport.audioContext.destination;
+        // Try master mixer
+        if (this.audioEngine.masterMixer?.input) {
+            console.log(`🎵 Audio clip routed to master mixer`);
+            return this.audioEngine.masterMixer.input;
+        }
+
+        // Fallback to audio context destination
+        const audioContext = this.transport?.audioContext || this.audioEngine?.audioContext;
+        if (audioContext && audioContext.destination) {
+            console.log(`🎵 Audio clip routed to audio context destination (fallback)`);
+            return audioContext.destination;
+        }
+
+        // Last resort - throw error
+        console.error(`❌ No valid destination found for audio clip ${clip.id}`);
+        throw new Error('No valid audio destination available');
     }
 
     /**

@@ -1,0 +1,173 @@
+/* WaveformDisplay - Zenith Design System */
+
+.waveform-display {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: var(--zenith-bg-secondary, #1a1a1a);
+  border: 1px solid var(--zenith-border-subtle, #3a3a3a);
+  border-radius: 8px;
+}
+
+.waveform-display--empty {
+  min-height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.waveform-display__empty-message {
+  font-size: 13px;
+  color: var(--zenith-text-muted, #666);
+}
+
+/* Toolbar */
+.waveform-display__toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--zenith-border-subtle, #3a3a3a);
+  gap: 12px;
+}
+
+.waveform-display__mode-buttons {
+  display: flex;
+  gap: 4px;
+}
+
+.waveform-display__mode-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--zenith-overlay-subtle, rgba(255, 255, 255, 0.05));
+  border: 1px solid var(--zenith-border-subtle, #3a3a3a);
+  border-radius: 6px;
+  color: var(--zenith-text-secondary, #b0b0b0);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.waveform-display__mode-btn:hover {
+  background: var(--zenith-overlay-medium, rgba(255, 255, 255, 0.1));
+  border-color: var(--zenith-accent-cool, #6B8EBF);
+  color: var(--zenith-text-primary, #e0e0e0);
+}
+
+.waveform-display__mode-btn--active {
+  background: var(--zenith-accent-cool, #6B8EBF);
+  border-color: var(--zenith-accent-cool, #6B8EBF);
+  color: white;
+  box-shadow: 0 0 8px var(--zenith-overlay-accent-cool, rgba(107, 142, 191, 0.4));
+}
+
+.waveform-display__mode-btn--active:hover {
+  background: var(--zenith-accent-cool, #6B8EBF);
+  filter: brightness(1.1);
+}
+
+.waveform-display__info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.waveform-display__time {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--zenith-text-primary, #e0e0e0);
+  font-variant-numeric: tabular-nums;
+}
+
+.waveform-display__details {
+  font-size: 11px;
+  color: var(--zenith-text-tertiary, #888);
+}
+
+.waveform-display__zoom-level {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--zenith-text-tertiary, #888);
+  min-width: 40px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Canvas Container */
+.waveform-display__canvas-container {
+  position: relative;
+  width: 100%;
+  background: var(--zenith-bg-primary, #0d0d0d);
+  border: 1px solid var(--zenith-border-subtle, #3a3a3a);
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.waveform-display__canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.waveform-display__mode-indicator {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 12px;
+  background: var(--zenith-overlay-strong, rgba(0, 0, 0, 0.8));
+  border: 1px solid var(--zenith-border-subtle, #3a3a3a);
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--zenith-text-secondary, #b0b0b0);
+  pointer-events: none;
+  backdrop-filter: blur(4px);
+}
+
+/* Footer */
+.waveform-display__footer {
+  padding-top: 8px;
+  border-top: 1px solid var(--zenith-border-subtle, #3a3a3a);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.waveform-display__footer-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  color: var(--zenith-text-tertiary, #888);
+  flex-wrap: wrap;
+}
+
+.waveform-display__footer-hint strong {
+  color: var(--zenith-text-secondary, #b0b0b0);
+  font-weight: 600;
+}
+
+.waveform-display__reset-btn {
+  padding: 4px 12px;
+  background: var(--zenith-overlay-subtle, rgba(255, 255, 255, 0.05));
+  border: 1px solid var(--zenith-border-subtle, #3a3a3a);
+  border-radius: 4px;
+  color: var(--zenith-text-secondary, #b0b0b0);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.waveform-display__reset-btn:hover {
+  background: var(--zenith-overlay-medium, rgba(255, 255, 255, 0.1));
+  border-color: var(--zenith-accent-cool, #6B8EBF);
+  color: var(--zenith-text-primary, #e0e0e0);
+}
