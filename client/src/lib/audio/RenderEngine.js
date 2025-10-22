@@ -851,8 +851,20 @@ export class RenderEngine {
     let maxTimeBeats = 0;
     const patternDataObj = patternData?.data || {};
 
+    // 🎹 SYNTH RELEASE: Track maximum release time from synth instruments
+    let maxReleaseTimeSeconds = 0;
+
     for (const [instrumentId, notes] of Object.entries(patternDataObj)) {
       if (!Array.isArray(notes)) continue;
+
+      // Check if this is a synth instrument with release envelope
+      const instrumentStore = patternData.instruments?.[instrumentId];
+      if (instrumentStore?.type === 'vasynth' || instrumentStore?.type === 'synth') {
+        // Get release time from preset if available
+        // Default VASynth release is 0.3s, but can be up to 2s in some presets
+        const releaseTime = instrumentStore?.synthParams?.envelope?.release || 0.3;
+        maxReleaseTimeSeconds = Math.max(maxReleaseTimeSeconds, releaseTime);
+      }
 
       for (const note of notes) {
         // Support both 'time' and 'startTime' for backwards compatibility
@@ -866,14 +878,25 @@ export class RenderEngine {
       }
     }
 
+    // 🎹 SYNTH RELEASE: Convert max release time to beats and add to padding
+    const bpm = getCurrentBPM();
+    // Convert seconds to beats: seconds * (BPM / 60) = beats
+    const releaseTimeBeats = maxReleaseTimeSeconds * (bpm / 60);
+    const totalPadding = RENDER_CONFIG.PATTERN_LENGTH_PADDING + releaseTimeBeats;
+
+    console.log(`🎹 Pattern length calculation:`, {
+      maxReleaseTime: maxReleaseTimeSeconds.toFixed(3) + 's',
+      releaseTimeBeats: releaseTimeBeats.toFixed(2) + ' beats',
+      totalPadding: totalPadding.toFixed(2) + ' beats'
+    });
+
     // Add padding and round to nearest bar using config
-    const totalBeats = Math.ceil((maxTimeBeats + RENDER_CONFIG.PATTERN_LENGTH_PADDING) / BEATS_PER_BAR) * BEATS_PER_BAR;
+    const totalBeats = Math.ceil((maxTimeBeats + totalPadding) / BEATS_PER_BAR) * BEATS_PER_BAR;
 
     // If no notes, use default from config
     const finalBeats = Math.max(totalBeats, RENDER_CONFIG.DEFAULT_PATTERN_LENGTH_BARS * BEATS_PER_BAR);
 
-    // Convert beats to samples using current BPM
-    const bpm = getCurrentBPM();
+    // Convert beats to samples using current BPM (bpm already declared above)
     const totalSeconds = beatsToSeconds(finalBeats, bpm);
     const lengthInSamples = Math.ceil(totalSeconds * this.sampleRate);
 
