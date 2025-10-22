@@ -182,8 +182,8 @@ export function useArrangementCanvas(containerRef, tracks = []) {
           setRenderTrigger(Date.now());
         }
       },
-      UPDATE_PRIORITIES.NORMAL,
-      UPDATE_FREQUENCIES.REALTIME
+      UPDATE_PRIORITIES.LOW, // Can be skipped if frame budget exceeded
+      UPDATE_FREQUENCIES.REALTIME // 60fps attempt - frame budget decides
     );
 
     return unsubscribe;

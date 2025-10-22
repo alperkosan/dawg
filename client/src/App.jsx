@@ -6,28 +6,12 @@ import { AudioContextService } from './lib/services/AudioContextService';
 import { visualizationEngine } from './lib/visualization/VisualizationEngine';
 import TimelineControllerSingleton from './lib/core/TimelineControllerSingleton';
 import TransportManagerSingleton from './lib/core/TransportManagerSingleton';
+import { initAudioCapabilityDetector } from './lib/utils/AudioCapabilityDetector';
 
 // Stores
 import { usePlaybackStore } from './store/usePlaybackStore';
 import { useArrangementStore } from './store/useArrangementStore';
 import { useInstrumentsStore } from './store/useInstrumentsStore';
-
-// Helper: Create demo audio buffer (sine wave for testing)
-const createDemoAudioBuffer = (audioContext, frequency = 440, duration = 2) => {
-  const sampleRate = audioContext.sampleRate;
-  const bufferLength = sampleRate * duration;
-  const buffer = audioContext.createBuffer(1, bufferLength, sampleRate);
-  const channelData = buffer.getChannelData(0);
-
-  // Generate sine wave with fade out
-  for (let i = 0; i < bufferLength; i++) {
-    const t = i / sampleRate;
-    const fadeOut = Math.max(0, 1 - (t / duration) * 0.3); // Gentle fade
-    channelData[i] = Math.sin(2 * Math.PI * frequency * t) * 0.5 * fadeOut;
-  }
-
-  return buffer;
-};
 
 // UI Components
 import StartupScreen from './components/StartUpScreen'; // Başlangıç ekranı
@@ -48,6 +32,16 @@ if (import.meta.env.DEV) {
   import('./utils/performanceHelpers').then(() => {
     console.log('🚀 Performance helpers loaded! Try: window.performanceHelpers.runPerformanceTest()');
   });
+
+  // ⚡ WASM: Load WASM helpers
+  import('./utils/wasmHelpers').then(() => {
+    console.log('⚡ WASM helpers loaded! Try: window.wasm.quickBenchmark()');
+  });
+
+  // 🎛️ PHASE 3: UnifiedMixer integrated into production! Manual tests available.
+  import('./lib/core/UnifiedMixerDemo.js').then(() => {
+    console.log('🎛️ UnifiedMixer: Running in production (manual tests: window.demo.help())');
+  }).catch(() => {});
 }
 
 function App() {
@@ -147,6 +141,12 @@ function App() {
       visualizationEngine.init(engine.audioContext);
       console.log('✅ VisualizationEngine initialized');
 
+      // ✅ PERFORMANCE: Detect audio capabilities
+      console.log('🔬 Detecting audio processing capabilities...');
+      initAudioCapabilityDetector(engine.audioContext).catch(err => {
+        console.warn('⚠️ Capability detection failed:', err);
+      });
+
       // ✅ Initialize TimelineController with current BPM from store
       const currentBPM = storeGetters.getBPM();
       await TimelineControllerSingleton.getInstance();
@@ -180,6 +180,21 @@ function App() {
 
       setEngineStatus('ready');
       console.log('✅ Ses sistemi başarıyla başlatıldı ve hazır!');
+
+      // 🔍 AUTO-DEBUG: Gain stack inspection after 2 seconds
+      setTimeout(() => {
+        console.log('\n');
+        console.log('═════════════════════════════════════════');
+        console.log('🔍 AUTO GAIN STACK DEBUG');
+        console.log('═════════════════════════════════════════');
+        if (engine.debugGainStack) {
+          engine.debugGainStack();
+        }
+        if (engine.debugRouting) {
+          console.log('\n');
+          engine.debugRouting();
+        }
+      }, 2000);
 
     } catch (error) {
       console.error('❌ Ses sistemi başlatılamadı:', error);

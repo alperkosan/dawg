@@ -88,6 +88,28 @@ export const useMixerStore = create((set, get) => ({
         return track;
       })
     }));
+
+    // 🎚️ MASTER CONTROLS SPECIAL CASE (UnifiedMixer integration)
+    // When UnifiedMixer is active, master channel has no mixer-processor node
+    // Use dedicated master control APIs instead
+    if (trackId === 'master') {
+      const audioEngine = AudioContextService.getAudioEngine();
+
+      if (param === 'volume' && audioEngine?.setMasterVolume) {
+        // Convert dB to linear gain (0 dB = 1.0, -6 dB = 0.5, etc.)
+        const linearGain = Math.pow(10, value / 20);
+        audioEngine.setMasterVolume(linearGain);
+        console.log(`🎚️ Master volume: ${value.toFixed(1)} dB → ${linearGain.toFixed(3)} gain`);
+        return;
+      }
+
+      if (param === 'pan' && audioEngine?.setMasterPan) {
+        audioEngine.setMasterPan(value);
+        console.log(`🎚️ Master pan: ${value.toFixed(2)}`);
+        return;
+      }
+    }
+
     // SES MOTORUNA KOMUT GÖNDER (sadece mevcut metodları çağır)
     if (AudioContextService.updateMixerParam) {
       AudioContextService.updateMixerParam(trackId, param, value);

@@ -13,6 +13,7 @@
  */
 
 import EventBus from './EventBus.js';
+import { realCPUMonitor } from '../utils/RealCPUMonitor.js';
 
 export class PerformanceMonitor {
     constructor(audioEngine) {
@@ -138,38 +139,42 @@ export class PerformanceMonitor {
     }
 
     /**
-     * Update CPU metrics (estimation)
+     * Update CPU metrics (REAL measurement + estimation)
      */
     updateCPUMetrics() {
-        // Estimate CPU based on:
-        // - Active voices
-        // - Active effects
-        // - Scheduled events
-        // - Grain count
+        // ⚡ CRITICAL: Use REAL CPU measurement from RealCPUMonitor
+        const realCPU = realCPUMonitor.getCPUUsage();
 
-        let estimatedCPU = 0;
+        if (realCPU > 0) {
+            // Use real measurement
+            this.metrics.cpuUsage = Math.min(100, realCPU);
+            this.metrics.realCPU = realCPU; // Store real measurement separately
+        } else {
+            // Fallback to estimation if real measurement not available
+            let estimatedCPU = 0;
 
-        // Base load
-        estimatedCPU += 5; // Base DAW overhead
+            // Base load
+            estimatedCPU += 5; // Base DAW overhead
 
-        // Voices (instruments)
-        const voiceLoad = (this.metrics.activeVoices / Math.max(this.metrics.maxVoices, 1)) * 20;
-        estimatedCPU += voiceLoad;
+            // Voices (instruments)
+            const voiceLoad = (this.metrics.activeVoices / Math.max(this.metrics.maxVoices, 1)) * 20;
+            estimatedCPU += voiceLoad;
 
-        // Effects
-        const effectLoad = this.metrics.activeEffects * 2; // ~2% per effect
-        estimatedCPU += effectLoad;
+            // Effects
+            const effectLoad = this.metrics.activeEffects * 2; // ~2% per effect
+            estimatedCPU += effectLoad;
 
-        // Grains (granular synthesis)
-        const grainLoad = (this.metrics.activeGrains / 100) * 5; // ~5% per 100 grains
-        estimatedCPU += grainLoad;
+            // Grains (granular synthesis)
+            const grainLoad = (this.metrics.activeGrains / 100) * 5; // ~5% per 100 grains
+            estimatedCPU += grainLoad;
 
-        // Scheduled events overhead
-        const schedulingLoad = Math.min(this.metrics.scheduledEvents / 100, 10); // Max 10%
-        estimatedCPU += schedulingLoad;
+            // Scheduled events overhead
+            const schedulingLoad = Math.min(this.metrics.scheduledEvents / 100, 10); // Max 10%
+            estimatedCPU += schedulingLoad;
 
-        // Clamp to 0-100
-        this.metrics.cpuUsage = Math.min(100, Math.max(0, estimatedCPU));
+            // Clamp to 0-100
+            this.metrics.cpuUsage = Math.min(100, Math.max(0, estimatedCPU));
+        }
 
         // Update peak
         if (this.metrics.cpuUsage > this.metrics.cpuPeak) {

@@ -38,7 +38,8 @@ export class PlayheadRenderer {
 
         log.info('Starting UIUpdateManager-based animation');
 
-        // Subscribe to UIUpdateManager with HIGH priority for smooth playhead
+        // Subscribe to UIUpdateManager with CRITICAL priority for smooth playhead
+        // ⚡ ULTRA-SMOOTH: 60fps with adaptive frame budget protection
         this.subscriptionId = uiUpdateManager.subscribe(
             `playhead-${Date.now()}`, // Unique ID for this playhead
             (currentTime, frameTime) => {
@@ -46,8 +47,8 @@ export class PlayheadRenderer {
                     this.updatePosition(this.getPositionCallback());
                 }
             },
-            UPDATE_PRIORITIES.HIGH,
-            UPDATE_FREQUENCIES.REALTIME
+            UPDATE_PRIORITIES.CRITICAL, // Highest priority - always runs
+            UPDATE_FREQUENCIES.REALTIME // 60fps - frame budget will protect us
         );
     }
 

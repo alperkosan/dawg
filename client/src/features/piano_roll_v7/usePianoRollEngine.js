@@ -102,8 +102,8 @@ export function usePianoRollEngine(containerRef, playbackControls = {}) {
                     setRenderTrigger(Date.now()); // Use timestamp to guarantee re-render
                 }
             },
-            UPDATE_PRIORITIES.NORMAL,
-            UPDATE_FREQUENCIES.REALTIME
+            UPDATE_PRIORITIES.LOW, // Can defer if frame budget exceeded
+            UPDATE_FREQUENCIES.REALTIME // 60fps attempt - frame budget protects
         );
 
         return () => {

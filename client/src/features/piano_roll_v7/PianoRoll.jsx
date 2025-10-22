@@ -351,8 +351,8 @@ function PianoRoll() {
                     }
                 });
             },
-            UPDATE_PRIORITIES.HIGH,
-            UPDATE_FREQUENCIES.REALTIME
+            UPDATE_PRIORITIES.HIGH, // Important but can defer slightly
+            UPDATE_FREQUENCIES.REALTIME // 60fps with frame budget protection
         );
 
         return unsubscribe;

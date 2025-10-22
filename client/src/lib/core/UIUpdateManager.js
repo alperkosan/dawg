@@ -1,6 +1,8 @@
 // src/lib/core/UIUpdateManager.js
 // DAWG - Unified UI Update Manager - Single RAF Loop for All UI Updates
 
+import { realCPUMonitor } from '../utils/RealCPUMonitor.js';
+
 /**
  * ✅ SINGLE RAF LOOP MANAGER
  * Consolidates all UI updates into one requestAnimationFrame loop
@@ -39,6 +41,13 @@ export class UIUpdateManager {
       droppedFrames: 0,
       lastFrameTime: 0,
       currentFps: 60
+    };
+
+    // ⚡ ADAPTIVE FRAME BUDGET: Only use remaining frame time
+    this.frameBudget = {
+      target: 14, // Target 14ms per frame (leaves 2.67ms safety buffer for 60fps)
+      spent: 0,
+      exceeded: 0
     };
 
     // ⚡ ADAPTIVE PERFORMANCE
@@ -171,6 +180,9 @@ export class UIUpdateManager {
 
     const frameStartTime = performance.now();
 
+    // ⚡ CRITICAL: Start real CPU measurement
+    const frameMeasurement = realCPUMonitor.startMeasure('UIUpdateManager_frame');
+
     // Calculate frame time
     const frameTime = currentTime - this.metrics.lastFrameTime;
     this.metrics.lastFrameTime = currentTime;
@@ -201,30 +213,44 @@ export class UIUpdateManager {
       // ✅ PERFORMANCE: In-place sort instead of creating new array
       this._updatesToProcessCache.sort(([,a], [,b]) => b.priority - a.priority);
 
-      // Execute updates in priority order
+      // ⚡ ADAPTIVE FRAME BUDGET: Execute updates with time budget awareness
+      this.frameBudget.spent = 0;
+
       for (let i = 0; i < this._updatesToProcessCache.length; i++) {
         const [id, subscriber] = this._updatesToProcessCache[i];
 
+        // ⚡ CRITICAL: Check frame budget before each update
+        const timeRemaining = this.frameBudget.target - this.frameBudget.spent;
+
+        // Skip LOW priority updates if we're running out of time
+        if (timeRemaining < 2 && subscriber.priority <= UPDATE_PRIORITIES.LOW) {
+          subscriber.lastUpdateTime = currentTime - subscriber.frequency + 5; // Retry in 5ms
+          continue;
+        }
+
         try {
-          let updateStartTime;
-          if (this._isDevelopment) {
-            updateStartTime = performance.now();
-          }
+          const updateStartTime = performance.now();
 
           // Call subscriber update function
           subscriber.callback(currentTime, frameTime);
 
-          // ✅ PERFORMANCE: Only measure performance in development
-          if (this._isDevelopment) {
-            const updateDuration = performance.now() - updateStartTime;
-            if (updateDuration > 5) {
-              console.warn(`🎨 Slow update detected: ${id} took ${updateDuration.toFixed(2)}ms`);
-            }
+          const updateDuration = performance.now() - updateStartTime;
+          this.frameBudget.spent += updateDuration;
+
+          // ✅ PERFORMANCE: Track slow updates
+          if (updateDuration > 3 && this._isDevelopment) {
+            console.warn(`🎨 Slow update: ${id} took ${updateDuration.toFixed(2)}ms`);
           }
 
         } catch (error) {
           console.error(`🎨 Update error in ${id}:`, error);
           // Don't break the loop for one subscriber's error
+        }
+
+        // ⚡ EMERGENCY BRAKE: Stop if we exceed frame budget
+        if (this.frameBudget.spent > this.frameBudget.target) {
+          this.frameBudget.exceeded++;
+          break;
         }
       }
 
@@ -248,6 +274,19 @@ export class UIUpdateManager {
     // ⚡ ADAPTIVE PERFORMANCE: Adjust quality based on FPS
     if (this.adaptiveMode.enabled && this.metrics.frameCount % this.adaptiveMode.fpsCheckInterval === 0) {
       this._adjustQualityLevel();
+    }
+
+    // ⚡ CRITICAL: End CPU measurement and calculate usage
+    realCPUMonitor.endMeasure(frameMeasurement);
+    const cpuUsage = realCPUMonitor.measureFrame(frameStartTime);
+
+    // Log heavy frames and frame budget status
+    if (this.metrics.frameCount % 300 === 0) { // Every 5 seconds at 60fps
+      console.log(`📊 Frame Budget: ${this.frameBudget.spent.toFixed(2)}/${this.frameBudget.target}ms, Exceeded: ${this.frameBudget.exceeded}, CPU: ${cpuUsage.toFixed(1)}%`);
+    }
+
+    if (cpuUsage > 80 && this.metrics.frameCount % 60 === 0) {
+      console.warn(`🔥 Heavy UI frame: ${cpuUsage.toFixed(1)}% CPU, ${frameDuration.toFixed(2)}ms, Budget: ${this.frameBudget.spent.toFixed(2)}ms`, realCPUMonitor.getReport());
     }
 
     // Schedule next frame
