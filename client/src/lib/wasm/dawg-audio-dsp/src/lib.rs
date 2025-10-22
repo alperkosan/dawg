@@ -335,6 +335,10 @@ struct ChannelStrip {
     // EQ/Comp enable
     eq_active: bool,
     comp_active: bool,
+
+    // Compression parameters (configurable)
+    comp_threshold: f32,  // in dB
+    comp_ratio: f32,
 }
 
 impl ChannelStrip {
@@ -350,45 +354,20 @@ impl ChannelStrip {
             solo: false,
             eq_active: false,
             comp_active: false,
+            comp_threshold: -12.0,  // Default: -12dB
+            comp_ratio: 4.0,        // Default: 4:1
         }
     }
 
     /// Process stereo sample through channel strip
     #[inline]
-    fn process(&mut self, sample_l: f32, sample_r: f32, threshold: f32, ratio: f32, sample_rate: f32) -> (f32, f32) {
+    fn process(&mut self, sample_l: f32, sample_r: f32, _sample_rate: f32) -> (f32, f32) {
         if self.mute {
             return (0.0, 0.0);
         }
 
-        let mut out_l = sample_l;
-        let mut out_r = sample_r;
-
-        // EQ processing
-        if self.eq_active {
-            out_l = self.eq_l.process(out_l);
-            out_r = self.eq_r.process(out_r);
-        }
-
-        // Compression
-        if self.comp_active {
-            let comp_gain = self.process_compression(out_l, out_r, threshold, ratio, sample_rate);
-            out_l *= comp_gain;
-            out_r *= comp_gain;
-        }
-
-        // Gain
-        out_l *= self.gain;
-        out_r *= self.gain;
-
-        // Panning (constant power)
-        let pan_rad = (self.pan + 1.0) * 0.5 * std::f32::consts::FRAC_PI_2; // 0 to PI/2
-        let left_gain = pan_rad.cos();
-        let right_gain = pan_rad.sin();
-
-        out_l *= left_gain;
-        out_r *= right_gain;
-
-        (out_l, out_r)
+        // 🧪 COMPLETE BYPASS - Just pass through
+        (sample_l, sample_r)
     }
 
     /// Process compression (same as WasmAudioProcessor)
@@ -476,29 +455,16 @@ impl UnifiedMixerProcessor {
         block_size: usize,
         num_channels: usize,
     ) {
-        // Clear output buffers
+        // 🧪 MINIMAL TEST: Match JavaScript exactly
+        // Clear output
         for i in 0..block_size {
             output_l[i] = 0.0;
             output_r[i] = 0.0;
         }
 
-        // Check if any channel is soloed
-        self.any_solo_active = self.channels.iter().any(|ch| ch.solo);
-
-        // Process each sample
+        // Simple sum - no solo/mute, no channel processing, just raw sum
         for sample_idx in 0..block_size {
-            let mut mix_l = 0.0_f32;
-            let mut mix_r = 0.0_f32;
-
-            // Process all channels for this sample
-            for ch_idx in 0..num_channels.min(self.channels.len()) {
-                let channel = &mut self.channels[ch_idx];
-
-                // Skip if soloed and this channel isn't soloed
-                if self.any_solo_active && !channel.solo {
-                    continue;
-                }
-
+            for ch_idx in 0..num_channels {
                 // Calculate input index: sample_idx * num_channels * 2 + ch_idx * 2
                 let input_base_idx = sample_idx * num_channels * 2 + ch_idx * 2;
 
@@ -506,29 +472,11 @@ impl UnifiedMixerProcessor {
                     let in_l = interleaved_inputs[input_base_idx];
                     let in_r = interleaved_inputs[input_base_idx + 1];
 
-                    // Process through channel strip
-                    let (out_l, out_r) = channel.process(
-                        in_l,
-                        in_r,
-                        -10.0,  // threshold (will be configurable)
-                        4.0,    // ratio (will be configurable)
-                        self.sample_rate
-                    );
-
-                    // Mix into output
-                    mix_l += out_l;
-                    mix_r += out_r;
+                    // Direct sum - exactly like JavaScript
+                    output_l[sample_idx] += in_l;
+                    output_r[sample_idx] += in_r;
                 }
             }
-
-            // Master compression (optional)
-            // let comp_gain = self.process_master_compression(mix_l, mix_r);
-            // mix_l *= comp_gain;
-            // mix_r *= comp_gain;
-
-            // Write to output
-            output_l[sample_idx] = mix_l;
-            output_r[sample_idx] = mix_r;
         }
     }
 
@@ -570,6 +518,21 @@ impl UnifiedMixerProcessor {
             let channel = &mut self.channels[channel_idx];
             channel.eq_l.update_coefficients(low_gain, mid_gain, high_gain, low_freq, high_freq);
             channel.eq_r.update_coefficients(low_gain, mid_gain, high_gain, low_freq, high_freq);
+        }
+    }
+
+    /// Update channel compression parameters
+    #[wasm_bindgen]
+    pub fn set_channel_compression(
+        &mut self,
+        channel_idx: usize,
+        threshold: f32,
+        ratio: f32,
+    ) {
+        if channel_idx < self.channels.len() {
+            let channel = &mut self.channels[channel_idx];
+            channel.comp_threshold = threshold;
+            channel.comp_ratio = ratio;
         }
     }
 

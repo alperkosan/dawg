@@ -488,7 +488,7 @@ const masterChannel = {
   id: 'master',
   name: 'Master',
   type: MIXER_TRACK_TYPES.MASTER,
-  volume: -6,
+  volume: 0,  // ✅ Unity gain (0dB) - professional DAW standard
   pan: 0,
   muted: false,
   solo: false,
@@ -509,9 +509,7 @@ const instrumentTracks = initialInstruments.map((inst, index) => ({
   name: inst.name,
   type: MIXER_TRACK_TYPES.TRACK,  // ✅ FIX: Use TRACK instead of INSTRUMENT
   instrumentId: inst.id,  // Keep instrument ID for reference
-  volume: inst.id.includes('bass') || inst.id === 'kick' || inst.id === '808' ? -3 :
-          inst.id === 'hi-hat' ? -12 :
-          inst.id.includes('pad') || inst.id === 'strings' ? -9 : -6,
+  volume: 0,  // ✅ Unity gain (0dB) - professional DAW standard (all faders start at same level)
   pan: 0,
   muted: false,
   solo: false,

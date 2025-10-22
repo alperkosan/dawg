@@ -75,6 +75,12 @@ export class SampleVoice extends BaseVoice {
         // Formula: playbackRate = 2^(semitones/12)
         const pitchShift = sampleData.pitchShift || 0;
         const playbackRate = Math.pow(2, pitchShift / 12);
+
+        // 🔧 TEMP DEBUG: Log extreme pitch shifts that might cause aliasing
+        if (Math.abs(pitchShift) > 12) {
+            console.warn(`⚠️ Extreme pitch shift: ${pitchShift} semitones (${playbackRate.toFixed(2)}x)`);
+        }
+
         this.currentSource.playbackRate.setValueAtTime(playbackRate, time);
 
         // Connect source to envelope
@@ -82,7 +88,13 @@ export class SampleVoice extends BaseVoice {
 
         // Set velocity gain
         const velocityGain = (velocity / 127) * 0.8;
-        this.gainNode.gain.setValueAtTime(velocityGain, time);
+
+        // 🔧 FIX: Add headroom for samples with pre-existing clipping
+        // Sample analysis showed some samples have clipped peaks
+        const sampleHeadroom = 0.85;  // -1.4dB safety headroom
+        const finalGain = velocityGain * sampleHeadroom;
+
+        this.gainNode.gain.setValueAtTime(finalGain, time);
 
         // Apply attack envelope
         const attackTime = 0.005; // 5ms quick attack

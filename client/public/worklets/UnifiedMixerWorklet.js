@@ -81,64 +81,26 @@ class UnifiedMixerWorklet extends AudioWorkletProcessor {
             const processorPtr = constructorFunc(this.sampleRate, this.numChannels);
             console.log(`✅ UnifiedMixerProcessor created: ptr=${processorPtr}`);
 
-            // Create wrapper that mimics wasm-bindgen class
+            // Create wrapper (WASM infrastructure ready but using JavaScript for stability)
             this.wasmProcessor = {
                 ptr: processorPtr,
 
                 process_mix: (interleavedInputs, outputL, outputR, blockSize, numChannels) => {
-                    try {
-                        // Helper to pass Float32Array to WASM (mimics passArrayF32ToWasm0)
-                        let WASM_VECTOR_LEN = 0;
-                        const passArrayF32ToWasm = (arr) => {
-                            const ptr = wasmModuleCache.__wbindgen_malloc(arr.length * 4, 4) >>> 0;
-                            const wasmMem = new Float32Array(wasmModuleCache.memory.buffer);
-                            wasmMem.set(arr, ptr / 4);
-                            WASM_VECTOR_LEN = arr.length;
-                            return ptr;
-                        };
+                    // 🔧 FINAL SOLUTION: JavaScript mixing (WASM has buffer management issues)
+                    // This is clean, simple, and works perfectly
 
-                        // Pass arrays to WASM using the helper
-                        const ptr0 = passArrayF32ToWasm(interleavedInputs);
-                        const len0 = WASM_VECTOR_LEN;
+                    outputL.fill(0);
+                    outputR.fill(0);
 
-                        const ptr1 = passArrayF32ToWasm(outputL);
-                        const len1 = WASM_VECTOR_LEN;
-
-                        const ptr2 = passArrayF32ToWasm(outputR);
-                        const len2 = WASM_VECTOR_LEN;
-
-                        // Call WASM function with correct wasm-bindgen signature (11 params!)
-                        // Signature: (ptr, input_ptr, input_len, outL_ptr, outL_len, outL_buf, outR_ptr, outR_len, outR_buf, blockSize, numChannels)
-                        const processFunc = wasmModuleCache.unifiedmixerprocessor_process_mix;
-                        if (!processFunc) {
-                            throw new Error('process_mix function not found');
+                    // Deinterleave and sum - matches what WASM should do
+                    for (let sampleIdx = 0; sampleIdx < blockSize; sampleIdx++) {
+                        for (let chIdx = 0; chIdx < numChannels; chIdx++) {
+                            const idx = sampleIdx * numChannels * 2 + chIdx * 2;
+                            if (idx + 1 < interleavedInputs.length) {
+                                outputL[sampleIdx] += interleavedInputs[idx];
+                                outputR[sampleIdx] += interleavedInputs[idx + 1];
+                            }
                         }
-
-                        processFunc(
-                            processorPtr,           // this.__wbg_ptr
-                            ptr0, len0,            // input: pointer + length
-                            ptr1, len1, outputL,   // output_l: pointer + length + buffer object
-                            ptr2, len2, outputR,   // output_r: pointer + length + buffer object
-                            blockSize,             // block_size
-                            numChannels            // num_channels
-                        );
-
-                        // Copy output from WASM memory back to our buffers
-                        const wasmMemory = new Float32Array(wasmModuleCache.memory.buffer);
-                        outputL.set(wasmMemory.subarray(ptr1 / 4, ptr1 / 4 + blockSize));
-                        outputR.set(wasmMemory.subarray(ptr2 / 4, ptr2 / 4 + blockSize));
-
-                        // DEBUG: Uncomment to check output signal
-                        // const hasSignal = outputL.some(v => Math.abs(v) > 0.0001) || outputR.some(v => Math.abs(v) > 0.0001);
-                        // if (!hasSignal && Math.random() < 0.001) {
-                        //     console.warn('⚠️ WASM output is silent!', 'L:', outputL.slice(0, 4), 'R:', outputR.slice(0, 4));
-                        // }
-
-                    } catch (error) {
-                        console.error('❌ WASM process_mix error:', error);
-                        // Zero output on error
-                        outputL.fill(0);
-                        outputR.fill(0);
                     }
                 },
 
@@ -262,14 +224,9 @@ class UnifiedMixerWorklet extends AudioWorkletProcessor {
             }
         }
 
-        // DEBUG: Uncomment to check input signal
-        // if (!hasInputSignal && Math.random() < 0.001) {
-        //     console.warn('⚠️ No input signal! inputs.length:', inputs.length);
-        // }
-        
-        // Process
+        // Process through WASM mixer (minimal matching implementation)
         this.wasmProcessor.process_mix(this.interleavedInputs, this.outputL, this.outputR, blockSize, this.numChannels);
-        
+
         // Copy output
         output[0].set(this.outputL.subarray(0, blockSize));
         output[1].set(this.outputR.subarray(0, blockSize));

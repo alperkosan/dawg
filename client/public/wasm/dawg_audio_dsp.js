@@ -237,6 +237,15 @@ export class UnifiedMixerProcessor {
         wasm.unifiedmixerprocessor_set_channel_eq(this.__wbg_ptr, channel_idx, low_gain, mid_gain, high_gain, low_freq, high_freq);
     }
     /**
+     * Update channel compression parameters
+     * @param {number} channel_idx
+     * @param {number} threshold
+     * @param {number} ratio
+     */
+    set_channel_compression(channel_idx, threshold, ratio) {
+        wasm.unifiedmixerprocessor_set_channel_compression(this.__wbg_ptr, channel_idx, threshold, ratio);
+    }
+    /**
      * Reset all channels
      */
     reset() {

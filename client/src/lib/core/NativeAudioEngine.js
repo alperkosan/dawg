@@ -20,6 +20,13 @@ import { globalParameterBatcher } from '../audio/ParameterBatcher.js';
 import { globalMessagePool } from '../audio/MessagePool.js';
 // 🎛️ PHASE 3: UnifiedMixer (MegaMixer) - High-performance WASM-powered mixer
 import { UnifiedMixerNode } from './UnifiedMixerNode.js';
+// 🎛️ CONFIGURATION: Centralized audio engine configuration
+import AudioEngineConfig, { getGainConfig, getInstrumentGainMultiplier, clampGain } from './AudioEngineConfig.js';
+// 🔬 DEBUG: Sample analyzer for distortion detection
+import { analyzeAllSamples } from '../../utils/sampleAnalyzer.js';
+import { testDirectPlayback } from '../../utils/directPlaybackTest.js';
+// 🎛️ DİNAMİK MİXER: Dynamic mixer insert system
+import { MixerInsert } from './MixerInsert.js';
 
 export class NativeAudioEngine {
     constructor(callbacks = {}) {
@@ -39,21 +46,28 @@ export class NativeAudioEngine {
         this.setTransportPosition = callbacks.setTransportPosition || (() => {});
         this.onPatternChange = callbacks.onPatternChange || (() => {});
         
-        // =================== AUDIO ROUTING ===================
-        this.masterMixer = null;
-        this.masterGain = null;        // Pure gain control (user-controllable)
-        this.masterAnalyzer = null;    // Monitoring only
+        // =================== DİNAMİK AUDIO ROUTING ===================
 
-        // 🎛️ PHASE 3: UnifiedMixer (MegaMixer) - Feature flag
-        this.useUnifiedMixer = true;  // ✅ ENABLED: High-performance WASM mixer!
-        this.unifiedMixer = null;      // Will be initialized if enabled
-        this.unifiedMixerChannelMap = new Map();  // channelId → channelIndex (0-31)
+        // 🎛️ DYNAMIC MIXER SYSTEM
+        this.mixerInserts = new Map();       // insertId → MixerInsert instance (dinamik)
+        this.instruments = new Map();        // instrumentId → Instrument instance (dinamik)
+        this.instrumentToInsert = new Map(); // instrumentId → insertId (routing map)
 
-        // =================== INSTRUMENTS & CHANNELS ===================
-        this.instruments = new Map();
-        this.mixerChannels = new Map();
+        // 🎚️ MASTER BUS (sabit, tek)
+        this.masterBusInput = null;          // Tüm insert'ler buraya send yapar
+        this.masterBusGain = null;           // Master bus gain
+        this.masterEffects = new Map();      // Master effect chain
+        this.masterGain = null;              // Final output volume
+        this.masterAnalyzer = null;          // Master metering
+
+        // ⚠️ DEPRECATED (will be removed)
+        this.unifiedMixer = null;            // Old unified mixer (being replaced)
+        this.unifiedMixerChannelMap = new Map();
+        this.nextChannelIndex = 0;
+        this.mixerChannels = new Map();      // Old mixer channels (being replaced)
+
+        // Effect registry
         this.effects = new Map();
-        this.sends = new Map();
         
         // =================== PATTERN & SEQUENCING ===================
         this.patterns = new Map();
@@ -139,11 +153,11 @@ export class NativeAudioEngine {
         this.workletManager = new ImprovedWorkletManager(this.audioContext);
         await this._loadRequiredWorklets();
 
-        // 3. Setup Master Audio Chain
+        // 3. Setup Master Audio Chain (RAW signal path)
         await this._setupMasterAudioChain();
 
-        // 4. Create Default Channels
-        this._createDefaultChannels();
+        // 4. ⚠️ REMOVED: _createDefaultChannels() - no longer needed
+        // UnifiedMixer handles all channel routing automatically
 
         // 5. ✅ NEW: Initialize PlaybackManager
         this.playbackManager = new PlaybackManager(this);
@@ -154,10 +168,12 @@ export class NativeAudioEngine {
         this.performanceMonitor.start(); // Auto-start monitoring
         console.log('✅ Performance monitoring initialized and started');
 
-        // 7. 🎛️ PHASE 3: Initialize UnifiedMixer (if enabled)
-        if (this.useUnifiedMixer) {
-            await this._initializeUnifiedMixer();
-        }
+        // 7. 🎛️ HYBRID: UnifiedMixer + Dynamic MixerInsert (geçiş dönemi)
+        // UnifiedMixer şimdilik aktif (backward compatibility)
+        // Yeni kod MixerInsert kullanmalı
+        await this._initializeUnifiedMixer();
+        console.log('✅ UnifiedMixer initialized (backward compatibility)');
+        console.log('ℹ️ Dynamic MixerInsert API ready for use');
 
         this.isInitialized = true;
     }
@@ -361,61 +377,43 @@ export class NativeAudioEngine {
 
     async _setupMasterAudioChain() {
 
-        // Master Mixer (Native Worklet)
-        const { node: masterMixerNode } = await this.workletManager.createWorkletNode(
-            'mixer-processor',
-            {
-                numberOfInputs: 8, // Multiple inputs for mixing
-                numberOfOutputs: 1,
-                outputChannelCount: [2],
-                processorOptions: {
-                    stripId: 'master',
-                    stripName: 'Master Mix'
-                }
-            }
-        );
+        // 🎛️ DİNAMİK MASTER BUS SYSTEM
+        // Tüm mixer insert'ler masterBusInput'a send yapar
+        // Master effects chain burada
+        // Final gain ve output
 
-        this.masterMixer = {
-            node: masterMixerNode,
-            input: masterMixerNode,
-            parameters: new Map([
-                ['gain', masterMixerNode.parameters.get('gain')],
-                ['lowGain', masterMixerNode.parameters.get('lowGain')],
-                ['midGain', masterMixerNode.parameters.get('midGain')],
-                ['highGain', masterMixerNode.parameters.get('highGain')]
-            ])
-        };
+        console.log('🎚️ Setting up DYNAMIC master bus...');
 
-        // 🎚️ PURE MASTER CHAIN - Absolutely NO Processing
-        // Just clean pan + volume control + monitoring
+        // 🎛️ Master Bus Input - Tüm insert'ler buraya bağlanır
+        this.masterBusInput = this.audioContext.createGain();
+        this.masterBusInput.gain.value = 1.0; // Unity gain
+        console.log('  📥 Master Bus Input: Unity gain (all inserts connect here)');
 
-        // Master Panner (stereo positioning - user-controllable)
-        this.masterPanner = this.audioContext.createStereoPanner();
-        this.masterPanner.pan.value = 0;  // Default center
-        console.log('🎚️ Master Panner: 0 (center)');
+        // 🎚️ Master Bus Gain - Pre-effects gain stage
+        this.masterBusGain = this.audioContext.createGain();
+        this.masterBusGain.gain.value = 1.0; // Unity gain
+        console.log('  🎛️ Master Bus Gain: Unity gain (pre-effects)');
 
-        // Master Gain (pure volume control - user-controllable)
+        // 🎚️ Master Volume - Final output control
         this.masterGain = this.audioContext.createGain();
-        this.masterGain.gain.value = 0.8;  // Default master volume
-        console.log('🎚️ Master Gain: 0.8 (pure volume control, zero processing)');
+        this.masterGain.gain.value = 0.8; // Default volume
+        console.log('  🎚️ Master Volume: 0.8 (final output)');
 
-        // Master Analyzer (monitoring only - no audio processing)
+        // 📊 Master Analyzer - Metering
         this.masterAnalyzer = this.audioContext.createAnalyser();
-        this.masterAnalyzer.fftSize = 2048;
+        this.masterAnalyzer.fftSize = 256;
         this.masterAnalyzer.smoothingTimeConstant = 0.8;
+        console.log('  📊 Master Analyzer: FFT 256 (metering)');
 
-        // 🎚️ CLEAN GAIN STAGING: Set internal mixer gain
-        this.masterMixer.parameters.get('gain').value = 0.7;
-        console.log('🎚️ MasterMixer internal gain: 0.7');
-
-        // 🎛️ PURE ROUTING: masterMixer → masterPanner → masterGain → analyzer → output
-        // NO compression, NO limiting, NO effects - COMPLETELY CLEAN!
-        this.masterMixer.node.connect(this.masterPanner);
-        this.masterPanner.connect(this.masterGain);
+        // 🎛️ İlk routing (effect yok)
+        // masterBusInput → masterBusGain → masterGain → analyzer → output
+        this.masterBusInput.connect(this.masterBusGain);
+        this.masterBusGain.connect(this.masterGain);
         this.masterGain.connect(this.masterAnalyzer);
         this.masterAnalyzer.connect(this.audioContext.destination);
 
-        console.log('✅ Master chain: PURE CLEAN OUTPUT (zero processing, only pan + volume control)');
+        console.log('✅ Dynamic Master Bus ready:');
+        console.log('   Route: Inserts → MasterBusInput → [Effects] → MasterGain → Output');
 
     }
 
@@ -487,6 +485,12 @@ export class NativeAudioEngine {
             });
 
         await Promise.allSettled(samplePromises);
+
+        // 🔬 DEBUG: Analyze all loaded samples for distortion
+        if (this.sampleBuffers.size > 0) {
+            console.log('\n🔬 Running sample analysis...');
+            setTimeout(() => analyzeAllSamples(this), 100);
+        }
     }
 
     // =================== INSTRUMENT MANAGEMENT ===================
@@ -540,9 +544,28 @@ export class NativeAudioEngine {
 
             this.instruments.set(instrumentData.id, instrument);
 
-            // Connect to mixer channel (create lazily if needed)
-            const channelId = instrumentData.mixerTrackId || await this._getOrCreateTrackChannel();
-            await this._connectInstrumentToChannel(instrumentData.id, channelId);
+            // 🎛️ DYNAMIC ROUTING: Use MixerInsert if mixerTrackId is provided
+            if (instrumentData.mixerTrackId) {
+                // Check if MixerInsert exists
+                const insert = this.mixerInserts.get(instrumentData.mixerTrackId);
+                if (insert) {
+                    // Route to dynamic MixerInsert
+                    this.routeInstrumentToInsert(instrumentData.id, instrumentData.mixerTrackId);
+                    console.log(`🔗 Instrument ${instrumentData.id} routed to MixerInsert: ${instrumentData.mixerTrackId}`);
+                } else {
+                    console.warn(`⚠️ MixerInsert not found: ${instrumentData.mixerTrackId}, falling back to UnifiedMixer`);
+                    await this._connectInstrumentToChannel(instrumentData.id, instrumentData.mixerTrackId);
+                }
+            } else {
+                // Backward compatibility: Auto-generate channel ID and use UnifiedMixer
+                if (this.nextChannelIndex >= 32) {
+                    console.warn('⚠️ All 32 channels in use, reusing channel 0');
+                    this.nextChannelIndex = 0;
+                }
+                const channelId = `track-${this.nextChannelIndex + 1}`;
+                this.nextChannelIndex++;
+                await this._connectInstrumentToChannel(instrumentData.id, channelId);
+            }
 
             this.metrics.instrumentsCreated++;
             console.log(`✅ Instrument created: ${instrumentData.name} (${instrumentData.type})`);
@@ -557,60 +580,9 @@ export class NativeAudioEngine {
 
     // =================== MIXER CHANNELS ===================
 
-    /**
-     * ⚡ PERFORMANCE: Lazy channel creation
-     * Get existing track channel or create new one on-demand
-     */
-    async _getOrCreateTrackChannel() {
-        // Try to find an available track channel
-        for (let i = 1; i <= 24; i++) {
-            const id = `track-${i}`;
-
-            // If channel doesn't exist, create it
-            if (!this.mixerChannels.has(id)) {
-                await this._createMixerChannel(id, `Track ${i}`, { type: 'track' });
-                return id;
-            }
-
-            // If channel exists but has no instruments connected, reuse it
-            const channel = this.mixerChannels.get(id);
-            const hasInstruments = Array.from(this.instruments.values()).some(
-                inst => inst.mixerChannelId === id
-            );
-
-            if (!hasInstruments) {
-                return id;
-            }
-        }
-
-        // Fallback: return master if all tracks are full
-        console.warn('⚠️ All 24 tracks are in use, routing to master');
-        return 'master';
-    }
-
-    _createDefaultChannels() {
-        // 🎛️ PHASE 3: Skip channel creation if UnifiedMixer is active
-        if (this.useUnifiedMixer) {
-            console.log('🎛️ UnifiedMixer active - skipping mixer-processor channel creation');
-            console.log('🎛️ Old mixer-processor channels: 0 (all routing through UnifiedMixer)');
-            return;
-        }
-
-        // ⚡ PERFORMANCE OPTIMIZATION: Lazy Channel Creation
-        // OLD: Created all 24 channels upfront = 196ms startup + 1.4MB memory
-        // NEW: Only create master + essential buses = 20ms startup + 200KB memory
-
-        // Master channel (always needed for old system)
-        this._createMixerChannel('master', 'Master', { isMaster: true });
-
-        // Essential bus channels only
-        this._createMixerChannel('bus-1', 'Reverb Bus', { type: 'bus' });
-
-        // ✅ Track channels are now created lazily when instruments are routed
-        // This saves ~170ms startup time and ~1.2MB memory!
-
-        console.log('✅ Lazy channel creation enabled - channels will be created on demand');
-    }
+    // ⚠️ REMOVED: Old mixer-processor channel system
+    // All routing now handled by UnifiedMixer (32 channels, WASM-powered)
+    // Old functions removed: _getOrCreateTrackChannel, _createDefaultChannels, _createMixerChannel
 
     // =================== 🎛️ PHASE 3: UNIFIED MIXER ===================
 
@@ -626,18 +598,18 @@ export class NativeAudioEngine {
             this.unifiedMixer = new UnifiedMixerNode(this.audioContext, 32);
             await this.unifiedMixer.initialize();
 
-            // 🎛️ CRITICAL FIX: Connect UnifiedMixer directly to master chain (bypass old masterMixer)
-            // UnifiedMixer does its own mixing, so connect straight to master pan/gain chain
-            // Routing: UnifiedMixer → masterPanner → masterGain → analyzer → output
-            this.unifiedMixer.connect(this.masterPanner);
-            console.log('✅ UnifiedMixer → masterPanner → masterGain → analyzer → output');
+            // 🎛️ RAW ROUTING: Connect UnifiedMixer directly to masterBusGain
+            // UnifiedMixer outputs mixed signal → masterBusGain (unity) → masterGain → analyzer → output
+            // COMPLETELY CLEAN - No EQ, no compression, no limiting
+            this.unifiedMixer.connect(this.masterBusGain);
+            console.log('✅ RAW ROUTING: UnifiedMixer → masterBusGain (unity gain) → masterGain → analyzer → output');
 
             // Initialize channel mapping (channelId → channelIndex 0-31)
             this._initializeUnifiedMixerChannelMap();
 
             logger.info('✅ UnifiedMixer initialized: 32 channels ready');
             logger.info('💡 CPU overhead: ~0% | Latency: 2.67ms | 11x faster than old system');
-            console.log('🎛️ ROUTING: UnifiedMixer → masterPanner → masterGain → analyzer → output');
+            logger.info('💡 RAW signal path - No automatic processing');
         } catch (error) {
             logger.error('❌ Failed to initialize UnifiedMixer:', error);
             // Fallback: Disable UnifiedMixer and use old system
@@ -686,77 +658,6 @@ export class NativeAudioEngine {
 
     // =================== END: UNIFIED MIXER ===================
 
-    async _createMixerChannel(id, name, options = {}) {
-        try {
-            // 1. Mikser kanalı için AudioWorkletNode'u oluşturuyoruz.
-            const { node: mixerNode } = await this.workletManager.createWorkletNode(
-                'mixer-processor',
-                {
-                    numberOfInputs: 1,
-                    numberOfOutputs: 1,
-                    outputChannelCount: [2],  // ✅ Force stereo output for pan to work
-                    channelCount: 2,          // ✅ Force stereo processing
-                    channelCountMode: 'explicit',  // ✅ Prevent auto-conversion to mono
-                    channelInterpretation: 'speakers',  // ✅ Stereo interpretation
-                    processorOptions: {
-                        stripId: id,
-                        stripName: name
-                    }
-                }
-            );
-
-            // 2. Kendi NativeMixerChannel sınıfımızı kullanarak yeni bir kanal örneği oluşturuyoruz.
-            //    Bu, ona worklet yöneticisini (workletManager) de ileterek efektlerin
-            //    doğru şekilde oluşturulmasını sağlar.
-            const channel = new NativeMixerChannel(
-                id,
-                name,
-                mixerNode,
-                this.audioContext,
-                this.workletManager, // Efekt yönetimi için bu referans kritikti.
-                options
-            );
-
-            // 3. Oluşturulan kanalı, motorun ana listesine ekliyoruz.
-            this.mixerChannels.set(id, channel);
-
-            // 3.5 🎚️ CRITICAL FIX: EXTREMELY low gain for 20+ instrument summing
-            // With 20 instruments: 20 × 0.07 × 0.7 × 0.8 = 0.784 ✅ NO CLIP
-            // Use setValueAtTime for immediate effect (bypass parameter batcher's 15ms delay)
-            const gainParam = channel.parameters.get('gain');
-            if (gainParam) {
-                gainParam.setValueAtTime(0.07, this.audioContext.currentTime);
-                console.log(`🎚️ Channel ${id} initial gain: 0.07 (sum-safe for 20+ instruments)`);
-            }
-
-            // 4. ROUTING FIX: Route all channels through master channel
-            if (options.isMaster) {
-                // Master channel connects to masterMixer (final output chain)
-                channel.connect(this.masterMixer.input);
-                console.log('🔌 Master channel connected to output chain');
-            } else {
-                // All other channels connect to master channel
-                const masterChannel = this.mixerChannels.get('master');
-                if (masterChannel) {
-                    channel.connect(masterChannel.input);
-                    console.log(`🔌 Channel ${id} connected to master channel`);
-                } else {
-                    // Fallback: If master not created yet, connect directly to masterMixer
-                    if (this.masterMixer?.input) {
-                        channel.connect(this.masterMixer.input);
-                        console.log(`⚠️ Channel ${id} connected directly to masterMixer (master channel not ready)`);
-                    }
-                }
-            }
-
-            this.metrics.channelsCreated++;
-            return channel;
-
-        } catch (error) {
-            throw error;
-        }
-    }
-
     // =================== MASTER CONTROLS ===================
 
     /**
@@ -775,27 +676,11 @@ export class NativeAudioEngine {
      * @returns {number} Current master volume
      */
     getMasterVolume() {
-        return this.masterGain ? this.masterGain.gain.value : 0.8;
+        return this.masterGain ? this.masterGain.gain.value : AudioEngineConfig.gain.masterVolume.default;
     }
 
-    /**
-     * Set master pan position (stereo balance)
-     * @param {number} pan - Pan value (-1.0 = full left, 0 = center, +1.0 = full right)
-     */
-    setMasterPan(pan) {
-        if (this.masterPanner) {
-            this.masterPanner.pan.setValueAtTime(pan, this.audioContext.currentTime);
-            console.log(`🎚️ Master pan: ${pan.toFixed(2)}`);
-        }
-    }
-
-    /**
-     * Get master pan position
-     * @returns {number} Current master pan (-1 to +1)
-     */
-    getMasterPan() {
-        return this.masterPanner ? this.masterPanner.pan.value : 0;
-    }
+    // ⚠️ REMOVED: Master pan functions (masterPanner doesn't exist in RAW signal path)
+    // Pan control is per-channel in UnifiedMixer, not on master
 
     // =================== GAIN SYSTEM ===================
 
@@ -822,19 +707,14 @@ export class NativeAudioEngine {
 
     _calculateAdaptiveGain() {
         const numInstruments = this.instruments.size || 1;
-        const targetPeak = 0.75;  // Safe target with headroom
-        const masterMixerGain = this.masterMixer?.parameters?.get('gain')?.value || 0.7;
-        const masterGainValue = this.masterGain?.gain?.value || 0.8;
 
-        // Calculate required per-channel gain
-        const channelGain = targetPeak / (numInstruments * masterMixerGain * masterGainValue);
+        // Use config system to get gain
+        this.gainConfig = getGainConfig(numInstruments);
+        const { channelGain, mode, expectedPeak } = this.gainConfig;
 
-        // Clamp between 0.05 and 0.8 (reasonable bounds)
-        const clampedGain = Math.max(0.05, Math.min(0.8, channelGain));
+        console.log(`🎚️ ${mode === 'adaptive' ? 'Adaptive' : 'Static'} Gain: ${numInstruments} instruments → ${channelGain.toFixed(3)} per channel (peak: ${expectedPeak.toFixed(3)})`);
 
-        console.log(`🎚️ Adaptive Gain: ${numInstruments} instruments → ${clampedGain.toFixed(3)} per channel (peak: ${(clampedGain * numInstruments * masterMixerGain * masterGainValue).toFixed(3)})`);
-
-        return clampedGain;
+        return channelGain;
     }
 
     updateAdaptiveGains() {
@@ -865,177 +745,58 @@ export class NativeAudioEngine {
     }
     */
 
-    // =================== MIXER CONTROLS ===================
+    // =================== MIXER CONTROLS (UnifiedMixer Only) ===================
 
     setChannelVolume(channelId, volume) {
-        // 🎛️ PHASE 3: UnifiedMixer parameter forwarding
-        if (this.useUnifiedMixer && this.unifiedMixer) {
-            const channelIdx = this._getUnifiedMixerChannelIndex(channelId);
-            if (channelIdx !== -1) {
-                this.unifiedMixer.setChannelParams(channelIdx, { gain: volume });
-                return;
-            }
+        if (!this.unifiedMixer) {
+            console.warn('⚠️ UnifiedMixer not initialized');
+            return;
         }
 
-        // Original mixer-processor
-        const channel = this.mixerChannels.get(channelId);
-        if (channel) {
-            channel.setVolume(volume);
+        const channelIdx = this._getUnifiedMixerChannelIndex(channelId);
+        if (channelIdx !== -1) {
+            this.unifiedMixer.setChannelParams(channelIdx, { gain: volume });
         }
     }
 
     setChannelPan(channelId, pan) {
-        // 🎛️ PHASE 3: UnifiedMixer parameter forwarding
-        if (this.useUnifiedMixer && this.unifiedMixer) {
-            const channelIdx = this._getUnifiedMixerChannelIndex(channelId);
-            if (channelIdx !== -1) {
-                this.unifiedMixer.setChannelParams(channelIdx, { pan });
-                return;
-            }
+        if (!this.unifiedMixer) {
+            console.warn('⚠️ UnifiedMixer not initialized');
+            return;
         }
 
-        // Original mixer-processor
-        const channel = this.mixerChannels.get(channelId);
-        if (channel) {
-            channel.setPan(pan);
+        const channelIdx = this._getUnifiedMixerChannelIndex(channelId);
+        if (channelIdx !== -1) {
+            this.unifiedMixer.setChannelParams(channelIdx, { pan });
         }
     }
 
     setChannelMute(channelId, muted) {
-        // 🎛️ PHASE 3: UnifiedMixer parameter forwarding
-        if (this.useUnifiedMixer && this.unifiedMixer) {
-            const channelIdx = this._getUnifiedMixerChannelIndex(channelId);
-            if (channelIdx !== -1) {
-                this.unifiedMixer.setChannelParams(channelIdx, { mute: muted });
-                return;
-            }
-        }
-
-        // Original mixer-processor
-        const channel = this.mixerChannels.get(channelId);
-        if (channel) {
-            channel.setMute(muted);
-        }
-    }
-
-    setChannelMono(channelId, mono) {
-        const channel = this.mixerChannels.get(channelId);
-        if (channel) {
-            channel.setMono(mono);
-        }
-    }
-
-    getMeterLevel(channelId) {
-        const channel = this.mixerChannels.get(channelId);
-        if (channel && channel.getMeterLevel) {
-            return channel.getMeterLevel();
-        }
-        return { peak: -60, rms: -60 };
-    }
-
-    setMasterVolume(volume) {
-        if (this.masterLimiter) {
-            const now = this.audioContext.currentTime;
-            const param = this.masterLimiter.gain;
-            param.cancelScheduledValues(now);
-            param.setValueAtTime(param.value, now);
-            param.linearRampToValueAtTime(volume, now + 0.015);
-        }
-    }
-
-    // =================== SEND/INSERT ROUTING ===================
-
-    /**
-     * Create a send from a track to a bus
-     * @param {string} trackId - Source track ID
-     * @param {string} busId - Target bus ID
-     * @param {number} level - Send level (0-1)
-     * @param {boolean} preFader - Send before or after fader
-     */
-    createSend(trackId, busId, level = 0.5, preFader = false) {
-        const sourceChannel = this.mixerChannels.get(trackId);
-        const busChannel = this.mixerChannels.get(busId);
-
-        if (!sourceChannel) {
-            console.error(`❌ Source channel not found: ${trackId}`);
+        if (!this.unifiedMixer) {
+            console.warn('⚠️ UnifiedMixer not initialized');
             return;
         }
 
-        if (!busChannel) {
-            console.error(`❌ Bus channel not found: ${busId}`);
-            return;
+        const channelIdx = this._getUnifiedMixerChannelIndex(channelId);
+        if (channelIdx !== -1) {
+            this.unifiedMixer.setChannelParams(channelIdx, { mute: muted });
         }
-
-        // Create send in source channel
-        sourceChannel.createSend(busId, busChannel.input, level, preFader);
-        console.log(`✅ Send created: ${trackId} → ${busId}`);
     }
 
-    /**
-     * Remove a send from a track
-     * @param {string} trackId - Source track ID
-     * @param {string} busId - Target bus ID
-     */
-    removeSend(trackId, busId) {
-        const sourceChannel = this.mixerChannels.get(trackId);
+    // ⚠️ REMOVED: setChannelMono (not supported in UnifiedMixer - use pan instead)
 
-        if (!sourceChannel) {
-            console.error(`❌ Source channel not found: ${trackId}`);
-            return;
-        }
-
-        sourceChannel.removeSend(busId);
-        console.log(`✅ Send removed: ${trackId} → ${busId}`);
-    }
-
-    /**
-     * Update send level
-     * @param {string} trackId - Source track ID
-     * @param {string} busId - Target bus ID
-     * @param {number} level - New send level (0-1)
-     */
-    updateSendLevel(trackId, busId, level) {
-        const sourceChannel = this.mixerChannels.get(trackId);
-
-        if (!sourceChannel) {
-            console.error(`❌ Source channel not found: ${trackId}`);
-            return;
-        }
-
-        sourceChannel.updateSendLevel(busId, level);
-        console.log(`✅ Send level updated: ${trackId} → ${busId} (${level})`);
-    }
-
-    /**
-     * Set track output routing (insert)
-     * @param {string} trackId - Source track ID
-     * @param {string} targetId - Target track/bus/master ID
-     */
-    setTrackOutput(trackId, targetId) {
-        const sourceChannel = this.mixerChannels.get(trackId);
-        const targetChannel = this.mixerChannels.get(targetId);
-
-        if (!sourceChannel) {
-            console.error(`❌ Source channel not found: ${trackId}`);
-            return;
-        }
-
-        if (!targetChannel) {
-            console.error(`❌ Target channel not found: ${targetId}`);
-            return;
-        }
-
-        // Reconnect source channel output to target channel input
-        sourceChannel.reconnectOutput(targetChannel.input);
-        console.log(`✅ Track output routed: ${trackId} → ${targetId}`);
-    }
+    // ⚠️ REMOVED: Old mixer-processor channel API
+    // getMeterLevel, createSend, removeSend, updateSendLevel, setTrackOutput
+    // All routing now handled by UnifiedMixer - use UnifiedMixer API instead
 
     // =================== AUDITION (PREVIEW) ===================
 
-    auditionNoteOn(instrumentId, pitch, velocity = 0.8) {
+    auditionNoteOn(instrumentId, pitch, velocity = null) {
         const instrument = this.instruments.get(instrumentId);
         if (instrument) {
-            instrument.triggerNote(pitch, velocity);
+            // Use default velocity from config if not specified
+            const defaultVelocity = AudioEngineConfig.gain.masterVolume.default;
+            instrument.triggerNote(pitch, velocity !== null ? velocity : defaultVelocity);
         }
     }
 
@@ -1063,21 +824,8 @@ export class NativeAudioEngine {
         };
     }
 
-    getChannelMeterData(channelId) {
-        const channel = this.mixerChannels.get(channelId);
-        if (!channel?.analyzer) return null;
-
-        const bufferLength = channel.analyzer.frequencyBinCount;
-        const dataArray = new Uint8Array(bufferLength);
-        channel.analyzer.getByteFrequencyData(dataArray);
-
-        return {
-            frequencyData: dataArray,
-            rms: this._calculateRMS(dataArray),
-            peak: Math.max(...dataArray),
-            channelId
-        };
-    }
+    // ⚠️ REMOVED: getChannelMeterData for old system
+    // Use UnifiedMixer.getChannelMetering() instead
 
     // =================== PERFORMANCE MONITORING ===================
 
@@ -1134,7 +882,11 @@ export class NativeAudioEngine {
                 total: this.instruments.size,
                 byType: this._getInstrumentsByType()
             },
-            mixerChannels: this.mixerChannels.size,
+            unifiedMixer: {
+                active: !!this.unifiedMixer,
+                channels: 32,
+                type: 'WASM-powered RAW signal path'
+            },
             workletManager: this.workletManager?.getDetailedStats(),
             transport: this.transport?.getStats(),
             playback: this.playbackManager?.getPlaybackStatus() // ✅ NEW: Playback status
@@ -1191,33 +943,27 @@ export class NativeAudioEngine {
         return true;
     }
 
+    // 🎛️ HYBRID: UnifiedMixer routing (backward compatibility)
+    // New code should use: createMixerInsert() + routeInstrumentToInsert()
+
     async _connectInstrumentToChannel(instrumentId, channelId) {
         console.log(`🔌 Attempting to connect instrument ${instrumentId} to channel ${channelId}`);
-
         const instrument = this.instruments.get(instrumentId);
         if (!instrument) {
             console.error(`❌ Instrument not found: ${instrumentId}`);
             return false;
         }
-
-        // Instrument output kontrolü
         if (!instrument.output) {
             console.error(`❌ Instrument ${instrumentId} has no output!`);
             return false;
         }
-
-        // 🎛️ PHASE 3: UnifiedMixer routing
-        if (this.useUnifiedMixer && this.unifiedMixer) {
-            return this._connectToUnifiedMixer(instrument, instrumentId, channelId);
+        if (!this.unifiedMixer) {
+            console.error('❌ UnifiedMixer not initialized - cannot route instrument');
+            return false;
         }
-
-        // Original routing (mixer-processor)
-        return this._connectToMixerProcessor(instrument, instrumentId, channelId);
+        return this._connectToUnifiedMixer(instrument, instrumentId, channelId);
     }
 
-    /**
-     * 🎛️ PHASE 3: Connect instrument to UnifiedMixer
-     */
     _connectToUnifiedMixer(instrument, instrumentId, channelId) {
         try {
             const channelIdx = this._getUnifiedMixerChannelIndex(channelId);
@@ -1225,32 +971,30 @@ export class NativeAudioEngine {
                 logger.error(`❌ Invalid channel ID for UnifiedMixer: ${channelId}`);
                 return false;
             }
-
-            // 🔥 CRITICAL: Disconnect ALL previous connections to prevent double routing
             try {
                 instrument.output.disconnect();
                 console.log(`🔌 Disconnected ${instrumentId} from all previous outputs`);
-            } catch (e) {
-                // May not be connected, ignore
+            } catch (e) {}
+            if (!this.mixerChannels.has(channelId)) {
+                this.mixerChannels.set(channelId, {
+                    id: channelId,
+                    instrumentNode: instrument.output,
+                    unifiedMixerIndex: channelIdx,
+                    effects: new Map(),
+                    output: instrument.output
+                });
+                console.log(`✅ Created mixer channel for ${channelId}`);
             }
-
-            // Connect instrument output to UnifiedMixer channel
             const success = this.unifiedMixer.connectToChannel(instrument.output, channelIdx);
-
             if (success) {
                 logger.info(`✅ Connected ${instrumentId} to UnifiedMixer channel ${channelIdx} (${channelId})`);
-                console.log(`🎛️ ROUTING: ${instrumentId} → UnifiedMixer[${channelIdx}] → masterMixer → Output`);
-
-                // 🎚️ CRITICAL FIX: EXTREMELY low gain for 20+ instrument summing
-                // With 20 instruments: 20 × 0.07 × 0.7 × 0.8 = 0.784 ✅ NO CLIP
-                // User can increase master volume if needed (up to 1.5x), but we prevent clipping by default
-                const baseGain = 0.07;  // Sum-safe: prevents clipping with 20+ instruments
-
-                console.log(`🎚️ Setting channel gain: ${baseGain} (sum-safe for ${this.instruments.size} instruments)`);
-
-                // Set default channel parameters
+                const currentConfig = getGainConfig(this.instruments.size);
+                const baseGain = currentConfig.channelGain;
+                const instrumentType = instrument.type || 'sample';
+                const instrumentMultiplier = getInstrumentGainMultiplier(instrumentType);
+                const finalGain = baseGain * instrumentMultiplier;
                 this.unifiedMixer.setChannelParams(channelIdx, {
-                    gain: baseGain,  // Optimized gain
+                    gain: finalGain,
                     pan: 0.0,
                     mute: false,
                     solo: false,
@@ -1258,51 +1002,9 @@ export class NativeAudioEngine {
                     compActive: false
                 });
             }
-
             return success;
         } catch (error) {
             logger.error(`❌ Failed to connect to UnifiedMixer:`, error);
-            return false;
-        }
-    }
-
-    /**
-     * Original routing: Connect instrument to mixer-processor channel
-     */
-    async _connectToMixerProcessor(instrument, instrumentId, channelId) {
-        // ⚡ LAZY CHANNEL CREATION: Create channel if it doesn't exist
-        let channel = this.mixerChannels.get(channelId);
-        if (!channel) {
-            console.log(`🔧 Creating channel on-demand: ${channelId}`);
-            const trackNumber = channelId.replace('track-', '');
-            await this._createMixerChannel(channelId, `Track ${trackNumber}`);
-            channel = this.mixerChannels.get(channelId);
-
-            if (!channel) {
-                console.error(`❌ Failed to create channel: ${channelId}`);
-                return false;
-            }
-        }
-
-        // Channel input kontrolü
-        if (!channel.input) {
-            console.error(`❌ Channel ${channelId} has no input!`);
-            return false;
-        }
-
-        console.log(`🔌 Connecting:`, {
-            instrument: instrumentId,
-            instrumentOutput: instrument.output.constructor.name,
-            channel: channelId,
-            channelInput: channel.input.constructor.name
-        });
-
-        try {
-            instrument.output.connect(channel.input);
-            console.log(`✅ Connected instrument ${instrumentId} output to channel ${channelId}`);
-            return true;
-        } catch (error) {
-            console.error(`❌ Failed to connect instrument to channel:`, error);
             return false;
         }
     }
@@ -1344,13 +1046,8 @@ export class NativeAudioEngine {
         console.log('═══════════════════════════════════════════════════');
 
         console.log('🎛️ Mixer System:');
-        console.log(`   useUnifiedMixer: ${this.useUnifiedMixer}`);
-        console.log(`   UnifiedMixer active: ${!!this.unifiedMixer}`);
-        console.log(`   Old mixer-processor channels: ${this.mixerChannels.size}`);
-
-        if (this.mixerChannels.size > 0) {
-            console.log('   ⚠️ Old channels exist:', Array.from(this.mixerChannels.keys()));
-        }
+        console.log(`   UnifiedMixer: ${!!this.unifiedMixer ? 'Active (RAW signal path)' : 'NOT INITIALIZED'}`);
+        console.log(`   32 WASM-powered channels, zero processing`);
 
         console.log('\n🎵 Instruments:');
         this.instruments.forEach((instrument, id) => {
@@ -1366,9 +1063,9 @@ export class NativeAudioEngine {
             console.log(`   Active channels: ${this.unifiedMixer.channelConnections?.size || 0}`);
         }
 
-        console.log('\n🎚️ GAIN STACK ANALYSIS:');
-        console.log(`   MasterMixer internal gain: ${this.masterMixer?.parameters?.get('gain')?.value || 'N/A'}`);
-        console.log(`   Master output gain: ${this.masterGain?.gain?.value || 'N/A'}`);
+        console.log('\n🎚️ GAIN STACK ANALYSIS (RAW Signal Path):');
+        console.log(`   Master Bus Gain (headroom): ${this.masterBusGain?.gain?.value || 'N/A'}`);
+        console.log(`   Master Volume (user control): ${this.masterGain?.gain?.value || 'N/A'}`);
 
         if (this.useUnifiedMixer && this.unifiedMixer) {
             console.log('\n🎛️ UnifiedMixer Channel Gains (first 9):');
@@ -1391,22 +1088,23 @@ export class NativeAudioEngine {
         console.log('🎚️ COMPLETE GAIN STACK INSPECTION');
         console.log('═══════════════════════════════════════════════════');
 
-        // Theoretical calculation
-        const channelGain = 0.15; // Expected
+        // RAW signal path calculation
+        const channelGain = 0.05; // Current channel gain
         const numInstruments = this.instruments.size;
         const summedSignal = channelGain * numInstruments;
-        const masterMixerGain = this.masterMixer?.parameters?.get('gain')?.value || 0.7;
-        const masterGainValue = this.masterGain?.gain?.value || 0.8;
+        const busGain = this.masterBusGain?.gain?.value || 0.7;
+        const masterVolume = this.masterGain?.gain?.value || 0.8;
 
-        console.log('📊 THEORETICAL:');
+        console.log('📊 THEORETICAL (RAW Signal Path):');
         console.log(`   ${numInstruments} instruments × ${channelGain} gain = ${summedSignal.toFixed(3)}`);
-        console.log(`   × masterMixer (${masterMixerGain}) = ${(summedSignal * masterMixerGain).toFixed(3)}`);
-        console.log(`   × masterGain (${masterGainValue}) = ${(summedSignal * masterMixerGain * masterGainValue).toFixed(3)}`);
-        console.log(`   Expected peak: ${(summedSignal * masterMixerGain * masterGainValue).toFixed(3)}`);
+        console.log(`   × Bus Gain (${busGain}) = ${(summedSignal * busGain).toFixed(3)}`);
+        console.log(`   × Master Volume (${masterVolume}) = ${(summedSignal * busGain * masterVolume).toFixed(3)}`);
+        console.log(`   Expected peak: ${(summedSignal * busGain * masterVolume).toFixed(3)}`);
 
-        console.log('\n🔍 ACTUAL VALUES:');
-        console.log(`   MasterMixer gain: ${masterMixerGain}`);
-        console.log(`   Master output gain: ${masterGainValue}`);
+        console.log('\n🔍 ACTUAL VALUES (RAW Signal - No Processing):');
+        console.log(`   Master Bus Gain: ${busGain} (headroom)`);
+        console.log(`   Master Volume: ${masterVolume} (user control)`);
+        console.log(`   NO EQ, NO Compression, NO Limiting`);
 
         console.log('\n⚠️ IF CLIPPING STILL OCCURS:');
         console.log('   1. Check if changes are loaded (hard refresh)');
@@ -1462,36 +1160,29 @@ export class NativeAudioEngine {
             this.unifiedMixerChannelMap.clear();
         }
 
-        // 🎚️ Dispose Master Panner
-        if (this.masterPanner) {
+        // 🎚️ Dispose Master Bus Gain
+        if (this.masterBusGain) {
             try {
-                this.masterPanner.disconnect();
-                this.masterPanner = null;
-                console.log('✅ Master panner disposed');
+                this.masterBusGain.disconnect();
+                this.masterBusGain = null;
+                console.log('✅ Master bus gain disposed');
             } catch (error) {
-                console.warn('⚠️ Master panner dispose failed:', error);
+                console.warn('⚠️ Master bus gain dispose failed:', error);
             }
         }
 
-        // 🎚️ Dispose Master Gain
+        // 🎚️ Dispose Master Volume
         if (this.masterGain) {
             try {
                 this.masterGain.disconnect();
                 this.masterGain = null;
-                console.log('✅ Master gain disposed');
+                console.log('✅ Master volume disposed');
             } catch (error) {
-                console.warn('⚠️ Master gain dispose failed:', error);
+                console.warn('⚠️ Master volume dispose failed:', error);
             }
         }
 
-        // Dispose mixer channels (old system)
-        this.mixerChannels.forEach((channel, id) => {
-            try {
-                channel.dispose();
-            } catch (error) {
-            }
-        });
-        this.mixerChannels.clear();
+        // ⚠️ REMOVED: Old mixer-processor channel disposal (no longer used)
 
         // Dispose worklet manager
         if (this.workletManager) {
@@ -1504,6 +1195,222 @@ export class NativeAudioEngine {
         }
 
     }
+
+    // =================== 🎛️ DİNAMİK MİXER INSERT API ===================
+
+    /**
+     * Mixer insert oluştur (track eklendiğinde)
+     * @param {string} insertId - Insert ID (örn: "kick-1", "bass-1")
+     * @param {string} label - Görünür isim (örn: "Kick", "Bass")
+     * @returns {MixerInsert} Oluşturulan insert instance
+     */
+    createMixerInsert(insertId, label = '') {
+        if (this.mixerInserts.has(insertId)) {
+            console.warn(`⚠️ MixerInsert ${insertId} already exists`);
+            return this.mixerInserts.get(insertId);
+        }
+
+        const insert = new MixerInsert(this.audioContext, insertId, label);
+
+        // Master bus'a bağla
+        insert.connectToMaster(this.masterBusInput);
+
+        this.mixerInserts.set(insertId, insert);
+
+        console.log(`✅ MixerInsert created: ${insertId} (${label})`);
+        return insert;
+    }
+
+    /**
+     * Mixer insert'i sil (track silindiğinde)
+     * @param {string} insertId - Insert ID
+     */
+    removeMixerInsert(insertId) {
+        const insert = this.mixerInserts.get(insertId);
+        if (!insert) {
+            console.warn(`⚠️ MixerInsert ${insertId} not found`);
+            return;
+        }
+
+        // Bağlı tüm instrument'leri temizle
+        const connectedInstruments = Array.from(this.instrumentToInsert.entries())
+            .filter(([instId, insId]) => insId === insertId)
+            .map(([instId]) => instId);
+
+        connectedInstruments.forEach(instId => {
+            this.removeInstrument(instId);
+        });
+
+        // Master bus'tan kes
+        insert.disconnectFromMaster(this.masterBusInput);
+
+        // Insert'i dispose et
+        insert.dispose();
+
+        this.mixerInserts.delete(insertId);
+        console.log(`✅ MixerInsert removed: ${insertId}`);
+    }
+
+    /**
+     * Instrument'i mixer insert'e bağla
+     * @param {string} instrumentId - Instrument ID
+     * @param {string} insertId - Insert ID
+     */
+    routeInstrumentToInsert(instrumentId, insertId) {
+        const instrument = this.instruments.get(instrumentId);
+        const insert = this.mixerInserts.get(insertId);
+
+        if (!instrument) {
+            console.error(`❌ Instrument ${instrumentId} not found`);
+            return;
+        }
+
+        if (!insert) {
+            console.error(`❌ MixerInsert ${insertId} not found`);
+            return;
+        }
+
+        // Önceki bağlantıyı kes
+        const oldInsertId = this.instrumentToInsert.get(instrumentId);
+        if (oldInsertId) {
+            const oldInsert = this.mixerInserts.get(oldInsertId);
+            if (oldInsert) {
+                oldInsert.disconnectInstrument(instrumentId, instrument.output);
+            }
+        }
+
+        // Yeni bağlantı
+        insert.connectInstrument(instrumentId, instrument.output);
+        this.instrumentToInsert.set(instrumentId, insertId);
+
+        console.log(`🔗 Routed: ${instrumentId} → ${insertId}`);
+    }
+
+    /**
+     * Insert'e effect ekle
+     * @param {string} insertId - Insert ID
+     * @param {string} effectType - Effect tipi
+     * @param {object} settings - Effect ayarları
+     * @returns {string} Effect ID
+     */
+    async addEffectToInsert(insertId, effectType, settings = {}) {
+        const insert = this.mixerInserts.get(insertId);
+        if (!insert) {
+            console.error(`❌ MixerInsert ${insertId} not found`);
+            return null;
+        }
+
+        try {
+            const effectNode = await effectRegistry.createEffectNode(
+                effectType,
+                this.audioContext,
+                settings
+            );
+
+            if (!effectNode) {
+                throw new Error(`Failed to create effect: ${effectType}`);
+            }
+
+            const effectId = `${insertId}-fx-${Date.now()}`;
+            insert.addEffect(effectId, effectNode, settings, false);
+
+            console.log(`✅ Effect added: ${effectType} → ${insertId}`);
+            return effectId;
+
+        } catch (error) {
+            console.error(`❌ Failed to add effect to ${insertId}:`, error);
+            return null;
+        }
+    }
+
+    /**
+     * Insert'ten effect kaldır
+     * @param {string} insertId - Insert ID
+     * @param {string} effectId - Effect ID
+     */
+    removeEffectFromInsert(insertId, effectId) {
+        const insert = this.mixerInserts.get(insertId);
+        if (!insert) {
+            console.error(`❌ MixerInsert ${insertId} not found`);
+            return;
+        }
+
+        insert.removeEffect(effectId);
+        console.log(`✅ Effect removed: ${effectId} from ${insertId}`);
+    }
+
+    /**
+     * Insert gain ayarla
+     * @param {string} insertId - Insert ID
+     * @param {number} gain - Gain değeri (0-1)
+     */
+    setInsertGain(insertId, gain) {
+        const insert = this.mixerInserts.get(insertId);
+        if (insert) {
+            insert.setGain(gain);
+        }
+    }
+
+    /**
+     * Insert pan ayarla
+     * @param {string} insertId - Insert ID
+     * @param {number} pan - Pan değeri (-1 to 1)
+     */
+    setInsertPan(insertId, pan) {
+        const insert = this.mixerInserts.get(insertId);
+        if (insert) {
+            insert.setPan(pan);
+        }
+    }
+
+    /**
+     * Instrument'i sil (dispose)
+     * @param {string} instrumentId - Instrument ID
+     */
+    removeInstrument(instrumentId) {
+        const instrument = this.instruments.get(instrumentId);
+        if (!instrument) {
+            return;
+        }
+
+        // Insert'ten disconnect
+        const insertId = this.instrumentToInsert.get(instrumentId);
+        if (insertId) {
+            const insert = this.mixerInserts.get(insertId);
+            if (insert) {
+                insert.disconnectInstrument(instrumentId, instrument.output);
+            }
+            this.instrumentToInsert.delete(instrumentId);
+        }
+
+        // Instrument dispose
+        if (instrument.dispose) {
+            instrument.dispose();
+        }
+
+        this.instruments.delete(instrumentId);
+        console.log(`✅ Instrument removed: ${instrumentId}`);
+    }
+
+    /**
+     * Tüm kaynakları temizle (engine destroy)
+     */
+    disposeAllResources() {
+        console.log('🗑️ Disposing all audio resources...');
+
+        // Remove all mixer inserts
+        Array.from(this.mixerInserts.keys()).forEach(insertId => {
+            this.removeMixerInsert(insertId);
+        });
+
+        // Remove all instruments
+        Array.from(this.instruments.keys()).forEach(instrumentId => {
+            this.removeInstrument(instrumentId);
+        });
+
+        console.log('✅ All audio resources disposed');
+    }
+
 }
 
 class NativeSynthInstrument {
@@ -1550,7 +1457,7 @@ class NativeSynthInstrument {
 
         this.workletNode = node;
         this.internalOutput = this.audioContext.createGain();
-        this.internalOutput.gain.value = 0.8;
+        this.internalOutput.gain.value = AudioEngineConfig.gain.masterVolume.default;
 
         // ✅ Force stereo on output gain node (preserve stereo from worklet)
         this.internalOutput.channelCount = 2;
@@ -1582,10 +1489,19 @@ class NativeSynthInstrument {
 
         const frequency = this._pitchToFrequency(pitch);
 
+        // ✅ RAW SIGNAL: Direct velocity to gain mapping (no reduction!)
+        // MIDI velocity 0-127 → Audio gain 0-1.0
+        // User controls final level with mixer faders
+        let normalizedVelocity = velocity;
+        if (normalizedVelocity > 1) {
+            // Direct MIDI to linear: 0-127 → 0-1.0
+            normalizedVelocity = normalizedVelocity / 127;
+        }
+
         // ⚡ PERFORMANCE: Use message pool instead of creating new objects
         // OLD: { type: 'noteOn', data: {...} } - new object every note!
         // NEW: Reuse pre-allocated message from pool - zero GC!
-        const msg = this.messagePool.acquireNoteOn(pitch, frequency, velocity, time, duration);
+        const msg = this.messagePool.acquireNoteOn(pitch, frequency, normalizedVelocity, time, duration);
 
         this.workletNode.port.postMessage(msg);
 
@@ -1724,378 +1640,9 @@ class NativeSynthInstrument {
     }
 }
 
-// =================== NATIVE MIXER CHANNEL CLASS ===================
-
-class NativeMixerChannel {
-    constructor(id, name, mixerNode, audioContext, workletManager, options = {}) {
-        this.id = id;
-        this.name = name;
-        this.mixerNode = mixerNode;
-        this.audioContext = audioContext;
-        this.workletManager = workletManager; // EKLENDİ
-        this.isMaster = options.isMaster || false;
-        this.type = options.type || 'track';
-
-        // ⚡ PERFORMANCE: Use global parameter batcher
-        this.parameterBatcher = globalParameterBatcher;
-
-        // Audio nodes
-        this.input = this.mixerNode;
-        this.output = this.audioContext.createGain();
-
-        // ✅ Force stereo on output gain node (preserve pan from worklet)
-        this.output.channelCount = 2;
-        this.output.channelCountMode = 'explicit';
-        this.output.channelInterpretation = 'speakers';
-
-        this.analyzer = this.audioContext.createAnalyser();
-        this.analyzer.channelCount = 2; // ✅ Analyzer should also be stereo
-        this.analyzer.channelCountMode = 'explicit';
-
-        // Parameters
-        this.parameters = new Map([
-            ['gain', this.mixerNode.parameters.get('gain')],
-            ['pan', this.mixerNode.parameters.get('pan')],
-            ['lowGain', this.mixerNode.parameters.get('lowGain')],
-            ['midGain', this.mixerNode.parameters.get('midGain')],
-            ['highGain', this.mixerNode.parameters.get('highGain')]
-        ]);
-
-        // Effects chain
-        this.effects = new Map();
-        this.sends = new Map();
-
-        // State
-        this.isMuted = false;
-        this.isSoloed = false;
-        this.volume = 0.8;
-        this.pan = 0;
-
-        this._setupAnalyzer();
-        this._setupSignalChain();
-    }
-
-    _setupAnalyzer() {
-        this.analyzer.fftSize = 1024;
-        this.analyzer.smoothingTimeConstant = 0.8;
-    }
-
-    _setupSignalChain() {
-        // Basic signal chain: mixerNode -> analyzer -> output
-        this.mixerNode.connect(this.analyzer);
-        this.analyzer.connect(this.output);
-    }
-
-    // =================== PARAMETER CONTROLS ===================
-
-    setVolume(volume) {
-        this.volume = Math.max(0, Math.min(2, volume));
-        const param = this.parameters.get('gain');
-        if (param) {
-            // ⚡ PERFORMANCE: Use parameter batcher (20x message reduction!)
-            // Instead of immediate update, batch with other updates in same frame
-            const now = this.audioContext.currentTime;
-            this.parameterBatcher.scheduleUpdate(param, this.volume, now + 0.015);
-        }
-    }
-
-    setPan(pan) {
-        this.pan = Math.max(-1, Math.min(1, pan));
-        const param = this.parameters.get('pan');
-        if (param) {
-            // ⚡ PERFORMANCE: Use parameter batcher
-            const now = this.audioContext.currentTime;
-            this.parameterBatcher.scheduleUpdate(param, this.pan, now + 0.015);
-        } else {
-            console.error(`❌ ${this.name}: Pan parameter is NULL!`);
-        }
-    }
-
-    setMute(muted) {
-        this.isMuted = muted;
-        const gainValue = muted ? 0 : this.volume;
-        const param = this.parameters.get('gain');
-        if (param) {
-            // ⚡ PERFORMANCE: Use parameter batcher for mute too
-            const now = this.audioContext.currentTime;
-            this.parameterBatcher.scheduleUpdate(param, gainValue, now + 0.015);
-            // console.log removed from hot path
-        } else {
-            console.error(`❌ ${this.name}: Gain parameter is NULL!`);
-        }
-    }
-
-    setSolo(soloed, isAnySoloed) {
-        this.isSoloed = soloed;
-        const shouldMute = isAnySoloed && !soloed;
-        console.log(`🎧 ${this.name}: setSolo(${soloed}, ${isAnySoloed}) → shouldMute=${shouldMute}`);
-        this.setMute(shouldMute);
-    }
-
-    setMono(mono) {
-        this.isMono = mono;
-        const param = this.parameters.get('mono');
-        if (param) {
-            const now = this.audioContext.currentTime;
-            param.cancelScheduledValues(now);
-            param.setValueAtTime(mono ? 1 : 0, now);
-            console.log(`📻 ${this.name}: Mono=${mono}`);
-        } else {
-            console.warn(`⚠️ ${this.name}: Mono parameter not available`);
-        }
-    }
-
-    // =================== EQ CONTROLS ===================
-
-    setEQBand(band, gain) {
-        const paramName = `${band}Gain`;
-        const param = this.parameters.get(paramName);
-        if (param) {
-            const dbGain = Math.max(-18, Math.min(18, gain));
-            const now = this.audioContext.currentTime;
-            param.cancelScheduledValues(now);
-            param.setValueAtTime(param.value, now);
-            param.linearRampToValueAtTime(dbGain, now + 0.015);
-        }
-    }
-
-    // =================== EFFECTS MANAGEMENT ===================
-
-    async addEffect(effectType, settings = {}, customEffectId = null) {
-        try {
-            // Use custom ID if provided (from store), otherwise generate one
-            const effectId = customEffectId || `${this.id}_effect_${Date.now()}`;
-
-            // NEW: Use EffectRegistry to create modular effect node
-            const node = await effectRegistry.createEffectNode(
-                effectType,
-                this.audioContext,
-                settings
-            );
-
-            if (!node) {
-                throw new Error(`Effect node could not be created: ${effectType}`);
-            }
-
-            const effect = new NativeEffect(effectId, effectType, node, settings);
-            this.effects.set(effectId, effect);
-
-            // Rebuild signal chain with new effect
-            this._rebuildEffectChain();
-
-            console.log(`✅ Added modular effect: ${effectType} (${effectId})`);
-            return effectId;
-
-        } catch (error) {
-            console.error(`❌ Failed to add effect: ${effectType}`, error);
-            throw error;
-        }
-    }
-
-    removeEffect(effectId) {
-        const effect = this.effects.get(effectId);
-        if (effect) {
-            effect.dispose();
-            this.effects.delete(effectId);
-            this._rebuildEffectChain();
-        }
-    }
-
-    _rebuildEffectChain() {
-        // Disconnect all current connections
-        this.mixerNode.disconnect();
-        this.effects.forEach(effect => effect.node.disconnect());
-
-        // Rebuild chain: mixerNode -> effects -> analyzer -> output
-        let currentNode = this.mixerNode;
-        
-        this.effects.forEach(effect => {
-            currentNode.connect(effect.node);
-            currentNode = effect.node;
-        });
-
-        currentNode.connect(this.analyzer);
-        this.analyzer.connect(this.output);
-    }
-
-    // =================== ANALYSIS ===================
-
-    getAnalysisData() {
-        const bufferLength = this.analyzer.frequencyBinCount;
-        const frequencyData = new Uint8Array(bufferLength);
-        const timeDomainData = new Uint8Array(bufferLength);
-
-        this.analyzer.getByteFrequencyData(frequencyData);
-        this.analyzer.getByteTimeDomainData(timeDomainData);
-
-        return {
-            frequency: frequencyData,
-            timeDomain: timeDomainData,
-            bufferLength,
-            sampleRate: this.audioContext.sampleRate
-        };
-    }
-
-    getMeterData() {
-        const analysisData = this.getAnalysisData();
-        if (!analysisData) return { peak: 0, rms: 0 };
-
-        const peak = Math.max(...analysisData.frequency) / 255;
-        let sum = 0;
-        for (let i = 0; i < analysisData.frequency.length; i++) {
-            sum += Math.pow(analysisData.frequency[i] / 255, 2);
-        }
-        const rms = Math.sqrt(sum / analysisData.frequency.length);
-
-        // Convert to dB
-        const peakDb = 20 * Math.log10(Math.max(peak, 0.001));
-        const rmsDb = 20 * Math.log10(Math.max(rms, 0.001));
-
-        return { peak: peakDb, rms: rmsDb };
-    }
-
-    // =================== SEND ROUTING ===================
-
-    /**
-     * Create a send from this channel to a bus
-     * @param {string} busId - Target bus ID
-     * @param {AudioNode} busInput - Target bus input node
-     * @param {number} level - Send level (0-1)
-     * @param {boolean} preFader - Send before or after fader
-     */
-    createSend(busId, busInput, level = 0.5, preFader = false) {
-        // Create send gain node
-        const sendGain = this.audioContext.createGain();
-        sendGain.gain.value = level;
-
-        // Determine tap point (pre or post fader)
-        const tapPoint = preFader ? this.mixerNode : this.analyzer;
-
-        // Connect: tapPoint -> sendGain -> busInput
-        tapPoint.connect(sendGain);
-        sendGain.connect(busInput);
-
-        // Store send info
-        this.sends.set(busId, {
-            busId,
-            gainNode: sendGain,
-            level,
-            preFader,
-            tapPoint
-        });
-
-        console.log(`🔌 Send created: ${this.id} → ${busId} (level: ${level}, ${preFader ? 'pre' : 'post'}-fader)`);
-    }
-
-    /**
-     * Remove a send from this channel
-     * @param {string} busId - Target bus ID
-     */
-    removeSend(busId) {
-        const send = this.sends.get(busId);
-        if (send) {
-            // Disconnect send
-            send.gainNode.disconnect();
-            this.sends.delete(busId);
-            console.log(`🔌 Send removed: ${this.id} → ${busId}`);
-        }
-    }
-
-    /**
-     * Update send level
-     * @param {string} busId - Target bus ID
-     * @param {number} level - New send level (0-1)
-     */
-    updateSendLevel(busId, level) {
-        const send = this.sends.get(busId);
-        if (send) {
-            send.level = level;
-            const now = this.audioContext.currentTime;
-            send.gainNode.gain.cancelScheduledValues(now);
-            send.gainNode.gain.setValueAtTime(send.gainNode.gain.value, now);
-            send.gainNode.gain.linearRampToValueAtTime(level, now + 0.015);
-            console.log(`🔊 Send level updated: ${this.id} → ${busId} (level: ${level})`);
-        }
-    }
-
-    /**
-     * Reconnect output to a different destination (insert routing)
-     * @param {AudioNode} destination - New destination node
-     */
-    reconnectOutput(destination) {
-        this.output.disconnect();
-        this.output.connect(destination);
-        console.log(`🔌 Output reconnected: ${this.id} → ${destination}`);
-    }
-
-    // =================== CONNECTION ===================
-
-    connect(destination) {
-        this.output.connect(destination);
-    }
-
-    disconnect() {
-        this.output.disconnect();
-    }
-
-    dispose() {
-        this.effects.forEach(effect => effect.dispose());
-        this.effects.clear();
-        
-        if (this.mixerNode) {
-            this.mixerNode.disconnect();
-        }
-        if (this.output) {
-            this.output.disconnect();
-        }
-        if (this.analyzer) {
-            this.analyzer.disconnect();
-        }
-
-    }
-
-    // =================== METERING ===================
-
-    getMeterLevel() {
-        if (!this.analyzer) {
-            return { peak: -60, rms: -60 };
-        }
-
-        const bufferLength = this.analyzer.frequencyBinCount;
-        const dataArray = new Uint8Array(bufferLength);
-
-        // Get time domain data (waveform)
-        this.analyzer.getByteTimeDomainData(dataArray);
-
-        // Calculate peak and RMS
-        let peak = 0;
-        let sum = 0;
-
-        for (let i = 0; i < bufferLength; i++) {
-            // Convert from 0-255 to -1 to +1
-            const normalized = (dataArray[i] - 128) / 128;
-            const abs = Math.abs(normalized);
-
-            if (abs > peak) {
-                peak = abs;
-            }
-
-            sum += normalized * normalized;
-        }
-
-        const rms = Math.sqrt(sum / bufferLength);
-
-        // Convert to dB (20 * log10(value))
-        // Add small epsilon to avoid log(0)
-        const peakDb = peak > 0.00001 ? 20 * Math.log10(peak) : -60;
-        const rmsDb = rms > 0.00001 ? 20 * Math.log10(rms) : -60;
-
-        return {
-            peak: Math.max(-60, Math.min(12, peakDb)),
-            rms: Math.max(-60, Math.min(12, rmsDb))
-        };
-    }
-}
+// ⚠️ REMOVED: NativeMixerChannel class (old mixer-processor system)
+// All mixer functionality now handled by UnifiedMixerNode
+// The old ~370 line class has been completely removed to simplify codebase
 
 // =================== NATIVE EFFECT CLASS ===================
 
@@ -2231,4 +1778,5 @@ class PatternData {
     }
 }
 
-export { PlaybackManager, NativeSynthInstrument, NativeMixerChannel, NativeEffect, PatternData };
+// ⚠️ REMOVED: NativeMixerChannel export (class removed - use UnifiedMixer instead)
+export { PlaybackManager, NativeSynthInstrument, NativeEffect, PatternData };

@@ -144,7 +144,15 @@ registerProcessor('benchmark-processor', BenchmarkProcessor);
         const url = URL.createObjectURL(blob);
 
         try {
-            await ctx.audioWorklet.addModule(url);
+            // Check if processor already registered (prevents error on reload)
+            try {
+                await ctx.audioWorklet.addModule(url);
+            } catch (error) {
+                // Processor already registered, continue
+                if (!error.message.includes('already registered')) {
+                    throw error;
+                }
+            }
 
             // Create benchmark node
             const benchmarkNode = new AudioWorkletNode(ctx, 'benchmark-processor');

@@ -348,7 +348,7 @@ export function useNoteInteractionsV2(
             startTime: Math.max(0, snappedTime),
             pitch: Math.max(0, Math.min(127, Math.round(pitch))),
             length: length,
-            velocity: velocity,
+            velocity: Math.max(1, Math.min(127, Math.round(velocity))), // ✅ Clamp to MIDI range
             instrumentId: currentInstrument.id
         };
 
@@ -1656,7 +1656,9 @@ export function useNoteInteractionsV2(
             const currentNotes = notes();
             const note = currentNotes.find(n => n.id === noteId);
             if (note) {
-                updateNote(noteId, { velocity: Math.max(0.01, Math.min(1.0, velocity)) });
+                // ✅ FIX: Clamp velocity to MIDI range (1-127)
+                // Piano roll uses MIDI format, not 0-1 range
+                updateNote(noteId, { velocity: Math.max(1, Math.min(127, Math.round(velocity))) });
             }
         }
     };

@@ -6,12 +6,12 @@ import { AudioContextService } from './lib/services/AudioContextService';
 import { visualizationEngine } from './lib/visualization/VisualizationEngine';
 import TimelineControllerSingleton from './lib/core/TimelineControllerSingleton';
 import TransportManagerSingleton from './lib/core/TransportManagerSingleton';
-import { initAudioCapabilityDetector } from './lib/utils/AudioCapabilityDetector';
 
 // Stores
 import { usePlaybackStore } from './store/usePlaybackStore';
 import { useArrangementStore } from './store/useArrangementStore';
 import { useInstrumentsStore } from './store/useInstrumentsStore';
+import { useMixerStore } from './store/useMixerStore';
 
 // UI Components
 import StartupScreen from './components/StartUpScreen'; // Başlangıç ekranı
@@ -66,7 +66,8 @@ function App() {
   const storeGetters = useMemo(() => ({
     getInstruments: () => useInstrumentsStore.getState().instruments,
     getActivePatternId: () => useArrangementStore.getState().activePatternId,
-    getBPM: () => usePlaybackStore.getState().bpm
+    getBPM: () => usePlaybackStore.getState().bpm,
+    getMixerTracks: () => useMixerStore.getState().mixerTracks
   }), []); // Empty deps - these getters don't change
 
   // 2. ✅ PERFORMANCE: Optimized audio system initialization
@@ -83,6 +84,10 @@ function App() {
 
       await engine.initialize();
       audioEngineRef.current = engine;
+
+      // 🔬 DEBUG: Expose to window for testing
+      window.audioEngine = engine;
+      console.log('🧪 DEBUG: window.audioEngine exposed for testing');
 
       // Load AudioWorklet processors for effects and mixer
       console.log('🎛️ Loading AudioWorklet processors...');
@@ -136,15 +141,32 @@ function App() {
 
       // Motoru, uygulama genelinde erişilebilir olan servisimize kaydediyoruz.
       await AudioContextService.setAudioEngine(engine);
+      console.log('✅ AudioContextService.audioEngine set:', {
+        hasEngine: !!AudioContextService.audioEngine,
+        hasMixerChannels: !!AudioContextService.audioEngine?.mixerChannels,
+        channelCount: AudioContextService.audioEngine?.mixerChannels?.size
+      });
+
+      // 🎛️ DYNAMIC MIXER: Create mixer inserts for existing tracks
+      console.log('🎛️ Initializing mixer inserts for existing tracks...');
+      const mixerTracks = storeGetters.getMixerTracks();
+      mixerTracks.forEach(track => {
+        if (track.type !== 'master') {
+          AudioContextService.createMixerInsert(track.id, track.name);
+          console.log(`✅ Created mixer insert: ${track.id} (${track.name})`);
+        }
+      });
 
       // ✅ Initialize VisualizationEngine
       visualizationEngine.init(engine.audioContext);
       console.log('✅ VisualizationEngine initialized');
 
-      // ✅ PERFORMANCE: Detect audio capabilities
-      console.log('🔬 Detecting audio processing capabilities...');
-      initAudioCapabilityDetector(engine.audioContext).catch(err => {
-        console.warn('⚠️ Capability detection failed:', err);
+      // ✅ Log basic audio capabilities
+      console.log('🎵 Audio Context Info:', {
+        sampleRate: engine.audioContext.sampleRate,
+        baseLatency: engine.audioContext.baseLatency?.toFixed(3) + 'ms' || 'N/A',
+        outputLatency: engine.audioContext.outputLatency?.toFixed(3) + 'ms' || 'N/A',
+        state: engine.audioContext.state
       });
 
       // ✅ Initialize TimelineController with current BPM from store

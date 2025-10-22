@@ -89,37 +89,40 @@ export const useMixerStore = create((set, get) => ({
       })
     }));
 
-    // 🎚️ MASTER CONTROLS SPECIAL CASE (UnifiedMixer integration)
-    // When UnifiedMixer is active, master channel has no mixer-processor node
-    // Use dedicated master control APIs instead
+    // 🎛️ DYNAMIC MIXER: Route to appropriate control
     if (trackId === 'master') {
+      // Master controls
       const audioEngine = AudioContextService.getAudioEngine();
 
       if (param === 'volume' && audioEngine?.setMasterVolume) {
         // Convert dB to linear gain (0 dB = 1.0, -6 dB = 0.5, etc.)
         const linearGain = Math.pow(10, value / 20);
         audioEngine.setMasterVolume(linearGain);
-        console.log(`🎚️ Master volume: ${value.toFixed(1)} dB → ${linearGain.toFixed(3)} gain`);
         return;
       }
 
       if (param === 'pan' && audioEngine?.setMasterPan) {
         audioEngine.setMasterPan(value);
-        console.log(`🎚️ Master pan: ${value.toFixed(2)}`);
+        return;
+      }
+    } else {
+      // Regular track controls - use dynamic mixer insert API
+      if (param === 'volume') {
+        // Convert dB to linear gain
+        const linearGain = Math.pow(10, value / 20);
+        AudioContextService.setInsertGain(trackId, linearGain);
+        return;
+      }
+
+      if (param === 'pan') {
+        AudioContextService.setInsertPan(trackId, value);
         return;
       }
     }
 
-    // SES MOTORUNA KOMUT GÖNDER (sadece mevcut metodları çağır)
+    // Fallback for other parameters (EQ, etc.)
     if (AudioContextService.updateMixerParam) {
       AudioContextService.updateMixerParam(trackId, param, value);
-    } else {
-      console.warn('⚠️ AudioContextService.updateMixerParam not found! Track:', trackId, param, value);
-      // Fallback: Try to access audio engine directly
-      const audioEngine = AudioContextService.getAudioEngine();
-      if (audioEngine && audioEngine.updateMixerParam) {
-        audioEngine.updateMixerParam(trackId, param, value);
-      }
     }
   },
 
@@ -166,10 +169,37 @@ export const useMixerStore = create((set, get) => ({
       };
     });
 
-    // SES MOTORUNA KOMUT GÖNDER: Sinyal zincirini yeniden kur.
-    if (newTrackState && AudioContextService.rebuildSignalChain) {
+    // 🎛️ DYNAMIC MIXER: Add effect to insert
+    if (trackId === 'master') {
+      // Master effects handled differently
+      if (AudioContextService.rebuildSignalChain) {
         AudioContextService.rebuildSignalChain(trackId, newTrackState).catch(error => {
-          console.error('❌ Failed to rebuild signal chain:', error);
+          console.error('❌ Failed to rebuild master chain:', error);
+        });
+      }
+    } else {
+      // Regular track - use dynamic mixer insert API
+      AudioContextService.addEffectToInsert(trackId, effectType, newEffect.settings)
+        .then(effectId => {
+          if (effectId) {
+            // Update effect ID with the one from audio engine
+            set(state => ({
+              mixerTracks: state.mixerTracks.map(track => {
+                if (track.id === trackId) {
+                  return {
+                    ...track,
+                    insertEffects: track.insertEffects.map(fx =>
+                      fx.id === newEffect.id ? { ...fx, audioEngineId: effectId } : fx
+                    )
+                  };
+                }
+                return track;
+              })
+            }));
+          }
+        })
+        .catch(error => {
+          console.error('❌ Failed to add effect:', error);
         });
     }
     return newEffect;
@@ -177,22 +207,36 @@ export const useMixerStore = create((set, get) => ({
 
   handleMixerEffectRemove: (trackId, effectId) => {
     let newTrackState;
-    set(state => ({
-      mixerTracks: state.mixerTracks.map(track => {
-        if (track.id === trackId) {
-          const updatedTrack = { ...track, insertEffects: track.insertEffects.filter(fx => fx.id !== effectId) };
-          newTrackState = updatedTrack;
-          return updatedTrack;
-        }
-        return track;
-      })
-    }));
+    let audioEngineEffectId;
 
-    // SES MOTORUNA KOMUT GÖNDER
-    if (newTrackState && AudioContextService.rebuildSignalChain) {
+    set(state => {
+      const track = state.mixerTracks.find(t => t.id === trackId);
+      const effect = track?.insertEffects.find(fx => fx.id === effectId);
+      audioEngineEffectId = effect?.audioEngineId || effectId;
+
+      return {
+        mixerTracks: state.mixerTracks.map(track => {
+          if (track.id === trackId) {
+            const updatedTrack = { ...track, insertEffects: track.insertEffects.filter(fx => fx.id !== effectId) };
+            newTrackState = updatedTrack;
+            return updatedTrack;
+          }
+          return track;
+        })
+      };
+    });
+
+    // 🎛️ DYNAMIC MIXER: Remove effect from insert
+    if (trackId === 'master') {
+      // Master effects handled differently
+      if (AudioContextService.rebuildSignalChain) {
         AudioContextService.rebuildSignalChain(trackId, newTrackState).catch(error => {
-          console.error('❌ Failed to rebuild signal chain:', error);
+          console.error('❌ Failed to rebuild master chain:', error);
         });
+      }
+    } else {
+      // Regular track - use dynamic mixer insert API
+      AudioContextService.removeEffectFromInsert(trackId, audioEngineEffectId);
     }
 
     // ✅ PERFORMANCE: Use StoreManager for panel cleanup
@@ -264,11 +308,27 @@ export const useMixerStore = create((set, get) => ({
     });
 
     const updatedTrack = get().mixerTracks.find(t => t.id === trackId);
+    const effect = updatedTrack?.insertEffects.find(fx => fx.id === effectId);
+    const audioEngineEffectId = effect?.audioEngineId || effectId;
 
-    if (needsRebuild && AudioContextService.rebuildSignalChain) {
+    // 🎛️ DYNAMIC MIXER: Update effect parameter
+    if (trackId === 'master') {
+      // Master effects - use rebuild
+      if (needsRebuild && AudioContextService.rebuildSignalChain) {
         AudioContextService.rebuildSignalChain(trackId, updatedTrack);
-    } else if (AudioContextService.updateEffectParam) {
+      } else if (AudioContextService.updateEffectParam) {
         AudioContextService.updateEffectParam(trackId, effectId, paramOrSettings, value);
+      }
+    } else {
+      // Regular track - use dynamic mixer insert API
+      if (typeof paramOrSettings === 'string') {
+        AudioContextService.updateInsertEffectParam(trackId, audioEngineEffectId, paramOrSettings, value);
+      } else {
+        // Multiple parameters
+        Object.entries(paramOrSettings).forEach(([param, val]) => {
+          AudioContextService.updateInsertEffectParam(trackId, audioEngineEffectId, param, val);
+        });
+      }
     }
   },
   
@@ -342,11 +402,8 @@ export const useMixerStore = create((set, get) => ({
       activeChannelId: newTrack.id
     }));
 
-    // Notify audio engine to create new channel
-    const audioEngine = AudioContextService.getAudioEngine();
-    if (audioEngine && audioEngine.createMixerChannel) {
-      audioEngine.createMixerChannel(newTrack);
-    }
+    // 🎛️ DYNAMIC MIXER: Create mixer insert for this track
+    AudioContextService.createMixerInsert(newTrack.id, newTrack.name);
 
     console.log(`✅ ${type} added: ${newTrack.name} (${newTrack.id})`);
     return newTrack.id;
@@ -407,11 +464,8 @@ export const useMixerStore = create((set, get) => ({
       };
     });
 
-    // Notify audio engine to remove channel
-    const audioEngine = AudioContextService.getAudioEngine();
-    if (audioEngine && audioEngine.removeMixerChannel) {
-      audioEngine.removeMixerChannel(trackId);
-    }
+    // 🎛️ DYNAMIC MIXER: Remove mixer insert for this track
+    AudioContextService.removeMixerInsert(trackId);
 
     console.log(`✅ Track removed: ${trackId}`);
   },

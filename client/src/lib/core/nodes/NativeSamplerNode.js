@@ -20,6 +20,11 @@ export class NativeSamplerNode {
         this.internalOutput = this.context.createGain(); // Direct audio output
         this.output = this.internalOutput; // Public output (may be last effect or internalOutput)
 
+        // ✅ RAW SIGNAL: No automatic gain reduction
+        // Let samples play at their natural level - user controls with faders
+        this.polyphonyGainReduction = false; // Disabled - RAW signal philosophy
+        this.internalOutput.gain.value = 1.0; // Fixed unity gain
+
         this.activeSources = new Set();
 
         // ✅ NEW: Initialize effect chain if provided
@@ -58,12 +63,35 @@ export class NativeSamplerNode {
                 semitoneShift += this.pitchOffset;
             }
 
+            const playbackRate = Math.pow(2, semitoneShift / 12);
+
+            // 🔧 DEBUG: Log pitch shifts that might cause distortion
+            if (Math.abs(semitoneShift) > 12 || playbackRate < 0.5 || playbackRate > 2.0) {
+                console.warn(`⚠️ ${this.name || 'Sample'} extreme pitch: ${semitoneShift}st (${playbackRate.toFixed(2)}x) - may cause aliasing`);
+            }
+
             // playbackRate'in her zaman geçerli bir sayı olmasını garantiliyoruz.
-            source.playbackRate.setValueAtTime(Math.pow(2, semitoneShift / 12), startTime);
+            source.playbackRate.setValueAtTime(playbackRate, startTime);
         }
 
         const gainNode = this.context.createGain();
-        gainNode.gain.setValueAtTime(velocity || 0.8, startTime);
+
+        // ✅ RAW SIGNAL: Direct velocity to gain mapping (no reduction!)
+        // MIDI velocity 0-127 → Audio gain 0-1.0
+        // User controls final level with mixer faders - this is professional DAW standard
+        let normalizedVelocity = velocity || 100;
+        if (normalizedVelocity > 1) {
+            // Direct MIDI to linear: 0-127 → 0-1.0
+            normalizedVelocity = normalizedVelocity / 127;
+        }
+
+        // 🔧 FIX: Add headroom for samples with pre-existing clipping
+        // Sample analysis showed some samples have clipped peaks (>100%)
+        // Apply gentle reduction to prevent output clipping
+        const sampleHeadroom = 0.85;  // -1.4dB safety headroom
+        const finalGain = normalizedVelocity * sampleHeadroom;
+
+        gainNode.gain.setValueAtTime(finalGain, startTime);
 
         source.connect(gainNode);
         gainNode.connect(this.internalOutput); // ✅ Changed to internalOutput (effect chain start)
@@ -161,6 +189,38 @@ export class NativeSamplerNode {
     // Sample için releaseNote boş (trigger-based playback)
     releaseNote() {
         // Samples are usually trigger-based, no release needed
+    }
+
+    /**
+     * ✅ POLYPHONY GAIN COMPENSATION
+     * Dynamically reduce gain based on active voice count to prevent clipping
+     * Professional sampler behavior: more voices = lower per-voice gain
+     */
+    _updatePolyphonyGain() {
+        if (!this.polyphonyGainReduction) return;
+
+        const voiceCount = this.activeSources.size;
+
+        // Calculate polyphonic gain reduction
+        // Target: Total output should NOT exceed 1.0 even with max velocity
+        // Max per-voice velocity = 0.7, so we need: 0.7 * polyphonyGain * voiceCount <= 1.0
+        // Therefore: polyphonyGain = 1.0 / (0.7 * voiceCount) for safety
+        // But we use sqrt for more musical/natural reduction
+        let polyphonyGain = 1.0;
+        if (voiceCount > 1) {
+            // Conservative approach: gain = 0.8 / voiceCount
+            // 2 voices = 0.4 each (-8dB) → total 0.8
+            // 4 voices = 0.2 each (-14dB) → total 0.8
+            // 8 voices = 0.1 each (-20dB) → total 0.8
+            polyphonyGain = Math.max(0.05, 0.8 / voiceCount);
+        }
+
+        // Smooth gain change to avoid clicks
+        this.internalOutput.gain.setTargetAtTime(
+            polyphonyGain,
+            this.context.currentTime,
+            0.01 // 10ms time constant
+        );
     }
 
     // ✅ EKLENEN: Dispose metodu

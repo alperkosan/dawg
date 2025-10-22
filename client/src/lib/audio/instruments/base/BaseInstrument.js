@@ -77,7 +77,14 @@ export class BaseInstrument {
      */
     triggerNote(pitch, velocity = 1, time = null, duration = null) {
         const midiNote = this.pitchToMidi(pitch);
-        const midiVelocity = Math.round(velocity * 127);
+
+        // 🔧 FIX: Auto-detect velocity format (MIDI 0-127 or normalized 0-1)
+        // If velocity > 1, assume it's already in MIDI format (0-127)
+        // Otherwise, convert normalized (0-1) to MIDI (0-127)
+        const midiVelocity = velocity > 1
+            ? Math.round(Math.max(1, Math.min(127, velocity)))  // Already MIDI format
+            : Math.round(velocity * 127);  // Convert normalized to MIDI
+
         const startTime = time !== null ? time : this.audioContext.currentTime;
 
         // 🐛 DEBUG: Always log for timeline preview debugging

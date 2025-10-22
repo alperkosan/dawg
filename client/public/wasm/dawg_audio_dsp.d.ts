@@ -58,6 +58,10 @@ export class UnifiedMixerProcessor {
    */
   set_channel_eq(channel_idx: number, low_gain: number, mid_gain: number, high_gain: number, low_freq: number, high_freq: number): void;
   /**
+   * Update channel compression parameters
+   */
+  set_channel_compression(channel_idx: number, threshold: number, ratio: number): void;
+  /**
    * Reset all channels
    */
   reset(): void;
@@ -108,6 +112,7 @@ export interface InitOutput {
   readonly unifiedmixerprocessor_process_mix: (a: number, b: number, c: number, d: number, e: number, f: any, g: number, h: number, i: any, j: number, k: number) => void;
   readonly unifiedmixerprocessor_set_channel_params: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => void;
   readonly unifiedmixerprocessor_set_channel_eq: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
+  readonly unifiedmixerprocessor_set_channel_compression: (a: number, b: number, c: number, d: number) => void;
   readonly unifiedmixerprocessor_reset: (a: number) => void;
   readonly unifiedmixerprocessor_get_num_channels: (a: number) => number;
   readonly __wbindgen_export_0: WebAssembly.Table;
