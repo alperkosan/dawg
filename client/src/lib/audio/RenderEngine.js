@@ -492,8 +492,14 @@ export class RenderEngine {
     const noteTimeSteps = note.startTime ?? note.time ?? 0;
     const noteTimeBeats = stepsToBeat(noteTimeSteps);
 
-    // Velocity is already normalized 0-1 in our system (not MIDI 0-127)
-    const noteVelocity = note.velocity ?? 1;
+    // ✅ FIX: Normalize velocity (handle both MIDI 0-127 and normalized 0-1 formats)
+    let noteVelocity = note.velocity ?? 100; // Default to MIDI 100 if not specified
+    if (noteVelocity > 1) {
+      // MIDI format (0-127) - convert to normalized (0-1) with square law curve
+      const velocityNormalized = Math.max(0, Math.min(127, noteVelocity)) / 127;
+      noteVelocity = velocityNormalized * velocityNormalized; // Square law for natural dynamics
+    }
+    // else: already normalized 0-1, use as-is
 
     // Duration can be Tone.js notation ('16n', '4n', etc.) or beats number
     const rawDuration = note.length ?? note.duration ?? 1;
