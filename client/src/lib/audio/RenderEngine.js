@@ -204,6 +204,41 @@ export class RenderEngine {
     console.log('🎬 DEBUG: patternData received:', patternData);
     console.log('🎬 DEBUG: patternData entries:', Object.entries(patternData));
 
+    // 🎚️ AUTO-GAIN: Calculate headroom based on number of instruments AND their mixer gains
+    // This prevents clipping when multiple instruments play simultaneously
+    const instrumentCount = Object.keys(patternData).length;
+
+    // Calculate average mixer gain to understand the actual signal level
+    let totalMixerGain = 0;
+    let mixerGainCount = 0;
+
+    for (const [instrumentId] of Object.entries(patternData)) {
+      const instrumentStore = options.patternData.instruments?.[instrumentId];
+      const mixerTrackId = instrumentStore?.mixerTrackId;
+      const mixerTrack = mixerTrackId ? options.patternData.mixerTracks?.[mixerTrackId] : null;
+
+      if (mixerTrack && mixerTrack.gain !== undefined) {
+        totalMixerGain += mixerTrack.gain;
+        mixerGainCount++;
+      }
+    }
+
+    const avgMixerGain = mixerGainCount > 0 ? totalMixerGain / mixerGainCount : 0.8;
+
+    // Auto-gain formula: compensate for number of instruments AND their mixer levels
+    // If avgMixerGain is 0.8 and we have 8 instruments:
+    // We need headroom for: 8 instruments × 0.8 gain = 6.4 total potential gain
+    // Target: Keep total around 0.7-0.8 to prevent clipping
+    const targetGain = 0.75; // Target overall gain to leave headroom
+    const autoGain = instrumentCount > 0 ? targetGain / (instrumentCount * avgMixerGain) : 1.0;
+
+    console.log(`🎚️ Auto-gain calculation:`, {
+      instrumentCount,
+      avgMixerGain: avgMixerGain.toFixed(3),
+      autoGain: autoGain.toFixed(3),
+      estimatedTotal: (instrumentCount * avgMixerGain * autoGain).toFixed(3)
+    });
+
     for (const [instrumentId, notes] of Object.entries(patternData)) {
       console.log(`🎬 DEBUG: Processing instrument ${instrumentId}, notes:`, notes);
       if (!notes || notes.length === 0) {
@@ -217,7 +252,7 @@ export class RenderEngine {
           notes,
           offlineContext,
           audioEngine,
-          options,
+          { ...options, autoGain }, // Pass auto-gain to prevent clipping
           options.patternData // Pass patternData for instrument lookup
         );
 
@@ -281,8 +316,16 @@ export class RenderEngine {
     // Then route it through offline mixer channel (applies mixer settings)
     const mixerOutputNode = this._createOfflineMixerChannel(offlineContext, instrumentOutputNode, mixerTrack);
 
-    // Finally connect to offline context destination
-    mixerOutputNode.connect(offlineContext.destination);
+    // 🎚️ AUTO-GAIN: Apply headroom compensation to prevent clipping
+    const autoGainNode = offlineContext.createGain();
+    const autoGain = options.autoGain !== undefined ? options.autoGain : 1.0;
+    autoGainNode.gain.setValueAtTime(autoGain, offlineContext.currentTime);
+
+    // Chain: mixer → autoGain → destination
+    mixerOutputNode.connect(autoGainNode);
+    autoGainNode.connect(offlineContext.destination);
+
+    console.log(`🎚️ Applied auto-gain ${autoGain.toFixed(3)} to ${instrumentId}`);
 
     // Use instrumentOutputNode as the target for instrument rendering
     const gainNode = instrumentOutputNode;
@@ -1001,11 +1044,13 @@ export class RenderEngine {
 
     // 1. GAIN (Volume)
     const gainNode = offlineContext.createGain();
-    const gainValue = mixerTrack.gain !== undefined ? mixerTrack.gain : 0.8;
+    // 🎛️ DYNAMIC MIXER: Use actual mixer insert gain (already linear 0-1)
+    // Default to 1.0 if not specified (unity gain, no attenuation)
+    const gainValue = mixerTrack.gain !== undefined ? mixerTrack.gain : 1.0;
     gainNode.gain.setValueAtTime(gainValue, offlineContext.currentTime);
     currentNode.connect(gainNode);
     currentNode = gainNode;
-    console.log(`  ✅ Gain: ${gainValue.toFixed(2)}`);
+    console.log(`  ✅ Gain: ${gainValue.toFixed(2)} (${mixerTrack.gain !== undefined ? 'from insert' : 'default unity'})`);
 
     // 2. PAN (Stereo positioning)
     if (mixerTrack.pan !== undefined && mixerTrack.pan !== 0) {

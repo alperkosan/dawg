@@ -5,6 +5,7 @@ import { useArrangementStore } from '@/store/useArrangementStore';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
 import { getPreviewManager } from '@/lib/audio/preview';
 import { getToolManager, TOOL_TYPES } from '@/lib/piano-roll-tools';
+import { premiumNoteRenderer } from '../renderers/noteRenderer';
 
 const RULER_HEIGHT = 30;
 const KEYBOARD_WIDTH = 80;
@@ -356,6 +357,9 @@ export function useNoteInteractionsV2(
         const currentNotes = notes();
         updatePatternStore([...currentNotes, newNote]);
 
+        // ✅ Trigger add animation
+        premiumNoteRenderer.animateNote(newNote.id, 'added');
+
         if (DEBUG_MODE) console.log('➕ Note added:', newNote);
         return newNote;
     }, [currentInstrument, snapValue, notes, updatePatternStore]);
@@ -372,16 +376,24 @@ export function useNoteInteractionsV2(
 
     // Delete notes
     const deleteNotes = useCallback((noteIds) => {
-        const currentNotes = notes();
-        const filteredNotes = currentNotes.filter(note => !noteIds.includes(note.id));
-        updatePatternStore(filteredNotes);
-
-        // Clear selection
-        setSelectedNoteIds(prev => {
-            const newSet = new Set(prev);
-            noteIds.forEach(id => newSet.delete(id));
-            return newSet;
+        // ✅ Trigger delete animation before actual deletion
+        noteIds.forEach(id => {
+            premiumNoteRenderer.animateNote(id, 'deleted');
         });
+
+        // Delay actual deletion to let animation play
+        setTimeout(() => {
+            const currentNotes = notes();
+            const filteredNotes = currentNotes.filter(note => !noteIds.includes(note.id));
+            updatePatternStore(filteredNotes);
+
+            // Clear selection
+            setSelectedNoteIds(prev => {
+                const newSet = new Set(prev);
+                noteIds.forEach(id => newSet.delete(id));
+                return newSet;
+            });
+        }, 250); // Match delete animation duration
 
         if (DEBUG_MODE) console.log('🗑️ Notes deleted:', noteIds);
     }, [notes, updatePatternStore]);
@@ -1421,7 +1433,55 @@ export function useNoteInteractionsV2(
             }
         }
 
-        if (e.key === 'Delete' || e.key === 'Backspace') {
+        // ✅ ARROW KEYS - Move selected notes
+        if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+            if (selectedNoteIds.size > 0) {
+                e.preventDefault();
+
+                const currentNotes = notes();
+                const selectedNotes = currentNotes.filter(note => selectedNoteIds.has(note.id));
+
+                let pitchDelta = 0;
+                let timeDelta = 0;
+
+                if (e.key === 'ArrowUp') {
+                    // Shift + Up/Down: semitone (1 pitch)
+                    // Ctrl/Cmd + Up/Down: octave (12 pitches)
+                    pitchDelta = (e.ctrlKey || e.metaKey) ? 12 : (e.shiftKey ? 1 : 0);
+                } else if (e.key === 'ArrowDown') {
+                    pitchDelta = (e.ctrlKey || e.metaKey) ? -12 : (e.shiftKey ? -1 : 0);
+                } else if (e.key === 'ArrowRight') {
+                    // Shift + Right/Left: step by step (1 step)
+                    // Ctrl/Cmd + Right/Left: bar by bar (16 steps)
+                    timeDelta = (e.ctrlKey || e.metaKey) ? 16 : (e.shiftKey ? 1 : 0);
+                } else if (e.key === 'ArrowLeft') {
+                    timeDelta = (e.ctrlKey || e.metaKey) ? -16 : (e.shiftKey ? -1 : 0);
+                }
+
+                // Only update if there's a delta
+                if (pitchDelta !== 0 || timeDelta !== 0) {
+                    const updatedNotes = currentNotes.map(note => {
+                        if (selectedNoteIds.has(note.id)) {
+                            return {
+                                ...note,
+                                pitch: Math.max(0, Math.min(127, note.pitch + pitchDelta)),
+                                startTime: Math.max(0, note.startTime + timeDelta)
+                            };
+                        }
+                        return note;
+                    });
+
+                    updatePatternStore(updatedNotes);
+
+                    // Trigger modified animation for moved notes
+                    selectedNotes.forEach(note => {
+                        premiumNoteRenderer.animateNote(note.id, 'modified');
+                    });
+
+                    if (DEBUG_MODE) console.log('🎹 Notes moved:', { pitchDelta, timeDelta });
+                }
+            }
+        } else if (e.key === 'Delete' || e.key === 'Backspace') {
             if (selectedNoteIds.size > 0) {
                 deleteNotes(Array.from(selectedNoteIds));
             }
@@ -1625,6 +1685,37 @@ export function useNoteInteractionsV2(
         }
     }, [keyboardPianoMode]);
 
+    // ✅ CURSOR STATE - Calculate cursor based on priority hierarchy
+    const getCursorState = useCallback(() => {
+        // Priority 1: Right click deletion drag (highest)
+        if (rightClickDragState?.isDragging) {
+            return 'eraser';
+        }
+
+        // Priority 2: Paint brush continuous drawing
+        if (paintDragState?.isDragging) {
+            return 'paintBrush';
+        }
+
+        // Priority 3: Note dragging/moving
+        if (dragState?.type === 'dragging') {
+            return 'grabbing';
+        }
+
+        // Priority 4: Note resizing
+        if (dragState?.type === 'resizing') {
+            return 'ew-resize';
+        }
+
+        // Priority 5: Area selection
+        if (isSelectingArea) {
+            return 'crosshair';
+        }
+
+        // Priority 6: Default tool cursor
+        return null; // Let CSS data-tool handle it
+    }, [rightClickDragState, paintDragState, dragState, isSelectingArea]);
+
     return {
         // Event handlers
         handleMouseDown,
@@ -1642,6 +1733,10 @@ export function useNoteInteractionsV2(
         previewNote,
         slicePreview,
         sliceRange,
+        rightClickDragState, // ✅ NEW: Right click drag state for deletion cursor
+        dragState, // ✅ NEW: Drag state for cursor management
+        paintDragState, // ✅ NEW: Paint drag state for cursor management
+        cursorState: getCursorState(), // ✅ NEW: Computed cursor state
 
         // Data
         notes: notes(),

@@ -285,7 +285,7 @@ export class AudioRenderer {
     for (const note of notes) {
       const startTime = note.time * secondsPerBeat;
       const duration = (note.duration || 1) * secondsPerBeat;
-      const velocity = note.velocity || 1.0;
+      const velocity = note.velocity || 100;
 
       if (instrument.audioBuffer) {
         // Sample-based instrument
@@ -299,7 +299,11 @@ export class AudioRenderer {
 
         // Create gain for velocity
         const gainNode = offlineContext.createGain();
-        gainNode.gain.value = velocity;
+        // ✅ FIX: Convert MIDI velocity (0-127) to linear gain (0-1)
+        // Using square law for more natural velocity response
+        const velocityNormalized = Math.max(0, Math.min(127, velocity)) / 127;
+        const velocityGain = velocityNormalized * velocityNormalized; // Square law
+        gainNode.gain.value = velocityGain;
 
         source.connect(gainNode);
 

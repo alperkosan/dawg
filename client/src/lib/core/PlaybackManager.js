@@ -1198,7 +1198,7 @@ export class PlaybackManager {
             outputNode = panNode;
         }
 
-        // ✅ ArrangementV2: Route to mixer channel with inheritance logic
+        // 🎛️ DYNAMIC MIXER: Route to mixer insert with inheritance logic
         let destination = this.audioEngine.masterGain || context.destination;
         let mixerChannelId;
 
@@ -1218,12 +1218,22 @@ export class PlaybackManager {
         }
 
         if (mixerChannelId) {
-            const mixerChannel = this.audioEngine.mixerChannels.get(mixerChannelId);
+            // 🎛️ DYNAMIC MIXER: Try to get mixer insert first
+            const mixerInsert = this.audioEngine.mixerInserts?.get(mixerChannelId);
 
-            if (mixerChannel && mixerChannel.input) {
-                destination = mixerChannel.input;
+            if (mixerInsert && mixerInsert.input) {
+                destination = mixerInsert.input;
                 const routeType = clip.isUnique ? 'unique' : (clip.assetId ? 'shared' : 'track');
+                console.log(`🎛️ Audio clip routed to mixer insert ${mixerChannelId} (${routeType})`);
             } else {
+                // Fallback to old mixer channels (backward compatibility)
+                const mixerChannel = this.audioEngine.mixerChannels?.get(mixerChannelId);
+                if (mixerChannel && mixerChannel.input) {
+                    destination = mixerChannel.input;
+                    console.log(`🎛️ Audio clip routed to legacy mixer channel ${mixerChannelId}`);
+                } else {
+                    console.warn(`⚠️ Mixer insert/channel ${mixerChannelId} not found, routing to master`);
+                }
             }
         }
 

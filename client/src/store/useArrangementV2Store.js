@@ -150,18 +150,15 @@ export const useArrangementV2Store = create((set, get) => ({
 
     get().pushHistory({ type: 'REMOVE_TRACK', track: removedTrack, clips: clips.filter(c => c.trackId === trackId) });
 
-    // Remove mixer channel from audio engine
+    // 🎛️ DYNAMIC MIXER: Remove mixer insert from audio engine
     const audioEngine = get()._audioEngine;
     const trackChannelMap = get()._trackChannelMap;
-    const channelId = trackChannelMap.get(trackId);
+    const insertId = trackChannelMap.get(trackId);
 
-    if (audioEngine && channelId) {
-      const channel = audioEngine.mixerChannels.get(channelId);
-      if (channel) {
-        channel.disconnect();
-        audioEngine.mixerChannels.delete(channelId);
-        console.log(`🗑️ Removed mixer channel ${channelId}`);
-      }
+    if (audioEngine && insertId) {
+      // Use dynamic mixer API to remove insert
+      audioEngine.removeMixerInsert(insertId);
+      console.log(`🗑️ Removed mixer insert ${insertId}`);
       trackChannelMap.delete(trackId);
     }
   },
@@ -173,20 +170,27 @@ export const useArrangementV2Store = create((set, get) => ({
       )
     });
 
-    // Sync to audio engine if initialized
+    // 🎛️ DYNAMIC MIXER: Sync to audio engine if initialized
     const audioEngine = get()._audioEngine;
     const trackChannelMap = get()._trackChannelMap;
-    const channelId = trackChannelMap.get(trackId);
+    const insertId = trackChannelMap.get(trackId);
 
-    if (audioEngine && channelId) {
-      const channel = audioEngine.mixerChannels.get(channelId);
-      if (channel) {
-        // Update channel parameters
-        if (updates.volume !== undefined) channel.setVolume(updates.volume);
-        if (updates.pan !== undefined) channel.setPan(updates.pan);
-        if (updates.muted !== undefined) channel.setMute(updates.muted);
-        if (updates.solo !== undefined) channel.setSolo(updates.solo);
-        if (updates.name !== undefined) channel.name = updates.name;
+    if (audioEngine && insertId) {
+      const insert = audioEngine.mixerInserts?.get(insertId);
+      if (insert) {
+        // Update insert parameters
+        if (updates.volume !== undefined) {
+          // Convert dB to linear gain
+          const linearGain = Math.pow(10, updates.volume / 20);
+          insert.setGain(linearGain);
+        }
+        if (updates.pan !== undefined) {
+          insert.setPan(updates.pan);
+        }
+        // Note: mute/solo not yet implemented in MixerInsert
+        if (updates.name !== undefined) {
+          insert.label = updates.name;
+        }
       }
     }
   },
@@ -614,36 +618,38 @@ export const useArrangementV2Store = create((set, get) => ({
     console.log('🎛️ Syncing tracks to audio engine...');
 
     for (const track of tracks) {
-      // Check if track already has a channel
-      let channelId = trackChannelMap.get(track.id);
+      // Check if track already has a mixer insert
+      let insertId = trackChannelMap.get(track.id);
 
-      if (!channelId) {
-        // Create new mixer channel for this track
-        channelId = `arr-${track.id}`;
+      if (!insertId) {
+        // Create new mixer insert for this track
+        insertId = `arr-${track.id}`;
 
         try {
-          // Check if channel already exists in audio engine
-          const existingChannel = audioEngine.mixerChannels.get(channelId);
+          // 🎛️ DYNAMIC MIXER: Check if insert already exists
+          const existingInsert = audioEngine.mixerInserts?.get(insertId);
 
-          if (!existingChannel) {
-            await audioEngine._createMixerChannel(channelId, track.name, { type: 'arrangement' });
-            console.log(`✅ Created mixer channel for track "${track.name}" (${channelId})`);
+          if (!existingInsert) {
+            // Create dynamic mixer insert
+            audioEngine.createMixerInsert(insertId, track.name);
+            console.log(`✅ Created mixer insert for track "${track.name}" (${insertId})`);
           }
 
-          trackChannelMap.set(track.id, channelId);
+          trackChannelMap.set(track.id, insertId);
         } catch (error) {
-          console.error(`❌ Failed to create channel for track ${track.name}:`, error);
+          console.error(`❌ Failed to create mixer insert for track ${track.name}:`, error);
           continue;
         }
       }
 
-      // Update channel parameters to match track settings
-      const channel = audioEngine.mixerChannels.get(channelId);
-      if (channel) {
-        channel.setVolume(track.volume);
-        channel.setPan(track.pan);
-        channel.setMute(track.muted);
-        channel.setSolo(track.solo);
+      // 🎛️ DYNAMIC MIXER: Update insert parameters to match track settings
+      const insert = audioEngine.mixerInserts?.get(insertId);
+      if (insert) {
+        // Convert dB to linear gain (arrangement tracks use dB, mixer uses linear)
+        const linearGain = Math.pow(10, track.volume / 20);
+        insert.setGain(linearGain);
+        insert.setPan(track.pan);
+        // Note: mute/solo not yet implemented in MixerInsert
       }
     }
 

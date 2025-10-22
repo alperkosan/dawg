@@ -401,6 +401,7 @@ function PianoRoll() {
                 ref={containerRef}
                 className="prv5-canvas-container"
                 data-tool={activeTool}
+                data-cursor={noteInteractions.cursorState}
                 onWheel={(e) => {
                     const rect = e.currentTarget.getBoundingClientRect();
                     const x = e.clientX - rect.left;

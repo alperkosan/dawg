@@ -119,7 +119,7 @@ class MeterService {
 
     // Get audio engine once (not in loop)
     const audioEngine = AudioContextService.getAudioEngine();
-    if (!audioEngine || !audioEngine.mixerChannels) {
+    if (!audioEngine) {
       this.rafId = requestAnimationFrame(this.update.bind(this));
       return;
     }
@@ -128,18 +128,40 @@ class MeterService {
     for (const [trackId, callbacks] of this.subscribers.entries()) {
       if (callbacks.size === 0) continue; // Skip if no active subscribers
 
-      const channel = audioEngine.mixerChannels.get(trackId);
-      if (!channel || !channel.analyzer) continue;
+      let analyzer = null;
+
+      // 🎛️ DYNAMIC MIXER: Try mixer insert first
+      if (audioEngine.mixerInserts) {
+        const insert = audioEngine.mixerInserts.get(trackId);
+        if (insert && insert.analyzer) {
+          analyzer = insert.analyzer;
+        }
+      }
+
+      // Master track
+      if (!analyzer && trackId === 'master' && audioEngine.masterAnalyzer) {
+        analyzer = audioEngine.masterAnalyzer;
+      }
+
+      // Fallback to old mixer channels (backward compatibility)
+      if (!analyzer && audioEngine.mixerChannels) {
+        const channel = audioEngine.mixerChannels.get(trackId);
+        if (channel && channel.analyzer) {
+          analyzer = channel.analyzer;
+        }
+      }
+
+      if (!analyzer) continue;
 
       // Get or create pooled buffer (avoid GC)
       let dataArray = this.bufferPool.get(trackId);
       if (!dataArray) {
-        dataArray = new Uint8Array(channel.analyzer.frequencyBinCount);
+        dataArray = new Uint8Array(analyzer.frequencyBinCount);
         this.bufferPool.set(trackId, dataArray);
       }
 
       // Read analyzer data once
-      channel.analyzer.getByteTimeDomainData(dataArray);
+      analyzer.getByteTimeDomainData(dataArray);
 
       // Calculate peak and RMS in one pass
       const { peak, rms } = this.calculateLevels(dataArray);

@@ -7,6 +7,47 @@ export class PremiumNoteRenderer {
     constructor() {
         this.animationCache = new Map();
         this.gradientCache = new Map();
+        // Note animations: noteId -> { type: 'added'|'deleted'|'modified', startTime, duration }
+        this.noteAnimations = new Map();
+    }
+
+    /**
+     * Trigger animation for a note
+     * @param {string} noteId - Note ID
+     * @param {'added'|'deleted'|'modified'} type - Animation type
+     */
+    animateNote(noteId, type) {
+        const durations = {
+            added: 300,      // 0.3s
+            deleted: 250,    // 0.25s
+            modified: 200    // 0.2s
+        };
+
+        this.noteAnimations.set(noteId, {
+            type,
+            startTime: performance.now(),
+            duration: durations[type] || 300
+        });
+
+        // Auto-cleanup after animation completes
+        setTimeout(() => {
+            this.noteAnimations.delete(noteId);
+        }, durations[type] + 50);
+    }
+
+    /**
+     * Get animation progress (0 to 1) for a note
+     * @param {string} noteId - Note ID
+     * @returns {{ type: string, progress: number } | null}
+     */
+    getAnimationState(noteId) {
+        const anim = this.noteAnimations.get(noteId);
+        if (!anim) return null;
+
+        const elapsed = performance.now() - anim.startTime;
+        const progress = Math.min(elapsed / anim.duration, 1);
+
+        return { type: anim.type, progress };
     }
 
     // Safe gradient creation with NaN/Infinity protection
@@ -61,6 +102,52 @@ export class PremiumNoteRenderer {
 
         ctx.save();
 
+        // ✅ CHECK FOR ACTIVE ANIMATION
+        const animState = this.getAnimationState(note.id);
+        let scale = 1;
+        let animAlpha = 1;
+        let glowIntensity = 0;
+
+        if (animState) {
+            const { type, progress } = animState;
+
+            if (type === 'added') {
+                // Ease out elastic: scale from 0.5 to 1.15 to 1
+                const t = progress;
+                if (t < 0.5) {
+                    scale = 0.5 + (1.15 - 0.5) * (t / 0.5);
+                } else {
+                    scale = 1.15 - (1.15 - 1) * ((t - 0.5) / 0.5);
+                }
+                animAlpha = progress;
+                glowIntensity = (1 - Math.abs(progress - 0.5) * 2) * 12; // Peak at 50%
+            } else if (type === 'deleted') {
+                // Scale down and fade
+                const t = progress;
+                if (t < 0.5) {
+                    scale = 1 + (1.1 - 1) * (t / 0.5);
+                    glowIntensity = (t / 0.5) * 12;
+                } else {
+                    scale = 1.1 - (1.1 - 0.3) * ((t - 0.5) / 0.5);
+                    glowIntensity = 12 - ((t - 0.5) / 0.5) * 4;
+                }
+                animAlpha = 1 - progress;
+            } else if (type === 'modified') {
+                // Quick pulse
+                scale = 1 + Math.sin(progress * Math.PI) * 0.05;
+                glowIntensity = Math.sin(progress * Math.PI) * 8;
+            }
+        }
+
+        // Apply scale transform
+        if (scale !== 1) {
+            const centerX = x + width / 2;
+            const centerY = y + height / 2;
+            ctx.translate(centerX, centerY);
+            ctx.scale(scale, scale);
+            ctx.translate(-centerX, -centerY);
+        }
+
         // ✅ ERASER TARGET OVERRIDE - Red warning color
         let alpha, baseHue, saturation, lightness;
 
@@ -71,10 +158,22 @@ export class PremiumNoteRenderer {
             lightness = 50;
         } else {
             // Premium note styling based on velocity and pitch
-            alpha = 0.85 + (note.velocity / 127) * 0.15;
+            alpha = (0.85 + (note.velocity / 127) * 0.15) * animAlpha;
             baseHue = note.hue || ((note.pitch * 2.8) % 360);
             saturation = note.saturation || (60 + (note.velocity / 127) * 40);
             lightness = note.brightness || (45 + (note.velocity / 127) * 25);
+        }
+
+        // ✅ ANIMATION GLOW EFFECT (before main body)
+        if (glowIntensity > 0) {
+            ctx.shadowBlur = glowIntensity;
+            if (animState?.type === 'deleted') {
+                ctx.shadowColor = `rgba(239, 68, 68, ${glowIntensity / 12})`;
+            } else if (animState?.type === 'added') {
+                ctx.shadowColor = `rgba(34, 197, 94, ${glowIntensity / 12})`;
+            } else {
+                ctx.shadowColor = `hsla(${baseHue}, 80%, 60%, ${glowIntensity / 12})`;
+            }
         }
 
         // Create premium gradient
@@ -91,6 +190,10 @@ export class PremiumNoteRenderer {
         ctx.fillStyle = gradient;
         this.drawRoundedRect(ctx, x, y, width, height, 3);
         ctx.fill();
+
+        // Reset shadow for other elements
+        ctx.shadowBlur = 0;
+        ctx.shadowColor = 'transparent';
 
         // Premium border with depth
         this.renderNoteBorder(ctx, x, y, width, height, {

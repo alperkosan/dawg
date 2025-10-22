@@ -133,29 +133,49 @@ export class AudioClipScheduler {
      * @private
      */
     _getClipDestination(clip) {
-        // Check if clip has assigned mixer channel
+        // 🎛️ DYNAMIC MIXER: Check if clip has assigned mixer insert first
         if (clip.channelId) {
+            // Try mixer insert first (new system)
+            const insert = this.audioEngine.mixerInserts?.get(clip.channelId);
+            if (insert && insert.input) {
+                console.log(`🎵 Audio clip routed to mixer insert: ${clip.channelId}`);
+                return insert.input;
+            }
+
+            // Fallback to old mixer channels (backward compatibility)
             const channel = this.audioEngine.mixerChannels?.get(clip.channelId);
             if (channel && channel.input) {
-                console.log(`🎵 Audio clip routed to mixer channel: ${clip.channelId}`);
+                console.log(`🎵 Audio clip routed to legacy mixer channel: ${clip.channelId}`);
                 return channel.input;
             }
         }
 
-        // Try master mixer
+        // Try master mixer insert
+        if (this.audioEngine.masterInsert?.input) {
+            console.log(`🎵 Audio clip routed to master mixer insert`);
+            return this.audioEngine.masterInsert.input;
+        }
+
+        // Try legacy master mixer
         if (this.audioEngine.masterMixer?.input) {
-            console.log(`🎵 Audio clip routed to master mixer`);
+            console.log(`🎵 Audio clip routed to legacy master mixer`);
             return this.audioEngine.masterMixer.input;
         }
 
-        // Fallback to audio context destination
+        // Fallback to master gain node
+        if (this.audioEngine.masterGain) {
+            console.log(`🎵 Audio clip routed to master gain (fallback)`);
+            return this.audioEngine.masterGain;
+        }
+
+        // Last resort - audio context destination
         const audioContext = this.transport?.audioContext || this.audioEngine?.audioContext;
         if (audioContext && audioContext.destination) {
-            console.log(`🎵 Audio clip routed to audio context destination (fallback)`);
+            console.log(`⚠️ Audio clip routed to audio context destination (no mixer routing)`);
             return audioContext.destination;
         }
 
-        // Last resort - throw error
+        // Error - no valid destination
         console.error(`❌ No valid destination found for audio clip ${clip.id}`);
         throw new Error('No valid audio destination available');
     }

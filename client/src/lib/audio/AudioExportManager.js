@@ -101,13 +101,17 @@ export class AudioExportManager {
 
       // ✅ FIX: Collect all instrument data upfront to avoid store access during render
       const { useInstrumentsStore } = await import('../../store/useInstrumentsStore');
-      const { useMixerStore } = await import('../../store/useMixerStore');
       const { instruments } = useInstrumentsStore.getState();
-      const { mixerTracks } = useMixerStore.getState();
 
-      console.log(`🎛️ Mixer store state:`, {
-        hasMixerTracks: !!mixerTracks,
-        trackCount: mixerTracks?.length || 0
+      // 🎛️ DYNAMIC MIXER: Get mixer insert data from audio engine, not old mixer store
+      const audioEngine = AudioContextService.getAudioEngine();
+      if (!audioEngine) {
+        throw new Error('Audio engine not available');
+      }
+
+      console.log(`🎛️ Audio Engine state:`, {
+        hasMixerInserts: !!audioEngine.mixerInserts,
+        insertCount: audioEngine.mixerInserts?.size || 0
       });
 
       const relevantInstruments = {};
@@ -118,19 +122,34 @@ export class AudioExportManager {
         if (inst) {
           relevantInstruments[instrumentId] = inst;
 
-          // Also collect mixer track for this instrument
+          // 🎛️ DYNAMIC MIXER: Get insert data from audio engine
           const mixerTrackId = inst.mixerTrackId;
-          if (mixerTrackId && Array.isArray(mixerTracks) && !relevantMixerTracks[mixerTrackId]) {
-            const mixerTrack = mixerTracks.find(t => t.id === mixerTrackId);
-            if (mixerTrack) {
-              relevantMixerTracks[mixerTrackId] = mixerTrack;
+          if (mixerTrackId && audioEngine.mixerInserts && !relevantMixerTracks[mixerTrackId]) {
+            const insert = audioEngine.mixerInserts.get(mixerTrackId);
+            if (insert) {
+              // Convert MixerInsert to format expected by renderer
+              relevantMixerTracks[mixerTrackId] = {
+                id: mixerTrackId,
+                name: insert.label || mixerTrackId,
+                gain: insert.gainNode.gain.value, // Linear gain (0-1)
+                pan: insert.panNode.pan.value,    // Pan (-1 to 1)
+                // Note: EQ parameters not currently stored in MixerInsert
+                // If needed, can be added to MixerInsert class later
+                lowGain: 0,
+                midGain: 0,
+                highGain: 0
+              };
+              console.log(`🎛️ Collected mixer insert ${mixerTrackId}:`, {
+                gain: insert.gainNode.gain.value,
+                pan: insert.panNode.pan.value
+              });
             }
           }
         }
       });
 
       console.log(`🎵 Collected ${Object.keys(relevantInstruments).length} instrument definitions for rendering`);
-      console.log(`🎛️ Collected ${Object.keys(relevantMixerTracks).length} mixer tracks for rendering`);
+      console.log(`🎛️ Collected ${Object.keys(relevantMixerTracks).length} mixer inserts for rendering`);
 
       // Attach instruments and mixer tracks to patternData for rendering
       patternData.instruments = relevantInstruments;
