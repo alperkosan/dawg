@@ -67,10 +67,11 @@ class MixerProcessor extends AudioWorkletProcessor {
         this.sampleRate = globalThis.sampleRate || 44100;
         this.frameCount = 0;
 
-        // ✅ DEBUG
-        this.processCallCount = 0;
-        this.hasReceivedAudio = false;
-        console.log(`🎚️ MixerProcessor created: ${this.stripId} (${this.stripName})`);
+        // ⚡ OPTIMIZATION: Dynamic VU meter update rate
+        // Target: ~6 updates per second regardless of sample rate
+        const TARGET_VU_UPDATE_HZ = 6;
+        this.vuUpdateInterval = Math.floor(this.sampleRate / TARGET_VU_UPDATE_HZ / 128) * 128;
+        // Round to nearest 128 samples for better alignment
 
         // Initialize EQ coefficients
         this.updateEQCoefficients(1, 1, 1, 200, 3000);
@@ -79,31 +80,6 @@ class MixerProcessor extends AudioWorkletProcessor {
     process(inputs, outputs, parameters) {
         const input = inputs[0];
         const output = outputs[0];
-
-        // ✅ DEBUG: Log channel configuration on first call
-        if (this.processCallCount === 0) {
-            console.log(`🎚️ MixerProcessor[${this.stripId}] CHANNEL CONFIG:`, {
-                inputChannels: input?.length || 0,
-                outputChannels: output?.length || 0,
-                stereo: (input?.length === 2 && output?.length === 2) ? '✅ YES' : '❌ NO'
-            });
-        }
-
-        // ✅ DEBUG: Log first few process calls for track-1
-        if (this.stripId === 'track-1' && this.processCallCount < 5) {
-            const hasAudio = input?.[0]?.[0] !== 0;
-            console.log(`🎚️ MixerProcessor[track-1] call #${this.processCallCount}:`, {
-                hasInput: !!input,
-                inputChannels: input?.length,
-                firstSample: input?.[0]?.[0],
-                hasAudio
-            });
-            if (hasAudio && !this.hasReceivedAudio) {
-                console.log('✅ track-1 MixerProcessor RECEIVED AUDIO!');
-                this.hasReceivedAudio = true;
-            }
-        }
-        this.processCallCount++;
 
         if (!input || !input.length || !output || !output.length) {
             return true;
@@ -154,8 +130,8 @@ class MixerProcessor extends AudioWorkletProcessor {
             let samplesR = channelCount > 1 ? input[1][i] : samplesL;
 
             // EQ processing (using cached coefficients)
-            samplesL = this.applyEQWithCachedCoeffs(samplesL, 'left');
-            samplesR = this.applyEQWithCachedCoeffs(samplesR, 'right');
+            samplesL = this.applyEQWithCachedCoeffs(samplesL);
+            samplesR = this.applyEQWithCachedCoeffs(samplesR);
 
             // Compression
             const compGain = this.processCompression(samplesL, samplesR, threshold, ratio);
@@ -189,9 +165,9 @@ class MixerProcessor extends AudioWorkletProcessor {
             this.updateVUMeter(samplesL, samplesR);
         }
 
-        // Send VU data periodically
+        // Send VU data periodically (dynamic rate based on sample rate)
         this.frameCount++;
-        if (this.frameCount % 1024 === 0) {
+        if (this.frameCount % this.vuUpdateInterval === 0) {
             this.sendVUData();
         }
 
@@ -260,7 +236,7 @@ class MixerProcessor extends AudioWorkletProcessor {
     }
 
     // ⚡ OPTIMIZATION: Apply 3-band EQ using pre-calculated coefficients
-    applyEQWithCachedCoeffs(sample, channel) {
+    applyEQWithCachedCoeffs(sample) {
         // All 3 bands in series (not parallel)
         let output = sample;
 

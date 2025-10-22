@@ -25,7 +25,6 @@ const FREQUENCY_TABLE = (() => {
     }
   }
 
-  console.log('⚡ Frequency lookup table initialized with', table.size, 'entries');
   return table;
 })();
 
@@ -40,8 +39,6 @@ class VoicePool {
     for (let i = 0; i < poolSize; i++) {
       this.availableVoices.push(this.createVoiceObject(i));
     }
-
-    console.log(`⚡ Voice pool initialized with ${poolSize} voices`);
   }
 
   createVoiceObject(id) {
@@ -71,8 +68,7 @@ class VoicePool {
       if (oldestVoice) {
         this.release(oldestVoice);
       } else {
-        // Fallback: create temporary voice
-        console.warn('⚠️ Voice pool exhausted, creating temporary voice');
+        // Fallback: create temporary voice (pool exhausted)
         return this.createVoiceObject('temp_' + Date.now());
       }
     }
@@ -181,7 +177,6 @@ class InstrumentProcessor extends AudioWorkletProcessor {
     // ✅ OFFLINE RENDERING: Schedule notes immediately if provided
     if (this.isOfflineRendering && options?.processorOptions?.offlineNotes) {
       const offlineNotes = options.processorOptions.offlineNotes;
-      console.log(`🎬 Scheduling ${offlineNotes.length} offline notes for ${this.instrumentName}`);
 
       offlineNotes.forEach(note => {
         this.triggerNote(
@@ -191,11 +186,9 @@ class InstrumentProcessor extends AudioWorkletProcessor {
           note.duration,
           note.delay
         );
-        console.log(`🎬 Offline note scheduled: ${note.pitch} at delay=${note.delay.toFixed(3)}s, dur=${note.duration.toFixed(3)}s`);
       });
     }
 
-    console.log(`🎵 InstrumentProcessor initialized: ${this.instrumentName} (${this.instrumentId})`);
     this.port.postMessage({
       type: 'debug',
       data: { message: `Processor ready: ${this.instrumentName}` }
@@ -251,13 +244,12 @@ class InstrumentProcessor extends AudioWorkletProcessor {
           break;
 
         case 'dispose':
-          console.log('🗑️ Disposing instrument processor');
           this.allNotesOff();
           // Cleanup işlemleri
-          break;          
-          
+          break;
+
         default:
-          console.warn(`Unknown message type: ${type}`);
+          // Unknown message type, ignore silently
       }
     } catch (error) {
       this.port.postMessage({
@@ -370,16 +362,6 @@ class InstrumentProcessor extends AudioWorkletProcessor {
   process(inputs, outputs, parameters) {
     const output = outputs[0];
     const blockSize = output[0].length;
-
-    // ✅ DEBUG: Log channel configuration on first call
-    if (!this.hasLoggedChannelConfig && output) {
-      console.log(`🎹 InstrumentProcessor[${this.instrumentId}] CHANNEL CONFIG:`, {
-        outputChannels: output?.length || 0,
-        stereo: (output?.length === 2) ? '✅ YES' : '❌ NO',
-        instrumentName: this.instrumentName
-      });
-      this.hasLoggedChannelConfig = true;
-    }
 
     for (let i = 0; i < blockSize; i++) {
         let mixedSample = 0;
