@@ -21,9 +21,9 @@ export class NativeTransportSystem {
         // ✅ Position tracking - ALL IN TICKS
         this.currentTick = 0;
         this.nextTickTime = 0;
-        // ⚡ OPTIMIZED: Reduced look-ahead frequency for better performance
-        this.lookAhead = 50.0; // Increased from 25ms to 50ms
-        this.scheduleAheadTime = 0.1;
+        // ⚡ CRITICAL: Tighter scheduling window for better timing accuracy
+        this.lookAhead = 10.0; // 10ms look-ahead (matches worker interval)
+        this.scheduleAheadTime = 0.05; // 50ms schedule window (reduced from 100ms)
 
         // ✅ CRITICAL: Loop system - ALL IN TICKS
         this.loop = true;
@@ -72,7 +72,9 @@ export class NativeTransportSystem {
     initializeWorkerTimer() {
         const workerScript = `
             let timerID = null;
-            let interval = 25;
+            // ⚡ CRITICAL: Reduced from 25ms to 10ms for tighter scheduling
+            // At 120 BPM: 16th note = ~125ms, so 10ms gives us 12 scheduling opportunities per note
+            let interval = 10;
 
             self.onmessage = function(e) {
                 if (e.data === 'start') {

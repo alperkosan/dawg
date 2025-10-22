@@ -95,12 +95,15 @@ class MixerProcessor extends AudioWorkletProcessor {
         const lowFreq = this.getParamValue(parameters.lowFreq, 0);
         const highFreq = this.getParamValue(parameters.highFreq, 0);
 
+        // ⚡ CRITICAL: Check if EQ is active (all gains at 1.0 = bypass)
+        const eqActive = (lowGain !== 1 || midGain !== 1 || highGain !== 1);
+
         // Only recalculate coefficients if parameters changed
-        if (lowGain !== this.cachedParams.lowGain ||
+        if (eqActive && (lowGain !== this.cachedParams.lowGain ||
             midGain !== this.cachedParams.midGain ||
             highGain !== this.cachedParams.highGain ||
             lowFreq !== this.cachedParams.lowFreq ||
-            highFreq !== this.cachedParams.highFreq) {
+            highFreq !== this.cachedParams.highFreq)) {
 
             this.updateEQCoefficients(lowGain, midGain, highGain, lowFreq, highFreq);
             this.cachedParams.lowGain = lowGain;
@@ -117,6 +120,9 @@ class MixerProcessor extends AudioWorkletProcessor {
         const threshold = this.getParamValue(parameters.compThreshold, 0);
         const ratio = this.getParamValue(parameters.compRatio, 0);
 
+        // ⚡ CRITICAL: Check if compression is active
+        const compActive = (threshold < 0 && ratio > 1);
+
         // ⚡ OPTIMIZATION: Pre-calculate pan coefficients if needed
         let panGainL = 1, panGainR = 1;
         if (pan !== 0) {
@@ -124,19 +130,23 @@ class MixerProcessor extends AudioWorkletProcessor {
             panGainR = Math.sin((pan + 1) * Math.PI / 4);
         }
 
-        // ⚡ HOT LOOP: Minimal calculations per sample
+        // ⚡ CRITICAL HOT LOOP: Skip expensive operations when bypassed
         for (let i = 0; i < blockSize; i++) {
             let samplesL = channelCount > 0 ? input[0][i] : 0;
             let samplesR = channelCount > 1 ? input[1][i] : samplesL;
 
-            // EQ processing (using cached coefficients)
-            samplesL = this.applyEQWithCachedCoeffs(samplesL);
-            samplesR = this.applyEQWithCachedCoeffs(samplesR);
+            // EQ processing (ONLY if active)
+            if (eqActive) {
+                samplesL = this.applyEQWithCachedCoeffs(samplesL);
+                samplesR = this.applyEQWithCachedCoeffs(samplesR);
+            }
 
-            // Compression
-            const compGain = this.processCompression(samplesL, samplesR, threshold, ratio);
-            samplesL *= compGain;
-            samplesR *= compGain;
+            // Compression (ONLY if active)
+            if (compActive) {
+                const compGain = this.processCompression(samplesL, samplesR, threshold, ratio);
+                samplesL *= compGain;
+                samplesR *= compGain;
+            }
 
             // Gain
             samplesL *= gain;
@@ -267,29 +277,31 @@ class MixerProcessor extends AudioWorkletProcessor {
         return output;
     }
 
-    // ⚡ OPTIMIZATION: Simplified compressor (returns gain multiplier)
+    // ⚡ CRITICAL OPTIMIZATION: Ultra-fast compressor (returns gain multiplier)
     processCompression(left, right, threshold, ratio) {
         const inputLevel = Math.max(Math.abs(left), Math.abs(right));
 
-        // Fast path: no compression needed
-        if (inputLevel < 0.001) {
+        // Fast path: no compression needed (most common case)
+        if (inputLevel < 0.001 || threshold >= 0) {
+            // Smooth gain back to 1.0
+            this.compState.gain += (1 - this.compState.gain) * 0.003;
             return this.compState.gain;
         }
 
-        const inputLevelDB = 20 * Math.log10(inputLevel);
+        // ⚡ OPTIMIZATION: Avoid log10/pow - use linear approximation
+        // Convert threshold from dB to linear (cache this!)
+        const thresholdLinear = Math.pow(10, threshold / 20);
 
-        let gainReduction = 0;
-        if (inputLevelDB > threshold) {
-            const excess = inputLevelDB - threshold;
-            gainReduction = excess * (1 - 1/ratio);
+        let targetGain = 1.0;
+        if (inputLevel > thresholdLinear) {
+            // Linear compression approximation (much faster than log/pow)
+            const excess = (inputLevel - thresholdLinear) / thresholdLinear;
+            const reduction = excess / ratio;
+            targetGain = 1.0 / (1.0 + reduction);
         }
 
-        const targetGain = Math.pow(10, -gainReduction / 20);
-
-        // Smooth gain changes
-        const attack = 0.003;
-        const release = 0.1;
-        const timeConstant = targetGain < this.compState.gain ? attack : release;
+        // Smooth gain changes (simplified)
+        const timeConstant = targetGain < this.compState.gain ? 0.003 : 0.1;
 
         this.compState.gain += (targetGain - this.compState.gain) *
                               (1 - Math.exp(-1 / (timeConstant * this.sampleRate)));
