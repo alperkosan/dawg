@@ -117,6 +117,7 @@ export function useArrangementCanvas(containerRef, tracks = []) {
 
     const resizeObserver = new ResizeObserver(entries => {
       const { width, height } = entries[0].contentRect;
+      console.log('🔄 Arrangement canvas resized:', { width, height });
       setViewportSize({ width, height });
       setRenderTrigger(Date.now());
     });
@@ -323,8 +324,21 @@ export function useArrangementCanvas(containerRef, tracks = []) {
 
     // Only resize if dimensions changed
     if (canvas.width !== rect.width * dpr || canvas.height !== rect.height * dpr) {
+      console.log('🎨 Canvas resizing:', {
+        canvasId: canvas.id || canvas.className,
+        from: { w: canvas.width / dpr, h: canvas.height / dpr },
+        to: { w: rect.width, h: rect.height },
+        dpr
+      });
       canvas.width = rect.width * dpr;
       canvas.height = rect.height * dpr;
+      // ✅ FIX: Reset transform before scaling to avoid double-scaling
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.scale(dpr, dpr);
+    } else {
+      // ✅ FIX: Ensure scale is applied even if dimensions didn't change
+      // This handles cases where context was reset
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.scale(dpr, dpr);
     }
 

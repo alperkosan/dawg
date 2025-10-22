@@ -13,6 +13,7 @@ import VASynthEditor from './components/editors/VASynthEditor';
 import MultiSampleEditor from './components/editors/MultiSampleEditor';
 import DrumSamplerEditor from './components/editors/DrumSamplerEditor';
 import { GranularSamplerUI } from '@/components/instruments/granular';
+import { ForgeSynthUI } from './ForgeSynthUI';
 import PresetBrowser from './components/PresetBrowser';
 import './InstrumentEditorPanel.css';
 
@@ -429,17 +430,7 @@ const InstrumentEditorPanel = () => {
     }
 
     if (type === 'synth') {
-      // TODO: ForgeSynthEditor
-      return (
-        <div className="editor-placeholder">
-          <div className="editor-placeholder__icon">🎹</div>
-          <div className="editor-placeholder__text">
-            ForgeSynth Editor
-            <br />
-            <span style={{ fontSize: '12px', color: '#666' }}>Coming soon...</span>
-          </div>
-        </div>
-      );
+      return <ForgeSynthUI instrument={instrumentData} />;
     }
 
     return (

@@ -103,7 +103,10 @@ ayrıca yeni yazdığım notaların velocity değerleriyle oynayamama gibi bir s
 
 shift wheel ile selected notaların eğer yoksa üzerinde olduğum notanın duration değerini hassas şekilde değiştirebilmeliyim. bu özellik eklenecek.
 
+velocity lane üst üste yazılmış notalarda sadece bir notanında değerini değiştirebiliyorum. hep en öndeki seçilebiliyor. birini düşürüp arkada açılana tıklamak istediğimde yine en öndeki seçiliyor.
 
 genel değerlendirmem:
 --------------------------------------
 genel olarak yetenekli ve bi noktaya kadar performanslı çalışabilen bir program oluşturabilmişiz. kullanıcı deneyimi zayıf fakat olabildiğince "yapılabilirliğe" kafa yorulduğunu görebiliyorum. kalan eksikleri ve hataları giderdiğimizde kullanması keyifli bir proje haline gelecek gibi hissettiriyor.
+
+

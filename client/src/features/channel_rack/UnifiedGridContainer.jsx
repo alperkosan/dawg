@@ -70,14 +70,12 @@ const UnifiedGridContainer = React.memo(({
       // Canvas container size matches viewport (already set in inline style, but update for resize)
       // Note: Inline style in JSX handles initial size
 
-      // 🐛 DEBUG: Log viewport and scroll info (1% sample)
-      if (Math.random() < 0.01) {
-        console.log('📊 Unified Canvas Update:', {
-          viewport: `${vpWidth}×${vpHeight}`,
-          scroll: `X:${scrollLeft} Y:${scrollTop}`,
-          containerSize: `${totalWidth}×${totalHeight}`,
-        });
-      }
+      // 🐛 DEBUG: Log viewport and scroll info
+      console.log('🔄 Channel Rack canvas resized:', {
+        viewport: `${vpWidth}×${vpHeight}`,
+        scroll: `X:${scrollLeft} Y:${scrollTop}`,
+        containerSize: `${totalWidth}×${totalHeight}`,
+      });
     };
 
     // Initial update
@@ -85,15 +83,20 @@ const UnifiedGridContainer = React.memo(({
 
     // Listen to parent scroll and window resize
     const scrollContainer = containerRef.current?.parentElement;
-    if (scrollContainer) {
-      scrollContainer.addEventListener('scroll', updateViewportAndScroll, { passive: true });
-      window.addEventListener('resize', updateViewportAndScroll, { passive: true });
+    if (!scrollContainer) return;
 
-      return () => {
-        scrollContainer.removeEventListener('scroll', updateViewportAndScroll);
-        window.removeEventListener('resize', updateViewportAndScroll);
-      };
-    }
+    // ✅ FIX: Use ResizeObserver instead of window resize for panel fullscreen support
+    const resizeObserver = new ResizeObserver(() => {
+      updateViewportAndScroll();
+    });
+
+    scrollContainer.addEventListener('scroll', updateViewportAndScroll, { passive: true });
+    resizeObserver.observe(scrollContainer);
+
+    return () => {
+      scrollContainer.removeEventListener('scroll', updateViewportAndScroll);
+      resizeObserver.disconnect();
+    };
   }, [totalWidth, totalHeight]);
 
   return (
