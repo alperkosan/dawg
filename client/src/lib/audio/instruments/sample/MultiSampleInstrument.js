@@ -30,7 +30,8 @@ export class MultiSampleInstrument extends BaseInstrument {
         this.sampleMap = null; // midiNote -> { buffer, baseNote, pitchShift }
 
         // Playback settings
-        this.maxPolyphony = 32;
+        // ⚡ OPTIMIZED: Reduced from 32 to 16 voices (AudioNode optimization)
+        this.maxPolyphony = 16;
 
         // ✅ NEW: Voice pooling for CPU efficiency and voice stealing
         this.voicePool = null;

@@ -341,8 +341,10 @@ if (typeof window !== 'undefined') {
     window.unifiedMixerDemo = unifiedMixerDemo;
     window.demo = unifiedMixerDemo; // Short alias
 
-    console.log('\n🎛️ UnifiedMixer Demo loaded!');
-    console.log('💡 Try: demo.help()');
+    // ✅ DISABLED: UnifiedMixer Demo logs removed
+    // Uncomment to enable:
+    // console.log('\n🎛️ UnifiedMixer Demo loaded!');
+    // console.log('💡 Try: demo.help()');
 }
 
 export default unifiedMixerDemo;

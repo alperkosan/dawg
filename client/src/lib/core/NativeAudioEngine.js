@@ -506,7 +506,9 @@ export class NativeAudioEngine {
 
             if (isMultiSampled || isVASynth || isGranular) {
                 // Use new centralized instrument system
-                console.log(`🎹 Creating ${instrumentData.name} using InstrumentFactory...`);
+                if (import.meta.env.DEV) {
+                    console.log(`🎹 Creating ${instrumentData.name} using InstrumentFactory...`);
+                }
                 instrument = await InstrumentFactory.createPlaybackInstrument(
                     instrumentData,
                     this.audioContext,
@@ -551,7 +553,7 @@ export class NativeAudioEngine {
                 if (insert) {
                     // Route to dynamic MixerInsert
                     this.routeInstrumentToInsert(instrumentData.id, instrumentData.mixerTrackId);
-                    console.log(`🔗 Instrument ${instrumentData.id} routed to MixerInsert: ${instrumentData.mixerTrackId}`);
+                    // Routing logged in routeInstrumentToInsert
                 } else {
                     console.warn(`⚠️ MixerInsert not found: ${instrumentData.mixerTrackId}, falling back to UnifiedMixer`);
                     await this._connectInstrumentToChannel(instrumentData.id, instrumentData.mixerTrackId);
@@ -568,7 +570,10 @@ export class NativeAudioEngine {
             }
 
             this.metrics.instrumentsCreated++;
-            console.log(`✅ Instrument created: ${instrumentData.name} (${instrumentData.type})`);
+            // Only log in DEV mode - production uses batched summary
+            if (import.meta.env.DEV) {
+                console.log(`✅ Instrument created: ${instrumentData.name} (${instrumentData.type})`);
+            }
 
             return instrument;
 
@@ -897,7 +902,9 @@ export class NativeAudioEngine {
 
     // Public method to reconnect instrument after effect chain change
     reconnectInstrumentToTrack(instrumentId, trackId) {
-        console.log(`🔄 Reconnecting instrument ${instrumentId} to track ${trackId}`);
+        if (import.meta.env.DEV) {
+            console.log(`🔄 Reconnecting instrument ${instrumentId} to track ${trackId}`);
+        }
 
         const instrument = this.instruments.get(instrumentId);
         if (!instrument) {
@@ -926,11 +933,15 @@ export class NativeAudioEngine {
      * @param {Object} params - Updated parameters
      */
     updateInstrumentParameters(instrumentId, params) {
-        console.log(`🎚️ Updating instrument parameters: ${instrumentId}`, params);
+        if (import.meta.env.DEV) {
+            console.log(`🎚️ Updating instrument parameters: ${instrumentId}`, params);
+        }
 
         // If mixerTrackId changed, re-route the instrument
         if (params.mixerTrackId) {
-            console.log(`🔌 Re-routing ${instrumentId} to ${params.mixerTrackId}`);
+            if (import.meta.env.DEV) {
+                console.log(`🔌 Re-routing ${instrumentId} to ${params.mixerTrackId}`);
+            }
             return this.reconnectInstrumentToTrack(instrumentId, params.mixerTrackId);
         }
 
@@ -947,7 +958,9 @@ export class NativeAudioEngine {
     // New code should use: createMixerInsert() + routeInstrumentToInsert()
 
     async _connectInstrumentToChannel(instrumentId, channelId) {
-        console.log(`🔌 Attempting to connect instrument ${instrumentId} to channel ${channelId}`);
+        if (import.meta.env.DEV) {
+            console.log(`🔌 Attempting to connect instrument ${instrumentId} to channel ${channelId}`);
+        }
         const instrument = this.instruments.get(instrumentId);
         if (!instrument) {
             console.error(`❌ Instrument not found: ${instrumentId}`);
@@ -973,7 +986,9 @@ export class NativeAudioEngine {
             }
             try {
                 instrument.output.disconnect();
-                console.log(`🔌 Disconnected ${instrumentId} from all previous outputs`);
+                if (import.meta.env.DEV) {
+                    console.log(`🔌 Disconnected ${instrumentId} from all previous outputs`);
+                }
             } catch (e) {}
             if (!this.mixerChannels.has(channelId)) {
                 this.mixerChannels.set(channelId, {
@@ -1217,7 +1232,9 @@ export class NativeAudioEngine {
 
         this.mixerInserts.set(insertId, insert);
 
-        console.log(`✅ MixerInsert created: ${insertId} (${label})`);
+        if (import.meta.env.DEV) {
+            console.log(`✅ MixerInsert created: ${insertId} (${label})`);
+        }
         return insert;
     }
 
@@ -1283,7 +1300,10 @@ export class NativeAudioEngine {
         insert.connectInstrument(instrumentId, instrument.output);
         this.instrumentToInsert.set(instrumentId, insertId);
 
-        console.log(`🔗 Routed: ${instrumentId} → ${insertId}`);
+        // Only log routing in DEV mode
+        if (import.meta.env.DEV) {
+            console.log(`🔗 Routed: ${instrumentId} → ${insertId}`);
+        }
     }
 
     /**
@@ -1389,7 +1409,9 @@ export class NativeAudioEngine {
         }
 
         this.instruments.delete(instrumentId);
-        console.log(`✅ Instrument removed: ${instrumentId}`);
+        if (import.meta.env.DEV) {
+            console.log(`✅ Instrument removed: ${instrumentId}`);
+        }
     }
 
     /**

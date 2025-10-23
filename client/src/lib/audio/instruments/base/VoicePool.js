@@ -29,7 +29,9 @@ export class VoicePool {
         this.freeVoices = [...this.voices]; // Available voices
         this.releaseQueue = []; // Voices in release phase { voice, endTime }
 
-        console.log(`🎵 VoicePool created: ${VoiceClass.name}, ${maxVoices} voices`);
+        if (import.meta.env.DEV) {
+            console.log(`🎵 VoicePool created: ${VoiceClass.name}, ${maxVoices} voices`);
+        }
     }
 
     /**
@@ -127,7 +129,9 @@ export class VoicePool {
             const index = this.releaseQueue.indexOf(quietest);
             this.releaseQueue.splice(index, 1);
 
-            console.log('🎵 Voice stolen from release queue');
+            if (import.meta.env.DEV) {
+                console.log('🎵 Voice stolen from release queue');
+            }
             return quietest.voice;
         }
 
@@ -148,7 +152,9 @@ export class VoicePool {
 
             if (candidate) {
                 this.activeVoices.delete(candidateNote);
-                console.log(`🎵 Voice stolen: note ${candidateNote}, priority ${lowestPriority.toFixed(1)}`);
+                if (import.meta.env.DEV) {
+                    console.log(`🎵 Voice stolen: note ${candidateNote}, priority ${lowestPriority.toFixed(1)}`);
+                }
                 return candidate;
             }
         }
@@ -218,7 +224,9 @@ export class VoicePool {
         this.activeVoices.clear();
         this.freeVoices = [...this.voices];
 
-        console.log('🛑 VoicePool: Emergency stop');
+        if (import.meta.env.DEV) {
+            console.log('🛑 VoicePool: Emergency stop');
+        }
     }
 
     /**
@@ -252,6 +260,8 @@ export class VoicePool {
         this.freeVoices = [];
         this.releaseQueue = [];
 
-        console.log('🗑️ VoicePool disposed');
+        if (import.meta.env.DEV) {
+            console.log('🗑️ VoicePool disposed');
+        }
     }
 }

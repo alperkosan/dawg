@@ -294,11 +294,13 @@ function ChannelRack() {
     // Update viewport width on mount and resize
     const updateViewport = () => {
       const newWidth = mainGrid.clientWidth;
-      console.log('🔄 Channel Rack viewport resized:', {
-        from: viewportWidth,
-        to: newWidth,
-        element: 'mainGrid'
-      });
+      if (import.meta.env.DEV && window.verboseLogging) {
+        console.log('🔄 Channel Rack viewport resized:', {
+          from: viewportWidth,
+          to: newWidth,
+          element: 'mainGrid'
+        });
+      }
       setViewportWidth(newWidth);
     };
     updateViewport();

@@ -103,6 +103,12 @@ export function printSampleAnalysis(audioBuffer, name = 'Sample') {
 
 // Auto-analyze all samples in engine
 export function analyzeAllSamples(audioEngine) {
+    // ✅ DISABLED: Sample analysis turned off completely
+    // Uncomment to enable: window.enableSampleAnalysis = true
+    if (!window.enableSampleAnalysis) {
+        return;
+    }
+
     console.log('\n🔬 ANALYZING ALL SAMPLES...\n');
 
     const results = [];

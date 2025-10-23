@@ -148,14 +148,15 @@ function App() {
       });
 
       // 🎛️ DYNAMIC MIXER: Create mixer inserts for existing tracks
-      console.log('🎛️ Initializing mixer inserts for existing tracks...');
       const mixerTracks = storeGetters.getMixerTracks();
+      const createdInserts = [];
       mixerTracks.forEach(track => {
         if (track.type !== 'master') {
           AudioContextService.createMixerInsert(track.id, track.name);
-          console.log(`✅ Created mixer insert: ${track.id} (${track.name})`);
+          createdInserts.push(track.name);
         }
       });
+      console.log(`✅ Created ${createdInserts.length} mixer inserts`);
 
       // ✅ Initialize VisualizationEngine
       visualizationEngine.init(engine.audioContext);

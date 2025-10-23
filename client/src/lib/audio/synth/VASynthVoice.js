@@ -72,23 +72,15 @@ export class VASynthVoice extends BaseVoice {
 
     /**
      * Initialize voice - create permanent audio node graph
-     * Oscillators start immediately but silent (controlled via amplitude gain)
+     * ⚡ OPTIMIZED: Oscillators created on-demand (not always running)
      */
     initialize() {
-        // Create oscillators (start immediately, always running)
+        // ⚡ OPTIMIZATION: Don't create oscillators here - create on trigger()
+        // This saves massive CPU as oscillators won't run when voice is silent
+        // Create oscillator gain nodes (persistent)
         this.oscillatorSettings.forEach((settings, i) => {
-            const osc = this.context.createOscillator();
-            osc.type = settings.waveform;
-            osc.frequency.setValueAtTime(440, this.context.currentTime); // Default A4
-            osc.detune.setValueAtTime(settings.detune, this.context.currentTime);
-
             const oscGain = this.context.createGain();
-            oscGain.gain.setValueAtTime(settings.enabled ? settings.level : 0, this.context.currentTime);
-
-            osc.connect(oscGain);
-            osc.start(0); // Start now, control via gain
-
-            this.oscillators[i] = osc;
+            oscGain.gain.setValueAtTime(0, this.context.currentTime);
             this.oscillatorGains[i] = oscGain;
         });
 
@@ -114,11 +106,14 @@ export class VASynthVoice extends BaseVoice {
         this.filter.connect(this.amplitudeGain);
         this.amplitudeGain.connect(this.output);
 
-        console.log('🎹 VASynthVoice initialized');
+        if (import.meta.env.DEV) {
+            console.log('🎹 VASynthVoice initialized');
+        }
     }
 
     /**
      * Trigger note - start envelopes and set frequencies
+     * ⚡ OPTIMIZED: Create and start oscillators on-demand
      */
     trigger(midiNote, velocity, frequency, time) {
         this.isActive = true;
@@ -126,17 +121,29 @@ export class VASynthVoice extends BaseVoice {
         this.currentVelocity = velocity;
         this.startTime = time;
 
-        // Set oscillator frequencies
-        this.oscillators.forEach((osc, i) => {
-            if (!osc) return;
-
-            const settings = this.oscillatorSettings[i];
+        // ⚡ OPTIMIZATION: Create and start oscillators on-demand
+        this.oscillatorSettings.forEach((settings, i) => {
             if (!settings.enabled) return;
 
+            // Create new oscillator for this note
+            const osc = this.context.createOscillator();
+            osc.type = settings.waveform;
+            osc.detune.setValueAtTime(settings.detune, this.context.currentTime);
+
+            // Calculate frequency with octave shift
             const octaveMultiplier = Math.pow(2, settings.octave);
             const targetFreq = frequency * octaveMultiplier;
-
             osc.frequency.setValueAtTime(targetFreq, time);
+
+            // Connect and start
+            osc.connect(this.oscillatorGains[i]);
+            osc.start(time);
+
+            // Store reference (will be stopped in release())
+            this.oscillators[i] = osc;
+
+            // Set gain level
+            this.oscillatorGains[i].gain.setValueAtTime(settings.level, time);
         });
 
         // Trigger filter envelope

@@ -1719,7 +1719,7 @@ export class AudioContextService {
 
     try {
       const insert = this.audioEngine.createMixerInsert(trackId, label);
-      console.log(`✅ AudioContextService: Created mixer insert ${trackId} (${label})`);
+      // Log removed - already logged in NativeAudioEngine
       return insert;
     } catch (error) {
       console.error(`❌ AudioContextService: Failed to create mixer insert ${trackId}:`, error);

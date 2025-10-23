@@ -47,7 +47,10 @@ export class MixerInsert {
     // Initial routing (no effects)
     this._rebuildChain();
 
-    console.log(`✅ MixerInsert created: ${insertId} (${label})`);
+    // Only log in dev mode
+    if (import.meta.env.DEV) {
+      console.log(`✅ MixerInsert created: ${insertId} (${label})`);
+    }
   }
 
   /**
@@ -62,7 +65,7 @@ export class MixerInsert {
     try {
       instrumentOutput.connect(this.input);
       this.instruments.add(instrumentId);
-      console.log(`🔗 Connected instrument ${instrumentId} → ${this.insertId}`);
+      // Only log errors, not every connection
     } catch (error) {
       console.error(`❌ Failed to connect instrument ${instrumentId}:`, error);
     }
@@ -225,7 +228,7 @@ export class MixerInsert {
   connectToMaster(masterInput) {
     try {
       this.output.connect(masterInput);
-      console.log(`🔗 ${this.insertId} → master bus`);
+      // Only log errors, not every connection
     } catch (error) {
       console.error(`❌ Failed to connect ${this.insertId} to master:`, error);
     }
