@@ -203,8 +203,10 @@ if (typeof window !== 'undefined') {
     runPerformanceTest
   };
 
-  console.log('💡 Performance helpers loaded! Available commands:');
-  console.log('  - window.performanceHelpers.addManyChannels(50)');
-  console.log('  - window.performanceHelpers.runPerformanceTest()');
-  console.log('  - window.performanceHelpers.monitorMemory()');
+  // ✅ DISABLED: Performance helper logs removed
+  // Uncomment to enable:
+  // console.log('💡 Performance helpers loaded! Available commands:');
+  // console.log('  - window.performanceHelpers.addManyChannels(50)');
+  // console.log('  - window.performanceHelpers.runPerformanceTest()');
+  // console.log('  - window.performanceHelpers.monitorMemory()');
 }

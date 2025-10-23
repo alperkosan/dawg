@@ -29,19 +29,19 @@ import { PLAYBACK_STATES } from './config/constants';
 
 // ✅ PERFORMANCE: Load performance helpers in development
 if (import.meta.env.DEV) {
-  import('./utils/performanceHelpers').then(() => {
+  /*import('./utils/performanceHelpers').then(() => {
     console.log('🚀 Performance helpers loaded! Try: window.performanceHelpers.runPerformanceTest()');
-  });
+  });*/
 
-  // ⚡ WASM: Load WASM helpers
+  /* ⚡ WASM: Load WASM helpers
   import('./utils/wasmHelpers').then(() => {
     console.log('⚡ WASM helpers loaded! Try: window.wasm.quickBenchmark()');
-  });
+  });*/
 
-  // 🎛️ PHASE 3: UnifiedMixer integrated into production! Manual tests available.
+  /* 🎛️ PHASE 3: UnifiedMixer integrated into production! Manual tests available.
   import('./lib/core/UnifiedMixerDemo.js').then(() => {
     console.log('🎛️ UnifiedMixer: Running in production (manual tests: window.demo.help())');
-  }).catch(() => {});
+  }).catch(() => {});*/
 }
 
 function App() {
@@ -148,14 +148,61 @@ function App() {
       });
 
       // 🎛️ DYNAMIC MIXER: Create mixer inserts for existing tracks
-      console.log('🎛️ Initializing mixer inserts for existing tracks...');
       const mixerTracks = storeGetters.getMixerTracks();
+      const createdInserts = [];
       mixerTracks.forEach(track => {
         if (track.type !== 'master') {
           AudioContextService.createMixerInsert(track.id, track.name);
-          console.log(`✅ Created mixer insert: ${track.id} (${track.name})`);
+          createdInserts.push(track.name);
         }
       });
+      console.log(`✅ Created ${createdInserts.length} mixer inserts`);
+
+      // 🔗 DYNAMIC MIXER: Re-route existing instruments to their MixerInserts
+      console.log('🔗 Re-routing instruments to mixer inserts...');
+      const existingInstruments = storeGetters.getInstruments();
+      console.log(`📊 Found ${existingInstruments.length} existing instruments`);
+
+      let reroutedCount = 0;
+      existingInstruments.forEach(inst => {
+        console.log(`  Checking instrument: ${inst.id}`, {
+          name: inst.name,
+          mixerTrackId: inst.mixerTrackId
+        });
+
+        if (inst.mixerTrackId && inst.mixerTrackId !== 'master') {
+          console.log(`  🔗 Re-routing ${inst.id} → ${inst.mixerTrackId}`);
+          AudioContextService.routeInstrumentToInsert(inst.id, inst.mixerTrackId);
+          reroutedCount++;
+        } else {
+          console.log(`  ⏭️ Skipping ${inst.id} (mixerTrackId: ${inst.mixerTrackId})`);
+        }
+      });
+      console.log(`✅ Re-routed ${reroutedCount}/${existingInstruments.length} instruments`);
+
+      // 🎛️ DYNAMIC MIXER: Load insert effects from initial data
+      console.log('🎛️ Loading insert effects from initial data...');
+      for (const track of mixerTracks) {
+        if (track.type !== 'master' && track.insertEffects && track.insertEffects.length > 0) {
+          console.log(`📥 Loading ${track.insertEffects.length} effects for track: ${track.name}`);
+          for (const effectConfig of track.insertEffects) {
+            try {
+              // ✅ SIMPLIFIED: AudioContextService creates effect with single ID
+              const effectId = await AudioContextService.addEffectToInsert(
+                track.id,
+                effectConfig.type,
+                effectConfig.settings
+              );
+              if (effectId) {
+                console.log(`✅ Loaded effect: ${effectConfig.type} (ID: ${effectId})`);
+              }
+            } catch (error) {
+              console.error(`❌ Failed to load effect ${effectConfig.type} for ${track.name}:`, error);
+            }
+          }
+        }
+      }
+      console.log('✅ Insert effects loaded');
 
       // ✅ Initialize VisualizationEngine
       visualizationEngine.init(engine.audioContext);
@@ -176,16 +223,16 @@ function App() {
 
       // ✅ PERFORMANCE: Use fresh store data with memoized getters
       console.log('📥 Başlangıç verileri yükleniyor...');
-      const instruments = storeGetters.getInstruments();
+      const instrumentsToLoad = storeGetters.getInstruments();
 
       // ⚡ DEBUG: Log sample instruments for troubleshooting
-      const sampleInstruments = instruments.filter(inst => inst.type === 'sample');
+      const sampleInstruments = instrumentsToLoad.filter(inst => inst.type === 'sample');
       console.log('🔍 Sample instruments to load:', sampleInstruments.map(inst => ({ id: inst.id, name: inst.name, url: inst.url })));
 
-      await engine.preloadSamples(instruments);
+      await engine.preloadSamples(instrumentsToLoad);
       console.log('✅ Sample preloading completed');
 
-      for (const inst of instruments) {
+      for (const inst of instrumentsToLoad) {
         try {
           await engine.createInstrument(inst);
           if (inst.type === 'sample') {
@@ -203,7 +250,7 @@ function App() {
       setEngineStatus('ready');
       console.log('✅ Ses sistemi başarıyla başlatıldı ve hazır!');
 
-      // 🔍 AUTO-DEBUG: Gain stack inspection after 2 seconds
+      /* 🔍 AUTO-DEBUG: Gain stack inspection after 2 seconds
       setTimeout(() => {
         console.log('\n');
         console.log('═════════════════════════════════════════');
@@ -216,14 +263,14 @@ function App() {
           console.log('\n');
           engine.debugRouting();
         }
-      }, 2000);
+      }, 2000);*/
 
     } catch (error) {
       console.error('❌ Ses sistemi başlatılamadı:', error);
       setEngineError(error.message);
       setEngineStatus('error');
     }
-  }, [engineStatus, audioEngineCallbacks, storeGetters]); // ✅ PERFORMANCE: Minimal dependencies
+  }, [engineStatus, audioEngineCallbacks, storeGetters]);  //✅ PERFORMANCE: Minimal dependencies 
   
   // 3. ✅ MEMORY LEAK FIX: Component yok olduğunda motoru ve transport manager'ı temizleyen useEffect
   useEffect(() => {

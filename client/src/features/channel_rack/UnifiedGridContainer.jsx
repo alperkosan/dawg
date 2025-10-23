@@ -70,12 +70,14 @@ const UnifiedGridContainer = React.memo(({
       // Canvas container size matches viewport (already set in inline style, but update for resize)
       // Note: Inline style in JSX handles initial size
 
-      // 🐛 DEBUG: Log viewport and scroll info
-      console.log('🔄 Channel Rack canvas resized:', {
-        viewport: `${vpWidth}×${vpHeight}`,
-        scroll: `X:${scrollLeft} Y:${scrollTop}`,
-        containerSize: `${totalWidth}×${totalHeight}`,
-      });
+      // Only log resize in DEV mode
+      if (import.meta.env.DEV && window.verboseLogging) {
+        console.log('🔄 Channel Rack canvas resized:', {
+          viewport: `${vpWidth}×${vpHeight}`,
+          scroll: `X:${scrollLeft} Y:${scrollTop}`,
+          containerSize: `${totalWidth}×${totalHeight}`,
+        });
+      }
     };
 
     // Initial update

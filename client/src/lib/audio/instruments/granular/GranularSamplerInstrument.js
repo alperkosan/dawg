@@ -70,10 +70,11 @@ export class GranularSamplerInstrument extends BaseInstrument {
             this.masterGain = this.audioContext.createGain();
             this.masterGain.gain.setValueAtTime(this.params.gain, this.audioContext.currentTime);
 
-            // Create grain pool (128 voices)
+            // Create grain pool (64 voices - optimized from 128)
+            // ⚡ OPTIMIZED: Reduced grain count for better performance
             this.grainPool = new GrainPool(
                 this.audioContext,
-                128,
+                64,
                 this.masterGain
             );
 

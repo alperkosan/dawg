@@ -302,6 +302,10 @@ export class EffectRegistry {
       numberOfInputs: 1,
       numberOfOutputs: 1,
       outputChannelCount: [2],
+      // 🔧 FIX: Force stereo processing for all effects
+      channelCount: 2,              // Always process 2 channels (L/R)
+      channelCountMode: 'explicit', // Don't auto-change based on input
+      channelInterpretation: 'speakers', // L/R speaker layout
       processorOptions: {
         effectType,
         settings
@@ -346,6 +350,10 @@ export class EffectRegistry {
       numberOfInputs: 1,
       numberOfOutputs: 1,
       outputChannelCount: [2],
+      // 🔧 FIX: Force stereo processing
+      channelCount: 2,
+      channelCountMode: 'explicit',
+      channelInterpretation: 'speakers',
       processorOptions: {
         dspChain: settings.dspChain || [],
         effectName: settings.effectName || 'CustomEffect'

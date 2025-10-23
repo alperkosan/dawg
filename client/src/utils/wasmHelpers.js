@@ -190,7 +190,8 @@ const wasmHelpers = new WasmHelpers();
 // Expose to window
 if (typeof window !== 'undefined') {
     window.wasm = wasmHelpers;
-    console.log('⚡ WASM helpers loaded! Try: window.wasm.quickBenchmark()');
+    // ✅ DISABLED: WASM helper log removed
+    // Uncomment to enable: console.log('⚡ WASM helpers loaded! Try: window.wasm.quickBenchmark()');
 }
 
 export default wasmHelpers;

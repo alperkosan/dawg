@@ -7,6 +7,11 @@ import { initialMixerTracks } from '@/config/initialData';
 import { pluginRegistry } from '@/config/pluginConfig';
 import { storeManager } from './StoreManager';
 
+// ⚡ UTILITY: Deep clone for effect settings (prevents shared references)
+const deepCloneSettings = (settings) => {
+  return JSON.parse(JSON.stringify(settings));
+};
+
 export const useMixerStore = create((set, get) => ({
   // ========================================================
   // === AUDIO STATE (affects audio engine) ===
@@ -142,54 +147,77 @@ export const useMixerStore = create((set, get) => ({
       return null;
     }
 
-    const newEffect = {
-      id: `fx-${uuidv4()}`,
-      type: effectType,
-      settings: { ...pluginDef.defaultSettings },
-      bypass: false,
-    };
-
-    let newTrackState;
-    set(state => {
-      const newTracks = state.mixerTracks.map(track => {
-        if (track.id === trackId) {
-          const updatedTrack = { ...track, insertEffects: [...track.insertEffects, newEffect] };
-          newTrackState = updatedTrack;
-          return updatedTrack;
-        }
-        return track;
-      });
-      // ✅ SAFETY: Update rate limiting timestamp
-      const newTimestamps = new Map(state._effectOperationTimestamps);
-      newTimestamps.set(trackId, now);
-
-      return {
-        mixerTracks: newTracks,
-        _effectOperationTimestamps: newTimestamps
-      };
-    });
-
-    // 🎛️ DYNAMIC MIXER: Add effect to insert
+    // 🎛️ DYNAMIC MIXER: Add effect to insert FIRST (to get AudioEngine ID)
     if (trackId === 'master') {
       // Master effects handled differently
+      const newEffect = {
+        id: `master-fx-${Date.now()}`, // Temporary ID for master
+        type: effectType,
+        settings: deepCloneSettings(pluginDef.defaultSettings), // ⚡ Deep clone to prevent shared references
+        bypass: false,
+      };
+
+      let newTrackState;
+      set(state => {
+        const newTracks = state.mixerTracks.map(track => {
+          if (track.id === trackId) {
+            const updatedTrack = { ...track, insertEffects: [...track.insertEffects, newEffect] };
+            newTrackState = updatedTrack;
+            return updatedTrack;
+          }
+          return track;
+        });
+        const newTimestamps = new Map(state._effectOperationTimestamps);
+        newTimestamps.set(trackId, now);
+        return { mixerTracks: newTracks, _effectOperationTimestamps: newTimestamps };
+      });
+
       if (AudioContextService.rebuildSignalChain) {
         AudioContextService.rebuildSignalChain(trackId, newTrackState).catch(error => {
           console.error('❌ Failed to rebuild master chain:', error);
         });
       }
+      return newEffect;
     } else {
-      // Regular track - use dynamic mixer insert API
-      AudioContextService.addEffectToInsert(trackId, effectType, newEffect.settings)
+      // ✅ SIMPLIFIED: Create effect with temporary ID, update with AudioEngine ID
+      // Generate temporary ID (will be replaced by AudioEngine ID)
+      const tempId = `${trackId}-fx-${Date.now()}`;
+
+      // ⚡ Deep clone settings to prevent shared references between effect instances
+      const clonedSettings = deepCloneSettings(pluginDef.defaultSettings);
+
+      const newEffect = {
+        id: tempId,
+        type: effectType,
+        settings: clonedSettings,
+        bypass: false,
+      };
+
+      // Add to Store immediately (for UI responsiveness)
+      set(state => {
+        const newTracks = state.mixerTracks.map(track => {
+          if (track.id === trackId) {
+            return { ...track, insertEffects: [...track.insertEffects, newEffect] };
+          }
+          return track;
+        });
+        const newTimestamps = new Map(state._effectOperationTimestamps);
+        newTimestamps.set(trackId, now);
+        return { mixerTracks: newTracks, _effectOperationTimestamps: newTimestamps };
+      });
+
+      // Create in AudioEngine (async) - use cloned settings here too
+      AudioContextService.addEffectToInsert(trackId, effectType, clonedSettings)
         .then(effectId => {
-          if (effectId) {
-            // Update effect ID with the one from audio engine
+          if (effectId && effectId !== tempId) {
+            // Update with actual AudioEngine ID
             set(state => ({
               mixerTracks: state.mixerTracks.map(track => {
                 if (track.id === trackId) {
                   return {
                     ...track,
                     insertEffects: track.insertEffects.map(fx =>
-                      fx.id === newEffect.id ? { ...fx, audioEngineId: effectId } : fx
+                      fx.id === tempId ? { ...fx, id: effectId } : fx
                     )
                   };
                 }
@@ -200,9 +228,22 @@ export const useMixerStore = create((set, get) => ({
         })
         .catch(error => {
           console.error('❌ Failed to add effect:', error);
+          // Remove placeholder on error
+          set(state => ({
+            mixerTracks: state.mixerTracks.map(track => {
+              if (track.id === trackId) {
+                return {
+                  ...track,
+                  insertEffects: track.insertEffects.filter(fx => fx.id !== tempId)
+                };
+              }
+              return track;
+            })
+          }));
         });
+
+      return newEffect;
     }
-    return newEffect;
   },
 
   handleMixerEffectRemove: (trackId, effectId) => {
@@ -266,10 +307,10 @@ export const useMixerStore = create((set, get) => ({
       return { mixerTracks: newTracks };
     });
 
-    const updatedTrack = get().mixerTracks.find(t => t.id === trackId);
-
-    if (AudioContextService.rebuildSignalChain) {
-      AudioContextService.rebuildSignalChain(trackId, updatedTrack);
+    // 🎛️ DYNAMIC MIXER: Use toggleEffectBypass instead of rebuildSignalChain
+    // toggleEffectBypass is more efficient and uses MixerInsert API
+    if (AudioContextService.toggleEffectBypass) {
+      AudioContextService.toggleEffectBypass(trackId, effectId, !currentBypass);
     }
   },
 
@@ -291,10 +332,15 @@ export const useMixerStore = create((set, get) => ({
                   if (paramOrSettings === 'bypass') {
                     newFx.bypass = value;
                   } else {
-                    newFx.settings = { ...fx.settings, [paramOrSettings]: value };
+                    // ⚡ SAFETY: Deep clone for complex values (arrays/objects) to prevent shared references
+                    const clonedValue = (Array.isArray(value) || (typeof value === 'object' && value !== null))
+                      ? deepCloneSettings(value)
+                      : value;
+                    newFx.settings = { ...fx.settings, [paramOrSettings]: clonedValue };
                   }
                 } else {
-                  newFx.settings = { ...fx.settings, ...paramOrSettings };
+                  // Multiple parameters - deep clone the whole object
+                  newFx.settings = { ...fx.settings, ...deepCloneSettings(paramOrSettings) };
                 }
                 return newFx;
               }
@@ -307,9 +353,8 @@ export const useMixerStore = create((set, get) => ({
       return { mixerTracks: newTracks };
     });
 
+    // ✅ SIMPLIFIED: effectId is already the AudioEngine ID (single ID system)
     const updatedTrack = get().mixerTracks.find(t => t.id === trackId);
-    const effect = updatedTrack?.insertEffects.find(fx => fx.id === effectId);
-    const audioEngineEffectId = effect?.audioEngineId || effectId;
 
     // 🎛️ DYNAMIC MIXER: Update effect parameter
     if (trackId === 'master') {
@@ -322,11 +367,11 @@ export const useMixerStore = create((set, get) => ({
     } else {
       // Regular track - use dynamic mixer insert API
       if (typeof paramOrSettings === 'string') {
-        AudioContextService.updateInsertEffectParam(trackId, audioEngineEffectId, paramOrSettings, value);
+        AudioContextService.updateInsertEffectParam(trackId, effectId, paramOrSettings, value);
       } else {
         // Multiple parameters
         Object.entries(paramOrSettings).forEach(([param, val]) => {
-          AudioContextService.updateInsertEffectParam(trackId, audioEngineEffectId, param, val);
+          AudioContextService.updateInsertEffectParam(trackId, effectId, param, val);
         });
       }
     }

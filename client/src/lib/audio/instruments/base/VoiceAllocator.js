@@ -22,7 +22,9 @@ export class VoiceAllocator {
         this.heldNotes = new Set(); // Notes currently pressed (mono priority)
         this.lastNote = null; // Most recent note
 
-        console.log(`🎹 VoiceAllocator created: mode=${this.mode}, portamento=${this.portamento}s`);
+        if (import.meta.env.DEV) {
+            console.log(`🎹 VoiceAllocator created: mode=${this.mode}, portamento=${this.portamento}s`);
+        }
     }
 
     /**
@@ -212,7 +214,9 @@ export class VoiceAllocator {
             this.legato = config.legato;
         }
 
-        console.log(`🎹 VoiceAllocator reconfigured: mode=${this.mode}, portamento=${this.portamento}s, legato=${this.legato}`);
+        if (import.meta.env.DEV) {
+            console.log(`🎹 VoiceAllocator reconfigured: mode=${this.mode}, portamento=${this.portamento}s, legato=${this.legato}`);
+        }
     }
 
     /**

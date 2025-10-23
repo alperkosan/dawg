@@ -35,10 +35,11 @@ export class VASynthInstrument_v2 extends BaseInstrument {
         };
 
         // Create voice pool (pre-allocate all voices)
+        // ⚡ OPTIMIZED: Reduced default from 16 to 8 voices (AudioNode optimization)
         this.voicePool = new VoicePool(
             audioContext,
             VASynthVoice,
-            this.preset.maxVoices || 16
+            this.preset.maxVoices || 8
         );
 
         // Create voice allocator (handles mono/poly logic)

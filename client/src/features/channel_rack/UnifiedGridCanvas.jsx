@@ -109,18 +109,13 @@ const UnifiedGridCanvas = React.memo(({
     // Listen to custom theme change event
     window.addEventListener('themeChanged', handleThemeChange);
 
-    // Listen to fullscreen change events (all browser prefixes)
+    // Listen to fullscreen change event (modern browsers)
+    // ⚡ OPTIMIZED: Removed legacy prefixes (webkit/moz/MS) - all modern browsers support standard event
     document.addEventListener('fullscreenchange', handleFullscreenChange);
-    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
-    document.addEventListener('mozfullscreenchange', handleFullscreenChange);
-    document.addEventListener('MSFullscreenChange', handleFullscreenChange);
 
     return () => {
       window.removeEventListener('themeChanged', handleThemeChange);
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
-      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
-      document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
-      document.removeEventListener('MSFullscreenChange', handleFullscreenChange);
     };
   }, []);
 
