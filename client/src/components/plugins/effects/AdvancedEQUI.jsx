@@ -204,7 +204,8 @@ const ProfessionalEQCanvas = React.memo(({
   trackId,
   showSpectrum,
   soloedBand,
-  mutedBands
+  mutedBands,
+  getFrequencyData // ⚡ NEW: Real-time FFT data
 }) => {
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
@@ -229,21 +230,16 @@ const ProfessionalEQCanvas = React.memo(({
   // Resize observer
   useEffect(() => {
     const container = containerRef.current;
-    if (!container) {
-      console.log('⚠️ Container ref not ready');
-      return;
-    }
+    if (!container) return;
 
     // Get initial dimensions immediately
     const rect = container.getBoundingClientRect();
-    console.log('📐 Initial container dimensions:', rect);
     if (rect.width > 0 && rect.height > 0) {
       setCanvasDims({ width: rect.width, height: rect.height });
     }
 
     const observer = new ResizeObserver(entries => {
       const { width, height } = entries[0].contentRect;
-      console.log('📐 ResizeObserver update:', { width, height });
       if (width > 0 && height > 0) {
         setCanvasDims({ width, height });
       }
@@ -277,10 +273,7 @@ const ProfessionalEQCanvas = React.memo(({
   // Main draw function
   const drawCanvas = useCallback(() => {
     const canvas = canvasRef.current;
-    if (!canvas || canvasDims.width === 0) {
-      console.log('🔍 Canvas draw skipped:', { canvas: !!canvas, width: canvasDims.width });
-      return;
-    }
+    if (!canvas || canvasDims.width === 0) return;
 
     const dpr = window.devicePixelRatio || 1;
     canvas.width = canvasDims.width * dpr;
@@ -289,14 +282,6 @@ const ProfessionalEQCanvas = React.memo(({
     ctx.scale(dpr, dpr);
 
     const { width, height } = canvasDims;
-
-    console.log('🔍 Drawing canvas:', {
-      width,
-      height,
-      bands: bands,
-      ghostBands: ghostBands,
-      bandsLength: bands?.length
-    });
 
     // Clear
     ctx.clearRect(0, 0, width, height);
@@ -335,10 +320,103 @@ const ProfessionalEQCanvas = React.memo(({
 
     ctx.setLineDash([]);
 
+    // 🎵 SPECTRUM ANALYZER: Real-time frequency content visualization
+    if (showSpectrum && getFrequencyData) {
+      const fftData = getFrequencyData();
+
+      // 🔍 DEBUG: Check FFT data (throttled - once per second)
+      if (fftData && !window._lastFFTDebug || Date.now() - window._lastFFTDebug > 1000) {
+        window._lastFFTDebug = Date.now();
+        const dataArray = Array.from(fftData);
+        const maxVal = Math.max(...dataArray);
+        const avgVal = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
+        const valuesAboveNoise = dataArray.filter(v => v > -100).length;
+        console.log('🔍 FFT Data (1s throttled):', {
+          length: fftData.length,
+          first5: dataArray.slice(0, 5).map(v => v.toFixed(1)),
+          maxValue: maxVal.toFixed(1),
+          avgValue: avgVal.toFixed(1),
+          valuesAbove_100dB: valuesAboveNoise,
+          hasSignal: valuesAboveNoise > 10
+        });
+      }
+
+      if (fftData && fftData.length > 0) {
+        const sampleRate = 48000; // Assume 48kHz
+        const nyquist = sampleRate / 2;
+        const binCount = fftData.length;
+
+        // Create gradient for spectrum (more visible)
+        const spectrumGradient = ctx.createLinearGradient(0, height * 0.2, 0, height);
+        spectrumGradient.addColorStop(0, 'rgba(0, 229, 181, 0.5)');  // ⚡ Increased opacity
+        spectrumGradient.addColorStop(0.5, 'rgba(0, 229, 181, 0.3)'); // ⚡ Increased opacity
+        spectrumGradient.addColorStop(1, 'rgba(0, 229, 181, 0.1)'); // ⚡ Increased opacity
+
+        ctx.fillStyle = spectrumGradient;
+        ctx.beginPath();
+
+        // Draw spectrum with logarithmic frequency mapping
+        const points = [];
+        for (let i = 0; i < width; i++) {
+          const freq = xToFreq(i, width);
+          if (freq < 20 || freq > 20000) continue;
+
+          // Map frequency to FFT bin
+          const binIndex = Math.floor((freq / nyquist) * binCount);
+          if (binIndex >= 0 && binIndex < binCount) {
+            // ⚡ FIX: FFT data is ALREADY in dB (-140 to 0 range)
+            const dbValue = fftData[binIndex];
+
+            // Filter noise floor: keep only signals above -100dB
+            if (dbValue < -100) continue;
+
+            // Clamp to usable range
+            const clampedDb = Math.max(-100, Math.min(0, dbValue));
+
+            // Map dB to canvas height
+            // -100dB = bottom (minimal), 0dB = top (full scale)
+            // Scale to EQ's dB range (-24 to +24)
+            const normalizedRange = (clampedDb + 100) / 100; // 0.0 to 1.0
+            const eqRangeDb = (normalizedRange * 48) - 24; // Map to -24 to +24dB
+
+            const y = dbToY(eqRangeDb, height);
+            points.push({ x: i, y });
+          }
+        }
+
+        // Draw filled area under spectrum
+        if (points.length > 0) {
+          // 🔍 DEBUG: Log spectrum drawing (throttled)
+          if (!window._lastSpectrumDrawDebug || Date.now() - window._lastSpectrumDrawDebug > 2000) {
+            window._lastSpectrumDrawDebug = Date.now();
+            console.log('✅ Drawing spectrum:', {
+              points: points.length,
+              firstPoint: points[0],
+              lastPoint: points[points.length - 1]
+            });
+          }
+
+          ctx.moveTo(points[0].x, height);
+          points.forEach(p => ctx.lineTo(p.x, p.y));
+          ctx.lineTo(points[points.length - 1].x, height);
+          ctx.closePath();
+          ctx.fill();
+
+          // Draw spectrum outline
+          ctx.strokeStyle = 'rgba(0, 229, 181, 0.6)'; // ⚡ More visible
+          ctx.lineWidth = 2; // ⚡ Thicker line
+          ctx.beginPath();
+          points.forEach((p, i) => {
+            if (i === 0) ctx.moveTo(p.x, p.y);
+            else ctx.lineTo(p.x, p.y);
+          });
+          ctx.stroke();
+        }
+      }
+    }
+
     // ⚡ PERFORMANCE: Use ghost bands during drag for smooth visual feedback
     const currentBands = ghostBands || bands;
-
-    console.log('🎨 Canvas currentBands:', { currentBands, bands, ghostBands, length: currentBands?.length });
 
     // Filter bands based on solo/mute
     let displayBands = currentBands;
@@ -458,32 +536,17 @@ const ProfessionalEQCanvas = React.memo(({
         ctx.stroke();
       }
     });
-  }, [canvasDims, bands, ghostBands, activeBandIndex, hoverBand, draggedBand, soloedBand, mutedBands, getCachedResponseCurve]);
+  }, [canvasDims, bands, ghostBands, activeBandIndex, hoverBand, draggedBand, soloedBand, mutedBands, getCachedResponseCurve, showSpectrum, getFrequencyData]);
 
   // ⚡ PERFORMANCE: Schedule redraws on state changes
   // Using direct RAF scheduling instead of callback to avoid circular dependency
   useEffect(() => {
-    console.log('🎨 Schedule redraw triggered:', {
-      width: canvasDims.width,
-      height: canvasDims.height,
-      bandsLength: bands?.length,
-      ghostBandsLength: ghostBands?.length
-    });
-
-    if (canvasDims.width === 0 || canvasDims.height === 0) {
-      console.log('⏭️ Skipping - canvas not ready');
-      return;
-    }
-
-    if (pendingDrawRef.current) {
-      console.log('⏭️ Skipping - already pending');
-      return;
-    }
+    if (canvasDims.width === 0 || canvasDims.height === 0) return;
+    if (pendingDrawRef.current) return;
 
     pendingDrawRef.current = true;
     rafIdRef.current = requestAnimationFrame(() => {
       pendingDrawRef.current = false;
-      console.log('🎬 Executing drawCanvas via RAF');
       drawCanvas();
     });
 
@@ -494,6 +557,40 @@ const ProfessionalEQCanvas = React.memo(({
       }
     };
   }, [canvasDims, bands, ghostBands, activeBandIndex, hoverBand, draggedBand, soloedBand, mutedBands, drawCanvas]);
+
+  // 🎵 SPECTRUM ANALYZER: Continuous updates when playing
+  useEffect(() => {
+    if (!showSpectrum || !getFrequencyData) return;
+
+    let animationId;
+    let isAnimating = true;
+
+    const animateSpectrum = () => {
+      if (!isAnimating) return;
+
+      // Trigger redraw for spectrum update
+      if (!pendingDrawRef.current) {
+        pendingDrawRef.current = true;
+        rafIdRef.current = requestAnimationFrame(() => {
+          pendingDrawRef.current = false;
+          drawCanvas();
+        });
+      }
+
+      // Continue animation loop
+      animationId = requestAnimationFrame(animateSpectrum);
+    };
+
+    // Start animation loop
+    animationId = requestAnimationFrame(animateSpectrum);
+
+    return () => {
+      isAnimating = false;
+      if (animationId) {
+        cancelAnimationFrame(animationId);
+      }
+    };
+  }, [showSpectrum, getFrequencyData, drawCanvas]);
 
   // Cleanup RAF on unmount
   useEffect(() => {
@@ -713,19 +810,7 @@ const ProfessionalEQCanvas = React.memo(({
       className="relative w-full h-full cursor-crosshair"
       style={{ background: COLORS.bg.primary }}
     >
-      {/* Spectrum analyzer background */}
-      {showSpectrum && (
-        <div className="absolute inset-0 opacity-20 pointer-events-none">
-          <SignalVisualizer
-            meterId={`${trackId}-fft`}
-            type="spectrum"
-            color={COLORS.curve}
-            config={{ showGrid: false, smooth: true }}
-          />
-        </div>
-      )}
-
-      {/* Main EQ canvas */}
+      {/* Main EQ canvas with integrated spectrum analyzer */}
       <canvas
         ref={canvasRef}
         style={{ width: '100%', height: '100%', display: 'block', position: 'relative', zIndex: 1 }}
@@ -1015,20 +1100,6 @@ const ProfessionalBandControl = React.memo(({
 export const AdvancedEQUI = ({ trackId, effect, onChange }) => {
   const { bands } = effect.settings;
 
-  // 🔍 DEBUG: Log bands on mount/update
-  React.useEffect(() => {
-    console.log('🔍 AdvancedEQUI DEBUG:', {
-      trackId,
-      effectId: effect.id,
-      effectType: effect.type,
-      bands: bands,
-      bandsLength: bands?.length,
-      bandsIsArray: Array.isArray(bands),
-      effectSettings: effect.settings,
-      settingsKeys: Object.keys(effect.settings)
-    });
-  }, [trackId, effect, bands]);
-
   // Audio plugin hook for real-time analysis
   const { isPlaying, getFrequencyData } = useAudioPlugin(trackId, effect.id, {
     fftSize: 8192, // High resolution for EQ work
@@ -1295,6 +1366,7 @@ export const AdvancedEQUI = ({ trackId, effect, onChange }) => {
             showSpectrum={showSpectrum}
             soloedBand={soloedBand}
             mutedBands={mutedBands}
+            getFrequencyData={getFrequencyData} // ⚡ Real-time FFT data
           />
         </div>
 
