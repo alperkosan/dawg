@@ -39,6 +39,33 @@ const throttle = (func, limit) => {
   };
 };
 
+// ⚡ PERFORMANCE: Debounce for smoother parameter updates
+// Batches rapid changes, waits for user to stop moving slider
+const debounce = (func, wait, options = {}) => {
+  let timeoutId;
+  let lastCallTime = 0;
+  const maxWait = options.maxWait || wait * 2;
+
+  return function(...args) {
+    const now = Date.now();
+    const timeSinceLastCall = now - lastCallTime;
+
+    clearTimeout(timeoutId);
+
+    // Force call if maxWait exceeded
+    if (timeSinceLastCall >= maxWait) {
+      lastCallTime = now;
+      func.apply(this, args);
+    } else {
+      // Wait for user to stop
+      timeoutId = setTimeout(() => {
+        lastCallTime = Date.now();
+        func.apply(this, args);
+      }, wait);
+    }
+  };
+};
+
 // EQ Constants
 const MIN_FREQ = 20;
 const MAX_FREQ = 20000;
@@ -188,24 +215,72 @@ const ProfessionalEQCanvas = React.memo(({
   const [hoverBand, setHoverBand] = useState(null);
   const [tooltip, setTooltip] = useState({ visible: false, x: 0, y: 0, freq: 0, db: 0, bandInfo: null });
 
+  // ⚡ PERFORMANCE: Ghost mode - separate visual state from audio state
+  // During drag, only visual feedback updates (no audio updates)
+  const [ghostBands, setGhostBands] = useState(null);
+
+  // ⚡ PERFORMANCE: Frequency response cache
+  const responseCacheRef = useRef({ bands: null, curve: null });
+
+  // ⚡ PERFORMANCE: RAF throttling for canvas updates
+  const rafIdRef = useRef(null);
+  const pendingDrawRef = useRef(false);
+
   // Resize observer
   useEffect(() => {
     const container = containerRef.current;
-    if (!container) return;
+    if (!container) {
+      console.log('⚠️ Container ref not ready');
+      return;
+    }
+
+    // Get initial dimensions immediately
+    const rect = container.getBoundingClientRect();
+    console.log('📐 Initial container dimensions:', rect);
+    if (rect.width > 0 && rect.height > 0) {
+      setCanvasDims({ width: rect.width, height: rect.height });
+    }
 
     const observer = new ResizeObserver(entries => {
       const { width, height } = entries[0].contentRect;
-      setCanvasDims({ width, height });
+      console.log('📐 ResizeObserver update:', { width, height });
+      if (width > 0 && height > 0) {
+        setCanvasDims({ width, height });
+      }
     });
 
     observer.observe(container);
     return () => observer.disconnect();
   }, []);
 
-  // Main draw loop
-  useEffect(() => {
+  // ⚡ PERFORMANCE: Cached response curve calculation
+  const getCachedResponseCurve = useCallback((displayBands) => {
+    // Check if bands changed
+    const bandsKey = JSON.stringify(displayBands.map(b => ({
+      type: b.type,
+      frequency: b.frequency,
+      gain: b.gain,
+      q: b.q,
+      active: b.active
+    })));
+
+    if (responseCacheRef.current.bands === bandsKey) {
+      return responseCacheRef.current.curve;
+    }
+
+    // Recalculate
+    const curve = EQCalculations.generateResponseCurve(displayBands, 44100, 400);
+    responseCacheRef.current = { bands: bandsKey, curve };
+    return curve;
+  }, []);
+
+  // Main draw function
+  const drawCanvas = useCallback(() => {
     const canvas = canvasRef.current;
-    if (!canvas || canvasDims.width === 0) return;
+    if (!canvas || canvasDims.width === 0) {
+      console.log('🔍 Canvas draw skipped:', { canvas: !!canvas, width: canvasDims.width });
+      return;
+    }
 
     const dpr = window.devicePixelRatio || 1;
     canvas.width = canvasDims.width * dpr;
@@ -214,6 +289,14 @@ const ProfessionalEQCanvas = React.memo(({
     ctx.scale(dpr, dpr);
 
     const { width, height } = canvasDims;
+
+    console.log('🔍 Drawing canvas:', {
+      width,
+      height,
+      bands: bands,
+      ghostBands: ghostBands,
+      bandsLength: bands?.length
+    });
 
     // Clear
     ctx.clearRect(0, 0, width, height);
@@ -252,16 +335,21 @@ const ProfessionalEQCanvas = React.memo(({
 
     ctx.setLineDash([]);
 
+    // ⚡ PERFORMANCE: Use ghost bands during drag for smooth visual feedback
+    const currentBands = ghostBands || bands;
+
+    console.log('🎨 Canvas currentBands:', { currentBands, bands, ghostBands, length: currentBands?.length });
+
     // Filter bands based on solo/mute
-    let displayBands = bands;
+    let displayBands = currentBands;
     if (soloedBand !== null) {
-      displayBands = bands.map((b, i) => i === soloedBand ? b : { ...b, active: false });
+      displayBands = currentBands.map((b, i) => i === soloedBand ? b : { ...b, active: false });
     } else {
-      displayBands = bands.map((b, i) => mutedBands.has(i) ? { ...b, active: false } : b);
+      displayBands = currentBands.map((b, i) => mutedBands.has(i) ? { ...b, active: false } : b);
     }
 
-    // Response curve
-    const responseCurve = EQCalculations.generateResponseCurve(displayBands, 44100, 400);
+    // ⚡ PERFORMANCE: Use cached response curve
+    const responseCurve = getCachedResponseCurve(displayBands);
 
     if (responseCurve && responseCurve.length > 0) {
       // Fill under curve
@@ -303,8 +391,8 @@ const ProfessionalEQCanvas = React.memo(({
       ctx.stroke();
     }
 
-    // Band nodes
-    bands.forEach((band, index) => {
+    // Band nodes (use currentBands for smooth drag feedback)
+    currentBands.forEach((band, index) => {
       if (!band) return;
 
       const x = freqToX(band.frequency, width);
@@ -370,18 +458,62 @@ const ProfessionalEQCanvas = React.memo(({
         ctx.stroke();
       }
     });
+  }, [canvasDims, bands, ghostBands, activeBandIndex, hoverBand, draggedBand, soloedBand, mutedBands, getCachedResponseCurve]);
 
-  }, [canvasDims, bands, activeBandIndex, hoverBand, draggedBand, soloedBand, mutedBands]);
+  // ⚡ PERFORMANCE: Schedule redraws on state changes
+  // Using direct RAF scheduling instead of callback to avoid circular dependency
+  useEffect(() => {
+    console.log('🎨 Schedule redraw triggered:', {
+      width: canvasDims.width,
+      height: canvasDims.height,
+      bandsLength: bands?.length,
+      ghostBandsLength: ghostBands?.length
+    });
+
+    if (canvasDims.width === 0 || canvasDims.height === 0) {
+      console.log('⏭️ Skipping - canvas not ready');
+      return;
+    }
+
+    if (pendingDrawRef.current) {
+      console.log('⏭️ Skipping - already pending');
+      return;
+    }
+
+    pendingDrawRef.current = true;
+    rafIdRef.current = requestAnimationFrame(() => {
+      pendingDrawRef.current = false;
+      console.log('🎬 Executing drawCanvas via RAF');
+      drawCanvas();
+    });
+
+    return () => {
+      if (rafIdRef.current) {
+        cancelAnimationFrame(rafIdRef.current);
+        pendingDrawRef.current = false;
+      }
+    };
+  }, [canvasDims, bands, ghostBands, activeBandIndex, hoverBand, draggedBand, soloedBand, mutedBands, drawCanvas]);
+
+  // Cleanup RAF on unmount
+  useEffect(() => {
+    return () => {
+      if (rafIdRef.current) {
+        cancelAnimationFrame(rafIdRef.current);
+      }
+    };
+  }, []);
 
   // Mouse interactions with modifier keys
   const findBandAtPosition = useCallback((mouseX, mouseY) => {
-    return bands.findIndex(band => {
+    const currentBands = ghostBands || bands;
+    return currentBands.findIndex(band => {
       if (!band) return false;
       const bandX = freqToX(band.frequency, canvasDims.width);
       const bandY = dbToY(band.gain, canvasDims.height);
       return Math.hypot(mouseX - bandX, mouseY - bandY) < NODE_HIT_RADIUS;
     });
-  }, [bands, canvasDims]);
+  }, [bands, ghostBands, canvasDims]);
 
   const handleMouseDown = useCallback((e) => {
     if (!containerRef.current) return;
@@ -392,6 +524,8 @@ const ProfessionalEQCanvas = React.memo(({
     const hitIndex = findBandAtPosition(mouseX, mouseY);
 
     if (hitIndex !== -1) {
+      // ⚡ PERFORMANCE: Start ghost mode (clone current bands for visual feedback)
+      setGhostBands([...bands]);
       setIsDragging(true);
 
       // Determine drag mode based on modifier keys
@@ -406,7 +540,7 @@ const ProfessionalEQCanvas = React.memo(({
       setDraggedBand({ index: hitIndex, startX: mouseX, startY: mouseY });
       setActiveBandIndex(hitIndex);
     }
-  }, [findBandAtPosition, setActiveBandIndex]);
+  }, [bands, findBandAtPosition, setActiveBandIndex]);
 
   const handleMouseMove = useCallback((e) => {
     if (!containerRef.current) return;
@@ -419,14 +553,16 @@ const ProfessionalEQCanvas = React.memo(({
 
     // Update tooltip
     const hoverIndex = findBandAtPosition(mouseX, mouseY);
-    const bandInfo = hoverIndex !== -1 ? bands[hoverIndex] : null;
+    const bandInfo = hoverIndex !== -1 ? (ghostBands || bands)[hoverIndex] : null;
     setTooltip({ visible: true, x: mouseX, y: mouseY, freq, db, bandInfo });
 
     if (isDragging && draggedBand) {
-      const band = bands[draggedBand.index];
+      // ⚡ PERFORMANCE: Ghost mode - update visual state only (no audio update)
+      const currentBands = ghostBands || bands;
+      const band = currentBands[draggedBand.index];
       if (!band) return;
 
-      const newBands = [...bands];
+      const newBands = [...currentBands];
 
       if (dragMode === 'q') {
         // Alt+drag: Adjust Q factor
@@ -440,8 +576,8 @@ const ProfessionalEQCanvas = React.memo(({
         const bandIndex = draggedBand.index;
 
         // ⚡ Boundary constraints: first/last bands
-        const prevBand = bandIndex > 0 ? bands[bandIndex - 1] : null;
-        const nextBand = bandIndex < bands.length - 1 ? bands[bandIndex + 1] : null;
+        const prevBand = bandIndex > 0 ? currentBands[bandIndex - 1] : null;
+        const nextBand = bandIndex < currentBands.length - 1 ? currentBands[bandIndex + 1] : null;
 
         // Frequency boundaries (50 Hz margin)
         const minFreqBound = prevBand ? prevBand.frequency + 50 : MIN_FREQ;
@@ -467,24 +603,38 @@ const ProfessionalEQCanvas = React.memo(({
         newBands[draggedBand.index] = { ...band, frequency: newFreq, gain: newGain };
       }
 
-      onBandChange(newBands);
+      // ⚡ PERFORMANCE: Update ghost state only (visual feedback)
+      // Audio update happens on mouseUp
+      setGhostBands(newBands);
     } else {
       setHoverBand(hoverIndex);
     }
-  }, [isDragging, draggedBand, dragMode, bands, onBandChange, findBandAtPosition]);
+  }, [isDragging, draggedBand, dragMode, bands, ghostBands, findBandAtPosition]);
 
   const handleMouseUp = useCallback(() => {
+    // ⚡ PERFORMANCE: Commit ghost state to audio on mouseUp
+    if (ghostBands) {
+      onBandChange(ghostBands);
+      setGhostBands(null); // Clear ghost state
+    }
+
     setIsDragging(false);
     setDraggedBand(null);
     setDragMode('normal');
-  }, []);
+  }, [ghostBands, onBandChange]);
 
   const handleMouseLeave = useCallback(() => {
+    // ⚡ PERFORMANCE: Commit ghost state if leaving during drag
+    if (ghostBands) {
+      onBandChange(ghostBands);
+      setGhostBands(null);
+    }
+
     setTooltip(t => ({ ...t, visible: false }));
     setHoverBand(null);
     setIsDragging(false);
     setDraggedBand(null);
-  }, []);
+  }, [ghostBands, onBandChange]);
 
   const handleDoubleClick = useCallback((e) => {
     const rect = containerRef.current.getBoundingClientRect();
@@ -865,6 +1015,20 @@ const ProfessionalBandControl = React.memo(({
 export const AdvancedEQUI = ({ trackId, effect, onChange }) => {
   const { bands } = effect.settings;
 
+  // 🔍 DEBUG: Log bands on mount/update
+  React.useEffect(() => {
+    console.log('🔍 AdvancedEQUI DEBUG:', {
+      trackId,
+      effectId: effect.id,
+      effectType: effect.type,
+      bands: bands,
+      bandsLength: bands?.length,
+      bandsIsArray: Array.isArray(bands),
+      effectSettings: effect.settings,
+      settingsKeys: Object.keys(effect.settings)
+    });
+  }, [trackId, effect, bands]);
+
   // Audio plugin hook for real-time analysis
   const { isPlaying, getFrequencyData } = useAudioPlugin(trackId, effect.id, {
     fftSize: 8192, // High resolution for EQ work
@@ -883,23 +1047,24 @@ export const AdvancedEQUI = ({ trackId, effect, onChange }) => {
   const [snapshotB, setSnapshotB] = useState(null);
   const [currentSnapshot, setCurrentSnapshot] = useState('live');
 
-  // ⚡ Throttled onChange (60fps)
-  const throttledOnChange = useMemo(
-    () => throttle((param, value) => onChange(param, value), 16),
+  // ⚡ PERFORMANCE: Debounced onChange for smooth parameter updates
+  // Wait 50ms after user stops moving slider, force update every 100ms max
+  const debouncedOnChange = useMemo(
+    () => debounce((param, value) => onChange(param, value), 50, { maxWait: 100 }),
     [onChange]
   );
 
   const handleBandChange = useCallback((newBands) => {
-    throttledOnChange('bands', newBands);
-  }, [throttledOnChange]);
+    debouncedOnChange('bands', newBands);
+  }, [debouncedOnChange]);
 
   const handleBandParamChange = useCallback((index, param, value) => {
     const newBands = [...bands];
     if (!newBands[index]) return;
 
     newBands[index] = { ...newBands[index], [param]: value };
-    throttledOnChange('bands', newBands);
-  }, [bands, throttledOnChange]);
+    debouncedOnChange('bands', newBands);
+  }, [bands, debouncedOnChange]);
 
   const handleAddBand = useCallback(() => {
     if (bands.length >= 8) return;

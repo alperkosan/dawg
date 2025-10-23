@@ -1012,162 +1012,11 @@ export class AudioContextService {
       return this.rebuildMasterChain(trackState);
     }
 
-    // Regular track handling
-    if (!this.audioEngine.mixerChannels) {
-      return;
-    }
-
-    const channel = this.audioEngine.mixerChannels.get(trackId);
-    if (!channel) {
-      console.warn('⚠️ No mixer channel found for trackId:', trackId);
-      return;
-    }
-
-    try {
-      // ✅ SAFETY: Fade out during chain rebuild to avoid pops/clicks
-      const originalGain = channel.output ? channel.output.gain.value : 1;
-      console.log('💾 Saving original gain:', originalGain);
-
-      // ⚠️ TEMPORARILY DISABLED: Fade out causes issues with testing
-      // We'll do instant rebuild instead
-      // if (channel.output && channel.output.gain) {
-      //   channel.output.gain.setTargetAtTime(0, this.audioEngine.audioContext.currentTime, 0.01);
-      // }
-
-      // Clear existing effects with better error handling
-      if (channel.effects) {
-        const effectsToDispose = Array.from(channel.effects.values());
-        for (const effect of effectsToDispose) {
-          try {
-            if (effect.node) {
-              effect.node.disconnect();
-            }
-            if (effect.dispose) {
-              effect.dispose();
-            }
-          } catch (disposeError) {
-            console.warn('⚠️ Error disposing effect:', effect.id, disposeError);
-          }
-        }
-        channel.effects.clear();
-      }
-
-      // Rebuild signal chain: mixerNode -> effects -> analyzer -> output
-      if (channel.mixerNode && channel.analyzer && channel.output) {
-        // Disconnect all first
-        try {
-          channel.mixerNode.disconnect();
-          channel.analyzer.disconnect();
-        } catch (disconnectError) {
-          console.warn('⚠️ Disconnect warning (expected):', disconnectError.message);
-        }
-
-        // ✅ FIX: Add new effects WITHOUT calling channel's rebuild (avoid double rebuild)
-        if (trackState.insertEffects && trackState.insertEffects.length > 0) {
-          // Manually build the chain to avoid channel._rebuildEffectChain()
-          let currentNode = channel.mixerNode;
-          console.log('🔗 Building effect chain for', trackId, 'with', trackState.insertEffects.length, 'effects');
-          console.log('🔗 Starting node:', currentNode.constructor.name);
-
-          for (const effectConfig of trackState.insertEffects) {
-            try {
-              // ✅ OPTIMIZATION: Create all effects (even bypassed ones) for instant toggle
-              const node = await effectRegistry.createEffectNode(
-                effectConfig.type,
-                this.audioEngine.audioContext,
-                effectConfig.settings
-              );
-
-              if (node) {
-                // ✅ Create effect object with bypass state
-                const effect = {
-                  id: effectConfig.id,
-                  type: effectConfig.type,
-                  node: node,
-                  settings: effectConfig.settings,
-                  bypass: effectConfig.bypass || false,
-                  parameters: new Map(),
-                  updateParameter: function(paramName, value) {
-                    const param = this.parameters.get(paramName);
-                    if (param) {
-                      const audioContext = this.node.context;
-                      if (audioContext && audioContext.currentTime !== undefined) {
-                        const now = audioContext.currentTime;
-                        param.cancelScheduledValues(now);
-                        param.setValueAtTime(param.value, now);
-                        param.linearRampToValueAtTime(value, now + 0.015);
-                      }
-                    }
-                    this.settings[paramName] = value;
-                  },
-                  dispose: function() {
-                    if (this.node) {
-                      try { this.node.disconnect(); } catch(e) {}
-                    }
-                  }
-                };
-
-                // Setup parameters
-                if (node.parameters) {
-                  for (const [name] of node.parameters) {
-                    const param = node.parameters.get(name);
-                    if (param) {
-                      effect.parameters.set(name, param);
-                    }
-                  }
-                }
-
-                channel.effects.set(effectConfig.id, effect);
-
-                // ✅ BYPASS OPTIMIZATION: Only connect to signal chain if NOT bypassed
-                if (!effectConfig.bypass) {
-                  console.log('🔗 Connecting:', currentNode.constructor.name, '→', effect.node.constructor.name);
-                  currentNode.connect(effect.node);
-                  currentNode = effect.node;
-                  console.log('✅ Added effect to chain:', effectConfig.type, effectConfig.id);
-                } else {
-                  console.log('⏭️  Effect created but bypassed (disconnected):', effectConfig.type);
-                }
-              }
-            } catch (error) {
-              console.error('❌ Error adding effect:', effectConfig.type, error);
-            }
-          }
-
-          // Connect last node to analyzer
-          console.log('🔗 Final connection:', currentNode.constructor.name, '→ analyzer');
-          currentNode.connect(channel.analyzer);
-        } else {
-          // No effects: direct connection
-          console.log('🔗 No effects, direct connection: mixerNode → analyzer');
-          channel.mixerNode.connect(channel.analyzer);
-        }
-
-        // Always connect analyzer to output
-        console.log('🔗 analyzer → output');
-        channel.analyzer.connect(channel.output);
-      }
-
-      // ✅ SAFETY: Restore gain immediately (no fade needed since we didn't fade out)
-      if (channel.output && channel.output.gain && originalGain !== channel.output.gain.value) {
-        console.log('🔊 Restoring gain to:', originalGain);
-        channel.output.gain.setValueAtTime(originalGain, this.audioEngine.audioContext.currentTime);
-      }
-
-      console.log('✅ Signal chain rebuilt successfully for:', trackId);
-    } catch (error) {
-      console.error('❌ Error rebuilding signal chain:', error);
-      // ✅ SAFETY: Always restore gain even on error
-      if (channel.output && channel.output.gain) {
-        channel.output.gain.setTargetAtTime(originalGain, this.audioEngine.audioContext.currentTime, 0.02);
-      }
-    }
+    // 🎛️ DYNAMIC MIXER: Use MixerInsert (no need to rebuild - effects are managed by MixerInsert)
+    // MixerInsert automatically rebuilds chain when effects are added/removed/bypassed
+    console.log('ℹ️ rebuildSignalChain called for track, but MixerInsert handles this automatically');
+    return;
   }
-
-  /**
-   * Build effect chain for a channel
-   * ✅ DEPRECATED: Now handled inline in rebuildSignalChain to avoid double rebuild
-   */
 
   /**
    * ✅ OPTIMIZATION: Toggle effect bypass without full chain rebuild
@@ -1220,9 +1069,23 @@ export class AudioContextService {
       return;
     }
 
-    // Regular track handling
+    // 🎛️ DYNAMIC MIXER: Use MixerInsert for regular tracks
+    if (this.audioEngine.mixerInserts) {
+      const insert = this.audioEngine.mixerInserts.get(trackId);
+      if (insert) {
+        // MixerInsert handles bypass and chain rebuild automatically
+        insert.setEffectBypass(effectId, bypass);
+        console.log(`✅ Toggled bypass for effect ${effectId} on ${trackId}: ${bypass}`);
+        return;
+      } else {
+        console.warn('⚠️ MixerInsert not found for trackId:', trackId);
+        return;
+      }
+    }
+
+    // ❌ FALLBACK: Old mixer channels system (should not be used)
     if (!this.audioEngine.mixerChannels) {
-      console.warn('⚠️ No mixer channels available');
+      console.warn('⚠️ No mixer channels or inserts available');
       return;
     }
 
@@ -1363,12 +1226,21 @@ export class AudioContextService {
     // ⚡ MultiBandEQ V2: Send bands array via message port
     if (effect.type === 'MultiBandEQ' && param === 'bands') {
       if (effect.node && effect.node.port) {
-        const now = performance.now();
-        if (!effect._lastBandUpdate || (now - effect._lastBandUpdate) >= 16) {
-          effect._lastBandUpdate = now;
-          effect.node.port.postMessage({
-            type: 'updateBands',
-            bands: value
+        // ⚡ PERFORMANCE: Optimized rate limiting with requestAnimationFrame
+        if (effect._rafPending) {
+          // Already scheduled, just update the pending value
+          effect._pendingBands = value;
+        } else {
+          effect._rafPending = true;
+          effect._pendingBands = value;
+
+          requestAnimationFrame(() => {
+            effect.node.port.postMessage({
+              type: 'updateBands',
+              bands: effect._pendingBands
+            });
+            effect._rafPending = false;
+            effect._pendingBands = null;
           });
         }
       } else {
@@ -1396,7 +1268,17 @@ export class AudioContextService {
       if (!this.audioEngine.masterEffects) {
         return null;
       }
-      const effect = this.audioEngine.masterEffects.get(effectId);
+
+      // Try direct lookup first
+      let effect = this.audioEngine.masterEffects.get(effectId);
+
+      // ⚡ FIX: If not found, search by Store ID (masterEffects uses Store ID as key)
+      if (!effect) {
+        effect = Array.from(this.audioEngine.masterEffects.values()).find(fx =>
+          fx.id === effectId || fx.type === effectId
+        );
+      }
+
       return effect && effect.node ? effect.node : null;
     }
 
@@ -1404,10 +1286,19 @@ export class AudioContextService {
     if (this.audioEngine.mixerInserts) {
       const insert = this.audioEngine.mixerInserts.get(trackId);
       if (insert && insert.effects) {
-        const effect = insert.effects.get(effectId);
+        // Try direct lookup first (audioEngineId)
+        let effect = insert.effects.get(effectId);
+
+        // If not found, search by audioEngineId (Store ID → AudioEngine ID mapping)
+        if (!effect) {
+          effect = Array.from(insert.effects.values()).find(fx =>
+            fx.id === effectId || fx.audioEngineId === effectId
+          );
+        }
+
         if (effect && effect.node) {
           return effect.node;
-        } else {
+        } else if (import.meta.env.DEV) {
           console.warn(`⚠️ Effect '${effectId}' not found in insert ${trackId}`);
           console.log('Available effects in insert:', Array.from(insert.effects.keys()));
         }
@@ -1655,28 +1546,75 @@ export class AudioContextService {
   /**
    * Get effect audio node for visualization
    * @param {string} trackId - Track ID
-   * @param {string} effectId - Effect ID
+   * @param {string} effectId - Effect ID (Store ID or AudioEngine ID)
    * @returns {AudioNode|null} The effect's audio node or null
    */
   static getEffectAudioNode(trackId, effectId) {
-    if (!this.audioEngine || !this.audioEngine.mixerChannels) {
+    if (!this.audioEngine) {
       console.warn('⚠️ No audio engine available');
       return null;
     }
 
-    const channel = this.audioEngine.mixerChannels.get(trackId);
-    if (!channel || !channel.effects) {
-      console.warn('⚠️ No mixer channel found for trackId:', trackId);
-      return null;
+    // 🎚️ MASTER CHANNEL: Check master effects first
+    if (trackId === 'master' && this.audioEngine.masterEffects) {
+      // Try direct lookup first (effectId)
+      let effect = this.audioEngine.masterEffects.get(effectId);
+
+      // ⚡ FIX: If not found, search by Store ID (masterEffects uses Store ID as key)
+      if (!effect) {
+        effect = Array.from(this.audioEngine.masterEffects.values()).find(fx =>
+          fx.id === effectId || fx.type === effectId
+        );
+      }
+
+      if (effect && effect.node) {
+        return effect.node;
+      } else if (import.meta.env.DEV) {
+        console.warn('⚠️ Master effect not found:', effectId);
+        console.log('Available master effects:', Array.from(this.audioEngine.masterEffects.keys()));
+      }
     }
 
-    const effect = channel.effects.get(effectId);
-    if (!effect || !effect.node) {
-      console.warn('⚠️ Effect not found:', effectId);
-      return null;
+    // 🎛️ DYNAMIC MIXER: Check mixer inserts
+    if (this.audioEngine.mixerInserts) {
+      const insert = this.audioEngine.mixerInserts.get(trackId);
+      if (insert && insert.effects) {
+        // ✅ SIMPLIFIED: Direct lookup only (single ID system)
+        const effect = insert.effects.get(effectId);
+
+        if (effect && effect.node) {
+          return effect.node;
+        } else if (import.meta.env.DEV) {
+          console.warn('⚠️ Effect not found in insert:', effectId);
+          console.log('Available effects in insert:', Array.from(insert.effects.keys()));
+        }
+      }
     }
 
-    return effect.node;
+    // 🎚️ LEGACY: Fallback to old mixerChannels (for backwards compatibility)
+    if (this.audioEngine.mixerChannels) {
+      const channel = this.audioEngine.mixerChannels.get(trackId);
+      if (channel && channel.effects) {
+        // Try direct lookup first (audioEngineId)
+        let effect = channel.effects.get(effectId);
+
+        // ⚡ FIX: If not found, search by audioEngineId (Store ID → AudioEngine ID mapping)
+        if (!effect) {
+          effect = Array.from(channel.effects.values()).find(fx =>
+            fx.id === effectId || fx.audioEngineId === effectId
+          );
+        }
+
+        if (effect && effect.node) {
+          return effect.node;
+        }
+      }
+    }
+
+    if (import.meta.env.DEV) {
+      console.warn('⚠️ Effect not found in any mixer:', effectId);
+    }
+    return null;
   }
 
   /**
@@ -1779,7 +1717,8 @@ export class AudioContextService {
    * @param {string} trackId - Track ID (insert ID)
    * @param {string} effectType - Effect type
    * @param {object} settings - Effect settings
-   * @returns {string|null} Effect ID
+   * @param {string} storeEffectId - Optional Store effect ID for mapping
+   * @returns {string|null} Effect ID (audioEngineId)
    */
   static async addEffectToInsert(trackId, effectType, settings = {}) {
     if (!this.audioEngine) {
@@ -1794,7 +1733,9 @@ export class AudioContextService {
 
     try {
       const effectId = await this.audioEngine.addEffectToInsert(trackId, effectType, settings);
-      console.log(`✅ AudioContextService: Added ${effectType} to ${trackId}`);
+      if (import.meta.env.DEV) {
+        console.log(`✅ AudioContextService: Added ${effectType} to ${trackId} (ID: ${effectId})`);
+      }
       return effectId;
     } catch (error) {
       console.error(`❌ AudioContextService: Failed to add effect:`, error);
@@ -1864,6 +1805,40 @@ export class AudioContextService {
     if (!node) {
       console.warn(`⚠️ Effect node not found for ${effectId}`);
       return;
+    }
+
+    // ⚡ SPECIAL HANDLING: MultiBandEQ V2 uses message-based band updates
+    // Effect type is stored in effect object or can be inferred from settings
+    const effectType = effect.type || effect.settings?.type;
+    if (effectType === 'MultiBandEQ' && paramName === 'bands') {
+      if (node.port) {
+        // ⚡ PERFORMANCE: Optimized rate limiting with requestAnimationFrame
+        // Only send updates once per frame (16.6ms) using RAF
+        if (effect._rafPending) {
+          // Already scheduled, just update the pending value
+          effect._pendingBands = value;
+        } else {
+          effect._rafPending = true;
+          effect._pendingBands = value;
+
+          requestAnimationFrame(() => {
+            node.port.postMessage({
+              type: 'updateBands',
+              bands: effect._pendingBands
+            });
+            effect._rafPending = false;
+            effect._pendingBands = null;
+          });
+        }
+
+        // Update settings for tracking
+        if (effect.settings) {
+          effect.settings[paramName] = value;
+        }
+        return;
+      } else {
+        console.warn(`⚠️ MultiBandEQ node.port not available for ${effectId}`);
+      }
     }
 
     // Try to update AudioParam if exists

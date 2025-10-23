@@ -62,10 +62,19 @@ export class MixerInsert {
       return;
     }
 
+    // 🔍 DEBUG: Log instrument connection
+    console.log(`🔌 Connecting instrument to ${this.insertId}:`, {
+      instrumentId,
+      hasOutput: !!instrumentOutput,
+      outputType: instrumentOutput?.constructor?.name,
+      connectedInstruments: this.instruments.size
+    });
+
     try {
       instrumentOutput.connect(this.input);
       this.instruments.add(instrumentId);
-      // Only log errors, not every connection
+      console.log(`✅ Instrument ${instrumentId} connected to ${this.insertId}`);
+      console.log(`   Total instruments on ${this.insertId}: ${this.instruments.size}`);
     } catch (error) {
       console.error(`❌ Failed to connect instrument ${instrumentId}:`, error);
     }
@@ -90,23 +99,47 @@ export class MixerInsert {
 
   /**
    * Effect ekle
+   * @param {string} effectId - AudioEngine effect ID (Map key)
+   * @param {AudioNode} effectNode - Effect audio node
+   * @param {object} settings - Effect settings
+   * @param {boolean} bypass - Bypass state
+   * @param {string} effectType - Effect type (e.g., 'MultiBandEQ', 'Reverb')
    */
-  addEffect(effectId, effectNode, settings = {}, bypass = false) {
+  addEffect(effectId, effectNode, settings = {}, bypass = false, effectType = null) {
     if (this.effects.has(effectId)) {
       console.warn(`⚠️ Effect ${effectId} already exists in ${this.insertId}`);
       return;
     }
 
+    // 🔍 DEBUG: Log effect addition
+    console.log(`➕ Adding effect to ${this.insertId}:`, {
+      effectId,
+      effectType,
+      nodeType: effectNode?.constructor?.name,
+      hasNode: !!effectNode,
+      bypass,
+      settingsKeys: Object.keys(settings)
+    });
+
+    // ✅ SIMPLIFIED: Single ID system - effectId is the only identifier
+    // Store effect type for special handling (e.g., MultiBandEQ message-based params)
     this.effects.set(effectId, {
       node: effectNode,
       settings,
-      bypass
+      bypass,
+      type: effectType // Store effect type for parameter routing
     });
 
     this.effectOrder.push(effectId);
+
+    console.log(`📋 After adding - effectOrder: [${this.effectOrder.join(', ')}]`);
+    console.log(`📋 After adding - effects.size: ${this.effects.size}`);
+
     this._rebuildChain();
 
-    console.log(`🎛️ Added effect ${effectId} to ${this.insertId}`);
+    if (import.meta.env.DEV) {
+      console.log(`🎛️ Added effect ${effectType || effectId} to ${this.insertId}`);
+    }
   }
 
   /**
@@ -159,6 +192,20 @@ export class MixerInsert {
    */
   _rebuildChain() {
     try {
+      // 🔍 DEBUG: Log chain rebuild start
+      console.log(`🔧 Rebuilding chain for ${this.insertId}`);
+      console.log(`  📊 Effect order: [${this.effectOrder.join(', ')}]`);
+      console.log(`  📊 Effects map size: ${this.effects.size}`);
+
+      // Log all effects in the map
+      this.effects.forEach((effect, effectId) => {
+        console.log(`  📌 Effect in map: ${effectId}`, {
+          hasNode: !!effect.node,
+          nodeType: effect.node?.constructor?.name,
+          bypass: effect.bypass
+        });
+      });
+
       // Disconnect all first
       this.input.disconnect();
       this.gainNode.disconnect();
@@ -177,21 +224,34 @@ export class MixerInsert {
 
       // Build chain
       let currentNode = this.input;
+      let connectedEffects = 0;
 
       // Add non-bypassed effects
       for (const effectId of this.effectOrder) {
         const effect = this.effects.get(effectId);
         if (effect && !effect.bypass && effect.node) {
+          console.log(`  ✅ Connecting effect: ${effectId} (${effect.node.constructor.name})`);
           currentNode.connect(effect.node);
           currentNode = effect.node;
+          connectedEffects++;
+        } else {
+          console.warn(`  ⚠️ Skipping effect: ${effectId}`, {
+            exists: !!effect,
+            bypass: effect?.bypass,
+            hasNode: !!effect?.node
+          });
         }
       }
+
+      console.log(`  📊 Connected effects: ${connectedEffects}/${this.effectOrder.length}`);
 
       // Complete chain: effects → gain → pan → analyzer → output
       currentNode.connect(this.gainNode);
       this.gainNode.connect(this.panNode);
       this.panNode.connect(this.analyzer);
       this.analyzer.connect(this.output);
+
+      console.log(`  ✅ Chain complete: input → ${connectedEffects} effects → gain → pan → analyzer → output`);
 
     } catch (error) {
       console.error(`❌ Error rebuilding chain for ${this.insertId}:`, error);

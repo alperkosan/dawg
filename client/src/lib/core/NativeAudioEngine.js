@@ -168,12 +168,11 @@ export class NativeAudioEngine {
         this.performanceMonitor.start(); // Auto-start monitoring
         console.log('✅ Performance monitoring initialized and started');
 
-        // 7. 🎛️ HYBRID: UnifiedMixer + Dynamic MixerInsert (geçiş dönemi)
-        // UnifiedMixer şimdilik aktif (backward compatibility)
-        // Yeni kod MixerInsert kullanmalı
-        await this._initializeUnifiedMixer();
-        console.log('✅ UnifiedMixer initialized (backward compatibility)');
-        console.log('ℹ️ Dynamic MixerInsert API ready for use');
+        // 7. 🎛️ DYNAMIC MIXER: MixerInsert Only (high performance + flexibility)
+        // All tracks use MixerInsert system
+        // UnifiedMixer removed for cleaner architecture
+        console.log('✅ Dynamic MixerInsert system ready');
+        console.log('ℹ️ Performance: JS nodes for flexibility, optimized signal path');
 
         this.isInitialized = true;
     }
@@ -546,27 +545,25 @@ export class NativeAudioEngine {
 
             this.instruments.set(instrumentData.id, instrument);
 
-            // 🎛️ DYNAMIC ROUTING: Use MixerInsert if mixerTrackId is provided
+            // 🎛️ DYNAMIC ROUTING: All instruments route to MixerInsert
+            console.log(`🎛️ Routing new instrument ${instrumentData.id} to mixer...`);
             if (instrumentData.mixerTrackId) {
-                // Check if MixerInsert exists
                 const insert = this.mixerInserts.get(instrumentData.mixerTrackId);
+                console.log(`   mixerTrackId: ${instrumentData.mixerTrackId}`);
+                console.log(`   Insert found: ${!!insert}`);
                 if (insert) {
                     // Route to dynamic MixerInsert
+                    console.log(`   Calling routeInstrumentToInsert...`);
                     this.routeInstrumentToInsert(instrumentData.id, instrumentData.mixerTrackId);
-                    // Routing logged in routeInstrumentToInsert
+                    console.log(`   ✅ Routing complete`);
                 } else {
-                    console.warn(`⚠️ MixerInsert not found: ${instrumentData.mixerTrackId}, falling back to UnifiedMixer`);
-                    await this._connectInstrumentToChannel(instrumentData.id, instrumentData.mixerTrackId);
+                    console.error(`❌ MixerInsert not found: ${instrumentData.mixerTrackId}`);
+                    console.error(`   Available inserts: ${Array.from(this.mixerInserts.keys()).join(', ')}`);
+                    throw new Error(`Cannot route instrument ${instrumentData.id}: MixerInsert ${instrumentData.mixerTrackId} not found`);
                 }
             } else {
-                // Backward compatibility: Auto-generate channel ID and use UnifiedMixer
-                if (this.nextChannelIndex >= 32) {
-                    console.warn('⚠️ All 32 channels in use, reusing channel 0');
-                    this.nextChannelIndex = 0;
-                }
-                const channelId = `track-${this.nextChannelIndex + 1}`;
-                this.nextChannelIndex++;
-                await this._connectInstrumentToChannel(instrumentData.id, channelId);
+                console.error(`❌ Instrument ${instrumentData.id} missing mixerTrackId`);
+                throw new Error(`All instruments must have a mixerTrackId. Create MixerInsert first.`);
             }
 
             this.metrics.instrumentsCreated++;
@@ -1175,6 +1172,23 @@ export class NativeAudioEngine {
             this.unifiedMixerChannelMap.clear();
         }
 
+        // 🎛️ CRITICAL: Dispose all MixerInserts (prevents memory leak)
+        if (this.mixerInserts && this.mixerInserts.size > 0) {
+            console.log(`🧹 Disposing ${this.mixerInserts.size} MixerInserts...`);
+            this.mixerInserts.forEach((insert, insertId) => {
+                try {
+                    if (insert && insert.dispose) {
+                        insert.dispose();
+                    }
+                } catch (error) {
+                    console.warn(`⚠️ MixerInsert ${insertId} dispose failed:`, error);
+                }
+            });
+            this.mixerInserts.clear();
+            this.instrumentToInsert.clear();
+            console.log('✅ All MixerInserts disposed');
+        }
+
         // 🎚️ Dispose Master Bus Gain
         if (this.masterBusGain) {
             try {
@@ -1311,7 +1325,8 @@ export class NativeAudioEngine {
      * @param {string} insertId - Insert ID
      * @param {string} effectType - Effect tipi
      * @param {object} settings - Effect ayarları
-     * @returns {string} Effect ID
+     * @param {string} storeEffectId - Optional Store effect ID for mapping
+     * @returns {string} Effect ID (audioEngineId)
      */
     async addEffectToInsert(insertId, effectType, settings = {}) {
         const insert = this.mixerInserts.get(insertId);
@@ -1331,10 +1346,22 @@ export class NativeAudioEngine {
                 throw new Error(`Failed to create effect: ${effectType}`);
             }
 
+            // ✅ SIMPLIFIED: Generate single effect ID
             const effectId = `${insertId}-fx-${Date.now()}`;
-            insert.addEffect(effectId, effectNode, settings, false);
 
-            console.log(`✅ Effect added: ${effectType} → ${insertId}`);
+            // Add effect with single ID and effect type
+            insert.addEffect(effectId, effectNode, settings, false, effectType);
+
+            // ⚡ SPECIAL INITIALIZATION: MultiBandEQ requires bands to be sent via message
+            if (effectType === 'MultiBandEQ' && settings.bands && effectNode.port) {
+                effectNode.port.postMessage({
+                    type: 'updateBands',
+                    bands: settings.bands
+                });
+                console.log(`✅ MultiBandEQ initialized with ${settings.bands.length} bands`);
+            }
+
+            console.log(`✅ Effect added: ${effectType} → ${insertId} (ID: ${effectId})`);
             return effectId;
 
         } catch (error) {

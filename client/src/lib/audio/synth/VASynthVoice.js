@@ -174,6 +174,7 @@ export class VASynthVoice extends BaseVoice {
 
     /**
      * Release note - start envelope release phase
+     * ⚡ OPTIMIZED: Stop and cleanup oscillators after release
      * @returns {number} Release duration in seconds
      */
     release(time) {
@@ -190,18 +191,52 @@ export class VASynthVoice extends BaseVoice {
             releaseEnd = this.amplitudeEnvelope.release(this.amplitudeGain.gain, time);
         }
 
+        // ⚡ OPTIMIZATION: Stop oscillators after release duration
+        const releaseDuration = Math.max(0, releaseEnd - time);
+        this.oscillators.forEach((osc, i) => {
+            if (osc) {
+                try {
+                    osc.stop(releaseEnd);
+                    // Clear reference for garbage collection
+                    this.oscillators[i] = null;
+                } catch (e) {
+                    // Oscillator might already be stopped
+                }
+            }
+        });
+
         // Return release duration
-        return Math.max(0, releaseEnd - time);
+        return releaseDuration;
     }
 
     /**
      * Reset voice to silent state (for voice pool reuse)
-     * NO disposal - nodes persist!
+     * ⚡ OPTIMIZED: Cleanup oscillators (they are recreated on next trigger)
      */
     reset() {
         super.reset();
 
         const now = this.context.currentTime;
+
+        // ⚡ OPTIMIZATION: Stop any running oscillators
+        this.oscillators.forEach((osc, i) => {
+            if (osc) {
+                try {
+                    osc.stop(now);
+                } catch (e) {
+                    // Already stopped
+                }
+                this.oscillators[i] = null;
+            }
+        });
+
+        // Reset oscillator gains
+        this.oscillatorGains.forEach(oscGain => {
+            if (oscGain) {
+                oscGain.gain.cancelScheduledValues(now);
+                oscGain.gain.setValueAtTime(0, now);
+            }
+        });
 
         // Silence amplitude immediately
         if (this.amplitudeGain) {

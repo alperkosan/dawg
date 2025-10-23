@@ -382,8 +382,9 @@ export const initialInstruments = [
   { id: 'bellsynth', name: 'Bell Synth', type: INSTRUMENT_TYPES.VASYNTH, color: '#B0E0E6', presetName: 'Bell Synth', mixerTrackId: 'track-19' },
 
   // === GRANULAR SAMPLER ===
-  // ⚠️ DISABLED: Granular sampler temporarily disabled for performance optimization
-  // Re-enable after core optimizations are complete (128 grain voices = 256+ AudioNodes)
+  // ⚠️ DISABLED: User preference - keeping system optimized for maximum performance
+  // Granular adds ~128 AudioNodes and increases CPU even when idle (grain pool pre-allocated)
+  // Can be re-enabled when specifically needed for granular synthesis
   // {
   //   id: 'solstice-grain',
   //   name: 'Solstice Grain',
@@ -391,19 +392,19 @@ export const initialInstruments = [
   //   color: '#FF6EC7',
   //   mixerTrackId: 'track-20',
   //   url: '/audio/samples/instruments/piano/C4.ogg',
-  //   baseNote: 60,
+  //   baseNote: 60, // C4
   //   params: {
-  //     grainSize: 80,
-  //     grainDensity: 12,
-  //     samplePosition: 0.3,
-  //     positionRandom: 0.15,
-  //     pitch: 0,
-  //     pitchRandom: 2,
-  //     grainEnvelope: 'hann',
-  //     reverse: 0.1,
-  //     spread: 0.7,
-  //     mix: 1.0,
-  //     gain: 0.8
+  //     grainSize: 80,          // ms - smooth grain length
+  //     grainDensity: 12,       // grains/second - ✅ Optimized from 25 to 12
+  //     samplePosition: 0.3,    // 0-1 - start position in sample
+  //     positionRandom: 0.15,   // 0-1 - add movement
+  //     pitch: 0,               // semitones
+  //     pitchRandom: 2,         // semitones - subtle pitch variation
+  //     grainEnvelope: 'hann',  // smooth envelope
+  //     reverse: 0.1,           // 10% chance of reverse grains
+  //     spread: 0.7,            // wide stereo spread
+  //     mix: 1.0,               // 100% wet
+  //     gain: 0.8               // master gain
   //   }
   // }
 ];
