@@ -58,7 +58,7 @@ export class RenderEngine {
       this.isRendering = true;
 
       // Calculate render length with safety checks
-      let renderLength = length || this._calculatePatternLength(patternData);
+      let renderLength = length || await this._calculatePatternLength(patternData);
 
       console.log(`🎬 DEBUG: Calculated pattern length: ${renderLength} frames`);
       console.log(`🎬 DEBUG: Pattern data:`, patternData);
@@ -351,16 +351,17 @@ export class RenderEngine {
         return gainNode;
       }
 
-      // Create VASynth instance in offline context
-      const vaSynth = new VASynth(offlineContext);
-      vaSynth.loadPreset(preset);
-      vaSynth.masterGain.connect(gainNode);
+      console.log(`🎹 Rendering VASynth with preset: ${presetName}, ${notes.length} notes`);
 
-      console.log(`🎹 Created VASynth with preset: ${presetName}`);
-
-      // Schedule all notes
+      // ✅ FIX: Create separate VASynth instance for each note (polyphony)
+      // VASynth is monophonic - multiple notes on same instance override each other
       for (const note of notes) {
         try {
+          // Create new VASynth instance for this note
+          const vaSynth = new VASynth(offlineContext);
+          vaSynth.loadPreset(preset);
+          vaSynth.masterGain.connect(gainNode);
+
           await this._scheduleVASynthNote(
             vaSynth,
             note,
@@ -372,7 +373,7 @@ export class RenderEngine {
         }
       }
 
-      console.log(`🎹 Successfully scheduled ${notes.length} VASynth notes`);
+      console.log(`🎹 Successfully scheduled ${notes.length} VASynth notes (polyphonic)`);
       return gainNode;
     }
     // ✅ WORKLET-BASED SYNTH RENDERING: For legacy synth instruments
@@ -668,11 +669,14 @@ export class RenderEngine {
       midiVelocity = Math.min(127, Math.max(0, Math.round(noteVelocity)));
     }
 
-    console.log(`🎹 Scheduling VASynth note: MIDI=${midiNote}, vel=${midiVelocity}, time=${startTime.toFixed(3)}s, duration=${noteLength.toFixed(3)}s`);
+    const stopTime = startTime + noteLength;
+
+    console.log(`🎹 Scheduling VASynth note: MIDI=${midiNote}, vel=${midiVelocity}, time=${startTime.toFixed(3)}s, duration=${noteLength.toFixed(3)}s, stopTime=${stopTime.toFixed(3)}s`);
 
     // Schedule note on and note off
     vaSynth.noteOn(midiNote, midiVelocity, startTime);
-    vaSynth.noteOff(midiNote, startTime + noteLength);
+    // ✅ FIX: noteOff only takes stopTime parameter (not midiNote)
+    vaSynth.noteOff(stopTime);
   }
 
   /**
@@ -846,7 +850,7 @@ export class RenderEngine {
   /**
    * Calculate pattern length in samples
    */
-  _calculatePatternLength(patternData) {
+  async _calculatePatternLength(patternData) {
     // Calculate from notes (ALWAYS - ignore pattern.settings.length as it's unreliable)
     let maxTimeBeats = 0;
     const patternDataObj = patternData?.data || {};
@@ -854,14 +858,32 @@ export class RenderEngine {
     // 🎹 SYNTH RELEASE: Track maximum release time from synth instruments
     let maxReleaseTimeSeconds = 0;
 
+    // Import preset library once
+    let getPreset = null;
+    try {
+      const presets = await import('./synth/presets.js');
+      getPreset = presets.getPreset;
+    } catch (e) {
+      console.warn('Could not load presets for release time calculation');
+    }
+
     for (const [instrumentId, notes] of Object.entries(patternDataObj)) {
       if (!Array.isArray(notes)) continue;
 
       // Check if this is a synth instrument with release envelope
       const instrumentStore = patternData.instruments?.[instrumentId];
-      if (instrumentStore?.type === 'vasynth' || instrumentStore?.type === 'synth') {
-        // Get release time from preset if available
-        // Default VASynth release is 0.3s, but can be up to 2s in some presets
+      if (instrumentStore?.type === 'vasynth' && getPreset) {
+        // VASynth uses amplitudeEnvelope.release
+        const presetName = instrumentStore?.presetName || instrumentStore?.data?.presetName;
+        if (presetName) {
+          const preset = getPreset(presetName);
+          if (preset?.amplitudeEnvelope?.release) {
+            maxReleaseTimeSeconds = Math.max(maxReleaseTimeSeconds, preset.amplitudeEnvelope.release);
+            console.log(`🎹 Found VASynth "${presetName}" with release: ${preset.amplitudeEnvelope.release}s`);
+          }
+        }
+      } else if (instrumentStore?.type === 'synth') {
+        // Legacy synth
         const releaseTime = instrumentStore?.synthParams?.envelope?.release || 0.3;
         maxReleaseTimeSeconds = Math.max(maxReleaseTimeSeconds, releaseTime);
       }

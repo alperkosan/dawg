@@ -294,7 +294,33 @@ export class VASynth {
                 releaseEnd = this.amplitudeEnvelope.release(this.amplitudeGain.gain, time);
             }
 
-            // Stop and cleanup after release
+            console.log(`🎹 VASynth noteOff:`, {
+                stopTime,
+                currentTime: this.context.currentTime,
+                time,
+                releaseEnd,
+                releaseDuration: releaseEnd - time,
+                oscillatorCount: this.oscillators.length,
+                hasAmplitudeEnvelope: !!this.amplitudeEnvelope,
+                hasAmplitudeGain: !!this.amplitudeGain
+            });
+
+            // ✅ FIX: Stop oscillators at release end time (works for offline rendering)
+            // This is critical for OfflineAudioContext where setTimeout doesn't work
+            this.oscillators.forEach((osc, i) => {
+                if (osc) {
+                    try {
+                        const stopAt = releaseEnd + 0.1;
+                        osc.stop(stopAt); // Add small buffer after release
+                        console.log(`🎹 Scheduled oscillator ${i} stop at ${stopAt.toFixed(3)}s`);
+                    } catch (e) {
+                        console.warn(`🎹 Failed to stop oscillator ${i}:`, e.message);
+                    }
+                }
+            });
+
+            // Stop and cleanup after release (for real-time playback)
+            // Note: This won't work in offline rendering, but oscillator.stop() above will
             setTimeout(() => {
                 this.cleanup();
             }, Math.max(0, (releaseEnd - this.context.currentTime + 0.1) * 1000));
