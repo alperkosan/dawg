@@ -181,14 +181,70 @@ export class MixerInsert {
   setEffectBypass(effectId, bypass) {
     const effect = this.effects.get(effectId);
     if (!effect) {
+      console.warn(`⚠️ Effect ${effectId} not found for bypass toggle`);
       return;
     }
 
+    console.log(`🔄 setEffectBypass called: ${effectId}, bypass=${bypass}, current=${effect.bypass}`);
+    console.log(`  📊 Effect details:`, {
+      hasSettings: !!effect.settings,
+      settingsKeys: effect.settings ? Object.keys(effect.settings) : [],
+      type: effect.type,
+      hasNode: !!effect.node,
+      nodeType: effect.node?.constructor?.name
+    });
+
     if (effect.bypass !== bypass) {
       effect.bypass = bypass;
+
+      // ⚡ FIX: Reapply settings when enabling effect (bypass = false)
+      if (!bypass && effect.settings) {
+        console.log(`🔄 Reapplying settings for ${effectId} after bypass toggle`, effect.settings);
+        this.updateEffectSettings(effectId, effect.settings);
+      } else if (!bypass && !effect.settings) {
+        console.warn(`⚠️ No settings found for ${effectId}, cannot reapply`);
+      }
+
       this._rebuildChain();
       console.log(`⏭️ Effect ${effectId} bypass: ${bypass}`);
+    } else {
+      console.log(`  ℹ️ Already in desired bypass state, skipping`);
     }
+  }
+
+  /**
+   * Update effect settings (parameters)
+   * ⚡ FIX: Apply settings to effect node (for AudioWorklet effects like MultiBandEQ)
+   */
+  updateEffectSettings(effectId, settings) {
+    const effect = this.effects.get(effectId);
+    if (!effect || !effect.node) {
+      console.warn(`⚠️ Effect ${effectId} not found for settings update`);
+      return;
+    }
+
+    // Update stored settings
+    effect.settings = { ...effect.settings, ...settings };
+
+    // Apply settings to effect node
+    // AudioWorklet effects use postMessage
+    if (effect.node.port && effect.type === 'MultiBandEQ') {
+      console.log(`📤 Posting settings to AudioWorklet: ${effectId}`, settings);
+      effect.node.port.postMessage({
+        type: 'updateSettings',
+        settings: settings
+      });
+    }
+    // Native Web Audio effects use direct property assignment
+    else if (effect.node.parameters) {
+      Object.entries(settings).forEach(([key, value]) => {
+        if (effect.node.parameters.has(key)) {
+          effect.node.parameters.get(key).value = value;
+        }
+      });
+    }
+
+    console.log(`✅ Updated settings for ${effectId}`);
   }
 
   /**

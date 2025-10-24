@@ -989,81 +989,59 @@ export class AudioContextService {
 
   /**
    * Rebuild master bus effect chain
+   * ⚡ OPTIMIZED: Now uses MixerInsert system (no manual rebuild needed)
    */
   static async rebuildMasterChain(trackState) {
-    console.log('🔗 Rebuilding master chain:', trackState);
+    console.log('🔗 Rebuilding master chain (using MixerInsert system):', trackState);
 
-    if (!this.audioEngine || !this.audioEngine.masterBusGain || !this.audioEngine.masterGain) {
-      console.warn('⚠️ Master bus nodes not available');
+    if (!this.audioEngine || !this.audioEngine.mixerInserts) {
+      console.warn('⚠️ Audio engine or mixer inserts not available');
       return;
     }
 
-    const { audioContext, masterBusGain, masterGain } = this.audioEngine;
+    // ✅ UNIFIED: Use MixerInsert system for master track
+    const masterInsert = this.audioEngine.mixerInserts.get('master');
+    if (!masterInsert) {
+      console.error('❌ Master MixerInsert not found - this should not happen!');
+      return;
+    }
 
     try {
-      // Disconnect master bus (will reconnect with effects)
-      masterBusGain.disconnect();
-
-      // Clear existing master effects
-      if (!this.audioEngine.masterEffects) {
-        this.audioEngine.masterEffects = new Map();
-      } else {
-        // Dispose existing effects
-        for (const [id, effect] of this.audioEngine.masterEffects) {
-          try {
-            if (effect.node) effect.node.disconnect();
-            if (effect.dispose) effect.dispose();
-          } catch (err) {
-            console.warn('Error disposing master effect:', id, err);
-          }
-        }
-        this.audioEngine.masterEffects.clear();
+      // Clear existing effects from master insert
+      const existingEffectIds = Array.from(masterInsert.effects.keys());
+      for (const effectId of existingEffectIds) {
+        masterInsert.removeEffect(effectId);
       }
 
-      // Build effect chain
-      let currentNode = masterBusGain;
+      // Add effects from track state
       const insertEffects = trackState?.insertEffects || [];
-
       for (const effectConfig of insertEffects) {
-        if (effectConfig.bypass) continue;
-
         try {
           const effectNode = await effectRegistry.createEffectNode(
             effectConfig.type,
-            audioContext,
+            this.audioEngine.audioContext,
             effectConfig.settings
           );
 
           if (effectNode) {
-            // Connect in chain
-            currentNode.connect(effectNode.input || effectNode);
-            currentNode = effectNode.output || effectNode;
-
-            // Store effect
-            this.audioEngine.masterEffects.set(effectConfig.id, {
-              id: effectConfig.id,
-              type: effectConfig.type,
-              node: effectNode,
-              settings: effectConfig.settings,
-              bypass: effectConfig.bypass
-            });
-
-            console.log('✅ Master effect added:', effectConfig.type);
+            masterInsert.addEffect(
+              effectConfig.id,
+              effectNode,
+              effectConfig.settings,
+              effectConfig.bypass || false,
+              effectConfig.type
+            );
+            console.log(`✅ Master effect added: ${effectConfig.type} (${effectConfig.id})`);
           }
         } catch (err) {
           console.error('❌ Failed to create master effect:', effectConfig.type, err);
         }
       }
 
-      // Final connection to master gain
-      currentNode.connect(masterGain);
-      console.log('✅ Master chain rebuilt with', insertEffects.length, 'effects');
+      console.log(`✅ Master chain rebuilt with ${insertEffects.length} effects (MixerInsert system)`);
 
     } catch (error) {
       console.error('❌ Error rebuilding master chain:', error);
-      // Fallback: direct connection
-      masterBusGain.disconnect();
-      masterBusGain.connect(masterGain);
     }
   }
 
@@ -1106,50 +1084,15 @@ export class AudioContextService {
       return;
     }
 
-    // 🎚️ Special handling for master track
-    if (trackId === 'master') {
-      if (!this.audioEngine.masterEffects) {
-        console.warn('⚠️ No master effects available');
-        return;
-      }
-
-      const effect = this.audioEngine.masterEffects.get(effectId);
-      if (!effect) {
-        console.warn('⚠️ Master effect not found:', effectId);
-        return;
-      }
-
-      // If already in desired bypass state, do nothing
-      if (effect.bypass === bypass) {
-        return;
-      }
-
-      console.log(`🔄 Toggling master bypass for ${effect.type} (${effectId}): ${effect.bypass} → ${bypass}`);
-
-      // Update bypass state
-      effect.bypass = bypass;
-
-      // Update in store
-      const effectConfig = trackState.insertEffects.find(e => e.id === effectId);
-      if (effectConfig) {
-        effectConfig.bypass = bypass;
-      }
-
-      // Rebuild master chain
-      this.rebuildMasterChain(trackState);
-      return;
-    }
-
-    // 🎛️ DYNAMIC MIXER: Use MixerInsert for regular tracks
+    // ⚡ UNIFIED: Use MixerInsert system for ALL tracks (including master)
     if (this.audioEngine.mixerInserts) {
       const insert = this.audioEngine.mixerInserts.get(trackId);
       if (insert) {
-        // MixerInsert handles bypass and chain rebuild automatically
         insert.setEffectBypass(effectId, bypass);
         console.log(`✅ Toggled bypass for effect ${effectId} on ${trackId}: ${bypass}`);
         return;
       } else {
-        console.warn('⚠️ MixerInsert not found for trackId:', trackId);
+        console.warn(`⚠️ MixerInsert not found for trackId: ${trackId}`);
         return;
       }
     }
@@ -1220,12 +1163,11 @@ export class AudioContextService {
    * Helper to get track state from mixer store
    */
   static getTrackState(trackId) {
-    // Import dynamically to avoid circular dependency
+    // Access via window global to avoid circular dependency
     try {
-      // Access via StoreManager if available
-      if (typeof window !== 'undefined') {
-        const { useMixerStore } = require('../store/useMixerStore.js');
-        const state = useMixerStore.getState();
+      // useMixerStore is exposed globally via window.__DAWG_STORES__
+      if (typeof window !== 'undefined' && window.__DAWG_STORES__?.useMixerStore) {
+        const state = window.__DAWG_STORES__.useMixerStore.getState();
         return state.mixerTracks?.find(t => t.id === trackId);
       }
     } catch (error) {

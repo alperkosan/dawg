@@ -56,6 +56,7 @@ const EFFECT_ICONS = {
   'OrbitPanner': Sliders,
   'ArcadeCrusher': Zap,
   'PitchShifter': Sliders,
+  'HalfTime': Sliders,
   'FeedbackDelay': Zap,
   'AtmosMachine': Filter,
   'GhostLFO': Waves,

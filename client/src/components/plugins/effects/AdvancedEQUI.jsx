@@ -325,8 +325,13 @@ const ProfessionalEQCanvas = React.memo(({
     if (showSpectrum && getFrequencyData) {
       const fftData = getFrequencyData();
 
+      // ⚡ FIX: Guard against null FFT data (after bypass toggle)
+      if (!fftData) {
+        return; // Skip spectrum rendering if no data
+      }
+
       // 🔍 DEBUG: Check FFT data (throttled - once per second)
-      if (fftData && !window._lastFFTDebug || Date.now() - window._lastFFTDebug > 1000) {
+      if (!window._lastFFTDebug || Date.now() - window._lastFFTDebug > 1000) {
         window._lastFFTDebug = Date.now();
         const dataArray = Array.from(fftData);
         const maxVal = Math.max(...dataArray);

@@ -26,6 +26,10 @@ import { ArcadeCrusherUI } from '@/components/plugins/effects/ArcadeCrusherUI.js
 import { PitchShifterUI } from '@/components/plugins/effects/PitchShifterUI.jsx';
 import { BassEnhancer808UI } from '@/components/plugins/effects/BassEnhancer808UI';
 import { TransientDesignerUI } from '@/components/plugins/effects/TransientDesignerUI.jsx';
+import HalfTimeUI from '@/components/plugins/effects/HalfTimeUI.jsx';
+import LimiterUI from '@/components/plugins/effects/LimiterUI.jsx';
+import ClipperUI from '@/components/plugins/effects/ClipperUI.jsx';
+import RhythmFXUI from '@/components/plugins/effects/RhythmFXUI.jsx';
 
 /**
  * @file pluginConfig.jsx
@@ -320,6 +324,131 @@ export const pluginRegistry = {
       { name: 'Dub', settings: { timeLeft: 0.5, timeRight: 0.75, feedbackLeft: 0.7, feedbackRight: 0.7, pingPong: 0.6, wet: 0.5, filterFreq: 2000, saturation: 0.4, diffusion: 0.5 } },
       { name: 'Ambient', settings: { timeLeft: 1.2, timeRight: 1.5, feedbackLeft: 0.8, feedbackRight: 0.8, pingPong: 0.3, wet: 0.6, filterFreq: 5000, diffusion: 0.8, modDepth: 0.02 } },
       { name: 'Tape', settings: { timeLeft: 0.425, timeRight: 0.425, feedbackLeft: 0.55, feedbackRight: 0.55, pingPong: 0.0, wet: 0.35, filterFreq: 4000, saturation: 0.5, modDepth: 0.01, diffusion: 0.2 } }
+    ]
+  },
+  'HalfTime': {
+    type: 'HalfTime',
+    name: 'Half Time',
+    description: 'Professional time-stretching with granular synthesis',
+    category: 'The Spacetime Chamber',
+    story: 'Drag music through molasses - Time dilation effect',
+    toneNode: 'HalfTime',
+    uiComponent: HalfTimeUI,
+    initialSize: { width: 900, height: 750 },
+    minSize: { width: 900, height: 750 },
+    defaultSettings: {
+      rate: 0.5,
+      smoothing: 50,
+      pitchShift: -12,
+      grainSize: 100,
+      grainDensity: 8,
+      pitchLock: 1,
+      mix: 100,
+      mode: 0,
+      analogWarmth: 0,
+      glitchAmount: 0
+    },
+    presets: [
+      { name: 'Clean Half', settings: { rate: 0.5, smoothing: 80, pitchLock: 1, mode: 0, mix: 100 } },
+      { name: 'Tape Slowdown', settings: { rate: 0.5, smoothing: 30, pitchLock: 0, analogWarmth: 40, mode: 1, mix: 100 } },
+      { name: 'Granular Cloud', settings: { rate: 0.5, smoothing: 70, grainDensity: 12, pitchLock: 1, mode: 2, mix: 100 } },
+      { name: 'Vinyl Drag', settings: { rate: 0.5, smoothing: 40, pitchLock: 0, analogWarmth: 60, mode: 3, mix: 100 } },
+      { name: 'Glitch Stutter', settings: { rate: 0.5, smoothing: 90, grainSize: 50, grainDensity: 16, glitchAmount: 30, mode: 5, mix: 100 } },
+      { name: 'Quarter Time', settings: { rate: 0.25, smoothing: 60, pitchLock: 1, mode: 0, mix: 100 } }
+    ]
+  },
+  'Limiter': {
+    type: 'Limiter',
+    name: 'Limiter',
+    description: 'Professional mastering-grade peak limiter with true peak detection',
+    category: 'The Dynamics Forge',
+    story: 'The Ceiling Guardian - Transparent loudness maximization',
+    toneNode: 'Limiter',
+    uiComponent: LimiterUI,
+    initialSize: { width: 750, height: 680 },
+    minSize: { width: 750, height: 680 },
+    defaultSettings: {
+      ceiling: -0.1,
+      release: 100,
+      attack: 0.1,
+      lookahead: 5,
+      knee: 0,
+      stereoLink: 100,
+      autoGain: 0,
+      mode: 0,
+      truePeak: 1,
+      oversample: 4
+    },
+    presets: [
+      { name: 'Transparent Master', settings: { ceiling: -0.1, release: 500, attack: 0.1, lookahead: 10, knee: 0.3, mode: 0, truePeak: 1, oversample: 4 } },
+      { name: 'Punchy Drums', settings: { ceiling: -0.5, release: 100, attack: 1.0, lookahead: 5, knee: 0, mode: 1, truePeak: 1, oversample: 2 } },
+      { name: 'Aggressive Loud', settings: { ceiling: -0.1, release: 50, attack: 0.01, lookahead: 2, knee: 0, mode: 2, autoGain: 1, truePeak: 1, oversample: 4 } },
+      { name: 'Streaming Ready', settings: { ceiling: -1.0, release: 200, attack: 0.5, lookahead: 8, knee: 0.3, mode: 3, truePeak: 1, oversample: 4 } },
+      { name: 'Vintage Soft', settings: { ceiling: -0.5, release: 300, attack: 5.0, lookahead: 0, knee: 0.5, mode: 4, truePeak: 0, oversample: 1 } }
+    ]
+  },
+  'Clipper': {
+    type: 'Clipper',
+    name: 'Clipper',
+    description: 'Aggressive peak shaping with harmonic generation',
+    category: 'The Texture Lab',
+    story: 'The Hard Edge - Add punch and harmonic richness',
+    toneNode: 'Clipper',
+    uiComponent: ClipperUI,
+    initialSize: { width: 950, height: 650 },
+    minSize: { width: 950, height: 650 },
+    defaultSettings: {
+      ceiling: 0.0,
+      hardness: 100,
+      harmonics: 50,
+      preGain: 0,
+      postGain: 0,
+      mix: 100,
+      mode: 0,
+      dcFilter: 1,
+      oversample: 2
+    },
+    presets: [
+      { name: 'Hard Clip', settings: { mode: 0, ceiling: 0.0, hardness: 100, harmonics: 30, preGain: 0, mix: 100 } },
+      { name: 'Soft Warmth', settings: { mode: 1, ceiling: 0.0, hardness: 50, harmonics: 60, preGain: 3, mix: 100 } },
+      { name: 'Tube Saturation', settings: { mode: 2, ceiling: 0.0, hardness: 40, harmonics: 80, preGain: 6, mix: 100 } },
+      { name: 'Diode Grit', settings: { mode: 3, ceiling: 0.0, hardness: 60, harmonics: 70, preGain: 4, mix: 100 } },
+      { name: 'Wave Folder', settings: { mode: 4, ceiling: 0.0, hardness: 100, harmonics: 80, preGain: 8, mix: 100 } },
+      { name: 'Lo-Fi Crush', settings: { mode: 5, ceiling: 0.0, hardness: 70, harmonics: 60, preGain: 0, mix: 100 } }
+    ]
+  },
+
+  'RhythmFX': {
+    type: 'RhythmFX',
+    name: 'Rhythm FX',
+    description: 'Infinite rhythmic possibilities - gate, stutter, glitch, repeat, reverse',
+    category: 'The Rhythm Forge',
+    story: 'The Groove Sculptor - Infinite rhythmic creativity',
+    toneNode: 'RhythmFX',
+    uiComponent: RhythmFXUI,
+    initialSize: { width: 1000, height: 700 },
+    minSize: { width: 1000, height: 700 },
+    defaultSettings: {
+      division: 16,
+      chance: 100,
+      intensity: 100,
+      swing: 50,
+      bufferSize: 500,
+      fadeTime: 10,
+      glitchAmount: 50,
+      tapeSpeed: 100,
+      mode: 0,
+      bpm: 128
+    },
+    presets: [
+      { name: 'Gate Pattern', settings: { mode: 0, division: 16, chance: 100, intensity: 100, swing: 50, fadeTime: 10, bpm: 128 } },
+      { name: 'Stutter Roll', settings: { mode: 1, division: 32, chance: 100, intensity: 100, bufferSize: 100, fadeTime: 5, bpm: 128 } },
+      { name: 'Repeat Loop', settings: { mode: 2, division: 8, chance: 100, intensity: 80, bufferSize: 1000, fadeTime: 15, bpm: 128 } },
+      { name: 'Reverse Build', settings: { mode: 3, division: 16, chance: 100, intensity: 100, bufferSize: 500, fadeTime: 20, bpm: 128 } },
+      { name: 'Glitch Mayhem', settings: { mode: 4, division: 32, chance: 75, intensity: 100, glitchAmount: 80, bufferSize: 300, bpm: 128 } },
+      { name: 'Tape Stop', settings: { mode: 5, division: 8, chance: 100, intensity: 100, tapeSpeed: 50, fadeTime: 10, bpm: 128 } },
+      { name: 'Trap Hi-Hat', settings: { mode: 1, division: 32, chance: 100, intensity: 100, bufferSize: 50, swing: 60, bpm: 140 } },
+      { name: 'Euclidean Dream', settings: { mode: 0, division: 16, chance: 100, intensity: 100, swing: 50, fadeTime: 5, bpm: 128 } }
     ]
   }
 };

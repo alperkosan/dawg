@@ -388,7 +388,7 @@ export class NativeAudioEngine {
         this.masterBusInput.gain.value = 1.0; // Unity gain
         console.log('  📥 Master Bus Input: Unity gain (all inserts connect here)');
 
-        // 🎚️ Master Bus Gain - Pre-effects gain stage
+        // 🎚️ Master Bus Gain - Pre-effects gain stage (will be replaced by MixerInsert)
         this.masterBusGain = this.audioContext.createGain();
         this.masterBusGain.gain.value = 1.0; // Unity gain
         console.log('  🎛️ Master Bus Gain: Unity gain (pre-effects)');
@@ -411,8 +411,23 @@ export class NativeAudioEngine {
         this.masterGain.connect(this.masterAnalyzer);
         this.masterAnalyzer.connect(this.audioContext.destination);
 
+        // ✅ NEW: Create MixerInsert for master track (unified system)
+        // This allows master to use the same effect system as other tracks
+        const masterInsert = new MixerInsert(this.audioContext, 'master', 'Master');
+
+        // Connect master insert between masterBusInput and masterGain
+        // masterBusInput → masterInsert → masterGain
+        this.masterBusInput.disconnect();
+        this.masterBusInput.connect(masterInsert.input);
+        masterInsert.output.disconnect(); // Disconnect default routing
+        masterInsert.output.connect(this.masterGain);
+
+        // Store master insert in the mixerInserts map
+        this.mixerInserts.set('master', masterInsert);
+
+        console.log('✅ Master MixerInsert created and connected');
         console.log('✅ Dynamic Master Bus ready:');
-        console.log('   Route: Inserts → MasterBusInput → [Effects] → MasterGain → Output');
+        console.log('   Route: Inserts → MasterBusInput → MasterInsert[Effects] → MasterGain → Analyzer → Output');
 
     }
 

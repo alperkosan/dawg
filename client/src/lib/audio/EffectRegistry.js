@@ -231,6 +231,77 @@ export class EffectRegistry {
       ]
     });
 
+    // HalfTime - Time Stretcher
+    this.register('HalfTime', {
+      workletPath: '/worklets/effects/halftime-processor.js',
+      processorName: 'halftime-processor',
+      parameters: [
+        { name: 'rate', defaultValue: 0.5, minValue: 0.25, maxValue: 2.0 },
+        { name: 'smoothing', defaultValue: 50, minValue: 0, maxValue: 100 },
+        { name: 'pitchShift', defaultValue: -12, minValue: -24, maxValue: 24 },
+        { name: 'grainSize', defaultValue: 100, minValue: 50, maxValue: 500 },
+        { name: 'grainDensity', defaultValue: 8, minValue: 1, maxValue: 16 },
+        { name: 'pitchLock', defaultValue: 1, minValue: 0, maxValue: 1 },
+        { name: 'mix', defaultValue: 100, minValue: 0, maxValue: 100 },
+        { name: 'mode', defaultValue: 0, minValue: 0, maxValue: 5 },
+        { name: 'analogWarmth', defaultValue: 0, minValue: 0, maxValue: 100 },
+        { name: 'glitchAmount', defaultValue: 0, minValue: 0, maxValue: 100 }
+      ]
+    });
+
+    // Limiter - Professional Mastering
+    this.register('Limiter', {
+      workletPath: '/worklets/effects/limiter-processor.js',
+      processorName: 'limiter-processor',
+      parameters: [
+        { name: 'ceiling', defaultValue: -0.1, minValue: -10, maxValue: 0 },
+        { name: 'release', defaultValue: 100, minValue: 10, maxValue: 1000 },
+        { name: 'attack', defaultValue: 0.1, minValue: 0.01, maxValue: 10 },
+        { name: 'lookahead', defaultValue: 5, minValue: 0, maxValue: 10 },
+        { name: 'knee', defaultValue: 0, minValue: 0, maxValue: 1 },
+        { name: 'stereoLink', defaultValue: 100, minValue: 0, maxValue: 100 },
+        { name: 'autoGain', defaultValue: 0, minValue: 0, maxValue: 1 },
+        { name: 'mode', defaultValue: 0, minValue: 0, maxValue: 4 },
+        { name: 'truePeak', defaultValue: 1, minValue: 0, maxValue: 1 },
+        { name: 'oversample', defaultValue: 4, minValue: 1, maxValue: 8 }
+      ]
+    });
+
+    // Clipper - The Hard Edge
+    this.register('Clipper', {
+      workletPath: '/worklets/effects/clipper-processor.js',
+      processorName: 'clipper-processor',
+      parameters: [
+        { name: 'ceiling', defaultValue: 0.0, minValue: -10, maxValue: 3 },
+        { name: 'hardness', defaultValue: 100, minValue: 0, maxValue: 100 },
+        { name: 'harmonics', defaultValue: 50, minValue: 0, maxValue: 100 },
+        { name: 'preGain', defaultValue: 0, minValue: -12, maxValue: 12 },
+        { name: 'postGain', defaultValue: 0, minValue: -12, maxValue: 12 },
+        { name: 'mix', defaultValue: 100, minValue: 0, maxValue: 100 },
+        { name: 'mode', defaultValue: 0, minValue: 0, maxValue: 5 },
+        { name: 'dcFilter', defaultValue: 1, minValue: 0, maxValue: 1 },
+        { name: 'oversample', defaultValue: 2, minValue: 1, maxValue: 8 }
+      ]
+    });
+
+    // Rhythm FX - The Groove Sculptor
+    this.register('RhythmFX', {
+      workletPath: '/worklets/effects/rhythm-fx-processor.js',
+      processorName: 'rhythm-fx-processor',
+      parameters: [
+        { name: 'division', defaultValue: 16, minValue: 1, maxValue: 64 },
+        { name: 'chance', defaultValue: 100, minValue: 0, maxValue: 100 },
+        { name: 'intensity', defaultValue: 100, minValue: 0, maxValue: 100 },
+        { name: 'swing', defaultValue: 50, minValue: 0, maxValue: 100 },
+        { name: 'bufferSize', defaultValue: 500, minValue: 10, maxValue: 2000 },
+        { name: 'fadeTime', defaultValue: 10, minValue: 1, maxValue: 50 },
+        { name: 'glitchAmount', defaultValue: 50, minValue: 0, maxValue: 100 },
+        { name: 'tapeSpeed', defaultValue: 100, minValue: -200, maxValue: 200 },
+        { name: 'mode', defaultValue: 0, minValue: 0, maxValue: 5 },
+        { name: 'bpm', defaultValue: 128, minValue: 60, maxValue: 200 }
+      ]
+    });
+
     console.log(`📚 EffectRegistry: Registered ${this.effects.size} effects`);
   }
 

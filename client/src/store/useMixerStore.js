@@ -804,3 +804,12 @@ export const useMixerStore = create((set, get) => ({
     console.log(`✅ Track output set: ${trackId} → ${targetId || 'master'}`);
   },
 }));
+
+// ⚡ FIX: Expose store globally to avoid circular dependency with AudioContextService
+if (typeof window !== 'undefined') {
+  if (!window.__DAWG_STORES__) {
+    window.__DAWG_STORES__ = {};
+  }
+  window.__DAWG_STORES__.useMixerStore = useMixerStore;
+  console.log('✅ useMixerStore exposed globally');
+}
