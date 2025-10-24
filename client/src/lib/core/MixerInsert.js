@@ -40,6 +40,11 @@ export class MixerInsert {
     this.analyzer.fftSize = 256;
     this.analyzer.smoothingTimeConstant = 0.8;
 
+    // Control states
+    this.isMuted = false;
+    this.isMono = false;
+    this.savedGain = 0.8; // For mute/unmute
+
     // Default values
     this.gainNode.gain.value = 0.8;  // 0dB'ye yakın
     this.panNode.pan.value = 0;      // Center
@@ -280,6 +285,39 @@ export class MixerInsert {
       this.panNode.pan.setValueAtTime(this.panNode.pan.value, now);
       this.panNode.pan.linearRampToValueAtTime(value, now + 0.015);
     }
+  }
+
+  /**
+   * Mute/Unmute toggle
+   */
+  setMute(muted) {
+    this.isMuted = muted;
+
+    if (muted) {
+      // Save current gain and mute
+      this.savedGain = this.gainNode.gain.value;
+      this.gainNode.gain.setValueAtTime(0, this.audioContext.currentTime);
+    } else {
+      // Restore saved gain
+      this.gainNode.gain.setValueAtTime(this.savedGain, this.audioContext.currentTime);
+    }
+
+    console.log(`🔇 ${this.insertId}: ${muted ? 'Muted' : 'Unmuted'}`);
+  }
+
+  /**
+   * Mono/Stereo toggle
+   */
+  setMono(mono) {
+    this.isMono = mono;
+
+    if (mono) {
+      // Center pan (mono)
+      this.panNode.pan.setValueAtTime(0, this.audioContext.currentTime);
+    }
+    // Note: User can adjust pan after disabling mono
+
+    console.log(`🎚️ ${this.insertId}: ${mono ? 'Mono' : 'Stereo'}`);
   }
 
   /**

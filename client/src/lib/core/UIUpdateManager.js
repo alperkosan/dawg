@@ -2,6 +2,7 @@
 // DAWG - Unified UI Update Manager - Single RAF Loop for All UI Updates
 
 import { realCPUMonitor } from '../utils/RealCPUMonitor.js';
+import { idleDetector } from '../utils/IdleDetector.js';
 
 /**
  * ✅ SINGLE RAF LOOP MANAGER
@@ -32,6 +33,14 @@ export class UIUpdateManager {
     this.subscribers = new Map();
     this.isRunning = false;
     this.rafId = null;
+
+    // ⚡ IDLE OPTIMIZATION: Pause updates when idle
+    this.isIdle = false;
+    this.idleUnsubscribe = null;
+
+    // ⚡ VISIBILITY OPTIMIZATION: Pause updates when tab hidden
+    this.isVisible = !document.hidden;
+    this.visibilityUnsubscribe = null;
 
     // Performance tracking
     this.metrics = {
@@ -83,7 +92,82 @@ export class UIUpdateManager {
     // Bind methods
     this._updateLoop = this._updateLoop.bind(this);
 
-    console.log('🎨 UIUpdateManager initialized with performance optimizations');
+    // ⚡ IDLE OPTIMIZATION: Setup idle detection
+    this._setupIdleDetection();
+
+    // ⚡ VISIBILITY OPTIMIZATION: Setup visibility detection
+    this._setupVisibilityDetection();
+
+    console.log('🎨 UIUpdateManager initialized with performance optimizations + idle detection + visibility detection');
+  }
+
+  /**
+   * ⚡ IDLE OPTIMIZATION: Setup idle state callbacks
+   */
+  _setupIdleDetection() {
+    // Register idle callback - pause RAF loop
+    idleDetector.onIdle(() => {
+      this.isIdle = true;
+      console.log('😴 UIUpdateManager: Pausing RAF loop (idle)');
+
+      // Stop RAF loop to save CPU
+      if (this.rafId) {
+        cancelAnimationFrame(this.rafId);
+        this.rafId = null;
+      }
+    });
+
+    // Register active callback - resume RAF loop
+    idleDetector.onActive(() => {
+      this.isIdle = false;
+      console.log('👁️ UIUpdateManager: Resuming RAF loop (active)');
+
+      // Resume RAF loop if we have subscribers
+      if (this.isRunning && !this.rafId && this.subscribers.size > 0) {
+        this.rafId = requestAnimationFrame(this._updateLoop);
+      }
+    });
+
+    // Start idle detector
+    idleDetector.start();
+  }
+
+  /**
+   * ⚡ VISIBILITY OPTIMIZATION: Setup visibility state callbacks
+   */
+  _setupVisibilityDetection() {
+    const handleVisibilityChange = () => {
+      const isNowVisible = !document.hidden;
+
+      if (isNowVisible && !this.isVisible) {
+        // Tab became visible
+        this.isVisible = true;
+        console.log('👁️ UIUpdateManager: Tab visible - resuming RAF loop');
+
+        // Resume RAF loop if running and not idle
+        if (this.isRunning && !this.isIdle && !this.rafId && this.subscribers.size > 0) {
+          this.rafId = requestAnimationFrame(this._updateLoop);
+        }
+      } else if (!isNowVisible && this.isVisible) {
+        // Tab became hidden
+        this.isVisible = false;
+        console.log('🙈 UIUpdateManager: Tab hidden - pausing RAF loop');
+
+        // Stop RAF loop to save CPU
+        if (this.rafId) {
+          cancelAnimationFrame(this.rafId);
+          this.rafId = null;
+        }
+      }
+    };
+
+    // Listen to visibility change event
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // Store unsubscribe function for cleanup
+    this.visibilityUnsubscribe = () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }
 
   // =================== SUBSCRIPTION MANAGEMENT ===================
@@ -170,6 +254,11 @@ export class UIUpdateManager {
       this.rafId = null;
     }
 
+    // ⚡ CLEANUP: Remove visibility listener
+    if (this.visibilityUnsubscribe) {
+      this.visibilityUnsubscribe();
+      this.visibilityUnsubscribe = null;
+    }
   }
 
   /**
@@ -177,6 +266,11 @@ export class UIUpdateManager {
    */
   _updateLoop(currentTime = performance.now()) {
     if (!this.isRunning) return;
+
+    // ⚡ VISIBILITY CHECK: Don't run if tab is hidden
+    if (!this.isVisible) {
+      return; // RAF already cancelled in visibility handler
+    }
 
     const frameStartTime = performance.now();
 

@@ -1411,6 +1411,128 @@ export class NativeAudioEngine {
     }
 
     /**
+     * Insert mute ayarla
+     * @param {string} insertId - Insert ID
+     * @param {boolean} muted - Muted state
+     */
+    setInsertMute(insertId, muted) {
+        const insert = this.mixerInserts.get(insertId);
+        if (insert) {
+            insert.setMute(muted);
+        }
+    }
+
+    /**
+     * Solo mode - Sadece solo edilen track'ler duyulur
+     * @param {Set} soloedInserts - Solo edilen insert ID'leri
+     * @param {Set} mutedInserts - Orijinal mute durumları
+     */
+    setSoloMode(soloedInserts, mutedInserts) {
+        // Eğer hiç solo yoksa, hepsini normale döndür
+        if (soloedInserts.size === 0) {
+            // Restore original mute states
+            this.mixerInserts.forEach((insert, insertId) => {
+                const shouldBeMuted = mutedInserts.has(insertId);
+                insert.setMute(shouldBeMuted);
+            });
+            console.log('🔊 Solo mode disabled - all tracks restored');
+            return;
+        }
+
+        // Solo mode aktif: Solo olmayan herşeyi mute et
+        this.mixerInserts.forEach((insert, insertId) => {
+            const isSoloed = soloedInserts.has(insertId);
+            const isOriginallyMuted = mutedInserts.has(insertId);
+
+            if (isSoloed) {
+                // Solo track always plays (unless originally muted)
+                insert.setMute(isOriginallyMuted);
+            } else {
+                // Non-solo tracks are muted
+                insert.setMute(true);
+            }
+        });
+
+        console.log(`🔊 Solo mode: ${soloedInserts.size} track(s) soloed`);
+    }
+
+    /**
+     * Insert mono/stereo ayarla
+     * @param {string} insertId - Insert ID
+     * @param {boolean} mono - Mono state
+     */
+    setInsertMono(insertId, mono) {
+        const insert = this.mixerInserts.get(insertId);
+        if (insert) {
+            insert.setMono(mono);
+        }
+    }
+
+    // =================== 📤 SEND ROUTING ===================
+
+    /**
+     * Create send from source insert to destination insert
+     * @param {string} sourceId - Source insert ID
+     * @param {string} busId - Destination bus/insert ID
+     * @param {number} level - Send level (0-1)
+     * @param {boolean} preFader - Pre-fader send (not implemented yet)
+     */
+    createSend(sourceId, busId, level = 0.5, preFader = false) {
+        const sourceInsert = this.mixerInserts.get(sourceId);
+        const busInsert = this.mixerInserts.get(busId);
+
+        if (!sourceInsert) {
+            console.error(`❌ Source insert ${sourceId} not found`);
+            return;
+        }
+
+        if (!busInsert) {
+            console.error(`❌ Bus insert ${busId} not found`);
+            return;
+        }
+
+        // Add send: source → bus input
+        sourceInsert.addSend(busId, busInsert.input, level);
+        console.log(`✅ Send created: ${sourceId} → ${busId} (level: ${level})`);
+    }
+
+    /**
+     * Remove send from source to bus
+     * @param {string} sourceId - Source insert ID
+     * @param {string} busId - Destination bus ID
+     */
+    removeSend(sourceId, busId) {
+        const sourceInsert = this.mixerInserts.get(sourceId);
+
+        if (!sourceInsert) {
+            console.error(`❌ Source insert ${sourceId} not found`);
+            return;
+        }
+
+        sourceInsert.removeSend(busId);
+        console.log(`✅ Send removed: ${sourceId} → ${busId}`);
+    }
+
+    /**
+     * Update send level
+     * @param {string} sourceId - Source insert ID
+     * @param {string} busId - Destination bus ID
+     * @param {number} level - New send level (0-1)
+     */
+    updateSendLevel(sourceId, busId, level) {
+        const sourceInsert = this.mixerInserts.get(sourceId);
+
+        if (!sourceInsert) {
+            console.error(`❌ Source insert ${sourceId} not found`);
+            return;
+        }
+
+        sourceInsert.setSendLevel(busId, level);
+    }
+
+    // =================== 🎹 INSTRUMENT MANAGEMENT ===================
+
+    /**
      * Instrument'i sil (dispose)
      * @param {string} instrumentId - Instrument ID
      */

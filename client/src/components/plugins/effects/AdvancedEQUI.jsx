@@ -224,7 +224,8 @@ const ProfessionalEQCanvas = React.memo(({
   const responseCacheRef = useRef({ bands: null, curve: null });
 
   // ⚡ PERFORMANCE: RAF throttling for canvas updates
-  const rafIdRef = useRef(null);
+  const drawRafIdRef = useRef(null); // ⚡ FIX: Separate RAF ID for draw operations
+  const spectrumRafIdRef = useRef(null); // ⚡ FIX: Separate RAF ID for spectrum loop
   const pendingDrawRef = useRef(false);
 
   // Resize observer
@@ -545,14 +546,15 @@ const ProfessionalEQCanvas = React.memo(({
     if (pendingDrawRef.current) return;
 
     pendingDrawRef.current = true;
-    rafIdRef.current = requestAnimationFrame(() => {
+    drawRafIdRef.current = requestAnimationFrame(() => {
       pendingDrawRef.current = false;
       drawCanvas();
     });
 
     return () => {
-      if (rafIdRef.current) {
-        cancelAnimationFrame(rafIdRef.current);
+      if (drawRafIdRef.current) {
+        cancelAnimationFrame(drawRafIdRef.current);
+        drawRafIdRef.current = null;
         pendingDrawRef.current = false;
       }
     };
@@ -562,7 +564,6 @@ const ProfessionalEQCanvas = React.memo(({
   useEffect(() => {
     if (!showSpectrum || !getFrequencyData) return;
 
-    let animationId;
     let isAnimating = true;
 
     const animateSpectrum = () => {
@@ -571,33 +572,40 @@ const ProfessionalEQCanvas = React.memo(({
       // Trigger redraw for spectrum update
       if (!pendingDrawRef.current) {
         pendingDrawRef.current = true;
-        rafIdRef.current = requestAnimationFrame(() => {
+        drawRafIdRef.current = requestAnimationFrame(() => {
           pendingDrawRef.current = false;
           drawCanvas();
         });
       }
 
-      // Continue animation loop
-      animationId = requestAnimationFrame(animateSpectrum);
+      // Continue animation loop (store in separate ref)
+      spectrumRafIdRef.current = requestAnimationFrame(animateSpectrum);
     };
 
     // Start animation loop
-    animationId = requestAnimationFrame(animateSpectrum);
+    spectrumRafIdRef.current = requestAnimationFrame(animateSpectrum);
 
     return () => {
       isAnimating = false;
-      if (animationId) {
-        cancelAnimationFrame(animationId);
+      if (spectrumRafIdRef.current) {
+        cancelAnimationFrame(spectrumRafIdRef.current);
+        spectrumRafIdRef.current = null;
       }
     };
   }, [showSpectrum, getFrequencyData, drawCanvas]);
 
-  // Cleanup RAF on unmount
+  // ⚡ FIX: Cleanup ALL RAF IDs on unmount
   useEffect(() => {
     return () => {
-      if (rafIdRef.current) {
-        cancelAnimationFrame(rafIdRef.current);
+      if (drawRafIdRef.current) {
+        cancelAnimationFrame(drawRafIdRef.current);
+        drawRafIdRef.current = null;
       }
+      if (spectrumRafIdRef.current) {
+        cancelAnimationFrame(spectrumRafIdRef.current);
+        spectrumRafIdRef.current = null;
+      }
+      pendingDrawRef.current = false;
     };
   }, []);
 

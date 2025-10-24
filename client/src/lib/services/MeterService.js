@@ -17,6 +17,7 @@
  */
 
 import { AudioContextService } from './AudioContextService';
+import { idleDetector } from '../utils/IdleDetector.js';
 
 class MeterService {
   constructor() {
@@ -26,12 +27,45 @@ class MeterService {
     this.rafId = null;
     this.lastUpdate = 0;
 
+    // ⚡ IDLE OPTIMIZATION
+    this.isIdle = false;
+    this.pausedDueToIdle = false;
+
     // Performance settings
     this.UPDATE_INTERVAL = 16; // 60fps
     this.FALLOFF_RATE = 30;    // dB per second
 
     // Memory pooling: Reuse TypedArrays to avoid GC
     this.bufferPool = new Map(); // trackId -> Uint8Array (reused)
+
+    // ⚡ IDLE OPTIMIZATION: Setup idle detection
+    this._setupIdleDetection();
+  }
+
+  /**
+   * ⚡ IDLE OPTIMIZATION: Pause meters when idle (no playback and no user activity)
+   */
+  _setupIdleDetection() {
+    idleDetector.onIdle(() => {
+      // Only pause if not playing audio
+      const audioEngine = AudioContextService.getAudioEngine();
+      const isPlaying = audioEngine?.transport?.state === 'started';
+
+      if (!isPlaying && this.isRunning) {
+        this.pausedDueToIdle = true;
+        this.stop();
+        console.log('😴 MeterService: Paused (idle, not playing)');
+      }
+    });
+
+    idleDetector.onActive(() => {
+      // Resume if was paused due to idle and still have subscribers
+      if (this.pausedDueToIdle && this.subscribers.size > 0) {
+        this.pausedDueToIdle = false;
+        this.start();
+        console.log('👁️ MeterService: Resumed (active)');
+      }
+    });
   }
 
   /**

@@ -29,6 +29,7 @@
 
 import React, { useRef, useEffect, useCallback, useState, useMemo } from 'react';
 import { globalStyleCache } from '@/lib/rendering/StyleCache';
+import { uiUpdateManager, UPDATE_PRIORITIES, UPDATE_FREQUENCIES } from '@/lib/core/UIUpdateManager';
 
 const STEP_WIDTH = 16;
 const ROW_HEIGHT = 64;
@@ -77,33 +78,25 @@ const UnifiedGridCanvas = React.memo(({
   const [hoveredCell, setHoveredCell] = useState(null); // { row, step }
   const [themeVersion, setThemeVersion] = useState(0); // Force re-render on theme change
   const renderRef = useRef(null); // Store render function for immediate theme change
+  const isDirtyRef = useRef(true); // ⚡ DIRTY FLAG: Track if canvas needs redraw
 
   // ✅ Listen for theme changes and fullscreen - AGGRESSIVE: Call render immediately
   useEffect(() => {
     const handleThemeChange = () => {
-      console.log('🎨 Theme changed - re-rendering grid canvas IMMEDIATELY');
+      console.log('🎨 Theme changed - marking grid canvas dirty');
 
       // Method 1: Increment version to trigger useCallback recreation
       setThemeVersion(v => v + 1);
 
-      // Method 2: Force immediate render (don't wait for React reconciliation)
-      if (renderRef.current) {
-        // Wait one frame for StyleCache to update
-        requestAnimationFrame(() => {
-          renderRef.current();
-        });
-      }
+      // Method 2: Mark dirty for next UIUpdateManager cycle
+      isDirtyRef.current = true;
     };
 
     const handleFullscreenChange = () => {
-      console.log('🖥️ Fullscreen changed - re-rendering grid canvas');
+      console.log('🖥️ Fullscreen changed - marking grid canvas dirty');
 
-      // Re-render canvas when fullscreen changes (viewport size changes)
-      if (renderRef.current) {
-        requestAnimationFrame(() => {
-          renderRef.current();
-        });
-      }
+      // Mark dirty for next UIUpdateManager cycle
+      isDirtyRef.current = true;
     };
 
     // Listen to custom theme change event
@@ -531,26 +524,26 @@ const UnifiedGridCanvas = React.memo(({
     renderRef.current = render;
   }, [render]);
 
-  // ⚡ PERFORMANCE: Throttled re-render using RAF
+  // ⚡ PERFORMANCE: Unified rendering via UIUpdateManager
   useEffect(() => {
-    let rafId = null;
-    let isScheduled = false;
+    // Mark dirty whenever render dependencies change
+    isDirtyRef.current = true;
 
-    const scheduleRender = () => {
-      if (isScheduled) return;
-      isScheduled = true;
+    // Subscribe to UIUpdateManager for unified RAF loop
+    const unsubscribe = uiUpdateManager.subscribe(
+      'channel-rack-grid',
+      () => {
+        // Only render if dirty flag is set
+        if (!isDirtyRef.current) return;
 
-      rafId = requestAnimationFrame(() => {
         render();
-        isScheduled = false;
-      });
-    };
+        isDirtyRef.current = false;
+      },
+      UPDATE_PRIORITIES.MEDIUM, // Grid is important but not critical as playhead
+      UPDATE_FREQUENCIES.HIGH // Keep 60fps for smooth hover interaction
+    );
 
-    scheduleRender();
-
-    return () => {
-      if (rafId) cancelAnimationFrame(rafId);
-    };
+    return unsubscribe;
   }, [render]);
 
   // 🎯 INTERACTION: Map mouse to row/step

@@ -17,6 +17,7 @@
 import React, { useRef, useEffect, useCallback, useState } from 'react';
 import { getTimelineController } from '@/lib/core/TimelineControllerSingleton';
 import { globalStyleCache } from '@/lib/rendering/StyleCache';
+import { uiUpdateManager, UPDATE_PRIORITIES, UPDATE_FREQUENCIES } from '@/lib/core/UIUpdateManager';
 
 const TimelineCanvas = React.memo(({
   loopLength,
@@ -37,33 +38,25 @@ const TimelineCanvas = React.memo(({
   const [localGhostPosition, setLocalGhostPosition] = useState(null);
   const [themeVersion, setThemeVersion] = useState(0); // Force re-render on theme change
   const renderTimelineRef = useRef(null); // Store render function for theme change
+  const isDirtyRef = useRef(true); // ⚡ DIRTY FLAG: Track if timeline needs redraw
 
-  // ✅ Listen for theme changes and fullscreen - AGGRESSIVE: Call render immediately
+  // ✅ Listen for theme changes and fullscreen - Mark dirty for UIUpdateManager
   useEffect(() => {
     const handleThemeChange = () => {
-      console.log('🎨 Theme changed - re-rendering timeline canvas IMMEDIATELY');
+      console.log('🎨 Theme changed - marking timeline canvas dirty');
 
       // Method 1: Increment version to trigger useCallback recreation
       setThemeVersion(v => v + 1);
 
-      // Method 2: Force immediate render (don't wait for React reconciliation)
-      if (renderTimelineRef.current) {
-        // Wait one frame for StyleCache to update
-        requestAnimationFrame(() => {
-          renderTimelineRef.current();
-        });
-      }
+      // Method 2: Mark dirty for next UIUpdateManager cycle
+      isDirtyRef.current = true;
     };
 
     const handleFullscreenChange = () => {
-      console.log('🖥️ Fullscreen changed - re-rendering timeline canvas');
+      console.log('🖥️ Fullscreen changed - marking timeline canvas dirty');
 
-      // Re-render canvas when fullscreen changes
-      if (renderTimelineRef.current) {
-        requestAnimationFrame(() => {
-          renderTimelineRef.current();
-        });
-      }
+      // Mark dirty for next UIUpdateManager cycle
+      isDirtyRef.current = true;
     };
 
     window.addEventListener('themeChanged', handleThemeChange);
@@ -190,9 +183,26 @@ const TimelineCanvas = React.memo(({
     renderTimelineRef.current = renderTimeline;
   }, [renderTimeline]);
 
-  // ✅ Initial render and on loop length change
+  // ⚡ PERFORMANCE: Unified rendering via UIUpdateManager
   useEffect(() => {
-    renderTimeline();
+    // Mark dirty whenever render dependencies change
+    isDirtyRef.current = true;
+
+    // Subscribe to UIUpdateManager for unified RAF loop
+    const unsubscribe = uiUpdateManager.subscribe(
+      'channel-rack-timeline',
+      () => {
+        // Only render if dirty flag is set
+        if (!isDirtyRef.current) return;
+
+        renderTimeline();
+        isDirtyRef.current = false;
+      },
+      UPDATE_PRIORITIES.HIGH, // Timeline is critical - visible during playback
+      UPDATE_FREQUENCIES.HIGH // Keep 60fps for smooth playhead tracking
+    );
+
+    return unsubscribe;
   }, [renderTimeline]);
 
   // ⚠️ REMOVED: Old theme change listener (replaced by themeVersion state + event listener)

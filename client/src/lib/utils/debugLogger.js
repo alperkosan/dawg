@@ -397,6 +397,9 @@ export const createLogger = (namespace) => ({
   timeEnd: (label) => logger.timeEnd(namespace, label)
 });
 
+// Alias for backwards compatibility
+export const createScopedLogger = createLogger;
+
 // Global access for debugging
 if (typeof window !== 'undefined') {
   window.DebugLogger = logger;

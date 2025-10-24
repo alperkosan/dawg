@@ -9,6 +9,7 @@ import { useArrangementV2Store } from '@/store/useArrangementV2Store';
 import EventBus from './EventBus.js';
 import { PositionTracker } from './PositionTracker.js';
 import { audioAssetManager } from '@/lib/audio/AudioAssetManager';
+import { idleDetector } from '../utils/IdleDetector.js';
 
 // ✅ NEW: Modular scheduler system
 import {
@@ -552,7 +553,7 @@ export class PlaybackManager {
 
     // =================== PLAYBACK CONTROLS ===================
 
-    play(startStep = null) {
+    async play(startStep = null) {
         if (this.isPlaying && !this.isPaused) return;
 
         // ✅ FIX: If paused, use resume() instead of restarting
@@ -582,10 +583,21 @@ export class PlaybackManager {
 
             this._updateLoopSettingsImmediate(); // Force immediate loop update for playback start
             this._scheduleContent(startTime, 'playback-start', true); // Force immediate scheduling for playback start
+
+            // ⚡ IDLE OPTIMIZATION: Resume AudioContext if suspended
+            if (this.audioEngine.audioContext.state === 'suspended') {
+                await this.audioEngine.audioContext.resume();
+                console.log('🎵 AudioContext resumed for playback');
+            }
+
             this.transport.start(startTime);
 
             this.isPlaying = true;
             this.isPaused = false;
+
+            // ⚡ IDLE OPTIMIZATION: Notify idle detector that we're playing
+            idleDetector.setPlaying(true);
+
             // usePlaybackStore.getState().setPlaybackState('playing'); // ✅ Handled by PlaybackController
         } catch (error) {
             this.stop();
@@ -680,6 +692,9 @@ export class PlaybackManager {
 
             this.isPlaying = false;
             this.isPaused = false;
+
+            // ⚡ IDLE OPTIMIZATION: Notify idle detector that we stopped
+            idleDetector.setPlaying(false);
 
             // ✅ DAW STANDARD: Always reset to 0 on stop
             this.currentPosition = 0;

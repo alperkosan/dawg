@@ -7,6 +7,7 @@ import { DynamicLoopManager } from '../interfaces/DynamicLoopManager';
 import EventBus from '../core/EventBus';
 import { audioAssetManager } from '../audio/AudioAssetManager';
 import { effectRegistry } from '../audio/EffectRegistry';
+import { idleDetector } from '../utils/IdleDetector.js';
 
 export class AudioContextService {
   static instance = null;
@@ -49,9 +50,47 @@ export class AudioContextService {
       this.isSubscriptionsSetup = true;
     }
 
-    console.log("✅ AudioContextService v3.0: Native Engine + Interface Layer ready");
+    // ⚡ IDLE OPTIMIZATION: Setup AudioContext suspend/resume
+    this._setupAudioContextIdleOptimization();
+
+    console.log("✅ AudioContextService v3.0: Native Engine + Interface Layer + Idle Optimization ready");
     return engine;
   };
+
+  /**
+   * ⚡ IDLE OPTIMIZATION: Suspend AudioContext when idle and not playing
+   * This can save 10-15% CPU when idle!
+   */
+  static _setupAudioContextIdleOptimization() {
+    const audioContext = this.audioEngine?.audioContext;
+    if (!audioContext) return;
+
+    // Suspend on idle (if not playing)
+    idleDetector.onIdle(async () => {
+      const isPlaying = this.audioEngine?.transport?.state === 'started';
+
+      if (!isPlaying && audioContext.state === 'running') {
+        try {
+          await audioContext.suspend();
+          console.log('😴 AudioContext suspended (idle, not playing)');
+        } catch (error) {
+          console.warn('⚠️ Failed to suspend AudioContext:', error);
+        }
+      }
+    });
+
+    // Resume on active
+    idleDetector.onActive(async () => {
+      if (audioContext.state === 'suspended') {
+        try {
+          await audioContext.resume();
+          console.log('👁️ AudioContext resumed (active)');
+        } catch (error) {
+          console.warn('⚠️ Failed to resume AudioContext:', error);
+        }
+      }
+    });
+  }
 
   static getAudioEngine() {
     if (!this.audioEngine) {
@@ -63,6 +102,38 @@ export class AudioContextService {
   static getAudioContext() {
     return this.audioEngine?.audioContext || null;
   };
+
+  // =================== MIXER CONTROLS ===================
+
+  /**
+   * Set mute state for a track
+   * @param {string} trackId - Track ID
+   * @param {boolean} muted - Mute state
+   */
+  static setMuteState(trackId, muted) {
+    if (!this.audioEngine) return;
+    this.audioEngine.setInsertMute(trackId, muted);
+  }
+
+  /**
+   * Set solo state (affects all tracks)
+   * @param {Set} soloedTracks - Set of soloed track IDs
+   * @param {Set} mutedTracks - Set of originally muted track IDs
+   */
+  static setSoloState(soloedTracks, mutedTracks) {
+    if (!this.audioEngine) return;
+    this.audioEngine.setSoloMode(soloedTracks, mutedTracks);
+  }
+
+  /**
+   * Set mono state for a track
+   * @param {string} trackId - Track ID
+   * @param {boolean} mono - Mono state
+   */
+  static setMonoState(trackId, mono) {
+    if (!this.audioEngine) return;
+    this.audioEngine.setInsertMono(trackId, mono);
+  }
 
   // =================== INTERFACE LAYER INITIALIZATION ===================
 
