@@ -262,6 +262,7 @@ export class VoicePool {
 
         if (import.meta.env.DEV) {
             console.log('🗑️ VoicePool disposed');
+            console.trace('📍 Disposal stack trace:');
         }
     }
 }

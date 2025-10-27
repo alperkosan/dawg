@@ -12,15 +12,45 @@ export class PremiumNoteRenderer {
     }
 
     /**
+     * ✅ DOPAMINERGIC EASING FUNCTIONS
+     * Professional animation curves for satisfying feedback
+     */
+    easeOutElastic(t) {
+        const c4 = (2 * Math.PI) / 3;
+        return t === 0 ? 0 : t === 1 ? 1 :
+            Math.pow(2, -10 * t) * Math.sin((t * 10 - 0.75) * c4) + 1;
+    }
+
+    easeOutBounce(t) {
+        const n1 = 7.5625;
+        const d1 = 2.75;
+        if (t < 1 / d1) {
+            return n1 * t * t;
+        } else if (t < 2 / d1) {
+            return n1 * (t -= 1.5 / d1) * t + 0.75;
+        } else if (t < 2.5 / d1) {
+            return n1 * (t -= 2.25 / d1) * t + 0.9375;
+        } else {
+            return n1 * (t -= 2.625 / d1) * t + 0.984375;
+        }
+    }
+
+    easeOutBack(t) {
+        const c1 = 1.70158;
+        const c3 = c1 + 1;
+        return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+    }
+
+    /**
      * Trigger animation for a note
      * @param {string} noteId - Note ID
      * @param {'added'|'deleted'|'modified'} type - Animation type
      */
     animateNote(noteId, type) {
         const durations = {
-            added: 300,      // 0.3s
-            deleted: 250,    // 0.25s
-            modified: 200    // 0.2s
+            added: 500,      // ✅ 0.5s (longer for satisfaction)
+            deleted: 350,    // ✅ 0.35s (longer for dramatic effect)
+            modified: 250    // 0.25s
         };
 
         this.noteAnimations.set(noteId, {
@@ -102,40 +132,50 @@ export class PremiumNoteRenderer {
 
         ctx.save();
 
-        // ✅ CHECK FOR ACTIVE ANIMATION
+        // ✅ DOPAMINERGIC ANIMATIONS - Satisfying, juicy feedback
         const animState = this.getAnimationState(note.id);
         let scale = 1;
         let animAlpha = 1;
         let glowIntensity = 0;
+        let colorShift = 0; // Hue shift for animation
 
         if (animState) {
             const { type, progress } = animState;
 
             if (type === 'added') {
-                // Ease out elastic: scale from 0.5 to 1.15 to 1
+                // ✅ SUBTLE ADD: Quick fade-in with minimal scale
                 const t = progress;
-                if (t < 0.5) {
-                    scale = 0.5 + (1.15 - 0.5) * (t / 0.5);
-                } else {
-                    scale = 1.15 - (1.15 - 1) * ((t - 0.5) / 0.5);
-                }
-                animAlpha = progress;
-                glowIntensity = (1 - Math.abs(progress - 0.5) * 2) * 12; // Peak at 50%
+                const eased = 1 - Math.pow(1 - t, 2); // Ease out quad
+                scale = 0.92 + eased * 0.08; // Subtle: 0.92 → 1.0
+
+                // Quick fade-in
+                animAlpha = eased;
+
+                // ✅ SUBTLE GLOW: Soft green hint
+                const glowProgress = Math.sin(t * Math.PI); // Peak at 50%
+                glowIntensity = glowProgress * 6; // Max 6 (subtle)
+
+                // ✅ MINIMAL COLOR SHIFT: Light green tint
+                colorShift = glowProgress * 20; // Subtle shift
             } else if (type === 'deleted') {
-                // Scale down and fade
+                // ✅ SUBTLE DELETE: Simple fade-out
                 const t = progress;
-                if (t < 0.5) {
-                    scale = 1 + (1.1 - 1) * (t / 0.5);
-                    glowIntensity = (t / 0.5) * 12;
-                } else {
-                    scale = 1.1 - (1.1 - 0.3) * ((t - 0.5) / 0.5);
-                    glowIntensity = 12 - ((t - 0.5) / 0.5) * 4;
-                }
-                animAlpha = 1 - progress;
+                const eased = Math.pow(t, 1.5); // Ease in
+
+                scale = 1 - eased * 0.1; // Subtle shrink: 1.0 → 0.9
+                animAlpha = 1 - eased; // Smooth fade
+
+                // ✅ SUBTLE GLOW: Soft red hint
+                glowIntensity = (1 - t) * 5; // Fade from 5 to 0
+
+                // ✅ MINIMAL COLOR SHIFT: Light red tint
+                colorShift = -15; // Subtle red
             } else if (type === 'modified') {
-                // Quick pulse
-                scale = 1 + Math.sin(progress * Math.PI) * 0.05;
-                glowIntensity = Math.sin(progress * Math.PI) * 8;
+                // ✅ SUBTLE MODIFIED: Tiny pulse
+                const t = progress;
+                scale = 1 + Math.sin(t * Math.PI) * 0.03; // Very gentle: ±3%
+                glowIntensity = Math.sin(t * Math.PI) * 4; // Soft glow
+                colorShift = Math.sin(t * Math.PI) * 10; // Minimal wave
             }
         }
 
@@ -159,20 +199,32 @@ export class PremiumNoteRenderer {
         } else {
             // Premium note styling based on velocity and pitch
             alpha = (0.85 + (note.velocity / 127) * 0.15) * animAlpha;
-            baseHue = note.hue || ((note.pitch * 2.8) % 360);
+            baseHue = (note.hue || ((note.pitch * 2.8) % 360)) + colorShift; // ✅ Apply color shift
             saturation = note.saturation || (60 + (note.velocity / 127) * 40);
             lightness = note.brightness || (45 + (note.velocity / 127) * 25);
+
+            // ✅ Boost saturation during animations for more vibrant feedback
+            if (animState) {
+                saturation = Math.min(100, saturation + glowIntensity * 0.5);
+            }
         }
 
-        // ✅ ANIMATION GLOW EFFECT (before main body)
+        // ✅ SUBTLE GLOW EFFECT - Pleasant, minimal feedback
         if (glowIntensity > 0) {
-            ctx.shadowBlur = glowIntensity;
+            const glowAlpha = Math.min(glowIntensity / 6, 1); // Normalize to 0-1
+
             if (animState?.type === 'deleted') {
-                ctx.shadowColor = `rgba(239, 68, 68, ${glowIntensity / 12})`;
+                // Soft red hint
+                ctx.shadowBlur = glowIntensity;
+                ctx.shadowColor = `rgba(239, 68, 68, ${glowAlpha * 0.4})`;
             } else if (animState?.type === 'added') {
-                ctx.shadowColor = `rgba(34, 197, 94, ${glowIntensity / 12})`;
+                // Soft green hint
+                ctx.shadowBlur = glowIntensity;
+                ctx.shadowColor = `rgba(34, 197, 94, ${glowAlpha * 0.4})`;
             } else {
-                ctx.shadowColor = `hsla(${baseHue}, 80%, 60%, ${glowIntensity / 12})`;
+                // Soft colored glow
+                ctx.shadowBlur = glowIntensity;
+                ctx.shadowColor = `hsla(${baseHue}, 80%, 60%, ${glowAlpha * 0.3})`;
             }
         }
 

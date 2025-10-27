@@ -541,6 +541,58 @@ export class VASynth {
     }
 
     /**
+     * Update parameters in real-time
+     * Called when user changes parameters in the editor
+     */
+    updateParameters(params) {
+        console.log('🎹 VASynth.updateParameters:', params);
+
+        // Update filter envelope
+        if (params.filterEnvelope) {
+            this.setFilterEnvelope(params.filterEnvelope);
+        }
+
+        // Update amplitude envelope
+        if (params.amplitudeEnvelope) {
+            this.setAmplitudeEnvelope(params.amplitudeEnvelope);
+        }
+
+        // Update oscillator settings
+        if (params.oscillatorSettings) {
+            this.oscillatorSettings = params.oscillatorSettings;
+        }
+
+        // Update filter settings
+        if (params.filterSettings) {
+            this.setFilter(params.filterSettings);
+        }
+
+        // Update master volume
+        if (params.masterVolume !== undefined) {
+            this.masterVolume = params.masterVolume;
+            if (this.masterGain) {
+                this.masterGain.gain.setValueAtTime(
+                    params.masterVolume,
+                    this.context.currentTime
+                );
+            }
+        }
+
+        // Update voice mode settings
+        if (params.voiceMode !== undefined) {
+            this.voiceMode = params.voiceMode;
+        }
+
+        if (params.portamento !== undefined) {
+            this.portamento = params.portamento;
+        }
+
+        if (params.legato !== undefined) {
+            this.legato = params.legato;
+        }
+    }
+
+    /**
      * Dispose synth
      */
     dispose() {

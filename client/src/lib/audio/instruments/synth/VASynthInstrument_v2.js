@@ -250,6 +250,42 @@ export class VASynthInstrument_v2 extends BaseInstrument {
     }
 
     /**
+     * Update parameters in real-time
+     * Called when user changes parameters in the editor
+     */
+    updateParameters(params) {
+        console.log(`🎹 VASynthInstrument_v2.updateParameters (${this.name}):`, params);
+
+        // Update all voices in the pool
+        this.voicePool.voices.forEach(voice => {
+            // VASynthVoice has loadPreset method (not synth.updateParameters)
+            if (typeof voice.loadPreset === 'function') {
+                // Convert params to preset format
+                const presetUpdate = {};
+                if (params.oscillatorSettings) presetUpdate.oscillators = params.oscillatorSettings;
+                if (params.filterSettings) presetUpdate.filter = params.filterSettings;
+                if (params.filterEnvelope) presetUpdate.filterEnvelope = params.filterEnvelope;
+                if (params.amplitudeEnvelope) presetUpdate.amplitudeEnvelope = params.amplitudeEnvelope;
+
+                voice.loadPreset(presetUpdate);
+            }
+        });
+
+        // Update allocator settings if voice mode changed
+        if (params.voiceMode !== undefined) {
+            this.allocator.mode = params.voiceMode;
+        }
+        if (params.portamento !== undefined) {
+            this.allocator.portamento = params.portamento;
+        }
+        if (params.legato !== undefined) {
+            this.allocator.legato = params.legato;
+        }
+
+        console.log(`✅ Parameters updated for all ${this.voicePool.voices.length} voices`);
+    }
+
+    /**
      * Get debug info
      */
     getState() {

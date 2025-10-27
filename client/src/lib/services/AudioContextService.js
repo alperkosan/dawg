@@ -949,36 +949,32 @@ export class AudioContextService {
       return;
     }
 
-    // Use MixerChannel's setSolo method if available
-    if (this.audioEngine.mixerChannels) {
+    // Use MixerInsert system
+    if (this.audioEngine.mixerInserts) {
       const isAnySoloed = soloedChannels.size > 0;
 
-      this.audioEngine.mixerChannels.forEach((channel, channelId) => {
+      this.audioEngine.mixerInserts.forEach((insert, insertId) => {
         // NEVER mute master channel
-        if (channel.isMaster || channelId === 'master') {
-          console.log(`  Channel ${channelId}: SKIP (master channel never mutes)`);
+        if (insertId === 'master') {
+          console.log(`  Insert ${insertId}: SKIP (master never mutes)`);
           return;
         }
 
-        const isSoloed = soloedChannels.has(channelId);
+        const isSoloed = soloedChannels.has(insertId);
+        const isManuallyMuted = mutedChannels.has(insertId);
 
-        // Use MixerChannel's built-in setSolo method
-        if (channel.setSolo && typeof channel.setSolo === 'function') {
-          console.log(`  Channel ${channelId}: setSolo(${isSoloed}, ${isAnySoloed})`);
-          channel.setSolo(isSoloed, isAnySoloed);
+        if (isAnySoloed) {
+          // Solo is active - mute non-soloed channels
+          const shouldMute = !isSoloed;
+          if (this.audioEngine.setChannelMute) {
+            console.log(`  Insert ${insertId}: Mute=${shouldMute} (Solo active, isSoloed=${isSoloed})`);
+            this.audioEngine.setChannelMute(insertId, shouldMute);
+          }
         } else {
-          // Fallback to manual mute control
-          if (isAnySoloed) {
-            const shouldMute = !isSoloed;
-            if (this.audioEngine.setChannelMute) {
-              this.audioEngine.setChannelMute(channelId, shouldMute);
-            }
-          } else {
-            // No solo, restore original mute state
-            const isManuallyMuted = mutedChannels.has(channelId);
-            if (this.audioEngine.setChannelMute) {
-              this.audioEngine.setChannelMute(channelId, isManuallyMuted);
-            }
+          // No solo - restore manual mute state
+          if (this.audioEngine.setChannelMute) {
+            console.log(`  Insert ${insertId}: Restore mute=${isManuallyMuted} (No solo active)`);
+            this.audioEngine.setChannelMute(insertId, isManuallyMuted);
           }
         }
       });

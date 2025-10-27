@@ -25,8 +25,15 @@ const Knob = ({
   const startYRef = useRef(0);
   const startValueRef = useRef(0);
 
+  // Sync displayValue with prop value (when not dragging)
+  useEffect(() => {
+    if (!isDragging) {
+      setDisplayValue(value);
+    }
+  }, [value, isDragging]);
+
   // Normalize value to 0-1 range
-  const normalizedValue = (value - min) / (max - min);
+  const normalizedValue = (displayValue - min) / (max - min);
 
   // Arc parameters
   const radius = size === 'small' ? 20 : size === 'large' ? 36 : 28;

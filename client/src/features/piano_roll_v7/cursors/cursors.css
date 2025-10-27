@@ -1,0 +1,111 @@
+/**
+ * PROFESSIONAL PIANO ROLL CURSORS
+ *
+ * Custom SVG-based cursors for each tool
+ * Designed to match professional DAW aesthetics
+ */
+
+/* ========================================
+   CURSOR UTILITIES
+   ======================================== */
+
+.prv5-canvas-container {
+    cursor: default;
+}
+
+/* ========================================
+   TOOL CURSORS (Data Attribute Based)
+   ======================================== */
+
+/* SELECT TOOL - Default arrow with selection indicator */
+.prv5-canvas-container[data-tool="select"] {
+    cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="white" stroke="black" stroke-width="1" d="M3 3 L3 18 L9 12 L13 17 L16 14 L9 9 Z"/></svg>') 3 3, auto;
+}
+
+/* PAINT BRUSH TOOL - Brush icon */
+.prv5-canvas-container[data-tool="paintBrush"] {
+    cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><g transform="rotate(-45 12 12)"><rect x="10" y="3" width="4" height="12" fill="%2300AAFF" stroke="white" stroke-width="1" rx="2"/><circle cx="12" cy="16" r="3" fill="%2300AAFF" stroke="white" stroke-width="1"/></g></svg>') 6 18, crosshair;
+}
+
+/* ERASER TOOL - Eraser icon */
+.prv5-canvas-container[data-tool="eraser"] {
+    cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><g transform="rotate(-30 12 12)"><rect x="7" y="5" width="10" height="8" fill="%23FF6B6B" stroke="white" stroke-width="1.5" rx="2"/><rect x="7" y="11" width="10" height="3" fill="%23999" stroke="white" stroke-width="1"/></g></svg>') 8 16, not-allowed;
+}
+
+/* CHOPPER/SLICE TOOL - Knife icon */
+.prv5-canvas-container[data-tool="slice"],
+.prv5-canvas-container[data-tool="chopper"] {
+    cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><g transform="rotate(-45 12 12)"><line x1="12" y1="4" x2="12" y2="16" stroke="%23FFD700" stroke-width="2"/><path d="M10 4 L12 2 L14 4 Z" fill="%23FFD700" stroke="white" stroke-width="0.5"/><ellipse cx="12" cy="18" rx="3" ry="2" fill="%23666" stroke="white" stroke-width="1"/></g></svg>') 12 12, col-resize;
+}
+
+/* STRUMIZER TOOL - Guitar pick */
+.prv5-canvas-container[data-tool="strumizer"] {
+    cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path d="M12 4 L16 10 L14 18 L10 18 L8 10 Z" fill="%23FF9500" stroke="white" stroke-width="1.5"/></svg>') 12 12, grab;
+}
+
+/* ARPEGGIATOR TOOL - Musical notes */
+.prv5-canvas-container[data-tool="arpeggiator"] {
+    cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><ellipse cx="7" cy="16" rx="3" ry="2" fill="%2388E3FF" stroke="white" stroke-width="1"/><rect x="9" y="8" width="1.5" height="8" fill="%2388E3FF"/><ellipse cx="14" cy="13" rx="3" ry="2" fill="%2388E3FF" stroke="white" stroke-width="1"/><rect x="16" y="5" width="1.5" height="8" fill="%2388E3FF"/></svg>') 12 12, copy;
+}
+
+/* FLAM TOOL - Burst icon */
+.prv5-canvas-container[data-tool="flam"] {
+    cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4" fill="%23FFD700" stroke="white" stroke-width="1"/><circle cx="12" cy="12" r="7" fill="none" stroke="%23FFD700" stroke-width="1.5" opacity="0.5"/><circle cx="12" cy="12" r="10" fill="none" stroke="%23FFD700" stroke-width="1" opacity="0.3"/></svg>') 12 12, pointer;
+}
+
+/* RANDOMIZER TOOL - Dice icon */
+.prv5-canvas-container[data-tool="randomizer"] {
+    cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" fill="%23A78BFA" stroke="white" stroke-width="1.5" rx="2"/><circle cx="9" cy="9" r="1.5" fill="white"/><circle cx="12" cy="12" r="1.5" fill="white"/><circle cx="15" cy="15" r="1.5" fill="white"/><circle cx="9" cy="15" r="1.5" fill="white"/><circle cx="15" cy="9" r="1.5" fill="white"/></svg>') 12 12, help;
+}
+
+/* FLIP TOOL - Mirror icon */
+.prv5-canvas-container[data-tool="flip"] {
+    cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><rect x="11" y="4" width="2" height="16" fill="white" opacity="0.5"/><path d="M4 8 L4 16 L10 12 Z" fill="%2300D9FF" stroke="white" stroke-width="1"/><path d="M20 8 L20 16 L14 12 Z" fill="%2300D9FF" stroke="white" stroke-width="1"/></svg>') 12 12, move;
+}
+
+/* ========================================
+   DYNAMIC STATE CURSORS
+   ======================================== */
+
+/* Resize cursor (left/right) */
+.prv5-canvas-container[data-cursor="ew-resize"] {
+    cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path d="M8 12 L4 8 L4 16 Z" fill="white" stroke="black" stroke-width="1"/><path d="M16 12 L20 8 L20 16 Z" fill="white" stroke="black" stroke-width="1"/><line x1="8" y1="12" x2="16" y2="12" stroke="white" stroke-width="2"/></svg>') 12 12, ew-resize !important;
+}
+
+/* Move/drag cursor */
+.prv5-canvas-container[data-cursor="move"],
+.prv5-canvas-container[data-cursor="grabbing"] {
+    cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="%234CAF50" stroke="white" stroke-width="2" opacity="0.8"/><path d="M12 8 L12 16 M8 12 L16 12" stroke="white" stroke-width="2.5" stroke-linecap="round"/></svg>') 12 12, grabbing !important;
+}
+
+/* Eraser active (during drag) */
+.prv5-canvas-container[data-cursor="eraser"] {
+    cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><g transform="rotate(-30 12 12)"><rect x="7" y="5" width="10" height="8" fill="%23FF4444" stroke="white" stroke-width="1.5" rx="2"/><rect x="7" y="11" width="10" height="3" fill="%23CC0000" stroke="white" stroke-width="1"/></g></svg>') 8 16, not-allowed !important;
+}
+
+/* Paint brush active (during drag) */
+.prv5-canvas-container[data-cursor="paintBrush"] {
+    cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><g transform="rotate(-45 12 12)"><rect x="10" y="3" width="4" height="12" fill="%2300DDFF" stroke="white" stroke-width="1.5" rx="2"/><circle cx="12" cy="16" r="3" fill="%2300DDFF" stroke="white" stroke-width="1.5"/></g><circle cx="18" cy="18" r="2" fill="%2300DDFF" opacity="0.6"/></svg>') 6 18, crosshair !important;
+}
+
+/* Crosshair (selection area) */
+.prv5-canvas-container[data-cursor="crosshair"] {
+    cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="6" fill="none" stroke="%2300AAFF" stroke-width="2" opacity="0.7"/><line x1="12" y1="2" x2="12" y2="8" stroke="%2300AAFF" stroke-width="2"/><line x1="12" y1="16" x2="12" y2="22" stroke="%2300AAFF" stroke-width="2"/><line x1="2" y1="12" x2="8" y2="12" stroke="%2300AAFF" stroke-width="2"/><line x1="16" y1="12" x2="22" y2="12" stroke="%2300AAFF" stroke-width="2"/></svg>') 12 12, crosshair !important;
+}
+
+/* ========================================
+   FALLBACK FOR UNSUPPORTED BROWSERS
+   ======================================== */
+
+@supports not (cursor: url('data:image/svg+xml;utf8,...')) {
+    .prv5-canvas-container[data-tool="select"] { cursor: default; }
+    .prv5-canvas-container[data-tool="paintBrush"] { cursor: crosshair; }
+    .prv5-canvas-container[data-tool="eraser"] { cursor: not-allowed; }
+    .prv5-canvas-container[data-tool="slice"],
+    .prv5-canvas-container[data-tool="chopper"] { cursor: col-resize; }
+    .prv5-canvas-container[data-tool="strumizer"] { cursor: grab; }
+    .prv5-canvas-container[data-tool="arpeggiator"] { cursor: copy; }
+    .prv5-canvas-container[data-tool="flam"] { cursor: pointer; }
+    .prv5-canvas-container[data-tool="randomizer"] { cursor: help; }
+    .prv5-canvas-container[data-tool="flip"] { cursor: move; }
+}

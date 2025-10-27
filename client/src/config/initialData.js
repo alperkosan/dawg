@@ -229,6 +229,96 @@ const drillPattern = {
 };
 
 // =========================================================================
+// 🔥 PATTERN 5: VASYNTH V2 SHOWCASE (128 BPM)
+// Demonstrating unison, modulation, and effects features
+// =========================================================================
+const vaSynthShowcasePattern = {
+  kick: [0, 16, 32, 48].map(t => note(t, 'C4', 100)),
+  snare: [8, 24, 40, 56].map(t => note(t, 'C4', 85)),
+  'hi-hat': [
+    ...Array.from({ length: 32 }).map((_, i) => {
+      const velocity = i % 2 === 0 ? 70 : 45;
+      return note(i * 2, 'F#4', velocity, '8n');
+    })
+  ],
+
+  // 🎹 HYPER SAW: Wide stereo lead with unison (7 voices)
+  hypersaw: [
+    { t: 0, p: 'C4', d: '4n' }, { t: 4, p: 'D4', d: '4n' },
+    { t: 8, p: 'E4', d: '4n' }, { t: 12, p: 'G4', d: '4n' },
+    { t: 16, p: 'C5', d: '4n' }, { t: 20, p: 'B4', d: '4n' },
+    { t: 24, p: 'A4', d: '4n' }, { t: 28, p: 'G4', d: '4n' },
+    { t: 32, p: 'F4', d: '2n' }, { t: 40, p: 'E4', d: '4n' },
+    { t: 48, p: 'C4', d: '1n' }
+  ].map(n => note(n.t, n.p, 85, n.d)),
+
+  // 🎵 TRANCE PLUCK: Arpeggiated plucks with delay/reverb
+  trancepluck: [
+    { t: 0, p: 'C5', d: '16n' }, { t: 2, p: 'E5', d: '16n' }, { t: 4, p: 'G5', d: '16n' }, { t: 6, p: 'C6', d: '16n' },
+    { t: 8, p: 'B4', d: '16n' }, { t: 10, p: 'E5', d: '16n' }, { t: 12, p: 'G5', d: '16n' }, { t: 14, p: 'B5', d: '16n' },
+    { t: 16, p: 'A4', d: '16n' }, { t: 18, p: 'E5', d: '16n' }, { t: 20, p: 'A5', d: '16n' }, { t: 22, p: 'C6', d: '16n' },
+    { t: 24, p: 'G4', d: '16n' }, { t: 26, p: 'D5', d: '16n' }, { t: 28, p: 'G5', d: '16n' }, { t: 30, p: 'B5', d: '16n' },
+    { t: 32, p: 'F4', d: '16n' }, { t: 34, p: 'A4', d: '16n' }, { t: 36, p: 'C5', d: '16n' }, { t: 38, p: 'F5', d: '16n' },
+    { t: 40, p: 'E4', d: '16n' }, { t: 42, p: 'G4', d: '16n' }, { t: 44, p: 'C5', d: '16n' }, { t: 46, p: 'E5', d: '16n' },
+    { t: 48, p: 'C5', d: '8n' }, { t: 52, p: 'E5', d: '8n' }, { t: 56, p: 'G5', d: '8n' }, { t: 60, p: 'C6', d: '4n' }
+  ].map(n => note(n.t, n.p, 80, n.d)),
+
+  // ☁️ DREAM PAD: Lush unison pad with chorus/reverb
+  dreampad: [
+    // Long sustained chords
+    { t: 0, p: 'C3', d: '1n' }, { t: 0, p: 'E3', d: '1n' }, { t: 0, p: 'G3', d: '1n' }, { t: 0, p: 'C4', d: '1n' },
+    { t: 16, p: 'A2', d: '1n' }, { t: 16, p: 'C3', d: '1n' }, { t: 16, p: 'E3', d: '1n' }, { t: 16, p: 'A3', d: '1n' },
+    { t: 32, p: 'F2', d: '1n' }, { t: 32, p: 'A2', d: '1n' }, { t: 32, p: 'C3', d: '1n' }, { t: 32, p: 'F3', d: '1n' },
+    { t: 48, p: 'G2', d: '1n' }, { t: 48, p: 'B2', d: '1n' }, { t: 48, p: 'D3', d: '1n' }, { t: 48, p: 'G3', d: '1n' }
+  ].map(n => note(n.t, n.p, 60, n.d)),
+
+  // 🎸 WOBBLE BASS: LFO modulated filter bass
+  wobblebass: [
+    { t: 0, p: 'C2', d: '2n' }, { t: 8, p: 'C2', d: '4n' }, { t: 12, p: 'D2', d: '4n' },
+    { t: 16, p: 'A1', d: '2n' }, { t: 24, p: 'A1', d: '4n' }, { t: 28, p: 'G1', d: '4n' },
+    { t: 32, p: 'F1', d: '2n' }, { t: 40, p: 'F1', d: '4n' }, { t: 44, p: 'E1', d: '4n' },
+    { t: 48, p: 'G1', d: '1n' }
+  ].map(n => note(n.t, n.p, 90, n.d)),
+
+  // 🎹 ARP LEAD: Fast arpeggio with delay
+  arplead: [
+    { t: 32, p: 'C5', d: '16n' }, { t: 33, p: 'E5', d: '16n' }, { t: 34, p: 'G5', d: '16n' }, { t: 35, p: 'C6', d: '16n' },
+    { t: 36, p: 'G5', d: '16n' }, { t: 37, p: 'E5', d: '16n' }, { t: 38, p: 'C5', d: '16n' }, { t: 39, p: 'E5', d: '16n' },
+    { t: 40, p: 'A4', d: '16n' }, { t: 41, p: 'C5', d: '16n' }, { t: 42, p: 'E5', d: '16n' }, { t: 43, p: 'A5', d: '16n' },
+    { t: 44, p: 'E5', d: '16n' }, { t: 45, p: 'C5', d: '16n' }, { t: 46, p: 'A4', d: '16n' }, { t: 47, p: 'C5', d: '16n' },
+    { t: 48, p: 'F4', d: '16n' }, { t: 49, p: 'A4', d: '16n' }, { t: 50, p: 'C5', d: '16n' }, { t: 51, p: 'F5', d: '16n' },
+    { t: 52, p: 'C5', d: '16n' }, { t: 53, p: 'A4', d: '16n' }, { t: 54, p: 'F4', d: '16n' }, { t: 55, p: 'A4', d: '16n' },
+    { t: 56, p: 'G4', d: '16n' }, { t: 57, p: 'B4', d: '16n' }, { t: 58, p: 'D5', d: '16n' }, { t: 59, p: 'G5', d: '16n' },
+    { t: 60, p: 'D5', d: '16n' }, { t: 61, p: 'B4', d: '16n' }, { t: 62, p: 'G4', d: '16n' }, { t: 63, p: 'B4', d: '16n' }
+  ].map(n => note(n.t, n.p, 75, n.d)),
+
+  // 🔊 FAT BASS: Wide unison bass
+  fatbass: [
+    { t: 0, p: 'C1', d: '4n' }, { t: 4, p: 'C1', d: '8n' }, { t: 6, p: 'D1', d: '8n' },
+    { t: 8, p: 'E1', d: '4n' }, { t: 12, p: 'G1', d: '4n' },
+    { t: 16, p: 'A0', d: '4n' }, { t: 20, p: 'A0', d: '8n' }, { t: 22, p: 'G0', d: '8n' },
+    { t: 24, p: 'C1', d: '4n' }, { t: 28, p: 'E1', d: '4n' },
+    { t: 32, p: 'F0', d: '4n' }, { t: 36, p: 'F0', d: '8n' }, { t: 38, p: 'E0', d: '8n' },
+    { t: 40, p: 'A0', d: '4n' }, { t: 44, p: 'C1', d: '4n' },
+    { t: 48, p: 'G0', d: '1n' }
+  ].map(n => note(n.t, n.p, 85, n.d)),
+
+  // 🎤 VOCAL SYNTH: Formant-like synth with vibrato
+  vocalsynth: [
+    { t: 16, p: 'C4', d: '2n' }, { t: 24, p: 'D4', d: '8n' }, { t: 26, p: 'E4', d: '8n' }, { t: 28, p: 'G4', d: '4n' },
+    { t: 48, p: 'A3', d: '2n' }, { t: 56, p: 'G3', d: '8n' }, { t: 58, p: 'F3', d: '8n' }, { t: 60, p: 'E3', d: '4n' }
+  ].map(n => note(n.t, n.p, 70, n.d)),
+
+  // 💫 SIDECHAIN LEAD: Pumping lead with LFO volume modulation
+  sidechainlead: [
+    { t: 0, p: 'E4', d: '1n' }, { t: 0, p: 'G4', d: '1n' }, { t: 0, p: 'C5', d: '1n' },
+    { t: 16, p: 'C4', d: '1n' }, { t: 16, p: 'E4', d: '1n' }, { t: 16, p: 'A4', d: '1n' },
+    { t: 32, p: 'A3', d: '1n' }, { t: 32, p: 'C4', d: '1n' }, { t: 32, p: 'F4', d: '1n' },
+    { t: 48, p: 'B3', d: '1n' }, { t: 48, p: 'D4', d: '1n' }, { t: 48, p: 'G4', d: '1n' }
+  ].map(n => note(n.t, n.p, 75, n.d))
+};
+
+// =========================================================================
 // 🎹 VASYNTH PRESETS
 // =========================================================================
 const vaSynthPresets = {
@@ -369,7 +459,7 @@ export const initialInstruments = [
     ]
   },
 
-  // === VASYNTH INSTRUMENTS ===
+  // === VASYNTH INSTRUMENTS (Classic) ===
   { id: 'piano(synth)', name: 'Piano (Synth)', type: INSTRUMENT_TYPES.VASYNTH, color: '#A8E6CF', presetName: 'Piano', mixerTrackId: 'track-10' },
   { id: 'e.piano', name: 'E.Piano', type: INSTRUMENT_TYPES.VASYNTH, color: '#FFB6C1', presetName: 'E. Piano', mixerTrackId: 'track-11' },
   { id: 'organ', name: 'Organ', type: INSTRUMENT_TYPES.VASYNTH, color: '#FFDAB9', presetName: 'Organ', mixerTrackId: 'track-12' },
@@ -380,6 +470,16 @@ export const initialInstruments = [
   { id: 'warmpad', name: 'Warm Pad', type: INSTRUMENT_TYPES.VASYNTH, color: '#D8BFD8', presetName: 'Warm Pad', mixerTrackId: 'track-17' },
   { id: 'strings', name: 'Strings', type: INSTRUMENT_TYPES.VASYNTH, color: '#E6E6FA', presetName: 'Strings', mixerTrackId: 'track-18' },
   { id: 'bellsynth', name: 'Bell Synth', type: INSTRUMENT_TYPES.VASYNTH, color: '#B0E0E6', presetName: 'Bell Synth', mixerTrackId: 'track-19' },
+
+  // === VASYNTH V2 INSTRUMENTS (Showcasing Unison, Modulation, Effects) ===
+  { id: 'hypersaw', name: 'Hyper Saw', type: INSTRUMENT_TYPES.VASYNTH, color: '#FF1493', presetName: 'Hyper Saw', mixerTrackId: 'track-20' },
+  { id: 'trancepluck', name: 'Trance Pluck', type: INSTRUMENT_TYPES.VASYNTH, color: '#00CED1', presetName: 'Trance Pluck', mixerTrackId: 'track-21' },
+  { id: 'dreampad', name: 'Dream Pad', type: INSTRUMENT_TYPES.VASYNTH, color: '#9370DB', presetName: 'Dream Pad', mixerTrackId: 'track-22' },
+  { id: 'wobblebass', name: 'Wobble Bass', type: INSTRUMENT_TYPES.VASYNTH, color: '#32CD32', presetName: 'Wobble Bass', mixerTrackId: 'track-23' },
+  { id: 'arplead', name: 'Arp Lead', type: INSTRUMENT_TYPES.VASYNTH, color: '#FF6347', presetName: 'Arp Lead', mixerTrackId: 'track-24' },
+  { id: 'fatbass', name: 'Fat Bass', type: INSTRUMENT_TYPES.VASYNTH, color: '#8B008B', presetName: 'Fat Bass', mixerTrackId: 'track-25' },
+  { id: 'vocalsynth', name: 'Vocal Synth', type: INSTRUMENT_TYPES.VASYNTH, color: '#FFD700', presetName: 'Vocal Synth', mixerTrackId: 'track-26' },
+  { id: 'sidechainlead', name: 'Sidechain Lead', type: INSTRUMENT_TYPES.VASYNTH, color: '#FF69B4', presetName: 'Sidechain Lead', mixerTrackId: 'track-27' },
 
   // === GRANULAR SAMPLER ===
   // ⚠️ DISABLED: User preference - keeping system optimized for maximum performance
@@ -412,7 +512,7 @@ export const initialInstruments = [
 // =========================================================================
 // 📊 PATTERNS
 // =========================================================================
-export const initialPatternOrder = ['pattern1', 'pattern2', 'pattern3', 'pattern4'];
+export const initialPatternOrder = ['pattern1', 'pattern2', 'pattern3', 'pattern4', 'pattern5'];
 
 export const initialPatterns = {
   pattern1: {
@@ -478,6 +578,25 @@ export const initialPatterns = {
       '808': drillPattern['808'],
       '808bass': drillPattern['808bass'],
       pluck: drillPattern.pluck
+    }
+  },
+  pattern5: {
+    id: 'pattern5',
+    name: 'VASynth V2 Showcase',
+    length: 64,
+    color: '#FF1493',
+    data: {
+      kick: vaSynthShowcasePattern.kick,
+      snare: vaSynthShowcasePattern.snare,
+      'hi-hat': vaSynthShowcasePattern['hi-hat'],
+      hypersaw: vaSynthShowcasePattern.hypersaw,
+      trancepluck: vaSynthShowcasePattern.trancepluck,
+      dreampad: vaSynthShowcasePattern.dreampad,
+      wobblebass: vaSynthShowcasePattern.wobblebass,
+      arplead: vaSynthShowcasePattern.arplead,
+      fatbass: vaSynthShowcasePattern.fatbass,
+      vocalsynth: vaSynthShowcasePattern.vocalsynth,
+      sidechainlead: vaSynthShowcasePattern.sidechainlead
     }
   }
 };
@@ -552,7 +671,10 @@ export const initialClips = [
   { id: 'clip3', patternId: 'pattern3', trackIndex: 0, startTime: 8, duration: 4, color: '#95E1D3' },
 
   // Drill pattern (12-16 bars)
-  { id: 'clip4', patternId: 'pattern4', trackIndex: 0, startTime: 12, duration: 4, color: '#F38181' }
+  { id: 'clip4', patternId: 'pattern4', trackIndex: 0, startTime: 12, duration: 4, color: '#F38181' },
+
+  // VASynth V2 Showcase pattern (16-20 bars)
+  { id: 'clip5', patternId: 'pattern5', trackIndex: 0, startTime: 16, duration: 4, color: '#FF1493' }
 ];
 
 export const initialArrangement = {

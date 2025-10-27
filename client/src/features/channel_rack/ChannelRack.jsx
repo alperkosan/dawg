@@ -438,7 +438,7 @@ function ChannelRack() {
             name: fileData.name,
             url: fileData.url,
             audioBuffer: audioBuffer, // ✅ Include loaded audio buffer
-            type: 'audio'
+            type: 'sample' // ✅ Use standard instrument type
           });
         } catch (loadError) {
           console.error('Failed to load audio file:', loadError);

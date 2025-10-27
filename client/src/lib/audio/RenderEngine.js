@@ -101,23 +101,53 @@ export class RenderEngine {
         throw new Error('Audio engine not available');
       }
 
-      // Render each instrument's notes (pass full patternData for instrument lookup)
+      // Create master bus (instruments will connect here instead of destination)
+      const masterBus = offlineContext.createGain();
+      masterBus.gain.setValueAtTime(1.0, offlineContext.currentTime);
+
+      // Render each instrument's notes (pass master bus as destination)
       const instrumentBuffers = await this._renderInstrumentNotes(
         patternData.data,
         offlineContext,
         audioEngine,
-        { includeEffects, startTime, endTime, patternData }
+        { includeEffects, startTime, endTime, patternData, masterBus }
       );
 
-      // Mix all instrument buffers
-      const finalBuffer = await this._mixInstrumentBuffers(
-        instrumentBuffers,
-        offlineContext
-      );
+      // Apply master channel effects
+      // mixerTracks can be either ARRAY or OBJECT - handle both
+      const masterChannel = Array.isArray(patternData.mixerTracks)
+        ? patternData.mixerTracks.find(track => track.id === 'master')
+        : patternData.mixerTracks?.['master'];
 
-      // Apply post-processing
+      console.log('🎛️ Master channel check:', {
+        hasMixerTracks: !!patternData.mixerTracks,
+        isArray: Array.isArray(patternData.mixerTracks),
+        trackCount: Array.isArray(patternData.mixerTracks)
+          ? patternData.mixerTracks.length
+          : Object.keys(patternData.mixerTracks || {}).length,
+        hasMaster: !!masterChannel,
+        masterHasEffects: !!masterChannel?.insertEffects?.length,
+        masterEffectCount: masterChannel?.insertEffects?.length || 0,
+        allTrackIds: Array.isArray(patternData.mixerTracks)
+          ? patternData.mixerTracks.map(t => t.id)
+          : Object.keys(patternData.mixerTracks || {})
+      });
+
+      let finalOutput = masterBus;
+
+      if (masterChannel) {
+        console.log('🎛️ Applying master channel processing...');
+        finalOutput = await this._createOfflineMixerChannel(offlineContext, masterBus, masterChannel);
+      } else {
+        console.warn('⚠️ No master channel found - skipping master effects');
+      }
+
+      // Connect to destination
+      finalOutput.connect(offlineContext.destination);
+
+      // Apply post-processing (fade out on final output)
       if (fadeOut) {
-        this._applyFadeOut(finalBuffer, RENDER_CONFIG.DEFAULT_FADE_OUT);
+        this._applyFadeOut(finalOutput, RENDER_CONFIG.DEFAULT_FADE_OUT);
       }
 
       // Render offline context
@@ -314,16 +344,17 @@ export class RenderEngine {
     instrumentOutputNode.gain.setValueAtTime(1.0, offlineContext.currentTime);
 
     // Then route it through offline mixer channel (applies mixer settings)
-    const mixerOutputNode = this._createOfflineMixerChannel(offlineContext, instrumentOutputNode, mixerTrack);
+    const mixerOutputNode = await this._createOfflineMixerChannel(offlineContext, instrumentOutputNode, mixerTrack);
 
     // 🎚️ AUTO-GAIN: Apply headroom compensation to prevent clipping
     const autoGainNode = offlineContext.createGain();
     const autoGain = options.autoGain !== undefined ? options.autoGain : 1.0;
     autoGainNode.gain.setValueAtTime(autoGain, offlineContext.currentTime);
 
-    // Chain: mixer → autoGain → destination
+    // Chain: mixer → autoGain → masterBus (or destination if no master bus)
     mixerOutputNode.connect(autoGainNode);
-    autoGainNode.connect(offlineContext.destination);
+    const finalDestination = options.masterBus || offlineContext.destination;
+    autoGainNode.connect(finalDestination);
 
     console.log(`🎚️ Applied auto-gain ${autoGain.toFixed(3)} to ${instrumentId}`);
 
@@ -1046,6 +1077,12 @@ export class RenderEngine {
 
     for (const effectData of effectChainData) {
       try {
+        // Skip bypassed effects
+        if (effectData.bypass) {
+          console.log(`🎬 Skipping bypassed effect: ${effectData.type}`);
+          continue;
+        }
+
         // Create effect instance from serialized data
         const effect = EffectFactory.deserialize(effectData, context);
 
@@ -1070,15 +1107,15 @@ export class RenderEngine {
   }
 
   /**
-   * Create offline mixer channel with basic processing
-   * Applies: Gain, Pan, 3-band EQ (without complex FX like reverb/delay)
+   * Create offline mixer channel with full processing
+   * Applies: Gain, Pan, 3-band EQ, and Mixer Insert Effects
    *
    * @param {AudioContext} offlineContext - Offline audio context
    * @param {AudioNode} sourceNode - Input audio node
    * @param {Object} mixerTrack - Mixer track settings from store
-   * @returns {AudioNode} - Output node after mixer processing
+   * @returns {Promise<AudioNode>} - Output node after mixer processing
    */
-  _createOfflineMixerChannel(offlineContext, sourceNode, mixerTrack) {
+  async _createOfflineMixerChannel(offlineContext, sourceNode, mixerTrack) {
     if (!mixerTrack) {
       console.warn('🎛️ No mixer track provided, bypassing mixer processing');
       return sourceNode;
@@ -1088,7 +1125,11 @@ export class RenderEngine {
       trackId: mixerTrack.id,
       trackName: mixerTrack.name,
       gain: mixerTrack.gain,
-      pan: mixerTrack.pan
+      pan: mixerTrack.pan,
+      hasEffects: !!mixerTrack.effects,
+      effectCount: mixerTrack.effects?.length || 0,
+      effectTypes: mixerTrack.effects?.map(e => e.type),
+      fullTrackData: JSON.stringify(mixerTrack, null, 2)
     });
 
     let currentNode = sourceNode;
@@ -1153,8 +1194,25 @@ export class RenderEngine {
       }
     }
 
-    // TODO: Complex FX (reverb, delay, compression) can be added here later
-    // For now, we skip them to keep rendering fast and simple
+    // 4. MIXER INSERT EFFECTS (Plugin chain)
+    // Effects are stored as 'insertEffects' in mixer store
+    const effects = mixerTrack.insertEffects || mixerTrack.effects || [];
+
+    if (effects.length > 0) {
+      console.log(`  🎛️ Applying ${effects.length} mixer insert effects...`);
+      console.log(`  🎛️ Effects:`, effects.map(e => `${e.type} (bypass: ${e.bypass})`));
+
+      try {
+        // Apply mixer effects chain (same method used for instrument effects)
+        const effectOutput = await this._applyEffectChain(effects, currentNode, offlineContext);
+        currentNode = effectOutput;
+        console.log(`  ✅ Mixer effects applied`);
+      } catch (error) {
+        console.error(`  ❌ Failed to apply mixer effects:`, error);
+      }
+    } else {
+      console.log(`  ℹ️ No mixer insert effects on this track`);
+    }
 
     console.log(`🎛️ Offline mixer channel created for ${mixerTrack.name}`);
     return currentNode;

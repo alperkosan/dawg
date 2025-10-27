@@ -100,21 +100,27 @@ export const VA_SYNTH_PRESETS = {
     name: 'Bass',
     presets: [
       { id: 'bass', name: 'Bass', presetName: 'Bass', color: '#87CEEB' },
-      { id: '808bass', name: '808 Bass', presetName: '808 Bass', color: '#9370DB' }
+      { id: '808bass', name: '808 Bass', presetName: '808 Bass', color: '#9370DB' },
+      { id: 'subbass', name: 'Sub Bass', presetName: 'Sub Bass', color: '#4B0082' },
+      { id: 'reesebass', name: 'Reese Bass', presetName: 'Reese Bass', color: '#8B008B' }
     ]
   },
   lead: {
     name: 'Lead',
     presets: [
       { id: 'classiclead', name: 'Classic Lead', presetName: 'Classic Lead', color: '#F08080' },
-      { id: 'pluck', name: 'Pluck', presetName: 'Pluck', color: '#DDA0DD' }
+      { id: 'pluck', name: 'Pluck', presetName: 'Pluck', color: '#DDA0DD' },
+      { id: 'supersawlead', name: 'Supersaw Lead', presetName: 'Supersaw Lead', color: '#FF1493' },
+      { id: 'acidlead', name: 'Acid Lead', presetName: 'Acid Lead', color: '#FF6347' }
     ]
   },
   pad: {
     name: 'Pad',
     presets: [
       { id: 'warmpad', name: 'Warm Pad', presetName: 'Warm Pad', color: '#D8BFD8' },
-      { id: 'strings', name: 'Strings', presetName: 'Strings', color: '#E6E6FA' }
+      { id: 'strings', name: 'Strings', presetName: 'Strings', color: '#E6E6FA' },
+      { id: 'lushpad', name: 'Lush Pad', presetName: 'Lush Pad', color: '#DDA0DD' },
+      { id: 'analogpad', name: 'Analog Pad', presetName: 'Analog Pad', color: '#BA55D3' }
     ]
   },
   other: {

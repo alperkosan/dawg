@@ -137,19 +137,57 @@ export class AudioExportManager {
                 // If needed, can be added to MixerInsert class later
                 lowGain: 0,
                 midGain: 0,
-                highGain: 0
+                highGain: 0,
+                // ✅ ADD: Effect chain from MixerInsert
+                // insert.effects is a Map, not an array
+                insertEffects: insert.effects && insert.effects.size > 0
+                  ? Array.from(insert.effects.entries()).map(([effectId, effect]) => ({
+                      id: effectId,
+                      type: effect.type,
+                      bypass: effect.bypass || false,
+                      settings: effect.settings || {}
+                    }))
+                  : []
               };
               console.log(`🎛️ Collected mixer insert ${mixerTrackId}:`, {
                 gain: insert.gainNode.gain.value,
-                pan: insert.panNode.pan.value
+                pan: insert.panNode.pan.value,
+                effectCount: insert.effects?.size || 0
               });
             }
           }
         }
       });
 
+      // ✅ ADD: Collect master channel effects
+      const masterInsert = audioEngine.mixerInserts?.get('master');
+      if (masterInsert) {
+        relevantMixerTracks['master'] = {
+          id: 'master',
+          name: 'Master',
+          gain: masterInsert.gainNode.gain.value,
+          pan: masterInsert.panNode.pan.value,
+          lowGain: 0,
+          midGain: 0,
+          highGain: 0,
+          insertEffects: masterInsert.effects && masterInsert.effects.size > 0
+            ? Array.from(masterInsert.effects.entries()).map(([effectId, effect]) => ({
+                id: effectId,
+                type: effect.type,
+                bypass: effect.bypass || false,
+                settings: effect.settings || {}
+              }))
+            : []
+        };
+        console.log(`🎛️ Collected MASTER channel:`, {
+          gain: masterInsert.gainNode.gain.value,
+          effectCount: masterInsert.effects?.size || 0,
+          effects: masterInsert.effects ? Array.from(masterInsert.effects.values()).map(e => e.type) : []
+        });
+      }
+
       console.log(`🎵 Collected ${Object.keys(relevantInstruments).length} instrument definitions for rendering`);
-      console.log(`🎛️ Collected ${Object.keys(relevantMixerTracks).length} mixer inserts for rendering`);
+      console.log(`🎛️ Collected ${Object.keys(relevantMixerTracks).length} mixer inserts for rendering (including master)`);
 
       // Attach instruments and mixer tracks to patternData for rendering
       patternData.instruments = relevantInstruments;

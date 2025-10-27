@@ -1,13 +1,16 @@
-/* WaveformDisplay - Zenith Design System */
+/**
+ * WaveformDisplay Styles
+ * Uses Zenith design system for consistency
+ */
 
 .waveform-display {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 12px;
-  background: var(--zenith-bg-secondary, #1a1a1a);
-  border: 1px solid var(--zenith-border-subtle, #3a3a3a);
-  border-radius: 8px;
+  gap: var(--zenith-space-2, 0.5rem);
+  padding: var(--zenith-space-3, 0.75rem);
+  background: var(--zenith-bg-secondary);
+  border: 1px solid var(--zenith-border-subtle);
+  border-radius: var(--border-radius-md, 8px);
 }
 
 .waveform-display--empty {
@@ -18,8 +21,8 @@
 }
 
 .waveform-display__empty-message {
-  font-size: 13px;
-  color: var(--zenith-text-muted, #666);
+  font-size: var(--zenith-text-sm, 0.75rem);
+  color: var(--zenith-text-tertiary);
 }
 
 /* Toolbar */
@@ -27,71 +30,71 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--zenith-border-subtle, #3a3a3a);
-  gap: 12px;
+  padding-bottom: var(--zenith-space-2, 0.5rem);
+  border-bottom: 1px solid var(--zenith-border-subtle);
+  gap: var(--zenith-space-3, 0.75rem);
 }
 
 .waveform-display__mode-buttons {
   display: flex;
-  gap: 4px;
+  gap: var(--zenith-space-1, 0.25rem);
 }
 
 .waveform-display__mode-btn {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  background: var(--zenith-overlay-subtle, rgba(255, 255, 255, 0.05));
-  border: 1px solid var(--zenith-border-subtle, #3a3a3a);
-  border-radius: 6px;
-  color: var(--zenith-text-secondary, #b0b0b0);
-  font-size: 12px;
-  font-weight: 500;
+  gap: var(--zenith-space-2, 0.5rem);
+  padding: var(--zenith-space-2, 0.5rem) var(--zenith-space-3, 0.75rem);
+  background: var(--zenith-overlay-light);
+  border: 1px solid var(--zenith-border-subtle);
+  border-radius: var(--border-radius-sm, 6px);
+  color: var(--zenith-text-secondary);
+  font-size: var(--zenith-text-xs, 0.625rem);
+  font-weight: var(--zenith-weight-medium, 500);
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
 .waveform-display__mode-btn:hover {
-  background: var(--zenith-overlay-medium, rgba(255, 255, 255, 0.1));
-  border-color: var(--zenith-accent-cool, #6B8EBF);
-  color: var(--zenith-text-primary, #e0e0e0);
+  background: var(--zenith-overlay-medium);
+  border-color: var(--zenith-accent-cold);
+  color: var(--zenith-text-primary);
 }
 
 .waveform-display__mode-btn--active {
-  background: var(--zenith-accent-cool, #6B8EBF);
-  border-color: var(--zenith-accent-cool, #6B8EBF);
-  color: white;
-  box-shadow: 0 0 8px var(--zenith-overlay-accent-cool, rgba(107, 142, 191, 0.4));
+  background: var(--zenith-accent-cold);
+  border-color: var(--zenith-accent-cold);
+  color: var(--zenith-text-primary);
+  box-shadow: 0 0 8px rgba(var(--zenith-accent-cool-rgb), 0.4);
 }
 
 .waveform-display__mode-btn--active:hover {
-  background: var(--zenith-accent-cool, #6B8EBF);
-  filter: brightness(1.1);
+  background: var(--zenith-accent-cold);
+  opacity: 0.9;
 }
 
 .waveform-display__info {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--zenith-space-3, 0.75rem);
 }
 
 .waveform-display__time {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--zenith-text-primary, #e0e0e0);
+  font-size: var(--zenith-text-sm, 0.75rem);
+  font-weight: var(--zenith-weight-semibold, 600);
+  color: var(--zenith-text-primary);
   font-variant-numeric: tabular-nums;
 }
 
 .waveform-display__details {
-  font-size: 11px;
-  color: var(--zenith-text-tertiary, #888);
+  font-size: var(--zenith-text-xs, 0.625rem);
+  color: var(--zenith-text-tertiary);
 }
 
 .waveform-display__zoom-level {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--zenith-text-tertiary, #888);
+  font-size: var(--zenith-text-xs, 0.625rem);
+  font-weight: var(--zenith-weight-semibold, 600);
+  color: var(--zenith-text-tertiary);
   min-width: 40px;
   text-align: center;
   font-variant-numeric: tabular-nums;
@@ -101,9 +104,9 @@
 .waveform-display__canvas-container {
   position: relative;
   width: 100%;
-  background: var(--zenith-bg-primary, #0d0d0d);
-  border: 1px solid var(--zenith-border-subtle, #3a3a3a);
-  border-radius: 6px;
+  background: var(--zenith-bg-primary);
+  border: 1px solid var(--zenith-border-subtle);
+  border-radius: var(--border-radius-sm, 6px);
   overflow: hidden;
   box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.3);
 }
@@ -116,58 +119,58 @@
 
 .waveform-display__mode-indicator {
   position: absolute;
-  bottom: 8px;
+  bottom: var(--zenith-space-2, 0.5rem);
   left: 50%;
   transform: translateX(-50%);
-  padding: 4px 12px;
-  background: var(--zenith-overlay-strong, rgba(0, 0, 0, 0.8));
-  border: 1px solid var(--zenith-border-subtle, #3a3a3a);
-  border-radius: 4px;
-  font-size: 11px;
-  color: var(--zenith-text-secondary, #b0b0b0);
+  padding: var(--zenith-space-1, 0.25rem) var(--zenith-space-3, 0.75rem);
+  background: rgba(0, 0, 0, 0.8);
+  border: 1px solid var(--zenith-border-subtle);
+  border-radius: var(--border-radius-sm, 4px);
+  font-size: var(--zenith-text-xs, 0.625rem);
+  color: var(--zenith-text-secondary);
   pointer-events: none;
   backdrop-filter: blur(4px);
 }
 
 /* Footer */
 .waveform-display__footer {
-  padding-top: 8px;
-  border-top: 1px solid var(--zenith-border-subtle, #3a3a3a);
+  padding-top: var(--zenith-space-2, 0.5rem);
+  border-top: 1px solid var(--zenith-border-subtle);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--zenith-space-3, 0.75rem);
 }
 
 .waveform-display__footer-hint {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 10px;
-  color: var(--zenith-text-tertiary, #888);
+  gap: var(--zenith-space-2, 0.5rem);
+  font-size: var(--zenith-text-xs, 0.625rem);
+  color: var(--zenith-text-tertiary);
   flex-wrap: wrap;
 }
 
 .waveform-display__footer-hint strong {
-  color: var(--zenith-text-secondary, #b0b0b0);
-  font-weight: 600;
+  color: var(--zenith-text-secondary);
+  font-weight: var(--zenith-weight-semibold, 600);
 }
 
 .waveform-display__reset-btn {
-  padding: 4px 12px;
-  background: var(--zenith-overlay-subtle, rgba(255, 255, 255, 0.05));
-  border: 1px solid var(--zenith-border-subtle, #3a3a3a);
-  border-radius: 4px;
-  color: var(--zenith-text-secondary, #b0b0b0);
-  font-size: 11px;
-  font-weight: 500;
+  padding: var(--zenith-space-1, 0.25rem) var(--zenith-space-3, 0.75rem);
+  background: var(--zenith-overlay-light);
+  border: 1px solid var(--zenith-border-subtle);
+  border-radius: var(--border-radius-sm, 4px);
+  color: var(--zenith-text-secondary);
+  font-size: var(--zenith-text-xs, 0.625rem);
+  font-weight: var(--zenith-weight-medium, 500);
   cursor: pointer;
   transition: all 0.15s ease;
   white-space: nowrap;
 }
 
 .waveform-display__reset-btn:hover {
-  background: var(--zenith-overlay-medium, rgba(255, 255, 255, 0.1));
-  border-color: var(--zenith-accent-cool, #6B8EBF);
-  color: var(--zenith-text-primary, #e0e0e0);
+  background: var(--zenith-overlay-medium);
+  border-color: var(--zenith-accent-cold);
+  color: var(--zenith-text-primary);
 }

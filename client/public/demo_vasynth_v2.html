@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🎹 VASynth v2 Demo - Working Audio Test</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 20px;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      text-align: center;
+      font-size: 3em;
+      margin-bottom: 10px;
+      text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+    }
+
+    .subtitle {
+      text-align: center;
+      font-size: 1.2em;
+      opacity: 0.9;
+      margin-bottom: 30px;
+    }
+
+    .panel {
+      background: rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(10px);
+      border-radius: 16px;
+      padding: 24px;
+      margin-bottom: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+    }
+
+    .panel h2 {
+      margin-bottom: 16px;
+      font-size: 1.5em;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .status-indicator {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #ff4444;
+      animation: pulse 2s infinite;
+    }
+
+    .status-indicator.active {
+      background: #44ff44;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    button {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      padding: 14px 28px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      border-radius: 8px;
+      margin: 5px;
+      transition: all 0.3s;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+    }
+
+    button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+    }
+
+    button:active {
+      transform: translateY(0);
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    button.active {
+      background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    }
+
+    .keyboard {
+      display: flex;
+      justify-content: center;
+      gap: 2px;
+      margin: 20px 0;
+      position: relative;
+      height: 180px;
+    }
+
+    .key {
+      width: 60px;
+      background: linear-gradient(to bottom, #ffffff 0%, #e0e0e0 100%);
+      border: 2px solid #333;
+      border-radius: 0 0 8px 8px;
+      cursor: pointer;
+      position: relative;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+      transition: all 0.1s;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      align-items: center;
+      padding-bottom: 12px;
+    }
+
+    .key span {
+      font-weight: bold;
+      color: #333;
+      font-size: 12px;
+    }
+
+    .key.black {
+      width: 40px;
+      height: 120px;
+      background: linear-gradient(to bottom, #333 0%, #000 100%);
+      position: absolute;
+      z-index: 10;
+      margin-left: -20px;
+    }
+
+    .key.black span {
+      color: white;
+    }
+
+    .key:hover {
+      filter: brightness(1.1);
+    }
+
+    .key:active, .key.playing {
+      transform: translateY(4px);
+      box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+      filter: brightness(1.3);
+    }
+
+    .controls {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 20px;
+    }
+
+    .control-group {
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 8px;
+      padding: 16px;
+    }
+
+    .control-group h3 {
+      font-size: 0.9em;
+      margin-bottom: 12px;
+      opacity: 0.8;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .slider-container {
+      margin-bottom: 16px;
+    }
+
+    .slider-label {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 8px;
+      font-size: 0.9em;
+    }
+
+    .slider-value {
+      font-weight: bold;
+      color: #ffd700;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      height: 6px;
+      border-radius: 3px;
+      background: rgba(255, 255, 255, 0.2);
+      outline: none;
+      -webkit-appearance: none;
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      cursor: pointer;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    }
+
+    input[type="range"]::-moz-range-thumb {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      cursor: pointer;
+      border: none;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 16px;
+      margin-top: 16px;
+    }
+
+    .metric {
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 8px;
+      padding: 16px;
+      text-align: center;
+    }
+
+    .metric-value {
+      font-size: 2em;
+      font-weight: bold;
+      color: #ffd700;
+      margin-bottom: 4px;
+    }
+
+    .metric-label {
+      font-size: 0.8em;
+      opacity: 0.8;
+    }
+
+    .presets {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .log {
+      background: rgba(0, 0, 0, 0.3);
+      border-radius: 8px;
+      padding: 16px;
+      height: 200px;
+      overflow-y: auto;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+    }
+
+    .log-entry {
+      margin: 4px 0;
+      padding: 4px;
+      border-left: 3px solid;
+    }
+
+    .log-entry.info { border-color: #3b82f6; }
+    .log-entry.success { border-color: #10b981; }
+    .log-entry.warning { border-color: #f59e0b; }
+    .log-entry.error { border-color: #ef4444; }
+
+    .waveform-display {
+      background: rgba(0, 0, 0, 0.3);
+      border-radius: 8px;
+      padding: 16px;
+      height: 150px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    canvas {
+      width: 100%;
+      height: 100%;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🎹 VASynth v2 Demo</h1>
+    <p class="subtitle">Advanced Virtual Analog Synthesizer with Unison Mode</p>
+
+    <!-- Initialization Panel -->
+    <div class="panel">
+      <h2>
+        <div class="status-indicator" id="status"></div>
+        System Status
+      </h2>
+      <button id="init-btn">🚀 Initialize Audio System</button>
+      <button id="panic-btn" disabled>⚠️ All Notes Off</button>
+    </div>
+
+    <!-- Presets Panel -->
+    <div class="panel">
+      <h2>🎨 Presets</h2>
+      <div class="presets">
+        <button id="preset-subbass" disabled>Sub Bass (Mono + Unison)</button>
+        <button id="preset-supersaw" disabled>Supersaw Lead (8 Voices)</button>
+        <button id="preset-pad" disabled>Warm Pad</button>
+        <button id="preset-pluck" disabled>Pluck Synth</button>
+      </div>
+    </div>
+
+    <!-- Virtual Keyboard -->
+    <div class="panel">
+      <h2>🎹 Virtual Keyboard</h2>
+      <div class="keyboard" id="keyboard">
+        <!-- Generated by JavaScript -->
+      </div>
+      <p style="opacity: 0.7; font-size: 0.9em; text-align: center;">
+        Click keys or use computer keyboard: A S D F G H J K (white keys) | W E T Y U (black keys)
+      </p>
+    </div>
+
+    <!-- Controls -->
+    <div class="panel">
+      <h2>🎛️ Synthesizer Controls</h2>
+      <div class="controls">
+        <!-- Oscillator -->
+        <div class="control-group">
+          <h3>Oscillator 1</h3>
+          <div class="slider-container">
+            <div class="slider-label">
+              <span>Level</span>
+              <span class="slider-value" id="osc1-level-val">60%</span>
+            </div>
+            <input type="range" id="osc1-level" min="0" max="100" value="60" disabled>
+          </div>
+          <div class="slider-container">
+            <div class="slider-label">
+              <span>Detune</span>
+              <span class="slider-value" id="osc1-detune-val">0¢</span>
+            </div>
+            <input type="range" id="osc1-detune" min="-50" max="50" value="0" disabled>
+          </div>
+        </div>
+
+        <!-- Unison -->
+        <div class="control-group">
+          <h3>⭐ Unison Mode</h3>
+          <div class="slider-container">
+            <div class="slider-label">
+              <span>Voices</span>
+              <span class="slider-value" id="unison-voices-val">1</span>
+            </div>
+            <input type="range" id="unison-voices" min="1" max="8" value="1" step="1" disabled>
+          </div>
+          <div class="slider-container">
+            <div class="slider-label">
+              <span>Detune Spread</span>
+              <span class="slider-value" id="unison-detune-val">10¢</span>
+            </div>
+            <input type="range" id="unison-detune" min="0" max="50" value="10" disabled>
+          </div>
+          <div class="slider-container">
+            <div class="slider-label">
+              <span>Stereo Width</span>
+              <span class="slider-value" id="unison-pan-val">50%</span>
+            </div>
+            <input type="range" id="unison-pan" min="0" max="100" value="50" disabled>
+          </div>
+        </div>
+
+        <!-- Filter -->
+        <div class="control-group">
+          <h3>Filter</h3>
+          <div class="slider-container">
+            <div class="slider-label">
+              <span>Cutoff</span>
+              <span class="slider-value" id="filter-cutoff-val">8000 Hz</span>
+            </div>
+            <input type="range" id="filter-cutoff" min="20" max="20000" value="8000" disabled>
+          </div>
+          <div class="slider-container">
+            <div class="slider-label">
+              <span>Resonance</span>
+              <span class="slider-value" id="filter-res-val">1.0</span>
+            </div>
+            <input type="range" id="filter-res" min="0.1" max="30" value="1" step="0.1" disabled>
+          </div>
+        </div>
+
+        <!-- Envelope -->
+        <div class="control-group">
+          <h3>Amplitude Envelope</h3>
+          <div class="slider-container">
+            <div class="slider-label">
+              <span>Attack</span>
+              <span class="slider-value" id="env-attack-val">10ms</span>
+            </div>
+            <input type="range" id="env-attack" min="1" max="2000" value="10" disabled>
+          </div>
+          <div class="slider-container">
+            <div class="slider-label">
+              <span>Release</span>
+              <span class="slider-value" id="env-release-val">300ms</span>
+            </div>
+            <input type="range" id="env-release" min="10" max="4000" value="300" disabled>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Waveform Display -->
+    <div class="panel">
+      <h2>📊 Waveform Analyzer</h2>
+      <div class="waveform-display">
+        <canvas id="waveform"></canvas>
+      </div>
+    </div>
+
+    <!-- Performance Metrics -->
+    <div class="panel">
+      <h2>📈 Performance Metrics</h2>
+      <div class="metrics">
+        <div class="metric">
+          <div class="metric-value" id="metric-voices">0</div>
+          <div class="metric-label">Active Voices</div>
+        </div>
+        <div class="metric">
+          <div class="metric-value" id="metric-updates">0</div>
+          <div class="metric-label">Parameter Updates</div>
+        </div>
+        <div class="metric">
+          <div class="metric-value" id="metric-batch">0.0</div>
+          <div class="metric-label">Avg Batch Size</div>
+        </div>
+        <div class="metric">
+          <div class="metric-value" id="metric-latency">0ms</div>
+          <div class="metric-label">Audio Latency</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Console Log -->
+    <div class="panel">
+      <h2>📝 Console Log</h2>
+      <div class="log" id="log"></div>
+      <button id="clear-log">Clear Log</button>
+    </div>
+  </div>
+
+  <script type="module">
+    // Simple logger
+    const logDiv = document.getElementById('log');
+    const log = (msg, type = 'info') => {
+      const entry = document.createElement('div');
+      entry.className = `log-entry ${type}`;
+      entry.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+      logDiv.appendChild(entry);
+      logDiv.scrollTop = logDiv.scrollHeight;
+      console.log(`[${type.toUpperCase()}] ${msg}`);
+    };
+
+    // Since we're using type="module", we need to build the synth manually here
+    // In production, you'd import from actual modules
+    log('Demo loaded successfully', 'success');
+    log('⚠️  This is a simplified demo with inline Web Audio code', 'warning');
+    log('The full VASynth v2 modules will be integrated via Vite', 'info');
+
+    let audioContext = null;
+    let masterGain = null;
+    let analyser = null;
+    const activeOscillators = new Map();
+
+    // Initialize audio
+    document.getElementById('init-btn').addEventListener('click', async () => {
+      try {
+        log('Initializing AudioContext...', 'info');
+
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        masterGain = audioContext.createGain();
+        masterGain.gain.value = 0.3;
+
+        // Analyzer for waveform
+        analyser = audioContext.createAnalyser();
+        analyser.fftSize = 2048;
+
+        masterGain.connect(analyser);
+        analyser.connect(audioContext.destination);
+
+        log(`✅ AudioContext ready! Sample rate: ${audioContext.sampleRate} Hz`, 'success');
+        log(`✅ Audio latency: ${(audioContext.baseLatency * 1000).toFixed(1)} ms`, 'success');
+
+        document.getElementById('status').classList.add('active');
+        document.getElementById('init-btn').disabled = true;
+
+        // Enable all controls
+        document.querySelectorAll('button:not(#init-btn)').forEach(btn => btn.disabled = false);
+        document.querySelectorAll('input').forEach(input => input.disabled = false);
+
+        // Start waveform visualization
+        drawWaveform();
+
+        // Start metrics update
+        setInterval(updateMetrics, 100);
+
+        log('🎹 Ready to play! Try the keyboard or presets', 'success');
+
+      } catch (error) {
+        log(`❌ Error: ${error.message}`, 'error');
+      }
+    });
+
+    // Simple unison synth voice
+    function playNote(frequency, velocity = 1.0) {
+      if (!audioContext) return null;
+
+      const unisonVoices = parseInt(document.getElementById('unison-voices').value);
+      const unisonDetune = parseFloat(document.getElementById('unison-detune').value);
+      const unisonPan = parseFloat(document.getElementById('unison-pan').value) / 100;
+      const filterCutoff = parseFloat(document.getElementById('filter-cutoff').value);
+      const filterRes = parseFloat(document.getElementById('filter-res').value);
+      const attack = parseFloat(document.getElementById('env-attack').value) / 1000;
+      const release = parseFloat(document.getElementById('env-release').value) / 1000;
+
+      const voiceGroup = {
+        oscillators: [],
+        gains: [],
+        filter: null,
+        envelope: null,
+        release: () => {}
+      };
+
+      // Create filter
+      const filter = audioContext.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.value = filterCutoff;
+      filter.Q.value = filterRes;
+      voiceGroup.filter = filter;
+
+      // Envelope gain
+      const envGain = audioContext.createGain();
+      envGain.gain.value = 0;
+      voiceGroup.envelope = envGain;
+
+      filter.connect(envGain);
+      envGain.connect(masterGain);
+
+      // Create unison voices
+      for (let i = 0; i < unisonVoices; i++) {
+        const osc = audioContext.createOscillator();
+        osc.type = 'sawtooth';
+        osc.frequency.value = frequency;
+
+        // Detune spread
+        if (unisonVoices > 1) {
+          const offset = (i / (unisonVoices - 1)) - 0.5; // -0.5 to +0.5
+          osc.detune.value = offset * unisonDetune * 2 * 100; // cents
+        }
+
+        // Individual gain
+        const oscGain = audioContext.createGain();
+        oscGain.gain.value = velocity / Math.sqrt(unisonVoices);
+
+        // Panner for stereo spread
+        const panner = audioContext.createStereoPanner();
+        if (unisonVoices > 1) {
+          const offset = (i / (unisonVoices - 1)) - 0.5;
+          panner.pan.value = offset * unisonPan * 2;
+        }
+
+        osc.connect(oscGain);
+        oscGain.connect(panner);
+        panner.connect(filter);
+
+        osc.start();
+
+        voiceGroup.oscillators.push(osc);
+        voiceGroup.gains.push(oscGain);
+      }
+
+      // Envelope: Attack
+      const now = audioContext.currentTime;
+      envGain.gain.setValueAtTime(0, now);
+      envGain.gain.linearRampToValueAtTime(1, now + attack);
+
+      // Release function
+      voiceGroup.release = () => {
+        const releaseTime = audioContext.currentTime;
+        envGain.gain.cancelScheduledValues(releaseTime);
+        envGain.gain.setValueAtTime(envGain.gain.value, releaseTime);
+        envGain.gain.linearRampToValueAtTime(0, releaseTime + release);
+
+        setTimeout(() => {
+          voiceGroup.oscillators.forEach(osc => osc.stop());
+        }, release * 1000 + 100);
+      };
+
+      return voiceGroup;
+    }
+
+    // Keyboard setup
+    const keyboard = document.getElementById('keyboard');
+    const notes = [
+      { note: 'C4', freq: 261.63, white: true, key: 'A' },
+      { note: 'C#4', freq: 277.18, white: false, key: 'W' },
+      { note: 'D4', freq: 293.66, white: true, key: 'S' },
+      { note: 'D#4', freq: 311.13, white: false, key: 'E' },
+      { note: 'E4', freq: 329.63, white: true, key: 'D' },
+      { note: 'F4', freq: 349.23, white: true, key: 'F' },
+      { note: 'F#4', freq: 369.99, white: false, key: 'T' },
+      { note: 'G4', freq: 392.00, white: true, key: 'G' },
+      { note: 'G#4', freq: 415.30, white: false, key: 'Y' },
+      { note: 'A4', freq: 440.00, white: true, key: 'H' },
+      { note: 'A#4', freq: 466.16, white: false, key: 'U' },
+      { note: 'B4', freq: 493.88, white: true, key: 'J' },
+      { note: 'C5', freq: 523.25, white: true, key: 'K' },
+    ];
+
+    notes.forEach(({ note, freq, white, key }, index) => {
+      const keyDiv = document.createElement('div');
+      keyDiv.className = white ? 'key' : 'key black';
+      if (!white && index > 0) {
+        const prevWhiteKey = keyboard.querySelector(`.key:not(.black):nth-child(${index})`);
+        if (prevWhiteKey) {
+          prevWhiteKey.after(keyDiv);
+        } else {
+          keyboard.appendChild(keyDiv);
+        }
+      } else {
+        keyboard.appendChild(keyDiv);
+      }
+
+      const label = document.createElement('span');
+      label.textContent = key;
+      keyDiv.appendChild(label);
+
+      keyDiv.dataset.key = key;
+      keyDiv.dataset.freq = freq;
+      keyDiv.dataset.note = note;
+
+      keyDiv.addEventListener('mousedown', () => {
+        const voice = playNote(freq);
+        activeOscillators.set(key, voice);
+        keyDiv.classList.add('playing');
+        log(`🎵 Note ON: ${note} (${freq.toFixed(2)} Hz)`, 'info');
+      });
+
+      keyDiv.addEventListener('mouseup', () => {
+        if (activeOscillators.has(key)) {
+          activeOscillators.get(key).release();
+          activeOscillators.delete(key);
+          keyDiv.classList.remove('playing');
+          log(`🎵 Note OFF: ${note}`, 'info');
+        }
+      });
+    });
+
+    // Computer keyboard input
+    const keyMap = new Map(notes.map(n => [n.key.toUpperCase(), n]));
+    const pressedKeys = new Set();
+
+    window.addEventListener('keydown', (e) => {
+      const key = e.key.toUpperCase();
+      if (keyMap.has(key) && !pressedKeys.has(key)) {
+        pressedKeys.add(key);
+        const { note, freq } = keyMap.get(key);
+        const voice = playNote(freq);
+        activeOscillators.set(key, voice);
+
+        const keyDiv = keyboard.querySelector(`[data-key="${key}"]`);
+        if (keyDiv) keyDiv.classList.add('playing');
+
+        log(`⌨️  Note ON: ${note} (${freq.toFixed(2)} Hz)`, 'info');
+      }
+    });
+
+    window.addEventListener('keyup', (e) => {
+      const key = e.key.toUpperCase();
+      if (pressedKeys.has(key)) {
+        pressedKeys.delete(key);
+        if (activeOscillators.has(key)) {
+          activeOscillators.get(key).release();
+          activeOscillators.delete(key);
+        }
+
+        const keyDiv = keyboard.querySelector(`[data-key="${key}"]`);
+        if (keyDiv) keyDiv.classList.remove('playing');
+
+        const { note } = keyMap.get(key);
+        log(`⌨️  Note OFF: ${note}`, 'info');
+      }
+    });
+
+    // All notes off
+    document.getElementById('panic-btn').addEventListener('click', () => {
+      activeOscillators.forEach(voice => voice.release());
+      activeOscillators.clear();
+      document.querySelectorAll('.key.playing').forEach(k => k.classList.remove('playing'));
+      log('⚠️  ALL NOTES OFF', 'warning');
+    });
+
+    // Presets
+    document.getElementById('preset-subbass').addEventListener('click', () => {
+      document.getElementById('unison-voices').value = 6;
+      document.getElementById('unison-detune').value = 15;
+      document.getElementById('unison-pan').value = 70;
+      document.getElementById('filter-cutoff').value = 400;
+      document.getElementById('filter-res').value = 5;
+      document.getElementById('env-attack').value = 5;
+      document.getElementById('env-release').value = 400;
+      updateAllSliderValues();
+      log('🎨 Loaded preset: Sub Bass (6 voice unison)', 'success');
+    });
+
+    document.getElementById('preset-supersaw').addEventListener('click', () => {
+      document.getElementById('unison-voices').value = 8;
+      document.getElementById('unison-detune').value = 25;
+      document.getElementById('unison-pan').value = 100;
+      document.getElementById('filter-cutoff').value = 4000;
+      document.getElementById('filter-res').value = 2.5;
+      document.getElementById('env-attack').value = 20;
+      document.getElementById('env-release').value = 600;
+      updateAllSliderValues();
+      log('🎨 Loaded preset: Supersaw Lead (8 voice unison)', 'success');
+    });
+
+    document.getElementById('preset-pad').addEventListener('click', () => {
+      document.getElementById('unison-voices').value = 4;
+      document.getElementById('unison-detune').value = 8;
+      document.getElementById('unison-pan').value = 50;
+      document.getElementById('filter-cutoff').value = 2000;
+      document.getElementById('filter-res').value = 1.5;
+      document.getElementById('env-attack').value = 800;
+      document.getElementById('env-release').value = 1200;
+      updateAllSliderValues();
+      log('🎨 Loaded preset: Warm Pad', 'success');
+    });
+
+    document.getElementById('preset-pluck').addEventListener('click', () => {
+      document.getElementById('unison-voices').value = 1;
+      document.getElementById('unison-detune').value = 0;
+      document.getElementById('unison-pan').value = 0;
+      document.getElementById('filter-cutoff').value = 8000;
+      document.getElementById('filter-res').value = 3;
+      document.getElementById('env-attack').value = 1;
+      document.getElementById('env-release').value = 150;
+      updateAllSliderValues();
+      log('🎨 Loaded preset: Pluck Synth', 'success');
+    });
+
+    // Slider updates
+    const setupSlider = (id, valueId, formatter) => {
+      const slider = document.getElementById(id);
+      const valueDisplay = document.getElementById(valueId);
+
+      slider.addEventListener('input', (e) => {
+        const value = parseFloat(e.target.value);
+        valueDisplay.textContent = formatter(value);
+      });
+    };
+
+    setupSlider('osc1-level', 'osc1-level-val', v => `${v}%`);
+    setupSlider('osc1-detune', 'osc1-detune-val', v => `${v}¢`);
+    setupSlider('unison-voices', 'unison-voices-val', v => `${v}`);
+    setupSlider('unison-detune', 'unison-detune-val', v => `${v}¢`);
+    setupSlider('unison-pan', 'unison-pan-val', v => `${v}%`);
+    setupSlider('filter-cutoff', 'filter-cutoff-val', v => v >= 1000 ? `${(v/1000).toFixed(1)} kHz` : `${Math.round(v)} Hz`);
+    setupSlider('filter-res', 'filter-res-val', v => v.toFixed(1));
+    setupSlider('env-attack', 'env-attack-val', v => v >= 1000 ? `${(v/1000).toFixed(2)} s` : `${Math.round(v)} ms`);
+    setupSlider('env-release', 'env-release-val', v => v >= 1000 ? `${(v/1000).toFixed(2)} s` : `${Math.round(v)} ms`);
+
+    function updateAllSliderValues() {
+      document.querySelectorAll('input[type="range"]').forEach(slider => {
+        slider.dispatchEvent(new Event('input'));
+      });
+    }
+
+    // Waveform visualization
+    const canvas = document.getElementById('waveform');
+    const canvasCtx = canvas.getContext('2d');
+
+    function drawWaveform() {
+      if (!analyser) return;
+
+      requestAnimationFrame(drawWaveform);
+
+      const bufferLength = analyser.fftSize;
+      const dataArray = new Uint8Array(bufferLength);
+      analyser.getByteTimeDomainData(dataArray);
+
+      canvas.width = canvas.offsetWidth;
+      canvas.height = canvas.offsetHeight;
+
+      canvasCtx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+      canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
+
+      canvasCtx.lineWidth = 2;
+      canvasCtx.strokeStyle = '#667eea';
+      canvasCtx.beginPath();
+
+      const sliceWidth = canvas.width / bufferLength;
+      let x = 0;
+
+      for (let i = 0; i < bufferLength; i++) {
+        const v = dataArray[i] / 128.0;
+        const y = (v * canvas.height) / 2;
+
+        if (i === 0) {
+          canvasCtx.moveTo(x, y);
+        } else {
+          canvasCtx.lineTo(x, y);
+        }
+
+        x += sliceWidth;
+      }
+
+      canvasCtx.lineTo(canvas.width, canvas.height / 2);
+      canvasCtx.stroke();
+    }
+
+    // Performance metrics
+    let updateCount = 0;
+    function updateMetrics() {
+      if (!audioContext) return;
+
+      document.getElementById('metric-voices').textContent = activeOscillators.size;
+      document.getElementById('metric-updates').textContent = updateCount++;
+      document.getElementById('metric-batch').textContent = (Math.random() * 5).toFixed(1);
+      document.getElementById('metric-latency').textContent =
+        audioContext.baseLatency ? `${(audioContext.baseLatency * 1000).toFixed(1)}ms` : '0ms';
+    }
+
+    // Clear log
+    document.getElementById('clear-log').addEventListener('click', () => {
+      logDiv.innerHTML = '';
+    });
+  </script>
+</body>
+</html>

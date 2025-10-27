@@ -302,6 +302,31 @@ export class EffectRegistry {
       ]
     });
 
+    // Maximizer - Loudness Maximizer (Master Chain)
+    this.register('Maximizer', {
+      workletPath: '/worklets/effects/maximizer-processor.js',
+      processorName: 'maximizer-processor',
+      parameters: [
+        { name: 'inputGain', defaultValue: 0, minValue: -12, maxValue: 12 },
+        { name: 'saturation', defaultValue: 0.3, minValue: 0, maxValue: 1 },
+        { name: 'ceiling', defaultValue: -0.1, minValue: -6, maxValue: 0 },
+        { name: 'release', defaultValue: 0.1, minValue: 0.01, maxValue: 1 },
+        { name: 'wet', defaultValue: 1.0, minValue: 0, maxValue: 1 }
+      ]
+    });
+
+    // Imager - Stereo Width Control (Master Chain)
+    this.register('Imager', {
+      workletPath: '/worklets/effects/imager-processor.js',
+      processorName: 'imager-processor',
+      parameters: [
+        { name: 'width', defaultValue: 1.0, minValue: 0, maxValue: 2 },
+        { name: 'midGain', defaultValue: 1.0, minValue: 0, maxValue: 2 },
+        { name: 'sideGain', defaultValue: 1.0, minValue: 0, maxValue: 2 },
+        { name: 'wet', defaultValue: 1.0, minValue: 0, maxValue: 1 }
+      ]
+    });
+
     console.log(`📚 EffectRegistry: Registered ${this.effects.size} effects`);
   }
 

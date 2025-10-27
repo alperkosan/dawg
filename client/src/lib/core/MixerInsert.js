@@ -377,6 +377,28 @@ export class MixerInsert {
   }
 
   /**
+   * Solo toggle
+   * @param {boolean} soloed - Whether this channel is soloed
+   * @param {boolean} isAnySoloed - Whether any channel is soloed
+   */
+  setSolo(soloed, isAnySoloed) {
+    if (isAnySoloed) {
+      // If any channel is soloed, mute all non-soloed channels
+      if (!soloed) {
+        this.setMute(true);
+      } else {
+        this.setMute(false);
+      }
+    } else {
+      // No solo active, restore normal mute state
+      // This will be handled by store's mutedChannels state
+      this.setMute(false);
+    }
+
+    console.log(`🎧 ${this.insertId}: Solo=${soloed}, AnySoloed=${isAnySoloed}`);
+  }
+
+  /**
    * Master bus'a bağla
    */
   connectToMaster(masterInput) {

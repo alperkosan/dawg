@@ -789,18 +789,37 @@ export class NativeAudioEngine {
     }
 
     setChannelMute(channelId, muted) {
-        if (!this.unifiedMixer) {
-            console.warn('⚠️ UnifiedMixer not initialized');
-            return;
-        }
+        console.log('🔇 NativeAudioEngine.setChannelMute:', channelId, muted);
 
-        const channelIdx = this._getUnifiedMixerChannelIndex(channelId);
-        if (channelIdx !== -1) {
-            this.unifiedMixer.setChannelParams(channelIdx, { mute: muted });
+        const insert = this.mixerInserts.get(channelId);
+        if (insert && typeof insert.setMute === 'function') {
+            insert.setMute(muted);
+        } else {
+            console.warn(`⚠️ MixerInsert not found for channel: ${channelId}`);
         }
     }
 
-    // ⚠️ REMOVED: setChannelMono (not supported in UnifiedMixer - use pan instead)
+    setChannelMono(channelId, mono) {
+        console.log('📻 NativeAudioEngine.setChannelMono:', channelId, mono);
+
+        const insert = this.mixerInserts.get(channelId);
+        if (insert && typeof insert.setMono === 'function') {
+            insert.setMono(mono);
+        } else {
+            console.warn(`⚠️ MixerInsert not found for channel: ${channelId}`);
+        }
+    }
+
+    setChannelSolo(channelId, soloed, isAnySoloed) {
+        console.log('🎧 NativeAudioEngine.setChannelSolo:', channelId, soloed, isAnySoloed);
+
+        const insert = this.mixerInserts.get(channelId);
+        if (insert && typeof insert.setSolo === 'function') {
+            insert.setSolo(soloed, isAnySoloed);
+        } else {
+            console.warn(`⚠️ MixerInsert not found or missing setSolo method for channel: ${channelId}`);
+        }
+    }
 
     // ⚠️ REMOVED: Old mixer-processor channel API
     // getMeterLevel, createSend, removeSend, updateSendLevel, setTrackOutput

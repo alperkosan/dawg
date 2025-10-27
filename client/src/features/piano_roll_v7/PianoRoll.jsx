@@ -9,6 +9,7 @@ import Toolbar from './components/Toolbar';
 import VelocityLane from './components/VelocityLane';
 import LoopRegionOverlay from './components/LoopRegionOverlay';
 import ShortcutsPanel from './components/ShortcutsPanel';
+import ContextMenu from './components/ContextMenu';
 import { usePanelsStore } from '@/store/usePanelsStore';
 import { useInstrumentsStore } from '@/store/useInstrumentsStore';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
@@ -379,6 +380,134 @@ function PianoRoll() {
         [noteInteractions.selectedNoteIds]
     );
 
+    // ✅ CONTEXT MENU OPERATIONS
+    const contextMenuOperations = useMemo(() => ({
+        onCut: () => {
+            noteInteractions.cutNotes();
+        },
+        onCopy: () => {
+            noteInteractions.copyNotes();
+        },
+        onPaste: () => {
+            noteInteractions.pasteNotes();
+        },
+        onDelete: () => {
+            if (noteInteractions.selectedNoteIds.size > 0) {
+                noteInteractions.deleteNotes(Array.from(noteInteractions.selectedNoteIds));
+            } else if (noteInteractions.contextMenuState?.noteId) {
+                noteInteractions.deleteNotes([noteInteractions.contextMenuState.noteId]);
+            }
+        },
+        onDuplicate: () => {
+            // Trigger Ctrl+D behavior
+            const event = new KeyboardEvent('keydown', {
+                key: 'd',
+                code: 'KeyD',
+                ctrlKey: true,
+                bubbles: true
+            });
+            document.dispatchEvent(event);
+        },
+        onGlue: () => {
+            // TODO: Implement glue/merge notes
+            console.log('Glue notes - not yet implemented');
+        },
+        onSplit: () => {
+            // TODO: Implement split note at center
+            console.log('Split note - not yet implemented');
+        },
+        onQuantize: () => {
+            // Quantize selected notes to grid
+            if (noteInteractions.selectedNoteIds.size === 0) return;
+
+            const notesToQuantize = noteInteractions.notes.filter(n =>
+                noteInteractions.selectedNoteIds.has(n.id)
+            );
+
+            notesToQuantize.forEach(note => {
+                const quantizedTime = Math.round(note.startTime / snapValue) * snapValue;
+                noteInteractions.updateNote(note.id, { startTime: quantizedTime });
+            });
+
+            console.log(`✨ Quantized ${notesToQuantize.length} notes to grid: ${snapValue}`);
+        },
+        onHumanize: () => {
+            // Add subtle randomization to timing and velocity
+            if (noteInteractions.selectedNoteIds.size === 0) return;
+
+            const notesToHumanize = noteInteractions.notes.filter(n =>
+                noteInteractions.selectedNoteIds.has(n.id)
+            );
+
+            notesToHumanize.forEach(note => {
+                // ±5% timing variation
+                const timingVariation = (Math.random() - 0.5) * 0.1 * snapValue;
+                const newTime = Math.max(0, note.startTime + timingVariation);
+
+                // ±10% velocity variation
+                const velocityVariation = (Math.random() - 0.5) * 0.2;
+                const newVelocity = Math.max(1, Math.min(127,
+                    Math.round(note.velocity + velocityVariation * 127)
+                ));
+
+                noteInteractions.updateNote(note.id, {
+                    startTime: newTime,
+                    velocity: newVelocity
+                });
+            });
+
+            console.log(`🎲 Humanized ${notesToHumanize.length} notes`);
+        },
+        onVelocityFadeIn: () => {
+            // Linear fade in (0 to 100% velocity)
+            if (noteInteractions.selectedNoteIds.size === 0) return;
+
+            const notesToFade = noteInteractions.notes
+                .filter(n => noteInteractions.selectedNoteIds.has(n.id))
+                .sort((a, b) => a.startTime - b.startTime);
+
+            const count = notesToFade.length;
+            notesToFade.forEach((note, index) => {
+                const ratio = index / Math.max(1, count - 1);
+                const newVelocity = Math.round(20 + ratio * 107); // 20-127 range
+                noteInteractions.updateNote(note.id, { velocity: newVelocity });
+            });
+
+            console.log(`📈 Applied fade in to ${count} notes`);
+        },
+        onVelocityFadeOut: () => {
+            // Linear fade out (100% to 0 velocity)
+            if (noteInteractions.selectedNoteIds.size === 0) return;
+
+            const notesToFade = noteInteractions.notes
+                .filter(n => noteInteractions.selectedNoteIds.has(n.id))
+                .sort((a, b) => a.startTime - b.startTime);
+
+            const count = notesToFade.length;
+            notesToFade.forEach((note, index) => {
+                const ratio = 1 - (index / Math.max(1, count - 1));
+                const newVelocity = Math.round(20 + ratio * 107); // 127-20 range
+                noteInteractions.updateNote(note.id, { velocity: newVelocity });
+            });
+
+            console.log(`📉 Applied fade out to ${count} notes`);
+        },
+        onVelocityNormalize: () => {
+            // Normalize all velocities to 80% (100 in MIDI)
+            if (noteInteractions.selectedNoteIds.size === 0) return;
+
+            const notesToNormalize = noteInteractions.notes.filter(n =>
+                noteInteractions.selectedNoteIds.has(n.id)
+            );
+
+            notesToNormalize.forEach(note => {
+                noteInteractions.updateNote(note.id, { velocity: 100 });
+            });
+
+            console.log(`⚖️ Normalized ${notesToNormalize.length} notes to velocity 100`);
+        }
+    }), [noteInteractions, snapValue]);
+
     // ✅ REMOVED: Global keyboard shortcuts now handled by TransportManager
     // No need for component-level spacebar handling
 
@@ -535,6 +664,20 @@ function PianoRoll() {
                 isOpen={showShortcuts}
                 onClose={() => setShowShortcuts(false)}
             />
+
+            {/* ✅ CONTEXT MENU */}
+            {noteInteractions.contextMenuState && (
+                <ContextMenu
+                    x={noteInteractions.contextMenuState.x}
+                    y={noteInteractions.contextMenuState.y}
+                    noteId={noteInteractions.contextMenuState.noteId}
+                    hasSelection={noteInteractions.selectedNoteIds.size > 0}
+                    canUndo={noteInteractions.canUndo}
+                    canRedo={noteInteractions.canRedo}
+                    onClose={noteInteractions.clearContextMenu}
+                    {...contextMenuOperations}
+                />
+            )}
         </div>
     );
 }

@@ -1,0 +1,275 @@
+/**
+ * Instrument Effects Panel Styles
+ * Uses Zenith design system
+ */
+
+.instrument-effects-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--zenith-space-4, 1rem);
+  padding: var(--zenith-space-4, 1rem);
+}
+
+/* Header */
+.instrument-effects-panel__header h3 {
+  margin: 0 0 var(--zenith-space-2, 0.5rem) 0;
+  font-size: var(--zenith-text-lg, 1rem);
+  font-weight: var(--zenith-weight-semibold, 600);
+  color: var(--zenith-text-primary);
+}
+
+.instrument-effects-panel__hint {
+  margin: 0;
+  font-size: var(--zenith-text-sm, 0.75rem);
+  color: var(--zenith-text-secondary);
+}
+
+/* Info */
+.instrument-effects-panel__info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--zenith-space-2, 0.5rem);
+  padding: var(--zenith-space-3, 0.75rem);
+  background: var(--zenith-bg-tertiary);
+  border-radius: var(--border-radius-sm, 6px);
+  border: 1px solid var(--zenith-border-subtle);
+}
+
+.instrument-effects-panel__info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: var(--zenith-text-sm, 0.75rem);
+  color: var(--zenith-text-secondary);
+}
+
+.instrument-effects-panel__info-row strong {
+  color: var(--zenith-text-primary);
+  font-weight: var(--zenith-weight-semibold, 600);
+}
+
+/* Effects List */
+.instrument-effects-panel__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--zenith-space-2, 0.5rem);
+  min-height: 200px;
+}
+
+.instrument-effects-panel__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  gap: var(--zenith-space-2, 0.5rem);
+  color: var(--zenith-text-tertiary);
+  text-align: center;
+}
+
+.instrument-effects-panel__empty-icon {
+  font-size: 48px;
+  opacity: 0.5;
+}
+
+.instrument-effects-panel__empty p {
+  margin: 0;
+  font-size: var(--zenith-text-sm, 0.75rem);
+}
+
+.instrument-effects-panel__empty-hint {
+  color: var(--zenith-text-tertiary);
+  font-size: var(--zenith-text-xs, 0.625rem) !important;
+}
+
+/* Effect Item */
+.instrument-effects-panel__effect {
+  background: var(--zenith-bg-tertiary);
+  border: 1px solid var(--zenith-border-subtle);
+  border-radius: var(--border-radius-sm, 6px);
+  overflow: hidden;
+}
+
+.instrument-effects-panel__effect-header {
+  display: flex;
+  align-items: center;
+  gap: var(--zenith-space-2, 0.5rem);
+  padding: var(--zenith-space-3, 0.75rem);
+}
+
+.instrument-effects-panel__drag-handle {
+  color: var(--zenith-text-tertiary);
+  cursor: grab;
+}
+
+.instrument-effects-panel__drag-handle:active {
+  cursor: grabbing;
+}
+
+.instrument-effects-panel__effect-name {
+  flex: 1;
+  font-size: var(--zenith-text-sm, 0.75rem);
+  font-weight: var(--zenith-weight-medium, 500);
+  color: var(--zenith-text-primary);
+}
+
+.instrument-effects-panel__effect-actions {
+  display: flex;
+  gap: var(--zenith-space-1, 0.25rem);
+}
+
+.instrument-effects-panel__effect-btn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--zenith-overlay-light);
+  border: 1px solid transparent;
+  border-radius: var(--border-radius-sm, 4px);
+  color: var(--zenith-text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.instrument-effects-panel__effect-btn:hover {
+  background: var(--zenith-overlay-medium);
+  color: var(--zenith-text-primary);
+}
+
+.instrument-effects-panel__effect-btn.active {
+  background: var(--zenith-accent-cold);
+  color: var(--zenith-text-primary);
+  border-color: var(--zenith-accent-cold);
+}
+
+.instrument-effects-panel__effect-btn--danger:hover {
+  background: rgba(var(--zenith-error-rgb), 0.2);
+  color: var(--zenith-error);
+  border-color: var(--zenith-error);
+}
+
+.instrument-effects-panel__effect-settings {
+  padding: var(--zenith-space-3, 0.75rem);
+  background: var(--zenith-bg-secondary);
+  border-top: 1px solid var(--zenith-border-subtle);
+}
+
+/* Add Section */
+.instrument-effects-panel__add-section {
+  position: relative;
+}
+
+.instrument-effects-panel__add-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--zenith-space-2, 0.5rem);
+  padding: var(--zenith-space-3, 0.75rem);
+  background: var(--zenith-bg-tertiary);
+  border: 1px dashed var(--zenith-border-medium);
+  border-radius: var(--border-radius-sm, 6px);
+  color: var(--zenith-text-secondary);
+  font-size: var(--zenith-text-sm, 0.75rem);
+  font-weight: var(--zenith-weight-medium, 500);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.instrument-effects-panel__add-btn:hover {
+  background: var(--zenith-overlay-light);
+  border-color: var(--zenith-accent-cold);
+  color: var(--zenith-text-primary);
+}
+
+/* Add Menu */
+.instrument-effects-panel__add-menu {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  margin-bottom: var(--zenith-space-2, 0.5rem);
+  background: var(--zenith-bg-secondary);
+  border: 1px solid var(--zenith-border-medium);
+  border-radius: var(--border-radius-md, 8px);
+  box-shadow: var(--zenith-shadow-lg);
+  max-height: 400px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  z-index: 10;
+}
+
+.instrument-effects-panel__add-menu-header {
+  padding: var(--zenith-space-3, 0.75rem);
+  background: var(--zenith-bg-tertiary);
+  border-bottom: 1px solid var(--zenith-border-subtle);
+  font-size: var(--zenith-text-sm, 0.75rem);
+  font-weight: var(--zenith-weight-semibold, 600);
+  color: var(--zenith-text-primary);
+}
+
+.instrument-effects-panel__add-menu-list {
+  overflow-y: auto;
+  max-height: 350px;
+}
+
+.instrument-effects-panel__add-menu-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--zenith-space-3, 0.75rem);
+  padding: var(--zenith-space-3, 0.75rem);
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--zenith-border-subtle);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.instrument-effects-panel__add-menu-item:hover {
+  background: var(--zenith-overlay-light);
+}
+
+.instrument-effects-panel__add-menu-item:last-child {
+  border-bottom: none;
+}
+
+.instrument-effects-panel__add-menu-icon {
+  font-size: 24px;
+  width: 32px;
+  text-align: center;
+}
+
+.instrument-effects-panel__add-menu-info {
+  flex: 1;
+}
+
+.instrument-effects-panel__add-menu-name {
+  font-size: var(--zenith-text-sm, 0.75rem);
+  font-weight: var(--zenith-weight-medium, 500);
+  color: var(--zenith-text-primary);
+  margin-bottom: var(--zenith-space-1, 0.25rem);
+}
+
+.instrument-effects-panel__add-menu-desc {
+  font-size: var(--zenith-text-xs, 0.625rem);
+  color: var(--zenith-text-tertiary);
+}
+
+/* Recommendation */
+.instrument-effects-panel__recommendation {
+  padding: var(--zenith-space-3, 0.75rem);
+  background: rgba(var(--zenith-info-rgb), 0.1);
+  border: 1px solid rgba(var(--zenith-info-rgb), 0.3);
+  border-radius: var(--border-radius-sm, 6px);
+  font-size: var(--zenith-text-xs, 0.625rem);
+  color: var(--zenith-text-secondary);
+  line-height: 1.5;
+}
+
+.instrument-effects-panel__recommendation strong {
+  color: var(--zenith-info);
+}

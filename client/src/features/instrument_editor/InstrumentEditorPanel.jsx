@@ -15,6 +15,8 @@ import DrumSamplerEditor from './components/editors/DrumSamplerEditor';
 import { GranularSamplerUI } from '@/components/instruments/granular';
 import { ForgeSynthUI } from './ForgeSynthUI';
 import PresetBrowser from './components/PresetBrowser';
+import InstrumentEffectsPanel from './components/InstrumentEffectsPanel';
+import ModulationMatrix from './components/ModulationMatrix';
 import './InstrumentEditorPanel.css';
 
 const InstrumentEditorPanel = () => {
@@ -719,18 +721,8 @@ const InstrumentEditorPanel = () => {
         <div className="instrument-editor-panel__content">
           {activeTab === 'main' && getEditorComponent()}
           {activeTab === 'presets' && <PresetBrowser instrumentData={instrumentData} />}
-          {activeTab === 'effects' && (
-            <div className="editor-placeholder">
-              <div className="editor-placeholder__icon">🎚️</div>
-              <div className="editor-placeholder__text">Effects Chain Editor</div>
-            </div>
-          )}
-          {activeTab === 'modulation' && (
-            <div className="editor-placeholder">
-              <div className="editor-placeholder__icon">🔀</div>
-              <div className="editor-placeholder__text">Modulation Matrix</div>
-            </div>
-          )}
+          {activeTab === 'effects' && <InstrumentEffectsPanel instrumentData={instrumentData} />}
+          {activeTab === 'modulation' && <ModulationMatrix instrumentData={instrumentData} />}
         </div>
 
         {/* Footer */}

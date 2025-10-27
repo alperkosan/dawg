@@ -6,6 +6,14 @@ import { usePlaybackStore } from '@/store/usePlaybackStore';
 import { getPreviewManager } from '@/lib/audio/preview';
 import { getToolManager, TOOL_TYPES } from '@/lib/piano-roll-tools';
 import { premiumNoteRenderer } from '../renderers/noteRenderer';
+import {
+    getCommandStack,
+    AddNoteCommand,
+    DeleteNotesCommand,
+    UpdateNoteCommand,
+    MoveNotesCommand,
+    BatchCommand
+} from '@/lib/piano-roll-tools/CommandStack';
 
 const RULER_HEIGHT = 30;
 const KEYBOARD_WIDTH = 80;
@@ -126,6 +134,26 @@ export function useNoteInteractionsV2(
     loopRegion = null, // ✅ Loop region for Ctrl+D sync
     keyboardPianoMode = false // ✅ Keyboard piano mode toggle
 ) {
+    // ✅ COMMAND STACK - Initialize undo/redo system
+    const commandStackRef = useRef(null);
+    const [canUndo, setCanUndo] = useState(false);
+    const [canRedo, setCanRedo] = useState(false);
+
+    // Initialize command stack on mount
+    useEffect(() => {
+        if (!commandStackRef.current) {
+            commandStackRef.current = getCommandStack();
+
+            // Subscribe to history changes
+            const unsubscribe = commandStackRef.current.subscribe((info) => {
+                setCanUndo(info.canUndo);
+                setCanRedo(info.canRedo);
+            });
+
+            return () => unsubscribe();
+        }
+    }, []);
+
     // Local state - sadece UI için
     const [dragState, setDragState] = useState(null);
     const [hoveredNoteId, setHoveredNoteId] = useState(null);
@@ -141,6 +169,10 @@ export function useNoteInteractionsV2(
     const [paintDragState, setPaintDragState] = useState(null); // { lastPitch: number, lastTime: number } for continuous painting
     const [rightClickDragState, setRightClickDragState] = useState(null); // { lastPitch: number, lastTime: number, deletedNotes: Set } for continuous deletion
     const [activeKeyboardNotes, setActiveKeyboardNotes] = useState(new Map()); // Track keyboard-triggered notes for preview playback
+    const [contextMenuState, setContextMenuState] = useState(null); // { x: number, y: number, noteId: string | null }
+    const [lastClickTime, setLastClickTime] = useState(0); // Track double-click timing
+    const [lastClickedNoteId, setLastClickedNoteId] = useState(null); // Track last clicked note for double-click
+    const [clipboard, setClipboard] = useState(null); // ✅ Clipboard: { notes: [], sourceTime: number }
 
     // ✅ PERFORMANCE: Use individual selectors instead of object/array selector
     // This prevents "getSnapshot should be cached" warnings and infinite loops
@@ -227,16 +259,24 @@ export function useNoteInteractionsV2(
         return { time, pitch, x: rawX, y: rawY };
     }, [engine]);
 
-    // Find note at position - improved tolerance for easier interaction
+    // Find note at position - IMPROVED: Zoom-aware adaptive tolerance
     const findNoteAtPosition = useCallback((time, pitch) => {
         const currentNotes = notes();
+
+        // ✅ ZOOM-AWARE TOLERANCE - Adaptive based on viewport zoom
+        const zoomFactor = engine.viewport?.zoomX || 1;
+        const baseMargin = 0.1; // 10% base margin (more generous than before)
+
+        // As you zoom in, decrease tolerance (more precision needed)
+        // As you zoom out, increase tolerance (easier to click small notes)
+        const adaptiveMargin = baseMargin / Math.max(1, zoomFactor * 0.5);
+
         return currentNotes.find(note => {
             const noteEndTime = note.startTime + note.length;
 
-            // ✅ TIME TOLERANCE - Slightly relaxed for easier clicking
-            // Allow small margin at edges for easier interaction
-            const timeMargin = 0.05; // 5% of a step
-            const timeOverlap = time >= (note.startTime - timeMargin) && time <= (noteEndTime + timeMargin);
+            // ✅ ADAPTIVE TIME TOLERANCE
+            const timeOverlap = time >= (note.startTime - adaptiveMargin) &&
+                               time <= (noteEndTime + adaptiveMargin);
 
             // ✅ PITCH TOLERANCE - Exact pitch match only
             // No tolerance on Y axis - note must be clicked within its exact pitch row
@@ -244,7 +284,7 @@ export function useNoteInteractionsV2(
 
             return timeOverlap && pitchMatch;
         });
-    }, [notes]);
+    }, [notes, engine]);
 
     // Check if mouse is over resize handle
     const getResizeHandle = useCallback((mouseX, mouseY, note) => {
@@ -266,19 +306,20 @@ export function useNoteInteractionsV2(
         const noteWidth = Math.max(Math.round(stepWidth) - 1, Math.round(note.length * stepWidth) - 1);
         const noteHeight = Math.round(keyHeight) - 1;
 
-        // ✅ SMART RESIZE ZONES - Adaptive based on note width
+        // ✅ ZOOM-AWARE RESIZE ZONES - Adaptive based on note width AND zoom level
         // Ensure resize zones don't overlap and leave space for move area
-        const minMoveArea = 10; // Minimum pixels in middle for moving
+        const zoomFactor = viewport.zoomX || 1;
+        const minMoveArea = Math.max(8, 10 / zoomFactor); // Minimum pixels in middle for moving (zoom-adaptive)
         const maxZoneWidth = (noteWidth - minMoveArea) / 2; // Max zone width without overlap
 
-        // Calculate optimal zone width based on note size
+        // Calculate optimal zone width based on note size AND zoom
         let resizeZoneWidth;
         if (noteWidth < 20) {
-            // Very small notes: minimal zones (6px each)
-            resizeZoneWidth = Math.min(6, maxZoneWidth);
+            // Very small notes: zoom-adaptive minimal zones
+            resizeZoneWidth = Math.min(6 + (zoomFactor * 2), maxZoneWidth);
         } else if (noteWidth < 40) {
-            // Small notes: 25% of width, max limited by overlap protection
-            resizeZoneWidth = Math.min(noteWidth * 0.25, maxZoneWidth);
+            // Small notes: 25% of width, zoom-boosted
+            resizeZoneWidth = Math.min(noteWidth * 0.25 * (1 + zoomFactor * 0.1), maxZoneWidth);
         } else if (noteWidth < 80) {
             // Medium notes: 30% of width
             resizeZoneWidth = Math.min(noteWidth * 0.30, maxZoneWidth);
@@ -287,8 +328,8 @@ export function useNoteInteractionsV2(
             resizeZoneWidth = Math.min(noteWidth * 0.35, maxZoneWidth);
         }
 
-        // Ensure minimum zone width for usability
-        resizeZoneWidth = Math.max(5, resizeZoneWidth);
+        // Ensure minimum zone width for usability (zoom-aware)
+        resizeZoneWidth = Math.max(5 + zoomFactor, resizeZoneWidth);
 
         // Left handle (start time resize) - contained within note start area
         const leftAreaX1 = noteX; // Start exactly at note boundary
@@ -335,8 +376,36 @@ export function useNoteInteractionsV2(
         return null;
     }, [engine]);
 
-    // Add new note
-    const addNote = useCallback((time, pitch, length = 1, velocity = 100) => {
+    // ✅ INTERNAL: Add note to store without command (for undo/redo)
+    const _addNoteToStore = useCallback((note) => {
+        const currentNotes = notes();
+        updatePatternStore([...currentNotes, note]);
+        premiumNoteRenderer.animateNote(note.id, 'added');
+    }, [notes, updatePatternStore]);
+
+    // ✅ INTERNAL: Add multiple notes to store without command (for undo/redo)
+    const _addNotesToStore = useCallback((notesToAdd) => {
+        const currentNotes = notes();
+        updatePatternStore([...currentNotes, ...notesToAdd]);
+        notesToAdd.forEach(note => premiumNoteRenderer.animateNote(note.id, 'added'));
+    }, [notes, updatePatternStore]);
+
+    // ✅ INTERNAL: Delete notes from store without command (for undo/redo)
+    const _deleteNotesFromStore = useCallback((noteIds) => {
+        const currentNotes = notes();
+        const filteredNotes = currentNotes.filter(note => !noteIds.includes(note.id));
+        updatePatternStore(filteredNotes);
+
+        // Clear selection
+        setSelectedNoteIds(prev => {
+            const newSet = new Set(prev);
+            noteIds.forEach(id => newSet.delete(id));
+            return newSet;
+        });
+    }, [notes, updatePatternStore]);
+
+    // Add new note WITH UNDO/REDO
+    const addNote = useCallback((time, pitch, length = 1, velocity = 100, skipUndo = false) => {
         if (!currentInstrument) return;
 
         const snappedTime = snapValue > 0 ? snapToGrid(time, snapValue) : time;
@@ -353,50 +422,107 @@ export function useNoteInteractionsV2(
             instrumentId: currentInstrument.id
         };
 
-        // Update pattern store
-        const currentNotes = notes();
-        updatePatternStore([...currentNotes, newNote]);
-
-        // ✅ Trigger add animation
-        premiumNoteRenderer.animateNote(newNote.id, 'added');
+        if (skipUndo) {
+            // Bypass undo system (for paint brush continuous drawing)
+            _addNoteToStore(newNote);
+        } else {
+            // ✅ USE COMMAND STACK for undo/redo
+            const command = new AddNoteCommand(
+                newNote,
+                (note) => _addNoteToStore(note),
+                (noteIds) => {
+                    // ✅ FIXED: Immediate deletion for undo (no animation delay)
+                    _deleteNotesFromStore(noteIds);
+                }
+            );
+            commandStackRef.current?.execute(command);
+        }
 
         if (DEBUG_MODE) console.log('➕ Note added:', newNote);
         return newNote;
-    }, [currentInstrument, snapValue, notes, updatePatternStore]);
+    }, [currentInstrument, snapValue, notes, updatePatternStore, _addNoteToStore, _deleteNotesFromStore]);
 
-    // Update note
-    const updateNote = useCallback((noteId, updates) => {
+    // ✅ INTERNAL: Update note in store without command (for undo/redo)
+    const _updateNoteInStore = useCallback((noteId, updates) => {
         const currentNotes = notes();
         const updatedNotes = currentNotes.map(note =>
             note.id === noteId ? { ...note, ...updates } : note
         );
         updatePatternStore(updatedNotes);
-        if (DEBUG_MODE) console.log('📝 Note updated:', noteId, updates);
     }, [notes, updatePatternStore]);
 
-    // Delete notes
-    const deleteNotes = useCallback((noteIds) => {
-        // ✅ Trigger delete animation before actual deletion
-        noteIds.forEach(id => {
-            premiumNoteRenderer.animateNote(id, 'deleted');
-        });
+    // Update note WITH UNDO/REDO
+    const updateNote = useCallback((noteId, updates, skipUndo = false) => {
+        const currentNotes = notes();
+        const targetNote = currentNotes.find(n => n.id === noteId);
 
-        // Delay actual deletion to let animation play
-        setTimeout(() => {
-            const currentNotes = notes();
-            const filteredNotes = currentNotes.filter(note => !noteIds.includes(note.id));
-            updatePatternStore(filteredNotes);
+        if (!targetNote) {
+            console.warn('Note not found for update:', noteId);
+            return;
+        }
 
-            // Clear selection
-            setSelectedNoteIds(prev => {
-                const newSet = new Set(prev);
-                noteIds.forEach(id => newSet.delete(id));
-                return newSet;
+        // Store old state for undo
+        const oldState = { ...targetNote };
+
+        if (skipUndo) {
+            // Bypass undo system
+            _updateNoteInStore(noteId, updates);
+        } else {
+            // ✅ USE COMMAND STACK for undo/redo
+            const command = new UpdateNoteCommand(
+                noteId,
+                oldState,
+                { ...targetNote, ...updates },
+                (id, state) => _updateNoteInStore(id, state)
+            );
+            commandStackRef.current?.execute(command);
+        }
+
+        if (DEBUG_MODE) console.log('📝 Note updated:', noteId, updates);
+    }, [notes, _updateNoteInStore]);
+
+    // Delete notes WITH UNDO/REDO
+    const deleteNotes = useCallback((noteIds, skipUndo = false, skipAnimation = false) => {
+        const currentNotes = notes();
+        const notesToDelete = currentNotes.filter(note => noteIds.includes(note.id));
+
+        if (notesToDelete.length === 0) {
+            console.warn('No notes found to delete');
+            return;
+        }
+
+        // ✅ FIXED: Animation only for user-initiated deletions, not undo/redo
+        if (!skipAnimation) {
+            noteIds.forEach(id => {
+                premiumNoteRenderer.animateNote(id, 'deleted');
             });
-        }, 250); // Match delete animation duration
+        }
+
+        const performDeletion = () => {
+            if (skipUndo) {
+                // Bypass undo system (used by undo/redo internally)
+                _deleteNotesFromStore(noteIds);
+            } else {
+                // ✅ USE COMMAND STACK for undo/redo
+                const command = new DeleteNotesCommand(
+                    notesToDelete, // Store full note objects for undo
+                    (ids) => _deleteNotesFromStore(ids),
+                    (notesArray) => _addNotesToStore(notesArray)
+                );
+                commandStackRef.current?.execute(command);
+            }
+        };
+
+        if (!skipAnimation) {
+            // ✅ FIXED: Delay deletion to match animation duration (180ms - subtle)
+            setTimeout(performDeletion, 180);
+        } else {
+            // Immediate deletion (for undo/redo)
+            performDeletion();
+        }
 
         if (DEBUG_MODE) console.log('🗑️ Notes deleted:', noteIds);
-    }, [notes, updatePatternStore]);
+    }, [notes, _deleteNotesFromStore, _addNotesToStore]);
 
     // Slice note - Split note into two at given time position
     const sliceNote = useCallback((note, sliceTime) => {
@@ -599,18 +725,133 @@ export function useNoteInteractionsV2(
         });
     }, [notes, updatePatternStore, snapValue, snapToGrid]);
 
-    // Selection operations
-    const selectNote = useCallback((noteId, addToSelection = false) => {
+    // ✅ SMART SELECTION OPERATIONS
+    const selectNote = useCallback((noteId, addToSelection = false, toggle = false) => {
         setSelectedNoteIds(prev => {
             const newSet = addToSelection ? new Set(prev) : new Set();
-            newSet.add(noteId);
+
+            // ✅ TOGGLE MODE: Remove if exists, add if not (Ctrl+Click)
+            if (toggle && prev.has(noteId)) {
+                newSet.delete(noteId);
+                if (DEBUG_MODE) console.log('🔘 Toggled note OFF:', noteId);
+            } else {
+                newSet.add(noteId);
+                if (DEBUG_MODE && toggle) console.log('🔘 Toggled note ON:', noteId);
+            }
+
             return newSet;
         });
     }, []);
 
     const deselectAll = useCallback(() => {
         setSelectedNoteIds(new Set());
+        if (DEBUG_MODE) console.log('🔲 Deselected all notes');
     }, []);
+
+    const selectAll = useCallback(() => {
+        const currentNotes = notes();
+        const allNoteIds = currentNotes.map(n => n.id);
+        setSelectedNoteIds(new Set(allNoteIds));
+        if (DEBUG_MODE) console.log('🔳 Selected all notes:', allNoteIds.length);
+    }, [notes]);
+
+    const invertSelection = useCallback(() => {
+        const currentNotes = notes();
+        const allNoteIds = new Set(currentNotes.map(n => n.id));
+        const newSelection = new Set();
+
+        allNoteIds.forEach(id => {
+            if (!selectedNoteIds.has(id)) {
+                newSelection.add(id);
+            }
+        });
+
+        setSelectedNoteIds(newSelection);
+        if (DEBUG_MODE) console.log('🔄 Inverted selection:', newSelection.size, 'notes now selected');
+    }, [notes, selectedNoteIds]);
+
+    // ✅ CLIPBOARD OPERATIONS
+    const copyNotes = useCallback(() => {
+        if (selectedNoteIds.size === 0) {
+            if (DEBUG_MODE) console.warn('📋 Nothing to copy');
+            return;
+        }
+
+        const currentNotes = notes();
+        const selectedNotes = currentNotes.filter(n => selectedNoteIds.has(n.id));
+
+        // Find earliest time for relative positioning
+        const minTime = Math.min(...selectedNotes.map(n => n.startTime));
+
+        setClipboard({
+            notes: selectedNotes.map(note => ({
+                ...note,
+                // Store relative position from earliest note
+                relativeTime: note.startTime - minTime
+            })),
+            sourceTime: minTime
+        });
+
+        if (DEBUG_MODE) console.log('📋 Copied', selectedNotes.length, 'notes');
+    }, [notes, selectedNoteIds]);
+
+    const cutNotes = useCallback(() => {
+        if (selectedNoteIds.size === 0) {
+            if (DEBUG_MODE) console.warn('✂️ Nothing to cut');
+            return;
+        }
+
+        // Copy first
+        copyNotes();
+
+        // Then delete
+        deleteNotes(Array.from(selectedNoteIds));
+
+        if (DEBUG_MODE) console.log('✂️ Cut', selectedNoteIds.size, 'notes');
+    }, [selectedNoteIds, copyNotes, deleteNotes]);
+
+    const pasteNotes = useCallback(() => {
+        if (!clipboard || clipboard.notes.length === 0) {
+            if (DEBUG_MODE) console.warn('📋 Clipboard empty');
+            return;
+        }
+
+        if (!currentInstrument) {
+            if (DEBUG_MODE) console.warn('📋 No instrument selected');
+            return;
+        }
+
+        // Paste at playhead position if available, otherwise at original position
+        const playhead = usePlaybackStore.getState().currentStep;
+        const pasteTime = playhead || clipboard.sourceTime;
+
+        // Create new notes with new IDs
+        const newNotes = clipboard.notes.map(clipNote => ({
+            ...clipNote,
+            id: `note_${Date.now()}_${Math.random().toString(36).substring(2, 11)}_${performance.now()}`,
+            startTime: pasteTime + clipNote.relativeTime,
+            instrumentId: currentInstrument.id
+        }));
+
+        // ✅ USE BATCH COMMAND for undo/redo
+        import('@/lib/piano-roll-tools/CommandStack').then(({ getCommandStack, BatchCommand, AddNoteCommand }) => {
+            const commands = newNotes.map(note =>
+                new AddNoteCommand(
+                    note,
+                    (n) => _addNoteToStore(n),
+                    (noteIds) => _deleteNotesFromStore(noteIds)
+                )
+            );
+
+            const batchCommand = new BatchCommand(commands, `Paste ${newNotes.length} note(s)`);
+            getCommandStack().execute(batchCommand);
+        });
+
+        // Select pasted notes
+        setSelectedNoteIds(new Set(newNotes.map(n => n.id)));
+
+        if (DEBUG_MODE) console.log('📋 Pasted', newNotes.length, 'notes at time', pasteTime);
+    }, [clipboard, currentInstrument, _addNoteToStore, _deleteNotesFromStore]);
 
     // Mouse down handler
     const handleMouseDown = useCallback((e) => {
@@ -620,22 +861,34 @@ export function useNoteInteractionsV2(
         const toolManager = getToolManager();
         const currentTool = toolManager.getActiveTool();
 
-        // ✅ RIGHT CLICK - Delete note immediately and start drag-to-delete
+        // ✅ RIGHT CLICK - Tool-aware behavior
         if (e.button === 2) { // Right mouse button
-            const deletedNotes = new Set();
-            if (foundNote) {
-                deleteNotes([foundNote.id]);
-                deletedNotes.add(foundNote.id);
-                if (DEBUG_MODE) console.log('🗑️ Right click delete:', foundNote.id);
-            }
+            if (currentTool === TOOL_TYPES.SELECT) {
+                // SELECT TOOL: Show context menu
+                setContextMenuState({
+                    x: e.clientX,
+                    y: e.clientY,
+                    noteId: foundNote?.id || null,
+                    coords: coords
+                });
+                if (DEBUG_MODE) console.log('📋 Context menu triggered:', foundNote?.id);
+            } else if (e.shiftKey || currentTool === TOOL_TYPES.ERASER) {
+                // SHIFT + RIGHT CLICK or ERASER TOOL: Quick delete with drag support
+                const deletedNotes = new Set();
+                if (foundNote) {
+                    deleteNotes([foundNote.id]);
+                    deletedNotes.add(foundNote.id);
+                    if (DEBUG_MODE) console.log('🗑️ Right click delete:', foundNote.id);
+                }
 
-            // Start drag state for continuous deletion
-            setRightClickDragState({
-                lastPitch: coords.pitch,
-                lastTime: coords.time,
-                deletedNotes, // Track already deleted notes to avoid duplicate calls
-                isDragging: true
-            });
+                // Start drag state for continuous deletion
+                setRightClickDragState({
+                    lastPitch: coords.pitch,
+                    lastTime: coords.time,
+                    deletedNotes, // Track already deleted notes to avoid duplicate calls
+                    isDragging: true
+                });
+            }
             return; // Don't proceed with other handlers
         }
 
@@ -712,6 +965,33 @@ export function useNoteInteractionsV2(
         // ✅ SELECT TOOL - Standard selection and manipulation
         else if (currentTool === TOOL_TYPES.SELECT) {
             if (foundNote) {
+                // ✅ DOUBLE-CLICK DETECTION - Select all notes with same pitch
+                const now = Date.now();
+                const timeSinceLastClick = now - lastClickTime;
+                const isDoubleClick = timeSinceLastClick < 300 && lastClickedNoteId === foundNote.id;
+
+                if (isDoubleClick) {
+                    // DOUBLE-CLICK: Select all notes with same pitch
+                    const currentNotes = notes();
+                    const samePitchNotes = currentNotes.filter(n => n.pitch === foundNote.pitch);
+                    const samePitchIds = samePitchNotes.map(n => n.id);
+
+                    setSelectedNoteIds(new Set(samePitchIds));
+
+                    if (DEBUG_MODE) {
+                        console.log('🎯🎯 Double-click: Selected', samePitchIds.length, 'notes at pitch', foundNote.pitch);
+                    }
+
+                    // Reset click tracking
+                    setLastClickTime(0);
+                    setLastClickedNoteId(null);
+                    return; // Don't proceed with drag
+                }
+
+                // Update click tracking
+                setLastClickTime(now);
+                setLastClickedNoteId(foundNote.id);
+
                 // Check for resize handle first
                 const resizeHandle = getResizeHandle(coords.x, coords.y, foundNote);
 
@@ -750,6 +1030,7 @@ export function useNoteInteractionsV2(
 
                     // ✅ SHIFT+DRAG TO DUPLICATE - Create copies if Shift is held
                     const isDuplicating = e.shiftKey;
+                    const isToggling = e.ctrlKey || e.metaKey;
                     let duplicatedNoteIds = null;
 
                     // Determine which notes to work with
@@ -767,9 +1048,15 @@ export function useNoteInteractionsV2(
                             if (DEBUG_MODE) console.log('📋 Shift+Drag: Clicked note NOT in selection, duplicating ONLY clicked note');
                         }
                     } else {
+                        // ✅ CTRL+CLICK TO TOGGLE - Add/remove from selection
+                        if (isToggling) {
+                            selectNote(foundNote.id, true, true); // addToSelection=true, toggle=true
+                            return; // Don't start drag, just toggle selection
+                        }
+
                         // Normal move: select note if needed
                         if (!selectedNoteIds.has(foundNote.id)) {
-                            selectNote(foundNote.id, e.ctrlKey || e.metaKey);
+                            selectNote(foundNote.id, false); // Replace selection
                         }
                         workingNoteIds = selectedNoteIds.has(foundNote.id)
                             ? Array.from(selectedNoteIds)
@@ -922,25 +1209,66 @@ export function useNoteInteractionsV2(
 
             // Continuous drawing while mouse is held down
             if (paintDragState && paintDragState.mode !== 'erase' && !foundNote) {
-                // Only add note if we moved to a different pitch or time
-                if (coords.pitch !== paintDragState.lastPitch ||
-                    Math.abs(coords.time - paintDragState.lastTime) >= snapValue) {
+                const snappedCurrentTime = snapToGrid(coords.time, snapValue);
+                const snappedLastTime = paintDragState.lastTime;
 
-                    const newNote = addNote(coords.time, coords.pitch, lastNoteDuration);
-                    if (newNote) {
+                // Only add note if we moved to a different grid position (pitch OR time)
+                if (coords.pitch !== paintDragState.lastPitch ||
+                    Math.abs(snappedCurrentTime - snappedLastTime) >= snapValue * 0.9) {
+
+                    // ✅ DUPLICATE PREVENTION - Check if note already exists at this position
+                    const existingNote = notes().find(n =>
+                        Math.abs(n.startTime - snappedCurrentTime) < 0.01 &&
+                        n.pitch === Math.round(coords.pitch)
+                    );
+
+                    if (!existingNote) {
+                        // ✅ GAP FILLING - Interpolate between last and current position
+                        const timeDelta = Math.abs(snappedCurrentTime - snappedLastTime);
+                        const pitchDelta = Math.abs(coords.pitch - paintDragState.lastPitch);
+
+                        // If moved more than 1 grid position, fill gaps
+                        if (timeDelta > snapValue || pitchDelta > 1) {
+                            const steps = Math.max(
+                                Math.ceil(timeDelta / snapValue),
+                                Math.ceil(pitchDelta)
+                            );
+
+                            for (let i = 0; i <= steps; i++) {
+                                const ratio = i / steps;
+                                const interpTime = snappedLastTime + (snappedCurrentTime - snappedLastTime) * ratio;
+                                const interpPitch = Math.round(paintDragState.lastPitch + (coords.pitch - paintDragState.lastPitch) * ratio);
+
+                                // Check if note exists at interpolated position
+                                const interpSnappedTime = snapToGrid(interpTime, snapValue);
+                                const existsAtInterp = notes().find(n =>
+                                    Math.abs(n.startTime - interpSnappedTime) < 0.01 &&
+                                    n.pitch === interpPitch
+                                );
+
+                                if (!existsAtInterp) {
+                                    addNote(interpTime, interpPitch, lastNoteDuration, 100, true); // skipUndo=true for continuous drawing
+                                }
+                            }
+                        } else {
+                            // Single note at current position
+                            const newNote = addNote(coords.time, coords.pitch, lastNoteDuration, 100, true); // skipUndo=true
+                            if (newNote) {
+                                // Audio preview
+                                playPreview(
+                                    newNote.pitch,
+                                    newNote.velocity || 100,
+                                    0.15 // Short duration for mouse clicks
+                                );
+                            }
+                        }
+
                         // Update drag state with new position
                         setPaintDragState({
                             ...paintDragState,
                             lastPitch: coords.pitch,
-                            lastTime: coords.time
+                            lastTime: snappedCurrentTime
                         });
-
-                        // Audio preview
-                        playPreview(
-                            newNote.pitch,
-                            newNote.velocity || 100,
-                            0.15 // Short duration for mouse clicks
-                        );
                     }
                 }
             }
@@ -1201,20 +1529,106 @@ export function useNoteInteractionsV2(
             // Clear slice range
             setSliceRange(null);
         }
-        // Finalize drag operations
+        // ✅ MOVE OPERATION WITH UNDO/REDO
         else if (dragState?.type === 'moving' && tempNotes.length > 0) {
-            // Commit temporary notes to pattern store
-            updatePatternStore(tempNotes);
-            setTempNotes([]); // Clear temporary notes
-        } else if (dragState?.type === 'resizing' && tempNotes.length > 0) {
-            // Commit resized note to pattern store
-            updatePatternStore(tempNotes);
+            // Get original positions from dragState
+            const originalPositions = new Map(dragState.originalNotes);
+            const noteIds = dragState.noteIds;
 
-            // ✅ REMEMBER LAST DURATION - Save resized note's length for next note
+            // Get final positions from tempNotes
+            const finalPositions = new Map();
+            tempNotes.forEach(note => {
+                if (noteIds.includes(note.id)) {
+                    finalPositions.set(note.id, {
+                        startTime: note.startTime,
+                        pitch: note.pitch
+                    });
+                }
+            });
+
+            // Check if notes actually moved
+            let hasMoved = false;
+            for (const [noteId, original] of originalPositions.entries()) {
+                const final = finalPositions.get(noteId);
+                if (final && (Math.abs(final.startTime - original.startTime) > 0.001 || final.pitch !== original.pitch)) {
+                    hasMoved = true;
+                    break;
+                }
+            }
+
+            if (hasMoved) {
+                // ✅ CREATE BATCH COMMAND for move operation
+                import('@/lib/piano-roll-tools/CommandStack').then(({ getCommandStack, BatchCommand, UpdateNoteCommand }) => {
+                    const commands = [];
+                    const currentNotes = notes();
+
+                    noteIds.forEach(noteId => {
+                        const original = originalPositions.get(noteId);
+                        const final = finalPositions.get(noteId);
+                        const note = currentNotes.find(n => n.id === noteId);
+
+                        if (original && final && note) {
+                            const command = new UpdateNoteCommand(
+                                noteId,
+                                original, // old state
+                                { ...note, ...final }, // new state
+                                (id, state) => {
+                                    const current = notes();
+                                    const updated = current.map(n => n.id === id ? { ...n, ...state } : n);
+                                    updatePatternStore(updated);
+                                }
+                            );
+                            commands.push(command);
+                        }
+                    });
+
+                    if (commands.length > 0) {
+                        const batchCommand = new BatchCommand(commands, `Move ${noteIds.length} note(s)`);
+                        getCommandStack().execute(batchCommand);
+                    }
+                });
+            } else {
+                // No actual movement, just commit temp notes
+                updatePatternStore(tempNotes);
+            }
+
+            setTempNotes([]); // Clear temporary notes
+        }
+        // ✅ RESIZE OPERATION WITH UNDO/REDO
+        else if (dragState?.type === 'resizing' && tempNotes.length > 0) {
             const resizedNote = tempNotes.find(n => n.id === dragState.noteId);
-            if (resizedNote && resizedNote.length > 0) {
-                setLastNoteDuration(resizedNote.length);
-                if (DEBUG_MODE) console.log('💾 Remembered note duration:', resizedNote.length);
+            const originalNote = dragState.originalNote;
+
+            if (resizedNote && originalNote) {
+                // Check if note actually changed
+                const hasChanged = Math.abs(resizedNote.startTime - originalNote.startTime) > 0.001 ||
+                                  Math.abs(resizedNote.length - originalNote.length) > 0.001;
+
+                if (hasChanged) {
+                    // ✅ CREATE COMMAND for resize operation
+                    import('@/lib/piano-roll-tools/CommandStack').then(({ getCommandStack, UpdateNoteCommand }) => {
+                        const command = new UpdateNoteCommand(
+                            dragState.noteId,
+                            { startTime: originalNote.startTime, length: originalNote.length }, // old state
+                            { startTime: resizedNote.startTime, length: resizedNote.length }, // new state
+                            (id, state) => {
+                                const current = notes();
+                                const updated = current.map(n => n.id === id ? { ...n, ...state } : n);
+                                updatePatternStore(updated);
+                            }
+                        );
+                        getCommandStack().execute(command);
+                    });
+
+                    // ✅ REMEMBER LAST DURATION - Save resized note's length for next note
+                    if (resizedNote.length > 0) {
+                        setLastNoteDuration(resizedNote.length);
+                        if (DEBUG_MODE) console.log('💾 Remembered note duration:', resizedNote.length);
+                    }
+                } else {
+                    // No actual change, just commit temp notes
+                    updatePatternStore(tempNotes);
+                }
             }
 
             setTempNotes([]); // Clear temporary notes
@@ -1335,6 +1749,56 @@ export function useNoteInteractionsV2(
     // Key down handler
     const handleKeyDown = useCallback((e) => {
         const key = e.key.toLowerCase();
+
+        // ✅ UNDO/REDO - Ctrl+Z / Ctrl+Y
+        if ((e.ctrlKey || e.metaKey) && key === 'z' && !e.shiftKey) {
+            e.preventDefault();
+            if (commandStackRef.current) {
+                commandStackRef.current.undo();
+            }
+            return;
+        }
+
+        if ((e.ctrlKey || e.metaKey) && (key === 'y' || (key === 'z' && e.shiftKey))) {
+            e.preventDefault();
+            if (commandStackRef.current) {
+                commandStackRef.current.redo();
+            }
+            return;
+        }
+
+        // ✅ SELECT ALL - Ctrl+A
+        if ((e.ctrlKey || e.metaKey) && key === 'a') {
+            e.preventDefault();
+            selectAll();
+            return;
+        }
+
+        // ✅ INVERT SELECTION - Ctrl+I
+        if ((e.ctrlKey || e.metaKey) && key === 'i') {
+            e.preventDefault();
+            invertSelection();
+            return;
+        }
+
+        // ✅ CLIPBOARD - Cut/Copy/Paste
+        if ((e.ctrlKey || e.metaKey) && key === 'x') {
+            e.preventDefault();
+            cutNotes();
+            return;
+        }
+
+        if ((e.ctrlKey || e.metaKey) && key === 'c') {
+            e.preventDefault();
+            copyNotes();
+            return;
+        }
+
+        if ((e.ctrlKey || e.metaKey) && key === 'v') {
+            e.preventDefault();
+            pasteNotes();
+            return;
+        }
 
         // ✅ KEYBOARD PIANO MODE - Only active when mode is ON
         // This prevents conflicts with shortcuts
@@ -1737,6 +2201,7 @@ export function useNoteInteractionsV2(
         dragState, // ✅ NEW: Drag state for cursor management
         paintDragState, // ✅ NEW: Paint drag state for cursor management
         cursorState: getCursorState(), // ✅ NEW: Computed cursor state
+        contextMenuState, // ✅ NEW: Context menu state
 
         // Data
         notes: notes(),
@@ -1747,6 +2212,11 @@ export function useNoteInteractionsV2(
         deleteNotes,
         selectNote,
         deselectAll,
+        selectAll, // ✅ NEW: Select all notes (Ctrl+A)
+        invertSelection, // ✅ NEW: Invert selection (Ctrl+I)
+        copyNotes, // ✅ NEW: Copy to clipboard (Ctrl+C)
+        cutNotes, // ✅ NEW: Cut to clipboard (Ctrl+X)
+        pasteNotes, // ✅ NEW: Paste from clipboard (Ctrl+V)
         updateNoteVelocity: (noteId, velocity) => {
             const currentNotes = notes();
             const note = currentNotes.find(n => n.id === noteId);
@@ -1755,6 +2225,14 @@ export function useNoteInteractionsV2(
                 // Piano roll uses MIDI format, not 0-1 range
                 updateNote(noteId, { velocity: Math.max(1, Math.min(127, Math.round(velocity))) });
             }
-        }
+        },
+
+        // ✅ NEW: Undo/Redo operations
+        undo: () => commandStackRef.current?.undo(),
+        redo: () => commandStackRef.current?.redo(),
+        canUndo,
+        canRedo,
+        clearContextMenu: () => setContextMenuState(null),
+        clipboard // ✅ NEW: Clipboard state (for UI feedback)
     };
 }

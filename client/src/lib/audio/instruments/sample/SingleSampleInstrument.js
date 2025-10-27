@@ -281,6 +281,31 @@ export class SingleSampleInstrument extends BaseInstrument {
     }
 
     /**
+     * Update parameters in real-time
+     * Called when user changes parameters in the editor
+     */
+    updateParameters(params) {
+        console.log(`🎛️ SingleSampleInstrument.updateParameters (${this.name}):`, params);
+
+        // Update internal data
+        Object.keys(params).forEach(key => {
+            if (params[key] !== undefined) {
+                this.data[key] = params[key];
+            }
+        });
+
+        // Update master gain if volume/gain changed
+        if (params.gain !== undefined && this.masterGain) {
+            this.masterGain.gain.setValueAtTime(
+                params.gain,
+                this.audioContext.currentTime
+            );
+        }
+
+        console.log(`✅ Parameters updated for ${this.name}`);
+    }
+
+    /**
      * Cleanup
      */
     dispose() {

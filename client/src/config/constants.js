@@ -18,11 +18,27 @@ export const PLAYBACK_MODES = Object.freeze({
 });
 
 // --- Enstrüman Tipleri ---
+/**
+ * Instrument Types - 2 Ana Kategori
+ *
+ * ✅ SAMPLE-BASED (Sample file kullanır):
+ *    - SAMPLE: Tek veya çoklu audio sample (kick, snare, piano vb.)
+ *    - GRANULAR: Granular synthesis sampler (özel sample manipülasyonu)
+ *
+ * ✅ SYNTHESIS-BASED (Ses sentezi yapar):
+ *    - VASYNTH: Native Web Audio Virtual Analog Synth
+ *    - SYNTH: Legacy ForgeSynth (deprecated)
+ *
+ * 📝 Not: FileBrowser'dan eklenen samplelar otomatik olarak 'sample' tipine dönüştürülür.
+ */
 export const INSTRUMENT_TYPES = Object.freeze({
-  SAMPLE: 'sample',
-  SYNTH: 'synth',
-  VASYNTH: 'vasynth',  // Native Web Audio Virtual Analog Synth
-  GRANULAR: 'granular', // Granular Synthesis Sampler
+  // Sample-based instruments
+  SAMPLE: 'sample',      // Single or multi-sampled audio files
+  GRANULAR: 'granular',  // Granular synthesis (uses samples)
+
+  // Synthesis-based instruments
+  VASYNTH: 'vasynth',    // Native Web Audio Virtual Analog Synth
+  SYNTH: 'synth',        // Legacy ForgeSynth (deprecated)
 });
 
 // --- Mikser Kanal Tipleri ---

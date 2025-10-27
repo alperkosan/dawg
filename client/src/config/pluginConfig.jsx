@@ -31,6 +31,10 @@ import LimiterUI from '@/components/plugins/effects/LimiterUI.jsx';
 import ClipperUI from '@/components/plugins/effects/ClipperUI.jsx';
 import RhythmFXUI from '@/components/plugins/effects/RhythmFXUI.jsx';
 
+// Master Chain
+import { MaximizerUI } from '@/components/plugins/effects/MaximizerUI.jsx';
+import { ImagerUI } from '@/components/plugins/effects/ImagerUI.jsx';
+
 /**
  * @file pluginConfig.jsx
  * @description Tüm eklentilerin merkezi tanım dosyası.
@@ -449,6 +453,61 @@ export const pluginRegistry = {
       { name: 'Tape Stop', settings: { mode: 5, division: 8, chance: 100, intensity: 100, tapeSpeed: 50, fadeTime: 10, bpm: 128 } },
       { name: 'Trap Hi-Hat', settings: { mode: 1, division: 32, chance: 100, intensity: 100, bufferSize: 50, swing: 60, bpm: 140 } },
       { name: 'Euclidean Dream', settings: { mode: 0, division: 16, chance: 100, intensity: 100, swing: 50, fadeTime: 5, bpm: 128 } }
+    ]
+  },
+
+  // === MASTER CHAIN EFFECTS ===
+
+  'Maximizer': {
+    type: 'Maximizer',
+    name: 'Maximizer',
+    description: 'Loudness maximizer with soft saturation and brick-wall limiting',
+    category: 'The Master Chain',
+    story: 'Make it louder without clipping - Professional mastering tool',
+    toneNode: 'Maximizer',
+    uiComponent: MaximizerUI,
+    initialSize: { width: 800, height: 650 },
+    minSize: { width: 800, height: 650 },
+    defaultSettings: {
+      inputGain: 0,
+      saturation: 0.3,
+      ceiling: -0.1,
+      release: 0.1,
+      wet: 1.0
+    },
+    presets: [
+      { name: 'Gentle Loudness', settings: { inputGain: 2, saturation: 0.2, ceiling: -0.3, release: 0.2, wet: 1.0 } },
+      { name: 'Moderate Master', settings: { inputGain: 3, saturation: 0.3, ceiling: -0.1, release: 0.1, wet: 1.0 } },
+      { name: 'Aggressive Loud', settings: { inputGain: 6, saturation: 0.5, ceiling: -0.1, release: 0.05, wet: 1.0 } },
+      { name: 'Warm Glue', settings: { inputGain: 4, saturation: 0.6, ceiling: -0.2, release: 0.15, wet: 1.0 } },
+      { name: 'Transparent', settings: { inputGain: 2, saturation: 0.1, ceiling: -0.5, release: 0.2, wet: 1.0 } }
+    ]
+  },
+
+  'Imager': {
+    type: 'Imager',
+    name: 'Imager',
+    description: 'Stereo field sculptor with 7 character modes',
+    category: 'The Master Chain',
+    story: 'Shape your stereo image instantly - Professional Mid/Side processing',
+    toneNode: 'Imager',
+    uiComponent: ImagerUI,
+    initialSize: { width: 900, height: 720 },
+    minSize: { width: 900, height: 720 },
+    defaultSettings: {
+      width: 1.0,
+      midGain: 1.0,
+      sideGain: 1.0,
+      wet: 1.0
+    },
+    presets: [
+      { name: 'Mono (Bass Safe)', settings: { width: 0, midGain: 1.0, sideGain: 0, wet: 1.0 } },
+      { name: 'Narrow', settings: { width: 0.5, midGain: 1.0, sideGain: 0.5, wet: 1.0 } },
+      { name: 'Normal', settings: { width: 1.0, midGain: 1.0, sideGain: 1.0, wet: 1.0 } },
+      { name: 'Wide', settings: { width: 1.4, midGain: 0.85, sideGain: 1.4, wet: 1.0 } },
+      { name: 'Ultra Wide', settings: { width: 1.8, midGain: 0.7, sideGain: 1.8, wet: 1.0 } },
+      { name: 'Enhance Sides', settings: { width: 1.5, midGain: 0.6, sideGain: 1.9, wet: 1.0 } },
+      { name: 'Vocal Focus', settings: { width: 0.7, midGain: 1.3, sideGain: 0.5, wet: 1.0 } }
     ]
   }
 };

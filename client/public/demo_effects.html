@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🎭 VASynth v2 - Effects Chain Demo</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 20px;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      text-align: center;
+      font-size: 3em;
+      margin-bottom: 10px;
+      text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+    }
+
+    .subtitle {
+      text-align: center;
+      font-size: 1.2em;
+      opacity: 0.9;
+      margin-bottom: 30px;
+    }
+
+    .panel {
+      background: rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(10px);
+      border-radius: 16px;
+      padding: 24px;
+      margin-bottom: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .panel h2 {
+      margin-bottom: 16px;
+      font-size: 1.5em;
+    }
+
+    button {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      padding: 14px 28px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      border-radius: 8px;
+      margin: 5px;
+      transition: all 0.3s;
+    }
+
+    button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    button.active {
+      background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    }
+
+    .effects-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 20px;
+      margin-top: 20px;
+    }
+
+    .effect-card {
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 12px;
+      padding: 20px;
+      border: 2px solid transparent;
+      transition: all 0.3s;
+    }
+
+    .effect-card.active {
+      border-color: #ffd700;
+      box-shadow: 0 0 20px rgba(255, 215, 0, 0.3);
+    }
+
+    .effect-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+
+    .effect-header h3 {
+      font-size: 1.2em;
+    }
+
+    .toggle-btn {
+      padding: 8px 16px;
+      font-size: 14px;
+    }
+
+    .slider-container {
+      margin-bottom: 16px;
+    }
+
+    .slider-label {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 8px;
+      font-size: 0.9em;
+    }
+
+    .slider-value {
+      font-weight: bold;
+      color: #ffd700;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      height: 6px;
+      border-radius: 3px;
+      background: rgba(255, 255, 255, 0.2);
+      outline: none;
+      -webkit-appearance: none;
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      cursor: pointer;
+    }
+
+    select {
+      width: 100%;
+      padding: 8px;
+      background: rgba(0,0,0,0.3);
+      color: white;
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 4px;
+      font-size: 14px;
+    }
+
+    .demo-note {
+      background: rgba(255, 255, 255, 0.1);
+      border-left: 4px solid #ffd700;
+      padding: 16px;
+      border-radius: 8px;
+      margin-top: 16px;
+    }
+
+    .demo-note strong {
+      color: #ffd700;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🎭 Effects Chain Demo</h1>
+    <p class="subtitle">Distortion, Chorus, Delay & Reverb</p>
+
+    <!-- Controls -->
+    <div class="panel">
+      <h2>System</h2>
+      <button id="init-btn">🚀 Initialize Effects Demo</button>
+      <button id="play-btn" disabled>▶️ Play Test Tone</button>
+      <button id="stop-btn" disabled>⏸️ Stop</button>
+
+      <div class="demo-note">
+        <strong>💡 How to use:</strong> Initialize → Play test tone → Enable effects below and adjust parameters!
+      </div>
+    </div>
+
+    <!-- Effects Grid -->
+    <div class="panel">
+      <h2>🎚️ Effect Controls</h2>
+      <div class="effects-grid">
+        <!-- Distortion -->
+        <div class="effect-card" id="distortion-card">
+          <div class="effect-header">
+            <h3>🔥 Distortion</h3>
+            <button class="toggle-btn" id="distortion-toggle" disabled>OFF</button>
+          </div>
+
+          <div class="slider-container">
+            <div class="slider-label">
+              <span>Type</span>
+              <span class="slider-value" id="dist-type-val">Overdrive</span>
+            </div>
+            <select id="dist-type" disabled>
+              <option value="overdrive">Overdrive</option>
+              <option value="fuzz">Fuzz</option>
+              <option value="bitcrush">Bitcrush</option>
+            </select>
+          </div>
+
+          <div class="slider-container">
+            <div class="slider-label">
+              <span>Drive</span>
+              <span class="slider-value" id="dist-drive-val">5.0</span>
+            </div>
+            <input type="range" id="dist-drive" min="1" max="20" value="5" step="0.1" disabled>
+          </div>
+
+          <div class="slider-container">
+            <div class="slider-label">
+              <span>Mix</span>
+              <span class="slider-value" id="dist-mix-val">50%</span>
+            </div>
+            <input type="range" id="dist-mix" min="0" max="100" value="50" disabled>
+          </div>
+        </div>
+
+        <!-- Chorus -->
+        <div class="effect-card" id="chorus-card">
+          <div class="effect-header">
+            <h3>🌊 Chorus</h3>
+            <button class="toggle-btn" id="chorus-toggle" disabled>OFF</button>
+          </div>
+
+          <div class="slider-container">
+            <div class="slider-label">
+              <span>Rate</span>
+              <span class="slider-value" id="chorus-rate-val">0.5 Hz</span>
+            </div>
+            <input type="range" id="chorus-rate" min="0.1" max="5" value="0.5" step="0.1" disabled>
+          </div>
+
+          <div class="slider-container">
+            <div class="slider-label">
+              <span>Depth</span>
+              <span class="slider-value" id="chorus-depth-val">2.0 ms</span>
+            </div>
+            <input type="range" id="chorus-depth" min="0" max="10" value="2" step="0.1" disabled>
+          </div>
+
+          <div class="slider-container">
+            <div class="slider-label">
+              <span>Mix</span>
+              <span class="slider-value" id="chorus-mix-val">50%</span>
+            </div>
+            <input type="range" id="chorus-mix" min="0" max="100" value="50" disabled>
+          </div>
+        </div>
+
+        <!-- Delay -->
+        <div class="effect-card" id="delay-card">
+          <div class="effect-header">
+            <h3>⏱️ Delay</h3>
+            <button class="toggle-btn" id="delay-toggle" disabled>OFF</button>
+          </div>
+
+          <div class="slider-container">
+            <div class="slider-label">
+              <span>Time</span>
+              <span class="slider-value" id="delay-time-val">500 ms</span>
+            </div>
+            <input type="range" id="delay-time" min="10" max="2000" value="500" disabled>
+          </div>
+
+          <div class="slider-container">
+            <div class="slider-label">
+              <span>Feedback</span>
+              <span class="slider-value" id="delay-feedback-val">30%</span>
+            </div>
+            <input type="range" id="delay-feedback" min="0" max="90" value="30" disabled>
+          </div>
+
+          <div class="slider-container">
+            <div class="slider-label">
+              <span>Mix</span>
+              <span class="slider-value" id="delay-mix-val">30%</span>
+            </div>
+            <input type="range" id="delay-mix" min="0" max="100" value="30" disabled>
+          </div>
+        </div>
+
+        <!-- Reverb -->
+        <div class="effect-card" id="reverb-card">
+          <div class="effect-header">
+            <h3>🌌 Reverb</h3>
+            <button class="toggle-btn" id="reverb-toggle" disabled>OFF</button>
+          </div>
+
+          <div class="slider-container">
+            <div class="slider-label">
+              <span>Room Size</span>
+              <span class="slider-value" id="reverb-size-val">50%</span>
+            </div>
+            <input type="range" id="reverb-size" min="0" max="100" value="50" disabled>
+          </div>
+
+          <div class="slider-container">
+            <div class="slider-label">
+              <span>Damping</span>
+              <span class="slider-value" id="reverb-damping-val">50%</span>
+            </div>
+            <input type="range" id="reverb-damping" min="0" max="100" value="50" disabled>
+          </div>
+
+          <div class="slider-container">
+            <div class="slider-label">
+              <span>Mix</span>
+              <span class="slider-value" id="reverb-mix-val">20%</span>
+            </div>
+            <input type="range" id="reverb-mix" min="0" max="100" value="20" disabled>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    // Simplified effects demo
+    let audioContext = null;
+    let masterGain = null;
+    let oscillator = null;
+
+    // Effects
+    let distortion = null;
+    let chorus = null;
+    let delay = null;
+    let reverb = null;
+
+    let isPlaying = false;
+
+    const log = (msg) => console.log(`[Effects Demo] ${msg}`);
+
+    // Initialize
+    document.getElementById('init-btn').addEventListener('click', () => {
+      audioContext = new AudioContext();
+      masterGain = audioContext.createGain();
+      masterGain.gain.value = 0.2;
+      masterGain.connect(audioContext.destination);
+
+      // Enable all controls
+      document.querySelectorAll('button:not(#init-btn):not(#stop-btn)').forEach(btn => btn.disabled = false);
+      document.querySelectorAll('input, select').forEach(input => input.disabled = false);
+
+      document.getElementById('init-btn').disabled = true;
+
+      log('✅ Initialized! Click Play to test effects.');
+    });
+
+    // Play test tone
+    document.getElementById('play-btn').addEventListener('click', () => {
+      if (isPlaying) return;
+
+      oscillator = audioContext.createOscillator();
+      oscillator.type = 'sawtooth';
+      oscillator.frequency.value = 220; // A3
+
+      oscillator.connect(masterGain);
+      oscillator.start();
+
+      isPlaying = true;
+      document.getElementById('play-btn').disabled = true;
+      document.getElementById('stop-btn').disabled = false;
+
+      log('▶️ Playing test tone (A3)');
+    });
+
+    // Stop
+    document.getElementById('stop-btn').addEventListener('click', () => {
+      if (oscillator) oscillator.stop();
+      isPlaying = false;
+      document.getElementById('play-btn').disabled = false;
+      document.getElementById('stop-btn').disabled = true;
+
+      log('⏸️ Stopped');
+    });
+
+    // Distortion
+    document.getElementById('distortion-toggle').addEventListener('click', function() {
+      if (!distortion) {
+        // Create distortion
+        distortion = {
+          preGain: audioContext.createGain(),
+          waveshaper: audioContext.createWaveShaper(),
+          postGain: audioContext.createGain(),
+          mix: audioContext.createGain(),
+          dry: audioContext.createGain(),
+        };
+
+        distortion.preGain.gain.value = 5;
+        distortion.postGain.gain.value = 0.4;
+        distortion.mix.gain.value = 0.5;
+        distortion.dry.gain.value = 0.5;
+
+        updateDistortion();
+
+        // Routing
+        if (oscillator) {
+          oscillator.disconnect();
+          oscillator.connect(distortion.preGain);
+        }
+
+        distortion.preGain.connect(distortion.waveshaper);
+        distortion.waveshaper.connect(distortion.postGain);
+        distortion.postGain.connect(distortion.mix);
+        distortion.mix.connect(masterGain);
+
+        if (oscillator) {
+          oscillator.connect(distortion.dry);
+        }
+        distortion.dry.connect(masterGain);
+
+        this.textContent = 'ON';
+        this.classList.add('active');
+        document.getElementById('distortion-card').classList.add('active');
+
+        log('🔥 Distortion ON');
+      } else {
+        // Remove distortion
+        distortion = null;
+
+        if (oscillator) {
+          oscillator.disconnect();
+          oscillator.connect(masterGain);
+        }
+
+        this.textContent = 'OFF';
+        this.classList.remove('active');
+        document.getElementById('distortion-card').classList.remove('active');
+
+        log('Distortion OFF');
+      }
+    });
+
+    function updateDistortion() {
+      if (!distortion) return;
+
+      const drive = parseFloat(document.getElementById('dist-drive').value);
+      const type = document.getElementById('dist-type').value;
+
+      distortion.preGain.gain.value = drive;
+      distortion.postGain.gain.value = 1 / Math.sqrt(drive);
+
+      // Create curve
+      const samples = 44100;
+      const curve = new Float32Array(samples);
+
+      for (let i = 0; i < samples; i++) {
+        const x = (i * 2) / samples - 1;
+
+        if (type === 'overdrive') {
+          curve[i] = Math.tanh(x * drive);
+        } else if (type === 'fuzz') {
+          curve[i] = Math.max(-1, Math.min(1, x * drive));
+        } else if (type === 'bitcrush') {
+          const steps = 64;
+          curve[i] = Math.round(x * drive * steps) / steps;
+        }
+      }
+
+      distortion.waveshaper.curve = curve;
+      distortion.waveshaper.oversample = '4x';
+    }
+
+    document.getElementById('dist-type').addEventListener('change', (e) => {
+      document.getElementById('dist-type-val').textContent = e.target.value.charAt(0).toUpperCase() + e.target.value.slice(1);
+      updateDistortion();
+    });
+
+    document.getElementById('dist-drive').addEventListener('input', (e) => {
+      document.getElementById('dist-drive-val').textContent = parseFloat(e.target.value).toFixed(1);
+      updateDistortion();
+    });
+
+    document.getElementById('dist-mix').addEventListener('input', (e) => {
+      const mix = parseFloat(e.target.value) / 100;
+      document.getElementById('dist-mix-val').textContent = `${e.target.value}%`;
+      if (distortion) {
+        distortion.mix.gain.value = mix;
+        distortion.dry.gain.value = 1 - mix;
+      }
+    });
+
+    // Chorus
+    document.getElementById('chorus-toggle').addEventListener('click', function() {
+      if (!chorus) {
+        // Create chorus
+        chorus = {
+          delay: audioContext.createDelay(0.1),
+          lfo: audioContext.createOscillator(),
+          lfoGain: audioContext.createGain(),
+          wetGain: audioContext.createGain(),
+          dryGain: audioContext.createGain(),
+        };
+
+        chorus.delay.delayTime.value = 0.02;
+        chorus.lfo.type = 'sine';
+        chorus.lfo.frequency.value = 0.5;
+        chorus.lfoGain.gain.value = 0.002;
+        chorus.wetGain.gain.value = 0.5;
+        chorus.dryGain.gain.value = 0.5;
+
+        // Connect LFO
+        chorus.lfo.connect(chorus.lfoGain);
+        chorus.lfoGain.connect(chorus.delay.delayTime);
+        chorus.lfo.start();
+
+        // Routing
+        const source = distortion ? distortion.mix : oscillator;
+        if (source) {
+          source.disconnect();
+          // Wet path
+          source.connect(chorus.delay);
+          chorus.delay.connect(chorus.wetGain);
+          // Dry path
+          source.connect(chorus.dryGain);
+          // Mix
+          chorus.wetGain.connect(masterGain);
+          chorus.dryGain.connect(masterGain);
+        }
+
+        this.textContent = 'ON';
+        this.classList.add('active');
+        document.getElementById('chorus-card').classList.add('active');
+
+        log('🌊 Chorus ON');
+      } else {
+        // Remove chorus
+        chorus.lfo.stop();
+        chorus = null;
+
+        const source = distortion ? distortion.mix : oscillator;
+        if (source) {
+          source.disconnect();
+          source.connect(masterGain);
+        }
+
+        this.textContent = 'OFF';
+        this.classList.remove('active');
+        document.getElementById('chorus-card').classList.remove('active');
+
+        log('Chorus OFF');
+      }
+    });
+
+    document.getElementById('chorus-rate').addEventListener('input', (e) => {
+      const rate = parseFloat(e.target.value);
+      document.getElementById('chorus-rate-val').textContent = `${rate.toFixed(1)} Hz`;
+      if (chorus) {
+        chorus.lfo.frequency.setValueAtTime(rate, audioContext.currentTime);
+      }
+    });
+
+    document.getElementById('chorus-depth').addEventListener('input', (e) => {
+      const depth = parseFloat(e.target.value) / 1000;
+      document.getElementById('chorus-depth-val').textContent = `${e.target.value} ms`;
+      if (chorus) {
+        chorus.lfoGain.gain.setValueAtTime(depth, audioContext.currentTime);
+      }
+    });
+
+    document.getElementById('chorus-mix').addEventListener('input', (e) => {
+      const mix = parseFloat(e.target.value) / 100;
+      document.getElementById('chorus-mix-val').textContent = `${e.target.value}%`;
+      if (chorus) {
+        chorus.wetGain.gain.value = mix;
+        chorus.dryGain.gain.value = 1 - mix;
+      }
+    });
+
+    // Delay
+    document.getElementById('delay-toggle').addEventListener('click', function() {
+      if (!delay) {
+        // Create delay
+        delay = {
+          delayNode: audioContext.createDelay(5),
+          feedback: audioContext.createGain(),
+          wetGain: audioContext.createGain(),
+          dryGain: audioContext.createGain(),
+        };
+
+        delay.delayNode.delayTime.value = 0.5;
+        delay.feedback.gain.value = 0.3;
+        delay.wetGain.gain.value = 0.3;
+        delay.dryGain.gain.value = 0.7;
+
+        // Connect feedback loop
+        delay.delayNode.connect(delay.feedback);
+        delay.feedback.connect(delay.delayNode);
+        delay.delayNode.connect(delay.wetGain);
+
+        // Routing
+        const source = chorus ? chorus.wetGain : (distortion ? distortion.mix : oscillator);
+        if (source) {
+          source.disconnect();
+          // Wet path
+          source.connect(delay.delayNode);
+          // Dry path
+          source.connect(delay.dryGain);
+          // Mix
+          delay.wetGain.connect(masterGain);
+          delay.dryGain.connect(masterGain);
+        }
+
+        this.textContent = 'ON';
+        this.classList.add('active');
+        document.getElementById('delay-card').classList.add('active');
+
+        log('⏱️  Delay ON');
+      } else {
+        // Remove delay
+        delay = null;
+
+        const source = chorus ? chorus.wetGain : (distortion ? distortion.mix : oscillator);
+        if (source) {
+          source.disconnect();
+          source.connect(masterGain);
+        }
+
+        this.textContent = 'OFF';
+        this.classList.remove('active');
+        document.getElementById('delay-card').classList.remove('active');
+
+        log('Delay OFF');
+      }
+    });
+
+    document.getElementById('delay-time').addEventListener('input', (e) => {
+      const time = parseFloat(e.target.value) / 1000;
+      document.getElementById('delay-time-val').textContent = `${e.target.value} ms`;
+      if (delay) {
+        delay.delayNode.delayTime.setValueAtTime(time, audioContext.currentTime);
+      }
+    });
+
+    document.getElementById('delay-feedback').addEventListener('input', (e) => {
+      const feedback = parseFloat(e.target.value) / 100;
+      document.getElementById('delay-feedback-val').textContent = `${e.target.value}%`;
+      if (delay) {
+        delay.feedback.gain.setValueAtTime(feedback, audioContext.currentTime);
+      }
+    });
+
+    document.getElementById('delay-mix').addEventListener('input', (e) => {
+      const mix = parseFloat(e.target.value) / 100;
+      document.getElementById('delay-mix-val').textContent = `${e.target.value}%`;
+      if (delay) {
+        delay.wetGain.gain.value = mix;
+        delay.dryGain.gain.value = 1 - mix;
+      }
+    });
+
+    // Reverb
+    document.getElementById('reverb-toggle').addEventListener('click', function() {
+      if (!reverb) {
+        // Create simple reverb (convolver with impulse response)
+        reverb = {
+          convolver: audioContext.createConvolver(),
+          wetGain: audioContext.createGain(),
+          dryGain: audioContext.createGain(),
+        };
+
+        // Create impulse response
+        const sampleRate = audioContext.sampleRate;
+        const length = sampleRate * 2; // 2 seconds
+        const impulse = audioContext.createBuffer(2, length, sampleRate);
+        const impulseL = impulse.getChannelData(0);
+        const impulseR = impulse.getChannelData(1);
+
+        const roomSize = 0.5;
+        const damping = 0.5;
+
+        for (let i = 0; i < length; i++) {
+          const decay = Math.exp(-i / (sampleRate * roomSize * 2));
+          const damp = 1 - (i / length) * damping;
+          impulseL[i] = (Math.random() * 2 - 1) * decay * damp;
+          impulseR[i] = (Math.random() * 2 - 1) * decay * damp;
+        }
+
+        reverb.convolver.buffer = impulse;
+        reverb.wetGain.gain.value = 0.2;
+        reverb.dryGain.gain.value = 0.8;
+
+        // Routing
+        const source = delay ? delay.wetGain : (chorus ? chorus.wetGain : (distortion ? distortion.mix : oscillator));
+        if (source) {
+          source.disconnect();
+          // Wet path
+          source.connect(reverb.convolver);
+          reverb.convolver.connect(reverb.wetGain);
+          // Dry path
+          source.connect(reverb.dryGain);
+          // Mix
+          reverb.wetGain.connect(masterGain);
+          reverb.dryGain.connect(masterGain);
+        }
+
+        this.textContent = 'ON';
+        this.classList.add('active');
+        document.getElementById('reverb-card').classList.add('active');
+
+        log('🌌 Reverb ON');
+      } else {
+        // Remove reverb
+        reverb = null;
+
+        const source = delay ? delay.wetGain : (chorus ? chorus.wetGain : (distortion ? distortion.mix : oscillator));
+        if (source) {
+          source.disconnect();
+          source.connect(masterGain);
+        }
+
+        this.textContent = 'OFF';
+        this.classList.remove('active');
+        document.getElementById('reverb-card').classList.remove('active');
+
+        log('Reverb OFF');
+      }
+    });
+
+    document.getElementById('reverb-size').addEventListener('input', (e) => {
+      document.getElementById('reverb-size-val').textContent = `${e.target.value}%`;
+      // Reverb size requires recreating impulse - skipping for demo
+    });
+
+    document.getElementById('reverb-damping').addEventListener('input', (e) => {
+      document.getElementById('reverb-damping-val').textContent = `${e.target.value}%`;
+      // Damping requires recreating impulse - skipping for demo
+    });
+
+    document.getElementById('reverb-mix').addEventListener('input', (e) => {
+      const mix = parseFloat(e.target.value) / 100;
+      document.getElementById('reverb-mix-val').textContent = `${e.target.value}%`;
+      if (reverb) {
+        reverb.wetGain.gain.value = mix;
+        reverb.dryGain.gain.value = 1 - mix;
+      }
+    });
+
+    log('Effects demo loaded! Click Initialize.');
+  </script>
+</body>
+</html>

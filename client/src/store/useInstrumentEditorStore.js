@@ -122,8 +122,9 @@ const useInstrumentEditorStore = create(
           historyIndex: newHistory.length - 1,
         });
 
-        // Notify listeners (for real-time audio updates)
-        get()._notifyParameterChange(path, value);
+        // NOTE: Audio engine updates are now handled directly in editors
+        // This store only manages UI state and undo/redo history
+        // get()._notifyParameterChange(path, value);
       },
 
       /**

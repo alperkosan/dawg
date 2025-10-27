@@ -1,36 +1,142 @@
 /**
- * VASynth Editor
- * Full editor for Virtual Analog Synth instruments
+ * VASynth Editor v2
+ * Full editor for Virtual Analog Synth instruments with advanced features
+ *
+ * Features:
+ * - Unison mode (2-8 voices per oscillator)
+ * - Modulation matrix
+ * - Effects chain
+ * - Visual feedback (oscilloscope)
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useRef, useMemo } from 'react';
 import useInstrumentEditorStore from '../../../../store/useInstrumentEditorStore';
 import { getPreviewManager } from '@/lib/audio/preview';
 import { AudioContextService } from '@/lib/services/AudioContextService';
-import Knob from '../controls/Knob';
-import Slider from '../controls/Slider';
+import { getPreset } from '@/lib/audio/synth/presets';
+import { Knob, Slider } from '@/components/controls';
 import './VASynthEditor.css';
 
-const VASynthEditor = ({ instrumentData }) => {
+const VASynthEditor = ({ instrumentData: initialData }) => {
   const { updateParameter, getParameter } = useInstrumentEditorStore();
+
+  // Get live instrumentData from store (reactive to changes)
+  const instrumentData = useInstrumentEditorStore((state) => {
+    console.log('🔄 Store selector running, instrumentData:', state.instrumentData);
+    return state.instrumentData;
+  }) || initialData;
+
   const [activeNote, setActiveNote] = useState(null);
+  const canvasRef = useRef(null);
+  const animationRef = useRef(null);
+  const analyserRef = useRef(null);
 
   // Get preset data
   const presetName = instrumentData.presetName || 'Piano';
+  const presetData = getPreset(presetName);
 
-  // Setup PreviewManager with current instrument
+  // Default fallback values with unison support
+  const defaultOscillators = [
+    { enabled: true, waveform: 'sawtooth', detune: 0, octave: 0, level: 0.5, unisonVoices: 1, unisonDetune: 10, unisonPan: 0.5 },
+    { enabled: true, waveform: 'sawtooth', detune: -7, octave: 0, level: 0.5, unisonVoices: 1, unisonDetune: 10, unisonPan: 0.5 },
+    { enabled: false, waveform: 'square', detune: 0, octave: -1, level: 0.3, unisonVoices: 1, unisonDetune: 10, unisonPan: 0.5 }
+  ];
+
+  const defaultFilter = {
+    type: 'lowpass',
+    cutoff: 2000,
+    resonance: 1,
+    envelopeAmount: 2000
+  };
+
+  const defaultFilterEnvelope = {
+    attack: 0.01,
+    decay: 0.1,
+    sustain: 0.7,
+    release: 0.3
+  };
+
+  const defaultAmplitudeEnvelope = {
+    attack: 0.01,
+    decay: 0.2,
+    sustain: 0.8,
+    release: 0.5
+  };
+
+  // Get or initialize data from preset with safe fallbacks
+  // Merge defaults with existing data to support new parameters
+  // Use useMemo to ensure proper reactivity
+  const oscillators = useMemo(() => {
+    const result = Array.isArray(instrumentData.oscillators)
+      ? instrumentData.oscillators.map((osc, index) => ({
+          ...defaultOscillators[index],
+          ...osc,
+        }))
+      : (Array.isArray(presetData?.oscillators)
+          ? presetData.oscillators.map((osc, index) => ({
+              ...defaultOscillators[index],
+              ...osc,
+            }))
+          : defaultOscillators);
+    console.log('🔄 Oscillators recomputed:', result);
+    return result;
+  }, [instrumentData.oscillators, presetData?.oscillators]);
+
+  const filter = instrumentData.filter || presetData?.filter || defaultFilter;
+  const filterEnvelope = instrumentData.filterEnvelope || presetData?.filterEnvelope || defaultFilterEnvelope;
+  const amplitudeEnvelope = instrumentData.amplitudeEnvelope || presetData?.amplitudeEnvelope || defaultAmplitudeEnvelope;
+
+  // Setup PreviewManager with current instrument (only when instrument ID changes)
   useEffect(() => {
     const audioEngine = AudioContextService.getAudioEngine();
     if (audioEngine?.audioContext && instrumentData) {
       const previewManager = getPreviewManager(audioEngine.audioContext);
       previewManager.setInstrument(instrumentData);
     }
-  }, [instrumentData]);
+  }, [instrumentData.id]); // Only re-run when instrument ID changes, not on every parameter change!
 
   // Handle parameter updates
   const handleParameterChange = useCallback((path, value) => {
+    // 1. Update store (for UI state & undo/redo)
     updateParameter(path, value);
-  }, [updateParameter]);
+
+    // 2. Update audio engine DIRECTLY (bypassing store->engine chain)
+    const audioEngine = AudioContextService.getAudioEngine();
+    if (audioEngine && instrumentData.id) {
+      const instrument = audioEngine.instruments.get(instrumentData.id);
+      if (instrument && typeof instrument.updateParameters === 'function') {
+        // Build minimal update object based on path
+        const updateObj = {};
+        const keys = path.split('.');
+
+        if (keys[0] === 'oscillators') {
+          // oscillators.0.level -> update oscillator 0's level
+          const oscIndex = parseInt(keys[1]);
+          const paramName = keys[2];
+          const updatedOscillators = [...oscillators];
+          updatedOscillators[oscIndex] = { ...updatedOscillators[oscIndex], [paramName]: value };
+          updateObj.oscillatorSettings = updatedOscillators;
+        } else if (keys[0] === 'filter') {
+          // filter.cutoff -> update filter cutoff
+          updateObj.filterSettings = { ...filter, [keys[1]]: value };
+        } else if (keys[0] === 'filterEnvelope') {
+          updateObj.filterEnvelope = { ...filterEnvelope, [keys[1]]: value };
+        } else if (keys[0] === 'amplitudeEnvelope') {
+          updateObj.amplitudeEnvelope = { ...amplitudeEnvelope, [keys[1]]: value };
+        } else if (keys[0] === 'lfo1') {
+          // LFO modulation parameters
+          updateObj.lfo1 = { ...instrumentData.lfo1, [keys[1]]: value };
+        } else if (keys[0] === 'effects') {
+          // Effects toggle
+          updateObj.effects = { ...instrumentData.effects, [keys[1]]: value };
+        }
+
+        // Call updateParameters DIRECTLY (not through updateInstrumentParameters)
+        instrument.updateParameters(updateObj);
+        console.log('✅ VASynth parameter updated (direct):', path, value);
+      }
+    }
+  }, [updateParameter, instrumentData.id, instrumentData.lfo1, instrumentData.effects, oscillators, filter, filterEnvelope, amplitudeEnvelope]);
 
   // Preview keyboard handlers
   const handleNoteOn = useCallback((note, octave) => {
@@ -50,6 +156,85 @@ const VASynthEditor = ({ instrumentData }) => {
     }
   }, []);
 
+  // Oscilloscope visualization
+  const drawOscilloscope = useCallback(() => {
+    if (!canvasRef.current || !analyserRef.current) return;
+
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    const analyser = analyserRef.current;
+
+    const bufferLength = analyser.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+
+    const draw = () => {
+      animationRef.current = requestAnimationFrame(draw);
+
+      analyser.getByteTimeDomainData(dataArray);
+
+      // Clear canvas
+      ctx.fillStyle = 'rgba(20, 20, 30, 0.3)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Draw waveform
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#667eea';
+      ctx.beginPath();
+
+      const sliceWidth = canvas.width / bufferLength;
+      let x = 0;
+
+      for (let i = 0; i < bufferLength; i++) {
+        const v = dataArray[i] / 128.0;
+        const y = (v * canvas.height) / 2;
+
+        if (i === 0) {
+          ctx.moveTo(x, y);
+        } else {
+          ctx.lineTo(x, y);
+        }
+
+        x += sliceWidth;
+      }
+
+      ctx.lineTo(canvas.width, canvas.height / 2);
+      ctx.stroke();
+    };
+
+    draw();
+  }, []);
+
+  // Setup oscilloscope when audio engine is available
+  useEffect(() => {
+    const audioEngine = AudioContextService.getAudioEngine();
+    if (!audioEngine?.audioContext || !canvasRef.current) return;
+
+    // Create analyser
+    const analyser = audioEngine.audioContext.createAnalyser();
+    analyser.fftSize = 2048;
+    analyserRef.current = analyser;
+
+    // Connect instrument to analyser
+    if (instrumentData.id) {
+      const instrument = audioEngine.instruments.get(instrumentData.id);
+      if (instrument?.output) {
+        try {
+          instrument.output.connect(analyser);
+          drawOscilloscope();
+        } catch (err) {
+          console.warn('Failed to connect oscilloscope:', err);
+        }
+      }
+    }
+
+    // Cleanup
+    return () => {
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+      }
+    };
+  }, [instrumentData.id, drawOscilloscope]);
+
   return (
     <div className="vasynth-editor">
       {/* Preset Info */}
@@ -59,9 +244,9 @@ const VASynthEditor = ({ instrumentData }) => {
         </div>
         <div className="vasynth-editor__preset-name">{presetName}</div>
         <div className="vasynth-editor__preset-hint">
-          This is a VASynth instrument using the <strong>{presetName}</strong> preset.
+          VASynth preset with 3 oscillators, multi-mode filter, and dual ADSR envelopes.
           <br />
-          Full editor with oscillators, filters, and envelopes coming soon!
+          Adjust parameters below and hear changes in real-time!
         </div>
       </div>
 
@@ -71,37 +256,89 @@ const VASynthEditor = ({ instrumentData }) => {
           <div className="vasynth-editor__section-title">Oscillators</div>
         </div>
         <div className="vasynth-editor__oscillators">
-          {[1, 2, 3].map((oscNum) => (
-            <div key={oscNum} className="vasynth-editor__oscillator">
-              <div className="vasynth-editor__oscillator-header">OSC {oscNum}</div>
+          {oscillators.map((osc, index) => (
+            <div key={index} className="vasynth-editor__oscillator">
+              <div className="vasynth-editor__oscillator-header">OSC {index + 1}</div>
               <div className="vasynth-editor__oscillator-controls">
                 <Knob
                   label="Level"
-                  value={0.5}
+                  value={osc.level}
                   min={0}
                   max={1}
-                  size="small"
-                  color="#6B8EBF"
-                  onChange={(value) => console.log(`OSC${oscNum} level:`, value)}
+                  sizeVariant="small"
+                  valueFormatter={(v) => `${(v * 100).toFixed(0)}%`}
+                  onChange={(value) => handleParameterChange(`oscillators.${index}.level`, value)}
                 />
                 <Knob
                   label="Detune"
-                  value={0}
+                  value={osc.detune}
                   min={-50}
                   max={50}
-                  size="small"
-                  color="#6B8EBF"
-                  formatValue={(v) => `${v.toFixed(1)}¢`}
-                  onChange={(value) => console.log(`OSC${oscNum} detune:`, value)}
+                  sizeVariant="small"
+                  valueFormatter={(v) => `${v.toFixed(1)}¢`}
+                  onChange={(value) => handleParameterChange(`oscillators.${index}.detune`, value)}
                 />
+                <Knob
+                  label="Unison"
+                  value={osc.unisonVoices || 1}
+                  min={1}
+                  max={8}
+                  step={1}
+                  sizeVariant="small"
+                  color="#FFA500"
+                  valueFormatter={(v) => `${Math.round(v)}v`}
+                  onChange={(value) => handleParameterChange(`oscillators.${index}.unisonVoices`, Math.round(value))}
+                />
+                {(osc.unisonVoices || 1) > 1 && (
+                  <>
+                    <Knob
+                      label="U.Detune"
+                      value={osc.unisonDetune || 10}
+                      min={0}
+                      max={50}
+                      sizeVariant="small"
+                      color="#FFA500"
+                      valueFormatter={(v) => `${v.toFixed(1)}¢`}
+                      onChange={(value) => handleParameterChange(`oscillators.${index}.unisonDetune`, value)}
+                    />
+                    <Knob
+                      label="U.Pan"
+                      value={osc.unisonPan || 0.5}
+                      min={0}
+                      max={1}
+                      sizeVariant="small"
+                      color="#FFA500"
+                      valueFormatter={(v) => `${(v * 100).toFixed(0)}%`}
+                      onChange={(value) => handleParameterChange(`oscillators.${index}.unisonPan`, value)}
+                    />
+                  </>
+                )}
               </div>
               <div className="vasynth-editor__waveform-selector">
-                <button className="vasynth-editor__waveform-btn vasynth-editor__waveform-btn--active">
+                <button
+                  className={`vasynth-editor__waveform-btn ${osc.waveform === 'sawtooth' ? 'vasynth-editor__waveform-btn--active' : ''}`}
+                  onClick={() => handleParameterChange(`oscillators.${index}.waveform`, 'sawtooth')}
+                >
                   Saw
                 </button>
-                <button className="vasynth-editor__waveform-btn">Sqr</button>
-                <button className="vasynth-editor__waveform-btn">Tri</button>
-                <button className="vasynth-editor__waveform-btn">Sin</button>
+                <button
+                  className={`vasynth-editor__waveform-btn ${osc.waveform === 'square' ? 'vasynth-editor__waveform-btn--active' : ''}`}
+                  onClick={() => handleParameterChange(`oscillators.${index}.waveform`, 'square')}
+                >
+                  Sqr
+                </button>
+                <button
+                  className={`vasynth-editor__waveform-btn ${osc.waveform === 'triangle' ? 'vasynth-editor__waveform-btn--active' : ''}`}
+                  onClick={() => handleParameterChange(`oscillators.${index}.waveform`, 'triangle')}
+                >
+                  Tri
+                </button>
+                <button
+                  className={`vasynth-editor__waveform-btn ${osc.waveform === 'sine' ? 'vasynth-editor__waveform-btn--active' : ''}`}
+                  onClick={() => handleParameterChange(`oscillators.${index}.waveform`, 'sine')}
+                >
+                  Sin
+                </button>
               </div>
             </div>
           ))}
@@ -117,32 +354,44 @@ const VASynthEditor = ({ instrumentData }) => {
           <div className="vasynth-editor__filter-row">
             <Slider
               label="Cutoff"
-              value={0.6}
-              min={0}
-              max={1}
+              value={filter.cutoff}
+              min={20}
+              max={20000}
               color="#6B8EBF"
-              formatValue={(v) => `${Math.round(v * 20000)} Hz`}
-              onChange={(value) => console.log('Filter cutoff:', value)}
+              logarithmic
+              valueFormatter={(v) => {
+                if (v >= 1000) return `${(v / 1000).toFixed(1)} kHz`;
+                return `${Math.round(v)} Hz`;
+              }}
+              onChange={(value) => handleParameterChange('filter.cutoff', value)}
             />
           </div>
           <div className="vasynth-editor__filter-row">
             <Slider
               label="Resonance"
-              value={0.3}
-              min={0}
-              max={1}
+              value={filter.resonance}
+              min={0.0001}
+              max={30}
               color="#6B8EBF"
-              onChange={(value) => console.log('Filter resonance:', value)}
+              valueFormatter={(v) => `${v.toFixed(1)} Q`}
+              onChange={(value) => handleParameterChange('filter.resonance', value)}
             />
           </div>
           <div className="vasynth-editor__filter-row">
             <Slider
               label="Envelope Amount"
-              value={0.5}
-              min={0}
-              max={1}
+              value={filter.envelopeAmount}
+              min={-12000}
+              max={12000}
               color="#6B8EBF"
-              onChange={(value) => console.log('Filter env:', value)}
+              bipolar
+              valueFormatter={(v) => {
+                const abs = Math.abs(v);
+                const sign = v >= 0 ? '+' : '-';
+                if (abs >= 1000) return `${sign}${(abs / 1000).toFixed(1)} kHz`;
+                return `${sign}${abs.toFixed(0)} Hz`;
+              }}
+              onChange={(value) => handleParameterChange('filter.envelopeAmount', value)}
             />
           </div>
         </div>
@@ -156,38 +405,39 @@ const VASynthEditor = ({ instrumentData }) => {
         <div className="vasynth-editor__adsr">
           <Knob
             label="Attack"
-            value={0.01}
+            value={filterEnvelope.attack}
             min={0.001}
             max={2}
             color="#6B8EBF"
-            formatValue={(v) => `${(v * 1000).toFixed(0)}ms`}
-            onChange={(value) => console.log('Filter attack:', value)}
+            valueFormatter={(v) => `${(v * 1000).toFixed(0)}ms`}
+            onChange={(value) => handleParameterChange('filterEnvelope.attack', value)}
           />
           <Knob
             label="Decay"
-            value={0.1}
+            value={filterEnvelope.decay}
             min={0.001}
             max={2}
             color="#6B8EBF"
-            formatValue={(v) => `${(v * 1000).toFixed(0)}ms`}
-            onChange={(value) => console.log('Filter decay:', value)}
+            valueFormatter={(v) => `${(v * 1000).toFixed(0)}ms`}
+            onChange={(value) => handleParameterChange('filterEnvelope.decay', value)}
           />
           <Knob
             label="Sustain"
-            value={0.7}
+            value={filterEnvelope.sustain}
             min={0}
             max={1}
             color="#6B8EBF"
-            onChange={(value) => console.log('Filter sustain:', value)}
+            valueFormatter={(v) => `${(v * 100).toFixed(0)}%`}
+            onChange={(value) => handleParameterChange('filterEnvelope.sustain', value)}
           />
           <Knob
             label="Release"
-            value={0.3}
+            value={filterEnvelope.release}
             min={0.001}
             max={4}
             color="#6B8EBF"
-            formatValue={(v) => `${(v * 1000).toFixed(0)}ms`}
-            onChange={(value) => console.log('Filter release:', value)}
+            valueFormatter={(v) => `${(v * 1000).toFixed(0)}ms`}
+            onChange={(value) => handleParameterChange('filterEnvelope.release', value)}
           />
         </div>
       </div>
@@ -199,39 +449,150 @@ const VASynthEditor = ({ instrumentData }) => {
         <div className="vasynth-editor__adsr">
           <Knob
             label="Attack"
-            value={0.01}
+            value={amplitudeEnvelope.attack}
             min={0.001}
             max={2}
             color="#B67BA3"
-            formatValue={(v) => `${(v * 1000).toFixed(0)}ms`}
-            onChange={(value) => console.log('Amp attack:', value)}
+            valueFormatter={(v) => `${(v * 1000).toFixed(0)}ms`}
+            onChange={(value) => handleParameterChange('amplitudeEnvelope.attack', value)}
           />
           <Knob
             label="Decay"
-            value={0.2}
+            value={amplitudeEnvelope.decay}
             min={0.001}
             max={2}
             color="#B67BA3"
-            formatValue={(v) => `${(v * 1000).toFixed(0)}ms`}
-            onChange={(value) => console.log('Amp decay:', value)}
+            valueFormatter={(v) => `${(v * 1000).toFixed(0)}ms`}
+            onChange={(value) => handleParameterChange('amplitudeEnvelope.decay', value)}
           />
           <Knob
             label="Sustain"
-            value={0.8}
+            value={amplitudeEnvelope.sustain}
             min={0}
             max={1}
             color="#B67BA3"
-            onChange={(value) => console.log('Amp sustain:', value)}
+            valueFormatter={(v) => `${(v * 100).toFixed(0)}%`}
+            onChange={(value) => handleParameterChange('amplitudeEnvelope.sustain', value)}
           />
           <Knob
             label="Release"
-            value={0.5}
+            value={amplitudeEnvelope.release}
             min={0.001}
             max={4}
             color="#B67BA3"
-            formatValue={(v) => `${(v * 1000).toFixed(0)}ms`}
-            onChange={(value) => console.log('Amp release:', value)}
+            valueFormatter={(v) => `${(v * 1000).toFixed(0)}ms`}
+            onChange={(value) => handleParameterChange('amplitudeEnvelope.release', value)}
           />
+        </div>
+      </div>
+
+      {/* Modulation Section */}
+      <div className="vasynth-editor__section">
+        <div className="vasynth-editor__section-header">
+          <div className="vasynth-editor__section-title">🎛️ Modulation (LFO 1)</div>
+        </div>
+        <div className="vasynth-editor__modulation-panel">
+          <div className="vasynth-editor__lfo-controls">
+            <Knob
+              label="Rate"
+              value={instrumentData.lfo1?.rate || 0.5}
+              min={0.1}
+              max={20}
+              sizeVariant="small"
+              color="#9B59B6"
+              valueFormatter={(v) => `${v.toFixed(2)} Hz`}
+              onChange={(value) => handleParameterChange('lfo1.rate', value)}
+            />
+            <Knob
+              label="Depth"
+              value={instrumentData.lfo1?.depth || 0.5}
+              min={0}
+              max={1}
+              sizeVariant="small"
+              color="#9B59B6"
+              valueFormatter={(v) => `${(v * 100).toFixed(0)}%`}
+              onChange={(value) => handleParameterChange('lfo1.depth', value)}
+            />
+            <div className="vasynth-editor__lfo-waveform">
+              <select
+                value={instrumentData.lfo1?.waveform || 'sine'}
+                onChange={(e) => handleParameterChange('lfo1.waveform', e.target.value)}
+                className="vasynth-editor__select"
+              >
+                <option value="sine">Sine</option>
+                <option value="triangle">Triangle</option>
+                <option value="sawtooth">Sawtooth</option>
+                <option value="square">Square</option>
+              </select>
+            </div>
+          </div>
+          <div className="vasynth-editor__mod-target">
+            <label>Target:</label>
+            <select
+              value={instrumentData.lfo1?.target || 'filter.cutoff'}
+              onChange={(e) => handleParameterChange('lfo1.target', e.target.value)}
+              className="vasynth-editor__select"
+            >
+              <option value="filter.cutoff">Filter Cutoff</option>
+              <option value="filter.resonance">Filter Resonance</option>
+              <option value="osc.level">Oscillator Level</option>
+              <option value="osc.detune">Oscillator Detune</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* Effects Section */}
+      <div className="vasynth-editor__section">
+        <div className="vasynth-editor__section-header">
+          <div className="vasynth-editor__section-title">🎭 Effects</div>
+        </div>
+        <div className="vasynth-editor__effects-panel">
+          <div className="vasynth-editor__effect-toggles">
+            <button
+              className={`vasynth-editor__effect-btn ${instrumentData.effects?.distortion ? 'vasynth-editor__effect-btn--active' : ''}`}
+              onClick={() => handleParameterChange('effects.distortion', !(instrumentData.effects?.distortion))}
+            >
+              🔥 Distortion
+            </button>
+            <button
+              className={`vasynth-editor__effect-btn ${instrumentData.effects?.chorus ? 'vasynth-editor__effect-btn--active' : ''}`}
+              onClick={() => handleParameterChange('effects.chorus', !(instrumentData.effects?.chorus))}
+            >
+              🌊 Chorus
+            </button>
+            <button
+              className={`vasynth-editor__effect-btn ${instrumentData.effects?.delay ? 'vasynth-editor__effect-btn--active' : ''}`}
+              onClick={() => handleParameterChange('effects.delay', !(instrumentData.effects?.delay))}
+            >
+              ⏱️ Delay
+            </button>
+            <button
+              className={`vasynth-editor__effect-btn ${instrumentData.effects?.reverb ? 'vasynth-editor__effect-btn--active' : ''}`}
+              onClick={() => handleParameterChange('effects.reverb', !(instrumentData.effects?.reverb))}
+            >
+              🌌 Reverb
+            </button>
+          </div>
+          <p className="vasynth-editor__hint">Click to toggle effects on/off</p>
+        </div>
+      </div>
+
+      {/* Visual Feedback */}
+      <div className="vasynth-editor__section">
+        <div className="vasynth-editor__section-header">
+          <div className="vasynth-editor__section-title">📊 Oscilloscope</div>
+        </div>
+        <div className="vasynth-editor__visualizer">
+          <canvas
+            ref={canvasRef}
+            className="vasynth-editor__canvas"
+            width={800}
+            height={120}
+          />
+          <div className="vasynth-editor__visualizer-overlay">
+            Real-time waveform
+          </div>
         </div>
       </div>
 

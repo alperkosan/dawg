@@ -81,6 +81,22 @@ const DrumSamplerEditor = ({ instrumentData }) => {
     // TODO: Implement actual seeking when preview supports it
   }, []);
 
+  // Handle parameter change with real-time audio engine update
+  const handleParameterChange = useCallback((paramName, value) => {
+    // Update store
+    useInstrumentEditorStore.getState().updateParameter(paramName, value);
+
+    // Update audio engine in real-time
+    const audioEngine = AudioContextService.getAudioEngine();
+    if (audioEngine && instrumentData.id) {
+      const instrument = audioEngine.instruments.get(instrumentData.id);
+      if (instrument && typeof instrument.updateParameters === 'function') {
+        instrument.updateParameters({ [paramName]: value });
+        console.log(`✅ ${paramName} updated in audio engine:`, value);
+      }
+    }
+  }, [instrumentData.id]);
+
   return (
     <div className="drumsampler-editor">
       {/* Sample Info */}
@@ -128,9 +144,7 @@ const DrumSamplerEditor = ({ instrumentData }) => {
             step={0.1}
             color="#D4A259"
             formatValue={(v) => `${v > 0 ? '+' : ''}${v.toFixed(1)} st`}
-            onChange={(value) => {
-              useInstrumentEditorStore.getState().updateParameter('pitch', value);
-            }}
+            onChange={(value) => handleParameterChange('pitch', value)}
           />
           <Slider
             label="Volume"
@@ -142,7 +156,7 @@ const DrumSamplerEditor = ({ instrumentData }) => {
             formatValue={(v) => `${v > 0 ? '+' : ''}${v.toFixed(1)} dB`}
             onChange={(value) => {
               const gain = Math.pow(10, value / 20);
-              useInstrumentEditorStore.getState().updateParameter('gain', gain);
+              handleParameterChange('gain', gain);
             }}
           />
           <Slider
@@ -157,9 +171,7 @@ const DrumSamplerEditor = ({ instrumentData }) => {
               if (v < 0) return `${Math.abs(v * 100).toFixed(0)}% L`;
               return `${(v * 100).toFixed(0)}% R`;
             }}
-            onChange={(value) => {
-              useInstrumentEditorStore.getState().updateParameter('pan', value);
-            }}
+            onChange={(value) => handleParameterChange('pan', value)}
           />
         </div>
       </div>
@@ -176,9 +188,7 @@ const DrumSamplerEditor = ({ instrumentData }) => {
             step={0.001}
             color="#6B8EBF"
             formatValue={(v) => `${(v * 100).toFixed(1)}%`}
-            onChange={(value) => {
-              useInstrumentEditorStore.getState().updateParameter('sampleStart', value);
-            }}
+            onChange={(value) => handleParameterChange('sampleStart', value)}
           />
           <Slider
             label="End"
@@ -188,9 +198,7 @@ const DrumSamplerEditor = ({ instrumentData }) => {
             step={0.001}
             color="#6B8EBF"
             formatValue={(v) => `${(v * 100).toFixed(1)}%`}
-            onChange={(value) => {
-              useInstrumentEditorStore.getState().updateParameter('sampleEnd', value);
-            }}
+            onChange={(value) => handleParameterChange('sampleEnd', value)}
           />
           <Slider
             label="Loop Start"
@@ -200,9 +208,7 @@ const DrumSamplerEditor = ({ instrumentData }) => {
             step={0.001}
             color="#FFB74D"
             formatValue={(v) => `${(v * 100).toFixed(1)}%`}
-            onChange={(value) => {
-              useInstrumentEditorStore.getState().updateParameter('loopStart', value);
-            }}
+            onChange={(value) => handleParameterChange('loopStart', value)}
           />
           <Slider
             label="Loop End"
@@ -212,9 +218,7 @@ const DrumSamplerEditor = ({ instrumentData }) => {
             step={0.001}
             color="#FFB74D"
             formatValue={(v) => `${(v * 100).toFixed(1)}%`}
-            onChange={(value) => {
-              useInstrumentEditorStore.getState().updateParameter('loopEnd', value);
-            }}
+            onChange={(value) => handleParameterChange('loopEnd', value)}
           />
         </div>
 
@@ -222,17 +226,13 @@ const DrumSamplerEditor = ({ instrumentData }) => {
         <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
           <button
             className={`drumsampler-editor__toggle ${instrumentData.loop ? 'drumsampler-editor__toggle--active' : ''}`}
-            onClick={() => {
-              useInstrumentEditorStore.getState().updateParameter('loop', !instrumentData.loop);
-            }}
+            onClick={() => handleParameterChange('loop', !instrumentData.loop)}
           >
             {instrumentData.loop ? '🔁' : '▶️'} Loop
           </button>
           <button
             className={`drumsampler-editor__toggle ${instrumentData.reverse ? 'drumsampler-editor__toggle--active' : ''}`}
-            onClick={() => {
-              useInstrumentEditorStore.getState().updateParameter('reverse', !instrumentData.reverse);
-            }}
+            onClick={() => handleParameterChange('reverse', !instrumentData.reverse)}
           >
             {instrumentData.reverse ? '⏪' : '⏩'} Reverse
           </button>
@@ -251,9 +251,7 @@ const DrumSamplerEditor = ({ instrumentData }) => {
             step={0.001}
             color="#FF6B9D"
             formatValue={(v) => `${(v * 1000).toFixed(0)} ms`}
-            onChange={(value) => {
-              useInstrumentEditorStore.getState().updateParameter('attack', value);
-            }}
+            onChange={(value) => handleParameterChange('attack', value)}
           />
           <Slider
             label="Decay"
@@ -263,9 +261,7 @@ const DrumSamplerEditor = ({ instrumentData }) => {
             step={0.001}
             color="#FF6B9D"
             formatValue={(v) => `${(v * 1000).toFixed(0)} ms`}
-            onChange={(value) => {
-              useInstrumentEditorStore.getState().updateParameter('decay', value);
-            }}
+            onChange={(value) => handleParameterChange('decay', value)}
           />
           <Slider
             label="Sustain"
@@ -275,9 +271,7 @@ const DrumSamplerEditor = ({ instrumentData }) => {
             step={0.01}
             color="#FF6B9D"
             formatValue={(v) => `${(v * 100).toFixed(0)}%`}
-            onChange={(value) => {
-              useInstrumentEditorStore.getState().updateParameter('sustain', value);
-            }}
+            onChange={(value) => handleParameterChange('sustain', value)}
           />
           <Slider
             label="Release"
@@ -287,9 +281,7 @@ const DrumSamplerEditor = ({ instrumentData }) => {
             step={0.001}
             color="#FF6B9D"
             formatValue={(v) => `${(v * 1000).toFixed(0)} ms`}
-            onChange={(value) => {
-              useInstrumentEditorStore.getState().updateParameter('release', value);
-            }}
+            onChange={(value) => handleParameterChange('release', value)}
           />
         </div>
       </div>
@@ -309,9 +301,7 @@ const DrumSamplerEditor = ({ instrumentData }) => {
               if (v >= 1000) return `${(v / 1000).toFixed(1)} kHz`;
               return `${v.toFixed(0)} Hz`;
             }}
-            onChange={(value) => {
-              useInstrumentEditorStore.getState().updateParameter('filterCutoff', value);
-            }}
+            onChange={(value) => handleParameterChange('filterCutoff', value)}
           />
           <Slider
             label="Resonance"
@@ -321,9 +311,7 @@ const DrumSamplerEditor = ({ instrumentData }) => {
             step={0.1}
             color="#9C27B0"
             formatValue={(v) => `${v.toFixed(1)} Q`}
-            onChange={(value) => {
-              useInstrumentEditorStore.getState().updateParameter('filterResonance', value);
-            }}
+            onChange={(value) => handleParameterChange('filterResonance', value)}
           />
           <Slider
             label="Filter Env"
@@ -338,9 +326,7 @@ const DrumSamplerEditor = ({ instrumentData }) => {
               if (abs >= 1000) return `${sign}${(abs / 1000).toFixed(1)} kHz`;
               return `${sign}${abs.toFixed(0)} Hz`;
             }}
-            onChange={(value) => {
-              useInstrumentEditorStore.getState().updateParameter('filterEnvAmount', value);
-            }}
+            onChange={(value) => handleParameterChange('filterEnvAmount', value)}
           />
         </div>
 
@@ -348,25 +334,19 @@ const DrumSamplerEditor = ({ instrumentData }) => {
         <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
           <button
             className={`drumsampler-editor__toggle ${(!instrumentData.filterType || instrumentData.filterType === 'lowpass') ? 'drumsampler-editor__toggle--active' : ''}`}
-            onClick={() => {
-              useInstrumentEditorStore.getState().updateParameter('filterType', 'lowpass');
-            }}
+            onClick={() => handleParameterChange('filterType', 'lowpass')}
           >
             Lowpass
           </button>
           <button
             className={`drumsampler-editor__toggle ${instrumentData.filterType === 'highpass' ? 'drumsampler-editor__toggle--active' : ''}`}
-            onClick={() => {
-              useInstrumentEditorStore.getState().updateParameter('filterType', 'highpass');
-            }}
+            onClick={() => handleParameterChange('filterType', 'highpass')}
           >
             Highpass
           </button>
           <button
             className={`drumsampler-editor__toggle ${instrumentData.filterType === 'bandpass' ? 'drumsampler-editor__toggle--active' : ''}`}
-            onClick={() => {
-              useInstrumentEditorStore.getState().updateParameter('filterType', 'bandpass');
-            }}
+            onClick={() => handleParameterChange('filterType', 'bandpass')}
           >
             Bandpass
           </button>
