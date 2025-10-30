@@ -84,8 +84,9 @@ export class SingleSampleInstrument extends BaseInstrument {
         });
 
         try {
-            // Stop existing note at same pitch (re-trigger)
-            if (this.activeSources.has(midiNote)) {
+            // ✅ CUT ITSELF: Stop existing note at same pitch if enabled
+            const cutItself = this.data.cutItself !== undefined ? this.data.cutItself : true; // Default true for single samples (drums)
+            if (cutItself && this.activeSources.has(midiNote)) {
                 this.noteOff(midiNote, when);
             }
 

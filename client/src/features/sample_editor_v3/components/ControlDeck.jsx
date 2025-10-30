@@ -38,12 +38,21 @@ export const ControlDeck = ({ instrument, track, onParamChange }) => {
   };
 
   const handleParamChangeWithEngine = (param, value) => {
-    // Update UI state
+    // Update UI state (store)
     onParamChange(param, value);
 
     // Update audio engine in real-time
-    if (param === 'volume' || param === 'pitchOffset') {
-      AudioContextService.updateInstrumentParams(instrument.id, { [param]: value });
+    const engineParams = ['volume', 'pitchOffset', 'cutItself', 'attack', 'decay', 'sustain', 'release', 'filterType', 'filterCutoff', 'filterResonance'];
+
+    if (engineParams.includes(param)) {
+      const audioEngine = AudioContextService.getAudioEngine();
+      if (audioEngine) {
+        const audioInstrument = audioEngine.instruments.get(instrument.id);
+        if (audioInstrument && typeof audioInstrument.updateParameters === 'function') {
+          audioInstrument.updateParameters({ [param]: value });
+          console.log(`🎛️ Updated ${param} = ${value} in audio engine`);
+        }
+      }
     }
   };
 
@@ -190,71 +199,170 @@ export const ControlDeck = ({ instrument, track, onParamChange }) => {
 
       <div className="control-deck__content">
         {activeTab === 'main' && (
-          <div className="main-settings-grid">
-            {/* Mixer Track Selector */}
-            <div className="main-settings-grid__group" style={{ gridColumn: '1 / -1' }}>
-              <h4 className="main-settings-grid__group-title">Routing</h4>
-              <div style={{ padding: '8px', background: 'rgba(0,0,0,0.2)', borderRadius: '8px' }}>
-                <label style={{ display: 'block', fontSize: '11px', color: 'rgba(255,255,255,0.6)', marginBottom: '6px' }}>
-                  Mixer Channel
-                </label>
-                <select
-                  value={instrument.mixerTrackId || ''}
-                  onChange={(e) => handleMixerTrackChange(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '6px 10px',
-                    background: 'rgba(255,255,255,0.05)',
-                    border: '1px solid rgba(255,255,255,0.1)',
-                    borderRadius: '6px',
-                    color: 'white',
-                    fontSize: '13px',
-                    cursor: 'pointer'
-                  }}
-                >
-                  <option value="">Select Channel...</option>
-                  {mixerTracks.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name}
-                    </option>
-                  ))}
-                </select>
+          <>
+            <div className="main-settings-grid">
+              {/* Mixer Track Selector */}
+              <div className="main-settings-grid__group" style={{ gridColumn: '1 / -1' }}>
+                <h4 className="main-settings-grid__group-title">Routing</h4>
+                <div style={{ padding: '8px', background: 'rgba(0,0,0,0.2)', borderRadius: '8px' }}>
+                  <label style={{ display: 'block', fontSize: '11px', color: 'rgba(255,255,255,0.6)', marginBottom: '6px' }}>
+                    Mixer Channel
+                  </label>
+                  <select
+                    value={instrument.mixerTrackId || ''}
+                    onChange={(e) => handleMixerTrackChange(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '6px 10px',
+                      background: 'rgba(255,255,255,0.05)',
+                      border: '1px solid rgba(255,255,255,0.1)',
+                      borderRadius: '6px',
+                      color: 'white',
+                      fontSize: '13px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <option value="">Select Channel...</option>
+                    {mixerTracks.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="main-settings-grid__group">
+                <h4 className="main-settings-grid__group-title">Seviye</h4>
+                <Knob
+                  label="Gain"
+                  value={instrument.volume ?? 0}
+                  onChange={v => handleParamChangeWithEngine('volume', v)}
+                  min={-48}
+                  max={12}
+                  defaultValue={0}
+                  unit="dB"
+                />
+              </div>
+              <div className="main-settings-grid__group">
+                <h4 className="main-settings-grid__group-title">Ton</h4>
+                <Knob
+                  label="Pitch"
+                  value={instrument.pitchOffset ?? 0}
+                  onChange={v => handleParamChangeWithEngine('pitchOffset', v)}
+                  min={-24}
+                  max={24}
+                  defaultValue={0}
+                  unit="st"
+                />
+              </div>
+              <div className="main-settings-grid__group">
+                <h4 className="main-settings-grid__group-title">Playback</h4>
+                 <EffectSwitch
+                   label="Cut Itself"
+                   isActive={!!instrument.cutItself}
+                   onClick={() => handleParamChangeWithEngine('cutItself', !instrument.cutItself)}
+                 />
               </div>
             </div>
 
+            {/* ADSR Envelope Section */}
+            <div className="main-settings-grid" style={{ marginTop: '20px' }}>
             <div className="main-settings-grid__group">
-              <h4 className="main-settings-grid__group-title">Seviye</h4>
-              <Knob
-                label="Gain"
-                value={instrument.volume ?? 0}
-                onChange={v => handleParamChangeWithEngine('volume', v)}
-                min={-48}
-                max={12}
-                defaultValue={0}
-                unit="dB"
-              />
-            </div>
-            <div className="main-settings-grid__group">
-              <h4 className="main-settings-grid__group-title">Ton</h4>
-              <Knob
-                label="Pitch"
-                value={instrument.pitchOffset ?? 0}
-                onChange={v => handleParamChangeWithEngine('pitchOffset', v)}
-                min={-24}
-                max={24}
-                defaultValue={0}
-                unit="st"
-              />
-            </div>
-            <div className="main-settings-grid__group">
-              <h4 className="main-settings-grid__group-title">Playback</h4>
-               <EffectSwitch
-                 label="Cut Itself"
-                 isActive={!!instrument.cutItself}
-                 onClick={() => handleParamChangeWithEngine('cutItself', !instrument.cutItself)}
-               />
+              <h4 className="main-settings-grid__group-title">Envelope (ADSR)</h4>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
+                <Knob
+                  label="Attack"
+                  value={instrument.attack ?? 5}
+                  onChange={v => handleParamChangeWithEngine('attack', v)}
+                  min={0}
+                  max={1000}
+                  defaultValue={5}
+                  unit="ms"
+                />
+                <Knob
+                  label="Decay"
+                  value={instrument.decay ?? 100}
+                  onChange={v => handleParamChangeWithEngine('decay', v)}
+                  min={0}
+                  max={2000}
+                  defaultValue={100}
+                  unit="ms"
+                />
+                <Knob
+                  label="Sustain"
+                  value={instrument.sustain ?? 100}
+                  onChange={v => handleParamChangeWithEngine('sustain', v)}
+                  min={0}
+                  max={100}
+                  defaultValue={100}
+                  unit="%"
+                />
+                <Knob
+                  label="Release"
+                  value={instrument.release ?? 50}
+                  onChange={v => handleParamChangeWithEngine('release', v)}
+                  min={0}
+                  max={2000}
+                  defaultValue={50}
+                  unit="ms"
+                />
+              </div>
             </div>
           </div>
+
+          {/* Filter Section */}
+          <div className="main-settings-grid" style={{ marginTop: '20px' }}>
+            <div className="main-settings-grid__group">
+              <h4 className="main-settings-grid__group-title">Filter</h4>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
+                <div>
+                  <label style={{ fontSize: '11px', color: 'rgba(255,255,255,0.6)', marginBottom: '4px', display: 'block' }}>
+                    Type
+                  </label>
+                  <select
+                    value={instrument.filterType || 'lowpass'}
+                    onChange={(e) => handleParamChangeWithEngine('filterType', e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '6px 10px',
+                      background: 'rgba(255,255,255,0.05)',
+                      border: '1px solid rgba(255,255,255,0.1)',
+                      borderRadius: '6px',
+                      color: 'white',
+                      fontSize: '13px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <option value="lowpass">Low Pass</option>
+                    <option value="highpass">High Pass</option>
+                    <option value="bandpass">Band Pass</option>
+                    <option value="notch">Notch</option>
+                  </select>
+                </div>
+                <Knob
+                  label="Cutoff"
+                  value={instrument.filterCutoff ?? 20000}
+                  onChange={v => handleParamChangeWithEngine('filterCutoff', v)}
+                  min={20}
+                  max={20000}
+                  defaultValue={20000}
+                  logarithmic
+                  unit="Hz"
+                />
+                <Knob
+                  label="Resonance"
+                  value={instrument.filterResonance ?? 1}
+                  onChange={v => handleParamChangeWithEngine('filterResonance', v)}
+                  min={0.1}
+                  max={20}
+                  defaultValue={1}
+                  step={0.1}
+                />
+              </div>
+            </div>
+          </div>
+          </>
         )}
         {activeTab === 'effects' && (
            <EffectsPanel

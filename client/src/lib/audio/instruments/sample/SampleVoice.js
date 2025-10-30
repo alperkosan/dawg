@@ -56,8 +56,9 @@ export class SampleVoice extends BaseVoice {
      * @param {number} frequency - Target frequency (for pitch calculation)
      * @param {number} time - AudioContext time
      * @param {Object} sampleData - { buffer, baseNote, pitchShift }
+     * @param {Object} instrumentData - Instrument parameters (ADSR, etc.)
      */
-    trigger(midiNote, velocity, frequency, time, sampleData = null) {
+    trigger(midiNote, velocity, frequency, time, sampleData = null, instrumentData = null) {
         if (!sampleData || !sampleData.buffer) {
             console.warn('SampleVoice: No sample data provided');
             return;
@@ -96,11 +97,37 @@ export class SampleVoice extends BaseVoice {
 
         this.gainNode.gain.setValueAtTime(finalGain, time);
 
-        // Apply attack envelope
-        const attackTime = 0.005; // 5ms quick attack
+        // ✅ ADSR Envelope from instrument data
+        const attack = instrumentData?.attack !== undefined ? instrumentData.attack / 1000 : 0.005; // Default 5ms
+        const decay = instrumentData?.decay !== undefined ? instrumentData.decay / 1000 : 0;
+        const sustain = instrumentData?.sustain !== undefined ? instrumentData.sustain / 100 : 1; // 0-100% to 0-1
+        const useADSR = instrumentData && (instrumentData.attack !== undefined || instrumentData.decay !== undefined || instrumentData.sustain !== undefined);
+
+        // Store release time for later use
+        if (instrumentData?.release !== undefined) {
+            this.releaseTime = instrumentData.release / 1000;
+        }
+
         this.envelopeGain.gain.cancelScheduledValues(time);
         this.envelopeGain.gain.setValueAtTime(0, time);
-        this.envelopeGain.gain.linearRampToValueAtTime(1, time + attackTime);
+
+        if (useADSR) {
+            // Full ADSR envelope
+            // Attack: 0 -> 1
+            this.envelopeGain.gain.linearRampToValueAtTime(1, time + attack);
+
+            // Decay: 1 -> sustain level
+            if (decay > 0) {
+                this.envelopeGain.gain.linearRampToValueAtTime(sustain, time + attack + decay);
+                this.envelopePhase = 'decay';
+            } else {
+                this.envelopePhase = 'sustain';
+            }
+        } else {
+            // Simple attack envelope (legacy behavior)
+            this.envelopeGain.gain.linearRampToValueAtTime(1, time + attack);
+            this.envelopePhase = 'attack';
+        }
 
         // Start playback
         this.currentSource.start(time);
@@ -111,14 +138,14 @@ export class SampleVoice extends BaseVoice {
         this.currentVelocity = velocity;
         this.startTime = time;
         this.currentAmplitude = velocityGain;
-        this.envelopePhase = 'attack';
 
         // Track envelope phase changes
+        const envelopeEndTime = useADSR ? attack + decay : attack;
         setTimeout(() => {
-            if (this.envelopePhase === 'attack') {
+            if (this.envelopePhase === 'attack' || this.envelopePhase === 'decay') {
                 this.envelopePhase = 'sustain';
             }
-        }, attackTime * 1000);
+        }, envelopeEndTime * 1000);
 
         // Auto-cleanup when sample finishes naturally
         this.currentSource.onended = () => {

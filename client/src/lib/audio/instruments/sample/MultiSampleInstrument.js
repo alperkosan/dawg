@@ -159,8 +159,12 @@ export class MultiSampleInstrument extends BaseInstrument {
         }
 
         try {
+            // ✅ CUT ITSELF: Check if same note should cut itself
+            const cutItself = this.data.cutItself !== undefined ? this.data.cutItself : false;
+            const allowPolyphony = !cutItself; // If cutItself=true, don't allow polyphony for same note
+
             // ✅ NEW: Allocate voice from pool (with voice stealing if needed)
-            const voice = this.voicePool.allocate(midiNote, true); // true = allow polyphony
+            const voice = this.voicePool.allocate(midiNote, allowPolyphony);
 
             if (!voice) {
                 console.warn(`${this.name}: No voice available for note ${midiNote}`);
@@ -171,7 +175,7 @@ export class MultiSampleInstrument extends BaseInstrument {
             const frequency = this.midiToFrequency(midiNote);
 
             // ✅ NEW: Trigger voice with sample data
-            voice.trigger(midiNote, velocity, frequency, time, mapping);
+            voice.trigger(midiNote, velocity, frequency, time, mapping, this.data);
 
             // Track note
             this._trackNoteOn(midiNote, velocity, time);
@@ -233,6 +237,34 @@ export class MultiSampleInstrument extends BaseInstrument {
             clampedVolume,
             this.audioContext.currentTime
         );
+    }
+
+    /**
+     * Update parameters in real-time
+     * Called when user changes parameters in the editor
+     */
+    updateParameters(params) {
+        console.log(`🎛️ MultiSampleInstrument.updateParameters (${this.name}):`, params);
+
+        // Update internal data
+        Object.keys(params).forEach(key => {
+            if (params[key] !== undefined) {
+                this.data[key] = params[key];
+            }
+        });
+
+        // Update master gain if volume/gain changed
+        if (params.gain !== undefined && this.masterGain) {
+            this.masterGain.gain.setValueAtTime(
+                params.gain,
+                this.audioContext.currentTime
+            );
+        }
+
+        // ADSR and filter params will be used in next noteOn via trigger()
+        // No need to update active voices, they keep their envelope
+
+        console.log(`✅ Parameters updated for ${this.name}`);
     }
 
     /**

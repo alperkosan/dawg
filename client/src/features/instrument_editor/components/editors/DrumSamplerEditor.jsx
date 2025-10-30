@@ -245,42 +245,42 @@ const DrumSamplerEditor = ({ instrumentData }) => {
         <div className="drumsampler-editor__controls">
           <Slider
             label="Attack"
-            value={instrumentData.attack || 0.01}
-            min={0.001}
-            max={2}
-            step={0.001}
+            value={instrumentData.attack !== undefined ? instrumentData.attack : 0}
+            min={0}
+            max={1000}
+            step={1}
             color="#FF6B9D"
-            formatValue={(v) => `${(v * 1000).toFixed(0)} ms`}
+            formatValue={(v) => `${v.toFixed(0)} ms`}
             onChange={(value) => handleParameterChange('attack', value)}
           />
           <Slider
             label="Decay"
-            value={instrumentData.decay || 0.1}
-            min={0.001}
-            max={2}
-            step={0.001}
+            value={instrumentData.decay !== undefined ? instrumentData.decay : 0}
+            min={0}
+            max={2000}
+            step={1}
             color="#FF6B9D"
-            formatValue={(v) => `${(v * 1000).toFixed(0)} ms`}
+            formatValue={(v) => `${v.toFixed(0)} ms`}
             onChange={(value) => handleParameterChange('decay', value)}
           />
           <Slider
             label="Sustain"
-            value={instrumentData.sustain !== undefined ? instrumentData.sustain : 1}
+            value={instrumentData.sustain !== undefined ? instrumentData.sustain : 100}
             min={0}
-            max={1}
-            step={0.01}
+            max={100}
+            step={1}
             color="#FF6B9D"
-            formatValue={(v) => `${(v * 100).toFixed(0)}%`}
+            formatValue={(v) => `${v.toFixed(0)}%`}
             onChange={(value) => handleParameterChange('sustain', value)}
           />
           <Slider
             label="Release"
-            value={instrumentData.release || 0.3}
-            min={0.001}
-            max={4}
-            step={0.001}
+            value={instrumentData.release !== undefined ? instrumentData.release : 50}
+            min={0}
+            max={2000}
+            step={1}
             color="#FF6B9D"
-            formatValue={(v) => `${(v * 1000).toFixed(0)} ms`}
+            formatValue={(v) => `${v.toFixed(0)} ms`}
             onChange={(value) => handleParameterChange('release', value)}
           />
         </div>

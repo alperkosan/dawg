@@ -77,11 +77,28 @@ const InstrumentRow = ({
     }
   }, [instrument.name, instrument.id, mixerTrack.id, updateInstrument, setTrackName]);
 
-  const getContextMenuOptions = useCallback(() => [
-    { label: 'Rename', action: handleRename },
-    { label: 'Show in Mixer', action: openMixerAndFocus },
-    // ... diğer context menu seçenekleri ...
-  ], [handleRename, openMixerAndFocus]);
+  const handleToggleCutItself = useCallback(() => {
+    const currentValue = instrument.cutItself !== undefined ? instrument.cutItself :
+      (instrument.type === 'singleSample' ? true : false); // Default: true for drums, false for melodic
+    updateInstrument(instrument.id, { cutItself: !currentValue });
+  }, [instrument.id, instrument.cutItself, instrument.type, updateInstrument]);
+
+  const getContextMenuOptions = useCallback(() => {
+    // Determine current cutItself state
+    const cutItselfActive = instrument.cutItself !== undefined ? instrument.cutItself :
+      (instrument.type === 'singleSample' ? true : false);
+
+    return [
+      { label: 'Rename', action: handleRename },
+      { label: 'Show in Mixer', action: openMixerAndFocus },
+      { type: 'separator' },
+      {
+        label: 'Cut Itself',
+        action: handleToggleCutItself,
+        isActive: cutItselfActive
+      },
+    ];
+  }, [handleRename, openMixerAndFocus, handleToggleCutItself, instrument.cutItself, instrument.type]);
 
   // ✅ Memoized computed classes and styles
   const rowClasses = useMemo(() => `
