@@ -486,7 +486,7 @@ export class PlaybackManager {
             if (Array.isArray(notes) && notes.length > 0) {
                 let instrumentMaxStep = 0;
                 notes.forEach(note => {
-                    const noteTime = note.time || 0;
+                    const noteTime = (note.startTime ?? note.time ?? 0);
                     // Notanın süresini step cinsinden al, varsayılan olarak 1 step (16'lık nota)
                     const noteDuration = this._getDurationInSteps(note.duration) || 1;
                     const noteEnd = noteTime + noteDuration;
@@ -1324,8 +1324,8 @@ export class PlaybackManager {
         const loopTimeInSeconds = this.loop ? loopLength * this.transport.stepsToSeconds(1) : 0;
 
         notes.forEach(note => {
-            // Note timing calculation
-            const noteTimeInSteps = note.time || 0;
+            // Note timing calculation (support both startTime and time)
+            const noteTimeInSteps = (note.startTime ?? note.time ?? 0);
             const noteTimeInTicks = noteTimeInSteps * this.transport.ticksPerStep;
             const noteTimeInSeconds = noteTimeInTicks * this.transport.getSecondsPerTick();
 
@@ -1603,7 +1603,8 @@ export class PlaybackManager {
                 return;
             }
 
-            const noteStep = note.time || 0;
+            // Support both legacy `time` and new `startTime` fields
+            const noteStep = (note.startTime ?? note.time ?? 0);
 
             // ✅ CRITICAL: Check if note should play in current loop iteration
             const loopLength = this.loopEnd - this.loopStart;

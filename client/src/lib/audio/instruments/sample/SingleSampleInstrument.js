@@ -108,6 +108,16 @@ export class SingleSampleInstrument extends BaseInstrument {
             const pitchParam = this.data.pitch || 0; // additional pitch shift from UI
             const totalPitchShift = baseShift + pitchParam;
             const playbackRate = Math.pow(2, totalPitchShift / 12);
+
+            // ✅ EXTRA DEBUG: Log pitch math to diagnose wrong pitch issues
+            console.log(`🎯 ${this.name}.pitchCalc:`, {
+                midiNote,
+                baseNote: this.baseNote,
+                baseShift,
+                pitchParam,
+                totalPitchShift,
+                playbackRate: Number.isFinite(playbackRate) ? playbackRate.toFixed(4) : playbackRate
+            });
             source.playbackRate.setValueAtTime(playbackRate, when);
 
             // Create gain node for velocity + instrument gain

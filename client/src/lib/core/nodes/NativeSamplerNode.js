@@ -13,6 +13,7 @@ export class NativeSamplerNode {
         this.pianoRoll = instrumentData.pianoRoll;
         this.cutItself = instrumentData.cutItself;
         this.pitchOffset = instrumentData.pitchOffset || 0;
+        this.baseNote = instrumentData.baseNote || 60; // Default C4 for samples
 
         // ✅ NEW: Effect chain support
         this.effectChain = [];
@@ -51,26 +52,29 @@ export class NativeSamplerNode {
         const source = this.context.createBufferSource();
         source.buffer = this.buffer;
 
-        // ✅ DÜZELTME: PianoRoll pitch handling
-        if (this.pianoRoll) {
-            const midiNoteC4 = 60;
-            // Pitch'in tanımsız olma ihtimaline karşı 'C4' varsayılanı ekleniyor.
-            const targetMidi = this.pitchToMidi(pitch || 'C4');
-            let semitoneShift = targetMidi - midiNoteC4;
+        // ✅ Pitch handling: always honor incoming pitch relative to baseNote
+        const targetMidi = this.pitchToMidi(pitch ?? 60);
+        let semitoneShift = targetMidi - (this.baseNote || 60);
 
-            // Add pitch offset if set
-            if (this.pitchOffset) {
-                semitoneShift += this.pitchOffset;
-            }
+        // Add pitch offset if set
+        if (this.pitchOffset) {
+            semitoneShift += this.pitchOffset;
+        }
 
-            const playbackRate = Math.pow(2, semitoneShift / 12);
+        const playbackRate = Math.pow(2, semitoneShift / 12);
 
-            // 🔧 DEBUG: Log pitch shifts that might cause distortion
-            if (Math.abs(semitoneShift) > 12 || playbackRate < 0.5 || playbackRate > 2.0) {
-                console.warn(`⚠️ ${this.name || 'Sample'} extreme pitch: ${semitoneShift}st (${playbackRate.toFixed(2)}x) - may cause aliasing`);
-            }
+        // 🔧 DEBUG: Log pitch math for diagnostics
+        console.log(`🎯 ${this.name || 'Sample'}.pitchCalc:`, {
+            pitch,
+            targetMidi,
+            baseNote: this.baseNote || 60,
+            semitoneShift,
+            pitchOffset: this.pitchOffset || 0,
+            playbackRate: Number.isFinite(playbackRate) ? playbackRate.toFixed(4) : playbackRate
+        });
 
-            // playbackRate'in her zaman geçerli bir sayı olmasını garantiliyoruz.
+        // Apply playback rate (guard against invalid values)
+        if (Number.isFinite(playbackRate) && playbackRate > 0) {
             source.playbackRate.setValueAtTime(playbackRate, startTime);
         }
 
@@ -158,32 +162,35 @@ export class NativeSamplerNode {
 
     // ✅ DÜZELTME: Pitch to MIDI conversion
     pitchToMidi(pitch) {
-        // Eğer pitch null veya undefined ise, hemen varsayılan değeri döndür.
-        if (!pitch) return 60; 
+        // Support numeric MIDI directly
+        if (typeof pitch === 'number' && Number.isFinite(pitch)) {
+            const midi = Math.round(pitch);
+            return Math.max(0, Math.min(127, midi));
+        }
 
-        const noteNames = { 
-            C: 0, 'C#': 1, D: 2, 'D#': 3, E: 4, F: 5, 
-            'F#': 6, G: 7, 'G#': 8, A: 9, 'A#': 10, B: 11 
+        if (!pitch) return 60;
+
+        const noteNames = {
+            C: 0, 'C#': 1, Db: 1, D: 2, 'D#': 3, Eb: 3, E: 4, F: 5,
+            'F#': 6, Gb: 6, G: 7, 'G#': 8, Ab: 8, A: 9, 'A#': 10, Bb: 10, B: 11
         };
-        
-        const match = pitch.match(/([A-G]#?)(-?\d+)/);
+
+        const match = String(pitch).match(/^([A-G][#b]?)(-?\d+)$/);
         if (!match) {
             console.warn(`Invalid pitch format: ${pitch}, using C4`);
             return 60;
         }
-        
+
         const noteName = match[1];
         const octave = parseInt(match[2], 10);
         const noteValue = noteNames[noteName];
-
-        // Eğer nota ismi haritada bulunamazsa, tanımsız değerle hesaplama yapmasını engelle.
         if (noteValue === undefined) {
             console.warn(`Unknown note name: ${noteName}, using C4`);
             return 60;
         }
 
         const midiNumber = (octave + 1) * 12 + noteValue;
-        return Math.max(0, Math.min(127, midiNumber)); // MIDI range clamping
+        return Math.max(0, Math.min(127, midiNumber));
     }
 
     // Sample için releaseNote boş (trigger-based playback)
