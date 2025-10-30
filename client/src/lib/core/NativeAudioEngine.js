@@ -968,12 +968,13 @@ export class NativeAudioEngine {
             console.log(`🎚️ Updating instrument parameters: ${instrumentId}`, params);
         }
 
-        // If mixerTrackId changed, re-route the instrument
+        // If mixerTrackId changed, re-route the instrument using MixerInsert system
         if (params.mixerTrackId) {
             if (import.meta.env.DEV) {
                 console.log(`🔌 Re-routing ${instrumentId} to ${params.mixerTrackId}`);
             }
-            return this.reconnectInstrumentToTrack(instrumentId, params.mixerTrackId);
+            this.routeInstrumentToInsert(instrumentId, params.mixerTrackId);
+            return true;
         }
 
         // Other parameter updates can be handled here

@@ -182,15 +182,23 @@ const useInstrumentEditorStore = create(
       /**
        * Save current state
        */
-      save: () => {
+      save: async () => {
         const { instrumentData, instrumentId } = get();
 
         if (!instrumentData || !instrumentId) return;
 
-        // TODO: Integrate with useInstrumentsStore to persist changes
-        console.log('💾 Saving instrument:', instrumentId, instrumentData);
-
-        set({ isDirty: false });
+        try {
+          // Lazy import to avoid circular deps at module init
+          const { useInstrumentsStore } = await import('./useInstrumentsStore');
+          const updateInstrument = useInstrumentsStore.getState().updateInstrument;
+          if (typeof updateInstrument === 'function') {
+            await updateInstrument(instrumentId, instrumentData, false);
+          }
+          console.log('💾 Saved instrument to store:', instrumentId);
+          set({ isDirty: false, history: [instrumentData], historyIndex: 0 });
+        } catch (e) {
+          console.error('❌ Failed to save instrument:', e);
+        }
       },
 
       /**

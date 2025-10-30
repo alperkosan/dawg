@@ -273,7 +273,7 @@ const MaximizerVisualizer = ({ trackId, effectId, mode, intensity }) => {
 // MAIN UI COMPONENT
 // ============================================================================
 
-export function MaximizerUI({ trackId, effect, onUpdate }) {
+export function MaximizerUI({ trackId, effect, onUpdate = () => {} }) {
   // State
   const [mode, setMode] = useState(effect.parameters?.mode || 'moderate');
   const [intensity, setIntensity] = useState(effect.parameters?.intensity ?? 0.5);
@@ -340,14 +340,16 @@ export function MaximizerUI({ trackId, effect, onUpdate }) {
 
   // Update effect in parent
   useEffect(() => {
-    onUpdate({
-      ...effect,
-      parameters: {
-        mode,
-        intensity,
-        ...params
-      }
-    });
+    if (typeof onUpdate === 'function') {
+      onUpdate({
+        ...effect,
+        parameters: {
+          mode,
+          intensity,
+          ...params
+        }
+      });
+    }
   }, [mode, intensity, params, effect.id, effect.type, onUpdate]);
 
   // Handlers

@@ -21,12 +21,42 @@ export class NativeSamplerNode {
         this.internalOutput = this.context.createGain(); // Direct audio output
         this.output = this.internalOutput; // Public output (may be last effect or internalOutput)
 
+        // ✅ Runtime parameters (UI controlled)
+        this.params = {
+            // Playback
+            gain: 1.0,            // linear
+            pan: 0.0,             // -1..1
+            pitchOffset: this.pitchOffset || 0, // semitones
+
+            // Sample region
+            sampleStart: 0.0,     // 0..1 (normalized)
+            sampleEnd: 1.0,       // 0..1
+            loop: false,
+            loopStart: 0.0,       // 0..1
+            loopEnd: 1.0,         // 0..1
+            reverse: false,
+
+            // Envelope (ms / percent)
+            attack: 0,            // ms
+            decay: 0,             // ms
+            sustain: 100,         // percent
+            release: 50,          // ms
+
+            // Filter
+            filterType: 'lowpass',
+            filterCutoff: 20000,
+            filterResonance: 0,
+        };
+
         // ✅ RAW SIGNAL: No automatic gain reduction
         // Let samples play at their natural level - user controls with faders
         this.polyphonyGainReduction = false; // Disabled - RAW signal philosophy
         this.internalOutput.gain.value = 1.0; // Fixed unity gain
 
         this.activeSources = new Set();
+
+        // Reverse buffer cache
+        this._reversedBuffer = null;
 
         // ✅ NEW: Initialize effect chain if provided
         if (instrumentData.effectChain && instrumentData.effectChain.length > 0) {
@@ -50,7 +80,13 @@ export class NativeSamplerNode {
         }
 
         const source = this.context.createBufferSource();
-        source.buffer = this.buffer;
+        const useReverse = !!this.params.reverse;
+        const bufferToPlay = useReverse ? (this._getReversedBuffer() || this.buffer) : this.buffer;
+        if (!bufferToPlay) {
+            console.warn(`[NativeSamplerNode] No buffer for ${this.name}; skipping trigger`);
+            return;
+        }
+        source.buffer = bufferToPlay;
 
         // ✅ Pitch handling: always honor incoming pitch relative to baseNote
         const targetMidi = this.pitchToMidi(pitch ?? 60);
@@ -78,6 +114,55 @@ export class NativeSamplerNode {
             source.playbackRate.setValueAtTime(playbackRate, startTime);
         }
 
+        // =====================
+        // Gain / Envelope / Filter / Pan chain
+        // =====================
+
+        // Envelope gain (per-note)
+        const envelopeGain = this.context.createGain();
+        const sustainLinear = Math.max(0, Math.min(1, (this.params.sustain ?? 100) / 100));
+        const attackSec = Math.max(0, (this.params.attack || 0) / 1000);
+        const decaySec = Math.max(0, (this.params.decay || 0) / 1000);
+        const releaseSec = Math.max(0.005, (this.params.release || 50) / 1000);
+
+        // Backward-compatible behavior: if ADSR is effectively neutral (A=0,D=0,S=100),
+        // don't impose an envelope ramp; keep unity pass-through.
+        const envelopeNeutral = attackSec === 0 && decaySec === 0 && Math.abs(sustainLinear - 1.0) < 1e-6;
+        if (envelopeNeutral) {
+            envelopeGain.gain.setValueAtTime(1.0, startTime);
+        } else {
+            // Start at 0, ramp to peak, then decay to sustain
+            const peak = 1.0;
+            envelopeGain.gain.setValueAtTime(0, startTime);
+            if (attackSec > 0) {
+                envelopeGain.gain.linearRampToValueAtTime(peak, startTime + attackSec);
+            } else {
+                envelopeGain.gain.setValueAtTime(peak, startTime);
+            }
+            if (decaySec > 0) {
+                envelopeGain.gain.linearRampToValueAtTime(peak * sustainLinear, startTime + attackSec + decaySec);
+            } else {
+                envelopeGain.gain.setValueAtTime(peak * sustainLinear, startTime + attackSec);
+            }
+        }
+
+        // Filter (optional)
+        let lastNode = envelopeGain;
+        if (this.params.filterCutoff !== undefined || this.params.filterResonance !== undefined) {
+            const filter = this.context.createBiquadFilter();
+            filter.type = this.params.filterType || 'lowpass';
+            filter.frequency.setValueAtTime(this.params.filterCutoff || 20000, startTime);
+            filter.Q.setValueAtTime(this.params.filterResonance || 0, startTime);
+            lastNode.connect(filter);
+            lastNode = filter;
+        }
+
+        // Panner
+        const panner = this.context.createStereoPanner();
+        panner.pan.setValueAtTime(this.params.pan || 0, startTime);
+        lastNode.connect(panner);
+        lastNode = panner;
+
         const gainNode = this.context.createGain();
 
         // ✅ RAW SIGNAL: Direct velocity to gain mapping (no reduction!)
@@ -88,35 +173,85 @@ export class NativeSamplerNode {
             // Direct MIDI to linear: 0-127 → 0-1.0
             normalizedVelocity = normalizedVelocity / 127;
         }
+        const velocityGainLinear = normalizedVelocity * 1.0;
 
         // 🔧 FIX: Add headroom for samples with pre-existing clipping
         // Sample analysis showed some samples have clipped peaks (>100%)
         // Apply gentle reduction to prevent output clipping
         const sampleHeadroom = 0.85;  // -1.4dB safety headroom
-        const finalGain = normalizedVelocity * sampleHeadroom;
-
+        const finalGain = velocityGainLinear * sampleHeadroom * (this.params.gain || 1.0);
         gainNode.gain.setValueAtTime(finalGain, startTime);
+        if (!Number.isFinite(finalGain) || finalGain <= 0) {
+            console.warn(`⚠️ ${this.name} finalGain invalid:`, { normalizedVelocity, velocityGainLinear, finalGain });
+        }
 
-        source.connect(gainNode);
-        gainNode.connect(this.internalOutput); // ✅ Changed to internalOutput (effect chain start)
+        // Connect chain: source -> envelope -> (filter) -> panner -> gain -> output
+        source.connect(envelopeGain);
+        lastNode.connect(gainNode);
+        gainNode.connect(this.internalOutput);
 
-        source.start(startTime);
+        // =====================
+        // Loop / region / reverse handling
+        // =====================
+        const durationSec = bufferToPlay?.duration || 0;
+        const regionStart = Math.max(0, Math.min(1, this.params.sampleStart ?? 0)) * durationSec;
+        const regionEndNorm = (this.params.sampleEnd === undefined ? 1 : this.params.sampleEnd);
+        const regionEnd = Math.max(0, Math.min(1, regionEndNorm)) * durationSec;
+        const regionLength = Math.max(0.001, Math.max(0, regionEnd - regionStart));
+
+        console.log(`🎬 ${this.name} start region:`, {
+            durationSec: Number(durationSec.toFixed ? durationSec.toFixed(3) : durationSec),
+            regionStart: Number(regionStart.toFixed ? regionStart.toFixed(3) : regionStart),
+            regionEnd: Number(regionEnd.toFixed ? regionEnd.toFixed(3) : regionEnd),
+            regionLength: Number(regionLength.toFixed ? regionLength.toFixed(3) : regionLength),
+            loop: !!this.params.loop,
+            loopStart: this.params.loopStart,
+            loopEnd: this.params.loopEnd
+        });
+
+        if (this.params.loop) {
+            source.loop = true;
+            source.loopStart = Math.max(0, Math.min(1, this.params.loopStart || 0)) * durationSec;
+            source.loopEnd = Math.max(0, Math.min(1, this.params.loopEnd === undefined ? 1 : this.params.loopEnd)) * durationSec;
+        }
+
+        // Start with region trimming
+        source.start(startTime, regionStart, this.params.loop ? undefined : regionLength);
         
         // ✅ DÜZELTME: Duration handling with Native Time Utils
         if (duration) {
             try {
-                // Güncel BPM'i store'dan alıyoruz.
-                const currentBpm = usePlaybackStore.getState().bpm;
-                // `Tone.Time` yerine kendi `NativeTimeUtils` aracımızı kullanıyoruz.
-                const durationInSeconds = NativeTimeUtils.parseTime(duration, currentBpm);
+                let durationInSeconds;
+                if (typeof duration === 'number' && isFinite(duration)) {
+                    durationInSeconds = duration;
+                } else {
+                    const currentBpm = usePlaybackStore.getState().bpm;
+                    durationInSeconds = NativeTimeUtils.parseTime(duration, currentBpm);
+                }
                 
                 if (isFinite(durationInSeconds) && durationInSeconds > 0) {
-                    source.stop(startTime + durationInSeconds);
+                    // Release envelope before stop if envelope is active
+                    const stopAt = startTime + durationInSeconds;
+                    if (envelopeNeutral) {
+                        source.stop(stopAt);
+                    } else {
+                        const currentGain = gainNode.gain.value;
+                        gainNode.gain.setValueAtTime(currentGain, stopAt);
+                        gainNode.gain.linearRampToValueAtTime(0, stopAt + releaseSec);
+                        source.stop(stopAt + releaseSec);
+                    }
                 }
             } catch (e) { 
                 console.warn(`[NativeSamplerNode] Geçersiz süre formatı: ${duration}`, e);
                 // Default 1 saniye duration
-                source.stop(startTime + 1);
+                const stopAt = startTime + 1;
+                if (envelopeNeutral) {
+                    source.stop(stopAt);
+                } else {
+                    gainNode.gain.setValueAtTime(gainNode.gain.value, stopAt);
+                    gainNode.gain.linearRampToValueAtTime(0, stopAt + releaseSec);
+                    source.stop(stopAt + releaseSec);
+                }
             }
         }
 
@@ -267,11 +402,65 @@ export class NativeSamplerNode {
             this.cutItself = params.cutItself;
             console.log(`✂️ Updated cutItself: ${params.cutItself}`);
         }
+
+        // Map UI fields
+        if (params.gain !== undefined && this.output) {
+            this.params.gain = Math.max(0, params.gain);
+        }
+        if (params.pan !== undefined) this.params.pan = Math.max(-1, Math.min(1, params.pan));
+        if (params.pitch !== undefined) this.pitchOffset = params.pitch || 0;
+
+        if (params.sampleStart !== undefined) this.params.sampleStart = params.sampleStart;
+        if (params.sampleEnd !== undefined) this.params.sampleEnd = params.sampleEnd;
+        if (params.loop !== undefined) this.params.loop = !!params.loop;
+        if (params.loopStart !== undefined) this.params.loopStart = params.loopStart;
+        if (params.loopEnd !== undefined) this.params.loopEnd = params.loopEnd;
+        if (params.reverse !== undefined) {
+            this.params.reverse = !!params.reverse;
+            // Rebuild reverse buffer lazily next trigger
+            if (this.params.reverse && !this._reversedBuffer) {
+                this._buildReversedBuffer();
+            }
+        }
+
+        if (params.attack !== undefined) this.params.attack = params.attack;
+        if (params.decay !== undefined) this.params.decay = params.decay;
+        if (params.sustain !== undefined) this.params.sustain = params.sustain;
+        if (params.release !== undefined) this.params.release = params.release;
+
+        if (params.filterType !== undefined) this.params.filterType = params.filterType;
+        if (params.filterCutoff !== undefined) this.params.filterCutoff = params.filterCutoff;
+        if (params.filterResonance !== undefined) this.params.filterResonance = params.filterResonance;
     }
 
     // ✅ UTILITY: Convert dB to linear
     dbToLinear(db) {
         return Math.pow(10, db / 20);
+    }
+
+    // =====================
+    // Reverse buffer helpers
+    // =====================
+    _buildReversedBuffer() {
+        if (!this.buffer) return null;
+        const channels = this.buffer.numberOfChannels;
+        const length = this.buffer.length;
+        const sampleRate = this.buffer.sampleRate;
+        const rev = this.context.createBuffer(channels, length, sampleRate);
+        for (let ch = 0; ch < channels; ch++) {
+            const src = this.buffer.getChannelData(ch);
+            const dst = rev.getChannelData(ch);
+            for (let i = 0, j = length - 1; i < length; i++, j--) {
+                dst[i] = src[j];
+            }
+        }
+        this._reversedBuffer = rev;
+        return rev;
+    }
+
+    _getReversedBuffer() {
+        if (this._reversedBuffer) return this._reversedBuffer;
+        return this._buildReversedBuffer();
     }
 
     // ✅ NEW: Set or update effect chain

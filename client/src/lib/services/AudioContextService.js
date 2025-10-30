@@ -1027,6 +1027,10 @@ export class AudioContextService {
               effectConfig.bypass || false,
               effectConfig.type
             );
+            // ✅ Ensure newly added master effects start enabled unless explicitly bypassed
+            if (!effectConfig.bypass) {
+              masterInsert.setEffectBypass(effectConfig.id, false);
+            }
             console.log(`✅ Master effect added: ${effectConfig.type} (${effectConfig.id})`);
           }
         } catch (err) {

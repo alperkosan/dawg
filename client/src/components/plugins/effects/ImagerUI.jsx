@@ -321,7 +321,7 @@ const ImagerVisualizer = ({ trackId, effectId, mode, intensity }) => {
 // MAIN UI COMPONENT
 // ============================================================================
 
-export function ImagerUI({ trackId, effect, onUpdate }) {
+export function ImagerUI({ trackId, effect, onUpdate = () => {} }) {
   // State
   const [mode, setMode] = useState(effect.parameters?.mode || 'normal');
   const [intensity, setIntensity] = useState(effect.parameters?.intensity ?? 1.0);
@@ -388,14 +388,16 @@ export function ImagerUI({ trackId, effect, onUpdate }) {
 
   // Update effect in parent
   useEffect(() => {
-    onUpdate({
-      ...effect,
-      parameters: {
-        mode,
-        intensity,
-        ...params
-      }
-    });
+    if (typeof onUpdate === 'function') {
+      onUpdate({
+        ...effect,
+        parameters: {
+          mode,
+          intensity,
+          ...params
+        }
+      });
+    }
   }, [mode, intensity, params, effect.id, effect.type, onUpdate]);
 
   // Handlers
