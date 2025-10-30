@@ -57,10 +57,19 @@ export const ADSRCanvas = ({
   // Normalize values for display (0-1 range to canvas coordinates)
   const maxTime = 3; // Maximum time in seconds for A, D, R
 
-  const attackX = (attack / maxTime) * (actualWidth * 0.3);
-  const decayX = attackX + (decay / maxTime) * (actualWidth * 0.3);
-  const sustainX = actualWidth * 0.7;
-  const releaseX = actualWidth - 10;
+  // Horizontal layout (left → right)
+  const leftPadding = 10;
+  const rightPadding = 10;
+  const attackWidth = actualWidth * 0.3;   // 30% width reserved for attack
+  const decayWidth = actualWidth * 0.3;    // 30% width reserved for decay
+  const sustainStartX = leftPadding + attackWidth + decayWidth;
+  const sustainEndX = actualWidth - rightPadding; // release spans this range
+  const releaseWidth = Math.max(1, sustainEndX - sustainStartX);
+
+  const attackX = (attack / maxTime) * attackWidth;
+  const decayX = attackX + (decay / maxTime) * decayWidth;
+  const sustainX = sustainStartX;
+  const releaseX = sustainEndX;
   const sustainY = actualHeight - 10 - (sustain * (actualHeight - 20));
 
   const draw = useCallback(() => {
@@ -80,6 +89,8 @@ export const ADSRCanvas = ({
     canvas.height = actualHeight * dpr;
     canvas.style.width = `${actualWidth}px`;
     canvas.style.height = `${actualHeight}px`;
+    // Reset any previous transforms before applying DPR scale
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.scale(dpr, dpr);
 
     // Clear
@@ -104,13 +115,13 @@ export const ADSRCanvas = ({
     ctx.lineJoin = 'round';
 
     ctx.beginPath();
-    ctx.moveTo(10, actualHeight - 10); // Start point (0, 0)
+    ctx.moveTo(leftPadding, actualHeight - 10); // Start point (0, 0)
 
     // Attack
-    ctx.lineTo(10 + attackX, 10); // Peak
+    ctx.lineTo(leftPadding + attackX, 10); // Peak
 
     // Decay
-    ctx.lineTo(10 + decayX, sustainY); // Sustain level
+    ctx.lineTo(leftPadding + decayX, sustainY); // Sustain level
 
     // Sustain (flat line)
     ctx.lineTo(sustainX, sustainY);
@@ -140,8 +151,8 @@ export const ADSRCanvas = ({
       }
     };
 
-    drawPoint(10 + attackX, 10, dragging === 'attack' || hovering === 'attack', 'A');
-    drawPoint(10 + decayX, sustainY, dragging === 'decay' || hovering === 'decay', 'D');
+    drawPoint(leftPadding + attackX, 10, dragging === 'attack' || hovering === 'attack', 'A');
+    drawPoint(leftPadding + decayX, sustainY, dragging === 'decay' || hovering === 'decay', 'D');
     drawPoint(sustainX, sustainY, dragging === 'sustain' || hovering === 'sustain', 'S');
     drawPoint(releaseX, actualHeight - 10, dragging === 'release' || hovering === 'release', 'R');
 
@@ -171,8 +182,8 @@ export const ADSRCanvas = ({
 
   const findClosestPoint = (mouseX, mouseY) => {
     const points = [
-      { name: 'attack', x: 10 + attackX, y: 10 },
-      { name: 'decay', x: 10 + decayX, y: sustainY },
+      { name: 'attack', x: leftPadding + attackX, y: 10 },
+      { name: 'decay', x: leftPadding + decayX, y: sustainY },
       { name: 'sustain', x: sustainX, y: sustainY },
       { name: 'release', x: releaseX, y: actualHeight - 10 }
     ];
@@ -207,16 +218,24 @@ export const ADSRCanvas = ({
       const newValues = { attack, decay, sustain, release };
 
       if (dragging === 'attack') {
-        const newAttack = Math.max(0.001, Math.min(maxTime, (pos.x - 10) / (actualWidth * 0.3) * maxTime));
+        const ratio = Math.max(0, Math.min(1, (pos.x - leftPadding) / attackWidth));
+        const newAttack = Math.max(0.001, Math.min(maxTime, ratio * maxTime));
         newValues.attack = newAttack;
       } else if (dragging === 'decay') {
-        const newDecay = Math.max(0.001, Math.min(maxTime, (pos.x - 10 - attackX) / (actualWidth * 0.3) * maxTime));
+        // Decay measured from end of attack segment
+        const localX = Math.max(0, Math.min(decayWidth, (pos.x - leftPadding - attackX)));
+        const ratio = Math.max(0, Math.min(1, localX / decayWidth));
+        const newDecay = Math.max(0.001, Math.min(maxTime, ratio * maxTime));
         newValues.decay = newDecay;
       } else if (dragging === 'sustain') {
         const newSustain = Math.max(0, Math.min(1, 1 - (pos.y - 10) / (actualHeight - 20)));
         newValues.sustain = newSustain;
       } else if (dragging === 'release') {
-        const newRelease = Math.max(0.001, Math.min(maxTime, (actualWidth - pos.x) / (actualWidth * 0.3) * maxTime));
+        // Release measured from sustain segment start to right padding
+        const clampedX = Math.max(sustainStartX, Math.min(sustainEndX, pos.x));
+        const localX = clampedX - sustainStartX;
+        const ratio = Math.max(0, Math.min(1, localX / releaseWidth));
+        const newRelease = Math.max(0.001, Math.min(maxTime, ratio * maxTime));
         newValues.release = newRelease;
       }
 

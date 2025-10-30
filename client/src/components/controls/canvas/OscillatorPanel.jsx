@@ -51,6 +51,8 @@ export const OscillatorPanel = ({
     canvas.height = height * dpr;
     canvas.style.width = `${width}px`;
     canvas.style.height = `${height}px`;
+    // Reset transform before applying DPR scale to avoid cumulative scaling
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.scale(dpr, dpr);
 
     // Background - use Zenith theme colors with hover/drag feedback
@@ -164,14 +166,30 @@ export const OscillatorPanel = ({
     drawWaveform();
   }, [drawWaveform]);
 
-  const handleMouseDown = (e) => {
+  // Robust local X/Y in CSS pixels (handles DPR, padding, borders)
+  const getLocalPos = (evt) => {
     const canvas = canvasRef.current;
     const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    const style = window.getComputedStyle(canvas);
+    const borderLeft = parseFloat(style.borderLeftWidth) || 0;
+    const borderRight = parseFloat(style.borderRightWidth) || 0;
+    const innerWidth = Math.max(0, rect.width - borderLeft - borderRight);
+    // Prefer offsetX/offsetY if available (fast path)
+    const hasOffset = evt.nativeEvent && typeof evt.nativeEvent.offsetX === 'number';
+    const xRaw = hasOffset ? evt.nativeEvent.offsetX : (evt.clientX - rect.left - borderLeft);
+    const y = hasOffset ? evt.nativeEvent.offsetY : (evt.clientY - rect.top);
+    // Clamp to rect
+    const cx = Math.max(0, Math.min(innerWidth, xRaw));
+    const cy = Math.max(0, Math.min(rect.height, y));
+    return { x: cx, y: cy, rect, innerWidth, borderLeft };
+  };
+
+  const handleMouseDown = (e) => {
+    const canvas = canvasRef.current;
+    const { x, y, rect, innerWidth } = getLocalPos(e);
 
     // Click on waveform area = cycle waveform
-    if (y < height * 0.7) {
+    if (y < rect.height * 0.7) {
       const currentIndex = waveforms.indexOf(waveform);
       const nextWaveform = waveforms[(currentIndex + 1) % waveforms.length];
       onChange?.({ waveform: nextWaveform });
@@ -179,7 +197,8 @@ export const OscillatorPanel = ({
     // Click on level bar = start dragging
     else {
       setIsDragging(true);
-      const newLevel = Math.max(0, Math.min(1, (x - 5) / (width - 10)));
+      const usableWidth = Math.max(1, innerWidth - 10);
+      const newLevel = Math.max(0, Math.min(1, (x - 5) / usableWidth));
       onChange?.({ level: newLevel });
     }
   };
@@ -190,11 +209,11 @@ export const OscillatorPanel = ({
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const newLevel = Math.max(0, Math.min(1, (x - 5) / (width - 10)));
+    const { x, innerWidth } = getLocalPos(e);
+    const usableWidth = Math.max(1, innerWidth - 10);
+    const newLevel = Math.max(0, Math.min(1, (x - 5) / usableWidth));
     onChange?.({ level: newLevel });
-  }, [isDragging, width, onChange]);
+  }, [isDragging, onChange]);
 
   const handleMouseUp = useCallback(() => {
     setIsDragging(false);

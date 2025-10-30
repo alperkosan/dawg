@@ -52,7 +52,6 @@ const useInstrumentEditorStore = create(
       closeEditor: () => {
         const { isDirty } = get();
 
-        // TODO: Add confirmation dialog if dirty
         if (isDirty) {
           const confirm = window.confirm('You have unsaved changes. Close anyway?');
           if (!confirm) return;

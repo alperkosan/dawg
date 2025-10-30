@@ -43,6 +43,13 @@ const VASynthEditorV2 = ({ instrumentData: initialData }) => {
   const filterEnvelope = instrumentData.filterEnvelope || presetData?.filterEnvelope || {};
   const amplitudeEnvelope = instrumentData.amplitudeEnvelope || presetData?.amplitudeEnvelope || {};
 
+  // Helper: map note name like 'C', 'C#' with octave 4 to MIDI
+  const noteNameToMidi = useCallback((name, octave = 4) => {
+    const map = { 'C':0,'C#':1,'D':2,'D#':3,'E':4,'F':5,'F#':6,'G':7,'G#':8,'A':9,'A#':10,'B':11 };
+    const offset = map[name] ?? 0;
+    return (octave + 1) * 12 + offset; // MIDI formula
+  }, []);
+
   // Handle parameter updates
   const handleParameterChange = useCallback((path, value) => {
     updateParameter(path, value);
@@ -99,7 +106,7 @@ const VASynthEditorV2 = ({ instrumentData: initialData }) => {
   const handleNoteOff = useCallback((midiNote) => {
     const previewManager = getPreviewManager();
     if (previewManager && activeNotes.has(midiNote)) {
-      previewManager.stopPreview();
+      previewManager.stopNote(midiNote);
       setActiveNotes(prev => {
         const newSet = new Set(prev);
         newSet.delete(midiNote);
@@ -247,9 +254,9 @@ const VASynthEditorV2 = ({ instrumentData: initialData }) => {
         <div className="vasynth-editor-v2__section-title">PREVIEW</div>
         <div className="vasynth-editor-v2__keyboard">
           {['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'].map((note) => {
-            const pitch = note + '4';
+            const midi = noteNameToMidi(note, 4);
             const isBlack = note.includes('#');
-            const isActive = activeNote === pitch;
+            const isActive = activeNotes.has(midi);
 
             return (
               <button
@@ -259,9 +266,9 @@ const VASynthEditorV2 = ({ instrumentData: initialData }) => {
                   ${isBlack ? 'vasynth-editor-v2__key--black' : 'vasynth-editor-v2__key--white'}
                   ${isActive ? 'vasynth-editor-v2__key--active' : ''}
                 `}
-                onMouseDown={() => handleNoteOn(note, '4')}
-                onMouseUp={handleNoteOff}
-                onMouseLeave={handleNoteOff}
+                onMouseDown={() => handleNoteOn(midi)}
+                onMouseUp={() => handleNoteOff(midi)}
+                onMouseLeave={() => handleNoteOff(midi)}
               >
                 {!isBlack && <span className="vasynth-editor-v2__key-label">{note}</span>}
               </button>

@@ -72,7 +72,15 @@ const MultiSampleEditor = ({ instrumentData }) => {
   const handleNoteOff = useCallback(() => {
     const previewManager = getPreviewManager();
     if (previewManager) {
-      previewManager.stopPreview();
+      if (activeNote) {
+        const map = { 'C':0,'C#':1,'D':2,'D#':3,'E':4,'F':5,'F#':6,'G':7,'G#':8,'A':9,'A#':10,'B':11 };
+        const name = activeNote.replace(/[0-9-]/g, '');
+        const octave = parseInt(activeNote.replace(/[^0-9-]/g, ''), 10) || 4;
+        const midi = (octave + 1) * 12 + (map[name] ?? 0);
+        previewManager.stopNote(midi);
+      } else {
+        previewManager.stopPreview();
+      }
       setActiveNote(null);
     }
   }, []);
