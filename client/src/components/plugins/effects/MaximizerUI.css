@@ -1,3 +1,9 @@
+.maximizer-ui__meters { display: flex; gap: 16px; padding: 8px 0; }
+.maximizer-ui__meter { display: flex; align-items: center; gap: 8px; min-width: 180px; }
+.maximizer-ui__meter-label { font: 11px var(--zenith-font-mono, monospace); opacity: .7; width: 32px; }
+.maximizer-ui__meter-bar { position: relative; flex: 1; height: 8px; background: rgba(255,255,255,.08); border-radius: 4px; overflow: hidden; }
+.maximizer-ui__meter-fill { position: absolute; left: 0; top: 0; bottom: 0; background: #6B8EBF; border-radius: 4px; }
+.maximizer-ui__meter-value { font: 11px var(--zenith-font-mono, monospace); opacity: .8; width: 48px; text-align: right; }
 /* Maximizer UI Styles */
 
 .maximizer-ui {

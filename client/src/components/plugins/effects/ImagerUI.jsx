@@ -331,7 +331,9 @@ export function ImagerUI({ trackId, effect, onUpdate = () => {} }) {
     width: effect.parameters?.width ?? 1.0,
     midGain: effect.parameters?.midGain ?? 1.0,
     sideGain: effect.parameters?.sideGain ?? 1.0,
-    wet: effect.parameters?.wet ?? 1.0
+    wet: effect.parameters?.wet ?? 1.0,
+    lowMono: effect.parameters?.lowMono ?? 0,
+    crossover: effect.parameters?.crossover ?? 160
   });
 
   // Ghost values
@@ -342,6 +344,20 @@ export function ImagerUI({ trackId, effect, onUpdate = () => {} }) {
     fftSize: 2048,
     updateMetrics: false
   });
+
+  const [correlation, setCorrelation] = useState(1);
+
+  useEffect(() => {
+    const port = plugin?.audioNode?.workletNode?.port;
+    if (!port) return;
+    const onMsg = (e) => {
+      if (e.data?.type === 'corr' && typeof e.data.value === 'number') {
+        setCorrelation(Math.max(-1, Math.min(1, e.data.value)));
+      }
+    };
+    port.addEventListener('message', onMsg);
+    return () => port.removeEventListener('message', onMsg);
+  }, [plugin]);
 
   // Preset management
   const [selectedPresetId, setSelectedPresetId] = useState('normal');
@@ -371,7 +387,9 @@ export function ImagerUI({ trackId, effect, onUpdate = () => {} }) {
       width: scaledWidth,
       midGain: baseParams.midGain,
       sideGain: baseParams.sideGain,
-      wet: 1.0
+      wet: 1.0,
+      lowMono: manualParams.lowMono,
+      crossover: manualParams.crossover
     };
   }, [mode, intensity, showAdvanced, manualParams]);
 
@@ -473,6 +491,41 @@ export function ImagerUI({ trackId, effect, onUpdate = () => {} }) {
         mode={mode}
         intensity={intensity}
       />
+
+      {/* Correlation & Low-Band Mono Controls */}
+      <div className="imager-ui__meters" style={{ margin: '8px 0 12px' }}>
+        <div className="imager-ui__meter" style={{ minWidth: 220 }}>
+          <div className="imager-ui__meter-label">CORR</div>
+          <div className="imager-ui__meter-bar">
+            <div
+              className="imager-ui__meter-fill"
+              style={{
+                width: `${Math.round((correlation + 1) * 50)}%`,
+                background: correlation < 0 ? '#EF4444' : '#34D399'
+              }}
+            />
+          </div>
+          <div className="imager-ui__meter-value">{correlation.toFixed(2)}</div>
+        </div>
+        <div className="imager-ui__meter" style={{ gap: 12 }}>
+          <label className="imager-ui__meter-label" title="Low-band mono below crossover">LB MONO</label>
+          <input
+            type="checkbox"
+            checked={!!manualParams.lowMono}
+            onChange={(e) => handleManualChange('lowMono', e.target.checked ? 1 : 0)}
+          />
+          <input
+            type="range"
+            min="20"
+            max="500"
+            step="1"
+            value={manualParams.crossover}
+            onChange={(e) => handleManualChange('crossover', parseFloat(e.target.value))}
+            style={{ width: 140 }}
+          />
+          <div className="imager-ui__meter-value">{manualParams.crossover.toFixed(0)} Hz</div>
+        </div>
+      </div>
 
       {/* Mode Selector */}
       <div className="imager-modes">
@@ -639,6 +692,26 @@ export function ImagerUI({ trackId, effect, onUpdate = () => {} }) {
                 onChange={(e) => handleManualChange('wet', parseFloat(e.target.value))}
                 className="param-control__slider"
               />
+            </div>
+            <div className="param-control" style={{ marginTop: 8 }}>
+              <label>Low-band Mono (below {manualParams.crossover.toFixed(0)} Hz)</label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={!!manualParams.lowMono}
+                  onChange={(e) => handleManualChange('lowMono', e.target.checked ? 1 : 0)}
+                />
+                <input
+                  type="range"
+                  min="20"
+                  max="500"
+                  step="1"
+                  value={manualParams.crossover}
+                  onChange={(e) => handleManualChange('crossover', parseFloat(e.target.value))}
+                  className="param-control__slider"
+                />
+                <span className="param-hint">{manualParams.crossover.toFixed(0)} Hz</span>
+              </div>
             </div>
           </div>
         </div>

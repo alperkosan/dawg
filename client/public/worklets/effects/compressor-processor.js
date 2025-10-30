@@ -16,7 +16,16 @@ class CompressorProcessor extends AudioWorkletProcessor {
       { name: 'wet', defaultValue: 1.0, minValue: 0, maxValue: 1 },
       { name: 'upwardRatio', defaultValue: 2, minValue: 1, maxValue: 20 },
       { name: 'upwardDepth', defaultValue: 0, minValue: 0, maxValue: 1 },
-      { name: 'autoMakeup', defaultValue: 0, minValue: 0, maxValue: 1 }
+      { name: 'autoMakeup', defaultValue: 0, minValue: 0, maxValue: 1 },
+      // New: lookahead (ms) and stereo link (0..100)
+      { name: 'lookahead', defaultValue: 3, minValue: 0, maxValue: 10 },
+      { name: 'stereoLink', defaultValue: 100, minValue: 0, maxValue: 100 },
+      // Sidechain parameters
+      { name: 'scEnable', defaultValue: 0, minValue: 0, maxValue: 1 },
+      { name: 'scGain', defaultValue: 0, minValue: -24, maxValue: 24 },
+      { name: 'scFilterType', defaultValue: 1, minValue: 0, maxValue: 2 }, // 0:none 1:HPF 2:LPF
+      { name: 'scFreq', defaultValue: 150, minValue: 20, maxValue: 2000 },
+      { name: 'scListen', defaultValue: 0, minValue: 0, maxValue: 1 }
     ];
   }
 
@@ -52,6 +61,14 @@ class CompressorProcessor extends AudioWorkletProcessor {
     this.port.onmessage = (event) => {
       this.handleMessage(event.data);
     };
+
+    // Lookahead delay per channel
+    this.delayBuf = [new Float32Array(1), new Float32Array(1)];
+    this.delayIdx = [0, 0];
+    this.delaySamples = 0;
+
+    // Sidechain filter state
+    this.scState = [0, 0];
   }
 
   initBandFilters() {
@@ -86,6 +103,7 @@ class CompressorProcessor extends AudioWorkletProcessor {
   process(inputs, outputs, parameters) {
     const input = inputs[0];
     const output = outputs[0];
+    const scInput = inputs[1]; // optional sidechain
 
     if (!input || !input[0] || !output || !output[0]) return true;
 
@@ -94,6 +112,15 @@ class CompressorProcessor extends AudioWorkletProcessor {
 
     const wetParam = this.getParam(parameters.wet, 0);
     const wet = wetParam !== undefined ? wetParam : (this.settings.wet !== undefined ? this.settings.wet : 1.0);
+    // Sidechain config
+    const scEnable = (this.getParam(parameters.scEnable, 0) ?? this.settings.scEnable ?? 0) >= 0.5;
+    const scGainDb = this.getParam(parameters.scGain, 0) ?? (this.settings.scGain ?? 0);
+    const scFilterType = Math.round(this.getParam(parameters.scFilterType, 0) ?? (this.settings.scFilterType ?? 1));
+    const scFreq = this.getParam(parameters.scFreq, 0) ?? (this.settings.scFreq ?? 150);
+    const scListen = (this.getParam(parameters.scListen, 0) ?? this.settings.scListen ?? 0) >= 0.5;
+    const scGain = this.dbToGain(scGainDb);
+    const omega = 2 * Math.PI * Math.max(20, Math.min(2000, scFreq)) / this.sampleRate;
+    const coef = Math.exp(-omega);
 
     if (this.bypassed) {
       for (let channel = 0; channel < channelCount; channel++) {
@@ -105,14 +132,58 @@ class CompressorProcessor extends AudioWorkletProcessor {
     // Accumulate band levels for metering
     let lowLevel = 0, midLevel = 0, highLevel = 0;
 
+    // Update lookahead buffer size once per block
+    const lookaheadMs = this.getParam(parameters.lookahead, 0) ?? (this.settings.lookahead ?? 3);
+    const targetDelay = Math.max(0, Math.round((lookaheadMs / 1000) * this.sampleRate));
+    if (targetDelay !== this.delaySamples) {
+      this.delaySamples = targetDelay;
+      const size = Math.max(1, targetDelay + 8);
+      this.delayBuf = [new Float32Array(size), new Float32Array(size)];
+      this.delayIdx = [0, 0];
+    }
+
+    const stereoLink = (this.getParam(parameters.stereoLink, 0) ?? (this.settings.stereoLink ?? 100)) / 100;
+
     for (let channel = 0; channel < channelCount; channel++) {
       const inputChannel = input[channel];
       const outputChannel = output[channel];
       const filterState = this.filterStates[channel] || this.filterStates[0];
+      const dBuf = this.delayBuf[channel];
+      const dSize = dBuf.length;
+      let di = this.delayIdx[channel] | 0;
 
       for (let i = 0; i < blockSize; i++) {
         const drySample = inputChannel[i];
-        const wetSample = this.processEffect(drySample, channel, i, parameters);
+
+        // Sidechain detection sample
+        let detect = drySample;
+        if (scEnable && scInput && scInput[channel] && scInput[channel].length > i) {
+          detect = scInput[channel][i] * scGain;
+        }
+        // Apply SC filter (HPF/LPF one-pole) to detection only
+        if (scFilterType === 1) {
+          // HPF: x - lp
+          this.scState[channel] = coef * this.scState[channel] + (1 - coef) * detect;
+          detect = detect - this.scState[channel];
+        } else if (scFilterType === 2) {
+          // LPF
+          this.scState[channel] = coef * this.scState[channel] + (1 - coef) * detect;
+          detect = this.scState[channel];
+        }
+
+        // Write to lookahead buffer and read delayed sample
+        dBuf[di] = drySample;
+        const readIndex = (di - this.delaySamples + dSize) % dSize;
+        const delayedSample = dBuf[readIndex];
+        di = (di + 1) % dSize;
+
+        // If listening sidechain, route detection to output (debug)
+        if (scListen) {
+          outputChannel[i] = detect;
+          continue;
+        }
+
+        const wetSample = this.processEffect(delayedSample, channel, i, parameters, stereoLink, detect);
         outputChannel[i] = drySample * (1 - wet) + wetSample * wet;
 
         // Frequency band analysis (visual only)
@@ -130,6 +201,8 @@ class CompressorProcessor extends AudioWorkletProcessor {
         // Mid band (250Hz-2.5kHz) - difference
         midLevel += Math.max(0, absSample - filterState.lowState * 0.5 - Math.abs(highpassInput) * 0.5);
       }
+
+      this.delayIdx[channel] = di;
     }
 
     // Average band levels
@@ -151,9 +224,22 @@ class CompressorProcessor extends AudioWorkletProcessor {
       const midDb = this.gainToDb(this.bandLevels.mid);
       const highDb = this.gainToDb(this.bandLevels.high);
 
+      // Calculate sidechain signal level for visualization
+      let scLevelDb = -Infinity;
+      if (scEnable && scInput && scInput[0] && scInput[0].length > 0) {
+        let scSumSq = 0;
+        const scChannel = scInput[0];
+        for (let i = 0; i < Math.min(blockSize, scChannel.length); i++) {
+          scSumSq += scChannel[i] * scChannel[i];
+        }
+        const scRms = Math.sqrt(scSumSq / blockSize);
+        scLevelDb = scRms > 0 ? 20 * Math.log10(scRms * Math.pow(10, scGainDb / 20)) : -Infinity;
+      }
+
       this.port.postMessage({
         type: 'metering',
         gr: Math.abs(avgGR), // Overall GR (positive value)
+        scLevel: isFinite(scLevelDb) ? scLevelDb : null, // Sidechain signal level in dB
         bands: {
           low: Math.max(0, lowDb + 60), // Normalize to 0-60 range
           mid: Math.max(0, midDb + 60),
@@ -165,7 +251,7 @@ class CompressorProcessor extends AudioWorkletProcessor {
     return true;
   }
 
-  processEffect(sample, channel, parameters) {
+  processEffect(sample, channel, parameters, stereoLink = 1, detectorSample = undefined) {
     const threshold = this.getParam(parameters.threshold, 0) || this.settings.threshold || -24;
     const ratio = this.getParam(parameters.ratio, 0) || this.settings.ratio || 4;
     const attack = this.getParam(parameters.attack, 0) || this.settings.attack || 0.003;
@@ -178,16 +264,25 @@ class CompressorProcessor extends AudioWorkletProcessor {
     const state = this.channelState[channel] || this.channelState[0];
 
     // Convert to dB
-    const inputLevel = this.gainToDb(Math.abs(sample));
+    const levelSample = (detectorSample !== undefined) ? detectorSample : sample;
+    const inputLevel = this.gainToDb(Math.abs(levelSample));
 
-    // Envelope follower
+    // Envelope follower with program-dependent release
     const attackCoeff = Math.exp(-1 / (attack * this.sampleRate));
-    const releaseCoeff = Math.exp(-1 / (release * this.sampleRate));
+    // Two-release model: fast for transients, slow for sustained
+    const fastRel = Math.max(0.02, release * 0.25);
+    const slowRel = Math.max(0.05, release * 1.5);
+    const fastCoeff = Math.exp(-1 / (fastRel * this.sampleRate));
+    const slowCoeff = Math.exp(-1 / (slowRel * this.sampleRate));
 
     if (inputLevel > state.envelope) {
       state.envelope = attackCoeff * state.envelope + (1 - attackCoeff) * inputLevel;
     } else {
-      state.envelope = releaseCoeff * state.envelope + (1 - releaseCoeff) * inputLevel;
+      // Blend fast/slow based on how far below envelope we are
+      const delta = (state.envelope - inputLevel);
+      const weight = Math.max(0, Math.min(1, delta / 20)); // 0..1 over ~20dB
+      const relCoeff = slowCoeff * (1 - weight) + fastCoeff * weight;
+      state.envelope = relCoeff * state.envelope + (1 - relCoeff) * inputLevel;
     }
 
     // Calculate gain changes (both up and down)
@@ -210,7 +305,13 @@ class CompressorProcessor extends AudioWorkletProcessor {
       gainChange += upwardGain; // Add upward gain
     }
 
-    state.gainReduction = Math.abs(gainChange); // For metering
+    // Stereo link (average GR across channels if enabled)
+    let grDb = Math.abs(gainChange);
+    if (stereoLink > 0 && this.channelState.length >= 2) {
+      const other = this.channelState[(channel ^ 1)]?.gainReduction || grDb;
+      grDb = grDb * stereoLink + other * (1 - stereoLink);
+    }
+    state.gainReduction = grDb; // For metering
 
     // Auto-makeup gain: compensate for average gain reduction
     // Simple formula: makeup = threshold / ratio (approximate)
@@ -221,7 +322,7 @@ class CompressorProcessor extends AudioWorkletProcessor {
     }
 
     // Apply total gain change
-    const gain = this.dbToGain(gainChange);
+    const gain = this.dbToGain(gainChange - (grDb - Math.abs(gainChange))); // apply linked GR if any
     return sample * gain;
   }
 

@@ -281,9 +281,10 @@ class HalfTimeProcessor extends AudioWorkletProcessor {
       grainDensity * modeProfile.grainDensityMultiplier * (smoothing / 100)
     ));
 
-    // Grain overlap calculation
-    const overlap = Math.max(2, Math.min(8, actualGrainDensity / 2));
-    const grainSpacing = Math.floor(grainSizeSamples / overlap);
+    // 🎯 PROFESSIONAL GRAIN OVERLAP: Optimized calculation
+    // Overlap: 4-8 grains for smooth crossfading (industry standard)
+    const overlap = Math.max(4, Math.min(8, Math.floor(actualGrainDensity / 2.5)));
+    const grainSpacing = Math.max(1, Math.floor(grainSizeSamples / overlap));
 
     // Calculate pitch ratio
     let pitchRatio = 1.0;
@@ -301,11 +302,13 @@ class HalfTimeProcessor extends AudioWorkletProcessor {
     const totalFlutter = (modeProfile.flutter + (analogWarmth / 100) * 0.2);
     pitchRatio = this.applyFlutter(pitchRatio, totalFlutter);
 
-    // Spawn new grains
+    // 🎯 OPTIMIZED GRAIN SPAWNING: Better performance management
     state.nextGrainSpawn--;
     if (state.nextGrainSpawn <= 0) {
-      // Limit active grains for performance
-      if (state.grains.length < 32) {
+      // Professional grain limit: balance quality vs performance
+      // More grains = smoother sound but higher CPU
+      const maxGrains = modeProfile.windowType === 'rect' ? 16 : 24; // Fewer for glitch mode
+      if (state.grains.length < maxGrains) {
         const grain = this.createGrain(
           state,
           grainSizeSamples,
@@ -332,9 +335,12 @@ class HalfTimeProcessor extends AudioWorkletProcessor {
       }
     }
 
-    // Normalize by grain count (prevent volume buildup)
+    // 🎯 PROFESSIONAL GRAIN NORMALIZATION: Energy-preserving scaling
+    // Use 1/sqrt(N) rule with slight adjustment for overlap
     if (activeCount > 0) {
-      output /= Math.sqrt(activeCount * 0.8);
+      // Professional normalization: preserves energy across grain overlap
+      const overlapFactor = Math.min(1.2, overlap / 4); // Account for overlap
+      output /= Math.sqrt(activeCount) * (0.85 + overlapFactor * 0.15);
     }
 
     // Apply character processing
@@ -343,14 +349,23 @@ class HalfTimeProcessor extends AudioWorkletProcessor {
       output = this.applySaturation(output, totalWarmth);
     }
 
-    // Glitch mode: random artifacts
+    // 🎯 PROFESSIONAL GLITCH: Sample-accurate artifacts (not per-sample random)
     const totalGlitch = (modeProfile.glitch + glitchAmount / 100);
     if (totalGlitch > 0) {
-      if (Math.random() < totalGlitch * 0.02) {
-        output *= Math.random() * 0.5; // Random amplitude reduction
+      // Use deterministic pseudo-random for sample-accurate glitches
+      // Avoid Math.random() which is too slow and non-deterministic
+      const glitchSeed = (state.writeIndex * 7919 + channel * 9973) % 1000000;
+      const glitchRate = totalGlitch * 0.015; // Lower rate for quality
+      
+      // Amplitude glitch (deterministic)
+      if ((glitchSeed % 1000) < totalGlitch * 10) {
+        const glitchAmount = 0.3 + (glitchSeed % 700) / 1000; // 0.3-1.0 range
+        output *= glitchAmount;
       }
-      if (Math.random() < totalGlitch * 0.005) {
-        output = 0; // Random dropout
+      
+      // Dropout glitch (rare but effective)
+      if ((glitchSeed % 5000) < totalGlitch * 2) {
+        output = 0;
       }
     }
 

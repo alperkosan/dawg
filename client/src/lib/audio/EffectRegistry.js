@@ -46,7 +46,15 @@ export class EffectRegistry {
         { name: 'knee', defaultValue: 30, minValue: 0, maxValue: 40 },
         { name: 'wet', defaultValue: 1.0, minValue: 0, maxValue: 1 },
         { name: 'upwardRatio', defaultValue: 2, minValue: 1, maxValue: 20 },
-        { name: 'upwardDepth', defaultValue: 0, minValue: 0, maxValue: 1 }
+        { name: 'upwardDepth', defaultValue: 0, minValue: 0, maxValue: 1 },
+        // new params
+        { name: 'lookahead', defaultValue: 3, minValue: 0, maxValue: 10 },
+        { name: 'stereoLink', defaultValue: 100, minValue: 0, maxValue: 100 },
+        { name: 'scEnable', defaultValue: 0, minValue: 0, maxValue: 1 },
+        { name: 'scGain', defaultValue: 0, minValue: -24, maxValue: 24 },
+        { name: 'scFilterType', defaultValue: 1, minValue: 0, maxValue: 2 },
+        { name: 'scFreq', defaultValue: 150, minValue: 20, maxValue: 2000 },
+        { name: 'scListen', defaultValue: 0, minValue: 0, maxValue: 1 }
       ]
     });
 
@@ -311,7 +319,10 @@ export class EffectRegistry {
         { name: 'saturation', defaultValue: 0.3, minValue: 0, maxValue: 1 },
         { name: 'ceiling', defaultValue: -0.1, minValue: -6, maxValue: 0 },
         { name: 'release', defaultValue: 0.1, minValue: 0.01, maxValue: 1 },
-        { name: 'wet', defaultValue: 1.0, minValue: 0, maxValue: 1 }
+        { name: 'wet', defaultValue: 1.0, minValue: 0, maxValue: 1 },
+        // New true-peak limiting controls
+        { name: 'lookahead', defaultValue: 3, minValue: 0, maxValue: 10 },
+        { name: 'truePeak', defaultValue: 1, minValue: 0, maxValue: 1 }
       ]
     });
 
@@ -323,7 +334,9 @@ export class EffectRegistry {
         { name: 'width', defaultValue: 1.0, minValue: 0, maxValue: 2 },
         { name: 'midGain', defaultValue: 1.0, minValue: 0, maxValue: 2 },
         { name: 'sideGain', defaultValue: 1.0, minValue: 0, maxValue: 2 },
-        { name: 'wet', defaultValue: 1.0, minValue: 0, maxValue: 1 }
+        { name: 'wet', defaultValue: 1.0, minValue: 0, maxValue: 1 },
+        { name: 'lowMono', defaultValue: 0, minValue: 0, maxValue: 1 },
+        { name: 'crossover', defaultValue: 160, minValue: 20, maxValue: 500 }
       ]
     });
 
@@ -393,9 +406,13 @@ export class EffectRegistry {
     // Load worklet if not already loaded
     const processorName = await this.loadEffect(effectType, audioContext);
 
+    // 🎛️ SIDECHAIN: Compressor needs 2 inputs (main + sidechain)
+    const needsSidechain = effectType === 'Compressor';
+    const numberOfInputs = needsSidechain ? 2 : 1;
+
     // Create parameter descriptors for the node
     const nodeOptions = {
-      numberOfInputs: 1,
+      numberOfInputs,
       numberOfOutputs: 1,
       outputChannelCount: [2],
       // 🔧 FIX: Force stereo processing for all effects

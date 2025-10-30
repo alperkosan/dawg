@@ -345,6 +345,50 @@ class LimiterProcessor extends AudioWorkletProcessor {
     if (this.meteringCounter >= this.meteringInterval) {
       this.meteringCounter = 0;
 
+      // Calculate input/output levels and true-peak
+      let inputSumSq = 0;
+      let outputSumSq = 0;
+      let truePeakIn = 0;
+      let truePeakOut = 0;
+      const blockSize = inputLeft.length;
+
+      const inputRight = input[1] || inputLeft; // Get from input, not processLimiter
+      
+      for (let i = 0; i < blockSize; i++) {
+        // Input RMS
+        inputSumSq += inputLeft[i] * inputLeft[i];
+        if (inputRight && inputRight.length > i) {
+          inputSumSq += inputRight[i] * inputRight[i];
+        }
+
+        // Output RMS
+        outputSumSq += result.left[i] * result.left[i];
+        if (result.right && result.right.length > i) {
+          outputSumSq += result.right[i] * result.right[i];
+        }
+
+        // True-peak detection (simplified - check sample pairs)
+        if (i < blockSize - 1) {
+          const tpInL = Math.abs(inputLeft[i]) + Math.abs(inputLeft[i + 1]) * 0.5;
+          const tpOutL = Math.abs(result.left[i]) + Math.abs(result.left[i + 1]) * 0.5;
+          truePeakIn = Math.max(truePeakIn, tpInL);
+          truePeakOut = Math.max(truePeakOut, tpOutL);
+          if (inputRight && inputRight.length > i + 1 && result.right && result.right.length > i + 1) {
+            const tpInR = Math.abs(inputRight[i]) + Math.abs(inputRight[i + 1]) * 0.5;
+            const tpOutR = Math.abs(result.right[i]) + Math.abs(result.right[i + 1]) * 0.5;
+            truePeakIn = Math.max(truePeakIn, tpInR);
+            truePeakOut = Math.max(truePeakOut, tpOutR);
+          }
+        }
+      }
+
+      const inputRms = Math.sqrt(inputSumSq / (blockSize * 2));
+      const outputRms = Math.sqrt(outputSumSq / (blockSize * 2));
+      const inputDb = this.linearToDb(inputRms);
+      const outputDb = this.linearToDb(outputRms);
+      const truePeakInDb = this.linearToDb(truePeakIn);
+      const truePeakOutDb = this.linearToDb(truePeakOut);
+
       // Calculate average GR
       const avgGr = this.grHistory.peak;
 
@@ -354,7 +398,11 @@ class LimiterProcessor extends AudioWorkletProcessor {
           grPeak: this.grHistory.peak,
           grAverage: avgGr,
           envelopeLeft: this.linearToDb(this.envelope.left),
-          envelopeRight: this.linearToDb(this.envelope.right)
+          envelopeRight: this.linearToDb(this.envelope.right),
+          inputDb: isFinite(inputDb) ? inputDb : -144,
+          outputDb: isFinite(outputDb) ? outputDb : -144,
+          truePeakInDb: isFinite(truePeakInDb) ? truePeakInDb : -144,
+          truePeakOutDb: isFinite(truePeakOutDb) ? truePeakOutDb : -144
         }
       });
 

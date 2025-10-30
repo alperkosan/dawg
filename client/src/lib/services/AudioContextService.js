@@ -1813,6 +1813,15 @@ export class AudioContextService {
       return;
     }
 
+    // 🎛️ SIDECHAIN: Handle sidechain source routing
+    if (paramName === 'scSourceId') {
+      const getSourceInsert = (sourceInsertId) => {
+        return this.audioEngine.mixerInserts.get(sourceInsertId);
+      };
+      insert.updateSidechainSource(effectId, value, getSourceInsert);
+      // Continue to update settings (for storage)
+    }
+
     // Update effect node parameters
     const node = effect.node;
     if (!node) {

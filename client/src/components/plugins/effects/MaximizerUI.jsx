@@ -278,13 +278,17 @@ export function MaximizerUI({ trackId, effect, onUpdate = () => {} }) {
   const [mode, setMode] = useState(effect.parameters?.mode || 'moderate');
   const [intensity, setIntensity] = useState(effect.parameters?.intensity ?? 0.5);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [grMeter, setGrMeter] = useState(0); // 0..1 (1 = 100% reduction)
+  const [outPeak, setOutPeak] = useState(0); // linear peak 0..1
 
   const [manualParams, setManualParams] = useState({
     inputGain: effect.parameters?.inputGain ?? 0,
     saturation: effect.parameters?.saturation ?? 0.3,
     ceiling: effect.parameters?.ceiling ?? -0.1,
     release: effect.parameters?.release ?? 0.1,
-    wet: effect.parameters?.wet ?? 1.0
+    wet: effect.parameters?.wet ?? 1.0,
+    lookahead: effect.parameters?.lookahead ?? 3,
+    truePeak: effect.parameters?.truePeak ?? 1
   });
 
   // Ghost values
@@ -295,6 +299,23 @@ export function MaximizerUI({ trackId, effect, onUpdate = () => {} }) {
     fftSize: 2048,
     updateMetrics: false
   });
+
+  // Subscribe to meters from worklet port
+  useEffect(() => {
+    const port = plugin?.audioNode?.workletNode?.port;
+    if (!port) return;
+
+    const onMessage = (e) => {
+      const data = e.data;
+      if (!data) return;
+      if (data.type === 'meters') {
+        if (typeof data.gr === 'number') setGrMeter(Math.max(0, Math.min(1, data.gr)));
+        if (typeof data.out === 'number') setOutPeak(Math.max(0, Math.min(1, data.out)));
+      }
+    };
+    port.addEventListener('message', onMessage);
+    return () => port.removeEventListener('message', onMessage);
+  }, [plugin]);
 
   // Preset management
   const [selectedPresetId, setSelectedPresetId] = useState('moderate');
@@ -323,7 +344,9 @@ export function MaximizerUI({ trackId, effect, onUpdate = () => {} }) {
       saturation: baseParams.saturation * intensity,
       ceiling: baseParams.ceiling,
       release: baseParams.release,
-      wet: 1.0
+      wet: 1.0,
+      lookahead: manualParams.lookahead,
+      truePeak: manualParams.truePeak
     };
   }, [mode, intensity, showAdvanced, manualParams]);
 
@@ -425,6 +448,30 @@ export function MaximizerUI({ trackId, effect, onUpdate = () => {} }) {
         mode={mode}
         intensity={intensity}
       />
+
+      {/* Meters */}
+      <div className="maximizer-ui__meters">
+        <div className="maximizer-ui__meter">
+          <div className="maximizer-ui__meter-label">GR</div>
+          <div className="maximizer-ui__meter-bar">
+            <div
+              className="maximizer-ui__meter-fill"
+              style={{ width: `${Math.round(grMeter * 100)}%`, background: currentMode.color }}
+            />
+          </div>
+          <div className="maximizer-ui__meter-value">{(grMeter * 100).toFixed(0)}%</div>
+        </div>
+        <div className="maximizer-ui__meter">
+          <div className="maximizer-ui__meter-label">OUT</div>
+          <div className="maximizer-ui__meter-bar">
+            <div
+              className="maximizer-ui__meter-fill"
+              style={{ width: `${Math.round(outPeak * 100)}%` }}
+            />
+          </div>
+          <div className="maximizer-ui__meter-value">{(20*Math.log10(Math.max(outPeak, 1e-6))).toFixed(1)} dB</div>
+        </div>
+      </div>
 
       {/* Mode Selector */}
       <div className="maximizer-modes">
@@ -568,6 +615,30 @@ export function MaximizerUI({ trackId, effect, onUpdate = () => {} }) {
                 value={manualParams.release}
                 onChange={(e) => handleManualChange('release', parseFloat(e.target.value))}
                 className="param-control__slider"
+              />
+            </div>
+
+            <div className="param-control">
+              <label>
+                Look-ahead: {manualParams.lookahead.toFixed(1)} ms
+              </label>
+              <input
+                type="range"
+                min="0"
+                max="10"
+                step="0.1"
+                value={manualParams.lookahead}
+                onChange={(e) => handleManualChange('lookahead', parseFloat(e.target.value))}
+                className="param-control__slider"
+              />
+            </div>
+
+            <div className="param-control" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <label>True Peak</label>
+              <input
+                type="checkbox"
+                checked={!!manualParams.truePeak}
+                onChange={(e) => handleManualChange('truePeak', e.target.checked ? 1 : 0)}
               />
             </div>
           </div>

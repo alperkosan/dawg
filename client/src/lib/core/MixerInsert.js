@@ -29,6 +29,10 @@ export class MixerInsert {
     this.effects = new Map(); // effectId → { node, settings, bypass }
     this.effectOrder = [];     // Effect sıralaması
 
+    // 🎛️ SIDECHAIN: Track sidechain connections for effects (e.g., Compressor)
+    // effectId → { sourceInsertId, sourceNode }
+    this.sidechainConnections = new Map();
+
     // Connected instruments
     this.instruments = new Set(); // Bağlı instrument ID'leri
 
@@ -156,6 +160,20 @@ export class MixerInsert {
       return;
     }
 
+    // 🎛️ SIDECHAIN: Cleanup sidechain connection if exists
+    const sidechainConnection = this.sidechainConnections.get(effectId);
+    if (sidechainConnection) {
+      try {
+        if (sidechainConnection.sourceNode && sidechainConnection.sourceNode.disconnect) {
+          sidechainConnection.sourceNode.disconnect(effect.node, 1);
+          console.log(`🔌 Cleaned up sidechain connection for ${effectId}`);
+        }
+      } catch (error) {
+        console.warn(`⚠️ Error cleaning up sidechain for ${effectId}:`, error);
+      }
+      this.sidechainConnections.delete(effectId);
+    }
+
     // Dispose effect node
     try {
       if (effect.node.disconnect) {
@@ -226,6 +244,11 @@ export class MixerInsert {
     // Update stored settings
     effect.settings = { ...effect.settings, ...settings };
 
+    // 🎛️ SIDECHAIN: Handle sidechain source routing for Compressor
+    if (effect.type === 'Compressor' && settings.scSourceId !== undefined) {
+      this.updateSidechainSource(effectId, settings.scSourceId);
+    }
+
     // Apply settings to effect node
     // AudioWorklet effects use postMessage
     if (effect.node.port && effect.type === 'MultiBandEQ') {
@@ -245,6 +268,60 @@ export class MixerInsert {
     }
 
     console.log(`✅ Updated settings for ${effectId}`);
+  }
+
+  /**
+   * 🎛️ SIDECHAIN: Update sidechain source for an effect
+   * @param {string} effectId - Effect ID
+   * @param {string} sourceInsertId - Source mixer insert ID (empty string = disconnect)
+   * @param {function} getSourceInsert - Callback to get source MixerInsert by ID
+   */
+  updateSidechainSource(effectId, sourceInsertId, getSourceInsert = null) {
+    const effect = this.effects.get(effectId);
+    if (!effect || !effect.node) {
+      console.warn(`⚠️ Effect ${effectId} not found for sidechain routing`);
+      return;
+    }
+
+    // Check if effect supports sidechain (has 2 inputs)
+    if (effect.node.numberOfInputs < 2) {
+      console.warn(`⚠️ Effect ${effectId} does not support sidechain (needs 2 inputs)`);
+      return;
+    }
+
+    // Disconnect existing sidechain if any
+    const existingConnection = this.sidechainConnections.get(effectId);
+    if (existingConnection) {
+      try {
+        if (existingConnection.sourceNode && existingConnection.sourceNode.disconnect) {
+          existingConnection.sourceNode.disconnect(effect.node, 1); // Disconnect from input 1
+          console.log(`🔌 Disconnected sidechain from ${effectId}`);
+        }
+      } catch (error) {
+        console.warn(`⚠️ Error disconnecting sidechain from ${effectId}:`, error);
+      }
+      this.sidechainConnections.delete(effectId);
+    }
+
+    // Connect new sidechain source if provided
+    if (sourceInsertId && getSourceInsert) {
+      const sourceInsert = getSourceInsert(sourceInsertId);
+      if (sourceInsert && sourceInsert.output) {
+        try {
+          // Connect source insert's output to effect's input 1 (sidechain)
+          sourceInsert.output.connect(effect.node, 0, 1);
+          this.sidechainConnections.set(effectId, {
+            sourceInsertId,
+            sourceNode: sourceInsert.output
+          });
+          console.log(`🎛️ Connected sidechain: ${sourceInsertId} → ${effectId} (input 1)`);
+        } catch (error) {
+          console.error(`❌ Failed to connect sidechain ${sourceInsertId} → ${effectId}:`, error);
+        }
+      } else {
+        console.warn(`⚠️ Source insert ${sourceInsertId} not found for sidechain`);
+      }
+    }
   }
 
   /**

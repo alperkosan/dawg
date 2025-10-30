@@ -1396,6 +1396,14 @@ export class NativeAudioEngine {
                 console.log(`✅ MultiBandEQ initialized with ${settings.bands.length} bands`);
             }
 
+            // 🎛️ SIDECHAIN: Initialize sidechain routing if source is specified
+            if (effectType === 'Compressor' && settings.scSourceId) {
+                const getSourceInsert = (sourceInsertId) => {
+                    return this.mixerInserts.get(sourceInsertId);
+                };
+                insert.updateSidechainSource(effectId, settings.scSourceId, getSourceInsert);
+            }
+
             console.log(`✅ Effect added: ${effectType} → ${insertId} (ID: ${effectId})`);
             return effectId;
 

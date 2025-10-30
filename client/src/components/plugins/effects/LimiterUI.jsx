@@ -123,9 +123,10 @@ const FACTORY_PRESETS = [
 const presetManager = createPresetManager('limiter', FACTORY_PRESETS);
 
 /**
- * Limiter Visualizer - Shows waveform with ceiling and gain reduction
+ * Limiter Visualizer - Professional canvas visualization
+ * Similar to Compressor: Transfer curve + Waveform + Real-time signal flow
  */
-const LimiterVisualizer = ({ trackId, effectId, ceiling, mode }) => {
+const LimiterVisualizer = ({ trackId, effectId, ceiling, knee, truePeak }) => {
   const { isPlaying, getTimeDomainData, metricsDb, plugin } = useAudioPlugin(trackId, effectId, {
     fftSize: 2048,
     updateMetrics: true,
@@ -136,98 +137,309 @@ const LimiterVisualizer = ({ trackId, effectId, ceiling, mode }) => {
   const [meteringData, setMeteringData] = useState({
     grPeak: 0,
     grAverage: 0,
-    envelopeLeft: 0,
-    envelopeRight: 0
+    inputDb: -144,
+    outputDb: -144,
+    truePeakInDb: -144,
+    truePeakOutDb: -144
   });
 
+  // 🎵 STREAMING SIGNAL BUFFER: Store last N frames for flowing visualization
+  const signalBufferRef = useRef([]);
+  const maxBufferSize = 300; // ~5 seconds at 60fps
+
   const drawVisualization = useCallback((ctx, width, height) => {
-    // Background
-    ctx.fillStyle = '#1a1a2e';
+    // 🎨 DIVIDE CANVAS: Transfer curve area (top 60%) + Waveform area (bottom 40%)
+    const curveHeight = height * 0.6;
+    const waveformHeight = height * 0.4;
+    const waveformTop = curveHeight;
+
+    // Clear entire canvas
+    ctx.fillStyle = 'rgba(10, 10, 15, 0.95)';
     ctx.fillRect(0, 0, width, height);
 
-    // Grid
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+    // Grid (only in curve area)
+    ctx.strokeStyle = 'rgba(0, 168, 232, 0.08)';
     ctx.lineWidth = 1;
     for (let i = 0; i <= 4; i++) {
-      const y = (i / 4) * height;
+      const pos = (i / 4) * width;
       ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(width, y);
+      ctx.moveTo(pos, 0);
+      ctx.lineTo(pos, curveHeight);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(0, (i / 4) * curveHeight);
+      ctx.lineTo(width, (i / 4) * curveHeight);
       ctx.stroke();
     }
 
-    if (!isPlaying) {
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
-      ctx.font = '14px "Geist Mono", monospace';
-      ctx.textAlign = 'center';
-      ctx.fillText('LIMITER - Ready', width / 2, height / 2);
-      return;
+    // Waveform area background
+    ctx.fillStyle = 'rgba(5, 5, 10, 0.8)';
+    ctx.fillRect(0, waveformTop, width, waveformHeight);
+
+    // Diagonal reference line (1:1) - only in curve area
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([2, 2]);
+    ctx.beginPath();
+    ctx.moveTo(0, curveHeight);
+    ctx.lineTo(width, 0);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // 🎨 LIMITING TRANSFER CURVE: Shows input-output relationship
+    const dbToPixel = (db) => width - ((db + 60) / 60) * width;
+    const outputDbToPixel = (db) => curveHeight - ((db + 60) / 60) * curveHeight;
+
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+
+    for (let inputDb = -60; inputDb <= 0; inputDb += 0.5) {
+      let outputDb = inputDb;
+
+      // Apply limiting: Hard limit at ceiling
+      if (inputDb > ceiling) {
+        // Soft knee if enabled
+        if (knee > 0 && inputDb < ceiling + knee) {
+          const kneeRange = inputDb - ceiling;
+          const kneeAmount = (kneeRange / knee) * (1 - knee); // Smooth transition
+          outputDb = ceiling + kneeAmount;
+        } else {
+          outputDb = ceiling; // Brick wall
+        }
+      }
+
+      const x = dbToPixel(inputDb);
+      const y = outputDbToPixel(outputDb);
+      if (inputDb === -60) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
     }
+    ctx.stroke();
 
-    // Get waveform data
-    const timeData = getTimeDomainData();
-    if (!timeData) return;
+    // Curve glow
+    ctx.shadowBlur = 8;
+    ctx.shadowColor = 'rgba(255, 255, 255, 0.3)';
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+    ctx.lineWidth = 4;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
 
-    // Draw ceiling line
-    const ceilingLinear = Math.pow(10, ceiling / 20);
-    const ceilingY = height / 2 - (ceilingLinear * height / 2);
-    ctx.strokeStyle = '#E74C3C';
-    ctx.lineWidth = 2;
-    ctx.setLineDash([5, 5]);
+    // 🎛️ CEILING LINE (Red horizontal line)
+    const ceilingY = outputDbToPixel(ceiling);
+    ctx.strokeStyle = 'rgba(231, 76, 60, 0.9)'; // Red
+    ctx.lineWidth = 2.5;
+    ctx.setLineDash([6, 4]);
     ctx.beginPath();
     ctx.moveTo(0, ceilingY);
     ctx.lineTo(width, ceilingY);
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // Draw waveform
-    ctx.strokeStyle = '#4A90E2';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
+    // Ceiling label
+    ctx.font = 'bold 10px monospace';
+    ctx.fillStyle = 'rgba(231, 76, 60, 1)';
+    ctx.textAlign = 'left';
+    ctx.fillText(`CEILING: ${ceiling.toFixed(1)}dB`, 8, ceilingY - 5);
 
-    const sliceWidth = width / timeData.length;
-    let x = 0;
+    // 🎵 STREAMING SIGNAL VISUALIZATION: Show flowing signal over time
+    if (isPlaying) {
+      const timeData = getTimeDomainData();
+      if (timeData && timeData.length > 0) {
+        // Calculate RMS level in dB
+        let sumSq = 0;
+        for (let i = 0; i < timeData.length; i++) {
+          sumSq += timeData[i] * timeData[i];
+        }
+        const rms = Math.sqrt(sumSq / timeData.length);
+        const inputDb = rms > 0 ? 20 * Math.log10(rms) : -60;
+        const clampedInputDb = Math.max(-60, Math.min(0, inputDb));
 
-    for (let i = 0; i < timeData.length; i++) {
-      const v = timeData[i];
-      const y = (v + 1) * height / 2;
+        // Calculate output based on limiting curve
+        let outputDb = clampedInputDb;
+        if (clampedInputDb > ceiling) {
+          if (knee > 0 && clampedInputDb < ceiling + knee) {
+            const kneeRange = clampedInputDb - ceiling;
+            const kneeAmount = (kneeRange / knee) * (1 - knee);
+            outputDb = ceiling + kneeAmount;
+          } else {
+            outputDb = ceiling; // Hard limit
+          }
+        }
 
-      if (i === 0) {
-        ctx.moveTo(x, y);
-      } else {
-        ctx.lineTo(x, y);
+        // Add new point to buffer
+        signalBufferRef.current.push({
+          inputDb: clampedInputDb,
+          outputDb,
+          timestamp: performance.now()
+        });
+
+        // Trim buffer to max size
+        if (signalBufferRef.current.length > maxBufferSize) {
+          signalBufferRef.current.shift();
+        }
+
+        const buffer = signalBufferRef.current;
+
+        // 🎨 WAVEFORM AREA: Draw input and output signal areas
+        if (buffer.length > 10) {
+          const pointsPerPixel = Math.max(1, Math.floor(buffer.length / width));
+
+          // Draw input signal filled area
+          ctx.fillStyle = 'rgba(168, 85, 247, 0.4)';
+          ctx.beginPath();
+          
+          for (let x = 0; x < width; x++) {
+            const bufferIdx = Math.min(buffer.length - 1, Math.floor(x * pointsPerPixel));
+            const point = buffer[bufferIdx];
+            const inputDbNorm = (point.inputDb + 60) / 60;
+            const y = waveformTop + waveformHeight - (inputDbNorm * waveformHeight * 0.7);
+            
+            if (x === 0) {
+              ctx.moveTo(x, waveformTop + waveformHeight);
+              ctx.lineTo(x, y);
+            } else {
+              ctx.lineTo(x, y);
+            }
+          }
+          ctx.lineTo(width, waveformTop + waveformHeight);
+          ctx.closePath();
+          ctx.fill();
+
+          // Draw output/limited area (red tint when limiting)
+          const isLimiting = meteringData.grPeak < -0.1;
+          ctx.fillStyle = isLimiting ? 'rgba(231, 76, 60, 0.5)' : 'rgba(135, 206, 250, 0.5)';
+          ctx.beginPath();
+          
+          for (let x = 0; x < width; x++) {
+            const bufferIdx = Math.min(buffer.length - 1, Math.floor(x * pointsPerPixel));
+            const point = buffer[bufferIdx];
+            const outputDbNorm = (point.outputDb + 60) / 60;
+            const y = waveformTop + waveformHeight - (outputDbNorm * waveformHeight * 0.7);
+            
+            if (x === 0) {
+              ctx.moveTo(x, waveformTop + waveformHeight);
+              ctx.lineTo(x, y);
+            } else {
+              ctx.lineTo(x, y);
+            }
+          }
+          ctx.lineTo(width, waveformTop + waveformHeight);
+          ctx.closePath();
+          ctx.fill();
+
+          // Draw gain reduction overlay when limiting
+          if (isLimiting && buffer.length > 10) {
+            ctx.strokeStyle = 'rgba(231, 76, 60, 0.6)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            
+            for (let x = 0; x < width; x++) {
+              const bufferIdx = Math.min(buffer.length - 1, Math.floor(x * pointsPerPixel));
+              const point = buffer[bufferIdx];
+              const inputDbNorm = (point.inputDb + 60) / 60;
+              const outputDbNorm = (point.outputDb + 60) / 60;
+              
+              const inputY = waveformTop + waveformHeight - (inputDbNorm * waveformHeight * 0.7);
+              const outputY = waveformTop + waveformHeight - (outputDbNorm * waveformHeight * 0.7);
+              
+              if (point.inputDb > ceiling) {
+                if (x === 0 || (buffer[Math.max(0, bufferIdx - 1)]?.inputDb || -60) <= ceiling) {
+                  ctx.moveTo(x, inputY);
+                }
+                ctx.lineTo(x, outputY);
+              }
+            }
+            ctx.stroke();
+          }
+        }
+
+        // Draw current point indicators
+        const currentPoint = buffer[buffer.length - 1];
+        if (currentPoint) {
+          const inputX = dbToPixel(currentPoint.inputDb);
+          const inputY = outputDbToPixel(currentPoint.inputDb);
+          const outputY = outputDbToPixel(currentPoint.outputDb);
+
+          // Input level indicator (vertical line in curve area)
+          ctx.strokeStyle = 'rgba(0, 255, 255, 0.6)';
+          ctx.lineWidth = 2;
+          ctx.setLineDash([4, 4]);
+          ctx.beginPath();
+          ctx.moveTo(inputX, 0);
+          ctx.lineTo(inputX, curveHeight);
+          ctx.stroke();
+          ctx.setLineDash([]);
+
+          // Current input point (bright)
+          ctx.fillStyle = 'rgba(0, 255, 255, 1)';
+          ctx.beginPath();
+          ctx.arc(inputX, inputY, 5, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Current output point (red when limiting)
+          const isLimitingNow = currentPoint.outputDb < currentPoint.inputDb - 0.5;
+          ctx.fillStyle = isLimitingNow ? 'rgba(231, 76, 60, 1)' : 'rgba(135, 206, 250, 1)';
+          ctx.beginPath();
+          ctx.arc(inputX, outputY, 5, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Labels
+          ctx.font = 'bold 9px monospace';
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+          ctx.textAlign = 'left';
+          ctx.fillText(`IN: ${currentPoint.inputDb.toFixed(1)}dB`, inputX + 10, inputY - 10);
+          ctx.fillText(`OUT: ${currentPoint.outputDb.toFixed(1)}dB`, inputX + 10, outputY + 15);
+          
+          const gr = currentPoint.inputDb - currentPoint.outputDb;
+          if (gr > 0.1) {
+            ctx.fillStyle = 'rgba(231, 76, 60, 1)';
+            ctx.fillText(`GR: ${gr.toFixed(1)}dB`, inputX + 10, outputY + 30);
+          }
+        }
       }
-
-      x += sliceWidth;
+    } else {
+      // Clear buffer when stopped
+      if (signalBufferRef.current.length > 0) {
+        signalBufferRef.current = [];
+      }
+      
+      // Show "Audio Stopped" message
+      ctx.font = '11px monospace';
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+      ctx.textAlign = 'center';
+      ctx.fillText('Audio Stopped', width / 2, height / 2);
     }
 
-    ctx.stroke();
-
-    // Status text
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-    ctx.font = '11px "Geist Mono", monospace';
-    ctx.textAlign = 'left';
-
+    // Status indicators
     const isLimiting = meteringData.grPeak < -0.1;
-    const statusColor = isLimiting ? '#E74C3C' : '#00D9FF';
-    ctx.fillStyle = statusColor;
-    ctx.fillText(isLimiting ? '🔴 LIMITING' : '⚪ READY', 10, 20);
-
-    // Gain reduction display
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+    ctx.font = 'bold 10px monospace';
+    ctx.fillStyle = isLimiting ? 'rgba(231, 76, 60, 1)' : 'rgba(0, 217, 255, 1)';
+    ctx.textAlign = 'left';
+    ctx.fillText(isLimiting ? '🔴 LIMITING' : '⚪ READY', 8, 18);
+    
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
     ctx.textAlign = 'right';
-    ctx.fillText(`GR: ${meteringData.grPeak.toFixed(1)}dB peak`, width - 10, 20);
+    ctx.fillText(`GR: ${Math.abs(meteringData.grPeak).toFixed(1)}dB`, width - 8, 18);
 
-    // Ceiling label
-    ctx.fillStyle = '#E74C3C';
-    ctx.textAlign = 'center';
-    ctx.fillText(`Ceiling: ${ceiling.toFixed(1)}dB`, width / 2, ceilingY - 5);
+    // True-peak indicator (if enabled)
+    if (truePeak && meteringData.truePeakOutDb > ceiling) {
+      ctx.fillStyle = 'rgba(255, 200, 0, 1)';
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 9px monospace';
+      ctx.fillText(`⚠️ TP: ${meteringData.truePeakOutDb.toFixed(1)}dB`, width / 2, 18);
+    }
 
-  }, [isPlaying, getTimeDomainData, ceiling, meteringData]);
+    // Axis labels
+    ctx.font = '8px monospace';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+    ctx.textAlign = 'left';
+    ctx.fillText('INPUT dB', 8, curveHeight - 8);
+    ctx.fillText('OUTPUT dB', 8, curveHeight + 4);
+  }, [isPlaying, getTimeDomainData, metricsDb, ceiling, knee, truePeak, meteringData]);
 
   const { containerRef, canvasRef } = useCanvasVisualization(
     drawVisualization,
-    [ceiling, mode, isPlaying, meteringData]
+    [ceiling, knee, truePeak, isPlaying, meteringData]
   );
 
   // Listen for metering data from worklet
@@ -342,7 +554,8 @@ export function LimiterUI({ trackId, effect, onChange }) {
         trackId={trackId}
         effectId={effect.id}
         ceiling={ceiling}
-        mode={mode}
+        knee={knee}
+        truePeak={truePeak}
       />
 
       {/* Mode Selector */}

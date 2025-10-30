@@ -321,48 +321,32 @@ const ProfessionalEQCanvas = React.memo(({
 
     ctx.setLineDash([]);
 
-    // 🎵 SPECTRUM ANALYZER: Real-time frequency content visualization
+    // 🎵 ENHANCED SPECTRUM ANALYZER: Real-time frequency content visualization with flowing signal
     if (showSpectrum && getFrequencyData) {
       const fftData = getFrequencyData();
 
       // ⚡ FIX: Guard against null FFT data (after bypass toggle)
-      if (!fftData) {
-        return; // Skip spectrum rendering if no data
-      }
-
-      // 🔍 DEBUG: Check FFT data (throttled - once per second)
-      if (!window._lastFFTDebug || Date.now() - window._lastFFTDebug > 1000) {
-        window._lastFFTDebug = Date.now();
-        const dataArray = Array.from(fftData);
-        const maxVal = Math.max(...dataArray);
-        const avgVal = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
-        const valuesAboveNoise = dataArray.filter(v => v > -100).length;
-        console.log('🔍 FFT Data (1s throttled):', {
-          length: fftData.length,
-          first5: dataArray.slice(0, 5).map(v => v.toFixed(1)),
-          maxValue: maxVal.toFixed(1),
-          avgValue: avgVal.toFixed(1),
-          valuesAbove_100dB: valuesAboveNoise,
-          hasSignal: valuesAboveNoise > 10
-        });
-      }
-
-      if (fftData && fftData.length > 0) {
+      if (!fftData || fftData.length === 0) {
+        // Skip spectrum rendering if no data
+      } else {
         const sampleRate = 48000; // Assume 48kHz
         const nyquist = sampleRate / 2;
         const binCount = fftData.length;
 
-        // Create gradient for spectrum (more visible)
-        const spectrumGradient = ctx.createLinearGradient(0, height * 0.2, 0, height);
-        spectrumGradient.addColorStop(0, 'rgba(0, 229, 181, 0.5)');  // ⚡ Increased opacity
-        spectrumGradient.addColorStop(0.5, 'rgba(0, 229, 181, 0.3)'); // ⚡ Increased opacity
-        spectrumGradient.addColorStop(1, 'rgba(0, 229, 181, 0.1)'); // ⚡ Increased opacity
+        // 🎨 ENHANCED: Multi-layer spectrum visualization
+        // Base layer: Subtle filled area
+        const spectrumGradient = ctx.createLinearGradient(0, height * 0.1, 0, height);
+        spectrumGradient.addColorStop(0, 'rgba(0, 229, 181, 0.35)');  // Cyan at top
+        spectrumGradient.addColorStop(0.5, 'rgba(0, 229, 181, 0.2)');
+        spectrumGradient.addColorStop(1, 'rgba(0, 229, 181, 0.05)'); // Fade to bottom
 
         ctx.fillStyle = spectrumGradient;
         ctx.beginPath();
 
         // Draw spectrum with logarithmic frequency mapping
         const points = [];
+        const peakPoints = []; // For peak hold display
+        
         for (let i = 0; i < width; i++) {
           const freq = xToFreq(i, width);
           if (freq < 20 || freq > 20000) continue;
@@ -370,53 +354,72 @@ const ProfessionalEQCanvas = React.memo(({
           // Map frequency to FFT bin
           const binIndex = Math.floor((freq / nyquist) * binCount);
           if (binIndex >= 0 && binIndex < binCount) {
-            // ⚡ FIX: FFT data is ALREADY in dB (-140 to 0 range)
+            // FFT data is already in dB (-140 to 0 range)
             const dbValue = fftData[binIndex];
 
             // Filter noise floor: keep only signals above -100dB
-            if (dbValue < -100) continue;
+            if (dbValue < -100) {
+              // Still add point at bottom for smooth curve
+              points.push({ x: i, y: height });
+              continue;
+            }
 
             // Clamp to usable range
             const clampedDb = Math.max(-100, Math.min(0, dbValue));
 
             // Map dB to canvas height
-            // -100dB = bottom (minimal), 0dB = top (full scale)
+            // -100dB = bottom, 0dB = top
             // Scale to EQ's dB range (-24 to +24)
             const normalizedRange = (clampedDb + 100) / 100; // 0.0 to 1.0
             const eqRangeDb = (normalizedRange * 48) - 24; // Map to -24 to +24dB
 
             const y = dbToY(eqRangeDb, height);
             points.push({ x: i, y });
+            peakPoints.push({ x: i, y, db: clampedDb });
           }
         }
 
-        // Draw filled area under spectrum
+        // Draw filled area under spectrum (subtle background)
         if (points.length > 0) {
-          // 🔍 DEBUG: Log spectrum drawing (throttled)
-          if (!window._lastSpectrumDrawDebug || Date.now() - window._lastSpectrumDrawDebug > 2000) {
-            window._lastSpectrumDrawDebug = Date.now();
-            console.log('✅ Drawing spectrum:', {
-              points: points.length,
-              firstPoint: points[0],
-              lastPoint: points[points.length - 1]
-            });
-          }
-
           ctx.moveTo(points[0].x, height);
           points.forEach(p => ctx.lineTo(p.x, p.y));
           ctx.lineTo(points[points.length - 1].x, height);
           ctx.closePath();
           ctx.fill();
 
-          // Draw spectrum outline
-          ctx.strokeStyle = 'rgba(0, 229, 181, 0.6)'; // ⚡ More visible
-          ctx.lineWidth = 2; // ⚡ Thicker line
+          // 🎨 ENHANCED: Bright spectrum line with glow
+          ctx.strokeStyle = 'rgba(0, 229, 181, 0.8)'; // Brighter cyan
+          ctx.lineWidth = 2.5;
+          ctx.shadowColor = 'rgba(0, 229, 181, 0.6)';
+          ctx.shadowBlur = 8;
           ctx.beginPath();
           points.forEach((p, i) => {
             if (i === 0) ctx.moveTo(p.x, p.y);
             else ctx.lineTo(p.x, p.y);
           });
           ctx.stroke();
+          ctx.shadowBlur = 0;
+
+          // 🎨 ENHANCED: Peak indicators at key frequencies
+          // Find peaks in spectrum for visual feedback
+          if (peakPoints.length > 10) {
+            ctx.fillStyle = 'rgba(0, 229, 181, 0.9)';
+            ctx.beginPath();
+            
+            // Sample every 20th point for performance
+            for (let i = 10; i < peakPoints.length - 10; i += 20) {
+              const prev = peakPoints[i - 1];
+              const curr = peakPoints[i];
+              const next = peakPoints[i + 1];
+              
+              // Simple peak detection: higher than neighbors
+              if (curr.db > prev.db && curr.db > next.db && curr.db > -80) {
+                ctx.moveTo(curr.x, curr.y);
+                ctx.arc(curr.x, curr.y, 3, 0, Math.PI * 2);
+              }
+            }
+            ctx.fill();
+          }
         }
       }
     }
