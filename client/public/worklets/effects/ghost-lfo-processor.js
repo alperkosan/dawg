@@ -106,10 +106,14 @@ class GhostLFOProcessor extends AudioWorkletProcessor {
     const randomMod = this.smoothNoise(state.randomPhase * 100) * 2 - 1;
     const atmosphereMod = randomMod * atmosphere * 0.3;
 
-    // Glitch effect (random jumps)
+    // 🎯 PROFESSIONAL GLITCH: Deterministic pseudo-random (sample-accurate)
+    // Use deterministic random for reproducible, musical glitches
+    const glitchSeed = (state.writeIndex * 7919 + channel * 9973) % 1000000;
     let glitchMod = 0;
-    if (Math.random() < glitch * 0.01) {
-      glitchMod = (Math.random() * 2 - 1) * 0.5;
+    
+    if ((glitchSeed % 1000) < glitch * 10) {
+      // Deterministic glitch amount based on seed
+      glitchMod = ((glitchSeed % 2000) / 1000 - 1) * 0.5;
     }
 
     // Combine modulations

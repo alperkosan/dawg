@@ -289,12 +289,56 @@ export const pluginRegistry = {
       modRate: 0.5
     },
     presets: [
-      { name: 'Room', settings: { size: 0.35, decay: 0.8, damping: 0.4, wet: 0.25, earlyLateMix: 0.4 } },
-      { name: 'Hall', settings: { size: 0.65, decay: 2.5, damping: 0.5, wet: 0.35, earlyLateMix: 0.5 } },
-      { name: 'Cathedral', settings: { size: 0.9, decay: 6.0, damping: 0.7, wet: 0.45, earlyLateMix: 0.7 } },
-      { name: 'Plate', settings: { size: 0.5, decay: 1.8, damping: 0.2, wet: 0.4, earlyLateMix: 0.3, diffusion: 0.9 } },
-      { name: 'Vocal', settings: { size: 0.45, decay: 1.5, damping: 0.6, wet: 0.3, earlyLateMix: 0.45 } },
-      { name: 'Ambient', settings: { size: 0.95, decay: 10.0, damping: 0.8, wet: 0.6, earlyLateMix: 0.8, diffusion: 0.9 } }
+      // 🎯 METHODOLOGY: Real acoustic spaces + analog equipment references
+      { 
+        name: 'Room', 
+        description: 'Small intimate space - Studio room',
+        genre: ['All Genres'],
+        reference: 'Studio Room',
+        settings: { size: 0.35, decay: 0.8, damping: 0.4, wet: 0.25, earlyLateMix: 0.4, preDelay: 0.015, diffusion: 0.6 } 
+      },
+      { 
+        name: 'Hall', 
+        description: 'Concert hall - Large acoustic space',
+        genre: ['Classical', 'Jazz', 'Rock'],
+        reference: 'Concert Hall',
+        settings: { size: 0.65, decay: 2.5, damping: 0.5, wet: 0.35, earlyLateMix: 0.5, preDelay: 0.02, diffusion: 0.7 } 
+      },
+      { 
+        name: 'Cathedral', 
+        description: 'Vast sacred space - Long decay',
+        genre: ['Ambient', 'Classical', 'Electronic'],
+        reference: 'Cathedral Acoustics',
+        settings: { size: 0.9, decay: 6.0, damping: 0.7, wet: 0.45, earlyLateMix: 0.7, preDelay: 0.03, diffusion: 0.8 } 
+      },
+      { 
+        name: 'Plate', 
+        description: 'Lexicon-style plate reverb',
+        genre: ['Rock', 'Pop', 'Hip-Hop'],
+        reference: 'Lexicon Plate',
+        settings: { size: 0.5, decay: 1.8, damping: 0.2, wet: 0.4, earlyLateMix: 0.3, diffusion: 0.9, preDelay: 0.01 } 
+      },
+      { 
+        name: 'Vocal', 
+        description: 'Vocal plate - Warm and smooth',
+        genre: ['Pop', 'R&B', 'Soul'],
+        reference: 'Vocal Plate',
+        settings: { size: 0.45, decay: 1.5, damping: 0.6, wet: 0.3, earlyLateMix: 0.45, preDelay: 0.015, diffusion: 0.75 } 
+      },
+      { 
+        name: 'Ambient', 
+        description: 'Infinite soundscape - Long tail',
+        genre: ['Ambient', 'Electronic', 'Cinematic'],
+        reference: 'Ambient Reverb',
+        settings: { size: 0.95, decay: 10.0, damping: 0.8, wet: 0.6, earlyLateMix: 0.8, diffusion: 0.9, preDelay: 0.04 } 
+      },
+      { 
+        name: 'Chamber', 
+        description: 'Recording chamber - Medium decay',
+        genre: ['Jazz', 'Rock', 'Pop'],
+        reference: 'Chamber Reverb',
+        settings: { size: 0.55, decay: 1.2, damping: 0.5, wet: 0.32, earlyLateMix: 0.5, preDelay: 0.018, diffusion: 0.7 } 
+      }
     ]
   },
   'ModernDelay': {
@@ -323,11 +367,56 @@ export const pluginRegistry = {
       width: 1.0
     },
     presets: [
-      { name: 'Slapback', settings: { timeLeft: 0.08, timeRight: 0.085, feedbackLeft: 0.15, feedbackRight: 0.15, pingPong: 0.0, wet: 0.25, saturation: 0.2 } },
-      { name: 'Ping-Pong', settings: { timeLeft: 0.375, timeRight: 0.5, feedbackLeft: 0.5, feedbackRight: 0.5, pingPong: 0.9, wet: 0.4, diffusion: 0.3 } },
-      { name: 'Dub', settings: { timeLeft: 0.5, timeRight: 0.75, feedbackLeft: 0.7, feedbackRight: 0.7, pingPong: 0.6, wet: 0.5, filterFreq: 2000, saturation: 0.4, diffusion: 0.5 } },
-      { name: 'Ambient', settings: { timeLeft: 1.2, timeRight: 1.5, feedbackLeft: 0.8, feedbackRight: 0.8, pingPong: 0.3, wet: 0.6, filterFreq: 5000, diffusion: 0.8, modDepth: 0.02 } },
-      { name: 'Tape', settings: { timeLeft: 0.425, timeRight: 0.425, feedbackLeft: 0.55, feedbackRight: 0.55, pingPong: 0.0, wet: 0.35, filterFreq: 4000, saturation: 0.5, modDepth: 0.01, diffusion: 0.2 } }
+      // 🎯 METHODOLOGY: Classic delay techniques + tempo-synced delays
+      { 
+        name: 'Slapback', 
+        description: 'Vintage rockabilly echo - Short delay',
+        genre: ['Rock', 'Country', 'Blues'],
+        reference: '1950s Rockabilly',
+        settings: { timeLeft: 0.08, timeRight: 0.085, feedbackLeft: 0.15, feedbackRight: 0.15, pingPong: 0.0, wet: 0.25, saturation: 0.2, filterFreq: 8000 } 
+      },
+      { 
+        name: 'Ping-Pong', 
+        description: 'Stereo bouncing delay - Classic effect',
+        genre: ['Pop', 'Electronic', 'Rock'],
+        reference: 'Classic Ping-Pong',
+        settings: { timeLeft: 0.375, timeRight: 0.5, feedbackLeft: 0.5, feedbackRight: 0.5, pingPong: 0.9, wet: 0.4, diffusion: 0.3, filterFreq: 6000 } 
+      },
+      { 
+        name: 'Dub', 
+        description: 'Reggae-style echo - Filtered feedback',
+        genre: ['Reggae', 'Dub', 'Electronic'],
+        reference: 'King Tubby Style',
+        settings: { timeLeft: 0.5, timeRight: 0.75, feedbackLeft: 0.7, feedbackRight: 0.7, pingPong: 0.6, wet: 0.5, filterFreq: 2000, saturation: 0.4, diffusion: 0.5 } 
+      },
+      { 
+        name: 'Ambient', 
+        description: 'Long atmospheric delay - Wide stereo',
+        genre: ['Ambient', 'Electronic', 'Cinematic'],
+        reference: 'Ambient Delay',
+        settings: { timeLeft: 1.2, timeRight: 1.5, feedbackLeft: 0.8, feedbackRight: 0.8, pingPong: 0.3, wet: 0.6, filterFreq: 5000, diffusion: 0.8, modDepth: 0.02 } 
+      },
+      { 
+        name: 'Tape', 
+        description: 'Analog tape echo - Warm character',
+        genre: ['Rock', 'Pop', 'Blues'],
+        reference: 'Echoplex',
+        settings: { timeLeft: 0.425, timeRight: 0.425, feedbackLeft: 0.45, feedbackRight: 0.45, pingPong: 0.0, wet: 0.35, filterFreq: 4000, saturation: 0.4, modDepth: 0.01, diffusion: 0.15 } 
+      },
+      { 
+        name: 'Eighth Note', 
+        description: 'Tempo-synced 1/8 note delay',
+        genre: ['EDM', 'Hip-Hop', 'Pop'],
+        reference: 'Tempo Sync',
+        settings: { timeLeft: 0.25, timeRight: 0.25, feedbackLeft: 0.3, feedbackRight: 0.3, pingPong: 0.5, wet: 0.3, filterFreq: 7000, diffusion: 0.2 } 
+      },
+      { 
+        name: 'Quarter Note', 
+        description: 'Tempo-synced 1/4 note delay',
+        genre: ['Rock', 'Pop', 'Electronic'],
+        reference: 'Tempo Sync',
+        settings: { timeLeft: 0.5, timeRight: 0.5, feedbackLeft: 0.4, feedbackRight: 0.4, pingPong: 0.7, wet: 0.35, filterFreq: 6000, diffusion: 0.3 } 
+      }
     ]
   },
   'HalfTime': {

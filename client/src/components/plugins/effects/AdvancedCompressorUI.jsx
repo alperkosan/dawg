@@ -572,15 +572,12 @@ export const AdvancedCompressorUI = ({ trackId, effect, onChange }) => {
       {/* ===== LEFT PANEL: Mode Selection ===== */}
       <div className="w-[240px] flex-shrink-0 flex flex-col gap-4">
 
-        {/* Plugin Header */}
+        {/* Category Badge */}
         <div className="bg-gradient-to-r from-[#001829] to-[#1a1a1a] rounded-xl px-4 py-3 border border-[#00A8E8]/30">
           <div className="flex items-center gap-3">
             <div className="text-2xl">{currentMode?.icon || '🎚️'}</div>
             <div className="flex-1">
-              <div className="text-sm font-black text-[#00A8E8] tracking-wider uppercase">
-                Compressor
-              </div>
-              <div className="text-[9px] text-[#00B8F8]/70">The Dynamics Forge</div>
+              <div className="text-[9px] text-[#00B8F8]/70 font-semibold uppercase tracking-wider">The Dynamics Forge</div>
             </div>
           </div>
         </div>

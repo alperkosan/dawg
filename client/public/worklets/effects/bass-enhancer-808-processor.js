@@ -129,16 +129,27 @@ class BassEnhancer808Processor extends AudioWorkletProcessor {
       state.envelope = releaseCoeff * state.envelope + (1 - releaseCoeff) * rectified;
     }
 
-    // Generate sub-harmonic (octave down)
-    const subHarmonic = Math.sign(filteredBass) * Math.pow(Math.abs(filteredBass), 0.5) * state.envelope;
+    // 🎯 PROFESSIONAL SUB-BASS SYNTHESIS: Octave down generation (like MaxxBass, RBass)
+    // Sub-harmonic generation: Full-wave rectification + filtering for natural sub
+    const rectified = Math.abs(filteredBass);
+    
+    // 🎯 ANALOG-STYLE SUB: Square root compression for musical character
+    const subHarmonic = Math.sign(filteredBass) * Math.sqrt(rectified) * state.envelope * 0.8;
+    
+    // 🎯 SECOND HARMONIC: Even harmonic for warmth (like tube saturation)
+    const secondHarmonic = filteredBass * rectified * harmonics * 0.4; // Reduced for balance
+    
+    // 🎯 THIRD HARMONIC: Odd harmonic for presence (subtle)
+    const thirdHarmonic = filteredBass * filteredBass * Math.sign(filteredBass) * rectified * harmonics * 0.15;
 
-    // Generate 2nd harmonic (octave up) for warmth
-    const secondHarmonic = filteredBass * Math.abs(filteredBass) * harmonics;
+    // 🎯 PROFESSIONAL MIXING: Energy-preserving blend
+    // Original bass: preserve dynamics
+    const originalGain = 1.0 - (amount * 0.3); // Slight reduction to make room for harmonics
+    const enhanced = filteredBass * originalGain + subHarmonic * amount * 1.2 + secondHarmonic * 0.8 + thirdHarmonic;
 
-    // Mix enhanced bass
-    const enhanced = filteredBass * (1 + amount) + subHarmonic * amount + secondHarmonic;
-
-    return enhanced * 0.7; // Compensate for gain boost
+    // 🎯 AUTO-GAIN: Compensate for harmonic buildup
+    const compensation = 1.0 / (1 + amount * 0.6 + harmonics * 0.3);
+    return enhanced * compensation;
   }
 
   process(inputs, outputs, parameters) {

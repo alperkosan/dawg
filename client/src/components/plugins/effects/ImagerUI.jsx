@@ -1,721 +1,643 @@
 /**
- * ImagerUI - Stereo Field Sculptor Plugin
+ * MULTIBAND IMAGER V3.0 - Professional Multiband Stereo Field Sculptor
  *
- * Mode-Based Design Philosophy:
- * "Shape your stereo image instantly" - One width knob, infinite stereo possibilities
+ * Industry-leading multiband stereo imaging
+ * Inspired by: Ozone Imager 2, Waves S1, bx_stereomaker
  *
  * Features:
- * - 7 character modes (Mono → Narrow → Normal → Wide → Ultra Wide → Enhance Sides → Vocal Focus)
- * - Single width intensity control
- * - Visual stereo field display
- * - Progressive disclosure to Mid/Side parameters
- * - Professional Mid/Side processing
+ * - 4-band frequency-specific stereo width control
+ * - Real-time frequency spectrum analyzer
+ * - Per-band solo/mute
+ * - Stereoize (mono-to-stereo conversion)
+ * - Advanced vectorscope visualization
+ * - Band crossover frequency control
  */
 
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { Knob, ModeSelector, ExpandablePanel } from '@/components/controls';
 import { useAudioPlugin, useGhostValue, useCanvasVisualization } from '@/hooks/useAudioPlugin';
-import { createPresetManager } from '@/lib/audio/PresetManager';
-import './ImagerUI.css';
 
 // ============================================================================
-// MODE DEFINITIONS
+// BAND CONFIGURATION
 // ============================================================================
 
-const IMAGER_MODES = {
-  mono: {
-    id: 'mono',
-    name: 'Mono',
-    description: 'Bass-safe mono output',
-    icon: '🎯',
-    color: '#9CA3AF',
-    baseParams: {
-      width: 0,
-      midGain: 1.0,
-      sideGain: 0
-    }
-  },
-  narrow: {
-    id: 'narrow',
-    name: 'Narrow',
-    description: 'Focused stereo image',
-    icon: '🎵',
-    color: '#60A5FA',
-    baseParams: {
-      width: 0.5,
-      midGain: 1.0,
-      sideGain: 0.5
-    }
-  },
-  normal: {
-    id: 'normal',
-    name: 'Normal',
-    description: 'Natural stereo width',
-    icon: '🎼',
-    color: '#34D399',
-    baseParams: {
-      width: 1.0,
-      midGain: 1.0,
-      sideGain: 1.0
-    }
-  },
-  wide: {
-    id: 'wide',
-    name: 'Wide',
-    description: 'Enhanced stereo spread',
-    icon: '🌊',
-    color: '#A78BFA',
-    baseParams: {
-      width: 1.4,
-      midGain: 0.85,
-      sideGain: 1.4
-    }
-  },
-  ultraWide: {
-    id: 'ultraWide',
-    name: 'Ultra Wide',
-    description: 'Maximum stereo expansion',
-    icon: '🌌',
-    color: '#8B5CF6',
-    baseParams: {
-      width: 1.8,
-      midGain: 0.7,
-      sideGain: 1.8
-    }
-  },
-  enhanceSides: {
-    id: 'enhanceSides',
-    name: 'Enhance Sides',
-    description: 'Boost stereo information',
-    icon: '✨',
-    color: '#F472B6',
-    baseParams: {
-      width: 1.5,
-      midGain: 0.6,
-      sideGain: 1.9
-    }
-  },
-  vocalFocus: {
-    id: 'vocalFocus',
-    name: 'Vocal Focus',
-    description: 'Enhance center channel',
-    icon: '🎤',
-    color: '#FBBF24',
-    baseParams: {
-      width: 0.7,
-      midGain: 1.3,
-      sideGain: 0.5
-    }
-  }
-};
-
-// ============================================================================
-// FACTORY PRESETS
-// ============================================================================
-
-const FACTORY_PRESETS = [
-  {
-    id: 'mono',
-    name: 'Mono (Bass Safe)',
-    category: 'Utility',
-    parameters: {
-      mode: 'mono',
-      intensity: 1.0,
-      width: 0,
-      midGain: 1.0,
-      sideGain: 0,
-      wet: 1.0
-    },
-    description: 'Bass-safe mono output'
-  },
-  {
-    id: 'narrow',
-    name: 'Narrow',
-    category: 'Width Control',
-    parameters: {
-      mode: 'narrow',
-      intensity: 1.0,
-      width: 0.5,
-      midGain: 1.0,
-      sideGain: 0.5,
-      wet: 1.0
-    },
-    description: 'Focused stereo image'
-  },
-  {
-    id: 'normal',
-    name: 'Normal',
-    category: 'Width Control',
-    parameters: {
-      mode: 'normal',
-      intensity: 1.0,
-      width: 1.0,
-      midGain: 1.0,
-      sideGain: 1.0,
-      wet: 1.0
-    },
-    description: 'Natural stereo width'
-  },
-  {
-    id: 'wide',
-    name: 'Wide',
-    category: 'Width Control',
-    parameters: {
-      mode: 'wide',
-      intensity: 1.0,
-      width: 1.4,
-      midGain: 0.85,
-      sideGain: 1.4,
-      wet: 1.0
-    },
-    description: 'Enhanced stereo spread'
-  },
-  {
-    id: 'ultraWide',
-    name: 'Ultra Wide',
-    category: 'Wide Effects',
-    parameters: {
-      mode: 'ultraWide',
-      intensity: 1.0,
-      width: 1.8,
-      midGain: 0.7,
-      sideGain: 1.8,
-      wet: 1.0
-    },
-    description: 'Maximum stereo expansion'
-  },
-  {
-    id: 'enhanceSides',
-    name: 'Enhance Sides',
-    category: 'Creative',
-    parameters: {
-      mode: 'enhanceSides',
-      intensity: 1.0,
-      width: 1.5,
-      midGain: 0.6,
-      sideGain: 1.9,
-      wet: 1.0
-    },
-    description: 'Boost stereo information'
-  },
-  {
-    id: 'vocalFocus',
-    name: 'Vocal Focus',
-    category: 'Creative',
-    parameters: {
-      mode: 'vocalFocus',
-      intensity: 1.0,
-      width: 0.7,
-      midGain: 1.3,
-      sideGain: 0.5,
-      wet: 1.0
-    },
-    description: 'Enhance center channel'
-  }
+const DEFAULT_BANDS = [
+  { id: 'low', name: 'Low', freq: 100, color: '#EF4444', minFreq: 20, maxFreq: 200 },
+  { id: 'lowMid', name: 'Low Mid', freq: 600, color: '#F59E0B', minFreq: 200, maxFreq: 1000 },
+  { id: 'highMid', name: 'High Mid', freq: 3000, color: '#10B981', minFreq: 1000, maxFreq: 6000 },
+  { id: 'high', name: 'High', freq: 6000, color: '#3B82F6', minFreq: 3000, maxFreq: 20000 }
 ];
 
-const presetManager = createPresetManager('imager', FACTORY_PRESETS);
-
 // ============================================================================
-// VISUALIZER COMPONENT
+// FREQUENCY SPECTRUM ANALYZER
 // ============================================================================
 
-const ImagerVisualizer = ({ trackId, effectId, mode, intensity }) => {
-  const { isPlaying, getTimeDomainData, metricsDb } = useAudioPlugin(trackId, effectId, {
+const FrequencySpectrumAnalyzer = React.memo(({ trackId, effectId, bands, bandWidths }) => {
+  const { isPlaying, getFrequencyData } = useAudioPlugin(trackId, effectId, {
     fftSize: 2048,
-    updateMetrics: true,
-    rmsSmoothing: 0.2,
-    peakSmoothing: 0.15
+    updateMetrics: false
   });
 
-  const currentMode = IMAGER_MODES[mode];
-
-  const drawVisualization = useCallback((ctx, width, height) => {
-    // Clear
-    ctx.fillStyle = 'rgba(10, 10, 12, 0.95)';
+  const drawSpectrum = useCallback((ctx, width, height) => {
+    // Background
+    ctx.fillStyle = 'rgba(15, 15, 20, 0.95)';
     ctx.fillRect(0, 0, width, height);
 
     if (!isPlaying) {
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
-      ctx.font = '12px "Geist Mono", monospace';
+      ctx.fillStyle = 'rgba(155, 89, 182, 0.3)';
+      ctx.font = '12px monospace';
       ctx.textAlign = 'center';
       ctx.fillText('Audio Stopped', width / 2, height / 2);
       return;
     }
 
-    const timeData = getTimeDomainData();
-    if (!timeData) return;
+    const freqData = getFrequencyData();
+    if (!freqData || freqData.length === 0) return;
 
-    // Draw stereo field visualization
-    const centerX = width / 2;
-    const maxRadius = Math.min(width, height) * 0.35;
-    const currentRadius = maxRadius * (intensity * currentMode.baseParams.width);
+    const sampleRate = 48000;
+    const nyquist = sampleRate / 2;
+    const binWidth = nyquist / freqData.length;
 
-    // Draw center indicator
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+    // Frequency scale (logarithmic)
+    const freqToX = (freq) => {
+      const minFreq = 20;
+      const maxFreq = 20000;
+      const logMin = Math.log10(minFreq);
+      const logMax = Math.log10(maxFreq);
+      const logFreq = Math.log10(freq);
+      return ((logFreq - logMin) / (logMax - logMin)) * width;
+    };
+
+    // Draw frequency markers
+    ctx.strokeStyle = 'rgba(155, 89, 182, 0.2)';
     ctx.lineWidth = 1;
+    ctx.font = '9px monospace';
+    ctx.fillStyle = 'rgba(155, 89, 182, 0.6)';
+    ctx.textAlign = 'center';
+
+    [60, 100, 300, 600, 1000, 3000, 6000].forEach(freq => {
+      const x = freqToX(freq);
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, height);
+      ctx.stroke();
+      
+      const label = freq >= 1000 ? `${freq / 1000}k` : freq.toString();
+      ctx.fillText(label, x, height - 5);
+    });
+
+    // Draw spectrum
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+    ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.moveTo(centerX, 0);
-    ctx.lineTo(centerX, height);
-    ctx.stroke();
 
-    // Draw stereo field circle
-    ctx.strokeStyle = currentMode.color;
-    ctx.lineWidth = 3;
-    ctx.globalAlpha = 0.6;
-    ctx.beginPath();
-    ctx.arc(centerX, height / 2, currentRadius, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.globalAlpha = 1.0;
+    let firstPoint = true;
+    for (let i = 1; i < freqData.length; i++) {
+      const freq = i * binWidth;
+      if (freq < 20 || freq > 20000) continue;
 
-    // Draw waveform in stereo field
-    ctx.strokeStyle = currentMode.color;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
+      const x = freqToX(freq);
+      const dbValue = freqData[i];
+      const normalized = Math.max(0, Math.min(1, (dbValue + 100) / 100));
+      const y = height - normalized * height * 0.8;
 
-    const sliceWidth = width / timeData.length;
-    let x = 0;
-
-    for (let i = 0; i < timeData.length; i++) {
-      const v = timeData[i];
-      const y = (v + 1) * height / 2;
-
-      if (i === 0) {
+      if (firstPoint) {
         ctx.moveTo(x, y);
+        firstPoint = false;
       } else {
         ctx.lineTo(x, y);
       }
-      x += sliceWidth;
     }
     ctx.stroke();
 
-    // Draw metrics
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-    ctx.font = '11px "Geist Mono", monospace';
-    ctx.textAlign = 'left';
-    ctx.fillText(`L: ${metricsDb.rmsDb.toFixed(1)} dB`, 10, 20);
-    ctx.fillText(`R: ${metricsDb.peakDb.toFixed(1)} dB`, 10, 35);
+    // Draw band dividers and controls
+    bands.forEach((band, index) => {
+      const x = freqToX(band.freq);
+      const widthValue = bandWidths[band.id] || 0;
+      const isActive = Math.abs(widthValue) > 0.1;
 
-    // Draw mode indicator
-    ctx.fillStyle = currentMode.color;
-    ctx.textAlign = 'right';
-    ctx.font = '14px "Geist", sans-serif';
-    ctx.fillText(`${currentMode.icon} ${currentMode.name}`, width - 10, 25);
-    ctx.font = '10px "Geist Mono", monospace';
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-    ctx.fillText(`Width: ${(intensity * currentMode.baseParams.width * 100).toFixed(0)}%`, width - 10, 40);
-  }, [isPlaying, getTimeDomainData, metricsDb, currentMode, intensity]);
+      // Band divider line
+      ctx.strokeStyle = isActive ? band.color : 'rgba(155, 89, 182, 0.3)';
+      ctx.lineWidth = isActive ? 2 : 1;
+      ctx.setLineDash(isActive ? [] : [4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, height);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Band label
+      ctx.fillStyle = isActive ? band.color : 'rgba(155, 89, 182, 0.5)';
+      ctx.font = 'bold 10px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(band.name, x, 15);
+      
+      // Width value
+      ctx.fillText(`${widthValue > 0 ? '+' : ''}${widthValue.toFixed(0)}`, x, 28);
+    });
+
+    // Highlight selected band region
+    const activeBand = bands.find(b => Math.abs(bandWidths[b.id] || 0) > 0.1);
+    if (activeBand) {
+      const bandIndex = bands.indexOf(activeBand);
+      const startX = bandIndex > 0 ? freqToX(bands[bandIndex - 1].freq) : 0;
+      const endX = freqToX(activeBand.freq);
+      
+      ctx.fillStyle = `${activeBand.color}15`;
+      ctx.fillRect(startX, 0, endX - startX, height);
+    }
+  }, [isPlaying, getFrequencyData, bands, bandWidths]);
 
   const { containerRef, canvasRef } = useCanvasVisualization(
-    drawVisualization,
-    [mode, intensity, isPlaying]
+    drawSpectrum,
+    [bands, bandWidths, isPlaying],
+    { throttleMs: 50 } // ~20fps for spectrum
   );
 
   return (
-    <div ref={containerRef} className="imager-visualizer">
-      <canvas ref={canvasRef} className="imager-visualizer__canvas" />
+    <div ref={containerRef} className="w-full h-[180px] bg-black/50 rounded-xl border border-[#9B59B6]/20 overflow-hidden">
+      <canvas ref={canvasRef} className="w-full h-full" />
     </div>
   );
-};
+});
+
+FrequencySpectrumAnalyzer.displayName = 'FrequencySpectrumAnalyzer';
 
 // ============================================================================
-// MAIN UI COMPONENT
+// VECTORSCOPE VISUALIZER
+// ============================================================================
+
+const VectorscopeVisualizer = React.memo(({ trackId, effectId, correlation }) => {
+  const { isPlaying, getTimeDomainData } = useAudioPlugin(trackId, effectId, {
+    fftSize: 1024,
+    updateMetrics: false
+  });
+
+  const historyRef = useRef([]);
+  const maxHistory = 100;
+
+  const drawVectorscope = useCallback((ctx, width, height) => {
+    // Background
+    const bgGradient = ctx.createRadialGradient(
+      width / 2, height, 0,
+      width / 2, height, Math.max(width, height)
+    );
+    bgGradient.addColorStop(0, 'rgba(20, 10, 25, 0.95)');
+    bgGradient.addColorStop(1, 'rgba(15, 8, 18, 0.95)');
+    ctx.fillStyle = bgGradient;
+    ctx.fillRect(0, 0, width, height);
+
+    const centerX = width / 2;
+    const centerY = height;
+    const maxRadius = Math.min(width, height * 0.9);
+
+    // Grid
+    ctx.strokeStyle = 'rgba(155, 89, 182, 0.15)';
+    ctx.lineWidth = 1;
+    
+    // Center line
+    ctx.beginPath();
+    ctx.moveTo(centerX - maxRadius, centerY);
+    ctx.lineTo(centerX + maxRadius, centerY);
+    ctx.stroke();
+
+    // Semi-circular grid
+    for (let r = 0.25; r <= 1; r += 0.25) {
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, maxRadius * r, Math.PI, 0, false); // Semi-circle (top)
+      ctx.stroke();
+    }
+
+    if (!isPlaying) {
+      ctx.fillStyle = 'rgba(155, 89, 182, 0.3)';
+      ctx.font = '12px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('Audio Stopped', centerX, centerY - maxRadius / 2);
+      return;
+    }
+
+    const timeData = getTimeDomainData();
+    if (!timeData || timeData.length < 4) return;
+
+    // Process samples
+    const sampleCount = Math.min(Math.floor(timeData.length / 2 / 4), 150);
+    
+    if (historyRef.current.length > maxHistory) {
+      historyRef.current = historyRef.current.slice(-maxHistory);
+    }
+
+    // Add new points
+    for (let i = 0; i < sampleCount; i++) {
+      const idx = (i * 4) * 2;
+      const L = timeData[idx] || 0;
+      const R = timeData[idx + 1] || 0;
+      
+      const X = (L + R) * 0.5; // Mid
+      const Y = (L - R) * 0.5; // Side
+      
+      historyRef.current.push({
+        x: X,
+        y: Y,
+        life: 1.0
+      });
+    }
+
+    // Draw history
+    ctx.save();
+    const alivePoints = historyRef.current.filter(p => p.life > 0);
+    
+    alivePoints.forEach(point => {
+      point.life -= 0.01;
+
+      const angle = Math.atan2(point.y, point.x); // Polar angle
+      const radius = Math.sqrt(point.x * point.x + point.y * point.y); // Polar radius
+
+      const x = centerX + Math.cos(angle) * radius * maxRadius;
+      const y = centerY - Math.sin(angle) * radius * maxRadius;
+
+      const hue = 270 + (correlation * 60);
+      const alpha = point.life * 0.6;
+      
+      ctx.fillStyle = `hsla(${hue}, 70%, 60%, ${alpha})`;
+      ctx.beginPath();
+      ctx.arc(x, y, 1.5, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    historyRef.current = historyRef.current.filter(p => p.life > 0);
+    ctx.restore();
+
+    // Labels
+    ctx.fillStyle = 'rgba(155, 89, 182, 0.8)';
+    ctx.font = '10px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('L', centerX - maxRadius * 0.7, centerY + 15);
+    ctx.fillText('R', centerX + maxRadius * 0.7, centerY + 15);
+    ctx.fillText('M', centerX, centerY - maxRadius * 0.9);
+  }, [isPlaying, getTimeDomainData, correlation]);
+
+  const { containerRef, canvasRef } = useCanvasVisualization(
+    drawVectorscope,
+    [correlation, isPlaying],
+    { throttleMs: 33 }
+  );
+
+  return (
+    <div ref={containerRef} className="w-full h-[200px] bg-black/50 rounded-xl border border-[#9B59B6]/20 overflow-hidden">
+      <div className="p-2">
+        <div className="text-[9px] text-[#9B59B6]/70 font-bold uppercase">Vectorscope</div>
+      </div>
+      <canvas ref={canvasRef} className="w-full h-[180px]" />
+    </div>
+  );
+});
+
+VectorscopeVisualizer.displayName = 'VectorscopeVisualizer';
+
+// ============================================================================
+// MAIN MULTIBAND IMAGER UI
 // ============================================================================
 
 export function ImagerUI({ trackId, effect, onUpdate = () => {} }) {
-  // State
-  const [mode, setMode] = useState(effect.parameters?.mode || 'normal');
-  const [intensity, setIntensity] = useState(effect.parameters?.intensity ?? 1.0);
-  const [showAdvanced, setShowAdvanced] = useState(false);
-
-  const [manualParams, setManualParams] = useState({
-    width: effect.parameters?.width ?? 1.0,
-    midGain: effect.parameters?.midGain ?? 1.0,
-    sideGain: effect.parameters?.sideGain ?? 1.0,
-    wet: effect.parameters?.wet ?? 1.0,
-    lowMono: effect.parameters?.lowMono ?? 0,
-    crossover: effect.parameters?.crossover ?? 160
+  const [bands, setBands] = useState(() => {
+    const savedBands = effect.settings?.bands;
+    return savedBands || DEFAULT_BANDS.map(b => ({ ...b }));
   });
 
-  // Ghost values
-  const ghostIntensity = useGhostValue(intensity, 400);
+  const [bandWidths, setBandWidths] = useState(() => {
+    const saved = effect.settings?.bandWidths || {};
+    return {
+      low: saved.low ?? 0,
+      lowMid: saved.lowMid ?? 0,
+      highMid: saved.highMid ?? 0,
+      high: saved.high ?? 0
+    };
+  });
 
-  // Audio plugin connection
+  const [bandMutes, setBandMutes] = useState(() => {
+    const saved = effect.settings?.bandMutes || {};
+    return {
+      low: saved.low ?? 0,
+      lowMid: saved.lowMid ?? 0,
+      highMid: saved.highMid ?? 0,
+      high: saved.high ?? 0
+    };
+  });
+
+  const [bandSolos, setBandSolos] = useState(() => {
+    const saved = effect.settings?.bandSolos || {};
+    return {
+      low: saved.low ?? 0,
+      lowMid: saved.lowMid ?? 0,
+      highMid: saved.highMid ?? 0,
+      high: saved.high ?? 0
+    };
+  });
+
+  // Debug: Log state changes
+  useEffect(() => {
+    console.log('🎛️ Imager State:', { bandMutes, bandSolos });
+  }, [bandMutes, bandSolos]);
+
+  const [stereoize, setStereoize] = useState(effect.settings?.stereoize ?? 0);
+  const [globalWidth, setGlobalWidth] = useState(effect.settings?.globalWidth ?? 1.0);
+  const [correlation, setCorrelation] = useState(1);
+  const [mode, setMode] = useState('polar'); // 'polar' or 'level'
+
+  // Audio plugin
   const { plugin } = useAudioPlugin(trackId, effect.id, {
     fftSize: 2048,
     updateMetrics: false
   });
 
-  const [correlation, setCorrelation] = useState(1);
-
+  // Listen for correlation
   useEffect(() => {
     const port = plugin?.audioNode?.workletNode?.port;
     if (!port) return;
+    
     const onMsg = (e) => {
       if (e.data?.type === 'corr' && typeof e.data.value === 'number') {
         setCorrelation(Math.max(-1, Math.min(1, e.data.value)));
       }
     };
+    
     port.addEventListener('message', onMsg);
     return () => port.removeEventListener('message', onMsg);
   }, [plugin]);
 
-  // Preset management
-  const [selectedPresetId, setSelectedPresetId] = useState('normal');
-  const allPresets = useMemo(() => presetManager.getAllPresets(), []);
-  const presetsByCategory = useMemo(() => {
-    const grouped = {};
-    allPresets.forEach(preset => {
-      const category = preset.category || 'Other';
-      if (!grouped[category]) {
-        grouped[category] = [];
-      }
-      grouped[category].push(preset);
-    });
-    return grouped;
-  }, [allPresets]);
-
-  // Computed parameters
-  const params = useMemo(() => {
-    if (showAdvanced) {
-      return manualParams;
-    }
-
-    const baseParams = IMAGER_MODES[mode].baseParams;
-    const scaledWidth = baseParams.width * intensity;
-
-    return {
-      width: scaledWidth,
-      midGain: baseParams.midGain,
-      sideGain: baseParams.sideGain,
-      wet: 1.0,
-      lowMono: manualParams.lowMono,
-      crossover: manualParams.crossover
-    };
-  }, [mode, intensity, showAdvanced, manualParams]);
-
-  // Send parameters to audio worklet
-  useEffect(() => {
+  // Update effect parameters
+  const updateParams = useCallback(() => {
     const audioNode = plugin?.audioNode?.workletNode;
     if (!audioNode?.port) return;
 
+    // Prepare parameters
+    const params = {
+      band1Freq: bands[0]?.freq || 100,
+      band2Freq: bands[1]?.freq || 600,
+      band3Freq: bands[2]?.freq || 3000,
+      band4Freq: bands[3]?.freq || 6000,
+      band1Width: bandWidths.low || 0,
+      band2Width: bandWidths.lowMid || 0,
+      band3Width: bandWidths.highMid || 0,
+      band4Width: bandWidths.high || 0,
+      band1Mute: (bandMutes.low || 0) >= 0.5 ? 1 : 0,
+      band2Mute: (bandMutes.lowMid || 0) >= 0.5 ? 1 : 0,
+      band3Mute: (bandMutes.highMid || 0) >= 0.5 ? 1 : 0,
+      band4Mute: (bandMutes.high || 0) >= 0.5 ? 1 : 0,
+      band1Solo: (bandSolos.low || 0) >= 0.5 ? 1 : 0,
+      band2Solo: (bandSolos.lowMid || 0) >= 0.5 ? 1 : 0,
+      band3Solo: (bandSolos.highMid || 0) >= 0.5 ? 1 : 0,
+      band4Solo: (bandSolos.high || 0) >= 0.5 ? 1 : 0,
+      stereoize: stereoize >= 0.5 ? 1 : 0,
+      globalWidth,
+      wet: 1.0
+    };
+
+    console.log('📤 Sending Imager params:', params);
+
+    // Send parameters to worklet
     audioNode.port.postMessage({
       type: 'setParameters',
       data: params
     });
-  }, [params, plugin]);
 
-  // Update effect in parent
-  useEffect(() => {
     if (typeof onUpdate === 'function') {
       onUpdate({
         ...effect,
-        parameters: {
-          mode,
-          intensity,
-          ...params
+        settings: {
+          bands,
+          bandWidths,
+          bandMutes,
+          bandSolos,
+          stereoize,
+          globalWidth
         }
       });
     }
-  }, [mode, intensity, params, effect.id, effect.type, onUpdate]);
+  }, [bands, bandWidths, bandMutes, bandSolos, stereoize, globalWidth, plugin, onUpdate, effect]);
+
+  useEffect(() => {
+    const timer = setTimeout(updateParams, 50);
+    return () => clearTimeout(timer);
+  }, [updateParams]);
 
   // Handlers
-  const handleModeChange = useCallback((newMode) => {
-    setMode(newMode);
-    setIntensity(1.0);
+  const handleBandWidthChange = useCallback((bandId, value) => {
+    setBandWidths(prev => ({ ...prev, [bandId]: value }));
   }, []);
 
-  const handleIntensityChange = useCallback((value) => {
-    setIntensity(value);
+  const handleBandFreqChange = useCallback((bandId, freq) => {
+    setBands(prev => prev.map(b => b.id === bandId ? { ...b, freq } : b));
   }, []);
 
-  const handleManualChange = useCallback((paramName, value) => {
-    setManualParams(prev => ({ ...prev, [paramName]: value }));
+  const handleBandMute = useCallback((bandId) => {
+    setBandMutes(prev => ({ ...prev, [bandId]: prev[bandId] ? 0 : 1 }));
   }, []);
 
-  const handlePresetChange = useCallback((presetId) => {
-    presetManager.applyPreset(presetId, (presetParams) => {
-      setMode(presetParams.mode || 'normal');
-      setIntensity(presetParams.intensity ?? 1.0);
-      setManualParams({
-        width: presetParams.width,
-        midGain: presetParams.midGain,
-        sideGain: presetParams.sideGain,
-        wet: presetParams.wet
-      });
-      setSelectedPresetId(presetId);
+  const handleBandSolo = useCallback((bandId) => {
+    setBandSolos(prev => {
+      const newSolos = { ...prev };
+      // If clicking solo when already solo, turn off
+      if (prev[bandId]) {
+        newSolos[bandId] = 0;
+      } else {
+        // Turn off all others, turn on this one
+        Object.keys(newSolos).forEach(id => {
+          newSolos[id] = id === bandId ? 1 : 0;
+        });
+      }
+      return newSolos;
     });
   }, []);
 
-  const currentMode = IMAGER_MODES[mode];
-  const stereoFieldWidth = Math.min(Math.max(params.width * 100, 0), 200);
+  // Correlation display
+  const correlationDisplay = useMemo(() => {
+    const corr = correlation;
+    if (corr > 0.95) return { text: 'Mono', color: '#34D399' };
+    if (corr > 0.5) return { text: 'Strong', color: '#60A5FA' };
+    if (corr > 0) return { text: 'Good', color: '#9CA3AF' };
+    if (corr > -0.5) return { text: 'Warning', color: '#F59E0B' };
+    return { text: 'Phase Issue', color: '#EF4444' };
+  }, [correlation]);
 
   return (
-    <div className="imager-ui" style={{ '--mode-color': currentMode.color }}>
+    <div className="w-full h-full bg-gradient-to-br from-black via-[#0F0813] to-black p-6 flex flex-col gap-4 overflow-hidden">
+      
       {/* Header */}
-      <div className="imager-ui__header">
-        <div>
-          <h3 className="imager-ui__title">〰️ Imager</h3>
-          <p className="imager-ui__subtitle">Stereo Field Sculptor</p>
-        </div>
-
-        <div className="imager-ui__header-controls">
-          <select
-            value={selectedPresetId}
-            onChange={(e) => handlePresetChange(e.target.value)}
-            className="imager-ui__preset-dropdown"
-          >
-            {Object.entries(presetsByCategory).map(([category, presets]) => (
-              <optgroup key={category} label={category}>
-                {presets.map((preset) => (
-                  <option key={preset.id} value={preset.id}>
-                    {preset.name}
-                  </option>
-                ))}
-              </optgroup>
-            ))}
-          </select>
-
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-[#9B59B6]/70 font-semibold uppercase tracking-wider">The Master Chain</p>
+        <div className="flex items-center gap-2">
           <button
-            className={`imager-ui__advanced-toggle ${showAdvanced ? 'active' : ''}`}
-            onClick={() => setShowAdvanced(!showAdvanced)}
+            onClick={() => setMode(mode === 'polar' ? 'level' : 'polar')}
+            className={`px-3 py-1.5 text-xs rounded transition-colors ${
+              mode === 'polar'
+                ? 'bg-[#9B59B6]/30 border border-[#9B59B6]/50 text-[#9B59B6]'
+                : 'bg-[#9B59B6]/20 border border-[#9B59B6]/30 text-[#9B59B6]/70'
+            }`}
           >
-            {showAdvanced ? '▼ Simple' : '▲ Advanced'}
+            {mode === 'polar' ? 'Polar Sample' : 'Polar Level'}
           </button>
         </div>
       </div>
 
-      {/* Visualizer */}
-      <ImagerVisualizer
+      {/* Frequency Spectrum Analyzer */}
+      <FrequencySpectrumAnalyzer
         trackId={trackId}
         effectId={effect.id}
-        mode={mode}
-        intensity={intensity}
+        bands={bands}
+        bandWidths={bandWidths}
       />
 
-      {/* Correlation & Low-Band Mono Controls */}
-      <div className="imager-ui__meters" style={{ margin: '8px 0 12px' }}>
-        <div className="imager-ui__meter" style={{ minWidth: 220 }}>
-          <div className="imager-ui__meter-label">CORR</div>
-          <div className="imager-ui__meter-bar">
-            <div
-              className="imager-ui__meter-fill"
-              style={{
-                width: `${Math.round((correlation + 1) * 50)}%`,
-                background: correlation < 0 ? '#EF4444' : '#34D399'
-              }}
-            />
+      {/* Main Controls */}
+      <div className="grid grid-cols-5 gap-4">
+        {/* Left: Stereo Width Band Controls */}
+        <div className="col-span-3 flex flex-col gap-3">
+          <div className="text-sm font-bold text-[#9B59B6] uppercase tracking-wider mb-2">
+            Stereo Width
           </div>
-          <div className="imager-ui__meter-value">{correlation.toFixed(2)}</div>
-        </div>
-        <div className="imager-ui__meter" style={{ gap: 12 }}>
-          <label className="imager-ui__meter-label" title="Low-band mono below crossover">LB MONO</label>
-          <input
-            type="checkbox"
-            checked={!!manualParams.lowMono}
-            onChange={(e) => handleManualChange('lowMono', e.target.checked ? 1 : 0)}
-          />
-          <input
-            type="range"
-            min="20"
-            max="500"
-            step="1"
-            value={manualParams.crossover}
-            onChange={(e) => handleManualChange('crossover', parseFloat(e.target.value))}
-            style={{ width: 140 }}
-          />
-          <div className="imager-ui__meter-value">{manualParams.crossover.toFixed(0)} Hz</div>
-        </div>
-      </div>
 
-      {/* Mode Selector */}
-      <div className="imager-modes">
-        <div className="imager-modes__label">Stereo Character</div>
-        <div className="imager-modes__buttons">
-          {Object.values(IMAGER_MODES).map(m => (
-            <button
-              key={m.id}
-              className={`mode-btn ${mode === m.id ? 'active' : ''}`}
-              onClick={() => handleModeChange(m.id)}
-              style={{ '--btn-color': m.color }}
-              title={m.description}
-              disabled={showAdvanced}
-            >
-              <span className="mode-btn__icon">{m.icon}</span>
-              <span className="mode-btn__name">{m.name}</span>
-            </button>
-          ))}
-        </div>
-      </div>
+          {/* Band Faders */}
+          {bands.map((band) => {
+            const width = bandWidths[band.id] || 0;
+            const isMuted = bandMutes[band.id] || 0;
+            const isSolo = bandSolos[band.id] || 0;
+            const isActive = Math.abs(width) > 0.1;
 
-      {/* Main Control */}
-      {!showAdvanced && (
-        <div className="imager-main">
-          {/* Stereo Field Display */}
-          <div className="stereo-field">
-            <div className="stereo-field__label">Stereo Field</div>
-            <div className="stereo-field__canvas">
-              <div className="stereo-field__center"></div>
-              <div
-                className="stereo-field__width"
-                style={{
-                  width: `${stereoFieldWidth}%`,
-                  background: `linear-gradient(to right, transparent, ${currentMode.color}, transparent)`
-                }}
-              ></div>
-              <div className="stereo-field__markers">
-                <span className="marker marker--left">L</span>
-                <span className="marker marker--center">M</span>
-                <span className="marker marker--right">R</span>
+            return (
+              <div key={band.id} className="flex items-center gap-3">
+                {/* Band Info */}
+                <div className="w-20 flex flex-col">
+                  <div className="text-[10px] font-bold" style={{ color: band.color }}>
+                    {band.name}
+                  </div>
+                  <div className="text-[8px] text-white/50">
+                    {band.freq >= 1000 ? `${band.freq / 1000}k` : band.freq} Hz
+                  </div>
+                </div>
+
+                {/* Width Fader */}
+                <div className="flex-1 relative">
+                  <div className="h-12 bg-black/40 rounded border border-[#9B59B6]/20 relative overflow-hidden">
+                    <div
+                      className="absolute bottom-0 w-full transition-all duration-100"
+                      style={{
+                        height: `${Math.abs(width)}%`,
+                        background: width > 0
+                          ? `linear-gradient(to top, ${band.color}, ${band.color}80)`
+                          : `linear-gradient(to top, #9CA3AF, #9CA3AF80)`,
+                        opacity: isMuted ? 0.3 : 1
+                      }}
+                    />
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <span className={`text-xs font-mono ${isActive ? 'text-white' : 'text-white/30'}`}>
+                        {width > 0 ? '+' : ''}{width.toFixed(1)}
+                      </span>
+                    </div>
+                  </div>
+                  <input
+                    type="range"
+                    min="-100"
+                    max="100"
+                    step="0.5"
+                    value={width}
+                    onChange={(e) => handleBandWidthChange(band.id, parseFloat(e.target.value))}
+                    className="w-full h-2 mt-1"
+                    style={{ opacity: isMuted ? 0.5 : 1 }}
+                  />
+                </div>
+
+                {/* Solo/Mute Buttons */}
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleBandSolo(band.id)}
+                    className={`w-8 h-8 rounded text-[10px] font-bold transition-all ${
+                      isSolo
+                        ? 'bg-[#9B59B6] text-white'
+                        : 'bg-black/40 text-white/40 border border-[#9B59B6]/20'
+                    }`}
+                  >
+                    S
+                  </button>
+                  <button
+                    onClick={() => handleBandMute(band.id)}
+                    className={`w-8 h-8 rounded text-[10px] font-bold transition-all ${
+                      isMuted
+                        ? 'bg-red-500 text-white'
+                        : 'bg-black/40 text-white/40 border border-[#9B59B6]/20'
+                    }`}
+                  >
+                    M
+                  </button>
+                </div>
               </div>
-            </div>
-            <div className="stereo-field__value" style={{ color: currentMode.color }}>
-              {stereoFieldWidth.toFixed(0)}%
+            );
+          })}
+
+          {/* Stereoize Toggle */}
+          <div className="flex items-center gap-3 mt-2">
+            <label className="text-[10px] text-white/70 w-20">Stereoize</label>
+            <div className="flex-1 relative">
+              <button
+                onClick={() => setStereoize(stereoize ? 0 : 1)}
+                className={`w-full h-8 rounded transition-all ${
+                  stereoize
+                    ? 'bg-[#9B59B6] text-white'
+                    : 'bg-black/40 text-white/40 border border-[#9B59B6]/20'
+                }`}
+              >
+                {stereoize ? 'ON' : 'OFF'}
+              </button>
             </div>
           </div>
+        </div>
 
-          {/* Width Control */}
-          <div className="width-control">
-            <label className="width-control__label">Width Intensity</label>
-            <div className="width-control__slider-container">
-              <input
-                type="range"
-                min="0"
-                max="2"
-                step="0.01"
-                value={intensity}
-                onChange={(e) => handleIntensityChange(parseFloat(e.target.value))}
-                className="width-control__slider"
-                style={{
-                  background: `linear-gradient(to right, ${currentMode.color} 0%, ${currentMode.color} ${(intensity / 2) * 100}%, rgba(255,255,255,0.1) ${(intensity / 2) * 100}%, rgba(255,255,255,0.1) 100%)`
-                }}
-              />
-              {/* Ghost indicator */}
-              {Math.abs(ghostIntensity - intensity) > 0.01 && (
+        {/* Right: Vectorscope & Correlation */}
+        <div className="col-span-2 flex flex-col gap-4">
+          <VectorscopeVisualizer
+            trackId={trackId}
+            effectId={effect.id}
+            correlation={correlation}
+          />
+
+          {/* Correlation Meter */}
+          <div className="bg-black/40 rounded-lg p-3 border border-[#9B59B6]/20">
+            <div className="text-[9px] text-[#9B59B6]/70 uppercase mb-2 font-bold">Correlation</div>
+            <div className="flex items-center gap-2">
+              <div className="flex-1 h-2 bg-black/50 rounded-full overflow-hidden">
                 <div
-                  className="width-control__ghost"
+                  className="h-full transition-all duration-150"
                   style={{
-                    left: `${(ghostIntensity / 2) * 100}%`,
-                    backgroundColor: currentMode.color
+                    width: `${Math.round((correlation + 1) * 50)}%`,
+                    background: correlationDisplay.color
                   }}
                 />
-              )}
-            </div>
-            <div className="width-control__markers">
-              <span>Mono</span>
-              <span>Normal</span>
-              <span>Ultra</span>
-            </div>
-            <p className="width-control__hint">{currentMode.description}</p>
-          </div>
-
-          {/* Parameter Preview */}
-          <div className="param-preview">
-            <div className="param-preview__item">
-              <span className="param-preview__label">Width</span>
-              <span className="param-preview__value">{params.width.toFixed(2)}</span>
-            </div>
-            <div className="param-preview__item">
-              <span className="param-preview__label">Mid Gain</span>
-              <span className="param-preview__value">{(params.midGain * 100).toFixed(0)}%</span>
-            </div>
-            <div className="param-preview__item">
-              <span className="param-preview__label">Side Gain</span>
-              <span className="param-preview__value">{(params.sideGain * 100).toFixed(0)}%</span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Advanced Panel */}
-      {showAdvanced && (
-        <div className="imager-advanced">
-          <div className="imager-advanced__section">
-            <h4>Stereo Width</h4>
-            <div className="param-control">
-              <label>
-                Width: {manualParams.width.toFixed(2)}
-              </label>
-              <input
-                type="range"
-                min="0"
-                max="2"
-                step="0.01"
-                value={manualParams.width}
-                onChange={(e) => handleManualChange('width', parseFloat(e.target.value))}
-                className="param-control__slider"
-              />
-              <span className="param-hint">0 = Mono, 1 = Normal, 2 = Ultra Wide</span>
-            </div>
-          </div>
-
-          <div className="imager-advanced__section">
-            <h4>Mid/Side Balance</h4>
-            <div className="param-control">
-              <label>Mid Gain: {(manualParams.midGain * 100).toFixed(0)}%</label>
-              <input
-                type="range"
-                min="0"
-                max="2"
-                step="0.01"
-                value={manualParams.midGain}
-                onChange={(e) => handleManualChange('midGain', parseFloat(e.target.value))}
-                className="param-control__slider"
-              />
-              <span className="param-hint">Center channel level</span>
-            </div>
-
-            <div className="param-control">
-              <label>Side Gain: {(manualParams.sideGain * 100).toFixed(0)}%</label>
-              <input
-                type="range"
-                min="0"
-                max="2"
-                step="0.01"
-                value={manualParams.sideGain}
-                onChange={(e) => handleManualChange('sideGain', parseFloat(e.target.value))}
-                className="param-control__slider"
-              />
-              <span className="param-hint">Stereo information level</span>
-            </div>
-          </div>
-
-          <div className="imager-advanced__section">
-            <h4>Output</h4>
-            <div className="param-control">
-              <label>Mix: {(manualParams.wet * 100).toFixed(0)}%</label>
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.01"
-                value={manualParams.wet}
-                onChange={(e) => handleManualChange('wet', parseFloat(e.target.value))}
-                className="param-control__slider"
-              />
-            </div>
-            <div className="param-control" style={{ marginTop: 8 }}>
-              <label>Low-band Mono (below {manualParams.crossover.toFixed(0)} Hz)</label>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <input
-                  type="checkbox"
-                  checked={!!manualParams.lowMono}
-                  onChange={(e) => handleManualChange('lowMono', e.target.checked ? 1 : 0)}
-                />
-                <input
-                  type="range"
-                  min="20"
-                  max="500"
-                  step="1"
-                  value={manualParams.crossover}
-                  onChange={(e) => handleManualChange('crossover', parseFloat(e.target.value))}
-                  className="param-control__slider"
-                />
-                <span className="param-hint">{manualParams.crossover.toFixed(0)} Hz</span>
+              </div>
+              <div className="text-xs font-mono w-20 text-right" style={{ color: correlationDisplay.color }}>
+                {correlationDisplay.text}
               </div>
             </div>
+            <div className="text-[8px] text-white/40 mt-1 text-center">
+              {correlation.toFixed(2)}
+            </div>
+          </div>
+
+          {/* Global Width */}
+          <div className="bg-black/40 rounded-lg p-3 border border-[#9B59B6]/20">
+            <div className="text-[9px] text-[#9B59B6]/70 uppercase mb-2 font-bold">Global Width</div>
+            <Knob
+              label=""
+              value={globalWidth}
+              onChange={setGlobalWidth}
+              min={0}
+              max={2}
+              defaultValue={1.0}
+              sizeVariant="medium"
+              category="master-chain"
+              valueFormatter={(v) => `${(v * 100).toFixed(0)}%`}
+            />
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }

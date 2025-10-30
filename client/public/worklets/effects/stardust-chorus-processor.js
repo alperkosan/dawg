@@ -70,42 +70,69 @@ class StardustChorusProcessor extends AudioWorkletProcessor {
     const baseDelayMs = 20; // Base delay time
     const modulationMs = 15; // Max modulation depth
 
+    // 🎯 PROFESSIONAL CHORUS: Multiple voices with phase offset (like Dimension D)
+    // Voice spacing and phase relationships for natural stereo width
+    const voiceSpacing = 1.0 / Math.max(voices, 1); // Equal spacing
+    
     for (let v = 0; v < voices; v++) {
-      // Update LFO phase
+      // 🎯 SMOOTH LFO: Per-voice phase with stereo offset
       const lfoIncrement = (rate / this.sampleRate) * 2 * Math.PI;
       state.lfoPhases[v] += lfoIncrement;
       if (state.lfoPhases[v] > 2 * Math.PI) {
         state.lfoPhases[v] -= 2 * Math.PI;
       }
 
-      // Calculate modulated delay time
-      const lfoValue = Math.sin(state.lfoPhases[v]);
-      const delayMs = baseDelayMs + (lfoValue * modulationMs * depth);
+      // 🎯 PROFESSIONAL MODULATION: Triangle wave for smoother chorusing (less artifacts)
+      // Mix sine and triangle for musical character
+      const sineLFO = Math.sin(state.lfoPhases[v]);
+      const triangleLFO = (2 / Math.PI) * Math.asin(sineLFO); // Convert sine to triangle
+      const lfoValue = sineLFO * 0.7 + triangleLFO * 0.3; // Blend for natural sound
+      
+      // Voice offset for spacing (prevents phase cancellation)
+      const voiceOffset = v * voiceSpacing * modulationMs * 0.2;
+      const delayMs = baseDelayMs + voiceOffset + (lfoValue * modulationMs * depth);
       const delaySamples = (delayMs / 1000) * this.sampleRate;
 
-      // Read from delay buffer with interpolation
+      // 🎯 PROFESSIONAL CHORUS: Cubic interpolation for smooth modulation (like Eventide)
+      // Read from delay buffer with high-quality interpolation
       const readPos = state.writeIndex - delaySamples;
       const readIndex1 = Math.floor(readPos);
-      const readIndex2 = readIndex1 + 1;
       const frac = readPos - readIndex1;
 
+      // Cubic interpolation for smoother LFO modulation
+      const idx0 = (readIndex1 - 1 + bufferLength) % bufferLength;
       const idx1 = (readIndex1 + bufferLength) % bufferLength;
-      const idx2 = (readIndex2 + bufferLength) % bufferLength;
+      const idx2 = (readIndex1 + 1 + bufferLength) % bufferLength;
+      const idx3 = (readIndex1 + 2 + bufferLength) % bufferLength;
 
-      const sample1 = buffer[idx1];
-      const sample2 = buffer[idx2];
-      const delayedSample = sample1 + (sample2 - sample1) * frac;
+      const y0 = buffer[idx0];
+      const y1 = buffer[idx1];
+      const y2 = buffer[idx2];
+      const y3 = buffer[idx3];
 
-      // Pan voices for stereo width
+      // Catmull-Rom spline for smooth modulation
+      const c0 = y1;
+      const c1 = 0.5 * (y2 - y0);
+      const c2 = y0 - 2.5 * y1 + 2 * y2 - 0.5 * y3;
+      const c3 = 0.5 * (y3 - y0) + 1.5 * (y1 - y2);
+      const delayedSample = c0 + c1 * frac + c2 * frac * frac + c3 * frac * frac * frac;
+
+      // 🎯 PROFESSIONAL STEREO PANNING: Equal-power law for natural width
       const pan = (v / Math.max(voices - 1, 1)) - 0.5; // -0.5 to 0.5
-      const channelGain = channel === 0 ?
-        1 - (pan * stereoWidth) :
-        1 + (pan * stereoWidth);
+      
+      // Equal-power panning (preserves energy across stereo field)
+      const panAngle = (pan * stereoWidth + 1) * Math.PI / 4; // 0 to PI/2
+      const leftGain = Math.cos(panAngle);
+      const rightGain = Math.sin(panAngle);
+      
+      const channelGain = channel === 0 ? leftGain : rightGain;
 
-      chorusSum += delayedSample * channelGain;
+      // 🎯 VOICE LEVELING: Prevent volume buildup with multiple voices
+      const voiceGain = 1.0 / Math.sqrt(voices); // Energy-preserving normalization
+      chorusSum += delayedSample * channelGain * voiceGain;
     }
 
-    return chorusSum / voices;
+    return chorusSum;
   }
 
   process(inputs, outputs, parameters) {

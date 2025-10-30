@@ -90,28 +90,43 @@ class TransientDesignerProcessor extends AudioWorkletProcessor {
         const sample = inputChannel[i];
         const absSample = Math.abs(sample);
 
-        // Envelope follower (fast attack, slow release) - per channel
+        // 🎯 PROFESSIONAL ENVELOPE FOLLOWER: Dual-stage (like SPL Transient Designer)
+        // Fast attack for transient detection, slower release for sustain tracking
+        const attackCoeff = 0.98; // Fast attack (2ms equivalent)
+        const releaseCoeff = this.envelopeDecay; // Slow release (already set)
+        
         state.prevEnvelope = state.envelope;
         if (absSample > state.envelope) {
-          state.envelope = absSample; // Instant attack
+          // Attack: Fast response to transients
+          state.envelope = absSample * (1 - attackCoeff) + state.envelope * attackCoeff;
         } else {
-          state.envelope *= this.envelopeDecay; // Slow decay
+          // Release: Slow decay for sustain detection
+          state.envelope *= releaseCoeff;
         }
 
-        // Transient detection: Check rate of change
+        // 🎯 PROFESSIONAL TRANSIENT DETECTION: Rate-of-change + adaptive threshold
         const envelopeRise = state.envelope - state.prevEnvelope;
-        const isTransient = envelopeRise > this.threshold;
+        const riseRate = envelopeRise > 0 ? envelopeRise / Math.max(0.001, state.prevEnvelope) : 0;
+        
+        // Adaptive threshold based on envelope level (more sensitive at low levels)
+        const adaptiveThreshold = this.threshold * (1 + state.envelope * 2);
+        const isTransient = envelopeRise > adaptiveThreshold || riseRate > 0.3;
 
         // Calculate target gain
         const targetGain = isTransient ? transientGain : sustainGain;
 
-        // Smooth gain changes - per channel
+        // 🎯 PROFESSIONAL GAIN SMOOTHING: Different attack/release for natural response
+        const attackSmoothing = 1 - Math.exp(-1 / (this.sampleRate * 0.002)); // 2ms attack
+        const releaseSmoothing = 1 - Math.exp(-1 / (this.sampleRate * 0.020)); // 20ms release
+        
         let smoothedGain;
         if (isTransient) {
-          state.smoothedAttack += (targetGain - state.smoothedAttack) * (1 - this.smoothingCoeff);
+          // Fast attack smoothing for transients
+          state.smoothedAttack += (targetGain - state.smoothedAttack) * attackSmoothing;
           smoothedGain = state.smoothedAttack;
         } else {
-          state.smoothedSustain += (targetGain - state.smoothedSustain) * (1 - this.smoothingCoeff);
+          // Slower release smoothing for sustain
+          state.smoothedSustain += (targetGain - state.smoothedSustain) * releaseSmoothing;
           smoothedGain = state.smoothedSustain;
         }
 

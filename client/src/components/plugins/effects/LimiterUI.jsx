@@ -519,9 +519,9 @@ export function LimiterUI({ trackId, effect, onChange }) {
         alignItems: 'center',
         marginBottom: '20px'
       }}>
-        <h3 style={{ color: '#4A90E2', margin: 0, fontSize: '18px', fontWeight: 600 }}>
-          LIMITER - The Ceiling Guardian
-        </h3>
+        <p style={{ color: '#4A90E2', margin: 0, fontSize: '11px', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+          The Dynamics Forge
+        </p>
 
         {/* Preset Selector */}
         <select

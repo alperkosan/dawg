@@ -222,15 +222,12 @@ export const ModernReverbUI = ({ trackId, effect, onChange }) => {
       {/* ===== LEFT PANEL: Mode Selection ===== */}
       <div className="w-[240px] flex-shrink-0 flex flex-col gap-4">
 
-        {/* Plugin Header */}
+        {/* Category Badge */}
         <div className="bg-gradient-to-r from-[#2d1854] to-[#1a1a1a] rounded-xl px-4 py-3 border border-[#A855F7]/30">
           <div className="flex items-center gap-3">
             <div className="text-2xl">{currentMode?.icon || '🔊'}</div>
             <div className="flex-1">
-              <div className="text-sm font-black text-[#A855F7] tracking-wider uppercase">
-                Modern Reverb
-              </div>
-              <div className="text-[9px] text-[#22D3EE]/70">The Spacetime Chamber</div>
+              <div className="text-[9px] text-[#22D3EE]/70 font-semibold uppercase tracking-wider">The Spacetime Chamber</div>
             </div>
           </div>
         </div>

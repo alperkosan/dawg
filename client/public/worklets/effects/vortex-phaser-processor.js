@@ -144,12 +144,18 @@ class VortexPhaserProcessor extends AudioWorkletProcessor {
     const maxFreq = 2000;
     const modulatedFreq = minFreq + (maxFreq - minFreq) * lfoValue * depth;
 
-    // Calculate all-pass coefficient
+    // 🎯 PROFESSIONAL ALL-PASS: Stable coefficient calculation (like MXR Phase 90)
     const wc = 2 * Math.PI * modulatedFreq / this.sampleRate;
     // ✅ SAFETY: Clamp wc to prevent tan(π/2) = ∞
     const clampedWc = Math.min(wc / 2, Math.PI / 2 - 0.01);
+    
+    // 🎯 BILINEAR TRANSFORM: More stable than tan() method
+    // Pre-warped frequency for accurate response
     const tanHalfWc = Math.tan(clampedWc);
     const apCoeff = (tanHalfWc - 1) / (tanHalfWc + 1);
+    
+    // ✅ CLAMP COEFFICIENT: Prevent instability
+    const apCoeffClamped = Math.max(-0.999, Math.min(0.999, apCoeff));
 
     // ✅ DEBUG: Log coefficient calculation once
     if (!this._coeffLogged && channel === 0) {
@@ -178,10 +184,10 @@ class VortexPhaserProcessor extends AudioWorkletProcessor {
       return sample;
     }
 
-    // Process through all-pass stages
+    // 🎯 PROFESSIONAL PHASER: Process through all-pass stages with coefficient
     for (let i = 0; i < Math.min(stages, 12); i++) {
       const before = processed;
-      processed = this.processAllpass(processed, state.allpassStates[i], apCoeff);
+      processed = this.processAllpass(processed, state.allpassStates[i], apCoeffClamped);
 
       // ✅ DEBUG: Log first stage processing once
       if (!this._stageLogged && channel === 0 && i === 0) {

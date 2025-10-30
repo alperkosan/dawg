@@ -112,8 +112,7 @@ export const StardustChorusUI = ({ trackId, effect, onChange }) => {
     <div className="w-full h-full bg-gradient-to-br from-indigo-950 via-purple-950 to-pink-950 p-6">
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h2 className="text-xl font-bold text-purple-200">Stardust Chorus</h2>
-          <p className="text-xs text-purple-400">Galactic Modulation Engine</p>
+          <p className="text-xs text-purple-400 font-semibold uppercase tracking-wider">The Modulation Machine</p>
         </div>
         <div className="flex items-center gap-4">
           <div className="grid grid-cols-3 gap-1">

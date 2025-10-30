@@ -569,16 +569,16 @@ export class ModernDelayEffect extends BaseEffect {
     return {
       timeLeft: 0.425,
       timeRight: 0.425,
-      feedbackLeft: 0.55,
-      feedbackRight: 0.55,
+      feedbackLeft: 0.45, // Reduced from 0.55 to prevent runaway feedback
+      feedbackRight: 0.45, // Reduced from 0.55 to prevent runaway feedback
       pingPong: 0.0,
       wet: 0.35,
       filterType: 'lowpass',
       filterFreq: 4000,
-      saturation: 0.5,
+      saturation: 0.4, // Reduced from 0.5 for stability
       modDepth: 0.01,
       modRate: 0.4,
-      diffusion: 0.2
+      diffusion: 0.15 // Reduced from 0.2 for cleaner tape sound
     };
   }
 }

@@ -125,9 +125,15 @@ class MultibandCompressorProcessor extends AudioWorkletProcessor {
     const highDownRatio = this.getParam(parameters.highDownRatio, 0) || 3;
     const highGain = this.getParam(parameters.highGain, 0) || 0;
 
-    // Calculate attack/release based on time parameter (OTT style)
+    // 🎯 PROFESSIONAL TIMING: OTT-style attack/release curves (like Xfer OTT)
+    // Attack: Fast for transient preservation (1-100ms)
     const attack = 0.001 + (time * 0.1); // 1ms to 100ms
+    // Release: Adaptive for musical response (10-500ms)
     const release = 0.01 + (time * 0.5); // 10ms to 500ms
+    
+    // ✅ PROFESSIONAL COEFFICIENTS: Smooth envelope following
+    const attackCoeff = Math.exp(-1 / (attack * this.sampleRate));
+    const releaseCoeff = Math.exp(-1 / (release * this.sampleRate));
 
     // Accumulate band levels for metering
     let lowLevel = 0, midLevel = 0, highLevel = 0;
@@ -222,10 +228,12 @@ class MultibandCompressorProcessor extends AudioWorkletProcessor {
     return { low, mid, high };
   }
 
+  // 🎯 PROFESSIONAL CROSSOVER: Linkwitz-Riley 2nd order (like OTT, FabFilter)
   biquadLowpass(input, state, cutoff) {
     const omega = 2 * Math.PI * cutoff / this.sampleRate;
     const cosOmega = Math.cos(omega);
-    const alpha = Math.sin(omega) / (2 * 0.707); // Q = 0.707 for Butterworth
+    const sinOmega = Math.sin(omega);
+    const alpha = sinOmega / (2 * 0.707); // Q = 0.707 for Butterworth (Linkwitz-Riley)
 
     const b0 = (1 - cosOmega) / 2;
     const b1 = 1 - cosOmega;
@@ -234,8 +242,16 @@ class MultibandCompressorProcessor extends AudioWorkletProcessor {
     const a1 = -2 * cosOmega;
     const a2 = 1 - alpha;
 
+    // ✅ STABILITY: Direct Form I for numerical stability
     const output = (b0 / a0) * input + (b1 / a0) * state.x1 + (b2 / a0) * state.x2
                    - (a1 / a0) * state.y1 - (a2 / a0) * state.y2;
+
+    // ✅ STABILITY CHECK: Prevent filter from exploding
+    if (!isFinite(output) || Math.abs(output) > 10) {
+      state.x1 = state.x2 = 0;
+      state.y1 = state.y2 = 0;
+      return input; // Pass through on error
+    }
 
     state.x2 = state.x1;
     state.x1 = input;
@@ -248,7 +264,8 @@ class MultibandCompressorProcessor extends AudioWorkletProcessor {
   biquadHighpass(input, state, cutoff) {
     const omega = 2 * Math.PI * cutoff / this.sampleRate;
     const cosOmega = Math.cos(omega);
-    const alpha = Math.sin(omega) / (2 * 0.707);
+    const sinOmega = Math.sin(omega);
+    const alpha = sinOmega / (2 * 0.707); // Q = 0.707 for Butterworth
 
     const b0 = (1 + cosOmega) / 2;
     const b1 = -(1 + cosOmega);
@@ -260,6 +277,13 @@ class MultibandCompressorProcessor extends AudioWorkletProcessor {
     const output = (b0 / a0) * input + (b1 / a0) * state.x1 + (b2 / a0) * state.x2
                    - (a1 / a0) * state.y1 - (a2 / a0) * state.y2;
 
+    // ✅ STABILITY CHECK
+    if (!isFinite(output) || Math.abs(output) > 10) {
+      state.x1 = state.x2 = 0;
+      state.y1 = state.y2 = 0;
+      return input;
+    }
+
     state.x2 = state.x1;
     state.x1 = input;
     state.y2 = state.y1;
@@ -268,37 +292,45 @@ class MultibandCompressorProcessor extends AudioWorkletProcessor {
     return output;
   }
 
+  // 🎯 PROFESSIONAL MULTIBAND COMPRESSION: Upward + Downward (like OTT, Multiband Compressor)
   compressBand(sample, bandState, attack, release, threshold, upRatio, downRatio, depth) {
     const inputLevel = this.gainToDb(Math.abs(sample));
 
-    // Envelope follower
+    // 🎯 PROFESSIONAL ENVELOPE FOLLOWER: Smooth attack/release
     const attackCoeff = Math.exp(-1 / (attack * this.sampleRate));
     const releaseCoeff = Math.exp(-1 / (release * this.sampleRate));
 
     if (inputLevel > bandState.envelope) {
+      // Fast attack for transient preservation
       bandState.envelope = attackCoeff * bandState.envelope + (1 - attackCoeff) * inputLevel;
     } else {
+      // Smooth release for musical decay
       bandState.envelope = releaseCoeff * bandState.envelope + (1 - releaseCoeff) * inputLevel;
     }
 
     let gainChange = 0;
 
-    // DOWNWARD compression (above threshold)
+    // 🎯 DOWNWARD COMPRESSION: Above threshold (traditional compression)
     if (bandState.envelope > threshold) {
       const aboveThreshold = bandState.envelope - threshold;
       gainChange = -aboveThreshold * (1 - 1 / downRatio) * depth;
     }
 
-    // UPWARD compression (below threshold)
+    // 🎯 UPWARD COMPRESSION: Below threshold (OTT-style expansion)
     if (bandState.envelope < threshold) {
       const belowThreshold = threshold - bandState.envelope;
+      // Upward compression: boost quiet content (inverse ratio)
       gainChange += belowThreshold * (1 - 1 / upRatio) * depth;
     }
 
     bandState.gainReduction = Math.abs(gainChange);
 
+    // 🎯 SMOOTH GAIN APPLICATION: Prevent pumping artifacts
     const gain = this.dbToGain(gainChange);
-    return sample * gain;
+    
+    // ✅ CLAMP GAIN: Prevent extreme values
+    const clampedGain = Math.max(0.01, Math.min(10, gain));
+    return sample * clampedGain;
   }
 
   getParam(param, index) {

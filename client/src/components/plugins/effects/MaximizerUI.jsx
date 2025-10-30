@@ -13,6 +13,7 @@
  */
 
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import { Knob, ModeSelector, ExpandablePanel } from '@/components/controls';
 import { useAudioPlugin, useGhostValue, useCanvasVisualization } from '@/hooks/useAudioPlugin';
 import { createPresetManager } from '@/lib/audio/PresetManager';
 import './MaximizerUI.css';
@@ -21,13 +22,18 @@ import './MaximizerUI.css';
 // MODE DEFINITIONS
 // ============================================================================
 
+// ============================================================================
+// MAXIMIZER MODES - "The Master Chain" Category (Amber/Gold Theme)
+// ============================================================================
+
 const MAXIMIZER_MODES = {
   gentle: {
     id: 'gentle',
     name: 'Gentle',
     description: 'Subtle loudness boost for mastering',
     icon: '🌙',
-    color: '#60A5FA',
+    color: '#FBBF24', // Amber
+    category: 'mastering',
     baseParams: {
       inputGain: 2,
       saturation: 0.2,
@@ -40,7 +46,8 @@ const MAXIMIZER_MODES = {
     name: 'Moderate',
     description: 'Balanced loudness for modern masters',
     icon: '☀️',
-    color: '#34D399',
+    color: '#F59E0B', // Orange-amber
+    category: 'mastering',
     baseParams: {
       inputGain: 3,
       saturation: 0.3,
@@ -53,7 +60,8 @@ const MAXIMIZER_MODES = {
     name: 'Aggressive',
     description: 'Maximum loudness for competitive releases',
     icon: '🔥',
-    color: '#EF4444',
+    color: '#EF4444', // Red (aggressive)
+    category: 'loudness',
     baseParams: {
       inputGain: 6,
       saturation: 0.5,
@@ -66,7 +74,8 @@ const MAXIMIZER_MODES = {
     name: 'Warm Glue',
     description: 'Analog-style saturation and compression',
     icon: '🎸',
-    color: '#F59E0B',
+    color: '#F97316', // Warm orange
+    category: 'color',
     baseParams: {
       inputGain: 4,
       saturation: 0.6,
@@ -79,7 +88,8 @@ const MAXIMIZER_MODES = {
     name: 'Transparent',
     description: 'Clean limiting, minimal coloration',
     icon: '💎',
-    color: '#8B5CF6',
+    color: '#D97706', // Dark amber
+    category: 'mastering',
     baseParams: {
       inputGain: 2,
       saturation: 0.1,
@@ -188,13 +198,16 @@ const MaximizerVisualizer = ({ trackId, effectId, mode, intensity }) => {
   const currentMode = MAXIMIZER_MODES[mode];
 
   const drawVisualization = useCallback((ctx, width, height) => {
-    // Clear
-    ctx.fillStyle = 'rgba(10, 10, 12, 0.95)';
+    // 🎨 THEME: "The Master Chain" - Amber/Gold palette
+    const bgGradient = ctx.createLinearGradient(0, 0, 0, height);
+    bgGradient.addColorStop(0, 'rgba(20, 15, 10, 0.95)');
+    bgGradient.addColorStop(1, 'rgba(10, 8, 5, 0.95)');
+    ctx.fillStyle = bgGradient;
     ctx.fillRect(0, 0, width, height);
 
     if (!isPlaying) {
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
-      ctx.font = '12px "Geist Mono", monospace';
+      ctx.fillStyle = 'rgba(251, 191, 36, 0.3)'; // Amber
+      ctx.font = '12px monospace';
       ctx.textAlign = 'center';
       ctx.fillText('Audio Stopped', width / 2, height / 2);
       return;
@@ -203,8 +216,11 @@ const MaximizerVisualizer = ({ trackId, effectId, mode, intensity }) => {
     const timeData = getTimeDomainData();
     if (!timeData) return;
 
-    // Draw waveform
-    ctx.strokeStyle = currentMode.color;
+    // Draw waveform with amber gradient
+    const gradient = ctx.createLinearGradient(0, 0, 0, height);
+    gradient.addColorStop(0, currentMode.color);
+    gradient.addColorStop(1, '#D97706'); // Dark amber
+    ctx.strokeStyle = gradient;
     ctx.lineWidth = 2;
     ctx.beginPath();
 
@@ -224,9 +240,9 @@ const MaximizerVisualizer = ({ trackId, effectId, mode, intensity }) => {
     }
     ctx.stroke();
 
-    // Draw ceiling line
+    // Draw ceiling line (amber)
     const ceilingY = height * 0.1;
-    ctx.strokeStyle = 'rgba(239, 68, 68, 0.5)';
+    ctx.strokeStyle = 'rgba(251, 191, 36, 0.5)';
     ctx.lineWidth = 1;
     ctx.setLineDash([5, 5]);
     ctx.beginPath();
@@ -236,8 +252,8 @@ const MaximizerVisualizer = ({ trackId, effectId, mode, intensity }) => {
     ctx.setLineDash([]);
 
     // Draw metrics
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-    ctx.font = '11px "Geist Mono", monospace';
+    ctx.fillStyle = 'rgba(251, 191, 36, 0.9)';
+    ctx.font = '11px monospace';
     ctx.textAlign = 'left';
     ctx.fillText(`IN: ${metricsDb.rmsDb.toFixed(1)} dB`, 10, 20);
     ctx.fillText(`PEAK: ${metricsDb.peakDb.toFixed(1)} dB`, 10, 35);
@@ -250,10 +266,10 @@ const MaximizerVisualizer = ({ trackId, effectId, mode, intensity }) => {
     // Draw mode indicator
     ctx.fillStyle = currentMode.color;
     ctx.textAlign = 'right';
-    ctx.font = '14px "Geist", sans-serif';
+    ctx.font = 'bold 14px sans-serif';
     ctx.fillText(`${currentMode.icon} ${currentMode.name}`, width - 10, 25);
-    ctx.font = '10px "Geist Mono", monospace';
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+    ctx.font = '10px monospace';
+    ctx.fillStyle = 'rgba(251, 191, 36, 0.7)';
     ctx.fillText(`Intensity: ${(intensity * 100).toFixed(0)}%`, width - 10, 40);
   }, [isPlaying, getTimeDomainData, metricsDb, currentMode, intensity]);
 
@@ -411,8 +427,7 @@ export function MaximizerUI({ trackId, effect, onUpdate = () => {} }) {
       {/* Header */}
       <div className="maximizer-ui__header">
         <div>
-          <h3 className="maximizer-ui__title">🔊 Maximizer</h3>
-          <p className="maximizer-ui__subtitle">Loudness Sculptor</p>
+          <p className="maximizer-ui__subtitle">The Master Chain</p>
         </div>
 
         <div className="maximizer-ui__header-controls">
@@ -474,23 +489,20 @@ export function MaximizerUI({ trackId, effect, onUpdate = () => {} }) {
       </div>
 
       {/* Mode Selector */}
-      <div className="maximizer-modes">
-        <div className="maximizer-modes__label">Loudness Character</div>
-        <div className="maximizer-modes__buttons">
-          {Object.values(MAXIMIZER_MODES).map(m => (
-            <button
-              key={m.id}
-              className={`mode-btn ${mode === m.id ? 'active' : ''}`}
-              onClick={() => handleModeChange(m.id)}
-              style={{ '--btn-color': m.color }}
-              title={m.description}
-              disabled={showAdvanced}
-            >
-              <span className="mode-btn__icon">{m.icon}</span>
-              <span className="mode-btn__name">{m.name}</span>
-            </button>
-          ))}
-        </div>
+      <div className="mb-4">
+        <ModeSelector
+          modes={Object.values(MAXIMIZER_MODES).map(m => ({
+            id: m.id,
+            label: m.name,
+            icon: m.icon,
+            description: m.description
+          }))}
+          activeMode={mode}
+          onChange={handleModeChange}
+          orientation="horizontal"
+          category="master-chain"
+          className="w-full"
+        />
       </div>
 
       {/* Main Control */}

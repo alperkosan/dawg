@@ -159,26 +159,37 @@ class ModernDelayProcessor extends AudioWorkletProcessor {
       let filteredLeft = this.filterStateLeft;
       let filteredRight = this.filterStateRight;
 
-      // Saturation
+      // 🎯 FIX: Saturation ONLY on output, NOT in feedback loop (prevents runaway feedback)
+      // Saturation in feedback loop causes infinite buildup and crackling
+      let saturatedLeft = filteredLeft;
+      let saturatedRight = filteredRight;
+      
       if (saturation > 0) {
-        const drive = 1 + saturation * 50;
-        filteredLeft = Math.tanh(filteredLeft * drive) / Math.tanh(drive);
-        filteredRight = Math.tanh(filteredRight * drive) / Math.tanh(drive);
+        const drive = 1 + saturation * 30; // Reduced drive range for stability
+        saturatedLeft = Math.tanh(filteredLeft * drive) / Math.tanh(drive);
+        saturatedRight = Math.tanh(filteredRight * drive) / Math.tanh(drive);
       }
 
-      // Write to delay buffers with feedback
-      this.delayBufferLeft[this.writeIndex] =
-        inputLeft + filteredLeft * feedbackLeft * straightFB + filteredRight * feedbackRight * crossFB;
+      // 🎯 FIX: Feedback loop with safety limiting (prevents infinite feedback)
+      // Calculate feedback signals with soft limiting
+      let fbLeft = filteredLeft * feedbackLeft * straightFB + filteredRight * feedbackRight * crossFB;
+      let fbRight = filteredRight * feedbackRight * straightFB + filteredLeft * feedbackLeft * crossFB;
+      
+      // 🎯 SAFETY LIMITER: Prevent feedback from exceeding 0.95 (prevents runaway)
+      const maxFeedbackLevel = 0.95;
+      fbLeft = Math.max(-maxFeedbackLevel, Math.min(maxFeedbackLevel, fbLeft));
+      fbRight = Math.max(-maxFeedbackLevel, Math.min(maxFeedbackLevel, fbRight));
 
-      this.delayBufferRight[this.writeIndex] =
-        inputRight + filteredRight * feedbackRight * straightFB + filteredLeft * feedbackLeft * crossFB;
+      // Write to delay buffers with feedback (NO saturation in feedback path)
+      this.delayBufferLeft[this.writeIndex] = inputLeft + fbLeft;
+      this.delayBufferRight[this.writeIndex] = inputRight + fbRight;
 
       this.writeIndex = (this.writeIndex + 1) % this.delayBufferLeft.length;
 
-      // Mix dry and wet
-      output[0][i] = inputLeft * (1 - wet) + delayedLeft * wet;
+      // Mix dry and wet (use saturated version for output only)
+      output[0][i] = inputLeft * (1 - wet) + saturatedLeft * wet;
       if (output[1]) {
-        output[1][i] = inputRight * (1 - wet) + delayedRight * wet;
+        output[1][i] = inputRight * (1 - wet) + saturatedRight * wet;
       }
     }
 

@@ -179,7 +179,7 @@ const DELAY_MODES = {
     name: 'Tape',
     icon: '📼',
     description: 'Warm analog character',
-    defaults: { timeLeft: 0.425, timeRight: 0.425, feedbackLeft: 0.55, feedbackRight: 0.55, pingPong: 0.0, wet: 0.35, filterFreq: 4000, saturation: 0.5 }
+    defaults: { timeLeft: 0.425, timeRight: 0.425, feedbackLeft: 0.45, feedbackRight: 0.45, pingPong: 0.0, wet: 0.35, filterFreq: 4000, saturation: 0.4, diffusion: 0.15 }
   },
   'custom': {
     id: 'custom',
@@ -246,10 +246,7 @@ export const ModernDelayUI = ({ trackId, effect, onChange }) => {
           <div className="flex items-center gap-3">
             <div className="text-2xl">{currentMode?.icon || '⏱️'}</div>
             <div className="flex-1">
-              <div className="text-sm font-black text-[#A855F7] tracking-wider uppercase">
-                Modern Delay
-              </div>
-              <div className="text-[9px] text-[#22D3EE]/70">The Spacetime Chamber</div>
+              <div className="text-[9px] text-[#22D3EE]/70 font-semibold uppercase tracking-wider">The Spacetime Chamber</div>
             </div>
           </div>
         </div>

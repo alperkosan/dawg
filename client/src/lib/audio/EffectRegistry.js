@@ -185,16 +185,17 @@ export class EffectRegistry {
     // ❌ REMOVED: GhostLFO (unclear purpose, no use case)
     // ❌ REMOVED: SampleMorph (advanced granular, too complex)
 
-    // BassEnhancer808
+    // BassEnhancer808 V3.0 - With TASTE & TEXTURE
     this.register('BassEnhancer808', {
       workletPath: '/worklets/effects/bass-enhancer-808-processor.js',
       processorName: 'bass-enhancer-808-processor',
       parameters: [
-        { name: 'frequency', defaultValue: 60, minValue: 20, maxValue: 200 },
-        { name: 'amount', defaultValue: 0.5, minValue: 0, maxValue: 1 },
-        { name: 'harmonics', defaultValue: 0.3, minValue: 0, maxValue: 1 },
-        { name: 'tightness', defaultValue: 0.5, minValue: 0, maxValue: 1 },
-        { name: 'wet', defaultValue: 0.5, minValue: 0, maxValue: 1 }
+        { name: 'subBoost', defaultValue: 0.5, minValue: 0, maxValue: 1 },
+        { name: 'saturation', defaultValue: 0.5, minValue: 0, maxValue: 1 },
+        { name: 'punch', defaultValue: 0.5, minValue: 0, maxValue: 1 },
+        { name: 'taste', defaultValue: 0.5, minValue: 0, maxValue: 1 },
+        { name: 'texture', defaultValue: 0.5, minValue: 0, maxValue: 1 },
+        { name: 'wet', defaultValue: 1.0, minValue: 0, maxValue: 1 }
       ]
     });
 
@@ -326,17 +327,39 @@ export class EffectRegistry {
       ]
     });
 
-    // Imager - Stereo Width Control (Master Chain)
+    // Imager V3.0 - Multiband Stereo Imaging (Master Chain)
     this.register('Imager', {
       workletPath: '/worklets/effects/imager-processor.js',
       processorName: 'imager-processor',
       parameters: [
-        { name: 'width', defaultValue: 1.0, minValue: 0, maxValue: 2 },
-        { name: 'midGain', defaultValue: 1.0, minValue: 0, maxValue: 2 },
-        { name: 'sideGain', defaultValue: 1.0, minValue: 0, maxValue: 2 },
-        { name: 'wet', defaultValue: 1.0, minValue: 0, maxValue: 1 },
-        { name: 'lowMono', defaultValue: 0, minValue: 0, maxValue: 1 },
-        { name: 'crossover', defaultValue: 160, minValue: 20, maxValue: 500 }
+        // Band frequencies (crossover points)
+        { name: 'band1Freq', defaultValue: 100, minValue: 20, maxValue: 200 },
+        { name: 'band2Freq', defaultValue: 600, minValue: 200, maxValue: 1000 },
+        { name: 'band3Freq', defaultValue: 3000, minValue: 1000, maxValue: 6000 },
+        { name: 'band4Freq', defaultValue: 6000, minValue: 3000, maxValue: 20000 },
+        
+        // Band widths (-100 to +100)
+        { name: 'band1Width', defaultValue: 0, minValue: -100, maxValue: 100 },
+        { name: 'band2Width', defaultValue: 0, minValue: -100, maxValue: 100 },
+        { name: 'band3Width', defaultValue: 0, minValue: -100, maxValue: 100 },
+        { name: 'band4Width', defaultValue: 0, minValue: -100, maxValue: 100 },
+        
+        // Band mutes
+        { name: 'band1Mute', defaultValue: 0, minValue: 0, maxValue: 1 },
+        { name: 'band2Mute', defaultValue: 0, minValue: 0, maxValue: 1 },
+        { name: 'band3Mute', defaultValue: 0, minValue: 0, maxValue: 1 },
+        { name: 'band4Mute', defaultValue: 0, minValue: 0, maxValue: 1 },
+        
+        // Band solos
+        { name: 'band1Solo', defaultValue: 0, minValue: 0, maxValue: 1 },
+        { name: 'band2Solo', defaultValue: 0, minValue: 0, maxValue: 1 },
+        { name: 'band3Solo', defaultValue: 0, minValue: 0, maxValue: 1 },
+        { name: 'band4Solo', defaultValue: 0, minValue: 0, maxValue: 1 },
+        
+        // Global controls
+        { name: 'stereoize', defaultValue: 0, minValue: 0, maxValue: 1 },
+        { name: 'globalWidth', defaultValue: 1.0, minValue: 0, maxValue: 2 },
+        { name: 'wet', defaultValue: 1.0, minValue: 0, maxValue: 1 }
       ]
     });
 
