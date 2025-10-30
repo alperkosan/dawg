@@ -4,7 +4,7 @@
  * Compact visual panel for oscillator controls with waveform preview
  */
 
-import React, { useRef, useEffect, useCallback } from 'react';
+import React, { useRef, useEffect, useCallback, useState } from 'react';
 import './OscillatorPanel.css';
 
 // Helper to get computed CSS variable color
@@ -26,6 +26,8 @@ export const OscillatorPanel = ({
   height = 80,
 }) => {
   const canvasRef = useRef(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isHovering, setIsHovering] = useState(false);
 
   const waveforms = ['sawtooth', 'square', 'triangle', 'sine'];
 
@@ -51,12 +53,26 @@ export const OscillatorPanel = ({
     canvas.style.height = `${height}px`;
     ctx.scale(dpr, dpr);
 
-    // Background - use Zenith theme colors
-    const bgColor = enabled
+    // Background - use Zenith theme colors with hover/drag feedback
+    let bgColor = enabled
       ? getComputedColor('--zenith-bg-tertiary', '#1a1a2e')
       : getComputedColor('--zenith-bg-primary', '#0f0f1a');
-    ctx.fillStyle = bgColor;
-    ctx.fillRect(0, 0, width, height);
+
+    // Add glow effect on hover/drag
+    if (enabled && (isHovering || isDragging)) {
+      ctx.fillStyle = bgColor;
+      ctx.fillRect(0, 0, width, height);
+
+      // Subtle glow overlay
+      const gradient = ctx.createRadialGradient(width/2, height/2, 0, width/2, height/2, width/2);
+      gradient.addColorStop(0, `${color}20`); // 20 = ~12% opacity
+      gradient.addColorStop(1, 'transparent');
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, width, height);
+    } else {
+      ctx.fillStyle = bgColor;
+      ctx.fillRect(0, 0, width, height);
+    }
 
     if (!enabled) {
       ctx.fillStyle = getComputedColor('--zenith-text-tertiary', '#666');
@@ -105,14 +121,27 @@ export const OscillatorPanel = ({
     }
     ctx.stroke();
 
-    // Draw level indicator
+    // Draw level indicator with smooth animation
     const levelBarHeight = 4;
     const levelBarY = height - 12;
+
+    // Background
     ctx.fillStyle = getComputedColor('--zenith-bg-secondary', '#333');
     ctx.fillRect(5, levelBarY, width - 10, levelBarHeight);
 
-    ctx.fillStyle = color;
+    // Level fill with gradient
+    const levelGradient = ctx.createLinearGradient(5, 0, width - 5, 0);
+    levelGradient.addColorStop(0, color);
+    levelGradient.addColorStop(1, `${color}CC`); // Slightly transparent at end
+    ctx.fillStyle = levelGradient;
     ctx.fillRect(5, levelBarY, (width - 10) * level, levelBarHeight);
+
+    // Dragging indicator
+    if (isDragging) {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(4, levelBarY - 1, width - 8, levelBarHeight + 2);
+    }
 
     // Draw labels - use Zenith text colors
     ctx.fillStyle = getComputedColor('--zenith-text-tertiary', '#888');
@@ -129,13 +158,13 @@ export const OscillatorPanel = ({
       ctx.fillText(`${octave > 0 ? '+' : ''}${octave}oct`, width - 5, height - 2);
     }
 
-  }, [waveform, level, detune, octave, enabled, width, height, color]);
+  }, [waveform, level, detune, octave, enabled, width, height, color, isDragging, isHovering]);
 
   useEffect(() => {
     drawWaveform();
   }, [drawWaveform]);
 
-  const handleClick = (e) => {
+  const handleMouseDown = (e) => {
     const canvas = canvasRef.current;
     const rect = canvas.getBoundingClientRect();
     const x = e.clientX - rect.left;
@@ -147,12 +176,50 @@ export const OscillatorPanel = ({
       const nextWaveform = waveforms[(currentIndex + 1) % waveforms.length];
       onChange?.({ waveform: nextWaveform });
     }
-    // Click on level bar = adjust level
+    // Click on level bar = start dragging
     else {
+      setIsDragging(true);
       const newLevel = Math.max(0, Math.min(1, (x - 5) / (width - 10)));
       onChange?.({ level: newLevel });
     }
   };
+
+  const handleMouseMove = useCallback((e) => {
+    if (!isDragging) return;
+
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const newLevel = Math.max(0, Math.min(1, (x - 5) / (width - 10)));
+    onChange?.({ level: newLevel });
+  }, [isDragging, width, onChange]);
+
+  const handleMouseUp = useCallback(() => {
+    setIsDragging(false);
+  }, []);
+
+  const handleMouseEnter = () => {
+    setIsHovering(true);
+  };
+
+  const handleMouseLeave = () => {
+    setIsHovering(false);
+    setIsDragging(false);
+  };
+
+  // Global mouse events for dragging
+  useEffect(() => {
+    if (isDragging) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+      return () => {
+        window.removeEventListener('mousemove', handleMouseMove);
+        window.removeEventListener('mouseup', handleMouseUp);
+      };
+    }
+  }, [isDragging, handleMouseMove, handleMouseUp]);
 
   return (
     <div className={`oscillator-panel ${!enabled ? 'oscillator-panel--disabled' : ''}`}>
@@ -167,8 +234,10 @@ export const OscillatorPanel = ({
       </div>
       <canvas
         ref={canvasRef}
-        onClick={handleClick}
-        style={{ cursor: 'pointer' }}
+        onMouseDown={handleMouseDown}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+        style={{ cursor: isDragging ? 'grabbing' : 'pointer' }}
       />
     </div>
   );

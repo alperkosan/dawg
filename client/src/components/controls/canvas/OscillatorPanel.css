@@ -6,6 +6,12 @@
   background: var(--zenith-bg-secondary);
   border-radius: var(--zenith-radius-sm, 6px);
   border: 1px solid var(--zenith-border-subtle);
+  transition: all 0.2s ease;
+}
+
+.oscillator-panel:hover {
+  border-color: var(--zenith-border-medium);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
 .oscillator-panel--disabled {
@@ -46,6 +52,16 @@
 
 .oscillator-panel__toggle:hover {
   transform: scale(1.05);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.oscillator-panel canvas {
+  transition: opacity 0.15s ease;
+  user-select: none;
+}
+
+.oscillator-panel canvas:active {
+  opacity: 0.9;
 }
 
 .oscillator-panel canvas {

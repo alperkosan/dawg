@@ -31,17 +31,37 @@ export const ADSRCanvas = ({
   const actualBgColor = backgroundColor || getComputedColor('--zenith-bg-secondary', '#151922');
   const actualGridColor = gridColor || getComputedColor('--zenith-border-subtle', 'rgba(255, 255, 255, 0.05)');
   const canvasRef = useRef(null);
+  const containerRef = useRef(null);
   const [dragging, setDragging] = useState(null); // 'attack', 'decay', 'sustain', 'release'
   const [hovering, setHovering] = useState(null);
+  const [actualWidth, setActualWidth] = useState(width);
+  const [actualHeight, setActualHeight] = useState(height);
+
+  // Handle resize to make canvas responsive
+  useEffect(() => {
+    if (!containerRef.current) return;
+
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const { width: containerWidth } = entry.contentRect;
+        setActualWidth(containerWidth || width);
+        // Keep aspect ratio
+        setActualHeight(((containerWidth || width) * height) / width);
+      }
+    });
+
+    resizeObserver.observe(containerRef.current);
+    return () => resizeObserver.disconnect();
+  }, [width, height]);
 
   // Normalize values for display (0-1 range to canvas coordinates)
   const maxTime = 3; // Maximum time in seconds for A, D, R
 
-  const attackX = (attack / maxTime) * (width * 0.3);
-  const decayX = attackX + (decay / maxTime) * (width * 0.3);
-  const sustainX = width * 0.7;
-  const releaseX = width - 10;
-  const sustainY = height - 10 - (sustain * (height - 20));
+  const attackX = (attack / maxTime) * (actualWidth * 0.3);
+  const decayX = attackX + (decay / maxTime) * (actualWidth * 0.3);
+  const sustainX = actualWidth * 0.7;
+  const releaseX = actualWidth - 10;
+  const sustainY = actualHeight - 10 - (sustain * (actualHeight - 20));
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -56,24 +76,24 @@ export const ADSRCanvas = ({
     const monoFont = getComputedColor('--zenith-font-mono', 'monospace');
 
     // Set canvas size for retina displays
-    canvas.width = width * dpr;
-    canvas.height = height * dpr;
-    canvas.style.width = `${width}px`;
-    canvas.style.height = `${height}px`;
+    canvas.width = actualWidth * dpr;
+    canvas.height = actualHeight * dpr;
+    canvas.style.width = `${actualWidth}px`;
+    canvas.style.height = `${actualHeight}px`;
     ctx.scale(dpr, dpr);
 
     // Clear
     ctx.fillStyle = actualBgColor;
-    ctx.fillRect(0, 0, width, height);
+    ctx.fillRect(0, 0, actualWidth, actualHeight);
 
     // Draw grid
     ctx.strokeStyle = actualGridColor;
     ctx.lineWidth = 1;
     for (let i = 0; i <= 4; i++) {
-      const y = (i / 4) * height;
+      const y = (i / 4) * actualHeight;
       ctx.beginPath();
       ctx.moveTo(0, y);
-      ctx.lineTo(width, y);
+      ctx.lineTo(actualWidth, y);
       ctx.stroke();
     }
 
@@ -84,7 +104,7 @@ export const ADSRCanvas = ({
     ctx.lineJoin = 'round';
 
     ctx.beginPath();
-    ctx.moveTo(10, height - 10); // Start point (0, 0)
+    ctx.moveTo(10, actualHeight - 10); // Start point (0, 0)
 
     // Attack
     ctx.lineTo(10 + attackX, 10); // Peak
@@ -96,7 +116,7 @@ export const ADSRCanvas = ({
     ctx.lineTo(sustainX, sustainY);
 
     // Release
-    ctx.lineTo(releaseX, height - 10);
+    ctx.lineTo(releaseX, actualHeight - 10);
 
     ctx.stroke();
 
@@ -123,18 +143,18 @@ export const ADSRCanvas = ({
     drawPoint(10 + attackX, 10, dragging === 'attack' || hovering === 'attack', 'A');
     drawPoint(10 + decayX, sustainY, dragging === 'decay' || hovering === 'decay', 'D');
     drawPoint(sustainX, sustainY, dragging === 'sustain' || hovering === 'sustain', 'S');
-    drawPoint(releaseX, height - 10, dragging === 'release' || hovering === 'release', 'R');
+    drawPoint(releaseX, actualHeight - 10, dragging === 'release' || hovering === 'release', 'R');
 
     // Draw values
     ctx.fillStyle = valueColor;
     ctx.font = `9px ${monoFont}`;
     ctx.textAlign = 'left';
-    ctx.fillText(`A: ${(attack * 1000).toFixed(0)}ms`, 5, height - 5);
-    ctx.fillText(`D: ${(decay * 1000).toFixed(0)}ms`, 70, height - 5);
-    ctx.fillText(`S: ${(sustain * 100).toFixed(0)}%`, 135, height - 5);
-    ctx.fillText(`R: ${(release * 1000).toFixed(0)}ms`, 195, height - 5);
+    ctx.fillText(`A: ${(attack * 1000).toFixed(0)}ms`, 5, actualHeight - 5);
+    ctx.fillText(`D: ${(decay * 1000).toFixed(0)}ms`, 70, actualHeight - 5);
+    ctx.fillText(`S: ${(sustain * 100).toFixed(0)}%`, 135, actualHeight - 5);
+    ctx.fillText(`R: ${(release * 1000).toFixed(0)}ms`, 195, actualHeight - 5);
 
-  }, [attack, decay, sustain, release, width, height, actualColor, actualBgColor, actualGridColor, dragging, hovering, attackX, decayX, sustainX, sustainY, releaseX]);
+  }, [attack, decay, sustain, release, actualWidth, actualHeight, actualColor, actualBgColor, actualGridColor, dragging, hovering, attackX, decayX, sustainX, sustainY, releaseX]);
 
   useEffect(() => {
     draw();
@@ -154,7 +174,7 @@ export const ADSRCanvas = ({
       { name: 'attack', x: 10 + attackX, y: 10 },
       { name: 'decay', x: 10 + decayX, y: sustainY },
       { name: 'sustain', x: sustainX, y: sustainY },
-      { name: 'release', x: releaseX, y: height - 10 }
+      { name: 'release', x: releaseX, y: actualHeight - 10 }
     ];
 
     let closest = null;
@@ -187,16 +207,16 @@ export const ADSRCanvas = ({
       const newValues = { attack, decay, sustain, release };
 
       if (dragging === 'attack') {
-        const newAttack = Math.max(0.001, Math.min(maxTime, (pos.x - 10) / (width * 0.3) * maxTime));
+        const newAttack = Math.max(0.001, Math.min(maxTime, (pos.x - 10) / (actualWidth * 0.3) * maxTime));
         newValues.attack = newAttack;
       } else if (dragging === 'decay') {
-        const newDecay = Math.max(0.001, Math.min(maxTime, (pos.x - 10 - attackX) / (width * 0.3) * maxTime));
+        const newDecay = Math.max(0.001, Math.min(maxTime, (pos.x - 10 - attackX) / (actualWidth * 0.3) * maxTime));
         newValues.decay = newDecay;
       } else if (dragging === 'sustain') {
-        const newSustain = Math.max(0, Math.min(1, 1 - (pos.y - 10) / (height - 20)));
+        const newSustain = Math.max(0, Math.min(1, 1 - (pos.y - 10) / (actualHeight - 20)));
         newValues.sustain = newSustain;
       } else if (dragging === 'release') {
-        const newRelease = Math.max(0.001, Math.min(maxTime, (width - pos.x) / (width * 0.3) * maxTime));
+        const newRelease = Math.max(0.001, Math.min(maxTime, (actualWidth - pos.x) / (actualWidth * 0.3) * maxTime));
         newValues.release = newRelease;
       }
 
@@ -206,7 +226,7 @@ export const ADSRCanvas = ({
       const point = findClosestPoint(pos.x, pos.y);
       setHovering(point);
     }
-  }, [dragging, attack, decay, sustain, release, attackX, width, height, onChange]);
+  }, [dragging, attack, decay, sustain, release, attackX, actualWidth, actualHeight, onChange]);
 
   const handleMouseUp = useCallback(() => {
     if (dragging) {
@@ -227,7 +247,7 @@ export const ADSRCanvas = ({
   }, [dragging, handleMouseMove, handleMouseUp]);
 
   return (
-    <div className="adsr-canvas">
+    <div className="adsr-canvas" ref={containerRef}>
       <canvas
         ref={canvasRef}
         onMouseDown={handleMouseDown}

@@ -168,6 +168,22 @@
   letter-spacing: 0.5px;
 }
 
+/* Make canvas components responsive */
+.vasynth-editor-v2__envelope-panel .adsr-canvas {
+  width: 100%;
+}
+
+.vasynth-editor-v2__envelope-panel .adsr-canvas canvas {
+  width: 100% !important;
+  height: auto !important;
+  max-width: 100%;
+}
+
+.vasynth-editor-v2__oscillators .oscillator-panel canvas {
+  width: 100% !important;
+  height: auto !important;
+}
+
 /* Scrollbar - Zenith style */
 .vasynth-editor-v2::-webkit-scrollbar {
   width: 8px;

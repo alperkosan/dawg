@@ -15,7 +15,8 @@ import './VASynthEditorV2.css';
 
 const VASynthEditorV2 = ({ instrumentData: initialData }) => {
   const { updateParameter } = useInstrumentEditorStore();
-  const [activeNote, setActiveNote] = useState(null);
+  const [activeNotes, setActiveNotes] = useState(new Set()); // Multiple active notes
+  const [pressedKeys, setPressedKeys] = useState(new Set()); // Track pressed keyboard keys
 
   const instrumentData = useInstrumentEditorStore((state) => state.instrumentData) || initialData;
 
@@ -86,23 +87,78 @@ const VASynthEditorV2 = ({ instrumentData: initialData }) => {
     });
   }, [handleParameterChange]);
 
-  // Preview keyboard handlers
-  const handleNoteOn = useCallback((note, octave) => {
+  // Preview keyboard handlers - polyphonic support
+  const handleNoteOn = useCallback((midiNote) => {
     const previewManager = getPreviewManager();
-    if (previewManager) {
-      const pitch = note + octave;
-      previewManager.previewNote(pitch, 100, null);
-      setActiveNote(pitch);
+    if (previewManager && !activeNotes.has(midiNote)) {
+      previewManager.previewNote(midiNote, 100, null);
+      setActiveNotes(prev => new Set([...prev, midiNote]));
     }
-  }, []);
+  }, [activeNotes]);
 
-  const handleNoteOff = useCallback(() => {
+  const handleNoteOff = useCallback((midiNote) => {
     const previewManager = getPreviewManager();
-    if (previewManager) {
+    if (previewManager && activeNotes.has(midiNote)) {
       previewManager.stopPreview();
-      setActiveNote(null);
+      setActiveNotes(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(midiNote);
+        return newSet;
+      });
     }
-  }, []);
+  }, [activeNotes]);
+
+  // Keyboard event handlers for computer keyboard preview - polyphonic
+  useEffect(() => {
+    // Map of keyboard keys to MIDI notes (starting from C4 = 60)
+    const keyToNote = {
+      'a': 60,  // C4
+      'w': 61,  // C#4
+      's': 62,  // D4
+      'e': 63,  // D#4
+      'd': 64,  // E4
+      'f': 65,  // F4
+      't': 66,  // F#4
+      'g': 67,  // G4
+      'y': 68,  // G#4
+      'h': 69,  // A4
+      'u': 70,  // A#4
+      'j': 71,  // B4
+      'k': 72,  // C5
+      'o': 73,  // C#5
+      'l': 74,  // D5
+    };
+
+    const handleKeyDown = (e) => {
+      const key = e.key.toLowerCase();
+      if (keyToNote[key] && !pressedKeys.has(key)) {
+        e.preventDefault();
+        setPressedKeys(prev => new Set([...prev, key]));
+        handleNoteOn(keyToNote[key]);
+      }
+    };
+
+    const handleKeyUp = (e) => {
+      const key = e.key.toLowerCase();
+      if (keyToNote[key] && pressedKeys.has(key)) {
+        e.preventDefault();
+        setPressedKeys(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(key);
+          return newSet;
+        });
+        handleNoteOff(keyToNote[key]);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, [pressedKeys, handleNoteOn, handleNoteOff]);
 
   // Setup PreviewManager
   useEffect(() => {
@@ -226,8 +282,8 @@ const VASynthEditorV2 = ({ instrumentData: initialData }) => {
               sustain={filterEnvelope.sustain || 0.7}
               release={filterEnvelope.release || 0.3}
               onChange={(values) => handleEnvelopeChange('filterEnvelope', values)}
-              width={300}
-              height={140}
+              width={400}
+              height={150}
               color="#6B8EBF"
             />
           </div>
@@ -239,8 +295,8 @@ const VASynthEditorV2 = ({ instrumentData: initialData }) => {
               sustain={amplitudeEnvelope.sustain || 0.8}
               release={amplitudeEnvelope.release || 0.5}
               onChange={(values) => handleEnvelopeChange('amplitudeEnvelope', values)}
-              width={300}
-              height={140}
+              width={400}
+              height={150}
               color="#FF6B9D"
             />
           </div>
