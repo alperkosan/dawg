@@ -5,6 +5,7 @@ import { useArrangementStore } from '@/store/useArrangementStore';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
 import { getPreviewManager } from '@/lib/audio/preview';
 import { getToolManager, TOOL_TYPES } from '@/lib/piano-roll-tools';
+import EventBus from '@/lib/core/EventBus.js';
 import { premiumNoteRenderer } from '../renderers/noteRenderer';
 import {
     getCommandStack,
@@ -400,7 +401,18 @@ export function useNoteInteractionsV2(
         const currentNotes = notes();
         updatePatternStore([...currentNotes, note]);
         premiumNoteRenderer.animateNote(note.id, 'added');
-    }, [notes, updatePatternStore]);
+
+        // ✅ Emit NOTE_ADDED so PlaybackManager can schedule immediately during play
+        try {
+            EventBus.emit('NOTE_ADDED', {
+                patternId: activePatternId,
+                instrumentId: currentInstrument?.id,
+                note
+            });
+        } catch (e) {
+            // no-op
+        }
+    }, [notes, updatePatternStore, activePatternId, currentInstrument]);
 
     // ✅ INTERNAL: Add multiple notes to store without command (for undo/redo)
     const _addNotesToStore = useCallback((notesToAdd) => {

@@ -1608,8 +1608,14 @@ export class PlaybackManager {
 
             // ✅ CRITICAL: Check if note should play in current loop iteration
             const loopLength = this.loopEnd - this.loopStart;
-            const relativeCurrentStep = (currentStep - this.loopStart) % loopLength;
-            const relativeNoteStep = (noteStep - this.loopStart) % loopLength;
+            // Normalize modulo into [0, loopLength) to avoid negative remainders
+            const normalize = (v, m) => {
+                if (!m || m <= 0) return v; // No loop, passthrough
+                const r = v % m;
+                return r < 0 ? r + m : r;
+            };
+            const relativeCurrentStep = normalize(currentStep - this.loopStart, loopLength);
+            const relativeNoteStep = normalize(noteStep - this.loopStart, loopLength);
 
             // Calculate when note should play
             let nextPlayStep;
@@ -1638,7 +1644,15 @@ export class PlaybackManager {
                 willSchedule: absoluteTime > currentTime
             });
 
-            // Schedule the note
+            // Schedule the note (with small tolerance to avoid boundary misses)
+            const timeDelta = absoluteTime - currentTime;
+            if (timeDelta <= 0.003) {
+                // If we're too close or slightly in the past due to float drift, nudge to the near future
+                const nudge = 0.01; // 10ms
+                console.log(`⏱️ Nudge scheduling forward by ${nudge}s (delta=${timeDelta.toFixed(4)}s)`);
+                absoluteTime = currentTime + nudge;
+            }
+
             if (absoluteTime > currentTime) {
                 console.log('✅ Passed time check, scheduling note...');
 
