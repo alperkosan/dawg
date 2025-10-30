@@ -42,13 +42,16 @@ const arrangementStoreOrchestrator = (config) => (set, get, api) => {
     }, 100); // 100ms throttle
   };
 
-  // Orijinal updatePatternNotes fonksiyonunu sarmala (wrap).
+  // ✅ CRITICAL FIX: Disable automatic reschedule on pattern note updates
+  // Now using EventBus system (NOTE_ADDED, NOTE_REMOVED, NOTE_MODIFIED)
+  // which handles smart incremental scheduling instead of full reschedule
   const originalUpdatePatternNotes = store.updatePatternNotes;
   store.updatePatternNotes = (...args) => {
     originalUpdatePatternNotes(...args);
     // Throttled heavy operations
     throttledUpdateLoopLength();
-    throttledReschedule();
+    // ❌ REMOVED: throttledReschedule() - causes stuck notes during playback
+    // EventBus handles scheduling now
   };
 
   const originalSetActivePatternId = store.setActivePatternId;

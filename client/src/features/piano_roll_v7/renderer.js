@@ -490,6 +490,7 @@ function drawNotes(ctx, engine) {
     const selectedNoteIds = engine.selectedNoteIds || new Set();
     const hoveredNoteId = engine.hoveredNoteId || null;
     const activeTool = engine.activeTool || 'select';
+    const dragState = engine.dragState || null;
 
     // Don't render if no notes
     if (notes.length === 0) return;
@@ -501,7 +502,7 @@ function drawNotes(ctx, engine) {
     ctx.clip();
     ctx.translate(-engine.viewport.scrollX, -engine.viewport.scrollY);
 
-    // Render real notes using premium renderer
+    // Render real notes using premium renderer with dragState for visual feedback
     premiumNoteRenderer.renderNotes(
         ctx,
         notes,
@@ -509,7 +510,9 @@ function drawNotes(ctx, engine) {
         engine.viewport,
         selectedNoteIds,
         hoveredNoteId,
-        activeTool
+        activeTool,
+        dragState,
+        engine.snapValue
     );
 
     // Render preview note if exists

@@ -10,6 +10,7 @@ import useInstrumentEditorStore from '../../store/useInstrumentEditorStore';
 import { useInstrumentsStore } from '../../store/useInstrumentsStore';
 import { useMixerStore } from '../../store/useMixerStore';
 import VASynthEditor from './components/editors/VASynthEditor';
+import VASynthEditorV2 from './components/editors/VASynthEditorV2';
 import MultiSampleEditor from './components/editors/MultiSampleEditor';
 import DrumSamplerEditor from './components/editors/DrumSamplerEditor';
 import { GranularSamplerUI } from '@/components/instruments/granular';
@@ -416,7 +417,8 @@ const InstrumentEditorPanel = () => {
     const { type, multiSamples } = instrumentData;
 
     if (type === 'vasynth') {
-      return <VASynthEditor instrumentData={instrumentData} />;
+      // ✅ NEW: FL Studio style canvas-based editor
+      return <VASynthEditorV2 instrumentData={instrumentData} />;
     }
 
     if (type === 'sample') {

@@ -338,6 +338,16 @@ export class VASynth {
      * Cleanup audio nodes
      */
     cleanup() {
+        // ✅ CRITICAL FIX: Immediately mute before stopping to prevent stuck notes
+        if (this.amplitudeGain) {
+            try {
+                this.amplitudeGain.gain.cancelScheduledValues(this.context.currentTime);
+                this.amplitudeGain.gain.setValueAtTime(0, this.context.currentTime);
+            } catch (e) {
+                // Ignore
+            }
+        }
+
         // Stop oscillators
         this.oscillators.forEach(osc => {
             if (osc) {
@@ -593,11 +603,13 @@ export class VASynth {
     }
 
     /**
-     * Dispose synth
+     * Dispose synth - IMMEDIATE cleanup (no release envelope)
      */
     dispose() {
-        this.noteOff();
-        this.cleanup();
+        // ✅ CRITICAL FIX: Direct cleanup without noteOff to prevent stuck notes
+        // noteOff() uses setTimeout which delays cleanup - we need IMMEDIATE stop
+        this.cleanup(); // Stop oscillators NOW
         this.lfo.dispose();
+        this.isPlaying = false;
     }
 }

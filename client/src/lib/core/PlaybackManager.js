@@ -1697,13 +1697,17 @@ export class PlaybackManager {
                                              (note.duration && note.duration !== 'trigger');
 
                 if (shouldScheduleNoteOff) {
+                    console.log(`📝 Scheduling noteOff at ${absoluteTime + noteDuration}s (now: ${currentTime}s, in ${(absoluteTime + noteDuration - currentTime).toFixed(2)}s)`);
+
                     this.transport.scheduleEvent(
                         absoluteTime + noteDuration,
                         (scheduledTime) => {
+                            console.log(`🔕 EXECUTING noteOff callback for ${note.pitch || 'C4'} at ${scheduledTime}s`);
                             try {
                                 instrument.releaseNote(note.pitch || 'C4', scheduledTime);
+                                console.log(`✅ releaseNote called successfully`);
                             } catch (error) {
-                                console.error('Error in immediate noteOff:', error);
+                                console.error('❌ Error in immediate noteOff:', error);
                             }
                         },
                         { type: 'noteOff', instrumentId, note, step: nextPlayStep, immediate: true }
@@ -1734,12 +1738,14 @@ export class PlaybackManager {
                                       (instrument.activeNotes && instrument.activeNotes.size > 0);
 
                 if (hasActiveNotes) {
-                    // Use allNotesOff for graceful release, fallback to stopAll for immediate
-                    if (typeof instrument.allNotesOff === 'function') {
-                        instrument.allNotesOff();
-                        stoppedCount++;
-                    } else if (typeof instrument.stopAll === 'function') {
+                    // ✅ CRITICAL FIX: Use stopAll for IMMEDIATE stop (no release envelope)
+                    // This prevents stuck notes when loop restarts
+                    // Pattern will reschedule everything correctly
+                    if (typeof instrument.stopAll === 'function') {
                         instrument.stopAll();
+                        stoppedCount++;
+                    } else if (typeof instrument.allNotesOff === 'function') {
+                        instrument.allNotesOff();
                         stoppedCount++;
                     }
                 }
@@ -1748,8 +1754,7 @@ export class PlaybackManager {
             }
         });
 
-        if (stoppedCount > 0) {
-        }
+        console.log(`🛑 _stopAllActiveNotes: Stopped ${stoppedCount} instruments`);
     }
 
     _clearScheduledEvents(useFade = false) {

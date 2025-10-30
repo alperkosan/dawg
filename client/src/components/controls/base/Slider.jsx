@@ -129,7 +129,9 @@ export const Slider = ({
     if (rafRef.current !== null) return;
 
     rafRef.current = requestAnimationFrame(() => {
-      onChangeRef.current?.(calculateValue(latestPosRef.current));
+      const newValue = calculateValue(latestPosRef.current);
+      console.log('🎚️ Slider onChange triggered:', { label, value: newValue, hasCallback: !!onChangeRef.current });
+      onChangeRef.current?.(newValue);
       rafRef.current = null;
     });
   }, [disabled, calculateValue, orientation]);

@@ -16,6 +16,8 @@ import { usePlaybackStore } from '@/store/usePlaybackStore';
 import { getTimelineController } from '@/lib/core/TimelineControllerSingleton';
 import { getToolManager } from '@/lib/piano-roll-tools';
 import { getTransportManagerSync } from '@/lib/core/TransportManagerSingleton';
+// ✅ NEW CURSOR SYSTEMS
+import { PianoRollCursorManager, CURSOR_MANAGER_MODES, CURSOR_SOURCES, CURSOR_STATES } from './interaction';
 import './PianoRoll_v5.css';
 
 function PianoRoll() {
@@ -61,6 +63,45 @@ function PianoRoll() {
         scale: 'chromatic' // chromatic, major, minor, etc.
     });
 
+    // ✅ CURSOR MANAGER STATE
+    const [cursorManager, setCursorManager] = useState(null);
+
+    // ✅ CURSOR MANAGER - Initialize cursor management system
+    useEffect(() => {
+        const manager = new PianoRollCursorManager({
+            mode: CURSOR_MANAGER_MODES.AUTOMATIC,
+            preferredSystem: CURSOR_SOURCES.PREMIUM,
+            fallbackSystem: CURSOR_SOURCES.CSS,
+            pianoRollSelector: '.prv5-canvas-container',
+            integration: {
+                enabled: true,
+                autoDetect: true,
+                conflictResolution: true,
+                performanceOptimization: true
+            },
+            cursorMapping: {
+                'select': 'select-premium',
+                'paintBrush': 'paint-premium',
+                'eraser': 'erase-premium',
+                'slice': 'slice-premium',
+                'slide': 'slide-premium',
+                'hover': 'select-premium',
+                'active': 'select-premium',
+                'resizing': 'resize-both-premium',
+                'moving': 'move-premium',
+                'grabbing': 'grabbing-premium'
+            }
+        });
+
+        setCursorManager(manager);
+
+        return () => {
+            if (manager) {
+                manager.destroy();
+            }
+        };
+    }, []);
+
     // ✅ TOOL MANAGER - Subscribe to tool changes
     useEffect(() => {
         const toolManager = getToolManager();
@@ -71,10 +112,23 @@ function PianoRoll() {
         // Subscribe to tool changes
         const unsubscribe = toolManager.subscribe((toolType) => {
             setActiveTool(toolType);
+            
+            // ✅ Update cursor when tool changes
+            if (cursorManager) {
+                const cursorMap = {
+                    'select': 'select-premium',
+                    'paintBrush': 'paint-premium',
+                    'eraser': 'erase-premium',
+                    'slice': 'slice-premium',
+                    'slide': 'slide-premium'
+                };
+                const premiumCursor = cursorMap[toolType] || 'select-premium';
+                cursorManager.setCursor(premiumCursor, { source: CURSOR_SOURCES.SYSTEM });
+            }
         });
 
         return unsubscribe;
-    }, []);
+    }, [cursorManager]);
 
     // ✅ NOTIFY TRANSPORT MANAGER and TOOL MANAGER when keyboard piano mode changes
     useEffect(() => {
@@ -201,6 +255,39 @@ function PianoRoll() {
         keyboardPianoMode // ✅ Pass keyboard piano mode
     );
 
+    // ✅ CURSOR INTEGRATION - Connect note interactions cursor to cursor manager
+    useEffect(() => {
+        if (!cursorManager || !noteInteractions.cursorState) {
+            return; // Skip if manager not ready or no cursor state
+        }
+        
+        // Map note interactions cursor state to premium cursor
+        const cursorMap = {
+            'default': 'select-premium',
+            'select': 'select-premium',
+            'paint': 'paint-premium',
+            'paintBrush': 'paint-premium',
+            'erase': 'erase-premium',
+            'eraser': 'erase-premium',
+            'slice': 'slice-premium',
+            'slide': 'slide-premium',
+            'move': 'multi-move-premium',
+            'grab': 'multi-select-premium',
+            'grabbing': 'multi-move-premium',
+            'resize-left': 'resize-left-premium',
+            'resize-right': 'resize-right-premium',
+            'resize-both': 'resize-both-premium',
+            'ew-resize': 'resize-both-premium',
+            'crosshair': 'paint-premium',
+            'not-allowed': 'erase-premium'
+        };
+
+        const premiumCursor = cursorMap[noteInteractions.cursorState];
+        if (premiumCursor) {
+            cursorManager.setCursor(premiumCursor, { source: CURSOR_SOURCES.DIRECT });
+        }
+    }, [cursorManager, noteInteractions.cursorState]);
+
     // ✅ REGISTER PIANO ROLL TIMELINE with TimelineController
     useEffect(() => {
         if (!containerRef.current || !engine.dimensions.stepWidth) return;
@@ -295,7 +382,8 @@ function PianoRoll() {
             qualityLevel, // Pass quality level to renderer
             ghostPosition, // ✅ Pass ghost position for hover preview
             activeTool, // ✅ Pass active tool for visual feedback
-            loopRegion // ✅ Pass loop region for timeline rendering
+            loopRegion, // ✅ Pass loop region for timeline rendering
+            dragState: noteInteractions.dragState // ✅ Pass dragState for visual feedback during drag
         };
         drawPianoRollStatic(ctx, engineWithData);
 
@@ -379,6 +467,15 @@ function PianoRoll() {
         () => Array.from(noteInteractions.selectedNoteIds),
         [noteInteractions.selectedNoteIds]
     );
+
+    // ✅ CLEANUP - Cleanup cursor manager on unmount
+    useEffect(() => {
+        return () => {
+            if (cursorManager) {
+                cursorManager.destroy();
+            }
+        };
+    }, [cursorManager]);
 
     // ✅ CONTEXT MENU OPERATIONS
     const contextMenuOperations = useMemo(() => ({
@@ -530,7 +627,7 @@ function PianoRoll() {
                 ref={containerRef}
                 className="prv5-canvas-container"
                 data-tool={activeTool}
-                data-cursor={noteInteractions.cursorState}
+                // ✅ data-cursor removed - now handled by cursor manager
                 onWheel={(e) => {
                     const rect = e.currentTarget.getBoundingClientRect();
                     const x = e.clientX - rect.left;

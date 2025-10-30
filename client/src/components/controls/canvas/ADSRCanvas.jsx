@@ -1,0 +1,240 @@
+/**
+ * FL STUDIO STYLE ADSR ENVELOPE CANVAS
+ *
+ * Interactive canvas-based ADSR envelope with visual feedback
+ * Click and drag to adjust attack, decay, sustain, release
+ */
+
+import React, { useRef, useEffect, useCallback, useState } from 'react';
+import './ADSRCanvas.css';
+
+export const ADSRCanvas = ({
+  attack = 0.01,
+  decay = 0.1,
+  sustain = 0.7,
+  release = 0.3,
+  onChange,
+  onChangeEnd,
+  width = 280,
+  height = 120,
+  color = null, // Will use CSS variable
+  backgroundColor = null,
+  gridColor = null,
+}) => {
+  // Get colors from CSS variables (Zenith theme)
+  const getComputedColor = (varName, fallback) => {
+    if (typeof window === 'undefined') return fallback;
+    return getComputedStyle(document.documentElement).getPropertyValue(varName).trim() || fallback;
+  };
+
+  const actualColor = color || getComputedColor('--zenith-accent-cool', '#4ECDC4');
+  const actualBgColor = backgroundColor || getComputedColor('--zenith-bg-secondary', '#151922');
+  const actualGridColor = gridColor || getComputedColor('--zenith-border-subtle', 'rgba(255, 255, 255, 0.05)');
+  const canvasRef = useRef(null);
+  const [dragging, setDragging] = useState(null); // 'attack', 'decay', 'sustain', 'release'
+  const [hovering, setHovering] = useState(null);
+
+  // Normalize values for display (0-1 range to canvas coordinates)
+  const maxTime = 3; // Maximum time in seconds for A, D, R
+
+  const attackX = (attack / maxTime) * (width * 0.3);
+  const decayX = attackX + (decay / maxTime) * (width * 0.3);
+  const sustainX = width * 0.7;
+  const releaseX = width - 10;
+  const sustainY = height - 10 - (sustain * (height - 20));
+
+  const draw = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+
+    // Get fresh theme colors
+    const textColor = getComputedColor('--zenith-text-primary', '#FFFFFF');
+    const valueColor = getComputedColor('--zenith-text-tertiary', '#6B7280');
+    const monoFont = getComputedColor('--zenith-font-mono', 'monospace');
+
+    // Set canvas size for retina displays
+    canvas.width = width * dpr;
+    canvas.height = height * dpr;
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+    ctx.scale(dpr, dpr);
+
+    // Clear
+    ctx.fillStyle = actualBgColor;
+    ctx.fillRect(0, 0, width, height);
+
+    // Draw grid
+    ctx.strokeStyle = actualGridColor;
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= 4; i++) {
+      const y = (i / 4) * height;
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(width, y);
+      ctx.stroke();
+    }
+
+    // Draw envelope curve
+    ctx.strokeStyle = actualColor;
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    ctx.beginPath();
+    ctx.moveTo(10, height - 10); // Start point (0, 0)
+
+    // Attack
+    ctx.lineTo(10 + attackX, 10); // Peak
+
+    // Decay
+    ctx.lineTo(10 + decayX, sustainY); // Sustain level
+
+    // Sustain (flat line)
+    ctx.lineTo(sustainX, sustainY);
+
+    // Release
+    ctx.lineTo(releaseX, height - 10);
+
+    ctx.stroke();
+
+    // Draw control points
+    const drawPoint = (x, y, isActive, label) => {
+      ctx.fillStyle = isActive ? textColor : actualColor;
+      ctx.strokeStyle = isActive ? actualColor : textColor;
+      ctx.lineWidth = 2;
+
+      ctx.beginPath();
+      ctx.arc(x, y, isActive ? 6 : 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      // Label
+      if (isActive || hovering === label) {
+        ctx.fillStyle = textColor;
+        ctx.font = `10px ${monoFont}`;
+        ctx.textAlign = 'center';
+        ctx.fillText(label.toUpperCase(), x, y - 12);
+      }
+    };
+
+    drawPoint(10 + attackX, 10, dragging === 'attack' || hovering === 'attack', 'A');
+    drawPoint(10 + decayX, sustainY, dragging === 'decay' || hovering === 'decay', 'D');
+    drawPoint(sustainX, sustainY, dragging === 'sustain' || hovering === 'sustain', 'S');
+    drawPoint(releaseX, height - 10, dragging === 'release' || hovering === 'release', 'R');
+
+    // Draw values
+    ctx.fillStyle = valueColor;
+    ctx.font = `9px ${monoFont}`;
+    ctx.textAlign = 'left';
+    ctx.fillText(`A: ${(attack * 1000).toFixed(0)}ms`, 5, height - 5);
+    ctx.fillText(`D: ${(decay * 1000).toFixed(0)}ms`, 70, height - 5);
+    ctx.fillText(`S: ${(sustain * 100).toFixed(0)}%`, 135, height - 5);
+    ctx.fillText(`R: ${(release * 1000).toFixed(0)}ms`, 195, height - 5);
+
+  }, [attack, decay, sustain, release, width, height, actualColor, actualBgColor, actualGridColor, dragging, hovering, attackX, decayX, sustainX, sustainY, releaseX]);
+
+  useEffect(() => {
+    draw();
+  }, [draw]);
+
+  const getMousePos = (e) => {
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top
+    };
+  };
+
+  const findClosestPoint = (mouseX, mouseY) => {
+    const points = [
+      { name: 'attack', x: 10 + attackX, y: 10 },
+      { name: 'decay', x: 10 + decayX, y: sustainY },
+      { name: 'sustain', x: sustainX, y: sustainY },
+      { name: 'release', x: releaseX, y: height - 10 }
+    ];
+
+    let closest = null;
+    let minDist = 15; // Minimum distance to activate
+
+    points.forEach(point => {
+      const dist = Math.sqrt(Math.pow(mouseX - point.x, 2) + Math.pow(mouseY - point.y, 2));
+      if (dist < minDist) {
+        minDist = dist;
+        closest = point.name;
+      }
+    });
+
+    return closest;
+  };
+
+  const handleMouseDown = (e) => {
+    const pos = getMousePos(e);
+    const point = findClosestPoint(pos.x, pos.y);
+    if (point) {
+      setDragging(point);
+      e.preventDefault();
+    }
+  };
+
+  const handleMouseMove = useCallback((e) => {
+    const pos = getMousePos(e);
+
+    if (dragging) {
+      const newValues = { attack, decay, sustain, release };
+
+      if (dragging === 'attack') {
+        const newAttack = Math.max(0.001, Math.min(maxTime, (pos.x - 10) / (width * 0.3) * maxTime));
+        newValues.attack = newAttack;
+      } else if (dragging === 'decay') {
+        const newDecay = Math.max(0.001, Math.min(maxTime, (pos.x - 10 - attackX) / (width * 0.3) * maxTime));
+        newValues.decay = newDecay;
+      } else if (dragging === 'sustain') {
+        const newSustain = Math.max(0, Math.min(1, 1 - (pos.y - 10) / (height - 20)));
+        newValues.sustain = newSustain;
+      } else if (dragging === 'release') {
+        const newRelease = Math.max(0.001, Math.min(maxTime, (width - pos.x) / (width * 0.3) * maxTime));
+        newValues.release = newRelease;
+      }
+
+      onChange?.(newValues);
+    } else {
+      // Hover detection
+      const point = findClosestPoint(pos.x, pos.y);
+      setHovering(point);
+    }
+  }, [dragging, attack, decay, sustain, release, attackX, width, height, onChange]);
+
+  const handleMouseUp = useCallback(() => {
+    if (dragging) {
+      onChangeEnd?.();
+      setDragging(null);
+    }
+  }, [dragging, onChangeEnd]);
+
+  useEffect(() => {
+    if (dragging) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+      return () => {
+        window.removeEventListener('mousemove', handleMouseMove);
+        window.removeEventListener('mouseup', handleMouseUp);
+      };
+    }
+  }, [dragging, handleMouseMove, handleMouseUp]);
+
+  return (
+    <div className="adsr-canvas">
+      <canvas
+        ref={canvasRef}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={() => setHovering(null)}
+        style={{ cursor: dragging ? 'grabbing' : (hovering ? 'grab' : 'default') }}
+      />
+    </div>
+  );
+};

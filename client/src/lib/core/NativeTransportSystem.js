@@ -303,7 +303,9 @@ export class NativeTransportSystem {
 
             // ✅ SADECE EVENT TETİKLE
 
-            // Scheduled events'leri temizle
+            // ✅ CRITICAL FIX: Clear ALL scheduled events on loop restart
+            // PlaybackManager will stop all active notes and reschedule everything from pattern
+            // This prevents duplicate scheduling and stuck notes
             this.clearScheduledEvents();
 
             // Loop event'ini tetikle (PlaybackManager'da dinlenecek)
@@ -386,10 +388,13 @@ export class NativeTransportSystem {
         // Process events at or before current time
         for (const [scheduledTime, events] of this.scheduledEvents.entries()) {
             if (scheduledTime <= currentTime) {
+                console.log(`⏰ Processing ${events.length} events at ${scheduledTime}s (currentTime: ${currentTime}s)`);
                 events.forEach(event => {
                     try {
+                        console.log(`  ▶️ Executing event:`, event.data);
                         event.callback(scheduledTime, event.data);
                     } catch (error) {
+                        console.error(`  ❌ Event execution error:`, error);
                     }
                 });
                 this.scheduledEvents.delete(scheduledTime);

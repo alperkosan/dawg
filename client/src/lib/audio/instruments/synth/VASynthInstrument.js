@@ -112,6 +112,7 @@ export class VASynthInstrument extends BaseInstrument {
 
                 // Store voice
                 this.voices.set(midiNote, voice);
+                console.log(`🎹 VASynth noteOn: midiNote=${midiNote}, voices.size=${this.voices.size}, stored voice`);
             }
 
             // Track note
@@ -158,6 +159,8 @@ export class VASynthInstrument extends BaseInstrument {
                     // ✅ POLYPHONIC MODE: Stop specific voice
                     const voice = this.voices.get(midiNote);
 
+                    console.log(`🎹 VASynth noteOff: midiNote=${midiNote}, voice=${!!voice}, voices.size=${this.voices.size}, voices.keys=${Array.from(this.voices.keys()).join(',')}`);
+
                     if (voice) {
                         voice.noteOff(time);
 
@@ -171,6 +174,8 @@ export class VASynthInstrument extends BaseInstrument {
                         }, (releaseTime + 0.1) * 1000);
 
                         this.voiceTimeouts.set(midiNote, timeoutId);
+                    } else {
+                        console.warn(`⚠️ VASynth noteOff: No voice found for midiNote=${midiNote}`);
                     }
                 }
             } else {
@@ -300,7 +305,63 @@ export class VASynthInstrument extends BaseInstrument {
     }
 
     /**
-     * Update specific parameter
+     * Update multiple parameters at once (used by editor)
+     * @param {Object} updates - { oscillatorSettings, filterSettings, filterEnvelope, amplitudeEnvelope }
+     */
+    updateParameters(updates) {
+        console.log('🎛️ VASynth updateParameters called:', updates);
+
+        // Update preset data first (for future voices)
+        if (updates.oscillatorSettings) {
+            this.preset.oscillators = updates.oscillatorSettings;
+        }
+        if (updates.filterSettings) {
+            this.preset.filter = updates.filterSettings;
+        }
+        if (updates.filterEnvelope) {
+            this.preset.filterEnvelope = updates.filterEnvelope;
+        }
+        if (updates.amplitudeEnvelope) {
+            this.preset.amplitudeEnvelope = updates.amplitudeEnvelope;
+        }
+
+        // Update all active voices with new settings
+        this.voices.forEach(voice => {
+            try {
+                if (updates.oscillatorSettings) {
+                    // ✅ FIX: Check if it's an array first
+                    if (Array.isArray(updates.oscillatorSettings)) {
+                        updates.oscillatorSettings.forEach((oscSettings, index) => {
+                            if (oscSettings && voice.setOscillator) {
+                                voice.setOscillator(index, oscSettings);
+                            }
+                        });
+                    } else {
+                        console.warn('oscillatorSettings is not an array:', typeof updates.oscillatorSettings);
+                    }
+                }
+
+                if (updates.filterSettings && voice.setFilter) {
+                    voice.setFilter(updates.filterSettings);
+                }
+
+                if (updates.filterEnvelope && voice.setFilterEnvelope) {
+                    voice.setFilterEnvelope(updates.filterEnvelope);
+                }
+
+                if (updates.amplitudeEnvelope && voice.setAmplitudeEnvelope) {
+                    voice.setAmplitudeEnvelope(updates.amplitudeEnvelope);
+                }
+            } catch (error) {
+                console.error('Error updating voice parameters:', error);
+            }
+        });
+
+        console.log('✅ VASynth parameters updated, active voices:', this.voices.size);
+    }
+
+    /**
+     * Update specific parameter (legacy method)
      */
     setParameter(param, value) {
         // Update parameter on all voices

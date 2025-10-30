@@ -119,7 +119,9 @@ export const Knob = ({
         newValue = dragStartRef.current.value + (deltaY * range * sensitivity);
       }
 
-      onChangeRef.current?.(Math.max(min, Math.min(max, newValue)));
+      const clampedValue = Math.max(min, Math.min(max, newValue));
+      console.log('🎛️ Knob onChange triggered:', { label, value: clampedValue, hasCallback: !!onChangeRef.current });
+      onChangeRef.current?.(clampedValue);
       rafRef.current = null;
     });
   }, [min, max, logarithmic, disabled]);

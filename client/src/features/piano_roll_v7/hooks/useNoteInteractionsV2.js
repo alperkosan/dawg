@@ -19,7 +19,7 @@ const RULER_HEIGHT = 30;
 const KEYBOARD_WIDTH = 80;
 
 // Debug mode - set to false for production
-const DEBUG_MODE = false;
+const DEBUG_MODE = true; // ✅ Temporarily enabled for multi-resize debugging
 
 // ✅ KEYBOARD PIANO MAPPING - Computer keyboard keys to MIDI pitches
 // 3 octaves starting from C4 (MIDI 60-95)
@@ -252,9 +252,14 @@ export function useNoteInteractionsV2(
         const stepWidth = engine.dimensions?.stepWidth || 40;
         const keyHeight = engine.dimensions?.keyHeight || 20;
 
-        // Convert to piano roll coordinates
-        const time = (gridX + engine.viewport.scrollX) / stepWidth;
-        const pitch = Math.round(127 - (gridY + engine.viewport.scrollY) / keyHeight);
+        // Convert to piano roll coordinates with stable viewport values
+        const stableScrollX = engine.viewport?.scrollX || 0;
+        const stableScrollY = engine.viewport?.scrollY || 0;
+        
+        const time = (gridX + stableScrollX) / stepWidth;
+        // ✅ FIX: Don't round pitch - keep decimal precision for accurate hit detection
+        // This allows clicking anywhere within the note's vertical space
+        const pitch = 127 - (gridY + stableScrollY) / keyHeight;
 
         return { time, pitch, x: rawX, y: rawY };
     }, [engine]);
@@ -265,22 +270,30 @@ export function useNoteInteractionsV2(
 
         // ✅ ZOOM-AWARE TOLERANCE - Adaptive based on viewport zoom
         const zoomFactor = engine.viewport?.zoomX || 1;
-        const baseMargin = 0.1; // 10% base margin (more generous than before)
+        const zoomY = engine.viewport?.zoomY || 1;
+        
+        // ✅ IMPROVED: Dynamic base margin based on note density and zoom
+        const baseTimeMargin = 0.15; // Increased to 15% for better hit detection
+        const basePitchMargin = 0.35; // 35% pitch tolerance for easier clicking
 
-        // As you zoom in, decrease tolerance (more precision needed)
-        // As you zoom out, increase tolerance (easier to click small notes)
-        const adaptiveMargin = baseMargin / Math.max(1, zoomFactor * 0.5);
+        // As you zoom in, decrease tolerance (more precision)
+        // As you zoom out, increase tolerance (easier to click)
+        const adaptiveTimeMargin = baseTimeMargin / Math.max(1, Math.sqrt(zoomFactor));
+        const adaptivePitchMargin = basePitchMargin / Math.max(1, Math.sqrt(zoomY));
 
         return currentNotes.find(note => {
             const noteEndTime = note.startTime + note.length;
 
-            // ✅ ADAPTIVE TIME TOLERANCE
-            const timeOverlap = time >= (note.startTime - adaptiveMargin) &&
-                               time <= (noteEndTime + adaptiveMargin);
+            // ✅ ADAPTIVE TIME TOLERANCE - More generous
+            const timeOverlap = time >= (note.startTime - adaptiveTimeMargin) &&
+                               time <= (noteEndTime + adaptiveTimeMargin);
 
-            // ✅ PITCH TOLERANCE - Exact pitch match only
-            // No tolerance on Y axis - note must be clicked within its exact pitch row
-            const pitchMatch = Math.round(pitch) === note.pitch;
+            // ✅ FULL NOTE HEIGHT COVERAGE - Click anywhere within note's exact vertical space
+            // Note occupies exactly from (pitch - 0.5) to (pitch + 0.5)
+            // No tolerance outside the note boundaries
+            const notePitchMin = note.pitch - 0.5;
+            const notePitchMax = note.pitch + 0.5;
+            const pitchMatch = pitch >= notePitchMin && pitch <= notePitchMax;
 
             return timeOverlap && pitchMatch;
         });
@@ -306,42 +319,48 @@ export function useNoteInteractionsV2(
         const noteWidth = Math.max(Math.round(stepWidth) - 1, Math.round(note.length * stepWidth) - 1);
         const noteHeight = Math.round(keyHeight) - 1;
 
-        // ✅ ZOOM-AWARE RESIZE ZONES - Adaptive based on note width AND zoom level
-        // Ensure resize zones don't overlap and leave space for move area
+        // ✅ PRECISE: Narrow resize zones only at edges for professional control
         const zoomFactor = viewport.zoomX || 1;
-        const minMoveArea = Math.max(8, 10 / zoomFactor); // Minimum pixels in middle for moving (zoom-adaptive)
-        const maxZoneWidth = (noteWidth - minMoveArea) / 2; // Max zone width without overlap
+        
+        // ✅ Generous move area - most of the note is for moving
+        const minMoveArea = Math.max(noteWidth * 0.7, 20 / zoomFactor); // 70% minimum for move
+        const maxZoneWidth = (noteWidth - minMoveArea) / 2; // Max 15% per side
 
-        // Calculate optimal zone width based on note size AND zoom
+        // ✅ Narrow, precise resize zones - only at the very edges
         let resizeZoneWidth;
         if (noteWidth < 20) {
-            // Very small notes: zoom-adaptive minimal zones
-            resizeZoneWidth = Math.min(6 + (zoomFactor * 2), maxZoneWidth);
+            // Tiny notes: Fixed small zones
+            resizeZoneWidth = Math.min(5 + (zoomFactor * 1.5), maxZoneWidth);
         } else if (noteWidth < 40) {
-            // Small notes: 25% of width, zoom-boosted
-            resizeZoneWidth = Math.min(noteWidth * 0.25 * (1 + zoomFactor * 0.1), maxZoneWidth);
+            // Small notes: 12-15% of width
+            resizeZoneWidth = Math.min(noteWidth * 0.15, maxZoneWidth);
         } else if (noteWidth < 80) {
-            // Medium notes: 30% of width
-            resizeZoneWidth = Math.min(noteWidth * 0.30, maxZoneWidth);
+            // Medium notes: 12% of width
+            resizeZoneWidth = Math.min(noteWidth * 0.12, maxZoneWidth);
         } else {
-            // Large notes: 35% of width, generous resize area
-            resizeZoneWidth = Math.min(noteWidth * 0.35, maxZoneWidth);
+            // Large notes: 10% of width - very narrow and precise
+            resizeZoneWidth = Math.min(noteWidth * 0.10, maxZoneWidth);
         }
 
-        // Ensure minimum zone width for usability (zoom-aware)
-        resizeZoneWidth = Math.max(5 + zoomFactor, resizeZoneWidth);
+        // ✅ Minimum zone for usability but keep it narrow
+        const minZone = 5 + (zoomFactor * 1);
+        resizeZoneWidth = Math.max(minZone, resizeZoneWidth);
+        
+        // ✅ Cap maximum resize zone to keep it at edges only
+        resizeZoneWidth = Math.min(resizeZoneWidth, 15); // Never more than 15px
 
-        // Left handle (start time resize) - contained within note start area
+        // ✅ PRECISE: Resize handles only within note boundaries - no vertical overflow
+        // Left handle (start time resize) - narrow edge zone
         const leftAreaX1 = noteX; // Start exactly at note boundary
-        const leftAreaX2 = noteX + resizeZoneWidth; // Cover 35% from start
-        const leftAreaY1 = noteY; // Exact note top
-        const leftAreaY2 = noteY + noteHeight; // Exact note bottom
+        const leftAreaX2 = noteX + resizeZoneWidth; // Narrow zone from start
+        const leftAreaY1 = noteY; // Exact note top - no overflow
+        const leftAreaY2 = noteY + noteHeight; // Exact note bottom - no overflow
 
-        // Right handle (end time/length resize) - contained within note end area
-        const rightAreaX1 = noteX + noteWidth - resizeZoneWidth; // Cover 35% from end
+        // Right handle (end time/length resize) - narrow edge zone
+        const rightAreaX1 = noteX + noteWidth - resizeZoneWidth; // Narrow zone from end
         const rightAreaX2 = noteX + noteWidth; // End exactly at note boundary
-        const rightAreaY1 = noteY; // Exact note top
-        const rightAreaY2 = noteY + noteHeight; // Exact note bottom
+        const rightAreaY1 = noteY; // Exact note top - no overflow
+        const rightAreaY2 = noteY + noteHeight; // Exact note bottom - no overflow
 
         // Debug zones (DISABLED - too verbose)
         // if (DEBUG_MODE) {
@@ -899,21 +918,37 @@ export function useNoteInteractionsV2(
                 const resizeHandle = getResizeHandle(coords.x, coords.y, foundNote);
 
                 if (resizeHandle) {
-                    // Start resizing existing note (same as select tool)
+                    // ✅ MULTI-NOTE RESIZE: If note is already selected, resize all selected notes
                     if (!selectedNoteIds.has(foundNote.id)) {
                         deselectAll();
                         selectNote(foundNote.id, false);
                     }
 
-                    setDragState({
-                        type: 'resizing',
-                        noteId: foundNote.id,
-                        resizeHandle,
-                        startCoords: coords,
-                        originalNote: { ...foundNote }
+                    // Get all selected notes for multi-resize
+                    const currentNotes = notes();
+                    const selectedNotes = currentNotes.filter(n => selectedNoteIds.has(n.id));
+                    
+                    // Store original state of all selected notes
+                    const originalNotes = new Map();
+                    selectedNotes.forEach(note => {
+                        originalNotes.set(note.id, {
+                            startTime: note.startTime,
+                            length: note.length,
+                            pitch: note.pitch
+                        });
                     });
 
-                    if (DEBUG_MODE) console.log('🎨 Paint brush: Resize started', resizeHandle);
+                    setDragState({
+                        type: 'resizing',
+                        noteId: foundNote.id, // Primary note being resized
+                        noteIds: selectedNotes.map(n => n.id), // All notes to resize
+                        resizeHandle,
+                        startCoords: coords,
+                        originalNote: { ...foundNote },
+                        originalNotes // Store all original states
+                    });
+
+                    if (DEBUG_MODE) console.log('🎨 Paint brush: Multi-resize started', resizeHandle, selectedNotes.length, 'notes');
                 } else {
                     // Clicking on note body - preview sound and remember duration
                     playPreview(
@@ -997,26 +1032,43 @@ export function useNoteInteractionsV2(
 
                 if (resizeHandle) {
                     // Start resizing
+                    // ✅ MULTI-NOTE RESIZE: If note is already selected, resize all selected notes
                     if (!selectedNoteIds.has(foundNote.id)) {
                         deselectAll();
                         selectNote(foundNote.id, false);
                     }
 
+                    // Get all selected notes for multi-resize
+                    const currentNotes = notes();
+                    const selectedNotes = currentNotes.filter(n => selectedNoteIds.has(n.id));
+                    
+                    // Store original state of all selected notes
+                    const originalNotes = new Map();
+                    selectedNotes.forEach(note => {
+                        originalNotes.set(note.id, {
+                            startTime: note.startTime,
+                            length: note.length,
+                            pitch: note.pitch
+                        });
+                    });
+
                     if (DEBUG_MODE) {
-                        console.log('🎯 Resize started:', {
+                        console.log('🎯 Multi-resize started:', {
                             handle: resizeHandle,
-                            noteId: foundNote.id,
-                            originalNote: foundNote,
+                            primaryNoteId: foundNote.id,
+                            totalNotes: selectedNotes.length,
                             coords
                         });
                     }
 
                     setDragState({
                         type: 'resizing',
-                        noteId: foundNote.id,
+                        noteId: foundNote.id, // Primary note being resized
+                        noteIds: selectedNotes.map(n => n.id), // All notes to resize
                         resizeHandle,
                         startCoords: coords,
-                        originalNote: { ...foundNote }
+                        originalNote: { ...foundNote },
+                        originalNotes // Store all original states
                     });
                 } else {
                     // Start moving - reset duplicate memory
@@ -1392,86 +1444,22 @@ export function useNoteInteractionsV2(
             const deltaTime = coords.time - dragState.startCoords.time;
             const deltaPitch = coords.pitch - dragState.startCoords.pitch;
 
-            // Update moving notes in temporary state (no pattern store update)
-            const storedNotes = getPatternNotes();
-            const baseNotes = convertToPianoRollFormat(storedNotes);
-
-            const updatedNotes = baseNotes.map(note => {
-                if (dragState.noteIds.includes(note.id)) {
-                    const original = dragState.originalNotes.get(note.id);
-                    if (original) {
-                        let newTime = original.startTime + deltaTime;
-                        let newPitch = original.pitch + deltaPitch;
-
-                        // Snap to grid
-                        if (snapValue > 0) {
-                            newTime = snapToGrid(newTime, snapValue);
-                        }
-
-                        // Constrain values
-                        newTime = Math.max(0, newTime);
-                        newPitch = Math.max(0, Math.min(127, Math.round(newPitch)));
-
-                        return { ...note, startTime: newTime, pitch: newPitch };
-                    }
-                }
-                return note;
-            });
-
-            // Real-time görsel güncelleme için tempNotes kullan
-            setTempNotes(updatedNotes);
+            // Update dragState with current position for rendering
+            // Don't update tempNotes here - only visual feedback via dragState
+            setDragState(prev => ({
+                ...prev,
+                currentDelta: { deltaTime, deltaPitch }
+            }));
         } else if (dragState?.type === 'resizing') {
-            // Handle note resizing
-            const storedNotes = getPatternNotes();
-            const baseNotes = convertToPianoRollFormat(storedNotes);
-            const note = baseNotes.find(n => n.id === dragState.noteId);
+            // Calculate delta for resize
+            const deltaTime = coords.time - dragState.startCoords.time;
 
-            if (note) {
-                const deltaTime = coords.time - dragState.startCoords.time;
-                const minLength = 0.25; // Minimum note length
-
-                let updatedNote = { ...note };
-
-                if (dragState.resizeHandle === 'left') {
-                    // Resize from start (change startTime and length)
-                    // Original note end time (sabit kalmalı)
-                    const originalEndTime = dragState.originalNote.startTime + dragState.originalNote.length;
-
-                    let newStartTime = Math.max(0, dragState.originalNote.startTime + deltaTime);
-
-                    // Snap to grid
-                    if (snapValue > 0) {
-                        newStartTime = snapToGrid(newStartTime, snapValue);
-                    }
-
-                    // Length = original end time - new start time
-                    let newLength = Math.max(minLength, originalEndTime - newStartTime);
-
-                    updatedNote.startTime = newStartTime;
-                    updatedNote.length = newLength;
-                } else if (dragState.resizeHandle === 'right') {
-                    // Resize from end (change length only)
-                    // Start time sabit kalır, sadece end time değişir
-                    const originalStartTime = dragState.originalNote.startTime;
-                    let newEndTime = originalStartTime + dragState.originalNote.length + deltaTime;
-
-                    // Snap to grid
-                    if (snapValue > 0) {
-                        newEndTime = snapToGrid(newEndTime, snapValue);
-                    }
-
-                    // Length = new end time - original start time
-                    let newLength = Math.max(minLength, newEndTime - originalStartTime);
-
-                    updatedNote.length = newLength;
-                }
-
-                // Update temp notes for real-time visual feedback
-                const updatedNotes = baseNotes.map(n =>
-                    n.id === dragState.noteId ? updatedNote : n
-                );
-                setTempNotes(updatedNotes);
-            }
+            // Update dragState with current delta for rendering
+            // Don't update tempNotes here - only visual feedback via dragState
+            setDragState(prev => ({
+                ...prev,
+                currentDelta: { deltaTime }
+            }));
         } else if (isSelectingArea) {
             // Update selection area with pixel coordinates
             const stepWidth = engine.dimensions?.stepWidth || 40;
@@ -1530,18 +1518,35 @@ export function useNoteInteractionsV2(
             setSliceRange(null);
         }
         // ✅ MOVE OPERATION WITH UNDO/REDO
-        else if (dragState?.type === 'moving' && tempNotes.length > 0) {
+        else if (dragState?.type === 'moving' && dragState.currentDelta) {
             // Get original positions from dragState
             const originalPositions = new Map(dragState.originalNotes);
             const noteIds = dragState.noteIds;
+            const { deltaTime, deltaPitch } = dragState.currentDelta;
 
-            // Get final positions from tempNotes
+            // Calculate final positions from currentDelta
             const finalPositions = new Map();
-            tempNotes.forEach(note => {
-                if (noteIds.includes(note.id)) {
-                    finalPositions.set(note.id, {
-                        startTime: note.startTime,
-                        pitch: note.pitch
+            const storedNotes = getPatternNotes();
+            const baseNotes = convertToPianoRollFormat(storedNotes);
+            
+            noteIds.forEach(noteId => {
+                const original = originalPositions.get(noteId);
+                if (original) {
+                    let newTime = original.startTime + deltaTime;
+                    let newPitch = original.pitch + deltaPitch;
+
+                    // Snap to grid
+                    if (snapValue > 0) {
+                        newTime = snapToGrid(newTime, snapValue);
+                    }
+
+                    // Constrain values
+                    newTime = Math.max(0, newTime);
+                    newPitch = Math.max(0, Math.min(127, Math.round(newPitch)));
+
+                    finalPositions.set(noteId, {
+                        startTime: newTime,
+                        pitch: newPitch
                     });
                 }
             });
@@ -1557,21 +1562,32 @@ export function useNoteInteractionsV2(
             }
 
             if (hasMoved) {
-                // ✅ CREATE BATCH COMMAND for move operation
+                // ✅ IMMEDIATE UPDATE - Apply changes instantly
+                const currentNotes = notes();
+                const updatedNotes = currentNotes.map(note => {
+                    const final = finalPositions.get(note.id);
+                    if (final) {
+                        return { ...note, ...final };
+                    }
+                    return note;
+                });
+                
+                // Update store immediately for smooth UX
+                updatePatternStore(updatedNotes);
+
+                // ✅ CREATE BATCH COMMAND for undo/redo (async is OK here)
                 import('@/lib/piano-roll-tools/CommandStack').then(({ getCommandStack, BatchCommand, UpdateNoteCommand }) => {
                     const commands = [];
-                    const currentNotes = notes();
 
                     noteIds.forEach(noteId => {
                         const original = originalPositions.get(noteId);
                         const final = finalPositions.get(noteId);
-                        const note = currentNotes.find(n => n.id === noteId);
 
-                        if (original && final && note) {
+                        if (original && final) {
                             const command = new UpdateNoteCommand(
                                 noteId,
                                 original, // old state
-                                { ...note, ...final }, // new state
+                                final, // new state
                                 (id, state) => {
                                     const current = notes();
                                     const updated = current.map(n => n.id === id ? { ...n, ...state } : n);
@@ -1587,51 +1603,181 @@ export function useNoteInteractionsV2(
                         getCommandStack().execute(batchCommand);
                     }
                 });
-            } else {
-                // No actual movement, just commit temp notes
-                updatePatternStore(tempNotes);
             }
-
-            setTempNotes([]); // Clear temporary notes
         }
-        // ✅ RESIZE OPERATION WITH UNDO/REDO
-        else if (dragState?.type === 'resizing' && tempNotes.length > 0) {
-            const resizedNote = tempNotes.find(n => n.id === dragState.noteId);
-            const originalNote = dragState.originalNote;
+        // ✅ MULTI-NOTE RESIZE OPERATION WITH UNDO/REDO
+        else if (dragState?.type === 'resizing' && dragState.currentDelta) {
+            const { deltaTime } = dragState.currentDelta;
+            const minLength = 0.25;
+            
+            // ✅ Handle multi-note resize if noteIds exist
+            const noteIds = dragState.noteIds || [dragState.noteId];
+            const originalNotes = dragState.originalNotes || new Map([[dragState.noteId, dragState.originalNote]]);
+            
+            if (DEBUG_MODE) {
+                console.log('🔍 Multi-resize mouseUp:', {
+                    noteIds,
+                    noteIdsCount: noteIds.length,
+                    hasOriginalNotes: originalNotes.size,
+                    deltaTime
+                });
+            }
+            
+            // Calculate final states for all selected notes
+            const finalStates = new Map();
+            const currentNotes = notes();
+            
+            noteIds.forEach(noteId => {
+                const original = originalNotes.get(noteId);
+                if (!original) {
+                    if (DEBUG_MODE) console.warn('⚠️ No original state for note:', noteId);
+                    return;
+                }
+                
+                let resizedState = { ...original };
 
-            if (resizedNote && originalNote) {
-                // Check if note actually changed
-                const hasChanged = Math.abs(resizedNote.startTime - originalNote.startTime) > 0.001 ||
-                                  Math.abs(resizedNote.length - originalNote.length) > 0.001;
+                if (dragState.resizeHandle === 'left') {
+                    const originalEndTime = original.startTime + original.length;
+                    let newStartTime = Math.max(0, original.startTime + deltaTime);
 
-                if (hasChanged) {
-                    // ✅ CREATE COMMAND for resize operation
-                    import('@/lib/piano-roll-tools/CommandStack').then(({ getCommandStack, UpdateNoteCommand }) => {
-                        const command = new UpdateNoteCommand(
-                            dragState.noteId,
-                            { startTime: originalNote.startTime, length: originalNote.length }, // old state
-                            { startTime: resizedNote.startTime, length: resizedNote.length }, // new state
-                            (id, state) => {
-                                const current = notes();
-                                const updated = current.map(n => n.id === id ? { ...n, ...state } : n);
-                                updatePatternStore(updated);
-                            }
-                        );
-                        getCommandStack().execute(command);
-                    });
-
-                    // ✅ REMEMBER LAST DURATION - Save resized note's length for next note
-                    if (resizedNote.length > 0) {
-                        setLastNoteDuration(resizedNote.length);
-                        if (DEBUG_MODE) console.log('💾 Remembered note duration:', resizedNote.length);
+                    // Snap to grid
+                    if (snapValue > 0) {
+                        newStartTime = snapToGrid(newStartTime, snapValue);
                     }
-                } else {
-                    // No actual change, just commit temp notes
-                    updatePatternStore(tempNotes);
+
+                    let newLength = Math.max(minLength, originalEndTime - newStartTime);
+                    resizedState.startTime = newStartTime;
+                    resizedState.length = newLength;
+                } else if (dragState.resizeHandle === 'right') {
+                    const originalStartTime = original.startTime;
+                    let newEndTime = originalStartTime + original.length + deltaTime;
+
+                    // Snap to grid
+                    if (snapValue > 0) {
+                        newEndTime = snapToGrid(newEndTime, snapValue);
+                    }
+
+                    let newLength = Math.max(minLength, newEndTime - originalStartTime);
+                    resizedState.length = newLength;
+                }
+                
+                finalStates.set(noteId, resizedState);
+                
+                if (DEBUG_MODE) {
+                    console.log('📊 Calculated final state for note:', noteId, {
+                        original: { startTime: original.startTime, length: original.length },
+                        resized: { startTime: resizedState.startTime, length: resizedState.length }
+                    });
+                }
+            });
+
+            // Check if any notes actually changed
+            let hasChanged = false;
+            for (const [noteId, finalState] of finalStates.entries()) {
+                const original = originalNotes.get(noteId);
+                if (original && (Math.abs(finalState.startTime - original.startTime) > 0.001 ||
+                                Math.abs(finalState.length - original.length) > 0.001)) {
+                    hasChanged = true;
+                    break;
                 }
             }
 
-            setTempNotes([]); // Clear temporary notes
+            if (hasChanged) {
+                // ✅ IMMEDIATE UPDATE - Apply all changes instantly
+                const currentNotes = notes();
+                const updatedNotes = currentNotes.map(n => {
+                    const finalState = finalStates.get(n.id);
+                    if (finalState) {
+                        return {
+                            ...n,
+                            startTime: finalState.startTime,
+                            length: finalState.length
+                        };
+                    }
+                    return n;
+                });
+                
+                if (DEBUG_MODE) {
+                    console.log('✅ Updating pattern store with resized notes:', {
+                        totalNotes: currentNotes.length,
+                        resizedNotes: finalStates.size,
+                        updatedCount: updatedNotes.filter(n => finalStates.has(n.id)).length
+                    });
+                    
+                    // Log the actual updated notes
+                    updatedNotes.filter(n => finalStates.has(n.id)).forEach(note => {
+                        console.log('📝 Updated note in array:', note.id, {
+                            startTime: note.startTime,
+                            length: note.length
+                        });
+                    });
+                }
+                
+                // Update store immediately for smooth UX
+                updatePatternStore(updatedNotes);
+
+                // ✅ CREATE BATCH UPDATE COMMAND for undo/redo (async is OK here)
+                // IMPORTANT: We already applied the changes above (immediate update)
+                // So we need to add to history WITHOUT executing again
+                import('@/lib/piano-roll-tools/MultiNoteCommand').then(({ BatchUpdateNotesCommand }) => {
+                    import('@/lib/piano-roll-tools/CommandStack').then(({ getCommandStack }) => {
+                        const noteUpdates = [];
+                        
+                        noteIds.forEach(noteId => {
+                            const original = originalNotes.get(noteId);
+                            const finalState = finalStates.get(noteId);
+                            
+                            if (original && finalState) {
+                                noteUpdates.push({
+                                    noteId,
+                                    oldState: { startTime: original.startTime, length: original.length },
+                                    newState: { startTime: finalState.startTime, length: finalState.length }
+                                });
+                            }
+                        });
+                        
+                        if (noteUpdates.length > 0) {
+                            // Create a custom update function that applies all changes at once
+                            const updateFn = (updates) => {
+                                const current = notes();
+                                const updated = current.map(n => {
+                                    const state = updates.get(n.id);
+                                    return state ? { ...n, ...state } : n;
+                                });
+                                updatePatternStore(updated);
+                            };
+                            
+                            const command = new BatchUpdateNotesCommand(
+                                noteUpdates,
+                                updateFn,
+                                `Resize ${noteIds.length} note(s)`
+                            );
+                            
+                            if (DEBUG_MODE) {
+                                console.log('🔄 Adding to undo/redo history (without re-executing):', {
+                                    updateCount: noteUpdates.length,
+                                    noteIds: noteIds
+                                });
+                            }
+                            
+                            // ✅ Add to history WITHOUT executing (we already updated above)
+                            const stack = getCommandStack();
+                            stack.undoStack.push(command);
+                            stack.redoStack = [];
+                            if (stack.undoStack.length > stack.maxHistory) {
+                                stack.undoStack.shift();
+                            }
+                        }
+                    });
+                });
+
+                // ✅ REMEMBER LAST DURATION - Save primary resized note's length
+                const primaryFinalState = finalStates.get(dragState.noteId);
+                if (primaryFinalState && primaryFinalState.length > 0) {
+                    setLastNoteDuration(primaryFinalState.length);
+                    if (DEBUG_MODE) console.log('💾 Remembered note duration:', primaryFinalState.length, `(${noteIds.length} notes resized)`);
+                }
+            }
         }
 
         if (isSelectingArea && selectionArea) {

@@ -1,0 +1,11 @@
+.adsr-canvas {
+  display: inline-block;
+  border-radius: 4px;
+  overflow: hidden;
+  box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.adsr-canvas canvas {
+  display: block;
+  border-radius: 4px;
+}

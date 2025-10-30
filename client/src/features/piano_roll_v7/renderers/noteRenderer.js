@@ -478,7 +478,7 @@ export class PremiumNoteRenderer {
     }
 
     // Render multiple notes efficiently
-    renderNotes(ctx, notes, dimensions, viewport, selectedNoteIds, hoveredNoteId, activeTool = 'select') {
+    renderNotes(ctx, notes, dimensions, viewport, selectedNoteIds, hoveredNoteId, activeTool = 'select', dragState = null, snapValue = 1) {
         // Sort notes by pitch (render lower notes first for proper layering)
         const sortedNotes = [...notes].sort((a, b) => b.pitch - a.pitch);
 
@@ -489,7 +489,64 @@ export class PremiumNoteRenderer {
             // ✅ ERASER TOOL FEEDBACK - Red highlight for hovered note
             const isEraserTarget = activeTool === 'eraser' && isHovered;
 
-            this.renderNote(ctx, note, dimensions, viewport, isSelected, isHovered, isEraserTarget);
+            // ✅ DRAG VISUAL FEEDBACK - Apply delta to note position during drag
+            let renderNote = note;
+            if (dragState && dragState.currentDelta) {
+                if (dragState.type === 'moving' && dragState.noteIds && dragState.noteIds.includes(note.id)) {
+                    // Moving: apply delta to position
+                    const original = dragState.originalNotes.get(note.id);
+                    if (original) {
+                        const { deltaTime, deltaPitch } = dragState.currentDelta;
+                        let newTime = original.startTime + deltaTime;
+                        let newPitch = original.pitch + deltaPitch;
+
+                        // Snap to grid
+                        if (snapValue > 0) {
+                            newTime = Math.max(0, Math.round(newTime / snapValue) * snapValue);
+                        }
+
+                        newTime = Math.max(0, newTime);
+                        newPitch = Math.max(0, Math.min(127, Math.round(newPitch)));
+
+                        renderNote = { ...note, startTime: newTime, pitch: newPitch };
+                    }
+                } else if (dragState.type === 'resizing') {
+                    // ✅ MULTI-NOTE RESIZE: Check if this note is being resized
+                    const noteIds = dragState.noteIds || [dragState.noteId];
+                    const originalNotes = dragState.originalNotes || new Map([[dragState.noteId, dragState.originalNote]]);
+                    
+                    if (noteIds.includes(note.id)) {
+                        // This note is being resized - apply delta
+                        const { deltaTime } = dragState.currentDelta;
+                        const original = originalNotes.get(note.id);
+                        const minLength = 0.25;
+
+                        if (dragState.resizeHandle === 'left') {
+                            const originalEndTime = original.startTime + original.length;
+                            let newStartTime = Math.max(0, original.startTime + deltaTime);
+
+                            if (snapValue > 0) {
+                                newStartTime = Math.max(0, Math.round(newStartTime / snapValue) * snapValue);
+                            }
+
+                            const newLength = Math.max(minLength, originalEndTime - newStartTime);
+                            renderNote = { ...note, startTime: newStartTime, length: newLength };
+                        } else if (dragState.resizeHandle === 'right') {
+                            const originalStartTime = original.startTime;
+                            let newEndTime = originalStartTime + original.length + deltaTime;
+
+                            if (snapValue > 0) {
+                                newEndTime = Math.max(0, Math.round(newEndTime / snapValue) * snapValue);
+                            }
+
+                            const newLength = Math.max(minLength, newEndTime - originalStartTime);
+                            renderNote = { ...note, length: newLength };
+                        }
+                    }
+                }
+            }
+
+            this.renderNote(ctx, renderNote, dimensions, viewport, isSelected, isHovered, isEraserTarget);
         });
     }
 

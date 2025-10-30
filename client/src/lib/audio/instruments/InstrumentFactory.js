@@ -152,9 +152,9 @@ export class InstrumentFactory {
     static async _createVASynthInstrument(instrumentData, audioContext) {
         console.log(`  VASynth preset: ${instrumentData.presetName}`);
 
-        // ✅ Use new voice pool architecture
-        const { VASynthInstrument_v2 } = await import('./synth/VASynthInstrument_v2.js');
-        const instrument = new VASynthInstrument_v2(instrumentData, audioContext);
+        // ✅ Use VASynthInstrument (existing implementation)
+        const { VASynthInstrument } = await import('./synth/VASynthInstrument.js');
+        const instrument = new VASynthInstrument(instrumentData, audioContext);
         await instrument.initialize();
 
         return instrument;

@@ -9,7 +9,7 @@
  * - Visual feedback (oscilloscope)
  */
 
-import { useCallback, useEffect, useState, useRef, useMemo } from 'react';
+import React, { useCallback, useEffect, useState, useRef, useMemo } from 'react';
 import useInstrumentEditorStore from '../../../../store/useInstrumentEditorStore';
 import { getPreviewManager } from '@/lib/audio/preview';
 import { AudioContextService } from '@/lib/services/AudioContextService';
@@ -34,6 +34,26 @@ const VASynthEditor = ({ instrumentData: initialData }) => {
   // Get preset data
   const presetName = instrumentData.presetName || 'Piano';
   const presetData = getPreset(presetName);
+
+  // ✅ FIX: Initialize instrumentData with preset data on mount
+  useEffect(() => {
+    if (presetData && instrumentData && !instrumentData.oscillators) {
+      console.log('🔧 Initializing instrumentData with preset data:', presetData);
+
+      // Merge preset into instrumentData
+      const mergedData = {
+        ...instrumentData,
+        oscillators: presetData.oscillators,
+        filter: presetData.filter,
+        filterEnvelope: presetData.filterEnvelope,
+        amplitudeEnvelope: presetData.amplitudeEnvelope,
+        lfo1: presetData.lfo,
+      };
+
+      // Update store with merged data
+      useInstrumentEditorStore.setState({ instrumentData: mergedData });
+    }
+  }, [instrumentData.id]); // Only run when instrument ID changes
 
   // Default fallback values with unison support
   const defaultOscillators = [
@@ -67,6 +87,7 @@ const VASynthEditor = ({ instrumentData: initialData }) => {
   // Merge defaults with existing data to support new parameters
   // Use useMemo to ensure proper reactivity
   const oscillators = useMemo(() => {
+    console.log('🔄 useMemo deps changed - instrumentData.oscillators:', instrumentData.oscillators);
     const result = Array.isArray(instrumentData.oscillators)
       ? instrumentData.oscillators.map((osc, index) => ({
           ...defaultOscillators[index],
@@ -97,6 +118,8 @@ const VASynthEditor = ({ instrumentData: initialData }) => {
 
   // Handle parameter updates
   const handleParameterChange = useCallback((path, value) => {
+    console.log(`📝 handleParameterChange called: ${path} =`, value);
+
     // 1. Update store (for UI state & undo/redo)
     updateParameter(path, value);
 
@@ -113,22 +136,27 @@ const VASynthEditor = ({ instrumentData: initialData }) => {
           // oscillators.0.level -> update oscillator 0's level
           const oscIndex = parseInt(keys[1]);
           const paramName = keys[2];
-          const updatedOscillators = [...oscillators];
-          updatedOscillators[oscIndex] = { ...updatedOscillators[oscIndex], [paramName]: value };
-          updateObj.oscillatorSettings = updatedOscillators;
+          // ✅ FIX: Get fresh data from store to include the just-updated value
+          const currentData = useInstrumentEditorStore.getState().instrumentData;
+          updateObj.oscillatorSettings = currentData?.oscillators;
         } else if (keys[0] === 'filter') {
           // filter.cutoff -> update filter cutoff
-          updateObj.filterSettings = { ...filter, [keys[1]]: value };
+          const currentData = useInstrumentEditorStore.getState().instrumentData;
+          updateObj.filterSettings = currentData?.filter;
         } else if (keys[0] === 'filterEnvelope') {
-          updateObj.filterEnvelope = { ...filterEnvelope, [keys[1]]: value };
+          const currentData = useInstrumentEditorStore.getState().instrumentData;
+          updateObj.filterEnvelope = currentData?.filterEnvelope;
         } else if (keys[0] === 'amplitudeEnvelope') {
-          updateObj.amplitudeEnvelope = { ...amplitudeEnvelope, [keys[1]]: value };
+          const currentData = useInstrumentEditorStore.getState().instrumentData;
+          updateObj.amplitudeEnvelope = currentData?.amplitudeEnvelope;
         } else if (keys[0] === 'lfo1') {
           // LFO modulation parameters
-          updateObj.lfo1 = { ...instrumentData.lfo1, [keys[1]]: value };
+          const currentData = useInstrumentEditorStore.getState().instrumentData;
+          updateObj.lfo1 = currentData?.lfo1;
         } else if (keys[0] === 'effects') {
           // Effects toggle
-          updateObj.effects = { ...instrumentData.effects, [keys[1]]: value };
+          const currentData = useInstrumentEditorStore.getState().instrumentData;
+          updateObj.effects = currentData?.effects;
         }
 
         // Call updateParameters DIRECTLY (not through updateInstrumentParameters)
@@ -136,7 +164,10 @@ const VASynthEditor = ({ instrumentData: initialData }) => {
         console.log('✅ VASynth parameter updated (direct):', path, value);
       }
     }
-  }, [updateParameter, instrumentData.id, instrumentData.lfo1, instrumentData.effects, oscillators, filter, filterEnvelope, amplitudeEnvelope]);
+  // ✅ FIX: Only depend on stable values, not derived state
+  // oscillators/filter/etc are derived from instrumentData and change every render
+  // We read fresh values from store inside the callback, so no need for deps
+  }, [updateParameter, instrumentData.id]);
 
   // Preview keyboard handlers
   const handleNoteOn = useCallback((note, octave) => {
@@ -261,6 +292,7 @@ const VASynthEditor = ({ instrumentData: initialData }) => {
               <div className="vasynth-editor__oscillator-header">OSC {index + 1}</div>
               <div className="vasynth-editor__oscillator-controls">
                 <Knob
+                  key={`level-${index}`}
                   label="Level"
                   value={osc.level}
                   min={0}
@@ -270,6 +302,7 @@ const VASynthEditor = ({ instrumentData: initialData }) => {
                   onChange={(value) => handleParameterChange(`oscillators.${index}.level`, value)}
                 />
                 <Knob
+                  key={`detune-${index}`}
                   label="Detune"
                   value={osc.detune}
                   min={-50}
@@ -279,6 +312,7 @@ const VASynthEditor = ({ instrumentData: initialData }) => {
                   onChange={(value) => handleParameterChange(`oscillators.${index}.detune`, value)}
                 />
                 <Knob
+                  key={`unison-${index}`}
                   label="Unison"
                   value={osc.unisonVoices || 1}
                   min={1}
@@ -290,8 +324,9 @@ const VASynthEditor = ({ instrumentData: initialData }) => {
                   onChange={(value) => handleParameterChange(`oscillators.${index}.unisonVoices`, Math.round(value))}
                 />
                 {(osc.unisonVoices || 1) > 1 && (
-                  <>
+                  <React.Fragment key={`unison-controls-${index}`}>
                     <Knob
+                      key={`unison-detune-${index}`}
                       label="U.Detune"
                       value={osc.unisonDetune || 10}
                       min={0}
@@ -302,6 +337,7 @@ const VASynthEditor = ({ instrumentData: initialData }) => {
                       onChange={(value) => handleParameterChange(`oscillators.${index}.unisonDetune`, value)}
                     />
                     <Knob
+                      key={`unison-pan-${index}`}
                       label="U.Pan"
                       value={osc.unisonPan || 0.5}
                       min={0}
@@ -311,7 +347,7 @@ const VASynthEditor = ({ instrumentData: initialData }) => {
                       valueFormatter={(v) => `${(v * 100).toFixed(0)}%`}
                       onChange={(value) => handleParameterChange(`oscillators.${index}.unisonPan`, value)}
                     />
-                  </>
+                  </React.Fragment>
                 )}
               </div>
               <div className="vasynth-editor__waveform-selector">
