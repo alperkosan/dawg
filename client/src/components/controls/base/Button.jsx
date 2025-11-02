@@ -42,7 +42,7 @@ export const Button = ({
         color: active ? '#000' : colors.text,
         border: `1px solid ${active ? colors.fill : colors.border}`,
         boxShadow: active ? `0 0 12px ${colors.fillGlow}, 0 2px 4px rgba(0,0,0,0.3)` : 'none',
-        transition: styles['--transition-fast'],
+        transition: styles?.['--transition-fast'] || '150ms ease-out',
       }}
     >
       {children || label}

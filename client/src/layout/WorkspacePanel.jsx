@@ -71,7 +71,32 @@ function WorkspacePanel() {
             // Get the effect node for visualization
             const effectNode = AudioContextService.getEffectNode(track.id, effect.id);
 
-            PanelContent = (
+            // 🔍 DEBUG: Log effect node lookup
+            console.log('🔍 [WorkspacePanel] Effect node lookup:', {
+              effectType: effect.type,
+              effectId: effect.id,
+              trackId: track.id,
+              effectNode,
+              hasPort: !!effectNode?.port,
+              nodeType: effectNode?.constructor?.name
+            });
+
+            // Check if plugin uses v2.0 (has its own PluginContainerV2)
+            const usesV2Container = ['MultiBandEQ', 'ModernDelay', 'OTT', 'ModernReverb', 'Compressor', 'Saturator', 'TidalFilter', 'StardustChorus', 'VortexPhaser', 'OrbitPanner', 'ArcadeCrusher', 'PitchShifter', 'BassEnhancer808', 'TransientDesigner', 'HalfTime', 'Limiter', 'Clipper', 'RhythmFX', 'Maximizer', 'Imager'].includes(effect.type);
+
+            PanelContent = usesV2Container ? (
+              // v2.0: Plugin has its own container
+              <Suspense fallback={<div className="p-4">Loading UI...</div>}>
+                <PluginUIComponent
+                  trackId={track.id}
+                  effect={effect}
+                  effectNode={effectNode}
+                  onChange={handlePluginChange}
+                  definition={definition}
+                />
+              </Suspense>
+            ) : (
+              // v1.0: Wrap with PluginContainer
               <PluginContainer trackId={track.id} effect={effect} definition={definition}>
                 <Suspense fallback={<div className="p-4">Loading UI...</div>}>
                   <PluginUIComponent

@@ -98,7 +98,16 @@ export const useControlTheme = (variant = 'default', category = null) => {
   const theme = useThemeStore((state) => state.getActiveTheme());
 
   return useMemo(() => {
-    const { colors } = theme;
+    const { colors, zenith } = theme;
+
+    // Create styles object from zenith tokens
+    const styles = {
+      '--transition-fast': zenith?.['duration-fast'] || '150ms',
+      '--transition-normal': zenith?.['duration-normal'] || '200ms',
+      '--transition-slow': zenith?.['duration-slow'] || '300ms',
+      '--ease-out': zenith?.['ease-out'] || 'cubic-bezier(0, 0, 0.2, 1)',
+      '--ease-in-out': zenith?.['ease-in-out'] || 'cubic-bezier(0.4, 0, 0.2, 1)',
+    };
 
     // If category is provided, use category palette
     if (category && CATEGORY_PALETTES[category]) {
@@ -118,7 +127,7 @@ export const useControlTheme = (variant = 'default', category = null) => {
           secondary: categoryColors.secondary,
           accent: categoryColors.accent,
         },
-        styles: theme.styles,
+        styles,
       };
     }
 
@@ -188,7 +197,7 @@ export const useControlTheme = (variant = 'default', category = null) => {
 
     return {
       colors: variants[variant] || variants.default,
-      styles: theme.styles,
+      styles,
     };
   }, [theme, variant, category]);
 };

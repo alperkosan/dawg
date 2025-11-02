@@ -133,6 +133,7 @@ export class MixerInsert {
     // ✅ SIMPLIFIED: Single ID system - effectId is the only identifier
     // Store effect type for special handling (e.g., MultiBandEQ message-based params)
     this.effects.set(effectId, {
+      id: effectId, // Store ID for lookup compatibility (AudioContextService.getEffectNode)
       node: effectNode,
       settings,
       bypass,

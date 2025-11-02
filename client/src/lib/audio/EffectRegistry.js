@@ -19,6 +19,7 @@ export class EffectRegistry {
    */
   registerEffects() {
     // Saturator v2.0
+    // Saturator v2.0 - Professional multiband tube saturation
     this.register('Saturator', {
       workletPath: '/worklets/effects/saturator-processor.js',
       processorName: 'saturator-processor',
@@ -30,11 +31,21 @@ export class EffectRegistry {
         { name: 'lowCutFreq', defaultValue: 0, minValue: 0, maxValue: 500 },
         { name: 'highCutFreq', defaultValue: 20000, minValue: 2000, maxValue: 20000 },
         { name: 'tone', defaultValue: 0, minValue: -12, maxValue: 12 },
-        { name: 'headroom', defaultValue: 0, minValue: -12, maxValue: 12 }
+        { name: 'headroom', defaultValue: 0, minValue: -12, maxValue: 12 },
+        // 🎯 NEW v2.0: Multiband saturation
+        { name: 'multiband', defaultValue: 0, minValue: 0, maxValue: 1 },
+        { name: 'lowMidCrossover', defaultValue: 250, minValue: 50, maxValue: 500 },
+        { name: 'midHighCrossover', defaultValue: 2500, minValue: 1000, maxValue: 8000 },
+        { name: 'lowDrive', defaultValue: 1.0, minValue: 0, maxValue: 2.0 },
+        { name: 'midDrive', defaultValue: 1.0, minValue: 0, maxValue: 2.0 },
+        { name: 'highDrive', defaultValue: 1.0, minValue: 0, maxValue: 2.0 },
+        { name: 'lowMix', defaultValue: 1.0, minValue: 0, maxValue: 1 },
+        { name: 'midMix', defaultValue: 1.0, minValue: 0, maxValue: 1 },
+        { name: 'highMix', defaultValue: 1.0, minValue: 0, maxValue: 1 }
       ]
     });
 
-    // Compressor (Single-band with upward compression)
+    // Compressor v2.0 - Professional dynamic range compression
     this.register('Compressor', {
       workletPath: '/worklets/effects/compressor-processor.js',
       processorName: 'compressor-processor',
@@ -47,9 +58,14 @@ export class EffectRegistry {
         { name: 'wet', defaultValue: 1.0, minValue: 0, maxValue: 1 },
         { name: 'upwardRatio', defaultValue: 2, minValue: 1, maxValue: 20 },
         { name: 'upwardDepth', defaultValue: 0, minValue: 0, maxValue: 1 },
-        // new params
+        { name: 'autoMakeup', defaultValue: 0, minValue: 0, maxValue: 1 },
+        // Advanced parameters
         { name: 'lookahead', defaultValue: 3, minValue: 0, maxValue: 10 },
         { name: 'stereoLink', defaultValue: 100, minValue: 0, maxValue: 100 },
+        // 🎯 NEW v2.0: Detection mode
+        { name: 'detectionMode', defaultValue: 0, minValue: 0, maxValue: 1 },
+        { name: 'rmsWindow', defaultValue: 10, minValue: 1, maxValue: 50 },
+        // Sidechain
         { name: 'scEnable', defaultValue: 0, minValue: 0, maxValue: 1 },
         { name: 'scGain', defaultValue: 0, minValue: -24, maxValue: 24 },
         { name: 'scFilterType', defaultValue: 1, minValue: 0, maxValue: 2 },
@@ -201,7 +217,7 @@ export class EffectRegistry {
 
     // ❌ REMOVED: SidechainCompressor (will be integrated into main Compressor)
 
-    // ModernReverb
+    // ModernReverb v2.0 - With modulation and stereo width
     this.register('ModernReverb', {
       workletPath: '/worklets/effects/modern-reverb-processor.js',
       processorName: 'modern-reverb-processor',
@@ -209,13 +225,13 @@ export class EffectRegistry {
         { name: 'size', defaultValue: 0.7, minValue: 0.0, maxValue: 1.0 },
         { name: 'decay', defaultValue: 2.5, minValue: 0.1, maxValue: 15.0 },
         { name: 'damping', defaultValue: 0.5, minValue: 0.0, maxValue: 1.0 },
-        { name: 'width', defaultValue: 1.0, minValue: 0.0, maxValue: 1.0 },
+        { name: 'width', defaultValue: 1.0, minValue: 0.0, maxValue: 2.0 },      // Updated: 0=mono, 1=normal, 2=ultra-wide
         { name: 'preDelay', defaultValue: 0.02, minValue: 0.0, maxValue: 0.2 },
         { name: 'wet', defaultValue: 0.35, minValue: 0.0, maxValue: 1.0 },
         { name: 'earlyLateMix', defaultValue: 0.5, minValue: 0.0, maxValue: 1.0 },
         { name: 'diffusion', defaultValue: 0.7, minValue: 0.0, maxValue: 1.0 },
-        { name: 'modDepth', defaultValue: 0.3, minValue: 0.0, maxValue: 1.0 },
-        { name: 'modRate', defaultValue: 0.5, minValue: 0.1, maxValue: 2.0 }
+        { name: 'modDepth', defaultValue: 0.3, minValue: 0.0, maxValue: 1.0 },   // Chorus modulation depth
+        { name: 'modRate', defaultValue: 0.5, minValue: 0.1, maxValue: 2.0 }     // LFO rate in Hz
       ]
     });
 
@@ -259,6 +275,7 @@ export class EffectRegistry {
     });
 
     // Limiter - Professional Mastering
+    // Limiter v2.0 - Professional mastering-grade brick wall limiter
     this.register('Limiter', {
       workletPath: '/worklets/effects/limiter-processor.js',
       processorName: 'limiter-processor',
@@ -272,7 +289,11 @@ export class EffectRegistry {
         { name: 'autoGain', defaultValue: 0, minValue: 0, maxValue: 1 },
         { name: 'mode', defaultValue: 0, minValue: 0, maxValue: 4 },
         { name: 'truePeak', defaultValue: 1, minValue: 0, maxValue: 1 },
-        { name: 'oversample', defaultValue: 4, minValue: 1, maxValue: 8 }
+        { name: 'oversample', defaultValue: 4, minValue: 1, maxValue: 8 },
+        // 🎯 NEW v2.0: Advanced mastering controls
+        { name: 'dither', defaultValue: 0, minValue: 0, maxValue: 2 },
+        { name: 'outputTrim', defaultValue: 0, minValue: -12, maxValue: 12 },
+        { name: 'transientPreserve', defaultValue: 0, minValue: 0, maxValue: 1 }
       ]
     });
 
@@ -509,6 +530,219 @@ export class EffectRegistry {
   getParameters(effectType) {
     const config = this.effects.get(effectType);
     return config?.parameters || [];
+  }
+
+  /**
+   * Get v2.0 metadata for an effect (category, version, features)
+   */
+  getMetadata(effectType) {
+    // v2.0 metadata mapping
+    const metadata = {
+      // Dynamics Forge
+      'Compressor': {
+        category: 'dynamics-forge',
+        version: '2.0',
+        features: ['RMS/Peak Detection', 'Sidechain', 'Lookahead', 'Auto-Makeup'],
+        complexity: 'advanced',
+        cpuUsage: 'medium'
+      },
+      'Limiter': {
+        category: 'dynamics-forge',
+        version: '2.0',
+        features: ['TPDF Dither', 'Transient Preserve', 'True-Peak', 'Oversampling'],
+        complexity: 'advanced',
+        cpuUsage: 'high'
+      },
+      'OTT': {
+        category: 'dynamics-forge',
+        version: '1.0',
+        features: ['Multiband', 'Upward/Downward', '3-Band'],
+        complexity: 'advanced',
+        cpuUsage: 'high'
+      },
+      'TransientDesigner': {
+        category: 'dynamics-forge',
+        version: '1.0',
+        features: ['Attack/Sustain', 'Envelope Shaping'],
+        complexity: 'simple',
+        cpuUsage: 'low'
+      },
+      'Maximizer': {
+        category: 'dynamics-forge',
+        version: '1.0',
+        features: ['True-Peak', 'Lookahead', 'Saturation'],
+        complexity: 'intermediate',
+        cpuUsage: 'medium'
+      },
+      'Clipper': {
+        category: 'dynamics-forge',
+        version: '1.0',
+        features: ['Hard/Soft Clipping', 'Harmonic Control', 'Oversampling'],
+        complexity: 'intermediate',
+        cpuUsage: 'medium'
+      },
+
+      // Spacetime Chamber
+      'ModernReverb': {
+        category: 'spacetime-chamber',
+        version: '2.0',
+        features: ['Modulation', 'Stereo Width', 'Early/Late Mix', 'Diffusion'],
+        complexity: 'advanced',
+        cpuUsage: 'high'
+      },
+      'ModernDelay': {
+        category: 'spacetime-chamber',
+        version: '1.0',
+        features: ['Ping-Pong', 'Filter', 'Saturation', 'Modulation', 'Stereo'],
+        complexity: 'advanced',
+        cpuUsage: 'medium'
+      },
+
+      // Spectral Weave
+      'MultiBandEQ': {
+        category: 'spectral-weave',
+        version: '2.0',
+        features: ['Dynamic Bands', 'Multiple Filter Types', 'Visual Curve'],
+        complexity: 'advanced',
+        cpuUsage: 'medium'
+      },
+      'TidalFilter': {
+        category: 'spectral-weave',
+        version: '1.0',
+        features: ['Resonance', 'Drive', 'LP/HP Modes'],
+        complexity: 'simple',
+        cpuUsage: 'low'
+      },
+
+      // Texture Lab
+      'Saturator': {
+        category: 'texture-lab',
+        version: '2.0',
+        features: ['Multiband Saturation', 'Linkwitz-Riley Crossovers', '3-Band Processing'],
+        complexity: 'advanced',
+        cpuUsage: 'medium'
+      },
+      'ArcadeCrusher': {
+        category: 'texture-lab',
+        version: '1.0',
+        features: ['Bit Depth Reduction', 'Sample Rate Reduction'],
+        complexity: 'simple',
+        cpuUsage: 'low'
+      },
+      'BassEnhancer808': {
+        category: 'texture-lab',
+        version: '3.0',
+        features: ['Sub Boost', 'Saturation', 'Punch', 'Taste', 'Texture'],
+        complexity: 'intermediate',
+        cpuUsage: 'medium'
+      },
+
+      // Modulation Matrix
+      'StardustChorus': {
+        category: 'modulation-matrix',
+        version: '1.0',
+        features: ['Multi-Voice', 'Stereo Width', 'Rate/Depth'],
+        complexity: 'intermediate',
+        cpuUsage: 'medium'
+      },
+      'VortexPhaser': {
+        category: 'modulation-matrix',
+        version: '1.0',
+        features: ['Multi-Stage', 'Feedback', 'Stereo Phase'],
+        complexity: 'intermediate',
+        cpuUsage: 'medium'
+      },
+      'OrbitPanner': {
+        category: 'modulation-matrix',
+        version: '1.0',
+        features: ['LFO Shapes', 'Stereo Width', 'Rate/Depth'],
+        complexity: 'simple',
+        cpuUsage: 'low'
+      },
+
+      // Utility Station
+      'Imager': {
+        category: 'utility-station',
+        version: '3.0',
+        features: ['Multiband', '4-Band', 'M/S Processing', 'Solo/Mute'],
+        complexity: 'advanced',
+        cpuUsage: 'medium'
+      },
+
+      // Creative Workshop
+      'PitchShifter': {
+        category: 'creative-workshop',
+        version: '1.0',
+        features: ['Pitch Shifting', 'Window Size Control'],
+        complexity: 'intermediate',
+        cpuUsage: 'high'
+      },
+      'HalfTime': {
+        category: 'creative-workshop',
+        version: '1.0',
+        features: ['Time Stretching', 'Pitch Lock', 'Granular', 'Glitch'],
+        complexity: 'advanced',
+        cpuUsage: 'very-high'
+      },
+      'RhythmFX': {
+        category: 'creative-workshop',
+        version: '1.0',
+        features: ['Rhythmic Gating', 'Swing', 'Glitch', 'Tape Speed'],
+        complexity: 'advanced',
+        cpuUsage: 'medium'
+      }
+    };
+
+    return metadata[effectType] || {
+      category: 'utility-station',
+      version: '1.0',
+      features: [],
+      complexity: 'simple',
+      cpuUsage: 'low'
+    };
+  }
+
+  /**
+   * Get all effects in a category
+   */
+  getEffectsByCategory(category) {
+    const effects = [];
+    for (const [effectType, config] of this.effects) {
+      const metadata = this.getMetadata(effectType);
+      if (metadata.category === category) {
+        effects.push({
+          type: effectType,
+          config,
+          metadata
+        });
+      }
+    }
+    return effects;
+  }
+
+  /**
+   * Get all categories with their effects
+   */
+  getCategories() {
+    const categories = {
+      'dynamics-forge': [],
+      'spacetime-chamber': [],
+      'spectral-weave': [],
+      'texture-lab': [],
+      'modulation-matrix': [],
+      'utility-station': [],
+      'creative-workshop': []
+    };
+
+    for (const effectType of this.effects.keys()) {
+      const metadata = this.getMetadata(effectType);
+      categories[metadata.category].push({
+        type: effectType,
+        metadata
+      });
+    }
+
+    return categories;
   }
 
   /**

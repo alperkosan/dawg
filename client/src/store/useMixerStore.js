@@ -209,21 +209,35 @@ export const useMixerStore = create((set, get) => ({
       // Create in AudioEngine (async) - use cloned settings here too
       AudioContextService.addEffectToInsert(trackId, effectType, clonedSettings)
         .then(effectId => {
+          console.log('🔄 [useMixerStore] AudioEngine returned effectId:', {
+            tempId,
+            audioEngineId: effectId,
+            needsUpdate: effectId !== tempId
+          });
+
           if (effectId && effectId !== tempId) {
             // Update with actual AudioEngine ID
-            set(state => ({
-              mixerTracks: state.mixerTracks.map(track => {
+            set(state => {
+              const updatedTracks = state.mixerTracks.map(track => {
                 if (track.id === trackId) {
-                  return {
-                    ...track,
-                    insertEffects: track.insertEffects.map(fx =>
-                      fx.id === tempId ? { ...fx, id: effectId } : fx
-                    )
-                  };
+                  const updatedEffects = track.insertEffects.map(fx => {
+                    if (fx.id === tempId) {
+                      console.log('✅ [useMixerStore] Updated effect ID:', {
+                        from: tempId,
+                        to: effectId,
+                        type: fx.type
+                      });
+                      return { ...fx, id: effectId };
+                    }
+                    return fx;
+                  });
+                  return { ...track, insertEffects: updatedEffects };
                 }
                 return track;
-              })
-            }));
+              });
+
+              return { mixerTracks: updatedTracks };
+            });
           }
         })
         .catch(error => {

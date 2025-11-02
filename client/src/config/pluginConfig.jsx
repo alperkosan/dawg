@@ -9,31 +9,57 @@
 
 // Tier 1: Core Effects
 import { SaturatorUI } from '@/components/plugins/effects/SaturatorUI.jsx';
+import SaturatorUI_V2 from '@/components/plugins/effects/SaturatorUI_V2'; // ✨ v2.0
 import { AdvancedCompressorUI } from '@/components/plugins/effects/AdvancedCompressorUI.jsx';
-import { OTTUI } from '@/components/plugins/effects/OTTUI.jsx';
+import AdvancedCompressorUI_V2 from '@/components/plugins/effects/AdvancedCompressorUI_V2'; // ✨ v2.0
+import OTTUI_V2 from '@/components/plugins/effects/OTTUI_V2'; // ✨ v2.0
 import { AdvancedEQUI } from '@/components/plugins/effects/AdvancedEQUI.jsx';
-import { ModernReverbUI } from '@/components/plugins/effects/ModernReverbUI';
+import MultiBandEQUI_V2 from '@/components/plugins/effects/MultiBandEQUI_V2.jsx'; // ✨ v2.0
+import ModernReverbUI_V2 from '@/components/plugins/effects/ModernReverbUI_V2'; // ✨ v2.0
 import { ModernDelayUI } from '@/components/plugins/effects/ModernDelayUI';
+import ModernDelayUI_V2 from '@/components/plugins/effects/ModernDelayUI_V2'; // ✨ v2.0
+
+// Presets
+import { EQ_FACTORY_PRESETS } from '@/config/presets/eqPresets.js';
+import { delayPresets } from '@/config/presets/delayPresets.js';
+import { saturatorPresets } from '@/config/presets/saturatorPresets_simple.js';
+import { compressorPresets } from '@/config/presets/compressorPresets_simple.js';
+import { ottPresets } from '@/config/presets/ottPresets.js';
+import { tidalFilterPresets } from '@/config/presets/tidalFilterPresets.js';
+import { stardustChorusPresets } from '@/config/presets/stardustChorusPresets.js';
+import { vortexPhaserPresets } from '@/config/presets/vortexPhaserPresets.js';
+import { orbitPannerPresets } from '@/config/presets/orbitPannerPresets.js';
+import { arcadeCrusherPresets } from '@/config/presets/arcadeCrusherPresets.js';
+import { pitchShifterPresets } from '@/config/presets/pitchShifterPresets.js';
+import { bassEnhancer808Presets } from '@/config/presets/bassEnhancer808Presets.js';
+import { transientDesignerPresets } from '@/config/presets/transientDesignerPresets.js';
+import { halfTimePresets } from '@/config/presets/halfTimePresets.js';
+import { limiterPresets } from '@/config/presets/limiterPresets.js';
+import { clipperPresets } from '@/config/presets/clipperPresets.js';
+import { rhythmFXPresets } from '@/config/presets/rhythmFXPresets.js';
+import { maximizerPresets } from '@/config/presets/maximizerPresets.js';
+import { imagerPresets } from '@/config/presets/imagerPresets.js';
+import { reverbPresets } from '@/config/presets/reverbPresets.js';
 
 // Tier 2: Creative Effects
-import { TidalFilterUI } from '@/components/plugins/effects/TidalFilterUI.jsx';
-import { StardustChorusUI } from '@/components/plugins/effects/StardustChorusUI.jsx';
-import { VortexPhaserUI } from '@/components/plugins/effects/VortexPhaserUI.jsx';
-import { OrbitPannerUI } from '@/components/plugins/effects/OrbitPannerUI.jsx';
+import TidalFilterUI_V2 from '@/components/plugins/effects/TidalFilterUI_V2'; // ✨ v2.0
+import StardustChorusUI_V2 from '@/components/plugins/effects/StardustChorusUI_V2'; // ✨ v2.0
+import VortexPhaserUI_V2 from '@/components/plugins/effects/VortexPhaserUI_V2'; // ✨ v2.0
+import OrbitPannerUI_V2 from '@/components/plugins/effects/OrbitPannerUI_V2'; // ✨ v2.0
 
 // Tier 3: Specialized
-import { ArcadeCrusherUI } from '@/components/plugins/effects/ArcadeCrusherUI.jsx';
-import { PitchShifterUI } from '@/components/plugins/effects/PitchShifterUI.jsx';
-import { BassEnhancer808UI } from '@/components/plugins/effects/BassEnhancer808UI';
-import { TransientDesignerUI } from '@/components/plugins/effects/TransientDesignerUI.jsx';
-import HalfTimeUI from '@/components/plugins/effects/HalfTimeUI.jsx';
-import LimiterUI from '@/components/plugins/effects/LimiterUI.jsx';
-import ClipperUI from '@/components/plugins/effects/ClipperUI.jsx';
-import RhythmFXUI from '@/components/plugins/effects/RhythmFXUI.jsx';
+import ArcadeCrusherUI_V2 from '@/components/plugins/effects/ArcadeCrusherUI_V2'; // ✨ v2.0
+import PitchShifterUI_V2 from '@/components/plugins/effects/PitchShifterUI_V2'; // ✨ v2.0
+import BassEnhancer808UI_V2 from '@/components/plugins/effects/BassEnhancer808UI_V2'; // ✨ v2.0
+import TransientDesignerUI_V2 from '@/components/plugins/effects/TransientDesignerUI_V2'; // ✨ v2.0
+import HalfTimeUI_V2 from '@/components/plugins/effects/HalfTimeUI_V2'; // ✨ v2.0
+import LimiterUI_V2 from '@/components/plugins/effects/LimiterUI_V2'; // ✨ v2.0
+import ClipperUI_V2 from '@/components/plugins/effects/ClipperUI_V2'; // ✨ v2.0
+import RhythmFXUI_V2 from '@/components/plugins/effects/RhythmFXUI_V2'; // ✨ v2.0
 
 // Master Chain
-import { MaximizerUI } from '@/components/plugins/effects/MaximizerUI.jsx';
-import { ImagerUI } from '@/components/plugins/effects/ImagerUI.jsx';
+import MaximizerUI_V2 from '@/components/plugins/effects/MaximizerUI_V2'; // ✨ v2.0
+import ImagerUI_V2 from '@/components/plugins/effects/ImagerUI_V2'; // ✨ v2.0
 
 /**
  * @file pluginConfig.jsx
@@ -45,226 +71,447 @@ export const pluginRegistry = {
     type: 'Saturator',
     category: 'The Texture Lab',
     story: "Vintage tüp amplifikatörlerin sıcaklığı - From subtle warmth to molten distortion.",
-    toneNode: 'Distortion',
-    uiComponent: SaturatorUI,
+    toneNode: 'Saturator',
+    uiComponent: SaturatorUI_V2,
     initialSize: { width: 1100, height: 750 },
     minSize: { width: 1000, height: 650 },
     defaultSettings: {
-      distortion: 0.4,
-      wet: 1.0,
+      distortion: 0.25,  // More conservative starting point
+      wet: 0.7,          // Blend for musicality instead of 100% wet
       autoGain: 1,
-      lowCutFreq: 0,
+      lowCutFreq: 20,    // Full range
       highCutFreq: 20000,
       tone: 0,
       headroom: 0
     },
-    // Presets are now managed by preset modes system
+    // ✨ v2.0: Factory presets managed by PresetManager
     // See: @/config/presets/saturatorPresets.js
-    presets: []
+    presets: saturatorPresets
   },
   'Compressor': {
     type: 'Compressor',
     category: 'The Dynamics Forge',
     story: "Kozmik Atölye'nin presi - From gentle control to aggressive limiting.",
     toneNode: 'Compressor',
-    uiComponent: AdvancedCompressorUI,
+    uiComponent: AdvancedCompressorUI_V2,
     initialSize: { width: 1200, height: 800 },
     minSize: { width: 1100, height: 700 },
     defaultSettings: {
-      threshold: -24,
-      ratio: 4,
-      attack: 0.01,
-      release: 0.1,
-      knee: 12,
+      threshold: -20,      // Less aggressive starting point
+      ratio: 3,            // More musical ratio (3:1)
+      attack: 0.005,       // 5ms - versatile medium-fast attack
+      release: 0.15,       // 150ms - more musical release
+      knee: 10,            // Soft knee for transparency
       wet: 1.0,
+      lookahead: 3,        // Professional default
+      stereoLink: 100,     // Full stereo link
+      autoMakeup: 0,       // Disabled by default
       upwardRatio: 2,
-      upwardDepth: 0
+      upwardDepth: 0,      // Disabled by default
+      // 🎯 NEW v2.0: Detection mode defaults
+      detectionMode: 0,    // 0=Peak (default), 1=RMS
+      rmsWindow: 10,       // 10ms RMS window (SSL-style)
+      // Sidechain defaults
+      scEnable: 0,
+      scGain: 0,
+      scFilterType: 1,     // 1=HPF
+      scFreq: 150,
+      scListen: 0
     },
-    // Presets are now managed by preset modes system
+    // ✨ v2.0: Factory presets managed by PresetManager
     // See: @/config/presets/compressorPresets.js
-    presets: []
+    presets: compressorPresets
   },
   'OTT': {
     type: 'OTT',
     category: 'The Dynamics Forge',
     story: "Over the top - Xfer OTT'den ilham alan multiband compression gücü.",
     toneNode: 'OTT',
-    uiComponent: OTTUI,
+    uiComponent: OTTUI_V2, // ✨ v2.0
     initialSize: { width: 1300, height: 920 },
     minSize: { width: 1200, height: 920 },
     defaultSettings: {
-      depth: 0.5,
-      time: 0.5,
-      lowUpRatio: 3,
-      lowDownRatio: 3,
+      depth: 0.3,          // Gentler starting point (30%)
+      time: 0.5,           // Medium timing
+      lowUpRatio: 2.5,     // Gentler low-end compression
+      lowDownRatio: 2.5,
       lowGain: 0,
-      midUpRatio: 3,
+      midUpRatio: 3,       // Standard mid-range
       midDownRatio: 3,
       midGain: 0,
-      highUpRatio: 3,
+      highUpRatio: 3,      // Standard high-end
       highDownRatio: 3,
       highGain: 0,
       wet: 1.0
     },
-    // Presets are now managed by OTT modes system
+    // ✨ v2.0: Factory presets managed by PresetManager
     // See: @/config/presets/ottPresets.js
-    presets: []
+    presets: ottPresets
   },
   'MultiBandEQ': {
-    type: 'MultiBandEQ', category: 'The Spectral Weave', story: "Sesin tayfını, bir heykeltıraş gibi biçimlendir.",
-    toneNode: 'MultiBand', uiComponent: AdvancedEQUI,
-    initialSize: { width: 810, height: 620 },
-    minSize: { width: 810, height: 620 },
+    type: 'MultiBandEQ',
+    category: 'The Spectral Weave',
+    story: "Shape the spectrum like a sculptor - v2.0 with WebGL analyzer",
+    toneNode: 'MultiBandEQ',
+    uiComponent: MultiBandEQUI_V2, // ✨ v2.0
+    initialSize: { width: 1200, height: 700 },
+    minSize: { width: 1000, height: 600 },
     // --- DEĞİŞİKLİK BURADA ---
     // Her banda benzersiz ve kalıcı bir 'id' eklendi.
     defaultSettings: {
       bands: [
-        { id: 'band-low', type: 'lowshelf', frequency: 120, gain: 0, q: 0.71, active: true },
-        { id: 'band-mid', type: 'peaking', frequency: 1000, gain: 0, q: 1.5, active: true },
-        { id: 'band-high', type: 'highshelf', frequency: 8000, gain: 0, q: 0.71, active: true },
+        { id: 'band-1', type: 'highpass', frequency: 30, gain: 0, q: 0.71, active: true },    // Sub rumble filter
+        { id: 'band-2', type: 'lowshelf', frequency: 100, gain: 0, q: 0.71, active: true },   // Bass shelf
+        { id: 'band-3', type: 'peaking', frequency: 500, gain: 0, q: 1.0, active: true },     // Low-mid
+        { id: 'band-4', type: 'peaking', frequency: 2000, gain: 0, q: 1.0, active: true },    // Presence
+        { id: 'band-5', type: 'highshelf', frequency: 10000, gain: 0, q: 0.71, active: true } // Air
       ],
       wet: 1.0,
+      output: 1.0
     },
-    // --- DEĞİŞİKLİK SONU ---
+    // v2.0: Factory presets managed by PresetManager
+    presets: EQ_FACTORY_PRESETS
+  },
+  'MultiBandEQ_OLD': {
+    type: 'MultiBandEQ_OLD',
+    category: 'The Spectral Weave',
+    story: "Legacy EQ (v1.0) - use MultiBandEQ for v2.0",
+    toneNode: 'MultiBandEQ',
+    uiComponent: AdvancedEQUI, // Old version
+    initialSize: { width: 810, height: 620 },
+    minSize: { width: 810, height: 620 },
+    defaultSettings: {
+      bands: [
+        { id: 'band-1', type: 'highpass', frequency: 30, gain: 0, q: 0.71, active: true },
+        { id: 'band-2', type: 'lowshelf', frequency: 100, gain: 0, q: 0.71, active: true },
+        { id: 'band-3', type: 'peaking', frequency: 500, gain: 0, q: 1.0, active: true },
+        { id: 'band-4', type: 'peaking', frequency: 2000, gain: 0, q: 1.0, active: true },
+        { id: 'band-5', type: 'highshelf', frequency: 10000, gain: 0, q: 0.71, active: true }
+      ],
+      wet: 1.0,
+      output: 1.0
+    },
     presets: [
-        { name: 'Vokal Parlaklığı', settings: { bands: [ { id: 'band-1', type: 'peaking', frequency: 4000, gain: 2, q: 1.5, active: true }, { id: 'band-2', type: 'highshelf', frequency: 10000, gain: 1, q: 0.71, active: true } ] } },
-        { name: 'Bass Gücü', settings: { bands: [ { id: 'band-1', type: 'peaking', frequency: 80, gain: 3, q: 1.2, active: true }, { id: 'band-2', type: 'peaking', frequency: 400, gain: -2, q: 2, active: true } ] } },
+      {
+        name: 'Vocal Clarity (Legacy)',
+        description: 'Clean vocal presence with HPF',
+        genre: ['Pop', 'Rock', 'R&B'],
+        settings: {
+          bands: [
+            { id: 'band-1', type: 'highpass', frequency: 100, gain: 0, q: 0.71, active: true },
+            { id: 'band-2', type: 'peaking', frequency: 3000, gain: 2.5, q: 1.5, active: true },
+            { id: 'band-3', type: 'highshelf', frequency: 8000, gain: 1.5, q: 0.71, active: true }
+          ]
+        }
+      },
+      {
+        name: 'Vocal Air',
+        description: 'Add shimmer and brightness',
+        genre: ['Pop', 'Electronic'],
+        settings: {
+          bands: [
+            { id: 'band-1', type: 'highpass', frequency: 80, gain: 0, q: 0.71, active: true },
+            { id: 'band-2', type: 'highshelf', frequency: 10000, gain: 2, q: 0.71, active: true }
+          ]
+        }
+      },
+      {
+        name: 'De-Muddy Vocal',
+        description: 'Remove boxiness and mud',
+        genre: ['All Genres'],
+        settings: {
+          bands: [
+            { id: 'band-1', type: 'peaking', frequency: 300, gain: -3, q: 2, active: true },
+            { id: 'band-2', type: 'peaking', frequency: 3000, gain: 2, q: 1.5, active: true }
+          ]
+        }
+      },
+
+      // === BASS PRESETS ===
+      {
+        name: 'Bass Punch',
+        description: 'Sub boost with mud cut',
+        genre: ['EDM', 'Hip-Hop', 'Rock'],
+        settings: {
+          bands: [
+            { id: 'band-1', type: 'peaking', frequency: 80, gain: 3, q: 1.2, active: true },
+            { id: 'band-2', type: 'peaking', frequency: 300, gain: -2, q: 2, active: true }
+          ]
+        }
+      },
+      {
+        name: 'Sub Bass Boost',
+        description: 'Deep low-end enhancement',
+        genre: ['EDM', 'Hip-Hop'],
+        settings: {
+          bands: [
+            { id: 'band-1', type: 'lowshelf', frequency: 60, gain: 4, q: 0.71, active: true },
+            { id: 'band-2', type: 'peaking', frequency: 250, gain: -2, q: 1.5, active: true }
+          ]
+        }
+      },
+
+      // === DRUM PRESETS ===
+      {
+        name: 'Kick Drum',
+        description: 'Sub punch with attack clarity',
+        genre: ['EDM', 'Hip-Hop', 'Rock'],
+        settings: {
+          bands: [
+            { id: 'band-1', type: 'peaking', frequency: 60, gain: 3, q: 1.5, active: true },
+            { id: 'band-2', type: 'peaking', frequency: 3000, gain: 2, q: 1.5, active: true }
+          ]
+        }
+      },
+      {
+        name: 'Snare Crack',
+        description: 'Body and snap for snares',
+        genre: ['Rock', 'Pop', 'Hip-Hop'],
+        settings: {
+          bands: [
+            { id: 'band-1', type: 'peaking', frequency: 200, gain: 2, q: 1.0, active: true },
+            { id: 'band-2', type: 'peaking', frequency: 400, gain: -2, q: 3, active: true },
+            { id: 'band-3', type: 'peaking', frequency: 5000, gain: 3, q: 1.5, active: true }
+          ]
+        }
+      },
+
+      // === INSTRUMENT PRESETS ===
+      {
+        name: 'Acoustic Guitar',
+        description: 'Natural acoustic guitar tone',
+        genre: ['Folk', 'Pop', 'Rock'],
+        settings: {
+          bands: [
+            { id: 'band-1', type: 'highpass', frequency: 80, gain: 0, q: 0.71, active: true },
+            { id: 'band-2', type: 'peaking', frequency: 200, gain: -1.5, q: 1.5, active: true },
+            { id: 'band-3', type: 'peaking', frequency: 3000, gain: 2, q: 1.0, active: true },
+            { id: 'band-4', type: 'highshelf', frequency: 10000, gain: 1.5, q: 0.71, active: true }
+          ]
+        }
+      },
+      {
+        name: 'Electric Guitar',
+        description: 'Cut mud, add presence',
+        genre: ['Rock', 'Metal', 'Blues'],
+        settings: {
+          bands: [
+            { id: 'band-1', type: 'highpass', frequency: 100, gain: 0, q: 0.71, active: true },
+            { id: 'band-2', type: 'peaking', frequency: 250, gain: -2, q: 2, active: true },
+            { id: 'band-3', type: 'peaking', frequency: 2000, gain: 3, q: 1.5, active: true }
+          ]
+        }
+      },
+      {
+        name: 'Piano Warmth',
+        description: 'Warm piano with air',
+        genre: ['Jazz', 'Classical', 'Pop'],
+        settings: {
+          bands: [
+            { id: 'band-1', type: 'lowshelf', frequency: 250, gain: 1.5, q: 0.71, active: true },
+            { id: 'band-2', type: 'highshelf', frequency: 12000, gain: 2, q: 0.71, active: true }
+          ]
+        }
+      },
+      {
+        name: 'Synth Lead',
+        description: 'Bright, cutting synth lead',
+        genre: ['EDM', 'Electronic', 'Pop'],
+        settings: {
+          bands: [
+            { id: 'band-1', type: 'highpass', frequency: 150, gain: 0, q: 0.71, active: true },
+            { id: 'band-2', type: 'peaking', frequency: 2000, gain: 3, q: 1.5, active: true },
+            { id: 'band-3', type: 'highshelf', frequency: 8000, gain: 2, q: 0.71, active: true }
+          ]
+        }
+      },
+
+      // === MASTERING PRESETS ===
+      {
+        name: 'Mix Bus Glue',
+        description: 'Gentle master bus enhancement',
+        genre: ['All Genres'],
+        settings: {
+          bands: [
+            { id: 'band-1', type: 'highpass', frequency: 30, gain: 0, q: 0.71, active: true },
+            { id: 'band-2', type: 'highshelf', frequency: 10000, gain: 0.5, q: 0.71, active: true }
+          ]
+        }
+      },
+      {
+        name: 'Master Bright',
+        description: 'Add sparkle to master',
+        genre: ['Pop', 'Electronic'],
+        settings: {
+          bands: [
+            { id: 'band-1', type: 'highshelf', frequency: 8000, gain: 1.5, q: 0.71, active: true }
+          ]
+        }
+      },
+      {
+        name: 'Master Warm',
+        description: 'Add warmth to master',
+        genre: ['Rock', 'Jazz', 'Soul'],
+        settings: {
+          bands: [
+            { id: 'band-1', type: 'lowshelf', frequency: 100, gain: 1, q: 0.71, active: true }
+          ]
+        }
+      },
+      {
+        name: 'De-Ess',
+        description: 'Reduce sibilance',
+        genre: ['Vocal Processing'],
+        settings: {
+          bands: [
+            { id: 'band-1', type: 'peaking', frequency: 7000, gain: -4, q: 3, active: true }
+          ]
+        }
+      }
     ]
   },
   'TidalFilter': {
-    type: 'TidalFilter', category: 'The Spectral Weave', story: "Sesin üzerinden gelgit dalgaları gibi geçen ritmik filtre.",
-    toneNode: 'AutoFilter', uiComponent: TidalFilterUI,
-    initialSize: { width: 1235, height: 640 },
-    minSize: { width: 1235, height: 640 },
-    defaultSettings: { frequency: '8n', baseFrequency: 400, octaves: 2, wet: 1.0 },
-    presets: [
-      { name: 'Yavaş Süpürme', settings: { frequency: '1n', baseFrequency: 200, octaves: 4, wet: 1.0 } },
-      { name: 'Synth Ritim', settings: { frequency: '16n', baseFrequency: 800, octaves: 3, wet: 0.7 } },
-    ]
+    type: 'TidalFilter',
+    category: 'The Spectral Weave',
+    story: "Professional state-variable filter with smooth morphing - v2.0 with spectral visualization",
+    toneNode: 'TidalFilter',
+    uiComponent: TidalFilterUI_V2, // ✨ v2.0
+    initialSize: { width: 1100, height: 700 },
+    minSize: { width: 1000, height: 600 },
+    defaultSettings: {
+      cutoff: 1000,
+      resonance: 0.5,
+      filterType: 0, // 0=Lowpass, 0.5=Bandpass, 0.85=Highpass, 1=Notch
+      drive: 1.0,
+      wet: 1.0
+    },
+    // ✨ v2.0: Factory presets managed by PresetManager
+    // See: @/config/presets/tidalFilterPresets.js
+    presets: tidalFilterPresets
   },
   'StardustChorus': {
-    type: 'StardustChorus', category: 'Modulation Machines', story: "Sesi, yıldız tozundan bir bulutla sarmalar.",
-    toneNode: 'Chorus', uiComponent: StardustChorusUI,
-    initialSize: { width: 630, height: 670 },
-    minSize: { width: 630, height: 670 },
-    defaultSettings: { frequency: 1.5, delayTime: 3.5, depth: 0.7, wet: 0.5 },
-    presets: [
-      { name: 'Hafif Işıltı', settings: { frequency: 0.8, delayTime: 4.5, depth: 0.5, wet: 0.4 } },
-      { name: 'Sıvı Gitar', settings: { frequency: 2.2, delayTime: 2.8, depth: 0.8, wet: 0.6 } },
-    ]
+    type: 'StardustChorus',
+    category: 'Cosmic Modulation',
+    story: "Professional chorus with galaxy particle visualization - v2.0 with rich spatial effects",
+    toneNode: 'StardustChorus',
+    uiComponent: StardustChorusUI_V2, // ✨ v2.0
+    initialSize: { width: 1100, height: 700 },
+    minSize: { width: 1000, height: 600 },
+    defaultSettings: {
+      frequency: 1.5,
+      delayTime: 3.5,
+      depth: 0.7,
+      wet: 0.5
+    },
+    // ✨ v2.0: Factory presets managed by PresetManager
+    // See: @/config/presets/stardustChorusPresets.js
+    presets: stardustChorusPresets
   },
   'VortexPhaser': {
-    type: 'VortexPhaser', category: 'Modulation Machines', story: "Sesi, bir girdabın içine çeker.",
-    toneNode: 'Phaser', uiComponent: VortexPhaserUI,
-    initialSize: { width: 1170, height: 640 },
-    minSize: { width: 1170, height: 640 },
-    defaultSettings: { frequency: 0.5, octaves: 3, baseFrequency: 350, wet: 0.5 },
-     presets: [
-      { name: 'Yavaş Girdap', settings: { frequency: 0.2, octaves: 5, wet: 0.4, baseFrequency: 400 } },
-      { name: 'Jet Motoru', settings: { frequency: 4, octaves: 6, baseFrequency: 600, wet: 0.7 } },
-    ]
+    type: 'VortexPhaser',
+    category: 'Cosmic Modulation',
+    story: "Professional phaser with spectral visualization - v2.0 with sweeping notch filters",
+    toneNode: 'VortexPhaser',
+    uiComponent: VortexPhaserUI_V2, // ✨ v2.0
+    initialSize: { width: 1100, height: 750 },
+    minSize: { width: 1000, height: 650 },
+    defaultSettings: {
+      rate: 0.5,
+      depth: 0.6,
+      stages: 4,
+      feedback: 0.3,
+      stereoPhase: 90,
+      wet: 0.7
+    },
+    // ✨ v2.0: Factory presets managed by PresetManager
+    // See: @/config/presets/vortexPhaserPresets.js
+    presets: vortexPhaserPresets
   },
   'OrbitPanner': {
-    type: 'OrbitPanner', category: 'Modulation Machines', story: "Sesi, stereo alanında yörüngeye oturtur.",
-    toneNode: 'AutoPanner', uiComponent: OrbitPannerUI,
-    initialSize: { width: 1160, height: 780 },
-    minSize: { width: 1160, height: 780 },
-    defaultSettings: { frequency: '4n', depth: 1, wet: 1.0 },
-    presets: [
-      { name: 'Yavaş Yörünge', settings: { frequency: '2m', depth: 1, wet: 1.0 } },
-      { name: 'Hızlı Döngü', settings: { frequency: '8n', depth: 0.9, wet: 0.8 } },
-    ]
+    type: 'OrbitPanner',
+    category: 'Cosmic Modulation',
+    story: "Professional auto-panner with orbit visualization - v2.0",
+    toneNode: 'OrbitPanner',
+    uiComponent: OrbitPannerUI_V2, // ✨ v2.0
+    initialSize: { width: 1100, height: 700 },
+    minSize: { width: 1000, height: 600 },
+    defaultSettings: {
+      rate: 1.0,
+      depth: 0.7,
+      shape: 0,
+      stereoWidth: 1.0,
+      wet: 1.0
+    },
+    presets: orbitPannerPresets
   },
   'ArcadeCrusher': {
-    type: 'ArcadeCrusher', category: 'The Texture Lab', story: "Sesi, 8-bit bir video oyunu karakterine dönüştürür.",
-    toneNode: 'BitCrusher', uiComponent: ArcadeCrusherUI,
-    initialSize: { width: 1045, height: 566 },
-    minSize: { width: 1045, height: 566 },
-    defaultSettings: { bits: 4, wet: 1.0 },
-    presets: [
-      { name: 'Atari Sesi', settings: { bits: 4, wet: 0.8 } },
-      { name: 'Lo-Fi Vokal', settings: { bits: 6, wet: 0.5 } },
-    ]
+    type: 'ArcadeCrusher',
+    category: 'The Texture Lab',
+    story: "Professional bit-crushing with retro arcade aesthetics - v2.0",
+    toneNode: 'ArcadeCrusher',
+    uiComponent: ArcadeCrusherUI_V2, // ✨ v2.0
+    initialSize: { width: 1100, height: 700 },
+    minSize: { width: 1000, height: 600 },
+    defaultSettings: {
+      bitDepth: 8,
+      sampleRateReduction: 2,
+      crush: 0.5,
+      wet: 1.0
+    },
+    presets: arcadeCrusherPresets
   },
   'PitchShifter': {
-    type: 'PitchShifter', category: 'The Texture Lab', story: "Sesin DNA'sıyla oynayarak onu bir deve veya cüceye dönüştürür.",
-    toneNode: 'PitchShift', uiComponent: PitchShifterUI,
-    initialSize: { width: 1135, height: 596 },
-    minSize: { width: 1135, height: 596 },
-    defaultSettings: { pitch: 0, windowSize: 0.1, wet: 1.0 },
-    presets: [
-      { name: 'Oktav Altı', settings: { pitch: -12, wet: 0.6, windowSize: 0.1 } },
-      { name: 'Beşli Yukarı', settings: { pitch: 7, wet: 0.5, windowSize: 0.1 } },
-    ]
+    type: 'PitchShifter',
+    category: 'The Texture Lab',
+    story: "Professional pitch-shifting with harmonic visualization - v2.0",
+    toneNode: 'PitchShifter',
+    uiComponent: PitchShifterUI_V2, // ✨ v2.0
+    initialSize: { width: 1100, height: 700 },
+    minSize: { width: 1000, height: 600 },
+    defaultSettings: {
+      pitch: 0,
+      fineTune: 0,
+      formantShift: 0,
+      quality: 1,        // 0=Fast, 1=Normal, 2=High
+      inputGain: 0,
+      outputGain: 0,
+      wet: 1.0
+      // Note: windowSize removed - now auto-optimized to prevent phaser artifacts
+    },
+    presets: pitchShifterPresets
   },
   'BassEnhancer808': {
     type: 'BassEnhancer808',
-    name: '808 Bass Enhancer',
-    description: 'Next-generation multiband 808 bass processing suite',
-    category: 'dynamics',
+    category: 'The Dynamics Forge',
+    story: "Professional 808-style bass enhancement with TASTE & TEXTURE - v2.0",
     toneNode: 'BassEnhancer808',
-    uiComponent: BassEnhancer808UI,
+    uiComponent: BassEnhancer808UI_V2, // ✨ v2.0
+    initialSize: { width: 1100, height: 700 },
+    minSize: { width: 1000, height: 600 },
     defaultSettings: {
-      saturation: 0.3,
-      compression: 0.4,
-      subBoost: 0.6,
+      subBoost: 0.5,
+      saturation: 0.5,
       punch: 0.5,
-      warmth: 0.3,
+      taste: 0.5,
+      texture: 0.5,
       wet: 1.0
     },
-    presets: [
-      {
-        name: 'Sub Monster',
-        settings: { saturation: 0.2, compression: 0.6, subBoost: 0.9, punch: 0.7, warmth: 0.4 }
-      },
-      {
-        name: 'Trap Knock',
-        settings: { saturation: 0.5, compression: 0.8, subBoost: 0.5, punch: 0.9, warmth: 0.3 }
-      },
-      {
-        name: 'Drill Bass',
-        settings: { saturation: 0.7, compression: 0.5, subBoost: 0.4, punch: 0.8, warmth: 0.6 }
-      },
-      {
-        name: 'Future Bass',
-        settings: { saturation: 0.4, compression: 0.3, subBoost: 0.7, punch: 0.4, warmth: 0.8 }
-      },
-      {
-        name: 'Phonk Heavy',
-        settings: { saturation: 0.8, compression: 0.9, subBoost: 0.6, punch: 1.0, warmth: 0.2 }
-      },
-      {
-        name: 'Lofi Warm',
-        settings: { saturation: 0.6, compression: 0.3, subBoost: 0.5, punch: 0.2, warmth: 0.9 }
-      },
-      {
-        name: 'UK Drill',
-        settings: { saturation: 0.9, compression: 0.7, subBoost: 0.3, punch: 0.9, warmth: 0.1 }
-      }
-    ],
-    parameters: [
-      { id: 'saturation', name: 'Saturation', min: 0, max: 1, default: 0.3, unit: '%' },
-      { id: 'compression', name: 'Compression', min: 0, max: 1, default: 0.4, unit: '%' },
-      { id: 'subBoost', name: 'Sub Boost', min: 0, max: 1, default: 0.6, unit: '%' },
-      { id: 'punch', name: 'Punch', min: 0, max: 1, default: 0.5, unit: '%' },
-      { id: 'warmth', name: 'Warmth', min: 0, max: 1, default: 0.3, unit: '%' },
-      { id: 'wet', name: 'Mix', min: 0, max: 1, default: 1.0, unit: '%' }
-    ]
+    presets: bassEnhancer808Presets
   },
   'TransientDesigner': {
     type: 'TransientDesigner',
     category: 'The Dynamics Forge',
-    story: "Shape the attack and sustain of any sound - From punchy drums to smooth textures.",
+    story: "Shape the attack and sustain of any sound - From punchy drums to smooth textures - v2.0",
     toneNode: 'TransientDesigner',
-    uiComponent: TransientDesignerUI,
-    initialSize: { width: 1100, height: 660 },
-    minSize: { width: 1100, height: 660 },
+    uiComponent: TransientDesignerUI_V2, // ✨ v2.0
+    initialSize: { width: 1100, height: 700 },
+    minSize: { width: 1000, height: 600 },
     defaultSettings: {
       attack: 0,
       sustain: 0,
       mix: 1.0
     },
-    presets: []
+    presets: transientDesignerPresets
   },
   'ModernReverb': {
     type: 'ModernReverb',
@@ -273,73 +520,24 @@ export const pluginRegistry = {
     category: 'The Spacetime Chamber',
     story: 'Freeverb algoritması ile profesyonel reverb motoru',
     toneNode: 'ModernReverb',
-    uiComponent: ModernReverbUI,
+    uiComponent: ModernReverbUI_V2, // ✨ v2.0
     initialSize: { width: 1100, height: 720 },
     minSize: { width: 1100, height: 720 },
     defaultSettings: {
-      size: 0.7,
-      decay: 2.5,
+      size: 0.5,         // Medium room - more versatile
+      decay: 1.5,        // Shorter decay for general use
       damping: 0.5,
       width: 1.0,
-      preDelay: 0.02,
-      wet: 0.35,
+      preDelay: 0.015,   // 15ms - natural pre-delay
+      wet: 0.25,         // More conservative mix
       earlyLateMix: 0.5,
       diffusion: 0.7,
       modDepth: 0.3,
       modRate: 0.5
     },
-    presets: [
-      // 🎯 METHODOLOGY: Real acoustic spaces + analog equipment references
-      { 
-        name: 'Room', 
-        description: 'Small intimate space - Studio room',
-        genre: ['All Genres'],
-        reference: 'Studio Room',
-        settings: { size: 0.35, decay: 0.8, damping: 0.4, wet: 0.25, earlyLateMix: 0.4, preDelay: 0.015, diffusion: 0.6 } 
-      },
-      { 
-        name: 'Hall', 
-        description: 'Concert hall - Large acoustic space',
-        genre: ['Classical', 'Jazz', 'Rock'],
-        reference: 'Concert Hall',
-        settings: { size: 0.65, decay: 2.5, damping: 0.5, wet: 0.35, earlyLateMix: 0.5, preDelay: 0.02, diffusion: 0.7 } 
-      },
-      { 
-        name: 'Cathedral', 
-        description: 'Vast sacred space - Long decay',
-        genre: ['Ambient', 'Classical', 'Electronic'],
-        reference: 'Cathedral Acoustics',
-        settings: { size: 0.9, decay: 6.0, damping: 0.7, wet: 0.45, earlyLateMix: 0.7, preDelay: 0.03, diffusion: 0.8 } 
-      },
-      { 
-        name: 'Plate', 
-        description: 'Lexicon-style plate reverb',
-        genre: ['Rock', 'Pop', 'Hip-Hop'],
-        reference: 'Lexicon Plate',
-        settings: { size: 0.5, decay: 1.8, damping: 0.2, wet: 0.4, earlyLateMix: 0.3, diffusion: 0.9, preDelay: 0.01 } 
-      },
-      { 
-        name: 'Vocal', 
-        description: 'Vocal plate - Warm and smooth',
-        genre: ['Pop', 'R&B', 'Soul'],
-        reference: 'Vocal Plate',
-        settings: { size: 0.45, decay: 1.5, damping: 0.6, wet: 0.3, earlyLateMix: 0.45, preDelay: 0.015, diffusion: 0.75 } 
-      },
-      { 
-        name: 'Ambient', 
-        description: 'Infinite soundscape - Long tail',
-        genre: ['Ambient', 'Electronic', 'Cinematic'],
-        reference: 'Ambient Reverb',
-        settings: { size: 0.95, decay: 10.0, damping: 0.8, wet: 0.6, earlyLateMix: 0.8, diffusion: 0.9, preDelay: 0.04 } 
-      },
-      { 
-        name: 'Chamber', 
-        description: 'Recording chamber - Medium decay',
-        genre: ['Jazz', 'Rock', 'Pop'],
-        reference: 'Chamber Reverb',
-        settings: { size: 0.55, decay: 1.2, damping: 0.5, wet: 0.32, earlyLateMix: 0.5, preDelay: 0.018, diffusion: 0.7 } 
-      }
-    ]
+    // ✨ v2.0: Factory presets managed by PresetManager
+    // See: @/config/presets/reverbPresets.js
+    presets: reverbPresets
   },
   'ModernDelay': {
     type: 'ModernDelay',
@@ -348,87 +546,33 @@ export const pluginRegistry = {
     category: 'The Spacetime Chamber',
     story: 'Multi-tap stereo delay - Ping-pong, filtre ve saturasyon',
     toneNode: 'ModernDelay',
-    uiComponent: ModernDelayUI,
+    uiComponent: ModernDelayUI_V2, // ✨ v2.0
     initialSize: { width: 1100, height: 760 },
     minSize: { width: 1100, height: 760 },
     defaultSettings: {
-      timeLeft: 0.375,
-      timeRight: 0.5,
-      feedbackLeft: 0.4,
+      timeLeft: 0.375,     // 3/8 note (dotted eighth @ 120 BPM)
+      timeRight: 0.5,      // Quarter note @ 120 BPM
+      feedbackLeft: 0.4,   // Moderate feedback
       feedbackRight: 0.4,
-      pingPong: 0.0,
-      wet: 0.35,
+      pingPong: 0,         // No ping-pong by default
+      wet: 0.35,           // Conservative mix
       filterFreq: 8000,
-      filterQ: 1.0,
-      saturation: 0.0,
-      modDepth: 0.0,
-      modRate: 0.5,
-      diffusion: 0.0,
-      width: 1.0
+      saturation: 0.0,     // Off by default
+      diffusion: 0.0,      // Off by default
+      width: 1.0           // Normal stereo width
     },
-    presets: [
-      // 🎯 METHODOLOGY: Classic delay techniques + tempo-synced delays
-      { 
-        name: 'Slapback', 
-        description: 'Vintage rockabilly echo - Short delay',
-        genre: ['Rock', 'Country', 'Blues'],
-        reference: '1950s Rockabilly',
-        settings: { timeLeft: 0.08, timeRight: 0.085, feedbackLeft: 0.15, feedbackRight: 0.15, pingPong: 0.0, wet: 0.25, saturation: 0.2, filterFreq: 8000 } 
-      },
-      { 
-        name: 'Ping-Pong', 
-        description: 'Stereo bouncing delay - Classic effect',
-        genre: ['Pop', 'Electronic', 'Rock'],
-        reference: 'Classic Ping-Pong',
-        settings: { timeLeft: 0.375, timeRight: 0.5, feedbackLeft: 0.5, feedbackRight: 0.5, pingPong: 0.9, wet: 0.4, diffusion: 0.3, filterFreq: 6000 } 
-      },
-      { 
-        name: 'Dub', 
-        description: 'Reggae-style echo - Filtered feedback',
-        genre: ['Reggae', 'Dub', 'Electronic'],
-        reference: 'King Tubby Style',
-        settings: { timeLeft: 0.5, timeRight: 0.75, feedbackLeft: 0.7, feedbackRight: 0.7, pingPong: 0.6, wet: 0.5, filterFreq: 2000, saturation: 0.4, diffusion: 0.5 } 
-      },
-      { 
-        name: 'Ambient', 
-        description: 'Long atmospheric delay - Wide stereo',
-        genre: ['Ambient', 'Electronic', 'Cinematic'],
-        reference: 'Ambient Delay',
-        settings: { timeLeft: 1.2, timeRight: 1.5, feedbackLeft: 0.8, feedbackRight: 0.8, pingPong: 0.3, wet: 0.6, filterFreq: 5000, diffusion: 0.8, modDepth: 0.02 } 
-      },
-      { 
-        name: 'Tape', 
-        description: 'Analog tape echo - Warm character',
-        genre: ['Rock', 'Pop', 'Blues'],
-        reference: 'Echoplex',
-        settings: { timeLeft: 0.425, timeRight: 0.425, feedbackLeft: 0.45, feedbackRight: 0.45, pingPong: 0.0, wet: 0.35, filterFreq: 4000, saturation: 0.4, modDepth: 0.01, diffusion: 0.15 } 
-      },
-      { 
-        name: 'Eighth Note', 
-        description: 'Tempo-synced 1/8 note delay',
-        genre: ['EDM', 'Hip-Hop', 'Pop'],
-        reference: 'Tempo Sync',
-        settings: { timeLeft: 0.25, timeRight: 0.25, feedbackLeft: 0.3, feedbackRight: 0.3, pingPong: 0.5, wet: 0.3, filterFreq: 7000, diffusion: 0.2 } 
-      },
-      { 
-        name: 'Quarter Note', 
-        description: 'Tempo-synced 1/4 note delay',
-        genre: ['Rock', 'Pop', 'Electronic'],
-        reference: 'Tempo Sync',
-        settings: { timeLeft: 0.5, timeRight: 0.5, feedbackLeft: 0.4, feedbackRight: 0.4, pingPong: 0.7, wet: 0.35, filterFreq: 6000, diffusion: 0.3 } 
-      }
-    ]
+    // ✨ v2.0: Factory presets managed by PresetManager
+    // See: @/config/presets/delayPresets.js
+    presets: delayPresets
   },
   'HalfTime': {
     type: 'HalfTime',
-    name: 'Half Time',
-    description: 'Professional time-stretching with granular synthesis',
     category: 'The Spacetime Chamber',
-    story: 'Drag music through molasses - Time dilation effect',
+    story: 'Professional time-stretching with granular synthesis - v2.0',
     toneNode: 'HalfTime',
-    uiComponent: HalfTimeUI,
-    initialSize: { width: 900, height: 750 },
-    minSize: { width: 900, height: 750 },
+    uiComponent: HalfTimeUI_V2, // ✨ v2.0
+    initialSize: { width: 1100, height: 700 },
+    minSize: { width: 1000, height: 600 },
     defaultSettings: {
       rate: 0.5,
       smoothing: 50,
@@ -436,60 +580,42 @@ export const pluginRegistry = {
       grainSize: 100,
       grainDensity: 8,
       pitchLock: 1,
-      mix: 100,
-      mode: 0,
-      analogWarmth: 0,
-      glitchAmount: 0
+      mix: 100
     },
-    presets: [
-      { name: 'Clean Half', settings: { rate: 0.5, smoothing: 80, pitchLock: 1, mode: 0, mix: 100 } },
-      { name: 'Tape Slowdown', settings: { rate: 0.5, smoothing: 30, pitchLock: 0, analogWarmth: 40, mode: 1, mix: 100 } },
-      { name: 'Granular Cloud', settings: { rate: 0.5, smoothing: 70, grainDensity: 12, pitchLock: 1, mode: 2, mix: 100 } },
-      { name: 'Vinyl Drag', settings: { rate: 0.5, smoothing: 40, pitchLock: 0, analogWarmth: 60, mode: 3, mix: 100 } },
-      { name: 'Glitch Stutter', settings: { rate: 0.5, smoothing: 90, grainSize: 50, grainDensity: 16, glitchAmount: 30, mode: 5, mix: 100 } },
-      { name: 'Quarter Time', settings: { rate: 0.25, smoothing: 60, pitchLock: 1, mode: 0, mix: 100 } }
-    ]
+    presets: halfTimePresets
   },
   'Limiter': {
     type: 'Limiter',
     name: 'Limiter',
     description: 'Professional mastering-grade peak limiter with true peak detection',
     category: 'The Dynamics Forge',
-    story: 'The Ceiling Guardian - Transparent loudness maximization',
+    story: 'Professional mastering-grade peak limiter with true peak detection - v2.0',
     toneNode: 'Limiter',
-    uiComponent: LimiterUI,
-    initialSize: { width: 750, height: 680 },
-    minSize: { width: 750, height: 680 },
+    uiComponent: LimiterUI_V2, // ✨ v2.0
+    initialSize: { width: 1100, height: 700 },
+    minSize: { width: 1000, height: 600 },
     defaultSettings: {
-      ceiling: -0.1,
+      ceiling: -1.0,       // Streaming-era standard (-1dB TP)
       release: 100,
       attack: 0.1,
       lookahead: 5,
-      knee: 0,
+      knee: 0.2,           // Slight knee for transparency
       stereoLink: 100,
-      autoGain: 0,
-      mode: 0,
+      autoGain: 0,         // Manual control
+      mode: 0,             // Transparent mode
       truePeak: 1,
       oversample: 4
     },
-    presets: [
-      { name: 'Transparent Master', settings: { ceiling: -0.1, release: 500, attack: 0.1, lookahead: 10, knee: 0.3, mode: 0, truePeak: 1, oversample: 4 } },
-      { name: 'Punchy Drums', settings: { ceiling: -0.5, release: 100, attack: 1.0, lookahead: 5, knee: 0, mode: 1, truePeak: 1, oversample: 2 } },
-      { name: 'Aggressive Loud', settings: { ceiling: -0.1, release: 50, attack: 0.01, lookahead: 2, knee: 0, mode: 2, autoGain: 1, truePeak: 1, oversample: 4 } },
-      { name: 'Streaming Ready', settings: { ceiling: -1.0, release: 200, attack: 0.5, lookahead: 8, knee: 0.3, mode: 3, truePeak: 1, oversample: 4 } },
-      { name: 'Vintage Soft', settings: { ceiling: -0.5, release: 300, attack: 5.0, lookahead: 0, knee: 0.5, mode: 4, truePeak: 0, oversample: 1 } }
-    ]
+    presets: limiterPresets
   },
   'Clipper': {
     type: 'Clipper',
-    name: 'Clipper',
-    description: 'Aggressive peak shaping with harmonic generation',
     category: 'The Texture Lab',
-    story: 'The Hard Edge - Add punch and harmonic richness',
+    story: 'Aggressive peak shaping with harmonic generation - v2.0',
     toneNode: 'Clipper',
-    uiComponent: ClipperUI,
-    initialSize: { width: 950, height: 650 },
-    minSize: { width: 950, height: 650 },
+    uiComponent: ClipperUI_V2, // ✨ v2.0
+    initialSize: { width: 1100, height: 700 },
+    minSize: { width: 1000, height: 600 },
     defaultSettings: {
       ceiling: 0.0,
       hardness: 100,
@@ -501,14 +627,7 @@ export const pluginRegistry = {
       dcFilter: 1,
       oversample: 2
     },
-    presets: [
-      { name: 'Hard Clip', settings: { mode: 0, ceiling: 0.0, hardness: 100, harmonics: 30, preGain: 0, mix: 100 } },
-      { name: 'Soft Warmth', settings: { mode: 1, ceiling: 0.0, hardness: 50, harmonics: 60, preGain: 3, mix: 100 } },
-      { name: 'Tube Saturation', settings: { mode: 2, ceiling: 0.0, hardness: 40, harmonics: 80, preGain: 6, mix: 100 } },
-      { name: 'Diode Grit', settings: { mode: 3, ceiling: 0.0, hardness: 60, harmonics: 70, preGain: 4, mix: 100 } },
-      { name: 'Wave Folder', settings: { mode: 4, ceiling: 0.0, hardness: 100, harmonics: 80, preGain: 8, mix: 100 } },
-      { name: 'Lo-Fi Crush', settings: { mode: 5, ceiling: 0.0, hardness: 70, harmonics: 60, preGain: 0, mix: 100 } }
-    ]
+    presets: clipperPresets
   },
 
   'RhythmFX': {
@@ -516,11 +635,11 @@ export const pluginRegistry = {
     name: 'Rhythm FX',
     description: 'Infinite rhythmic possibilities - gate, stutter, glitch, repeat, reverse',
     category: 'The Rhythm Forge',
-    story: 'The Groove Sculptor - Infinite rhythmic creativity',
+    story: 'Infinite rhythmic possibilities - gate, stutter, glitch, repeat, reverse - v2.0',
     toneNode: 'RhythmFX',
-    uiComponent: RhythmFXUI,
-    initialSize: { width: 1000, height: 700 },
-    minSize: { width: 1000, height: 700 },
+    uiComponent: RhythmFXUI_V2, // ✨ v2.0
+    initialSize: { width: 1100, height: 700 },
+    minSize: { width: 1000, height: 600 },
     defaultSettings: {
       division: 16,
       chance: 100,
@@ -533,16 +652,7 @@ export const pluginRegistry = {
       mode: 0,
       bpm: 128
     },
-    presets: [
-      { name: 'Gate Pattern', settings: { mode: 0, division: 16, chance: 100, intensity: 100, swing: 50, fadeTime: 10, bpm: 128 } },
-      { name: 'Stutter Roll', settings: { mode: 1, division: 32, chance: 100, intensity: 100, bufferSize: 100, fadeTime: 5, bpm: 128 } },
-      { name: 'Repeat Loop', settings: { mode: 2, division: 8, chance: 100, intensity: 80, bufferSize: 1000, fadeTime: 15, bpm: 128 } },
-      { name: 'Reverse Build', settings: { mode: 3, division: 16, chance: 100, intensity: 100, bufferSize: 500, fadeTime: 20, bpm: 128 } },
-      { name: 'Glitch Mayhem', settings: { mode: 4, division: 32, chance: 75, intensity: 100, glitchAmount: 80, bufferSize: 300, bpm: 128 } },
-      { name: 'Tape Stop', settings: { mode: 5, division: 8, chance: 100, intensity: 100, tapeSpeed: 50, fadeTime: 10, bpm: 128 } },
-      { name: 'Trap Hi-Hat', settings: { mode: 1, division: 32, chance: 100, intensity: 100, bufferSize: 50, swing: 60, bpm: 140 } },
-      { name: 'Euclidean Dream', settings: { mode: 0, division: 16, chance: 100, intensity: 100, swing: 50, fadeTime: 5, bpm: 128 } }
-    ]
+    presets: rhythmFXPresets
   },
 
   // === MASTER CHAIN EFFECTS ===
@@ -552,51 +662,43 @@ export const pluginRegistry = {
     name: 'Maximizer',
     description: 'Loudness maximizer with soft saturation and brick-wall limiting',
     category: 'The Master Chain',
-    story: 'Make it louder without clipping - Professional mastering tool',
+    story: 'Loudness maximizer with soft saturation and brick-wall limiting - v2.0',
     toneNode: 'Maximizer',
-    uiComponent: MaximizerUI,
-    initialSize: { width: 800, height: 650 },
-    minSize: { width: 800, height: 650 },
+    uiComponent: MaximizerUI_V2, // ✨ v2.0
+    initialSize: { width: 1100, height: 700 },
+    minSize: { width: 1000, height: 600 },
     defaultSettings: {
-      inputGain: 0,
-      saturation: 0.3,
-      ceiling: -0.1,
-      release: 0.1,
-      wet: 1.0
+      inputGain: 2,        // Gentle gain for audible maximizing
+      saturation: 0.2,     // Conservative saturation
+      ceiling: -0.5,       // Safer ceiling for streaming
+      release: 0.15,
+      wet: 1.0,
+      lookahead: 3,        // Professional default
+      truePeak: 1
     },
-    presets: [
-      { name: 'Gentle Loudness', settings: { inputGain: 2, saturation: 0.2, ceiling: -0.3, release: 0.2, wet: 1.0 } },
-      { name: 'Moderate Master', settings: { inputGain: 3, saturation: 0.3, ceiling: -0.1, release: 0.1, wet: 1.0 } },
-      { name: 'Aggressive Loud', settings: { inputGain: 6, saturation: 0.5, ceiling: -0.1, release: 0.05, wet: 1.0 } },
-      { name: 'Warm Glue', settings: { inputGain: 4, saturation: 0.6, ceiling: -0.2, release: 0.15, wet: 1.0 } },
-      { name: 'Transparent', settings: { inputGain: 2, saturation: 0.1, ceiling: -0.5, release: 0.2, wet: 1.0 } }
-    ]
+    presets: maximizerPresets
   },
 
   'Imager': {
     type: 'Imager',
-    name: 'Imager',
-    description: 'Stereo field sculptor with 7 character modes',
     category: 'The Master Chain',
-    story: 'Shape your stereo image instantly - Professional Mid/Side processing',
+    story: 'Professional multiband stereo imaging - v2.0',
     toneNode: 'Imager',
-    uiComponent: ImagerUI,
-    initialSize: { width: 900, height: 720 },
-    minSize: { width: 900, height: 720 },
+    uiComponent: ImagerUI_V2, // ✨ v2.0
+    initialSize: { width: 1100, height: 700 },
+    minSize: { width: 1000, height: 600 },
     defaultSettings: {
-      width: 1.0,
-      midGain: 1.0,
-      sideGain: 1.0,
-      wet: 1.0
+      band1Freq: 100,
+      band2Freq: 600,
+      band3Freq: 3000,
+      band4Freq: 6000,
+      band1Width: 0,
+      band2Width: 0,
+      band3Width: 0,
+      band4Width: 0,
+      globalWidth: 1.0,
+      stereoize: 0
     },
-    presets: [
-      { name: 'Mono (Bass Safe)', settings: { width: 0, midGain: 1.0, sideGain: 0, wet: 1.0 } },
-      { name: 'Narrow', settings: { width: 0.5, midGain: 1.0, sideGain: 0.5, wet: 1.0 } },
-      { name: 'Normal', settings: { width: 1.0, midGain: 1.0, sideGain: 1.0, wet: 1.0 } },
-      { name: 'Wide', settings: { width: 1.4, midGain: 0.85, sideGain: 1.4, wet: 1.0 } },
-      { name: 'Ultra Wide', settings: { width: 1.8, midGain: 0.7, sideGain: 1.8, wet: 1.0 } },
-      { name: 'Enhance Sides', settings: { width: 1.5, midGain: 0.6, sideGain: 1.9, wet: 1.0 } },
-      { name: 'Vocal Focus', settings: { width: 0.7, midGain: 1.3, sideGain: 0.5, wet: 1.0 } }
-    ]
+    presets: imagerPresets
   }
 };

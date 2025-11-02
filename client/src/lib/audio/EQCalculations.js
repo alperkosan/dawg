@@ -51,6 +51,33 @@ export class EQCalculations {
         a1 = 2 * ((A - 1) - (A + 1) * cos_w0);
         a2 = (A + 1) - (A - 1) * cos_w0 - 2 * Math.sqrt(A) * alpha;
         break;
+      case 'highpass':
+        // Highpass filter
+        b0 = (1 + cos_w0) / 2;
+        b1 = -(1 + cos_w0);
+        b2 = (1 + cos_w0) / 2;
+        a0 = 1 + alpha;
+        a1 = -2 * cos_w0;
+        a2 = 1 - alpha;
+        break;
+      case 'lowpass':
+        // Lowpass filter
+        b0 = (1 - cos_w0) / 2;
+        b1 = 1 - cos_w0;
+        b2 = (1 - cos_w0) / 2;
+        a0 = 1 + alpha;
+        a1 = -2 * cos_w0;
+        a2 = 1 - alpha;
+        break;
+      case 'notch':
+        // Notch filter (band-stop)
+        b0 = 1;
+        b1 = -2 * cos_w0;
+        b2 = 1;
+        a0 = 1 + alpha;
+        a1 = -2 * cos_w0;
+        a2 = 1 - alpha;
+        break;
       default:
         return { b0: 1, b1: 0, b2: 0, a0: 1, a1: 0, a2: 0 };
     }

@@ -10,10 +10,20 @@ import { PluginColorPalette, PluginAnimations } from '../PluginDesignSystem';
 
 // --- Profesyonel Knob Bileşeni ---
 // --- Profesyonel Knob Bileşeni - DAHA SAĞLAM ---
+/**
+ * @deprecated Use Knob from '@/components/controls/base/Knob' instead
+ * This component is kept for backward compatibility only
+ * Will be removed in future version
+ *
+ * Migration:
+ * import { Knob } from '@/components/controls/base/Knob';
+ * <Knob sizeVariant="small" /> instead of <ProfessionalKnob size={60} />
+ */
 export const ProfessionalKnob = ({
   label, value = 0, min = 0, max = 100, defaultValue = 50, onChange,
   size = 60, unit = '', precision = 0, logarithmic = false, className = ''
 }) => {
+  console.warn('⚠️ ProfessionalKnob is deprecated. Use Knob from @/components/controls/base/Knob instead.');
   const [isDragging, setIsDragging] = useState(false);
   const dragStartRef = useRef({ y: 0, value: 0 });
   const rafRef = useRef(null);

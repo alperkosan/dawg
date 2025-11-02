@@ -48,7 +48,18 @@ const pitchToMidi = (pitch) => {
 };
 
 // ✅ UTILITY: Convert Tone.js duration to step count
-const durationToSteps = (duration) => {
+// ✅ FL STUDIO STYLE: Support visualLength for display
+const durationToSteps = (duration, useVisual = false, note = null) => {
+  // ✅ FL STUDIO STYLE: Use visualLength if available and useVisual is true
+  if (useVisual && note && note.visualLength !== undefined && typeof note.visualLength === 'number') {
+    return note.visualLength;
+  }
+  
+  // ✅ FL STUDIO STYLE: Use length if available (new format)
+  if (!useVisual && note && note.length !== undefined && typeof note.length === 'number') {
+    return note.length;
+  }
+  
   if (typeof duration === 'number') return duration; // Already in steps
   if (typeof duration !== 'string') return 1; // Default 1 step
 
@@ -374,10 +385,13 @@ const UnifiedGridCanvas = React.memo(({
         let notesRendered = 0;
         notes.forEach(note => {
           const step = note.time;
-          const duration = durationToSteps(note.duration); // ✅ FIX: Convert "8n" to steps
-
-          // ✅ FIX: Check viewport visibility with duration (note end position)
-          const noteEndStep = step + duration;
+          
+          // ✅ FL STUDIO STYLE: Use visualLength for display, actual length for viewport calculation
+          const visualDuration = durationToSteps(note.duration, true, note);
+          const actualDuration = durationToSteps(note.duration, false, note);
+          
+          // ✅ FIX: Check viewport visibility with actual duration (note end position)
+          const noteEndStep = step + actualDuration;
           if (noteEndStep < startStep || step > endStep) return;
 
           const pitch = note.pitch !== undefined && note.pitch !== null ? note.pitch : C5_MIDI;
@@ -387,7 +401,8 @@ const UnifiedGridCanvas = React.memo(({
           const noteHeight = Math.max(2, previewHeight / pitchRange);
 
           const noteX = step * STEP_WIDTH - scrollX + 1;
-          const noteWidth = duration * STEP_WIDTH - 2;
+          // ✅ FL STUDIO STYLE: Use visualLength for display width
+          const noteWidth = visualDuration * STEP_WIDTH - 2;
 
           ctx.fillStyle = accentCool;
           ctx.fillRect(noteX, noteY, noteWidth, noteHeight);

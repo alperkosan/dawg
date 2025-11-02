@@ -1,20 +1,27 @@
 /**
- * PROFESSIONAL KNOB CONTROL
+ * KNOB CONTROL v2.0 - Unified Professional Implementation
  *
  * Modern, performant rotary knob with RAF throttling
+ * Merged best features from base Knob + ProfessionalKnob
  *
  * Features:
  * - Vertical drag interaction
- * - Shift for fine control
+ * - Shift for fine control (10x precision)
  * - Double-click to reset
  * - Logarithmic/linear scaling
- * - Ghost value support (visual feedback lag)
+ * - Ghost value support (visual feedback lag, 400ms)
  * - Category-based theming
- * - Size variants (small, medium, large)
+ * - Size variants (small: 60px, medium: 80px, large: 100px)
  * - Custom color override
  * - Custom value formatting
  * - ARIA accessible
- * - Zero memory leaks
+ * - Zero memory leaks (proper RAF cleanup)
+ *
+ * v2.0 Changes:
+ * ✅ Added NaN/undefined crash protection (from ProfessionalKnob)
+ * ✅ Enhanced type safety checks on all interactions
+ * ✅ Backward compatible with legacy size prop
+ * ✅ Improved performance with RAF throttling
  */
 
 import React, { useState, useRef, useCallback, useEffect } from 'react';
@@ -146,7 +153,9 @@ export const Knob = ({
 
   // Mouse down handler
   const handleMouseDown = useCallback((e) => {
-    if (disabled || typeof value !== 'number') return;
+    // 🎯 CRITICAL FIX: Prevent NaN crash (from ProfessionalKnob)
+    // Only allow drag if value is numeric and valid
+    if (disabled || typeof value !== 'number' || isNaN(value)) return;
 
     e.preventDefault();
     setIsDragging(true);
@@ -159,7 +168,10 @@ export const Knob = ({
 
   // Double click to reset
   const handleDoubleClick = useCallback(() => {
-    if (disabled || typeof value !== 'number') return;
+    // 🎯 CRITICAL FIX: Prevent NaN crash on double-click (from ProfessionalKnob)
+    if (disabled || typeof value !== 'number' || isNaN(value)) return;
+    if (typeof defaultValue !== 'number' || isNaN(defaultValue)) return;
+
     onChange?.(defaultValue);
     onChangeEnd?.();
   }, [value, defaultValue, disabled, onChange, onChangeEnd]);

@@ -372,11 +372,15 @@ export const ModernReverbUI = ({ trackId, effect, onChange }) => {
                 value={width * 100}
                 onChange={(val) => onChange('width', val / 100)}
                 min={0}
-                max={100}
+                max={200}
                 defaultValue={100}
                 sizeVariant="small"
                 category="spacetime-chamber"
-                valueFormatter={(v) => `${v.toFixed(0)}%`}
+                valueFormatter={(v) => {
+                  if (v < 20) return 'MONO';
+                  if (v > 180) return 'ULTRA';
+                  return `${v.toFixed(0)}%`;
+                }}
               />
               <Knob
                 label="DIFFUSION"
@@ -470,7 +474,7 @@ export const ModernReverbUI = ({ trackId, effect, onChange }) => {
         </div>
 
         {/* How It Works */}
-        <div className="flex-1 bg-gradient-to-br from-[#2d1854]/20 to-black/50 rounded-xl p-4 border border-[#A855F7]/10">
+        <div className="flex-1 bg-gradient-to-br from-[#2d1854]/20 to-black/50 rounded-xl p-4 border border-[#A855F7]/10 overflow-y-auto">
           <div className="text-[9px] text-[#22D3EE]/70 font-bold uppercase tracking-wider mb-3">
             How It Works
           </div>
@@ -484,6 +488,18 @@ export const ModernReverbUI = ({ trackId, effect, onChange }) => {
             <p>
               <span className="text-[#FACC15] font-bold">Damping:</span> High frequency absorption
             </p>
+            <div className="pt-2 border-t border-[#A855F7]/10 mt-2">
+              <p className="text-[#22D3EE]/80 font-bold mb-1">✨ NEW v2.0</p>
+              <p>
+                <span className="text-[#A855F7] font-bold">Width:</span> Stereo field (0=mono, 200=ultra)
+              </p>
+              <p>
+                <span className="text-[#22D3EE] font-bold">Mod Depth:</span> Chorus shimmer amount
+              </p>
+              <p>
+                <span className="text-[#FACC15] font-bold">Mod Rate:</span> LFO speed (Hz)
+              </p>
+            </div>
             <p className="text-white/30 italic pt-2 text-[8px]">
               💡 Watch RT60 marker in decay envelope
             </p>

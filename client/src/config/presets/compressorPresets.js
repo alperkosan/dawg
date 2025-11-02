@@ -440,3 +440,16 @@ export const COMPRESSOR_MODE_CATEGORIES = {
   aggressive: { name: 'Aggressive', color: 'red' },
   creative: { name: 'Creative', color: 'purple' }
 };
+
+/**
+ * Export presets as array for PresetManager (PluginContainerV2)
+ */
+export const compressorPresets = Object.values(COMPRESSOR_MODES).map(mode => ({
+  id: mode.id,
+  name: mode.name,
+  category: COMPRESSOR_MODE_CATEGORIES[mode.category]?.name || mode.category,
+  description: mode.description,
+  tags: mode.genre || [],
+  author: 'DAWG',
+  settings: mode.baseParams
+}));

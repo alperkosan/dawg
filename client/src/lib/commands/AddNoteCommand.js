@@ -2,6 +2,7 @@ import { Command } from './Command';
 import { useArrangementStore } from '@/store/useArrangementStore';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
 import EventBus from '../core/EventBus.js';
+import { calculatePatternLoopLength } from '../utils/patternUtils.js';
 
 /**
  * Bir enstrümana yeni bir nota ekleyen ve bu işlemi geri alabilen komut.
@@ -27,30 +28,77 @@ export class AddNoteCommand extends Command {
     const activePatternId = useArrangementStore.getState().activePatternId;
     if (!activePatternId) return;
 
+    const activePattern = useArrangementStore.getState().patterns[activePatternId];
+    if (!activePattern) return;
+
     // Get current notes for this instrument
-    const currentNotes = useArrangementStore.getState().patterns[activePatternId].data[this.instrumentId] || [];
+    const currentNotes = activePattern.data[this.instrumentId] || [];
+
+    // ✅ FL STUDIO STYLE: Calculate pattern length and extend note to pattern length
+    // Get pattern length in steps (default to 64 if no notes exist)
+    const patternLengthInSteps = calculatePatternLoopLength(activePattern) || 64;
+    
+    // Convert step length to duration string
+    // 1 step = 1/16 note, so patternLengthInSteps steps = patternLengthInSteps/16 bars
+    // But duration is relative to the beat, so we need to calculate in beats
+    // 16 steps = 1 bar = 4 beats (4/4 time) = 1 whole note
+    // So: steps to beats = steps / 4, then beats to duration string
+    const stepsToDuration = (steps) => {
+      if (steps <= 0.25) return '32n';  // 1/32 note
+      if (steps <= 0.5) return '32n';
+      if (steps <= 1) return '16n';    // 1/16 note (1 step)
+      if (steps <= 2) return '8n';     // 1/8 note (2 steps)
+      if (steps <= 4) return '4n';     // 1/4 note (4 steps)
+      if (steps <= 8) return '2n';     // 1/2 note (8 steps)
+      if (steps <= 16) return '1n';    // Whole note (16 steps = 1 bar)
+      // For longer durations, use multiples
+      const bars = steps / 16;
+      if (bars <= 2) return '2n';      // 2 bars = 2 whole notes
+      if (bars <= 4) return '1n';      // 4 bars = 4 whole notes (but we'll use max '1n' and extend)
+      // For very long patterns, use '1n' as base and note will extend to pattern length
+      return '1n';
+    };
 
     // ✅ SMART PITCH DETECTION: Use existing note's pitch if available
     // This ensures new notes match the instrument's configured pitch
     let defaultPitch = 'C4'; // Fallback
     let defaultVelocity = 1.0;
-    let defaultDuration = '16n';
 
     if (currentNotes.length > 0) {
-      // Use pitch, velocity, and duration from the first existing note
+      // Use pitch and velocity from the first existing note
       const firstNote = currentNotes[0];
       defaultPitch = firstNote.pitch || 'C4';
       defaultVelocity = firstNote.velocity !== undefined ? firstNote.velocity : 1.0;
-      defaultDuration = firstNote.duration || '16n';
 
       console.log(`📝 AddNoteCommand: Using template from existing notes:`, {
         pitch: defaultPitch,
-        velocity: defaultVelocity,
-        duration: defaultDuration
+        velocity: defaultVelocity
       });
-    } else {
-      console.log(`📝 AddNoteCommand: No existing notes, using defaults for ${this.instrumentId}`);
     }
+    
+    // ✅ FL STUDIO STYLE: ALL new notes extend to full pattern length
+    // Calculate duration from note start to pattern end
+    const noteStartStep = this.step;
+    const noteLengthInSteps = patternLengthInSteps - noteStartStep;
+    const defaultDuration = stepsToDuration(Math.max(1, noteLengthInSteps));
+    
+    console.log(`📝 AddNoteCommand: New note for ${this.instrumentId}, extending to pattern length:`, {
+      patternLengthInSteps,
+      noteStartStep,
+      noteLengthInSteps,
+      duration: defaultDuration
+    });
+
+    // ✅ FL STUDIO STYLE: Visual length vs Audio duration
+    // Visual: 1 step (short, oval edges indicate it extends)
+    // Audio: Pattern length (extends to pattern end for full playback)
+    // ALL NEW NOTES should be oval (visualLength = 1) unless explicitly resized
+    
+    // Calculate audio length in steps directly (more accurate than converting duration string)
+    // noteStartStep already defined above, reuse it
+    const audioLengthInSteps = patternLengthInSteps - noteStartStep;
+    
+    const audioDuration = defaultDuration; // Keep duration string for legacy compatibility
 
     // Geri alma (undo) işlemi için notayı burada oluşturup sınıf içinde saklıyoruz.
     this.note = {
@@ -58,7 +106,9 @@ export class AddNoteCommand extends Command {
       time: this.step,
       pitch: defaultPitch,
       velocity: defaultVelocity,
-      duration: defaultDuration
+      duration: audioDuration, // Audio duration (for playback - legacy format)
+      length: audioLengthInSteps, // ✅ Audio length in steps (pattern length for all new notes)
+      visualLength: 1 // ✅ FL STUDIO STYLE: All new notes are oval (1 step visual, full pattern audio)
     };
 
     const newNotes = [...currentNotes, this.note];

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useMixerStore } from '@/store/useMixerStore';
 import { Knob, ModeSelector, ExpandablePanel } from '@/components/controls';
 import { useAudioPlugin, useGhostValue, useCanvasVisualization } from '@/hooks/useAudioPlugin';
+import { useRenderer } from '@/services/CanvasRenderManager';
 import { COMPRESSOR_MODES, getCompressorModeParameters } from '@/config/presets';
 
 /**
@@ -28,7 +29,7 @@ import { COMPRESSOR_MODES, getCompressorModeParameters } from '@/config/presets'
 // COMPRESSION CURVE VISUALIZER
 // ============================================================================
 
-const CompressionCurve = ({ trackId, effectId, threshold, ratio, knee, gainReduction = 0, sidechainLevel = null, scEnable = 0 }) => {
+const CompressionCurve = ({ trackId, effectId, threshold, ratio, knee, gainReduction = 0, sidechainLevel = null, scEnable = 0, onChange }) => {
   const { isPlaying, getTimeDomainData, metricsDb } = useAudioPlugin(trackId, effectId, {
     fftSize: 2048,
     updateMetrics: true,
@@ -476,7 +477,10 @@ export const AdvancedCompressorUI = ({ trackId, effect, onChange }) => {
     scFreq = 150,
     scListen = 0,
     stereoLink = 100,
-    lookahead = 3
+    lookahead = 3,
+    // 🎯 NEW v2.0: Detection mode parameters
+    detectionMode = 0,
+    rmsWindow = 10
   } = effect.settings || {};
 
   const [selectedMode, setSelectedMode] = useState('custom');
@@ -617,6 +621,7 @@ export const AdvancedCompressorUI = ({ trackId, effect, onChange }) => {
             gainReduction={gainReduction}
             sidechainLevel={sidechainLevel}
             scEnable={scEnable}
+            onChange={onChange}
           />
         </div>
 
@@ -825,6 +830,52 @@ export const AdvancedCompressorUI = ({ trackId, effect, onChange }) => {
                 category="dynamics-forge"
                 valueFormatter={(v) => `${v.toFixed(1)} dB`}
               />
+            </div>
+
+            {/* 🎯 NEW v2.0: Detection Mode */}
+            <div className="mt-6 pt-4 border-t border-[#00A8E8]/20">
+              <div className="text-[10px] text-[#00B8F8]/80 uppercase tracking-wider mb-3 font-bold">
+                ✨ Detection v2.0
+              </div>
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={() => onChange('detectionMode', 0)}
+                  className={`flex-1 px-4 py-2.5 rounded-lg text-xs font-bold transition-all ${
+                    detectionMode === 0
+                      ? 'bg-gradient-to-r from-[#00A8E8] to-[#00B8F8] text-white shadow-lg shadow-[#00A8E8]/30'
+                      : 'bg-black/30 text-white/50 hover:bg-black/50 border border-[#00A8E8]/20'
+                  }`}
+                >
+                  PEAK
+                  <div className="text-[9px] font-normal opacity-70 mt-0.5">1176 / FET</div>
+                </button>
+                <button
+                  onClick={() => onChange('detectionMode', 1)}
+                  className={`flex-1 px-4 py-2.5 rounded-lg text-xs font-bold transition-all ${
+                    detectionMode === 1
+                      ? 'bg-gradient-to-r from-[#00A8E8] to-[#00B8F8] text-white shadow-lg shadow-[#00A8E8]/30'
+                      : 'bg-black/30 text-white/50 hover:bg-black/50 border border-[#00A8E8]/20'
+                  }`}
+                >
+                  RMS
+                  <div className="text-[9px] font-normal opacity-70 mt-0.5">SSL / VCA</div>
+                </button>
+              </div>
+              {detectionMode === 1 && (
+                <label className="flex items-center gap-3 mt-3">
+                  <span className="text-xs text-white/70 w-28">RMS Window</span>
+                  <input
+                    type="range"
+                    min="1"
+                    max="50"
+                    step="1"
+                    value={rmsWindow}
+                    onChange={(e) => onChange('rmsWindow', parseFloat(e.target.value))}
+                    className="flex-1"
+                  />
+                  <span className="text-[10px] text-white/50 w-16 text-right font-mono">{rmsWindow.toFixed(0)} ms</span>
+                </label>
+              )}
             </div>
 
             {/* Link & Lookahead */}

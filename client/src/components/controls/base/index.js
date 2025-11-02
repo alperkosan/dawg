@@ -6,3 +6,5 @@ export { Toggle } from './Toggle';
 export { Display } from './Display';
 export { ModeSelector } from './ModeSelector';
 export { ExpandablePanel } from './ExpandablePanel';
+export { Checkbox } from './Checkbox';
+export { Select } from './Select';

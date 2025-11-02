@@ -1276,40 +1276,58 @@ export class AudioContextService {
       return null;
     }
 
-    // 🎚️ Master track - use master effects
-    if (trackId === 'master') {
-      if (!this.audioEngine.masterEffects) {
-        return null;
-      }
-
-      // Try direct lookup first
-      let effect = this.audioEngine.masterEffects.get(effectId);
-
-      // ⚡ FIX: If not found, search by Store ID (masterEffects uses Store ID as key)
-      if (!effect) {
-        effect = Array.from(this.audioEngine.masterEffects.values()).find(fx =>
-          fx.id === effectId || fx.type === effectId
-        );
-      }
-
-      return effect && effect.node ? effect.node : null;
-    }
-
-    // 🎛️ DYNAMIC MIXER: Check mixer inserts first
+    // 🎛️ DYNAMIC MIXER: Check mixer inserts first (includes master track!)
     if (this.audioEngine.mixerInserts) {
       const insert = this.audioEngine.mixerInserts.get(trackId);
+
+      console.log('🔍 [getEffectNode] Mixer insert lookup:', {
+        trackId,
+        effectId,
+        hasInsert: !!insert,
+        hasEffects: !!insert?.effects,
+        effectsSize: insert?.effects?.size,
+        availableKeys: insert?.effects ? Array.from(insert.effects.keys()) : []
+      });
+
       if (insert && insert.effects) {
         // Try direct lookup first (audioEngineId)
         let effect = insert.effects.get(effectId);
 
+        console.log('🔍 [getEffectNode] Direct lookup:', {
+          effectId,
+          found: !!effect,
+          hasNode: !!effect?.node,
+          effectKeys: effect ? Object.keys(effect) : []
+        });
+
         // If not found, search by audioEngineId (Store ID → AudioEngine ID mapping)
         if (!effect) {
+          console.log('🔍 [getEffectNode] Trying fallback search...');
+          const allEffects = Array.from(insert.effects.entries());
+          console.log('🔍 [getEffectNode] All effects:', allEffects.map(([key, fx]) => ({
+            key,
+            fxId: fx.id,
+            fxType: fx.type,
+            hasNode: !!fx.node
+          })));
+
           effect = Array.from(insert.effects.values()).find(fx =>
             fx.id === effectId || fx.audioEngineId === effectId
           );
+
+          console.log('🔍 [getEffectNode] Fallback result:', {
+            found: !!effect,
+            matchedById: effect?.id === effectId,
+            matchedByAudioEngineId: effect?.audioEngineId === effectId
+          });
         }
 
         if (effect && effect.node) {
+          console.log('✅ [getEffectNode] Effect found!', {
+            effectId,
+            nodeType: effect.node.constructor.name,
+            hasPort: !!effect.node.port
+          });
           return effect.node;
         } else if (import.meta.env.DEV) {
           console.warn(`⚠️ Effect '${effectId}' not found in insert ${trackId}`);
@@ -1324,12 +1342,33 @@ export class AudioContextService {
       if (channel && channel.effects) {
         const effect = Array.from(channel.effects.values()).find(fx => fx.id === effectId);
         if (effect && effect.node) {
+          console.log('✅ [getEffectNode] Found in legacy mixerChannels');
           return effect.node;
         }
       }
     }
 
-    console.warn('⚠️ Effect not found:', effectId);
+    // Fallback to old master effects (backward compatibility)
+    if (trackId === 'master' && this.audioEngine.masterEffects) {
+      let effect = this.audioEngine.masterEffects.get(effectId);
+      if (!effect) {
+        effect = Array.from(this.audioEngine.masterEffects.values()).find(fx =>
+          fx.id === effectId || fx.type === effectId
+        );
+      }
+      if (effect && effect.node) {
+        console.log('✅ [getEffectNode] Found in legacy masterEffects');
+        return effect.node;
+      }
+    }
+
+    console.warn('⚠️ [getEffectNode] Effect not found anywhere:', {
+      trackId,
+      effectId,
+      hasMixerInserts: !!this.audioEngine.mixerInserts,
+      hasMixerChannels: !!this.audioEngine.mixerChannels,
+      hasMasterEffects: !!this.audioEngine.masterEffects
+    });
     return null;
   }
 
@@ -1568,7 +1607,31 @@ export class AudioContextService {
       return null;
     }
 
-    // 🎚️ MASTER CHANNEL: Check master effects first
+    // 🎛️ DYNAMIC MIXER: Check mixer inserts FIRST (includes master track!)
+    // This is the primary system now, master uses MixerInsert too
+    if (this.audioEngine.mixerInserts) {
+      const insert = this.audioEngine.mixerInserts.get(trackId);
+      if (insert && insert.effects) {
+        // Try direct lookup first
+        let effect = insert.effects.get(effectId);
+
+        // If not found, search by id or audioEngineId (Store ID → AudioEngine ID mapping)
+        if (!effect) {
+          effect = Array.from(insert.effects.values()).find(fx =>
+            fx.id === effectId || fx.audioEngineId === effectId
+          );
+        }
+
+        if (effect && effect.node) {
+          return effect.node;
+        } else if (import.meta.env.DEV) {
+          console.warn('⚠️ Effect not found in insert:', effectId);
+          console.log('Available effects in insert:', Array.from(insert.effects.keys()));
+        }
+      }
+    }
+
+    // 🎚️ LEGACY: Fallback to old masterEffects (backward compatibility)
     if (trackId === 'master' && this.audioEngine.masterEffects) {
       // Try direct lookup first (effectId)
       let effect = this.audioEngine.masterEffects.get(effectId);
@@ -1583,24 +1646,8 @@ export class AudioContextService {
       if (effect && effect.node) {
         return effect.node;
       } else if (import.meta.env.DEV) {
-        console.warn('⚠️ Master effect not found:', effectId);
+        console.warn('⚠️ Master effect not found in legacy system:', effectId);
         console.log('Available master effects:', Array.from(this.audioEngine.masterEffects.keys()));
-      }
-    }
-
-    // 🎛️ DYNAMIC MIXER: Check mixer inserts
-    if (this.audioEngine.mixerInserts) {
-      const insert = this.audioEngine.mixerInserts.get(trackId);
-      if (insert && insert.effects) {
-        // ✅ SIMPLIFIED: Direct lookup only (single ID system)
-        const effect = insert.effects.get(effectId);
-
-        if (effect && effect.node) {
-          return effect.node;
-        } else if (import.meta.env.DEV) {
-          console.warn('⚠️ Effect not found in insert:', effectId);
-          console.log('Available effects in insert:', Array.from(insert.effects.keys()));
-        }
       }
     }
 

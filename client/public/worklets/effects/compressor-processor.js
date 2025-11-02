@@ -1,8 +1,18 @@
 /**
- * COMPRESSOR PROCESSOR
+ * COMPRESSOR PROCESSOR v2.0
  *
- * Dynamic range compressor with attack, release, ratio, knee
- * Professional studio-quality compression
+ * Professional dynamic range compressor with advanced detection modes
+ * - Peak/RMS detection modes (SSL G-Comp / 1176 style)
+ * - Lookahead for transient-perfect compression
+ * - Sidechain filter with HPF/LPF
+ * - Upward compression (OTT/Multiband style)
+ * - Program-dependent release
+ * - Stereo link with independent or linked processing
+ *
+ * NEW IN v2.0:
+ * ✅ RMS detection mode (window-based averaging like SSL/API)
+ * ✅ Detection mode parameter (0=Peak, 1=RMS)
+ * ✅ RMS window size control (1-50ms)
  */
 
 class CompressorProcessor extends AudioWorkletProcessor {
@@ -17,9 +27,12 @@ class CompressorProcessor extends AudioWorkletProcessor {
       { name: 'upwardRatio', defaultValue: 2, minValue: 1, maxValue: 20 },
       { name: 'upwardDepth', defaultValue: 0, minValue: 0, maxValue: 1 },
       { name: 'autoMakeup', defaultValue: 0, minValue: 0, maxValue: 1 },
-      // New: lookahead (ms) and stereo link (0..100)
+      // Lookahead and stereo link
       { name: 'lookahead', defaultValue: 3, minValue: 0, maxValue: 10 },
       { name: 'stereoLink', defaultValue: 100, minValue: 0, maxValue: 100 },
+      // 🎯 NEW v2.0: Detection mode (0=Peak, 1=RMS)
+      { name: 'detectionMode', defaultValue: 0, minValue: 0, maxValue: 1 },
+      { name: 'rmsWindow', defaultValue: 10, minValue: 1, maxValue: 50 }, // RMS window in ms
       // Sidechain parameters
       { name: 'scEnable', defaultValue: 0, minValue: 0, maxValue: 1 },
       { name: 'scGain', defaultValue: 0, minValue: -24, maxValue: 24 },
@@ -69,6 +82,14 @@ class CompressorProcessor extends AudioWorkletProcessor {
 
     // Sidechain filter state
     this.scState = [0, 0];
+
+    // 🎯 NEW v2.0: RMS detection buffers (circular buffer per channel)
+    // Max window = 50ms at 48kHz = 2400 samples
+    const maxRmsSize = Math.ceil(0.05 * this.sampleRate); // 50ms
+    this.rmsBuf = [new Float32Array(maxRmsSize), new Float32Array(maxRmsSize)];
+    this.rmsIdx = [0, 0];
+    this.rmsSumSq = [0, 0]; // Running sum of squares
+    this.rmsSize = Math.ceil(0.01 * this.sampleRate); // Default 10ms
   }
 
   initBandFilters() {
@@ -261,11 +282,48 @@ class CompressorProcessor extends AudioWorkletProcessor {
     const upwardDepth = this.getParam(parameters.upwardDepth, 0) || this.settings.upwardDepth || 0;
     const autoMakeup = this.getParam(parameters.autoMakeup, 0) || this.settings.autoMakeup || 0;
 
+    // 🎯 NEW v2.0: Detection mode (Peak vs RMS)
+    const detectionMode = Math.round(this.getParam(parameters.detectionMode, 0) ?? this.settings.detectionMode ?? 0);
+    const rmsWindowMs = this.getParam(parameters.rmsWindow, 0) ?? this.settings.rmsWindow ?? 10;
+
     const state = this.channelState[channel] || this.channelState[0];
 
-    // Convert to dB
+    // Update RMS window size if changed
+    const targetRmsSize = Math.max(1, Math.ceil((rmsWindowMs / 1000) * this.sampleRate));
+    if (targetRmsSize !== this.rmsSize) {
+      this.rmsSize = Math.min(targetRmsSize, this.rmsBuf[0].length); // Clamp to max buffer
+      // Reset RMS calculation when window size changes
+      this.rmsSumSq[0] = 0;
+      this.rmsSumSq[1] = 0;
+    }
+
+    // 🎯 NEW v2.0: Calculate detection level (Peak or RMS)
     const levelSample = (detectorSample !== undefined) ? detectorSample : sample;
-    const inputLevel = this.gainToDb(Math.abs(levelSample));
+    let inputLevel;
+
+    if (detectionMode === 1) {
+      // RMS DETECTION (SSL G-Comp / API style)
+      // Use circular buffer to maintain running RMS window
+      const rmsBuf = this.rmsBuf[channel];
+      const rmsIdx = this.rmsIdx[channel];
+      const oldSample = rmsBuf[rmsIdx];
+      const newSample = levelSample;
+
+      // Update running sum: remove old sample, add new sample
+      this.rmsSumSq[channel] += (newSample * newSample) - (oldSample * oldSample);
+      this.rmsSumSq[channel] = Math.max(0, this.rmsSumSq[channel]); // Prevent negative drift
+
+      // Store new sample
+      rmsBuf[rmsIdx] = newSample;
+      this.rmsIdx[channel] = (rmsIdx + 1) % this.rmsSize;
+
+      // Calculate RMS and convert to dB
+      const rmsValue = Math.sqrt(this.rmsSumSq[channel] / this.rmsSize);
+      inputLevel = this.gainToDb(Math.max(rmsValue, 0.00001));
+    } else {
+      // PEAK DETECTION (1176 / FET style)
+      inputLevel = this.gainToDb(Math.abs(levelSample));
+    }
 
     // Envelope follower with program-dependent release
     const attackCoeff = Math.exp(-1 / (attack * this.sampleRate));

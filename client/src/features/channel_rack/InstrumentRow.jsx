@@ -2,9 +2,14 @@ import React, { useState, memo, useCallback, useMemo } from 'react';
 import { useInstrumentsStore } from '@/store/useInstrumentsStore';
 import { useMixerStore } from '@/store/useMixerStore';
 import { usePanelsStore } from '@/store/usePanelsStore'; // Panelleri açmak için eklendi
+import { useArrangementStore } from '@/store/useArrangementStore';
 import ChannelContextMenu from '@/components/ChannelContextMenu';
 import { Music, Piano, Volume2, VolumeX, SlidersHorizontal } from 'lucide-react';
 import { Knob } from '@/components/controls';
+import commandManager from '@/lib/commands/CommandManager';
+import { AddNoteCommand } from '@/lib/commands/AddNoteCommand';
+import { DeleteNoteCommand } from '@/lib/commands/DeleteNoteCommand';
+import { calculatePatternLoopLength } from '@/lib/utils/patternUtils.js';
 
 // ✅ Direct property selectors - no object creation
 const selectUpdateInstrument = (state) => state.updateInstrument;
@@ -83,6 +88,54 @@ const InstrumentRow = ({
     updateInstrument(instrument.id, { cutItself: !currentValue });
   }, [instrument.id, instrument.cutItself, instrument.type, updateInstrument]);
 
+  // ✅ FL STUDIO STYLE: Fill pattern with notes at specified intervals
+  const handleFillPattern = useCallback((stepInterval, clearExisting = false) => {
+    const activePatternId = useArrangementStore.getState().activePatternId;
+    if (!activePatternId) return;
+
+    const activePattern = useArrangementStore.getState().patterns[activePatternId];
+    if (!activePattern) return;
+
+    const patternLengthInSteps = calculatePatternLoopLength(activePattern) || 64;
+    
+    // Get existing notes to determine pitch and velocity
+    const currentNotes = activePattern.data[instrument.id] || [];
+    const defaultPitch = currentNotes.length > 0 ? currentNotes[0].pitch : 'C4';
+    const defaultVelocity = currentNotes.length > 0 ? (currentNotes[0].velocity !== undefined ? currentNotes[0].velocity : 1.0) : 1.0;
+
+    // Clear existing notes if requested
+    if (clearExisting && currentNotes.length > 0) {
+      // Delete all existing notes first
+      currentNotes.forEach(note => {
+        const command = new DeleteNoteCommand(instrument.id, note);
+        commandManager.execute(command);
+      });
+    }
+    
+    // Add notes at specified intervals
+    const notesToAdd = [];
+    for (let step = 0; step < patternLengthInSteps; step += stepInterval) {
+      // Check if note already exists at this step (only if not clearing)
+      if (!clearExisting && currentNotes.some(n => n.time === step)) {
+        continue; // Skip existing notes
+      }
+      notesToAdd.push({ step, pitch: defaultPitch, velocity: defaultVelocity });
+    }
+
+    // Execute all add commands
+    notesToAdd.forEach(({ step }) => {
+      const command = new AddNoteCommand(instrument.id, step);
+      commandManager.execute(command);
+    });
+
+    console.log(`✅ Filled pattern with notes every ${stepInterval} steps:`, {
+      patternLengthInSteps,
+      notesAdded: notesToAdd.length,
+      stepInterval,
+      clearExisting
+    });
+  }, [instrument.id]);
+
   const getContextMenuOptions = useCallback(() => {
     // Determine current cutItself state
     const cutItselfActive = instrument.cutItself !== undefined ? instrument.cutItself :
@@ -97,8 +150,18 @@ const InstrumentRow = ({
         action: handleToggleCutItself,
         isActive: cutItselfActive
       },
+      { type: 'separator' },
+      {
+        label: 'Fill Pattern',
+        children: [
+          { label: 'Fill each 2 steps', action: () => handleFillPattern(2) },
+          { label: 'Fill each 4 steps', action: () => handleFillPattern(4) },
+          { label: 'Fill each 8 steps', action: () => handleFillPattern(8) },
+          { label: 'Fill each 16 steps', action: () => handleFillPattern(16) },
+        ]
+      },
     ];
-  }, [handleRename, openMixerAndFocus, handleToggleCutItself, instrument.cutItself, instrument.type]);
+  }, [handleRename, openMixerAndFocus, handleToggleCutItself, handleFillPattern, instrument.cutItself, instrument.type]);
 
   // ✅ Memoized computed classes and styles
   const rowClasses = useMemo(() => `

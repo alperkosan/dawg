@@ -12,11 +12,12 @@ export const Toggle = ({
   value = false,
   onChange,
   variant = 'default',
+  category = null,
   disabled = false,
   size = 'md',
   className = '',
 }) => {
-  const { colors, styles } = useControlTheme(variant);
+  const { colors, styles } = useControlTheme(variant, category);
 
   const sizes = {
     sm: { width: 36, height: 20, thumbSize: 16 },
@@ -40,7 +41,7 @@ export const Toggle = ({
           height,
           backgroundColor: value ? colors.fill : colors.track,
           boxShadow: value ? `0 0 8px ${colors.fillGlow}` : 'none',
-          transition: styles['--transition-fast'],
+          transition: styles?.['--transition-fast'] || '150ms ease-out',
         }}
         onClick={() => !disabled && onChange?.(!value)}
       >
@@ -52,7 +53,7 @@ export const Toggle = ({
             left: value ? `calc(100% - ${thumbSize + 2}px)` : 2,
             backgroundColor: value ? '#000' : colors.indicator,
             boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
-            transition: styles['--transition-fast'],
+            transition: styles?.['--transition-fast'] || '150ms ease-out',
           }}
         />
       </div>

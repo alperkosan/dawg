@@ -1,11 +1,19 @@
 /**
- * MODERN REVERB PROCESSOR
+ * MODERN REVERB PROCESSOR v2.0
  *
- * Freeverb-style algorithmic reverb
+ * Professional algorithmic reverb with modulation
  * - 8 comb filters (4 per channel with stereo spread)
  * - 4 allpass filters for diffusion
- * - Early reflections simulation
- * - Modulated delay for chorus effect
+ * - Early reflections simulation (12-tap room modeling)
+ * - LFO-based chorus modulation (Lexicon/Shimmer style)
+ * - Mid/Side stereo width control (0-200%)
+ * - Two-pole damping filter for smooth high-frequency rolloff
+ *
+ * NEW IN v2.0:
+ * ✅ Chorus modulation (modDepth, modRate parameters)
+ * ✅ Stereo width control (width parameter: 0=mono, 1=normal, 2=ultra-wide)
+ * ✅ Per-comb LFO phase offset for richer stereo image
+ * ✅ Fractional delay interpolation for smooth modulation
  */
 
 // Import base processor if available
@@ -20,7 +28,10 @@ class ModernReverbProcessor extends AudioWorkletProcessor {
       { name: 'preDelay', defaultValue: 0.02, minValue: 0, maxValue: 0.2 },
       { name: 'wet', defaultValue: 0.35, minValue: 0, maxValue: 1 },
       { name: 'earlyLateMix', defaultValue: 0.5, minValue: 0, maxValue: 1 },
-      { name: 'diffusion', defaultValue: 0.7, minValue: 0, maxValue: 1 }
+      { name: 'diffusion', defaultValue: 0.7, minValue: 0, maxValue: 1 },
+      { name: 'width', defaultValue: 1.0, minValue: 0, maxValue: 2 },       // Stereo width control
+      { name: 'modDepth', defaultValue: 0.3, minValue: 0, maxValue: 1 },    // Chorus modulation depth
+      { name: 'modRate', defaultValue: 0.5, minValue: 0.1, maxValue: 2 }    // LFO rate in Hz
     ];
   }
 
@@ -93,6 +104,10 @@ class ModernReverbProcessor extends AudioWorkletProcessor {
     this.preDelayBuffer = new Float32Array(maxPreDelay);
     this.preDelayIndex = 0;
 
+    // 🎯 LFO for modulation (chorus effect)
+    this.lfoPhase = 0;
+    this.lfoPhaseIncrement = 0;
+
     this.port.onmessage = (event) => {
       const { type, data } = event.data;
       if (type === 'updateSettings') {
@@ -130,6 +145,9 @@ class ModernReverbProcessor extends AudioWorkletProcessor {
     const wet = this.getParam(parameters.wet, 0) ?? this.settings.wet ?? 0.35;
     const earlyLateMix = this.getParam(parameters.earlyLateMix, 0) ?? this.settings.earlyLateMix ?? 0.5;
     const diffusion = this.getParam(parameters.diffusion, 0) ?? this.settings.diffusion ?? 0.7;
+    const width = this.getParam(parameters.width, 0) ?? this.settings.width ?? 1.0;
+    const modDepth = this.getParam(parameters.modDepth, 0) ?? this.settings.modDepth ?? 0.3;
+    const modRate = this.getParam(parameters.modRate, 0) ?? this.settings.modRate ?? 0.5;
 
     if (this.bypassed) {
       for (let ch = 0; ch < channels; ch++) {
@@ -160,7 +178,18 @@ class ModernReverbProcessor extends AudioWorkletProcessor {
     // Diffusion allpass feedback: 0.5-0.7 range (Freeverb standard)
     const allpassFeedback = 0.5 + diffusion * 0.2;
 
+    // 🎯 LFO for chorus modulation (Shimmer/Lexicon style)
+    this.lfoPhaseIncrement = (2 * Math.PI * modRate) / this.sampleRate;
+
     for (let i = 0; i < blockSize; i++) {
+      // Update LFO phase
+      this.lfoPhase += this.lfoPhaseIncrement;
+      if (this.lfoPhase >= 2 * Math.PI) {
+        this.lfoPhase -= 2 * Math.PI;
+      }
+
+      // Calculate LFO value (sine wave, 0 to 1)
+      const lfoValue = (Math.sin(this.lfoPhase) + 1) * 0.5;
       // Mix input channels to mono
       let monoInput = 0;
       for (let ch = 0; ch < channels; ch++) {
@@ -188,10 +217,27 @@ class ModernReverbProcessor extends AudioWorkletProcessor {
       let combSumRight = 0;
 
       this.combFilters.forEach((comb, idx) => {
-        // Size-scaled delay read position
-        const scaledSize = Math.floor(comb.baseSize * sizeScale);
-        const effectiveIndex = comb.index % scaledSize;
-        const delayed = comb.buffer[effectiveIndex];
+        // Size-scaled delay read position (clamp to buffer size)
+        const scaledSize = Math.min(Math.floor(comb.baseSize * sizeScale), comb.size);
+
+        // 🎯 CHORUS MODULATION: LFO modulates delay time (±5% like Lexicon/Eventide)
+        // Alternate LFO phase per comb filter for richer stereo image
+        const lfoPhaseOffset = (idx * Math.PI / 4); // 45° offset per filter
+        const modulatedLFO = (Math.sin(this.lfoPhase + lfoPhaseOffset) + 1) * 0.5;
+        const modulationAmount = modDepth * 0.05 * scaledSize; // ±5% delay modulation
+        const modulatedDelayTime = scaledSize + (modulatedLFO - 0.5) * 2 * modulationAmount;
+
+        // Safe fractional delay with linear interpolation
+        const clampedDelay = Math.max(1, Math.min(modulatedDelayTime, scaledSize - 1));
+        const readPos = (comb.index - clampedDelay + comb.size) % comb.size;
+        const readPosInt = Math.floor(readPos);
+        const readPosFrac = readPos - readPosInt;
+
+        // Linear interpolation for smooth modulation (safe buffer access)
+        const nextIdx = (readPosInt + 1) % comb.size;
+        const sample1 = comb.buffer[readPosInt] || 0;
+        const sample2 = comb.buffer[nextIdx] || 0;
+        const delayed = sample1 + (sample2 - sample1) * readPosFrac;
 
         // 🎯 TWO-POLE LOWPASS: Smoother high-frequency damping (like Lexicon)
         // First pole
@@ -200,13 +246,16 @@ class ModernReverbProcessor extends AudioWorkletProcessor {
         comb.filterState2 = comb.filterState + dampCoeff2 * (comb.filterState2 - comb.filterState);
         const filtered = comb.filterState2;
 
-        // Write back with feedback
-        comb.buffer[comb.index] = preDelayedSample + filtered * feedback;
+        // Write back with feedback (safety check for NaN/Infinity)
+        const outputSample = preDelayedSample + filtered * feedback;
+        comb.buffer[comb.index] = isFinite(outputSample) ? outputSample : 0;
         comb.index = (comb.index + 1) % comb.size;
 
-        // Sum to appropriate channel
-        if (comb.channel === 0) combSumLeft += delayed;
-        else combSumRight += delayed;
+        // Sum to appropriate channel (safety check)
+        if (isFinite(delayed)) {
+          if (comb.channel === 0) combSumLeft += delayed;
+          else combSumRight += delayed;
+        }
       });
 
       combSumLeft /= 4;
@@ -230,15 +279,27 @@ class ModernReverbProcessor extends AudioWorkletProcessor {
       });
 
       // Mix early and late
-      const reverbLeft = earlySum * (1 - earlyLateMix) + lateLeft * earlyLateMix;
-      const reverbRight = earlySum * (1 - earlyLateMix) + lateRight * earlyLateMix;
+      let reverbLeft = earlySum * (1 - earlyLateMix) + lateLeft * earlyLateMix;
+      let reverbRight = earlySum * (1 - earlyLateMix) + lateRight * earlyLateMix;
+
+      // 🎯 STEREO WIDTH CONTROL: Mid/Side processing (like Valhalla/FabFilter)
+      // width: 0 = mono, 1 = normal stereo, 2 = ultra-wide
+      const mid = (reverbLeft + reverbRight) * 0.5;
+      const side = (reverbLeft - reverbRight) * 0.5;
+      reverbLeft = mid + side * width;
+      reverbRight = mid - side * width;
 
       // 🎯 PROFESSIONAL OUTPUT: Proper gain staging
       // Wet signal gain: Compensate for parallel comb filter summation
       const wetGain = 0.5; // Professional reverb output level
-      output[0][i] = input[0][i] * (1 - wet) + reverbLeft * wet * wetGain;
+
+      // Safety: Clamp output and check for NaN/Infinity
+      const outLeft = input[0][i] * (1 - wet) + reverbLeft * wet * wetGain;
+      output[0][i] = isFinite(outLeft) ? Math.max(-1, Math.min(1, outLeft)) : input[0][i];
+
       if (channels > 1) {
-        output[1][i] = input[1][i] * (1 - wet) + reverbRight * wet * wetGain;
+        const outRight = input[1][i] * (1 - wet) + reverbRight * wet * wetGain;
+        output[1][i] = isFinite(outRight) ? Math.max(-1, Math.min(1, outRight)) : input[1][i];
       }
     }
 

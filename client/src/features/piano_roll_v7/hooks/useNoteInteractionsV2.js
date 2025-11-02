@@ -7,6 +7,7 @@ import { getPreviewManager } from '@/lib/audio/preview';
 import { getToolManager, TOOL_TYPES } from '@/lib/piano-roll-tools';
 import EventBus from '@/lib/core/EventBus.js';
 import { premiumNoteRenderer } from '../renderers/noteRenderer';
+import { calculatePatternLoopLength } from '@/lib/utils/patternUtils.js';
 import {
     getCommandStack,
     AddNoteCommand,
@@ -200,6 +201,7 @@ export function useNoteInteractionsV2(
             startTime: note.time || 0,
             pitch: typeof note.pitch === 'string' ? stringToPitch(note.pitch) : note.pitch,
             length: note.length || (note.duration ? durationToLength(note.duration) : 1),
+            visualLength: note.visualLength, // ✅ FL STUDIO STYLE: Preserve visualLength
             velocity: note.velocity || 100,
             instrumentId: currentInstrument?.id
         }));
@@ -231,7 +233,8 @@ export function useNoteInteractionsV2(
             time: note.startTime,       // Piano Roll: startTime → time
             pitch: note.pitch,          // Piano Roll: pitch (number) → pitch (number)
             velocity: note.velocity || 100,
-            length: note.length         // Piano Roll: length → length (duration yerine)
+            length: note.length,         // Piano Roll: length → length (duration yerine)
+            visualLength: note.visualLength // ✅ FL STUDIO STYLE: Preserve visualLength
         }));
 
         // Update pattern store
@@ -315,9 +318,11 @@ export function useNoteInteractionsV2(
         const worldY = viewport.scrollY + canvasY;
 
         // Note position in renderer coordinates
+        // ✅ FL STUDIO STYLE: Use visualLength for resize handle detection (for oval notes)
+        const displayLength = note.visualLength !== undefined ? note.visualLength : note.length;
         const noteX = Math.round(note.startTime * stepWidth);
         const noteY = Math.round((127 - note.pitch) * keyHeight);
-        const noteWidth = Math.max(Math.round(stepWidth) - 1, Math.round(note.length * stepWidth) - 1);
+        const noteWidth = Math.max(Math.round(stepWidth) - 1, Math.round(displayLength * stepWidth) - 1);
         const noteHeight = Math.round(keyHeight) - 1;
 
         // ✅ PRECISE: Narrow resize zones only at edges for professional control
@@ -441,6 +446,35 @@ export function useNoteInteractionsV2(
 
         const snappedTime = snapValue > 0 ? snapToGrid(time, snapValue) : time;
 
+        // ✅ FL STUDIO STYLE: Calculate pattern length and extend ALL new notes to pattern length
+        // ALL NEW NOTES should be oval (visualLength = 1) unless explicitly resized
+        const activePattern = useArrangementStore.getState().patterns[activePatternId];
+        
+        // ✅ FL STUDIO STYLE: visualLength is ALWAYS 1 for new notes (unless resized later)
+        // Even if length is provided (from lastNoteDuration), visualLength stays 1
+        const visualLength = 1; // ✅ ALWAYS 1 step visual for new notes
+        
+        let finalLength = length;
+        
+        // If length is default (1), not specified, or is pattern length (from lastNoteDuration), extend to pattern length
+        if (activePattern && (length === 1 || !length || length <= 0 || length >= (calculatePatternLoopLength(activePattern) || 64) * 0.8)) {
+            const patternLengthInSteps = calculatePatternLoopLength(activePattern) || 64;
+            const noteStartStep = snappedTime;
+            const noteLengthInSteps = Math.max(1, patternLengthInSteps - noteStartStep);
+            finalLength = noteLengthInSteps;
+            
+            if (DEBUG_MODE) {
+                console.log('🎼 Piano Roll: New note, extending to pattern length:', {
+                    patternLengthInSteps,
+                    noteStartStep,
+                    noteLengthInSteps,
+                    finalLength,
+                    visualLength
+                });
+            }
+        }
+        // else: Use provided length for audio, but visualLength stays 1
+
         // Generate unique ID with timestamp + random + counter for same-millisecond safety
         const uniqueId = `note_${Date.now()}_${Math.random().toString(36).substring(2, 11)}_${performance.now()}`;
 
@@ -448,7 +482,8 @@ export function useNoteInteractionsV2(
             id: uniqueId,
             startTime: Math.max(0, snappedTime),
             pitch: Math.max(0, Math.min(127, Math.round(pitch))),
-            length: length,
+            length: finalLength, // Audio length (for playback)
+            visualLength: visualLength, // ✅ FL STUDIO STYLE: All new notes are oval (1 step visual)
             velocity: Math.max(1, Math.min(127, Math.round(velocity))), // ✅ Clamp to MIDI range
             instrumentId: currentInstrument.id
         };
@@ -471,7 +506,7 @@ export function useNoteInteractionsV2(
 
         if (DEBUG_MODE) console.log('➕ Note added:', newNote);
         return newNote;
-    }, [currentInstrument, snapValue, notes, updatePatternStore, _addNoteToStore, _deleteNotesFromStore]);
+    }, [currentInstrument, snapValue, activePatternId, notes, updatePatternStore, _addNoteToStore, _deleteNotesFromStore]);
 
     // ✅ INTERNAL: Update note in store without command (for undo/redo)
     const _updateNoteInStore = useCallback((noteId, updates) => {
@@ -940,27 +975,79 @@ export function useNoteInteractionsV2(
                     const currentNotes = notes();
                     const selectedNotes = currentNotes.filter(n => selectedNoteIds.has(n.id));
                     
-                    // Store original state of all selected notes
-                    const originalNotes = new Map();
-                    selectedNotes.forEach(note => {
-                        originalNotes.set(note.id, {
-                            startTime: note.startTime,
-                            length: note.length,
-                            pitch: note.pitch
-                        });
+                    // ✅ FL STUDIO STYLE: When resize starts, convert oval notes to normal notes
+                    // Store CONVERTED state (for resize calculations) and original state (for undo)
+                    const originalNotesForUndo = new Map(); // For undo/redo (keep original pattern-length)
+                    const originalNotesForResize = new Map(); // For resize calculations (use converted length)
+                    const convertedNotes = selectedNotes.map(note => {
+                        // If note is oval (visualLength < length), convert it to normal
+                        if (note.visualLength !== undefined && note.visualLength < note.length) {
+                            // Use visualLength as the new length (oval -> normal)
+                            const convertedNote = {
+                                ...note,
+                                length: note.visualLength,
+                                visualLength: note.visualLength // No longer oval
+                            };
+                            
+                            // Store original state BEFORE conversion (for undo)
+                            originalNotesForUndo.set(note.id, {
+                                startTime: note.startTime,
+                                length: note.length, // Original pattern-length
+                                visualLength: note.visualLength, // Original visual length
+                                pitch: note.pitch
+                            });
+                            
+                            // Store CONVERTED state for resize calculations
+                            originalNotesForResize.set(note.id, {
+                                startTime: convertedNote.startTime,
+                                length: convertedNote.length, // ✅ CONVERTED length (visualLength)
+                                visualLength: convertedNote.visualLength,
+                                pitch: convertedNote.pitch
+                            });
+                            
+                            return convertedNote;
+                        } else {
+                            // Normal note, store as is
+                            originalNotesForUndo.set(note.id, {
+                                startTime: note.startTime,
+                                length: note.length,
+                                visualLength: note.visualLength,
+                                pitch: note.pitch
+                            });
+                            
+                            originalNotesForResize.set(note.id, {
+                                startTime: note.startTime,
+                                length: note.length,
+                                visualLength: note.visualLength,
+                                pitch: note.pitch
+                            });
+                            
+                            return note;
+                        }
                     });
+                    
+                    // ✅ Update notes immediately to convert oval -> normal before resize
+                    if (convertedNotes.some((n, i) => n.length !== selectedNotes[i].length || n.visualLength !== selectedNotes[i].visualLength)) {
+                        updatePatternStore(convertedNotes);
+                        // ✅ CRITICAL: Also update tempNotes so notes() returns converted notes immediately
+                        setTempNotes(convertedNotes);
+                    }
+                    
+                    // ✅ Get converted note for primary note (might be converted from oval)
+                    const convertedPrimaryNote = convertedNotes.find(n => n.id === foundNote.id) || foundNote;
 
                     setDragState({
                         type: 'resizing',
                         noteId: foundNote.id, // Primary note being resized
-                        noteIds: selectedNotes.map(n => n.id), // All notes to resize
+                        noteIds: convertedNotes.map(n => n.id), // All notes to resize (converted)
                         resizeHandle,
                         startCoords: coords,
-                        originalNote: { ...foundNote },
-                        originalNotes // Store all original states
+                        originalNote: { ...convertedPrimaryNote }, // Use converted note
+                        originalNotes: originalNotesForResize, // ✅ Use CONVERTED notes for resize calculations
+                        originalNotesForUndo // Store original for undo/redo
                     });
 
-                    if (DEBUG_MODE) console.log('🎨 Paint brush: Multi-resize started', resizeHandle, selectedNotes.length, 'notes');
+                    if (DEBUG_MODE) console.log('🎨 Paint brush: Multi-resize started', resizeHandle, convertedNotes.length, 'notes');
                 } else {
                     // Clicking on note body - preview sound and remember duration
                     playPreview(
@@ -1054,33 +1141,88 @@ export function useNoteInteractionsV2(
                     const currentNotes = notes();
                     const selectedNotes = currentNotes.filter(n => selectedNoteIds.has(n.id));
                     
-                    // Store original state of all selected notes
-                    const originalNotes = new Map();
-                    selectedNotes.forEach(note => {
-                        originalNotes.set(note.id, {
-                            startTime: note.startTime,
-                            length: note.length,
-                            pitch: note.pitch
-                        });
+                    // ✅ FL STUDIO STYLE: When resize starts, convert oval notes to normal notes
+                    // Store CONVERTED state (for resize calculations) and original state (for undo)
+                    const originalNotesForUndo = new Map(); // For undo/redo (keep original pattern-length)
+                    const originalNotesForResize = new Map(); // For resize calculations (use converted length)
+                    const convertedNotes = selectedNotes.map(note => {
+                        // If note is oval (visualLength < length), convert it to normal
+                        if (note.visualLength !== undefined && note.visualLength < note.length) {
+                            // Use visualLength as the new length (oval -> normal)
+                            const convertedNote = {
+                                ...note,
+                                length: note.visualLength,
+                                visualLength: note.visualLength // No longer oval
+                            };
+                            
+                            // Store original state BEFORE conversion (for undo)
+                            originalNotesForUndo.set(note.id, {
+                                startTime: note.startTime,
+                                length: note.length, // Original pattern-length
+                                visualLength: note.visualLength, // Original visual length
+                                pitch: note.pitch
+                            });
+                            
+                            // Store CONVERTED state for resize calculations
+                            originalNotesForResize.set(note.id, {
+                                startTime: convertedNote.startTime,
+                                length: convertedNote.length, // ✅ CONVERTED length (visualLength)
+                                visualLength: convertedNote.visualLength,
+                                pitch: convertedNote.pitch
+                            });
+                            
+                            return convertedNote;
+                        } else {
+                            // Normal note, store as is
+                            originalNotesForUndo.set(note.id, {
+                                startTime: note.startTime,
+                                length: note.length,
+                                visualLength: note.visualLength,
+                                pitch: note.pitch
+                            });
+                            
+                            originalNotesForResize.set(note.id, {
+                                startTime: note.startTime,
+                                length: note.length,
+                                visualLength: note.visualLength,
+                                pitch: note.pitch
+                            });
+                            
+                            return note;
+                        }
                     });
+                    
+                    // ✅ Update notes immediately to convert oval -> normal before resize
+                    if (convertedNotes.some((n, i) => n.length !== selectedNotes[i].length || n.visualLength !== selectedNotes[i].visualLength)) {
+                        updatePatternStore(convertedNotes);
+                        // ✅ CRITICAL: Also update tempNotes so notes() returns converted notes immediately
+                        setTempNotes(convertedNotes);
+                    }
+                    
+                    // ✅ Get converted note for primary note (might be converted from oval)
+                    const convertedPrimaryNote = convertedNotes.find(n => n.id === foundNote.id) || foundNote;
 
                     if (DEBUG_MODE) {
                         console.log('🎯 Multi-resize started:', {
                             handle: resizeHandle,
                             primaryNoteId: foundNote.id,
-                            totalNotes: selectedNotes.length,
-                            coords
+                            totalNotes: convertedNotes.length,
+                            coords,
+                            converted: convertedNotes.filter(n => n.length !== selectedNotes.find(s => s.id === n.id)?.length).length,
+                            originalLengths: Array.from(originalNotesForResize.values()).map(n => n.length),
+                            convertedLengths: convertedNotes.map(n => n.length)
                         });
                     }
 
                     setDragState({
                         type: 'resizing',
                         noteId: foundNote.id, // Primary note being resized
-                        noteIds: selectedNotes.map(n => n.id), // All notes to resize
+                        noteIds: convertedNotes.map(n => n.id), // All notes to resize (converted)
                         resizeHandle,
                         startCoords: coords,
-                        originalNote: { ...foundNote },
-                        originalNotes // Store all original states
+                        originalNote: { ...convertedPrimaryNote }, // Use converted note
+                        originalNotes: originalNotesForResize, // ✅ Use CONVERTED notes for resize calculations
+                        originalNotesForUndo // Store original for undo/redo
                     });
                 } else {
                     // Start moving - reset duplicate memory
@@ -1342,7 +1484,8 @@ export function useNoteInteractionsV2(
                 setPreviewNote({
                     pitch: coords.pitch,
                     startTime: snappedTime,
-                    length: lastNoteDuration, // Use last duration for preview
+                    length: lastNoteDuration, // Use last duration for audio preview
+                    visualLength: 1, // ✅ FL STUDIO STYLE: Preview always shows as 1 step
                     velocity: 0.8,
                     isPreview: true
                 });
@@ -1492,7 +1635,8 @@ export function useNoteInteractionsV2(
             setPreviewNote({
                 startTime: Math.max(0, snappedTime),
                 pitch: Math.max(0, Math.min(127, Math.round(coords.pitch))),
-                length: 1,
+                length: 1, // Audio length (will be extended to pattern length when note is created)
+                visualLength: 1, // ✅ FL STUDIO STYLE: Preview always shows as 1 step
                 velocity: 100
             });
         }
@@ -1639,16 +1783,54 @@ export function useNoteInteractionsV2(
             const finalStates = new Map();
             const currentNotes = notes();
             
+            // ✅ DEBUG: Log original notes to see what we're working with
+            if (DEBUG_MODE) {
+                console.log('🔍 Resize mouseUp - originalNotes:', {
+                    size: originalNotes.size,
+                    entries: Array.from(originalNotes.entries()).map(([id, note]) => ({
+                        id,
+                        startTime: note.startTime,
+                        length: note.length,
+                        visualLength: note.visualLength
+                    })),
+                    noteIds: noteIds,
+                    currentNotesLengths: currentNotes.filter(n => noteIds.includes(n.id)).map(n => ({
+                        id: n.id,
+                        length: n.length,
+                        visualLength: n.visualLength
+                    }))
+                });
+            }
+            
             noteIds.forEach(noteId => {
                 const original = originalNotes.get(noteId);
                 if (!original) {
-                    if (DEBUG_MODE) console.warn('⚠️ No original state for note:', noteId);
+                    if (DEBUG_MODE) {
+                        console.warn('⚠️ No original state for note:', noteId, {
+                            availableIds: Array.from(originalNotes.keys()),
+                            noteIds: noteIds
+                        });
+                    }
                     return;
+                }
+                
+                // ✅ DEBUG: Log what we're using for resize calculation
+                if (DEBUG_MODE) {
+                    console.log('📏 Resizing note:', noteId, {
+                        original: {
+                            startTime: original.startTime,
+                            length: original.length,
+                            visualLength: original.visualLength
+                        },
+                        deltaTime,
+                        resizeHandle: dragState.resizeHandle
+                    });
                 }
                 
                 let resizedState = { ...original };
 
                 if (dragState.resizeHandle === 'left') {
+                    // ✅ FIX: original is already converted (oval -> normal), so use original.length directly
                     const originalEndTime = original.startTime + original.length;
                     let newStartTime = Math.max(0, original.startTime + deltaTime);
 
@@ -1660,9 +1842,14 @@ export function useNoteInteractionsV2(
                     let newLength = Math.max(minLength, originalEndTime - newStartTime);
                     resizedState.startTime = newStartTime;
                     resizedState.length = newLength;
+                    // ✅ FL STUDIO STYLE: When resized, visualLength matches length (no longer oval)
+                    resizedState.visualLength = newLength;
                 } else if (dragState.resizeHandle === 'right') {
+                    // ✅ FIX: Right resize should NOT change startTime, only length
+                    // ✅ FIX: original is already converted (oval -> normal), so use original.length directly
                     const originalStartTime = original.startTime;
-                    let newEndTime = originalStartTime + original.length + deltaTime;
+                    const originalEndTime = originalStartTime + original.length;
+                    let newEndTime = originalEndTime + deltaTime;
 
                     // Snap to grid
                     if (snapValue > 0) {
@@ -1670,7 +1857,11 @@ export function useNoteInteractionsV2(
                     }
 
                     let newLength = Math.max(minLength, newEndTime - originalStartTime);
+                    // ✅ FIX: Ensure startTime stays the same for right resize
+                    resizedState.startTime = originalStartTime; // ✅ CRITICAL: Don't change startTime
                     resizedState.length = newLength;
+                    // ✅ FL STUDIO STYLE: When resized, visualLength matches length (no longer oval)
+                    resizedState.visualLength = newLength;
                 }
                 
                 finalStates.set(noteId, resizedState);
@@ -1703,7 +1894,8 @@ export function useNoteInteractionsV2(
                         return {
                             ...n,
                             startTime: finalState.startTime,
-                            length: finalState.length
+                            length: finalState.length,
+                            visualLength: finalState.visualLength // ✅ FL STUDIO STYLE: Update visualLength too
                         };
                     }
                     return n;
@@ -1735,15 +1927,26 @@ export function useNoteInteractionsV2(
                     import('@/lib/piano-roll-tools/CommandStack').then(({ getCommandStack }) => {
                         const noteUpdates = [];
                         
+                        // ✅ Use originalNotesForUndo if available (for proper undo), otherwise fallback to originalNotes
+                        const undoOriginalNotes = dragState.originalNotesForUndo || originalNotes;
+                        
                         noteIds.forEach(noteId => {
-                            const original = originalNotes.get(noteId);
+                            const original = undoOriginalNotes.get(noteId);
                             const finalState = finalStates.get(noteId);
                             
                             if (original && finalState) {
                                 noteUpdates.push({
                                     noteId,
-                                    oldState: { startTime: original.startTime, length: original.length },
-                                    newState: { startTime: finalState.startTime, length: finalState.length }
+                                    oldState: { 
+                                        startTime: original.startTime, 
+                                        length: original.length,
+                                        visualLength: original.visualLength // ✅ FL STUDIO STYLE: Include visualLength in undo/redo
+                                    },
+                                    newState: { 
+                                        startTime: finalState.startTime, 
+                                        length: finalState.length,
+                                        visualLength: finalState.visualLength // ✅ FL STUDIO STYLE: Include visualLength in undo/redo
+                                    }
                                 });
                             }
                         });
@@ -1754,7 +1957,15 @@ export function useNoteInteractionsV2(
                                 const current = notes();
                                 const updated = current.map(n => {
                                     const state = updates.get(n.id);
-                                    return state ? { ...n, ...state } : n;
+                                    if (state) {
+                                        return { 
+                                            ...n, 
+                                            startTime: state.startTime,
+                                            length: state.length,
+                                            visualLength: state.visualLength // ✅ FL STUDIO STYLE: Update visualLength too
+                                        };
+                                    }
+                                    return n;
                                 });
                                 updatePatternStore(updated);
                             };

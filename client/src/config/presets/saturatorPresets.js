@@ -448,3 +448,16 @@ export const MODE_CATEGORIES = {
   vintage: { name: 'Vintage', color: 'orange' },
   subtle: { name: 'Subtle', color: 'cyan' }
 };
+
+/**
+ * Export presets as array for PresetManager (PluginContainerV2)
+ */
+export const saturatorPresets = Object.values(SATURATOR_MODES).map(mode => ({
+  id: mode.id,
+  name: mode.name,
+  category: MODE_CATEGORIES[mode.category]?.name || mode.category,
+  description: mode.description,
+  tags: mode.genre || [],
+  author: 'DAWG',
+  settings: mode.baseParams
+}));

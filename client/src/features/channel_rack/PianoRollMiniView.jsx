@@ -21,7 +21,13 @@ const pitchToMidi = (pitch) => {
 };
 
 // Duration'ı step'lere çevir - hem number (length) hem string (duration) destekler
-const getDurationInSteps = (note) => {
+// ✅ FL STUDIO STYLE: Use visualLength for display, length/duration for audio
+const getDurationInSteps = (note, useVisual = true) => {
+    // ✅ FL STUDIO STYLE: Use visualLength for display if available
+    if (useVisual && note.visualLength !== undefined && typeof note.visualLength === 'number') {
+        return note.visualLength;
+    }
+
     // ✅ NEW FORMAT: If note has 'length' property (number), use it directly
     if (typeof note.length === 'number') {
         return note.length;
@@ -122,8 +128,11 @@ export default function PianoRollMiniView({ notes = [], patternLength, onNoteCli
       // ⚡ PERFORMANCE: Only draw notes in visible viewport
       notes.forEach(note => {
         const noteTime = note.time;
-        const noteDuration = getDurationInSteps(note);
-        const noteEndTime = noteTime + noteDuration;
+        // ✅ FL STUDIO STYLE: Use visualLength for display (visual = true)
+        const noteDuration = getDurationInSteps(note, true);
+        // For viewport calculation, use actual length (visual = false) to check full note range
+        const noteActualDuration = getDurationInSteps(note, false);
+        const noteEndTime = noteTime + noteActualDuration;
 
         // Skip notes completely outside viewport
         if (noteEndTime < startStep || noteTime > endStep) return;

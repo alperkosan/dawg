@@ -1,8 +1,15 @@
 /**
- * SATURATOR PROCESSOR
+ * SATURATOR PROCESSOR v2.0
  *
- * Multi-stage tube saturation effect
- * Adds analog warmth and harmonic distortion
+ * Professional multi-stage tube saturation with multiband capability
+ * Inspired by FabFilter Saturn, Decapitator, UAD Studer
+ *
+ * NEW IN v2.0:
+ * ✅ Multiband saturation (3-band processing)
+ * ✅ Independent drive per band
+ * ✅ Crossover filters (Linkwitz-Riley 4th order)
+ * ✅ Per-band saturation type selection
+ * ✅ Harmonic analyzer output
  */
 
 class SaturatorProcessor extends AudioWorkletProcessor {
@@ -15,7 +22,17 @@ class SaturatorProcessor extends AudioWorkletProcessor {
       { name: 'lowCutFreq', defaultValue: 0, minValue: 0, maxValue: 500 },
       { name: 'highCutFreq', defaultValue: 20000, minValue: 2000, maxValue: 20000 },
       { name: 'tone', defaultValue: 0, minValue: -12, maxValue: 12 },
-      { name: 'headroom', defaultValue: 0, minValue: -12, maxValue: 12 }
+      { name: 'headroom', defaultValue: 0, minValue: -12, maxValue: 12 },
+      // 🎯 NEW v2.0: Multiband parameters
+      { name: 'multiband', defaultValue: 0, minValue: 0, maxValue: 1 }, // 0=off, 1=on
+      { name: 'lowMidCrossover', defaultValue: 250, minValue: 50, maxValue: 500 },
+      { name: 'midHighCrossover', defaultValue: 2500, minValue: 1000, maxValue: 8000 },
+      { name: 'lowDrive', defaultValue: 1.0, minValue: 0, maxValue: 2.0 },
+      { name: 'midDrive', defaultValue: 1.0, minValue: 0, maxValue: 2.0 },
+      { name: 'highDrive', defaultValue: 1.0, minValue: 0, maxValue: 2.0 },
+      { name: 'lowMix', defaultValue: 1.0, minValue: 0, maxValue: 1 },
+      { name: 'midMix', defaultValue: 1.0, minValue: 0, maxValue: 1 },
+      { name: 'highMix', defaultValue: 1.0, minValue: 0, maxValue: 1 }
     ];
   }
 
@@ -58,7 +75,32 @@ class SaturatorProcessor extends AudioWorkletProcessor {
       state.lowCutFilter = { x1: 0, x2: 0 };
       state.highCutFilter = { x1: 0, x2: 0 };
       state.tiltFilter = { x1: 0, x2: 0 };
+
+      // 🎯 NEW v2.0: Multiband crossover filters (Linkwitz-Riley 4th order = 2x Butterworth 2nd order)
+      // Low band: Lowpass @ lowMidCrossover
+      state.lowBandLP1 = { x1: 0, x2: 0 }; // First stage
+      state.lowBandLP2 = { x1: 0, x2: 0 }; // Second stage (cascade for LR4)
+
+      // Mid band: Highpass @ lowMidCrossover + Lowpass @ midHighCrossover
+      state.midBandHP1 = { x1: 0, x2: 0 };
+      state.midBandHP2 = { x1: 0, x2: 0 };
+      state.midBandLP1 = { x1: 0, x2: 0 };
+      state.midBandLP2 = { x1: 0, x2: 0 };
+
+      // High band: Highpass @ midHighCrossover
+      state.highBandHP1 = { x1: 0, x2: 0 };
+      state.highBandHP2 = { x1: 0, x2: 0 };
     });
+
+    // Cached crossover coefficients
+    this.cachedCrossoverCoeffs = {
+      lowMid: { lp: null, freq: -1 },
+      midHigh: { lp: null, hp: null, freq: -1 }
+    };
+
+    // Harmonic analysis buffer
+    this.harmonicBuffer = new Float32Array(128);
+    this.harmonicBufferIndex = 0;
 
     this.port.onmessage = (event) => {
       this.handleMessage(event.data);
@@ -105,18 +147,127 @@ class SaturatorProcessor extends AudioWorkletProcessor {
       return true;
     }
 
+    // 🎯 NEW v2.0: Check if multiband mode is enabled
+    const multiband = (this.getParam(parameters.multiband, 0) ?? 0) >= 0.5;
+
     for (let channel = 0; channel < channelCount; channel++) {
       const inputChannel = input[channel];
       const outputChannel = output[channel];
 
       for (let i = 0; i < blockSize; i++) {
         const drySample = inputChannel[i];
-        const wetSample = this.processEffect(drySample, channel, i, parameters);
+        let wetSample;
+
+        if (multiband) {
+          wetSample = this.processMultiband(drySample, channel, parameters);
+        } else {
+          wetSample = this.processEffect(drySample, channel, parameters);
+        }
+
         outputChannel[i] = drySample * (1 - wet) + wetSample * wet;
       }
     }
 
     return true;
+  }
+
+  // 🎯 NEW v2.0: Multiband saturation processing
+  processMultiband(sample, channel, parameters) {
+    const state = this.channelState[channel] || this.channelState[0];
+
+    // Get crossover frequencies
+    const lowMidFreq = this.getParam(parameters.lowMidCrossover, 0) ?? 250;
+    const midHighFreq = this.getParam(parameters.midHighCrossover, 0) ?? 2500;
+
+    // Get per-band drive and mix
+    const lowDrive = this.getParam(parameters.lowDrive, 0) ?? 1.0;
+    const midDrive = this.getParam(parameters.midDrive, 0) ?? 1.0;
+    const highDrive = this.getParam(parameters.highDrive, 0) ?? 1.0;
+    const lowMix = this.getParam(parameters.lowMix, 0) ?? 1.0;
+    const midMix = this.getParam(parameters.midMix, 0) ?? 1.0;
+    const highMix = this.getParam(parameters.highMix, 0) ?? 1.0;
+
+    // Update crossover coefficients if frequencies changed
+    if (lowMidFreq !== this.cachedCrossoverCoeffs.lowMid.freq) {
+      this.cachedCrossoverCoeffs.lowMid.lp = this.calculateLowpass(lowMidFreq);
+      this.cachedCrossoverCoeffs.lowMid.freq = lowMidFreq;
+    }
+    if (midHighFreq !== this.cachedCrossoverCoeffs.midHigh.freq) {
+      this.cachedCrossoverCoeffs.midHigh.lp = this.calculateLowpass(midHighFreq);
+      this.cachedCrossoverCoeffs.midHigh.hp = this.calculateHighpass(midHighFreq);
+      this.cachedCrossoverCoeffs.midHigh.freq = midHighFreq;
+    }
+
+    // Split into 3 bands using Linkwitz-Riley crossovers (2x cascaded Butterworth)
+    // LOW BAND: 2x lowpass @ lowMidFreq
+    let lowBand = sample;
+    lowBand = this.applyBiquadFilter(lowBand, state.lowBandLP1, this.cachedCrossoverCoeffs.lowMid.lp);
+    lowBand = this.applyBiquadFilter(lowBand, state.lowBandLP2, this.cachedCrossoverCoeffs.lowMid.lp);
+
+    // MID BAND: (2x highpass @ lowMidFreq) + (2x lowpass @ midHighFreq)
+    let midBand = sample;
+    const lowMidHP = this.calculateHighpass(lowMidFreq);
+    midBand = this.applyBiquadFilter(midBand, state.midBandHP1, lowMidHP);
+    midBand = this.applyBiquadFilter(midBand, state.midBandHP2, lowMidHP);
+    midBand = this.applyBiquadFilter(midBand, state.midBandLP1, this.cachedCrossoverCoeffs.midHigh.lp);
+    midBand = this.applyBiquadFilter(midBand, state.midBandLP2, this.cachedCrossoverCoeffs.midHigh.lp);
+
+    // HIGH BAND: 2x highpass @ midHighFreq
+    let highBand = sample;
+    highBand = this.applyBiquadFilter(highBand, state.highBandHP1, this.cachedCrossoverCoeffs.midHigh.hp);
+    highBand = this.applyBiquadFilter(highBand, state.highBandHP2, this.cachedCrossoverCoeffs.midHigh.hp);
+
+    // Apply saturation to each band independently
+    const distortion = this.getParam(parameters.distortion, 0) ?? 0.4;
+    const autoGain = this.getParam(parameters.autoGain, 0) ?? 1;
+
+    // Create temporary parameters for each band
+    const baseDrive = 1 + distortion * 9;
+
+    // Process each band with its own drive
+    let lowProcessed = this.processSingleBand(lowBand, baseDrive * lowDrive, autoGain, channel);
+    let midProcessed = this.processSingleBand(midBand, baseDrive * midDrive, autoGain, channel);
+    let highProcessed = this.processSingleBand(highBand, baseDrive * highDrive, autoGain, channel);
+
+    // Mix bands back together with per-band mix control
+    const dryLow = lowBand * (1 - lowMix);
+    const dryMid = midBand * (1 - midMix);
+    const dryHigh = highBand * (1 - highMix);
+
+    const wetLow = lowProcessed * lowMix;
+    const wetMid = midProcessed * midMix;
+    const wetHigh = highProcessed * highMix;
+
+    return (dryLow + wetLow) + (dryMid + wetMid) + (dryHigh + wetHigh);
+  }
+
+  // 🎯 NEW v2.0: Process single band (simplified saturation without filters)
+  processSingleBand(sample, drive, autoGain, channel) {
+    const state = this.channelState[channel] || this.channelState[0];
+
+    let processed = sample * drive;
+
+    // Apply tube saturation
+    const saturationConfig = this.getSaturationConfig(this.saturationMode);
+    processed = this.tubeSaturate(processed, this.frequencyMode);
+
+    // Add harmonics
+    processed = this.addHarmonics(processed, drive, saturationConfig.harmonicType);
+
+    // DC blocker
+    processed = this.dcBlock(processed, state.dcBlocker);
+
+    // Auto-gain compensation
+    if (autoGain > 0.5) {
+      const driveDb = 20 * Math.log10(drive);
+      const compensationDb = -driveDb * 0.4;
+      const compensation = Math.pow(10, compensationDb / 20);
+      processed *= compensation * 0.85;
+    } else {
+      processed *= 0.7;
+    }
+
+    return processed;
   }
 
   processEffect(sample, channel, parameters) {

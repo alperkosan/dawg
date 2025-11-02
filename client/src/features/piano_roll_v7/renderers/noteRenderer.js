@@ -119,8 +119,13 @@ export class PremiumNoteRenderer {
         const x = Math.round(note.startTime * stepWidth);
         const y = Math.round((127 - note.pitch) * keyHeight);
 
-        // Calculate width to fill grid cells completely based on note length
-        const noteWidthInSteps = Math.round(note.length * stepWidth);
+        // ✅ FL STUDIO STYLE: Use visualLength for display, length for audio
+        // visualLength = 1 step means note extends to pattern end but shows as short
+        const displayLength = note.visualLength !== undefined ? note.visualLength : note.length;
+        const hasExtendedAudio = note.visualLength !== undefined && note.visualLength < note.length;
+        
+        // Calculate width to fill grid cells completely based on visual length
+        const noteWidthInSteps = Math.round(displayLength * stepWidth);
         const width = Math.max(Math.round(stepWidth) - 1, noteWidthInSteps - 1); // -1 for grid line visibility
         const height = Math.round(keyHeight) - 1; // -1 for horizontal grid line visibility
 
@@ -240,20 +245,52 @@ export class PremiumNoteRenderer {
 
         // Main note body with subtle 3D effect - aligned to grid
         ctx.fillStyle = gradient;
-        this.drawRoundedRect(ctx, x, y, width, height, 3);
-        ctx.fill();
+        
+        // ✅ FL STUDIO STYLE: Oval edges for extended audio notes (visualLength < length)
+        // This indicates the note extends to pattern end but shows as short
+        if (hasExtendedAudio) {
+            // Draw with more rounded (oval) edges to indicate extension
+            const cornerRadius = Math.min(height / 2, 6); // More rounded = oval shape
+            this.drawRoundedRect(ctx, x, y, width, height, cornerRadius);
+            ctx.fill();
+            
+            // Add subtle indicator line on right edge to show it extends
+            ctx.strokeStyle = `hsla(${baseHue}, ${saturation}%, ${lightness + 10}%, ${alpha * 0.6})`;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(x + width - 1, y);
+            ctx.lineTo(x + width - 1, y + height);
+            ctx.stroke();
+        } else {
+            // Normal rounded rectangle
+            this.drawRoundedRect(ctx, x, y, width, height, 3);
+            ctx.fill();
+        }
 
         // Reset shadow for other elements
         ctx.shadowBlur = 0;
         ctx.shadowColor = 'transparent';
 
         // Premium border with depth
-        this.renderNoteBorder(ctx, x, y, width, height, {
-            hue: baseHue,
-            isSelected,
-            isHovered,
-            velocity: note.velocity
-        });
+        // ✅ FL STUDIO STYLE: Dashed border for extended audio notes
+        if (hasExtendedAudio) {
+            ctx.save();
+            ctx.setLineDash([3, 2]); // Dashed border to indicate extension
+            ctx.lineWidth = 1.5;
+            ctx.strokeStyle = `hsla(${baseHue}, ${saturation}%, ${lightness + 15}%, ${alpha * 0.8})`;
+            const cornerRadius = Math.min(height / 2, 6);
+            this.drawRoundedRect(ctx, x, y, width, height, cornerRadius);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.restore();
+        } else {
+            this.renderNoteBorder(ctx, x, y, width, height, {
+                hue: baseHue,
+                isSelected,
+                isHovered,
+                velocity: note.velocity
+            });
+        }
 
         // Velocity indicator (subtle left bar)
         this.renderVelocityIndicator(ctx, x + 1, y + 1, height - 2, note.velocity);
@@ -522,6 +559,7 @@ export class PremiumNoteRenderer {
                         const minLength = 0.25;
 
                         if (dragState.resizeHandle === 'left') {
+                            // ✅ FIX: original is already converted (oval -> normal), so use original.length directly
                             const originalEndTime = original.startTime + original.length;
                             let newStartTime = Math.max(0, original.startTime + deltaTime);
 
@@ -530,17 +568,21 @@ export class PremiumNoteRenderer {
                             }
 
                             const newLength = Math.max(minLength, originalEndTime - newStartTime);
-                            renderNote = { ...note, startTime: newStartTime, length: newLength };
+                            renderNote = { ...note, startTime: newStartTime, length: newLength, visualLength: newLength };
                         } else if (dragState.resizeHandle === 'right') {
+                            // ✅ FIX: Right resize should NOT change startTime, only length
+                            // ✅ FIX: original is already converted (oval -> normal), so use original.length directly
                             const originalStartTime = original.startTime;
-                            let newEndTime = originalStartTime + original.length + deltaTime;
+                            const originalEndTime = originalStartTime + original.length;
+                            let newEndTime = originalEndTime + deltaTime;
 
                             if (snapValue > 0) {
                                 newEndTime = Math.max(0, Math.round(newEndTime / snapValue) * snapValue);
                             }
 
                             const newLength = Math.max(minLength, newEndTime - originalStartTime);
-                            renderNote = { ...note, length: newLength };
+                            // ✅ FIX: Ensure startTime stays the same for right resize
+                            renderNote = { ...note, startTime: originalStartTime, length: newLength, visualLength: newLength };
                         }
                     }
                 }
@@ -554,10 +596,14 @@ export class PremiumNoteRenderer {
     renderPreviewNote(ctx, note, dimensions, viewport) {
         const { stepWidth, keyHeight } = dimensions;
 
+        // ✅ FL STUDIO STYLE: Use visualLength for preview display
+        const displayLength = note.visualLength !== undefined ? note.visualLength : (note.length || 1);
+        const hasExtendedAudio = note.visualLength !== undefined && note.visualLength < note.length;
+        
         // Calculate note position and size
         const x = Math.round(note.startTime * stepWidth);
         const y = Math.round((127 - note.pitch) * keyHeight);
-        const noteWidthInSteps = Math.round(note.length * stepWidth);
+        const noteWidthInSteps = Math.round(displayLength * stepWidth);
         const width = Math.max(Math.round(stepWidth) - 1, noteWidthInSteps - 1);
         const height = Math.round(keyHeight) - 1;
 
@@ -580,18 +626,31 @@ export class PremiumNoteRenderer {
         gradient.addColorStop(0.7, `hsla(${baseHue}, 60%, 50%, ${alpha})`);
         gradient.addColorStop(1, `hsla(${baseHue}, 60%, 40%, ${alpha})`);
 
+        // ✅ FL STUDIO STYLE: Oval edges for extended audio preview notes
+        const cornerRadius = hasExtendedAudio ? Math.min(height / 2, 6) : 3;
+        
         // Draw preview note body
         ctx.fillStyle = gradient;
-        this.drawRoundedRect(ctx, x, y, width, height, 3);
+        this.drawRoundedRect(ctx, x, y, width, height, cornerRadius);
         ctx.fill();
 
         // Preview border - dashed line for distinction
         ctx.strokeStyle = `hsla(${baseHue}, 70%, 80%, 0.7)`;
         ctx.lineWidth = 2;
         ctx.setLineDash([4, 4]); // Dashed border for preview
-        this.drawRoundedRect(ctx, x, y, width, height, 3);
+        this.drawRoundedRect(ctx, x, y, width, height, cornerRadius);
         ctx.stroke();
         ctx.setLineDash([]); // Reset dash
+        
+        // ✅ FL STUDIO STYLE: Add indicator line on right edge if extended
+        if (hasExtendedAudio) {
+            ctx.strokeStyle = `hsla(${baseHue}, 70%, 80%, ${alpha * 0.6})`;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(x + width - 1, y);
+            ctx.lineTo(x + width - 1, y + height);
+            ctx.stroke();
+        }
 
         // Subtle preview highlight
         const previewHighlight = this.createSafeLinearGradient(ctx,x, y, x, y + height * 0.3);
@@ -599,7 +658,7 @@ export class PremiumNoteRenderer {
         previewHighlight.addColorStop(1, `hsla(${baseHue}, 80%, 90%, 0)`);
 
         ctx.fillStyle = previewHighlight;
-        this.drawRoundedRect(ctx, x + 1, y + 1, width - 2, height * 0.3, 2);
+        this.drawRoundedRect(ctx, x + 1, y + 1, width - 2, height * 0.3, Math.max(2, cornerRadius - 1));
         ctx.fill();
 
         // Preview label (optional for larger notes)

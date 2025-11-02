@@ -1523,32 +1523,67 @@ export class PlaybackManager {
      * @private
      */
     _flushAllEffects() {
-        if (!this.audioEngine || !this.audioEngine.mixerChannels) return;
+        if (!this.audioEngine) return;
 
-        // Iterate through all mixer channels
-        this.audioEngine.mixerChannels.forEach((channel, channelId) => {
-            if (!channel.effects) return;
+        let flushedCount = 0;
 
-            // Flush each effect in the channel
-            channel.effects.forEach((effect, effectId) => {
-                try {
-                    // NativeEffect uses effect.node.port
-                    if (effect.node && effect.node.port) {
-                        effect.node.port.postMessage({ type: 'flush' });
+        // 🎛️ MODERN SYSTEM: Flush mixer inserts (NativeEffect system)
+        if (this.audioEngine.mixerInserts) {
+            this.audioEngine.mixerInserts.forEach((insert, insertId) => {
+                if (!insert.effects) return;
+
+                // Flush each effect in the insert
+                insert.effects.forEach((effect, effectId) => {
+                    try {
+                        // NativeEffect uses effect.node.port
+                        if (effect.node && effect.node.port) {
+                            effect.node.port.postMessage({ type: 'flush' });
+                            flushedCount++;
+                        }
+                        // WorkletEffect uses effect.workletNode.port
+                        else if (effect.workletNode && effect.workletNode.port) {
+                            effect.workletNode.port.postMessage({ type: 'flush' });
+                            flushedCount++;
+                        }
+                        // Try direct reset method if available
+                        else if (effect.reset && typeof effect.reset === 'function') {
+                            effect.reset();
+                            flushedCount++;
+                        }
+                    } catch (e) {
+                        console.warn(`Failed to flush effect ${effectId}:`, e);
                     }
-                    // WorkletEffect uses effect.workletNode.port
-                    else if (effect.workletNode && effect.workletNode.port) {
-                        effect.workletNode.port.postMessage({ type: 'flush' });
-                    }
-                    // Try direct reset method if available
-                    else if (effect.reset && typeof effect.reset === 'function') {
-                        effect.reset();
-                    }
-                } catch (e) {
-                    // Silent fail - effect may not support flushing
-                }
+                });
             });
-        });
+        }
+
+        // 🔙 LEGACY SYSTEM: Fallback to old mixer channels (backward compatibility)
+        if (this.audioEngine.mixerChannels) {
+            this.audioEngine.mixerChannels.forEach((channel, channelId) => {
+                if (!channel.effects) return;
+
+                channel.effects.forEach((effect, effectId) => {
+                    try {
+                        if (effect.node && effect.node.port) {
+                            effect.node.port.postMessage({ type: 'flush' });
+                            flushedCount++;
+                        }
+                        else if (effect.workletNode && effect.workletNode.port) {
+                            effect.workletNode.port.postMessage({ type: 'flush' });
+                            flushedCount++;
+                        }
+                        else if (effect.reset && typeof effect.reset === 'function') {
+                            effect.reset();
+                            flushedCount++;
+                        }
+                    } catch (e) {
+                        console.warn(`Failed to flush legacy effect ${effectId}:`, e);
+                    }
+                });
+            });
+        }
+
+        console.log(`🧹 Flushed ${flushedCount} effects`);
     }
 
     /**
