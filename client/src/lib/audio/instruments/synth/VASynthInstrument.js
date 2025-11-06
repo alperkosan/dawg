@@ -59,7 +59,7 @@ export class VASynthInstrument extends BaseInstrument {
     /**
      * Play a note (polyphonic or monophonic based on preset)
      */
-    noteOn(midiNote, velocity = 100, startTime = null) {
+    noteOn(midiNote, velocity = 100, startTime = null, extendedParams = null) {
         if (!this._isInitialized) {
             console.warn(`${this.name}: Not initialized, call initialize() first`);
             return;
@@ -79,13 +79,22 @@ export class VASynthInstrument extends BaseInstrument {
                     // Create mono voice on first note
                     monoVoice = new VASynth(this.audioContext);
                     monoVoice.loadPreset(this.preset);
-                    monoVoice.masterGain.connect(this.masterGain);
+                    
+                    // ✅ PHASE 2: Apply per-note pan if present
+                    if (extendedParams?.pan !== undefined && extendedParams.pan !== 0) {
+                        const panner = this.audioContext.createStereoPanner();
+                        panner.pan.setValueAtTime(extendedParams.pan, time);
+                        monoVoice.masterGain.connect(panner);
+                        panner.connect(this.masterGain);
+                    } else {
+                        monoVoice.masterGain.connect(this.masterGain);
+                    }
                     this.voices.set('mono', monoVoice);
                 }
 
-                // Trigger note on mono voice (handles portamento/legato internally)
-                monoVoice.noteOn(midiNote, velocity, time);
-                this.activeNotes.set(midiNote, { startTime: time, velocity });
+                // ✅ PHASE 2: Trigger note on mono voice with extended params
+                monoVoice.noteOn(midiNote, velocity, time, extendedParams);
+                this.activeNotes.set(midiNote, { startTime: time, velocity, extendedParams });
 
             } else {
                 // ✅ POLYPHONIC MODE: Create separate voice per note
@@ -105,10 +114,19 @@ export class VASynthInstrument extends BaseInstrument {
                 // Create new voice for this note
                 const voice = new VASynth(this.audioContext);
                 voice.loadPreset(this.preset);
-                voice.masterGain.connect(this.masterGain);
+                
+                // ✅ PHASE 2: Apply per-note pan if present
+                if (extendedParams?.pan !== undefined && extendedParams.pan !== 0) {
+                    const panner = this.audioContext.createStereoPanner();
+                    panner.pan.setValueAtTime(extendedParams.pan, time);
+                    voice.masterGain.connect(panner);
+                    panner.connect(this.masterGain);
+                } else {
+                    voice.masterGain.connect(this.masterGain);
+                }
 
-                // Start note
-                voice.noteOn(midiNote, velocity, time);
+                // ✅ PHASE 2: Start note with extended params
+                voice.noteOn(midiNote, velocity, time, extendedParams);
 
                 // Store voice
                 this.voices.set(midiNote, voice);

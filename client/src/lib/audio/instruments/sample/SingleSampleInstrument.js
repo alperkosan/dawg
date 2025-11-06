@@ -58,7 +58,7 @@ export class SingleSampleInstrument extends BaseInstrument {
      * @param {number} velocity - MIDI velocity (0-127)
      * @param {number} startTime - When to start (AudioContext time)
      */
-    noteOn(midiNote, velocity = 100, startTime = null) {
+    noteOn(midiNote, velocity = 100, startTime = null, extendedParams = null) {
         if (!this._isInitialized || !this.sampleBuffer) {
             console.warn(`❌ SingleSample not ready: ${this.name}`, {
                 isInitialized: this._isInitialized,
@@ -106,7 +106,15 @@ export class SingleSampleInstrument extends BaseInstrument {
             // Calculate pitch shift (combine base note shift + pitch parameter)
             const baseShift = midiNote - this.baseNote; // semitones
             const pitchParam = this.data.pitch || 0; // additional pitch shift from UI
-            const totalPitchShift = baseShift + pitchParam;
+            
+            // ✅ PHASE 2: Apply initial pitch bend if present
+            let initialPitchBend = 0;
+            if (extendedParams?.pitchBend && Array.isArray(extendedParams.pitchBend) && extendedParams.pitchBend.length > 0) {
+                const firstPoint = extendedParams.pitchBend[0];
+                initialPitchBend = (firstPoint.value / 8192) * 2; // ±2 semitones range
+            }
+            
+            const totalPitchShift = baseShift + pitchParam + initialPitchBend;
             const playbackRate = Math.pow(2, totalPitchShift / 12);
 
             // ✅ EXTRA DEBUG: Log pitch math to diagnose wrong pitch issues
@@ -144,21 +152,39 @@ export class SingleSampleInstrument extends BaseInstrument {
                 }
             }
 
-            // Create panner for stereo positioning
+            // ✅ PHASE 2: Create panner - use note pan if available, otherwise instrument pan
             let lastNode = gainNode;
-            if (this.data.pan !== undefined && this.data.pan !== 0) {
+            const panValue = extendedParams?.pan !== undefined ? extendedParams.pan : (this.data.pan || 0);
+            if (panValue !== 0) {
                 const panner = this.audioContext.createStereoPanner();
-                panner.pan.setValueAtTime(this.data.pan, when);
+                panner.pan.setValueAtTime(panValue, when);
                 gainNode.connect(panner);
                 lastNode = panner;
             }
 
-            // Create filter if defined
+            // ✅ PHASE 2: Create filter - apply mod wheel and aftertouch if present
             if (this.data.filterType && this.data.filterCutoff) {
                 const filter = this.audioContext.createBiquadFilter();
                 filter.type = this.data.filterType || 'lowpass';
-                filter.frequency.setValueAtTime(this.data.filterCutoff || 20000, when);
-                filter.Q.setValueAtTime(this.data.filterResonance || 1, when);
+                
+                // Apply mod wheel (CC1) to filter cutoff if present
+                let filterCutoff = this.data.filterCutoff || 20000;
+                if (extendedParams?.modWheel !== undefined) {
+                    const modWheelNormalized = extendedParams.modWheel / 127; // 0-1
+                    const cutoffRange = filterCutoff * 0.5; // ±50% modulation
+                    filterCutoff = filterCutoff + (modWheelNormalized - 0.5) * cutoffRange * 2;
+                    filterCutoff = Math.max(20, Math.min(20000, filterCutoff)); // Clamp
+                }
+                filter.frequency.setValueAtTime(filterCutoff, when);
+                
+                // Apply aftertouch to filter Q if present
+                let filterQ = this.data.filterResonance || 1;
+                if (extendedParams?.aftertouch !== undefined) {
+                    const aftertouchNormalized = extendedParams.aftertouch / 127; // 0-1
+                    filterQ = filterQ + aftertouchNormalized * 10; // Add up to 10 Q
+                    filterQ = Math.max(0, Math.min(30, filterQ)); // Clamp Q
+                }
+                filter.Q.setValueAtTime(filterQ, when);
 
                 lastNode.connect(filter);
                 lastNode = filter;

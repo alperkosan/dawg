@@ -43,8 +43,8 @@ export class SampleVoice extends BaseVoice {
         this.gainNode = this.context.createGain();
         this.gainNode.gain.setValueAtTime(1, this.context.currentTime);
 
-        // Connect: envelope -> velocity -> output
-        this.envelopeGain.connect(this.gainNode);
+        // ✅ PHASE 2: Don't connect here - connections will be made dynamically in trigger()
+        // to support filter/panner chain based on extendedParams
         this.output = this.gainNode;
     }
 
@@ -58,7 +58,7 @@ export class SampleVoice extends BaseVoice {
      * @param {Object} sampleData - { buffer, baseNote, pitchShift }
      * @param {Object} instrumentData - Instrument parameters (ADSR, etc.)
      */
-    trigger(midiNote, velocity, frequency, time, sampleData = null, instrumentData = null) {
+    trigger(midiNote, velocity, frequency, time, sampleData = null, instrumentData = null, extendedParams = null) {
         if (!sampleData || !sampleData.buffer) {
             console.warn('SampleVoice: No sample data provided');
             return;
@@ -75,17 +75,137 @@ export class SampleVoice extends BaseVoice {
         // Calculate playback rate for pitch shifting
         // Formula: playbackRate = 2^(semitones/12)
         const pitchShift = sampleData.pitchShift || 0;
-        const playbackRate = Math.pow(2, pitchShift / 12);
+        
+        // ✅ PHASE 2: Apply initial pitch bend if present
+        let initialPitchBend = 0;
+        if (extendedParams?.pitchBend && Array.isArray(extendedParams.pitchBend) && extendedParams.pitchBend.length > 0) {
+            const firstPoint = extendedParams.pitchBend[0];
+            initialPitchBend = (firstPoint.value / 8192) * 2; // ±2 semitones range
+        }
+        
+        const totalPitchShift = pitchShift + initialPitchBend;
+        const playbackRate = Math.pow(2, totalPitchShift / 12);
 
         // 🔧 TEMP DEBUG: Log extreme pitch shifts that might cause aliasing
-        if (Math.abs(pitchShift) > 12) {
-            console.warn(`⚠️ Extreme pitch shift: ${pitchShift} semitones (${playbackRate.toFixed(2)}x)`);
+        if (Math.abs(totalPitchShift) > 12) {
+            console.warn(`⚠️ Extreme pitch shift: ${totalPitchShift} semitones (${playbackRate.toFixed(2)}x)`);
         }
 
-        this.currentSource.playbackRate.setValueAtTime(playbackRate, time);
+        // ✅ FL Studio-style slide - handle slide pitch glide
+        if (extendedParams?.slideEnabled === true && 
+            extendedParams?.slideTargetPitch !== undefined && 
+            extendedParams?.slideTargetPitch !== null &&
+            extendedParams?.slideDuration) {
+            
+            // Ensure targetPitch is a number
+            const targetPitch = typeof extendedParams.slideTargetPitch === 'number' 
+                ? extendedParams.slideTargetPitch 
+                : parseInt(extendedParams.slideTargetPitch);
+            
+            if (!isNaN(targetPitch) && targetPitch >= 0 && targetPitch <= 127) {
+                const sourcePitch = midiNote;
+                const slideDuration = extendedParams.slideDuration;
+                
+                // Calculate playback rates relative to sample's base note
+                const sourcePlaybackRate = Math.pow(2, (sourcePitch - sampleData.baseNote) / 12);
+                const targetPlaybackRate = Math.pow(2, (targetPitch - sampleData.baseNote) / 12);
+                
+                // ✅ FL Studio-style: Note starts at its own pitch, then glides to target pitch
+                // Slide starts immediately when note starts, glides over slideDuration
+                this.currentSource.playbackRate.setValueAtTime(sourcePlaybackRate, time);
+                this.currentSource.playbackRate.exponentialRampToValueAtTime(
+                    targetPlaybackRate,
+                    time + slideDuration
+                );
+                
+                console.log('🎚️ SampleVoice slide applied:', {
+                    sourcePitch,
+                    targetPitch,
+                    slideDuration: slideDuration.toFixed(3) + 's',
+                    sourceRate: sourcePlaybackRate.toFixed(3),
+                    targetRate: targetPlaybackRate.toFixed(3)
+                });
+            } else {
+                console.warn('⚠️ Invalid slideTargetPitch:', extendedParams.slideTargetPitch);
+                // Fallback to normal playback
+                this.currentSource.playbackRate.setValueAtTime(playbackRate, time);
+            }
+        } else {
+            // Normal playback - no slide
+            this.currentSource.playbackRate.setValueAtTime(playbackRate, time);
+        }
+        
+        // ✅ PHASE 2: Schedule pitch bend automation if present (non-slide pitch bend)
+        if (extendedParams?.pitchBend && Array.isArray(extendedParams.pitchBend) && extendedParams.pitchBend.length > 1) {
+            const noteDurationSec = sampleData.buffer.duration || 1;
+            extendedParams.pitchBend.forEach((point, index) => {
+                if (index === 0) return; // Skip first point (already applied)
+                
+                let pointTime;
+                if (point.time <= 1 && point.time >= 0) {
+                    // Normalized time (0-1)
+                    pointTime = time + (point.time * noteDurationSec);
+                } else {
+                    // Absolute time in steps - estimate conversion
+                    const stepsPerBeat = 4;
+                    const bpm = 120;
+                    const secondsPerStep = (60 / bpm) / stepsPerBeat;
+                    pointTime = time + (point.time * secondsPerStep);
+                }
+                
+                const pitchBendSemitones = (point.value / 8192) * 2;
+                const newPlaybackRate = Math.pow(2, (pitchShift + pitchBendSemitones) / 12);
+                
+                if (Number.isFinite(newPlaybackRate) && newPlaybackRate > 0 && pointTime > time) {
+                    this.currentSource.playbackRate.setValueAtTime(newPlaybackRate, pointTime);
+                }
+            });
+        }
 
         // Connect source to envelope
         this.currentSource.connect(this.envelopeGain);
+
+        // ✅ PHASE 2: Create filter if mod wheel or aftertouch present
+        let lastNode = this.envelopeGain;
+        let filterNode = null;
+        if (extendedParams?.modWheel !== undefined || extendedParams?.aftertouch !== undefined) {
+            filterNode = this.context.createBiquadFilter();
+            filterNode.type = 'lowpass';
+            
+            // Apply mod wheel (CC1) to filter cutoff if present
+            let filterCutoff = 20000; // Default high cutoff
+            if (extendedParams?.modWheel !== undefined) {
+                const modWheelNormalized = extendedParams.modWheel / 127; // 0-1
+                const cutoffRange = filterCutoff * 0.5; // ±50% modulation
+                filterCutoff = filterCutoff + (modWheelNormalized - 0.5) * cutoffRange * 2;
+                filterCutoff = Math.max(20, Math.min(20000, filterCutoff)); // Clamp
+            }
+            filterNode.frequency.setValueAtTime(filterCutoff, time);
+            
+            // Apply aftertouch to filter Q if present
+            let filterQ = 1;
+            if (extendedParams?.aftertouch !== undefined) {
+                const aftertouchNormalized = extendedParams.aftertouch / 127; // 0-1
+                filterQ = filterQ + aftertouchNormalized * 10; // Add up to 10 Q
+                filterQ = Math.max(0, Math.min(30, filterQ)); // Clamp Q
+            }
+            filterNode.Q.setValueAtTime(filterQ, time);
+            
+            this.envelopeGain.connect(filterNode);
+            lastNode = filterNode;
+        }
+
+        // ✅ PHASE 2: Create panner if pan present
+        let pannerNode = null;
+        if (extendedParams?.pan !== undefined && extendedParams.pan !== 0) {
+            pannerNode = this.context.createStereoPanner();
+            pannerNode.pan.setValueAtTime(extendedParams.pan, time);
+            lastNode.connect(pannerNode);
+            lastNode = pannerNode;
+        }
+
+        // Connect lastNode to gainNode
+        lastNode.connect(this.gainNode);
 
         // Set velocity gain
         const velocityGain = (velocity / 127) * 0.8;
@@ -96,6 +216,15 @@ export class SampleVoice extends BaseVoice {
         const finalGain = velocityGain * sampleHeadroom;
 
         this.gainNode.gain.setValueAtTime(finalGain, time);
+        
+        // Update output reference if panner/filter was added
+        if (pannerNode) {
+            this.output = pannerNode;
+        } else if (filterNode) {
+            this.output = filterNode;
+        } else {
+            this.output = this.gainNode;
+        }
 
         // ✅ ADSR Envelope from instrument data
         const attack = instrumentData?.attack !== undefined ? instrumentData.attack / 1000 : 0.005; // Default 5ms

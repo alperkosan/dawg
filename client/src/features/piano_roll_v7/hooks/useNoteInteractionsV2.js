@@ -14,8 +14,13 @@ import {
     DeleteNotesCommand,
     UpdateNoteCommand,
     MoveNotesCommand,
-    BatchCommand
+    BatchCommand,
+    TransposeNotesCommand,
+    ToggleMuteCommand
 } from '@/lib/piano-roll-tools/CommandStack';
+import { midiInputContext } from '../state/MIDIInputContext';
+import { ActionType } from '../state/ActionTypes';
+import { migrateNoteToExtended } from '../utils/noteMigration';
 
 const RULER_HEIGHT = 30;
 const KEYBOARD_WIDTH = 80;
@@ -140,6 +145,17 @@ export function useNoteInteractionsV2(
     const commandStackRef = useRef(null);
     const [canUndo, setCanUndo] = useState(false);
     const [canRedo, setCanRedo] = useState(false);
+    
+    // ✅ ID Generation Counter - Prevent ID collisions
+    const noteIdCounterRef = useRef(0);
+    const generateUniqueNoteId = useCallback(() => {
+        noteIdCounterRef.current += 1;
+        const timestamp = Date.now();
+        const random = Math.random().toString(36).substring(2, 11);
+        const counter = noteIdCounterRef.current;
+        const perf = performance.now();
+        return `note_${timestamp}_${random}_${counter}_${perf}`;
+    }, []);
 
     // Initialize command stack on mount
     useEffect(() => {
@@ -167,7 +183,7 @@ export function useNoteInteractionsV2(
     const [selectedNoteIds, setSelectedNoteIds] = useState(new Set());
     const [tempNotes, setTempNotes] = useState([]); // Real-time drag için geçici notalar
     const [lastDuplicateAction, setLastDuplicateAction] = useState(null); // Track last Ctrl+B action for sequential duplication
-    const [lastNoteDuration, setLastNoteDuration] = useState(1); // Remember last note duration for smart note creation
+    // ✅ NOTE: lastNoteDuration removed - now using MIDIInputContext for smart duration prediction
     const [paintDragState, setPaintDragState] = useState(null); // { lastPitch: number, lastTime: number } for continuous painting
     const [rightClickDragState, setRightClickDragState] = useState(null); // { lastPitch: number, lastTime: number, deletedNotes: Set } for continuous deletion
     const [activeKeyboardNotes, setActiveKeyboardNotes] = useState(new Map()); // Track keyboard-triggered notes for preview playback
@@ -175,6 +191,7 @@ export function useNoteInteractionsV2(
     const [lastClickTime, setLastClickTime] = useState(0); // Track double-click timing
     const [lastClickedNoteId, setLastClickedNoteId] = useState(null); // Track last clicked note for double-click
     const [clipboard, setClipboard] = useState(null); // ✅ Clipboard: { notes: [], sourceTime: number }
+    const [slideSourceNoteId, setSlideSourceNoteId] = useState(null); // ✅ PHASE 3: Track source note for slide connection
 
     // ✅ PERFORMANCE: Use individual selectors instead of object/array selector
     // This prevents "getSnapshot should be cached" warnings and infinite loops
@@ -189,22 +206,47 @@ export function useNoteInteractionsV2(
         return pattern?.data?.[currentInstrument.id] || [];
     }, [patterns, activePatternId, currentInstrument]);
 
+    // ✅ Sync pattern length with MIDIInputContext
+    useEffect(() => {
+        if (activePatternId) {
+            const pattern = patterns[activePatternId];
+            const patternLength = calculatePatternLoopLength(pattern) || 64;
+            midiInputContext.setPatternLength(patternLength);
+        }
+    }, [activePatternId, patterns]);
+
     // Get current pattern notes for instrument
     const getPatternNotes = useCallback(() => {
         return storedNotes;
     }, [storedNotes]);
 
     // Convert stored format to Piano Roll format for display
+    // ✅ PHASE 1: Use migration utility for extended note support
     const convertToPianoRollFormat = useCallback((storedNotes) => {
-        return storedNotes.map(note => ({
-            id: note.id,
-            startTime: note.time || 0,
-            pitch: typeof note.pitch === 'string' ? stringToPitch(note.pitch) : note.pitch,
-            length: note.length || (note.duration ? durationToLength(note.duration) : 1),
-            visualLength: note.visualLength, // ✅ FL STUDIO STYLE: Preserve visualLength
-            velocity: note.velocity || 100,
-            instrumentId: currentInstrument?.id
-        }));
+        return storedNotes.map(note => {
+            // Migrate to extended format first
+            const migrated = migrateNoteToExtended(note);
+            
+            // Convert to Piano Roll display format
+            return {
+                id: migrated.id,
+                startTime: migrated.time || migrated.startTime || 0,
+                pitch: typeof migrated.pitch === 'string' ? stringToPitch(migrated.pitch) : migrated.pitch,
+                length: migrated.length || (migrated.duration ? durationToLength(migrated.duration) : 1),
+                visualLength: migrated.visualLength, // ✅ FL STUDIO STYLE: Preserve visualLength
+                velocity: migrated.velocity || 100,
+                isMuted: migrated.isMuted || false, // ✅ GHOST NOTES: Preserve mute state
+                instrumentId: currentInstrument?.id,
+                // ✅ PHASE 1: Extended properties
+                pitchBend: migrated.pitchBend,
+                modWheel: migrated.modWheel,
+                aftertouch: migrated.aftertouch,
+                pan: migrated.pan,
+                releaseVelocity: migrated.releaseVelocity,
+                slideTo: migrated.slideTo,
+                slideDuration: migrated.slideDuration
+            };
+        });
     }, [currentInstrument]);
 
     // Memoize converted notes to avoid expensive recalculations on every mouse move
@@ -228,13 +270,23 @@ export function useNoteInteractionsV2(
         if (!activePatternId || !currentInstrument) return;
 
         // Piano Roll format'ı direkt kullan - sadece key isimleri uygun hale getir
+        // ✅ PHASE 1: Include extended properties in storage
         const standardizedNotes = pianoRollNotes.map(note => ({
             id: note.id,
             time: note.startTime,       // Piano Roll: startTime → time
             pitch: note.pitch,          // Piano Roll: pitch (number) → pitch (number)
             velocity: note.velocity || 100,
             length: note.length,         // Piano Roll: length → length (duration yerine)
-            visualLength: note.visualLength // ✅ FL STUDIO STYLE: Preserve visualLength
+            visualLength: note.visualLength, // ✅ FL STUDIO STYLE: Preserve visualLength
+            isMuted: note.isMuted || false,  // ✅ GHOST NOTES: Preserve mute state
+            // ✅ PHASE 1: Extended properties (only if present to avoid bloating old notes)
+            ...(note.pitchBend !== undefined && { pitchBend: note.pitchBend }),
+            ...(note.modWheel !== undefined && note.modWheel !== null && { modWheel: note.modWheel }),
+            ...(note.aftertouch !== undefined && note.aftertouch !== null && { aftertouch: note.aftertouch }),
+            ...(note.pan !== undefined && note.pan !== 0 && { pan: note.pan }),
+            ...(note.releaseVelocity !== undefined && note.releaseVelocity !== null && { releaseVelocity: note.releaseVelocity }),
+            ...(note.slideTo !== undefined && note.slideTo !== null && { slideTo: note.slideTo }),
+            ...(note.slideDuration !== undefined && note.slideDuration !== null && { slideDuration: note.slideDuration })
         }));
 
         // Update pattern store
@@ -285,8 +337,12 @@ export function useNoteInteractionsV2(
         const adaptiveTimeMargin = baseTimeMargin / Math.max(1, Math.sqrt(zoomFactor));
         const adaptivePitchMargin = basePitchMargin / Math.max(1, Math.sqrt(zoomY));
 
-        return currentNotes.find(note => {
-            const noteEndTime = note.startTime + note.length;
+        // ✅ FIX: Find all notes at position, then select the best one
+        // This prevents ID confusion when multiple notes overlap
+        const candidates = currentNotes.filter(note => {
+            // ✅ FL STUDIO STYLE: Use visualLength for hit detection (oval notes)
+            const displayLength = note.visualLength !== undefined ? note.visualLength : note.length;
+            const noteEndTime = note.startTime + displayLength;
 
             // ✅ ADAPTIVE TIME TOLERANCE - More generous
             const timeOverlap = time >= (note.startTime - adaptiveTimeMargin) &&
@@ -301,7 +357,32 @@ export function useNoteInteractionsV2(
 
             return timeOverlap && pitchMatch;
         });
-    }, [notes, engine]);
+
+        // ✅ FIX: If multiple notes overlap, prefer:
+        // 1. Selected notes (if any are selected)
+        // 2. Notes with highest pitch (topmost)
+        // 3. Notes with shortest visualLength (most visible)
+        if (candidates.length === 0) return null;
+        if (candidates.length === 1) return candidates[0];
+
+        // Check if any candidate is selected
+        const selectedCandidates = candidates.filter(n => selectedNoteIds.has(n.id));
+        if (selectedCandidates.length > 0) {
+            // Prefer selected notes, then highest pitch
+            return selectedCandidates.sort((a, b) => b.pitch - a.pitch)[0];
+        }
+
+        // Prefer highest pitch (topmost), then shortest visualLength
+        return candidates.sort((a, b) => {
+            if (Math.abs(b.pitch - a.pitch) > 0.1) {
+                return b.pitch - a.pitch; // Higher pitch first
+            }
+            // If same pitch, prefer shorter visualLength (more visible)
+            const aVisual = a.visualLength !== undefined ? a.visualLength : a.length;
+            const bVisual = b.visualLength !== undefined ? b.visualLength : b.length;
+            return aVisual - bVisual;
+        })[0];
+    }, [notes, engine, selectedNoteIds]);
 
     // Check if mouse is over resize handle
     const getResizeHandle = useCallback((mouseX, mouseY, note) => {
@@ -446,44 +527,34 @@ export function useNoteInteractionsV2(
 
         const snappedTime = snapValue > 0 ? snapToGrid(time, snapValue) : time;
 
-        // ✅ FL STUDIO STYLE: Calculate pattern length and extend ALL new notes to pattern length
-        // ALL NEW NOTES should be oval (visualLength = 1) unless explicitly resized
-        const activePattern = useArrangementStore.getState().patterns[activePatternId];
-        
-        // ✅ FL STUDIO STYLE: visualLength is ALWAYS 1 for new notes (unless resized later)
-        // Even if length is provided (from lastNoteDuration), visualLength stays 1
-        const visualLength = 1; // ✅ ALWAYS 1 step visual for new notes
-        
-        let finalLength = length;
-        
-        // If length is default (1), not specified, or is pattern length (from lastNoteDuration), extend to pattern length
-        if (activePattern && (length === 1 || !length || length <= 0 || length >= (calculatePatternLoopLength(activePattern) || 64) * 0.8)) {
-            const patternLengthInSteps = calculatePatternLoopLength(activePattern) || 64;
-            const noteStartStep = snappedTime;
-            const noteLengthInSteps = Math.max(1, patternLengthInSteps - noteStartStep);
-            finalLength = noteLengthInSteps;
-            
-            if (DEBUG_MODE) {
-                console.log('🎼 Piano Roll: New note, extending to pattern length:', {
-                    patternLengthInSteps,
-                    noteStartStep,
-                    noteLengthInSteps,
-                    finalLength,
-                    visualLength
-                });
-            }
-        }
-        // else: Use provided length for audio, but visualLength stays 1
+        // ✅ SMART DURATION PREDICTION using MIDIInputContext
+        const durationConfig = midiInputContext.getNextNoteDuration({
+            pitch,
+            time: snappedTime,
+            velocity
+        });
 
-        // Generate unique ID with timestamp + random + counter for same-millisecond safety
-        const uniqueId = `note_${Date.now()}_${Math.random().toString(36).substring(2, 11)}_${performance.now()}`;
+        const finalLength = durationConfig.audioLength;
+        const visualLength = durationConfig.visualLength;
+
+        if (DEBUG_MODE) {
+            console.log('🧠 Smart Duration Prediction:', {
+                reason: durationConfig.reason,
+                visualLength,
+                audioLength: finalLength,
+                shouldBeOval: durationConfig.shouldBeOval
+            });
+        }
+
+        // ✅ Generate unique ID using centralized function (prevents collisions)
+        const uniqueId = generateUniqueNoteId();
 
         const newNote = {
             id: uniqueId,
             startTime: Math.max(0, snappedTime),
             pitch: Math.max(0, Math.min(127, Math.round(pitch))),
             length: finalLength, // Audio length (for playback)
-            visualLength: visualLength, // ✅ FL STUDIO STYLE: All new notes are oval (1 step visual)
+            visualLength: visualLength, // Smart predicted visual length
             velocity: Math.max(1, Math.min(127, Math.round(velocity))), // ✅ Clamp to MIDI range
             instrumentId: currentInstrument.id
         };
@@ -503,6 +574,21 @@ export function useNoteInteractionsV2(
             );
             commandStackRef.current?.execute(command);
         }
+
+        // ✅ Record action and update duration memory
+        midiInputContext.recordAction(ActionType.NOTE_CREATED_CLICK, {
+            pitch,
+            time: snappedTime,
+            velocity,
+            length: finalLength,
+            visualLength
+        });
+        midiInputContext.updateDurationMemory({
+            length: finalLength,
+            visualLength,
+            wasResized: false,
+            wasWheeled: false
+        });
 
         if (DEBUG_MODE) console.log('➕ Note added:', newNote);
         return newNote;
@@ -589,6 +675,108 @@ export function useNoteInteractionsV2(
 
         if (DEBUG_MODE) console.log('🗑️ Notes deleted:', noteIds);
     }, [notes, _deleteNotesFromStore, _addNotesToStore]);
+
+    // ✅ TRANSPOSE NOTES - Shift pitch by semitones
+    const transposeNotes = useCallback((noteIds, semitones) => {
+        if (!noteIds || noteIds.length === 0) {
+            console.warn('No notes to transpose');
+            return;
+        }
+
+        const currentNotes = notes();
+        const notesToTranspose = currentNotes.filter(note => noteIds.includes(note.id));
+
+        if (notesToTranspose.length === 0) {
+            console.warn('No notes found for transpose');
+            return;
+        }
+
+        // Check if any notes would go out of bounds
+        const anyOutOfBounds = notesToTranspose.some(note => {
+            const newPitch = note.pitch + semitones;
+            return newPitch < 0 || newPitch > 127;
+        });
+
+        if (anyOutOfBounds) {
+            console.warn('⚠️ Transpose would exceed MIDI pitch range (0-127)');
+            // Still proceed but clamp values
+        }
+
+        // Create transpose command
+        const command = new TransposeNotesCommand(
+            notesToTranspose,
+            semitones,
+            (transposedNotes) => {
+                // Update store with transposed notes
+                const updatedNotes = currentNotes.map(note => {
+                    const transposed = transposedNotes.find(t => t.id === note.id);
+                    return transposed || note;
+                });
+                updatePatternStore(updatedNotes);
+            }
+        );
+
+        commandStackRef.current?.execute(command);
+
+        // Record action for MIDIInputContext
+        midiInputContext.recordAction(ActionType.NOTE_TRANSPOSED, {
+            noteIds,
+            semitones,
+            count: notesToTranspose.length
+        });
+
+        if (DEBUG_MODE) {
+            const direction = semitones > 0 ? 'up' : 'down';
+            console.log(`🎹 Transposed ${notesToTranspose.length} note(s) ${direction} by ${Math.abs(semitones)} semitone(s)`);
+        }
+    }, [notes, updatePatternStore]);
+
+    // ✅ TOGGLE MUTE - Ghost notes feature
+    const toggleMute = useCallback((noteIds) => {
+        if (!noteIds || noteIds.length === 0) {
+            console.warn('No notes to toggle mute');
+            return;
+        }
+
+        const currentNotes = notes();
+        const notesToToggle = currentNotes.filter(note => noteIds.includes(note.id));
+
+        if (notesToToggle.length === 0) {
+            console.warn('No notes found for mute toggle');
+            return;
+        }
+
+        // Create toggle mute command
+        const command = new ToggleMuteCommand(
+            notesToToggle,
+            (toggledNotes) => {
+                // Update store with toggled notes
+                const updatedNotes = currentNotes.map(note => {
+                    const toggled = toggledNotes.find(t => t.id === note.id);
+                    return toggled || note;
+                });
+                updatePatternStore(updatedNotes);
+            }
+        );
+
+        commandStackRef.current?.execute(command);
+
+        // Count muted vs unmuted for feedback
+        const nowMuted = notesToToggle.filter(n => !n.isMuted).length;
+        const nowUnmuted = notesToToggle.length - nowMuted;
+
+        // Record action for MIDIInputContext
+        midiInputContext.recordAction(ActionType.NOTE_TOGGLED_MUTE, {
+            noteIds,
+            count: notesToToggle.length,
+            muted: nowMuted,
+            unmuted: nowUnmuted
+        });
+
+        if (DEBUG_MODE) {
+            console.log(`👻 Toggled mute: ${nowMuted} muted, ${nowUnmuted} unmuted`);
+        }
+    }, [notes, updatePatternStore]);
 
     // Slice note - Split note into two at given time position
     const sliceNote = useCallback((note, sliceTime) => {
@@ -958,6 +1146,60 @@ export function useNoteInteractionsV2(
             return; // Don't proceed with other handlers
         }
 
+        // ✅ PHASE 3: SLIDE TOOL - Create slide connections between notes
+        if (currentTool === TOOL_TYPES.SLIDE) {
+            if (!foundNote) {
+                // Clicked on empty space - clear source note
+                setSlideSourceNoteId(null);
+                return;
+            }
+
+            if (!slideSourceNoteId) {
+                // First click - select source note
+                setSlideSourceNoteId(foundNote.id);
+                selectNote(foundNote.id, false); // Select only this note
+                if (DEBUG_MODE) console.log('🔗 Slide tool: Source note selected:', foundNote.id);
+            } else {
+                // Second click - create slide connection
+                if (slideSourceNoteId === foundNote.id) {
+                    // Clicked same note - clear selection
+                    setSlideSourceNoteId(null);
+                    deselectAll();
+                    return;
+                }
+
+                // Create slide connection: source note -> target note
+                const sourceNote = notes().find(n => n.id === slideSourceNoteId);
+                if (!sourceNote) {
+                    setSlideSourceNoteId(null);
+                    return;
+                }
+
+                // Calculate default slide duration (distance between notes in steps)
+                const timeDistance = Math.abs(foundNote.startTime - (sourceNote.startTime + (sourceNote.length || 1)));
+                const defaultSlideDuration = Math.max(0.25, Math.min(32, timeDistance)); // Clamp between 0.25 and 32 steps
+
+                // Update source note with slideTo connection
+                const updatedNote = {
+                    ...sourceNote,
+                    slideTo: foundNote.id,
+                    slideDuration: defaultSlideDuration
+                };
+
+                updateNote(slideSourceNoteId, updatedNote);
+                if (DEBUG_MODE) console.log('🔗 Slide connection created:', {
+                    source: slideSourceNoteId,
+                    target: foundNote.id,
+                    duration: defaultSlideDuration
+                });
+
+                // Reset for next connection
+                setSlideSourceNoteId(null);
+                selectNote(foundNote.id, false); // Select target note as feedback
+            }
+            return;
+        }
+
         // ✅ PAINT BRUSH TOOL - Draw notes by clicking or dragging, resize existing notes
         if (currentTool === TOOL_TYPES.PAINT_BRUSH) {
             if (foundNote) {
@@ -965,26 +1207,53 @@ export function useNoteInteractionsV2(
                 const resizeHandle = getResizeHandle(coords.x, coords.y, foundNote);
 
                 if (resizeHandle) {
-                    // ✅ MULTI-NOTE RESIZE: If note is already selected, resize all selected notes
-                    if (!selectedNoteIds.has(foundNote.id)) {
-                        deselectAll();
-                        selectNote(foundNote.id, false);
-                    }
-
-                    // Get all selected notes for multi-resize
+                    // ✅ FIX: If Ctrl/Shift is NOT pressed, clear selection and select only the clicked note
+                    // This prevents resizing the wrong note when another note is selected
+                    const isMultiSelect = e.ctrlKey || e.metaKey || e.shiftKey;
+                    
+                    // ✅ CRITICAL FIX: Determine which notes to resize BEFORE state updates
+                    // State updates are async, so we need to calculate based on current state and intent
                     const currentNotes = notes();
-                    const selectedNotes = currentNotes.filter(n => selectedNoteIds.has(n.id));
+                    let notesToResize;
+                    
+                    if (!isMultiSelect) {
+                        // ✅ SINGLE RESIZE MODE: Always resize only the clicked note
+                        // Clear all selections and select only the note being resized
+                        if (!selectedNoteIds.has(foundNote.id) || selectedNoteIds.size > 1) {
+                            deselectAll();
+                            selectNote(foundNote.id, false);
+                        }
+                        
+                        // ✅ CRITICAL: Use foundNote directly, ignore selectedNoteIds (state not updated yet)
+                        notesToResize = [foundNote];
+                    } else {
+                        // ✅ MULTI-SELECT MODE: Resize all selected notes (including clicked one)
+                        // If note is not selected, add it to selection
+                        if (!selectedNoteIds.has(foundNote.id)) {
+                            selectNote(foundNote.id, true); // Add to selection
+                        }
+                        
+                        // ✅ CRITICAL: Use selectedNoteIds + foundNote (in case state not updated)
+                        const selectedNotes = currentNotes.filter(n => selectedNoteIds.has(n.id));
+                        // Include foundNote if not already in selectedNotes
+                        if (!selectedNotes.find(n => n.id === foundNote.id)) {
+                            notesToResize = [...selectedNotes, foundNote];
+                        } else {
+                            notesToResize = selectedNotes.length > 0 ? selectedNotes : [foundNote];
+                        }
+                    }
                     
                     // ✅ FL STUDIO STYLE: When resize starts, convert oval notes to normal notes
                     // Store CONVERTED state (for resize calculations) and original state (for undo)
                     const originalNotesForUndo = new Map(); // For undo/redo (keep original pattern-length)
                     const originalNotesForResize = new Map(); // For resize calculations (use converted length)
-                    const convertedNotes = selectedNotes.map(note => {
+                    const convertedNotes = notesToResize.map(note => {
                         // If note is oval (visualLength < length), convert it to normal
                         if (note.visualLength !== undefined && note.visualLength < note.length) {
                             // Use visualLength as the new length (oval -> normal)
+                            // ✅ PRESERVE ALL FIELDS: Spread note first to keep isMuted, velocity, etc.
                             const convertedNote = {
-                                ...note,
+                                ...note, // ✅ Keep all fields including isMuted
                                 length: note.visualLength,
                                 visualLength: note.visualLength // No longer oval
                             };
@@ -1026,15 +1295,29 @@ export function useNoteInteractionsV2(
                         }
                     });
                     
-                    // ✅ Update notes immediately to convert oval -> normal before resize
-                    if (convertedNotes.some((n, i) => n.length !== selectedNotes[i].length || n.visualLength !== selectedNotes[i].visualLength)) {
-                        updatePatternStore(convertedNotes);
-                        // ✅ CRITICAL: Also update tempNotes so notes() returns converted notes immediately
+                    // ✅ FIX BUG 1: Don't update store immediately - only convert in memory for resize
+                    // Conversion will be applied when resize completes successfully
+                    // This prevents notes from disappearing if resize is cancelled
+                    if (convertedNotes.some((n, i) => n.length !== notesToResize[i].length || n.visualLength !== notesToResize[i].visualLength)) {
+                        // ✅ CRITICAL: Only update tempNotes (visual), not store (persistent)
+                        // Store will be updated when resize completes in handleMouseUp
                         setTempNotes(convertedNotes);
                     }
                     
                     // ✅ Get converted note for primary note (might be converted from oval)
                     const convertedPrimaryNote = convertedNotes.find(n => n.id === foundNote.id) || foundNote;
+
+                    if (DEBUG_MODE) {
+                        console.log('🎯 Multi-resize started:', {
+                            resizeHandle,
+                            totalNotes: convertedNotes.length,
+                            notesToResize: notesToResize.length,
+                            selectedNotes: selectedNotes.length,
+                            convertedNotes: convertedNotes.map(n => n.id),
+                            noteIds: convertedNotes.map(n => n.id),
+                            foundNoteId: foundNote.id
+                        });
+                    }
 
                     setDragState({
                         type: 'resizing',
@@ -1046,25 +1329,33 @@ export function useNoteInteractionsV2(
                         originalNotes: originalNotesForResize, // ✅ Use CONVERTED notes for resize calculations
                         originalNotesForUndo // Store original for undo/redo
                     });
-
-                    if (DEBUG_MODE) console.log('🎨 Paint brush: Multi-resize started', resizeHandle, convertedNotes.length, 'notes');
                 } else {
-                    // Clicking on note body - preview sound and remember duration
+                    // Clicking on note body - preview sound and update duration memory
                     playPreview(
                         foundNote.pitch,
                         foundNote.velocity || 100,
                         0.15 // Short duration for mouse clicks
                     );
 
-                    // ✅ REMEMBER LAST DURATION - Save clicked note's length for next note
-                    if (foundNote.length > 0) {
-                        setLastNoteDuration(foundNote.length);
-                        if (DEBUG_MODE) console.log('💾 Remembered note duration from paint brush click:', foundNote.length);
-                    }
+                    // ✅ Record action and update duration memory
+                    midiInputContext.recordAction(ActionType.NOTE_CREATED_PAINT, {
+                        pitch: foundNote.pitch,
+                        time: foundNote.startTime,
+                        velocity: foundNote.velocity,
+                        length: foundNote.length,
+                        visualLength: foundNote.visualLength
+                    });
+                    midiInputContext.updateDurationMemory({
+                        length: foundNote.length,
+                        visualLength: foundNote.visualLength || 1,
+                        wasResized: false,
+                        wasWheeled: false
+                    });
+                    if (DEBUG_MODE) console.log('💾 Paint brush click - updated duration memory:', foundNote.length);
                 }
             } else {
-                // Add new note with last used duration
-                const newNote = addNote(coords.time, coords.pitch, lastNoteDuration);
+                // Add new note with smart duration prediction
+                const newNote = addNote(coords.time, coords.pitch);
                 if (newNote) {
                     // Start paint drag state for continuous drawing
                     setPaintDragState({
@@ -1105,20 +1396,21 @@ export function useNoteInteractionsV2(
                 const isDoubleClick = timeSinceLastClick < 300 && lastClickedNoteId === foundNote.id;
 
                 if (isDoubleClick) {
-                    // DOUBLE-CLICK: Select all notes with same pitch
-                    const currentNotes = notes();
-                    const samePitchNotes = currentNotes.filter(n => n.pitch === foundNote.pitch);
-                    const samePitchIds = samePitchNotes.map(n => n.id);
-
-                    setSelectedNoteIds(new Set(samePitchIds));
+                    // ✅ DOUBLE-CLICK: Open Note Properties Panel (FL Studio style)
+                    // Select only this note (not all same pitch notes)
+                    setSelectedNoteIds(new Set([foundNote.id]));
 
                     if (DEBUG_MODE) {
-                        console.log('🎯🎯 Double-click: Selected', samePitchIds.length, 'notes at pitch', foundNote.pitch);
+                        console.log('🎯🎯 Double-click: Opening Note Properties for note', foundNote.id);
                     }
 
                     // Reset click tracking
                     setLastClickTime(0);
                     setLastClickedNoteId(null);
+                    
+                    // ✅ Emit event to open Note Properties Panel
+                    EventBus.emit('pianoRoll:openNoteProperties', { noteId: foundNote.id });
+                    
                     return; // Don't proceed with drag
                 }
 
@@ -1131,26 +1423,63 @@ export function useNoteInteractionsV2(
 
                 if (resizeHandle) {
                     // Start resizing
-                    // ✅ MULTI-NOTE RESIZE: If note is already selected, resize all selected notes
-                    if (!selectedNoteIds.has(foundNote.id)) {
-                        deselectAll();
-                        selectNote(foundNote.id, false);
-                    }
-
-                    // Get all selected notes for multi-resize
+                    // ✅ FIX: If Ctrl/Shift is NOT pressed, clear selection and select only the clicked note
+                    // This prevents resizing the wrong note when another note is selected
+                    const isMultiSelect = e.ctrlKey || e.metaKey || e.shiftKey;
+                    
+                    // ✅ CRITICAL FIX: Determine which notes to resize BEFORE state updates
+                    // State updates are async, so we need to calculate based on current state and intent
                     const currentNotes = notes();
-                    const selectedNotes = currentNotes.filter(n => selectedNoteIds.has(n.id));
+                    let notesToResize;
+                    
+                    if (!isMultiSelect) {
+                        // ✅ SINGLE RESIZE MODE: Always resize only the clicked note
+                        // Clear all selections and select only the note being resized
+                        if (!selectedNoteIds.has(foundNote.id) || selectedNoteIds.size > 1) {
+                            deselectAll();
+                            selectNote(foundNote.id, false);
+                        }
+                        
+                        // ✅ CRITICAL: Use foundNote directly, ignore selectedNoteIds (state not updated yet)
+                        notesToResize = [foundNote];
+                    } else {
+                        // ✅ MULTI-SELECT MODE: Resize all selected notes (including clicked one)
+                        // If note is not selected, add it to selection
+                        if (!selectedNoteIds.has(foundNote.id)) {
+                            selectNote(foundNote.id, true); // Add to selection
+                        }
+                        
+                        // ✅ CRITICAL: Use selectedNoteIds + foundNote (in case state not updated)
+                        const selectedNotes = currentNotes.filter(n => selectedNoteIds.has(n.id));
+                        // Include foundNote if not already in selectedNotes
+                        if (!selectedNotes.find(n => n.id === foundNote.id)) {
+                            notesToResize = [...selectedNotes, foundNote];
+                        } else {
+                            notesToResize = selectedNotes.length > 0 ? selectedNotes : [foundNote];
+                        }
+                    }
+                    
+                    if (DEBUG_MODE) {
+                        console.log('🔍 Resize debug:', {
+                            isMultiSelect,
+                            selectedNoteIdsSize: selectedNoteIds.size,
+                            notesToResizeCount: notesToResize.length,
+                            foundNoteId: foundNote?.id,
+                            notesToResizeIds: notesToResize.map(n => n.id)
+                        });
+                    }
                     
                     // ✅ FL STUDIO STYLE: When resize starts, convert oval notes to normal notes
                     // Store CONVERTED state (for resize calculations) and original state (for undo)
                     const originalNotesForUndo = new Map(); // For undo/redo (keep original pattern-length)
                     const originalNotesForResize = new Map(); // For resize calculations (use converted length)
-                    const convertedNotes = selectedNotes.map(note => {
+                    const convertedNotes = notesToResize.map(note => {
                         // If note is oval (visualLength < length), convert it to normal
                         if (note.visualLength !== undefined && note.visualLength < note.length) {
                             // Use visualLength as the new length (oval -> normal)
+                            // ✅ PRESERVE ALL FIELDS: Spread note first to keep isMuted, velocity, etc.
                             const convertedNote = {
-                                ...note,
+                                ...note, // ✅ Keep all fields including isMuted
                                 length: note.visualLength,
                                 visualLength: note.visualLength // No longer oval
                             };
@@ -1192,10 +1521,12 @@ export function useNoteInteractionsV2(
                         }
                     });
                     
-                    // ✅ Update notes immediately to convert oval -> normal before resize
-                    if (convertedNotes.some((n, i) => n.length !== selectedNotes[i].length || n.visualLength !== selectedNotes[i].visualLength)) {
-                        updatePatternStore(convertedNotes);
-                        // ✅ CRITICAL: Also update tempNotes so notes() returns converted notes immediately
+                    // ✅ FIX BUG 1: Don't update store immediately - only convert in memory for resize
+                    // Conversion will be applied when resize completes successfully
+                    // This prevents notes from disappearing if resize is cancelled
+                    if (convertedNotes.some((n, i) => n.length !== notesToResize[i].length || n.visualLength !== notesToResize[i].visualLength)) {
+                        // ✅ CRITICAL: Only update tempNotes (visual), not store (persistent)
+                        // Store will be updated when resize completes in handleMouseUp
                         setTempNotes(convertedNotes);
                     }
                     
@@ -1208,7 +1539,7 @@ export function useNoteInteractionsV2(
                             primaryNoteId: foundNote.id,
                             totalNotes: convertedNotes.length,
                             coords,
-                            converted: convertedNotes.filter(n => n.length !== selectedNotes.find(s => s.id === n.id)?.length).length,
+                            converted: convertedNotes.filter(n => n.length !== notesToResize.find(s => s.id === n.id)?.length).length,
                             originalLengths: Array.from(originalNotesForResize.values()).map(n => n.length),
                             convertedLengths: convertedNotes.map(n => n.length)
                         });
@@ -1228,15 +1559,41 @@ export function useNoteInteractionsV2(
                     // Start moving - reset duplicate memory
                     setLastDuplicateAction(null);
 
-                    // ✅ REMEMBER LAST DURATION - Save clicked note's length for next note
+                    // ✅ FIX: If Ctrl/Shift is NOT pressed, clear selection and select only the clicked note
+                    // This prevents moving/resizing the wrong note when another note is selected
+                    const isMultiSelect = e.ctrlKey || e.metaKey || e.shiftKey;
+                    
+                    if (!isMultiSelect) {
+                        // ✅ CRITICAL: Clear all selections and select only the note being moved
+                        // This ensures we move the correct note, not the previously selected one
+                        if (!selectedNoteIds.has(foundNote.id) || selectedNoteIds.size > 1) {
+                            deselectAll();
+                            selectNote(foundNote.id, false);
+                        }
+                    } else if (e.shiftKey) {
+                        // Shift = duplicate, don't change selection
+                    } else {
+                        // Ctrl/Cmd = toggle selection
+                        const isToggling = e.ctrlKey || e.metaKey;
+                        if (isToggling) {
+                            selectNote(foundNote.id, true, true); // addToSelection=true, toggle=true
+                            return; // Don't start drag, just toggle selection
+                        }
+                    }
+
+                    // ✅ Update duration memory when clicking a note
                     if (foundNote.length > 0) {
-                        setLastNoteDuration(foundNote.length);
-                        if (DEBUG_MODE) console.log('💾 Remembered note duration from selection:', foundNote.length);
+                        midiInputContext.updateDurationMemory({
+                            length: foundNote.length,
+                            visualLength: foundNote.visualLength || 1,
+                            wasResized: false,
+                            wasWheeled: false
+                        });
+                        if (DEBUG_MODE) console.log('💾 Updated duration memory from selection:', foundNote.length);
                     }
 
                     // ✅ SHIFT+DRAG TO DUPLICATE - Create copies if Shift is held
                     const isDuplicating = e.shiftKey;
-                    const isToggling = e.ctrlKey || e.metaKey;
                     let duplicatedNoteIds = null;
 
                     // Determine which notes to work with
@@ -1254,16 +1611,8 @@ export function useNoteInteractionsV2(
                             if (DEBUG_MODE) console.log('📋 Shift+Drag: Clicked note NOT in selection, duplicating ONLY clicked note');
                         }
                     } else {
-                        // ✅ CTRL+CLICK TO TOGGLE - Add/remove from selection
-                        if (isToggling) {
-                            selectNote(foundNote.id, true, true); // addToSelection=true, toggle=true
-                            return; // Don't start drag, just toggle selection
-                        }
-
-                        // Normal move: select note if needed
-                        if (!selectedNoteIds.has(foundNote.id)) {
-                            selectNote(foundNote.id, false); // Replace selection
-                        }
+                        // Normal move: use current selection (already updated above)
+                        // Selection was already updated in the multi-select check above
                         workingNoteIds = selectedNoteIds.has(foundNote.id)
                             ? Array.from(selectedNoteIds)
                             : [foundNote.id];
@@ -1280,7 +1629,7 @@ export function useNoteInteractionsV2(
                         duplicatedNoteIds = [];
 
                         notesToDuplicate.forEach(note => {
-                            const uniqueId = `note_${Date.now()}_${Math.random().toString(36).substring(2, 11)}_${performance.now()}`;
+                            const uniqueId = generateUniqueNoteId();
                             const duplicatedNote = {
                                 ...note,
                                 id: uniqueId
@@ -1453,12 +1802,12 @@ export function useNoteInteractionsV2(
                                 );
 
                                 if (!existsAtInterp) {
-                                    addNote(interpTime, interpPitch, lastNoteDuration, 100, true); // skipUndo=true for continuous drawing
+                                    addNote(interpTime, interpPitch, 1, 100, true); // skipUndo=true for continuous drawing
                                 }
                             }
                         } else {
                             // Single note at current position
-                            const newNote = addNote(coords.time, coords.pitch, lastNoteDuration, 100, true); // skipUndo=true
+                            const newNote = addNote(coords.time, coords.pitch, 1, 100, true); // skipUndo=true
                             if (newNote) {
                                 // Audio preview
                                 playPreview(
@@ -1479,13 +1828,18 @@ export function useNoteInteractionsV2(
                 }
             }
 
-            // Show preview note
+            // Show preview note with smart duration prediction
             if (!foundNote && stepWidth && coords.pitch >= 0 && coords.pitch <= 127) {
+                const previewDuration = midiInputContext.getNextNoteDuration({
+                    pitch: coords.pitch,
+                    time: snappedTime,
+                    velocity: 100
+                });
                 setPreviewNote({
                     pitch: coords.pitch,
                     startTime: snappedTime,
-                    length: lastNoteDuration, // Use last duration for audio preview
-                    visualLength: 1, // ✅ FL STUDIO STYLE: Preview always shows as 1 step
+                    length: previewDuration.audioLength,
+                    visualLength: previewDuration.visualLength,
                     velocity: 0.8,
                     isPreview: true
                 });
@@ -1545,6 +1899,13 @@ export function useNoteInteractionsV2(
                 e.currentTarget.style.cursor = 'ew-resize';
             } else {
                 e.currentTarget.style.cursor = 'move';
+            }
+        } else if (currentTool === TOOL_TYPES.SLIDE) {
+            // ✅ PHASE 3: Slide tool cursor - show different cursor if source note is selected
+            if (slideSourceNoteId) {
+                e.currentTarget.style.cursor = foundNote ? 'crosshair' : 'not-allowed';
+            } else {
+                e.currentTarget.style.cursor = foundNote ? 'crosshair' : 'default';
             }
         } else if (activeTool === 'slice') {
             e.currentTarget.style.cursor = foundNote ? 'col-resize' : 'default';
@@ -1606,14 +1967,49 @@ export function useNoteInteractionsV2(
                 currentDelta: { deltaTime, deltaPitch }
             }));
         } else if (dragState?.type === 'resizing') {
-            // Calculate delta for resize
+            // ✅ FIX BUG 2: Calculate delta for resize based on visual representation
+            // For oval notes, resize handle position is based on visualLength, not length
+            // So deltaTime should account for this
             const deltaTime = coords.time - dragState.startCoords.time;
 
-            // Update dragState with current delta for rendering
-            // Don't update tempNotes here - only visual feedback via dragState
+            // ✅ FIX BUG 2: Account for visual length vs actual length mismatch
+            // The issue: resize handle position is based on visualLength (from originalNote before conversion)
+            // but resize calculation uses converted length (visualLength = length after conversion)
+            // We need to adjust delta based on the TRUE original note's visual length
+            const trueOriginalNotes = dragState.originalNotesForUndo;
+            const primaryNote = dragState.originalNote; // This is converted note
+            
+            let adjustedDeltaTime = deltaTime;
+            
+            if (trueOriginalNotes && primaryNote && dragState.resizeHandle === 'right') {
+                // Check if TRUE original was oval (before conversion)
+                const trueOriginal = trueOriginalNotes.get(dragState.noteId);
+                if (trueOriginal && trueOriginal.visualLength !== undefined && 
+                    trueOriginal.visualLength < trueOriginal.length) {
+                    // TRUE original was oval - handle position was at visualLength
+                    // But converted note has visualLength = length
+                    // So we need to account for the difference
+                    const trueVisualEndTime = trueOriginal.startTime + trueOriginal.visualLength;
+                    const convertedEndTime = primaryNote.startTime + primaryNote.length;
+                    const visualOffset = convertedEndTime - trueVisualEndTime;
+                    // Adjust delta: if we moved right by X, we actually moved right by X - offset
+                    adjustedDeltaTime = deltaTime - visualOffset;
+                }
+            } else if (trueOriginalNotes && primaryNote && dragState.resizeHandle === 'left') {
+                // For left resize, startTime is the same, but we need to account for visual offset
+                const trueOriginal = trueOriginalNotes.get(dragState.noteId);
+                if (trueOriginal && trueOriginal.visualLength !== undefined && 
+                    trueOriginal.visualLength < trueOriginal.length) {
+                    // Start time is same, but length calculation will be affected
+                    // Actually, for left resize, visualLength doesn't affect delta calculation
+                    // because we're moving from startTime, not endTime
+                    adjustedDeltaTime = deltaTime;
+                }
+            }
+            
             setDragState(prev => ({
                 ...prev,
-                currentDelta: { deltaTime }
+                currentDelta: { deltaTime: adjustedDeltaTime }
             }));
         } else if (isSelectingArea) {
             // Update selection area with pixel coordinates
@@ -1764,7 +2160,9 @@ export function useNoteInteractionsV2(
         // ✅ MULTI-NOTE RESIZE OPERATION WITH UNDO/REDO
         else if (dragState?.type === 'resizing' && dragState.currentDelta) {
             const { deltaTime } = dragState.currentDelta;
-            const minLength = 0.25;
+            // ✅ FIX: Minimum length should be at least one grid unit (snapValue)
+            // If snapValue is 1, minLength should be 1; if 0.5, minLength should be 0.5, etc.
+            const minLength = snapValue > 0 ? Math.max(0.25, snapValue) : 0.25;
             
             // ✅ Handle multi-note resize if noteIds exist
             const noteIds = dragState.noteIds || [dragState.noteId];
@@ -1840,6 +2238,14 @@ export function useNoteInteractionsV2(
                     }
 
                     let newLength = Math.max(minLength, originalEndTime - newStartTime);
+                    
+                    // ✅ FIX: Snap length to grid as well
+                    if (snapValue > 0) {
+                        newLength = snapToGrid(newLength, snapValue);
+                        // Ensure minimum length after snapping
+                        newLength = Math.max(minLength, newLength);
+                    }
+                    
                     resizedState.startTime = newStartTime;
                     resizedState.length = newLength;
                     // ✅ FL STUDIO STYLE: When resized, visualLength matches length (no longer oval)
@@ -1857,6 +2263,14 @@ export function useNoteInteractionsV2(
                     }
 
                     let newLength = Math.max(minLength, newEndTime - originalStartTime);
+                    
+                    // ✅ FIX: Snap length to grid as well
+                    if (snapValue > 0) {
+                        newLength = snapToGrid(newLength, snapValue);
+                        // Ensure minimum length after snapping
+                        newLength = Math.max(minLength, newLength);
+                    }
+                    
                     // ✅ FIX: Ensure startTime stays the same for right resize
                     resizedState.startTime = originalStartTime; // ✅ CRITICAL: Don't change startTime
                     resizedState.length = newLength;
@@ -1874,21 +2288,90 @@ export function useNoteInteractionsV2(
                 }
             });
 
-            // Check if any notes actually changed
+            // ✅ FIX BUG 1: Check if any notes actually changed
+            // Use originalNotesForUndo (true original) for comparison, not converted originalNotes
             let hasChanged = false;
+            const undoOriginalNotes = dragState.originalNotesForUndo || originalNotes;
             for (const [noteId, finalState] of finalStates.entries()) {
-                const original = originalNotes.get(noteId);
-                if (original && (Math.abs(finalState.startTime - original.startTime) > 0.001 ||
-                                Math.abs(finalState.length - original.length) > 0.001)) {
+                const trueOriginal = undoOriginalNotes.get(noteId); // ✅ Use TRUE original (before conversion)
+                if (trueOriginal && (Math.abs(finalState.startTime - trueOriginal.startTime) > 0.001 ||
+                                Math.abs(finalState.length - trueOriginal.length) > 0.001 ||
+                                Math.abs((finalState.visualLength || finalState.length) - (trueOriginal.visualLength || trueOriginal.length)) > 0.001)) {
                     hasChanged = true;
                     break;
                 }
             }
+            
+            // ✅ FIX BUG 1: Ensure all notes in noteIds have finalStates (even if resize cancelled)
+            // If resize was cancelled, restore to TRUE original state (before conversion)
+            if (!hasChanged) {
+                // Resize was cancelled or too small - restore to TRUE original (before conversion)
+                const undoOriginalNotes = dragState.originalNotesForUndo || originalNotes;
+                const currentNotes = notes();
+                const allNoteIds = new Set([...noteIds, ...currentNotes.map(n => n.id)]);
+                
+                // ✅ CRITICAL FIX: Use storedNotes (from store) as base, not tempNotes
+                // This ensures we don't lose notes that were in store but not in tempNotes
+                const storedNotes = getPatternNotes();
+                const baseNotes = convertedNotes || convertToPianoRollFormat(storedNotes);
+                
+                const restoredNotes = baseNotes.map(n => {
+                    if (noteIds.includes(n.id)) {
+                        // Restore to TRUE original (before conversion)
+                        const trueOriginal = undoOriginalNotes.get(n.id);
+                        if (trueOriginal) {
+                            return {
+                                ...n,
+                                startTime: trueOriginal.startTime,
+                                length: trueOriginal.length,
+                                visualLength: trueOriginal.visualLength
+                            };
+                        }
+                        // Fallback to converted if true original not found
+                        const converted = originalNotes.get(n.id);
+                        if (converted) {
+                            return {
+                                ...n,
+                                startTime: converted.startTime,
+                                length: converted.length,
+                                visualLength: converted.visualLength
+                            };
+                        }
+                    }
+                    return n;
+                });
+                
+                // ✅ CRITICAL: Ensure all noteIds are present (don't lose notes)
+                noteIds.forEach(noteId => {
+                    if (!restoredNotes.find(n => n.id === noteId)) {
+                        const trueOriginal = undoOriginalNotes.get(noteId);
+                        if (trueOriginal) {
+                            restoredNotes.push({
+                                id: noteId,
+                                startTime: trueOriginal.startTime,
+                                pitch: trueOriginal.pitch || 60,
+                                length: trueOriginal.length,
+                                visualLength: trueOriginal.visualLength,
+                                velocity: 100,
+                                isMuted: false
+                            });
+                        }
+                    }
+                });
+                
+                updatePatternStore(restoredNotes);
+                setTempNotes([]); // Clear tempNotes to use store
+            }
 
             if (hasChanged) {
                 // ✅ IMMEDIATE UPDATE - Apply all changes instantly
-                const currentNotes = notes();
-                const updatedNotes = currentNotes.map(n => {
+                // ✅ CRITICAL FIX: Use storedNotes as base, not tempNotes
+                // tempNotes might be empty or stale after resize
+                const storedNotes = getPatternNotes();
+                const baseNotes = convertToPianoRollFormat(storedNotes);
+                
+                // ✅ CRITICAL FIX: Ensure all notes are included, not just those in tempNotes
+                const updatedNotes = baseNotes.map(n => {
                     const finalState = finalStates.get(n.id);
                     if (finalState) {
                         return {
@@ -1901,11 +2384,31 @@ export function useNoteInteractionsV2(
                     return n;
                 });
                 
+                // ✅ CRITICAL FIX: Ensure all resized notes are present (don't lose notes)
+                noteIds.forEach(noteId => {
+                    if (!updatedNotes.find(n => n.id === noteId)) {
+                        const finalState = finalStates.get(noteId);
+                        if (finalState) {
+                            const original = originalNotes.get(noteId);
+                            updatedNotes.push({
+                                id: noteId,
+                                startTime: finalState.startTime,
+                                pitch: original?.pitch || 60,
+                                length: finalState.length,
+                                visualLength: finalState.visualLength,
+                                velocity: original?.velocity || 100,
+                                isMuted: original?.isMuted || false
+                            });
+                        }
+                    }
+                });
+                
                 if (DEBUG_MODE) {
                     console.log('✅ Updating pattern store with resized notes:', {
-                        totalNotes: currentNotes.length,
+                        baseNotesCount: baseNotes.length,
                         resizedNotes: finalStates.size,
-                        updatedCount: updatedNotes.filter(n => finalStates.has(n.id)).length
+                        updatedCount: updatedNotes.filter(n => finalStates.has(n.id)).length,
+                        finalNotesCount: updatedNotes.length
                     });
                     
                     // Log the actual updated notes
@@ -1919,6 +2422,9 @@ export function useNoteInteractionsV2(
                 
                 // Update store immediately for smooth UX
                 updatePatternStore(updatedNotes);
+                
+                // ✅ CRITICAL FIX: Clear tempNotes after resize to ensure store is used
+                setTempNotes([]);
 
                 // ✅ CREATE BATCH UPDATE COMMAND for undo/redo (async is OK here)
                 // IMPORTANT: We already applied the changes above (immediate update)
@@ -1994,11 +2500,29 @@ export function useNoteInteractionsV2(
                     });
                 });
 
-                // ✅ REMEMBER LAST DURATION - Save primary resized note's length
+                // ✅ Record resize action and update duration memory
                 const primaryFinalState = finalStates.get(dragState.noteId);
                 if (primaryFinalState && primaryFinalState.length > 0) {
-                    setLastNoteDuration(primaryFinalState.length);
-                    if (DEBUG_MODE) console.log('💾 Remembered note duration:', primaryFinalState.length, `(${noteIds.length} notes resized)`);
+                    // ✅ FIX: Get oldLength from originalNote or originalNotesForUndo
+                    const originalNote = dragState.originalNote;
+                    const originalNotesForUndo = dragState.originalNotesForUndo;
+                    const trueOriginal = originalNotesForUndo?.get(dragState.noteId);
+                    const oldLength = trueOriginal?.length || originalNote?.length || dragState.originalLength;
+                    
+                    midiInputContext.recordAction(ActionType.NOTE_RESIZED, {
+                        noteId: dragState.noteId,
+                        oldLength: oldLength,
+                        newLength: primaryFinalState.length,
+                        visualLength: primaryFinalState.visualLength,
+                        multiNoteCount: noteIds.length
+                    });
+                    midiInputContext.updateDurationMemory({
+                        length: primaryFinalState.length,
+                        visualLength: primaryFinalState.visualLength || primaryFinalState.length,
+                        wasResized: true,
+                        wasWheeled: false
+                    });
+                    if (DEBUG_MODE) console.log('💾 Resize complete - updated duration memory:', primaryFinalState.length, `(${noteIds.length} notes resized)`);
                 }
             }
         }
@@ -2052,26 +2576,23 @@ export function useNoteInteractionsV2(
 
         // Shift+Wheel: Change duration of hovered or selected notes
         if (e.shiftKey && (foundNote || selectedNoteIds.size > 0)) {
-            // Try to prevent default (may fail in passive listeners)
-            try {
-                e.preventDefault();
-                e.stopPropagation();
-            } catch (err) {
-                // Passive listener - can't prevent default
-            }
+            // Note: preventDefault doesn't work with passive listeners
+            // This is expected behavior - wheel will still scroll if not over a note
 
             const delta = -e.deltaY; // Positive = scroll up = increase
             const step = 0.25; // 1/16th step increment
             const change = delta > 0 ? step : -step;
 
             if (foundNote && !selectedNoteIds.has(foundNote.id)) {
-                // Change hovered note's duration
+                // Change hovered note's duration (only audio length, NOT visual length)
                 const newLength = Math.max(0.25, foundNote.length + change);
                 updateNote(foundNote.id, { length: newLength });
-                setLastNoteDuration(newLength); // Remember for next note
+
+                // ✅ Record wheel action - DON'T update duration memory
+                // Wheel adjusts audio length only, doesn't affect next note creation
                 if (DEBUG_MODE) console.log('🎚️ Duration changed (hover):', foundNote.id, newLength);
             } else if (selectedNoteIds.size > 0) {
-                // Change all selected notes' duration
+                // Change all selected notes' duration (only audio length, NOT visual length)
                 const currentNotes = notes();
                 const updatedNotes = currentNotes.map(note => {
                     if (selectedNoteIds.has(note.id)) {
@@ -2082,12 +2603,8 @@ export function useNoteInteractionsV2(
                 });
                 updatePatternStore(updatedNotes);
 
-                // Remember the first selected note's new length
-                const firstSelectedNote = updatedNotes.find(n => selectedNoteIds.has(n.id));
-                if (firstSelectedNote) {
-                    setLastNoteDuration(firstSelectedNote.length);
-                }
-
+                // ✅ Record wheel action - DON'T update duration memory
+                // Wheel adjusts audio length only, doesn't affect next note creation
                 if (DEBUG_MODE) console.log('🎚️ Duration changed (selected):', selectedNoteIds.size, 'notes');
             }
 
@@ -2166,6 +2683,48 @@ export function useNoteInteractionsV2(
         if ((e.ctrlKey || e.metaKey) && key === 'v') {
             e.preventDefault();
             pasteNotes();
+            return;
+        }
+
+        // ✅ TRANSPOSE - Cmd+Up/Down (1 semitone), Cmd+Alt+Up/Down (1 octave)
+        // Note: Cmd+Shift+Arrow is often captured by OS for text selection
+        if ((e.ctrlKey || e.metaKey) && (key === 'arrowup' || key === 'arrowdown')) {
+            e.preventDefault();
+
+            if (selectedNoteIds.size === 0) {
+                console.log('⚠️ No notes selected for transpose');
+                return;
+            }
+
+            const semitones = e.altKey ? 12 : 1; // Alt for octave, plain for semitone
+            const direction = key === 'arrowup' ? 1 : -1;
+            const transpose = semitones * direction;
+
+            if (DEBUG_MODE) {
+                console.log('🎹 Transpose shortcut:', {
+                    key,
+                    altKey: e.altKey,
+                    shiftKey: e.shiftKey,
+                    semitones,
+                    direction,
+                    transpose
+                });
+            }
+
+            transposeNotes(Array.from(selectedNoteIds), transpose);
+            return;
+        }
+
+        // ✅ TOGGLE MUTE - M key (Ghost Notes)
+        if (key === 'm' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+            e.preventDefault();
+
+            if (selectedNoteIds.size === 0) {
+                console.log('⚠️ No notes selected for mute toggle');
+                return;
+            }
+
+            toggleMute(Array.from(selectedNoteIds));
             return;
         }
 
@@ -2373,7 +2932,7 @@ export function useNoteInteractionsV2(
                 const duplicatedNotes = [];
 
                 selectedNotes.forEach(note => {
-                    const uniqueId = `note_${Date.now()}_${Math.random().toString(36).substring(2, 11)}_${performance.now()}`;
+                    const uniqueId = generateUniqueNoteId();
                     const newStartTime = (typeof note.startTime === 'number' ? note.startTime : 0) + offset;
 
                     const duplicatedNote = {
@@ -2488,7 +3047,7 @@ export function useNoteInteractionsV2(
             }
         }
         // Note: Spacebar handling will be added to PianoRoll.jsx component level
-    }, [selectedNoteIds, deleteNotes, deselectAll, notes, snapValue, addNote, lastDuplicateAction, currentInstrument, lastNoteDuration]);
+    }, [selectedNoteIds, deleteNotes, deselectAll, notes, snapValue, addNote, lastDuplicateAction, currentInstrument]);
 
     // ✅ KEY UP HANDLER - Stop keyboard piano preview
     const handleKeyUp = useCallback((e) => {
@@ -2579,6 +3138,8 @@ export function useNoteInteractionsV2(
         addNote,
         updateNote,
         deleteNotes,
+        transposeNotes, // ✅ NEW: Transpose selected notes (Cmd+Up/Down)
+        toggleMute, // ✅ NEW: Toggle mute for ghost notes (M key)
         selectNote,
         deselectAll,
         selectAll, // ✅ NEW: Select all notes (Ctrl+A)

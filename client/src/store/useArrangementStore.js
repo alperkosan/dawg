@@ -106,6 +106,22 @@ export const useArrangementStore = create(arrangementStoreOrchestrator((set, get
     });
      // Orkestratör bu eylemi de yakalayacak.
   },
+
+  // ✅ PHASE 2: Update CC lanes for a pattern
+  updatePatternCCLanes: (patternId, ccLanesData) => {
+    set(state => {
+      const newPatterns = { ...state.patterns };
+      const targetPattern = newPatterns[patternId];
+
+      if (targetPattern) {
+        newPatterns[patternId] = { ...targetPattern, ccLanes: ccLanesData };
+        return { patterns: newPatterns };
+      }
+
+      console.warn('❌ Pattern not found for CC lanes update:', patternId);
+      return state;
+    });
+  },
   
   renameActivePattern: (newName) => {
     const { activePatternId } = get();

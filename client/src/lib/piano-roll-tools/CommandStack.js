@@ -130,6 +130,88 @@ export class MoveNotesCommand extends ICommand {
 }
 
 /**
+ * Transpose Notes Command
+ */
+export class TransposeNotesCommand extends ICommand {
+    constructor(notes, semitones, updatePatternStoreFn) {
+        super();
+        this.notes = notes; // Array of note objects
+        this.semitones = semitones; // Number of semitones to transpose (+/-)
+        this.updatePatternStoreFn = updatePatternStoreFn;
+
+        // Store original pitches for undo
+        this.originalPitches = new Map();
+        notes.forEach(note => {
+            this.originalPitches.set(note.id, note.pitch);
+        });
+    }
+
+    execute() {
+        const transposedNotes = this.notes.map(note => {
+            const newPitch = Math.max(0, Math.min(127, note.pitch + this.semitones));
+            return { ...note, pitch: newPitch };
+        });
+        this.updatePatternStoreFn(transposedNotes);
+    }
+
+    undo() {
+        const restoredNotes = this.notes.map(note => {
+            const originalPitch = this.originalPitches.get(note.id);
+            return { ...note, pitch: originalPitch };
+        });
+        this.updatePatternStoreFn(restoredNotes);
+    }
+
+    getDescription() {
+        const direction = this.semitones > 0 ? 'up' : 'down';
+        const amount = Math.abs(this.semitones);
+        return `Transpose ${this.notes.length} note(s) ${direction} by ${amount} semitone(s)`;
+    }
+}
+
+/**
+ * Toggle Mute Command (Ghost Notes)
+ */
+export class ToggleMuteCommand extends ICommand {
+    constructor(notes, updatePatternStoreFn) {
+        super();
+        this.notes = notes; // Array of note objects
+        this.updatePatternStoreFn = updatePatternStoreFn;
+
+        // Store original mute states for undo
+        this.originalMuteStates = new Map();
+        notes.forEach(note => {
+            this.originalMuteStates.set(note.id, note.isMuted || false);
+        });
+    }
+
+    execute() {
+        const toggledNotes = this.notes.map(note => {
+            return { ...note, isMuted: !(note.isMuted || false) };
+        });
+        this.updatePatternStoreFn(toggledNotes);
+    }
+
+    undo() {
+        const restoredNotes = this.notes.map(note => {
+            const originalMuteState = this.originalMuteStates.get(note.id);
+            return { ...note, isMuted: originalMuteState };
+        });
+        this.updatePatternStoreFn(restoredNotes);
+    }
+
+    getDescription() {
+        const muteCount = this.notes.filter(n => !n.isMuted).length;
+        const unmuteCount = this.notes.length - muteCount;
+        if (muteCount > unmuteCount) {
+            return `Mute ${muteCount} note(s)`;
+        } else {
+            return `Unmute ${unmuteCount} note(s)`;
+        }
+    }
+}
+
+/**
  * Batch Command (for complex operations with multiple sub-commands)
  */
 export class BatchCommand extends ICommand {

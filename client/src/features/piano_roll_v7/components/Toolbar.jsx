@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { MousePointer, Edit3, Eraser, Scissors, Music, Zap, Guitar, Shuffle, FlipHorizontal2, Piano } from 'lucide-react';
+import { MousePointer, Edit3, Eraser, Scissors, Music, Zap, Guitar, Shuffle, FlipHorizontal2, Piano, Settings, Sliders, Link2 } from 'lucide-react';
 import { getToolManager, TOOL_TYPES } from '@/lib/piano-roll-tools';
 import './Toolbar.css';
 
@@ -22,6 +22,7 @@ const tools = [
     { id: TOOL_TYPES.SELECT, label: 'Select', icon: MousePointer, hotkey: 'V' },
     { id: TOOL_TYPES.PAINT_BRUSH, label: 'Paint', icon: Edit3, hotkey: 'B' },
     { id: TOOL_TYPES.ERASER, label: 'Eraser', icon: Eraser, hotkey: 'E' },
+    { id: TOOL_TYPES.SLIDE, label: 'Slide', icon: Link2, hotkey: 'G' },
     { id: TOOL_TYPES.CHOPPER, label: 'Chopper', icon: Scissors, hotkey: 'C', requiresSelection: true },
     { id: TOOL_TYPES.STRUMIZER, label: 'Strum', icon: Guitar, hotkey: 'S', requiresSelection: true },
     { id: TOOL_TYPES.ARPEGGIATOR, label: 'Arpeggio', icon: Music, hotkey: 'A', requiresSelection: true },
@@ -41,7 +42,12 @@ function Toolbar({
     keyboardPianoMode = false,
     onKeyboardPianoModeChange,
     keyboardPianoSettings = { baseOctave: 4, scale: 'chromatic' },
-    onKeyboardPianoSettingsChange
+    onKeyboardPianoSettingsChange,
+    // ✅ PHASE 2: CC Lanes & Note Properties
+    showCCLanes = false,
+    onShowCCLanesChange,
+    showNoteProperties = false,
+    onShowNotePropertiesChange
 }) {
     const [showQuantizeMenu, setShowQuantizeMenu] = useState(false);
     const [showPianoSettings, setShowPianoSettings] = useState(false);
@@ -114,6 +120,26 @@ function Toolbar({
 
             {/* Sağ Grup - Sadece Essential Settings */}
             <div className="prv7-toolbar-group">
+                {/* ✅ PHASE 2: CC Lanes Toggle */}
+                <button
+                    className={`prv7-tool-btn ${showCCLanes ? 'prv7-tool-btn--active' : ''}`}
+                    onClick={() => onShowCCLanesChange?.(!showCCLanes)}
+                    title="Toggle CC Lanes (Automation)"
+                    style={{ marginRight: '8px' }}
+                >
+                    <Sliders size={18} />
+                </button>
+
+                {/* ✅ PHASE 2: Note Properties Toggle */}
+                <button
+                    className={`prv7-tool-btn ${showNoteProperties ? 'prv7-tool-btn--active' : ''}`}
+                    onClick={() => onShowNotePropertiesChange?.(!showNoteProperties)}
+                    title="Toggle Note Properties Panel"
+                    style={{ marginRight: '8px' }}
+                >
+                    <Settings size={18} />
+                </button>
+
                 {/* Keyboard Piano Mode Toggle */}
                 <div style={{ position: 'relative', marginRight: '12px' }}>
                     <button

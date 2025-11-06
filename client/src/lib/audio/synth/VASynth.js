@@ -113,9 +113,17 @@ export class VASynth {
     /**
      * Start playing a note
      */
-    noteOn(midiNote, velocity = 100, startTime = null) {
+    noteOn(midiNote, velocity = 100, startTime = null, extendedParams = null) {
         const time = startTime !== null ? startTime : this.context.currentTime;
-        const baseFrequency = this.midiToFrequency(midiNote);
+        
+        // ✅ PHASE 2: Apply initial pitch bend if present
+        let pitchBendSemitones = 0;
+        if (extendedParams?.pitchBend && Array.isArray(extendedParams.pitchBend) && extendedParams.pitchBend.length > 0) {
+            const firstPoint = extendedParams.pitchBend[0];
+            pitchBendSemitones = (firstPoint.value / 8192) * 2; // ±2 semitones range
+        }
+        
+        const baseFrequency = this.midiToFrequency(midiNote + pitchBendSemitones);
 
         // ✅ Monophonic Mode with Portamento
         if (this.isPlaying && this.voiceMode === 'mono') {
@@ -210,9 +218,24 @@ export class VASynth {
         this.filter.type = this.filterSettings.type;
         this.filter.Q.setValueAtTime(this.filterSettings.resonance, time);
 
-        // Base filter cutoff
-        const baseCutoff = this.filterSettings.cutoff;
+        // ✅ PHASE 2: Base filter cutoff with mod wheel modulation
+        let baseCutoff = this.filterSettings.cutoff;
+        if (extendedParams?.modWheel !== undefined) {
+            const modWheelNormalized = extendedParams.modWheel / 127; // 0-1
+            const cutoffRange = baseCutoff * 0.5; // ±50% modulation
+            baseCutoff = baseCutoff + (modWheelNormalized - 0.5) * cutoffRange * 2;
+            baseCutoff = Math.max(20, Math.min(20000, baseCutoff)); // Clamp
+        }
         this.filter.frequency.setValueAtTime(baseCutoff, time);
+        
+        // ✅ PHASE 2: Apply aftertouch to filter Q
+        let filterQ = this.filterSettings.resonance;
+        if (extendedParams?.aftertouch !== undefined) {
+            const aftertouchNormalized = extendedParams.aftertouch / 127; // 0-1
+            filterQ = filterQ + aftertouchNormalized * 10; // Add up to 10 Q
+            filterQ = Math.max(0, Math.min(30, filterQ)); // Clamp Q
+        }
+        this.filter.Q.setValueAtTime(filterQ, time);
 
         // Create gain node for filter envelope modulation
         this.filterEnvGain = this.context.createGain();

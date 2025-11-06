@@ -3,6 +3,10 @@
 
 import { globalStyleCache } from '../../../lib/rendering/StyleCache.js';
 
+// Constants for rendering
+const KEYBOARD_WIDTH = 80;
+const RULER_HEIGHT = 30;
+
 export class PremiumNoteRenderer {
     constructor() {
         this.animationCache = new Map();
@@ -137,6 +141,10 @@ export class PremiumNoteRenderer {
 
         ctx.save();
 
+        // ✅ GHOST NOTES (MUTED) - Visual feedback for muted notes
+        const isMuted = note.isMuted || false;
+        const muteOpacity = isMuted ? 0.35 : 1.0; // Dimmed when muted
+
         // ✅ DOPAMINERGIC ANIMATIONS - Satisfying, juicy feedback
         const animState = this.getAnimationState(note.id);
         let scale = 1;
@@ -203,10 +211,16 @@ export class PremiumNoteRenderer {
             lightness = 50;
         } else {
             // Premium note styling based on velocity and pitch
-            alpha = (0.85 + (note.velocity / 127) * 0.15) * animAlpha;
+            alpha = (0.85 + (note.velocity / 127) * 0.15) * animAlpha * muteOpacity; // ✅ Apply mute opacity
             baseHue = (note.hue || ((note.pitch * 2.8) % 360)) + colorShift; // ✅ Apply color shift
             saturation = note.saturation || (60 + (note.velocity / 127) * 40);
             lightness = note.brightness || (45 + (note.velocity / 127) * 25);
+
+            // ✅ Desaturate muted notes for ghost effect
+            if (isMuted) {
+                saturation = saturation * 0.3; // 70% less saturation
+                lightness = Math.min(75, lightness + 15); // Lighter/washed out
+            }
 
             // ✅ Boost saturation during animations for more vibrant feedback
             if (animState) {
@@ -272,13 +286,13 @@ export class PremiumNoteRenderer {
         ctx.shadowColor = 'transparent';
 
         // Premium border with depth
-        // ✅ FL STUDIO STYLE: Dashed border for extended audio notes
-        if (hasExtendedAudio) {
+        // ✅ FL STUDIO STYLE: Dashed border for extended audio notes OR muted notes
+        if (hasExtendedAudio || isMuted) {
             ctx.save();
-            ctx.setLineDash([3, 2]); // Dashed border to indicate extension
+            ctx.setLineDash([3, 2]); // Dashed border to indicate extension or mute
             ctx.lineWidth = 1.5;
             ctx.strokeStyle = `hsla(${baseHue}, ${saturation}%, ${lightness + 15}%, ${alpha * 0.8})`;
-            const cornerRadius = Math.min(height / 2, 6);
+            const cornerRadius = isMuted ? 3 : Math.min(height / 2, 6); // Less rounded for muted
             this.drawRoundedRect(ctx, x, y, width, height, cornerRadius);
             ctx.stroke();
             ctx.setLineDash([]);
@@ -519,6 +533,9 @@ export class PremiumNoteRenderer {
         // Sort notes by pitch (render lower notes first for proper layering)
         const sortedNotes = [...notes].sort((a, b) => b.pitch - a.pitch);
 
+        // ✅ PHASE 3: Render slide connections first (behind notes)
+        this.renderSlideConnections(ctx, sortedNotes, dimensions, viewport);
+
         sortedNotes.forEach(note => {
             const isSelected = selectedNoteIds.has(note.id);
             const isHovered = hoveredNoteId === note.id;
@@ -556,7 +573,15 @@ export class PremiumNoteRenderer {
                         // This note is being resized - apply delta
                         const { deltaTime } = dragState.currentDelta;
                         const original = originalNotes.get(note.id);
-                        const minLength = 0.25;
+                            // ✅ FIX: Minimum length should be at least one grid unit (snapValue)
+                            // If snapValue is 1, minLength should be 1; if 0.5, minLength should be 0.5, etc.
+                            const minLength = snapValue > 0 ? Math.max(0.25, snapValue) : 0.25;
+                            
+                            // Helper: Snap to grid
+                            const snapToGrid = (value, snap) => {
+                                if (snap <= 0) return value;
+                                return Math.round(value / snap) * snap;
+                            };
 
                         if (dragState.resizeHandle === 'left') {
                             // ✅ FIX: original is already converted (oval -> normal), so use original.length directly
@@ -567,7 +592,15 @@ export class PremiumNoteRenderer {
                                 newStartTime = Math.max(0, Math.round(newStartTime / snapValue) * snapValue);
                             }
 
-                            const newLength = Math.max(minLength, originalEndTime - newStartTime);
+                            let newLength = Math.max(minLength, originalEndTime - newStartTime);
+                            
+                            // ✅ FIX: Snap length to grid as well
+                            if (snapValue > 0) {
+                                newLength = snapToGrid(newLength, snapValue);
+                                // Ensure minimum length after snapping
+                                newLength = Math.max(minLength, newLength);
+                            }
+                            
                             renderNote = { ...note, startTime: newStartTime, length: newLength, visualLength: newLength };
                         } else if (dragState.resizeHandle === 'right') {
                             // ✅ FIX: Right resize should NOT change startTime, only length
@@ -580,7 +613,15 @@ export class PremiumNoteRenderer {
                                 newEndTime = Math.max(0, Math.round(newEndTime / snapValue) * snapValue);
                             }
 
-                            const newLength = Math.max(minLength, newEndTime - originalStartTime);
+                            let newLength = Math.max(minLength, newEndTime - originalStartTime);
+                            
+                            // ✅ FIX: Snap length to grid as well
+                            if (snapValue > 0) {
+                                newLength = snapToGrid(newLength, snapValue);
+                                // Ensure minimum length after snapping
+                                newLength = Math.max(minLength, newLength);
+                            }
+                            
                             // ✅ FIX: Ensure startTime stays the same for right resize
                             renderNote = { ...note, startTime: originalStartTime, length: newLength, visualLength: newLength };
                         }
@@ -746,6 +787,145 @@ export class PremiumNoteRenderer {
         const octave = Math.floor(pitch / 12) - 1;
         const noteName = notes[pitch % 12];
         return `${noteName}${octave}`;
+    }
+
+    // ✅ FL Studio-style: Render slide indicator for notes with slideEnabled
+    renderSlideConnections(ctx, notes, dimensions, viewport) {
+        const { stepWidth, keyHeight } = dimensions;
+
+        // ✅ FIX: Context is already translated by drawNotes (KEYBOARD_WIDTH, RULER_HEIGHT, -scrollX, -scrollY)
+        // So we don't need to translate again, but we need to account for visibility correctly
+
+        // ✅ OPTIMIZED: Using StyleCache
+        const accentCool = globalStyleCache.get('--zenith-accent-cool');
+        const accentWarm = globalStyleCache.get('--zenith-accent-warm');
+
+        // ✅ FL Studio-style: Find notes with slideEnabled
+        const slideNotes = notes.filter(n => 
+            n.slideEnabled === true && 
+            n.slideTargetPitch !== undefined && 
+            n.slideTargetPitch !== null &&
+            n.slideDuration !== undefined &&
+            n.slideDuration > 0
+        );
+        
+        if (slideNotes.length === 0) return;
+
+        slideNotes.forEach(note => {
+            // Convert note pitch to MIDI number if needed
+            let sourcePitch = note.pitch;
+            if (typeof sourcePitch === 'string') {
+                const noteMap = { 'C': 0, 'C#': 1, 'D': 2, 'D#': 3, 'E': 4, 'F': 5, 'F#': 6, 'G': 7, 'G#': 8, 'A': 9, 'A#': 10, 'B': 11 };
+                const match = sourcePitch.match(/([A-G]#?)(\d+)/);
+                if (match) {
+                    const [, noteName, octave] = match;
+                    sourcePitch = (parseInt(octave) + 1) * 12 + (noteMap[noteName] || 0);
+                } else {
+                    return; // Invalid pitch
+                }
+            }
+            
+            // Ensure targetPitch is a number
+            let targetPitch = note.slideTargetPitch;
+            if (typeof targetPitch !== 'number') {
+                targetPitch = parseInt(targetPitch);
+                if (isNaN(targetPitch) || targetPitch < 0 || targetPitch > 127) {
+                    return; // Invalid target pitch
+                }
+            }
+
+            // ✅ FL Studio-style: Slide is from note end to target pitch (not to another note)
+            // Calculate positions (in translated coordinate space where scrollX/scrollY are already applied)
+            const startX = note.startTime * stepWidth;
+            // Use sourcePitch (already converted to MIDI number) for Y position
+            const startY = (127 - sourcePitch) * keyHeight;
+            
+            // Use visualLength for display length
+            const displayLength = note.visualLength !== undefined ? note.visualLength : note.length;
+            const noteEndX = startX + (displayLength * stepWidth);
+            
+            // Slide duration in steps
+            const slideDurationSteps = note.slideDuration || 1;
+            const slideEndX = noteEndX + (slideDurationSteps * stepWidth);
+            
+            // Target pitch position (Y coordinate)
+            const targetY = (127 - targetPitch) * keyHeight;
+
+            // Calculate center Y positions for slide line
+            const centerY1 = startY + keyHeight / 2;
+            const centerY2 = targetY + keyHeight / 2;
+
+            // ✅ FIX: Visibility check - context is already translated by drawNotes (-scrollX, -scrollY)
+            // So positions are in note coordinate space, but we need to check against viewport bounds
+            // Visible area in note space: scrollX to scrollX+visibleWidth, scrollY to scrollY+visibleHeight
+            const visibleStartX = viewport.scrollX;
+            const visibleEndX = viewport.scrollX + (viewport.width - KEYBOARD_WIDTH);
+            const visibleStartY = viewport.scrollY;
+            const visibleEndY = viewport.scrollY + (viewport.height - RULER_HEIGHT);
+
+            // Check if slide line intersects visible area
+            const minX = Math.min(noteEndX, slideEndX);
+            const maxX = Math.max(noteEndX, slideEndX);
+            const minY = Math.min(centerY1, centerY2);
+            const maxY = Math.max(centerY1, centerY2);
+
+            if (maxX < visibleStartX || minX > visibleEndX ||
+                maxY < visibleStartY || minY > visibleEndY) {
+                return; // Not visible
+            }
+
+            // Slide line style
+            ctx.strokeStyle = accentCool || '#3b82f6';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([4, 4]); // Dashed line
+            ctx.globalAlpha = 0.7;
+
+            // ✅ FL Studio-style: Draw line from note end to target pitch
+            // Draw curved line (bezier curve for smooth visual)
+            ctx.beginPath();
+            ctx.moveTo(noteEndX, centerY1);
+            
+            // Control points for smooth curve
+            const controlX1 = noteEndX + (slideEndX - noteEndX) * 0.3;
+            const controlX2 = slideEndX - (slideEndX - noteEndX) * 0.3;
+            ctx.bezierCurveTo(
+                controlX1, centerY1,
+                controlX2, centerY2,
+                slideEndX, centerY2
+            );
+            ctx.stroke();
+
+            // Draw arrow head at target pitch position
+            const arrowSize = 6;
+            const angle = Math.atan2(centerY2 - centerY1, slideEndX - noteEndX);
+            
+            ctx.save();
+            ctx.translate(slideEndX, centerY2);
+            ctx.rotate(angle);
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.lineTo(-arrowSize, -arrowSize / 2);
+            ctx.lineTo(-arrowSize, arrowSize / 2);
+            ctx.closePath();
+            ctx.fillStyle = accentCool || '#3b82f6';
+            ctx.globalAlpha = 0.9;
+            ctx.fill();
+            ctx.restore();
+
+            // Draw slide duration indicator (small circle at slide end)
+            ctx.beginPath();
+            ctx.arc(slideEndX, centerY2, 3, 0, Math.PI * 2);
+            ctx.fillStyle = accentWarm || '#f59e0b';
+            ctx.globalAlpha = 0.8;
+            ctx.fill();
+
+            ctx.globalAlpha = 1.0;
+            ctx.setLineDash([]); // ✅ Reset line dash after drawing
+        });
+
+        // ✅ Reset line dash and alpha after all connections are drawn
+        ctx.setLineDash([]);
+        ctx.globalAlpha = 1.0;
     }
 
     // Clear caches (call when theme changes)

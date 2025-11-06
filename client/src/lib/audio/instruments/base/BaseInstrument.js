@@ -51,7 +51,14 @@ export class BaseInstrument {
      * @param {number} velocity - Note velocity (0-127)
      * @param {number} startTime - AudioContext time to start (optional)
      */
-    noteOn(midiNote, velocity = 100, startTime = null) {
+    /**
+     * Start playing a note
+     * @param {number} midiNote - MIDI note number (0-127)
+     * @param {number} velocity - Note velocity (0-127)
+     * @param {number} startTime - AudioContext time to start
+     * @param {Object} extendedParams - Extended note parameters (optional)
+     */
+    noteOn(midiNote, velocity = 100, startTime = null, extendedParams = null) {
         throw new Error('noteOn() must be implemented by subclass');
     }
 
@@ -74,8 +81,13 @@ export class BaseInstrument {
      * @param {number} velocity - Note velocity (0-1 normalized)
      * @param {number} time - AudioContext time to start
      * @param {number} duration - Note duration in seconds (optional)
+     * @param {Object} extendedParams - Extended note parameters (optional)
+     * @param {number} [extendedParams.pan] - Per-note pan (-1 to 1)
+     * @param {number} [extendedParams.modWheel] - Mod wheel (CC1) value (0-127)
+     * @param {number} [extendedParams.aftertouch] - Aftertouch value (0-127)
+     * @param {Array} [extendedParams.pitchBend] - Pitch bend automation points
      */
-    triggerNote(pitch, velocity = 1, time = null, duration = null) {
+    triggerNote(pitch, velocity = 1, time = null, duration = null, extendedParams = null) {
         const midiNote = this.pitchToMidi(pitch);
 
         // 🔧 FIX: Auto-detect velocity format (MIDI 0-127 or normalized 0-1)
@@ -97,14 +109,15 @@ export class BaseInstrument {
             startTime: startTime.toFixed(3) + 's',
             now: this.audioContext.currentTime.toFixed(3) + 's',
             isInitialized: this._isInitialized,
-            hasBuffer: this.sampleBuffer ? 'YES' : 'NO'
+            hasBuffer: this.sampleBuffer ? 'YES' : 'NO',
+            extendedParams: extendedParams ? 'YES' : 'NO'
         });
 
-        this.noteOn(midiNote, midiVelocity, startTime);
+        this.noteOn(midiNote, midiVelocity, startTime, extendedParams);
 
         // Store for potential noteOff
         if (duration && duration > 0) {
-            this.activeNotes.set(midiNote, { startTime, duration, pitch });
+            this.activeNotes.set(midiNote, { startTime, duration, pitch, extendedParams });
         }
     }
 
@@ -114,12 +127,13 @@ export class BaseInstrument {
      *
      * @param {string} pitch - Note pitch (e.g., 'C4', 'A#3')
      * @param {number} time - AudioContext time to stop (optional)
+     * @param {number} releaseVelocity - Release velocity (0-127, optional)
      */
-    releaseNote(pitch, time = null) {
+    releaseNote(pitch, time = null, releaseVelocity = null) {
         const midiNote = this.pitchToMidi(pitch);
         const stopTime = time !== null ? time : this.audioContext.currentTime;
         // Debug: console.log(`📍 releaseNote: ${pitch} (MIDI ${midiNote}) at ${stopTime.toFixed(3)}s (now: ${this.audioContext.currentTime.toFixed(3)}s)`);
-        this.noteOff(midiNote, stopTime);
+        this.noteOff(midiNote, stopTime, releaseVelocity);
     }
 
     /**

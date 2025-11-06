@@ -66,7 +66,7 @@ export class NativeSamplerNode {
         console.log(`✅ NativeSamplerNode created: ${this.name}`);
     }
 
-    triggerNote(pitch, velocity, time, duration) {
+    triggerNote(pitch, velocity, time, duration, extendedParams = null) {
         const startTime = time || this.context.currentTime;
 
         // ✅ DEBUG: Log kick triggers
@@ -97,7 +97,17 @@ export class NativeSamplerNode {
             semitoneShift += this.pitchOffset;
         }
 
-        const playbackRate = Math.pow(2, semitoneShift / 12);
+        // ✅ PHASE 2: Apply initial pitch bend if present
+        let initialPitchBend = 0;
+        if (extendedParams?.pitchBend && Array.isArray(extendedParams.pitchBend) && extendedParams.pitchBend.length > 0) {
+            // Use first pitch bend point as initial value
+            const firstPoint = extendedParams.pitchBend[0];
+            // Pitch bend range: -8192 to 8191 (MIDI standard), convert to semitones
+            // Standard pitch bend range is ±2 semitones (some synths use ±12)
+            initialPitchBend = (firstPoint.value / 8192) * 2; // ±2 semitones range
+        }
+
+        const playbackRate = Math.pow(2, (semitoneShift + initialPitchBend) / 12);
 
         // 🔧 DEBUG: Log pitch math for diagnostics
         console.log(`🎯 ${this.name || 'Sample'}.pitchCalc:`, {
@@ -112,6 +122,38 @@ export class NativeSamplerNode {
         // Apply playback rate (guard against invalid values)
         if (Number.isFinite(playbackRate) && playbackRate > 0) {
             source.playbackRate.setValueAtTime(playbackRate, startTime);
+            
+            // ✅ PHASE 2: Schedule pitch bend automation if present
+            if (extendedParams?.pitchBend && Array.isArray(extendedParams.pitchBend) && extendedParams.pitchBend.length > 1) {
+                // Schedule pitch bend changes over time
+                // For pitch bend automation, we'll use the note duration in seconds
+                const noteDurationSec = duration || bufferToPlay.duration || 1;
+                
+                extendedParams.pitchBend.forEach((point, index) => {
+                    if (index === 0) return; // Skip first point (already applied as initial)
+                    
+                    // Convert point.time (0-1 normalized or absolute steps) to seconds
+                    let pointTime;
+                    if (point.time <= 1 && point.time >= 0) {
+                        // Normalized time (0-1) - multiply by note duration
+                        pointTime = startTime + (point.time * noteDurationSec);
+                    } else {
+                        // Absolute time in steps - estimate conversion (4 steps per beat, 120 BPM default)
+                        const stepsPerBeat = 4;
+                        const bpm = 120; // Default, will be refined if transport available
+                        const secondsPerStep = (60 / bpm) / stepsPerBeat;
+                        pointTime = startTime + (point.time * secondsPerStep);
+                    }
+                    
+                    // Calculate new playback rate with pitch bend
+                    const pitchBendSemitones = (point.value / 8192) * 2; // ±2 semitones
+                    const newPlaybackRate = Math.pow(2, (semitoneShift + pitchBendSemitones) / 12);
+                    
+                    if (Number.isFinite(newPlaybackRate) && newPlaybackRate > 0 && pointTime > startTime) {
+                        source.playbackRate.setValueAtTime(newPlaybackRate, pointTime);
+                    }
+                });
+            }
         }
 
         // =====================
@@ -148,18 +190,42 @@ export class NativeSamplerNode {
 
         // Filter (optional)
         let lastNode = envelopeGain;
+        let filterNode = null;
         if (this.params.filterCutoff !== undefined || this.params.filterResonance !== undefined) {
-            const filter = this.context.createBiquadFilter();
-            filter.type = this.params.filterType || 'lowpass';
-            filter.frequency.setValueAtTime(this.params.filterCutoff || 20000, startTime);
-            filter.Q.setValueAtTime(this.params.filterResonance || 0, startTime);
-            lastNode.connect(filter);
-            lastNode = filter;
+            filterNode = this.context.createBiquadFilter();
+            filterNode.type = this.params.filterType || 'lowpass';
+            
+            // ✅ PHASE 2: Apply mod wheel (CC1) to filter cutoff if present
+            let filterCutoff = this.params.filterCutoff || 20000;
+            if (extendedParams?.modWheel !== undefined) {
+                // Mod wheel (0-127) modulates filter cutoff
+                // Map mod wheel to ±50% of cutoff range
+                const modWheelNormalized = extendedParams.modWheel / 127; // 0-1
+                const cutoffRange = filterCutoff * 0.5; // ±50% modulation
+                filterCutoff = filterCutoff + (modWheelNormalized - 0.5) * cutoffRange * 2;
+                filterCutoff = Math.max(20, Math.min(20000, filterCutoff)); // Clamp to audible range
+            }
+            
+            filterNode.frequency.setValueAtTime(filterCutoff, startTime);
+            
+            // ✅ PHASE 2: Apply aftertouch to filter Q (resonance) if present
+            let filterQ = this.params.filterResonance || 0;
+            if (extendedParams?.aftertouch !== undefined) {
+                // Aftertouch (0-127) modulates filter Q
+                const aftertouchNormalized = extendedParams.aftertouch / 127; // 0-1
+                filterQ = filterQ + aftertouchNormalized * 10; // Add up to 10 Q
+                filterQ = Math.max(0, Math.min(30, filterQ)); // Clamp Q
+            }
+            
+            filterNode.Q.setValueAtTime(filterQ, startTime);
+            lastNode.connect(filterNode);
+            lastNode = filterNode;
         }
 
-        // Panner
+        // ✅ PHASE 2: Panner - use note pan if available, otherwise instrument pan
         const panner = this.context.createStereoPanner();
-        panner.pan.setValueAtTime(this.params.pan || 0, startTime);
+        const panValue = extendedParams?.pan !== undefined ? extendedParams.pan : (this.params.pan || 0);
+        panner.pan.setValueAtTime(panValue, startTime);
         lastNode.connect(panner);
         lastNode = panner;
 
@@ -329,7 +395,8 @@ export class NativeSamplerNode {
     }
 
     // Sample için releaseNote boş (trigger-based playback)
-    releaseNote() {
+    // ✅ PHASE 2: Added releaseVelocity parameter for consistency
+    releaseNote(pitch = null, time = null, releaseVelocity = null) {
         // Samples are usually trigger-based, no release needed
     }
 

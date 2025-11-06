@@ -115,3 +115,4 @@
 **Kısa Vadeli (Şimdi):** PSOLA iyileştirmeleri
 **Orta Vadeli:** Phase Vocoder eklemek (Quality=High mode)
 
+

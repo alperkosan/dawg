@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState, useMemo } from 'react';
+import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react';
 import { usePianoRollEngine } from './usePianoRollEngine';
 import { useNoteInteractionsV2 } from './hooks/useNoteInteractionsV2';
 import { useLoopRegionSelection } from './hooks/useLoopRegionSelection';
@@ -7,15 +7,20 @@ import { uiUpdateManager, UPDATE_PRIORITIES, UPDATE_FREQUENCIES } from '@/lib/co
 import { performanceMonitor } from '@/utils/PerformanceMonitor';
 import Toolbar from './components/Toolbar';
 import VelocityLane from './components/VelocityLane';
+import CCLanes from './components/CCLanes';
+import NotePropertiesPanel from './components/NotePropertiesPanel';
 import LoopRegionOverlay from './components/LoopRegionOverlay';
 import ShortcutsPanel from './components/ShortcutsPanel';
 import ContextMenu from './components/ContextMenu';
 import { usePanelsStore } from '@/store/usePanelsStore';
 import { useInstrumentsStore } from '@/store/useInstrumentsStore';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
+import { useArrangementStore } from '@/store/useArrangementStore';
+import { AutomationLane } from './types/AutomationLane';
 import { getTimelineController } from '@/lib/core/TimelineControllerSingleton';
 import { getToolManager } from '@/lib/piano-roll-tools';
 import { getTransportManagerSync } from '@/lib/core/TransportManagerSingleton';
+import EventBus from '@/lib/core/EventBus.js';
 // ✅ NEW CURSOR SYSTEMS
 import { PianoRollCursorManager, CURSOR_MANAGER_MODES, CURSOR_SOURCES, CURSOR_STATES } from './interaction';
 import './PianoRoll_v5.css';
@@ -55,6 +60,25 @@ function PianoRoll() {
 
     // ✅ SHORTCUTS PANEL STATE
     const [showShortcuts, setShowShortcuts] = useState(false);
+
+    // ✅ PHASE 2: CC LANES STATE
+    const [ccLanes, setCCLanes] = useState([]);
+    const [showCCLanes, setShowCCLanes] = useState(false);
+    
+    // ✅ PHASE 2: NOTE PROPERTIES PANEL STATE
+    const [showNoteProperties, setShowNoteProperties] = useState(false);
+    const [propertiesPanelCollapsed, setPropertiesPanelCollapsed] = useState(false);
+    
+    // ✅ Listen for double-click events to open Note Properties Panel
+    useEffect(() => {
+        const handleOpenNoteProperties = () => {
+            setShowNoteProperties(true);
+            setPropertiesPanelCollapsed(false);
+        };
+        
+        EventBus.on('pianoRoll:openNoteProperties', handleOpenNoteProperties);
+        return () => EventBus.off('pianoRoll:openNoteProperties', handleOpenNoteProperties);
+    }, []);
 
     // ✅ KEYBOARD PIANO MODE STATE
     const [keyboardPianoMode, setKeyboardPianoMode] = useState(false);
@@ -462,6 +486,122 @@ function PianoRoll() {
         noteInteractions.updateNoteVelocity?.(noteId, newVelocity);
     };
 
+    // ✅ PHASE 2: CC LANES HANDLERS
+    const activePatternId = useArrangementStore(state => state.activePatternId);
+    
+    // ✅ PHASE 2: Initialize CC lanes for pattern - load from store or create defaults
+    useEffect(() => {
+        if (!activePatternId || !currentInstrument) {
+            setCCLanes([]);
+            return;
+        }
+
+        // Load CC lanes from pattern store
+        const pattern = useArrangementStore.getState().patterns[activePatternId];
+        if (pattern?.ccLanes && Array.isArray(pattern.ccLanes) && pattern.ccLanes.length > 0) {
+            // Restore from stored data
+            const restoredLanes = pattern.ccLanes.map(laneData => AutomationLane.fromJSON(laneData));
+            setCCLanes(restoredLanes);
+        } else {
+            // Create default lanes: Mod Wheel (CC1), Pitch Bend, Aftertouch
+            const defaultLanes = [
+                new AutomationLane(1, 'Mod Wheel'), // CC1
+                new AutomationLane('pitchBend', 'Pitch Bend'),
+                new AutomationLane('aftertouch', 'Aftertouch')
+            ];
+            setCCLanes(defaultLanes);
+            
+            // ✅ FIX: Save defaults to store after render (avoid setState during render warning)
+            setTimeout(() => {
+                const ccLanesData = defaultLanes.map(lane => lane.toJSON());
+                useArrangementStore.getState().updatePatternCCLanes(activePatternId, ccLanesData);
+            }, 0);
+        }
+    }, [activePatternId, currentInstrument]);
+
+    const handleCCLanePointAdd = useCallback((ccNumber, time, value) => {
+        setCCLanes(prevLanes => {
+            const updatedLanes = prevLanes.map(lane => {
+                if (lane.ccNumber === ccNumber) {
+                    const newLane = lane.clone();
+                    newLane.addPoint(time, value);
+                    return newLane;
+                }
+                return lane;
+            });
+            
+            // ✅ PHASE 2: Save CC lanes to pattern store
+            if (activePatternId) {
+                const ccLanesData = updatedLanes.map(lane => lane.toJSON());
+                useArrangementStore.getState().updatePatternCCLanes(activePatternId, ccLanesData);
+            }
+            
+            return updatedLanes;
+        });
+    }, [activePatternId]);
+
+    const handleCCLanePointRemove = useCallback((ccNumber, pointIndex) => {
+        setCCLanes(prevLanes => {
+            const updatedLanes = prevLanes.map(lane => {
+                if (lane.ccNumber === ccNumber) {
+                    const newLane = lane.clone();
+                    newLane.removePoint(pointIndex);
+                    return newLane;
+                }
+                return lane;
+            });
+            
+            // ✅ PHASE 2: Save CC lanes to pattern store
+            if (activePatternId) {
+                const ccLanesData = updatedLanes.map(lane => lane.toJSON());
+                useArrangementStore.getState().updatePatternCCLanes(activePatternId, ccLanesData);
+            }
+            
+            return updatedLanes;
+        });
+    }, [activePatternId]);
+
+    const handleCCLanePointUpdate = useCallback((ccNumber, pointIndex, updates) => {
+        setCCLanes(prevLanes => {
+            const updatedLanes = prevLanes.map(lane => {
+                if (lane.ccNumber === ccNumber) {
+                    const newLane = lane.clone();
+                    newLane.updatePoint(pointIndex, updates);
+                    return newLane;
+                }
+                return lane;
+            });
+            
+            // ✅ PHASE 2: Save CC lanes to pattern store
+            if (activePatternId) {
+                const ccLanesData = updatedLanes.map(lane => lane.toJSON());
+                useArrangementStore.getState().updatePatternCCLanes(activePatternId, ccLanesData);
+            }
+            
+            return updatedLanes;
+        });
+    }, [activePatternId]);
+
+    // ✅ PHASE 2: NOTE PROPERTIES HANDLERS
+    // ✅ FIX: Calculate selectedNote on every render to ensure it updates when notes change
+    // Don't use useMemo here - we want it to recalculate whenever notes array changes
+    const selectedNote = (() => {
+        if (noteInteractions.selectedNoteIds.size === 1) {
+            const noteId = Array.from(noteInteractions.selectedNoteIds)[0];
+            const note = noteInteractions.notes.find(n => n.id === noteId);
+            return note || null;
+        }
+        return null;
+    })();
+
+    const handleNotePropertyChange = useCallback((property, value) => {
+        if (!selectedNote) return;
+        
+        // Update via note interactions
+        const updates = { [property]: value };
+        noteInteractions.updateNote?.(selectedNote.id, updates);
+    }, [selectedNote, noteInteractions]);
+
     // Memoize selectedNoteIds array to prevent VelocityLane re-renders
     const selectedNoteIdsArray = useMemo(
         () => Array.from(noteInteractions.selectedNoteIds),
@@ -622,6 +762,11 @@ function PianoRoll() {
                 onKeyboardPianoModeChange={setKeyboardPianoMode}
                 keyboardPianoSettings={keyboardPianoSettings}
                 onKeyboardPianoSettingsChange={setKeyboardPianoSettings}
+                // ✅ PHASE 2: CC Lanes & Note Properties
+                showCCLanes={showCCLanes}
+                onShowCCLanesChange={setShowCCLanes}
+                showNoteProperties={showNoteProperties}
+                onShowNotePropertiesChange={setShowNoteProperties}
             />
             <div
                 ref={containerRef}
@@ -755,6 +900,35 @@ function PianoRoll() {
                 viewport={engine.viewport}
                 activeTool={activeTool}
             />
+
+            {/* ✅ PHASE 2: CC LANES */}
+            {showCCLanes && ccLanes.length > 0 && (
+                <CCLanes
+                    lanes={ccLanes}
+                    selectedNoteIds={selectedNoteIdsArray}
+                    onLaneChange={(laneId, lane) => {
+                        // Handle lane change if needed
+                    }}
+                    onPointAdd={handleCCLanePointAdd}
+                    onPointRemove={handleCCLanePointRemove}
+                    onPointUpdate={handleCCLanePointUpdate}
+                    dimensions={engine.dimensions}
+                    viewport={engine.viewport}
+                    activeTool={activeTool}
+                    snapValue={snapValue}
+                />
+            )}
+
+            {/* ✅ PHASE 2: NOTE PROPERTIES PANEL */}
+            {showNoteProperties && (
+                <NotePropertiesPanel
+                    selectedNote={selectedNote}
+                    onPropertyChange={handleNotePropertyChange}
+                    collapsed={propertiesPanelCollapsed}
+                    onToggleCollapse={() => setPropertiesPanelCollapsed(prev => !prev)}
+                    allNotes={noteInteractions.notes} // ✅ FL Studio: Need all notes to find next note for slide target
+                />
+            )}
 
             {/* ✅ SHORTCUTS PANEL */}
             <ShortcutsPanel

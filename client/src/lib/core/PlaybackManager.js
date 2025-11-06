@@ -10,6 +10,7 @@ import EventBus from './EventBus.js';
 import { PositionTracker } from './PositionTracker.js';
 import { audioAssetManager } from '@/lib/audio/AudioAssetManager';
 import { idleDetector } from '../utils/IdleDetector.js';
+import { AutomationLane } from '@/features/piano_roll_v7/types/AutomationLane';
 
 // ✅ NEW: Modular scheduler system
 import {
@@ -1324,6 +1325,11 @@ export class PlaybackManager {
         const loopTimeInSeconds = this.loop ? loopLength * this.transport.stepsToSeconds(1) : 0;
 
         notes.forEach(note => {
+            // ✅ GHOST NOTES: Skip muted notes during playback
+            if (note.isMuted) {
+                return; // Skip this note
+            }
+
             // Note timing calculation (support both startTime and time)
             const noteTimeInSteps = (note.startTime ?? note.time ?? 0);
             const noteTimeInTicks = noteTimeInSteps * this.transport.ticksPerStep;
@@ -1364,6 +1370,105 @@ export class PlaybackManager {
                 noteDuration = this.transport.stepsToSeconds(1);
             }
 
+            // ✅ PHASE 2: Extract extended parameters from note AND CC lanes
+            const extendedParams = {};
+            if (note.pan !== undefined) extendedParams.pan = note.pan;
+            if (note.modWheel !== undefined) extendedParams.modWheel = note.modWheel;
+            if (note.aftertouch !== undefined) extendedParams.aftertouch = note.aftertouch;
+            if (note.pitchBend && Array.isArray(note.pitchBend)) extendedParams.pitchBend = note.pitchBend;
+            
+            // ✅ FL Studio-style slide logic
+            // Slide is a property of the note itself: slideEnabled, slideDuration, slideTargetPitch
+            if (note.slideEnabled === true) {
+                // Validate slideTargetPitch
+                let targetPitch = note.slideTargetPitch;
+                if (targetPitch === undefined || targetPitch === null) {
+                    // No target pitch - skip slide
+                    console.warn('⚠️ Slide enabled but no targetPitch:', note.id);
+                } else {
+                    // Ensure targetPitch is a number (MIDI 0-127)
+                    if (typeof targetPitch === 'string') {
+                        // Convert string pitch (C4) to MIDI number
+                        const noteMap = { 'C': 0, 'C#': 1, 'D': 2, 'D#': 3, 'E': 4, 'F': 5, 'F#': 6, 'G': 7, 'G#': 8, 'A': 9, 'A#': 10, 'B': 11 };
+                        const match = targetPitch.match(/([A-G]#?)(\d+)/);
+                        if (match) {
+                            const [, noteName, octave] = match;
+                            targetPitch = (parseInt(octave) + 1) * 12 + (noteMap[noteName] || 0);
+                        } else {
+                            console.warn('⚠️ Invalid slideTargetPitch format:', targetPitch);
+                            targetPitch = null;
+                        }
+                    }
+                    
+                    if (targetPitch !== null && targetPitch >= 0 && targetPitch <= 127) {
+                        const slideDurationSteps = note.slideDuration || 1;
+                        const slideDurationSeconds = this.transport.stepsToSeconds(slideDurationSteps);
+                        
+                        // ✅ FL Studio-style slide: Note glides from its own pitch to target pitch
+                        // Slide starts immediately when note starts, glides over slideDuration
+                        extendedParams.slideEnabled = true;
+                        extendedParams.slideTargetPitch = targetPitch;
+                        extendedParams.slideDuration = slideDurationSeconds;
+                        
+                        // Extend note duration to include slide duration
+                        noteDuration = noteDuration + slideDurationSeconds;
+                        
+                        console.log('🎚️ Slide enabled:', {
+                            noteId: note.id.substring(0, 12),
+                            sourcePitch: note.pitch,
+                            targetPitch: targetPitch,
+                            slideDuration: slideDurationSeconds.toFixed(3) + 's',
+                            slideDurationSteps
+                        });
+                    }
+                }
+            }
+            
+            // ✅ PHASE 2: Get CC lanes data from pattern store and apply to note
+            try {
+                const { patterns, activePatternId } = useArrangementStore.getState();
+                const patternId = activePatternId || this.activePatternId;
+                const pattern = patternId ? patterns[patternId] : null;
+                
+                if (pattern && pattern.ccLanes && Array.isArray(pattern.ccLanes)) {
+                    pattern.ccLanes.forEach(laneData => {
+                        const lane = AutomationLane.fromJSON(laneData);
+                        const ccValue = lane.getValueAtTime(noteTimeInSteps, 'linear');
+                        
+                        if (ccValue !== null) {
+                            if (lane.ccNumber === 1) {
+                                // Mod Wheel (CC1) - override note's modWheel if CC lane has value
+                                extendedParams.modWheel = ccValue;
+                            } else if (lane.ccNumber === 'pitchBend') {
+                                // Pitch Bend - create automation points from CC lane
+                                if (!extendedParams.pitchBend) extendedParams.pitchBend = [];
+                                // Get all points in note's time range
+                                const points = lane.getPoints();
+                                const noteEndTime = noteTimeInSteps + (note.length || 1);
+                                const relevantPoints = points.filter(p => p.time >= noteTimeInSteps && p.time <= noteEndTime);
+                                if (relevantPoints.length > 0) {
+                                    // Convert to relative time (0-1 normalized within note)
+                                    relevantPoints.forEach(point => {
+                                        const relativeTime = (point.time - noteTimeInSteps) / (note.length || 1);
+                                        extendedParams.pitchBend.push({ time: relativeTime, value: point.value });
+                                    });
+                                } else {
+                                    // Use single point at note start
+                                    extendedParams.pitchBend.push({ time: 0, value: ccValue });
+                                }
+                            } else if (lane.ccNumber === 'aftertouch') {
+                                // Aftertouch - override note's aftertouch if CC lane has value
+                                extendedParams.aftertouch = ccValue;
+                            }
+                        }
+                    });
+                }
+            } catch (error) {
+                console.warn('⚠️ Failed to load CC lanes for note:', error);
+            }
+            
+            const hasExtendedParams = Object.keys(extendedParams).length > 0;
+
             // Note on event
             this.transport.scheduleEvent(
                 absoluteTime,
@@ -1373,7 +1478,8 @@ export class PlaybackManager {
                             note.pitch || 'C4',
                             note.velocity || 1,
                             scheduledTime,
-                            noteDuration
+                            noteDuration,
+                            hasExtendedParams ? extendedParams : null
                         );
                     } catch (error) {
                     }
@@ -1398,13 +1504,16 @@ export class PlaybackManager {
                 };
 
 
+                // ✅ PHASE 2: Extract release velocity from note
+                const releaseVelocity = note.releaseVelocity !== undefined ? note.releaseVelocity : null;
+
                 this.transport.scheduleEvent(
                     absoluteTime + noteDuration,
                     (scheduledTime) => {
                         try {
                             // ✅ GUARD: Only release if this is still the right note instance
                             // Check if there's a newer note with same pitch that started after us
-                            instrument.releaseNote(noteMetadata.pitch, scheduledTime);
+                            instrument.releaseNote(noteMetadata.pitch, scheduledTime, releaseVelocity);
                         } catch (error) {
                             console.error(`Error in noteOff for ${noteMetadata.pitch}:`, error);
                         }

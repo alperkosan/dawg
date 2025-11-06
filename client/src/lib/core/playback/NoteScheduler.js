@@ -56,6 +56,14 @@ export class NoteScheduler {
                 noteDuration = this.transport.stepsToSeconds(1);
             }
 
+            // ✅ PHASE 2: Extract extended parameters from note
+            const extendedParams = {};
+            if (note.pan !== undefined) extendedParams.pan = note.pan;
+            if (note.modWheel !== undefined) extendedParams.modWheel = note.modWheel;
+            if (note.aftertouch !== undefined) extendedParams.aftertouch = note.aftertouch;
+            if (note.pitchBend && Array.isArray(note.pitchBend)) extendedParams.pitchBend = note.pitchBend;
+            const hasExtendedParams = Object.keys(extendedParams).length > 0;
+
             // Schedule note on event
             this.transport.scheduleEvent(
                 absoluteTime,
@@ -65,7 +73,8 @@ export class NoteScheduler {
                             note.pitch || 'C4',
                             note.velocity || 1,
                             scheduledTime,
-                            noteDuration
+                            noteDuration,
+                            hasExtendedParams ? extendedParams : null
                         );
                     } catch (error) {
                         console.error(`NoteScheduler: triggerNote error:`, error);
@@ -92,11 +101,14 @@ export class NoteScheduler {
                     pitch: note.pitch || 'C4'
                 };
 
+                // ✅ PHASE 2: Extract release velocity from note
+                const releaseVelocity = note.releaseVelocity !== undefined ? note.releaseVelocity : null;
+
                 this.transport.scheduleEvent(
                     absoluteTime + noteDuration,
                     (scheduledTime) => {
                         try {
-                            instrument.releaseNote(noteMetadata.pitch, scheduledTime);
+                            instrument.releaseNote(noteMetadata.pitch, scheduledTime, releaseVelocity);
                         } catch (error) {
                             console.error(`NoteScheduler: releaseNote error:`, error);
                         }

@@ -142,7 +142,7 @@ export class MultiSampleInstrument extends BaseInstrument {
     /**
      * Play a note
      */
-    noteOn(midiNote, velocity = 100, startTime = null) {
+    noteOn(midiNote, velocity = 100, startTime = null, extendedParams = null) {
         if (!this._isInitialized) {
             console.warn(`${this.name}: Not initialized`);
             return;
@@ -174,8 +174,8 @@ export class MultiSampleInstrument extends BaseInstrument {
             // Calculate frequency for the note
             const frequency = this.midiToFrequency(midiNote);
 
-            // ✅ NEW: Trigger voice with sample data
-            voice.trigger(midiNote, velocity, frequency, time, mapping, this.data);
+            // ✅ PHASE 2: Trigger voice with sample data and extended params
+            voice.trigger(midiNote, velocity, frequency, time, mapping, this.data, extendedParams);
 
             // Track note
             this._trackNoteOn(midiNote, velocity, time);

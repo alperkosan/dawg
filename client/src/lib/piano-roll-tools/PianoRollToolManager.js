@@ -15,7 +15,8 @@ export const TOOL_TYPES = {
   ERASER: 'eraser',           // Erase notes
   FLAM: 'flam',               // Create flam effect
   RANDOMIZER: 'randomizer',   // Randomize note properties
-  FLIP: 'flip'                // Flip notes horizontally/vertically
+  FLIP: 'flip',               // Flip notes horizontally/vertically
+  SLIDE: 'slide'              // ✅ PHASE 3: Create slide connections between notes
 };
 
 export const TOOL_SHORTCUTS = {
@@ -27,7 +28,8 @@ export const TOOL_SHORTCUTS = {
   [TOOL_TYPES.ERASER]: 'e',         // Alt+E (Erase)
   [TOOL_TYPES.FLAM]: 'f',           // Alt+F (Flam)
   [TOOL_TYPES.RANDOMIZER]: 'r',     // Alt+R (Randomize)
-  [TOOL_TYPES.FLIP]: 'l'            // Alt+L (Flip - mirrored 'L')
+  [TOOL_TYPES.FLIP]: 'l',           // Alt+L (Flip - mirrored 'L')
+  [TOOL_TYPES.SLIDE]: 'g'           // ✅ PHASE 3: Alt+G (Glide/Slide)
 };
 
 export const TOOL_INFO = {
@@ -84,6 +86,12 @@ export const TOOL_INFO = {
     icon: '↔️',
     description: 'Mirror notes horizontally or vertically',
     cursor: 'move'
+  },
+  [TOOL_TYPES.SLIDE]: {
+    name: 'Slide',
+    icon: '🔗',
+    description: 'Create slide connections between notes (portamento)',
+    cursor: 'crosshair'
   }
 };
 

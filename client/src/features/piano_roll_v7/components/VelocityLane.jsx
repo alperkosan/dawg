@@ -62,8 +62,12 @@ function VelocityLane({
             const velocity = note.velocity || 100;
             const normalizedVelocity = velocity / 127; // Normalize to 0-1 for rendering
 
+            // ✅ FL STUDIO STYLE: Use visualLength for display, length for audio
+            // Oval notes (visualLength < length) should show as 1 step in velocity lane
+            const displayLength = note.visualLength !== undefined ? note.visualLength : note.length;
+
             const noteX = note.startTime * stepWidth;
-            const noteWidth = Math.max(1, note.length * stepWidth);
+            const noteWidth = Math.max(1, displayLength * stepWidth);
             const barHeight = normalizedVelocity * canvasHeight * 0.8; // 80% of canvas height max
             const barY = canvasHeight - barHeight;
 
@@ -133,8 +137,10 @@ function VelocityLane({
         const canvasHeight = canvas.height / (window.devicePixelRatio || 1);
 
         // Find all notes at click X position
+        // ✅ FL STUDIO STYLE: Use visualLength for click detection in velocity lane
         const notesAtPosition = notes.filter(note => {
-            return clickTime >= note.startTime && clickTime <= (note.startTime + note.length);
+            const displayLength = note.visualLength !== undefined ? note.visualLength : note.length;
+            return clickTime >= note.startTime && clickTime <= (note.startTime + displayLength);
         });
 
         if (notesAtPosition.length === 0) return;
