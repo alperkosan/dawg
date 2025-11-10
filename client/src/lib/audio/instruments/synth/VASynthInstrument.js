@@ -99,9 +99,26 @@ export class VASynthInstrument extends BaseInstrument {
             } else {
                 // ✅ POLYPHONIC MODE: Create separate voice per note
 
-                // If note is already playing, stop it first (cancel pending timeout)
+                // ✅ CRITICAL FIX: If note is already playing, immediately dispose old voice
+                // Don't use noteOff() which schedules disposal - that would delete the NEW voice!
                 if (this.voices.has(midiNote)) {
-                    this.noteOff(midiNote);
+                    const oldVoice = this.voices.get(midiNote);
+
+                    // Cancel any pending timeout for this note
+                    if (this.voiceTimeouts.has(midiNote)) {
+                        clearTimeout(this.voiceTimeouts.get(midiNote));
+                        this.voiceTimeouts.delete(midiNote);
+                    }
+
+                    // Immediately dispose old voice (no release envelope for retriggered notes)
+                    if (oldVoice) {
+                        oldVoice.dispose();
+                    }
+
+                    // Remove from voices map (will be replaced with new voice below)
+                    this.voices.delete(midiNote);
+
+                    console.log(`🔄 VASynth retrigger: Disposed old voice for midiNote=${midiNote}`);
                 }
 
                 // Check polyphony limit
@@ -275,15 +292,16 @@ export class VASynthInstrument extends BaseInstrument {
         this.voiceTimeouts.forEach(timeoutId => clearTimeout(timeoutId));
         this.voiceTimeouts.clear();
 
-        // Immediately dispose all voices without waiting for release
+        // ✅ Dispose all voices (calls cleanup which lets envelopes finish naturally)
         this.voices.forEach((voice) => {
             try {
-                voice.dispose(); // Instant cleanup
+                voice.dispose();
             } catch (error) {
                 console.error('Error disposing voice:', error);
             }
         });
 
+        // Clear state
         this.voices.clear();
         this.activeNotes.clear();
         this._isPlaying = false;

@@ -361,24 +361,19 @@ export class VASynth {
      * Cleanup audio nodes
      */
     cleanup() {
-        // ✅ CRITICAL FIX: Immediately mute before stopping to prevent stuck notes
-        if (this.amplitudeGain) {
-            try {
-                this.amplitudeGain.gain.cancelScheduledValues(this.context.currentTime);
-                this.amplitudeGain.gain.setValueAtTime(0, this.context.currentTime);
-            } catch (e) {
-                // Ignore
-            }
-        }
+        // ✅ Minimal cleanup - let release envelopes finish naturally
+        const now = this.context.currentTime;
 
         // Stop oscillators
         this.oscillators.forEach(osc => {
             if (osc) {
                 try {
-                    osc.stop();
+                    if (osc.context.state !== 'closed') {
+                        osc.stop(now);
+                    }
                     osc.disconnect();
                 } catch (e) {
-                    // Already stopped
+                    // Already stopped - ignore
                 }
             }
         });
@@ -388,25 +383,21 @@ export class VASynth {
             if (gain) {
                 try {
                     gain.disconnect();
-                } catch (e) {
-                    // Already disconnected
-                }
+                } catch (e) { /* ignore */ }
             }
         });
 
-        // Disconnect other nodes
+        // Disconnect filter chain
         [this.filter, this.filterEnvGain, this.amplitudeGain, this.masterGain].forEach(node => {
             if (node) {
                 try {
                     node.disconnect();
-                } catch (e) {
-                    // Already disconnected
-                }
+                } catch (e) { /* ignore */ }
             }
         });
 
         // Stop LFO
-        if (this.lfo.isRunning) {
+        if (this.lfo && this.lfo.isRunning) {
             this.lfo.stop();
         }
 
@@ -416,7 +407,6 @@ export class VASynth {
         this.filter = null;
         this.filterEnvGain = null;
         this.amplitudeGain = null;
-        // ✅ Don't null masterGain - it's created in constructor and reused
     }
 
     /**

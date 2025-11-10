@@ -327,23 +327,35 @@ export function usePianoRollEngine(containerRef, playbackControls = {}) {
     }, [viewportData.scrollY, viewportSize.height, dimensions.keyHeight, dimensions.totalKeys]);
 
     // ✅ PHASE 1: Follow Playhead Mode - Programmatic viewport control
-    const updateViewport = useCallback(({ scrollX, scrollY }) => {
+    const updateViewport = useCallback(({ scrollX, scrollY, smooth = true }) => {
+        const vp = viewportRef.current;
+
         if (scrollX !== undefined) {
             const maxScrollX = Math.max(0, dimensions.totalWidth - viewportSize.width);
-            setViewportData(prev => ({
-                ...prev,
-                scrollX: Math.max(0, Math.min(maxScrollX, scrollX)),
-                targetScrollX: Math.max(0, Math.min(maxScrollX, scrollX))
-            }));
+            const clampedScrollX = Math.max(0, Math.min(maxScrollX, scrollX));
+
+            if (smooth) {
+                // Smooth scroll: Only update target, let UIUpdateManager interpolate
+                vp.targetScrollX = clampedScrollX;
+            } else {
+                // Instant scroll: Update both current and target
+                vp.scrollX = clampedScrollX;
+                vp.targetScrollX = clampedScrollX;
+            }
         }
         if (scrollY !== undefined) {
             const maxScrollY = Math.max(0, dimensions.totalHeight - viewportSize.height);
-            setViewportData(prev => ({
-                ...prev,
-                scrollY: Math.max(0, Math.min(maxScrollY, scrollY)),
-                targetScrollY: Math.max(0, Math.min(maxScrollY, scrollY))
-            }));
+            const clampedScrollY = Math.max(0, Math.min(maxScrollY, scrollY));
+
+            if (smooth) {
+                vp.targetScrollY = clampedScrollY;
+            } else {
+                vp.scrollY = clampedScrollY;
+                vp.targetScrollY = clampedScrollY;
+            }
         }
+
+        setRenderTrigger(Date.now());
     }, [dimensions, viewportSize]);
 
     return {

@@ -5,10 +5,27 @@ import { INSTRUMENT_TYPES, MIXER_TRACK_TYPES } from './constants';
 // =========================================================================
 
 // Helper function to create notes
-// ✅ FL STUDIO STYLE: All notes are oval (visualLength: 1) and extend to pattern length
-const note = (time, pitch = 'C4', velocity = 100, duration = '16n', patternLength = 64) => {
-  // Calculate audio length: from note start to pattern end
-  const audioLengthInSteps = Math.max(1, patternLength - time);
+// ✅ DRUM NOTES: Oval (visualLength: 1) - extends to pattern end but shows as 1 step
+// ✅ VASYNTH NOTES: Rectangular (visualLength = length) - shows actual duration
+const note = (time, pitch = 'C4', velocity = 100, duration = '16n', patternLength = 64, isDrum = false) => {
+  // Convert duration string to steps (e.g., '1n' = 16 steps, '2n' = 8 steps, '4n' = 4 steps, '8n' = 2 steps, '16n' = 1 step)
+  const durationToSteps = (dur) => {
+    if (typeof dur === 'number') return dur;
+    // ✅ FIX: Check longer patterns first to avoid false matches (e.g., '16n' contains '1n')
+    if (dur.includes('16n')) return 1;
+    if (dur.includes('8n')) return 2;
+    if (dur.includes('4n')) return 4;
+    if (dur.includes('2n')) return 8;
+    if (dur.includes('1n')) return 16;
+    if (dur.includes('32n')) return 0.5; // Half step (not common but supported)
+    // Default to 1 step if pattern not recognized
+    return 1;
+  };
+  
+  const durationSteps = durationToSteps(duration);
+  const audioLengthInSteps = isDrum 
+    ? Math.max(1, patternLength - time) // Drums extend to pattern end
+    : durationSteps; // VASynth uses actual duration
   
   return {
     id: `note_${time}_${pitch}_${Math.random().toString(36).substring(7)}`,
@@ -16,8 +33,8 @@ const note = (time, pitch = 'C4', velocity = 100, duration = '16n', patternLengt
     pitch,
     velocity,
     duration, // Legacy format for compatibility
-    length: audioLengthInSteps, // ✅ Audio length in steps (extends to pattern end)
-    visualLength: 1 // ✅ FL STUDIO STYLE: All notes are oval (1 step visual)
+    length: audioLengthInSteps, // Audio length in steps
+    ...(isDrum ? { visualLength: 1 } : {}) // ✅ DRUMS: Oval (visualLength: 1), VASYNTH: Rectangular (no visualLength)
   };
 };
 
@@ -27,37 +44,39 @@ const note = (time, pitch = 'C4', velocity = 100, duration = '16n', patternLengt
 // =========================================================================
 const TRAP_PATTERN_LENGTH = 64;
 const trapPattern = {
-  kick: [0, 6, 10, 16, 22, 26, 32, 38, 42, 48, 54, 58].map(t => note(t, 'C4', 100, '16n', TRAP_PATTERN_LENGTH)),
-  snare: [8, 24, 40, 56].map(t => note(t, 'C4', 95, '16n', TRAP_PATTERN_LENGTH)),
-  clap: [8, 24, 40, 56].map(t => note(t, 'C4', 80, '16n', TRAP_PATTERN_LENGTH)), // Layered with snare
+  // ✅ DRUMS: All oval (visualLength: 1)
+  kick: [0, 6, 10, 16, 22, 26, 32, 38, 42, 48, 54, 58].map(t => note(t, 'C4', 100, '16n', TRAP_PATTERN_LENGTH, true)),
+  snare: [8, 24, 40, 56].map(t => note(t, 'C4', 95, '16n', TRAP_PATTERN_LENGTH, true)),
+  clap: [8, 24, 40, 56].map(t => note(t, 'C4', 80, '16n', TRAP_PATTERN_LENGTH, true)), // Layered with snare
   'hi-hat': [
     // Fast triplet hi-hats (classic trap)
     ...Array.from({ length: 64 }).map((_, i) => {
       const velocity = i % 3 === 0 ? 80 : (i % 3 === 1 ? 45 : 60);
-      return note(i, 'F#4', velocity, '32n', TRAP_PATTERN_LENGTH);
+      return note(i, 'F#4', velocity, '32n', TRAP_PATTERN_LENGTH, true);
     })
   ],
-  openhat: [15, 31, 47, 63].map(t => note(t, 'G#4', 70, '8n', TRAP_PATTERN_LENGTH)),
+  openhat: [15, 31, 47, 63].map(t => note(t, 'G#4', 70, '8n', TRAP_PATTERN_LENGTH, true)),
   '808': [
     // Hard-hitting 808 sub bass
     { t: 0, p: 'C1', d: '4n' }, { t: 6, p: 'C1', d: '16n' }, { t: 10, p: 'G0', d: '16n' },
     { t: 16, p: 'A#0', d: '4n' }, { t: 22, p: 'A#0', d: '16n' }, { t: 26, p: 'F0', d: '16n' },
     { t: 32, p: 'G#0', d: '4n' }, { t: 38, p: 'G#0', d: '16n' }, { t: 42, p: 'D#0', d: '16n' },
     { t: 48, p: 'A#0', d: '2n' }, { t: 56, p: 'C1', d: '8n' },
-  ].map(n => note(n.t, n.p, 100, n.d, TRAP_PATTERN_LENGTH)),
-  perc: [4, 12, 20, 28, 36, 44, 52, 60].map(t => note(t, 'C4', 65, '16n', TRAP_PATTERN_LENGTH)), // Texture
+  ].map(n => note(n.t, n.p, 100, n.d, TRAP_PATTERN_LENGTH, true)),
+  perc: [4, 12, 20, 28, 36, 44, 52, 60].map(t => note(t, 'C4', 65, '16n', TRAP_PATTERN_LENGTH, true)), // Texture
+  // ✅ VASYNTH: Rectangular notes (no visualLength, actual duration)
   '808bass': [
-    { t: 0, p: 'C2', d: '2n' }, { t: 8, p: 'C2', d: '16n' }, { t: 10, p: 'G1', d: '16n' },
-    { t: 16, p: 'A#1', d: '2n' }, { t: 24, p: 'A#1', d: '16n' }, { t: 26, p: 'F1', d: '16n' },
-    { t: 32, p: 'G#1', d: '2n' }, { t: 40, p: 'G#1', d: '16n' }, { t: 42, p: 'D#1', d: '16n' },
-    { t: 48, p: 'A#1', d: '4n' }, { t: 52, p: 'C2', d: '8n' }, { t: 56, p: 'D2', d: '8n' },
-  ].map(n => note(n.t, n.p, 100, n.d, TRAP_PATTERN_LENGTH)),
+    { t: 0, p: 'C2', d: '8n' }, { t: 8, p: 'C2', d: '4n' }, { t: 10, p: 'G1', d: '2n' },
+    { t: 16, p: 'A#1', d: '8n' }, { t: 24, p: 'A#1', d: '4n' }, { t: 26, p: 'F1', d: '2n' },
+    { t: 32, p: 'G#1', d: '8n' }, { t: 40, p: 'G#1', d: '4n' }, { t: 42, p: 'D#1', d: '2n' },
+    { t: 48, p: 'A#1', d: '8n' }, { t: 52, p: 'C2', d: '4n' }, { t: 56, p: 'D2', d: '8n' },
+  ].map(n => note(n.t, n.p, 100, n.d, TRAP_PATTERN_LENGTH, false)),
   'bellsynth': [
-    { t: 2, p: 'C5', d: '8n' }, { t: 6, p: 'G4', d: '8n' }, { t: 10, p: 'D#5', d: '8n' },
-    { t: 18, p: 'A#4', d: '8n' }, { t: 22, p: 'F4', d: '8n' }, { t: 26, p: 'C5', d: '8n' },
-    { t: 34, p: 'G#4', d: '8n' }, { t: 38, p: 'D#4', d: '8n' }, { t: 42, p: 'A#4', d: '8n' },
-    { t: 50, p: 'A#4', d: '4n' }, { t: 56, p: 'C5', d: '8n' },
-  ].map(n => note(n.t, n.p, 75, n.d, TRAP_PATTERN_LENGTH))
+    { t: 0, p: 'C5', d: '4n' }, { t: 4, p: 'G4', d: '8n' }, { t: 6, p: 'D#5', d: '8n' },
+    { t: 12, p: 'A#4', d: '4n' }, { t: 16, p: 'F4', d: '8n' }, { t: 18, p: 'C5', d: '8n' },
+    { t: 24, p: 'G#4', d: '4n' }, { t: 28, p: 'D#4', d: '8n' }, { t: 30, p: 'A#4', d: '8n' },
+    { t: 36, p: 'A#4', d: '2n' }, { t: 44, p: 'C5', d: '4n' }, { t: 48, p: 'G5', d: '8n' }, { t: 52, p: 'D#5', d: '8n' },
+  ].map(n => note(n.t, n.p, 75, n.d, TRAP_PATTERN_LENGTH, false))
 };
 
 // =========================================================================
@@ -67,19 +86,19 @@ const trapPattern = {
 // =========================================================================
 const BOOM_BAP_PATTERN_LENGTH = 256; // 16 bars (16 * 16 steps)
 const boomBapPattern = {
-  // === DRUMS (16 bars) - Classic 90s breakbeat style ===
+  // === DRUMS (16 bars) - Classic 90s breakbeat style - ✅ OVAL
   kick: [
     // Bar 1-8: Classic boom bap pattern (heavy kick on 1 and 3)
     0, 16, 32, 48, 64, 80, 96, 112,
     // Bar 9-16: Variation with occasional doubles
     128, 140, 144, 160, 176, 188, 192, 208, 224, 236, 240
-  ].map(t => note(t, 'C4', 100, '8n', BOOM_BAP_PATTERN_LENGTH)),
+  ].map(t => note(t, 'C4', 100, '8n', BOOM_BAP_PATTERN_LENGTH, true)),
 
   snare: [
     // Bar 1-16: Classic backbeat (always on 2 and 4)
     8, 24, 40, 56, 72, 88, 104, 120,
     136, 152, 168, 184, 200, 216, 232, 248
-  ].map(t => note(t, 'C4', 90, '8n', BOOM_BAP_PATTERN_LENGTH)),
+  ].map(t => note(t, 'C4', 90, '8n', BOOM_BAP_PATTERN_LENGTH, true)),
 
   rim: [
     // Bar 1-8: Ghost notes (subtle)
@@ -88,7 +107,7 @@ const boomBapPattern = {
     // Bar 9-16: Slightly more active but still sparse
     134, 142, 150, 158, 166, 174, 182, 190,
     198, 206, 214, 222, 230, 238, 246, 254
-  ].map(t => note(t, 'C4', 50, '32n', BOOM_BAP_PATTERN_LENGTH)), // Quiet ghost notes
+  ].map(t => note(t, 'C4', 50, '32n', BOOM_BAP_PATTERN_LENGTH, true)), // Quiet ghost notes
 
   'hi-hat': [
     // Bar 1-8: Sparse, open hi-hats only (90s minimal style)
@@ -99,13 +118,13 @@ const boomBapPattern = {
     164, 168, 172, 176, 180, 184, 188, 192,
     196, 200, 204, 208, 212, 216, 220, 224,
     228, 232, 236, 240, 244, 248, 252
-  ].map((t, i) => note(t, i < 16 ? 'G#4' : 'F#4', i < 16 ? 60 : 45, '8n', BOOM_BAP_PATTERN_LENGTH)),
+  ].map((t, i) => note(t, i < 16 ? 'G#4' : 'F#4', i < 16 ? 60 : 45, '8n', BOOM_BAP_PATTERN_LENGTH, true)),
 
   perc: [
     // Minimal shaker/texture (very sparse, 90s lofi style)
     15, 31, 47, 63, 79, 95, 111, 127,
     143, 159, 175, 191, 207, 223, 239, 255
-  ].map(t => note(t, 'C4', 40, '16n', BOOM_BAP_PATTERN_LENGTH)),
+  ].map(t => note(t, 'C4', 40, '16n', BOOM_BAP_PATTERN_LENGTH, true)),
 
   // === PIANO SAMPLED (Jazzy loop - 16 bars, 90s style) ===
   'piano(sampled)': [
@@ -150,17 +169,41 @@ const boomBapPattern = {
     { t: 224, p: 'F2', d: '2n' }, { t: 224, p: 'A2', d: '2n' }, { t: 224, p: 'C3', d: '2n' },
     { t: 232, p: 'A2', d: '4n' },
     { t: 240, p: 'G2', d: '1n' }, { t: 240, p: 'B2', d: '1n' }, { t: 240, p: 'D3', d: '1n' }
-  ].map(n => note(n.t, n.p, 70, n.d, BOOM_BAP_PATTERN_LENGTH)), // Lower velocity for lofi vibe
+  ].map(n => note(n.t, n.p, 70, n.d, BOOM_BAP_PATTERN_LENGTH, false)), // ✅ Sample-based, rectangular notes (no visualLength)
 
-  // === WARM PAD (Subtle atmospheric - 16 bars) ===
+  // === VASYNTH: Rectangular notes with actual durations ===
+  // ✅ WARM PAD: Long sustained chords (rectangular, shows full duration)
   warmpad: [
-    // Bar 1-8: C major (long sustain, barely there)
-    { t: 0, p: 'C3', d: '1n' }, { t: 0, p: 'E3', d: '1n' }, { t: 0, p: 'G3', d: '1n' },
-    { t: 64, p: 'C3', d: '1n' }, { t: 64, p: 'E3', d: '1n' }, { t: 64, p: 'G3', d: '1n' },
-    // Bar 9-16: A minor (subtle shift)
-    { t: 128, p: 'A3', d: '1n' }, { t: 128, p: 'C4', d: '1n' }, { t: 128, p: 'E4', d: '1n' },
-    { t: 192, p: 'A3', d: '1n' }, { t: 192, p: 'C4', d: '1n' }, { t: 192, p: 'E4', d: '1n' }
-  ].map(n => note(n.t, n.p, 30, n.d, BOOM_BAP_PATTERN_LENGTH)), // Very quiet, just atmosphere
+    // Bar 1-4: C major (long sustain)
+    { t: 0, p: 'C3', d: '2n' }, { t: 0, p: 'E3', d: '2n' }, { t: 0, p: 'G3', d: '2n' },
+    // Bar 5-8: Repeat with variation
+    { t: 32, p: 'C3', d: '2n' }, { t: 32, p: 'E3', d: '2n' }, { t: 32, p: 'G3', d: '2n' },
+    { t: 64, p: 'A2', d: '2n' }, { t: 64, p: 'C3', d: '2n' }, { t: 64, p: 'E3', d: '2n' },
+    // Bar 9-12: A minor progression
+    { t: 96, p: 'A3', d: '4n' }, { t: 96, p: 'C4', d: '4n' }, { t: 96, p: 'E4', d: '4n' },
+    { t: 112, p: 'A3', d: '4n' }, { t: 112, p: 'C4', d: '4n' }, { t: 112, p: 'E4', d: '4n' },
+    { t: 128, p: 'F2', d: '2n' }, { t: 128, p: 'A2', d: '2n' }, { t: 128, p: 'C3', d: '2n' },
+    { t: 160, p: 'G2', d: '2n' }, { t: 160, p: 'B2', d: '2n' }, { t: 160, p: 'D3', d: '2n' },
+    // Bar 13-16: Final chords
+    { t: 192, p: 'C3', d: '4n' }, { t: 192, p: 'E3', d: '4n' }, { t: 192, p: 'G3', d: '4n' },
+    { t: 208, p: 'A3', d: '4n' }, { t: 208, p: 'C4', d: '4n' }, { t: 208, p: 'E4', d: '4n' },
+    { t: 224, p: 'F2', d: '4n' }, { t: 224, p: 'A2', d: '4n' }, { t: 224, p: 'C3', d: '4n' },
+    { t: 240, p: 'G2', d: '4n' }, { t: 240, p: 'B2', d: '4n' }, { t: 240, p: 'D3', d: '4n' }
+  ].map(n => note(n.t, n.p, 30, n.d, BOOM_BAP_PATTERN_LENGTH, false)), // Very quiet, just atmosphere
+  
+  // ✅ BASS: Rhythmic bassline with varied durations
+  bass: [
+    // Bar 1-4: Root notes with rhythm
+    { t: 0, p: 'C2', d: '4n' }, { t: 4, p: 'C2', d: '8n' }, { t: 6, p: 'E2', d: '8n' },
+    { t: 16, p: 'A1', d: '4n' }, { t: 20, p: 'A1', d: '8n' }, { t: 22, p: 'C2', d: '8n' },
+    { t: 32, p: 'F1', d: '4n' }, { t: 36, p: 'F1', d: '8n' }, { t: 38, p: 'A1', d: '8n' },
+    { t: 48, p: 'G1', d: '2n' },
+    // Bar 5-8: Variation
+    { t: 64, p: 'C2', d: '8n' }, { t: 68, p: 'E2', d: '8n' }, { t: 72, p: 'G2', d: '4n' },
+    { t: 80, p: 'A1', d: '8n' }, { t: 84, p: 'C2', d: '8n' }, { t: 88, p: 'E2', d: '4n' },
+    { t: 96, p: 'F1', d: '8n' }, { t: 100, p: 'A1', d: '8n' }, { t: 104, p: 'C2', d: '4n' },
+    { t: 112, p: 'G1', d: '8n' }, { t: 116, p: 'B1', d: '8n' }, { t: 120, p: 'D2', d: '4n' },
+  ].map(n => note(n.t, n.p, 75, n.d, BOOM_BAP_PATTERN_LENGTH, false))
 };
 
 // =========================================================================
@@ -169,30 +212,40 @@ const boomBapPattern = {
 // =========================================================================
 const CLOUD_RAP_PATTERN_LENGTH = 64;
 const cloudRapPattern = {
-  kick: [0, 16, 32, 48].map(t => note(t, 'C4', 85, '4n', CLOUD_RAP_PATTERN_LENGTH)),
-  snare: [8, 24, 40, 56].map(t => note(t, 'C4', 70, '8n', CLOUD_RAP_PATTERN_LENGTH)),
+  // ✅ DRUMS: Oval notes
+  kick: [0, 16, 32, 48].map(t => note(t, 'C4', 85, '4n', CLOUD_RAP_PATTERN_LENGTH, true)),
+  snare: [8, 24, 40, 56].map(t => note(t, 'C4', 70, '8n', CLOUD_RAP_PATTERN_LENGTH, true)),
   'hi-hat': [
     ...Array.from({ length: 16 }).map((_, i) => {
-      return note(i * 4, 'F#4', 50, '8n', CLOUD_RAP_PATTERN_LENGTH);
+      return note(i * 4, 'F#4', 50, '8n', CLOUD_RAP_PATTERN_LENGTH, true);
     })
   ],
-  openhat: [6, 14, 22, 30, 38, 46, 54, 62].map(t => note(t, 'G#4', 60, '4n', CLOUD_RAP_PATTERN_LENGTH)),
+  openhat: [6, 14, 22, 30, 38, 46, 54, 62].map(t => note(t, 'G#4', 60, '4n', CLOUD_RAP_PATTERN_LENGTH, true)),
+  // ✅ VASYNTH: Rectangular notes with varied durations
   warmpad: [
-    { t: 0, p: 'C4', d: '1n' }, { t: 0, p: 'E4', d: '1n' }, { t: 0, p: 'G4', d: '1n' },
-    { t: 32, p: 'A3', d: '1n' }, { t: 32, p: 'C4', d: '1n' }, { t: 32, p: 'E4', d: '1n' },
-  ].map(n => note(n.t, n.p, 60, n.d, CLOUD_RAP_PATTERN_LENGTH)),
+    { t: 0, p: 'C4', d: '2n' }, { t: 0, p: 'E4', d: '2n' }, { t: 0, p: 'G4', d: '2n' },
+    { t: 16, p: 'C4', d: '2n' }, { t: 16, p: 'E4', d: '2n' }, { t: 16, p: 'G4', d: '2n' },
+    { t: 32, p: 'A3', d: '2n' }, { t: 32, p: 'C4', d: '2n' }, { t: 32, p: 'E4', d: '2n' },
+    { t: 48, p: 'A3', d: '2n' }, { t: 48, p: 'C4', d: '2n' }, { t: 48, p: 'E4', d: '2n' },
+  ].map(n => note(n.t, n.p, 60, n.d, CLOUD_RAP_PATTERN_LENGTH, false)),
   'e.piano': [
-    { t: 2, p: 'C5', d: '2n' }, { t: 8, p: 'E5', d: '4n' }, { t: 14, p: 'G5', d: '8n' },
-    { t: 18, p: 'A4', d: '2n' }, { t: 24, p: 'C5', d: '4n' }, { t: 30, p: 'E5', d: '8n' },
-    { t: 34, p: 'F4', d: '2n' }, { t: 40, p: 'A4', d: '4n' }, { t: 46, p: 'C5', d: '8n' },
-    { t: 50, p: 'G4', d: '1n' },
-  ].map(n => note(n.t, n.p, 70, n.d, CLOUD_RAP_PATTERN_LENGTH)),
+    // Melodic pattern with varied note lengths
+    { t: 0, p: 'C5', d: '4n' }, { t: 4, p: 'E5', d: '8n' }, { t: 6, p: 'G5', d: '8n' },
+    { t: 8, p: 'A4', d: '4n' }, { t: 12, p: 'C5', d: '8n' }, { t: 14, p: 'E5', d: '8n' },
+    { t: 16, p: 'F4', d: '4n' }, { t: 20, p: 'A4', d: '8n' }, { t: 22, p: 'C5', d: '8n' },
+    { t: 24, p: 'G4', d: '2n' },
+    { t: 32, p: 'C5', d: '8n' }, { t: 34, p: 'E5', d: '8n' }, { t: 36, p: 'G5', d: '4n' },
+    { t: 40, p: 'A4', d: '8n' }, { t: 42, p: 'C5', d: '8n' }, { t: 44, p: 'E5', d: '4n' },
+    { t: 48, p: 'F4', d: '8n' }, { t: 50, p: 'A4', d: '8n' }, { t: 52, p: 'C5', d: '4n' },
+    { t: 56, p: 'G4', d: '8n' },
+  ].map(n => note(n.t, n.p, 70, n.d, CLOUD_RAP_PATTERN_LENGTH, false)),
   bass: [
-    { t: 0, p: 'C4', d: '1n' },
-    { t: 16, p: 'A3', d: '1n' },
-    { t: 32, p: 'F3', d: '1n' },
-    { t: 48, p: 'G3', d: '1n' },
-  ].map(n => note(n.t, n.p, 75, n.d, CLOUD_RAP_PATTERN_LENGTH))
+    // Rhythmic bass with different durations
+    { t: 0, p: 'C3', d: '4n' }, { t: 4, p: 'C3', d: '8n' }, { t: 6, p: 'E3', d: '8n' },
+    { t: 16, p: 'A2', d: '4n' }, { t: 20, p: 'A2', d: '8n' }, { t: 22, p: 'C3', d: '8n' },
+    { t: 32, p: 'F2', d: '4n' }, { t: 36, p: 'F2', d: '8n' }, { t: 38, p: 'A2', d: '8n' },
+    { t: 48, p: 'G2', d: '8n' }, { t: 52, p: 'B2', d: '8n' }, { t: 56, p: 'D3', d: '8n' },
+  ].map(n => note(n.t, n.p, 75, n.d, CLOUD_RAP_PATTERN_LENGTH, false))
 };
 
 // =========================================================================
@@ -201,17 +254,18 @@ const cloudRapPattern = {
 // =========================================================================
 const DRILL_PATTERN_LENGTH = 64;
 const drillPattern = {
-  kick: [0, 6, 12, 16, 22, 28, 32, 38, 44, 48, 54, 60].map(t => note(t, 'C4', 100, '16n', DRILL_PATTERN_LENGTH)),
-  snare: [8, 24, 40, 56].map(t => note(t, 'C4', 90, '16n', DRILL_PATTERN_LENGTH)),
-  clap: [8, 24, 40, 56].map(t => note(t, 'C4', 75, '16n', DRILL_PATTERN_LENGTH)), // UK Drill clap layer
+  // ✅ DRUMS: Oval notes
+  kick: [0, 6, 12, 16, 22, 28, 32, 38, 44, 48, 54, 60].map(t => note(t, 'C4', 100, '16n', DRILL_PATTERN_LENGTH, true)),
+  snare: [8, 24, 40, 56].map(t => note(t, 'C4', 90, '16n', DRILL_PATTERN_LENGTH, true)),
+  clap: [8, 24, 40, 56].map(t => note(t, 'C4', 75, '16n', DRILL_PATTERN_LENGTH, true)), // UK Drill clap layer
   'hi-hat': [
     ...Array.from({ length: 64 }).map((_, i) => {
       const velocity = i % 4 === 0 ? 70 : (i % 4 === 2 ? 80 : 35);
-      return note(i, 'F#4', velocity, '16n', DRILL_PATTERN_LENGTH);
+      return note(i, 'F#4', velocity, '16n', DRILL_PATTERN_LENGTH, true);
     })
   ],
-  openhat: [15, 31, 47].map(t => note(t, 'G#4', 65, '4n', DRILL_PATTERN_LENGTH)),
-  rim: [2, 10, 18, 26, 34, 42, 50, 58].map(t => note(t, 'C4', 60, '32n', DRILL_PATTERN_LENGTH)), // Drill rolls
+  openhat: [15, 31, 47].map(t => note(t, 'G#4', 65, '4n', DRILL_PATTERN_LENGTH, true)),
+  rim: [2, 10, 18, 26, 34, 42, 50, 58].map(t => note(t, 'C4', 60, '32n', DRILL_PATTERN_LENGTH, true)), // Drill rolls
   '808': [
     // Deep 808 slides (UK Drill style)
     { t: 0, p: 'C0', d: '8n' }, { t: 2, p: 'C#0', d: '16n' }, { t: 4, p: 'D0', d: '8n' },
@@ -221,114 +275,161 @@ const drillPattern = {
     { t: 32, p: 'D#-1', d: '8n' }, { t: 34, p: 'E-1', d: '16n' }, { t: 36, p: 'F-1', d: '8n' },
     { t: 40, p: 'G#-1', d: '4n' }, { t: 46, p: 'A-1', d: '16n' },
     { t: 48, p: 'C0', d: '2n' }, { t: 56, p: 'A#-1', d: '8n' },
-  ].map(n => note(n.t, n.p, 100, n.d, DRILL_PATTERN_LENGTH)),
+  ].map(n => note(n.t, n.p, 100, n.d, DRILL_PATTERN_LENGTH, true)),
+  // ✅ VASYNTH: Rectangular notes with actual durations
   '808bass': [
-    // Sliding 808s (drill signature)
-    { t: 0, p: 'C2', d: '8n' }, { t: 2, p: 'C#2', d: '16n' }, { t: 4, p: 'D2', d: '8n' },
-    { t: 8, p: 'A#1', d: '4n' }, { t: 14, p: 'A1', d: '16n' },
-    { t: 16, p: 'G#1', d: '8n' }, { t: 18, p: 'A1', d: '16n' }, { t: 20, p: 'A#1', d: '8n' },
-    { t: 24, p: 'F1', d: '4n' }, { t: 30, p: 'F#1', d: '16n' },
-    { t: 32, p: 'D#1', d: '8n' }, { t: 34, p: 'E1', d: '16n' }, { t: 36, p: 'F1', d: '8n' },
-    { t: 40, p: 'G#1', d: '4n' }, { t: 46, p: 'A1', d: '16n' },
-    { t: 48, p: 'C2', d: '2n' }, { t: 56, p: 'A#1', d: '8n' },
-  ].map(n => note(n.t, n.p, 100, n.d, DRILL_PATTERN_LENGTH)),
+    // Sliding 808s with varied durations for rhythm
+    { t: 0, p: 'C2', d: '4n' }, { t: 4, p: 'C#2', d: '8n' }, { t: 6, p: 'D2', d: '8n' },
+    { t: 8, p: 'A#1', d: '4n' }, { t: 12, p: 'A1', d: '8n' }, { t: 14, p: 'A#1', d: '8n' },
+    { t: 16, p: 'G#1', d: '4n' }, { t: 20, p: 'A1', d: '8n' }, { t: 22, p: 'A#1', d: '8n' },
+    { t: 24, p: 'F1', d: '4n' }, { t: 28, p: 'F#1', d: '8n' }, { t: 30, p: 'G1', d: '8n' },
+    { t: 32, p: 'D#1', d: '4n' }, { t: 36, p: 'E1', d: '8n' }, { t: 38, p: 'F1', d: '8n' },
+    { t: 40, p: 'G#1', d: '4n' }, { t: 44, p: 'A1', d: '8n' }, { t: 46, p: 'A#1', d: '8n' },
+    { t: 48, p: 'C2', d: '2n' }, { t: 56, p: 'A#1', d: '4n' },
+  ].map(n => note(n.t, n.p, 100, n.d, DRILL_PATTERN_LENGTH, false)),
   pluck: [
-    { t: 0, p: 'C5', d: '16n' }, { t: 4, p: 'D#5', d: '16n' }, { t: 8, p: 'G5', d: '16n' },
-    { t: 16, p: 'A#4', d: '16n' }, { t: 20, p: 'D5', d: '16n' }, { t: 24, p: 'F5', d: '16n' },
-    { t: 32, p: 'G#4', d: '16n' }, { t: 36, p: 'C5', d: '16n' }, { t: 40, p: 'D#5', d: '16n' },
-    { t: 48, p: 'C5', d: '8n' }, { t: 52, p: 'D#5', d: '8n' }, { t: 56, p: 'G5', d: '8n' },
-  ].map(n => note(n.t, n.p, 70, n.d, DRILL_PATTERN_LENGTH))
+    // Melodic pluck pattern with varied note lengths
+    { t: 0, p: 'C5', d: '8n' }, { t: 2, p: 'D#5', d: '8n' }, { t: 4, p: 'G5', d: '4n' },
+    { t: 8, p: 'A#4', d: '8n' }, { t: 10, p: 'D5', d: '8n' }, { t: 12, p: 'F5', d: '4n' },
+    { t: 16, p: 'G#4', d: '8n' }, { t: 18, p: 'C5', d: '8n' }, { t: 20, p: 'D#5', d: '4n' },
+    { t: 24, p: 'C5', d: '8n' }, { t: 26, p: 'E5', d: '8n' }, { t: 28, p: 'G5', d: '4n' },
+    { t: 32, p: 'A#4', d: '8n' }, { t: 34, p: 'D5', d: '8n' }, { t: 36, p: 'F5', d: '4n' },
+    { t: 40, p: 'G#4', d: '8n' }, { t: 42, p: 'C5', d: '8n' }, { t: 44, p: 'D#5', d: '4n' },
+    { t: 48, p: 'C5', d: '2n' }, { t: 56, p: 'G5', d: '8n' },
+  ].map(n => note(n.t, n.p, 70, n.d, DRILL_PATTERN_LENGTH, false))
 };
 
 // =========================================================================
 // 🔥 PATTERN 5: VASYNTH V2 SHOWCASE (128 BPM)
+// ✅ NEW: Redesigned with varied durations and creative rhythms
 // Demonstrating unison, modulation, and effects features
 // =========================================================================
 const VASYNTH_SHOWCASE_PATTERN_LENGTH = 64;
 const vaSynthShowcasePattern = {
-  kick: [0, 16, 32, 48].map(t => note(t, 'C4', 100, '16n', VASYNTH_SHOWCASE_PATTERN_LENGTH)),
-  snare: [8, 24, 40, 56].map(t => note(t, 'C4', 85, '16n', VASYNTH_SHOWCASE_PATTERN_LENGTH)),
+  // ✅ DRUMS: Oval notes
+  kick: [0, 16, 32, 48].map(t => note(t, 'C4', 100, '16n', VASYNTH_SHOWCASE_PATTERN_LENGTH, true)),
+  snare: [8, 24, 40, 56].map(t => note(t, 'C4', 85, '16n', VASYNTH_SHOWCASE_PATTERN_LENGTH, true)),
   'hi-hat': [
     ...Array.from({ length: 32 }).map((_, i) => {
       const velocity = i % 2 === 0 ? 70 : 45;
-      return note(i * 2, 'F#4', velocity, '8n', VASYNTH_SHOWCASE_PATTERN_LENGTH);
+      return note(i * 2, 'F#4', velocity, '8n', VASYNTH_SHOWCASE_PATTERN_LENGTH, true);
     })
   ],
 
-  // 🎹 HYPER SAW: Wide stereo lead with unison (7 voices)
+  // ✅ VASYNTH: Rectangular notes with varied durations and new rhythms
+  // 🎹 HYPER SAW: Melodic lead with dynamic note lengths
   hypersaw: [
-    { t: 0, p: 'C4', d: '4n' }, { t: 4, p: 'D4', d: '4n' },
-    { t: 8, p: 'E4', d: '4n' }, { t: 12, p: 'G4', d: '4n' },
-    { t: 16, p: 'C5', d: '4n' }, { t: 20, p: 'B4', d: '4n' },
-    { t: 24, p: 'A4', d: '4n' }, { t: 28, p: 'G4', d: '4n' },
-    { t: 32, p: 'F4', d: '2n' }, { t: 40, p: 'E4', d: '4n' },
-    { t: 48, p: 'C4', d: '1n' }
-  ].map(n => note(n.t, n.p, 85, n.d, VASYNTH_SHOWCASE_PATTERN_LENGTH)),
+    { t: 0, p: 'C4', d: '2n' }, { t: 8, p: 'D4', d: '8n' }, { t: 10, p: 'E4', d: '8n' },
+    { t: 12, p: 'G4', d: '4n' }, { t: 16, p: 'C5', d: '8n' }, { t: 18, p: 'B4', d: '8n' },
+    { t: 20, p: 'A4', d: '4n' }, { t: 24, p: 'G4', d: '8n' }, { t: 26, p: 'F4', d: '8n' },
+    { t: 28, p: 'E4', d: '2n' }, { t: 36, p: 'D4', d: '8n' }, { t: 38, p: 'C4', d: '8n' },
+    { t: 40, p: 'E4', d: '4n' }, { t: 44, p: 'G4', d: '4n' }, { t: 48, p: 'C5', d: '2n' },
+    { t: 56, p: 'B4', d: '4n' }, { t: 60, p: 'A4', d: '4n' }
+  ].map(n => note(n.t, n.p, 85, n.d, VASYNTH_SHOWCASE_PATTERN_LENGTH, false)),
 
-  // 🎵 TRANCE PLUCK: Arpeggiated plucks with delay/reverb
+  // 🎵 TRANCE PLUCK: Arpeggiated pattern with rhythmic variations
   trancepluck: [
-    { t: 0, p: 'C5', d: '16n' }, { t: 2, p: 'E5', d: '16n' }, { t: 4, p: 'G5', d: '16n' }, { t: 6, p: 'C6', d: '16n' },
-    { t: 8, p: 'B4', d: '16n' }, { t: 10, p: 'E5', d: '16n' }, { t: 12, p: 'G5', d: '16n' }, { t: 14, p: 'B5', d: '16n' },
-    { t: 16, p: 'A4', d: '16n' }, { t: 18, p: 'E5', d: '16n' }, { t: 20, p: 'A5', d: '16n' }, { t: 22, p: 'C6', d: '16n' },
-    { t: 24, p: 'G4', d: '16n' }, { t: 26, p: 'D5', d: '16n' }, { t: 28, p: 'G5', d: '16n' }, { t: 30, p: 'B5', d: '16n' },
-    { t: 32, p: 'F4', d: '16n' }, { t: 34, p: 'A4', d: '16n' }, { t: 36, p: 'C5', d: '16n' }, { t: 38, p: 'F5', d: '16n' },
-    { t: 40, p: 'E4', d: '16n' }, { t: 42, p: 'G4', d: '16n' }, { t: 44, p: 'C5', d: '16n' }, { t: 46, p: 'E5', d: '16n' },
-    { t: 48, p: 'C5', d: '8n' }, { t: 52, p: 'E5', d: '8n' }, { t: 56, p: 'G5', d: '8n' }, { t: 60, p: 'C6', d: '4n' }
-  ].map(n => note(n.t, n.p, 80, n.d, VASYNTH_SHOWCASE_PATTERN_LENGTH)),
+    // Bar 1: Fast arpeggio
+    { t: 0, p: 'C5', d: '8n' }, { t: 2, p: 'E5', d: '8n' }, { t: 4, p: 'G5', d: '8n' }, { t: 6, p: 'C6', d: '8n' },
+    // Bar 2: Syncopated pattern
+    { t: 8, p: 'B4', d: '4n' }, { t: 12, p: 'E5', d: '8n' }, { t: 14, p: 'G5', d: '8n' }, { t: 16, p: 'B5', d: '4n' },
+    // Bar 3: Melodic line
+    { t: 20, p: 'A4', d: '8n' }, { t: 22, p: 'E5', d: '8n' }, { t: 24, p: 'A5', d: '4n' }, { t: 28, p: 'C6', d: '4n' },
+    // Bar 4: Chord progression
+    { t: 32, p: 'G4', d: '8n' }, { t: 34, p: 'D5', d: '8n' }, { t: 36, p: 'G5', d: '4n' }, { t: 40, p: 'B5', d: '4n' },
+    { t: 44, p: 'F4', d: '8n' }, { t: 46, p: 'A4', d: '8n' }, { t: 48, p: 'C5', d: '2n' },
+    { t: 56, p: 'E5', d: '4n' }, { t: 60, p: 'G5', d: '4n' }
+  ].map(n => note(n.t, n.p, 80, n.d, VASYNTH_SHOWCASE_PATTERN_LENGTH, false)),
 
-  // ☁️ DREAM PAD: Lush unison pad with chorus/reverb
+  // ☁️ DREAM PAD: Evolving chord progressions with varied durations
   dreampad: [
-    // Long sustained chords
-    { t: 0, p: 'C3', d: '1n' }, { t: 0, p: 'E3', d: '1n' }, { t: 0, p: 'G3', d: '1n' }, { t: 0, p: 'C4', d: '1n' },
-    { t: 16, p: 'A2', d: '1n' }, { t: 16, p: 'C3', d: '1n' }, { t: 16, p: 'E3', d: '1n' }, { t: 16, p: 'A3', d: '1n' },
-    { t: 32, p: 'F2', d: '1n' }, { t: 32, p: 'A2', d: '1n' }, { t: 32, p: 'C3', d: '1n' }, { t: 32, p: 'F3', d: '1n' },
-    { t: 48, p: 'G2', d: '1n' }, { t: 48, p: 'B2', d: '1n' }, { t: 48, p: 'D3', d: '1n' }, { t: 48, p: 'G3', d: '1n' }
-  ].map(n => note(n.t, n.p, 60, n.d, VASYNTH_SHOWCASE_PATTERN_LENGTH)),
+    // Bar 1-2: C major (sustained then staccato)
+    { t: 0, p: 'C3', d: '2n' }, { t: 0, p: 'E3', d: '2n' }, { t: 0, p: 'G3', d: '2n' }, { t: 0, p: 'C4', d: '2n' },
+    { t: 8, p: 'C3', d: '4n' }, { t: 8, p: 'E3', d: '4n' }, { t: 8, p: 'G3', d: '4n' }, { t: 8, p: 'C4', d: '4n' },
+    { t: 12, p: 'C3', d: '4n' }, { t: 12, p: 'E3', d: '4n' }, { t: 12, p: 'G3', d: '4n' }, { t: 12, p: 'C4', d: '4n' },
+    // Bar 3-4: A minor (rhythmic)
+    { t: 16, p: 'A2', d: '4n' }, { t: 16, p: 'C3', d: '4n' }, { t: 16, p: 'E3', d: '4n' }, { t: 16, p: 'A3', d: '4n' },
+    { t: 20, p: 'A2', d: '4n' }, { t: 20, p: 'C3', d: '4n' }, { t: 20, p: 'E3', d: '4n' }, { t: 20, p: 'A3', d: '4n' },
+    { t: 24, p: 'A2', d: '2n' }, { t: 24, p: 'C3', d: '2n' }, { t: 24, p: 'E3', d: '2n' }, { t: 24, p: 'A3', d: '2n' },
+    // Bar 5-6: F major
+    { t: 32, p: 'F2', d: '4n' }, { t: 32, p: 'A2', d: '4n' }, { t: 32, p: 'C3', d: '4n' }, { t: 32, p: 'F3', d: '4n' },
+    { t: 36, p: 'F2', d: '8n' }, { t: 36, p: 'A2', d: '8n' }, { t: 36, p: 'C3', d: '8n' }, { t: 36, p: 'F3', d: '8n' },
+    { t: 38, p: 'F2', d: '8n' }, { t: 38, p: 'A2', d: '8n' }, { t: 38, p: 'C3', d: '8n' }, { t: 38, p: 'F3', d: '8n' },
+    { t: 40, p: 'F2', d: '2n' }, { t: 40, p: 'A2', d: '2n' }, { t: 40, p: 'C3', d: '2n' }, { t: 40, p: 'F3', d: '2n' },
+    // Bar 7-8: G major (resolution)
+    { t: 48, p: 'G2', d: '4n' }, { t: 48, p: 'B2', d: '4n' }, { t: 48, p: 'D3', d: '4n' }, { t: 48, p: 'G3', d: '4n' },
+    { t: 52, p: 'G2', d: '4n' }, { t: 52, p: 'B2', d: '4n' }, { t: 52, p: 'D3', d: '4n' }, { t: 52, p: 'G3', d: '4n' },
+    { t: 56, p: 'G2', d: '8n' }, { t: 56, p: 'B2', d: '8n' }, { t: 56, p: 'D3', d: '8n' }, { t: 56, p: 'G3', d: '8n' }
+  ].map(n => note(n.t, n.p, 60, n.d, VASYNTH_SHOWCASE_PATTERN_LENGTH, false)),
 
-  // 🎸 WOBBLE BASS: LFO modulated filter bass
+  // 🎸 WOBBLE BASS: Rhythmic bassline with syncopation
   wobblebass: [
-    { t: 0, p: 'C2', d: '2n' }, { t: 8, p: 'C2', d: '4n' }, { t: 12, p: 'D2', d: '4n' },
-    { t: 16, p: 'A1', d: '2n' }, { t: 24, p: 'A1', d: '4n' }, { t: 28, p: 'G1', d: '4n' },
-    { t: 32, p: 'F1', d: '2n' }, { t: 40, p: 'F1', d: '4n' }, { t: 44, p: 'E1', d: '4n' },
-    { t: 48, p: 'G1', d: '1n' }
-  ].map(n => note(n.t, n.p, 90, n.d, VASYNTH_SHOWCASE_PATTERN_LENGTH)),
+    { t: 0, p: 'C2', d: '4n' }, { t: 4, p: 'C2', d: '8n' }, { t: 6, p: 'D2', d: '8n' },
+    { t: 8, p: 'E2', d: '4n' }, { t: 12, p: 'G2', d: '4n' },
+    { t: 16, p: 'A1', d: '4n' }, { t: 20, p: 'A1', d: '8n' }, { t: 22, p: 'G1', d: '8n' },
+    { t: 24, p: 'C2', d: '4n' }, { t: 28, p: 'E2', d: '4n' },
+    { t: 32, p: 'F1', d: '8n' }, { t: 34, p: 'F1', d: '8n' }, { t: 36, p: 'E1', d: '8n' }, { t: 38, p: 'F1', d: '8n' },
+    { t: 40, p: 'A1', d: '4n' }, { t: 44, p: 'C2', d: '4n' },
+    { t: 48, p: 'G1', d: '2n' }, { t: 56, p: 'B1', d: '8n' }
+  ].map(n => note(n.t, n.p, 90, n.d, VASYNTH_SHOWCASE_PATTERN_LENGTH, false)),
 
-  // 🎹 ARP LEAD: Fast arpeggio with delay
+  // 🎹 ARP LEAD: Dynamic arpeggio with rhythmic breaks
   arplead: [
-    { t: 32, p: 'C5', d: '16n' }, { t: 33, p: 'E5', d: '16n' }, { t: 34, p: 'G5', d: '16n' }, { t: 35, p: 'C6', d: '16n' },
-    { t: 36, p: 'G5', d: '16n' }, { t: 37, p: 'E5', d: '16n' }, { t: 38, p: 'C5', d: '16n' }, { t: 39, p: 'E5', d: '16n' },
-    { t: 40, p: 'A4', d: '16n' }, { t: 41, p: 'C5', d: '16n' }, { t: 42, p: 'E5', d: '16n' }, { t: 43, p: 'A5', d: '16n' },
-    { t: 44, p: 'E5', d: '16n' }, { t: 45, p: 'C5', d: '16n' }, { t: 46, p: 'A4', d: '16n' }, { t: 47, p: 'C5', d: '16n' },
-    { t: 48, p: 'F4', d: '16n' }, { t: 49, p: 'A4', d: '16n' }, { t: 50, p: 'C5', d: '16n' }, { t: 51, p: 'F5', d: '16n' },
-    { t: 52, p: 'C5', d: '16n' }, { t: 53, p: 'A4', d: '16n' }, { t: 54, p: 'F4', d: '16n' }, { t: 55, p: 'A4', d: '16n' },
-    { t: 56, p: 'G4', d: '16n' }, { t: 57, p: 'B4', d: '16n' }, { t: 58, p: 'D5', d: '16n' }, { t: 59, p: 'G5', d: '16n' },
-    { t: 60, p: 'D5', d: '16n' }, { t: 61, p: 'B4', d: '16n' }, { t: 62, p: 'G4', d: '16n' }, { t: 63, p: 'B4', d: '16n' }
-  ].map(n => note(n.t, n.p, 75, n.d, VASYNTH_SHOWCASE_PATTERN_LENGTH)),
+    // Bar 1: Fast ascending arpeggio
+    { t: 0, p: 'C5', d: '8n' }, { t: 2, p: 'E5', d: '8n' }, { t: 4, p: 'G5', d: '8n' }, { t: 6, p: 'C6', d: '8n' },
+    { t: 8, p: 'G5', d: '8n' }, { t: 10, p: 'E5', d: '8n' }, { t: 12, p: 'C5', d: '4n' },
+    // Bar 2: Descending pattern
+    { t: 16, p: 'A4', d: '8n' }, { t: 18, p: 'C5', d: '8n' }, { t: 20, p: 'E5', d: '8n' }, { t: 22, p: 'A5', d: '8n' },
+    { t: 24, p: 'E5', d: '4n' }, { t: 28, p: 'C5', d: '4n' },
+    // Bar 3: Syncopated arpeggio
+    { t: 32, p: 'F4', d: '8n' }, { t: 34, p: 'A4', d: '8n' }, { t: 36, p: 'C5', d: '8n' }, { t: 38, p: 'F5', d: '8n' },
+    { t: 40, p: 'C5', d: '4n' }, { t: 44, p: 'A4', d: '4n' },
+    // Bar 4: Resolution
+    { t: 48, p: 'G4', d: '8n' }, { t: 50, p: 'B4', d: '8n' }, { t: 52, p: 'D5', d: '8n' }, { t: 54, p: 'G5', d: '8n' },
+    { t: 56, p: 'D5', d: '4n' }, { t: 60, p: 'B4', d: '4n' }
+  ].map(n => note(n.t, n.p, 75, n.d, VASYNTH_SHOWCASE_PATTERN_LENGTH, false)),
 
-  // 🔊 FAT BASS: Wide unison bass
+  // 🔊 FAT BASS: Powerful bassline with varied rhythms
   fatbass: [
-    { t: 0, p: 'C1', d: '4n' }, { t: 4, p: 'C1', d: '8n' }, { t: 6, p: 'D1', d: '8n' },
-    { t: 8, p: 'E1', d: '4n' }, { t: 12, p: 'G1', d: '4n' },
-    { t: 16, p: 'A0', d: '4n' }, { t: 20, p: 'A0', d: '8n' }, { t: 22, p: 'G0', d: '8n' },
+    { t: 0, p: 'C1', d: '8n' }, { t: 2, p: 'C1', d: '8n' }, { t: 4, p: 'D1', d: '8n' }, { t: 6, p: 'E1', d: '8n' },
+    { t: 8, p: 'G1', d: '4n' }, { t: 12, p: 'E1', d: '4n' },
+    { t: 16, p: 'A0', d: '8n' }, { t: 18, p: 'A0', d: '8n' }, { t: 20, p: 'G0', d: '8n' }, { t: 22, p: 'A0', d: '8n' },
     { t: 24, p: 'C1', d: '4n' }, { t: 28, p: 'E1', d: '4n' },
-    { t: 32, p: 'F0', d: '4n' }, { t: 36, p: 'F0', d: '8n' }, { t: 38, p: 'E0', d: '8n' },
+    { t: 32, p: 'F0', d: '8n' }, { t: 34, p: 'F0', d: '8n' }, { t: 36, p: 'E0', d: '8n' }, { t: 38, p: 'F0', d: '8n' },
     { t: 40, p: 'A0', d: '4n' }, { t: 44, p: 'C1', d: '4n' },
-    { t: 48, p: 'G0', d: '1n' }
-  ].map(n => note(n.t, n.p, 85, n.d, VASYNTH_SHOWCASE_PATTERN_LENGTH)),
+    { t: 48, p: 'G0', d: '2n' }, { t: 56, p: 'B0', d: '8n' }
+  ].map(n => note(n.t, n.p, 85, n.d, VASYNTH_SHOWCASE_PATTERN_LENGTH, false)),
 
-  // 🎤 VOCAL SYNTH: Formant-like synth with vibrato
+  // 🎤 VOCAL SYNTH: Melodic phrase with expressive timing
   vocalsynth: [
-    { t: 16, p: 'C4', d: '2n' }, { t: 24, p: 'D4', d: '8n' }, { t: 26, p: 'E4', d: '8n' }, { t: 28, p: 'G4', d: '4n' },
-    { t: 48, p: 'A3', d: '2n' }, { t: 56, p: 'G3', d: '8n' }, { t: 58, p: 'F3', d: '8n' }, { t: 60, p: 'E3', d: '4n' }
-  ].map(n => note(n.t, n.p, 70, n.d, VASYNTH_SHOWCASE_PATTERN_LENGTH)),
+    { t: 0, p: 'C4', d: '4n' }, { t: 4, p: 'D4', d: '8n' }, { t: 6, p: 'E4', d: '8n' },
+    { t: 8, p: 'G4', d: '2n' }, { t: 16, p: 'E4', d: '4n' }, { t: 20, p: 'D4', d: '8n' },
+    { t: 22, p: 'C4', d: '8n' }, { t: 24, p: 'A3', d: '2n' },
+    { t: 32, p: 'A3', d: '4n' }, { t: 36, p: 'C4', d: '8n' }, { t: 38, p: 'D4', d: '8n' },
+    { t: 40, p: 'E4', d: '4n' }, { t: 44, p: 'G4', d: '4n' }, { t: 48, p: 'A3', d: '2n' },
+    { t: 56, p: 'G3', d: '4n' }, { t: 60, p: 'F3', d: '4n' }
+  ].map(n => note(n.t, n.p, 70, n.d, VASYNTH_SHOWCASE_PATTERN_LENGTH, false)),
 
-  // 💫 SIDECHAIN LEAD: Pumping lead with LFO volume modulation
+  // 💫 SIDECHAIN LEAD: Chord progression with rhythmic variation
   sidechainlead: [
-    { t: 0, p: 'E4', d: '1n' }, { t: 0, p: 'G4', d: '1n' }, { t: 0, p: 'C5', d: '1n' },
-    { t: 16, p: 'C4', d: '1n' }, { t: 16, p: 'E4', d: '1n' }, { t: 16, p: 'A4', d: '1n' },
-    { t: 32, p: 'A3', d: '1n' }, { t: 32, p: 'C4', d: '1n' }, { t: 32, p: 'F4', d: '1n' },
-    { t: 48, p: 'B3', d: '1n' }, { t: 48, p: 'D4', d: '1n' }, { t: 48, p: 'G4', d: '1n' }
-  ].map(n => note(n.t, n.p, 75, n.d, VASYNTH_SHOWCASE_PATTERN_LENGTH))
+    // Bar 1: E minor
+    { t: 0, p: 'E4', d: '2n' }, { t: 0, p: 'G4', d: '2n' }, { t: 0, p: 'C5', d: '2n' },
+    { t: 8, p: 'E4', d: '4n' }, { t: 8, p: 'G4', d: '4n' }, { t: 8, p: 'C5', d: '4n' },
+    { t: 12, p: 'E4', d: '4n' }, { t: 12, p: 'G4', d: '4n' }, { t: 12, p: 'C5', d: '4n' },
+    // Bar 2: A minor
+    { t: 16, p: 'C4', d: '4n' }, { t: 16, p: 'E4', d: '4n' }, { t: 16, p: 'A4', d: '4n' },
+    { t: 20, p: 'C4', d: '4n' }, { t: 20, p: 'E4', d: '4n' }, { t: 20, p: 'A4', d: '4n' },
+    { t: 24, p: 'C4', d: '2n' }, { t: 24, p: 'E4', d: '2n' }, { t: 24, p: 'A4', d: '2n' },
+    // Bar 3: F major
+    { t: 32, p: 'A3', d: '8n' }, { t: 32, p: 'C4', d: '8n' }, { t: 32, p: 'F4', d: '8n' },
+    { t: 34, p: 'A3', d: '8n' }, { t: 34, p: 'C4', d: '8n' }, { t: 34, p: 'F4', d: '8n' },
+    { t: 36, p: 'A3', d: '4n' }, { t: 36, p: 'C4', d: '4n' }, { t: 36, p: 'F4', d: '4n' },
+    { t: 40, p: 'A3', d: '2n' }, { t: 40, p: 'C4', d: '2n' }, { t: 40, p: 'F4', d: '2n' },
+    // Bar 4: G major (resolution)
+    { t: 48, p: 'B3', d: '4n' }, { t: 48, p: 'D4', d: '4n' }, { t: 48, p: 'G4', d: '4n' },
+    { t: 52, p: 'B3', d: '4n' }, { t: 52, p: 'D4', d: '4n' }, { t: 52, p: 'G4', d: '4n' },
+    { t: 56, p: 'B3', d: '8n' }, { t: 56, p: 'D4', d: '8n' }, { t: 56, p: 'G4', d: '8n' }
+  ].map(n => note(n.t, n.p, 75, n.d, VASYNTH_SHOWCASE_PATTERN_LENGTH, false))
 };
 
 // =========================================================================

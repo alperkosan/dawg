@@ -153,15 +153,18 @@ function PianoRoll() {
             const targetScrollX = playheadX - (engine.viewport.width / 2);
             const diff = Math.abs(engine.viewport.scrollX - targetScrollX);
 
-            if (diff > 5) {
+            // Use instant scroll with higher threshold to reduce jitter
+            // Threshold of 100px gives smooth following without constant micro-adjustments
+            if (diff > 100) {
                 const newScrollX = Math.max(0, targetScrollX);
-                engine.eventHandlers.updateViewport({ scrollX: newScrollX });
+                engine.eventHandlers.updateViewport({ scrollX: newScrollX, smooth: false });
             }
         } else if (followPlayheadMode === 'PAGE') {
             // Jump to next page when playhead reaches 80% of viewport width
             if (playheadX > engine.viewport.scrollX + threshold) {
                 const newScrollX = engine.viewport.scrollX + engine.viewport.width;
-                engine.eventHandlers.updateViewport({ scrollX: newScrollX });
+                // Page jumps should be instant for clear visual feedback
+                engine.eventHandlers.updateViewport({ scrollX: newScrollX, smooth: false });
             }
         }
     }, [currentStep, isPlaying, followPlayheadMode, engine.viewport, engine.dimensions, engine.eventHandlers]);
