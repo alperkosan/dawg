@@ -2,45 +2,53 @@
  * TRACK HEADER STYLES - ZENITH THEME
  */
 
+/* ✅ PHASE 2: Design Consistency - Using Zenith theme variables with alternating backgrounds */
 .arr-v2-track-header {
   position: relative;
   display: flex;
-  background: rgba(15, 15, 20, 0.95);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  /* Background will be set inline based on index (alternating dark-light) */
+  border-bottom: 1px solid var(--zenith-border-medium);
   overflow: hidden;
   backdrop-filter: blur(10px);
-  transition: background-color 0.15s ease;
+  transition: background-color var(--zenith-duration-normal) var(--zenith-ease-in-out);
 }
 
-.arr-v2-track-header:hover {
-  background: rgba(18, 18, 24, 0.95);
+/* ✅ PHASE 2: Alternating track backgrounds (dark-light) */
+.arr-v2-track-header.track-even {
+  background: rgba(21, 25, 34, 0.4); /* Darker track (even index) - matches gridRenderer */
+}
+
+.arr-v2-track-header.track-odd {
+  background: rgba(30, 36, 47, 0.2); /* Lighter track (odd index) - matches gridRenderer */
+}
+
+.arr-v2-track-header:hover:not(.selected) {
+  background: var(--zenith-bg-tertiary) !important;
 }
 
 .arr-v2-track-header.selected {
-  background: rgba(139, 92, 246, 0.15);
-  border-bottom-color: rgba(139, 92, 246, 0.4);
+  background: var(--zenith-overlay-light) !important;
+  border-bottom-color: var(--zenith-accent-cool);
 }
 
-/* Color indicator */
-.arr-v2-track-color {
-  width: 4px;
-  height: 100%;
-  flex-shrink: 0;
-  background: linear-gradient(180deg, var(--color) 0%, transparent 100%);
-  box-shadow: 0 0 8px var(--color);
+.arr-v2-track-header.selected:hover {
+  background: var(--zenith-overlay-light) !important;
 }
+
+/* ✅ PHASE 2: Color indicator removed - tracks use alternating dark-light backgrounds */
 
 /* Main content area */
 .arr-v2-track-content {
   flex: 1;
   display: flex;
   flex-direction: column;
-  padding: 8px;
-  gap: 4px;
+  padding: var(--spacing-2);
+  gap: var(--spacing-1);
   min-width: 0;
 }
 
 /* Drag handle */
+/* ✅ PHASE 2: Design Consistency - Using Zenith theme variables */
 .arr-v2-track-drag-handle {
   position: absolute;
   top: 4px;
@@ -50,22 +58,22 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: rgba(255, 255, 255, 0.3);
+  color: var(--zenith-text-tertiary);
   cursor: grab;
-  border-radius: 4px;
-  transition: all 0.15s ease;
-  font-size: 12px;
+  border-radius: var(--border-radius-sm);
+  transition: all var(--zenith-duration-normal) var(--zenith-ease-in-out);
+  font-size: var(--font-size-xs);
   user-select: none;
 }
 
 .arr-v2-track-drag-handle:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.6);
+  background: var(--zenith-overlay-light);
+  color: var(--zenith-text-secondary);
 }
 
 .arr-v2-track-drag-handle:active {
   cursor: grabbing;
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--zenith-overlay-medium);
 }
 
 /* Track name */
@@ -77,204 +85,111 @@
 .arr-v2-track-name-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--spacing-1);
 }
 
-.arr-v2-track-color-picker-wrapper {
-  position: relative;
-  flex-shrink: 0;
-}
+/* ✅ PHASE 2: Color picker removed - tracks use alternating dark-light backgrounds */
 
-.arr-v2-track-color-btn {
-  width: 16px;
-  height: 16px;
-  border-radius: 3px;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  cursor: pointer;
-  transition: all 0.15s ease;
-  flex-shrink: 0;
-}
-
-.arr-v2-track-color-btn:hover {
-  border-color: rgba(255, 255, 255, 0.6);
-  transform: scale(1.1);
-  box-shadow: 0 0 8px currentColor;
-}
-
-.arr-v2-color-picker-dropdown {
-  position: absolute;
-  top: 20px;
-  left: 0;
-  z-index: 1000;
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 6px;
-  padding: 8px;
-  background: rgba(20, 20, 28, 0.98);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 6px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(10px);
-}
-
-.arr-v2-color-option {
-  width: 24px;
-  height: 24px;
-  border-radius: 4px;
-  border: 2px solid transparent;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.arr-v2-color-option:hover {
-  border-color: rgba(255, 255, 255, 0.6);
-  transform: scale(1.1);
-}
-
-.arr-v2-color-option.selected {
-  border-color: rgba(255, 255, 255, 1);
-  box-shadow: 0 0 12px currentColor;
-}
-
+/* ✅ PHASE 2: Design Consistency - Using Zenith theme variables */
 .arr-v2-track-name {
   flex: 1;
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.9);
-  padding: 4px 6px;
-  border-radius: 4px;
+  color: var(--zenith-text-primary);
+  padding: var(--spacing-1) var(--spacing-1);
+  border-radius: var(--border-radius-sm);
   cursor: text;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  transition: background-color 0.15s ease;
+  transition: background-color var(--zenith-duration-normal) var(--zenith-ease-in-out);
 }
 
 .arr-v2-track-name:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--zenith-overlay-light);
 }
 
 .arr-v2-track-name-input {
   width: 100%;
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.9);
-  background: rgba(139, 92, 246, 0.2);
-  border: 1px solid rgba(139, 92, 246, 0.6);
-  border-radius: 4px;
-  padding: 4px 6px;
+  color: var(--zenith-text-primary);
+  background: var(--zenith-bg-tertiary);
+  border: 1px solid var(--zenith-accent-cool);
+  border-radius: var(--border-radius-sm);
+  padding: var(--spacing-1) var(--spacing-1);
   outline: none;
 }
 
 .arr-v2-track-name-input:focus {
-  background: rgba(139, 92, 246, 0.25);
-  border-color: rgba(139, 92, 246, 0.8);
+  background: var(--zenith-bg-tertiary);
+  border-color: var(--zenith-accent-cool);
+  box-shadow: 0 0 8px rgba(78, 205, 196, 0.3);
 }
 
 /* Control buttons */
 .arr-v2-track-buttons {
   display: flex;
-  gap: 4px;
+  gap: var(--spacing-1);
 }
 
+/* ✅ PHASE 2: Design Consistency - Using Button component from library */
 .arr-v2-track-btn {
-  width: 24px;
-  height: 20px;
-  display: flex;
+  width: 24px !important;
+  height: 20px !important;
+  min-width: 24px !important;
+  min-height: 20px !important;
+  padding: 0 !important; /* Override Button component padding */
+  display: flex !important;
   align-items: center;
   justify-content: center;
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.5);
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 3px;
-  cursor: pointer;
-  transition: all 0.15s ease;
+  border-radius: var(--border-radius-sm) !important;
+  transition: all var(--zenith-duration-normal) var(--zenith-ease-in-out);
   user-select: none;
 }
 
 .arr-v2-track-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.8);
-  border-color: rgba(255, 255, 255, 0.2);
-}
-
-.arr-v2-track-btn.active {
-  background: rgba(139, 92, 246, 0.4);
-  color: rgba(255, 255, 255, 1);
-  border-color: rgba(139, 92, 246, 0.6);
-  box-shadow: 0 0 8px rgba(139, 92, 246, 0.4);
+  transform: none; /* Override Button component transform */
 }
 
 .arr-v2-track-btn:active {
-  transform: scale(0.95);
+  transform: scale(0.95) !important; /* Override Button component transform */
 }
 
-/* Volume/Pan controls */
+/* Volume/Pan controls - ✅ PHASE 2: Using component library */
 .arr-v2-track-control {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 10px;
-}
-
-.arr-v2-track-control-label {
-  color: rgba(255, 255, 255, 0.5);
-  font-weight: 600;
-  width: 24px;
-  flex-shrink: 0;
-}
-
-.arr-v2-track-slider {
+  gap: var(--spacing-1);
+  font-size: var(--font-size-xs);
+  min-width: 0;
   flex: 1;
-  height: 3px;
-  -webkit-appearance: none;
-  appearance: none;
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 2px;
-  outline: none;
-  cursor: pointer;
 }
 
-.arr-v2-track-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 10px;
-  height: 10px;
-  background: rgba(139, 92, 246, 0.9);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  border-radius: 50%;
-  cursor: pointer;
-  transition: all 0.15s ease;
+/* ✅ PHASE 2: Component library slider integration */
+.arr-v2-track-volume-slider,
+.arr-v2-track-pan-slider {
+  flex: 1;
+  min-width: 0;
+  max-width: 60px;
 }
 
-.arr-v2-track-slider::-webkit-slider-thumb:hover {
-  background: rgba(139, 92, 246, 1);
-  box-shadow: 0 0 8px rgba(139, 92, 246, 0.6);
-  transform: scale(1.2);
-}
-
-.arr-v2-track-slider::-moz-range-thumb {
-  width: 10px;
-  height: 10px;
-  background: rgba(139, 92, 246, 0.9);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  border-radius: 50%;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.arr-v2-track-slider::-moz-range-thumb:hover {
-  background: rgba(139, 92, 246, 1);
-  box-shadow: 0 0 8px rgba(139, 92, 246, 0.6);
-  transform: scale(1.2);
+/* ✅ PHASE 2: Design Consistency - Using Zenith theme variables */
+.arr-v2-track-control-label {
+  color: var(--zenith-text-secondary);
+  font-weight: 600;
+  width: 28px;
+  flex-shrink: 0;
+  font-size: var(--font-size-xs);
 }
 
 .arr-v2-track-control-value {
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--zenith-text-primary);
   font-weight: 600;
-  min-width: 30px;
+  min-width: 32px;
   text-align: right;
-  font-size: 10px;
+  font-size: var(--font-size-xs);
+  font-family: var(--font-mono);
 }

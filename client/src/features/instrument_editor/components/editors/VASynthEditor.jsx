@@ -111,7 +111,8 @@ const VASynthEditor = ({ instrumentData: initialData }) => {
   useEffect(() => {
     const audioEngine = AudioContextService.getAudioEngine();
     if (audioEngine?.audioContext && instrumentData) {
-      const previewManager = getPreviewManager(audioEngine.audioContext);
+      // ✅ FX CHAIN: Pass audioEngine to PreviewManager for mixer routing
+      const previewManager = getPreviewManager(audioEngine.audioContext, audioEngine);
       previewManager.setInstrument(instrumentData);
     }
   }, [instrumentData.id]); // Only re-run when instrument ID changes, not on every parameter change!

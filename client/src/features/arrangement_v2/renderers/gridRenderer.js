@@ -5,28 +5,83 @@
  * - Bar lines, beat lines, subdivision lines
  * - Track lanes with alternating colors
  * - Smooth, performant rendering
+ * - ✅ THEME-AWARE: Dynamically reads colors from CSS variables
  */
 
+import { StyleCache } from '@/lib/rendering/StyleCache';
+
 // ============================================================================
-// ZENITH COLORS - Matching Zenith Design System
+// ZENITH COLORS - Dynamic theme support
 // ============================================================================
 
-export const ZENITH_COLORS = {
-  // Darker background for better contrast with colored clips
-  background: '#060810',  // Darker than zenith-bg-primary for more contrast
-
-  // Track lanes now use track colors (not used directly anymore)
-  trackLane: 'rgba(30, 36, 47, 0.3)',
-  trackLaneAlt: 'rgba(21, 25, 34, 0.5)',
-
-  // Grid lines - slightly more visible for better readability
-  gridLine: 'rgba(255, 255, 255, 0.06)',   // zenith-border-subtle (slightly brighter)
-  gridLineBeat: 'rgba(255, 255, 255, 0.12)', // zenith-border-medium (slightly brighter)
-  gridLineBar: 'rgba(255, 255, 255, 0.25)',  // zenith-border-strong (more visible)
-
-  // Track borders - more prominent
-  trackBorder: 'rgba(255, 255, 255, 0.12)'
+// Fallback colors (used if StyleCache is not available or CSS variables are missing)
+const FALLBACK_COLORS = {
+  background: '#0A0E1A',
+  trackLaneDark: 'rgba(21, 25, 34, 0.4)',
+  trackLaneLight: 'rgba(30, 36, 47, 0.2)',
+  gridLine: 'rgba(255, 255, 255, 0.05)',
+  gridLineBeat: 'rgba(255, 255, 255, 0.1)',
+  gridLineBar: 'rgba(255, 255, 255, 0.2)',
+  trackBorder: 'rgba(255, 255, 255, 0.1)'
 };
+
+/**
+ * ✅ THEME-AWARE: Get Zenith colors from CSS variables
+ * @param {StyleCache} styleCache - StyleCache instance for reading CSS variables
+ * @returns {Object} Zenith color object
+ */
+export function getZenithColors(styleCache) {
+  if (!styleCache) {
+    console.warn('⚠️ GridRenderer: StyleCache not available, using fallback colors');
+    return FALLBACK_COLORS;
+  }
+
+  try {
+    // Read CSS variables from theme
+    const bgPrimary = styleCache.get('--zenith-bg-primary') || FALLBACK_COLORS.background;
+    const borderSubtle = styleCache.get('--zenith-border-subtle') || FALLBACK_COLORS.gridLine;
+    const borderMedium = styleCache.get('--zenith-border-medium') || FALLBACK_COLORS.gridLineBeat;
+    const borderStrong = styleCache.get('--zenith-border-strong') || FALLBACK_COLORS.gridLineBar;
+
+    // Parse background color to create track overlays
+    // Convert hex to RGB for overlay calculation
+    const parseHex = (hex) => {
+      const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+      return result ? {
+        r: parseInt(result[1], 16),
+        g: parseInt(result[2], 16),
+        b: parseInt(result[3], 16)
+      } : null;
+    };
+
+    // Calculate track lane colors based on background
+    let trackLaneDark = FALLBACK_COLORS.trackLaneDark;
+    let trackLaneLight = FALLBACK_COLORS.trackLaneLight;
+
+    if (bgPrimary.startsWith('#')) {
+      const rgb = parseHex(bgPrimary);
+      if (rgb) {
+        // Dark overlay: slightly darker than background
+        trackLaneDark = `rgba(${Math.max(0, rgb.r - 5)}, ${Math.max(0, rgb.g - 5)}, ${Math.max(0, rgb.b - 5)}, 0.4)`;
+        // Light overlay: slightly lighter than background
+        trackLaneLight = `rgba(${Math.min(255, rgb.r + 10)}, ${Math.min(255, rgb.g + 10)}, ${Math.min(255, rgb.b + 10)}, 0.2)`;
+      }
+    }
+
+    return {
+      background: bgPrimary,
+      trackLaneDark,
+      trackLaneLight,
+      gridLine: borderSubtle,
+      gridLineBeat: borderMedium,
+      gridLineBar: borderStrong,
+      trackBorder: borderMedium
+    };
+  } catch (error) {
+    console.warn('⚠️ GridRenderer: Error reading theme colors, using fallbacks:', error);
+    return FALLBACK_COLORS;
+  }
+}
 
 // ============================================================================
 // CONSTANTS
@@ -40,29 +95,40 @@ const PIXELS_PER_BEAT = 48; // Base pixels per beat at zoom = 1
 
 /**
  * Draw the grid background
+ * ✅ THEME-AWARE: Accepts StyleCache for dynamic theme color reading
+ * @param {CanvasRenderingContext2D} ctx - Canvas context
+ * @param {number} width - Canvas width
+ * @param {number} height - Canvas height
+ * @param {Object} viewport - Viewport state {offsetX, offsetY, zoomX, zoomY}
+ * @param {Array} tracks - Array of track objects
+ * @param {number} snapSize - Snap size in beats
+ * @param {StyleCache} styleCache - StyleCache instance for theme colors (optional)
  */
-export function drawGrid(ctx, width, height, viewport, tracks, snapSize = 0.25) {
+export function drawGrid(ctx, width, height, viewport, tracks, snapSize = 0.25, styleCache = null) {
   const { offsetX, offsetY, zoomX, zoomY } = viewport;
   const pixelsPerBeat = PIXELS_PER_BEAT * zoomX;
 
+  // ✅ THEME-AWARE: Get colors from CSS variables (dynamic theme support)
+  const colors = getZenithColors(styleCache);
+
   // Clear canvas
-  ctx.fillStyle = ZENITH_COLORS.background;
+  ctx.fillStyle = colors.background;
   ctx.fillRect(0, 0, width, height);
 
   // Draw track lanes
-  drawTrackLanes(ctx, width, height, tracks, offsetY, zoomY);
+  drawTrackLanes(ctx, width, height, tracks, offsetY, zoomY, colors);
 
   // Draw vertical grid lines (time)
-  drawVerticalGridLines(ctx, width, height, offsetX, pixelsPerBeat, snapSize);
+  drawVerticalGridLines(ctx, width, height, offsetX, pixelsPerBeat, snapSize, colors);
 
   // Draw horizontal track borders
-  drawTrackBorders(ctx, width, tracks, offsetY, zoomY);
+  drawTrackBorders(ctx, width, tracks, offsetY, zoomY, colors);
 }
 
 /**
- * Draw track lanes with track-specific colors
+ * ✅ THEME-AWARE: Draw track lanes with alternating dark-light Zenith theme colors
  */
-function drawTrackLanes(ctx, width, height, tracks, offsetY, zoomY) {
+function drawTrackLanes(ctx, width, height, tracks, offsetY, zoomY, colors) {
   let y = -offsetY;
 
   tracks.forEach((track, index) => {
@@ -75,13 +141,10 @@ function drawTrackLanes(ctx, width, height, tracks, offsetY, zoomY) {
     }
     if (y > height) return;
 
-    // Use track color with subtle transparency
-    // Convert hex to rgba with alternating opacity for visual separation
-    const trackColor = track.color || '#8b5cf6';
-    const opacity = index % 2 === 0 ? 0.08 : 0.12;
-    const rgba = hexToRgba(trackColor, opacity);
-
-    ctx.fillStyle = rgba;
+    // ✅ THEME-AWARE: Use alternating dark-light backgrounds from theme
+    // Even index = dark, odd index = light
+    const isEven = index % 2 === 0;
+    ctx.fillStyle = isEven ? colors.trackLaneDark : colors.trackLaneLight;
     ctx.fillRect(0, y, width, trackHeight);
 
     y += trackHeight;
@@ -89,24 +152,9 @@ function drawTrackLanes(ctx, width, height, tracks, offsetY, zoomY) {
 }
 
 /**
- * Convert hex color to rgba with opacity
+ * ✅ THEME-AWARE: Draw vertical grid lines (bar/beat/subdivision)
  */
-function hexToRgba(hex, opacity) {
-  // Remove # if present
-  hex = hex.replace('#', '');
-
-  // Parse hex values
-  const r = parseInt(hex.substring(0, 2), 16);
-  const g = parseInt(hex.substring(2, 4), 16);
-  const b = parseInt(hex.substring(4, 6), 16);
-
-  return `rgba(${r}, ${g}, ${b}, ${opacity})`;
-}
-
-/**
- * Draw vertical grid lines (bar/beat/subdivision)
- */
-function drawVerticalGridLines(ctx, width, height, offsetX, pixelsPerBeat, snapSize) {
+function drawVerticalGridLines(ctx, width, height, offsetX, pixelsPerBeat, snapSize, colors) {
   const beatsPerBar = 4; // 4/4 time signature
   const startBeat = Math.floor(offsetX / pixelsPerBeat);
   const endBeat = Math.ceil((offsetX + width) / pixelsPerBeat) + 1;
@@ -123,15 +171,15 @@ function drawVerticalGridLines(ctx, width, height, offsetX, pixelsPerBeat, snapS
     // Draw line
     if (isBar) {
       // Bar line (strongest)
-      ctx.strokeStyle = ZENITH_COLORS.gridLineBar;
+      ctx.strokeStyle = colors.gridLineBar;
       ctx.lineWidth = 2;
     } else if (isBeat) {
       // Beat line (medium)
-      ctx.strokeStyle = ZENITH_COLORS.gridLineBeat;
+      ctx.strokeStyle = colors.gridLineBeat;
       ctx.lineWidth = 1;
     } else {
       // Subdivision line (subtle)
-      ctx.strokeStyle = ZENITH_COLORS.gridLine;
+      ctx.strokeStyle = colors.gridLine;
       ctx.lineWidth = 1;
     }
 
@@ -142,21 +190,21 @@ function drawVerticalGridLines(ctx, width, height, offsetX, pixelsPerBeat, snapS
 
     // Draw subdivisions if zoomed in enough
     if (pixelsPerBeat > 60 && snapSize < 1) {
-      drawSubdivisions(ctx, x, height, pixelsPerBeat, snapSize);
+      drawSubdivisions(ctx, x, height, pixelsPerBeat, snapSize, colors);
     }
   }
 }
 
 /**
- * Draw subdivision lines between beats
+ * ✅ THEME-AWARE: Draw subdivision lines between beats
  */
-function drawSubdivisions(ctx, beatX, height, pixelsPerBeat, snapSize) {
+function drawSubdivisions(ctx, beatX, height, pixelsPerBeat, snapSize, colors) {
   const subdivisions = Math.floor(1 / snapSize);
 
   for (let i = 1; i < subdivisions; i++) {
     const x = beatX + (i * snapSize * pixelsPerBeat);
 
-    ctx.strokeStyle = ZENITH_COLORS.gridLine;
+    ctx.strokeStyle = colors.gridLine;
     ctx.lineWidth = 0.5;
     ctx.globalAlpha = 0.5;
 
@@ -170,9 +218,9 @@ function drawSubdivisions(ctx, beatX, height, pixelsPerBeat, snapSize) {
 }
 
 /**
- * Draw horizontal borders between tracks
+ * ✅ THEME-AWARE: Draw horizontal borders between tracks
  */
-function drawTrackBorders(ctx, width, tracks, offsetY, zoomY) {
+function drawTrackBorders(ctx, width, tracks, offsetY, zoomY, colors) {
   let y = -offsetY;
 
   tracks.forEach((track) => {
@@ -180,7 +228,7 @@ function drawTrackBorders(ctx, width, tracks, offsetY, zoomY) {
     y += trackHeight;
 
     if (y >= 0 && y <= ctx.canvas.height) {
-      ctx.strokeStyle = ZENITH_COLORS.trackBorder;
+      ctx.strokeStyle = colors.trackBorder;
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(0, y);

@@ -19,6 +19,7 @@ function CCLanes({
     onPointAdd, // (laneId, time, value) => void
     onPointRemove, // (laneId, pointIndex) => void
     onPointUpdate, // (laneId, pointIndex, updates) => void
+    onScroll, // (deltaX, deltaY) => void - Scroll callback to sync with Piano Roll
     dimensions,
     viewport,
     activeTool = 'select',
@@ -67,7 +68,7 @@ function CCLanes({
             }
         }
 
-    }, [lanes, selectedLaneIndex, hoveredPoint, draggingPoint, dimensions, viewport]);
+    }, [lanes, selectedLaneIndex, hoveredPoint, draggingPoint, dimensions, viewport, viewport?.scrollX]);
 
     const drawAutomationLane = (ctx, { lane, laneIndex, dimensions, viewport, canvasHeight, canvasWidth, hoveredPoint, draggingPoint }) => {
         const styles = getComputedStyle(document.documentElement);
@@ -301,6 +302,17 @@ function CCLanes({
         }
     }, [draggingPoint]);
 
+    // Handle wheel scroll to sync with Piano Roll
+    const handleWheel = useCallback((e) => {
+        if (!onScroll) return;
+
+        e.preventDefault();
+        e.stopPropagation();
+
+        // Pass scroll delta to parent (Piano Roll)
+        onScroll(e.deltaX, e.deltaY);
+    }, [onScroll]);
+
     return (
         <div className="cc-lanes">
             <div className="cc-lanes-header">
@@ -328,6 +340,7 @@ function CCLanes({
                 onMouseMove={handleMouseMove}
                 onMouseUp={handleMouseUp}
                 onMouseLeave={handleMouseUp}
+                onWheel={handleWheel}
                 style={{
                     width: '100%',
                     height: CC_LANE_HEIGHT,

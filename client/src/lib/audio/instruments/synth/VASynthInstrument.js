@@ -467,4 +467,83 @@ export class VASynthInstrument extends BaseInstrument {
             } : null
         };
     }
+
+    /**
+     * ✅ PHASE 4: Set instrument volume (real-time automation)
+     */
+    setVolume(volume, time = null) {
+        if (!this.masterGain) return;
+
+        const now = time !== null ? time : this.audioContext.currentTime;
+        const clampedVolume = Math.max(0, Math.min(1, volume));
+
+        // Smooth transition to avoid clicks
+        this.masterGain.gain.cancelScheduledValues(now);
+        this.masterGain.gain.setTargetAtTime(clampedVolume, now, 0.01);
+    }
+
+    /**
+     * ✅ PHASE 4: Set instrument pan (real-time automation)
+     * Note: This creates a shared panner for all voices
+     */
+    setPan(pan, time = null) {
+        if (!this.masterGain) return;
+
+        // Create panner node if doesn't exist
+        if (!this.panNode) {
+            this.panNode = this.audioContext.createStereoPanner();
+
+            // Reconnect: masterGain -> panNode -> output destination
+            this.masterGain.disconnect();
+            this.masterGain.connect(this.panNode);
+
+            // Update output to point to panner
+            const oldOutput = this.output;
+            this.output = this.panNode;
+
+            // Reconnect to all existing destinations
+            this.connectedDestinations.forEach(dest => {
+                try {
+                    this.output.connect(dest);
+                } catch (e) {
+                    console.warn('Failed to reconnect to destination:', e);
+                }
+            });
+        }
+
+        const now = time !== null ? time : this.audioContext.currentTime;
+        const clampedPan = Math.max(-1, Math.min(1, pan));
+
+        // Smooth transition to avoid clicks
+        this.panNode.pan.cancelScheduledValues(now);
+        this.panNode.pan.setTargetAtTime(clampedPan, now, 0.01);
+    }
+
+    /**
+     * ✅ PHASE 4: Set filter cutoff (real-time automation)
+     */
+    setFilterCutoff(cutoff, time = null) {
+        // Apply to all active voices
+        this.voices.forEach(voice => {
+            if (voice.filter && voice.filter.frequency) {
+                const now = time !== null ? time : this.audioContext.currentTime;
+                const freqHz = 20 + (cutoff / 127) * 20000; // Map 0-127 to 20Hz-20kHz
+                voice.filter.frequency.setTargetAtTime(freqHz, now, 0.01);
+            }
+        });
+    }
+
+    /**
+     * ✅ PHASE 4: Set filter resonance (real-time automation)
+     */
+    setFilterResonance(resonance, time = null) {
+        // Apply to all active voices
+        this.voices.forEach(voice => {
+            if (voice.filter && voice.filter.Q) {
+                const now = time !== null ? time : this.audioContext.currentTime;
+                const qValue = 0.1 + (resonance / 127) * 30; // Map 0-127 to 0.1-30
+                voice.filter.Q.setTargetAtTime(qValue, now, 0.01);
+            }
+        });
+    }
 }

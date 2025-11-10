@@ -10,12 +10,14 @@
 
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { useArrangementCanvas, useClipInteraction } from './hooks';
-import { useArrangementV2Store } from '@/store/useArrangementV2Store';
+// ✅ PHASE 1: Store Consolidation - Use unified store
 import { useArrangementStore } from '@/store/useArrangementStore';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
 import { usePanelsStore } from '@/store/usePanelsStore';
-import { useProjectAudioStore } from '@/store/useProjectAudioStore';
-import { useTransportManager } from '@/hooks/useTransportManager';
+import { getTimelineController } from '@/lib/core/TimelineControllerSingleton'; // ✅ Unified transport system
+import { AudioContextService } from '@/lib/services/AudioContextService'; // ✅ For audio engine sync
+// ✅ PHASE 2: Design Consistency - Using component library
+import { Button } from '@/components/controls/base/Button';
 import { drawGrid, renderAudioClip, renderPatternClip } from './renderers';
 import { TimelineRuler } from './components/TimelineRuler';
 import { TrackHeader } from './components/TrackHeader';
@@ -25,7 +27,7 @@ import { PatternBrowser } from './components/PatternBrowser';
 import { audioAssetManager } from '@/lib/audio/AudioAssetManager';
 import { uiUpdateManager, UPDATE_PRIORITIES, UPDATE_FREQUENCIES } from '@/lib/core/UIUpdateManager';
 import { getAudioClipDurationBeats } from '@/lib/utils/audioDuration';
-// import { getTimelineController } from '@/lib/core/TimelineControllerSingleton'; // Disabled - using own interaction system
+import { StyleCache } from '@/lib/rendering/StyleCache';
 import './ArrangementPanelV2.css';
 
 /**
@@ -102,41 +104,56 @@ export function ArrangementPanelV2() {
   const clipsCanvasRef = useRef(null);
   const handlesCanvasRef = useRef(null);
 
-  // Transport hook - enables position tracking
-  const transport = useTransportManager({ trackPosition: true });
-
-  // Store state
-  const tracks = useArrangementV2Store(state => state.tracks);
-  const clips = useArrangementV2Store(state => state.clips);
-  const selectedClipIds = useArrangementV2Store(state => state.selectedClipIds);
-  const clipboard = useArrangementV2Store(state => state.clipboard);
-  const cursorPosition = useArrangementV2Store(state => state.cursorPosition);
-  const snapEnabled = useArrangementV2Store(state => state.snapEnabled);
-  const snapSize = useArrangementV2Store(state => state.snapSize);
-  const markers = useArrangementV2Store(state => state.markers);
-  const loopRegions = useArrangementV2Store(state => state.loopRegions);
+  // ✅ PHASE 1: Store Consolidation - Use unified store
+  // Arrangement state (from unified store)
+  const tracks = useArrangementStore(state => state.arrangementTracks);
+  const clips = useArrangementStore(state => state.arrangementClips);
+  const selectedClipIds = useArrangementStore(state => state.selectedClipIds);
+  const clipboard = useArrangementStore(state => state.clipboard);
+  const snapEnabled = useArrangementStore(state => state.snapEnabled);
+  const snapSize = useArrangementStore(state => state.snapSize);
+  const markers = useArrangementStore(state => state.arrangementMarkers);
+  const loopRegions = useArrangementStore(state => state.arrangementLoopRegions);
 
   // Pattern store (for pattern clip rendering)
   const patterns = useArrangementStore(state => state.patterns);
-  const updateTrack = useArrangementV2Store(state => state.updateTrack);
-  const setCursorPosition = useArrangementV2Store(state => state.setCursorPosition);
-  const setSnapEnabled = useArrangementV2Store(state => state.setSnapEnabled);
-  const setSnapSize = useArrangementV2Store(state => state.setSnapSize);
-  const copySelection = useArrangementV2Store(state => state.copySelection);
-  const cutSelection = useArrangementV2Store(state => state.cutSelection);
-  const paste = useArrangementV2Store(state => state.paste);
-  const duplicateClips = useArrangementV2Store(state => state.duplicateClips);
-  const removeClips = useArrangementV2Store(state => state.removeClips);
-  const splitClip = useArrangementV2Store(state => state.splitClip);
-  const addPatternClip = useArrangementV2Store(state => state.addPatternClip);
-  const updateClip = useArrangementV2Store(state => state.updateClip);
-  const addMarker = useArrangementV2Store(state => state.addMarker);
-  const removeMarker = useArrangementV2Store(state => state.removeMarker);
-  const addLoopRegion = useArrangementV2Store(state => state.addLoopRegion);
-  const removeLoopRegion = useArrangementV2Store(state => state.removeLoopRegion);
-  const updateLoopRegion = useArrangementV2Store(state => state.updateLoopRegion);
-  const initializeTransport = useArrangementV2Store(state => state.initializeTransport);
-  const cleanupTransport = useArrangementV2Store(state => state.cleanupTransport);
+  
+  // Arrangement actions (from unified store)
+  const updateTrack = useArrangementStore(state => state.updateArrangementTrack);
+  const setSnapEnabled = useArrangementStore(state => state.setArrangementSnapEnabled);
+  const setSnapSize = useArrangementStore(state => state.setArrangementSnapSize);
+  const copySelection = useArrangementStore(state => state.copyArrangementSelection);
+  const cutSelection = useArrangementStore(state => state.cutArrangementSelection);
+  const paste = useArrangementStore(state => state.pasteArrangementClips);
+  const duplicateClips = useArrangementStore(state => state.duplicateArrangementClips);
+  const removeClips = useArrangementStore(state => state.removeArrangementClips);
+  const splitClip = useArrangementStore(state => state.splitArrangementClip);
+  const addPatternClip = useArrangementStore(state => state.addArrangementPatternClip);
+  const updateClip = useArrangementStore(state => state.updateArrangementClip);
+  const addMarker = useArrangementStore(state => state.addArrangementMarker);
+  const removeMarker = useArrangementStore(state => state.removeArrangementMarker);
+  const addLoopRegion = useArrangementStore(state => state.addArrangementLoopRegion);
+  const removeLoopRegion = useArrangementStore(state => state.removeArrangementLoopRegion);
+  const updateLoopRegion = useArrangementStore(state => state.updateArrangementLoopRegion);
+  
+  // ✅ PHASE 1: Transport System Unification - Use TimelineController (same as Piano Roll)
+  // Playback state (read-only from usePlaybackStore)
+  const currentStep = usePlaybackStore(state => state.currentStep);
+  const playbackMode = usePlaybackStore(state => state.playbackMode);
+  const isPlaying = usePlaybackStore(state => state.isPlaying);
+  const followPlayheadMode = usePlaybackStore(state => state.followPlayheadMode);
+  
+  // Transport control via TimelineController
+  const setCursorPosition = useCallback((position) => {
+    try {
+      const timelineController = getTimelineController();
+      // Convert beats to steps (1 beat = 4 steps in 16th notes)
+      const positionInSteps = Math.max(0, position) * 4;
+      timelineController.jumpToPosition(positionInSteps);
+    } catch (e) {
+      console.warn('TimelineController not initialized:', e);
+    }
+  }, []);
 
   // Canvas engine
   const engine = useArrangementCanvas(containerRef, tracks);
@@ -150,16 +167,67 @@ export function ArrangementPanelV2() {
   // Sample editor state
   const [sampleEditorOpen, setSampleEditorOpen] = useState(false);
 
-  // Unified playhead/timeline state
-  // const [ghostPosition, setGhostPosition] = useState(null); // Disabled with TimelineController
-  const currentStep = usePlaybackStore(state => state.currentStep);
-  const currentPositionMode = usePlaybackStore(state => state._currentPositionMode);
-  const playbackMode = usePlaybackStore(state => state.playbackMode);
-  const isPlaying = usePlaybackStore(state => state.isPlaying);
+  // ✅ THEME-AWARE: Track theme version to trigger re-renders on theme change
+  const [themeVersion, setThemeVersion] = useState(0);
 
-  // ✅ FIX: Only use position updates in song mode for arrangement panel
-  // In pattern mode, the playhead should not move
-  const effectiveCurrentStep = playbackMode === 'song' ? currentStep : 0;
+  // ✅ PHASE 1: Transport System Unification - Playback state already defined above
+  // Convert steps to beats for cursor position (1 beat = 4 steps in 16th notes)
+  // Arrangement panel always uses the current step regardless of playback mode
+  const effectiveCurrentStep = currentStep / 4;
+
+  // ✅ PHASE 1: Follow Playhead Mode - Auto-scroll during playback
+  const userInteractionRef = useRef(false); // Track if user is manually scrolling
+
+  useEffect(() => {
+    // Early exits - don't follow if not playing, mode is OFF, user is scrolling, or viewport not ready
+    if (!isPlaying || followPlayheadMode === 'OFF') return;
+    if (userInteractionRef.current) return;
+    if (!viewport || !dimensions || !eventHandlers?.updateViewport) return;
+
+    const playheadX = effectiveCurrentStep * dimensions.pixelsPerBeat;
+    const threshold = viewport.width * 0.8;
+
+    if (followPlayheadMode === 'CONTINUOUS') {
+      // Keep playhead centered in viewport
+      const targetScrollX = playheadX - (viewport.width / 2);
+      const diff = Math.abs(viewport.scrollX - targetScrollX);
+
+      if (diff > 5) { // Threshold to prevent jitter
+        const newScrollX = Math.max(0, targetScrollX);
+        eventHandlers.updateViewport({ scrollX: newScrollX });
+      }
+    } else if (followPlayheadMode === 'PAGE') {
+      // Jump to next page when playhead reaches 80% of viewport width
+      if (playheadX > viewport.scrollX + threshold) {
+        const newScrollX = viewport.scrollX + viewport.width;
+        eventHandlers.updateViewport({ scrollX: newScrollX });
+      }
+    }
+  }, [effectiveCurrentStep, isPlaying, followPlayheadMode, viewport, dimensions, eventHandlers]);
+
+  // Track user interaction to pause follow mode temporarily
+  useEffect(() => {
+    const handleUserScroll = () => {
+      userInteractionRef.current = true;
+      // Resume follow on next play
+      const resumeFollow = () => {
+        userInteractionRef.current = false;
+      };
+      // Reset flag after 2 seconds of no interaction
+      const timer = setTimeout(resumeFollow, 2000);
+      return () => clearTimeout(timer);
+    };
+
+    const container = containerRef.current;
+    if (container) {
+      container.addEventListener('wheel', handleUserScroll);
+      container.addEventListener('mousedown', handleUserScroll);
+      return () => {
+        container.removeEventListener('wheel', handleUserScroll);
+        container.removeEventListener('mousedown', handleUserScroll);
+      };
+    }
+  }, []);
 
   // Clip double-click handler for sample editor
   const handleClipDoubleClick = useCallback(async (clip) => {
@@ -259,16 +327,24 @@ export function ArrangementPanelV2() {
   const [loopDragMode, setLoopDragMode] = useState(null); // 'create' | 'move' | 'resize-start' | 'resize-end'
   const [hoveredLoop, setHoveredLoop] = useState(null); // { regionId, handle } - for hover feedback
 
-  // Initialize transport on mount
+  // ✅ PHASE 1: Transport System Unification
+  // TimelineController is initialized globally, no need for local initialization
+  // Audio engine sync on mount
   useEffect(() => {
-    console.log('🎵 ArrangementV2 mounting, initializing transport...');
-    initializeTransport();
-
-    return () => {
-      console.log('🎵 ArrangementV2 unmounting, cleaning up transport...');
-      cleanupTransport();
+    console.log('🎵 ArrangementV2 mounting, syncing tracks to audio engine...');
+    const syncTracks = async () => {
+      try {
+        const audioEngine = AudioContextService.getAudioEngine();
+        if (audioEngine) {
+          // Sync arrangement tracks to audio engine
+          await useArrangementStore.getState()._syncArrangementTracksToAudioEngine();
+        }
+      } catch (e) {
+        console.warn('Failed to sync tracks to audio engine:', e);
+      }
     };
-  }, [initializeTransport, cleanupTransport]);
+    syncTracks();
+  }, []);
 
   // ✅ REMOVED: Empty useEffect that was causing excessive re-render logs
   // TimelineController is disabled for ArrangementV2 (uses own clip interaction system)
@@ -296,7 +372,7 @@ export function ArrangementPanelV2() {
     // Clear canvas
     ctx.clearRect(0, 0, viewport.width, viewport.height);
 
-    // Draw grid
+    // ✅ THEME-AWARE: Draw grid with StyleCache for dynamic theme colors
     drawGrid(
       ctx,
       viewport.width - constants.TRACK_HEADER_WIDTH,
@@ -308,9 +384,10 @@ export function ArrangementPanelV2() {
         zoomY: viewport.zoomY
       },
       tracks,
-      snapSize
+      snapSize,
+      styleCacheRef.current // Pass StyleCache for theme-aware colors
     );
-  }, [viewport, tracks, snapSize, setupCanvas, constants, dimensions, lod]);
+  }, [viewport, tracks, snapSize, setupCanvas, constants, dimensions, lod, themeVersion]);
 
   // Clips canvas (middle layer) - render clips
   useEffect(() => {
@@ -390,6 +467,29 @@ export function ArrangementPanelV2() {
 
     ctx.restore();
   }, [viewport, clips, tracks, selectedClipIds, dimensions, setupCanvas, constants, lod, patterns]);
+
+  // ✅ THEME-AWARE: Create StyleCache instance for dynamic theme color reading
+  const styleCacheRef = useRef(null);
+  if (!styleCacheRef.current) {
+    styleCacheRef.current = new StyleCache();
+  }
+
+  // ✅ THEME-AWARE: Listen to theme changes and trigger re-render
+  useEffect(() => {
+    const handleThemeChange = () => {
+      console.log('🎨 ArrangementPanel: Theme changed, invalidating StyleCache and re-rendering');
+      if (styleCacheRef.current) {
+        styleCacheRef.current.invalidate();
+      }
+      // Trigger re-render by updating theme version
+      setThemeVersion(prev => prev + 1);
+    };
+
+    window.addEventListener('themeChanged', handleThemeChange);
+    return () => {
+      window.removeEventListener('themeChanged', handleThemeChange);
+    };
+  }, []);
 
   // Handles canvas (top layer) - interaction overlays
   useEffect(() => {
@@ -993,11 +1093,9 @@ export function ArrangementPanelV2() {
     }
 
     // Draw playhead (unified timeline - Single Source of Truth from PlaybackStore)
-    // ✅ FIX: Use effectiveCurrentStep which only updates in song mode
+    // ✅ PHASE 1: effectiveCurrentStep is already in beats (converted above)
     if (effectiveCurrentStep !== null && effectiveCurrentStep !== undefined) {
-      // effectiveCurrentStep is in steps (16th notes), convert to beats: 1 beat = 4 steps
-      const playheadBeats = effectiveCurrentStep / 4;
-      const playheadX = (playheadBeats * constants.PIXELS_PER_BEAT * viewport.zoomX) - viewport.scrollX;
+      const playheadX = (effectiveCurrentStep * constants.PIXELS_PER_BEAT * viewport.zoomX) - viewport.scrollX;
 
       // Only draw if playhead is visible on screen
       if (playheadX >= 0 && playheadX <= viewport.width) {
@@ -1096,7 +1194,8 @@ export function ArrangementPanelV2() {
       if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
         if (clipboard && clipboard.length > 0) {
           e.preventDefault();
-          paste(cursorPosition);
+          // Get cursor position from effectiveCurrentStep (already in beats)
+          paste(effectiveCurrentStep || 0);
           console.log(`Pasted ${clipboard.length} clip(s)`);
         }
         return;
@@ -1107,7 +1206,7 @@ export function ArrangementPanelV2() {
         if (selectedClipIds.length > 0) {
           e.preventDefault();
           const newClipIds = duplicateClips(selectedClipIds);
-          useArrangementV2Store.getState().setSelection(newClipIds);
+          useArrangementStore.getState().setArrangementSelection(newClipIds);
           console.log(`Duplicated ${selectedClipIds.length} clip(s)`);
         }
         return;
@@ -1116,7 +1215,7 @@ export function ArrangementPanelV2() {
       // Select All - Ctrl+A
       if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
         e.preventDefault();
-        useArrangementV2Store.getState().selectAll();
+        useArrangementStore.getState().selectAllArrangementClips();
         return;
       }
 
@@ -1227,8 +1326,9 @@ export function ArrangementPanelV2() {
         e.preventDefault();
         const label = prompt('Marker name:', 'Marker');
         if (label) {
-          addMarker(cursorPosition || 0, label);
-          console.log(`📍 Added marker "${label}" at ${(cursorPosition || 0).toFixed(2)} beats`);
+          // Get cursor position from effectiveCurrentStep (already in beats)
+          addMarker(effectiveCurrentStep || 0, label);
+          console.log(`📍 Added marker "${label}" at ${(effectiveCurrentStep || 0).toFixed(2)} beats`);
         }
         return;
       }
@@ -1238,7 +1338,7 @@ export function ArrangementPanelV2() {
           e.preventDefault();
           const label = prompt('Loop region name:', 'Loop');
           if (label) {
-            const start = cursorPosition || 0;
+            const start = effectiveCurrentStep || 0;
             const end = start + 8; // Default 8 beats
             addLoopRegion(start, end, label);
             console.log(`🔄 Added loop region "${label}" from ${start.toFixed(2)} to ${end.toFixed(2)} beats`);
@@ -1250,7 +1350,7 @@ export function ArrangementPanelV2() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedClipIds, clipboard, cursorPosition, cancelDrag, cancelResize, cancelFade, cancelGain, copySelection, cutSelection, paste, duplicateClips, removeClips, setActiveTool, viewport, eventHandlers, clips, constants, deletionMode, setDeletionMode, drawStart, drawGhost, setDrawStart, setDrawGhost, splitStart, splitRange, setSplitStart, setSplitRange, addMarker, addLoopRegion]);
+  }, [selectedClipIds, clipboard, effectiveCurrentStep, cancelDrag, cancelResize, cancelFade, cancelGain, copySelection, cutSelection, paste, duplicateClips, removeClips, setActiveTool, viewport, eventHandlers, clips, constants, deletionMode, setDeletionMode, drawStart, drawGhost, setDrawStart, setDrawGhost, splitStart, splitRange, setSplitStart, setSplitRange, addMarker, addLoopRegion]);
 
   // ============================================================================
   // EVENT HANDLERS
@@ -1312,7 +1412,7 @@ export function ArrangementPanelV2() {
         menuClipIds = selectedClipIds;
       } else {
         // Right-clicking on unselected clip - select only this clip
-        useArrangementV2Store.getState().setSelection([clip.id]);
+        useArrangementStore.getState().setArrangementSelection([clip.id]);
         menuClipIds = [clip.id];
       }
 
@@ -1346,7 +1446,7 @@ export function ArrangementPanelV2() {
       if (clip) {
         const newName = prompt('Rename clip:', clip.name);
         if (newName) {
-          useArrangementV2Store.getState().updateClip(clipId, { name: newName });
+          useArrangementStore.getState().updateArrangementClip(clipId, { name: newName });
         }
       }
     }
@@ -1418,21 +1518,30 @@ export function ArrangementPanelV2() {
         // Shift+Click: Single line split (all clips at once)
         if (e.shiftKey) {
           if (splitPreview && splitPreview.clips.length > 0) {
-            const splitTime = splitPreview.x / (constants.PIXELS_PER_BEAT * viewport.zoomX);
+            // ✅ FIX: Calculate split time from canvasX (world coordinates)
+            // Apply snap if enabled for consistent splitting
+            let splitTime = splitPreview.x / (constants.PIXELS_PER_BEAT * viewport.zoomX);
+            if (snapEnabled) {
+              splitTime = Math.round(splitTime / snapSize) * snapSize;
+            }
 
             let successCount = 0;
             let failCount = 0;
 
             splitPreview.clips.forEach(clip => {
+              // ✅ FIX: Validate split point is within clip bounds (strict check)
+              // splitTime must be strictly between clip start and end (not at boundaries)
               if (splitTime > clip.startTime && splitTime < clip.startTime + clip.duration) {
                 const result = splitClip(clip.id, splitTime);
                 if (result) {
                   successCount++;
                 } else {
                   failCount++;
+                  console.warn(`⚠️ Failed to split clip ${clip.id} at ${splitTime.toFixed(2)} beats`);
                 }
               } else {
                 failCount++;
+                console.warn(`⚠️ Split time ${splitTime.toFixed(2)} is outside clip bounds [${clip.startTime.toFixed(2)}, ${(clip.startTime + clip.duration).toFixed(2)})`);
               }
             });
 
@@ -1458,8 +1567,30 @@ export function ArrangementPanelV2() {
             return;
           } else if (splitRange && splitRange.clips.length > 0) {
             // Second click: Execute range split
-            const startTime = splitRange.startX / (constants.PIXELS_PER_BEAT * viewport.zoomX);
-            const endTime = splitRange.endX / (constants.PIXELS_PER_BEAT * viewport.zoomX);
+            // ✅ FIX: Calculate split times from world coordinates (canvasX)
+            let startTime = splitRange.startX / (constants.PIXELS_PER_BEAT * viewport.zoomX);
+            let endTime = splitRange.endX / (constants.PIXELS_PER_BEAT * viewport.zoomX);
+            
+            // ✅ FIX: Ensure endTime > startTime
+            if (endTime <= startTime) {
+              console.warn('⚠️ Range split: endTime must be greater than startTime');
+              setSplitStart(null);
+              setSplitRange(null);
+              return;
+            }
+            
+            // ✅ SNAP: Apply snap if enabled
+            if (snapEnabled) {
+              startTime = Math.round(startTime / snapSize) * snapSize;
+              endTime = Math.round(endTime / snapSize) * snapSize;
+              // Re-check after snap
+              if (endTime <= startTime) {
+                console.warn('⚠️ Range split: endTime <= startTime after snap, aborting');
+                setSplitStart(null);
+                setSplitRange(null);
+                return;
+              }
+            }
 
             let successCount = 0;
             let failCount = 0;
@@ -1469,7 +1600,7 @@ export function ArrangementPanelV2() {
               const clipStart = clip.startTime;
               const clipEnd = clip.startTime + clip.duration;
 
-              // Collect split points within this clip
+              // ✅ FIX: Collect split points within this clip (strict bounds check)
               const splitPoints = [];
               if (startTime > clipStart && startTime < clipEnd) {
                 splitPoints.push(startTime);
@@ -1478,16 +1609,18 @@ export function ArrangementPanelV2() {
                 splitPoints.push(endTime);
               }
 
-              // Sort split points
+              // ✅ FIX: Sort split points (ascending)
               splitPoints.sort((a, b) => a - b);
 
-              // Execute splits from right to left (to maintain clip IDs)
+              // ✅ FIX: Execute splits from right to left (to maintain clip IDs)
+              // Reverse order prevents clip ID changes affecting subsequent splits
               splitPoints.reverse().forEach(splitTime => {
                 const result = splitClip(clip.id, splitTime);
                 if (result) {
                   successCount++;
                 } else {
                   failCount++;
+                  console.warn(`⚠️ Failed to split clip ${clip.id} at ${splitTime.toFixed(2)} beats`);
                 }
               });
             });
@@ -1598,16 +1731,19 @@ export function ArrangementPanelV2() {
           const startX = Math.min(splitStart.x, canvasX);
           const endX = Math.max(splitStart.x, canvasX);
 
-          // Find all clips that intersect with the range
+          // ✅ FIX: Find all clips that intersect with the range
           const affectedClips = clips.filter(clip => {
             const track = tracks.find(t => t.id === clip.trackId);
             if (!track) return false;
 
+            // Calculate clip boundaries in world coordinates (canvasX space)
             const clipStartX = clip.startTime * constants.PIXELS_PER_BEAT * viewport.zoomX;
             const clipEndX = clipStartX + (clip.duration * constants.PIXELS_PER_BEAT * viewport.zoomX);
 
-            // Check if range overlaps with clip
-            return !(endX < clipStartX || startX > clipEndX);
+            // ✅ FIX: Check if range overlaps with clip (intersection detection)
+            // Range overlaps if: endX > clipStartX && startX < clipEndX
+            // This ensures at least one split point can be within the clip
+            return endX > clipStartX && startX < clipEndX;
           });
 
           setSplitRange({
@@ -1620,14 +1756,18 @@ export function ArrangementPanelV2() {
           setSplitPreview(null);
         } else {
           // Single line preview mode
+          // ✅ FIX: Find clips that intersect with the split line
           const affectedClips = clips.filter(clip => {
             const track = tracks.find(t => t.id === clip.trackId);
             if (!track) return false;
 
+            // Calculate clip boundaries in world coordinates (canvasX space)
             const clipStartX = clip.startTime * constants.PIXELS_PER_BEAT * viewport.zoomX;
             const clipEndX = clipStartX + (clip.duration * constants.PIXELS_PER_BEAT * viewport.zoomX);
 
-            return canvasX >= clipStartX && canvasX <= clipEndX;
+            // ✅ FIX: Check if split line intersects clip (strict bounds: not at boundaries)
+            // canvasX must be strictly inside clip bounds for valid split (matches split execution logic)
+            return canvasX > clipStartX && canvasX < clipEndX;
           });
 
           if (affectedClips.length > 0) {
@@ -1851,7 +1991,7 @@ export function ArrangementPanelV2() {
     const name = sample.name || 'Audio Clip';
 
     // Add audio clip
-    const addAudioClip = useArrangementV2Store.getState().addAudioClip;
+    const addAudioClip = useArrangementStore.getState().addArrangementAudioClip;
     addAudioClip(track.id, startTime, audioAssetId, duration, name);
 
     console.log(`🔊 Added audio clip "${name}" at ${startTime.toFixed(2)} beats on track ${track.name} (${duration.toFixed(2)} beats)`);
@@ -1953,7 +2093,7 @@ export function ArrangementPanelV2() {
         }
 
         // Add audio clip
-        const addAudioClip = useArrangementV2Store.getState().addAudioClip;
+        const addAudioClip = useArrangementStore.getState().addArrangementAudioClip;
         addAudioClip(track.id, startTime, assetId, duration, name);
 
         console.log(`✅ Added audio clip: ${name} at ${startTime} beats on track ${track.name} (${duration.toFixed(2)} beats)`);
@@ -2251,18 +2391,20 @@ export function ArrangementPanelV2() {
             />
           ))}
 
-          {/* Add Track Button */}
-          <button
-            className="arr-v2-add-track-btn"
+          {/* Add Track Button - ✅ PHASE 2: Using Button component from library */}
+          <Button
             onClick={() => {
-              const addTrack = useArrangementV2Store.getState().addTrack;
+              const addTrack = useArrangementStore.getState().addArrangementTrack;
               addTrack();
             }}
+            variant="default"
+            size="sm"
+            className="arr-v2-add-track-btn"
             title="Add new track"
           >
             <span className="arr-v2-add-track-icon">+</span>
             <span className="arr-v2-add-track-label">Add Track</span>
-          </button>
+          </Button>
         </div>
 
         {/* Canvas layers */}
@@ -2300,11 +2442,11 @@ export function ArrangementPanelV2() {
           hasClipboard={clipboard && clipboard.length > 0}
           onCopy={copySelection}
           onCut={cutSelection}
-          onPaste={() => paste(cursorPosition)}
+          onPaste={() => paste(effectiveCurrentStep || 0)}
           onDelete={() => removeClips(contextMenu.clipIds)}
           onDuplicate={() => {
             const newClipIds = duplicateClips(contextMenu.clipIds);
-            useArrangementV2Store.getState().setSelection(newClipIds);
+            useArrangementStore.getState().setArrangementSelection(newClipIds);
           }}
           onRename={handleRenameClip}
           onColorChange={(color) => {

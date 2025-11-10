@@ -54,36 +54,29 @@
   letter-spacing: -0.5px;
 }
 
-/* Toolbar Buttons */
+/* ✅ PHASE 2: Toolbar Buttons - Using Button component from library */
 .arr-v2-toolbar-btn {
-  display: flex;
+  display: flex !important;
   align-items: center;
   gap: var(--spacing-2);
-  padding: var(--spacing-2) var(--spacing-3);
-  background: transparent;
-  border: none;
-  border-radius: var(--border-radius-md);
-  color: var(--zenith-text-secondary);
-  font-size: var(--font-size-sm);
-  font-family: var(--font-body);
-  font-weight: 500;
-  cursor: pointer;
-  transition: all var(--transition-speed) ease;
   white-space: nowrap;
+  /* Button component handles styling, but we override for toolbar-specific needs */
 }
 
-.arr-v2-toolbar-btn:hover {
-  background: var(--zenith-bg-secondary);
-  color: var(--zenith-text-primary);
+/* Icon-only buttons need special sizing */
+.arr-v2-toolbar-btn-icon-only {
+  width: 28px !important;
+  height: 28px !important;
+  min-width: 28px !important;
+  min-height: 28px !important;
+  padding: var(--spacing-2) !important;
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
 }
 
-.arr-v2-toolbar-btn.active {
-  background: var(--zenith-bg-tertiary);
-  color: var(--zenith-accent-cool);
-}
-
-.arr-v2-toolbar-btn:active {
-  transform: scale(0.97);
+.arr-v2-toolbar-btn-icon-only .arr-v2-toolbar-btn-label {
+  display: none;
 }
 
 /* Button Icons & Labels */
@@ -121,7 +114,7 @@
   font-family: var(--font-body);
   cursor: pointer;
   outline: none;
-  transition: all var(--transition-speed) ease;
+  transition: all var(--zenith-duration-normal) var(--zenith-ease-in-out);
   min-width: 80px;
 }
 
@@ -154,6 +147,16 @@
   color: var(--zenith-text-secondary);
   font-weight: 500;
   white-space: nowrap;
+}
+
+/* ✅ PHASE 2: Component library integration styles */
+.arr-v2-snap-toggle {
+  margin-right: var(--spacing-1);
+}
+
+.arr-v2-snap-select {
+  min-width: 100px;
+  font-size: var(--font-size-xs);
 }
 
 /* Compact mode for smaller screens */

@@ -2,17 +2,18 @@
  * 🎨 CLIP CONTEXT MENU STYLES
  */
 
+/* ✅ PHASE 2: Design Consistency - Using Zenith theme variables */
 .arr-v2-context-menu {
   position: fixed;
   z-index: 10000;
   min-width: 220px;
-  background: rgba(20, 20, 30, 0.98);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
+  background: var(--zenith-bg-tertiary);
+  border: 1px solid var(--zenith-border-medium);
+  border-radius: var(--border-radius-lg);
   backdrop-filter: blur(20px);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
-  padding: 6px;
-  animation: arr-v2-context-menu-appear 0.15s ease-out;
+  box-shadow: var(--zenith-shadow-lg);
+  padding: var(--spacing-1);
+  animation: arr-v2-context-menu-appear var(--zenith-duration-fast) var(--zenith-ease-out);
 }
 
 @keyframes arr-v2-context-menu-appear {
@@ -34,35 +35,36 @@
 }
 
 .arr-v2-context-menu-section:not(:last-child) {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  margin-bottom: 4px;
-  padding-bottom: 6px;
+  border-bottom: 1px solid var(--zenith-border-medium);
+  margin-bottom: var(--spacing-1);
+  padding-bottom: var(--spacing-1);
 }
 
+/* ✅ PHASE 2: Design Consistency - Using Zenith theme variables */
 .arr-v2-context-menu-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
+  gap: var(--spacing-2);
+  padding: var(--spacing-2) var(--spacing-3);
   background: transparent;
   border: none;
-  border-radius: 6px;
-  color: rgba(255, 255, 255, 0.9);
-  font-size: 13px;
-  font-family: 'Inter', system-ui, sans-serif;
+  border-radius: var(--border-radius-md);
+  color: var(--zenith-text-primary);
+  font-size: var(--font-size-sm);
+  font-family: var(--font-body);
   cursor: pointer;
-  transition: all 0.12s ease;
+  transition: all var(--zenith-duration-fast) var(--zenith-ease-in-out);
   text-align: left;
   white-space: nowrap;
 }
 
 .arr-v2-context-menu-item:hover:not(:disabled) {
-  background: rgba(139, 92, 246, 0.2);
-  color: rgba(255, 255, 255, 1);
+  background: var(--zenith-bg-secondary);
+  color: var(--zenith-accent-cool);
 }
 
 .arr-v2-context-menu-item:active:not(:disabled) {
-  background: rgba(139, 92, 246, 0.3);
+  background: var(--zenith-bg-tertiary);
   transform: scale(0.98);
 }
 
@@ -83,16 +85,16 @@
 }
 
 .arr-v2-context-menu-shortcut {
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.4);
-  font-family: 'Monaco', 'Menlo', monospace;
+  font-size: var(--font-size-xs);
+  color: var(--zenith-text-tertiary);
+  font-family: var(--font-mono);
   flex-shrink: 0;
 }
 
 .arr-v2-context-menu-info {
-  padding: 8px 12px;
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.5);
+  padding: var(--spacing-2) var(--spacing-3);
+  font-size: var(--font-size-xs);
+  color: var(--zenith-text-secondary);
   text-align: center;
   font-style: italic;
 }
@@ -100,25 +102,25 @@
 .arr-v2-color-palette {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 6px;
-  padding: 8px 12px;
+  gap: var(--spacing-1);
+  padding: var(--spacing-2) var(--spacing-3);
 }
 
 .arr-v2-color-swatch {
   width: 32px;
   height: 32px;
-  border: 2px solid rgba(255, 255, 255, 0.2);
-  border-radius: 6px;
+  border: 2px solid var(--zenith-border-medium);
+  border-radius: var(--border-radius-md);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all var(--zenith-duration-normal) var(--zenith-ease-in-out);
   background: none;
   padding: 0;
 }
 
 .arr-v2-color-swatch:hover {
   transform: scale(1.1);
-  border-color: rgba(255, 255, 255, 0.6);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  border-color: var(--zenith-border-strong);
+  box-shadow: var(--zenith-shadow-md);
 }
 
 .arr-v2-color-swatch:active {

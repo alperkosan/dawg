@@ -330,3 +330,115 @@
 .instrument-picker__presets::-webkit-scrollbar-thumb:hover {
   background: #444;
 }
+
+/* AI Instrument Section */
+.instrument-picker__ai-section {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 24px;
+}
+
+.instrument-picker__ai-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.instrument-picker__ai-icon {
+  font-size: 48px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.instrument-picker__ai-info {
+  flex: 1;
+}
+
+.instrument-picker__ai-info h3 {
+  margin: 0 0 8px 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.instrument-picker__ai-info p {
+  margin: 0;
+  font-size: 14px;
+  color: #999;
+  line-height: 1.5;
+}
+
+.instrument-picker__ai-features {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.instrument-picker__ai-feature {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+
+.instrument-picker__ai-feature:hover {
+  border-color: #4a9eff;
+  background: rgba(74, 158, 255, 0.05);
+}
+
+.instrument-picker__ai-feature-icon {
+  font-size: 24px;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.instrument-picker__ai-feature strong {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  margin-bottom: 4px;
+}
+
+.instrument-picker__ai-feature p {
+  margin: 0;
+  font-size: 12px;
+  color: #999;
+  line-height: 1.4;
+}
+
+.instrument-picker__ai-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 14px 24px;
+  background: linear-gradient(135deg, #6B8EBF 0%, #4a9eff 100%);
+  border: none;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 2px 8px rgba(74, 158, 255, 0.3);
+}
+
+.instrument-picker__ai-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(74, 158, 255, 0.4);
+  background: linear-gradient(135deg, #7a9ecf 0%, #5aafff 100%);
+}
+
+.instrument-picker__ai-button:active {
+  transform: translateY(0);
+}
+
+.instrument-picker__ai-button span {
+  font-size: 18px;
+}

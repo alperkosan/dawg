@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Play, Pause, Square, Wind, Repeat } from 'lucide-react';
+import { Play, Pause, Square, Wind, Repeat, Maximize2, ChevronRight, X } from 'lucide-react';
 import { Knob } from '@/components/controls';
 import { CPUMonitor } from '@/components/monitors/CPUMonitor';
 import { PLAYBACK_MODES, PLAYBACK_STATES } from '@/config/constants';
@@ -36,12 +36,14 @@ function TopToolbar() {
   const bpm = usePlaybackStore(state => state.bpm);
   const currentPosition = usePlaybackStore(state => state.currentStep);
   const loopEnabled = usePlaybackStore(state => state.loopEnabled);
+  const followPlayheadMode = usePlaybackStore(state => state.followPlayheadMode);
 
   const setPlaybackMode = usePlaybackStore(state => state.setPlaybackMode);
   const setBPM = usePlaybackStore(state => state.handleBpmChange);
   const setLoopEnabled = usePlaybackStore(state => state.setLoopEnabled);
   const togglePlayPause = usePlaybackStore(state => state.togglePlayPause);
   const handleStop = usePlaybackStore(state => state.handleStop);
+  const cycleFollowPlayheadMode = usePlaybackStore(state => state.cycleFollowPlayheadMode);
 
   const isReady = true; // Store is always ready
 
@@ -97,6 +99,15 @@ function TopToolbar() {
             className={`top-toolbar__transport-btn transport-btn ${loopEnabled ? 'transport-btn--active' : ''}`}
         >
           <Repeat size={18} />
+        </button>
+        <button
+            title={`Follow Playhead: ${followPlayheadMode}\nClick to cycle: CONTINUOUS → PAGE → OFF`}
+            onClick={cycleFollowPlayheadMode}
+            className={`top-toolbar__transport-btn transport-btn ${followPlayheadMode !== 'OFF' ? 'transport-btn--active' : ''}`}
+        >
+          {followPlayheadMode === 'CONTINUOUS' && <Maximize2 size={18} />}
+          {followPlayheadMode === 'PAGE' && <ChevronRight size={18} />}
+          {followPlayheadMode === 'OFF' && <X size={18} />}
         </button>
         <div className="top-toolbar__mode-toggle">
             <ModeButton

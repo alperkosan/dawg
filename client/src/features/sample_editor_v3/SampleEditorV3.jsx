@@ -2,7 +2,8 @@ import React from 'react';
 import { useInstrumentsStore } from '@/store/useInstrumentsStore';
 import { usePanelsStore } from '@/store/usePanelsStore';
 import { useMixerStore } from '@/store/useMixerStore';
-import { useArrangementV2Store } from '@/store/useArrangementV2Store';
+// ✅ PHASE 1: Store Consolidation - Use unified store
+import { useArrangementStore } from '@/store/useArrangementStore';
 import { audioAssetManager } from '@/lib/audio/AudioAssetManager';
 
 import { WaveformWorkbench } from './components/WaveformWorkbench';
@@ -13,9 +14,10 @@ import './SampleEditorV3.css';
 // AudioClipControls: Mixer routing for audio clips with shared/unique editing
 const AudioClipControls = ({ editorClipData }) => {
   const mixerTracks = useMixerStore(state => state.mixerTracks);
-  const updateClip = useArrangementV2Store(state => state.updateClip);
-  const tracks = useArrangementV2Store(state => state.tracks);
-  const clips = useArrangementV2Store(state => state.clips);
+  // ✅ PHASE 1: Store Consolidation - Use unified store
+  const updateClip = useArrangementStore(state => state.updateArrangementClip);
+  const tracks = useArrangementStore(state => state.arrangementTracks);
+  const clips = useArrangementStore(state => state.arrangementClips);
   const instrumentBuffer = usePanelsStore(state => state.editorBuffer);
 
   // Get live clip data from store (reactive)

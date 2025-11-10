@@ -1,5 +1,17 @@
 /**
  * 🎵 ARRANGEMENT V2 STORE
+ * 
+ * ⚠️ DEPRECATED - This store is deprecated and will be removed in a future version.
+ * 
+ * All functionality has been migrated to useArrangementStore (unified store).
+ * 
+ * Migration guide:
+ * - Use `useArrangementStore` instead of `useArrangementV2Store`
+ * - Arrangement tracks: `useArrangementStore(state => state.arrangementTracks)`
+ * - Arrangement clips: `useArrangementStore(state => state.arrangementClips)`
+ * - Actions: Use `addArrangementTrack`, `addArrangementClip`, etc. from `useArrangementStore`
+ * 
+ * See: client/src/store/useArrangementStore.js for the unified store.
  *
  * Clean, modern state management for Arrangement Panel V2
  * - Tracks and clips management

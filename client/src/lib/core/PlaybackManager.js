@@ -5,12 +5,13 @@ import { NativeTimeUtils } from '../utils/NativeTimeUtils.js';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
 import { useArrangementStore } from '@/store/useArrangementStore';
 import { useArrangementWorkspaceStore } from '@/store/useArrangementWorkspaceStore';
-import { useArrangementV2Store } from '@/store/useArrangementV2Store';
+// ✅ PHASE 1: Store Consolidation - useArrangementV2Store removed, use useArrangementStore instead
 import EventBus from './EventBus.js';
 import { PositionTracker } from './PositionTracker.js';
 import { audioAssetManager } from '@/lib/audio/AudioAssetManager';
 import { idleDetector } from '../utils/IdleDetector.js';
 import { AutomationLane } from '@/features/piano_roll_v7/types/AutomationLane';
+import { getAutomationManager } from '@/lib/automation/AutomationManager';
 
 // ✅ NEW: Modular scheduler system
 import {
@@ -134,6 +135,9 @@ export class PlaybackManager {
 
         this.transport.on('stop', (data) => {
 
+            // ✅ PHASE 4: Stop all real-time automations
+            this.automationScheduler.stopAllRealtimeAutomations();
+
             // ✅ FIX: Reset position tracker and emit accurate position
             this.positionTracker.clearCache();
             this.currentPosition = this.loopStart;
@@ -151,6 +155,9 @@ export class PlaybackManager {
         });
 
         this.transport.on('pause', (data) => {
+
+            // ✅ PHASE 4: Stop all real-time automations on pause
+            this.automationScheduler.stopAllRealtimeAutomations();
 
             // ✅ FIX: Get accurate position from PositionTracker and preserve it
             const position = this.positionTracker.getDisplayPosition();
@@ -511,15 +518,15 @@ export class PlaybackManager {
     }
 
     _calculateSongLoop() {
-        // ✅ Try ArrangementV2Store first (new system), fallback to old system
-        const v2Store = useArrangementV2Store.getState();
-        const v2Clips = v2Store.clips || [];
-
+        // ✅ PHASE 1: Store Consolidation - Use unified store
+        const arrangementStore = useArrangementStore.getState();
+        // Try arrangement clips first (new system), fallback to pattern clips (old system)
+        const arrangementClips = arrangementStore.arrangementClips || [];
+        
         let clips;
-        if (v2Clips.length > 0) {
-            clips = v2Clips;
+        if (arrangementClips.length > 0) {
+            clips = arrangementClips;
         } else {
-            const arrangementStore = useArrangementStore.getState();
             clips = arrangementStore.clips || [];
         }
 
@@ -874,24 +881,42 @@ export class PlaybackManager {
             this._scheduleInstrumentNotes(instrument, notes, instrumentId, baseTime);
         });
 
+        // ✅ PHASE 4: Start real-time automation for all instruments with automation lanes
+        try {
+            const automationManager = getAutomationManager();
+
+            Object.keys(activePattern.data).forEach((instrumentId) => {
+                const lanes = automationManager.getLanes(arrangementStore.activePatternId, instrumentId);
+                if (lanes && lanes.length > 0) {
+                    this.automationScheduler.startRealtimeAutomation(
+                        instrumentId,
+                        arrangementStore.activePatternId,
+                        lanes
+                    );
+                }
+            });
+        } catch (error) {
+            console.warn('⚠️ Failed to start real-time automation:', error);
+        }
+
         // ✅ Return metrics for performance tracking
         return { totalNotes, instrumentCount };
     }
 
     _scheduleSongContent(baseTime) {
 
-        // ✅ Try ArrangementV2Store first (new system), fallback to workspace store (old system)
-        const v2Store = useArrangementV2Store.getState();
-        const v2Clips = v2Store.clips || [];
-        const v2Tracks = v2Store.tracks || [];
+        // ✅ PHASE 1: Store Consolidation - Use unified store
+        const arrangementStore = useArrangementStore.getState();
+        // Try arrangement clips/tracks first (new system), fallback to pattern clips (old system)
+        const arrangementClips = arrangementStore.arrangementClips || [];
+        const arrangementTracks = arrangementStore.arrangementTracks || [];
 
         let clips, tracks, patterns;
 
-        if (v2Clips.length > 0 || v2Tracks.length > 0) {
-            // Use ArrangementV2 (new system)
-            clips = v2Clips;
-            tracks = v2Tracks;
-            const arrangementStore = useArrangementStore.getState();
+        if (arrangementClips.length > 0 || arrangementTracks.length > 0) {
+            // Use Arrangement (new system)
+            clips = arrangementClips;
+            tracks = arrangementTracks;
             patterns = arrangementStore.patterns || {};
         } else {
             // Fallback to workspace store (old system)
@@ -905,7 +930,6 @@ export class PlaybackManager {
 
             clips = arrangement.clips || [];
             tracks = arrangement.tracks || [];
-            const arrangementStore = useArrangementStore.getState();
             patterns = arrangementStore.patterns || {};
         }
 
@@ -965,16 +989,24 @@ export class PlaybackManager {
                     }
 
 
-                    // Filter and offset notes by clip start time and duration
+                    // ✅ FIX: For split pattern clips, adjust note timing based on patternOffset
+                    // patternOffset is the number of steps to skip from the pattern start (for right clip after split)
+                    const patternOffset = clip.patternOffset || 0; // In steps (16th notes)
+                    
+                    // Filter and offset notes by clip start time, duration, and pattern offset
                     const offsetNotes = notes
                         .filter(note => {
-                            // Only include notes within clip duration
                             const noteTime = note.time || 0;
-                            return noteTime < clipDurationSteps;
+                            // Only include notes that:
+                            // 1. Are at or after the pattern offset (for split clips)
+                            // 2. Are within the clip duration (from pattern offset)
+                            return noteTime >= patternOffset && noteTime < (patternOffset + clipDurationSteps);
                         })
                         .map(note => ({
                             ...note,
-                            time: (note.time || 0) + clipStartStep
+                            // Adjust note time: subtract patternOffset (so notes start from 0 in the right clip)
+                            // then add clipStartStep (to position in arrangement)
+                            time: (note.time || 0) - patternOffset + clipStartStep
                         }));
 
 
@@ -1020,14 +1052,25 @@ export class PlaybackManager {
                     const clipStartStep = Math.floor((clip.startTime || 0) * 4);
                     const clipDurationSteps = (clip.duration || 4) * 4;
 
+                    // ✅ FIX: For split pattern clips, adjust note timing based on patternOffset
+                    const patternOffset = clip.patternOffset || 0; // In steps (16th notes)
+                    
                     Object.entries(pattern.data).forEach(([instrumentId, notes]) => {
                         if (!Array.isArray(notes) || notes.length === 0) return;
                         const instrument = this.audioEngine.instruments.get(instrumentId);
                         if (!instrument) return;
 
                         const offsetNotes = notes
-                            .filter(note => (note.time || 0) < clipDurationSteps)
-                            .map(note => ({ ...note, time: (note.time || 0) + clipStartStep }));
+                            .filter(note => {
+                                const noteTime = note.time || 0;
+                                // Only include notes that are at or after pattern offset and within clip duration
+                                return noteTime >= patternOffset && noteTime < (patternOffset + clipDurationSteps);
+                            })
+                            .map(note => ({
+                                ...note,
+                                // Adjust note time: subtract patternOffset then add clipStartStep
+                                time: (note.time || 0) - patternOffset + clipStartStep
+                            }));
 
                         if (offsetNotes.length > 0) {
                             this._scheduleInstrumentNotes(instrument, offsetNotes, instrumentId, baseTime, clip.id);
@@ -1424,19 +1467,34 @@ export class PlaybackManager {
                 }
             }
             
-            // ✅ PHASE 2: Get CC lanes data from pattern store and apply to note
+            // ✅ PHASE 4: Get CC lanes data from AutomationManager (per instrument)
             try {
-                const { patterns, activePatternId } = useArrangementStore.getState();
+                const automationManager = getAutomationManager();
+                const { activePatternId } = useArrangementStore.getState();
                 const patternId = activePatternId || this.activePatternId;
-                const pattern = patternId ? patterns[patternId] : null;
-                
-                if (pattern && pattern.ccLanes && Array.isArray(pattern.ccLanes)) {
-                    pattern.ccLanes.forEach(laneData => {
-                        const lane = AutomationLane.fromJSON(laneData);
+
+                // Get lanes for this specific pattern + instrument combination
+                const lanes = automationManager.getLanes(patternId, instrumentId);
+
+                if (lanes && lanes.length > 0) {
+                    lanes.forEach(lane => {
                         const ccValue = lane.getValueAtTime(noteTimeInSteps, 'linear');
-                        
+
                         if (ccValue !== null) {
-                            if (lane.ccNumber === 1) {
+                            // ✅ MIXING CONTROLS
+                            if (lane.ccNumber === 7) {
+                                // Volume (CC7) - normalize from 0-127 to 0-1
+                                extendedParams.volume = ccValue / 127;
+                            } else if (lane.ccNumber === 10) {
+                                // Pan (CC10) - normalize from 0-127 to -1 to 1
+                                extendedParams.pan = (ccValue - 64) / 64;
+                            } else if (lane.ccNumber === 11) {
+                                // Expression (CC11) - normalize from 0-127 to 0-1
+                                extendedParams.expression = ccValue / 127;
+                            }
+
+                            // ✅ MODULATION
+                            else if (lane.ccNumber === 1) {
                                 // Mod Wheel (CC1) - override note's modWheel if CC lane has value
                                 extendedParams.modWheel = ccValue;
                             } else if (lane.ccNumber === 'pitchBend') {
@@ -1460,11 +1518,50 @@ export class PlaybackManager {
                                 // Aftertouch - override note's aftertouch if CC lane has value
                                 extendedParams.aftertouch = ccValue;
                             }
+
+                            // ✅ PERFORMANCE CONTROLS
+                            else if (lane.ccNumber === 64) {
+                                // Sustain Pedal (CC64) - boolean on/off (>63 = on)
+                                extendedParams.sustain = ccValue > 63;
+                            } else if (lane.ccNumber === 5) {
+                                // Portamento Time (CC5) - normalize from 0-127 to 0-2 seconds
+                                extendedParams.portamento = (ccValue / 127) * 2;
+                            }
+
+                            // ✅ FILTER CONTROLS (stored for instrument processing)
+                            else if (lane.ccNumber === 74) {
+                                // Filter Cutoff (CC74)
+                                extendedParams.filterCutoff = ccValue;
+                            } else if (lane.ccNumber === 71) {
+                                // Filter Resonance (CC71)
+                                extendedParams.filterResonance = ccValue;
+                            }
+
+                            // ✅ ENVELOPE CONTROLS (stored for instrument processing)
+                            else if (lane.ccNumber === 73) {
+                                // Attack Time (CC73) - normalize from 0-127 to 0-2 seconds
+                                extendedParams.attackTime = (ccValue / 127) * 2;
+                            } else if (lane.ccNumber === 72) {
+                                // Release Time (CC72) - normalize from 0-127 to 0-5 seconds
+                                extendedParams.releaseTime = (ccValue / 127) * 5;
+                            }
+
+                            // ✅ EFFECTS CONTROLS (stored for instrument processing)
+                            else if (lane.ccNumber === 91) {
+                                // Reverb Send (CC91) - normalize from 0-127 to 0-1
+                                extendedParams.reverbSend = ccValue / 127;
+                            } else if (lane.ccNumber === 93) {
+                                // Chorus Send (CC93) - normalize from 0-127 to 0-1
+                                extendedParams.chorusSend = ccValue / 127;
+                            } else if (lane.ccNumber === 94) {
+                                // Delay Send (CC94) - normalize from 0-127 to 0-1
+                                extendedParams.delaySend = ccValue / 127;
+                            }
                         }
                     });
                 }
             } catch (error) {
-                console.warn('⚠️ Failed to load CC lanes for note:', error);
+                console.warn('⚠️ Failed to load automation lanes for note:', error);
             }
             
             const hasExtendedParams = Object.keys(extendedParams).length > 0;

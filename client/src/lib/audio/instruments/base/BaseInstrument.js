@@ -90,12 +90,25 @@ export class BaseInstrument {
     triggerNote(pitch, velocity = 1, time = null, duration = null, extendedParams = null) {
         const midiNote = this.pitchToMidi(pitch);
 
+        // ✅ PHASE 4: Apply volume and expression automation to velocity
+        let finalVelocity = velocity;
+
+        // Volume (CC7) - master volume control
+        if (extendedParams?.volume !== undefined) {
+            finalVelocity = finalVelocity * extendedParams.volume;
+        }
+
+        // Expression (CC11) - dynamic volume control (like breath control)
+        if (extendedParams?.expression !== undefined) {
+            finalVelocity = finalVelocity * extendedParams.expression;
+        }
+
         // 🔧 FIX: Auto-detect velocity format (MIDI 0-127 or normalized 0-1)
         // If velocity > 1, assume it's already in MIDI format (0-127)
         // Otherwise, convert normalized (0-1) to MIDI (0-127)
-        const midiVelocity = velocity > 1
-            ? Math.round(Math.max(1, Math.min(127, velocity)))  // Already MIDI format
-            : Math.round(velocity * 127);  // Convert normalized to MIDI
+        const midiVelocity = finalVelocity > 1
+            ? Math.round(Math.max(1, Math.min(127, finalVelocity)))  // Already MIDI format
+            : Math.round(finalVelocity * 127);  // Convert normalized to MIDI
 
         const startTime = time !== null ? time : this.audioContext.currentTime;
 
@@ -104,6 +117,8 @@ export class BaseInstrument {
             pitch,
             midiNote,
             velocity: velocity.toFixed(2),
+            volume: extendedParams?.volume?.toFixed(2) || 'none',
+            finalVelocity: finalVelocity.toFixed(2),
             midiVelocity,
             duration: duration ? duration.toFixed(3) + 's' : 'null',
             startTime: startTime.toFixed(3) + 's',
@@ -211,23 +226,100 @@ export class BaseInstrument {
     }
 
     /**
+     * Apply automation parameters to instrument
+     * Called during playback to apply real-time automation
+     *
+     * @param {Object} params - Automation parameters
+     * @param {number} params.volume - Volume (0-1, optional)
+     * @param {number} params.pan - Pan (-1 to 1, optional)
+     * @param {number} params.expression - Expression (0-1, optional)
+     * @param {number} params.filterCutoff - Filter cutoff (0-127, optional)
+     * @param {number} params.filterResonance - Filter resonance (0-127, optional)
+     * @param {number} time - AudioContext time to apply (optional)
+     */
+    applyAutomation(params, time = null) {
+        const now = time !== null ? time : this.audioContext.currentTime;
+
+        // Volume automation
+        if (params.volume !== undefined) {
+            this.setVolume(params.volume, now);
+        }
+
+        // Expression automation (similar to volume but separate)
+        if (params.expression !== undefined) {
+            this.setExpression(params.expression, now);
+        }
+
+        // Pan automation
+        if (params.pan !== undefined) {
+            this.setPan(params.pan, now);
+        }
+
+        // Filter automation
+        if (params.filterCutoff !== undefined) {
+            this.setFilterCutoff(params.filterCutoff, now);
+        }
+
+        if (params.filterResonance !== undefined) {
+            this.setFilterResonance(params.filterResonance, now);
+        }
+
+        // Other automation can be added here
+    }
+
+    /**
      * Set instrument volume
      *
      * @param {number} volume - Volume (0-1)
+     * @param {number} time - AudioContext time (optional)
      */
-    setVolume(volume) {
+    setVolume(volume, time = null) {
         // Override in subclass if volume control is supported
-        console.warn(`${this.name}: setVolume() not implemented`);
+        // Default: no-op
+    }
+
+    /**
+     * Set instrument expression (dynamic volume)
+     *
+     * @param {number} expression - Expression (0-1)
+     * @param {number} time - AudioContext time (optional)
+     */
+    setExpression(expression, time = null) {
+        // Override in subclass if expression control is supported
+        // Default: no-op
     }
 
     /**
      * Set instrument pan
      *
      * @param {number} pan - Pan (-1 to 1)
+     * @param {number} time - AudioContext time (optional)
      */
-    setPan(pan) {
+    setPan(pan, time = null) {
         // Override in subclass if pan control is supported
-        console.warn(`${this.name}: setPan() not implemented`);
+        // Default: no-op
+    }
+
+    /**
+     * Set filter cutoff
+     *
+     * @param {number} cutoff - Cutoff (0-127)
+     * @param {number} time - AudioContext time (optional)
+     */
+    setFilterCutoff(cutoff, time = null) {
+        // Override in subclass if filter control is supported
+        // Default: no-op
+    }
+
+    /**
+     * Set filter resonance
+     *
+     * @param {number} resonance - Resonance (0-127)
+     * @param {number} time - AudioContext time (optional)
+     */
+    setFilterResonance(resonance, time = null) {
+        // Override in subclass if filter control is supported
+        // Default: no-op
     }
 
     // =================== GETTERS ===================

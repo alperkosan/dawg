@@ -8,6 +8,7 @@ import {
   VA_SYNTH_PRESETS,
   createInstrumentFromPreset
 } from '@/config/instrumentCategories';
+import { usePanelsStore } from '@/store/usePanelsStore';
 import './InstrumentPicker.css';
 
 /**
@@ -45,6 +46,9 @@ export default function InstrumentPicker({ onSelectInstrument, onClose }) {
     };
   }, []);
 
+  // Get togglePanel function from store
+  const togglePanel = usePanelsStore(state => state.togglePanel);
+
   // Get presets for selected category
   const categoryPresets = useMemo(() => {
     switch (selectedCategory) {
@@ -54,6 +58,9 @@ export default function InstrumentPicker({ onSelectInstrument, onClose }) {
         return MULTI_SAMPLER_PRESETS;
       case INSTRUMENT_CATEGORIES.VA_SYNTH:
         return VA_SYNTH_PRESETS;
+      case INSTRUMENT_CATEGORIES.AI_INSTRUMENT:
+        // AI instruments don't have presets - return empty
+        return {};
       default:
         return {};
     }
@@ -252,7 +259,51 @@ export default function InstrumentPicker({ onSelectInstrument, onClose }) {
 
         {/* Preset Groups */}
         <div className="instrument-picker__presets">
-          {Object.keys(filteredPresets).length === 0 ? (
+          {/* AI Instrument Category - Special handling */}
+          {selectedCategory === INSTRUMENT_CATEGORIES.AI_INSTRUMENT ? (
+            <div className="instrument-picker__ai-section">
+              <div className="instrument-picker__ai-header">
+                <span className="instrument-picker__ai-icon">✨</span>
+                <div className="instrument-picker__ai-info">
+                  <h3>AI Instrument Generator</h3>
+                  <p>Create custom instruments using AI text-to-audio generation</p>
+                </div>
+              </div>
+              <div className="instrument-picker__ai-features">
+                <div className="instrument-picker__ai-feature">
+                  <span className="instrument-picker__ai-feature-icon">🎵</span>
+                  <div>
+                    <strong>Text-to-Audio</strong>
+                    <p>Describe your sound and AI will generate it</p>
+                  </div>
+                </div>
+                <div className="instrument-picker__ai-feature">
+                  <span className="instrument-picker__ai-feature-icon">🎯</span>
+                  <div>
+                    <strong>Smart Suggestions</strong>
+                    <p>Get AI-powered recommendations based on your project</p>
+                  </div>
+                </div>
+                <div className="instrument-picker__ai-feature">
+                  <span className="instrument-picker__ai-feature-icon">📚</span>
+                  <div>
+                    <strong>Presets</strong>
+                    <p>Browse curated AI instrument presets</p>
+                  </div>
+                </div>
+              </div>
+              <button
+                className="instrument-picker__ai-button"
+                onClick={() => {
+                  onClose();
+                  togglePanel('ai-instrument');
+                }}
+              >
+                <span>✨</span>
+                Open AI Instrument Panel
+              </button>
+            </div>
+          ) : Object.keys(filteredPresets).length === 0 ? (
             <div className="instrument-picker__empty">
               <p>No instruments found matching "{searchQuery}"</p>
             </div>

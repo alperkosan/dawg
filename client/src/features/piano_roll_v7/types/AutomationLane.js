@@ -22,6 +22,7 @@ export class AutomationLane {
             throw new Error(`Invalid CC number: ${ccNumber}`);
         }
 
+        this.id = `lane_${ccNumber}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         this.ccNumber = ccNumber;
         this.name = name || AutomationLane.getDefaultName(ccNumber);
         this.ccData = ccData || new CCData(ccNumber);
@@ -169,6 +170,7 @@ export class AutomationLane {
      */
     clone() {
         const lane = new AutomationLane(this.ccNumber, this.name, this.ccData.clone());
+        lane.id = this.id; // Preserve ID on clone
         lane.visible = this.visible;
         lane.height = this.height;
         lane.color = this.color;
@@ -181,6 +183,7 @@ export class AutomationLane {
      */
     toJSON() {
         return {
+            id: this.id,
             ccNumber: this.ccNumber,
             name: this.name,
             ccData: this.ccData.toJSON(),
@@ -201,6 +204,7 @@ export class AutomationLane {
             json.name,
             CCData.fromJSON(json.ccData)
         );
+        lane.id = json.id || lane.id; // Use saved ID or keep generated one
         lane.visible = json.visible !== undefined ? json.visible : true;
         lane.height = json.height || 60;
         lane.color = json.color || AutomationLane.getDefaultColor(json.ccNumber);

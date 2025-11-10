@@ -66,8 +66,9 @@ export class AudioClipScheduler {
         const clipDurationBeats = clip.duration || (audioBuffer.duration * (this.transport.bpm / 60));
         const clipDurationSeconds = clipDurationBeats * (60 / this.transport.bpm); // beats to seconds
 
-        // Get clip offset (where to start playing in the buffer)
-        const clipOffset = clip.offset || 0; // in seconds
+        // ✅ FIX: Get clip offset (where to start playing in the buffer)
+        // Support both 'offset' and 'sampleOffset' properties (sampleOffset is used for split clips)
+        const clipOffset = clip.sampleOffset || clip.offset || 0; // in seconds
 
         // Schedule audio playback
         this.transport.scheduleEvent(

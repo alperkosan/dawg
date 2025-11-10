@@ -9,6 +9,7 @@ import { ForgeSynthUI } from '@/features/instrument_editor/ForgeSynthUI';
 import AudioQualitySettings from '@/components/AudioQualitySettings';
 import AudioQualitySettings_v2 from '@/components/AudioQualitySettings_v2';
 import FileBrowserPanel from '@/features/file_browser/FileBrowserPanel';
+import { AIInstrumentPanel } from '@/features/ai_instrument/AIInstrumentPanel';
 
 export const panelRegistry = {
   'channel-rack': ChannelRack,
@@ -22,6 +23,7 @@ export const panelRegistry = {
   'instrument-editor-forgesynth': ForgeSynthUI,
   'audio-quality-settings': AudioQualitySettings_v2, // ✅ V2 with modern design
   'audio-quality-settings-v1': AudioQualitySettings, // Legacy version
+  'ai-instrument': AIInstrumentPanel, // ✨ AI Instrument Generator
 };
 
 export const panelDefinitions = {
@@ -89,5 +91,11 @@ export const panelDefinitions = {
     initialSize: { width: 900, height: 700 },
     initialPos: { x: 100, y: 50 },
     minSize: { width: 700, height: 500 },
+  },
+  'ai-instrument': {
+    title: 'AI Instrument Generator ✨',
+    initialSize: { width: 600, height: 800 },
+    initialPos: { x: 120, y: 140 },
+    minSize: { width: 500, height: 600 },
   },
 };

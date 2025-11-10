@@ -6,9 +6,15 @@
  * - Snap settings
  * - Zoom controls
  * - Transport controls
+ * 
+ * ✅ PHASE 2: Design Consistency - Using component library
  */
 
 import React from 'react';
+import { Button } from '@/components/controls/base/Button';
+import { Select } from '@/components/controls/base/Select';
+import { Toggle } from '@/components/controls/base/Toggle';
+import { MousePointer, Scissors, Trash2, Pencil, ZoomIn, ZoomOut, RotateCcw, Maximize2 } from 'lucide-react';
 import './ArrangementToolbar.css';
 
 export function ArrangementToolbar({
@@ -23,14 +29,22 @@ export function ArrangementToolbar({
   onZoomChange,
   onFitToView
 }) {
+  // ✅ PHASE 2: Design Consistency - Tool definitions with icons
   const tools = [
-    { id: 'select', label: 'Select', icon: '⬚', shortcut: 'V' },
-    { id: 'delete', label: 'Delete', icon: '🗑️', shortcut: 'D', tooltip: 'Hold right-click to delete' },
-    { id: 'split', label: 'Split', icon: '✂️', shortcut: 'S' },
-    { id: 'draw', label: 'Draw', icon: '✏️', shortcut: 'P' }
+    { id: 'select', label: 'Select', icon: MousePointer, shortcut: 'V' },
+    { id: 'delete', label: 'Delete', icon: Trash2, shortcut: 'D', tooltip: 'Hold right-click to delete' },
+    { id: 'split', label: 'Split', icon: Scissors, shortcut: 'S' },
+    { id: 'draw', label: 'Draw', icon: Pencil, shortcut: 'P' }
   ];
 
-  const snapSizes = [0.25, 0.5, 1, 2, 4];
+  // Snap size options
+  const snapSizeOptions = [
+    { value: 0.25, label: '1/4 beat' },
+    { value: 0.5, label: '1/2 beat' },
+    { value: 1, label: '1 beat' },
+    { value: 2, label: '2 beats' },
+    { value: 4, label: '4 beats' }
+  ];
 
   return (
     <div className="arr-v2-toolbar">
@@ -40,18 +54,25 @@ export function ArrangementToolbar({
           <span className="arr-v2-brand-text">Arrangement</span>
         </div>
 
+        {/* ✅ PHASE 2: Tool buttons - using Button component from library */}
         <div className="arr-v2-toolbar-group">
-          {tools.map(tool => (
-            <button
-              key={tool.id}
-              className={`arr-v2-toolbar-btn ${activeTool === tool.id ? 'active' : ''}`}
-              onClick={() => onToolChange(tool.id)}
-              title={`${tool.label} (${tool.shortcut})${tool.tooltip ? ` - ${tool.tooltip}` : ''}`}
-            >
-              <span className="arr-v2-toolbar-btn-icon">{tool.icon}</span>
-              <span className="arr-v2-toolbar-btn-label">{tool.label}</span>
-            </button>
-          ))}
+          {tools.map(tool => {
+            const Icon = tool.icon;
+            return (
+              <Button
+                key={tool.id}
+                active={activeTool === tool.id}
+                onClick={() => onToolChange(tool.id)}
+                variant="default"
+                size="sm"
+                className="arr-v2-toolbar-btn"
+                title={`${tool.label} (${tool.shortcut})${tool.tooltip ? ` - ${tool.tooltip}` : ''}`}
+              >
+                <Icon size={18} />
+                <span className="arr-v2-toolbar-btn-label">{tool.label}</span>
+              </Button>
+            );
+          })}
         </div>
       </div>
 
@@ -59,72 +80,71 @@ export function ArrangementToolbar({
       <div className="arr-v2-toolbar-section arr-v2-toolbar-section-right">
         {/* Snap Settings */}
         <div className="arr-v2-setting-item">
-          <button
-            className={`arr-v2-toolbar-btn ${snapEnabled ? 'active' : ''}`}
-            onClick={onSnapToggle}
-            title="Toggle Snap (Alt+S)"
-          >
-            <span className="arr-v2-toolbar-btn-icon">🧲</span>
-            <span className="arr-v2-toolbar-btn-label">Snap</span>
-          </button>
-
+          <label htmlFor="snap-toggle" className="arr-v2-setting-label">Snap:</label>
+          <Toggle
+            value={snapEnabled}
+            onChange={onSnapToggle}
+            size="sm"
+            variant="default"
+            className="arr-v2-snap-toggle"
+          />
+          
           {snapEnabled && (
-            <>
-              <label htmlFor="snap-select" className="arr-v2-setting-label">Grid:</label>
-              <select
-                id="snap-select"
-                className="arr-v2-toolbar-select"
-                value={snapSize}
-                onChange={(e) => onSnapSizeChange(parseFloat(e.target.value))}
-                title="Snap Size"
-              >
-                {snapSizes.map(size => (
-                  <option key={size} value={size}>
-                    {size >= 1 ? `${size} beat${size > 1 ? 's' : ''}` : `1/${1/size}`}
-                  </option>
-                ))}
-              </select>
-            </>
+            <Select
+              value={snapSize.toString()}
+              onChange={(value) => onSnapSizeChange(parseFloat(value))}
+              options={snapSizeOptions}
+              className="arr-v2-snap-select"
+              category="dynamics-forge"
+            />
           )}
         </div>
 
-        {/* Zoom Controls */}
+        {/* Zoom Controls - ✅ PHASE 2: Using Button component from library */}
         <div className="arr-v2-toolbar-group">
-          <button
-            className="arr-v2-toolbar-btn arr-v2-toolbar-btn-icon-only"
+          <Button
             onClick={() => onZoomChange(zoomX * 0.8, zoomY)}
+            variant="default"
+            size="sm"
+            className="arr-v2-toolbar-btn-icon-only"
             title="Zoom Out (Ctrl+-)"
           >
-            <span className="arr-v2-toolbar-btn-icon">−</span>
-          </button>
+            <ZoomOut size={16} />
+          </Button>
 
           <div className="arr-v2-toolbar-zoom-display" title="Current Zoom">
             {(zoomX * 100).toFixed(0)}%
           </div>
 
-          <button
-            className="arr-v2-toolbar-btn arr-v2-toolbar-btn-icon-only"
+          <Button
             onClick={() => onZoomChange(zoomX * 1.25, zoomY)}
+            variant="default"
+            size="sm"
+            className="arr-v2-toolbar-btn-icon-only"
             title="Zoom In (Ctrl++)"
           >
-            <span className="arr-v2-toolbar-btn-icon">+</span>
-          </button>
+            <ZoomIn size={16} />
+          </Button>
 
-          <button
-            className="arr-v2-toolbar-btn arr-v2-toolbar-btn-icon-only"
+          <Button
             onClick={() => onZoomChange(1.0, 1.0)}
+            variant="default"
+            size="sm"
+            className="arr-v2-toolbar-btn-icon-only"
             title="Reset Zoom (Ctrl+0)"
           >
-            <span className="arr-v2-toolbar-btn-icon">⟲</span>
-          </button>
+            <RotateCcw size={16} />
+          </Button>
 
-          <button
-            className="arr-v2-toolbar-btn arr-v2-toolbar-btn-icon-only"
+          <Button
             onClick={onFitToView}
+            variant="default"
+            size="sm"
+            className="arr-v2-toolbar-btn-icon-only"
             title="Fit to View (F)"
           >
-            <span className="arr-v2-toolbar-btn-icon">⛶</span>
-          </button>
+            <Maximize2 size={16} />
+          </Button>
         </div>
       </div>
     </div>

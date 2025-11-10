@@ -10,7 +10,8 @@ import { INSTRUMENT_TYPES } from './constants';
 export const INSTRUMENT_CATEGORIES = {
   SAMPLER: 'sampler',
   MULTI_SAMPLER: 'multiSampler',
-  VA_SYNTH: 'vaSynth'
+  VA_SYNTH: 'vaSynth',
+  AI_INSTRUMENT: 'aiInstrument'
 };
 
 export const CATEGORY_INFO = {
@@ -31,6 +32,12 @@ export const CATEGORY_INFO = {
     icon: '🎛️',
     description: 'Virtual analog synthesizer with presets',
     engine: 'VASynthInstrument_v2'
+  },
+  [INSTRUMENT_CATEGORIES.AI_INSTRUMENT]: {
+    name: 'AI Instrument',
+    icon: '✨',
+    description: 'Generate instruments with AI (text-to-audio)',
+    engine: 'AIInstrument'
   }
 };
 
@@ -172,6 +179,11 @@ export function createInstrumentFromPreset(category, preset, options = {}) {
         presetName: preset.presetName
       };
 
+    case INSTRUMENT_CATEGORIES.AI_INSTRUMENT:
+      // AI instruments are created via AI Instrument Panel, not from preset
+      // This case should not be called, but included for completeness
+      throw new Error('AI instruments must be created via AI Instrument Panel');
+
     default:
       throw new Error(`Unknown category: ${category}`);
   }
@@ -188,7 +200,22 @@ export function getPresetsForCategory(category) {
       return MULTI_SAMPLER_PRESETS;
     case INSTRUMENT_CATEGORIES.VA_SYNTH:
       return VA_SYNTH_PRESETS;
+    case INSTRUMENT_CATEGORIES.AI_INSTRUMENT:
+      // AI instruments don't have presets - they're generated on-demand
+      return {};
     default:
       return {};
   }
 }
+
+// =========================================================================
+// ✨ AI INSTRUMENT PRESETS (Placeholder - actual generation happens in AI Panel)
+// =========================================================================
+export const AI_INSTRUMENT_PRESETS = {
+  // AI instruments are generated on-demand, not from presets
+  // This is a placeholder structure for future use
+  quickStart: {
+    name: 'Quick Start',
+    presets: []
+  }
+};

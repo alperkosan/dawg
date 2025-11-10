@@ -11,7 +11,7 @@ import { AddNoteCommand } from '@/lib/commands/AddNoteCommand';
 import { DeleteNoteCommand } from '@/lib/commands/DeleteNoteCommand';
 import { DND_TYPES } from '@/config/constants';
 import { storeManager } from '@/store/StoreManager';
-import { createMultiScrollSync, createWheelForwarder } from '@/lib/utils/scrollSync';
+import { createScrollSynchronizer, createWheelForwarder } from '@/lib/utils/scrollSync';
 
 // ✅ PERFORMANCE: Local throttle utility removed - now using optimized scroll utilities
 import { Copy, X, Download } from 'lucide-react';
@@ -107,6 +107,7 @@ function ChannelRack() {
   const isPlaying = usePlaybackStore(state => state.isPlaying);
   const position = usePlaybackStore(state => playbackMode === 'pattern' ? state.currentStep : 0);
   const setTransportPosition = usePlaybackStore(state => state.setTransportPosition);
+  const followPlayheadMode = usePlaybackStore(state => state.followPlayheadMode);
 
   // ✅ Display position for UnifiedTimeline
   const displayPosition = position;
@@ -248,22 +249,43 @@ function ChannelRack() {
 
     console.log('🔄 ChannelRack: Setting up optimized scroll synchronization');
 
-    // ✅ PERFORMANCE: Use optimized multi-target scroll sync
-    const scrollSyncCleanup = createMultiScrollSync(
+    // ✅ FIX: Bidirectional scroll sync
+    // Grid scroll Y -> Instruments list scroll Y
+    const gridToInstrumentsSync = createScrollSynchronizer(
       { current: mainGrid },
-      [
-        // High priority: Timeline (critical for user feedback)
-        { ref: { current: timeline }, axis: 'x', priority: 'high', method: 'scroll' },
-        // Normal priority: Instruments list (less critical)
-        { ref: { current: instrumentsList }, axis: 'y', priority: 'normal', method: 'scroll' }
-      ],
-      {
-        throttleMs: 8, // ~120fps for ultra-smooth sync
-        debugMode: false // Set to true for performance debugging
-      }
+      [{ ref: { current: instrumentsList }, axis: 'y', method: 'scroll' }],
+      null,
+      { throttleMs: 8, debugMode: false }
+    );
+
+    // ✅ FIX: Instruments list scroll Y -> Grid scroll Y (reverse sync)
+    // Use a flag to prevent infinite loops
+    let isSyncingFromInstruments = false;
+    const handleInstrumentsScroll = () => {
+      if (isSyncingFromInstruments) return;
+      if (!mainGrid || !instrumentsList) return;
+      
+      isSyncingFromInstruments = true;
+      requestAnimationFrame(() => {
+        if (mainGrid && instrumentsList) {
+          mainGrid.scrollTop = instrumentsList.scrollTop;
+        }
+        isSyncingFromInstruments = false;
+      });
+    };
+
+    instrumentsList.addEventListener('scroll', handleInstrumentsScroll, { passive: true });
+
+    // Grid scroll X -> Timeline scroll X
+    const gridToTimelineSync = createScrollSynchronizer(
+      { current: mainGrid },
+      [{ ref: { current: timeline }, axis: 'x', method: 'scroll' }],
+      null,
+      { throttleMs: 8, debugMode: false }
     );
 
     // ✅ PERFORMANCE: Use optimized wheel forwarder with momentum
+    // This forwards wheel events from instruments list to grid
     const wheelForwarderCleanup = createWheelForwarder(
       { current: instrumentsList },
       { current: mainGrid },
@@ -280,8 +302,10 @@ function ChannelRack() {
     console.log('🔄 ChannelRack: Optimized scroll sync initialized');
 
     return () => {
-      scrollSyncCleanup();
+      gridToInstrumentsSync();
+      gridToTimelineSync();
       wheelForwarderCleanup();
+      instrumentsList.removeEventListener('scroll', handleInstrumentsScroll);
       console.log('🔄 ChannelRack: Optimized scroll sync cleaned up');
     };
   }, []); // Empty deps - setup once
@@ -324,6 +348,59 @@ function ChannelRack() {
     };
   }, []);
 
+  // ✅ PHASE 1: Follow Playhead Mode - Auto-scroll during playback
+  const userInteractionRef = useRef(false);
+
+  useEffect(() => {
+    // Early exits - only follow in pattern mode
+    if (!isPlaying || followPlayheadMode === 'OFF' || playbackMode !== 'pattern') return;
+    if (userInteractionRef.current) return;
+
+    const mainGrid = scrollContainerRef.current;
+    if (!mainGrid) return;
+
+    const playheadX = position * STEP_WIDTH;
+    const threshold = viewportWidth * 0.8;
+
+    if (followPlayheadMode === 'CONTINUOUS') {
+      // Keep playhead centered in viewport
+      const targetScrollX = playheadX - (viewportWidth / 2);
+      const diff = Math.abs(scrollX - targetScrollX);
+
+      if (diff > 5) {
+        const newScrollX = Math.max(0, targetScrollX);
+        mainGrid.scrollLeft = newScrollX;
+      }
+    } else if (followPlayheadMode === 'PAGE') {
+      // Jump to next page when playhead reaches 80% of viewport width
+      if (playheadX > scrollX + threshold) {
+        const newScrollX = scrollX + viewportWidth;
+        mainGrid.scrollLeft = newScrollX;
+      }
+    }
+  }, [position, isPlaying, followPlayheadMode, playbackMode, scrollX, viewportWidth]);
+
+  // Track user interaction to pause follow mode temporarily
+  useEffect(() => {
+    const handleUserScroll = () => {
+      userInteractionRef.current = true;
+      const timer = setTimeout(() => {
+        userInteractionRef.current = false;
+      }, 2000);
+      return () => clearTimeout(timer);
+    };
+
+    const mainGrid = scrollContainerRef.current;
+    if (mainGrid) {
+      mainGrid.addEventListener('wheel', handleUserScroll);
+      mainGrid.addEventListener('mousedown', handleUserScroll);
+      return () => {
+        mainGrid.removeEventListener('wheel', handleUserScroll);
+        mainGrid.removeEventListener('mousedown', handleUserScroll);
+      };
+    }
+  }, []);
+
   const handleNoteToggle = useCallback((instrumentId, step) => {
     try {
       if (!activePattern) return;
@@ -345,9 +422,36 @@ function ChannelRack() {
     return organizedContent.data;
   }, [organizedContent]);
 
-  // ✅ Calculate content height for flat view
+  // ✅ Calculate content height for flat view (including add button)
+  // Instrument rows: 64px each (border-bottom: 1px included in box-sizing: border-box, so total is 64px)
+  // Add button: 64px height (border-top: 1px dashed, border-bottom: 1px solid included in box-sizing: border-box)
+  //            + 4px margin-top (creates spacing and shows the dashed separator line)
+  // Total add button visual space: 64px + 4px = 68px
   const totalContentHeight = useMemo(() => {
-    return Math.max(64, (organizedContent.data.length + 1) * 64); // +1 for add button
+    const instrumentCount = organizedContent.data.length;
+    const ROW_HEIGHT = 64; // Each instrument row height (includes border-bottom in box-sizing)
+    const ADD_BUTTON_HEIGHT = 64; // Add button height (includes borders in box-sizing: border-box)
+    const ADD_BUTTON_MARGIN_TOP = 4; // Margin-top creates spacing above add button (shows dashed line separator)
+    
+    // Calculate total height
+    const instrumentsHeight = instrumentCount * ROW_HEIGHT;
+    const addButtonTotalSpace = ADD_BUTTON_HEIGHT + ADD_BUTTON_MARGIN_TOP; // 68px total
+    const totalHeight = instrumentsHeight + addButtonTotalSpace;
+    const minHeight = Math.max(64, totalHeight);
+    
+    if (import.meta.env.DEV && window.verboseLogging) {
+      console.log('📏 ChannelRack height calculation:', {
+        instrumentCount,
+        instrumentsHeight,
+        addButtonHeight: ADD_BUTTON_HEIGHT,
+        addButtonMarginTop: ADD_BUTTON_MARGIN_TOP,
+        addButtonTotalSpace,
+        totalHeight,
+        minHeight
+      });
+    }
+    
+    return minHeight;
   }, [organizedContent]);
 
   // ⚠️ DEPRECATED: This handler is now replaced by TimelineController
@@ -605,7 +709,7 @@ function ChannelRack() {
         </div>
       </div>
       <div ref={instrumentListRef} className="channel-rack-layout__instruments">
-        <div style={{ height: totalContentHeight }}>
+        <div className="channel-rack-layout__instruments-content" style={{ minHeight: totalContentHeight }}>
           {/* Flat view (instruments only) */}
           {organizedContent.data.map((inst, index) => (
             <InstrumentRow
@@ -619,10 +723,28 @@ function ChannelRack() {
               patternNotes={activePattern?.data[inst.id] || []}
             />
           ))}
-          {/* ✅ NEW: Instrument Picker Button */}
-          <div className="instrument-row instrument-row--add" onClick={() => setIsInstrumentPickerOpen(true)}>
-            <Icon name="PlusCircle" size={20} />
-            <span>Add Instrument...</span>
+          {/* ✅ NEW: Instrument Picker Button - Always visible at the end */}
+          <div 
+            className="instrument-row instrument-row--add" 
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              console.log('➕ Add Instrument button clicked');
+              setIsInstrumentPickerOpen(true);
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+            title="Add New Instrument (Click to add new instrument)"
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                setIsInstrumentPickerOpen(true);
+              }
+            }}
+          >
+            <Icon name="Plus" size={20} />
+            <span>Add Instrument</span>
           </div>
         </div>
       </div>
@@ -654,6 +776,7 @@ function ChannelRack() {
               const inst = visibleInstruments.find(i => i.id === instrumentId);
               if (inst) openPianoRollForInstrument(inst);
             }}
+            addButtonHeight={68} // ✅ FIX: Match instruments list add button height (64px height + 4px margin-top)
           />
         ) : (
           // ⚠️ LEGACY: Multi-canvas approach (one canvas per instrument)

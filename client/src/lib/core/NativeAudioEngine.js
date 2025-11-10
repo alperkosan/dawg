@@ -1327,7 +1327,12 @@ export class NativeAudioEngine {
         const insert = this.mixerInserts.get(insertId);
 
         if (!instrument) {
-            console.error(`❌ Instrument ${instrumentId} not found`);
+            // ⚠️ FIX: Don't log error in production, just silently skip
+            // This can happen during app initialization when re-routing is attempted
+            // before instruments are created. It's not a critical error.
+            if (import.meta.env.DEV) {
+                console.warn(`⚠️ Instrument ${instrumentId} not found - skipping routing (this is normal during initialization)`);
+            }
             return;
         }
 

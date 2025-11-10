@@ -8,7 +8,8 @@
  * - Zenith theme styling
  */
 
-import { ZENITH_COLORS } from './gridRenderer';
+// ✅ THEME-AWARE: Pattern clip renderer uses fixed colors for now
+// TODO: Make pattern clip renderer theme-aware in the future
 
 // ============================================================================
 // CONSTANTS
@@ -17,14 +18,14 @@ import { ZENITH_COLORS } from './gridRenderer';
 const PIXELS_PER_BEAT = 48;
 
 /**
- * Generate pattern clip colors from track color
+ * ✅ PHASE 2: Design Consistency - Generate pattern clip colors using Zenith theme
+ * Pattern clips use a fixed warm accent color (purple) from Zenith theme
  */
-function getPatternClipColors(trackColor) {
-  // Parse hex color
-  const hex = trackColor.replace('#', '');
-  const r = parseInt(hex.substring(0, 2), 16);
-  const g = parseInt(hex.substring(2, 4), 16);
-  const b = parseInt(hex.substring(4, 6), 16);
+function getPatternClipColors() {
+  // Use Zenith purple color (purple: #8b5cf6 / rgba(139, 92, 246, ...))
+  const r = 139;
+  const g = 92;
+  const b = 246;
 
   // Calculate slightly lighter/darker variants
   const lighten = (val) => Math.min(255, val + 30);
@@ -74,9 +75,8 @@ export function renderPatternClip(ctx, pattern, clip, x, y, width, height, isSel
   // Save context state
   ctx.save();
 
-  // Get colors from track
-  const trackColor = track?.color || '#FFB627';
-  const colors = getPatternClipColors(trackColor);
+  // ✅ PHASE 2: Design Consistency - Use fixed Zenith theme colors (no track color dependency)
+  const colors = getPatternClipColors();
 
   // Draw clip background
   drawClipBackground(ctx, x, y, width, height, isSelected, colors);

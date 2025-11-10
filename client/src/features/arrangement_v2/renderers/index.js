@@ -6,10 +6,10 @@
 
 export {
   drawGrid,
+  getZenithColors,
   beatsToPixels,
   pixelsToBeats,
-  snapToGrid,
-  ZENITH_COLORS
+  snapToGrid
 } from './gridRenderer';
 
 export {

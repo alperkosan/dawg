@@ -16,6 +16,8 @@ export const Button = ({
   disabled = false,
   className = '',
   children,
+  title, // ✅ PHASE 2: Support title attribute
+  ...props // ✅ PHASE 2: Support other HTML attributes
 }) => {
   const { colors, styles } = useControlTheme(variant);
 
@@ -29,6 +31,8 @@ export const Button = ({
     <button
       onClick={onClick}
       disabled={disabled}
+      title={title}
+      {...props}
       className={`
         ${sizes[size]}
         font-semibold rounded-lg

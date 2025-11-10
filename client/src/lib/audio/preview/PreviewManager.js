@@ -2,13 +2,15 @@
  * PreviewManager
  * Unified preview system for all instrument types
  * Handles preview in PianoRoll, FileBrowser, Instrument Editor, Channel Rack
+ * ✅ FX CHAIN SUPPORT: Routes preview through MixerInsert to include FX chain
  */
 
 import { InstrumentFactory } from '../instruments/index.js';
 
 export class PreviewManager {
-  constructor(audioContext) {
+  constructor(audioContext, audioEngine = null) {
     this.audioContext = audioContext;
+    this.audioEngine = audioEngine; // ✅ FX CHAIN: Reference to audioEngine for mixer routing
     this.currentInstrument = null;
     this.previewInstrument = null; // BaseInstrument instance
     this.isPlaying = false;
@@ -18,14 +20,16 @@ export class PreviewManager {
     // ✅ POLYPHONY: Track multiple active notes for keyboard piano
     this.activeNotes = new Map(); // Map<midiNote, { velocity, startTime }>
 
-    // Output routing
-    this.output = this.audioContext.createGain();
-    this.output.gain.value = 0.7; // Preview volume
-    this.output.connect(this.audioContext.destination);
+    // ✅ FX CHAIN: Preview routing (will be set based on instrument's mixerTrackId)
+    this.currentMixerInsert = null; // Current MixerInsert for preview routing
+    this.fallbackOutput = this.audioContext.createGain(); // Fallback output (direct to destination)
+    this.fallbackOutput.gain.value = 0.7; // Preview volume
+    this.fallbackOutput.connect(this.audioContext.destination);
   }
 
   /**
    * Set current instrument for preview
+   * ✅ FX CHAIN: Routes preview through MixerInsert to include FX chain
    * @param {Object} instrumentData - Instrument configuration
    */
   async setInstrument(instrumentData) {
@@ -34,9 +38,20 @@ export class PreviewManager {
 
     // Dispose old instrument
     if (this.previewInstrument) {
+      // ✅ FX CHAIN: Disconnect from previous routing
+      if (this.previewInstrument.output) {
+        try {
+          this.previewInstrument.output.disconnect();
+        } catch (e) {
+          // Already disconnected
+        }
+      }
       this.previewInstrument.dispose();
       this.previewInstrument = null;
     }
+
+    // ✅ FX CHAIN: Clear previous mixer insert reference
+    this.currentMixerInsert = null;
 
     // Create new preview instrument using factory
     try {
@@ -46,13 +61,72 @@ export class PreviewManager {
         { useCache: true } // Share cache with playback
       );
 
-      // Connect to output
+      // ✅ FX CHAIN: Route preview through MixerInsert (if available)
       if (this.previewInstrument) {
-        this.previewInstrument.connect(this.output);
+        await this._routePreviewThroughMixer(instrumentData);
         this.currentInstrument = instrumentData;
       }
     } catch (error) {
       console.error('PreviewManager: Failed to create instrument:', error);
+    }
+  }
+
+  /**
+   * ✅ FX CHAIN: Route preview through MixerInsert to include FX chain
+   * @param {Object} instrumentData - Instrument configuration
+   * @private
+   */
+  async _routePreviewThroughMixer(instrumentData) {
+    if (!this.previewInstrument || !this.previewInstrument.output) {
+      console.warn('⚠️ PreviewManager: No preview instrument output available');
+      return;
+    }
+
+    // ✅ FX CHAIN: Try to get audioEngine if not set
+    if (!this.audioEngine) {
+      try {
+        const { AudioContextService } = await import('../../services/AudioContextService.js');
+        this.audioEngine = AudioContextService.getAudioEngine();
+      } catch (error) {
+        console.warn('⚠️ PreviewManager: Could not access AudioContextService:', error);
+      }
+    }
+
+    // ✅ FX CHAIN: Get mixerTrackId from instrumentData
+    const mixerTrackId = instrumentData.mixerTrackId;
+
+    if (mixerTrackId && this.audioEngine && this.audioEngine.mixerInserts) {
+      const mixerInsert = this.audioEngine.mixerInserts.get(mixerTrackId);
+
+      if (mixerInsert && mixerInsert.input) {
+        // ✅ FX CHAIN: Route preview through MixerInsert (includes FX chain)
+        try {
+          this.previewInstrument.connect(mixerInsert.input);
+          this.currentMixerInsert = mixerInsert;
+          console.log(`🎛️ PreviewManager: Routed preview through MixerInsert ${mixerTrackId} (FX chain included)`);
+          return;
+        } catch (error) {
+          console.warn(`⚠️ PreviewManager: Failed to route through MixerInsert ${mixerTrackId}:`, error);
+        }
+      } else {
+        console.warn(`⚠️ PreviewManager: MixerInsert ${mixerTrackId} not found, using fallback routing`);
+      }
+    } else {
+      if (!mixerTrackId) {
+        console.warn('⚠️ PreviewManager: No mixerTrackId in instrumentData, using fallback routing (FX chain not included)');
+      } else if (!this.audioEngine) {
+        console.warn('⚠️ PreviewManager: AudioEngine not available, using fallback routing (FX chain not included)');
+      } else if (!this.audioEngine.mixerInserts) {
+        console.warn('⚠️ PreviewManager: MixerInserts not available, using fallback routing (FX chain not included)');
+      }
+    }
+
+    // ✅ FALLBACK: Route directly to destination (no FX chain)
+    try {
+      this.previewInstrument.connect(this.fallbackOutput);
+      console.log('⚠️ PreviewManager: Using fallback routing (direct to destination, FX chain NOT included)');
+    } catch (error) {
+      console.error('❌ PreviewManager: Failed to connect preview instrument:', error);
     }
   }
 
@@ -177,7 +251,9 @@ export class PreviewManager {
       // Create and play buffer source
       this.fileSource = this.audioContext.createBufferSource();
       this.fileSource.buffer = audioBuffer;
-      this.fileSource.connect(this.output);
+      // ✅ FX CHAIN: File preview uses fallback output (no mixer routing)
+      // Note: File preview is for FileBrowser, not instrument preview, so no FX chain needed
+      this.fileSource.connect(this.fallbackOutput);
       this.fileSource.start();
 
       this.isPlaying = true;
@@ -195,18 +271,22 @@ export class PreviewManager {
 
   /**
    * Set preview volume
+   * ✅ FX CHAIN: Updates fallback output volume (MixerInsert volume is controlled by mixer)
    * @param {number} volume - 0-1
    */
   setVolume(volume) {
-    this.output.gain.value = Math.max(0, Math.min(1, volume));
+    this.fallbackOutput.gain.value = Math.max(0, Math.min(1, volume));
+    // Note: If routed through MixerInsert, volume is controlled by mixer insert gain
+    // This only affects fallback routing (direct to destination)
   }
 
   /**
    * Get current volume
+   * ✅ FX CHAIN: Returns fallback output volume (MixerInsert volume is controlled by mixer)
    * @returns {number} Current volume (0-1)
    */
   getVolume() {
-    return this.output.gain.value;
+    return this.fallbackOutput.gain.value;
   }
 
   /**
@@ -219,17 +299,29 @@ export class PreviewManager {
 
   /**
    * Cleanup and dispose
+   * ✅ FX CHAIN: Cleans up mixer routing
    */
   dispose() {
     this.stopPreview();
 
     if (this.previewInstrument) {
+      // ✅ FX CHAIN: Disconnect from mixer routing
+      if (this.previewInstrument.output) {
+        try {
+          this.previewInstrument.output.disconnect();
+        } catch (e) {
+          // Already disconnected
+        }
+      }
       this.previewInstrument.dispose();
       this.previewInstrument = null;
     }
 
-    if (this.output) {
-      this.output.disconnect();
+    // ✅ FX CHAIN: Clear mixer insert reference
+    this.currentMixerInsert = null;
+
+    if (this.fallbackOutput) {
+      this.fallbackOutput.disconnect();
     }
 
     this.currentInstrument = null;
@@ -241,12 +333,17 @@ let previewManagerInstance = null;
 
 /**
  * Get singleton PreviewManager instance
+ * ✅ FX CHAIN: Accepts audioEngine parameter for mixer routing
  * @param {AudioContext} audioContext - Web Audio AudioContext
+ * @param {NativeAudioEngine} audioEngine - Audio engine instance (optional, for FX chain support)
  * @returns {PreviewManager}
  */
-export const getPreviewManager = (audioContext) => {
+export const getPreviewManager = (audioContext, audioEngine = null) => {
   if (!previewManagerInstance && audioContext) {
-    previewManagerInstance = new PreviewManager(audioContext);
+    previewManagerInstance = new PreviewManager(audioContext, audioEngine);
+  } else if (previewManagerInstance && audioEngine && !previewManagerInstance.audioEngine) {
+    // ✅ FX CHAIN: Update audioEngine reference if not set
+    previewManagerInstance.audioEngine = audioEngine;
   }
   return previewManagerInstance;
 };

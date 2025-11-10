@@ -7,25 +7,23 @@
  * - Volume and pan controls (compact)
  * - Double-click to rename
  * - Drag handle for reordering
+ * 
+ * ✅ PHASE 2: Design Consistency - Using component library
  */
 
 import React, { useState, useRef, useEffect } from 'react';
+// ✅ PHASE 2: Design Consistency - Using component library
+import { Button } from '@/components/controls/base/Button';
+import { Toggle } from '@/components/controls/base/Toggle';
+import { Slider } from '@/components/controls/base/Slider';
+import { Checkbox } from '@/components/controls/base/Checkbox';
+import { GripVertical, Volume2, VolumeX, Headphones, Lock } from 'lucide-react';
 import './TrackHeader.css';
 
 /**
  * TrackHeader component
+ * ✅ PHASE 2: Design Consistency - Removed color palette, tracks use alternating dark-light Zenith theme
  */
-// Available colors for tracks
-const TRACK_COLORS = [
-  '#f43f5e', // Red
-  '#8b5cf6', // Purple
-  '#3b82f6', // Blue
-  '#06b6d4', // Cyan
-  '#10b981', // Green
-  '#f59e0b', // Orange
-  '#ec4899', // Pink
-  '#6366f1', // Indigo
-];
 
 export function TrackHeader({
   track,
@@ -38,9 +36,7 @@ export function TrackHeader({
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(track.name);
-  const [showColorPicker, setShowColorPicker] = useState(false);
   const inputRef = useRef(null);
-  const colorPickerRef = useRef(null);
 
   // Focus input when editing starts
   useEffect(() => {
@@ -50,19 +46,7 @@ export function TrackHeader({
     }
   }, [isEditing]);
 
-  // Close color picker when clicking outside
-  useEffect(() => {
-    if (!showColorPicker) return;
-
-    const handleClickOutside = (e) => {
-      if (colorPickerRef.current && !colorPickerRef.current.contains(e.target)) {
-        setShowColorPicker(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showColorPicker]);
+  // ✅ PHASE 2: Color picker removed - tracks use alternating dark-light backgrounds
 
   // Handle name edit
   const handleNameDoubleClick = (e) => {
@@ -112,28 +96,18 @@ export function TrackHeader({
     onUpdate?.({ pan: parseFloat(e.target.value) });
   };
 
-  // Color picker handlers
-  const toggleColorPicker = (e) => {
-    e.stopPropagation();
-    setShowColorPicker(!showColorPicker);
-  };
+  // ✅ PHASE 2: Color picker handlers removed - tracks use alternating dark-light backgrounds
 
-  const handleColorSelect = (color) => {
-    onUpdate?.({ color });
-    setShowColorPicker(false);
-  };
+  // ✅ PHASE 2: Design Consistency - Alternating dark-light backgrounds
+  const trackClassName = index % 2 === 0 ? 'track-even' : 'track-odd';
 
   return (
     <div
-      className={`arr-v2-track-header ${isSelected ? 'selected' : ''}`}
+      className={`arr-v2-track-header ${trackClassName} ${isSelected ? 'selected' : ''}`}
       style={{ height: `${height}px` }}
       onDoubleClick={onDoubleClick}
     >
-      {/* Color indicator */}
-      <div
-        className="arr-v2-track-color"
-        style={{ backgroundColor: track.color }}
-      />
+      {/* ✅ PHASE 2: Color indicator removed - tracks use alternating dark-light backgrounds */}
 
       {/* Main content */}
       <div className="arr-v2-track-content">
@@ -143,37 +117,12 @@ export function TrackHeader({
           onMouseDown={onDragStart}
           title="Drag to reorder"
         >
-          <span>⋮⋮</span>
+          <GripVertical size={14} />
         </div>
 
-        {/* Track name with color picker */}
+        {/* Track name - ✅ PHASE 2: Color picker removed */}
         <div className="arr-v2-track-name-container">
           <div className="arr-v2-track-name-row">
-            {/* Color picker button */}
-            <div className="arr-v2-track-color-picker-wrapper">
-              <button
-                className="arr-v2-track-color-btn"
-                style={{ backgroundColor: track.color }}
-                onClick={toggleColorPicker}
-                title="Change track color"
-              />
-
-              {/* Color picker dropdown */}
-              {showColorPicker && (
-                <div ref={colorPickerRef} className="arr-v2-color-picker-dropdown">
-                  {TRACK_COLORS.map((color) => (
-                    <button
-                      key={color}
-                      className={`arr-v2-color-option ${track.color === color ? 'selected' : ''}`}
-                      style={{ backgroundColor: color }}
-                      onClick={() => handleColorSelect(color)}
-                      title={color}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-
             {/* Track name */}
             {isEditing ? (
               <input
@@ -197,61 +146,75 @@ export function TrackHeader({
           </div>
         </div>
 
-        {/* Control buttons */}
+        {/* Control buttons - ✅ PHASE 2: Using Button component from library */}
         <div className="arr-v2-track-buttons">
-          <button
-            className={`arr-v2-track-btn ${track.muted ? 'active' : ''}`}
+          <Button
+            active={track.muted}
             onClick={toggleMute}
+            variant="default"
+            size="sm"
+            className="arr-v2-track-btn"
             title="Mute track"
           >
-            M
-          </button>
-          <button
-            className={`arr-v2-track-btn ${track.solo ? 'active' : ''}`}
+            {track.muted ? <VolumeX size={14} /> : <Volume2 size={14} />}
+          </Button>
+          <Button
+            active={track.solo}
             onClick={toggleSolo}
+            variant="default"
+            size="sm"
+            className="arr-v2-track-btn"
             title="Solo track"
           >
-            S
-          </button>
-          <button
-            className={`arr-v2-track-btn ${track.locked ? 'active' : ''}`}
+            <Headphones size={14} />
+          </Button>
+          <Button
+            active={track.locked}
             onClick={toggleLock}
+            variant="default"
+            size="sm"
+            className="arr-v2-track-btn"
             title="Lock track"
           >
-            L
-          </button>
+            <Lock size={14} />
+          </Button>
         </div>
 
-        {/* Volume control */}
+        {/* Volume control - ✅ PHASE 2: Using component library Slider */}
         <div className="arr-v2-track-control">
           <label className="arr-v2-track-control-label">Vol</label>
-          <input
-            type="range"
-            className="arr-v2-track-slider"
-            min="0"
-            max="2"
-            step="0.01"
+          <Slider
             value={track.volume}
-            onChange={handleVolumeChange}
-            title={`Volume: ${Math.round(track.volume * 100)}%`}
+            min={0}
+            max={2}
+            step={0.01}
+            onChange={(value) => onUpdate?.({ volume: value })}
+            width={60}
+            showValue={false}
+            precision={0}
+            variant="default"
+            className="arr-v2-track-volume-slider"
           />
           <span className="arr-v2-track-control-value">
-            {Math.round(track.volume * 100)}
+            {Math.round(track.volume * 100)}%
           </span>
         </div>
 
-        {/* Pan control */}
+        {/* Pan control - ✅ PHASE 2: Using component library Slider (bipolar) */}
         <div className="arr-v2-track-control">
           <label className="arr-v2-track-control-label">Pan</label>
-          <input
-            type="range"
-            className="arr-v2-track-slider"
-            min="-1"
-            max="1"
-            step="0.01"
+          <Slider
             value={track.pan}
-            onChange={handlePanChange}
-            title={`Pan: ${track.pan > 0 ? 'R' : track.pan < 0 ? 'L' : 'C'}${Math.abs(Math.round(track.pan * 100))}`}
+            min={-1}
+            max={1}
+            step={0.01}
+            bipolar={true}
+            onChange={(value) => onUpdate?.({ pan: value })}
+            width={60}
+            showValue={false}
+            precision={0}
+            variant="default"
+            className="arr-v2-track-pan-slider"
           />
           <span className="arr-v2-track-control-value">
             {track.pan === 0 ? 'C' : track.pan > 0 ? `R${Math.round(track.pan * 100)}` : `L${Math.abs(Math.round(track.pan * 100))}`}

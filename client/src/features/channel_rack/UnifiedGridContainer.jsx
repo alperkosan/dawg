@@ -30,6 +30,7 @@ const UnifiedGridContainer = React.memo(({
   totalSteps = 256,
   onNoteToggle = null,
   onInstrumentClick = null,
+  addButtonHeight = 0, // Height for add button row (default: 0, set by parent)
 }) => {
   const containerRef = useRef(null);
   const canvasContainerRef = useRef(null);
@@ -39,8 +40,21 @@ const UnifiedGridContainer = React.memo(({
   const [viewportHeight, setViewportHeight] = useState(600);
 
   // Calculate total content dimensions
-  const totalHeight = instruments.length * ROW_HEIGHT;
+  // ✅ FIX: Include add button height to match instruments list height
+  // Grid doesn't render add button, but we need the same total height for scroll sync
+  // Add button: 64px height + 4px margin-top = 68px total space
+  const totalHeight = instruments.length * ROW_HEIGHT + addButtonHeight;
   const totalWidth = totalSteps * STEP_WIDTH;
+  
+  if (import.meta.env.DEV && window.verboseLogging) {
+    console.log('📏 UnifiedGridContainer height calculation:', {
+      instrumentCount: instruments.length,
+      rowHeight: ROW_HEIGHT,
+      instrumentsHeight: instruments.length * ROW_HEIGHT,
+      addButtonHeight,
+      totalHeight
+    });
+  }
 
   // Transform pattern data to notesData format
   const notesData = React.useMemo(() => {

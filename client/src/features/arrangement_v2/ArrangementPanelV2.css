@@ -13,11 +13,11 @@
   flex-direction: column;
 }
 
-/* Timeline container */
+/* Timeline container - ✅ PHASE 2: Using Zenith theme variables */
 .arr-v2-timeline-container {
   position: relative;
   z-index: 20;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--zenith-shadow-md);
 }
 
 /* Main content area */
@@ -46,35 +46,39 @@
   pointer-events: auto;
 }
 
-/* Add Track Button */
+/* Add Track Button - ✅ PHASE 2: Using Zenith theme variables and Button component */
 .arr-v2-add-track-btn {
-  width: 100%;
-  height: 40px;
-  display: flex;
+  width: 100% !important;
+  height: 40px !important;
+  display: flex !important;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  background: rgba(139, 92, 246, 0.1);
-  border: 1px dashed rgba(139, 92, 246, 0.3);
-  border-radius: 6px;
-  margin: 8px 0;
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 13px;
+  gap: var(--spacing-2);
+  background: var(--zenith-overlay-light) !important;
+  border: 1px dashed var(--zenith-border-medium) !important;
+  border-radius: var(--border-radius-md) !important;
+  margin: var(--spacing-2) 0;
+  color: var(--zenith-text-secondary) !important;
+  font-size: var(--font-size-sm);
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all var(--zenith-duration-normal) var(--zenith-ease-in-out);
+  padding: 0 !important; /* Override Button component padding */
+  box-shadow: none !important; /* Override Button component shadow */
 }
 
 .arr-v2-add-track-btn:hover {
-  background: rgba(139, 92, 246, 0.2);
-  border-color: rgba(139, 92, 246, 0.5);
-  color: rgba(255, 255, 255, 0.9);
+  background: var(--zenith-overlay-medium) !important;
+  border-color: var(--zenith-accent-cool) !important;
+  color: var(--zenith-text-primary) !important;
   transform: translateY(-1px);
+  box-shadow: none !important;
 }
 
 .arr-v2-add-track-btn:active {
   transform: translateY(0);
-  background: rgba(139, 92, 246, 0.3);
+  background: var(--zenith-overlay-strong) !important;
+  box-shadow: none !important;
 }
 
 .arr-v2-add-track-icon {
@@ -118,23 +122,23 @@
   pointer-events: none;
 }
 
-/* Debug overlay */
+/* Debug overlay - ✅ PHASE 2: Using Zenith theme variables */
 .arr-v2-debug-overlay {
   position: absolute;
-  top: 8px;
-  right: 8px;
-  padding: 8px 12px;
-  background: rgba(0, 0, 0, 0.85);
+  top: var(--spacing-2);
+  right: var(--spacing-2);
+  padding: var(--spacing-2) var(--spacing-3);
+  background: var(--zenith-bg-tertiary);
   backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
-  font-size: 11px;
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
-  color: rgba(255, 255, 255, 0.8);
+  border: 1px solid var(--zenith-border-medium);
+  border-radius: var(--border-radius-md);
+  font-size: var(--font-size-xs);
+  font-family: var(--font-mono);
+  color: var(--zenith-text-secondary);
   line-height: 1.5;
   z-index: 100;
   pointer-events: none;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
+  box-shadow: var(--zenith-shadow-lg);
 }
 
 .arr-v2-debug-overlay div {
@@ -161,10 +165,10 @@
   background: var(--zenith-accent-cool);
 }
 
-/* Smooth transitions */
+/* Smooth transitions - ✅ PHASE 2: Using Zenith theme variables */
 .arr-v2-container * {
-  transition: background-color var(--transition-speed) ease,
-              border-color var(--transition-speed) ease;
+  transition: background-color var(--zenith-duration-normal) var(--zenith-ease-in-out),
+              border-color var(--zenith-duration-normal) var(--zenith-ease-in-out);
 }
 
 /* Loading state */
@@ -184,7 +188,7 @@
   border: 3px solid var(--zenith-border-medium);
   border-top-color: var(--zenith-accent-cool);
   border-radius: 50%;
-  animation: arr-v2-spin 0.8s linear infinite;
+  animation: arr-v2-spin var(--zenith-duration-normal) linear infinite;
   z-index: 200;
 }
 

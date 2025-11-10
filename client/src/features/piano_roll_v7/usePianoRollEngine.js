@@ -124,11 +124,23 @@ export function usePianoRollEngine(containerRef, playbackControls = {}) {
             const mouseX = offsetX - KEYBOARD_WIDTH;
             const mouseY = offsetY - RULER_HEIGHT;
 
-            // Mouse altındaki dünya koordinatını hesapla (current değerlerle)
+            // ✅ FIX: scrollX is stored in screen coordinates
+            // After translate(-scrollX), screen x=0 corresponds to world x=scrollX
+            // Screen x=mouseX corresponds to world x=scrollX + mouseX
+            // To keep the same world point under the mouse after zoom:
+            // Current: worldX = scrollX + mouseX (scrollX in screen, mouseX in screen)
+            // After zoom: stepWidth changes, but worldX should stay the same
+            // newScrollX + mouseX = worldX = scrollX + mouseX
+            // newScrollX = scrollX (scrollX stays in screen coordinates)
+            // But wait, we need to account for zoom change in world coordinates
+            // Current worldX = (scrollX + mouseX) / oldZoomX * BASE_STEP_WIDTH
+            // New worldX should be same: (newScrollX + mouseX) / newZoomX * BASE_STEP_WIDTH
+            // So: (scrollX + mouseX) / oldZoomX = (newScrollX + mouseX) / newZoomX
+            // newScrollX = (scrollX + mouseX) * (newZoomX / oldZoomX) - mouseX
             const worldX = (vp.scrollX + mouseX) / vp.zoomX;
             const worldY = (vp.scrollY + mouseY) / vp.zoomY;
-
-            // Yeni scroll pozisyonunu hesapla
+            
+            // Keep the same world point under the mouse (convert back to screen coordinates)
             const newScrollX = (worldX * newZoomX) - mouseX;
             const newScrollY = (worldY * newZoomY) - mouseY;
 
@@ -145,12 +157,32 @@ export function usePianoRollEngine(containerRef, playbackControls = {}) {
             // Immediate render trigger for zoom changes
             setRenderTrigger(Date.now());
         } else {
+            // ✅ FIX: scrollX is stored in screen coordinates for scroll operations
+            // deltaX is screen pixels, so we can add directly
+            // Renderer will convert to world coordinates when needed via translate
             vp.targetScrollX += deltaX;
             vp.targetScrollY += deltaY;
         }
 
+        // ✅ FIX: maxScrollX should be in screen coordinates (same as scrollX)
+        // totalWidth is in world coordinates (includes zoomX)
+        // maxScrollX = totalWidth - viewportWidth (both in same units)
+        // Since scrollX is in screen coordinates, maxScrollX should also be in screen coordinates
+        // But totalWidth is world coordinates, so we need to convert
+        // Actually, maxScrollX = totalWidth - viewportWidth, both should be in same units
+        // If scrollX is screen, then maxScrollX should be screen too
+        // But totalWidth is world, so: maxScrollX (screen) = totalWidth (world) - viewportWidth (screen)
+        // This doesn't work! We need scrollX and maxScrollX in same units
+        // Solution: Keep scrollX in screen coordinates, but maxScrollX calculation needs adjustment
         const totalWidth = TOTAL_BARS * STEPS_PER_BAR * BASE_STEP_WIDTH * vp.targetZoomX;
         const totalHeight = TOTAL_KEYS * BASE_KEY_HEIGHT * vp.targetZoomY;
+        // scrollX is in screen coordinates, so maxScrollX should be screen coordinates too
+        // totalWidth is world coordinates, viewportWidth is screen coordinates
+        // maxScrollX (screen) = totalWidth (world) - viewportWidth (screen) doesn't work
+        // We need to keep scrollX in screen coordinates, so maxScrollX = totalWidth - viewportWidth
+        // But this only works if totalWidth and viewportWidth are in same units
+        // Actually, scrollX represents the screen offset, so maxScrollX = totalWidth - viewportWidth
+        // where both are in screen pixels (1:1 mapping after translate)
         const maxScrollX = Math.max(0, totalWidth - (viewportSize.width - KEYBOARD_WIDTH));
         const maxScrollY = Math.max(0, totalHeight - (viewportSize.height - RULER_HEIGHT));
         vp.targetScrollX = Math.max(0, Math.min(maxScrollX, vp.targetScrollX));
@@ -162,8 +194,17 @@ export function usePianoRollEngine(containerRef, playbackControls = {}) {
         const vp = viewportRef.current;
         if (offsetY <= RULER_HEIGHT && button === 0) {
             const mouseX = offsetX - KEYBOARD_WIDTH;
-            const worldX = (vp.scrollX + mouseX) / vp.zoomX;
-            const step = Math.floor(worldX / BASE_STEP_WIDTH);
+            // ✅ FIX: scrollX is in screen coordinates
+            // After translate(-scrollX), screen x=mouseX corresponds to world x=scrollX + mouseX
+            // But scrollX is screen, so worldX = scrollX + mouseX (both screen, but after translate they map to world)
+            // Actually, after translate(-scrollX), screen x=0 maps to world x=scrollX
+            // So screen x=mouseX maps to world x=scrollX + mouseX
+            // But scrollX is screen pixels, so we need to convert to world: worldX = (scrollX + mouseX) / zoomX * BASE_STEP_WIDTH / BASE_STEP_WIDTH
+            // Actually simpler: worldX = scrollX + mouseX (after translate, 1:1 mapping)
+            // Then convert to step: step = worldX / stepWidth = (scrollX + mouseX) / (BASE_STEP_WIDTH * zoomX)
+            const worldX = vp.scrollX + mouseX; // After translate, screen and world are 1:1
+            const stepWidth = BASE_STEP_WIDTH * vp.zoomX;
+            const step = Math.floor(worldX / stepWidth);
 
             // ✅ UNIFIED TIMELINE CONTROL: Use TimelineController for consistent behavior
             try {
@@ -200,8 +241,11 @@ export function usePianoRollEngine(containerRef, playbackControls = {}) {
         if (isSettingLoopRef.current) {
             const { offsetX } = e;
             const mouseX = offsetX - KEYBOARD_WIDTH;
-            const worldX = (vp.scrollX + mouseX) / vp.zoomX;
-            const currentStep = Math.floor(worldX / BASE_STEP_WIDTH);
+            // ✅ FIX: scrollX is in screen coordinates
+            // After translate(-scrollX), screen x=mouseX corresponds to world x=scrollX + mouseX
+            const worldX = vp.scrollX + mouseX; // After translate, screen and world are 1:1
+            const stepWidth = BASE_STEP_WIDTH * vp.zoomX;
+            const currentStep = Math.floor(worldX / stepWidth);
             setLoopRegion(loopStartPointRef.current, currentStep);
             return;
         }
@@ -209,6 +253,7 @@ export function usePianoRollEngine(containerRef, playbackControls = {}) {
             const deltaX = e.clientX - lastMousePosRef.current.x;
             const deltaY = e.clientY - lastMousePosRef.current.y;
             lastMousePosRef.current = { x: e.clientX, y: e.clientY };
+            // ✅ FIX: scrollX is in screen coordinates, pan by delta directly
             vp.targetScrollX -= deltaX;
             vp.targetScrollY -= deltaY;
             const totalWidth = TOTAL_BARS * STEPS_PER_BAR * BASE_STEP_WIDTH * vp.targetZoomX;
@@ -281,12 +326,38 @@ export function usePianoRollEngine(containerRef, playbackControls = {}) {
         };
     }, [viewportData.scrollY, viewportSize.height, dimensions.keyHeight, dimensions.totalKeys]);
 
+    // ✅ PHASE 1: Follow Playhead Mode - Programmatic viewport control
+    const updateViewport = useCallback(({ scrollX, scrollY }) => {
+        if (scrollX !== undefined) {
+            const maxScrollX = Math.max(0, dimensions.totalWidth - viewportSize.width);
+            setViewportData(prev => ({
+                ...prev,
+                scrollX: Math.max(0, Math.min(maxScrollX, scrollX)),
+                targetScrollX: Math.max(0, Math.min(maxScrollX, scrollX))
+            }));
+        }
+        if (scrollY !== undefined) {
+            const maxScrollY = Math.max(0, dimensions.totalHeight - viewportSize.height);
+            setViewportData(prev => ({
+                ...prev,
+                scrollY: Math.max(0, Math.min(maxScrollY, scrollY)),
+                targetScrollY: Math.max(0, Math.min(maxScrollY, scrollY))
+            }));
+        }
+    }, [dimensions, viewportSize]);
+
     return {
         viewport: { ...viewportData, width: viewportSize.width, height: viewportSize.height, visibleSteps, visibleKeys },
         dimensions,
         lod,
         snapValue,
         setSnapValue,
-        eventHandlers: { onMouseDown: handleMouseDown, onMouseMove: handleMouseMove, onMouseUp: handleMouseUp, onMouseLeave: handleMouseUp }
+        eventHandlers: {
+            onMouseDown: handleMouseDown,
+            onMouseMove: handleMouseMove,
+            onMouseUp: handleMouseUp,
+            onMouseLeave: handleMouseUp,
+            updateViewport
+        }
     };
 }

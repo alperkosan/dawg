@@ -126,6 +126,26 @@ function snapToGrid(value, snapValue) {
 // Helper: Play preview using PreviewManager
 // duration = null means sustain until stopNote is called (for keyboard piano)
 // duration = number means auto-stop after that duration (for mouse clicks)
+// ✅ Point-in-polygon algorithm (ray casting)
+// Check if a point is inside a polygon
+function isPointInPolygon(x, y, polygon) {
+    if (!polygon || polygon.length < 3) return false;
+    
+    let inside = false;
+    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+        const xi = polygon[i].x;
+        const yi = polygon[i].y;
+        const xj = polygon[j].x;
+        const yj = polygon[j].y;
+        
+        // Ray casting algorithm: Check if ray from point crosses edge
+        const intersect = ((yi > y) !== (yj > y)) && 
+                         (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+        if (intersect) inside = !inside;
+    }
+    return inside;
+}
+
 function playPreview(pitch, velocity = 100, duration = null) {
     const previewManager = getPreviewManager();
     if (previewManager) {
@@ -176,7 +196,9 @@ export function useNoteInteractionsV2(
     const [dragState, setDragState] = useState(null);
     const [hoveredNoteId, setHoveredNoteId] = useState(null);
     const [isSelectingArea, setIsSelectingArea] = useState(false);
-    const [selectionArea, setSelectionArea] = useState(null);
+    const [selectionArea, setSelectionArea] = useState(null); // { mode: 'rect' | 'lasso', startCoords, endCoords, startX, startY, endX, endY, path?: Array<{x, y}> }
+    const [isSelectingTimeRange, setIsSelectingTimeRange] = useState(false); // ✅ Time-based selection from timeline
+    const [timeRangeSelection, setTimeRangeSelection] = useState(null); // { startTime: number, endTime: number }
     const [previewNote, setPreviewNote] = useState(null);
     const [slicePreview, setSlicePreview] = useState(null); // { x: number, noteId: string }
     const [sliceRange, setSliceRange] = useState(null); // { x: number, startY: number, endY: number, time: number, startPitch: number, endPitch: number }
@@ -1676,8 +1698,11 @@ export function useNoteInteractionsV2(
                     );
                 }
             } else {
-                // Start area selection
+                // ✅ Start area selection (rectangular or lasso)
                 setIsSelectingArea(true);
+                
+                // ✅ Lasso mode: Alt+drag for freehand selection
+                const isLassoMode = e.altKey;
 
                 // Convert to pixel coordinates for renderer
                 const stepWidth = engine.dimensions?.stepWidth || 40;
@@ -1687,12 +1712,14 @@ export function useNoteInteractionsV2(
                 const pixelY = (127 - coords.pitch) * keyHeight - engine.viewport.scrollY;
 
                 setSelectionArea({
+                    mode: isLassoMode ? 'lasso' : 'rect',
                     startCoords: coords,
                     endCoords: coords,
                     startX: pixelX,
                     startY: pixelY,
                     endX: pixelX,
-                    endY: pixelY
+                    endY: pixelY,
+                    path: isLassoMode ? [{ x: pixelX, y: pixelY }] : undefined // ✅ Lasso path tracking
                 });
             }
         } else if (activeTool === 'eraser') {
@@ -2019,12 +2046,37 @@ export function useNoteInteractionsV2(
             const pixelX = coords.time * stepWidth - engine.viewport.scrollX;
             const pixelY = (127 - coords.pitch) * keyHeight - engine.viewport.scrollY;
 
-            setSelectionArea(prev => ({
-                ...prev,
-                endCoords: coords,
-                endX: pixelX,
-                endY: pixelY
-            }));
+            setSelectionArea(prev => {
+                if (!prev) return prev;
+                
+                // ✅ Lasso mode: Add point to path (with distance threshold to avoid too many points)
+                if (prev.mode === 'lasso' && prev.path) {
+                    const lastPoint = prev.path[prev.path.length - 1];
+                    const distance = Math.sqrt(
+                        Math.pow(pixelX - lastPoint.x, 2) + 
+                        Math.pow(pixelY - lastPoint.y, 2)
+                    );
+                    
+                    // Only add point if moved at least 3 pixels (performance optimization)
+                    if (distance > 3) {
+                        return {
+                            ...prev,
+                            endCoords: coords,
+                            endX: pixelX,
+                            endY: pixelY,
+                            path: [...prev.path, { x: pixelX, y: pixelY }]
+                        };
+                    }
+                }
+                
+                // Rectangular mode: Just update end coordinates
+                return {
+                    ...prev,
+                    endCoords: coords,
+                    endX: pixelX,
+                    endY: pixelY
+                };
+            });
         } else if (activeTool === 'pencil' && !dragState) {
             // Show preview note
             const snappedTime = snapValue > 0 ? snapToGrid(coords.time, snapValue) : coords.time;
@@ -2049,8 +2101,108 @@ export function useNoteInteractionsV2(
         engine
     ]);
 
+    // ✅ Time-based selection: Handle ruler mouse events
+    const handleRulerMouseDown = useCallback((e) => {
+        // Only handle if Shift key is pressed (time-based selection)
+        if (!e.shiftKey) return false;
+        
+        const rect = e.currentTarget.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+        
+        const RULER_HEIGHT = 30;
+        const KEYBOARD_WIDTH = 80;
+        
+        // Only handle if in ruler area
+        if (mouseY > RULER_HEIGHT || mouseX < KEYBOARD_WIDTH) {
+            return false;
+        }
+        
+        // ✅ FIX: Calculate step position matching renderer algorithm
+        // Renderer uses: ctx.translate(-scrollX), then draws at x = step * stepWidth
+        // scrollX is in screen coordinates, but after translate(-scrollX), screen and world are 1:1
+        // After translate(-scrollX), screen x=0 corresponds to world x=scrollX
+        // Screen mouse position → World position: worldX = scrollX + canvasX (after translate, 1:1 mapping)
+        // World position → Time: time = worldX / stepWidth
+        const { stepWidth } = engine.dimensions;
+        const { scrollX } = engine.viewport;
+        const canvasX = mouseX - KEYBOARD_WIDTH;
+        // scrollX is in screen coordinates, but after translate(-scrollX), it maps to world coordinates
+        // After translate, screen coordinate canvasX maps to world coordinate scrollX + canvasX
+        const worldX = scrollX + canvasX; // After translate, screen and world are 1:1
+        const clickedTime = worldX / stepWidth;
+        
+        // Start time-based selection
+        setIsSelectingTimeRange(true);
+        setTimeRangeSelection({ startTime: clickedTime, endTime: clickedTime });
+        
+        return true;
+    }, [engine]);
+    
+    const handleRulerMouseMove = useCallback((e) => {
+        if (!isSelectingTimeRange) return false;
+        
+        const rect = e.currentTarget.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        
+        const KEYBOARD_WIDTH = 80;
+        // ✅ FIX: Calculate step position matching renderer algorithm
+        // Renderer uses: ctx.translate(-scrollX), then draws at x = step * stepWidth
+        // So scrollX is in world coordinates (already includes zoomX)
+        // Screen mouse position → World position: worldX = scrollX + canvasX
+        // World position → Time: time = worldX / stepWidth
+        const { stepWidth } = engine.dimensions;
+        const { scrollX } = engine.viewport;
+        const canvasX = mouseX - KEYBOARD_WIDTH;
+        const worldX = scrollX + canvasX;
+        const currentTime = worldX / stepWidth;
+        
+        // Update time range selection (keep original startTime, update endTime)
+        setTimeRangeSelection(prev => {
+            if (!prev) return prev;
+            return {
+                startTime: prev.startTime, // Keep original start
+                endTime: currentTime // Update end
+            };
+        });
+        
+        return true;
+    }, [isSelectingTimeRange, engine]);
+    
     // Mouse up handler
     const handleMouseUp = useCallback((e) => {
+        // ✅ Finalize time-based selection
+        if (isSelectingTimeRange && timeRangeSelection) {
+            const { startTime, endTime } = timeRangeSelection;
+            const minTime = Math.min(startTime, endTime);
+            const maxTime = Math.max(startTime, endTime);
+            
+            // Select all notes in time range
+            const currentNotes = notes();
+            const notesInTimeRange = currentNotes.filter(note => {
+                const noteEndTime = note.startTime + (note.visualLength || note.length);
+                // Note overlaps with time range if it starts before range ends and ends after range starts
+                return note.startTime < maxTime && noteEndTime > minTime;
+            });
+            
+            // Select notes (multi-select if Ctrl/Cmd is pressed)
+            if (e.ctrlKey || e.metaKey) {
+                notesInTimeRange.forEach(note => selectNote(note.id, true));
+            } else {
+                setSelectedNoteIds(new Set(notesInTimeRange.map(note => note.id)));
+            }
+            
+            if (DEBUG_MODE) {
+                console.log('⏱️ Time-based selection:', {
+                    timeRange: { start: minTime, end: maxTime },
+                    notesFound: notesInTimeRange.length
+                });
+            }
+            
+            // Clear time range selection
+            setIsSelectingTimeRange(false);
+            setTimeRangeSelection(null);
+        }
         // Finalize slice range operation
         if (dragState?.type === 'slicing' && sliceRange) {
             const { actualStartPitch, actualEndPitch, time } = sliceRange;
@@ -2528,20 +2680,99 @@ export function useNoteInteractionsV2(
         }
 
         if (isSelectingArea && selectionArea) {
-            // Finalize area selection
-            const { startCoords, endCoords } = selectionArea;
-            const minTime = Math.min(startCoords.time, endCoords.time);
-            const maxTime = Math.max(startCoords.time, endCoords.time);
-            const minPitch = Math.min(startCoords.pitch, endCoords.pitch);
-            const maxPitch = Math.max(startCoords.pitch, endCoords.pitch);
-
+            // ✅ Finalize area selection (rectangular or lasso)
             const currentNotes = notes();
-            const notesInArea = currentNotes.filter(note => {
-                const noteEndTime = note.startTime + note.length;
-                const timeOverlap = note.startTime < maxTime && noteEndTime > minTime;
-                const pitchInRange = note.pitch >= minPitch && note.pitch <= maxPitch;
-                return timeOverlap && pitchInRange;
-            });
+            let notesInArea = [];
+            
+            if (selectionArea.mode === 'lasso' && selectionArea.path && selectionArea.path.length > 2) {
+                // ✅ Lasso selection: Use point-in-polygon algorithm
+                const path = selectionArea.path;
+                
+                // Close the path by connecting last point to first
+                const closedPath = [...path, path[0]];
+                
+                // Convert notes to pixel coordinates and check if they're inside polygon
+                const stepWidth = engine.dimensions?.stepWidth || 40;
+                const keyHeight = engine.dimensions?.keyHeight || 20;
+                
+                notesInArea = currentNotes.filter(note => {
+                    // ✅ Get note position in pixel coordinates (same coordinate space as lasso path)
+                    // Lasso path points are calculated as: (time * stepWidth - scrollX, (127 - pitch) * keyHeight - scrollY)
+                    // This is after ctx.translate(KEYBOARD_WIDTH, RULER_HEIGHT) in renderer
+                    
+                    // Calculate note bounds in pixel coordinates
+                    const noteStartX = note.startTime * stepWidth - engine.viewport.scrollX;
+                    const noteEndX = (note.startTime + (note.visualLength || note.length)) * stepWidth - engine.viewport.scrollX;
+                    const noteTopY = (127 - (note.pitch + 0.5)) * keyHeight - engine.viewport.scrollY;
+                    const noteBottomY = (127 - (note.pitch - 0.5)) * keyHeight - engine.viewport.scrollY;
+                    
+                    // ✅ Check multiple points of the note (center + corners) to see if note overlaps with polygon
+                    // This ensures we catch notes that are partially inside the lasso
+                    const noteCenterX = (noteStartX + noteEndX) / 2;
+                    const noteCenterY = (noteTopY + noteBottomY) / 2;
+                    
+                    // Check center point
+                    if (isPointInPolygon(noteCenterX, noteCenterY, closedPath)) {
+                        return true;
+                    }
+                    
+                    // Check corner points
+                    const corners = [
+                        { x: noteStartX, y: noteTopY },      // Top-left
+                        { x: noteEndX, y: noteTopY },        // Top-right
+                        { x: noteStartX, y: noteBottomY },   // Bottom-left
+                        { x: noteEndX, y: noteBottomY }      // Bottom-right
+                    ];
+                    
+                    // If any corner is inside, select the note
+                    for (const corner of corners) {
+                        if (isPointInPolygon(corner.x, corner.y, closedPath)) {
+                            return true;
+                        }
+                    }
+                    
+                    // ✅ Also check if note rectangle intersects with polygon (for edge cases)
+                    // Simplified: Check if polygon has points inside note bounds
+                    const noteBounds = {
+                        minX: Math.min(noteStartX, noteEndX),
+                        maxX: Math.max(noteStartX, noteEndX),
+                        minY: Math.min(noteTopY, noteBottomY),
+                        maxY: Math.max(noteTopY, noteBottomY)
+                    };
+                    
+                    // Check if any polygon vertex is inside note bounds
+                    for (const point of closedPath) {
+                        if (point.x >= noteBounds.minX && point.x <= noteBounds.maxX &&
+                            point.y >= noteBounds.minY && point.y <= noteBounds.maxY) {
+                            return true;
+                        }
+                    }
+                    
+                    return false;
+                });
+                
+                if (DEBUG_MODE) {
+                    console.log('🎯 Lasso selection:', {
+                        pathPoints: closedPath.length,
+                        notesFound: notesInArea.length,
+                        notes: notesInArea.map(n => ({ id: n.id.substring(0, 12), pitch: n.pitch, time: n.startTime }))
+                    });
+                }
+            } else {
+                // ✅ Rectangular selection: Original logic
+                const { startCoords, endCoords } = selectionArea;
+                const minTime = Math.min(startCoords.time, endCoords.time);
+                const maxTime = Math.max(startCoords.time, endCoords.time);
+                const minPitch = Math.min(startCoords.pitch, endCoords.pitch);
+                const maxPitch = Math.max(startCoords.pitch, endCoords.pitch);
+
+                notesInArea = currentNotes.filter(note => {
+                    const noteEndTime = note.startTime + note.length;
+                    const timeOverlap = note.startTime < maxTime && noteEndTime > minTime;
+                    const pitchInRange = note.pitch >= minPitch && note.pitch <= maxPitch;
+                    return timeOverlap && pitchInRange;
+                });
+            }
 
             // Select notes in area
             if (e.ctrlKey || e.metaKey) {
@@ -2561,13 +2792,15 @@ export function useNoteInteractionsV2(
         setDragState(null);
         setIsSelectingArea(false);
         setSelectionArea(null);
+        setIsSelectingTimeRange(false); // ✅ Clear time range selection
+        setTimeRangeSelection(null);
         setPreviewNote(null);
         setSlicePreview(null);
         setSliceRange(null); // ✅ Clear slice range
         setTempNotes([]); // Clear temporary notes
         setPaintDragState(null); // ✅ Clear paint/erase drag state
         setRightClickDragState(null); // ✅ Clear right click drag state
-    }, [isSelectingArea, selectionArea, notes, selectNote, dragState, tempNotes, updatePatternStore, performPitchRangeSlice, sliceNote, sliceRange]);
+    }, [isSelectingArea, selectionArea, isSelectingTimeRange, timeRangeSelection, notes, selectNote, dragState, tempNotes, updatePatternStore, performPitchRangeSlice, sliceNote, sliceRange]);
 
     // ✅ WHEEL HANDLER - Velocity and duration control
     const handleWheel = useCallback((e) => {
@@ -3113,6 +3346,8 @@ export function useNoteInteractionsV2(
         handleMouseDown,
         handleMouseMove,
         handleMouseUp,
+        handleRulerMouseDown, // ✅ NEW: Time-based selection from timeline
+        handleRulerMouseMove, // ✅ NEW: Time-based selection from timeline
         handleKeyDown,
         handleKeyUp, // ✅ NEW: Key up handler for keyboard piano
         handleWheel, // ✅ NEW: Wheel handler for velocity and duration control
@@ -3122,6 +3357,8 @@ export function useNoteInteractionsV2(
         selectedNoteIds,
         isSelectingArea,
         selectionArea,
+        isSelectingTimeRange, // ✅ NEW: Time-based selection state
+        timeRangeSelection, // ✅ NEW: Time range selection data
         previewNote,
         slicePreview,
         sliceRange,

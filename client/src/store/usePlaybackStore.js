@@ -41,6 +41,9 @@ export const usePlaybackStore = create((set, get) => ({
   _isInitialized: false,
   _currentPositionMode: 'pattern', // ✅ Track which mode the current position is for
 
+  // ✅ PHASE 1: Follow Playhead Mode
+  followPlayheadMode: 'CONTINUOUS', // 'CONTINUOUS' | 'PAGE' | 'OFF'
+
   // =============== INITIALIZATION ===============
   _initController: async () => {
     const state = get();
@@ -216,6 +219,21 @@ export const usePlaybackStore = create((set, get) => ({
 
   handleMasterVolumeChange: async (volume) => {
     set({ masterVolume: volume });
+  },
+
+  // ✅ PHASE 1: Follow Playhead Mode Actions
+  setFollowPlayheadMode: (mode) => {
+    set({ followPlayheadMode: mode });
+    console.log('🎯 Follow Playhead Mode:', mode);
+  },
+
+  cycleFollowPlayheadMode: () => {
+    const modes = ['CONTINUOUS', 'PAGE', 'OFF'];
+    const currentMode = get().followPlayheadMode;
+    const currentIndex = modes.indexOf(currentMode);
+    const nextIndex = (currentIndex + 1) % modes.length;
+    const nextMode = modes[nextIndex];
+    get().setFollowPlayheadMode(nextMode);
   },
 
   // =============== UTILITY ===============

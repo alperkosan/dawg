@@ -1,18 +1,108 @@
 // src/store/useArrangementStore.js
+// ✅ UNIFIED ARRANGEMENT STORE
 // NativeAudioEngine entegrasyonu için modernize edildi.
+// Phase 1: Store Consolidation - Merged useArrangementV2Store functionality
 import { create } from 'zustand';
+import { nanoid } from 'nanoid';
 import { initialPatterns, initialPatternOrder, initialClips, initialInstruments } from '@/config/initialData';
 import { AudioContextService } from '@/lib/services/AudioContextService';
 import { storeManager } from './StoreManager';
 import { usePlaybackStore } from './usePlaybackStore';
+import { audioAssetManager } from '@/lib/audio/AudioAssetManager.js';
+import { getTimelineController } from '@/lib/core/TimelineControllerSingleton.js';
 
-// Başlangıç verisinden dinamik olarak track'leri oluştur.
+// ============================================================================
+// HELPERS - Arrangement Tracks & Clips
+// ============================================================================
+
+// ✅ PHASE 2: Design Consistency - Remove color palette, use alternating dark-light Zenith theme
+// Track colors are now determined by index (alternating dark-light)
+// No color property needed - tracks use alternating background colors from Zenith theme
+
+const createArrangementTrack = (name, index) => ({
+  id: `track-${nanoid(8)}`,
+  name: name || `Track ${index + 1}`,
+  // Color removed - tracks use alternating dark-light backgrounds from Zenith theme
+  height: 80,
+  volume: 1.0,
+  pan: 0,
+  muted: false,
+  solo: false,
+  locked: false,
+  collapsed: false
+});
+
+const createAudioClip = (trackId, startTime, assetId, duration, name) => ({
+  id: `clip-${nanoid(8)}`,
+  type: 'audio',
+  trackId,
+  startTime,
+  duration,
+  assetId,
+  sampleOffset: 0,
+  playbackRate: 1.0,
+  fadeIn: 0,
+  fadeOut: 0,
+  gain: 0,
+  name: name || 'Audio Clip',
+  // ✅ PHASE 2: Color removed - audio clips use fixed Zenith cyan color (#4ECDC4)
+  muted: false,
+  locked: false,
+  // Shared editing system
+  isUnique: false,
+  uniqueMetadata: null,
+  mixerChannelId: null // DEPRECATED: kept for backward compatibility
+});
+
+const createPatternClip = (trackId, startTime, patternId, duration, instrumentId, name) => ({
+  id: `clip-${nanoid(8)}`,
+  type: 'pattern',
+  trackId,
+  startTime,
+  duration,
+  patternId,
+  instrumentId,
+  loopCount: 1,
+  name: name || 'Pattern',
+  // ✅ SPLIT SUPPORT: patternOffset for split clips (in steps, 16th notes)
+  // 0 = start from beginning of pattern, >0 = skip steps from pattern start
+  patternOffset: 0,
+  // ✅ PHASE 2: Color removed - pattern clips use fixed Zenith purple color (#8b5cf6)
+  muted: false,
+  locked: false
+});
+
+const createMarker = (time, label, color) => ({
+  id: `marker-${nanoid(8)}`,
+  time,
+  label: label || 'Marker',
+  color: color || '#8b5cf6'
+});
+
+const createLoopRegion = (startTime, endTime, label, color) => ({
+  id: `loop-${nanoid(8)}`,
+  startTime,
+  endTime,
+  label: label || 'Loop',
+  color: color || '#22c55e'
+});
+
+// Başlangıç verisinden dinamik olarak track'leri oluştur (legacy - pattern tracks)
 const initialTracks = initialInstruments.map(inst => ({
   id: `track-${inst.id}`,
   instrumentId: inst.id,
   name: inst.name,
   height: 60,
 }));
+
+// ✅ PHASE 2: Design Consistency - Initialize with default tracks (4 tracks)
+// Tracks use alternating dark-light backgrounds (no color property)
+const initialArrangementTracks = [
+  createArrangementTrack('Track 1', 0),
+  createArrangementTrack('Track 2', 1),
+  createArrangementTrack('Track 3', 2),
+  createArrangementTrack('Track 4', 3),
+];
 
 /**
  * ⚡ OPTIMIZED: Throttled orchestrator to prevent excessive heavy operations
@@ -66,15 +156,58 @@ const arrangementStoreOrchestrator = (config) => (set, get, api) => {
 };
 
 export const useArrangementStore = create(arrangementStoreOrchestrator((set, get) => ({
+  // ========================================================
+  // === PATTERN MANAGEMENT (Existing) ===
+  // ========================================================
   patterns: initialPatterns,
   patternOrder: initialPatternOrder,
-  tracks: initialTracks,
-  clips: initialClips,
+  tracks: initialTracks, // Legacy pattern tracks
+  clips: initialClips, // Legacy pattern clips
   activePatternId: 'pattern2',  // ✅ Boom Bap showcase pattern (16 bars)
   songLength: 128, // bar cinsinden
   zoomX: 1,
+  nextPatternNumber: 5,
 
-  // Loop regions for infinite canvas
+  // ========================================================
+  // === ARRANGEMENT PANEL STATE (New - from useArrangementV2Store) ===
+  // ========================================================
+  
+  // Arrangement tracks (separate from pattern tracks)
+  arrangementTracks: initialArrangementTracks,
+  
+  // Arrangement clips (separate from pattern clips)
+  arrangementClips: [],
+  
+  // Selection
+  selectedClipIds: [],
+  
+  // Clipboard
+  clipboard: null,
+  
+  // Markers
+  arrangementMarkers: [],
+  
+  // Loop regions (arrangement-specific, separate from pattern loop regions)
+  arrangementLoopRegions: [],
+  
+  // Viewport
+  viewportOffset: { x: 0, y: 0 },
+  zoom: { x: 1, y: 1 },
+  snapEnabled: true,
+  snapSize: 0.25, // 1/16 note in beats
+  
+  // History
+  history: {
+    past: [],
+    future: [],
+    maxSize: 50
+  },
+  
+  // Audio engine integration
+  _audioEngine: null,
+  _trackChannelMap: new Map(), // Map track IDs to mixer channel IDs
+
+  // Loop regions for infinite canvas (legacy - pattern loop regions)
   loopRegions: [],
 
   // ========================================================
@@ -517,5 +650,557 @@ export const useArrangementStore = create(arrangementStoreOrchestrator((set, get
     });
   },
 
+  // ========================================================
+  // === ARRANGEMENT PANEL ACTIONS (New - from useArrangementV2Store) ===
+  // ========================================================
+
+  // =================== TRACKS ===================
+
+  addArrangementTrack: async (name) => {
+    const tracks = get().arrangementTracks;
+    const trackNumber = tracks.length + 1;
+    const trackName = name || `Track ${trackNumber}`;
+
+    // ✅ PHASE 2: No color parameter - tracks use alternating dark-light backgrounds
+    const newTrack = createArrangementTrack(trackName, tracks.length);
+    set({ arrangementTracks: [...tracks, newTrack] });
+    get().pushHistory({ type: 'ADD_ARRANGEMENT_TRACK', trackId: newTrack.id });
+
+    // Sync to audio engine if initialized
+    const audioEngine = get()._audioEngine || AudioContextService.getAudioEngine();
+    if (audioEngine) {
+      await get()._syncArrangementTracksToAudioEngine();
+    }
+
+    console.log(`➕ Added arrangement track: ${trackName} (${trackColor})`);
+    return newTrack.id;
+  },
+
+  removeArrangementTrack: async (trackId) => {
+    const tracks = get().arrangementTracks;
+    const clips = get().arrangementClips;
+    const removedTrack = tracks.find(t => t.id === trackId);
+
+    // Remove all clips in this track
+    const updatedClips = clips.filter(c => c.trackId !== trackId);
+
+    set({
+      arrangementTracks: tracks.filter(t => t.id !== trackId),
+      arrangementClips: updatedClips
+    });
+
+    get().pushHistory({ 
+      type: 'REMOVE_ARRANGEMENT_TRACK', 
+      track: removedTrack, 
+      clips: clips.filter(c => c.trackId === trackId) 
+    });
+
+    // Remove mixer insert from audio engine
+    const audioEngine = get()._audioEngine || AudioContextService.getAudioEngine();
+    const trackChannelMap = get()._trackChannelMap;
+    const insertId = trackChannelMap.get(trackId);
+
+    if (audioEngine && insertId) {
+      audioEngine.removeMixerInsert(insertId);
+      console.log(`🗑️ Removed mixer insert ${insertId}`);
+      trackChannelMap.delete(trackId);
+    }
+  },
+
+  updateArrangementTrack: async (trackId, updates) => {
+    set({
+      arrangementTracks: get().arrangementTracks.map(t =>
+        t.id === trackId ? { ...t, ...updates } : t
+      )
+    });
+
+    // Sync to audio engine if initialized
+    const audioEngine = get()._audioEngine || AudioContextService.getAudioEngine();
+    const trackChannelMap = get()._trackChannelMap;
+    const insertId = trackChannelMap.get(trackId);
+
+    if (audioEngine && insertId) {
+      const insert = audioEngine.mixerInserts?.get(insertId);
+      if (insert) {
+        if (updates.volume !== undefined) {
+          const linearGain = Math.pow(10, updates.volume / 20);
+          insert.setGain(linearGain);
+        }
+        if (updates.pan !== undefined) {
+          insert.setPan(updates.pan);
+        }
+        if (updates.name !== undefined) {
+          insert.label = updates.name;
+        }
+      }
+    }
+  },
+
+  reorderArrangementTracks: (fromIndex, toIndex) => {
+    const tracks = [...get().arrangementTracks];
+    const [movedTrack] = tracks.splice(fromIndex, 1);
+    tracks.splice(toIndex, 0, movedTrack);
+    set({ arrangementTracks: tracks });
+    get().pushHistory({ type: 'REORDER_ARRANGEMENT_TRACKS', fromIndex, toIndex });
+  },
+
+  // =================== CLIPS ===================
+
+  addArrangementClip: (clip) => {
+    const newClip = { ...clip, id: clip.id || `clip-${nanoid(8)}` };
+
+    // Increment asset reference count for audio clips
+    if (newClip.type === 'audio' && newClip.assetId) {
+      audioAssetManager.addAssetReference(newClip.assetId);
+    }
+
+    set({ arrangementClips: [...get().arrangementClips, newClip] });
+    get().pushHistory({ type: 'ADD_ARRANGEMENT_CLIP', clipId: newClip.id });
+    return newClip.id;
+  },
+
+  addArrangementAudioClip: (trackId, startTime, assetId, duration, name) => {
+    const clip = createAudioClip(trackId, startTime, assetId, duration, name);
+    return get().addArrangementClip(clip);
+  },
+
+  addArrangementPatternClip: (trackId, startTime, patternId, duration, instrumentId, name) => {
+    const clip = createPatternClip(trackId, startTime, patternId, duration, instrumentId, name);
+    return get().addArrangementClip(clip);
+  },
+
+  removeArrangementClip: (clipId) => {
+    const clip = get().arrangementClips.find(c => c.id === clipId);
+
+    // Decrement asset reference count for audio clips
+    if (clip?.type === 'audio' && clip.assetId) {
+      audioAssetManager.removeAssetReference(clip.assetId);
+    }
+
+    set({ arrangementClips: get().arrangementClips.filter(c => c.id !== clipId) });
+    get().pushHistory({ type: 'REMOVE_ARRANGEMENT_CLIP', clip });
+  },
+
+  removeArrangementClips: (clipIds) => {
+    const clips = get().arrangementClips.filter(c => clipIds.includes(c.id));
+
+    // Decrement asset reference counts
+    clips.forEach(clip => {
+      if (clip.type === 'audio' && clip.assetId) {
+        audioAssetManager.removeAssetReference(clip.assetId);
+      }
+    });
+
+    set({ arrangementClips: get().arrangementClips.filter(c => !clipIds.includes(c.id)) });
+    get().pushHistory({ type: 'REMOVE_ARRANGEMENT_CLIPS', clips });
+  },
+
+  updateArrangementClip: (clipId, updates) => {
+    const oldClip = get().arrangementClips.find(c => c.id === clipId);
+    let updatedClip = null;
+
+    set({
+      arrangementClips: get().arrangementClips.map(c => {
+        if (c.id === clipId) {
+          updatedClip = { ...c, ...updates };
+          return updatedClip;
+        }
+        return c;
+      })
+    });
+
+    get().pushHistory({ type: 'UPDATE_ARRANGEMENT_CLIP', clipId, oldState: oldClip, newState: updates });
+
+    // Reschedule only the updated clip
+    const audioEngine = get()._audioEngine || AudioContextService.getAudioEngine();
+    if (audioEngine?.playbackManager && updatedClip) {
+      audioEngine.playbackManager.rescheduleClipEvents(updatedClip);
+    }
+  },
+
+  duplicateArrangementClips: (clipIds, offsetBeats = 0) => {
+    const clips = get().arrangementClips.filter(c => clipIds.includes(c.id));
+    const newClips = clips.map(clip => ({
+      ...clip,
+      id: `clip-${nanoid(8)}`,
+      startTime: clip.startTime + (offsetBeats || clip.duration)
+    }));
+
+    set({ arrangementClips: [...get().arrangementClips, ...newClips] });
+    get().pushHistory({ type: 'DUPLICATE_ARRANGEMENT_CLIPS', clipIds, newClipIds: newClips.map(c => c.id) });
+
+    return newClips.map(c => c.id);
+  },
+
+  splitArrangementClip: (clipId, splitPosition) => {
+    const clip = get().arrangementClips.find(c => c.id === clipId);
+    if (!clip) return null;
+
+    const splitPoint = splitPosition - clip.startTime;
+    if (splitPoint <= 0 || splitPoint >= clip.duration) return null;
+
+    // Get current BPM from TimelineController
+    let currentBPM = 140;
+    try {
+      const timelineController = getTimelineController();
+      currentBPM = timelineController.state?.bpm || 140;
+    } catch (e) {
+      // TimelineController not initialized, use default
+    }
+
+    // Create two new clips
+    const leftClip = {
+      ...clip,
+      id: `clip-${nanoid(8)}`,
+      duration: splitPoint
+    };
+
+    const rightClip = {
+      ...clip,
+      id: `clip-${nanoid(8)}`,
+      startTime: clip.startTime + splitPoint,
+      duration: clip.duration - splitPoint
+    };
+
+    // For audio clips, adjust sample offset for right clip
+    if (clip.type === 'audio') {
+      const secondsPerBeat = 60 / currentBPM;
+      const splitTimeInSeconds = splitPoint * secondsPerBeat;
+      rightClip.sampleOffset = (clip.sampleOffset || 0) + splitTimeInSeconds;
+
+      if (clip.assetId) {
+        audioAssetManager.addAssetReference(clip.assetId); // For leftClip
+        audioAssetManager.addAssetReference(clip.assetId); // For rightClip
+      }
+    }
+
+    // ✅ FIX: For pattern clips, adjust pattern offset for right clip
+    // This ensures notes in the right clip start from the split point, not from the beginning
+    if (clip.type === 'pattern') {
+      // Convert split point from beats to steps (16th notes)
+      // 1 beat = 4 sixteenth notes
+      const splitPointSteps = splitPoint * 4;
+      rightClip.patternOffset = (clip.patternOffset || 0) + splitPointSteps;
+    }
+
+    // Remove original clip
+    get().removeArrangementClip(clipId);
+
+    // Add two new clips
+    set({
+      arrangementClips: [...get().arrangementClips, leftClip, rightClip]
+    });
+
+    get().pushHistory({ 
+      type: 'SPLIT_ARRANGEMENT_CLIP', 
+      originalClip: clip, 
+      leftClipId: leftClip.id, 
+      rightClipId: rightClip.id 
+    });
+
+    return [leftClip.id, rightClip.id];
+  },
+
+  // =================== SELECTION ===================
+
+  setArrangementSelection: (clipIds) => {
+    set({ selectedClipIds: Array.isArray(clipIds) ? clipIds : [clipIds] });
+  },
+
+  addToArrangementSelection: (clipIds) => {
+    const toAdd = Array.isArray(clipIds) ? clipIds : [clipIds];
+    set({ selectedClipIds: [...new Set([...get().selectedClipIds, ...toAdd])] });
+  },
+
+  removeFromArrangementSelection: (clipIds) => {
+    const toRemove = Array.isArray(clipIds) ? clipIds : [clipIds];
+    set({ selectedClipIds: get().selectedClipIds.filter(id => !toRemove.includes(id)) });
+  },
+
+  toggleArrangementSelection: (clipId) => {
+    const selected = get().selectedClipIds;
+    if (selected.includes(clipId)) {
+      set({ selectedClipIds: selected.filter(id => id !== clipId) });
+    } else {
+      set({ selectedClipIds: [...selected, clipId] });
+    }
+  },
+
+  clearArrangementSelection: () => {
+    set({ selectedClipIds: [] });
+  },
+
+  selectAllArrangementClips: () => {
+    set({ selectedClipIds: get().arrangementClips.map(c => c.id) });
+  },
+
+  // =================== CLIPBOARD ===================
+
+  copyArrangementSelection: () => {
+    const clips = get().arrangementClips.filter(c => get().selectedClipIds.includes(c.id));
+    if (clips.length === 0) return;
+
+    const minStartTime = Math.min(...clips.map(c => c.startTime));
+    set({
+      clipboard: clips.map(c => ({
+        ...c,
+        startTime: c.startTime - minStartTime
+      }))
+    });
+  },
+
+  cutArrangementSelection: () => {
+    get().copyArrangementSelection();
+    get().removeArrangementClips(get().selectedClipIds);
+    set({ selectedClipIds: [] });
+  },
+
+  pasteArrangementClips: (cursorPosition) => {
+    const clipboard = get().clipboard;
+    if (!clipboard || clipboard.length === 0) return;
+
+    const newClips = clipboard.map(clip => ({
+      ...clip,
+      id: `clip-${nanoid(8)}`,
+      startTime: cursorPosition + clip.startTime
+    }));
+
+    set({ arrangementClips: [...get().arrangementClips, ...newClips] });
+    set({ selectedClipIds: newClips.map(c => c.id) });
+
+    get().pushHistory({ type: 'PASTE_ARRANGEMENT_CLIPS', clipIds: newClips.map(c => c.id) });
+  },
+
+  // =================== MARKERS ===================
+
+  addArrangementMarker: (time, label, color) => {
+    const marker = createMarker(time, label, color);
+    set({ 
+      arrangementMarkers: [...get().arrangementMarkers, marker].sort((a, b) => a.time - b.time) 
+    });
+    get().pushHistory({ type: 'ADD_ARRANGEMENT_MARKER', markerId: marker.id });
+    return marker.id;
+  },
+
+  removeArrangementMarker: (markerId) => {
+    const marker = get().arrangementMarkers.find(m => m.id === markerId);
+    set({ arrangementMarkers: get().arrangementMarkers.filter(m => m.id !== markerId) });
+    get().pushHistory({ type: 'REMOVE_ARRANGEMENT_MARKER', marker });
+  },
+
+  updateArrangementMarker: (markerId, updates) => {
+    const oldMarker = get().arrangementMarkers.find(m => m.id === markerId);
+    set({
+      arrangementMarkers: get().arrangementMarkers.map(m =>
+        m.id === markerId ? { ...m, ...updates } : m
+      ).sort((a, b) => a.time - b.time)
+    });
+    get().pushHistory({ type: 'UPDATE_ARRANGEMENT_MARKER', markerId, oldMarker, updates });
+  },
+
+  // =================== LOOP REGIONS ===================
+
+  addArrangementLoopRegion: async (startTime, endTime, label, color) => {
+    const region = createLoopRegion(startTime, endTime, label, color);
+    set({ 
+      arrangementLoopRegions: [...get().arrangementLoopRegions, region].sort((a, b) => a.startTime - b.startTime) 
+    });
+    get().pushHistory({ type: 'ADD_ARRANGEMENT_LOOP_REGION', regionId: region.id });
+
+    // Sync with TimelineController if available
+    try {
+      const timelineController = getTimelineController();
+      if (timelineController) {
+        // Convert beats to steps (1 beat = 4 steps)
+        const startInSteps = startTime * 4;
+        const endInSteps = endTime * 4;
+        await timelineController.setLoopRange(startInSteps, endInSteps);
+        if (!timelineController.state.loopEnabled) {
+          await timelineController.setLoopEnabled(true);
+        }
+      }
+    } catch (e) {
+      // TimelineController not initialized
+    }
+
+    return region.id;
+  },
+
+  removeArrangementLoopRegion: async (regionId) => {
+    const region = get().arrangementLoopRegions.find(r => r.id === regionId);
+    set({ arrangementLoopRegions: get().arrangementLoopRegions.filter(r => r.id !== regionId) });
+    get().pushHistory({ type: 'REMOVE_ARRANGEMENT_LOOP_REGION', region });
+  },
+
+  updateArrangementLoopRegion: async (regionId, updates) => {
+    const oldRegion = get().arrangementLoopRegions.find(r => r.id === regionId);
+    set({
+      arrangementLoopRegions: get().arrangementLoopRegions.map(r =>
+        r.id === regionId ? { ...r, ...updates } : r
+      ).sort((a, b) => a.startTime - b.startTime)
+    });
+    get().pushHistory({ type: 'UPDATE_ARRANGEMENT_LOOP_REGION', regionId, oldRegion, updates });
+
+    // Sync with TimelineController if this is active loop
+    try {
+      const timelineController = getTimelineController();
+      if (timelineController && timelineController.state.loopEnabled) {
+        const updatedRegion = get().arrangementLoopRegions.find(r => r.id === regionId);
+        if (updatedRegion) {
+          const startInSteps = updatedRegion.startTime * 4;
+          const endInSteps = updatedRegion.endTime * 4;
+          await timelineController.setLoopRange(startInSteps, endInSteps);
+        }
+      }
+    } catch (e) {
+      // TimelineController not initialized
+    }
+  },
+
+  // =================== VIEWPORT ===================
+
+  setArrangementZoom: (axis, value) => {
+    const clampedValue = Math.max(0.1, Math.min(10, value));
+    set({
+      zoom: {
+        ...get().zoom,
+        [axis]: clampedValue
+      }
+    });
+  },
+
+  setArrangementViewportOffset: (x, y) => {
+    set({ viewportOffset: { x, y } });
+  },
+
+  setArrangementSnapEnabled: (enabled) => {
+    set({ snapEnabled: enabled });
+  },
+
+  setArrangementSnapSize: (size) => {
+    set({ snapSize: size });
+  },
+
+  // =================== HISTORY ===================
+
+  pushHistory: (action) => {
+    const history = get().history;
+    const past = [...history.past, action];
+
+    if (past.length > history.maxSize) {
+      past.shift();
+    }
+
+    set({
+      history: {
+        ...history,
+        past,
+        future: []
+      }
+    });
+  },
+
+  undo: () => {
+    const history = get().history;
+    if (history.past.length === 0) return;
+
+    const action = history.past[history.past.length - 1];
+    const newPast = history.past.slice(0, -1);
+
+    // TODO: Implement undo logic for each action type
+    console.log('Undo:', action);
+
+    set({
+      history: {
+        ...history,
+        past: newPast,
+        future: [action, ...history.future]
+      }
+    });
+  },
+
+  redo: () => {
+    const history = get().history;
+    if (history.future.length === 0) return;
+
+    const action = history.future[0];
+    const newFuture = history.future.slice(1);
+
+    // TODO: Implement redo logic for each action type
+    console.log('Redo:', action);
+
+    set({
+      history: {
+        ...history,
+        past: [...history.past, action],
+        future: newFuture
+      }
+    });
+  },
+
+  // =================== AUDIO ENGINE INTEGRATION ===================
+
+  _syncArrangementTracksToAudioEngine: async () => {
+    const audioEngine = get()._audioEngine || AudioContextService.getAudioEngine();
+    const tracks = get().arrangementTracks;
+    const trackChannelMap = get()._trackChannelMap;
+
+    if (!audioEngine) {
+      set({ _audioEngine: audioEngine });
+      return;
+    }
+
+    console.log('🎛️ Syncing arrangement tracks to audio engine...');
+
+    for (const track of tracks) {
+      let insertId = trackChannelMap.get(track.id);
+
+      if (!insertId) {
+        insertId = `arr-${track.id}`;
+
+        try {
+          const existingInsert = audioEngine.mixerInserts?.get(insertId);
+
+          if (!existingInsert) {
+            audioEngine.createMixerInsert(insertId, track.name);
+            console.log(`✅ Created mixer insert for track "${track.name}" (${insertId})`);
+          }
+
+          trackChannelMap.set(track.id, insertId);
+        } catch (error) {
+          console.error(`❌ Failed to create mixer insert for track ${track.name}:`, error);
+          continue;
+        }
+      }
+
+      const insert = audioEngine.mixerInserts?.get(insertId);
+      if (insert) {
+        const linearGain = Math.pow(10, track.volume / 20);
+        insert.setGain(linearGain);
+        insert.setPan(track.pan);
+      }
+    }
+
+    set({ _trackChannelMap: trackChannelMap, _audioEngine: audioEngine });
+    console.log(`🎛️ Synced ${tracks.length} arrangement tracks to audio engine`);
+  },
+
+  // =================== UTILITIES ===================
+
+  getArrangementClipById: (clipId) => {
+    return get().arrangementClips.find(c => c.id === clipId);
+  },
+
+  getArrangementClipsByTrack: (trackId) => {
+    return get().arrangementClips.filter(c => c.trackId === trackId);
+  },
+
+  getSelectedArrangementClips: () => {
+    return get().arrangementClips.filter(c => get().selectedClipIds.includes(c.id));
+  },
+
+  getArrangementTrackById: (trackId) => {
+    return get().arrangementTracks.find(t => t.id === trackId);
+  }
 
 })));

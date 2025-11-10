@@ -370,7 +370,22 @@ export function useArrangementCanvas(containerRef, tracks = []) {
       onMouseMove: handleMouseMove,
       onMouseUp: handleMouseUp,
       onMouseLeave: handleMouseLeave,
-      onZoom: handleZoom
+      onZoom: handleZoom,
+      // ✅ PHASE 1: Follow Playhead Mode - Programmatic viewport control
+      updateViewport: useCallback(({ scrollX, scrollY }) => {
+        const vp = viewportRef.current;
+        if (scrollX !== undefined) {
+          const maxScrollX = Math.max(0, dimensions.totalWidth - (viewportSize.width - TRACK_HEADER_WIDTH));
+          vp.targetScrollX = Math.max(0, Math.min(maxScrollX, scrollX));
+          vp.scrollX = vp.targetScrollX; // Immediate update for follow mode
+        }
+        if (scrollY !== undefined) {
+          const maxScrollY = Math.max(0, dimensions.totalHeight - (viewportSize.height - TIMELINE_HEIGHT));
+          vp.targetScrollY = Math.max(0, Math.min(maxScrollY, scrollY));
+          vp.scrollY = vp.targetScrollY; // Immediate update for follow mode
+        }
+        setRenderTrigger(Date.now());
+      }, [dimensions, viewportSize])
     },
 
     // Utilities

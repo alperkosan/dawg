@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { MousePointer, Edit3, Eraser, Scissors, Music, Zap, Guitar, Shuffle, FlipHorizontal2, Piano, Settings, Sliders, Link2 } from 'lucide-react';
+import { MousePointer, Edit3, Eraser, Scissors, Music, Zap, Guitar, Shuffle, FlipHorizontal2, Piano, Settings, Sliders, Link2, ScaleIcon } from 'lucide-react';
 import { getToolManager, TOOL_TYPES } from '@/lib/piano-roll-tools';
 import './Toolbar.css';
 
@@ -47,7 +47,10 @@ function Toolbar({
     showCCLanes = false,
     onShowCCLanesChange,
     showNoteProperties = false,
-    onShowNotePropertiesChange
+    onShowNotePropertiesChange,
+    // ✅ PHASE 5: Scale Selector
+    showScaleSelector = false,
+    onShowScaleSelectorChange
 }) {
     const [showQuantizeMenu, setShowQuantizeMenu] = useState(false);
     const [showPianoSettings, setShowPianoSettings] = useState(false);
@@ -138,6 +141,16 @@ function Toolbar({
                     style={{ marginRight: '8px' }}
                 >
                     <Settings size={18} />
+                </button>
+
+                {/* ✅ PHASE 5: Scale Selector Toggle */}
+                <button
+                    className={`prv7-tool-btn ${showScaleSelector ? 'prv7-tool-btn--active' : ''}`}
+                    onClick={() => onShowScaleSelectorChange?.(!showScaleSelector)}
+                    title="Toggle Scale Highlighting"
+                    style={{ marginRight: '8px' }}
+                >
+                    <ScaleIcon size={18} />
                 </button>
 
                 {/* Keyboard Piano Mode Toggle */}

@@ -12,6 +12,7 @@ import NotePropertiesPanel from './components/NotePropertiesPanel';
 import LoopRegionOverlay from './components/LoopRegionOverlay';
 import ShortcutsPanel from './components/ShortcutsPanel';
 import ContextMenu from './components/ContextMenu';
+import ScaleSelectorPanel from './components/ScaleSelectorPanel';
 import { usePanelsStore } from '@/store/usePanelsStore';
 import { useInstrumentsStore } from '@/store/useInstrumentsStore';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
@@ -20,9 +21,14 @@ import { AutomationLane } from './types/AutomationLane';
 import { getTimelineController } from '@/lib/core/TimelineControllerSingleton';
 import { getToolManager } from '@/lib/piano-roll-tools';
 import { getTransportManagerSync } from '@/lib/core/TransportManagerSingleton';
+import { getAutomationManager } from '@/lib/automation/AutomationManager';
 import EventBus from '@/lib/core/EventBus.js';
 // ✅ NEW CURSOR SYSTEMS
 import { PianoRollCursorManager, CURSOR_MANAGER_MODES, CURSOR_SOURCES, CURSOR_STATES } from './interaction';
+// ✅ NEW TIMELINE SYSTEM
+import { useTimelineStore } from '@/stores/TimelineStore';
+import TimelineCoordinateSystem from '@/lib/timeline/TimelineCoordinateSystem';
+import TimelineRenderer from './renderers/timelineRenderer';
 import './PianoRoll_v5.css';
 
 function PianoRoll() {
@@ -37,11 +43,18 @@ function PianoRoll() {
     const playbackState = usePlaybackStore(state => state.playbackState);
     const currentStep = usePlaybackStore(state => state.currentStep);
     const setTransportPosition = usePlaybackStore(state => state.setTransportPosition);
+    const followPlayheadMode = usePlaybackStore(state => state.followPlayheadMode);
 
     // Pass transport position setter to engine for timeline interaction
     const { snapValue, setSnapValue, ...engine } = usePianoRollEngine(containerRef, {
         setTransportPosition
     });
+
+    // ✅ Store engine ref for avoiding stale closure (used by timeline and playhead)
+    const engineRef = useRef(engine);
+    useEffect(() => {
+        engineRef.current = engine;
+    }, [engine]);
 
     // Toolbar state
     const [activeTool, setActiveTool] = useState('select');
@@ -68,7 +81,16 @@ function PianoRoll() {
     // ✅ PHASE 2: NOTE PROPERTIES PANEL STATE
     const [showNoteProperties, setShowNoteProperties] = useState(false);
     const [propertiesPanelCollapsed, setPropertiesPanelCollapsed] = useState(false);
-    
+
+    // ✅ PHASE 5: SCALE HIGHLIGHTING STATE
+    const [showScaleSelector, setShowScaleSelector] = useState(false);
+    const [scaleHighlight, setScaleHighlight] = useState(null);
+
+    // ✅ PHASE 5: Scale change callback
+    const handleScaleChange = useCallback((scaleData) => {
+        setScaleHighlight(scaleData.scaleSystem);
+    }, []);
+
     // ✅ Listen for double-click events to open Note Properties Panel
     useEffect(() => {
         const handleOpenNoteProperties = () => {
@@ -89,6 +111,81 @@ function PianoRoll() {
 
     // ✅ CURSOR MANAGER STATE
     const [cursorManager, setCursorManager] = useState(null);
+
+    // ✅ TIMELINE SYSTEM STATE
+    const timelineStore = useTimelineStore();
+    const [timelineCoordinateSystem, setTimelineCoordinateSystem] = useState(null);
+    const [timelineRenderer, setTimelineRenderer] = useState(null);
+
+    // ✅ TIMELINE SYSTEM - Initialize timeline infrastructure
+    useEffect(() => {
+        const coordinateSystem = new TimelineCoordinateSystem(useTimelineStore);
+        const renderer = new TimelineRenderer(useTimelineStore, coordinateSystem);
+
+        setTimelineCoordinateSystem(coordinateSystem);
+        setTimelineRenderer(renderer);
+
+        // Initialize with default time signature and tempo
+        // (already set in TimelineStore defaults)
+
+        console.log('🎵 Timeline System initialized');
+
+        return () => {
+            // Cleanup if needed
+            coordinateSystem.clearCache();
+        };
+    }, []);
+
+    // ✅ PHASE 1: Follow Playhead Mode - Auto-scroll during playback
+    const userInteractionRef = useRef(false);
+
+    useEffect(() => {
+        // Early exits
+        if (!isPlaying || followPlayheadMode === 'OFF') return;
+        if (userInteractionRef.current) return;
+        if (!engine.viewport || !engine.dimensions || !engine.eventHandlers?.updateViewport) return;
+
+        const playheadX = currentStep * engine.dimensions.stepWidth;
+        const threshold = engine.viewport.width * 0.8;
+
+        if (followPlayheadMode === 'CONTINUOUS') {
+            // Keep playhead centered in viewport
+            const targetScrollX = playheadX - (engine.viewport.width / 2);
+            const diff = Math.abs(engine.viewport.scrollX - targetScrollX);
+
+            if (diff > 5) {
+                const newScrollX = Math.max(0, targetScrollX);
+                engine.eventHandlers.updateViewport({ scrollX: newScrollX });
+            }
+        } else if (followPlayheadMode === 'PAGE') {
+            // Jump to next page when playhead reaches 80% of viewport width
+            if (playheadX > engine.viewport.scrollX + threshold) {
+                const newScrollX = engine.viewport.scrollX + engine.viewport.width;
+                engine.eventHandlers.updateViewport({ scrollX: newScrollX });
+            }
+        }
+    }, [currentStep, isPlaying, followPlayheadMode, engine.viewport, engine.dimensions, engine.eventHandlers]);
+
+    // Track user interaction to pause follow mode temporarily
+    useEffect(() => {
+        const handleUserScroll = () => {
+            userInteractionRef.current = true;
+            const timer = setTimeout(() => {
+                userInteractionRef.current = false;
+            }, 2000);
+            return () => clearTimeout(timer);
+        };
+
+        const container = containerRef.current;
+        if (container) {
+            container.addEventListener('wheel', handleUserScroll);
+            container.addEventListener('mousedown', handleUserScroll);
+            return () => {
+                container.removeEventListener('wheel', handleUserScroll);
+                container.removeEventListener('mousedown', handleUserScroll);
+            };
+        }
+    }, []);
 
     // ✅ CURSOR MANAGER - Initialize cursor management system
     useEffect(() => {
@@ -245,7 +342,8 @@ function PianoRoll() {
 
                 const audioEngine = AudioContextService.getAudioEngine();
                 if (audioEngine?.audioContext) {
-                    const previewManager = getPreviewManager(audioEngine.audioContext);
+                    // ✅ FX CHAIN: Pass audioEngine to PreviewManager for mixer routing
+                    const previewManager = getPreviewManager(audioEngine.audioContext, audioEngine);
                     await previewManager.setInstrument(currentInstrument); // ✅ AWAIT the async call
 
                     if (!cancelled) {
@@ -313,6 +411,7 @@ function PianoRoll() {
     }, [cursorManager, noteInteractions.cursorState]);
 
     // ✅ REGISTER PIANO ROLL TIMELINE with TimelineController
+    // Note: engineRef is defined later in the file and used here via closure
     useEffect(() => {
         if (!containerRef.current || !engine.dimensions.stepWidth) return;
 
@@ -324,7 +423,7 @@ function PianoRoll() {
             const KEYBOARD_WIDTH = 80;
 
             // ✅ Custom position calculation for piano roll (accounts for scroll/zoom)
-            // Use latest engine state by accessing it from component scope (not closure)
+            // Use engineRef to always get the LATEST engine state (avoid stale closure)
             const calculatePosition = (mouseX, mouseY) => {
                 // Only handle clicks in timeline ruler area
                 if (mouseY > RULER_HEIGHT) {
@@ -332,23 +431,31 @@ function PianoRoll() {
                 }
 
                 // Subtract keyboard width
-                const timelineX = mouseX - KEYBOARD_WIDTH;
-                if (timelineX < 0) {
+                const canvasX = mouseX - KEYBOARD_WIDTH;
+                if (canvasX < 0) {
                     return null; // In keyboard area
                 }
 
-                // ✅ Get latest viewport and dimensions (engine is in component scope, always fresh)
-                const viewport = engine.viewport;
-                const stepWidth = engine.dimensions?.stepWidth;
-                if (!viewport || !stepWidth) return null;
+                // ✅ CRITICAL FIX: Use engineRef.current to get LATEST engine state
+                const currentEngine = engineRef.current;
+                const viewport = currentEngine.viewport;
+                const dimensions = currentEngine.dimensions;
+                if (!viewport || !dimensions) return null;
 
-                // Account for scroll (already in screen pixels)
-                const worldX = viewport.scrollX + timelineX;
+                // ✅ CRITICAL FIX: Convert canvas coordinates to world coordinates
+                // scrollX is already in world pixel space, canvasX is in screen pixel space
+                // We need to add scrollX (which is in world space) to canvasX (screen space)
+                const worldX = viewport.scrollX + canvasX;
 
-                // Convert pixels to steps using current stepWidth (includes zoom)
+                // ✅ IMPORTANT: dimensions.stepWidth is the RENDERED step width (already includes zoom)
+                // It's updated by the engine's render loop based on viewport.zoomX
+                // So we DON'T multiply by zoomX again - that would apply zoom twice!
+                const stepWidth = dimensions.stepWidth;
+
+                // Convert world pixels to steps
                 const step = Math.floor(worldX / stepWidth);
 
-                return Math.max(0, Math.min(engine.dimensions.totalSteps - 1, step));
+                return Math.max(0, Math.min(dimensions.totalSteps - 1, step));
             };
 
             // Register piano roll timeline for ghost playhead
@@ -400,6 +507,8 @@ function PianoRoll() {
             hoveredNoteId: noteInteractions.hoveredNoteId,
             selectionArea: noteInteractions.selectionArea,
             isSelectingArea: noteInteractions.isSelectingArea,
+            isSelectingTimeRange: noteInteractions.isSelectingTimeRange, // ✅ Time-based selection state
+            timeRangeSelection: noteInteractions.timeRangeSelection, // ✅ Time range selection data
             previewNote: noteInteractions.previewNote,
             slicePreview: noteInteractions.slicePreview,
             sliceRange: noteInteractions.sliceRange,
@@ -407,19 +516,19 @@ function PianoRoll() {
             ghostPosition, // ✅ Pass ghost position for hover preview
             activeTool, // ✅ Pass active tool for visual feedback
             loopRegion, // ✅ Pass loop region for timeline rendering
-            dragState: noteInteractions.dragState // ✅ Pass dragState for visual feedback during drag
+            dragState: noteInteractions.dragState, // ✅ Pass dragState for visual feedback during drag
+            scaleHighlight // ✅ PHASE 5: Pass scale highlighting system
         };
         drawPianoRollStatic(ctx, engineWithData);
 
-    }, [engine, snapValue, noteInteractions, qualityLevel, ghostPosition, activeTool, loopRegion]); // Added: loopRegion
+        // ✅ NEW: Render timeline system (time signatures, tempo, markers, loop regions)
+        if (timelineRenderer) {
+            timelineRenderer.render(ctx, engineWithData);
+        }
 
-    // ✅ Store engine ref for playhead rendering (avoid stale closure)
-    const engineRef = useRef(engine);
-    useEffect(() => {
-        engineRef.current = engine;
-    }, [engine]);
+    }, [engine, snapValue, noteInteractions, qualityLevel, ghostPosition, activeTool, loopRegion, noteInteractions.isSelectingTimeRange, noteInteractions.timeRangeSelection, timelineRenderer, scaleHighlight]); // Added: time-based selection + timelineRenderer + scale highlight
 
-    // Playhead canvas - fast rendering via UIUpdateManager
+    // Playhead canvas - fast rendering via UIUpdateManager (uses engineRef from top of component)
     useEffect(() => {
         if (!isPlaying) {
             const canvas = playheadCanvasRef.current;
@@ -489,37 +598,67 @@ function PianoRoll() {
     // ✅ PHASE 2: CC LANES HANDLERS
     const activePatternId = useArrangementStore(state => state.activePatternId);
     
-    // ✅ PHASE 2: Initialize CC lanes for pattern - load from store or create defaults
+    // ✅ PHASE 4: Initialize CC lanes from AutomationManager (per pattern + instrument)
     useEffect(() => {
         if (!activePatternId || !currentInstrument) {
             setCCLanes([]);
             return;
         }
 
-        // Load CC lanes from pattern store
-        const pattern = useArrangementStore.getState().patterns[activePatternId];
-        if (pattern?.ccLanes && Array.isArray(pattern.ccLanes) && pattern.ccLanes.length > 0) {
-            // Restore from stored data
-            const restoredLanes = pattern.ccLanes.map(laneData => AutomationLane.fromJSON(laneData));
-            setCCLanes(restoredLanes);
-        } else {
-            // Create default lanes: Mod Wheel (CC1), Pitch Bend, Aftertouch
+        const automationManager = getAutomationManager();
+
+        // Get lanes from AutomationManager (pattern + instrument specific)
+        let lanes = automationManager.getLanes(activePatternId, currentInstrument.id);
+
+        // If no lanes exist, create defaults
+        if (lanes.length === 0) {
             const defaultLanes = [
-                new AutomationLane(1, 'Mod Wheel'), // CC1
+                new AutomationLane(7, 'Volume'),      // CC7 - Essential mixing control
+                new AutomationLane(10, 'Pan'),        // CC10 - Essential mixing control
+                new AutomationLane(1, 'Mod Wheel'),   // CC1 - Common modulation
                 new AutomationLane('pitchBend', 'Pitch Bend'),
                 new AutomationLane('aftertouch', 'Aftertouch')
             ];
-            setCCLanes(defaultLanes);
-            
-            // ✅ FIX: Save defaults to store after render (avoid setState during render warning)
-            setTimeout(() => {
-                const ccLanesData = defaultLanes.map(lane => lane.toJSON());
-                useArrangementStore.getState().updatePatternCCLanes(activePatternId, ccLanesData);
-            }, 0);
+
+            // Save to AutomationManager
+            automationManager.setLanes(activePatternId, currentInstrument.id, defaultLanes);
+            lanes = defaultLanes;
         }
+
+        setCCLanes(lanes);
+    }, [activePatternId, currentInstrument]);
+
+    // ✅ PHASE 4: Sync with AutomationManager - Listen for lane changes from Instrument Editor
+    useEffect(() => {
+        if (!activePatternId || !currentInstrument) return;
+
+        const automationManager = getAutomationManager();
+
+        // Subscribe to automation manager events
+        const unsubscribe = automationManager.subscribe((event) => {
+            // Only update if this is for the current pattern/instrument
+            const currentKey = automationManager.getLaneKey(activePatternId, currentInstrument.id);
+
+            // Check if event is for current pattern/instrument
+            const eventPatternId = event.patternId || activePatternId;
+            const eventInstrumentId = event.instrumentId || currentInstrument.id;
+            const eventKey = automationManager.getLaneKey(eventPatternId, eventInstrumentId);
+
+            if (eventKey !== currentKey) return;
+
+            // Sync ccLanes with AutomationManager
+            const managerLanes = automationManager.getLanes(activePatternId, currentInstrument.id);
+            setCCLanes(managerLanes);
+        });
+
+        return unsubscribe;
     }, [activePatternId, currentInstrument]);
 
     const handleCCLanePointAdd = useCallback((ccNumber, time, value) => {
+        if (!activePatternId || !currentInstrument) return;
+
+        const automationManager = getAutomationManager();
+
         setCCLanes(prevLanes => {
             const updatedLanes = prevLanes.map(lane => {
                 if (lane.ccNumber === ccNumber) {
@@ -529,18 +668,19 @@ function PianoRoll() {
                 }
                 return lane;
             });
-            
-            // ✅ PHASE 2: Save CC lanes to pattern store
-            if (activePatternId) {
-                const ccLanesData = updatedLanes.map(lane => lane.toJSON());
-                useArrangementStore.getState().updatePatternCCLanes(activePatternId, ccLanesData);
-            }
-            
+
+            // ✅ PHASE 4: Save to AutomationManager (pattern + instrument specific)
+            automationManager.setLanes(activePatternId, currentInstrument.id, updatedLanes);
+
             return updatedLanes;
         });
-    }, [activePatternId]);
+    }, [activePatternId, currentInstrument]);
 
     const handleCCLanePointRemove = useCallback((ccNumber, pointIndex) => {
+        if (!activePatternId || !currentInstrument) return;
+
+        const automationManager = getAutomationManager();
+
         setCCLanes(prevLanes => {
             const updatedLanes = prevLanes.map(lane => {
                 if (lane.ccNumber === ccNumber) {
@@ -550,18 +690,19 @@ function PianoRoll() {
                 }
                 return lane;
             });
-            
-            // ✅ PHASE 2: Save CC lanes to pattern store
-            if (activePatternId) {
-                const ccLanesData = updatedLanes.map(lane => lane.toJSON());
-                useArrangementStore.getState().updatePatternCCLanes(activePatternId, ccLanesData);
-            }
-            
+
+            // ✅ PHASE 4: Save to AutomationManager (pattern + instrument specific)
+            automationManager.setLanes(activePatternId, currentInstrument.id, updatedLanes);
+
             return updatedLanes;
         });
-    }, [activePatternId]);
+    }, [activePatternId, currentInstrument]);
 
     const handleCCLanePointUpdate = useCallback((ccNumber, pointIndex, updates) => {
+        if (!activePatternId || !currentInstrument) return;
+
+        const automationManager = getAutomationManager();
+
         setCCLanes(prevLanes => {
             const updatedLanes = prevLanes.map(lane => {
                 if (lane.ccNumber === ccNumber) {
@@ -571,16 +712,37 @@ function PianoRoll() {
                 }
                 return lane;
             });
-            
-            // ✅ PHASE 2: Save CC lanes to pattern store
-            if (activePatternId) {
-                const ccLanesData = updatedLanes.map(lane => lane.toJSON());
-                useArrangementStore.getState().updatePatternCCLanes(activePatternId, ccLanesData);
-            }
-            
+
+            // ✅ PHASE 4: Save to AutomationManager (pattern + instrument specific)
+            automationManager.setLanes(activePatternId, currentInstrument.id, updatedLanes);
+
             return updatedLanes;
         });
-    }, [activePatternId]);
+    }, [activePatternId, currentInstrument]);
+
+    // ✅ PHASE 4: Handle scroll from CC Lanes to sync Piano Roll viewport
+    const handleCCLanesScroll = useCallback((deltaX, deltaY) => {
+        const currentEngine = engineRef.current;
+        if (!currentEngine) return;
+
+        // Update viewport scroll (horizontal scroll from vertical wheel)
+        const scrollSpeed = 1.0;
+        const newScrollX = Math.max(0, currentEngine.viewport.scrollX + (deltaY * scrollSpeed));
+
+        currentEngine.viewport.scrollX = newScrollX;
+        currentEngine.viewport.targetScrollX = newScrollX;
+
+        // Force re-render
+        if (canvasRef.current) {
+            const ctx = canvasRef.current.getContext('2d');
+            if (ctx && currentEngine.notes && currentEngine.dimensions) {
+                drawPianoRollStatic(ctx, {
+                    ...currentEngine,
+                    notes: currentEngine.notes
+                }, currentEngine.dimensions);
+            }
+        }
+    }, []);
 
     // ✅ PHASE 2: NOTE PROPERTIES HANDLERS
     // ✅ FIX: Calculate selectedNote on every render to ensure it updates when notes change
@@ -767,6 +929,9 @@ function PianoRoll() {
                 onShowCCLanesChange={setShowCCLanes}
                 showNoteProperties={showNoteProperties}
                 onShowNotePropertiesChange={setShowNoteProperties}
+                // ✅ PHASE 5: Scale Selector
+                showScaleSelector={showScaleSelector}
+                onShowScaleSelectorChange={setShowScaleSelector}
             />
             <div
                 ref={containerRef}
@@ -802,10 +967,17 @@ function PianoRoll() {
                     const isInGrid = x > 80 && y > 30;
 
                     if (isInRuler) {
-                        // ✅ Try loop region selection first
-                        const handled = loopRegionHook.handleRulerMouseDown(e);
-                        if (!handled) {
-                            engine.eventHandlers.onMouseDown?.(e);
+                        // ✅ Shift+drag: Time-based selection (select all notes in time range)
+                        // Normal drag: Loop region selection
+                        if (e.shiftKey) {
+                            // Time-based selection - handled by noteInteractions
+                            noteInteractions.handleRulerMouseDown?.(e);
+                        } else {
+                            // Loop region selection
+                            const handled = loopRegionHook.handleRulerMouseDown(e);
+                            if (!handled) {
+                                engine.eventHandlers.onMouseDown?.(e);
+                            }
                         }
                     } else if (isInGrid) {
                         noteInteractions.handleMouseDown(e);
@@ -819,10 +991,15 @@ function PianoRoll() {
                     const isInGrid = x > 80 && y > 30;
 
                     if (isInRuler) {
-                        // ✅ Handle loop region dragging
-                        const handled = loopRegionHook.handleRulerMouseMove(e);
-                        if (!handled) {
-                            engine.eventHandlers.onMouseMove?.(e);
+                        // ✅ Shift+drag: Time-based selection
+                        if (e.shiftKey) {
+                            noteInteractions.handleRulerMouseMove?.(e);
+                        } else {
+                            // Loop region dragging
+                            const handled = loopRegionHook.handleRulerMouseMove(e);
+                            if (!handled) {
+                                engine.eventHandlers.onMouseMove?.(e);
+                            }
                         }
                     } else if (isInGrid) {
                         noteInteractions.handleMouseMove(e);
@@ -912,8 +1089,9 @@ function PianoRoll() {
                     onPointAdd={handleCCLanePointAdd}
                     onPointRemove={handleCCLanePointRemove}
                     onPointUpdate={handleCCLanePointUpdate}
-                    dimensions={engine.dimensions}
-                    viewport={engine.viewport}
+                    onScroll={handleCCLanesScroll}
+                    dimensions={engineRef.current.dimensions}
+                    viewport={engineRef.current.viewport}
                     activeTool={activeTool}
                     snapValue={snapValue}
                 />
@@ -927,6 +1105,13 @@ function PianoRoll() {
                     collapsed={propertiesPanelCollapsed}
                     onToggleCollapse={() => setPropertiesPanelCollapsed(prev => !prev)}
                     allNotes={noteInteractions.notes} // ✅ FL Studio: Need all notes to find next note for slide target
+                />
+            )}
+
+            {/* ✅ PHASE 5: SCALE SELECTOR PANEL */}
+            {showScaleSelector && (
+                <ScaleSelectorPanel
+                    onChange={handleScaleChange}
                 />
             )}
 

@@ -158,27 +158,13 @@ function App() {
       });
       console.log(`✅ Created ${createdInserts.length} mixer inserts`);
 
-      // 🔗 DYNAMIC MIXER: Re-route existing instruments to their MixerInserts
-      console.log('🔗 Re-routing instruments to mixer inserts...');
-      const existingInstruments = storeGetters.getInstruments();
-      console.log(`📊 Found ${existingInstruments.length} existing instruments`);
-
-      let reroutedCount = 0;
-      existingInstruments.forEach(inst => {
-        console.log(`  Checking instrument: ${inst.id}`, {
-          name: inst.name,
-          mixerTrackId: inst.mixerTrackId
-        });
-
-        if (inst.mixerTrackId && inst.mixerTrackId !== 'master') {
-          console.log(`  🔗 Re-routing ${inst.id} → ${inst.mixerTrackId}`);
-          AudioContextService.routeInstrumentToInsert(inst.id, inst.mixerTrackId);
-          reroutedCount++;
-        } else {
-          console.log(`  ⏭️ Skipping ${inst.id} (mixerTrackId: ${inst.mixerTrackId})`);
-        }
-      });
-      console.log(`✅ Re-routed ${reroutedCount}/${existingInstruments.length} instruments`);
+      // ⚠️ NOTE: Re-routing is NOT needed here because:
+      // 1. createInstrument() already handles routing automatically (see NativeAudioEngine.js:564-578)
+      // 2. Instruments are created AFTER this point (line 235-244)
+      // 3. Re-routing here causes "Instrument not found" errors because instruments don't exist yet
+      // 
+      // If re-routing is needed for existing instruments (e.g., after loading saved project),
+      // it should be done AFTER all instruments are created (after line 244)
 
       // 🎛️ DYNAMIC MIXER: Load insert effects from initial data
       console.log('🎛️ Loading insert effects from initial data...');
@@ -240,6 +226,33 @@ function App() {
           }
         } catch (error) {
           console.error(`❌ Failed to create instrument ${inst.name}:`, error);
+        }
+      }
+
+      // 🔗 DYNAMIC MIXER: Re-route instruments that weren't auto-routed during creation
+      // This handles edge cases where instruments exist but weren't routed during createInstrument()
+      // Note: createInstrument() already routes instruments automatically, so this is mostly redundant
+      // but kept for safety in case of edge cases (e.g., instruments created before mixer inserts)
+      if (import.meta.env.DEV) {
+        const existingInstruments = storeGetters.getInstruments();
+        let reroutedCount = 0;
+        existingInstruments.forEach(inst => {
+          if (inst.mixerTrackId && inst.mixerTrackId !== 'master') {
+            // Check if instrument exists in audio engine before routing
+            const instrumentExists = engine.instruments && engine.instruments.has(inst.id);
+            if (instrumentExists) {
+              // Only route if not already routed (createInstrument should have done this)
+              const isAlreadyRouted = engine.instrumentToInsert && engine.instrumentToInsert.get(inst.id) === inst.mixerTrackId;
+              if (!isAlreadyRouted) {
+                console.log(`  🔗 Re-routing ${inst.id} → ${inst.mixerTrackId}`);
+                AudioContextService.routeInstrumentToInsert(inst.id, inst.mixerTrackId);
+                reroutedCount++;
+              }
+            }
+          }
+        });
+        if (reroutedCount > 0) {
+          console.log(`✅ Re-routed ${reroutedCount} instruments (edge cases)`);
         }
       }
 

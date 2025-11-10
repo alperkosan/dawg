@@ -20,9 +20,10 @@
  */
 
 import { useState, useCallback, useRef } from 'react';
-import { useArrangementV2Store } from '@/store/useArrangementV2Store';
+// ✅ PHASE 1: Store Consolidation - Use unified store
+import { useArrangementStore } from '@/store/useArrangementStore';
 import { snapToGrid } from '../renderers/gridRenderer';
-import TransportManagerSingleton from '@/lib/core/TransportManagerSingleton';
+import { getTimelineController } from '@/lib/core/TimelineControllerSingleton'; // ✅ Unified transport system
 
 // ============================================================================
 // CONSTANTS
@@ -54,14 +55,14 @@ export function useClipInteraction(viewport, tracks, clips, constants, dimension
   const [fadeGhosts, setFadeGhosts] = useState(null); // Array of ghosts for fade manipulation
   const [gainGhosts, setGainGhosts] = useState(null); // Array of ghosts for gain manipulation
 
-  // Store actions
-  const setSelection = useArrangementV2Store(state => state.setSelection);
-  const addToSelection = useArrangementV2Store(state => state.addToSelection);
-  const toggleSelection = useArrangementV2Store(state => state.toggleSelection);
-  const clearSelection = useArrangementV2Store(state => state.clearSelection);
-  const selectedClipIds = useArrangementV2Store(state => state.selectedClipIds);
-  const updateClip = useArrangementV2Store(state => state.updateClip);
-  const snapSize = useArrangementV2Store(state => state.snapSize);
+  // ✅ PHASE 1: Store Consolidation - Use unified store
+  const setSelection = useArrangementStore(state => state.setArrangementSelection);
+  const addToSelection = useArrangementStore(state => state.addToArrangementSelection);
+  const toggleSelection = useArrangementStore(state => state.toggleArrangementSelection);
+  const clearSelection = useArrangementStore(state => state.clearArrangementSelection);
+  const selectedClipIds = useArrangementStore(state => state.selectedClipIds);
+  const updateClip = useArrangementStore(state => state.updateArrangementClip);
+  const snapSize = useArrangementStore(state => state.snapSize);
 
   // Double-click detection
   const lastClickRef = useRef({ time: 0, clipId: null });

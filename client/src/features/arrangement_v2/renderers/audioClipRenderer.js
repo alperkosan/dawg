@@ -10,7 +10,8 @@
  */
 
 import { getWaveformCache } from './WaveformCache';
-import { ZENITH_COLORS } from './gridRenderer';
+// ✅ THEME-AWARE: Audio clip renderer uses fixed colors for now
+// TODO: Make audio clip renderer theme-aware in the future
 
 // ============================================================================
 // CONSTANTS
@@ -19,14 +20,14 @@ import { ZENITH_COLORS } from './gridRenderer';
 const PIXELS_PER_BEAT = 48;
 
 /**
- * Generate audio clip colors from track color
+ * ✅ PHASE 2: Design Consistency - Generate audio clip colors using Zenith theme
+ * Audio clips use a fixed cool accent color (cyan) from Zenith theme
  */
-function getAudioClipColors(trackColor) {
-  // Parse hex color
-  const hex = trackColor.replace('#', '');
-  const r = parseInt(hex.substring(0, 2), 16);
-  const g = parseInt(hex.substring(2, 4), 16);
-  const b = parseInt(hex.substring(4, 6), 16);
+function getAudioClipColors() {
+  // Use Zenith accent-cool color (cyan: #4ECDC4 / rgba(78, 205, 196, ...))
+  const r = 78;
+  const g = 205;
+  const b = 196;
 
   return {
     background: `rgba(${r}, ${g}, ${b}, 0.15)`,
@@ -66,9 +67,8 @@ export function renderAudioClip(ctx, audioBuffer, clip, x, y, width, height, isS
   // Save context state
   ctx.save();
 
-  // Get colors from track
-  const trackColor = track?.color || '#4ECDC4';
-  const colors = getAudioClipColors(trackColor);
+  // ✅ PHASE 2: Design Consistency - Use fixed Zenith theme colors (no track color dependency)
+  const colors = getAudioClipColors();
 
   // Draw clip background
   drawClipBackground(ctx, x, y, width, height, isSelected, colors);

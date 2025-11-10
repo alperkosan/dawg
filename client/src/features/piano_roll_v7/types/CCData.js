@@ -167,14 +167,14 @@ export class CCData {
             return this.events[beforeIndex].value;
         }
 
-        // Before all events
+        // Before all events - return null (no automation yet)
         if (beforeIndex === -1) {
-            return this.events[0].value;
+            return null;
         }
 
-        // After all events
+        // After all events - return null (automation ended, return to default)
         if (afterIndex === -1) {
-            return this.events[this.events.length - 1].value;
+            return null;
         }
 
         // Interpolate

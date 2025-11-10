@@ -2,12 +2,13 @@
  * TIMELINE RULER STYLES
  */
 
+/* ✅ PHASE 2: Design Consistency - Using Zenith theme variables */
 .arr-v2-timeline-ruler {
   position: relative;
   width: 100%;
-  background: linear-gradient(180deg, rgba(15, 15, 20, 0.98) 0%, rgba(15, 15, 20, 0.95) 100%);
+  background: var(--zenith-bg-secondary);
   backdrop-filter: blur(10px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid var(--zenith-border-medium);
   overflow: hidden;
   user-select: none;
 }
@@ -19,5 +20,5 @@
 }
 
 .arr-v2-timeline-ruler:hover {
-  background: linear-gradient(180deg, rgba(18, 18, 24, 0.98) 0%, rgba(15, 15, 20, 0.95) 100%);
+  background: var(--zenith-bg-tertiary);
 }

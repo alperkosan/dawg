@@ -32,10 +32,18 @@ export function useLoopRegionSelection(engine, snapValue, loopRegion, setLoopReg
             return false;
         }
 
-        // Calculate step position
+        // ✅ FIX: Calculate step position matching renderer algorithm
+        // Renderer uses: ctx.translate(-scrollX), then draws at x = step * stepWidth
+        // scrollX is in screen coordinates, but after translate(-scrollX), screen and world are 1:1
+        // After translate(-scrollX), screen x=0 corresponds to world x=scrollX
+        // Screen mouse position → World position: worldX = scrollX + canvasX (after translate, 1:1 mapping)
+        // World position → Step: step = worldX / stepWidth
         const { stepWidth } = engine.dimensions;
+        const { scrollX } = engine.viewport;
         const canvasX = mouseX - KEYBOARD_WIDTH;
-        const worldX = engine.viewport.scrollX + canvasX;
+        // scrollX is in screen coordinates, but after translate(-scrollX), it maps to world coordinates
+        // After translate, screen coordinate canvasX maps to world coordinate scrollX + canvasX
+        const worldX = scrollX + canvasX; // After translate, screen and world are 1:1
         const clickedStep = Math.floor(worldX / stepWidth);
 
         // Alt+Click: Select single bar
@@ -65,22 +73,31 @@ export function useLoopRegionSelection(engine, snapValue, loopRegion, setLoopReg
         const rect = e.currentTarget.getBoundingClientRect();
         const mouseX = e.clientX - rect.left;
 
-        // Calculate step position
+        // ✅ FIX: Calculate step position matching renderer algorithm
+        // Renderer uses: ctx.translate(-scrollX), then draws at x = step * stepWidth
+        // So scrollX is in world coordinates (already includes zoomX)
+        // Screen mouse position → World position: worldX = scrollX + canvasX
+        // World position → Step: step = worldX / stepWidth
         const { stepWidth } = engine.dimensions;
+        const { scrollX } = engine.viewport;
         const canvasX = mouseX - KEYBOARD_WIDTH;
-        const worldX = engine.viewport.scrollX + canvasX;
+        const worldX = scrollX + canvasX;
         const currentStep = Math.floor(worldX / stepWidth);
 
         // Calculate region (start < end always)
         const start = Math.min(dragStartRef.current, currentStep);
         const end = Math.max(dragStartRef.current, currentStep);
 
-        // Snap to bars (Shift to disable snapping)
-        if (!e.shiftKey) {
+        // ✅ IMPROVED: Snap to bars (Shift to disable snapping, Ctrl for fine control)
+        if (!e.shiftKey && !e.ctrlKey && !e.metaKey) {
+            // Auto-snap to bars
             const snappedStart = snapToBar(start);
-            const snappedEnd = snapToBar(end) + 16; // End at next bar boundary
-            setLoopRegion({ start: snappedStart, end: snappedEnd });
+            const snappedEnd = snapToBar(end);
+            // If end is at bar boundary, include that bar
+            const finalEnd = (end % 16 === 0) ? snappedEnd : snapToBar(end) + 16;
+            setLoopRegion({ start: snappedStart, end: finalEnd });
         } else {
+            // Fine control: no snapping
             setLoopRegion({ start, end: end + 1 });
         }
 

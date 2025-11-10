@@ -9,6 +9,7 @@ import { useEffect, useState, useRef } from 'react';
 import useInstrumentEditorStore from '../../store/useInstrumentEditorStore';
 import { useInstrumentsStore } from '../../store/useInstrumentsStore';
 import { useMixerStore } from '../../store/useMixerStore';
+import { useArrangementStore } from '../../store/useArrangementStore';
 import VASynthEditor from './components/editors/VASynthEditor';
 import VASynthEditorV2 from './components/editors/VASynthEditorV2';
 import MultiSampleEditor from './components/editors/MultiSampleEditor';
@@ -18,6 +19,7 @@ import { ForgeSynthUI } from './ForgeSynthUI';
 import PresetBrowser from './components/PresetBrowser';
 import InstrumentEffectsPanel from './components/InstrumentEffectsPanel';
 import ModulationMatrix from './components/ModulationMatrix';
+import AutomationSettingsPanel from '../piano_roll_v7/components/AutomationSettingsPanel';
 import './InstrumentEditorPanel.css';
 
 const InstrumentEditorPanel = () => {
@@ -42,6 +44,9 @@ const InstrumentEditorPanel = () => {
 
   // Get mixer tracks for routing selector
   const mixerTracks = useMixerStore(state => state.mixerTracks);
+
+  // Get active pattern for automation lanes
+  const activePatternId = useArrangementStore(state => state.activePatternId);
 
   // ✅ RESIZABLE PANEL STATE
   const [panelWidth, setPanelWidth] = useState(() => {
@@ -626,6 +631,12 @@ const InstrumentEditorPanel = () => {
             Effects
           </button>
           <button
+            className={`instrument-editor-panel__tab ${activeTab === 'automation' ? 'instrument-editor-panel__tab--active' : ''}`}
+            onClick={() => setActiveTab('automation')}
+          >
+            Automation
+          </button>
+          <button
             className={`instrument-editor-panel__tab ${activeTab === 'modulation' ? 'instrument-editor-panel__tab--active' : ''}`}
             onClick={() => setActiveTab('modulation')}
           >
@@ -724,6 +735,7 @@ const InstrumentEditorPanel = () => {
           {activeTab === 'main' && getEditorComponent()}
           {activeTab === 'presets' && <PresetBrowser instrumentData={instrumentData} />}
           {activeTab === 'effects' && <InstrumentEffectsPanel instrumentData={instrumentData} />}
+          {activeTab === 'automation' && activePatternId && <AutomationSettingsPanel patternId={activePatternId} instrumentId={instrumentId} />}
           {activeTab === 'modulation' && <ModulationMatrix instrumentData={instrumentData} />}
         </div>
 

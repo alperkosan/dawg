@@ -43,11 +43,12 @@ export function drawPianoRollStatic(ctx, engine) {
     drawGhostPlayhead(ctx, engine); // ✅ GHOST PLAYHEAD (hover preview)
     // REMOVED: drawPlayhead(ctx, engine); - Now rendered separately for performance
     drawTimeline(ctx, engine);
+    drawTimeRangeSelection(ctx, engine); // ✅ Time-based selection on timeline
     drawKeyboard(ctx, engine);
     drawCornerAndBorders(ctx, engine);
 }
 
-function drawGrid(ctx, { viewport, dimensions, lod, snapValue, qualityLevel = 'high' }) {
+function drawGrid(ctx, { viewport, dimensions, lod, snapValue, qualityLevel = 'high', scaleHighlight = null }) {
     // ✅ OPTIMIZED: No getComputedStyle() call - using StyleCache
     ctx.save();
     ctx.translate(KEYBOARD_WIDTH, RULER_HEIGHT);
@@ -61,15 +62,45 @@ function drawGrid(ctx, { viewport, dimensions, lod, snapValue, qualityLevel = 'h
     // ⚡ ADAPTIVE: Skip black keys in low quality mode
     const skipBlackKeys = qualityLevel === 'low' && lod >= 2;
 
+    // ✅ PHASE 5: Draw scale highlighting rows FIRST (background layer)
+    if (scaleHighlight && scaleHighlight.getScale() && lod < 3) {
+        const { startKey, endKey } = viewport.visibleKeys;
+        const scaleInfo = scaleHighlight.getScaleInfo();
+
+        for (let i = startKey; i <= endKey; i++) {
+            const midiNote = 127 - i;
+            const isInScale = scaleHighlight.isNoteInScale(midiNote);
+            const pitchClass = midiNote % 12;
+            const isRoot = pitchClass === scaleInfo.root;
+
+            if (isInScale) {
+                // Highlight in-scale rows
+                ctx.fillStyle = scaleInfo.color;
+                ctx.globalAlpha = isRoot ? 0.15 : 0.08;
+                ctx.fillRect(0, i * keyHeight, dimensions.totalWidth, keyHeight);
+                ctx.globalAlpha = 1.0;
+            } else {
+                // Dim out-of-scale rows
+                ctx.fillStyle = '#000000';
+                ctx.globalAlpha = 0.2;
+                ctx.fillRect(0, i * keyHeight, dimensions.totalWidth, keyHeight);
+                ctx.globalAlpha = 1.0;
+            }
+        }
+    }
+
+    // Draw black key rows (piano key colors)
     if (lod < 3 && !skipBlackKeys) {
         const bgSecondary = globalStyleCache.get('--zenith-bg-secondary');
         ctx.fillStyle = bgSecondary || '#202229';
+        ctx.globalAlpha = scaleHighlight ? 0.3 : 1.0; // Make semi-transparent when scale highlighting is active
         const { startKey, endKey } = viewport.visibleKeys;
         for (let i = startKey; i <= endKey; i++) {
             if ([1, 3, 6, 8, 10].includes(i % 12)) {
                 ctx.fillRect(0, i * keyHeight, dimensions.totalWidth, keyHeight);
             }
         }
+        ctx.globalAlpha = 1.0;
     }
 
     const { startStep, endStep } = viewport.visibleSteps;
@@ -365,68 +396,121 @@ function drawTimeline(ctx, { viewport, dimensions, lod, snapValue }) {
 }
 
 // ✅ LOOP REGION ON TIMELINE - Visual indicator on ruler
+// ✅ Draw time range selection on timeline (for time-based selection)
+function drawTimeRangeSelection(ctx, engine) {
+    const { isSelectingTimeRange, timeRangeSelection, viewport, dimensions } = engine;
+    
+    if (!isSelectingTimeRange || !timeRangeSelection) return;
+    
+    const { startTime, endTime } = timeRangeSelection;
+    const minTime = Math.min(startTime, endTime);
+    const maxTime = Math.max(startTime, endTime);
+    const { stepWidth } = dimensions;
+    
+    // ✅ FIX: Match drawTimeline algorithm exactly
+    // Timeline uses: ctx.translate(KEYBOARD_WIDTH, 0), then ctx.translate(-scrollX, 0)
+    // Then draws at: x = step * stepWidth (world coordinates)
+    // So we do the same transform sequence
+    ctx.save();
+    ctx.translate(KEYBOARD_WIDTH, 0);
+    ctx.beginPath();
+    ctx.rect(0, 0, viewport.width - KEYBOARD_WIDTH, RULER_HEIGHT);
+    ctx.clip();
+    ctx.translate(-viewport.scrollX, 0);
+    
+    // Calculate world coordinates (matching timeline drawing)
+    const startX = minTime * stepWidth;
+    const endX = maxTime * stepWidth;
+    const width = endX - startX;
+    
+    // Only draw if visible (check in world coordinates after translate)
+    const visibleStartX = viewport.scrollX;
+    const visibleEndX = viewport.scrollX + (viewport.width - KEYBOARD_WIDTH);
+    
+    if (endX < visibleStartX || startX > visibleEndX) {
+        ctx.restore();
+        return;
+    }
+    
+    // Draw time range highlight on timeline
+    const accentCoolFaded = globalStyleCache.get('--zenith-accent-cool-faded');
+    ctx.fillStyle = accentCoolFaded || 'rgba(59, 130, 246, 0.2)';
+    ctx.fillRect(startX, 0, width, RULER_HEIGHT);
+    
+    // Draw border
+    const accentCool = globalStyleCache.get('--zenith-accent-cool');
+    ctx.strokeStyle = accentCool || 'rgba(59, 130, 246, 0.8)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(startX, 0, width, RULER_HEIGHT);
+    
+    // Draw vertical lines at start and end
+    ctx.beginPath();
+    ctx.moveTo(startX, 0);
+    ctx.lineTo(startX, RULER_HEIGHT);
+    ctx.moveTo(endX, 0);
+    ctx.lineTo(endX, RULER_HEIGHT);
+    ctx.stroke();
+    
+    ctx.restore();
+}
+
 function drawLoopRegionOnTimeline(ctx, engine) {
     const { loopRegion, viewport, dimensions } = engine;
     if (!loopRegion || !dimensions) return;
 
-    // ✅ OPTIMIZED: Using StyleCache
+    // ✅ FIX: Match drawTimeline algorithm exactly
+    // Timeline uses: ctx.translate(KEYBOARD_WIDTH, 0), then ctx.translate(-scrollX, 0)
+    // Then draws at: x = step * stepWidth (world coordinates)
     const { stepWidth } = dimensions;
     const { start, end } = loopRegion;
 
     ctx.save();
     ctx.translate(KEYBOARD_WIDTH, 0);
+    ctx.beginPath();
+    ctx.rect(0, 0, viewport.width - KEYBOARD_WIDTH, RULER_HEIGHT);
+    ctx.clip();
+    ctx.translate(-viewport.scrollX, 0);
 
-    // Calculate positions
-    const startX = (start * stepWidth) - viewport.scrollX;
-    const endX = (end * stepWidth) - viewport.scrollX;
+    // Calculate world coordinates (matching timeline drawing)
+    const startX = start * stepWidth;
+    const endX = end * stepWidth;
     const width = endX - startX;
 
-    // Only render if visible
-    if (endX < 0 || startX > viewport.width - KEYBOARD_WIDTH) {
+    // Only render if visible (check in world coordinates)
+    const visibleStartX = viewport.scrollX;
+    const visibleEndX = viewport.scrollX + (viewport.width - KEYBOARD_WIDTH);
+
+    if (endX < visibleStartX || startX > visibleEndX) {
         ctx.restore();
         return;
     }
 
-    // Clamp to visible area
-    const visibleStartX = Math.max(0, startX);
-    const visibleEndX = Math.min(viewport.width - KEYBOARD_WIDTH, endX);
-    const visibleWidth = visibleEndX - visibleStartX;
+    // Draw loop region (clip handles visibility, draw in world coordinates)
+    const accentCool = globalStyleCache.get('--zenith-accent-cool');
+    
+    // Fill
+    ctx.fillStyle = accentCool || '#3b82f6';
+    ctx.globalAlpha = 0.15;
+    ctx.fillRect(startX, 0, width, RULER_HEIGHT);
 
-    if (visibleWidth > 0) {
-        // Fill
-        const accentCool = globalStyleCache.get('--zenith-accent-cool');
-        ctx.fillStyle = accentCool || '#3b82f6';
-        ctx.globalAlpha = 0.15;
-        ctx.fillRect(visibleStartX, 0, visibleWidth, RULER_HEIGHT);
+    // Borders
+    ctx.globalAlpha = 0.8;
+    ctx.strokeStyle = accentCool || '#3b82f6';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(startX, 0);
+    ctx.lineTo(startX, RULER_HEIGHT);
+    ctx.moveTo(endX, 0);
+    ctx.lineTo(endX, RULER_HEIGHT);
+    ctx.stroke();
 
-        // Borders
-        ctx.globalAlpha = 0.8;
-        ctx.strokeStyle = accentCool || '#3b82f6';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-
-        // Left border (if visible)
-        if (startX >= 0 && startX <= viewport.width - KEYBOARD_WIDTH) {
-            ctx.moveTo(startX, 0);
-            ctx.lineTo(startX, RULER_HEIGHT);
-        }
-
-        // Right border (if visible)
-        if (endX >= 0 && endX <= viewport.width - KEYBOARD_WIDTH) {
-            ctx.moveTo(endX, 0);
-            ctx.lineTo(endX, RULER_HEIGHT);
-        }
-
-        ctx.stroke();
-
-        // Top line
-        ctx.globalAlpha = 0.4;
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(visibleStartX, 0);
-        ctx.lineTo(visibleEndX, 0);
-        ctx.stroke();
-    }
+    // Top line
+    ctx.globalAlpha = 0.4;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(startX, 0);
+    ctx.lineTo(endX, 0);
+    ctx.stroke();
 
     ctx.restore();
 }
@@ -447,16 +531,23 @@ function drawKeyboard(ctx, { viewport, dimensions, lod }) {
         const { startKey, endKey } = viewport.visibleKeys;
         const bgPrimary = globalStyleCache.get('--zenith-bg-primary');
         const textPrimary = globalStyleCache.get('--zenith-text-primary');
+
         for (let key = startKey; key <= endKey; key++) {
             const y = key * dimensions.keyHeight;
+            const midiNote = 127 - key;
             const isBlack = [1, 3, 6, 8, 10].includes(key % 12);
+
+            // Normal keyboard rendering - no scale highlighting
             ctx.fillStyle = isBlack ? (bgPrimary || '#1a202c') : (textPrimary || '#cbd5e1');
             ctx.fillRect(0, y, KEYBOARD_WIDTH, dimensions.keyHeight);
+
+            // Draw note labels
             if (!isBlack && lod < 2 && dimensions.keyHeight >= 12) {
-                const octave = Math.floor((127 - key) / 12);
-                const noteName = NOTES[(127-key) % 12];
+                const octave = Math.floor(midiNote / 12) - 1;
+                const noteName = NOTES[midiNote % 12];
                 if (noteName === 'C') {
                     ctx.fillStyle = bgPrimary || '#1a202c';
+                    ctx.globalAlpha = 1.0;
                     const fontSize = lod < 1 ? 10 : 8;
                     ctx.font = `${fontSize}px sans-serif`;
                     ctx.textAlign = 'right';
@@ -540,6 +631,46 @@ function drawSelectionArea(ctx, engine) {
     ctx.rect(0, 0, viewport.width - KEYBOARD_WIDTH, viewport.height - RULER_HEIGHT);
     ctx.clip();
 
+    // ✅ Lasso mode: Draw freehand polygon
+    if (selectionArea.mode === 'lasso' && selectionArea.path && selectionArea.path.length > 1) {
+        const path = selectionArea.path;
+        
+        // Draw polygon fill
+        ctx.beginPath();
+        ctx.moveTo(path[0].x, path[0].y);
+        for (let i = 1; i < path.length; i++) {
+            ctx.lineTo(path[i].x, path[i].y);
+        }
+        ctx.closePath();
+        
+        // Gradient background for lasso
+        const accentCoolFaded = globalStyleCache.get('--zenith-accent-cool-faded');
+        const bgGradient = ctx.createLinearGradient(0, 0, viewport.width, viewport.height);
+        bgGradient.addColorStop(0, accentCoolFaded || 'rgba(59, 130, 246, 0.08)');
+        bgGradient.addColorStop(0.5, accentCoolFaded || 'rgba(59, 130, 246, 0.12)');
+        bgGradient.addColorStop(1, accentCoolFaded || 'rgba(59, 130, 246, 0.08)');
+        ctx.fillStyle = bgGradient;
+        ctx.fill();
+        
+        // Draw polygon border
+        const time = Date.now() * 0.002;
+        const dashOffset = (time * 20) % 16;
+        const accentCool = globalStyleCache.get('--zenith-accent-cool');
+        
+        ctx.shadowColor = accentCoolFaded || 'rgba(59, 130, 246, 0.4)';
+        ctx.shadowBlur = 6;
+        ctx.strokeStyle = accentCool || 'rgba(59, 130, 246, 0.9)';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([8, 4]);
+        ctx.lineDashOffset = -dashOffset;
+        ctx.stroke();
+        
+        ctx.shadowBlur = 0;
+        ctx.restore();
+        return;
+    }
+
+    // ✅ Rectangular mode: Original logic
     const { startX, startY, endX, endY } = selectionArea;
     const x = Math.min(startX, endX);
     const y = Math.min(startY, endY);
