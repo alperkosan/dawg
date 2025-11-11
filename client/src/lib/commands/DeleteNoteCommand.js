@@ -26,11 +26,12 @@ export class DeleteNoteCommand extends Command {
     useArrangementStore.getState().updatePatternNotes(activePatternId, this.instrumentId, newNotes);
     usePlaybackStore.getState().updateLoopLength();
 
-    // ✅ FIX: Notify PlaybackManager via EventBus
+    // ✅ FIX: Notify PlaybackManager via EventBus (include note object for immediate cancellation)
     EventBus.emit('NOTE_REMOVED', {
       patternId: activePatternId,
       instrumentId: this.instrumentId,
-      noteId: this.note.id
+      noteId: this.note.id,
+      note: this.note // ✅ SCHEDULE OPT: Include note object for immediate cancellation
     });
   }
 

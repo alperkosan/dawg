@@ -79,13 +79,14 @@ export class VoicePool {
      *
      * @param {number} midiNote - MIDI note number
      * @param {number} time - AudioContext time to release
+     * @param {number|null} releaseVelocity - Note-off velocity (0-127, null = default)
      */
-    release(midiNote, time) {
+    release(midiNote, time, releaseVelocity = null) {
         const voice = this.activeVoices.get(midiNote);
         if (!voice) return;
 
-        // Start release phase
-        const releaseDuration = voice.release(time);
+        // ✅ RELEASE VELOCITY: Start release phase with release velocity
+        const releaseDuration = voice.release(time, releaseVelocity);
 
         // Remove from active voices
         this.activeVoices.delete(midiNote);
@@ -198,12 +199,12 @@ export class VoicePool {
      *
      * @param {number} time - AudioContext time to release
      */
-    releaseAll(time) {
+    releaseAll(time, releaseVelocity = null) {
         // Copy keys to avoid modification during iteration
         const notes = Array.from(this.activeVoices.keys());
 
         notes.forEach(note => {
-            this.release(note, time);
+            this.release(note, time, releaseVelocity);
         });
     }
 

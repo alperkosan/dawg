@@ -6,6 +6,7 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import useInstrumentEditorStore from '../../../../store/useInstrumentEditorStore';
+import { usePlaybackStore } from '@/store/usePlaybackStore';
 import { AudioContextService } from '@/lib/services/AudioContextService';
 import { getPreset } from '@/lib/audio/synth/presets';
 import { getPreviewManager } from '@/lib/audio/preview';
@@ -32,16 +33,60 @@ const VASynthEditorV2 = ({ instrumentData: initialData }) => {
         filter: presetData.filter,
         filterEnvelope: presetData.filterEnvelope,
         amplitudeEnvelope: presetData.amplitudeEnvelope,
-        lfo1: presetData.lfo,
+        lfo1: {
+          ...presetData.lfo,
+          target: presetData.lfoTarget || 'filter.cutoff' // ✅ LFO TARGET: Include target in lfo1
+        },
       };
       useInstrumentEditorStore.setState({ instrumentData: mergedData });
     }
   }, [instrumentData.id]);
 
   const oscillators = instrumentData.oscillators || presetData?.oscillators || [];
-  const filter = instrumentData.filter || presetData?.filter || {};
-  const filterEnvelope = instrumentData.filterEnvelope || presetData?.filterEnvelope || {};
-  const amplitudeEnvelope = instrumentData.amplitudeEnvelope || presetData?.amplitudeEnvelope || {};
+  // ✅ FILTER DRIVE: Merge filter with defaults to ensure drive property exists
+  const defaultFilter = {
+    type: 'lowpass',
+    cutoff: 2000,
+    resonance: 1,
+    envelopeAmount: 2000,
+    drive: 0 // ✅ FILTER DRIVE: Default drive value
+  };
+  const filter = {
+    ...defaultFilter,
+    ...(presetData?.filter || {}),
+    ...(instrumentData.filter || {})
+  };
+  // ✅ ENVELOPE DELAY/HOLD: Merge envelopes with defaults to ensure delay and hold properties exist
+  const defaultFilterEnvelope = {
+    delay: 0,
+    attack: 0.01,
+    hold: 0,
+    decay: 0.1,
+    sustain: 0.7,
+    release: 0.3
+  };
+  const defaultAmplitudeEnvelope = {
+    delay: 0,
+    attack: 0.01,
+    hold: 0,
+    decay: 0.2,
+    sustain: 0.8,
+    release: 0.5
+  };
+  const filterEnvelope = {
+    ...defaultFilterEnvelope,
+    ...(presetData?.filterEnvelope || {}),
+    ...(instrumentData.filterEnvelope || {})
+  };
+  const amplitudeEnvelope = {
+    ...defaultAmplitudeEnvelope,
+    ...(presetData?.amplitudeEnvelope || {}),
+    ...(instrumentData.amplitudeEnvelope || {})
+  };
+  const lfo1 = instrumentData.lfo1 || presetData?.lfo || { frequency: 4, depth: 0.5, waveform: 'sine', target: 'filter.cutoff', tempoSync: false, tempoSyncRate: '1/4' };
+  
+  // ✅ TEMPO SYNC: Get BPM from playback store
+  const bpm = usePlaybackStore(state => state.bpm);
 
   // Helper: map note name like 'C', 'C#' with octave 4 to MIDI
   const noteNameToMidi = useCallback((name, octave = 4) => {
@@ -60,6 +105,13 @@ const VASynthEditorV2 = ({ instrumentData: initialData }) => {
       if (instrument && typeof instrument.updateParameters === 'function') {
         const updateObj = {};
         const keys = path.split('.');
+        
+        // ✅ TEMPO SYNC: If tempo sync or rate changed, include BPM
+        if (keys[0] === 'lfo1' && (keys[1] === 'tempoSync' || keys[1] === 'tempoSyncRate')) {
+          if (!updateObj.lfo1) updateObj.lfo1 = {};
+          updateObj.lfo1[keys[1]] = value;
+          updateObj.lfo1.bpm = bpm; // ✅ TEMPO SYNC: Include current BPM
+        }
 
         if (keys[0] === 'oscillators') {
           const currentData = useInstrumentEditorStore.getState().instrumentData;
@@ -73,6 +125,10 @@ const VASynthEditorV2 = ({ instrumentData: initialData }) => {
         } else if (keys[0] === 'amplitudeEnvelope') {
           const currentData = useInstrumentEditorStore.getState().instrumentData;
           updateObj.amplitudeEnvelope = currentData?.amplitudeEnvelope;
+        } else if (keys[0] === 'lfo1') {
+          // ✅ LFO UI: Update LFO parameters
+          const currentData = useInstrumentEditorStore.getState().instrumentData;
+          updateObj.lfo1 = currentData?.lfo1;
         }
 
         instrument.updateParameters(updateObj);
@@ -247,6 +303,17 @@ const VASynthEditorV2 = ({ instrumentData: initialData }) => {
             }}
             onChange={(value) => handleParameterChange('filter.envelopeAmount', value)}
           />
+          <Knob
+            label="Drive"
+            value={filter.drive || 0}
+            min={0}
+            max={1}
+            step={0.01}
+            sizeVariant="medium"
+            color="#FF6B6B"
+            valueFormatter={(v) => `${(v * 100).toFixed(0)}%`}
+            onChange={(value) => handleParameterChange('filter.drive', value)}
+          />
         </div>
       </div>
 
@@ -294,6 +361,29 @@ const VASynthEditorV2 = ({ instrumentData: initialData }) => {
               height={150}
               color="#6B8EBF"
             />
+            {/* ✅ ENVELOPE DELAY/HOLD: Delay and Hold controls */}
+            <div className="vasynth-editor-v2__envelope-extra-controls">
+              <Knob
+                label="Delay"
+                value={filterEnvelope.delay || 0}
+                min={0}
+                max={2}
+                sizeVariant="small"
+                color="#6B8EBF"
+                valueFormatter={(v) => `${(v * 1000).toFixed(0)}ms`}
+                onChange={(value) => handleParameterChange('filterEnvelope.delay', value)}
+              />
+              <Knob
+                label="Hold"
+                value={filterEnvelope.hold || 0}
+                min={0}
+                max={2}
+                sizeVariant="small"
+                color="#6B8EBF"
+                valueFormatter={(v) => `${(v * 1000).toFixed(0)}ms`}
+                onChange={(value) => handleParameterChange('filterEnvelope.hold', value)}
+              />
+            </div>
           </div>
           <div className="vasynth-editor-v2__envelope-panel">
             <div className="vasynth-editor-v2__envelope-label">Amplitude Envelope</div>
@@ -307,7 +397,116 @@ const VASynthEditorV2 = ({ instrumentData: initialData }) => {
               height={150}
               color="#FF6B9D"
             />
+            {/* ✅ ENVELOPE DELAY/HOLD: Delay and Hold controls */}
+            <div className="vasynth-editor-v2__envelope-extra-controls">
+              <Knob
+                label="Delay"
+                value={amplitudeEnvelope.delay || 0}
+                min={0}
+                max={2}
+                sizeVariant="small"
+                color="#FF6B9D"
+                valueFormatter={(v) => `${(v * 1000).toFixed(0)}ms`}
+                onChange={(value) => handleParameterChange('amplitudeEnvelope.delay', value)}
+              />
+              <Knob
+                label="Hold"
+                value={amplitudeEnvelope.hold || 0}
+                min={0}
+                max={2}
+                sizeVariant="small"
+                color="#FF6B9D"
+                valueFormatter={(v) => `${(v * 1000).toFixed(0)}ms`}
+                onChange={(value) => handleParameterChange('amplitudeEnvelope.hold', value)}
+              />
+            </div>
           </div>
+        </div>
+      </div>
+
+      {/* ✅ LFO UI: LFO Section */}
+      <div className="vasynth-editor-v2__section">
+        <div className="vasynth-editor-v2__section-title">LFO 1</div>
+        <div className="vasynth-editor-v2__lfo-controls">
+          <Knob
+            label="Frequency"
+            value={lfo1.frequency || 4}
+            min={0.01}
+            max={20}
+            sizeVariant="medium"
+            color="#9B59B6"
+            valueFormatter={(v) => `${v.toFixed(2)} Hz`}
+            onChange={(value) => handleParameterChange('lfo1.frequency', value)}
+          />
+          <Knob
+            label="Depth"
+            value={lfo1.depth || 0.5}
+            min={0}
+            max={1}
+            sizeVariant="medium"
+            color="#9B59B6"
+            valueFormatter={(v) => `${(v * 100).toFixed(0)}%`}
+            onChange={(value) => handleParameterChange('lfo1.depth', value)}
+          />
+          <div className="vasynth-editor-v2__lfo-waveform">
+            <label className="vasynth-editor-v2__label">Waveform</label>
+            <select
+              value={lfo1.waveform || 'sine'}
+              onChange={(e) => handleParameterChange('lfo1.waveform', e.target.value)}
+              className="vasynth-editor-v2__select"
+            >
+              <option value="sine">Sine</option>
+              <option value="triangle">Triangle</option>
+              <option value="sawtooth">Sawtooth</option>
+              <option value="square">Square</option>
+            </select>
+          </div>
+          <div className="vasynth-editor-v2__lfo-target">
+            <label className="vasynth-editor-v2__label">Target</label>
+            <select
+              value={lfo1.target || 'filter.cutoff'}
+              onChange={(e) => handleParameterChange('lfo1.target', e.target.value)}
+              className="vasynth-editor-v2__select"
+            >
+              <option value="filter.cutoff">Filter Cutoff</option>
+              <option value="filter.resonance">Filter Resonance</option>
+              <option value="osc.level">Oscillator Level</option>
+              <option value="osc.detune">Oscillator Detune</option>
+              <option value="osc.pitch">Oscillator Pitch</option>
+            </select>
+          </div>
+        </div>
+        {/* ✅ TEMPO SYNC: Tempo sync controls */}
+        <div className="vasynth-editor-v2__lfo-tempo-sync">
+          <label className="vasynth-editor-v2__tempo-sync-toggle">
+            <input
+              type="checkbox"
+              checked={lfo1.tempoSync || false}
+              onChange={(e) => handleParameterChange('lfo1.tempoSync', e.target.checked)}
+              className="vasynth-editor-v2__checkbox"
+            />
+            <span className="vasynth-editor-v2__label">Tempo Sync</span>
+          </label>
+          {lfo1.tempoSync && (
+            <div className="vasynth-editor-v2__lfo-rate">
+              <label className="vasynth-editor-v2__label">Rate</label>
+              <select
+                value={lfo1.tempoSyncRate || '1/4'}
+                onChange={(e) => handleParameterChange('lfo1.tempoSyncRate', e.target.value)}
+                className="vasynth-editor-v2__select"
+              >
+                <option value="1/64">1/64</option>
+                <option value="1/32">1/32</option>
+                <option value="1/16">1/16</option>
+                <option value="1/8">1/8</option>
+                <option value="1/4">1/4</option>
+                <option value="1/2">1/2</option>
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="4">4</option>
+              </select>
+            </div>
+          )}
         </div>
       </div>
     </div>

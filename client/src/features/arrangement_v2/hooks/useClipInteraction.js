@@ -66,6 +66,9 @@ export function useClipInteraction(viewport, tracks, clips, constants, dimension
 
   // Double-click detection
   const lastClickRef = useRef({ time: 0, clipId: null });
+  
+  // ✅ FIX: Track if double-click was handled (for preventing other interactions)
+  const doubleClickHandledRef = useRef(false);
 
   // Interaction state machine
   const interactionStateRef = useRef({
@@ -592,7 +595,7 @@ export function useClipInteraction(viewport, tracks, clips, constants, dimension
       const original = state.originalClipStates.get(clipId);
       if (!original) return;
 
-      let newStartTime, newDuration, newSampleOffset;
+      let newStartTime, newDuration, newSampleOffset, newPatternOffset;
 
       if (state.resizeHandle === 'left') {
         // Resizing from left: adjust startTime and duration
@@ -625,6 +628,12 @@ export function useClipInteraction(viewport, tracks, clips, constants, dimension
           newSampleOffset = (clip.sampleOffset || 0) + startTimeDeltaSeconds;
           newSampleOffset = Math.max(0, newSampleOffset); // Can't be negative
         }
+        
+        // ✅ FIX: For pattern clips, preserve pattern offset when resizing
+        // Pattern offset determines where in the pattern to start playing, which should NOT change
+        // when resizing the clip in the arrangement (only changes on split)
+        // Resizing from left just changes the clip's start time in the arrangement, not where it starts in the pattern
+        newPatternOffset = clip.patternOffset;
       } else {
         // Resizing from right: adjust duration only
         newStartTime = original.startTime;
@@ -641,6 +650,11 @@ export function useClipInteraction(viewport, tracks, clips, constants, dimension
 
         // No sampleOffset change when resizing from right
         newSampleOffset = clip.sampleOffset;
+        
+        // ✅ FIX: For pattern clips, preserve pattern offset when resizing from right
+        // Pattern offset determines where in the pattern to start playing, which should NOT change
+        // when resizing the clip duration (only changes on split)
+        newPatternOffset = clip.patternOffset;
       }
 
       // Build ghost for this clip
@@ -655,6 +669,7 @@ export function useClipInteraction(viewport, tracks, clips, constants, dimension
         newStartTime,
         newDuration,
         newSampleOffset, // Include for audio clips
+        newPatternOffset, // ✅ FIX: Include for pattern clips
         x: worldX,
         y: worldY,
         width,
@@ -687,6 +702,17 @@ export function useClipInteraction(viewport, tracks, clips, constants, dimension
         // For audio clips, update sampleOffset if changed
         if (ghost.clip.type === 'audio' && ghost.newSampleOffset !== undefined) {
           updates.sampleOffset = ghost.newSampleOffset;
+        }
+        
+        // ✅ FIX: For pattern clips, update patternOffset if changed
+        if (ghost.clip.type === 'pattern' && ghost.newPatternOffset !== undefined) {
+          updates.patternOffset = ghost.newPatternOffset;
+          console.log(`🎵 Resize: Updated patternOffset for clip ${ghost.clipId}`, {
+            oldPatternOffset: ghost.clip.patternOffset || 0,
+            newPatternOffset: ghost.newPatternOffset,
+            startTime: ghost.newStartTime,
+            duration: ghost.newDuration
+          });
         }
 
         updateClip(ghost.clipId, updates);
@@ -1063,8 +1089,12 @@ export function useClipInteraction(viewport, tracks, clips, constants, dimension
         // Double-click detected - trigger callback
         onClipDoubleClick(clickedClip);
         lastClickRef.current = { time: 0, clipId: null }; // Reset
+        doubleClickHandledRef.current = true; // ✅ FIX: Mark double-click as handled
         return;
       }
+      
+      // ✅ FIX: Reset double-click flag if this is a new click (not double-click)
+      doubleClickHandledRef.current = false;
 
       // Update last click info
       lastClickRef.current = { time: now, clipId: clickedClip.id };
@@ -1321,6 +1351,16 @@ export function useClipInteraction(viewport, tracks, clips, constants, dimension
     cancelDrag,
     cancelResize,
     cancelFade,
-    cancelGain
+    cancelGain,
+    
+    // ✅ FIX: Export double-click handler flag for preventing other interactions
+    wasDoubleClick: () => {
+      const handled = doubleClickHandledRef.current;
+      // Reset flag after reading (one-time use)
+      if (handled) {
+        doubleClickHandledRef.current = false;
+      }
+      return handled;
+    }
   };
 }

@@ -66,18 +66,23 @@ const VASynthEditor = ({ instrumentData: initialData }) => {
     type: 'lowpass',
     cutoff: 2000,
     resonance: 1,
-    envelopeAmount: 2000
+    envelopeAmount: 2000,
+    drive: 0 // ✅ FILTER DRIVE: Default drive value
   };
 
   const defaultFilterEnvelope = {
+    delay: 0,    // ✅ ENVELOPE DELAY/HOLD: Default delay value
     attack: 0.01,
+    hold: 0,     // ✅ ENVELOPE DELAY/HOLD: Default hold value
     decay: 0.1,
     sustain: 0.7,
     release: 0.3
   };
 
   const defaultAmplitudeEnvelope = {
+    delay: 0,    // ✅ ENVELOPE DELAY/HOLD: Default delay value
     attack: 0.01,
+    hold: 0,     // ✅ ENVELOPE DELAY/HOLD: Default hold value
     decay: 0.2,
     sustain: 0.8,
     release: 0.5
@@ -103,7 +108,12 @@ const VASynthEditor = ({ instrumentData: initialData }) => {
     return result;
   }, [instrumentData.oscillators, presetData?.oscillators]);
 
-  const filter = instrumentData.filter || presetData?.filter || defaultFilter;
+  // ✅ FILTER DRIVE: Merge filter with defaults to ensure drive property exists
+  const filter = {
+    ...defaultFilter,
+    ...(presetData?.filter || {}),
+    ...(instrumentData.filter || {})
+  };
   const filterEnvelope = instrumentData.filterEnvelope || presetData?.filterEnvelope || defaultFilterEnvelope;
   const amplitudeEnvelope = instrumentData.amplitudeEnvelope || presetData?.amplitudeEnvelope || defaultAmplitudeEnvelope;
 
@@ -441,6 +451,18 @@ const VASynthEditor = ({ instrumentData: initialData }) => {
               onChange={(value) => handleParameterChange('filter.envelopeAmount', value)}
             />
           </div>
+          <div className="vasynth-editor__filter-row">
+            <Slider
+              label="Drive"
+              value={filter.drive || 0}
+              min={0}
+              max={1}
+              step={0.01}
+              color="#FF6B6B"
+              valueFormatter={(v) => `${(v * 100).toFixed(0)}%`}
+              onChange={(value) => handleParameterChange('filter.drive', value)}
+            />
+          </div>
         </div>
       </div>
 
@@ -451,6 +473,15 @@ const VASynthEditor = ({ instrumentData: initialData }) => {
         </div>
         <div className="vasynth-editor__adsr">
           <Knob
+            label="Delay"
+            value={filterEnvelope.delay || 0}
+            min={0}
+            max={2}
+            color="#6B8EBF"
+            valueFormatter={(v) => `${(v * 1000).toFixed(0)}ms`}
+            onChange={(value) => handleParameterChange('filterEnvelope.delay', value)}
+          />
+          <Knob
             label="Attack"
             value={filterEnvelope.attack}
             min={0.001}
@@ -458,6 +489,15 @@ const VASynthEditor = ({ instrumentData: initialData }) => {
             color="#6B8EBF"
             valueFormatter={(v) => `${(v * 1000).toFixed(0)}ms`}
             onChange={(value) => handleParameterChange('filterEnvelope.attack', value)}
+          />
+          <Knob
+            label="Hold"
+            value={filterEnvelope.hold || 0}
+            min={0}
+            max={2}
+            color="#6B8EBF"
+            valueFormatter={(v) => `${(v * 1000).toFixed(0)}ms`}
+            onChange={(value) => handleParameterChange('filterEnvelope.hold', value)}
           />
           <Knob
             label="Decay"
@@ -495,6 +535,15 @@ const VASynthEditor = ({ instrumentData: initialData }) => {
         </div>
         <div className="vasynth-editor__adsr">
           <Knob
+            label="Delay"
+            value={amplitudeEnvelope.delay || 0}
+            min={0}
+            max={2}
+            color="#B67BA3"
+            valueFormatter={(v) => `${(v * 1000).toFixed(0)}ms`}
+            onChange={(value) => handleParameterChange('amplitudeEnvelope.delay', value)}
+          />
+          <Knob
             label="Attack"
             value={amplitudeEnvelope.attack}
             min={0.001}
@@ -502,6 +551,15 @@ const VASynthEditor = ({ instrumentData: initialData }) => {
             color="#B67BA3"
             valueFormatter={(v) => `${(v * 1000).toFixed(0)}ms`}
             onChange={(value) => handleParameterChange('amplitudeEnvelope.attack', value)}
+          />
+          <Knob
+            label="Hold"
+            value={amplitudeEnvelope.hold || 0}
+            min={0}
+            max={2}
+            color="#B67BA3"
+            valueFormatter={(v) => `${(v * 1000).toFixed(0)}ms`}
+            onChange={(value) => handleParameterChange('amplitudeEnvelope.hold', value)}
           />
           <Knob
             label="Decay"

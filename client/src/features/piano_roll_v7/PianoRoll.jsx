@@ -167,7 +167,9 @@ function PianoRoll() {
                 engine.eventHandlers.updateViewport({ scrollX: newScrollX, smooth: false });
             }
         }
-    }, [currentStep, isPlaying, followPlayheadMode, engine.viewport, engine.dimensions, engine.eventHandlers]);
+        // ✅ FIX: Only depend on values that should trigger scroll, not the entire engine objects
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [currentStep, isPlaying, followPlayheadMode]);
 
     // Track user interaction to pause follow mode temporarily
     useEffect(() => {

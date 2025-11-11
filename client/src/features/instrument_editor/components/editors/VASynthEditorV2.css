@@ -201,3 +201,90 @@
 .vasynth-editor-v2::-webkit-scrollbar-thumb:hover {
   background: var(--zenith-border-medium);
 }
+
+/* ✅ LFO UI: LFO Controls */
+.vasynth-editor-v2__lfo-controls {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+  padding: 16px;
+  background: var(--zenith-bg-secondary);
+  border-radius: var(--zenith-radius-md, 8px);
+  border: 1px solid var(--zenith-border-subtle);
+}
+
+.vasynth-editor-v2__lfo-waveform {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 120px;
+}
+
+.vasynth-editor-v2__lfo-target {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 160px;
+}
+
+.vasynth-editor-v2__lfo-tempo-sync {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  padding: 12px 16px;
+  background: var(--zenith-bg-tertiary);
+  border-radius: var(--zenith-radius-sm, 6px);
+  border: 1px solid var(--zenith-border-subtle);
+  margin-top: 12px;
+}
+
+.vasynth-editor-v2__tempo-sync-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.vasynth-editor-v2__checkbox {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: var(--zenith-accent-cool);
+}
+
+.vasynth-editor-v2__lfo-rate {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 100px;
+}
+
+.vasynth-editor-v2__label {
+  font-size: var(--zenith-text-xs);
+  font-weight: var(--zenith-font-semibold, 600);
+  color: var(--zenith-text-secondary);
+  letter-spacing: 0.5px;
+}
+
+.vasynth-editor-v2__select {
+  padding: 8px 12px;
+  background: var(--zenith-bg-primary);
+  border: 1px solid var(--zenith-border-medium);
+  border-radius: var(--zenith-radius-sm, 6px);
+  color: var(--zenith-text-primary);
+  font-size: var(--zenith-text-sm);
+  font-family: var(--zenith-font-primary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.vasynth-editor-v2__select:hover {
+  border-color: var(--zenith-accent-cool);
+  background: var(--zenith-bg-tertiary);
+}
+
+.vasynth-editor-v2__select:focus {
+  outline: none;
+  border-color: var(--zenith-accent-cool);
+  box-shadow: 0 0 0 2px rgba(78, 205, 196, 0.2);
+}

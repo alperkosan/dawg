@@ -879,8 +879,20 @@ export const useArrangementStore = create(arrangementStoreOrchestrator((set, get
     if (clip.type === 'pattern') {
       // Convert split point from beats to steps (16th notes)
       // 1 beat = 4 sixteenth notes
-      const splitPointSteps = splitPoint * 4;
-      rightClip.patternOffset = (clip.patternOffset || 0) + splitPointSteps;
+      const splitPointSteps = Math.floor(splitPoint * 4);
+      const currentPatternOffset = clip.patternOffset || 0;
+      rightClip.patternOffset = currentPatternOffset + splitPointSteps;
+      
+      // ✅ DEBUG: Log pattern offset calculation for debugging
+      console.log(`✂️ Split pattern clip: ${clip.id}`, {
+        splitPointBeats: splitPoint,
+        splitPointSteps,
+        currentPatternOffset,
+        newRightClipPatternOffset: rightClip.patternOffset,
+        leftClipPatternOffset: leftClip.patternOffset || 0,
+        leftClipDuration: leftClip.duration,
+        rightClipDuration: rightClip.duration
+      });
     }
 
     // Remove original clip

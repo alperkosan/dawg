@@ -13,9 +13,15 @@ export class LFO {
         this.depth = 0.5;   // 0-1
         this.waveform = 'sine'; // sine, square, sawtooth, triangle
         this.isRunning = false;
+        
+        // ✅ TEMPO SYNC: Tempo sync settings
+        this.tempoSync = false; // Enable tempo sync
+        this.tempoSyncRate = '1/4'; // Rate division (1/64, 1/32, 1/16, 1/8, 1/4, 1/2, 1, 2, 4)
+        this.bpm = 120; // Current BPM (updated from transport)
 
         // Connections
         this.connectedParams = new Set();
+        this.depthGainNodes = new Map(); // param -> depthGain node (for proper disconnect)
     }
 
     /**
@@ -60,13 +66,21 @@ export class LFO {
         // Disconnect all
         this.connectedParams.forEach(param => {
             try {
-                this.gainNode.disconnect(param);
+                // ✅ LFO PLAYBACK: Use tracked depthGain nodes for proper disconnect
+                const depthGain = this.depthGainNodes.get(param);
+                if (depthGain) {
+                    this.gainNode.disconnect(depthGain);
+                    depthGain.disconnect(param);
+                } else {
+                    this.gainNode.disconnect(param);
+                }
             } catch (e) {
                 // Already disconnected
             }
         });
 
         this.connectedParams.clear();
+        this.depthGainNodes.clear();
         this.oscillator = null;
         this.gainNode = null;
         this.isRunning = false;
@@ -83,6 +97,12 @@ export class LFO {
             return;
         }
 
+        // ✅ LFO PLAYBACK: Check if already connected to avoid duplicate connections
+        if (this.connectedParams.has(param)) {
+            // Already connected - disconnect first to reconnect with new amount
+            this.disconnect(param);
+        }
+
         // Adjust depth for this specific connection
         const depthGain = this.context.createGain();
         depthGain.gain.setValueAtTime(amount, this.context.currentTime);
@@ -90,25 +110,64 @@ export class LFO {
         this.gainNode.connect(depthGain);
         depthGain.connect(param);
 
+        // ✅ LFO PLAYBACK: Track depthGain node for proper disconnect
         this.connectedParams.add(param);
+        this.depthGainNodes.set(param, depthGain);
     }
 
     /**
      * Disconnect from a specific AudioParam
+     * ✅ LFO PLAYBACK: Improved disconnect to handle depthGain nodes
      */
     disconnect(param) {
         if (!this.gainNode) return;
 
         try {
-            this.gainNode.disconnect(param);
+            // ✅ LFO PLAYBACK: Disconnect specific depthGain node if tracked
+            const depthGain = this.depthGainNodes.get(param);
+            if (depthGain) {
+                this.gainNode.disconnect(depthGain);
+                depthGain.disconnect(param);
+                this.depthGainNodes.delete(param);
+            } else {
+                // Fallback: Try direct disconnect
+                this.gainNode.disconnect(param);
+            }
+            
             this.connectedParams.delete(param);
         } catch (e) {
-            // Not connected
+            // Not connected or already disconnected
         }
     }
 
     /**
-     * Set LFO frequency
+     * Calculate frequency from tempo sync rate
+     * @param {number} bpm - Current BPM
+     * @param {string} rate - Rate division (e.g., '1/4', '1/8', '2')
+     * @returns {number} Calculated frequency in Hz
+     */
+    calculateTempoSyncFrequency(bpm, rate) {
+        // Parse rate: '1/64', '1/32', '1/16', '1/8', '1/4', '1/2', '1', '2', '4'
+        let beatsPerCycle = 1;
+        
+        if (rate.includes('/')) {
+            const [numerator, denominator] = rate.split('/').map(Number);
+            beatsPerCycle = numerator / denominator;
+        } else {
+            beatsPerCycle = Number(rate);
+        }
+        
+        // Convert to cycles per second (Hz)
+        // 1 beat = 60/BPM seconds
+        // 1 cycle = beatsPerCycle * (60/BPM) seconds
+        // Frequency = 1 / cycle duration = BPM / (60 * beatsPerCycle)
+        const frequency = bpm / (60 * beatsPerCycle);
+        
+        return Math.max(0.01, Math.min(20, frequency));
+    }
+
+    /**
+     * Set LFO frequency (manual or tempo sync)
      */
     setFrequency(frequency) {
         this.frequency = Math.max(0.01, Math.min(20, frequency));
@@ -118,6 +177,40 @@ export class LFO {
                 this.frequency,
                 this.context.currentTime
             );
+        }
+    }
+    
+    /**
+     * ✅ TEMPO SYNC: Set tempo sync enabled
+     */
+    setTempoSync(enabled, bpm = null, rate = null) {
+        this.tempoSync = enabled;
+        
+        if (bpm !== null) {
+            this.bpm = bpm;
+        }
+        
+        if (rate !== null) {
+            this.tempoSyncRate = rate;
+        }
+        
+        // ✅ TEMPO SYNC: Recalculate frequency if tempo sync is enabled
+        if (this.tempoSync) {
+            const calculatedFreq = this.calculateTempoSyncFrequency(this.bpm, this.tempoSyncRate);
+            this.setFrequency(calculatedFreq);
+        }
+    }
+    
+    /**
+     * ✅ TEMPO SYNC: Update BPM (called when transport BPM changes)
+     */
+    updateBPM(bpm) {
+        this.bpm = bpm;
+        
+        // ✅ TEMPO SYNC: Recalculate frequency if tempo sync is enabled
+        if (this.tempoSync) {
+            const calculatedFreq = this.calculateTempoSyncFrequency(this.bpm, this.tempoSyncRate);
+            this.setFrequency(calculatedFreq);
         }
     }
 
@@ -185,17 +278,29 @@ export class LFO {
             frequency: this.frequency,
             depth: this.depth,
             waveform: this.waveform,
-            isRunning: this.isRunning
+            isRunning: this.isRunning,
+            tempoSync: this.tempoSync, // ✅ TEMPO SYNC
+            tempoSyncRate: this.tempoSyncRate, // ✅ TEMPO SYNC
+            bpm: this.bpm // ✅ TEMPO SYNC
         };
     }
 
     /**
      * Set multiple settings at once
      */
-    setSettings({ frequency, depth, waveform }) {
+    setSettings({ frequency, depth, waveform, tempoSync, tempoSyncRate, bpm }) {
         if (frequency !== undefined) this.setFrequency(frequency);
         if (depth !== undefined) this.setDepth(depth);
         if (waveform !== undefined) this.setWaveform(waveform);
+        
+        // ✅ TEMPO SYNC: Handle tempo sync settings
+        if (tempoSync !== undefined || tempoSyncRate !== undefined || bpm !== undefined) {
+            this.setTempoSync(
+                tempoSync !== undefined ? tempoSync : this.tempoSync,
+                bpm !== undefined ? bpm : this.bpm,
+                tempoSyncRate !== undefined ? tempoSyncRate : this.tempoSyncRate
+            );
+        }
     }
 
     /**

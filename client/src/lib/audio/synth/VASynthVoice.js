@@ -125,25 +125,73 @@ export class VASynthVoice extends BaseVoice {
         this.oscillatorSettings.forEach((settings, i) => {
             if (!settings.enabled) return;
 
-            // Create new oscillator for this note
-            const osc = this.context.createOscillator();
-            osc.type = settings.waveform;
-            osc.detune.setValueAtTime(settings.detune, this.context.currentTime);
-
             // Calculate frequency with octave shift
             const octaveMultiplier = Math.pow(2, settings.octave);
             const targetFreq = frequency * octaveMultiplier;
-            osc.frequency.setValueAtTime(targetFreq, time);
 
-            // Connect and start
-            osc.connect(this.oscillatorGains[i]);
-            osc.start(time);
+            // ✅ PWM: For square wave with pulse width, use two oscillators
+            if (settings.waveform === 'square' && settings.pulseWidth !== undefined && settings.pulseWidth !== 0.5) {
+                // ✅ PWM: Create two square wave oscillators for pulse width modulation
+                const osc1 = this.context.createOscillator();
+                const osc2 = this.context.createOscillator();
+                osc1.type = 'square';
+                osc2.type = 'square';
 
-            // Store reference (will be stopped in release())
-            this.oscillators[i] = osc;
+                // Set frequencies
+                osc1.frequency.setValueAtTime(targetFreq, time);
+                osc2.frequency.setValueAtTime(targetFreq, time);
 
-            // Set gain level
-            this.oscillatorGains[i].gain.setValueAtTime(settings.level, time);
+                // Apply detune
+                osc1.detune.setValueAtTime(settings.detune, this.context.currentTime);
+                osc2.detune.setValueAtTime(settings.detune, this.context.currentTime);
+
+                // ✅ PWM: Pulse width mixing
+                const pulseWidth = Math.max(0.01, Math.min(0.99, settings.pulseWidth)); // Clamp 0.01-0.99
+                const mix1 = pulseWidth;
+                const mix2 = 1 - pulseWidth;
+
+                // Create gain nodes for mixing
+                const gain1 = this.context.createGain();
+                const gain2 = this.context.createGain();
+                const mixGain = this.context.createGain();
+
+                gain1.gain.setValueAtTime(mix1 * settings.level, time);
+                gain2.gain.setValueAtTime(mix2 * settings.level, time);
+                mixGain.gain.setValueAtTime(1.0, time);
+
+                // Connect: osc1 -> gain1 -> mixGain
+                //         osc2 -> gain2 -> mixGain -> oscillatorGains[i]
+                osc1.connect(gain1);
+                osc2.connect(gain2);
+                gain1.connect(mixGain);
+                gain2.connect(mixGain);
+                mixGain.connect(this.oscillatorGains[i]);
+
+                // Start both oscillators
+                osc1.start(time);
+                osc2.start(time);
+
+                // Store references
+                this.oscillators[i] = [osc1, osc2]; // Store array for PWM
+            } else {
+                // ✅ NORMAL: Standard oscillator (non-square or square with 0.5 pulse width)
+                const osc = this.context.createOscillator();
+                osc.type = settings.waveform;
+                osc.detune.setValueAtTime(settings.detune, this.context.currentTime);
+                osc.frequency.setValueAtTime(targetFreq, time);
+
+                // Connect and start
+                osc.connect(this.oscillatorGains[i]);
+                osc.start(time);
+
+                // Store reference (will be stopped in release())
+                this.oscillators[i] = osc;
+            }
+
+            // Set gain level (for normal oscillators, or PWM mixGain is already set)
+            if (!(settings.waveform === 'square' && settings.pulseWidth !== undefined && settings.pulseWidth !== 0.5)) {
+                this.oscillatorGains[i].gain.setValueAtTime(settings.level, time);
+            }
         });
 
         // Trigger filter envelope
@@ -222,7 +270,16 @@ export class VASynthVoice extends BaseVoice {
         this.oscillators.forEach((osc, i) => {
             if (osc) {
                 try {
-                    osc.stop(now);
+                    // ✅ PWM: Handle array of oscillators (PWM mode)
+                    if (Array.isArray(osc)) {
+                        osc.forEach(o => {
+                            if (o) {
+                                o.stop(now);
+                            }
+                        });
+                    } else {
+                        osc.stop(now);
+                    }
                 } catch (e) {
                     // Already stopped
                 }
@@ -265,8 +322,18 @@ export class VASynthVoice extends BaseVoice {
         this.oscillators.forEach(osc => {
             if (osc) {
                 try {
-                    osc.stop();
-                    osc.disconnect();
+                    // ✅ PWM: Handle array of oscillators (PWM mode)
+                    if (Array.isArray(osc)) {
+                        osc.forEach(o => {
+                            if (o) {
+                                o.stop();
+                                o.disconnect();
+                            }
+                        });
+                    } else {
+                        osc.stop();
+                        osc.disconnect();
+                    }
                 } catch (e) {
                     // Already stopped
                 }
@@ -317,9 +384,20 @@ export class VASynthVoice extends BaseVoice {
             const octaveMultiplier = Math.pow(2, settings.octave);
             const targetFreq = toFreq * octaveMultiplier;
 
-            osc.frequency.cancelScheduledValues(time);
-            osc.frequency.setValueAtTime(osc.frequency.value, time);
-            osc.frequency.exponentialRampToValueAtTime(targetFreq, time + duration);
+            // ✅ PWM: Handle array of oscillators (PWM mode)
+            if (Array.isArray(osc)) {
+                osc.forEach(o => {
+                    if (o) {
+                        o.frequency.cancelScheduledValues(time);
+                        o.frequency.setValueAtTime(o.frequency.value, time);
+                        o.frequency.exponentialRampToValueAtTime(targetFreq, time + duration);
+                    }
+                });
+            } else {
+                osc.frequency.cancelScheduledValues(time);
+                osc.frequency.setValueAtTime(osc.frequency.value, time);
+                osc.frequency.exponentialRampToValueAtTime(targetFreq, time + duration);
+            }
         });
     }
 

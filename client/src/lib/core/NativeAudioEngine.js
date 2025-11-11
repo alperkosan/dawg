@@ -226,6 +226,18 @@ export class NativeAudioEngine {
         if (this.playbackManager) {
             this.playbackManager._updateLoopSettings();
         }
+        
+        // ✅ TEMPO SYNC: Update BPM for all active VASynth instruments
+        this.instruments.forEach((instrument) => {
+            if (instrument && typeof instrument.updateBPM === 'function') {
+                try {
+                    instrument.updateBPM(bpm);
+                } catch (error) {
+                    console.warn(`Failed to update BPM for instrument ${instrument.name}:`, error);
+                }
+            }
+        });
+        
         return this;
     }
 
@@ -974,13 +986,26 @@ export class NativeAudioEngine {
                 console.log(`🔌 Re-routing ${instrumentId} to ${params.mixerTrackId}`);
             }
             this.routeInstrumentToInsert(instrumentId, params.mixerTrackId);
-            return true;
+            // Don't return early - continue to update other parameters
         }
+
+        // ✅ FIX: Extract only relevant parameters (not the entire instrument object)
+        // Filter out metadata fields that shouldn't be passed to updateParameters
+        const relevantParams = {};
+        const paramKeys = ['sampleStart', 'sampleStartModulation', 'timeStretchEnabled', 
+                          'gain', 'pan', 'pitch', 'attack', 'decay', 'sustain', 'release',
+                          'filterCutoff', 'filterResonance', 'filterKeyTracking'];
+        
+        paramKeys.forEach(key => {
+            if (params[key] !== undefined) {
+                relevantParams[key] = params[key];
+            }
+        });
 
         // Other parameter updates can be handled here
         const instrument = this.instruments.get(instrumentId);
-        if (instrument && instrument.updateParameters) {
-            instrument.updateParameters(params);
+        if (instrument && instrument.updateParameters && Object.keys(relevantParams).length > 0) {
+            instrument.updateParameters(relevantParams);
         }
 
         return true;

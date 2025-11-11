@@ -349,15 +349,38 @@ export function useArrangementCanvas(containerRef, tracks = []) {
   // RETURN VALUE
   // ============================================================================
 
+  // ✅ FIX: Memoize viewport object to prevent infinite re-renders
+  // The viewport object is recreated on every render, causing useEffect dependencies to change
+  // Also memoize visibleRanges objects to prevent unnecessary recreations
+  const memoizedVisibleBeats = useMemo(() => visibleRanges.beats, [
+    visibleRanges.beats.start,
+    visibleRanges.beats.end
+  ]);
+  const memoizedVisibleTracks = useMemo(() => visibleRanges.tracks, [
+    visibleRanges.tracks.start,
+    visibleRanges.tracks.end
+  ]);
+  
+  const viewport = useMemo(() => ({
+    ...viewportRef.current,
+    width: viewportSize.width,
+    height: viewportSize.height,
+    visibleBeats: memoizedVisibleBeats,
+    visibleTracks: memoizedVisibleTracks
+  }), [
+    viewportRef.current.scrollX,
+    viewportRef.current.scrollY,
+    viewportRef.current.zoomX,
+    viewportRef.current.zoomY,
+    viewportSize.width,
+    viewportSize.height,
+    memoizedVisibleBeats,
+    memoizedVisibleTracks
+  ]);
+
   return {
     // Viewport state
-    viewport: {
-      ...viewportRef.current,
-      width: viewportSize.width,
-      height: viewportSize.height,
-      visibleBeats: visibleRanges.beats,
-      visibleTracks: visibleRanges.tracks
-    },
+    viewport,
 
     // Dimensions
     dimensions,

@@ -14,6 +14,7 @@ import { useArrangementCanvas, useClipInteraction } from './hooks';
 import { useArrangementStore } from '@/store/useArrangementStore';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
 import { usePanelsStore } from '@/store/usePanelsStore';
+import { useProjectAudioStore } from '@/store/useProjectAudioStore';
 import { getTimelineController } from '@/lib/core/TimelineControllerSingleton'; // ✅ Unified transport system
 import { AudioContextService } from '@/lib/services/AudioContextService'; // ✅ For audio engine sync
 // ✅ PHASE 2: Design Consistency - Using component library
@@ -178,11 +179,17 @@ export function ArrangementPanelV2() {
   // ✅ PHASE 1: Follow Playhead Mode - Auto-scroll during playback
   const userInteractionRef = useRef(false); // Track if user is manually scrolling
 
+  // ✅ FIX: Store updateViewport in ref to avoid dependency issues
+  const updateViewportRef = useRef(eventHandlers?.updateViewport);
+  useEffect(() => {
+    updateViewportRef.current = eventHandlers?.updateViewport;
+  }, [eventHandlers?.updateViewport]);
+
   useEffect(() => {
     // Early exits - don't follow if not playing, mode is OFF, user is scrolling, or viewport not ready
     if (!isPlaying || followPlayheadMode === 'OFF') return;
     if (userInteractionRef.current) return;
-    if (!viewport || !dimensions || !eventHandlers?.updateViewport) return;
+    if (!viewport || !dimensions || !updateViewportRef.current) return;
 
     const playheadX = effectiveCurrentStep * dimensions.pixelsPerBeat;
     const threshold = viewport.width * 0.8;
@@ -194,16 +201,18 @@ export function ArrangementPanelV2() {
 
       if (diff > 5) { // Threshold to prevent jitter
         const newScrollX = Math.max(0, targetScrollX);
-        eventHandlers.updateViewport({ scrollX: newScrollX });
+        updateViewportRef.current({ scrollX: newScrollX });
       }
     } else if (followPlayheadMode === 'PAGE') {
       // Jump to next page when playhead reaches 80% of viewport width
       if (playheadX > viewport.scrollX + threshold) {
         const newScrollX = viewport.scrollX + viewport.width;
-        eventHandlers.updateViewport({ scrollX: newScrollX });
+        updateViewportRef.current({ scrollX: newScrollX });
       }
     }
-  }, [effectiveCurrentStep, isPlaying, followPlayheadMode, viewport, dimensions, eventHandlers]);
+    // ✅ FIX: Only depend on specific viewport properties, not the whole object
+    // Use primitive values to avoid infinite loops
+  }, [effectiveCurrentStep, isPlaying, followPlayheadMode, viewport.scrollX, viewport.width, dimensions?.pixelsPerBeat]);
 
   // Track user interaction to pause follow mode temporarily
   useEffect(() => {
@@ -387,7 +396,9 @@ export function ArrangementPanelV2() {
       snapSize,
       styleCacheRef.current // Pass StyleCache for theme-aware colors
     );
-  }, [viewport, tracks, snapSize, setupCanvas, constants, dimensions, lod, themeVersion]);
+    // ✅ FIX: Only depend on specific viewport properties to avoid infinite loops
+    // Use primitive values instead of optional chaining to ensure stable dependencies
+  }, [viewport.width, viewport.height, viewport.scrollX, viewport.scrollY, viewport.zoomX, viewport.zoomY, tracks.length, snapSize, dimensions?.trackHeight, lod, themeVersion]);
 
   // Clips canvas (middle layer) - render clips
   useEffect(() => {
@@ -466,7 +477,9 @@ export function ArrangementPanelV2() {
     });
 
     ctx.restore();
-  }, [viewport, clips, tracks, selectedClipIds, dimensions, setupCanvas, constants, lod, patterns]);
+    // ✅ FIX: Include clips array in dependencies to trigger re-render when clip positions change
+    // Zustand store returns new array reference when clips are updated, so this is safe
+  }, [viewport.width, viewport.height, viewport.scrollX, viewport.scrollY, viewport.zoomX, viewport.visibleBeats, viewport.visibleTracks, clips, tracks, selectedClipIds, dimensions?.trackHeight, lod, patterns]);
 
   // ✅ THEME-AWARE: Create StyleCache instance for dynamic theme color reading
   const styleCacheRef = useRef(null);
@@ -1482,6 +1495,21 @@ export function ArrangementPanelV2() {
     if (deletionTimerRef.current) {
       clearTimeout(deletionTimerRef.current);
       deletionTimerRef.current = null;
+    }
+
+    // ✅ FIX: Call handleMouseDown FIRST for double-click detection (before other tool checks)
+    // Double-click detection must happen before other interactions (deletion, split, draw)
+    // This ensures audio clip double-click opens Sample Editor even when other tools are active
+    if (e.button === 0 && activeTool !== 'draw') {
+      // Call handleMouseDown which will detect double-click and call onClipDoubleClick
+      // handleMouseDown will set doubleClickHandledRef if double-click is detected
+      handleMouseDown(e);
+      
+      // ✅ FIX: Check if double-click was handled and skip other interactions
+      if (clipInteraction.wasDoubleClick()) {
+        console.log('🎵 Double-click detected, skipping other interactions');
+        return; // Skip deletion, split, draw, etc.
+      }
     }
 
     // If in deletion mode and left-clicking a clip, delete it

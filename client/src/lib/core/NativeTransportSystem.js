@@ -175,6 +175,21 @@ export class NativeTransportSystem {
         return this.position + ticksElapsed;
     }
 
+    /**
+     * ✅ Get current position in steps (for AutomationScheduler compatibility)
+     * Converts current tick position to steps with sub-step precision during playback
+     */
+    getCurrentStep() {
+        if (!this.isPlaying) {
+            return this.ticksToSteps(this.currentTick);
+        }
+
+        // Sub-step precision during playback
+        const elapsed = this.audioContext.currentTime - this.nextTickTime + this.getSecondsPerTick();
+        const ticksElapsed = Math.floor(elapsed / this.getSecondsPerTick());
+        return this.ticksToSteps(this.currentTick + ticksElapsed);
+    }
+
     setPosition(step) {
         const targetTick = this.stepsToTicks(step);
         this.currentTick = targetTick;

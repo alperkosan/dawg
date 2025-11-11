@@ -680,6 +680,22 @@ export class TransportManager {
   }
 
   /**
+   * ✅ GET CURRENT STEP (alias for getCurrentPosition)
+   * For API compatibility with AutomationScheduler and other systems
+   */
+  getCurrentStep() {
+    return this.state.currentPosition;
+  }
+
+  /**
+   * ✅ GET PLAYING STATE
+   * For API compatibility - allows direct access to isPlaying
+   */
+  get isPlaying() {
+    return this.state.isPlaying;
+  }
+
+  /**
    * ✅ GET GHOST POSITION
    * Returns ghost position for UI hover effects
    */

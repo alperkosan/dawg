@@ -13,14 +13,16 @@ import { ADSREnvelope } from './ADSREnvelope.js';
 import { LFO } from './LFO.js';
 
 export class VASynth {
-    constructor(audioContext) {
+    constructor(audioContext, bpm = 120) {
         this.context = audioContext;
         this.isPlaying = false;
+        this.bpm = bpm; // ✅ TEMPO SYNC: Store BPM for tempo sync calculations
 
         // Audio nodes
         this.oscillators = [null, null, null];
         this.oscillatorGains = [];
         this.filter = null;
+        this.filterDrive = null; // ✅ FILTER DRIVE: WaveShaperNode for saturation
         this.filterEnvGain = null;
         this.amplitudeGain = null;
 
@@ -34,6 +36,7 @@ export class VASynth {
 
         // LFO
         this.lfo = new LFO(audioContext);
+        this.lfoTarget = 'filter.cutoff'; // ✅ LFO TARGET: Default target
 
         // Synth parameters
         this.masterVolume = 0.7;
@@ -81,7 +84,9 @@ export class VASynth {
             cutoff: 2000,         // Hz (20-20000)
             resonance: 1,         // Q factor (0.0001-30)
             envelopeAmount: 2000, // How much envelope affects cutoff
-            velocitySensitivity: 0.5 // 0-1
+            velocitySensitivity: 0.5, // 0-1
+            keyTracking: 0,       // ✅ KEY TRACKING: 0-1 (0 = off, 1 = full tracking)
+            drive: 0              // ✅ FILTER DRIVE: 0-1 (0 = no drive, 1 = maximum saturation)
         };
 
         // Effects settings
@@ -137,17 +142,31 @@ export class VASynth {
                 const octaveMultiplier = Math.pow(2, settings.octave);
                 const targetFreq = baseFrequency * octaveMultiplier;
 
-                if (glideTime > 0.001) {
-                    // Portamento: smooth glide
-                    osc.frequency.cancelScheduledValues(time);
-                    osc.frequency.setValueAtTime(osc.frequency.value, time);
-                    osc.frequency.exponentialRampToValueAtTime(
-                        targetFreq,
-                        time + glideTime
-                    );
+                // ✅ PWM: Handle array of oscillators (PWM mode)
+                if (Array.isArray(osc)) {
+                    osc.forEach(o => {
+                        if (glideTime > 0.001) {
+                            o.frequency.cancelScheduledValues(time);
+                            o.frequency.setValueAtTime(o.frequency.value, time);
+                            o.frequency.exponentialRampToValueAtTime(targetFreq, time + glideTime);
+                        } else {
+                            o.frequency.setValueAtTime(targetFreq, time);
+                        }
+                    });
                 } else {
-                    // No portamento: instant jump
-                    osc.frequency.setValueAtTime(targetFreq, time);
+                    // Normal single oscillator
+                    if (glideTime > 0.001) {
+                        // Portamento: smooth glide
+                        osc.frequency.cancelScheduledValues(time);
+                        osc.frequency.setValueAtTime(osc.frequency.value, time);
+                        osc.frequency.exponentialRampToValueAtTime(
+                            targetFreq,
+                            time + glideTime
+                        );
+                    } else {
+                        // No portamento: instant jump
+                        osc.frequency.setValueAtTime(targetFreq, time);
+                    }
                 }
             });
 
@@ -192,25 +211,79 @@ export class VASynth {
         this.oscillatorSettings.forEach((settings, i) => {
             if (!settings.enabled) return;
 
-            const osc = this.context.createOscillator();
-            osc.type = settings.waveform;
-
             // Calculate frequency with octave offset
             const octaveMultiplier = Math.pow(2, settings.octave);
             const frequency = baseFrequency * octaveMultiplier;
-            osc.frequency.setValueAtTime(frequency, time);
 
-            // Apply detune
-            osc.detune.setValueAtTime(settings.detune, time);
+            // ✅ PWM: For square wave with pulse width, use two oscillators
+            if (settings.waveform === 'square' && settings.pulseWidth !== undefined && settings.pulseWidth !== 0.5) {
+                // ✅ PWM: Create two square wave oscillators for pulse width modulation
+                const osc1 = this.context.createOscillator();
+                const osc2 = this.context.createOscillator();
+                osc1.type = 'square';
+                osc2.type = 'square';
 
-            // Create gain node for this oscillator
-            const oscGain = this.context.createGain();
-            oscGain.gain.setValueAtTime(settings.level, time);
+                // Set frequencies
+                osc1.frequency.setValueAtTime(frequency, time);
+                osc2.frequency.setValueAtTime(frequency, time);
 
-            osc.connect(oscGain);
+                // Apply detune
+                osc1.detune.setValueAtTime(settings.detune, time);
+                osc2.detune.setValueAtTime(settings.detune, time);
 
-            this.oscillators[i] = osc;
-            this.oscillatorGains[i] = oscGain;
+                // ✅ PWM: Phase offset for second oscillator (180 degrees = inverted)
+                // Pulse width 0.5 = 50% duty cycle (normal square)
+                // Pulse width < 0.5 = narrower pulse (more high, less low)
+                // Pulse width > 0.5 = wider pulse (less high, more low)
+                const pulseWidth = Math.max(0.01, Math.min(0.99, settings.pulseWidth)); // Clamp 0.01-0.99
+                const phaseOffset = (pulseWidth - 0.5) * Math.PI * 2; // Convert to phase offset
+                
+                // Create gain nodes for mixing
+                const gain1 = this.context.createGain();
+                const gain2 = this.context.createGain();
+                const mixGain = this.context.createGain();
+
+                // ✅ PWM: Mix oscillators based on pulse width
+                // At 0.5 pulse width: equal mix (normal square)
+                // At < 0.5: more of osc1 (narrower pulse)
+                // At > 0.5: more of osc2 (wider pulse)
+                const mix1 = pulseWidth;
+                const mix2 = 1 - pulseWidth;
+
+                gain1.gain.setValueAtTime(mix1 * settings.level, time);
+                gain2.gain.setValueAtTime(mix2 * settings.level, time);
+                mixGain.gain.setValueAtTime(1.0, time);
+
+                // Connect: osc1 -> gain1 -> mixGain
+                //         osc2 -> gain2 -> mixGain
+                osc1.connect(gain1);
+                osc2.connect(gain2);
+                gain1.connect(mixGain);
+                gain2.connect(mixGain);
+
+                // Start both oscillators
+                osc1.start(time);
+                osc2.start(time);
+
+                // Store references
+                this.oscillators[i] = [osc1, osc2]; // Store array for PWM
+                this.oscillatorGains[i] = mixGain;
+            } else {
+                // ✅ NORMAL: Standard oscillator (non-square or square with 0.5 pulse width)
+                const osc = this.context.createOscillator();
+                osc.type = settings.waveform;
+                osc.frequency.setValueAtTime(frequency, time);
+                osc.detune.setValueAtTime(settings.detune, time);
+
+                // Create gain node for this oscillator
+                const oscGain = this.context.createGain();
+                oscGain.gain.setValueAtTime(settings.level, time);
+
+                osc.connect(oscGain);
+
+                this.oscillators[i] = osc;
+                this.oscillatorGains[i] = oscGain;
+            }
         });
 
         // Create filter
@@ -219,7 +292,24 @@ export class VASynth {
         this.filter.Q.setValueAtTime(this.filterSettings.resonance, time);
 
         // ✅ PHASE 2: Base filter cutoff with mod wheel modulation
+        // ✅ KEY TRACKING: Apply key tracking if enabled
         let baseCutoff = this.filterSettings.cutoff;
+        
+        // ✅ KEY TRACKING: Apply key tracking if enabled
+        const keyTrackingAmount = this.filterSettings.keyTracking || 0; // 0-1
+        if (keyTrackingAmount > 0) {
+            const noteFrequency = this.midiToFrequency(midiNote);
+            const baseFrequency = this.midiToFrequency(60); // C4 as base
+            const frequencyRatio = noteFrequency / baseFrequency;
+            
+            // Calculate key tracking offset
+            // Higher notes = higher frequency = higher cutoff
+            // Range: ±50% of base cutoff based on key tracking amount
+            const keyTrackingOffset = (frequencyRatio - 1) * keyTrackingAmount * baseCutoff * 0.5;
+            baseCutoff = baseCutoff + keyTrackingOffset;
+            baseCutoff = Math.max(20, Math.min(20000, baseCutoff)); // Clamp to valid range
+        }
+        
         if (extendedParams?.modWheel !== undefined) {
             const modWheelNormalized = extendedParams.modWheel / 127; // 0-1
             const cutoffRange = baseCutoff * 0.5; // ±50% modulation
@@ -245,12 +335,27 @@ export class VASynth {
         this.amplitudeGain = this.context.createGain();
         this.amplitudeGain.gain.setValueAtTime(0, time);
 
-        // Connect oscillators to filter
-        this.oscillatorGains.forEach(oscGain => {
-            if (oscGain) {
-                oscGain.connect(this.filter);
-            }
-        });
+        // ✅ FILTER DRIVE: Create drive node if drive > 0
+        if (this.filterSettings.drive > 0.001) {
+            this.filterDrive = this.context.createWaveShaper();
+            this.filterDrive.curve = this._createDriveCurve(this.filterSettings.drive);
+            this.filterDrive.oversample = '4x'; // Reduce aliasing
+            
+            // Connect: Oscillators → Filter Drive → Filter → Amplitude Gain → Master Gain
+            this.oscillatorGains.forEach(oscGain => {
+                if (oscGain) {
+                    oscGain.connect(this.filterDrive);
+                }
+            });
+            this.filterDrive.connect(this.filter);
+        } else {
+            // Connect: Oscillators → Filter → Amplitude Gain → Master Gain
+            this.oscillatorGains.forEach(oscGain => {
+                if (oscGain) {
+                    oscGain.connect(this.filter);
+                }
+            });
+        }
 
         // Connect: Filter → Amplitude Gain → Master Gain
         // Note: masterGain is already created in constructor
@@ -287,11 +392,74 @@ export class VASynth {
             velocity
         );
 
-        // Start LFO if enabled
-        if (this.lfo.isRunning) {
-            this.lfo.stop();
+        // ✅ LFO PLAYBACK: Start LFO and connect to target parameter
+        if (this.lfo && this.lfo.frequency > 0 && this.lfo.depth > 0) {
+            if (this.lfo.isRunning) {
+                this.lfo.stop();
+            }
+            
+            // ✅ TEMPO SYNC: Update BPM before starting (if tempo sync is enabled)
+            if (this.lfo.tempoSync && this.bpm) {
+                this.lfo.updateBPM(this.bpm);
+            }
+            
+            this.lfo.start(time);
+            
+            // ✅ LFO TARGET: Connect LFO to target parameter based on lfoTarget
+            const target = this.lfoTarget || 'filter.cutoff';
+            let targetParam = null;
+            let modulationAmount = 0;
+            
+            switch (target) {
+                case 'filter.cutoff':
+                    targetParam = this.filter.frequency;
+                    const baseCutoff = this.filterSettings.cutoff;
+                    modulationAmount = this.lfo.depth * baseCutoff * 0.5; // ±50% of cutoff
+                    break;
+                    
+                case 'filter.resonance':
+                    targetParam = this.filter.Q;
+                    const baseResonance = this.filterSettings.resonance;
+                    modulationAmount = this.lfo.depth * baseResonance * 0.5; // ±50% of resonance
+                    break;
+                    
+                case 'osc.level':
+                    // ✅ LFO TARGET: Modulate first oscillator level
+                    if (this.oscillatorGains[0]) {
+                        targetParam = this.oscillatorGains[0].gain;
+                        modulationAmount = this.lfo.depth * 0.5; // ±50% of level
+                    }
+                    break;
+                    
+                case 'osc.detune':
+                    // ✅ LFO TARGET: Modulate first oscillator detune
+                    if (this.oscillators[0] && !Array.isArray(this.oscillators[0])) {
+                        targetParam = this.oscillators[0].detune;
+                        modulationAmount = this.lfo.depth * 50; // ±50 cents
+                    }
+                    break;
+                    
+                case 'osc.pitch':
+                    // ✅ LFO TARGET: Modulate first oscillator frequency (pitch)
+                    if (this.oscillators[0] && !Array.isArray(this.oscillators[0])) {
+                        targetParam = this.oscillators[0].frequency;
+                        const baseFreq = this.oscillators[0].frequency.value;
+                        modulationAmount = this.lfo.depth * baseFreq * 0.1; // ±10% of frequency (vibrato)
+                    }
+                    break;
+                    
+                default:
+                    // Fallback to filter cutoff
+                    targetParam = this.filter.frequency;
+                    const fallbackCutoff = this.filterSettings.cutoff;
+                    modulationAmount = this.lfo.depth * fallbackCutoff * 0.5;
+                    break;
+            }
+            
+            if (targetParam) {
+                this.lfo.connect(targetParam, modulationAmount);
+            }
         }
-        this.lfo.start(time);
 
         this.isPlaying = true;
     }
@@ -334,7 +502,16 @@ export class VASynth {
                 if (osc) {
                     try {
                         const stopAt = releaseEnd + 0.1;
-                        osc.stop(stopAt); // Add small buffer after release
+                        // ✅ PWM: Handle array of oscillators (PWM mode)
+                        if (Array.isArray(osc)) {
+                            osc.forEach(o => {
+                                if (o) {
+                                    o.stop(stopAt);
+                                }
+                            });
+                        } else {
+                            osc.stop(stopAt); // Add small buffer after release
+                        }
                         console.log(`🎹 Scheduled oscillator ${i} stop at ${stopAt.toFixed(3)}s`);
                     } catch (e) {
                         console.warn(`🎹 Failed to stop oscillator ${i}:`, e.message);
@@ -368,10 +545,23 @@ export class VASynth {
         this.oscillators.forEach(osc => {
             if (osc) {
                 try {
-                    if (osc.context.state !== 'closed') {
-                        osc.stop(now);
+                    // ✅ PWM: Handle array of oscillators (PWM mode)
+                    if (Array.isArray(osc)) {
+                        osc.forEach(o => {
+                            if (o && o.context && o.context.state !== 'closed') {
+                                o.stop(now);
+                            }
+                            if (o) {
+                                o.disconnect();
+                            }
+                        });
+                    } else {
+                        // Normal single oscillator
+                        if (osc.context && osc.context.state !== 'closed') {
+                            osc.stop(now);
+                        }
+                        osc.disconnect();
                     }
-                    osc.disconnect();
                 } catch (e) {
                     // Already stopped - ignore
                 }
@@ -431,29 +621,53 @@ export class VASynth {
 
     /**
      * Update filter settings
+     * ✅ KEY TRACKING: Key tracking is applied per-note in noteOn(), not here
      */
     setFilter(settings) {
+        const driveChanged = settings.drive !== undefined && 
+                            settings.drive !== this.filterSettings.drive;
+        
         this.filterSettings = {
             ...this.filterSettings,
             ...settings
         };
 
+        // ✅ FILTER DRIVE: Update drive curve if drive changed
+        if (driveChanged && this.filterDrive && this.filterSettings.drive > 0.001) {
+            this.filterDrive.curve = this._createDriveCurve(this.filterSettings.drive);
+        }
+
         // Apply to current filter if playing
+        // Note: Key tracking is note-specific, so it's not applied here
+        // It will be applied on next noteOn() call
         if (this.isPlaying && this.filter) {
             if (settings.type !== undefined) {
                 this.filter.type = settings.type;
             }
             if (settings.cutoff !== undefined) {
-                this.filter.frequency.setValueAtTime(
-                    settings.cutoff,
-                    this.context.currentTime
-                );
+                // ✅ KEY TRACKING: Don't apply cutoff directly if key tracking is enabled
+                // Key tracking modifies cutoff per-note, so we can't set a global value
+                if (this.filterSettings.keyTracking === 0 || this.filterSettings.keyTracking === undefined) {
+                    this.filter.frequency.setValueAtTime(
+                        settings.cutoff,
+                        this.context.currentTime
+                    );
+                }
             }
             if (settings.resonance !== undefined) {
                 this.filter.Q.setValueAtTime(
                     settings.resonance,
                     this.context.currentTime
                 );
+            }
+            
+            // ✅ FILTER DRIVE: If drive changed significantly, restart note to apply drive node
+            // Drive node is created in noteOn(), so we need to restart to apply changes
+            if (driveChanged && this.currentNote !== null) {
+                const note = this.currentNote;
+                const vel = this.currentVelocity;
+                this.noteOff();
+                this.noteOn(note, vel);
             }
         }
     }
@@ -503,6 +717,7 @@ export class VASynth {
             filterEnvelope: this.filterEnvelope.getSettings(),
             amplitudeEnvelope: this.amplitudeEnvelope.getSettings(),
             lfo: this.lfo.getSettings(),
+            lfoTarget: this.lfoTarget, // ✅ LFO TARGET: Save target in preset
             masterVolume: this.masterVolume
         };
     }
@@ -531,6 +746,11 @@ export class VASynth {
 
         if (preset.lfo) {
             this.setLFO(preset.lfo);
+        }
+        
+        // ✅ LFO TARGET: Load LFO target from preset
+        if (preset.lfoTarget !== undefined) {
+            this.lfoTarget = preset.lfoTarget;
         }
 
         if (preset.masterVolume !== undefined) {
@@ -590,6 +810,81 @@ export class VASynth {
             this.setFilter(params.filterSettings);
         }
 
+        // ✅ LFO PLAYBACK: Update LFO settings
+        if (params.lfo1) {
+            // ✅ TEMPO SYNC: Include BPM in LFO settings if tempo sync is enabled
+            const lfoSettings = { ...params.lfo1 };
+            if (lfoSettings.tempoSync && this.bpm) {
+                lfoSettings.bpm = this.bpm;
+            }
+            
+            this.setLFO(lfoSettings);
+            
+            // ✅ LFO TARGET: Update LFO target if provided
+            if (params.lfo1.target !== undefined) {
+                this.lfoTarget = params.lfo1.target;
+            }
+            
+            // ✅ LFO PLAYBACK: Reconnect LFO if playing (with new target)
+            if (this.isPlaying && this.lfo && this.lfo.isRunning) {
+                // Disconnect all old connections
+                this.lfo.connectedParams.forEach(param => {
+                    this.lfo.disconnect(param);
+                });
+                
+                // Reconnect with new target and settings
+                if (this.lfo.frequency > 0 && this.lfo.depth > 0) {
+                    const target = this.lfoTarget || 'filter.cutoff';
+                    let targetParam = null;
+                    let modulationAmount = 0;
+                    
+                    switch (target) {
+                        case 'filter.cutoff':
+                            if (this.filter) {
+                                targetParam = this.filter.frequency;
+                                const baseCutoff = this.filterSettings.cutoff;
+                                modulationAmount = this.lfo.depth * baseCutoff * 0.5;
+                            }
+                            break;
+                            
+                        case 'filter.resonance':
+                            if (this.filter) {
+                                targetParam = this.filter.Q;
+                                const baseResonance = this.filterSettings.resonance;
+                                modulationAmount = this.lfo.depth * baseResonance * 0.5;
+                            }
+                            break;
+                            
+                        case 'osc.level':
+                            if (this.oscillatorGains[0]) {
+                                targetParam = this.oscillatorGains[0].gain;
+                                modulationAmount = this.lfo.depth * 0.5;
+                            }
+                            break;
+                            
+                        case 'osc.detune':
+                            if (this.oscillators[0] && !Array.isArray(this.oscillators[0])) {
+                                targetParam = this.oscillators[0].detune;
+                                modulationAmount = this.lfo.depth * 50;
+                            }
+                            break;
+                            
+                        case 'osc.pitch':
+                            if (this.oscillators[0] && !Array.isArray(this.oscillators[0])) {
+                                targetParam = this.oscillators[0].frequency;
+                                const baseFreq = this.oscillators[0].frequency.value;
+                                modulationAmount = this.lfo.depth * baseFreq * 0.1;
+                            }
+                            break;
+                    }
+                    
+                    if (targetParam) {
+                        this.lfo.connect(targetParam, modulationAmount);
+                    }
+                }
+            }
+        }
+
         // Update master volume
         if (params.masterVolume !== undefined) {
             this.masterVolume = params.masterVolume;
@@ -613,6 +908,36 @@ export class VASynth {
         if (params.legato !== undefined) {
             this.legato = params.legato;
         }
+    }
+
+    /**
+     * ✅ FILTER DRIVE: Create waveshaping curve for saturation
+     * 
+     * @param {number} drive - Drive amount (0-1)
+     * @returns {Float32Array} WaveShaper curve
+     */
+    _createDriveCurve(drive) {
+        const samples = 4096;
+        const curve = new Float32Array(samples);
+        const deg = Math.PI / 180;
+        
+        // Soft saturation curve (tanh-like)
+        // Drive controls the amount of saturation
+        // Higher drive = more distortion
+        for (let i = 0; i < samples; i++) {
+            const x = (i * 2) / samples - 1; // -1 to 1
+            const driveAmount = drive * 3; // Scale drive (0-3)
+            
+            // Soft saturation using tanh
+            // Drive amount controls how much saturation is applied
+            const saturated = Math.tanh(x * (1 + driveAmount));
+            
+            // Mix between original and saturated signal
+            const mix = drive; // 0 = original, 1 = fully saturated
+            curve[i] = x * (1 - mix) + saturated * mix;
+        }
+        
+        return curve;
     }
 
     /**

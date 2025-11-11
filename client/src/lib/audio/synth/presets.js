@@ -58,6 +58,7 @@ export const SYNTH_PRESETS = {
             depth: 0,
             waveform: 'sine'
         },
+        cutItself: false,  // ✅ Natural release
         masterVolume: 0.7
     },
 
@@ -115,6 +116,7 @@ export const SYNTH_PRESETS = {
             depth: 0,
             waveform: 'sine'
         },
+        cutItself: false,  // ✅ Natural release
         masterVolume: 0.7
     },
 
@@ -172,6 +174,7 @@ export const SYNTH_PRESETS = {
             depth: 0.2,
             waveform: 'sine'
         },
+        cutItself: false,  // ✅ Natural release for pad
         masterVolume: 0.6
     },
 
@@ -233,6 +236,7 @@ export const SYNTH_PRESETS = {
         voiceMode: 'mono',
         portamento: 0.05,
         legato: false,
+        cutItself: false,  // ✅ Expressive lead needs natural release
         masterVolume: 0.65
     },
 
@@ -294,6 +298,7 @@ export const SYNTH_PRESETS = {
         voiceMode: 'mono',
         portamento: 0.02,
         legato: true,
+        cutItself: false,  // ✅ Bass needs natural release for smooth lines
         masterVolume: 0.85
     },
 
@@ -351,6 +356,7 @@ export const SYNTH_PRESETS = {
             depth: 0,
             waveform: 'sine'
         },
+        cutItself: true,  // ✅ Percussive, sustain=0, cut on retrigger
         masterVolume: 0.7
     },
 
@@ -408,6 +414,7 @@ export const SYNTH_PRESETS = {
             depth: 0.05,
             waveform: 'sine'
         },
+        cutItself: false,  // ✅ Organ sustains naturally
         masterVolume: 0.7
     },
 
@@ -465,70 +472,124 @@ export const SYNTH_PRESETS = {
             depth: 0.1,
             waveform: 'sine'
         },
+        cutItself: false,  // ✅ Strings need natural release
         masterVolume: 0.65
     },
 
     '808 Bass': {
-        oscillator: {
-            type: 'sine'
-        },
-        envelope: {
-            attack: 0.001,
-            decay: 0.5,
-            sustain: 0.3,
-            release: 0.4
-        },
+        oscillators: [
+            {
+                enabled: true,
+                waveform: 'sine',
+                detune: 0,
+                octave: 0,
+                level: 0.9,
+                pulseWidth: 0.5
+            },
+            {
+                enabled: true,
+                waveform: 'triangle',
+                detune: 0,
+                octave: 1,
+                level: 0.3,
+                pulseWidth: 0.5
+            },
+            {
+                enabled: false,
+                waveform: 'sine',
+                detune: 0,
+                octave: 0,
+                level: 0.3,
+                pulseWidth: 0.5
+            }
+        ],
         filter: {
             type: 'lowpass',
-            frequency: 500,
-            Q: 2,
-            rolloff: -24
+            cutoff: 500,
+            resonance: 2.0,
+            envelopeAmount: 800,
+            velocitySensitivity: 0.5
         },
         filterEnvelope: {
             attack: 0.001,
             decay: 0.3,
             sustain: 0.2,
             release: 0.2,
-            baseFrequency: 500,
-            octaves: 1
+            velocitySensitivity: 0.4
+        },
+        amplitudeEnvelope: {
+            attack: 0.001,
+            decay: 0.5,
+            sustain: 0.3,
+            release: 0.4,
+            velocitySensitivity: 0.7
         },
         lfo: {
             frequency: 0.1,
             depth: 0.05,
             waveform: 'sine'
         },
+        voiceMode: 'mono',
+        portamento: 0.01,
+        legato: false,
+        cutItself: true,  // ✅ Drum-like, cut on retrigger
         masterVolume: 0.9
     },
 
     'Bell Synth': {
-        oscillator: {
-            type: 'sine'
-        },
-        envelope: {
-            attack: 0.01,
-            decay: 0.8,
-            sustain: 0.2,
-            release: 0.6
-        },
+        oscillators: [
+            {
+                enabled: true,
+                waveform: 'sine',
+                detune: 0,
+                octave: 0,
+                level: 0.6,
+                pulseWidth: 0.5
+            },
+            {
+                enabled: true,
+                waveform: 'sine',
+                detune: 0,
+                octave: 2,
+                level: 0.25,
+                pulseWidth: 0.5
+            },
+            {
+                enabled: true,
+                waveform: 'triangle',
+                detune: 5,
+                octave: 3,
+                level: 0.15,
+                pulseWidth: 0.5
+            }
+        ],
         filter: {
             type: 'lowpass',
-            frequency: 3000,
-            Q: 1,
-            rolloff: -12
+            cutoff: 3000,
+            resonance: 1.0,
+            envelopeAmount: 2000,
+            velocitySensitivity: 0.8
         },
         filterEnvelope: {
             attack: 0.01,
             decay: 0.6,
             sustain: 0.1,
             release: 0.4,
-            baseFrequency: 3000,
-            octaves: 2
+            velocitySensitivity: 0.7
+        },
+        amplitudeEnvelope: {
+            attack: 0.01,
+            decay: 0.8,
+            sustain: 0.2,
+            release: 0.6,
+            velocitySensitivity: 0.8
         },
         lfo: {
             frequency: 0.2,
             depth: 0.1,
             waveform: 'sine'
         },
+        cutItself: false,  // ✅ Natural release for bell sound
         masterVolume: 0.7
     },
 
@@ -589,6 +650,7 @@ export const SYNTH_PRESETS = {
         voiceMode: 'mono',
         portamento: 0.03,
         legato: true,
+        cutItself: false,  // ✅ Sub bass needs natural decay
         masterVolume: 0.95
     },
 
@@ -648,6 +710,7 @@ export const SYNTH_PRESETS = {
         voiceMode: 'mono',
         portamento: 0.02,
         legato: true,
+        cutItself: false,  // ✅ Reese bass needs natural decay
         masterVolume: 0.8
     },
 
@@ -708,6 +771,7 @@ export const SYNTH_PRESETS = {
         voiceMode: 'mono',
         portamento: 0.04,
         legato: false,
+        cutItself: false,  // ✅ Supersaw lead needs natural release
         masterVolume: 0.6
     },
 
@@ -767,6 +831,7 @@ export const SYNTH_PRESETS = {
         voiceMode: 'mono',
         portamento: 0.01,
         legato: true,
+        cutItself: false,  // ✅ Acid lead needs natural release
         masterVolume: 0.7
     },
 
@@ -824,6 +889,7 @@ export const SYNTH_PRESETS = {
             depth: 0.25,
             waveform: 'sine'
         },
+        cutItself: false,  // ✅ Lush pad needs long natural release
         masterVolume: 0.55
     },
 
@@ -880,6 +946,7 @@ export const SYNTH_PRESETS = {
             depth: 0.15,
             waveform: 'sine'
         },
+        cutItself: false,  // ✅ Analog pad needs natural release
         masterVolume: 0.6
     },
 
@@ -970,6 +1037,7 @@ export const SYNTH_PRESETS = {
             }
         ],
         voiceMode: 'poly',
+        cutItself: false,  // ✅ Hyper saw needs natural release
         masterVolume: 0.55
     },
 
@@ -1051,6 +1119,7 @@ export const SYNTH_PRESETS = {
             }
         ],
         voiceMode: 'poly',
+        cutItself: true,  // ✅ Trance pluck is percussive (sustain=0)
         masterVolume: 0.65
     },
 
@@ -1138,6 +1207,7 @@ export const SYNTH_PRESETS = {
             }
         ],
         voiceMode: 'poly',
+        cutItself: false,  // ✅ Dream pad needs long natural release
         masterVolume: 0.5
     },
 
@@ -1209,6 +1279,7 @@ export const SYNTH_PRESETS = {
         voiceMode: 'mono',
         portamento: 0.02,
         legato: true,
+        cutItself: false,  // ✅ Wobble bass needs natural release
         masterVolume: 0.75
     },
 
@@ -1289,6 +1360,7 @@ export const SYNTH_PRESETS = {
             }
         ],
         voiceMode: 'poly',
+        cutItself: true,  // ✅ Arp lead is percussive/staccato
         masterVolume: 0.7
     },
 
@@ -1365,6 +1437,7 @@ export const SYNTH_PRESETS = {
         voiceMode: 'mono',
         portamento: 0.025,
         legato: true,
+        cutItself: false,  // ✅ Fat bass needs natural release
         masterVolume: 0.8
     },
 
@@ -1448,6 +1521,7 @@ export const SYNTH_PRESETS = {
             }
         ],
         voiceMode: 'poly',
+        cutItself: false,  // ✅ Vocal synth needs natural release
         masterVolume: 0.6
     },
 
@@ -1533,6 +1607,7 @@ export const SYNTH_PRESETS = {
             }
         ],
         voiceMode: 'poly',
+        cutItself: false,  // ✅ Sidechain lead needs natural release
         masterVolume: 0.6
     }
 };

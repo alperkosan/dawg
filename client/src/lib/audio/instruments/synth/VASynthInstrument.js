@@ -99,26 +99,75 @@ export class VASynthInstrument extends BaseInstrument {
             } else {
                 // ✅ POLYPHONIC MODE: Create separate voice per note
 
-                // ✅ CRITICAL FIX: If note is already playing, immediately dispose old voice
-                // Don't use noteOff() which schedules disposal - that would delete the NEW voice!
+                // ✅ RETRIGGER HANDLING: Respect instrument's cutItself parameter
                 if (this.voices.has(midiNote)) {
                     const oldVoice = this.voices.get(midiNote);
 
-                    // Cancel any pending timeout for this note
+                    // ✅ FIX: Cancel ALL pending timeouts for this note (both regular and retrigger)
                     if (this.voiceTimeouts.has(midiNote)) {
                         clearTimeout(this.voiceTimeouts.get(midiNote));
                         this.voiceTimeouts.delete(midiNote);
                     }
-
-                    // Immediately dispose old voice (no release envelope for retriggered notes)
-                    if (oldVoice) {
-                        oldVoice.dispose();
+                    if (this.voiceTimeouts.has(`retrigger_${midiNote}`)) {
+                        clearTimeout(this.voiceTimeouts.get(`retrigger_${midiNote}`));
+                        this.voiceTimeouts.delete(`retrigger_${midiNote}`);
                     }
 
-                    // Remove from voices map (will be replaced with new voice below)
-                    this.voices.delete(midiNote);
+                    if (oldVoice) {
+                        // ✅ Check cutItself parameter (default: false for natural release)
+                        const cutItself = this.preset?.cutItself ?? false;
 
-                    console.log(`🔄 VASynth retrigger: Disposed old voice for midiNote=${midiNote}`);
+                        if (cutItself) {
+                            // ✅ IMMEDIATE CUT: Quick fade-out for percussive/drum sounds
+                            try {
+                                const now = this.audioContext.currentTime;
+                                const fadeTime = 0.01; // 10ms quick fade to prevent click
+
+                                if (oldVoice.amplitudeGain) {
+                                    oldVoice.amplitudeGain.gain.cancelScheduledValues(now);
+                                    oldVoice.amplitudeGain.gain.setValueAtTime(oldVoice.amplitudeGain.gain.value, now);
+                                    oldVoice.amplitudeGain.gain.exponentialRampToValueAtTime(0.0001, now + fadeTime);
+                                }
+
+                                setTimeout(() => {
+                                    oldVoice.dispose();
+                                }, fadeTime * 1000 + 10);
+
+                                console.log(`✂️ Retrigger (cut itself): Quick fade for note ${midiNote}`);
+                            } catch (e) {
+                                console.warn(`⚠️ Failed to cut voice:`, e);
+                                // ✅ FIX: Use dispose() instead of cleanup()
+                                try { oldVoice.dispose(); } catch (disposeError) { /* Already disposed */ }
+                            }
+                        } else {
+                            // ✅ NATURAL RELEASE: Use instrument's ADSR release envelope
+                            try {
+                                oldVoice.noteOff(time);
+
+                                // ✅ FIX: Use preset's actual release time, better fallback
+                                const presetRelease = this.preset?.amplitudeEnvelope?.release || 1.0;
+                                const releaseTime = oldVoice.amplitudeEnvelope?.releaseTime || presetRelease;
+                                const timeoutId = setTimeout(() => {
+                                    oldVoice.dispose();
+                                    console.log(`♻️ Disposed retriggered voice for note ${midiNote} after ${releaseTime}s release`);
+                                }, (releaseTime + 0.1) * 1000);
+
+                                // ✅ FIX: Use unique timestamp to avoid collision
+                                const timeoutKey = `retrigger_${midiNote}_${Date.now()}`;
+                                this.voiceTimeouts.set(timeoutKey, timeoutId);
+
+                                console.log(`🔄 Retrigger (natural release): ${releaseTime}s release for note ${midiNote}`);
+                            } catch (e) {
+                                console.warn(`⚠️ Failed to trigger noteOff on old voice:`, e);
+                                // ✅ FIX: Use dispose() instead of cleanup()
+                                try { oldVoice.dispose(); } catch (disposeError) { /* Already disposed */ }
+                            }
+                        }
+                    }
+
+                    // ✅ FIX: Remove from map AFTER setting up cleanup
+                    // This ensures we don't lose the reference before disposal is scheduled
+                    this.voices.delete(midiNote);
                 }
 
                 // Check polyphony limit
@@ -147,7 +196,7 @@ export class VASynthInstrument extends BaseInstrument {
 
                 // Store voice
                 this.voices.set(midiNote, voice);
-                console.log(`🎹 VASynth noteOn: midiNote=${midiNote}, voices.size=${this.voices.size}, stored voice`);
+                console.log(`🎹 VASynth noteOn: midiNote=${midiNote}, velocity=${velocity}, voices.size=${this.voices.size}, instrumentName=${this.name}`);
             }
 
             // Track note
@@ -194,7 +243,7 @@ export class VASynthInstrument extends BaseInstrument {
                     // ✅ POLYPHONIC MODE: Stop specific voice
                     const voice = this.voices.get(midiNote);
 
-                    console.log(`🎹 VASynth noteOff: midiNote=${midiNote}, voice=${!!voice}, voices.size=${this.voices.size}, voices.keys=${Array.from(this.voices.keys()).join(',')}`);
+                    console.log(`🔴 VASynth noteOff: instrumentName=${this.name}, midiNote=${midiNote}, hasVoice=${!!voice}, voices.size=${this.voices.size}, voices.keys=[${Array.from(this.voices.keys()).join(',')}]`);
 
                     if (voice) {
                         voice.noteOff(time);
@@ -360,6 +409,14 @@ export class VASynthInstrument extends BaseInstrument {
         if (updates.amplitudeEnvelope) {
             this.preset.amplitudeEnvelope = updates.amplitudeEnvelope;
         }
+        // ✅ LFO PLAYBACK: Update LFO settings in preset
+        if (updates.lfo1) {
+            this.preset.lfo = updates.lfo1;
+            // ✅ LFO TARGET: Update LFO target if provided
+            if (updates.lfo1.target !== undefined) {
+                this.preset.lfoTarget = updates.lfo1.target;
+            }
+        }
 
         // Update all active voices with new settings
         this.voices.forEach(voice => {
@@ -388,12 +445,37 @@ export class VASynthInstrument extends BaseInstrument {
                 if (updates.amplitudeEnvelope && voice.setAmplitudeEnvelope) {
                     voice.setAmplitudeEnvelope(updates.amplitudeEnvelope);
                 }
+                
+                // ✅ LFO PLAYBACK: Update LFO settings in active voices
+                if (updates.lfo1 && voice.updateParameters) {
+                    voice.updateParameters({ lfo1: updates.lfo1 });
+                }
             } catch (error) {
                 console.error('Error updating voice parameters:', error);
             }
         });
 
         console.log('✅ VASynth parameters updated, active voices:', this.voices.size);
+    }
+
+    /**
+     * ✅ TEMPO SYNC: Update BPM for all active voices
+     * Called when transport BPM changes
+     */
+    updateBPM(bpm) {
+        this.voices.forEach(voice => {
+            try {
+                if (voice && voice.lfo && typeof voice.lfo.updateBPM === 'function') {
+                    voice.lfo.updateBPM(bpm);
+                }
+                // ✅ TEMPO SYNC: Also update VASynth's internal BPM
+                if (voice && typeof voice.bpm !== 'undefined') {
+                    voice.bpm = bpm;
+                }
+            } catch (error) {
+                console.warn(`Failed to update BPM for voice:`, error);
+            }
+        });
     }
 
     /**

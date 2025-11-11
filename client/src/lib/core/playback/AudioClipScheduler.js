@@ -10,6 +10,7 @@
  */
 
 import { audioAssetManager } from '../../audio/AudioAssetManager.js';
+import { useArrangementStore } from '../../../store/useArrangementStore.js';
 
 export class AudioClipScheduler {
     constructor(transport, audioEngine) {
@@ -134,20 +135,56 @@ export class AudioClipScheduler {
      * @private
      */
     _getClipDestination(clip) {
+        // ✅ FIX: Support both clip.mixerChannelId (arrangement clips) and clip.channelId (legacy)
+        const mixerChannelId = clip.mixerChannelId || clip.channelId;
+        
         // 🎛️ DYNAMIC MIXER: Check if clip has assigned mixer insert first
-        if (clip.channelId) {
+        if (mixerChannelId) {
             // Try mixer insert first (new system)
-            const insert = this.audioEngine.mixerInserts?.get(clip.channelId);
+            const insert = this.audioEngine.mixerInserts?.get(mixerChannelId);
             if (insert && insert.input) {
-                console.log(`🎵 Audio clip routed to mixer insert: ${clip.channelId}`);
+                console.log(`🎵 Audio clip "${clip.name || clip.id}" routed to mixer insert: ${mixerChannelId}`);
                 return insert.input;
             }
 
             // Fallback to old mixer channels (backward compatibility)
-            const channel = this.audioEngine.mixerChannels?.get(clip.channelId);
+            const channel = this.audioEngine.mixerChannels?.get(mixerChannelId);
             if (channel && channel.input) {
-                console.log(`🎵 Audio clip routed to legacy mixer channel: ${clip.channelId}`);
+                console.log(`🎵 Audio clip "${clip.name || clip.id}" routed to legacy mixer channel: ${mixerChannelId}`);
                 return channel.input;
+            }
+        }
+        
+        // ✅ FIX: If clip doesn't have mixerChannelId, try to route through track's mixer channel
+        // This is for arrangement clips where mixerChannelId is null (inherit from track)
+        if (clip.trackId) {
+            try {
+                const arrangementStore = useArrangementStore.getState();
+                const track = arrangementStore.arrangementTracks?.find(t => t.id === clip.trackId);
+                
+                if (track) {
+                    // Get track's mixer insert ID from _trackChannelMap
+                    const trackChannelMap = arrangementStore._trackChannelMap;
+                    const trackMixerInsertId = trackChannelMap?.get(track.id);
+                    
+                    if (trackMixerInsertId) {
+                        const trackInsert = this.audioEngine.mixerInserts?.get(trackMixerInsertId);
+                        if (trackInsert && trackInsert.input) {
+                            console.log(`🎵 Audio clip "${clip.name || clip.id}" routed to track's mixer insert: ${trackMixerInsertId} (inherited from track "${track.name}")`);
+                            return trackInsert.input;
+                        }
+                    }
+                }
+                
+                // Fallback: try to construct mixer insert ID from track ID (standard naming convention)
+                const trackMixerInsertId = `arr-${clip.trackId}`;
+                const trackInsert = this.audioEngine.mixerInserts?.get(trackMixerInsertId);
+                if (trackInsert && trackInsert.input) {
+                    console.log(`🎵 Audio clip "${clip.name || clip.id}" routed to track's mixer insert: ${trackMixerInsertId} (fallback from track ID)`);
+                    return trackInsert.input;
+                }
+            } catch (error) {
+                console.warn(`⚠️ Could not get track mixer channel for clip ${clip.id}:`, error);
             }
         }
 

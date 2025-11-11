@@ -1,13 +1,16 @@
 /**
  * ADSR Envelope - Native Web Audio implementation
  * Attack, Decay, Sustain, Release envelope for synth parameters
+ * ✅ ENVELOPE DELAY/HOLD: Extended to DADSRH (Delay, Attack, Decay, Sustain, Release, Hold)
  */
 export class ADSREnvelope {
     constructor(audioContext) {
         this.context = audioContext;
 
         // Default ADSR values (in seconds, except sustain which is 0-1)
+        this.delay = 0;       // ✅ DELAY: Delay before envelope starts (0 = no delay)
         this.attack = 0.01;   // 10ms
+        this.hold = 0;        // ✅ HOLD: Hold at peak level (0 = no hold)
         this.decay = 0.1;     // 100ms
         this.sustain = 0.7;   // 70%
         this.releaseTime = 0.3;   // 300ms - renamed to avoid conflict with release() method
@@ -18,6 +21,7 @@ export class ADSREnvelope {
 
     /**
      * Apply envelope to an AudioParam (e.g., gain, frequency, filter cutoff)
+     * ✅ ENVELOPE DELAY/HOLD: Extended to DADSRH (Delay → Attack → Hold → Decay → Sustain → Release)
      * @param {AudioParam} param - The parameter to modulate
      * @param {number} startTime - When to start the envelope
      * @param {number} peakValue - Maximum value of the envelope
@@ -34,15 +38,29 @@ export class ADSREnvelope {
         // Clear any existing automation
         param.cancelScheduledValues(triggerTime);
 
-        // Start from 0
+        // ✅ DELAY: Start from 0 and wait for delay period
+        const delayEnd = triggerTime + this.delay;
         param.setValueAtTime(0, triggerTime);
+        
+        // If delay > 0, stay at 0 during delay
+        if (this.delay > 0.001) {
+            param.setValueAtTime(0, delayEnd);
+        }
 
-        // Attack phase
-        const attackEnd = triggerTime + this.attack;
+        // ✅ ATTACK: Attack phase (0 → peak)
+        const attackStart = delayEnd;
+        const attackEnd = attackStart + this.attack;
         param.linearRampToValueAtTime(adjustedPeak, attackEnd);
 
-        // Decay phase
-        const decayEnd = attackEnd + this.decay;
+        // ✅ HOLD: Hold at peak level (if hold > 0)
+        let holdEnd = attackEnd;
+        if (this.hold > 0.001) {
+            holdEnd = attackEnd + this.hold;
+            param.setValueAtTime(adjustedPeak, holdEnd);
+        }
+
+        // ✅ DECAY: Decay phase (peak → sustain)
+        const decayEnd = holdEnd + this.decay;
         const sustainLevel = adjustedPeak * this.sustain;
         param.linearRampToValueAtTime(sustainLevel, decayEnd);
 
@@ -83,6 +101,7 @@ export class ADSREnvelope {
 
     /**
      * Apply exponential envelope (better for frequency modulation)
+     * ✅ ENVELOPE DELAY/HOLD: Extended to DADSRH
      * @param {AudioParam} param
      * @param {number} startTime
      * @param {number} baseValue - Starting value (e.g., base filter cutoff)
@@ -108,14 +127,30 @@ export class ADSREnvelope {
         const minValue = Math.max(0.001, baseValue);
 
         param.cancelScheduledValues(triggerTime);
+        
+        // ✅ DELAY: Start from base value and wait for delay period
+        const delayEnd = triggerTime + this.delay;
         param.setValueAtTime(minValue, triggerTime);
+        
+        // If delay > 0, stay at base value during delay
+        if (this.delay > 0.001) {
+            param.setValueAtTime(minValue, delayEnd);
+        }
 
-        // Attack
-        const attackEnd = triggerTime + this.attack;
+        // ✅ ATTACK: Attack phase (base → peak)
+        const attackStart = delayEnd;
+        const attackEnd = attackStart + this.attack;
         param.exponentialRampToValueAtTime(adjustedPeak, attackEnd);
 
-        // Decay - decay back toward base value
-        const decayEnd = attackEnd + this.decay;
+        // ✅ HOLD: Hold at peak level (if hold > 0)
+        let holdEnd = attackEnd;
+        if (this.hold > 0.001) {
+            holdEnd = attackEnd + this.hold;
+            param.setValueAtTime(adjustedPeak, holdEnd);
+        }
+
+        // ✅ DECAY: Decay phase (peak → sustain)
+        const decayEnd = holdEnd + this.decay;
         const decayTarget = baseValue + (adjustedPeak - baseValue) * this.sustain;
         const sustainLevel = Math.max(minValue, decayTarget);
         param.exponentialRampToValueAtTime(sustainLevel, decayEnd);
@@ -151,9 +186,12 @@ export class ADSREnvelope {
 
     /**
      * Set ADSR parameters
+     * ✅ ENVELOPE DELAY/HOLD: Added delay and hold parameters
      */
-    setParams({ attack, decay, sustain, release, velocitySensitivity }) {
+    setParams({ delay, attack, hold, decay, sustain, release, velocitySensitivity }) {
+        if (delay !== undefined) this.delay = Math.max(0, delay);
         if (attack !== undefined) this.attack = Math.max(0.001, attack);
+        if (hold !== undefined) this.hold = Math.max(0, hold);
         if (decay !== undefined) this.decay = Math.max(0.001, decay);
         if (sustain !== undefined) this.sustain = Math.max(0, Math.min(1, sustain));
         if (release !== undefined) this.releaseTime = Math.max(0.001, release);
@@ -164,10 +202,13 @@ export class ADSREnvelope {
 
     /**
      * Get current ADSR parameters
+     * ✅ ENVELOPE DELAY/HOLD: Added delay and hold to return value
      */
     getParams() {
         return {
+            delay: this.delay,
             attack: this.attack,
+            hold: this.hold,
             decay: this.decay,
             sustain: this.sustain,
             release: this.releaseTime,
@@ -184,15 +225,17 @@ export class ADSREnvelope {
 
     /**
      * Calculate total envelope duration (without release)
+     * ✅ ENVELOPE DELAY/HOLD: Include delay and hold in duration calculation
      */
     getTotalDuration() {
-        return this.attack + this.decay;
+        return this.delay + this.attack + this.hold + this.decay;
     }
 
     /**
      * Calculate total envelope duration including release
+     * ✅ ENVELOPE DELAY/HOLD: Include delay and hold in duration calculation
      */
     getTotalDurationWithRelease() {
-        return this.attack + this.decay + this.releaseTime;
+        return this.delay + this.attack + this.hold + this.decay + this.releaseTime;
     }
 }

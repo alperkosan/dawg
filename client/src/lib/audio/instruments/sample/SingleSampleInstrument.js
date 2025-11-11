@@ -162,13 +162,30 @@ export class SingleSampleInstrument extends BaseInstrument {
                 lastNode = panner;
             }
 
-            // ✅ PHASE 2: Create filter - apply mod wheel and aftertouch if present
+            // ✅ PHASE 2: Create filter - apply mod wheel, aftertouch, and key tracking if present
             if (this.data.filterType && this.data.filterCutoff) {
                 const filter = this.audioContext.createBiquadFilter();
                 filter.type = this.data.filterType || 'lowpass';
                 
-                // Apply mod wheel (CC1) to filter cutoff if present
+                // ✅ KEY TRACKING: Get base filter cutoff
                 let filterCutoff = this.data.filterCutoff || 20000;
+                
+                // ✅ KEY TRACKING: Apply key tracking if enabled
+                if (this.data.filterKeyTracking !== undefined && this.data.filterKeyTracking > 0) {
+                    const keyTrackingAmount = this.data.filterKeyTracking; // 0-1
+                    const noteFrequency = 440 * Math.pow(2, (midiNote - 69) / 12);
+                    const baseFrequency = 440 * Math.pow(2, (60 - 69) / 12); // C4 as base
+                    const frequencyRatio = noteFrequency / baseFrequency;
+                    
+                    // Calculate key tracking offset
+                    // Higher notes = higher frequency = higher cutoff
+                    // Range: ±50% of base cutoff based on key tracking amount
+                    const keyTrackingOffset = (frequencyRatio - 1) * keyTrackingAmount * filterCutoff * 0.5;
+                    filterCutoff = filterCutoff + keyTrackingOffset;
+                    filterCutoff = Math.max(20, Math.min(20000, filterCutoff)); // Clamp to valid range
+                }
+                
+                // Apply mod wheel (CC1) to filter cutoff if present
                 if (extendedParams?.modWheel !== undefined) {
                     const modWheelNormalized = extendedParams.modWheel / 127; // 0-1
                     const cutoffRange = filterCutoff * 0.5; // ±50% modulation
@@ -238,8 +255,9 @@ export class SingleSampleInstrument extends BaseInstrument {
      * Stop a note
      * @param {number} midiNote - MIDI note to stop (null = stop all)
      * @param {number} stopTime - When to stop (AudioContext time)
+     * @param {number|null} releaseVelocity - Note-off velocity (0-127, null = default)
      */
-    noteOff(midiNote = null, stopTime = null) {
+    noteOff(midiNote = null, stopTime = null, releaseVelocity = null) {
         const when = stopTime !== null ? stopTime : this.audioContext.currentTime;
 
         if (midiNote === null) {
@@ -253,15 +271,27 @@ export class SingleSampleInstrument extends BaseInstrument {
             if (activeSource) {
                 const { source, gainNode } = activeSource;
 
-                // Apply release envelope if defined
-                const release = (this.data.release || 50) / 1000;
+                // ✅ RELEASE VELOCITY: Calculate effective release time based on release velocity
+                let baseRelease = (this.data.release || 50) / 1000;
+                let effectiveRelease = baseRelease;
+                
+                if (releaseVelocity !== null && releaseVelocity !== undefined) {
+                    const velocityNormalized = Math.max(0, Math.min(127, releaseVelocity)) / 127; // 0-1
+                    // Map velocity to release time: 0.5x (fast) to 1.0x (normal)
+                    const releaseTimeMultiplier = 1.0 - (velocityNormalized * 0.5);
+                    effectiveRelease = baseRelease * releaseTimeMultiplier;
+                    
+                    if (import.meta.env.DEV) {
+                        console.log(`🎚️ SingleSample release: velocity=${releaseVelocity}, baseTime=${baseRelease.toFixed(3)}s, effectiveTime=${effectiveRelease.toFixed(3)}s`);
+                    }
+                }
 
-                // Fade out with release time
+                // Fade out with effective release time
                 gainNode.gain.setValueAtTime(gainNode.gain.value, when);
-                gainNode.gain.linearRampToValueAtTime(0, when + release);
+                gainNode.gain.linearRampToValueAtTime(0, when + effectiveRelease);
 
                 // Stop source after release
-                source.stop(when + release);
+                source.stop(when + effectiveRelease);
 
                 // Cleanup
                 this.activeSources.delete(midiNote);

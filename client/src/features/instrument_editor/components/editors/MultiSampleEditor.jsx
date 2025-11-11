@@ -7,24 +7,45 @@
 import { useEffect, useCallback, useState } from 'react';
 import { getPreviewManager } from '@/lib/audio/preview';
 import { AudioContextService } from '@/lib/services/AudioContextService';
+import useInstrumentEditorStore from '@/store/useInstrumentEditorStore';
+import { useInstrumentsStore } from '@/store/useInstrumentsStore';
+import Slider from '../controls/Slider';
 import WaveformDisplay from '../WaveformDisplay';
 import './MultiSampleEditor.css';
 
-const MultiSampleEditor = ({ instrumentData }) => {
-  const samples = instrumentData.multiSamples || [];
+const MultiSampleEditor = ({ instrumentData: initialData }) => {
+  // Get live instrumentData from store (reactive to changes)
+  const instrumentData = useInstrumentEditorStore((state) => state.instrumentData) || initialData;
+  const { updateParameter } = useInstrumentEditorStore();
+  const { updateInstrument } = useInstrumentsStore();
+  
+  const samples = instrumentData?.multiSamples || [];
   const [activeNote, setActiveNote] = useState(null);
   const [selectedSample, setSelectedSample] = useState(null);
   const [audioBuffer, setAudioBuffer] = useState(null);
+  
+  // ✅ TIME STRETCH: Get time stretch enabled state
+  const timeStretchEnabled = instrumentData?.timeStretchEnabled || false;
+  
+  // ✅ SAMPLE START MODULATION: Get sample start modulation state
+  const sampleStart = instrumentData?.sampleStart || 0;
+  const sampleStartModulation = instrumentData?.sampleStartModulation || {
+    enabled: false,
+    source: 'envelope',
+    depth: 0.5
+  };
 
   // Setup PreviewManager with current instrument
+  // ✅ FIX: Only update when instrument ID changes, not when parameters change
+  // This prevents re-creating the instrument when time stretch toggle is changed
   useEffect(() => {
     const audioEngine = AudioContextService.getAudioEngine();
-    if (audioEngine?.audioContext && instrumentData) {
+    if (audioEngine?.audioContext && instrumentData?.id) {
       // ✅ FX CHAIN: Pass audioEngine to PreviewManager for mixer routing
       const previewManager = getPreviewManager(audioEngine.audioContext, audioEngine);
       previewManager.setInstrument(instrumentData);
     }
-  }, [instrumentData]);
+  }, [instrumentData?.id]); // ✅ FIX: Only depend on instrument ID, not entire instrumentData
 
   // Load audio buffer when sample is selected
   useEffect(() => {
@@ -84,7 +105,56 @@ const MultiSampleEditor = ({ instrumentData }) => {
       }
       setActiveNote(null);
     }
-  }, []);
+  }, [activeNote]);
+
+  // ✅ TIME STRETCH: Handle time stretch toggle
+  const handleTimeStretchToggle = useCallback(async (enabled) => {
+    if (!instrumentData?.id) return;
+
+    // Update store
+    updateParameter('timeStretchEnabled', enabled);
+
+    // Update instrument in store
+    updateInstrument(instrumentData.id, { timeStretchEnabled: enabled });
+
+    // Update audio engine instrument
+    const audioEngine = AudioContextService.getAudioEngine();
+    if (audioEngine && instrumentData.id) {
+      const instrument = audioEngine.instruments.get(instrumentData.id);
+      if (instrument && typeof instrument.timeStretchEnabled !== 'undefined') {
+        instrument.timeStretchEnabled = enabled;
+        // Re-initialize time stretcher if needed
+        if (enabled && !instrument.timeStretcher) {
+          // ✅ FIX: Use dynamic import instead of require
+          const { TimeStretcher } = await import('@/lib/audio/dsp/TimeStretcher');
+          instrument.timeStretcher = new TimeStretcher(audioEngine.audioContext);
+          // Inject into voices
+          if (instrument.voicePool) {
+            instrument.voicePool.voices.forEach(voice => {
+              voice.timeStretcher = instrument.timeStretcher;
+              voice.timeStretchEnabled = true;
+            });
+          }
+        }
+      }
+    }
+
+    console.log(`🎚️ Time stretch ${enabled ? 'enabled' : 'disabled'} for ${instrumentData.name}`);
+  }, [instrumentData, updateParameter, updateInstrument]);
+
+  // ✅ SAMPLE START MODULATION: Handle parameter changes
+  const handleSampleStartChange = useCallback((value) => {
+    if (!instrumentData?.id) return;
+    updateParameter('sampleStart', value);
+    updateInstrument(instrumentData.id, { sampleStart: value });
+  }, [instrumentData, updateParameter, updateInstrument]);
+
+  const handleSampleStartModulationChange = useCallback((updates) => {
+    if (!instrumentData?.id) return;
+    const newModulation = { ...sampleStartModulation, ...updates };
+    updateParameter('sampleStartModulation', newModulation);
+    updateInstrument(instrumentData.id, { sampleStartModulation: newModulation });
+  }, [instrumentData, sampleStartModulation, updateParameter, updateInstrument]);
 
   return (
     <div className="multisample-editor">
@@ -155,6 +225,85 @@ const MultiSampleEditor = ({ instrumentData }) => {
               </button>
             );
           })}
+        </div>
+      </div>
+
+      {/* ✅ SAMPLE START MODULATION: Sample Start Controls */}
+      <div className="multisample-editor__section">
+        <div className="multisample-editor__section-title">Sample Start</div>
+        <div className="multisample-editor__sample-start">
+          <Slider
+            label="Start Offset"
+            value={sampleStart}
+            min={0}
+            max={1}
+            step={0.001}
+            color="#6B8EBF"
+            formatValue={(v) => `${(v * 100).toFixed(1)}%`}
+            onChange={handleSampleStartChange}
+          />
+          
+          <div className="multisample-editor__modulation-toggle">
+            <label className="multisample-editor__modulation-label">
+              <input
+                type="checkbox"
+                checked={sampleStartModulation.enabled}
+                onChange={(e) => handleSampleStartModulationChange({ enabled: e.target.checked })}
+                className="multisample-editor__modulation-checkbox"
+              />
+              <span>Enable Modulation</span>
+            </label>
+          </div>
+          
+          {sampleStartModulation.enabled && (
+            <div className="multisample-editor__modulation-controls">
+              <div className="multisample-editor__modulation-source">
+                <label>Source:</label>
+                <select
+                  value={sampleStartModulation.source}
+                  onChange={(e) => handleSampleStartModulationChange({ source: e.target.value })}
+                  className="multisample-editor__modulation-select"
+                >
+                  <option value="envelope">Envelope</option>
+                  <option value="lfo" disabled>LFO (Coming Soon)</option>
+                </select>
+              </div>
+              
+              <Slider
+                label="Modulation Depth"
+                value={sampleStartModulation.depth}
+                min={0}
+                max={1}
+                step={0.01}
+                color="#6B8EBF"
+                formatValue={(v) => `${(v * 100).toFixed(0)}%`}
+                onChange={(value) => handleSampleStartModulationChange({ depth: value })}
+              />
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ✅ TIME STRETCH: Time Stretch Toggle */}
+      <div className="multisample-editor__section">
+        <div className="multisample-editor__section-title">Time Stretch</div>
+        <div className="multisample-editor__time-stretch">
+          <label className="multisample-editor__time-stretch-label">
+            <input
+              type="checkbox"
+              checked={timeStretchEnabled}
+              onChange={(e) => handleTimeStretchToggle(e.target.checked)}
+              className="multisample-editor__time-stretch-checkbox"
+            />
+            <span>Enable Time Stretching</span>
+          </label>
+          <div className="multisample-editor__time-stretch-info">
+            <p>When enabled, pitch changes won't affect sample duration.</p>
+            <p>Reduces aliasing and maintains consistent timing.</p>
+            <p className="multisample-editor__time-stretch-warning">
+              ⚠️ First playback may use playbackRate (fallback) while buffers are cached.
+            </p>
+          </div>
         </div>
       </div>
 

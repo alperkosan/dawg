@@ -62,6 +62,12 @@
   --zenith-shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.5);
   --zenith-shadow-xl: 0 16px 32px rgba(0, 0, 0, 0.6);
 
+  /* ✅ PREMIUM TEXTURE: Workspace texture customization variables */
+  --zenith-workspace-texture-accent: rgba(255, 255, 255, 0.01);
+  --zenith-workspace-grid-color: rgba(255, 255, 255, 0.02);
+  --zenith-workspace-grid-size: 32px;
+  --zenith-workspace-gradient-opacity: 0.3;
+
   /* =================== TYPOGRAPHY =================== */
 
   /* Font Families */

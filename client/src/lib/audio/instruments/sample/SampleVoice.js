@@ -29,6 +29,14 @@ export class SampleVoice extends BaseVoice {
         // Envelope tracking (for voice stealing priority)
         this.currentAmplitude = 0;
         this.envelopePhase = 'idle'; // 'idle' | 'attack' | 'sustain' | 'release'
+
+        // ✅ TIME STRETCH: Time stretcher instance (injected from instrument)
+        this.timeStretcher = null;
+        this.timeStretchEnabled = false;
+        
+        // ✅ TIME STRETCH: Cache for stretched buffers
+        // Map<cacheKey, { promise, buffer }> - buffer is set when promise resolves
+        this.stretchedBufferCache = new Map();
     }
 
     /**
@@ -67,11 +75,6 @@ export class SampleVoice extends BaseVoice {
         // Stop current source if playing
         this.stopCurrentSource();
 
-        // Create new buffer source (one-shot)
-        this.currentSource = this.context.createBufferSource();
-        this.currentSource.buffer = sampleData.buffer;
-        this.currentBuffer = sampleData.buffer;
-
         // Calculate playback rate for pitch shifting
         // Formula: playbackRate = 2^(semitones/12)
         const pitchShift = sampleData.pitchShift || 0;
@@ -86,10 +89,78 @@ export class SampleVoice extends BaseVoice {
         const totalPitchShift = pitchShift + initialPitchBend;
         const playbackRate = Math.pow(2, totalPitchShift / 12);
 
+        // ✅ TIME STRETCH: Use time stretcher if enabled and pitch shift is significant
+        let bufferToUse = sampleData.buffer;
+        let useTimeStretch = this.timeStretchEnabled && 
+                              this.timeStretcher && 
+                              Math.abs(totalPitchShift) > 0.1; // Only use if pitch shift > 0.1 semitones
+
+        if (useTimeStretch) {
+            // Generate cache key
+            const bufferId = `${sampleData.buffer.duration.toFixed(6)}_${sampleData.buffer.sampleRate}_${sampleData.buffer.numberOfChannels}`;
+            const cacheKey = `${bufferId}_${totalPitchShift.toFixed(2)}`;
+
+            // Check if already cached
+            if (this.stretchedBufferCache.has(cacheKey)) {
+                const cacheEntry = this.stretchedBufferCache.get(cacheKey);
+                
+                // If buffer is already resolved, use it
+                if (cacheEntry.buffer) {
+                    bufferToUse = cacheEntry.buffer;
+                    console.log(`✅ TimeStretcher: Using cached buffer (${totalPitchShift.toFixed(2)} semitones)`);
+                    // useTimeStretch stays true - we'll use playbackRate = 1.0
+                } else {
+                    // Promise is still pending - use playbackRate for this playback
+                    // Next time this buffer is used, it will be cached and ready
+                    console.log(`⏳ TimeStretcher: Buffer still stretching, using playbackRate for now`);
+                    useTimeStretch = false; // Fallback for this playback
+                }
+            } else {
+                // Start async stretching (background - don't wait)
+                const stretchPromise = this.timeStretcher.getPitchShiftedBuffer(
+                    sampleData.buffer, 
+                    totalPitchShift
+                );
+                
+                // Cache the promise (buffer will be set when resolved)
+                this.stretchedBufferCache.set(cacheKey, {
+                    promise: stretchPromise,
+                    buffer: null
+                });
+                
+                // For this playback, use playbackRate (fallback)
+                // Next time this buffer is used, it will be cached and ready
+                console.log(`⏳ TimeStretcher: Stretching buffer (${totalPitchShift.toFixed(2)} semitones), using playbackRate for now`);
+                useTimeStretch = false; // Fallback for this playback
+                
+                // Handle promise resolution in background
+                stretchPromise.then(buffer => {
+                    // Update cache entry with resolved buffer
+                    const cacheEntry = this.stretchedBufferCache.get(cacheKey);
+                    if (cacheEntry) {
+                        cacheEntry.buffer = buffer;
+                    }
+                    console.log(`✅ TimeStretcher: Buffer cached (${totalPitchShift.toFixed(2)} semitones)`);
+                }).catch(error => {
+                    console.warn('⚠️ TimeStretcher error:', error);
+                    this.stretchedBufferCache.delete(cacheKey);
+                });
+            }
+        }
+
+        // Create new buffer source (one-shot)
+        this.currentSource = this.context.createBufferSource();
+        this.currentSource.buffer = bufferToUse;
+        this.currentBuffer = bufferToUse;
+
         // 🔧 TEMP DEBUG: Log extreme pitch shifts that might cause aliasing
         if (Math.abs(totalPitchShift) > 12) {
             console.warn(`⚠️ Extreme pitch shift: ${totalPitchShift} semitones (${playbackRate.toFixed(2)}x)`);
         }
+
+        // ✅ TIME STRETCH: If using stretched buffer, playbackRate should be 1.0
+        // (pitch is already shifted in the buffer)
+        const finalPlaybackRate = useTimeStretch ? 1.0 : playbackRate;
 
         // ✅ FL Studio-style slide - handle slide pitch glide
         if (extendedParams?.slideEnabled === true && 
@@ -106,9 +177,15 @@ export class SampleVoice extends BaseVoice {
                 const sourcePitch = midiNote;
                 const slideDuration = extendedParams.slideDuration;
                 
+                // ✅ TIME STRETCH: For slide with time stretch, we need to handle differently
+                // For now, slide still uses playbackRate (time stretch doesn't support dynamic pitch changes)
+                if (useTimeStretch) {
+                    console.warn('⚠️ Slide with time stretch not fully supported, using playbackRate for slide');
+                }
+                
                 // Calculate playback rates relative to sample's base note
-                const sourcePlaybackRate = Math.pow(2, (sourcePitch - sampleData.baseNote) / 12);
-                const targetPlaybackRate = Math.pow(2, (targetPitch - sampleData.baseNote) / 12);
+                const sourcePlaybackRate = useTimeStretch ? 1.0 : Math.pow(2, (sourcePitch - sampleData.baseNote) / 12);
+                const targetPlaybackRate = useTimeStretch ? 1.0 : Math.pow(2, (targetPitch - sampleData.baseNote) / 12);
                 
                 // ✅ FL Studio-style: Note starts at its own pitch, then glides to target pitch
                 // Slide starts immediately when note starts, glides over slideDuration
@@ -123,16 +200,17 @@ export class SampleVoice extends BaseVoice {
                     targetPitch,
                     slideDuration: slideDuration.toFixed(3) + 's',
                     sourceRate: sourcePlaybackRate.toFixed(3),
-                    targetRate: targetPlaybackRate.toFixed(3)
+                    targetRate: targetPlaybackRate.toFixed(3),
+                    timeStretch: useTimeStretch
                 });
             } else {
                 console.warn('⚠️ Invalid slideTargetPitch:', extendedParams.slideTargetPitch);
                 // Fallback to normal playback
-                this.currentSource.playbackRate.setValueAtTime(playbackRate, time);
+                this.currentSource.playbackRate.setValueAtTime(finalPlaybackRate, time);
             }
         } else {
             // Normal playback - no slide
-            this.currentSource.playbackRate.setValueAtTime(playbackRate, time);
+            this.currentSource.playbackRate.setValueAtTime(finalPlaybackRate, time);
         }
         
         // ✅ PHASE 2: Schedule pitch bend automation if present (non-slide pitch bend)
@@ -165,15 +243,36 @@ export class SampleVoice extends BaseVoice {
         // Connect source to envelope
         this.currentSource.connect(this.envelopeGain);
 
-        // ✅ PHASE 2: Create filter if mod wheel or aftertouch present
+        // ✅ PHASE 2: Create filter if mod wheel, aftertouch, or key tracking present
         let lastNode = this.envelopeGain;
         let filterNode = null;
-        if (extendedParams?.modWheel !== undefined || extendedParams?.aftertouch !== undefined) {
+        const needsFilter = extendedParams?.modWheel !== undefined || 
+                           extendedParams?.aftertouch !== undefined ||
+                           (instrumentData?.filterKeyTracking !== undefined && instrumentData.filterKeyTracking > 0);
+        
+        if (needsFilter) {
             filterNode = this.context.createBiquadFilter();
             filterNode.type = 'lowpass';
             
+            // ✅ KEY TRACKING: Get base filter cutoff from instrument data or default
+            let filterCutoff = instrumentData?.filterCutoff || 20000; // Default high cutoff
+            
+            // ✅ KEY TRACKING: Apply key tracking if enabled
+            if (instrumentData?.filterKeyTracking !== undefined && instrumentData.filterKeyTracking > 0) {
+                const keyTrackingAmount = instrumentData.filterKeyTracking; // 0-1
+                const noteFrequency = this.midiToFrequency(midiNote);
+                const baseFrequency = this.midiToFrequency(60); // C4 as base
+                const frequencyRatio = noteFrequency / baseFrequency;
+                
+                // Calculate key tracking offset
+                // Higher notes = higher frequency = higher cutoff
+                // Range: ±50% of base cutoff based on key tracking amount
+                const keyTrackingOffset = (frequencyRatio - 1) * keyTrackingAmount * filterCutoff * 0.5;
+                filterCutoff = filterCutoff + keyTrackingOffset;
+                filterCutoff = Math.max(20, Math.min(20000, filterCutoff)); // Clamp to valid range
+            }
+            
             // Apply mod wheel (CC1) to filter cutoff if present
-            let filterCutoff = 20000; // Default high cutoff
             if (extendedParams?.modWheel !== undefined) {
                 const modWheelNormalized = extendedParams.modWheel / 127; // 0-1
                 const cutoffRange = filterCutoff * 0.5; // ±50% modulation
@@ -183,7 +282,7 @@ export class SampleVoice extends BaseVoice {
             filterNode.frequency.setValueAtTime(filterCutoff, time);
             
             // Apply aftertouch to filter Q if present
-            let filterQ = 1;
+            let filterQ = instrumentData?.filterResonance || 1;
             if (extendedParams?.aftertouch !== undefined) {
                 const aftertouchNormalized = extendedParams.aftertouch / 127; // 0-1
                 filterQ = filterQ + aftertouchNormalized * 10; // Add up to 10 Q
@@ -258,8 +357,56 @@ export class SampleVoice extends BaseVoice {
             this.envelopePhase = 'attack';
         }
 
-        // Start playback
-        this.currentSource.start(time);
+        // ✅ SAMPLE START MODULATION: Calculate sample start offset
+        // Support both static offset and LFO/envelope modulation
+        let sampleStartOffset = 0; // In seconds
+        
+        // Static sample start offset from instrument data
+        if (instrumentData?.sampleStart !== undefined) {
+            const sampleStartNormalized = instrumentData.sampleStart; // 0-1 (normalized)
+            sampleStartOffset = sampleStartNormalized * (sampleData.buffer.duration || 1);
+            
+            // 🔧 DEBUG: Log sample start offset
+            if (import.meta.env.DEV && sampleStartOffset > 0.001) {
+                console.log(`🎚️ SampleVoice: sampleStart=${sampleStartNormalized.toFixed(3)} (${(sampleStartNormalized * 100).toFixed(1)}%), offset=${sampleStartOffset.toFixed(3)}s, bufferDuration=${(sampleData.buffer.duration || 0).toFixed(3)}s`);
+            }
+        }
+        
+        // ✅ SAMPLE START MODULATION: Apply LFO/envelope modulation if enabled
+        // For now, we'll use a simple approach: velocity-based or random modulation
+        // LFO modulation will be added in a future update
+        if (instrumentData?.sampleStartModulation?.enabled) {
+            const modulationDepth = instrumentData.sampleStartModulation.depth || 0; // 0-1
+            const modulationSource = instrumentData.sampleStartModulation.source || 'envelope'; // 'envelope' | 'lfo'
+            
+            if (modulationSource === 'envelope') {
+                // ✅ FIX: Use velocity to simulate envelope-based modulation
+                // Higher velocity = higher envelope = more modulation
+                // This creates variation in sample start position per note
+                const velocityNormalized = velocity / 127; // 0-1
+                const modulationAmount = velocityNormalized * modulationDepth * (sampleData.buffer.duration || 1) * 0.2; // Max 20% of sample
+                sampleStartOffset += modulationAmount;
+                
+                // 🔧 DEBUG: Log modulation
+                if (import.meta.env.DEV && modulationAmount > 0.001) {
+                    console.log(`🎚️ SampleVoice modulation: velocity=${velocity}, depth=${modulationDepth.toFixed(2)}, amount=${modulationAmount.toFixed(3)}s`);
+                }
+            }
+            // TODO: LFO modulation will be added later
+        }
+        
+        // Clamp offset to valid range
+        const maxOffset = (sampleData.buffer.duration || 1) - 0.001; // Leave at least 1ms
+        sampleStartOffset = Math.max(0, Math.min(maxOffset, sampleStartOffset));
+        
+        // Start playback with offset
+        if (sampleStartOffset > 0.001) {
+            // Use offset parameter in start()
+            this.currentSource.start(time, sampleStartOffset);
+        } else {
+            // No offset, start from beginning
+            this.currentSource.start(time);
+        }
 
         // Update state
         this.isActive = true;
@@ -290,21 +437,42 @@ export class SampleVoice extends BaseVoice {
      * Release note (start release envelope)
      *
      * @param {number} time - AudioContext time
+     * @param {number|null} releaseVelocity - Note-off velocity (0-127, null = default)
      * @returns {number} Release duration in seconds
      */
-    release(time) {
+    release(time, releaseVelocity = null) {
         if (!this.currentSource || !this.isActive) {
             return 0;
         }
 
-        // Apply release envelope
+        // ✅ RELEASE VELOCITY: Calculate effective release time based on release velocity
+        // Higher release velocity = faster release (shorter time)
+        // Lower release velocity = slower release (longer time)
+        // Formula: effectiveReleaseTime = baseReleaseTime * (1 - releaseVelocity / 127 * 0.5)
+        // - releaseVelocity = 127 → effectiveReleaseTime = baseReleaseTime * 0.5 (50% faster)
+        // - releaseVelocity = 0 → effectiveReleaseTime = baseReleaseTime * 1.0 (normal)
+        // - releaseVelocity = 64 → effectiveReleaseTime = baseReleaseTime * 0.75 (25% faster)
+        let effectiveReleaseTime = this.releaseTime;
+        
+        if (releaseVelocity !== null && releaseVelocity !== undefined) {
+            const velocityNormalized = Math.max(0, Math.min(127, releaseVelocity)) / 127; // 0-1
+            // Map velocity to release time: 0.5x (fast) to 1.0x (normal)
+            const releaseTimeMultiplier = 1.0 - (velocityNormalized * 0.5);
+            effectiveReleaseTime = this.releaseTime * releaseTimeMultiplier;
+            
+            if (import.meta.env.DEV) {
+                console.log(`🎚️ SampleVoice release: velocity=${releaseVelocity}, baseTime=${this.releaseTime.toFixed(3)}s, effectiveTime=${effectiveReleaseTime.toFixed(3)}s`);
+            }
+        }
+
+        // Apply release envelope with effective release time
         this.envelopeGain.gain.cancelScheduledValues(time);
         this.envelopeGain.gain.setValueAtTime(this.envelopeGain.gain.value, time);
-        this.envelopeGain.gain.linearRampToValueAtTime(0, time + this.releaseTime);
+        this.envelopeGain.gain.linearRampToValueAtTime(0, time + effectiveReleaseTime);
 
         // Stop source after release
         try {
-            this.currentSource.stop(time + this.releaseTime);
+            this.currentSource.stop(time + effectiveReleaseTime);
         } catch (e) {
             // Already stopped or scheduled
         }
@@ -314,7 +482,7 @@ export class SampleVoice extends BaseVoice {
 
         // Track amplitude decay
         const startAmp = this.currentAmplitude;
-        const decayRate = startAmp / this.releaseTime;
+        const decayRate = startAmp / effectiveReleaseTime;
         const updateInterval = 50; // Update every 50ms
 
         const decayInterval = setInterval(() => {
@@ -326,7 +494,7 @@ export class SampleVoice extends BaseVoice {
             }
         }, updateInterval);
 
-        return this.releaseTime;
+        return effectiveReleaseTime;
     }
 
     /**

@@ -277,16 +277,25 @@ export class PlaybackManager {
     }
 
     /**
-     * ✅ NEW: Handle note removal
+     * ✅ SCHEDULE OPT: Handle note removal with immediate cancellation
      * @param {Object} data - {patternId, instrumentId, noteId, note}
      */
     _handleNoteRemoved(data) {
-        const { patternId, instrumentId, note } = data;
+        const { patternId, instrumentId, noteId, note } = data;
 
         const arrangementStore = useArrangementStore.getState();
         if (patternId !== arrangementStore.activePatternId) return;
 
-        // ✅ CRITICAL FIX: If note is currently playing, stop it immediately
+        console.log('🎵 PlaybackManager._handleNoteRemoved:', {
+            patternId,
+            instrumentId,
+            noteId,
+            note,
+            isPlaying: this.isPlaying,
+            isPaused: this.isPaused
+        });
+
+        // ✅ SCHEDULE OPT: If note is currently playing, stop it immediately
         if (this.isPlaying && !this.isPaused && note && instrumentId) {
             const instrument = this.audioEngine.instruments.get(instrumentId);
             if (instrument && note.pitch) {
@@ -298,6 +307,22 @@ export class PlaybackManager {
                 } catch (e) {
                     console.error('Error stopping removed note:', e);
                 }
+            }
+        }
+
+        // ✅ SCHEDULE OPT: Cancel future scheduled events for this note
+        if (this.isPlaying && !this.isPaused && this.transport && this.transport.clearScheduledEvents) {
+            const noteIdToCancel = noteId || (note && note.id);
+            if (noteIdToCancel) {
+                console.log('🗑️ Cancelling scheduled events for note:', noteIdToCancel);
+                
+                // Cancel scheduled events matching this note ID
+                this.transport.clearScheduledEvents((eventData) => {
+                    // Check if event is for this note (noteId or note.id match)
+                    if (!eventData) return false;
+                    return eventData.noteId === noteIdToCancel ||
+                           (eventData.note && eventData.note.id === noteIdToCancel);
+                });
             }
         }
 
@@ -522,7 +547,7 @@ export class PlaybackManager {
         const arrangementStore = useArrangementStore.getState();
         // Try arrangement clips first (new system), fallback to pattern clips (old system)
         const arrangementClips = arrangementStore.arrangementClips || [];
-        
+
         let clips;
         if (arrangementClips.length > 0) {
             clips = arrangementClips;
@@ -976,6 +1001,22 @@ export class PlaybackManager {
                 const clipDurationBeats = clip.duration || pattern.length || 4; // Use pattern length if available
                 const clipDurationSteps = clipDurationBeats * 4;
 
+                // ✅ FIX: Get patternOffset (number of steps to skip from pattern start)
+                // This is set when a pattern clip is split, so the right clip plays from the split point
+                const patternOffset = clip.patternOffset || 0; // In steps (16th notes)
+                
+                // ✅ DEBUG: Log pattern offset for debugging
+                if (patternOffset > 0) {
+                    console.log(`🎵 Pattern clip ${clip.id} has patternOffset: ${patternOffset} steps (${patternOffset / 4} beats)`, {
+                        clipId: clip.id,
+                        clipStartTime: clip.startTime,
+                        clipDuration: clipDurationBeats,
+                        patternOffset,
+                        clipStartStep,
+                        clipDurationSteps
+                    });
+                }
+
                 // Schedule pattern notes with clip timing offset
                 Object.entries(pattern.data).forEach(([instrumentId, notes]) => {
                     if (!Array.isArray(notes) || notes.length === 0) {
@@ -988,26 +1029,35 @@ export class PlaybackManager {
                         return;
                     }
 
-
-                    // ✅ FIX: For split pattern clips, adjust note timing based on patternOffset
-                    // patternOffset is the number of steps to skip from the pattern start (for right clip after split)
-                    const patternOffset = clip.patternOffset || 0; // In steps (16th notes)
-                    
-                    // Filter and offset notes by clip start time, duration, and pattern offset
+                    // ✅ FIX: Filter and offset notes by clip start time, duration, and pattern offset
+                    // patternOffset determines where in the pattern to start playing (for split clips)
+                    // clipDurationSteps determines how many steps to play from patternOffset
                     const offsetNotes = notes
                         .filter(note => {
                             const noteTime = note.time || 0;
                             // Only include notes that:
                             // 1. Are at or after the pattern offset (for split clips)
                             // 2. Are within the clip duration (from pattern offset)
-                            return noteTime >= patternOffset && noteTime < (patternOffset + clipDurationSteps);
+                            const noteIsAfterOffset = noteTime >= patternOffset;
+                            const noteIsWithinDuration = noteTime < (patternOffset + clipDurationSteps);
+                            return noteIsAfterOffset && noteIsWithinDuration;
                         })
                         .map(note => ({
                             ...note,
-                            // Adjust note time: subtract patternOffset (so notes start from 0 in the right clip)
-                            // then add clipStartStep (to position in arrangement)
+                            // Adjust note time: subtract patternOffset (so notes start from 0 relative to clip start)
+                            // then add clipStartStep (to position in arrangement timeline)
                             time: (note.time || 0) - patternOffset + clipStartStep
                         }));
+                    
+                    // ✅ DEBUG: Log filtered notes for debugging
+                    if (patternOffset > 0 && offsetNotes.length > 0) {
+                        console.log(`🎵 Filtered ${offsetNotes.length} notes for patternOffset ${patternOffset}`, {
+                            originalNoteCount: notes.length,
+                            filteredNoteCount: offsetNotes.length,
+                            firstNoteTime: offsetNotes[0]?.time,
+                            lastNoteTime: offsetNotes[offsetNotes.length - 1]?.time
+                        });
+                    }
 
 
                     if (offsetNotes.length > 0) {
@@ -1054,7 +1104,7 @@ export class PlaybackManager {
 
                     // ✅ FIX: For split pattern clips, adjust note timing based on patternOffset
                     const patternOffset = clip.patternOffset || 0; // In steps (16th notes)
-                    
+
                     Object.entries(pattern.data).forEach(([instrumentId, notes]) => {
                         if (!Array.isArray(notes) || notes.length === 0) return;
                         const instrument = this.audioEngine.instruments.get(instrumentId);
@@ -1566,7 +1616,7 @@ export class PlaybackManager {
             
             const hasExtendedParams = Object.keys(extendedParams).length > 0;
 
-            // Note on event
+            // ✅ SCHEDULE OPT: Note on event with noteId for cancellation tracking
             this.transport.scheduleEvent(
                 absoluteTime,
                 (scheduledTime) => {
@@ -1581,7 +1631,14 @@ export class PlaybackManager {
                     } catch (error) {
                     }
                 },
-                { type: 'noteOn', instrumentId, note, step: noteTimeInSteps, clipId }
+                { 
+                    type: 'noteOn', 
+                    instrumentId, 
+                    note, 
+                    noteId: note.id, // ✅ SCHEDULE OPT: Store note ID for cancellation
+                    step: noteTimeInSteps, 
+                    clipId 
+                }
             );
 
             // ✅ FIX: Note off event - check for both length and duration
@@ -1740,27 +1797,27 @@ export class PlaybackManager {
 
                 // Flush each effect in the insert
                 insert.effects.forEach((effect, effectId) => {
-                    try {
-                        // NativeEffect uses effect.node.port
-                        if (effect.node && effect.node.port) {
-                            effect.node.port.postMessage({ type: 'flush' });
+                try {
+                    // NativeEffect uses effect.node.port
+                    if (effect.node && effect.node.port) {
+                        effect.node.port.postMessage({ type: 'flush' });
                             flushedCount++;
-                        }
-                        // WorkletEffect uses effect.workletNode.port
-                        else if (effect.workletNode && effect.workletNode.port) {
-                            effect.workletNode.port.postMessage({ type: 'flush' });
-                            flushedCount++;
-                        }
-                        // Try direct reset method if available
-                        else if (effect.reset && typeof effect.reset === 'function') {
-                            effect.reset();
-                            flushedCount++;
-                        }
-                    } catch (e) {
-                        console.warn(`Failed to flush effect ${effectId}:`, e);
                     }
-                });
+                    // WorkletEffect uses effect.workletNode.port
+                    else if (effect.workletNode && effect.workletNode.port) {
+                        effect.workletNode.port.postMessage({ type: 'flush' });
+                            flushedCount++;
+                    }
+                    // Try direct reset method if available
+                    else if (effect.reset && typeof effect.reset === 'function') {
+                        effect.reset();
+                            flushedCount++;
+                    }
+                } catch (e) {
+                        console.warn(`Failed to flush effect ${effectId}:`, e);
+                }
             });
+        });
         }
 
         // 🔙 LEGACY SYSTEM: Fallback to old mixer channels (backward compatibility)
@@ -1897,6 +1954,30 @@ export class PlaybackManager {
             if (absoluteTime > currentTime) {
                 console.log('✅ Passed time check, scheduling note...');
 
+                // ✅ SCHEDULE OPT: Check if note is already scheduled to prevent duplicates
+                const noteId = note.id;
+                if (noteId && this.transport && this.transport.scheduledEvents) {
+                    let alreadyScheduled = false;
+                    for (const [scheduledTime, events] of this.transport.scheduledEvents.entries()) {
+                        if (scheduledTime >= currentTime) { // Only check future events
+                            for (const event of events) {
+                                if (event.data && (
+                                    event.data.noteId === noteId ||
+                                    (event.data.note && event.data.note.id === noteId)
+                                )) {
+                                    console.log('⚠️ Note already scheduled, skipping duplicate:', noteId);
+                                    alreadyScheduled = true;
+                                    break;
+                                }
+                            }
+                            if (alreadyScheduled) break;
+                        }
+                    }
+                    if (alreadyScheduled) {
+                        return; // Skip scheduling duplicate
+                    }
+                }
+
                 // ✅ FIX: Calculate note duration properly
                 let noteDuration;
                 if (typeof note.length === 'number') {
@@ -1917,10 +1998,11 @@ export class PlaybackManager {
                     velocity: note.velocity || 1,
                     duration: noteDuration,
                     absoluteTime,
-                    instrumentId
+                    instrumentId,
+                    noteId
                 });
 
-                // ✅ FIX: Schedule noteOn
+                // ✅ SCHEDULE OPT: Schedule noteOn with noteId for cancellation tracking
                 this.transport.scheduleEvent(
                     absoluteTime,
                     (scheduledTime) => {
@@ -1943,12 +2025,19 @@ export class PlaybackManager {
                             console.error('❌ Error in immediate noteOn:', error);
                         }
                     },
-                    { type: 'noteOn', instrumentId, note, step: nextPlayStep, immediate: true }
+                    { 
+                        type: 'noteOn', 
+                        instrumentId, 
+                        note, 
+                        noteId: note.id, // ✅ SCHEDULE OPT: Store note ID for cancellation
+                        step: nextPlayStep, 
+                        immediate: true 
+                    }
                 );
 
                 console.log('📝 scheduleEvent called');
 
-                // ✅ CRITICAL FIX: Schedule noteOff to prevent stuck notes!
+                // ✅ SCHEDULE OPT: Schedule noteOff with noteId for cancellation tracking
                 const shouldScheduleNoteOff = (typeof note.length === 'number' && note.length > 0) ||
                                              (note.duration && note.duration !== 'trigger');
 
@@ -1966,7 +2055,14 @@ export class PlaybackManager {
                                 console.error('❌ Error in immediate noteOff:', error);
                             }
                         },
-                        { type: 'noteOff', instrumentId, note, step: nextPlayStep, immediate: true }
+                        { 
+                            type: 'noteOff', 
+                            instrumentId, 
+                            note, 
+                            noteId: note.id, // ✅ SCHEDULE OPT: Store note ID for cancellation
+                            step: nextPlayStep, 
+                            immediate: true 
+                        }
                     );
                 }
             } else {

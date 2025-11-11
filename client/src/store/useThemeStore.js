@@ -83,6 +83,13 @@ const createTheme = (name, colors, zenithOverrides = {}) => ({
     'shadow-md': zenithOverrides['shadow-md'] || '0 4px 8px rgba(0, 0, 0, 0.4)',
     'shadow-lg': zenithOverrides['shadow-lg'] || '0 8px 16px rgba(0, 0, 0, 0.5)',
     'shadow-xl': zenithOverrides['shadow-xl'] || '0 16px 32px rgba(0, 0, 0, 0.6)',
+    
+    // ✅ PREMIUM TEXTURE: Workspace texture customization
+    'workspace-texture-accent': zenithOverrides['workspace-texture-accent'] || 'rgba(255, 255, 255, 0.01)',
+    'workspace-grid-color': zenithOverrides['workspace-grid-color'] || 'rgba(255, 255, 255, 0.02)',
+    'workspace-grid-size': zenithOverrides['workspace-grid-size'] || '32px',
+    'workspace-gradient': zenithOverrides['workspace-gradient'] || null, // Optional gradient override
+    'workspace-gradient-opacity': zenithOverrides['workspace-gradient-opacity'] || '0.3',
 
     // Typography
     'font-primary': zenithOverrides['font-primary'] || "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif",
@@ -141,7 +148,13 @@ const defaultThemes = [
       'accent-cold': '#5A6C8A',
       'text-primary': '#FFFFFF',
       'text-secondary': '#A1A8B5',
-      'text-tertiary': '#6B7280'
+      'text-tertiary': '#6B7280',
+      
+      // ✅ PREMIUM TEXTURE: Classic workspace texture
+      'workspace-texture-accent': 'rgba(107, 142, 191, 0.015)',
+      'workspace-grid-color': 'rgba(255, 255, 255, 0.02)',
+      'workspace-grid-size': '32px',
+      'workspace-gradient-opacity': '0.3'
     }
   ),
 
@@ -503,7 +516,44 @@ const defaultThemes = [
       // Smooth animations
       'duration-fast': '120ms',
       'duration-normal': '250ms',
-      'duration-slow': '350ms'
+      'duration-slow': '350ms',
+      
+      // ✅ PREMIUM TEXTURE: Anime-themed workspace texture
+      'workspace-texture-accent': 'rgba(224, 64, 251, 0.03)',
+      'workspace-grid-color': 'rgba(224, 64, 251, 0.05)',
+      'workspace-grid-size': '24px',
+      'workspace-gradient': 'linear-gradient(135deg, #0D0012 0%, #1A0A1F 50%, #0D0012 100%)',
+      'workspace-gradient-opacity': '0.4'
+    }
+  ),
+  
+  // ✅ PREMIUM TEXTURE: Analog Warmth theme texture
+  createTheme('Analog Warmth (Enhanced)',
+    {
+      primary: '#FF8C00',
+      accent: '#FFB627',
+      backgroundDeep: '#1A0F0A',
+      background: '#2D1810',
+      surface: '#3D2418',
+      text: '#FFE6D5',
+      textMuted: '#C9A68A',
+      border: 'rgba(255, 140, 0, 0.2)'
+    },
+    {
+      'bg-primary': '#1A0F0A',
+      'bg-secondary': '#2D1810',
+      'bg-tertiary': '#3D2418',
+      'accent-hot': '#FF8C00',
+      'accent-warm': '#FFB627',
+      'text-primary': '#FFE6D5',
+      'text-secondary': '#C9A68A',
+      
+      // ✅ PREMIUM TEXTURE: Warm-themed workspace texture
+      'workspace-texture-accent': 'rgba(255, 182, 39, 0.02)',
+      'workspace-grid-color': 'rgba(255, 140, 0, 0.03)',
+      'workspace-grid-size': '40px',
+      'workspace-gradient': 'linear-gradient(135deg, #1A0F0A 0%, #2D1810 50%, #1A0F0A 100%)',
+      'workspace-gradient-opacity': '0.5'
     }
   )
 ];
