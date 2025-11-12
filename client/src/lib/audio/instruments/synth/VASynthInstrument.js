@@ -9,6 +9,28 @@ import { BaseInstrument } from '../base/BaseInstrument.js';
 import { VASynth } from '../../synth/VASynth.js';
 import { getPreset } from '../../synth/presets.js';
 
+const normalizeModulationMatrix = (matrix) => {
+    if (!Array.isArray(matrix)) {
+        return [];
+    }
+
+    return matrix
+        .filter(Boolean)
+        .map((slot) => {
+            const destination = slot.destination || slot.target;
+            if (!slot.source || !destination) {
+                return null;
+            }
+
+            return {
+                ...slot,
+                target: slot.target ?? destination,
+                destination
+            };
+        })
+        .filter(Boolean);
+};
+
 export class VASynthInstrument extends BaseInstrument {
     constructor(instrumentData, audioContext) {
         super(instrumentData, audioContext);
@@ -25,6 +47,8 @@ export class VASynthInstrument extends BaseInstrument {
 
         // Master output
         this.masterGain = null;
+
+        this.modulationMatrix = normalizeModulationMatrix(instrumentData?.modulationMatrix || []);
     }
 
     /**
@@ -45,6 +69,16 @@ export class VASynthInstrument extends BaseInstrument {
 
             // Set as output
             this.output = this.masterGain;
+
+            if (this.modulationMatrix.length > 0) {
+                this.preset = {
+                    ...this.preset,
+                    modulationMatrix: this.modulationMatrix
+                };
+            } else if (Array.isArray(this.preset?.modulationMatrix)) {
+                this.modulationMatrix = normalizeModulationMatrix(this.preset.modulationMatrix);
+                this.preset.modulationMatrix = this.modulationMatrix;
+            }
 
             this._isInitialized = true;
 
@@ -79,6 +113,9 @@ export class VASynthInstrument extends BaseInstrument {
                     // Create mono voice on first note
                     monoVoice = new VASynth(this.audioContext);
                     monoVoice.loadPreset(this.preset);
+                    if (this.modulationMatrix.length > 0) {
+                        monoVoice.updateParameters({ modulationMatrix: this.modulationMatrix });
+                    }
                     
                     // ✅ PHASE 2: Apply per-note pan if present
                     if (extendedParams?.pan !== undefined && extendedParams.pan !== 0) {
@@ -180,6 +217,9 @@ export class VASynthInstrument extends BaseInstrument {
                 // Create new voice for this note
                 const voice = new VASynth(this.audioContext);
                 voice.loadPreset(this.preset);
+                if (this.modulationMatrix.length > 0) {
+                    voice.updateParameters({ modulationMatrix: this.modulationMatrix });
+                }
                 
                 // ✅ PHASE 2: Apply per-note pan if present
                 if (extendedParams?.pan !== undefined && extendedParams.pan !== 0) {
@@ -454,6 +494,24 @@ export class VASynthInstrument extends BaseInstrument {
                 console.error('Error updating voice parameters:', error);
             }
         });
+
+        if (updates.modulationMatrix) {
+            const normalizedMatrix = normalizeModulationMatrix(updates.modulationMatrix);
+            this.modulationMatrix = normalizedMatrix;
+            this.preset.modulationMatrix = normalizedMatrix;
+
+            if (normalizedMatrix.length === 0) {
+                console.log('ℹ️ VASynth modulation matrix cleared');
+            }
+
+            this.voices.forEach((voice) => {
+                try {
+                    voice.updateParameters({ modulationMatrix: normalizedMatrix });
+                } catch (error) {
+                    console.warn('⚠️ Failed to update modulation matrix on voice:', error);
+                }
+            });
+        }
 
         console.log('✅ VASynth parameters updated, active voices:', this.voices.size);
     }

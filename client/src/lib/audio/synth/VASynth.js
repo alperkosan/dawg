@@ -11,6 +11,7 @@
 
 import { ADSREnvelope } from './ADSREnvelope.js';
 import { LFO } from './LFO.js';
+import { ModulationEngine, ModulationSourceType } from './modulation/ModulationEngine.js';
 
 export class VASynth {
     constructor(audioContext, bpm = 120) {
@@ -37,6 +38,20 @@ export class VASynth {
         // LFO
         this.lfo = new LFO(audioContext);
         this.lfoTarget = 'filter.cutoff'; // ✅ LFO TARGET: Default target
+
+        // ✅ MODULATION MATRIX: Modulation engine
+        this.modulationEngine = new ModulationEngine(audioContext, 16);
+        this.modulationEngine.setLFO(this.lfo);
+        this.modulationEngine.setEnvelopes(this.filterEnvelope, this.amplitudeEnvelope);
+        
+        // ✅ MODULATION MATRIX: Parameter targets (will be set in noteOn)
+        this.modulationTargets = new Map(); // destination -> { param, baseValue, range }
+        this.modulationMatrix = [];
+        
+        // ✅ MODULATION MATRIX: Setup modulation callback
+        this.modulationEngine.onModulationUpdate = (modulationMap) => {
+            this._applyModulation(modulationMap);
+        };
 
         // Synth parameters
         this.masterVolume = 0.7;
@@ -121,6 +136,17 @@ export class VASynth {
     noteOn(midiNote, velocity = 100, startTime = null, extendedParams = null) {
         const time = startTime !== null ? startTime : this.context.currentTime;
         
+        // ✅ MODULATION MATRIX: Update MIDI sources
+        let aftertouch = 0;
+        let modWheel = 0;
+        if (extendedParams) {
+            aftertouch = extendedParams.aftertouch || 0;
+            modWheel = extendedParams.modWheel || 0;
+        }
+        if (this.modulationEngine) {
+            this.modulationEngine.setMIDISources(velocity, aftertouch, modWheel);
+        }
+        
         // ✅ PHASE 2: Apply initial pitch bend if present
         let pitchBendSemitones = 0;
         if (extendedParams?.pitchBend && Array.isArray(extendedParams.pitchBend) && extendedParams.pitchBend.length > 0) {
@@ -129,6 +155,7 @@ export class VASynth {
         }
         
         const baseFrequency = this.midiToFrequency(midiNote + pitchBendSemitones);
+        this.currentBaseFrequency = baseFrequency;
 
         // ✅ Monophonic Mode with Portamento
         if (this.isPlaying && this.voiceMode === 'mono') {
@@ -461,7 +488,168 @@ export class VASynth {
             }
         }
 
+        // ✅ MODULATION MATRIX: Register parameter targets
+        this._registerModulationTargets();
+
+        // ✅ MODULATION MATRIX: Start modulation updates
+        if (this.modulationEngine && !this.modulationEngine.updateInterval) {
+            this.modulationEngine.startUpdates();
+        }
+
         this.isPlaying = true;
+    }
+    
+    /**
+     * ✅ MODULATION MATRIX: Register parameter targets for modulation
+     */
+    _registerModulationTargets() {
+        this.modulationTargets.clear();
+        if (!this.filter || !this.amplitudeGain) return;
+
+        // Filter cutoff
+        if (!this.filter) return;
+
+        const cutoffParam = this.filter.frequency;
+        const resonanceParam = this.filter.Q;
+
+        this.modulationTargets.set('filter.cutoff', {
+            param: cutoffParam,
+            apply: (value) => {
+                cutoffParam.cancelScheduledValues(this.context.currentTime);
+                cutoffParam.setValueAtTime(value, this.context.currentTime);
+            },
+            getBaseValue: () => this.filterSettings.cutoff,
+            getRange: () => 20000 - 20,
+            min: 20,
+            max: 20000
+        });
+
+        // Filter resonance
+        this.modulationTargets.set('filter.resonance', {
+            param: resonanceParam,
+            apply: (value) => {
+                resonanceParam.cancelScheduledValues(this.context.currentTime);
+                resonanceParam.setValueAtTime(value, this.context.currentTime);
+            },
+            getBaseValue: () => this.filterSettings.resonance,
+            getRange: () => 30 - 0.0001,
+            min: 0.0001,
+            max: 30
+        });
+
+        // Oscillator level (first oscillator)
+        if (this.oscillatorGains[0]) {
+            this.modulationTargets.set('osc.level', {
+                param: this.oscillatorGains[0].gain,
+                apply: (value) => {
+                    const param = this.oscillatorGains[0].gain;
+                    param.cancelScheduledValues(this.context.currentTime);
+                    param.setValueAtTime(value, this.context.currentTime);
+                },
+                getBaseValue: () => this.oscillatorSettings[0].level,
+                getRange: () => 1 - 0,
+                min: 0,
+                max: 1
+            });
+        }
+
+        // Oscillator detune (first oscillator)
+        if (this.oscillators[0] && !Array.isArray(this.oscillators[0])) {
+            this.modulationTargets.set('osc.detune', {
+                param: this.oscillators[0].detune,
+                apply: (value) => {
+                    const param = this.oscillators[0].detune;
+                    param.cancelScheduledValues(this.context.currentTime);
+                    param.setValueAtTime(value, this.context.currentTime);
+                },
+                getBaseValue: () => this.oscillatorSettings[0].detune,
+                getRange: () => 1200 - (-1200),
+                min: -1200,
+                max: 1200
+            });
+        }
+
+        // Oscillator pitch (first oscillator)
+        if (this.oscillators[0] && !Array.isArray(this.oscillators[0])) {
+            this.modulationTargets.set('osc.pitch', {
+                param: this.oscillators[0].frequency,
+                apply: (value) => {
+                    const param = this.oscillators[0].frequency;
+                    param.cancelScheduledValues(this.context.currentTime);
+                    param.setValueAtTime(value, this.context.currentTime);
+                },
+                getBaseValue: () => this.currentBaseFrequency ?? this.oscillators[0].frequency?.value ?? 0,
+                getRange: () => Math.max(0, (this.currentBaseFrequency ?? 0) * 0.2), // ±20%
+                min: 20,
+                max: 20000
+            });
+        }
+    }
+    
+    /**
+     * ✅ MODULATION MATRIX: Apply modulation to parameters
+     */
+    _applyModulation(modulationMap) {
+        const time = this.context.currentTime;
+
+        const logEnabled = import.meta.env.DEV && modulationMap.size > 0;
+
+        if (logEnabled) {
+            console.group('🎛️ Modulation Update');
+        }
+
+        for (const [destination, modulationValue] of modulationMap.entries()) {
+            const target = this.modulationTargets.get(destination);
+            if (!target) continue;
+
+            const baseValue = target.getBaseValue
+                ? target.getBaseValue()
+                : (target.baseValue !== undefined ? target.baseValue : target.param?.value);
+
+            const range = target.getRange
+                ? target.getRange()
+                : (target.range !== undefined ? target.range : (target.max - target.min));
+
+            if (baseValue === undefined || range === undefined) {
+                if (logEnabled) {
+                    console.warn(`⚠️ Modulation skipped: ${destination}, baseValue or range undefined`, { baseValue, range });
+                }
+                continue;
+            }
+
+            const modulationOffset = modulationValue * (range / 2);
+            let newValue = baseValue + modulationOffset;
+
+            const min = target.min !== undefined ? target.min : -Infinity;
+            const max = target.max !== undefined ? target.max : Infinity;
+            newValue = Math.max(min, Math.min(max, newValue));
+
+            if (logEnabled) {
+                console.log(`• ${destination}`, {
+                    baseValue: baseValue.toFixed(4),
+                    modulationValue: modulationValue.toFixed(4),
+                    range: range.toFixed ? range.toFixed(4) : range,
+                    newValue: newValue.toFixed(4),
+                    offset: modulationOffset.toFixed(4)
+                });
+            }
+
+            try {
+                if (target.apply) {
+                    target.apply(newValue, time);
+                } else if (target.param) {
+                    target.param.setValueAtTime(newValue, time);
+                }
+            } catch (e) {
+                if (logEnabled) {
+                    console.warn(`[ModulationEngine] Failed to apply modulation to ${destination}:`, e);
+                }
+            }
+        }
+
+        if (logEnabled) {
+            console.groupEnd();
+        }
     }
 
     /**
@@ -781,6 +969,12 @@ export class VASynth {
         if (preset.unisonSpread !== undefined) {
             this.unisonSpread = preset.unisonSpread;
         }
+
+        if (Array.isArray(preset.modulationMatrix)) {
+            this.updateParameters({ modulationMatrix: preset.modulationMatrix });
+        } else if (this.modulationMatrix.length > 0) {
+            this.updateParameters({ modulationMatrix: this.modulationMatrix });
+        }
     }
 
     /**
@@ -908,6 +1102,51 @@ export class VASynth {
         if (params.legato !== undefined) {
             this.legato = params.legato;
         }
+
+        // ✅ MODULATION MATRIX: Update modulation slots
+        if (params.modulationMatrix && Array.isArray(params.modulationMatrix)) {
+            const normalizedMatrix = this._normalizeModulationMatrix(params.modulationMatrix);
+            this.modulationMatrix = normalizedMatrix;
+
+            // Clear existing slots
+            this.modulationEngine.clear();
+
+            // Add new slots
+            normalizedMatrix.forEach((slot) => {
+                this.modulationEngine.addSlot(
+                    slot.source,
+                    slot.destination,
+                    slot.amount,
+                    slot.curve
+                );
+            });
+
+            if (this.isPlaying) {
+                this._registerModulationTargets();
+            }
+        }
+    }
+
+    _normalizeModulationMatrix(matrix) {
+        return matrix
+            .filter(Boolean)
+            .map((slot) => {
+                const destination = slot.destination || slot.target;
+                if (!slot.source || !destination) {
+                    return null;
+                }
+
+                return {
+                    id: slot.id || `mod_${Date.now()}`,
+                    source: slot.source,
+                    destination,
+                    target: slot.target ?? destination,
+                    amount: slot.amount ?? 0,
+                    curve: slot.curve || 'linear',
+                    enabled: slot.enabled !== false
+                };
+            })
+            .filter((slot) => slot && slot.enabled);
     }
 
     /**
@@ -948,6 +1187,10 @@ export class VASynth {
         // noteOff() uses setTimeout which delays cleanup - we need IMMEDIATE stop
         this.cleanup(); // Stop oscillators NOW
         this.lfo.dispose();
+        // ✅ MODULATION MATRIX: Dispose modulation engine
+        if (this.modulationEngine) {
+            this.modulationEngine.dispose();
+        }
         this.isPlaying = false;
     }
 }

@@ -17,7 +17,7 @@ import { VoiceAllocator, VoiceMode, VoiceStealStrategy } from '../core/VoiceAllo
 import { ParameterController } from '../core/ParameterController.js';
 import { ParameterRegistry, ParameterID } from '../core/ParameterRegistry.js';
 import { DEFAULT_VASYNTH_CONFIG, ParameterValidator } from '../core/ParameterSchema.js';
-import { ModulationEngine } from './modulation/ModulationEngine.js';
+import { ModulationEngine, ModulationSourceType, ModulationCurve } from './modulation/ModulationEngine.js';
 import { ModulationRouter } from './modulation/ModulationRouter.js';
 
 /**
@@ -94,6 +94,7 @@ export class VASynthInstrument {
 
     // State
     this.isDisposed = false;
+    this.modulationMatrix = [];
   }
 
   /**
@@ -284,6 +285,14 @@ export class VASynthInstrument {
     this._updateAllVoices({
       oscillatorSettings: this.config.oscillators,
     });
+
+    if (oscIndex === 0) {
+      if (paramName === 'level') {
+        this.modulationRouter.setBaseValue(ParameterID.OSC_1_LEVEL, value);
+      } else if (paramName === 'detune') {
+        this.modulationRouter.setBaseValue(ParameterID.OSC_1_DETUNE, value);
+      }
+    }
   }
 
   /**
@@ -301,8 +310,10 @@ export class VASynthInstrument {
     for (const voice of voices) {
       if (parameterId === ParameterID.FILTER_CUTOFF) {
         this._updateAudioParam(voice.filter.frequency, value, ramp, duration, time);
+        this.modulationRouter.setBaseValue(ParameterID.FILTER_CUTOFF, value);
       } else if (parameterId === ParameterID.FILTER_RESONANCE) {
         this._updateAudioParam(voice.filter.Q, value, ramp, duration, time);
+        this.modulationRouter.setBaseValue(ParameterID.FILTER_RESONANCE, value);
       } else if (parameterId === ParameterID.FILTER_TYPE) {
         voice.filter.type = value;
       } else {
@@ -387,6 +398,17 @@ export class VASynthInstrument {
   }
 
   /**
+   * Update parameters (external API)
+   */
+  updateParameters(params = {}) {
+    if (params.modulationMatrix) {
+      this._updateModulationMatrix(params.modulationMatrix);
+    }
+
+    return true;
+  }
+
+  /**
    * Get current configuration
    */
   getConfig() {
@@ -442,9 +464,45 @@ export class VASynthInstrument {
       }
     );
 
+    // Oscillator 1 level
+    this.modulationRouter.registerTarget(
+      ParameterID.OSC_1_LEVEL,
+      null,
+      (value) => {
+        this.config.oscillators[0].level = value;
+        const voices = this.voiceAllocator.getAllVoices();
+        for (const voice of voices) {
+          voice.updateParameters({
+            oscillatorSettings: this.config.oscillators,
+          });
+        }
+      }
+    );
+
+    // Oscillator 1 detune (used for pitch modulation)
+    this.modulationRouter.registerTarget(
+      ParameterID.OSC_1_DETUNE,
+      null,
+      (value) => {
+        this.config.oscillators[0].detune = value;
+        const voices = this.voiceAllocator.getAllVoices();
+        for (const voice of voices) {
+          voice.updateParameters({
+            oscillatorSettings: this.config.oscillators,
+          });
+        }
+      }
+    );
+
     // Set initial base values
     this.modulationRouter.setBaseValue(ParameterID.FILTER_CUTOFF, this.config.filter.cutoff);
     this.modulationRouter.setBaseValue(ParameterID.FILTER_RESONANCE, this.config.filter.resonance);
+    this.modulationRouter.setBaseValue(ParameterID.OSC_1_LEVEL, this.config.oscillators[0].level);
+    this.modulationRouter.setBaseValue(ParameterID.OSC_1_DETUNE, this.config.oscillators[0].detune);
+
+    if (this.modulationMatrix.length > 0) {
+      this._updateModulationMatrix(this.modulationMatrix);
+    }
   }
 
   /**
@@ -474,6 +532,96 @@ export class VASynthInstrument {
         totalSlots: this.modulationEngine.getSlotCount(),
       },
     };
+  }
+
+  /**
+   * Apply modulation matrix data to modulation engine
+   */
+  _updateModulationMatrix(matrix = []) {
+    this.modulationMatrix = Array.isArray(matrix) ? matrix : [];
+
+    // Reset existing slots
+    this.modulationEngine.slots.forEach((slot) => slot.reset());
+
+    // Refresh base values
+    this.modulationRouter.setBaseValue(ParameterID.FILTER_CUTOFF, this.config.filter.cutoff);
+    this.modulationRouter.setBaseValue(ParameterID.FILTER_RESONANCE, this.config.filter.resonance);
+    this.modulationRouter.setBaseValue(ParameterID.OSC_1_LEVEL, this.config.oscillators[0].level);
+    this.modulationRouter.setBaseValue(ParameterID.OSC_1_DETUNE, this.config.oscillators[0].detune);
+
+    for (const slotConfig of this.modulationMatrix) {
+      if (!slotConfig || slotConfig.enabled === false) continue;
+
+      const sourceId = this._mapModulationSource(slotConfig.source);
+      const destinationId = this._mapModulationDestination(slotConfig.target);
+
+      if (!sourceId || !destinationId) {
+        if (import.meta.env.DEV) {
+          console.warn('[VASynth] Unsupported modulation route:', slotConfig);
+        }
+        continue;
+      }
+
+      const amount = Math.max(-1, Math.min(1, slotConfig.amount ?? 0));
+      const curve = this._mapModulationCurve(slotConfig.curve);
+
+      const slot = this.modulationEngine.addSlot(sourceId, destinationId, amount, curve);
+      if (slot && slotConfig.id) {
+        slot.id = slotConfig.id;
+      }
+    }
+
+    if (!this.modulationEngine.updateInterval) {
+      this.modulationEngine.startUpdates();
+    }
+  }
+
+  _mapModulationSource(sourceId) {
+    switch (sourceId) {
+      case 'lfo_1':
+      case 'lfo_2':
+      case 'lfo_3':
+      case 'lfo_4':
+        return sourceId;
+      case 'env_1':
+      case 'env_2':
+      case 'env_3':
+      case 'env_4':
+        return sourceId;
+      case 'velocity':
+        return ModulationSourceType.VELOCITY;
+      case 'aftertouch':
+        return ModulationSourceType.AFTERTOUCH;
+      case 'modwheel':
+      case 'mod_wheel':
+        return ModulationSourceType.MOD_WHEEL;
+      default:
+        return null;
+    }
+  }
+
+  _mapModulationDestination(targetId) {
+    switch (targetId) {
+      case 'filter.cutoff':
+        return ParameterID.FILTER_CUTOFF;
+      case 'filter.resonance':
+        return ParameterID.FILTER_RESONANCE;
+      case 'osc.level':
+        return ParameterID.OSC_1_LEVEL;
+      case 'osc.detune':
+      case 'osc.pitch':
+        return ParameterID.OSC_1_DETUNE;
+      default:
+        return null;
+    }
+  }
+
+  _mapModulationCurve(curve) {
+    if (!curve) return ModulationCurve.LINEAR;
+    const normalized = curve.toLowerCase();
+    if (normalized === 'exponential') return ModulationCurve.EXPONENTIAL;
+    if (normalized === 's_curve' || normalized === 's-curve') return ModulationCurve.S_CURVE;
+    return ModulationCurve.LINEAR;
   }
 
   /**

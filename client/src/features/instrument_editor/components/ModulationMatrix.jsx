@@ -4,19 +4,20 @@
  * FL Studio / Vital inspired modulation routing
  */
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import useInstrumentEditorStore from '@/store/useInstrumentEditorStore';
+import { AudioContextService } from '@/lib/services/AudioContextService';
 import { Plus, Trash2, Activity, TrendingUp, Sliders } from 'lucide-react';
 import './ModulationMatrix.css';
 
+// ✅ MODULATION MATRIX: Map UI source IDs to ModulationEngine source types
 const MODULATION_SOURCES = [
-  { id: 'lfo1', name: 'LFO 1', icon: '〜', type: 'lfo' },
-  { id: 'lfo2', name: 'LFO 2', icon: '〜', type: 'lfo' },
-  { id: 'env1', name: 'Envelope 1', icon: '📈', type: 'envelope' },
-  { id: 'env2', name: 'Envelope 2', icon: '📈', type: 'envelope' },
+  { id: 'lfo_1', name: 'LFO 1', icon: '〜', type: 'lfo' },
+  { id: 'env_1', name: 'Filter Envelope', icon: '📈', type: 'envelope' },
+  { id: 'env_2', name: 'Amplitude Envelope', icon: '📈', type: 'envelope' },
   { id: 'velocity', name: 'Velocity', icon: '⚡', type: 'midi' },
   { id: 'aftertouch', name: 'Aftertouch', icon: '👆', type: 'midi' },
-  { id: 'modwheel', name: 'Mod Wheel', icon: '🎚️', type: 'midi' },
+  { id: 'mod_wheel', name: 'Mod Wheel', icon: '🎚️', type: 'midi' },
 ];
 
 const MODULATION_TARGETS = [
@@ -30,11 +31,36 @@ const MODULATION_TARGETS = [
 ];
 
 const ModulationMatrix = ({ instrumentData }) => {
-  const [modulations, setModulations] = useState([]);
+  const { updateParameter } = useInstrumentEditorStore();
+  
+  // ✅ MODULATION MATRIX: Load modulations from instrumentData
+  const [modulations, setModulations] = useState(() => {
+    return instrumentData?.modulationMatrix || [];
+  });
   const [showAddModal, setShowAddModal] = useState(false);
   const [selectedSource, setSelectedSource] = useState(null);
   const [selectedTarget, setSelectedTarget] = useState(null);
   const [amount, setAmount] = useState(0.5);
+
+  // ✅ MODULATION MATRIX: Sync with instrumentData changes
+  useEffect(() => {
+    if (instrumentData?.modulationMatrix) {
+      setModulations(instrumentData.modulationMatrix);
+    }
+  }, [instrumentData?.modulationMatrix]);
+
+  // ✅ MODULATION MATRIX: Update audio engine when modulations change
+  const updateAudioEngine = useCallback((newModulations) => {
+    const audioEngine = AudioContextService.getAudioEngine();
+    if (audioEngine && instrumentData?.id) {
+      const instrument = audioEngine.instruments.get(instrumentData.id);
+      if (instrument && typeof instrument.updateParameters === 'function') {
+        instrument.updateParameters({
+          modulationMatrix: newModulations
+        });
+      }
+    }
+  }, [instrumentData?.id]);
 
   const handleAddModulation = () => {
     if (!selectedSource || !selectedTarget) {
@@ -48,9 +74,16 @@ const ModulationMatrix = ({ instrumentData }) => {
       target: selectedTarget,
       amount: amount,
       enabled: true,
+      curve: 'linear' // Default curve
     };
 
-    setModulations([...modulations, newMod]);
+    const newModulations = [...modulations, newMod];
+    setModulations(newModulations);
+    
+    // ✅ MODULATION MATRIX: Update store and audio engine
+    updateParameter('modulationMatrix', newModulations);
+    updateAudioEngine(newModulations);
+    
     setShowAddModal(false);
     setSelectedSource(null);
     setSelectedTarget(null);
@@ -58,19 +91,34 @@ const ModulationMatrix = ({ instrumentData }) => {
   };
 
   const handleRemoveModulation = (modId) => {
-    setModulations(modulations.filter(m => m.id !== modId));
+    const newModulations = modulations.filter(m => m.id !== modId);
+    setModulations(newModulations);
+    
+    // ✅ MODULATION MATRIX: Update store and audio engine
+    updateParameter('modulationMatrix', newModulations);
+    updateAudioEngine(newModulations);
   };
 
   const handleToggleModulation = (modId) => {
-    setModulations(modulations.map(m =>
+    const newModulations = modulations.map(m =>
       m.id === modId ? { ...m, enabled: !m.enabled } : m
-    ));
+    );
+    setModulations(newModulations);
+    
+    // ✅ MODULATION MATRIX: Update store and audio engine
+    updateParameter('modulationMatrix', newModulations);
+    updateAudioEngine(newModulations);
   };
 
   const handleAmountChange = (modId, newAmount) => {
-    setModulations(modulations.map(m =>
+    const newModulations = modulations.map(m =>
       m.id === modId ? { ...m, amount: newAmount } : m
-    ));
+    );
+    setModulations(newModulations);
+    
+    // ✅ MODULATION MATRIX: Update store and audio engine
+    updateParameter('modulationMatrix', newModulations);
+    updateAudioEngine(newModulations);
   };
 
   const getSourceInfo = (sourceId) => {
@@ -256,8 +304,8 @@ const ModulationMatrix = ({ instrumentData }) => {
 
       {/* Info Box */}
       <div className="modulation-matrix__info">
-        <strong>ℹ️ Note:</strong> Modulation matrix is currently in preview mode.
-        Full implementation coming soon with real-time parameter modulation.
+        <strong>ℹ️ Note:</strong> Modulation matrix is now fully functional!
+        Real-time parameter modulation is active.
       </div>
     </div>
   );

@@ -5,7 +5,7 @@
  */
 
 import React, { useCallback, useEffect, useState } from 'react';
-import useInstrumentEditorStore from '../../../../store/useInstrumentEditorStore';
+import useInstrumentEditorStore from '@/store/useInstrumentEditorStore';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
 import { AudioContextService } from '@/lib/services/AudioContextService';
 import { getPreset } from '@/lib/audio/synth/presets';

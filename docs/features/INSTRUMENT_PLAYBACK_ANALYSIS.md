@@ -594,4 +594,3 @@ const playbackRate = Math.pow(2, totalPitchShift / 12);
 **Rapor Hazırlayan:** AI Assistant  
 **Son Güncelleme:** 2025-01-XX  
 **Versiyon:** 1.0
-

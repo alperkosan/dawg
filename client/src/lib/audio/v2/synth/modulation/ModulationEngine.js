@@ -135,8 +135,13 @@ export class ModulationSource {
    * Get current value
    */
   getValue() {
-    if (this.node && this.node.getCurrentValue) {
-      return this.node.getCurrentValue();
+    if (this.node) {
+      if (this.node.getRawValue) {
+        return this.node.getRawValue();
+      }
+      if (this.node.getCurrentValue) {
+        return this.node.getCurrentValue();
+      }
     }
 
     return this.value;
@@ -155,6 +160,24 @@ export class ModulationSource {
   start(time = null) {
     if (this.node && this.node.start) {
       this.node.start(time);
+    }
+  }
+
+  activate(hasActiveSlot = true) {
+    if (!hasActiveSlot) return;
+    if (this.type.startsWith('lfo_') && this.node) {
+      if (this.node.frequency <= 0.0001 && this.node.setFrequency) {
+        this.node.setFrequency(1);
+      }
+      if (!this.node.isRunning && this.node.start) {
+        this.node.start();
+      }
+    }
+  }
+
+  deactivate() {
+    if (this.type.startsWith('lfo_') && this.node && this.node.isRunning && this.node.stop) {
+      this.node.stop();
     }
   }
 
@@ -264,6 +287,8 @@ export class ModulationEngine {
 
     console.log(`[ModulationEngine] Added slot: ${source} → ${destination} (amount: ${amount})`);
 
+    this._ensureSourceActive(source);
+
     return slot;
   }
 
@@ -274,7 +299,11 @@ export class ModulationEngine {
     const slot = this.slots.find(s => s.id === slotId);
 
     if (slot) {
+      const previousSource = slot.source;
       slot.reset();
+      if (previousSource) {
+        this._deactivateSourceIfUnused(previousSource);
+      }
     }
   }
 
@@ -286,11 +315,23 @@ export class ModulationEngine {
 
     if (!slot) return;
 
+    const previousSource = slot.source;
+
     if (updates.enabled !== undefined) slot.enabled = updates.enabled;
     if (updates.source !== undefined) slot.source = updates.source;
     if (updates.destination !== undefined) slot.destination = updates.destination;
     if (updates.amount !== undefined) slot.amount = updates.amount;
     if (updates.curve !== undefined) slot.curve = updates.curve;
+
+    if (slot.source) {
+      this._ensureSourceActive(slot.source);
+    }
+    if (previousSource && previousSource !== slot.source) {
+      this._deactivateSourceIfUnused(previousSource);
+    }
+    if (slot.source && slot.enabled === false) {
+      this._deactivateSourceIfUnused(slot.source);
+    }
   }
 
   /**
@@ -433,7 +474,9 @@ export class ModulationEngine {
    * Clear all slots
    */
   clearAll() {
+    const sources = new Set(this.slots.map(slot => slot.source));
     this.slots.forEach(slot => slot.reset());
+    sources.forEach(source => this._deactivateSourceIfUnused(source));
   }
 
   /**
@@ -464,6 +507,32 @@ export class ModulationEngine {
     this.sources.clear();
     this.slots = [];
     this.destinationCache.clear();
+  }
+
+  _ensureSourceActive(sourceType) {
+    if (!sourceType) return;
+    const source = this.sources.get(sourceType);
+    if (!source) return;
+    const hasActiveSlot = this.slots.some(slot => slot.enabled && slot.source === sourceType);
+    if (!hasActiveSlot) return;
+    if (source.activate) {
+      source.activate(true);
+    } else if (source.start) {
+      source.start();
+    }
+  }
+
+  _deactivateSourceIfUnused(sourceType) {
+    if (!sourceType) return;
+    const source = this.sources.get(sourceType);
+    if (!source) return;
+    const stillUsed = this.slots.some(slot => slot.enabled && slot.source === sourceType);
+    if (stillUsed) return;
+    if (source.deactivate) {
+      source.deactivate();
+    } else if (source.stop) {
+      source.stop();
+    }
   }
 }
 

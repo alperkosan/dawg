@@ -22,6 +22,13 @@ export class LFO {
         // Connections
         this.connectedParams = new Set();
         this.depthGainNodes = new Map(); // param -> depthGain node (for proper disconnect)
+        
+        // ✅ MODULATION MATRIX: For reading current LFO value analytically
+        this.currentValue = 0; // Cached current value with depth (-1 to 1)
+        this.currentRawValue = 0; // Cached raw waveform value (-1 to 1)
+        this.phase = 0;
+        this.lastUpdateTime = null;
+        this.valueUpdateRAF = null;
     }
 
     /**
@@ -41,12 +48,117 @@ export class LFO {
         this.gainNode = this.context.createGain();
         this.gainNode.gain.setValueAtTime(this.depth, time);
 
-        // Connect
+        // Connect oscillator to gain
         this.oscillator.connect(this.gainNode);
+
+        // ✅ MODULATION MATRIX: Reset phase and start value updates
+        this.phase = 0;
+        this.lastUpdateTime = time;
+        this._startValueUpdates();
 
         // Start oscillator
         this.oscillator.start(time);
         this.isRunning = true;
+    }
+    
+    /**
+     * ✅ MODULATION MATRIX: Get current LFO value (-1 to 1)
+     * @returns {number} Current LFO output value
+     */
+    getCurrentValue() {
+        if (!this.isRunning) {
+            return 0;
+        }
+        return this.currentValue;
+    }
+    
+    /**
+     * ✅ MODULATION MATRIX: Get raw waveform value (-1 to 1) independent of depth
+     * @returns {number} Current raw LFO output
+     */
+    getRawValue() {
+        if (!this.isRunning) {
+            return 0;
+        }
+        return this.currentRawValue;
+    }
+    
+    /**
+     * ✅ MODULATION MATRIX: Start periodic value updates (analytic)
+     */
+    _startValueUpdates() {
+        const raf = (typeof window !== 'undefined' && window.requestAnimationFrame)
+            ? window.requestAnimationFrame.bind(window)
+            : (cb) => setTimeout(cb, 16);
+        const cancelRaf = (typeof window !== 'undefined' && window.cancelAnimationFrame)
+            ? window.cancelAnimationFrame.bind(window)
+            : clearTimeout;
+        
+        const updateValue = () => {
+            if (!this.isRunning) {
+                this.valueUpdateRAF = null;
+                return;
+            }
+            
+            const currentTime = this.context.currentTime;
+            if (this.lastUpdateTime === null) {
+                this.lastUpdateTime = currentTime;
+            }
+            const deltaTime = Math.max(0, currentTime - this.lastUpdateTime);
+            this.lastUpdateTime = currentTime;
+            
+            // Advance phase
+            this.phase += 2 * Math.PI * this.frequency * deltaTime;
+            this.phase %= (2 * Math.PI);
+            
+            // Compute waveform sample (-1 to 1)
+            let rawValue = 0;
+            const phaseNorm = this.phase / (2 * Math.PI); // 0..1
+            switch (this.waveform) {
+                case 'square':
+                    rawValue = this.phase < Math.PI ? 1 : -1;
+                    break;
+                case 'sawtooth':
+                    rawValue = 2 * (phaseNorm - Math.floor(phaseNorm + 0.5));
+                    break;
+                case 'triangle': {
+                    const saw = 2 * (phaseNorm - Math.floor(phaseNorm + 0.5));
+                    rawValue = Math.abs(saw) * 2 - 1;
+                    break;
+                }
+                case 'sine':
+                default:
+                    rawValue = Math.sin(this.phase);
+                    break;
+            }
+            
+            // Cache values
+            this.currentRawValue = rawValue;
+            this.currentValue = rawValue * this.depth;
+            
+            this.valueUpdateRAF = raf(updateValue);
+        };
+        
+        if (this.valueUpdateRAF) {
+            cancelRaf(this.valueUpdateRAF);
+        }
+        this.valueUpdateRAF = raf(updateValue);
+    }
+    
+    /**
+     * ✅ MODULATION MATRIX: Stop periodic value updates
+     */
+    _stopValueUpdates() {
+        const cancelRaf = (typeof window !== 'undefined' && window.cancelAnimationFrame)
+            ? window.cancelAnimationFrame.bind(window)
+            : clearTimeout;
+        
+        if (this.valueUpdateRAF) {
+            cancelRaf(this.valueUpdateRAF);
+            this.valueUpdateRAF = null;
+        }
+        this.lastUpdateTime = null;
+        this.currentRawValue = 0;
     }
 
     /**
@@ -83,6 +195,11 @@ export class LFO {
         this.depthGainNodes.clear();
         this.oscillator = null;
         this.gainNode = null;
+        this._stopValueUpdates();
+        this.currentValue = 0;
+        this.currentRawValue = 0;
+        this.phase = 0;
+        this.lastUpdateTime = null;
         this.isRunning = false;
     }
 
@@ -309,5 +426,8 @@ export class LFO {
     dispose() {
         this.stop();
         this.connectedParams.clear();
+        this._stopValueUpdates();
+        this.currentValue = 0;
+        this.currentRawValue = 0;
     }
 }

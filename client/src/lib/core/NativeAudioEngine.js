@@ -994,7 +994,8 @@ export class NativeAudioEngine {
         const relevantParams = {};
         const paramKeys = ['sampleStart', 'sampleStartModulation', 'timeStretchEnabled', 
                           'gain', 'pan', 'pitch', 'attack', 'decay', 'sustain', 'release',
-                          'filterCutoff', 'filterResonance', 'filterKeyTracking'];
+                          'filterCutoff', 'filterResonance', 'filterKeyTracking',
+                          'modulationMatrix'];
         
         paramKeys.forEach(key => {
             if (params[key] !== undefined) {
