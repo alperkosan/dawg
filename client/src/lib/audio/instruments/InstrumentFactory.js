@@ -49,13 +49,6 @@ export class InstrumentFactory {
                         audioContext
                     );
 
-                case INSTRUMENT_TYPES.GRANULAR:
-                    return await this._createGranularInstrument(
-                        instrumentData,
-                        audioContext,
-                        { preloadSamples, onProgress }
-                    );
-
                 case INSTRUMENT_TYPES.SYNTH:
                     // Legacy ForgeSynth - not implemented yet in new system
                     console.warn(`ForgeSynth not yet supported in InstrumentFactory`);
@@ -161,36 +154,6 @@ export class InstrumentFactory {
     }
 
     /**
-     * Create Granular Sampler instrument
-     * @private
-     */
-    static async _createGranularInstrument(instrumentData, audioContext, options) {
-        const { preloadSamples, onProgress } = options;
-
-        console.log(`  Granular sampler: ${instrumentData.url || 'No sample'}`);
-
-        // Load sample if URL provided
-        let sampleBuffer = null;
-        if (preloadSamples && instrumentData.url) {
-            const buffers = await SampleLoader.preloadInstrument(instrumentData, audioContext);
-            sampleBuffer = buffers.get(instrumentData.url);
-            console.log(`    Sample loaded: ${sampleBuffer ? sampleBuffer.duration.toFixed(2) + 's' : 'Failed'}`);
-        }
-
-        // Import and create instrument
-        const { GranularSamplerInstrument } = await import('./granular/GranularSamplerInstrument.js');
-        const instrument = new GranularSamplerInstrument(
-            instrumentData,
-            audioContext,
-            sampleBuffer
-        );
-
-        await instrument.initialize();
-
-        return instrument;
-    }
-
-    /**
      * Preload samples for an instrument
      *
      * @param {Object} instrumentData - Instrument configuration
@@ -199,7 +162,7 @@ export class InstrumentFactory {
      * @returns {Promise<Map<string, AudioBuffer>>}
      */
     static async preloadSamples(instrumentData, audioContext, onProgress = null) {
-        if (instrumentData.type !== INSTRUMENT_TYPES.SAMPLE && instrumentData.type !== INSTRUMENT_TYPES.GRANULAR) {
+        if (instrumentData.type !== INSTRUMENT_TYPES.SAMPLE) {
             console.log(`${instrumentData.name}: No samples to preload (${instrumentData.type})`);
             return new Map();
         }
@@ -237,17 +200,6 @@ export class InstrumentFactory {
                     requiresSamples: false
                 };
 
-            case INSTRUMENT_TYPES.GRANULAR:
-                return {
-                    supportsPolyphony: true,
-                    supportsPitchBend: true,
-                    supportsVelocity: true,
-                    supportsAftertouch: false,
-                    supportsPresetChange: true,
-                    supportsParameterAutomation: true,
-                    requiresSamples: true
-                };
-
             case INSTRUMENT_TYPES.SYNTH:
                 return {
                     supportsPolyphony: true,
@@ -271,7 +223,7 @@ export class InstrumentFactory {
      * @returns {boolean}
      */
     static requiresSamples(instrumentType) {
-        return instrumentType === INSTRUMENT_TYPES.SAMPLE || instrumentType === INSTRUMENT_TYPES.GRANULAR;
+        return instrumentType === INSTRUMENT_TYPES.SAMPLE;
     }
 
     /**

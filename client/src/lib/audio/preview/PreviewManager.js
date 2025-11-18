@@ -13,6 +13,8 @@ export class PreviewManager {
     this.audioEngine = audioEngine; // ✅ FX CHAIN: Reference to audioEngine for mixer routing
     this.currentInstrument = null;
     this.previewInstrument = null; // BaseInstrument instance
+    this.isInstrumentReady = false;
+    this.pendingPreviews = [];
     this.isPlaying = false;
     this.currentNote = null;
     this.fileSource = null; // For file preview
@@ -35,6 +37,8 @@ export class PreviewManager {
   async setInstrument(instrumentData) {
     // Stop current preview
     this.stopPreview();
+    this.isInstrumentReady = false;
+    this.pendingPreviews = [];
 
     // Dispose old instrument
     if (this.previewInstrument) {
@@ -65,6 +69,8 @@ export class PreviewManager {
       if (this.previewInstrument) {
         await this._routePreviewThroughMixer(instrumentData);
         this.currentInstrument = instrumentData;
+        this.isInstrumentReady = true;
+        this._flushPendingPreviews();
       }
     } catch (error) {
       console.error('PreviewManager: Failed to create instrument:', error);
@@ -142,29 +148,37 @@ export class PreviewManager {
       return;
     }
 
-    // Convert pitch to MIDI if string
+    if (!this.isInstrumentReady) {
+      this.pendingPreviews.push({ pitch, velocity, duration });
+      return;
+    }
+
+    this._playPreviewNow(pitch, velocity, duration);
+  }
+
+  _playPreviewNow(pitch, velocity = 100, duration = null) {
+    if (!this.previewInstrument) {
+      return;
+    }
+
     const midiNote = typeof pitch === 'string'
       ? this.previewInstrument.pitchToMidi(pitch)
       : pitch;
 
-    // ✅ POLYPHONY FIX: Don't stop ALL notes, only stop the SAME note if re-triggering
     if (this.activeNotes.has(midiNote)) {
       this.stopNote(midiNote);
     }
 
-    // Start note
     try {
       this.previewInstrument.noteOn(midiNote, velocity);
       this.isPlaying = true;
       this.currentNote = midiNote;
 
-      // ✅ Track active note for polyphony
       this.activeNotes.set(midiNote, {
         velocity,
         startTime: Date.now()
       });
 
-      // Auto-stop if duration specified
       if (duration !== null) {
         setTimeout(() => {
           this.stopNote(midiNote);
@@ -180,6 +194,18 @@ export class PreviewManager {
    * @param {number} midiNote - MIDI note number to stop
    */
   stopNote(midiNote) {
+    if (this.pendingPreviews.length) {
+      this.pendingPreviews = this.pendingPreviews.filter(({ pitch }) => {
+        if (typeof pitch === 'string') {
+          if (this.previewInstrument?.pitchToMidi) {
+            return this.previewInstrument.pitchToMidi(pitch) !== midiNote;
+          }
+          return true;
+        }
+        return pitch !== midiNote;
+      });
+    }
+
     if (!this.previewInstrument) return;
 
     try {
@@ -199,6 +225,7 @@ export class PreviewManager {
    * Stop current preview (all notes)
    */
   stopPreview() {
+    this.pendingPreviews = [];
     // Stop instrument preview
     if (this.isPlaying && this.previewInstrument) {
       try {
@@ -232,6 +259,19 @@ export class PreviewManager {
 
     this.isPlaying = false;
     this.currentNote = null;
+  }
+
+  _flushPendingPreviews() {
+    if (!this.isInstrumentReady || !this.previewInstrument || this.pendingPreviews.length === 0) {
+      return;
+    }
+
+    const queued = [...this.pendingPreviews];
+    this.pendingPreviews.length = 0;
+
+    queued.forEach(({ pitch, velocity, duration }) => {
+      this._playPreviewNow(pitch, velocity, duration);
+    });
   }
 
   /**
@@ -303,6 +343,8 @@ export class PreviewManager {
    */
   dispose() {
     this.stopPreview();
+    this.isInstrumentReady = false;
+    this.pendingPreviews = [];
 
     if (this.previewInstrument) {
       // ✅ FX CHAIN: Disconnect from mixer routing

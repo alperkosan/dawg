@@ -3,6 +3,7 @@
 import { NativeTimeUtils } from '../../utils/NativeTimeUtils';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
 import { EffectFactory } from '../../audio/effects';
+import { clampValue, createDefaultSampleChopPattern } from '../../audio/instruments/sample/sampleChopUtils.js';
 
 export class NativeSamplerNode {
     constructor(instrumentData, audioBuffer, audioContext) {
@@ -48,6 +49,22 @@ export class NativeSamplerNode {
             filterResonance: 0,
         };
 
+        // Sample chop state
+        this.sampleChop = instrumentData.sampleChop
+            ? JSON.parse(JSON.stringify(instrumentData.sampleChop))
+            : createDefaultSampleChopPattern();
+        this.sampleChopMode = instrumentData.sampleChopMode || 'standard';
+        this._chopTimer = null;
+        this._chopStartTime = 0;
+        this._chopSecondsPerStep = 0;
+        this._activeChopSliceId = null;
+        this._lastChopStep = -1;
+        this._currentChopSource = null;
+        this._currentChopGain = null;
+        this._chopNoteCount = 0;
+        this._chopReleaseTimers = new Set();
+        this._chopVelocity = 1;
+
         // ✅ RAW SIGNAL: No automatic gain reduction
         // Let samples play at their natural level - user controls with faders
         this.polyphonyGainReduction = false; // Disabled - RAW signal philosophy
@@ -68,10 +85,34 @@ export class NativeSamplerNode {
 
     triggerNote(pitch, velocity, time, duration, extendedParams = null) {
         const startTime = time || this.context.currentTime;
+        const normalizedVelocity = velocity ?? 1;
+        const useChop = this._shouldUseSampleChop();
+
+        if (import.meta.env?.DEV) {
+            console.log(`[SampleChop][Native] noteOn ${this.name}`, {
+                pitch,
+                velocity: normalizedVelocity,
+                mode: this.sampleChopMode,
+                loopEnabled: this.sampleChop?.loopEnabled,
+                sliceCount: this.sampleChop?.slices?.length || 0,
+                useChop
+            });
+        }
+
+        if (useChop) {
+            this._chopVelocity = normalizedVelocity;
+            this._handleChopNoteOn(startTime);
+
+            const durationSeconds = this._resolveDurationSeconds(duration);
+            if (durationSeconds) {
+                this._scheduleChopRelease(durationSeconds);
+            }
+            return;
+        }
 
         // ✅ DEBUG: Log kick triggers
         if (this.id === 'inst-1') {
-            console.log('🥁 Kick triggerNote!', { pitch, velocity, hasBuffer: !!this.buffer });
+            console.log('🥁 Kick triggerNote!', { pitch, velocity: normalizedVelocity, hasBuffer: !!this.buffer });
         }
 
         // ✅ DÜZELTME: cutItself özelliği
@@ -234,12 +275,15 @@ export class NativeSamplerNode {
         // ✅ RAW SIGNAL: Direct velocity to gain mapping (no reduction!)
         // MIDI velocity 0-127 → Audio gain 0-1.0
         // User controls final level with mixer faders - this is professional DAW standard
-        let normalizedVelocity = velocity || 100;
-        if (normalizedVelocity > 1) {
-            // Direct MIDI to linear: 0-127 → 0-1.0
-            normalizedVelocity = normalizedVelocity / 127;
+        let velocityValue = normalizedVelocity;
+        if (velocityValue === undefined || velocityValue === null) {
+            velocityValue = 100;
         }
-        const velocityGainLinear = normalizedVelocity * 1.0;
+        if (velocityValue > 1) {
+            // Direct MIDI to linear: 0-127 → 0-1.0
+            velocityValue = velocityValue / 127;
+        }
+        const velocityGainLinear = velocityValue * 1.0;
 
         // 🔧 FIX: Add headroom for samples with pre-existing clipping
         // Sample analysis showed some samples have clipped peaks (>100%)
@@ -248,7 +292,7 @@ export class NativeSamplerNode {
         const finalGain = velocityGainLinear * sampleHeadroom * (this.params.gain || 1.0);
         gainNode.gain.setValueAtTime(finalGain, startTime);
         if (!Number.isFinite(finalGain) || finalGain <= 0) {
-            console.warn(`⚠️ ${this.name} finalGain invalid:`, { normalizedVelocity, velocityGainLinear, finalGain });
+            console.warn(`⚠️ ${this.name} finalGain invalid:`, { velocityValue, velocityGainLinear, finalGain });
         }
 
         // Connect chain: source -> envelope -> (filter) -> panner -> gain -> output
@@ -344,6 +388,7 @@ export class NativeSamplerNode {
             }
         });
         this.activeSources.clear();
+        this._stopSampleChopPlayback();
     }
 
     // ✅ PANIC: Instant stop (for emergency stop button)
@@ -359,6 +404,7 @@ export class NativeSamplerNode {
             }
         });
         this.activeSources.clear();
+        this._stopSampleChopPlayback();
     }
 
     // ✅ DÜZELTME: Pitch to MIDI conversion
@@ -397,7 +443,10 @@ export class NativeSamplerNode {
     // Sample için releaseNote boş (trigger-based playback)
     // ✅ PHASE 2: Added releaseVelocity parameter for consistency
     releaseNote(pitch = null, time = null, releaseVelocity = null) {
-        // Samples are usually trigger-based, no release needed
+        if (this._chopNoteCount > 0) {
+            this._handleChopNoteOff();
+        }
+        // Samples are usually trigger-based, no additional release handling needed for standard playback
     }
 
     /**
@@ -498,6 +547,30 @@ export class NativeSamplerNode {
         if (params.filterType !== undefined) this.params.filterType = params.filterType;
         if (params.filterCutoff !== undefined) this.params.filterCutoff = params.filterCutoff;
         if (params.filterResonance !== undefined) this.params.filterResonance = params.filterResonance;
+
+        if (params.sampleChopMode !== undefined) {
+            const nextMode = params.sampleChopMode;
+            if (nextMode !== this.sampleChopMode) {
+                this.sampleChopMode = nextMode;
+                if (nextMode !== 'chop') {
+                    this._stopSampleChopPlayback();
+                } else if (this._chopNoteCount > 0) {
+                    this._startSampleChopPlayback();
+                }
+            }
+        }
+
+        if (params.sampleChop !== undefined) {
+            try {
+                this.sampleChop = JSON.parse(JSON.stringify(params.sampleChop || createDefaultSampleChopPattern()));
+            } catch {
+                this.sampleChop = createDefaultSampleChopPattern();
+            }
+
+            if (this._chopNoteCount > 0 && this._shouldUseSampleChop()) {
+                this._startSampleChopPlayback();
+            }
+        }
     }
 
     // ✅ UTILITY: Convert dB to linear
@@ -528,6 +601,310 @@ export class NativeSamplerNode {
     _getReversedBuffer() {
         if (this._reversedBuffer) return this._reversedBuffer;
         return this._buildReversedBuffer();
+    }
+
+    /**
+     * ===================== SAMPLE CHOP HELPERS =====================
+     */
+    _shouldUseSampleChop() {
+        return Boolean(
+            this.sampleChopMode === 'chop' &&
+            this.sampleChop &&
+            this.sampleChop.loopEnabled &&
+            Array.isArray(this.sampleChop.slices) &&
+            this.sampleChop.slices.length > 0
+        );
+    }
+
+    _handleChopNoteOn(startTime = this.context.currentTime) {
+        this._chopNoteCount += 1;
+        if (this._chopNoteCount === 1) {
+            this._startSampleChopPlayback(startTime);
+        }
+    }
+
+    _handleChopNoteOff() {
+        if (this._chopNoteCount > 0) {
+            this._chopNoteCount -= 1;
+        }
+        if (this._chopNoteCount === 0) {
+            this._stopSampleChopPlayback();
+        }
+    }
+
+    _resolveDurationSeconds(duration) {
+        if (duration === undefined || duration === null) {
+            return null;
+        }
+        if (typeof duration === 'number' && Number.isFinite(duration)) {
+            return duration;
+        }
+        try {
+            const currentBpm = usePlaybackStore.getState().bpm;
+            const seconds = NativeTimeUtils.parseTime(duration, currentBpm);
+            return Number.isFinite(seconds) ? seconds : null;
+        } catch (error) {
+            console.warn('[SampleChop][Native] Failed to parse duration', duration, error);
+            return null;
+        }
+    }
+
+    _scheduleChopRelease(durationSeconds) {
+        if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+            return;
+        }
+        const timer = setTimeout(() => {
+            this._chopReleaseTimers.delete(timer);
+            this._handleChopNoteOff();
+        }, durationSeconds * 1000);
+        this._chopReleaseTimers.add(timer);
+    }
+
+    _startSampleChopPlayback(startTime = this.context.currentTime) {
+        if (this.sampleChopMode !== 'chop') {
+            return;
+        }
+        if (!this.sampleChop || !this.sampleChop.loopEnabled) {
+            return;
+        }
+
+        const hasSlices = Array.isArray(this.sampleChop.slices) && this.sampleChop.slices.length > 0;
+        if (!hasSlices) {
+            return;
+        }
+
+        this._stopSampleChopPlayback();
+
+        const tempo = this._getSampleChopTempo();
+        const secondsPerStep = (60 / Math.max(tempo, 1)) / 4; // 16th grid
+
+        this._chopStartTime = startTime || this.context.currentTime;
+        this._chopSecondsPerStep = secondsPerStep || 0.125;
+        this._lastChopStep = -1;
+        this._activeChopSliceId = null;
+
+        this._chopTimer = setInterval(() => {
+            try {
+                this._applySampleChopFrame();
+            } catch (error) {
+                console.error('SampleChop playback error (native sampler):', error);
+            }
+        }, 40);
+
+        this._applySampleChopFrame();
+    }
+
+    _stopSampleChopPlayback() {
+        if (this._chopTimer) {
+            clearInterval(this._chopTimer);
+            this._chopTimer = null;
+        }
+        for (const timer of this._chopReleaseTimers) {
+            clearTimeout(timer);
+        }
+        this._chopReleaseTimers.clear();
+        this._chopStartTime = 0;
+        this._chopSecondsPerStep = 0;
+        this._activeChopSliceId = null;
+        this._lastChopStep = -1;
+        this._chopNoteCount = 0;
+        this._stopActiveChopSource();
+    }
+
+    _applySampleChopFrame() {
+        if (!this.sampleChop || !this.sampleChop.loopEnabled) {
+            return;
+        }
+        if (!Array.isArray(this.sampleChop.slices) || this.sampleChop.slices.length === 0) {
+            return;
+        }
+        if (!this._chopSecondsPerStep) {
+            return;
+        }
+
+        const loopDuration = this.sampleChop.length * this._chopSecondsPerStep;
+        if (!loopDuration || loopDuration <= 0) {
+            return;
+        }
+
+        const currentTime = this.context.currentTime;
+        const elapsed = currentTime - this._chopStartTime;
+        const loopPosition = ((elapsed % loopDuration) + loopDuration) % loopDuration;
+        const stepFloat = loopPosition / this._chopSecondsPerStep;
+
+        const activeSlice = this._findActiveChopSlice(stepFloat);
+
+        if (activeSlice?.id !== this._activeChopSliceId) {
+            this._activeChopSliceId = activeSlice ? activeSlice.id : null;
+            this._triggerSampleChopSlice(activeSlice);
+        }
+
+        this._lastChopStep = stepFloat;
+    }
+
+    _findActiveChopSlice(stepFloat) {
+        const patternLength = this.sampleChop.length || 0;
+        if (!patternLength) {
+            return null;
+        }
+
+        const normalizedStep = ((stepFloat % patternLength) + patternLength) % patternLength;
+        const slices = this.sampleChop.slices || [];
+
+        for (let i = 0; i < slices.length; i += 1) {
+            const slice = slices[i];
+            const start = slice.startStep ?? 0;
+            const end = slice.endStep ?? start;
+            if (end <= start) continue;
+
+            if (normalizedStep >= start && normalizedStep < end) {
+                return slice;
+            }
+        }
+
+        return null;
+    }
+
+    _getSampleChopTempo() {
+        if (this.sampleChop && this.sampleChop.tempo) {
+            return this.sampleChop.tempo;
+        }
+        return 140;
+    }
+
+    _stopActiveChopSource() {
+        if (this._currentChopSource) {
+            try {
+                this._currentChopSource.stop();
+            } catch (e) {}
+            try {
+                this._currentChopSource.disconnect();
+            } catch (e) {}
+            this.activeSources.delete(this._currentChopSource);
+            this._currentChopSource = null;
+        }
+
+        if (this._currentChopGain) {
+            try {
+                this._currentChopGain.disconnect();
+            } catch (e) {}
+            this._currentChopGain = null;
+        }
+    }
+
+    _triggerSampleChopSlice(slice) {
+        if (!slice) {
+            this._stopActiveChopSource();
+            return;
+        }
+
+        if (!this.buffer) {
+            console.warn('SampleChop (native sampler): No buffer available');
+            this._stopActiveChopSource();
+            return;
+        }
+
+        this._stopActiveChopSource();
+
+        const buffer = this.buffer;
+        const instrumentGain = this.params.gain || 1;
+        const sliceGain = clampValue(slice.gain ?? 1, 0, 2);
+        let velocityValue = this._chopVelocity ?? 1;
+        if (velocityValue > 1) {
+            velocityValue = velocityValue / 127;
+        }
+        velocityValue = clampValue(velocityValue, 0, 1);
+        const totalGain = instrumentGain * sliceGain * velocityValue;
+
+        const startRatio = clampValue(slice.startOffset ?? 0, 0, 0.99);
+        const endRatio = clampValue(slice.endOffset ?? 1, startRatio + 0.01, 1);
+        const bufferDuration = buffer.duration;
+        const sliceStart = startRatio * bufferDuration;
+        const sliceEnd = Math.min(bufferDuration, endRatio * bufferDuration);
+        const sliceDuration = Math.max(sliceEnd - sliceStart, 0.01);
+
+        const isReverse = Boolean(slice.reverse);
+        const shouldLoop = Boolean(slice.loop);
+        const playbackRate = Math.pow(2, (slice.pitch ?? 0) / 12);
+
+        const playSliceInstance = () => {
+            const source = this.context.createBufferSource();
+            source.buffer = buffer;
+
+            const gainNode = this.context.createGain();
+            gainNode.gain.setValueAtTime(totalGain, this.context.currentTime);
+
+            let lastNode = gainNode;
+
+            if ((this.params.pan || 0) !== 0) {
+                const panner = this.context.createStereoPanner();
+                panner.pan.setValueAtTime(this.params.pan || 0, this.context.currentTime);
+                gainNode.connect(panner);
+                lastNode = panner;
+            }
+
+            if (this.params.filterType && this.params.filterCutoff) {
+                const filter = this.context.createBiquadFilter();
+                filter.type = this.params.filterType || 'lowpass';
+                filter.frequency.setValueAtTime(this.params.filterCutoff || 20000, this.context.currentTime);
+                filter.Q.setValueAtTime(this.params.filterResonance || 0, this.context.currentTime);
+                lastNode.connect(filter);
+                lastNode = filter;
+            }
+
+            source.connect(gainNode);
+            lastNode.connect(this.internalOutput);
+
+            if (isReverse) {
+                source.loop = false;
+                source.playbackRate.setValueAtTime(-Math.abs(playbackRate), this.context.currentTime);
+                const offset = Math.max(0, sliceEnd - 0.0001);
+                source.start(this.context.currentTime, offset, sliceDuration);
+            } else {
+                source.playbackRate.setValueAtTime(playbackRate, this.context.currentTime);
+                if (shouldLoop) {
+                    source.loop = true;
+                    source.loopStart = sliceStart;
+                    source.loopEnd = sliceEnd;
+                    source.start(this.context.currentTime, sliceStart);
+                } else {
+                    source.loop = false;
+                    source.start(this.context.currentTime, sliceStart, sliceDuration);
+                }
+            }
+
+            this._currentChopSource = source;
+            this._currentChopGain = gainNode;
+            this.activeSources.add(source);
+
+            source.onended = () => {
+                if (this._currentChopSource === source) {
+                    this._currentChopSource = null;
+                    this._currentChopGain = null;
+                }
+                if (this.activeSources.has(source)) {
+                    this.activeSources.delete(source);
+                }
+                try {
+                    gainNode.disconnect();
+                } catch (e) {}
+                try {
+                    source.disconnect();
+                } catch (e) {}
+
+                if (
+                    isReverse &&
+                    shouldLoop &&
+                    this._activeChopSliceId === slice.id &&
+                    this.sampleChopMode === 'chop' &&
+                    this.sampleChop?.loopEnabled
+                ) {
+                    playSliceInstance();
+                }
+            };
+        };
+
+        playSliceInstance();
     }
 
     // ✅ NEW: Set or update effect chain

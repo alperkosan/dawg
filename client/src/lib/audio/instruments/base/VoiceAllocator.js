@@ -20,6 +20,7 @@ export class VoiceAllocator {
         this.monoVoice = null; // Currently active mono voice
         this.lastFrequency = null; // For portamento
         this.heldNotes = new Set(); // Notes currently pressed (mono priority)
+        this.heldOrder = []; // Preserve insertion order for mono priority fallback
         this.lastNote = null; // Most recent note
 
         if (import.meta.env.DEV) {
@@ -52,6 +53,7 @@ export class VoiceAllocator {
     handleMonoNoteOn(midiNote, velocity, frequency, time) {
         // Add to held notes set
         this.heldNotes.add(midiNote);
+        this._pushHeldOrder(midiNote);
         this.lastNote = midiNote;
 
         if (!this.monoVoice || !this.monoVoice.isActive) {
@@ -138,6 +140,7 @@ export class VoiceAllocator {
     handleMonoNoteOff(midiNote, time) {
         // Remove from held notes
         this.heldNotes.delete(midiNote);
+        this._removeHeldOrder(midiNote);
 
         if (this.heldNotes.size === 0) {
             // No more notes held - release mono voice
@@ -148,9 +151,42 @@ export class VoiceAllocator {
                 this.lastNote = null;
             }
         } else {
-            // Other notes still held - keep playing
-            // Optionally: retrigger most recent note (mono priority)
-            // For now: just keep current note playing
+            // Other notes still held - switch to the most recent one (FL-style mono priority)
+            const targetNote = this._getMostRecentHeldNote();
+            if (targetNote == null || !this.monoVoice) {
+                return;
+            }
+
+            const targetFrequency = this.midiToFreq(targetNote);
+            const currentFrequency = this.lastFrequency || this.midiToFreq(midiNote);
+            const glideTime = Math.max(0, this.portamento || 0);
+
+            if (glideTime > 0.001) {
+                this.monoVoice.glideToFrequency(
+                    currentFrequency,
+                    targetFrequency,
+                    time,
+                    glideTime
+                );
+            } else {
+                // Immediate snap (tiny glide avoids zero-duration log issues)
+                this.monoVoice.glideToFrequency(
+                    currentFrequency,
+                    targetFrequency,
+                    time,
+                    0.0001
+                );
+            }
+
+            if (!this.legato) {
+                // Non-legato mono: retrigger envelope for the fallback note
+                this.monoVoice.trigger(targetNote, this.monoVoice.currentVelocity || 100, targetFrequency, time);
+            } else {
+                this.monoVoice.currentNote = targetNote;
+            }
+
+            this.lastNote = targetNote;
+            this.lastFrequency = targetFrequency;
         }
     }
 
@@ -237,5 +273,24 @@ export class VoiceAllocator {
      */
     midiToFreq(midiNote) {
         return 440 * Math.pow(2, (midiNote - 69) / 12);
+    }
+
+    _pushHeldOrder(midiNote) {
+        this.heldOrder = this.heldOrder.filter(note => note !== midiNote);
+        this.heldOrder.push(midiNote);
+    }
+
+    _removeHeldOrder(midiNote) {
+        this.heldOrder = this.heldOrder.filter(note => note !== midiNote);
+    }
+
+    _getMostRecentHeldNote() {
+        for (let i = this.heldOrder.length - 1; i >= 0; i -= 1) {
+            const note = this.heldOrder[i];
+            if (this.heldNotes.has(note)) {
+                return note;
+            }
+        }
+        return null;
     }
 }

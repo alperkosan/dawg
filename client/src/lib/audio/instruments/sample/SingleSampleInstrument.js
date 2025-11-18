@@ -14,6 +14,7 @@
  */
 
 import { BaseInstrument } from '../base/BaseInstrument.js';
+import { clampValue, createDefaultSampleChopPattern } from './sampleChopUtils.js';
 
 export class SingleSampleInstrument extends BaseInstrument {
     constructor(instrumentData, audioContext, sampleBuffer) {
@@ -30,6 +31,21 @@ export class SingleSampleInstrument extends BaseInstrument {
 
         // Master output
         this.masterGain = null;
+
+        // Sample chop
+        this.sampleChop = instrumentData.sampleChop
+            ? JSON.parse(JSON.stringify(instrumentData.sampleChop))
+            : createDefaultSampleChopPattern();
+        this.sampleChopMode = instrumentData.sampleChopMode || 'standard';
+        this.data.sampleChop = this.sampleChop;
+        this.data.sampleChopMode = this.sampleChopMode;
+        this._chopTimer = null;
+        this._chopStartTime = 0;
+        this._chopSecondsPerStep = 0;
+        this._activeChopSliceId = null;
+        this._lastChopStep = -1;
+        this._currentChopSource = null;
+        this._currentChopGain = null;
     }
 
     /**
@@ -68,6 +84,25 @@ export class SingleSampleInstrument extends BaseInstrument {
         }
 
         const when = startTime !== null ? startTime : this.audioContext.currentTime;
+
+        const useChop = this._shouldUseSampleChop();
+        if (import.meta.env.DEV) {
+            console.log(`[SampleChop][Single] noteOn ${this.name}`, {
+                midiNote,
+                mode: this.sampleChopMode,
+                loopEnabled: this.sampleChop?.loopEnabled,
+                sliceCount: this.sampleChop?.slices?.length || 0,
+                useChop
+            });
+        }
+
+        if (useChop) {
+            this._trackNoteOn(midiNote, velocity, when);
+            if (this.activeNotes.size === 1) {
+                this._startSampleChopPlayback(when);
+            }
+            return;
+        }
 
         console.log(`🥁 ${this.name}.noteOn:`, {
             midiNote,
@@ -266,6 +301,14 @@ export class SingleSampleInstrument extends BaseInstrument {
             return;
         }
 
+        if (this._shouldUseSampleChop()) {
+            this._trackNoteOff(midiNote);
+            if (this.activeNotes.size === 0) {
+                this._stopSampleChopPlayback();
+            }
+            return;
+        }
+
         try {
             const activeSource = this.activeSources.get(midiNote);
             if (activeSource) {
@@ -327,6 +370,7 @@ export class SingleSampleInstrument extends BaseInstrument {
         this.activeSources.clear();
         this.activeNotes.clear();
         this._isPlaying = false;
+        this._stopSampleChopPlayback();
     }
 
     /**
@@ -361,6 +405,24 @@ export class SingleSampleInstrument extends BaseInstrument {
             }
         });
 
+        if (params.sampleChopMode !== undefined) {
+            const nextMode = params.sampleChopMode;
+            if (nextMode !== this.sampleChopMode) {
+                this.sampleChopMode = nextMode;
+                this.data.sampleChopMode = nextMode;
+                if (nextMode !== 'chop') {
+                    this._stopSampleChopPlayback();
+                } else if (this.activeNotes.size > 0) {
+                    const restartTime = this.audioContext ? this.audioContext.currentTime : undefined;
+                    this._startSampleChopPlayback(restartTime);
+                }
+            }
+        }
+
+        if (params.sampleChop !== undefined) {
+            this._updateSampleChopPattern(params.sampleChop);
+        }
+
         // Update master gain if volume/gain changed
         if (params.gain !== undefined && this.masterGain) {
             this.masterGain.gain.setValueAtTime(
@@ -386,7 +448,284 @@ export class SingleSampleInstrument extends BaseInstrument {
         this.sampleBuffer = null;
         this.activeSources.clear();
         this.activeNotes.clear();
+        this._stopSampleChopPlayback();
 
         console.log(`🗑️ SingleSample disposed: ${this.name}`);
+    }
+
+    /**
+     * ===================== SAMPLE CHOP HELPERS =====================
+     */
+    _shouldUseSampleChop() {
+        const result = Boolean(
+            this.sampleChopMode === 'chop' &&
+            this.sampleChop &&
+            this.sampleChop.loopEnabled &&
+            Array.isArray(this.sampleChop.slices) &&
+            this.sampleChop.slices.length > 0
+        );
+        if (import.meta.env.DEV) {
+            console.log(`[SampleChop][Single] _shouldUseSampleChop ${this.name}`, {
+                mode: this.sampleChopMode,
+                loopEnabled: this.sampleChop?.loopEnabled,
+                sliceCount: this.sampleChop?.slices?.length || 0,
+                result
+            });
+        }
+        return result;
+    }
+
+    _updateSampleChopPattern(pattern) {
+        this.sampleChop = JSON.parse(JSON.stringify(pattern || createDefaultSampleChopPattern()));
+        this.data.sampleChop = this.sampleChop;
+
+        if (this.sampleChopMode === 'chop' && this.sampleChop.loopEnabled && (this._chopTimer || this.activeNotes.size > 0)) {
+            const restartTime = this.audioContext ? this.audioContext.currentTime : undefined;
+            this._startSampleChopPlayback(restartTime);
+        }
+    }
+
+    _startSampleChopPlayback(startTime = this.audioContext.currentTime) {
+        if (this.sampleChopMode !== 'chop') {
+            if (import.meta.env.DEV) {
+                console.log(`[SampleChop][Single] start aborted: mode=${this.sampleChopMode}`);
+            }
+            return;
+        }
+        if (!this.sampleChop || !this.sampleChop.loopEnabled) {
+            if (import.meta.env.DEV) {
+                console.log(`[SampleChop][Single] start aborted: loopEnabled=${this.sampleChop?.loopEnabled}`);
+            }
+            return;
+        }
+
+        const hasSlices = Array.isArray(this.sampleChop.slices) && this.sampleChop.slices.length > 0;
+        if (!hasSlices) {
+            if (import.meta.env.DEV) {
+                console.log('[SampleChop][Single] start aborted: no slices');
+            }
+            return;
+        }
+
+        this._stopSampleChopPlayback();
+
+        const tempo = this._getSampleChopTempo();
+        const secondsPerStep = (60 / Math.max(tempo, 1)) / 4; // 16th-note grid
+
+        if (import.meta.env.DEV) {
+            console.log('[SampleChop][Single] start', {
+                tempo,
+                secondsPerStep,
+                startTime
+            });
+        }
+
+        this._chopStartTime = startTime || this.audioContext.currentTime;
+        this._chopSecondsPerStep = secondsPerStep || 0.125;
+        this._lastChopStep = -1;
+        this._activeChopSliceId = null;
+
+        this._chopTimer = setInterval(() => {
+            try {
+                this._applySampleChopFrame();
+            } catch (error) {
+                console.error('SampleChop playback error (single sample):', error);
+            }
+        }, 40);
+
+        this._applySampleChopFrame();
+    }
+
+    _stopSampleChopPlayback() {
+        if (this._chopTimer) {
+            clearInterval(this._chopTimer);
+            this._chopTimer = null;
+        }
+        this._chopStartTime = 0;
+        this._chopSecondsPerStep = 0;
+        this._activeChopSliceId = null;
+        this._lastChopStep = -1;
+        this._stopActiveChopSource();
+    }
+
+    _applySampleChopFrame() {
+        if (!this.sampleChop || !this.sampleChop.loopEnabled) {
+            return;
+        }
+        if (!Array.isArray(this.sampleChop.slices) || this.sampleChop.slices.length === 0) {
+            return;
+        }
+        if (!this._chopSecondsPerStep) {
+            return;
+        }
+
+        const loopDuration = this.sampleChop.length * this._chopSecondsPerStep;
+        if (!loopDuration || loopDuration <= 0) {
+            if (import.meta.env.DEV) {
+                console.log('[SampleChop][Single] invalid loopDuration', {
+                    length: this.sampleChop.length,
+                    secondsPerStep: this._chopSecondsPerStep
+                });
+            }
+            return;
+        }
+
+        const currentTime = this.audioContext.currentTime;
+        const elapsed = currentTime - this._chopStartTime;
+        const loopPosition = ((elapsed % loopDuration) + loopDuration) % loopDuration;
+        const stepFloat = loopPosition / this._chopSecondsPerStep;
+
+        const activeSlice = this._findActiveChopSlice(stepFloat);
+        if (import.meta.env.DEV) {
+            console.log('[SampleChop][Single] frame', {
+                elapsed: elapsed.toFixed(3),
+                stepFloat: stepFloat.toFixed(2),
+                activeSlice: activeSlice?.id || null
+            });
+        }
+
+        if (activeSlice?.id !== this._activeChopSliceId) {
+            this._activeChopSliceId = activeSlice ? activeSlice.id : null;
+            this._playSampleChopSlice(activeSlice);
+        }
+
+        this._lastChopStep = stepFloat;
+    }
+
+    _findActiveChopSlice(stepFloat) {
+        const patternLength = this.sampleChop.length || 0;
+        if (!patternLength) {
+            return null;
+        }
+
+        const normalizedStep = ((stepFloat % patternLength) + patternLength) % patternLength;
+        const slices = this.sampleChop.slices || [];
+
+        for (let i = 0; i < slices.length; i += 1) {
+            const slice = slices[i];
+            const start = slice.startStep ?? 0;
+            const end = slice.endStep ?? start;
+            if (end <= start) continue;
+
+            if (normalizedStep >= start && normalizedStep < end) {
+                return slice;
+            }
+        }
+
+        return null;
+    }
+
+    _getSampleChopTempo() {
+        if (this.sampleChop && this.sampleChop.tempo) {
+            return this.sampleChop.tempo;
+        }
+        return 140;
+    }
+
+    _stopActiveChopSource() {
+        if (this._currentChopSource) {
+            try {
+                this._currentChopSource.stop();
+            } catch (e) {}
+            try {
+                this._currentChopSource.disconnect();
+            } catch (e) {}
+            this._currentChopSource = null;
+        }
+
+        if (this._currentChopGain) {
+            try {
+                this._currentChopGain.disconnect();
+            } catch (e) {}
+            this._currentChopGain = null;
+        }
+    }
+
+    _playSampleChopSlice(slice) {
+        if (!slice) {
+            this._stopActiveChopSource();
+            return;
+        }
+
+        if (import.meta.env.DEV) {
+            console.log('[SampleChop][Single] trigger slice', {
+                id: slice.id,
+                startStep: slice.startStep,
+                endStep: slice.endStep,
+                startOffset: slice.startOffset,
+                endOffset: slice.endOffset,
+                gain: slice.gain,
+                pitch: slice.pitch,
+                loop: slice.loop,
+                reverse: slice.reverse
+            });
+        }
+
+        if (!this.sampleBuffer) {
+            console.warn('SampleChop (single sample): No buffer available');
+            this._stopActiveChopSource();
+            return;
+        }
+
+        this._stopActiveChopSource();
+
+        const buffer = this.sampleBuffer;
+        const source = this.audioContext.createBufferSource();
+        source.buffer = buffer;
+
+        const gainNode = this.audioContext.createGain();
+        const sliceGain = clampValue(slice.gain ?? 1, 0, 2);
+        gainNode.gain.setValueAtTime(sliceGain, this.audioContext.currentTime);
+
+        const pitch = slice.pitch ?? 0;
+        const playbackRate = Math.pow(2, pitch / 12);
+
+        const startRatio = clampValue(slice.startOffset ?? 0, 0, 0.99);
+        const endRatio = clampValue(slice.endOffset ?? 1, startRatio + 0.01, 1);
+        const bufferDuration = buffer.duration;
+        const sliceStart = startRatio * bufferDuration;
+        const sliceEnd = Math.min(bufferDuration, endRatio * bufferDuration);
+        const sliceDuration = Math.max(sliceEnd - sliceStart, 0.01);
+
+        const now = this.audioContext.currentTime;
+        const isReverse = Boolean(slice.reverse);
+        const shouldLoop = Boolean(slice.loop);
+
+        if (shouldLoop) {
+            source.loop = true;
+            source.loopStart = sliceStart;
+            source.loopEnd = sliceEnd;
+        } else {
+            source.loop = false;
+        }
+
+        if (isReverse) {
+            if (shouldLoop) {
+                console.warn('SampleChop: Reverse looping not supported yet, forcing one-shot');
+            }
+            source.playbackRate.setValueAtTime(-Math.abs(playbackRate), now);
+            const offset = Math.max(0, sliceEnd - 0.0001);
+            source.start(now, offset, sliceDuration);
+        } else {
+            source.playbackRate.setValueAtTime(playbackRate, now);
+            if (shouldLoop) {
+                source.start(now, sliceStart);
+            } else {
+                source.start(now, sliceStart, sliceDuration);
+            }
+        }
+
+        source.connect(gainNode);
+        gainNode.connect(this.masterGain);
+
+        this._currentChopSource = source;
+        this._currentChopGain = gainNode;
+
+        source.onended = () => {
+            if (this._currentChopSource === source) {
+                this._currentChopSource = null;
+                this._currentChopGain = null;
+            }
+        };
     }
 }

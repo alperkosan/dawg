@@ -528,9 +528,7 @@ export class NativeAudioEngine {
             // ✅ NEW: Try to use InstrumentFactory for multi-sampled instruments, VASynth, and Granular
             const isMultiSampled = instrumentData.multiSamples && instrumentData.multiSamples.length > 0;
             const isVASynth = instrumentData.type === 'vasynth';
-            const isGranular = instrumentData.type === 'granular';
-
-            if (isMultiSampled || isVASynth || isGranular) {
+            if (isMultiSampled || isVASynth) {
                 // Use new centralized instrument system
                 if (import.meta.env.DEV) {
                     console.log(`🎹 Creating ${instrumentData.name} using InstrumentFactory...`);
@@ -995,7 +993,7 @@ export class NativeAudioEngine {
         const paramKeys = ['sampleStart', 'sampleStartModulation', 'timeStretchEnabled', 
                           'gain', 'pan', 'pitch', 'attack', 'decay', 'sustain', 'release',
                           'filterCutoff', 'filterResonance', 'filterKeyTracking',
-                          'modulationMatrix'];
+                          'modulationMatrix', 'sampleChop', 'sampleChopMode'];
         
         paramKeys.forEach(key => {
             if (params[key] !== undefined) {

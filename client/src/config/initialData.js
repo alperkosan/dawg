@@ -1,4 +1,5 @@
 import { INSTRUMENT_TYPES, MIXER_TRACK_TYPES } from './constants';
+import { createDefaultSampleChopPattern } from '@/lib/audio/instruments/sample/sampleChopUtils';
 
 // =========================================================================
 // 🎵 140 BPM HIP-HOP PROJECT - Multiple Sub-Genres
@@ -541,21 +542,27 @@ const vaSynthPresets = {
 // =========================================================================
 // 🎛️ INSTRUMENTS
 // =========================================================================
+const sampleInstrument = (instrument) => ({
+  sampleChop: createDefaultSampleChopPattern(),
+  sampleChopMode: 'standard',
+  ...instrument,
+});
+
 export const initialInstruments = [
   // === DRUMS ===
-  { id: 'kick', name: 'Kick', type: INSTRUMENT_TYPES.SAMPLE, url: '/audio/samples/drums/kick.wav', color: '#FF6B6B', mixerTrackId: 'track-1' },
-  { id: 'snare', name: 'Snare', type: INSTRUMENT_TYPES.SAMPLE, url: '/audio/samples/drums/snare.wav', color: '#4ECDC4', mixerTrackId: 'track-2' },
-  { id: 'hi-hat', name: 'Hi-Hat', type: INSTRUMENT_TYPES.SAMPLE, url: '/audio/samples/drums/hihat.wav', color: '#95E1D3', mixerTrackId: 'track-3' },
-  { id: 'openhat', name: 'Open Hat', type: INSTRUMENT_TYPES.SAMPLE, url: '/audio/samples/drums/openhat.wav', color: '#F38181', mixerTrackId: 'track-4' },
+  sampleInstrument({ id: 'kick', name: 'Kick', type: INSTRUMENT_TYPES.SAMPLE, url: '/audio/samples/drums/kick.wav', color: '#FF6B6B', mixerTrackId: 'track-1' }),
+  sampleInstrument({ id: 'snare', name: 'Snare', type: INSTRUMENT_TYPES.SAMPLE, url: '/audio/samples/drums/snare.wav', color: '#4ECDC4', mixerTrackId: 'track-2' }),
+  sampleInstrument({ id: 'hi-hat', name: 'Hi-Hat', type: INSTRUMENT_TYPES.SAMPLE, url: '/audio/samples/drums/hihat.wav', color: '#95E1D3', mixerTrackId: 'track-3' }),
+  sampleInstrument({ id: 'openhat', name: 'Open Hat', type: INSTRUMENT_TYPES.SAMPLE, url: '/audio/samples/drums/openhat.wav', color: '#F38181', mixerTrackId: 'track-4' }),
 
   // === KXVI DRUMS ===
-  { id: 'clap', name: 'Clap', type: INSTRUMENT_TYPES.SAMPLE, url: '/audio/samples/kxvi/clap.wav', color: '#FFA07A', mixerTrackId: 'track-5' },
-  { id: '808', name: '808', type: INSTRUMENT_TYPES.SAMPLE, url: '/audio/samples/kxvi/808.wav', color: '#8B4789', mixerTrackId: 'track-6' },
-  { id: 'rim', name: 'Rim', type: INSTRUMENT_TYPES.SAMPLE, url: '/audio/samples/kxvi/rim.wav', color: '#CD853F', mixerTrackId: 'track-7' },
-  { id: 'perc', name: 'Perc', type: INSTRUMENT_TYPES.SAMPLE, url: '/audio/samples/kxvi/perc.wav', color: '#DAA520', mixerTrackId: 'track-8' },
+  sampleInstrument({ id: 'clap', name: 'Clap', type: INSTRUMENT_TYPES.SAMPLE, url: '/audio/samples/kxvi/clap.wav', color: '#FFA07A', mixerTrackId: 'track-5' }),
+  sampleInstrument({ id: '808', name: '808', type: INSTRUMENT_TYPES.SAMPLE, url: '/audio/samples/kxvi/808.wav', color: '#8B4789', mixerTrackId: 'track-6' }),
+  sampleInstrument({ id: 'rim', name: 'Rim', type: INSTRUMENT_TYPES.SAMPLE, url: '/audio/samples/kxvi/rim.wav', color: '#CD853F', mixerTrackId: 'track-7' }),
+  sampleInstrument({ id: 'perc', name: 'Perc', type: INSTRUMENT_TYPES.SAMPLE, url: '/audio/samples/kxvi/perc.wav', color: '#DAA520', mixerTrackId: 'track-8' }),
 
   // === PIANO (Multi-Sample) ===
-  {
+  sampleInstrument({
     id: 'piano(sampled)',
     name: 'Piano (Sampled)',
     type: INSTRUMENT_TYPES.SAMPLE,
@@ -571,7 +578,7 @@ export const initialInstruments = [
       { url: '/audio/samples/instruments/piano/C7.ogg', note: 'C7', midiNote: 96 },
       { url: '/audio/samples/instruments/piano/C8.ogg', note: 'C8', midiNote: 108 }
     ]
-  },
+  }),
 
   // === VASYNTH INSTRUMENTS (Classic) ===
   { id: 'piano(synth)', name: 'Piano (Synth)', type: INSTRUMENT_TYPES.VASYNTH, color: '#A8E6CF', presetName: 'Piano', mixerTrackId: 'track-10' },
@@ -594,30 +601,6 @@ export const initialInstruments = [
   { id: 'fatbass', name: 'Fat Bass', type: INSTRUMENT_TYPES.VASYNTH, color: '#8B008B', presetName: 'Fat Bass', mixerTrackId: 'track-25' },
   { id: 'vocalsynth', name: 'Vocal Synth', type: INSTRUMENT_TYPES.VASYNTH, color: '#FFD700', presetName: 'Vocal Synth', mixerTrackId: 'track-26' },
   { id: 'sidechainlead', name: 'Sidechain Lead', type: INSTRUMENT_TYPES.VASYNTH, color: '#FF69B4', presetName: 'Sidechain Lead', mixerTrackId: 'track-27' },
-
-  // === GRANULAR SAMPLER ===
-  // ⚠️ DISABLED: User preference - keeping system optimized for maximum performance
-  // Granular adds ~128 AudioNodes and increases CPU even when idle (grain pool pre-allocated)
-  // Can be re-enabled when specifically needed for granular synthesis
-  // {
-  //   id: 'solstice-grain',
-  //   name: 'Solstice Grain',
-  //   type: INSTRUMENT_TYPES.GRANULAR,
-  //   color: '#FF6EC7',
-  //   mixerTrackId: 'track-20',
-  //   url: '/audio/samples/instruments/piano/C4.ogg',
-  //   baseNote: 60, // C4
-  //   params: {
-  //     grainSize: 80,          // ms - smooth grain length
-  //     grainDensity: 12,       // grains/second - ✅ Optimized from 25 to 12
-  //     samplePosition: 0.3,    // 0-1 - start position in sample
-  //     positionRandom: 0.15,   // 0-1 - add movement
-  //     pitch: 0,               // semitones
-  //     pitchRandom: 2,         // semitones - subtle pitch variation
-  //     grainEnvelope: 'hann',  // smooth envelope
-  //     reverse: 0.1,           // 10% chance of reverse grains
-  //     spread: 0.7,            // wide stereo spread
-  //     mix: 1.0,               // 100% wet
   //     gain: 0.8               // master gain
   //   }
   // }

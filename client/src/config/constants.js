@@ -23,7 +23,6 @@ export const PLAYBACK_MODES = Object.freeze({
  *
  * ✅ SAMPLE-BASED (Sample file kullanır):
  *    - SAMPLE: Tek veya çoklu audio sample (kick, snare, piano vb.)
- *    - GRANULAR: Granular synthesis sampler (özel sample manipülasyonu)
  *
  * ✅ SYNTHESIS-BASED (Ses sentezi yapar):
  *    - VASYNTH: Native Web Audio Virtual Analog Synth
@@ -34,7 +33,6 @@ export const PLAYBACK_MODES = Object.freeze({
 export const INSTRUMENT_TYPES = Object.freeze({
   // Sample-based instruments
   SAMPLE: 'sample',      // Single or multi-sampled audio files
-  GRANULAR: 'granular',  // Granular synthesis (uses samples)
 
   // Synthesis-based instruments
   VASYNTH: 'vasynth',    // Native Web Audio Virtual Analog Synth

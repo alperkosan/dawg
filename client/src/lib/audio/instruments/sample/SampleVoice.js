@@ -13,6 +13,8 @@
 
 import { BaseVoice } from '../base/BaseVoice.js';
 
+const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+
 export class SampleVoice extends BaseVoice {
     constructor(audioContext) {
         super(audioContext);
@@ -79,6 +81,9 @@ export class SampleVoice extends BaseVoice {
         // Formula: playbackRate = 2^(semitones/12)
         const pitchShift = sampleData.pitchShift || 0;
         
+        const sliceParams = extendedParams?.sampleSlice || null;
+        const slicePitchOffset = sliceParams?.pitch ?? 0;
+
         // ✅ PHASE 2: Apply initial pitch bend if present
         let initialPitchBend = 0;
         if (extendedParams?.pitchBend && Array.isArray(extendedParams.pitchBend) && extendedParams.pitchBend.length > 0) {
@@ -86,7 +91,7 @@ export class SampleVoice extends BaseVoice {
             initialPitchBend = (firstPoint.value / 8192) * 2; // ±2 semitones range
         }
         
-        const totalPitchShift = pitchShift + initialPitchBend;
+        const totalPitchShift = pitchShift + initialPitchBend + slicePitchOffset;
         const playbackRate = Math.pow(2, totalPitchShift / 12);
 
         // ✅ TIME STRETCH: Use time stretcher if enabled and pitch shift is significant
@@ -162,8 +167,11 @@ export class SampleVoice extends BaseVoice {
         // (pitch is already shifted in the buffer)
         const finalPlaybackRate = useTimeStretch ? 1.0 : playbackRate;
 
+        const isReverseSlice = Boolean(sliceParams?.reverse);
+
         // ✅ FL Studio-style slide - handle slide pitch glide
-        if (extendedParams?.slideEnabled === true && 
+        if (!isReverseSlice &&
+            extendedParams?.slideEnabled === true && 
             extendedParams?.slideTargetPitch !== undefined && 
             extendedParams?.slideTargetPitch !== null &&
             extendedParams?.slideDuration) {
@@ -210,11 +218,12 @@ export class SampleVoice extends BaseVoice {
             }
         } else {
             // Normal playback - no slide
-            this.currentSource.playbackRate.setValueAtTime(finalPlaybackRate, time);
+            const rateSign = isReverseSlice ? -1 : 1;
+            this.currentSource.playbackRate.setValueAtTime(rateSign * finalPlaybackRate, time);
         }
         
         // ✅ PHASE 2: Schedule pitch bend automation if present (non-slide pitch bend)
-        if (extendedParams?.pitchBend && Array.isArray(extendedParams.pitchBend) && extendedParams.pitchBend.length > 1) {
+        if (!isReverseSlice && extendedParams?.pitchBend && Array.isArray(extendedParams.pitchBend) && extendedParams.pitchBend.length > 1) {
             const noteDurationSec = sampleData.buffer.duration || 1;
             extendedParams.pitchBend.forEach((point, index) => {
                 if (index === 0) return; // Skip first point (already applied)
@@ -238,6 +247,8 @@ export class SampleVoice extends BaseVoice {
                     this.currentSource.playbackRate.setValueAtTime(newPlaybackRate, pointTime);
                 }
             });
+        } else if (isReverseSlice && extendedParams?.pitchBend) {
+            console.warn('SampleVoice: Pitch bend automation disabled for reverse slices');
         }
 
         // Connect source to envelope
@@ -312,7 +323,8 @@ export class SampleVoice extends BaseVoice {
         // 🔧 FIX: Add headroom for samples with pre-existing clipping
         // Sample analysis showed some samples have clipped peaks
         const sampleHeadroom = 0.85;  // -1.4dB safety headroom
-        const finalGain = velocityGain * sampleHeadroom;
+        const sliceGainMultiplier = sliceParams ? clamp(sliceParams.gain ?? 1, 0, 2) : 1;
+        const finalGain = velocityGain * sampleHeadroom * sliceGainMultiplier;
 
         this.gainNode.gain.setValueAtTime(finalGain, time);
         
@@ -396,15 +408,48 @@ export class SampleVoice extends BaseVoice {
         }
         
         // Clamp offset to valid range
-        const maxOffset = (sampleData.buffer.duration || 1) - 0.001; // Leave at least 1ms
+        const bufferDuration = sampleData.buffer.duration || 1;
+        const maxOffset = bufferDuration - 0.001; // Leave at least 1ms
         sampleStartOffset = Math.max(0, Math.min(maxOffset, sampleStartOffset));
-        
-        // Start playback with offset
-        if (sampleStartOffset > 0.001) {
-            // Use offset parameter in start()
-            this.currentSource.start(time, sampleStartOffset);
+
+        let playbackOffset = sampleStartOffset;
+        let playbackDuration = Math.max(0.01, bufferDuration - playbackOffset);
+        let playbackLoop = false;
+        let playbackLoopStart = playbackOffset;
+        let playbackLoopEnd = Math.min(bufferDuration, playbackOffset + playbackDuration);
+        let playbackReverse = isReverseSlice;
+
+        if (sliceParams) {
+            const sliceStartRatio = clamp(sliceParams.startOffset ?? 0, 0, 0.99);
+            const sliceEndRatio = clamp(sliceParams.endOffset ?? 1, sliceStartRatio + 0.01, 1);
+            playbackOffset = sliceStartRatio * bufferDuration;
+            playbackDuration = Math.max(0.01, (sliceEndRatio - sliceStartRatio) * bufferDuration);
+            playbackLoop = Boolean(sliceParams.loop);
+            playbackLoopStart = playbackOffset;
+            playbackLoopEnd = Math.min(bufferDuration, playbackOffset + playbackDuration);
+            playbackReverse = Boolean(sliceParams.reverse);
+        }
+
+        if (playbackLoop) {
+            this.currentSource.loop = true;
+            this.currentSource.loopStart = playbackLoopStart;
+            this.currentSource.loopEnd = playbackLoopEnd;
         } else {
-            // No offset, start from beginning
+            this.currentSource.loop = false;
+        }
+
+        if (playbackReverse) {
+            if (playbackLoop) {
+                console.warn('SampleVoice: Reverse looping not supported yet, forcing one-shot');
+            }
+            const sliceEnd = Math.min(bufferDuration, playbackLoopEnd);
+            this.currentSource.loop = false;
+            this.currentSource.start(time, sliceEnd, playbackDuration);
+        } else if (playbackLoop) {
+            this.currentSource.start(time, playbackOffset);
+        } else if (playbackOffset > 0.001) {
+            this.currentSource.start(time, playbackOffset, playbackDuration);
+        } else {
             this.currentSource.start(time);
         }
 

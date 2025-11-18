@@ -4,13 +4,63 @@
  * Features: Waveform visualization, playback controls, preview
  */
 
-import { useEffect, useCallback, useState } from 'react';
+import { useEffect, useCallback, useState, useMemo } from 'react';
 import { getPreviewManager } from '@/lib/audio/preview';
 import { AudioContextService } from '@/lib/services/AudioContextService';
+import { SAMPLE_CHOP_PRESETS } from '@/config/sampleChopPresets';
+import { createDefaultSampleChopPattern } from '@/lib/audio/instruments/sample/sampleChopUtils';
 import useInstrumentEditorStore from '../../../../store/useInstrumentEditorStore';
 import Slider from '../controls/Slider';
 import WaveformDisplay from '../WaveformDisplay';
+import SampleChopEditor from '../granular/SampleChopEditor';
 import './DrumSamplerEditor.css';
+
+const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+const normalizeLength = (length) => {
+  if (!Number.isFinite(length) || length <= 0) return 16;
+  return Math.max(1, Math.round(length));
+};
+
+const instantiateSampleChopPreset = (preset, currentPattern = null, timestamp = Date.now()) => {
+  if (!preset?.pattern) {
+    return createDefaultSampleChopPattern();
+  }
+
+  const presetPattern = preset.pattern;
+  const presetLength = normalizeLength(presetPattern.length);
+  const existingLength = normalizeLength(currentPattern?.length || presetLength);
+  const targetLength = Math.max(existingLength, presetLength);
+  const repeats = Math.max(1, Math.ceil(targetLength / presetLength));
+
+  const slices = [];
+  for (let repeat = 0; repeat < repeats; repeat += 1) {
+    const offset = repeat * presetLength;
+      (presetPattern.slices || []).forEach((slice, index) => {
+      const startStep = clamp((slice.startStep ?? 0) + offset, 0, targetLength);
+      const endStep = clamp((slice.endStep ?? slice.startStep ?? 0) + offset, 0, targetLength);
+      if (endStep <= startStep) {
+        return;
+      }
+        slices.push({
+        ...slice,
+        startStep,
+        endStep,
+          id: `${preset.id}-slice-${timestamp}-${repeat}-${index}`,
+          displayLabel: `${repeat + 1}.${index + 1}`,
+      });
+    });
+  }
+
+  return {
+    id: `${preset.id}-${timestamp}`,
+    name: preset.name,
+    length: targetLength,
+    snap: currentPattern?.snap || presetPattern.snap || '1/16',
+    tempo: currentPattern?.tempo || presetPattern.tempo || 140,
+    loopEnabled: currentPattern?.loopEnabled ?? presetPattern.loopEnabled ?? true,
+    slices,
+  };
+};
 
 const DrumSamplerEditor = ({ instrumentData }) => {
   const sampleUrl = instrumentData.url || '';
@@ -18,6 +68,31 @@ const DrumSamplerEditor = ({ instrumentData }) => {
   const [audioBuffer, setAudioBuffer] = useState(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
+  const sampleChop = instrumentData?.sampleChop;
+  const sampleChopMode = instrumentData?.sampleChopMode || 'chop';
+  const waveformData = useMemo(() => {
+    if (!audioBuffer) return null;
+    const channelData = audioBuffer.getChannelData(0);
+    const bucketCount = 512;
+    const samplesPerBucket = Math.max(1, Math.floor(channelData.length / bucketCount));
+    const buckets = [];
+    for (let i = 0; i < bucketCount; i += 1) {
+      const start = i * samplesPerBucket;
+      if (start >= channelData.length) break;
+      let min = 1;
+      let max = -1;
+      for (let j = 0; j < samplesPerBucket && start + j < channelData.length; j += 1) {
+        const sample = channelData[start + j];
+        if (sample < min) min = sample;
+        if (sample > max) max = sample;
+      }
+      buckets.push({ min, max });
+    }
+    return {
+      duration: audioBuffer.duration,
+      buckets,
+    };
+  }, [audioBuffer]);
 
   // Load audio buffer for waveform
   useEffect(() => {
@@ -98,6 +173,28 @@ const DrumSamplerEditor = ({ instrumentData }) => {
     }
   }, [instrumentData.id]);
 
+  const handleSampleChopChange = useCallback((nextPattern) => {
+    handleParameterChange('sampleChop', nextPattern);
+  }, [handleParameterChange]);
+
+  const handleSampleChopModeChange = useCallback((mode) => {
+    if (mode === sampleChopMode) return;
+    handleParameterChange('sampleChopMode', mode);
+  }, [handleParameterChange, sampleChopMode]);
+
+  const handleApplySampleChopPreset = useCallback((preset) => {
+    if (!preset) return;
+    const instantiatedPattern = instantiateSampleChopPreset(preset, sampleChop, Date.now());
+    handleSampleChopChange(instantiatedPattern);
+    if (sampleChopMode !== 'chop') {
+      handleSampleChopModeChange('chop');
+    }
+  }, [handleSampleChopChange, handleSampleChopModeChange, sampleChopMode, sampleChop]);
+
+  const handleResetSampleChop = useCallback(() => {
+    handleSampleChopChange(createDefaultSampleChopPattern());
+  }, [handleSampleChopChange]);
+
   return (
     <div className="drumsampler-editor">
       {/* Sample Info */}
@@ -113,6 +210,30 @@ const DrumSamplerEditor = ({ instrumentData }) => {
             ▶ Preview
           </button>
         </div>
+      </div>
+
+      {/* Playback Mode */}
+      <div className="drumsampler-editor__section">
+        <div className="drumsampler-editor__section-title">Playback Mode</div>
+        <div className="drumsampler-editor__mode-switch">
+          <button
+            type="button"
+            className={`drumsampler-editor__mode-btn ${sampleChopMode !== 'chop' ? 'drumsampler-editor__mode-btn--active' : ''}`}
+            onClick={() => handleSampleChopModeChange('standard')}
+          >
+            Standard
+          </button>
+          <button
+            type="button"
+            className={`drumsampler-editor__mode-btn ${sampleChopMode === 'chop' ? 'drumsampler-editor__mode-btn--active' : ''}`}
+            onClick={() => handleSampleChopModeChange('chop')}
+          >
+            Sample Chop
+          </button>
+        </div>
+        <p className="drumsampler-editor__mode-hint">
+          Standard mode plays the raw sample per note. Sample Chop mode routes notes through your slice pattern/loop.
+        </p>
       </div>
 
       {/* Waveform Display */}
@@ -238,6 +359,40 @@ const DrumSamplerEditor = ({ instrumentData }) => {
             {instrumentData.reverse ? '⏪' : '⏩'} Reverse
           </button>
         </div>
+      </div>
+
+      {/* Sample Chop */}
+      <div className="drumsampler-editor__section">
+        <div className="drumsampler-editor__section-title">Sample Chop</div>
+        <div className="sample-chop-presets">
+          <div className="sample-chop-presets__header">
+            <span>Factory Presets</span>
+            <button
+              type="button"
+              className="sample-chop-presets__reset"
+              onClick={handleResetSampleChop}
+            >
+              Reset
+            </button>
+          </div>
+          <div className="sample-chop-presets__grid">
+            {SAMPLE_CHOP_PRESETS.map((preset) => (
+              <button
+                key={preset.id}
+                type="button"
+                className="sample-chop-presets__chip"
+                onClick={() => handleApplySampleChopPreset(preset)}
+                title={preset.description}
+              >
+                <span className="sample-chop-presets__chip-emoji" aria-hidden="true">
+                  {preset.emoji}
+                </span>
+                <span>{preset.name}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+        <SampleChopEditor pattern={sampleChop} onChange={handleSampleChopChange} waveform={waveformData} />
       </div>
 
       {/* Envelope */}

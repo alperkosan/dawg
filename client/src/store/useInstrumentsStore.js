@@ -3,7 +3,9 @@
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
 import { initialInstruments } from '@/config/initialData';
+import { INSTRUMENT_TYPES } from '@/config/constants';
 import { AudioContextService } from '@/lib/services/AudioContextService';
+import { createDefaultSampleChopPattern } from '@/lib/audio/instruments/sample/sampleChopUtils';
 import { storeManager } from './StoreManager';
 
 export const useInstrumentsStore = create((set, get) => ({
@@ -90,6 +92,14 @@ export const useInstrumentsStore = create((set, get) => ({
         ...(instrumentData.audioBuffer && { audioBuffer: instrumentData.audioBuffer })
     };
 
+    const resolvedType = newInstrument.type || INSTRUMENT_TYPES.SAMPLE;
+    newInstrument.type = resolvedType;
+
+    if (resolvedType === INSTRUMENT_TYPES.SAMPLE) {
+      newInstrument.sampleChop = createDefaultSampleChopPattern();
+      newInstrument.sampleChopMode = 'standard';
+    }
+
     // ✅ AUTO-GROUP ASSIGNMENT: Detect instrument type and assign to appropriate group
     const detectInstrumentGroup = (name) => {
       const lowerName = name.toLowerCase();
@@ -160,6 +170,12 @@ export const useInstrumentsStore = create((set, get) => ({
         if (inst.id === instrumentId) {
           // precomputed gibi iç içe objeleri doğru bir şekilde birleştir.
           const mergedParams = { ...inst, ...newParams };
+          if (newParams.sampleChop) {
+            mergedParams.sampleChop = JSON.parse(JSON.stringify(newParams.sampleChop));
+          }
+          if (newParams.sampleChopMode !== undefined) {
+            mergedParams.sampleChopMode = newParams.sampleChopMode;
+          }
           if (newParams.precomputed) {
             mergedParams.precomputed = { ...inst.precomputed, ...newParams.precomputed };
           }
@@ -190,8 +206,8 @@ export const useInstrumentsStore = create((set, get) => ({
         set(state => ({ processingEffects: { ...state.processingEffects, [instrumentId]: false } }));
       }
     } else {
-      // SES MOTORUNA KOMUT GÖNDER: Sadece anlık parametreleri (örn. envelope) güncelle.
-      AudioContextService.updateInstrumentParameters(instrumentId, updatedInstrument);
+      // SES MOTORUNA KOMUT GÖNDER: Sadece değişen parametreleri motorla senkronla.
+      AudioContextService.updateInstrumentParameters(instrumentId, newParams);
     }
   },
 

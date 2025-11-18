@@ -64,7 +64,6 @@ export const AudioEngineConfig = {
       synth: 1.0,    // No auto-reduction
       sample: 1.0,   // No auto-reduction
       vasynth: 1.0,  // No auto-reduction
-      granular: 1.0, // No auto-reduction
       undefined: 1.0 // No auto-reduction
     }
   },

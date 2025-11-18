@@ -55,6 +55,7 @@ export class VASynth {
 
         // Synth parameters
         this.masterVolume = 0.7;
+        this._cleanupTimer = null;
 
         // ✅ DAW-Standard Voice Mode Settings
         this.voiceMode = 'poly'; // 'mono' or 'poly'
@@ -135,6 +136,7 @@ export class VASynth {
      */
     noteOn(midiNote, velocity = 100, startTime = null, extendedParams = null) {
         const time = startTime !== null ? startTime : this.context.currentTime;
+        this._cancelCleanupTimer();
         
         // ✅ MODULATION MATRIX: Update MIDI sources
         let aftertouch = 0;
@@ -227,7 +229,8 @@ export class VASynth {
 
         // ✅ Polyphonic Mode or First Note in Mono Mode
         if (this.isPlaying) {
-            this.noteOff();
+            this.noteOff(time);
+            this._cancelCleanupTimer();
         }
 
         this.currentNote = midiNote;
@@ -709,14 +712,17 @@ export class VASynth {
 
             // Stop and cleanup after release (for real-time playback)
             // Note: This won't work in offline rendering, but oscillator.stop() above will
-            setTimeout(() => {
+            this._cancelCleanupTimer();
+            const cleanupDelay = Math.max(0, (releaseEnd - this.context.currentTime + 0.1) * 1000);
+            this._cleanupTimer = setTimeout(() => {
                 this.cleanup();
-            }, Math.max(0, (releaseEnd - this.context.currentTime + 0.1) * 1000));
+            }, cleanupDelay);
 
             this.isPlaying = false;
 
         } catch (error) {
             // Silently handle - defensive checks should prevent most errors
+            this._cancelCleanupTimer();
             this.cleanup();
             this.isPlaying = false;
         }
@@ -726,6 +732,7 @@ export class VASynth {
      * Cleanup audio nodes
      */
     cleanup() {
+        this._cancelCleanupTimer();
         // ✅ Minimal cleanup - let release envelopes finish naturally
         const now = this.context.currentTime;
 
@@ -765,14 +772,20 @@ export class VASynth {
             }
         });
 
-        // Disconnect filter chain
-        [this.filter, this.filterEnvGain, this.amplitudeGain, this.masterGain].forEach(node => {
+        // Disconnect filter chain (masterGain stays connected to the host graph)
+        [this.filter, this.filterEnvGain, this.amplitudeGain].forEach(node => {
             if (node) {
                 try {
                     node.disconnect();
                 } catch (e) { /* ignore */ }
             }
         });
+
+        if (this.filterDrive) {
+            try {
+                this.filterDrive.disconnect();
+            } catch (e) { /* ignore */ }
+        }
 
         // Stop LFO
         if (this.lfo && this.lfo.isRunning) {
@@ -785,6 +798,14 @@ export class VASynth {
         this.filter = null;
         this.filterEnvGain = null;
         this.amplitudeGain = null;
+        this.filterDrive = null;
+    }
+
+    _cancelCleanupTimer() {
+        if (this._cleanupTimer) {
+            clearTimeout(this._cleanupTimer);
+            this._cleanupTimer = null;
+        }
     }
 
     /**

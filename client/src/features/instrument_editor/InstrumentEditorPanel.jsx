@@ -14,7 +14,6 @@ import VASynthEditor from './components/editors/VASynthEditor';
 import VASynthEditorV2 from './components/editors/VASynthEditorV2';
 import MultiSampleEditor from './components/editors/MultiSampleEditor';
 import DrumSamplerEditor from './components/editors/DrumSamplerEditor';
-import { GranularSamplerUI } from '@/components/instruments/granular';
 import { ForgeSynthUI } from './ForgeSynthUI';
 import PresetBrowser from './components/PresetBrowser';
 import InstrumentEffectsPanel from './components/InstrumentEffectsPanel';
@@ -434,10 +433,6 @@ const InstrumentEditorPanel = () => {
       }
     }
 
-    if (type === 'granular') {
-      return <GranularSamplerUI instrumentId={instrumentId} />;
-    }
-
     if (type === 'synth') {
       return <ForgeSynthUI instrument={instrumentData} />;
     }
@@ -504,7 +499,6 @@ const InstrumentEditorPanel = () => {
               {instrumentData.type === 'vasynth' && '🎹'}
               {instrumentData.type === 'sample' && (instrumentData.multiSamples ? '🎵' : '🥁')}
               {instrumentData.type === 'synth' && '🎛️'}
-              {instrumentData.type === 'granular' && '🌾'}
             </div>
             <div className="instrument-editor-panel__name">
               <div className="instrument-editor-panel__name-primary">{instrumentData.name}</div>

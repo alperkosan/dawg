@@ -18,6 +18,7 @@ import { BaseInstrument } from '../base/BaseInstrument.js';
 import { VoicePool } from '../base/VoicePool.js';
 import { SampleVoice } from './SampleVoice.js';
 import { TimeStretcher } from '../../dsp/TimeStretcher.js';
+import { clampValue, createDefaultSampleChopPattern } from './sampleChopUtils.js';
 
 export class MultiSampleInstrument extends BaseInstrument {
     constructor(instrumentData, audioContext, sampleBuffers) {
@@ -49,6 +50,24 @@ export class MultiSampleInstrument extends BaseInstrument {
 
         // Master output
         this.masterGain = null;
+
+        // Sample chop pattern (repurposed timeline)
+        this.sampleChop = instrumentData.sampleChop
+            ? JSON.parse(JSON.stringify(instrumentData.sampleChop))
+            : createDefaultSampleChopPattern();
+        this.data.sampleChop = this.sampleChop;
+        this.sampleChopMode = instrumentData.sampleChopMode || 'chop';
+        this.data.sampleChopMode = this.sampleChopMode;
+        this._chopTimer = null;
+        this._chopStartTime = 0;
+        this._chopSecondsPerStep = 0;
+        this._activeChopSliceId = null;
+        this._chopLoopIteration = 0;
+        this._lastChopStep = -1;
+        this._currentChopSource = null;
+        this._currentChopGain = null;
+        this._sampleChopMidiNote = 119; // Dedicated internal note number for slice playback
+        this._sampleChopReleaseTimeout = null;
     }
 
     /**
@@ -307,6 +326,25 @@ export class MultiSampleInstrument extends BaseInstrument {
 
         const time = startTime !== null ? startTime : this.audioContext.currentTime;
 
+        const useChop = this._shouldUseSampleChop();
+        if (import.meta.env.DEV) {
+            console.log(`[SampleChop][Multi] noteOn ${this.name}`, {
+                midiNote,
+                mode: this.sampleChopMode,
+                loopEnabled: this.sampleChop?.loopEnabled,
+                sliceCount: this.sampleChop?.slices?.length || 0,
+                useChop
+            });
+        }
+
+        if (useChop) {
+            this._trackNoteOn(midiNote, velocity, time);
+            if (this.activeNotes.size === 1) {
+                this._startSampleChopPlayback(time);
+            }
+            return;
+        }
+
         // ✅ VELOCITY LAYERS: Get sample mapping for this note and velocity
         const mapping = this._getSampleMapping(midiNote, velocity);
 
@@ -484,6 +522,20 @@ export class MultiSampleInstrument extends BaseInstrument {
             return;
         }
 
+        if (this._shouldUseSampleChop()) {
+            if (midiNote !== null) {
+                this._trackNoteOff(midiNote);
+            } else {
+                this.activeNotes.clear();
+                this._isPlaying = false;
+            }
+
+            if (this.activeNotes.size === 0) {
+                this._stopSampleChopPlayback();
+            }
+            return;
+        }
+
         const time = stopTime !== null ? stopTime : this.audioContext.currentTime;
 
         try {
@@ -491,10 +543,14 @@ export class MultiSampleInstrument extends BaseInstrument {
                 // ✅ RELEASE VELOCITY: Release specific note via voice pool with release velocity
                 this.voicePool.release(midiNote, time, releaseVelocity);
                 this._trackNoteOff(midiNote);
+                if (this.sampleChop?.loopEnabled && this.activeNotes.size === 0) {
+                    this._stopSampleChopPlayback();
+                }
             } else {
                 // ✅ NEW: Release all notes via voice pool
                 this.voicePool.releaseAll(time);
                 this.activeNotes.clear();
+                this._stopSampleChopPlayback();
             }
 
         } catch (error) {
@@ -515,6 +571,7 @@ export class MultiSampleInstrument extends BaseInstrument {
 
         this.activeNotes.clear();
         this._isPlaying = false;
+        this._stopSampleChopPlayback();
     }
 
     /**
@@ -555,6 +612,24 @@ export class MultiSampleInstrument extends BaseInstrument {
             console.log(`🎚️ Sample start modulation updated:`, params.sampleStartModulation);
         }
 
+        if (params.sampleChopMode !== undefined) {
+            const nextMode = params.sampleChopMode;
+            if (nextMode !== this.sampleChopMode) {
+                this.sampleChopMode = nextMode;
+                this.data.sampleChopMode = nextMode;
+                if (nextMode !== 'chop') {
+                    this._stopSampleChopPlayback();
+                } else if (this.activeNotes.size > 0) {
+                    const restartTime = this.audioContext ? this.audioContext.currentTime : undefined;
+                    this._startSampleChopPlayback(restartTime);
+                }
+            }
+        }
+
+        if (params.sampleChop !== undefined) {
+            this._updateSampleChopPattern(params.sampleChop);
+        }
+
         // Update master gain if volume/gain changed
         if (params.gain !== undefined && this.masterGain) {
             this.masterGain.gain.setValueAtTime(
@@ -591,6 +666,271 @@ export class MultiSampleInstrument extends BaseInstrument {
         super.dispose();
 
         console.log(`🗑️ MultiSample disposed: ${this.name}`);
+    }
+
+    /**
+     * ===================== SAMPLE CHOP HELPERS =====================
+     */
+
+    _shouldUseSampleChop() {
+        const result = Boolean(
+            this.sampleChopMode === 'chop' &&
+            this.sampleChop &&
+            this.sampleChop.loopEnabled &&
+            Array.isArray(this.sampleChop.slices) &&
+            this.sampleChop.slices.length > 0
+        );
+        if (import.meta.env.DEV) {
+            console.log(`[SampleChop][Multi] _shouldUseSampleChop ${this.name}`, {
+                mode: this.sampleChopMode,
+                loopEnabled: this.sampleChop?.loopEnabled,
+                sliceCount: this.sampleChop?.slices?.length || 0,
+                result
+            });
+        }
+        return result;
+    }
+
+    _updateSampleChopPattern(pattern) {
+        this.sampleChop = JSON.parse(JSON.stringify(pattern || createDefaultSampleChopPattern()));
+        this.data.sampleChop = this.sampleChop;
+
+        if (this.sampleChopMode === 'chop' && this.sampleChop.loopEnabled && (this._chopTimer || this.activeNotes.size > 0)) {
+            const restartTime = this.audioContext ? this.audioContext.currentTime : undefined;
+            this._startSampleChopPlayback(restartTime);
+        }
+    }
+
+    _startSampleChopPlayback(startTime = this.audioContext.currentTime) {
+        if (this.sampleChopMode !== 'chop') {
+            if (import.meta.env.DEV) {
+                console.log(`[SampleChop][Multi] start aborted: mode=${this.sampleChopMode}`);
+            }
+            return;
+        }
+        if (!this.sampleChop || !this.sampleChop.loopEnabled) {
+            if (import.meta.env.DEV) {
+                console.log(`[SampleChop][Multi] start aborted: loopEnabled=${this.sampleChop?.loopEnabled}`);
+            }
+            return;
+        }
+
+        const hasSlices = Array.isArray(this.sampleChop.slices) && this.sampleChop.slices.length > 0;
+        if (!hasSlices) {
+            if (import.meta.env.DEV) {
+                console.log('[SampleChop][Multi] start aborted: no slices');
+            }
+            return;
+        }
+
+        this._stopSampleChopPlayback();
+
+        const tempo = this._getSampleChopTempo();
+        const secondsPerStep = (60 / Math.max(tempo, 1)) / 4; // 16th-note grid
+
+        if (import.meta.env.DEV) {
+            console.log('[SampleChop][Multi] start', {
+                tempo,
+                secondsPerStep,
+                startTime
+            });
+        }
+
+        this._chopStartTime = startTime;
+        this._chopSecondsPerStep = secondsPerStep || 0.125;
+        this._chopLoopIteration = 0;
+        this._lastChopStep = -1;
+        this._activeChopSliceId = null;
+
+        this._chopTimer = setInterval(() => {
+            try {
+                this._applySampleChopFrame();
+            } catch (error) {
+                console.error('SampleChop playback error:', error);
+            }
+        }, 40);
+
+        this._applySampleChopFrame();
+    }
+
+    _stopSampleChopPlayback() {
+        if (this._chopTimer) {
+            clearInterval(this._chopTimer);
+            this._chopTimer = null;
+        }
+        if (this._sampleChopReleaseTimeout) {
+            clearTimeout(this._sampleChopReleaseTimeout);
+            this._sampleChopReleaseTimeout = null;
+        }
+        try {
+            this.voicePool.release(this._sampleChopMidiNote, this.audioContext.currentTime);
+        } catch (e) {
+            // Voice may not be active
+        }
+        this._chopStartTime = 0;
+        this._chopSecondsPerStep = 0;
+        this._activeChopSliceId = null;
+        this._lastChopStep = -1;
+    }
+
+    _applySampleChopFrame() {
+        if (!this.sampleChop || !this.sampleChop.loopEnabled) {
+            return;
+        }
+        if (!Array.isArray(this.sampleChop.slices) || this.sampleChop.slices.length === 0) {
+            return;
+        }
+        if (!this._chopSecondsPerStep) {
+            return;
+        }
+
+        const loopDuration = this.sampleChop.length * this._chopSecondsPerStep;
+        if (!loopDuration || loopDuration <= 0) {
+            if (import.meta.env.DEV) {
+                console.log('[SampleChop][Multi] invalid loopDuration', {
+                    length: this.sampleChop.length,
+                    secondsPerStep: this._chopSecondsPerStep
+                });
+            }
+            return;
+        }
+
+        const currentTime = this.audioContext.currentTime;
+        const elapsed = currentTime - this._chopStartTime;
+        const loopPosition = ((elapsed % loopDuration) + loopDuration) % loopDuration;
+        const stepFloat = loopPosition / this._chopSecondsPerStep;
+
+        const activeSlice = this._findActiveChopSlice(stepFloat);
+        if (import.meta.env.DEV) {
+            console.log('[SampleChop][Multi] frame', {
+                elapsed: elapsed.toFixed(3),
+                stepFloat: stepFloat.toFixed(2),
+                activeSlice: activeSlice?.id || null
+            });
+        }
+
+        if (activeSlice?.id !== this._activeChopSliceId) {
+            if (!activeSlice && this._activeChopSliceId) {
+                this._releaseSampleChopVoice();
+            }
+            this._activeChopSliceId = activeSlice ? activeSlice.id : null;
+            if (activeSlice) {
+                this._triggerSampleChopSlice(activeSlice);
+            }
+        }
+
+        this._lastChopStep = stepFloat;
+    }
+
+    _triggerSampleChopSlice(slice) {
+        if (!slice) {
+            return;
+        }
+
+        const baseMidi = this.multiSamples[0]?.midiNote ?? this.data?.baseNote ?? 60;
+        const mapping = this._getSampleMapping(baseMidi, 100) || this._getSampleMapping(slice.midiNote ?? baseMidi, 100);
+        if (!mapping || !mapping.buffer) {
+            return;
+        }
+
+        const voice = this.voicePool.allocate(this._sampleChopMidiNote, false);
+        if (!voice) {
+            return;
+        }
+
+        const now = this.audioContext.currentTime;
+        const bufferDuration = mapping.buffer.duration || 0.001;
+        const startOffset = clampValue(slice.startOffset ?? 0, 0, 0.99);
+        const endOffset = clampValue(slice.endOffset ?? 1, startOffset + 0.01, 1);
+        const sliceDuration = Math.max(0.01, (endOffset - startOffset) * bufferDuration);
+        const slicePitch = slice.pitch ?? 0;
+        const sliceGain = clampValue(slice.gain ?? 1, 0, 2);
+        const velocity = Math.max(1, Math.min(127, Math.round(sliceGain * 100)));
+        const frequency = this.midiToFrequency(baseMidi + slicePitch);
+
+        const sampleData = {
+            ...mapping,
+            pitchShift: (mapping.pitchShift ?? (baseMidi - (mapping.baseNote ?? baseMidi)))
+        };
+
+        voice.trigger(
+            this._sampleChopMidiNote,
+            velocity,
+            frequency,
+            now,
+            sampleData,
+            this.data,
+            {
+                sampleSlice: {
+                    startOffset,
+                    endOffset,
+                    duration: sliceDuration,
+                    pitch: slicePitch,
+                    gain: sliceGain,
+                    loop: Boolean(slice.loop),
+                    reverse: Boolean(slice.reverse)
+                },
+                pan: slice.pan ?? 0
+            }
+        );
+
+        if (this._sampleChopReleaseTimeout) {
+            clearTimeout(this._sampleChopReleaseTimeout);
+            this._sampleChopReleaseTimeout = null;
+        }
+
+        if (!slice.loop) {
+            this._sampleChopReleaseTimeout = setTimeout(() => {
+                try {
+                    this.voicePool.release(this._sampleChopMidiNote, this.audioContext.currentTime);
+                } catch (e) {
+                    // Already released
+                }
+                this._sampleChopReleaseTimeout = null;
+            }, sliceDuration * 1000);
+        }
+    }
+
+    _releaseSampleChopVoice() {
+        if (this._sampleChopReleaseTimeout) {
+            clearTimeout(this._sampleChopReleaseTimeout);
+            this._sampleChopReleaseTimeout = null;
+        }
+        try {
+            this.voicePool.release(this._sampleChopMidiNote, this.audioContext.currentTime);
+        } catch (e) {
+            // Already released
+        }
+    }
+
+    _findActiveChopSlice(stepFloat) {
+        const patternLength = this.sampleChop.length || 0;
+        if (!patternLength) {
+            return null;
+        }
+
+        const normalizedStep = ((stepFloat % patternLength) + patternLength) % patternLength;
+        const slices = this.sampleChop.slices || [];
+
+        for (let i = 0; i < slices.length; i += 1) {
+            const slice = slices[i];
+            const start = slice.startStep ?? 0;
+            const end = slice.endStep ?? start;
+            if (end <= start) continue;
+
+            if (normalizedStep >= start && normalizedStep < end) {
+                return slice;
+            }
+        }
+
+        return null;
+    }
+
+    _getSampleChopTempo() {
+        if (this.sampleChop && this.sampleChop.tempo) {
+            return this.sampleChop.tempo;
+        }
+        return 140;
     }
 
     /**

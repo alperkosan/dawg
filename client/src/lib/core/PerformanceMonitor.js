@@ -5,7 +5,6 @@
  * - CPU usage estimation
  * - Memory usage
  * - Active voices (instruments)
- * - Grain count (granular synthesis)
  * - Audio dropouts
  * - Latency
  *
@@ -41,8 +40,6 @@ export class PerformanceMonitor {
             // Voices & Activity
             activeVoices: 0,
             maxVoices: 0,
-            activeGrains: 0,
-            maxGrains: 1000,
 
             // Instruments & Effects
             activeInstruments: 0,
@@ -76,7 +73,6 @@ export class PerformanceMonitor {
             memoryWarning: 70,   // %
             memoryCritical: 85,
             voiceWarning: 0.8,   // 80% of max
-            grainWarning: 0.8
         };
 
         // Performance warnings
@@ -164,10 +160,6 @@ export class PerformanceMonitor {
             const effectLoad = this.metrics.activeEffects * 2; // ~2% per effect
             estimatedCPU += effectLoad;
 
-            // Grains (granular synthesis)
-            const grainLoad = (this.metrics.activeGrains / 100) * 5; // ~5% per 100 grains
-            estimatedCPU += grainLoad;
-
             // Scheduled events overhead
             const schedulingLoad = Math.min(this.metrics.scheduledEvents / 100, 10); // Max 10%
             estimatedCPU += schedulingLoad;
@@ -244,7 +236,6 @@ export class PerformanceMonitor {
     updateVoiceMetrics() {
         let totalActiveVoices = 0;
         let totalMaxVoices = 0;
-        let totalActiveGrains = 0;
 
         // Count active voices across all instruments
         this.audioEngine.instruments.forEach(instrument => {
@@ -256,16 +247,10 @@ export class PerformanceMonitor {
                 totalMaxVoices += instrument.capabilities.maxVoices || 16;
             }
 
-            // Granular instruments
-            if (instrument.type === 'granular' && instrument.grainPool) {
-                const poolStats = instrument.grainPool.getStats();
-                totalActiveGrains += poolStats.activeVoices || 0;
-            }
         });
 
         this.metrics.activeVoices = totalActiveVoices;
         this.metrics.maxVoices = totalMaxVoices || 128;
-        this.metrics.activeGrains = totalActiveGrains;
     }
 
     /**
@@ -369,17 +354,6 @@ export class PerformanceMonitor {
             });
         }
 
-        // Grain warnings
-        const grainUsage = this.metrics.activeGrains / this.metrics.maxGrains;
-        if (grainUsage >= this.thresholds.grainWarning) {
-            this.warnings.push({
-                level: 'warning',
-                type: 'grains',
-                message: `Grain count is high (${this.metrics.activeGrains})`,
-                tip: 'Reduce grain density or number of granular instruments playing'
-            });
-        }
-
         // Emit warnings if any
         if (this.warnings.length > 0) {
             EventBus.emit('PERFORMANCE_WARNING', this.warnings);
@@ -424,7 +398,6 @@ export class PerformanceMonitor {
             },
             activity: {
                 voices: `${this.metrics.activeVoices}/${this.metrics.maxVoices}`,
-                grains: this.metrics.activeGrains,
                 instruments: this.metrics.activeInstruments,
                 effects: `${this.metrics.activeEffects} active, ${this.metrics.bypassedEffects} bypassed`
             },

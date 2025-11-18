@@ -117,10 +117,6 @@ export function PerformanceOverlay({ performanceMonitor }) {
                         </span>
                     </div>
                     <div className="performance-stat">
-                        <span className="performance-stat__label">Grains</span>
-                        <span className="performance-stat__value">{metrics.activeGrains}</span>
-                    </div>
-                    <div className="performance-stat">
                         <span className="performance-stat__label">Instruments</span>
                         <span className="performance-stat__value">{metrics.activeInstruments}</span>
                     </div>
