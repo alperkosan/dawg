@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react';
 import { usePianoRollEngine } from './usePianoRollEngine';
-import { useNoteInteractionsV2 } from './hooks/useNoteInteractionsV2';
+// import { useNoteInteractionsV2 } from './hooks/useNoteInteractionsV2'; // ✅ V2 DEPRECATED
+import { useNoteInteractionsV3 } from './hooks/useNoteInteractionsV3'; // ✅ V3 ACTIVE
 import { useLoopRegionSelection } from './hooks/useLoopRegionSelection';
 import { drawPianoRollStatic, drawPlayhead } from './renderer';
 import { uiUpdateManager, UPDATE_PRIORITIES, UPDATE_FREQUENCIES } from '@/lib/core/UIUpdateManager';
@@ -23,8 +24,7 @@ import { getToolManager } from '@/lib/piano-roll-tools';
 import { getTransportManagerSync } from '@/lib/core/TransportManagerSingleton';
 import { getAutomationManager } from '@/lib/automation/AutomationManager';
 import EventBus from '@/lib/core/EventBus.js';
-// ✅ NEW CURSOR SYSTEMS
-import { PianoRollCursorManager, CURSOR_MANAGER_MODES, CURSOR_SOURCES, CURSOR_STATES } from './interaction';
+// ✅ REMOVED: Complex cursor manager - using simple CSS cursors now
 // ✅ NEW TIMELINE SYSTEM
 import { useTimelineStore } from '@/stores/TimelineStore';
 import TimelineCoordinateSystem from '@/lib/timeline/TimelineCoordinateSystem';
@@ -57,7 +57,8 @@ function PianoRoll() {
     }, [engine]);
 
     // Toolbar state
-    const [activeTool, setActiveTool] = useState('select');
+    // ✅ FIX: Default to paintBrush for better workflow (users typically want to write notes immediately)
+    const [activeTool, setActiveTool] = useState('paintBrush');
     const [zoom, setZoom] = useState(1.0);
 
     // Performance monitoring
@@ -109,8 +110,7 @@ function PianoRoll() {
         scale: 'chromatic' // chromatic, major, minor, etc.
     });
 
-    // ✅ CURSOR MANAGER STATE
-    const [cursorManager, setCursorManager] = useState(null);
+    // ✅ REMOVED: Cursor manager state - using simple CSS cursors now
 
     // ✅ TIMELINE SYSTEM STATE
     const timelineStore = useTimelineStore();
@@ -192,41 +192,7 @@ function PianoRoll() {
         }
     }, []);
 
-    // ✅ CURSOR MANAGER - Initialize cursor management system
-    useEffect(() => {
-        const manager = new PianoRollCursorManager({
-            mode: CURSOR_MANAGER_MODES.AUTOMATIC,
-            preferredSystem: CURSOR_SOURCES.PREMIUM,
-            fallbackSystem: CURSOR_SOURCES.CSS,
-            pianoRollSelector: '.prv5-canvas-container',
-            integration: {
-                enabled: true,
-                autoDetect: true,
-                conflictResolution: true,
-                performanceOptimization: true
-            },
-            cursorMapping: {
-                'select': 'select-premium',
-                'paintBrush': 'paint-premium',
-                'eraser': 'erase-premium',
-                'slice': 'slice-premium',
-                'slide': 'slide-premium',
-                'hover': 'select-premium',
-                'active': 'select-premium',
-                'resizing': 'resize-both-premium',
-                'moving': 'move-premium',
-                'grabbing': 'grabbing-premium'
-            }
-        });
-
-        setCursorManager(manager);
-
-        return () => {
-            if (manager) {
-                manager.destroy();
-            }
-        };
-    }, []);
+    // ✅ REMOVED: Complex cursor manager - using simple CSS cursors now
 
     // ✅ TOOL MANAGER - Subscribe to tool changes
     useEffect(() => {
@@ -236,25 +202,14 @@ function PianoRoll() {
         setActiveTool(toolManager.getActiveTool());
 
         // Subscribe to tool changes
-        const unsubscribe = toolManager.subscribe((toolType) => {
-            setActiveTool(toolType);
-            
-            // ✅ Update cursor when tool changes
-            if (cursorManager) {
-                const cursorMap = {
-                    'select': 'select-premium',
-                    'paintBrush': 'paint-premium',
-                    'eraser': 'erase-premium',
-                    'slice': 'slice-premium',
-                    'slide': 'slide-premium'
-                };
-                const premiumCursor = cursorMap[toolType] || 'select-premium';
-                cursorManager.setCursor(premiumCursor, { source: CURSOR_SOURCES.SYSTEM });
+        const unsubscribe = toolManager.subscribe((event, data) => {
+            if (event === 'tool-changed') {
+                setActiveTool(data.tool);
             }
         });
 
         return unsubscribe;
-    }, [cursorManager]);
+    }, []);
 
     // ✅ NOTIFY TRANSPORT MANAGER and TOOL MANAGER when keyboard piano mode changes
     useEffect(() => {
@@ -372,48 +327,41 @@ function PianoRoll() {
     // ✅ LOOP REGION HOOK - Timeline selection
     const loopRegionHook = useLoopRegionSelection(engine, snapValue, loopRegion, setLoopRegion);
 
-    // V2 Hook - Sade ve basit, ArrangementStore merkezli
-    const noteInteractions = useNoteInteractionsV2(
+    // ✅ V3 Hook - Evolutionary design, zero race conditions
+    const noteInteractions = useNoteInteractionsV3({
         engine,
         activeTool,
         snapValue,
         currentInstrument,
-        loopRegion, // ✅ Pass loop region for Ctrl+D sync
-        keyboardPianoMode // ✅ Pass keyboard piano mode
-    );
+        loopRegion,
+        keyboardPianoMode
+    });
 
-    // ✅ CURSOR INTEGRATION - Connect note interactions cursor to cursor manager
-    useEffect(() => {
-        if (!cursorManager || !noteInteractions.cursorState) {
-            return; // Skip if manager not ready or no cursor state
-        }
-        
-        // Map note interactions cursor state to premium cursor
+    // ✅ SIMPLE CURSOR SYSTEM - Map cursor state to CSS cursor
+    const currentCursor = useMemo(() => {
+        const cursorState = noteInteractions.cursorState;
+
+        // Simple CSS cursor mapping
         const cursorMap = {
-            'default': 'select-premium',
-            'select': 'select-premium',
-            'paint': 'paint-premium',
-            'paintBrush': 'paint-premium',
-            'erase': 'erase-premium',
-            'eraser': 'erase-premium',
-            'slice': 'slice-premium',
-            'slide': 'slide-premium',
-            'move': 'multi-move-premium',
-            'grab': 'multi-select-premium',
-            'grabbing': 'multi-move-premium',
-            'resize-left': 'resize-left-premium',
-            'resize-right': 'resize-right-premium',
-            'resize-both': 'resize-both-premium',
-            'ew-resize': 'resize-both-premium',
-            'crosshair': 'paint-premium',
-            'not-allowed': 'erase-premium'
+            'grab': 'grab',
+            'grabbing': 'grabbing',
+            'resize-left': 'w-resize',
+            'resize-right': 'e-resize',
+            'resize-both': 'ew-resize',
+            'w-resize': 'w-resize', // ✅ V3: Direct CSS cursor values
+            'e-resize': 'e-resize', // ✅ V3: Direct CSS cursor values
+            'crosshair': 'crosshair',
+            'not-allowed': 'not-allowed',
+            'col-resize': 'col-resize',
+            'default': 'default', // ✅ V3: Direct CSS cursor value
+            'paint-premium': 'crosshair',
+            'erase-premium': 'not-allowed',
+            'slice-premium': 'col-resize',
+            'slide-premium': 'alias'
         };
 
-        const premiumCursor = cursorMap[noteInteractions.cursorState];
-        if (premiumCursor) {
-            cursorManager.setCursor(premiumCursor, { source: CURSOR_SOURCES.DIRECT });
-        }
-    }, [cursorManager, noteInteractions.cursorState]);
+        return cursorState ? (cursorMap[cursorState] || cursorState) : 'default';
+    }, [noteInteractions.cursorState]);
 
     // ✅ REGISTER PIANO ROLL TIMELINE with TimelineController
     // Note: engineRef is defined later in the file and used here via closure
@@ -503,6 +451,34 @@ function PianoRoll() {
             ctx.scale(dpr, dpr);
         }
 
+        // ✅ V3: Convert dragState and resizeState to renderer format
+        let dragState = null;
+
+        // Convert drag state (moving notes)
+        if (noteInteractions.dragState && noteInteractions.dragState.noteIds) {
+            const ds = noteInteractions.dragState;
+            dragState = {
+                type: 'moving',
+                noteIds: ds.noteIds,
+                originalNotes: ds.originals,
+                currentDelta: ds.delta ? {
+                    deltaTime: ds.delta.time,
+                    deltaPitch: ds.delta.pitch
+                } : { deltaTime: 0, deltaPitch: 0 }
+            };
+        }
+        // Convert resize state (resizing notes)
+        else if (noteInteractions.resizeState && noteInteractions.resizeState.noteIds) {
+            const rs = noteInteractions.resizeState;
+            dragState = {
+                type: 'resizing',
+                noteIds: rs.noteIds,
+                originalNotes: rs.originals,
+                resizeHandle: rs.handle,
+                currentDelta: rs.delta ? { deltaTime: rs.delta } : { deltaTime: 0 }
+            };
+        }
+
         // Static data (everything except playhead)
         const engineWithData = {
             ...engine,
@@ -521,7 +497,7 @@ function PianoRoll() {
             ghostPosition, // ✅ Pass ghost position for hover preview
             activeTool, // ✅ Pass active tool for visual feedback
             loopRegion, // ✅ Pass loop region for timeline rendering
-            dragState: noteInteractions.dragState, // ✅ Pass dragState for visual feedback during drag
+            dragState, // ✅ V3: Unified dragState (includes resizing)
             scaleHighlight // ✅ PHASE 5: Pass scale highlighting system
         };
         drawPianoRollStatic(ctx, engineWithData);
@@ -775,14 +751,7 @@ function PianoRoll() {
         [noteInteractions.selectedNoteIds]
     );
 
-    // ✅ CLEANUP - Cleanup cursor manager on unmount
-    useEffect(() => {
-        return () => {
-            if (cursorManager) {
-                cursorManager.destroy();
-            }
-        };
-    }, [cursorManager]);
+    // ✅ REMOVED: Cursor manager cleanup - using simple CSS cursors now
 
     // ✅ CONTEXT MENU OPERATIONS
     const contextMenuOperations = useMemo(() => ({
@@ -942,7 +911,7 @@ function PianoRoll() {
                 ref={containerRef}
                 className="prv5-canvas-container"
                 data-tool={activeTool}
-                // ✅ data-cursor removed - now handled by cursor manager
+                style={{ cursor: currentCursor }}
                 onWheel={(e) => {
                     const rect = e.currentTarget.getBoundingClientRect();
                     const x = e.clientX - rect.left;

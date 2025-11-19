@@ -6,6 +6,14 @@ const RULER_HEIGHT = 30;
 const KEYBOARD_WIDTH = 80;
 const NOTES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
+// ✅ PERFORMANCE: Reusable arrays for grid batching (avoids allocation every frame)
+const gridBatchArrays = {
+    barLines: [],
+    beatLines: [],
+    snapLines: [],
+    otherLines: []
+};
+
 // Export drawPlayhead for separate playhead layer rendering
 export { drawPlayhead };
 
@@ -112,24 +120,35 @@ function drawGrid(ctx, { viewport, dimensions, lod, snapValue, qualityLevel = 'h
     // Triplet detection - check if current snap is a triplet value
     const isTripletSnap = typeof snapValue === 'string' && snapValue.endsWith('T');
 
-    // Convert triplet string to numeric value for grid calculations
+    // ✅ FIX: Use exact fraction-based calculations for triplets to avoid floating point errors
     if (isTripletSnap) {
-        gridStepIncrement = parseFloat(snapValue.replace('T', ''));
+        // Parse triplet value once and cache it (e.g., "0.333333T" → 4/3 = 1.333...)
+        const baseValue = parseFloat(snapValue.replace('T', ''));
+        // Detect common triplet fractions and use exact values
+        if (Math.abs(baseValue - 1.333333) < 0.01) {
+            gridStepIncrement = 4 / 3; // Triplet quarter note (exact)
+        } else if (Math.abs(baseValue - 0.666666) < 0.01) {
+            gridStepIncrement = 2 / 3; // Triplet eighth note (exact)
+        } else if (Math.abs(baseValue - 0.333333) < 0.01) {
+            gridStepIncrement = 1 / 3; // Triplet sixteenth note (exact)
+        } else {
+            gridStepIncrement = baseValue; // Fallback for other triplet values
+        }
     }
 
     // ⚡ ADAPTIVE: Increase LOD aggressiveness in low quality mode
     const qualityLodBoost = qualityLevel === 'low' ? 1 : (qualityLevel === 'medium' ? 0.5 : 0);
 
-    // LOD bazlı minimum grid increment'i - triplet için agresif azaltma
+    // ✅ FIX: LOD bazlı minimum grid increment - triplet için daha az agresif
     let lodStepIncrement = 1;
     if (isTripletSnap) {
-        // Triplet mode: Daha erken ve agresif azaltma
+        // ✅ Triplet mode: LESS aggressive reduction to keep triplets visible longer
         const effectiveLod = lod + qualityLodBoost;
-        if (effectiveLod >= 4) lodStepIncrement = 16; // Sadece bar'lar
-        else if (effectiveLod >= 3) lodStepIncrement = 8; // Yarım nota seviyesi
-        else if (effectiveLod >= 2) lodStepIncrement = 4; // Beat seviyesi
-        else if (effectiveLod >= 1) lodStepIncrement = gridStepIncrement * 2; // Her ikinci triplet
-        else lodStepIncrement = gridStepIncrement; // Tüm triplet'ler
+        if (effectiveLod >= 5) lodStepIncrement = 16; // Sadece bar'lar (çok uzakta)
+        else if (effectiveLod >= 4) lodStepIncrement = 8; // Yarım nota seviyesi
+        else if (effectiveLod >= 3) lodStepIncrement = 4; // Beat seviyesi
+        else if (effectiveLod >= 2) lodStepIncrement = gridStepIncrement * 3; // Her 3. triplet (beat aligned)
+        else lodStepIncrement = gridStepIncrement; // Tüm triplet'ler (LOD 0-1)
     } else {
         // Regular mode - daha agresif LOD azaltması
         const effectiveLod = lod + qualityLodBoost;
@@ -139,22 +158,28 @@ function drawGrid(ctx, { viewport, dimensions, lod, snapValue, qualityLevel = 'h
         else lodStepIncrement = gridStepIncrement; // Tüm grid'ler
     }
 
-    // Effective step increment - hem triplet hem regular mode'da agresif LOD
+    // ✅ FIX: Effective step increment - triplet için daha az agresif LOD
     let effectiveStepIncrement;
     if (isTripletSnap) {
-        // Triplet mode: LOD 2'den itibaren seyrek grid
-        effectiveStepIncrement = lod >= 2 ? lodStepIncrement : gridStepIncrement;
+        // ✅ Triplet mode: LOD 3'ten itibaren seyrek grid (daha toleranslı)
+        effectiveStepIncrement = lod >= 3 ? lodStepIncrement : gridStepIncrement;
     } else {
-        // Regular mode: LOD 2'den itibaren seyrek grid (daha agresif)
+        // Regular mode: LOD 2'den itibaren seyrek grid (normal agresiflik)
         effectiveStepIncrement = lod >= 2 ? lodStepIncrement : gridStepIncrement;
     }
     const startLine = Math.floor(startStep / effectiveStepIncrement) * effectiveStepIncrement;
 
-    // ⚡ PERFORMANCE: Batch grid lines by type to reduce draw calls
-    const barLines = [];
-    const beatLines = [];
-    const snapLines = [];
-    const otherLines = [];
+    // ✅ PERFORMANCE: Reuse arrays instead of creating new ones every frame
+    const barLines = gridBatchArrays.barLines;
+    const beatLines = gridBatchArrays.beatLines;
+    const snapLines = gridBatchArrays.snapLines;
+    const otherLines = gridBatchArrays.otherLines;
+
+    // Clear arrays (much faster than creating new arrays)
+    barLines.length = 0;
+    beatLines.length = 0;
+    snapLines.length = 0;
+    otherLines.length = 0;
 
     // Precision-safe loop için integer counter kullan
     const startCounter = Math.floor(startLine / effectiveStepIncrement);
@@ -177,11 +202,14 @@ function drawGrid(ctx, { viewport, dimensions, lod, snapValue, qualityLevel = 'h
         } else if (isSnapGridLine) {
             // Snap grid lines - triplet mode'da LOD-aware hierarchy
             if (isTripletSnap) {
-                // Triplet beat detection: her 3 subdivision'da bir beat
-            // Use precise floating point comparison for triplet steps
-            const exactSubdivisionIndex = step / gridStepIncrement;
-            const subdivisionIndex = Math.round(exactSubdivisionIndex);
-            const isTripletBeat = Math.abs(exactSubdivisionIndex - subdivisionIndex) < 0.01 && subdivisionIndex % 3 === 0;
+                // ✅ FIX: Use exact integer-based triplet beat detection
+                // Calculate subdivision index using exact fraction math
+                const exactSubdivisionIndex = step / gridStepIncrement;
+                const subdivisionIndex = Math.round(exactSubdivisionIndex);
+                // Check if we're on an exact triplet subdivision (within tolerance for floating point)
+                const isExactSubdivision = Math.abs(exactSubdivisionIndex - subdivisionIndex) < 0.001;
+                // Every 3rd triplet subdivision is a beat
+                const isTripletBeat = isExactSubdivision && (subdivisionIndex % 3 === 0);
 
                 // Triplet beat hierarchy
                 if (isTripletBeat) {
@@ -620,7 +648,7 @@ function drawNotes(ctx, engine) {
 }
 
 function drawSelectionArea(ctx, engine) {
-    const { selectionArea, isSelectingArea, viewport } = engine;
+    const { selectionArea, isSelectingArea, viewport, dimensions } = engine;
 
     if (!isSelectingArea || !selectionArea) return;
 
@@ -632,14 +660,19 @@ function drawSelectionArea(ctx, engine) {
     ctx.clip();
 
     // ✅ Lasso mode: Draw freehand polygon
-    if (selectionArea.mode === 'lasso' && selectionArea.path && selectionArea.path.length > 1) {
-        const path = selectionArea.path;
-        
+    if (selectionArea.type === 'lasso' && selectionArea.path && selectionArea.path.length > 1) {
+
+        // Convert V3 path from piano roll coordinates to screen coordinates
+        const screenPath = selectionArea.path.map(point => ({
+            x: point.time * dimensions.stepWidth - viewport.scrollX,
+            y: (127 - point.pitch) * dimensions.keyHeight - viewport.scrollY
+        }));
+
         // Draw polygon fill
         ctx.beginPath();
-        ctx.moveTo(path[0].x, path[0].y);
-        for (let i = 1; i < path.length; i++) {
-            ctx.lineTo(path[i].x, path[i].y);
+        ctx.moveTo(screenPath[0].x, screenPath[0].y);
+        for (let i = 1; i < screenPath.length; i++) {
+            ctx.lineTo(screenPath[i].x, screenPath[i].y);
         }
         ctx.closePath();
         
@@ -670,8 +703,15 @@ function drawSelectionArea(ctx, engine) {
         return;
     }
 
-    // ✅ Rectangular mode: Original logic
-    const { startX, startY, endX, endY } = selectionArea;
+    // ✅ Rectangular mode: Convert V3 piano roll coordinates to screen coordinates
+    const { start, end } = selectionArea;
+
+    // Convert piano roll coordinates (time, pitch) to screen coordinates
+    const startX = start.time * dimensions.stepWidth - viewport.scrollX;
+    const startY = (127 - start.pitch) * dimensions.keyHeight - viewport.scrollY;
+    const endX = end.time * dimensions.stepWidth - viewport.scrollX;
+    const endY = (127 - end.pitch) * dimensions.keyHeight - viewport.scrollY;
+
     const x = Math.min(startX, endX);
     const y = Math.min(startY, endY);
     const width = Math.abs(endX - startX);

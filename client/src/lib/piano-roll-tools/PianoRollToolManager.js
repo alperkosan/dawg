@@ -97,7 +97,8 @@ export const TOOL_INFO = {
 
 class PianoRollToolManager {
   constructor() {
-    this.activeTool = TOOL_TYPES.SELECT;
+    // ✅ FIX: Default to paintBrush for better workflow (users typically want to write notes immediately)
+    this.activeTool = TOOL_TYPES.PAINT_BRUSH;
     this.keyboardPianoModeActive = false; // ✅ Track keyboard piano mode
     this.toolSettings = {
       [TOOL_TYPES.PAINT_BRUSH]: {

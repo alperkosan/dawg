@@ -122,6 +122,29 @@ export class SmartDurationPredictor {
     }
 
     // RULE 5: Fallback - Son kullanılan ayarı koru
+    // ✅ FIX: If no notes exist yet (first note), default to oval note
+    const hasNoNotes = !durationMemory.visualLength || durationMemory.visualLength === 1;
+    const isFirstNote = hasNoNotes && durationMemory.isOval === true;
+    
+    // ✅ FIX: Default to oval note for first note in pattern
+    if (isFirstNote) {
+      const defaultVisualLength = 1; // Visual length is 1 step
+      const defaultAudioLength = this.calculatePatternEndLength(newNoteData.time, patternLength);
+      
+      console.log('🎯 Duration prediction: FIRST_NOTE_DEFAULT (oval)', {
+        visualLength: defaultVisualLength,
+        audioLength: defaultAudioLength,
+        patternLength
+      });
+
+      return {
+        visualLength: defaultVisualLength,
+        shouldBeOval: true,
+        audioLength: defaultAudioLength,
+        reason: PredictionReason.CONTINUE_LAST
+      };
+    }
+    
     const lastLength = durationMemory.visualLength || 1;
 
     console.log('🎯 Duration prediction: CONTINUE_LAST (fallback)', {

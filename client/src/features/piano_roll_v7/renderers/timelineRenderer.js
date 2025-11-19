@@ -22,6 +22,13 @@ const MARKER_HEIGHT = 20;
 const TEMPO_MARKER_SIZE = 12;
 const TIME_SIG_MARKER_SIZE = 14;
 
+// ✅ PERFORMANCE: Cached font strings (avoid string concatenation every frame)
+const FONT_MARKER_NAME = '10px Inter, sans-serif';
+const FONT_LOOP_NAME = '11px Inter, sans-serif';
+const FONT_BAR_NUMBER = '11px Inter, sans-serif';
+const FONT_TIME_SIGNATURE = '9px Inter, sans-serif';
+const FONT_BEAT_NUMBER = '9px Inter, sans-serif';
+
 // ═══════════════════════════════════════════════════════════
 // TIMELINE RENDERER CLASS
 // ═══════════════════════════════════════════════════════════
@@ -97,12 +104,8 @@ export class TimelineRenderer {
       ctx.lineTo(x, RULER_HEIGHT);
       ctx.stroke();
 
-      // Draw time signature text (e.g., "4/4")
-      ctx.fillStyle = globalStyleCache.get('--zenith-text-primary') || '#ffffff';
-      ctx.font = `bold ${TIME_SIG_MARKER_SIZE}px Inter, sans-serif`;
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'top';
-      ctx.fillText(`${ts.numerator}/${ts.denominator}`, x + 4, 2);
+      // ✅ REMOVED: Text rendering (reduces visual clutter)
+      // Time signature is indicated by the vertical line only
     }
 
     ctx.restore();
@@ -148,12 +151,8 @@ export class TimelineRenderer {
       ctx.arc(x, RULER_HEIGHT - TEMPO_MARKER_SIZE, 3, 0, Math.PI * 2);
       ctx.fill();
 
-      // Draw BPM text
-      ctx.fillStyle = globalStyleCache.get('--zenith-text-primary') || '#ffffff';
-      ctx.font = `${TEMPO_MARKER_SIZE}px Inter, sans-serif`;
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'bottom';
-      ctx.fillText(`${Math.round(tempo.bpm)} BPM`, x + 6, RULER_HEIGHT - 2);
+      // ✅ REMOVED: BPM text rendering (reduces visual clutter)
+      // Tempo is indicated by the metronome icon only
     }
 
     ctx.restore();
@@ -221,7 +220,7 @@ export class TimelineRenderer {
     // Draw marker name (if there's space)
     if (marker.name) {
       ctx.fillStyle = globalStyleCache.get('--zenith-text-primary') || '#ffffff';
-      ctx.font = '10px Inter, sans-serif';
+      ctx.font = FONT_MARKER_NAME;
       ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
       ctx.fillText(marker.name, x + flagWidth + 4, y + 2);
@@ -239,11 +238,17 @@ export class TimelineRenderer {
     const { viewport, dimensions } = engine;
     const loopRegions = this.timelineStore.getState().loopRegions;
 
+    // ✅ OPTIMIZATION: Early viewport culling in step space (before pixel calculations)
+    const { startStep, endStep } = viewport.visibleSteps;
+
     ctx.save();
     ctx.translate(KEYBOARD_WIDTH, 0);
 
     for (const loop of loopRegions) {
-      // Calculate pixel positions
+      // ✅ Skip if loop is completely outside visible step range
+      if (loop.end < startStep || loop.start > endStep) continue;
+
+      // Calculate pixel positions (only for visible loops)
       const startX = this.coordinateSystem.stepToPixel(
         loop.start,
         viewport.zoomX,
@@ -258,7 +263,7 @@ export class TimelineRenderer {
 
       const width = endX - startX;
 
-      // Skip if not visible
+      // ✅ Additional pixel-space check (for edge cases where step culling isn't enough)
       if (endX < 0 || startX > viewport.width - KEYBOARD_WIDTH) continue;
 
       // Draw on timeline ruler
@@ -299,7 +304,7 @@ export class TimelineRenderer {
     // Loop name
     if (loop.name && width > 40) {
       ctx.fillStyle = globalStyleCache.get('--zenith-text-primary') || '#ffffff';
-      ctx.font = '11px Inter, sans-serif';
+      ctx.font = FONT_LOOP_NAME;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(loop.name, x + width / 2, RULER_HEIGHT / 2);
@@ -403,7 +408,7 @@ export class TimelineRenderer {
 
       // Draw bar number
       ctx.fillStyle = globalStyleCache.get('--zenith-text-secondary') || '#9ca3af';
-      ctx.font = '11px Inter, sans-serif';
+      ctx.font = FONT_BAR_NUMBER;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'bottom';
       ctx.fillText(bar + 1, x, RULER_HEIGHT - 14);
@@ -412,7 +417,7 @@ export class TimelineRenderer {
       const ts = this.timelineStore.getState().getTimeSignatureAt(barLine.position);
       if (barLine.position === 0 || lod < 2) {
         ctx.fillStyle = globalStyleCache.get('--zenith-text-tertiary') || '#6b7280';
-        ctx.font = '9px Inter, sans-serif';
+        ctx.font = FONT_TIME_SIGNATURE;
         ctx.fillText(`${ts.numerator}/${ts.denominator}`, x, RULER_HEIGHT - 2);
       }
     }
@@ -441,7 +446,7 @@ export class TimelineRenderer {
         // Draw beat number (if zoomed in enough)
         if (lod === 0 && viewport.zoomX > 0.5) {
           ctx.fillStyle = globalStyleCache.get('--zenith-text-tertiary') || '#6b7280';
-          ctx.font = '9px Inter, sans-serif';
+          ctx.font = FONT_BEAT_NUMBER;
           ctx.textAlign = 'center';
           ctx.textBaseline = 'bottom';
           ctx.fillText(beat + 1, x, RULER_HEIGHT - 2);

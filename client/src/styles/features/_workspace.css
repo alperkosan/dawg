@@ -15,15 +15,15 @@
   position: relative; 
   min-width: 0;
   
-  /* ✅ PREMIUM TEXTURE: Base background with theme-aware texture */
+  /* ✅ PREMIUM TEXTURE: Base background with theme-aware texture (improved contrast) */
   background-color: var(--zenith-bg-primary);
   background-image: 
     /* Subtle noise texture */
-    radial-gradient(circle at 20% 50%, var(--zenith-workspace-texture-accent, rgba(255, 255, 255, 0.01)) 0%, transparent 50%),
-    radial-gradient(circle at 80% 50%, var(--zenith-workspace-texture-accent, rgba(255, 255, 255, 0.01)) 0%, transparent 50%),
-    /* Grid pattern overlay (subtle) */
-    linear-gradient(var(--zenith-workspace-grid-color, rgba(255, 255, 255, 0.02)) 1px, transparent 1px),
-    linear-gradient(90deg, var(--zenith-workspace-grid-color, rgba(255, 255, 255, 0.02)) 1px, transparent 1px);
+    radial-gradient(circle at 20% 50%, var(--zenith-workspace-texture-accent, rgba(255, 255, 255, 0.02)) 0%, transparent 50%),
+    radial-gradient(circle at 80% 50%, var(--zenith-workspace-texture-accent, rgba(255, 255, 255, 0.02)) 0%, transparent 50%),
+    /* Grid pattern overlay (improved contrast) */
+    linear-gradient(var(--zenith-workspace-grid-color, rgba(255, 255, 255, 0.035)) 1px, transparent 1px),
+    linear-gradient(90deg, var(--zenith-workspace-grid-color, rgba(255, 255, 255, 0.035)) 1px, transparent 1px);
   background-size: 
     100% 100%,
     100% 100%,

@@ -24,14 +24,15 @@
   --zenith-accent-cold: #556FB5;
 
   /* Semantic Colors */
-  --zenith-success: #10B981;
+  /* ✅ FIX: Improved contrast for success green - brighter for better visibility on dark backgrounds */
+  --zenith-success: #22C55E; /* Brighter green (#10B981 -> #22C55E) for better contrast */
   --zenith-warning: #F59E0B;
   --zenith-error: #EF4444;
   --zenith-info: #3B82F6;
 
   /* RGB Variants for Canvas Rendering (rgba support) */
   --zenith-accent-cool-rgb: 78, 205, 196;
-  --zenith-success-rgb: 16, 185, 129;
+  --zenith-success-rgb: 34, 197, 94; /* Updated to match new success color */
   --zenith-error-rgb: 239, 68, 68;
 
   /* Plugin-Specific Palettes */
@@ -62,8 +63,8 @@
   --zenith-shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.5);
   --zenith-shadow-xl: 0 16px 32px rgba(0, 0, 0, 0.6);
 
-  /* ✅ PREMIUM TEXTURE: Workspace texture customization variables */
-  --zenith-workspace-texture-accent: rgba(255, 255, 255, 0.01);
+  /* ✅ PREMIUM TEXTURE: Workspace texture customization variables (improved contrast) */
+  --zenith-workspace-texture-accent: rgba(255, 255, 255, 0.02); /* Increased from 0.01 for better visibility */
   --zenith-workspace-grid-color: rgba(255, 255, 255, 0.02);
   --zenith-workspace-grid-size: 32px;
   --zenith-workspace-gradient-opacity: 0.3;

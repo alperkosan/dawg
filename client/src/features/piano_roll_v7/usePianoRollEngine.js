@@ -232,7 +232,8 @@ export function usePianoRollEngine(containerRef, playbackControls = {}) {
         if (button === 1) {
             isPanningRef.current = true;
             lastMousePosRef.current = { x: e.clientX, y: e.clientY };
-            e.target.style.cursor = 'grabbing';
+            // ✅ REMOVED: Cursor management now handled by PianoRollCursorManager
+            // e.target.style.cursor = 'grabbing';
         }
     }, [setLoopRegion, setTransportPosition]);
 
@@ -269,7 +270,8 @@ export function usePianoRollEngine(containerRef, playbackControls = {}) {
         if (isSettingLoopRef.current) isSettingLoopRef.current = false;
         if (e.button === 1) {
             isPanningRef.current = false;
-            e.target.style.cursor = 'grab';
+            // ✅ REMOVED: Cursor management now handled by PianoRollCursorManager
+            // e.target.style.cursor = 'grab';
         }
     }, []);
 

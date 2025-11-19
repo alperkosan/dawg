@@ -192,6 +192,11 @@ export function useNoteInteractionsV2(
         }
     }, []);
 
+    // ✅ RESET cursor state when tool changes to prevent stuck cursors
+    useEffect(() => {
+        setCursorState('default');
+    }, [activeTool]);
+
     // Local state - sadece UI için
     const [dragState, setDragState] = useState(null);
     const [hoveredNoteId, setHoveredNoteId] = useState(null);
@@ -214,6 +219,7 @@ export function useNoteInteractionsV2(
     const [lastClickedNoteId, setLastClickedNoteId] = useState(null); // Track last clicked note for double-click
     const [clipboard, setClipboard] = useState(null); // ✅ Clipboard: { notes: [], sourceTime: number }
     const [slideSourceNoteId, setSlideSourceNoteId] = useState(null); // ✅ PHASE 3: Track source note for slide connection
+    const [cursorState, setCursorState] = useState('default'); // ✅ REDESIGNED: Cursor state for enhanced feedback
 
     // ✅ PERFORMANCE: Use individual selectors instead of object/array selector
     // This prevents "getSnapshot should be cached" warnings and infinite loops
@@ -342,39 +348,30 @@ export function useNoteInteractionsV2(
         return { time, pitch, x: rawX, y: rawY };
     }, [engine]);
 
-    // Find note at position - IMPROVED: Zoom-aware adaptive tolerance
+    // Find note at position - WYSIWYG: Exact visible area only (no padding)
     const findNoteAtPosition = useCallback((time, pitch) => {
         const currentNotes = notes();
+        const { keyHeight } = engine.dimensions || { keyHeight: 20 };
 
-        // ✅ ZOOM-AWARE TOLERANCE - Adaptive based on viewport zoom
-        const zoomFactor = engine.viewport?.zoomX || 1;
-        const zoomY = engine.viewport?.zoomY || 1;
-        
-        // ✅ IMPROVED: Dynamic base margin based on note density and zoom
-        const baseTimeMargin = 0.15; // Increased to 15% for better hit detection
-        const basePitchMargin = 0.35; // 35% pitch tolerance for easier clicking
+        // ✅ FIX: Calculate actual note height (notes are drawn with keyHeight - 1)
+        // This matches the visual rendering exactly
+        const actualNoteHeight = keyHeight - 1;
+        const pitchRange = actualNoteHeight / keyHeight; // Convert pixel height to pitch range
 
-        // As you zoom in, decrease tolerance (more precision)
-        // As you zoom out, increase tolerance (easier to click)
-        const adaptiveTimeMargin = baseTimeMargin / Math.max(1, Math.sqrt(zoomFactor));
-        const adaptivePitchMargin = basePitchMargin / Math.max(1, Math.sqrt(zoomY));
-
-        // ✅ FIX: Find all notes at position, then select the best one
-        // This prevents ID confusion when multiple notes overlap
+        // ✅ WYSIWYG PRINCIPLE: Use exact visible area, no adaptive margins
+        // What you see is what you get - click only on visible note area
         const candidates = currentNotes.filter(note => {
             // ✅ FL STUDIO STYLE: Use visualLength for hit detection (oval notes)
             const displayLength = note.visualLength !== undefined ? note.visualLength : note.length;
             const noteEndTime = note.startTime + displayLength;
 
-            // ✅ ADAPTIVE TIME TOLERANCE - More generous
-            const timeOverlap = time >= (note.startTime - adaptiveTimeMargin) &&
-                               time <= (noteEndTime + adaptiveTimeMargin);
+            // ✅ EXACT TIME BOUNDARIES - No tolerance, only visible area
+            const timeOverlap = time >= note.startTime && time <= noteEndTime;
 
-            // ✅ FULL NOTE HEIGHT COVERAGE - Click anywhere within note's exact vertical space
-            // Note occupies exactly from (pitch - 0.5) to (pitch + 0.5)
-            // No tolerance outside the note boundaries
-            const notePitchMin = note.pitch - 0.5;
-            const notePitchMax = note.pitch + 0.5;
+            // ✅ FIX: EXACT PITCH BOUNDARIES - Match visual note height (keyHeight - 1)
+            // Note is centered at note.pitch, so it spans from (pitch - pitchRange/2) to (pitch + pitchRange/2)
+            const notePitchMin = note.pitch - (pitchRange / 2);
+            const notePitchMax = note.pitch + (pitchRange / 2);
             const pitchMatch = pitch >= notePitchMin && pitch <= notePitchMax;
 
             return timeOverlap && pitchMatch;
@@ -1581,24 +1578,49 @@ export function useNoteInteractionsV2(
                     // Start moving - reset duplicate memory
                     setLastDuplicateAction(null);
 
-                    // ✅ FIX: If Ctrl/Shift is NOT pressed, clear selection and select only the clicked note
-                    // This prevents moving/resizing the wrong note when another note is selected
+                    // ✅ FIX: Multi-note selection handling
+                    // If multiple notes are selected and clicked note is in selection, move all selected
+                    // If clicked note is not in selection, clear selection and select only clicked note
                     const isMultiSelect = e.ctrlKey || e.metaKey || e.shiftKey;
-                    
+
+                    // ✅ CRITICAL FIX: Determine which notes to work with BEFORE updating selection
+                    // Because React state updates are asynchronous, we need to compute this first
+                    let effectiveSelectedNotes = new Set(selectedNoteIds);
+
+                    if (DEBUG_MODE) {
+                        console.log('🖱️ Mouse down on note - Selection logic:', {
+                            clickedNoteId: foundNote.id,
+                            currentSelectionSize: selectedNoteIds.size,
+                            isClickedNoteSelected: selectedNoteIds.has(foundNote.id),
+                            isMultiSelect,
+                            isShift: e.shiftKey,
+                            isCtrl: e.ctrlKey || e.metaKey
+                        });
+                    }
+
                     if (!isMultiSelect) {
-                        // ✅ CRITICAL: Clear all selections and select only the note being moved
-                        // This ensures we move the correct note, not the previously selected one
-                        if (!selectedNoteIds.has(foundNote.id) || selectedNoteIds.size > 1) {
+                        // ✅ FIX: Only clear selection if clicked note is NOT in current selection
+                        // If clicked note IS in selection and multiple notes are selected, keep all selected for multi-move
+                        if (!selectedNoteIds.has(foundNote.id)) {
+                            // Clicked note is NOT selected - clear selection and select only this note
                             deselectAll();
                             selectNote(foundNote.id, false);
+                            effectiveSelectedNotes = new Set([foundNote.id]); // ✅ Update local tracking
+                            if (DEBUG_MODE) console.log('🔄 Cleared selection, selected clicked note only');
+                        } else {
+                            if (DEBUG_MODE) console.log('✅ Clicked note IS selected - keeping all', selectedNoteIds.size, 'notes selected');
                         }
+                        // ✅ If clicked note IS selected and multiple notes are selected, keep all selected
+                        // This allows multi-note move when clicking on a selected note
                     } else if (e.shiftKey) {
                         // Shift = duplicate, don't change selection
+                        if (DEBUG_MODE) console.log('📋 Shift held - will duplicate');
                     } else {
                         // Ctrl/Cmd = toggle selection
                         const isToggling = e.ctrlKey || e.metaKey;
                         if (isToggling) {
                             selectNote(foundNote.id, true, true); // addToSelection=true, toggle=true
+                            if (DEBUG_MODE) console.log('🔘 Ctrl/Cmd - toggling selection, NOT starting drag');
                             return; // Don't start drag, just toggle selection
                         }
                     }
@@ -1618,14 +1640,14 @@ export function useNoteInteractionsV2(
                     const isDuplicating = e.shiftKey;
                     let duplicatedNoteIds = null;
 
-                    // Determine which notes to work with
+                    // Determine which notes to work with (using effectiveSelectedNotes for correct state)
                     let workingNoteIds;
                     if (isDuplicating) {
                         // ✅ SHIFT+DRAG LOGIC FIX: Only duplicate what you click on
-                        if (selectedNoteIds.size > 0 && selectedNoteIds.has(foundNote.id)) {
+                        if (effectiveSelectedNotes.size > 0 && effectiveSelectedNotes.has(foundNote.id)) {
                             // Clicked note is part of selection - duplicate all selected
-                            workingNoteIds = Array.from(selectedNoteIds);
-                            if (DEBUG_MODE) console.log('📋 Shift+Drag: Clicked note IS in selection, duplicating all', selectedNoteIds.size, 'notes');
+                            workingNoteIds = Array.from(effectiveSelectedNotes);
+                            if (DEBUG_MODE) console.log('📋 Shift+Drag: Clicked note IS in selection, duplicating all', effectiveSelectedNotes.size, 'notes');
                         } else {
                             // Clicked note is NOT part of selection - duplicate ONLY clicked note
                             // (Ignore other selected notes - user wants to duplicate what they clicked)
@@ -1633,14 +1655,15 @@ export function useNoteInteractionsV2(
                             if (DEBUG_MODE) console.log('📋 Shift+Drag: Clicked note NOT in selection, duplicating ONLY clicked note');
                         }
                     } else {
-                        // Normal move: use current selection (already updated above)
-                        // Selection was already updated in the multi-select check above
-                        workingNoteIds = selectedNoteIds.has(foundNote.id)
-                            ? Array.from(selectedNoteIds)
+                        // ✅ CRITICAL FIX: Use effectiveSelectedNotes instead of stale selectedNoteIds
+                        // Normal move: use effective selection (accounts for immediate updates)
+                        workingNoteIds = effectiveSelectedNotes.has(foundNote.id)
+                            ? Array.from(effectiveSelectedNotes)
                             : [foundNote.id];
                     }
 
                     let originalNotesForDrag = new Map();
+                    let finalNoteIds = [];
 
                     if (isDuplicating) {
                         // Create duplicates of working notes
@@ -1669,12 +1692,61 @@ export function useNoteInteractionsV2(
                         // Select the duplicated notes
                         setSelectedNoteIds(new Set(duplicatedNoteIds));
 
-                        if (DEBUG_MODE) console.log('📋 Duplicated notes for dragging:', duplicatedNoteIds.length);
+                        // ✅ FIX: Use duplicatedNoteIds for dragState
+                        finalNoteIds = duplicatedNoteIds;
+
+                        if (DEBUG_MODE) console.log('📋 Duplicated notes for dragging:', duplicatedNoteIds.length, 'IDs:', duplicatedNoteIds);
                     } else {
-                        // Normal move: Store original positions
+                        // ✅ CRITICAL FIX: Normal move - use effectiveSelectedNotes instead of stale selectedNoteIds
                         const currentNotes = notes();
-                        const noteIds = selectedNoteIds.has(foundNote.id) ? Array.from(selectedNoteIds) : [foundNote.id];
-                        noteIds.forEach(id => {
+                        finalNoteIds = effectiveSelectedNotes.has(foundNote.id)
+                            ? Array.from(effectiveSelectedNotes)
+                            : [foundNote.id];
+
+                        // ✅ FIX: Ensure all selected notes have original positions stored
+                        finalNoteIds.forEach(id => {
+                            const note = currentNotes.find(n => n.id === id);
+                            if (note) {
+                                originalNotesForDrag.set(id, {
+                                    startTime: note.startTime,
+                                    pitch: note.pitch
+                                });
+                            } else {
+                                console.warn('⚠️ Note not found for drag:', id, 'Available notes:', currentNotes.map(n => n.id));
+                            }
+                        });
+                        
+                        // ✅ FIX: Debug log for multi-note move setup
+                        if (DEBUG_MODE && finalNoteIds.length > 1) {
+                            console.log('📦 Multi-note move setup:', {
+                                clickedNote: foundNote.id,
+                                effectiveSelectedCount: effectiveSelectedNotes.size,
+                                finalNoteIds: finalNoteIds.length,
+                                originalNotesCount: originalNotesForDrag.size,
+                                noteIds: finalNoteIds
+                            });
+                        }
+                    }
+
+                    // ✅ FIX: Ensure noteIds is always an array, never null
+                    if (!finalNoteIds || finalNoteIds.length === 0) {
+                        finalNoteIds = [foundNote.id];
+                        if (!originalNotesForDrag.has(foundNote.id)) {
+                            const currentNotes = notes();
+                            const note = currentNotes.find(n => n.id === foundNote.id);
+                            if (note) {
+                                originalNotesForDrag.set(foundNote.id, { startTime: note.startTime, pitch: note.pitch });
+                            }
+                        }
+                    }
+                    
+                    // ✅ FIX: Validate that all noteIds have original positions
+                    const missingOriginals = finalNoteIds.filter(id => !originalNotesForDrag.has(id));
+                    if (missingOriginals.length > 0) {
+                        console.warn('⚠️ Missing original positions for notes:', missingOriginals);
+                        // Try to fill missing originals
+                        const currentNotes = notes();
+                        missingOriginals.forEach(id => {
                             const note = currentNotes.find(n => n.id === id);
                             if (note) {
                                 originalNotesForDrag.set(id, { startTime: note.startTime, pitch: note.pitch });
@@ -1682,9 +1754,22 @@ export function useNoteInteractionsV2(
                         });
                     }
 
+                    // ✅ CRITICAL DEBUG: Log drag state creation
+                    if (DEBUG_MODE) {
+                        console.log('🎯 Creating drag state:', {
+                            type: 'moving',
+                            noteIdsCount: finalNoteIds.length,
+                            noteIds: finalNoteIds,
+                            originalNotesCount: originalNotesForDrag.size,
+                            isDuplicating,
+                            effectiveSelectedNotesSize: effectiveSelectedNotes.size,
+                            actualSelectedNoteIdsSize: selectedNoteIds.size
+                        });
+                    }
+
                     setDragState({
                         type: 'moving',
-                        noteIds: isDuplicating ? duplicatedNoteIds : (selectedNoteIds.has(foundNote.id) ? Array.from(selectedNoteIds) : [foundNote.id]),
+                        noteIds: finalNoteIds, // ✅ FIX: Always use finalNoteIds array
                         startCoords: coords,
                         originalNotes: originalNotesForDrag,
                         isDuplicating // Track if this is a duplicate operation
@@ -1855,8 +1940,9 @@ export function useNoteInteractionsV2(
                 }
             }
 
-            // Show preview note with smart duration prediction
-            if (!foundNote && stepWidth && coords.pitch >= 0 && coords.pitch <= 127) {
+            // ✅ FIX: Show preview note with smart duration prediction
+            // Always show preview when hovering (even on first open) if instrument is ready
+            if (!foundNote && stepWidth && coords.pitch >= 0 && coords.pitch <= 127 && currentInstrument) {
                 const previewDuration = midiInputContext.getNextNoteDuration({
                     pitch: coords.pitch,
                     time: snappedTime,
@@ -1898,8 +1984,6 @@ export function useNoteInteractionsV2(
         // ✅ ERASER HIGHLIGHT & CONTINUOUS DELETION - Highlight and delete while dragging
         if (currentTool === TOOL_TYPES.ERASER) {
             if (foundNote) {
-                e.currentTarget.style.cursor = 'not-allowed';
-
                 // Continuous deletion while mouse is held down
                 if (paintDragState && paintDragState.mode === 'erase') {
                     // Only delete if we moved to a different note
@@ -1919,24 +2003,38 @@ export function useNoteInteractionsV2(
             }
         }
 
-        // Cursor feedback for better UX
-        if (foundNote && currentTool === TOOL_TYPES.SELECT) {
+        // ✅ REDESIGNED: Enhanced cursor feedback system
+        // This provides immediate visual feedback based on context
+        // ✅ FIX: Initialize with tool-specific cursor (not 'default')
+        let cursorState = null;
+
+        if (dragState?.type === 'moving') {
+            cursorState = 'grabbing';
+        } else if (dragState?.type === 'resizing') {
+            cursorState = dragState.resizeHandle === 'left' ? 'resize-left' :
+                         dragState.resizeHandle === 'right' ? 'resize-right' : 'resize-both';
+        } else if (foundNote && currentTool === TOOL_TYPES.SELECT) {
             const resizeHandle = getResizeHandle(coords.x, coords.y, foundNote);
             if (resizeHandle) {
-                e.currentTarget.style.cursor = 'ew-resize';
+                cursorState = resizeHandle === 'left' ? 'resize-left' :
+                            resizeHandle === 'right' ? 'resize-right' : 'resize-both';
             } else {
-                e.currentTarget.style.cursor = 'move';
+                cursorState = 'grab';
             }
         } else if (currentTool === TOOL_TYPES.SLIDE) {
             // ✅ PHASE 3: Slide tool cursor - show different cursor if source note is selected
             if (slideSourceNoteId) {
-                e.currentTarget.style.cursor = foundNote ? 'crosshair' : 'not-allowed';
+                cursorState = foundNote ? 'crosshair' : 'not-allowed';
             } else {
-                e.currentTarget.style.cursor = foundNote ? 'crosshair' : 'default';
+                cursorState = foundNote ? 'crosshair' : 'slide-premium';
             }
-        } else if (activeTool === 'slice') {
-            e.currentTarget.style.cursor = foundNote ? 'col-resize' : 'default';
-
+        } else if (currentTool === TOOL_TYPES.ERASER) {
+            cursorState = foundNote ? 'not-allowed' : 'erase-premium';
+        } else if (currentTool === TOOL_TYPES.PAINT_BRUSH) {
+            cursorState = foundNote ? 'not-allowed' : 'paint-premium';
+        } else if (currentTool === TOOL_TYPES.SLICE) {
+            cursorState = foundNote ? 'col-resize' : 'slice-premium';
+            
             // ✅ SLICE PREVIEW: Show slice line when hovering over note
             if (foundNote) {
                 const { stepWidth } = engine.dimensions || {};
@@ -1948,8 +2046,13 @@ export function useNoteInteractionsV2(
                 setSlicePreview(null);
             }
         } else {
-            e.currentTarget.style.cursor = 'default';
             setSlicePreview(null); // Clear slice preview for other tools
+        }
+
+        // ✅ Update cursor state for cursor manager integration
+        // Only update if we have a specific cursor (null means use tool default)
+        if (cursorState !== null) {
+            setCursorState(cursorState);
         }
 
         if (dragState?.type === 'slicing') {
@@ -2228,10 +2331,15 @@ export function useNoteInteractionsV2(
             const noteIds = dragState.noteIds;
             const { deltaTime, deltaPitch } = dragState.currentDelta;
 
+            // ✅ FIX: Validate noteIds array
+            if (!noteIds || !Array.isArray(noteIds) || noteIds.length === 0) {
+                console.warn('⚠️ Move operation: Invalid noteIds', noteIds);
+                setDragState(null);
+                return;
+            }
+
             // Calculate final positions from currentDelta
             const finalPositions = new Map();
-            const storedNotes = getPatternNotes();
-            const baseNotes = convertToPianoRollFormat(storedNotes);
             
             noteIds.forEach(noteId => {
                 const original = originalPositions.get(noteId);
@@ -2252,8 +2360,17 @@ export function useNoteInteractionsV2(
                         startTime: newTime,
                         pitch: newPitch
                     });
+                } else {
+                    console.warn('⚠️ Move operation: Original position not found for note', noteId);
                 }
             });
+
+            // ✅ FIX: Check if we have valid final positions
+            if (finalPositions.size === 0) {
+                console.warn('⚠️ Move operation: No valid final positions calculated');
+                setDragState(null);
+                return;
+            }
 
             // Check if notes actually moved
             let hasMoved = false;
@@ -2266,15 +2383,42 @@ export function useNoteInteractionsV2(
             }
 
             if (hasMoved) {
-                // ✅ IMMEDIATE UPDATE - Apply changes instantly
-                const currentNotes = notes();
-                const updatedNotes = currentNotes.map(note => {
+                // ✅ FIX: Get current notes from store directly (bypass tempNotes)
+                // Use getPatternNotes() to get actual stored notes, not render state
+                const storedNotes = getPatternNotes();
+                const baseNotes = convertToPianoRollFormat(storedNotes);
+                
+                // ✅ FIX: Validate that all noteIds exist in baseNotes
+                const missingNotes = noteIds.filter(id => !baseNotes.find(n => n.id === id));
+                if (missingNotes.length > 0) {
+                    console.warn('⚠️ Move operation: Some notes not found in stored notes', missingNotes);
+                }
+                
+                // ✅ FIX: Apply final positions to base notes
+                const updatedNotes = baseNotes.map(note => {
                     const final = finalPositions.get(note.id);
                     if (final) {
                         return { ...note, ...final };
                     }
                     return note;
                 });
+                
+                // ✅ FIX: Debug log for multi-note move
+                if (DEBUG_MODE) {
+                    console.log('📦 Multi-note move:', {
+                        noteIds: noteIds.length,
+                        originalPositions: originalPositions.size,
+                        finalPositions: finalPositions.size,
+                        baseNotesCount: baseNotes.length,
+                        updatedNotesCount: updatedNotes.length,
+                        deltaTime,
+                        deltaPitch,
+                        updatedNoteIds: Array.from(finalPositions.keys())
+                    });
+                }
+                
+                // ✅ FIX: Clear tempNotes BEFORE updating store to prevent stale data
+                setTempNotes([]);
                 
                 // Update store immediately for smooth UX
                 updatePatternStore(updatedNotes);
@@ -2697,14 +2841,20 @@ export function useNoteInteractionsV2(
                 
                 notesInArea = currentNotes.filter(note => {
                     // ✅ Get note position in pixel coordinates (same coordinate space as lasso path)
-                    // Lasso path points are calculated as: (time * stepWidth - scrollX, (127 - pitch) * keyHeight - scrollY)
-                    // This is after ctx.translate(KEYBOARD_WIDTH, RULER_HEIGHT) in renderer
-                    
-                    // Calculate note bounds in pixel coordinates
-                    const noteStartX = note.startTime * stepWidth - engine.viewport.scrollX;
-                    const noteEndX = (note.startTime + (note.visualLength || note.length)) * stepWidth - engine.viewport.scrollX;
-                    const noteTopY = (127 - (note.pitch + 0.5)) * keyHeight - engine.viewport.scrollY;
-                    const noteBottomY = (127 - (note.pitch - 0.5)) * keyHeight - engine.viewport.scrollY;
+                    // Lasso path points are in screen pixel coordinates (after translate and scroll)
+                    // We need to calculate note positions in the same coordinate space
+
+                    // Calculate note bounds in pixel coordinates (world coordinates)
+                    const noteWorldStartX = note.startTime * stepWidth;
+                    const noteWorldEndX = (note.startTime + (note.visualLength || note.length)) * stepWidth;
+                    const noteWorldTopY = (127 - (note.pitch + 0.5)) * keyHeight;
+                    const noteWorldBottomY = (127 - (note.pitch - 0.5)) * keyHeight;
+
+                    // Convert to screen coordinates (matching lasso path)
+                    const noteStartX = noteWorldStartX - engine.viewport.scrollX;
+                    const noteEndX = noteWorldEndX - engine.viewport.scrollX;
+                    const noteTopY = noteWorldTopY - engine.viewport.scrollY;
+                    const noteBottomY = noteWorldBottomY - engine.viewport.scrollY;
                     
                     // ✅ Check multiple points of the note (center + corners) to see if note overlaps with polygon
                     // This ensures we catch notes that are partially inside the lasso
@@ -3365,7 +3515,7 @@ export function useNoteInteractionsV2(
         rightClickDragState, // ✅ NEW: Right click drag state for deletion cursor
         dragState, // ✅ NEW: Drag state for cursor management
         paintDragState, // ✅ NEW: Paint drag state for cursor management
-        cursorState: getCursorState(), // ✅ NEW: Computed cursor state
+        cursorState, // ✅ REDESIGNED: Real-time cursor state from mouse interactions
         contextMenuState, // ✅ NEW: Context menu state
 
         // Data

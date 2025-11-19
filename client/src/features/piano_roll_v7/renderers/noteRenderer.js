@@ -109,6 +109,18 @@ export class PremiumNoteRenderer {
                 startTime: note.startTime,
                 pitch: note.pitch,
                 length: note.length,
+                pitchType: typeof note.pitch,
+                noteKeys: Object.keys(note),
+                fullNote: JSON.stringify(note, null, 2)
+            });
+            return;
+        }
+
+        // ✅ Validate pitch is a number, not a string
+        if (typeof note.pitch !== 'number') {
+            console.error('❌ Note pitch is not a number:', {
+                pitch: note.pitch,
+                pitchType: typeof note.pitch,
                 note
             });
             return;
@@ -549,6 +561,19 @@ export class PremiumNoteRenderer {
                 if (dragState.type === 'moving' && dragState.noteIds && dragState.noteIds.includes(note.id)) {
                     // Moving: apply delta to position
                     const original = dragState.originalNotes.get(note.id);
+
+                    // DEBUG: Log first note being rendered during drag
+                    if (note.id === dragState.noteIds[0] && typeof window !== 'undefined' && !window.__dragLogShown) {
+                        window.__dragLogShown = true;
+                        console.log('🎨 Renderer: Moving notes:', {
+                            noteIdsCount: dragState.noteIds.length,
+                            currentNoteId: note.id,
+                            hasOriginal: !!original,
+                            delta: dragState.currentDelta
+                        });
+                        setTimeout(() => { window.__dragLogShown = false; }, 1000);
+                    }
+
                     if (original) {
                         const { deltaTime, deltaPitch } = dragState.currentDelta;
                         let newTime = original.startTime + deltaTime;
@@ -573,57 +598,72 @@ export class PremiumNoteRenderer {
                         // This note is being resized - apply delta
                         const { deltaTime } = dragState.currentDelta;
                         const original = originalNotes.get(note.id);
-                            // ✅ FIX: Minimum length should be at least one grid unit (snapValue)
-                            // If snapValue is 1, minLength should be 1; if 0.5, minLength should be 0.5, etc.
-                            const minLength = snapValue > 0 ? Math.max(0.25, snapValue) : 0.25;
-                            
+
+                        // ✅ Safety check: Only proceed if original exists
+                        if (original) {
+                            // ✅ Minimum length: Use snap value as minimum (or 0.25 if no snap)
+                            const minLength = snapValue > 0 ? snapValue : 0.25;
+
                             // Helper: Snap to grid
                             const snapToGrid = (value, snap) => {
                                 if (snap <= 0) return value;
                                 return Math.round(value / snap) * snap;
                             };
 
-                        if (dragState.resizeHandle === 'left') {
-                            // ✅ FIX: original is already converted (oval -> normal), so use original.length directly
-                            const originalEndTime = original.startTime + original.length;
-                            let newStartTime = Math.max(0, original.startTime + deltaTime);
+                            // ✅ Detect oval notes: use visualLength for resize, keep original length
+                            const isOvalNote = note.length !== note.visualLength;
+                            const resizableLength = original.visualLength || original.length;
+
+                            if (dragState.resizeHandle === 'left') {
+                                const originalEndTime = original.startTime + resizableLength;
+                                let newStartTime = Math.max(0, original.startTime + deltaTime);
 
                             if (snapValue > 0) {
                                 newStartTime = Math.max(0, Math.round(newStartTime / snapValue) * snapValue);
                             }
 
-                            let newLength = Math.max(minLength, originalEndTime - newStartTime);
-                            
+                            let newVisualLength = Math.max(minLength, originalEndTime - newStartTime);
+
                             // ✅ FIX: Snap length to grid as well
                             if (snapValue > 0) {
-                                newLength = snapToGrid(newLength, snapValue);
+                                newVisualLength = snapToGrid(newVisualLength, snapValue);
                                 // Ensure minimum length after snapping
-                                newLength = Math.max(minLength, newLength);
+                                newVisualLength = Math.max(minLength, newVisualLength);
                             }
-                            
-                            renderNote = { ...note, startTime: newStartTime, length: newLength, visualLength: newLength };
+
+                            // ✅ For oval notes: keep original length, only change visualLength
+                            renderNote = {
+                                ...note,
+                                startTime: newStartTime,
+                                visualLength: newVisualLength,
+                                length: isOvalNote ? note.length : newVisualLength
+                            };
                         } else if (dragState.resizeHandle === 'right') {
-                            // ✅ FIX: Right resize should NOT change startTime, only length
-                            // ✅ FIX: original is already converted (oval -> normal), so use original.length directly
                             const originalStartTime = original.startTime;
-                            const originalEndTime = originalStartTime + original.length;
+                            const originalEndTime = originalStartTime + resizableLength;
                             let newEndTime = originalEndTime + deltaTime;
 
                             if (snapValue > 0) {
                                 newEndTime = Math.max(0, Math.round(newEndTime / snapValue) * snapValue);
                             }
 
-                            let newLength = Math.max(minLength, newEndTime - originalStartTime);
-                            
+                            let newVisualLength = Math.max(minLength, newEndTime - originalStartTime);
+
                             // ✅ FIX: Snap length to grid as well
                             if (snapValue > 0) {
-                                newLength = snapToGrid(newLength, snapValue);
+                                newVisualLength = snapToGrid(newVisualLength, snapValue);
                                 // Ensure minimum length after snapping
-                                newLength = Math.max(minLength, newLength);
+                                newVisualLength = Math.max(minLength, newVisualLength);
                             }
-                            
-                            // ✅ FIX: Ensure startTime stays the same for right resize
-                            renderNote = { ...note, startTime: originalStartTime, length: newLength, visualLength: newLength };
+
+                            // ✅ For oval notes: keep original length, only change visualLength
+                            renderNote = {
+                                ...note,
+                                startTime: originalStartTime,
+                                visualLength: newVisualLength,
+                                length: isOvalNote ? note.length : newVisualLength
+                            };
+                            }
                         }
                     }
                 }

@@ -58,7 +58,8 @@ const createTheme = (name, colors, zenithOverrides = {}) => ({
     'accent-cold': zenithOverrides['accent-cold'] || '#556FB5',
 
     // Semantic Colors
-    'success': zenithOverrides['success'] || '#10B981',
+    // ✅ FIX: Improved contrast for success green - brighter for better visibility on dark backgrounds
+    'success': zenithOverrides['success'] || '#22C55E', // Brighter green (#10B981 -> #22C55E) for better contrast
     'warning': zenithOverrides['warning'] || '#F59E0B',
     'error': zenithOverrides['error'] || '#EF4444',
     'info': zenithOverrides['info'] || '#3B82F6',
@@ -115,7 +116,7 @@ const createTheme = (name, colors, zenithOverrides = {}) => ({
     'accent-warm-rgb': hexToRGB(zenithOverrides['accent-warm'] || '#FFB627'),
     'accent-cool-rgb': hexToRGB(zenithOverrides['accent-cool'] || colors.accent || '#4ECDC4'),
     'accent-cold-rgb': hexToRGB(zenithOverrides['accent-cold'] || '#556FB5'),
-    'success-rgb': hexToRGB(zenithOverrides['success'] || '#10B981'),
+    'success-rgb': hexToRGB(zenithOverrides['success'] || '#22C55E'), // Updated to match new success color
     'warning-rgb': hexToRGB(zenithOverrides['warning'] || '#F59E0B'),
     'error-rgb': hexToRGB(zenithOverrides['error'] || '#EF4444'),
     'info-rgb': hexToRGB(zenithOverrides['info'] || '#3B82F6'),
@@ -150,9 +151,9 @@ const defaultThemes = [
       'text-secondary': '#A1A8B5',
       'text-tertiary': '#6B7280',
       
-      // ✅ PREMIUM TEXTURE: Classic workspace texture
-      'workspace-texture-accent': 'rgba(107, 142, 191, 0.015)',
-      'workspace-grid-color': 'rgba(255, 255, 255, 0.02)',
+      // ✅ PREMIUM TEXTURE: Classic workspace texture (improved contrast)
+      'workspace-texture-accent': 'rgba(107, 142, 191, 0.025)', // Increased from 0.015 for better visibility
+      'workspace-grid-color': 'rgba(255, 255, 255, 0.035)', // Increased from 0.02 for better contrast
       'workspace-grid-size': '32px',
       'workspace-gradient-opacity': '0.3'
     }
@@ -486,7 +487,7 @@ const defaultThemes = [
       'text-tertiary': '#9575B8',   // Darker purple
 
       // Semantic colors with anime flair
-      'success': '#00E676',         // Bright green
+      'success': '#4ADE80',         // Bright green (improved contrast - #00E676 -> #4ADE80)
       'warning': '#FFEA00',         // Bright yellow
       'error': '#FF1744',           // Bright red (matches accent-hot)
       'info': '#E040FB',            // Purple (matches accent-cool)
@@ -518,9 +519,9 @@ const defaultThemes = [
       'duration-normal': '250ms',
       'duration-slow': '350ms',
       
-      // ✅ PREMIUM TEXTURE: Anime-themed workspace texture
-      'workspace-texture-accent': 'rgba(224, 64, 251, 0.03)',
-      'workspace-grid-color': 'rgba(224, 64, 251, 0.05)',
+      // ✅ PREMIUM TEXTURE: Anime-themed workspace texture (improved contrast)
+      'workspace-texture-accent': 'rgba(224, 64, 251, 0.04)', // Increased from 0.03 for better visibility
+      'workspace-grid-color': 'rgba(224, 64, 251, 0.06)', // Increased from 0.05 for better contrast
       'workspace-grid-size': '24px',
       'workspace-gradient': 'linear-gradient(135deg, #0D0012 0%, #1A0A1F 50%, #0D0012 100%)',
       'workspace-gradient-opacity': '0.4'
@@ -548,9 +549,9 @@ const defaultThemes = [
       'text-primary': '#FFE6D5',
       'text-secondary': '#C9A68A',
       
-      // ✅ PREMIUM TEXTURE: Warm-themed workspace texture
-      'workspace-texture-accent': 'rgba(255, 182, 39, 0.02)',
-      'workspace-grid-color': 'rgba(255, 140, 0, 0.03)',
+      // ✅ PREMIUM TEXTURE: Warm-themed workspace texture (improved contrast)
+      'workspace-texture-accent': 'rgba(255, 182, 39, 0.03)', // Increased from 0.02 for better visibility
+      'workspace-grid-color': 'rgba(255, 140, 0, 0.04)', // Increased from 0.03 for better contrast
       'workspace-grid-size': '40px',
       'workspace-gradient': 'linear-gradient(135deg, #1A0F0A 0%, #2D1810 50%, #1A0F0A 100%)',
       'workspace-gradient-opacity': '0.5'

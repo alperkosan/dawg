@@ -188,7 +188,12 @@ function CCLanes({
 
     // Handle mouse interactions
     const handleMouseDown = useCallback((e) => {
-        if (activeTool !== 'select' || selectedLaneIndex < 0 || selectedLaneIndex >= lanes.length) return;
+        // ✅ FIX: Allow automation drawing with any tool (or at least select/paintBrush)
+        // Automation should be drawable regardless of active tool
+        if (selectedLaneIndex < 0 || selectedLaneIndex >= lanes.length) return;
+        
+        // ✅ FIX: Stop event propagation to prevent piano roll from handling the event
+        e.stopPropagation();
 
         const canvas = canvasRef.current;
         const rect = canvas.getBoundingClientRect();
@@ -231,9 +236,14 @@ function CCLanes({
                 onPointAdd(lane.ccNumber, snappedTime, Math.max(min, Math.min(max, Math.round(clickValue))));
             }
         }
-    }, [activeTool, selectedLaneIndex, lanes, dimensions, viewport, snapValue, onPointAdd]);
+    }, [selectedLaneIndex, lanes, dimensions, viewport, snapValue, onPointAdd]);
 
     const handleMouseMove = useCallback((e) => {
+        // ✅ FIX: Stop event propagation when interacting with automation
+        if (draggingPoint || (selectedLaneIndex >= 0 && selectedLaneIndex < lanes.length)) {
+            e.stopPropagation();
+        }
+        
         if (!draggingPoint || selectedLaneIndex < 0 || selectedLaneIndex >= lanes.length) {
             // Update hover state
             const canvas = canvasRef.current;
@@ -296,8 +306,10 @@ function CCLanes({
         }
     }, [draggingPoint, selectedLaneIndex, lanes, dimensions, viewport, snapValue, onPointUpdate]);
 
-    const handleMouseUp = useCallback(() => {
+    const handleMouseUp = useCallback((e) => {
+        // ✅ FIX: Stop event propagation when interacting with automation
         if (draggingPoint) {
+            e?.stopPropagation();
             setDraggingPoint(null);
         }
     }, [draggingPoint]);
