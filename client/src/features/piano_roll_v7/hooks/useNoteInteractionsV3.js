@@ -390,43 +390,106 @@ export function useNoteInteractionsV3({
     const findNoteAtPosition = useCallback((coords) => {
         const { keyHeight } = engine.dimensions || { keyHeight: 20 };
 
-        return notes.find(n => {
-            const noteEnd = n.startTime + (n.visualLength || n.length);
+        // ✅ FIX: Calculate exact note boundaries matching renderer
+        // Renderer: y = (127 - pitch) * keyHeight, height = keyHeight - 1
+        // This means note is TOP-ALIGNED (not centered) at pitch
+        // 
+        // Pitch to Y conversion: pitch = 127 - y / keyHeight
+        // Note at pitch 60, keyHeight 20:
+        // - Top Y: (127 - 60) * 20 = 1340 → pitch = 60.0
+        // - Bottom Y: 1340 + 19 = 1359 → pitch = 127 - 1359/20 = 59.05
+        // - Range: [59.05, 60.0] (inclusive)
+        //
+        // Formula: bottomPitch = pitch - (keyHeight - 1) / keyHeight
+        const actualNoteHeight = keyHeight - 1;
+        const pitchRange = actualNoteHeight / keyHeight; // 19/20 = 0.95 for keyHeight=20
 
-            // Time match
-            const timeMatch = coords.time >= n.startTime && coords.time <= noteEnd;
+        // ✅ WYSIWYG PRINCIPLE: Use exact visible area, no padding
+        // What you see is what you get - click only on visible note area
+        const candidates = notes.filter(n => {
+            // ✅ FL STUDIO STYLE: Use visualLength for hit detection (oval notes support)
+            const displayLength = n.visualLength !== undefined ? n.visualLength : n.length;
+            const noteEndTime = n.startTime + displayLength;
 
-            // ✅ Pitch match - notes occupy exactly 1 full MIDI note height
-            // Renderer: y = (127 - pitch) * keyHeight, height = keyHeight - 1
-            // Coord conversion: pitch = 127 - y / keyHeight
-            //
-            // Example: note at pitch 60, keyHeight 20
-            // - Y start: (127 - 60) * 20 = 1340
-            // - Y end: 1340 + 19 = 1359
-            // - Pitch at Y=1340: 127 - 1340/20 = 60.0
-            // - Pitch at Y=1359: 127 - 1359/20 = 59.05
-            //
-            // So note at pitch 60 covers pitch range [59.05, 60.0]
-            // Since height = keyHeight - 1, range is approximately [pitch - 0.95, pitch]
-            const pitchMatch = coords.pitch >= (n.pitch - 1.0) && coords.pitch <= n.pitch;
+            // ✅ EXACT TIME BOUNDARIES - No tolerance, only visible area
+            // Use inclusive boundaries to match visual rendering exactly
+            // >= start and <= end (both inclusive) matches what user sees
+            const timeMatch = coords.time >= n.startTime && coords.time <= noteEndTime;
+
+            // ✅ EXACT PITCH BOUNDARIES - Match renderer exactly (TOP-ALIGNED, not centered)
+            // Note is TOP-ALIGNED at note.pitch, so it spans:
+            // - Top edge: pitch (exactly)
+            // - Bottom edge: pitch - pitchRange
+            // Example: pitch=60, keyHeight=20, pitchRange=0.95
+            // - Top: 60.0
+            // - Bottom: 60 - 0.95 = 59.05
+            // - Range: [59.05, 60.0] (inclusive) ✓ Matches renderer!
+            const notePitchMin = n.pitch - pitchRange;
+            const notePitchMax = n.pitch;
+            const pitchMatch = coords.pitch >= notePitchMin && coords.pitch <= notePitchMax;
 
             return timeMatch && pitchMatch;
         });
-    }, [notes, engine]);
+
+        // ✅ FIX: If multiple notes overlap, prefer:
+        // 1. Selected notes (if any are selected)
+        // 2. Notes with highest pitch (topmost)
+        // 3. Notes with shortest visualLength (most visible)
+        if (candidates.length === 0) return null;
+        if (candidates.length === 1) return candidates[0];
+
+        // Check if any candidate is selected
+        const selectedCandidates = candidates.filter(n => state.selection.has(n.id));
+        if (selectedCandidates.length > 0) {
+            // Prefer selected notes, then highest pitch
+            return selectedCandidates.sort((a, b) => b.pitch - a.pitch)[0];
+        }
+
+        // Prefer highest pitch (topmost), then shortest visualLength
+        return candidates.sort((a, b) => {
+            if (Math.abs(b.pitch - a.pitch) > 0.1) {
+                return b.pitch - a.pitch; // Higher pitch first
+            }
+            // If same pitch, prefer shorter visualLength (more visible)
+            const aVisual = a.visualLength !== undefined ? a.visualLength : a.length;
+            const bVisual = b.visualLength !== undefined ? b.visualLength : b.length;
+            return aVisual - bVisual;
+        })[0];
+    }, [notes, engine, state.selection]);
 
     const getResizeHandle = useCallback((coords, note) => {
         if (!note) return null;
         const noteEnd = note.startTime + (note.visualLength || note.length);
-        const threshold = 0.25; // 1/4 beat
+        
+        // ✅ FIX: Use snap-aware threshold - should match grid snap tolerance
+        // Use half of snap value or minimum 0.25 for better UX
+        const threshold = snapValue > 0 ? Math.max(0.25, snapValue * 0.5) : 0.25;
 
         if (Math.abs(coords.time - note.startTime) < threshold) return 'left';
         if (Math.abs(coords.time - noteEnd) < threshold) return 'right';
         return null;
-    }, []);
+    }, [snapValue]);
 
     const snapToGrid = useCallback((value) => {
         if (snapValue <= 0) return value;
-        return Math.round(value / snapValue) * snapValue;
+        // ✅ FIX: Snap to grid based on grid center (note interaction için)
+        // Grid'in ilk %80'ine (0-0.8) bastığında -> o grid'e yaz (Math.floor)
+        // Grid'in son %20'sine (0.8-1.0) bastığında -> sonraki grid'e yaz (Math.ceil)
+        // Example: snapValue=1, value=0.0 -> gridPos=0.0 < 0.8 -> floor(0.0/1)*1 = 0 ✓
+        //          snapValue=1, value=0.7 -> gridPos=0.7 < 0.8 -> floor(0.7/1)*1 = 0 ✓
+        //          snapValue=1, value=0.9 -> gridPos=0.9 >= 0.8 -> ceil(0.9/1)*1 = 1 ✓
+        //          snapValue=1, value=1.7 -> gridPos=0.7 < 0.8 -> floor(1.7/1)*1 = 1 ✓
+        //          snapValue=1, value=1.9 -> gridPos=0.9 >= 0.8 -> ceil(1.9/1)*1 = 2 ✓
+        const gridCenter = snapValue * 0.8; // 80% threshold
+        const gridPosition = (value % snapValue + snapValue) % snapValue; // Handle negative values
+        
+        if (gridPosition < gridCenter) {
+            // Grid'in ilk %80'i -> o grid'e yaz
+            return Math.floor(value / snapValue) * snapValue;
+        } else {
+            // Grid'in son %20'si -> sonraki grid'e yaz
+            return Math.ceil(value / snapValue) * snapValue;
+        }
     }, [snapValue]);
 
     // ===================================================================
@@ -588,11 +651,84 @@ export function useNoteInteractionsV3({
     }, [state.selection, getResizeHandle, select, startResize, startDrag]);
 
     const handlePaintTool = useCallback((e, coords, note) => {
+        // ✅ FIX: First check if there's a note at raw coordinates (for immediate feedback)
+        // This uses hit detection to give instant feedback
         if (note) return; // Can't paint on existing note
 
-        const time = snapToGrid(coords.time);
-        const midiPitch = Math.round(coords.pitch);
+        // ✅ FIX: Snap coordinates FIRST, then check if snapped position is empty
+        // This ensures paint tool uses same tolerance as hit detection
+        // snapToGrid snaps based on grid center: first half -> current grid, second half -> next grid
+        const snappedTime = snapToGrid(coords.time);
+        
+        // ✅ FIX: Pitch rounding with grid center sensitivity (note interaction için)
+        // Grid'in ilk %80'ine (0-0.8) bastığında -> o pitch'e yaz (Math.floor)
+        // Grid'in son %20'sine (0.8-1.0) bastığında -> sonraki pitch'e yaz (Math.ceil)
+        // Bu, pitch için daha hassas kontrol sağlar
+        // Example: pitch=60.0 -> pitchPos=0.0 < 0.8 -> floor(60.0) = 60 ✓
+        //          pitch=60.7 -> pitchPos=0.7 < 0.8 -> floor(60.7) = 60 ✓
+        //          pitch=60.9 -> pitchPos=0.9 >= 0.8 -> ceil(60.9) = 61 ✓
+        const pitchGridCenter = 0.8; // 80% threshold
+        const pitchPosition = (coords.pitch % 1 + 1) % 1; // Handle negative values, get fractional part
+        
+        let finalPitch;
+        if (pitchPosition < pitchGridCenter) {
+            // Grid'in ilk %80'i -> o pitch'e yaz
+            finalPitch = Math.floor(coords.pitch);
+        } else {
+            // Grid'in son %20'si -> sonraki pitch'e yaz
+            finalPitch = Math.ceil(coords.pitch);
+        }
+        
+        // Clamp to valid MIDI range
+        finalPitch = Math.max(0, Math.min(127, finalPitch));
+        
+        // snappedTime is already at grid position, no need to round again
+        const finalTime = snappedTime;
+        
         const lengthInSteps = snapValue || 1;
+
+        // ✅ FIX: Check if snapped position already has a note
+        // For paint tool, we need STRICTER check than hit detection for time
+        // Hit detection uses inclusive boundaries, but paint tool should allow writing
+        // notes at the exact end of another note (for continuous note writing)
+        // So we use EXCLUSIVE end boundary for paint tool duplicate check
+        const { keyHeight } = engine.dimensions || { keyHeight: 20 };
+        const actualNoteHeight = keyHeight - 1;
+        const pitchRange = actualNoteHeight / keyHeight;
+        
+        const existingNote = notes.find(n => {
+            const displayLength = n.visualLength !== undefined ? n.visualLength : n.length;
+            const noteEndTime = n.startTime + displayLength;
+            
+            // ✅ FIX: Time overlap check with EXCLUSIVE end boundary for paint tool
+            // This allows writing notes at the exact end of another note
+            // >= start and < end (end is exclusive) allows writing at noteEndTime
+            // Example: note at [0, 1], finalTime=1.0 -> 1.0 >= 0 && 1.0 < 1 = false ✓ (can write)
+            //          note at [0, 1], finalTime=0.5 -> 0.5 >= 0 && 0.5 < 1 = true ✗ (duplicate)
+            const timeOverlap = finalTime >= n.startTime && finalTime < noteEndTime;
+            
+            // Pitch overlap check (same as hit detection - TOP-ALIGNED)
+            const notePitchMin = n.pitch - pitchRange;
+            const notePitchMax = n.pitch;
+            const pitchOverlap = finalPitch >= notePitchMin && finalPitch <= notePitchMax;
+            
+            return timeOverlap && pitchOverlap;
+        });
+        
+        if (existingNote) {
+            // Position already occupied, don't create duplicate
+            if (DEBUG) {
+                console.log('⚠️ [V3] Paint blocked - note exists at snapped position:', {
+                    snapped: { time: finalTime, pitch: finalPitch },
+                    existing: { 
+                        time: existingNote.startTime, 
+                        end: existingNote.startTime + (existingNote.visualLength || existingNote.length), 
+                        pitch: existingNote.pitch 
+                    }
+                });
+            }
+            return;
+        }
 
         // ✅ COMPATIBILITY: Create note in both formats for backward compatibility
         // Piano Roll uses: startTime, pitch (MIDI number), length (steps), velocity (0-127)
@@ -601,13 +737,13 @@ export function useNoteInteractionsV3({
             id: `note_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
 
             // ✅ Piano Roll format (for rendering)
-            startTime: time,
-            pitch: midiPitch, // MIDI number (0-127)
+            startTime: finalTime, // Rounded to grid center, then to grid
+            pitch: finalPitch, // MIDI number (0-127) - rounded to grid center
             length: lengthInSteps,
             visualLength: lengthInSteps,
 
             // ✅ Channel Rack format (for playback - legacy compatibility)
-            time: time,
+            time: finalTime,
             duration: `${lengthInSteps}*16n`, // Convert steps to Tone.js duration
 
             // ✅ Velocity: Use 0-127 format (more standard)
@@ -620,9 +756,9 @@ export function useNoteInteractionsV3({
 
         // ✅ PREVIEW: Play note sound with short duration (200ms)
         // This gives immediate feedback when painting notes
-        getPreviewManager().previewNote(midiPitch, 100, 0.2);
+        getPreviewManager().previewNote(finalPitch, 100, 0.2);
 
-    }, [snapToGrid, snapValue, addNotesToPattern]);
+    }, [snapToGrid, snapValue, addNotesToPattern, findNoteAtPosition]);
 
     const handleEraserTool = useCallback((e, coords, note) => {
         if (!note) return;
