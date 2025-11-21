@@ -240,6 +240,8 @@ export function ArrangementPanelV2() {
 
   // Clip double-click handler for sample editor
   const handleClipDoubleClick = useCallback(async (clip) => {
+    console.log('🎵 handleClipDoubleClick CALLED!', { clipType: clip.type, clipName: clip.name });
+
     // Only open sample editor for audio clips
     if (clip.type === 'audio') {
       console.log('🎵 Opening sample editor for clip:', clip.name);
@@ -1480,6 +1482,8 @@ export function ArrangementPanelV2() {
 
   // Combined mouse handlers (viewport + clip interaction)
   const handleCombinedMouseDown = (e) => {
+    console.log('🔵 handleCombinedMouseDown CALLED - button:', e.button, 'target:', e.target.className);
+
     // Close context menu on any click
     setContextMenu(null);
 
@@ -1501,13 +1505,16 @@ export function ArrangementPanelV2() {
     // Double-click detection must happen before other interactions (deletion, split, draw)
     // This ensures audio clip double-click opens Sample Editor even when other tools are active
     if (e.button === 0 && activeTool !== 'draw') {
+      console.log('🖱️ handleCombinedMouseDown: Calling clipInteraction.handleMouseDown');
       // Call handleMouseDown which will detect double-click and call onClipDoubleClick
       // handleMouseDown will set doubleClickHandledRef if double-click is detected
       handleMouseDown(e);
-      
+
       // ✅ FIX: Check if double-click was handled and skip other interactions
-      if (clipInteraction.wasDoubleClick()) {
-        console.log('🎵 Double-click detected, skipping other interactions');
+      const wasDouble = clipInteraction.wasDoubleClick();
+      console.log('🖱️ wasDoubleClick check result:', wasDouble);
+      if (wasDouble) {
+        console.log('🎵 Double-click detected in handleCombinedMouseDown, skipping other interactions');
         return; // Skip deletion, split, draw, etc.
       }
     }

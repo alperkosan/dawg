@@ -1039,6 +1039,14 @@ export function useClipInteraction(viewport, tracks, clips, constants, dimension
     // Only handle left mouse button
     if (e.button !== 0) return;
 
+    // ✅ FIX: Prevent event from being processed multiple times
+    // Check if this event was already handled by checking a custom flag
+    if (e._clipInteractionHandled) {
+      console.log('⚠️ Event already handled, skipping');
+      return;
+    }
+    e._clipInteractionHandled = true;
+
     const rect = e.currentTarget.getBoundingClientRect();
     const screenX = e.clientX - rect.left;
     const screenY = e.clientY - rect.top;
@@ -1085,15 +1093,25 @@ export function useClipInteraction(viewport, tracks, clips, constants, dimension
       const timeSinceLastClick = now - lastClickRef.current.time;
       const isDoubleClick = timeSinceLastClick < 300 && lastClickRef.current.clipId === clickedClip.id;
 
+      console.log('🖱️ CLIP CLICK DEBUG:', {
+        clipId: clickedClip.id,
+        clipType: clickedClip.type,
+        timeSinceLastClick,
+        isDoubleClick,
+        lastClickedClipId: lastClickRef.current.clipId
+      });
+
       if (isDoubleClick && onClipDoubleClick) {
         // Double-click detected - trigger callback
+        console.log('✅ DOUBLE-CLICK CONFIRMED! Calling onClipDoubleClick');
         onClipDoubleClick(clickedClip);
         lastClickRef.current = { time: 0, clipId: null }; // Reset
         doubleClickHandledRef.current = true; // ✅ FIX: Mark double-click as handled
         return;
       }
-      
+
       // ✅ FIX: Reset double-click flag if this is a new click (not double-click)
+      console.log('❌ NOT a double-click - this is a single click');
       doubleClickHandledRef.current = false;
 
       // Update last click info
