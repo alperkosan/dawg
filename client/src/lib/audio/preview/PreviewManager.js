@@ -88,49 +88,13 @@ export class PreviewManager {
       return;
     }
 
-    // ✅ FX CHAIN: Try to get audioEngine if not set
-    if (!this.audioEngine) {
-      try {
-        const { AudioContextService } = await import('../../services/AudioContextService.js');
-        this.audioEngine = AudioContextService.getAudioEngine();
-      } catch (error) {
-        console.warn('⚠️ PreviewManager: Could not access AudioContextService:', error);
-      }
-    }
-
-    // ✅ FX CHAIN: Get mixerTrackId from instrumentData
-    const mixerTrackId = instrumentData.mixerTrackId;
-
-    if (mixerTrackId && this.audioEngine && this.audioEngine.mixerInserts) {
-      const mixerInsert = this.audioEngine.mixerInserts.get(mixerTrackId);
-
-      if (mixerInsert && mixerInsert.input) {
-        // ✅ FX CHAIN: Route preview through MixerInsert (includes FX chain)
-        try {
-          this.previewInstrument.connect(mixerInsert.input);
-          this.currentMixerInsert = mixerInsert;
-          console.log(`🎛️ PreviewManager: Routed preview through MixerInsert ${mixerTrackId} (FX chain included)`);
-          return;
-        } catch (error) {
-          console.warn(`⚠️ PreviewManager: Failed to route through MixerInsert ${mixerTrackId}:`, error);
-        }
-      } else {
-        console.warn(`⚠️ PreviewManager: MixerInsert ${mixerTrackId} not found, using fallback routing`);
-      }
-    } else {
-      if (!mixerTrackId) {
-        console.warn('⚠️ PreviewManager: No mixerTrackId in instrumentData, using fallback routing (FX chain not included)');
-      } else if (!this.audioEngine) {
-        console.warn('⚠️ PreviewManager: AudioEngine not available, using fallback routing (FX chain not included)');
-      } else if (!this.audioEngine.mixerInserts) {
-        console.warn('⚠️ PreviewManager: MixerInserts not available, using fallback routing (FX chain not included)');
-      }
-    }
-
-    // ✅ FALLBACK: Route directly to destination (no FX chain)
+    // ✅ TEMPORARY FIX: Always use fallback routing (direct to destination)
+    // This avoids potential conflicts with playback routing through MixerInsert
+    // TODO: Investigate why routing through MixerInsert causes playback issues
     try {
       this.previewInstrument.connect(this.fallbackOutput);
-      console.log('⚠️ PreviewManager: Using fallback routing (direct to destination, FX chain NOT included)');
+      console.log('🎛️ PreviewManager: Using direct routing (bypass mixer, no FX chain)');
+      return;
     } catch (error) {
       console.error('❌ PreviewManager: Failed to connect preview instrument:', error);
     }

@@ -24,6 +24,7 @@ import { getToolManager } from '@/lib/piano-roll-tools';
 import { getTransportManagerSync } from '@/lib/core/TransportManagerSingleton';
 import { getAutomationManager } from '@/lib/automation/AutomationManager';
 import EventBus from '@/lib/core/EventBus.js';
+import { getPreviewManager } from '@/lib/audio/preview';
 // ✅ REMOVED: Complex cursor manager - using simple CSS cursors now
 // ✅ NEW TIMELINE SYSTEM
 import { useTimelineStore } from '@/store/TimelineStore';
@@ -284,11 +285,10 @@ function PianoRoll() {
         ? instruments.find(inst => inst.id === pianoRollInstrumentId)
         : null;
 
-    // ✅ Setup PreviewManager for all instrument types
+    // ✅ Setup PreviewManager to use AudioEngine's instrument directly
     useEffect(() => {
         if (!currentInstrument) return;
 
-        // Use unified PreviewManager for all instrument types
         let cancelled = false;
 
         const setupPreview = async () => {
@@ -302,12 +302,14 @@ function PianoRoll() {
 
                 const audioEngine = AudioContextService.getAudioEngine();
                 if (audioEngine?.audioContext) {
-                    // ✅ FX CHAIN: Pass audioEngine to PreviewManager for mixer routing
                     const previewManager = getPreviewManager(audioEngine.audioContext, audioEngine);
-                    await previewManager.setInstrument(currentInstrument); // ✅ AWAIT the async call
+
+                    // ✅ Use PreviewManager's normal setInstrument flow
+                    // This creates a separate preview instrument that won't interfere with playback
+                    await previewManager.setInstrument(currentInstrument);
 
                     if (!cancelled) {
-                        console.log('✅ Preview ready:', currentInstrument.name, `(${currentInstrument.type})`);
+                        console.log('✅ Preview instrument set:', currentInstrument.name);
                     }
                 }
             } catch (err) {
@@ -323,6 +325,65 @@ function PianoRoll() {
             cancelled = true;
         };
     }, [currentInstrument]);
+
+    // ✅ KEYBOARD PREVIEW - Track active keyboard preview note
+    const activeKeyboardNoteRef = useRef(null);
+    const [activeKeyboardNote, setActiveKeyboardNote] = useState(null);
+
+    // ✅ KEYBOARD PREVIEW - Start note when mouse down on keyboard
+    const handleKeyboardMouseDown = useCallback((e) => {
+        if (!currentInstrument || !engine.dimensions) return;
+
+        const rect = e.currentTarget.getBoundingClientRect();
+        const y = e.clientY - rect.top;
+        const RULER_HEIGHT = 30;
+        const KEYBOARD_WIDTH = 80;
+
+        // Check if click is in keyboard area
+        const x = e.clientX - rect.left;
+        if (x > KEYBOARD_WIDTH || y < RULER_HEIGHT) return;
+
+        // Calculate MIDI note from Y position
+        const gridY = y - RULER_HEIGHT;
+        const scrollY = engine.viewport?.scrollY || 0;
+        const keyHeight = engine.dimensions.keyHeight || 20;
+        const keyIndex = Math.floor((gridY + scrollY) / keyHeight);
+        const midiNote = 127 - keyIndex;
+
+        // Validate MIDI range
+        if (midiNote < 0 || midiNote > 127) return;
+
+        // Stop previous note if any
+        if (activeKeyboardNoteRef.current !== null) {
+            try {
+                getPreviewManager().stopNote(activeKeyboardNoteRef.current);
+            } catch (error) {
+                console.error('Error stopping previous keyboard note:', error);
+            }
+        }
+
+        // Start playing the note (sustain indefinitely until mouse up)
+        try {
+            getPreviewManager().previewNote(midiNote, 100, null); // null = sustain until stopped
+            activeKeyboardNoteRef.current = midiNote;
+            setActiveKeyboardNote(midiNote); // ✅ Update state for visual feedback
+        } catch (error) {
+            console.error('Keyboard preview error:', error);
+        }
+    }, [currentInstrument, engine]);
+
+    // ✅ KEYBOARD PREVIEW - Stop note when mouse up
+    const handleKeyboardMouseUp = useCallback(() => {
+        if (activeKeyboardNoteRef.current !== null) {
+            try {
+                getPreviewManager().stopNote(activeKeyboardNoteRef.current);
+                activeKeyboardNoteRef.current = null;
+                setActiveKeyboardNote(null); // ✅ Clear visual feedback
+            } catch (error) {
+                console.error('Error stopping keyboard note:', error);
+            }
+        }
+    }, []);
 
     // ✅ LOOP REGION HOOK - Timeline selection
     const loopRegionHook = useLoopRegionSelection(engine, snapValue, loopRegion, setLoopRegion);
@@ -498,7 +559,8 @@ function PianoRoll() {
             activeTool, // ✅ Pass active tool for visual feedback
             loopRegion, // ✅ Pass loop region for timeline rendering
             dragState, // ✅ V3: Unified dragState (includes resizing)
-            scaleHighlight // ✅ PHASE 5: Pass scale highlighting system
+            scaleHighlight, // ✅ PHASE 5: Pass scale highlighting system
+            activeKeyboardNote // ✅ Pass active keyboard note for visual feedback
         };
         drawPianoRollStatic(ctx, engineWithData);
 
@@ -507,7 +569,7 @@ function PianoRoll() {
             timelineRenderer.render(ctx, engineWithData);
         }
 
-    }, [engine, snapValue, noteInteractions, qualityLevel, ghostPosition, activeTool, loopRegion, noteInteractions.isSelectingTimeRange, noteInteractions.timeRangeSelection, timelineRenderer, scaleHighlight]); // Added: time-based selection + timelineRenderer + scale highlight
+    }, [engine, snapValue, noteInteractions, qualityLevel, ghostPosition, activeTool, loopRegion, noteInteractions.isSelectingTimeRange, noteInteractions.timeRangeSelection, timelineRenderer, scaleHighlight, activeKeyboardNote]); // Added: time-based selection + timelineRenderer + scale highlight + activeKeyboardNote
 
     // Playhead canvas - fast rendering via UIUpdateManager (uses engineRef from top of component)
     useEffect(() => {
@@ -938,6 +1000,7 @@ function PianoRoll() {
                     const x = e.clientX - rect.left;
                     const y = e.clientY - rect.top;
                     const isInRuler = y <= 30;
+                    const isInKeyboard = x <= 80 && y > 30;
                     const isInGrid = x > 80 && y > 30;
 
                     if (isInRuler) {
@@ -953,6 +1016,9 @@ function PianoRoll() {
                                 engine.eventHandlers.onMouseDown?.(e);
                             }
                         }
+                    } else if (isInKeyboard) {
+                        // ✅ Keyboard preview - start playing note on mouse down
+                        handleKeyboardMouseDown(e);
                     } else if (isInGrid) {
                         noteInteractions.handleMouseDown(e);
                     }
@@ -981,11 +1047,15 @@ function PianoRoll() {
                     // engine.eventHandlers.onMouseMove?.(e); // Bu satır viewport kaymasına neden oluyor
                 }}
                 onMouseUp={(e) => {
+                    // ✅ Stop keyboard preview note if active
+                    handleKeyboardMouseUp();
                     loopRegionHook.handleRulerMouseUp();
                     noteInteractions.handleMouseUp(e);
                     engine.eventHandlers.onMouseUp?.(e);
                 }}
                 onMouseLeave={(e) => {
+                    // ✅ Stop keyboard preview note if mouse leaves canvas
+                    handleKeyboardMouseUp();
                     noteInteractions.handleMouseUp(e);
                     engine.eventHandlers.onMouseLeave?.(e);
                 }}

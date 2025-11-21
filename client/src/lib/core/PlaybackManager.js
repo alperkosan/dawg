@@ -760,6 +760,13 @@ export class PlaybackManager {
             this.transport.setPosition(targetStep);
         }
 
+        // ✅ CRITICAL FIX: Stop all active instrument voices BEFORE clearing scheduled events
+        // This prevents stuck notes from VASynth voices that are still releasing
+        // Especially important for instruments with long release envelopes (e.g., warmpad)
+        if (this.isPlaying) {
+            this._stopAllActiveNotes();
+        }
+
         // Clear any scheduled events to prevent conflicts
         this._clearScheduledEvents();
 

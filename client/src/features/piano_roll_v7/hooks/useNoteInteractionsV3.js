@@ -347,6 +347,7 @@ export function useNoteInteractionsV3({
 
     const addNotesToPattern = useCallback((newNotes) => {
         if (!activePatternId || !currentInstrument) return;
+
         const updatedNotes = [...notes, ...newNotes];
         updatePatternNotes(activePatternId, currentInstrument.id, updatedNotes);
 
@@ -589,24 +590,37 @@ export function useNoteInteractionsV3({
     const handlePaintTool = useCallback((e, coords, note) => {
         if (note) return; // Can't paint on existing note
 
-        // Create new note
+        const time = snapToGrid(coords.time);
+        const midiPitch = Math.round(coords.pitch);
+        const lengthInSteps = snapValue || 1;
+
+        // ✅ COMPATIBILITY: Create note in both formats for backward compatibility
+        // Piano Roll uses: startTime, pitch (MIDI number), length (steps), velocity (0-127)
+        // Channel Rack uses: time, pitch (string), duration (Tone.js), velocity (0-1), length (steps)
         const newNote = {
             id: `note_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-            startTime: snapToGrid(coords.time),
-            pitch: Math.round(coords.pitch), // ✅ Round pitch to integer
-            length: snapValue || 1,
-            visualLength: snapValue || 1,
+
+            // ✅ Piano Roll format (for rendering)
+            startTime: time,
+            pitch: midiPitch, // MIDI number (0-127)
+            length: lengthInSteps,
+            visualLength: lengthInSteps,
+
+            // ✅ Channel Rack format (for playback - legacy compatibility)
+            time: time,
+            duration: `${lengthInSteps}*16n`, // Convert steps to Tone.js duration
+
+            // ✅ Velocity: Use 0-127 format (more standard)
             velocity: 100,
+
             muted: false
         };
 
         addNotesToPattern([newNote]);
 
-        // ✅ PREVIEW: Play note sound immediately
-        getPreviewManager().previewNote({
-            ...newNote,
-            instrumentId: currentInstrument?.id
-        });
+        // ✅ PREVIEW: Play note sound with short duration (200ms)
+        // This gives immediate feedback when painting notes
+        getPreviewManager().previewNote(midiPitch, 100, 0.2);
 
     }, [snapToGrid, snapValue, addNotesToPattern]);
 
@@ -636,11 +650,8 @@ export function useNoteInteractionsV3({
         // Tool-specific behavior
         if (activeTool === TOOL_TYPES.SELECT) {
             if (foundNote && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
-                // ✅ PREVIEW: Play note when clicking/selecting
-                getPreviewManager().previewNote({
-                    ...foundNote,
-                    instrumentId: currentInstrument?.id
-                });
+                // ✅ PREVIEW: Play note when clicking/selecting with short duration (300ms)
+                getPreviewManager().previewNote(foundNote.pitch, foundNote.velocity || 100, 0.3);
             }
             handleSelectTool(e, coords, foundNote);
         } else if (activeTool === TOOL_TYPES.PAINT_BRUSH) {
@@ -737,14 +748,11 @@ export function useNoteInteractionsV3({
             });
         }
 
-        // ✅ PREVIEW: Play the first moved note to confirm new pitch
+        // ✅ PREVIEW: Play the first moved note to confirm new pitch with short duration (200ms)
         if (updated.length > 0) {
             const primaryNote = updated.find(n => noteIds.includes(n.id));
             if (primaryNote) {
-                getPreviewManager().previewNote({
-                    ...primaryNote,
-                    instrumentId: currentInstrument?.id
-                });
+                getPreviewManager().previewNote(primaryNote.pitch, primaryNote.velocity || 100, 0.2);
             }
         }
 
@@ -837,14 +845,11 @@ export function useNoteInteractionsV3({
                 }
             });
 
-            // ✅ PREVIEW: Play note after resize
+            // ✅ PREVIEW: Play note after resize with short duration (200ms)
             if (updated.length > 0) {
                 const primaryNote = updated.find(n => noteIds.includes(n.id));
                 if (primaryNote) {
-                    getPreviewManager().previewNote({
-                        ...primaryNote,
-                        instrumentId: currentInstrument?.id
-                    });
+                    getPreviewManager().previewNote(primaryNote.pitch, primaryNote.velocity || 100, 0.2);
                 }
             }
         }

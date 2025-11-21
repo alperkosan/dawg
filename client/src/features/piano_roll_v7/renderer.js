@@ -543,7 +543,7 @@ function drawLoopRegionOnTimeline(ctx, engine) {
     ctx.restore();
 }
 
-function drawKeyboard(ctx, { viewport, dimensions, lod }) {
+function drawKeyboard(ctx, { viewport, dimensions, lod, activeKeyboardNote }) {
     // ✅ OPTIMIZED: Using StyleCache
     ctx.save();
     ctx.translate(0, RULER_HEIGHT);
@@ -559,15 +559,32 @@ function drawKeyboard(ctx, { viewport, dimensions, lod }) {
         const { startKey, endKey } = viewport.visibleKeys;
         const bgPrimary = globalStyleCache.get('--zenith-bg-primary');
         const textPrimary = globalStyleCache.get('--zenith-text-primary');
+        const accentCool = globalStyleCache.get('--zenith-accent-cool');
 
         for (let key = startKey; key <= endKey; key++) {
             const y = key * dimensions.keyHeight;
             const midiNote = 127 - key;
             const isBlack = [1, 3, 6, 8, 10].includes(key % 12);
+            const isActive = activeKeyboardNote !== null && activeKeyboardNote !== undefined && midiNote === activeKeyboardNote;
 
-            // Normal keyboard rendering - no scale highlighting
-            ctx.fillStyle = isBlack ? (bgPrimary || '#1a202c') : (textPrimary || '#cbd5e1');
-            ctx.fillRect(0, y, KEYBOARD_WIDTH, dimensions.keyHeight);
+            // ✅ KEYBOARD PREVIEW: Highlight active key
+            if (isActive) {
+                // Active key gets accent color
+                ctx.fillStyle = accentCool || '#3b82f6';
+                ctx.globalAlpha = isBlack ? 0.8 : 0.6;
+                ctx.fillRect(0, y, KEYBOARD_WIDTH, dimensions.keyHeight);
+                ctx.globalAlpha = 1.0;
+
+                // Add glow effect
+                ctx.shadowColor = accentCool || '#3b82f6';
+                ctx.shadowBlur = 10;
+                ctx.fillRect(0, y, KEYBOARD_WIDTH, dimensions.keyHeight);
+                ctx.shadowBlur = 0;
+            } else {
+                // Normal keyboard rendering
+                ctx.fillStyle = isBlack ? (bgPrimary || '#1a202c') : (textPrimary || '#cbd5e1');
+                ctx.fillRect(0, y, KEYBOARD_WIDTH, dimensions.keyHeight);
+            }
 
             // Draw note labels
             if (!isBlack && lod < 2 && dimensions.keyHeight >= 12) {
