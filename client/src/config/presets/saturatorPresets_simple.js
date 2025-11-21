@@ -18,7 +18,8 @@ export const saturatorPresets = [
       autoGain: 1,
       lowCutFreq: 20,
       highCutFreq: 20000,
-      headroom: 0
+      headroom: 0,
+      multiband: 0
     }
   },
   {
@@ -35,7 +36,8 @@ export const saturatorPresets = [
       autoGain: 1,
       lowCutFreq: 30,
       highCutFreq: 18000,
-      headroom: -2
+      headroom: -2,
+      multiband: 0
     }
   },
   {
@@ -52,7 +54,8 @@ export const saturatorPresets = [
       autoGain: 1,
       lowCutFreq: 20,
       highCutFreq: 20000,
-      headroom: 0
+      headroom: 0,
+      multiband: 0
     }
   },
   {
@@ -69,7 +72,8 @@ export const saturatorPresets = [
       autoGain: 1,
       lowCutFreq: 20,
       highCutFreq: 15000,
-      headroom: -3
+      headroom: -3,
+      multiband: 0
     }
   },
   {
@@ -86,7 +90,8 @@ export const saturatorPresets = [
       autoGain: 1,
       lowCutFreq: 20,
       highCutFreq: 8000,
-      headroom: 0
+      headroom: 0,
+      multiband: 0
     }
   },
   {
@@ -103,7 +108,89 @@ export const saturatorPresets = [
       autoGain: 1,
       lowCutFreq: 80,
       highCutFreq: 20000,
-      headroom: 2
+      headroom: 2,
+      multiband: 0
+    }
+  },
+  // === MULTIBAND PRESETS ===
+  {
+    id: 'multiband-master',
+    name: 'Multiband Master',
+    category: 'Mastering',
+    description: 'Balanced saturation across all bands for mix bus',
+    tags: ['mastering', 'multiband', 'balanced'],
+    author: 'DAWG',
+    settings: {
+      multiband: 1,
+      lowMidCrossover: 200,
+      midHighCrossover: 4000,
+      lowDrive: 0.3,
+      midDrive: 0.4,
+      highDrive: 0.5,
+      lowMix: 1.0,
+      midMix: 1.0,
+      highMix: 0.8,
+      autoGain: 1
+    }
+  },
+  {
+    id: 'drum-bus-crush',
+    name: 'Drum Bus Crush',
+    category: 'Drums',
+    description: 'Heavy low-end drive with crisp highs',
+    tags: ['drums', 'multiband', 'heavy'],
+    author: 'DAWG',
+    settings: {
+      multiband: 1,
+      lowMidCrossover: 150,
+      midHighCrossover: 2500,
+      lowDrive: 1.5,
+      midDrive: 0.8,
+      highDrive: 1.2,
+      lowMix: 1.0,
+      midMix: 0.8,
+      highMix: 0.6,
+      autoGain: 1
+    }
+  },
+  {
+    id: 'bass-growl',
+    name: 'Bass Growl',
+    category: 'Bass',
+    description: 'Distorted mids for growl, clean subs',
+    tags: ['bass', 'multiband', 'growl'],
+    author: 'DAWG',
+    settings: {
+      multiband: 1,
+      lowMidCrossover: 100,
+      midHighCrossover: 1000,
+      lowDrive: 0.2, // Clean sub
+      midDrive: 1.8, // Growling mids
+      highDrive: 0.5,
+      lowMix: 1.0,
+      midMix: 1.0,
+      highMix: 0.5,
+      autoGain: 1
+    }
+  },
+  {
+    id: 'vocal-air-lift',
+    name: 'Vocal Air Lift',
+    category: 'Vocal',
+    description: 'Saturates highs for breathy presence',
+    tags: ['vocal', 'multiband', 'air'],
+    author: 'DAWG',
+    settings: {
+      multiband: 1,
+      lowMidCrossover: 300,
+      midHighCrossover: 5000,
+      lowDrive: 0.1,
+      midDrive: 0.3,
+      highDrive: 1.2, // Saturation on air band
+      lowMix: 0.5,
+      midMix: 0.8,
+      highMix: 1.0,
+      autoGain: 1
     }
   }
 ];

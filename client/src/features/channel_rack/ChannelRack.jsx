@@ -101,16 +101,22 @@ function ChannelRack() {
     togglePanel
   } = panelsData;
 
-  // ✅ UNIFIED STATE from PlaybackStore - Single source of truth
+  // ✅ OPTIMIZED: Consolidated PlaybackStore subscription (reduces re-render triggers)
+  // Use individual selectors to avoid getSnapshot caching issues
   const playbackMode = usePlaybackStore(state => state.playbackMode);
   const playbackState = usePlaybackStore(state => state.playbackState);
   const isPlaying = usePlaybackStore(state => state.isPlaying);
-  const position = usePlaybackStore(state => playbackMode === 'pattern' ? state.currentStep : 0);
-  const setTransportPosition = usePlaybackStore(state => state.setTransportPosition);
   const followPlayheadMode = usePlaybackStore(state => state.followPlayheadMode);
+  const setTransportPosition = usePlaybackStore(state => state.setTransportPosition);
+
+  // Position calculation depends on playbackMode, so compute it separately
+  const position = usePlaybackStore(state =>
+    state.playbackMode === 'pattern' ? state.currentStep : 0
+  );
 
   // ✅ Display position for UnifiedTimeline
   const displayPosition = position;
+
 
   // ✅ Position tracking with actual position (not ghost)
   // ❌ REMOVED: Legacy ghost position state - now handled by UnifiedTimeline
@@ -264,7 +270,7 @@ function ChannelRack() {
     const handleInstrumentsScroll = () => {
       if (isSyncingFromInstruments) return;
       if (!mainGrid || !instrumentsList) return;
-      
+
       isSyncingFromInstruments = true;
       requestAnimationFrame(() => {
         if (mainGrid && instrumentsList) {
@@ -348,37 +354,68 @@ function ChannelRack() {
     };
   }, []);
 
-  // ✅ PHASE 1: Follow Playhead Mode - Auto-scroll during playback
+
+  // ✅ OPTIMIZED: Follow Playhead Mode - RAF-based auto-scroll during playback
   const userInteractionRef = useRef(false);
 
   useEffect(() => {
     // Early exits - only follow in pattern mode
     if (!isPlaying || followPlayheadMode === 'OFF' || playbackMode !== 'pattern') return;
-    if (userInteractionRef.current) return;
 
     const mainGrid = scrollContainerRef.current;
     if (!mainGrid) return;
 
-    const playheadX = position * STEP_WIDTH;
-    const threshold = viewportWidth * 0.8;
+    let rafId = null;
+    let lastAppliedScrollX = mainGrid.scrollLeft;
 
-    if (followPlayheadMode === 'CONTINUOUS') {
-      // Keep playhead centered in viewport
-      const targetScrollX = playheadX - (viewportWidth / 2);
-      const diff = Math.abs(scrollX - targetScrollX);
+    // ⚡ PERFORMANCE: RAF loop runs at 60fps but only updates DOM when needed
+    const updateScroll = () => {
+      // Skip if user is interacting
+      if (userInteractionRef.current) {
+        rafId = requestAnimationFrame(updateScroll);
+        return;
+      }
 
-      if (diff > 5) {
+      const playheadX = position * STEP_WIDTH;
+      let targetScrollX = null;
+
+      if (followPlayheadMode === 'CONTINUOUS') {
+        // Keep playhead centered in viewport
+        targetScrollX = playheadX - (viewportWidth / 2);
+        const diff = Math.abs(lastAppliedScrollX - targetScrollX);
+
+        // Only update if difference is significant (prevents micro-adjustments)
+        if (diff < 5) {
+          targetScrollX = null;
+        }
+      } else if (followPlayheadMode === 'PAGE') {
+        // Jump to next page when playhead reaches 80% of viewport width
+        const threshold = viewportWidth * 0.8;
+        if (playheadX > lastAppliedScrollX + threshold) {
+          targetScrollX = lastAppliedScrollX + viewportWidth;
+        }
+      }
+
+      // ✅ Only mutate DOM if we have a new target scroll position
+      if (targetScrollX !== null) {
         const newScrollX = Math.max(0, targetScrollX);
         mainGrid.scrollLeft = newScrollX;
+        lastAppliedScrollX = newScrollX;
       }
-    } else if (followPlayheadMode === 'PAGE') {
-      // Jump to next page when playhead reaches 80% of viewport width
-      if (playheadX > scrollX + threshold) {
-        const newScrollX = scrollX + viewportWidth;
-        mainGrid.scrollLeft = newScrollX;
+
+      rafId = requestAnimationFrame(updateScroll);
+    };
+
+    // Start the RAF loop
+    rafId = requestAnimationFrame(updateScroll);
+
+    return () => {
+      if (rafId) {
+        cancelAnimationFrame(rafId);
       }
-    }
-  }, [position, isPlaying, followPlayheadMode, playbackMode, scrollX, viewportWidth]);
+    };
+  }, [position, isPlaying, followPlayheadMode, playbackMode, viewportWidth]);
+
 
   // Track user interaction to pause follow mode temporarily
   useEffect(() => {
@@ -432,13 +469,13 @@ function ChannelRack() {
     const ROW_HEIGHT = 64; // Each instrument row height (includes border-bottom in box-sizing)
     const ADD_BUTTON_HEIGHT = 64; // Add button height (includes borders in box-sizing: border-box)
     const ADD_BUTTON_MARGIN_TOP = 4; // Margin-top creates spacing above add button (shows dashed line separator)
-    
+
     // Calculate total height
     const instrumentsHeight = instrumentCount * ROW_HEIGHT;
     const addButtonTotalSpace = ADD_BUTTON_HEIGHT + ADD_BUTTON_MARGIN_TOP; // 68px total
     const totalHeight = instrumentsHeight + addButtonTotalSpace;
     const minHeight = Math.max(64, totalHeight);
-    
+
     if (import.meta.env.DEV && window.verboseLogging) {
       console.log('📏 ChannelRack height calculation:', {
         instrumentCount,
@@ -450,7 +487,7 @@ function ChannelRack() {
         minHeight
       });
     }
-    
+
     return minHeight;
   }, [organizedContent]);
 
@@ -627,9 +664,8 @@ function ChannelRack() {
                   {patternOrder.map((patternId) => (
                     <button
                       key={patternId}
-                      className={`channel-rack-layout__pattern-item ${
-                        patternId === activePatternId ? 'channel-rack-layout__pattern-item--active' : ''
-                      }`}
+                      className={`channel-rack-layout__pattern-item ${patternId === activePatternId ? 'channel-rack-layout__pattern-item--active' : ''
+                        }`}
                       onClick={() => handlePatternChange(patternId)}
                     >
                       {patterns[patternId]?.name || patternId}
@@ -724,8 +760,8 @@ function ChannelRack() {
             />
           ))}
           {/* ✅ NEW: Instrument Picker Button - Always visible at the end */}
-          <div 
-            className="instrument-row instrument-row--add" 
+          <div
+            className="instrument-row instrument-row--add"
             onClick={(e) => {
               e.stopPropagation();
               e.preventDefault();
@@ -788,26 +824,26 @@ function ChannelRack() {
               const showPianoRoll = inst.pianoRoll || hasNonC5Notes;
 
               return (
-              <div key={inst.id} className="channel-rack-layout__grid-row" onClick={handleGridRowClick}>
-                {showPianoRoll ? (
-                  <PianoRollMiniView
-                    notes={notes}
-                    patternLength={audioLoopLength}
-                    onNoteClick={() => openPianoRollForInstrument(inst)}
-                    scrollX={scrollX}
-                    viewportWidth={viewportWidth}
-                  />
-                ) : (
-                  <StepGridCanvas
-                    instrumentId={inst.id}
-                    notes={notes}
-                    totalSteps={audioLoopLength}
-                    onNoteToggle={handleNoteToggle}
-                    scrollX={scrollX}
-                    viewportWidth={viewportWidth}
-                  />
-                )}
-              </div>
+                <div key={inst.id} className="channel-rack-layout__grid-row" onClick={handleGridRowClick}>
+                  {showPianoRoll ? (
+                    <PianoRollMiniView
+                      notes={notes}
+                      patternLength={audioLoopLength}
+                      onNoteClick={() => openPianoRollForInstrument(inst)}
+                      scrollX={scrollX}
+                      viewportWidth={viewportWidth}
+                    />
+                  ) : (
+                    <StepGridCanvas
+                      instrumentId={inst.id}
+                      notes={notes}
+                      totalSteps={audioLoopLength}
+                      onNoteToggle={handleNoteToggle}
+                      scrollX={scrollX}
+                      viewportWidth={viewportWidth}
+                    />
+                  )}
+                </div>
               );
             })}
             <div className="channel-rack-layout__grid-row" onClick={handleGridRowClick} />

@@ -11,7 +11,8 @@
 import { useState, useCallback, useMemo } from 'react';
 import { useInstrumentsStore } from '@/store/useInstrumentsStore';
 import { useArrangementWorkspaceStore } from '@/store/useArrangementWorkspaceStore';
-import { AudioRenderer } from '@/lib/audio/AudioRenderer';
+import { useMixerStore } from '@/store/useMixerStore';
+import { RenderEngine } from '@/lib/audio/RenderEngine';
 import { AudioContextService } from '@/lib/services/AudioContextService';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -24,7 +25,50 @@ export const useAudioRenderer = () => {
   const addClip = useArrangementWorkspaceStore(state => state.addClip);
 
   // Memoize renderer to prevent re-initialization on every render
-  const renderer = useMemo(() => new AudioRenderer(), []);
+  const renderer = useMemo(() => new RenderEngine(), []);
+
+  /**
+   * Helper: Prepare pattern data with full context (instruments, mixer tracks)
+   * RenderEngine expects a self-contained object with all necessary data.
+   */
+  const preparePatternData = useCallback((pattern, instrumentsList, mixerTracksList) => {
+    const patternData = {
+      id: pattern.id,
+      name: pattern.name,
+      data: {}, // Grouped notes
+      instruments: {},
+      mixerTracks: {}
+    };
+
+    // Group notes by instrument
+    if (pattern.notes) {
+      for (const note of pattern.notes) {
+        if (!patternData.data[note.instrumentId]) {
+          patternData.data[note.instrumentId] = [];
+        }
+        patternData.data[note.instrumentId].push(note);
+      }
+    }
+
+    // Populate instruments and mixer tracks
+    for (const inst of instrumentsList) {
+      patternData.instruments[inst.id] = inst;
+      if (inst.mixerTrackId) {
+        const track = mixerTracksList.find(t => t.id === inst.mixerTrackId);
+        if (track) {
+          patternData.mixerTracks[track.id] = track;
+        }
+      }
+    }
+
+    // Add master track
+    const masterTrack = mixerTracksList.find(t => t.id === 'master');
+    if (masterTrack) {
+      patternData.mixerTracks['master'] = masterTrack;
+    }
+
+    return patternData;
+  }, []);
 
   /**
    * Render an audio sample with effects
@@ -84,7 +128,7 @@ export const useAudioRenderer = () => {
       setIsRendering(false);
       setRenderProgress(0);
     }
-  }, [instruments]);
+  }, [instruments, renderer]);
 
   /**
    * Render a pattern to audio
@@ -100,20 +144,29 @@ export const useAudioRenderer = () => {
         throw new Error('Pattern not found');
       }
 
-      // Get instruments map
-      const instrumentsMap = new Map(instruments.map(inst => [inst.id, inst]));
+      // Prepare full pattern data
+      const mixerTracks = useMixerStore.getState().tracks;
+      const patternData = preparePatternData(pattern, instruments, mixerTracks);
 
       // Render pattern
-      const renderedBuffer = await renderer.renderPatternToAudio(
-        pattern,
-        instrumentsMap,
+      const result = await renderer.renderPattern(
+        patternData,
         {
-          bpm: options.bpm || 140,
-          duration: options.duration,
+          sampleRate: 48000, // Default high quality
+          length: options.duration ? (options.duration * 60 / (options.bpm || 140)) * 48000 : null,
           includeEffects: options.includeEffects !== false,
-          normalize: options.normalize !== false
+          // RenderEngine doesn't support 'normalize' option in renderPattern yet, 
+          // but we can add post-processing if needed. 
+          // For now, we rely on auto-gain.
         }
       );
+
+      let renderedBuffer = result.audioBuffer;
+
+      // Apply normalization if requested (using the utility we added)
+      if (options.normalize !== false) {
+        renderedBuffer = renderer._normalizeBuffer(renderedBuffer);
+      }
 
       setRenderProgress(50);
 
@@ -123,7 +176,8 @@ export const useAudioRenderer = () => {
           name: options.name || `${pattern.name} (Rendered)`,
           addToArrangement: options.addToArrangement,
           trackId: options.trackId,
-          startTime: options.startTime
+          startTime: options.startTime,
+          bpm: options.bpm
         });
       }
 
@@ -145,7 +199,7 @@ export const useAudioRenderer = () => {
       setIsRendering(false);
       setRenderProgress(0);
     }
-  }, [instruments]);
+  }, [instruments, renderer, preparePatternData]);
 
   /**
    * Render an arrangement track to audio
@@ -155,17 +209,31 @@ export const useAudioRenderer = () => {
     setRenderProgress(0);
 
     try {
-      // Get instruments map
+      // Get instruments map for quick lookup
       const instrumentsMap = new Map(instruments.map(inst => [inst.id, inst]));
+
+      // Get mixer tracks
+      const mixerTracks = useMixerStore.getState().tracks;
 
       // Filter clips for this track
       const trackClips = clips.filter(clip => clip.trackId === trackId);
+
+      // Enrich patterns with full context
+      const enrichedPatterns = {};
+      for (const clip of trackClips) {
+        if (clip.type === 'pattern' && clip.patternId) {
+          const pattern = patterns[clip.patternId];
+          if (pattern && !enrichedPatterns[clip.patternId]) {
+            enrichedPatterns[clip.patternId] = preparePatternData(pattern, instruments, mixerTracks);
+          }
+        }
+      }
 
       // Render track
       const renderedBuffer = await renderer.renderTrackToAudio(
         trackClips,
         instrumentsMap,
-        patterns,
+        enrichedPatterns,
         {
           bpm: options.bpm || 140,
           startTime: options.startTime || 0,
@@ -183,7 +251,8 @@ export const useAudioRenderer = () => {
           name: options.name || `Track ${trackId} (Rendered)`,
           addToArrangement: options.addToArrangement,
           trackId: options.newTrackId || trackId,
-          startTime: options.startTime || 0
+          startTime: options.startTime || 0,
+          bpm: options.bpm
         });
       }
 
@@ -205,7 +274,7 @@ export const useAudioRenderer = () => {
       setIsRendering(false);
       setRenderProgress(0);
     }
-  }, [instruments]);
+  }, [instruments, renderer, preparePatternData]);
 
   /**
    * Import rendered audio buffer to project as new instrument
@@ -269,7 +338,7 @@ export const useAudioRenderer = () => {
       console.error('Failed to import rendered audio:', error);
       throw error;
     }
-  }, [handleAddNewInstrument, addClip]);
+  }, [handleAddNewInstrument, addClip, renderer]);
 
   return {
     renderSample,

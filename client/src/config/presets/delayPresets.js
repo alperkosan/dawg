@@ -23,6 +23,8 @@ export const delayPresets = [
       filterFreq: 5000,       // Roll off highs (vintage tape)
       saturation: 0.25,       // Light tape warmth
       diffusion: 0,           // No diffusion (tight)
+      wobble: 0.1,            // Subtle tape wobble
+      flutter: 0.05,          // Light flutter
       width: 1.0              // Normal stereo width
     }
   },
@@ -44,6 +46,8 @@ export const delayPresets = [
       filterFreq: 8000,       // Bright (clear bounces)
       saturation: 0,          // Clean digital
       diffusion: 0.15,        // Slight diffusion (smoother tail)
+      wobble: 0,
+      flutter: 0,
       width: 1.0              // Normal stereo width
     }
   },
@@ -65,6 +69,8 @@ export const delayPresets = [
       filterFreq: 3500,       // Dark (muddy dub vibe)
       saturation: 0.4,        // Tape saturation (warmth)
       diffusion: 0.25,        // Moderate diffusion (smeared)
+      wobble: 0.2,            // Noticeable wobble
+      flutter: 0.1,           // Some grit
       width: 1.0              // Normal stereo width
     }
   },
@@ -86,6 +92,8 @@ export const delayPresets = [
       filterFreq: 6000,       // Slightly rolled off
       saturation: 0.1,        // Very light warmth
       diffusion: 0.7,         // Heavy diffusion (washy, reverb-like)
+      wobble: 0.15,           // Slow drift
+      flutter: 0,
       width: 1.0              // Normal stereo width
     }
   },
@@ -107,7 +115,55 @@ export const delayPresets = [
       filterFreq: 4500,       // Dark (vintage tape)
       saturation: 0.5,        // Heavy tape saturation (warmth + grit)
       diffusion: 0.2,         // Light diffusion (tape smear)
+      wobble: 0.3,            // Heavy wobble (old tape)
+      flutter: 0.2,           // Noticeable flutter
       width: 1.0              // Normal stereo width
+    }
+  },
+
+  {
+    id: 'chorus_echo',
+    name: 'Chorus Echo',
+    category: 'Modulation',
+    description: 'Short modulated delay creating a thick chorus effect',
+    tags: ['chorus', 'modulation', 'short', 'wide'],
+    author: 'DAWG',
+    settings: {
+      timeLeft: 0.02,         // 20ms (chorus range)
+      timeRight: 0.025,       // 25ms
+      feedbackLeft: 0.3,
+      feedbackRight: 0.3,
+      pingPong: 0.1,
+      wet: 0.5,
+      filterFreq: 12000,
+      saturation: 0.1,
+      diffusion: 0,
+      wobble: 0.6,            // Heavy modulation
+      flutter: 0.1,
+      width: 1.5              // Extra wide
+    }
+  },
+
+  {
+    id: 'lofi_cassette',
+    name: 'Lo-Fi Cassette',
+    category: 'Vintage',
+    description: 'Degraded cassette tape delay with heavy flutter and saturation',
+    tags: ['lofi', 'cassette', 'degraded', 'noise'],
+    author: 'DAWG',
+    settings: {
+      timeLeft: 0.4,
+      timeRight: 0.41,
+      feedbackLeft: 0.4,
+      feedbackRight: 0.4,
+      pingPong: 0,
+      wet: 0.4,
+      filterFreq: 2500,       // Very dark (cheap tape)
+      saturation: 0.7,        // Heavy distortion
+      diffusion: 0,
+      wobble: 0.4,            // Unstable transport
+      flutter: 0.5,           // Damaged tape
+      width: 0.8              // Narrow stereo
     }
   },
 
@@ -128,6 +184,8 @@ export const delayPresets = [
       filterFreq: 8000,
       saturation: 0,
       diffusion: 0,
+      wobble: 0,
+      flutter: 0,
       width: 1.0
     }
   }

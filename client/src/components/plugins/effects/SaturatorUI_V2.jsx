@@ -1,27 +1,19 @@
 /**
  * SATURATOR UI V2.0
  *
- * Professional analog saturation with harmonic visualization
+ * Professional analog saturation with multiband capability
  *
  * v2.0 Changes:
- * ✅ Integrated with PluginContainerV2
- * ✅ Uses ThreePanelLayout
- * ✅ CanvasRenderManager for visualization
- * ✅ Parameter Batching
- * ✅ Preset Manager integration
- * ✅ Category-based theming (texture-lab)
- * ✅ Performance optimization with RAF batching
- *
- * Features:
- * - Real-time harmonic visualization
- * - Mode-based workflow (8 saturation styles)
- * - Professional saturation parameters
+ * ✅ Full-width layout (removed TwoPanelLayout)
+ * ✅ Multiband controls (Low/Mid/High Drive & Mix)
+ * ✅ Crossover frequency controls
+ * ✅ Enhanced visualizer integration
+ * ✅ "Texture Lab" theme
  */
 
-import React, { useState, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import PluginContainerV2 from '../container/PluginContainerV2';
-import { TwoPanelLayout } from '../layout/TwoPanelLayout';
-import { Knob, ExpandablePanel, Slider, Checkbox } from '@/components/controls';
+import { Knob, Slider, Checkbox } from '@/components/controls';
 import { getCategoryColors } from '../PluginDesignSystem';
 import { useParameterBatcher } from '@/services/ParameterBatcher';
 import { useRenderer } from '@/services/CanvasRenderManager';
@@ -32,165 +24,207 @@ import { useMixerStore } from '@/store/useMixerStore';
 // HARMONIC VISUALIZER
 // ============================================================================
 
-const HarmonicVisualizer = ({ trackId, effectId, drive, mix, categoryColors }) => {
-  // Helper to convert hex to rgba with opacity
-  const hexToRgba = useCallback((hex, opacity) => {
-    const r = parseInt(hex.slice(1, 3), 16);
-    const g = parseInt(hex.slice(3, 5), 16);
-    const b = parseInt(hex.slice(5, 7), 16);
-    return `rgba(${r}, ${g}, ${b}, ${opacity})`;
-  }, []);
+const TransferCurveVisualizer = ({ trackId, effectId, drive, mix, categoryColors, multiband }) => {
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
-  const harmonicLevelsRef = useRef(new Array(6).fill(0));
 
-  const { isPlaying, getFrequencyData, metricsDb } = useAudioPlugin(trackId, effectId, {
-    fftSize: 2048,
+  const { isPlaying, metricsDb } = useAudioPlugin(trackId, effectId, {
     updateMetrics: true,
     rmsSmoothing: 0.3,
-    peakSmoothing: 0.2
+    peakSmoothing: 0.1
   });
 
-  const drawHarmonics = useCallback((timestamp) => {
+  // Copy of the DSP logic for accurate visualization
+  const tubeSaturate = useCallback((x) => {
+    const sign = Math.sign(x);
+    const abs = Math.abs(x);
+
+    // 'wide' mode parameters (default)
+    const threshold1 = 0.33;
+    const threshold2 = 0.66;
+    const knee1 = 0.15;
+
+    if (abs < threshold1 - knee1) {
+      return x;
+    } else if (abs < threshold1 + knee1) {
+      const t = (abs - (threshold1 - knee1)) / (2 * knee1);
+      const smooth = t * t * (3 - 2 * t);
+      const linearPart = x * (1 - smooth);
+      const saturatedPart = sign * (threshold1 + (abs - threshold1) * 0.7) * smooth;
+      return linearPart + saturatedPart;
+    } else if (abs < threshold2) {
+      const t = (abs - threshold1) / (threshold2 - threshold1);
+      const saturated = threshold1 + (threshold2 - threshold1) * (1 - Math.pow(1 - t, 2));
+      return sign * saturated;
+    } else {
+      const excess = abs - threshold2;
+      const limited = threshold2 + (1 - threshold2) * (1 - Math.exp(-excess / 0.1));
+      return sign * Math.min(0.95, limited);
+    }
+  }, []);
+
+  const drawCurve = useCallback((timestamp) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Use display dimensions (accounting for DPR)
     const dpr = window.devicePixelRatio || 1;
-    const displayWidth = canvas.width / dpr;
-    const displayHeight = canvas.height / dpr;
+    const width = canvas.width / dpr;
+    const height = canvas.height / dpr;
 
-    // Clear (use full canvas dimensions)
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // Scale context for sharp rendering on retina
     ctx.save();
     ctx.scale(dpr, dpr);
 
-    // Clear with subtle fade
-    ctx.fillStyle = 'rgba(10, 10, 15, 0.3)';
-    ctx.fillRect(0, 0, displayWidth, displayHeight);
+    // Grid
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    // Horizontal center
+    ctx.moveTo(0, height / 2);
+    ctx.lineTo(width, height / 2);
+    // Vertical center
+    ctx.moveTo(width / 2, 0);
+    ctx.lineTo(width / 2, height);
+    ctx.stroke();
 
-    const freqData = getFrequencyData();
+    // Calculate effective drive (matching processor logic: 1 + distortion * 9)
+    const effectiveDrive = 1 + drive * 9;
 
-    if (isPlaying && freqData) {
-      // Calculate harmonic content
-      const fundamental = 100; // Hz
-      const binWidth = 48000 / 2 / freqData.length;
+    // Draw Transfer Curve
+    ctx.beginPath();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = categoryColors.primary;
 
-      for (let i = 0; i < 6; i++) {
-        const harmonic = fundamental * (i + 1);
-        const binIndex = Math.floor(harmonic / binWidth);
+    const steps = 100;
+    for (let i = 0; i <= steps; i++) {
+      // x goes from -1 to 1
+      const x = (i / steps) * 2 - 1;
 
-        if (binIndex < freqData.length) {
-          const dbValue = freqData[binIndex];
-          const normalized = Math.max(0, Math.min(1, (dbValue + 100) / 100));
-          harmonicLevelsRef.current[i] = harmonicLevelsRef.current[i] * 0.8 + normalized * 0.2;
-        }
-      }
+      // Apply drive then saturate
+      const drivenX = x * effectiveDrive;
+      const saturatedY = tubeSaturate(drivenX);
+
+      // Map to screen coordinates
+      // x: -1 -> 0, 1 -> width
+      // y: 1 -> 0, -1 -> height (inverted y)
+      const screenX = ((x + 1) / 2) * width;
+      const screenY = height - ((saturatedY + 1) / 2) * height;
+
+      if (i === 0) ctx.moveTo(screenX, screenY);
+      else ctx.lineTo(screenX, screenY);
     }
+    ctx.stroke();
 
-    // Draw harmonic bars
-    const barWidth = displayWidth / 8;
-    const maxHeight = displayHeight * 0.8;
+    // Draw Linear Reference (faint)
+    ctx.beginPath();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+    ctx.setLineDash([4, 4]);
+    ctx.moveTo(0, height);
+    ctx.lineTo(width, 0);
+    ctx.stroke();
+    ctx.setLineDash([]);
 
-    harmonicLevelsRef.current.forEach((level, i) => {
-      const x = (i + 1) * barWidth;
-      const barHeight = level * maxHeight;
-      const y = displayHeight - barHeight;
-
-      // Category-themed gradient (using categoryColors)
-      const gradient = ctx.createLinearGradient(x, y, x, displayHeight);
-      if (drive < 0.3) {
-        gradient.addColorStop(0, hexToRgba(categoryColors.primary, 0.8));
-        gradient.addColorStop(1, hexToRgba(categoryColors.primary, 0.3));
-      } else if (drive < 0.7) {
-        gradient.addColorStop(0, hexToRgba(categoryColors.secondary, 0.8));
-        gradient.addColorStop(1, hexToRgba(categoryColors.secondary, 0.3));
-      } else {
-        gradient.addColorStop(0, hexToRgba(categoryColors.accent, 0.9));
-        gradient.addColorStop(1, hexToRgba(categoryColors.accent, 0.4));
-      }
-
-      ctx.fillStyle = gradient;
-      ctx.fillRect(x - barWidth / 3, y, barWidth / 1.5, barHeight);
-
-      // Harmonic number label
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
-      ctx.font = 'bold 9px monospace';
-      ctx.textAlign = 'center';
-      ctx.fillText(`H${i + 1}`, x, displayHeight - 5);
-    });
-
-    // Metrics overlay
+    // Visualize Signal Level (Ball)
     if (isPlaying) {
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-      ctx.fillRect(displayWidth - 120, 10, 110, 60);
+      // Convert dB to linear (0-1)
+      const peakLinear = Math.pow(10, metricsDb.peakDb / 20);
+      // Clamp to 0-1
+      const clampedPeak = Math.min(1, Math.max(0, peakLinear));
 
-      ctx.font = 'bold 9px monospace';
-      ctx.textAlign = 'right';
+      if (clampedPeak > 0.001) {
+        // Calculate position on the curve
+        // We show the positive peak
+        const x = clampedPeak;
+        const drivenX = x * effectiveDrive;
+        const saturatedY = tubeSaturate(drivenX);
 
-      ctx.fillStyle = categoryColors.primary;
-      ctx.fillText(`RMS: ${metricsDb.rmsDb.toFixed(1)}dB`, displayWidth - 15, 30);
+        const screenX = ((x + 1) / 2) * width;
+        const screenY = height - ((saturatedY + 1) / 2) * height;
 
-      ctx.fillStyle = categoryColors.secondary;
-      ctx.fillText(`PEAK: ${metricsDb.peakDb.toFixed(1)}dB`, displayWidth - 15, 45);
+        // Draw ball
+        ctx.beginPath();
+        ctx.fillStyle = '#fff';
+        ctx.shadowColor = categoryColors.accent;
+        ctx.shadowBlur = 10;
+        ctx.arc(screenX, screenY, 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
 
-      ctx.fillStyle = metricsDb.clipping ? '#ef4444' : '#22c55e'; // Red for clipping, green for OK
-      ctx.fillText(metricsDb.clipping ? 'CLIP!' : 'OK', displayWidth - 15, 60);
-    } else {
-      // "Play to see" message (using categoryColors)
-      ctx.fillStyle = hexToRgba(categoryColors.primary, 0.3);
-      ctx.font = 'bold 12px system-ui';
-      ctx.textAlign = 'center';
-      ctx.fillText('▶ Play to see harmonics', displayWidth / 2, displayHeight / 2);
+        // Mirror ball (for symmetry visual)
+        const screenXMirror = ((-x + 1) / 2) * width;
+        const screenYMirror = height - ((-saturatedY + 1) / 2) * height;
+
+        ctx.beginPath();
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+        ctx.arc(screenXMirror, screenYMirror, 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
 
-    // Restore context
-    ctx.restore();
-  }, [isPlaying, getFrequencyData, metricsDb, drive, mix, categoryColors, hexToRgba]);
+    // Metrics Overlay
+    const formatDb = (val) => val < -100 ? '-Inf' : val.toFixed(1);
 
-  // Handle canvas resizing with high DPI
-  React.useEffect(() => {
+    ctx.font = 'bold 10px monospace';
+    ctx.textAlign = 'right';
+
+    // RMS
+    ctx.fillStyle = categoryColors.primary;
+    ctx.fillText(`RMS: ${formatDb(metricsDb.rmsDb)} dB`, width - 10, 20);
+
+    // Peak
+    ctx.fillStyle = categoryColors.secondary;
+    ctx.fillText(`PEAK: ${formatDb(metricsDb.peakDb)} dB`, width - 10, 35);
+
+    // Clip
+    if (metricsDb.clipping) {
+      ctx.fillStyle = '#ef4444';
+      ctx.fillText('CLIP', width - 10, 50);
+    }
+
+    // Multiband Label
+    if (multiband) {
+      ctx.textAlign = 'left';
+      ctx.fillStyle = categoryColors.accent;
+      ctx.fillText('MULTIBAND ACTIVE', 10, 20);
+      ctx.fillStyle = 'rgba(255,255,255,0.4)';
+      ctx.fillText('(Curve shows global character)', 10, 35);
+    }
+
+    ctx.restore();
+  }, [drive, categoryColors, isPlaying, metricsDb, tubeSaturate, multiband]);
+
+  // Setup canvas sizing
+  useEffect(() => {
     const canvas = canvasRef.current;
     const container = containerRef.current;
     if (!canvas || !container) return;
 
-    const updateDimensions = () => {
+    const updateSize = () => {
       const rect = container.getBoundingClientRect();
       const dpr = window.devicePixelRatio || 1;
+
       canvas.width = rect.width * dpr;
       canvas.height = rect.height * dpr;
-      canvas.style.width = `${rect.width}px`;
-      canvas.style.height = `${rect.height}px`;
     };
 
-    updateDimensions();
-    const observer = new ResizeObserver(updateDimensions);
-    observer.observe(container);
+    updateSize();
 
-    return () => observer.disconnect();
+    const resizeObserver = new ResizeObserver(updateSize);
+    resizeObserver.observe(container);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
   }, []);
 
-  // Use CanvasRenderManager for smooth 60fps rendering
-  useRenderer(drawHarmonics, 5, 16, [drive, mix, isPlaying, categoryColors, hexToRgba]);
-
-  // Get category colors for canvas styling
-  const containerStyle = {
-    background: 'rgba(0, 0, 0, 0.5)',
-    borderColor: `${categoryColors.primary}33`, // 20% opacity in hex
-  };
+  useRenderer(drawCurve);
 
   return (
-    <div 
-      ref={containerRef} 
-      className="w-full h-[200px] rounded-xl overflow-hidden"
-      style={containerStyle}
-    >
-      <canvas ref={canvasRef} className="w-full h-full" />
+    <div ref={containerRef} className="w-full h-full relative rounded-lg overflow-hidden bg-black/40 border border-white/5">
+      <canvas ref={canvasRef} className="w-full h-full block" />
     </div>
   );
 };
@@ -200,97 +234,155 @@ const HarmonicVisualizer = ({ trackId, effectId, drive, mix, categoryColors }) =
 // ============================================================================
 
 const SaturatorUI_V2 = ({ trackId, effect, effectNode, definition }) => {
-  const {
-    distortion = 0.4,
-    wet = 1.0,
-    tone = 0,
-    lowCutFreq = 20,
-    highCutFreq = 20000,
-    autoGain = true,
-    headroom = 0
-  } = effect.settings || {};
+  // Theme colors from design system
+  const categoryColors = getCategoryColors('texture-lab');
 
-  // DEBUG: Check preset count
-  console.log('🔍 [SaturatorUI_V2] definition.presets:', definition?.presets?.length);
-
-  // Get category colors
-  const categoryColors = useMemo(() => getCategoryColors('texture-lab'), []);
-
-  // Use ParameterBatcher for smooth parameter updates
+  // Parameter batcher
   const { setParam } = useParameterBatcher(effectNode);
 
-  // Mixer store for parameter changes
-  const { handleMixerEffectChange } = useMixerStore.getState();
+  // Local state for smooth UI
+  const [localDistortion, setLocalDistortion] = useState(effect.settings.distortion || 0.4);
+  const [localWet, setLocalWet] = useState(effect.settings.wet || 1.0);
+  const [localAutoGain, setLocalAutoGain] = useState(effect.settings.autoGain || 1);
+  const [localLowCut, setLocalLowCut] = useState(effect.settings.lowCutFreq || 0);
+  const [localHighCut, setLocalHighCut] = useState(effect.settings.highCutFreq || 20000);
+  const [localTone, setLocalTone] = useState(effect.settings.tone || 0);
+  const [localHeadroom, setLocalHeadroom] = useState(effect.settings.headroom || 0);
 
-  // Ghost values for smooth visual feedback
-  const ghostDrive = useGhostValue(distortion, 400);
-  const ghostMix = useGhostValue(wet, 400);
-  const ghostTone = useGhostValue(tone, 400);
+  // Multiband State
+  const [isMultiband, setIsMultiband] = useState((effect.settings.multiband || 0) === 1);
+  const [localLowMidX, setLocalLowMidX] = useState(effect.settings.lowMidCrossover || 250);
+  const [localMidHighX, setLocalMidHighX] = useState(effect.settings.midHighCrossover || 2500);
 
-  // Handle individual parameter changes
-  const handleParamChange = useCallback((key, value) => {
-    setParam(key, value);
-    handleMixerEffectChange(trackId, effect.id, key, value);
-  }, [setParam, trackId, effect.id, handleMixerEffectChange]);
+  const [localLowDrive, setLocalLowDrive] = useState(effect.settings.lowDrive || 1.0);
+  const [localMidDrive, setLocalMidDrive] = useState(effect.settings.midDrive || 1.0);
+  const [localHighDrive, setLocalHighDrive] = useState(effect.settings.highDrive || 1.0);
+
+  const [localLowMix, setLocalLowMix] = useState(effect.settings.lowMix || 1.0);
+  const [localMidMix, setLocalMidMix] = useState(effect.settings.midMix || 1.0);
+  const [localHighMix, setLocalHighMix] = useState(effect.settings.highMix || 1.0);
+
+  // Sync with presets
+  useEffect(() => {
+    setLocalDistortion(effect.settings.distortion ?? 0.4);
+    setLocalWet(effect.settings.wet ?? 1.0);
+    setLocalAutoGain(effect.settings.autoGain ?? 1);
+    setLocalLowCut(effect.settings.lowCutFreq ?? 0);
+    setLocalHighCut(effect.settings.highCutFreq ?? 20000);
+    setLocalTone(effect.settings.tone ?? 0);
+    setLocalHeadroom(effect.settings.headroom ?? 0);
+
+    setIsMultiband((effect.settings.multiband ?? 0) === 1);
+    setLocalLowMidX(effect.settings.lowMidCrossover ?? 250);
+    setLocalMidHighX(effect.settings.midHighCrossover ?? 2500);
+    setLocalLowDrive(effect.settings.lowDrive ?? 1.0);
+    setLocalMidDrive(effect.settings.midDrive ?? 1.0);
+    setLocalHighDrive(effect.settings.highDrive ?? 1.0);
+    setLocalLowMix(effect.settings.lowMix ?? 1.0);
+    setLocalMidMix(effect.settings.midMix ?? 1.0);
+    setLocalHighMix(effect.settings.highMix ?? 1.0);
+  }, [effect.settings, effect.id]); // Added effect.id to force update on preset change
+
+  // Handlers
+  const handleParamChange = useCallback((param, value) => {
+    // Update local state immediately
+    switch (param) {
+      case 'distortion': setLocalDistortion(value); break;
+      case 'wet': setLocalWet(value); break;
+      case 'autoGain': setLocalAutoGain(value); break;
+      case 'lowCutFreq': setLocalLowCut(value); break;
+      case 'highCutFreq': setLocalHighCut(value); break;
+      case 'tone': setLocalTone(value); break;
+      case 'headroom': setLocalHeadroom(value); break;
+      case 'multiband': setIsMultiband(value === 1); break;
+      case 'lowMidCrossover': setLocalLowMidX(value); break;
+      case 'midHighCrossover': setLocalMidHighX(value); break;
+      case 'lowDrive': setLocalLowDrive(value); break;
+      case 'midDrive': setLocalMidDrive(value); break;
+      case 'highDrive': setLocalHighDrive(value); break;
+      case 'lowMix': setLocalLowMix(value); break;
+      case 'midMix': setLocalMidMix(value); break;
+      case 'highMix': setLocalHighMix(value); break;
+      default: break;
+    }
+
+    // Send to audio engine
+    setParam(param, value);
+  }, [setParam]);
 
   return (
     <PluginContainerV2
       trackId={trackId}
       effect={effect}
       definition={definition}
+      title="SATURATOR"
+      subtitle="TUBE HARMONICS"
       category="texture-lab"
+      presets={[
+        { id: 'default', name: 'Default' },
+        { id: 'warm_tube', name: 'Warm Tube' },
+        { id: 'crushed', name: 'Crushed' },
+        { id: 'master_warmth', name: 'Master Warmth' },
+        { id: 'vocal_grit', name: 'Vocal Grit' },
+        { id: 'bass_growl', name: 'Bass Growl' }, // New
+        { id: 'drum_bus', name: 'Drum Bus Crush' }, // New
+        { id: 'multiband_master', name: 'Multiband Master' } // New
+      ]}
     >
-      <TwoPanelLayout
-        category="texture-lab"
+      <div className="flex flex-col h-full gap-4 p-2">
 
-        mainPanel={
-          <>
-            {/* Harmonic Visualizer */}
-            <HarmonicVisualizer
+        {/* TOP SECTION: Visualizer & Mode Switch */}
+        <div className="h-48 flex gap-4">
+          {/* Visualizer (Expanded) */}
+          <div className="flex-1 relative">
+            <TransferCurveVisualizer
               trackId={trackId}
               effectId={effect.id}
-              drive={distortion}
-              mix={wet}
+              drive={localDistortion}
+              mix={localWet}
               categoryColors={categoryColors}
+              multiband={isMultiband}
             />
 
-            {/* Main Controls */}
-            <div 
-              className="bg-gradient-to-br from-black/50 rounded-xl p-6"
-              style={{
-                background: `linear-gradient(135deg, rgba(0, 0, 0, 0.5) 0%, ${categoryColors.accent}30 100%)`,
-                border: `1px solid ${categoryColors.primary}33`,
-              }}
-            >
-              <div className="flex items-center justify-center gap-16">
-                {/* Drive Knob */}
+            {/* Mode Switch Overlay */}
+            <div className="absolute top-2 right-2 flex bg-black/60 rounded-lg p-1 backdrop-blur-sm border border-white/10">
+              <button
+                className={`px-3 py-1 text-[10px] font-bold rounded-md transition-colors ${!isMultiband ? 'bg-[#F97316] text-black' : 'text-white/60 hover:text-white'}`}
+                onClick={() => handleParamChange('multiband', 0)}
+              >
+                SINGLE BAND
+              </button>
+              <button
+                className={`px-3 py-1 text-[10px] font-bold rounded-md transition-colors ${isMultiband ? 'bg-[#F97316] text-black' : 'text-white/60 hover:text-white'}`}
+                onClick={() => handleParamChange('multiband', 1)}
+              >
+                MULTIBAND
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* MAIN CONTROLS */}
+        <div className="flex-1 bg-black/20 rounded-lg p-4 border border-[#F97316]/10">
+
+          {/* SINGLE BAND MODE */}
+          {!isMultiband && (
+            <div className="h-full flex flex-col justify-between animate-in fade-in duration-300">
+              <div className="flex justify-center gap-12 items-center flex-1">
                 <Knob
                   label="DRIVE"
-                  value={distortion}
-                  ghostValue={ghostDrive}
-                  onChange={(val) => handleParamChange('distortion', val)}
+                  value={localDistortion}
+                  onChange={(v) => handleParamChange('distortion', v)}
                   min={0}
                   max={1.5}
                   defaultValue={0.4}
                   sizeVariant="large"
                   category="texture-lab"
-                  valueFormatter={(v) => `${(v * 100).toFixed(0)}%`}
                 />
-
-                {/* Divider */}
-                <div 
-                  className="h-24 w-px bg-gradient-to-b from-transparent to-transparent"
-                  style={{
-                    background: `linear-gradient(to bottom, transparent, ${categoryColors.primary}4D, transparent)`,
-                  }}
-                />
-
-                {/* Mix Knob */}
                 <Knob
                   label="MIX"
-                  value={wet}
-                  ghostValue={ghostMix}
-                  onChange={(val) => handleParamChange('wet', val)}
+                  value={localWet}
+                  onChange={(v) => handleParamChange('wet', v)}
                   min={0}
                   max={1}
                   defaultValue={1}
@@ -299,143 +391,185 @@ const SaturatorUI_V2 = ({ trackId, effect, effectNode, definition }) => {
                   valueFormatter={(v) => `${(v * 100).toFixed(0)}%`}
                 />
               </div>
+
+              {/* Tone Controls */}
+              <div className="flex justify-center gap-8 pt-4 border-t border-white/5">
+                <Knob
+                  label="TONE"
+                  value={localTone}
+                  onChange={(v) => handleParamChange('tone', v)}
+                  min={-12}
+                  max={12}
+                  defaultValue={0}
+                  sizeVariant="small"
+                  category="texture-lab"
+                  valueFormatter={(v) => `${v > 0 ? '+' : ''}${v.toFixed(1)}`}
+                />
+                <Knob
+                  label="LOW CUT"
+                  value={localLowCut}
+                  onChange={(v) => handleParamChange('lowCutFreq', v)}
+                  min={0}
+                  max={500}
+                  defaultValue={0}
+                  sizeVariant="small"
+                  category="texture-lab"
+                  valueFormatter={(v) => `${v.toFixed(0)} Hz`}
+                />
+                <Knob
+                  label="HIGH CUT"
+                  value={localHighCut}
+                  onChange={(v) => handleParamChange('highCutFreq', v)}
+                  min={5000}
+                  max={20000}
+                  defaultValue={20000}
+                  sizeVariant="small"
+                  category="texture-lab"
+                  valueFormatter={(v) => `${(v / 1000).toFixed(1)} kHz`}
+                />
+                <Knob
+                  label="HEADROOM"
+                  value={localHeadroom}
+                  onChange={(v) => handleParamChange('headroom', v)}
+                  min={-6}
+                  max={6}
+                  defaultValue={0}
+                  sizeVariant="small"
+                  category="texture-lab"
+                  valueFormatter={(v) => `${v.toFixed(1)} dB`}
+                />
+              </div>
             </div>
+          )}
 
-            {/* Advanced Settings */}
-            <ExpandablePanel
-              title="Advanced Settings"
-              icon="⚙️"
-              category="texture-lab"
-              defaultExpanded={false}
-            >
-              <div className="grid grid-cols-2 gap-6 p-4">
-                {/* Tone Control */}
-                <div>
+          {/* MULTIBAND MODE */}
+          {isMultiband && (
+            <div className="h-full flex flex-col gap-4 animate-in fade-in duration-300">
+              {/* Crossovers */}
+              <div className="flex gap-4 px-4 py-2 bg-black/20 rounded-lg border border-[#F97316]/10">
+                <div className="flex-1">
                   <Slider
-                    label="TONE"
-                    value={tone}
-                    ghostValue={ghostTone}
-                    onChange={(val) => handleParamChange('tone', val)}
-                    min={-10}
-                    max={10}
-                    defaultValue={0}
-                    bipolar={true}
-                    centerDetent={true}
-                    category="texture-lab"
-                    valueFormatter={(v) => {
-                      if (v > 0) return `+${v.toFixed(1)}`;
-                      if (v < 0) return `${v.toFixed(1)}`;
-                      return '0';
-                    }}
-                  />
-                </div>
-
-                {/* Low Cut Filter */}
-                <div>
-                  <Slider
-                    label="LOW CUT"
-                    value={lowCutFreq}
-                    onChange={(val) => handleParamChange('lowCutFreq', val)}
-                    min={20}
+                    label="LOW X-OVER"
+                    value={localLowMidX}
+                    onChange={(v) => handleParamChange('lowMidCrossover', v)}
+                    min={50}
                     max={500}
-                    defaultValue={20}
-                    logarithmic={true}
-                    showTicks={true}
+                    defaultValue={250}
                     category="texture-lab"
                     valueFormatter={(v) => `${v.toFixed(0)} Hz`}
                   />
                 </div>
-
-                {/* High Cut Filter */}
-                <div>
+                <div className="flex-1">
                   <Slider
-                    label="HIGH CUT"
-                    value={highCutFreq}
-                    onChange={(val) => handleParamChange('highCutFreq', val)}
-                    min={5000}
-                    max={20000}
-                    defaultValue={20000}
-                    logarithmic={true}
-                    showTicks={true}
+                    label="HIGH X-OVER"
+                    value={localMidHighX}
+                    onChange={(v) => handleParamChange('midHighCrossover', v)}
+                    min={1000}
+                    max={8000}
+                    defaultValue={2500}
                     category="texture-lab"
-                    valueFormatter={(v) => {
-                      if (v >= 1000) return `${(v / 1000).toFixed(1)} kHz`;
-                      return `${v.toFixed(0)} Hz`;
-                    }}
-                  />
-                </div>
-
-                {/* Headroom */}
-                <div>
-                  <Slider
-                    label="HEADROOM"
-                    value={headroom}
-                    onChange={(val) => handleParamChange('headroom', val)}
-                    min={-6}
-                    max={6}
-                    defaultValue={0}
-                    bipolar={true}
-                    centerDetent={true}
-                    category="texture-lab"
-                    valueFormatter={(v) => `${v.toFixed(1)} dB`}
+                    valueFormatter={(v) => `${(v / 1000).toFixed(1)} kHz`}
                   />
                 </div>
               </div>
 
-              {/* Auto Gain Toggle */}
-              <div 
-                className="px-4 pb-4 pt-2 border-t"
-                style={{ borderColor: `${categoryColors.primary}1A` }}
-              >
-                <Checkbox
-                  checked={autoGain === true || autoGain === 1}
-                  onChange={(checked) => handleParamChange('autoGain', checked)}
-                  label="Auto Gain Compensation"
-                  description="Automatically adjusts output level to match input"
-                  category="texture-lab"
-                />
-              </div>
-            </ExpandablePanel>
-          </>
-        }
+              {/* 3 Bands */}
+              <div className="grid grid-cols-3 gap-4 flex-1">
+                {/* Low Band */}
+                <div className="bg-black/20 rounded-lg p-4 border border-[#F97316]/10 flex flex-col items-center gap-4">
+                  <div className="text-xs font-bold text-[#F97316]">LOW BAND</div>
+                  <Knob
+                    label="DRIVE"
+                    value={localLowDrive}
+                    onChange={(v) => handleParamChange('lowDrive', v)}
+                    min={0}
+                    max={2}
+                    defaultValue={1}
+                    sizeVariant="medium"
+                    category="texture-lab"
+                  />
+                  <Slider
+                    label="MIX"
+                    value={localLowMix * 100}
+                    onChange={(v) => handleParamChange('lowMix', v / 100)}
+                    min={0}
+                    max={100}
+                    defaultValue={100}
+                    category="texture-lab"
+                    unit="%"
+                  />
+                </div>
 
-        sidePanel={
-          <>
-            {/* Processing Stats */}
-            <div 
-              className="bg-gradient-to-br from-black/50 rounded-xl p-4"
-              style={{
-                background: `linear-gradient(135deg, rgba(0, 0, 0, 0.5) 0%, ${categoryColors.accent}20 100%)`,
-                border: `1px solid ${categoryColors.primary}1A`,
-              }}
-            >
-              <div 
-                className="text-[9px] uppercase tracking-wider mb-3 font-bold"
-                style={{ color: `${categoryColors.secondary}B3` }}
-              >
-                Processing
-              </div>
-              <div className="space-y-2.5">
-                <div className="flex justify-between items-center">
-                  <span className="text-[10px] text-white/60">Drive</span>
-                  <span className="text-[10px] text-white font-mono">{(distortion * 100).toFixed(0)}%</span>
+                {/* Mid Band */}
+                <div className="bg-black/20 rounded-lg p-4 border border-[#F97316]/10 flex flex-col items-center gap-4">
+                  <div className="text-xs font-bold text-[#F97316]">MID BAND</div>
+                  <Knob
+                    label="DRIVE"
+                    value={localMidDrive}
+                    onChange={(v) => handleParamChange('midDrive', v)}
+                    min={0}
+                    max={2}
+                    defaultValue={1}
+                    sizeVariant="medium"
+                    category="texture-lab"
+                  />
+                  <Slider
+                    label="MIX"
+                    value={localMidMix * 100}
+                    onChange={(v) => handleParamChange('midMix', v / 100)}
+                    min={0}
+                    max={100}
+                    defaultValue={100}
+                    category="texture-lab"
+                    unit="%"
+                  />
                 </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-[10px] text-white/60">Mix</span>
-                  <span className="text-[10px] text-white font-mono">{(wet * 100).toFixed(0)}%</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-[10px] text-white/60">Tone</span>
-                  <span className="text-[10px] text-white font-mono">{tone > 0 ? `+${tone.toFixed(1)}` : tone.toFixed(1)}</span>
+
+                {/* High Band */}
+                <div className="bg-black/20 rounded-lg p-4 border border-[#F97316]/10 flex flex-col items-center gap-4">
+                  <div className="text-xs font-bold text-[#F97316]">HIGH BAND</div>
+                  <Knob
+                    label="DRIVE"
+                    value={localHighDrive}
+                    onChange={(v) => handleParamChange('highDrive', v)}
+                    min={0}
+                    max={2}
+                    defaultValue={1}
+                    sizeVariant="medium"
+                    category="texture-lab"
+                  />
+                  <Slider
+                    label="MIX"
+                    value={localHighMix * 100}
+                    onChange={(v) => handleParamChange('highMix', v / 100)}
+                    min={0}
+                    max={100}
+                    defaultValue={100}
+                    category="texture-lab"
+                    unit="%"
+                  />
                 </div>
               </div>
             </div>
-          </>
-        }
-      />
+          )}
+        </div>
+
+        {/* FOOTER */}
+        <div className="flex justify-between items-center px-4 py-2 bg-black/20 rounded-lg border border-[#F97316]/10">
+          <Checkbox
+            checked={localAutoGain === true || localAutoGain === 1}
+            onChange={(checked) => handleParamChange('autoGain', checked ? 1 : 0)}
+            label="AUTO GAIN"
+            category="texture-lab"
+          />
+          <div className="text-[10px] text-white/40">
+            {isMultiband ? 'MULTIBAND PROCESSING ACTIVE' : 'SINGLE BAND TUBE EMULATION'}
+          </div>
+        </div>
+
+      </div>
     </PluginContainerV2>
   );
 };
 
 export default SaturatorUI_V2;
-

@@ -105,6 +105,64 @@ export class BiquadFilter {
 }
 if (Symbol.dispose) BiquadFilter.prototype[Symbol.dispose] = BiquadFilter.prototype.free;
 
+const ReverbProcessorFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_reverbprocessor_free(ptr >>> 0, 1));
+
+export class ReverbProcessor {
+
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        ReverbProcessorFinalization.unregister(this);
+        return ptr;
+    }
+
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_reverbprocessor_free(ptr, 0);
+    }
+    /**
+     * @param {number} sample_rate
+     */
+    constructor(sample_rate) {
+        const ret = wasm.reverbprocessor_new(sample_rate);
+        this.__wbg_ptr = ret >>> 0;
+        ReverbProcessorFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * @param {Float32Array} input_l
+     * @param {Float32Array} input_r
+     * @param {Float32Array} output_l
+     * @param {Float32Array} output_r
+     * @param {number} size
+     * @param {number} decay
+     * @param {number} damping
+     * @param {number} pre_delay_time
+     * @param {number} wet
+     * @param {number} early_late_mix
+     * @param {number} width
+     * @param {number} mod_depth
+     * @param {number} mod_rate
+     */
+    process(input_l, input_r, output_l, output_r, size, decay, damping, pre_delay_time, wet, early_late_mix, width, mod_depth, mod_rate) {
+        const ptr0 = passArrayF32ToWasm0(input_l, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArrayF32ToWasm0(input_r, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        var ptr2 = passArrayF32ToWasm0(output_l, wasm.__wbindgen_malloc);
+        var len2 = WASM_VECTOR_LEN;
+        var ptr3 = passArrayF32ToWasm0(output_r, wasm.__wbindgen_malloc);
+        var len3 = WASM_VECTOR_LEN;
+        wasm.reverbprocessor_process(this.__wbg_ptr, ptr0, len0, ptr1, len1, ptr2, len2, output_l, ptr3, len3, output_r, size, decay, damping, pre_delay_time, wet, early_late_mix, width, mod_depth, mod_rate);
+    }
+    reset() {
+        wasm.reverbprocessor_reset(this.__wbg_ptr);
+    }
+}
+if (Symbol.dispose) ReverbProcessor.prototype[Symbol.dispose] = ReverbProcessor.prototype.free;
+
 const ThreeBandEQFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_threebandeq_free(ptr >>> 0, 1));
@@ -297,10 +355,12 @@ export class WasmAudioProcessor {
      * @param {boolean} eq_active
      * @param {boolean} comp_active
      * @param {number} gain
+     * @param {number} pan
+     * @param {boolean} mono
      * @param {number} threshold
      * @param {number} ratio
      */
-    process_buffer(input_l, input_r, output_l, output_r, eq_active, comp_active, gain, threshold, ratio) {
+    process_buffer(input_l, input_r, output_l, output_r, eq_active, comp_active, gain, pan, mono, threshold, ratio) {
         const ptr0 = passArrayF32ToWasm0(input_l, wasm.__wbindgen_malloc);
         const len0 = WASM_VECTOR_LEN;
         const ptr1 = passArrayF32ToWasm0(input_r, wasm.__wbindgen_malloc);
@@ -309,7 +369,7 @@ export class WasmAudioProcessor {
         var len2 = WASM_VECTOR_LEN;
         var ptr3 = passArrayF32ToWasm0(output_r, wasm.__wbindgen_malloc);
         var len3 = WASM_VECTOR_LEN;
-        wasm.wasmaudioprocessor_process_buffer(this.__wbg_ptr, ptr0, len0, ptr1, len1, ptr2, len2, output_l, ptr3, len3, output_r, eq_active, comp_active, gain, threshold, ratio);
+        wasm.wasmaudioprocessor_process_buffer(this.__wbg_ptr, ptr0, len0, ptr1, len1, ptr2, len2, output_l, ptr3, len3, output_r, eq_active, comp_active, gain, pan, mono, threshold, ratio);
     }
     /**
      * Update EQ settings

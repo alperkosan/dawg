@@ -168,7 +168,9 @@ const ModernReverbUI_V2 = ({ trackId, effect, effectNode, onChange, definition }
     earlyLateMix = 0.5,
     diffusion = 0.7,
     modDepth = 0.3,
-    modRate = 0.5
+    modRate = 0.5,
+    lowCut = 100,
+    shimmer = 0.0
   } = effect.settings || {};
 
   // Local state for all parameters
@@ -182,6 +184,8 @@ const ModernReverbUI_V2 = ({ trackId, effect, effectNode, onChange, definition }
   const [localDiffusion, setLocalDiffusion] = useState(diffusion);
   const [localModDepth, setLocalModDepth] = useState(modDepth);
   const [localModRate, setLocalModRate] = useState(modRate);
+  const [localLowCut, setLocalLowCut] = useState(lowCut);
+  const [localShimmer, setLocalShimmer] = useState(shimmer);
 
   // Get category colors
   const categoryColors = useMemo(() => getCategoryColors('spacetime-chamber'), []);
@@ -211,6 +215,8 @@ const ModernReverbUI_V2 = ({ trackId, effect, effectNode, onChange, definition }
     if (effect.settings.diffusion !== undefined) setLocalDiffusion(effect.settings.diffusion);
     if (effect.settings.modDepth !== undefined) setLocalModDepth(effect.settings.modDepth);
     if (effect.settings.modRate !== undefined) setLocalModRate(effect.settings.modRate);
+    if (effect.settings.lowCut !== undefined) setLocalLowCut(effect.settings.lowCut);
+    if (effect.settings.shimmer !== undefined) setLocalShimmer(effect.settings.shimmer);
   }, [effect.settings]);
 
   // Handle individual parameter changes
@@ -220,7 +226,7 @@ const ModernReverbUI_V2 = ({ trackId, effect, effectNode, onChange, definition }
     onChange?.(key, value);
 
     // Update local state
-    switch(key) {
+    switch (key) {
       case 'size': setLocalSize(value); break;
       case 'decay': setLocalDecay(value); break;
       case 'damping': setLocalDamping(value); break;
@@ -231,6 +237,8 @@ const ModernReverbUI_V2 = ({ trackId, effect, effectNode, onChange, definition }
       case 'diffusion': setLocalDiffusion(value); break;
       case 'modDepth': setLocalModDepth(value); break;
       case 'modRate': setLocalModRate(value); break;
+      case 'lowCut': setLocalLowCut(value); break;
+      case 'shimmer': setLocalShimmer(value); break;
     }
   }, [setParam, handleMixerEffectChange, trackId, effect.id, onChange]);
 
@@ -241,167 +249,188 @@ const ModernReverbUI_V2 = ({ trackId, effect, effectNode, onChange, definition }
       definition={definition}
       category="spacetime-chamber"
     >
-      <TwoPanelLayout
-        category="spacetime-chamber"
+      <div className="flex flex-col h-full p-4 gap-4">
+        {/* TOP: Visualizer (Expanded) */}
+        <div className="flex-1 min-h-[220px] bg-black/40 rounded-lg overflow-hidden border border-[#22D3EE]/20 relative shadow-[0_0_30px_rgba(34,211,238,0.05)]">
+          <DecayEnvelopeVisualizer
+            decay={localDecay}
+            damping={localDamping}
+            earlyLateMix={localEarlyLateMix}
+            size={localSize}
+            categoryColors={categoryColors}
+          />
+          {/* Overlay Info */}
+          <div className="absolute top-4 right-4 flex flex-col items-end gap-1 pointer-events-none">
+            <div className="text-[#22D3EE] font-bold text-lg tracking-wider">MODERN REVERB</div>
+            <div className="text-[#A855F7] text-xs tracking-widest uppercase opacity-80">The Spacetime Chamber</div>
+          </div>
+        </div>
 
-        mainPanel={
-          <>
-            {/* Decay Envelope Visualizer */}
-            <div className="h-48 mb-4">
-              <DecayEnvelopeVisualizer
-                decay={localDecay}
-                damping={localDamping}
-                earlyLateMix={localEarlyLateMix}
-                size={localSize}
-                categoryColors={categoryColors}
+        {/* MIDDLE: Main Controls (Hero Section) */}
+        <div className="bg-gradient-to-r from-black/60 via-[#1e1b4b]/40 to-black/60 rounded-xl p-5 border border-[#22D3EE]/10 flex items-center justify-around shadow-lg">
+          <Knob
+            label="SIZE"
+            value={localSize * 100}
+            ghostValue={ghostSize}
+            onChange={(val) => handleParamChange('size', val / 100)}
+            min={0}
+            max={100}
+            defaultValue={70}
+            sizeVariant="large"
+            category="spacetime-chamber"
+            valueFormatter={(v) => `${v.toFixed(0)}%`}
+          />
+          <Knob
+            label="DECAY"
+            value={localDecay}
+            ghostValue={ghostDecay}
+            onChange={(val) => handleParamChange('decay', val)}
+            min={0.1}
+            max={15}
+            defaultValue={2.5}
+            sizeVariant="large"
+            category="spacetime-chamber"
+            valueFormatter={(v) => `${v.toFixed(1)} s`}
+          />
+          <Knob
+            label="DAMPING"
+            value={localDamping * 100}
+            ghostValue={ghostDamping}
+            onChange={(val) => handleParamChange('damping', val / 100)}
+            min={0}
+            max={100}
+            defaultValue={50}
+            sizeVariant="large"
+            category="spacetime-chamber"
+            valueFormatter={(v) => `${v.toFixed(0)}%`}
+          />
+          <Knob
+            label="MIX"
+            value={localWet * 100}
+            ghostValue={ghostWet}
+            onChange={(val) => handleParamChange('wet', val / 100)}
+            min={0}
+            max={100}
+            defaultValue={35}
+            sizeVariant="large"
+            category="spacetime-chamber"
+            valueFormatter={(v) => `${v.toFixed(0)}%`}
+          />
+        </div>
+
+        {/* BOTTOM: Advanced Controls (Split Groups) */}
+        <div className="grid grid-cols-2 gap-4 h-[180px]">
+
+          {/* Group 1: Reflections & Stereo */}
+          <div className="bg-black/40 rounded-xl p-4 border border-white/5 flex flex-col">
+            <div className="text-[10px] font-bold text-[#A855F7]/70 mb-3 uppercase tracking-widest flex items-center gap-2">
+              <div className="w-1 h-1 rounded-full bg-[#A855F7]"></div>
+              Reflections & Stereo
+            </div>
+            <div className="flex items-center justify-between flex-1 px-2">
+              <Knob
+                label="EARLY/LATE"
+                value={localEarlyLateMix * 100}
+                onChange={(val) => handleParamChange('earlyLateMix', val / 100)}
+                min={0}
+                max={100}
+                defaultValue={50}
+                sizeVariant="small"
+                category="spacetime-chamber"
+                valueFormatter={(v) => `${v.toFixed(0)}%`}
+              />
+              <Knob
+                label="PRE-DELAY"
+                value={localPreDelay * 1000}
+                onChange={(val) => handleParamChange('preDelay', val / 1000)}
+                min={0}
+                max={100}
+                defaultValue={20}
+                sizeVariant="small"
+                category="spacetime-chamber"
+                valueFormatter={(v) => `${v.toFixed(0)} ms`}
+              />
+              <Knob
+                label="DIFFUSION"
+                value={localDiffusion * 100}
+                onChange={(val) => handleParamChange('diffusion', val / 100)}
+                min={0}
+                max={100}
+                defaultValue={70}
+                sizeVariant="small"
+                category="spacetime-chamber"
+                valueFormatter={(v) => `${v.toFixed(0)}%`}
+              />
+              <Knob
+                label="WIDTH"
+                value={localWidth * 100}
+                onChange={(val) => handleParamChange('width', val / 100)}
+                min={0}
+                max={100}
+                defaultValue={100}
+                sizeVariant="small"
+                category="spacetime-chamber"
+                valueFormatter={(v) => `${v.toFixed(0)}%`}
               />
             </div>
+          </div>
 
-            {/* Main Controls */}
-            <div className="bg-gradient-to-br from-black/50 to-[#2d1854]/30 rounded-xl p-6 border border-[#A855F7]/20 mb-4">
-              <div className="text-xs font-bold text-[#22D3EE]/70 mb-4 uppercase tracking-wider">Main Parameters</div>
-              <div className="grid grid-cols-4 gap-6">
-                <Knob
-                  label="SIZE"
-                  value={localSize * 100}
-                  ghostValue={ghostSize}
-                  onChange={(val) => handleParamChange('size', val / 100)}
-                  min={0}
-                  max={100}
-                  defaultValue={70}
-                  sizeVariant="medium"
-                  category="spacetime-chamber"
-                  valueFormatter={(v) => `${v.toFixed(0)}%`}
-                />
-                <Knob
-                  label="DECAY"
-                  value={localDecay}
-                  ghostValue={ghostDecay}
-                  onChange={(val) => handleParamChange('decay', val)}
-                  min={0.1}
-                  max={15}
-                  defaultValue={2.5}
-                  sizeVariant="medium"
-                  category="spacetime-chamber"
-                  valueFormatter={(v) => `${v.toFixed(1)} s`}
-                />
-                <Knob
-                  label="DAMPING"
-                  value={localDamping * 100}
-                  ghostValue={ghostDamping}
-                  onChange={(val) => handleParamChange('damping', val / 100)}
-                  min={0}
-                  max={100}
-                  defaultValue={50}
-                  sizeVariant="medium"
-                  category="spacetime-chamber"
-                  valueFormatter={(v) => `${v.toFixed(0)}%`}
-                />
-                <Knob
-                  label="MIX"
-                  value={localWet * 100}
-                  ghostValue={ghostWet}
-                  onChange={(val) => handleParamChange('wet', val / 100)}
-                  min={0}
-                  max={100}
-                  defaultValue={35}
-                  sizeVariant="medium"
-                  category="spacetime-chamber"
-                  valueFormatter={(v) => `${v.toFixed(0)}%`}
-                />
-              </div>
+          {/* Group 2: Modulation & Tone */}
+          <div className="bg-black/40 rounded-xl p-4 border border-white/5 flex flex-col">
+            <div className="text-[10px] font-bold text-[#22D3EE]/70 mb-3 uppercase tracking-widest flex items-center gap-2">
+              <div className="w-1 h-1 rounded-full bg-[#22D3EE]"></div>
+              Modulation & Tone
             </div>
-
-            {/* Advanced Controls */}
-            <div className="bg-gradient-to-br from-[#1e1b4b]/50 to-black/50 rounded-xl p-6 border border-[#A855F7]/10">
-              <div className="text-xs font-bold text-[#22D3EE]/70 mb-4 uppercase tracking-wider">Advanced</div>
-              <div className="grid grid-cols-3 gap-6">
-                <Knob
-                  label="EARLY/LATE"
-                  value={localEarlyLateMix * 100}
-                  onChange={(val) => handleParamChange('earlyLateMix', val / 100)}
-                  min={0}
-                  max={100}
-                  defaultValue={50}
-                  sizeVariant="small"
-                  category="spacetime-chamber"
-                  valueFormatter={(v) => `${v.toFixed(0)}%`}
-                />
-                <Knob
-                  label="DIFFUSION"
-                  value={localDiffusion * 100}
-                  onChange={(val) => handleParamChange('diffusion', val / 100)}
-                  min={0}
-                  max={100}
-                  defaultValue={70}
-                  sizeVariant="small"
-                  category="spacetime-chamber"
-                  valueFormatter={(v) => `${v.toFixed(0)}%`}
-                />
-                <Knob
-                  label="PRE-DELAY"
-                  value={localPreDelay * 1000}
-                  onChange={(val) => handleParamChange('preDelay', val / 1000)}
-                  min={0}
-                  max={100}
-                  defaultValue={20}
-                  sizeVariant="small"
-                  category="spacetime-chamber"
-                  valueFormatter={(v) => `${v.toFixed(0)} ms`}
-                />
-              </div>
-
-              <div className="grid grid-cols-3 gap-6 mt-4">
-                <Knob
-                  label="WIDTH"
-                  value={localWidth * 100}
-                  onChange={(val) => handleParamChange('width', val / 100)}
-                  min={0}
-                  max={100}
-                  defaultValue={100}
-                  sizeVariant="small"
-                  category="spacetime-chamber"
-                  valueFormatter={(v) => `${v.toFixed(0)}%`}
-                />
-                <Knob
-                  label="MOD DEPTH"
-                  value={localModDepth * 100}
-                  onChange={(val) => handleParamChange('modDepth', val / 100)}
-                  min={0}
-                  max={100}
-                  defaultValue={30}
-                  sizeVariant="small"
-                  category="spacetime-chamber"
-                  valueFormatter={(v) => `${v.toFixed(0)}%`}
-                />
-                <Knob
-                  label="MOD RATE"
-                  value={localModRate}
-                  onChange={(val) => handleParamChange('modRate', val)}
-                  min={0.1}
-                  max={5}
-                  defaultValue={0.5}
-                  sizeVariant="small"
-                  category="spacetime-chamber"
-                  valueFormatter={(v) => `${v.toFixed(1)} Hz`}
-                />
-              </div>
-            </div>
-          </>
-        }
-
-        sidePanel={
-          <div className="h-full flex items-center justify-center">
-            <div className="text-center p-8">
-              <div className="text-[#22D3EE] text-6xl mb-4">🌌</div>
-              <div className="text-sm text-[#A855F7] font-bold mb-2">Modern Reverb</div>
-              <div className="text-xs text-white/40 leading-relaxed">
-                Professional algorithmic reverb with early reflections and decay envelope control.
-              </div>
+            <div className="flex items-center justify-between flex-1 px-2">
+              <Knob
+                label="MOD DEPTH"
+                value={localModDepth * 100}
+                onChange={(val) => handleParamChange('modDepth', val / 100)}
+                min={0}
+                max={100}
+                defaultValue={30}
+                sizeVariant="small"
+                category="spacetime-chamber"
+                valueFormatter={(v) => `${v.toFixed(0)}%`}
+              />
+              <Knob
+                label="MOD RATE"
+                value={localModRate}
+                onChange={(val) => handleParamChange('modRate', val)}
+                min={0.1}
+                max={5}
+                defaultValue={0.5}
+                sizeVariant="small"
+                category="spacetime-chamber"
+                valueFormatter={(v) => `${v.toFixed(1)} Hz`}
+              />
+              <Knob
+                label="LOW CUT"
+                value={localLowCut}
+                onChange={(val) => handleParamChange('lowCut', val)}
+                min={20}
+                max={1000}
+                defaultValue={100}
+                sizeVariant="small"
+                category="spacetime-chamber"
+                valueFormatter={(v) => `${v.toFixed(0)} Hz`}
+              />
+              <Knob
+                label="SHIMMER"
+                value={localShimmer * 100}
+                onChange={(val) => handleParamChange('shimmer', val / 100)}
+                min={0}
+                max={100}
+                defaultValue={0}
+                sizeVariant="small"
+                category="spacetime-chamber"
+                valueFormatter={(v) => `${v.toFixed(0)}%`}
+              />
             </div>
           </div>
-        }
-      />
+
+        </div>
+      </div>
     </PluginContainerV2>
   );
 };

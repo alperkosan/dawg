@@ -17,6 +17,13 @@ export class BiquadFilter {
    */
   reset(): void;
 }
+export class ReverbProcessor {
+  free(): void;
+  [Symbol.dispose](): void;
+  constructor(sample_rate: number);
+  process(input_l: Float32Array, input_r: Float32Array, output_l: Float32Array, output_r: Float32Array, size: number, decay: number, damping: number, pre_delay_time: number, wet: number, early_late_mix: number, width: number, mod_depth: number, mod_rate: number): void;
+  reset(): void;
+}
 export class ThreeBandEQ {
   free(): void;
   [Symbol.dispose](): void;
@@ -77,7 +84,7 @@ export class WasmAudioProcessor {
   /**
    * Process stereo buffer
    */
-  process_buffer(input_l: Float32Array, input_r: Float32Array, output_l: Float32Array, output_r: Float32Array, eq_active: boolean, comp_active: boolean, gain: number, threshold: number, ratio: number): void;
+  process_buffer(input_l: Float32Array, input_r: Float32Array, output_l: Float32Array, output_r: Float32Array, eq_active: boolean, comp_active: boolean, gain: number, pan: number, mono: boolean, threshold: number, ratio: number): void;
   /**
    * Update EQ settings
    */
@@ -104,7 +111,7 @@ export interface InitOutput {
   readonly threebandeq_reset: (a: number) => void;
   readonly __wbg_wasmaudioprocessor_free: (a: number, b: number) => void;
   readonly wasmaudioprocessor_new: (a: number) => number;
-  readonly wasmaudioprocessor_process_buffer: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: any, i: number, j: number, k: any, l: number, m: number, n: number, o: number, p: number) => void;
+  readonly wasmaudioprocessor_process_buffer: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: any, i: number, j: number, k: any, l: number, m: number, n: number, o: number, p: number, q: number, r: number) => void;
   readonly wasmaudioprocessor_update_eq_coefficients: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
   readonly wasmaudioprocessor_reset: (a: number) => void;
   readonly __wbg_unifiedmixerprocessor_free: (a: number, b: number) => void;
@@ -115,6 +122,10 @@ export interface InitOutput {
   readonly unifiedmixerprocessor_set_channel_compression: (a: number, b: number, c: number, d: number) => void;
   readonly unifiedmixerprocessor_reset: (a: number) => void;
   readonly unifiedmixerprocessor_get_num_channels: (a: number) => number;
+  readonly __wbg_reverbprocessor_free: (a: number, b: number) => void;
+  readonly reverbprocessor_new: (a: number) => number;
+  readonly reverbprocessor_process: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: any, i: number, j: number, k: any, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number) => void;
+  readonly reverbprocessor_reset: (a: number) => void;
   readonly __wbindgen_export_0: WebAssembly.Table;
   readonly __wbindgen_malloc: (a: number, b: number) => number;
   readonly __wbindgen_start: () => void;

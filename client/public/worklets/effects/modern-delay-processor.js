@@ -20,7 +20,9 @@ class ModernDelayProcessor extends AudioWorkletProcessor {
       { name: 'wet', defaultValue: 0.35, minValue: 0, maxValue: 1 },
       { name: 'filterFreq', defaultValue: 8000, minValue: 100, maxValue: 20000 },
       { name: 'saturation', defaultValue: 0, minValue: 0, maxValue: 1 },
-      { name: 'diffusion', defaultValue: 0, minValue: 0, maxValue: 1 }
+      { name: 'diffusion', defaultValue: 0, minValue: 0, maxValue: 1 },
+      { name: 'wobble', defaultValue: 0, minValue: 0, maxValue: 1 },
+      { name: 'flutter', defaultValue: 0, minValue: 0, maxValue: 1 }
     ];
   }
 
@@ -40,6 +42,12 @@ class ModernDelayProcessor extends AudioWorkletProcessor {
     // Filter states (one-pole lowpass)
     this.filterStateLeft = 0;
     this.filterStateRight = 0;
+
+    // Modulation states
+    this.lfoPhase = 0;
+    this.flutterPhase = 0;
+    this.flutterTarget = 0;
+    this.flutterCurrent = 0;
 
     // Diffusion (allpass filters)
     const allpassSizes = [
@@ -90,6 +98,8 @@ class ModernDelayProcessor extends AudioWorkletProcessor {
     const filterFreq = this.getParam(parameters.filterFreq, 0) ?? this.settings.filterFreq ?? 8000;
     const saturation = this.getParam(parameters.saturation, 0) ?? this.settings.saturation ?? 0;
     const diffusion = this.getParam(parameters.diffusion, 0) ?? this.settings.diffusion ?? 0;
+    const wobble = this.getParam(parameters.wobble, 0) ?? this.settings.wobble ?? 0;
+    const flutter = this.getParam(parameters.flutter, 0) ?? this.settings.flutter ?? 0;
 
     if (this.bypassed) {
       output[0].set(input[0]);
@@ -98,16 +108,10 @@ class ModernDelayProcessor extends AudioWorkletProcessor {
     }
 
     // 🎯 PROFESSIONAL DELAY CALCULATIONS
-    
-    // Fractional delay for smooth modulation (industry standard)
-    const delaySamplesLeft = timeLeft * this.sampleRate;
-    const delaySamplesRight = timeRight * this.sampleRate;
-    
-    // Store fractional parts for interpolation
-    const delayIntLeft = Math.floor(delaySamplesLeft);
-    const delayFracLeft = delaySamplesLeft - delayIntLeft;
-    const delayIntRight = Math.floor(delaySamplesRight);
-    const delayFracRight = delaySamplesRight - delayIntRight;
+
+    // Base delay samples
+    const baseDelaySamplesLeft = timeLeft * this.sampleRate;
+    const baseDelaySamplesRight = timeRight * this.sampleRate;
 
     // Professional filter coefficient: Pre-warped bilinear transform
     const omega = 2 * Math.PI * filterFreq / this.sampleRate;
@@ -117,15 +121,56 @@ class ModernDelayProcessor extends AudioWorkletProcessor {
     const straightFB = 1 - pingPong;
     const crossFB = pingPong * 0.9; // Increased for more pronounced ping-pong
 
+    // LFO Parameters (Wobble)
+    // Slow, drifting LFO: 0.5Hz - 3Hz
+    const lfoFreq = 0.5 + wobble * 2.5;
+    const lfoInc = (2 * Math.PI * lfoFreq) / this.sampleRate;
+    // Depth: up to 5ms modulation
+    const lfoDepth = wobble * 0.005 * this.sampleRate;
+
+    // Random Parameters (Flutter)
+    // Fast, erratic modulation
+    const flutterSpeed = 0.002; // Rate of change for random target
+
     for (let i = 0; i < blockSize; i++) {
       const inputLeft = input[0][i];
       const inputRight = input[1]?.[i] ?? inputLeft;
+
+      // 🎯 MODULATION CALCULATION
+
+      // 1. Wobble (Sine LFO)
+      this.lfoPhase += lfoInc;
+      if (this.lfoPhase > 2 * Math.PI) this.lfoPhase -= 2 * Math.PI;
+      const wobbleMod = Math.sin(this.lfoPhase) * lfoDepth;
+
+      // 2. Flutter (Smoothed Random Walk)
+      if (Math.random() < flutterSpeed) {
+        this.flutterTarget = (Math.random() * 2 - 1) * flutter;
+      }
+      // Smooth approach to target
+      this.flutterCurrent += (this.flutterTarget - this.flutterCurrent) * 0.01;
+      // Depth: up to 2ms modulation
+      const flutterMod = this.flutterCurrent * 0.002 * this.sampleRate;
+
+      // Total Modulation
+      const totalModLeft = wobbleMod + flutterMod;
+      const totalModRight = -wobbleMod + flutterMod; // Invert wobble for stereo width
+
+      // Calculate final delay times with modulation
+      const modDelayLeft = baseDelaySamplesLeft + totalModLeft;
+      const modDelayRight = baseDelaySamplesRight + totalModRight;
+
+      // Store fractional parts for interpolation
+      const delayIntLeft = Math.floor(modDelayLeft);
+      const delayFracLeft = modDelayLeft - delayIntLeft;
+      const delayIntRight = Math.floor(modDelayRight);
+      const delayFracRight = modDelayRight - delayIntRight;
 
       // 🎯 FRACTIONAL DELAY INTERPOLATION: Cubic for smooth modulation
       // Read positions with fractional part
       const readIdxLeftBase = (this.writeIndex - delayIntLeft + this.delayBufferLeft.length) % this.delayBufferLeft.length;
       const readIdxRightBase = (this.writeIndex - delayIntRight + this.delayBufferRight.length) % this.delayBufferRight.length;
-      
+
       // Cubic interpolation for smooth delay time changes
       let delayedLeft = this.cubicInterpolate(
         this.delayBufferLeft,
@@ -163,7 +208,7 @@ class ModernDelayProcessor extends AudioWorkletProcessor {
       // Saturation in feedback loop causes infinite buildup and crackling
       let saturatedLeft = filteredLeft;
       let saturatedRight = filteredRight;
-      
+
       if (saturation > 0) {
         const drive = 1 + saturation * 30; // Reduced drive range for stability
         saturatedLeft = Math.tanh(filteredLeft * drive) / Math.tanh(drive);
@@ -174,7 +219,7 @@ class ModernDelayProcessor extends AudioWorkletProcessor {
       // Calculate feedback signals with soft limiting
       let fbLeft = filteredLeft * feedbackLeft * straightFB + filteredRight * feedbackRight * crossFB;
       let fbRight = filteredRight * feedbackRight * straightFB + filteredLeft * feedbackLeft * crossFB;
-      
+
       // 🎯 SAFETY LIMITER: Prevent feedback from exceeding 0.95 (prevents runaway)
       const maxFeedbackLevel = 0.95;
       fbLeft = Math.max(-maxFeedbackLevel, Math.min(maxFeedbackLevel, fbLeft));

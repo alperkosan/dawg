@@ -54,12 +54,12 @@ const durationToSteps = (duration, useVisual = false, note = null) => {
   if (useVisual && note && note.visualLength !== undefined && typeof note.visualLength === 'number') {
     return note.visualLength;
   }
-  
+
   // ✅ FL STUDIO STYLE: Use length if available (new format)
   if (!useVisual && note && note.length !== undefined && typeof note.length === 'number') {
     return note.length;
   }
-  
+
   if (typeof duration === 'number') return duration; // Already in steps
   if (typeof duration !== 'string') return 1; // Default 1 step
 
@@ -79,8 +79,8 @@ const UnifiedGridCanvas = React.memo(({
   totalSteps = 256,
   onNoteToggle = null,
   onInstrumentClick = null,
-  scrollX = 0,
-  scrollY = 0,
+  scrollXRef, // ⚡ PERFORMANCE: Refs instead of values (no re-renders)
+  scrollYRef,
   viewportWidth = 1000,
   viewportHeight = 600,
 }) => {
@@ -140,8 +140,11 @@ const UnifiedGridCanvas = React.memo(({
     });
   }, []);
 
-  // ⚡ Calculate visible bounds (virtual rendering) - MEMOIZED
-  const visibleBounds = useMemo(() => {
+  // ⚡ PERFORMANCE: Calculate visible bounds from scroll refs (no memoization needed)
+  const calculateVisibleBounds = useCallback(() => {
+    const scrollX = scrollXRef?.current || 0;
+    const scrollY = scrollYRef?.current || 0;
+
     // Visible rows (instruments) with buffer
     const startRow = Math.max(0, Math.floor(scrollY / ROW_HEIGHT) - BUFFER_ROWS);
     const endRow = Math.min(
@@ -156,10 +159,10 @@ const UnifiedGridCanvas = React.memo(({
       Math.ceil((scrollX + viewportWidth) / STEP_WIDTH) + BUFFER_STEPS
     );
 
-    return { startRow, endRow, startStep, endStep };
-  }, [instruments.length, totalSteps, scrollX, scrollY, viewportWidth, viewportHeight]);
+    return { startRow, endRow, startStep, endStep, scrollX, scrollY };
+  }, [scrollXRef, scrollYRef, instruments.length, totalSteps, viewportWidth, viewportHeight]);
 
-  // 🎨 RENDER FUNCTION - Single unified render
+  // 🎨 RENDER FUNCTION - Single unified render (called from RAF loop)
   const render = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -180,8 +183,8 @@ const UnifiedGridCanvas = React.memo(({
     canvas.style.height = `${viewportHeight}px`;
     ctx.scale(dpr, dpr);
 
-    // Get visible bounds from memoized value
-    const { startRow, endRow, startStep, endStep } = visibleBounds;
+    // Calculate visible bounds from current scroll position (refs)
+    const { startRow, endRow, startStep, endStep, scrollX, scrollY } = calculateVisibleBounds();
 
     // 🐛 DEBUG: Log render info (1% sample to avoid spam)
     if (Math.random() < 0.01) {
@@ -385,11 +388,11 @@ const UnifiedGridCanvas = React.memo(({
         let notesRendered = 0;
         notes.forEach(note => {
           const step = note.time;
-          
+
           // ✅ FL STUDIO STYLE: Use visualLength for display, actual length for viewport calculation
           const visualDuration = durationToSteps(note.duration, true, note);
           const actualDuration = durationToSteps(note.duration, false, note);
-          
+
           // ✅ FIX: Check viewport visibility with actual duration (note end position)
           const noteEndStep = step + actualDuration;
           if (noteEndStep < startStep || step > endStep) return;
@@ -529,7 +532,7 @@ const UnifiedGridCanvas = React.memo(({
     viewportWidth,
     viewportHeight,
     hoveredCell,
-    visibleBounds, // ⚡ OPTIMIZATION: Only re-render when visible bounds change
+    calculateVisibleBounds, // ⚡ OPTIMIZATION: Bounds calculation function
     isStepSequencerMode, // ✅ Mode detection function
     themeVersion, // ✅ THEME: Re-render when theme changes
   ]);
@@ -539,30 +542,30 @@ const UnifiedGridCanvas = React.memo(({
     renderRef.current = render;
   }, [render]);
 
-  // ⚡ PERFORMANCE: Unified rendering via UIUpdateManager
+  // ⚡ PERFORMANCE: RAF-based continuous rendering (60 FPS)
   useEffect(() => {
-    // Mark dirty whenever render dependencies change
-    isDirtyRef.current = true;
+    let rafId;
 
-    // Subscribe to UIUpdateManager for unified RAF loop
-    const unsubscribe = uiUpdateManager.subscribe(
-      'channel-rack-grid',
-      () => {
-        // Only render if dirty flag is set
-        if (!isDirtyRef.current) return;
+    const renderLoop = () => {
+      // Always render at 60 FPS (scroll position read from refs)
+      render();
+      rafId = requestAnimationFrame(renderLoop);
+    };
 
-        render();
-        isDirtyRef.current = false;
-      },
-      UPDATE_PRIORITIES.MEDIUM, // Grid is important but not critical as playhead
-      UPDATE_FREQUENCIES.HIGH // Keep 60fps for smooth hover interaction
-    );
+    // Start RAF loop
+    rafId = requestAnimationFrame(renderLoop);
 
-    return unsubscribe;
+    return () => {
+      if (rafId) {
+        cancelAnimationFrame(rafId);
+      }
+    };
   }, [render]);
 
   // 🎯 INTERACTION: Map mouse to row/step
   const getInteractionCell = useCallback((mouseX, mouseY) => {
+    const scrollX = scrollXRef?.current || 0;
+    const scrollY = scrollYRef?.current || 0;
     const row = Math.floor((mouseY + scrollY) / ROW_HEIGHT);
     const step = Math.floor((mouseX + scrollX) / STEP_WIDTH);
 
@@ -571,7 +574,7 @@ const UnifiedGridCanvas = React.memo(({
     }
 
     return { row, step, instrumentId: instruments[row]?.id };
-  }, [instruments, totalSteps, scrollX, scrollY]);
+  }, [instruments, totalSteps, scrollXRef, scrollYRef]);
 
   // Mouse move handler
   const handleMouseMove = useCallback((e) => {

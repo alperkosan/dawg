@@ -464,14 +464,24 @@ import { useEffect, useRef } from 'react';
 
 export const useRenderer = (callback, priority = 0, throttle = 16, deps = []) => {
   const idRef = useRef(null);
+  const callbackRef = useRef(callback);
+
+  // Update callback ref when it changes
+  useEffect(() => {
+    callbackRef.current = callback;
+  }, [callback]);
 
   useEffect(() => {
     // Generate unique ID
     const id = `renderer_${Math.random().toString(36).substr(2, 9)}`;
     idRef.current = id;
 
-    // Register renderer
-    renderManager.register(id, callback, priority, throttle);
+    // Register renderer with stable callback wrapper
+    renderManager.register(id, (now) => {
+      if (callbackRef.current) {
+        callbackRef.current(now);
+      }
+    }, priority, throttle);
 
     // Cleanup on unmount
     return () => {

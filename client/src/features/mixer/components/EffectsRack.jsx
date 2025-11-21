@@ -9,26 +9,11 @@
  * - Add effect button
  */
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useMixerStore } from '@/store/useMixerStore';
 import { usePanelsStore } from '@/store/usePanelsStore';
 import { pluginRegistry } from '@/config/pluginConfig';
-import {
-  DndContext,
-  closestCenter,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-} from '@dnd-kit/core';
-import {
-  arrayMove,
-  SortableContext,
-  sortableKeyboardCoordinates,
-  useSortable,
-  verticalListSortingStrategy,
-} from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
+import { useDrag, useDrop } from 'react-dnd';
 import {
   Plus,
   Trash2,
@@ -66,31 +51,80 @@ const EFFECT_ICONS = {
   default: Settings
 };
 
+const DND_TYPE = 'MIXER_EFFECT';
+
 // ============================================================================
 // SORTABLE EFFECT ITEM
 // ============================================================================
 
-const SortableEffectItem = ({ effect, track, expandedEffect, setExpandedEffect }) => {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: effect.id });
-
+const SortableEffectItem = ({ effect, track, index, moveEffect, expandedEffect, setExpandedEffect }) => {
+  const ref = useRef(null);
   const {
     handleMixerEffectRemove,
     handleMixerEffectChange,
     handleMixerEffectToggle
   } = useMixerStore();
 
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  };
+  const [{ isDragging }, drag] = useDrag({
+    type: DND_TYPE,
+    item: { id: effect.id, index },
+    collect: (monitor) => ({
+      isDragging: monitor.isDragging(),
+    }),
+  });
+
+  const [, drop] = useDrop({
+    accept: DND_TYPE,
+    hover(item, monitor) {
+      if (!ref.current) {
+        return;
+      }
+      const dragIndex = item.index;
+      const hoverIndex = index;
+
+      // Don't replace items with themselves
+      if (dragIndex === hoverIndex) {
+        return;
+      }
+
+      // Determine rectangle on screen
+      const hoverBoundingRect = ref.current?.getBoundingClientRect();
+
+      // Get vertical middle
+      const hoverMiddleY = (hoverBoundingRect.bottom - hoverBoundingRect.top) / 2;
+
+      // Determine mouse position
+      const clientOffset = monitor.getClientOffset();
+
+      // Get pixels to the top
+      const hoverClientY = clientOffset.y - hoverBoundingRect.top;
+
+      // Only perform the move when the mouse has crossed half of the items height
+      // When dragging downwards, only move when the cursor is below 50%
+      // When dragging upwards, only move when the cursor is above 50%
+
+      // Dragging downwards
+      if (dragIndex < hoverIndex && hoverClientY < hoverMiddleY) {
+        return;
+      }
+
+      // Dragging upwards
+      if (dragIndex > hoverIndex && hoverClientY > hoverMiddleY) {
+        return;
+      }
+
+      // Time to actually perform the action
+      moveEffect(dragIndex, hoverIndex);
+
+      // Note: we're mutating the monitor item here!
+      // Generally it's better to avoid mutations,
+      // but it's good here for the sake of performance
+      // to avoid expensive index searches.
+      item.index = hoverIndex;
+    },
+  });
+
+  drag(drop(ref));
 
   const Icon = EFFECT_ICONS[effect.type] || EFFECT_ICONS.default;
   const isExpanded = expandedEffect === effect.id;
@@ -103,19 +137,15 @@ const SortableEffectItem = ({ effect, track, expandedEffect, setExpandedEffect }
 
   return (
     <div
-      ref={setNodeRef}
-      style={style}
+      ref={ref}
       className={`effects-rack__item ${effect.bypass ? 'effects-rack__item--disabled' : ''} ${isDragging ? 'effects-rack__item--dragging' : ''}`}
+      style={{ opacity: isDragging ? 0.5 : 1 }}
     >
       {/* Effect Header */}
       <div className="effects-rack__item-header">
-        <button
-          className="effects-rack__drag-handle"
-          {...attributes}
-          {...listeners}
-        >
+        <div className="effects-rack__drag-handle" style={{ cursor: 'grab' }}>
           <GripVertical size={12} />
-        </button>
+        </div>
 
         <div className="effects-rack__item-info">
           <Icon size={14} />
@@ -201,14 +231,6 @@ export const EffectsRack = ({ track }) => {
     reorderEffect
   } = useMixerStore();
 
-  // ✅ Drag and drop sensors
-  const sensors = useSensors(
-    useSensor(PointerSensor),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
-  );
-
   if (!track) {
     return (
       <div className="effects-rack effects-rack--empty">
@@ -228,29 +250,9 @@ export const EffectsRack = ({ track }) => {
     setShowAddMenu(false);
   };
 
-  // ✅ Handle drag end - reorder effects
-  const handleDragEnd = (event) => {
-    const { active, over } = event;
-
-    console.log('🎯 handleDragEnd:', {
-      active: active?.id,
-      over: over?.id,
-      hasReorderEffect: typeof reorderEffect === 'function'
-    });
-
-    if (over && active.id !== over.id) {
-      const oldIndex = effects.findIndex(fx => fx.id === active.id);
-      const newIndex = effects.findIndex(fx => fx.id === over.id);
-
-      console.log(`🔄 Reordering effect: ${active.id} from index ${oldIndex} to ${newIndex}`);
-
-      // Update store with new order
-      if (typeof reorderEffect === 'function') {
-        reorderEffect(track.id, oldIndex, newIndex);
-        console.log(`✅ reorderEffect called successfully`);
-      } else {
-        console.error('❌ reorderEffect is not a function!', reorderEffect);
-      }
+  const moveEffect = (dragIndex, hoverIndex) => {
+    if (typeof reorderEffect === 'function') {
+      reorderEffect(track.id, dragIndex, hoverIndex);
     }
   };
 
@@ -313,35 +315,26 @@ export const EffectsRack = ({ track }) => {
       )}
 
       {/* Effects List */}
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragEnd={handleDragEnd}
-      >
-        <div className="effects-rack__list">
-          {effects.length === 0 ? (
-            <div className="effects-rack__no-effects">
-              <p>No effects</p>
-              <span>Click + to add an effect</span>
-            </div>
-          ) : (
-            <SortableContext
-              items={effects.map(fx => fx.id)}
-              strategy={verticalListSortingStrategy}
-            >
-              {effects.map((effect) => (
-                <SortableEffectItem
-                  key={effect.id}
-                  effect={effect}
-                  track={track}
-                  expandedEffect={expandedEffect}
-                  setExpandedEffect={setExpandedEffect}
-                />
-              ))}
-            </SortableContext>
-          )}
-        </div>
-      </DndContext>
+      <div className="effects-rack__list">
+        {effects.length === 0 ? (
+          <div className="effects-rack__no-effects">
+            <p>No effects</p>
+            <span>Click + to add an effect</span>
+          </div>
+        ) : (
+          effects.map((effect, index) => (
+            <SortableEffectItem
+              key={effect.id}
+              index={index}
+              effect={effect}
+              track={track}
+              moveEffect={moveEffect}
+              expandedEffect={expandedEffect}
+              setExpandedEffect={setExpandedEffect}
+            />
+          ))
+        )}
+      </div>
 
       {/* Routing Info */}
       {track.type !== 'master' && (

@@ -116,20 +116,25 @@ export class VASynthInstrument extends BaseInstrument {
                     if (this.modulationMatrix.length > 0) {
                         monoVoice.updateParameters({ modulationMatrix: this.modulationMatrix });
                     }
-                    
-                    // ✅ PHASE 2: Apply per-note pan if present
-                    if (extendedParams?.pan !== undefined && extendedParams.pan !== 0) {
-                        const panner = this.audioContext.createStereoPanner();
-                        panner.pan.setValueAtTime(extendedParams.pan, time);
-                        monoVoice.masterGain.connect(panner);
-                        panner.connect(this.masterGain);
-                    } else {
-                        monoVoice.masterGain.connect(this.masterGain);
-                    }
+
                     this.voices.set('mono', monoVoice);
                 }
 
+                // ✅ FIX: Reset routing for mono voice to prevent double connections
+                try { monoVoice.masterGain.disconnect(); } catch (e) { }
+
+                // ✅ PHASE 2: Apply per-note pan if present
+                if (extendedParams?.pan !== undefined && extendedParams.pan !== 0) {
+                    const panner = this.audioContext.createStereoPanner();
+                    panner.pan.setValueAtTime(extendedParams.pan, time);
+                    monoVoice.masterGain.connect(panner);
+                    panner.connect(this.masterGain);
+                } else {
+                    monoVoice.masterGain.connect(this.masterGain);
+                }
+
                 // ✅ PHASE 2: Trigger note on mono voice with extended params
+                console.log(`🎹 VASynth Mono noteOn: midiNote=${midiNote}, velocity=${velocity}, instrumentName=${this.name}`);
                 monoVoice.noteOn(midiNote, velocity, time, extendedParams);
                 this.activeNotes.set(midiNote, { startTime: time, velocity, extendedParams });
 
@@ -220,7 +225,7 @@ export class VASynthInstrument extends BaseInstrument {
                 if (this.modulationMatrix.length > 0) {
                     voice.updateParameters({ modulationMatrix: this.modulationMatrix });
                 }
-                
+
                 // ✅ PHASE 2: Apply per-note pan if present
                 if (extendedParams?.pan !== undefined && extendedParams.pan !== 0) {
                     const panner = this.audioContext.createStereoPanner();
@@ -485,7 +490,7 @@ export class VASynthInstrument extends BaseInstrument {
                 if (updates.amplitudeEnvelope && voice.setAmplitudeEnvelope) {
                     voice.setAmplitudeEnvelope(updates.amplitudeEnvelope);
                 }
-                
+
                 // ✅ LFO PLAYBACK: Update LFO settings in active voices
                 if (updates.lfo1 && voice.updateParameters) {
                     voice.updateParameters({ lfo1: updates.lfo1 });

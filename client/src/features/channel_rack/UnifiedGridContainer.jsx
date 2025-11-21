@@ -34,8 +34,12 @@ const UnifiedGridContainer = React.memo(({
 }) => {
   const containerRef = useRef(null);
   const canvasContainerRef = useRef(null);
-  const [scrollX, setScrollX] = useState(0);
-  const [scrollY, setScrollY] = useState(0);
+
+  // ⚡ PERFORMANCE: Use refs instead of state for scroll (no re-renders)
+  const scrollXRef = useRef(0);
+  const scrollYRef = useRef(0);
+
+  // Viewport size still uses state (only changes on resize, not scroll)
   const [viewportWidth, setViewportWidth] = useState(1000);
   const [viewportHeight, setViewportHeight] = useState(600);
 
@@ -45,7 +49,7 @@ const UnifiedGridContainer = React.memo(({
   // Add button: 64px height + 4px margin-top = 68px total space
   const totalHeight = instruments.length * ROW_HEIGHT + addButtonHeight;
   const totalWidth = totalSteps * STEP_WIDTH;
-  
+
   if (import.meta.env.DEV && window.verboseLogging) {
     console.log('📏 UnifiedGridContainer height calculation:', {
       instrumentCount: instruments.length,
@@ -62,55 +66,46 @@ const UnifiedGridContainer = React.memo(({
     return activePattern.data || {};
   }, [activePattern]);
 
-  // Update viewport size and scroll position
+  // ⚡ OPTIMIZED: Separate scroll and viewport tracking
   useEffect(() => {
-    const updateViewportAndScroll = () => {
-      // Parent is the scroll container (channel-rack-layout__grid-scroll-area)
-      const scrollContainer = containerRef.current?.parentElement;
-      if (!scrollContainer || !canvasContainerRef.current) return;
+    const scrollContainer = containerRef.current?.parentElement;
+    if (!scrollContainer) return;
 
-      // Update viewport dimensions
+    // Handle scroll - just update refs (no setState, no re-render)
+    const handleScroll = () => {
+      scrollXRef.current = scrollContainer.scrollLeft;
+      scrollYRef.current = scrollContainer.scrollTop;
+      // Canvas will read these refs in its RAF loop
+    };
+
+    // Handle viewport resize - update state (triggers re-render, but only on resize)
+    const updateViewport = () => {
       const vpWidth = scrollContainer.clientWidth;
       const vpHeight = scrollContainer.clientHeight;
       setViewportWidth(vpWidth);
       setViewportHeight(vpHeight);
 
-      // Update scroll position
-      const scrollLeft = scrollContainer.scrollLeft;
-      const scrollTop = scrollContainer.scrollTop;
-      setScrollX(scrollLeft);
-      setScrollY(scrollTop);
-
-      // Canvas container size matches viewport (already set in inline style, but update for resize)
-      // Note: Inline style in JSX handles initial size
-
-      // Only log resize in DEV mode
       if (import.meta.env.DEV && window.verboseLogging) {
-        console.log('🔄 Channel Rack canvas resized:', {
+        console.log('🔄 Channel Rack viewport resized:', {
           viewport: `${vpWidth}×${vpHeight}`,
-          scroll: `X:${scrollLeft} Y:${scrollTop}`,
           containerSize: `${totalWidth}×${totalHeight}`,
         });
       }
     };
 
-    // Initial update
-    updateViewportAndScroll();
+    // Initial setup
+    updateViewport();
+    handleScroll(); // Initialize scroll refs
 
-    // Listen to parent scroll and window resize
-    const scrollContainer = containerRef.current?.parentElement;
-    if (!scrollContainer) return;
+    // ✅ ResizeObserver for viewport changes
+    const resizeObserver = new ResizeObserver(updateViewport);
 
-    // ✅ FIX: Use ResizeObserver instead of window resize for panel fullscreen support
-    const resizeObserver = new ResizeObserver(() => {
-      updateViewportAndScroll();
-    });
-
-    scrollContainer.addEventListener('scroll', updateViewportAndScroll, { passive: true });
+    // Listen to scroll (updates refs only)
+    scrollContainer.addEventListener('scroll', handleScroll, { passive: true });
     resizeObserver.observe(scrollContainer);
 
     return () => {
-      scrollContainer.removeEventListener('scroll', updateViewportAndScroll);
+      scrollContainer.removeEventListener('scroll', handleScroll);
       resizeObserver.disconnect();
     };
   }, [totalWidth, totalHeight]);
@@ -144,8 +139,8 @@ const UnifiedGridContainer = React.memo(({
           totalSteps={totalSteps}
           onNoteToggle={onNoteToggle}
           onInstrumentClick={onInstrumentClick}
-          scrollX={scrollX}
-          scrollY={scrollY}
+          scrollXRef={scrollXRef}
+          scrollYRef={scrollYRef}
           viewportWidth={viewportWidth}
           viewportHeight={viewportHeight}
         />

@@ -26,7 +26,7 @@ import { getAutomationManager } from '@/lib/automation/AutomationManager';
 import EventBus from '@/lib/core/EventBus.js';
 // ✅ REMOVED: Complex cursor manager - using simple CSS cursors now
 // ✅ NEW TIMELINE SYSTEM
-import { useTimelineStore } from '@/stores/TimelineStore';
+import { useTimelineStore } from '@/store/TimelineStore';
 import TimelineCoordinateSystem from '@/lib/timeline/TimelineCoordinateSystem';
 import TimelineRenderer from './renderers/timelineRenderer';
 import './PianoRoll_v5.css';
@@ -78,7 +78,7 @@ function PianoRoll() {
     // ✅ PHASE 2: CC LANES STATE
     const [ccLanes, setCCLanes] = useState([]);
     const [showCCLanes, setShowCCLanes] = useState(false);
-    
+
     // ✅ PHASE 2: NOTE PROPERTIES PANEL STATE
     const [showNoteProperties, setShowNoteProperties] = useState(false);
     const [propertiesPanelCollapsed, setPropertiesPanelCollapsed] = useState(false);
@@ -98,7 +98,7 @@ function PianoRoll() {
             setShowNoteProperties(true);
             setPropertiesPanelCollapsed(false);
         };
-        
+
         EventBus.on('pianoRoll:openNoteProperties', handleOpenNoteProperties);
         return () => EventBus.off('pianoRoll:openNoteProperties', handleOpenNoteProperties);
     }, []);
@@ -578,7 +578,7 @@ function PianoRoll() {
 
     // ✅ PHASE 2: CC LANES HANDLERS
     const activePatternId = useArrangementStore(state => state.activePatternId);
-    
+
     // ✅ PHASE 4: Initialize CC lanes from AutomationManager (per pattern + instrument)
     useEffect(() => {
         if (!activePatternId || !currentInstrument) {
@@ -739,7 +739,7 @@ function PianoRoll() {
 
     const handleNotePropertyChange = useCallback((property, value) => {
         if (!selectedNote) return;
-        
+
         // Update via note interactions
         const updates = { [property]: value };
         noteInteractions.updateNote?.(selectedNote.id, updates);

@@ -5,23 +5,16 @@
  *
  * v2.0 Changes:
  * ✅ Integrated with PluginContainerV2
- * ✅ Uses TwoPanelLayout (unified design)
- * ✅ PresetManager integration (NO ModeSelector)
- * ✅ CanvasRenderManager for visualization
+ * ✅ Full-width layout (removed TwoPanelLayout)
+ * ✅ Expanded PingPongVisualizer
+ * ✅ Added Modulation Controls (Wobble, Flutter)
  * ✅ Parameter Batching
  * ✅ Category-based theming (spacetime-chamber)
- *
- * Features:
- * - Real-time ping-pong visualization with animated feedback pulses
- * - Professional factory presets (13 presets)
- * - A/B comparison (via PluginContainerV2)
- * - Undo/Redo (via PluginContainerV2)
  */
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import PluginContainerV2 from '../container/PluginContainerV2';
-import { TwoPanelLayout } from '../layout/TwoPanelLayout';
-import { Knob, Slider } from '@/components/controls';
+import { Knob, Slider, Checkbox } from '@/components/controls';
 import { getCategoryColors } from '../PluginDesignSystem';
 import { useParameterBatcher } from '@/services/ParameterBatcher';
 import { useRenderer } from '@/services/CanvasRenderManager';
@@ -37,7 +30,9 @@ const PingPongVisualizer = ({
   feedbackLeft,
   feedbackRight,
   pingPong,
-  wet
+  wet,
+  wobble,
+  flutter
 }) => {
   const canvasRef = React.useRef(null);
   const containerRef = React.useRef(null);
@@ -59,8 +54,8 @@ const PingPongVisualizer = ({
     ctx.scale(dpr, dpr);
 
     // Background
-    ctx.fillStyle = 'rgba(5, 5, 10, 0.98)';
-    ctx.fillRect(0, 0, displayWidth, displayHeight);
+    // ctx.fillStyle = 'rgba(5, 5, 10, 0.98)';
+    // ctx.fillRect(0, 0, displayWidth, displayHeight);
 
     // Animation phase
     animationPhaseRef.current = (animationPhaseRef.current + 0.02) % 1;
@@ -100,32 +95,39 @@ const PingPongVisualizer = ({
     const leftDelayX = leftX + (timeLeft / maxTime) * (displayWidth * 0.25);
     const rightDelayX = rightX - (timeRight / maxTime) * (displayWidth * 0.25);
 
+    // Wobble effect on position
+    const wobbleOffset = Math.sin(phase * 10) * wobble * 10;
+
     // Left delay marker
     ctx.fillStyle = 'rgba(34, 211, 238, 0.8)';
     ctx.beginPath();
-    ctx.arc(leftDelayX, centerY, 8, 0, Math.PI * 2);
+    ctx.arc(leftDelayX + wobbleOffset, centerY, 8, 0, Math.PI * 2);
     ctx.fill();
 
     // Right delay marker
     ctx.fillStyle = 'rgba(168, 85, 247, 0.8)';
     ctx.beginPath();
-    ctx.arc(rightDelayX, centerY, 8, 0, Math.PI * 2);
+    ctx.arc(rightDelayX - wobbleOffset, centerY, 8, 0, Math.PI * 2);
     ctx.fill();
 
     // Feedback pulses
     for (let i = 0; i < 3; i++) {
       const pulsePhase = (phase + i * 0.33) % 1;
       const opacity = (1 - pulsePhase) * feedbackLeft * wet;
+
+      // Flutter effect on radius
+      const flutterOffset = (Math.random() - 0.5) * flutter * 5;
+
       ctx.strokeStyle = `rgba(34, 211, 238, ${opacity})`;
       ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.arc(leftX, centerY, 30 + pulsePhase * 40, 0, Math.PI * 2);
+      ctx.arc(leftX, centerY, 30 + pulsePhase * 40 + flutterOffset, 0, Math.PI * 2);
       ctx.stroke();
 
       const opacityR = (1 - pulsePhase) * feedbackRight * wet;
       ctx.strokeStyle = `rgba(168, 85, 247, ${opacityR})`;
       ctx.beginPath();
-      ctx.arc(rightX, centerY, 30 + pulsePhase * 40, 0, Math.PI * 2);
+      ctx.arc(rightX, centerY, 30 + pulsePhase * 40 + flutterOffset, 0, Math.PI * 2);
       ctx.stroke();
     }
 
@@ -143,7 +145,7 @@ const PingPongVisualizer = ({
     ctx.fillText(`FB: ${(feedbackRight * 100).toFixed(0)}%`, rightX, centerY + 50);
 
     ctx.restore();
-  }, [timeLeft, timeRight, feedbackLeft, feedbackRight, pingPong, wet]);
+  }, [timeLeft, timeRight, feedbackLeft, feedbackRight, pingPong, wet, wobble, flutter]);
 
   // Canvas resize handling with DPR
   useEffect(() => {
@@ -156,8 +158,6 @@ const PingPongVisualizer = ({
       const dpr = window.devicePixelRatio || 1;
       canvas.width = rect.width * dpr;
       canvas.height = rect.height * dpr;
-      canvas.style.width = `${rect.width}px`;
-      canvas.style.height = `${rect.height}px`;
     };
 
     updateDimensions();
@@ -168,11 +168,11 @@ const PingPongVisualizer = ({
   }, []);
 
   // Register with CanvasRenderManager (30fps)
-  useRenderer(drawPingPong, 5, 33.33, [timeLeft, timeRight, feedbackLeft, feedbackRight, pingPong, wet]);
+  useRenderer(drawPingPong, 5, 33.33, [timeLeft, timeRight, feedbackLeft, feedbackRight, pingPong, wet, wobble, flutter]);
 
   return (
-    <div ref={containerRef} className="w-full h-full relative bg-black/40 rounded-lg">
-      <canvas ref={canvasRef} className="w-full h-full" />
+    <div ref={containerRef} className="w-full h-full relative bg-black/40 rounded-lg border border-white/5 overflow-hidden">
+      <canvas ref={canvasRef} className="w-full h-full block" />
     </div>
   );
 };
@@ -192,6 +192,8 @@ const ModernDelayUI_V2 = ({ trackId, effect, effectNode, onChange, definition })
     filterFreq = 8000,
     saturation = 0.0,
     diffusion = 0.0,
+    wobble = 0.0,
+    flutter = 0.0,
     width = 1.0
   } = effect.settings || {};
 
@@ -205,6 +207,8 @@ const ModernDelayUI_V2 = ({ trackId, effect, effectNode, onChange, definition })
   const [localFilterFreq, setLocalFilterFreq] = useState(filterFreq);
   const [localSaturation, setLocalSaturation] = useState(saturation);
   const [localDiffusion, setLocalDiffusion] = useState(diffusion);
+  const [localWobble, setLocalWobble] = useState(wobble);
+  const [localFlutter, setLocalFlutter] = useState(flutter);
   const [localWidth, setLocalWidth] = useState(width);
 
   const categoryColors = useMemo(() => getCategoryColors('spacetime-chamber'), []);
@@ -213,7 +217,6 @@ const ModernDelayUI_V2 = ({ trackId, effect, effectNode, onChange, definition })
 
   // Sync with presets
   useEffect(() => {
-    console.log('[ModernDelay] Preset loaded:', effect.settings);
     if (effect.settings.timeLeft !== undefined) setLocalTimeLeft(effect.settings.timeLeft);
     if (effect.settings.timeRight !== undefined) setLocalTimeRight(effect.settings.timeRight);
     if (effect.settings.feedbackLeft !== undefined) setLocalFeedbackLeft(effect.settings.feedbackLeft);
@@ -223,6 +226,8 @@ const ModernDelayUI_V2 = ({ trackId, effect, effectNode, onChange, definition })
     if (effect.settings.filterFreq !== undefined) setLocalFilterFreq(effect.settings.filterFreq);
     if (effect.settings.saturation !== undefined) setLocalSaturation(effect.settings.saturation);
     if (effect.settings.diffusion !== undefined) setLocalDiffusion(effect.settings.diffusion);
+    if (effect.settings.wobble !== undefined) setLocalWobble(effect.settings.wobble);
+    if (effect.settings.flutter !== undefined) setLocalFlutter(effect.settings.flutter);
     if (effect.settings.width !== undefined) setLocalWidth(effect.settings.width);
   }, [effect.settings]);
 
@@ -231,7 +236,7 @@ const ModernDelayUI_V2 = ({ trackId, effect, effectNode, onChange, definition })
     handleMixerEffectChange(trackId, effect.id, { [key]: value });
     onChange?.(key, value);
 
-    switch(key) {
+    switch (key) {
       case 'timeLeft': setLocalTimeLeft(value); break;
       case 'timeRight': setLocalTimeRight(value); break;
       case 'feedbackLeft': setLocalFeedbackLeft(value); break;
@@ -241,6 +246,8 @@ const ModernDelayUI_V2 = ({ trackId, effect, effectNode, onChange, definition })
       case 'filterFreq': setLocalFilterFreq(value); break;
       case 'saturation': setLocalSaturation(value); break;
       case 'diffusion': setLocalDiffusion(value); break;
+      case 'wobble': setLocalWobble(value); break;
+      case 'flutter': setLocalFlutter(value); break;
       case 'width': setLocalWidth(value); break;
     }
   }, [setParam, handleMixerEffectChange, trackId, effect.id, onChange]);
@@ -252,41 +259,46 @@ const ModernDelayUI_V2 = ({ trackId, effect, effectNode, onChange, definition })
       definition={definition}
       category="spacetime-chamber"
     >
-      <TwoPanelLayout
-        category="spacetime-chamber"
+      <div className="flex flex-col h-full gap-3 p-3">
 
-        mainPanel={
-          <>
-            {/* Visualizer */}
-            <div className="h-48 mb-4">
-              <PingPongVisualizer
-                timeLeft={localTimeLeft}
-                timeRight={localTimeRight}
-                feedbackLeft={localFeedbackLeft}
-                feedbackRight={localFeedbackRight}
-                pingPong={localPingPong}
-                wet={localWet}
-              />
-            </div>
+        {/* TOP SECTION: Visualizer & Time Controls */}
+        <div className="flex flex-1 gap-3 min-h-0">
 
-            {/* Main Controls */}
-            <div className="bg-gradient-to-br from-black/50 to-[#2d1854]/30 rounded-xl p-6 border border-[#A855F7]/20 mb-4">
-              <div className="text-xs font-bold text-[#22D3EE]/70 mb-4 uppercase tracking-wider">Delay Times & Feedback</div>
-              <div className="grid grid-cols-2 gap-8 mb-6">
-                <div>
-                  <div className="text-xs text-cyan-400 mb-3">LEFT CHANNEL</div>
-                  <div className="space-y-4">
-                    <Knob
-                      label="TIME"
-                      value={localTimeLeft * 1000}
-                      onChange={(v) => handleParamChange('timeLeft', v / 1000)}
-                      min={10}
-                      max={2000}
-                      defaultValue={375}
-                      sizeVariant="medium"
-                      category="spacetime-chamber"
-                      valueFormatter={(v) => `${v.toFixed(0)} ms`}
-                    />
+          {/* Visualizer (Slightly reduced width to give more space to controls) */}
+          <div className="flex-[1.4] relative min-w-0">
+            <PingPongVisualizer
+              timeLeft={localTimeLeft}
+              timeRight={localTimeRight}
+              feedbackLeft={localFeedbackLeft}
+              feedbackRight={localFeedbackRight}
+              pingPong={localPingPong}
+              wet={localWet}
+              wobble={localWobble}
+              flutter={localFlutter}
+            />
+          </div>
+
+          {/* Time & Feedback Controls */}
+          <div className="flex-1 bg-gradient-to-br from-black/50 to-[#2d1854]/30 rounded-xl p-3 border border-[#A855F7]/20 flex flex-col justify-between min-w-0">
+            <div className="text-[11px] font-bold text-[#22D3EE]/70 mb-2 uppercase tracking-wider truncate">Time & Space</div>
+
+            <div className="flex flex-col gap-2">
+              {/* Left */}
+              <div className="bg-white/5 rounded-lg p-2">
+                <div className="text-[9px] text-cyan-400 font-bold mb-1 truncate">LEFT CHANNEL</div>
+                <div className="flex items-center gap-3">
+                  <Knob
+                    label="TIME"
+                    value={localTimeLeft * 1000}
+                    onChange={(v) => handleParamChange('timeLeft', v / 1000)}
+                    min={10}
+                    max={2000}
+                    defaultValue={375}
+                    sizeVariant="medium"
+                    category="spacetime-chamber"
+                    valueFormatter={(v) => `${v.toFixed(0)} ms`}
+                  />
+                  <div className="flex-1 pt-3">
                     <Slider
                       label="FEEDBACK"
                       value={localFeedbackLeft * 100}
@@ -300,21 +312,24 @@ const ModernDelayUI_V2 = ({ trackId, effect, effectNode, onChange, definition })
                     />
                   </div>
                 </div>
+              </div>
 
-                <div>
-                  <div className="text-xs text-purple-400 mb-3">RIGHT CHANNEL</div>
-                  <div className="space-y-4">
-                    <Knob
-                      label="TIME"
-                      value={localTimeRight * 1000}
-                      onChange={(v) => handleParamChange('timeRight', v / 1000)}
-                      min={10}
-                      max={2000}
-                      defaultValue={500}
-                      sizeVariant="medium"
-                      category="spacetime-chamber"
-                      valueFormatter={(v) => `${v.toFixed(0)} ms`}
-                    />
+              {/* Right */}
+              <div className="bg-white/5 rounded-lg p-2">
+                <div className="text-[9px] text-purple-400 font-bold mb-1 truncate">RIGHT CHANNEL</div>
+                <div className="flex items-center gap-3">
+                  <Knob
+                    label="TIME"
+                    value={localTimeRight * 1000}
+                    onChange={(v) => handleParamChange('timeRight', v / 1000)}
+                    min={10}
+                    max={2000}
+                    defaultValue={500}
+                    sizeVariant="medium"
+                    category="spacetime-chamber"
+                    valueFormatter={(v) => `${v.toFixed(0)} ms`}
+                  />
+                  <div className="flex-1 pt-3">
                     <Slider
                       label="FEEDBACK"
                       value={localFeedbackRight * 100}
@@ -329,98 +344,122 @@ const ModernDelayUI_V2 = ({ trackId, effect, effectNode, onChange, definition })
                   </div>
                 </div>
               </div>
-
-              <div className="grid grid-cols-2 gap-6">
-                <Slider
-                  label="PING-PONG"
-                  value={localPingPong * 100}
-                  onChange={(v) => handleParamChange('pingPong', v / 100)}
-                  min={0}
-                  max={100}
-                  defaultValue={0}
-                  unit="%"
-                  precision={0}
-                  category="spacetime-chamber"
-                />
-                <Slider
-                  label="MIX"
-                  value={localWet * 100}
-                  onChange={(v) => handleParamChange('wet', v / 100)}
-                  min={0}
-                  max={100}
-                  defaultValue={35}
-                  unit="%"
-                  precision={0}
-                  category="spacetime-chamber"
-                />
-              </div>
             </div>
 
-            {/* Advanced Controls */}
-            <div className="bg-gradient-to-br from-[#1e1b4b]/50 to-black/50 rounded-xl p-6 border border-[#A855F7]/10">
-              <div className="text-xs font-bold text-[#22D3EE]/70 mb-4 uppercase tracking-wider">Character</div>
-              <div className="grid grid-cols-2 gap-6">
-                <Knob
-                  label="FILTER"
-                  value={localFilterFreq}
-                  onChange={(v) => handleParamChange('filterFreq', v)}
-                  min={200}
-                  max={20000}
-                  defaultValue={8000}
-                  sizeVariant="small"
-                  category="spacetime-chamber"
-                  valueFormatter={(v) => `${(v / 1000).toFixed(1)} kHz`}
-                />
-                <Knob
-                  label="SATURATION"
-                  value={localSaturation * 100}
-                  onChange={(v) => handleParamChange('saturation', v / 100)}
-                  min={0}
-                  max={100}
-                  defaultValue={0}
-                  sizeVariant="small"
-                  category="spacetime-chamber"
-                  valueFormatter={(v) => `${v.toFixed(0)}%`}
-                />
-                <Knob
-                  label="DIFFUSION"
-                  value={localDiffusion * 100}
-                  onChange={(v) => handleParamChange('diffusion', v / 100)}
-                  min={0}
-                  max={100}
-                  defaultValue={0}
-                  sizeVariant="small"
-                  category="spacetime-chamber"
-                  valueFormatter={(v) => `${v.toFixed(0)}%`}
-                />
-                <Knob
-                  label="WIDTH"
-                  value={localWidth * 100}
-                  onChange={(v) => handleParamChange('width', v / 100)}
-                  min={0}
-                  max={100}
-                  defaultValue={100}
-                  sizeVariant="small"
-                  category="spacetime-chamber"
-                  valueFormatter={(v) => `${v.toFixed(0)}%`}
-                />
-              </div>
-            </div>
-          </>
-        }
-
-        sidePanel={
-          <div className="h-full flex items-center justify-center">
-            <div className="text-center p-8">
-              <div className="text-[#22D3EE] text-6xl mb-4">⏱️</div>
-              <div className="text-sm text-[#A855F7] font-bold mb-2">Modern Delay</div>
-              <div className="text-xs text-white/40 leading-relaxed">
-                Professional stereo delay with ping-pong and character controls.
-              </div>
+            <div className="mt-2 pt-2 border-t border-white/5">
+              <Slider
+                label="PING-PONG"
+                value={localPingPong * 100}
+                onChange={(v) => handleParamChange('pingPong', v / 100)}
+                defaultValue={0}
+                unit="%"
+                precision={0}
+                category="spacetime-chamber"
+              />
             </div>
           </div>
-        }
-      />
+        </div>
+
+        {/* BOTTOM SECTION: Character, Modulation & Mix */}
+        <div className="h-32 flex gap-3 min-h-0">
+
+          {/* Character */}
+          <div className="flex-1 bg-gradient-to-br from-[#1e1b4b]/50 to-black/50 rounded-xl p-3 border border-[#A855F7]/10 min-w-0">
+            <div className="text-[11px] font-bold text-[#22D3EE]/70 mb-2 uppercase tracking-wider">Character</div>
+            <div className="flex gap-2 justify-between">
+              <Knob
+                label="FILTER"
+                value={localFilterFreq}
+                onChange={(v) => handleParamChange('filterFreq', v)}
+                min={200}
+                max={20000}
+                defaultValue={8000}
+                sizeVariant="small"
+                category="spacetime-chamber"
+                valueFormatter={(v) => `${(v / 1000).toFixed(1)}k`}
+              />
+              <Knob
+                label="SATURATE"
+                value={localSaturation * 100}
+                onChange={(v) => handleParamChange('saturation', v / 100)}
+                min={0}
+                max={100}
+                defaultValue={0}
+                sizeVariant="small"
+                category="spacetime-chamber"
+                valueFormatter={(v) => `${v.toFixed(0)}%`}
+              />
+              <Knob
+                label="DIFFUSE"
+                value={localDiffusion * 100}
+                onChange={(v) => handleParamChange('diffusion', v / 100)}
+                min={0}
+                max={100}
+                defaultValue={0}
+                sizeVariant="small"
+                category="spacetime-chamber"
+                valueFormatter={(v) => `${v.toFixed(0)}%`}
+              />
+            </div>
+          </div>
+
+          {/* Modulation (NEW) */}
+          <div className="flex-1 bg-gradient-to-br from-[#1e1b4b]/50 to-black/50 rounded-xl p-3 border border-[#A855F7]/10 min-w-0">
+            <div className="text-[11px] font-bold text-[#A855F7]/70 mb-2 uppercase tracking-wider">Modulation</div>
+            <div className="flex gap-2 justify-between">
+              <Knob
+                label="WOBBLE"
+                value={localWobble * 100}
+                onChange={(v) => handleParamChange('wobble', v / 100)}
+                min={0}
+                max={100}
+                defaultValue={0}
+                sizeVariant="small"
+                category="spacetime-chamber"
+                valueFormatter={(v) => `${v.toFixed(0)}%`}
+              />
+              <Knob
+                label="FLUTTER"
+                value={localFlutter * 100}
+                onChange={(v) => handleParamChange('flutter', v / 100)}
+                min={0}
+                max={100}
+                defaultValue={0}
+                sizeVariant="small"
+                category="spacetime-chamber"
+                valueFormatter={(v) => `${v.toFixed(0)}%`}
+              />
+              <Knob
+                label="WIDTH"
+                value={localWidth * 100}
+                onChange={(v) => handleParamChange('width', v / 100)}
+                min={0}
+                max={100}
+                defaultValue={100}
+                sizeVariant="small"
+                category="spacetime-chamber"
+                valueFormatter={(v) => `${v.toFixed(0)}%`}
+              />
+            </div>
+          </div>
+
+          {/* Output */}
+          <div className="w-28 bg-black/40 rounded-xl p-3 border border-white/5 flex flex-col justify-center min-w-0">
+            <Knob
+              label="MIX"
+              value={localWet * 100}
+              onChange={(v) => handleParamChange('wet', v / 100)}
+              min={0}
+              max={100}
+              defaultValue={35}
+              sizeVariant="medium"
+              category="spacetime-chamber"
+              valueFormatter={(v) => `${v.toFixed(0)}%`}
+            />
+          </div>
+
+        </div>
+      </div>
     </PluginContainerV2>
   );
 };

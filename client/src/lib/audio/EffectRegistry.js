@@ -231,7 +231,9 @@ export class EffectRegistry {
         { name: 'earlyLateMix', defaultValue: 0.5, minValue: 0.0, maxValue: 1.0 },
         { name: 'diffusion', defaultValue: 0.7, minValue: 0.0, maxValue: 1.0 },
         { name: 'modDepth', defaultValue: 0.3, minValue: 0.0, maxValue: 1.0 },   // Chorus modulation depth
-        { name: 'modRate', defaultValue: 0.5, minValue: 0.1, maxValue: 2.0 }     // LFO rate in Hz
+        { name: 'modRate', defaultValue: 0.5, minValue: 0.1, maxValue: 2.0 },    // LFO rate in Hz
+        { name: 'lowCut', defaultValue: 100, minValue: 20, maxValue: 1000 },     // 🎯 NEW: High-pass filter
+        { name: 'shimmer', defaultValue: 0.0, minValue: 0.0, maxValue: 1.0 }     // 🎯 NEW: Pitch shift amount
       ]
     });
 
@@ -240,18 +242,20 @@ export class EffectRegistry {
       workletPath: '/worklets/effects/modern-delay-processor.js',
       processorName: 'modern-delay-processor',
       parameters: [
-        { name: 'timeLeft', defaultValue: 0.375, minValue: 0.001, maxValue: 4.0 },
-        { name: 'timeRight', defaultValue: 0.5, minValue: 0.001, maxValue: 4.0 },
-        { name: 'feedbackLeft', defaultValue: 0.4, minValue: 0.0, maxValue: 1.0 },
-        { name: 'feedbackRight', defaultValue: 0.4, minValue: 0.0, maxValue: 1.0 },
-        { name: 'pingPong', defaultValue: 0.0, minValue: 0.0, maxValue: 1.0 },
-        { name: 'wet', defaultValue: 0.35, minValue: 0.0, maxValue: 1.0 },
+        { name: 'timeLeft', defaultValue: 0.375, minValue: 0.001, maxValue: 4 },
+        { name: 'timeRight', defaultValue: 0.5, minValue: 0.001, maxValue: 4 },
+        { name: 'feedbackLeft', defaultValue: 0.4, minValue: 0, maxValue: 1 },
+        { name: 'feedbackRight', defaultValue: 0.4, minValue: 0, maxValue: 1 },
+        { name: 'pingPong', defaultValue: 0, minValue: 0, maxValue: 1 },
+        { name: 'wet', defaultValue: 0.35, minValue: 0, maxValue: 1 },
         { name: 'filterFreq', defaultValue: 8000, minValue: 100, maxValue: 20000 },
         { name: 'filterQ', defaultValue: 1.0, minValue: 0.1, maxValue: 20.0 },
-        { name: 'saturation', defaultValue: 0.0, minValue: 0.0, maxValue: 1.0 },
+        { name: 'saturation', defaultValue: 0, minValue: 0, maxValue: 1 },
+        { name: 'diffusion', defaultValue: 0, minValue: 0, maxValue: 1 },
+        { name: 'wobble', defaultValue: 0, minValue: 0, maxValue: 1 },
+        { name: 'flutter', defaultValue: 0, minValue: 0, maxValue: 1 },
         { name: 'modDepth', defaultValue: 0.0, minValue: 0.0, maxValue: 0.05 },
         { name: 'modRate', defaultValue: 0.5, minValue: 0.1, maxValue: 5.0 },
-        { name: 'diffusion', defaultValue: 0.0, minValue: 0.0, maxValue: 1.0 },
         { name: 'width', defaultValue: 1.0, minValue: 0.0, maxValue: 2.0 }
       ]
     });
@@ -358,25 +362,25 @@ export class EffectRegistry {
         { name: 'band2Freq', defaultValue: 600, minValue: 200, maxValue: 1000 },
         { name: 'band3Freq', defaultValue: 3000, minValue: 1000, maxValue: 6000 },
         { name: 'band4Freq', defaultValue: 6000, minValue: 3000, maxValue: 20000 },
-        
+
         // Band widths (-100 to +100)
         { name: 'band1Width', defaultValue: 0, minValue: -100, maxValue: 100 },
         { name: 'band2Width', defaultValue: 0, minValue: -100, maxValue: 100 },
         { name: 'band3Width', defaultValue: 0, minValue: -100, maxValue: 100 },
         { name: 'band4Width', defaultValue: 0, minValue: -100, maxValue: 100 },
-        
+
         // Band mutes
         { name: 'band1Mute', defaultValue: 0, minValue: 0, maxValue: 1 },
         { name: 'band2Mute', defaultValue: 0, minValue: 0, maxValue: 1 },
         { name: 'band3Mute', defaultValue: 0, minValue: 0, maxValue: 1 },
         { name: 'band4Mute', defaultValue: 0, minValue: 0, maxValue: 1 },
-        
+
         // Band solos
         { name: 'band1Solo', defaultValue: 0, minValue: 0, maxValue: 1 },
         { name: 'band2Solo', defaultValue: 0, minValue: 0, maxValue: 1 },
         { name: 'band3Solo', defaultValue: 0, minValue: 0, maxValue: 1 },
         { name: 'band4Solo', defaultValue: 0, minValue: 0, maxValue: 1 },
-        
+
         // Global controls
         { name: 'stereoize', defaultValue: 0, minValue: 0, maxValue: 1 },
         { name: 'globalWidth', defaultValue: 1.0, minValue: 0, maxValue: 2 },
@@ -423,6 +427,8 @@ export class EffectRegistry {
     }
 
     try {
+      // WASM polyfill loading removed as ModernReverb and ModernDelay are now pure JS
+
       await audioContext.audioWorklet.addModule(config.workletPath);
       this.loadedWorklets.add(config.processorName);
       console.log(`✅ Loaded effect worklet: ${effectType}`);

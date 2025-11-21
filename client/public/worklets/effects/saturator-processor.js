@@ -94,7 +94,7 @@ class SaturatorProcessor extends AudioWorkletProcessor {
 
     // Cached crossover coefficients
     this.cachedCrossoverCoeffs = {
-      lowMid: { lp: null, freq: -1 },
+      lowMid: { lp: null, hp: null, freq: -1 },
       midHigh: { lp: null, hp: null, freq: -1 }
     };
 
@@ -190,6 +190,7 @@ class SaturatorProcessor extends AudioWorkletProcessor {
     // Update crossover coefficients if frequencies changed
     if (lowMidFreq !== this.cachedCrossoverCoeffs.lowMid.freq) {
       this.cachedCrossoverCoeffs.lowMid.lp = this.calculateLowpass(lowMidFreq);
+      this.cachedCrossoverCoeffs.lowMid.hp = this.calculateHighpass(lowMidFreq);
       this.cachedCrossoverCoeffs.lowMid.freq = lowMidFreq;
     }
     if (midHighFreq !== this.cachedCrossoverCoeffs.midHigh.freq) {
@@ -206,9 +207,8 @@ class SaturatorProcessor extends AudioWorkletProcessor {
 
     // MID BAND: (2x highpass @ lowMidFreq) + (2x lowpass @ midHighFreq)
     let midBand = sample;
-    const lowMidHP = this.calculateHighpass(lowMidFreq);
-    midBand = this.applyBiquadFilter(midBand, state.midBandHP1, lowMidHP);
-    midBand = this.applyBiquadFilter(midBand, state.midBandHP2, lowMidHP);
+    midBand = this.applyBiquadFilter(midBand, state.midBandHP1, this.cachedCrossoverCoeffs.lowMid.hp);
+    midBand = this.applyBiquadFilter(midBand, state.midBandHP2, this.cachedCrossoverCoeffs.lowMid.hp);
     midBand = this.applyBiquadFilter(midBand, state.midBandLP1, this.cachedCrossoverCoeffs.midHigh.lp);
     midBand = this.applyBiquadFilter(midBand, state.midBandLP2, this.cachedCrossoverCoeffs.midHigh.lp);
 
@@ -319,19 +319,19 @@ class SaturatorProcessor extends AudioWorkletProcessor {
     // Process at higher sample rate, then downsample with filtering
     const oversampleFactor = this.oversample;
     let processedOversampled = processed * drive * (1 + headroom / 12);
-    
+
     // Apply saturation curve based on mode (before tube saturation)
     if (processedOversampled > saturationConfig.threshold) {
       processedOversampled = saturationConfig.threshold + (processedOversampled - saturationConfig.threshold) * saturationConfig.softness;
     } else if (processedOversampled < -saturationConfig.threshold * 0.9) {
       processedOversampled = -saturationConfig.threshold * 0.9 + (processedOversampled + saturationConfig.threshold * 0.9) * saturationConfig.softness * 1.1;
     }
-    
+
     // 🎯 PROFESSIONAL TUBE SATURATION: Multi-stage with oversampling
     for (let os = 0; os < oversampleFactor; os++) {
       processedOversampled = this.tubeSaturate(processedOversampled, this.frequencyMode);
     }
-    
+
     // Simple downsampling (for 2x oversampling, average is sufficient)
     processed = processedOversampled;
 
@@ -419,7 +419,7 @@ class SaturatorProcessor extends AudioWorkletProcessor {
     // 🎯 EVEN HARMONICS (2nd, 4th): Warm, tube-like
     const harmonic2 = sample * Math.abs(sample) * 0.08 * drive; // 2nd harmonic
     const harmonic4 = sample * sample * sample * Math.abs(sample) * 0.02 * drive; // 4th harmonic
-    
+
     // 🎯 ODD HARMONICS (3rd, 5th): Edgy, transistor-like
     const harmonic3 = sample * sample * Math.abs(sample) * 0.05 * drive; // 3rd harmonic
     const harmonic5 = sample * sample * sample * sample * Math.abs(sample) * 0.01 * drive; // 5th harmonic
@@ -487,7 +487,7 @@ class SaturatorProcessor extends AudioWorkletProcessor {
     const a1 = -2 * cs;
     const a2 = 1 - alpha;
 
-    return { b0: b0/a0, b1: b1/a0, b2: b2/a0, a1: a1/a0, a2: a2/a0 };
+    return { b0: b0 / a0, b1: b1 / a0, b2: b2 / a0, a1: a1 / a0, a2: a2 / a0 };
   }
 
   calculateLowpass(freq) {
@@ -504,7 +504,7 @@ class SaturatorProcessor extends AudioWorkletProcessor {
     const a1 = -2 * cs;
     const a2 = 1 - alpha;
 
-    return { b0: b0/a0, b1: b1/a0, b2: b2/a0, a1: a1/a0, a2: a2/a0 };
+    return { b0: b0 / a0, b1: b1 / a0, b2: b2 / a0, a1: a1 / a0, a2: a2 / a0 };
   }
 
   calculateTilt(gain) {
@@ -542,7 +542,7 @@ class SaturatorProcessor extends AudioWorkletProcessor {
       a2 = (A + 1) + (A - 1) * cs - 2 * Math.sqrt(A) * alpha;
     }
 
-    return { b0: b0/a0, b1: b1/a0, b2: b2/a0, a1: a1/a0, a2: a2/a0 };
+    return { b0: b0 / a0, b1: b1 / a0, b2: b2 / a0, a1: a1 / a0, a2: a2 / a0 };
   }
 
   applyBiquadFilter(sample, filterState, coeffs) {

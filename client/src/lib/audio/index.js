@@ -5,7 +5,9 @@
  */
 
 // Audio Processing
-export { AudioRenderer } from './AudioRenderer.js';
+// Audio Processing
+// export { AudioRenderer } from './AudioRenderer.js'; // Deprecated
+export { RenderEngine } from './RenderEngine.js';
 export { RenderEngine } from './RenderEngine.js';
 export { AudioProcessor } from './AudioProcessor.js';
 export { AudioExportManager } from './AudioExportManager.js';

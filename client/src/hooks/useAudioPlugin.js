@@ -75,9 +75,10 @@ export function useAudioPlugin(trackId, effectId, options = {}) {
     };
   }, [trackId, effectId, options.fftSize, options.smoothingTimeConstant, options.metricsUpdateInterval]);
 
-  // Update metrics periodically (only when playing)
+  // Update metrics periodically (whenever mounted and enabled)
+  // ⚡ FIX: Removed !isPlaying check to allow metering for live input/monitoring
   useEffect(() => {
-    if (!options.updateMetrics || !isPlaying || !pluginRef.current) {
+    if (!options.updateMetrics || !pluginRef.current) {
       return;
     }
 
@@ -106,7 +107,7 @@ export function useAudioPlugin(trackId, effectId, options = {}) {
         cancelAnimationFrame(animationFrameId);
       }
     };
-  }, [isPlaying, options.updateMetrics, options.rmsSmoothing, options.peakSmoothing]);
+  }, [options.updateMetrics, options.rmsSmoothing, options.peakSmoothing]);
 
   // Get time domain data
   const getTimeDomainData = useCallback(() => {

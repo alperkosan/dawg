@@ -42,10 +42,10 @@ export class NativeAudioEngine {
         this.messagePool = globalMessagePool; // Share global pool
 
         // =================== CALLBACK FUNCTIONS ===================
-        this.setPlaybackState = callbacks.setPlaybackState || (() => {});
-        this.setTransportPosition = callbacks.setTransportPosition || (() => {});
-        this.onPatternChange = callbacks.onPatternChange || (() => {});
-        
+        this.setPlaybackState = callbacks.setPlaybackState || (() => { });
+        this.setTransportPosition = callbacks.setTransportPosition || (() => { });
+        this.onPatternChange = callbacks.onPatternChange || (() => { });
+
         // =================== DİNAMİK AUDIO ROUTING ===================
 
         // 🎛️ DYNAMIC MIXER SYSTEM
@@ -68,17 +68,17 @@ export class NativeAudioEngine {
 
         // Effect registry
         this.effects = new Map();
-        
+
         // =================== PATTERN & SEQUENCING ===================
         this.patterns = new Map();
         this.activePatternId = null;
         this.patternLength = 64;
         this.currentStep = 0;
-        
+
         // =================== SAMPLE MANAGEMENT ===================
         this.sampleBuffers = new Map();
         this.sampleCache = new Map();
-        
+
         // =================== PERFORMANCE TRACKING ===================
         this.metrics = {
             instrumentsCreated: 0,
@@ -90,7 +90,7 @@ export class NativeAudioEngine {
             dropouts: 0,
             lastUpdateTime: 0
         };
-        
+
         // =================== STATE ===================
         this.isInitialized = false;
         this.engineMode = 'native-worklet';
@@ -100,7 +100,7 @@ export class NativeAudioEngine {
             sampleRate: 48000,
             maxPolyphony: 32
         };
-        
+
     }
 
     // =================== INITIALIZATION ===================
@@ -226,7 +226,7 @@ export class NativeAudioEngine {
         if (this.playbackManager) {
             this.playbackManager._updateLoopSettings();
         }
-        
+
         // ✅ TEMPO SYNC: Update BPM for all active VASynth instruments
         this.instruments.forEach((instrument) => {
             if (instrument && typeof instrument.updateBPM === 'function') {
@@ -237,7 +237,7 @@ export class NativeAudioEngine {
                 }
             }
         });
-        
+
         return this;
     }
 
@@ -340,7 +340,7 @@ export class NativeAudioEngine {
 
     setActivePattern(patternId) {
         this.activePatternId = patternId;
-        
+
         if (this.playbackManager) {
             this.playbackManager.activePatternId = patternId;
             this.playbackManager._updateLoopSettings();
@@ -367,8 +367,9 @@ export class NativeAudioEngine {
 
     async _loadRequiredWorklets() {
         try {
-            
+
             const workletConfigs = [
+                { path: '/worklets/text-encoder-polyfill.js', name: 'text-encoder-polyfill' },
                 { path: '/worklets/instrument-processor.js', name: 'instrument-processor' },
                 { path: '/worklets/mixer-processor.js', name: 'mixer-processor' },
                 { path: '/worklets/analysis-processor.js', name: 'analysis-processor' }
@@ -376,8 +377,8 @@ export class NativeAudioEngine {
 
             const results = await this.workletManager.loadMultipleWorklets(workletConfigs);
             const successful = results.filter(r => r.status === 'fulfilled').length;
-            
-            
+
+
             if (successful === 0) {
                 throw new Error('No worklets could be loaded');
             }
@@ -489,7 +490,7 @@ export class NativeAudioEngine {
     // =================== SAMPLE MANAGEMENT ===================
 
     async preloadSamples(instrumentData) {
-        
+
         const samplePromises = instrumentData
             .filter(inst => inst.type === 'sample' && inst.url)
             .map(async (inst) => {
@@ -502,10 +503,10 @@ export class NativeAudioEngine {
                     const response = await fetch(inst.url);
                     const arrayBuffer = await response.arrayBuffer();
                     const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
-                    
+
                     this.sampleCache.set(inst.url, audioBuffer);
                     this.sampleBuffers.set(inst.id, audioBuffer);
-                    
+
                 } catch (error) {
                 }
             });
@@ -894,7 +895,7 @@ export class NativeAudioEngine {
 
     _updatePerformanceMetrics() {
         const now = performance.now();
-        
+
         this.metrics = {
             ...this.metrics,
             activeVoices: this._countActiveVoices(),
@@ -990,11 +991,11 @@ export class NativeAudioEngine {
         // ✅ FIX: Extract only relevant parameters (not the entire instrument object)
         // Filter out metadata fields that shouldn't be passed to updateParameters
         const relevantParams = {};
-        const paramKeys = ['sampleStart', 'sampleStartModulation', 'timeStretchEnabled', 
-                          'gain', 'pan', 'pitch', 'attack', 'decay', 'sustain', 'release',
-                          'filterCutoff', 'filterResonance', 'filterKeyTracking',
-                          'modulationMatrix', 'sampleChop', 'sampleChopMode'];
-        
+        const paramKeys = ['sampleStart', 'sampleStartModulation', 'timeStretchEnabled',
+            'gain', 'pan', 'pitch', 'attack', 'decay', 'sustain', 'release',
+            'filterCutoff', 'filterResonance', 'filterKeyTracking',
+            'modulationMatrix', 'sampleChop', 'sampleChopMode'];
+
         paramKeys.forEach(key => {
             if (params[key] !== undefined) {
                 relevantParams[key] = params[key];
@@ -1045,7 +1046,7 @@ export class NativeAudioEngine {
                 if (import.meta.env.DEV) {
                     console.log(`🔌 Disconnected ${instrumentId} from all previous outputs`);
                 }
-            } catch (e) {}
+            } catch (e) { }
             if (!this.mixerChannels.has(channelId)) {
                 this.mixerChannels.set(channelId, {
                     id: channelId,
@@ -1085,7 +1086,7 @@ export class NativeAudioEngine {
             if (instrument.allNotesOff) {
                 instrument.allNotesOff();
             }
-             if (instrument.stopAll) {
+            if (instrument.stopAll) {
                 instrument.stopAll();
             }
         });
@@ -1205,7 +1206,7 @@ export class NativeAudioEngine {
         // Dispose instruments
         this.instruments.forEach((instrument, id) => {
             try {
-                if(instrument.dispose) instrument.dispose();
+                if (instrument.dispose) instrument.dispose();
             } catch (error) {
             }
         });
@@ -1718,12 +1719,12 @@ class NativeSynthInstrument {
 
         // Setup parameters
         ['pitch', 'gate', 'velocity', 'detune', 'filterFreq', 'filterQ',
-         'attack', 'decay', 'sustain', 'release'].forEach(paramName => {
-            const param = this.workletNode.parameters.get(paramName);
-            if (param) {
-                this.parameters.set(paramName, param);
-            }
-        });
+            'attack', 'decay', 'sustain', 'release'].forEach(paramName => {
+                const param = this.workletNode.parameters.get(paramName);
+                if (param) {
+                    this.parameters.set(paramName, param);
+                }
+            });
 
     }
 
@@ -1795,7 +1796,7 @@ class NativeSynthInstrument {
         };
         const match = pitch.match(/([A-G]#?)(\d+)/);
         if (!match) return 440;
-        
+
         const noteName = match[1];
         const octave = parseInt(match[2]);
         const midiNumber = (octave + 1) * 12 + noteMap[noteName];
@@ -1976,7 +1977,7 @@ class PatternData {
         Object.values(this.data).forEach(notes => {
             if (Array.isArray(notes)) {
                 notes.forEach(note => {
-                    const noteEnd = (note.time || 0) + (note.duration ? 
+                    const noteEnd = (note.time || 0) + (note.duration ?
                         NativeTimeUtils.parseTime(note.duration, 120) / NativeTimeUtils.parseTime('16n', 120) : 1);
                     if (noteEnd > maxTime) {
                         maxTime = noteEnd;

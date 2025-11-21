@@ -28,7 +28,9 @@ export const reverbPresets = [
       diffusion: 0.6,
       width: 1.0,
       modDepth: 0.3,
-      modRate: 0.5
+      modRate: 0.5,
+      lowCut: 100,
+      shimmer: 0
     }
   },
   {
@@ -48,7 +50,9 @@ export const reverbPresets = [
       diffusion: 0.7,
       width: 1.0,
       modDepth: 0.3,
-      modRate: 0.5
+      modRate: 0.5,
+      lowCut: 150,
+      shimmer: 0
     }
   },
   {
@@ -68,7 +72,9 @@ export const reverbPresets = [
       diffusion: 0.8,
       width: 1.0,
       modDepth: 0.3,
-      modRate: 0.5
+      modRate: 0.5,
+      lowCut: 200,
+      shimmer: 0.1
     }
   },
   {
@@ -88,7 +94,9 @@ export const reverbPresets = [
       diffusion: 0.7,
       width: 1.0,
       modDepth: 0.3,
-      modRate: 0.5
+      modRate: 0.5,
+      lowCut: 120,
+      shimmer: 0
     }
   },
 
@@ -111,7 +119,9 @@ export const reverbPresets = [
       diffusion: 0.9,
       width: 1.0,
       modDepth: 0.3,
-      modRate: 0.5
+      modRate: 0.5,
+      lowCut: 250,
+      shimmer: 0
     }
   },
   {
@@ -132,7 +142,9 @@ export const reverbPresets = [
       diffusion: 0.4,
       width: 1.0,
       modDepth: 0.5,
-      modRate: 1.5
+      modRate: 1.5,
+      lowCut: 150,
+      shimmer: 0
     }
   },
 
@@ -154,7 +166,9 @@ export const reverbPresets = [
       diffusion: 0.75,
       width: 1.0,
       modDepth: 0.3,
-      modRate: 0.5
+      modRate: 0.5,
+      lowCut: 300, // Keep vocals clean
+      shimmer: 0
     }
   },
   {
@@ -174,7 +188,9 @@ export const reverbPresets = [
       diffusion: 0.9,
       width: 1.0,
       modDepth: 0.3,
-      modRate: 0.5
+      modRate: 0.5,
+      lowCut: 100,
+      shimmer: 0.2
     }
   },
   {
@@ -194,7 +210,31 @@ export const reverbPresets = [
       diffusion: 0.95,
       width: 1.0,
       modDepth: 0.6,
-      modRate: 0.3
+      modRate: 0.3,
+      lowCut: 200,
+      shimmer: 0.8 // High shimmer amount
+    }
+  },
+  {
+    id: 'angelic-choir',
+    name: 'Angelic Choir',
+    category: 'Creative',
+    description: 'Ethereal shimmer for pads and vocals',
+    tags: ['shimmer', 'pad', 'choir'],
+    author: 'DAWG Audio',
+    settings: {
+      size: 0.95,
+      decay: 5.0,
+      damping: 0.4,
+      wet: 0.5,
+      earlyLateMix: 0.7,
+      preDelay: 0.05,
+      diffusion: 1.0,
+      width: 1.0,
+      modDepth: 0.4,
+      modRate: 0.2,
+      lowCut: 300,
+      shimmer: 0.6
     }
   },
 
@@ -216,7 +256,9 @@ export const reverbPresets = [
       diffusion: 0.5,
       width: 1.0,
       modDepth: 0.3,
-      modRate: 0.5
+      modRate: 0.5,
+      lowCut: 80,
+      shimmer: 0
     }
   },
   {
@@ -236,7 +278,9 @@ export const reverbPresets = [
       diffusion: 0.65,
       width: 1.0,
       modDepth: 0.3,
-      modRate: 0.5
+      modRate: 0.5,
+      lowCut: 150,
+      shimmer: 0
     }
   },
   {
@@ -256,7 +300,9 @@ export const reverbPresets = [
       diffusion: 0.85,
       width: 1.0,
       modDepth: 0.3,
-      modRate: 0.5
+      modRate: 0.5,
+      lowCut: 100,
+      shimmer: 0
     }
   }
 ];

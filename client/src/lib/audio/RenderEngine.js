@@ -95,6 +95,9 @@ export class RenderEngine {
 
       const offlineContext = new OfflineAudioContext(2, renderLength, sampleRate);
 
+      // ✅ LOAD WORKLETS: Ensure all effect processors are loaded
+      await this._loadEffectWorklets(offlineContext);
+
       // Get audio engine for instrument data
       const audioEngine = AudioContextService.getAudioEngine();
       if (!audioEngine) {
@@ -221,6 +224,195 @@ export class RenderEngine {
       patterns: patternSequence.length,
       renderTime: Date.now()
     };
+  }
+
+  /**
+   * Render an audio sample with effects to a new audio buffer
+   * @param {AudioBuffer} sourceBuffer - Original audio buffer
+   * @param {Object} options - Render options with effects, fade, gain, playback rate
+   * @returns {Promise<AudioBuffer>} Rendered audio buffer
+   */
+  async renderSampleWithEffects(sourceBuffer, options = {}) {
+    const {
+      fadeIn = 0,           // in seconds
+      fadeOut = 0,          // in seconds
+      gain = 0,             // in dB
+      playbackRate = 1.0,   // time stretch
+      sampleOffset = 0,     // start offset in seconds
+      duration = null,      // render duration (null = full length)
+      effects = []          // array of effect processors
+    } = options;
+
+    console.log('🎬 Rendering sample with effects:', options);
+
+    try {
+      this.isRendering = true;
+
+      // Calculate render length
+      const sourceDuration = sourceBuffer.duration;
+      const actualDuration = duration || (sourceDuration - sampleOffset);
+      const renderDuration = actualDuration / playbackRate; // Adjust for playback rate
+      const renderLength = Math.ceil(renderDuration * this.sampleRate);
+
+      // Create offline context
+      const offlineContext = new OfflineAudioContext(
+        sourceBuffer.numberOfChannels,
+        renderLength,
+        this.sampleRate
+      );
+
+      // ✅ LOAD WORKLETS: Ensure all effect processors are loaded
+      await this._loadEffectWorklets(offlineContext);
+
+      // Create source
+      const source = offlineContext.createBufferSource();
+      source.buffer = sourceBuffer;
+      source.playbackRate.value = playbackRate;
+
+      // Create gain node
+      const gainNode = offlineContext.createGain();
+      const gainLinear = Math.pow(10, gain / 20);
+      gainNode.gain.value = gainLinear;
+
+      // Apply fade in
+      if (fadeIn > 0) {
+        gainNode.gain.setValueAtTime(0, 0);
+        gainNode.gain.linearRampToValueAtTime(gainLinear, fadeIn);
+      }
+
+      // Apply fade out
+      if (fadeOut > 0) {
+        const fadeOutStart = renderDuration - fadeOut;
+        if (fadeOutStart > 0) {
+          gainNode.gain.setValueAtTime(gainLinear, fadeOutStart);
+          gainNode.gain.linearRampToValueAtTime(0, renderDuration);
+        }
+      }
+
+      // Connect audio graph
+      source.connect(gainNode);
+
+      // Apply effects chain
+      let currentNode = gainNode;
+      if (effects && effects.length > 0) {
+        currentNode = await this._applyEffectChain(effects, gainNode, offlineContext);
+      }
+
+      // Connect to destination
+      currentNode.connect(offlineContext.destination);
+
+      // Start playback with offset
+      source.start(0, sampleOffset, actualDuration);
+
+      // Render
+      const renderedBuffer = await offlineContext.startRendering();
+
+      console.log(`🎬 Sample rendered: ${renderedBuffer.duration.toFixed(2)}s`);
+      return renderedBuffer;
+
+    } catch (error) {
+      console.error('🎬 Sample render failed:', error);
+      throw error;
+    } finally {
+      this.isRendering = false;
+    }
+  }
+
+  /**
+   * Render an arrangement track (clip sequence) to audio buffer
+   * @param {Array} clips - Array of clips on the track
+   * @param {Map} instruments - Instruments map
+   * @param {Object} patterns - Patterns object
+   * @param {Object} options - Render options
+   * @returns {Promise<AudioBuffer>} Rendered audio buffer
+   */
+  async renderTrackToAudio(clips, instruments, patterns, options = {}) {
+    const {
+      bpm = 140,
+      startTime = 0,     // in beats
+      endTime = null,    // in beats, null = auto-calculate
+      includeEffects = true,
+      normalize = false
+    } = options;
+
+    console.log(`🎬 Rendering track with ${clips.length} clips`, options);
+
+    try {
+      this.isRendering = true;
+
+      // Calculate render duration
+      let trackEndTime = endTime;
+      if (!trackEndTime) {
+        trackEndTime = Math.max(...clips.map(c => c.startTime + c.duration));
+      }
+
+      const renderDurationBeats = trackEndTime - startTime;
+      const renderDurationSeconds = (renderDurationBeats * 60) / bpm;
+      const renderLength = Math.ceil(renderDurationSeconds * this.sampleRate);
+
+      // Create offline context
+      const offlineContext = new OfflineAudioContext(2, renderLength, this.sampleRate);
+
+      // ✅ LOAD WORKLETS: Ensure all effect processors are loaded
+      await this._loadEffectWorklets(offlineContext);
+
+      // Render each clip
+      for (const clip of clips) {
+        // Skip clips outside render range
+        if (clip.startTime + clip.duration < startTime) continue;
+        if (clip.startTime > trackEndTime) continue;
+
+        const clipStartSeconds = ((clip.startTime - startTime) * 60) / bpm;
+
+        if (clip.type === 'audio') {
+          // Render audio clip
+          await this._renderAudioClipToContext(
+            clip,
+            instruments,
+            offlineContext,
+            clipStartSeconds,
+            bpm,
+            includeEffects
+          );
+        } else if (clip.type === 'pattern') {
+          // Render pattern clip
+          const pattern = patterns[clip.patternId];
+          if (pattern) {
+            // Use existing renderPattern logic to get a buffer
+            // This ensures we use the full engine capabilities (VASynth, Worklets, etc.)
+            const result = await this.renderPattern(pattern, {
+              sampleRate: this.sampleRate,
+              includeEffects: includeEffects,
+              length: (clip.duration * 60 / bpm) * this.sampleRate // Limit to clip duration
+            });
+
+            if (result && result.audioBuffer) {
+              const source = offlineContext.createBufferSource();
+              source.buffer = result.audioBuffer;
+              source.connect(offlineContext.destination);
+              source.start(clipStartSeconds);
+            }
+          }
+        }
+      }
+
+      // Render offline context
+      let renderedBuffer = await offlineContext.startRendering();
+
+      // Normalize if requested
+      if (normalize) {
+        renderedBuffer = this._normalizeBuffer(renderedBuffer);
+      }
+
+      console.log(`🎬 Track rendered: ${renderedBuffer.duration.toFixed(2)}s`);
+      return renderedBuffer;
+
+    } catch (error) {
+      console.error('🎬 Track render failed:', error);
+      throw error;
+    } finally {
+      this.isRendering = false;
+    }
   }
 
   // =================== INSTRUMENT RENDERING ===================
@@ -673,7 +865,12 @@ export class RenderEngine {
 
     let noteVelocity = note.velocity ?? 1;
     const rawDuration = note.length ?? note.duration ?? 1;
-    const noteDurationBeats = this._durationToBeats(rawDuration);
+
+    // ✅ FIX: If duration is a number, it's in STEPS. Convert to beats.
+    // If it's a string (e.g. '4n'), parse it using _durationToBeats.
+    const noteDurationBeats = typeof rawDuration === 'number'
+      ? stepsToBeat(rawDuration)
+      : this._durationToBeats(rawDuration);
 
     const bpm = getCurrentBPM();
     const startTime = beatsToSeconds(noteTimeBeats, bpm);
@@ -849,6 +1046,62 @@ export class RenderEngine {
     console.log(`🎬 Synth scheduled: ${instrument.name || 'Synth'} freq=${frequency.toFixed(1)}Hz time=${startTime.toFixed(3)}s dur=${safeDuration.toFixed(3)}s vel=${velocity.toFixed(2)}`);
   }
 
+  /**
+   * Render audio clip to offline context
+   */
+  async _renderAudioClipToContext(clip, instruments, offlineContext, startTime, bpm, includeEffects) {
+    const instrument = instruments.get(clip.sampleId);
+    if (!instrument || !instrument.audioBuffer) {
+      console.warn(`🎬 Audio clip ${clip.id} has no audio buffer`);
+      return;
+    }
+
+    const source = offlineContext.createBufferSource();
+    source.buffer = instrument.audioBuffer;
+
+    // Apply clip properties
+    const playbackRate = clip.playbackRate || 1.0;
+    source.playbackRate.value = playbackRate;
+
+    // Create gain node
+    const gainNode = offlineContext.createGain();
+    const gainDb = clip.gain || 0;
+    const gainLinear = Math.pow(10, gainDb / 20);
+    gainNode.gain.value = gainLinear;
+
+    // Apply fade in/out
+    const fadeIn = clip.fadeIn || 0; // in beats
+    const fadeOut = clip.fadeOut || 0;
+    const fadeInSeconds = (fadeIn * 60) / bpm;
+    const fadeOutSeconds = (fadeOut * 60) / bpm;
+    const clipDurationSeconds = (clip.duration * 60) / bpm;
+
+    if (fadeInSeconds > 0) {
+      gainNode.gain.setValueAtTime(0, startTime);
+      gainNode.gain.linearRampToValueAtTime(gainLinear, startTime + fadeInSeconds);
+    }
+
+    if (fadeOutSeconds > 0) {
+      const fadeOutStart = startTime + clipDurationSeconds - fadeOutSeconds;
+      gainNode.gain.setValueAtTime(gainLinear, fadeOutStart);
+      gainNode.gain.linearRampToValueAtTime(0, startTime + clipDurationSeconds);
+    }
+
+    // Connect
+    source.connect(gainNode);
+
+    // Apply effects if needed (though audio clips usually don't have per-clip effects in this model, 
+    // but if they did, we'd apply them here)
+
+    gainNode.connect(offlineContext.destination);
+
+    // Play with offset
+    const sampleOffsetBeats = clip.sampleOffset || 0;
+    const sampleOffsetSeconds = (sampleOffsetBeats * 60) / bpm;
+
+    source.start(startTime, sampleOffsetSeconds, clipDurationSeconds / playbackRate);
+  }
+
   // =================== MIXING & POST-PROCESSING ===================
 
   /**
@@ -925,7 +1178,12 @@ export class RenderEngine {
         const noteStartTimeSteps = note.startTime ?? note.time ?? 0;
         const noteStartTimeBeats = stepsToBeat(noteStartTimeSteps);
         const rawDuration = note.length ?? note.duration ?? 1;
-        const noteDuration = this._durationToBeats(rawDuration);
+
+        // ✅ FIX: Handle numeric duration as steps
+        const noteDuration = typeof rawDuration === 'number'
+          ? stepsToBeat(rawDuration)
+          : this._durationToBeats(rawDuration);
+
         const noteEndTimeBeats = noteStartTimeBeats + noteDuration;
         maxTimeBeats = Math.max(maxTimeBeats, noteEndTimeBeats);
       }
@@ -1155,8 +1413,8 @@ export class RenderEngine {
 
     // 3. 3-BAND EQ (Low/Mid/High)
     const hasEQ = (mixerTrack.lowGain && mixerTrack.lowGain !== 0) ||
-                  (mixerTrack.midGain && mixerTrack.midGain !== 0) ||
-                  (mixerTrack.highGain && mixerTrack.highGain !== 0);
+      (mixerTrack.midGain && mixerTrack.midGain !== 0) ||
+      (mixerTrack.highGain && mixerTrack.highGain !== 0);
 
     if (hasEQ) {
       // Low shelf (bass)
@@ -1216,6 +1474,147 @@ export class RenderEngine {
 
     console.log(`🎛️ Offline mixer channel created for ${mixerTrack.name}`);
     return currentNode;
+  }
+
+  /**
+   * Normalize audio buffer
+   */
+  _normalizeBuffer(buffer) {
+    const numberOfChannels = buffer.numberOfChannels;
+    let maxAmplitude = 0;
+
+    // Find max amplitude across all channels
+    for (let channel = 0; channel < numberOfChannels; channel++) {
+      const data = buffer.getChannelData(channel);
+      for (let i = 0; i < data.length; i++) {
+        maxAmplitude = Math.max(maxAmplitude, Math.abs(data[i]));
+      }
+    }
+
+    // Normalize if needed
+    if (maxAmplitude > 0 && maxAmplitude < 1.0) {
+      const scale = 0.95 / maxAmplitude; // Leave some headroom
+      for (let channel = 0; channel < numberOfChannels; channel++) {
+        const data = buffer.getChannelData(channel);
+        for (let i = 0; i < data.length; i++) {
+          data[i] *= scale;
+        }
+      }
+    }
+
+    return buffer;
+  }
+
+  /**
+   * Convert AudioBuffer to WAV Blob for download/storage
+   */
+  audioBufferToWav(buffer) {
+    const numberOfChannels = buffer.numberOfChannels;
+    const sampleRate = buffer.sampleRate;
+    const format = 1; // PCM
+    const bitDepth = 16;
+
+    const bytesPerSample = bitDepth / 8;
+    const blockAlign = numberOfChannels * bytesPerSample;
+
+    const data = [];
+    for (let i = 0; i < buffer.length; i++) {
+      for (let channel = 0; channel < numberOfChannels; channel++) {
+        const sample = buffer.getChannelData(channel)[i];
+        const intSample = Math.max(-1, Math.min(1, sample)) * 0x7FFF;
+        data.push(intSample < 0 ? intSample + 0x10000 : intSample);
+      }
+    }
+
+    const dataLength = data.length * bytesPerSample;
+    const arrayBuffer = new ArrayBuffer(44 + dataLength);
+    const view = new DataView(arrayBuffer);
+
+    // WAV header
+    const writeString = (offset, string) => {
+      for (let i = 0; i < string.length; i++) {
+        view.setUint8(offset + i, string.charCodeAt(i));
+      }
+    };
+
+    writeString(0, 'RIFF');
+    view.setUint32(4, 36 + dataLength, true);
+    writeString(8, 'WAVE');
+    writeString(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, format, true);
+    view.setUint16(22, numberOfChannels, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * blockAlign, true);
+    view.setUint16(32, blockAlign, true);
+    view.setUint16(34, bitDepth, true);
+    writeString(36, 'data');
+    view.setUint32(40, dataLength, true);
+
+    // Write audio data
+    let offset = 44;
+    for (let i = 0; i < data.length; i++) {
+      view.setInt16(offset, data[i], true);
+      offset += 2;
+    }
+
+    return new Blob([arrayBuffer], { type: 'audio/wav' });
+  }
+
+  /**
+   * Load all effect worklet modules into the offline context
+   */
+  async _loadEffectWorklets(offlineContext) {
+    if (offlineContext._workletsLoaded) return;
+
+    const polyfill = '/worklets/text-encoder-polyfill.js';
+    const otherWorklets = [
+      '/worklets/instrument-processor.js', // Core instrument processor
+      '/worklets/mixer-processor.js',
+      '/worklets/effects/compressor-processor.js',
+      '/worklets/effects/saturator-processor.js',
+      '/worklets/effects/multiband-eq-processor.js',
+      '/worklets/effects/bass-enhancer-808-processor.js',
+      '/worklets/effects/feedback-delay-processor.js',
+      '/worklets/effects/atmos-machine-processor.js',
+      '/worklets/effects/stardust-chorus-processor.js',
+      '/worklets/effects/vortex-phaser-processor.js',
+      '/worklets/effects/tidal-filter-processor.js',
+      '/worklets/effects/ghost-lfo-processor.js',
+      '/worklets/effects/orbit-panner-processor.js',
+      '/worklets/effects/arcade-crusher-processor.js',
+      '/worklets/effects/pitch-shifter-processor.js',
+      '/worklets/effects/sample-morph-processor.js',
+      '/worklets/effects/sidechain-compressor-processor.js',
+      '/worklets/effects/reverb-processor.js',
+      '/worklets/effects/delay-processor.js',
+      '/worklets/effects/modern-reverb-processor.js',
+      '/worklets/effects/modern-delay-processor.js'
+    ];
+
+    console.log('🎬 Loading effect worklets for offline rendering...');
+
+    try {
+      // 1. Load Polyfill FIRST (Sequential)
+      try {
+        await offlineContext.audioWorklet.addModule(polyfill);
+        console.log('✅ Polyfill loaded for offline context');
+      } catch (err) {
+        console.error('❌ Failed to load polyfill:', err);
+      }
+
+      // 2. Load others in parallel
+      await Promise.all(otherWorklets.map(file =>
+        offlineContext.audioWorklet.addModule(file).catch(err => {
+          console.warn(`⚠️ Failed to load worklet: ${file}`, err);
+        })
+      ));
+
+      offlineContext._workletsLoaded = true;
+      console.log('✅ All offline worklets loaded');
+    } catch (error) {
+      console.error('❌ Error loading offline worklets:', error);
+    }
   }
 }
 

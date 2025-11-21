@@ -9,7 +9,7 @@
  */
 
 import React, { useState } from 'react';
-import { useTimelineStore, MarkerType } from '@/stores/TimelineStore';
+import { useTimelineStore, MarkerType } from '@/store/TimelineStore';
 import './TimelineMarkersPanel.css';
 
 const MARKER_COLORS = [

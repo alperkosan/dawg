@@ -11,6 +11,7 @@ import { getCommandStack } from '@/lib/piano-roll-tools/CommandStack';
 import { TOOL_TYPES } from '@/lib/piano-roll-tools';
 import { useArrangementStore } from '@/store/useArrangementStore';
 import { getPreviewManager } from '@/lib/audio/preview';
+import EventBus from '@/lib/core/EventBus';
 
 const DEBUG = true;
 const VERSION = '3.0.0';
@@ -338,6 +339,8 @@ export function useNoteInteractionsV3({
         return { time, pitch, x: rawX, y: rawY };
     }, [engine]);
 
+
+
     // ===================================================================
     // HELPERS - Store operations
     // ===================================================================
@@ -346,13 +349,38 @@ export function useNoteInteractionsV3({
         if (!activePatternId || !currentInstrument) return;
         const updatedNotes = [...notes, ...newNotes];
         updatePatternNotes(activePatternId, currentInstrument.id, updatedNotes);
+
+        // ✅ EVENT BUS: Notify audio engine immediately
+        newNotes.forEach(note => {
+            EventBus.emit('NOTE_ADDED', {
+                patternId: activePatternId,
+                instrumentId: currentInstrument.id,
+                note
+            });
+        });
     }, [notes, activePatternId, currentInstrument, updatePatternNotes]);
 
     const deleteNotesFromPattern = useCallback((noteIds) => {
         if (!activePatternId || !currentInstrument) return;
+
+        // Get notes to be deleted for event emission
+        const notesToDelete = notes.filter(n => noteIds.includes(n.id));
+
         const updatedNotes = notes.filter(n => !noteIds.includes(n.id));
         updatePatternNotes(activePatternId, currentInstrument.id, updatedNotes);
+
+        // ✅ EVENT BUS: Notify audio engine immediately
+        notesToDelete.forEach(note => {
+            EventBus.emit('NOTE_REMOVED', {
+                patternId: activePatternId,
+                instrumentId: currentInstrument.id,
+                noteId: note.id,
+                note // Pass full note object for context if needed
+            });
+        });
     }, [notes, activePatternId, currentInstrument, updatePatternNotes]);
+
+
 
     // ===================================================================
     // HELPERS - Note queries
@@ -574,6 +602,12 @@ export function useNoteInteractionsV3({
 
         addNotesToPattern([newNote]);
 
+        // ✅ PREVIEW: Play note sound immediately
+        getPreviewManager().previewNote({
+            ...newNote,
+            instrumentId: currentInstrument?.id
+        });
+
     }, [snapToGrid, snapValue, addNotesToPattern]);
 
     const handleEraserTool = useCallback((e, coords, note) => {
@@ -601,6 +635,13 @@ export function useNoteInteractionsV3({
 
         // Tool-specific behavior
         if (activeTool === TOOL_TYPES.SELECT) {
+            if (foundNote && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+                // ✅ PREVIEW: Play note when clicking/selecting
+                getPreviewManager().previewNote({
+                    ...foundNote,
+                    instrumentId: currentInstrument?.id
+                });
+            }
             handleSelectTool(e, coords, foundNote);
         } else if (activeTool === TOOL_TYPES.PAINT_BRUSH) {
             handlePaintTool(e, coords, foundNote);
@@ -675,6 +716,18 @@ export function useNoteInteractionsV3({
 
         if (activePatternId && currentInstrument) {
             updatePatternNotes(activePatternId, currentInstrument.id, updated);
+
+            // ✅ EVENT BUS: Notify audio engine of modifications
+            // Only emit for notes that actually changed
+            updated.forEach(note => {
+                if (noteIds.includes(note.id)) {
+                    EventBus.emit('NOTE_MODIFIED', {
+                        patternId: activePatternId,
+                        instrumentId: currentInstrument.id,
+                        note
+                    });
+                }
+            });
         }
 
         if (DEBUG) {
@@ -682,6 +735,17 @@ export function useNoteInteractionsV3({
                 original: delta,
                 constrained: { time: constrainedDeltaTime, pitch: constrainedDeltaPitch }
             });
+        }
+
+        // ✅ PREVIEW: Play the first moved note to confirm new pitch
+        if (updated.length > 0) {
+            const primaryNote = updated.find(n => noteIds.includes(n.id));
+            if (primaryNote) {
+                getPreviewManager().previewNote({
+                    ...primaryNote,
+                    instrumentId: currentInstrument?.id
+                });
+            }
         }
 
         dispatch({ type: Action.END_DRAG });
@@ -761,6 +825,28 @@ export function useNoteInteractionsV3({
 
         if (activePatternId && currentInstrument) {
             updatePatternNotes(activePatternId, currentInstrument.id, updated);
+
+            // ✅ EVENT BUS: Notify audio engine of modifications
+            updated.forEach(note => {
+                if (noteIds.includes(note.id)) {
+                    EventBus.emit('NOTE_MODIFIED', {
+                        patternId: activePatternId,
+                        instrumentId: currentInstrument.id,
+                        note
+                    });
+                }
+            });
+
+            // ✅ PREVIEW: Play note after resize
+            if (updated.length > 0) {
+                const primaryNote = updated.find(n => noteIds.includes(n.id));
+                if (primaryNote) {
+                    getPreviewManager().previewNote({
+                        ...primaryNote,
+                        instrumentId: currentInstrument?.id
+                    });
+                }
+            }
         }
         dispatch({ type: Action.END_RESIZE });
     }, [state.resize, notes, snapToGrid, snapValue, activePatternId, currentInstrument, updatePatternNotes]);
@@ -780,7 +866,7 @@ export function useNoteInteractionsV3({
             selected = notes.filter(n => {
                 const noteEnd = n.startTime + n.length;
                 return n.startTime < maxTime && noteEnd > minTime &&
-                       n.pitch >= minPitch && n.pitch <= maxPitch;
+                    n.pitch >= minPitch && n.pitch <= maxPitch;
             }).map(n => n.id);
         }
 
@@ -976,7 +1062,7 @@ export function useNoteInteractionsV3({
         handleMouseMove,
         handleMouseUp,
         handleKeyDown,
-        handleWheel: () => {}, // Stub
+        handleWheel: () => { }, // Stub
 
         // Selection
         selectNote: select,
