@@ -12,14 +12,21 @@ import { useState, useCallback, useRef } from 'react';
 const RULER_HEIGHT = 30;
 const KEYBOARD_WIDTH = 80;
 
-export function useLoopRegionSelection(engine, snapValue, loopRegion, setLoopRegion) {
+export function useLoopRegionSelection(engine, snapValue, loopRegion, setLoopRegion, onSetPlayhead) {
     const [isDraggingRegion, setIsDraggingRegion] = useState(false);
     const dragStartRef = useRef(null);
+    const hasMovedRef = useRef(false); // Track if mouse moved during drag
 
-    // Snap to bar (16 steps = 1 bar)
+    // Snap to bar (16 steps = 1 bar) - Only used for Alt+Click
     const snapToBar = useCallback((step) => {
         return Math.round(step / 16) * 16;
     }, []);
+
+    // Snap to grid using snapValue
+    const snapToGrid = useCallback((step) => {
+        if (snapValue <= 0) return step;
+        return Math.round(step / snapValue) * snapValue;
+    }, [snapValue]);
 
     // Handle ruler mouse down - start loop region selection
     const handleRulerMouseDown = useCallback((e) => {
@@ -54,15 +61,19 @@ export function useLoopRegionSelection(engine, snapValue, loopRegion, setLoopReg
             return true;
         }
 
-        // Start dragging for region selection
+        // ✅ FIX: Don't create loop region on single click
+        // Only start tracking drag, create region only if mouse moves
         dragStartRef.current = clickedStep;
         setIsDraggingRegion(true);
+        hasMovedRef.current = false; // Reset movement flag
 
-        // Set initial region (single point)
-        setLoopRegion({ start: clickedStep, end: clickedStep });
+        // ✅ Set playhead position on single click
+        if (onSetPlayhead) {
+            onSetPlayhead(clickedStep);
+        }
 
         return true;
-    }, [engine, setLoopRegion, snapToBar]);
+    }, [engine, setLoopRegion, snapToBar, onSetPlayhead]);
 
     // Handle ruler mouse move - update loop region
     const handleRulerMouseMove = useCallback((e) => {
@@ -84,31 +95,51 @@ export function useLoopRegionSelection(engine, snapValue, loopRegion, setLoopReg
         const worldX = scrollX + canvasX;
         const currentStep = Math.floor(worldX / stepWidth);
 
+        // ✅ FIX: Only create loop region if mouse actually moved
+        // Check if mouse moved at least 8 pixels (to avoid accidental region creation on click)
+        const startPixelX = dragStartRef.current * stepWidth + KEYBOARD_WIDTH - scrollX;
+        const pixelDelta = Math.abs(mouseX - startPixelX);
+        if (pixelDelta < 8) {
+            return true; // Mouse hasn't moved enough, don't create region yet
+        }
+
+        hasMovedRef.current = true; // Mark that mouse has moved
+
         // Calculate region (start < end always)
         const start = Math.min(dragStartRef.current, currentStep);
         const end = Math.max(dragStartRef.current, currentStep);
 
-        // ✅ IMPROVED: Snap to bars (Shift to disable snapping, Ctrl for fine control)
+        // ✅ IMPROVED: Snap to grid using snapValue (Shift to disable snapping)
         if (!e.shiftKey && !e.ctrlKey && !e.metaKey) {
-            // Auto-snap to bars
-            const snappedStart = snapToBar(start);
-            const snappedEnd = snapToBar(end);
-            // If end is at bar boundary, include that bar
-            const finalEnd = (end % 16 === 0) ? snappedEnd : snapToBar(end) + 16;
-            setLoopRegion({ start: snappedStart, end: finalEnd });
+            // Auto-snap to grid
+            const snappedStart = snapToGrid(start);
+            const snappedEnd = snapToGrid(end);
+            setLoopRegion({ start: snappedStart, end: snappedEnd + snapValue });
         } else {
-            // Fine control: no snapping
+            // Fine control: no snapping (exact step positions)
             setLoopRegion({ start, end: end + 1 });
         }
 
         return true;
-    }, [isDraggingRegion, engine, setLoopRegion, snapToBar]);
+    }, [isDraggingRegion, engine, setLoopRegion, snapToGrid, snapValue]);
 
     // Handle ruler mouse up - finalize loop region
     const handleRulerMouseUp = useCallback(() => {
         if (isDraggingRegion) {
+            // ✅ FIX: If mouse didn't move, it was just a click (playhead was already set)
+            // Don't create a single-step loop region
+            if (!hasMovedRef.current) {
+                // Just a click, no loop region created
+                setIsDraggingRegion(false);
+                dragStartRef.current = null;
+                hasMovedRef.current = false;
+                return true;
+            }
+
+            // Mouse moved, loop region was created during drag
             setIsDraggingRegion(false);
             dragStartRef.current = null;
+            hasMovedRef.current = false;
             return true;
         }
         return false;

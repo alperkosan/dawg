@@ -1426,27 +1426,181 @@ export function useNoteInteractionsV3({
         }
 
         // ✅ DUPLICATE - Ctrl/Cmd + D
+        // If loop region is set: duplicate all notes in loop region
+        // Otherwise: duplicate selected notes
         if ((e.ctrlKey || e.metaKey) && e.key === 'd') {
             e.preventDefault();
-            if (state.selection.size === 0) return;
             
-            const selectedNotes = notes.filter(n => state.selection.has(n.id));
-            if (selectedNotes.length === 0) return;
-
-            // Calculate duplicate offset (loop region aware if available)
+            let notesToDuplicate = [];
             let offset = 4; // Default: 4 beats ahead
+
+            // ✅ LOOP REGION PRIORITY: If loop region is set, duplicate all notes in region
             if (loopRegion && loopRegion.start !== undefined && loopRegion.end !== undefined) {
+                // Get all notes within loop region (notes that overlap with region)
+                notesToDuplicate = notes.filter(note => {
+                    const noteEnd = note.startTime + (note.visualLength !== undefined ? note.visualLength : note.length);
+                    // Note overlaps with loop region if:
+                    // - Note starts before region ends AND
+                    // - Note ends after region starts
+                    return note.startTime < loopRegion.end && noteEnd > loopRegion.start;
+                });
+                
+                // Use loop region length as offset
                 offset = loopRegion.end - loopRegion.start;
+            } else {
+                // No loop region: use selected notes
+                if (state.selection.size === 0) return;
+                notesToDuplicate = notes.filter(n => state.selection.has(n.id));
+                if (notesToDuplicate.length === 0) return;
             }
 
-            const duplicatedNotes = selectedNotes.map(note => ({
+            if (notesToDuplicate.length === 0) {
+                console.warn('⚠️ No notes to duplicate');
+                return;
+            }
+
+            // Create duplicated notes
+            const duplicatedNotes = notesToDuplicate.map(note => ({
                 ...note,
                 id: `note_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
                 startTime: note.startTime + offset
             }));
 
-            addNotesToPattern(duplicatedNotes);
+            // ✅ COMMAND STACK: Use AddNoteCommand for undo/redo
+            const stack = commandStackRef.current;
+            if (stack && activePatternId && currentInstrument) {
+                const command = new AddNoteCommand(
+                    duplicatedNotes,
+                    (newNotes) => {
+                        const updated = [...notes, ...newNotes];
+                        updatePatternNotes(activePatternId, currentInstrument.id, updated);
+                        
+                        // EventBus notifications
+                        newNotes.forEach(note => {
+                            EventBus.emit('NOTE_ADDED', {
+                                patternId: activePatternId,
+                                instrumentId: currentInstrument.id,
+                                note
+                            });
+                        });
+                    }
+                );
+                stack.execute(command);
+            } else {
+                // Fallback if command stack not available
+                addNotesToPattern(duplicatedNotes);
+            }
+            
+            // Select the duplicated notes
             select(duplicatedNotes.map(n => n.id), 'replace');
+            return;
+        }
+
+        // ✅ SEQUENTIAL DUPLICATE (LOOP REGION) - Ctrl/Cmd + B
+        // Duplicates notes within loop region, filling the entire region
+        if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
+            e.preventDefault();
+            
+            // Require loop region
+            if (!loopRegion || loopRegion.start === undefined || loopRegion.end === undefined) {
+                console.warn('⚠️ Cmd+B requires a loop region to be set');
+                return;
+            }
+
+            // Get notes within loop region (notes that overlap with region)
+            const notesInRegion = notes.filter(note => {
+                const noteEnd = note.startTime + (note.visualLength !== undefined ? note.visualLength : note.length);
+                // Note overlaps with loop region if:
+                // - Note starts before region ends AND
+                // - Note ends after region starts
+                return note.startTime < loopRegion.end && noteEnd > loopRegion.start;
+            });
+
+            if (notesInRegion.length === 0) {
+                console.warn('⚠️ No notes found within loop region');
+                return;
+            }
+
+            // ✅ FIX: Calculate pattern boundaries relative to loop region start
+            // Normalize notes to start from loop region start (0-based)
+            const normalizedNotes = notesInRegion.map(note => ({
+                ...note,
+                relativeStart: note.startTime - loopRegion.start
+            }));
+
+            const minRelativeStart = Math.min(...normalizedNotes.map(n => n.relativeStart));
+            const maxRelativeEnd = Math.max(...normalizedNotes.map(n => {
+                const noteLength = n.visualLength !== undefined ? n.visualLength : n.length;
+                return n.relativeStart + noteLength;
+            }));
+            const patternLength = maxRelativeEnd - minRelativeStart;
+            const loopLength = loopRegion.end - loopRegion.start;
+
+            if (patternLength <= 0) {
+                console.warn('⚠️ Invalid pattern length');
+                return;
+            }
+
+            // Calculate how many copies we need to fill the loop region
+            // Start from the first copy (i=1) and continue until we fill the region
+            const allDuplicatedNotes = [];
+            let copyIndex = 1;
+            
+            while (true) {
+                const copyOffset = patternLength * copyIndex;
+                const copyStartInRegion = minRelativeStart + copyOffset;
+                
+                // Stop if this copy would start beyond the loop region
+                if (copyStartInRegion >= loopLength) {
+                    break;
+                }
+
+                // Create copies of all notes in this iteration
+                normalizedNotes.forEach(note => {
+                    const newRelativeStart = note.relativeStart + copyOffset;
+                    const newStartTime = loopRegion.start + newRelativeStart;
+                    const noteLength = note.visualLength !== undefined ? note.visualLength : note.length;
+                    const newEndTime = newStartTime + noteLength;
+
+                    // Only add if the note fits within the loop region
+                    if (newStartTime >= loopRegion.start && newEndTime <= loopRegion.end) {
+                        allDuplicatedNotes.push({
+                            ...note,
+                            id: `note_${Date.now()}_${copyIndex}_${Math.random().toString(36).substr(2, 9)}`,
+                            startTime: newStartTime
+                        });
+                    }
+                });
+
+                copyIndex++;
+            }
+
+            if (allDuplicatedNotes.length > 0) {
+                // ✅ COMMAND STACK: Use BatchCommand for undo/redo
+                const stack = commandStackRef.current;
+                if (stack && activePatternId && currentInstrument) {
+                    const command = new AddNoteCommand(
+                        allDuplicatedNotes,
+                        (newNotes) => {
+                            const updated = [...notes, ...newNotes];
+                            updatePatternNotes(activePatternId, currentInstrument.id, updated);
+                            
+                            // EventBus notifications
+                            newNotes.forEach(note => {
+                                EventBus.emit('NOTE_ADDED', {
+                                    patternId: activePatternId,
+                                    instrumentId: currentInstrument.id,
+                                    note
+                                });
+                            });
+                        }
+                    );
+                    stack.execute(command);
+                } else {
+                    // Fallback if command stack not available
+                    addNotesToPattern(allDuplicatedNotes);
+                }
+            }
             return;
         }
 
@@ -1459,10 +1613,24 @@ export function useNoteInteractionsV3({
             return;
         }
 
-        // Ctrl/Cmd + A - Select all
+        // Ctrl/Cmd + A - Select all (or all in loop region if loop region is set)
         if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
             e.preventDefault();
-            select(notes.map(n => n.id), 'replace');
+            
+            // ✅ LOOP REGION AWARE: If loop region is set, select only notes within it
+            if (loopRegion && loopRegion.start !== undefined && loopRegion.end !== undefined) {
+                const notesInRegion = notes.filter(note => {
+                    const noteEnd = note.startTime + (note.visualLength !== undefined ? note.visualLength : note.length);
+                    // Note overlaps with loop region if:
+                    // - Note starts before region ends AND
+                    // - Note ends after region starts
+                    return note.startTime < loopRegion.end && noteEnd > loopRegion.start;
+                });
+                select(notesInRegion.map(n => n.id), 'replace');
+            } else {
+                // No loop region: select all notes
+                select(notes.map(n => n.id), 'replace');
+            }
             return;
         }
 

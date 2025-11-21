@@ -757,13 +757,27 @@ export class TimelineController {
 
   /**
    * ✅ UPDATE POSITION FROM MOTOR
+   * ✅ INDUSTRY STANDARD: Use PlaybackManager position as source of truth
+   * This ensures consistency with PlaybackController's position persistence system
    */
   _updatePositionFromMotor() {
     if (!this.audioEngine?.transport) return;
 
-    const newPosition = this.audioEngine.transport.ticksToSteps(
-      this.audioEngine.transport.currentTick
-    );
+    // ✅ INDUSTRY STANDARD: Use PlaybackManager position (same as PlaybackController)
+    // This ensures TimelineController stays in sync with PlaybackController
+    // PlaybackManager maintains correct position even when transport resets
+    const playbackManager = this.audioEngine.playbackManager;
+    let newPosition;
+    
+    if (playbackManager?.currentPosition !== undefined) {
+      // Use PlaybackManager position (more reliable, especially at play start)
+      newPosition = playbackManager.currentPosition;
+    } else {
+      // Fallback to transport position if manager not available
+      newPosition = this.audioEngine.transport.ticksToSteps(
+        this.audioEngine.transport.currentTick
+      );
+    }
 
     // Only update if significant change
     if (Math.abs(newPosition - this.state.currentPosition) > 0.05) {

@@ -174,7 +174,9 @@ export function ArrangementPanelV2() {
   // ✅ PHASE 1: Transport System Unification - Playback state already defined above
   // Convert steps to beats for cursor position (1 beat = 4 steps in 16th notes)
   // Arrangement panel always uses the current step regardless of playback mode
-  const effectiveCurrentStep = currentStep / 4;
+  // ✅ FIX: Only show playhead in song mode (not in pattern mode)
+  // Pattern mode playhead should only appear in Piano Roll and Channel Rack
+  const effectiveCurrentStep = playbackMode === 'song' ? currentStep / 4 : null;
 
   // ✅ PHASE 1: Follow Playhead Mode - Auto-scroll during playback
   const userInteractionRef = useRef(false); // Track if user is manually scrolling
@@ -187,9 +189,11 @@ export function ArrangementPanelV2() {
 
   useEffect(() => {
     // Early exits - don't follow if not playing, mode is OFF, user is scrolling, or viewport not ready
-    if (!isPlaying || followPlayheadMode === 'OFF') return;
+    // ✅ FIX: Don't follow playhead in pattern mode (only in song mode)
+    if (!isPlaying || followPlayheadMode === 'OFF' || playbackMode !== 'song') return;
     if (userInteractionRef.current) return;
     if (!viewport || !dimensions || !updateViewportRef.current) return;
+    if (effectiveCurrentStep === null || effectiveCurrentStep === undefined) return;
 
     const playheadX = effectiveCurrentStep * dimensions.pixelsPerBeat;
     const threshold = viewport.width * 0.8;
@@ -212,7 +216,7 @@ export function ArrangementPanelV2() {
     }
     // ✅ FIX: Only depend on specific viewport properties, not the whole object
     // Use primitive values to avoid infinite loops
-  }, [effectiveCurrentStep, isPlaying, followPlayheadMode, viewport.scrollX, viewport.width, dimensions?.pixelsPerBeat]);
+  }, [effectiveCurrentStep, isPlaying, followPlayheadMode, playbackMode, viewport.scrollX, viewport.width, dimensions?.pixelsPerBeat]);
 
   // Track user interaction to pause follow mode temporarily
   useEffect(() => {
@@ -1107,7 +1111,8 @@ export function ArrangementPanelV2() {
 
     // Draw playhead (unified timeline - Single Source of Truth from PlaybackStore)
     // ✅ PHASE 1: effectiveCurrentStep is already in beats (converted above)
-    if (effectiveCurrentStep !== null && effectiveCurrentStep !== undefined) {
+    // ✅ FIX: Only draw playhead in song mode (not in pattern mode)
+    if (effectiveCurrentStep !== null && effectiveCurrentStep !== undefined && playbackMode === 'song') {
       const playheadX = (effectiveCurrentStep * constants.PIXELS_PER_BEAT * viewport.zoomX) - viewport.scrollX;
 
       // Only draw if playhead is visible on screen
@@ -1138,7 +1143,7 @@ export function ArrangementPanelV2() {
     // }
 
     ctx.restore();
-  }, [viewport, setupCanvas, marqueeBox, hoveredClipId, hoveredHandle, dragGhosts, resizeGhosts, fadeGhosts, gainGhosts, clips, tracks, selectedClipIds, constants, dimensions, splitPreview, splitRange, drawGhost, patternDragPreview, effectiveCurrentStep, isPlaying]);
+  }, [viewport, setupCanvas, marqueeBox, hoveredClipId, hoveredHandle, dragGhosts, resizeGhosts, fadeGhosts, gainGhosts, clips, tracks, selectedClipIds, constants, dimensions, splitPreview, splitRange, drawGhost, patternDragPreview, effectiveCurrentStep, isPlaying, playbackMode]);
 
   // ============================================================================
   // KEYBOARD SHORTCUTS

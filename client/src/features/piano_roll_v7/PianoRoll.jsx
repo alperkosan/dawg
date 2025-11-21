@@ -386,7 +386,22 @@ function PianoRoll() {
     }, []);
 
     // ✅ LOOP REGION HOOK - Timeline selection
-    const loopRegionHook = useLoopRegionSelection(engine, snapValue, loopRegion, setLoopRegion);
+    // Pass playhead setter callback for single click behavior
+    const jumpToStep = usePlaybackStore(state => state.jumpToStep);
+    const handleSetPlayhead = useCallback((step) => {
+        jumpToStep(step);
+    }, [jumpToStep]);
+    
+    const loopRegionHook = useLoopRegionSelection(engine, snapValue, loopRegion, setLoopRegion, handleSetPlayhead);
+
+    // ✅ LOOP REGION → PLAYBACK ENGINE SYNC
+    // When loop region changes, update playback engine loop range
+    useEffect(() => {
+        if (loopRegion && loopRegion.start !== undefined && loopRegion.end !== undefined) {
+            const { setLoopRange } = usePlaybackStore.getState();
+            setLoopRange(loopRegion.start, loopRegion.end);
+        }
+    }, [loopRegion]);
 
     // ✅ V3 Hook - Evolutionary design, zero race conditions
     const noteInteractions = useNoteInteractionsV3({
