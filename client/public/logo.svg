@@ -1,8 +1,8 @@
 <svg width="120" height="120" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <!-- DAWG Logo - Online Ghetto Theme -->
+  <!-- DAWG Logo - Original, Clear, Recognizable -->
   <defs>
-    <!-- Street art gradient: Hot to Warm -->
-    <linearGradient id="ghettoGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+    <!-- Primary gradient: Hot to Warm (Street Energy) -->
+    <linearGradient id="primaryGradient" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" style="stop-color:#FF6B35;stop-opacity:1" />
       <stop offset="50%" style="stop-color:#FFB627;stop-opacity:1" />
       <stop offset="100%" style="stop-color:#FFD700;stop-opacity:1" />
@@ -16,25 +16,19 @@
     
     <!-- Street glow effect -->
     <filter id="streetGlow" x="-30%" y="-30%" width="160%" height="160%">
-      <feGaussianBlur stdDeviation="2.5" result="coloredBlur"/>
+      <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
       <feMerge>
         <feMergeNode in="coloredBlur"/>
         <feMergeNode in="SourceGraphic"/>
       </feMerge>
     </filter>
     
-    <!-- Rough texture -->
-    <filter id="roughTexture">
-      <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="3" result="noise"/>
-      <feDisplacementMap in="SourceGraphic" in2="noise" scale="1.5"/>
-    </filter>
-    
-    <!-- Shadow for depth -->
-    <filter id="ghettoShadow" x="-50%" y="-50%" width="200%" height="200%">
-      <feGaussianBlur in="SourceAlpha" stdDeviation="4"/>
-      <feOffset dx="2" dy="3" result="offsetblur"/>
+    <!-- Strong shadow for depth -->
+    <filter id="strongShadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="5"/>
+      <feOffset dx="3" dy="4" result="offsetblur"/>
       <feComponentTransfer>
-        <feFuncA type="linear" slope="0.4"/>
+        <feFuncA type="linear" slope="0.5"/>
       </feComponentTransfer>
       <feMerge>
         <feMergeNode/>
@@ -44,102 +38,118 @@
   </defs>
   
   <!-- Dark urban background -->
-  <rect width="120" height="120" rx="12" fill="#0A0E1A"/>
-  <rect x="2" y="2" width="116" height="116" rx="10" fill="#151922" opacity="0.8"/>
+  <rect width="120" height="120" rx="14" fill="#0A0E1A"/>
+  <rect x="3" y="3" width="114" height="114" rx="11" fill="#151922" opacity="0.9"/>
   
-  <!-- Graffiti-style "D" - Bold and edgy -->
-  <path d="M 20 25 
-           L 20 95
-           L 25 95
-           L 25 85
-           L 35 90
-           L 45 88
-           L 55 85
-           L 60 80
-           L 60 70
-           L 55 65
-           L 50 60
-           L 45 55
-           L 40 50
-           L 35 45
-           L 30 40
-           L 25 35
-           L 20 30
-           Z" 
-        fill="url(#ghettoGradient)" 
-        opacity="0.95"
-        filter="url(#ghettoShadow)"/>
-  
-  <!-- Inner cutout for street style -->
-  <path d="M 28 40
-           L 28 80
-           L 32 78
-           L 38 75
-           L 42 70
+  <!-- Bold, recognizable "D" - Main focal point -->
+  <path d="M 25 20 
+           L 25 100
+           L 30 100
+           L 30 90
+           L 42 95
+           L 55 92
+           L 65 88
+           L 70 82
+           L 70 72
+           L 65 66
+           L 55 62
            L 42 60
-           L 38 55
-           L 32 50
-           L 28 45
+           L 30 55
+           L 25 50
+           L 25 20
+           Z" 
+        fill="url(#primaryGradient)" 
+        opacity="0.98"
+        filter="url(#strongShadow)"/>
+  
+  <!-- Inner cutout for depth and clarity -->
+  <path d="M 32 35
+           L 32 85
+           L 36 84
+           L 44 82
+           L 50 78
+           L 50 72
+           L 44 68
+           L 36 66
+           L 32 65
+           L 32 55
+           L 36 54
+           L 44 52
+           L 50 48
+           L 50 42
+           L 44 38
+           L 36 36
+           L 32 35
            Z" 
         fill="#0A0E1A" 
-        opacity="0.7"/>
+        opacity="0.8"/>
   
-  <!-- Graffiti highlight -->
-  <path d="M 25 35
-           L 30 40
-           L 35 45
-           L 40 50
-           L 45 55
-           L 50 60
-           L 55 65
-           L 60 70" 
-        stroke="url(#coolGradient)" 
-        stroke-width="2.5" 
+  <!-- Audio wave integrated into D - Makes it recognizable as audio tool -->
+  <path d="M 75 35
+           L 77 30
+           L 80 35
+           L 83 25
+           L 86 35
+           L 89 32
+           L 92 35
+           L 95 30
+           L 98 35" 
+        stroke="url(#primaryGradient)" 
+        stroke-width="4" 
         stroke-linecap="round" 
+        stroke-linejoin="round"
         fill="none"
-        opacity="0.6"
+        opacity="0.95"
         filter="url(#streetGlow)"/>
   
-  <!-- Beat wave - Street style -->
-  <path d="M 70 40
-           L 72 35
-           L 75 40
-           L 78 32
-           L 81 40
-           L 84 38
-           L 87 40
-           L 90 35
-           L 93 40" 
-        stroke="url(#ghettoGradient)" 
+  <path d="M 75 50
+           L 77 45
+           L 80 50
+           L 83 40
+           L 86 50
+           L 89 47
+           L 92 50
+           L 95 45
+           L 98 50" 
+        stroke="url(#coolGradient)" 
+        stroke-width="3.5" 
+        stroke-linecap="round" 
+        stroke-linejoin="round"
+        fill="none"
+        opacity="0.85"
+        filter="url(#streetGlow)"/>
+  
+  <path d="M 75 65
+           L 77 60
+           L 80 65
+           L 83 55
+           L 86 65
+           L 89 62
+           L 92 65
+           L 95 60
+           L 98 65" 
+        stroke="url(#primaryGradient)" 
         stroke-width="3" 
         stroke-linecap="round" 
         stroke-linejoin="round"
         fill="none"
-        opacity="0.9"
+        opacity="0.75"
         filter="url(#streetGlow)"/>
   
-  <path d="M 70 60
-           L 72 55
-           L 75 60
-           L 78 52
-           L 81 60
-           L 84 58
-           L 87 60
-           L 90 55
-           L 93 60" 
+  <!-- Accent dots - Visual rhythm -->
+  <circle cx="80" cy="42" r="4" fill="#FF6B35" opacity="0.95" filter="url(#streetGlow)"/>
+  <circle cx="89" cy="42" r="3.5" fill="#4ECDC4" opacity="0.9" filter="url(#streetGlow)"/>
+  <circle cx="95" cy="47" r="3" fill="#FFB627" opacity="0.85" filter="url(#streetGlow)"/>
+  
+  <!-- Highlight on D for recognition -->
+  <path d="M 30 35
+           L 42 60
+           L 55 66
+           L 65 72" 
         stroke="url(#coolGradient)" 
-        stroke-width="2.5" 
+        stroke-width="3" 
         stroke-linecap="round" 
-        stroke-linejoin="round"
         fill="none"
         opacity="0.7"
         filter="url(#streetGlow)"/>
-  
-  <!-- Street accent dots -->
-  <circle cx="75" cy="50" r="3" fill="#FF6B35" opacity="0.9" filter="url(#streetGlow)"/>
-  <circle cx="85" cy="50" r="2.5" fill="#4ECDC4" opacity="0.8" filter="url(#streetGlow)"/>
-  <circle cx="90" cy="55" r="2" fill="#FFB627" opacity="0.7" filter="url(#streetGlow)"/>
-  
-  <!-- Urban texture overlay -->
-  <rect width="120" height="120" rx="12" fill="url(#roughTexture)" opacity="0.05"/>
 </svg>
