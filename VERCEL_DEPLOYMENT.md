@@ -72,9 +72,11 @@ vercel --prod
 ### `vercel.json`
 
 Vercel yapılandırma dosyası root dizinde bulunur. Bu dosya:
-- Serverless function'ları tanımlar
-- Route'ları yapılandırır
+- Serverless function'ları tanımlar (`functions`)
+- Route'ları yapılandırır (`rewrites`)
 - Function timeout ve memory limit'lerini ayarlar
+
+⚠️ **Önemli**: `builds` ve `functions` birlikte kullanılamaz. Modern Vercel'de sadece `functions` kullanılır. `builds` kaldırılmıştır.
 
 ### `server/api/index.ts`
 
