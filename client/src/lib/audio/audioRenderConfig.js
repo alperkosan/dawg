@@ -33,6 +33,9 @@ export function getCurrentSampleRate() {
     if (audioEngine?.audioContext?.sampleRate) {
       return audioEngine.audioContext.sampleRate;
     }
+    // ✅ FIX: Return default sample rate if audio engine not ready
+    // This prevents errors during module initialization
+    return 44100; // Default sample rate
   } catch (error) {
     console.warn('🎛️ Could not get sample rate from context, using default');
   }

@@ -2,14 +2,14 @@
 // NativeAudioEngine ve AudioContextService ile tam entegre, olay tabanlı mimari.
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
-import { initialInstruments } from '@/config/initialData';
+// ✅ Empty project - no initial data
 import { INSTRUMENT_TYPES } from '@/config/constants';
 import { AudioContextService } from '@/lib/services/AudioContextService';
 import { createDefaultSampleChopPattern } from '@/lib/audio/instruments/sample/sampleChopUtils';
 import { storeManager } from './StoreManager';
 
 export const useInstrumentsStore = create((set, get) => ({
-  instruments: initialInstruments,
+  instruments: [], // ✅ Empty project - start with no instruments
   // Bir enstrüman üzerinde (örn. reverse) işlem yapılırken UI'da bekleme durumu göstermek için.
   processingEffects: {},
 
@@ -131,6 +131,18 @@ export const useInstrumentsStore = create((set, get) => ({
 
     // ✅ PERFORMANCE: Use StoreManager for all side effects
     storeManager.createInstrumentWithSideEffects(newInstrument, mixerTrackId, newName);
+
+    // ✅ NEW: Add buffer to ProjectBufferManager if available
+    if (newInstrument.audioBuffer && newInstrument.url) {
+      // Async import to avoid circular dependencies
+      import('@/lib/audio/ProjectBufferManager.js').then(({ getProjectBufferManager }) => {
+        const bufferManager = getProjectBufferManager();
+        bufferManager.addBuffer(newInstrument.url, newInstrument.audioBuffer);
+      }).catch(err => {
+        // Non-critical, just log
+        console.debug('ProjectBufferManager not available:', err);
+      });
+    }
 
     // SES MOTORUNA KOMUT GÖNDER: Yeni enstrümanı oluştur.
     AudioContextService.createInstrument(newInstrument);

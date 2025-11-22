@@ -123,12 +123,16 @@
 
 .startup-screen__title {
   font-family: var(--font-display);
-  font-weight: 700;
+  font-weight: 900;
   font-size: 3rem;
-  color: var(--color-text-heading);
+  background: linear-gradient(135deg, #FF6B35 0%, #FFD23F 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
   margin: 0;
-  letter-spacing: -0.02em;
-  text-shadow: 0 0 20px rgba(255, 215, 0, 0.3);
+  letter-spacing: -1px;
+  text-transform: uppercase;
+  text-shadow: 0 0 24px rgba(255, 107, 53, 0.4);
 }
 
 .startup-screen__subtitle {

@@ -1,0 +1,108 @@
+/**
+ * Toast Notification Styles
+ */
+
+.toast-container {
+  position: fixed;
+  top: 80px;
+  right: 20px;
+  z-index: 10000;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  min-width: 300px;
+  max-width: 400px;
+  background: var(--zenith-bg-secondary);
+  border: 1px solid var(--zenith-border-medium);
+  border-radius: var(--zenith-radius-md);
+  box-shadow: var(--zenith-shadow-xl);
+  opacity: 0;
+  transform: translateX(100%);
+  transition: all 0.3s var(--zenith-ease-out);
+  pointer-events: auto;
+  backdrop-filter: blur(20px);
+}
+
+.toast--visible {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.toast--success {
+  border-color: #10b981;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, var(--zenith-bg-secondary) 100%);
+}
+
+.toast--error {
+  border-color: #ef4444;
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, var(--zenith-bg-secondary) 100%);
+}
+
+.toast--info {
+  border-color: #3b82f6;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, var(--zenith-bg-secondary) 100%);
+}
+
+.toast--warning {
+  border-color: #f59e0b;
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, var(--zenith-bg-secondary) 100%);
+}
+
+.toast__icon {
+  flex-shrink: 0;
+}
+
+.toast--success .toast__icon {
+  color: #10b981;
+}
+
+.toast--error .toast__icon {
+  color: #ef4444;
+}
+
+.toast--info .toast__icon {
+  color: #3b82f6;
+}
+
+.toast--warning .toast__icon {
+  color: #f59e0b;
+}
+
+.toast__message {
+  flex: 1;
+  font-size: var(--zenith-text-sm);
+  color: var(--zenith-text-primary);
+  line-height: 1.5;
+}
+
+.toast__close {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: var(--zenith-radius-sm);
+  color: var(--zenith-text-secondary);
+  cursor: pointer;
+  transition: all var(--zenith-duration-fast) var(--zenith-ease-out);
+}
+
+.toast__close:hover {
+  background: var(--zenith-bg-tertiary);
+  color: var(--zenith-text-primary);
+}
+
+
+

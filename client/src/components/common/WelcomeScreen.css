@@ -1,0 +1,171 @@
+/**
+ * Welcome Screen
+ * Zenith Design System compliant
+ */
+
+.welcome-screen {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--zenith-bg-primary);
+  padding: var(--zenith-space-8);
+  position: relative;
+  overflow: hidden;
+}
+
+/* Subtle background texture */
+.welcome-screen::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: 
+    radial-gradient(circle at 20% 50%, rgba(78, 205, 196, 0.05) 0%, transparent 50%),
+    radial-gradient(circle at 80% 50%, rgba(255, 182, 39, 0.05) 0%, transparent 50%);
+  pointer-events: none;
+}
+
+.welcome-container {
+  width: 100%;
+  max-width: 900px;
+  text-align: center;
+  position: relative;
+  z-index: 1;
+}
+
+.welcome-header {
+  margin-bottom: var(--zenith-space-12);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--zenith-space-4);
+}
+
+.welcome-title {
+  font-size: var(--zenith-text-3xl);
+  font-weight: 900;
+  line-height: var(--zenith-leading-tight);
+  color: var(--zenith-text-primary);
+  margin-bottom: var(--zenith-space-2);
+  font-family: var(--zenith-font-primary);
+  background: linear-gradient(135deg, #FF6B35 0%, #FFD23F 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  letter-spacing: -1px;
+  text-transform: uppercase;
+  text-shadow: 0 0 16px rgba(255, 107, 53, 0.3);
+}
+
+.welcome-subtitle {
+  font-size: var(--zenith-text-xl);
+  color: var(--zenith-text-secondary);
+  font-family: var(--zenith-font-primary);
+  font-weight: var(--zenith-weight-normal);
+}
+
+.welcome-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: var(--zenith-space-6);
+  margin-bottom: var(--zenith-space-12);
+}
+
+.welcome-option {
+  background: var(--zenith-bg-secondary);
+  border: 1px solid var(--zenith-border-medium);
+  border-radius: var(--zenith-radius-xl);
+  padding: var(--zenith-space-10);
+  cursor: pointer;
+  transition: all var(--zenith-duration-slow) var(--zenith-ease-smooth);
+  text-align: left;
+  position: relative;
+  overflow: hidden;
+}
+
+.welcome-option::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, rgba(78, 205, 196, 0.05) 0%, rgba(255, 182, 39, 0.05) 100%);
+  opacity: 0;
+  transition: opacity var(--zenith-duration-normal) var(--zenith-ease-out);
+}
+
+.welcome-option:hover {
+  border-color: var(--zenith-accent-cool);
+  transform: translateY(-4px);
+  box-shadow: var(--zenith-shadow-lg), 0 0 24px rgba(var(--zenith-accent-cool-rgb), 0.2);
+}
+
+.welcome-option:hover::before {
+  opacity: 1;
+}
+
+.welcome-option__icon {
+  width: 80px;
+  height: 80px;
+  background: linear-gradient(135deg, var(--zenith-accent-cool) 0%, var(--zenith-accent-warm) 100%);
+  border-radius: var(--zenith-radius-lg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--zenith-bg-primary);
+  margin-bottom: var(--zenith-space-6);
+  position: relative;
+  z-index: 1;
+  box-shadow: 0 4px 12px rgba(var(--zenith-accent-cool-rgb), 0.3);
+}
+
+.welcome-option__title {
+  font-size: var(--zenith-text-2xl);
+  font-weight: var(--zenith-weight-bold);
+  color: var(--zenith-text-primary);
+  margin-bottom: var(--zenith-space-3);
+  font-family: var(--zenith-font-primary);
+  position: relative;
+  z-index: 1;
+}
+
+.welcome-option__description {
+  font-size: var(--zenith-text-lg);
+  color: var(--zenith-text-secondary);
+  line-height: var(--zenith-leading-relaxed);
+  margin: 0;
+  font-family: var(--zenith-font-primary);
+  position: relative;
+  z-index: 1;
+}
+
+.welcome-footer {
+  display: flex;
+  justify-content: center;
+}
+
+.welcome-logout {
+  display: flex;
+  align-items: center;
+  gap: var(--zenith-space-2);
+  padding: var(--zenith-space-3) var(--zenith-space-6);
+  background: transparent;
+  border: 1px solid var(--zenith-border-medium);
+  border-radius: var(--zenith-radius-md);
+  color: var(--zenith-text-secondary);
+  font-weight: var(--zenith-weight-medium);
+  font-family: var(--zenith-font-primary);
+  cursor: pointer;
+  transition: all var(--zenith-duration-normal) var(--zenith-ease-in-out);
+}
+
+.welcome-logout:hover {
+  background: var(--zenith-bg-secondary);
+  border-color: var(--zenith-error);
+  color: var(--zenith-error);
+}

@@ -1,0 +1,250 @@
+/**
+ * Quick Auth Modal
+ * Zenith Design System compliant
+ */
+
+.quick-auth-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--zenith-overlay-heavy);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  padding: var(--zenith-space-4);
+  animation: fadeIn var(--zenith-duration-normal) var(--zenith-ease-out);
+  /* ✅ FIX: Ensure modal is centered on screen */
+  margin: 0;
+  overflow: auto;
+  /* ✅ FIX: Prevent scrolling issues */
+  min-height: 100vh;
+  min-width: 100vw;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.quick-auth-modal {
+  background: var(--zenith-bg-secondary);
+  border: 1px solid var(--zenith-border-medium);
+  border-radius: var(--zenith-radius-xl);
+  width: 100%;
+  max-width: 480px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: var(--zenith-shadow-xl);
+  animation: slideUp var(--zenith-duration-slow) var(--zenith-ease-bounce);
+  position: relative;
+  backdrop-filter: blur(20px);
+  /* ✅ FIX: Ensure modal is properly centered */
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.quick-auth-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--zenith-space-6);
+  border-bottom: 1px solid var(--zenith-border-medium);
+  background: linear-gradient(135deg, rgba(var(--zenith-accent-cool-rgb), 0.1) 0%, rgba(var(--zenith-accent-warm-rgb), 0.1) 100%);
+}
+
+.quick-auth-modal__header-content {
+  display: flex;
+  align-items: center;
+  gap: var(--zenith-space-3);
+}
+
+.quick-auth-modal__icon-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--zenith-radius-md);
+  background: linear-gradient(135deg, var(--zenith-accent-cool) 0%, var(--zenith-accent-warm) 100%);
+  color: var(--zenith-bg-primary);
+}
+
+.quick-auth-modal__title {
+  font-size: var(--zenith-text-2xl);
+  font-weight: var(--zenith-weight-bold);
+  color: var(--zenith-text-primary);
+  font-family: var(--zenith-font-primary);
+  margin: 0;
+}
+
+.quick-auth-modal__close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: transparent;
+  border: 1px solid var(--zenith-border-medium);
+  border-radius: var(--zenith-radius-md);
+  color: var(--zenith-text-secondary);
+  cursor: pointer;
+  transition: all var(--zenith-duration-fast) var(--zenith-ease-out);
+}
+
+.quick-auth-modal__close:hover {
+  background: var(--zenith-bg-tertiary);
+  border-color: var(--zenith-border-strong);
+  color: var(--zenith-text-primary);
+}
+
+.quick-auth-modal__tabs {
+  display: flex;
+  border-bottom: 1px solid var(--zenith-border-medium);
+  padding: 0 var(--zenith-space-6);
+}
+
+.quick-auth-modal__tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--zenith-space-2);
+  padding: var(--zenith-space-4);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--zenith-text-secondary);
+  font-weight: var(--zenith-weight-medium);
+  font-family: var(--zenith-font-primary);
+  cursor: pointer;
+  transition: all var(--zenith-duration-fast) var(--zenith-ease-out);
+}
+
+.quick-auth-modal__tab:hover {
+  color: var(--zenith-text-primary);
+  background: var(--zenith-bg-tertiary);
+}
+
+.quick-auth-modal__tab.active {
+  color: var(--zenith-accent-cool);
+  border-bottom-color: var(--zenith-accent-cool);
+}
+
+.quick-auth-modal__form {
+  padding: var(--zenith-space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--zenith-space-5);
+}
+
+.quick-auth-modal__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--zenith-space-2);
+}
+
+.quick-auth-modal__label {
+  display: flex;
+  align-items: center;
+  gap: var(--zenith-space-2);
+  font-size: var(--zenith-text-sm);
+  font-weight: var(--zenith-weight-medium);
+  color: var(--zenith-text-secondary);
+  font-family: var(--zenith-font-primary);
+}
+
+.quick-auth-modal__input {
+  width: 100%;
+  padding: var(--zenith-space-3) var(--zenith-space-4);
+  background: var(--zenith-bg-primary);
+  border: 1px solid var(--zenith-border-medium);
+  border-radius: var(--zenith-radius-md);
+  color: var(--zenith-text-primary);
+  font-size: var(--zenith-text-base);
+  font-family: var(--zenith-font-primary);
+  transition: all var(--zenith-duration-fast) var(--zenith-ease-out);
+}
+
+.quick-auth-modal__input:focus {
+  outline: none;
+  border-color: var(--zenith-accent-cool);
+  box-shadow: 0 0 0 3px rgba(var(--zenith-accent-cool-rgb), 0.1);
+}
+
+.quick-auth-modal__input.error {
+  border-color: var(--zenith-error);
+}
+
+.quick-auth-modal__input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.quick-auth-modal__error {
+  font-size: var(--zenith-text-sm);
+  color: var(--zenith-error);
+  font-family: var(--zenith-font-primary);
+  margin-top: var(--zenith-space-1);
+}
+
+.quick-auth-modal__error-message {
+  padding: var(--zenith-space-3) var(--zenith-space-4);
+  background: rgba(var(--zenith-error-rgb), 0.1);
+  border: 1px solid var(--zenith-error);
+  border-radius: var(--zenith-radius-md);
+  color: var(--zenith-error);
+  font-size: var(--zenith-text-sm);
+  font-family: var(--zenith-font-primary);
+  text-align: center;
+}
+
+.quick-auth-modal__submit {
+  width: 100%;
+  padding: var(--zenith-space-4) var(--zenith-space-6);
+  background: linear-gradient(135deg, var(--zenith-accent-cool) 0%, var(--zenith-accent-warm) 100%);
+  border: none;
+  border-radius: var(--zenith-radius-md);
+  color: var(--zenith-bg-primary);
+  font-size: var(--zenith-text-base);
+  font-weight: var(--zenith-weight-semibold);
+  font-family: var(--zenith-font-primary);
+  cursor: pointer;
+  transition: all var(--zenith-duration-normal) var(--zenith-ease-in-out);
+  box-shadow: 0 4px 12px rgba(var(--zenith-accent-cool-rgb), 0.3);
+}
+
+.quick-auth-modal__submit:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(var(--zenith-accent-cool-rgb), 0.4);
+}
+
+.quick-auth-modal__submit:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.quick-auth-modal__submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+

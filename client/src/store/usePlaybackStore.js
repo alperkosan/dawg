@@ -1,7 +1,7 @@
 // src/store/usePlaybackStore.js
 import { create } from 'zustand';
 import { PLAYBACK_MODES, PLAYBACK_STATES } from '@/config/constants';
-import { initialSettings } from '@/config/initialData';
+// ✅ Empty project - no initial settings
 import PlaybackControllerSingleton from '@/lib/core/PlaybackControllerSingleton.js';
 
 /**
@@ -27,7 +27,7 @@ export const usePlaybackStore = create((set, get) => ({
   isPlaying: false,
   playbackState: PLAYBACK_STATES.STOPPED,
   playbackMode: PLAYBACK_MODES.PATTERN,
-  bpm: initialSettings.bpm,  // ✅ Use initial BPM from config (140)
+  bpm: 120, // ✅ Empty project - default BPM
   masterVolume: 0.8,
   transportPosition: '1:1:00',
   transportStep: 0,
@@ -107,12 +107,15 @@ export const usePlaybackStore = create((set, get) => ({
 
   // =============== ACTIONS ===============
   togglePlayPause: async () => {
+    console.log('🏪 usePlaybackStore.togglePlayPause() called');
     const controller = await get()._initController();
     if (!controller) {
       console.error('🏪 No controller available for togglePlayPause');
       return;
     }
+    console.log('🏪 Calling controller.togglePlayPause()');
     await controller.togglePlayPause();
+    console.log('🏪 controller.togglePlayPause() completed');
   },
 
   handleStop: async () => {

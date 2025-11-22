@@ -30,6 +30,8 @@ import { getPreviewManager } from '@/lib/audio/preview';
 import { useTimelineStore } from '@/store/TimelineStore';
 import TimelineCoordinateSystem from '@/lib/timeline/TimelineCoordinateSystem';
 import TimelineRenderer from './renderers/timelineRenderer';
+import { MIDIRecorder } from '@/lib/midi/MIDIRecorder';
+import { MIDIRecordingPanel } from './components/MIDIRecordingPanel';
 import './PianoRoll_v5.css';
 
 function PianoRoll() {
@@ -92,6 +94,10 @@ function PianoRoll() {
     const handleScaleChange = useCallback((scaleData) => {
         setScaleHighlight(scaleData.scaleSystem);
     }, []);
+
+    // ✅ MIDI RECORDING STATE
+    const [isRecording, setIsRecording] = useState(false);
+    const midiRecorderRef = useRef(null);
 
     // ✅ Listen for double-click events to open Note Properties Panel
     useEffect(() => {
@@ -233,6 +239,27 @@ function PianoRoll() {
                 return;
             }
 
+            // ✅ MIDI RECORDING - Ctrl/Cmd + R
+            if ((e.ctrlKey || e.metaKey) && e.key === 'r' && !e.shiftKey) {
+                e.preventDefault();
+                if (midiRecorderRef.current) {
+                    if (isRecording) {
+                        midiRecorderRef.current.stopRecording();
+                        setIsRecording(false);
+                    } else {
+                        const success = midiRecorderRef.current.startRecording({
+                            mode: 'replace', // Default mode
+                            quantizeStrength: 0,
+                            countInBars: 1
+                        });
+                        if (success) {
+                            setIsRecording(true);
+                        }
+                    }
+                }
+                return;
+            }
+
             // ? or H key: Toggle shortcuts panel (only if not in input field)
             if ((e.key === '?' || e.key === 'h' || e.key === 'H') && !e.ctrlKey && !e.metaKey && !e.altKey) {
                 const target = e.target;
@@ -249,7 +276,7 @@ function PianoRoll() {
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [keyboardPianoMode]);
+    }, [keyboardPianoMode, isRecording]);
 
     useEffect(() => {
         const interval = setInterval(() => {
@@ -280,10 +307,35 @@ function PianoRoll() {
     // Get data from persistent stores
     const pianoRollInstrumentId = usePanelsStore(state => state.pianoRollInstrumentId);
     const instruments = useInstrumentsStore(state => state.instruments);
+    const arrangementStore = useArrangementStore();
+    const playbackStore = usePlaybackStore();
+    // timelineStore already declared above (line 123)
 
     const currentInstrument = pianoRollInstrumentId
         ? instruments.find(inst => inst.id === pianoRollInstrumentId)
         : null;
+
+    // ✅ Initialize MIDI Recorder
+    useEffect(() => {
+        if (!midiRecorderRef.current) {
+            midiRecorderRef.current = new MIDIRecorder(
+                playbackStore,
+                arrangementStore,
+                timelineStore,
+                loopRegion // Pass loop region for replace/loop mode
+            );
+        } else {
+            // Update loop region when it changes
+            midiRecorderRef.current.loopRegion = loopRegion;
+        }
+
+        return () => {
+            if (midiRecorderRef.current) {
+                midiRecorderRef.current.destroy();
+                midiRecorderRef.current = null;
+            }
+        };
+    }, [playbackStore, arrangementStore, timelineStore, loopRegion]);
 
     // ✅ Setup PreviewManager to use AudioEngine's instrument directly
     useEffect(() => {
@@ -1178,6 +1230,13 @@ function PianoRoll() {
             <ShortcutsPanel
                 isOpen={showShortcuts}
                 onClose={() => setShowShortcuts(false)}
+            />
+
+            {/* ✅ MIDI RECORDING PANEL */}
+            <MIDIRecordingPanel
+                midiRecorder={midiRecorderRef.current}
+                isRecording={isRecording}
+                onRecordingChange={setIsRecording}
             />
 
             {/* ✅ CONTEXT MENU */}

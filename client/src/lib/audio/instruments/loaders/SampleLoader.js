@@ -18,6 +18,39 @@ export class SampleLoader {
         cacheHits: 0,
         cacheMisses: 0
     };
+    
+    /**
+     * Clean unused buffers from cache
+     * @param {Set<string>} activeUrls - URLs of currently active samples
+     */
+    static cleanUnusedCache(activeUrls = new Set()) {
+        const beforeCount = this.cache.size;
+        const toRemove = [];
+        
+        this.cache.forEach((buffer, url) => {
+            if (!activeUrls.has(url)) {
+                toRemove.push(url);
+            }
+        });
+        
+        toRemove.forEach(url => {
+            this.cache.delete(url);
+        });
+        
+        const afterCount = this.cache.size;
+        if (beforeCount > afterCount) {
+            console.log(`🧹 SampleLoader: Cleaned ${beforeCount - afterCount} unused cached buffers (${afterCount} remaining)`);
+        }
+    }
+    
+    /**
+     * Clear all cache (use with caution - only when switching projects)
+     */
+    static clearCache() {
+        const count = this.cache.size;
+        this.cache.clear();
+        console.log(`🧹 SampleLoader: Cleared ${count} cached buffers`);
+    }
 
     /**
      * Load a single audio sample

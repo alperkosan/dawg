@@ -24,13 +24,24 @@ export class RenderEngine {
   constructor() {
     this.isRendering = false;
     this.renderQueue = [];
-    this.sampleRate = getCurrentSampleRate();
+    // ✅ FIX: Use default sample rate initially, will be updated when audio engine is ready
+    // Don't call getCurrentSampleRate() here to avoid AudioContextService access during module load
+    this.sampleRate = 44100; // Default, will be updated via updateSampleRate()
     this.maxRenderTime = RENDER_CONFIG.MAX_RENDER_TIME;
 
-    console.log('🎬 RenderEngine initialized', {
-      sampleRate: this.sampleRate,
-      maxRenderTime: this.maxRenderTime
-    });
+    // ✅ FIX: Silent initialization - don't log during module load
+    // Will be logged when actually used
+  }
+
+  /**
+   * Update sample rate when audio engine becomes available
+   */
+  updateSampleRate() {
+    const newSampleRate = getCurrentSampleRate();
+    if (newSampleRate !== this.sampleRate) {
+      console.log(`🎬 RenderEngine: Sample rate updated ${this.sampleRate} → ${newSampleRate}`);
+      this.sampleRate = newSampleRate;
+    }
   }
 
   // =================== PATTERN RENDERING ===================
@@ -143,6 +154,17 @@ export class RenderEngine {
         finalOutput = await this._createOfflineMixerChannel(offlineContext, masterBus, masterChannel);
       } else {
         console.warn('⚠️ No master channel found - skipping master effects');
+      }
+
+      // ✅ FIX: Apply master volume (matches live playback)
+      // Live playback: masterGain.gain.value = 0.8 (default)
+      const masterVolume = audioEngine.masterGain?.gain?.value ?? 0.8;
+      if (masterVolume !== 1.0) {
+        console.log(`🎚️ Applying master volume: ${masterVolume.toFixed(2)}`);
+        const masterVolumeNode = offlineContext.createGain();
+        masterVolumeNode.gain.setValueAtTime(masterVolume, offlineContext.currentTime);
+        finalOutput.connect(masterVolumeNode);
+        finalOutput = masterVolumeNode;
       }
 
       // Connect to destination
@@ -530,28 +552,57 @@ export class RenderEngine {
       totalTracks: Object.keys(patternData.mixerTracks || {}).length
     });
 
-    // ✅ IMPROVED: Create offline mixer channel with full processing (gain, pan, EQ)
-    // First create a simple gain node as the instrument's output
+    // ✅ FIX: Match live playback signal chain order
+    // Live playback (MixerInsert): input → effects → gain → pan → analyzer → output
+    // Render should match: effects → gain → pan
+    
+    // Create instrument output node
     const instrumentOutputNode = offlineContext.createGain();
     instrumentOutputNode.gain.setValueAtTime(1.0, offlineContext.currentTime);
 
-    // Then route it through offline mixer channel (applies mixer settings)
-    const mixerOutputNode = await this._createOfflineMixerChannel(offlineContext, instrumentOutputNode, mixerTrack);
+    // ✅ FIX: Apply effects FIRST (matches MixerInsert._rebuildChain order)
+    let currentNode = instrumentOutputNode;
+    
+    // 1. Effects first (if any)
+    const effects = mixerTrack?.insertEffects || mixerTrack?.effects || [];
+    if (effects.length > 0 && options.includeEffects) {
+      console.log(`🎛️ Applying ${effects.length} effects to ${instrumentId} (before gain/pan)`);
+      currentNode = await this._applyEffectChain(effects, currentNode, offlineContext);
+    }
 
-    // 🎚️ AUTO-GAIN: Apply headroom compensation to prevent clipping
-    const autoGainNode = offlineContext.createGain();
-    const autoGain = options.autoGain !== undefined ? options.autoGain : 1.0;
-    autoGainNode.gain.setValueAtTime(autoGain, offlineContext.currentTime);
+    // 2. Then route through mixer channel (gain, pan, EQ) - skip effects (already applied above)
+    // Apply gain
+    const gainNode = offlineContext.createGain();
+    const gainValue = mixerTrack?.gain !== undefined ? mixerTrack.gain : 1.0;
+    gainNode.gain.setValueAtTime(gainValue, offlineContext.currentTime);
+    currentNode.connect(gainNode);
+    currentNode = gainNode;
+    
+    // Apply pan
+    if (mixerTrack?.pan !== undefined && mixerTrack.pan !== 0) {
+      const panNode = offlineContext.createStereoPanner();
+      panNode.pan.setValueAtTime(mixerTrack.pan, offlineContext.currentTime);
+      currentNode.connect(panNode);
+      currentNode = panNode;
+    }
+    
+    const mixerOutputNode = currentNode;
 
-    // Chain: mixer → autoGain → masterBus (or destination if no master bus)
-    mixerOutputNode.connect(autoGainNode);
+    // ✅ FIX: Remove auto-gain to match live playback
+    // Live playback doesn't apply auto-gain, so render shouldn't either
+    // This was causing ~10-15% difference in output level
+    // const autoGain = options.autoGain !== undefined ? options.autoGain : 1.0;
+    // mixerOutputNode.connect(autoGainNode);
+    // autoGainNode.connect(finalDestination);
+    
+    // Direct connection: mixer → masterBus (matches live playback)
     const finalDestination = options.masterBus || offlineContext.destination;
-    autoGainNode.connect(finalDestination);
+    mixerOutputNode.connect(finalDestination);
 
-    console.log(`🎚️ Applied auto-gain ${autoGain.toFixed(3)} to ${instrumentId}`);
+    console.log(`🎚️ Connected ${instrumentId} to master bus (no auto-gain, matches live playback)`);
 
     // Use instrumentOutputNode as the target for instrument rendering
-    const gainNode = instrumentOutputNode;
+    const instrumentGainNode = instrumentOutputNode;
 
     // ✅ VASYNTH RENDERING: VASynth has its own rendering path
     if (instrument.type === 'vasynth') {
@@ -571,7 +622,7 @@ export class RenderEngine {
       const preset = getPreset(presetName);
       if (!preset) {
         console.warn(`🎹 Preset not found: ${presetName}`);
-        return gainNode;
+        return instrumentGainNode;
       }
 
       console.log(`🎹 Rendering VASynth with preset: ${presetName}, ${notes.length} notes`);
@@ -583,7 +634,7 @@ export class RenderEngine {
           // Create new VASynth instance for this note
           const vaSynth = new VASynth(offlineContext);
           vaSynth.loadPreset(preset);
-          vaSynth.masterGain.connect(gainNode);
+          vaSynth.masterGain.connect(instrumentGainNode);
 
           await this._scheduleVASynthNote(
             vaSynth,
@@ -597,7 +648,7 @@ export class RenderEngine {
       }
 
       console.log(`🎹 Successfully scheduled ${notes.length} VASynth notes (polyphonic)`);
-      return gainNode;
+      return instrumentGainNode;
     }
     // ✅ WORKLET-BASED SYNTH RENDERING: For legacy synth instruments
     else if (instrument.type === 'synth') {
@@ -605,7 +656,7 @@ export class RenderEngine {
 
       if (!hasSynthParams) {
         console.warn(`🎬 No synth params found for ${instrument.name}`);
-        return gainNode;
+        return instrumentGainNode;
       }
       console.log(`🎬 Using rendering for ${instrument.type}: ${instrument.name}`, { hasSynthParams, hasInstrumentStore: !!instrumentStore });
 
@@ -663,7 +714,7 @@ export class RenderEngine {
         audioOutput = await this._applyEffectChain(instrumentStore.effectChain, workletNode, offlineContext);
       }
 
-      audioOutput.connect(gainNode);
+      audioOutput.connect(instrumentGainNode);
 
       // ✅ CRITICAL: Keep worklet node reference so it doesn't get garbage collected
       offlineContext._activeWorklets = offlineContext._activeWorklets || [];
@@ -671,7 +722,7 @@ export class RenderEngine {
 
       console.log(`🎬 Worklet processor created for ${instrument.name} with ${preparedNotes.length} pre-scheduled notes`);
 
-      return gainNode;
+      return instrumentGainNode;
 
     }
     // ✅ SAMPLE INSTRUMENTS: Use legacy rendering
@@ -685,7 +736,7 @@ export class RenderEngine {
         // Create intermediate node for effects
         const effectInput = offlineContext.createGain();
         const effectOutput = await this._applyEffectChain(instrumentStore.effectChain, effectInput, offlineContext);
-        effectOutput.connect(gainNode);
+        effectOutput.connect(instrumentGainNode);
         sampleDestination = effectInput;
       }
 
@@ -703,7 +754,7 @@ export class RenderEngine {
         }
       }
 
-      return gainNode;
+      return instrumentGainNode;
     }
   }
 
@@ -1341,11 +1392,33 @@ export class RenderEngine {
           continue;
         }
 
+        // ✅ FIX: Normalize effect type names to match EffectFactory
+        // EffectFactory uses kebab-case: 'modern-delay', 'modern-reverb'
+        // But mixer stores may use PascalCase: 'ModernDelay', 'ModernReverb'
+        let normalizedType = effectData.type;
+        const typeMap = {
+          'ModernDelay': 'modern-delay',
+          'ModernReverb': 'modern-reverb',
+          'Delay': 'delay',
+          'Reverb': 'reverb'
+        };
+        
+        if (typeMap[normalizedType]) {
+          normalizedType = typeMap[normalizedType];
+          console.log(`🎬 Normalized effect type: ${effectData.type} → ${normalizedType}`);
+        }
+
+        // Create normalized effect data
+        const normalizedEffectData = {
+          ...effectData,
+          type: normalizedType
+        };
+
         // Create effect instance from serialized data
-        const effect = EffectFactory.deserialize(effectData, context);
+        const effect = EffectFactory.deserialize(normalizedEffectData, context);
 
         if (!effect) {
-          console.warn(`🎬 Failed to create effect: ${effectData.type}`);
+          console.warn(`🎬 Failed to create effect: ${effectData.type} (normalized: ${normalizedType})`);
           continue;
         }
 

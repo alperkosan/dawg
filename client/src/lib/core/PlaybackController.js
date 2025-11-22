@@ -199,8 +199,23 @@ export class PlaybackController extends SimpleEventEmitter {
    * ✅ UNIFIED PLAY - Tek play fonksiyonu
    */
   async play(startPosition = null) {
+    console.log('🎵 PlaybackController.play() called', { startPosition, isPlaying: this.state.isPlaying });
 
-    if (this.state.isPlaying) return false;
+    if (this.state.isPlaying) {
+      console.log('⚠️ Already playing, returning false');
+      return false;
+    }
+
+    // ✅ CRITICAL: Check if audio engine is available
+    if (!this.audioEngine) {
+      console.error('❌ PlaybackController: Audio engine not available');
+      return false;
+    }
+
+    if (!this.audioEngine.playbackManager) {
+      console.error('❌ PlaybackController: PlaybackManager not available');
+      return false;
+    }
 
     try {
       // ✅ INDUSTRY STANDARD: Use UI position as source of truth (persistent)
@@ -220,6 +235,8 @@ export class PlaybackController extends SimpleEventEmitter {
         }
       }
 
+      console.log('🎵 PlaybackController: Starting playback at position', playPosition);
+
       // ✅ INDUSTRY STANDARD: Take position snapshot before play start
       // This prevents transport from overriding position on first frames
       this.state.playStartSnapshot = playPosition;
@@ -231,13 +248,39 @@ export class PlaybackController extends SimpleEventEmitter {
       this.state.positionLocked = true;
       this.state.positionLockFrames = 3;
 
+      // ✅ CRITICAL: Resume AudioContext if suspended (required by browser autoplay policy)
+      console.log('🎵 Checking AudioContext state:', this.audioEngine.audioContext?.state);
+      if (this.audioEngine.audioContext?.state === 'suspended') {
+        try {
+          await this.audioEngine.audioContext.resume();
+          console.log('🎵 AudioContext resumed for playback');
+        } catch (resumeError) {
+          console.warn('⚠️ Could not resume AudioContext:', resumeError);
+          // Continue anyway - PlaybackManager will also try to resume
+        }
+      }
+
       // Position ayarla (ensures both state and manager are in sync)
+      console.log('🎵 Setting position via _jumpToPositionInternal:', playPosition);
       if (playPosition !== null) {
-        await this._jumpToPositionInternal(playPosition);
+        try {
+          await this._jumpToPositionInternal(playPosition);
+          console.log('✅ Position set successfully');
+        } catch (jumpError) {
+          console.error('❌ Failed to set position:', jumpError);
+          throw jumpError;
+        }
       }
 
       // Motor başlat (use the resolved position)
-      await this.audioEngine.playbackManager.play(playPosition);
+      console.log('🎵 PlaybackController: Calling PlaybackManager.play()', playPosition);
+      try {
+        await this.audioEngine.playbackManager.play(playPosition);
+        console.log('✅ PlaybackController: PlaybackManager.play() completed');
+      } catch (playError) {
+        console.error('❌ PlaybackManager.play() failed:', playError);
+        throw playError;
+      }
 
       // ✅ Manual state update - motor events disabled
       this.state.playbackState = PLAYBACK_STATES.PLAYING;
@@ -329,19 +372,30 @@ export class PlaybackController extends SimpleEventEmitter {
    * ✅ SMART TOGGLE - Kullanıcı deneyimi odaklı
    */
   async togglePlayPause() {
+    console.log('🎵 PlaybackController.togglePlayPause() called', {
+      playbackState: this.state.playbackState,
+      isPlaying: this.state.isPlaying,
+      hasAudioEngine: !!this.audioEngine,
+      hasPlaybackManager: !!this.audioEngine?.playbackManager
+    });
+
     switch (this.state.playbackState) {
       case PLAYBACK_STATES.PLAYING:
+        console.log('🎵 State is PLAYING, calling pause()');
         return await this.pause();
 
       case PLAYBACK_STATES.PAUSED:
+        console.log('🎵 State is PAUSED, calling play() to resume');
         return await this.play(); // Resume from current position
 
       case PLAYBACK_STATES.STOPPED:
       default:
+        console.log('🎵 State is STOPPED, calling play()');
         // ✅ FIX: Use PlaybackManager's current position (set by jumpToStep/timeline click)
         // This ensures we use the position that was actually set, not stale state
-        const managerPosition = this.audioEngine.playbackManager?.currentPosition;
+        const managerPosition = this.audioEngine?.playbackManager?.currentPosition;
         const playPosition = managerPosition !== undefined ? managerPosition : this.state.currentPosition;
+        console.log('🎵 Play position determined:', { managerPosition, currentPosition: this.state.currentPosition, playPosition });
         // Sync state with manager position
         if (managerPosition !== undefined) {
           this.state.currentPosition = managerPosition;

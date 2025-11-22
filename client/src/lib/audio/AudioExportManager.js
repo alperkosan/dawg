@@ -956,6 +956,29 @@ export class AudioExportManager {
   }
 }
 
-// Singleton instance
-export const audioExportManager = new AudioExportManager();
+// ✅ FIX: Lazy singleton - only create when needed (after audio engine is ready)
+let _audioExportManagerInstance = null;
+
+export function getAudioExportManager() {
+  if (!_audioExportManagerInstance) {
+    _audioExportManagerInstance = new AudioExportManager();
+    // Update sample rate when audio engine becomes available
+    if (window.audioEngine) {
+      _audioExportManagerInstance.renderEngine.updateSampleRate();
+    }
+  }
+  return _audioExportManagerInstance;
+}
+
+// For backward compatibility - lazy proxy
+export const audioExportManager = new Proxy({}, {
+  get(target, prop) {
+    // Only create instance when actually accessed
+    const instance = getAudioExportManager();
+    return instance[prop];
+  }
+});
+
+// ✅ FIX: Don't create instance on module load
+// Use getAudioExportManager() when you need the instance
 export default audioExportManager;

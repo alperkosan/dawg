@@ -567,10 +567,12 @@ function ChannelRack() {
         const audioContext = AudioContextService.getAudioEngine().audioContext;
 
         try {
-          // Fetch and decode audio file
-          const response = await fetch(fileData.url);
-          const arrayBuffer = await response.arrayBuffer();
-          const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+          // ✅ NEW: Use ProjectBufferManager for efficient buffer management
+          const { getProjectBufferManager } = await import('@/lib/audio/ProjectBufferManager.js');
+          const bufferManager = getProjectBufferManager();
+          
+          // Get buffer (checks cache first, only loads if needed)
+          const audioBuffer = await bufferManager.getBuffer(fileData.url, audioContext);
 
           console.log('✅ Audio buffer loaded:', audioBuffer.duration, 'seconds');
 

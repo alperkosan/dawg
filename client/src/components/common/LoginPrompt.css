@@ -1,0 +1,129 @@
+.login-prompt-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  backdrop-filter: blur(4px);
+}
+
+.login-prompt-modal {
+  background: var(--zenith-bg-elevated);
+  border-radius: 16px;
+  padding: 0;
+  max-width: 480px;
+  width: 90%;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--zenith-border);
+  animation: slideUp 0.3s ease-out;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.login-prompt-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.5rem;
+  border-bottom: 1px solid var(--zenith-border);
+}
+
+.login-prompt-header h2 {
+  margin: 0;
+  font-size: 1.5rem;
+  color: var(--zenith-text-primary);
+}
+
+.login-prompt-close {
+  background: none;
+  border: none;
+  font-size: 2rem;
+  color: var(--zenith-text-secondary);
+  cursor: pointer;
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.login-prompt-close:hover {
+  background: var(--zenith-bg-secondary);
+  color: var(--zenith-text-primary);
+}
+
+.login-prompt-content {
+  padding: 1.5rem;
+}
+
+.login-prompt-content p {
+  margin: 0 0 1.5rem 0;
+  color: var(--zenith-text-secondary);
+  line-height: 1.6;
+}
+
+.login-prompt-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.login-prompt-button {
+  padding: 0.875rem 1.5rem;
+  border-radius: 8px;
+  font-weight: 500;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: none;
+}
+
+.login-prompt-button.primary {
+  background: var(--zenith-accent-primary);
+  color: white;
+}
+
+.login-prompt-button.primary:hover {
+  background: var(--zenith-accent-primary-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(78, 205, 196, 0.3);
+}
+
+.login-prompt-button.secondary {
+  background: var(--zenith-bg-secondary);
+  color: var(--zenith-text-primary);
+  border: 1px solid var(--zenith-border);
+}
+
+.login-prompt-button.secondary:hover {
+  background: var(--zenith-bg-elevated);
+  border-color: var(--zenith-accent-primary);
+}
+
+.login-prompt-button.ghost {
+  background: transparent;
+  color: var(--zenith-text-secondary);
+}
+
+.login-prompt-button.ghost:hover {
+  color: var(--zenith-text-primary);
+  background: var(--zenith-bg-secondary);
+}
+

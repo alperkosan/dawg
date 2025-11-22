@@ -84,3 +84,33 @@
   padding-left: var(--spacing-4);
 }
 
+/* ✅ NEW: Drag & Drop styles */
+.file-node--drag-over {
+  background-color: var(--color-accent-primary);
+  color: var(--color-text-inverse);
+  border: 2px dashed var(--color-accent-primary);
+  opacity: 0.8;
+}
+
+.file-node--drop-zone {
+  position: relative;
+}
+
+.file-node--drop-zone::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border: 2px dashed transparent;
+  border-radius: var(--border-radius-md);
+  pointer-events: none;
+  transition: border-color var(--transition-speed) ease;
+}
+
+.file-node--drop-zone:hover::before {
+  border-color: var(--color-accent-primary);
+  opacity: 0.5;
+}
+

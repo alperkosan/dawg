@@ -615,7 +615,10 @@ export class PlaybackManager {
             }
 
             this._updateLoopSettingsImmediate(); // Force immediate loop update for playback start
+            
+            console.log('🎵 PlaybackManager: Calling _scheduleContent()', { startTime, reason: 'playback-start' });
             this._scheduleContent(startTime, 'playback-start', true); // Force immediate scheduling for playback start
+            console.log('✅ PlaybackManager: _scheduleContent() completed');
 
             // ⚡ IDLE OPTIMIZATION: Resume AudioContext if suspended
             if (this.audioEngine.audioContext.state === 'suspended') {
@@ -623,7 +626,9 @@ export class PlaybackManager {
                 console.log('🎵 AudioContext resumed for playback');
             }
 
+            console.log('🎵 PlaybackManager: Starting transport at', startTime);
             this.transport.start(startTime);
+            console.log('✅ PlaybackManager: Transport started');
 
             this.isPlaying = true;
             this.isPaused = false;
@@ -889,29 +894,51 @@ export class PlaybackManager {
      * @param {number} baseTime - Base scheduling time
      */
     _schedulePatternContent(baseTime) {
+        console.log('🎵 PlaybackManager._schedulePatternContent() called', { baseTime });
+        
         const arrangementStore = useArrangementStore.getState();
+        console.log('🎵 ArrangementStore state:', {
+            activePatternId: arrangementStore.activePatternId,
+            patternsCount: Object.keys(arrangementStore.patterns || {}).length,
+            patterns: Object.keys(arrangementStore.patterns || {})
+        });
+        
         const activePattern = arrangementStore.patterns[arrangementStore.activePatternId];
 
         if (!activePattern) {
+            console.warn('⚠️ No active pattern found:', arrangementStore.activePatternId);
             return { totalNotes: 0, instrumentCount: 0 };
         }
 
-        const instrumentCount = Object.keys(activePattern.data).length;
-        const totalNotes = Object.values(activePattern.data).reduce((sum, notes) => sum + (notes?.length || 0), 0);
+        console.log('🎵 Active pattern found:', {
+            id: activePattern.id,
+            instrumentCount: Object.keys(activePattern.data || {}).length,
+            instruments: Object.keys(activePattern.data || {})
+        });
+
+        const instrumentCount = Object.keys(activePattern.data || {}).length;
+        const totalNotes = Object.values(activePattern.data || {}).reduce((sum, notes) => sum + (notes?.length || 0), 0);
+
+        console.log('🎵 Scheduling notes:', { instrumentCount, totalNotes, baseTime });
 
         // Schedule notes for each instrument
-        Object.entries(activePattern.data).forEach(([instrumentId, notes]) => {
+        Object.entries(activePattern.data || {}).forEach(([instrumentId, notes]) => {
             if (!Array.isArray(notes) || notes.length === 0) {
+                console.log(`⏭️ Skipping instrument ${instrumentId}: no notes`);
                 return;
             }
 
             const instrument = this.audioEngine.instruments.get(instrumentId);
             if (!instrument) {
+                console.warn(`⚠️ Instrument ${instrumentId} not found in audio engine`);
                 return;
             }
 
+            console.log(`🎵 Scheduling ${notes.length} notes for instrument ${instrumentId}`);
             this._scheduleInstrumentNotes(instrument, notes, instrumentId, baseTime);
         });
+        
+        console.log('✅ Pattern content scheduled');
 
         // ✅ PHASE 4: Start real-time automation for all instruments with automation lanes
         try {

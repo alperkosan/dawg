@@ -1,0 +1,221 @@
+.auth-screen {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--zenith-bg-primary) 0%, var(--zenith-bg-secondary) 100%);
+  padding: 2rem;
+}
+
+.auth-container {
+  width: 100%;
+  max-width: 420px;
+  background: var(--zenith-bg-elevated);
+  border-radius: 16px;
+  padding: 2.5rem;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--zenith-border);
+}
+
+.auth-header {
+  text-align: center;
+  margin-bottom: 2rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--zenith-space-3);
+}
+
+.auth-logo {
+  font-size: 2.5rem;
+  font-weight: 900;
+  margin: 0;
+  font-family: var(--zenith-font-primary);
+  background: linear-gradient(135deg, #FF6B35 0%, #FFD23F 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  letter-spacing: -1px;
+  text-transform: uppercase;
+  text-shadow: 0 0 12px rgba(255, 107, 53, 0.3);
+}
+
+.auth-tagline {
+  color: var(--zenith-text-secondary);
+  font-size: 0.9rem;
+}
+
+.auth-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 2rem;
+  background: var(--zenith-bg-secondary);
+  padding: 0.25rem;
+  border-radius: 8px;
+}
+
+.auth-tab {
+  flex: 1;
+  padding: 0.75rem 1rem;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--zenith-text-secondary);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.auth-tab:hover {
+  color: var(--zenith-text-primary);
+  background: var(--zenith-bg-elevated);
+}
+
+.auth-tab.active {
+  background: var(--zenith-accent-primary);
+  color: white;
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.form-group label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--zenith-text-primary);
+}
+
+.form-group input {
+  padding: 0.75rem 1rem;
+  background: var(--zenith-bg-secondary);
+  border: 1px solid var(--zenith-border);
+  border-radius: 8px;
+  color: var(--zenith-text-primary);
+  font-size: 1rem;
+  transition: all 0.2s;
+}
+
+.form-group input:focus {
+  outline: none;
+  border-color: var(--zenith-accent-primary);
+  box-shadow: 0 0 0 3px rgba(78, 205, 196, 0.1);
+}
+
+.form-group input.error {
+  border-color: var(--zenith-error);
+}
+
+.error-message {
+  font-size: 0.75rem;
+  color: var(--zenith-error);
+}
+
+.error-banner {
+  padding: 0.75rem 1rem;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid var(--zenith-error);
+  border-radius: 8px;
+  color: var(--zenith-error);
+  font-size: 0.875rem;
+}
+
+.auth-submit {
+  padding: 0.875rem 1.5rem;
+  background: var(--zenith-accent-primary);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-top: 0.5rem;
+}
+
+.auth-submit:hover:not(:disabled) {
+  background: var(--zenith-accent-primary-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(78, 205, 196, 0.3);
+}
+
+.auth-submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.auth-divider {
+  display: flex;
+  align-items: center;
+  margin: 1.5rem 0;
+  text-align: center;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--zenith-border);
+}
+
+.auth-divider span {
+  padding: 0 1rem;
+  color: var(--zenith-text-secondary);
+  font-size: 0.875rem;
+}
+
+.auth-guest {
+  width: 100%;
+  padding: 0.875rem 1.5rem;
+  background: transparent;
+  color: var(--zenith-text-primary);
+  border: 1px solid var(--zenith-border);
+  border-radius: 8px;
+  font-weight: 500;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.auth-guest:hover:not(:disabled) {
+  background: var(--zenith-bg-secondary);
+  border-color: var(--zenith-accent-primary);
+}
+
+.auth-guest:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.auth-hint {
+  text-align: center;
+  margin-top: 1.5rem;
+  color: var(--zenith-text-secondary);
+  font-size: 0.875rem;
+}
+
+.auth-link {
+  background: none;
+  border: none;
+  color: var(--zenith-accent-primary);
+  cursor: pointer;
+  font-weight: 500;
+  text-decoration: underline;
+  padding: 0;
+  margin-left: 0.25rem;
+}
+
+.auth-link:hover {
+  color: var(--zenith-accent-primary-hover);
+}
+

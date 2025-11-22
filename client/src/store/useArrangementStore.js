@@ -4,7 +4,7 @@
 // Phase 1: Store Consolidation - Merged useArrangementV2Store functionality
 import { create } from 'zustand';
 import { nanoid } from 'nanoid';
-import { initialPatterns, initialPatternOrder, initialClips, initialInstruments } from '@/config/initialData';
+// ✅ Empty project - no initial data
 import { AudioContextService } from '@/lib/services/AudioContextService';
 import { storeManager } from './StoreManager';
 import { usePlaybackStore } from './usePlaybackStore';
@@ -87,22 +87,11 @@ const createLoopRegion = (startTime, endTime, label, color) => ({
   color: color || '#22c55e'
 });
 
-// Başlangıç verisinden dinamik olarak track'leri oluştur (legacy - pattern tracks)
-const initialTracks = initialInstruments.map(inst => ({
-  id: `track-${inst.id}`,
-  instrumentId: inst.id,
-  name: inst.name,
-  height: 60,
-}));
+// ✅ Empty project - no initial tracks
+const initialTracks = [];
 
-// ✅ PHASE 2: Design Consistency - Initialize with default tracks (4 tracks)
-// Tracks use alternating dark-light backgrounds (no color property)
-const initialArrangementTracks = [
-  createArrangementTrack('Track 1', 0),
-  createArrangementTrack('Track 2', 1),
-  createArrangementTrack('Track 3', 2),
-  createArrangementTrack('Track 4', 3),
-];
+// ✅ Empty project - start with no arrangement tracks
+const initialArrangementTracks = [];
 
 /**
  * ⚡ OPTIMIZED: Throttled orchestrator to prevent excessive heavy operations
@@ -159,10 +148,10 @@ export const useArrangementStore = create(arrangementStoreOrchestrator((set, get
   // ========================================================
   // === PATTERN MANAGEMENT (Existing) ===
   // ========================================================
-  patterns: initialPatterns,
-  patternOrder: initialPatternOrder,
-  tracks: initialTracks, // Legacy pattern tracks
-  clips: initialClips, // Legacy pattern clips
+  patterns: {}, // ✅ Empty project - start with no patterns
+  patternOrder: [], // ✅ Empty project - start with no pattern order
+  tracks: [], // ✅ Empty project - start with no tracks
+  clips: [], // ✅ Empty project - start with no clips
   activePatternId: 'pattern2',  // ✅ Boom Bap showcase pattern (16 bars)
   songLength: 128, // bar cinsinden
   zoomX: 1,
@@ -173,7 +162,7 @@ export const useArrangementStore = create(arrangementStoreOrchestrator((set, get
   // ========================================================
   
   // Arrangement tracks (separate from pattern tracks)
-  arrangementTracks: initialArrangementTracks,
+  arrangementTracks: [], // ✅ Empty project - start with no arrangement tracks
   
   // Arrangement clips (separate from pattern clips)
   arrangementClips: [],
@@ -218,7 +207,23 @@ export const useArrangementStore = create(arrangementStoreOrchestrator((set, get
   // --- EYLEMLER (ACTIONS) ---
 
   setActivePatternId: (patternId) => {
-    if (get().activePatternId === patternId) return;
+    const state = get();
+    
+    // ✅ FIX: Ensure pattern exists, if not, select first available pattern
+    if (!state.patterns[patternId]) {
+      const availablePatterns = state.patternOrder.filter(id => state.patterns[id]);
+      if (availablePatterns.length > 0) {
+        const firstPattern = availablePatterns[0];
+        console.warn(`⚠️ Pattern ${patternId} not found, switching to first available: ${firstPattern}`);
+        set({ activePatternId: firstPattern });
+        return;
+      } else {
+        console.error('❌ No patterns available to select');
+        return;
+      }
+    }
+    
+    if (state.activePatternId === patternId) return;
     set({ activePatternId: patternId });
     // Orkestratör bu eylemi yakalayıp gerekli diğer işlemleri yapacak.
   },
@@ -552,12 +557,17 @@ export const useArrangementStore = create(arrangementStoreOrchestrator((set, get
   deletePattern: (patternId) => {
     const state = get();
 
-    // Don't delete if it's the only pattern
-    if (state.patternOrder.length <= 1) return false;
+    // ✅ FIX: Don't delete if it's the only pattern - always keep at least 1 pattern
+    const availablePatterns = state.patternOrder.filter(id => state.patterns[id]);
+    if (availablePatterns.length <= 1) {
+      console.warn('⚠️ Cannot delete the last pattern. At least one pattern must exist.');
+      return false;
+    }
 
     // If deleting active pattern, switch to first available
+    const remainingPatterns = state.patternOrder.filter(id => id !== patternId);
     const newActivePattern = state.activePatternId === patternId
-      ? state.patternOrder.find(id => id !== patternId)
+      ? remainingPatterns[0] // Switch to first remaining pattern
       : state.activePatternId;
 
     set(state => {
@@ -566,11 +576,12 @@ export const useArrangementStore = create(arrangementStoreOrchestrator((set, get
 
       return {
         patterns: newPatterns,
-        patternOrder: state.patternOrder.filter(id => id !== patternId),
+        patternOrder: remainingPatterns,
         activePatternId: newActivePattern
       };
     });
 
+    console.log(`✅ Deleted pattern ${patternId}, switched to ${newActivePattern}`);
     return true;
   },
 

@@ -1,0 +1,142 @@
+/**
+ * Project Title Modal Styles
+ */
+
+.project-title-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10001; /* ✅ FIX: Higher z-index to ensure it's above all other elements */
+  /* ✅ FIX: Ensure overlay covers entire viewport */
+  width: 100vw;
+  height: 100vh;
+  margin: 0;
+  padding: 0;
+}
+
+.project-title-modal {
+  background: var(--zenith-bg-secondary);
+  border: 1px solid var(--zenith-border-medium);
+  border-radius: var(--zenith-radius-lg);
+  box-shadow: var(--zenith-shadow-xl);
+  width: 90%;
+  max-width: 500px;
+  padding: 0;
+  overflow: hidden;
+  backdrop-filter: blur(20px);
+}
+
+.project-title-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--zenith-space-4);
+  border-bottom: 1px solid var(--zenith-border-medium);
+  background: var(--zenith-bg-tertiary);
+}
+
+.project-title-modal__header h2 {
+  margin: 0;
+  font-size: var(--zenith-text-lg);
+  font-weight: var(--zenith-weight-bold);
+  color: var(--zenith-text-primary);
+}
+
+.project-title-modal__close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: var(--zenith-radius-sm);
+  color: var(--zenith-text-secondary);
+  cursor: pointer;
+  transition: all var(--zenith-duration-fast) var(--zenith-ease-out);
+}
+
+.project-title-modal__close:hover {
+  background: var(--zenith-bg-elevated);
+  color: var(--zenith-text-primary);
+}
+
+.project-title-modal__form {
+  padding: var(--zenith-space-4);
+}
+
+.project-title-modal__field {
+  margin-bottom: var(--zenith-space-4);
+}
+
+.project-title-modal__field label {
+  display: block;
+  margin-bottom: var(--zenith-space-2);
+  font-size: var(--zenith-text-sm);
+  font-weight: var(--zenith-weight-medium);
+  color: var(--zenith-text-primary);
+}
+
+.project-title-modal__field input {
+  width: 100%;
+  padding: var(--zenith-space-3);
+  background: var(--zenith-bg-tertiary);
+  border: 1px solid var(--zenith-border-medium);
+  border-radius: var(--zenith-radius-md);
+  color: var(--zenith-text-primary);
+  font-size: var(--zenith-text-base);
+  transition: all var(--zenith-duration-fast) var(--zenith-ease-out);
+}
+
+.project-title-modal__field input:focus {
+  outline: none;
+  border-color: #FF6B35;
+  box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.1);
+}
+
+.project-title-modal__actions {
+  display: flex;
+  gap: var(--zenith-space-3);
+  justify-content: flex-end;
+  margin-top: var(--zenith-space-4);
+}
+
+.project-title-modal__button {
+  display: flex;
+  align-items: center;
+  gap: var(--zenith-space-2);
+  padding: var(--zenith-space-2) var(--zenith-space-4);
+  background: var(--zenith-bg-tertiary);
+  border: 1px solid var(--zenith-border-medium);
+  border-radius: var(--zenith-radius-md);
+  color: var(--zenith-text-primary);
+  font-size: var(--zenith-text-sm);
+  font-weight: var(--zenith-weight-medium);
+  cursor: pointer;
+  transition: all var(--zenith-duration-fast) var(--zenith-ease-out);
+}
+
+.project-title-modal__button:hover {
+  background: var(--zenith-bg-elevated);
+  border-color: #FF6B35;
+}
+
+.project-title-modal__button--primary {
+  background: linear-gradient(135deg, #FF6B35 0%, #FFD23F 100%);
+  border-color: #FF6B35;
+  color: #000;
+}
+
+.project-title-modal__button--primary:hover {
+  background: linear-gradient(135deg, #FF8C5A 0%, #FFE066 100%);
+  box-shadow: 0 0 8px rgba(255, 107, 53, 0.3);
+}
+

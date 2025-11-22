@@ -1,4 +1,4 @@
-import React, { useEffect, useCallback } from 'react';
+import React, { useEffect, useCallback, useState } from 'react';
 import WaveformDisplay from '../sample_editor_v3/WaveformDisplay';
 import { Loader2, Play, Pause, AlertTriangle, Plus } from 'lucide-react';
 import { usePreviewPlayerStore } from '@/store/usePreviewPlayerStore';
@@ -12,10 +12,15 @@ export function FileBrowserPreview({ fileNode }) {
       error, selectFileForPreview, playPreview
   } = usePreviewPlayerStore();
 
+  // Full preview için state
+  const [isFullPreview, setIsFullPreview] = useState(false);
+
   const handleAddNewInstrument = useInstrumentsStore(state => state.handleAddNewInstrument);
 
   useEffect(() => {
-    selectFileForPreview(fileNode?.type === 'file' ? fileNode.url : null);
+    // Preview için normal yükleme (2 saniye)
+    selectFileForPreview(fileNode?.type === 'file' ? fileNode.url : null, false);
+    setIsFullPreview(false);
   }, [fileNode, selectFileForPreview]);
 
   const handleAddToChannelRack = useCallback(() => {
@@ -24,9 +29,30 @@ export function FileBrowserPreview({ fileNode }) {
     }
   }, [fileNode, handleAddNewInstrument]);
 
-  const handlePlayToggle = useCallback(() => {
-    if (url) playPreview(url);
-  }, [url, playPreview]);
+  const handlePlayToggle = useCallback((e) => {
+    if (url) {
+      // Shift veya Ctrl/Cmd tuşu basılıysa full preview
+      const fullLoad = e.shiftKey || e.ctrlKey || e.metaKey;
+      if (fullLoad) {
+        // Full buffer yükle ve çal
+        setIsFullPreview(true);
+        selectFileForPreview(url, true);
+        // Buffer yüklendikten sonra otomatik çalacak (useEffect ile)
+      } else {
+        // Normal preview (2 saniye)
+        setIsFullPreview(false);
+        playPreview(url);
+      }
+    }
+  }, [url, playPreview, selectFileForPreview]);
+  
+  // Full preview yüklendikten sonra otomatik çal
+  useEffect(() => {
+    if (isFullPreview && waveformBuffer && !isPlaying && loadingUrl !== url) {
+      // Full buffer yüklendi, otomatik çal
+      playPreview(url);
+    }
+  }, [isFullPreview, waveformBuffer, isPlaying, loadingUrl, url, playPreview]);
 
   // Empty state
   if (!fileNode || fileNode.type !== 'file') {
@@ -83,7 +109,7 @@ export function FileBrowserPreview({ fileNode }) {
               <button
                 onClick={handlePlayToggle}
                 className="preview__play-button"
-                title={isCurrentlyPlaying ? "Pause" : "Play"}
+                title={isCurrentlyPlaying ? "Pause" : "Play (Shift/Ctrl+Click for full preview)"}
               >
                 {isCurrentlyPlaying ? <Pause size={20} /> : <Play size={20} />}
               </button>

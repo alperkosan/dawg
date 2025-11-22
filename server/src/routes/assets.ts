@@ -1,0 +1,402 @@
+/**
+ * Assets routes for file browser
+ * Handles user file uploads, listing, deletion, and management
+ */
+
+import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import { z } from 'zod';
+import { assetsService } from '../services/assets.js';
+import { storageService } from '../services/storage.js';
+import { BadRequestError, NotFoundError, ForbiddenError } from '../utils/errors.js';
+
+// Validation schemas
+const uploadRequestSchema = z.object({
+  filename: z.string().min(1).max(255),
+  size: z.number().int().positive().max(1073741824), // Max 1GB per file
+  mimeType: z.string().refine((val) => val.startsWith('audio/'), { // ✅ FIX: More flexible mimeType validation
+    message: 'Mime type must start with "audio/"'
+  }),
+  folderPath: z.string().default('/'),
+  parentFolderId: z.string().uuid().optional().nullable(), // ✅ FIX: Allow null values
+});
+
+const listAssetsSchema = z.object({
+  folderPath: z.string().optional(),
+  parentFolderId: z.string().uuid().optional(),
+  limit: z.coerce.number().int().positive().max(1000).default(50), // Increased max to 1000
+  offset: z.coerce.number().int().nonnegative().default(0),
+});
+
+const renameAssetSchema = z.object({
+  newName: z.string().min(1).max(255),
+});
+
+const moveAssetSchema = z.object({
+  folderPath: z.string(),
+  parentFolderId: z.string().uuid().optional(),
+});
+
+export async function assetsRoutes(fastify: FastifyInstance) {
+  // Get user storage quota
+  fastify.get(
+    '/quota',
+    { preHandler: [fastify.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const userId = (request as any).user.userId;
+      const quota = await assetsService.getUserQuota(userId);
+      return reply.send(quota);
+    }
+  );
+
+  // List user assets
+  fastify.get(
+    '/',
+    { preHandler: [fastify.authenticate] },
+    async (request: FastifyRequest<{ Querystring: z.infer<typeof listAssetsSchema> }>, reply: FastifyReply) => {
+      const userId = (request as any).user.userId;
+      const query = listAssetsSchema.parse(request.query);
+      
+      const assets = await assetsService.listUserAssets(
+        userId,
+        query.folderPath,
+        query.parentFolderId,
+        query.limit,
+        query.offset
+      );
+      
+      return reply.send({
+        assets,
+        total: assets.length,
+        limit: query.limit,
+        offset: query.offset,
+      });
+    }
+  );
+
+  // Request upload (get presigned URL)
+  fastify.post(
+    '/upload/request',
+    { preHandler: [fastify.authenticate] },
+    async (request: FastifyRequest<{ Body: z.infer<typeof uploadRequestSchema> }>, reply: FastifyReply) => {
+      try {
+        const userId = (request as any).user.userId;
+        
+        // ✅ FIX: Better error handling for validation
+        let body;
+        try {
+          body = uploadRequestSchema.parse(request.body);
+        } catch (validationError) {
+          console.error('❌ Upload request validation error:', validationError);
+          throw new BadRequestError(`Invalid upload request: ${validationError.message}`);
+        }
+
+        // Check quota
+        const quota = await assetsService.getUserQuota(userId);
+        if (quota.used_bytes + body.size > quota.quota_bytes) {
+          throw new BadRequestError('Storage quota exceeded. Maximum 1GB allowed.');
+        }
+
+        // Create upload request
+        const uploadRequest = await assetsService.createUploadRequest(
+          userId,
+          body.filename,
+          body.size,
+          body.mimeType,
+          body.folderPath,
+          body.parentFolderId || null // ✅ FIX: Explicitly convert undefined to null
+        );
+
+        return reply.send(uploadRequest);
+      } catch (error) {
+        console.error('❌ Upload request error:', error);
+        if (error instanceof BadRequestError || error instanceof NotFoundError || error instanceof ForbiddenError) {
+          throw error;
+        }
+        // Generic error for unexpected issues
+        throw new BadRequestError(`Upload request failed: ${error.message || 'Unknown error'}`);
+      }
+    }
+  );
+
+  // Upload file (multipart/form-data)
+  fastify.post(
+    '/upload/:assetId',
+    { 
+      preHandler: [fastify.authenticate],
+      // ✅ FIX: Register multipart plugin for file uploads
+    },
+    async (request: FastifyRequest<{ Params: { assetId: string } }>, reply: FastifyReply) => {
+      const userId = (request as any).user.userId;
+      const { assetId } = request.params;
+
+      const { logger } = await import('../utils/logger.js');
+      logger.info(`📤 Starting file upload for asset ${assetId} (user: ${userId})`);
+
+      // Verify asset ownership
+      const asset = await assetsService.getAssetById(userId, assetId);
+      if (!asset) {
+        throw new NotFoundError('Asset not found');
+      }
+
+      logger.info(`📁 Asset found: ${asset.filename} (${asset.file_size} bytes)`);
+
+      // ✅ FIX: Handle file upload using multipart
+      const data = await request.file();
+      if (!data) {
+        throw new BadRequestError('No file provided');
+      }
+
+      logger.info(`📦 File received: ${data.filename} (${data.file?.bytesRead || 'unknown'} bytes)`);
+
+      // ✅ CDN: Upload file using storage service
+      // Use the storage key that was created in createUploadRequest
+      const buffer = await data.toBuffer();
+      logger.info(`🔄 Uploading to storage service... (storage_key: ${asset.storage_key})`);
+      
+      const storageResult = await storageService.uploadFile(
+        userId,
+        assetId,
+        asset.filename,
+        buffer,
+        false, // isSystemAsset
+        undefined, // categorySlug
+        undefined, // packSlug
+        asset.storage_key // Use the storage key from database
+      );
+
+      logger.info(`✅ Storage upload completed: ${storageResult.storageKey} -> ${storageResult.storageUrl}`);
+
+      // Update asset with storage info
+      const db = await import('../services/database.js').then(m => m.getDatabase());
+      await db.query(
+        `UPDATE user_assets 
+         SET storage_key = $1, storage_url = $2, updated_at = NOW()
+         WHERE id = $3 AND user_id = $4`,
+        [storageResult.storageKey, storageResult.storageUrl, assetId, userId]
+      );
+
+      // Mark as completed
+      const completedAsset = await assetsService.completeUpload(userId, assetId);
+      return reply.send(completedAsset);
+    }
+  );
+
+  // Complete upload (mark as uploaded) - for when file is already uploaded
+  fastify.post(
+    '/upload/complete/:assetId',
+    { preHandler: [fastify.authenticate] },
+    async (request: FastifyRequest<{ Params: { assetId: string } }>, reply: FastifyReply) => {
+      const userId = (request as any).user.userId;
+      const { assetId } = request.params;
+
+      const asset = await assetsService.completeUpload(userId, assetId);
+      return reply.send(asset);
+    }
+  );
+
+  // ✅ FIX: Serve file endpoint with Range Request support
+  fastify.get(
+    '/:assetId/file',
+    { preHandler: [fastify.authenticate] },
+    async (request: FastifyRequest<{ Params: { assetId: string } }>, reply: FastifyReply) => {
+      const userId = (request as any).user.userId;
+      const { assetId } = request.params;
+
+      // Verify asset ownership
+      const asset = await assetsService.getAssetById(userId, assetId);
+      if (!asset) {
+        throw new NotFoundError('Asset not found');
+      }
+
+      // ✅ CDN: If storage_url is a CDN URL, redirect to CDN (CDN handles Range Requests)
+      if (asset.storage_url && !asset.storage_url.startsWith('/api/')) {
+        // CDN URL - redirect to CDN (Bunny CDN supports Range Requests)
+        // Pass Range header to CDN if present
+        const rangeHeader = request.headers.range;
+        if (rangeHeader) {
+          // CDN will handle Range Request, just redirect
+          reply.header('Location', asset.storage_url);
+          return reply.code(302).send();
+        }
+        return reply.redirect(302, asset.storage_url);
+      }
+
+      // ✅ CDN: Otherwise, serve from local storage with Range Request support
+      const { storageService } = await import('../services/storage.js');
+      
+      try {
+        // Extract local path from storage_key or construct it
+        const path = await import('path');
+        let localPath: string | undefined;
+        
+        if (asset.storage_key && asset.storage_key.includes('uploads')) {
+          localPath = path.join(process.cwd(), asset.storage_key);
+        } else {
+          // Construct local path from assetId
+          const fileExtension = path.extname(asset.filename) || '.wav';
+          localPath = path.join(process.cwd(), 'uploads', userId, `${assetId}${fileExtension}`);
+        }
+        
+        const fileBuffer = await storageService.getFile(asset.storage_key, localPath);
+        const fileSize = fileBuffer.length;
+        
+        // ✅ NEW: Handle Range Request
+        const rangeHeader = request.headers.range;
+        if (rangeHeader) {
+          // Parse Range header (e.g., "bytes=0-176399")
+          const rangeMatch = rangeHeader.match(/bytes=(\d+)-(\d*)/);
+          if (rangeMatch) {
+            const start = parseInt(rangeMatch[1], 10);
+            const end = rangeMatch[2] ? parseInt(rangeMatch[2], 10) : fileSize - 1;
+            const chunkSize = (end - start) + 1;
+            
+            // Validate range
+            if (start >= fileSize || end >= fileSize || start > end) {
+              reply.code(416).header('Content-Range', `bytes */${fileSize}`);
+              return reply.send();
+            }
+            
+            // Extract range from buffer
+            const chunk = fileBuffer.slice(start, end + 1);
+            
+            // Set Range Response headers
+            reply.code(206); // Partial Content
+            reply.header('Content-Range', `bytes ${start}-${end}/${fileSize}`);
+            reply.header('Content-Length', chunkSize);
+            reply.header('Content-Type', asset.mime_type || 'audio/wav');
+            reply.header('Accept-Ranges', 'bytes');
+            reply.header('Cache-Control', 'public, max-age=31536000');
+            
+            return reply.send(chunk);
+          }
+        }
+        
+        // No Range Request - send full file
+        reply.header('Content-Type', asset.mime_type || 'audio/wav');
+        reply.header('Content-Length', fileSize);
+        reply.header('Content-Disposition', `inline; filename="${asset.filename}"`);
+        reply.header('Accept-Ranges', 'bytes'); // ✅ NEW: Indicate Range Request support
+        reply.header('Cache-Control', 'public, max-age=31536000');
+        
+        return reply.send(fileBuffer);
+      } catch (error) {
+        console.error(`❌ Failed to read file:`, error);
+        throw new NotFoundError(`File not found on server`);
+      }
+    }
+  );
+
+  // Delete asset
+  fastify.delete(
+    '/:assetId',
+    { preHandler: [fastify.authenticate] },
+    async (request: FastifyRequest<{ Params: { assetId: string } }>, reply: FastifyReply) => {
+      const userId = (request as any).user.userId;
+      const { assetId } = request.params;
+
+      // ✅ FIX: Delete asset (trigger will update quota automatically)
+      await assetsService.deleteAsset(userId, assetId);
+      
+      // ✅ FIX: Return updated quota in response
+      const quota = await assetsService.getUserQuota(userId);
+      
+      return reply.send({ 
+        success: true,
+        quota // ✅ Include updated quota in response
+      });
+    }
+  );
+
+  // Rename asset
+  fastify.patch(
+    '/:assetId/rename',
+    { preHandler: [fastify.authenticate] },
+    async (
+      request: FastifyRequest<{ Params: { assetId: string }; Body: z.infer<typeof renameAssetSchema> }>,
+      reply: FastifyReply
+    ) => {
+      const userId = (request as any).user.userId;
+      const { assetId } = request.params;
+      const body = renameAssetSchema.parse(request.body);
+
+      const asset = await assetsService.renameAsset(userId, assetId, body.newName);
+      return reply.send(asset);
+    }
+  );
+
+  // Move asset (change folder)
+  fastify.patch(
+    '/:assetId/move',
+    { preHandler: [fastify.authenticate] },
+    async (
+      request: FastifyRequest<{ Params: { assetId: string }; Body: z.infer<typeof moveAssetSchema> }>,
+      reply: FastifyReply
+    ) => {
+      const userId = (request as any).user.userId;
+      const { assetId } = request.params;
+      const body = moveAssetSchema.parse(request.body);
+
+      const asset = await assetsService.moveAsset(userId, assetId, body.folderPath, body.parentFolderId);
+      return reply.send(asset);
+    }
+  );
+
+  // Create folder
+  fastify.post(
+    '/folders',
+    { preHandler: [fastify.authenticate] },
+    async (
+      request: FastifyRequest<{ Body: { name: string; parentFolderId?: string } }>,
+      reply: FastifyReply
+    ) => {
+      const userId = (request as any).user.userId;
+      const { name, parentFolderId } = request.body;
+
+      if (!name || name.trim().length === 0) {
+        throw new BadRequestError('Folder name is required');
+      }
+
+      // ✅ FIX: Create folder in database
+      const folder = await assetsService.createFolder(userId, name.trim(), parentFolderId);
+      return reply.send(folder);
+    }
+  );
+
+  // List folders
+  fastify.get(
+    '/folders',
+    { preHandler: [fastify.authenticate] },
+    async (
+      request: FastifyRequest<{ Querystring: { parentFolderId?: string } }>,
+      reply: FastifyReply
+    ) => {
+      const userId = (request as any).user.userId;
+      const { parentFolderId } = request.query;
+      
+      const folders = await assetsService.listUserFolders(userId, parentFolderId);
+      return reply.send({ folders });
+    }
+  );
+
+  // Delete folder
+  fastify.delete(
+    '/folders/:folderId',
+    { preHandler: [fastify.authenticate] },
+    async (request: FastifyRequest<{ Params: { folderId: string } }>, reply: FastifyReply) => {
+      const userId = (request as any).user.userId;
+      const { folderId } = request.params;
+
+      // ✅ FIX: Delete folder (recursively deletes all contents)
+      await assetsService.deleteFolder(userId, folderId);
+      
+      // ✅ FIX: Return updated quota in response
+      const quota = await assetsService.getUserQuota(userId);
+      
+      return reply.send({ 
+        success: true,
+        quota // ✅ Include updated quota in response
+      });
+    }
+  );
+}
+

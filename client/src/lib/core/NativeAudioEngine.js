@@ -136,10 +136,23 @@ export class NativeAudioEngine {
             sampleRate: this.settings.sampleRate
         });
 
-        if (this.audioContext.state === 'suspended') {
-            await this.audioContext.resume();
+        // ✅ NOTE: AudioContext will be suspended until user interaction
+        // We'll resume it when user clicks "Stüdyoya Gir" or starts playback
+        console.log(`🎵 AudioContext created (state: ${this.audioContext.state})`);
+    }
+
+    /**
+     * Resume AudioContext (required after user interaction)
+     */
+    async resumeAudioContext() {
+        if (!this.audioContext) {
+            throw new Error('AudioContext not initialized');
         }
 
+        if (this.audioContext.state === 'suspended') {
+            await this.audioContext.resume();
+            console.log('✅ AudioContext resumed');
+        }
     }
 
     async _initializeCore() {
@@ -489,7 +502,38 @@ export class NativeAudioEngine {
 
     // =================== SAMPLE MANAGEMENT ===================
 
+    /**
+     * Clean unused sample buffers (keep only those in use)
+     * @param {Set<string>} activeInstrumentIds - IDs of currently active instruments
+     */
+    cleanUnusedBuffers(activeInstrumentIds = new Set()) {
+        if (!this.sampleBuffers) return;
+        
+        const beforeCount = this.sampleBuffers.size;
+        const toRemove = [];
+        
+        // Find buffers not associated with active instruments
+        this.sampleBuffers.forEach((buffer, instrumentId) => {
+            if (!activeInstrumentIds.has(instrumentId)) {
+                toRemove.push(instrumentId);
+            }
+        });
+        
+        // Remove unused buffers
+        toRemove.forEach(id => {
+            this.sampleBuffers.delete(id);
+        });
+        
+        const afterCount = this.sampleBuffers.size;
+        if (beforeCount > afterCount) {
+            console.log(`🧹 Cleaned ${beforeCount - afterCount} unused sample buffers (${afterCount} remaining)`);
+        }
+    }
+
     async preloadSamples(instrumentData) {
+        // ✅ FIX: Clean unused buffers before loading new samples
+        const activeIds = new Set(instrumentData.map(inst => inst.id));
+        this.cleanUnusedBuffers(activeIds);
 
         const samplePromises = instrumentData
             .filter(inst => inst.type === 'sample' && inst.url)
@@ -776,26 +820,24 @@ export class NativeAudioEngine {
     // =================== MIXER CONTROLS (UnifiedMixer Only) ===================
 
     setChannelVolume(channelId, volume) {
-        if (!this.unifiedMixer) {
-            console.warn('⚠️ UnifiedMixer not initialized');
-            return;
-        }
-
-        const channelIdx = this._getUnifiedMixerChannelIndex(channelId);
-        if (channelIdx !== -1) {
-            this.unifiedMixer.setChannelParams(channelIdx, { gain: volume });
+        // ✅ FIX: Use new MixerInsert system instead of deprecated UnifiedMixer
+        const insert = this.mixerInserts?.get(channelId);
+        if (insert) {
+            insert.setGain(volume);
+        } else {
+            // Silently fail - insert may not exist yet (e.g., during deserialization)
+            // console.warn(`⚠️ MixerInsert not found for channel: ${channelId}`);
         }
     }
 
     setChannelPan(channelId, pan) {
-        if (!this.unifiedMixer) {
-            console.warn('⚠️ UnifiedMixer not initialized');
-            return;
-        }
-
-        const channelIdx = this._getUnifiedMixerChannelIndex(channelId);
-        if (channelIdx !== -1) {
-            this.unifiedMixer.setChannelParams(channelIdx, { pan });
+        // ✅ FIX: Use new MixerInsert system instead of deprecated UnifiedMixer
+        const insert = this.mixerInserts?.get(channelId);
+        if (insert) {
+            insert.setPan(pan);
+        } else {
+            // Silently fail - insert may not exist yet (e.g., during deserialization)
+            // console.warn(`⚠️ MixerInsert not found for channel: ${channelId}`);
         }
     }
 
@@ -1015,23 +1057,21 @@ export class NativeAudioEngine {
     // New code should use: createMixerInsert() + routeInstrumentToInsert()
 
     async _connectInstrumentToChannel(instrumentId, channelId) {
+        // ✅ FIX: Use new MixerInsert system instead of deprecated UnifiedMixer
+        // This method is deprecated - use routeInstrumentToInsert() instead
+        // But keep it for backward compatibility
         if (import.meta.env.DEV) {
             console.log(`🔌 Attempting to connect instrument ${instrumentId} to channel ${channelId}`);
         }
-        const instrument = this.instruments.get(instrumentId);
-        if (!instrument) {
-            console.error(`❌ Instrument not found: ${instrumentId}`);
+        
+        // Use the new routing system
+        try {
+            this.routeInstrumentToInsert(instrumentId, channelId);
+            return true;
+        } catch (error) {
+            console.error(`❌ Failed to route instrument ${instrumentId} to ${channelId}:`, error);
             return false;
         }
-        if (!instrument.output) {
-            console.error(`❌ Instrument ${instrumentId} has no output!`);
-            return false;
-        }
-        if (!this.unifiedMixer) {
-            console.error('❌ UnifiedMixer not initialized - cannot route instrument');
-            return false;
-        }
-        return this._connectToUnifiedMixer(instrument, instrumentId, channelId);
     }
 
     _connectToUnifiedMixer(instrument, instrumentId, channelId) {

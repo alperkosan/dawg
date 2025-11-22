@@ -19,6 +19,7 @@ import PresetBrowser from './components/PresetBrowser';
 import InstrumentEffectsPanel from './components/InstrumentEffectsPanel';
 import ModulationMatrix from './components/ModulationMatrix';
 import AutomationSettingsPanel from '../piano_roll_v7/components/AutomationSettingsPanel';
+import ConfirmationModal from '../../components/common/ConfirmationModal';
 import './InstrumentEditorPanel.css';
 
 const InstrumentEditorPanel = () => {
@@ -73,6 +74,17 @@ const InstrumentEditorPanel = () => {
   const [activeSlot, setActiveSlot] = useState('A'); // 'A' or 'B'
   const [showABPanel, setShowABPanel] = useState(false);
 
+  // ✅ CONFIRMATION MODAL STATE
+  const [confirmationModal, setConfirmationModal] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    confirmText: 'Confirm',
+    cancelText: 'Cancel',
+    variant: 'default',
+    onConfirm: null,
+  });
+
   // ✅ RESIZE HANDLERS
   const handleResizeStart = (e) => {
     e.preventDefault();
@@ -126,12 +138,18 @@ const InstrumentEditorPanel = () => {
 
   // ✅ RANDOMIZE HANDLER
   const handleRandomize = () => {
-    if (!confirm('Randomize all parameters? This will change all current values.')) {
-      return;
-    }
-
-    // Define randomization rules for different parameter types
-    const randomizeParameter = (key, value) => {
+    setConfirmationModal({
+      isOpen: true,
+      title: 'Randomize Parameters',
+      message: 'Randomize all parameters? This will change all current values.',
+      confirmText: 'Randomize',
+      cancelText: 'Cancel',
+      variant: 'warning',
+      onConfirm: () => {
+        setConfirmationModal({ ...confirmationModal, isOpen: false });
+        
+        // Define randomization rules for different parameter types
+        const randomizeParameter = (key, value) => {
       // Skip certain parameters
       if (['id', 'name', 'type', 'mixerTrackId', 'presetName'].includes(key)) {
         return value;
@@ -177,24 +195,32 @@ const InstrumentEditorPanel = () => {
       randomized[key] = randomizeParameter(key, value);
     });
 
-    // Update all randomized parameters
-    Object.entries(randomized).forEach(([key, value]) => {
-      if (value !== instrumentData[key] && !['id', 'name', 'type', 'mixerTrackId'].includes(key)) {
-        updateParameter(key, value);
-      }
-    });
+        // Update all randomized parameters
+        Object.entries(randomized).forEach(([key, value]) => {
+          if (value !== instrumentData[key] && !['id', 'name', 'type', 'mixerTrackId'].includes(key)) {
+            updateParameter(key, value);
+          }
+        });
 
-    console.log('🎲 Parameters randomized');
+        console.log('🎲 Parameters randomized');
+      },
+    });
   };
 
   // ✅ INIT/RESET HANDLER
   const handleReset = () => {
-    if (!confirm('Reset all parameters to defaults? This will lose all current changes.')) {
-      return;
-    }
-
-    // Get default values based on instrument type
-    const getDefaults = () => {
+    setConfirmationModal({
+      isOpen: true,
+      title: 'Reset Parameters',
+      message: 'Reset all parameters to defaults? This will lose all current changes.',
+      confirmText: 'Reset',
+      cancelText: 'Cancel',
+      variant: 'warning',
+      onConfirm: () => {
+        setConfirmationModal({ ...confirmationModal, isOpen: false });
+        
+        // Get default values based on instrument type
+        const getDefaults = () => {
       const baseDefaults = {
         gain: 0.7,
         pan: 0,
@@ -223,14 +249,16 @@ const InstrumentEditorPanel = () => {
       return baseDefaults;
     };
 
-    const defaults = getDefaults();
+        const defaults = getDefaults();
 
-    // Apply defaults
-    Object.entries(defaults).forEach(([key, value]) => {
-      updateParameter(key, value);
+        // Apply defaults
+        Object.entries(defaults).forEach(([key, value]) => {
+          updateParameter(key, value);
+        });
+
+        console.log('🔄 Parameters reset to defaults');
+      },
     });
-
-    console.log('🔄 Parameters reset to defaults');
   };
 
   // ✅ A/B COMPARISON HANDLERS
@@ -313,13 +341,26 @@ const InstrumentEditorPanel = () => {
 
     // Check type compatibility
     if (copiedParams.type !== instrumentData.type) {
-      const confirmPaste = confirm(
-        `Parameters were copied from a ${copiedParams.type} instrument.\n` +
-        `Current instrument is ${instrumentData.type}.\n\n` +
-        `Paste anyway? (Some parameters may not be compatible)`
-      );
-      if (!confirmPaste) return;
+      setConfirmationModal({
+        isOpen: true,
+        title: 'Type Mismatch',
+        message: `Parameters were copied from a ${copiedParams.type} instrument.\nCurrent instrument is ${instrumentData.type}.\n\nPaste anyway? (Some parameters may not be compatible)`,
+        confirmText: 'Paste Anyway',
+        cancelText: 'Cancel',
+        variant: 'warning',
+        onConfirm: () => {
+          setConfirmationModal({ ...confirmationModal, isOpen: false });
+          // Continue with paste logic below
+          pasteParameters();
+        },
+      });
+      return;
     }
+    
+    pasteParameters();
+  };
+  
+  const pasteParameters = () => {
 
     // Apply all copied parameters
     Object.entries(copiedParams.params).forEach(([key, value]) => {
@@ -743,6 +784,18 @@ const InstrumentEditorPanel = () => {
           </div>
         </div>
       </div>
+
+      {/* Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={confirmationModal.isOpen}
+        title={confirmationModal.title}
+        message={confirmationModal.message}
+        confirmText={confirmationModal.confirmText}
+        cancelText={confirmationModal.cancelText}
+        variant={confirmationModal.variant}
+        onConfirm={confirmationModal.onConfirm}
+        onCancel={() => setConfirmationModal({ ...confirmationModal, isOpen: false })}
+      />
     </>
   );
 };

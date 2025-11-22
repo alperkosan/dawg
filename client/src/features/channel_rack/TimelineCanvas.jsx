@@ -15,7 +15,7 @@
  */
 
 import React, { useRef, useEffect, useCallback, useState } from 'react';
-import { getTimelineController } from '@/lib/core/TimelineControllerSingleton';
+import TimelineControllerSingleton, { getTimelineController, isTimelineControllerInitialized } from '@/lib/core/TimelineControllerSingleton';
 import { globalStyleCache } from '@/lib/rendering/StyleCache';
 import { uiUpdateManager, UPDATE_PRIORITIES, UPDATE_FREQUENCIES } from '@/lib/core/UIUpdateManager';
 
@@ -212,8 +212,16 @@ const TimelineCanvas = React.memo(({
   useEffect(() => {
     if (!containerRef.current) return;
 
-    try {
-      const timelineController = getTimelineController();
+    // ✅ FIX: Wait for TimelineController to be initialized
+    const initializeTimeline = async () => {
+      try {
+        // Wait for TimelineController to be ready
+        if (!isTimelineControllerInitialized()) {
+          console.log('⏳ TimelineController not ready, waiting...');
+          await TimelineControllerSingleton.getInstance();
+        }
+        
+        const timelineController = getTimelineController();
 
       // Stable callback reference with animation control
       const handlePositionChange = (position, ghostPosition) => {
@@ -286,16 +294,6 @@ const TimelineCanvas = React.memo(({
         const step = Math.floor(exactStep);
         const clampedStep = Math.max(0, Math.min(loopLength - 1, step));
 
-        // 🐛 DEBUG: Log position calculation
-        console.log(`🖱️ calculatePosition:`, {
-          mouseX,
-          parentScroll,
-          adjustedX,
-          exactStep: exactStep.toFixed(2),
-          flooredStep: step,
-          clampedStep,
-          STEP_WIDTH
-        });
 
         return clampedStep;
       };
@@ -424,22 +422,37 @@ const TimelineCanvas = React.memo(({
         calculatePosition
       });
 
-      setIsRegistered(true);
-      console.log('✅ TimelineCanvas registered');
+        setIsRegistered(true);
+        console.log('✅ TimelineCanvas registered');
+      } catch (error) {
+        console.error('Failed to register TimelineCanvas:', error);
+      }
+    };
 
-      // Cleanup on unmount
-      return () => {
-        timelineController.unregisterTimeline('channel-rack-timeline');
-        console.log('🧹 TimelineCanvas cleanup');
-      };
-    } catch (error) {
-      console.error('Failed to register TimelineCanvas:', error);
-    }
+    // Start initialization
+    initializeTimeline();
+
+    // Cleanup on unmount
+    return () => {
+      if (isTimelineControllerInitialized()) {
+        try {
+          const timelineController = getTimelineController();
+          timelineController.unregisterTimeline('channel-rack-timeline');
+          console.log('🧹 TimelineCanvas cleanup');
+        } catch (error) {
+          // Ignore cleanup errors if controller not available
+        }
+      }
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // ✅ FIX: Only register/unregister once on mount/unmount (calculatePosition uses closure)
 
   // ✅ SEPARATE EFFECT: Update loop length if it changes
   useEffect(() => {
+    if (!isTimelineControllerInitialized()) {
+      return; // Wait for initialization
+    }
+    
     try {
       const timelineController = getTimelineController();
       const timeline = timelineController.timelines.get('channel-rack-timeline');
@@ -448,6 +461,7 @@ const TimelineCanvas = React.memo(({
       }
     } catch (error) {
       // Ignore if not initialized yet
+      console.warn('Could not update loop length:', error);
     }
   }, [loopLength]);
 

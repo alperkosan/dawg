@@ -64,6 +64,7 @@ import { TexturePack, DepthEffects } from '../PluginTexturePack';
 import { useMixerStore } from '@/store/useMixerStore';
 import { PresetManager } from '@/services/PresetManager';
 import { useParameterBatcher } from '@/services/ParameterBatcher';
+import ConfirmationModal from '@/components/common/ConfirmationModal';
 
 /**
  * PRESET MENU V2.0 (Enhanced with search, tags, import/export)
@@ -84,6 +85,15 @@ const PresetMenuV2 = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTags, setSelectedTags] = useState([]);
   const [showStats, setShowStats] = useState(false);
+  const [confirmationModal, setConfirmationModal] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    confirmText: 'Confirm',
+    cancelText: 'Cancel',
+    variant: 'default',
+    onConfirm: null,
+  });
 
   // Position menu
   useEffect(() => {
@@ -393,14 +403,29 @@ const PluginContainerV2 = ({
   }, [activePresetName]);
 
   // Delete preset
+  const [deleteConfirmation, setDeleteConfirmation] = useState({
+    isOpen: false,
+    presetId: null,
+    presetName: '',
+  });
+
   const handleDelete = useCallback((presetId) => {
     const preset = presetManager.getUserPresets().find(p => p.id === presetId);
     if (!preset) return;
 
-    if (window.confirm(`Delete preset "${preset.name}"? This cannot be undone.`)) {
-      presetManager.deletePreset(presetId);
+    setDeleteConfirmation({
+      isOpen: true,
+      presetId,
+      presetName: preset.name,
+    });
+  }, [presetManager]);
+
+  const confirmDelete = useCallback(() => {
+    if (deleteConfirmation.presetId) {
+      presetManager.deletePreset(deleteConfirmation.presetId);
+      setDeleteConfirmation({ isOpen: false, presetId: null, presetName: '' });
     }
-  }, []);
+  }, [deleteConfirmation.presetId, presetManager]);
 
   // Export preset
   const handleExport = useCallback((presetId) => {
@@ -711,6 +736,18 @@ const PluginContainerV2 = ({
         </div>
       )}
       </div>
+
+      {/* Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={deleteConfirmation.isOpen}
+        title="Delete Preset"
+        message={`Delete preset "${deleteConfirmation.presetName}"? This cannot be undone.`}
+        confirmText="Delete"
+        cancelText="Cancel"
+        variant="danger"
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteConfirmation({ isOpen: false, presetId: null, presetName: '' })}
+      />
     </TexturePack>
   );
 };

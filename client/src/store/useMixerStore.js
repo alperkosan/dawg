@@ -3,7 +3,7 @@
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
 import { AudioContextService } from '@/lib/services/AudioContextService';
-import { initialMixerTracks } from '@/config/initialData';
+// ✅ Empty project - no initial data
 import { pluginRegistry } from '@/config/pluginConfig';
 import { storeManager } from './StoreManager';
 
@@ -16,7 +16,28 @@ export const useMixerStore = create((set, get) => ({
   // ========================================================
   // === AUDIO STATE (affects audio engine) ===
   // ========================================================
-  mixerTracks: initialMixerTracks,
+  mixerTracks: [
+    // ✅ Empty project - only master track (required)
+    {
+      id: 'master',
+      name: 'Master',
+      type: 'master',
+      volume: 0, // 0 dB
+      pan: 0,
+      isMuted: false,
+      isSolo: false,
+      color: '#8b5cf6',
+      output: null, // Master has no output
+      sends: [],
+      insertEffects: [],
+      eq: {
+        enabled: false,
+        lowGain: 0,
+        midGain: 0,
+        highGain: 0
+      }
+    }
+  ], // ✅ Empty project - start with only master track
   soloedChannels: new Set(),
   mutedChannels: new Set(),
   monoChannels: new Set(), // ✅ Channels forced to mono output

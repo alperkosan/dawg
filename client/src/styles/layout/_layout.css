@@ -3,7 +3,7 @@
 .app-container {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  /* ✅ FIX: Height is now set dynamically via inline style to account for banner */
   width: 100vw;
   overflow: hidden;
   background: var(--zenith-bg-secondary);
@@ -24,11 +24,13 @@
   display: flex;
   align-items: center; 
   justify-content: space-between;
-  height: 52px;
-  padding: 0 var(--spacing-4);
-  background-color: var(--zenith-bg-secondary);
+  height: 56px;
+  padding: 0 var(--zenith-space-6);
+  background: var(--zenith-bg-secondary);
   border-bottom: 1px solid var(--zenith-border-medium);
   flex-shrink: 0;
+  box-shadow: var(--zenith-shadow-sm);
+  backdrop-filter: blur(10px);
 }
 
 /* <<< YENİ KURAL: Master Knob için özel bir sarmalayıcı sınıfı >>> */
@@ -59,20 +61,7 @@
   gap: var(--spacing-3); /* <<< Boşlukları daha tutarlı hale getir */
 }
 
-/* Logo & Başlık */
-.top-toolbar__logo {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-2);
-  color: var(--zenith-text-primary);
-}
-
-.top-toolbar__logo-title {
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: var(--font-size-xl);
-  letter-spacing: -0.5px; /* Hafifçe sıkıştırılmış harfler */
-}
+/* Logo removed from TopToolbar - now only in NavigationHeader */
 
 /* Transport Butonları (Play, Stop) */
 .top-toolbar__transport-btn {

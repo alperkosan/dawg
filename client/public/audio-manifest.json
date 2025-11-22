@@ -1,0 +1,221 @@
+{
+  "version": "1.0.0",
+  "generatedAt": "2025-11-22T00:25:54.178Z",
+  "totalFiles": 31,
+  "directories": [
+    {
+      "name": "drums",
+      "path": "drums",
+      "fileCount": 7,
+      "files": [
+        {
+          "name": "clap.wav",
+          "url": "/audio/samples/drums/clap.wav",
+          "size": 228376,
+          "ext": "wav"
+        },
+        {
+          "name": "crash.wav",
+          "url": "/audio/samples/drums/crash.wav",
+          "size": 3421008,
+          "ext": "wav"
+        },
+        {
+          "name": "hihat.wav",
+          "url": "/audio/samples/drums/hihat.wav",
+          "size": 16908,
+          "ext": "wav"
+        },
+        {
+          "name": "kick.wav",
+          "url": "/audio/samples/drums/kick.wav",
+          "size": 235238,
+          "ext": "wav"
+        },
+        {
+          "name": "openhat.wav",
+          "url": "/audio/samples/drums/openhat.wav",
+          "size": 354818,
+          "ext": "wav"
+        },
+        {
+          "name": "rim.wav",
+          "url": "/audio/samples/drums/rim.wav",
+          "size": 95354,
+          "ext": "wav"
+        },
+        {
+          "name": "snare.wav",
+          "url": "/audio/samples/drums/snare.wav",
+          "size": 110032,
+          "ext": "wav"
+        }
+      ]
+    },
+    {
+      "name": "instruments",
+      "path": "instruments",
+      "fileCount": 4,
+      "files": [
+        {
+          "name": "808.wav",
+          "url": "/audio/samples/instruments/808.wav",
+          "size": 809684,
+          "ext": "wav"
+        },
+        {
+          "name": "808_1.wav",
+          "url": "/audio/samples/instruments/808_1.wav",
+          "size": 1315036,
+          "ext": "wav"
+        },
+        {
+          "name": "808_2.wav",
+          "url": "/audio/samples/instruments/808_2.wav",
+          "size": 378840,
+          "ext": "wav"
+        },
+        {
+          "name": "perc.wav",
+          "url": "/audio/samples/instruments/perc.wav",
+          "size": 911142,
+          "ext": "wav"
+        }
+      ]
+    },
+    {
+      "name": "piano",
+      "path": "instruments/piano",
+      "fileCount": 16,
+      "files": [
+        {
+          "name": "C1.ogg",
+          "url": "/audio/samples/instruments/piano/C1.ogg",
+          "size": 120443,
+          "ext": "ogg"
+        },
+        {
+          "name": "C2.ogg",
+          "url": "/audio/samples/instruments/piano/C2.ogg",
+          "size": 119464,
+          "ext": "ogg"
+        },
+        {
+          "name": "C3.ogg",
+          "url": "/audio/samples/instruments/piano/C3.ogg",
+          "size": 127488,
+          "ext": "ogg"
+        },
+        {
+          "name": "C4.ogg",
+          "url": "/audio/samples/instruments/piano/C4.ogg",
+          "size": 119632,
+          "ext": "ogg"
+        },
+        {
+          "name": "C5.ogg",
+          "url": "/audio/samples/instruments/piano/C5.ogg",
+          "size": 82214,
+          "ext": "ogg"
+        },
+        {
+          "name": "C6.ogg",
+          "url": "/audio/samples/instruments/piano/C6.ogg",
+          "size": 56321,
+          "ext": "ogg"
+        },
+        {
+          "name": "C7.ogg",
+          "url": "/audio/samples/instruments/piano/C7.ogg",
+          "size": 23416,
+          "ext": "ogg"
+        },
+        {
+          "name": "C8.ogg",
+          "url": "/audio/samples/instruments/piano/C8.ogg",
+          "size": 21746,
+          "ext": "ogg"
+        },
+        {
+          "name": "piano_c1.ogg",
+          "url": "/audio/samples/instruments/piano/piano_c1.ogg",
+          "size": 120443,
+          "ext": "ogg"
+        },
+        {
+          "name": "piano_c2.ogg",
+          "url": "/audio/samples/instruments/piano/piano_c2.ogg",
+          "size": 119464,
+          "ext": "ogg"
+        },
+        {
+          "name": "piano_c3.ogg",
+          "url": "/audio/samples/instruments/piano/piano_c3.ogg",
+          "size": 127488,
+          "ext": "ogg"
+        },
+        {
+          "name": "piano_c4.ogg",
+          "url": "/audio/samples/instruments/piano/piano_c4.ogg",
+          "size": 119632,
+          "ext": "ogg"
+        },
+        {
+          "name": "piano_c5.ogg",
+          "url": "/audio/samples/instruments/piano/piano_c5.ogg",
+          "size": 82214,
+          "ext": "ogg"
+        },
+        {
+          "name": "piano_c6.ogg",
+          "url": "/audio/samples/instruments/piano/piano_c6.ogg",
+          "size": 56321,
+          "ext": "ogg"
+        },
+        {
+          "name": "piano_c7.ogg",
+          "url": "/audio/samples/instruments/piano/piano_c7.ogg",
+          "size": 43029,
+          "ext": "ogg"
+        },
+        {
+          "name": "piano_c8.ogg",
+          "url": "/audio/samples/instruments/piano/piano_c8.ogg",
+          "size": 21746,
+          "ext": "ogg"
+        }
+      ]
+    },
+    {
+      "name": "kxvi",
+      "path": "kxvi",
+      "fileCount": 4,
+      "files": [
+        {
+          "name": "808.wav",
+          "url": "/audio/samples/kxvi/808.wav",
+          "size": 366662,
+          "ext": "wav"
+        },
+        {
+          "name": "clap.wav",
+          "url": "/audio/samples/kxvi/clap.wav",
+          "size": 20688,
+          "ext": "wav"
+        },
+        {
+          "name": "perc.wav",
+          "url": "/audio/samples/kxvi/perc.wav",
+          "size": 20114,
+          "ext": "wav"
+        },
+        {
+          "name": "rim.wav",
+          "url": "/audio/samples/kxvi/rim.wav",
+          "size": 20748,
+          "ext": "wav"
+        }
+      ]
+    }
+  ]
+}

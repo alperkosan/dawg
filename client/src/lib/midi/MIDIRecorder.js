@@ -31,11 +31,12 @@ export const RECORD_MODE = {
 // ═══════════════════════════════════════════════════════════
 
 export class MIDIRecorder {
-    constructor(playbackStore, arrangementStore, timelineStore) {
+    constructor(playbackStore, arrangementStore, timelineStore, loopRegion = null) {
         this.playbackStore = playbackStore;
         this.arrangementStore = arrangementStore;
         this.timelineStore = timelineStore;
         this.midiDeviceManager = getMIDIDeviceManager();
+        this.loopRegion = loopRegion; // { start: step, end: step } or null
 
         this.state = {
             isRecording: false,
@@ -143,8 +144,7 @@ export class MIDIRecorder {
 
         // Clear existing notes in replace mode
         if (this.state.recordMode === RECORD_MODE.REPLACE) {
-            // TODO: Clear notes in recording region
-            console.log('🧹 Replace mode: clearing existing notes in region');
+            this.clearNotesInRegion();
         }
 
         console.log('🔴 Recording started at step', this.state.recordStartStep);
@@ -204,7 +204,21 @@ export class MIDIRecorder {
 
         // Calculate step position
         const elapsedMs = timestamp - this.state.recordStartTime;
-        const currentStep = this.state.recordStartStep + this.msToSteps(elapsedMs);
+        let currentStep = this.state.recordStartStep + this.msToSteps(elapsedMs);
+
+        // Loop mode: Wrap step position within loop region
+        if (this.state.recordMode === RECORD_MODE.LOOP && this.loopRegion) {
+            const loopStart = this.loopRegion.start;
+            const loopEnd = this.loopRegion.end;
+            const loopLength = loopEnd - loopStart;
+            
+            if (loopLength > 0) {
+                // Calculate position relative to loop start
+                const relativeStep = currentStep - loopStart;
+                // Wrap within loop region
+                currentStep = loopStart + (relativeStep % loopLength);
+            }
+        }
 
         // Apply quantization
         const quantizedStep = this.quantizeStep(currentStep, this.state.quantizeStrength);
@@ -272,7 +286,12 @@ export class MIDIRecorder {
         const activeInstrumentId = this.arrangementStore.activeInstrumentId;
 
         if (activePatternId && activeInstrumentId) {
-            this.arrangementStore.addNote(activePatternId, activeInstrumentId, note);
+            // Get existing notes and add new note
+            const pattern = this.arrangementStore.patterns[activePatternId];
+            const existingNotes = pattern?.data?.[activeInstrumentId] || [];
+            const updatedNotes = [...existingNotes, note];
+            
+            this.arrangementStore.updatePatternNotes(activePatternId, activeInstrumentId, updatedNotes);
             console.log(`✅ Recorded: ${this.pitchToName(pitch)} len=${length.toFixed(2)}`);
         }
     }
@@ -303,7 +322,12 @@ export class MIDIRecorder {
             const activeInstrumentId = this.arrangementStore.activeInstrumentId;
 
             if (activePatternId && activeInstrumentId) {
-                this.arrangementStore.addNote(activePatternId, activeInstrumentId, note);
+                // Get existing notes and add new note
+                const pattern = this.arrangementStore.patterns[activePatternId];
+                const existingNotes = pattern?.data?.[activeInstrumentId] || [];
+                const updatedNotes = [...existingNotes, note];
+                
+                this.arrangementStore.updatePatternNotes(activePatternId, activeInstrumentId, updatedNotes);
                 console.log(`✅ Finalized: ${this.pitchToName(pitch)} (no Note Off)`);
             }
         }
@@ -353,6 +377,54 @@ export class MIDIRecorder {
     // ═══════════════════════════════════════════════════════════
     // UTILITIES
     // ═══════════════════════════════════════════════════════════
+
+    /**
+     * Clear notes in recording region (for replace mode)
+     */
+    clearNotesInRegion() {
+        const activePatternId = this.arrangementStore.activePatternId;
+        const activeInstrumentId = this.arrangementStore.activeInstrumentId;
+
+        if (!activePatternId || !activeInstrumentId) {
+            console.warn('⚠️ No active pattern or instrument for clearing notes');
+            return;
+        }
+
+        const pattern = this.arrangementStore.patterns[activePatternId];
+        if (!pattern) {
+            console.warn('⚠️ Pattern not found:', activePatternId);
+            return;
+        }
+
+        const existingNotes = pattern.data?.[activeInstrumentId] || [];
+        
+        // Determine recording region
+        let regionStart = this.state.recordStartStep;
+        let regionEnd = null;
+
+        if (this.loopRegion && this.loopRegion.start !== undefined && this.loopRegion.end !== undefined) {
+            // Use loop region if available
+            regionStart = this.loopRegion.start;
+            regionEnd = this.loopRegion.end;
+        } else {
+            // If no loop region, clear from record start to end of pattern (or a reasonable default)
+            // For now, we'll clear from record start to a large number (pattern end)
+            regionEnd = Infinity; // Will be limited by existing notes
+        }
+
+        // Filter out notes that overlap with the recording region
+        const filteredNotes = existingNotes.filter(note => {
+            const noteStart = note.startTime;
+            const noteEnd = note.startTime + (note.visualLength !== undefined ? note.visualLength : note.length);
+            
+            // Remove note if it overlaps with recording region
+            return !(noteStart < regionEnd && noteEnd > regionStart);
+        });
+
+        // Update pattern notes
+        this.arrangementStore.updatePatternNotes(activePatternId, activeInstrumentId, filteredNotes);
+        console.log(`🧹 Replace mode: Cleared ${existingNotes.length - filteredNotes.length} notes in region`);
+    }
 
     /**
      * Convert MIDI pitch to note name

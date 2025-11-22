@@ -188,14 +188,14 @@ const UnifiedGridCanvas = React.memo(({
 
     // 🐛 DEBUG: Log render info (1% sample to avoid spam)
     if (Math.random() < 0.01) {
-      console.log('🎨 Unified Canvas Render:', {
+      /*console.log('🎨 Unified Canvas Render:', {
         viewport: `${viewportWidth}×${viewportHeight}`,
         scroll: `X:${scrollX} Y:${scrollY}`,
         rows: `${startRow}-${endRow} of ${instruments.length}`,
         steps: `${startStep}-${endStep} of ${totalSteps}`,
         firstRowY: startRow * ROW_HEIGHT - scrollY,
         instrumentNames: instruments.slice(startRow, Math.min(startRow + 3, endRow)).map(i => i?.name || 'unknown'),
-      });
+      });*/
     }
 
     // Get colors from StyleCache
@@ -518,12 +518,12 @@ const UnifiedGridCanvas = React.memo(({
     // ⚡ PERFORMANCE: Log render time
     const renderTime = performance.now() - startTime;
     if (Math.random() < 0.05) { // 5% sample
-      console.log('⚡ Render Performance:', {
+      /*console.log('⚡ Render Performance:', {
         time: `${renderTime.toFixed(2)}ms`,
         rows: `${startRow}-${endRow}`,
         notes: Object.values(notesData).flat().length,
         viewport: `${viewportWidth}×${viewportHeight}`,
-      });
+      });*/
     }
   }, [
     instruments,

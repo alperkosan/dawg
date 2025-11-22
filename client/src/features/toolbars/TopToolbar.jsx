@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Play, Pause, Square, Wind, Repeat, Maximize2, ChevronRight, X } from 'lucide-react';
+import { Play, Pause, Square, Repeat, Maximize2, ChevronRight, X, Download, Save, Loader2 } from 'lucide-react';
 import { Knob } from '@/components/controls';
 import { CPUMonitor } from '@/components/monitors/CPUMonitor';
 import { PLAYBACK_MODES, PLAYBACK_STATES } from '@/config/constants';
@@ -27,7 +27,7 @@ const ModeButton = ({ label, mode, activeMode, onClick }) => {
     );
 };
 
-function TopToolbar() {
+function TopToolbar({ onExportClick, onSaveClick, saveStatus = 'saved', lastSavedAt = null }) {
   // ✅ UNIFIED STATE from PlaybackStore (single source of truth)
   // Use selector pattern for better reactivity
   const playbackMode = usePlaybackStore(state => state.playbackMode);
@@ -68,13 +68,6 @@ function TopToolbar() {
 
   return (
     <header className="top-toolbar">
-      <div className="toolbar__group">
-        <div className="top-toolbar__logo">
-          <Wind size={24} className="text-[var(--zenith-accent-cool)]" />
-          <h1 className="top-toolbar__logo-title">SoundForge</h1>
-        </div>
-      </div>
-
       <div className="toolbar__group">
         <button
             title={
@@ -139,6 +132,72 @@ function TopToolbar() {
 
       <div className="toolbar__group" style={{ width: '280px', justifyContent: 'flex-end', gap: '12px' }}>
         <CPUMonitor />
+        {onSaveClick && (
+          <button
+            title={
+              saveStatus === 'saving' 
+                ? 'Saving...' 
+                : saveStatus === 'unsaved' 
+                  ? 'Unsaved changes (Ctrl/Cmd + S)' 
+                  : saveStatus === 'error'
+                    ? 'Save failed - Click to retry'
+                    : lastSavedAt 
+                      ? `Saved at ${new Date(lastSavedAt).toLocaleTimeString()} (Ctrl/Cmd + S)`
+                      : 'Save Project (Ctrl/Cmd + S)'
+            }
+            onClick={() => {
+              if (onSaveClick && saveStatus !== 'saving') {
+                onSaveClick();
+              }
+            }}
+            className={`top-toolbar__transport-btn transport-btn ${
+              saveStatus === 'unsaved' ? 'top-toolbar__save-btn--unsaved' : ''
+            } ${saveStatus === 'saving' ? 'top-toolbar__save-btn--saving' : ''} ${
+              saveStatus === 'error' ? 'top-toolbar__save-btn--error' : ''
+            }`}
+            style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'center',
+              position: 'relative',
+              gap: '4px'
+            }}
+            disabled={saveStatus === 'saving'}
+          >
+            {saveStatus === 'saving' ? (
+              <Loader2 size={18} className="spinner" style={{ animation: 'spin 1s linear infinite' }} />
+            ) : (
+              <Save size={18} />
+            )}
+            {saveStatus === 'unsaved' && (
+              <span style={{ 
+                position: 'absolute', 
+                top: '4px', 
+                right: '4px', 
+                width: '6px', 
+                height: '6px', 
+                borderRadius: '50%', 
+                background: '#ef4444',
+                boxShadow: '0 0 4px rgba(239, 68, 68, 0.8)'
+              }} />
+            )}
+          </button>
+        )}
+        <button
+          title="Export Audio (Ctrl/Cmd + E)"
+          onClick={() => {
+            console.log('🎵 Export button clicked');
+            if (onExportClick) {
+              onExportClick();
+            } else {
+              console.warn('⚠️ onExportClick not provided');
+            }
+          }}
+          className="top-toolbar__transport-btn transport-btn"
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+        >
+          <Download size={18} />
+        </button>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <Knob
             size={28}

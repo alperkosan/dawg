@@ -1,0 +1,172 @@
+/**
+ * Project Loading Screen Styles
+ * Zenith Design System compliant
+ */
+
+.project-loading-screen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--zenith-bg-primary);
+  z-index: 10000;
+  backdrop-filter: blur(8px);
+  animation: fadeIn 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.project-loading-screen__content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  max-width: 480px;
+  padding: var(--zenith-space-8);
+  gap: var(--zenith-space-6);
+}
+
+.project-loading-screen__logo {
+  margin-bottom: var(--zenith-space-4);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.8;
+    transform: scale(0.98);
+  }
+}
+
+.project-loading-screen__icon {
+  color: var(--zenith-accent-cool);
+  margin-bottom: var(--zenith-space-2);
+  animation: float 3s ease-in-out infinite;
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+.project-loading-screen__title {
+  font-size: var(--zenith-text-2xl);
+  font-weight: var(--zenith-weight-bold);
+  color: var(--zenith-text-primary);
+  font-family: var(--zenith-font-primary);
+  margin: 0;
+  background: linear-gradient(135deg, var(--zenith-accent-cool) 0%, var(--zenith-accent-warm) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.project-loading-screen__message {
+  font-size: var(--zenith-text-base);
+  color: var(--zenith-text-secondary);
+  font-family: var(--zenith-font-primary);
+  margin: 0;
+  line-height: var(--zenith-leading-relaxed);
+}
+
+.project-loading-screen__spinner {
+  margin: var(--zenith-space-4) 0;
+  color: var(--zenith-accent-cool);
+}
+
+.spinning {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.project-loading-screen__steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--zenith-space-3);
+  width: 100%;
+  margin-top: var(--zenith-space-4);
+  padding: var(--zenith-space-4);
+  background: var(--zenith-bg-secondary);
+  border-radius: var(--zenith-radius-lg);
+  border: 1px solid var(--zenith-border-medium);
+}
+
+.project-loading-screen__step {
+  display: flex;
+  align-items: center;
+  gap: var(--zenith-space-3);
+  font-size: var(--zenith-text-sm);
+  color: var(--zenith-text-secondary);
+  font-family: var(--zenith-font-primary);
+  text-align: left;
+}
+
+.step-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--zenith-accent-cool);
+  opacity: 0.5;
+  animation: stepPulse 1.5s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+.project-loading-screen__step:nth-child(1) .step-indicator {
+  animation-delay: 0s;
+}
+
+.project-loading-screen__step:nth-child(2) .step-indicator {
+  animation-delay: 0.2s;
+}
+
+.project-loading-screen__step:nth-child(3) .step-indicator {
+  animation-delay: 0.4s;
+}
+
+.project-loading-screen__step:nth-child(4) .step-indicator {
+  animation-delay: 0.6s;
+}
+
+@keyframes stepPulse {
+  0%, 100% {
+    opacity: 0.5;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+}
+
+
+

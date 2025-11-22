@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { Music, Play, Volume2, Headphones, Mic, Zap } from "lucide-react";
+import { Play, Volume2, Headphones, Mic, Zap } from "lucide-react";
+import DawgLogo from "./common/DawgLogo";
 
 function StartupScreen({ onStart }) {
   const [isLoaded, setIsLoaded] = useState(false);
@@ -21,7 +22,7 @@ function StartupScreen({ onStart }) {
       <div className={`startup-screen__content ${isLoaded ? "loaded" : ""}`}>
         <div className="startup-screen__header">
           <div className="startup-screen__logo">
-            <Music size={64} strokeWidth={1.5} />
+            <DawgLogo size={64} variant="full" />
           </div>
           <h1 className="startup-screen__title">DAWG</h1>
           <div className="startup-screen__subtitle">

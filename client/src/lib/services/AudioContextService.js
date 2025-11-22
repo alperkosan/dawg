@@ -46,7 +46,7 @@ export class AudioContextService {
 
     // Setup store subscriptions for reactive updates
     if (!this.isSubscriptionsSetup) {
-      this._setupStoreSubscriptions();
+      await this._setupStoreSubscriptions();
       this.isSubscriptionsSetup = true;
     }
 
@@ -837,10 +837,13 @@ export class AudioContextService {
   /**
    * Store subscription management
    */
-  static _setupStoreSubscriptions() {
+  static async _setupStoreSubscriptions() {
     // This would typically be called from setAudioEngine
     // Implementation depends on specific store structure
     console.log('📡 Setting up store subscriptions...');
+    
+    // ✅ FIX: Sync existing mixer tracks to audio engine
+    await this._syncMixerTracksToAudioEngine();
     
     // Example subscription pattern:
     /*
@@ -861,6 +864,187 @@ export class AudioContextService {
       // Use this.parameters.set() for real-time updates
     });
     */
+  }
+
+  /**
+   * ✅ FIX: Sync mixer tracks from store to audio engine
+   * Creates mixer inserts for all existing tracks
+   */
+  static async _syncMixerTracksToAudioEngine() {
+    if (!this.audioEngine) {
+      console.warn('⚠️ Cannot sync mixer tracks: audio engine not ready');
+      return;
+    }
+
+    try {
+      // Get mixer tracks from store (direct import to avoid circular deps)
+      let mixerTracks = [];
+      try {
+        // Try direct import first (preferred)
+        const { useMixerStore } = await import('@/store/useMixerStore');
+        const state = useMixerStore.getState();
+        mixerTracks = state.mixerTracks || [];
+      } catch (importError) {
+        // Fallback to window object if import fails
+        if (typeof window !== 'undefined' && window.__DAWG_STORES__?.useMixerStore) {
+          const state = window.__DAWG_STORES__.useMixerStore.getState();
+          mixerTracks = state.mixerTracks || [];
+        } else {
+          console.warn('⚠️ Cannot access mixer store - mixer tracks may not be synced');
+          return;
+        }
+      }
+
+      console.log(`🎛️ Syncing ${mixerTracks.length} mixer tracks to audio engine...`);
+
+      for (const track of mixerTracks) {
+        // Skip if insert already exists
+        if (this.audioEngine.mixerInserts?.has(track.id)) {
+          continue;
+        }
+
+        // Create mixer insert for this track
+        try {
+          const insert = this.createMixerInsert(track.id, track.name || track.id);
+          if (insert) {
+            // Set initial gain and pan from store
+            if (track.volume !== undefined) {
+              const linearGain = Math.pow(10, track.volume / 20);
+              insert.setGain(linearGain);
+            }
+            if (track.pan !== undefined) {
+              insert.setPan(track.pan);
+            }
+            console.log(`✅ Created mixer insert for track "${track.name || track.id}"`);
+          }
+        } catch (error) {
+          console.error(`❌ Failed to create mixer insert for track ${track.id}:`, error);
+        }
+      }
+
+      console.log(`✅ Synced ${mixerTracks.length} mixer tracks to audio engine`);
+      
+      // ✅ CRITICAL FIX: Sync existing instruments to mixer inserts
+      await this._syncInstrumentsToMixerInserts();
+    } catch (error) {
+      console.error('❌ Failed to sync mixer tracks:', error);
+    }
+  }
+
+  /**
+   * ✅ CRITICAL FIX: Sync existing instruments to mixer inserts
+   * This ensures instruments created before audio engine initialization are properly routed
+   */
+  static async _syncInstrumentsToMixerInserts() {
+    if (!this.audioEngine) {
+      console.warn('⚠️ Cannot sync instruments: audio engine not ready');
+      return;
+    }
+
+    try {
+      // Get instruments from store (direct import to avoid circular deps)
+      let instruments = [];
+      try {
+        // Try direct import first (preferred)
+        const { useInstrumentsStore } = await import('@/store/useInstrumentsStore');
+        const state = useInstrumentsStore.getState();
+        instruments = state.instruments || [];
+      } catch (importError) {
+        // Fallback to window object if import fails
+        if (typeof window !== 'undefined' && window.__DAWG_STORES__?.useInstrumentsStore) {
+          const state = window.__DAWG_STORES__.useInstrumentsStore.getState();
+          instruments = state.instruments || [];
+        } else {
+          console.warn('⚠️ Cannot access instruments store - instruments may not be synced');
+          return;
+        }
+      }
+
+      console.log(`🎵 Syncing ${instruments.length} instruments to mixer inserts...`);
+      console.log('🎵 Available instruments in store:', instruments.map(i => ({ id: i.id, name: i.name })));
+      console.log('🎵 Available instruments in audio engine:', Array.from(this.audioEngine.instruments?.keys() || []));
+
+      let syncedCount = 0;
+      let skippedCount = 0;
+      let errorCount = 0;
+      let createdCount = 0;
+
+      for (const instrument of instruments) {
+        // Skip if instrument doesn't have mixerTrackId
+        if (!instrument.mixerTrackId) {
+          skippedCount++;
+          continue;
+        }
+
+        // Check if instrument already exists in audio engine
+        let audioEngineInstrument = this.audioEngine.instruments?.get(instrument.id);
+        
+        // ✅ CRITICAL FIX: If instrument doesn't exist, create it
+        if (!audioEngineInstrument) {
+          console.log(`🎵 Instrument ${instrument.id} not found in audio engine, creating...`);
+          try {
+            // ✅ CRITICAL: Preload sample if it's a sample instrument
+            if (instrument.type === 'sample' && instrument.url && !instrument.audioBuffer) {
+              console.log(`🎵 Preloading sample for instrument ${instrument.id}: ${instrument.url}`);
+              try {
+                // preloadSamples expects an array, so wrap in array
+                await this.audioEngine.preloadSamples([instrument]);
+                console.log(`✅ Sample preloaded for instrument ${instrument.id}`);
+              } catch (preloadError) {
+                console.error(`❌ Failed to preload sample for instrument ${instrument.id}:`, preloadError);
+                // Continue anyway - createInstrument might handle it
+              }
+            }
+
+            // Create instrument in audio engine
+            await this.audioEngine.createInstrument(instrument);
+            audioEngineInstrument = this.audioEngine.instruments?.get(instrument.id);
+            if (audioEngineInstrument) {
+              createdCount++;
+              console.log(`✅ Created instrument ${instrument.id} (${instrument.name}) in audio engine`);
+            } else {
+              console.error(`❌ Failed to create instrument ${instrument.id} - still not found after creation`);
+              errorCount++;
+              continue;
+            }
+          } catch (createError) {
+            console.error(`❌ Failed to create instrument ${instrument.id}:`, createError);
+            errorCount++;
+            continue;
+          }
+        }
+
+        // Check if mixer insert exists
+        const mixerInsert = this.audioEngine.mixerInserts?.get(instrument.mixerTrackId);
+        if (!mixerInsert) {
+          console.warn(`⚠️ Mixer insert ${instrument.mixerTrackId} not found for instrument ${instrument.id}`);
+          errorCount++;
+          continue;
+        }
+
+        // Check if already routed
+        const currentRoute = this.audioEngine.instrumentToInsert?.get(instrument.id);
+        if (currentRoute === instrument.mixerTrackId) {
+          // Already routed correctly
+          skippedCount++;
+          continue;
+        }
+
+        // Route instrument to mixer insert
+        try {
+          this.routeInstrumentToInsert(instrument.id, instrument.mixerTrackId);
+          syncedCount++;
+          console.log(`✅ Routed instrument ${instrument.id} (${instrument.name}) to ${instrument.mixerTrackId}`);
+        } catch (error) {
+          console.error(`❌ Failed to route instrument ${instrument.id}:`, error);
+          errorCount++;
+        }
+      }
+
+      console.log(`✅ Instrument sync complete: ${createdCount} created, ${syncedCount} synced, ${skippedCount} skipped, ${errorCount} errors`);
+    } catch (error) {
+      console.error('❌ Failed to sync instruments:', error);
+    }
   }
 
   // =================== CLEANUP ===================

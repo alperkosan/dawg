@@ -1,0 +1,105 @@
+/**
+ * Guest Banner
+ * Zenith Design System compliant
+ */
+
+.guest-banner {
+  position: fixed;
+  top: 56px; /* Below navigation header */
+  left: 0;
+  right: 0;
+  background: var(--zenith-bg-tertiary);
+  border-bottom: 1px solid var(--zenith-border-medium);
+  color: var(--zenith-text-primary);
+  padding: var(--zenith-space-3) var(--zenith-space-6);
+  z-index: 999;
+  box-shadow: var(--zenith-shadow-sm);
+  backdrop-filter: blur(10px);
+  /* ✅ FIX: Define banner height for layout calculations */
+  --banner-height: 52px; /* Approximate height: padding (12px top + 12px bottom) + content (~28px) */
+  height: var(--banner-height);
+  display: flex;
+  align-items: center;
+}
+
+.guest-banner__content {
+  max-width: 1400px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--zenith-space-4);
+}
+
+.guest-banner__message {
+  flex: 1;
+  font-size: var(--zenith-text-base);
+  line-height: var(--zenith-leading-normal);
+  color: var(--zenith-text-secondary);
+  font-family: var(--zenith-font-primary);
+}
+
+.guest-banner__link {
+  background: none;
+  border: none;
+  color: var(--zenith-accent-cool);
+  text-decoration: underline;
+  cursor: pointer;
+  font-weight: var(--zenith-weight-medium);
+  padding: 0;
+  margin: 0 var(--zenith-space-1);
+  transition: color var(--zenith-duration-fast) var(--zenith-ease-out);
+  font-family: var(--zenith-font-primary);
+}
+
+.guest-banner__link:hover {
+  color: var(--zenith-accent-warm);
+}
+
+.guest-banner__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--zenith-space-2);
+}
+
+.guest-banner__button {
+  display: flex;
+  align-items: center;
+  gap: var(--zenith-space-2);
+  padding: var(--zenith-space-2) var(--zenith-space-4);
+  background: var(--zenith-bg-secondary);
+  border: 1px solid var(--zenith-border-medium);
+  border-radius: var(--zenith-radius-md);
+  color: var(--zenith-text-primary);
+  font-weight: var(--zenith-weight-medium);
+  font-size: var(--zenith-text-base);
+  font-family: var(--zenith-font-primary);
+  cursor: pointer;
+  transition: all var(--zenith-duration-normal) var(--zenith-ease-in-out);
+}
+
+.guest-banner__button:hover {
+  background: var(--zenith-bg-primary);
+  border-color: var(--zenith-accent-cool);
+  color: var(--zenith-accent-cool);
+  box-shadow: 0 0 12px rgba(var(--zenith-accent-cool-rgb), 0.2);
+}
+
+.guest-banner__dismiss {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--zenith-space-2);
+  background: transparent;
+  border: 1px solid var(--zenith-border-medium);
+  border-radius: var(--zenith-radius-md);
+  color: var(--zenith-text-secondary);
+  cursor: pointer;
+  transition: all var(--zenith-duration-fast) var(--zenith-ease-out);
+}
+
+.guest-banner__dismiss:hover {
+  background: var(--zenith-bg-secondary);
+  border-color: var(--zenith-border-strong);
+  color: var(--zenith-text-primary);
+}

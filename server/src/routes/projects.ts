@@ -1,0 +1,361 @@
+/**
+ * Project routes
+ */
+
+import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import { z } from 'zod';
+import {
+  createProject,
+  findProjectById,
+  findProjectByShareToken,
+  updateProject,
+  deleteProject,
+  listProjects,
+  canAccessProject,
+  canEditProject,
+  duplicateProject,
+  incrementPlayCount,
+} from '../services/projects.js';
+import { NotFoundError, ForbiddenError, BadRequestError } from '../utils/errors.js';
+
+const CreateProjectSchema = z.object({
+  title: z.string().min(1).max(255),
+  description: z.string().max(5000).optional(),
+  thumbnailUrl: z.string().url().optional(),
+  bpm: z.number().int().min(1).max(300).optional(),
+  keySignature: z.string().optional(),
+  timeSignature: z.string().optional(),
+  projectData: z.record(z.any()),
+  isPublic: z.boolean().optional(),
+  isUnlisted: z.boolean().optional(),
+});
+
+const UpdateProjectSchema = CreateProjectSchema.partial();
+
+export async function projectRoutes(server: FastifyInstance) {
+  // Get all projects
+  server.get('/', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const query = request.query as {
+        userId?: string;
+        public?: string;
+        search?: string;
+        page?: string;
+        limit?: string;
+        sortBy?: string;
+        sortOrder?: string;
+      };
+      
+      const result = await listProjects({
+        userId: query.userId,
+        isPublic: query.public === 'true' ? true : query.public === 'false' ? false : undefined,
+        search: query.search,
+        page: query.page ? parseInt(query.page, 10) : undefined,
+        limit: query.limit ? parseInt(query.limit, 10) : undefined,
+        sortBy: query.sortBy as any,
+        sortOrder: query.sortOrder as 'asc' | 'desc',
+      });
+      
+      return {
+        projects: result.projects.map(p => ({
+          id: p.id,
+          userId: p.user_id,
+          title: p.title,
+          description: p.description,
+          thumbnailUrl: p.thumbnail_url,
+          bpm: p.bpm,
+          keySignature: p.key_signature,
+          timeSignature: p.time_signature,
+          version: p.version,
+          isPublic: p.is_public,
+          isUnlisted: p.is_unlisted,
+          playCount: p.play_count,
+          likeCount: p.like_count,
+          remixCount: p.remix_count,
+          createdAt: p.created_at,
+          updatedAt: p.updated_at,
+          publishedAt: p.published_at,
+        })),
+        pagination: {
+          page: query.page ? parseInt(query.page, 10) : 1,
+          limit: query.limit ? parseInt(query.limit, 10) : 20,
+          total: result.total,
+          totalPages: Math.ceil(result.total / (query.limit ? parseInt(query.limit, 10) : 20)),
+        },
+      };
+    } catch (error: any) {
+      throw error;
+    }
+  });
+  
+  // Create project
+  server.post('/', {
+    preHandler: [server.authenticate],
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      if (!request.user) {
+        throw new ForbiddenError('Authentication required');
+      }
+      
+      const body = CreateProjectSchema.parse(request.body);
+      
+      const project = await createProject({
+        userId: request.user.userId,
+        title: body.title,
+        description: body.description,
+        thumbnailUrl: body.thumbnailUrl,
+        bpm: body.bpm,
+        keySignature: body.keySignature,
+        timeSignature: body.timeSignature,
+        projectData: body.projectData,
+      });
+      
+      // Update public/unlisted if provided
+      if (body.isPublic !== undefined || body.isUnlisted !== undefined) {
+        await updateProject(project.id, {
+          isPublic: body.isPublic,
+          isUnlisted: body.isUnlisted,
+        });
+      }
+      
+      reply.code(201);
+      
+      return {
+        project: {
+          id: project.id,
+          userId: project.user_id,
+          title: project.title,
+          description: project.description,
+          thumbnailUrl: project.thumbnail_url,
+          bpm: project.bpm,
+          keySignature: project.key_signature,
+          timeSignature: project.time_signature,
+          projectData: project.project_data,
+          version: project.version,
+          isPublic: project.is_public,
+          isUnlisted: project.is_unlisted,
+          playCount: project.play_count,
+          likeCount: project.like_count,
+          remixCount: project.remix_count,
+          createdAt: project.created_at,
+          updatedAt: project.updated_at,
+        },
+      };
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        throw new BadRequestError('Validation failed', error.errors);
+      }
+      throw error;
+    }
+  });
+  
+  // Get project by ID (optional auth - public projects can be accessed without login)
+  server.get('/:id', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const { id } = request.params as { id: string };
+      
+      // Try to get userId from token (optional authentication)
+      let userId: string | null = null;
+      try {
+        const authHeader = request.headers.authorization;
+        if (authHeader && authHeader.startsWith('Bearer ')) {
+          const token = authHeader.substring(7);
+          const decoded = await server.jwt.verify(token);
+          userId = decoded.userId as string;
+        }
+      } catch (error) {
+        // Ignore auth errors - user will be treated as anonymous
+      }
+      
+      const project = await findProjectById(id);
+      if (!project) {
+        throw new NotFoundError('Project not found');
+      }
+      
+      // Check access
+      const hasAccess = await canAccessProject(userId, id);
+      if (!hasAccess) {
+        throw new ForbiddenError('Access denied');
+      }
+      
+      // Increment play count if not owner
+      if (userId && userId !== project.user_id) {
+        await incrementPlayCount(id);
+      }
+      
+      return {
+        project: {
+          id: project.id,
+          userId: project.user_id,
+          title: project.title,
+          description: project.description,
+          thumbnailUrl: project.thumbnail_url,
+          bpm: project.bpm,
+          keySignature: project.key_signature,
+          timeSignature: project.time_signature,
+          projectData: project.project_data,
+          version: project.version,
+          isPublic: project.is_public,
+          isUnlisted: project.is_unlisted,
+          shareToken: project.share_token,
+          playCount: project.play_count,
+          likeCount: project.like_count,
+          remixCount: project.remix_count,
+          createdAt: project.created_at,
+          updatedAt: project.updated_at,
+          publishedAt: project.published_at,
+        },
+      };
+    } catch (error: any) {
+      throw error;
+    }
+  });
+  
+  // Update project
+  server.put('/:id', {
+    preHandler: [server.authenticate],
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      if (!request.user) {
+        throw new ForbiddenError('Authentication required');
+      }
+      
+      const { id } = request.params as { id: string };
+      const body = UpdateProjectSchema.parse(request.body);
+      
+      // Check if user can edit
+      const canEdit = await canEditProject(request.user.userId, id);
+      if (!canEdit) {
+        throw new ForbiddenError('You do not have permission to edit this project');
+      }
+      
+      const project = await updateProject(id, {
+        title: body.title,
+        description: body.description,
+        thumbnailUrl: body.thumbnailUrl,
+        bpm: body.bpm,
+        keySignature: body.keySignature,
+        timeSignature: body.timeSignature,
+        projectData: body.projectData,
+        isPublic: body.isPublic,
+        isUnlisted: body.isUnlisted,
+      });
+      
+      return {
+        project: {
+          id: project.id,
+          userId: project.user_id,
+          title: project.title,
+          description: project.description,
+          thumbnailUrl: project.thumbnail_url,
+          bpm: project.bpm,
+          keySignature: project.key_signature,
+          timeSignature: project.time_signature,
+          projectData: project.project_data,
+          version: project.version,
+          isPublic: project.is_public,
+          isUnlisted: project.is_unlisted,
+          playCount: project.play_count,
+          likeCount: project.like_count,
+          remixCount: project.remix_count,
+          createdAt: project.created_at,
+          updatedAt: project.updated_at,
+        },
+      };
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        throw new BadRequestError('Validation failed', error.errors);
+      }
+      throw error;
+    }
+  });
+  
+  // Delete project
+  server.delete('/:id', {
+    preHandler: [server.authenticate],
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      if (!request.user) {
+        throw new ForbiddenError('Authentication required');
+      }
+      
+      const { id } = request.params as { id: string };
+      
+      // Check if user owns project
+      const project = await findProjectById(id);
+      if (!project) {
+        throw new NotFoundError('Project not found');
+      }
+      
+      if (project.user_id !== request.user.userId) {
+        // Check if user can delete (collaborator with can_delete permission)
+        const canEdit = await canEditProject(request.user.userId, id);
+        if (!canEdit) {
+          throw new ForbiddenError('You do not have permission to delete this project');
+        }
+        
+        // Check collaborator delete permission
+        const db = (await import('../services/database.js')).getDatabase();
+        const collaboratorResult = await db.query(
+          `SELECT can_delete FROM project_collaborators
+           WHERE project_id = $1 AND user_id = $2 AND is_active = true`,
+          [id, request.user.userId]
+        );
+        
+        if (collaboratorResult.rows.length === 0 || !collaboratorResult.rows[0].can_delete) {
+          throw new ForbiddenError('You do not have permission to delete this project');
+        }
+      }
+      
+      await deleteProject(id);
+      
+      return {
+        message: 'Project deleted successfully',
+      };
+    } catch (error: any) {
+      throw error;
+    }
+  });
+  
+  // Duplicate project
+  server.post('/:id/duplicate', {
+    preHandler: [server.authenticate],
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      if (!request.user) {
+        throw new ForbiddenError('Authentication required');
+      }
+      
+      const { id } = request.params as { id: string };
+      const body = request.body as { title?: string } | undefined;
+      
+      const newProject = await duplicateProject(id, request.user.userId, body?.title);
+      
+      reply.code(201);
+      
+      return {
+        project: {
+          id: newProject.id,
+          userId: newProject.user_id,
+          title: newProject.title,
+          description: newProject.description,
+          thumbnailUrl: newProject.thumbnail_url,
+          bpm: newProject.bpm,
+          keySignature: newProject.key_signature,
+          timeSignature: newProject.time_signature,
+          projectData: newProject.project_data,
+          version: newProject.version,
+          isPublic: newProject.is_public,
+          isUnlisted: newProject.is_unlisted,
+          playCount: newProject.play_count,
+          likeCount: newProject.like_count,
+          remixCount: newProject.remix_count,
+          createdAt: newProject.created_at,
+          updatedAt: newProject.updated_at,
+        },
+      };
+    } catch (error: any) {
+      throw error;
+    }
+  });
+}
