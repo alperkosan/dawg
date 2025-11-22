@@ -71,6 +71,15 @@ async function createServer() {
 // Vercel serverless function handler
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
+    // ✅ DEBUG: Log incoming request
+    logger.info('Vercel request received:', {
+      method: req.method,
+      url: req.url,
+      headers: Object.keys(req.headers),
+      hasBody: !!req.body,
+      bodyType: typeof req.body,
+    });
+
     const server = await createServer();
     
     // ✅ FIX: Vercel rewrite sonrası URL'yi doğru al
@@ -89,15 +98,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       url = '/' + url;
     }
     
-    // ✅ DEBUG: Log URL for troubleshooting (production'da disable edilebilir)
-    if (process.env.NODE_ENV === 'development' || process.env.VERCEL_ENV === 'development') {
-      logger.info('Vercel request:', {
-        method: req.method,
-        originalUrl: req.url,
-        finalUrl: url,
-        query: req.query,
-      });
+    // ✅ FIX: Parse request body correctly
+    let payload = req.body;
+    if (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH') {
+      // If body is already parsed (JSON), use it directly
+      // If it's a string, try to parse it
+      if (typeof payload === 'string' && payload.length > 0) {
+        try {
+          payload = JSON.parse(payload);
+        } catch (e) {
+          // If parsing fails, use as is (might be form data)
+          logger.warn('Failed to parse body as JSON, using as string:', e);
+        }
+      }
     }
+    
+    logger.info('Processing request:', {
+      method: req.method,
+      url: url,
+      payloadSize: payload ? JSON.stringify(payload).length : 0,
+    });
     
     // Use Fastify's inject method for serverless
     const response = await server.inject({
@@ -105,7 +125,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       url: url,
       headers: req.headers as Record<string, string>,
       query: req.query as Record<string, string>,
-      payload: req.body,
+      payload: payload,
+    });
+
+    logger.info('Fastify response:', {
+      statusCode: response.statusCode,
+      headers: Object.keys(response.headers),
     });
 
     // Set response headers
@@ -122,13 +147,37 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Send response
     res.send(response.payload);
   } catch (error) {
-    logger.error('Serverless function error:', error);
-    res.status(500).json({
+    // ✅ Enhanced error logging
+    logger.error('Serverless function error:', {
+      error: error instanceof Error ? {
+        message: error.message,
+        stack: error.stack,
+        name: error.name,
+      } : error,
+      request: {
+        method: req.method,
+        url: req.url,
+        headers: req.headers,
+      },
+    });
+    
+    // Send detailed error in development
+    const errorResponse: any = {
       error: {
         message: 'Internal server error',
         code: 'INTERNAL_ERROR',
       },
-    });
+    };
+    
+    if (process.env.NODE_ENV === 'development' || process.env.VERCEL_ENV === 'development') {
+      errorResponse.error.details = error instanceof Error ? {
+        message: error.message,
+        stack: error.stack,
+        name: error.name,
+      } : String(error);
+    }
+    
+    res.status(500).json(errorResponse);
   }
 }
 
