@@ -12,7 +12,7 @@
  * Solves cache thrashing during zoom animations.
  */
 
-import { createLogger, NAMESPACES } from '@/lib/utils/DebugLogger';
+import { createLogger, NAMESPACES } from '@/lib/utils/debugLogger.js';
 import { WaveformRenderer } from '../core/WaveformRenderer';
 
 const log = createLogger(NAMESPACES.PERFORMANCE);

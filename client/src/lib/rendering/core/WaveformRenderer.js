@@ -8,7 +8,7 @@
  * - Render queue integration
  */
 
-import { createLogger, NAMESPACES } from '@/lib/utils/DebugLogger';
+import { createLogger, NAMESPACES } from '@/lib/utils/debugLogger.js';
 import {
   calculateRMS,
   findMinMaxPeak,

@@ -1,6 +1,6 @@
 // lib/core/PlayheadRenderer.js
 import { uiUpdateManager, UPDATE_PRIORITIES, UPDATE_FREQUENCIES } from './UIUpdateManager.js';
-import { createLogger, NAMESPACES } from '../utils/DebugLogger.js';
+import { createLogger, NAMESPACES } from '../utils/debugLogger.js';
 
 const log = createLogger(NAMESPACES.RENDER);
 

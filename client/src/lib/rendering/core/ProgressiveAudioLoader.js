@@ -11,7 +11,7 @@
  * Prevents browser freeze when loading massive audio files.
  */
 
-import { createLogger, NAMESPACES } from '@/lib/utils/DebugLogger';
+import { createLogger, NAMESPACES } from '@/lib/utils/debugLogger.js';
 
 const log = createLogger(NAMESPACES.AUDIO);
 

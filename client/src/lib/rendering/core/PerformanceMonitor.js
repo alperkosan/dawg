@@ -8,7 +8,7 @@
  * - Performance analytics
  */
 
-import { createLogger, NAMESPACES } from '@/lib/utils/DebugLogger';
+import { createLogger, NAMESPACES } from '@/lib/utils/debugLogger.js';
 
 const log = createLogger(NAMESPACES.PERFORMANCE);
 
