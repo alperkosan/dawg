@@ -2,6 +2,7 @@
 // Yeniden programlanmış preview player - buffer management ve cache optimizasyonları
 import { create } from 'zustand';
 import { decodeAudioData, setGlobalAudioContext } from '@/lib/utils/audioUtils';
+import { apiClient } from '@/services/api.js';
 
 // Audio context singleton
 let audioContext = null;
@@ -58,26 +59,29 @@ const manageCacheSize = () => {
 
 /**
  * Buffer'ı cache'e ekle ve access time güncelle
+ * @param {string} cacheKey - Cache key (url veya url:preview veya url:full)
+ * @param {AudioBuffer} buffer - Audio buffer to cache
  */
-const addToCache = (url, buffer) => {
+const addToCache = (cacheKey, buffer) => {
   const size = buffer.length * buffer.numberOfChannels * 4; // 32-bit float
   manageCacheSize();
 
-  bufferCache.set(url, {
+  bufferCache.set(cacheKey, {
     buffer,
     lastAccess: Date.now(),
     size
   });
   totalCacheSize += size;
 
-  console.log(`[PreviewCache] Cached: ${url} (${(size / 1024).toFixed(1)}KB) - Total: ${bufferCache.size} files, ${(totalCacheSize / 1024 / 1024).toFixed(2)}MB`);
+  console.log(`[PreviewCache] Cached: ${cacheKey} (${(size / 1024).toFixed(1)}KB) - Total: ${bufferCache.size} files, ${(totalCacheSize / 1024 / 1024).toFixed(2)}MB`);
 };
 
 /**
  * Cache'ten buffer al ve access time güncelle
+ * @param {string} cacheKey - Cache key (url veya url:preview veya url:full)
  */
-const getFromCache = (url) => {
-  const cached = bufferCache.get(url);
+const getFromCache = (cacheKey) => {
+  const cached = bufferCache.get(cacheKey);
   if (cached) {
     cached.lastAccess = Date.now();
     return cached.buffer;
@@ -86,40 +90,137 @@ const getFromCache = (url) => {
 };
 
 /**
- * Ses dosyasını yükle ve decode et
+ * Preview için Range Request ile sadece ilk 2 saniye yükle
+ * @param {string} url - Audio file URL
+ * @param {number} duration - Preview duration in seconds (default: 2)
+ * @returns {Promise<ArrayBuffer>}
  */
-const loadAudioBuffer = async (url, set, get) => {
+/**
+ * ✅ FIX: Normalize URL to use backend proxy for system assets (avoids CORS)
+ */
+function normalizePreviewUrl(url) {
+  // If already an API endpoint, return as is
+  if (url.includes('/api/assets/')) {
+    return url;
+  }
+  
+  // ✅ FIX: System assets from CDN -> use backend proxy endpoint
+  // Extract assetId from CDN URL pattern: .../system-assets/.../{assetId}/filename
+  if (url.includes('dawg.b-cdn.net/system-assets') || url.includes('system-assets/')) {
+    // Try to extract assetId from URL
+    // Pattern: .../system-assets/.../{assetId}/filename
+    const match = url.match(/system-assets\/[^/]+\/[^/]+\/([a-f0-9-]{36})\//);
+    if (match && match[1]) {
+      const assetId = match[1];
+      return `${apiClient.baseURL}/assets/system/${assetId}/file`;
+    }
+  }
+  
+  return url;
+}
+
+const loadPreviewRange = async (url, duration = 2, signal) => {
+  // ✅ FIX: Normalize URL to use backend proxy for system assets
+  const normalizedUrl = normalizePreviewUrl(url);
+  
+  const sampleRate = 44100;
+  const bytesPerSample = 2; // 16-bit
+  const channels = 2; // stereo
+  const bytesPerSecond = sampleRate * bytesPerSample * channels;
+  const rangeEnd = bytesPerSecond * duration - 1; // Range is inclusive
+  
+  const headers = {};
+  if (normalizedUrl.includes('/api/assets/')) {
+    const { useAuthStore } = await import('@/store/useAuthStore.js');
+    const token = useAuthStore.getState().accessToken;
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+  }
+  headers['Range'] = `bytes=0-${rangeEnd}`;
+  
+  const response = await fetch(normalizedUrl, { 
+    signal,
+    headers
+  });
+  
+  // Range request desteklenmiyorsa fallback
+  if (response.status === 206) {
+    // Partial Content - Range request başarılı
+    return await response.arrayBuffer();
+  } else if (response.status === 200) {
+    // Full content - Range request desteklenmiyor, fallback to full load
+    console.log('[PreviewCache] Range request not supported, loading full file');
+    return await response.arrayBuffer();
+  } else {
+    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+  }
+};
+
+/**
+ * Full audio buffer yükle (projeye eklenen sample'lar için)
+ * @param {string} url - Audio file URL
+ * @returns {Promise<ArrayBuffer>}
+ */
+const loadFullBuffer = async (url, signal) => {
+  // ✅ FIX: Normalize URL to use backend proxy for system assets
+  const normalizedUrl = normalizePreviewUrl(url);
+  
+  const headers = {};
+  if (normalizedUrl.includes('/api/assets/')) {
+    const { useAuthStore } = await import('@/store/useAuthStore.js');
+    const token = useAuthStore.getState().accessToken;
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+  }
+  
+  const response = await fetch(normalizedUrl, { 
+    signal,
+    headers
+  });
+  
+  if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+  return await response.arrayBuffer();
+};
+
+/**
+ * Ses dosyasını yükle ve decode et
+ * @param {boolean} fullLoad - Full buffer yükle (false = preview için 2 saniye)
+ */
+const loadAudioBuffer = async (url, set, get, fullLoad = false) => {
     // Cache'te var mı kontrol et
-    const cachedBuffer = getFromCache(url);
+    const cacheKey = fullLoad ? `${url}:full` : `${url}:preview`;
+    const cachedBuffer = getFromCache(cacheKey);
     if (cachedBuffer) {
-      console.log(`[PreviewCache] Hit: ${url}`);
+      console.log(`[PreviewCache] Hit: ${cacheKey}`);
       set({
         waveformBuffer: cachedBuffer,
         error: null,
         loadingUrl: null,
         currentFileUrl: url
       });
-      // ✅ FIX: Ensure state update completes before .then() callback
       await Promise.resolve();
       return;
     }
 
-    console.log(`[PreviewCache] Miss: ${url} - Loading...`);
+    console.log(`[PreviewCache] Miss: ${cacheKey} - Loading ${fullLoad ? 'full' : 'preview'}...`);
 
     // AbortController ile iptal edilebilir fetch
     const controller = new AbortController();
     set({ abortController: controller });
 
     try {
-        const response = await fetch(url, { signal: controller.signal });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-        const arrayBuffer = await response.arrayBuffer();
+        // Preview için Range Request, full için normal fetch
+        const arrayBuffer = fullLoad 
+          ? await loadFullBuffer(url, controller.signal)
+          : await loadPreviewRange(url, 2, controller.signal);
+        
         const context = getAudioContext();
         const audioBuffer = await decodeAudioData(arrayBuffer.slice(0));
 
-        // Cache'e ekle
-        addToCache(url, audioBuffer);
+        // Cache'e ekle (preview ve full ayrı cache'lenir)
+        addToCache(cacheKey, audioBuffer);
 
         // State güncelle (sadece hala aynı dosya yükleniyorsa)
         const currentState = get();
@@ -163,8 +264,10 @@ export const usePreviewPlayerStore = create((set, get) => ({
 
   /**
    * Dosya seçildiğinde buffer'ı yükle
+   * @param {string} url - Audio file URL
+   * @param {boolean} fullLoad - Full buffer yükle (default: false = preview için 2 saniye)
    */
-  selectFileForPreview: (url) => {
+  selectFileForPreview: (url, fullLoad = false) => {
     const state = get();
 
     // Önceki yüklemeyi iptal et
@@ -193,8 +296,23 @@ export const usePreviewPlayerStore = create((set, get) => ({
       return;
     }
 
-    // Aynı dosya zaten yüklüyse skip et
+    // Aynı dosya zaten yüklüyse skip et (full load isteniyorsa ve preview yüklüyse tekrar yükle)
     if (state.currentFileUrl === url && state.waveformBuffer) {
+      // Full load isteniyorsa ama preview yüklüyse tekrar yükle
+      if (fullLoad) {
+        const cacheKey = `${url}:full`;
+        const fullBuffer = getFromCache(cacheKey);
+        if (!fullBuffer) {
+          // Full buffer yok, yükle
+          set({
+            loadingUrl: url,
+            error: null,
+            isPlaying: false,
+            playingUrl: null
+          });
+          loadAudioBuffer(url, set, get, true);
+        }
+      }
       return;
     }
 
@@ -206,7 +324,7 @@ export const usePreviewPlayerStore = create((set, get) => ({
       playingUrl: null
     });
 
-    loadAudioBuffer(url, set, get);
+    loadAudioBuffer(url, set, get, fullLoad);
   },
 
   /**
@@ -239,13 +357,14 @@ export const usePreviewPlayerStore = create((set, get) => ({
 
     // Eğer farklı dosya çalınmak isteniyorsa cache'ten al
     if (state.currentFileUrl !== url) {
-      bufferToPlay = getFromCache(url);
+      // Önce full cache'inden kontrol et (daha iyi kalite), yoksa preview cache'inden
+      bufferToPlay = getFromCache(`${url}:full`) || getFromCache(`${url}:preview`);
 
       if (!bufferToPlay) {
-        console.log('[PreviewPlayer] Buffer not ready, loading first...');
+        console.log('[PreviewPlayer] Buffer not ready, loading preview first...');
         // ✅ FIX: Load and auto-play WITHOUT recursive call
         set({ loadingUrl: url, error: null });
-        loadAudioBuffer(url, set, get).then(() => {
+        loadAudioBuffer(url, set, get, false).then(() => {
           // Yükleme bitince otomatik çal (direkt, recursive call yok!)
           const newState = get();
           const loadedBuffer = newState.waveformBuffer;

@@ -1,0 +1,51 @@
+{
+  "name": "dawg-server",
+  "version": "1.0.0",
+  "description": "DAWG Backend Server",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "migrate": "tsx src/migrate.ts up",
+    "migrate:down": "tsx src/migrate.ts down",
+    "reset-test-projects": "tsx scripts/reset-test-projects.ts",
+    "check-project-patterns": "tsx scripts/check-project-patterns.ts",
+    "test": "vitest",
+    "lint": "eslint src --ext .ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": ["daw", "audio", "collaboration"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@fastify/cors": "^9.0.1",
+    "@fastify/cookie": "^9.2.0",
+    "@fastify/jwt": "^7.2.4",
+    "@fastify/multipart": "^8.0.0",
+    "@fastify/rate-limit": "^9.1.0",
+    "@fastify/websocket": "^10.0.0",
+    "bcrypt": "^5.1.1",
+    "dotenv": "^16.3.1",
+    "fastify": "^4.24.3",
+    "pg": "^8.11.3",
+    "pino": "^8.16.2",
+    "pino-pretty": "^10.2.3",
+    "zod": "^3.22.4",
+    "zod-to-json-schema": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/bcrypt": "^5.0.2",
+    "@types/node": "^20.10.5",
+    "@types/pg": "^8.10.9",
+    "@typescript-eslint/eslint-plugin": "^6.15.0",
+    "@typescript-eslint/parser": "^6.15.0",
+    "@vercel/node": "^3.0.7",
+    "eslint": "^8.56.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3",
+    "vitest": "^1.1.0"
+  }
+}
+
