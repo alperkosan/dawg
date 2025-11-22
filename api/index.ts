@@ -73,8 +73,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const server = await createServer();
     
-    // Build request URL (Vercel provides path, we need to reconstruct full path)
-    const url = req.url || '/';
+    // ✅ FIX: Vercel rewrite sonrası URL'yi doğru al
+    // Vercel rewrite: /api/(.*) -> /api/index?path=$1
+    // req.url orijinal path'i içerir, ama query'den de alabiliriz
+    let url = req.url || '/';
+    
+    // ✅ FIX: Query'den path varsa kullan (rewrite sonrası)
+    if (req.query && typeof req.query.path === 'string') {
+      url = req.query.path;
+      // Query'den path alındıysa, query'den path'i çıkar
+      const { path, ...restQuery } = req.query;
+      req.query = restQuery;
+    }
+    
+    // ✅ FIX: URL'yi normalize et (başında / olmalı, /api/ prefix'i olmalı)
+    if (!url.startsWith('/')) {
+      url = '/' + url;
+    }
+    
+    // ✅ FIX: Eğer URL /api ile başlamıyorsa, /api ekle
+    if (!url.startsWith('/api/') && url !== '/api') {
+      // Query'den gelen path zaten /api/auth/login formatında olmalı
+      // Ama emin olmak için kontrol edelim
+      if (url.startsWith('/auth/') || url.startsWith('/users/') || url.startsWith('/projects/')) {
+        url = '/api' + url;
+      }
+    }
     
     // Use Fastify's inject method for serverless
     const response = await server.inject({
