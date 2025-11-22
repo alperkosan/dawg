@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, Suspense, useCallback, useMemo } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
+import { SpeedInsights } from '@vercel/speed-insights/react';
 
 // Core Systems
 import { NativeAudioEngine } from './lib/core/NativeAudioEngine';
@@ -832,6 +833,7 @@ function App() {
   return (
     <BrowserRouter>
       <AppRouter />
+      <SpeedInsights />
     </BrowserRouter>
   );
 }
