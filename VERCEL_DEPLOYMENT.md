@@ -18,7 +18,19 @@ Bu dokümantasyon, DAWG backend server'ını Vercel'de deploy etmek için gerekl
 
 ### 1. Environment Variables (Çevre Değişkenleri)
 
-Vercel dashboard'unda veya `vercel.json` ile aşağıdaki environment variable'ları ayarlayın:
+**Frontend (Client) Environment Variables:**
+
+Vercel Dashboard → Project → Settings → Environment Variables:
+
+```bash
+# ✅ Production'da relative path kullanılır (/api), bu variable'a gerek yok
+# Development için (local):
+# VITE_API_URL=http://localhost:3000/api
+```
+
+**Backend (Server) Environment Variables:**
+
+Vercel Dashboard → Project → Settings → Environment Variables:
 
 ```bash
 # Database (Neon - Önerilen)
@@ -34,8 +46,10 @@ JWT_SECRET=your-secret-key-here
 # Cookie
 COOKIE_SECRET=your-cookie-secret-here
 
-# CORS
-CORS_ORIGIN=https://your-frontend-domain.vercel.app
+# CORS (Production URL'lerini ekleyin, virgülle ayırın)
+# Örnek: CORS_ORIGIN=https://dawg.vercel.app,https://dawg-xxx.vercel.app
+# Veya tüm Vercel preview deployment'ları için: CORS_ORIGIN=https://*.vercel.app
+CORS_ORIGIN=https://your-frontend-domain.vercel.app,https://*.vercel.app
 
 # Storage (Bunny CDN)
 CDN_BUNNY_STORAGE_API_KEY=your-bunny-api-key

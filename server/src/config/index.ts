@@ -78,7 +78,33 @@ export const config = {
   
   // CORS
   cors: {
-    origin: process.env.CORS_ORIGIN?.split(',') || ['http://localhost:5173', 'http://localhost:5174'],
+    // ✅ Production: Support Vercel preview deployments and production domain
+    // Development: localhost origins
+    origin: (() => {
+      // If CORS_ORIGIN is explicitly set, use it
+      if (process.env.CORS_ORIGIN) {
+        return process.env.CORS_ORIGIN.split(',').map(o => o.trim());
+      }
+      
+      // Default origins for development
+      const defaultOrigins = [
+        'http://localhost:5173', 
+        'http://localhost:5174',
+      ];
+      
+      // ✅ Production: Add Vercel URL if available
+      if (process.env.VERCEL_URL) {
+        defaultOrigins.push(`https://${process.env.VERCEL_URL}`);
+      }
+      
+      // ✅ Production: Support all Vercel preview deployments (wildcard)
+      // Fastify CORS supports regex patterns
+      if (process.env.NODE_ENV === 'production' || process.env.VERCEL) {
+        defaultOrigins.push(/^https:\/\/.*\.vercel\.app$/);
+      }
+      
+      return defaultOrigins;
+    })(),
   },
   
   // Rate Limiting

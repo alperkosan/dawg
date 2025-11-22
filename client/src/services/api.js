@@ -6,7 +6,9 @@
 
 import { useAuthStore } from '../store/useAuthStore.js';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+// ✅ Production: Use relative path (same domain), Development: Use localhost
+const API_BASE_URL = import.meta.env.VITE_API_URL || 
+  (import.meta.env.PROD ? '/api' : 'http://localhost:3000/api');
 
 // ✅ Toast notification handler (will be set by App.jsx)
 let toastHandler = null;
