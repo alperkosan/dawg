@@ -75,35 +75,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     
     // ✅ FIX: Vercel rewrite sonrası URL'yi doğru al
     // Vercel'de rewrite kullanırken, req.url orijinal path'i içerir
-    // Örnek: /api/auth/login -> req.url = '/api/auth/login'
+    // Örnek: /api/auth/login isteği -> req.url = '/api/auth/login' (orijinal path korunur)
     let url = req.url || '/';
     
-    // ✅ FIX: Eğer query'den path varsa kullan (rewrite pattern'inden gelen)
-    if (req.query && typeof req.query.path === 'string') {
-      const pathFromQuery = req.query.path;
-      // Query'den gelen path /api ile başlamıyorsa ekle
-      if (pathFromQuery.startsWith('/')) {
-        url = pathFromQuery.startsWith('/api/') ? pathFromQuery : '/api' + pathFromQuery;
-      } else {
-        url = '/api/' + pathFromQuery;
-      }
-      // Query'den path'i çıkar (Fastify'a geçerken)
-      const { path, ...restQuery } = req.query;
-      req.query = restQuery;
+    // ✅ FIX: Vercel rewrite sonrası req.url zaten doğru path'i içerir
+    // Ama bazen query string ile geliyor, onu temizle
+    if (url.includes('?')) {
+      url = url.split('?')[0];
     }
     
-    // ✅ FIX: URL'yi normalize et
+    // ✅ FIX: URL'yi normalize et (başında / olmalı)
     if (!url.startsWith('/')) {
       url = '/' + url;
     }
     
-    // ✅ DEBUG: Log URL for troubleshooting
-    logger.info('Vercel request:', {
-      method: req.method,
-      originalUrl: req.url,
-      finalUrl: url,
-      query: req.query,
-    });
+    // ✅ DEBUG: Log URL for troubleshooting (production'da disable edilebilir)
+    if (process.env.NODE_ENV === 'development' || process.env.VERCEL_ENV === 'development') {
+      logger.info('Vercel request:', {
+        method: req.method,
+        originalUrl: req.url,
+        finalUrl: url,
+        query: req.query,
+      });
+    }
     
     // Use Fastify's inject method for serverless
     const response = await server.inject({
