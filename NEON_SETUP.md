@@ -27,33 +27,70 @@ Neon, serverless PostgreSQL servisidir ve Vercel ile mükemmel entegre çalış�
 
 ## Connection String Format
 
-### Direct Connection (Development)
+### Direct Connection (Development - pgbouncer olmadan)
 ```
-postgresql://user:password@ep-xxx-xxx.region.aws.neon.tech/database?sslmode=require
+postgresql://neondb_owner:npg_vNYLEDgzTr54@ep-lingering-truth-agv32bfq.c-2.eu-central-1.aws.neon.tech/neondb?sslmode=require
 ```
 
 ### Pooler Connection (Production - Önerilen)
 ```
-postgresql://user:password@ep-xxx-xxx-pooler.region.aws.neon.tech/database?sslmode=require
+postgresql://neondb_owner:npg_vNYLEDgzTr54@ep-lingering-truth-agv32bfq-pooler.c-2.eu-central-1.aws.neon.tech/neondb?sslmode=require
 ```
 
-**Önemli**: Production'da **pooler endpoint** kullanın (daha iyi performance ve connection management).
+**Önemli**: 
+- ✅ Production'da **pooler endpoint** kullanın (`-pooler` ile biten) - daha iyi performance ve connection management
+- ✅ Region: `c-2.eu-central-1.aws` (Frankfurt, Germany)
+- ✅ Database: `neondb`
+- ✅ User: `neondb_owner`
 
 ## Environment Variables
 
 Vercel Dashboard → Project → Settings → **Environment Variables**:
 
-```bash
-# Neon Database URL (Vercel integration otomatik ekler)
-DATABASE_URL=postgresql://user:password@ep-xxx-xxx-pooler.region.aws.neon.tech/database?sslmode=require
+### ✅ Önerilen Konfigürasyon (Pooler Connection)
 
-# Veya manuel olarak
-NEON_DATABASE_URL=postgresql://user:password@ep-xxx-xxx-pooler.region.aws.neon.tech/database?sslmode=require
+```bash
+# ✅ Recommended for most uses - Pooler endpoint (önerilen)
+DATABASE_URL=postgresql://neondb_owner:npg_vNYLEDgzTr54@ep-lingering-truth-agv32bfq-pooler.c-2.eu-central-1.aws.neon.tech/neondb?sslmode=require
 
 # Connection Pool Settings (optional - defaults optimized for Neon)
 DB_POOL_MIN=0      # Serverless için 0 (connection'ları açık tutmaz)
 DB_POOL_MAX=5      # Neon free tier: 5 connections
 ```
+
+### Direct Connection (pgbouncer olmadan)
+
+```bash
+# For uses requiring a connection without pgbouncer
+DATABASE_URL_UNPOOLED=postgresql://neondb_owner:npg_vNYLEDgzTr54@ep-lingering-truth-agv32bfq.c-2.eu-central-1.aws.neon.tech/neondb?sslmode=require
+```
+
+### Vercel Postgres Template Variables (Opsiyonel)
+
+```bash
+# Vercel Postgres template variables (kullanılıyorsa)
+POSTGRES_URL=postgresql://neondb_owner:npg_vNYLEDgzTr54@ep-lingering-truth-agv32bfq-pooler.c-2.eu-central-1.aws.neon.tech/neondb?sslmode=require
+POSTGRES_URL_NON_POOLING=postgresql://neondb_owner:npg_vNYLEDgzTr54@ep-lingering-truth-agv32bfq.c-2.eu-central-1.aws.neon.tech/neondb?sslmode=require
+POSTGRES_USER=neondb_owner
+POSTGRES_HOST=ep-lingering-truth-agv32bfq-pooler.c-2.eu-central-1.aws.neon.tech
+POSTGRES_PASSWORD=npg_vNYLEDgzTr54
+POSTGRES_DATABASE=neondb
+```
+
+### Neon Auth Variables (Next.js için - Opsiyonel)
+
+```bash
+# Neon Auth environment variables (Next.js için, bizim projede kullanılmıyor)
+NEXT_PUBLIC_STACK_PROJECT_ID=d1a8b6a6-038d-4e0e-8aee-cbaf544819e7
+NEXT_PUBLIC_STACK_PUBLISHABLE_CLIENT_KEY=pck_3eptdqb360hb4qe5htv0p9d675j7sepsr1ecj21jw4aqg
+STACK_SECRET_SERVER_KEY=ssk_rjdyx3ycvyf3yyt63v85y6ndg39rf59578bdr2menea9g
+```
+
+**Önemli Notlar:**
+- ✅ **Production'da her zaman pooler endpoint kullanın** (`-pooler` ile biten)
+- ✅ **SSL zorunlu**: `?sslmode=require` parametresi eklenmeli
+- ✅ **Vercel integration otomatik ekler**: Manuel eklemeye gerek yok
+- ⚠️ **Credentials güvenli tutulmalı**: Bu dosyada örnek olarak gösterilmiştir
 
 ## Database Migrations
 

@@ -33,9 +33,17 @@ Vercel Dashboard → Project → Settings → Environment Variables:
 Vercel Dashboard → Project → Settings → Environment Variables:
 
 ```bash
-# Database (Neon - Önerilen)
+# ✅ Database (Neon - Önerilen)
 # Vercel Neon integration otomatik olarak ekler, manuel eklemeyin
-DATABASE_URL=postgresql://user:password@ep-xxx-xxx-pooler.region.aws.neon.tech/database?sslmode=require
+# Pooler endpoint (production için önerilen)
+DATABASE_URL=postgresql://neondb_owner:npg_vNYLEDgzTr54@ep-lingering-truth-agv32bfq-pooler.c-2.eu-central-1.aws.neon.tech/neondb?sslmode=require
+
+# Direct connection (pgbouncer olmadan - gerekirse)
+DATABASE_URL_UNPOOLED=postgresql://neondb_owner:npg_vNYLEDgzTr54@ep-lingering-truth-agv32bfq.c-2.eu-central-1.aws.neon.tech/neondb?sslmode=require
+
+# Connection Pool Settings (optional - defaults optimized for Neon)
+DB_POOL_MIN=0      # Serverless için 0
+DB_POOL_MAX=5      # Neon free tier: 5 connections
 
 # Veya diğer PostgreSQL servisleri için
 # DATABASE_URL=postgresql://user:password@host:5432/database
