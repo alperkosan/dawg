@@ -1,7 +1,6 @@
 {
-  "version": 2,
   "functions": {
-    "server/api/index.ts": {
+    "api/index.ts": {
       "maxDuration": 30,
       "memory": 1024
     }
@@ -9,12 +8,11 @@
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "/server/api/index.ts"
+      "destination": "/api/index"
     },
     {
       "source": "/health",
-      "destination": "/server/api/index.ts"
+      "destination": "/api/index"
     }
   ]
 }
-
