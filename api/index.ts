@@ -74,31 +74,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const server = await createServer();
     
     // ✅ FIX: Vercel rewrite sonrası URL'yi doğru al
-    // Vercel rewrite: /api/(.*) -> /api/index?path=$1
-    // req.url orijinal path'i içerir, ama query'den de alabiliriz
+    // Vercel'de rewrite kullanırken, req.url orijinal path'i içerir
+    // Örnek: /api/auth/login -> req.url = '/api/auth/login'
     let url = req.url || '/';
     
-    // ✅ FIX: Query'den path varsa kullan (rewrite sonrası)
+    // ✅ FIX: Eğer query'den path varsa kullan (rewrite pattern'inden gelen)
     if (req.query && typeof req.query.path === 'string') {
-      url = req.query.path;
-      // Query'den path alındıysa, query'den path'i çıkar
+      const pathFromQuery = req.query.path;
+      // Query'den gelen path /api ile başlamıyorsa ekle
+      if (pathFromQuery.startsWith('/')) {
+        url = pathFromQuery.startsWith('/api/') ? pathFromQuery : '/api' + pathFromQuery;
+      } else {
+        url = '/api/' + pathFromQuery;
+      }
+      // Query'den path'i çıkar (Fastify'a geçerken)
       const { path, ...restQuery } = req.query;
       req.query = restQuery;
     }
     
-    // ✅ FIX: URL'yi normalize et (başında / olmalı, /api/ prefix'i olmalı)
+    // ✅ FIX: URL'yi normalize et
     if (!url.startsWith('/')) {
       url = '/' + url;
     }
     
-    // ✅ FIX: Eğer URL /api ile başlamıyorsa, /api ekle
-    if (!url.startsWith('/api/') && url !== '/api') {
-      // Query'den gelen path zaten /api/auth/login formatında olmalı
-      // Ama emin olmak için kontrol edelim
-      if (url.startsWith('/auth/') || url.startsWith('/users/') || url.startsWith('/projects/')) {
-        url = '/api' + url;
-      }
-    }
+    // ✅ DEBUG: Log URL for troubleshooting
+    logger.info('Vercel request:', {
+      method: req.method,
+      originalUrl: req.url,
+      finalUrl: url,
+      query: req.query,
+    });
     
     // Use Fastify's inject method for serverless
     const response = await server.inject({
