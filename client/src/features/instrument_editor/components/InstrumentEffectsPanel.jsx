@@ -25,7 +25,7 @@ const InstrumentEffectsPanel = ({ instrumentData }) => {
   // Get instrument-level effects (if supported)
   const effects = instrumentData.effects || [];
 
-  const handleAddEffect = (effectType) => {
+  const handleAddEffect = async (effectType) => {
     const effectConfig = pluginRegistry[effectType];
     if (!effectConfig) return;
 

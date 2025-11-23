@@ -255,7 +255,7 @@ export function PluginTemplateUI({ trackId, effect, onUpdate }) {
       if (!file) return;
 
       const reader = new FileReader();
-      reader.onload = (event) => {
+      reader.onload = async (event) => {
         try {
           const presetId = presetManager.importPreset(event.target.result);
           const { apiClient } = await import('../../../services/api.js');
