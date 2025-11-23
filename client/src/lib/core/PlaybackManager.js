@@ -2112,9 +2112,13 @@ export class PlaybackManager {
     /**
      * ✅ NEW: Stop all currently playing notes across all instruments
      * This prevents stuck notes when loop restarts or playback stops
+     * 
+     * ✅ FIX: Use noteOff/allNotesOff for graceful release (with envelope)
+     * This provides natural fade-out when loop restarts, matching industry DAW behavior
      */
     _stopAllActiveNotes() {
         let stoppedCount = 0;
+        const currentTime = this.transport.audioContext.currentTime;
 
         this.audioEngine.instruments.forEach((instrument, instrumentId) => {
             try {
@@ -2124,14 +2128,19 @@ export class PlaybackManager {
                                       (instrument.activeNotes && instrument.activeNotes.size > 0);
 
                 if (hasActiveNotes) {
-                    // ✅ CRITICAL FIX: Use stopAll for IMMEDIATE stop (no release envelope)
-                    // This prevents stuck notes when loop restarts
-                    // Pattern will reschedule everything correctly
-                    if (typeof instrument.stopAll === 'function') {
-                        instrument.stopAll();
+                    // ✅ FIX: Use allNotesOff/noteOff for graceful release (with envelope)
+                    // This provides natural fade-out when loop restarts
+                    // Pattern will reschedule everything correctly after release
+                    if (typeof instrument.allNotesOff === 'function') {
+                        instrument.allNotesOff(currentTime);
                         stoppedCount++;
-                    } else if (typeof instrument.allNotesOff === 'function') {
-                        instrument.allNotesOff();
+                    } else if (typeof instrument.noteOff === 'function') {
+                        // noteOff(null) = stop all notes with release envelope
+                        instrument.noteOff(null, currentTime);
+                        stoppedCount++;
+                    } else if (typeof instrument.stopAll === 'function') {
+                        // Fallback: immediate stop if noteOff not available
+                        instrument.stopAll();
                         stoppedCount++;
                     }
                 }
@@ -2140,7 +2149,7 @@ export class PlaybackManager {
             }
         });
 
-        console.log(`🛑 _stopAllActiveNotes: Stopped ${stoppedCount} instruments`);
+        console.log(`🛑 _stopAllActiveNotes: Stopped ${stoppedCount} instruments (with release envelope)`);
     }
 
     _clearScheduledEvents(useFade = false) {
