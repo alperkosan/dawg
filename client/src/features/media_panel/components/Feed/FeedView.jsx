@@ -47,7 +47,10 @@ export default function FeedView() {
       setCurrentPage(page);
     } catch (err) {
       setError(err);
-      apiClient.showToast('Failed to load feed', 'error');
+      // ✅ FIX: Defer toast to avoid flushSync warning during render
+      setTimeout(() => {
+        apiClient.showToast('Failed to load feed', 'error');
+      }, 0);
     } finally {
       setIsLoading(false);
       setIsFetchingNextPage(false);

@@ -19,14 +19,27 @@ export function ToastProvider({ children }) {
     // ✅ FIX: Serialize/deserialize toast to ensure React detects state change
     const serializedToast = JSON.parse(JSON.stringify(toast));
     
-    // ✅ FIX: Use flushSync to force immediate DOM update (like modals do)
-    flushSync(() => {
-      setToasts(prev => {
-        const newToasts = [...prev];
-        newToasts.push(serializedToast);
-        return newToasts;
-      });
-      setToastKey(prev => prev + 1);
+    // ✅ FIX: Use queueMicrotask to defer flushSync if called during render
+    // This prevents "flushSync was called from inside a lifecycle method" warning
+    queueMicrotask(() => {
+      try {
+        flushSync(() => {
+          setToasts(prev => {
+            const newToasts = [...prev];
+            newToasts.push(serializedToast);
+            return newToasts;
+          });
+          setToastKey(prev => prev + 1);
+        });
+      } catch (error) {
+        // Fallback: If flushSync fails (e.g., during render), use regular state update
+        setToasts(prev => {
+          const newToasts = [...prev];
+          newToasts.push(serializedToast);
+          return newToasts;
+        });
+        setToastKey(prev => prev + 1);
+      }
     });
     
     // Auto-remove after duration
