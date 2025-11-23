@@ -170,12 +170,35 @@ export async function feedRoutes(server: FastifyInstance) {
       const result = await db.query(projectsQuery, params);
 
       // Get total count
+      // ✅ FIX: countQuery doesn't use is_liked query, so we need to adjust params
+      // Remove limit and offset (last 2 params), and also remove userId if it was added for is_liked
+      let countParams: any[] = [];
+      let countParamIndex = 1;
+      
+      // Add userId for following filter if needed
+      if (query.filter === 'following' && userId) {
+        countParams.push(userId);
+        countParamIndex++;
+      }
+      
       let countQuery = `
         SELECT COUNT(DISTINCT p.id) as total
         FROM projects p
-        ${conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''}
       `;
-      const countParams = params.slice(0, paramIndex - 1); // Remove limit and offset
+      
+      const countConditions: string[] = [];
+      if (!userId || query.filter !== 'following') {
+        countConditions.push(`p.is_public = true`);
+      }
+      
+      if (query.filter === 'following' && userId) {
+        countConditions.push(`p.user_id IN (SELECT following_id FROM user_follows WHERE follower_id = $1)`);
+      }
+      
+      if (countConditions.length > 0) {
+        countQuery += ` WHERE ${countConditions.join(' AND ')}`;
+      }
+      
       const countResult = await db.query(countQuery, countParams);
       const total = parseInt(countResult.rows[0]?.total || '0', 10);
 
