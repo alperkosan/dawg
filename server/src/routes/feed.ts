@@ -187,7 +187,7 @@ export async function feedRoutes(server: FastifyInstance) {
           remixes: parseInt(row.remix_count || '0', 10),
           views: parseInt(row.view_count || '0', 10),
         },
-        isLiked: row.is_liked || false,
+        isLiked: Boolean(row.is_liked) || false,
       }));
 
       return reply.send({
