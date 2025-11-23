@@ -347,6 +347,163 @@ class ApiClient {
     });
   }
 
+  // ============================================
+  // Media Panel API (Feed, Interactions, Notifications)
+  // ============================================
+
+  /**
+   * Get feed projects
+   */
+  async getFeed(filters = {}) {
+    const params = new URLSearchParams();
+    if (filters.page) params.append('page', filters.page);
+    if (filters.limit) params.append('limit', filters.limit);
+    if (filters.sort) params.append('sort', filters.sort);
+    if (filters.filter) params.append('filter', filters.filter);
+    if (filters.genre) params.append('genre', filters.genre);
+
+    const queryString = params.toString();
+    return this.request(`/feed${queryString ? `?${queryString}` : ''}`, {
+      method: 'GET',
+    });
+  }
+
+  /**
+   * Get trending projects
+   */
+  async getTrending(period = '24h', limit = 20) {
+    const params = new URLSearchParams();
+    params.append('period', period);
+    params.append('limit', limit.toString());
+
+    return this.request(`/feed/trending?${params.toString()}`, {
+      method: 'GET',
+    });
+  }
+
+  /**
+   * Like/unlike a project
+   */
+  async toggleLike(projectId) {
+    return this.request(`/interactions/projects/${projectId}/like`, {
+      method: 'POST',
+    });
+  }
+
+  /**
+   * Add comment to project
+   */
+  async addComment(projectId, content, parentId = null) {
+    return this.request(`/interactions/projects/${projectId}/comments`, {
+      method: 'POST',
+      body: JSON.stringify({ content, parentId }),
+    });
+  }
+
+  /**
+   * Get comments for project
+   */
+  async getComments(projectId, page = 1, limit = 50) {
+    const params = new URLSearchParams();
+    params.append('page', page.toString());
+    params.append('limit', limit.toString());
+
+    return this.request(`/interactions/projects/${projectId}/comments?${params.toString()}`, {
+      method: 'GET',
+    });
+  }
+
+  /**
+   * Share project
+   */
+  async shareProject(projectId, platform = null) {
+    return this.request(`/interactions/projects/${projectId}/share`, {
+      method: 'POST',
+      body: JSON.stringify({ platform }),
+    });
+  }
+
+  /**
+   * Create remix
+   */
+  async createRemix(projectId, changesSummary = null, credits = null) {
+    return this.request(`/interactions/projects/${projectId}/remix`, {
+      method: 'POST',
+      body: JSON.stringify({ changesSummary, credits }),
+    });
+  }
+
+  /**
+   * Follow/unfollow user
+   */
+  async toggleFollow(userId) {
+    return this.request(`/interactions/users/${userId}/follow`, {
+      method: 'POST',
+    });
+  }
+
+  /**
+   * Get notifications
+   */
+  async getNotifications(filters = {}) {
+    const params = new URLSearchParams();
+    if (filters.page) params.append('page', filters.page);
+    if (filters.limit) params.append('limit', filters.limit);
+    if (filters.unreadOnly !== undefined) params.append('unreadOnly', filters.unreadOnly.toString());
+    if (filters.type) params.append('type', filters.type);
+
+    const queryString = params.toString();
+    return this.request(`/notifications${queryString ? `?${queryString}` : ''}`, {
+      method: 'GET',
+    });
+  }
+
+  /**
+   * Mark notification as read
+   */
+  async markNotificationAsRead(notificationId) {
+    return this.request(`/notifications/${notificationId}/read`, {
+      method: 'PUT',
+    });
+  }
+
+  /**
+   * Mark all notifications as read
+   */
+  async markAllNotificationsAsRead() {
+    return this.request('/notifications/read-all', {
+      method: 'PUT',
+    });
+  }
+
+  /**
+   * Delete notification
+   */
+  async deleteNotification(notificationId) {
+    return this.request(`/notifications/${notificationId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  /**
+   * Get notification settings
+   */
+  async getNotificationSettings() {
+    return this.request('/notifications/settings', {
+      method: 'GET',
+    });
+  }
+
+  /**
+   * Update notification settings
+   */
+  async updateNotificationSettings(settings) {
+    return this.request('/notifications/settings', {
+      method: 'PUT',
+      body: JSON.stringify(settings),
+    });
+  }
+
   // Admin endpoints
   async uploadSystemAsset(formData) {
     const token = this.getToken();
