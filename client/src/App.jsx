@@ -646,7 +646,7 @@ function DAWApp() {
       default:
         return <StartupScreen onStart={initializeAudioSystem} />;
     }
-  }, [engineStatus, engineError, initializeAudioSystem, isExportPanelOpen, showLoginPrompt, showProjectTitleModal, handleSave, isAuthenticated, isGuest, currentProjectId, handleProjectSelect, handleNewProject, handleEditTitle, isLoadingProject, loadingProjectTitle, currentProjectTitle, toasts, toastKey, removeToast]);
+  }, [engineStatus, engineError, initializeAudioSystem, isExportPanelOpen, showLoginPrompt, showProjectTitleModal, handleSave, isAuthenticated, isGuest, currentProjectId, handleProjectSelect, handleNewProject, handleEditTitle, isLoadingProject, loadingProjectTitle, currentProjectTitle, toasts, toastKey, removeToast, saveStatus, lastSavedAt]);
 
   return <>{renderContent()}</>;
 }
