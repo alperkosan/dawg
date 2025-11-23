@@ -5,6 +5,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Play, Pause, Volume2, VolumeX, Loader2 } from 'lucide-react';
 import WaveformVisualizer from './WaveformVisualizer';
+import { useMediaPlayerStore } from '../../store/useMediaPlayerStore';
 import './ProjectPreviewPlayer.css';
 
 export default function ProjectPreviewPlayer({ 
@@ -13,6 +14,8 @@ export default function ProjectPreviewPlayer({
   onPlayStateChange,
   className = '' 
 }) {
+  // ✅ FIX: Use store state instead of local state for isPlaying
+  const { isPlaying: storeIsPlaying, playingProjectId } = useMediaPlayerStore();
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -27,6 +30,25 @@ export default function ProjectPreviewPlayer({
   const gainNodeRef = useRef(null);
   const analyserRef = useRef(null);
   const progressIntervalRef = useRef(null);
+  const isSyncingRef = useRef(false); // Prevent infinite loops
+
+  // ✅ FIX: Sync with store's isPlaying state
+  useEffect(() => {
+    // Only sync if this project is the one playing and we're not already syncing
+    if (isSyncingRef.current) return;
+    if (!audioBuffer) return; // Wait for audio to load
+    
+    const shouldPlay = storeIsPlaying && !isPlaying;
+    const shouldPause = !storeIsPlaying && isPlaying;
+    
+    if (shouldPlay || shouldPause) {
+      isSyncingRef.current = true;
+      handlePlayPause().finally(() => {
+        isSyncingRef.current = false;
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storeIsPlaying, audioBuffer, isPlaying]);
 
   // Initialize audio context
   useEffect(() => {
@@ -43,9 +65,12 @@ export default function ProjectPreviewPlayer({
   // Load audio buffer when URL changes
   useEffect(() => {
     if (!audioUrl) {
+      console.warn('ProjectPreviewPlayer: No audioUrl provided');
       setAudioBuffer(null);
       return;
     }
+
+    console.log('ProjectPreviewPlayer: Loading audio from URL:', audioUrl);
 
     const loadAudio = async () => {
       setIsLoading(true);
@@ -58,12 +83,21 @@ export default function ProjectPreviewPlayer({
         }
 
         // Fetch and decode audio
+        console.log('ProjectPreviewPlayer: Fetching audio...');
         const response = await fetch(audioUrl);
-        if (!response.ok) throw new Error('Failed to fetch audio');
+        if (!response.ok) {
+          throw new Error(`Failed to fetch audio: ${response.status} ${response.statusText}`);
+        }
         
         const arrayBuffer = await response.arrayBuffer();
+        console.log('ProjectPreviewPlayer: Decoding audio buffer...');
         const buffer = await context.decodeAudioData(arrayBuffer);
         
+        console.log('ProjectPreviewPlayer: Audio loaded successfully', {
+          duration: buffer.duration,
+          sampleRate: buffer.sampleRate,
+          numberOfChannels: buffer.numberOfChannels
+        });
         setAudioBuffer(buffer);
 
         // Create analyser for waveform visualization
@@ -96,7 +130,10 @@ export default function ProjectPreviewPlayer({
 
   // Play/pause handler
   const handlePlayPause = useCallback(async () => {
-    if (!audioBuffer || !audioContextRef.current) return;
+    if (!audioBuffer || !audioContextRef.current) {
+      console.warn('ProjectPreviewPlayer: Cannot play - audioBuffer or context not ready');
+      return;
+    }
 
     const context = audioContextRef.current;
 

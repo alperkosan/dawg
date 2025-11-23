@@ -62,8 +62,10 @@
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  opacity: 0;
+  opacity: 0.8; /* ✅ FIX: Make button more visible for testing */
   transition: opacity 0.2s ease;
+  z-index: 10; /* ✅ FIX: Ensure button is above other elements */
+  pointer-events: auto; /* ✅ FIX: Ensure button is clickable */
 }
 
 .project-card:hover .project-card__play-btn {

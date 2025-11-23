@@ -78,6 +78,9 @@ export async function feedRoutes(server: FastifyInstance) {
           p.is_unlisted,
           p.created_at,
           p.updated_at,
+          p.preview_audio_url,
+          p.preview_audio_duration,
+          p.preview_audio_status,
           u.id as user_id,
           u.username,
           u.avatar_url,
@@ -105,7 +108,7 @@ export async function feedRoutes(server: FastifyInstance) {
         projectsQuery += ` WHERE ${conditions.join(' AND ')}`;
       }
 
-      projectsQuery += ` GROUP BY p.id, u.id, u.username, u.avatar_url`;
+      projectsQuery += ` GROUP BY p.id, u.id, u.username, u.avatar_url, p.preview_audio_url, p.preview_audio_duration, p.preview_audio_status`;
 
       // Sorting
       switch (query.sort) {
@@ -132,6 +135,9 @@ export async function feedRoutes(server: FastifyInstance) {
               p.is_unlisted,
               p.created_at,
               p.updated_at,
+              p.preview_audio_url,
+              p.preview_audio_duration,
+              p.preview_audio_status,
               u.id as user_id,
               u.username,
               u.avatar_url,
@@ -152,7 +158,7 @@ export async function feedRoutes(server: FastifyInstance) {
             LEFT JOIN project_remixes pr ON pr.original_project_id = p.id
             LEFT JOIN project_views pv ON pv.project_id = p.id
             ${conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''}
-            GROUP BY p.id, u.id, u.username, u.avatar_url
+            GROUP BY p.id, u.id, u.username, u.avatar_url, p.preview_audio_url, p.preview_audio_duration, p.preview_audio_status
             ORDER BY trending_score DESC, p.created_at DESC
           `;
           break;
@@ -214,6 +220,11 @@ export async function feedRoutes(server: FastifyInstance) {
         isUnlisted: row.is_unlisted,
         createdAt: row.created_at,
         updatedAt: row.updated_at,
+        previewAudioUrl: row.preview_audio_url,
+        preview_audio_url: row.preview_audio_url, // Alias for compatibility
+        previewAudioDuration: row.preview_audio_duration,
+        preview_audio_duration: row.preview_audio_duration, // Alias for compatibility
+        previewAudioStatus: row.preview_audio_status,
         author: {
           id: row.user_id,
           username: row.username,
@@ -279,6 +290,9 @@ export async function feedRoutes(server: FastifyInstance) {
           p.is_unlisted,
           p.created_at,
           p.updated_at,
+          p.preview_audio_url,
+          p.preview_audio_duration,
+          p.preview_audio_status,
           u.id as user_id,
           u.username,
           u.avatar_url,
@@ -299,7 +313,7 @@ export async function feedRoutes(server: FastifyInstance) {
         LEFT JOIN project_remixes pr ON pr.original_project_id = p.id
         LEFT JOIN project_views pv ON pv.project_id = p.id
         WHERE p.is_public = true
-        GROUP BY p.id, u.id, u.username, u.avatar_url
+        GROUP BY p.id, u.id, u.username, u.avatar_url, p.preview_audio_url, p.preview_audio_duration, p.preview_audio_status
         HAVING trending_score > 0
         ORDER BY trending_score DESC, p.created_at DESC
         LIMIT $${userId ? 2 : 1}
@@ -317,6 +331,11 @@ export async function feedRoutes(server: FastifyInstance) {
         isUnlisted: row.is_unlisted,
         createdAt: row.created_at,
         updatedAt: row.updated_at,
+        previewAudioUrl: row.preview_audio_url,
+        preview_audio_url: row.preview_audio_url, // Alias for compatibility
+        previewAudioDuration: row.preview_audio_duration,
+        preview_audio_duration: row.preview_audio_duration, // Alias for compatibility
+        previewAudioStatus: row.preview_audio_status,
         author: {
           id: row.user_id,
           username: row.username,

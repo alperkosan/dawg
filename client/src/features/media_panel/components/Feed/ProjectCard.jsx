@@ -37,6 +37,15 @@ export default function ProjectCard({ project }) {
     setLikeCount(project.stats?.likes || 0);
   }, [project.id, project.isLiked, project.stats?.likes]);
 
+  // ✅ FIX: Show player when this project becomes the current playing project
+  useEffect(() => {
+    if (isCurrentPlaying && hasPreview) {
+      setShowPlayer(true);
+    } else if (!isCurrentPlaying) {
+      setShowPlayer(false);
+    }
+  }, [isCurrentPlaying, hasPreview]);
+
   const handleLike = async (e) => {
     e.stopPropagation();
     try {
@@ -50,26 +59,51 @@ export default function ProjectCard({ project }) {
   };
 
   const handlePlay = (e) => {
+    console.log('🎵 handlePlay called:', { 
+      projectId: project.id, 
+      hasPreview, 
+      isCurrentPlaying, 
+      isPlaying,
+      previewAudioUrl: project.previewAudioUrl,
+      preview_audio_url: project.preview_audio_url
+    });
+    
     e.stopPropagation();
     
     if (!hasPreview) {
+      console.warn('🎵 No preview available for project:', project.id);
       apiClient.showToast('No preview available for this project', 'info');
       return;
     }
 
+    const audioUrl = project.previewAudioUrl || project.preview_audio_url;
+    const duration = project.previewAudioDuration || project.preview_audio_duration;
+
+    console.log('🎵 Playback state:', { 
+      isCurrentPlaying, 
+      isPlaying, 
+      audioUrl, 
+      duration 
+    });
+
     if (isCurrentPlaying && isPlaying) {
       // Pause current playback
+      console.log('🎵 Pausing playback');
       pause();
     } else if (isCurrentPlaying && !isPlaying) {
       // Resume current playback
+      console.log('🎵 Resuming playback');
       play();
     } else {
       // Start new playback
-      const audioUrl = project.previewAudioUrl || project.preview_audio_url;
-      const duration = project.previewAudioDuration || project.preview_audio_duration;
+      console.log('🎵 Starting new playback:', { projectId: project.id, audioUrl, duration });
       setPlayingProject(project.id, audioUrl, duration);
       setShowPlayer(true);
-      play();
+      // Small delay to ensure ProjectPreviewPlayer is mounted and ready
+      setTimeout(() => {
+        console.log('🎵 Calling play() after delay');
+        play();
+      }, 50);
     }
   };
 
@@ -93,7 +127,13 @@ export default function ProjectCard({ project }) {
   };
 
   return (
-    <div className="project-card">
+    <div 
+      className="project-card"
+      onClick={(e) => {
+        // ✅ DEBUG: Log when card is clicked to see if it's interfering
+        console.log('🎵 ProjectCard clicked:', { target: e.target, currentTarget: e.currentTarget });
+      }}
+    >
       {/* Thumbnail */}
       <div className="project-card__thumbnail">
         {project.thumbnailUrl ? (
@@ -105,7 +145,14 @@ export default function ProjectCard({ project }) {
         )}
         <button 
           className="project-card__play-btn" 
-          onClick={handlePlay}
+          onClick={(e) => {
+            console.log('🎵 Play button clicked');
+            handlePlay(e);
+          }}
+          onMouseDown={(e) => {
+            console.log('🎵 Play button mousedown');
+            e.stopPropagation();
+          }}
           title={hasPreview ? (isCurrentPlaying && isPlaying ? 'Pause' : 'Play') : 'No preview available'}
         >
           {isCurrentPlaying && isPlaying ? <Pause size={20} /> : <Play size={20} />}
