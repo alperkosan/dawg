@@ -3,12 +3,18 @@
  */
 
 import { readdir, readFile } from 'fs/promises';
-import { join } from 'path';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import { getDatabase } from './services/database.js';
 import { logger } from './utils/logger.js';
 import { config } from './config/index.js';
 
-const MIGRATIONS_DIR = join(process.cwd(), 'migrations');
+// ✅ FIX: Get migrations directory relative to this file
+// Works both in local dev (server/src/migrate.ts) and Vercel (api/index.ts imports from server/src/migrate.ts)
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+// From server/src/migrate.ts -> server/migrations
+const MIGRATIONS_DIR = join(__dirname, '..', 'migrations');
 
 interface Migration {
   filename: string;
