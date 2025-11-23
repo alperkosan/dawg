@@ -10,9 +10,9 @@ CREATE TABLE IF NOT EXISTS project_shares (
   created_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE INDEX idx_project_shares_project_id ON project_shares(project_id);
-CREATE INDEX idx_project_shares_user_id ON project_shares(user_id);
-CREATE INDEX idx_project_shares_created_at ON project_shares(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_project_shares_project_id ON project_shares(project_id);
+CREATE INDEX IF NOT EXISTS idx_project_shares_user_id ON project_shares(user_id);
+CREATE INDEX IF NOT EXISTS idx_project_shares_created_at ON project_shares(created_at DESC);
 
 -- User follows table
 CREATE TABLE IF NOT EXISTS user_follows (
@@ -24,9 +24,9 @@ CREATE TABLE IF NOT EXISTS user_follows (
   CHECK(follower_id != following_id)
 );
 
-CREATE INDEX idx_user_follows_follower ON user_follows(follower_id);
-CREATE INDEX idx_user_follows_following ON user_follows(following_id);
-CREATE INDEX idx_user_follows_created_at ON user_follows(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_user_follows_follower ON user_follows(follower_id);
+CREATE INDEX IF NOT EXISTS idx_user_follows_following ON user_follows(following_id);
+CREATE INDEX IF NOT EXISTS idx_user_follows_created_at ON user_follows(created_at DESC);
 
 -- Feed preferences (user-specific feed customization)
 CREATE TABLE IF NOT EXISTS feed_preferences (
@@ -48,9 +48,9 @@ CREATE TABLE IF NOT EXISTS project_views (
   created_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE INDEX idx_project_views_project_id ON project_views(project_id);
-CREATE INDEX idx_project_views_user_id ON project_views(user_id);
-CREATE INDEX idx_project_views_created_at ON project_views(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_project_views_project_id ON project_views(project_id);
+CREATE INDEX IF NOT EXISTS idx_project_views_user_id ON project_views(user_id);
+CREATE INDEX IF NOT EXISTS idx_project_views_created_at ON project_views(created_at DESC);
 
 -- Project likes table (if not exists in 003_community_features.sql)
 -- Check if project_likes exists, if not create it
@@ -65,9 +65,9 @@ BEGIN
       UNIQUE(project_id, user_id)
     );
     
-    CREATE INDEX idx_project_likes_project_id ON project_likes(project_id);
-    CREATE INDEX idx_project_likes_user_id ON project_likes(user_id);
-    CREATE INDEX idx_project_likes_created_at ON project_likes(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_project_likes_project_id ON project_likes(project_id);
+    CREATE INDEX IF NOT EXISTS idx_project_likes_user_id ON project_likes(user_id);
+    CREATE INDEX IF NOT EXISTS idx_project_likes_created_at ON project_likes(created_at DESC);
   END IF;
 END $$;
 
