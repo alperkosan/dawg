@@ -127,7 +127,7 @@
 .admin-panel__button--primary {
   background: linear-gradient(135deg, var(--zenith-accent-cool) 0%, var(--zenith-accent-warm) 100%);
   border-color: var(--zenith-accent-cool);
-  color: var(--zenith-text-inverse);
+  color: #000000; /* ✅ FIX: Use black for better contrast on gradient background */
   box-shadow: 0 2px 8px rgba(var(--zenith-accent-cool-rgb), 0.3);
 }
 
