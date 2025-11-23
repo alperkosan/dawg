@@ -569,7 +569,7 @@ function DAWApp() {
               onNewProject={handleNewProject}
               onEditTitle={handleEditTitle}
             />
-            {/* ✅ FIX: Modal'ı app-container dışına taşıdık - overlay'in tam ekranı kaplaması için */}
+            {/* ✅ FIX: Modal'ları ve ToastContainer'ı app-container dışına taşıdık - overlay'in tam ekranı kaplaması ve pointer-events sorunlarını önlemek için */}
             <ProjectTitleModal
               isOpen={showProjectTitleModal}
               onClose={() => setShowProjectTitleModal(false)}
@@ -582,6 +582,18 @@ function DAWApp() {
                 if (currentProjectId) {
                   await handleSave(false);
                 }
+              }}
+            />
+            {/* ✅ FIX: ToastContainer'ı app-container dışına taşıdık - pointer-events sorunlarını önlemek için */}
+            <ToastContainer toasts={toasts} onRemove={removeToast} />
+            {/* ✅ FIX: Modal'ları app-container dışına taşıdık - pointer-events sorunlarını önlemek için */}
+            <ExportPanel isOpen={isExportPanelOpen} onClose={() => setIsExportPanelOpen(false)} />
+            <LoginPrompt 
+              isOpen={showLoginPrompt} 
+              onClose={() => setShowLoginPrompt(false)}
+              onLogin={() => {
+                // User is now authenticated, state updated automatically
+                setShowLoginPrompt(false);
               }}
             />
             <div 
@@ -603,7 +615,6 @@ function DAWApp() {
                 saveStatus={saveStatus}
                 lastSavedAt={lastSavedAt}
               />
-              <ToastContainer toasts={toasts} onRemove={removeToast} />
               <MainToolbar />
               <main className="app-main">
                 <Suspense fallback={<div>Yükleniyor...</div>}>
@@ -613,15 +624,6 @@ function DAWApp() {
               <Taskbar />
               <InstrumentEditorPanel />
               <PerformanceOverlay performanceMonitor={audioEngineRef.current?.performanceMonitor} />
-              <ExportPanel isOpen={isExportPanelOpen} onClose={() => setIsExportPanelOpen(false)} />
-              <LoginPrompt 
-                isOpen={showLoginPrompt} 
-                onClose={() => setShowLoginPrompt(false)}
-                onLogin={() => {
-                  // User is now authenticated, state updated automatically
-                  setShowLoginPrompt(false);
-                }}
-              />
             </div>
           </ThemeProvider>
         );
