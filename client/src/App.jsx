@@ -35,6 +35,7 @@ import NavigationHeader from './components/layout/NavigationHeader';
 import ProjectLoadingScreen from './components/common/ProjectLoadingScreen';
 import AdminPanel from './pages/AdminPanel';
 import ProjectsPage from './pages/ProjectsPage';
+import MediaPanel from './features/media_panel/MediaPanel';
 import { ToastContainer } from './components/common/Toast';
 import ProjectTitleModal from './components/common/ProjectTitleModal';
 import './components/common/WelcomeScreen.css';
