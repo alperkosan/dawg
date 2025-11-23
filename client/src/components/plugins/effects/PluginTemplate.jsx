@@ -219,7 +219,7 @@ export function PluginTemplateUI({ trackId, effect, onUpdate }) {
     });
   }, [effect, onUpdate]);
 
-  const handleSavePreset = useCallback(() => {
+  const handleSavePreset = useCallback(async () => {
     const name = prompt('Enter preset name:');
     if (!name || !name.trim()) return;
 
