@@ -651,10 +651,8 @@ function DAWApp() {
   return <>{renderContent()}</>;
 }
 
-// Media Component (placeholder for media section)
+// Media Component - Full page route for Media Panel
 function MediaApp() {
-  const { isGuest } = useAuthStore();
-  
   return (
     <ThemeProvider>
       <NavigationHeader />
@@ -662,18 +660,13 @@ function MediaApp() {
         className="media-app" 
         style={{ 
           marginTop: '56px', // Navigation header
-          minHeight: 'calc(100vh - 56px)' // Full viewport minus header
+          height: 'calc(100vh - 56px)', // Full viewport minus header
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden'
         }}
       >
-        <div className="media-app__container">
-          <div className="media-app__header">
-            <h1 className="media-app__title">Medya</h1>
-            <p className="media-app__subtitle">Keşfet, İlham Al, Paylaş</p>
-          </div>
-          <div className="media-app__content">
-            <p className="media-app__placeholder">Medya bölümü yakında...</p>
-          </div>
-        </div>
+        <MediaPanel />
       </div>
     </ThemeProvider>
   );
