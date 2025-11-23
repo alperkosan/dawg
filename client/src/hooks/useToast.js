@@ -4,6 +4,7 @@
  */
 
 import { useState, useCallback, createContext, useContext } from 'react';
+import { flushSync } from 'react-dom';
 
 const ToastContext = createContext(null);
 
@@ -15,17 +16,18 @@ export function ToastProvider({ children }) {
     const id = Date.now() + Math.random();
     const toast = { id, message, type, duration };
     
-    // ✅ FIX: Create new array reference and serialize to ensure React detects change
-    setToasts(prev => {
-      const newToasts = [...prev];
-      // ✅ FIX: Serialize/deserialize toast to ensure React detects state change
-      const serializedToast = JSON.parse(JSON.stringify(toast));
-      newToasts.push(serializedToast);
-      return newToasts;
-    });
+    // ✅ FIX: Serialize/deserialize toast to ensure React detects state change
+    const serializedToast = JSON.parse(JSON.stringify(toast));
     
-    // ✅ FIX: Force re-render by updating key
-    setToastKey(prev => prev + 1);
+    // ✅ FIX: Use flushSync to force immediate DOM update (like modals do)
+    flushSync(() => {
+      setToasts(prev => {
+        const newToasts = [...prev];
+        newToasts.push(serializedToast);
+        return newToasts;
+      });
+      setToastKey(prev => prev + 1);
+    });
     
     // Auto-remove after duration
     setTimeout(() => {

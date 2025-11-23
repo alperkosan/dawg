@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, Suspense, useCallback, useMemo } from 'react';
+import { flushSync } from 'react-dom';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { SpeedInsights } from '@vercel/speed-insights/react';
 
@@ -372,17 +373,18 @@ function DAWApp() {
     const id = Date.now() + Math.random();
     const toast = { id, message, type, duration };
     
-    // ✅ FIX: Create new array reference and serialize to ensure React detects change
-    setToasts(prev => {
-      const newToasts = [...prev];
-      // ✅ FIX: Serialize/deserialize toast to ensure React detects state change
-      const serializedToast = JSON.parse(JSON.stringify(toast));
-      newToasts.push(serializedToast);
-      return newToasts;
-    });
+    // ✅ FIX: Serialize/deserialize toast to ensure React detects state change
+    const serializedToast = JSON.parse(JSON.stringify(toast));
     
-    // ✅ FIX: Force re-render by updating key
-    setToastKey(prev => prev + 1);
+    // ✅ FIX: Use flushSync to force immediate DOM update (like modals do)
+    flushSync(() => {
+      setToasts(prev => {
+        const newToasts = [...prev];
+        newToasts.push(serializedToast);
+        return newToasts;
+      });
+      setToastKey(prev => prev + 1);
+    });
     
     // Auto-remove after duration
     setTimeout(() => {
@@ -644,7 +646,7 @@ function DAWApp() {
       default:
         return <StartupScreen onStart={initializeAudioSystem} />;
     }
-  }, [engineStatus, engineError, initializeAudioSystem, isExportPanelOpen, showLoginPrompt, showProjectTitleModal, handleSave, isAuthenticated, isGuest, currentProjectId, handleProjectSelect, handleNewProject, handleEditTitle, isLoadingProject, loadingProjectTitle, currentProjectTitle]);
+  }, [engineStatus, engineError, initializeAudioSystem, isExportPanelOpen, showLoginPrompt, showProjectTitleModal, handleSave, isAuthenticated, isGuest, currentProjectId, handleProjectSelect, handleNewProject, handleEditTitle, isLoadingProject, loadingProjectTitle, currentProjectTitle, toasts, toastKey, removeToast]);
 
   return <>{renderContent()}</>;
 }
