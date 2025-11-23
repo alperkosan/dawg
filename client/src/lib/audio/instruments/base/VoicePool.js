@@ -42,11 +42,32 @@ export class VoicePool {
      * @returns {BaseVoice|null} Allocated voice or null if failed
      */
     allocate(midiNote, allowPolyphony = true) {
-        // ✅ CRITICAL FIX: Only check for re-trigger if polyphony is disabled (mono mode)
-        // In poly mode, multiple instances of the same note should each get their own voice
+        // ✅ CRITICAL FIX: cutItself behavior - stop existing note before allocating new one
+        // If polyphony is disabled (cutItself=true), we need to stop the existing note first
         if (!allowPolyphony && this.activeVoices.has(midiNote)) {
-            // Mono mode: Return existing voice for re-trigger
-            return this.activeVoices.get(midiNote);
+            // ✅ FIX: Stop existing voice before re-triggering (cutItself behavior)
+            // This ensures oval notes (or any long notes) are properly cut when retriggered
+            const existingVoice = this.activeVoices.get(midiNote);
+            if (existingVoice) {
+                const now = this.context.currentTime;
+                // Stop existing voice immediately (cutItself = instant cut, no release)
+                try {
+                    if (typeof existingVoice.stop === 'function') {
+                        existingVoice.stop(now);
+                    } else if (typeof existingVoice.noteOff === 'function') {
+                        // Quick fade to prevent click
+                        existingVoice.noteOff(now);
+                    }
+                } catch (e) {
+                    console.warn('⚠️ Failed to stop existing voice for cutItself:', e);
+                }
+                // Remove from active voices (will be re-added below)
+                this.activeVoices.delete(midiNote);
+                // Return voice to free pool or reuse it
+                if (!this.freeVoices.includes(existingVoice)) {
+                    this.freeVoices.push(existingVoice);
+                }
+            }
         }
 
         // ✅ POLYPHONY FIX: In poly mode, always allocate a new voice even if same note is playing
