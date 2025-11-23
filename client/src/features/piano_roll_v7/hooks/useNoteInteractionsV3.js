@@ -1202,18 +1202,28 @@ export function useNoteInteractionsV3({
                         const newState = allNewStates.get(noteId);
                         
                         // Each command stores its state, but uses shared update function
+                        // ✅ FIX: Use a flag to track whether we're executing or undoing
+                        let isExecuting = true;
+                        
                         const updateNoteFn = (id, state) => {
                             // Create a map with all states for this operation
                             const statesMap = new Map();
-                            // For execute: use all new states
-                            // For undo: use all old states
-                            if (state === newState) {
+                            
+                            // Determine which states to apply based on the state passed
+                            // If state matches newState structure, we're executing
+                            // If state matches oldState structure, we're undoing
+                            const isNewState = state.startTime === newState.startTime && 
+                                            state.length === newState.length &&
+                                            state.visualLength === newState.visualLength;
+                            
+                            if (isNewState) {
                                 // Execute: apply all new states
                                 allNewStates.forEach((s, nid) => statesMap.set(nid, s));
                             } else {
                                 // Undo: apply all old states
                                 allOldStates.forEach((s, nid) => statesMap.set(nid, s));
                             }
+                            
                             // Update all notes at once
                             updateAllNotesFn(statesMap);
                         };
