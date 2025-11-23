@@ -422,9 +422,14 @@ class ApiClient {
    * Add comment to project
    */
   async addComment(projectId, content, parentId = null) {
+    const body = { content };
+    // Only include parentId if it's not null/undefined
+    if (parentId) {
+      body.parentId = parentId;
+    }
     return this.request(`/interactions/projects/${projectId}/comments`, {
       method: 'POST',
-      body: JSON.stringify({ content, parentId }),
+      body: JSON.stringify(body),
     });
   }
 

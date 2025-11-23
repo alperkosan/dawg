@@ -3,6 +3,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
+import ReactDOM from 'react-dom';
 import { X, Send, Heart, MoreVertical, Trash2, Edit2 } from 'lucide-react';
 import { apiClient } from '@/services/api.js';
 import './CommentModal.css';
@@ -177,7 +178,7 @@ export default function CommentModal({ projectId, isOpen, onClose, initialCommen
 
   if (!isOpen) return null;
 
-  return (
+  const modalContent = (
     <div className="comment-modal-overlay" onClick={onClose}>
       <div className="comment-modal" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
@@ -245,6 +246,9 @@ export default function CommentModal({ projectId, isOpen, onClose, initialCommen
       </div>
     </div>
   );
+
+  // Render modal using portal to document.body
+  return ReactDOM.createPortal(modalContent, document.body);
 }
 
 function CommentItem({
