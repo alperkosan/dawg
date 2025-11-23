@@ -14,7 +14,10 @@ export function ToastProvider({ children }) {
     const id = Date.now() + Math.random();
     const toast = { id, message, type, duration };
     
-    setToasts(prev => [...prev, toast]);
+    // ✅ FIX: Serialize/deserialize toast to ensure React detects state change
+    const serializedToast = JSON.parse(JSON.stringify(toast));
+    
+    setToasts(prev => [...prev, serializedToast]);
     
     // Auto-remove after duration
     setTimeout(() => {
