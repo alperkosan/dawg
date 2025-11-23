@@ -372,7 +372,7 @@ const AudioQualitySettings = ({ onSettingsChange, currentEngine = null }) => {
             <div className="action-buttons">
                 <button
                     className="btn-secondary"
-                    onClick={() => {
+                    onClick={async () => {
                         const exported = qualityManager.exportSettings();
                         navigator.clipboard?.writeText(JSON.stringify(exported, null, 2));
                         const { apiClient } = await import('../services/api.js');

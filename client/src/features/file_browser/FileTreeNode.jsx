@@ -11,17 +11,21 @@ const DraggableFileNode = ({ node, onContextMenu, children }) => {
     // Use native HTML5 drag for compatibility with both React DND and native drop zones
     const handleDragStart = (e) => {
         setIsDragging(true);
-        e.dataTransfer.effectAllowed = 'move'; // Change to 'move' for file browser operations
+        e.dataTransfer.effectAllowed = 'copy'; // ✅ FIX: Use 'copy' for dragging to channel rack (read-only files can be copied)
         e.dataTransfer.setData('application/x-dawg-file-node', JSON.stringify({
             nodeId: node.id,
             nodeType: node.type,
             name: node.name,
-            url: node.url
+            url: node.url,
+            assetId: node.assetId, // ✅ Include assetId for system assets
+            readOnly: node.readOnly // ✅ Include readOnly flag
         }));
-        // Also set text/plain for backward compatibility
+        // Also set text/plain for backward compatibility (channel rack uses this)
         e.dataTransfer.setData('text/plain', JSON.stringify({
             name: node.name,
-            url: node.url
+            url: node.url,
+            assetId: node.assetId, // ✅ Include assetId for system assets
+            readOnly: node.readOnly // ✅ Include readOnly flag
         }));
     };
 
@@ -29,13 +33,17 @@ const DraggableFileNode = ({ node, onContextMenu, children }) => {
         setIsDragging(false);
     };
 
+    // ✅ FIX: Allow dragging all files (including system assets) to channel rack
+    // readOnly only prevents moving files within file browser, not dragging to channel rack
+    const isDraggable = node.type === FILE_SYSTEM_TYPES.FILE; // All files can be dragged
+
     return (
         <div
             onContextMenu={(e) => onContextMenu(e, node)}
             onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
-            draggable={!node.readOnly} // Only allow dragging user files
-            style={{ opacity: isDragging ? 0.5 : 1, cursor: node.readOnly ? 'default' : 'grab' }}
+            draggable={isDraggable} // ✅ FIX: Allow dragging all files (system assets too)
+            style={{ opacity: isDragging ? 0.5 : 1, cursor: isDraggable ? 'grab' : 'default' }}
         >
             {children}
         </div>
