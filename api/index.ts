@@ -6,12 +6,13 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import crypto from 'crypto';
 import Fastify, { FastifyInstance } from 'fastify';
-import { config } from '../server/src/config/index.js';
-import { registerPlugins } from '../server/src/plugins/index.js';
-import { registerRoutes } from '../server/src/routes/index.js';
-import { logger } from '../server/src/utils/logger.js';
-import { testConnection } from '../server/src/services/database.js';
-import { runMigrations } from '../server/src/migrate.js';
+// ✅ FIX: Vercel TypeScript derlemesi için .ts uzantısı kullan (runtime'da .js olur)
+import { config } from '../server/src/config/index';
+import { registerPlugins } from '../server/src/plugins/index';
+import { registerRoutes } from '../server/src/routes/index';
+import { logger } from '../server/src/utils/logger';
+import { testConnection } from '../server/src/services/database';
+import { runMigrations } from '../server/src/migrate';
 
 // Global server instance (reused across invocations for better performance)
 let serverInstance: FastifyInstance | null = null;
