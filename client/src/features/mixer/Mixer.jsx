@@ -12,7 +12,7 @@
  * - Centralized meter service
  */
 
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { useMixerStore } from '@/store/useMixerStore';
 import { useMixerUIStore } from '@/store/useMixerUIStore';
 import {
@@ -56,6 +56,23 @@ const Mixer = () => {
       return () => document.removeEventListener('mousedown', handleClickOutside);
     }
   }, [showAddMenu]);
+
+  // ✅ FIX: Memoize navigateChannel to avoid recreating on every render
+  const navigateChannel = useCallback((direction) => {
+    const allTracksOrdered = [
+      ...mixerTracks.filter(t => t.type === 'track'),
+      ...mixerTracks.filter(t => t.type === 'master'),
+      ...mixerTracks.filter(t => t.type === 'bus')
+    ];
+
+    const currentIndex = allTracksOrdered.findIndex(t => t.id === activeChannelId);
+    if (currentIndex === -1) return;
+
+    const newIndex = currentIndex + direction;
+    if (newIndex >= 0 && newIndex < allTracksOrdered.length) {
+      setActiveChannelId(allTracksOrdered[newIndex].id);
+    }
+  }, [mixerTracks, activeChannelId, setActiveChannelId]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -104,25 +121,9 @@ const Mixer = () => {
       }
     };
 
-    const navigateChannel = (direction) => {
-      const allTracksOrdered = [
-        ...mixerTracks.filter(t => t.type === 'track'),
-        ...mixerTracks.filter(t => t.type === 'master'),
-        ...mixerTracks.filter(t => t.type === 'bus')
-      ];
-
-      const currentIndex = allTracksOrdered.findIndex(t => t.id === activeChannelId);
-      if (currentIndex === -1) return;
-
-      const newIndex = currentIndex + direction;
-      if (newIndex >= 0 && newIndex < allTracksOrdered.length) {
-        setActiveChannelId(allTracksOrdered[newIndex].id);
-      }
-    };
-
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [activeChannelId, mixerTracks, toggleMute, toggleSolo, removeTrack, setActiveChannelId]);
+  }, [activeChannelId, mixerTracks, toggleMute, toggleSolo, removeTrack, navigateChannel]);
 
   const handleAddTrack = () => {
     addTrack('track');
