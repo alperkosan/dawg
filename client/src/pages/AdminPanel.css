@@ -462,6 +462,47 @@
   gap: var(--zenith-space-2);
 }
 
+/* Projects */
+.admin-panel__project-name {
+  font-weight: 600;
+  color: var(--zenith-text-primary);
+  display: flex;
+  align-items: center;
+  gap: var(--zenith-space-2);
+}
+
+.admin-panel__project-description {
+  font-size: var(--zenith-font-size-sm);
+  color: var(--zenith-text-secondary);
+  margin-top: var(--zenith-space-1);
+  line-height: 1.4;
+}
+
+.admin-panel__visibility {
+  display: flex;
+  align-items: center;
+  gap: var(--zenith-space-1);
+}
+
+.admin-panel__project-stats {
+  display: flex;
+  gap: var(--zenith-space-2);
+  font-size: var(--zenith-font-size-sm);
+  color: var(--zenith-text-secondary);
+}
+
+.admin-panel__project-stats span {
+  display: flex;
+  align-items: center;
+  gap: var(--zenith-space-1);
+}
+
+.admin-panel__toolbar-actions {
+  display: flex;
+  gap: var(--zenith-space-2);
+  align-items: center;
+}
+
 /* Modals */
 .admin-modal-overlay {
   position: fixed;
