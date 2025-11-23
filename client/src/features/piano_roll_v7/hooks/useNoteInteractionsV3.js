@@ -80,7 +80,7 @@ const Action = {
 // ===================================================================
 
 function reducer(state, action) {
-    if (DEBUG) {
+    if (DEBUG && action.type !== "set_hover") {
         console.log(`🔄 [V3.${action.type}]`, action.payload);
     }
 
@@ -1142,44 +1142,115 @@ export function useNoteInteractionsV3({
                     }
                 } else {
                     // Multiple notes - batch command
-                    const commands = noteIds.map(noteId => {
+                    // ✅ FIX: Create a shared update function that updates all notes at once
+                    // This prevents each command from overwriting previous updates
+                    const allOldStates = new Map();
+                    const allNewStates = new Map();
+                    
+                    noteIds.forEach(noteId => {
                         const orig = originals.get(noteId);
                         const updatedNote = updated.find(n => n.id === noteId);
-                        if (!orig || !updatedNote) return null;
+                        if (orig && updatedNote) {
+                            allOldStates.set(noteId, {
+                                startTime: orig.startTime,
+                                length: orig.length,
+                                visualLength: orig.visualLength
+                            });
+                            allNewStates.set(noteId, {
+                                startTime: updatedNote.startTime,
+                                length: updatedNote.length,
+                                visualLength: updatedNote.visualLength
+                            });
+                        }
+                    });
 
-                        const oldState = {
-                            startTime: orig.startTime,
-                            length: orig.length,
-                            visualLength: orig.visualLength
-                        };
-                        const newState = {
-                            startTime: updatedNote.startTime,
-                            length: updatedNote.length,
-                            visualLength: updatedNote.visualLength
-                        };
-
-                        const updateNoteFn = (id, state) => {
-                            const finalNotes = notes.map(n =>
-                                n.id === id ? { ...n, ...state } : n
-                            );
-                            updatePatternNotes(activePatternId, currentInstrument.id, finalNotes);
-                            
-                            // EventBus notification
-                            const modifiedNote = finalNotes.find(n => n.id === id);
-                            if (modifiedNote) {
+                    // ✅ FIX: Single update function that updates all notes at once
+                    // This function will be called once for the entire batch
+                    let currentNotesRef = notes; // Capture current notes at batch creation time
+                    
+                    const updateAllNotesFn = (statesToApply) => {
+                        // Apply all updates at once
+                        const finalNotes = currentNotesRef.map(n => {
+                            const state = statesToApply.get(n.id);
+                            if (state) {
+                                return { ...n, ...state };
+                            }
+                            return n;
+                        });
+                        
+                        // Update pattern notes with all changes at once
+                        updatePatternNotes(activePatternId, currentInstrument.id, finalNotes);
+                        
+                        // Update reference for next call (undo/redo)
+                        currentNotesRef = finalNotes;
+                        
+                        // ✅ EVENT BUS: Notify audio engine of all modifications
+                        finalNotes.forEach(note => {
+                            if (noteIds.includes(note.id)) {
                                 EventBus.emit('NOTE_MODIFIED', {
                                     patternId: activePatternId,
                                     instrumentId: currentInstrument.id,
-                                    note: modifiedNote
+                                    note
                                 });
                             }
+                        });
+                    };
+
+                    // Create commands with shared update function
+                    const commands = Array.from(allOldStates.keys()).map(noteId => {
+                        const oldState = allOldStates.get(noteId);
+                        const newState = allNewStates.get(noteId);
+                        
+                        // Each command stores its state, but uses shared update function
+                        const updateNoteFn = (id, state) => {
+                            // Create a map with all states for this operation
+                            const statesMap = new Map();
+                            // For execute: use all new states
+                            // For undo: use all old states
+                            if (state === newState) {
+                                // Execute: apply all new states
+                                allNewStates.forEach((s, nid) => statesMap.set(nid, s));
+                            } else {
+                                // Undo: apply all old states
+                                allOldStates.forEach((s, nid) => statesMap.set(nid, s));
+                            }
+                            // Update all notes at once
+                            updateAllNotesFn(statesMap);
                         };
 
                         return new UpdateNoteCommand(noteId, oldState, newState, updateNoteFn);
                     }).filter(Boolean);
 
                     if (commands.length > 0) {
+                        // ✅ FIX: Create custom batch command that updates all notes at once
                         const batchCommand = new BatchCommand(commands, `Resize ${commands.length} note(s)`);
+                        
+                        // Override execute to call updateAllNotesFn once with all new states
+                        const originalExecute = batchCommand.execute.bind(batchCommand);
+                        batchCommand.execute = function() {
+                            // Update all notes at once with new states
+                            updateAllNotesFn(allNewStates);
+                            // Mark commands as executed for undo/redo tracking
+                            this.commands.forEach(cmd => {
+                                if (cmd.executed !== undefined) {
+                                    cmd.executed = true;
+                                }
+                            });
+                        };
+                        
+                        // Override undo to call updateAllNotesFn once with all old states
+                        const originalUndo = batchCommand.undo.bind(batchCommand);
+                        batchCommand.undo = function() {
+                            // Update all notes at once with old states
+                            updateAllNotesFn(allOldStates);
+                            // Mark commands as not executed
+                            this.commands.forEach(cmd => {
+                                if (cmd.executed !== undefined) {
+                                    cmd.executed = false;
+                                }
+                            });
+                        };
+                        
                         stack.execute(batchCommand);
                     }
                 }
