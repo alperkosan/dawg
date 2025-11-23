@@ -1,0 +1,192 @@
+.project-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--zenith-bg-secondary);
+  border: 1px solid var(--zenith-border-subtle);
+  border-radius: var(--zenith-radius-lg);
+  overflow: hidden;
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.project-card:hover {
+  border-color: var(--zenith-border-primary);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.project-card__thumbnail {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: var(--zenith-bg-tertiary);
+  overflow: hidden;
+}
+
+.project-card__thumbnail img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.project-card__thumbnail-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--zenith-accent-primary), var(--zenith-accent-secondary));
+  color: var(--zenith-text-inverse);
+  font-size: 3rem;
+  font-weight: bold;
+}
+
+.project-card__play-btn {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.7);
+  border: none;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.project-card:hover .project-card__play-btn {
+  opacity: 1;
+}
+
+.project-card__play-btn:hover {
+  background: rgba(0, 0, 0, 0.9);
+  transform: translate(-50%, -50%) scale(1.1);
+}
+
+.project-card__content {
+  padding: var(--zenith-space-4);
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--zenith-space-2);
+}
+
+.project-card__title {
+  font-size: var(--zenith-font-size-lg);
+  font-weight: 600;
+  color: var(--zenith-text-primary);
+  margin: 0;
+  line-height: 1.3;
+}
+
+.project-card__description {
+  font-size: var(--zenith-font-size-sm);
+  color: var(--zenith-text-secondary);
+  margin: 0;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.project-card__author {
+  display: flex;
+  align-items: center;
+  gap: var(--zenith-space-2);
+  margin-top: auto;
+}
+
+.project-card__author-avatar,
+.project-card__author-avatar-placeholder {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.project-card__author-avatar-placeholder {
+  background: var(--zenith-accent-primary);
+  color: var(--zenith-text-inverse);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--zenith-font-size-xs);
+  font-weight: 600;
+}
+
+.project-card__author-name {
+  font-size: var(--zenith-font-size-sm);
+  color: var(--zenith-text-secondary);
+  font-weight: 500;
+}
+
+.project-card__metadata {
+  display: flex;
+  gap: var(--zenith-space-2);
+  font-size: var(--zenith-font-size-xs);
+  color: var(--zenith-text-tertiary);
+}
+
+.project-card__bpm,
+.project-card__key {
+  padding: 2px 6px;
+  background: var(--zenith-bg-tertiary);
+  border-radius: var(--zenith-radius-sm);
+}
+
+.project-card__stats {
+  display: flex;
+  gap: var(--zenith-space-3);
+  font-size: var(--zenith-font-size-xs);
+  color: var(--zenith-text-tertiary);
+}
+
+.project-card__stat {
+  display: flex;
+  align-items: center;
+  gap: var(--zenith-space-1);
+}
+
+.project-card__actions {
+  display: flex;
+  gap: 0;
+  border-top: 1px solid var(--zenith-border-subtle);
+  padding: var(--zenith-space-2);
+}
+
+.project-card__action-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--zenith-space-1);
+  padding: var(--zenith-space-2);
+  background: transparent;
+  border: none;
+  color: var(--zenith-text-secondary);
+  cursor: pointer;
+  font-size: var(--zenith-font-size-sm);
+  transition: all 0.2s ease;
+  border-radius: var(--zenith-radius-sm);
+}
+
+.project-card__action-btn:hover {
+  background: var(--zenith-bg-hover);
+  color: var(--zenith-text-primary);
+}
+
+.project-card__action-btn.active {
+  color: var(--zenith-accent-primary);
+}
+
+.project-card__action-btn.active:hover {
+  background: var(--zenith-bg-hover);
+}
+

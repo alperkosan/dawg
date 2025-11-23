@@ -1,0 +1,101 @@
+.project-card-skeleton {
+  display: flex;
+  flex-direction: column;
+  background: var(--zenith-bg-secondary);
+  border: 1px solid var(--zenith-border-subtle);
+  border-radius: var(--zenith-radius-lg);
+  overflow: hidden;
+}
+
+.project-card-skeleton__thumbnail {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: linear-gradient(
+    90deg,
+    var(--zenith-bg-tertiary) 0%,
+    var(--zenith-bg-hover) 50%,
+    var(--zenith-bg-tertiary) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+.project-card-skeleton__content {
+  padding: var(--zenith-space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--zenith-space-2);
+}
+
+.project-card-skeleton__title {
+  height: 20px;
+  width: 70%;
+  background: linear-gradient(
+    90deg,
+    var(--zenith-bg-tertiary) 0%,
+    var(--zenith-bg-hover) 50%,
+    var(--zenith-bg-tertiary) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: var(--zenith-radius-sm);
+}
+
+.project-card-skeleton__description {
+  height: 14px;
+  width: 100%;
+  background: linear-gradient(
+    90deg,
+    var(--zenith-bg-tertiary) 0%,
+    var(--zenith-bg-hover) 50%,
+    var(--zenith-bg-tertiary) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: var(--zenith-radius-sm);
+}
+
+.project-card-skeleton__author {
+  height: 24px;
+  width: 120px;
+  background: linear-gradient(
+    90deg,
+    var(--zenith-bg-tertiary) 0%,
+    var(--zenith-bg-hover) 50%,
+    var(--zenith-bg-tertiary) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: var(--zenith-radius-sm);
+  margin-top: auto;
+}
+
+.project-card-skeleton__metadata {
+  height: 16px;
+  width: 80px;
+  background: linear-gradient(
+    90deg,
+    var(--zenith-bg-tertiary) 0%,
+    var(--zenith-bg-hover) 50%,
+    var(--zenith-bg-tertiary) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: var(--zenith-radius-sm);
+}
+
+.project-card-skeleton__actions {
+  height: 48px;
+  border-top: 1px solid var(--zenith-border-subtle);
+  background: var(--zenith-bg-tertiary);
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+

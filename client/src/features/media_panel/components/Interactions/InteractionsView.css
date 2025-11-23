@@ -1,0 +1,13 @@
+.interactions-view {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: var(--zenith-space-8);
+}
+
+.interactions-view__placeholder {
+  text-align: center;
+  color: var(--zenith-text-secondary);
+}
+

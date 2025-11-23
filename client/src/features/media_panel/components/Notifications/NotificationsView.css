@@ -1,0 +1,13 @@
+.notifications-view {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: var(--zenith-space-8);
+}
+
+.notifications-view__placeholder {
+  text-align: center;
+  color: var(--zenith-text-secondary);
+}
+

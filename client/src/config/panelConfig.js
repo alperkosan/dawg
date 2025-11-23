@@ -10,6 +10,7 @@ import AudioQualitySettings from '@/components/AudioQualitySettings';
 import AudioQualitySettings_v2 from '@/components/AudioQualitySettings_v2';
 import FileBrowserPanel from '@/features/file_browser/FileBrowserPanel';
 import { AIInstrumentPanel } from '@/features/ai_instrument/AIInstrumentPanel';
+import MediaPanel from '@/features/media_panel/MediaPanel';
 
 export const panelRegistry = {
   'channel-rack': ChannelRack,
@@ -24,6 +25,7 @@ export const panelRegistry = {
   'audio-quality-settings': AudioQualitySettings_v2, // ✅ V2 with modern design
   'audio-quality-settings-v1': AudioQualitySettings, // Legacy version
   'ai-instrument': AIInstrumentPanel, // ✨ AI Instrument Generator
+  'media-panel': MediaPanel, // 📱 Media Panel (Feed, Interactions, Notifications)
 };
 
 export const panelDefinitions = {
@@ -97,5 +99,11 @@ export const panelDefinitions = {
     initialSize: { width: 600, height: 800 },
     initialPos: { x: 120, y: 140 },
     minSize: { width: 500, height: 600 },
+  },
+  'media-panel': {
+    title: 'Media Panel 📱',
+    initialSize: { width: 1000, height: 700 },
+    initialPos: { x: 140, y: 160 },
+    minSize: { width: 800, height: 500 },
   },
 };
