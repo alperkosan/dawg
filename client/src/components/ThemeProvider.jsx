@@ -26,9 +26,17 @@ export const ThemeProvider = ({ children }) => {
       });
     }
 
+    // 3. Apply theme ID as data attribute for theme-specific CSS patterns
+    const themeSlug = activeTheme.name.toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '');
+    root.setAttribute('data-theme-id', themeSlug);
+    root.setAttribute('data-theme-name', activeTheme.name);
+
     console.log(`🎨 Theme applied: ${activeTheme.name}`, {
       colors: Object.keys(activeTheme.colors).length,
-      zenithTokens: activeTheme.zenith ? Object.keys(activeTheme.zenith).length : 0
+      zenithTokens: activeTheme.zenith ? Object.keys(activeTheme.zenith).length : 0,
+      themeSlug
     });
 
   }, [activeTheme]);
