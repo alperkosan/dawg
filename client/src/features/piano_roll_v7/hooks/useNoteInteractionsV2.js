@@ -2666,27 +2666,33 @@ export function useNoteInteractionsV2(
                 const storedNotes = getPatternNotes();
                 const baseNotes = convertToPianoRollFormat(storedNotes);
                 
-                // ✅ CRITICAL FIX: Ensure all notes are included, not just those in tempNotes
-                const updatedNotes = baseNotes.map(n => {
-                    const finalState = finalStates.get(n.id);
-                    if (finalState) {
-                        return {
-                            ...n,
-                            startTime: finalState.startTime,
-                            length: finalState.length,
-                            visualLength: finalState.visualLength // ✅ FL STUDIO STYLE: Update visualLength too
-                        };
-                    }
-                    return n;
+                // ✅ FIX: Create a Map for faster lookup and ensure all resized notes are included
+                const updatedNotesMap = new Map();
+                
+                // First, add all base notes (non-resized notes stay as-is)
+                baseNotes.forEach(n => {
+                    updatedNotesMap.set(n.id, n);
                 });
                 
-                // ✅ CRITICAL FIX: Ensure all resized notes are present (don't lose notes)
+                // ✅ FIX: Then update all resized notes from finalStates
+                // This ensures ALL resized notes are updated, even if they weren't in baseNotes
                 noteIds.forEach(noteId => {
-                    if (!updatedNotes.find(n => n.id === noteId)) {
-                        const finalState = finalStates.get(noteId);
-                        if (finalState) {
-                            const original = originalNotes.get(noteId);
-                            updatedNotes.push({
+                    const finalState = finalStates.get(noteId);
+                    if (finalState) {
+                        const existingNote = updatedNotesMap.get(noteId);
+                        const original = originalNotes.get(noteId);
+                        
+                        if (existingNote) {
+                            // Update existing note
+                            updatedNotesMap.set(noteId, {
+                                ...existingNote,
+                                startTime: finalState.startTime,
+                                length: finalState.length,
+                                visualLength: finalState.visualLength // ✅ FL STUDIO STYLE: Update visualLength too
+                            });
+                        } else {
+                            // Add missing note (shouldn't happen, but safety check)
+                            updatedNotesMap.set(noteId, {
                                 id: noteId,
                                 startTime: finalState.startTime,
                                 pitch: original?.pitch || 60,
@@ -2698,6 +2704,9 @@ export function useNoteInteractionsV2(
                         }
                     }
                 });
+                
+                // Convert Map back to array
+                const updatedNotes = Array.from(updatedNotesMap.values());
                 
                 if (DEBUG_MODE) {
                     console.log('✅ Updating pattern store with resized notes:', {

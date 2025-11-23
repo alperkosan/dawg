@@ -1014,12 +1014,24 @@ export class AudioContextService {
           }
         }
 
-        // Check if mixer insert exists
-        const mixerInsert = this.audioEngine.mixerInserts?.get(instrument.mixerTrackId);
+        // ✅ FIX: Check if mixer insert exists, create if missing
+        let mixerInsert = this.audioEngine.mixerInserts?.get(instrument.mixerTrackId);
         if (!mixerInsert) {
-          console.warn(`⚠️ Mixer insert ${instrument.mixerTrackId} not found for instrument ${instrument.id}`);
-          errorCount++;
-          continue;
+          console.warn(`⚠️ Mixer insert ${instrument.mixerTrackId} not found for instrument ${instrument.id}, creating...`);
+          // Try to create the mixer insert
+          try {
+            mixerInsert = this.createMixerInsert(instrument.mixerTrackId, instrument.mixerTrackId);
+            if (!mixerInsert) {
+              console.error(`❌ Failed to create mixer insert ${instrument.mixerTrackId}`);
+              errorCount++;
+              continue;
+            }
+            console.log(`✅ Created mixer insert ${instrument.mixerTrackId} for instrument ${instrument.id}`);
+          } catch (createError) {
+            console.error(`❌ Failed to create mixer insert ${instrument.mixerTrackId}:`, createError);
+            errorCount++;
+            continue;
+          }
         }
 
         // Check if already routed
