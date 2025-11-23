@@ -115,7 +115,7 @@
 
 .top-toolbar__mode-btn--active {
   background-color: var(--zenith-accent-warm);
-  color: var(--zenith-text-primary);
+  color: #000000; /* ✅ FIX: Use black for better contrast on accent-warm (yellow) background */
   box-shadow: 0 1px 4px rgba(var(--zenith-accent-warm-rgb), 0.2);
 }
 

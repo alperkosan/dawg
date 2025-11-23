@@ -151,7 +151,7 @@
 
 .instrument-row__action-btn--active {
   background-color: var(--zenith-accent-cool);
-  color: var(--zenith-text-primary);
+  color: #000000; /* ✅ FIX: Use black for better contrast on accent-cool background */
   box-shadow: var(--zenith-shadow-lg);
 }
 
