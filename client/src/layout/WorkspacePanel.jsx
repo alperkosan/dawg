@@ -6,10 +6,18 @@ import FileBrowserPanel from '@/features/file_browser/FileBrowserPanel';
 import { usePanelsStore } from '@/store/usePanelsStore';
 import { useInstrumentsStore } from '@/store/useInstrumentsStore';
 import { useMixerStore } from '@/store/useMixerStore';
+import { useThemeStore } from '@/store/useThemeStore';
 import { panelRegistry, panelDefinitions } from '@/config/panelConfig';
 import { pluginRegistry } from '@/config/pluginConfig';
 import PluginContainer from '@/components/plugins/container/PluginContainer';
 import { AudioContextService } from '@/lib/services/AudioContextService';
+
+// Atmospheric effects
+import MatrixRain from '@/components/effects/MatrixRain';
+import CyberpunkScanlines from '@/components/effects/CyberpunkScanlines';
+import OceanBubbles from '@/components/effects/OceanBubbles';
+import RetroMiamiGrid from '@/components/effects/RetroMiamiGrid';
+import ParticlesEffect from '@/components/effects/ParticlesEffect';
 
 function WorkspacePanel() {
   const {
@@ -23,14 +31,143 @@ function WorkspacePanel() {
   const pianoRollInstrument = instruments.find(i => i.id === pianoRollInstrumentId);
   const editingInstrument = instruments.find(i => i.id === editingInstrumentId);
 
+  // Get active theme for atmospheric effects
+  const activeTheme = useThemeStore(state => {
+    const { themes, activeThemeId } = state;
+    return themes.find(t => t.id === activeThemeId);
+  });
+  const themeName = activeTheme?.name || '';
+
   const baseZIndex = 10;
+
+  // Render appropriate effect based on theme
+  const renderThemeEffect = () => {
+    switch (themeName) {
+      case 'Matrix Code':
+        return <MatrixRain opacity={0.15} fontSize={14} speed={0.4} />;
+
+      case 'Cyberpunk Neon':
+        return <CyberpunkScanlines opacity={0.15} speed={0.8} />;
+
+      case 'Ocean Deep':
+        return <OceanBubbles opacity={0.18} count={12} />;
+
+      case 'Retro Miami':
+        return <RetroMiamiGrid opacity={0.12} speed={0.5} />;
+
+      case '8-Bit Night':
+        return (
+          <ParticlesEffect
+            type="stars"
+            count={40}
+            color="#4ade80"
+            opacity={0.2}
+            speed={0.3}
+            size={{ min: 1, max: 2 }}
+          />
+        );
+
+      case 'Midnight Purple':
+        return (
+          <ParticlesEffect
+            type="stars"
+            count={60}
+            color="#C77DFF"
+            secondaryColor="#9D4EDD"
+            opacity={0.25}
+            speed={0.2}
+            size={{ min: 1, max: 3 }}
+          />
+        );
+
+      case 'Arctic Minimal':
+        return (
+          <ParticlesEffect
+            type="snow"
+            count={30}
+            color="#E0F7FF"
+            opacity={0.15}
+            speed={0.6}
+            size={{ min: 2, max: 4 }}
+          />
+        );
+
+      case 'Lavender Dreams':
+        return (
+          <ParticlesEffect
+            type="petals"
+            count={20}
+            color="#E6B8FF"
+            secondaryColor="#D4A5FF"
+            opacity={0.2}
+            speed={0.4}
+            size={{ min: 2, max: 5 }}
+          />
+        );
+
+      case 'Anime Vibes':
+        return (
+          <ParticlesEffect
+            type="petals"
+            count={25}
+            color="#FF1744"
+            secondaryColor="#E040FB"
+            opacity={0.18}
+            speed={0.5}
+            size={{ min: 2, max: 4 }}
+          />
+        );
+
+      case 'Forest Twilight':
+        return (
+          <ParticlesEffect
+            type="fireflies"
+            count={15}
+            color="#32CD32"
+            opacity={0.3}
+            speed={0.25}
+            size={{ min: 1.5, max: 3 }}
+          />
+        );
+
+      case 'Sunset Vibes':
+        return (
+          <ParticlesEffect
+            type="sparkles"
+            count={20}
+            color="#FF6B35"
+            secondaryColor="#F7931E"
+            opacity={0.15}
+            speed={0.3}
+            size={{ min: 1, max: 2 }}
+          />
+        );
+
+      case 'Desert Heat':
+        return (
+          <ParticlesEffect
+            type="sparkles"
+            count={15}
+            color="#FFB627"
+            opacity={0.12}
+            speed={0.2}
+            size={{ min: 1, max: 2 }}
+          />
+        );
+
+      default:
+        return null; // No effect for other themes
+    }
+  };
 
   return (
     // 'workspace' sınıfı artık display: flex kullanıyor.
-    <div className="workspace"> 
+    <div className="workspace">
       <FileBrowserPanel />
       {/* 'workspace__main-content' flex-grow: 1 ile geri kalan alanı kaplayacak */}
-      <div className="workspace__main-content"> 
+      <div className="workspace__main-content">
+        {/* Atmospheric effects based on active theme */}
+        {renderThemeEffect()} 
         {Object.values(panels).map(panel => {
           const isMaximized = fullscreenPanel === panel.id;
 

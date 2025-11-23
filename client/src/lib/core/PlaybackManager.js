@@ -1489,9 +1489,27 @@ export class PlaybackManager {
                 noteDuration = this.transport.stepsToSeconds(note.length);
             } else if (note.duration) {
                 // LEGACY FORMAT: duration as string ("4n", "8n", etc)
-                noteDuration = note.duration === 'trigger' ?
-                    this.transport.stepsToSeconds(0.1) :
-                    NativeTimeUtils.parseTime(note.duration, this.transport.bpm);
+                if (note.duration === 'trigger') {
+                    noteDuration = this.transport.stepsToSeconds(0.1);
+                } else {
+                    // ✅ FIX: Handle invalid duration formats (e.g., "4*16n")
+                    // Try to parse, but fallback to length if available
+                    try {
+                        noteDuration = NativeTimeUtils.parseTime(note.duration, this.transport.bpm);
+                    } catch (error) {
+                        console.warn(`⚠️ Invalid duration format: "${note.duration}", falling back to length or default`, error);
+                        // Fallback: try to extract number from invalid format (e.g., "4*16n" -> 4)
+                        const match = String(note.duration).match(/(\d+)/);
+                        if (match) {
+                            const steps = parseFloat(match[1]);
+                            noteDuration = this.transport.stepsToSeconds(steps);
+                        } else if (typeof note.length === 'number') {
+                            noteDuration = this.transport.stepsToSeconds(note.length);
+                        } else {
+                            noteDuration = this.transport.stepsToSeconds(1);
+                        }
+                    }
+                }
             } else {
                 // FALLBACK: Default to 1 step
                 noteDuration = this.transport.stepsToSeconds(1);

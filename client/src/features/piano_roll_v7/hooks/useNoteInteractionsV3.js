@@ -25,6 +25,35 @@ const DEBUG = true;
 const VERSION = '3.0.0';
 
 // ===================================================================
+// UTILITY FUNCTIONS
+// ===================================================================
+
+/**
+ * Convert steps to Tone.js duration string
+ * 1 step = 1/16 note = "16n"
+ * 2 steps = 1/8 note = "8n"
+ * 4 steps = 1/4 note = "4n"
+ * 8 steps = 1/2 note = "2n"
+ * 16 steps = 1 whole note = "1n"
+ */
+function stepsToDurationString(steps) {
+    if (typeof steps !== 'number' || steps <= 0) return '16n';
+    
+    // Round to nearest valid duration
+    if (steps <= 0.5) return '32n';
+    if (steps <= 1) return '16n';
+    if (steps <= 2) return '8n';
+    if (steps <= 4) return '4n';
+    if (steps <= 8) return '2n';
+    if (steps <= 16) return '1n';
+    
+    // For longer durations, use multiples of whole notes
+    // But keep it simple - just use "1n" for anything longer
+    // (The actual length is stored in the `length` property)
+    return '1n';
+}
+
+// ===================================================================
 // STATE MACHINE
 // ===================================================================
 
@@ -827,7 +856,7 @@ export function useNoteInteractionsV3({
 
             // ✅ Channel Rack format (for playback - legacy compatibility)
             time: finalTime,
-            duration: `${lengthInSteps}*16n`, // Convert steps to Tone.js duration
+            duration: stepsToDurationString(lengthInSteps), // Convert steps to Tone.js duration
 
             // ✅ Velocity: Use 0-127 format (more standard)
             velocity: 100,

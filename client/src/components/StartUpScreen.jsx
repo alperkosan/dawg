@@ -27,10 +27,10 @@ function StartupScreen({ onStart }) {
           <h1 className="startup-screen__title">DAWG</h1>
           <div className="startup-screen__subtitle">
             <span className="startup-screen__tagline">
-              Digital Audio Workstation - Ghetto Blaster Edition
+              Digital Audio Workstation
             </span>
             <span className="startup-screen__description">
-              Online Ghetto - Profesyonel müzik prodüksiyonu
+              Profesyonel müzik prodüksiyonu
             </span>
           </div>
         </div>
