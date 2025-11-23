@@ -367,14 +367,22 @@ function DAWApp() {
 
   // ✅ 5. TOAST NOTIFICATIONS: Show success/error messages
   const [toasts, setToasts] = useState([]);
+  const [toastKey, setToastKey] = useState(0); // ✅ FIX: Force re-render with key
   const showNotification = useCallback((message, type = 'info', duration = 4000) => {
     const id = Date.now() + Math.random();
     const toast = { id, message, type, duration };
     
-    // ✅ FIX: Serialize/deserialize toast to ensure React detects state change
-    const serializedToast = JSON.parse(JSON.stringify(toast));
+    // ✅ FIX: Create new array reference and serialize to ensure React detects change
+    setToasts(prev => {
+      const newToasts = [...prev];
+      // ✅ FIX: Serialize/deserialize toast to ensure React detects state change
+      const serializedToast = JSON.parse(JSON.stringify(toast));
+      newToasts.push(serializedToast);
+      return newToasts;
+    });
     
-    setToasts(prev => [...prev, serializedToast]);
+    // ✅ FIX: Force re-render by updating key
+    setToastKey(prev => prev + 1);
     
     // Auto-remove after duration
     setTimeout(() => {
@@ -590,7 +598,7 @@ function DAWApp() {
               }}
             />
             {/* ✅ FIX: ToastContainer'ı app-container dışına taşıdık - pointer-events sorunlarını önlemek için */}
-            <ToastContainer toasts={toasts} onRemove={removeToast} />
+            <ToastContainer key={toastKey} toasts={toasts} onRemove={removeToast} />
             {/* ✅ FIX: Modal'ları app-container dışına taşıdık - pointer-events sorunlarını önlemek için */}
             <ExportPanel isOpen={isExportPanelOpen} onClose={() => setIsExportPanelOpen(false)} />
             <LoginPrompt 
