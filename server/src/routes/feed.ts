@@ -22,7 +22,22 @@ export async function feedRoutes(server: FastifyInstance) {
     try {
       const query = FeedQuerySchema.parse(request.query);
       const db = getDatabase();
-      const userId = request.user?.userId;
+      
+      // ✅ FIX: Optional authentication - try to get userId from token if present
+      let userId: string | undefined = request.user?.userId;
+      if (!userId) {
+        const authHeader = request.headers.authorization;
+        if (authHeader && authHeader.startsWith('Bearer ')) {
+          try {
+            const token = authHeader.substring(7);
+            const decoded = await server.jwt.verify(token);
+            userId = decoded.userId as string;
+          } catch (error) {
+            // Ignore auth errors - user will be treated as anonymous
+            userId = undefined;
+          }
+        }
+      }
 
       const conditions: string[] = [];
       const params: any[] = [];

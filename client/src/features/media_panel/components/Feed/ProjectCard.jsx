@@ -14,9 +14,10 @@ export default function ProjectCard({ project }) {
 
   // ✅ FIX: Update state when project prop changes (e.g., after feed refresh)
   useEffect(() => {
-    setIsLiked(project.isLiked || false);
+    // Use project.id as key to ensure we update when project changes
+    setIsLiked(Boolean(project.isLiked));
     setLikeCount(project.stats?.likes || 0);
-  }, [project.isLiked, project.stats?.likes]);
+  }, [project.id, project.isLiked, project.stats?.likes]);
 
   const handleLike = async (e) => {
     e.stopPropagation();
