@@ -22,8 +22,13 @@ async function createServer() {
     return serverInstance;
   }
 
+  // ✅ FIX: Vercel/serverless ortamında pino-pretty kullanma
+  // pino-pretty development tool'u, serverless'te sorun yaratır
+  const isVercel = !!process.env.VERCEL || !!process.env.VERCEL_ENV;
+  const isDev = process.env.NODE_ENV === 'development' && !isVercel;
+  
   const server = Fastify({
-    logger: {
+    logger: isDev ? {
       level: 'info',
       transport: {
         target: 'pino-pretty',
@@ -33,34 +38,63 @@ async function createServer() {
           ignore: 'pid,hostname',
         },
       },
-    },
+    } : false, // Vercel'de logger'ı kapat, console.log kullan
     requestIdLogLabel: 'reqId',
     genReqId: () => crypto.randomUUID(),
-    // ✅ Vercel: Enable request logging in development
-    disableRequestLogging: false,
+    // ✅ Vercel: Disable request logging (console.log kullanıyoruz)
+    disableRequestLogging: true,
   });
 
   try {
     // Test database connection
     if (!isInitialized) {
-      logger.info('Testing database connection...');
-      const dbConnected = await testConnection();
-      if (!dbConnected) {
-        throw new Error('Database connection failed');
+      console.log('🔵 Step 1: Testing database connection...');
+      try {
+        const dbConnected = await testConnection();
+        if (!dbConnected) {
+          console.error('❌ Database connection test returned false');
+          throw new Error('Database connection failed');
+        }
+        console.log('✅ Database connection successful');
+      } catch (dbError) {
+        console.error('❌ Database connection error:', dbError);
+        console.error('Database URL:', process.env.DATABASE_URL ? 'SET' : 'NOT SET');
+        console.error('Neon URL:', process.env.NEON_DATABASE_URL ? 'SET' : 'NOT SET');
+        throw dbError;
       }
       
       // Run migrations (only once on cold start)
-      logger.info('Running database migrations...');
-      await runMigrations();
+      console.log('🔵 Step 2: Running database migrations...');
+      try {
+        await runMigrations();
+        console.log('✅ Migrations completed');
+      } catch (migrationError) {
+        console.error('❌ Migration error:', migrationError);
+        throw migrationError;
+      }
       
       isInitialized = true;
     }
     
     // Register plugins
-    await registerPlugins(server);
+    console.log('🔵 Step 3: Registering plugins...');
+    try {
+      await registerPlugins(server);
+      console.log('✅ Plugins registered');
+    } catch (pluginError) {
+      console.error('❌ Plugin registration error:', pluginError);
+      throw pluginError;
+    }
     
     // Register routes
-    await registerRoutes(server);
+    console.log('🔵 Step 4: Registering routes...');
+    try {
+      await registerRoutes(server);
+      console.log('✅ Routes registered');
+    } catch (routeError) {
+      console.error('❌ Route registration error:', routeError);
+      throw routeError;
+    }
     
     // Health check
     server.get('/health', async () => {
@@ -68,9 +102,17 @@ async function createServer() {
     });
 
     // Prepare server (don't listen, we're in serverless mode)
-    await server.ready();
+    console.log('🔵 Step 5: Preparing server...');
+    try {
+      await server.ready();
+      console.log('✅ Server ready');
+    } catch (readyError) {
+      console.error('❌ Server ready error:', readyError);
+      throw readyError;
+    }
 
     serverInstance = server;
+    console.log('✅ Server instance created successfully');
     return server;
   } catch (error) {
     console.error('❌ Failed to create server:', error);
@@ -79,7 +121,7 @@ async function createServer() {
       stack: error instanceof Error ? error.stack : undefined,
       name: error instanceof Error ? error.name : undefined,
     });
-    logger.error('Failed to create server:', error);
+    // Don't use logger here, it might fail too
     throw error;
   }
 }
