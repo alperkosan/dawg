@@ -2,7 +2,7 @@
  * Project Card - Individual project card in feed
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Heart, MessageCircle, Share2, GitBranch, Eye, Play, Pause } from 'lucide-react';
 import { apiClient } from '@/services/api.js';
 import './ProjectCard.css';
@@ -11,6 +11,12 @@ export default function ProjectCard({ project }) {
   const [isLiked, setIsLiked] = useState(project.isLiked || false);
   const [likeCount, setLikeCount] = useState(project.stats?.likes || 0);
   const [isPlaying, setIsPlaying] = useState(false);
+
+  // ✅ FIX: Update state when project prop changes (e.g., after feed refresh)
+  useEffect(() => {
+    setIsLiked(project.isLiked || false);
+    setLikeCount(project.stats?.likes || 0);
+  }, [project.isLiked, project.stats?.likes]);
 
   const handleLike = async (e) => {
     e.stopPropagation();
