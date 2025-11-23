@@ -73,6 +73,12 @@ async function createServer() {
     serverInstance = server;
     return server;
   } catch (error) {
+    console.error('❌ Failed to create server:', error);
+    console.error('Error details:', {
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+      name: error instanceof Error ? error.name : undefined,
+    });
     logger.error('Failed to create server:', error);
     throw error;
   }
