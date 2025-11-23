@@ -8,6 +8,9 @@ import { projectRoutes } from './projects.js';
 import { userRoutes } from './users.js';
 import { assetsRoutes } from './assets.js';
 import { systemAssetsRoutes } from './systemAssets.js';
+import { feedRoutes } from './feed.js';
+import { interactionRoutes } from './interactions.js';
+import { notificationRoutes } from './notifications.js';
 import { registerWebSocketRoutes } from './websocket.js';
 
 export async function registerRoutes(server: FastifyInstance) {

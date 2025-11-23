@@ -16,6 +16,9 @@ interface Connection {
 // Map<projectId, Map<userId, Connection>>
 const connections = new Map<string, Map<string, Connection>>();
 
+// Map<userId, Set<Connection>> - For notifications (user can be in multiple projects)
+const userConnections = new Map<string, Set<Connection>>();
+
 /**
  * Register WebSocket connection
  */
@@ -29,12 +32,19 @@ export function registerConnection(
   }
   
   const projectConnections = connections.get(projectId)!;
-  projectConnections.set(userId, {
+  const connection: Connection = {
     socket,
     userId,
     projectId,
     connectedAt: new Date(),
-  });
+  };
+  projectConnections.set(userId, connection);
+  
+  // Also register for user-based notifications
+  if (!userConnections.has(userId)) {
+    userConnections.set(userId, new Set());
+  }
+  userConnections.get(userId)!.add(connection);
   
   logger.debug(`Registered WebSocket connection: user ${userId} to project ${projectId}`);
 }
@@ -45,11 +55,23 @@ export function registerConnection(
 export function unregisterConnection(projectId: string, userId: string): void {
   const projectConnections = connections.get(projectId);
   if (projectConnections) {
+    const connection = projectConnections.get(userId);
     projectConnections.delete(userId);
     
     // Clean up empty project connections
     if (projectConnections.size === 0) {
       connections.delete(projectId);
+    }
+    
+    // Also remove from user connections
+    if (connection) {
+      const userConns = userConnections.get(userId);
+      if (userConns) {
+        userConns.delete(connection);
+        if (userConns.size === 0) {
+          userConnections.delete(userId);
+        }
+      }
     }
   }
   
@@ -151,6 +173,54 @@ export function cleanupConnections(): void {
       connections.delete(projectId);
     }
   }
+}
+
+/**
+ * Send notification to user (across all their connections)
+ */
+export function sendNotificationToUser(userId: string, notification: any): boolean {
+  const userConns = userConnections.get(userId);
+  if (!userConns || userConns.size === 0) {
+    return false;
+  }
+  
+  const messageStr = JSON.stringify({
+    type: 'notification:new',
+    data: notification,
+    timestamp: Date.now(),
+  });
+  
+  let sentCount = 0;
+  const deadConnections: Connection[] = [];
+  
+  for (const connection of userConns) {
+    if (connection.socket.readyState === WebSocket.OPEN) {
+      try {
+        connection.socket.send(messageStr);
+        sentCount++;
+      } catch (error) {
+        logger.error(`Failed to send notification to user ${userId}`, error);
+        deadConnections.push(connection);
+      }
+    } else {
+      deadConnections.push(connection);
+    }
+  }
+  
+  // Clean up dead connections
+  for (const deadConn of deadConnections) {
+    userConns.delete(deadConn);
+    const projectConns = connections.get(deadConn.projectId);
+    if (projectConns) {
+      projectConns.delete(deadConn.userId);
+    }
+  }
+  
+  if (userConns.size === 0) {
+    userConnections.delete(userId);
+  }
+  
+  return sentCount > 0;
 }
 
 // Cleanup every minute
