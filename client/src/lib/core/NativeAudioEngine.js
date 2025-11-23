@@ -1430,10 +1430,10 @@ export class NativeAudioEngine {
      * @param {string} insertId - Insert ID
      * @param {string} effectType - Effect tipi
      * @param {object} settings - Effect ayarları
-     * @param {string} storeEffectId - Optional Store effect ID for mapping
+     * @param {string} storeEffectId - Optional Store effect ID for mapping (if provided, uses this ID instead of generating new one)
      * @returns {string} Effect ID (audioEngineId)
      */
-    async addEffectToInsert(insertId, effectType, settings = {}) {
+    async addEffectToInsert(insertId, effectType, settings = {}, storeEffectId = null) {
         const insert = this.mixerInserts.get(insertId);
         if (!insert) {
             console.error(`❌ MixerInsert ${insertId} not found`);
@@ -1451,8 +1451,8 @@ export class NativeAudioEngine {
                 throw new Error(`Failed to create effect: ${effectType}`);
             }
 
-            // ✅ SIMPLIFIED: Generate single effect ID
-            const effectId = `${insertId}-fx-${Date.now()}`;
+            // ✅ Use provided storeEffectId if available, otherwise generate new ID
+            const effectId = storeEffectId || `${insertId}-fx-${Date.now()}`;
 
             // Add effect with single ID and effect type
             insert.addEffect(effectId, effectNode, settings, false, effectType);

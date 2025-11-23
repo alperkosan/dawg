@@ -898,27 +898,65 @@ export class AudioContextService {
       console.log(`🎛️ Syncing ${mixerTracks.length} mixer tracks to audio engine...`);
 
       for (const track of mixerTracks) {
-        // Skip if insert already exists
-        if (this.audioEngine.mixerInserts?.has(track.id)) {
-          continue;
+        // Check if insert already exists
+        const insertExists = this.audioEngine.mixerInserts?.has(track.id);
+
+        if (!insertExists) {
+          // Create mixer insert for this track
+          try {
+            const insert = this.createMixerInsert(track.id, track.name || track.id);
+            if (insert) {
+              // Set initial gain and pan from store
+              if (track.volume !== undefined) {
+                const linearGain = Math.pow(10, track.volume / 20);
+                insert.setGain(linearGain);
+              }
+              if (track.pan !== undefined) {
+                insert.setPan(track.pan);
+              }
+              console.log(`✅ Created mixer insert for track "${track.name || track.id}"`);
+            }
+          } catch (error) {
+            console.error(`❌ Failed to create mixer insert for track ${track.id}:`, error);
+            continue; // Skip to next track if insert creation failed
+          }
         }
 
-        // Create mixer insert for this track
-        try {
-          const insert = this.createMixerInsert(track.id, track.name || track.id);
+        // ✅ CRITICAL FIX: Sync insert effects to AudioEngine
+        // This ensures effects from deserialized projects are properly created in AudioEngine
+        if (track.insertEffects && Array.isArray(track.insertEffects) && track.insertEffects.length > 0) {
+          const insert = this.audioEngine.mixerInserts.get(track.id);
           if (insert) {
-            // Set initial gain and pan from store
-            if (track.volume !== undefined) {
-              const linearGain = Math.pow(10, track.volume / 20);
-              insert.setGain(linearGain);
+            for (const effect of track.insertEffects) {
+              try {
+                // Check if effect already exists in AudioEngine
+                const effectExists = insert.effects?.has(effect.id);
+                if (!effectExists) {
+                  console.log(`🎛️ Adding effect ${effect.type} (${effect.id}) to insert ${track.id}...`);
+
+                  // Add effect to insert with original ID and settings
+                  await this.audioEngine.addEffectToInsert(
+                    track.id,
+                    effect.type,
+                    effect.settings || {},
+                    effect.id  // Pass original effect ID to preserve it
+                  );
+
+                  // Apply bypass state if needed
+                  if (effect.bypass && insert.effects?.has(effect.id)) {
+                    const effectNode = insert.effects.get(effect.id);
+                    if (effectNode && effectNode.bypass !== undefined) {
+                      effectNode.bypass = effect.bypass;
+                    }
+                  }
+
+                  console.log(`✅ Added effect ${effect.type} (${effect.id}) to insert ${track.id}`);
+                }
+              } catch (error) {
+                console.error(`❌ Failed to add effect ${effect.type} to insert ${track.id}:`, error);
+              }
             }
-            if (track.pan !== undefined) {
-              insert.setPan(track.pan);
-            }
-            console.log(`✅ Created mixer insert for track "${track.name || track.id}"`);
           }
-        } catch (error) {
-          console.error(`❌ Failed to create mixer insert for track ${track.id}:`, error);
         }
       }
 

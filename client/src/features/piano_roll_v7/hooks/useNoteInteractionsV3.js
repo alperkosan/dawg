@@ -573,9 +573,12 @@ export function useNoteInteractionsV3({
         if (!note) return null;
         const noteEnd = note.startTime + (note.visualLength || note.length);
         
-        // ✅ FIX: Use snap-aware threshold - should match grid snap tolerance
-        // Use half of snap value or minimum 0.25 for better UX
-        const threshold = snapValue > 0 ? Math.max(0.25, snapValue * 0.5) : 0.25;
+        // ✅ FIX: Smaller, more precise resize handle detection
+        // Use a smaller threshold for better precision (0.15-0.2 range)
+        // This makes resize handles more precise and less likely to trigger accidentally
+        const threshold = snapValue > 0 
+            ? Math.min(0.2, Math.max(0.1, snapValue * 0.15))  // 15% of snap value, clamped between 0.1-0.2
+            : 0.15;  // Default 0.15 when no snap
 
         if (Math.abs(coords.time - note.startTime) < threshold) return 'left';
         if (Math.abs(coords.time - noteEnd) < threshold) return 'right';
@@ -732,14 +735,20 @@ export function useNoteInteractionsV3({
         const isCtrl = e.ctrlKey || e.metaKey;
         const isShift = e.shiftKey;
 
-        // Check for resize handle
+        // ✅ FIX: Check for resize handle FIRST - if handle detected, always start resize
+        // This works for both selected and unselected notes
+        // If cursor is on resize handle, user clearly wants to resize, not move
         const handle = getResizeHandle(coords, note);
-        if (handle && state.selection.has(note.id)) {
+        if (handle) {
+            // ✅ FIX: If note is not selected, select it first (for multi-resize if needed)
+            if (!state.selection.has(note.id)) {
+                select(note.id, 'replace');
+            }
             startResize(note, handle, coords);
             return;
         }
 
-        // Selection logic
+        // Selection logic (only if not on resize handle)
         if (isCtrl) {
             // Toggle selection
             select(note.id, 'toggle');
