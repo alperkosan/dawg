@@ -7,8 +7,23 @@
 import { useAuthStore } from '../store/useAuthStore.js';
 
 // ✅ Production: Use relative path (same domain), Development: Use localhost
-const API_BASE_URL = import.meta.env.VITE_API_URL || 
-  (import.meta.env.PROD ? '/api' : 'http://localhost:3000/api');
+// ✅ FIX: Always use relative path in production (Vercel)
+const getApiBaseUrl = () => {
+  // If VITE_API_URL is explicitly set, use it
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL;
+  }
+  
+  // Production: Always use relative path (works with Vercel)
+  if (import.meta.env.PROD || import.meta.env.MODE === 'production') {
+    return '/api';
+  }
+  
+  // Development: Use localhost
+  return 'http://localhost:3000/api';
+};
+
+const API_BASE_URL = getApiBaseUrl();
 
 // ✅ Toast notification handler (will be set by App.jsx)
 let toastHandler = null;
