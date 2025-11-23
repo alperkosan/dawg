@@ -1004,6 +1004,13 @@ export class ProjectSerializer {
       if (mixer.master) {
         const masterTrackInArray = newTracks.find(t => t.id === 'master');
         if (masterTrackInArray) {
+          // ✅ FIX: Restore master effects FIRST (before Object.assign)
+          // This ensures effects are restored with their original IDs and settings
+          // We'll set insertEffects directly and then rebuild the chain
+          const masterInsertEffects = mixer.master.insertEffects && Array.isArray(mixer.master.insertEffects) 
+            ? mixer.master.insertEffects 
+            : [];
+          
           // Update master track with mixer.master data
           Object.assign(masterTrackInArray, {
             volume: mixer.master.volume ?? masterTrackInArray.volume,
@@ -1011,7 +1018,8 @@ export class ProjectSerializer {
             // ✅ FIX: Map DB properties (muted/solo) to store properties (isMuted/isSolo)
             isMuted: mixer.master.muted !== undefined ? mixer.master.muted : (mixer.master.isMuted ?? masterTrackInArray.isMuted),
             isSolo: mixer.master.solo !== undefined ? mixer.master.solo : (mixer.master.isSolo ?? masterTrackInArray.isSolo),
-            insertEffects: mixer.master.insertEffects || masterTrackInArray.insertEffects,
+            // ✅ FIX: Set insertEffects directly (don't use handleMixerEffectAdd which adds new effects)
+            insertEffects: masterInsertEffects,
           });
           
           // Update store again with updated master
@@ -1028,18 +1036,16 @@ export class ProjectSerializer {
             store.toggleMute('master');
           }
           
-          // Restore master effects
-          if (mixer.master.insertEffects && Array.isArray(mixer.master.insertEffects)) {
-            mixer.master.insertEffects.forEach(effect => {
-              try {
-                store.handleMixerEffectAdd('master', effect.type);
-              } catch (error) {
-                console.error(`❌ Failed to restore master effect ${effect.type}:`, error);
-              }
-            });
+          // ✅ FIX: Rebuild master chain with restored effects (don't use handleMixerEffectAdd)
+          // handleMixerEffectAdd creates NEW effects, but we want to restore EXISTING effects
+          if (masterInsertEffects.length > 0) {
+            const updatedMasterTrack = useMixerStore.getState().mixerTracks.find(t => t.id === 'master');
+            if (updatedMasterTrack && AudioContextService.rebuildMasterChain) {
+              await AudioContextService.rebuildMasterChain(updatedMasterTrack);
+            }
           }
           
-          console.log(`✅ Restored master channel`);
+          console.log(`✅ Restored master channel with ${masterInsertEffects.length} effects`);
         }
       }
       
