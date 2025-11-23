@@ -351,25 +351,41 @@ export class VASynthInstrument extends BaseInstrument {
         this.voiceTimeouts.forEach(timeoutId => clearTimeout(timeoutId));
         this.voiceTimeouts.clear();
 
-        // Release all voices with envelope
-        this.voices.forEach((voice, midiNote) => {
+        // ✅ CRITICAL FIX: For mono mode, immediately dispose voice to prevent playback issues on loop restart
+        // Mono voice reuse can cause problems when voice is in release phase during new loop
+        const isMono = this.preset?.voiceMode === 'mono';
+        
+        if (isMono && this.voices.has('mono')) {
+            // Mono mode: Immediately dispose to ensure clean state for next loop
+            const monoVoice = this.voices.get('mono');
             try {
-                voice.noteOff(stopTime);
-
-                // ✅ Schedule voice disposal after release completes
-                const releaseTime = voice.amplitudeEnvelope?.releaseTime || 0.5;
-                const timeoutId = setTimeout(() => {
-                    voice.dispose();
-                    this.voices.delete(midiNote);
-                    this.voiceTimeouts.delete(midiNote);
-                    this.activeNotes.delete(midiNote);
-                }, (releaseTime + 0.1) * 1000);
-
-                this.voiceTimeouts.set(midiNote, timeoutId);
+                monoVoice.dispose(); // Immediate cleanup
             } catch (error) {
-                console.error('Error releasing voice:', error);
+                console.error('Error disposing mono voice:', error);
             }
-        });
+            this.voices.delete('mono');
+            this.activeNotes.clear();
+        } else {
+            // Polyphonic mode: Release all voices with envelope
+            this.voices.forEach((voice, midiNote) => {
+                try {
+                    voice.noteOff(stopTime);
+
+                    // ✅ Schedule voice disposal after release completes
+                    const releaseTime = voice.amplitudeEnvelope?.releaseTime || 0.5;
+                    const timeoutId = setTimeout(() => {
+                        voice.dispose();
+                        this.voices.delete(midiNote);
+                        this.voiceTimeouts.delete(midiNote);
+                        this.activeNotes.delete(midiNote);
+                    }, (releaseTime + 0.1) * 1000);
+
+                    this.voiceTimeouts.set(midiNote, timeoutId);
+                } catch (error) {
+                    console.error('Error releasing voice:', error);
+                }
+            });
+        }
 
         this._isPlaying = false;
     }
