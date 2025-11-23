@@ -1078,11 +1078,26 @@ export function useNoteInteractionsV3({
         }
         // Right handle: no constraint needed (can grow infinitely)
 
-        const updated = notes.map(note => {
+        // ✅ FIX: Get fresh notes from store to avoid closure issues
+        const getCurrentNotes = () => {
+            if (!activePatternId || !currentInstrument) return notes;
+            const currentPattern = useArrangementStore.getState().patterns[activePatternId];
+            return currentPattern?.data?.[currentInstrument.id] || notes;
+        };
+
+        const currentNotes = getCurrentNotes();
+        const updated = currentNotes.map(note => {
             if (!noteIds.includes(note.id)) return note;
 
             const orig = originals.get(note.id);
-            if (!orig) return note;
+            if (!orig) {
+                console.warn(`⚠️ Resize: Original note not found in originals map: ${note.id}`, {
+                    noteId: note.id,
+                    noteIds: Array.from(noteIds),
+                    originalsKeys: Array.from(originals.keys())
+                });
+                return note; // Return unchanged note if original not found
+            }
 
             let newTime = orig.startTime;
             let newVisualLength = orig.visualLength || orig.length;
@@ -1150,7 +1165,9 @@ export function useNoteInteractionsV3({
                         };
 
                         const updateNoteFn = (id, state) => {
-                            const finalNotes = notes.map(n =>
+                            // ✅ FIX: Get fresh notes from store to avoid closure issues
+                            const freshNotes = getCurrentNotes();
+                            const finalNotes = freshNotes.map(n =>
                                 n.id === id ? { ...n, ...state } : n
                             );
                             updatePatternNotes(activePatternId, currentInstrument.id, finalNotes);
@@ -1195,11 +1212,13 @@ export function useNoteInteractionsV3({
 
                     // ✅ FIX: Single update function that updates all notes at once
                     // This function will be called once for the entire batch
-                    let currentNotesRef = notes; // Capture current notes at batch creation time
-                    
+                    // ✅ FIX: Get fresh notes from store each time to avoid closure issues
                     const updateAllNotesFn = (statesToApply) => {
+                        // ✅ FIX: Get fresh notes from store each time (not from closure)
+                        const freshNotes = getCurrentNotes();
+                        
                         // Apply all updates at once
-                        const finalNotes = currentNotesRef.map(n => {
+                        const finalNotes = freshNotes.map(n => {
                             const state = statesToApply.get(n.id);
                             if (state) {
                                 return { ...n, ...state };
@@ -1207,11 +1226,18 @@ export function useNoteInteractionsV3({
                             return n;
                         });
                         
-                        // Update pattern notes with all changes at once
-                        updatePatternNotes(activePatternId, currentInstrument.id, finalNotes);
+                        // ✅ FIX: Ensure all notes are preserved (not just updated ones)
+                        // This prevents notes from disappearing if they're not in statesToApply
+                        const finalNotesMap = new Map(finalNotes.map(n => [n.id, n]));
+                        freshNotes.forEach(note => {
+                            if (!finalNotesMap.has(note.id)) {
+                                finalNotesMap.set(note.id, note);
+                            }
+                        });
+                        const allNotes = Array.from(finalNotesMap.values());
                         
-                        // Update reference for next call (undo/redo)
-                        currentNotesRef = finalNotes;
+                        // Update pattern notes with all changes at once
+                        updatePatternNotes(activePatternId, currentInstrument.id, allNotes);
                         
                         // ✅ EVENT BUS: Notify audio engine of all modifications
                         finalNotes.forEach(note => {

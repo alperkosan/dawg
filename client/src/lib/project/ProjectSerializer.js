@@ -388,6 +388,11 @@ export class ProjectSerializer {
       await this.deserializeMixer(projectData.mixer);
     }
 
+    // ✅ CRITICAL FIX: Sync mixer tracks to AudioEngine after deserialization
+    // This ensures mixer inserts exist before instruments are created
+    const { AudioContextService } = await import('../services/AudioContextService.js');
+    await AudioContextService._syncMixerTracksToAudioEngine();
+
     // ✅ CRITICAL FIX: Preload samples BEFORE creating instruments
     // This ensures buffers are available when instruments are created
     if (projectData.instruments) {
