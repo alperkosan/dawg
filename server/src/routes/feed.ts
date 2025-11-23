@@ -44,7 +44,7 @@ export async function feedRoutes(server: FastifyInstance) {
       let paramIndex = 1;
 
       // Filter: only public projects for non-owners
-      if (!userId || !query.filter.includes('following')) {
+      if (!userId || query.filter !== 'following') {
         conditions.push(`p.is_public = true`);
       }
 
@@ -216,10 +216,17 @@ export async function feedRoutes(server: FastifyInstance) {
       });
     } catch (error) {
       logger.error('Error fetching feed:', error);
+      if (error instanceof Error) {
+        logger.error('Error stack:', error.stack);
+        logger.error('Error message:', error.message);
+      }
       if (error instanceof z.ZodError) {
         return reply.code(400).send({ error: 'Invalid query parameters', details: error.errors });
       }
-      return reply.code(500).send({ error: 'Internal server error' });
+      return reply.code(500).send({ 
+        error: 'Internal server error',
+        message: error instanceof Error ? error.message : 'Unknown error'
+      });
     }
   });
 
