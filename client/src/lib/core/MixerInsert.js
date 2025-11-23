@@ -195,6 +195,31 @@ export class MixerInsert {
   }
 
   /**
+   * Reorder effects without losing settings
+   * @param {number} sourceIndex - Current index of effect
+   * @param {number} destinationIndex - New index for effect
+   */
+  reorderEffects(sourceIndex, destinationIndex) {
+    if (sourceIndex < 0 || sourceIndex >= this.effectOrder.length) {
+      console.warn(`⚠️ Invalid source index: ${sourceIndex}`);
+      return;
+    }
+    if (destinationIndex < 0 || destinationIndex >= this.effectOrder.length) {
+      console.warn(`⚠️ Invalid destination index: ${destinationIndex}`);
+      return;
+    }
+
+    // Reorder the effectOrder array without touching the effects Map
+    const [movedEffectId] = this.effectOrder.splice(sourceIndex, 1);
+    this.effectOrder.splice(destinationIndex, 0, movedEffectId);
+
+    console.log(`🔄 Reordered effects in ${this.insertId}: [${this.effectOrder.join(', ')}]`);
+
+    // Rebuild signal chain with new order (settings are preserved in effects Map)
+    this._rebuildChain();
+  }
+
+  /**
    * Effect bypass toggle
    */
   setEffectBypass(effectId, bypass) {

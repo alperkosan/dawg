@@ -972,7 +972,11 @@ export class ProjectSerializer {
       useMixerStore.setState({ mixerTracks: newTracks });
       console.log(`✅ Updated mixer store with ${newTracks.length} tracks (1 master + ${newTracks.length - 1} channels)`);
       
-      // Now restore track parameters and effects for each track
+      // ✅ FIX: Don't restore effects here - they're already in the store (line 953)
+      // and will be synced to AudioEngine by _syncMixerTracksToAudioEngine() in deserialize()
+      // Restoring them here with handleMixerEffectAdd() would create duplicate effects with new IDs
+
+      // Restore track parameters (volume, pan, mute, solo) for each track
       newTracks.forEach(track => {
         try {
           // Restore track parameters
@@ -987,18 +991,6 @@ export class ProjectSerializer {
           }
           if (track.isSolo) {
             store.toggleSolo(track.id);
-          }
-          
-          // Restore effects
-          if (track.insertEffects && Array.isArray(track.insertEffects) && track.insertEffects.length > 0) {
-            track.insertEffects.forEach(effect => {
-              try {
-                store.handleMixerEffectAdd(track.id, effect.type);
-                // Effect settings will be restored when effect is added
-              } catch (error) {
-                console.error(`❌ Failed to restore effect ${effect.type} on track ${track.id}:`, error);
-              }
-            });
           }
         } catch (error) {
           console.error(`❌ Failed to restore parameters for track ${track.id}:`, error);
@@ -1040,37 +1032,17 @@ export class ProjectSerializer {
           if (mixer.master.muted !== undefined && mixer.master.muted !== store.mutedChannels.has('master')) {
             store.toggleMute('master');
           }
-          
-          // ✅ FIX: Rebuild master chain with restored effects (don't use handleMixerEffectAdd)
-          // handleMixerEffectAdd creates NEW effects, but we want to restore EXISTING effects
-          if (masterInsertEffects.length > 0) {
-            const updatedMasterTrack = useMixerStore.getState().mixerTracks.find(t => t.id === 'master');
-            if (updatedMasterTrack && AudioContextService.rebuildMasterChain) {
-              await AudioContextService.rebuildMasterChain(updatedMasterTrack);
-            }
-          }
-          
+
+          // ✅ FIX: Don't rebuild master chain here - effects are already in the store (line 1019)
+          // and will be synced to AudioEngine by _syncMixerTracksToAudioEngine() in deserialize()
+
           console.log(`✅ Restored master channel with ${masterInsertEffects.length} effects`);
         }
       }
-      
-      // ✅ CRITICAL: Sync mixer tracks to audio engine after deserialization
-      // This ensures all mixer inserts are created in the audio engine
-      // Wait a bit to ensure Zustand state is fully propagated
-      await new Promise(resolve => setTimeout(resolve, 10));
-      
-      try {
-        // Verify store was updated before syncing
-        const updatedState = useMixerStore.getState();
-        console.log(`🔍 Verifying store update: ${updatedState.mixerTracks.length} tracks in store`);
-        
-        const { AudioContextService } = await import('../services/AudioContextService.js');
-        await AudioContextService._syncMixerTracksToAudioEngine();
-        console.log('✅ Synced mixer tracks to audio engine');
-      } catch (syncError) {
-        console.warn('⚠️ Failed to sync mixer tracks to audio engine:', syncError);
-        // Continue anyway - tracks are in store, will sync later
-      }
+
+      // ✅ FIX: Don't sync mixer tracks to AudioEngine here
+      // This is now handled in deserialize() method (after deserializeMixer() call)
+      // which ensures proper order: mixer → sync → samples → instruments
     } catch (error) {
       console.error('❌ Failed to restore mixer:', error);
     }

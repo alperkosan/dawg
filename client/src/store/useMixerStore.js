@@ -413,26 +413,25 @@ export const useMixerStore = create((set, get) => ({
   },
   
   reorderEffect: (trackId, sourceIndex, destinationIndex) => {
-    let newTrackState;
+    // Update store
     set(state => {
       const newTracks = state.mixerTracks.map(track => {
         if (track.id === trackId) {
           const effects = Array.from(track.insertEffects);
           const [removed] = effects.splice(sourceIndex, 1);
           effects.splice(destinationIndex, 0, removed);
-          newTrackState = { ...track, insertEffects: effects };
-          return newTrackState;
+          return { ...track, insertEffects: effects };
         }
         return track;
       });
       return { mixerTracks: newTracks };
     });
-    
-    // SES MOTORUNA KOMUT GÖNDER
-    if (newTrackState && AudioContextService.rebuildSignalChain) {
-        AudioContextService.rebuildSignalChain(trackId, newTrackState).catch(error => {
-          console.error('❌ Failed to rebuild signal chain:', error);
-        });
+
+    // ✅ CRITICAL FIX: Reorder effects in AudioEngine (preserves settings)
+    if (AudioContextService.reorderInsertEffects) {
+      AudioContextService.reorderInsertEffects(trackId, sourceIndex, destinationIndex);
+    } else {
+      console.warn('⚠️ AudioContextService.reorderInsertEffects not available');
     }
   },
 

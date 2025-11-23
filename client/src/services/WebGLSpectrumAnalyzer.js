@@ -305,7 +305,13 @@ export class WebGLSpectrumAnalyzer {
    */
   connectSource(sourceNode) {
     if (this.sourceNode) {
-      this.sourceNode.disconnect(this.analyser);
+      try {
+        // ✅ FIX: Try to disconnect old source, but don't throw if already disconnected
+        this.sourceNode.disconnect(this.analyser);
+      } catch (error) {
+        // Already disconnected - this is fine, ignore the error
+        console.log('ℹ️ Old source node already disconnected');
+      }
     }
 
     this.sourceNode = sourceNode;
@@ -318,7 +324,14 @@ export class WebGLSpectrumAnalyzer {
    */
   disconnectSource() {
     if (this.sourceNode) {
-      this.sourceNode.disconnect(this.analyser);
+      try {
+        // ✅ FIX: Try to disconnect, but don't throw if already disconnected
+        // This can happen when effects are reordered and the chain is rebuilt
+        this.sourceNode.disconnect(this.analyser);
+      } catch (error) {
+        // Already disconnected - this is fine, ignore the error
+        console.log('ℹ️ Source node already disconnected (likely due to effect reordering)');
+      }
       this.sourceNode = null;
     }
   }

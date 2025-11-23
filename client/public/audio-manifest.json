@@ -191,37 +191,6 @@
           "ext": "ogg"
         }
       ]
-    },
-    {
-      "name": "kxvi",
-      "path": "kxvi",
-      "fileCount": 4,
-      "files": [
-        {
-          "name": "808.wav",
-          "url": "/audio/samples/kxvi/808.wav",
-          "size": 366662,
-          "ext": "wav"
-        },
-        {
-          "name": "clap.wav",
-          "url": "/audio/samples/kxvi/clap.wav",
-          "size": 20688,
-          "ext": "wav"
-        },
-        {
-          "name": "perc.wav",
-          "url": "/audio/samples/kxvi/perc.wav",
-          "size": 20114,
-          "ext": "wav"
-        },
-        {
-          "name": "rim.wav",
-          "url": "/audio/samples/kxvi/rim.wav",
-          "size": 20748,
-          "ext": "wav"
-        }
-      ]
     }
   ]
 }

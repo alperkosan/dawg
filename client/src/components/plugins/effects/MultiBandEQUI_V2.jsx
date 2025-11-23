@@ -33,6 +33,7 @@ import { useRenderer } from '@/services/CanvasRenderManager';
 import { useWebGLSpectrum } from '@/services/WebGLSpectrumAnalyzer';
 import { EQCalculations } from '@/lib/audio/EQCalculations';
 import { AudioContextService } from '@/lib/services/AudioContextService';
+import { useMixerStore } from '@/store/useMixerStore';
 import {
   Plus, Volume2, VolumeX, Headphones,
   Trash2, Power, Settings
@@ -700,6 +701,7 @@ const EQCurveCanvas = ({
  */
 export const MultiBandEQUI_V2 = ({ trackId, effect, effectNode, definition }) => {
   const categoryColors = useMemo(() => getCategoryColors('spectral-weave'), []);
+  const { handleMixerEffectChange } = useMixerStore();
 
   // State
   const [bands, setBands] = useState(effect.settings.bands || []);
@@ -790,9 +792,14 @@ export const MultiBandEQUI_V2 = ({ trackId, effect, effectNode, definition }) =>
     setBands(prev => {
       const updated = [...prev];
       updated[index] = { ...updated[index], [param]: value };
+
+      // ✅ CRITICAL FIX: Sync band changes to store
+      // This ensures changes persist across effect reordering
+      handleMixerEffectChange(trackId, effect.id, 'bands', updated);
+
       return updated;
     });
-  }, []);
+  }, [trackId, effect.id, handleMixerEffectChange]);
 
   const handleAddBand = useCallback(() => {
     if (bands.length >= 20) return;
@@ -806,16 +813,30 @@ export const MultiBandEQUI_V2 = ({ trackId, effect, effectNode, definition }) =>
       active: true
     };
 
-    setBands(prev => [...prev, newBand]);
+    setBands(prev => {
+      const updated = [...prev, newBand];
+
+      // ✅ CRITICAL FIX: Sync band changes to store
+      handleMixerEffectChange(trackId, effect.id, 'bands', updated);
+
+      return updated;
+    });
     setActiveBandIndex(bands.length);
-  }, [bands.length]);
+  }, [bands.length, trackId, effect.id, handleMixerEffectChange]);
 
   const handleRemoveBand = useCallback((index) => {
-    setBands(prev => prev.filter((_, i) => i !== index));
+    setBands(prev => {
+      const updated = prev.filter((_, i) => i !== index);
+
+      // ✅ CRITICAL FIX: Sync band changes to store
+      handleMixerEffectChange(trackId, effect.id, 'bands', updated);
+
+      return updated;
+    });
     if (activeBandIndex >= bands.length - 1) {
       setActiveBandIndex(Math.max(0, bands.length - 2));
     }
-  }, [activeBandIndex, bands.length]);
+  }, [activeBandIndex, bands.length, trackId, effect.id, handleMixerEffectChange]);
 
   const handleSolo = useCallback((index) => {
     setSoloedBand(prev => prev === index ? null : index);
@@ -832,6 +853,17 @@ export const MultiBandEQUI_V2 = ({ trackId, effect, effectNode, definition }) =>
       return updated;
     });
   }, []);
+
+  // ✅ CRITICAL FIX: Wrapper functions to sync parameter changes to store
+  const handleWetChange = useCallback((value) => {
+    setWet(value);
+    handleMixerEffectChange(trackId, effect.id, 'wet', value);
+  }, [trackId, effect.id, handleMixerEffectChange]);
+
+  const handleOutputChange = useCallback((value) => {
+    setOutput(value);
+    handleMixerEffectChange(trackId, effect.id, 'output', value);
+  }, [trackId, effect.id, handleMixerEffectChange]);
 
   return (
     <PluginContainerV2
@@ -886,7 +918,7 @@ export const MultiBandEQUI_V2 = ({ trackId, effect, effectNode, definition }) =>
                 min={0}
                 max={2}
                 defaultValue={1}
-                onChange={setOutput}
+                onChange={handleOutputChange}
                 category="spectral-weave"
                 sizeVariant="small"
                 valueFormatter={(v) => `${(v * 100).toFixed(0)}%`}
@@ -897,7 +929,7 @@ export const MultiBandEQUI_V2 = ({ trackId, effect, effectNode, definition }) =>
                 min={0}
                 max={1}
                 defaultValue={1}
-                onChange={setWet}
+                onChange={handleWetChange}
                 category="spectral-weave"
                 sizeVariant="small"
                 valueFormatter={(v) => `${(v * 100).toFixed(0)}%`}

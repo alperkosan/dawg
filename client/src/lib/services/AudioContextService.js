@@ -1295,10 +1295,32 @@ export class AudioContextService {
       return this.rebuildMasterChain(trackState);
     }
 
-    // 🎛️ DYNAMIC MIXER: Use MixerInsert (no need to rebuild - effects are managed by MixerInsert)
-    // MixerInsert automatically rebuilds chain when effects are added/removed/bypassed
-    console.log('ℹ️ rebuildSignalChain called for track, but MixerInsert handles this automatically');
+    // 🎛️ DYNAMIC MIXER: Use MixerInsert
+    // Note: This is called when effect order changes in the store
+    // We don't need to rebuild - just update the effect order in MixerInsert
+    console.log('ℹ️ rebuildSignalChain called for track - MixerInsert handles chain automatically');
     return;
+  }
+
+  /**
+   * Reorder effects in a mixer insert
+   * Called when user drags effects to reorder them
+   */
+  static reorderInsertEffects(trackId, sourceIndex, destinationIndex) {
+    if (!this.audioEngine) {
+      console.warn('⚠️ Cannot reorder effects: audio engine not ready');
+      return;
+    }
+
+    const insert = this.audioEngine.mixerInserts?.get(trackId);
+    if (!insert) {
+      console.warn(`⚠️ MixerInsert not found: ${trackId}`);
+      return;
+    }
+
+    // Reorder effects in the insert (preserves settings)
+    insert.reorderEffects(sourceIndex, destinationIndex);
+    console.log(`✅ Reordered effects in insert ${trackId}: ${sourceIndex} → ${destinationIndex}`);
   }
 
   /**
