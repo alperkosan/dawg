@@ -23,11 +23,21 @@ async function createServer() {
   }
 
   const server = Fastify({
-    logger: process.env.NODE_ENV === 'development' ? logger : false,
+    logger: {
+      level: 'info',
+      transport: {
+        target: 'pino-pretty',
+        options: {
+          colorize: true,
+          translateTime: 'HH:MM:ss Z',
+          ignore: 'pid,hostname',
+        },
+      },
+    },
     requestIdLogLabel: 'reqId',
     genReqId: () => crypto.randomUUID(),
-    // ✅ Vercel: Disable request logging in production for performance
-    disableRequestLogging: process.env.NODE_ENV === 'production',
+    // ✅ Vercel: Enable request logging in development
+    disableRequestLogging: false,
   });
 
   try {
@@ -71,13 +81,23 @@ async function createServer() {
 // Vercel serverless function handler
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
-    // ✅ DEBUG: Log incoming request
+    // ✅ DEBUG: Log incoming request (always log, not just in dev)
+    console.log('🔵 Vercel request received:', {
+      method: req.method,
+      url: req.url,
+      headers: Object.keys(req.headers),
+      hasBody: !!req.body,
+      bodyType: typeof req.body,
+      query: req.query,
+    });
+    
     logger.info('Vercel request received:', {
       method: req.method,
       url: req.url,
       headers: Object.keys(req.headers),
       hasBody: !!req.body,
       bodyType: typeof req.body,
+      query: req.query,
     });
 
     const server = await createServer();
@@ -113,6 +133,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
     
+    console.log('🟢 Processing request:', {
+      method: req.method,
+      url: url,
+      payloadSize: payload ? JSON.stringify(payload).length : 0,
+    });
+    
     logger.info('Processing request:', {
       method: req.method,
       url: url,
@@ -128,6 +154,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       payload: payload,
     });
 
+    console.log('🟡 Fastify response:', {
+      statusCode: response.statusCode,
+      headers: Object.keys(response.headers),
+    });
+    
     logger.info('Fastify response:', {
       statusCode: response.statusCode,
       headers: Object.keys(response.headers),
@@ -147,7 +178,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Send response
     res.send(response.payload);
   } catch (error) {
-    // ✅ Enhanced error logging
+    // ✅ Enhanced error logging (console.log for visibility)
+    console.error('❌ Serverless function error:', error);
+    console.error('Error details:', {
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+      name: error instanceof Error ? error.name : undefined,
+    });
+    
     logger.error('Serverless function error:', {
       error: error instanceof Error ? {
         message: error.message,
