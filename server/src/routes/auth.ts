@@ -111,7 +111,15 @@ export async function authRoutes(server: FastifyInstance) {
       };
     } catch (error: any) {
       if (error instanceof z.ZodError) {
-        throw new BadRequestError('Validation failed', error.errors);
+        // ✅ FIX: Create user-friendly error message from Zod errors
+        const errorMessages = error.errors.map(e => {
+          const field = e.path.join('.') || 'field';
+          return `${field}: ${e.message}`;
+        });
+        const mainMessage = errorMessages.length === 1 
+          ? errorMessages[0] 
+          : `Validation failed: ${errorMessages.join(', ')}`;
+        throw new BadRequestError(mainMessage, 'VALIDATION_ERROR');
       }
       throw error;
     }
