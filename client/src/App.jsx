@@ -747,7 +747,7 @@ function AppRouter() {
         element={
           isAuthenticated ? (
             <ThemeProvider>
-              <WelcomeScreen />
+              <WelcomeScreen onChoose={() => setShowWelcome(false)} />
             </ThemeProvider>
           ) : (
             <Navigate to="/auth" replace />
