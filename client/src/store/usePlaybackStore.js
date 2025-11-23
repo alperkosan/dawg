@@ -42,7 +42,7 @@ export const usePlaybackStore = create((set, get) => ({
   _currentPositionMode: 'pattern', // ✅ Track which mode the current position is for
 
   // ✅ PHASE 1: Follow Playhead Mode
-  followPlayheadMode: 'CONTINUOUS', // 'CONTINUOUS' | 'PAGE' | 'OFF'
+  followPlayheadMode: 'OFF', // 'CONTINUOUS' | 'PAGE' | 'OFF'
 
   // =============== INITIALIZATION ===============
   _initController: async () => {
