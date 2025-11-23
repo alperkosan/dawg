@@ -1483,10 +1483,29 @@ export class PlaybackManager {
             }
 
             // ✅ FIX: Support both new format (length: number) and legacy format (duration: string)
+            // ✅ FIX: Handle oval notes (visualLength: 1) - use length if available, otherwise extend to pattern end
             let noteDuration;
-            if (typeof note.length === 'number') {
+            if (typeof note.length === 'number' && note.length > 0) {
                 // NEW FORMAT: length in steps (number)
                 noteDuration = this.transport.stepsToSeconds(note.length);
+            } else if (note.visualLength === 1 && (typeof note.length !== 'number' || note.length <= 0)) {
+                // ✅ OVAL NOTES: visualLength: 1 but no valid length - extend to pattern end
+                const arrangementStore = useArrangementStore.getState();
+                const activePattern = arrangementStore.patterns[arrangementStore.activePatternId];
+                if (activePattern) {
+                    const patternLengthInSteps = activePattern.length || 64;
+                    const noteStartStep = noteTimeInSteps;
+                    const remainingSteps = Math.max(1, patternLengthInSteps - noteStartStep);
+                    noteDuration = this.transport.stepsToSeconds(remainingSteps);
+                    console.log(`🎵 Oval note detected: extending to pattern end`, {
+                        noteStartStep,
+                        patternLengthInSteps,
+                        remainingSteps,
+                        noteDuration: noteDuration.toFixed(3) + 's'
+                    });
+                } else {
+                    noteDuration = this.transport.stepsToSeconds(1);
+                }
             } else if (note.duration) {
                 // LEGACY FORMAT: duration as string ("4n", "8n", etc)
                 if (note.duration === 'trigger') {
@@ -2031,10 +2050,30 @@ export class PlaybackManager {
                 }
 
                 // ✅ FIX: Calculate note duration properly
+                // ✅ FIX: Handle oval notes (visualLength: 1) - use length if available, otherwise extend to pattern end
                 let noteDuration;
-                if (typeof note.length === 'number') {
+                const noteTimeInSteps = note.startTime || note.time || 0;
+                if (typeof note.length === 'number' && note.length > 0) {
                     // NEW FORMAT: length in steps
                     noteDuration = this.transport.stepsToSeconds(note.length);
+                } else if (note.visualLength === 1 && (typeof note.length !== 'number' || note.length <= 0)) {
+                    // ✅ OVAL NOTES: visualLength: 1 but no valid length - extend to pattern end
+                    const arrangementStore = useArrangementStore.getState();
+                    const activePattern = arrangementStore.patterns[arrangementStore.activePatternId];
+                    if (activePattern) {
+                        const patternLengthInSteps = activePattern.length || 64;
+                        const noteStartStep = noteTimeInSteps;
+                        const remainingSteps = Math.max(1, patternLengthInSteps - noteStartStep);
+                        noteDuration = this.transport.stepsToSeconds(remainingSteps);
+                        console.log(`🎵 Oval note detected (immediate): extending to pattern end`, {
+                            noteStartStep,
+                            patternLengthInSteps,
+                            remainingSteps,
+                            noteDuration: noteDuration.toFixed(3) + 's'
+                        });
+                    } else {
+                        noteDuration = this.transport.stepsToSeconds(1);
+                    }
                 } else if (note.duration) {
                     // LEGACY FORMAT: duration as string
                     noteDuration = note.duration === 'trigger' ?

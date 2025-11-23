@@ -18,6 +18,7 @@ export class VASynth {
         this.context = audioContext;
         this.isPlaying = false;
         this.bpm = bpm; // ✅ TEMPO SYNC: Store BPM for tempo sync calculations
+        this.noteDuration = null; // ✅ FIX: Store note duration for proper release timing
 
         // Audio nodes
         this.oscillators = [null, null, null];
@@ -137,6 +138,13 @@ export class VASynth {
     noteOn(midiNote, velocity = 100, startTime = null, extendedParams = null) {
         const time = startTime !== null ? startTime : this.context.currentTime;
         this._cancelCleanupTimer();
+        
+        // ✅ FIX: Store duration from extendedParams for note off timing
+        if (extendedParams?.duration && extendedParams.duration > 0) {
+            this.noteDuration = extendedParams.duration;
+        } else {
+            this.noteDuration = null;
+        }
         
         // ✅ MODULATION MATRIX: Update MIDI sources
         let aftertouch = 0;

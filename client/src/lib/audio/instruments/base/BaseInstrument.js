@@ -112,6 +112,12 @@ export class BaseInstrument {
 
         const startTime = time !== null ? time : this.audioContext.currentTime;
 
+        // ✅ FIX: Add duration to extendedParams so it reaches voice level
+        const paramsWithDuration = extendedParams ? { ...extendedParams } : {};
+        if (duration && duration > 0) {
+            paramsWithDuration.duration = duration;
+        }
+
         // 🐛 DEBUG: Always log for timeline preview debugging
         console.log(`🎵 ${this.name}.triggerNote:`, {
             pitch,
@@ -128,7 +134,8 @@ export class BaseInstrument {
             extendedParams: extendedParams ? 'YES' : 'NO'
         });
 
-        this.noteOn(midiNote, midiVelocity, startTime, extendedParams);
+        // ✅ FIX: Pass duration via extendedParams to noteOn
+        this.noteOn(midiNote, midiVelocity, startTime, Object.keys(paramsWithDuration).length > 0 ? paramsWithDuration : null);
 
         // Store for potential noteOff
         if (duration && duration > 0) {
