@@ -250,7 +250,7 @@ export default function FileBrowserPanel() {
                         await createFolder(isSystemFolder ? 'root' : node.id);
                     } catch (error) {
                         console.error('Failed to create folder:', error);
-                        alert(`Klasör oluşturulamadı: ${error.message}`);
+                        apiClient.showToast(`Klasör oluşturulamadı: ${error.message}`, 'error', 5000);
                     }
                 }
             });
@@ -270,7 +270,7 @@ export default function FileBrowserPanel() {
                         if (targetFolderId) {
                             moveNode(node.id, targetFolderId.trim()).catch(error => {
                                 console.error('Failed to move file:', error);
-                                alert(`Failed to move file: ${error.message}`);
+                                apiClient.showToast(`Failed to move file: ${error.message}`, 'error', 5000);
                             });
                         }
                     }
@@ -343,7 +343,7 @@ export default function FileBrowserPanel() {
                             await createFolder(parentId);
                         } catch (error) {
                             console.error('Failed to create folder:', error);
-                            alert(`Klasör oluşturulamadı: ${error.message}`);
+                            apiClient.showToast(`Klasör oluşturulamadı: ${error.message}`, 'error', 5000);
                         }
                     }} title="New Folder" className="file-browser__action-btn">
                         <Plus size={14} /> {/* ✅ FIX: Smaller icon */}

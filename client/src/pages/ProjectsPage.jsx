@@ -8,6 +8,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/useAuthStore';
 import { projectService } from '../services/projectService';
 import { apiClient } from '../services/api.js';
+import ConfirmationModal from '../components/common/ConfirmationModal';
 import { 
   FolderOpen, 
   Edit, 
@@ -31,10 +32,22 @@ export default function ProjectsPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedProject, setSelectedProject] = useState(null);
+  const [selectedProjects, setSelectedProjects] = useState(new Set()); // ✅ Multi-select
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [copiedShareUrl, setCopiedShareUrl] = useState(null);
+  
+  // ✅ Confirmation modal state
+  const [confirmationModal, setConfirmationModal] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    confirmText: 'Confirm',
+    cancelText: 'Cancel',
+    variant: 'default',
+    onConfirm: null,
+  });
 
   useEffect(() => {
     if (isAuthenticated && !isGuest) {
@@ -55,7 +68,7 @@ export default function ProjectsPage() {
       setProjects(response.projects || []);
     } catch (error) {
       console.error('Failed to load projects:', error);
-      alert(`Failed to load projects: ${error.message}`);
+      apiClient.showToast(`Failed to load projects: ${error.message}`, 'error', 5000);
     } finally {
       setIsLoading(false);
     }
@@ -82,10 +95,10 @@ export default function ProjectsPage() {
       await loadProjects();
       setShowEditModal(false);
       setSelectedProject(null);
-      alert('Project updated successfully!');
+      apiClient.showToast('Project updated successfully!', 'success', 3000);
     } catch (error) {
       console.error('Failed to update project:', error);
-      alert(`Failed to update project: ${error.message}`);
+      // ✅ Error toast will be shown automatically by API client
     }
   };
 
@@ -95,11 +108,59 @@ export default function ProjectsPage() {
       await loadProjects();
       setShowDeleteModal(false);
       setSelectedProject(null);
-      alert('Project deleted successfully!');
+      apiClient.showToast('Project deleted successfully!', 'success', 3000);
     } catch (error) {
       console.error('Failed to delete project:', error);
-      alert(`Failed to delete project: ${error.message}`);
+      // ✅ Error toast will be shown automatically by API client
     }
+  };
+  
+  // ✅ Multi-select handlers
+  const handleToggleProjectSelection = (projectId) => {
+    const newSelection = new Set(selectedProjects);
+    if (newSelection.has(projectId)) {
+      newSelection.delete(projectId);
+    } else {
+      newSelection.add(projectId);
+    }
+    setSelectedProjects(newSelection);
+  };
+
+  const handleSelectAllProjects = () => {
+    if (selectedProjects.size === filteredProjects.length) {
+      setSelectedProjects(new Set()); // Deselect all
+    } else {
+      setSelectedProjects(new Set(filteredProjects.map(p => p.id))); // Select all
+    }
+  };
+
+  const handleDeleteSelectedProjects = async () => {
+    if (selectedProjects.size === 0) return;
+    
+    const count = selectedProjects.size;
+    setConfirmationModal({
+      isOpen: true,
+      title: 'Delete Projects',
+      message: `Are you sure you want to delete ${count} project(s)? This action cannot be undone.`,
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      variant: 'danger',
+      onConfirm: async () => {
+        setConfirmationModal({ ...confirmationModal, isOpen: false });
+        try {
+          // Delete all selected projects in parallel
+          await Promise.all(Array.from(selectedProjects).map(projectId => 
+            projectService.deleteProject(projectId)
+          ));
+          setSelectedProjects(new Set()); // Clear selection
+          await loadProjects();
+          apiClient.showToast(`Successfully deleted ${count} project(s)`, 'success', 3000);
+        } catch (error) {
+          console.error('Delete failed:', error);
+          // ✅ Error toast will be shown automatically by API client
+        }
+      },
+    });
   };
 
   const handleTogglePublic = async (project) => {
@@ -108,10 +169,10 @@ export default function ProjectsPage() {
         isPublic: !project.isPublic,
       });
       await loadProjects();
-      alert(`Project ${project.isPublic ? 'unpublished' : 'published'} successfully!`);
+      apiClient.showToast(`Project ${project.isPublic ? 'unpublished' : 'published'} successfully!`, 'success', 3000);
     } catch (error) {
       console.error('Failed to update project:', error);
-      alert(`Failed to update project: ${error.message}`);
+      // ✅ Error toast will be shown automatically by API client
     }
   };
 
@@ -162,6 +223,29 @@ export default function ProjectsPage() {
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
+          {/* ✅ Multi-select controls */}
+          {filteredProjects.length > 0 && (
+            <div className="projects-page__toolbar-actions">
+              <button
+                className="projects-page__button"
+                onClick={handleSelectAllProjects}
+                title={selectedProjects.size === filteredProjects.length ? 'Deselect All' : 'Select All'}
+              >
+                <Check size={16} />
+                {selectedProjects.size === filteredProjects.length ? 'Deselect All' : 'Select All'}
+              </button>
+              {selectedProjects.size > 0 && (
+                <button
+                  className="projects-page__button projects-page__button--danger"
+                  onClick={handleDeleteSelectedProjects}
+                  title={`Delete ${selectedProjects.size} project(s)`}
+                >
+                  <Trash2 size={16} />
+                  Delete Selected ({selectedProjects.size})
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         {isLoading ? (
@@ -194,7 +278,23 @@ export default function ProjectsPage() {
         ) : (
           <div className="projects-page__grid">
             {filteredProjects.map((project) => (
-              <div key={project.id} className="projects-page__card">
+              <div 
+                key={project.id} 
+                className={`projects-page__card ${selectedProjects.has(project.id) ? 'projects-page__card--selected' : ''}`}
+              >
+                {/* ✅ Multi-select checkbox */}
+                <div className="projects-page__card-checkbox">
+                  <label className="projects-page__checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={selectedProjects.has(project.id)}
+                      onChange={() => handleToggleProjectSelection(project.id)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="projects-page__checkbox-input"
+                    />
+                    <span className="projects-page__checkbox-custom"></span>
+                  </label>
+                </div>
                 <div className="projects-page__card-header">
                   <div className="projects-page__card-title">
                     <Music size={20} />
@@ -337,6 +437,23 @@ export default function ProjectsPage() {
           copiedShareUrl={copiedShareUrl}
         />
       )}
+      
+      {/* ✅ Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={confirmationModal.isOpen}
+        title={confirmationModal.title}
+        message={confirmationModal.message}
+        confirmText={confirmationModal.confirmText}
+        cancelText={confirmationModal.cancelText}
+        variant={confirmationModal.variant}
+        onConfirm={() => {
+          if (confirmationModal.onConfirm) {
+            confirmationModal.onConfirm();
+          }
+          setConfirmationModal({ ...confirmationModal, isOpen: false });
+        }}
+        onCancel={() => setConfirmationModal({ ...confirmationModal, isOpen: false })}
+      />
     </div>
   );
 }
@@ -353,7 +470,7 @@ function EditProjectModal({ project, onClose, onSave }) {
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!formData.title.trim()) {
-      alert('Title is required');
+      apiClient.showToast('Title is required', 'warning', 3000);
       return;
     }
 
@@ -470,7 +587,7 @@ function ShareProjectModal({ project, onClose, onCopyUrl, onTogglePublic, copied
       // Reload projects to reflect changes
       window.location.reload();
     } catch (error) {
-      alert(`Failed to update project: ${error.message}`);
+      // ✅ Error toast will be shown automatically by API client
     }
   };
 

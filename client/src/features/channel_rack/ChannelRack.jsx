@@ -585,7 +585,8 @@ function ChannelRack() {
           });
         } catch (loadError) {
           console.error('Failed to load audio file:', loadError);
-          alert(`Failed to load audio file: ${fileData.name}`);
+          const { apiClient } = await import('../../services/api.js');
+          apiClient.showToast(`Failed to load audio file: ${fileData.name}`, 'error', 5000);
         }
       }
     } catch (error) {

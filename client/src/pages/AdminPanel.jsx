@@ -1076,7 +1076,7 @@ function PackModal({ categories, onClose, onSave }) {
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!formData.name || !formData.slug) {
-      alert('Please enter name and slug');
+      apiClient.showToast('Please enter name and slug', 'warning', 3000);
       return;
     }
 
@@ -1219,7 +1219,7 @@ function PackEditModal({ pack, categories, onClose, onSave }) {
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!formData.name || !formData.slug) {
-      alert('Please enter name and slug');
+      apiClient.showToast('Please enter name and slug', 'warning', 3000);
       return;
     }
 
@@ -1358,7 +1358,7 @@ function CategoryEditModal({ category, onClose, onSave }) {
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!formData.name || !formData.slug) {
-      alert('Please enter name and slug');
+      apiClient.showToast('Please enter name and slug', 'warning', 3000);
       return;
     }
 

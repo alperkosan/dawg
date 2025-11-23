@@ -106,7 +106,8 @@ export function FileTreeNode({ node, onContextMenu, onNodeClick, selectedNode, d
             }
         } catch (error) {
             console.error('Failed to move file:', error);
-            alert(`Failed to move file: ${error.message}`);
+            const { apiClient } = await import('../../services/api.js');
+            apiClient.showToast(`Failed to move file: ${error.message}`, 'error', 5000);
         }
     };
     

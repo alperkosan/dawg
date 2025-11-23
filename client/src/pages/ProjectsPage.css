@@ -48,7 +48,17 @@
 }
 
 .projects-page__toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--zenith-space-4);
   margin-bottom: var(--zenith-space-6);
+}
+
+.projects-page__toolbar-actions {
+  display: flex;
+  gap: var(--zenith-space-2);
+  align-items: center;
 }
 
 .projects-page__search {
@@ -109,11 +119,80 @@
 }
 
 .projects-page__card {
+  position: relative;
   background: var(--zenith-bg-secondary);
   border: 1px solid var(--zenith-border-medium);
   border-radius: var(--zenith-radius-lg);
   padding: var(--zenith-space-4);
   transition: all var(--zenith-duration-fast) var(--zenith-ease-out);
+}
+
+.projects-page__card--selected {
+  border-color: var(--zenith-accent-cool);
+  background: var(--zenith-bg-secondary);
+  box-shadow: 0 0 0 2px var(--zenith-accent-cool);
+}
+
+.projects-page__card-checkbox {
+  position: absolute;
+  top: var(--zenith-space-2);
+  left: var(--zenith-space-2);
+  z-index: 10;
+}
+
+.projects-page__checkbox-label {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  position: relative;
+}
+
+.projects-page__checkbox-input {
+  position: absolute;
+  opacity: 0;
+  cursor: pointer;
+  width: 0;
+  height: 0;
+}
+
+.projects-page__checkbox-custom {
+  position: relative;
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--zenith-border-medium);
+  background: var(--zenith-bg-tertiary);
+  border-radius: var(--zenith-radius-sm);
+  transition: all var(--zenith-duration-fast) var(--zenith-ease-out);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.projects-page__checkbox-custom::after {
+  content: '';
+  position: absolute;
+  display: none;
+  width: 6px;
+  height: 10px;
+  border: solid var(--zenith-accent-cool);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+  top: 2px;
+}
+
+.projects-page__checkbox-input:checked ~ .projects-page__checkbox-custom {
+  background: var(--zenith-bg-secondary);
+  border-color: var(--zenith-accent-cool);
+  box-shadow: 0 0 0 2px var(--zenith-accent-cool), 0 0 8px rgba(78, 205, 196, 0.3);
+}
+
+.projects-page__checkbox-input:checked ~ .projects-page__checkbox-custom::after {
+  display: block;
+}
+
+.projects-page__checkbox-label:hover .projects-page__checkbox-custom {
+  border-color: var(--zenith-accent-cool);
+  box-shadow: 0 0 4px rgba(78, 205, 196, 0.2);
 }
 
 .projects-page__card:hover {
@@ -127,6 +206,7 @@
   justify-content: space-between;
   align-items: flex-start;
   margin-bottom: var(--zenith-space-3);
+  padding-top: var(--zenith-space-6); /* Space for checkbox */
 }
 
 .projects-page__card-title {

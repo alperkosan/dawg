@@ -62,9 +62,10 @@ const ModulationMatrix = ({ instrumentData }) => {
     }
   }, [instrumentData?.id]);
 
-  const handleAddModulation = () => {
+  const handleAddModulation = async () => {
     if (!selectedSource || !selectedTarget) {
-      alert('Please select both source and target');
+      const { apiClient } = await import('../../../services/api.js');
+      apiClient.showToast('Please select both source and target', 'warning', 3000);
       return;
     }
 

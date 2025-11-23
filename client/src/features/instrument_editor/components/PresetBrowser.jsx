@@ -60,9 +60,10 @@ const PresetBrowser = ({ instrumentData }) => {
     setFavorites(newFavorites);
   };
 
-  const handleSavePreset = () => {
+  const handleSavePreset = async () => {
     if (!newPresetName.trim()) {
-      alert('Please enter a preset name');
+      const { apiClient } = await import('../../../services/api.js');
+      apiClient.showToast('Please enter a preset name', 'warning', 3000);
       return;
     }
 

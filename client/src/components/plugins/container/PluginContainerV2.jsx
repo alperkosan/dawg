@@ -454,10 +454,11 @@ const PluginContainerV2 = ({
       const text = await file.text();
       const imported = await presetManager.importPreset(text);
 
+      const { apiClient } = await import('../../services/api.js');
       if (imported) {
-        alert(`Preset "${imported.name}" imported successfully!`);
+        apiClient.showToast(`Preset "${imported.name}" imported successfully!`, 'success', 3000);
       } else {
-        alert('Failed to import preset. Check console for errors.');
+        apiClient.showToast('Failed to import preset. Check console for errors.', 'error', 5000);
       }
     };
     input.click();

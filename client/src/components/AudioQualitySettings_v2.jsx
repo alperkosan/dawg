@@ -98,7 +98,8 @@ const AudioQualitySettings_v2 = ({ onClose, currentEngine = null }) => {
         const settings = qualityManager.getCurrentSettings();
 
         if (!validation.valid) {
-            alert('Cannot apply settings: There are validation errors');
+            const { apiClient } = await import('../services/api.js');
+            apiClient.showToast('Cannot apply settings: There are validation errors', 'error', 5000);
             return;
         }
 
@@ -111,11 +112,13 @@ const AudioQualitySettings_v2 = ({ onClose, currentEngine = null }) => {
             // For now, just update applied settings state
             setAppliedSettings(settings);
 
-            alert('Audio settings applied successfully!\\n\\nNote: Some settings require a full page reload to take effect.');
+            const { apiClient } = await import('../services/api.js');
+            apiClient.showToast('Audio settings applied successfully! Note: Some settings require a full page reload to take effect.', 'success', 5000);
 
         } catch (error) {
             console.error('Failed to apply audio settings:', error);
-            alert('Failed to apply settings: ' + error.message);
+            const { apiClient } = await import('../services/api.js');
+            apiClient.showToast(`Failed to apply settings: ${error.message}`, 'error', 5000);
         } finally {
             setIsApplying(false);
         }
@@ -124,7 +127,8 @@ const AudioQualitySettings_v2 = ({ onClose, currentEngine = null }) => {
     // Test audio with current settings
     const playTestAudio = useCallback(async () => {
         if (!audioEngine) {
-            alert('Audio engine not available');
+            const { apiClient } = await import('../services/api.js');
+            apiClient.showToast('Audio engine not available', 'error', 3000);
             return;
         }
 
@@ -136,7 +140,8 @@ const AudioQualitySettings_v2 = ({ onClose, currentEngine = null }) => {
 
             // ✅ Check if AudioContext is closed or suspended
             if (audioContext.state === 'closed') {
-                alert('Audio engine is closed. Please restart the application.');
+                const { apiClient } = await import('../services/api.js');
+                apiClient.showToast('Audio engine is closed. Please restart the application.', 'error', 5000);
                 setTestAudioPlaying(false);
                 return;
             }
@@ -165,7 +170,8 @@ const AudioQualitySettings_v2 = ({ onClose, currentEngine = null }) => {
             setTimeout(() => setTestAudioPlaying(false), 1000);
         } catch (error) {
             console.error('Test audio failed:', error);
-            alert('Test audio failed: ' + error.message);
+            const { apiClient } = await import('../services/api.js');
+            apiClient.showToast(`Test audio failed: ${error.message}`, 'error', 5000);
             setTestAudioPlaying(false);
         }
     }, [audioEngine]);
@@ -496,10 +502,11 @@ const AudioQualitySettings_v2 = ({ onClose, currentEngine = null }) => {
 
                     <button
                         className="btn-secondary-v2"
-                        onClick={() => {
+                        onClick={async () => {
                             const exported = qualityManager.exportSettings();
                             navigator.clipboard?.writeText(JSON.stringify(exported, null, 2));
-                            alert('Settings copied to clipboard!');
+                            const { apiClient } = await import('../services/api.js');
+                            apiClient.showToast('Settings copied to clipboard!', 'success', 3000);
                         }}
                     >
                         <Save size={16} />
