@@ -167,8 +167,15 @@ export class VASynth {
         const baseFrequency = this.midiToFrequency(midiNote + pitchBendSemitones);
         this.currentBaseFrequency = baseFrequency;
 
+        // ✅ BUG #5 FIX: Check if voice is in cleanup phase (isPlaying false but oscillators still exist)
+        // If in cleanup phase, we need to create new oscillators instead of using portamento
+        const isInCleanupPhase = !this.isPlaying && 
+            this.oscillators && 
+            this.oscillators.some(osc => osc !== null && osc !== undefined);
+
         // ✅ Monophonic Mode with Portamento
-        if (this.isPlaying && this.voiceMode === 'mono') {
+        // Only use portamento if actually playing (not in cleanup phase)
+        if (this.isPlaying && this.voiceMode === 'mono' && !isInCleanupPhase) {
             // Already playing - just glide to new frequency
             const glideTime = this.portamento;
 
@@ -235,8 +242,11 @@ export class VASynth {
             return;
         }
 
-        // ✅ Polyphonic Mode or First Note in Mono Mode
-        if (this.isPlaying) {
+        // ✅ BUG #5 FIX: Polyphonic Mode or First Note in Mono Mode
+        // If in cleanup phase, force cleanup before creating new oscillators
+        if (isInCleanupPhase) {
+            this.cleanup();
+        } else if (this.isPlaying) {
             this.noteOff(time);
             this._cancelCleanupTimer();
         }
@@ -695,8 +705,9 @@ export class VASynth {
                 hasAmplitudeGain: !!this.amplitudeGain
             });
 
-            // ✅ FIX: Stop oscillators at release end time (works for offline rendering)
+            // ✅ BUG #3 FIX: Stop oscillators at release end time (works for offline rendering)
             // This is critical for OfflineAudioContext where setTimeout doesn't work
+            // Mark oscillators as scheduled for stop to prevent double cleanup
             this.oscillators.forEach((osc, i) => {
                 if (osc) {
                     try {
@@ -718,12 +729,16 @@ export class VASynth {
                 }
             });
 
-            // Stop and cleanup after release (for real-time playback)
-            // Note: This won't work in offline rendering, but oscillator.stop() above will
+            // ✅ BUG #3 FIX: Schedule cleanup after oscillators have stopped
+            // Use slightly longer delay to ensure oscillators are stopped before cleanup
+            // Cleanup will only disconnect nodes, not stop oscillators (they're already stopped)
             this._cancelCleanupTimer();
-            const cleanupDelay = Math.max(0, (releaseEnd - this.context.currentTime + 0.1) * 1000);
+            const cleanupDelay = Math.max(0, (releaseEnd - this.context.currentTime + 0.2) * 1000);
             this._cleanupTimer = setTimeout(() => {
-                this.cleanup();
+                // Only cleanup if still not playing (prevent race condition with new noteOn)
+                if (!this.isPlaying) {
+                    this.cleanup();
+                }
             }, cleanupDelay);
 
             this.isPlaying = false;
@@ -744,15 +759,22 @@ export class VASynth {
         // ✅ Minimal cleanup - let release envelopes finish naturally
         const now = this.context.currentTime;
 
-        // Stop oscillators
+        // ✅ BUG #3 FIX: Stop oscillators only if not already stopped
+        // Oscillators are already stopped in noteOff() at releaseEnd + 0.1
+        // This cleanup is called after that, so oscillators should already be stopped
         this.oscillators.forEach(osc => {
             if (osc) {
                 try {
                     // ✅ PWM: Handle array of oscillators (PWM mode)
                     if (Array.isArray(osc)) {
                         osc.forEach(o => {
-                            if (o && o.context && o.context.state !== 'closed') {
-                                o.stop(now);
+                            // Only stop if not already stopped (defensive check)
+                            if (o && o.context && o.context.state !== 'closed' && o.playbackState !== 'finished') {
+                                try {
+                                    o.stop(now);
+                                } catch (e) {
+                                    // Already stopped - ignore
+                                }
                             }
                             if (o) {
                                 o.disconnect();
@@ -760,13 +782,18 @@ export class VASynth {
                         });
                     } else {
                         // Normal single oscillator
-                        if (osc.context && osc.context.state !== 'closed') {
-                            osc.stop(now);
+                        // Only stop if not already stopped (defensive check)
+                        if (osc.context && osc.context.state !== 'closed' && osc.playbackState !== 'finished') {
+                            try {
+                                osc.stop(now);
+                            } catch (e) {
+                                // Already stopped - ignore
+                            }
                         }
                         osc.disconnect();
                     }
                 } catch (e) {
-                    // Already stopped - ignore
+                    // Already stopped or disconnected - ignore
                 }
             }
         });

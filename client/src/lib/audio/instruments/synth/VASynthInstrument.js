@@ -109,8 +109,22 @@ export class VASynthInstrument extends BaseInstrument {
                 // ✅ MONOPHONIC MODE: Use single shared voice
                 let monoVoice = this.voices.get('mono');
 
+                // ✅ BUG #2 FIX: Check if existing voice is in cleanup phase
+                // If voice exists but is not playing and oscillators are null, it's in cleanup phase
+                if (monoVoice && !monoVoice.isPlaying && 
+                    (!monoVoice.oscillators || monoVoice.oscillators.every(osc => !osc))) {
+                    // Voice is in cleanup phase - dispose it and create new one
+                    try {
+                        monoVoice.dispose();
+                    } catch (e) {
+                        // Ignore disposal errors
+                    }
+                    this.voices.delete('mono');
+                    monoVoice = null;
+                }
+
                 if (!monoVoice) {
-                    // Create mono voice on first note
+                    // Create mono voice on first note or after cleanup
                     monoVoice = new VASynth(this.audioContext);
                     monoVoice.loadPreset(this.preset);
                     if (this.modulationMatrix.length > 0) {
@@ -120,8 +134,17 @@ export class VASynthInstrument extends BaseInstrument {
                     this.voices.set('mono', monoVoice);
                 }
 
-                // ✅ FIX: Reset routing for mono voice to prevent double connections
-                try { monoVoice.masterGain.disconnect(); } catch (e) { }
+                // ✅ BUG #1 FIX: Reset routing for mono voice to prevent double connections
+                // Check if voice is still valid and masterGain exists before disconnecting
+                if (monoVoice && monoVoice.masterGain) {
+                    try {
+                        // Check if masterGain is still connected (has any connections)
+                        // If already disconnected or disposed, this will throw, which is fine
+                        monoVoice.masterGain.disconnect();
+                    } catch (e) {
+                        // Voice might be in cleanup phase or already disconnected - ignore
+                    }
+                }
 
                 // ✅ PHASE 2: Apply per-note pan if present
                 if (extendedParams?.pan !== undefined && extendedParams.pan !== 0) {
@@ -145,15 +168,20 @@ export class VASynthInstrument extends BaseInstrument {
                 if (this.voices.has(midiNote)) {
                     const oldVoice = this.voices.get(midiNote);
 
-                    // ✅ FIX: Cancel ALL pending timeouts for this note (both regular and retrigger)
+                    // ✅ BUG #4 FIX: Cancel ALL pending timeouts for this note (both regular and retrigger)
+                    // Cancel regular timeout
                     if (this.voiceTimeouts.has(midiNote)) {
                         clearTimeout(this.voiceTimeouts.get(midiNote));
                         this.voiceTimeouts.delete(midiNote);
                     }
-                    if (this.voiceTimeouts.has(`retrigger_${midiNote}`)) {
-                        clearTimeout(this.voiceTimeouts.get(`retrigger_${midiNote}`));
-                        this.voiceTimeouts.delete(`retrigger_${midiNote}`);
-                    }
+                    // Cancel all retrigger timeouts (they use unique keys like retrigger_${midiNote}_${timestamp})
+                    const retriggerKeys = Array.from(this.voiceTimeouts.keys()).filter(key => 
+                        typeof key === 'string' && key.startsWith(`retrigger_${midiNote}_`)
+                    );
+                    retriggerKeys.forEach(key => {
+                        clearTimeout(this.voiceTimeouts.get(key));
+                        this.voiceTimeouts.delete(key);
+                    });
 
                     if (oldVoice) {
                         // ✅ Check cutItself parameter (default: false for natural release)
