@@ -688,8 +688,12 @@ function AppRouter() {
       setAuthChecked(true);
       // If authenticated, check if user has already chosen
       if (authenticated) {
-        const hasChosen = sessionStorage.getItem('user-has-chosen');
-        if (!hasChosen) {
+        try {
+          const hasChosen = sessionStorage.getItem('user-has-chosen');
+          if (!hasChosen || !JSON.parse(hasChosen)) {
+            setShowWelcome(true);
+          }
+        } catch {
           setShowWelcome(true);
         }
       }

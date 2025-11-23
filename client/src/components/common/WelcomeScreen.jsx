@@ -16,7 +16,7 @@ export default function WelcomeScreen({ onChoose }) {
   const { user } = useAuthStore();
 
   const handleChoose = (path) => {
-    sessionStorage.setItem('user-has-chosen', 'true');
+    sessionStorage.setItem('user-has-chosen', JSON.stringify(true));
     // ✅ FIX: Call onChoose callback to update parent state
     if (onChoose) {
       onChoose();

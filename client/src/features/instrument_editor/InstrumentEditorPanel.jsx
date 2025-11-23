@@ -51,8 +51,12 @@ const InstrumentEditorPanel = () => {
   // ✅ RESIZABLE PANEL STATE
   const [panelWidth, setPanelWidth] = useState(() => {
     // Load from localStorage or use default
-    const saved = localStorage.getItem('instrumentEditorPanelWidth');
-    return saved ? parseInt(saved, 10) : 500;
+    try {
+      const saved = localStorage.getItem('instrumentEditorPanelWidth');
+      return saved ? JSON.parse(saved) : 500;
+    } catch {
+      return 500;
+    }
   });
   const [isResizing, setIsResizing] = useState(false);
   const panelRef = useRef(null);
@@ -103,7 +107,7 @@ const InstrumentEditorPanel = () => {
     const handleMouseUp = () => {
       setIsResizing(false);
       // Save to localStorage
-      localStorage.setItem('instrumentEditorPanelWidth', panelWidth.toString());
+      localStorage.setItem('instrumentEditorPanelWidth', JSON.stringify(panelWidth));
     };
 
     window.addEventListener('mousemove', handleMouseMove);

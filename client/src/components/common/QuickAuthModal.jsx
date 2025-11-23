@@ -74,7 +74,7 @@ export default function QuickAuthModal({ isOpen, onClose, onSuccess }) {
       }
 
       // Success - update session storage
-      sessionStorage.setItem('user-has-chosen', 'true');
+      sessionStorage.setItem('user-has-chosen', JSON.stringify(true));
       
       // Call success callback
       if (onSuccess) {

@@ -13,9 +13,14 @@ import './GuestBanner.css';
 export default function GuestBanner({ onHeightChange }) {
   const navigate = useNavigate();
   const { isGuest } = useAuthStore();
-  const [dismissed, setDismissed] = React.useState(
-    localStorage.getItem('guest-banner-dismissed') === 'true'
-  );
+  const [dismissed, setDismissed] = React.useState(() => {
+    try {
+      const stored = localStorage.getItem('guest-banner-dismissed');
+      return stored ? JSON.parse(stored) : false;
+    } catch {
+      return false;
+    }
+  });
   const [showAuthModal, setShowAuthModal] = useState(false);
   const bannerRef = React.useRef(null);
 
@@ -50,7 +55,7 @@ export default function GuestBanner({ onHeightChange }) {
 
   const handleDismiss = () => {
     setDismissed(true);
-    localStorage.setItem('guest-banner-dismissed', 'true');
+    localStorage.setItem('guest-banner-dismissed', JSON.stringify(true));
   };
 
   const handleAuthSuccess = () => {
