@@ -36,6 +36,7 @@ import ProjectLoadingScreen from './components/common/ProjectLoadingScreen';
 import AdminPanel from './pages/AdminPanel';
 import ProjectsPage from './pages/ProjectsPage';
 import MediaPanel from './features/media_panel/MediaPanel';
+import RenderPage from './pages/RenderPage';
 import { ToastContainer } from './components/common/Toast';
 import ProjectTitleModal from './components/common/ProjectTitleModal';
 import './components/common/WelcomeScreen.css';
@@ -843,6 +844,16 @@ function AppRouter() {
               <ProjectsPage />
             </ThemeProvider>
           </ProtectedRoute>
+        } 
+      />
+
+      {/* Render Route (for headless browser/Puppeteer) */}
+      <Route 
+        path="/render" 
+        element={
+          <ThemeProvider>
+            <RenderPage />
+          </ThemeProvider>
         } 
       />
 

@@ -17,6 +17,7 @@ import {
   incrementPlayCount,
 } from '../services/projects.js';
 import { NotFoundError, ForbiddenError, BadRequestError } from '../utils/errors.js';
+import { logger } from '../utils/logger.js';
 
 const CreateProjectSchema = z.object({
   title: z.string().min(1).max(255),
@@ -75,6 +76,10 @@ export async function projectRoutes(server: FastifyInstance) {
           createdAt: p.created_at,
           updatedAt: p.updated_at,
           publishedAt: p.published_at,
+          previewAudioUrl: p.preview_audio_url,
+          previewAudioDuration: p.preview_audio_duration,
+          previewAudioRenderedAt: p.preview_audio_rendered_at,
+          previewAudioStatus: p.preview_audio_status,
         })),
         pagination: {
           page: query.page ? parseInt(query.page, 10) : 1,
@@ -317,6 +322,160 @@ export async function projectRoutes(server: FastifyInstance) {
     }
   });
   
+  // Render project preview
+  server.post('/:id/render-preview', {
+    preHandler: [server.authenticate],
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      if (!request.user) {
+        throw new ForbiddenError('Authentication required');
+      }
+      
+      const { id } = request.params as { id: string };
+      
+      // Check if user can edit
+      const canEdit = await canEditProject(request.user.userId, id);
+      if (!canEdit) {
+        throw new ForbiddenError('You do not have permission to render this project');
+      }
+      
+      // Trigger render (async, don't wait)
+      const { getAudioRenderService } = await import('../services/audioRender.js');
+      const renderService = getAudioRenderService();
+      
+      // Initialize if needed
+      await renderService.initialize();
+      
+      // Start render in background
+      renderService.renderProjectPreview(id).catch((error) => {
+        logger.error(`Failed to render preview for project ${id}:`, error);
+      });
+      
+      return {
+        message: 'Render started',
+        status: 'queued',
+      };
+    } catch (error: any) {
+      throw error;
+    }
+  });
+  
+  // Upload client-side rendered preview audio
+  // ✅ FIX: Support both base64 (legacy) and multipart/form-data (streaming) uploads
+  server.post('/:id/upload-preview', {
+    preHandler: [server.authenticate],
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      if (!request.user) {
+        throw new ForbiddenError('Authentication required');
+      }
+      const { id } = request.params as { id: string };
+
+      const project = await findProjectById(id);
+      if (!project) {
+        throw new NotFoundError('Project not found');
+      }
+
+      // Only owner can upload preview
+      if (project.user_id !== request.user.userId) {
+        throw new ForbiddenError('You do not have permission to upload preview for this project');
+      }
+
+      const contentType = request.headers['content-type'] || '';
+      let audioBuffer: Buffer | null = null;
+      let duration: number;
+
+      // ✅ NEW: Support multipart/form-data (streaming upload, no base64 overhead)
+      if (contentType.includes('multipart/form-data')) {
+        let fileData: any = null;
+        let durationValue: string | null = null;
+
+        // Parse multipart data - fields come first, then file
+        for await (const part of request.parts()) {
+          if (part.type === 'field') {
+            const field = part as any;
+            if (field.fieldname === 'duration') {
+              durationValue = field.value;
+            }
+          } else if (part.type === 'file') {
+            // Accept any file field name ('file', 'audio', etc.)
+            fileData = part;
+            // Read file buffer from stream
+            audioBuffer = await fileData.toBuffer();
+            logger.info(`📁 [UPLOAD_PREVIEW] File received: ${(fileData as any).filename || 'unknown'}, size: ${(audioBuffer.length / 1024 / 1024).toFixed(2)}MB`);
+          }
+        }
+
+        if (!fileData || !audioBuffer) {
+          throw new BadRequestError('No file provided in multipart form');
+        }
+
+        if (!durationValue) {
+          throw new BadRequestError('duration field is required');
+        }
+
+        duration = parseFloat(durationValue);
+
+        logger.info(`📤 [UPLOAD_PREVIEW] Multipart upload completed: ${(audioBuffer.length / 1024 / 1024).toFixed(2)}MB, duration: ${duration}s`);
+      } else {
+        // ✅ LEGACY: Support base64 JSON (for backward compatibility)
+        const body = request.body as { audioBuffer: string; duration: number };
+        if (!body.audioBuffer || !body.duration) {
+          throw new BadRequestError('audioBuffer and duration are required');
+        }
+
+        // Decode base64 to buffer
+        audioBuffer = Buffer.from(body.audioBuffer, 'base64');
+        duration = body.duration;
+
+        logger.info(`📤 [UPLOAD_PREVIEW] Base64 upload: ${(audioBuffer.length / 1024 / 1024).toFixed(2)}MB`);
+      }
+
+      if (!audioBuffer) {
+        throw new BadRequestError('No audio data provided');
+      }
+
+      const filename = `${id}-preview.wav`;
+      const storageKey = `project-previews/${id}/${filename}`;
+
+      // Upload to CDN
+      logger.info(`📤 [UPLOAD_PREVIEW] Starting CDN upload for project ${id}...`);
+      const cdnUploadStartTime = Date.now();
+      const { storageService } = await import('../services/storage.js');
+      const storageResult = await storageService.uploadFile(
+        project.user_id,
+        id, // assetId
+        filename,
+        audioBuffer,
+        false, // not system asset
+        undefined,
+        undefined,
+        storageKey
+      );
+      const cdnUploadTime = Date.now() - cdnUploadStartTime;
+      logger.info(`✅ [UPLOAD_PREVIEW] CDN upload completed in ${cdnUploadTime}ms: ${storageResult.storageUrl}`);
+
+      // Update project with preview URL
+      logger.info(`💾 [UPLOAD_PREVIEW] Updating project ${id} with preview URL...`);
+      await updateProject(id, {
+        previewAudioUrl: storageResult.storageUrl,
+        previewAudioDuration: Math.round(duration),
+        previewAudioRenderedAt: new Date(),
+        previewAudioStatus: 'ready',
+      });
+      logger.info(`✅ [UPLOAD_PREVIEW] Project ${id} updated successfully`);
+
+      return {
+        message: 'Preview uploaded successfully',
+        previewAudioUrl: storageResult.storageUrl,
+        duration: Math.round(duration),
+      };
+    } catch (error: any) {
+      logger.error(`[UPLOAD_PREVIEW] Error uploading preview for project:`, error);
+      throw error;
+    }
+  });
+
   // Duplicate project
   server.post('/:id/duplicate', {
     preHandler: [server.authenticate],

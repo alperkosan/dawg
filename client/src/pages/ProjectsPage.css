@@ -247,6 +247,44 @@
   border: 1px solid var(--zenith-border-medium);
 }
 
+.projects-page__badge--render {
+  font-size: var(--zenith-text-xs);
+}
+
+.projects-page__badge--render-pending {
+  background: rgba(var(--zenith-text-tertiary-rgb), 0.2);
+  color: var(--zenith-text-tertiary);
+  border: 1px solid var(--zenith-border-medium);
+}
+
+.projects-page__badge--render-rendering {
+  background: rgba(var(--zenith-accent-warm-rgb), 0.2);
+  color: var(--zenith-accent-warm);
+  border: 1px solid var(--zenith-accent-warm);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+.projects-page__badge--render-ready {
+  background: rgba(var(--zenith-color-success-rgb), 0.2);
+  color: var(--zenith-color-success);
+  border: 1px solid var(--zenith-color-success);
+}
+
+.projects-page__badge--render-failed {
+  background: rgba(var(--zenith-color-danger-rgb), 0.2);
+  color: var(--zenith-color-danger);
+  border: 1px solid var(--zenith-color-danger);
+}
+
 .projects-page__card-description {
   font-size: var(--zenith-text-sm);
   color: var(--zenith-text-secondary);
@@ -545,6 +583,60 @@
   font-size: var(--zenith-text-xs);
   color: var(--zenith-text-secondary);
   margin: 0;
+}
+
+/* Publish Modal Progress */
+.projects-publish-progress {
+  padding: var(--zenith-space-4);
+}
+
+.projects-publish-progress__bar {
+  width: 100%;
+  height: 8px;
+  background: var(--zenith-bg-tertiary);
+  border-radius: var(--zenith-radius-full);
+  overflow: hidden;
+  margin-bottom: var(--zenith-space-4);
+}
+
+.projects-publish-progress__fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--zenith-accent-warm), var(--zenith-accent-cool));
+  border-radius: var(--zenith-radius-full);
+  transition: width 0.3s ease;
+}
+
+.projects-publish-progress__status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--zenith-text-sm);
+  font-weight: var(--zenith-weight-medium);
+  color: var(--zenith-text-secondary);
+  margin-bottom: var(--zenith-space-6);
+  min-height: 24px;
+}
+
+.projects-publish-progress__steps {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--zenith-space-3);
+  font-size: var(--zenith-text-xs);
+}
+
+.projects-publish-progress__steps > div {
+  padding: var(--zenith-space-2);
+  border-radius: var(--zenith-radius-sm);
+  background: var(--zenith-bg-tertiary);
+  color: var(--zenith-text-tertiary);
+  text-align: center;
+  transition: all var(--zenith-duration-fast) var(--zenith-ease-out);
+}
+
+.projects-publish-progress__steps > div.completed {
+  background: var(--zenith-accent-warm);
+  color: #000;
+  font-weight: var(--zenith-weight-medium);
 }
 
 

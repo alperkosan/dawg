@@ -78,6 +78,10 @@ export class BaseEffect {
    * Set multiple parameters at once
    */
   setParametersState(state) {
+    if (!state || typeof state !== 'object') {
+      console.warn(`⚠️ [BaseEffect] setParametersState called with invalid state:`, state);
+      return;
+    }
     Object.keys(state).forEach(name => {
       this.setParameter(name, state[name]);
     });

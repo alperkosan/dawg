@@ -1400,7 +1400,10 @@ export class RenderEngine {
           'ModernDelay': 'modern-delay',
           'ModernReverb': 'modern-reverb',
           'Delay': 'delay',
-          'Reverb': 'reverb'
+          'Reverb': 'reverb',
+          'MultiBandEQ': 'multiband-eq',
+          'Clipper': 'clipper',
+          'Limiter': 'limiter'
         };
         
         if (typeMap[normalizedType]) {
@@ -1647,6 +1650,9 @@ export class RenderEngine {
       '/worklets/effects/compressor-processor.js',
       '/worklets/effects/saturator-processor.js',
       '/worklets/effects/multiband-eq-processor.js',
+      '/worklets/effects/multiband-eq-processor-v2.js', // ✅ NEW: MultiBandEQ V2
+      '/worklets/effects/clipper-processor.js', // ✅ NEW: Clipper
+      '/worklets/effects/limiter-processor.js', // ✅ NEW: Limiter
       '/worklets/effects/bass-enhancer-808-processor.js',
       '/worklets/effects/feedback-delay-processor.js',
       '/worklets/effects/atmos-machine-processor.js',

@@ -210,6 +210,34 @@ class ApiClient {
     });
   }
 
+  /**
+   * Upload client-side rendered project preview audio
+   */
+  async renderProjectPreview(projectId, renderData) {
+    // ✅ FIX: Support both base64 (legacy) and multipart/form-data (streaming)
+    // If renderData.audioFile is a Blob/File, use multipart upload
+    // Otherwise, use base64 JSON (legacy)
+    if (renderData.audioFile && renderData.audioFile instanceof Blob) {
+      const formData = new FormData();
+      // ✅ Backend accepts any file field name ('file', 'audio', etc.)
+      formData.append('file', renderData.audioFile, `${projectId}-preview.wav`);
+      formData.append('duration', renderData.duration.toString());
+
+      return this.request(`/projects/${projectId}/upload-preview`, {
+        method: 'POST',
+        body: formData,
+        // Don't set Content-Type header, browser will set it with boundary
+        headers: {},
+      });
+    } else {
+      // Legacy: base64 JSON
+      return this.request(`/projects/${projectId}/upload-preview`, {
+        method: 'POST',
+        body: JSON.stringify(renderData),
+      });
+    }
+  }
+
   async deleteProject(id) {
     return this.request(`/projects/${id}`, {
       method: 'DELETE',

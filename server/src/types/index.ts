@@ -61,6 +61,14 @@ export interface Project {
   publishedAt?: Date; // Alias
   deleted_at?: Date;
   deletedAt?: Date; // Alias
+  preview_audio_url?: string;
+  previewAudioUrl?: string; // Alias
+  preview_audio_duration?: number;
+  previewAudioDuration?: number; // Alias
+  preview_audio_rendered_at?: Date;
+  previewAudioRenderedAt?: Date; // Alias
+  preview_audio_status?: 'pending' | 'rendering' | 'ready' | 'failed';
+  previewAudioStatus?: 'pending' | 'rendering' | 'ready' | 'failed'; // Alias
 }
 
 export interface ProjectAsset {

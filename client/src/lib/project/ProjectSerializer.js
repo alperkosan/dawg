@@ -171,7 +171,6 @@ export class ProjectSerializer {
    */
   static serializeCurrentState() {
     const arrangementStore = useArrangementStore.getState();
-    const arrangementV2Store = useArrangementV2Store.getState();
     const instrumentsStore = useInstrumentsStore.getState();
     const mixerStore = useMixerStore.getState();
     const playbackStore = usePlaybackStore.getState();
@@ -195,8 +194,8 @@ export class ProjectSerializer {
       pattern_order: arrangementStore.patternOrder || [],
       
       arrangement: {
-        tracks: this.serializeArrangementTracks(arrangementV2Store),
-        clips: this.serializeArrangementClips(arrangementV2Store),
+        tracks: this.serializeArrangementTracks(arrangementStore),
+        clips: this.serializeArrangementClips(arrangementStore),
         markers: arrangementStore.markers || [],
         loop_regions: arrangementStore.loopRegions || [],
       },
@@ -576,7 +575,8 @@ export class ProjectSerializer {
   }
 
   static serializeArrangementTracks(store) {
-    return store.tracks.map(track => ({
+    // ✅ FIX: Use arrangementTracks from useArrangementStore (not V2 store)
+    return (store.arrangementTracks || []).map(track => ({
       id: track.id,
       name: track.name,
       volume: track.volume,
@@ -584,11 +584,15 @@ export class ProjectSerializer {
       muted: track.muted,
       solo: track.solo,
       color: track.color,
+      height: track.height,
+      locked: track.locked,
+      collapsed: track.collapsed,
     }));
   }
 
   static serializeArrangementClips(store) {
-    return store.clips.map(clip => ({
+    // ✅ FIX: Use arrangementClips from useArrangementStore (not V2 store)
+    return (store.arrangementClips || []).map(clip => ({
       id: clip.id,
       trackId: clip.trackId,
       patternId: clip.patternId,
@@ -597,6 +601,11 @@ export class ProjectSerializer {
       color: clip.color,
       assetId: clip.assetId,
       sampleOffset: clip.sampleOffset,
+      type: clip.type, // 'pattern' or 'audio'
+      name: clip.name,
+      muted: clip.muted,
+      locked: clip.locked,
+      patternOffset: clip.patternOffset,
     }));
   }
 

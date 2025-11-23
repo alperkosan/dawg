@@ -77,7 +77,8 @@ export async function findProjectById(id: string, includeDeleted: boolean = fals
     SELECT id, user_id, title, description, thumbnail_url, bpm, key_signature,
            time_signature, project_data, version, is_public, is_unlisted,
            share_token, play_count, like_count, remix_count, created_at,
-           updated_at, published_at, deleted_at
+           updated_at, published_at, deleted_at, preview_audio_url,
+           preview_audio_duration, preview_audio_rendered_at, preview_audio_status
     FROM projects
     WHERE id = $1
   `;
@@ -100,7 +101,8 @@ export async function findProjectByShareToken(token: string): Promise<Project | 
     `SELECT id, user_id, title, description, thumbnail_url, bpm, key_signature,
             time_signature, project_data, version, is_public, is_unlisted,
             share_token, play_count, like_count, remix_count, created_at,
-            updated_at, published_at, deleted_at
+            updated_at, published_at, deleted_at, preview_audio_url,
+            preview_audio_duration, preview_audio_rendered_at, preview_audio_status
      FROM projects
      WHERE share_token = $1 AND deleted_at IS NULL`,
     [token]
@@ -124,6 +126,10 @@ export async function updateProject(
     projectData?: Record<string, any>;
     isPublic?: boolean;
     isUnlisted?: boolean;
+    previewAudioUrl?: string;
+    previewAudioDuration?: number;
+    previewAudioRenderedAt?: Date;
+    previewAudioStatus?: 'pending' | 'rendering' | 'ready' | 'failed';
   }
 ): Promise<Project> {
   const db = getDatabase();
@@ -170,8 +176,62 @@ export async function updateProject(
     values.push(data.isUnlisted);
   }
   
+  // ✅ NEW: Preview audio fields
+  if (data.previewAudioUrl !== undefined) {
+    updates.push(`preview_audio_url = $${paramIndex++}`);
+    values.push(data.previewAudioUrl);
+  }
+  if (data.previewAudioDuration !== undefined) {
+    updates.push(`preview_audio_duration = $${paramIndex++}`);
+    values.push(data.previewAudioDuration);
+  }
+  if (data.previewAudioRenderedAt !== undefined) {
+    updates.push(`preview_audio_rendered_at = $${paramIndex++}`);
+    values.push(data.previewAudioRenderedAt);
+  }
+  if (data.previewAudioStatus !== undefined) {
+    updates.push(`preview_audio_status = $${paramIndex++}`);
+    values.push(data.previewAudioStatus);
+  }
+  
   if (updates.length === 0) {
     throw new Error('No fields to update');
+  }
+  
+  // ✅ DISABLED: Client-side render is now used instead of Puppeteer
+  // Audio render is now handled client-side in the publish modal
+  // This allows user interaction for AudioContext resume
+  // Puppeteer render is only triggered if explicitly requested via triggerPuppeteerRender flag
+  let shouldTriggerRender = false;
+  let wasPrivate = false;
+  let hasReadyPreview = false;
+  
+  // Only trigger Puppeteer render if explicitly requested (not for normal publish)
+  if (data.isPublic === true && (data as any).triggerPuppeteerRender === true) {
+    // Get previous project state BEFORE the update
+    const previousProjectResult = await db.query<Project>(
+      `SELECT is_public, preview_audio_status FROM projects WHERE id = $1 AND deleted_at IS NULL`,
+      [id]
+    );
+    
+    if (previousProjectResult.rows.length > 0) {
+      const previousProject = previousProjectResult.rows[0];
+      wasPrivate = !previousProject.is_public;
+      hasReadyPreview = previousProject.preview_audio_status === 'ready';
+      
+      logger.info(`🎬 [PUBLISH] Project ${id} publish check (BEFORE update):`, {
+        wasPrivate,
+        hasReadyPreview,
+        previousStatus: previousProject.preview_audio_status,
+      });
+      
+      // Trigger render if: project was private OR doesn't have ready preview
+      shouldTriggerRender = wasPrivate || !hasReadyPreview;
+    } else {
+      logger.warn(`⚠️ [PUBLISH] Project ${id} not found before update check`);
+    }
+  } else if (data.isPublic === true) {
+    logger.info(`ℹ️ [PUBLISH] Project ${id} is being published - client-side render will handle audio preview`);
   }
   
   updates.push(`updated_at = NOW()`);
@@ -184,7 +244,8 @@ export async function updateProject(
      RETURNING id, user_id, title, description, thumbnail_url, bpm, key_signature,
                time_signature, project_data, version, is_public, is_unlisted,
                share_token, play_count, like_count, remix_count, created_at,
-               updated_at, published_at, deleted_at`,
+               updated_at, published_at, deleted_at, preview_audio_url,
+               preview_audio_duration, preview_audio_rendered_at, preview_audio_status`,
     values
   );
   
@@ -192,7 +253,40 @@ export async function updateProject(
     throw new Error('Project not found');
   }
   
-  return result.rows[0];
+  const updatedProject = result.rows[0];
+  
+  // ✅ NEW: Trigger audio render if project is made public
+  if (shouldTriggerRender) {
+    // Project just became public OR doesn't have ready preview - trigger render in background
+    logger.info(`🎬 [PUBLISH] Project ${id} ${wasPrivate ? 'just became public' : 'needs preview render'}, triggering audio render...`);
+    // Don't await - let it run in background
+    import('./audioRender.js').then(({ getAudioRenderService }) => {
+      logger.info(`🎬 [PUBLISH] Initializing render service for project ${id}...`);
+      getAudioRenderService()
+        .initialize()
+        .then(() => {
+          logger.info(`🎬 [PUBLISH] Starting render for project ${id}...`);
+          return getAudioRenderService().renderProjectPreview(id);
+        })
+        .then(() => {
+          logger.info(`✅ [PUBLISH] Render completed successfully for project ${id}`);
+        })
+        .catch((error) => {
+          logger.error(`❌ [PUBLISH] Failed to render preview for project ${id}:`, error);
+          logger.error(`❌ [PUBLISH] Error details:`, {
+            message: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined,
+            projectId: id,
+          });
+        });
+    }).catch((error) => {
+      logger.error(`❌ [PUBLISH] Failed to import render service:`, error);
+    });
+  } else if (data.isPublic === true) {
+    logger.info(`ℹ️ [PUBLISH] Project ${id} was already public with ready preview, skipping render trigger`);
+  }
+  
+  return updatedProject;
 }
 
 /**
@@ -267,7 +361,8 @@ export async function listProjects(options: {
     `SELECT id, user_id, title, description, thumbnail_url, bpm, key_signature,
             time_signature, project_data, version, is_public, is_unlisted,
             share_token, play_count, like_count, remix_count, created_at,
-            updated_at, published_at, deleted_at
+            updated_at, published_at, deleted_at, preview_audio_url,
+            preview_audio_duration, preview_audio_rendered_at, preview_audio_status
      FROM projects
      WHERE ${whereClause}
      ORDER BY ${sortBy} ${sortOrder}

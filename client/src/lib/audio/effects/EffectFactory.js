@@ -37,14 +37,12 @@ export class EffectFactory {
       }
     },
     'multiband-eq': {
-      workletName: 'multiband-eq-processor',
+      workletName: 'multiband-eq-processor-v2',
       displayName: 'Multiband EQ',
       params: {
-        lowGain: { label: 'Low', defaultValue: 0, min: -24, max: 24, unit: ' dB' },
-        midGain: { label: 'Mid', defaultValue: 0, min: -24, max: 24, unit: ' dB' },
-        highGain: { label: 'High', defaultValue: 0, min: -24, max: 24, unit: ' dB' },
-        lowFreq: { label: 'Low Freq', defaultValue: 250, min: 20, max: 1000, unit: ' Hz' },
-        highFreq: { label: 'High Freq', defaultValue: 4000, min: 1000, max: 16000, unit: ' Hz' }
+        wet: { label: 'Wet', defaultValue: 1.0, min: 0, max: 1, unit: '' },
+        output: { label: 'Output', defaultValue: 1.0, min: 0, max: 2, unit: '' }
+        // Bands array is sent via worklet.port.postMessage() (message-based)
       }
     },
     'bass-enhancer': {
@@ -159,6 +157,37 @@ export class EffectFactory {
         ratio: { label: 'Ratio', defaultValue: 4, min: 1, max: 20, unit: ':1' },
         attack: { label: 'Attack', defaultValue: 0.001, min: 0.0001, max: 0.1, unit: 's' },
         release: { label: 'Release', defaultValue: 0.1, min: 0.01, max: 1, unit: 's' }
+      }
+    },
+    'limiter': {
+      workletName: 'limiter-processor',
+      displayName: 'Limiter',
+      params: {
+        ceiling: { label: 'Ceiling', defaultValue: -0.1, min: -10, max: 0, unit: ' dB' },
+        release: { label: 'Release', defaultValue: 100, min: 10, max: 1000, unit: ' ms' },
+        attack: { label: 'Attack', defaultValue: 0.1, min: 0.01, max: 10, unit: ' ms' },
+        lookahead: { label: 'Lookahead', defaultValue: 5, min: 0, max: 10, unit: ' ms' },
+        knee: { label: 'Knee', defaultValue: 0, min: 0, max: 1, unit: '' },
+        stereoLink: { label: 'Stereo Link', defaultValue: 100, min: 0, max: 100, unit: ' %' },
+        autoGain: { label: 'Auto Gain', defaultValue: 0, min: 0, max: 1, unit: '' },
+        mode: { label: 'Mode', defaultValue: 0, min: 0, max: 4, unit: '' },
+        truePeak: { label: 'True Peak', defaultValue: 1, min: 0, max: 1, unit: '' },
+        oversample: { label: 'Oversample', defaultValue: 4, min: 1, max: 8, unit: 'x' }
+      }
+    },
+    'clipper': {
+      workletName: 'clipper-processor',
+      displayName: 'Clipper',
+      params: {
+        ceiling: { label: 'Ceiling', defaultValue: 0.0, min: -10, max: 3, unit: ' dB' },
+        hardness: { label: 'Hardness', defaultValue: 100, min: 0, max: 100, unit: ' %' },
+        harmonics: { label: 'Harmonics', defaultValue: 50, min: 0, max: 100, unit: ' %' },
+        preGain: { label: 'Pre Gain', defaultValue: 0, min: -12, max: 12, unit: ' dB' },
+        postGain: { label: 'Post Gain', defaultValue: 0, min: -12, max: 12, unit: ' dB' },
+        mix: { label: 'Mix', defaultValue: 100, min: 0, max: 100, unit: ' %' },
+        mode: { label: 'Mode', defaultValue: 0, min: 0, max: 5, unit: '' },
+        dcFilter: { label: 'DC Filter', defaultValue: 1, min: 0, max: 1, unit: '' },
+        oversample: { label: 'Oversample', defaultValue: 2, min: 1, max: 8, unit: 'x' }
       }
     }
   };
@@ -297,7 +326,13 @@ export class EffectFactory {
 
     effect.id = data.id;
     effect.enabled = data.enabled ?? true;
-    effect.setParametersState(data.parameters);
+    
+    // Only set parameters if they exist and are valid
+    if (data.parameters && typeof data.parameters === 'object') {
+      effect.setParametersState(data.parameters);
+    } else {
+      console.warn(`⚠️ [EffectFactory] Effect ${data.type} has no valid parameters, using defaults`);
+    }
 
     return effect;
   }

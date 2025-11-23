@@ -574,7 +574,9 @@ export class ExportManager {
             sampleRate: finalBuffer.sampleRate,
             assetId,
             clipId,
-            audioBuffer: finalBuffer // Include buffer for potential reuse
+            audioBuffer: finalBuffer, // Include buffer for potential reuse
+            file: blob, // Include blob for file operations
+            blob: blob // Alias for convenience
         };
     }
 

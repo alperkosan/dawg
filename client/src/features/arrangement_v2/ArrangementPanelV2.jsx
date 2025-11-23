@@ -32,9 +32,19 @@ import { StyleCache } from '@/lib/rendering/StyleCache';
 import './ArrangementPanelV2.css';
 
 /**
- * Convert pitch string (e.g., "C4", "F#5") to MIDI note number
+ * Convert pitch string (e.g., "C4", "F#5") or MIDI number to MIDI note number
  */
 function pitchToMIDI(pitch) {
+  // If pitch is already a number (MIDI note), return it directly
+  if (typeof pitch === 'number') {
+    return Math.round(pitch);
+  }
+  
+  // If pitch is not a string, return default
+  if (typeof pitch !== 'string') {
+    return 60; // Default to C4
+  }
+  
   const noteMap = { 'C': 0, 'C#': 1, 'D': 2, 'D#': 3, 'E': 4, 'F': 5, 'F#': 6, 'G': 7, 'G#': 8, 'A': 9, 'A#': 10, 'B': 11 };
   const match = pitch.match(/^([A-G]#?)(-?\d+)$/);
   if (!match) return 60; // Default to C4
