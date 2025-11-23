@@ -1674,20 +1674,31 @@ export class AudioContextService {
    * Create a new instrument in the audio engine
    * @param {Object} instrument - Instrument data
    */
-  static createInstrument(instrument) {
+  static async createInstrument(instrument) {
     if (!this.audioEngine) {
       console.warn('⚠️ AudioContextService: Cannot create instrument - audio engine not ready');
       return;
     }
 
     try {
-      // For now, just log the instrument creation
-      // TODO: Implement actual audio engine instrument creation
+      // ✅ FIX: Ensure mixer insert exists before creating instrument
+      if (instrument.mixerTrackId) {
+        let mixerInsert = this.audioEngine.mixerInserts?.get(instrument.mixerTrackId);
+        if (!mixerInsert) {
+          console.log(`🎛️ Creating mixer insert ${instrument.mixerTrackId} for instrument ${instrument.id}`);
+          mixerInsert = this.createMixerInsert(instrument.mixerTrackId, instrument.mixerTrackId);
+          if (!mixerInsert) {
+            console.error(`❌ Failed to create mixer insert ${instrument.mixerTrackId}`);
+            // Continue anyway - instrument creation might still work
+          }
+        }
+      }
+
       console.log('🎵 AudioContextService: Creating instrument:', instrument.name, instrument.type);
 
       // If the audio engine has an instrument creation method, call it here
       if (this.audioEngine.createInstrument) {
-        return this.audioEngine.createInstrument(instrument);
+        return await this.audioEngine.createInstrument(instrument);
       }
     } catch (error) {
       console.error('❌ AudioContextService: Failed to create instrument:', error);
