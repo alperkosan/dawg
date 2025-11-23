@@ -179,7 +179,12 @@ const defaultThemes = [
       'radius-sm': '0px',
       'radius-md': '0px',
       'radius-lg': '0px',
-      'radius-xl': '0px'
+      'radius-xl': '0px',
+      // ✅ PREMIUM TEXTURE: 8-bit pixelated grid texture
+      'workspace-texture-accent': 'rgba(74, 222, 128, 0.03)',
+      'workspace-grid-color': 'rgba(74, 222, 128, 0.05)',
+      'workspace-grid-size': '16px',
+      'workspace-gradient-opacity': '0.2'
     }
   ),
 
@@ -201,7 +206,12 @@ const defaultThemes = [
       'accent-hot': '#FF8C00',
       'accent-warm': '#FFB627',
       'text-primary': '#FFE6D5',
-      'text-secondary': '#C9A68A'
+      'text-secondary': '#C9A68A',
+      // ✅ PREMIUM TEXTURE: Warm analog texture with subtle grain
+      'workspace-texture-accent': 'rgba(255, 182, 39, 0.025)',
+      'workspace-grid-color': 'rgba(255, 140, 0, 0.03)',
+      'workspace-grid-size': '40px',
+      'workspace-gradient-opacity': '0.4'
     }
   ),
 
@@ -228,7 +238,12 @@ const defaultThemes = [
       'accent-cold': '#0088FF',
       'text-primary': '#E0E0FF',
       'text-secondary': '#B090D0',
-      'text-tertiary': '#8060A0'
+      'text-tertiary': '#8060A0',
+      // ✅ PREMIUM TEXTURE: Cyberpunk neon grid with scanline effect
+      'workspace-texture-accent': 'rgba(0, 255, 255, 0.04)',
+      'workspace-grid-color': 'rgba(255, 0, 255, 0.06)',
+      'workspace-grid-size': '20px',
+      'workspace-gradient-opacity': '0.5'
     }
   ),
 
@@ -253,7 +268,12 @@ const defaultThemes = [
       'accent-cold': '#1E90FF',
       'text-primary': '#E0F7FF',
       'text-secondary': '#8FC5D9',
-      'text-tertiary': '#5A8FA3'
+      'text-tertiary': '#5A8FA3',
+      // ✅ PREMIUM TEXTURE: Ocean wave-like texture with flowing grid
+      'workspace-texture-accent': 'rgba(0, 206, 209, 0.03)',
+      'workspace-grid-color': 'rgba(30, 144, 255, 0.04)',
+      'workspace-grid-size': '36px',
+      'workspace-gradient-opacity': '0.35'
     }
   ),
 
@@ -278,7 +298,12 @@ const defaultThemes = [
       'accent-cold': '#2E8B57',
       'text-primary': '#E8F5E8',
       'text-secondary': '#A8D5A8',
-      'text-tertiary': '#6B946B'
+      'text-tertiary': '#6B946B',
+      // ✅ PREMIUM TEXTURE: Forest organic texture with natural grid
+      'workspace-texture-accent': 'rgba(50, 205, 50, 0.025)',
+      'workspace-grid-color': 'rgba(154, 205, 50, 0.035)',
+      'workspace-grid-size': '28px',
+      'workspace-gradient-opacity': '0.3'
     }
   ),
 
@@ -303,7 +328,12 @@ const defaultThemes = [
       'accent-cold': '#E08E45',
       'text-primary': '#FFE5D9',
       'text-secondary': '#DBAC9A',
-      'text-tertiary': '#B58A77'
+      'text-tertiary': '#B58A77',
+      // ✅ PREMIUM TEXTURE: Sunset gradient texture with warm grid
+      'workspace-texture-accent': 'rgba(255, 107, 53, 0.03)',
+      'workspace-grid-color': 'rgba(255, 182, 39, 0.04)',
+      'workspace-grid-size': '44px',
+      'workspace-gradient-opacity': '0.45'
     }
   ),
 
@@ -328,7 +358,12 @@ const defaultThemes = [
       'accent-cold': '#4682B4',
       'text-primary': '#FFFFFF',
       'text-secondary': '#B0C4D0',
-      'text-tertiary': '#7A8E9E'
+      'text-tertiary': '#7A8E9E',
+      // ✅ PREMIUM TEXTURE: Minimal icy texture with subtle grid
+      'workspace-texture-accent': 'rgba(135, 206, 235, 0.02)',
+      'workspace-grid-color': 'rgba(224, 247, 255, 0.025)',
+      'workspace-grid-size': '48px',
+      'workspace-gradient-opacity': '0.25'
     }
   ),
 
@@ -353,7 +388,12 @@ const defaultThemes = [
       'accent-cold': '#9D4EDD',
       'text-primary': '#E0AAFF',
       'text-secondary': '#C77DFF',
-      'text-tertiary': '#9D4EDD'
+      'text-tertiary': '#9D4EDD',
+      // ✅ PREMIUM TEXTURE: Mystical purple texture with cosmic grid
+      'workspace-texture-accent': 'rgba(199, 125, 255, 0.035)',
+      'workspace-grid-color': 'rgba(157, 78, 221, 0.05)',
+      'workspace-grid-size': '30px',
+      'workspace-gradient-opacity': '0.4'
     }
   ),
 
@@ -378,7 +418,12 @@ const defaultThemes = [
       'accent-cold': '#8A2BE2',
       'text-primary': '#FFE0F7',
       'text-secondary': '#E0A0D9',
-      'text-tertiary': '#B870C9'
+      'text-tertiary': '#B870C9',
+      // ✅ PREMIUM TEXTURE: Retro Miami vibes with vibrant grid
+      'workspace-texture-accent': 'rgba(0, 217, 255, 0.04)',
+      'workspace-grid-color': 'rgba(255, 20, 147, 0.06)',
+      'workspace-grid-size': '24px',
+      'workspace-gradient-opacity': '0.5'
     }
   ),
 
@@ -403,7 +448,12 @@ const defaultThemes = [
       'accent-cold': '#CD853F',
       'text-primary': '#FFEFD5',
       'text-secondary': '#D4B896',
-      'text-tertiary': '#A8906E'
+      'text-tertiary': '#A8906E',
+      // ✅ PREMIUM TEXTURE: Desert heat texture with sandy grid
+      'workspace-texture-accent': 'rgba(255, 182, 39, 0.03)',
+      'workspace-grid-color': 'rgba(255, 127, 80, 0.04)',
+      'workspace-grid-size': '38px',
+      'workspace-gradient-opacity': '0.4'
     }
   ),
 
@@ -429,7 +479,12 @@ const defaultThemes = [
       'text-primary': '#00FF41',
       'text-secondary': '#00B82E',
       'text-tertiary': '#008C22',
-      'font-primary': "'Courier New', 'Courier', monospace"
+      'font-primary': "'Courier New', 'Courier', monospace",
+      // ✅ PREMIUM TEXTURE: Matrix code texture with digital grid
+      'workspace-texture-accent': 'rgba(0, 255, 65, 0.05)',
+      'workspace-grid-color': 'rgba(0, 217, 54, 0.08)',
+      'workspace-grid-size': '12px',
+      'workspace-gradient-opacity': '0.6'
     }
   ),
 
@@ -454,7 +509,12 @@ const defaultThemes = [
       'accent-cold': '#B08BD9',
       'text-primary': '#F5E6FF',
       'text-secondary': '#D4B8E6',
-      'text-tertiary': '#B090C9'
+      'text-tertiary': '#B090C9',
+      // ✅ PREMIUM TEXTURE: Lavender dreamy texture with soft grid
+      'workspace-texture-accent': 'rgba(212, 165, 255, 0.03)',
+      'workspace-grid-color': 'rgba(230, 184, 255, 0.04)',
+      'workspace-grid-size': '34px',
+      'workspace-gradient-opacity': '0.35'
     }
   ),
 
