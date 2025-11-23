@@ -27,6 +27,11 @@ export async function registerRoutes(server: FastifyInstance) {
   await server.register(systemAssetsRoutes, { prefix: '/api/assets' }); // Public: /api/assets/system
   await server.register(systemAssetsRoutes, { prefix: '/api' }); // Admin: /api/admin/system/assets
   
+  // Media Panel routes
+  await server.register(feedRoutes, { prefix: '/api/feed' });
+  await server.register(interactionRoutes, { prefix: '/api/interactions' });
+  await server.register(notificationRoutes, { prefix: '/api/notifications' });
+  
   // WebSocket routes
   await registerWebSocketRoutes(server);
 }
