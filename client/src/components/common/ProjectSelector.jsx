@@ -19,6 +19,8 @@ export default function ProjectSelector({ currentProjectId, onProjectSelect, onN
   const dropdownRef = useRef(null);
 
   // ✅ FIX: Memoize loadProjects to avoid unnecessary re-renders
+  // Note: currentProjectId is used inside but not in deps to avoid infinite loops
+  // It's checked in a separate useEffect that watches currentProjectId
   const loadProjects = useCallback(async () => {
     setIsLoading(true);
     setError(null);
@@ -35,6 +37,8 @@ export default function ProjectSelector({ currentProjectId, onProjectSelect, onN
       
       // ✅ FIX: If currentProjectId is set but not in loaded projects, it might be a new project
       // This is handled by the parent component, so we just log it
+      // Note: We access currentProjectId from closure, which is safe because it's a prop
+      // and the useEffect below handles reloading when it changes
       if (currentProjectId && !loadedProjects.find(p => p.id === currentProjectId)) {
         console.log(`⚠️ Current project ${currentProjectId} not found in loaded projects`);
       }
@@ -45,7 +49,7 @@ export default function ProjectSelector({ currentProjectId, onProjectSelect, onN
     } finally {
       setIsLoading(false);
     }
-  }, []); // ✅ FIX: No dependencies to avoid infinite loops
+  }, [currentProjectId]); // ✅ FIX: Add currentProjectId to deps - it's used in the callback
 
   // ✅ FIX: Load projects immediately when authenticated (for initial load)
   useEffect(() => {
