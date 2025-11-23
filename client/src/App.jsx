@@ -708,7 +708,7 @@ function AppRouter() {
   if (showWelcome && isAuthenticated) {
     return (
       <ThemeProvider>
-        <WelcomeScreen />
+        <WelcomeScreen onChoose={() => setShowWelcome(false)} />
       </ThemeProvider>
     );
   }

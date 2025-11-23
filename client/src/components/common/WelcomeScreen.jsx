@@ -17,6 +17,10 @@ export default function WelcomeScreen({ onChoose }) {
 
   const handleChoose = (path) => {
     sessionStorage.setItem('user-has-chosen', 'true');
+    // ✅ FIX: Call onChoose callback to update parent state
+    if (onChoose) {
+      onChoose();
+    }
     navigate(path);
   };
 
