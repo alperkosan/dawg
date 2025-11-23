@@ -5,12 +5,15 @@
 import React, { useState, useEffect } from 'react';
 import { Heart, MessageCircle, Share2, GitBranch, Eye, Play, Pause } from 'lucide-react';
 import { apiClient } from '@/services/api.js';
+import CommentModal from './CommentModal';
 import './ProjectCard.css';
 
 export default function ProjectCard({ project }) {
   const [isLiked, setIsLiked] = useState(project.isLiked || false);
   const [likeCount, setLikeCount] = useState(project.stats?.likes || 0);
+  const [commentCount, setCommentCount] = useState(project.stats?.comments || 0);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isCommentModalOpen, setIsCommentModalOpen] = useState(false);
 
   // ✅ FIX: Update state when project prop changes (e.g., after feed refresh)
   useEffect(() => {
@@ -118,14 +121,30 @@ export default function ProjectCard({ project }) {
           <Heart size={18} fill={isLiked ? 'currentColor' : 'none'} />
           <span>{likeCount}</span>
         </button>
-        <button className="project-card__action-btn" title="Comment">
+        <button 
+          className="project-card__action-btn" 
+          title="Comment"
+          onClick={(e) => {
+            e.stopPropagation();
+            setIsCommentModalOpen(true);
+          }}
+        >
           <MessageCircle size={18} />
-          <span>{project.stats?.comments || 0}</span>
+          <span>{commentCount}</span>
         </button>
         <button className="project-card__action-btn" onClick={handleShare} title="Share">
           <Share2 size={18} />
         </button>
       </div>
+
+      {/* Comment Modal */}
+      <CommentModal
+        projectId={project.id}
+        isOpen={isCommentModalOpen}
+        onClose={() => setIsCommentModalOpen(false)}
+        initialCommentCount={commentCount}
+        onCommentCountChange={setCommentCount}
+      />
     </div>
   );
 }
