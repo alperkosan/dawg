@@ -109,9 +109,17 @@ export class NativeTransportSystem {
         const startTime = when || this.audioContext.currentTime;
         this.isPlaying = true;
 
-        // ✅ CRITICAL FIX: Always start from loop beginning unless explicitly paused
+        // ✅ CRITICAL FIX: Preserve position if setPosition was called before start
+        // Only reset to loopStartTick if position hasn't been explicitly set
+        // This allows starting playback from a specific position (e.g., timeline click)
         if (!this.isPaused) {
-            this.currentTick = this.loopStartTick;
+            // Only reset to loop start if currentTick is at loop start (wasn't explicitly set)
+            // If setPosition was called, currentTick will be different from loopStartTick
+            if (this.currentTick === this.loopStartTick || this.currentTick === 0) {
+                // Position wasn't explicitly set, start from loop beginning
+                this.currentTick = this.loopStartTick;
+            }
+            // Otherwise, keep currentTick as set by setPosition
             this.currentBar = Math.floor(this.currentTick / this.ticksPerBar);
         } else {
             // ✅ CRITICAL FIX: When resuming from pause, clear pause state

@@ -609,11 +609,6 @@ export class PlaybackManager {
                 playPosition = this.currentPosition;
             }
 
-            // ✅ CRITICAL: Always ensure transport position matches our intended position
-            if (this.transport.setPosition) {
-                this.transport.setPosition(playPosition);
-            }
-
             this._updateLoopSettingsImmediate(); // Force immediate loop update for playback start
             
             console.log('🎵 PlaybackManager: Calling _scheduleContent()', { startTime, reason: 'playback-start' });
@@ -629,6 +624,13 @@ export class PlaybackManager {
             console.log('🎵 PlaybackManager: Starting transport at', startTime);
             this.transport.start(startTime);
             console.log('✅ PlaybackManager: Transport started');
+
+            // ✅ CRITICAL FIX: Set position AFTER start() to prevent transport from resetting it
+            // start() will preserve the position if it was already set, but we need to ensure
+            // it's set after start() to override any reset that might have happened
+            if (this.transport.setPosition) {
+                this.transport.setPosition(playPosition);
+            }
 
             this.isPlaying = true;
             this.isPaused = false;
@@ -734,12 +736,11 @@ export class PlaybackManager {
             // ⚡ IDLE OPTIMIZATION: Notify idle detector that we stopped
             idleDetector.setPlaying(false);
 
-            // ✅ DAW STANDARD: Always reset to 0 on stop
+            // ✅ DAW STANDARD: Always reset to 0 on stop (expected behavior)
             this.currentPosition = 0;
             if (this.transport.setPosition) {
                 this.transport.setPosition(0);
             }
-
 
             // Update UI position
             const { usePlaybackStore } = require('../../store/usePlaybackStore');

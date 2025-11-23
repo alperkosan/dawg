@@ -448,11 +448,15 @@ export class PlaybackController extends SimpleEventEmitter {
     // This position survives stop/play cycles (matches FL Studio, Ableton behavior)
     this.state.currentPosition = Math.max(0, position);
     
+    // ✅ CRITICAL FIX: Always update PlaybackManager position, even when stopped
+    // This ensures that when play is pressed, PlaybackManager has the correct position
+    // Otherwise, PlaybackManager.currentPosition will be 0 (from stop) and play will start at 0
+    await this.audioEngine.playbackManager.jumpToStep(position);
+    
     // ✅ Update transport position only if playing
     // If stopped, transport position will sync on next play
     if (this.state.isPlaying) {
       this.state.transportPosition = this.state.currentPosition;
-      await this.audioEngine.playbackManager.jumpToStep(position);
     }
     
     // ✅ Always emit UI update (even when stopped)
