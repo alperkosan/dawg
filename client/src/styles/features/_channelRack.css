@@ -85,7 +85,7 @@
 /* Export button special styling */
 .channel-rack-layout__mgmt-btn--export {
   background: var(--zenith-accent-warm);
-  color: var(--zenith-text-primary);
+  color: #000000; /* ✅ FIX: Use black for better contrast on accent-warm (yellow) background */
 }
 
 .channel-rack-layout__mgmt-btn--export:hover {
