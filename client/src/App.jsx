@@ -29,7 +29,6 @@ import { PerformanceOverlay } from './components/debug/PerformanceOverlay';
 import ExportPanel from './components/ExportPanel';
 import AuthScreen from './components/auth/AuthScreen';
 import LoginPrompt from './components/common/LoginPrompt';
-import GuestBanner from './components/common/GuestBanner';
 import WelcomeScreen from './components/common/WelcomeScreen';
 import NavigationHeader from './components/layout/NavigationHeader';
 import ProjectLoadingScreen from './components/common/ProjectLoadingScreen';
@@ -37,7 +36,6 @@ import AdminPanel from './pages/AdminPanel';
 import ProjectsPage from './pages/ProjectsPage';
 import { ToastContainer } from './components/common/Toast';
 import ProjectTitleModal from './components/common/ProjectTitleModal';
-import './components/common/GuestBanner.css';
 import './components/common/WelcomeScreen.css';
 import './pages/AdminPanel.css';
 import './pages/ProjectsPage.css';
@@ -79,7 +77,6 @@ function DAWApp() {
   const [showProjectTitleModal, setShowProjectTitleModal] = useState(false);
   const [currentProjectId, setCurrentProjectId] = useState(null);
   const [templateInitialized, setTemplateInitialized] = useState(false); // ✅ FIX: Track if template has been initialized
-  const [bannerHeight, setBannerHeight] = useState(0); // ✅ FIX: Track banner height for layout calculations
   const [isLoadingProject, setIsLoadingProject] = useState(false); // ✅ FIX: Track project loading state
   const [loadingProjectTitle, setLoadingProjectTitle] = useState(null); // ✅ FIX: Track project title during loading
   const [projectLoadAttempted, setProjectLoadAttempted] = useState(false); // ✅ FIX: Track if project load was attempted to prevent duplicate loads
@@ -570,7 +567,6 @@ function DAWApp() {
               onNewProject={handleNewProject}
               onEditTitle={handleEditTitle}
             />
-            <GuestBanner onHeightChange={setBannerHeight} />
             {/* ✅ FIX: Modal'ı app-container dışına taşıdık - overlay'in tam ekranı kaplaması için */}
             <ProjectTitleModal
               isOpen={showProjectTitleModal}
@@ -589,8 +585,8 @@ function DAWApp() {
             <div 
               className="app-container" 
               style={{ 
-                marginTop: `${56 + bannerHeight}px`, // Navigation header (56px) + banner height
-                height: `calc(100vh - ${56 + bannerHeight}px)`, // Full viewport minus header and banner
+                marginTop: '56px', // Navigation header (56px)
+                height: 'calc(100vh - 56px)', // Full viewport minus header
                 opacity: isLoadingProject ? 0.3 : 1, // ✅ FIX: Dim UI during loading
                 pointerEvents: isLoadingProject ? 'none' : 'auto', // ✅ FIX: Disable interactions during loading
                 transition: 'opacity 0.3s ease-out' // ✅ FIX: Smooth transition
@@ -631,7 +627,7 @@ function DAWApp() {
       default:
         return <StartupScreen onStart={initializeAudioSystem} />;
     }
-  }, [engineStatus, engineError, initializeAudioSystem, isExportPanelOpen, showLoginPrompt, showProjectTitleModal, handleSave, isAuthenticated, isGuest, currentProjectId, handleProjectSelect, handleNewProject, handleEditTitle, isLoadingProject, loadingProjectTitle, bannerHeight, currentProjectTitle]);
+  }, [engineStatus, engineError, initializeAudioSystem, isExportPanelOpen, showLoginPrompt, showProjectTitleModal, handleSave, isAuthenticated, isGuest, currentProjectId, handleProjectSelect, handleNewProject, handleEditTitle, isLoadingProject, loadingProjectTitle, currentProjectTitle]);
 
   return <>{renderContent()}</>;
 }
@@ -639,17 +635,15 @@ function DAWApp() {
 // Media Component (placeholder for media section)
 function MediaApp() {
   const { isGuest } = useAuthStore();
-  const [bannerHeight, setBannerHeight] = useState(0);
   
   return (
     <ThemeProvider>
       <NavigationHeader />
-      <GuestBanner onHeightChange={setBannerHeight} />
       <div 
         className="media-app" 
         style={{ 
-          marginTop: `${56 + bannerHeight}px`, // Navigation header + banner height
-          minHeight: `calc(100vh - ${56 + bannerHeight}px)` // Full viewport minus header and banner
+          marginTop: '56px', // Navigation header
+          minHeight: 'calc(100vh - 56px)' // Full viewport minus header
         }}
       >
         <div className="media-app__container">
