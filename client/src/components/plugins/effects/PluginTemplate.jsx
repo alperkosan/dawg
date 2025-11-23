@@ -228,7 +228,7 @@ export function PluginTemplateUI({ trackId, effect, onUpdate }) {
       description: 'User saved preset'
     });
 
-    const { apiClient } = await import('../../../services/api.js');
+    const { apiClient } = await import('@/services/api.js');
     if (presetId) {
       setSelectedPresetId(presetId);
       apiClient.showToast('Preset saved successfully!', 'success', 3000);
@@ -258,13 +258,13 @@ export function PluginTemplateUI({ trackId, effect, onUpdate }) {
       reader.onload = async (event) => {
         try {
           const presetId = presetManager.importPreset(event.target.result);
-          const { apiClient } = await import('../../../services/api.js');
+          const { apiClient } = await import('@/services/api.js');
           if (presetId) {
             handlePresetChange(presetId);
             apiClient.showToast('Preset imported successfully!', 'success', 3000);
           }
         } catch (error) {
-          const { apiClient } = await import('../../../services/api.js');
+          const { apiClient } = await import('@/services/api.js');
           apiClient.showToast(`Failed to import preset: ${error.message}`, 'error', 5000);
         }
       };

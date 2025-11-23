@@ -375,7 +375,7 @@ const AudioQualitySettings = ({ onSettingsChange, currentEngine = null }) => {
                     onClick={async () => {
                         const exported = qualityManager.exportSettings();
                         navigator.clipboard?.writeText(JSON.stringify(exported, null, 2));
-                        const { apiClient } = await import('../services/api.js');
+                        const { apiClient } = await import('@/services/api.js');
                         apiClient.showToast('Settings copied to clipboard!', 'success', 3000);
                     }}
                 >

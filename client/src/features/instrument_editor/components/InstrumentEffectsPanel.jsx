@@ -31,7 +31,7 @@ const InstrumentEffectsPanel = ({ instrumentData }) => {
 
     // For now, redirect to mixer channel
     // In future, we can add instrument-level effects
-    const { apiClient } = await import('../../../services/api.js');
+    const { apiClient } = await import('@/services/api.js');
     apiClient.showToast(`Add ${effectConfig.type || effectType} to mixer channel "${mixerTrack?.name || 'Unknown'}" instead. Instrument-level effects coming soon!`, 'info', 5000);
     setShowAddMenu(false);
   };

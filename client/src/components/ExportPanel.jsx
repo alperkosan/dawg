@@ -93,7 +93,7 @@ export const ExportPanel = ({ isOpen, onClose }) => {
 
     const handleExport = useCallback(async () => {
         if (selectedChannels.size === 0) {
-            const { apiClient } = await import('../services/api.js');
+            const { apiClient } = await import('@/services/api.js');
             apiClient.showToast('Please select at least one channel to export', 'warning', 3000);
             return;
         }

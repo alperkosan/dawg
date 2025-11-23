@@ -782,7 +782,7 @@ export const useFileBrowserStore = create((set, get) => ({
       await get().loadStorageQuota();
     } catch (error) {
       console.error('Failed to delete node:', error);
-      const { apiClient } = await import('../services/api.js');
+      const { apiClient } = await import('@/services/api.js');
       apiClient.showToast(`Silme işlemi başarısız: ${error.message}`, 'error', 5000);
       throw error;
     }

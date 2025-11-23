@@ -62,7 +62,7 @@ const PresetBrowser = ({ instrumentData }) => {
 
   const handleSavePreset = async () => {
     if (!newPresetName.trim()) {
-      const { apiClient } = await import('../../../services/api.js');
+      const { apiClient } = await import('@/services/api.js');
       apiClient.showToast('Please enter a preset name', 'warning', 3000);
       return;
     }

@@ -55,7 +55,7 @@ export const ThemeEditor = () => {
   const handleExport = async () => {
     const themeJson = JSON.stringify(activeTheme, null, 2);
     navigator.clipboard.writeText(themeJson).then(async () => {
-      const { apiClient } = await import('../../services/api.js');
+      const { apiClient } = await import('@/services/api.js');
       apiClient.showToast('Tema JSON olarak panoya kopyalandı!', 'success', 3000);
     });
   };
@@ -63,14 +63,14 @@ export const ThemeEditor = () => {
   const handleImport = async () => {
     try {
       const themeJson = prompt("Lütfen tema JSON'unu buraya yapıştırın:");
-      const { apiClient } = await import('../../services/api.js');
+      const { apiClient } = await import('@/services/api.js');
       if (themeJson) {
         const newTheme = JSON.parse(themeJson);
         addTheme({ name: `${newTheme.name} (Kopya)`, colors: newTheme.colors, styles: newTheme.styles });
         apiClient.showToast('Tema başarıyla içe aktarıldı!', 'success', 3000);
       }
     } catch (e) {
-      const { apiClient } = await import('../../services/api.js');
+      const { apiClient } = await import('@/services/api.js');
       apiClient.showToast('Geçersiz JSON formatı. Lütfen kontrol edin.', 'error', 5000);
     }
   };
