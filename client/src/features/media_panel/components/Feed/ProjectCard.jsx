@@ -6,14 +6,29 @@ import React, { useState, useEffect } from 'react';
 import { Heart, MessageCircle, Share2, GitBranch, Eye, Play, Pause } from 'lucide-react';
 import { apiClient } from '@/services/api.js';
 import CommentModal from './CommentModal';
+import ProjectPreviewPlayer from '../Media/ProjectPreviewPlayer';
+import { useMediaPlayerStore } from '../../store/useMediaPlayerStore';
 import './ProjectCard.css';
 
 export default function ProjectCard({ project }) {
   const [isLiked, setIsLiked] = useState(project.isLiked || false);
   const [likeCount, setLikeCount] = useState(project.stats?.likes || 0);
   const [commentCount, setCommentCount] = useState(project.stats?.comments || 0);
-  const [isPlaying, setIsPlaying] = useState(false);
   const [isCommentModalOpen, setIsCommentModalOpen] = useState(false);
+  const [showPlayer, setShowPlayer] = useState(false);
+
+  // Global media player state
+  const {
+    playingProjectId,
+    isPlaying,
+    setPlayingProject,
+    play,
+    pause,
+    stop,
+  } = useMediaPlayerStore();
+
+  const isCurrentPlaying = playingProjectId === project.id;
+  const hasPreview = project.previewAudioUrl || project.preview_audio_url;
 
   // ✅ FIX: Update state when project prop changes (e.g., after feed refresh)
   useEffect(() => {
@@ -36,8 +51,34 @@ export default function ProjectCard({ project }) {
 
   const handlePlay = (e) => {
     e.stopPropagation();
-    setIsPlaying(!isPlaying);
-    // TODO: Implement audio playback
+    
+    if (!hasPreview) {
+      apiClient.showToast('No preview available for this project', 'info');
+      return;
+    }
+
+    if (isCurrentPlaying && isPlaying) {
+      // Pause current playback
+      pause();
+    } else if (isCurrentPlaying && !isPlaying) {
+      // Resume current playback
+      play();
+    } else {
+      // Start new playback
+      const audioUrl = project.previewAudioUrl || project.preview_audio_url;
+      const duration = project.previewAudioDuration || project.preview_audio_duration;
+      setPlayingProject(project.id, audioUrl, duration);
+      setShowPlayer(true);
+      play();
+    }
+  };
+
+  const handlePlayStateChange = (playing) => {
+    if (playing) {
+      play();
+    } else {
+      pause();
+    }
   };
 
   const handleShare = async (e) => {
@@ -62,10 +103,25 @@ export default function ProjectCard({ project }) {
             <span>{project.title.charAt(0).toUpperCase()}</span>
           </div>
         )}
-        <button className="project-card__play-btn" onClick={handlePlay}>
-          {isPlaying ? <Pause size={20} /> : <Play size={20} />}
+        <button 
+          className="project-card__play-btn" 
+          onClick={handlePlay}
+          title={hasPreview ? (isCurrentPlaying && isPlaying ? 'Pause' : 'Play') : 'No preview available'}
+        >
+          {isCurrentPlaying && isPlaying ? <Pause size={20} /> : <Play size={20} />}
         </button>
       </div>
+
+      {/* Audio Player */}
+      {showPlayer && isCurrentPlaying && hasPreview && (
+        <div className="project-card__player">
+          <ProjectPreviewPlayer
+            audioUrl={project.previewAudioUrl || project.preview_audio_url}
+            duration={project.previewAudioDuration || project.preview_audio_duration}
+            onPlayStateChange={handlePlayStateChange}
+          />
+        </div>
+      )}
 
       {/* Content */}
       <div className="project-card__content">

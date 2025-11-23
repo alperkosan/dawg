@@ -255,6 +255,69 @@ export async function updateProject(
   
   const updatedProject = result.rows[0];
   
+  // ✅ NEW: Delete preview audio from CDN when project is unpublished
+  if (data.isPublic === false) {
+    // Get previous project state to check if it had a preview audio
+    const previousProjectResult = await db.query<Project>(
+      `SELECT preview_audio_url FROM projects WHERE id = $1 AND deleted_at IS NULL`,
+      [id]
+    );
+    
+    if (previousProjectResult.rows.length > 0) {
+      const previousProject = previousProjectResult.rows[0];
+      const previewAudioUrl = previousProject.preview_audio_url;
+      
+      if (previewAudioUrl) {
+        try {
+          // Extract storage key from CDN URL
+          // URL format examples:
+          // - https://dawg.b-cdn.net/project-previews/{id}/{filename} (pull zone)
+          // - https://storage.bunnycdn.com/{zone}/project-previews/{id}/{filename} (storage API)
+          let storageKey: string | null = null;
+          
+          // Try to extract storage key from URL
+          // Look for "project-previews/" pattern in URL
+          const urlMatch = previewAudioUrl.match(/project-previews\/[^?]+/);
+          if (urlMatch) {
+            storageKey = urlMatch[0];
+            logger.info(`🔍 [UNPUBLISH] Extracted storage key from URL: ${storageKey}`);
+          } else {
+            // Fallback: construct storage key from project ID
+            // Assuming filename format: {id}-preview.wav (matches upload format)
+            storageKey = `project-previews/${id}/${id}-preview.wav`;
+            logger.info(`🔍 [UNPUBLISH] Constructed storage key from project ID: ${storageKey}`);
+          }
+          
+          if (storageKey) {
+            logger.info(`🗑️ [UNPUBLISH] Deleting preview audio from CDN for project ${id}: ${storageKey}`);
+            const { storageService } = await import('./storage.js');
+            await storageService.deleteFile(storageKey);
+            logger.info(`✅ [UNPUBLISH] Preview audio deleted from CDN for project ${id}`);
+          }
+        } catch (error) {
+          logger.warn(`⚠️ [UNPUBLISH] Failed to delete preview audio from CDN for project ${id}:`, error);
+          // Continue with unpublish even if CDN deletion fails
+        }
+      }
+      
+      // Clear preview audio fields in database
+      try {
+        await db.query(
+          `UPDATE projects 
+           SET preview_audio_url = NULL, 
+               preview_audio_duration = NULL, 
+               preview_audio_rendered_at = NULL, 
+               preview_audio_status = NULL
+           WHERE id = $1 AND deleted_at IS NULL`,
+          [id]
+        );
+        logger.info(`✅ [UNPUBLISH] Cleared preview audio fields for project ${id}`);
+      } catch (error) {
+        logger.warn(`⚠️ [UNPUBLISH] Failed to clear preview audio fields for project ${id}:`, error);
+      }
+    }
+  }
+  
   // ✅ NEW: Trigger audio render if project is made public
   if (shouldTriggerRender) {
     // Project just became public OR doesn't have ready preview - trigger render in background

@@ -189,6 +189,45 @@ export class EffectFactory {
         dcFilter: { label: 'DC Filter', defaultValue: 1, min: 0, max: 1, unit: '' },
         oversample: { label: 'Oversample', defaultValue: 2, min: 1, max: 8, unit: 'x' }
       }
+    },
+    // ✅ FIX: Add ModernReverb and ModernDelay as worklet effects for offline rendering
+    'modern-reverb': {
+      workletName: 'modern-reverb-processor',
+      displayName: 'Modern Reverb',
+      params: {
+        size: { label: 'Room Size', defaultValue: 0.7, min: 0.0, max: 1.0, unit: '' },
+        decay: { label: 'Decay Time', defaultValue: 2.5, min: 0.1, max: 15.0, unit: 's' },
+        damping: { label: 'High Damping', defaultValue: 0.5, min: 0.0, max: 1.0, unit: '' },
+        width: { label: 'Stereo Width', defaultValue: 1.0, min: 0.0, max: 1.0, unit: '' },
+        preDelay: { label: 'Pre-Delay', defaultValue: 0.02, min: 0.0, max: 0.2, unit: 's' },
+        wet: { label: 'Mix', defaultValue: 0.35, min: 0.0, max: 1.0, unit: '' },
+        earlyLateMix: { label: 'Early/Late', defaultValue: 0.5, min: 0.0, max: 1.0, unit: '' },
+        diffusion: { label: 'Diffusion', defaultValue: 0.7, min: 0.0, max: 1.0, unit: '' },
+        modDepth: { label: 'Mod Depth', defaultValue: 0.3, min: 0.0, max: 1.0, unit: '' },
+        modRate: { label: 'Mod Rate', defaultValue: 0.5, min: 0.1, max: 2.0, unit: 'Hz' },
+        lowCut: { label: 'Low Cut', defaultValue: 100, min: 20, max: 1000, unit: 'Hz' },
+        shimmer: { label: 'Shimmer', defaultValue: 0.0, min: 0.0, max: 1.0, unit: '' }
+      }
+    },
+    'modern-delay': {
+      workletName: 'modern-delay-processor',
+      displayName: 'Modern Delay',
+      params: {
+        timeLeft: { label: 'Left Time', defaultValue: 0.375, min: 0.001, max: 4.0, unit: 's' },
+        timeRight: { label: 'Right Time', defaultValue: 0.5, min: 0.001, max: 4.0, unit: 's' },
+        feedbackLeft: { label: 'FB Left', defaultValue: 0.4, min: 0.0, max: 1.0, unit: '' },
+        feedbackRight: { label: 'FB Right', defaultValue: 0.4, min: 0.0, max: 1.0, unit: '' },
+        pingPong: { label: 'Ping-Pong', defaultValue: 0.0, min: 0.0, max: 1.0, unit: '' },
+        wet: { label: 'Mix', defaultValue: 0.35, min: 0.0, max: 1.0, unit: '' },
+        filterFreq: { label: 'Filter Freq', defaultValue: 8000, min: 100, max: 20000, unit: 'Hz' },
+        saturation: { label: 'Saturation', defaultValue: 0.0, min: 0.0, max: 1.0, unit: '' },
+        diffusion: { label: 'Diffusion', defaultValue: 0.0, min: 0.0, max: 1.0, unit: '' },
+        wobble: { label: 'Wobble', defaultValue: 0.0, min: 0.0, max: 1.0, unit: '' },
+        flutter: { label: 'Flutter', defaultValue: 0.0, min: 0.0, max: 1.0, unit: '' },
+        modDepth: { label: 'Mod Depth', defaultValue: 0.0, min: 0.0, max: 0.05, unit: 'ms' },
+        modRate: { label: 'Mod Rate', defaultValue: 0.5, min: 0.1, max: 5.0, unit: 'Hz' },
+        width: { label: 'Stereo Width', defaultValue: 1.0, min: 0.0, max: 2.0, unit: '' }
+      }
     }
   };
 
@@ -327,9 +366,13 @@ export class EffectFactory {
     effect.id = data.id;
     effect.enabled = data.enabled ?? true;
     
+    // ✅ FIX: Support both 'parameters' and 'settings' field names
+    // Mixer store uses 'settings', but some serialized data may use 'parameters'
+    const parameters = data.parameters || data.settings;
+    
     // Only set parameters if they exist and are valid
-    if (data.parameters && typeof data.parameters === 'object') {
-      effect.setParametersState(data.parameters);
+    if (parameters && typeof parameters === 'object' && Object.keys(parameters).length > 0) {
+      effect.setParametersState(parameters);
     } else {
       console.warn(`⚠️ [EffectFactory] Effect ${data.type} has no valid parameters, using defaults`);
     }

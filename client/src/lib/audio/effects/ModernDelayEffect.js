@@ -185,6 +185,23 @@ export class ModernDelayEffect extends BaseEffect {
         default: 0.0,
         label: 'Duck Amount',
         unit: '%'
+      },
+      // ✅ FIX: Add missing parameters that exist in worklet processor
+      wobble: {
+        value: 0.0,
+        min: 0.0,
+        max: 1.0,
+        default: 0.0,
+        label: 'Wobble',
+        unit: '%'
+      },
+      flutter: {
+        value: 0.0,
+        min: 0.0,
+        max: 1.0,
+        default: 0.0,
+        label: 'Flutter',
+        unit: '%'
       }
     };
 

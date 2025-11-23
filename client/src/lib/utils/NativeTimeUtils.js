@@ -47,6 +47,18 @@ export class NativeTime {
         }
 
         if (typeof value === 'string') {
+            // ✅ FIX: Support multiplication format like "4*16n" (4 times 16th note)
+            const multiplicationMatch = value.match(/^(\d+)\*(\d+(?:\.\d+)?)(n|t|d)$/);
+            if (multiplicationMatch) {
+                const [, multiplier, noteValue, modifier] = multiplicationMatch;
+                return {
+                    type: 'note',
+                    noteValue: parseFloat(noteValue),
+                    modifier: modifier,
+                    multiplier: parseInt(multiplier)
+                };
+            }
+
             // Note durations: "4n", "8n", "16n", "2n", etc.
             const noteDurationMatch = value.match(/^(\d+(?:\.\d+)?)(n|t|d)$/);
             if (noteDurationMatch) {
@@ -100,6 +112,15 @@ export class NativeTime {
     }
 
     toSeconds() {
+        // ✅ FIX: Handle multiplication format (e.g., "4*16n")
+        if (this.parsedValue.type === 'note' && this.parsedValue.multiplier) {
+            const singleNoteSeconds = this.noteDurationToSeconds(
+                this.parsedValue.noteValue,
+                this.parsedValue.modifier
+            );
+            return singleNoteSeconds * this.parsedValue.multiplier;
+        }
+
         switch (this.parsedValue.type) {
             case 'seconds':
                 return this.parsedValue.value;

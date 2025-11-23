@@ -41,6 +41,12 @@
   font-weight: bold;
 }
 
+.project-card__player {
+  padding: var(--zenith-space-3);
+  border-top: 1px solid var(--zenith-border-subtle);
+  background: var(--zenith-bg-primary);
+}
+
 .project-card__play-btn {
   position: absolute;
   top: 50%;

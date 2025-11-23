@@ -111,6 +111,23 @@ export class ModernReverbEffect extends BaseEffect {
         default: 0.5,
         label: 'Mod Rate',
         unit: 'Hz'
+      },
+      // ✅ FIX: Add missing parameters that exist in worklet processor
+      lowCut: {
+        value: 100,
+        min: 20,
+        max: 1000,
+        default: 100,
+        label: 'Low Cut',
+        unit: 'Hz'
+      },
+      shimmer: {
+        value: 0.0,
+        min: 0.0,
+        max: 1.0,
+        default: 0.0,
+        label: 'Shimmer',
+        unit: '%'
       }
     };
 

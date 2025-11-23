@@ -1269,10 +1269,19 @@ export class RenderEngine {
 
   /**
    * Convert Tone.js duration notation to beats (e.g., '16n' -> 0.25, '4n' -> 1, '2n' -> 2)
+   * Also supports multiplication format like '4*16n' (4 times 16th note = 1 beat)
    */
   _durationToBeats(duration) {
     if (typeof duration === 'number') return duration;
     if (!duration || typeof duration !== 'string') return 1;
+
+    // ✅ FIX: Support multiplication format like '4*16n' (4 times 16th note)
+    const multiplicationMatch = duration.match(/^(\d+)\*(\d+)n$/);
+    if (multiplicationMatch) {
+      const [, multiplier, noteValue] = multiplicationMatch;
+      const singleNoteBeats = 4 / parseInt(noteValue);
+      return singleNoteBeats * parseInt(multiplier);
+    }
 
     // Tone.js notation: '1n' = whole note = 4 beats, '2n' = half = 2 beats, '4n' = quarter = 1 beat, '8n' = eighth = 0.5, '16n' = sixteenth = 0.25
     const match = duration.match(/^(\d+)n$/);
@@ -1411,10 +1420,13 @@ export class RenderEngine {
           console.log(`🎬 Normalized effect type: ${effectData.type} → ${normalizedType}`);
         }
 
-        // Create normalized effect data
+        // ✅ FIX: Ensure effect data has parameters field (from settings if needed)
+        // Mixer store uses 'settings', but EffectFactory expects 'parameters'
         const normalizedEffectData = {
           ...effectData,
-          type: normalizedType
+          type: normalizedType,
+          // ✅ CRITICAL: Map 'settings' to 'parameters' for EffectFactory compatibility
+          parameters: effectData.parameters || effectData.settings || {}
         };
 
         // Create effect instance from serialized data

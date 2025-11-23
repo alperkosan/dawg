@@ -1,0 +1,188 @@
+.project-preview-player {
+  display: flex;
+  flex-direction: column;
+  gap: var(--zenith-space-3);
+  padding: var(--zenith-space-3);
+  background: var(--zenith-bg-secondary);
+  border-radius: var(--zenith-radius-lg);
+  border: 1px solid var(--zenith-border-subtle);
+}
+
+.project-preview-player__empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--zenith-space-8);
+  color: var(--zenith-text-secondary);
+  font-size: var(--zenith-font-size-sm);
+}
+
+.project-preview-player__error {
+  padding: var(--zenith-space-2);
+  background: var(--zenith-error-bg, rgba(239, 68, 68, 0.1));
+  color: var(--zenith-error-text, #ef4444);
+  border-radius: var(--zenith-radius-md);
+  font-size: var(--zenith-font-size-sm);
+}
+
+.project-preview-player__waveform {
+  width: 100%;
+  height: 80px;
+  border-radius: var(--zenith-radius-md);
+  overflow: hidden;
+  background: var(--zenith-bg-tertiary);
+}
+
+.project-preview-player__controls {
+  display: flex;
+  align-items: center;
+  gap: var(--zenith-space-3);
+}
+
+.project-preview-player__play-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  background: var(--zenith-accent-primary);
+  color: var(--zenith-text-on-accent);
+  border: none;
+  border-radius: var(--zenith-radius-full);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.project-preview-player__play-btn:hover:not(:disabled) {
+  opacity: 0.9;
+  transform: scale(1.05);
+}
+
+.project-preview-player__play-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.project-preview-player__progress-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--zenith-space-1);
+}
+
+.project-preview-player__progress-bar {
+  position: relative;
+  width: 100%;
+  height: 6px;
+  background: var(--zenith-bg-tertiary);
+  border-radius: 3px;
+  cursor: pointer;
+  overflow: visible;
+}
+
+.project-preview-player__progress-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  background: var(--zenith-accent-primary);
+  border-radius: 3px;
+  transition: width 0.1s linear;
+}
+
+.project-preview-player__progress-handle {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 12px;
+  height: 12px;
+  background: var(--zenith-accent-primary);
+  border: 2px solid var(--zenith-bg-primary);
+  border-radius: 50%;
+  cursor: grab;
+  transition: left 0.1s linear;
+}
+
+.project-preview-player__progress-handle:active {
+  cursor: grabbing;
+}
+
+.project-preview-player__time {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--zenith-font-size-xs);
+  color: var(--zenith-text-secondary);
+}
+
+.project-preview-player__volume {
+  display: flex;
+  align-items: center;
+  gap: var(--zenith-space-2);
+  flex-shrink: 0;
+}
+
+.project-preview-player__mute-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: transparent;
+  color: var(--zenith-text-secondary);
+  border: none;
+  border-radius: var(--zenith-radius-md);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.project-preview-player__mute-btn:hover {
+  background: var(--zenith-bg-hover);
+  color: var(--zenith-text-primary);
+}
+
+.project-preview-player__volume-slider {
+  width: 80px;
+  height: 4px;
+  background: var(--zenith-bg-tertiary);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.project-preview-player__volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  background: var(--zenith-accent-primary);
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.project-preview-player__volume-slider::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  background: var(--zenith-accent-primary);
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+

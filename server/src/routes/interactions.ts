@@ -15,7 +15,6 @@ const LikeProjectSchema = z.object({
 });
 
 const CommentProjectSchema = z.object({
-  projectId: z.string().uuid(),
   content: z.string().min(1).max(5000),
   parentId: z.string().uuid().optional(),
 });

@@ -7,7 +7,7 @@ import { X, Send, Heart, MoreVertical, Trash2, Edit2 } from 'lucide-react';
 import { apiClient } from '@/services/api.js';
 import './CommentModal.css';
 
-export default function CommentModal({ projectId, isOpen, onClose, initialCommentCount = 0 }) {
+export default function CommentModal({ projectId, isOpen, onClose, initialCommentCount = 0, onCommentCountChange }) {
   const [comments, setComments] = useState([]);
   const [newComment, setNewComment] = useState('');
   const [replyingTo, setReplyingTo] = useState(null);
@@ -38,7 +38,7 @@ export default function CommentModal({ projectId, isOpen, onClose, initialCommen
   const loadComments = async () => {
     setIsLoading(true);
     try {
-      const response = await apiClient.getComments(projectId, { page: 1, limit: 100 });
+      const response = await apiClient.getComments(projectId, 1, 100);
       setComments(response.comments || []);
       setCommentCount(response.pagination?.total || response.comments?.length || 0);
     } catch (error) {
