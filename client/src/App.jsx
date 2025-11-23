@@ -395,10 +395,12 @@ function DAWApp() {
       return;
     }
 
+    // ✅ FIX: Set saving status immediately for better UX feedback
+    if (!isAutoSave) {
+      setSaveStatus('saving');
+    }
+
     try {
-      if (!isAutoSave) {
-        setSaveStatus('saving');
-      }
       console.log(`💾 ${isAutoSave ? 'Auto-' : ''}Saving project...`);
       
       // ✅ FIX: Serialize ALL current state first (instruments, patterns, mixer, arrangement, etc.)
