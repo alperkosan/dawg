@@ -53,15 +53,6 @@ export const SAMPLER_PRESETS = {
       { id: 'hihat', name: 'Hi-Hat', url: '/audio/samples/drums/hihat.wav', color: '#95E1D3', baseNote: 60 },
       { id: 'openhat', name: 'Open Hat', url: '/audio/samples/drums/openhat.wav', color: '#F38181', baseNote: 60 }
     ]
-  },
-  kxvi: {
-    name: 'KXVI Drums',
-    presets: [
-      { id: 'clap', name: 'Clap', url: '/audio/samples/kxvi/clap.wav', color: '#FFA07A', baseNote: 60 },
-      { id: '808', name: '808', url: '/audio/samples/kxvi/808.wav', color: '#8B4789', baseNote: 36 },
-      { id: 'rim', name: 'Rim', url: '/audio/samples/kxvi/rim.wav', color: '#CD853F', baseNote: 60 },
-      { id: 'perc', name: 'Perc', url: '/audio/samples/kxvi/perc.wav', color: '#DAA520', baseNote: 60 }
-    ]
   }
 };
 
