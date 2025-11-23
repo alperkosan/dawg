@@ -276,62 +276,62 @@
     30px 500px;
   background-repeat: repeat-x;
   background-position: 
-    0 0,
-    35px 0,
-    70px 0,
-    105px 0,
-    140px 0;
-  animation: matrixRain 10s linear infinite;
+    0 -200px,
+    35px -350px,
+    70px -100px,
+    105px -450px,
+    140px -250px;
+  animation: 
+    matrixRain1 8s linear infinite,
+    matrixRain2 12s linear infinite,
+    matrixRain3 10s linear infinite,
+    matrixRain4 14s linear infinite,
+    matrixRain5 9s linear infinite;
 }
 
-@keyframes matrixRain {
+/* Each column has its own animation with different speed and starting position */
+@keyframes matrixRain1 {
   0% { 
-    background-position: 
-      0 0,
-      35px 0,
-      70px 0,
-      105px 0,
-      140px 0;
-  }
-  20% {
-    background-position: 
-      0 500px,
-      35px 0,
-      70px 0,
-      105px 0,
-      140px 0;
-  }
-  40% {
-    background-position: 
-      0 500px,
-      35px 500px,
-      70px 0,
-      105px 0,
-      140px 0;
-  }
-  60% {
-    background-position: 
-      0 500px,
-      35px 500px,
-      70px 500px,
-      105px 0,
-      140px 0;
-  }
-  80% {
-    background-position: 
-      0 500px,
-      35px 500px,
-      70px 500px,
-      105px 500px,
-      140px 0;
+    background-position: 0 -200px, 35px -350px, 70px -100px, 105px -450px, 140px -250px;
   }
   100% { 
-    background-position: 
-      0 500px,
-      35px 500px,
-      70px 500px,
-      105px 500px,
-      140px 500px;
+    background-position: 0 500px, 35px -350px, 70px -100px, 105px -450px, 140px -250px;
+  }
+}
+
+@keyframes matrixRain2 {
+  0% { 
+    background-position: 0 -200px, 35px -350px, 70px -100px, 105px -450px, 140px -250px;
+  }
+  100% { 
+    background-position: 0 -200px, 35px 500px, 70px -100px, 105px -450px, 140px -250px;
+  }
+}
+
+@keyframes matrixRain3 {
+  0% { 
+    background-position: 0 -200px, 35px -350px, 70px -100px, 105px -450px, 140px -250px;
+  }
+  100% { 
+    background-position: 0 -200px, 35px -350px, 70px 500px, 105px -450px, 140px -250px;
+  }
+}
+
+@keyframes matrixRain4 {
+  0% { 
+    background-position: 0 -200px, 35px -350px, 70px -100px, 105px -450px, 140px -250px;
+  }
+  100% { 
+    background-position: 0 -200px, 35px -350px, 70px -100px, 105px 500px, 140px -250px;
+  }
+}
+
+@keyframes matrixRain5 {
+  0% { 
+    background-position: 0 -200px, 35px -350px, 70px -100px, 105px -450px, 140px -250px;
+  }
+  100% { 
+    background-position: 0 -200px, 35px -350px, 70px -100px, 105px -450px, 140px 500px;
   }
 }
 
