@@ -44,6 +44,10 @@ export async function createUser(data: {
   const db = getDatabase();
   const passwordHash = await hashPassword(data.password);
 
+  // Check if this is the first user (will be admin)
+  const userCountResult = await db.query('SELECT COUNT(*) as count FROM users');
+  const isFirstUser = parseInt(userCountResult.rows[0].count) === 0;
+
   const result = await db.query<User>(
     `INSERT INTO users (email, username, password_hash, display_name)
      VALUES ($1, $2, $3, $4)
@@ -52,7 +56,25 @@ export async function createUser(data: {
     [data.email, data.username, passwordHash, data.displayName || data.username]
   );
 
-  return result.rows[0];
+  const user = result.rows[0];
+
+  // ✅ Make first user admin
+  if (isFirstUser) {
+    try {
+      await db.query(
+        `INSERT INTO user_roles (user_id, role_type, is_verified, verified_at)
+         VALUES ($1, 'admin', true, NOW())
+         ON CONFLICT (user_id, role_type) DO NOTHING`,
+        [user.id]
+      );
+      logger.info(`✅ First user created and assigned admin role: ${user.username}`);
+    } catch (error) {
+      // If user_roles table doesn't exist yet (migration not run), log warning
+      logger.warn('Could not assign admin role (user_roles table may not exist yet):', error);
+    }
+  }
+
+  return user;
 }
 
 /**
