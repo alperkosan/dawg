@@ -1,6 +1,6 @@
 /**
  * DAWG Logo Component
- * ONLINE GHETTO - Graffiti & Drip Aesthetic
+ * GHETTO BLASTER - Boombox inspired graffiti logo
  * Street Art vibes meets Digital Audio Production
  */
 
@@ -14,376 +14,280 @@ export const DawgLogo = ({ size = 32, className = '', variant = 'full' }) => {
     return themes.find(t => t.id === activeThemeId) || themes[0];
   });
 
-  // Get theme colors for graffiti logo - vibrant street colors
+  // Get theme colors for graffiti boombox - vibrant street colors
   const accentHot = activeTheme?.zenith?.['accent-hot'] || '#FF6B35';
   const accentWarm = activeTheme?.zenith?.['accent-warm'] || '#FFB627';
   const accentCool = activeTheme?.zenith?.['accent-cool'] || '#4ECDC4';
   const accentCold = activeTheme?.zenith?.['accent-cold'] || '#556FB5';
   const bgPrimary = activeTheme?.zenith?.['bg-primary'] || '#0A0E1A';
   const bgSecondary = activeTheme?.zenith?.['bg-secondary'] || '#151922';
-  
-  // Generate SVG with theme colors - Graffiti & Drip Style
+
+  // Generate SVG with theme colors - Ghetto Blaster Style
   const logoSvg = useMemo(() => {
     const isIcon = variant === 'icon';
-    const viewBox = isIcon ? '0 0 80 80' : '0 0 200 80';
+    const viewBox = isIcon ? '0 0 100 100' : '0 0 220 100';
     const uniqueId = `${variant}-${size}-${Date.now().toString(36)}`;
 
-    // Icon variant (compact graffiti "D" with subtle drips for avatar)
+    // Icon variant (compact ghetto blaster for avatar)
     if (isIcon) {
       return `
         <svg width="${size}" height="${size}" viewBox="${viewBox}" fill="none" xmlns="http://www.w3.org/2000/svg">
           <defs>
-            <!-- Graffiti gradient - vibrant street colors -->
-            <linearGradient id="graffiti-${uniqueId}" x1="0%" y1="0%" x2="100%" y2="100%">
+            <!-- Graffiti gradients -->
+            <linearGradient id="body-grad-${uniqueId}" x1="0%" y1="0%" x2="100%" y2="100%">
               <stop offset="0%" style="stop-color:${accentHot};stop-opacity:1" />
-              <stop offset="30%" style="stop-color:${accentWarm};stop-opacity:1" />
-              <stop offset="70%" style="stop-color:${accentCool};stop-opacity:1" />
+              <stop offset="50%" style="stop-color:${accentWarm};stop-opacity:1" />
+              <stop offset="100%" style="stop-color:${accentCool};stop-opacity:1" />
+            </linearGradient>
+
+            <linearGradient id="speaker-grad-${uniqueId}" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" style="stop-color:${accentCool};stop-opacity:1" />
               <stop offset="100%" style="stop-color:${accentCold};stop-opacity:1" />
             </linearGradient>
 
-            <!-- Spray paint glow -->
-            <filter id="spray-glow-${uniqueId}" x="-50%" y="-50%" width="200%" height="200%">
-              <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+            <!-- Spray glow -->
+            <filter id="glow-${uniqueId}" x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur stdDeviation="2.5" result="coloredBlur"/>
               <feMerge>
                 <feMergeNode in="coloredBlur"/>
                 <feMergeNode in="SourceGraphic"/>
               </feMerge>
             </filter>
 
-            <!-- Graffiti shadow (3D effect) -->
-            <filter id="graffiti-shadow-${uniqueId}">
-              <feDropShadow dx="2" dy="3" stdDeviation="2" flood-color="#000000" flood-opacity="0.7"/>
-              <feDropShadow dx="3" dy="4" stdDeviation="1" flood-color="${accentHot}" flood-opacity="0.4"/>
+            <!-- 3D shadow -->
+            <filter id="shadow-${uniqueId}">
+              <feDropShadow dx="2" dy="3" stdDeviation="2" flood-color="#000000" flood-opacity="0.8"/>
+              <feDropShadow dx="3" dy="4" stdDeviation="1" flood-color="${accentHot}" flood-opacity="0.3"/>
             </filter>
           </defs>
 
-          <!-- Background container with rounded corners -->
-          <rect width="80" height="80" rx="16" fill="${bgPrimary}" opacity="0.9"/>
-          <rect x="2" y="2" width="76" height="76" rx="14" fill="${bgSecondary}" opacity="0.6"/>
+          <!-- Background -->
+          <rect width="100" height="100" rx="18" fill="${bgPrimary}" opacity="0.95"/>
+          <rect x="3" y="3" width="94" height="94" rx="16" fill="${bgSecondary}" opacity="0.7"/>
 
-          <!-- Graffiti "D" - centered and compact -->
-          <g transform="translate(12, 10)">
-            <!-- Black outline shadow -->
-            <path d="M 8 8
-                     L 8 50
-                     L 14 50
-                     L 22 52
-                     L 30 50
-                     L 36 45
-                     L 40 38
-                     L 40 28
-                     L 36 21
-                     L 30 16
-                     L 22 14
-                     L 14 16
-                     L 8 16
-                     L 8 8
-                     Z"
-                  fill="#000000"
-                  opacity="0.8"
-                  transform="translate(2, 2)"/>
+          <!-- GHETTO BLASTER / BOOMBOX -->
+          <g transform="translate(15, 18)">
+            <!-- Main boombox body - shadow -->
+            <rect x="2" y="2" width="70" height="50" rx="6" fill="#000000" opacity="0.7"/>
 
-            <!-- Main graffiti "D" -->
-            <path d="M 8 8
-                     L 8 50
-                     L 14 50
-                     L 22 52
-                     L 30 50
-                     L 36 45
-                     L 40 38
-                     L 40 28
-                     L 36 21
-                     L 30 16
-                     L 22 14
-                     L 14 16
-                     L 8 16
-                     L 8 8
-                     Z"
-                  fill="url(#graffiti-${uniqueId})"
+            <!-- Main boombox body -->
+            <rect x="0" y="0" width="70" height="50" rx="6"
+                  fill="url(#body-grad-${uniqueId})"
                   stroke="${accentHot}"
                   stroke-width="2.5"
-                  filter="url(#graffiti-shadow-${uniqueId})"/>
+                  filter="url(#shadow-${uniqueId})"/>
 
-            <!-- Inner cut-out -->
-            <path d="M 15 14
-                     L 15 44
-                     L 20 45
-                     L 26 44
-                     L 30 40
-                     L 32 33
-                     L 30 26
-                     L 26 22
-                     L 20 21
-                     L 15 22
-                     L 15 14
-                     Z"
-                  fill="${bgPrimary}"
-                  opacity="0.95"/>
-
-            <!-- Spray paint highlights -->
-            <g filter="url(#spray-glow-${uniqueId})" opacity="0.6">
-              <ellipse cx="16" cy="16" rx="3" ry="1.5" fill="${accentWarm}"/>
-              <circle cx="19" cy="19" r="1.2" fill="${accentCool}"/>
-              <circle cx="22" cy="21" r="0.8" fill="${accentHot}"/>
+            <!-- Left speaker -->
+            <g transform="translate(8, 10)">
+              <!-- Speaker cone -->
+              <circle cx="10" cy="15" r="12" fill="${bgPrimary}" opacity="0.9" stroke="${accentCool}" stroke-width="2"/>
+              <!-- Speaker grille -->
+              <circle cx="10" cy="15" r="9" fill="none" stroke="url(#speaker-grad-${uniqueId})" stroke-width="1.5"/>
+              <circle cx="10" cy="15" r="6" fill="none" stroke="${accentCool}" stroke-width="1"/>
+              <circle cx="10" cy="15" r="3" fill="${accentCool}" opacity="0.8"/>
             </g>
 
-            <!-- Compact drip effects - subtle, contained within square -->
-            <g filter="url(#spray-glow-${uniqueId})">
-              <!-- Small drip left -->
-              <path d="M 10 50 L 10 56 Q 10 58, 11 58.5 Q 12 59, 13 58.5 Q 14 58, 14 56 L 14 50 Z"
-                    fill="${accentHot}" opacity="0.75"/>
+            <!-- Right speaker -->
+            <g transform="translate(40, 10)">
+              <!-- Speaker cone -->
+              <circle cx="10" cy="15" r="12" fill="${bgPrimary}" opacity="0.9" stroke="${accentCool}" stroke-width="2"/>
+              <!-- Speaker grille -->
+              <circle cx="10" cy="15" r="9" fill="none" stroke="url(#speaker-grad-${uniqueId})" stroke-width="1.5"/>
+              <circle cx="10" cy="15" r="6" fill="none" stroke="${accentCool}" stroke-width="1"/>
+              <circle cx="10" cy="15" r="3" fill="${accentCool}" opacity="0.8"/>
+            </g>
 
-              <!-- Small drip center -->
-              <path d="M 20 52 L 20 57 Q 20 59, 21 59.5 Q 22 60, 23 59.5 Q 24 59, 24 57 L 24 52 Z"
+            <!-- Center cassette/display panel -->
+            <rect x="28" y="18" width="14" height="14" rx="2" fill="${bgPrimary}" opacity="0.9" stroke="${accentWarm}" stroke-width="1.5"/>
+
+            <!-- Cassette spools -->
+            <circle cx="32" cy="25" r="2.5" fill="none" stroke="${accentWarm}" stroke-width="1"/>
+            <circle cx="38" cy="25" r="2.5" fill="none" stroke="${accentWarm}" stroke-width="1"/>
+            <circle cx="32" cy="25" r="1" fill="${accentWarm}" opacity="0.7"/>
+            <circle cx="38" cy="25" r="1" fill="${accentWarm}" opacity="0.7"/>
+
+            <!-- Handle on top -->
+            <path d="M 20 0 Q 20 -5, 25 -5 L 45 -5 Q 50 -5, 50 0"
+                  fill="none"
+                  stroke="${accentHot}"
+                  stroke-width="2.5"
+                  stroke-linecap="round"/>
+
+            <!-- EQ / Waveform bars -->
+            <g transform="translate(5, 38)" filter="url(#glow-${uniqueId})">
+              <rect x="0" y="4" width="2" height="5" rx="1" fill="${accentHot}" opacity="0.9"/>
+              <rect x="4" y="2" width="2" height="7" rx="1" fill="${accentCool}" opacity="0.9"/>
+              <rect x="8" y="3" width="2" height="6" rx="1" fill="${accentWarm}" opacity="0.9"/>
+              <rect x="12" y="1" width="2" height="8" rx="1" fill="${accentCold}" opacity="0.9"/>
+              <rect x="16" y="3" width="2" height="6" rx="1" fill="${accentHot}" opacity="0.9"/>
+
+              <rect x="44" y="4" width="2" height="5" rx="1" fill="${accentHot}" opacity="0.9"/>
+              <rect x="48" y="2" width="2" height="7" rx="1" fill="${accentCool}" opacity="0.9"/>
+              <rect x="52" y="3" width="2" height="6" rx="1" fill="${accentWarm}" opacity="0.9"/>
+              <rect x="56" y="1" width="2" height="8" rx="1" fill="${accentCold}" opacity="0.9"/>
+              <rect x="60" y="3" width="2" height="6" rx="1" fill="${accentHot}" opacity="0.9"/>
+            </g>
+
+            <!-- DRIP EFFECTS -->
+            <g filter="url(#glow-${uniqueId})">
+              <!-- Drip from left speaker -->
+              <path d="M 15 50 L 15 56 Q 15 58, 16 59 Q 17 60, 18 59 Q 19 58, 19 56 L 19 50 Z"
                     fill="${accentCool}" opacity="0.75"/>
+              <circle cx="17" cy="60" r="1.5" fill="${accentCool}" opacity="0.6"/>
 
-              <!-- Small drip right -->
-              <path d="M 32 50 L 32 55 Q 32 57, 33 57.5 Q 34 58, 35 57.5 Q 36 57, 36 55 L 36 50 Z"
+              <!-- Drip from center -->
+              <path d="M 34 50 L 34 58 Q 34 60, 35 61 Q 36 62, 37 61 Q 38 60, 38 58 L 38 50 Z"
                     fill="${accentWarm}" opacity="0.75"/>
+              <circle cx="36" cy="62" r="1.5" fill="${accentWarm}" opacity="0.6"/>
 
-              <!-- Tiny drip dots -->
-              <circle cx="12" cy="59" r="1.5" fill="${accentHot}" opacity="0.6"/>
-              <ellipse cx="22" cy="60" rx="1.5" ry="2" fill="${accentCool}" opacity="0.6"/>
-              <circle cx="34" cy="58" r="1.2" fill="${accentWarm}" opacity="0.6"/>
+              <!-- Drip from right speaker -->
+              <path d="M 52 50 L 52 55 Q 52 57, 53 58 Q 54 59, 55 58 Q 56 57, 56 55 L 56 50 Z"
+                    fill="${accentHot}" opacity="0.75"/>
+              <circle cx="54" cy="59" r="1.2" fill="${accentHot}" opacity="0.6"/>
             </g>
           </g>
 
-          <!-- Waveform bars - compact, integrated -->
-          <g transform="translate(54, 18)" filter="url(#spray-glow-${uniqueId})">
-            <rect x="0" y="10" width="2.5" height="8" rx="1.25" fill="${accentHot}" opacity="0.9"/>
-            <rect x="4" y="6" width="2.5" height="16" rx="1.25" fill="${accentCool}" opacity="0.9"/>
-            <rect x="8" y="8" width="2.5" height="12" rx="1.25" fill="${accentWarm}" opacity="0.9"/>
-            <rect x="12" y="4" width="2.5" height="20" rx="1.25" fill="${accentCold}" opacity="0.9"/>
-          </g>
-
-          <!-- "ONLINE GHETTO" tag - compact bottom text -->
+          <!-- "GHETTO BLASTER" tag -->
           <text
-            x="40"
-            y="72"
+            x="50"
+            y="90"
             font-family="'Courier New', monospace"
             font-size="5"
             font-weight="700"
-            letter-spacing="0.1em"
+            letter-spacing="0.15em"
             fill="${accentCool}"
-            opacity="0.8"
+            opacity="0.85"
             text-anchor="middle"
-            filter="url(#spray-glow-${uniqueId})"
+            filter="url(#glow-${uniqueId})"
             style="text-transform: uppercase;">
-            ONLINE GHETTO
+            GHETTO BLASTER
           </text>
         </svg>
       `;
     }
     
-    // Full variant (graffiti "DAWG" with drips)
+    // Full variant (just ghetto blaster, wider for horizontal use)
     return `
       <svg width="${size * 2.5}" height="${size}" viewBox="${viewBox}" fill="none" xmlns="http://www.w3.org/2000/svg">
         <defs>
-          <!-- Graffiti gradient - vibrant street colors -->
-          <linearGradient id="graffiti-full-${uniqueId}" x1="0%" y1="0%" x2="100%" y2="100%">
+          <!-- Graffiti gradients -->
+          <linearGradient id="body-full-${uniqueId}" x1="0%" y1="0%" x2="100%" y2="100%">
             <stop offset="0%" style="stop-color:${accentHot};stop-opacity:1" />
-            <stop offset="30%" style="stop-color:${accentWarm};stop-opacity:1" />
-            <stop offset="70%" style="stop-color:${accentCool};stop-opacity:1" />
+            <stop offset="50%" style="stop-color:${accentWarm};stop-opacity:1" />
+            <stop offset="100%" style="stop-color:${accentCool};stop-opacity:1" />
+          </linearGradient>
+
+          <linearGradient id="speaker-full-${uniqueId}" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" style="stop-color:${accentCool};stop-opacity:1" />
             <stop offset="100%" style="stop-color:${accentCold};stop-opacity:1" />
           </linearGradient>
 
-          <linearGradient id="text-graffiti-${uniqueId}" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" style="stop-color:${accentHot};stop-opacity:1" />
-            <stop offset="25%" style="stop-color:${accentWarm};stop-opacity:1" />
-            <stop offset="50%" style="stop-color:${accentCool};stop-opacity:1" />
-            <stop offset="75%" style="stop-color:${accentCold};stop-opacity:1" />
-            <stop offset="100%" style="stop-color:${accentHot};stop-opacity:1" />
-          </linearGradient>
-
-          <!-- Spray paint glow -->
-          <filter id="spray-glow-full-${uniqueId}" x="-50%" y="-50%" width="200%" height="200%">
-            <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+          <!-- Spray glow -->
+          <filter id="glow-full-${uniqueId}" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="2.5" result="coloredBlur"/>
             <feMerge>
               <feMergeNode in="coloredBlur"/>
               <feMergeNode in="SourceGraphic"/>
             </feMerge>
           </filter>
 
-          <!-- Graffiti 3D shadow -->
-          <filter id="graffiti-shadow-full-${uniqueId}">
-            <feDropShadow dx="2" dy="3" stdDeviation="2" flood-color="#000000" flood-opacity="0.7"/>
-            <feDropShadow dx="4" dy="5" stdDeviation="1" flood-color="${accentHot}" flood-opacity="0.5"/>
-          </filter>
-
-          <!-- Text shadow -->
-          <filter id="text-shadow-${uniqueId}">
-            <feDropShadow dx="3" dy="4" stdDeviation="2" flood-color="#000000" flood-opacity="0.8"/>
-            <feDropShadow dx="1" dy="1" stdDeviation="3" flood-color="${accentCool}" flood-opacity="0.6"/>
+          <!-- 3D shadow -->
+          <filter id="shadow-full-${uniqueId}">
+            <feDropShadow dx="2" dy="3" stdDeviation="2" flood-color="#000000" flood-opacity="0.8"/>
+            <feDropShadow dx="3" dy="4" stdDeviation="1" flood-color="${accentHot}" flood-opacity="0.3"/>
           </filter>
         </defs>
 
-        <!-- Dark background -->
-        <rect width="200" height="80" fill="${bgPrimary}" opacity="0.2"/>
+        <!-- Background -->
+        <rect width="220" height="100" fill="${bgPrimary}" opacity="0.2"/>
 
-        <!-- GRAFFITI "D" ICON - compact -->
-        <g transform="translate(4, 12)">
-          <!-- Outline shadow -->
-          <path d="M 6 4
-                   L 6 36
-                   L 11 36
-                   L 17 38
-                   L 23 36
-                   L 27 32
-                   L 29 26
-                   L 29 22
-                   L 27 16
-                   L 23 12
-                   L 17 10
-                   L 11 12
-                   L 6 12
-                   L 6 4
-                   Z"
-                fill="#000000"
-                opacity="0.7"
-                transform="translate(1.5, 1.5)"/>
+        <!-- GHETTO BLASTER - centered, larger -->
+        <g transform="translate(60, 15)">
+          <!-- Boombox body shadow -->
+          <rect x="3" y="3" width="80" height="58" rx="7" fill="#000000" opacity="0.7"/>
 
-          <!-- Main "D" -->
-          <path d="M 6 4
-                   L 6 36
-                   L 11 36
-                   L 17 38
-                   L 23 36
-                   L 27 32
-                   L 29 26
-                   L 29 22
-                   L 27 16
-                   L 23 12
-                   L 17 10
-                   L 11 12
-                   L 6 12
-                   L 6 4
-                   Z"
-                fill="url(#graffiti-full-${uniqueId})"
+          <!-- Boombox body -->
+          <rect x="0" y="0" width="80" height="58" rx="7"
+                fill="url(#body-full-${uniqueId})"
                 stroke="${accentHot}"
-                stroke-width="2"
-                filter="url(#graffiti-shadow-full-${uniqueId})"/>
+                stroke-width="2.5"
+                filter="url(#shadow-full-${uniqueId})"/>
 
-          <!-- Inner cut -->
-          <path d="M 11 8
-                   L 11 32
-                   L 15 33
-                   L 19 32
-                   L 22 28
-                   L 23 24
-                   L 22 20
-                   L 19 16
-                   L 15 15
-                   L 11 16
-                   L 11 8
-                   Z"
-                fill="${bgPrimary}"
-                opacity="0.95"/>
-
-          <!-- Spray highlights -->
-          <g filter="url(#spray-glow-full-${uniqueId})" opacity="0.5">
-            <ellipse cx="10" cy="10" rx="2.5" ry="1.2" fill="${accentWarm}"/>
-            <circle cx="13" cy="13" r="0.8" fill="${accentHot}"/>
+          <!-- Left speaker -->
+          <g transform="translate(10, 12)">
+            <circle cx="12" cy="17" r="14" fill="${bgPrimary}" opacity="0.9" stroke="${accentCool}" stroke-width="2"/>
+            <circle cx="12" cy="17" r="10" fill="none" stroke="url(#speaker-full-${uniqueId})" stroke-width="1.8"/>
+            <circle cx="12" cy="17" r="6.5" fill="none" stroke="${accentCool}" stroke-width="1.2"/>
+            <circle cx="12" cy="17" r="3" fill="${accentCool}" opacity="0.8"/>
           </g>
 
-          <!-- Compact drips from D -->
-          <g filter="url(#spray-glow-full-${uniqueId})">
-            <path d="M 8 36 L 8 42 Q 8 44, 9 45 Q 10 46, 11 45 Q 12 44, 12 42 L 12 36 Z"
-                  fill="${accentHot}" opacity="0.7"/>
-            <path d="M 16 38 L 16 44 Q 16 46, 17 47 Q 18 48, 19 47 Q 20 46, 20 44 L 20 38 Z"
-                  fill="${accentCool}" opacity="0.7"/>
-            <circle cx="10" cy="46" r="1.2" fill="${accentHot}" opacity="0.5"/>
-            <circle cx="18" cy="48" r="1" fill="${accentCool}" opacity="0.5"/>
+          <!-- Right speaker -->
+          <g transform="translate(44, 12)">
+            <circle cx="12" cy="17" r="14" fill="${bgPrimary}" opacity="0.9" stroke="${accentCool}" stroke-width="2"/>
+            <circle cx="12" cy="17" r="10" fill="none" stroke="url(#speaker-full-${uniqueId})" stroke-width="1.8"/>
+            <circle cx="12" cy="17" r="6.5" fill="none" stroke="${accentCool}" stroke-width="1.2"/>
+            <circle cx="12" cy="17" r="3" fill="${accentCool}" opacity="0.8"/>
           </g>
-        </g>
 
-        <!-- GRAFFITI "DAWG" TEXT -->
-        <g transform="translate(50, 0)">
-          <!-- Text outline/shadow -->
+          <!-- Center cassette -->
+          <rect x="32" y="21" width="16" height="16" rx="2" fill="${bgPrimary}" opacity="0.9" stroke="${accentWarm}" stroke-width="1.5"/>
+          <circle cx="36" cy="29" r="3" fill="none" stroke="${accentWarm}" stroke-width="1"/>
+          <circle cx="44" cy="29" r="3" fill="none" stroke="${accentWarm}" stroke-width="1"/>
+          <circle cx="36" cy="29" r="1.2" fill="${accentWarm}" opacity="0.7"/>
+          <circle cx="44" cy="29" r="1.2" fill="${accentWarm}" opacity="0.7"/>
+
+          <!-- Handle -->
+          <path d="M 24 0 Q 24 -6, 30 -6 L 50 -6 Q 56 -6, 56 0"
+                fill="none"
+                stroke="${accentHot}"
+                stroke-width="2.8"
+                stroke-linecap="round"/>
+
+          <!-- EQ bars -->
+          <g transform="translate(6, 44)" filter="url(#glow-full-${uniqueId})">
+            <rect x="0" y="4" width="2" height="6" rx="1" fill="${accentHot}" opacity="0.9"/>
+            <rect x="4" y="2" width="2" height="8" rx="1" fill="${accentCool}" opacity="0.9"/>
+            <rect x="8" y="3" width="2" height="7" rx="1" fill="${accentWarm}" opacity="0.9"/>
+            <rect x="12" y="1" width="2" height="9" rx="1" fill="${accentCold}" opacity="0.9"/>
+            <rect x="16" y="3" width="2" height="7" rx="1" fill="${accentHot}" opacity="0.9"/>
+
+            <rect x="52" y="4" width="2" height="6" rx="1" fill="${accentHot}" opacity="0.9"/>
+            <rect x="56" y="2" width="2" height="8" rx="1" fill="${accentCool}" opacity="0.9"/>
+            <rect x="60" y="3" width="2" height="7" rx="1" fill="${accentWarm}" opacity="0.9"/>
+            <rect x="64" y="1" width="2" height="9" rx="1" fill="${accentCold}" opacity="0.9"/>
+            <rect x="68" y="3" width="2" height="7" rx="1" fill="${accentHot}" opacity="0.9"/>
+          </g>
+
+          <!-- Drips -->
+          <g filter="url(#glow-full-${uniqueId})">
+            <path d="M 18 58 L 18 65 Q 18 67, 19.5 68 Q 21 69, 22.5 68 Q 24 67, 24 65 L 24 58 Z"
+                  fill="${accentCool}" opacity="0.75"/>
+            <circle cx="21" cy="69" r="1.5" fill="${accentCool}" opacity="0.6"/>
+
+            <path d="M 39 58 L 39 67 Q 39 69, 40.5 70 Q 42 71, 43.5 70 Q 45 69, 45 67 L 45 58 Z"
+                  fill="${accentWarm}" opacity="0.75"/>
+            <circle cx="42" cy="71" r="1.5" fill="${accentWarm}" opacity="0.6"/>
+
+            <path d="M 60 58 L 60 64 Q 60 66, 61.5 67 Q 63 68, 64.5 67 Q 66 66, 66 64 L 66 58 Z"
+                  fill="${accentHot}" opacity="0.75"/>
+            <circle cx="63" cy="68" r="1.3" fill="${accentHot}" opacity="0.6"/>
+          </g>
+
+          <!-- "GHETTO BLASTER" tag -->
           <text
-            x="0"
-            y="42"
-            font-family="'Impact', 'Arial Black', sans-serif"
-            font-size="42"
-            font-weight="900"
-            letter-spacing="0.05em"
-            fill="#000000"
-            opacity="0.8"
-            transform="translate(2, 3)"
-            style="text-transform: uppercase;">
-            DAWG
-          </text>
-
-          <!-- Main graffiti text -->
-          <text
-            x="0"
-            y="42"
-            font-family="'Impact', 'Arial Black', sans-serif"
-            font-size="42"
-            font-weight="900"
-            letter-spacing="0.05em"
-            fill="url(#text-graffiti-${uniqueId})"
-            stroke="${accentHot}"
-            stroke-width="1.5"
-            filter="url(#text-shadow-${uniqueId})"
-            style="text-transform: uppercase; paint-order: stroke fill;">
-            DAWG
-          </text>
-
-          <!-- Spray paint splatters on text -->
-          <g filter="url(#spray-glow-full-${uniqueId})" opacity="0.5">
-            <circle cx="8" cy="18" r="2" fill="${accentWarm}"/>
-            <ellipse cx="35" cy="16" rx="2.5" ry="1.5" fill="${accentCool}"/>
-            <circle cx="70" cy="20" r="1.5" fill="${accentHot}"/>
-            <ellipse cx="105" cy="17" rx="2" ry="1" fill="${accentCold}"/>
-          </g>
-
-          <!-- Drips from letters - more controlled -->
-          <g filter="url(#spray-glow-full-${uniqueId})">
-            <!-- Drip from D -->
-            <path d="M 12 42 L 12 48 Q 12 50, 13.5 51 Q 15 52, 16.5 51 Q 18 50, 18 48 L 18 42 Z"
-                  fill="${accentHot}" opacity="0.7"/>
-
-            <!-- Drip from A -->
-            <path d="M 35 42 L 35 47 Q 35 49, 36.5 50 Q 38 51, 39.5 50 Q 41 49, 41 47 L 41 42 Z"
-                  fill="${accentCool}" opacity="0.7"/>
-
-            <!-- Drip from W -->
-            <path d="M 70 42 L 70 50 Q 70 52, 71.5 53 Q 73 54, 74.5 53 Q 76 52, 76 50 L 76 42 Z"
-                  fill="${accentWarm}" opacity="0.7"/>
-
-            <!-- Drip from G -->
-            <path d="M 105 42 L 105 46 Q 105 48, 106.5 49 Q 108 50, 109.5 49 Q 111 48, 111 46 L 111 42 Z"
-                  fill="${accentCold}" opacity="0.7"/>
-
-            <!-- Tiny drip dots -->
-            <circle cx="15" cy="52" r="1.2" fill="${accentHot}" opacity="0.5"/>
-            <circle cx="38" cy="51" r="1" fill="${accentCool}" opacity="0.5"/>
-            <circle cx="73" cy="54" r="1.3" fill="${accentWarm}" opacity="0.5"/>
-            <circle cx="108" cy="50" r="1" fill="${accentCold}" opacity="0.5"/>
-          </g>
-
-          <!-- Subtitle with graffiti style -->
-          <text
-            x="0"
-            y="62"
+            x="40"
+            y="82"
             font-family="'Courier New', monospace"
             font-size="6"
             font-weight="700"
-            letter-spacing="0.12em"
+            letter-spacing="0.15em"
             fill="${accentCool}"
-            opacity="0.8"
-            filter="url(#spray-glow-full-${uniqueId})"
+            opacity="0.85"
+            text-anchor="middle"
+            filter="url(#glow-full-${uniqueId})"
             style="text-transform: uppercase;">
-            ONLINE GHETTO
+            GHETTO BLASTER
           </text>
-        </g>
-
-        <!-- Waveform bars - street style -->
-        <g transform="translate(168, 20)" filter="url(#spray-glow-full-${uniqueId})">
-          <rect x="0" y="8" width="3" height="12" rx="1.5" fill="${accentHot}" opacity="0.95"/>
-          <rect x="5" y="4" width="3" height="20" rx="1.5" fill="${accentCool}" opacity="0.95"/>
-          <rect x="10" y="6" width="3" height="16" rx="1.5" fill="${accentWarm}" opacity="0.95"/>
-          <rect x="15" y="2" width="3" height="24" rx="1.5" fill="${accentCold}" opacity="0.95"/>
         </g>
       </svg>
     `;

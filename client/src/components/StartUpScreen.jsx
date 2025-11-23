@@ -22,15 +22,15 @@ function StartupScreen({ onStart }) {
       <div className={`startup-screen__content ${isLoaded ? "loaded" : ""}`}>
         <div className="startup-screen__header">
           <div className="startup-screen__logo">
-            <DawgLogo size={64} variant="full" />
+            <DawgLogo size={100} variant="icon" />
           </div>
           <h1 className="startup-screen__title">DAWG</h1>
           <div className="startup-screen__subtitle">
             <span className="startup-screen__tagline">
-              Digital Audio Workstation
+              Digital Audio Workstation - Ghetto Blaster Edition
             </span>
             <span className="startup-screen__description">
-              Profesyonel müzik prodüksiyonu için tasarlandı
+              Online Ghetto - Profesyonel müzik prodüksiyonu
             </span>
           </div>
         </div>

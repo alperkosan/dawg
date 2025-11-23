@@ -287,56 +287,63 @@
     matrixRain3 9s linear infinite,
     matrixRain4 13s linear infinite,
     matrixRain5 8.5s linear infinite;
+  animation-delay: 
+    0s,
+    2.3s,
+    1.1s,
+    3.7s,
+    0.8s;
 }
 
-/* Each column has its own animation with different speed, starting position, and disappears at bottom */
-/* Column 1: Short drop (15 chars), fast */
+/* Matrix Rain Animation - Continuous drops with staggered timing */
+/* Each column animates independently with different speeds and delays */
+/* Column 1: Short drop (15 chars), fast, starts immediately */
 @keyframes matrixRain1 {
   0% { 
     background-position: 0 -150px, 35px -280px, 70px -80px, 105px -320px, 140px -200px;
   }
   100% { 
-    background-position: 0 120vh, 35px -280px, 70px -80px, 105px -320px, 140px -200px;
+    background-position: 0 calc(100vh + 180px), 35px -280px, 70px -80px, 105px -320px, 140px -200px;
   }
 }
 
-/* Column 2: Medium drop (25 chars), slow */
+/* Column 2: Medium drop (25 chars), slow, starts after 2.3s */
 @keyframes matrixRain2 {
   0% { 
     background-position: 0 -150px, 35px -280px, 70px -80px, 105px -320px, 140px -200px;
   }
   100% { 
-    background-position: 0 -150px, 35px 120vh, 70px -80px, 105px -320px, 140px -200px;
+    background-position: 0 -150px, 35px calc(100vh + 300px), 70px -80px, 105px -320px, 140px -200px;
   }
 }
 
-/* Column 3: Long drop (35 chars), medium */
+/* Column 3: Long drop (35 chars), medium, starts after 1.1s */
 @keyframes matrixRain3 {
   0% { 
     background-position: 0 -150px, 35px -280px, 70px -80px, 105px -320px, 140px -200px;
   }
   100% { 
-    background-position: 0 -150px, 35px -280px, 70px 120vh, 105px -320px, 140px -200px;
+    background-position: 0 -150px, 35px -280px, 70px calc(100vh + 420px), 105px -320px, 140px -200px;
   }
 }
 
-/* Column 4: Very long drop (40 chars), very slow */
+/* Column 4: Very long drop (40 chars), very slow, starts after 3.7s */
 @keyframes matrixRain4 {
   0% { 
     background-position: 0 -150px, 35px -280px, 70px -80px, 105px -320px, 140px -200px;
   }
   100% { 
-    background-position: 0 -150px, 35px -280px, 70px -80px, 105px 120vh, 140px -200px;
+    background-position: 0 -150px, 35px -280px, 70px -80px, 105px calc(100vh + 480px), 140px -200px;
   }
 }
 
-/* Column 5: Short drop (18 chars), fast */
+/* Column 5: Short drop (18 chars), fast, starts after 0.8s */
 @keyframes matrixRain5 {
   0% { 
     background-position: 0 -150px, 35px -280px, 70px -80px, 105px -320px, 140px -200px;
   }
   100% { 
-    background-position: 0 -150px, 35px -280px, 70px -80px, 105px -320px, 140px 120vh;
+    background-position: 0 -150px, 35px -280px, 70px -80px, 105px -320px, 140px calc(100vh + 216px);
   }
 }
 
