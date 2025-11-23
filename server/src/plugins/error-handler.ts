@@ -28,11 +28,20 @@ export async function registerErrorHandler(server: FastifyInstance) {
 
     // Handle Zod validation errors
     if (error instanceof ZodError) {
+      // ✅ FIX: Create user-friendly error message from Zod errors
+      const errorMessages = error.errors.map(e => {
+        const field = e.path.join('.') || 'field';
+        return `${field}: ${e.message}`;
+      });
+      const mainMessage = errorMessages.length === 1 
+        ? errorMessages[0] 
+        : `Validation failed: ${errorMessages.join(', ')}`;
+      
       return reply.code(400).send({
         error: {
-          message: 'Validation failed',
+          message: mainMessage,
           code: 'VALIDATION_ERROR',
-          errors: error.errors.map(e => ({
+          details: error.errors.map(e => ({
             path: e.path.join('.'),
             message: e.message,
           })),
@@ -42,11 +51,30 @@ export async function registerErrorHandler(server: FastifyInstance) {
 
     // Handle Fastify validation errors
     if (error.validation) {
+      const errorMessages = error.validation.map((v: any) => {
+        const field = v.instancePath || v.params?.missingProperty || 'field';
+        return `${field}: ${v.message || 'Invalid value'}`;
+      });
+      const mainMessage = errorMessages.length === 1 
+        ? errorMessages[0] 
+        : `Validation failed: ${errorMessages.join(', ')}`;
+      
       return reply.code(400).send({
         error: {
-          message: 'Validation failed',
+          message: mainMessage,
           code: 'VALIDATION_ERROR',
-          errors: error.validation,
+          details: error.validation,
+        },
+      });
+    }
+    
+    // ✅ FIX: Handle 413 Payload Too Large (Vercel limit: 4.5MB for request body)
+    if (error.statusCode === 413 || error.code === 'FST_ERR_REQ_ENTITY_TOO_LARGE') {
+      return reply.code(413).send({
+        error: {
+          message: 'File too large. Maximum file size is 4.5MB for direct upload. For larger files, please use a different method.',
+          code: 'FILE_TOO_LARGE',
+          maxSize: '4.5MB',
         },
       });
     }

@@ -574,8 +574,34 @@ export const useFileBrowserStore = create((set, get) => ({
       });
 
       if (!uploadResponse.ok) {
-        const errorText = await uploadResponse.text();
-        throw new Error(`Upload failed: ${errorText}`);
+        // ✅ FIX: Better error handling for upload failures
+        let errorMessage = 'Upload failed';
+        
+        if (uploadResponse.status === 413) {
+          errorMessage = 'File too large. Maximum file size is 4.5MB for direct upload.';
+        } else {
+          try {
+            const errorData = await uploadResponse.json();
+            errorMessage = errorData.error?.message || errorData.message || errorMessage;
+            
+            // Include validation details if available
+            if (errorData.error?.details) {
+              const details = Array.isArray(errorData.error.details)
+                ? errorData.error.details.map(d => d.message || `${d.path}: Invalid`).join(', ')
+                : errorData.error.details.message || '';
+              if (details) {
+                errorMessage = `${errorMessage} (${details})`;
+              }
+            }
+          } catch (e) {
+            const errorText = await uploadResponse.text().catch(() => '');
+            errorMessage = errorText || `Upload failed: ${uploadResponse.statusText}`;
+          }
+        }
+        
+        // Show error toast
+        apiClient.showToast(errorMessage, 'error', 6000);
+        throw new Error(errorMessage);
       }
 
       // ✅ FIX: Upload endpoint already calls completeUpload, so we just get the result

@@ -170,6 +170,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // ✅ FIX: Parse request body correctly
     let payload = req.body;
     if (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH') {
+      // ✅ FIX: Check content-length for 413 errors (Vercel limit: 4.5MB)
+      const contentLength = req.headers['content-length'];
+      if (contentLength && parseInt(contentLength) > 4.5 * 1024 * 1024) {
+        console.error('❌ Request body too large:', contentLength, 'bytes');
+        return res.status(413).json({
+          error: {
+            message: 'File too large. Maximum file size is 4.5MB for direct upload. For larger files, please use a different method.',
+            code: 'FILE_TOO_LARGE',
+            maxSize: '4.5MB',
+            receivedSize: `${(parseInt(contentLength) / 1024 / 1024).toFixed(2)}MB`,
+          },
+        });
+      }
+      
       // If body is already parsed (JSON), use it directly
       // If it's a string, try to parse it
       if (typeof payload === 'string' && payload.length > 0) {

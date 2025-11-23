@@ -84,15 +84,39 @@ class ApiClient {
 
     return fetch(url, config)
       .then(async (response) => {
+        // ✅ FIX: Handle 413 and other status codes before JSON parsing
+        if (response.status === 413) {
+          const errorMessage = 'File too large. Maximum file size is 4.5MB for direct upload.';
+          if (!suppressToasts) {
+            this._showToast(errorMessage, 'error', 6000);
+          }
+          throw new Error(errorMessage);
+        }
+        
         const data = await response.json().catch(() => ({}));
         
         // Handle errors
         if (!response.ok) {
-          const errorMessage = data.error?.message || data.message || `Request failed: ${response.statusText}`;
+          // ✅ FIX: Better error message extraction with validation details
+          let errorMessage = data.error?.message || data.message || `Request failed: ${response.statusText}`;
+          
+          // ✅ FIX: Include validation error details if available
+          if (data.error?.details && Array.isArray(data.error.details)) {
+            const details = data.error.details.map(d => d.message || `${d.path}: ${d.message || 'Invalid'}`).join(', ');
+            if (details) {
+              errorMessage = `${errorMessage} (${details})`;
+            }
+          } else if (data.error?.details && typeof data.error.details === 'object') {
+            // Handle single detail object
+            const detail = data.error.details;
+            if (detail.message) {
+              errorMessage = `${errorMessage}: ${detail.message}`;
+            }
+          }
           
           // ✅ Show error toast (unless suppressed)
           if (!suppressToasts) {
-            this._showToast(errorMessage, 'error', 5000);
+            this._showToast(errorMessage, 'error', 6000);
           }
           
           throw new Error(errorMessage);
