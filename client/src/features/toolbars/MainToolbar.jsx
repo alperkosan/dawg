@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutGrid, SlidersHorizontal, AudioLines, Music, Keyboard, Palette, Activity, Settings, Infinity, Layers } from 'lucide-react';
+import { LayoutGrid, SlidersHorizontal, AudioLines, Music, Keyboard, Palette, Activity, Settings, Infinity, Layers, Newspaper } from 'lucide-react';
 import { usePanelsStore } from '@/store/usePanelsStore';
 import { useThemeStore } from '@/store/useThemeStore';
 import { AudioContextService } from '@/lib/services/AudioContextService';
@@ -20,6 +20,7 @@ function MainToolbar() {
         { id: 'mixer', title: 'Mixer', icon: SlidersHorizontal },
         { id: 'piano-roll', title: 'Piano Roll', icon: Music },
         { id: 'keybindings', title: 'Keyboard Shortcuts', icon: Keyboard },
+        { id: 'media-panel', title: 'Media Panel 📱', icon: Newspaper },
     ];
 
     const settingsButtons = [
