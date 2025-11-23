@@ -273,33 +273,33 @@
     0 0,
     60px 0,
     120px 0;
-  animation: matrixRain 12s linear infinite, matrixRain2 15s linear infinite, matrixRain3 18s linear infinite;
+  animation: matrixRain 12s linear infinite;
 }
 
 @keyframes matrixRain {
   0% { 
-    background-position: 0 0, 60px 0, 120px 0;
+    background-position: 
+      0 0,
+      60px 0,
+      120px 0;
+  }
+  33.33% {
+    background-position: 
+      0 400px,
+      60px 0,
+      120px 0;
+  }
+  66.66% {
+    background-position: 
+      0 400px,
+      60px 400px,
+      120px 0;
   }
   100% { 
-    background-position: 0 400px, 60px 0, 120px 0;
-  }
-}
-
-@keyframes matrixRain2 {
-  0% { 
-    background-position: 0 0, 60px 0, 120px 0;
-  }
-  100% { 
-    background-position: 0 0, 60px 400px, 120px 0;
-  }
-}
-
-@keyframes matrixRain3 {
-  0% { 
-    background-position: 0 0, 60px 0, 120px 0;
-  }
-  100% { 
-    background-position: 0 0, 60px 0, 120px 400px;
+    background-position: 
+      0 400px,
+      60px 400px,
+      120px 400px;
   }
 }
 
