@@ -6,22 +6,25 @@
 import React, { useState, useEffect } from 'react';
 import { useAuthStore } from '../store/useAuthStore';
 import { apiClient, setToastHandler } from '../services/api';
-import { Upload, Edit, Trash2, Plus, Search, Filter, Music, Folder, Tag, Settings } from 'lucide-react';
+import { Upload, Edit, Trash2, Plus, Search, Filter, Music, Folder, Tag, Settings, FileText, Eye, EyeOff, Globe, Lock } from 'lucide-react';
 import ConfirmationModal from '../components/common/ConfirmationModal';
 import './AdminPanel.css';
 
 export default function AdminPanel() {
   const { isAuthenticated } = useAuthStore();
-  const [activeTab, setActiveTab] = useState('assets'); // 'assets', 'packs', 'categories'
+  const [activeTab, setActiveTab] = useState('assets'); // 'assets', 'packs', 'categories', 'projects'
   const [assets, setAssets] = useState([]);
   const [packs, setPacks] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [projects, setProjects] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedAsset, setSelectedAsset] = useState(null);
   const [selectedPack, setSelectedPack] = useState(null);
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [selectedPacks, setSelectedPacks] = useState(new Set()); // For multi-select
+  const [selectedProjects, setSelectedProjects] = useState(new Set()); // For multi-select
+  const [selectedProject, setSelectedProject] = useState(null);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
@@ -110,6 +113,9 @@ export default function AdminPanel() {
         // Mount'ta yüklenen categories modal'lar için, burada yüklenen categories tab için
         const response = await apiClient.listSystemCategories();
         setCategories(response.categories || []);
+      } else if (activeTab === 'projects') {
+        const response = await apiClient.getProjects({ limit: 1000 });
+        setProjects(response.projects || []);
       }
     } catch (error) {
       console.error('Failed to load data:', error);
@@ -337,6 +343,13 @@ export default function AdminPanel() {
             <Tag size={18} />
             Categories
           </button>
+          <button
+            className={`admin-panel__tab ${activeTab === 'projects' ? 'active' : ''}`}
+            onClick={() => setActiveTab('projects')}
+          >
+            <FileText size={18} />
+            Projects
+          </button>
         </div>
       </header>
 
@@ -560,6 +573,220 @@ export default function AdminPanel() {
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {activeTab === 'projects' && (
+          <div className="admin-panel__section">
+            <div className="admin-panel__toolbar">
+              <div className="admin-panel__search">
+                <Search size={18} />
+                <input
+                  type="text"
+                  placeholder="Search projects..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+              </div>
+              <div className="admin-panel__toolbar-actions">
+                {selectedProjects.size > 0 && (
+                  <button
+                    className="admin-panel__button admin-panel__button--danger"
+                    onClick={() => {
+                      setConfirmationModal({
+                        isOpen: true,
+                        title: 'Delete Selected Projects',
+                        message: `Are you sure you want to delete ${selectedProjects.size} project(s)? This action cannot be undone.`,
+                        confirmText: 'Delete',
+                        cancelText: 'Cancel',
+                        variant: 'danger',
+                        onConfirm: async () => {
+                          try {
+                            for (const projectId of selectedProjects) {
+                              await apiClient.deleteProject(projectId);
+                            }
+                            setSelectedProjects(new Set());
+                            await loadData();
+                            setConfirmationModal({ ...confirmationModal, isOpen: false });
+                          } catch (error) {
+                            console.error('Failed to delete projects:', error);
+                          }
+                        },
+                      });
+                    }}
+                  >
+                    <Trash2 size={18} />
+                    Delete Selected ({selectedProjects.size})
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {isLoading ? (
+              <div className="admin-panel__loading">Loading projects...</div>
+            ) : (
+              <div className="admin-panel__table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th style={{ width: '40px' }}>
+                        <input
+                          type="checkbox"
+                          checked={selectedProjects.size === projects.length && projects.length > 0}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedProjects(new Set(projects.map(p => p.id)));
+                            } else {
+                              setSelectedProjects(new Set());
+                            }
+                          }}
+                        />
+                      </th>
+                      <th>Title</th>
+                      <th>Author</th>
+                      <th>BPM</th>
+                      <th>Visibility</th>
+                      <th>Stats</th>
+                      <th>Created</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {projects
+                      .filter(project => 
+                        !searchQuery || 
+                        project.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                        project.description?.toLowerCase().includes(searchQuery.toLowerCase())
+                      )
+                      .map((project) => (
+                        <tr key={project.id}>
+                          <td>
+                            <input
+                              type="checkbox"
+                              checked={selectedProjects.has(project.id)}
+                              onChange={(e) => {
+                                const newSelected = new Set(selectedProjects);
+                                if (e.target.checked) {
+                                  newSelected.add(project.id);
+                                } else {
+                                  newSelected.delete(project.id);
+                                }
+                                setSelectedProjects(newSelected);
+                              }}
+                            />
+                          </td>
+                          <td>
+                            <div className="admin-panel__project-name">
+                              {project.title || 'Untitled Project'}
+                              {project.isUnlisted && (
+                                <span className="admin-panel__badge" style={{ background: '#666' }}>Unlisted</span>
+                              )}
+                            </div>
+                            {project.description && (
+                              <div className="admin-panel__project-description">
+                                {project.description.substring(0, 100)}
+                                {project.description.length > 100 ? '...' : ''}
+                              </div>
+                            )}
+                          </td>
+                          <td>{project.userId || '-'}</td>
+                          <td>{project.bpm || '-'}</td>
+                          <td>
+                            <div className="admin-panel__visibility">
+                              {project.isPublic ? (
+                                <span className="admin-panel__status active">
+                                  <Globe size={14} />
+                                  Public
+                                </span>
+                              ) : (
+                                <span className="admin-panel__status inactive">
+                                  <Lock size={14} />
+                                  Private
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td>
+                            <div className="admin-panel__project-stats">
+                              <span title="Views">{project.playCount || 0} 👁️</span>
+                              <span title="Likes">{project.likeCount || 0} ❤️</span>
+                              <span title="Remixes">{project.remixCount || 0} 🔄</span>
+                            </div>
+                          </td>
+                          <td>
+                            {project.createdAt 
+                              ? new Date(project.createdAt).toLocaleDateString()
+                              : '-'
+                            }
+                          </td>
+                          <td>
+                            <div className="admin-panel__actions">
+                              <button
+                                className="admin-panel__action-btn"
+                                onClick={() => {
+                                  setSelectedProject(project);
+                                  // Toggle public/private
+                                  apiClient.updateProject(project.id, {
+                                    isPublic: !project.isPublic
+                                  }).then(() => {
+                                    loadData();
+                                  }).catch(err => {
+                                    console.error('Failed to update project:', err);
+                                  });
+                                }}
+                                title={project.isPublic ? 'Make Private' : 'Make Public'}
+                              >
+                                {project.isPublic ? <Lock size={16} /> : <Globe size={16} />}
+                              </button>
+                              <button
+                                className="admin-panel__action-btn"
+                                onClick={() => {
+                                  setSelectedProject(project);
+                                  // TODO: Open edit modal
+                                  apiClient.showToast('Edit project feature coming soon', 'info');
+                                }}
+                                title="Edit"
+                              >
+                                <Edit size={16} />
+                              </button>
+                              <button
+                                className="admin-panel__action-btn admin-panel__action-btn--danger"
+                                onClick={() => {
+                                  setConfirmationModal({
+                                    isOpen: true,
+                                    title: 'Delete Project',
+                                    message: `Are you sure you want to delete "${project.title || 'Untitled Project'}"? This action cannot be undone.`,
+                                    confirmText: 'Delete',
+                                    cancelText: 'Cancel',
+                                    variant: 'danger',
+                                    onConfirm: async () => {
+                                      try {
+                                        await apiClient.deleteProject(project.id);
+                                        await loadData();
+                                        setConfirmationModal({ ...confirmationModal, isOpen: false });
+                                      } catch (error) {
+                                        console.error('Failed to delete project:', error);
+                                      }
+                                    },
+                                  });
+                                }}
+                                title="Delete"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+                {projects.length === 0 && (
+                  <div className="admin-panel__empty">
+                    {searchQuery ? 'No projects found matching your search' : 'No projects yet.'}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>
