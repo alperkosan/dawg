@@ -7,7 +7,7 @@ import { apiClient } from '@/services/api.js';
 /**
  * ✅ FIX: Normalize asset URL to use API endpoint instead of MinIO/CDN
  * Converts MinIO/CDN URLs to API endpoint format
- * System assets use /api/assets/system/:assetId/file endpoint to avoid CORS issues
+ * System assets and user assets use backend proxy endpoints to avoid CORS issues
  */
 function normalizeAssetUrl(storageUrl, assetId, isSystemAsset = false) {
   // ✅ FIX: Check if it's a system asset by URL pattern
@@ -37,6 +37,11 @@ function normalizeAssetUrl(storageUrl, assetId, isSystemAsset = false) {
   // ✅ FIX: System assets from CDN -> use backend proxy endpoint
   if (isSystem) {
     return `${apiClient.baseURL}/assets/system/${assetId}/file`;
+  }
+  
+  // ✅ FIX: User assets from CDN -> use backend proxy endpoint (avoids CORS)
+  if (storageUrl.includes('dawg.b-cdn.net/user-assets') || storageUrl.includes('user-assets/')) {
+    return `${apiClient.baseURL}/assets/${assetId}/file`;
   }
   
   // If it's a MinIO/CDN URL (e.g., http://localhost:9000/dawg-audio/...), convert to API endpoint

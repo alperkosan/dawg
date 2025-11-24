@@ -41,6 +41,46 @@ Bu rehber, DAWG projesi için Bunny CDN yapılandırmasını adım adım açıkl
 4. **"Add Pull Zone"** butonuna tıklayın
 5. Pull Zone'unuzun CDN URL'ini not edin (örn: `https://dawg.b-cdn.net`)
 
+### 1.5 CORS Ayarlarını Yapılandırma (ÖNEMLİ - CORS hatalarını önlemek için)
+1. Oluşturduğunuz **Pull Zone**'a tıklayın
+2. **"General"** veya **"Settings"** sekmesine gidin
+3. **"Security"** veya **"Advanced Settings"** bölümünü bulun
+4. **"Cross-Origin Resource Sharing (CORS)"** ayarlarını yapılandırın:
+
+   **Seçenek 1: Tüm Origin'lere İzin Ver (Development için)**
+   - ✅ **"Enable CORS"** veya **"Allow All Origins"** seçeneğini aktif edin
+   - Bu, tüm domain'lerden gelen isteklere izin verir
+
+   **Seçenek 2: Belirli Origin'lere İzin Ver (Production için - Önerilen)**
+   - ✅ **"Enable CORS"** seçeneğini aktif edin
+   - **"Allowed Origins"** alanına izin vermek istediğiniz domain'leri ekleyin:
+     ```
+     https://dawg-beryl.vercel.app
+     https://*.vercel.app
+     https://yourdomain.com
+     ```
+   - **"Allowed Methods"** için şunları seçin:
+     - ✅ GET
+     - ✅ HEAD
+     - ✅ OPTIONS
+   - **"Allowed Headers"** için şunları ekleyin:
+     ```
+     Range
+     Content-Type
+     Authorization
+     ```
+   - **"Exposed Headers"** (opsiyonel):
+     ```
+     Content-Range
+     Content-Length
+     Accept-Ranges
+     ```
+
+5. **"Save"** veya **"Update Pull Zone"** butonuna tıklayın
+6. ⚠️ **ÖNEMLİ**: Değişikliklerin aktif olması birkaç dakika sürebilir (CDN cache)
+
+**Alternatif Çözüm**: Eğer CORS ayarlarını yapmak istemiyorsanız, backend proxy endpoint'leri kullanabilirsiniz (zaten implementasyon mevcut). Bu durumda CORS ayarlarına gerek yoktur çünkü dosyalar backend üzerinden serve edilir.
+
 ---
 
 ## 🔑 Adım 2: API Key'lerini Alma
@@ -145,6 +185,13 @@ npm run dev
 - ✅ Network tab'ında request'leri kontrol edin
 - ✅ Server log'larını kontrol edin
 - ✅ Bunny CDN Dashboard'da Storage Zone'unuzu kontrol edin (dosyalar görünüyor mu?)
+
+### CORS Hatası: "Access to fetch at '...' has been blocked by CORS policy"
+- ✅ Pull Zone ayarlarında CORS'un aktif olduğundan emin olun (yukarıdaki **1.5** adımına bakın)
+- ✅ Allowed Origins listesine domain'inizin eklendiğinden emin olun
+- ✅ Vercel preview URL'leri için wildcard kullanın: `https://*.vercel.app`
+- ✅ Değişikliklerin aktif olması için birkaç dakika bekleyin (CDN cache)
+- ✅ Alternatif: Backend proxy endpoint'lerini kullanın (`/api/assets/:assetId/file`) - CORS ayarlarına gerek yok
 
 ---
 

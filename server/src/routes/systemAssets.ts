@@ -121,16 +121,68 @@ export async function systemAssetsRoutes(fastify: FastifyInstance) {
         throw new BadRequestError('Premium assets require authentication');
       }
 
-      // ✅ CDN: If storage_url is a CDN URL, redirect to CDN (CDN handles Range Requests)
+      // ✅ FIX: If storage_url is a CDN URL, proxy from CDN to avoid CORS issues
       if (asset.storageUrl && !asset.storageUrl.startsWith('/api/')) {
-        // CDN URL - redirect to CDN (Bunny CDN supports Range Requests)
-        const rangeHeader = request.headers.range;
-        if (rangeHeader) {
-          // CDN will handle Range Request, just redirect
-          reply.header('Location', asset.storageUrl);
-          return reply.code(302).send();
+        const { logger } = await import('../utils/logger.js');
+        logger.info(`📤 [PROXY] Proxying system asset from CDN: ${asset.storageUrl}`);
+        
+        try {
+          // ✅ FIX: Fetch from CDN and proxy to client (avoids CORS)
+          const rangeHeader = request.headers.range;
+          const headers: Record<string, string> = {};
+          
+          // Pass Range header to CDN if present
+          if (rangeHeader) {
+            headers['Range'] = rangeHeader;
+          }
+          
+          // ✅ FIX: Add timeout to prevent hanging
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+          
+          const cdnResponse = await fetch(asset.storageUrl, {
+            headers,
+            signal: controller.signal,
+          });
+          
+          clearTimeout(timeoutId);
+          
+          if (!cdnResponse.ok) {
+            logger.error(`❌ [PROXY] CDN fetch failed: ${cdnResponse.status} ${cdnResponse.statusText}`);
+            throw new NotFoundError('File not found on CDN');
+          }
+          
+          // ✅ FIX: Forward response headers from CDN
+          const contentType = cdnResponse.headers.get('content-type') || asset.mimeType || 'audio/wav';
+          const contentLength = cdnResponse.headers.get('content-length');
+          const contentRange = cdnResponse.headers.get('content-range');
+          const acceptRanges = cdnResponse.headers.get('accept-ranges');
+          
+          reply.header('Content-Type', contentType);
+          if (contentLength) {
+            reply.header('Content-Length', contentLength);
+          }
+          if (contentRange) {
+            reply.header('Content-Range', contentRange);
+            reply.code(206); // Partial Content
+          } else {
+            reply.code(200);
+          }
+          if (acceptRanges) {
+            reply.header('Accept-Ranges', acceptRanges);
+          }
+          reply.header('Cache-Control', 'public, max-age=31536000');
+          reply.header('Access-Control-Allow-Origin', '*'); // ✅ FIX: Allow CORS
+          reply.header('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+          reply.header('Access-Control-Allow-Headers', 'Range, Content-Type');
+          
+          // ✅ FIX: Stream response from CDN to client
+          const buffer = await cdnResponse.arrayBuffer();
+          return reply.send(Buffer.from(buffer));
+        } catch (error) {
+          logger.error(`❌ [PROXY] CDN proxy failed:`, error);
+          // Fall through to local storage
         }
-        return reply.redirect(302, asset.storageUrl);
       }
 
       // ✅ CDN: Otherwise, serve from local storage with Range Request support

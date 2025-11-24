@@ -96,7 +96,7 @@ const getFromCache = (cacheKey) => {
  * @returns {Promise<ArrayBuffer>}
  */
 /**
- * ✅ FIX: Normalize URL to use backend proxy for system assets (avoids CORS)
+ * ✅ FIX: Normalize URL to use backend proxy for system assets and user assets (avoids CORS)
  */
 function normalizePreviewUrl(url) {
   // If already an API endpoint, return as is
@@ -113,6 +113,18 @@ function normalizePreviewUrl(url) {
     if (match && match[1]) {
       const assetId = match[1];
       return `${apiClient.baseURL}/assets/system/${assetId}/file`;
+    }
+  }
+  
+  // ✅ FIX: User assets from CDN -> use backend proxy endpoint
+  // Extract assetId from CDN URL pattern: .../user-assets/.../{year-month}/{assetId}/filename
+  if (url.includes('dawg.b-cdn.net/user-assets') || url.includes('user-assets/')) {
+    // Try to extract assetId from URL
+    // Pattern: .../user-assets/{userId}/{year-month}/{assetId}/filename
+    const match = url.match(/user-assets\/[^/]+\/[^/]+\/([a-f0-9-]{36})\//);
+    if (match && match[1]) {
+      const assetId = match[1];
+      return `${apiClient.baseURL}/assets/${assetId}/file`;
     }
   }
   
