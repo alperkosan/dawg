@@ -4,11 +4,9 @@
  */
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getRawBody } from '@vercel/node';
 import crypto from 'crypto';
 import Fastify, { FastifyInstance } from 'fastify';
-// @ts-ignore - busboy doesn't have TypeScript types
-import busboy from 'busboy';
+import formidable from 'formidable';
 
 // ✅ FIX: Disable Vercel's bodyParser for multipart requests
 // This allows Fastify's multipart plugin to handle the raw stream
@@ -255,94 +253,61 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           // Ignore logger errors
         }
         
-        // ✅ FIX: Parse multipart data with busboy
-        // In Vercel, with bodyParser: false, we need to use getRawBody or read from stream
+        // ✅ FIX: Parse multipart data with formidable
+        // Formidable works better with Vercel's request object
         const parsedData: { fields: Record<string, string>; files: Record<string, { buffer: Buffer; filename: string; mimetype: string }> } = {
           fields: {},
           files: {},
         };
         
         try {
-          // ✅ FIX: In Vercel, with bodyParser: false, we need to use getRawBody
-          // getRawBody reads the raw request body as a Buffer
-          let rawBody: Buffer;
-          try {
-            rawBody = await getRawBody(req);
-            console.log(`📦 [MULTIPART] Raw body size: ${rawBody.length} bytes`);
-          } catch (getRawBodyError: any) {
-            console.error(`❌ [MULTIPART] getRawBody failed: ${getRawBodyError.message}`);
-            console.error(`❌ [MULTIPART] getRawBody error stack: ${getRawBodyError.stack}`);
-            console.error(`❌ [MULTIPART] Request method: ${req.method}`);
-            console.error(`❌ [MULTIPART] Request headers: ${JSON.stringify(req.headers, null, 2)}`);
-            // If getRawBody fails, we can't parse multipart
-            throw new Error(`Failed to get raw body from Vercel request: ${getRawBodyError.message}`);
+          console.log(`📦 [MULTIPART] Starting formidable parsing...`);
+          
+          // Use formidable to parse multipart form data
+          // ✅ FIX: Use /tmp directory for temp files in Vercel
+          const form = formidable({
+            maxFileSize: 1073741824, // 1GB
+            keepExtensions: false,
+            multiples: false,
+            uploadDir: '/tmp', // Vercel's writable directory
+          });
+          
+          // Parse the request
+          const [fields, files] = await form.parse(req as any);
+          
+          // Convert fields to simple object
+          for (const [key, value] of Object.entries(fields)) {
+            parsedData.fields[key] = Array.isArray(value) ? value[0] : value;
+            console.log(`📝 [MULTIPART] Field: ${key} = ${parsedData.fields[key].substring(0, 50)}...`);
           }
           
-          // Parse multipart data with busboy
-          await new Promise<void>((resolve, reject) => {
-            const bb = busboy({
-              headers: req.headers as any,
-              limits: {
-                fileSize: 1073741824, // 1GB
-              },
-            });
-            
-            let hasError = false;
-            
-            bb.on('field', (name, value) => {
-              if (hasError) return;
-              parsedData.fields[name] = value;
-              console.log(`📝 [MULTIPART] Field: ${name} = ${value.substring(0, 50)}...`);
-            });
-            
-            bb.on('file', (name, file, info) => {
-              if (hasError) return;
-              const chunks: Buffer[] = [];
-              file.on('data', (chunk) => {
-                chunks.push(chunk);
-              });
-              file.on('end', () => {
-                parsedData.files[name] = {
-                  buffer: Buffer.concat(chunks),
-                  filename: info.filename || 'unknown',
-                  mimetype: info.mimeType || 'application/octet-stream',
-                };
-                console.log(`📁 [MULTIPART] File: ${name} = ${info.filename}, size: ${parsedData.files[name].buffer.length} bytes`);
-              });
-              file.on('error', (err) => {
-                if (!hasError) {
-                  hasError = true;
-                  console.error(`❌ [MULTIPART] File stream error: ${err.message}`);
-                  reject(err);
-                }
-              });
-            });
-            
-            bb.on('finish', () => {
-              if (hasError) return;
-              console.log(`✅ [MULTIPART] Parsing completed. Fields: ${Object.keys(parsedData.fields).length}, Files: ${Object.keys(parsedData.files).length}`);
-              resolve();
-            });
-            
-            bb.on('error', (err) => {
-              if (!hasError) {
-                hasError = true;
-                console.error(`❌ [MULTIPART] Busboy error: ${err.message}`);
-                reject(err);
-              }
-            });
-            
-            // Write raw body to busboy
-            try {
-              bb.end(rawBody);
-            } catch (writeError: any) {
-              if (!hasError) {
-                hasError = true;
-                console.error(`❌ [MULTIPART] Error writing to busboy: ${writeError.message}`);
-                reject(writeError);
+          // Convert files to buffers
+          for (const [key, fileArray] of Object.entries(files)) {
+            const file = Array.isArray(fileArray) ? fileArray[0] : fileArray;
+            if (file) {
+              // Read file buffer
+              const fs = await import('fs/promises');
+              const buffer = await fs.readFile(file.filepath);
+              
+              parsedData.files[key] = {
+                buffer: buffer,
+                filename: file.originalFilename || 'unknown',
+                mimetype: file.mimetype || 'application/octet-stream',
+              };
+              
+              console.log(`📁 [MULTIPART] File: ${key} = ${parsedData.files[key].filename}, size: ${buffer.length} bytes`);
+              
+              // Clean up temp file
+              try {
+                await fs.unlink(file.filepath);
+              } catch (unlinkError) {
+                // Ignore cleanup errors
+                console.warn(`⚠️ [MULTIPART] Failed to cleanup temp file: ${file.filepath}`);
               }
             }
-          });
+          }
+          
+          console.log(`✅ [MULTIPART] Parsing completed. Fields: ${Object.keys(parsedData.fields).length}, Files: ${Object.keys(parsedData.files).length}`);
           
           // ✅ FIX: Store parsed data for route handler
           payload = parsedData; // Pass as payload so route can access it
