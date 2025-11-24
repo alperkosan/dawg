@@ -260,10 +260,10 @@ const loadAudioBuffer = async (url, set, get, fullLoad = false) => {
     set({ abortController: controller });
 
     try {
-        // Preview için Range Request, full için normal fetch
-        const arrayBuffer = fullLoad 
-          ? await loadFullBuffer(url, controller.signal)
-          : await loadPreviewRange(url, 2, controller.signal);
+        // ✅ FIX: Always load full file (Range request causes decode issues with WAV files)
+        // Preview files are typically small enough (< 5MB) that loading full file is acceptable
+        // Range requests with WAV files can result in incomplete or corrupted data that can't be decoded
+        const arrayBuffer = await loadFullBuffer(url, controller.signal);
         
         // ✅ FIX: Validate arrayBuffer before decoding
         if (!arrayBuffer || arrayBuffer.byteLength === 0) {
@@ -272,9 +272,58 @@ const loadAudioBuffer = async (url, set, get, fullLoad = false) => {
         
         console.log(`[PreviewCache] Decoding audio buffer: ${arrayBuffer.byteLength} bytes`);
         
+        // ✅ FIX: Validate WAV header before decoding
+        if (arrayBuffer.byteLength >= 4) {
+          const view = new Uint8Array(arrayBuffer);
+          const isWav = view[0] === 0x52 && view[1] === 0x49 && view[2] === 0x46 && view[3] === 0x46; // "RIFF"
+          if (!isWav) {
+            console.warn(`[PreviewCache] Warning: File does not start with WAV header (RIFF), first bytes: ${Array.from(view.slice(0, 8)).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' ')}`);
+          }
+        }
+        
         const context = getAudioContext();
-        // ✅ FIX: Don't slice the buffer - use it as is
-        const audioBuffer = await decodeAudioData(arrayBuffer);
+        
+        // ✅ FIX: Decode with better error handling and validation
+        let audioBuffer;
+        try {
+          // ✅ FIX: Create a copy of the buffer to avoid any potential issues
+          const bufferCopy = arrayBuffer.slice(0);
+          
+          // ✅ FIX: Additional validation - check WAV structure
+          if (bufferCopy.byteLength >= 44) {
+            const view = new DataView(bufferCopy);
+            const riff = String.fromCharCode(view.getUint8(0), view.getUint8(1), view.getUint8(2), view.getUint8(3));
+            const wave = String.fromCharCode(view.getUint8(8), view.getUint8(9), view.getUint8(10), view.getUint8(11));
+            
+            if (riff !== 'RIFF' || wave !== 'WAVE') {
+              console.warn(`[PreviewCache] Invalid WAV structure: RIFF=${riff}, WAVE=${wave}`);
+            }
+          }
+          
+          audioBuffer = await decodeAudioData(bufferCopy);
+        } catch (decodeError) {
+          console.error(`[PreviewCache] Decode error details:`, {
+            error: decodeError.message,
+            errorName: decodeError.name,
+            bufferSize: arrayBuffer.byteLength,
+            firstBytes: arrayBuffer.byteLength >= 44 
+              ? Array.from(new Uint8Array(arrayBuffer.slice(0, 44))).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' ')
+              : 'too small',
+            // Check if it's a valid WAV file
+            isWav: arrayBuffer.byteLength >= 4 && 
+                   new Uint8Array(arrayBuffer)[0] === 0x52 && 
+                   new Uint8Array(arrayBuffer)[1] === 0x49 && 
+                   new Uint8Array(arrayBuffer)[2] === 0x46 && 
+                   new Uint8Array(arrayBuffer)[3] === 0x46
+          });
+          
+          // ✅ FIX: If decode fails but it's a valid WAV header, the issue might be with partial content
+          // Try to get more diagnostic info
+          if (decodeError.name === 'EncodingError') {
+            throw new Error(`Failed to decode audio: ${decodeError.message}. This might be due to incomplete WAV data from Range request. Buffer size: ${arrayBuffer.byteLength} bytes`);
+          }
+          throw decodeError;
+        }
 
         // Cache'e ekle (preview ve full ayrı cache'lenir)
         addToCache(cacheKey, audioBuffer);
