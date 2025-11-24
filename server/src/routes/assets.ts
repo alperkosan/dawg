@@ -328,12 +328,31 @@ export async function assetsRoutes(fastify: FastifyInstance) {
           const controller = new AbortController();
           const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
           
-          const cdnResponse = await fetch(cleanStorageUrl, {
-            headers,
-            signal: controller.signal,
-          });
+          logger.info(`📡 [PROXY] Fetching from CDN: ${cleanStorageUrl}`);
           
-          clearTimeout(timeoutId);
+          let cdnResponse: Response;
+          try {
+            cdnResponse = await fetch(cleanStorageUrl, {
+              headers,
+              signal: controller.signal,
+            });
+            clearTimeout(timeoutId);
+          } catch (fetchError: any) {
+            clearTimeout(timeoutId);
+            logger.error(`❌ [PROXY] Fetch error:`, {
+              error: fetchError.message || String(fetchError),
+              errorName: fetchError.name,
+              cdnUrl: cleanStorageUrl,
+            });
+            
+            // Check if it's a timeout
+            if (fetchError.name === 'AbortError' || controller.signal.aborted) {
+              throw new NotFoundError('CDN request timeout (30s)');
+            }
+            
+            // Re-throw with more context
+            throw new Error(`CDN fetch failed: ${fetchError.message || fetchError}`);
+          }
           
           if (!cdnResponse.ok) {
             logger.error(`❌ [PROXY] CDN fetch failed: ${cdnResponse.status} ${cdnResponse.statusText}`);
@@ -341,15 +360,17 @@ export async function assetsRoutes(fastify: FastifyInstance) {
             logger.error(`❌ [PROXY] CDN error response: ${errorText}`);
             logger.error(`❌ [PROXY] CDN URL: ${cleanStorageUrl}`);
             
-            // ✅ FIX: If file not found on CDN (404), it might have been deleted
-            // Check if database record still exists and clean it up if needed
+            // ✅ FIX: If file not found on CDN (404), don't fallback to local storage
+            // Vercel serverless doesn't have persistent local storage
             if (cdnResponse.status === 404) {
               logger.warn(`⚠️ [PROXY] File not found on CDN (404) but database record exists. This might indicate a stale record.`);
               logger.warn(`⚠️ [PROXY] Asset ID: ${assetId}, User ID: ${userId}`);
+              logger.warn(`⚠️ [PROXY] Storage Key: ${asset.storage_key}`);
               // Note: We don't delete the database record here to avoid race conditions
               // The user should delete the asset properly through the API
               throw new NotFoundError('File not found on CDN (may have been deleted). Please refresh the file browser.');
             }
+            // For other errors (500, timeout, etc.), also don't fallback to local storage on Vercel
             throw new NotFoundError(`File not found on CDN: ${cdnResponse.status}`);
           }
           
@@ -418,7 +439,21 @@ export async function assetsRoutes(fastify: FastifyInstance) {
           
           // ✅ FALLBACK: Use arrayBuffer() with careful conversion
           logger.info(`📦 [PROXY] Using buffer approach, Status: ${cdnResponse.status}, Range: ${rangeHeader || 'none'}`);
-          const arrayBuffer = await cdnResponse.arrayBuffer();
+          
+          let arrayBuffer: ArrayBuffer;
+          try {
+            arrayBuffer = await cdnResponse.arrayBuffer();
+            logger.info(`📦 [PROXY] ArrayBuffer received: ${arrayBuffer.byteLength} bytes`);
+          } catch (arrayBufferError: any) {
+            logger.error(`❌ [PROXY] Failed to read arrayBuffer:`, {
+              error: arrayBufferError.message || String(arrayBufferError),
+              errorName: arrayBufferError.name,
+              cdnUrl: cleanStorageUrl,
+              responseStatus: cdnResponse.status,
+              responseStatusText: cdnResponse.statusText,
+            });
+            throw new Error(`Failed to read CDN response: ${arrayBufferError.message || arrayBufferError}`);
+          }
           
           if (arrayBuffer.byteLength === 0) {
             logger.error(`❌ [PROXY] CDN returned empty response`);
@@ -493,74 +528,37 @@ export async function assetsRoutes(fastify: FastifyInstance) {
           
           // ✅ FIX: Send buffer directly (Fastify handles Buffer correctly)
           return reply.send(buffer);
-        } catch (error) {
-          logger.error(`❌ [PROXY] CDN proxy failed:`, error);
-          // Fall through to local storage
+        } catch (error: any) {
+          // ✅ FIX: Log detailed error information
+          logger.error(`❌ [PROXY] CDN proxy failed:`, {
+            error: error.message || String(error),
+            errorName: error.name,
+            errorStack: error.stack,
+            cdnUrl: cleanStorageUrl,
+            assetId,
+            userId,
+            storageKey: asset.storage_key,
+          });
+          
+          // ✅ FIX: Don't fallback to local storage on Vercel (serverless doesn't have persistent storage)
+          // Only re-throw if it's already a NotFoundError (404 from CDN)
+          if (error instanceof NotFoundError) {
+            throw error;
+          }
+          
+          // For other errors (network, timeout, etc.), also throw instead of falling back
+          const errorMessage = error.message || error.toString() || 'CDN proxy failed';
+          logger.error(`❌ [PROXY] CDN proxy error details: ${errorMessage}`);
+          throw new NotFoundError(`File not available: ${errorMessage}`);
         }
       }
 
-      // ✅ CDN: Otherwise, serve from local storage with Range Request support
-      const { storageService } = await import('../services/storage.js');
-      
-      try {
-        // Extract local path from storage_key or construct it
-        const path = await import('path');
-        let localPath: string | undefined;
-        
-        if (asset.storage_key && asset.storage_key.includes('uploads')) {
-          localPath = path.join(process.cwd(), asset.storage_key);
-        } else {
-          // Construct local path from assetId
-          const fileExtension = path.extname(asset.filename) || '.wav';
-          localPath = path.join(process.cwd(), 'uploads', userId, `${assetId}${fileExtension}`);
-        }
-        
-        const fileBuffer = await storageService.getFile(asset.storage_key, localPath);
-        const fileSize = fileBuffer.length;
-        
-        // ✅ NEW: Handle Range Request
-        const rangeHeader = request.headers.range;
-        if (rangeHeader) {
-          // Parse Range header (e.g., "bytes=0-176399")
-          const rangeMatch = rangeHeader.match(/bytes=(\d+)-(\d*)/);
-          if (rangeMatch) {
-            const start = parseInt(rangeMatch[1], 10);
-            const end = rangeMatch[2] ? parseInt(rangeMatch[2], 10) : fileSize - 1;
-            const chunkSize = (end - start) + 1;
-            
-            // Validate range
-            if (start >= fileSize || end >= fileSize || start > end) {
-              reply.code(416).header('Content-Range', `bytes */${fileSize}`);
-              return reply.send();
-            }
-            
-            // Extract range from buffer
-            const chunk = fileBuffer.slice(start, end + 1);
-            
-            // Set Range Response headers
-            reply.code(206); // Partial Content
-            reply.header('Content-Range', `bytes ${start}-${end}/${fileSize}`);
-            reply.header('Content-Length', chunkSize);
-            reply.header('Content-Type', asset.mime_type || 'audio/wav');
-            reply.header('Accept-Ranges', 'bytes');
-            reply.header('Cache-Control', 'public, max-age=31536000');
-            
-            return reply.send(chunk);
-          }
-        }
-        
-        // No Range Request - send full file
-        reply.header('Content-Type', asset.mime_type || 'audio/wav');
-        reply.header('Content-Length', fileSize);
-        reply.header('Content-Disposition', `inline; filename="${asset.filename}"`);
-        reply.header('Accept-Ranges', 'bytes'); // ✅ NEW: Indicate Range Request support
-        reply.header('Cache-Control', 'public, max-age=31536000');
-        
-        return reply.send(fileBuffer);
-      } catch (error) {
-        console.error(`❌ Failed to read file:`, error);
-        throw new NotFoundError(`File not found on server`);
-      }
+      // ✅ FIX: If we reach here, storage_url is not a CDN URL (starts with /api/)
+      // This means the file should be served from the API endpoint itself
+      // But in production (Vercel), all files should be on CDN, so this shouldn't happen
+      logger.warn(`⚠️ [FILE] Storage URL is not a CDN URL: ${asset.storage_url}`);
+      logger.warn(`⚠️ [FILE] This should not happen in production. File should be on CDN.`);
+      throw new NotFoundError('File not available. Please ensure the file is uploaded to CDN.');
     }
   );
 
