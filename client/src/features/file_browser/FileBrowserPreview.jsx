@@ -12,6 +12,7 @@ export function FileBrowserPreview({ fileNode }) {
   const [audioUrl, setAudioUrl] = useState(null);
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
   const [audioError, setAudioError] = useState(null);
+  const [isLoadingAudioUrl, setIsLoadingAudioUrl] = useState(false);
 
   const {
       isPlaying, playingUrl, loadingUrl, waveformBuffer,
@@ -28,6 +29,8 @@ export function FileBrowserPreview({ fileNode }) {
   useEffect(() => {
     if (fileNode?.type === 'file' && fileNode.url && useUrlPlayer) {
       const loadAudioUrl = async () => {
+        setIsLoadingAudioUrl(true);
+        setAudioError(null);
         try {
           const { apiClient } = await import('@/services/api.js');
           
@@ -65,8 +68,36 @@ export function FileBrowserPreview({ fileNode }) {
             throw new Error(`Failed to fetch audio: ${response.status}`);
           }
 
+          // ✅ FIX: Get MIME type from response header
+          const contentType = response.headers.get('content-type') || 'audio/wav';
+          
+          // ✅ FIX: Determine MIME type from filename if header is generic
+          let mimeType = contentType;
+          if (contentType === 'application/octet-stream' || !contentType.startsWith('audio/')) {
+            const filename = fileNode.name || '';
+            if (filename.endsWith('.wav')) {
+              mimeType = 'audio/wav';
+            } else if (filename.endsWith('.mp3')) {
+              mimeType = 'audio/mpeg';
+            } else if (filename.endsWith('.ogg')) {
+              mimeType = 'audio/ogg';
+            } else if (filename.endsWith('.m4a')) {
+              mimeType = 'audio/mp4';
+            } else {
+              mimeType = 'audio/wav'; // Default
+            }
+          }
+
           const blob = await response.blob();
-          const blobUrl = URL.createObjectURL(blob);
+          
+          // ✅ FIX: Create blob with correct MIME type if it's wrong
+          let finalBlob = blob;
+          if (blob.type !== mimeType && mimeType.startsWith('audio/')) {
+            // Recreate blob with correct MIME type
+            finalBlob = new Blob([blob], { type: mimeType });
+          }
+          
+          const blobUrl = URL.createObjectURL(finalBlob);
           
           // ✅ FIX: Cleanup previous blob URL
           if (blobUrlRef.current) {
@@ -76,10 +107,18 @@ export function FileBrowserPreview({ fileNode }) {
           blobUrlRef.current = blobUrl;
           setAudioUrl(blobUrl);
           setAudioError(null);
+          
+          console.log('✅ [URL Player] Audio URL loaded:', {
+            blobUrl,
+            mimeType: finalBlob.type,
+            size: finalBlob.size
+          });
         } catch (err) {
           console.error('Failed to load audio URL:', err);
           setAudioError(err.message);
           setAudioUrl(null);
+        } finally {
+          setIsLoadingAudioUrl(false);
         }
       };
 
@@ -148,25 +187,73 @@ export function FileBrowserPreview({ fileNode }) {
     }
   }, [fileNode, handleAddNewInstrument]);
 
-  const handlePlayToggle = useCallback((e) => {
+  const handlePlayToggle = useCallback(async (e) => {
     if (useUrlPlayer && audioRef.current) {
       // ✅ NEW: Use HTML5 audio player (no decode issues)
       if (isAudioPlaying) {
         audioRef.current.pause();
       } else {
-        // Add auth token to audio element if needed
-        if (audioUrl && audioUrl.includes('/api/assets/')) {
-          const { useAuthStore } = require('@/store/useAuthStore.js');
-          const token = useAuthStore.getState().accessToken;
-          if (token && audioRef.current) {
-            // Note: HTML5 audio doesn't support custom headers directly
-            // We'll need to use fetch with credentials or pass token in URL
-            // For now, rely on cookie-based auth or proxy handles it
+        // ✅ FIX: Wait for audio to be ready before playing
+        const audio = audioRef.current;
+        
+        if (!audioUrl) {
+          setAudioError('Audio URL not loaded yet');
+          return;
+        }
+
+        // Check if audio has a valid source
+        if (!audio.src || audio.src === '') {
+          setAudioError('Audio source not set');
+          return;
+        }
+
+        // Wait for audio to be ready
+        if (audio.readyState < 2) { // HAVE_CURRENT_DATA
+          try {
+            await new Promise((resolve, reject) => {
+              const timeout = setTimeout(() => {
+                reject(new Error('Audio load timeout'));
+              }, 10000); // 10 second timeout
+
+              const handleCanPlay = () => {
+                clearTimeout(timeout);
+                audio.removeEventListener('canplay', handleCanPlay);
+                audio.removeEventListener('error', handleError);
+                resolve(null);
+              };
+
+              const handleError = (e) => {
+                clearTimeout(timeout);
+                audio.removeEventListener('canplay', handleCanPlay);
+                audio.removeEventListener('error', handleError);
+                reject(new Error(`Audio load error: ${audio.error?.message || 'Unknown error'}`));
+              };
+
+              audio.addEventListener('canplay', handleCanPlay, { once: true });
+              audio.addEventListener('error', handleError, { once: true });
+              
+              // If already ready, resolve immediately
+              if (audio.readyState >= 2) {
+                clearTimeout(timeout);
+                audio.removeEventListener('canplay', handleCanPlay);
+                audio.removeEventListener('error', handleError);
+                resolve(null);
+              } else {
+                // Trigger load if not already loading
+                audio.load();
+              }
+            });
+          } catch (err) {
+            console.error('Failed to load audio:', err);
+            setAudioError(err.message || 'Failed to load audio');
+            return;
           }
         }
-        audioRef.current.play().catch(err => {
+
+        // Now play
+        audio.play().catch(err => {
           console.error('Failed to play audio:', err);
-          setAudioError('Failed to play audio');
+          setAudioError(`Failed to play: ${err.message || 'Unknown error'}`);
         });
       }
     } else {
@@ -209,7 +296,7 @@ export function FileBrowserPreview({ fileNode }) {
   }
 
   const isCurrentlyPlaying = useUrlPlayer ? isAudioPlaying : (isPlaying && playingUrl === url);
-  const isLoading = !useUrlPlayer && loadingUrl === url;
+  const isLoading = useUrlPlayer ? isLoadingAudioUrl : (loadingUrl === url);
   const hasWaveform = !isLoading && !error && waveformBuffer && !useUrlPlayer;
   const showError = useUrlPlayer ? audioError : (error && !isLoading);
 
@@ -218,13 +305,35 @@ export function FileBrowserPreview({ fileNode }) {
       <p className="preview__info" title={name}>{name}</p>
       <div className="preview__content">
         {/* ✅ NEW: HTML5 Audio Element (hidden, controlled via ref) */}
-        {useUrlPlayer && audioUrl && (
+        {useUrlPlayer && (
           <audio
             ref={audioRef}
-            src={audioUrl}
+            src={audioUrl || undefined}
             preload="metadata"
             crossOrigin="anonymous"
             style={{ display: 'none' }}
+            onError={(e) => {
+              console.error('Audio element error:', e, audioRef.current?.error);
+              const error = audioRef.current?.error;
+              if (error) {
+                let errorMsg = 'Unknown audio error';
+                switch (error.code) {
+                  case error.MEDIA_ERR_ABORTED:
+                    errorMsg = 'Audio loading aborted';
+                    break;
+                  case error.MEDIA_ERR_NETWORK:
+                    errorMsg = 'Network error loading audio';
+                    break;
+                  case error.MEDIA_ERR_DECODE:
+                    errorMsg = 'Audio decode error';
+                    break;
+                  case error.MEDIA_ERR_SRC_NOT_SUPPORTED:
+                    errorMsg = 'Audio format not supported';
+                    break;
+                }
+                setAudioError(errorMsg);
+              }
+            }}
           />
         )}
 
