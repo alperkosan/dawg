@@ -378,6 +378,12 @@ export async function assetsRoutes(fastify: FastifyInstance) {
           // ✅ FIX: Forward response headers from CDN
           // ✅ FIX: Override application/octet-stream with proper audio MIME type
           let contentType = cdnResponse.headers.get('content-type') || asset.mime_type || 'audio/wav';
+          
+          // ✅ FIX: Remove charset parameter from audio MIME types (audio files don't have charset)
+          if (contentType.includes(';')) {
+            contentType = contentType.split(';')[0].trim();
+          }
+          
           if (contentType === 'application/octet-stream' || !contentType.startsWith('audio/')) {
             // Determine MIME type from filename or use default
             const filename = asset.filename || '';
@@ -393,6 +399,11 @@ export async function assetsRoutes(fastify: FastifyInstance) {
               contentType = asset.mime_type || 'audio/wav';
             }
             logger.info(`🔧 [PROXY] Overriding Content-Type from '${cdnResponse.headers.get('content-type')}' to '${contentType}'`);
+          }
+          
+          // ✅ FIX: Ensure contentType doesn't have charset (double-check)
+          if (contentType.includes(';')) {
+            contentType = contentType.split(';')[0].trim();
           }
           const contentLength = cdnResponse.headers.get('content-length');
           const contentRange = cdnResponse.headers.get('content-range');

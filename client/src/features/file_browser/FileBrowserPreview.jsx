@@ -21,7 +21,7 @@ export function FileBrowserPreview({ fileNode }) {
 
   // Full preview için state
   const [isFullPreview, setIsFullPreview] = useState(false);
-  const [useUrlPlayer, setUseUrlPlayer] = useState(false); // Toggle between URL player and buffer player
+  const [useUrlPlayer, setUseUrlPlayer] = useState(true); // ✅ FIX: Default to URL player (no decode issues)
 
   const handleAddNewInstrument = useInstrumentsStore(state => state.handleAddNewInstrument);
 
@@ -69,8 +69,13 @@ export function FileBrowserPreview({ fileNode }) {
             throw new Error(`Failed to fetch audio: ${response.status} ${response.statusText}`);
           }
 
-          // ✅ FIX: Get MIME type from response header
-          const contentType = response.headers.get('content-type') || 'audio/wav';
+          // ✅ FIX: Get MIME type from response header and clean it
+          let contentType = response.headers.get('content-type') || 'audio/wav';
+          
+          // ✅ FIX: Remove charset parameter from audio MIME types (audio files don't have charset)
+          if (contentType.includes(';')) {
+            contentType = contentType.split(';')[0].trim();
+          }
           
           // ✅ FIX: Determine MIME type from filename if header is generic
           let mimeType = contentType;
@@ -88,6 +93,16 @@ export function FileBrowserPreview({ fileNode }) {
               mimeType = 'audio/wav'; // Default
             }
           }
+          
+          // ✅ FIX: Ensure mimeType doesn't have charset
+          if (mimeType.includes(';')) {
+            mimeType = mimeType.split(';')[0].trim();
+          }
+          
+          console.log('🔧 [URL Player] MIME type cleaned:', {
+            original: response.headers.get('content-type'),
+            cleaned: mimeType
+          });
 
           // ✅ FIX: Read as arrayBuffer first to validate, then create blob
           const arrayBuffer = await response.arrayBuffer();
