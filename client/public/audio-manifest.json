@@ -1,7 +1,7 @@
 {
   "version": "1.0.0",
-  "generatedAt": "2025-11-23T00:20:04.734Z",
-  "totalFiles": 32,
+  "generatedAt": "2025-11-24T17:31:00.736Z",
+  "totalFiles": 25,
   "directories": [
     {
       "name": "drums",
@@ -61,26 +61,8 @@
     {
       "name": "instruments",
       "path": "instruments",
-      "fileCount": 4,
+      "fileCount": 1,
       "files": [
-        {
-          "name": "808.wav",
-          "url": "/audio/samples/instruments/808.wav",
-          "size": 809684,
-          "ext": "wav"
-        },
-        {
-          "name": "808_1.wav",
-          "url": "/audio/samples/instruments/808_1.wav",
-          "size": 1315036,
-          "ext": "wav"
-        },
-        {
-          "name": "808_2.wav",
-          "url": "/audio/samples/instruments/808_2.wav",
-          "size": 378840,
-          "ext": "wav"
-        },
         {
           "name": "perc.wav",
           "url": "/audio/samples/instruments/perc.wav",

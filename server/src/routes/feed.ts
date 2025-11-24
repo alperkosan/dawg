@@ -117,10 +117,8 @@ export async function feedRoutes(server: FastifyInstance) {
           break;
         case 'trending':
           // Trending: projects with high engagement in last 24 hours
-          // Rebuild query for trending with proper param indexing
-          const trendingIsLikedQuery = userId 
-            ? `EXISTS(SELECT 1 FROM project_likes pl2 WHERE pl2.project_id = p.id AND pl2.user_id = $${paramIndex - 1})`
-            : 'false';
+          // ✅ FIX: Use same isLikedQuery that was already built above (with correct param index)
+          // The isLikedQuery already uses the correct paramIndex, so we can reuse it
           
           projectsQuery = `
             SELECT 
@@ -145,7 +143,7 @@ export async function feedRoutes(server: FastifyInstance) {
               COUNT(DISTINCT pc.id) as comment_count,
               COUNT(DISTINCT pr.id) as remix_count,
               COUNT(DISTINCT pv.id) as view_count,
-              ${trendingIsLikedQuery} as is_liked,
+              ${isLikedQuery} as is_liked,
               (
                 COUNT(DISTINCT CASE WHEN pl.created_at > NOW() - INTERVAL '24 hours' THEN pl.id END) +
                 COUNT(DISTINCT CASE WHEN pc.created_at > NOW() - INTERVAL '24 hours' THEN pc.id END) * 2 +
