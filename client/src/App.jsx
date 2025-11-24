@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useRef, Suspense, useCallback, useMemo } from 'react';
 import { flushSync } from 'react-dom';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
-// ✅ FIX: Dynamic import for Analytics to prevent server-side execution
-// Analytics should only run in browser environment
 
 // Core Systems
 import { NativeAudioEngine } from './lib/core/NativeAudioEngine';
@@ -916,37 +914,11 @@ function AppRouter() {
   );
 }
 
-// ✅ FIX: Lazy load Analytics components to prevent server-side execution
-const LazyAnalytics = React.lazy(() => {
-  // Only load in browser environment
-  if (typeof window !== 'undefined') {
-    return import('@vercel/analytics/react').then(module => ({ default: module.Analytics }));
-  }
-  // Return empty component for server-side
-  return Promise.resolve({ default: () => null });
-});
-
-const LazySpeedInsights = React.lazy(() => {
-  // Only load in browser environment
-  if (typeof window !== 'undefined') {
-    return import('@vercel/speed-insights/react').then(module => ({ default: module.SpeedInsights }));
-  }
-  // Return empty component for server-side
-  return Promise.resolve({ default: () => null });
-});
-
 // Root App Component
 function App() {
   return (
     <BrowserRouter>
       <AppRouter />
-      {/* ✅ FIX: Only render Analytics in browser, wrapped in Suspense */}
-      {typeof window !== 'undefined' && (
-        <Suspense fallback={null}>
-          <LazyAnalytics />
-          <LazySpeedInsights />
-        </Suspense>
-      )}
     </BrowserRouter>
   );
 }

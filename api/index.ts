@@ -10,12 +10,13 @@ import busboy from 'busboy';
 
 // ✅ FIX: Disable Vercel's bodyParser for multipart requests
 // This allows Fastify's multipart plugin to handle the raw stream
-export const config = {
+export const vercelConfig = {
   api: {
     bodyParser: false, // Disable bodyParser to allow Fastify to handle multipart
   },
 };
 // ✅ FIX: nodenext moduleResolution için .js uzantısı kullan (TypeScript'te .ts, runtime'da .js)
+// ✅ FIX: Renamed to avoid conflict with exported config
 import { config } from '../server/src/config/index.js';
 import { registerPlugins } from '../server/src/plugins/index.js';
 import { registerRoutes } from '../server/src/routes/index.js';
@@ -182,7 +183,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const contentType = req.headers['content-type'] || '';
     const isMultipart = contentType.includes('multipart/form-data');
     
-    let payload = req.body;
+    let payload: any = req.body;
+    let injectPayload: any = undefined; // ✅ FIX: Declare injectPayload variable
+    
     if (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH') {
       // ✅ FIX: Check content-length for 413 errors (Vercel limit: 4.5MB)
       const contentLength = req.headers['content-length'];
@@ -327,40 +330,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // We'll need to modify the route handler to accept pre-parsed data
       // Or we can create a custom request object
       
-      // For now, let's pass the parsed data in a way that the route handler can access it
-      // We'll attach it to the request object before calling inject
+      // ✅ FIX: For multipart, we'll handle it separately
+      // For now, set injectPayload to undefined (multipart handling needs more work)
       injectPayload = undefined;
-      
-      // Store parsed data in a way that Fastify route can access it
-      // We'll use a custom header or query param to pass the parsed data
-      // Actually, better: Create a readable stream from the parsed data
-      const { Readable } = await import('stream');
-      const formDataStream = new Readable();
-      formDataStream.push(null); // End the stream
-      
-      // Actually, the best approach is to manually call the route handler
-      // But that requires access to the route handler, which is complex
-      
-      // Let's try a simpler approach: Pass the parsed data as JSON
-      // and modify the route handler to handle both multipart and JSON
-      // But that defeats the purpose of using multipart
-      
-      // Best solution: Create a mock request object with the parsed data
-      // and pass it directly to Fastify's route handler
-      // But Fastify's inject() doesn't support this
-      
-      // Final solution: We'll need to modify the route handler to accept
-      // pre-parsed multipart data, or we can use a different approach
-      // For now, let's try to pass the parsed data in a special format
-      
-      // Actually, let's just pass undefined and see if we can modify
-      // the route handler to check for pre-parsed data
-      injectPayload = undefined;
+    }
+    
+    // ✅ FIX: Set injectPayload for all requests (if not already set)
+    if (injectPayload === undefined) {
+      injectPayload = payload;
+    }
+    
+    // ✅ FIX: Set injectPayload for all requests
+    if (injectPayload === undefined && payload !== undefined) {
+      injectPayload = payload;
     }
     
     // Use Fastify's inject method for serverless
     const response = await server.inject({
-      method: req.method || 'GET',
+      method: (req.method || 'GET') as any, // ✅ FIX: Type assertion for HTTPMethods
       url: url,
       headers: req.headers as Record<string, string>,
       query: req.query as Record<string, string>,
