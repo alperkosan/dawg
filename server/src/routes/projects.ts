@@ -390,27 +390,25 @@ export async function projectRoutes(server: FastifyInstance) {
       let duration: number;
 
       // ✅ NEW: Support multipart/form-data (streaming upload, no base64 overhead)
-      if (contentType.includes('multipart/form-data')) {
+      // ✅ FIX: Also check for application/json with pre-parsed multipart data
+      const isMultipartRequest = contentType.includes('multipart/form-data') || 
+                                 (contentType.includes('application/json') && 
+                                  request.body && 
+                                  typeof request.body === 'object' && 
+                                  'fields' in request.body && 
+                                  'files' in request.body);
+      
+      if (isMultipartRequest) {
         logger.info(`📦 [UPLOAD_PREVIEW] Starting multipart parsing...`);
         logger.info(`📦 [UPLOAD_PREVIEW] Content-Type: ${contentType}`);
         logger.info(`📦 [UPLOAD_PREVIEW] Request body type: ${typeof request.body}`);
         logger.info(`📦 [UPLOAD_PREVIEW] Request body keys: ${request.body ? Object.keys(request.body as any) : 'null'}`);
-        // ✅ DEBUG: Check if payload is in a different location
-        logger.info(`📦 [UPLOAD_PREVIEW] Request has rawBody: ${(request as any).rawBody ? 'yes' : 'no'}`);
-        logger.info(`📦 [UPLOAD_PREVIEW] Request has payload: ${(request as any).payload ? 'yes' : 'no'}`);
         logger.info(`📦 [UPLOAD_PREVIEW] Request body stringified length: ${request.body ? JSON.stringify(request.body).length : 0}`);
 
-        // ✅ FIX: Try to get body from request.body or request.payload
-        let body = request.body as any;
-        if (!body || (typeof body === 'object' && Object.keys(body).length === 0)) {
-          // Try request.payload as fallback
-          body = (request as any).payload;
-          if (body) {
-            logger.info(`📦 [UPLOAD_PREVIEW] Using request.payload instead of request.body`);
-          }
-        }
+        const body = request.body as any;
         
         // ✅ FIX: Check if multipart data was pre-parsed by Vercel handler (formidable)
+        // This data comes as application/json with fields and files (base64 encoded)
         if (body && typeof body === 'object' && 'fields' in body && 'files' in body) {
           logger.info(`✅ [UPLOAD_PREVIEW] Using pre-parsed multipart data from Vercel handler`);
           const parsedData = body as { 

@@ -398,11 +398,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       injectPayload = payload;
     }
     
+    // ✅ FIX: For multipart requests, change Content-Type to application/json
+    // This prevents Fastify's multipart plugin from trying to parse it as a stream
+    // We've already parsed it with formidable, so we pass it as JSON
+    const injectHeaders = { ...req.headers } as Record<string, string>;
+    if (isMultipart && injectPayload) {
+      // Change Content-Type to application/json so Fastify doesn't try to parse as multipart
+      injectHeaders['content-type'] = 'application/json';
+      console.log(`📦 [MULTIPART] Changed Content-Type to application/json for inject()`);
+    }
+    
     // Use Fastify's inject method for serverless
     const response = await server.inject({
       method: (req.method || 'GET') as any, // ✅ FIX: Type assertion for HTTPMethods
       url: url,
-      headers: req.headers as Record<string, string>,
+      headers: injectHeaders,
       query: req.query as Record<string, string>,
       payload: injectPayload,
     });
