@@ -69,12 +69,15 @@ export async function registerErrorHandler(server: FastifyInstance) {
     }
     
     // ✅ FIX: Handle 413 Payload Too Large (Vercel limit: 4.5MB for request body)
-    if (error.statusCode === 413 || error.code === 'FST_ERR_REQ_ENTITY_TOO_LARGE') {
+    // Note: With base64 encoding, a 3.5MB file becomes ~4.7MB, so we allow up to 10MB in Fastify
+    // but Vercel's limit is still 4.5MB
+    if (error.statusCode === 413 || error.code === 'FST_ERR_REQ_ENTITY_TOO_LARGE' || error.code === 'FST_ERR_CTP_BODY_TOO_LARGE') {
       return reply.code(413).send({
         error: {
-          message: 'File too large. Maximum file size is 4.5MB for direct upload. For larger files, please use a different method.',
+          message: 'File too large. Maximum file size is ~3.5MB for direct upload (Vercel limit: 4.5MB with base64 encoding). For larger files, please use chunked upload or a different method.',
           code: 'FILE_TOO_LARGE',
-          maxSize: '4.5MB',
+          maxSize: '~3.5MB (raw file)',
+          vercelLimit: '4.5MB (with encoding)',
         },
       });
     }

@@ -310,14 +310,27 @@ export default function ProjectsPage() {
         throw new Error(`Audio file too large (${fileSizeMB.toFixed(2)}MB). Maximum size is 4MB for upload. Please reduce the project duration or use a shorter arrangement.`);
       }
       
-      // Upload via API using multipart/form-data
+      // ✅ Use unified upload service
       const durationSeconds = (durationBeats / 4) * (60 / bpm);
-      console.log(`📤 [PUBLISH] Starting multipart upload: ${fileSizeMB.toFixed(2)}MB, duration: ${durationSeconds.toFixed(2)}s`);
+      console.log(`📤 [PUBLISH] Starting upload: ${fileSizeMB.toFixed(2)}MB, duration: ${durationSeconds.toFixed(2)}s`);
       const uploadStartTime = Date.now();
-      await apiClient.renderProjectPreview(project.id, {
-        audioFile: audioBlob, // ✅ Pass Blob directly instead of base64
+      
+      const { uploadFile: uploadFileService, UploadType } = await import('@/lib/services/uploadService.js');
+      
+      await uploadFileService(audioBlob, {
+        type: UploadType.PROJECT_PREVIEW,
+        projectId: project.id,
         duration: durationSeconds,
+        onProgress: (progress) => {
+          // Update publish progress (90-95% range for upload)
+          setPublishProgress({ 
+            progress: 90 + (progress * 0.05), 
+            status: `Uploading audio preview... ${Math.round(progress)}%`, 
+            error: null 
+          });
+        },
       });
+      
       const uploadTime = Date.now() - uploadStartTime;
       console.log(`✅ [PUBLISH] Upload completed in ${uploadTime}ms`);
       

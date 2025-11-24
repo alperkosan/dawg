@@ -131,68 +131,19 @@ export default function AdminPanel() {
     setUploadProgress(0);
     
     try {
-      const formData = new FormData();
-      // ✅ FIX: Add fields FIRST, then file LAST
-      // This ensures fields are read before file stream blocks the loop
-      formData.append('name', metadata.name);
-      formData.append('filename', file.name);
-      if (metadata.description) formData.append('description', metadata.description);
-      if (metadata.categoryId) formData.append('categoryId', metadata.categoryId);
-      if (metadata.packId) formData.append('packId', metadata.packId);
-      if (metadata.bpm) formData.append('bpm', metadata.bpm.toString());
-      if (metadata.keySignature) formData.append('keySignature', metadata.keySignature);
-      if (metadata.tags) formData.append('tags', JSON.stringify(metadata.tags));
-      if (metadata.isPremium) formData.append('isPremium', 'true');
-      if (metadata.isFeatured) formData.append('isFeatured', 'true');
-      if (metadata.isActive !== undefined) formData.append('isActive', metadata.isActive ? 'true' : 'false');
-      // Add file LAST so fields are read first
-      formData.append('file', file);
-
-      const token = useAuthStore.getState().accessToken;
+      // ✅ Use unified upload service
+      const { uploadFile: uploadFileService, UploadType } = await import('@/lib/services/uploadService.js');
       
-      // ✅ NEW: Use XMLHttpRequest for progress tracking
-      const xhr = new XMLHttpRequest();
-      
-      const uploadPromise = new Promise((resolve, reject) => {
-        xhr.upload.addEventListener('progress', (e) => {
-          if (e.lengthComputable) {
-            const percentComplete = (e.loaded / e.total) * 100;
-            setUploadProgress(percentComplete);
-          }
-        });
-
-        xhr.addEventListener('load', () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            try {
-              const asset = JSON.parse(xhr.responseText);
-              resolve(asset);
-            } catch (error) {
-              reject(new Error('Failed to parse response'));
-            }
-          } else {
-            try {
-              const error = JSON.parse(xhr.responseText);
-              reject(new Error(error.error?.message || 'Upload failed'));
-            } catch {
-              reject(new Error(`Upload failed: ${xhr.statusText}`));
-            }
-          }
-        });
-
-        xhr.addEventListener('error', () => {
-          reject(new Error('Network error during upload'));
-        });
-
-        xhr.addEventListener('abort', () => {
-          reject(new Error('Upload cancelled'));
-        });
-
-        xhr.open('POST', `${apiClient.baseURL}/admin/system/assets`);
-        xhr.setRequestHeader('Authorization', `Bearer ${token}`);
-        xhr.send(formData);
+      const asset = await uploadFileService(file, {
+        type: UploadType.SYSTEM_ASSET,
+        metadata: {
+          ...metadata,
+          filename: file.name,
+        },
+        onProgress: (progress) => {
+          setUploadProgress(progress);
+        },
       });
-
-      const asset = await uploadPromise;
       
       // Show success toast
       apiClient.showToast(`✅ Asset "${asset.name}" uploaded successfully`, 'success', 3000);

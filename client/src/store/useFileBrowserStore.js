@@ -535,7 +535,7 @@ export const useFileBrowserStore = create((set, get) => ({
     }
   },
 
-  // ✅ BACKEND: Upload file to server
+  // ✅ BACKEND: Upload file to server (using unified upload service)
   uploadFile: async (file, folderPath = '/', parentFolderId = null, onProgress = null) => {
     try {
       // Check if user is authenticated
@@ -546,66 +546,15 @@ export const useFileBrowserStore = create((set, get) => ({
         throw new Error('Please log in to upload files');
       }
 
-      // Request upload
-      // ✅ FIX: Ensure mimeType is set (fallback to 'audio/wav' if not provided)
-      const mimeType = file.type || 'audio/wav';
-      if (!mimeType.startsWith('audio/')) {
-        console.warn(`⚠️ File ${file.name} has non-audio mime type: ${mimeType}, using 'audio/wav'`);
-      }
+      // ✅ Use unified upload service
+      const { uploadFile: uploadFileService, UploadType } = await import('@/lib/services/uploadService.js');
       
-      const uploadRequest = await apiClient.requestUpload({
-        filename: file.name,
-        size: file.size,
-        mimeType: mimeType.startsWith('audio/') ? mimeType : 'audio/wav',
+      const asset = await uploadFileService(file, {
+        type: UploadType.USER_ASSET,
         folderPath,
-        parentFolderId: parentFolderId || null, // ✅ FIX: Explicitly set to null if not provided
+        parentFolderId,
+        onProgress,
       });
-
-      // ✅ FIX: Upload file to backend
-      const formData = new FormData();
-      formData.append('file', file);
-      
-      const uploadResponse = await fetch(`${apiClient.baseURL}/assets/upload/${uploadRequest.assetId}`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiClient.getToken()}`,
-        },
-        body: formData,
-      });
-
-      if (!uploadResponse.ok) {
-        // ✅ FIX: Better error handling for upload failures
-        let errorMessage = 'Upload failed';
-        
-        if (uploadResponse.status === 413) {
-          errorMessage = 'File too large. Maximum file size is 4.5MB for direct upload.';
-        } else {
-          try {
-            const errorData = await uploadResponse.json();
-            errorMessage = errorData.error?.message || errorData.message || errorMessage;
-            
-            // Include validation details if available
-            if (errorData.error?.details) {
-              const details = Array.isArray(errorData.error.details)
-                ? errorData.error.details.map(d => d.message || `${d.path}: Invalid`).join(', ')
-                : errorData.error.details.message || '';
-              if (details) {
-                errorMessage = `${errorMessage} (${details})`;
-              }
-            }
-          } catch (e) {
-            const errorText = await uploadResponse.text().catch(() => '');
-            errorMessage = errorText || `Upload failed: ${uploadResponse.statusText}`;
-          }
-        }
-        
-        // Show error toast
-        apiClient.showToast(errorMessage, 'error', 6000);
-        throw new Error(errorMessage);
-      }
-
-      // ✅ FIX: Upload endpoint already calls completeUpload, so we just get the result
-      const asset = await uploadResponse.json();
 
       // Reload ALL user assets to rebuild tree
       await get().loadUserAssets();

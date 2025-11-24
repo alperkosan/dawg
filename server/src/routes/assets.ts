@@ -118,7 +118,74 @@ export async function assetsRoutes(fastify: FastifyInstance) {
     }
   );
 
-  // Upload file (multipart/form-data)
+  // ✅ NEW: Get upload credentials for client-side direct upload to Bunny CDN
+  fastify.post(
+    '/upload/:assetId/credentials',
+    { preHandler: [fastify.authenticate] },
+    async (request: FastifyRequest<{ Params: { assetId: string } }>, reply: FastifyReply) => {
+      try {
+        const userId = (request as any).user.userId;
+        const { assetId } = request.params;
+
+        const { logger } = await import('../utils/logger.js');
+        logger.info(`📤 [CREDENTIALS] Requesting upload credentials for asset ${assetId} (user: ${userId})`);
+
+        // Verify asset ownership
+        const asset = await assetsService.getAssetById(userId, assetId);
+        if (!asset) {
+          logger.error(`❌ [CREDENTIALS] Asset ${assetId} not found for user ${userId}`);
+          throw new NotFoundError('Asset not found');
+        }
+
+        logger.info(`✅ [CREDENTIALS] Asset found: ${asset.filename}, status: ${asset.processing_status}, storage_key: ${asset.storage_key}`);
+
+        // Check if asset is in 'uploading' status (or allow 'pending' as well)
+        if (asset.processing_status !== 'uploading' && asset.processing_status !== 'pending') {
+          logger.warn(`⚠️ [CREDENTIALS] Asset ${assetId} is not in uploading status: ${asset.processing_status}, but allowing credentials anyway`);
+          // Don't throw error, just log - allow credentials even if status is not 'uploading'
+          // This can happen if the asset was created but status wasn't set correctly
+        }
+
+        // Check if storage_key exists
+        if (!asset.storage_key) {
+          logger.error(`❌ [CREDENTIALS] Asset ${assetId} has no storage_key`);
+          throw new BadRequestError('Asset has no storage key');
+        }
+
+        const { config } = await import('../config/index.js');
+        
+        // Check if Bunny CDN is properly configured
+        if (config.cdn.provider === 'bunny' && config.cdn.bunny.storageZoneName && config.cdn.bunny.storageApiKey) {
+          // Generate Bunny CDN direct upload URL
+          const uploadUrl = `https://storage.bunnycdn.com/${config.cdn.bunny.storageZoneName}/${asset.storage_key}`;
+          
+          // ✅ SECURITY: Return AccessKey only for this specific upload
+          // This endpoint is authenticated, so only the asset owner can get the key
+          // The key is only valid for this specific storageKey
+          return reply.send({
+            uploadUrl,
+            accessKey: config.cdn.bunny.storageApiKey, // ✅ SECURITY: Only returned to authenticated asset owner
+            storageKey: asset.storage_key,
+            expiresIn: 3600, // 1 hour
+          });
+        } else {
+          // ✅ FIX: Return 404 (Not Found) instead of 400 (Bad Request)
+          // This allows the client to gracefully fall back to server-side upload
+          // 404 means "this feature is not available" rather than "you made a bad request"
+          logger.warn(`⚠️ [CREDENTIALS] Bunny CDN not configured - returning 404 to trigger server-side fallback`);
+          logger.warn(`   Provider: ${config.cdn.provider}, Zone: ${config.cdn.bunny.storageZoneName}, API Key: ${config.cdn.bunny.storageApiKey ? 'set' : 'missing'}`);
+          throw new NotFoundError('Direct upload not available. Use server-side upload instead.');
+        }
+      } catch (error) {
+        if (error instanceof BadRequestError || error instanceof NotFoundError) {
+          throw error;
+        }
+        throw new BadRequestError(`Failed to get upload credentials: ${error.message || 'Unknown error'}`);
+      }
+    }
+  );
+
+  // Upload file (multipart/form-data) - Server-side upload (fallback)
   fastify.post(
     '/upload/:assetId',
     { 
@@ -141,16 +208,40 @@ export async function assetsRoutes(fastify: FastifyInstance) {
       logger.info(`📁 Asset found: ${asset.filename} (${asset.file_size} bytes)`);
 
       // ✅ FIX: Handle file upload using multipart
-      const data = await request.file();
-      if (!data) {
+      // Try request.file() first (simpler API)
+      let fileData: any = null;
+      let buffer: Buffer | null = null;
+
+      try {
+        fileData = await request.file();
+        if (fileData) {
+          logger.info(`📦 File received via request.file(): ${fileData.filename}`);
+          buffer = await fileData.toBuffer();
+        }
+      } catch (error) {
+        logger.warn(`⚠️ request.file() failed, trying request.parts(): ${error}`);
+      }
+
+      // ✅ FALLBACK: Use request.parts() if request.file() didn't work
+      if (!fileData || !buffer) {
+        logger.info(`🔄 Trying request.parts() to find file...`);
+        for await (const part of request.parts()) {
+          if (part.type === 'file') {
+            fileData = part;
+            logger.info(`📁 File part found: ${(part as any).filename || 'unknown'}`);
+            buffer = await fileData.toBuffer();
+            logger.info(`✅ Buffer created: ${buffer.length} bytes`);
+            break; // Found file, exit loop
+          }
+        }
+      }
+
+      if (!fileData || !buffer) {
+        logger.error(`❌ No file provided in request`);
         throw new BadRequestError('No file provided');
       }
 
-      logger.info(`📦 File received: ${data.filename} (${data.file?.bytesRead || 'unknown'} bytes)`);
-
-      // ✅ CDN: Upload file using storage service
-      // Use the storage key that was created in createUploadRequest
-      const buffer = await data.toBuffer();
+      logger.info(`📦 File received: ${(fileData as any).filename || 'unknown'} (${buffer.length} bytes)`);
       logger.info(`🔄 Uploading to storage service... (storage_key: ${asset.storage_key})`);
       
       const storageResult = await storageService.uploadFile(

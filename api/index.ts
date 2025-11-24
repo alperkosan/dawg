@@ -54,6 +54,9 @@ async function createServer() {
     genReqId: () => crypto.randomUUID(),
     // ✅ Vercel: Disable request logging (console.log kullanıyoruz)
     disableRequestLogging: true,
+    // ✅ FIX: Increase body size limit to 10MB (Vercel's limit is 4.5MB, but we allow up to 10MB for JSON payloads)
+    // Note: Vercel's actual limit is 4.5MB, but we set this higher to handle base64-encoded files
+    bodyLimit: 10 * 1024 * 1024, // 10MB
   });
 
   try {
@@ -228,15 +231,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let injectPayload: any = undefined; // ✅ FIX: Declare injectPayload variable
     
     if (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH') {
-      // ✅ FIX: Check content-length for 413 errors (Vercel limit: 4.5MB)
+      // ✅ FIX: Check content-length for 413 errors (Vercel limit: 4.5MB for raw request)
+      // Note: With base64 encoding, a 3.5MB file becomes ~4.7MB, so we allow up to 5MB
+      // Vercel's actual limit is 4.5MB, but we'll let it fail at Vercel level if needed
       const contentLength = req.headers['content-length'];
-      if (contentLength && parseInt(contentLength) > 4.5 * 1024 * 1024) {
+      if (contentLength && parseInt(contentLength) > 5 * 1024 * 1024) {
         console.error('❌ Request body too large:', contentLength, 'bytes');
         return res.status(413).json({
           error: {
-            message: 'File too large. Maximum file size is 4.5MB for direct upload. For larger files, please use a different method.',
+            message: 'File too large. Maximum file size is ~3.5MB for direct upload (4.5MB limit with base64 encoding). For larger files, please use a different method.',
             code: 'FILE_TOO_LARGE',
-            maxSize: '4.5MB',
+            maxSize: '~3.5MB (raw)',
             receivedSize: `${(parseInt(contentLength) / 1024 / 1024).toFixed(2)}MB`,
           },
         });

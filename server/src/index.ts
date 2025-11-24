@@ -16,6 +16,8 @@ const server = Fastify({
   logger: logger,
   requestIdLogLabel: 'reqId',
   genReqId: () => crypto.randomUUID(),
+  // ✅ FIX: Increase body size limit to 10MB for file uploads
+  bodyLimit: 10 * 1024 * 1024, // 10MB
 });
 
 async function start() {
