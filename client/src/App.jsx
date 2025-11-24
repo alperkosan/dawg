@@ -249,6 +249,38 @@ function DAWApp() {
   const initializeAudioSystem = useCallback(async () => {
     if (engineStatus === 'ready' || engineStatus === 'initializing') return;
 
+    // ✅ FIX: Check if engine already exists in AudioContextService (from previous mount)
+    const existingEngine = AudioContextService.getAudioEngine();
+    if (existingEngine && existingEngine.audioContext && existingEngine.audioContext.state !== 'closed') {
+      console.log('♻️ Reusing existing audio engine from previous mount');
+      audioEngineRef.current = existingEngine;
+      window.audioEngine = existingEngine;
+      
+      // Ensure AudioContext is resumed
+      if (existingEngine.audioContext.state === 'suspended') {
+        try {
+          await existingEngine.resumeAudioContext();
+          console.log('✅ AudioContext resumed for existing engine');
+        } catch (error) {
+          console.warn('⚠️ Failed to resume AudioContext:', error);
+        }
+      }
+      
+      // ✅ CRITICAL: Re-sync instruments to mixer inserts after reusing engine
+      // This ensures instrument connections are restored after panel navigation
+      try {
+        await AudioContextService._syncInstrumentsToMixerInserts();
+        console.log('✅ Re-synced instruments to mixer inserts');
+      } catch (syncError) {
+        console.warn('⚠️ Failed to re-sync instruments:', syncError);
+      }
+      
+      // Update engine status without reinitializing
+      setEngineStatus('ready');
+      console.log('✅ Existing audio engine ready');
+      return;
+    }
+
     setEngineStatus('initializing');
     console.log('🚀 Ses sistemi başlatılıyor...');
 

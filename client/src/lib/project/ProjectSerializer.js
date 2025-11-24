@@ -402,6 +402,10 @@ export class ProjectSerializer {
       this.deserializeInstruments(projectData.instruments);
     }
 
+    // ✅ CRITICAL FIX: Sync instruments to mixer inserts AFTER deserializing instruments
+    // This ensures instruments are properly routed to their mixer tracks
+    await AudioContextService._syncInstrumentsToMixerInserts();
+
     if (projectData.patterns) {
       this.deserializePatterns(projectData.patterns);
     }
