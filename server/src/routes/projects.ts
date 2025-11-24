@@ -391,85 +391,109 @@ export async function projectRoutes(server: FastifyInstance) {
 
       // ✅ NEW: Support multipart/form-data (streaming upload, no base64 overhead)
       if (contentType.includes('multipart/form-data')) {
-        let fileData: any = null;
-        let durationValue: string | null = null;
-
         logger.info(`📦 [UPLOAD_PREVIEW] Starting multipart parsing...`);
         logger.info(`📦 [UPLOAD_PREVIEW] Content-Type: ${contentType}`);
         logger.info(`📦 [UPLOAD_PREVIEW] Request body type: ${typeof request.body}`);
         logger.info(`📦 [UPLOAD_PREVIEW] Request body keys: ${request.body ? Object.keys(request.body as any) : 'null'}`);
 
-        // ✅ FIX: Try request.body first (if attachFieldsToBody works), then fallback to request.parts()
         const body = request.body as any;
-        if (body && typeof body === 'object' && 'duration' in body) {
-          durationValue = body.duration;
-          logger.info(`📝 [UPLOAD_PREVIEW] Duration from request.body: ${durationValue}`);
-        }
-
-        // ✅ FIX: Use request.parts() to parse multipart data (more reliable on Vercel)
-        // Fields come first, then file
-        try {
-          logger.info(`🔄 [UPLOAD_PREVIEW] Calling request.parts()...`);
-          let partCount = 0;
-          for await (const part of request.parts()) {
-            partCount++;
-            logger.info(`📦 [UPLOAD_PREVIEW] Part ${partCount}: type=${part.type}, fieldname=${(part as any).fieldname || 'N/A'}`);
-            
-            if (part.type === 'field') {
-              const field = part as any;
-              logger.info(`📝 [UPLOAD_PREVIEW] Field: ${field.fieldname} = ${field.value?.substring(0, 50) || 'empty'}...`);
-              if (field.fieldname === 'duration') {
-                durationValue = field.value;
-                logger.info(`✅ [UPLOAD_PREVIEW] Duration from parts(): ${durationValue}`);
-              }
-            } else if (part.type === 'file') {
-              // Accept any file field name ('file', 'audio', etc.)
-              fileData = part;
-              logger.info(`📁 [UPLOAD_PREVIEW] File part found: ${(fileData as any).filename || 'unknown'}`);
-              // Read file buffer from stream
-              audioBuffer = await fileData.toBuffer();
-              logger.info(`✅ [UPLOAD_PREVIEW] File buffer created: ${(audioBuffer.length / 1024 / 1024).toFixed(2)}MB`);
-            }
+        
+        // ✅ FIX: Check if multipart data was pre-parsed by Vercel handler (busboy)
+        if (body && typeof body === 'object' && 'fields' in body && 'files' in body) {
+          logger.info(`✅ [UPLOAD_PREVIEW] Using pre-parsed multipart data from Vercel handler`);
+          const parsedData = body as { fields: Record<string, string>; files: Record<string, { buffer: Buffer; filename: string; mimetype: string }> };
+          
+          // Get duration from fields
+          const durationValue = parsedData.fields['duration'];
+          if (!durationValue) {
+            throw new BadRequestError('duration field is required');
           }
-          logger.info(`✅ [UPLOAD_PREVIEW] Parts loop completed. Total parts: ${partCount}`);
-        } catch (error: any) {
-          logger.error(`❌ [UPLOAD_PREVIEW] Error parsing multipart: ${error.message}`);
-          logger.error(`❌ [UPLOAD_PREVIEW] Error stack: ${error.stack}`);
-          // Fallback: try request.file() if parts() fails
-          if (!fileData) {
-            logger.info(`🔄 [UPLOAD_PREVIEW] Trying fallback: request.file()...`);
-            try {
-              const fallbackFile = await request.file();
-              if (fallbackFile) {
-                fileData = fallbackFile;
+          
+          // Get file from files (accept any file field name)
+          const fileKeys = Object.keys(parsedData.files);
+          if (fileKeys.length === 0) {
+            throw new BadRequestError('No file provided in multipart form');
+          }
+          
+          const fileKey = fileKeys[0]; // Use first file
+          const fileInfo = parsedData.files[fileKey];
+          audioBuffer = fileInfo.buffer;
+          duration = parseFloat(durationValue);
+          
+          logger.info(`📁 [UPLOAD_PREVIEW] File received: ${fileInfo.filename}, size: ${(audioBuffer.length / 1024 / 1024).toFixed(2)}MB`);
+          logger.info(`📤 [UPLOAD_PREVIEW] Multipart upload completed: ${(audioBuffer.length / 1024 / 1024).toFixed(2)}MB, duration: ${duration}s`);
+        } else {
+          // ✅ FALLBACK: Try request.parts() if pre-parsed data not available
+          let fileData: any = null;
+          let durationValue: string | null = null;
+
+          // Try request.body first (if attachFieldsToBody works)
+          if (body && typeof body === 'object' && 'duration' in body) {
+            durationValue = body.duration;
+            logger.info(`📝 [UPLOAD_PREVIEW] Duration from request.body: ${durationValue}`);
+          }
+
+          // Use request.parts() to parse multipart data
+          try {
+            logger.info(`🔄 [UPLOAD_PREVIEW] Calling request.parts()...`);
+            let partCount = 0;
+            for await (const part of request.parts()) {
+              partCount++;
+              logger.info(`📦 [UPLOAD_PREVIEW] Part ${partCount}: type=${part.type}, fieldname=${(part as any).fieldname || 'N/A'}`);
+              
+              if (part.type === 'field') {
+                const field = part as any;
+                logger.info(`📝 [UPLOAD_PREVIEW] Field: ${field.fieldname} = ${field.value?.substring(0, 50) || 'empty'}...`);
+                if (field.fieldname === 'duration') {
+                  durationValue = field.value;
+                  logger.info(`✅ [UPLOAD_PREVIEW] Duration from parts(): ${durationValue}`);
+                }
+              } else if (part.type === 'file') {
+                fileData = part;
+                logger.info(`📁 [UPLOAD_PREVIEW] File part found: ${(fileData as any).filename || 'unknown'}`);
                 audioBuffer = await fileData.toBuffer();
-                logger.info(`✅ [UPLOAD_PREVIEW] File received via fallback: ${fileData.filename || 'unknown'}, size: ${(audioBuffer.length / 1024 / 1024).toFixed(2)}MB`);
-              } else {
-                logger.error(`❌ [UPLOAD_PREVIEW] request.file() also returned null`);
+                logger.info(`✅ [UPLOAD_PREVIEW] File buffer created: ${(audioBuffer.length / 1024 / 1024).toFixed(2)}MB`);
               }
-            } catch (fallbackError: any) {
-              logger.error(`❌ [UPLOAD_PREVIEW] Fallback request.file() also failed: ${fallbackError.message}`);
+            }
+            logger.info(`✅ [UPLOAD_PREVIEW] Parts loop completed. Total parts: ${partCount}`);
+          } catch (error: any) {
+            logger.error(`❌ [UPLOAD_PREVIEW] Error parsing multipart: ${error.message}`);
+            logger.error(`❌ [UPLOAD_PREVIEW] Error stack: ${error.stack}`);
+            // Fallback: try request.file() if parts() fails
+            if (!fileData) {
+              logger.info(`🔄 [UPLOAD_PREVIEW] Trying fallback: request.file()...`);
+              try {
+                const fallbackFile = await request.file();
+                if (fallbackFile) {
+                  fileData = fallbackFile;
+                  audioBuffer = await fileData.toBuffer();
+                  logger.info(`✅ [UPLOAD_PREVIEW] File received via fallback: ${fileData.filename || 'unknown'}, size: ${(audioBuffer.length / 1024 / 1024).toFixed(2)}MB`);
+                } else {
+                  logger.error(`❌ [UPLOAD_PREVIEW] request.file() also returned null`);
+                }
+              } catch (fallbackError: any) {
+                logger.error(`❌ [UPLOAD_PREVIEW] Fallback request.file() also failed: ${fallbackError.message}`);
+              }
             }
           }
+
+          if (!fileData || !audioBuffer) {
+            logger.error('❌ [UPLOAD_PREVIEW] No file received in multipart form');
+            logger.error('❌ [UPLOAD_PREVIEW] Content-Type:', contentType);
+            logger.error('❌ [UPLOAD_PREVIEW] Request body keys:', Object.keys(body || {}));
+            logger.error('❌ [UPLOAD_PREVIEW] Request headers:', JSON.stringify(request.headers, null, 2));
+            throw new BadRequestError('No file provided in multipart form');
+          }
+
+          if (!durationValue) {
+            logger.error('❌ [UPLOAD_PREVIEW] Duration not found in request.body or parts()');
+            logger.error('❌ [UPLOAD_PREVIEW] Request body:', JSON.stringify(body, null, 2));
+            throw new BadRequestError('duration field is required');
+          }
+
+          duration = parseFloat(durationValue);
+          logger.info(`📤 [UPLOAD_PREVIEW] Multipart upload completed: ${(audioBuffer.length / 1024 / 1024).toFixed(2)}MB, duration: ${duration}s`);
         }
-
-        if (!fileData || !audioBuffer) {
-          logger.error('❌ [UPLOAD_PREVIEW] No file received in multipart form');
-          logger.error('❌ [UPLOAD_PREVIEW] Content-Type:', contentType);
-          logger.error('❌ [UPLOAD_PREVIEW] Request body keys:', Object.keys(body || {}));
-          logger.error('❌ [UPLOAD_PREVIEW] Request headers:', JSON.stringify(request.headers, null, 2));
-          throw new BadRequestError('No file provided in multipart form');
-        }
-
-        if (!durationValue) {
-          logger.error('❌ [UPLOAD_PREVIEW] Duration not found in request.body or parts()');
-          logger.error('❌ [UPLOAD_PREVIEW] Request body:', JSON.stringify(body, null, 2));
-          throw new BadRequestError('duration field is required');
-        }
-
-        duration = parseFloat(durationValue);
-
-        logger.info(`📤 [UPLOAD_PREVIEW] Multipart upload completed: ${(audioBuffer.length / 1024 / 1024).toFixed(2)}MB, duration: ${duration}s`);
       } else {
         // ✅ LEGACY: Support base64 JSON (for backward compatibility)
         const body = request.body as { audioBuffer: string; duration: number };
