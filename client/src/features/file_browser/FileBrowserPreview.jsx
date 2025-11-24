@@ -63,9 +63,10 @@ export function FileBrowserPreview({ fileNode }) {
             headers['Authorization'] = `Bearer ${token}`;
           }
 
+          console.log('📥 [URL Player] Fetching audio from:', proxyUrl);
           const response = await fetch(proxyUrl, { headers });
           if (!response.ok) {
-            throw new Error(`Failed to fetch audio: ${response.status}`);
+            throw new Error(`Failed to fetch audio: ${response.status} ${response.statusText}`);
           }
 
           // ✅ FIX: Get MIME type from response header
@@ -88,13 +89,36 @@ export function FileBrowserPreview({ fileNode }) {
             }
           }
 
-          const blob = await response.blob();
+          // ✅ FIX: Read as arrayBuffer first to validate, then create blob
+          const arrayBuffer = await response.arrayBuffer();
           
-          // ✅ FIX: Create blob with correct MIME type if it's wrong
-          let finalBlob = blob;
-          if (blob.type !== mimeType && mimeType.startsWith('audio/')) {
-            // Recreate blob with correct MIME type
-            finalBlob = new Blob([blob], { type: mimeType });
+          if (!arrayBuffer || arrayBuffer.byteLength === 0) {
+            throw new Error('Received empty response from server');
+          }
+          
+          console.log('📦 [URL Player] ArrayBuffer received:', {
+            size: arrayBuffer.byteLength,
+            contentType,
+            mimeType
+          });
+          
+          // ✅ FIX: Validate WAV header if it's a WAV file
+          if (mimeType === 'audio/wav' && arrayBuffer.byteLength >= 4) {
+            const view = new Uint8Array(arrayBuffer);
+            const isWav = view[0] === 0x52 && view[1] === 0x49 && view[2] === 0x46 && view[3] === 0x46; // "RIFF"
+            if (!isWav) {
+              console.warn('⚠️ [URL Player] File does not start with WAV header (RIFF)');
+            } else {
+              console.log('✅ [URL Player] Valid WAV header detected');
+            }
+          }
+          
+          // ✅ FIX: Create blob with correct MIME type
+          const finalBlob = new Blob([arrayBuffer], { type: mimeType });
+          
+          // ✅ FIX: Validate final blob
+          if (!finalBlob || finalBlob.size === 0) {
+            throw new Error('Failed to create valid blob');
           }
           
           const blobUrl = URL.createObjectURL(finalBlob);
@@ -111,7 +135,9 @@ export function FileBrowserPreview({ fileNode }) {
           console.log('✅ [URL Player] Audio URL loaded:', {
             blobUrl,
             mimeType: finalBlob.type,
-            size: finalBlob.size
+            size: finalBlob.size,
+            blobUrlValid: blobUrl.startsWith('blob:'),
+            blobType: finalBlob.type
           });
         } catch (err) {
           console.error('Failed to load audio URL:', err);
@@ -141,21 +167,104 @@ export function FileBrowserPreview({ fileNode }) {
     }
   }, [fileNode, assetId, useUrlPlayer]);
 
+  // ✅ NEW: Update audio src when audioUrl changes
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio || !useUrlPlayer) return;
+
+    if (audioUrl && audioUrl.startsWith('blob:')) {
+      console.log('🔧 [URL Player] Setting audio src:', audioUrl);
+      // Clear any existing error
+      setAudioError(null);
+      // Set src and load
+      audio.src = audioUrl;
+      audio.load(); // Reload the audio element with new src
+      
+      // Verify src was set
+      setTimeout(() => {
+        if (audio.src !== audioUrl) {
+          console.error('❌ [URL Player] Audio src mismatch:', {
+            expected: audioUrl,
+            actual: audio.src
+          });
+          setAudioError('Failed to set audio source');
+        } else {
+          console.log('✅ [URL Player] Audio src verified:', audio.src);
+        }
+      }, 100);
+    } else if (audioUrl) {
+      console.warn('⚠️ [URL Player] Invalid audioUrl (not a blob URL):', audioUrl);
+      setAudioError('Invalid audio URL');
+    } else {
+      audio.src = '';
+    }
+  }, [audioUrl, useUrlPlayer]);
+
   // ✅ NEW: HTML5 audio event handlers
   useEffect(() => {
     const audio = audioRef.current;
-    if (!audio) return;
+    if (!audio || !useUrlPlayer) return;
 
-    const handlePlay = () => setIsAudioPlaying(true);
-    const handlePause = () => setIsAudioPlaying(false);
-    const handleEnded = () => setIsAudioPlaying(false);
+    const handlePlay = () => {
+      console.log('▶️ [URL Player] Audio playing');
+      setIsAudioPlaying(true);
+    };
+    const handlePause = () => {
+      console.log('⏸️ [URL Player] Audio paused');
+      setIsAudioPlaying(false);
+    };
+    const handleEnded = () => {
+      console.log('⏹️ [URL Player] Audio ended');
+      setIsAudioPlaying(false);
+    };
     const handleError = (e) => {
-      console.error('HTML5 Audio error:', e);
-      setAudioError('Failed to load audio');
+      const error = audio.error;
+      console.error('❌ [URL Player] Audio error:', {
+        error,
+        code: error?.code,
+        message: error?.message,
+        src: audio.src,
+        networkState: audio.networkState,
+        readyState: audio.readyState
+      });
+      
+      let errorMsg = 'Failed to load audio';
+      if (error) {
+        switch (error.code) {
+          case error.MEDIA_ERR_ABORTED:
+            errorMsg = 'Audio loading aborted';
+            break;
+          case error.MEDIA_ERR_NETWORK:
+            errorMsg = 'Network error loading audio';
+            break;
+          case error.MEDIA_ERR_DECODE:
+            errorMsg = 'Audio decode error';
+            break;
+          case error.MEDIA_ERR_SRC_NOT_SUPPORTED:
+            errorMsg = 'Audio format not supported or invalid source';
+            break;
+        }
+      }
+      setAudioError(errorMsg);
       setIsAudioPlaying(false);
     };
     const handleLoadedData = () => {
+      console.log('✅ [URL Player] Audio data loaded:', {
+        duration: audio.duration,
+        readyState: audio.readyState,
+        networkState: audio.networkState
+      });
       setAudioError(null);
+    };
+    const handleCanPlay = () => {
+      console.log('✅ [URL Player] Audio can play');
+      setAudioError(null);
+    };
+    const handleLoadedMetadata = () => {
+      console.log('✅ [URL Player] Audio metadata loaded:', {
+        duration: audio.duration,
+        src: audio.src
+      });
     };
 
     audio.addEventListener('play', handlePlay);
@@ -163,6 +272,8 @@ export function FileBrowserPreview({ fileNode }) {
     audio.addEventListener('ended', handleEnded);
     audio.addEventListener('error', handleError);
     audio.addEventListener('loadeddata', handleLoadedData);
+    audio.addEventListener('canplay', handleCanPlay);
+    audio.addEventListener('loadedmetadata', handleLoadedMetadata);
 
     return () => {
       audio.removeEventListener('play', handlePlay);
@@ -170,8 +281,10 @@ export function FileBrowserPreview({ fileNode }) {
       audio.removeEventListener('ended', handleEnded);
       audio.removeEventListener('error', handleError);
       audio.removeEventListener('loadeddata', handleLoadedData);
+      audio.removeEventListener('canplay', handleCanPlay);
+      audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
     };
-  }, []);
+  }, [useUrlPlayer]);
 
   useEffect(() => {
     // Preview için normal yükleme (2 saniye) - sadece buffer player için
@@ -308,32 +421,9 @@ export function FileBrowserPreview({ fileNode }) {
         {useUrlPlayer && (
           <audio
             ref={audioRef}
-            src={audioUrl || undefined}
             preload="metadata"
             crossOrigin="anonymous"
             style={{ display: 'none' }}
-            onError={(e) => {
-              console.error('Audio element error:', e, audioRef.current?.error);
-              const error = audioRef.current?.error;
-              if (error) {
-                let errorMsg = 'Unknown audio error';
-                switch (error.code) {
-                  case error.MEDIA_ERR_ABORTED:
-                    errorMsg = 'Audio loading aborted';
-                    break;
-                  case error.MEDIA_ERR_NETWORK:
-                    errorMsg = 'Network error loading audio';
-                    break;
-                  case error.MEDIA_ERR_DECODE:
-                    errorMsg = 'Audio decode error';
-                    break;
-                  case error.MEDIA_ERR_SRC_NOT_SUPPORTED:
-                    errorMsg = 'Audio format not supported';
-                    break;
-                }
-                setAudioError(errorMsg);
-              }
-            }}
           />
         )}
 
