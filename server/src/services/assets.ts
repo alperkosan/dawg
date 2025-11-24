@@ -211,18 +211,32 @@ export const assetsService = {
 
   /**
    * Complete upload (mark as uploaded)
+   * ✅ FIX: Also update storage_url if it's not set (for client-side CDN uploads)
    */
   async completeUpload(userId: string, assetId: string): Promise<UserAsset> {
     // Verify ownership
     const asset = await this.getAssetById(userId, assetId);
 
-    // Update status
+    // ✅ FIX: If storage_url is not set or is a fallback URL, generate CDN URL from storage_key
+    let storageUrl = asset.storage_url;
+    if (!storageUrl || storageUrl.startsWith('/api/')) {
+      // Generate CDN URL from storage_key
+      const { storageService } = await import('./storage.js');
+      storageUrl = storageService.getCDNUrl(asset.storage_key, assetId);
+      // Clean URL before storing
+      storageUrl = storageUrl.replace(/[\n\r\t\s]+/g, '').trim();
+    }
+
+    // Update status and storage_url
     const db = getDatabase();
     await db.query(
       `UPDATE user_assets
-       SET processing_status = 'completed', is_processed = true, updated_at = NOW()
-       WHERE id = $1 AND user_id = $2`,
-      [assetId, userId]
+       SET processing_status = 'completed', 
+           is_processed = true, 
+           storage_url = $1,
+           updated_at = NOW()
+       WHERE id = $2 AND user_id = $3`,
+      [storageUrl, assetId, userId]
     );
 
     return this.getAssetById(userId, assetId);
