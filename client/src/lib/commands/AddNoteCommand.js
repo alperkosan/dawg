@@ -62,13 +62,26 @@ export class AddNoteCommand extends Command {
     // ✅ SMART PITCH DETECTION: Use existing note's pitch if available
     // This ensures new notes match the instrument's configured pitch
     let defaultPitch = 'C4'; // Fallback
-    let defaultVelocity = 1.0;
+    let defaultVelocity = 100; // ✅ FIX: Use MIDI velocity range (0-127), default 100
 
     if (currentNotes.length > 0) {
       // Use pitch and velocity from the first existing note
       const firstNote = currentNotes[0];
       defaultPitch = firstNote.pitch || 'C4';
-      defaultVelocity = firstNote.velocity !== undefined ? firstNote.velocity : 1.0;
+      
+      // ✅ FIX: Normalize velocity to 0-127 range
+      // Handle both 0-1 normalized and 0-127 MIDI formats
+      if (firstNote.velocity !== undefined) {
+        if (firstNote.velocity <= 1.0) {
+          // 0-1 normalized format, convert to 0-127
+          defaultVelocity = Math.round(firstNote.velocity * 127);
+        } else {
+          // Already in 0-127 format
+          defaultVelocity = Math.round(firstNote.velocity);
+        }
+      } else {
+        defaultVelocity = 100; // Default MIDI velocity
+      }
 
       console.log(`📝 AddNoteCommand: Using template from existing notes:`, {
         pitch: defaultPitch,

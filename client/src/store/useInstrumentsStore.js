@@ -7,6 +7,7 @@ import { INSTRUMENT_TYPES } from '@/config/constants';
 import { AudioContextService } from '@/lib/services/AudioContextService';
 import { createDefaultSampleChopPattern } from '@/lib/audio/instruments/sample/sampleChopUtils';
 import { storeManager } from './StoreManager';
+import { useMixerStore } from './useMixerStore';
 
 export const useInstrumentsStore = create((set, get) => ({
   instruments: [], // ✅ Empty project - start with no instruments
@@ -56,6 +57,27 @@ export const useInstrumentsStore = create((set, get) => ({
 
     // ✅ PERFORMANCE: Use StoreManager to find unused mixer track (only if not already specified)
     let mixerTrackId = instrumentData.mixerTrackId;
+
+    // ✅ FIX: Auto-match mixer track by instrument name if mixerTrackId is "master"
+    // This fixes the issue where instruments added later are saved with mixerTrackId: "master"
+    // but mixer has a track with the same name
+    if (mixerTrackId === 'master' || !mixerTrackId) {
+      const mixerState = useMixerStore.getState();
+      const instrumentName = newName?.toLowerCase().trim();
+      
+      if (instrumentName) {
+        // Find mixer track with matching name
+        const matchingTrack = mixerState.mixerTracks.find(track => 
+          track.id !== 'master' && 
+          track.name?.toLowerCase().trim() === instrumentName
+        );
+        
+        if (matchingTrack) {
+          mixerTrackId = matchingTrack.id;
+          console.log(`🔗 ✅ Auto-matched instrument "${newName}" to mixer track "${matchingTrack.id}" (${matchingTrack.name})`);
+        }
+      }
+    }
 
     if (!mixerTrackId) {
       const firstUnusedTrack = storeManager.findUnusedMixerTrack();

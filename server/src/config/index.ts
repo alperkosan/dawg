@@ -116,9 +116,10 @@ export const config = {
       }
       
       // ✅ Production: Support all Vercel preview deployments (wildcard)
-      // Fastify CORS supports regex patterns
+      // Fastify CORS supports regex patterns as strings
       if (process.env.NODE_ENV === 'production' || process.env.VERCEL) {
-        defaultOrigins.push(/^https:\/\/.*\.vercel\.app$/);
+        // ✅ FIX: Use string pattern instead of RegExp for CORS origin
+        defaultOrigins.push('https://*.vercel.app');
       }
       
       return defaultOrigins;

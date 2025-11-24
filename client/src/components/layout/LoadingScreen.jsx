@@ -2,7 +2,7 @@ import React from 'react';
 import { useThemeStore } from '../../store/useThemeStore';
 import './LoadingScreen.css';
 
-const LoadingScreen = () => {
+const LoadingScreen = ({ message = 'Initializing Audio Engine & Loading Worklets...' }) => {
   const getActiveTheme = useThemeStore(state => state.getActiveTheme);
   const theme = getActiveTheme();
 
@@ -32,7 +32,7 @@ const LoadingScreen = () => {
           ))}
         </h1>
         <p className="text-sm text-[var(--text-secondary)]">
-          Initializing Audio Engine & Loading Worklets...
+          {message}
         </p>
       </div>
       <div className="loading-bar-container">

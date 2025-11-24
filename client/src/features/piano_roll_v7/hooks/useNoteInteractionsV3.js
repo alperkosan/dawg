@@ -386,7 +386,23 @@ export function useNoteInteractionsV3({
     const _addNotesToPattern = useCallback((newNotes) => {
         if (!activePatternId || !currentInstrument) return;
 
-        const updatedNotes = [...notes, ...newNotes];
+        // ✅ CRITICAL: Get fresh notes from store to avoid closure issues
+        const getCurrentNotes = () => {
+            const currentPattern = useArrangementStore.getState().patterns[activePatternId];
+            return currentPattern?.data?.[currentInstrument.id] || [];
+        };
+        
+        const currentNotes = getCurrentNotes();
+
+        // ✅ FIX: Ensure time property is set for channel rack minipreview
+        const normalizedNewNotes = newNotes.map(note => {
+            if (note.time === undefined && note.startTime !== undefined) {
+                return { ...note, time: note.startTime };
+            }
+            return note;
+        });
+
+        const updatedNotes = [...currentNotes, ...normalizedNewNotes];
         updatePatternNotes(activePatternId, currentInstrument.id, updatedNotes);
 
         // ✅ EVENT BUS: Notify audio engine immediately
@@ -397,7 +413,7 @@ export function useNoteInteractionsV3({
                 note
             });
         });
-    }, [notes, activePatternId, currentInstrument, updatePatternNotes]);
+    }, [activePatternId, currentInstrument, updatePatternNotes]);
 
     // ✅ PUBLIC: Add notes with CommandStack (for undo/redo)
     const addNotesToPattern = useCallback((newNotes, skipUndo = false) => {
@@ -641,29 +657,154 @@ export function useNoteInteractionsV3({
         });
 
         if (isDuplicate) {
-            // Create duplicates
+            // ✅ CRITICAL: Get fresh notes from store to avoid closure issues
+            // The notes array in closure might be stale, so get current notes from store
+            const getCurrentNotes = () => {
+                if (!activePatternId || !currentInstrument) return notes;
+                const currentPattern = useArrangementStore.getState().patterns[activePatternId];
+                return currentPattern?.data?.[currentInstrument.id] || notes;
+            };
+            
+            const currentNotes = getCurrentNotes();
+            
+            if (DEBUG) {
+                console.log('🔄 [V3] Duplicate mode:', {
+                    noteIdsCount: noteIds.length,
+                    noteIds,
+                    notesInStore: currentNotes.length,
+                    notesInClosure: notes.length
+                });
+            }
+            
+            // Create duplicates with normalization
             const duplicates = noteIds.map(id => {
-                const note = notes.find(n => n.id === id);
-                if (!note) return null;
-                return {
-                    ...note,
+                // ✅ FIX: Use currentNotes from store instead of closure notes
+                const note = currentNotes.find(n => n.id === id);
+                if (!note) {
+                    if (DEBUG) {
+                        console.warn('⚠️ [V3] Note not found for duplicate:', id, {
+                            availableIds: currentNotes.map(n => n.id).slice(0, 10)
+                        });
+                    }
+                    return null;
+                }
+                
+                // ✅ CRITICAL: Normalize note format (same as notes useMemo)
+                let normalized = { ...note };
+                
+                // Convert `time` to `startTime`
+                if (normalized.time !== undefined && normalized.startTime === undefined) {
+                    normalized.startTime = normalized.time;
+                }
+                // Ensure both time and startTime exist
+                if (normalized.startTime !== undefined && normalized.time === undefined) {
+                    normalized.time = normalized.startTime;
+                }
+                
+                // Convert `duration` to `length` if needed
+                if (normalized.duration !== undefined && normalized.length === undefined) {
+                    const durationMap = {
+                        '1n': 4, '2n': 2, '4n': 1, '8n': 0.5, '16n': 0.25
+                    };
+                    normalized.length = durationMap[normalized.duration] || 1;
+                    if (normalized.visualLength === undefined) {
+                        normalized.visualLength = normalized.length;
+                    }
+                }
+                
+                // Convert pitch string to MIDI number (e.g., 'C4' -> 60)
+                if (typeof normalized.pitch === 'string') {
+                    const noteMap = { 'C': 0, 'D': 2, 'E': 4, 'F': 5, 'G': 7, 'A': 9, 'B': 11 };
+                    const match = normalized.pitch.match(/^([A-G])#?(\d+)$/);
+                    if (match) {
+                        const [, noteName, octave] = match;
+                        const isSharp = normalized.pitch.includes('#');
+                        normalized.pitch = (parseInt(octave) + 1) * 12 + noteMap[noteName] + (isSharp ? 1 : 0);
+                    } else {
+                        console.warn('⚠️ [V3] Could not parse pitch:', normalized.pitch);
+                        normalized.pitch = 60; // Default to C4
+                    }
+                }
+                
+                // Create duplicate with new ID
+                const duplicate = {
+                    ...normalized,
                     id: `note_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
                 };
+                
+                return duplicate;
             }).filter(Boolean);
+            
+            if (DEBUG) {
+                console.log('✅ [V3] Created', duplicates.length, 'duplicates from', noteIds.length, 'noteIds');
+                console.log('✅ [V3] Duplicate notes:', duplicates.map(d => ({ id: d.id, startTime: d.startTime, pitch: d.pitch })));
+            }
 
-            addNotesToPattern(duplicates);
+            // ✅ CRITICAL: Add duplicates directly to pattern store
+            // Don't use addNotesToPattern here because it creates individual commands
+            // We'll add them directly and handle undo/redo in finalizeDrag
+            _addNotesToPattern(duplicates);
 
-            // Update noteIds to duplicates
-            noteIds = duplicates.map(d => d.id);
+            // ✅ CRITICAL: Get fresh notes from store to get the actual IDs after addition
+            // Sometimes the IDs might be modified during addition
+            const getFreshNotes = () => {
+                if (!activePatternId || !currentInstrument) return [];
+                const currentPattern = useArrangementStore.getState().patterns[activePatternId];
+                return currentPattern?.data?.[currentInstrument.id] || [];
+            };
+            
+            // Wait a tick for store to update, then get fresh note IDs
+            // Use the duplicate IDs we created, but verify they exist in store
+            const freshNotes = getFreshNotes();
+            const duplicateIds = duplicates.map(d => d.id);
+            
+            // Verify all duplicates are in store
+            const verifiedIds = duplicateIds.filter(id => freshNotes.some(n => n.id === id));
+            
+            if (DEBUG) {
+                console.log('✅ [V3] Duplicates added:', {
+                    expectedCount: duplicates.length,
+                    duplicateIds,
+                    verifiedCount: verifiedIds.length,
+                    verifiedIds,
+                    freshNotesCount: freshNotes.length
+                });
+            }
+            
+            // Update noteIds to verified duplicates for drag operation
+            noteIds = verifiedIds.length > 0 ? verifiedIds : duplicateIds;
+            
+            if (DEBUG) {
+                console.log('✅ [V3] Final noteIds for drag:', noteIds);
+            }
 
-            // Update originals
+            // Update originals - ✅ CRITICAL: Ensure all required properties are set
             originals.clear();
             duplicates.forEach(d => {
+                // ✅ FIX: Validate and ensure startTime is a valid number
+                if (d.startTime === undefined || d.startTime === null || isNaN(d.startTime)) {
+                    console.error('❌ [V3] Duplicate note has invalid startTime:', d);
+                    // Try to get from time property or use 0 as fallback
+                    d.startTime = d.time !== undefined ? d.time : 0;
+                }
+                
+                // ✅ FIX: Ensure pitch is a valid number
+                if (d.pitch === undefined || d.pitch === null || isNaN(d.pitch)) {
+                    console.error('❌ [V3] Duplicate note has invalid pitch:', d);
+                    d.pitch = 60; // Default to C4
+                }
+                
+                // ✅ FIX: Ensure length is a valid number
+                if (d.length === undefined || d.length === null || isNaN(d.length)) {
+                    console.error('❌ [V3] Duplicate note has invalid length:', d);
+                    d.length = 1; // Default to 1 step
+                }
+                
                 originals.set(d.id, {
                     startTime: d.startTime,
                     pitch: d.pitch,
                     length: d.length,
-                    visualLength: d.visualLength
+                    visualLength: d.visualLength !== undefined ? d.visualLength : d.length
                 });
             });
 
@@ -679,7 +820,7 @@ export function useNoteInteractionsV3({
         if (DEBUG) {
             console.log('🎯 [V3] Drag started:', noteIds.length, 'notes');
         }
-    }, [notes, addNotesToPattern, select]);
+    }, [notes, addNotesToPattern, select, activePatternId, currentInstrument]);
 
     const startResize = useCallback((note, handle, coords) => {
         const noteIds = state.selection.has(note.id)
@@ -757,16 +898,54 @@ export function useNoteInteractionsV3({
 
         // Determine working notes
         let workingIds;
-        if (state.selection.has(note.id)) {
-            // Clicking selected note - keep selection
-            workingIds = Array.from(state.selection);
+        if (isShift) {
+            // ✅ FIX: Shift+drag = duplicate mode
+            // CRITICAL: Shift basılıyken seçimi DEĞİŞTİRME, mevcut seçimi koru
+            // Always duplicate ALL selected notes if any exist, otherwise duplicate clicked note
+            const currentSelection = Array.from(state.selection);
+            
+            if (DEBUG) {
+                console.log('🔍 [V3] Shift+drag:', {
+                    selectionSize: state.selection.size,
+                    currentSelection,
+                    clickedNoteId: note.id,
+                    isInSelection: state.selection.has(note.id)
+                });
+            }
+            
+            if (state.selection.size > 0) {
+                // ✅ CRITICAL FIX: Shift basılıyken tıklama yapıldığında seçimi değiştirme
+                // Tüm seçili notaları duplicate et (tıklanan nota seçili olsun ya da olmasın)
+                workingIds = currentSelection;
+                
+                if (DEBUG) {
+                    console.log('✅ [V3] Shift+drag: Duplicating all', workingIds.length, 'selected notes');
+                }
+            } else {
+                // No selection, duplicate only clicked note
+                select(note.id, 'replace');
+                workingIds = [note.id];
+                
+                if (DEBUG) {
+                    console.log('✅ [V3] Shift+drag: No selection, duplicating only clicked note');
+                }
+            }
         } else {
-            // Clicking unselected note - replace selection
-            select(note.id, 'replace');
-            workingIds = [note.id];
+            // Normal drag: only move clicked note or selected notes
+            if (state.selection.has(note.id)) {
+                // Clicking selected note - keep selection
+                workingIds = Array.from(state.selection);
+            } else {
+                // Clicking unselected note - replace selection
+                select(note.id, 'replace');
+                workingIds = [note.id];
+            }
         }
 
-        // Start drag
+        // Start drag (isShift determines if it's duplicate mode)
+        if (DEBUG && isShift) {
+            console.log('🚀 [V3] Starting shift+drag with', workingIds.length, 'notes:', workingIds);
+        }
         startDrag(workingIds, coords, isShift);
 
     }, [state.selection, getResizeHandle, select, startResize, startDrag]);
@@ -1004,7 +1183,12 @@ export function useNoteInteractionsV3({
                         if (noteIds.includes(note.id)) {
                             const state = statesMap.get(note.id);
                             if (state) {
-                                return { ...note, startTime: state.startTime, pitch: state.pitch };
+                                const updatedNote = { ...note, startTime: state.startTime, pitch: state.pitch };
+                                // ✅ FIX: Ensure time property is set for channel rack (step sequencer and minipreview)
+                                if (updatedNote.time === undefined || updatedNote.time !== state.startTime) {
+                                    updatedNote.time = state.startTime;
+                                }
+                                return updatedNote;
                             }
                         }
                         return note;
@@ -1032,10 +1216,17 @@ export function useNoteInteractionsV3({
                 stack.execute(command);
             } else {
                 // Fallback if CommandStack not available
-                updatePatternNotes(activePatternId, currentInstrument.id, updated);
+                // ✅ FIX: Ensure time property is set for channel rack
+                const notesWithTime = updated.map(note => {
+                    if (noteIds.includes(note.id) && (note.time === undefined || note.time !== note.startTime)) {
+                        return { ...note, time: note.startTime };
+                    }
+                    return note;
+                });
+                updatePatternNotes(activePatternId, currentInstrument.id, notesWithTime);
 
                 // ✅ EVENT BUS: Notify audio engine of modifications
-                updated.forEach(note => {
+                notesWithTime.forEach(note => {
                     if (noteIds.includes(note.id)) {
                         EventBus.emit('NOTE_MODIFIED', {
                             patternId: activePatternId,
@@ -1176,9 +1367,17 @@ export function useNoteInteractionsV3({
                         const updateNoteFn = (id, state) => {
                             // ✅ FIX: Get fresh notes from store to avoid closure issues
                             const freshNotes = getCurrentNotes();
-                            const finalNotes = freshNotes.map(n =>
-                                n.id === id ? { ...n, ...state } : n
-                            );
+                            const finalNotes = freshNotes.map(n => {
+                                if (n.id === id) {
+                                    const updated = { ...n, ...state };
+                                    // ✅ FIX: Ensure time property is set for channel rack
+                                    if (updated.time === undefined || updated.time !== updated.startTime) {
+                                        updated.time = updated.startTime;
+                                    }
+                                    return updated;
+                                }
+                                return n;
+                            });
                             updatePatternNotes(activePatternId, currentInstrument.id, finalNotes);
                             
                             // EventBus notification
@@ -1230,7 +1429,12 @@ export function useNoteInteractionsV3({
                         const finalNotes = freshNotes.map(n => {
                             const state = statesToApply.get(n.id);
                             if (state) {
-                                return { ...n, ...state };
+                                const updated = { ...n, ...state };
+                                // ✅ FIX: Ensure time property is set for channel rack
+                                if (updated.time === undefined || updated.time !== updated.startTime) {
+                                    updated.time = updated.startTime;
+                                }
+                                return updated;
                             }
                             return n;
                         });
@@ -1605,35 +1809,57 @@ export function useNoteInteractionsV3({
             }
 
             // Create duplicated notes
-            const duplicatedNotes = notesToDuplicate.map(note => ({
-                ...note,
-                id: `note_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-                startTime: note.startTime + offset
-            }));
+            // ✅ FIX: Preserve ALL note properties including duration, extended properties, etc.
+            const duplicatedNotes = notesToDuplicate.map(note => {
+                const newStartTime = note.startTime + offset;
+                const newTime = note.time !== undefined ? note.time + offset : newStartTime;
+                
+                // Create duplicate with all properties preserved
+                const duplicate = {
+                    ...note, // Spread all existing properties first
+                    id: `note_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                    startTime: newStartTime,
+                    time: newTime // ✅ FIX: Set time property for channel rack minipreview
+                };
+                
+                // ✅ FIX: Explicitly preserve duration if it exists (for legacy compatibility)
+                if (note.duration !== undefined) {
+                    duplicate.duration = note.duration;
+                }
+                
+                // ✅ FIX: Preserve all extended properties explicitly
+                if (note.pitchBend !== undefined) duplicate.pitchBend = Array.isArray(note.pitchBend) ? [...note.pitchBend] : note.pitchBend;
+                if (note.modWheel !== undefined && note.modWheel !== null) duplicate.modWheel = note.modWheel;
+                if (note.aftertouch !== undefined && note.aftertouch !== null) duplicate.aftertouch = note.aftertouch;
+                if (note.pan !== undefined && note.pan !== 0) duplicate.pan = note.pan;
+                if (note.releaseVelocity !== undefined && note.releaseVelocity !== null) duplicate.releaseVelocity = note.releaseVelocity;
+                if (note.slideTo !== undefined && note.slideTo !== null) duplicate.slideTo = note.slideTo;
+                if (note.slideDuration !== undefined && note.slideDuration !== null) duplicate.slideDuration = note.slideDuration;
+                if (note.isMuted !== undefined) duplicate.isMuted = note.isMuted;
+                if (note.velocity !== undefined) duplicate.velocity = note.velocity;
+                if (note.visualLength !== undefined) duplicate.visualLength = note.visualLength;
+                
+                return duplicate;
+            });
 
-            // ✅ COMMAND STACK: Use AddNoteCommand for undo/redo
+            // ✅ COMMAND STACK: Create a custom command for duplicate that preserves all properties
             const stack = commandStackRef.current;
             if (stack && activePatternId && currentInstrument) {
-                const command = new AddNoteCommand(
-                    duplicatedNotes,
-                    (newNotes) => {
-                        const updated = [...notes, ...newNotes];
-                        updatePatternNotes(activePatternId, currentInstrument.id, updated);
-                        
-                        // EventBus notifications
-                        newNotes.forEach(note => {
-                            EventBus.emit('NOTE_ADDED', {
-                                patternId: activePatternId,
-                                instrumentId: currentInstrument.id,
-                                note
-                            });
-                        });
-                    }
-                );
-                stack.execute(command);
+                // Create a custom command that adds the duplicated notes directly
+                const duplicateCommand = {
+                    execute: () => {
+                        _addNotesToPattern(duplicatedNotes);
+                    },
+                    undo: () => {
+                        const noteIds = duplicatedNotes.map(n => n.id);
+                        _deleteNotesFromPattern(noteIds);
+                    },
+                    getDescription: () => `Duplicate ${duplicatedNotes.length} note(s)`
+                };
+                stack.execute(duplicateCommand);
             } else {
                 // Fallback if command stack not available
-                addNotesToPattern(duplicatedNotes);
+                _addNotesToPattern(duplicatedNotes);
             }
             
             // Select the duplicated notes

@@ -101,7 +101,19 @@ const InstrumentRow = ({
     // Get existing notes to determine pitch and velocity
     const currentNotes = activePattern.data[instrument.id] || [];
     const defaultPitch = currentNotes.length > 0 ? currentNotes[0].pitch : 'C4';
-    const defaultVelocity = currentNotes.length > 0 ? (currentNotes[0].velocity !== undefined ? currentNotes[0].velocity : 1.0) : 1.0;
+    
+    // ✅ FIX: Normalize velocity to 0-127 MIDI range
+    let defaultVelocity = 100; // Default MIDI velocity
+    if (currentNotes.length > 0 && currentNotes[0].velocity !== undefined) {
+      const velocity = currentNotes[0].velocity;
+      if (velocity <= 1.0) {
+        // 0-1 normalized format, convert to 0-127
+        defaultVelocity = Math.round(velocity * 127);
+      } else {
+        // Already in 0-127 format
+        defaultVelocity = Math.round(velocity);
+      }
+    }
 
     // Clear existing notes if requested
     if (clearExisting && currentNotes.length > 0) {

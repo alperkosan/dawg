@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { getDatabase } from '../services/database.js';
 import { NotFoundError, BadRequestError } from '../utils/errors.js';
 import { logger } from '../utils/logger.js';
+import { JWTPayload } from '../middleware/auth.js';
 
 const FeedQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -30,8 +31,11 @@ export async function feedRoutes(server: FastifyInstance) {
         if (authHeader && authHeader.startsWith('Bearer ')) {
           try {
             const token = authHeader.substring(7);
-            const decoded = await server.jwt.verify(token);
-            userId = decoded.userId as string;
+            const decoded = await server.jwt.verify<JWTPayload>(token);
+            // ✅ FIX: Type-safe JWT payload access
+            if (typeof decoded === 'object' && decoded !== null && 'userId' in decoded) {
+              userId = (decoded as JWTPayload).userId;
+            }
           } catch (error) {
             // Ignore auth errors - user will be treated as anonymous
             userId = undefined;

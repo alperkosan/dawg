@@ -18,6 +18,7 @@ import {
 } from '../services/projects.js';
 import { NotFoundError, ForbiddenError, BadRequestError } from '../utils/errors.js';
 import { logger } from '../utils/logger.js';
+import { JWTPayload } from '../middleware/auth.js';
 
 const CreateProjectSchema = z.object({
   title: z.string().min(1).max(255),
@@ -165,8 +166,11 @@ export async function projectRoutes(server: FastifyInstance) {
         const authHeader = request.headers.authorization;
         if (authHeader && authHeader.startsWith('Bearer ')) {
           const token = authHeader.substring(7);
-          const decoded = await server.jwt.verify(token);
-          userId = decoded.userId as string;
+          const decoded = await server.jwt.verify<JWTPayload>(token);
+          // ✅ FIX: Type-safe JWT payload access
+          if (typeof decoded === 'object' && decoded !== null && 'userId' in decoded) {
+            userId = (decoded as JWTPayload).userId;
+          }
         }
       } catch (error) {
         // Ignore auth errors - user will be treated as anonymous

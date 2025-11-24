@@ -19,6 +19,7 @@ import {
 import { canAccessProject } from '../services/projects.js';
 import { findUserById } from '../services/auth.js';
 import { logger } from '../utils/logger.js';
+import { JWTPayload } from '../middleware/auth.js';
 
 interface WebSocketMessage {
   type: string;
@@ -51,9 +52,13 @@ export async function registerWebSocketRoutes(server: FastifyInstance) {
           }
           
           try {
-            const decoded = await server.jwt.verify(token);
-            userId = decoded.userId as string;
-            username = decoded.username as string;
+            const decoded = await server.jwt.verify<JWTPayload>(token);
+            // ✅ FIX: Type-safe JWT payload access
+            if (typeof decoded === 'object' && decoded !== null && 'userId' in decoded) {
+              const payload = decoded as JWTPayload;
+              userId = payload.userId;
+              username = payload.username;
+            }
             
             // Get project ID
             projectId = msg.data?.projectId;

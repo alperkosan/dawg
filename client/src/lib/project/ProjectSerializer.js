@@ -676,10 +676,23 @@ export class ProjectSerializer {
 
   static deserializeInstruments(instruments) {
     const store = useInstrumentsStore.getState();
+    const mixerStore = useMixerStore.getState();
     console.log(`📦 Restoring ${instruments.length} instruments...`);
     
-    // Clear existing instruments (except initial ones if needed)
-    // For now, we'll add instruments without clearing to avoid breaking existing setup
+    // ✅ FIX: Build a map of mixer track names to track IDs for matching
+    // This helps fix cases where instruments are saved with mixerTrackId: "master"
+    // but mixer has a track with the same name as the instrument
+    const mixerTrackNameMap = new Map();
+    mixerStore.mixerTracks.forEach(track => {
+      if (track.id !== 'master' && track.name) {
+        // Normalize names for matching (case-insensitive, trim whitespace)
+        const normalizedName = track.name.toLowerCase().trim();
+        mixerTrackNameMap.set(normalizedName, track.id);
+      }
+    });
+    
+    // ✅ DEBUG: Log mixer track name map for debugging
+    console.log(`🔍 Mixer track name map:`, Array.from(mixerTrackNameMap.entries()));
     
     // Add instruments
     instruments.forEach(instData => {
@@ -692,15 +705,50 @@ export class ProjectSerializer {
           instrumentType = 'sample';
         }
         
+        // ✅ FIX: Auto-match mixer track by instrument name if mixerTrackId is "master"
+        // This fixes the issue where instruments added later are saved with mixerTrackId: "master"
+        // but mixer has a track with the same name
+        let mixerTrackId = instData.mixerTrackId;
+        const originalMixerTrackId = mixerTrackId;
+        
+        if (mixerTrackId === 'master' || !mixerTrackId) {
+          const instrumentName = instData.name?.toLowerCase().trim();
+          console.log(`🔍 Checking auto-match for "${instData.name}" (normalized: "${instrumentName}")`);
+          console.log(`🔍 Available mixer track names:`, Array.from(mixerTrackNameMap.keys()));
+          
+          if (instrumentName && mixerTrackNameMap.has(instrumentName)) {
+            const matchedTrackId = mixerTrackNameMap.get(instrumentName);
+            mixerTrackId = matchedTrackId;
+            console.log(`🔗 ✅ Auto-matched instrument "${instData.name}" to mixer track "${matchedTrackId}" (was: ${originalMixerTrackId})`);
+          } else {
+            console.log(`🔍 No match found for "${instData.name}" in mixer tracks`);
+            // ✅ FIX: Try partial matching (e.g., "Piano" matches "Piano" track)
+            // This handles cases where names might have slight variations
+            const partialMatch = Array.from(mixerTrackNameMap.entries()).find(([trackName, trackId]) => 
+              trackName.includes(instrumentName) || instrumentName.includes(trackName)
+            );
+            if (partialMatch) {
+              mixerTrackId = partialMatch[1];
+              console.log(`🔗 ✅ Partial match: instrument "${instData.name}" to mixer track "${partialMatch[1]}"`);
+            }
+          }
+        } else {
+          console.log(`🔍 Instrument "${instData.name}" already has mixerTrackId: ${mixerTrackId} (skipping auto-match)`);
+        }
+        
         // Ensure required fields
         const instrumentData = {
           ...instData,
           id: instData.id || `inst-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
           type: instrumentType,
+          mixerTrackId: mixerTrackId || instData.mixerTrackId || 'master', // Fallback to master if no match
         };
         
+        // ✅ CRITICAL: Log the final mixerTrackId before passing to handleAddNewInstrument
+        console.log(`📝 Restoring instrument "${instrumentData.name}" with mixerTrackId: ${instrumentData.mixerTrackId} (original: ${originalMixerTrackId})`);
+        
         store.handleAddNewInstrument(instrumentData);
-        console.log(`✅ Restored instrument: ${instrumentData.name} (${instrumentType})`);
+        console.log(`✅ Restored instrument: ${instrumentData.name} (${instrumentType}) → ${instrumentData.mixerTrackId}`);
       } catch (error) {
         console.error(`❌ Failed to restore instrument ${instData.id}:`, error);
       }

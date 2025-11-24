@@ -120,13 +120,17 @@ export class AudioRenderService {
       logger.info('⏳ [RENDER] Waiting for React to initialize and useEffect to run...');
       try {
         // Wait for RenderPage to set up window properties (useEffect runs)
+        // ✅ FIX: window is available in browser context (page.evaluate)
         await page.waitForFunction(
           () => {
             // Check if useEffect has started (window.renderResult or window.renderError should be initialized)
             // Or if renderProject has started (we'll check for console logs)
-            return typeof (window as any).renderResult !== 'undefined' || 
-                   typeof (window as any).renderError !== 'undefined' ||
-                   (window as any).renderPageMounted === true;
+            // @ts-ignore - window is available in browser context
+            return typeof window.renderResult !== 'undefined' || 
+                   // @ts-ignore
+                   typeof window.renderError !== 'undefined' ||
+                   // @ts-ignore
+                   window.renderPageMounted === true;
           },
           { timeout: 10000 } // 10 seconds max
         );
@@ -140,34 +144,42 @@ export class AudioRenderService {
       const renderStart = Date.now();
       
       const renderResult = await page.evaluate(async () => {
+        // ✅ FIX: window is available in browser context (page.evaluate)
+        // @ts-ignore - window is available in browser context
+        const win = window as any;
+        
         console.log(`🎬 [RENDER] page.evaluate started, checking window state...`);
         console.log(`📊 [RENDER] Initial state:`, {
-          hasResult: !!(window as any).renderResult,
-          hasError: !!(window as any).renderError,
-          renderPageMounted: !!(window as any).renderPageMounted,
+          hasResult: !!win.renderResult,
+          hasError: !!win.renderError,
+          renderPageMounted: !!win.renderPageMounted,
         });
         
         // First, check if render has already started or completed
-        if ((window as any).renderResult) {
+        if (win.renderResult) {
           console.log(`✅ [RENDER] Render result already available!`);
-          return (window as any).renderResult;
+          return win.renderResult;
         }
         
-        if ((window as any).renderError) {
-          const errorMsg = (window as any).renderError;
+        if (win.renderError) {
+          const errorMsg = win.renderError;
           console.error(`❌ [RENDER] Render error already detected: ${errorMsg}`);
           throw new Error(errorMsg);
         }
         
         // Wait for window.renderResult to be set
         return new Promise((resolve, reject) => {
+          // ✅ FIX: window is available in browser context
+          // @ts-ignore - window is available in browser context
+          const win = window as any;
+          
           console.log(`⏳ [RENDER] Starting promise to wait for render result...`);
           const maxWait = 300000; // 5 minutes
           const startTime = Date.now();
           let lastCheckTime = startTime;
           let lastState = {
-            hasResult: !!(window as any).renderResult,
-            hasError: !!(window as any).renderError,
+            hasResult: !!win.renderResult,
+            hasError: !!win.renderError,
           };
           
           const checkResult = () => {
@@ -176,8 +188,8 @@ export class AudioRenderService {
             
             // Check current state
             const currentState = {
-              hasResult: !!(window as any).renderResult,
-              hasError: !!(window as any).renderError,
+              hasResult: !!win.renderResult,
+              hasError: !!win.renderError,
             };
             
             // Log state changes
@@ -192,16 +204,16 @@ export class AudioRenderService {
               console.log(`📊 [RENDER] Current state:`, {
                 hasResult: currentState.hasResult,
                 hasError: currentState.hasError,
-                renderError: (window as any).renderError || null,
+                renderError: win.renderError || null,
               });
               lastCheckTime = Date.now();
             }
             
-            if ((window as any).renderResult) {
+            if (win.renderResult) {
               console.log(`✅ [RENDER] Render result found!`);
-              resolve((window as any).renderResult);
-            } else if ((window as any).renderError) {
-              const errorMsg = (window as any).renderError;
+              resolve(win.renderResult);
+            } else if (win.renderError) {
+              const errorMsg = win.renderError;
               console.error(`❌ [RENDER] Render error detected: ${errorMsg}`);
               reject(new Error(errorMsg));
             } else if (elapsed > maxWait) {
@@ -209,7 +221,7 @@ export class AudioRenderService {
               console.error(`❌ [RENDER] Final state:`, {
                 hasResult: currentState.hasResult,
                 hasError: currentState.hasError,
-                renderError: (window as any).renderError || null,
+                renderError: win.renderError || null,
               });
               reject(new Error(`Render timeout after ${Math.floor(maxWait / 1000)}s`));
             } else {
@@ -277,13 +289,16 @@ export class AudioRenderService {
       // Try to get browser console logs and error state for more context
       try {
         const browserState = await page.evaluate(() => {
+          // ✅ FIX: window is available in browser context
+          // @ts-ignore - window is available in browser context
+          const win = window as any;
           return {
-            renderError: (window as any).renderError || null,
-            renderResult: (window as any).renderResult ? 'exists' : null,
-            hasError: !!(window as any).renderError,
-            hasResult: !!(window as any).renderResult,
-            renderPageMounted: !!(window as any).renderPageMounted,
-            windowLocation: window.location.href,
+            renderError: win.renderError || null,
+            renderResult: win.renderResult ? 'exists' : null,
+            hasError: !!win.renderError,
+            hasResult: !!win.renderResult,
+            renderPageMounted: !!win.renderPageMounted,
+            windowLocation: win.location.href,
           };
         });
         

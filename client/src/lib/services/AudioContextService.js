@@ -1118,12 +1118,19 @@ export class AudioContextService {
           }
         }
 
-        // Check if already routed
+        // ✅ FIX: Check if already routed correctly
         const currentRoute = this.audioEngine.instrumentToInsert?.get(instrument.id);
         if (currentRoute === instrument.mixerTrackId) {
           // Already routed correctly
+          console.log(`⏭️ Instrument ${instrument.id} (${instrument.name}) already routed to ${instrument.mixerTrackId}, skipping...`);
           skippedCount++;
           continue;
+        }
+
+        // ✅ FIX: If instrument exists but is routed to a different track, we need to re-route
+        // But first check if the current route is valid (not null/undefined)
+        if (currentRoute && currentRoute !== instrument.mixerTrackId) {
+          console.log(`🔄 Instrument ${instrument.id} (${instrument.name}) is routed to ${currentRoute}, re-routing to ${instrument.mixerTrackId}...`);
         }
 
         // Route instrument to mixer insert
@@ -1132,8 +1139,14 @@ export class AudioContextService {
           syncedCount++;
           console.log(`✅ Routed instrument ${instrument.id} (${instrument.name}) to ${instrument.mixerTrackId}`);
         } catch (error) {
-          console.error(`❌ Failed to route instrument ${instrument.id}:`, error);
-          errorCount++;
+          // ✅ FIX: If error is "already connected", it's not a real error - just log and continue
+          if (error.message?.includes('already connected') || error.message?.includes('not connected')) {
+            console.log(`ℹ️ Instrument ${instrument.id} (${instrument.name}) routing warning (non-critical):`, error.message);
+            skippedCount++;
+          } else {
+            console.error(`❌ Failed to route instrument ${instrument.id}:`, error);
+            errorCount++;
+          }
         }
       }
 

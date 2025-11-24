@@ -17,5 +17,36 @@ export default defineConfig({
       '@/assets': path.resolve(__dirname, './src/assets'),
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        // ✅ CODE SPLITTING: Manual chunks for better optimization
+        manualChunks: {
+          // Vendor chunks - separate large dependencies
+          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+          'audio-vendor': [
+            // Large audio libraries can be split if needed
+          ],
+          // Feature-based chunks
+          'pages': [
+            './src/pages/AdminPanel',
+            './src/pages/ProjectsPage',
+            './src/pages/RenderPage',
+          ],
+          'media': [
+            './src/features/media_panel/MediaPanel',
+          ],
+        },
+        // Chunk size warning limit (default: 500KB)
+        chunkSizeWarningLimit: 1000, // Increase to 1MB for audio apps
+      },
+    },
+    // Target modern browsers for better tree-shaking
+    target: 'esnext',
+    // Minify options
+    minify: 'esbuild',
+    // Source maps for production debugging (optional)
+    sourcemap: false,
+  },
 })
 

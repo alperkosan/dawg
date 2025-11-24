@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, Suspense, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, Suspense, useCallback, useMemo, lazy } from 'react';
 import { flushSync } from 'react-dom';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 
@@ -32,12 +32,14 @@ import LoginPrompt from './components/common/LoginPrompt';
 import WelcomeScreen from './components/common/WelcomeScreen';
 import NavigationHeader from './components/layout/NavigationHeader';
 import ProjectLoadingScreen from './components/common/ProjectLoadingScreen';
-import AdminPanel from './pages/AdminPanel';
-import ProjectsPage from './pages/ProjectsPage';
-import MediaPanel from './features/media_panel/MediaPanel';
-import RenderPage from './pages/RenderPage';
 import { ToastContainer } from './components/common/Toast';
 import ProjectTitleModal from './components/common/ProjectTitleModal';
+
+// ✅ CODE SPLITTING: Lazy load pages and heavy components
+const AdminPanel = lazy(() => import('./pages/AdminPanel'));
+const ProjectsPage = lazy(() => import('./pages/ProjectsPage'));
+const MediaPanel = lazy(() => import('./features/media_panel/MediaPanel'));
+const RenderPage = lazy(() => import('./pages/RenderPage'));
 import './components/common/WelcomeScreen.css';
 import './pages/AdminPanel.css';
 import './pages/ProjectsPage.css';
@@ -72,7 +74,23 @@ if (import.meta.env.DEV) {
 function DAWApp() {
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [engineStatus, setEngineStatus] = useState('idle');
+  
+  // ✅ UX IMPROVEMENT: Persist engine status across route changes
+  // Check if engine was already initialized in this session
+  const getInitialEngineStatus = () => {
+    // Check sessionStorage for persisted engine status
+    const persistedStatus = sessionStorage.getItem('dawg_engine_status');
+    if (persistedStatus === 'ready') {
+      // Verify engine actually exists
+      const existingEngine = AudioContextService.getAudioEngine();
+      if (existingEngine && existingEngine.audioContext && existingEngine.audioContext.state !== 'closed') {
+        return 'ready';
+      }
+    }
+    return 'idle';
+  };
+  
+  const [engineStatus, setEngineStatus] = useState(getInitialEngineStatus);
   const [engineError, setEngineError] = useState(null);
   const [isExportPanelOpen, setIsExportPanelOpen] = useState(false);
   const [showLoginPrompt, setShowLoginPrompt] = useState(false);
@@ -224,7 +242,45 @@ function DAWApp() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engineStatus, isAuthenticated, isGuest, templateInitialized, projectLoadAttempted, isLoadingProject, currentProjectId, searchParams]);
 
-  // ✅ FIX: Resume AudioContext when returning to DAW route from other panels
+  // ✅ UX IMPROVEMENT: Check for existing engine on mount
+  // This prevents showing StartupScreen if engine was already initialized
+  useEffect(() => {
+    // Only check once on mount if status is 'idle'
+    if (engineStatus === 'idle') {
+      const existingEngine = AudioContextService.getAudioEngine();
+      if (existingEngine && existingEngine.audioContext && existingEngine.audioContext.state !== 'closed') {
+        console.log('♻️ Found existing audio engine on mount, reusing...');
+        audioEngineRef.current = existingEngine;
+        window.audioEngine = existingEngine;
+        
+        // Resume AudioContext if suspended
+        const resumeIfNeeded = async () => {
+          if (existingEngine.audioContext.state === 'suspended') {
+            try {
+              await existingEngine.resumeAudioContext();
+              console.log('✅ AudioContext resumed for existing engine');
+            } catch (error) {
+              console.warn('⚠️ Failed to resume AudioContext:', error);
+            }
+          }
+        };
+        
+        resumeIfNeeded();
+        
+        // Re-sync instruments to mixer
+        AudioContextService._syncInstrumentsToMixerInserts().catch(err => {
+          console.warn('⚠️ Failed to re-sync instruments:', err);
+        });
+        
+        // Update status to ready
+        setEngineStatus('ready');
+        sessionStorage.setItem('dawg_engine_status', 'ready');
+        console.log('✅ Existing audio engine restored');
+      }
+    }
+  }, []); // Only run once on mount
+
+  // ✅ UX IMPROVEMENT: Resume AudioContext when returning to DAW route from other panels
   useEffect(() => {
     // Only run if we're on DAW route and engine is ready
     if (location.pathname.startsWith('/daw') && engineStatus === 'ready' && audioEngineRef.current) {
@@ -247,10 +303,11 @@ function DAWApp() {
   const initializeAudioSystem = useCallback(async () => {
     if (engineStatus === 'ready' || engineStatus === 'initializing') return;
 
-    // ✅ FIX: Check if engine already exists in AudioContextService (from previous mount)
+    // ✅ UX IMPROVEMENT: Check if engine already exists in AudioContextService (from previous mount)
+    // This check is also done in useEffect, but we keep it here as a safety check
     const existingEngine = AudioContextService.getAudioEngine();
     if (existingEngine && existingEngine.audioContext && existingEngine.audioContext.state !== 'closed') {
-      console.log('♻️ Reusing existing audio engine from previous mount');
+      console.log('♻️ Reusing existing audio engine');
       audioEngineRef.current = existingEngine;
       window.audioEngine = existingEngine;
       
@@ -275,6 +332,8 @@ function DAWApp() {
       
       // Update engine status without reinitializing
       setEngineStatus('ready');
+      // ✅ UX IMPROVEMENT: Persist engine status
+      sessionStorage.setItem('dawg_engine_status', 'ready');
       console.log('✅ Existing audio engine ready');
       return;
     }
@@ -335,6 +394,8 @@ function DAWApp() {
       TransportManagerSingleton.getInstance();
 
       setEngineStatus('ready');
+      // ✅ UX IMPROVEMENT: Persist engine status
+      sessionStorage.setItem('dawg_engine_status', 'ready');
       console.log('✅ Ses sistemi hazır!');
       
       // ✅ FIX: For guest users, create empty template immediately
@@ -363,6 +424,8 @@ function DAWApp() {
       console.error('❌ Ses sistemi başlatma hatası:', error);
       setEngineError(error.message || 'Bilinmeyen hata');
       setEngineStatus('error');
+      // ✅ UX IMPROVEMENT: Clear persisted status on error
+      sessionStorage.removeItem('dawg_engine_status');
     }
   }, [engineStatus, audioEngineCallbacks, isAuthenticated, isGuest, templateInitialized]);
 
@@ -710,6 +773,18 @@ function DAWApp() {
         );
       case 'idle':
       default:
+        // ✅ UX IMPROVEMENT: Check if engine is being restored
+        // If engine exists but status is still 'idle', show loading instead of startup screen
+        const existingEngine = AudioContextService.getAudioEngine();
+        if (existingEngine && existingEngine.audioContext && existingEngine.audioContext.state !== 'closed') {
+          // Engine exists but status hasn't updated yet - show loading
+          return (
+            <ThemeProvider>
+              <LoadingScreen message="Stüdyoya bağlanılıyor..." />
+            </ThemeProvider>
+          );
+        }
+        // No engine exists - show startup screen
         return <StartupScreen onStart={initializeAudioSystem} />;
     }
   }, [engineStatus, engineError, initializeAudioSystem, isExportPanelOpen, showLoginPrompt, showProjectTitleModal, handleSave, isAuthenticated, isGuest, currentProjectId, handleProjectSelect, handleNewProject, handleEditTitle, isLoadingProject, loadingProjectTitle, currentProjectTitle, toasts, toastKey, removeToast, saveStatus, lastSavedAt]);
@@ -732,7 +807,9 @@ function MediaApp() {
           overflow: 'hidden'
         }}
       >
-        <MediaPanel />
+        <Suspense fallback={<LoadingScreen />}>
+          <MediaPanel />
+        </Suspense>
       </div>
     </ThemeProvider>
   );
@@ -880,7 +957,9 @@ function AppRouter() {
         element={
           <ProtectedRoute requireAuth={true}>
             <ThemeProvider>
-              <AdminPanel />
+              <Suspense fallback={<LoadingScreen />}>
+                <AdminPanel />
+              </Suspense>
             </ThemeProvider>
           </ProtectedRoute>
         } 
@@ -892,7 +971,9 @@ function AppRouter() {
         element={
           <ProtectedRoute requireAuth={true}>
             <ThemeProvider>
-              <ProjectsPage />
+              <Suspense fallback={<LoadingScreen />}>
+                <ProjectsPage />
+              </Suspense>
             </ThemeProvider>
           </ProtectedRoute>
         } 
@@ -903,7 +984,9 @@ function AppRouter() {
         path="/render" 
         element={
           <ThemeProvider>
-            <RenderPage />
+            <Suspense fallback={<LoadingScreen />}>
+              <RenderPage />
+            </Suspense>
           </ThemeProvider>
         } 
       />
