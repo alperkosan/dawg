@@ -13,6 +13,7 @@ export class AudioContextService {
   static instance = null;
   static audioEngine = null;
   static isSubscriptionsSetup = false;
+  static idleOptimizationSetup = false; // ✅ FIX: Track if idle optimization is already setup
   
   // =================== NEW: INTERFACE LAYER ===================
   static interfaceManager = null;
@@ -33,6 +34,7 @@ export class AudioContextService {
   };
 
   static async setAudioEngine(engine) {
+    const isNewEngine = this.audioEngine !== engine;
     this.audioEngine = engine;
 
     // Initialize AudioAssetManager with AudioContext
@@ -41,8 +43,12 @@ export class AudioContextService {
       console.log("✅ AudioAssetManager initialized");
     }
 
-    // Initialize interface layer
-    await this.initializeInterfaceLayer();
+    // ✅ FIX: Only initialize interface layer if it's a new engine or not already initialized
+    if (isNewEngine || !this.timelineAPI) {
+      await this.initializeInterfaceLayer();
+    } else {
+      console.log("ℹ️ Interface layer already initialized, skipping...");
+    }
 
     // Setup store subscriptions for reactive updates
     if (!this.isSubscriptionsSetup) {
@@ -50,8 +56,22 @@ export class AudioContextService {
       this.isSubscriptionsSetup = true;
     }
 
-    // ⚡ IDLE OPTIMIZATION: Setup AudioContext suspend/resume
-    this._setupAudioContextIdleOptimization();
+    // ✅ FIX: Only setup idle optimization once (prevent duplicate listeners)
+    if (!this.idleOptimizationSetup) {
+      this._setupAudioContextIdleOptimization();
+      this.idleOptimizationSetup = true;
+    }
+
+    // ✅ FIX: Always ensure AudioContext is resumed when engine is set
+    // This fixes the issue where mixer signals are lost after panel navigation
+    if (engine?.audioContext && engine.audioContext.state === 'suspended') {
+      try {
+        await engine.audioContext.resume();
+        console.log('✅ AudioContext resumed after engine set');
+      } catch (error) {
+        console.warn('⚠️ Failed to resume AudioContext:', error);
+      }
+    }
 
     console.log("✅ AudioContextService v3.0: Native Engine + Interface Layer + Idle Optimization ready");
     return engine;
@@ -60,19 +80,39 @@ export class AudioContextService {
   /**
    * ⚡ IDLE OPTIMIZATION: Suspend AudioContext when idle and not playing
    * This can save 10-15% CPU when idle!
+   * ✅ FIX: Only suspend when on DAW route, not when navigating between panels
    */
   static _setupAudioContextIdleOptimization() {
     const audioContext = this.audioEngine?.audioContext;
     if (!audioContext) return;
 
-    // Suspend on idle (if not playing)
+    // ✅ FIX: Track if we're on DAW route to prevent suspend during panel navigation
+    let isOnDawRoute = window.location.pathname.startsWith('/daw');
+    
+    // Listen for route changes
+    const checkRoute = () => {
+      isOnDawRoute = window.location.pathname.startsWith('/daw');
+    };
+    
+    // Check route on popstate (back/forward) and listen for custom route change events
+    window.addEventListener('popstate', checkRoute);
+    
+    // Also check periodically (fallback for programmatic navigation)
+    const routeCheckInterval = setInterval(checkRoute, 1000);
+
+    // Suspend on idle (if not playing AND on DAW route)
     idleDetector.onIdle(async () => {
+      // ✅ FIX: Only suspend if we're on DAW route (not when navigating to media/admin)
+      if (!isOnDawRoute) {
+        return; // Don't suspend when on other routes
+      }
+
       const isPlaying = this.audioEngine?.transport?.state === 'started';
 
       if (!isPlaying && audioContext.state === 'running') {
         try {
           await audioContext.suspend();
-          console.log('😴 AudioContext suspended (idle, not playing)');
+          console.log('😴 AudioContext suspended (idle, not playing, on DAW route)');
         } catch (error) {
           console.warn('⚠️ Failed to suspend AudioContext:', error);
         }
@@ -90,6 +130,12 @@ export class AudioContextService {
         }
       }
     });
+
+    // ✅ FIX: Store cleanup function for later disposal
+    this._idleOptimizationCleanup = () => {
+      window.removeEventListener('popstate', checkRoute);
+      clearInterval(routeCheckInterval);
+    };
   }
 
   static getAudioEngine() {
@@ -1844,6 +1890,12 @@ export class AudioContextService {
   static dispose() {
     console.log('🗑️ Disposing AudioContextService...');
 
+    // ✅ FIX: Cleanup idle optimization listeners
+    if (this._idleOptimizationCleanup) {
+      this._idleOptimizationCleanup();
+      this._idleOptimizationCleanup = null;
+    }
+
     // Dispose interface APIs
     this.timelineAPI?.dispose?.();
     this.parameterSync?.dispose?.();
@@ -1856,6 +1908,7 @@ export class AudioContextService {
     this.loopManager = null;
     this.eventBus = null;
     this.interfaceManager = null;
+    this.idleOptimizationSetup = false;
 
     console.log('✅ AudioContextService disposed');
   }

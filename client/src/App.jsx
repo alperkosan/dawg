@@ -225,6 +225,26 @@ function DAWApp() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engineStatus, isAuthenticated, isGuest, templateInitialized, projectLoadAttempted, isLoadingProject, currentProjectId, searchParams]);
 
+  // ✅ FIX: Resume AudioContext when returning to DAW route from other panels
+  useEffect(() => {
+    // Only run if we're on DAW route and engine is ready
+    if (location.pathname.startsWith('/daw') && engineStatus === 'ready' && audioEngineRef.current) {
+      const resumeAudioContext = async () => {
+        const engine = audioEngineRef.current;
+        if (engine?.audioContext && engine.audioContext.state === 'suspended') {
+          try {
+            await engine.audioContext.resume();
+            console.log('✅ AudioContext resumed after returning to DAW route');
+          } catch (error) {
+            console.warn('⚠️ Failed to resume AudioContext:', error);
+          }
+        }
+      };
+      
+      resumeAudioContext();
+    }
+  }, [location.pathname, engineStatus]);
+
   const initializeAudioSystem = useCallback(async () => {
     if (engineStatus === 'ready' || engineStatus === 'initializing') return;
 

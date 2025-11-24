@@ -205,7 +205,7 @@ export default function ProjectsPage() {
     // The DAW component will detect the project parameter and load it
   };
 
-  const handlePublishWithRender = async (project) => {
+  const handlePublishWithRender = React.useCallback(async (project) => {
     try {
       setPublishProgress({ progress: 0, status: 'Loading project...', error: null });
       
@@ -346,7 +346,7 @@ export default function ProjectsPage() {
       });
       apiClient.showToast(`Failed to publish: ${error.message}`, 'error', 5000);
     }
-  };
+  }, []); // ✅ FIX: Empty deps - function is stable, project is passed as parameter
 
   const filteredProjects = projects.filter(project =>
     project.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -756,14 +756,20 @@ function DeleteProjectModal({ project, onClose, onConfirm }) {
 
 // Publish Modal with Render Progress
 function PublishModal({ project, progress, onClose, onPublish }) {
-  const [hasStarted, setHasStarted] = React.useState(false);
+  const hasStartedRef = React.useRef(false);
+  const projectIdRef = React.useRef(null);
   
   React.useEffect(() => {
-    if (!hasStarted) {
-      setHasStarted(true);
+    // ✅ FIX: Only run once per project ID to prevent infinite loop
+    // Use refs to track state without causing re-renders
+    if (!hasStartedRef.current || projectIdRef.current !== project.id) {
+      hasStartedRef.current = true;
+      projectIdRef.current = project.id;
       onPublish(project);
     }
-  }, [hasStarted, onPublish, project]);
+    // ✅ FIX: Only depend on project.id, not the entire project object or onPublish function
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project.id]); // Only re-run if project ID changes
   
   const isComplete = progress.progress === 100;
   const hasError = progress.error !== null;
