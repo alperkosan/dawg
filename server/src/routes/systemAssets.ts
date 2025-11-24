@@ -178,19 +178,96 @@ export async function systemAssetsRoutes(fastify: FastifyInstance) {
           const contentRange = cdnResponse.headers.get('content-range');
           const acceptRanges = cdnResponse.headers.get('accept-ranges');
           
-          // ✅ FIX: Stream response directly from CDN to avoid encoding issues
-          // Convert Web ReadableStream to Node.js Readable stream
-          if (!cdnResponse.body) {
-            throw new NotFoundError('CDN response has no body');
+          // ✅ FIX: Try streaming first, fallback to buffer if stream fails
+          let useStream = false;
+          let nodeStream: Readable | null = null;
+          
+          if (cdnResponse.body && typeof Readable.fromWeb === 'function') {
+            try {
+              // ✅ FIX: Convert Web ReadableStream to Node.js Readable (Node.js 18+)
+              nodeStream = Readable.fromWeb(cdnResponse.body as any);
+              useStream = true;
+              logger.info(`📦 [PROXY] Using stream approach, Status: ${cdnResponse.status}, Range: ${rangeHeader || 'none'}`);
+            } catch (streamError: any) {
+              logger.warn(`⚠️ [PROXY] Stream conversion failed, falling back to buffer: ${streamError.message}`);
+              useStream = false;
+            }
           }
           
-          // ✅ FIX: Convert Web ReadableStream to Node.js Readable
-          // This avoids any encoding/decoding issues with arrayBuffer() conversion
-          const nodeStream = Readable.fromWeb(cdnResponse.body as any);
+          if (useStream && nodeStream) {
+            // ✅ FIX: Set headers before streaming
+            reply.header('Content-Type', contentType);
+            if (contentLength) {
+              reply.header('Content-Length', contentLength);
+            }
+            if (contentRange) {
+              reply.header('Content-Range', contentRange);
+              reply.code(206); // Partial Content
+            } else {
+              reply.code(200);
+            }
+            if (acceptRanges) {
+              reply.header('Accept-Ranges', acceptRanges);
+            }
+            reply.header('Cache-Control', 'public, max-age=31536000');
+            reply.header('Access-Control-Allow-Origin', '*'); // ✅ FIX: Allow CORS
+            reply.header('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+            reply.header('Access-Control-Allow-Headers', 'Range, Content-Type');
+            
+            // ✅ FIX: Stream directly to client (avoids buffer encoding issues)
+            return reply.send(nodeStream);
+          }
           
-          logger.info(`📦 [PROXY] Streaming CDN response, Status: ${cdnResponse.status}, Range: ${rangeHeader || 'none'}`);
+          // ✅ FALLBACK: Use arrayBuffer() with careful conversion
+          logger.info(`📦 [PROXY] Using buffer approach, Status: ${cdnResponse.status}, Range: ${rangeHeader || 'none'}`);
+          const arrayBuffer = await cdnResponse.arrayBuffer();
           
-          // ✅ FIX: Set headers before streaming
+          if (arrayBuffer.byteLength === 0) {
+            logger.error(`❌ [PROXY] CDN returned empty response`);
+            throw new NotFoundError('File is empty on CDN');
+          }
+          
+          // ✅ FIX: Convert ArrayBuffer to Buffer using direct memory copy
+          // Create Uint8Array view first, then convert to Buffer
+          const uint8Array = new Uint8Array(arrayBuffer);
+          const buffer = Buffer.from(uint8Array.buffer, uint8Array.byteOffset, uint8Array.byteLength);
+          
+          // ✅ FIX: Basic validation - check if it starts with audio file signatures
+          const bufferView = new Uint8Array(buffer);
+          const isAudioFile = bufferView.length > 4 && (
+            // WAV: "RIFF"
+            (bufferView[0] === 0x52 && bufferView[1] === 0x49 && bufferView[2] === 0x46 && bufferView[3] === 0x46) ||
+            // MP3: ID3 tag or MPEG header
+            (bufferView[0] === 0x49 && bufferView[1] === 0x44 && bufferView[2] === 0x33) ||
+            (bufferView[0] === 0xFF && (bufferView[1] & 0xE0) === 0xE0) ||
+            // OGG: "OggS"
+            (bufferView[0] === 0x4F && bufferView[1] === 0x67 && bufferView[2] === 0x67 && bufferView[3] === 0x53)
+          );
+          
+          if (!isAudioFile && bufferView.length > 100) {
+            // Check if it's HTML (error page)
+            const textDecoder = new TextDecoder();
+            const textStart = textDecoder.decode(bufferView.slice(0, 100));
+            if (textStart.includes('<html') || textStart.includes('<!DOCTYPE')) {
+              logger.error(`❌ [PROXY] CDN returned HTML instead of audio file`);
+              logger.error(`❌ [PROXY] Response preview: ${textStart.substring(0, 200)}`);
+              throw new NotFoundError('CDN returned error page instead of audio file');
+            }
+          }
+          
+          // ✅ FIX: Validate WAV structure more thoroughly
+          if (isAudioFile && bufferView.length >= 12) {
+            const waveBytes = [bufferView[8], bufferView[9], bufferView[10], bufferView[11]];
+            const waveCheck = String.fromCharCode(...waveBytes);
+            if (waveCheck !== 'WAVE') {
+              logger.warn(`⚠️ [PROXY] WAV file structure issue: RIFF header found but WAVE chunk is '${waveCheck}' instead of 'WAVE'`);
+              logger.warn(`⚠️ [PROXY] Bytes 8-11: ${waveBytes.map(b => '0x' + b.toString(16).padStart(2, '0')).join(' ')}`);
+              logger.warn(`⚠️ [PROXY] Byte values: ${waveBytes.join(', ')}`);
+            }
+          }
+          
+          logger.info(`✅ [PROXY] CDN proxy successful: ${buffer.byteLength} bytes, Content-Type: ${contentType}, Status: ${cdnResponse.status}, Range: ${rangeHeader || 'none'}`);
+          
           reply.header('Content-Type', contentType);
           if (contentLength) {
             reply.header('Content-Length', contentLength);
@@ -209,8 +286,8 @@ export async function systemAssetsRoutes(fastify: FastifyInstance) {
           reply.header('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
           reply.header('Access-Control-Allow-Headers', 'Range, Content-Type');
           
-          // ✅ FIX: Stream directly to client (avoids buffer encoding issues)
-          return reply.send(nodeStream);
+          // ✅ FIX: Send buffer directly (Fastify handles Buffer correctly)
+          return reply.send(buffer);
         } catch (error) {
           logger.error(`❌ [PROXY] CDN proxy failed:`, error);
           // Fall through to local storage

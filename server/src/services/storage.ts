@@ -85,8 +85,12 @@ export const storageService = {
           }
 
           // Generate CDN URL using pull zone
-          const storageUrl = config.cdn.bunny.pullZoneUrl 
-            ? `${config.cdn.bunny.pullZoneUrl}/${storageKey}`
+          // ✅ FIX: Remove trailing slashes and /n/ prefix (Bunny CDN sometimes adds this)
+          let pullZoneUrl = config.cdn.bunny.pullZoneUrl?.replace(/\/+$/, '') || '';
+          // Remove /n/ prefix if present (Bunny CDN pull zone URL should not include this)
+          pullZoneUrl = pullZoneUrl.replace(/\/n\/?$/, '');
+          const storageUrl = pullZoneUrl 
+            ? `${pullZoneUrl}/${storageKey.replace(/^\/+/, '')}` // Remove leading slashes from storageKey
             : `/api/assets/${assetId}/file`; // Fallback to API endpoint
 
           logger.info(`✅ File uploaded to Bunny CDN: ${storageKey}`);
@@ -198,7 +202,11 @@ export const storageService = {
   getCDNUrl(storageKey: string, assetId?: string): string {
     // ✅ Bunny CDN: Use pull zone URL
     if (config.cdn.provider === 'bunny' && config.cdn.bunny.pullZoneUrl) {
-      return `${config.cdn.bunny.pullZoneUrl}/${storageKey}`;
+      // ✅ FIX: Remove trailing slashes and /n/ prefix (Bunny CDN sometimes adds this)
+      let pullZoneUrl = config.cdn.bunny.pullZoneUrl.replace(/\/+$/, '');
+      // Remove /n/ prefix if present (Bunny CDN pull zone URL should not include this)
+      pullZoneUrl = pullZoneUrl.replace(/\/n\/?$/, '');
+      return `${pullZoneUrl}/${storageKey.replace(/^\/+/, '')}`; // Remove leading slashes from storageKey
     }
     
     // ✅ Fallback: Use API endpoint
