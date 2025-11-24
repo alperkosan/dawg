@@ -85,12 +85,16 @@ export const storageService = {
           }
 
           // Generate CDN URL using pull zone
-          // ✅ FIX: Remove trailing slashes and /n/ prefix (Bunny CDN sometimes adds this)
-          let pullZoneUrl = config.cdn.bunny.pullZoneUrl?.replace(/\/+$/, '') || '';
+          // ✅ FIX: Remove trailing slashes, /n/ prefix, and any whitespace/newlines
+          let pullZoneUrl = config.cdn.bunny.pullZoneUrl
+            ?.replace(/[\n\r\t\s]+/g, '') // Remove all whitespace, newlines, tabs
+            .replace(/\/+$/, '') // Remove trailing slashes
+            .trim() || '';
           // Remove /n/ prefix if present (Bunny CDN pull zone URL should not include this)
           pullZoneUrl = pullZoneUrl.replace(/\/n\/?$/, '');
+          const cleanStorageKey = storageKey.replace(/^\/+/, ''); // Remove leading slashes from storageKey
           const storageUrl = pullZoneUrl 
-            ? `${pullZoneUrl}/${storageKey.replace(/^\/+/, '')}` // Remove leading slashes from storageKey
+            ? `${pullZoneUrl}/${cleanStorageKey}`.replace(/[\n\r\t\s]+/g, '').trim() // Final cleanup
             : `/api/assets/${assetId}/file`; // Fallback to API endpoint
 
           logger.info(`✅ File uploaded to Bunny CDN: ${storageKey}`);
@@ -202,11 +206,17 @@ export const storageService = {
   getCDNUrl(storageKey: string, assetId?: string): string {
     // ✅ Bunny CDN: Use pull zone URL
     if (config.cdn.provider === 'bunny' && config.cdn.bunny.pullZoneUrl) {
-      // ✅ FIX: Remove trailing slashes and /n/ prefix (Bunny CDN sometimes adds this)
-      let pullZoneUrl = config.cdn.bunny.pullZoneUrl.replace(/\/+$/, '');
+      // ✅ FIX: Remove trailing slashes, /n/ prefix, and any whitespace/newlines
+      let pullZoneUrl = config.cdn.bunny.pullZoneUrl
+        .replace(/[\n\r\t\s]+/g, '') // Remove all whitespace, newlines, tabs
+        .replace(/\/+$/, '') // Remove trailing slashes
+        .trim();
       // Remove /n/ prefix if present (Bunny CDN pull zone URL should not include this)
       pullZoneUrl = pullZoneUrl.replace(/\/n\/?$/, '');
-      return `${pullZoneUrl}/${storageKey.replace(/^\/+/, '')}`; // Remove leading slashes from storageKey
+      const cleanStorageKey = storageKey.replace(/^\/+/, ''); // Remove leading slashes from storageKey
+      const url = `${pullZoneUrl}/${cleanStorageKey}`;
+      // ✅ FIX: Final cleanup - ensure no newlines or whitespace in final URL
+      return url.replace(/[\n\r\t\s]+/g, '').trim();
     }
     
     // ✅ Fallback: Use API endpoint

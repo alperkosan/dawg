@@ -257,13 +257,16 @@ export async function assetsRoutes(fastify: FastifyInstance) {
 
       logger.info(`✅ Storage upload completed: ${storageResult.storageKey} -> ${storageResult.storageUrl}`);
 
+      // ✅ FIX: Clean storage URL before storing in database (remove any whitespace/newlines)
+      const cleanStorageUrl = storageResult.storageUrl.replace(/[\n\r\t\s]+/g, '').trim();
+
       // Update asset with storage info
       const db = await import('../services/database.js').then(m => m.getDatabase());
       await db.query(
         `UPDATE user_assets 
          SET storage_key = $1, storage_url = $2, updated_at = NOW()
          WHERE id = $3 AND user_id = $4`,
-        [storageResult.storageKey, storageResult.storageUrl, assetId, userId]
+        [storageResult.storageKey, cleanStorageUrl, assetId, userId]
       );
 
       // Mark as completed
@@ -302,15 +305,22 @@ export async function assetsRoutes(fastify: FastifyInstance) {
       // ✅ FIX: If storage_url is a CDN URL, proxy from CDN to avoid CORS issues
       if (asset.storage_url && !asset.storage_url.startsWith('/api/')) {
         const { logger } = await import('../utils/logger.js');
-        logger.info(`📤 [PROXY] Proxying user asset from CDN: ${asset.storage_url}`);
+        // ✅ FIX: Clean URL - remove newlines, whitespace, tabs, and normalize
+        // This handles cases where URL was stored with whitespace in database
+        const cleanStorageUrl = asset.storage_url
+          .replace(/[\n\r\t]+/g, '') // Remove newlines, carriage returns, tabs
+          .replace(/\s+/g, '') // Remove all whitespace
+          .trim();
+        logger.info(`📤 [PROXY] Proxying user asset from CDN: ${cleanStorageUrl}`);
+        logger.info(`📤 [PROXY] Original URL (for debugging): ${JSON.stringify(asset.storage_url)}`);
         
         try {
           // ✅ FIX: Fetch from CDN and proxy to client (avoids CORS)
           const rangeHeader = request.headers.range;
           const headers: Record<string, string> = {};
           
-          // Pass Range header to CDN if present
-          if (rangeHeader) {
+        // Pass Range header to CDN if present
+        if (rangeHeader) {
             headers['Range'] = rangeHeader;
           }
           
@@ -318,7 +328,7 @@ export async function assetsRoutes(fastify: FastifyInstance) {
           const controller = new AbortController();
           const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
           
-          const cdnResponse = await fetch(asset.storage_url, {
+          const cdnResponse = await fetch(cleanStorageUrl, {
             headers,
             signal: controller.signal,
           });
@@ -329,7 +339,18 @@ export async function assetsRoutes(fastify: FastifyInstance) {
             logger.error(`❌ [PROXY] CDN fetch failed: ${cdnResponse.status} ${cdnResponse.statusText}`);
             const errorText = await cdnResponse.text().catch(() => 'Unknown error');
             logger.error(`❌ [PROXY] CDN error response: ${errorText}`);
-            throw new NotFoundError('File not found on CDN');
+            logger.error(`❌ [PROXY] CDN URL: ${cleanStorageUrl}`);
+            
+            // ✅ FIX: If file not found on CDN (404), it might have been deleted
+            // Check if database record still exists and clean it up if needed
+            if (cdnResponse.status === 404) {
+              logger.warn(`⚠️ [PROXY] File not found on CDN (404) but database record exists. This might indicate a stale record.`);
+              logger.warn(`⚠️ [PROXY] Asset ID: ${assetId}, User ID: ${userId}`);
+              // Note: We don't delete the database record here to avoid race conditions
+              // The user should delete the asset properly through the API
+              throw new NotFoundError('File not found on CDN (may have been deleted). Please refresh the file browser.');
+            }
+            throw new NotFoundError(`File not found on CDN: ${cdnResponse.status}`);
           }
           
           // ✅ FIX: Forward response headers from CDN

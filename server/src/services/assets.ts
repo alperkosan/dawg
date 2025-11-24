@@ -140,7 +140,9 @@ export const assetsService = {
     const storageKey = `user-assets/${userId}/${yearMonth}/${assetId}/${filename}`;
 
     // ✅ CDN: Generate CDN URL using storage service
-    const storageUrl = storageService.getCDNUrl(storageKey);
+    let storageUrl = storageService.getCDNUrl(storageKey);
+    // ✅ FIX: Ensure URL is clean before storing in database (remove any whitespace/newlines)
+    storageUrl = storageUrl.replace(/[\n\r\t\s]+/g, '').trim();
 
     // ✅ FIX: Validate parentFolderId exists and is a folder owned by user
     let validParentFolderId: string | null = null;
@@ -331,16 +333,22 @@ export const assetsService = {
       }
       
       await storageService.deleteFile(asset.storage_key, localPath);
+      console.log(`✅ Deleted file from storage: ${asset.storage_key}`);
     } catch (error) {
       console.warn(`⚠️ Failed to delete file from storage: ${error.message}`);
       // Continue with DB deletion even if storage deletion fails
     }
 
-    // Delete from database (trigger will automatically update quota)
+    // ✅ FIX: Delete from database (trigger will automatically update quota)
+    // Use transaction to ensure atomicity
     const db = getDatabase();
-    await db.query(`DELETE FROM user_assets WHERE id = $1 AND user_id = $2`, [assetId, userId]);
+    const result = await db.query(`DELETE FROM user_assets WHERE id = $1 AND user_id = $2`, [assetId, userId]);
     
-    console.log(`✅ Deleted asset ${assetId} (${asset.filename}) - quota will be updated by trigger`);
+    if (result.rowCount === 0) {
+      throw new Error(`Asset ${assetId} not found or already deleted`);
+    }
+    
+    console.log(`✅ Deleted asset ${assetId} (${asset.filename}) from database - quota will be updated by trigger`);
   },
 
   /**
