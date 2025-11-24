@@ -178,13 +178,18 @@ export async function systemAssetsRoutes(fastify: FastifyInstance) {
           const acceptRanges = cdnResponse.headers.get('accept-ranges');
           
           // ✅ FIX: Validate that we got audio data, not an error page
-          const buffer = await cdnResponse.arrayBuffer();
+          const arrayBuffer = await cdnResponse.arrayBuffer();
+          
+          logger.info(`📦 [PROXY] CDN response received: ${arrayBuffer.byteLength} bytes, Status: ${cdnResponse.status}, Range: ${rangeHeader || 'none'}`);
           
           // ✅ FIX: Check if response is actually audio (not HTML error page)
-          if (buffer.byteLength === 0) {
+          if (arrayBuffer.byteLength === 0) {
             logger.error(`❌ [PROXY] CDN returned empty response`);
             throw new NotFoundError('File is empty on CDN');
           }
+          
+          // ✅ FIX: Convert ArrayBuffer to Buffer correctly (without encoding issues)
+          const buffer = Buffer.from(arrayBuffer);
           
           // ✅ FIX: Basic validation - check if it starts with audio file signatures
           const bufferView = new Uint8Array(buffer);
@@ -209,7 +214,16 @@ export async function systemAssetsRoutes(fastify: FastifyInstance) {
             }
           }
           
-          logger.info(`✅ [PROXY] CDN proxy successful: ${buffer.byteLength} bytes, Content-Type: ${contentType}, Status: ${cdnResponse.status}`);
+          // ✅ FIX: Validate WAV structure more thoroughly
+          if (isAudioFile && bufferView.length >= 12) {
+            const waveCheck = String.fromCharCode(bufferView[8], bufferView[9], bufferView[10], bufferView[11]);
+            if (waveCheck !== 'WAVE') {
+              logger.warn(`⚠️ [PROXY] WAV file structure issue: RIFF header found but WAVE chunk is '${waveCheck}' instead of 'WAVE'`);
+              logger.warn(`⚠️ [PROXY] Bytes 8-11: ${Array.from(bufferView.slice(8, 12)).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' ')}`);
+            }
+          }
+          
+          logger.info(`✅ [PROXY] CDN proxy successful: ${buffer.byteLength} bytes, Content-Type: ${contentType}, Status: ${cdnResponse.status}, Range: ${rangeHeader || 'none'}`);
           
           reply.header('Content-Type', contentType);
           if (contentLength) {
@@ -229,8 +243,8 @@ export async function systemAssetsRoutes(fastify: FastifyInstance) {
           reply.header('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
           reply.header('Access-Control-Allow-Headers', 'Range, Content-Type');
           
-          // ✅ FIX: Send buffer to client
-          return reply.send(Buffer.from(buffer));
+          // ✅ FIX: Send buffer directly (Fastify handles Buffer correctly)
+          return reply.send(buffer);
         } catch (error) {
           logger.error(`❌ [PROXY] CDN proxy failed:`, error);
           // Fall through to local storage

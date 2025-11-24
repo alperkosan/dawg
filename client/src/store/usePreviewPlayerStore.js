@@ -291,12 +291,18 @@ const loadAudioBuffer = async (url, set, get, fullLoad = false) => {
           
           // ✅ FIX: Additional validation - check WAV structure
           if (bufferCopy.byteLength >= 44) {
-            const view = new DataView(bufferCopy);
-            const riff = String.fromCharCode(view.getUint8(0), view.getUint8(1), view.getUint8(2), view.getUint8(3));
-            const wave = String.fromCharCode(view.getUint8(8), view.getUint8(9), view.getUint8(10), view.getUint8(11));
+            const view = new Uint8Array(bufferCopy);
+            // ✅ FIX: Use Uint8Array instead of DataView for more reliable string conversion
+            const riffBytes = [view[0], view[1], view[2], view[3]];
+            const waveBytes = [view[8], view[9], view[10], view[11]];
+            const riff = String.fromCharCode(...riffBytes);
+            const wave = String.fromCharCode(...waveBytes);
             
             if (riff !== 'RIFF' || wave !== 'WAVE') {
               console.warn(`[PreviewCache] Invalid WAV structure: RIFF=${riff}, WAVE=${wave}`);
+              console.warn(`[PreviewCache] RIFF bytes: ${riffBytes.map(b => '0x' + b.toString(16).padStart(2, '0')).join(' ')}`);
+              console.warn(`[PreviewCache] WAVE bytes: ${waveBytes.map(b => '0x' + b.toString(16).padStart(2, '0')).join(' ')}`);
+              console.warn(`[PreviewCache] First 44 bytes: ${Array.from(view.slice(0, 44)).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' ')}`);
             }
           }
           
