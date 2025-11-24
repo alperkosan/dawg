@@ -32,7 +32,16 @@ const CreateProjectSchema = z.object({
   isUnlisted: z.boolean().optional(),
 });
 
-const UpdateProjectSchema = CreateProjectSchema.partial();
+const UpdateProjectSchema = CreateProjectSchema.partial().extend({
+  // ✅ FIX: Add preview audio fields for client-side upload
+  previewAudioUrl: z.string().url().optional(),
+  previewAudioDuration: z.number().int().nonnegative().optional(),
+  previewAudioRenderedAt: z.union([
+    z.string(), // ISO string - will be converted to Date in updateProject
+    z.date(),
+  ]).optional(),
+  previewAudioStatus: z.enum(['pending', 'rendering', 'ready', 'failed']).optional(),
+});
 
 export async function projectRoutes(server: FastifyInstance) {
   // Get all projects
@@ -230,7 +239,18 @@ export async function projectRoutes(server: FastifyInstance) {
       }
       
       const { id } = request.params as { id: string };
-      const body = UpdateProjectSchema.parse(request.body);
+      
+      // ✅ FIX: Better error handling for validation
+      let body;
+      try {
+        body = UpdateProjectSchema.parse(request.body);
+      } catch (validationError) {
+        logger.error(`❌ [UPDATE_PROJECT] Validation error for project ${id}:`, validationError);
+        if (validationError instanceof z.ZodError) {
+          throw new BadRequestError('Validation failed', validationError.errors);
+        }
+        throw validationError;
+      }
       
       // Check if user can edit
       const canEdit = await canEditProject(request.user.userId, id);
@@ -238,6 +258,15 @@ export async function projectRoutes(server: FastifyInstance) {
         throw new ForbiddenError('You do not have permission to edit this project');
       }
       
+      // ✅ FIX: Convert previewAudioRenderedAt string to Date if needed
+      const previewAudioRenderedAt = body.previewAudioRenderedAt 
+        ? (typeof body.previewAudioRenderedAt === 'string' 
+           ? new Date(body.previewAudioRenderedAt) 
+           : body.previewAudioRenderedAt)
+        : undefined;
+
+      logger.info(`📝 [UPDATE_PROJECT] Updating project ${id} with preview audio: ${body.previewAudioUrl ? 'yes' : 'no'}`);
+
       const project = await updateProject(id, {
         title: body.title,
         description: body.description,
@@ -248,6 +277,11 @@ export async function projectRoutes(server: FastifyInstance) {
         projectData: body.projectData,
         isPublic: body.isPublic,
         isUnlisted: body.isUnlisted,
+        // ✅ FIX: Include preview audio fields from client-side upload
+        previewAudioUrl: body.previewAudioUrl,
+        previewAudioDuration: body.previewAudioDuration,
+        previewAudioRenderedAt: previewAudioRenderedAt,
+        previewAudioStatus: body.previewAudioStatus,
       });
       
       return {
@@ -272,10 +306,15 @@ export async function projectRoutes(server: FastifyInstance) {
         },
       };
     } catch (error: any) {
+      logger.error(`❌ [UPDATE_PROJECT] Error updating project:`, error);
       if (error instanceof z.ZodError) {
         throw new BadRequestError('Validation failed', error.errors);
       }
-      throw error;
+      if (error instanceof BadRequestError || error instanceof ForbiddenError || error instanceof NotFoundError) {
+        throw error;
+      }
+      // Re-throw as internal server error for unexpected errors
+      throw new Error(`Failed to update project: ${error.message || 'Unknown error'}`);
     }
   });
   
