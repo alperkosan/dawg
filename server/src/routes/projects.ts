@@ -395,13 +395,28 @@ export async function projectRoutes(server: FastifyInstance) {
         logger.info(`📦 [UPLOAD_PREVIEW] Content-Type: ${contentType}`);
         logger.info(`📦 [UPLOAD_PREVIEW] Request body type: ${typeof request.body}`);
         logger.info(`📦 [UPLOAD_PREVIEW] Request body keys: ${request.body ? Object.keys(request.body as any) : 'null'}`);
+        // ✅ DEBUG: Check if payload is in a different location
+        logger.info(`📦 [UPLOAD_PREVIEW] Request has rawBody: ${(request as any).rawBody ? 'yes' : 'no'}`);
+        logger.info(`📦 [UPLOAD_PREVIEW] Request has payload: ${(request as any).payload ? 'yes' : 'no'}`);
+        logger.info(`📦 [UPLOAD_PREVIEW] Request body stringified length: ${request.body ? JSON.stringify(request.body).length : 0}`);
 
-        const body = request.body as any;
+        // ✅ FIX: Try to get body from request.body or request.payload
+        let body = request.body as any;
+        if (!body || (typeof body === 'object' && Object.keys(body).length === 0)) {
+          // Try request.payload as fallback
+          body = (request as any).payload;
+          if (body) {
+            logger.info(`📦 [UPLOAD_PREVIEW] Using request.payload instead of request.body`);
+          }
+        }
         
-        // ✅ FIX: Check if multipart data was pre-parsed by Vercel handler (busboy)
+        // ✅ FIX: Check if multipart data was pre-parsed by Vercel handler (formidable)
         if (body && typeof body === 'object' && 'fields' in body && 'files' in body) {
           logger.info(`✅ [UPLOAD_PREVIEW] Using pre-parsed multipart data from Vercel handler`);
-          const parsedData = body as { fields: Record<string, string>; files: Record<string, { buffer: Buffer; filename: string; mimetype: string }> };
+          const parsedData = body as { 
+            fields: Record<string, string>; 
+            files: Record<string, { bufferBase64?: string; buffer?: Buffer; filename: string; mimetype: string }> 
+          };
           
           // Get duration from fields
           const durationValue = parsedData.fields['duration'];
@@ -417,10 +432,20 @@ export async function projectRoutes(server: FastifyInstance) {
           
           const fileKey = fileKeys[0]; // Use first file
           const fileInfo = parsedData.files[fileKey];
-          audioBuffer = fileInfo.buffer;
+          
+          // ✅ FIX: Decode base64 buffer if present (from JSON serialization)
+          if (fileInfo.bufferBase64) {
+            audioBuffer = Buffer.from(fileInfo.bufferBase64, 'base64');
+            logger.info(`📁 [UPLOAD_PREVIEW] File buffer decoded from base64: ${fileInfo.filename}, size: ${(audioBuffer.length / 1024 / 1024).toFixed(2)}MB`);
+          } else if (fileInfo.buffer) {
+            audioBuffer = fileInfo.buffer;
+            logger.info(`📁 [UPLOAD_PREVIEW] File buffer (direct): ${fileInfo.filename}, size: ${(audioBuffer.length / 1024 / 1024).toFixed(2)}MB`);
+          } else {
+            throw new BadRequestError('File buffer not found in parsed data');
+          }
+          
           duration = parseFloat(durationValue);
           
-          logger.info(`📁 [UPLOAD_PREVIEW] File received: ${fileInfo.filename}, size: ${(audioBuffer.length / 1024 / 1024).toFixed(2)}MB`);
           logger.info(`📤 [UPLOAD_PREVIEW] Multipart upload completed: ${(audioBuffer.length / 1024 / 1024).toFixed(2)}MB, duration: ${duration}s`);
         } else {
           // ✅ FALLBACK: Try request.parts() if pre-parsed data not available

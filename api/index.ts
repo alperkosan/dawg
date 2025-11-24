@@ -310,8 +310,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           console.log(`✅ [MULTIPART] Parsing completed. Fields: ${Object.keys(parsedData.fields).length}, Files: ${Object.keys(parsedData.files).length}`);
           
           // ✅ FIX: Store parsed data for route handler
-          payload = parsedData; // Pass as payload so route can access it
-          console.log(`✅ [MULTIPART] Parsed data ready. Fields: ${Object.keys(parsedData.fields).length}, Files: ${Object.keys(parsedData.files).length}`);
+          // Convert Buffer to base64 for JSON serialization (server.inject() uses JSON.stringify)
+          const serializableData = {
+            fields: parsedData.fields,
+            files: {} as Record<string, { bufferBase64: string; filename: string; mimetype: string }>,
+          };
+          
+          for (const [key, fileInfo] of Object.entries(parsedData.files)) {
+            serializableData.files[key] = {
+              bufferBase64: fileInfo.buffer.toString('base64'),
+              filename: fileInfo.filename,
+              mimetype: fileInfo.mimetype,
+            };
+          }
+          
+          payload = serializableData; // Pass as payload so route can access it
+          console.log(`✅ [MULTIPART] Parsed data ready (serialized). Fields: ${Object.keys(parsedData.fields).length}, Files: ${Object.keys(parsedData.files).length}`);
           
         } catch (multipartError: any) {
           console.error(`❌ [MULTIPART] Error parsing multipart: ${multipartError.message}`);
@@ -356,33 +370,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // Ignore logger errors
     }
     
-    // ✅ FIX: For multipart requests, Fastify's multipart plugin will handle them
-    // Vercel's bodyParser is disabled, so Fastify can process the raw stream
-    // Note: Fastify inject() doesn't support multipart streams directly,
-    // but since we're using server.inject(), we need to handle this differently
-    // For now, pass undefined and let the route handler handle multipart via Fastify's plugin
+    // ✅ FIX: For multipart requests, we've already parsed them with formidable
+    // Pass the parsed data as payload so route handler can access it
     if (isMultipart) {
-      console.log('📦 Multipart request detected - Fastify multipart plugin will handle it');
+      console.log('📦 Multipart request detected - using pre-parsed data');
       // ✅ FIX: Safe logger call
       try {
         if (logger && typeof logger.info === 'function') {
-          logger.info('📦 Multipart request - Fastify will handle via multipart plugin');
+          logger.info('📦 Multipart request - using pre-parsed data from formidable');
         }
       } catch (loggerError) {
         // Ignore logger errors
       }
       
-      // ✅ FIX: For multipart, we can't use inject() with raw stream
-      // Instead, we need to let Fastify handle it directly via its multipart plugin
-      // But since we're using inject(), we'll pass undefined and handle error in route
-      // OR: We could create a custom request handler for multipart
-      // For now, return 415 Unsupported Media Type for multipart via inject()
-      // The route handler should handle multipart directly if needed
-      injectPayload = undefined;
-      
-      // ✅ FIX: Note - multipart requests via inject() are not fully supported
-      // Routes that need multipart should handle it directly via Fastify's request object
-      // This is a limitation of using server.inject() for serverless
+      // ✅ FIX: payload already contains parsed data from formidable
+      // Pass it to inject() so route handler can access it via request.body
+      injectPayload = payload;
     }
     
     // ✅ FIX: Set injectPayload for all requests (if not already set)
