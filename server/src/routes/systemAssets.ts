@@ -155,7 +155,24 @@ export async function systemAssetsRoutes(fastify: FastifyInstance) {
           }
           
           // ✅ FIX: Forward response headers from CDN
-          const contentType = cdnResponse.headers.get('content-type') || asset.mimeType || 'audio/wav';
+          // ✅ FIX: Override application/octet-stream with proper audio MIME type
+          let contentType = cdnResponse.headers.get('content-type') || asset.mimeType || 'audio/wav';
+          if (contentType === 'application/octet-stream' || !contentType.startsWith('audio/')) {
+            // Determine MIME type from filename or use default
+            const filename = asset.filename || '';
+            if (filename.endsWith('.wav')) {
+              contentType = 'audio/wav';
+            } else if (filename.endsWith('.mp3')) {
+              contentType = 'audio/mpeg';
+            } else if (filename.endsWith('.ogg')) {
+              contentType = 'audio/ogg';
+            } else if (filename.endsWith('.m4a')) {
+              contentType = 'audio/mp4';
+            } else {
+              contentType = asset.mimeType || 'audio/wav';
+            }
+            logger.info(`🔧 [PROXY] Overriding Content-Type from '${cdnResponse.headers.get('content-type')}' to '${contentType}'`);
+          }
           const contentLength = cdnResponse.headers.get('content-length');
           const contentRange = cdnResponse.headers.get('content-range');
           const acceptRanges = cdnResponse.headers.get('accept-ranges');

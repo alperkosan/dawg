@@ -228,8 +228,16 @@ const loadAudioBuffer = async (url, set, get, fullLoad = false) => {
           ? await loadFullBuffer(url, controller.signal)
           : await loadPreviewRange(url, 2, controller.signal);
         
+        // ✅ FIX: Validate arrayBuffer before decoding
+        if (!arrayBuffer || arrayBuffer.byteLength === 0) {
+          throw new Error('Empty audio buffer received');
+        }
+        
+        console.log(`[PreviewCache] Decoding audio buffer: ${arrayBuffer.byteLength} bytes`);
+        
         const context = getAudioContext();
-        const audioBuffer = await decodeAudioData(arrayBuffer.slice(0));
+        // ✅ FIX: Don't slice the buffer - use it as is
+        const audioBuffer = await decodeAudioData(arrayBuffer);
 
         // Cache'e ekle (preview ve full ayrı cache'lenir)
         addToCache(cacheKey, audioBuffer);

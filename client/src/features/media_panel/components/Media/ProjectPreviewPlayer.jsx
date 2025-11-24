@@ -82,9 +82,35 @@ export default function ProjectPreviewPlayer({
           await context.resume();
         }
 
+        // ✅ FIX: Normalize URL to use backend proxy for CDN URLs (avoids CORS)
+        let normalizedUrl = audioUrl;
+        
+        // If it's a CDN URL (user-assets), convert to proxy endpoint
+        if (audioUrl.includes('dawg.b-cdn.net/user-assets') || audioUrl.includes('user-assets/')) {
+          // Extract assetId from URL pattern: .../user-assets/{userId}/{year-month}/{assetId}/{filename}
+          const match = audioUrl.match(/user-assets\/[^/]+\/[^/]+\/([a-f0-9-]{36})\//);
+          if (match && match[1]) {
+            const assetId = match[1];
+            // Dynamically import apiClient to avoid circular dependencies
+            const { apiClient } = await import('@/services/api.js');
+            normalizedUrl = `${apiClient.baseURL}/assets/${assetId}/file`;
+            console.log('ProjectPreviewPlayer: Using proxy endpoint:', normalizedUrl);
+          }
+        }
+
         // Fetch and decode audio
         console.log('ProjectPreviewPlayer: Fetching audio...');
-        const response = await fetch(audioUrl);
+        const headers = {};
+        if (normalizedUrl.includes('/api/assets/')) {
+          // Add auth token for authenticated endpoints
+          const { useAuthStore } = await import('@/store/useAuthStore.js');
+          const token = useAuthStore.getState().accessToken;
+          if (token) {
+            headers['Authorization'] = `Bearer ${token}`;
+          }
+        }
+        
+        const response = await fetch(normalizedUrl, { headers });
         if (!response.ok) {
           throw new Error(`Failed to fetch audio: ${response.status} ${response.statusText}`);
         }

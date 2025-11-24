@@ -333,13 +333,32 @@ export async function assetsRoutes(fastify: FastifyInstance) {
           }
           
           // ✅ FIX: Forward response headers from CDN
-          const contentType = cdnResponse.headers.get('content-type') || asset.mime_type || 'audio/wav';
+          // ✅ FIX: Override application/octet-stream with proper audio MIME type
+          let contentType = cdnResponse.headers.get('content-type') || asset.mime_type || 'audio/wav';
+          if (contentType === 'application/octet-stream' || !contentType.startsWith('audio/')) {
+            // Determine MIME type from filename or use default
+            const filename = asset.filename || '';
+            if (filename.endsWith('.wav')) {
+              contentType = 'audio/wav';
+            } else if (filename.endsWith('.mp3')) {
+              contentType = 'audio/mpeg';
+            } else if (filename.endsWith('.ogg')) {
+              contentType = 'audio/ogg';
+            } else if (filename.endsWith('.m4a')) {
+              contentType = 'audio/mp4';
+            } else {
+              contentType = asset.mime_type || 'audio/wav';
+            }
+            logger.info(`🔧 [PROXY] Overriding Content-Type from '${cdnResponse.headers.get('content-type')}' to '${contentType}'`);
+          }
           const contentLength = cdnResponse.headers.get('content-length');
           const contentRange = cdnResponse.headers.get('content-range');
           const acceptRanges = cdnResponse.headers.get('accept-ranges');
           
           // ✅ FIX: Validate that we got audio data, not an error page
           const buffer = await cdnResponse.arrayBuffer();
+          
+          logger.info(`📦 [PROXY] CDN response received: ${buffer.byteLength} bytes, Status: ${cdnResponse.status}, Range: ${rangeHeader || 'none'}`);
           
           // ✅ FIX: Check if response is actually audio (not HTML error page)
           if (buffer.byteLength === 0) {
@@ -359,18 +378,25 @@ export async function assetsRoutes(fastify: FastifyInstance) {
             (bufferView[0] === 0x4F && bufferView[1] === 0x67 && bufferView[2] === 0x67 && bufferView[3] === 0x53)
           );
           
-          if (!isAudioFile && bufferView.length > 100) {
-            // Check if it's HTML (error page)
+          // ✅ FIX: For Range requests, check if it's a valid partial content
+          if (rangeHeader && !isAudioFile && bufferView.length > 100) {
+            // Range request might not include file header, that's OK
+            logger.info(`ℹ️ [PROXY] Range request - partial content (${buffer.byteLength} bytes), skipping header validation`);
+          } else if (!isAudioFile && bufferView.length > 100) {
+            // Check if it's HTML (error page) - only for full content
             const textDecoder = new TextDecoder();
             const textStart = textDecoder.decode(bufferView.slice(0, 100));
             if (textStart.includes('<html') || textStart.includes('<!DOCTYPE')) {
               logger.error(`❌ [PROXY] CDN returned HTML instead of audio file`);
               logger.error(`❌ [PROXY] Response preview: ${textStart.substring(0, 200)}`);
               throw new NotFoundError('CDN returned error page instead of audio file');
+            } else {
+              logger.warn(`⚠️ [PROXY] Response doesn't match known audio file signatures, but not HTML either`);
+              logger.warn(`⚠️ [PROXY] First bytes: ${Array.from(bufferView.slice(0, 20)).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' ')}`);
             }
           }
           
-          logger.info(`✅ [PROXY] CDN proxy successful: ${buffer.byteLength} bytes, Content-Type: ${contentType}, Status: ${cdnResponse.status}`);
+          logger.info(`✅ [PROXY] CDN proxy successful: ${buffer.byteLength} bytes, Content-Type: ${contentType}, Status: ${cdnResponse.status}, Range: ${rangeHeader || 'none'}`);
           
           reply.header('Content-Type', contentType);
           if (contentLength) {
