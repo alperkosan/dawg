@@ -391,35 +391,29 @@ export async function projectRoutes(server: FastifyInstance) {
 
       // ✅ NEW: Support multipart/form-data (streaming upload, no base64 overhead)
       if (contentType.includes('multipart/form-data')) {
-        let fileData: any = null;
-        let durationValue: string | null = null;
-
-        // Parse multipart data - fields come first, then file
-        for await (const part of request.parts()) {
-          if (part.type === 'field') {
-            const field = part as any;
-            if (field.fieldname === 'duration') {
-              durationValue = field.value;
-            }
-          } else if (part.type === 'file') {
-            // Accept any file field name ('file', 'audio', etc.)
-            fileData = part;
-            // Read file buffer from stream
-            audioBuffer = await fileData.toBuffer();
-            logger.info(`📁 [UPLOAD_PREVIEW] File received: ${(fileData as any).filename || 'unknown'}, size: ${(audioBuffer.length / 1024 / 1024).toFixed(2)}MB`);
-          }
-        }
-
-        if (!fileData || !audioBuffer) {
-          throw new BadRequestError('No file provided in multipart form');
-        }
-
+        // ✅ FIX: With attachFieldsToBody: 'keyValues', form fields are in request.body
+        // Use request.file() for the file and request.body for fields
+        const body = request.body as any;
+        const durationValue = body?.duration;
+        
         if (!durationValue) {
           throw new BadRequestError('duration field is required');
         }
 
+        // ✅ FIX: Use request.file() instead of request.parts() for better Vercel compatibility
+        const fileData = await request.file();
+        if (!fileData) {
+          logger.error('❌ [UPLOAD_PREVIEW] No file received in multipart form');
+          logger.error('❌ [UPLOAD_PREVIEW] Content-Type:', contentType);
+          logger.error('❌ [UPLOAD_PREVIEW] Request body keys:', Object.keys(body || {}));
+          throw new BadRequestError('No file provided in multipart form');
+        }
+
+        // Read file buffer from stream
+        audioBuffer = await fileData.toBuffer();
         duration = parseFloat(durationValue);
 
+        logger.info(`📁 [UPLOAD_PREVIEW] File received: ${fileData.filename || 'unknown'}, size: ${(audioBuffer.length / 1024 / 1024).toFixed(2)}MB`);
         logger.info(`📤 [UPLOAD_PREVIEW] Multipart upload completed: ${(audioBuffer.length / 1024 / 1024).toFixed(2)}MB, duration: ${duration}s`);
       } else {
         // ✅ LEGACY: Support base64 JSON (for backward compatibility)
