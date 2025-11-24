@@ -28,7 +28,11 @@ export const config = {
     // ✅ Neon: Use DATABASE_URL from Vercel/Neon integration
     // Format: postgresql://user:password@host/database?sslmode=require
     // Or with pooler: postgresql://user:password@host-pooler/database?sslmode=require
-    url: process.env.DATABASE_URL || process.env.NEON_DATABASE_URL || 'postgresql://user:password@localhost:5432/dawg',
+    // ✅ FIX: Support both DATABASE_URL and dawg_DATABASE_URL (Vercel Neon integration prefix)
+    url: process.env.DATABASE_URL 
+      || process.env.NEON_DATABASE_URL 
+      || process.env.dawg_DATABASE_URL  // Vercel Neon integration uses prefix
+      || 'postgresql://user:password@localhost:5432/dawg',
     poolMin: parseInt(process.env.DB_POOL_MIN || '0', 10), // ✅ Serverless: 0 for Neon
     poolMax: parseInt(process.env.DB_POOL_MAX || '5', 10), // ✅ Neon free tier: 5 connections
   },
