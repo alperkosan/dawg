@@ -219,9 +219,11 @@ class ApiClient {
     // Otherwise, use base64 JSON (legacy)
     if (renderData.audioFile && renderData.audioFile instanceof Blob) {
       const formData = new FormData();
+      // ✅ CRITICAL: Add fields FIRST, then file LAST
+      // This ensures fields are read before file stream blocks the loop
+      formData.append('duration', renderData.duration.toString());
       // ✅ Backend accepts any file field name ('file', 'audio', etc.)
       formData.append('file', renderData.audioFile, `${projectId}-preview.wav`);
-      formData.append('duration', renderData.duration.toString());
 
       return this.request(`/projects/${projectId}/upload-preview`, {
         method: 'POST',
