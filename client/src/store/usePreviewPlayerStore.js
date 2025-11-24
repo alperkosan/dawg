@@ -139,7 +139,11 @@ const loadPreviewRange = async (url, duration = 2, signal) => {
   const bytesPerSample = 2; // 16-bit
   const channels = 2; // stereo
   const bytesPerSecond = sampleRate * bytesPerSample * channels;
-  const rangeEnd = bytesPerSecond * duration - 1; // Range is inclusive
+  const previewSize = bytesPerSecond * duration; // ~352KB for 2 seconds
+  
+  // ✅ FIX: For small files (< 1MB), load full file instead of Range request
+  // This is more reliable and avoids WAV header issues
+  const MAX_PREVIEW_SIZE = 1024 * 1024; // 1MB
   
   const headers = {};
   if (normalizedUrl.includes('/api/assets/')) {
@@ -149,24 +153,57 @@ const loadPreviewRange = async (url, duration = 2, signal) => {
       headers['Authorization'] = `Bearer ${token}`;
     }
   }
-  headers['Range'] = `bytes=0-${rangeEnd}`;
   
-  const response = await fetch(normalizedUrl, { 
+  // ✅ FIX: Try Range request first, but validate WAV header
+  // If preview size is small enough, just load full file
+  if (previewSize < MAX_PREVIEW_SIZE) {
+    // Try Range request for preview
+    headers['Range'] = `bytes=0-${previewSize - 1}`;
+    
+    try {
+      const response = await fetch(normalizedUrl, { 
+        signal,
+        headers
+      });
+      
+      if (response.status === 206) {
+        // Partial Content - Range request başarılı
+        const arrayBuffer = await response.arrayBuffer();
+        
+        // ✅ FIX: Validate that we got WAV header (first 4 bytes should be "RIFF")
+        if (arrayBuffer.byteLength >= 4) {
+          const view = new Uint8Array(arrayBuffer);
+          const isWav = view[0] === 0x52 && view[1] === 0x49 && view[2] === 0x46 && view[3] === 0x46; // "RIFF"
+          
+          if (isWav) {
+            console.log(`[PreviewCache] Range request successful: ${arrayBuffer.byteLength} bytes with valid WAV header`);
+            return arrayBuffer;
+          } else {
+            console.warn('[PreviewCache] Range request response does not start with WAV header, loading full file');
+          }
+        }
+      } else if (response.status === 200) {
+        // Full content - Range request desteklenmiyor
+        console.log('[PreviewCache] Range request not supported, got full file');
+        return await response.arrayBuffer();
+      }
+    } catch (error) {
+      console.warn('[PreviewCache] Range request failed, falling back to full load:', error);
+    }
+  }
+  
+  // ✅ FIX: Fallback to full file load (more reliable for preview)
+  console.log('[PreviewCache] Loading full file for preview');
+  const fullResponse = await fetch(normalizedUrl, { 
     signal,
-    headers
+    headers: headers['Authorization'] ? { 'Authorization': headers['Authorization'] } : {}
   });
   
-  // Range request desteklenmiyorsa fallback
-  if (response.status === 206) {
-    // Partial Content - Range request başarılı
-    return await response.arrayBuffer();
-  } else if (response.status === 200) {
-    // Full content - Range request desteklenmiyor, fallback to full load
-    console.log('[PreviewCache] Range request not supported, loading full file');
-    return await response.arrayBuffer();
-  } else {
-    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+  if (!fullResponse.ok) {
+    throw new Error(`HTTP ${fullResponse.status}: ${fullResponse.statusText}`);
   }
+  
+  return await fullResponse.arrayBuffer();
 };
 
 /**
