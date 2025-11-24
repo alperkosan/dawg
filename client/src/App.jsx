@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, Suspense, useCallback, useMemo } from 'react';
 import { flushSync } from 'react-dom';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
+import { Analytics } from '@vercel/analytics/react';
 import { SpeedInsights } from '@vercel/speed-insights/react';
 
 // Core Systems
@@ -888,6 +889,7 @@ function App() {
   return (
     <BrowserRouter>
       <AppRouter />
+      <Analytics />
       <SpeedInsights />
     </BrowserRouter>
   );
