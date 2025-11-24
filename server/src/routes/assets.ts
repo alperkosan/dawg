@@ -327,6 +327,8 @@ export async function assetsRoutes(fastify: FastifyInstance) {
           
           if (!cdnResponse.ok) {
             logger.error(`❌ [PROXY] CDN fetch failed: ${cdnResponse.status} ${cdnResponse.statusText}`);
+            const errorText = await cdnResponse.text().catch(() => 'Unknown error');
+            logger.error(`❌ [PROXY] CDN error response: ${errorText}`);
             throw new NotFoundError('File not found on CDN');
           }
           
@@ -335,6 +337,40 @@ export async function assetsRoutes(fastify: FastifyInstance) {
           const contentLength = cdnResponse.headers.get('content-length');
           const contentRange = cdnResponse.headers.get('content-range');
           const acceptRanges = cdnResponse.headers.get('accept-ranges');
+          
+          // ✅ FIX: Validate that we got audio data, not an error page
+          const buffer = await cdnResponse.arrayBuffer();
+          
+          // ✅ FIX: Check if response is actually audio (not HTML error page)
+          if (buffer.byteLength === 0) {
+            logger.error(`❌ [PROXY] CDN returned empty response`);
+            throw new NotFoundError('File is empty on CDN');
+          }
+          
+          // ✅ FIX: Basic validation - check if it starts with audio file signatures
+          const bufferView = new Uint8Array(buffer);
+          const isAudioFile = bufferView.length > 4 && (
+            // WAV: "RIFF"
+            (bufferView[0] === 0x52 && bufferView[1] === 0x49 && bufferView[2] === 0x46 && bufferView[3] === 0x46) ||
+            // MP3: ID3 tag or MPEG header
+            (bufferView[0] === 0x49 && bufferView[1] === 0x44 && bufferView[2] === 0x33) ||
+            (bufferView[0] === 0xFF && (bufferView[1] & 0xE0) === 0xE0) ||
+            // OGG: "OggS"
+            (bufferView[0] === 0x4F && bufferView[1] === 0x67 && bufferView[2] === 0x67 && bufferView[3] === 0x53)
+          );
+          
+          if (!isAudioFile && bufferView.length > 100) {
+            // Check if it's HTML (error page)
+            const textDecoder = new TextDecoder();
+            const textStart = textDecoder.decode(bufferView.slice(0, 100));
+            if (textStart.includes('<html') || textStart.includes('<!DOCTYPE')) {
+              logger.error(`❌ [PROXY] CDN returned HTML instead of audio file`);
+              logger.error(`❌ [PROXY] Response preview: ${textStart.substring(0, 200)}`);
+              throw new NotFoundError('CDN returned error page instead of audio file');
+            }
+          }
+          
+          logger.info(`✅ [PROXY] CDN proxy successful: ${buffer.byteLength} bytes, Content-Type: ${contentType}, Status: ${cdnResponse.status}`);
           
           reply.header('Content-Type', contentType);
           if (contentLength) {
@@ -354,8 +390,7 @@ export async function assetsRoutes(fastify: FastifyInstance) {
           reply.header('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
           reply.header('Access-Control-Allow-Headers', 'Range, Content-Type');
           
-          // ✅ FIX: Stream response from CDN to client
-          const buffer = await cdnResponse.arrayBuffer();
+          // ✅ FIX: Send buffer to client
           return reply.send(Buffer.from(buffer));
         } catch (error) {
           logger.error(`❌ [PROXY] CDN proxy failed:`, error);
