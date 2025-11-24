@@ -5,6 +5,7 @@
 
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
+import { Readable } from 'stream';
 import { assetsService } from '../services/assets.js';
 import { storageService } from '../services/storage.js';
 import { BadRequestError, NotFoundError, ForbiddenError } from '../utils/errors.js';
@@ -421,7 +422,7 @@ export async function assetsRoutes(fastify: FastifyInstance) {
             }
             if (contentRange) {
               reply.header('Content-Range', contentRange);
-              reply.code(206); // Partial Content
+            reply.code(206); // Partial Content
             } else {
               reply.code(200);
             }
@@ -521,7 +522,7 @@ export async function assetsRoutes(fastify: FastifyInstance) {
           if (acceptRanges) {
             reply.header('Accept-Ranges', acceptRanges);
           }
-          reply.header('Cache-Control', 'public, max-age=31536000');
+        reply.header('Cache-Control', 'public, max-age=31536000');
           reply.header('Access-Control-Allow-Origin', '*'); // ✅ FIX: Allow CORS
           reply.header('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
           reply.header('Access-Control-Allow-Headers', 'Range, Content-Type');
