@@ -60,17 +60,41 @@ async function createServer() {
     // Test database connection
     if (!isInitialized) {
       console.log('🔵 Step 1: Testing database connection...');
+      console.log('Database URL present:', process.env.DATABASE_URL ? 'YES' : 'NO');
+      console.log('Neon URL present:', process.env.NEON_DATABASE_URL ? 'YES' : 'NO');
+      
+      // ✅ FIX: Log database URL (masked) for debugging
+      if (process.env.DATABASE_URL) {
+        const dbUrl = process.env.DATABASE_URL;
+        const maskedUrl = dbUrl.substring(0, 20) + '...' + dbUrl.substring(dbUrl.length - 10);
+        console.log('Database URL (masked):', maskedUrl);
+        console.log('Is Neon URL:', dbUrl.includes('neon.tech') || dbUrl.includes('neon') || dbUrl.includes('pooler'));
+      }
+      
       try {
         const dbConnected = await testConnection();
         if (!dbConnected) {
           console.error('❌ Database connection test returned false');
-          throw new Error('Database connection failed');
+          // ✅ FIX: More detailed error message
+          throw new Error('Database connection test failed. Check DATABASE_URL and network connectivity.');
         }
         console.log('✅ Database connection successful');
       } catch (dbError) {
         console.error('❌ Database connection error:', dbError);
         console.error('Database URL:', process.env.DATABASE_URL ? 'SET' : 'NOT SET');
         console.error('Neon URL:', process.env.NEON_DATABASE_URL ? 'SET' : 'NOT SET');
+        
+        // ✅ FIX: Check if DATABASE_URL is valid format
+        if (process.env.DATABASE_URL) {
+          const dbUrl = process.env.DATABASE_URL;
+          if (!dbUrl.startsWith('postgresql://') && !dbUrl.startsWith('postgres://')) {
+            console.error('⚠️ DATABASE_URL does not start with postgresql:// or postgres://');
+          }
+          if (!dbUrl.includes('@')) {
+            console.error('⚠️ DATABASE_URL missing @ (credentials separator)');
+          }
+        }
+        
         throw dbError;
       }
       

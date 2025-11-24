@@ -94,11 +94,51 @@ export async function closeDatabase(): Promise<void> {
 export async function testConnection(): Promise<boolean> {
   try {
     const db = getDatabase();
-    const result = await db.query('SELECT NOW()');
-    logger.info('Database connection test successful', result.rows[0]);
+    // ✅ FIX: Add timeout for connection test (5 seconds)
+    const result = await Promise.race([
+      db.query('SELECT NOW()'),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Connection timeout after 5 seconds')), 5000)
+      )
+    ]) as any;
+    
+    console.log('✅ Database connection test successful:', result.rows[0]);
+    // ✅ FIX: Safe logger call
+    try {
+      if (logger && typeof logger.info === 'function') {
+        logger.info('Database connection test successful', result.rows[0]);
+      }
+    } catch (loggerError) {
+      // Ignore logger errors
+    }
     return true;
   } catch (error) {
-    logger.error('Database connection test failed', error);
+    // ✅ FIX: Enhanced error logging
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorStack = error instanceof Error ? error.stack : undefined;
+    const errorName = error instanceof Error ? error.name : undefined;
+    
+    console.error('❌ Database connection test failed:', {
+      message: errorMessage,
+      name: errorName,
+      stack: errorStack,
+      databaseUrl: config.database.url ? 
+        (config.database.url.substring(0, 20) + '...') : 
+        'NOT SET',
+      isNeon: isNeonDatabase(config.database.url),
+    });
+    
+    // ✅ FIX: Safe logger call
+    try {
+      if (logger && typeof logger.error === 'function') {
+        logger.error('Database connection test failed', {
+          error: errorMessage,
+          name: errorName,
+        });
+      }
+    } catch (loggerError) {
+      // Ignore logger errors
+    }
     return false;
   }
 }
