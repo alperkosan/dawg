@@ -178,47 +178,9 @@ export async function systemAssetsRoutes(fastify: FastifyInstance) {
           const contentRange = cdnResponse.headers.get('content-range');
           const acceptRanges = cdnResponse.headers.get('accept-ranges');
           
-          // ✅ FIX: Try streaming first, fallback to buffer if stream fails
-          let useStream = false;
-          let nodeStream: Readable | null = null;
-          
-          if (cdnResponse.body && typeof Readable.fromWeb === 'function') {
-            try {
-              // ✅ FIX: Convert Web ReadableStream to Node.js Readable (Node.js 18+)
-              nodeStream = Readable.fromWeb(cdnResponse.body as any);
-              useStream = true;
-              logger.info(`📦 [PROXY] Using stream approach, Status: ${cdnResponse.status}, Range: ${rangeHeader || 'none'}`);
-            } catch (streamError: any) {
-              logger.warn(`⚠️ [PROXY] Stream conversion failed, falling back to buffer: ${streamError.message}`);
-              useStream = false;
-            }
-          }
-          
-          if (useStream && nodeStream) {
-            // ✅ FIX: Set headers before streaming
-            reply.header('Content-Type', contentType);
-            if (contentLength) {
-              reply.header('Content-Length', contentLength);
-            }
-            if (contentRange) {
-              reply.header('Content-Range', contentRange);
-              reply.code(206); // Partial Content
-            } else {
-              reply.code(200);
-            }
-            if (acceptRanges) {
-              reply.header('Accept-Ranges', acceptRanges);
-            }
-            reply.header('Cache-Control', 'public, max-age=31536000');
-            reply.header('Access-Control-Allow-Origin', '*'); // ✅ FIX: Allow CORS
-            reply.header('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
-            reply.header('Access-Control-Allow-Headers', 'Range, Content-Type');
-            
-            // ✅ FIX: Stream directly to client (avoids buffer encoding issues)
-            return reply.send(nodeStream);
-          }
-          
-          // ✅ FALLBACK: Use arrayBuffer() with careful conversion
+          // ✅ FIX: Always use buffer approach (stream conversion causes encoding issues)
+          // Readable.fromWeb() can cause byte corruption in binary data
+          // Use arrayBuffer() which is more reliable for binary data
           logger.info(`📦 [PROXY] Using buffer approach, Status: ${cdnResponse.status}, Range: ${rangeHeader || 'none'}`);
           const arrayBuffer = await cdnResponse.arrayBuffer();
           
