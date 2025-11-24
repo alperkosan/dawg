@@ -134,10 +134,16 @@ export const assetsService = {
     }
 
     const assetId = crypto.randomUUID();
+    // ✅ FIX: Use assetId as filename in storage (easier access, no special characters)
+    // Extract file extension from original filename
+    const path = await import('path');
+    const fileExtension = path.extname(filename) || '.wav';
+    const storageFilename = `${assetId}${fileExtension}`;
+    
     // ✅ FIX: Use same format as storageService.uploadFile for consistency
     const now = new Date();
     const yearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const storageKey = `user-assets/${userId}/${yearMonth}/${assetId}/${filename}`;
+    const storageKey = `user-assets/${userId}/${yearMonth}/${assetId}/${storageFilename}`;
 
     // ✅ CDN: Generate CDN URL using storage service
     let storageUrl = storageService.getCDNUrl(storageKey);

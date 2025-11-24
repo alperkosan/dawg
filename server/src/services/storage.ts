@@ -35,19 +35,28 @@ export const storageService = {
     let storageKey: string;
     
     if (providedStorageKey) {
+      // ✅ FIX: If storage key is provided, use it as-is (already contains assetId as filename)
       storageKey = providedStorageKey;
     } else if (isSystemAsset) {
-      // System assets: system-assets/{category}/{pack}/{assetId}/{filename}
-      // Example: system-assets/drums/dawg-starter-pack/{assetId}/kick.wav
+      // System assets: system-assets/{category}/{pack}/{assetId}/{assetId}.ext
+      // Example: system-assets/drums/dawg-starter-pack/{assetId}/{assetId}.wav
       const category = categorySlug || 'uncategorized';
       const pack = packSlug || 'default';
-      storageKey = `system-assets/${category}/${pack}/${assetId}/${filename}`;
+      // ✅ FIX: Use assetId as filename (extract extension from original filename)
+      const path = await import('path');
+      const fileExtension = path.extname(filename) || '.wav';
+      const storageFilename = `${assetId}${fileExtension}`;
+      storageKey = `system-assets/${category}/${pack}/${assetId}/${storageFilename}`;
     } else {
-      // User assets: user-assets/{userId}/{year-month}/{assetId}/{filename}
-      // Example: user-assets/{userId}/2025-01/{assetId}/sample.wav
+      // User assets: user-assets/{userId}/{year-month}/{assetId}/{assetId}.ext
+      // Example: user-assets/{userId}/2025-01/{assetId}/{assetId}.wav
+      // ✅ FIX: Use assetId as filename (extract extension from original filename)
+      const path = await import('path');
+      const fileExtension = path.extname(filename) || '.wav';
+      const storageFilename = `${assetId}${fileExtension}`;
       const now = new Date();
       const yearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-      storageKey = `user-assets/${userId}/${yearMonth}/${assetId}/${filename}`;
+      storageKey = `user-assets/${userId}/${yearMonth}/${assetId}/${storageFilename}`;
     }
     
     // ✅ Bunny CDN Upload - Lokalden CDN bağlantısı kurulabilir
