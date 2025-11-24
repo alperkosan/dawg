@@ -159,15 +159,15 @@ const loadPreviewRange = async (url, duration = 2, signal) => {
   if (previewSize < MAX_PREVIEW_SIZE) {
     // Try Range request for preview
     headers['Range'] = `bytes=0-${previewSize - 1}`;
-    
+  
     try {
-      const response = await fetch(normalizedUrl, { 
-        signal,
-        headers
-      });
-      
-      if (response.status === 206) {
-        // Partial Content - Range request başarılı
+  const response = await fetch(normalizedUrl, { 
+    signal,
+    headers
+  });
+  
+  if (response.status === 206) {
+    // Partial Content - Range request başarılı
         const arrayBuffer = await response.arrayBuffer();
         
         // ✅ FIX: Validate that we got WAV header (first 4 bytes should be "RIFF")
@@ -182,10 +182,10 @@ const loadPreviewRange = async (url, duration = 2, signal) => {
             console.warn('[PreviewCache] Range request response does not start with WAV header, loading full file');
           }
         }
-      } else if (response.status === 200) {
+  } else if (response.status === 200) {
         // Full content - Range request desteklenmiyor
         console.log('[PreviewCache] Range request not supported, got full file');
-        return await response.arrayBuffer();
+    return await response.arrayBuffer();
       }
     } catch (error) {
       console.warn('[PreviewCache] Range request failed, falling back to full load:', error);

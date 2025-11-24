@@ -1144,8 +1144,8 @@ export class AudioContextService {
             console.log(`ℹ️ Instrument ${instrument.id} (${instrument.name}) routing warning (non-critical):`, error.message);
             skippedCount++;
           } else {
-            console.error(`❌ Failed to route instrument ${instrument.id}:`, error);
-            errorCount++;
+          console.error(`❌ Failed to route instrument ${instrument.id}:`, error);
+          errorCount++;
           }
         }
       }

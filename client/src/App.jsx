@@ -808,7 +808,7 @@ function MediaApp() {
         }}
       >
         <Suspense fallback={<LoadingScreen />}>
-          <MediaPanel />
+        <MediaPanel />
         </Suspense>
       </div>
     </ThemeProvider>
@@ -958,7 +958,7 @@ function AppRouter() {
           <ProtectedRoute requireAuth={true}>
             <ThemeProvider>
               <Suspense fallback={<LoadingScreen />}>
-                <AdminPanel />
+              <AdminPanel />
               </Suspense>
             </ThemeProvider>
           </ProtectedRoute>
@@ -972,7 +972,7 @@ function AppRouter() {
           <ProtectedRoute requireAuth={true}>
             <ThemeProvider>
               <Suspense fallback={<LoadingScreen />}>
-                <ProjectsPage />
+              <ProjectsPage />
               </Suspense>
             </ThemeProvider>
           </ProtectedRoute>
@@ -985,7 +985,7 @@ function AppRouter() {
         element={
           <ThemeProvider>
             <Suspense fallback={<LoadingScreen />}>
-              <RenderPage />
+            <RenderPage />
             </Suspense>
           </ThemeProvider>
         } 

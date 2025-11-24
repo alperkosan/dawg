@@ -44,12 +44,12 @@ export async function registerAuthMiddleware(server: FastifyInstance) {
       // ✅ FIX: Type assertion for JWT payload
       if (typeof decoded === 'object' && decoded !== null && 'userId' in decoded) {
         const payload = decoded as JWTPayload;
-        // Attach user to request
-        request.user = {
+      // Attach user to request
+      request.user = {
           userId: payload.userId,
           email: payload.email,
           username: payload.username,
-        };
+      };
       } else {
         throw new Error('Invalid JWT payload');
       }

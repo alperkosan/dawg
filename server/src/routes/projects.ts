@@ -266,7 +266,7 @@ export async function projectRoutes(server: FastifyInstance) {
         : undefined;
 
       logger.info(`📝 [UPDATE_PROJECT] Updating project ${id} with preview audio: ${body.previewAudioUrl ? 'yes' : 'no'}`);
-
+      
       const project = await updateProject(id, {
         title: body.title,
         description: body.description,
@@ -311,7 +311,7 @@ export async function projectRoutes(server: FastifyInstance) {
         throw new BadRequestError('Validation failed', error.errors);
       }
       if (error instanceof BadRequestError || error instanceof ForbiddenError || error instanceof NotFoundError) {
-        throw error;
+      throw error;
       }
       // Re-throw as internal server error for unexpected errors
       throw new Error(`Failed to update project: ${error.message || 'Unknown error'}`);
@@ -486,8 +486,8 @@ export async function projectRoutes(server: FastifyInstance) {
           logger.info(`📤 [UPLOAD_PREVIEW] Multipart upload completed: ${(audioBuffer.length / 1024 / 1024).toFixed(2)}MB, duration: ${duration}s`);
         } else {
           // ✅ FALLBACK: Try request.parts() if pre-parsed data not available
-          let fileData: any = null;
-          let durationValue: string | null = null;
+        let fileData: any = null;
+        let durationValue: string | null = null;
 
           // Try request.body first (if attachFieldsToBody works)
           if (body && typeof body === 'object' && 'duration' in body) {
@@ -499,19 +499,19 @@ export async function projectRoutes(server: FastifyInstance) {
           try {
             logger.info(`🔄 [UPLOAD_PREVIEW] Calling request.parts()...`);
             let partCount = 0;
-            for await (const part of request.parts()) {
+        for await (const part of request.parts()) {
               partCount++;
               logger.info(`📦 [UPLOAD_PREVIEW] Part ${partCount}: type=${part.type}, fieldname=${(part as any).fieldname || 'N/A'}`);
               
-              if (part.type === 'field') {
-                const field = part as any;
+          if (part.type === 'field') {
+            const field = part as any;
                 logger.info(`📝 [UPLOAD_PREVIEW] Field: ${field.fieldname} = ${field.value?.substring(0, 50) || 'empty'}...`);
-                if (field.fieldname === 'duration') {
-                  durationValue = field.value;
+            if (field.fieldname === 'duration') {
+              durationValue = field.value;
                   logger.info(`✅ [UPLOAD_PREVIEW] Duration from parts(): ${durationValue}`);
-                }
-              } else if (part.type === 'file') {
-                fileData = part;
+            }
+          } else if (part.type === 'file') {
+            fileData = part;
                 logger.info(`📁 [UPLOAD_PREVIEW] File part found: ${(fileData as any).filename || 'unknown'}`);
                 audioBuffer = await fileData.toBuffer();
                 logger.info(`✅ [UPLOAD_PREVIEW] File buffer created: ${(audioBuffer.length / 1024 / 1024).toFixed(2)}MB`);
@@ -528,7 +528,7 @@ export async function projectRoutes(server: FastifyInstance) {
                 const fallbackFile = await request.file();
                 if (fallbackFile) {
                   fileData = fallbackFile;
-                  audioBuffer = await fileData.toBuffer();
+            audioBuffer = await fileData.toBuffer();
                   logger.info(`✅ [UPLOAD_PREVIEW] File received via fallback: ${fileData.filename || 'unknown'}, size: ${(audioBuffer.length / 1024 / 1024).toFixed(2)}MB`);
                 } else {
                   logger.error(`❌ [UPLOAD_PREVIEW] request.file() also returned null`);
@@ -536,25 +536,25 @@ export async function projectRoutes(server: FastifyInstance) {
               } catch (fallbackError: any) {
                 logger.error(`❌ [UPLOAD_PREVIEW] Fallback request.file() also failed: ${fallbackError.message}`);
               }
-            }
           }
+        }
 
-          if (!fileData || !audioBuffer) {
+        if (!fileData || !audioBuffer) {
             logger.error('❌ [UPLOAD_PREVIEW] No file received in multipart form');
             logger.error('❌ [UPLOAD_PREVIEW] Content-Type:', contentType);
             logger.error('❌ [UPLOAD_PREVIEW] Request body keys:', Object.keys(body || {}));
             logger.error('❌ [UPLOAD_PREVIEW] Request headers:', JSON.stringify(request.headers, null, 2));
-            throw new BadRequestError('No file provided in multipart form');
-          }
+          throw new BadRequestError('No file provided in multipart form');
+        }
 
-          if (!durationValue) {
+        if (!durationValue) {
             logger.error('❌ [UPLOAD_PREVIEW] Duration not found in request.body or parts()');
             logger.error('❌ [UPLOAD_PREVIEW] Request body:', JSON.stringify(body, null, 2));
-            throw new BadRequestError('duration field is required');
-          }
+          throw new BadRequestError('duration field is required');
+        }
 
-          duration = parseFloat(durationValue);
-          logger.info(`📤 [UPLOAD_PREVIEW] Multipart upload completed: ${(audioBuffer.length / 1024 / 1024).toFixed(2)}MB, duration: ${duration}s`);
+        duration = parseFloat(durationValue);
+        logger.info(`📤 [UPLOAD_PREVIEW] Multipart upload completed: ${(audioBuffer.length / 1024 / 1024).toFixed(2)}MB, duration: ${duration}s`);
         }
       } else {
         // ✅ LEGACY: Support base64 JSON (for backward compatibility)

@@ -734,7 +734,7 @@ export function useNoteInteractionsV3({
                 
                 return duplicate;
             }).filter(Boolean);
-            
+
             if (DEBUG) {
                 console.log('✅ [V3] Created', duplicates.length, 'duplicates from', noteIds.length, 'noteIds');
                 console.log('✅ [V3] Duplicate notes:', duplicates.map(d => ({ id: d.id, startTime: d.startTime, pitch: d.pitch })));
@@ -757,7 +757,7 @@ export function useNoteInteractionsV3({
             // Use the duplicate IDs we created, but verify they exist in store
             const freshNotes = getFreshNotes();
             const duplicateIds = duplicates.map(d => d.id);
-            
+
             // Verify all duplicates are in store
             const verifiedIds = duplicateIds.filter(id => freshNotes.some(n => n.id === id));
             
@@ -932,13 +932,13 @@ export function useNoteInteractionsV3({
             }
         } else {
             // Normal drag: only move clicked note or selected notes
-            if (state.selection.has(note.id)) {
-                // Clicking selected note - keep selection
-                workingIds = Array.from(state.selection);
-            } else {
-                // Clicking unselected note - replace selection
-                select(note.id, 'replace');
-                workingIds = [note.id];
+        if (state.selection.has(note.id)) {
+            // Clicking selected note - keep selection
+            workingIds = Array.from(state.selection);
+        } else {
+            // Clicking unselected note - replace selection
+            select(note.id, 'replace');
+            workingIds = [note.id];
             }
         }
 
@@ -1817,11 +1817,11 @@ export function useNoteInteractionsV3({
                 // Create duplicate with all properties preserved
                 const duplicate = {
                     ...note, // Spread all existing properties first
-                    id: `note_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                id: `note_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
                     startTime: newStartTime,
                     time: newTime // ✅ FIX: Set time property for channel rack minipreview
                 };
-                
+
                 // ✅ FIX: Explicitly preserve duration if it exists (for legacy compatibility)
                 if (note.duration !== undefined) {
                     duplicate.duration = note.duration;
