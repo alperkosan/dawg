@@ -69,8 +69,19 @@ export const config = {
       pullZoneUrl: process.env.BUNNY_PULL_ZONE_URL || 'https://dawg.b-cdn.net',
       storageZoneName: process.env.BUNNY_STORAGE_ZONE_NAME || 'dawg-storage',
       storageZoneRegion: process.env.BUNNY_STORAGE_ZONE_REGION || 'de', // de, ny, la, sg, etc.
-      apiKey: process.env.BUNNY_API_KEY || '4cd141b1-7536-4c1d-a271-cdcfb9b7c188164396e2-e980-449e-807a-944dca1017c7',
-      storageApiKey: process.env.BUNNY_STORAGE_API_KEY || 'c15a4aa9-6755-4330-a3db4237abd4-8697-45b1', // Storage zone API key
+      // ✅ FIX: Require API keys from environment (no hardcoded secrets)
+      apiKey: process.env.BUNNY_API_KEY || (() => {
+        if (process.env.NODE_ENV === 'production') {
+          console.warn('⚠️ BUNNY_API_KEY not set in production!');
+        }
+        return '';
+      })(),
+      storageApiKey: process.env.BUNNY_STORAGE_API_KEY || (() => {
+        if (process.env.NODE_ENV === 'production') {
+          console.warn('⚠️ BUNNY_STORAGE_API_KEY not set in production!');
+        }
+        return '';
+      })(),
     },
   },
   

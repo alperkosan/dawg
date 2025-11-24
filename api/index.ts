@@ -139,6 +139,19 @@ async function createServer() {
 
 // Vercel serverless function handler
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // ✅ FIX: Set timeout to prevent hanging requests
+  const timeout = setTimeout(() => {
+    if (!res.headersSent) {
+      console.error('❌ Request timeout after 25 seconds');
+      res.status(504).json({
+        error: {
+          message: 'Request timeout',
+          code: 'TIMEOUT',
+        },
+      });
+    }
+  }, 25000); // 25 seconds (Vercel max is 30s, leave 5s buffer)
+
   try {
     // ✅ DEBUG: Log incoming request (always log, not just in dev)
     console.log('🔵 Vercel request received:', {
@@ -150,14 +163,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       query: req.query,
     });
     
-    logger.info('Vercel request received:', {
-      method: req.method,
-      url: req.url,
-      headers: Object.keys(req.headers),
-      hasBody: !!req.body,
-      bodyType: typeof req.body,
-      query: req.query,
-    });
+    // ✅ FIX: Safe logger call (logger might be disabled in Vercel)
+    try {
+      if (logger && typeof logger.info === 'function') {
+        logger.info('Vercel request received:', {
+          method: req.method,
+          url: req.url,
+        });
+      }
+    } catch (loggerError) {
+      // Ignore logger errors
+      console.warn('Logger error (ignored):', loggerError);
+    }
 
     const server = await createServer();
     
@@ -203,7 +220,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       
       // ✅ FIX: For multipart/form-data, parse with busboy and pass to Fastify
       if (isMultipart) {
-        logger.info('📦 Multipart request detected - parsing with busboy');
+        // ✅ FIX: Safe logger call
+        try {
+          if (logger && typeof logger.info === 'function') {
+            logger.info('📦 Multipart request detected - parsing with busboy');
+          }
+        } catch (loggerError) {
+          // Ignore logger errors
+        }
         // Vercel's bodyParser doesn't parse multipart, so req.body is undefined
         // We need to get the raw body from Vercel's request
         // But Vercel doesn't expose raw body directly, so we need to reconstruct it
@@ -220,7 +244,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             payload = JSON.parse(payload);
           } catch (e) {
             // If parsing fails, use as is
-            logger.warn('Failed to parse body as JSON, using as string:', e);
+            // ✅ FIX: Safe logger call
+            try {
+              if (logger && typeof logger.warn === 'function') {
+                logger.warn('Failed to parse body as JSON, using as string:', e);
+              }
+            } catch (loggerError) {
+              // Ignore logger errors
+            }
           }
         }
       }
@@ -232,17 +263,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       payloadSize: payload ? JSON.stringify(payload).length : 0,
     });
     
-    logger.info('Processing request:', {
-      method: req.method,
-      url: url,
-      payloadSize: payload ? JSON.stringify(payload).length : 0,
-    });
+    // ✅ FIX: Safe logger call
+    try {
+      if (logger && typeof logger.info === 'function') {
+        logger.info('Processing request:', {
+          method: req.method,
+          url: url,
+        });
+      }
+    } catch (loggerError) {
+      // Ignore logger errors
+    }
     
     // ✅ FIX: For multipart requests, we need to parse with busboy and create a mock request
     // Fastify's inject() doesn't support multipart streams, so we need to parse it first
     if (isMultipart) {
       console.log('📦 Multipart request detected - parsing with busboy');
-      logger.info('📦 Multipart request - parsing with busboy');
+      // ✅ FIX: Safe logger call
+      try {
+        if (logger && typeof logger.info === 'function') {
+          logger.info('📦 Multipart request - parsing with busboy');
+        }
+      } catch (loggerError) {
+        // Ignore logger errors
+      }
       
       // Parse multipart data using busboy
       const parsedData: any = {
@@ -359,10 +403,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       headers: Object.keys(response.headers),
     });
     
-    logger.info('Fastify response:', {
-      statusCode: response.statusCode,
-      headers: Object.keys(response.headers),
-    });
+    // ✅ FIX: Safe logger call
+    try {
+      if (logger && typeof logger.info === 'function') {
+        logger.info('Fastify response:', {
+          statusCode: response.statusCode,
+        });
+      }
+    } catch (loggerError) {
+      // Ignore logger errors
+    }
 
     // Set response headers
     Object.keys(response.headers).forEach(key => {
@@ -386,18 +436,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       name: error instanceof Error ? error.name : undefined,
     });
     
-    logger.error('Serverless function error:', {
-      error: error instanceof Error ? {
-        message: error.message,
-        stack: error.stack,
-        name: error.name,
-      } : error,
-      request: {
-        method: req.method,
-        url: req.url,
-        headers: req.headers,
-      },
-    });
+    // ✅ FIX: Safe logger call
+    try {
+      if (logger && typeof logger.error === 'function') {
+        logger.error('Serverless function error:', {
+          error: error instanceof Error ? {
+            message: error.message,
+            stack: error.stack,
+            name: error.name,
+          } : error,
+        });
+      }
+    } catch (loggerError) {
+      // Ignore logger errors
+      console.warn('Logger error (ignored):', loggerError);
+    }
     
     // Send detailed error in development
     const errorResponse: any = {
