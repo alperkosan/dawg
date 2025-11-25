@@ -239,12 +239,46 @@ export class EffectFactory {
     'modern-delay': ModernDelayEffect
   };
 
+  static aliasMap = {
+    'saturator': 'saturator',
+    'compressor': 'compressor',
+    'multibandeq': 'multiband-eq',
+    'multiband-eq': 'multiband-eq',
+    'tidalfilter': 'tidal-filter',
+    'stardustchorus': 'stardust-chorus',
+    'vortexphaser': 'vortex-phaser',
+    'orbitpanner': 'orbit-panner',
+    'arcadecrusher': 'arcade-crusher',
+    'pitchshifter': 'pitch-shifter',
+    'bassenhancer808': 'bass-enhancer',
+    'bassenhancer': 'bass-enhancer',
+    'modernreverb': 'modern-reverb',
+    'modern-delay': 'modern-delay',
+    'moderndelay': 'modern-delay',
+    'halftime': 'half-time',
+    'limiter': 'limiter',
+    'clipper': 'clipper',
+    'rhythmfx': 'rhythm-fx',
+    'sidechaincompressor': 'sidechain-compressor',
+    'maximizer': 'maximizer',
+    'imager': 'imager'
+  };
+
+  static normalizeType(type) {
+    if (!type) return '';
+    const raw = type.toString().trim().toLowerCase();
+    const hyphenated = raw.replace(/\s+/g, '-');
+    return this.aliasMap[raw] || this.aliasMap[hyphenated] || hyphenated;
+  }
+
   /**
    * Create effect instance by type
    */
   static createEffect(context, type, preset = null) {
+    const normalizedType = this.normalizeType(type);
+
     // Check if it's a worklet effect
-    const workletDef = this.workletEffects[type];
+    const workletDef = this.workletEffects[normalizedType];
     if (workletDef) {
       const effect = new WorkletEffect(
         context,
@@ -263,7 +297,7 @@ export class EffectFactory {
     }
 
     // Check if it's a legacy effect
-    const EffectClass = this.effectTypes[type];
+    const EffectClass = this.effectTypes[normalizedType];
     if (!EffectClass) {
       console.error(`Unknown effect type: ${type}`);
       return null;
