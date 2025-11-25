@@ -3,5 +3,43 @@
   flex-direction: column;
   height: 100%;
   overflow: hidden;
+  background: var(--zenith-bg-primary);
+}
+
+.feed-view__body {
+  display: flex;
+  flex: 1;
+  gap: var(--zenith-space-5);
+  padding: var(--zenith-space-5);
+  overflow: hidden;
+  background: color-mix(in srgb, var(--zenith-bg-secondary) 90%, transparent);
+  border: 1px solid var(--zenith-border-subtle);
+  border-radius: var(--zenith-radius-xl);
+}
+
+.feed-view__content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  overflow-y: auto;
+}
+
+.feed-view__content .feed-content {
+  flex: 1;
+}
+
+.feed-view__body > .feed-sidebar {
+  flex-shrink: 0;
+}
+
+@media (max-width: 1024px) {
+  .feed-view__body {
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  .feed-view__body > .feed-sidebar {
+    width: 100%;
+  }
 }
 

@@ -6,6 +6,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { apiClient } from '@/services/api.js';
 import FeedHeader from './FeedHeader';
 import FeedContent from './FeedContent';
+import FeedSidebar from './FeedSidebar';
 import './FeedView.css';
 
 export default function FeedView() {
@@ -80,15 +81,20 @@ export default function FeedView() {
   return (
     <div className="feed-view">
       <FeedHeader filters={filters} onFilterChange={handleFilterChange} />
-      <FeedContent
-        projects={projects}
-        isLoading={isLoading}
-        error={error}
-        hasNextPage={hasNextPage}
-        isFetchingNextPage={isFetchingNextPage}
-        onLoadMore={handleLoadMore}
-        onRefresh={handleRefresh}
-      />
+      <div className="feed-view__body">
+        <div className="feed-view__content">
+          <FeedContent
+            projects={projects}
+            isLoading={isLoading}
+            error={error}
+            hasNextPage={hasNextPage}
+            isFetchingNextPage={isFetchingNextPage}
+            onLoadMore={handleLoadMore}
+            onRefresh={handleRefresh}
+          />
+        </div>
+        <FeedSidebar projects={projects} />
+      </div>
     </div>
   );
 }

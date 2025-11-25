@@ -106,7 +106,8 @@ function DAWApp() {
   const autoSaveTimerRef = useRef(null);
   const hasUnsavedChangesRef = useRef(false);
   const audioEngineRef = useRef(null);
-  const { isGuest, isAuthenticated } = useAuthStore();
+  const { isGuest, isAuthenticated, user } = useAuthStore();
+  const authSessionRef = useRef(null);
 
   const audioEngineCallbacks = useMemo(() => ({
     setPlaybackState: (state) => {},
@@ -119,6 +120,77 @@ function DAWApp() {
     getBPM: () => usePlaybackStore.getState().bpm,
     getMixerTracks: () => useMixerStore.getState().mixerTracks
   }), []);
+
+  const resetWorkspaceState = useCallback((reason = 'auth-change') => {
+    console.log(`🔄 Resetting workspace state due to ${reason}`);
+    setProjectLoadAttempted(false);
+    setTemplateInitialized(false);
+    setCurrentProjectId(null);
+    setCurrentProjectTitle('Untitled Project');
+    setSaveStatus('saved');
+    setLastSavedAt(null);
+    hasUnsavedChangesRef.current = false;
+    setIsLoadingProject(false);
+    setLoadingProjectTitle(null);
+
+    import('./lib/project/ProjectSerializer.js')
+      .then(({ ProjectSerializer }) => ProjectSerializer.clearAll())
+      .catch((error) => console.warn('⚠️ Failed to clear workspace state:', error));
+  }, []);
+
+  const prepareEmptyWorkspace = useCallback(
+    async ({ loadingTitle = 'Yeni proje hazırlanıyor...', markUnsaved = true } = {}) => {
+      try {
+        setIsLoadingProject(true);
+        setLoadingProjectTitle(loadingTitle);
+        const { ProjectSerializer } = await import('./lib/project/ProjectSerializer.js');
+        await ProjectSerializer.clearAll();
+        const template = ProjectSerializer.createEmptyProjectTemplate();
+        await ProjectSerializer.deserialize(template);
+        setCurrentProjectId(null);
+        setCurrentProjectTitle('Untitled Project');
+        setTemplateInitialized(true);
+        setSaveStatus(markUnsaved ? 'unsaved' : 'saved');
+        hasUnsavedChangesRef.current = markUnsaved;
+        if (!markUnsaved) {
+          setLastSavedAt(new Date());
+        }
+      } catch (error) {
+        console.error('❌ Failed to prepare empty workspace:', error);
+      } finally {
+        setIsLoadingProject(false);
+        setLoadingProjectTitle(null);
+      }
+    },
+    []
+  );
+
+  const loadDefaultWorkspace = useCallback(async () => {
+    try {
+      setIsLoadingProject(true);
+      setLoadingProjectTitle('Çalışma alanı yükleniyor...');
+      const loadedProject = await projectService.loadOrCreateFirstProject();
+      if (loadedProject?.id) {
+        setCurrentProjectId(loadedProject.id);
+        setCurrentProjectTitle(loadedProject.title || 'Untitled Project');
+        setTemplateInitialized(true);
+        setSaveStatus('saved');
+        hasUnsavedChangesRef.current = false;
+        setLastSavedAt(loadedProject.updatedAt ? new Date(loadedProject.updatedAt) : new Date());
+        const currentUrl = new URL(window.location.href);
+        currentUrl.searchParams.set('project', loadedProject.id);
+        window.history.replaceState({}, '', currentUrl.toString());
+        return;
+      }
+      await prepareEmptyWorkspace({ loadingTitle: 'Yeni proje hazırlanıyor...', markUnsaved: true });
+    } catch (error) {
+      console.error('❌ Failed to load default workspace:', error);
+      await prepareEmptyWorkspace({ loadingTitle: 'Yeni proje hazırlanıyor...', markUnsaved: true });
+    } finally {
+      setIsLoadingProject(false);
+      setLoadingProjectTitle(null);
+    }
+  }, [prepareEmptyWorkspace]);
 
   // Handle project selection/loading
   // ✅ FIX: Memoize onEditTitle callback to prevent re-renders and ensure immediate state update
@@ -200,47 +272,32 @@ function DAWApp() {
             console.log('📂 Loading project from URL:', projectIdFromUrl);
             // ✅ FIX: Call handleProjectSelect directly (it's stable due to empty deps)
             await handleProjectSelect(projectIdFromUrl);
-          } else if (!projectIdFromUrl) {
-            // ✅ FIX: URL'de project ID yoksa direkt boş template oluştur (yeni proje)
-            // Kullanıcı isterse ProjectSelector'dan mevcut projeyi seçebilir
-            console.log('📋 Creating new empty project...');
-            setIsLoadingProject(true);
-            setLoadingProjectTitle('Yeni Proje Oluşturuluyor...');
-            
-            // Clear existing state first
-            const { ProjectSerializer } = await import('./lib/project/ProjectSerializer.js');
-            await ProjectSerializer.clearAll();
-            
-            // ✅ FIX: Create empty template locally (don't save to backend until user saves)
-            const template = ProjectSerializer.createEmptyProjectTemplate();
-            await ProjectSerializer.deserialize(template);
-            
-            // Don't create project in backend yet - wait for user to save
-            setCurrentProjectId(null); // No project ID until saved
-            setCurrentProjectTitle('Untitled Project');
-            setTemplateInitialized(true);
-            setSaveStatus('unsaved'); // Mark as unsaved
-            hasUnsavedChangesRef.current = true; // Has unsaved changes
-            
-            console.log('✅ Empty project template created');
-            
-            setIsLoadingProject(false);
-            setLoadingProjectTitle(null);
+            return;
           }
+
+          await loadDefaultWorkspace();
         } catch (error) {
           console.error('❌ Failed to load project:', error);
-          setIsLoadingProject(false);
-          setLoadingProjectTitle(null);
+          await prepareEmptyWorkspace({ loadingTitle: 'Yeni proje hazırlanıyor...', markUnsaved: true });
           setProjectLoadAttempted(false); // ✅ FIX: Allow retry on error
         }
       };
       
       loadProjectFromUrlOrDefault();
     }
-    // ✅ FIX: Use eslint-disable-next-line to suppress warning about handleProjectSelect
-    // handleProjectSelect is stable (empty deps) so it's safe to use
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engineStatus, isAuthenticated, isGuest, templateInitialized, projectLoadAttempted, isLoadingProject, currentProjectId, searchParams]);
+  }, [engineStatus, isAuthenticated, isGuest, templateInitialized, projectLoadAttempted, isLoadingProject, currentProjectId, searchParams, handleProjectSelect, loadDefaultWorkspace, prepareEmptyWorkspace]);
+
+  useEffect(() => {
+    const authKey = isGuest ? 'guest' : (user?.id ? `user:${user.id}` : 'user');
+    if (authSessionRef.current === null) {
+      authSessionRef.current = authKey;
+      return;
+    }
+    if (authSessionRef.current !== authKey) {
+      authSessionRef.current = authKey;
+      resetWorkspaceState('auth-change');
+    }
+  }, [isGuest, isAuthenticated, user, resetWorkspaceState]);
 
   // ✅ UX IMPROVEMENT: Check for existing engine on mount
   // This prevents showing StartupScreen if engine was already initialized
@@ -400,25 +457,11 @@ function DAWApp() {
       
       // ✅ FIX: For guest users, create empty template immediately
       // For authenticated users, project loading is handled in the useEffect above
-      if (isGuest && !templateInitialized) {
-        try {
-          console.log('📋 Creating empty project template for guest user...');
-          setIsLoadingProject(true);
-          setLoadingProjectTitle('Misafir Projesi Hazırlanıyor...');
-          
-          const { ProjectSerializer } = await import('./lib/project/ProjectSerializer.js');
-          const template = ProjectSerializer.createEmptyProjectTemplate();
-          await ProjectSerializer.deserialize(template);
-          setTemplateInitialized(true);
-          console.log('✅ Empty project template created for guest');
-          
-          setIsLoadingProject(false);
-          setLoadingProjectTitle(null);
-        } catch (error) {
-          console.error('❌ Failed to create template for guest:', error);
-          setIsLoadingProject(false);
-          setLoadingProjectTitle(null);
-        }
+      if (isGuest && !templateInitialized && !isLoadingProject) {
+        prepareEmptyWorkspace({
+          loadingTitle: 'Misafir Projesi Hazırlanıyor...',
+          markUnsaved: true,
+        });
       }
     } catch (error) {
       console.error('❌ Ses sistemi başlatma hatası:', error);
@@ -427,7 +470,7 @@ function DAWApp() {
       // ✅ UX IMPROVEMENT: Clear persisted status on error
       sessionStorage.removeItem('dawg_engine_status');
     }
-  }, [engineStatus, audioEngineCallbacks, isAuthenticated, isGuest, templateInitialized]);
+  }, [engineStatus, audioEngineCallbacks, isAuthenticated, isGuest, templateInitialized, prepareEmptyWorkspace]);
 
   // Handle save action - show login prompt if guest
   // ✅ FIX: Define handleSave BEFORE it's used in useEffect

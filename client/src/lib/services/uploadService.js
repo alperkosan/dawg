@@ -96,84 +96,45 @@ async function uploadUserAsset(file, { folderPath, parentFolderId, onProgress })
   });
 
   // Try client-side direct upload to Bunny CDN first (bypasses Vercel 4.5MB limit)
-  if (uploadRequest.uploadUrl) {
-    try {
-      console.log(`📤 [CLIENT_UPLOAD] Attempting direct upload to Bunny CDN...`);
-      
-      // Get upload credentials from server
-      const credentialsResponse = await fetch(`${api.baseURL}/assets/upload/${uploadRequest.assetId}/credentials`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${api.getToken()}`,
-        },
-      });
-
-      // ✅ FIX: 404 means Bunny CDN is not configured - gracefully fall back to server upload
-      if (credentialsResponse.status === 404) {
-        console.log(`ℹ️ [CLIENT_UPLOAD] Direct upload not available (Bunny CDN not configured), using server upload`);
-        throw new Error('DIRECT_UPLOAD_NOT_AVAILABLE'); // Special error code for graceful fallback
-      }
-
-      if (!credentialsResponse.ok) {
-        throw new Error('Failed to get upload credentials');
-      }
-
-      const credentials = await credentialsResponse.json();
-      
-      // Upload directly to Bunny CDN with progress tracking
-      const uploadResponse = await uploadToBunnyCDN(
-        credentials.uploadUrl,
-        credentials.accessKey,
-        file,
-        onProgress
-      );
-
-      if (!uploadResponse.ok) {
-        const errorText = await uploadResponse.text();
-        throw new Error(`Bunny CDN upload failed: ${uploadResponse.status} - ${errorText}`);
-      }
-
-      console.log(`✅ [CLIENT_UPLOAD] Direct upload to Bunny CDN successful`);
-      
-      // ✅ FIX: Get the CDN URL from storage service
-      // The CDN URL is constructed as: pullZoneUrl/storageKey
-      const { storageService } = await import('@/services/storage.js');
-      const cdnUrl = storageService.getCDNUrl(credentials.storageKey || uploadRequest.storageKey, uploadRequest.assetId);
-      console.log(`🌐 [CLIENT_UPLOAD] CDN URL: ${cdnUrl}`);
-      
-      // Mark upload as completed (this will also update storage_url with the CDN URL)
-      const completedAsset = await api.completeUpload(uploadRequest.assetId);
-      
-      // ✅ FIX: Ensure storage_url is set to the full CDN URL
-      if (completedAsset.storage_url && !completedAsset.storage_url.startsWith('http')) {
-        // If storage_url is not a full URL, update it
-        const updatedAsset = await api.updateAsset(uploadRequest.assetId, {
-          storage_url: cdnUrl
-        });
-        return updatedAsset;
-      }
-      
-      return completedAsset;
-    } catch (clientUploadError) {
-      // ✅ FIX: Don't show error for graceful fallback (Bunny CDN not configured)
-      if (clientUploadError.message === 'DIRECT_UPLOAD_NOT_AVAILABLE') {
-        console.log(`ℹ️ [CLIENT_UPLOAD] Using server-side upload (direct upload not available)`);
-      } else {
-        console.warn(`⚠️ [CLIENT_UPLOAD] Direct upload failed, falling back to server upload:`, clientUploadError);
-      }
-      // Fall through to server-side upload
-    }
+  if (!uploadRequest.uploadUrl) {
+    throw new Error('Direct upload URL was not provided. Please verify CDN configuration.');
   }
 
-  // Fallback: Server-side upload (multipart/form-data)
-  const formData = new FormData();
-  formData.append('file', file);
-  
-  return await uploadToServer(
-    `${api.baseURL}/assets/upload/${uploadRequest.assetId}`,
-    formData,
-    { onProgress }
+  console.log(`📤 [CLIENT_UPLOAD] Starting direct upload to Bunny CDN...`);
+
+  const credentialsResponse = await fetch(`${api.baseURL}/assets/upload/${uploadRequest.assetId}/credentials`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${api.getToken()}`,
+    },
+  });
+
+  if (credentialsResponse.status === 404) {
+    throw new Error('Direct upload credentials are unavailable. Ensure Bunny CDN is configured on the server.');
+  }
+
+  if (!credentialsResponse.ok) {
+    throw new Error('Failed to fetch upload credentials');
+  }
+
+  const credentials = await credentialsResponse.json();
+
+  const uploadResponse = await uploadToBunnyCDN(
+    credentials.uploadUrl,
+    credentials.accessKey,
+    file,
+    onProgress
   );
+
+  if (!uploadResponse.ok) {
+    const errorText = await uploadResponse.text();
+    throw new Error(`Bunny CDN upload failed: ${uploadResponse.status} - ${errorText}`);
+  }
+
+  console.log(`✅ [CLIENT_UPLOAD] Direct upload to Bunny CDN successful`);
+
+  const completedAsset = await api.completeUpload(uploadRequest.assetId);
+  return completedAsset;
 }
 
 /**

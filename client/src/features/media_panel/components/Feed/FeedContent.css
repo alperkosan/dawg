@@ -1,11 +1,10 @@
 .feed-content {
   flex: 1;
   overflow-y: auto;
-  padding: var(--zenith-space-4);
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  padding: 0 var(--zenith-space-2) var(--zenith-space-4);
+  display: flex;
+  flex-direction: column;
   gap: var(--zenith-space-4);
-  align-content: start;
 }
 
 .feed-content__error,
