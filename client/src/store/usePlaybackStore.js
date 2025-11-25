@@ -1,6 +1,7 @@
 // src/store/usePlaybackStore.js
 import { create } from 'zustand';
 import { PLAYBACK_MODES, PLAYBACK_STATES } from '@/config/constants';
+import { usePreviewPlayerStore } from './usePreviewPlayerStore.js';
 // ✅ Empty project - no initial settings
 import PlaybackControllerSingleton from '@/lib/core/PlaybackControllerSingleton.js';
 
@@ -125,6 +126,14 @@ export const usePlaybackStore = create((set, get) => ({
       return;
     }
     await controller.stop();
+    try {
+      const { stopPreview, isPlaying } = usePreviewPlayerStore.getState();
+      if (isPlaying) {
+        stopPreview();
+      }
+    } catch (error) {
+      console.warn('⚠️ Failed to stop preview player on transport stop:', error);
+    }
   },
 
   jumpToStep: async (step) => {
