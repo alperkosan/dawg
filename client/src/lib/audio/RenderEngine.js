@@ -19,6 +19,10 @@ import {
   DEFAULT_BIT_DEPTH
 } from './audioRenderConfig';
 import { EffectFactory } from './effects';
+import {
+  ensureEffectWorkletsLoaded,
+  collectEffectTypesFromMixerTracks
+} from './effects/workletRegistry';
 
 export class RenderEngine {
   constructor() {
@@ -107,7 +111,10 @@ export class RenderEngine {
       const offlineContext = new OfflineAudioContext(2, renderLength, sampleRate);
 
       // ✅ LOAD WORKLETS: Ensure all effect processors are loaded
-      await this._loadEffectWorklets(offlineContext);
+      await this._loadEffectWorklets(
+        offlineContext,
+        collectEffectTypesFromMixerTracks(patternData.mixerTracks)
+      );
 
       // Get audio engine for instrument data
       const audioEngine = AudioContextService.getAudioEngine();
@@ -284,7 +291,9 @@ export class RenderEngine {
       );
 
       // ✅ LOAD WORKLETS: Ensure all effect processors are loaded
-      await this._loadEffectWorklets(offlineContext);
+      const inlineEffects =
+        Array.isArray(effects) ? effects.map(effect => effect?.type || effect?.workletName) : [];
+      await this._loadEffectWorklets(offlineContext, inlineEffects);
 
       // Create source
       const source = offlineContext.createBufferSource();
@@ -444,6 +453,30 @@ export class RenderEngine {
    */
   async _renderInstrumentNotes(patternData, offlineContext, audioEngine, options) {
     const instrumentBuffers = [];
+    const mixerTracks = options.patternData.mixerTracks || {};
+    const masterBusNode = options.masterBus || offlineContext.destination;
+    const busNodeCache = new Map();
+
+    const getBusChannel = async (busId) => {
+      if (!busId) return null;
+      if (busNodeCache.has(busId)) {
+        return busNodeCache.get(busId);
+      }
+
+      const busTrack = mixerTracks[busId];
+      if (!busTrack) {
+        console.warn(`🎚️ Bus track not found for send target ${busId}`);
+        return null;
+      }
+
+      const busInput = offlineContext.createGain();
+      const busOutput = await this._createOfflineMixerChannel(offlineContext, busInput, busTrack);
+      busOutput.connect(masterBusNode);
+
+      const busEntry = { input: busInput, output: busOutput };
+      busNodeCache.set(busId, busEntry);
+      return busEntry;
+    };
 
     console.log('🎬 DEBUG: patternData received:', patternData);
     console.log('🎬 DEBUG: patternData entries:', Object.entries(patternData));
@@ -496,7 +529,7 @@ export class RenderEngine {
           notes,
           offlineContext,
           audioEngine,
-          { ...options, autoGain }, // Pass auto-gain to prevent clipping
+          { ...options, autoGain, getBusChannel },
           options.patternData // Pass patternData for instrument lookup
         );
 
@@ -598,6 +631,27 @@ export class RenderEngine {
     // Direct connection: mixer → masterBus (matches live playback)
     const finalDestination = options.masterBus || offlineContext.destination;
     mixerOutputNode.connect(finalDestination);
+
+    // Apply sends (route to bus inserts) if available
+    if (Array.isArray(mixerTrack?.sends) && typeof options.getBusChannel === 'function') {
+      for (const send of mixerTrack.sends) {
+        if (!send?.busId) continue;
+        const level = typeof send.level === 'number' ? send.level : 0;
+        if (level <= 0) continue;
+
+        try {
+          const busEntry = await options.getBusChannel(send.busId);
+          if (!busEntry) continue;
+          const sendGainNode = offlineContext.createGain();
+          sendGainNode.gain.setValueAtTime(level, offlineContext.currentTime);
+          mixerOutputNode.connect(sendGainNode);
+          sendGainNode.connect(busEntry.input);
+          console.log(`📤 Send routed: ${instrumentId} → ${send.busId} @ ${level.toFixed(3)}`);
+        } catch (error) {
+          console.warn(`⚠️ Failed to route send ${send.busId} for ${instrumentId}:`, error);
+        }
+      }
+    }
 
     console.log(`🎚️ Connected ${instrumentId} to master bus (no auto-gain, matches live playback)`);
 
@@ -1652,60 +1706,18 @@ export class RenderEngine {
   /**
    * Load all effect worklet modules into the offline context
    */
-  async _loadEffectWorklets(offlineContext) {
-    if (offlineContext._workletsLoaded) return;
+  async _loadEffectWorklets(audioContext, effectSources = []) {
+    if (!audioContext) return;
 
-    const polyfill = '/worklets/text-encoder-polyfill.js';
-    const otherWorklets = [
-      '/worklets/instrument-processor.js', // Core instrument processor
-      '/worklets/mixer-processor.js',
-      '/worklets/effects/compressor-processor.js',
-      '/worklets/effects/saturator-processor.js',
-      '/worklets/effects/multiband-eq-processor.js',
-      '/worklets/effects/multiband-eq-processor-v2.js', // ✅ NEW: MultiBandEQ V2
-      '/worklets/effects/clipper-processor.js', // ✅ NEW: Clipper
-      '/worklets/effects/limiter-processor.js', // ✅ NEW: Limiter
-      '/worklets/effects/bass-enhancer-808-processor.js',
-      '/worklets/effects/feedback-delay-processor.js',
-      '/worklets/effects/atmos-machine-processor.js',
-      '/worklets/effects/stardust-chorus-processor.js',
-      '/worklets/effects/vortex-phaser-processor.js',
-      '/worklets/effects/tidal-filter-processor.js',
-      '/worklets/effects/ghost-lfo-processor.js',
-      '/worklets/effects/orbit-panner-processor.js',
-      '/worklets/effects/arcade-crusher-processor.js',
-      '/worklets/effects/pitch-shifter-processor.js',
-      '/worklets/effects/sample-morph-processor.js',
-      '/worklets/effects/sidechain-compressor-processor.js',
-      '/worklets/effects/reverb-processor.js',
-      '/worklets/effects/delay-processor.js',
-      '/worklets/effects/modern-reverb-processor.js',
-      '/worklets/effects/modern-delay-processor.js'
-    ];
+    let effectTypes = [];
 
-    console.log('🎬 Loading effect worklets for offline rendering...');
-
-    try {
-      // 1. Load Polyfill FIRST (Sequential)
-      try {
-        await offlineContext.audioWorklet.addModule(polyfill);
-        console.log('✅ Polyfill loaded for offline context');
-      } catch (err) {
-        console.error('❌ Failed to load polyfill:', err);
-      }
-
-      // 2. Load others in parallel
-      await Promise.all(otherWorklets.map(file =>
-        offlineContext.audioWorklet.addModule(file).catch(err => {
-          console.warn(`⚠️ Failed to load worklet: ${file}`, err);
-        })
-      ));
-
-      offlineContext._workletsLoaded = true;
-      console.log('✅ All offline worklets loaded');
-    } catch (error) {
-      console.error('❌ Error loading offline worklets:', error);
+    if (Array.isArray(effectSources)) {
+      effectTypes = effectSources.filter(Boolean);
+    } else if (effectSources) {
+      effectTypes = collectEffectTypesFromMixerTracks(effectSources);
     }
+
+    await ensureEffectWorkletsLoaded(audioContext, effectTypes);
   }
 }
 

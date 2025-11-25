@@ -16,19 +16,11 @@ import { createScrollSynchronizer, createWheelForwarder } from '@/lib/utils/scro
 // ✅ PERFORMANCE: Local throttle utility removed - now using optimized scroll utilities
 import { Copy, X, Download } from 'lucide-react';
 import InstrumentRow from './InstrumentRow';
-import StepGrid from './StepGrid';
-import StepGridCanvas from './StepGridCanvas'; // ⚡ NEW: Canvas-based grid
-import PianoRollMiniView from './PianoRollMiniView';
-import PianoRollMiniViewC4 from './PianoRollMiniViewC4'; // ⚡ NEW: C4-level preview
 import TimelineCanvas from './TimelineCanvas'; // ⚡ PERFORMANCE: Canvas-based timeline (replaces DOM nodes)
 import UnifiedGridContainer from './UnifiedGridContainer'; // 🚀 REVOLUTIONARY: Single canvas for all instruments
-// import UnifiedTimeline from './UnifiedTimeline'; // ⚠️ LEGACY: Replaced by TimelineCanvas
-// import InteractiveTimeline from './InteractiveTimeline'; // ⚠️ DEPRECATED - kept for reference
 import AudioExportPanel from '@/components/AudioExportPanel';
 import InstrumentPicker from './InstrumentPicker'; // ✅ NEW: Instrument selection UI
 
-// 🚀 FEATURE FLAG: Enable unified canvas (single canvas for all instruments)
-const USE_UNIFIED_CANVAS = true; // Set to false to use legacy multi-canvas approach
 // ✅ PERFORMANCE: Lazy-loaded icons to reduce initial bundle size
 const Icon = memo(({ name, size = 20, ...props }) => {
   const [IconComponent, setIconComponent] = useState(null);
@@ -114,14 +106,7 @@ function ChannelRack() {
     state.playbackMode === 'pattern' ? state.currentStep : 0
   );
 
-  // ✅ Display position for UnifiedTimeline
   const displayPosition = position;
-
-
-  // ✅ Position tracking with actual position (not ghost)
-  // ❌ REMOVED: Legacy ghost position state - now handled by UnifiedTimeline
-  // ❌ REMOVED: channelRackPosition - no longer needed (compact playhead removed)
-  // ❌ REMOVED: isJumping state - no longer needed (compact playhead removed)
 
   // Refs for UI element registration
   const patternDropdownRef = useRef(null);
@@ -138,7 +123,7 @@ function ChannelRack() {
   // State for native drag-and-drop visual feedback
   const [isNativeDragOver, setIsNativeDragOver] = useState(false);
 
-  // ⚡ PERFORMANCE: Track scroll position for viewport rendering in StepGridCanvas
+  // ⚡ PERFORMANCE: Track scroll position for timeline + legacy mini views
   const [scrollX, setScrollX] = useState(0);
   const [viewportWidth, setViewportWidth] = useState(1000);
 
@@ -510,11 +495,6 @@ function ChannelRack() {
     setTransportPosition(transportPos, targetStep);
   }, [setTransportPosition, audioLoopLength]);
 
-  // ✅ Prevent timeline click on grid rows (only allow on empty areas)
-  const handleGridRowClick = useCallback((e) => {
-    e.stopPropagation(); // Prevent timeline click when clicking on grid rows
-  }, []);
-
   // ✅ Drop zone for new samples/instruments
   const [{ isOver, canDrop }, dropRef] = useDrop({
     accept: DND_TYPES.SOUND_SOURCE,
@@ -804,54 +784,17 @@ function ChannelRack() {
         {/* ⚡ NO WRAPPER: TimelineCanvas handles its own sizing */}
       </div>
       <div ref={scrollContainerRef} className="channel-rack-layout__grid-scroll-area" /* Legacy onClick removed - TimelineController handles this */>
-        {USE_UNIFIED_CANVAS ? (
-          // 🚀 UNIFIED CANVAS: Single canvas for ALL instruments
-          <UnifiedGridContainer
-            instruments={visibleInstruments}
-            activePattern={activePattern}
-            totalSteps={audioLoopLength}
-            onNoteToggle={handleNoteToggle}
-            onInstrumentClick={(instrumentId) => {
-              const inst = visibleInstruments.find(i => i.id === instrumentId);
-              if (inst) openPianoRollForInstrument(inst);
-            }}
-            addButtonHeight={68} // ✅ FIX: Match instruments list add button height (64px height + 4px margin-top)
-          />
-        ) : (
-          // ⚠️ LEGACY: Multi-canvas approach (one canvas per instrument)
-          <div style={{ width: audioLoopLength * STEP_WIDTH, height: totalContentHeight }} className="channel-rack-layout__grid-content">
-            {visibleInstruments.map((inst, index) => {
-              // ✅ Check if notes have pitches other than C5
-              const notes = activePattern?.data[inst.id] || [];
-              const hasNonC5Notes = notes.some(note => note.pitch && note.pitch !== 'C5');
-              const showPianoRoll = inst.pianoRoll || hasNonC5Notes;
-
-              return (
-                <div key={inst.id} className="channel-rack-layout__grid-row" onClick={handleGridRowClick}>
-                  {showPianoRoll ? (
-                    <PianoRollMiniView
-                      notes={notes}
-                      patternLength={audioLoopLength}
-                      onNoteClick={() => openPianoRollForInstrument(inst)}
-                      scrollX={scrollX}
-                      viewportWidth={viewportWidth}
-                    />
-                  ) : (
-                    <StepGridCanvas
-                      instrumentId={inst.id}
-                      notes={notes}
-                      totalSteps={audioLoopLength}
-                      onNoteToggle={handleNoteToggle}
-                      scrollX={scrollX}
-                      viewportWidth={viewportWidth}
-                    />
-                  )}
-                </div>
-              );
-            })}
-            <div className="channel-rack-layout__grid-row" onClick={handleGridRowClick} />
-          </div>
-        )}
+        <UnifiedGridContainer
+          instruments={visibleInstruments}
+          activePattern={activePattern}
+          totalSteps={audioLoopLength}
+          onNoteToggle={handleNoteToggle}
+          onInstrumentClick={(instrumentId) => {
+            const inst = visibleInstruments.find(i => i.id === instrumentId);
+            if (inst) openPianoRollForInstrument(inst);
+          }}
+          addButtonHeight={68} // ✅ FIX: Match instruments list add button height (64px height + 4px margin-top)
+        />
       </div>
 
       {/* Audio Export Panel */}

@@ -1006,6 +1006,61 @@ export class AudioContextService {
         }
       }
 
+      // ✅ NEW: Restore send routing after all inserts exist
+      for (const track of mixerTracks) {
+        if (!Array.isArray(track.sends) || track.sends.length === 0) {
+          continue;
+        }
+
+        const sourceInsert = this.audioEngine.mixerInserts?.get(track.id);
+        if (!sourceInsert) {
+          console.warn(`⚠️ Cannot restore sends for ${track.id}: insert not found`);
+          continue;
+        }
+
+        for (const send of track.sends) {
+          if (!send?.busId) {
+            continue;
+          }
+
+          const busInsert = this.audioEngine.mixerInserts?.get(send.busId);
+          if (!busInsert) {
+            console.warn(`⚠️ Send target ${send.busId} for ${track.id} not found (yet)`);
+            continue;
+          }
+
+          const level =
+            typeof send.level === 'number'
+              ? send.level
+              : 0;
+
+          const hasSend =
+            sourceInsert?.sends && typeof sourceInsert.sends.has === 'function'
+              ? sourceInsert.sends.has(send.busId)
+              : false;
+
+          if (hasSend) {
+            try {
+              sourceInsert.setSendLevel(send.busId, level);
+            } catch (error) {
+              console.warn(`⚠️ Failed to update send level for ${track.id} → ${send.busId}:`, error);
+            }
+            continue;
+          }
+
+          try {
+            this.audioEngine.createSend(
+              track.id,
+              send.busId,
+              level,
+              !!send.preFader
+            );
+          } catch (error) {
+            console.error(`❌ Failed to recreate send ${track.id} → ${send.busId}:`, error);
+          }
+        }
+      }
+
       console.log(`✅ Synced ${mixerTracks.length} mixer tracks to audio engine`);
       
       // ✅ CRITICAL FIX: Sync existing instruments to mixer inserts

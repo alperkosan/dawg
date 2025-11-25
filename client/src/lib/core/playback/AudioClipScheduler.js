@@ -58,18 +58,65 @@ export class AudioClipScheduler {
             return false;
         }
 
-        // Convert clip startTime (in beats) to seconds
+        const bpm = this.transport?.bpm || 120;
+        const secondsPerBeat = 60 / bpm;
+
         const clipStartBeats = clip.startTime || 0;
-        const clipStartSeconds = clipStartBeats * (60 / this.transport.bpm); // beats to seconds
-        const absoluteStartTime = baseTime + clipStartSeconds;
+        const clipStartSeconds = clipStartBeats * secondsPerBeat;
 
-        // Calculate duration
-        const clipDurationBeats = clip.duration || (audioBuffer.duration * (this.transport.bpm / 60));
-        const clipDurationSeconds = clipDurationBeats * (60 / this.transport.bpm); // beats to seconds
+        const clipDurationBeats =
+            typeof clip.duration === 'number'
+                ? clip.duration
+                : audioBuffer.duration * (bpm / 60);
+        const clipDurationSeconds = clipDurationBeats * secondsPerBeat;
+        const clipEndSeconds = clipStartSeconds + clipDurationSeconds;
 
-        // ✅ FIX: Get clip offset (where to start playing in the buffer)
-        // Support both 'offset' and 'sampleOffset' properties (sampleOffset is used for split clips)
-        const clipOffset = clip.sampleOffset || clip.offset || 0; // in seconds
+        const clipOffset = clip.sampleOffset || clip.offset || 0; // seconds
+
+        let absoluteStartTime = baseTime + clipStartSeconds;
+        let startOffsetSeconds = clipOffset;
+        let playbackDurationSeconds = clipDurationSeconds;
+
+        try {
+            if (this.transport?.ticksToSteps) {
+                const currentTick = this.transport.currentTick || 0;
+                const currentStep = this.transport.ticksToSteps(currentTick);
+                const currentPositionBeats = currentStep / 4;
+                const currentPositionSeconds = currentStep * this.transport.stepsToSeconds(1);
+
+                const clipEndBeats = clipStartBeats + clipDurationBeats;
+                const isWithinClip =
+                    currentPositionBeats >= clipStartBeats &&
+                    currentPositionBeats < clipEndBeats;
+
+                if (isWithinClip) {
+                    absoluteStartTime = baseTime;
+
+                    const elapsedSeconds = currentPositionSeconds - clipStartSeconds;
+                    if (elapsedSeconds > 0) {
+                        startOffsetSeconds += elapsedSeconds;
+                        playbackDurationSeconds = Math.max(0, clipEndSeconds - currentPositionSeconds);
+                    }
+                } else {
+                    const relativeSeconds = clipStartSeconds - currentPositionSeconds;
+                    absoluteStartTime = baseTime + relativeSeconds;
+
+                    if (absoluteStartTime < baseTime) {
+                        return false;
+                    }
+                }
+            }
+        } catch (error) {
+            console.warn('AudioClipScheduler: Failed to calculate resume offset', error);
+        }
+
+        if (startOffsetSeconds >= audioBuffer.duration) {
+            return false;
+        }
+
+        if (playbackDurationSeconds <= 0) {
+            return false;
+        }
 
         // Schedule audio playback
         this.transport.scheduleEvent(
@@ -106,8 +153,15 @@ export class AudioClipScheduler {
                     source.connect(destination);
 
                     // Start playback
-                    const startOffset = clipOffset;
-                    const duration = clipDurationSeconds;
+                    const startOffset = startOffsetSeconds;
+                    const duration = Math.min(
+                        playbackDurationSeconds,
+                        audioBuffer.duration - startOffset
+                    );
+
+                    if (duration <= 0) {
+                        return;
+                    }
 
                     source.start(scheduledTime, startOffset, duration);
 

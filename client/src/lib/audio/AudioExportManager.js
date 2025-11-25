@@ -99,113 +99,23 @@ export class AudioExportManager {
         throw new Error(`Pattern ${patternId} not found`);
       }
 
-      // ✅ FIX: Collect all instrument data upfront to avoid store access during render
-      const { useInstrumentsStore } = await import('../../store/useInstrumentsStore');
-      const { instruments } = useInstrumentsStore.getState();
-
-      // 🎛️ DYNAMIC MIXER: Get mixer insert data from audio engine, not old mixer store
-      const audioEngine = AudioContextService.getAudioEngine();
-      if (!audioEngine) {
-        throw new Error('Audio engine not available');
-      }
-
-      console.log(`🎛️ Audio Engine state:`, {
-        hasMixerInserts: !!audioEngine.mixerInserts,
-        insertCount: audioEngine.mixerInserts?.size || 0
+      const { patternData: renderPatternData } = await this._preparePatternSnapshot(patternData, {
+        includeMasterChannel: true
       });
-
-      const relevantInstruments = {};
-      const relevantMixerTracks = {};
-
-      Object.keys(patternData.data || {}).forEach(instrumentId => {
-        const inst = instruments.find(i => i.id === instrumentId);
-        if (inst) {
-          relevantInstruments[instrumentId] = inst;
-
-          // 🎛️ DYNAMIC MIXER: Get insert data from audio engine
-          const mixerTrackId = inst.mixerTrackId;
-          if (mixerTrackId && audioEngine.mixerInserts && !relevantMixerTracks[mixerTrackId]) {
-            const insert = audioEngine.mixerInserts.get(mixerTrackId);
-            if (insert) {
-              // Convert MixerInsert to format expected by renderer
-              relevantMixerTracks[mixerTrackId] = {
-                id: mixerTrackId,
-                name: insert.label || mixerTrackId,
-                gain: insert.gainNode.gain.value, // Linear gain (0-1)
-                pan: insert.panNode.pan.value,    // Pan (-1 to 1)
-                // Note: EQ parameters not currently stored in MixerInsert
-                // If needed, can be added to MixerInsert class later
-                lowGain: 0,
-                midGain: 0,
-                highGain: 0,
-                // ✅ ADD: Effect chain from MixerInsert
-                // insert.effects is a Map, not an array
-                insertEffects: insert.effects && insert.effects.size > 0
-                  ? Array.from(insert.effects.entries()).map(([effectId, effect]) => ({
-                      id: effectId,
-                      type: effect.type,
-                      bypass: effect.bypass || false,
-                      settings: effect.settings || {}
-                    }))
-                  : []
-              };
-              console.log(`🎛️ Collected mixer insert ${mixerTrackId}:`, {
-                gain: insert.gainNode.gain.value,
-                pan: insert.panNode.pan.value,
-                effectCount: insert.effects?.size || 0
-              });
-            }
-          }
-        }
-      });
-
-      // ✅ ADD: Collect master channel effects
-      const masterInsert = audioEngine.mixerInserts?.get('master');
-      if (masterInsert) {
-        relevantMixerTracks['master'] = {
-          id: 'master',
-          name: 'Master',
-          gain: masterInsert.gainNode.gain.value,
-          pan: masterInsert.panNode.pan.value,
-          lowGain: 0,
-          midGain: 0,
-          highGain: 0,
-          insertEffects: masterInsert.effects && masterInsert.effects.size > 0
-            ? Array.from(masterInsert.effects.entries()).map(([effectId, effect]) => ({
-                id: effectId,
-                type: effect.type,
-                bypass: effect.bypass || false,
-                settings: effect.settings || {}
-              }))
-            : []
-        };
-        console.log(`🎛️ Collected MASTER channel:`, {
-          gain: masterInsert.gainNode.gain.value,
-          effectCount: masterInsert.effects?.size || 0,
-          effects: masterInsert.effects ? Array.from(masterInsert.effects.values()).map(e => e.type) : []
-        });
-      }
-
-      console.log(`🎵 Collected ${Object.keys(relevantInstruments).length} instrument definitions for rendering`);
-      console.log(`🎛️ Collected ${Object.keys(relevantMixerTracks).length} mixer inserts for rendering (including master)`);
-
-      // Attach instruments and mixer tracks to patternData for rendering
-      patternData.instruments = relevantInstruments;
-      patternData.mixerTracks = relevantMixerTracks;
 
       // Choose export strategy based on type
       switch (settings.type) {
         case EXPORT_TYPES.PATTERN:
-          return await this._exportSinglePattern(patternData, settings);
+          return await this._exportSinglePattern(renderPatternData, settings);
 
         case EXPORT_TYPES.CHANNELS:
-          return await this._exportPatternByChannels(patternData, settings);
+          return await this._exportPatternByChannels(renderPatternData, settings);
 
         case EXPORT_TYPES.STEMS:
-          return await this._exportPatternByStems(patternData, settings);
+          return await this._exportPatternByStems(renderPatternData, settings);
 
         case EXPORT_TYPES.FREEZE:
-          return await this._freezePattern(patternData, settings);
+          return await this._freezePattern(renderPatternData, settings);
 
         default:
           throw new Error(`Export type ${settings.type} not supported`);
@@ -802,6 +712,167 @@ export class AudioExportManager {
     const { useArrangementStore } = await import('../../store/useArrangementStore');
     const { patterns } = useArrangementStore.getState();
     return patterns[patternId];
+  }
+
+  /**
+   * Prepare a renderable snapshot of pattern data with instrument & mixer metadata.
+   * @param {object} patternData
+   * @param {object} options
+   * @param {Array<string>} options.instrumentIds - restrict to these instruments
+   * @param {boolean} options.includeMasterChannel - include master insert metadata (default true)
+   * @returns {Promise<{ patternData: object, instrumentIds: string[] }>}
+   */
+  async _preparePatternSnapshot(patternData, options = {}) {
+    const {
+      instrumentIds = null,
+      includeMasterChannel = true
+    } = options;
+
+    if (!patternData) {
+      throw new Error('Pattern data is required for snapshot');
+    }
+
+    const sourceData = patternData.data || {};
+    const targetInstrumentIds = instrumentIds
+      ? instrumentIds.filter(Boolean)
+      : Object.keys(sourceData);
+
+    const snapshot = {
+      ...patternData,
+      data: {}
+    };
+
+    targetInstrumentIds.forEach(id => {
+      if (sourceData[id]) {
+        snapshot.data[id] = sourceData[id];
+      }
+    });
+
+    const { useInstrumentsStore } = await import('../../store/useInstrumentsStore');
+    const { useMixerStore } = await import('../../store/useMixerStore');
+    const { instruments } = useInstrumentsStore.getState();
+    const mixerState = useMixerStore.getState();
+    const mixerTracks = mixerState.mixerTracks || [];
+    const mixerTrackMetaMap = new Map(mixerTracks.map(track => [track.id, track]));
+
+    const instrumentMap = {};
+    const mixerTrackMap = {};
+    const requiredBusIds = new Set();
+
+    const audioEngine = AudioContextService.getAudioEngine();
+    if (!audioEngine) {
+      throw new Error('Audio engine not available');
+    }
+
+    targetInstrumentIds.forEach(instrumentId => {
+      const inst = instruments.find(i => i.id === instrumentId);
+      if (!inst) return;
+
+      instrumentMap[instrumentId] = inst;
+
+      const mixerTrackId = inst.mixerTrackId;
+      if (
+        mixerTrackId &&
+        audioEngine.mixerInserts &&
+        !mixerTrackMap[mixerTrackId]
+      ) {
+        const insert = audioEngine.mixerInserts.get(mixerTrackId);
+        if (insert) {
+          const trackMeta = mixerTrackMetaMap.get(mixerTrackId);
+          const serialized = this._serializeInsert(insert, mixerTrackId, { trackMeta });
+          mixerTrackMap[mixerTrackId] = serialized;
+
+          if (Array.isArray(serialized.sends)) {
+            serialized.sends.forEach(send => send?.busId && requiredBusIds.add(send.busId));
+          }
+        }
+      }
+    });
+
+    if (includeMasterChannel) {
+      const masterInsert = audioEngine.mixerInserts?.get('master');
+      if (masterInsert) {
+          mixerTrackMap['master'] = this._serializeInsert(masterInsert, 'master', {
+            trackMeta: mixerTrackMetaMap.get('master'),
+            forceType: 'master'
+          });
+      }
+    }
+
+    // Ensure bus inserts referenced by sends are included
+    for (const busId of requiredBusIds) {
+      if (mixerTrackMap[busId]) continue;
+      const busInsert = audioEngine.mixerInserts?.get(busId);
+      if (!busInsert) continue;
+      const trackMeta = mixerTrackMetaMap.get(busId);
+      mixerTrackMap[busId] = this._serializeInsert(busInsert, busId, {
+        trackMeta,
+        forceType: trackMeta?.type || (busId?.startsWith('bus-') ? 'bus' : undefined)
+      });
+    }
+
+    snapshot.instruments = instrumentMap;
+    snapshot.mixerTracks = mixerTrackMap;
+
+    return {
+      patternData: snapshot,
+      instrumentIds: targetInstrumentIds
+    };
+  }
+
+  _serializeInsert(insert, mixerTrackId, { trackMeta = null, forceType, sends: overrideSends } = {}) {
+    const serialized = {
+      id: mixerTrackId,
+      name: insert.label || mixerTrackId,
+      gain: insert.gainNode?.gain?.value ?? 1,
+      pan: insert.panNode?.pan?.value ?? 0,
+      lowGain: trackMeta?.eq?.low ?? 0,
+      midGain: trackMeta?.eq?.mid ?? 0,
+      highGain: trackMeta?.eq?.high ?? 0,
+      type: forceType || trackMeta?.type || (mixerTrackId?.startsWith('bus-') ? 'bus' : 'track'),
+      insertEffects:
+        insert.effects && insert.effects.size > 0
+          ? Array.from(insert.effects.entries()).map(([effectId, effect]) => ({
+              id: effectId,
+              type: effect.type,
+              bypass: effect.bypass || false,
+              settings: effect.settings || {}
+            }))
+          : []
+    };
+
+    const sends = overrideSends ?? this._serializeSends(insert, trackMeta);
+    if (sends.length > 0) {
+      serialized.sends = sends;
+    }
+
+    return serialized;
+  }
+
+  _serializeSends(insert, trackMeta) {
+    const sends = [];
+    const storeSends = Array.isArray(trackMeta?.sends) ? trackMeta.sends : [];
+    const storeSendMap = new Map(storeSends.map(send => [send.busId, send]));
+
+    if (insert?.sends?.size > 0) {
+      insert.sends.forEach((sendData, busId) => {
+        sends.push({
+          busId,
+          level: sendData?.gain?.gain?.value ?? 0,
+          preFader: !!storeSendMap.get(busId)?.preFader
+        });
+      });
+    } else if (storeSends.length > 0) {
+      storeSends.forEach(send => {
+        sends.push({
+          busId: send.busId,
+          level: typeof send.level === 'number' ? send.level : 0,
+          preFader: !!send.preFader
+        });
+      });
+    }
+
+    return sends;
   }
 
   /**

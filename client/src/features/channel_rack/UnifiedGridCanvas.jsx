@@ -246,49 +246,62 @@ const UnifiedGridCanvas = React.memo(({
       ctx.fillRect(0, y, viewportWidth, ROW_HEIGHT);
     }
 
-    // === LAYER 2: GRID LINES (BATCH RENDERING) ===
+    // === LAYER 2: GRID LINES ===
+    // Horizontal separators
     ctx.beginPath();
-
-    // Horizontal lines (row separators)
     ctx.strokeStyle = borderSubtle;
     ctx.lineWidth = 1;
     for (let row = startRow; row <= endRow; row++) {
       const y = row * ROW_HEIGHT - scrollY;
       if (y >= -ROW_HEIGHT && y <= viewportHeight) {
-        ctx.moveTo(0, y);
-        ctx.lineTo(viewportWidth, y);
+        ctx.moveTo(0, y + 0.5);
+        ctx.lineTo(viewportWidth, y + 0.5);
       }
     }
+    ctx.stroke();
 
-    // Vertical lines (bars and beats)
     const startBar = Math.floor(startStep / 16);
     const endBar = Math.ceil(endStep / 16);
 
+    // Bar lines (thicker, with highlight after the first bar)
     for (let bar = startBar; bar <= endBar; bar++) {
       const barStep = bar * 16;
       const x = barStep * STEP_WIDTH - scrollX;
+      if (x < -STEP_WIDTH || x > viewportWidth) continue;
 
-      if (x >= -STEP_WIDTH && x <= viewportWidth) {
-        // Bar line (thick)
-        ctx.strokeStyle = borderStrong;
-        ctx.lineWidth = 2;
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, viewportHeight);
+      const isFirstBar = bar === 0;
+      ctx.beginPath();
+      ctx.strokeStyle = isFirstBar ? `rgba(${accentCoolRgb}, 0.25)` : borderStrong;
+      ctx.lineWidth = isFirstBar ? 2 : 3;
 
-        // Beat lines (thin)
-        ctx.strokeStyle = borderMedium;
-        ctx.lineWidth = 1;
-        for (let beat = 1; beat < 4; beat++) {
-          const beatStep = barStep + beat * 4;
-          const beatX = beatStep * STEP_WIDTH - scrollX;
-          if (beatX >= 0 && beatX <= viewportWidth) {
-            ctx.moveTo(beatX, 0);
-            ctx.lineTo(beatX, viewportHeight);
-          }
+      if (!isFirstBar) {
+        ctx.shadowBlur = 6;
+        ctx.shadowColor = `rgba(${accentCoolRgb}, 0.35)`;
+      } else {
+        ctx.shadowBlur = 0;
+      }
+
+      ctx.moveTo(x + 0.5, 0);
+      ctx.lineTo(x + 0.5, viewportHeight);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+    }
+
+    // Beat dividers (thin lines inside bars)
+    ctx.beginPath();
+    ctx.strokeStyle = borderMedium;
+    ctx.lineWidth = 1;
+    for (let bar = startBar; bar <= endBar; bar++) {
+      const barStep = bar * 16;
+      for (let beat = 1; beat < 4; beat++) {
+        const beatStep = barStep + beat * 4;
+        const beatX = beatStep * STEP_WIDTH - scrollX;
+        if (beatX >= 0 && beatX <= viewportWidth) {
+          ctx.moveTo(beatX + 0.5, 0);
+          ctx.lineTo(beatX + 0.5, viewportHeight);
         }
       }
     }
-
     ctx.stroke();
 
     // === CONSTANTS: Shared values for step sequencer rendering ===

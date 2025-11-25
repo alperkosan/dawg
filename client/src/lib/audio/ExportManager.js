@@ -367,93 +367,17 @@ export class ExportManager {
             onProgress(10);
         }
 
-        // Use AudioExportManager's pattern preparation logic
-        // Get base pattern data
-        const basePatternData = await this.audioExportManager._getPatternData(activePatternId);
-        if (!basePatternData) {
-            throw new Error('Failed to prepare pattern data');
-        }
+        const channelInstrumentIds = channelId === 'master'
+            ? Object.keys(filteredPatternData.data)
+            : instruments.map(inst => inst.id);
 
-        // Get instruments and mixer tracks (same logic as AudioExportManager)
-        const audioEngine = AudioContextService.getAudioEngine();
-        if (!audioEngine) {
-            throw new Error('Audio engine not available');
-        }
-
-        const allInstruments = useInstrumentsStore.getState().instruments;
-        const relevantInstruments = {};
-        const relevantMixerTracks = {};
-
-        // Filter to only include instruments for this channel
-        const channelInstrumentIds = channelId === 'master' 
-            ? new Set(Object.keys(filteredPatternData.data))
-            : new Set(instruments.map(inst => inst.id));
-
-        Object.keys(filteredPatternData.data || {}).forEach(instrumentId => {
-            if (!channelInstrumentIds.has(instrumentId)) return;
-
-            const inst = allInstruments.find(i => i.id === instrumentId);
-            if (inst) {
-                relevantInstruments[instrumentId] = inst;
-
-                // Get mixer insert data
-                const mixerTrackId = inst.mixerTrackId;
-                if (mixerTrackId && audioEngine.mixerInserts && !relevantMixerTracks[mixerTrackId]) {
-                    const insert = audioEngine.mixerInserts.get(mixerTrackId);
-                    if (insert) {
-                        relevantMixerTracks[mixerTrackId] = {
-                            id: mixerTrackId,
-                            name: insert.label || mixerTrackId,
-                            gain: insert.gainNode.gain.value,
-                            pan: insert.panNode.pan.value,
-                            lowGain: 0,
-                            midGain: 0,
-                            highGain: 0,
-                            insertEffects: insert.effects && insert.effects.size > 0
-                                ? Array.from(insert.effects.entries()).map(([effectId, effect]) => ({
-                                    id: effectId,
-                                    type: effect.type,
-                                    bypass: effect.bypass || false,
-                                    settings: effect.settings || {}
-                                }))
-                                : []
-                        };
-                    }
-                }
+        const { patternData: fullPatternData } = await this.audioExportManager._preparePatternSnapshot(
+            filteredPatternData,
+            {
+                instrumentIds: channelInstrumentIds,
+                includeMasterChannel: channelId === 'master'
             }
-        });
-
-        // Add master channel if exporting master
-        if (channelId === 'master') {
-            const masterInsert = audioEngine.mixerInserts?.get('master');
-            if (masterInsert) {
-                relevantMixerTracks['master'] = {
-                    id: 'master',
-                    name: 'Master',
-                    gain: masterInsert.gainNode.gain.value,
-                    pan: masterInsert.panNode.pan.value,
-                    lowGain: 0,
-                    midGain: 0,
-                    highGain: 0,
-                    insertEffects: masterInsert.effects && masterInsert.effects.size > 0
-                        ? Array.from(masterInsert.effects.entries()).map(([effectId, effect]) => ({
-                            id: effectId,
-                            type: effect.type,
-                            bypass: effect.bypass || false,
-                            settings: effect.settings || {}
-                        }))
-                        : []
-                };
-            }
-        }
-
-        // Prepare full pattern data
-        const fullPatternData = {
-            ...basePatternData,
-            data: filteredPatternData.data,
-            instruments: relevantInstruments,
-            mixerTracks: relevantMixerTracks
-        };
+        );
 
         if (onProgress) {
             onProgress(20);
@@ -477,26 +401,7 @@ export class ExportManager {
         }
 
         // Apply mixer processing for this specific channel (if not master)
-        let processedBuffer = renderResult.audioBuffer;
-        
-        if (channelId !== 'master' && settings.includeEffects) {
-            // Apply channel-specific mixer processing
-            processedBuffer = await this._applyChannelMixerProcessing(
-                processedBuffer,
-                mixerInsert,
-                settings
-            );
-        } else if (channelId === 'master' && settings.includeEffects) {
-            // Master: apply master channel effects if any
-            const masterInsert = AudioContextService.getAudioEngine()?.mixerInserts?.get('master');
-            if (masterInsert) {
-                processedBuffer = await this._applyChannelMixerProcessing(
-                    processedBuffer,
-                    masterInsert,
-                    settings
-                );
-            }
-        }
+        const processedBuffer = renderResult.audioBuffer;
 
         if (onProgress) {
             onProgress(80);
@@ -791,57 +696,6 @@ export class ExportManager {
         }
 
         return destination;
-    }
-
-    /**
-     * Apply channel-specific mixer processing (gain, pan, EQ, effects)
-     * @private
-     */
-    async _applyChannelMixerProcessing(audioBuffer, mixerInsert, settings) {
-        if (!settings.includeEffects || !mixerInsert) {
-            return audioBuffer;
-        }
-
-        // Create offline context for processing
-        const offlineContext = new OfflineAudioContext(
-            audioBuffer.numberOfChannels,
-            audioBuffer.length,
-            audioBuffer.sampleRate
-        );
-
-        // Create source node
-        const source = offlineContext.createBufferSource();
-        source.buffer = audioBuffer;
-
-        // Apply gain
-        const gainNode = offlineContext.createGain();
-        const gainValue = mixerInsert.gainNode?.gain?.value ?? 1.0;
-        gainNode.gain.setValueAtTime(gainValue, offlineContext.currentTime);
-        source.connect(gainNode);
-
-        // Apply pan (if stereo)
-        let currentNode = gainNode;
-        if (audioBuffer.numberOfChannels === 2 && mixerInsert.panNode) {
-            const panNode = offlineContext.createStereoPanner();
-            const panValue = mixerInsert.panNode?.pan?.value ?? 0;
-            panNode.pan.setValueAtTime(panValue, offlineContext.currentTime);
-            gainNode.connect(panNode);
-            currentNode = panNode;
-        }
-
-        // Apply effects (if any) - simplified for now
-        if (mixerInsert.effects && mixerInsert.effects.size > 0) {
-            console.log(`🎛️ Note: ${mixerInsert.effects.size} effects found but not yet applied in export`);
-            // TODO: Apply effects chain
-        }
-
-        // Connect to destination
-        currentNode.connect(offlineContext.destination);
-        source.start(0);
-
-        // Render
-        const processedBuffer = await offlineContext.startRendering();
-        return processedBuffer;
     }
 
     /**

@@ -210,9 +210,7 @@ export default function ProjectsPage() {
       setPublishProgress({ progress: 0, status: 'Loading project...', error: null });
       
       // Import render dependencies
-      const { NativeAudioEngine } = await import('@/lib/core/NativeAudioEngine');
-      const { AudioContextService } = await import('@/lib/services/AudioContextService');
-      const { ProjectSerializer } = await import('@/lib/project/ProjectSerializer');
+      const { runProjectExportSession } = await import('@/lib/audio/export/ExportSessionManager.js');
       const { exportManager } = await import('@/lib/audio/ExportManager');
       const { useArrangementStore } = await import('@/store/useArrangementStore');
       const { usePlaybackStore } = await import('@/store/usePlaybackStore');
@@ -226,67 +224,67 @@ export default function ProjectsPage() {
         throw new Error('Project data not found');
       }
       
-      // 2. Initialize audio engine
-      setPublishProgress({ progress: 20, status: 'Initializing audio engine...', error: null });
-      const audioEngine = new NativeAudioEngine();
-      await audioEngine.initialize();
-      await AudioContextService.setAudioEngine(audioEngine);
-      await audioEngine.resumeAudioContext();
+      setPublishProgress({ progress: 20, status: 'Preparing export workspace...', error: null });
       
-      // 3. Load project into engine
-      setPublishProgress({ progress: 30, status: 'Loading project into audio engine...', error: null });
-      await ProjectSerializer.deserialize(projectData.projectData, audioEngine);
-      
-      // Wait for samples to load
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // 4. Calculate duration
-      setPublishProgress({ progress: 40, status: 'Calculating arrangement duration...', error: null });
-      const arrangementStore = useArrangementStore.getState();
-      const playbackStore = usePlaybackStore.getState();
-      const bpm = playbackStore.bpm || projectData.bpm || 120;
-      
-      const clips = arrangementStore.arrangementClips || [];
-      let maxEndTime = 0;
-      clips.forEach(clip => {
-        const clipEndTime = (clip.startTime || 0) + (clip.duration || 0);
-        maxEndTime = Math.max(maxEndTime, clipEndTime);
-      });
-      const durationBeats = maxEndTime > 0 ? maxEndTime : 16;
-      
-      // 5. Export master channel
-      // ✅ FIX: Use DEMO quality (22.05kHz) for publish to reduce file size
-      // This ensures the base64 encoded audio stays under the 4.5MB upload limit
-      setPublishProgress({ progress: 50, status: 'Rendering audio (optimized for upload)...', error: null });
-      const exportResult = await exportManager.exportChannels(
-        ['master'],
-        {
-          format: 'wav',
-          quality: 'DEMO', // ✅ Use DEMO quality (22.05kHz) instead of STANDARD (44.1kHz) to reduce file size
-          mode: 'OFFLINE',
-          includeEffects: true,
-          normalize: true,
-          fadeOut: true,
-          fadeOutDuration: 0.1,
-          stereo: true,
-          startTime: 0,
-          endTime: durationBeats,
-          download: false, // ✅ Don't auto-download, we'll upload to backend
-        },
-        (channelId, progress, status) => {
-          // Map export progress (50-90%)
-          const mappedProgress = 50 + (progress * 0.4);
-          setPublishProgress({ 
-            progress: Math.round(mappedProgress), 
-            status: status || 'Rendering...', 
-            error: null 
+      const { exportResult, durationBeats, bpm } = await runProjectExportSession(
+        projectData.projectData,
+        async () => {
+          setPublishProgress({ progress: 30, status: 'Loading project into audio engine...', error: null });
+          
+          // Wait for samples to hydrate before rendering
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
+          setPublishProgress({ progress: 40, status: 'Calculating arrangement duration...', error: null });
+          const arrangementStore = useArrangementStore.getState();
+          const playbackStore = usePlaybackStore.getState();
+          const bpmValue = playbackStore.bpm || projectData.bpm || 120;
+          
+          const clips = arrangementStore.arrangementClips || [];
+          let maxEndTime = 0;
+          clips.forEach(clip => {
+            const clipEndTime = (clip.startTime || 0) + (clip.duration || 0);
+            maxEndTime = Math.max(maxEndTime, clipEndTime);
           });
-        }
+          const durationBeatsValue = maxEndTime > 0 ? maxEndTime : 16;
+          
+          setPublishProgress({ progress: 50, status: 'Rendering audio (optimized for upload)...', error: null });
+          const exportResultLocal = await exportManager.exportChannels(
+            ['master'],
+            {
+              format: 'wav',
+              quality: 'DEMO',
+              mode: 'OFFLINE',
+              includeEffects: true,
+              normalize: true,
+              fadeOut: true,
+              fadeOutDuration: 0.1,
+              stereo: true,
+              startTime: 0,
+              endTime: durationBeatsValue,
+              download: false,
+            },
+            (channelId, progress, status) => {
+              const mappedProgress = 50 + (progress * 0.4);
+              setPublishProgress({
+                progress: Math.round(mappedProgress),
+                status: status || 'Rendering...',
+                error: null
+              });
+            }
+          );
+
+          if (!exportResultLocal || exportResultLocal.length === 0 || !exportResultLocal[0]?.file) {
+            throw new Error('Export failed - no result');
+          }
+
+          return {
+            exportResult: exportResultLocal,
+            durationBeats: durationBeatsValue,
+            bpm: bpmValue
+          };
+        },
+        { preserveWorkspace: true }
       );
-      
-      if (!exportResult || exportResult.length === 0 || !exportResult[0]?.file) {
-        throw new Error('Export failed - no result');
-      }
       
       // 6. Upload to backend
       setPublishProgress({ progress: 90, status: 'Uploading audio preview...', error: null });

@@ -126,6 +126,13 @@ export const usePlaybackStore = create((set, get) => ({
       return;
     }
     await controller.stop();
+    // ✅ UX: Always rewind to start when transport is stopped from UI
+    await controller.jumpToPosition(0, { smooth: false });
+    set({
+      currentStep: 0,
+      transportStep: 0,
+      transportPosition: '1:1:00'
+    });
     try {
       const { stopPreview, isPlaying } = usePreviewPlayerStore.getState();
       if (isPlaying) {
