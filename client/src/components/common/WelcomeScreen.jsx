@@ -17,6 +17,11 @@ export default function WelcomeScreen({ onChoose }) {
 
   const handleChoose = (path) => {
     sessionStorage.setItem('user-has-chosen', JSON.stringify(true));
+    if (path === '/daw') {
+      sessionStorage.setItem('daw-auto-start', JSON.stringify(true));
+    } else {
+      sessionStorage.removeItem('daw-auto-start');
+    }
     // ✅ FIX: Call onChoose callback to update parent state
     if (onChoose) {
       onChoose();

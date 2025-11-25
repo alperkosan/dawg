@@ -84,6 +84,7 @@ export async function uploadFile(file, options = {}) {
  */
 async function uploadUserAsset(file, { folderPath, parentFolderId, onProgress }) {
   const api = await getApiClient();
+  const finalFilename = metadata.filename || file.name;
   const mimeType = file.type || 'audio/wav';
   
   // Request upload
@@ -141,6 +142,62 @@ async function uploadUserAsset(file, { folderPath, parentFolderId, onProgress })
  * Upload system asset (admin panel)
  */
 async function uploadSystemAsset(file, { metadata, onProgress }) {
+  const api = await getApiClient();
+  const mimeType = file.type || 'audio/wav';
+  const normalizedMetadata = {
+    ...metadata,
+    categoryId: metadata.categoryId || undefined,
+    packId: metadata.packId || undefined,
+    isPremium: metadata.isPremium ?? false,
+    isFeatured: metadata.isFeatured ?? false,
+    isActive: metadata.isActive ?? true,
+  };
+
+  try {
+    const uploadRequest = await api.requestSystemAssetUpload({
+      filename: finalFilename,
+      size: file.size,
+      mimeType: mimeType.startsWith('audio/') ? mimeType : 'audio/wav',
+      categoryId: normalizedMetadata.categoryId,
+      packId: normalizedMetadata.packId,
+    });
+
+    if (!uploadRequest?.uploadUrl || !uploadRequest?.accessKey) {
+      throw new Error('Direct upload not available');
+    }
+
+    await uploadToBunnyCDN(
+      uploadRequest.uploadUrl,
+      uploadRequest.accessKey,
+      file,
+      onProgress
+    );
+
+    const asset = await api.completeSystemAssetUpload({
+      assetId: uploadRequest.assetId,
+      filename: finalFilename,
+      mimeType: mimeType.startsWith('audio/') ? mimeType : 'audio/wav',
+      fileSize: file.size,
+      name: normalizedMetadata.name || metadata.name || file.name,
+      description: normalizedMetadata.description,
+      categoryId: normalizedMetadata.categoryId,
+      packId: normalizedMetadata.packId,
+      bpm: normalizedMetadata.bpm,
+      keySignature: normalizedMetadata.keySignature,
+      tags: normalizedMetadata.tags,
+      isPremium: normalizedMetadata.isPremium,
+      isFeatured: normalizedMetadata.isFeatured,
+      isActive: normalizedMetadata.isActive,
+    });
+
+    return asset;
+  } catch (error) {
+    console.warn('⚠️ [UPLOAD] Direct system asset upload failed, falling back to server upload:', error);
+    return uploadSystemAssetViaServer(file, { metadata, onProgress });
+  }
+}
+
+async function uploadSystemAssetViaServer(file, { metadata, onProgress }) {
   const formData = new FormData();
   
   // Add metadata fields first

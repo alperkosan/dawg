@@ -7,10 +7,12 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { Readable } from 'stream';
 import crypto from 'crypto';
+import path from 'path';
 import { systemAssetsService } from '../services/systemAssets.js';
 import { BadRequestError, NotFoundError, ConflictError } from '../utils/errors.js';
 import { storageService } from '../services/storage.js';
 import { logger } from '../utils/logger.js';
+import { config } from '../config/index.js';
 
 // Validation schemas
 const listAssetsSchema = z.object({
@@ -35,6 +37,60 @@ const listPacksSchema = z.object({
   limit: z.coerce.number().int().positive().max(1000).default(50),
   offset: z.coerce.number().int().nonnegative().default(0),
 });
+
+const systemAssetUploadRequestSchema = z.object({
+  filename: z.string().min(1).max(255),
+  size: z.number().int().positive().max(1073741824), // 1GB max
+  mimeType: z.string().min(1),
+  categoryId: z.string().uuid().optional(),
+  packId: z.string().uuid().optional(),
+});
+
+const systemAssetUploadCompleteSchema = z.object({
+  assetId: z.string().uuid(),
+  filename: z.string().min(1).max(255),
+  mimeType: z.string().min(1),
+  fileSize: z.number().int().positive(),
+  name: z.string().min(1),
+  description: z.string().optional(),
+  categoryId: z.string().uuid().optional(),
+  packId: z.string().uuid().optional(),
+  bpm: z.number().int().positive().optional(),
+  keySignature: z.string().optional(),
+  tags: z.array(z.string()).optional(),
+  isPremium: z.boolean().optional(),
+  isFeatured: z.boolean().optional(),
+  isActive: z.boolean().optional(),
+});
+
+function buildSystemAssetStorageKey(assetId: string, filename: string, categorySlug: string, packSlug: string): string {
+  const fileExtension = path.extname(filename) || '.wav';
+  const storageFilename = `${assetId}${fileExtension}`;
+  return `system-assets/${categorySlug}/${packSlug}/${assetId}/${storageFilename}`;
+}
+
+async function resolveCategoryAndPackSlugs(categoryId?: string, packId?: string) {
+  let categorySlug = 'uncategorized';
+  let packSlug = 'default';
+
+  if (categoryId) {
+    const category = await systemAssetsService.getCategoryById(categoryId);
+    if (!category) {
+      throw new BadRequestError('Category not found');
+    }
+    categorySlug = category.slug || 'uncategorized';
+  }
+
+  if (packId) {
+    const pack = await systemAssetsService.getPackById(packId);
+    if (!pack) {
+      throw new BadRequestError('Pack not found');
+    }
+    packSlug = pack.slug || 'default';
+  }
+
+  return { categorySlug, packSlug };
+}
 
 export async function systemAssetsRoutes(fastify: FastifyInstance) {
   // ==================== PUBLIC ENDPOINTS ====================
@@ -427,6 +483,70 @@ export async function systemAssetsRoutes(fastify: FastifyInstance) {
   // Note: For now, all authenticated users can access admin endpoints
   // TODO: Add role-based access control (isAdmin check)
 
+  // Request direct upload for system asset (admin)
+  fastify.post(
+    '/admin/system/assets/upload/request',
+    { preHandler: [fastify.authenticate] },
+    async (request: FastifyRequest<{ Body: z.infer<typeof systemAssetUploadRequestSchema> }>, reply: FastifyReply) => {
+      const body = systemAssetUploadRequestSchema.parse(request.body);
+
+      if (config.cdn.provider !== 'bunny' || !config.cdn.bunny.storageZoneName || !config.cdn.bunny.storageApiKey) {
+        throw new NotFoundError('Direct upload not available');
+      }
+
+      const assetId = crypto.randomUUID();
+      const { categorySlug, packSlug } = await resolveCategoryAndPackSlugs(body.categoryId, body.packId);
+      const storageKey = buildSystemAssetStorageKey(assetId, body.filename, categorySlug, packSlug);
+      const uploadUrl = `https://storage.bunnycdn.com/${config.cdn.bunny.storageZoneName}/${storageKey}`;
+      const storageUrl = storageService.getCDNUrl(storageKey, assetId);
+
+      return reply.send({
+        assetId,
+        storageKey,
+        uploadUrl,
+        storageUrl,
+        accessKey: config.cdn.bunny.storageApiKey,
+        categorySlug,
+        packSlug,
+      });
+    }
+  );
+
+  // Complete direct upload (admin)
+  fastify.post(
+    '/admin/system/assets/upload/complete',
+    { preHandler: [fastify.authenticate] },
+    async (request: FastifyRequest<{ Body: z.infer<typeof systemAssetUploadCompleteSchema> }>, reply: FastifyReply) => {
+      const userId = (request as any).user.userId;
+      const body = systemAssetUploadCompleteSchema.parse(request.body);
+
+      const { categorySlug, packSlug } = await resolveCategoryAndPackSlugs(body.categoryId, body.packId);
+      const storageKey = buildSystemAssetStorageKey(body.assetId, body.filename, categorySlug, packSlug);
+      const storageUrl = storageService.getCDNUrl(storageKey, body.assetId);
+
+      const asset = await systemAssetsService.createAsset(userId, {
+        id: body.assetId,
+        name: body.name,
+        filename: body.filename,
+        description: body.description,
+        categoryId: body.categoryId,
+        packId: body.packId,
+        bpm: body.bpm,
+        keySignature: body.keySignature,
+        tags: body.tags,
+        isPremium: body.isPremium || false,
+        isFeatured: body.isFeatured || false,
+        isActive: body.isActive !== undefined ? body.isActive : true,
+        storageKey,
+        storageUrl,
+        fileSize: body.fileSize,
+        mimeType: body.mimeType,
+      });
+
+      return reply.send(asset);
+    }
+  );
+
   // Upload system asset (admin)
   fastify.post(
     '/admin/system/assets',
@@ -440,50 +560,108 @@ export async function systemAssetsRoutes(fastify: FastifyInstance) {
       // Field'lar file'dan önce gönderildiği için önce field'lar okunacak
       let fileData: any = null;
       const formData: any = {};
+      let uploadBuffer: Buffer | null = null;
+      let uploadFilename: string | undefined;
+      let uploadMimeType: string | undefined;
+      const contentType = request.headers['content-type'] || '';
+      const body = request.body as any;
+
+      const processField = (fieldName: string, fieldValue?: string) => {
+        if (fieldValue === undefined || fieldValue === null) {
+          return;
+        }
+        if (fieldName === 'tags') {
+          try {
+            formData[fieldName] = JSON.parse(fieldValue);
+          } catch {
+            formData[fieldName] = fieldValue
+              .split(',')
+              .map((t: string) => t.trim())
+              .filter(Boolean);
+          }
+        } else if (fieldName === 'bpm') {
+          formData[fieldName] = fieldValue ? parseInt(fieldValue) : undefined;
+        } else if (fieldName === 'isPremium' || fieldName === 'isFeatured' || fieldName === 'isActive') {
+          formData[fieldName] = fieldValue === 'true' || fieldValue === true;
+        } else {
+          formData[fieldName] = fieldValue || undefined;
+        }
+      };
+
+      const hasPreParsedMultipart =
+        body &&
+        typeof body === 'object' &&
+        'fields' in body &&
+        'files' in body &&
+        contentType.includes('application/json');
       
       try {
         logger.info('📋 Parsing multipart data (fields first, then file)...');
-        
-        // Read all parts - fields come first, then file
-        for await (const part of request.parts()) {
-          if (part.type === 'field') {
-            const field = part as any;
-            const fieldValue = field.value;
-            logger.info(`📝 Field: ${field.fieldname} = ${fieldValue?.substring(0, 50) || 'empty'}...`);
-            
-            // Process field value
-            if (field.fieldname === 'tags') {
-              try {
-                formData[field.fieldname] = JSON.parse(fieldValue);
-              } catch {
-                formData[field.fieldname] = fieldValue.split(',').map((t: string) => t.trim()).filter(Boolean);
-              }
-            } else if (field.fieldname === 'bpm') {
-              formData[field.fieldname] = fieldValue ? parseInt(fieldValue) : undefined;
-            } else if (field.fieldname === 'isPremium' || field.fieldname === 'isFeatured' || field.fieldname === 'isActive') {
-              formData[field.fieldname] = fieldValue === 'true';
-            } else {
-              formData[field.fieldname] = fieldValue || undefined;
+
+        if (hasPreParsedMultipart) {
+          logger.info('✅ Detected pre-parsed multipart payload (Vercel)');
+          const parsedData = body as {
+            fields: Record<string, string | string[]>;
+            files: Record<string, { bufferBase64?: string; buffer?: Buffer | { data: number[] }; filename?: string; mimetype?: string; filepath?: string }>;
+          };
+
+          Object.entries(parsedData.fields || {}).forEach(([fieldName, value]) => {
+            const normalizedValue = Array.isArray(value) ? value[0] : value;
+            logger.info(`📝 Field: ${fieldName} = ${normalizedValue?.toString().substring(0, 50) || 'empty'}...`);
+            processField(fieldName, normalizedValue as string);
+          });
+
+          const fileKeys = Object.keys(parsedData.files || {});
+          if (fileKeys.length === 0) {
+            logger.error('❌ No file provided in pre-parsed multipart payload');
+            throw new BadRequestError('No file provided');
+          }
+          const fileInfo = parsedData.files[fileKeys[0]];
+          logger.info(`📁 File (pre-parsed): ${fileInfo.filename || 'unknown'}, mimetype: ${fileInfo.mimetype || 'unknown'}`);
+
+          if (fileInfo.bufferBase64) {
+            uploadBuffer = Buffer.from(fileInfo.bufferBase64, 'base64');
+          } else if (fileInfo.buffer) {
+            uploadBuffer = Buffer.isBuffer(fileInfo.buffer)
+              ? (fileInfo.buffer as Buffer)
+              : Buffer.from((fileInfo.buffer as any).data || fileInfo.buffer);
+          } else if (fileInfo.filepath) {
+            const fs = await import('fs/promises');
+            uploadBuffer = await fs.readFile(fileInfo.filepath);
+          }
+
+          if (!uploadBuffer) {
+            throw new BadRequestError('Failed to read uploaded file');
+          }
+
+          uploadFilename = fileInfo.filename;
+          uploadMimeType = fileInfo.mimetype;
+        } else {
+          // Read all parts - fields come first, then file
+          for await (const part of request.parts()) {
+            if (part.type === 'field') {
+              const field = part as any;
+              const fieldValue = field.value;
+              logger.info(`📝 Field: ${field.fieldname} = ${fieldValue?.substring(0, 50) || 'empty'}...`);
+              processField(field.fieldname, fieldValue);
+            } else if (part.type === 'file') {
+              fileData = part;
+              logger.info(`📁 File part found: ${(part as any).filename || 'unknown'}`);
+              logger.info(`🔄 Consuming file stream to unblock loop...`);
+              const buffer = await fileData.toBuffer();
+              logger.info(`✅ Buffer created: ${buffer.length} bytes`);
+              (fileData as any).buffer = buffer;
+              uploadBuffer = buffer;
+              uploadFilename = (fileData as any).filename;
+              uploadMimeType = (fileData as any).mimetype;
             }
-          } else if (part.type === 'file') {
-            fileData = part;
-            logger.info(`📁 File part found: ${(part as any).filename || 'unknown'}`);
-            // ⚠️ CRITICAL: In Fastify multipart, file part stream MUST be consumed
-            // to continue the loop. We need to consume it NOW to unblock.
-            // This will read the entire file into memory, but it's necessary
-            logger.info(`🔄 Consuming file stream to unblock loop...`);
-            // Consume the stream immediately to unblock the loop
-            const buffer = await fileData.toBuffer();
-            logger.info(`✅ Buffer created: ${buffer.length} bytes`);
-            // Store buffer for later use
-            (fileData as any).buffer = buffer;
-            // Now the loop can continue (though there should be no more parts after file)
           }
         }
         
         logger.info(`✅ Loop completed`);
         
-        if (!fileData) {
+        const fileFound = hasPreParsedMultipart ? !!uploadBuffer : !!fileData;
+        if (!fileFound || !uploadBuffer) {
           logger.error('❌ No file part found');
           throw new BadRequestError('No file provided');
         }
@@ -497,8 +675,8 @@ export async function systemAssetsRoutes(fastify: FastifyInstance) {
         throw new BadRequestError(`Failed to parse upload data: ${error instanceof Error ? error.message : String(error)}`);
       }
 
-      if (!fileData) {
-        logger.error('❌ No file data found');
+      if (!uploadBuffer) {
+        logger.error('❌ No file data buffer available');
         throw new BadRequestError('No file provided');
       }
 
@@ -508,13 +686,9 @@ export async function systemAssetsRoutes(fastify: FastifyInstance) {
       }
 
       // Use the buffer we already created in the try block
-      const buffer = (fileData as any).buffer;
-      if (!buffer) {
-        logger.error('❌ No buffer found - this should not happen');
-        throw new BadRequestError('Failed to read file');
-      }
+      const buffer = uploadBuffer;
       const assetId = crypto.randomUUID();
-      const filename = formData.filename || (fileData as any).filename || 'asset.wav';
+      const filename = formData.filename || uploadFilename || 'asset.wav';
       
       logger.info(`🆔 Asset ID: ${assetId}`);
       logger.info(`📝 Filename: ${filename}`);
@@ -573,7 +747,7 @@ export async function systemAssetsRoutes(fastify: FastifyInstance) {
         storageKey: storageResult.storageKey,
         storageUrl: storageResult.storageUrl,
         fileSize,
-        mimeType: (fileData as any).mimetype || 'audio/wav',
+        mimeType: uploadMimeType || 'audio/wav',
       });
 
       logger.info(`✅ Asset created successfully: ${asset.id}`);

@@ -7,8 +7,8 @@
 import { BaseEffect } from './BaseEffect.js';
 
 export class WorkletEffect extends BaseEffect {
-  constructor(context, workletName, displayName, parameterDefinitions = {}) {
-    super(context, displayName);
+  constructor(context, effectType, workletName, displayName, parameterDefinitions = {}) {
+    super(context, effectType, displayName);
 
     this.workletName = workletName;
     this.workletNode = null;

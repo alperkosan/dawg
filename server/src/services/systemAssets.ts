@@ -561,6 +561,7 @@ export const systemAssetsService = {
   async createAsset(
     userId: string,
     assetData: {
+      id?: string;
       name: string;
       filename: string;
       description?: string;
@@ -583,7 +584,7 @@ export const systemAssetsService = {
     }
   ): Promise<SystemAsset> {
     const db = getDatabase();
-    const assetId = crypto.randomUUID();
+    const assetId = assetData.id || crypto.randomUUID();
 
     // Get pack name if packId provided
     let packName: string | undefined;

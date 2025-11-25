@@ -91,6 +91,7 @@ function DAWApp() {
   };
   
   const [engineStatus, setEngineStatus] = useState(getInitialEngineStatus);
+  const [autoStartInProgress, setAutoStartInProgress] = useState(false);
   const [engineError, setEngineError] = useState(null);
   const [isExportPanelOpen, setIsExportPanelOpen] = useState(false);
   const [showLoginPrompt, setShowLoginPrompt] = useState(false);
@@ -499,6 +500,29 @@ function DAWApp() {
     }
   }, [engineStatus, audioEngineCallbacks, isAuthenticated, isGuest, templateInitialized, prepareEmptyWorkspace]);
 
+  useEffect(() => {
+    if (engineStatus !== 'idle') {
+      if (autoStartInProgress) {
+        setAutoStartInProgress(false);
+      }
+      return;
+    }
+
+    let shouldAutoStart = false;
+    try {
+      const stored = sessionStorage.getItem('daw-auto-start');
+      shouldAutoStart = stored ? JSON.parse(stored) : false;
+    } catch {
+      shouldAutoStart = false;
+    }
+
+    if (shouldAutoStart && !autoStartInProgress) {
+      sessionStorage.removeItem('daw-auto-start');
+      setAutoStartInProgress(true);
+      initializeAudioSystem();
+    }
+  }, [engineStatus, initializeAudioSystem, autoStartInProgress]);
+
   // Handle save action - show login prompt if guest
   // ✅ FIX: Define handleSave BEFORE it's used in useEffect
 
@@ -854,10 +878,17 @@ function DAWApp() {
             </ThemeProvider>
           );
         }
+        if (autoStartInProgress) {
+          return (
+            <ThemeProvider>
+              <LoadingScreen message="Stüdyoya bağlanılıyor..." />
+            </ThemeProvider>
+          );
+        }
         // No engine exists - show startup screen
         return <StartupScreen onStart={initializeAudioSystem} />;
     }
-  }, [engineStatus, engineError, initializeAudioSystem, isExportPanelOpen, showLoginPrompt, showProjectTitleModal, handleSave, isAuthenticated, isGuest, currentProjectId, handleProjectSelect, handleNewProject, handleEditTitle, isLoadingProject, loadingProjectTitle, currentProjectTitle, toasts, toastKey, removeToast, saveStatus, lastSavedAt]);
+  }, [engineStatus, engineError, initializeAudioSystem, isExportPanelOpen, showLoginPrompt, showProjectTitleModal, handleSave, isAuthenticated, isGuest, currentProjectId, handleProjectSelect, handleNewProject, handleEditTitle, isLoadingProject, loadingProjectTitle, currentProjectTitle, toasts, toastKey, removeToast, saveStatus, lastSavedAt, autoStartInProgress]);
 
   return <>{renderContent()}</>;
 }

@@ -282,6 +282,7 @@ export class EffectFactory {
     if (workletDef) {
       const effect = new WorkletEffect(
         context,
+        normalizedType,
         workletDef.workletName,
         workletDef.displayName,
         workletDef.params

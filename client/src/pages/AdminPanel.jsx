@@ -3,7 +3,7 @@
  * System assets management interface
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuthStore } from '../store/useAuthStore';
 import { apiClient, setToastHandler } from '../services/api';
 import { Upload, Edit, Trash2, Plus, Search, Filter, Music, Folder, Tag, Settings, FileText, Eye, EyeOff, Globe, Lock } from 'lucide-react';
@@ -885,6 +885,32 @@ function AssetUploadModal({ categories, packs, onClose, onUpload, uploadProgress
     isActive: true, // ✅ FIX: Add isActive field (default: true)
   });
   const [file, setFile] = useState(null);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const fileInputRef = useRef(null);
+
+  const formatFileSize = (bytes) => {
+    if (!bytes) return '0 MB';
+    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  };
+
+  const handleFileSelect = (selectedFile) => {
+    if (selectedFile) {
+      setFile(selectedFile);
+    }
+  };
+
+  const handleFileChange = (event) => {
+    const selectedFile = event.target.files?.[0];
+    handleFileSelect(selectedFile);
+  };
+
+  const handleDrop = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setIsDragOver(false);
+    const droppedFile = event.dataTransfer.files?.[0];
+    handleFileSelect(droppedFile);
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -916,14 +942,47 @@ function AssetUploadModal({ categories, packs, onClose, onUpload, uploadProgress
           <button className="admin-modal__close" onClick={onClose}>×</button>
         </div>
         <form className="admin-modal__form" onSubmit={handleSubmit}>
-          <div className="admin-modal__field">
-            <label>File *</label>
+          <div 
+            className={`admin-modal__dropzone ${isDragOver ? 'admin-modal__dropzone--active' : ''} ${file ? 'admin-modal__dropzone--filled' : ''}`}
+            onDragOver={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setIsDragOver(true);
+            }}
+            onDragLeave={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setIsDragOver(false);
+            }}
+            onDrop={handleDrop}
+            onClick={() => fileInputRef.current?.click()}
+          >
             <input
               type="file"
               accept="audio/*"
-              onChange={(e) => setFile(e.target.files[0])}
-              required
+              ref={fileInputRef}
+              className="admin-modal__dropzone-input"
+              onChange={handleFileChange}
             />
+            <div className="admin-modal__dropzone-content">
+              <div className="admin-modal__dropzone-icon">
+                <Upload size={32} />
+              </div>
+              {file ? (
+                <div className="admin-modal__dropzone-details">
+                  <p className="admin-modal__dropzone-filename">{file.name}</p>
+                  <span className="admin-modal__dropzone-meta">
+                    {formatFileSize(file.size)} · {file.type || 'audio/wav'}
+                  </span>
+                </div>
+              ) : (
+                <div className="admin-modal__dropzone-details">
+                  <p className="admin-modal__dropzone-title">Drag & drop your asset</p>
+                  <span className="admin-modal__dropzone-meta">or click to browse files</span>
+                  <small className="admin-modal__dropzone-hint">WAV, MP3, OGG up to 1GB</small>
+                </div>
+              )}
+            </div>
           </div>
           <div className="admin-modal__field">
             <label>Name *</label>

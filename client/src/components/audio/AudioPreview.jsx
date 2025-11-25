@@ -41,6 +41,27 @@ export function AudioPreview({
   const [waveformData, setWaveformData] = useState(null);
   const [isWaveformLoading, setIsWaveformLoading] = useState(false);
 
+  // Stop any playing audio when URL changes or component unmounts
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    audio.pause();
+    audio.currentTime = 0;
+    setIsPlaying(false);
+    setCurrentTime(0);
+  }, [url]);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    return () => {
+      if (audio) {
+        audio.pause();
+        audio.currentTime = 0;
+      }
+    };
+  }, []);
+
   // Load audio metadata
   useEffect(() => {
     const audio = audioRef.current;

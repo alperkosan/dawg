@@ -377,6 +377,20 @@ class ApiClient {
     });
   }
 
+  async requestSystemAssetUpload(payload) {
+    return this.request(`/assets/admin/system/assets/upload/request`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async completeSystemAssetUpload(payload) {
+    return this.request(`/assets/admin/system/assets/upload/complete`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
   // ============================================
   // Media Panel API (Feed, Interactions, Notifications)
   // ============================================
