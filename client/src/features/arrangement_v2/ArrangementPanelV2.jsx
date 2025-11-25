@@ -2129,6 +2129,7 @@ export function ArrangementPanelV2() {
             id: assetId,
             name: name,
             assetId: assetId,
+            url,
             durationBeats: duration,
             durationSeconds: buffer.duration,
             type: 'used-in-project', // Mark as actively used in project

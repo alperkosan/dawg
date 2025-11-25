@@ -25,16 +25,20 @@ export const useProjectAudioStore = create((set, get) => ({
    */
   addSample: (sampleData) => {
     set(state => {
+      const metadata = sampleData.metadata || {};
       const newSample = {
         id: sampleData.id,
         name: sampleData.name,
         assetId: sampleData.assetId,
+        url: sampleData.url || metadata.url || null,
+        storageKey: sampleData.storageKey || metadata.storageKey || null,
+        storageProvider: sampleData.storageProvider || metadata.storageProvider || null,
         durationBeats: sampleData.durationBeats,
         durationSeconds: sampleData.durationSeconds,
         type: sampleData.type || 'frozen', // frozen, stem, bounce, etc.
         originalPattern: sampleData.originalPattern,
         createdAt: sampleData.createdAt || Date.now(),
-        metadata: sampleData.metadata || {}
+        metadata
       };
 
       console.log(`📦 Added project audio: ${sampleData.name} (${sampleData.type})`);

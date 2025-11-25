@@ -289,15 +289,42 @@ function DAWApp() {
 
   useEffect(() => {
     const authKey = isGuest ? 'guest' : (user?.id ? `user:${user.id}` : 'user');
-    if (authSessionRef.current === null) {
+    const prevAuthKey = authSessionRef.current;
+
+    if (prevAuthKey === null) {
       authSessionRef.current = authKey;
       return;
     }
-    if (authSessionRef.current !== authKey) {
-      authSessionRef.current = authKey;
-      resetWorkspaceState('auth-change');
+
+    if (prevAuthKey === authKey) {
+      return;
     }
-  }, [isGuest, isAuthenticated, user, resetWorkspaceState]);
+
+    authSessionRef.current = authKey;
+
+    const wasGuest = prevAuthKey === 'guest';
+    const isNowGuest = authKey === 'guest';
+    const prevUserId = prevAuthKey?.startsWith('user:') ? prevAuthKey.split(':')[1] : null;
+    const nextUserId = authKey?.startsWith('user:') ? authKey.split(':')[1] : null;
+
+    if (!wasGuest && isNowGuest) {
+      resetWorkspaceState('logout');
+      return;
+    }
+
+    if (!wasGuest && !isNowGuest && prevUserId !== nextUserId) {
+      resetWorkspaceState('account-switch');
+      return;
+    }
+
+    if (wasGuest && !isNowGuest) {
+      if (!currentProjectId) {
+        setSaveStatus('unsaved');
+        hasUnsavedChangesRef.current = true;
+      }
+      return;
+    }
+  }, [isGuest, isAuthenticated, user, resetWorkspaceState, currentProjectId, setSaveStatus]);
 
   // ✅ UX IMPROVEMENT: Check for existing engine on mount
   // This prevents showing StartupScreen if engine was already initialized

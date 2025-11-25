@@ -11,6 +11,7 @@ import { usePlaybackStore } from '@/store/usePlaybackStore';
 import { useTimelineStore } from '@/store/TimelineStore';
 import { useProjectAudioStore } from '@/store/useProjectAudioStore';
 import { useArrangementWorkspaceStore } from '@/store/useArrangementWorkspaceStore';
+import { storageService } from '@/services/storage.js';
 
 export class ProjectSerializer {
   static CURRENT_VERSION = '1.0.0';
@@ -189,7 +190,7 @@ export class ProjectSerializer {
         key_signature: playbackStore.keySignature,
       },
 
-      instruments: this.serializeInstruments(instrumentsStore),
+      instruments: this.serializeInstruments(instrumentsStore, projectAudioStore),
       patterns: this.serializePatterns(arrangementStore),
       pattern_order: arrangementStore.patternOrder || [],
       
@@ -392,6 +393,10 @@ export class ProjectSerializer {
     const { AudioContextService } = await import('../services/AudioContextService.js');
     await AudioContextService._syncMixerTracksToAudioEngine();
 
+    if (projectData.audio_assets) {
+      this.deserializeAudioAssets(projectData.audio_assets);
+    }
+
     // ✅ CRITICAL FIX: Preload samples BEFORE creating instruments
     // This ensures buffers are available when instruments are created
     if (projectData.instruments) {
@@ -420,10 +425,6 @@ export class ProjectSerializer {
 
     if (projectData.timeline) {
       this.deserializeTimeline(projectData.timeline);
-    }
-
-    if (projectData.audio_assets) {
-      this.deserializeAudioAssets(projectData.audio_assets);
     }
 
     if (projectData.workspace) {
@@ -539,25 +540,48 @@ export class ProjectSerializer {
 
   // =================== SERIALIZATION HELPERS ===================
 
-  static serializeInstruments(store) {
-    return store.instruments.map(inst => ({
-      id: inst.id,
-      name: inst.name,
-      type: inst.type,
-      color: inst.color,
-      mixerTrackId: inst.mixerTrackId,
-      url: inst.url,
-      baseNote: inst.baseNote,
-      envelope: inst.envelope,
-      effectChain: inst.effectChain,
-      isMuted: inst.isMuted,
-      cutItself: inst.cutItself,
-      pianoRoll: inst.pianoRoll,
-      multiSamples: inst.multiSamples,
-      presetName: inst.presetName,
-      assetId: inst.assetId,
-      // Don't serialize audioBuffer - it's too large
-    }));
+  static serializeInstruments(store, audioStore) {
+    const assetMap = new Map();
+    (audioStore?.samples || []).forEach(sample => {
+      if (!sample) return;
+      assetMap.set(sample.assetId || sample.id, sample);
+    });
+
+    const mapSampleArray = (samples = []) => {
+      if (!Array.isArray(samples)) return samples;
+      return samples.map(sample => {
+        if (!sample) return sample;
+        const resolvedUrl = this._resolveAssetUrl(sample.url, sample.assetId, assetMap);
+        if (resolvedUrl && resolvedUrl !== sample.url) {
+          return { ...sample, url: resolvedUrl };
+        }
+        return sample;
+      });
+    };
+
+    return store.instruments.map(inst => {
+      const resolvedUrl = this._resolveAssetUrl(inst.url, inst.assetId, assetMap);
+      const resolvedSamples = mapSampleArray(inst.multiSamples);
+
+      return {
+        id: inst.id,
+        name: inst.name,
+        type: inst.type,
+        color: inst.color,
+        mixerTrackId: inst.mixerTrackId,
+        url: resolvedUrl || inst.url,
+        baseNote: inst.baseNote,
+        envelope: inst.envelope,
+        effectChain: inst.effectChain,
+        isMuted: inst.isMuted,
+        cutItself: inst.cutItself,
+        pianoRoll: inst.pianoRoll,
+        multiSamples: resolvedSamples,
+        presetName: inst.presetName,
+        assetId: inst.assetId,
+        // Don't serialize audioBuffer - it's too large
+      };
+    });
   }
 
   static serializePatterns(store) {
@@ -613,6 +637,31 @@ export class ProjectSerializer {
     }));
   }
 
+  static _resolveAssetUrl(currentUrl, assetId, assetMap) {
+    if (currentUrl && !currentUrl.startsWith('blob:')) {
+      return currentUrl;
+    }
+
+    if (!assetId) {
+      return currentUrl || null;
+    }
+
+    const asset = assetMap?.get(assetId);
+    if (!asset) {
+      return currentUrl || null;
+    }
+
+    if (asset.url && !asset.url.startsWith('blob:')) {
+      return asset.url;
+    }
+
+    if (asset.storageKey) {
+      return storageService.getCDNUrl(asset.storageKey, assetId);
+    }
+
+    return currentUrl || null;
+  }
+
   static serializeMixerTracks(store) {
     return store.mixerTracks
       .filter(track => track.id !== 'master')
@@ -654,6 +703,9 @@ export class ProjectSerializer {
       id: sample.id,
       name: sample.name,
       assetId: sample.assetId,
+      url: sample.url,
+      storageKey: sample.storageKey,
+      storageProvider: sample.storageProvider,
       durationBeats: sample.durationBeats,
       durationSeconds: sample.durationSeconds,
       type: sample.type,
@@ -677,6 +729,11 @@ export class ProjectSerializer {
   static deserializeInstruments(instruments) {
     const store = useInstrumentsStore.getState();
     const mixerStore = useMixerStore.getState();
+    const projectAudioStore = useProjectAudioStore.getState();
+    const assetMap = new Map();
+    (projectAudioStore.samples || []).forEach(sample => {
+      assetMap.set(sample.assetId || sample.id, sample);
+    });
     console.log(`📦 Restoring ${instruments.length} instruments...`);
     
     // ✅ FIX: Build a map of mixer track names to track IDs for matching
@@ -743,6 +800,22 @@ export class ProjectSerializer {
           type: instrumentType,
           mixerTrackId: mixerTrackId || instData.mixerTrackId || 'master', // Fallback to master if no match
         };
+
+        const resolvedInstrumentUrl = this._resolveAssetUrl(instrumentData.url, instrumentData.assetId, assetMap);
+        if (resolvedInstrumentUrl) {
+          instrumentData.url = resolvedInstrumentUrl;
+        }
+
+        if (Array.isArray(instrumentData.multiSamples)) {
+          instrumentData.multiSamples = instrumentData.multiSamples.map(sample => {
+            if (!sample) return sample;
+            const resolvedSampleUrl = this._resolveAssetUrl(sample.url, sample.assetId, assetMap);
+            if (resolvedSampleUrl && resolvedSampleUrl !== sample.url) {
+              return { ...sample, url: resolvedSampleUrl };
+            }
+            return sample;
+          });
+        }
         
         // ✅ CRITICAL: Log the final mixerTrackId before passing to handleAddNewInstrument
         console.log(`📝 Restoring instrument "${instrumentData.name}" with mixerTrackId: ${instrumentData.mixerTrackId} (original: ${originalMixerTrackId})`);
@@ -1141,6 +1214,9 @@ export class ProjectSerializer {
               id: sample.id,
               name: sample.name,
               assetId: sample.assetId,
+              url: sample.url,
+              storageKey: sample.storageKey,
+              storageProvider: sample.storageProvider,
               durationBeats: sample.durationBeats,
               durationSeconds: sample.durationSeconds,
               type: sample.type || 'frozen',

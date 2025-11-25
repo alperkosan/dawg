@@ -191,8 +191,8 @@ export class SampleLoader {
      * @private
      */
     static async _fetchAndDecode(url, audioContext, onProgress) {
-        // Fetch audio file
-        const response = await fetch(url);
+        const { resolvedUrl, headers } = await this._prepareRequest(url);
+        const response = await fetch(resolvedUrl, { headers });
 
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -215,6 +215,33 @@ export class SampleLoader {
         } catch (error) {
             throw new Error(`Failed to decode audio: ${error.message}`);
         }
+    }
+
+    static async _prepareRequest(url) {
+        let resolvedUrl = url;
+        const headers = {};
+
+        if (typeof window !== 'undefined' && resolvedUrl) {
+            if (resolvedUrl.startsWith('//')) {
+                resolvedUrl = `${window.location.protocol}${resolvedUrl}`;
+            } else if (resolvedUrl.startsWith('/')) {
+                resolvedUrl = `${window.location.origin}${resolvedUrl}`;
+            }
+        }
+
+        if (resolvedUrl?.includes('/api/assets/')) {
+            try {
+                const { useAuthStore } = await import('@/store/useAuthStore.js');
+                const token = useAuthStore.getState().accessToken;
+                if (token) {
+                    headers['Authorization'] = `Bearer ${token}`;
+                }
+            } catch (error) {
+                console.warn('⚠️ SampleLoader: Unable to attach auth header', error);
+            }
+        }
+
+        return { resolvedUrl, headers };
     }
 
     /**
