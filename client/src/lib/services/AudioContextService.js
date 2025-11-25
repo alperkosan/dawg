@@ -2306,6 +2306,8 @@ export class AudioContextService {
         param.cancelScheduledValues(now);
         param.setValueAtTime(param.value, now);
         param.linearRampToValueAtTime(value, now + 0.015);
+        effect.settings = effect.settings || {};
+        effect.settings[paramName] = value;
         return;
       }
     }
@@ -2313,12 +2315,16 @@ export class AudioContextService {
     // Try direct property update
     if (paramName in node) {
       node[paramName] = value;
+      effect.settings = effect.settings || {};
+      effect.settings[paramName] = value;
       return;
     }
 
     // Try updateParameter method (custom effects)
     if (node.updateParameter && typeof node.updateParameter === 'function') {
       node.updateParameter(paramName, value);
+      effect.settings = effect.settings || {};
+      effect.settings[paramName] = value;
       return;
     }
 

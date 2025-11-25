@@ -84,7 +84,7 @@ export async function uploadFile(file, options = {}) {
  */
 async function uploadUserAsset(file, { folderPath, parentFolderId, onProgress }) {
   const api = await getApiClient();
-  const finalFilename = metadata.filename || file.name;
+  const finalFilename = file.name;
   const mimeType = file.type || 'audio/wav';
   
   // Request upload
@@ -141,9 +141,10 @@ async function uploadUserAsset(file, { folderPath, parentFolderId, onProgress })
 /**
  * Upload system asset (admin panel)
  */
-async function uploadSystemAsset(file, { metadata, onProgress }) {
+async function uploadSystemAsset(file, { metadata = {}, onProgress }) {
   const api = await getApiClient();
   const mimeType = file.type || 'audio/wav';
+  const finalFilename = metadata.filename || file.name;
   const normalizedMetadata = {
     ...metadata,
     categoryId: metadata.categoryId || undefined,
