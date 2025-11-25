@@ -3,54 +3,68 @@ import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
 import { FILE_SYSTEM_TYPES } from '@/config/constants';
 import { apiClient } from '@/services/api.js';
+import { storageService } from '@/services/storage.js';
 
 /**
  * ✅ FIX: Normalize asset URL to use API endpoint instead of MinIO/CDN
  * Converts MinIO/CDN URLs to API endpoint format
  * System assets and user assets use backend proxy endpoints to avoid CORS issues
  */
-function normalizeAssetUrl(storageUrl, assetId, isSystemAsset = false) {
-  // ✅ FIX: Check if it's a system asset by URL pattern
-  const isSystemAssetByUrl = storageUrl && (
-    storageUrl.includes('dawg.b-cdn.net/system-assets') ||
-    storageUrl.includes('system-assets/')
+function normalizeAssetUrl(storageUrl, assetId, isSystemAsset = false, storageKey) {
+  const cleanUrl = storageUrl
+    ? storageUrl.replace(/[\n\r\t\s]+/g, '').trim()
+    : '';
+
+  const looksLikeSystemUrl = cleanUrl && (
+    cleanUrl.includes('dawg.b-cdn.net/system-assets') ||
+    cleanUrl.includes('system-assets/')
   );
-  
-  const isSystem = isSystemAsset || isSystemAssetByUrl;
-  
-  if (!storageUrl) {
-    // If no storage_url, construct API endpoint from assetId
-    return isSystem 
-      ? `${apiClient.baseURL}/assets/system/${assetId}/file`
-      : `${apiClient.baseURL}/assets/${assetId}/file`;
+  const isSystem = isSystemAsset || looksLikeSystemUrl;
+
+  // Prefer absolute CDN URLs when already provided
+  if (cleanUrl && cleanUrl.startsWith('http')) {
+    return cleanUrl;
   }
-  
-  // If already an API endpoint, return as is
-  if (storageUrl.startsWith('/api/') || storageUrl.includes('/api/assets/')) {
-    // Make it absolute if it's relative
-    if (storageUrl.startsWith('/api/')) {
-      return `${apiClient.baseURL}${storageUrl}`;
+
+  const isApiPath = cleanUrl && cleanUrl.startsWith('/api/');
+  const isApiUrl = cleanUrl && cleanUrl.includes('/api/assets/');
+
+  // If we're still holding onto an API URL but have the storage key, construct CDN URL on the fly
+  if ((!cleanUrl || isApiPath || isApiUrl) && storageKey) {
+    const cdnUrl = storageService.getCDNUrl(storageKey, assetId);
+    if (cdnUrl) {
+      return cdnUrl;
     }
-    return storageUrl;
   }
-  
-  // ✅ FIX: System assets from CDN -> use backend proxy endpoint
+
+  // If already an API endpoint, ensure it's absolute for the browser
+  if (isApiPath) {
+    return `${apiClient.baseURL}${cleanUrl}`;
+  }
+  if (isApiUrl) {
+    return cleanUrl;
+  }
+
+  // Legacy local/minio links -> fall back to API proxy
+  if (cleanUrl && (cleanUrl.includes('localhost:9000') || cleanUrl.includes('dawg-audio'))) {
+    return `${apiClient.baseURL}/assets/${assetId}/file`;
+  }
+
+  // If we still have a relative path for system asset, send via proxy
   if (isSystem) {
     return `${apiClient.baseURL}/assets/system/${assetId}/file`;
   }
-  
-  // ✅ FIX: User assets from CDN -> use backend proxy endpoint (avoids CORS)
-  if (storageUrl.includes('dawg.b-cdn.net/user-assets') || storageUrl.includes('user-assets/')) {
-    return `${apiClient.baseURL}/assets/${assetId}/file`;
+
+  if (cleanUrl) {
+    return cleanUrl.startsWith('http')
+      ? cleanUrl
+      : cleanUrl.startsWith('//')
+        ? `https:${cleanUrl}`
+        : cleanUrl;
   }
-  
-  // If it's a MinIO/CDN URL (e.g., http://localhost:9000/dawg-audio/...), convert to API endpoint
-  if (storageUrl.includes('localhost:9000') || storageUrl.includes('dawg-audio')) {
-    return `${apiClient.baseURL}/assets/${assetId}/file`;
-  }
-  
-  // Otherwise, assume it's already correct or return API endpoint as fallback
-  return storageUrl.startsWith('http') ? storageUrl : `${apiClient.baseURL}/assets/${assetId}/file`;
+
+  // Last resort fallback
+  return `${apiClient.baseURL}/assets/${assetId}/file`;
 }
 
 // Bir düğümü ağaç yapısı içinde ID'sine göre bulan yardımcı fonksiyon.
@@ -178,7 +192,7 @@ function buildFileTreeFromManifest(manifest, userAssets = [], systemAssets = [],
             id: asset.id,
             type: FILE_SYSTEM_TYPES.FILE,
             name: asset.name,
-            url: normalizeAssetUrl(asset.storageUrl, asset.id),
+            url: normalizeAssetUrl(asset.storageUrl, asset.id, false, asset.storageKey),
             readOnly: true,
             assetId: asset.id,
             bpm: asset.bpm,
@@ -202,7 +216,7 @@ function buildFileTreeFromManifest(manifest, userAssets = [], systemAssets = [],
           id: asset.id,
           type: FILE_SYSTEM_TYPES.FILE,
           name: asset.name,
-          url: normalizeAssetUrl(asset.storageUrl, asset.id),
+          url: normalizeAssetUrl(asset.storageUrl, asset.id, false, asset.storageKey),
           readOnly: true,
           assetId: asset.id,
           bpm: asset.bpm,
@@ -245,7 +259,7 @@ function buildFileTreeFromManifest(manifest, userAssets = [], systemAssets = [],
           id: asset.id,
           type: FILE_SYSTEM_TYPES.FILE,
           name: asset.name,
-          url: normalizeAssetUrl(asset.storageUrl, asset.id),
+          url: normalizeAssetUrl(asset.storageUrl, asset.id, false, asset.storageKey),
           readOnly: true,
           assetId: asset.id,
           bpm: asset.bpm,
@@ -268,7 +282,7 @@ function buildFileTreeFromManifest(manifest, userAssets = [], systemAssets = [],
           id: asset.id,
           type: FILE_SYSTEM_TYPES.FILE,
           name: asset.name,
-          url: normalizeAssetUrl(asset.storageUrl, asset.id),
+          url: normalizeAssetUrl(asset.storageUrl, asset.id, false, asset.storageKey),
           readOnly: true,
           assetId: asset.id,
           bpm: asset.bpm,
@@ -298,7 +312,7 @@ function buildFileTreeFromManifest(manifest, userAssets = [], systemAssets = [],
         id: asset.id,
         type: FILE_SYSTEM_TYPES.FILE,
         name: asset.filename,
-        url: normalizeAssetUrl(asset.storage_url, asset.id), // ✅ FIX: Normalize URL
+        url: normalizeAssetUrl(asset.storage_url, asset.id, false, asset.storage_key), // ✅ FIX: Normalize URL
         readOnly: false,
         assetId: asset.id,
         folderPath: asset.folder_path,
@@ -310,7 +324,7 @@ function buildFileTreeFromManifest(manifest, userAssets = [], systemAssets = [],
         id: asset.id,
         type: FILE_SYSTEM_TYPES.FILE,
         name: asset.filename,
-        url: normalizeAssetUrl(asset.storage_url, asset.id), // ✅ FIX: Normalize URL
+        url: normalizeAssetUrl(asset.storage_url, asset.id, false, asset.storage_key), // ✅ FIX: Normalize URL
         readOnly: false,
         assetId: asset.id,
         folderPath: asset.folder_path || '/',
