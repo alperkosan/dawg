@@ -428,7 +428,6 @@ export const pluginRegistry = {
     },
     presets: clipperPresets
   },
-
   'RhythmFX': {
     type: 'RhythmFX',
     name: 'Rhythm FX',
@@ -477,7 +476,6 @@ export const pluginRegistry = {
     },
     presets: maximizerPresets
   },
-
   'Imager': {
     type: 'Imager',
     category: 'The Master Chain',

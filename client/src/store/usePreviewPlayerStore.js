@@ -207,6 +207,28 @@ const loadPreviewRange = async (url, duration = 2, signal) => {
 };
 
 /**
+ * Desteklenen audio uzantıları
+ */
+const SUPPORTED_AUDIO_EXTENSIONS = ['wav', 'wave', 'mp3', 'ogg', 'oga', 'm4a', 'aac', 'flac'];
+
+const getFileExtension = (url = '') => {
+  try {
+    const cleanUrl = url.split('?')[0].split('#')[0];
+    const parts = cleanUrl.split('.');
+    if (parts.length <= 1) return '';
+    return parts.pop().toLowerCase();
+  } catch (error) {
+    return '';
+  }
+};
+
+const isLikelyWavBuffer = (arrayBuffer) => {
+  if (!arrayBuffer || arrayBuffer.byteLength < 4) return false;
+  const view = new Uint8Array(arrayBuffer, 0, 4);
+  return view[0] === 0x52 && view[1] === 0x49 && view[2] === 0x46 && view[3] === 0x46; // RIFF
+};
+
+/**
  * Full audio buffer yükle (projeye eklenen sample'lar için)
  * @param {string} url - Audio file URL
  * @returns {Promise<ArrayBuffer>}
@@ -260,9 +282,7 @@ const loadAudioBuffer = async (url, set, get, fullLoad = false) => {
     set({ abortController: controller });
 
     try {
-        // ✅ FIX: Always load full file (Range request causes decode issues with WAV files)
-        // Preview files are typically small enough (< 5MB) that loading full file is acceptable
-        // Range requests with WAV files can result in incomplete or corrupted data that can't be decoded
+        // ✅ Always load full file (Range request causes decode issues with some formats)
         const arrayBuffer = await loadFullBuffer(url, controller.signal);
         
         // ✅ FIX: Validate arrayBuffer before decoding
@@ -272,14 +292,9 @@ const loadAudioBuffer = async (url, set, get, fullLoad = false) => {
         
         console.log(`[PreviewCache] Decoding audio buffer: ${arrayBuffer.byteLength} bytes`);
         
-        // ✅ FIX: Validate WAV header before decoding
-        if (arrayBuffer.byteLength >= 4) {
-          const view = new Uint8Array(arrayBuffer);
-          const isWav = view[0] === 0x52 && view[1] === 0x49 && view[2] === 0x46 && view[3] === 0x46; // "RIFF"
-          if (!isWav) {
-            console.warn(`[PreviewCache] Warning: File does not start with WAV header (RIFF), first bytes: ${Array.from(view.slice(0, 8)).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' ')}`);
-          }
-        }
+        const fileExtension = getFileExtension(url);
+        const shouldBeWav = ['wav', 'wave'].includes(fileExtension);
+        const bufferLooksWav = isLikelyWavBuffer(arrayBuffer);
         
         const context = getAudioContext();
         
@@ -289,19 +304,16 @@ const loadAudioBuffer = async (url, set, get, fullLoad = false) => {
           // ✅ FIX: Create a copy of the buffer to avoid any potential issues
           const bufferCopy = arrayBuffer.slice(0);
           
-          // ✅ FIX: Additional validation - check WAV structure
-          if (bufferCopy.byteLength >= 44) {
+          // ✅ WAV yapısını yalnızca gerçekten WAV dosyası beklediğimizde doğrula
+          if (shouldBeWav && bufferCopy.byteLength >= 44) {
             const view = new Uint8Array(bufferCopy);
-            // ✅ FIX: Use Uint8Array instead of DataView for more reliable string conversion
             const riffBytes = [view[0], view[1], view[2], view[3]];
             const waveBytes = [view[8], view[9], view[10], view[11]];
             const riff = String.fromCharCode(...riffBytes);
             const wave = String.fromCharCode(...waveBytes);
             
             if (riff !== 'RIFF' || wave !== 'WAVE') {
-              console.warn(`[PreviewCache] Invalid WAV structure: RIFF=${riff}, WAVE=${wave}`);
-              console.warn(`[PreviewCache] RIFF bytes: ${riffBytes.map(b => '0x' + b.toString(16).padStart(2, '0')).join(' ')}`);
-              console.warn(`[PreviewCache] WAVE bytes: ${waveBytes.map(b => '0x' + b.toString(16).padStart(2, '0')).join(' ')}`);
+              console.warn(`[PreviewCache] Invalid WAV structure for ${url}: RIFF=${riff}, WAVE=${wave}`);
               console.warn(`[PreviewCache] First 44 bytes: ${Array.from(view.slice(0, 44)).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' ')}`);
             }
           }
@@ -315,18 +327,16 @@ const loadAudioBuffer = async (url, set, get, fullLoad = false) => {
             firstBytes: arrayBuffer.byteLength >= 44 
               ? Array.from(new Uint8Array(arrayBuffer.slice(0, 44))).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' ')
               : 'too small',
-            // Check if it's a valid WAV file
-            isWav: arrayBuffer.byteLength >= 4 && 
-                   new Uint8Array(arrayBuffer)[0] === 0x52 && 
-                   new Uint8Array(arrayBuffer)[1] === 0x49 && 
-                   new Uint8Array(arrayBuffer)[2] === 0x46 && 
-                   new Uint8Array(arrayBuffer)[3] === 0x46
+            extension: fileExtension || 'unknown',
+            looksLikeWav: bufferLooksWav
           });
           
-          // ✅ FIX: If decode fails but it's a valid WAV header, the issue might be with partial content
-          // Try to get more diagnostic info
           if (decodeError.name === 'EncodingError') {
-            throw new Error(`Failed to decode audio: ${decodeError.message}. This might be due to incomplete WAV data from Range request. Buffer size: ${arrayBuffer.byteLength} bytes`);
+            const baseMessage = `Failed to decode audio: ${decodeError.message}.`;
+            if (shouldBeWav || bufferLooksWav) {
+              throw new Error(`${baseMessage} This might be due to incomplete WAV data. Buffer size: ${arrayBuffer.byteLength} bytes`);
+            }
+            throw new Error(`${baseMessage} File type: ${fileExtension || 'unknown'}.`);
           }
           throw decodeError;
         }

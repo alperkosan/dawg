@@ -135,8 +135,23 @@ async function uploadUserAsset(file, { folderPath, parentFolderId, onProgress })
 
       console.log(`✅ [CLIENT_UPLOAD] Direct upload to Bunny CDN successful`);
       
-      // Mark upload as completed
+      // ✅ FIX: Get the CDN URL from storage service
+      // The CDN URL is constructed as: pullZoneUrl/storageKey
+      const { storageService } = await import('@/services/storage.js');
+      const cdnUrl = storageService.getCDNUrl(credentials.storageKey || uploadRequest.storageKey, uploadRequest.assetId);
+      console.log(`🌐 [CLIENT_UPLOAD] CDN URL: ${cdnUrl}`);
+      
+      // Mark upload as completed (this will also update storage_url with the CDN URL)
       const completedAsset = await api.completeUpload(uploadRequest.assetId);
+      
+      // ✅ FIX: Ensure storage_url is set to the full CDN URL
+      if (completedAsset.storage_url && !completedAsset.storage_url.startsWith('http')) {
+        // If storage_url is not a full URL, update it
+        const updatedAsset = await api.updateAsset(uploadRequest.assetId, {
+          storage_url: cdnUrl
+        });
+        return updatedAsset;
+      }
       
       return completedAsset;
     } catch (clientUploadError) {

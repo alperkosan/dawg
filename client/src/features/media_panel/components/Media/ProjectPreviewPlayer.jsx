@@ -1,19 +1,28 @@
 /**
  * Project Preview Player - Audio player for project previews in media panel
+ * ✅ NEW: Uses AudioPreview component with direct CDN URL
  */
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Play, Pause, Volume2, VolumeX, Loader2 } from 'lucide-react';
-import WaveformVisualizer from './WaveformVisualizer';
-import { useMediaPlayerStore } from '../../store/useMediaPlayerStore';
-import './ProjectPreviewPlayer.css';
+import React from 'react';
+import { AudioPreview } from '@/components/audio/AudioPreview';
 
 export default function ProjectPreviewPlayer({ 
   audioUrl, 
   duration, 
   onPlayStateChange,
-  className = '' 
+  className = '',
+  title
 }) {
+  // ✅ NEW: Use AudioPreview component with direct CDN URL
+  // CDN URL should be stored in audioUrl (full CDN URL from previewAudioUrl)
+  return (
+    <AudioPreview
+      url={audioUrl}
+      title={title || 'Project Preview'}
+      showAddButton={false}
+      className={className}
+    />
+  );
   // ✅ FIX: Use store state instead of local state for isPlaying
   const { isPlaying: storeIsPlaying, playingProjectId } = useMediaPlayerStore();
   const [isPlaying, setIsPlaying] = useState(false);
