@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useDrag } from 'react-dnd';
-import { Folder, FileAudio, ChevronRight } from 'lucide-react';
+import { Folder, FileAudio, ChevronRight, Loader2, Play, Pause } from 'lucide-react';
 import { usePreviewPlayerStore } from '@/store/usePreviewPlayerStore';
 import { useFileBrowserStore } from '@/store/useFileBrowserStore';
 import { DND_TYPES, FILE_SYSTEM_TYPES } from '@/config/constants'; // GÜNCELLENDİ
@@ -54,8 +54,17 @@ export function FileTreeNode({ node, onContextMenu, onNodeClick, selectedNode, d
     const [isOpen, setIsOpen] = useState(true);
     const [isDragOver, setIsDragOver] = useState(false);
     const isSelected = selectedNode?.id === node.id;
+
+    // ✅ FIX: Get player state for UI feedback (individual selectors to avoid infinite loop)
     const playPreview = usePreviewPlayerStore(state => state.playPreview);
+    const loadingUrl = usePreviewPlayerStore(state => state.loadingUrl);
+    const playingUrl = usePreviewPlayerStore(state => state.playingUrl);
+    const isPlaying = usePreviewPlayerStore(state => state.isPlaying);
+
     const moveNode = useFileBrowserStore(state => state.moveNode);
+
+    const isLoading = loadingUrl === node.url;
+    const isPlayingNode = isPlaying && playingUrl === node.url;
 
     const handleNodeClick = (e) => {
         e.stopPropagation();
@@ -69,9 +78,9 @@ export function FileTreeNode({ node, onContextMenu, onNodeClick, selectedNode, d
 
     // ✅ NEW: Handle drag over for drop zones
     const handleDragOver = (e) => {
-        if (node.type === FILE_SYSTEM_TYPES.FOLDER && 
-            !node.readOnly && 
-            node.id !== 'folder-dawg-library' && 
+        if (node.type === FILE_SYSTEM_TYPES.FOLDER &&
+            !node.readOnly &&
+            node.id !== 'folder-dawg-library' &&
             !node.id?.startsWith('folder-dawg-') &&
             node.id !== 'folder-user-samples') {
             e.preventDefault();
@@ -100,14 +109,14 @@ export function FileTreeNode({ node, onContextMenu, onNodeClick, selectedNode, d
             if (!dragData) return;
 
             const draggedNode = JSON.parse(dragData);
-            
+
             // Don't allow dropping on itself
             if (draggedNode.nodeId === node.id) return;
 
             // Only allow dropping files into folders
-            if (node.type === FILE_SYSTEM_TYPES.FOLDER && 
-                !node.readOnly && 
-                node.id !== 'folder-dawg-library' && 
+            if (node.type === FILE_SYSTEM_TYPES.FOLDER &&
+                !node.readOnly &&
+                node.id !== 'folder-dawg-library' &&
                 !node.id?.startsWith('folder-dawg-') &&
                 node.id !== 'folder-user-samples') {
                 await moveNode(draggedNode.nodeId, node.id);
@@ -118,27 +127,27 @@ export function FileTreeNode({ node, onContextMenu, onNodeClick, selectedNode, d
             apiClient.showToast(`Failed to move file: ${error.message}`, 'error', 5000);
         }
     };
-    
+
     const isFolder = node.type === FILE_SYSTEM_TYPES.FOLDER; // GÜNCELLENDİ
     const isFile = node.type === FILE_SYSTEM_TYPES.FILE; // GÜNCELLENDİ
     const indentStyle = { paddingLeft: `${depth * 16}px` };
 
     // ✅ Check if folder can accept drops (user-created folders only)
-    const canAcceptDrop = isFolder && 
-                         !node.readOnly && 
-                         node.id !== 'folder-dawg-library' && 
-                         !node.id?.startsWith('folder-dawg-') &&
-                         node.id !== 'folder-user-samples';
+    const canAcceptDrop = isFolder &&
+        !node.readOnly &&
+        node.id !== 'folder-dawg-library' &&
+        !node.id?.startsWith('folder-dawg-') &&
+        node.id !== 'folder-user-samples';
 
     const nodeClasses = `file-node ${isSelected ? 'file-node--selected' : ''} ${isDragOver ? 'file-node--drag-over' : ''} ${canAcceptDrop ? 'file-node--drop-zone' : ''}`;
     const togglerClasses = `file-node__toggler ${isOpen ? 'file-node__toggler--open' : ''}`;
     const iconClass = isFolder ? 'file-node__icon--folder' : 'file-node__icon--file';
 
     const nodeContent = (
-        <div 
-            style={indentStyle} 
-            className={nodeClasses} 
-            onClick={handleNodeClick} 
+        <div
+            style={indentStyle}
+            className={nodeClasses}
+            onClick={handleNodeClick}
             onContextMenu={(e) => onContextMenu(e, node)}
             onDragOver={canAcceptDrop ? handleDragOver : undefined}
             onDragLeave={canAcceptDrop ? handleDragLeave : undefined}
@@ -148,9 +157,22 @@ export function FileTreeNode({ node, onContextMenu, onNodeClick, selectedNode, d
                 {isFolder && <ChevronRight size={16} />}
             </div>
             <div className={`file-node__icon ${iconClass}`}>
-                {isFolder ? <Folder size={16} /> : <FileAudio size={16} />}
+                {isFolder ? (
+                    <Folder size={16} />
+                ) : (
+                    isLoading ? (
+                        <Loader2 size={16} className="animate-spin text-blue-500" />
+                    ) : isPlayingNode ? (
+                        <Pause size={16} className="text-green-500" />
+                    ) : (
+                        <FileAudio size={16} />
+                    )
+                )}
             </div>
-            <span className="file-node__name">{node.name}</span>
+            <span className={`file-node__name ${isPlayingNode ? 'text-green-500 font-medium' : ''} ${isLoading ? 'text-blue-500' : ''}`}>
+                {node.name}
+                {isLoading && <span className="ml-2 text-xs opacity-70">(Yükleniyor...)</span>}
+            </span>
         </div>
     );
 
@@ -161,9 +183,9 @@ export function FileTreeNode({ node, onContextMenu, onNodeClick, selectedNode, d
                 {isOpen && node.children && (
                     <div className="file-node__children">
                         {node.children.map(child => (
-                            <FileTreeNode 
-                                key={child.id} 
-                                node={child} 
+                            <FileTreeNode
+                                key={child.id}
+                                node={child}
                                 onContextMenu={onContextMenu}
                                 onNodeClick={onNodeClick}
                                 selectedNode={selectedNode}
@@ -175,6 +197,6 @@ export function FileTreeNode({ node, onContextMenu, onNodeClick, selectedNode, d
             </div>
         );
     }
-    
+
     return isFile ? <DraggableFileNode node={node} onContextMenu={onContextMenu}>{nodeContent}</DraggableFileNode> : nodeContent;
 }

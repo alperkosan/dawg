@@ -37,7 +37,7 @@ async function createServer() {
   // pino-pretty development tool'u, serverless'te sorun yaratır
   const isVercel = !!process.env.VERCEL || !!process.env.VERCEL_ENV;
   const isDev = process.env.NODE_ENV === 'development' && !isVercel;
-  
+
   const server = Fastify({
     logger: isDev ? {
       level: 'info',
@@ -65,7 +65,7 @@ async function createServer() {
       console.log('🔵 Step 1: Testing database connection...');
       console.log('Database URL present:', process.env.DATABASE_URL ? 'YES' : 'NO');
       console.log('Neon URL present:', process.env.NEON_DATABASE_URL ? 'YES' : 'NO');
-      
+
       // ✅ FIX: Log database URL (masked) for debugging
       if (process.env.DATABASE_URL) {
         const dbUrl = process.env.DATABASE_URL;
@@ -73,7 +73,7 @@ async function createServer() {
         console.log('Database URL (masked):', maskedUrl);
         console.log('Is Neon URL:', dbUrl.includes('neon.tech') || dbUrl.includes('neon') || dbUrl.includes('pooler'));
       }
-      
+
       try {
         const dbConnected = await testConnection();
         if (!dbConnected) {
@@ -86,7 +86,7 @@ async function createServer() {
         console.error('❌ Database connection error:', dbError);
         console.error('Database URL:', process.env.DATABASE_URL ? 'SET' : 'NOT SET');
         console.error('Neon URL:', process.env.NEON_DATABASE_URL ? 'SET' : 'NOT SET');
-        
+
         // ✅ FIX: Check if DATABASE_URL is valid format
         if (process.env.DATABASE_URL) {
           const dbUrl = process.env.DATABASE_URL;
@@ -97,10 +97,10 @@ async function createServer() {
             console.error('⚠️ DATABASE_URL missing @ (credentials separator)');
           }
         }
-        
+
         throw dbError;
       }
-      
+
       // Run migrations (only once on cold start)
       console.log('🔵 Step 2: Running database migrations...');
       try {
@@ -110,10 +110,10 @@ async function createServer() {
         console.error('❌ Migration error:', migrationError);
         throw migrationError;
       }
-      
+
       isInitialized = true;
     }
-    
+
     // Register plugins
     console.log('🔵 Step 3: Registering plugins...');
     try {
@@ -123,7 +123,7 @@ async function createServer() {
       console.error('❌ Plugin registration error:', pluginError);
       throw pluginError;
     }
-    
+
     // Register routes
     console.log('🔵 Step 4: Registering routes...');
     try {
@@ -133,7 +133,7 @@ async function createServer() {
       console.error('❌ Route registration error:', routeError);
       throw routeError;
     }
-    
+
     // Health check
     server.get('/health', async () => {
       return { status: 'ok', timestamp: new Date().toISOString() };
@@ -189,7 +189,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       bodyType: typeof req.body,
       query: req.query,
     });
-    
+
     // ✅ FIX: Safe logger call (logger might be disabled in Vercel)
     try {
       if (logger && typeof logger.info === 'function') {
@@ -204,32 +204,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const server = await createServer();
-    
+
     // ✅ FIX: Vercel rewrite sonrası URL'yi doğru al
     // Vercel'de rewrite kullanırken, req.url orijinal path'i içerir
     // Örnek: /api/auth/login isteği -> req.url = '/api/auth/login' (orijinal path korunur)
     let url = req.url || '/';
-    
+
     // ✅ FIX: Vercel rewrite sonrası req.url zaten doğru path'i içerir
     // Ama bazen query string ile geliyor, onu temizle
     if (url.includes('?')) {
       url = url.split('?')[0];
     }
-    
+
     // ✅ FIX: URL'yi normalize et (başında / olmalı)
     if (!url.startsWith('/')) {
       url = '/' + url;
     }
-    
+
     // ✅ FIX: Parse request body correctly
     // ⚠️ CRITICAL: For multipart/form-data, we MUST NOT parse the body
     // Fastify's multipart plugin needs the raw request stream
     const contentType = req.headers['content-type'] || '';
     const isMultipart = contentType.includes('multipart/form-data');
-    
+
     let payload: any = req.body;
     let injectPayload: any = undefined; // ✅ FIX: Declare injectPayload variable
-    
+
     if (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH') {
       // ✅ FIX: Check content-length for 413 errors (Vercel limit: 4.5MB for raw request)
       // Note: With base64 encoding, a 3.5MB file becomes ~4.7MB, so we allow up to 5MB
@@ -246,7 +246,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           },
         });
       }
-      
+
       // ✅ FIX: For multipart/form-data, parse with busboy and pass to Fastify
       if (isMultipart) {
         // ✅ FIX: Safe logger call
@@ -257,17 +257,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         } catch (loggerError) {
           // Ignore logger errors
         }
-        
+
         // ✅ FIX: Parse multipart data with formidable
         // Formidable works better with Vercel's request object
         const parsedData: { fields: Record<string, string>; files: Record<string, { buffer: Buffer; filename: string; mimetype: string }> } = {
           fields: {},
           files: {},
         };
-        
+
         try {
           console.log(`📦 [MULTIPART] Starting formidable parsing...`);
-          
+
           // Use formidable to parse multipart form data
           // ✅ FIX: Use /tmp directory for temp files in Vercel
           const form = formidable({
@@ -276,16 +276,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             multiples: false,
             uploadDir: '/tmp', // Vercel's writable directory
           });
-          
+
           // Parse the request
           const [fields, files] = await form.parse(req as any);
-          
+
           // Convert fields to simple object
           for (const [key, value] of Object.entries(fields)) {
             parsedData.fields[key] = Array.isArray(value) ? value[0] : value;
             console.log(`📝 [MULTIPART] Field: ${key} = ${parsedData.fields[key].substring(0, 50)}...`);
           }
-          
+
           // Convert files to buffers
           for (const [key, fileArray] of Object.entries(files)) {
             const file = Array.isArray(fileArray) ? fileArray[0] : fileArray;
@@ -293,15 +293,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               // Read file buffer
               const fs = await import('fs/promises');
               const buffer = await fs.readFile(file.filepath);
-              
+
               parsedData.files[key] = {
                 buffer: buffer,
                 filename: file.originalFilename || 'unknown',
                 mimetype: file.mimetype || 'application/octet-stream',
               };
-              
+
               console.log(`📁 [MULTIPART] File: ${key} = ${parsedData.files[key].filename}, size: ${buffer.length} bytes`);
-              
+
               // Clean up temp file
               try {
                 await fs.unlink(file.filepath);
@@ -311,16 +311,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               }
             }
           }
-          
+
           console.log(`✅ [MULTIPART] Parsing completed. Fields: ${Object.keys(parsedData.fields).length}, Files: ${Object.keys(parsedData.files).length}`);
-          
+
           // ✅ FIX: Store parsed data for route handler
           // Convert Buffer to base64 for JSON serialization (server.inject() uses JSON.stringify)
           const serializableData = {
             fields: parsedData.fields,
             files: {} as Record<string, { bufferBase64: string; filename: string; mimetype: string }>,
           };
-          
+
           for (const [key, fileInfo] of Object.entries(parsedData.files)) {
             serializableData.files[key] = {
               bufferBase64: fileInfo.buffer.toString('base64'),
@@ -328,10 +328,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               mimetype: fileInfo.mimetype,
             };
           }
-          
+
           payload = serializableData; // Pass as payload so route can access it
           console.log(`✅ [MULTIPART] Parsed data ready (serialized). Fields: ${Object.keys(parsedData.fields).length}, Files: ${Object.keys(parsedData.files).length}`);
-          
+
         } catch (multipartError: any) {
           console.error(`❌ [MULTIPART] Error parsing multipart: ${multipartError.message}`);
           console.error(`❌ [MULTIPART] Error stack: ${multipartError.stack}`);
@@ -356,13 +356,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
       }
     }
-    
+
     console.log('🟢 Processing request:', {
       method: req.method,
       url: url,
       payloadSize: payload ? JSON.stringify(payload).length : 0,
     });
-    
+
     // ✅ FIX: Safe logger call
     try {
       if (logger && typeof logger.info === 'function') {
@@ -374,7 +374,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     } catch (loggerError) {
       // Ignore logger errors
     }
-    
+
     // ✅ FIX: For multipart requests, we've already parsed them with formidable
     // Pass the parsed data as payload so route handler can access it
     if (isMultipart) {
@@ -387,22 +387,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       } catch (loggerError) {
         // Ignore logger errors
       }
-      
+
       // ✅ FIX: payload already contains parsed data from formidable
       // Pass it to inject() so route handler can access it via request.body
       injectPayload = payload;
     }
-    
+
     // ✅ FIX: Set injectPayload for all requests (if not already set)
     if (injectPayload === undefined) {
       injectPayload = payload;
     }
-    
+
     // ✅ FIX: Set injectPayload for all requests
     if (injectPayload === undefined && payload !== undefined) {
       injectPayload = payload;
     }
-    
+
     // ✅ FIX: For multipart requests, change Content-Type to application/json
     // This prevents Fastify's multipart plugin from trying to parse it as a stream
     // We've already parsed it with formidable, so we pass it as JSON
@@ -412,7 +412,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       injectHeaders['content-type'] = 'application/json';
       console.log(`📦 [MULTIPART] Changed Content-Type to application/json for inject()`);
     }
-    
+
     // Use Fastify's inject method for serverless
     const response = await server.inject({
       method: (req.method || 'GET') as any, // ✅ FIX: Type assertion for HTTPMethods
@@ -426,7 +426,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       statusCode: response.statusCode,
       headers: Object.keys(response.headers),
     });
-    
+
     // ✅ FIX: Safe logger call
     try {
       if (logger && typeof logger.info === 'function') {
@@ -450,7 +450,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     res.status(response.statusCode);
 
     // Send response
-    res.send(response.payload);
+    // ✅ FIX: Use rawPayload (Buffer) to prevent binary data corruption
+    // fastify-inject converts Buffer to string in .payload, which corrupts binary files (WAV, etc.)
+    res.send(response.rawPayload);
   } catch (error) {
     // ✅ Enhanced error logging (console.log for visibility)
     console.error('❌ Serverless function error:', error);
@@ -459,7 +461,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       stack: error instanceof Error ? error.stack : undefined,
       name: error instanceof Error ? error.name : undefined,
     });
-    
+
     // ✅ FIX: Safe logger call
     try {
       if (logger && typeof logger.error === 'function') {
@@ -475,7 +477,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // Ignore logger errors
       console.warn('Logger error (ignored):', loggerError);
     }
-    
+
     // Send detailed error in development
     const errorResponse: any = {
       error: {
@@ -483,7 +485,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         code: 'INTERNAL_ERROR',
       },
     };
-    
+
     if (process.env.NODE_ENV === 'development' || process.env.VERCEL_ENV === 'development') {
       errorResponse.error.details = error instanceof Error ? {
         message: error.message,
@@ -491,7 +493,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         name: error.name,
       } : String(error);
     }
-    
+
     res.status(500).json(errorResponse);
   }
 }

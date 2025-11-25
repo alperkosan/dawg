@@ -21,6 +21,13 @@ function normalizeAssetUrl(storageUrl, assetId, isSystemAsset = false, storageKe
   );
   const isSystem = isSystemAsset || looksLikeSystemUrl;
 
+  // ✅ FIX: Force API proxy for user assets to avoid CORS issues
+  // User assets on BunnyCDN might have strict CORS policies that block direct browser access
+  // The API proxy (/api/assets/:id/file) handles the fetch server-side and adds proper CORS headers
+  if (assetId && !isSystem) {
+    return `${apiClient.baseURL}/assets/${assetId}/file`;
+  }
+
   // Prefer absolute CDN URLs when already provided
   if (cleanUrl && cleanUrl.startsWith('http')) {
     return cleanUrl;
@@ -69,22 +76,22 @@ function normalizeAssetUrl(storageUrl, assetId, isSystemAsset = false, storageKe
 
 // Bir düğümü ağaç yapısı içinde ID'sine göre bulan yardımcı fonksiyon.
 const findNode = (node, nodeId) => {
-    if (node.id === nodeId) return node;
-    if (node.children) {
-        for (const child of node.children) {
-            const found = findNode(child, nodeId);
-            if (found) return found;
-        }
+  if (node.id === nodeId) return node;
+  if (node.children) {
+    for (const child of node.children) {
+      const found = findNode(child, nodeId);
+      if (found) return found;
     }
-    return null;
+  }
+  return null;
 };
 
 // Bir düğümü ağaçtan kaldıran yardımcı fonksiyon.
 const removeNode = (parent, nodeId) => {
-    if (!parent.children) return parent;
-    parent.children = parent.children.filter(child => child.id !== nodeId);
-    parent.children.forEach(child => removeNode(child, nodeId));
-    return parent;
+  if (!parent.children) return parent;
+  parent.children = parent.children.filter(child => child.id !== nodeId);
+  parent.children.forEach(child => removeNode(child, nodeId));
+  return parent;
 };
 
 /**
@@ -158,7 +165,7 @@ function buildFileTreeFromManifest(manifest, userAssets = [], systemAssets = [],
     // Group system assets by pack
     const assetsByPack = {};
     const assetsWithoutPack = [];
-    
+
     if (systemAssets && systemAssets.length > 0) {
       systemAssets.forEach(asset => {
         if (asset.packId && packMap.has(asset.packId)) {
@@ -231,7 +238,7 @@ function buildFileTreeFromManifest(manifest, userAssets = [], systemAssets = [],
     // Fallback: If no packs but we have assets, group by packId from assets
     const assetsByPack = {};
     const assetsWithoutPack = [];
-    
+
     systemAssets.forEach(asset => {
       if (asset.packId && asset.packName) {
         if (!assetsByPack[asset.packId]) {
@@ -298,11 +305,11 @@ function buildFileTreeFromManifest(manifest, userAssets = [], systemAssets = [],
   // ✅ DYNAMIC: Separate folders and files from user assets
   const userFoldersFromDB = userAssets.filter(asset => asset.mime_type === 'folder');
   const userFiles = userAssets.filter(asset => asset.mime_type !== 'folder');
-  
+
   // ✅ DYNAMIC: Organize user files by parent_folder_id
   const filesByParentId = {};
   const rootFiles = [];
-  
+
   userFiles.forEach(asset => {
     if (asset.parent_folder_id) {
       if (!filesByParentId[asset.parent_folder_id]) {
@@ -336,7 +343,7 @@ function buildFileTreeFromManifest(manifest, userAssets = [], systemAssets = [],
   // ✅ DYNAMIC: Build folder tree structure from DB folders
   const folderMap = new Map(); // id -> folder node
   const rootFolders = [];
-  
+
   // First pass: Create folder nodes
   userFoldersFromDB.forEach(folder => {
     const folderNode = {
@@ -349,7 +356,7 @@ function buildFileTreeFromManifest(manifest, userAssets = [], systemAssets = [],
     };
     folderMap.set(folder.id, folderNode);
   });
-  
+
   // Second pass: Build hierarchy
   userFoldersFromDB.forEach(folder => {
     const folderNode = folderMap.get(folder.id);
@@ -370,40 +377,40 @@ function buildFileTreeFromManifest(manifest, userAssets = [], systemAssets = [],
       rootFolders.push(folderNode);
     }
   });
-  
+
   // ✅ DYNAMIC: Combine root folders and root files
   const userFolderChildren = [...rootFolders, ...rootFiles];
 
   // ✅ DYNAMIC: Build root children - only add "DAWG Library" if there's content
   const rootChildren = [];
-  
+
   // Only add "DAWG Library" folder if there's actual content (manifest files, packs, or system assets)
   if (dawgLibraryChildren.length > 0 || (manifest && manifest.directories && manifest.directories.length > 0)) {
     rootChildren.push({
       id: 'folder-dawg-library',
       name: 'DAWG Library',
       type: FILE_SYSTEM_TYPES.FOLDER,
-      children: dawgLibraryChildren.length > 0 
-        ? dawgLibraryChildren 
+      children: dawgLibraryChildren.length > 0
+        ? dawgLibraryChildren
         : []
     });
   }
 
   // ✅ FIX: Add user-created root folders (folders with no parent or parent not in DB)
   // These are folders created at root level
-  const rootUserFolders = userFolderChildren.filter(item => 
+  const rootUserFolders = userFolderChildren.filter(item =>
     item.type === FILE_SYSTEM_TYPES.FOLDER && (!item.parentFolderId || item.parentFolderId === null)
   );
-  
+
   // ✅ FIX: Add root user folders to root level (same level as DAWG Library)
   rootChildren.push(...rootUserFolders);
 
   // ✅ DYNAMIC: Only add "My Samples" folder if there are user files or folders with parent
-  const userFilesAndNestedFolders = userFolderChildren.filter(item => 
-    item.type === FILE_SYSTEM_TYPES.FILE || 
+  const userFilesAndNestedFolders = userFolderChildren.filter(item =>
+    item.type === FILE_SYSTEM_TYPES.FILE ||
     (item.type === FILE_SYSTEM_TYPES.FOLDER && item.parentFolderId)
   );
-  
+
   if (userFilesAndNestedFolders.length > 0) {
     rootChildren.push({
       id: 'folder-user-samples',
@@ -437,7 +444,7 @@ export const useFileBrowserStore = create((set, get) => ({
   quota: null,
   userAssetsLoaded: false,
   userAssets: [], // Store user assets for tree building
-  
+
   setSelectedNode: (node) => set({ selectedNode: node }),
 
   // ✅ DYNAMIC: Load audio manifest and rebuild file tree
@@ -446,11 +453,11 @@ export const useFileBrowserStore = create((set, get) => ({
     const currentUserAssets = get().userAssets || [];
     const currentSystemAssets = get().systemAssets || [];
     const currentSystemPacks = get().systemPacks || [];
-    
+
     // Rebuild tree with manifest, user assets, and system assets
     const newTree = buildFileTreeFromManifest(manifest, currentUserAssets, currentSystemAssets, currentSystemPacks);
     set({ fileTree: newTree, manifestLoaded: true });
-    
+
     if (manifest) {
       console.log('✅ Audio manifest loaded:', manifest.totalFiles, 'files in', manifest.directories.length, 'directories');
     }
@@ -459,41 +466,41 @@ export const useFileBrowserStore = create((set, get) => ({
   // ✅ NEW: Load system assets from database
   loadSystemAssets: async () => {
     try {
-      const response = await apiClient.listSystemAssets({ 
+      const response = await apiClient.listSystemAssets({
         isActive: true,
         limit: 1000 // Get all active assets
       });
       const assets = response.assets || [];
-      
+
       // Also load packs for organization
-      const packsResponse = await apiClient.listSystemPacks({ 
+      const packsResponse = await apiClient.listSystemPacks({
         isActive: true,
-        limit: 100 
+        limit: 100
       });
       const packs = packsResponse.packs || [];
-      
-      set({ 
+
+      set({
         systemAssets: assets,
         systemPacks: packs,
-        systemAssetsLoaded: true 
+        systemAssetsLoaded: true
       });
-      
+
       // ✅ DYNAMIC: Rebuild file tree with system assets
       const manifest = await loadAudioManifest().catch(() => null);
       const currentUserAssets = get().userAssets || [];
       const newTree = buildFileTreeFromManifest(manifest, currentUserAssets, assets, packs);
       set({ fileTree: newTree });
-      
+
       console.log(`✅ System assets loaded: ${assets.length} assets, ${packs.length} packs`);
       return { assets, packs };
     } catch (error) {
       // Silently fail if backend is not available
       if (error.message?.includes('Failed to fetch') || error.message?.includes('ERR_CONNECTION_REFUSED')) {
         console.log('⚠️ Backend not available, skipping system assets load');
-        set({ 
+        set({
           systemAssets: [],
           systemPacks: [],
-          systemAssetsLoaded: true 
+          systemAssetsLoaded: true
         });
         return { assets: [], packs: [] };
       }
@@ -525,27 +532,27 @@ export const useFileBrowserStore = create((set, get) => ({
       // Load ALL user assets (not filtered by folder) to build complete tree
       const response = await apiClient.listAssets({ limit: 1000 }); // Get all assets
       const assets = response.assets || [];
-      
-      set({ 
+
+      set({
         userAssets: assets,
-        userAssetsLoaded: true 
+        userAssetsLoaded: true
       });
-      
+
       // ✅ DYNAMIC: Rebuild file tree with user assets, system assets, and manifest
       const manifest = await loadAudioManifest().catch(() => null);
       const currentSystemAssets = get().systemAssets || [];
       const currentSystemPacks = get().systemPacks || [];
       const newTree = buildFileTreeFromManifest(manifest, assets, currentSystemAssets, currentSystemPacks);
       set({ fileTree: newTree });
-      
+
       return assets;
     } catch (error) {
       // Silently fail if backend is not available (guest mode or server not running)
       if (error.message?.includes('Failed to fetch') || error.message?.includes('ERR_CONNECTION_REFUSED')) {
         console.log('⚠️ Backend not available, skipping user assets load');
-        set({ 
+        set({
           userAssets: [],
-          userAssetsLoaded: true 
+          userAssetsLoaded: true
         }); // Mark as loaded to prevent retries
         return [];
       }
@@ -560,14 +567,14 @@ export const useFileBrowserStore = create((set, get) => ({
       // Check if user is authenticated
       const { useAuthStore } = await import('@/store/useAuthStore.js');
       const authState = useAuthStore.getState();
-      
+
       if (!authState.isAuthenticated || authState.isGuest) {
         throw new Error('Please log in to upload files');
       }
 
       // ✅ Use unified upload service
       const { uploadFile: uploadFileService, UploadType } = await import('@/lib/services/uploadService.js');
-      
+
       const asset = await uploadFileService(file, {
         type: UploadType.USER_ASSET,
         folderPath,
@@ -577,7 +584,7 @@ export const useFileBrowserStore = create((set, get) => ({
 
       // Reload ALL user assets to rebuild tree
       await get().loadUserAssets();
-      
+
       // Update quota
       await get().loadStorageQuota();
 
@@ -595,10 +602,10 @@ export const useFileBrowserStore = create((set, get) => ({
   deleteUserAsset: async (assetId) => {
     try {
       await apiClient.deleteAsset(assetId);
-      
+
       // Reload ALL user assets to rebuild tree
       await get().loadUserAssets();
-      
+
       // Update quota
       await get().loadStorageQuota();
     } catch (error) {
@@ -611,7 +618,7 @@ export const useFileBrowserStore = create((set, get) => ({
   renameUserAsset: async (assetId, newName) => {
     try {
       await apiClient.renameAsset(assetId, newName);
-      
+
       // Reload ALL user assets to rebuild tree
       await get().loadUserAssets();
     } catch (error) {
@@ -626,20 +633,20 @@ export const useFileBrowserStore = create((set, get) => ({
       // Check if user is authenticated
       const { useAuthStore } = await import('@/store/useAuthStore.js');
       const authState = useAuthStore.getState();
-      
+
       if (!authState.isAuthenticated || authState.isGuest) {
         throw new Error('Please log in to create folders');
       }
 
       // ✅ FIX: System folders that should not be used as parent (always add to root level)
       const systemFolders = ['folder-dawg-library', 'folder-user-samples', 'folder-dawg-'];
-      const isSystemFolder = systemFolders.some(sysFolder => 
+      const isSystemFolder = systemFolders.some(sysFolder =>
         parentId === sysFolder || parentId.startsWith('folder-dawg-')
       );
 
       // Determine parent folder ID for backend (null for root/system folders)
       const backendParentId = (parentId === 'root' || isSystemFolder) ? null : parentId;
-      
+
       // Generate unique name
       const state = get();
       const newTree = JSON.parse(JSON.stringify(state.fileTree));
@@ -652,7 +659,7 @@ export const useFileBrowserStore = create((set, get) => ({
 
       // ✅ FIX: Create folder in backend
       const folder = await apiClient.createFolder(newName, backendParentId);
-      
+
       // ✅ FIX: Add folder to local tree
       if (parentId === 'root' || isSystemFolder) {
         rootNode.children.push({
@@ -690,12 +697,12 @@ export const useFileBrowserStore = create((set, get) => ({
           });
         }
       }
-      
+
       set({ fileTree: newTree });
-      
+
       // ✅ FIX: Reload user assets to sync with backend
       await get().loadUserAssets();
-      
+
       return folder;
     } catch (error) {
       console.error('Failed to create folder:', error);
@@ -709,20 +716,20 @@ export const useFileBrowserStore = create((set, get) => ({
       console.warn('⚠️ Cannot delete DAWG Library or its contents');
       return;
     }
-    
+
     try {
       const nodeToDelete = findNode(get().fileTree, nodeId);
       if (!nodeToDelete) {
         console.warn('⚠️ Node not found:', nodeId);
         return;
       }
-      
+
       // ✅ FIX: Check if it's a read-only system file
       if (nodeToDelete.readOnly) {
         console.warn('⚠️ Cannot delete read-only file');
         return;
       }
-      
+
       // ✅ FIX: Delete from backend based on node type
       if (nodeToDelete.type === FILE_SYSTEM_TYPES.FILE) {
         // Delete file from backend
@@ -737,15 +744,15 @@ export const useFileBrowserStore = create((set, get) => ({
             throw new Error('Klasör boş değil. Önce içindeki dosyaları silin.');
           }
         }
-        
+
         // Delete folder from backend
         await apiClient.deleteFolder(nodeId);
         console.log(`✅ Deleted folder: ${nodeToDelete.name}`);
       }
-      
+
       // ✅ FIX: Reload user assets to sync with backend
       await get().loadUserAssets();
-      
+
       // ✅ FIX: Update quota after deletion
       await get().loadStorageQuota();
     } catch (error) {
@@ -778,7 +785,7 @@ export const useFileBrowserStore = create((set, get) => ({
       // Check if user is authenticated
       const { useAuthStore } = await import('@/store/useAuthStore.js');
       const authState = useAuthStore.getState();
-      
+
       if (!authState.isAuthenticated || authState.isGuest) {
         throw new Error('Please log in to move files');
       }
@@ -790,18 +797,18 @@ export const useFileBrowserStore = create((set, get) => ({
       }
 
       // ✅ Prevent moving system files/folders
-      if (nodeToMove.readOnly || 
-          nodeId === 'root' || 
-          nodeId === 'folder-dawg-library' || 
-          nodeId?.startsWith('folder-dawg-') ||
-          nodeId === 'folder-user-samples') {
+      if (nodeToMove.readOnly ||
+        nodeId === 'root' ||
+        nodeId === 'folder-dawg-library' ||
+        nodeId?.startsWith('folder-dawg-') ||
+        nodeId === 'folder-user-samples') {
         throw new Error('Cannot move system files or folders');
       }
 
       // ✅ Prevent moving to system folders
-      if (targetFolderId === 'folder-dawg-library' || 
-          targetFolderId?.startsWith('folder-dawg-') ||
-          targetFolderId === 'folder-user-samples') {
+      if (targetFolderId === 'folder-dawg-library' ||
+        targetFolderId?.startsWith('folder-dawg-') ||
+        targetFolderId === 'folder-user-samples') {
         throw new Error('Cannot move files to system folders');
       }
 
