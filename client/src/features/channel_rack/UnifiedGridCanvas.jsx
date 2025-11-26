@@ -204,13 +204,12 @@ const UnifiedGridCanvas = React.memo(({
   // ✅ Listen for theme changes and fullscreen - AGGRESSIVE: Call render immediately
   useEffect(() => {
     const handleThemeChange = () => {
-      console.log('🎨 Theme changed - marking grid canvas dirty');
-
-      // Method 1: Increment version to trigger useCallback recreation
-      setThemeVersion(v => v + 1);
-
-      // Method 2: Mark dirty for next UIUpdateManager cycle
-      markDirty();
+      console.log('🎨 Theme changed - scheduling palette refresh');
+      // Wait one frame so CSS vars settle before re-reading palette
+      requestAnimationFrame(() => {
+        setThemeVersion((v) => v + 1);
+        markDirty();
+      });
     };
 
     const handleFullscreenChange = () => {
@@ -310,8 +309,22 @@ const UnifiedGridCanvas = React.memo(({
     supportsOffscreenCanvas,
     isVisible,
     sendFullStateToWorker,
+    themeVersion
+  ]);
+
+  useEffect(() => {
+    if (!supportsOffscreenCanvas) return;
+    if (!workerSurfaceIdRef.current) return;
+    if (!isVisible) return;
+    workerNeedsFullSyncRef.current = true;
+    sendFullStateToWorker();
+  }, [
+    supportsOffscreenCanvas,
+    isVisible,
+    sendFullStateToWorker,
     instrumentsFingerprint,
-    notesDataFingerprint
+    notesDataFingerprint,
+    themeVersion
   ]);
 
   // Worker surface lifecycle (initialization)
