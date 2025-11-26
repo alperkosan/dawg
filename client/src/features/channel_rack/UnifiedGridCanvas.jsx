@@ -77,6 +77,7 @@ const UnifiedGridCanvas = React.memo(({
   instruments = [],
   notesData = {}, // { instrumentId: [notes...] }
   totalSteps = 256,
+  patternLength = null,
   onNoteToggle = null,
   onInstrumentClick = null,
   scrollXRef, // ⚡ PERFORMANCE: Refs instead of values (no re-renders)
@@ -367,7 +368,25 @@ const UnifiedGridCanvas = React.memo(({
       }
     }
 
-    // === LAYER 5: NOTES - ADAPTIVE MODE (STEP SEQUENCER vs MINI PREVIEW) ===
+    // === LAYER 5: PATTERN COVERAGE OVERLAY (DIM EXCESS REGION) ===
+    if (patternLength !== null && Number.isFinite(patternLength)) {
+      const normalizedPatternLength = Math.max(0, Math.min(patternLength, totalSteps));
+      if (normalizedPatternLength < totalSteps) {
+        const dimStartWorld = normalizedPatternLength * STEP_WIDTH;
+        const visibleStartWorld = scrollX;
+        const visibleEndWorld = scrollX + viewportWidth;
+        if (visibleEndWorld > dimStartWorld) {
+          const startX = Math.max(0, dimStartWorld - visibleStartWorld);
+          const dimWidth = viewportWidth - startX;
+          if (dimWidth > 0) {
+            ctx.fillStyle = 'rgba(5, 8, 15, 0.45)';
+            ctx.fillRect(startX, 0, dimWidth, viewportHeight);
+          }
+        }
+      }
+    }
+
+    // === LAYER 6: NOTES - ADAPTIVE MODE (STEP SEQUENCER vs MINI PREVIEW) ===
     for (let row = startRow; row < endRow; row++) {
       const instrument = instruments[row];
       if (!instrument) continue;
@@ -470,7 +489,7 @@ const UnifiedGridCanvas = React.memo(({
       }
     }
 
-    // === LAYER 6: GHOST NOTE (HOVER OVERLAY - STEP SEQUENCER ONLY) ===
+    // === LAYER 7: GHOST NOTE (HOVER OVERLAY - STEP SEQUENCER ONLY) ===
     if (hoveredCell) {
       const { row, step, instrumentId } = hoveredCell;
       const instrument = instruments[row];
@@ -543,6 +562,7 @@ const UnifiedGridCanvas = React.memo(({
     instruments,
     notesData,
     totalSteps,
+    patternLength,
     viewportWidth,
     viewportHeight,
     hoveredCell,

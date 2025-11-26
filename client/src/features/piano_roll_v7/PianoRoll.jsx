@@ -227,6 +227,12 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
         engineRef.current = engine;
     }, [engine]);
 
+    const requestViewportUpdate = useCallback((values) => {
+        const engineInstance = engineRef.current;
+        if (!engineInstance?.eventHandlers?.updateViewport) return;
+        engineInstance.eventHandlers.updateViewport(values);
+    }, []);
+
     // Toolbar state
     // ✅ FIX: Default to paintBrush for better workflow (users typically want to write notes immediately)
     const [activeTool, setActiveTool] = useState('paintBrush');
@@ -811,6 +817,25 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
         return cursorState ? (cursorMap[cursorState] || cursorState) : 'default';
     }, [noteInteractions.cursorState]);
 
+    const gridViewportWidth = Math.max(0, (engine.viewport?.width || 0) - KEYBOARD_WIDTH);
+    const gridViewportHeight = Math.max(0, (engine.viewport?.height || 0) - RULER_HEIGHT);
+    const contentWidth = Math.max(gridViewportWidth, engine.dimensions?.totalWidth || gridViewportWidth);
+    const contentHeight = Math.max(gridViewportHeight, engine.dimensions?.totalHeight || gridViewportHeight);
+    const maxScrollX = Math.max(0, contentWidth - gridViewportWidth);
+    const maxScrollY = Math.max(0, contentHeight - gridViewportHeight);
+    const horizontalScroll = Math.min(maxScrollX, Math.max(0, engine.viewport?.scrollX || 0));
+    const verticalScroll = Math.min(maxScrollY, Math.max(0, engine.viewport?.scrollY || 0));
+
+    const handleHorizontalScrollbarScroll = useCallback((nextScrollX) => {
+        const clamped = Math.max(0, Math.min(maxScrollX, nextScrollX));
+        requestViewportUpdate({ scrollX: clamped, smooth: false });
+    }, [maxScrollX, requestViewportUpdate]);
+
+    const handleVerticalScrollbarScroll = useCallback((nextScrollY) => {
+        const clamped = Math.max(0, Math.min(maxScrollY, nextScrollY));
+        requestViewportUpdate({ scrollY: clamped, smooth: false });
+    }, [maxScrollY, requestViewportUpdate]);
+
     // ✅ REGISTER PIANO ROLL TIMELINE with TimelineController
     // Note: engineRef is defined later in the file and used here via closure
     useEffect(() => {
@@ -1380,6 +1405,29 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
                 <canvas ref={notesCanvasRef} className="prv5-canvas prv5-canvas-notes" />
                 <canvas ref={playheadCanvasRef} className="prv5-canvas prv5-canvas-playhead" />
 
+                <PianoRollScrollbar
+                    orientation="horizontal"
+                    viewportSize={gridViewportWidth}
+                    contentSize={contentWidth}
+                    scrollOffset={horizontalScroll}
+                    onScroll={handleHorizontalScrollbarScroll}
+                    style={{
+                        left: KEYBOARD_WIDTH + 12,
+                        bottom: 10
+                    }}
+                />
+                <PianoRollScrollbar
+                    orientation="vertical"
+                    viewportSize={gridViewportHeight}
+                    contentSize={contentHeight}
+                    scrollOffset={verticalScroll}
+                    onScroll={handleVerticalScrollbarScroll}
+                    style={{
+                        top: RULER_HEIGHT + 12,
+                        right: 12
+                    }}
+                />
+
                 {/* ✅ LOOP REGION OVERLAY */}
                 {loopRegion && (
                     <LoopRegionOverlay
@@ -1489,3 +1537,118 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
 }
 
 export default PianoRoll;
+
+const PianoRollScrollbar = ({
+    orientation,
+    viewportSize,
+    contentSize,
+    scrollOffset,
+    onScroll,
+    style
+}) => {
+    const trackRef = useRef(null);
+    const dragHandlersRef = useRef(null);
+    const isHorizontal = orientation === 'horizontal';
+
+    const trackLength = Math.max(0, viewportSize);
+    const shouldRenderScrollbar = trackLength > 0 && contentSize > viewportSize + 1 && Number.isFinite(contentSize);
+
+    const scrollRange = Math.max(1, contentSize - viewportSize);
+    const thumbRatio = viewportSize / contentSize;
+    const thumbLength = Math.max(24, trackLength * thumbRatio);
+    const maxThumbOffset = Math.max(0, trackLength - thumbLength);
+    const clampedScroll = Math.max(0, Math.min(scrollRange, scrollOffset));
+    const thumbOffset = maxThumbOffset === 0 ? 0 : (clampedScroll / scrollRange) * maxThumbOffset;
+
+    const emitScroll = useCallback((thumbPos) => {
+        const clampedThumb = Math.max(0, Math.min(maxThumbOffset, thumbPos));
+        const ratio = maxThumbOffset === 0 ? 0 : clampedThumb / maxThumbOffset;
+        const nextScroll = ratio * scrollRange;
+        onScroll(nextScroll);
+    }, [maxThumbOffset, onScroll, scrollRange]);
+
+    const cleanupDrag = useCallback(() => {
+        if (dragHandlersRef.current) {
+            window.removeEventListener('pointermove', dragHandlersRef.current.move);
+            window.removeEventListener('pointerup', dragHandlersRef.current.up);
+            dragHandlersRef.current = null;
+        }
+    }, []);
+
+    useEffect(() => cleanupDrag, [cleanupDrag]);
+
+    const startDrag = useCallback((initialClientPos, initialThumb) => {
+        const handlePointerMove = (moveEvent) => {
+            const pointerPos = isHorizontal ? moveEvent.clientX : moveEvent.clientY;
+            const delta = pointerPos - initialClientPos;
+            emitScroll(initialThumb + delta);
+        };
+
+        const handlePointerUp = () => {
+            cleanupDrag();
+        };
+
+        dragHandlersRef.current = {
+            move: handlePointerMove,
+            up: handlePointerUp
+        };
+
+        window.addEventListener('pointermove', handlePointerMove);
+        window.addEventListener('pointerup', handlePointerUp);
+    }, [emitScroll, cleanupDrag, isHorizontal]);
+
+    const handleThumbPointerDown = useCallback((event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const pointerPos = isHorizontal ? event.clientX : event.clientY;
+        startDrag(pointerPos, thumbOffset);
+    }, [isHorizontal, startDrag, thumbOffset]);
+
+    const handleTrackPointerDown = useCallback((event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const trackRect = trackRef.current?.getBoundingClientRect();
+        if (!trackRect) return;
+
+        const pointerInTrack = isHorizontal
+            ? event.clientX - trackRect.left
+            : event.clientY - trackRect.top;
+
+        const newThumbStart = Math.max(0, Math.min(pointerInTrack - thumbLength / 2, maxThumbOffset));
+        emitScroll(newThumbStart);
+        const pointerPos = isHorizontal ? event.clientX : event.clientY;
+        startDrag(pointerPos, newThumbStart);
+    }, [emitScroll, isHorizontal, maxThumbOffset, startDrag, thumbLength]);
+
+    const containerStyle = {
+        ...style,
+        width: isHorizontal ? `${viewportSize}px` : (style?.width || '12px'),
+        height: isHorizontal ? (style?.height || '12px') : `${viewportSize}px`
+    };
+
+    if (!shouldRenderScrollbar) {
+        return null;
+    }
+
+    return (
+        <div
+            className={`prv5-scrollbar prv5-scrollbar--${orientation}`}
+            style={containerStyle}
+        >
+            <div
+                ref={trackRef}
+                className="prv5-scrollbar__track"
+                onPointerDown={handleTrackPointerDown}
+            >
+                <div
+                    className="prv5-scrollbar__thumb"
+                    onPointerDown={handleThumbPointerDown}
+                    style={isHorizontal
+                        ? { width: `${thumbLength}px`, left: `${thumbOffset}px`, height: '100%' }
+                        : { height: `${thumbLength}px`, top: `${thumbOffset}px`, width: '100%' }
+                    }
+                />
+            </div>
+        </div>
+    );
+};

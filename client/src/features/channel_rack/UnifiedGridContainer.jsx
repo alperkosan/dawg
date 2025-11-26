@@ -28,10 +28,12 @@ const UnifiedGridContainer = React.memo(({
   instruments = [],
   activePattern = null,
   totalSteps = 256,
+  patternLength = 256,
   onNoteToggle = null,
   onInstrumentClick = null,
   addButtonHeight = 0, // Height for add button row (default: 0, set by parent)
   isVisible = true,
+  onExtendSteps = null,
 }) => {
   const containerRef = useRef(null);
   const canvasContainerRef = useRef(null);
@@ -78,7 +80,13 @@ const UnifiedGridContainer = React.memo(({
     const handleScroll = () => {
       scrollXRef.current = scrollContainer.scrollLeft;
       scrollYRef.current = scrollContainer.scrollTop;
-      // Canvas will read these refs in its RAF loop
+
+      if (typeof onExtendSteps === 'function') {
+        const viewportRightStep = (scrollContainer.scrollLeft + scrollContainer.clientWidth) / STEP_WIDTH;
+        if (viewportRightStep > totalSteps - 64) {
+          onExtendSteps(Math.ceil(viewportRightStep + 128));
+        }
+      }
     };
 
     // Handle viewport resize - update state (triggers re-render, but only on resize)
@@ -111,7 +119,7 @@ const UnifiedGridContainer = React.memo(({
       scrollContainer.removeEventListener('scroll', handleScroll);
       resizeObserver.disconnect();
     };
-  }, [totalWidth, totalHeight, isVisible]);
+  }, [totalWidth, totalHeight, isVisible, totalSteps, onExtendSteps]);
 
   return (
     <div
@@ -140,6 +148,7 @@ const UnifiedGridContainer = React.memo(({
           instruments={instruments}
           notesData={notesData}
           totalSteps={totalSteps}
+          patternLength={patternLength}
           onNoteToggle={onNoteToggle}
           onInstrumentClick={onInstrumentClick}
           scrollXRef={scrollXRef}

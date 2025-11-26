@@ -2,6 +2,8 @@
 import { create } from 'zustand';
 import { PLAYBACK_MODES, PLAYBACK_STATES } from '@/config/constants';
 import { usePreviewPlayerStore } from './usePreviewPlayerStore.js';
+import { storeManager } from './StoreManager';
+import { calculatePatternLoopLength, calculateArrangementLoopLength } from '@/lib/utils/patternUtils.js';
 // ✅ Empty project - no initial settings
 import PlaybackControllerSingleton from '@/lib/core/PlaybackControllerSingleton.js';
 
@@ -227,12 +229,44 @@ export const usePlaybackStore = create((set, get) => ({
   },
 
   updateLoopLength: () => {
-    const newLength = 64;
-    set({ audioLoopLength: newLength });
+    const { playbackMode, _controller } = get();
+    let nextLength = 64;
 
-    const { _controller } = get();
+    try {
+      const arrangementStore = storeManager?.stores?.arrangement;
+      const arrangementState = arrangementStore?.getState?.();
+
+      if (arrangementState) {
+        if (playbackMode === PLAYBACK_MODES.PATTERN) {
+          const { activePatternId, patterns } = arrangementState;
+          const activePattern = patterns?.[activePatternId];
+          if (activePattern) {
+            if (typeof activePattern.length === 'number') {
+              nextLength = activePattern.length;
+            } else {
+              nextLength = calculatePatternLoopLength(activePattern);
+            }
+          }
+        } else {
+          const arrangementClips = arrangementState.clips || [];
+          if (arrangementClips.length > 0) {
+            nextLength = calculateArrangementLoopLength(arrangementClips);
+          } else if (typeof arrangementState.songLength === 'number') {
+            nextLength = Math.max(64, Math.ceil(arrangementState.songLength * 16));
+          }
+        }
+      }
+    } catch (error) {
+      console.warn('⚠️ Failed to compute loop length from arrangement state:', error);
+    }
+
+    set({
+      audioLoopLength: nextLength,
+      loopEndStep: nextLength
+    });
+
     if (_controller) {
-      _controller.setLoopRange(0, newLength);
+      _controller.setLoopRange(0, nextLength);
     }
   },
 

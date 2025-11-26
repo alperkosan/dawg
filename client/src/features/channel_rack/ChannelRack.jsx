@@ -40,6 +40,7 @@ const Icon = memo(({ name, size = 20, ...props }) => {
 });
 
 const STEP_WIDTH = 16;
+const VIRTUAL_STEPS_BUFFER = 64;
 
 // ✅ PERFORMANCE: Cached selector functions to prevent infinite loops
 const selectInstrumentsData = (state) => state;
@@ -81,7 +82,8 @@ function ChannelRackComponent() {
     createPattern,
     duplicatePattern,
     deletePattern,
-    renamePattern
+    renamePattern,
+    setPatternLength
   } = arrangementData;
 
   const {
@@ -194,6 +196,23 @@ function ChannelRackComponent() {
 
     return Math.max(minLength, roundedLength);
   }, [activePattern]);
+
+  const [virtualSteps, setVirtualSteps] = useState(() =>
+    Math.max(audioLoopLength + VIRTUAL_STEPS_BUFFER, 256)
+  );
+
+  useEffect(() => {
+    setVirtualSteps(prev => {
+      const target = audioLoopLength + VIRTUAL_STEPS_BUFFER;
+      return prev >= target ? prev : target;
+    });
+  }, [audioLoopLength]);
+
+  const handleExtendVirtualSteps = useCallback((requestedStep) => {
+    if (typeof requestedStep !== 'number' || Number.isNaN(requestedStep)) return;
+    const target = requestedStep + VIRTUAL_STEPS_BUFFER;
+    setVirtualSteps(prev => (prev >= target ? prev : target));
+  }, []);
 
   // ✅ PERFORMANCE: Pre-compute instruments lookup map - O(1) access
   const instrumentsMap = useMemo(() =>
@@ -442,11 +461,19 @@ function ChannelRackComponent() {
         commandManager.execute(new DeleteNoteCommand(instrumentId, existingNote));
       } else {
         commandManager.execute(new AddNoteCommand(instrumentId, step));
+
+        // Auto-extend pattern length + virtual grid if we toggled beyond current loop
+        const projectedLength = Math.ceil((step + 1) / 16) * 16;
+        const currentLength = activePattern.length || audioLoopLength;
+        if (projectedLength > currentLength) {
+          setPatternLength(activePatternId, projectedLength);
+        }
+        handleExtendVirtualSteps(projectedLength);
       }
     } catch (error) {
       console.error('Error toggling note:', error);
     }
-  }, [activePattern]);
+  }, [activePattern, activePatternId, audioLoopLength, handleExtendVirtualSteps, setPatternLength]);
 
   // ✅ Get all visible instruments for grid rendering (simplified for flat view)
   const visibleInstruments = useMemo(() => {
@@ -778,7 +805,8 @@ function ChannelRackComponent() {
         <UnifiedGridContainer
           instruments={visibleInstruments}
           activePattern={activePattern}
-          totalSteps={audioLoopLength}
+          totalSteps={virtualSteps}
+          patternLength={audioLoopLength}
           onNoteToggle={handleNoteToggle}
           onInstrumentClick={(instrumentId) => {
             const inst = visibleInstruments.find(i => i.id === instrumentId);
@@ -786,6 +814,7 @@ function ChannelRackComponent() {
           }}
           addButtonHeight={68} // ✅ FIX: Match instruments list add button height (64px height + 4px margin-top)
           isVisible={isChannelRackVisible}
+          onExtendSteps={handleExtendVirtualSteps}
         />
       </div>
 
