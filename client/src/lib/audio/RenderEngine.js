@@ -1534,17 +1534,33 @@ export class RenderEngine {
 
     let currentNode = sourceNode;
 
-    // 1. GAIN (Volume)
+    // 1. MIXER INSERT EFFECTS (match live chain: effects run pre-fader)
+    const effects = mixerTrack.insertEffects || mixerTrack.effects || [];
+
+    if (effects.length > 0) {
+      console.log(`  🎛️ Applying ${effects.length} mixer insert effects (pre-fader)...`);
+      console.log(`  🎛️ Effects:`, effects.map(e => `${e.type} (bypass: ${e.bypass})`));
+
+      try {
+        const effectOutput = await this._applyEffectChain(effects, currentNode, offlineContext);
+        currentNode = effectOutput;
+        console.log(`  ✅ Mixer effects applied`);
+      } catch (error) {
+        console.error(`  ❌ Failed to apply mixer effects:`, error);
+      }
+    } else {
+      console.log(`  ℹ️ No mixer insert effects on this track`);
+    }
+
+    // 2. GAIN (Volume) – matches MixerInsert chain (effects → gain → pan)
     const gainNode = offlineContext.createGain();
-    // 🎛️ DYNAMIC MIXER: Use actual mixer insert gain (already linear 0-1)
-    // Default to 1.0 if not specified (unity gain, no attenuation)
     const gainValue = mixerTrack.gain !== undefined ? mixerTrack.gain : 1.0;
     gainNode.gain.setValueAtTime(gainValue, offlineContext.currentTime);
     currentNode.connect(gainNode);
     currentNode = gainNode;
     console.log(`  ✅ Gain: ${gainValue.toFixed(2)} (${mixerTrack.gain !== undefined ? 'from insert' : 'default unity'})`);
 
-    // 2. PAN (Stereo positioning)
+    // 3. PAN (Stereo positioning)
     if (mixerTrack.pan !== undefined && mixerTrack.pan !== 0) {
       const panNode = offlineContext.createStereoPanner();
       panNode.pan.setValueAtTime(mixerTrack.pan, offlineContext.currentTime);
@@ -1553,7 +1569,7 @@ export class RenderEngine {
       console.log(`  ✅ Pan: ${mixerTrack.pan.toFixed(2)}`);
     }
 
-    // 3. 3-BAND EQ (Low/Mid/High)
+    // 4. 3-BAND EQ (Low/Mid/High)
     const hasEQ = (mixerTrack.lowGain && mixerTrack.lowGain !== 0) ||
       (mixerTrack.midGain && mixerTrack.midGain !== 0) ||
       (mixerTrack.highGain && mixerTrack.highGain !== 0);
@@ -1592,26 +1608,6 @@ export class RenderEngine {
         currentNode = highShelf;
         console.log(`  ✅ High EQ: ${mixerTrack.highGain.toFixed(1)} dB`);
       }
-    }
-
-    // 4. MIXER INSERT EFFECTS (Plugin chain)
-    // Effects are stored as 'insertEffects' in mixer store
-    const effects = mixerTrack.insertEffects || mixerTrack.effects || [];
-
-    if (effects.length > 0) {
-      console.log(`  🎛️ Applying ${effects.length} mixer insert effects...`);
-      console.log(`  🎛️ Effects:`, effects.map(e => `${e.type} (bypass: ${e.bypass})`));
-
-      try {
-        // Apply mixer effects chain (same method used for instrument effects)
-        const effectOutput = await this._applyEffectChain(effects, currentNode, offlineContext);
-        currentNode = effectOutput;
-        console.log(`  ✅ Mixer effects applied`);
-      } catch (error) {
-        console.error(`  ❌ Failed to apply mixer effects:`, error);
-      }
-    } else {
-      console.log(`  ℹ️ No mixer insert effects on this track`);
     }
 
     console.log(`🎛️ Offline mixer channel created for ${mixerTrack.name}`);
