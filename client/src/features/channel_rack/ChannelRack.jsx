@@ -567,7 +567,7 @@ function ChannelRackComponent() {
           // ✅ NEW: Use ProjectBufferManager for efficient buffer management
           const { getProjectBufferManager } = await import('@/lib/audio/ProjectBufferManager.js');
           const bufferManager = getProjectBufferManager();
-          
+
           // Get buffer (checks cache first, only loads if needed)
           const audioBuffer = await bufferManager.getBuffer(fileData.url, audioContext);
 
