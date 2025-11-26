@@ -142,6 +142,9 @@ export class PlaybackManager {
         this.loopStart = 0; // in steps
         this.loopEnd = 64; // in steps
         this.isAutoLoop = true; // Auto calculate loop points
+        this.loopPreRollTime = 0.08; // seconds before loop to schedule next cycle
+        this.loopPreRollTimer = null;
+        this.lastPreRollTarget = null;
         
         // Pattern mode settings
         this.activePatternId = null;
@@ -460,36 +463,44 @@ export class PlaybackManager {
      * @param {number} nextStartTime - Bir sonraki loop'un başlangıç zamanı
      */
     _handleLoopRestart(nextStartTime = null) {
-        // ✅ OPTIMIZATION: Prevent duplicate scheduling if already pending
-        if (this.schedulingOptimizer.isSchedulePending()) {
+        if (!this.isPlaying) {
             return;
         }
 
-        // ✅ CONSISTENT: Reset to loopStart (not hardcoded 0)
         this.currentPosition = this.loopStart;
 
-        // ✅ CONSISTENT: Force transport position to loopStart immediately
         if (this.transport.setPosition) {
             this.transport.setPosition(this.loopStart);
         }
 
-        // ✅ OPTIMIZATION: DON'T clear here - Transport already cleared (line 303 NativeTransportSystem.js)
-        // _clearScheduledEvents will be called inside _scheduleContent anyway
-        // Removing this prevents DOUBLE clearing
+        let scheduledTarget = nextStartTime;
+        if (!scheduledTarget) {
+            scheduledTarget = this._computeNextLoopStartTime();
+        }
 
-        // ✅ CRITICAL FIX: Stop all active notes to prevent stuck notes on loop restart
-        this._stopAllActiveNotes();
+        if (!scheduledTarget || !Number.isFinite(scheduledTarget)) {
+            this._scheduleContent(null, 'loop-restart-fallback', true);
+        } else {
+            const alreadyMatchesTarget = this.lastPreRollTarget &&
+                Math.abs(this.lastPreRollTarget - scheduledTarget) < 0.0005;
 
-        // Content'i yeniden schedule et
-        const startTime = nextStartTime || this.transport.audioContext.currentTime;
-        this._scheduleContent(startTime, 'loop-restart', true); // Force immediate scheduling for loop restart
+            if (!alreadyMatchesTarget) {
+                this._scheduleContent(scheduledTarget, 'loop-restart-fallback', true, {
+                    append: true,
+                    priority: 'burst'
+                });
+            }
 
-        // ✅ BONUS: Loop restart analytics
+            const nextTarget = scheduledTarget + this._getLoopDurationSeconds();
+            if (Number.isFinite(nextTarget)) {
+                this._scheduleLoopPreRoll(nextTarget);
+            }
+        }
+
         this._trackLoopRestart();
 
-        // UI'ı bilgilendir - use corrected position
         this._emit('loopRestart', {
-            time: startTime,
+            time: scheduledTarget || this.transport.audioContext.currentTime,
             tick: this.loopStart * this.transport.ticksPerStep,
             step: this.loopStart,
             mode: this.currentMode,
@@ -607,6 +618,67 @@ export class PlaybackManager {
         this._updateTransportLoop();
     }
 
+    _getLoopDurationSeconds() {
+        if (!this.transport || typeof this.transport.stepsToSeconds !== 'function') {
+            return 0;
+        }
+        const loopLengthSteps = Math.max(1, this.loopEnd - this.loopStart);
+        return this.transport.stepsToSeconds(loopLengthSteps);
+    }
+
+    _computeNextLoopStartTime() {
+        if (!this.transport?.audioContext) {
+            return null;
+        }
+        const currentTime = this.transport.audioContext.currentTime;
+        const loopLengthSteps = Math.max(1, this.loopEnd - this.loopStart);
+        if (!loopLengthSteps || !Number.isFinite(loopLengthSteps)) {
+            return currentTime;
+        }
+        const currentStep = this.transport.ticksToSteps(this.transport.currentTick);
+        const relativeStep = ((currentStep - this.loopStart) % loopLengthSteps + loopLengthSteps) % loopLengthSteps;
+        const stepsRemaining = loopLengthSteps - relativeStep;
+        const secondsRemaining = this.transport.stepsToSeconds(stepsRemaining);
+        return currentTime + secondsRemaining;
+    }
+
+    _cancelLoopPreRoll() {
+        if (this.loopPreRollTimer) {
+            clearTimeout(this.loopPreRollTimer);
+            this.loopPreRollTimer = null;
+        }
+        this.lastPreRollTarget = null;
+    }
+
+    _scheduleLoopPreRoll(targetStartTime) {
+        if (!this.isPlaying || !this.transport?.audioContext || !isFinite(targetStartTime)) {
+            return;
+        }
+
+        const audioCtx = this.transport.audioContext;
+        const currentTime = audioCtx.currentTime;
+        const adjustedTarget = Math.max(targetStartTime, currentTime);
+        const fireTime = Math.max(currentTime, adjustedTarget - this.loopPreRollTime);
+        const delayMs = Math.max(0, (fireTime - currentTime) * 1000);
+
+        if (this.loopPreRollTimer) {
+            clearTimeout(this.loopPreRollTimer);
+            this.loopPreRollTimer = null;
+        }
+
+        this.lastPreRollTarget = targetStartTime;
+        this.loopPreRollTimer = setTimeout(() => {
+            this.loopPreRollTimer = null;
+            if (!this.isPlaying) {
+                return;
+            }
+            this._scheduleContent(targetStartTime, 'loop-pre-roll', true, {
+                append: true,
+                priority: 'burst'
+            });
+        }, delayMs);
+    }
+
     _calculatePatternLoop() {
         const arrangementStore = useArrangementStore.getState();
         const activePatternId = arrangementStore.activePatternId;
@@ -628,9 +700,8 @@ export class PlaybackManager {
             if (Array.isArray(notes) && notes.length > 0) {
                 let instrumentMaxStep = 0;
                 notes.forEach(note => {
-                    const noteTime = (note.startTime ?? note.time ?? 0);
-                    // Notanın süresini step cinsinden al, varsayılan olarak 1 step (16'lık nota)
-                    const noteDuration = this._getDurationInSteps(note.duration) || 1;
+                    const noteTime = this._getNoteStartStep(note);
+                    const noteDuration = this._getNoteLengthInSteps(note);
                     const noteEnd = noteTime + noteDuration;
                     instrumentMaxStep = Math.max(instrumentMaxStep, noteEnd);
                 });
@@ -739,6 +810,11 @@ export class PlaybackManager {
                 this.transport.setPosition(playPosition);
             }
 
+            const nextLoopStart = startTime + this._getLoopDurationSeconds();
+            if (Number.isFinite(nextLoopStart)) {
+                this._scheduleLoopPreRoll(nextLoopStart);
+            }
+
             this.isPlaying = true;
             this.isPaused = false;
             this.schedulingOptimizer.setPlaybackActivity(true);
@@ -769,6 +845,7 @@ export class PlaybackManager {
 
             this.isPaused = true;
             this.schedulingOptimizer.setPlaybackActivity(false);
+            this._cancelLoopPreRoll();
 
 
             // Notify stores
@@ -797,6 +874,10 @@ export class PlaybackManager {
 
             // ✅ CRITICAL FIX: Reschedule content from current position
             this._scheduleContent(startTime, 'resume', true);
+            const nextTarget = this._computeNextLoopStartTime();
+            if (nextTarget) {
+                this._scheduleLoopPreRoll(nextTarget);
+            }
 
             // Notify stores
             // usePlaybackStore.getState().setPlaybackState('playing'); // ✅ Handled by PlaybackController
@@ -811,6 +892,7 @@ export class PlaybackManager {
 
         try {
             this.transport.stop();
+            this._cancelLoopPreRoll();
 
             // ✅ OPTIMIZATION: Only stop instruments that are actually playing
             let stoppedCount = 0;
@@ -969,16 +1051,22 @@ export class PlaybackManager {
         const {
             scope = 'auto',
             instrumentIds = null,
-            priority = 'auto'
+            priority = 'auto',
+            append = false
         } = options;
 
         let resolvedScope = scope;
+        const appendMode = Boolean(append);
         const explicitInstrumentTargets = this._resolveInstrumentTargets('notes', instrumentIds);
 
         if (resolvedScope === 'auto') {
             resolvedScope = (explicitInstrumentTargets && explicitInstrumentTargets.length) || this.dirtyState.instruments.size > 0
                 ? 'notes'
                 : 'all';
+        }
+
+        if (appendMode) {
+            resolvedScope = 'all';
         }
 
         if (this.dirtyState.global || this.currentMode === 'song' || force) {
@@ -991,7 +1079,7 @@ export class PlaybackManager {
                 : this._resolveInstrumentTargets('notes'))
             : null;
         const targetSet = instrumentTargets && instrumentTargets.length ? new Set(instrumentTargets) : null;
-        const shouldUseFilter = resolvedScope === 'notes' && targetSet && targetSet.size > 0;
+        const shouldUseFilter = !appendMode && resolvedScope === 'notes' && targetSet && targetSet.size > 0;
 
         if (resolvedScope === 'notes' && !shouldUseFilter && !force) {
             // Nothing dirty to schedule
@@ -1008,8 +1096,9 @@ export class PlaybackManager {
                 ? (eventData) => targetSet.has(eventData?.instrumentId)
                 : null;
 
-            // Önceki event'leri temizle (eğer daha önce temizlenmediyse)
-            this._clearScheduledEvents(false, clearFilter);
+            if (!appendMode) {
+                this._clearScheduledEvents(false, clearFilter);
+            }
 
             let scheduledNotes = 0;
             let scheduledInstruments = 0;
@@ -1036,12 +1125,16 @@ export class PlaybackManager {
 
             const dirtyInstrumentCount = targetSet
                 ? targetSet.size
-                : (resolvedScope === 'all' ? this.audioEngine?.instruments?.size || 0 : this.dirtyState.instruments.size);
+                : (resolvedScope === 'all'
+                    ? this.audioEngine?.instruments?.size || 0
+                    : this.dirtyState.instruments.size);
 
-            if (shouldUseFilter) {
-                targetSet.forEach(id => this.dirtyState.instruments.delete(id));
-            } else {
-                this._resetDirtyState();
+            if (!appendMode) {
+                if (shouldUseFilter) {
+                    targetSet.forEach(id => this.dirtyState.instruments.delete(id));
+                } else {
+                    this._resetDirtyState();
+                }
             }
 
             const schedulerStats = this.schedulingOptimizer.getStats ? this.schedulingOptimizer.getStats() : null;
@@ -1062,12 +1155,23 @@ export class PlaybackManager {
                     timestamp: Date.now()
                 });
             }
+
+            if (appendMode && typeof startTime === 'number') {
+                this.lastPreRollTarget = startTime;
+            } else if (!appendMode && this.isPlaying) {
+                const nextTarget = this._computeNextLoopStartTime();
+                if (nextTarget) {
+                    this._scheduleLoopPreRoll(nextTarget);
+                }
+            }
         };
 
-        const effectivePriority = shouldUseFilter ? 'realtime' : priority;
+        const effectivePriority = appendMode
+            ? 'burst'
+            : (shouldUseFilter ? 'realtime' : priority);
 
         // Use debounced scheduling unless forced
-        if (force || resolvedScope === 'all') {
+        if (force || resolvedScope === 'all' || appendMode) {
             this.schedulingOptimizer.forceExecute(scheduleCallback);
         } else {
             this.schedulingOptimizer.requestSchedule(scheduleCallback, reason, effectivePriority);
@@ -2128,6 +2232,28 @@ export class PlaybackManager {
         const durationInSeconds = NativeTimeUtils.parseTime(duration, bpm);
         // Transport'taki yardımcı fonksiyonla saniyeyi step'e çevir
         return this.transport.secondsToSteps(durationInSeconds);
+    }
+
+    _getNoteStartStep(note) {
+        if (!note) return 0;
+        if (typeof note.startTime === 'number' && !Number.isNaN(note.startTime)) {
+            return note.startTime;
+        }
+        if (typeof note.time === 'number' && !Number.isNaN(note.time)) {
+            return note.time;
+        }
+        return 0;
+    }
+
+    _getNoteLengthInSteps(note) {
+        if (!note) return 1;
+        if (typeof note.length === 'number' && note.length > 0) {
+            return note.length;
+        }
+        if (note.duration) {
+            return this._getDurationInSteps(note.duration) || 1;
+        }
+        return 1;
     }
 
     /**

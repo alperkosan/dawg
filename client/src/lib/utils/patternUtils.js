@@ -18,28 +18,41 @@ export const calculatePatternLoopLength = (pattern, defaultBPM = 120) => {
   let noteCount = 0;
 
   // Tüm enstrümanların notalarını kontrol et
+  const getNoteStart = (note) => {
+    if (typeof note?.startTime === 'number' && !Number.isNaN(note.startTime)) {
+      return note.startTime;
+    }
+    if (typeof note?.time === 'number' && !Number.isNaN(note.time)) {
+      return note.time;
+    }
+    return 0;
+  };
+
+  const getNoteLength = (note) => {
+    if (typeof note?.length === 'number' && note.length > 0) {
+      return note.length;
+    }
+    if (note?.duration) {
+      try {
+        const durationInSeconds = NativeTimeUtils.parseTime(note.duration, defaultBPM);
+        const sixteenthNoteSeconds = NativeTimeUtils.parseTime('16n', defaultBPM);
+        return durationInSeconds / sixteenthNoteSeconds;
+      } catch (error) {
+        return 1;
+      }
+    }
+    return 1;
+  };
+
   Object.values(pattern.data).forEach(notes => {
     if (Array.isArray(notes)) {
       noteCount += notes.length;
       
       notes.forEach(note => {
-        let noteEndStep = note.time || 0;
-        
-        // Nota süresini step'e çevir
-        if (note.duration) {
-          try {
-            const durationInSeconds = NativeTimeUtils.parseTime(note.duration, defaultBPM);
-            const sixteenthNoteSeconds = NativeTimeUtils.parseTime('16n', defaultBPM);
-            const durationInSteps = durationInSeconds / sixteenthNoteSeconds;
-            noteEndStep += durationInSteps;
-          } catch (error) {
-            // Hatalı süre formatı, varsayılan 1 step kullan
-            noteEndStep += 1;
-          }
-        } else {
-          noteEndStep += 1; // Varsayılan nota uzunluğu
-        }
-        
+        const startStep = getNoteStart(note);
+        const lengthInSteps = getNoteLength(note);
+        const noteEndStep = startStep + lengthInSteps;
+      
         maxStep = Math.max(maxStep, noteEndStep);
       });
     }
