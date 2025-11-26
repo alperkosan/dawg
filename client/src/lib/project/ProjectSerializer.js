@@ -435,11 +435,35 @@ export class ProjectSerializer {
     // Restore playback settings
     if (projectData.metadata) {
       const playbackStore = usePlaybackStore.getState();
+
       if (projectData.metadata.bpm) {
-        playbackStore.handleBpmChange(projectData.metadata.bpm);
+        const restoredBpm = Number(projectData.metadata.bpm) || 120;
+
+        // ✅ Update Zustand state immediately so helper utilities read the correct BPM
+        usePlaybackStore.setState({ bpm: restoredBpm });
+
+        try {
+          const { AudioContextService } = await import('../services/AudioContextService.js');
+          // Always push BPM to the currently active audio engine
+          if (typeof AudioContextService.setBPM === 'function') {
+            AudioContextService.setBPM(restoredBpm);
+          } else {
+            const engine = AudioContextService.getAudioEngine?.();
+            engine?.setBPM?.(restoredBpm);
+          }
+
+          // Only route through PlaybackController when it's bound to the same engine
+          const controller = playbackStore._controller;
+          const currentEngine = AudioContextService.getAudioEngine?.();
+          if (controller && controller.audioEngine === currentEngine && typeof controller.setBPM === 'function') {
+            controller.setBPM(restoredBpm);
+          }
+        } catch (error) {
+          console.warn('⚠️ Failed to sync BPM to audio engine during project restore:', error);
+        }
       }
+
       if (projectData.metadata.time_signature) {
-        // Time signature restoration if method exists
         console.log(`✅ Restored BPM: ${projectData.metadata.bpm}, Time Signature: ${projectData.metadata.time_signature}`);
       }
     }
