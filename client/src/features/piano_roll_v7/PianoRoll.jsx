@@ -206,6 +206,34 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
     const gridCanvasRef = useRef(null);
     const notesCanvasRef = useRef(null);
     const playheadCanvasRef = useRef(null); // NEW: Separate playhead layer
+    const backgroundDirtyRef = useRef(true);
+    const notesDirtyRef = useRef(true);
+    const notesDirtyRegionRef = useRef(null);
+
+    const markBackgroundDirty = useCallback(() => {
+        backgroundDirtyRef.current = true;
+    }, []);
+
+    const markNotesDirty = useCallback((clipRegion) => {
+        if (!clipRegion) {
+            notesDirtyRegionRef.current = null;
+        } else if (!notesDirtyRegionRef.current) {
+            notesDirtyRegionRef.current = { ...clipRegion };
+        } else {
+            const current = notesDirtyRegionRef.current;
+            const minX = Math.min(current.x, clipRegion.x);
+            const minY = Math.min(current.y, clipRegion.y);
+            const maxX = Math.max(current.x + current.width, clipRegion.x + clipRegion.width);
+            const maxY = Math.max(current.y + current.height, clipRegion.y + clipRegion.height);
+            notesDirtyRegionRef.current = {
+                x: minX,
+                y: minY,
+                width: maxX - minX,
+                height: maxY - minY
+            };
+        }
+        notesDirtyRef.current = true;
+    }, []);
 
     // ✅ UNIFIED TRANSPORT SYSTEM - Get playback controls first
     const togglePlayPause = usePlaybackStore(state => state.togglePlayPause);
@@ -225,7 +253,9 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
     const engineRef = useRef(engine);
     useEffect(() => {
         engineRef.current = engine;
-    }, [engine]);
+        markBackgroundDirty();
+        markNotesDirty();
+    }, [engine, markBackgroundDirty, markNotesDirty]);
 
     const requestViewportUpdate = useCallback((values) => {
         const engineInstance = engineRef.current;
@@ -753,12 +783,19 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
     useEffect(() => {
         if (!isPianoRollVisible) {
             clearCanvasRef(gridCanvasRef);
+            clearCanvasRef(notesCanvasRef);
+            backgroundDirtyRef.current = true;
+            notesDirtyRef.current = true;
+            notesDirtyRegionRef.current = null;
             return;
         }
-        paintBackgroundLayer();
+        markBackgroundDirty();
+        markNotesDirty();
+    }, [isPianoRollVisible, markBackgroundDirty, markNotesDirty]);
+
+    useEffect(() => {
+        markBackgroundDirty();
     }, [
-        isPianoRollVisible,
-        paintBackgroundLayer,
         viewportData.scrollX,
         viewportData.scrollY,
         viewportData.width,
@@ -767,29 +804,65 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
         viewportData.zoomY,
         dimensionsData.stepWidth,
         dimensionsData.keyHeight,
-        loopRegion
+        loopRegion,
+        markBackgroundDirty
     ]);
 
     useEffect(() => {
-        if (!isPianoRollVisible) {
-            clearCanvasRef(notesCanvasRef);
-            return;
-        }
-        paintNotesLayer(dragDirtyRegion);
+        markNotesDirty();
     }, [
-        isPianoRollVisible,
-        paintNotesLayer,
-        dragDirtyRegion,
-        viewportData.scrollX,
-        viewportData.scrollY,
-        viewportData.width,
-        viewportData.height,
-        viewportData.zoomX,
-        viewportData.zoomY,
-        dimensionsData.stepWidth,
-        dimensionsData.keyHeight,
-        engine.lod
+        notes,
+        selectedNoteIds,
+        hoveredNoteId,
+        selectionArea,
+        isSelectingArea,
+        isSelectingTimeRange,
+        timeRangeSelection,
+        previewNote,
+        slicePreview,
+        sliceRange,
+        rendererDragState,
+        scaleHighlight,
+        activeTool,
+        loopRegion,
+        activeKeyboardNote,
+        ghostPosition,
+        qualityLevel,
+        markNotesDirty
     ]);
+
+    useEffect(() => {
+        if (dragDirtyRegion) {
+            markNotesDirty({
+                x: Math.max(0, dragDirtyRegion.x),
+                y: Math.max(0, dragDirtyRegion.y),
+                width: dragDirtyRegion.width,
+                height: dragDirtyRegion.height
+            });
+        }
+    }, [dragDirtyRegion, markNotesDirty]);
+
+    useEffect(() => {
+        if (!isPianoRollVisible) return;
+        let rafId;
+        const loop = () => {
+            if (backgroundDirtyRef.current) {
+                backgroundDirtyRef.current = false;
+                paintBackgroundLayer();
+            }
+            if (notesDirtyRef.current) {
+                notesDirtyRef.current = false;
+                const region = notesDirtyRegionRef.current;
+                notesDirtyRegionRef.current = null;
+                paintNotesLayer(region);
+            }
+            rafId = requestAnimationFrame(loop);
+        };
+        rafId = requestAnimationFrame(loop);
+        return () => {
+            if (rafId) cancelAnimationFrame(rafId);
+        };
+    }, [isPianoRollVisible, paintBackgroundLayer, paintNotesLayer]);
 
     // ✅ SIMPLE CURSOR SYSTEM - Map cursor state to CSS cursor
     const currentCursor = useMemo(() => {

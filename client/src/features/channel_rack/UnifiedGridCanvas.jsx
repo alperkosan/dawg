@@ -92,6 +92,9 @@ const UnifiedGridCanvas = React.memo(({
   const [themeVersion, setThemeVersion] = useState(0); // Force re-render on theme change
   const renderRef = useRef(null); // Store render function for immediate theme change
   const isDirtyRef = useRef(true); // ⚡ DIRTY FLAG: Track if canvas needs redraw
+  const markDirty = useCallback(() => {
+    isDirtyRef.current = true;
+  }, []);
 
   // ✅ Listen for theme changes and fullscreen - AGGRESSIVE: Call render immediately
   useEffect(() => {
@@ -102,14 +105,14 @@ const UnifiedGridCanvas = React.memo(({
       setThemeVersion(v => v + 1);
 
       // Method 2: Mark dirty for next UIUpdateManager cycle
-      isDirtyRef.current = true;
+      markDirty();
     };
 
     const handleFullscreenChange = () => {
       console.log('🖥️ Fullscreen changed - marking grid canvas dirty');
 
       // Mark dirty for next UIUpdateManager cycle
-      isDirtyRef.current = true;
+      markDirty();
     };
 
     // Listen to custom theme change event
@@ -123,7 +126,7 @@ const UnifiedGridCanvas = React.memo(({
       window.removeEventListener('themeChanged', handleThemeChange);
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
     };
-  }, []);
+  }, [markDirty]);
 
   // ✅ UTILITY: Detect if instrument should use step sequencer mode
   // Step sequencer: all notes are C4 or C5 (standard drum programming)
@@ -574,9 +577,28 @@ const UnifiedGridCanvas = React.memo(({
   // ✅ Store render function in ref for immediate theme change access
   useEffect(() => {
     renderRef.current = render;
-  }, [render]);
+    markDirty();
+  }, [render, markDirty]);
 
-  // ⚡ PERFORMANCE: RAF-based continuous rendering (60 FPS)
+  useEffect(() => {
+    markDirty();
+  }, [
+    instruments,
+    notesData,
+    totalSteps,
+    patternLength,
+    viewportWidth,
+    viewportHeight,
+    themeVersion,
+    markDirty
+  ]);
+
+  useEffect(() => {
+    markDirty();
+  }, [hoveredCell, markDirty]);
+
+  const lastScrollRef = useRef({ x: 0, y: 0 });
+
   useEffect(() => {
     if (!isVisible) {
       return;
@@ -585,7 +607,20 @@ const UnifiedGridCanvas = React.memo(({
     let rafId;
 
     const renderLoop = () => {
-      render();
+      const currentScrollX = scrollXRef?.current || 0;
+      const currentScrollY = scrollYRef?.current || 0;
+      if (
+        currentScrollX !== lastScrollRef.current.x ||
+        currentScrollY !== lastScrollRef.current.y
+      ) {
+        lastScrollRef.current = { x: currentScrollX, y: currentScrollY };
+        markDirty();
+      }
+
+      if (isDirtyRef.current) {
+        isDirtyRef.current = false;
+        renderRef.current?.();
+      }
       rafId = requestAnimationFrame(renderLoop);
     };
 
@@ -596,7 +631,7 @@ const UnifiedGridCanvas = React.memo(({
         cancelAnimationFrame(rafId);
       }
     };
-  }, [render, isVisible]);
+  }, [isVisible, markDirty, scrollXRef, scrollYRef]);
 
   // 🎯 INTERACTION: Map mouse to row/step
   const getInteractionCell = useCallback((mouseX, mouseY) => {

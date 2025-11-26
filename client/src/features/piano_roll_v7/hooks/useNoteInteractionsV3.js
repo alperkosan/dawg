@@ -980,11 +980,11 @@ export function useNoteInteractionsV3({
         const { keyHeight } = engine.dimensions || { keyHeight: 20 };
         const actualNoteHeight = keyHeight - 1;
         const pitchRange = actualNoteHeight / keyHeight;
-        
+
         const existingNote = notes.find(n => {
             const displayLength = n.visualLength !== undefined ? n.visualLength : n.length;
             const noteEndTime = n.startTime + displayLength;
-            
+
             // ✅ FIX: Time overlap check with EXCLUSIVE end boundary for paint tool
             // This allows writing notes at the exact end of another note
             // >= start and < end (end is exclusive) allows writing at noteEndTime
