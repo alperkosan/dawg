@@ -5,6 +5,10 @@ import path from 'path'
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
+  worker: {
+    // Workers need ES modules to allow code-splitting (IIFE breaks Vite build on Vercel)
+    format: 'es'
+  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
