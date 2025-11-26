@@ -24,9 +24,15 @@ export class PreviewManager {
 
     // ✅ FX CHAIN: Preview routing (will be set based on instrument's mixerTrackId)
     this.currentMixerInsert = null; // Current MixerInsert for preview routing
+    this.previewGainNode = this.audioContext.createGain();
+    this.previewGainNode.gain.value = 0.7;
+    this.previewGainDestination = null;
     this.fallbackOutput = this.audioContext.createGain(); // Fallback output (direct to destination)
     this.fallbackOutput.gain.value = 0.7; // Preview volume
     this.fallbackOutput.connect(this.audioContext.destination);
+
+    // Default routing: preview gain → fallback output
+    this._setPreviewGainDestination(this.fallbackOutput);
   }
 
   /**
@@ -42,14 +48,7 @@ export class PreviewManager {
 
     // Dispose old instrument
     if (this.previewInstrument) {
-      // ✅ FX CHAIN: Disconnect from previous routing
-      if (this.previewInstrument.output) {
-        try {
-          this.previewInstrument.output.disconnect();
-        } catch (e) {
-          // Already disconnected
-        }
-      }
+      this._disconnectPreviewInstrument();
       this.previewInstrument.dispose();
       this.previewInstrument = null;
     }
@@ -67,6 +66,14 @@ export class PreviewManager {
 
       // ✅ FX CHAIN: Route preview through MixerInsert (if available)
       if (this.previewInstrument) {
+        // Always route instrument output through preview gain node first
+        try {
+          this.previewInstrument.disconnect();
+        } catch (e) {
+          // ignore
+        }
+        this.previewInstrument.connect(this.previewGainNode);
+
         await this._routePreviewThroughMixer(instrumentData);
         this.currentInstrument = instrumentData;
         this.isInstrumentReady = true;
@@ -88,16 +95,55 @@ export class PreviewManager {
       return;
     }
 
-    // ✅ TEMPORARY FIX: Always use fallback routing (direct to destination)
-    // This avoids potential conflicts with playback routing through MixerInsert
-    // TODO: Investigate why routing through MixerInsert causes playback issues
-    try {
-      this.previewInstrument.connect(this.fallbackOutput);
-      console.log('🎛️ PreviewManager: Using direct routing (bypass mixer, no FX chain)');
+    const mixerTrackId = instrumentData?.mixerTrackId || instrumentData?.mixerTrack?.id;
+
+    if (!this.audioEngine || !this.audioEngine.mixerInserts || !mixerTrackId) {
+      this._connectPreviewGainToFallback();
       return;
-    } catch (error) {
-      console.error('❌ PreviewManager: Failed to connect preview instrument:', error);
     }
+
+    const insert = this.audioEngine.mixerInserts.get(mixerTrackId);
+
+    if (!insert || !insert.input) {
+      console.warn(`⚠️ PreviewManager: Mixer insert ${mixerTrackId} not found, using fallback output`);
+      this._connectPreviewGainToFallback();
+      return;
+    }
+
+    this._setPreviewGainDestination(insert.input);
+    this.currentMixerInsert = insert;
+    console.log(`🎛️ PreviewManager: Routed preview through mixer insert ${mixerTrackId}`);
+  }
+
+  _disconnectPreviewInstrument() {
+    if (!this.previewInstrument) return;
+    try {
+      this.previewInstrument.disconnect();
+    } catch (e) {
+      // already disconnected
+    }
+  }
+
+  _setPreviewGainDestination(destination) {
+    if (!this.previewGainNode) return;
+    try {
+      this.previewGainNode.disconnect();
+    } catch (e) {
+      // ignore
+    }
+
+    if (destination) {
+      this.previewGainNode.connect(destination);
+      this.previewGainDestination = destination;
+    } else {
+      this.previewGainDestination = null;
+    }
+  }
+
+  _connectPreviewGainToFallback() {
+    this._setPreviewGainDestination(this.fallbackOutput);
+    this.currentMixerInsert = null;
+    console.log('🎛️ PreviewManager: Using fallback routing (direct to destination)');
   }
 
   /**
@@ -279,7 +325,11 @@ export class PreviewManager {
    * @param {number} volume - 0-1
    */
   setVolume(volume) {
-    this.fallbackOutput.gain.value = Math.max(0, Math.min(1, volume));
+    const clamped = Math.max(0, Math.min(1, volume));
+    if (this.previewGainNode) {
+      this.previewGainNode.gain.setValueAtTime(clamped, this.audioContext.currentTime);
+    }
+    this.fallbackOutput.gain.value = clamped;
     // Note: If routed through MixerInsert, volume is controlled by mixer insert gain
     // This only affects fallback routing (direct to destination)
   }
@@ -311,14 +361,7 @@ export class PreviewManager {
     this.pendingPreviews = [];
 
     if (this.previewInstrument) {
-      // ✅ FX CHAIN: Disconnect from mixer routing
-      if (this.previewInstrument.output) {
-        try {
-          this.previewInstrument.output.disconnect();
-        } catch (e) {
-          // Already disconnected
-        }
-      }
+      this._disconnectPreviewInstrument();
       this.previewInstrument.dispose();
       this.previewInstrument = null;
     }
@@ -331,6 +374,8 @@ export class PreviewManager {
     }
 
     this.currentInstrument = null;
+
+    // Keep preview gain node ready for the next session (no disconnect needed)
   }
 }
 
