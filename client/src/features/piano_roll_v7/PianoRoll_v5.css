@@ -112,8 +112,12 @@
 }
 
 /* Multi-layer canvas system for performance optimization */
-.prv5-canvas-main {
-  z-index: 1; /* Static layer: grid, notes, keyboard, timeline */
+.prv5-canvas-grid {
+  z-index: 0; /* Background layer: grid, keyboard, timeline */
+}
+
+.prv5-canvas-notes {
+  z-index: 1; /* Foreground layer: notes & overlays */
 }
 
 .prv5-canvas-playhead {

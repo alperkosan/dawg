@@ -1,3 +1,5 @@
+import { MixerCpuTelemetry } from '../telemetry/MixerCpuTelemetry';
+
 /**
  * MixerInsert - Dinamik mixer kanal yönetimi
  *
@@ -12,6 +14,21 @@
  * - Track silindiğinde dispose edilir
  * - Bellekten tamamen temizlenir
  */
+
+const EFFECT_CPU_WEIGHT_MAP = {
+  saturator: 3.2,
+  modernreverb: 4.5,
+  moderndelay: 3.6,
+  ott: 3.0,
+  limiter: 2.5,
+  multibandeq: 2.2,
+  compressor: 2.0,
+  clipper: 1.8,
+  transientdesigner: 1.7,
+  stardustchorus: 1.6,
+  tidalfilter: 1.4,
+  default: 1.0
+};
 
 export class MixerInsert {
   constructor(audioContext, insertId, label = '') {
@@ -44,6 +61,23 @@ export class MixerInsert {
     this.analyzer.fftSize = 256;
     this.analyzer.smoothingTimeConstant = 0.8;
 
+    // Auto-sleep (silence detection)
+    this.autoSleepConfig = {
+      enabled: insertId !== 'master',
+      threshold: 0.00018,
+      wakeThreshold: 0.00035,
+      sleepAfterMs: 1000,
+      wakeAfterMs: 150,
+      pollIntervalMs: 250
+    };
+    this._autoSleepState = {
+      isSleeping: false,
+      belowTimer: 0,
+      aboveTimer: 0,
+      lastSampleTime: (typeof performance !== 'undefined' ? performance.now() : Date.now()),
+      monitorHandle: null
+    };
+
     // Control states
     this.isMuted = false;
     this.isMono = false;
@@ -55,6 +89,9 @@ export class MixerInsert {
 
     // Initial routing (no effects)
     this._rebuildChain();
+
+    // Kick off auto-sleep monitoring
+    this._initAutoSleepMonitor();
 
     // Only log in dev mode
     if (import.meta.env.DEV) {
@@ -390,9 +427,16 @@ export class MixerInsert {
       let currentNode = this.input;
       let connectedEffects = 0;
 
-      // Add non-bypassed effects
+      const skipEffects = this.autoSleepConfig.enabled && this._autoSleepState?.isSleeping;
+
+      // Add non-bypassed effects (unless auto-sleeping)
       for (const effectId of this.effectOrder) {
         const effect = this.effects.get(effectId);
+        if (skipEffects) {
+          console.log(`  ⏸️ Auto-sleep active → skipping effect chain for ${this.insertId}`);
+          break;
+        }
+
         if (effect && !effect.bypass && effect.node) {
           console.log(`  ✅ Connecting effect: ${effectId} (${effect.node.constructor.name})`);
           currentNode.connect(effect.node);
@@ -416,6 +460,8 @@ export class MixerInsert {
       this.analyzer.connect(this.output);
 
       console.log(`  ✅ Chain complete: input → ${connectedEffects} effects → gain → pan → analyzer → output`);
+
+      this._pushCpuTelemetry(this._calculateCpuMetrics(connectedEffects));
 
     } catch (error) {
       console.error(`❌ Error rebuilding chain for ${this.insertId}:`, error);
@@ -600,6 +646,145 @@ export class MixerInsert {
   }
 
   /**
+   * Initialize auto-sleep polling loop
+   */
+  _initAutoSleepMonitor() {
+    if (!this.autoSleepConfig.enabled || this._autoSleepState.monitorHandle) {
+      return;
+    }
+
+    const interval = Math.max(100, this.autoSleepConfig.pollIntervalMs);
+    this._autoSleepState.monitorHandle = setInterval(() => {
+      try {
+        this._evaluateAutoSleep();
+      } catch (error) {
+        console.warn(`⚠️ Auto-sleep monitor error (${this.insertId}):`, error);
+      }
+    }, interval);
+  }
+
+  _evaluateAutoSleep() {
+    if (!this.analyzer || !this.autoSleepConfig.enabled) {
+      return;
+    }
+
+    const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    const delta = now - (this._autoSleepState.lastSampleTime || now);
+    this._autoSleepState.lastSampleTime = now;
+
+    const level = this.getMeterLevel();
+
+    if (level < this.autoSleepConfig.threshold) {
+      this._autoSleepState.belowTimer += delta;
+      this._autoSleepState.aboveTimer = 0;
+    } else {
+      this._autoSleepState.aboveTimer += delta;
+      this._autoSleepState.belowTimer = 0;
+    }
+
+    const shouldSleep =
+      !this._autoSleepState.isSleeping &&
+      this._autoSleepState.belowTimer >= this.autoSleepConfig.sleepAfterMs;
+
+    const shouldWake =
+      this._autoSleepState.isSleeping &&
+      level > this.autoSleepConfig.wakeThreshold &&
+      this._autoSleepState.aboveTimer >= this.autoSleepConfig.wakeAfterMs;
+
+    if (shouldSleep) {
+      this._setAutoSleepState(true);
+    } else if (shouldWake) {
+      this._setAutoSleepState(false);
+    }
+  }
+
+  _setAutoSleepState(shouldSleep) {
+    if (!this.autoSleepConfig.enabled) return;
+    if (this._autoSleepState.isSleeping === shouldSleep) return;
+
+    this._autoSleepState.isSleeping = shouldSleep;
+    this._autoSleepState.belowTimer = 0;
+    this._autoSleepState.aboveTimer = 0;
+
+    console.log(
+      shouldSleep
+        ? `😴 Auto-sleep enabled for ${this.insertId}`
+        : `🔔 Auto-sleep disabled for ${this.insertId}`
+    );
+
+    this._rebuildChain();
+    if (shouldSleep) {
+      this._pushCpuTelemetry({
+        load: 0.05,
+        effectScore: 0,
+        sendCount: this.sends.size,
+        instrumentCount: this.instruments.size,
+        sleeping: true,
+        effects: []
+      });
+    }
+  }
+
+  _calculateCpuMetrics(connectedEffects = 0) {
+    if (!this.effects) {
+      return {
+        load: 0,
+        effectScore: 0,
+        sendCount: 0,
+        instrumentCount: 0,
+        sleeping: this._autoSleepState?.isSleeping || false,
+        effects: []
+      };
+    }
+
+    const activeEffects = [];
+    let effectScore = 0;
+
+    for (const effectId of this.effectOrder) {
+      const effect = this.effects.get(effectId);
+      if (effect && !effect.bypass && effect.node) {
+        const effectType = (effect.type || effect.node?.constructor?.name || 'effect')
+          .toString()
+          .toLowerCase();
+        const weight = EFFECT_CPU_WEIGHT_MAP[effectType] ?? EFFECT_CPU_WEIGHT_MAP.default;
+        effectScore += weight;
+        activeEffects.push({
+          id: effectId,
+          type: effect.type || 'unknown',
+          weight
+        });
+      }
+    }
+
+    const sendCount = this.sends.size;
+    const instrumentCount = this.instruments.size;
+
+    let load = 0.15 + effectScore * 0.1 + sendCount * 0.06 + instrumentCount * 0.04;
+    load += connectedEffects * 0.02;
+
+    if (this._autoSleepState.isSleeping) {
+      load = 0.05;
+    }
+
+    load = Math.max(0, Math.min(1, load));
+
+    return {
+      load,
+      effectScore,
+      sendCount,
+      instrumentCount,
+      sleeping: this._autoSleepState.isSleeping,
+      effects: activeEffects
+    };
+  }
+
+  _pushCpuTelemetry(metrics = null) {
+    if (!MixerCpuTelemetry) return;
+    const payload = metrics || this._calculateCpuMetrics();
+    MixerCpuTelemetry.update(this.insertId, payload);
+  }
+
+  /**
    * Temizlik - tüm kaynakları serbest bırak
    */
   dispose() {
@@ -635,6 +820,11 @@ export class MixerInsert {
     this.panNode = null;
     this.analyzer = null;
     this.output = null;
+
+    if (this._autoSleepState?.monitorHandle) {
+      clearInterval(this._autoSleepState.monitorHandle);
+      this._autoSleepState.monitorHandle = null;
+    }
 
     console.log(`✅ MixerInsert disposed: ${this.insertId}`);
   }

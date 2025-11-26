@@ -98,7 +98,7 @@ export class PremiumNoteRenderer {
     }
 
     // Premium note rendering with advanced visuals
-    renderNote(ctx, note, dimensions, viewport, isSelected = false, isHovered = false, isEraserTarget = false) {
+    renderNote(ctx, note, dimensions, viewport, isSelected = false, isHovered = false, isEraserTarget = false, options = {}) {
         // ✅ OPTIMIZED: Using StyleCache
         const { stepWidth, keyHeight } = dimensions;
 
@@ -319,7 +319,9 @@ export class PremiumNoteRenderer {
         }
 
         // Velocity indicator (subtle left bar)
-        this.renderVelocityIndicator(ctx, x + 1, y + 1, height - 2, note.velocity);
+        if (!options.hideVelocityIndicator) {
+            this.renderVelocityIndicator(ctx, x + 1, y + 1, height - 2, note.velocity);
+        }
 
         // Premium highlight effect
         this.renderNoteHighlight(ctx, x, y, width, height, {
@@ -541,12 +543,14 @@ export class PremiumNoteRenderer {
     }
 
     // Render multiple notes efficiently
-    renderNotes(ctx, notes, dimensions, viewport, selectedNoteIds, hoveredNoteId, activeTool = 'select', dragState = null, snapValue = 1) {
+    renderNotes(ctx, notes, dimensions, viewport, selectedNoteIds, hoveredNoteId, activeTool = 'select', dragState = null, snapValue = 1, lod = 0) {
         // Sort notes by pitch (render lower notes first for proper layering)
         const sortedNotes = [...notes].sort((a, b) => b.pitch - a.pitch);
 
         // ✅ PHASE 3: Render slide connections first (behind notes)
         this.renderSlideConnections(ctx, sortedNotes, dimensions, viewport);
+
+        const hideVelocityIndicator = lod >= 2;
 
         sortedNotes.forEach(note => {
             const isSelected = selectedNoteIds.has(note.id);
@@ -669,7 +673,7 @@ export class PremiumNoteRenderer {
                 }
             }
 
-            this.renderNote(ctx, renderNote, dimensions, viewport, isSelected, isHovered, isEraserTarget);
+            this.renderNote(ctx, renderNote, dimensions, viewport, isSelected, isHovered, isEraserTarget, { hideVelocityIndicator });
         });
     }
 

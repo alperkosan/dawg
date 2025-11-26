@@ -28,6 +28,7 @@ const TimelineCanvas = React.memo(({
   viewportWidth = 1000, // ⚡ NEW: Viewport width for viewport rendering
   activePattern = null, // ✅ NEW: For note preview on seek
   instruments = [], // ✅ NEW: For note preview on seek
+  isVisible = true,
 }) => {
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
@@ -185,25 +186,24 @@ const TimelineCanvas = React.memo(({
 
   // ⚡ PERFORMANCE: Unified rendering via UIUpdateManager
   useEffect(() => {
+    if (!isVisible) return;
+
     // Mark dirty whenever render dependencies change
     isDirtyRef.current = true;
 
-    // Subscribe to UIUpdateManager for unified RAF loop
     const unsubscribe = uiUpdateManager.subscribe(
       'channel-rack-timeline',
       () => {
-        // Only render if dirty flag is set
         if (!isDirtyRef.current) return;
-
         renderTimeline();
         isDirtyRef.current = false;
       },
-      UPDATE_PRIORITIES.HIGH, // Timeline is critical - visible during playback
-      UPDATE_FREQUENCIES.HIGH // Keep 60fps for smooth playhead tracking
+      UPDATE_PRIORITIES.HIGH,
+      UPDATE_FREQUENCIES.HIGH
     );
 
     return unsubscribe;
-  }, [renderTimeline]);
+  }, [renderTimeline, isVisible]);
 
   // ⚠️ REMOVED: Old theme change listener (replaced by themeVersion state + event listener)
   // Previous implementation used MutationObserver, now using custom 'themeChanged' event

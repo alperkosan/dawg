@@ -177,6 +177,8 @@ function WorkspacePanel() {
           let PanelContent;
           let panelDef = panelDefinitions[panel.id];
           const componentProps = { key: panel.id };
+          const isPanelVisible = panel.isOpen && !panel.isMinimized && (!fullscreenPanel || fullscreenPanel === panel.id);
+          componentProps.isVisible = isPanelVisible;
 
           if (panel.type === 'plugin') {
             const track = mixerTracks.find(t => t.id === panel.trackId);

@@ -25,35 +25,40 @@ export function drawPianoRoll(ctx, engine) {
     if (engine.playhead || engine.isPlaying !== undefined) {
         drawPlayhead(ctx, engine);
     }
-
-    // Draw loop region if exists
-    if (engine.loopRegion) {
-        drawLoopRegionOnTimeline(ctx, engine);
-    }
 }
 
 // Static rendering (everything except playhead) - for performance optimization
 export function drawPianoRollStatic(ctx, engine) {
-    // ✅ OPTIMIZED: Use StyleCache instead of getComputedStyle() every frame
+    drawPianoRollBackground(ctx, engine);
+    drawPianoRollForeground(ctx, engine);
+}
+
+export function drawPianoRollBackground(ctx, engine) {
     const { viewport } = engine;
     if (!viewport || viewport.width === 0 || viewport.height === 0) return;
 
     const bgPrimary = globalStyleCache.get('--zenith-bg-primary');
+    ctx.clearRect(0, 0, viewport.width, viewport.height);
     ctx.fillStyle = bgPrimary || '#181A20';
     ctx.fillRect(0, 0, viewport.width, viewport.height);
 
-    // Draw all layers EXCEPT main playhead
     drawGrid(ctx, engine);
+    drawTimeline(ctx, engine);
+    drawLoopRegionOnTimeline(ctx, engine);
+    drawKeyboard(ctx, engine);
+    drawCornerAndBorders(ctx, engine);
+}
+
+export function drawPianoRollForeground(ctx, engine) {
+    const { viewport } = engine;
+    if (!viewport || viewport.width === 0 || viewport.height === 0) return;
+
     drawNotes(ctx, engine); // Premium note rendering
     drawSelectionArea(ctx, engine); // Selection area overlay
     drawSlicePreview(ctx, engine); // ✅ SLICE PREVIEW
     drawSliceRange(ctx, engine); // ✅ SLICE RANGE
     drawGhostPlayhead(ctx, engine); // ✅ GHOST PLAYHEAD (hover preview)
-    // REMOVED: drawPlayhead(ctx, engine); - Now rendered separately for performance
-    drawTimeline(ctx, engine);
     drawTimeRangeSelection(ctx, engine); // ✅ Time-based selection on timeline
-    drawKeyboard(ctx, engine);
-    drawCornerAndBorders(ctx, engine);
 }
 
 function drawGrid(ctx, { viewport, dimensions, lod, snapValue, qualityLevel = 'high', scaleHighlight = null }) {
@@ -648,7 +653,8 @@ function drawNotes(ctx, engine) {
         hoveredNoteId,
         activeTool,
         dragState,
-        engine.snapValue
+        engine.snapValue,
+        engine.lod || 0
     );
 
     // Render preview note if exists

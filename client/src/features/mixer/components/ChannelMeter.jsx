@@ -19,7 +19,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { meterService } from '@/lib/services/MeterService';
 import './ChannelMeter.css';
 
-export const ChannelMeter = ({ trackId }) => {
+export const ChannelMeter = ({ trackId, isVisible = true }) => {
   const [meterData, setMeterData] = useState({ peak: -60, rms: -60 });
   const [peakHold, setPeakHold] = useState(-60);
   const [ghostTrail, setGhostTrail] = useState(-60);
@@ -37,6 +37,8 @@ export const ChannelMeter = ({ trackId }) => {
   ghostTrailRef.current = ghostTrail;
 
   useEffect(() => {
+    if (!isVisible) return;
+
     const PEAK_HOLD_DURATION = 2000; // 2 seconds
     const GHOST_FADE_DURATION = 300;  // 300ms
     const UI_UPDATE_INTERVAL = 50;    // Update UI less frequently (20fps is enough for visual feedback)
@@ -78,7 +80,7 @@ export const ChannelMeter = ({ trackId }) => {
         clearTimeout(uiUpdateTimerRef.current);
       }
     };
-  }, [trackId]); // ✅ Only re-subscribe if trackId changes
+  }, [trackId, isVisible]); // ✅ Only re-subscribe if trackId or visibility changes
 
   // Convert dB to percentage (range: -60dB to +12dB → 0% to 100%)
   const dbToPercent = (db) => {

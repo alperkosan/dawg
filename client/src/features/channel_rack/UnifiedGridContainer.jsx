@@ -31,6 +31,7 @@ const UnifiedGridContainer = React.memo(({
   onNoteToggle = null,
   onInstrumentClick = null,
   addButtonHeight = 0, // Height for add button row (default: 0, set by parent)
+  isVisible = true,
 }) => {
   const containerRef = useRef(null);
   const canvasContainerRef = useRef(null);
@@ -68,6 +69,8 @@ const UnifiedGridContainer = React.memo(({
 
   // ⚡ OPTIMIZED: Separate scroll and viewport tracking
   useEffect(() => {
+    if (!isVisible) return;
+
     const scrollContainer = containerRef.current?.parentElement;
     if (!scrollContainer) return;
 
@@ -108,7 +111,7 @@ const UnifiedGridContainer = React.memo(({
       scrollContainer.removeEventListener('scroll', handleScroll);
       resizeObserver.disconnect();
     };
-  }, [totalWidth, totalHeight]);
+  }, [totalWidth, totalHeight, isVisible]);
 
   return (
     <div
@@ -143,6 +146,7 @@ const UnifiedGridContainer = React.memo(({
           scrollYRef={scrollYRef}
           viewportWidth={viewportWidth}
           viewportHeight={viewportHeight}
+          isVisible={isVisible}
         />
       </div>
     </div>

@@ -254,7 +254,7 @@ export function useNoteOperations(
             // Check if there's a note that overlaps with the clicked position
             const noteEndTime = note.startTime + note.length;
             const timeOverlap = time >= note.startTime && time <= noteEndTime;
-            const pitchMatch = Math.abs(note.pitch - pitch) < 0.5;
+            const pitchMatch = Math.abs(note.pitch - pitch) < 0.05;
             return timeOverlap && pitchMatch;
         });
 
