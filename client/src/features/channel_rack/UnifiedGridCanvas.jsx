@@ -83,6 +83,7 @@ const UnifiedGridCanvas = React.memo(({
   scrollYRef,
   viewportWidth = 1000,
   viewportHeight = 600,
+  isVisible = true,
 }) => {
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
@@ -557,15 +558,17 @@ const UnifiedGridCanvas = React.memo(({
 
   // ⚡ PERFORMANCE: RAF-based continuous rendering (60 FPS)
   useEffect(() => {
+    if (!isVisible) {
+      return;
+    }
+
     let rafId;
 
     const renderLoop = () => {
-      // Always render at 60 FPS (scroll position read from refs)
       render();
       rafId = requestAnimationFrame(renderLoop);
     };
 
-    // Start RAF loop
     rafId = requestAnimationFrame(renderLoop);
 
     return () => {
@@ -573,7 +576,7 @@ const UnifiedGridCanvas = React.memo(({
         cancelAnimationFrame(rafId);
       }
     };
-  }, [render]);
+  }, [render, isVisible]);
 
   // 🎯 INTERACTION: Map mouse to row/step
   const getInteractionCell = useCallback((mouseX, mouseY) => {

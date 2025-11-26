@@ -155,7 +155,7 @@ export class PianoRollInteractionManager extends EventEmitter {
             doubleClickThreshold: 300,
             dragThreshold: 3, // pixels
             resizeHandleSize: 8,
-            snapTolerance: 0.1,
+            snapTolerance: 0.05,
             
             // Cursor settings
             cursorTransition: 'all 0.1s ease',

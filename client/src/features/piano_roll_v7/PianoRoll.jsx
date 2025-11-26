@@ -3,7 +3,7 @@ import { usePianoRollEngine } from './usePianoRollEngine';
 // import { useNoteInteractionsV2 } from './hooks/useNoteInteractionsV2'; // ✅ V2 DEPRECATED
 import { useNoteInteractionsV3 } from './hooks/useNoteInteractionsV3'; // ✅ V3 ACTIVE
 import { useLoopRegionSelection } from './hooks/useLoopRegionSelection';
-import { drawPianoRollStatic, drawPlayhead } from './renderer';
+import { drawPianoRollBackground, drawPianoRollForeground, drawPlayhead } from './renderer';
 import { uiUpdateManager, UPDATE_PRIORITIES, UPDATE_FREQUENCIES } from '@/lib/core/UIUpdateManager';
 import { performanceMonitor } from '@/utils/PerformanceMonitor';
 import Toolbar from './components/Toolbar';
@@ -25,6 +25,7 @@ import { getTransportManagerSync } from '@/lib/core/TransportManagerSingleton';
 import { getAutomationManager } from '@/lib/automation/AutomationManager';
 import EventBus from '@/lib/core/EventBus.js';
 import { getPreviewManager } from '@/lib/audio/preview';
+import { PANEL_IDS } from '@/config/constants';
 // ✅ REMOVED: Complex cursor manager - using simple CSS cursors now
 // ✅ NEW TIMELINE SYSTEM
 import { useTimelineStore } from '@/store/TimelineStore';
@@ -32,9 +33,178 @@ import TimelineCoordinateSystem from '@/lib/timeline/TimelineCoordinateSystem';
 import TimelineRenderer from './renderers/timelineRenderer';
 import './PianoRoll_v5.css';
 
-function PianoRoll() {
+const KEYBOARD_WIDTH = 80;
+const RULER_HEIGHT = 30;
+
+const resizeCanvasToDisplay = (canvas, ctx) => {
+    const dpr = window.devicePixelRatio || 1;
+    const { width, height } = canvas.getBoundingClientRect();
+    const scaledWidth = width * dpr;
+    const scaledHeight = height * dpr;
+
+    if (canvas.width !== scaledWidth || canvas.height !== scaledHeight) {
+        canvas.width = scaledWidth;
+        canvas.height = scaledHeight;
+    }
+
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return { width, height };
+};
+
+const clampRectToViewport = (rect, viewportWidth, viewportHeight) => {
+    if (!rect || rect.width <= 0 || rect.height <= 0) return null;
+
+    const x = Math.max(0, rect.x);
+    const y = Math.max(0, rect.y);
+    const right = Math.min(viewportWidth, rect.x + rect.width);
+    const bottom = Math.min(viewportHeight, rect.y + rect.height);
+
+    if (right <= x || bottom <= y) return null;
+
+    return {
+        x,
+        y,
+        width: right - x,
+        height: bottom - y
+    };
+};
+
+const expandRect = (rect, padding = 12) => ({
+    x: rect.x - padding,
+    y: rect.y - padding,
+    width: rect.width + padding * 2,
+    height: rect.height + padding * 2
+});
+
+const clearCanvasRef = (canvasRef) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+};
+
+const noteToScreenRect = (note, viewport, dimensions) => {
+    if (!note || !dimensions?.stepWidth || !dimensions?.keyHeight || !viewport) return null;
+
+    const stepWidth = dimensions.stepWidth;
+    const keyHeight = dimensions.keyHeight;
+    const scrollX = viewport.scrollX || 0;
+    const scrollY = viewport.scrollY || 0;
+    const startTime = note.startTime ?? 0;
+    const pitch = note.pitch ?? 0;
+    const visualLength = note.visualLength ?? note.length ?? 0.25;
+
+    const x = KEYBOARD_WIDTH + (startTime * stepWidth - scrollX);
+    const y = RULER_HEIGHT + ((127 - pitch) * keyHeight - scrollY);
+    const width = Math.max(1, visualLength * stepWidth);
+    const height = Math.max(1, keyHeight);
+
+    return { x, y, width, height };
+};
+
+const computeDragDirtyRegion = (dragState, viewport, dimensions, notesById, snapValue) => {
+    if (!dragState || !dragState.noteIds || dragState.noteIds.length === 0) return null;
+    if (!viewport || !dimensions || !notesById) return null;
+
+    const rects = [];
+    const { noteIds, originalNotes, currentDelta = {}, resizeHandle } = dragState;
+    const deltaTime = currentDelta.deltaTime || 0;
+    const deltaPitch = currentDelta.deltaPitch || 0;
+    const snap = typeof snapValue === 'number' && snapValue > 0 ? snapValue : null;
+
+    const getBaseNote = (noteId) => {
+        const live = notesById.get(noteId);
+        const original = originalNotes?.get(noteId);
+        if (!live && !original) return null;
+        return {
+            startTime: original?.startTime ?? live?.startTime ?? 0,
+            pitch: original?.pitch ?? live?.pitch ?? 0,
+            length: original?.length ?? live?.length ?? 0.25,
+            visualLength: original?.visualLength ?? live?.visualLength ?? original?.length ?? live?.length ?? 0.25
+        };
+    };
+
+    noteIds.forEach(noteId => {
+        const base = getBaseNote(noteId);
+        if (!base) return;
+
+        rects.push(noteToScreenRect(base, viewport, dimensions));
+
+        const mutated = { ...base };
+        if (dragState.type === 'moving') {
+            let newStart = base.startTime + deltaTime;
+            if (snap) {
+                newStart = Math.round(newStart / snap) * snap;
+            }
+            mutated.startTime = Math.max(0, newStart);
+            mutated.pitch = Math.max(0, Math.min(127, base.pitch + deltaPitch));
+        } else if (dragState.type === 'resizing') {
+            const minLength = snap || 0.25;
+            const originalEnd = base.startTime + (base.visualLength || base.length);
+
+            if (resizeHandle === 'left') {
+                let newStart = base.startTime + deltaTime;
+                if (snap) newStart = Math.round(newStart / snap) * snap;
+                newStart = Math.max(0, newStart);
+                const newLength = Math.max(minLength, originalEnd - newStart);
+                mutated.startTime = newStart;
+                mutated.visualLength = newLength;
+                mutated.length = newLength;
+            } else {
+                let newEnd = originalEnd + deltaTime;
+                if (snap) newEnd = Math.round(newEnd / snap) * snap;
+                const newLength = Math.max(minLength, newEnd - base.startTime);
+                mutated.visualLength = newLength;
+                mutated.length = newLength;
+            }
+        }
+
+        rects.push(noteToScreenRect(mutated, viewport, dimensions));
+    });
+
+    const filtered = rects.filter(Boolean);
+    if (!filtered.length) return null;
+
+    const union = filtered.reduce(
+        (acc, rect) => ({
+            minX: Math.min(acc.minX, rect.x),
+            minY: Math.min(acc.minY, rect.y),
+            maxX: Math.max(acc.maxX, rect.x + rect.width),
+            maxY: Math.max(acc.maxY, rect.y + rect.height)
+        }),
+        { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity }
+    );
+
+    if (!isFinite(union.minX) || !isFinite(union.minY) || !isFinite(union.maxX) || !isFinite(union.maxY)) {
+        return null;
+    }
+
+    const padded = expandRect({
+        x: union.minX,
+        y: union.minY,
+        width: union.maxX - union.minX,
+        height: union.maxY - union.minY
+    }, 24);
+
+    return clampRectToViewport(padded, viewport.width, viewport.height);
+};
+
+const selectPianoRollVisibility = (state) => {
+    const panel = state.panels?.[PANEL_IDS.PIANO_ROLL];
+    if (!panel) return true;
+    const isOpen = panel.isOpen && !panel.isMinimized;
+    if (!isOpen) return false;
+    if (state.fullscreenPanel && state.fullscreenPanel !== PANEL_IDS.PIANO_ROLL) {
+        return false;
+    }
+    return true;
+};
+
+function PianoRoll({ isVisible: panelVisibleProp = true }) {
     const containerRef = useRef(null);
-    const canvasRef = useRef(null);
+    const gridCanvasRef = useRef(null);
+    const notesCanvasRef = useRef(null);
     const playheadCanvasRef = useRef(null); // NEW: Separate playhead layer
 
     // ✅ UNIFIED TRANSPORT SYSTEM - Get playback controls first
@@ -281,6 +451,8 @@ function PianoRoll() {
 
     // Get data from persistent stores
     const pianoRollInstrumentId = usePanelsStore(state => state.pianoRollInstrumentId);
+    const storeVisibility = usePanelsStore(selectPianoRollVisibility);
+    const isPianoRollVisible = panelVisibleProp && storeVisibility;
     const instruments = useInstrumentsStore(state => state.instruments);
     const arrangementStore = useArrangementStore();
     const playbackStore = usePlaybackStore();
@@ -342,8 +514,6 @@ function PianoRoll() {
 
         const rect = e.currentTarget.getBoundingClientRect();
         const y = e.clientY - rect.top;
-        const RULER_HEIGHT = 30;
-        const KEYBOARD_WIDTH = 80;
 
         // Check if click is in keyboard area
         const x = e.clientX - rect.left;
@@ -419,6 +589,202 @@ function PianoRoll() {
         keyboardPianoMode
     });
 
+    const {
+        notes,
+        selectedNoteIds,
+        hoveredNoteId,
+        selectionArea,
+        isSelectingArea,
+        isSelectingTimeRange,
+        timeRangeSelection,
+        previewNote,
+        slicePreview,
+        sliceRange,
+        dragState: rawDragState,
+        resizeState: rawResizeState
+    } = noteInteractions;
+
+    const rendererDragState = useMemo(() => {
+        if (rawDragState && rawDragState.noteIds) {
+            const ds = rawDragState;
+            return {
+                type: 'moving',
+                noteIds: ds.noteIds,
+                originalNotes: ds.originals,
+                currentDelta: ds.delta ? {
+                    deltaTime: ds.delta.time || 0,
+                    deltaPitch: ds.delta.pitch || 0
+                } : { deltaTime: 0, deltaPitch: 0 }
+            };
+        }
+
+        if (rawResizeState && (rawResizeState.noteIds || rawResizeState.noteId)) {
+            const rs = rawResizeState;
+            return {
+                type: 'resizing',
+                noteIds: rs.noteIds || (rs.noteId ? [rs.noteId] : []),
+                originalNotes: rs.originals,
+                resizeHandle: rs.handle,
+                currentDelta: rs.delta ? { deltaTime: rs.delta } : { deltaTime: 0 }
+            };
+        }
+
+        return null;
+    }, [rawDragState, rawResizeState]);
+
+    const notesById = useMemo(() => {
+        const map = new Map();
+        notes.forEach(note => map.set(note.id, note));
+        return map;
+    }, [notes]);
+
+    const viewportData = engine.viewport || { scrollX: 0, scrollY: 0, width: 0, height: 0, zoomX: 1, zoomY: 1 };
+    const dimensionsData = engine.dimensions || { stepWidth: 0, keyHeight: 0 };
+
+    const dragDirtyRegion = useMemo(() => computeDragDirtyRegion(
+        rendererDragState,
+        viewportData,
+        dimensionsData,
+        notesById,
+        snapValue
+    ), [
+        rendererDragState,
+        notesById,
+        viewportData.scrollX,
+        viewportData.scrollY,
+        viewportData.width,
+        viewportData.height,
+        dimensionsData.stepWidth,
+        dimensionsData.keyHeight,
+        snapValue
+    ]);
+
+    const paintBackgroundLayer = useCallback(() => {
+        const canvas = gridCanvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
+        resizeCanvasToDisplay(canvas, ctx);
+
+        const payload = {
+            ...engineRef.current,
+            snapValue,
+            qualityLevel,
+            scaleHighlight
+        };
+
+        drawPianoRollBackground(ctx, payload);
+        if (timelineRenderer) {
+            timelineRenderer.render(ctx, payload);
+        }
+    }, [qualityLevel, scaleHighlight, snapValue, timelineRenderer]);
+
+    const paintNotesLayer = useCallback((clipRect) => {
+        const canvas = notesCanvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
+        const { width, height } = resizeCanvasToDisplay(canvas, ctx);
+        if (!width || !height) return;
+
+        const payload = {
+            ...engineRef.current,
+            snapValue,
+            notes,
+            selectedNoteIds,
+            hoveredNoteId,
+            selectionArea,
+            isSelectingArea,
+            isSelectingTimeRange,
+            timeRangeSelection,
+            previewNote,
+            slicePreview,
+            sliceRange,
+            qualityLevel,
+            ghostPosition,
+            activeTool,
+            loopRegion,
+            dragState: rendererDragState,
+            scaleHighlight,
+            activeKeyboardNote
+        };
+
+        if (clipRect && clipRect.width > 0 && clipRect.height > 0) {
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(clipRect.x, clipRect.y, clipRect.width, clipRect.height);
+            ctx.clip();
+            ctx.clearRect(clipRect.x, clipRect.y, clipRect.width, clipRect.height);
+            drawPianoRollForeground(ctx, payload);
+            ctx.restore();
+        } else {
+            ctx.clearRect(0, 0, width, height);
+            drawPianoRollForeground(ctx, payload);
+        }
+    }, [
+        activeKeyboardNote,
+        activeTool,
+        ghostPosition,
+        isSelectingArea,
+        isSelectingTimeRange,
+        loopRegion,
+        notes,
+        previewNote,
+        rendererDragState,
+        scaleHighlight,
+        selectedNoteIds,
+        selectionArea,
+        slicePreview,
+        sliceRange,
+        snapValue,
+        timeRangeSelection,
+        hoveredNoteId,
+        qualityLevel
+    ]);
+
+    useEffect(() => {
+        if (!isPianoRollVisible) {
+            clearCanvasRef(gridCanvasRef);
+            return;
+        }
+        paintBackgroundLayer();
+    }, [
+        isPianoRollVisible,
+        paintBackgroundLayer,
+        viewportData.scrollX,
+        viewportData.scrollY,
+        viewportData.width,
+        viewportData.height,
+        viewportData.zoomX,
+        viewportData.zoomY,
+        dimensionsData.stepWidth,
+        dimensionsData.keyHeight,
+        loopRegion
+    ]);
+
+    useEffect(() => {
+        if (!isPianoRollVisible) {
+            clearCanvasRef(notesCanvasRef);
+            return;
+        }
+        paintNotesLayer(dragDirtyRegion);
+    }, [
+        isPianoRollVisible,
+        paintNotesLayer,
+        dragDirtyRegion,
+        viewportData.scrollX,
+        viewportData.scrollY,
+        viewportData.width,
+        viewportData.height,
+        viewportData.zoomX,
+        viewportData.zoomY,
+        dimensionsData.stepWidth,
+        dimensionsData.keyHeight,
+        engine.lod
+    ]);
+
     // ✅ SIMPLE CURSOR SYSTEM - Map cursor state to CSS cursor
     const currentCursor = useMemo(() => {
         const cursorState = noteInteractions.cursorState;
@@ -454,9 +820,6 @@ function PianoRoll() {
             const timelineController = getTimelineController();
 
             // Calculate ruler element bounds (top 30px of container)
-            const RULER_HEIGHT = 30;
-            const KEYBOARD_WIDTH = 80;
-
             // ✅ Custom position calculation for piano roll (accounts for scroll/zoom)
             // Use engineRef to always get the LATEST engine state (avoid stale closure)
             const calculatePosition = (mouseX, mouseY) => {
@@ -519,78 +882,6 @@ function PianoRoll() {
         // ✅ FIX: Empty deps - only register once, calculatePosition uses latest engine from scope
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []); // Only register once on mount
-
-    useEffect(() => {
-        const canvas = canvasRef.current;
-        const ctx = canvas?.getContext('2d');
-        if (!ctx || !engine.viewport.width) return;
-
-        const dpr = window.devicePixelRatio || 1;
-        const rect = canvas.getBoundingClientRect();
-        if (canvas.width !== rect.width * dpr || canvas.height !== rect.height * dpr) {
-            canvas.width = rect.width * dpr;
-            canvas.height = rect.height * dpr;
-            ctx.scale(dpr, dpr);
-        }
-
-        // ✅ V3: Convert dragState and resizeState to renderer format
-        let dragState = null;
-
-        // Convert drag state (moving notes)
-        if (noteInteractions.dragState && noteInteractions.dragState.noteIds) {
-            const ds = noteInteractions.dragState;
-            dragState = {
-                type: 'moving',
-                noteIds: ds.noteIds,
-                originalNotes: ds.originals,
-                currentDelta: ds.delta ? {
-                    deltaTime: ds.delta.time,
-                    deltaPitch: ds.delta.pitch
-                } : { deltaTime: 0, deltaPitch: 0 }
-            };
-        }
-        // Convert resize state (resizing notes)
-        else if (noteInteractions.resizeState && noteInteractions.resizeState.noteIds) {
-            const rs = noteInteractions.resizeState;
-            dragState = {
-                type: 'resizing',
-                noteIds: rs.noteIds,
-                originalNotes: rs.originals,
-                resizeHandle: rs.handle,
-                currentDelta: rs.delta ? { deltaTime: rs.delta } : { deltaTime: 0 }
-            };
-        }
-
-        // Static data (everything except playhead)
-        const engineWithData = {
-            ...engine,
-            snapValue,
-            notes: noteInteractions.notes,
-            selectedNoteIds: noteInteractions.selectedNoteIds,
-            hoveredNoteId: noteInteractions.hoveredNoteId,
-            selectionArea: noteInteractions.selectionArea,
-            isSelectingArea: noteInteractions.isSelectingArea,
-            isSelectingTimeRange: noteInteractions.isSelectingTimeRange, // ✅ Time-based selection state
-            timeRangeSelection: noteInteractions.timeRangeSelection, // ✅ Time range selection data
-            previewNote: noteInteractions.previewNote,
-            slicePreview: noteInteractions.slicePreview,
-            sliceRange: noteInteractions.sliceRange,
-            qualityLevel, // Pass quality level to renderer
-            ghostPosition, // ✅ Pass ghost position for hover preview
-            activeTool, // ✅ Pass active tool for visual feedback
-            loopRegion, // ✅ Pass loop region for timeline rendering
-            dragState, // ✅ V3: Unified dragState (includes resizing)
-            scaleHighlight, // ✅ PHASE 5: Pass scale highlighting system
-            activeKeyboardNote // ✅ Pass active keyboard note for visual feedback
-        };
-        drawPianoRollStatic(ctx, engineWithData);
-
-        // ✅ NEW: Render timeline system (time signatures, tempo, markers, loop regions)
-        if (timelineRenderer) {
-            timelineRenderer.render(ctx, engineWithData);
-        }
-
-    }, [engine, snapValue, noteInteractions, qualityLevel, ghostPosition, activeTool, loopRegion, noteInteractions.isSelectingTimeRange, noteInteractions.timeRangeSelection, timelineRenderer, scaleHighlight, activeKeyboardNote]); // Added: time-based selection + timelineRenderer + scale highlight + activeKeyboardNote
 
     // Playhead canvas - fast rendering via UIUpdateManager (uses engineRef from top of component)
     useEffect(() => {
@@ -785,7 +1076,7 @@ function PianoRoll() {
     }, [activePatternId, currentInstrument]);
 
     // ✅ PHASE 4: Handle scroll from CC Lanes to sync Piano Roll viewport
-    const handleCCLanesScroll = useCallback((deltaX, deltaY) => {
+    const handleCCLanesScroll = useCallback((_deltaX, deltaY) => {
         const currentEngine = engineRef.current;
         if (!currentEngine) return;
 
@@ -796,24 +1087,16 @@ function PianoRoll() {
         currentEngine.viewport.scrollX = newScrollX;
         currentEngine.viewport.targetScrollX = newScrollX;
 
-        // Force re-render
-        if (canvasRef.current) {
-            const ctx = canvasRef.current.getContext('2d');
-            if (ctx && currentEngine.notes && currentEngine.dimensions) {
-                drawPianoRollStatic(ctx, {
-                    ...currentEngine,
-                    notes: currentEngine.notes
-                }, currentEngine.dimensions);
-            }
-        }
-    }, []);
+        paintBackgroundLayer();
+        paintNotesLayer();
+    }, [paintBackgroundLayer, paintNotesLayer]);
 
     // ✅ PHASE 2: NOTE PROPERTIES HANDLERS
     // ✅ FIX: Calculate selectedNote on every render to ensure it updates when notes change
     // Don't use useMemo here - we want it to recalculate whenever notes array changes
     const selectedNote = (() => {
-        if (noteInteractions.selectedNoteIds.size === 1) {
-            const noteId = Array.from(noteInteractions.selectedNoteIds)[0];
+        if (selectedNoteIds.size === 1) {
+            const noteId = Array.from(selectedNoteIds)[0];
             const note = noteInteractions.notes.find(n => n.id === noteId);
             return note || null;
         }
@@ -830,8 +1113,8 @@ function PianoRoll() {
 
     // Memoize selectedNoteIds array to prevent VelocityLane re-renders
     const selectedNoteIdsArray = useMemo(
-        () => Array.from(noteInteractions.selectedNoteIds),
-        [noteInteractions.selectedNoteIds]
+        () => Array.from(selectedNoteIds),
+        [selectedNoteIds]
     );
 
     // ✅ REMOVED: Cursor manager cleanup - using simple CSS cursors now
@@ -848,8 +1131,8 @@ function PianoRoll() {
             noteInteractions.pasteNotes();
         },
         onDelete: () => {
-            if (noteInteractions.selectedNoteIds.size > 0) {
-                noteInteractions.deleteNotes(Array.from(noteInteractions.selectedNoteIds));
+            if (selectedNoteIds.size > 0) {
+                noteInteractions.deleteNotes(Array.from(selectedNoteIds));
             } else if (noteInteractions.contextMenuState?.noteId) {
                 noteInteractions.deleteNotes([noteInteractions.contextMenuState.noteId]);
             }
@@ -874,10 +1157,10 @@ function PianoRoll() {
         },
         onQuantize: () => {
             // Quantize selected notes to grid
-            if (noteInteractions.selectedNoteIds.size === 0) return;
+            if (selectedNoteIds.size === 0) return;
 
             const notesToQuantize = noteInteractions.notes.filter(n =>
-                noteInteractions.selectedNoteIds.has(n.id)
+                selectedNoteIds.has(n.id)
             );
 
             notesToQuantize.forEach(note => {
@@ -889,10 +1172,10 @@ function PianoRoll() {
         },
         onHumanize: () => {
             // Add subtle randomization to timing and velocity
-            if (noteInteractions.selectedNoteIds.size === 0) return;
+            if (selectedNoteIds.size === 0) return;
 
             const notesToHumanize = noteInteractions.notes.filter(n =>
-                noteInteractions.selectedNoteIds.has(n.id)
+                selectedNoteIds.has(n.id)
             );
 
             notesToHumanize.forEach(note => {
@@ -916,10 +1199,10 @@ function PianoRoll() {
         },
         onVelocityFadeIn: () => {
             // Linear fade in (0 to 100% velocity)
-            if (noteInteractions.selectedNoteIds.size === 0) return;
+            if (selectedNoteIds.size === 0) return;
 
             const notesToFade = noteInteractions.notes
-                .filter(n => noteInteractions.selectedNoteIds.has(n.id))
+                .filter(n => selectedNoteIds.has(n.id))
                 .sort((a, b) => a.startTime - b.startTime);
 
             const count = notesToFade.length;
@@ -933,10 +1216,10 @@ function PianoRoll() {
         },
         onVelocityFadeOut: () => {
             // Linear fade out (100% to 0 velocity)
-            if (noteInteractions.selectedNoteIds.size === 0) return;
+            if (selectedNoteIds.size === 0) return;
 
             const notesToFade = noteInteractions.notes
-                .filter(n => noteInteractions.selectedNoteIds.has(n.id))
+                .filter(n => selectedNoteIds.has(n.id))
                 .sort((a, b) => a.startTime - b.startTime);
 
             const count = notesToFade.length;
@@ -950,10 +1233,10 @@ function PianoRoll() {
         },
         onVelocityNormalize: () => {
             // Normalize all velocities to 80% (100 in MIDI)
-            if (noteInteractions.selectedNoteIds.size === 0) return;
+            if (selectedNoteIds.size === 0) return;
 
             const notesToNormalize = noteInteractions.notes.filter(n =>
-                noteInteractions.selectedNoteIds.has(n.id)
+                selectedNoteIds.has(n.id)
             );
 
             notesToNormalize.forEach(note => {
@@ -976,7 +1259,7 @@ function PianoRoll() {
                 onToolChange={handleToolChange}
                 zoom={zoom}
                 onZoomChange={handleZoomChange}
-                selectedCount={noteInteractions.selectedNoteIds.size} // V2 Hook'dan
+                selectedCount={selectedNoteIds.size} // V2 Hook'dan
                 keyboardPianoMode={keyboardPianoMode}
                 onKeyboardPianoModeChange={setKeyboardPianoMode}
                 keyboardPianoSettings={keyboardPianoSettings}
@@ -1093,7 +1376,8 @@ function PianoRoll() {
                 onContextMenu={(e) => e.preventDefault()}
                 tabIndex={0}
             >
-                <canvas ref={canvasRef} className="prv5-canvas prv5-canvas-main" />
+                <canvas ref={gridCanvasRef} className="prv5-canvas prv5-canvas-grid" />
+                <canvas ref={notesCanvasRef} className="prv5-canvas prv5-canvas-notes" />
                 <canvas ref={playheadCanvasRef} className="prv5-canvas prv5-canvas-playhead" />
 
                 {/* ✅ LOOP REGION OVERLAY */}
@@ -1193,7 +1477,7 @@ function PianoRoll() {
                     x={noteInteractions.contextMenuState.x}
                     y={noteInteractions.contextMenuState.y}
                     noteId={noteInteractions.contextMenuState.noteId}
-                    hasSelection={noteInteractions.selectedNoteIds.size > 0}
+                    hasSelection={selectedNoteIds.size > 0}
                     canUndo={noteInteractions.canUndo}
                     canRedo={noteInteractions.canRedo}
                     onClose={noteInteractions.clearContextMenu}

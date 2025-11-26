@@ -205,7 +205,7 @@ function reducer(state, action) {
                 }
             };
 
-        case Action.UPDATE_AREA:
+        case Action.UPDATE_AREA: {
             if (!state.areaSelect) return state;
             const updated = {
                 ...state.areaSelect,
@@ -215,6 +215,7 @@ function reducer(state, action) {
                 updated.path = [...updated.path, action.payload.end];
             }
             return { ...state, areaSelect: updated };
+        }
 
         case Action.END_AREA:
             return {
@@ -434,7 +435,6 @@ export function useNoteInteractionsV3({
                     newNotes[0],
                     (note) => _addNotesToPattern([note]),
                     (noteIds) => {
-                        const notesToDelete = notes.filter(n => noteIds.includes(n.id));
                         _deleteNotesFromPattern(noteIds);
                     }
                 );
@@ -446,7 +446,6 @@ export function useNoteInteractionsV3({
                         note,
                         (note) => _addNotesToPattern([note]),
                         (noteIds) => {
-                            const notesToDelete = notes.filter(n => noteIds.includes(n.id));
                             _deleteNotesFromPattern(noteIds);
                         }
                     )
@@ -960,24 +959,10 @@ export function useNoteInteractionsV3({
         // snapToGrid snaps based on grid center: first half -> current grid, second half -> next grid
         const snappedTime = snapToGrid(coords.time);
         
-        // ✅ FIX: Pitch rounding with grid center sensitivity (note interaction için)
-        // Grid'in ilk %80'ine (0-0.8) bastığında -> o pitch'e yaz (Math.floor)
-        // Grid'in son %20'sine (0.8-1.0) bastığında -> sonraki pitch'e yaz (Math.ceil)
-        // Bu, pitch için daha hassas kontrol sağlar
-        // Example: pitch=60.0 -> pitchPos=0.0 < 0.8 -> floor(60.0) = 60 ✓
-        //          pitch=60.7 -> pitchPos=0.7 < 0.8 -> floor(60.7) = 60 ✓
-        //          pitch=60.9 -> pitchPos=0.9 >= 0.8 -> ceil(60.9) = 61 ✓
-        const pitchGridCenter = 0.8; // 80% threshold
-        const pitchPosition = (coords.pitch % 1 + 1) % 1; // Handle negative values, get fractional part
-        
-        let finalPitch;
-        if (pitchPosition < pitchGridCenter) {
-            // Grid'in ilk %80'i -> o pitch'e yaz
-            finalPitch = Math.floor(coords.pitch);
-        } else {
-            // Grid'in son %20'si -> sonraki pitch'e yaz
-            finalPitch = Math.ceil(coords.pitch);
-        }
+        // ✅ FIX: Treat full key height as same pitch (avoid accidental next-note hits near bottom edge)
+        const keyHeightPx = engine.dimensions?.keyHeight || 20;
+        const pitchCoverage = Math.max(0.5, (keyHeightPx - 1) / keyHeightPx); // Note body covers ~95% of key height
+        let finalPitch = Math.floor(coords.pitch + pitchCoverage);
         
         // Clamp to valid MIDI range
         finalPitch = Math.max(0, Math.min(127, finalPitch));
@@ -1470,9 +1455,6 @@ export function useNoteInteractionsV3({
                         const newState = allNewStates.get(noteId);
                         
                         // Each command stores its state, but uses shared update function
-                        // ✅ FIX: Use a flag to track whether we're executing or undoing
-                        let isExecuting = true;
-                        
                         const updateNoteFn = (id, state) => {
                             // Create a map with all states for this operation
                             const statesMap = new Map();
@@ -1504,7 +1486,6 @@ export function useNoteInteractionsV3({
                         const batchCommand = new BatchCommand(commands, `Resize ${commands.length} note(s)`);
                         
                         // Override execute to call updateAllNotesFn once with all new states
-                        const originalExecute = batchCommand.execute.bind(batchCommand);
                         batchCommand.execute = function() {
                             // Update all notes at once with new states
                             updateAllNotesFn(allNewStates);
@@ -1517,7 +1498,6 @@ export function useNoteInteractionsV3({
                         };
                         
                         // Override undo to call updateAllNotesFn once with all old states
-                        const originalUndo = batchCommand.undo.bind(batchCommand);
                         batchCommand.undo = function() {
                             // Update all notes at once with old states
                             updateAllNotesFn(allOldStates);
@@ -1689,7 +1669,7 @@ export function useNoteInteractionsV3({
     // MOUSE UP
     // ===================================================================
 
-    const handleMouseUp = useCallback((e) => {
+    const handleMouseUp = useCallback(() => {
         if (state.mode === Mode.DRAG && state.drag) {
             finalizeDrag();
         } else if (state.mode === Mode.RESIZE && state.resize) {

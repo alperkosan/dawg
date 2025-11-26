@@ -244,7 +244,7 @@ export const DEFAULT_CONFIG = {
         doubleClickThreshold: 300,
         dragThreshold: 3,
         resizeHandleSize: 8,
-        snapTolerance: 0.1
+        snapTolerance: 0.05
     },
     
     visualFeedback: {

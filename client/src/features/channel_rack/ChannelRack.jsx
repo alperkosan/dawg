@@ -9,7 +9,7 @@ import { useMixerStore } from '@/store/useMixerStore';
 import commandManager from '@/lib/commands/CommandManager';
 import { AddNoteCommand } from '@/lib/commands/AddNoteCommand';
 import { DeleteNoteCommand } from '@/lib/commands/DeleteNoteCommand';
-import { DND_TYPES } from '@/config/constants';
+import { DND_TYPES, PANEL_IDS } from '@/config/constants';
 import { storeManager } from '@/store/StoreManager';
 import { createScrollSynchronizer, createWheelForwarder } from '@/lib/utils/scrollSync';
 
@@ -41,21 +41,22 @@ const Icon = memo(({ name, size = 20, ...props }) => {
 
 const STEP_WIDTH = 16;
 
-// Precise step calculation to avoid floating point errors
-const calculateStep = (clickX, stepWidth, maxStep) => {
-  const exactStep = clickX / stepWidth;
-  const roundedStep = Math.round(exactStep * 100) / 100; // Round to 2 decimal places first
-  const finalStep = Math.round(roundedStep); // Then round to integer
-  return Math.max(0, Math.min(maxStep, finalStep));
-};
-
-
 // ✅ PERFORMANCE: Cached selector functions to prevent infinite loops
 const selectInstrumentsData = (state) => state;
 const selectArrangementData = (state) => state;
 const selectPanelsData = (state) => state;
+const selectChannelRackVisibility = (state) => {
+  const panel = state.panels?.[PANEL_IDS.CHANNEL_RACK];
+  if (!panel) return true;
+  const isOpen = panel.isOpen && !panel.isMinimized;
+  if (!isOpen) return false;
+  if (state.fullscreenPanel && state.fullscreenPanel !== PANEL_IDS.CHANNEL_RACK) {
+    return false;
+  }
+  return true;
+};
 
-function ChannelRack() {
+function ChannelRackComponent() {
   // ✅ PERFORMANCE: Batched store subscriptions with shallow equality
   const instrumentsData = useInstrumentsStore(selectInstrumentsData, shallow);
 
@@ -66,13 +67,9 @@ function ChannelRack() {
   const {
     instruments,
     channelOrder,
-    channelGroups,
     selectedChannels,
-    channelViewMode,
     initializeChannelOrder,
-    reorderChannels,
     toggleChannelSelection,
-    setChannelViewMode,
     handleAddNewInstrument
   } = instrumentsData;
 
@@ -90,16 +87,15 @@ function ChannelRack() {
   const {
     openPianoRollForInstrument,
     handleEditInstrument,
-    togglePanel
   } = panelsData;
+
+  const isChannelRackVisible = usePanelsStore(selectChannelRackVisibility);
 
   // ✅ OPTIMIZED: Consolidated PlaybackStore subscription (reduces re-render triggers)
   // Use individual selectors to avoid getSnapshot caching issues
   const playbackMode = usePlaybackStore(state => state.playbackMode);
-  const playbackState = usePlaybackStore(state => state.playbackState);
   const isPlaying = usePlaybackStore(state => state.isPlaying);
   const followPlayheadMode = usePlaybackStore(state => state.followPlayheadMode);
-  const setTransportPosition = usePlaybackStore(state => state.setTransportPosition);
 
   // Position calculation depends on playbackMode, so compute it separately
   const position = usePlaybackStore(state =>
@@ -151,9 +147,7 @@ function ChannelRack() {
 
   // ✅ FL Studio Style: Add button allows creating new instruments only
   // All existing channels are always visible, so no need for "available instruments" logic
-  const canCreateNewInstrument = useMemo(() => {
-    return true; // FL Studio always allows creating new instruments
-  }, []);
+
 
   // ✅ Click outside to close pattern dropdown
   useEffect(() => {
@@ -232,6 +226,10 @@ function ChannelRack() {
 
   // ✅ PERFORMANCE OPTIMIZED: High-performance scroll synchronization using optimized utilities
   useEffect(() => {
+    if (!isChannelRackVisible) {
+      return;
+    }
+
     const mainGrid = scrollContainerRef.current;
     const instrumentsList = instrumentListRef.current;
     const timeline = timelineContainerRef.current;
@@ -299,24 +297,28 @@ function ChannelRack() {
       instrumentsList.removeEventListener('scroll', handleInstrumentsScroll);
       console.log('🔄 ChannelRack: Optimized scroll sync cleaned up');
     };
-  }, []); // Empty deps - setup once
+  }, [isChannelRackVisible]); // Re-run when panel visibility changes
 
   // ⚡ PERFORMANCE: Track scroll position and viewport size for rendering
   useEffect(() => {
+    if (!isChannelRackVisible) return;
+
     const mainGrid = scrollContainerRef.current;
     if (!mainGrid) return;
 
     // Update viewport width on mount and resize
     const updateViewport = () => {
       const newWidth = mainGrid.clientWidth;
-      if (import.meta.env.DEV && window.verboseLogging) {
-        console.log('🔄 Channel Rack viewport resized:', {
-          from: viewportWidth,
-          to: newWidth,
-          element: 'mainGrid'
-        });
-      }
-      setViewportWidth(newWidth);
+      setViewportWidth(prevWidth => {
+        if (import.meta.env.DEV && window.verboseLogging) {
+          console.log('🔄 Channel Rack viewport resized:', {
+            from: prevWidth,
+            to: newWidth,
+            element: 'mainGrid'
+          });
+        }
+        return newWidth;
+      });
     };
     updateViewport();
 
@@ -337,15 +339,22 @@ function ChannelRack() {
       mainGrid.removeEventListener('scroll', handleScroll);
       resizeObserver.disconnect();
     };
-  }, []);
+  }, [isChannelRackVisible]);
 
 
   // ✅ OPTIMIZED: Follow Playhead Mode - RAF-based auto-scroll during playback
   const userInteractionRef = useRef(false);
 
   useEffect(() => {
-    // Early exits - only follow in pattern mode
-    if (!isPlaying || followPlayheadMode === 'OFF' || playbackMode !== 'pattern') return;
+    // Early exits - only follow in pattern mode and when panel is visible
+    if (
+      !isChannelRackVisible ||
+      !isPlaying ||
+      followPlayheadMode === 'OFF' ||
+      playbackMode !== 'pattern'
+    ) {
+      return;
+    }
 
     const mainGrid = scrollContainerRef.current;
     if (!mainGrid) return;
@@ -399,7 +408,7 @@ function ChannelRack() {
         cancelAnimationFrame(rafId);
       }
     };
-  }, [position, isPlaying, followPlayheadMode, playbackMode, viewportWidth]);
+  }, [position, isPlaying, followPlayheadMode, playbackMode, viewportWidth, isChannelRackVisible]);
 
 
   // Track user interaction to pause follow mode temporarily
@@ -437,7 +446,7 @@ function ChannelRack() {
     } catch (error) {
       console.error('Error toggling note:', error);
     }
-  }, [activePatternId, activePattern]);
+  }, [activePattern]);
 
   // ✅ Get all visible instruments for grid rendering (simplified for flat view)
   const visibleInstruments = useMemo(() => {
@@ -475,25 +484,6 @@ function ChannelRack() {
 
     return minHeight;
   }, [organizedContent]);
-
-  // ⚠️ DEPRECATED: This handler is now replaced by TimelineController
-  // Kept for fallback if TimelineController is not available
-  const handleTimelineClickInternal = useCallback((e) => {
-    console.warn('⚠️ Using legacy timeline click handler - TimelineController should handle this');
-
-    const rect = e.currentTarget.getBoundingClientRect();
-    const clickX = e.clientX - rect.left;
-    const targetStep = calculateStep(clickX, STEP_WIDTH, audioLoopLength - 1);
-
-    // Fallback to legacy behavior
-    const beatPosition = targetStep / 4;
-    const bar = Math.floor(beatPosition / 4);
-    const beat = Math.floor(beatPosition % 4);
-    const tick = Math.floor((beatPosition % 1) * 480);
-    const transportPos = `${bar + 1}:${beat + 1}:${tick}`;
-
-    setTransportPosition(transportPos, targetStep);
-  }, [setTransportPosition, audioLoopLength]);
 
   // ✅ Drop zone for new samples/instruments
   const [{ isOver, canDrop }, dropRef] = useDrop({
@@ -777,6 +767,7 @@ function ChannelRack() {
           viewportWidth={viewportWidth}
           activePattern={activePattern} // ✅ For note preview on seek
           instruments={visibleInstruments} // ✅ For note preview on seek
+          isVisible={isChannelRackVisible}
         />
         {/* ✅ PERFORMANCE: Canvas-based rendering replaces 80+ DOM nodes */}
         {/* ⚡ CPU reduction: ~70% in timeline rendering */}
@@ -794,6 +785,7 @@ function ChannelRack() {
             if (inst) openPianoRollForInstrument(inst);
           }}
           addButtonHeight={68} // ✅ FIX: Match instruments list add button height (64px height + 4px margin-top)
+          isVisible={isChannelRackVisible}
         />
       </div>
 
@@ -818,4 +810,5 @@ function ChannelRack() {
 }
 
 // ✅ Memoize the entire component to prevent unnecessary re-renders
-export default memo(ChannelRack);
+const ChannelRack = memo(ChannelRackComponent);
+export default ChannelRack;

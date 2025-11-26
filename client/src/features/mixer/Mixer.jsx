@@ -26,7 +26,7 @@ import { MixerChannel } from './components/MixerChannel';
 import { EffectsRack } from './components/EffectsRack';
 import './Mixer.css';
 
-const Mixer = () => {
+const Mixer = ({ isVisible = true }) => {
   const [showEffectsRack, setShowEffectsRack] = useState(true);
   const [showAddMenu, setShowAddMenu] = useState(false);
   const addMenuRef = useRef(null);
@@ -234,15 +234,16 @@ const Mixer = () => {
                   <div className="mixer-2__separator-line" />
                   <div className="mixer-2__separator-label">MASTER</div>
                 </div>
-                <MixerChannel
-                  key={masterTrack.id}
-                  track={masterTrack}
-                  allTracks={allTracksOrdered}
-                  activeTrack={activeTrack}
-                  isActive={activeChannelId === masterTrack.id}
-                  isMaster={true}
-                  onClick={() => setActiveChannelId(masterTrack.id)}
-                />
+            <MixerChannel
+              key={masterTrack.id}
+              track={masterTrack}
+              allTracks={allTracksOrdered}
+              activeTrack={activeTrack}
+              isActive={activeChannelId === masterTrack.id}
+              isMaster={true}
+              onClick={() => setActiveChannelId(masterTrack.id)}
+              isVisible={isVisible}
+            />
               </>
             )}
 
@@ -261,7 +262,8 @@ const Mixer = () => {
                     activeTrack={activeTrack}
                     isActive={activeChannelId === track.id}
                     isMaster={false}
-                    onClick={() => setActiveChannelId(track.id)}
+                onClick={() => setActiveChannelId(track.id)}
+                isVisible={isVisible}
                   />
                 ))}
               </>
@@ -281,6 +283,7 @@ const Mixer = () => {
                 isActive={activeChannelId === track.id}
                 isMaster={false}
                 onClick={() => setActiveChannelId(track.id)}
+                isVisible={isVisible}
               />
             ))}
           </div>

@@ -19,7 +19,15 @@ import { ChannelMeter } from './ChannelMeter';
 import { SendAcceptButton } from './SendAcceptButton';
 import './MixerChannel.css';
 
-const MixerChannelComponent = ({ track, allTracks, isActive, isMaster, onClick, activeTrack }) => {
+const MixerChannelComponent = ({
+  track,
+  allTracks,
+  isActive,
+  isMaster,
+  onClick,
+  activeTrack,
+  isVisible = true
+}) => {
   const [isEditingName, setIsEditingName] = useState(false);
   const [editedName, setEditedName] = useState(track.name);
   const [showColorPicker, setShowColorPicker] = useState(false);
@@ -258,7 +266,7 @@ const MixerChannelComponent = ({ track, allTracks, isActive, isMaster, onClick, 
 
       {/* Real-time Meter */}
       <div className="mixer-channel-2__meter-container">
-        <ChannelMeter trackId={track.id} />
+        <ChannelMeter trackId={track.id} isVisible={isVisible} />
       </div>
 
       {/* Fader */}
