@@ -8,6 +8,7 @@ import EventBus from '../core/EventBus';
 import { audioAssetManager } from '../audio/AudioAssetManager';
 import { effectRegistry } from '../audio/EffectRegistry';
 import { idleDetector } from '../utils/IdleDetector.js';
+import { normalizeEffectParam, normalizeEffectSettings } from '../audio/effects/parameterMappings.js';
 
 export class AudioContextService {
   static instance = null;
@@ -2242,14 +2243,19 @@ export class AudioContextService {
       return;
     }
 
+    const effectType = effect.type || effect.settings?.type;
+    const normalizedParamName = normalizeEffectParam(effectType, paramName);
+    const effectiveSettings = normalizeEffectSettings(effectType, effect.settings || {});
+    effect.settings = effectiveSettings;
+
     // Handle bypass separately
-    if (paramName === 'bypass') {
+    if (normalizedParamName === 'bypass') {
       insert.setEffectBypass(effectId, value);
       return;
     }
 
     // 🎛️ SIDECHAIN: Handle sidechain source routing
-    if (paramName === 'scSourceId') {
+    if (normalizedParamName === 'scSourceId') {
       const getSourceInsert = (sourceInsertId) => {
         return this.audioEngine.mixerInserts.get(sourceInsertId);
       };
@@ -2265,9 +2271,7 @@ export class AudioContextService {
     }
 
     // ⚡ SPECIAL HANDLING: MultiBandEQ V2 uses message-based band updates
-    // Effect type is stored in effect object or can be inferred from settings
-    const effectType = effect.type || effect.settings?.type;
-    if (effectType === 'MultiBandEQ' && paramName === 'bands') {
+    if (effectType === 'MultiBandEQ' && normalizedParamName === 'bands') {
       if (node.port) {
         // ⚡ PERFORMANCE: Optimized rate limiting with requestAnimationFrame
         // Only send updates once per frame (16.6ms) using RAF
@@ -2289,9 +2293,7 @@ export class AudioContextService {
         }
 
         // Update settings for tracking
-        if (effect.settings) {
-          effect.settings[paramName] = value;
-        }
+        effect.settings[normalizedParamName] = value;
         return;
       } else {
         console.warn(`⚠️ MultiBandEQ node.port not available for ${effectId}`);
@@ -2299,39 +2301,34 @@ export class AudioContextService {
     }
 
     // Try to update AudioParam if exists
-    if (node.parameters && node.parameters.has(paramName)) {
-      const param = node.parameters.get(paramName);
+    if (node.parameters && node.parameters.has(normalizedParamName)) {
+      const param = node.parameters.get(normalizedParamName);
       if (param && param.setValueAtTime) {
         const now = this.audioEngine.audioContext.currentTime;
         param.cancelScheduledValues(now);
         param.setValueAtTime(param.value, now);
         param.linearRampToValueAtTime(value, now + 0.015);
-        effect.settings = effect.settings || {};
-        effect.settings[paramName] = value;
+        effect.settings[normalizedParamName] = value;
         return;
       }
     }
 
     // Try direct property update
-    if (paramName in node) {
-      node[paramName] = value;
-      effect.settings = effect.settings || {};
-      effect.settings[paramName] = value;
+    if (normalizedParamName in node) {
+      node[normalizedParamName] = value;
+      effect.settings[normalizedParamName] = value;
       return;
     }
 
     // Try updateParameter method (custom effects)
     if (node.updateParameter && typeof node.updateParameter === 'function') {
-      node.updateParameter(paramName, value);
-      effect.settings = effect.settings || {};
-      effect.settings[paramName] = value;
+      node.updateParameter(normalizedParamName, value);
+      effect.settings[normalizedParamName] = value;
       return;
     }
 
     // Update settings for tracking
-    if (effect.settings) {
-      effect.settings[paramName] = value;
-    }
+    effect.settings[normalizedParamName] = value;
   }
 
   /**

@@ -239,6 +239,7 @@ const SaturatorUI_V2 = ({ trackId, effect, effectNode, definition }) => {
 
   // Parameter batcher
   const { setParam } = useParameterBatcher(effectNode);
+  const handleMixerEffectChange = useMixerStore.getState().handleMixerEffectChange;
 
   // Local state for smooth UI
   const [localDistortion, setLocalDistortion] = useState(effect.settings.distortion || 0.4);
@@ -306,9 +307,10 @@ const SaturatorUI_V2 = ({ trackId, effect, effectNode, definition }) => {
       default: break;
     }
 
-    // Send to audio engine
+    // Send to audio engine + store
     setParam(param, value);
-  }, [setParam]);
+    handleMixerEffectChange(trackId, effect.id, param, value);
+  }, [setParam, handleMixerEffectChange, trackId, effect.id]);
 
   return (
     <PluginContainerV2

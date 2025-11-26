@@ -79,7 +79,16 @@ export const pluginRegistry = {
       lowCutFreq: 20,    // Full range
       highCutFreq: 20000,
       tone: 0,
-      headroom: 0
+      headroom: 0,
+      multiband: 0,
+      lowMidCrossover: 250,
+      midHighCrossover: 2500,
+      lowDrive: 1.0,
+      midDrive: 1.0,
+      highDrive: 1.0,
+      lowMix: 1.0,
+      midMix: 1.0,
+      highMix: 1.0
     },
     // ✨ v2.0: Factory presets managed by PresetManager
     // See: @/config/presets/saturatorPresets.js
@@ -197,9 +206,11 @@ export const pluginRegistry = {
     initialSize: { width: 1100, height: 700 },
     minSize: { width: 1000, height: 600 },
     defaultSettings: {
-      frequency: 1.5,
+      rate: 1.5,
       delayTime: 3.5,
       depth: 0.7,
+      voices: 3,
+      stereoWidth: 0.5,
       wet: 0.5
     },
     // ✨ v2.0: Factory presets managed by PresetManager

@@ -22,19 +22,20 @@ class WaveformCache {
    * KEY INSIGHT: Width IS part of the key because canvas size matters
    * But we also need zoom/ppb to ensure correct time-scale rendering
    */
-  _getCacheKey(clipId, width, height, lod, sampleOffset = 0, zoomX = 1, pixelsPerBeat = 48) {
+  _getCacheKey(clipId, width, height, lod, sampleOffset = 0, zoomX = 1, pixelsPerBeat = 48, bpm = 140) {
     // Round values to avoid cache misses from floating point errors
     const roundedOffset = Math.round(sampleOffset * 1000) / 1000;
     const roundedZoom = Math.round(zoomX * 1000) / 1000;
     const roundedPPB = Math.round(pixelsPerBeat * 10) / 10;
-    return `${clipId}-w${width}-h${height}-lod${lod}-off${roundedOffset}-z${roundedZoom}-ppb${roundedPPB}`;
+    const roundedBPM = Math.round(bpm * 10) / 10;
+    return `${clipId}-w${width}-h${height}-lod${lod}-off${roundedOffset}-z${roundedZoom}-ppb${roundedPPB}-bpm${roundedBPM}`;
   }
 
   /**
    * Get cached waveform canvas
    */
   get(clipId, clip, width, height, bpm, lod, pixelsPerBeat, zoomX) {
-    const key = this._getCacheKey(clipId, width, height, lod, clip.sampleOffset, zoomX, pixelsPerBeat);
+    const key = this._getCacheKey(clipId, width, height, lod, clip.sampleOffset, zoomX, pixelsPerBeat, bpm);
     const cached = this.cache.get(key);
 
     if (cached) {
@@ -51,7 +52,7 @@ class WaveformCache {
    * Store waveform canvas in cache
    */
   set(clipId, clip, width, height, bpm, lod, canvas, pixelsPerBeat, zoomX) {
-    const key = this._getCacheKey(clipId, width, height, lod, clip.sampleOffset, zoomX, pixelsPerBeat);
+    const key = this._getCacheKey(clipId, width, height, lod, clip.sampleOffset, zoomX, pixelsPerBeat, bpm);
 
     // Remove oldest if cache is full
     if (this.cache.size >= this.maxSize) {

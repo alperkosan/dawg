@@ -12,6 +12,7 @@ import { useTimelineStore } from '@/store/TimelineStore';
 import { useProjectAudioStore } from '@/store/useProjectAudioStore';
 import { useArrangementWorkspaceStore } from '@/store/useArrangementWorkspaceStore';
 import { storageService } from '@/services/storage.js';
+import { normalizeEffectSettings } from '@/lib/audio/effects/parameterMappings.js';
 
 export class ProjectSerializer {
   static CURRENT_VERSION = '1.0.0';
@@ -674,7 +675,10 @@ export class ProjectSerializer {
         muted: track.muted,
         solo: track.solo,
         color: track.color,
-        insertEffects: track.insertEffects || [],
+        insertEffects: (track.insertEffects || []).map(effect => ({
+          ...effect,
+          settings: normalizeEffectSettings(effect.type || effect.effectType, effect.settings || {})
+        })),
         sends: track.sends || [],
         output: track.output,
         eq: track.eq,
@@ -689,7 +693,10 @@ export class ProjectSerializer {
       volume: master.volume,
       pan: master.pan,
       muted: master.muted,
-      insertEffects: master.insertEffects || [],
+      insertEffects: (master.insertEffects || []).map(effect => ({
+        ...effect,
+        settings: normalizeEffectSettings(effect.type || effect.effectType, effect.settings || {})
+      })),
       eq: master.eq,
     };
   }
@@ -1071,6 +1078,10 @@ export class ProjectSerializer {
       if (mixer.tracks && Array.isArray(mixer.tracks)) {
         mixer.tracks.forEach(track => {
           try {
+            const normalizedInsertEffects = (track.insertEffects || []).map(effect => ({
+              ...effect,
+              settings: normalizeEffectSettings(effect.type || effect.effectType, effect.settings || {})
+            }));
             // Create new track with template data
             const newTrack = {
               id: track.id,
@@ -1084,7 +1095,7 @@ export class ProjectSerializer {
               color: track.color || '#3b82f6',
               output: track.output || 'master',
               sends: track.sends || [],
-              insertEffects: track.insertEffects || [],
+              insertEffects: normalizedInsertEffects,
               eq: track.eq || {
                 enabled: false,
                 lowGain: 0,
@@ -1139,7 +1150,10 @@ export class ProjectSerializer {
           // This ensures effects are restored with their original IDs and settings
           // We'll set insertEffects directly and then rebuild the chain
           const masterInsertEffects = mixer.master.insertEffects && Array.isArray(mixer.master.insertEffects) 
-            ? mixer.master.insertEffects 
+            ? mixer.master.insertEffects.map(effect => ({
+                ...effect,
+                settings: normalizeEffectSettings(effect.type || effect.effectType, effect.settings || {})
+              }))
             : [];
           
           // Update master track with mixer.master data

@@ -17,7 +17,7 @@ export const stardustChorusPresets = [
     tags: ['subtle', 'thick', 'natural'],
     author: 'DAWG',
     settings: {
-      frequency: 0.8,
+      rate: 0.8,
       delayTime: 4.5,
       depth: 0.3,
       wet: 0.4
@@ -31,7 +31,7 @@ export const stardustChorusPresets = [
     tags: ['detune', 'width', 'gentle'],
     author: 'DAWG',
     settings: {
-      frequency: 0.5,
+      rate: 0.5,
       delayTime: 3.0,
       depth: 0.25,
       wet: 0.3
@@ -49,7 +49,7 @@ export const stardustChorusPresets = [
     tags: ['guitar', 'lush', 'flowing'],
     author: 'DAWG',
     settings: {
-      frequency: 2.2,
+      rate: 2.2,
       delayTime: 2.8,
       depth: 0.8,
       wet: 0.6
@@ -63,7 +63,7 @@ export const stardustChorusPresets = [
     tags: ['80s', 'synth', 'ensemble'],
     author: 'DAWG',
     settings: {
-      frequency: 1.5,
+      rate: 1.5,
       delayTime: 3.5,
       depth: 0.7,
       wet: 0.5
@@ -77,7 +77,7 @@ export const stardustChorusPresets = [
     tags: ['dreamy', 'shimmer', 'ethereal'],
     author: 'DAWG',
     settings: {
-      frequency: 1.8,
+      rate: 1.8,
       delayTime: 5.0,
       depth: 0.85,
       wet: 0.65
@@ -95,7 +95,7 @@ export const stardustChorusPresets = [
     tags: ['wide', 'stereo', 'spacious'],
     author: 'DAWG',
     settings: {
-      frequency: 1.2,
+      rate: 1.2,
       delayTime: 6.0,
       depth: 0.9,
       wet: 0.7
@@ -109,7 +109,7 @@ export const stardustChorusPresets = [
     tags: ['dimension', 'roland', 'width'],
     author: 'DAWG',
     settings: {
-      frequency: 0.9,
+      rate: 0.9,
       delayTime: 4.0,
       depth: 0.75,
       wet: 0.8
@@ -127,7 +127,7 @@ export const stardustChorusPresets = [
     tags: ['juno', 'vintage', 'analog'],
     author: 'DAWG',
     settings: {
-      frequency: 1.5,
+      rate: 1.5,
       delayTime: 3.5,
       depth: 0.7,
       wet: 1.0
@@ -141,7 +141,7 @@ export const stardustChorusPresets = [
     tags: ['analog', 'warm', 'vintage'],
     author: 'DAWG',
     settings: {
-      frequency: 1.0,
+      rate: 1.0,
       delayTime: 5.5,
       depth: 0.6,
       wet: 0.55
@@ -155,7 +155,7 @@ export const stardustChorusPresets = [
     tags: ['tape', 'vintage', 'lofi'],
     author: 'DAWG',
     settings: {
-      frequency: 0.7,
+      rate: 0.7,
       delayTime: 8.0,
       depth: 0.5,
       wet: 0.6
@@ -173,7 +173,7 @@ export const stardustChorusPresets = [
     tags: ['detune', 'dreamy', 'atmospheric'],
     author: 'DAWG',
     settings: {
-      frequency: 3.5,
+      rate: 3.5,
       delayTime: 10.0,
       depth: 0.95,
       wet: 0.8
@@ -187,7 +187,7 @@ export const stardustChorusPresets = [
     tags: ['vibrato', 'intense', 'fast'],
     author: 'DAWG',
     settings: {
-      frequency: 6.0,
+      rate: 6.0,
       delayTime: 2.0,
       depth: 0.9,
       wet: 1.0
@@ -201,7 +201,7 @@ export const stardustChorusPresets = [
     tags: ['space', 'cosmic', 'movement'],
     author: 'DAWG',
     settings: {
-      frequency: 0.3,
+      rate: 0.3,
       delayTime: 12.0,
       depth: 0.85,
       wet: 0.75

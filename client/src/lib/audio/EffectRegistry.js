@@ -140,6 +140,7 @@ export class EffectRegistry {
       processorName: 'stardust-chorus-processor',
       parameters: [
         { name: 'rate', defaultValue: 1.5, minValue: 0.1, maxValue: 10 },
+        { name: 'delayTime', defaultValue: 3.5, minValue: 1, maxValue: 20 },
         { name: 'depth', defaultValue: 0.5, minValue: 0, maxValue: 1 },
         { name: 'voices', defaultValue: 3, minValue: 1, maxValue: 5 },
         { name: 'stereoWidth', defaultValue: 0.5, minValue: 0, maxValue: 1 },

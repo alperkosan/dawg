@@ -7,6 +7,7 @@ class StardustChorusProcessor extends AudioWorkletProcessor {
   static get parameterDescriptors() {
     return [
       { name: 'rate', defaultValue: 1.5, minValue: 0.1, maxValue: 10 },
+      { name: 'delayTime', defaultValue: 3.5, minValue: 1, maxValue: 20 },
       { name: 'depth', defaultValue: 0.5, minValue: 0, maxValue: 1 },
       { name: 'voices', defaultValue: 3, minValue: 1, maxValue: 5 },
       { name: 'stereoWidth', defaultValue: 0.5, minValue: 0, maxValue: 1 },
@@ -53,6 +54,7 @@ class StardustChorusProcessor extends AudioWorkletProcessor {
 
   processEffect(sample, channel, parameters) {
     const rate = this.getParam(parameters.rate, 0) || 1.5;
+    const delayTime = this.getParam(parameters.delayTime, 0);
     const depth = this.getParam(parameters.depth, 0) || 0.5;
     const voices = Math.floor(this.getParam(parameters.voices, 0) || 3);
     const stereoWidth = this.getParam(parameters.stereoWidth, 0) || 0.5;
@@ -67,7 +69,9 @@ class StardustChorusProcessor extends AudioWorkletProcessor {
 
     // Sum multiple chorus voices
     let chorusSum = 0;
-    const baseDelayMs = 20; // Base delay time
+    const baseDelayMs = delayTime !== undefined
+      ? delayTime
+      : (this.settings.delayTime !== undefined ? this.settings.delayTime : 20); // Base delay time
     const modulationMs = 15; // Max modulation depth
 
     // 🎯 PROFESSIONAL CHORUS: Multiple voices with phase offset (like Dimension D)

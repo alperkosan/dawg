@@ -153,6 +153,7 @@ export function ArrangementPanelV2() {
   const playbackMode = usePlaybackStore(state => state.playbackMode);
   const isPlaying = usePlaybackStore(state => state.isPlaying);
   const followPlayheadMode = usePlaybackStore(state => state.followPlayheadMode);
+  const bpm = usePlaybackStore(state => state.bpm || 140);
   
   // Transport control via TimelineController
   const setCursorPosition = useCallback((position) => {
@@ -477,7 +478,7 @@ export function ArrangementPanelV2() {
           }
         }
 
-        renderAudioClip(ctx, audioBuffer, clip, x, y, width, clipHeight, isSelected, 140, lod, constants.PIXELS_PER_BEAT, viewport.zoomX, track);
+        renderAudioClip(ctx, audioBuffer, clip, x, y, width, clipHeight, isSelected, bpm, lod, constants.PIXELS_PER_BEAT, viewport.zoomX, track);
       } else if (clip.type === 'pattern') {
         // Load pattern data from pattern store
         const pattern = patterns[clip.patternId] || null;
@@ -495,7 +496,7 @@ export function ArrangementPanelV2() {
     ctx.restore();
     // ✅ FIX: Include clips array in dependencies to trigger re-render when clip positions change
     // Zustand store returns new array reference when clips are updated, so this is safe
-  }, [viewport.width, viewport.height, viewport.scrollX, viewport.scrollY, viewport.zoomX, viewport.visibleBeats, viewport.visibleTracks, clips, tracks, selectedClipIds, dimensions?.trackHeight, lod, patterns]);
+  }, [viewport.width, viewport.height, viewport.scrollX, viewport.scrollY, viewport.zoomX, viewport.visibleBeats, viewport.visibleTracks, clips, tracks, selectedClipIds, dimensions?.trackHeight, lod, patterns, bpm]);
 
   // ✅ THEME-AWARE: Create StyleCache instance for dynamic theme color reading
   const styleCacheRef = useRef(null);

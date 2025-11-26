@@ -31,9 +31,22 @@ export class EffectFactory {
       workletName: 'saturator-processor',
       displayName: 'Saturator',
       params: {
-        drive: { label: 'Drive', defaultValue: 5, min: 1, max: 20, unit: '' },
-        tone: { label: 'Tone', defaultValue: 0.5, min: 0, max: 1, unit: '' },
-        wet: { label: 'Mix', defaultValue: 0.5, min: 0, max: 1, unit: '' }
+        distortion: { label: 'Drive', defaultValue: 0.4, min: 0, max: 1.5, unit: '' },
+        wet: { label: 'Mix', defaultValue: 1.0, min: 0, max: 1, unit: '' },
+        autoGain: { label: 'Auto Gain', defaultValue: 1, min: 0, max: 1, unit: '' },
+        lowCutFreq: { label: 'Low Cut', defaultValue: 0, min: 0, max: 500, unit: ' Hz' },
+        highCutFreq: { label: 'High Cut', defaultValue: 20000, min: 2000, max: 20000, unit: ' Hz' },
+        tone: { label: 'Tone', defaultValue: 0, min: -12, max: 12, unit: ' dB' },
+        headroom: { label: 'Headroom', defaultValue: 0, min: -12, max: 12, unit: ' dB' },
+        multiband: { label: 'Multiband', defaultValue: 0, min: 0, max: 1, unit: '' },
+        lowMidCrossover: { label: 'Low/Mid X-over', defaultValue: 250, min: 50, max: 500, unit: ' Hz' },
+        midHighCrossover: { label: 'Mid/High X-over', defaultValue: 2500, min: 1000, max: 8000, unit: ' Hz' },
+        lowDrive: { label: 'Low Drive', defaultValue: 1.0, min: 0, max: 2.0, unit: '' },
+        midDrive: { label: 'Mid Drive', defaultValue: 1.0, min: 0, max: 2.0, unit: '' },
+        highDrive: { label: 'High Drive', defaultValue: 1.0, min: 0, max: 2.0, unit: '' },
+        lowMix: { label: 'Low Mix', defaultValue: 1.0, min: 0, max: 1, unit: '' },
+        midMix: { label: 'Mid Mix', defaultValue: 1.0, min: 0, max: 1, unit: '' },
+        highMix: { label: 'High Mix', defaultValue: 1.0, min: 0, max: 1, unit: '' }
       }
     },
     'multiband-eq': {
@@ -78,9 +91,11 @@ export class EffectFactory {
       workletName: 'stardust-chorus-processor',
       displayName: 'Stardust Chorus',
       params: {
-        rate: { label: 'Rate', defaultValue: 0.5, min: 0.1, max: 5, unit: ' Hz' },
-        depth: { label: 'Depth', defaultValue: 0.5, min: 0, max: 1, unit: '' },
-        feedback: { label: 'Feedback', defaultValue: 0.3, min: 0, max: 0.9, unit: '' },
+        rate: { label: 'Rate', defaultValue: 1.5, min: 0.1, max: 10, unit: ' Hz' },
+        delayTime: { label: 'Delay', defaultValue: 3.5, min: 1, max: 20, unit: ' ms' },
+        depth: { label: 'Depth', defaultValue: 0.7, min: 0, max: 1, unit: '' },
+        voices: { label: 'Voices', defaultValue: 3, min: 1, max: 5, unit: '' },
+        stereoWidth: { label: 'Stereo Width', defaultValue: 0.5, min: 0, max: 1, unit: '' },
         wet: { label: 'Mix', defaultValue: 0.5, min: 0, max: 1, unit: '' }
       }
     },

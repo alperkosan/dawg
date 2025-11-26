@@ -68,7 +68,7 @@ class ChorusParticle {
 // GALAXY PARTICLE SYSTEM VISUALIZER
 // ============================================================================
 
-const GalaxyParticleSystem = ({ frequency, depth, delayTime, trackId, effectId }) => {
+const GalaxyParticleSystem = ({ rate, depth, delayTime, trackId, effectId }) => {
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
   const particlesRef = useRef([]);
@@ -97,12 +97,12 @@ const GalaxyParticleSystem = ({ frequency, depth, delayTime, trackId, effectId }
     console.log('[StardustChorus] Visualization params:', {
       trackId,
       effectId,
-      frequency,
+      rate,
       depth,
       inputLevel,
       hasMetrics: !!metrics
     });
-  }, [trackId, effectId, frequency, depth, inputLevel, metrics]);
+  }, [trackId, effectId, rate, depth, inputLevel, metrics]);
 
   const drawVisualization = useCallback((timestamp) => {
     const canvas = canvasRef.current;
@@ -147,7 +147,7 @@ const GalaxyParticleSystem = ({ frequency, depth, delayTime, trackId, effectId }
 
     // Update and draw particles
     particlesRef.current = particlesRef.current.filter(particle => {
-      particle.update(time, frequency, depth);
+      particle.update(time, rate, depth);
       particle.draw(ctx, inputLevel);
       return particle.life > 0;
     });
@@ -156,7 +156,7 @@ const GalaxyParticleSystem = ({ frequency, depth, delayTime, trackId, effectId }
 
     // Update time
     timeRef.current += 0.5;
-  }, [frequency, depth, inputLevel]);
+  }, [rate, depth, inputLevel]);
 
   // Handle canvas resizing
   useEffect(() => {
@@ -181,7 +181,7 @@ const GalaxyParticleSystem = ({ frequency, depth, delayTime, trackId, effectId }
   }, []);
 
   // Use CanvasRenderManager for smooth rendering
-  useRenderer(drawVisualization, 5, 16, [frequency, depth, inputLevel]);
+  useRenderer(drawVisualization, 5, 16, [rate, depth, inputLevel]);
 
   return (
     <div ref={containerRef} className="w-full h-[200px] bg-black/50 rounded-xl border border-[#a78bfa]/20 overflow-hidden">
@@ -196,15 +196,14 @@ const GalaxyParticleSystem = ({ frequency, depth, delayTime, trackId, effectId }
 
 const StardustChorusUI_V2 = ({ trackId, effect, effectNode, definition }) => {
   // Extract settings with defaults
-  const {
-    frequency = 1.5,
-    delayTime = 3.5,
-    depth = 0.7,
-    wet = 0.5
-  } = effect.settings || {};
+  const settings = effect.settings || {};
+  const rate = settings.rate ?? settings.frequency ?? 1.5;
+  const delayTime = settings.delayTime ?? 3.5;
+  const depth = settings.depth ?? 0.7;
+  const wet = settings.wet ?? 0.5;
 
   // Local state for UI
-  const [localFrequency, setLocalFrequency] = useState(frequency);
+  const [localRate, setLocalRate] = useState(rate);
   const [localDelayTime, setLocalDelayTime] = useState(delayTime);
   const [localDepth, setLocalDepth] = useState(depth);
   const [localWet, setLocalWet] = useState(wet);
@@ -217,7 +216,7 @@ const StardustChorusUI_V2 = ({ trackId, effect, effectNode, definition }) => {
   const { handleMixerEffectChange } = useMixerStore.getState();
 
   // Ghost values
-  const ghostFrequency = useGhostValue(localFrequency, 400);
+  const ghostRate = useGhostValue(localRate, 400);
   const ghostDelayTime = useGhostValue(localDelayTime, 400);
   const ghostDepth = useGhostValue(localDepth * 100, 400);
   const ghostWet = useGhostValue(localWet * 100, 400);
@@ -228,9 +227,12 @@ const StardustChorusUI_V2 = ({ trackId, effect, effectNode, definition }) => {
 
     console.log('[StardustChorus] Preset loaded, updating parameters:', effect.settings);
     const updates = {};
-    if (effect.settings.frequency !== undefined) {
-      setLocalFrequency(effect.settings.frequency);
-      updates.frequency = effect.settings.frequency;
+    if (effect.settings.rate !== undefined) {
+      setLocalRate(effect.settings.rate);
+      updates.rate = effect.settings.rate;
+    } else if (effect.settings.frequency !== undefined) {
+      setLocalRate(effect.settings.frequency);
+      updates.rate = effect.settings.frequency;
     }
     if (effect.settings.delayTime !== undefined) {
       setLocalDelayTime(effect.settings.delayTime);
@@ -258,7 +260,7 @@ const StardustChorusUI_V2 = ({ trackId, effect, effectNode, definition }) => {
     handleMixerEffectChange(trackId, effect.id, { [key]: value });
 
     // Update local state
-    if (key === 'frequency') setLocalFrequency(value);
+    if (key === 'rate') setLocalRate(value);
     else if (key === 'delayTime') setLocalDelayTime(value);
     else if (key === 'depth') setLocalDepth(value);
     else if (key === 'wet') setLocalWet(value);
@@ -280,7 +282,7 @@ const StardustChorusUI_V2 = ({ trackId, effect, effectNode, definition }) => {
             <GalaxyParticleSystem
               trackId={trackId}
               effectId={effect.id}
-              frequency={localFrequency}
+              rate={localRate}
               depth={localDepth}
               delayTime={localDelayTime}
             />
@@ -290,9 +292,9 @@ const StardustChorusUI_V2 = ({ trackId, effect, effectNode, definition }) => {
               <div className="grid grid-cols-4 gap-6">
                 <Knob
                   label="RATE"
-                  value={localFrequency}
-                  ghostValue={ghostFrequency}
-                  onChange={(val) => handleParamChange('frequency', val)}
+                  value={localRate}
+                  ghostValue={ghostRate}
+                  onChange={(val) => handleParamChange('rate', val)}
                   min={0.1}
                   max={10}
                   defaultValue={1.5}
@@ -355,7 +357,7 @@ const StardustChorusUI_V2 = ({ trackId, effect, effectNode, definition }) => {
                 <div className="flex justify-between items-center text-[10px]">
                   <span className="text-white/50">Rate</span>
                   <span className="text-[#c4b5fd] font-mono font-bold tabular-nums">
-                    {localFrequency.toFixed(2)} Hz
+                    {localRate.toFixed(2)} Hz
                   </span>
                 </div>
                 <div className="flex justify-between items-center text-[10px]">

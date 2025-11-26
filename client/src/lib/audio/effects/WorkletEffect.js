@@ -19,6 +19,7 @@ export class WorkletEffect extends BaseEffect {
     try {
       // Create AudioWorkletNode
       this.workletNode = new AudioWorkletNode(this.context, this.workletName);
+      this.workletNode.__dawgEffectType = effectType;
 
       // Connect to our input/output
       this.inputNode.connect(this.workletNode);

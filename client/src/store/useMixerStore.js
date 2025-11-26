@@ -3,6 +3,7 @@
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
 import { AudioContextService } from '@/lib/services/AudioContextService';
+import { normalizeEffectParam, normalizeEffectSettings } from '@/lib/audio/effects/parameterMappings.js';
 // ✅ Empty project - no initial data
 import { pluginRegistry } from '@/config/pluginConfig';
 import { storeManager } from './StoreManager';
@@ -359,23 +360,35 @@ export const useMixerStore = create((set, get) => ({
             ...track,
             insertEffects: track.insertEffects.map(fx => {
               if (fx.id === effectId) {
-                let newFx = { ...fx };
+                const effectType = fx.type || fx.effectType;
+                let newFx = {
+                  ...fx,
+                  settings: normalizeEffectSettings(effectType, fx.settings || {})
+                };
                 if (typeof paramOrSettings === 'string') {
-                  if (paramOrSettings === 'bypass' || paramOrSettings === 'sidechainSource') {
+                  const canonicalParam = normalizeEffectParam(effectType, paramOrSettings);
+                  if (canonicalParam === 'bypass' || canonicalParam === 'sidechainSource') {
                     needsRebuild = true;
                   }
-                  if (paramOrSettings === 'bypass') {
+                  if (canonicalParam === 'bypass') {
                     newFx.bypass = value;
                   } else {
                     // ⚡ SAFETY: Deep clone for complex values (arrays/objects) to prevent shared references
                     const clonedValue = (Array.isArray(value) || (typeof value === 'object' && value !== null))
                       ? deepCloneSettings(value)
                       : value;
-                    newFx.settings = { ...fx.settings, [paramOrSettings]: clonedValue };
+                    newFx.settings = { ...newFx.settings, [canonicalParam]: clonedValue };
                   }
                 } else {
                   // Multiple parameters - deep clone the whole object
-                  newFx.settings = { ...fx.settings, ...deepCloneSettings(paramOrSettings) };
+                  const updates = {};
+                  Object.entries(paramOrSettings).forEach(([key, val]) => {
+                    const canonicalKey = normalizeEffectParam(effectType, key);
+                    updates[canonicalKey] = (Array.isArray(val) || (typeof val === 'object' && val !== null))
+                      ? deepCloneSettings(val)
+                      : val;
+                  });
+                  newFx.settings = { ...newFx.settings, ...updates };
                 }
                 return newFx;
               }
@@ -390,6 +403,8 @@ export const useMixerStore = create((set, get) => ({
 
     // ✅ SIMPLIFIED: effectId is already the AudioEngine ID (single ID system)
     const updatedTrack = get().mixerTracks.find(t => t.id === trackId);
+    const trackEffect = updatedTrack?.insertEffects.find(fx => fx.id === effectId);
+    const effectType = trackEffect?.type || trackEffect?.effectType;
 
     // 🎛️ DYNAMIC MIXER: Update effect parameter
     if (trackId === 'master') {
@@ -397,16 +412,26 @@ export const useMixerStore = create((set, get) => ({
       if (needsRebuild && AudioContextService.rebuildSignalChain) {
         AudioContextService.rebuildSignalChain(trackId, updatedTrack);
       } else if (AudioContextService.updateEffectParam) {
-        AudioContextService.updateEffectParam(trackId, effectId, paramOrSettings, value);
+        if (typeof paramOrSettings === 'string') {
+          const canonicalParam = normalizeEffectParam(effectType, paramOrSettings);
+          AudioContextService.updateEffectParam(trackId, effectId, canonicalParam, value);
+        } else {
+          Object.entries(paramOrSettings).forEach(([param, val]) => {
+            const canonicalParam = normalizeEffectParam(effectType, param);
+            AudioContextService.updateEffectParam(trackId, effectId, canonicalParam, val);
+          });
+        }
       }
     } else {
       // Regular track - use dynamic mixer insert API
       if (typeof paramOrSettings === 'string') {
-        AudioContextService.updateInsertEffectParam(trackId, effectId, paramOrSettings, value);
+        const canonicalParam = normalizeEffectParam(effectType, paramOrSettings);
+        AudioContextService.updateInsertEffectParam(trackId, effectId, canonicalParam, value);
       } else {
         // Multiple parameters
         Object.entries(paramOrSettings).forEach(([param, val]) => {
-          AudioContextService.updateInsertEffectParam(trackId, effectId, param, val);
+          const canonicalParam = normalizeEffectParam(effectType, param);
+          AudioContextService.updateInsertEffectParam(trackId, effectId, canonicalParam, val);
         });
       }
     }

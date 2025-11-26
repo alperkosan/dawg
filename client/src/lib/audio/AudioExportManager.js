@@ -10,6 +10,7 @@ import { AudioProcessor } from './AudioProcessor';
 import { FileManager } from './FileManager';
 import { RenderEngine } from './RenderEngine';
 import { audioAssetManager } from './AudioAssetManager';
+import { normalizeEffectSettings } from './effects/parameterMappings.js';
 import {
   EXPORT_FORMATS,
   EXPORT_TYPES,
@@ -836,7 +837,7 @@ export class AudioExportManager {
               id: effectId,
               type: effect.type,
               bypass: effect.bypass || false,
-              settings: effect.settings || {}
+              settings: normalizeEffectSettings(effect.type, effect.settings || {})
             }))
           : []
     };

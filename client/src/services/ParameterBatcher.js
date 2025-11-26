@@ -1,3 +1,5 @@
+import { normalizeEffectParam } from '@/lib/audio/effects/parameterMappings.js';
+
 /**
  * PARAMETER BATCHER v2.0
  *
@@ -132,9 +134,12 @@ export class ParameterBatcher {
       return;
     }
 
+    const effectType = node.__dawgEffectType || node.effectType || node?.__effectType;
+    const canonicalKey = normalizeEffectParam(effectType, key);
+
     // Handle non-worklet nodes (AudioParams)
     if (node.parameters && node.parameters.get) {
-      const param = node.parameters.get(key);
+      const param = node.parameters.get(canonicalKey);
       if (param) {
         param.value = value;
         return;
@@ -155,11 +160,12 @@ export class ParameterBatcher {
     }
 
     // Add parameter to batch
-    batch.addParameter(key, value, priority);
+    batch.addParameter(canonicalKey, value, priority);
 
     // Log
     if (this.config.enableLogging) {
-      console.log(`📦 Batched: ${key} = ${value} (batch size: ${batch.size()})`);
+      const loggedKey = canonicalKey !== key ? `${key}→${canonicalKey}` : canonicalKey;
+      console.log(`📦 Batched: ${loggedKey} = ${value} (batch size: ${batch.size()})`);
     }
 
     // Immediate flush if requested
