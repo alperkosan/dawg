@@ -2486,6 +2486,7 @@ export class PlaybackManager {
                 try {
                     callback(data);
                 } catch (error) {
+                    console.error(`PlaybackManager listener error for event "${event}":`, error);
                 }
             });
         }
