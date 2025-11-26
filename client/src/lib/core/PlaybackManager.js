@@ -940,8 +940,10 @@ export class PlaybackManager {
             }
 
             // Update UI position
-            const playbackStore = usePlaybackStore.getState();
-            playbackStore.set({ transportPosition: '1:1:0', transportStep: 0 });
+            usePlaybackStore.setState({
+                transportPosition: '1:1:0',
+                transportStep: 0
+            });
 
             // usePlaybackStore.getState().setPlaybackState('stopped'); // ✅ Handled by PlaybackController
         } catch (error) {

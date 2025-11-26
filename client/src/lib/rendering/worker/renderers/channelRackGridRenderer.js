@@ -29,6 +29,7 @@ export const channelRackGridRenderer = {
       scrollY: 0,
       palette: { ...DEFAULT_PALETTE, ...(initialState.palette || {}) },
       hoveredCell: null,
+      devicePixelRatio: initialState.devicePixelRatio || 1,
       ...initialState
     };
 
@@ -66,10 +67,9 @@ export const channelRackGridRenderer = {
         return;
       }
 
-      canvas.width = state.viewportWidth;
-      canvas.height = state.viewportHeight;
-
-      const dpr = self.devicePixelRatio || 1;
+      const dpr = state.devicePixelRatio || self.devicePixelRatio || 1;
+      canvas.width = state.viewportWidth * dpr;
+      canvas.height = state.viewportHeight * dpr;
       ctx.save();
       ctx.scale(dpr, dpr);
 

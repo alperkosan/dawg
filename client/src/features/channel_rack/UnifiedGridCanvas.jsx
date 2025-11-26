@@ -36,6 +36,13 @@ const ROW_HEIGHT = 64;
 const BUFFER_STEPS = 32;
 const BUFFER_ROWS = 2;
 
+const readDevicePixelRatio = () => {
+  if (typeof window === 'undefined' || !window.devicePixelRatio) {
+    return 1;
+  }
+  return window.devicePixelRatio || 1;
+};
+
 // ✅ UTILITY: Convert pitch to MIDI number
 const pitchToMidi = (pitch) => {
   if (typeof pitch === 'number') return pitch;
@@ -109,8 +116,43 @@ const UnifiedGridCanvas = React.memo(({
   const lastTotalStepsRef = useRef(null);
   const lastViewportRef = useRef({ width: null, height: null });
   const lastScrollPostedRef = useRef({ x: -1, y: -1 });
+  const lastDevicePixelRatioSentRef = useRef(readDevicePixelRatio());
+
+  const [devicePixelRatio, setDevicePixelRatio] = useState(lastDevicePixelRatioSentRef.current);
+  const devicePixelRatioRef = useRef(lastDevicePixelRatioSentRef.current);
 
   const palette = useMemo(() => getPalette(), [themeVersion]);
+  const instrumentsFingerprint = useMemo(() => buildInstrumentSignature(instruments), [instruments]);
+  const notesDataFingerprint = useMemo(() => {
+    if (!notesData) return 'none';
+    const keys = Object.keys(notesData).sort();
+    const counts = keys.map((key) => (Array.isArray(notesData[key]) ? notesData[key].length : 0));
+    return `${keys.join('|')}#${counts.join(',')}`;
+  }, [notesData]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    const handleDprChange = () => {
+      const next = readDevicePixelRatio();
+      if (next !== devicePixelRatioRef.current) {
+        devicePixelRatioRef.current = next;
+        setDevicePixelRatio(next);
+        markDirty();
+      }
+    };
+
+    window.addEventListener('resize', handleDprChange);
+    window.addEventListener('orientationchange', handleDprChange);
+
+    return () => {
+      window.removeEventListener('resize', handleDprChange);
+      window.removeEventListener('orientationchange', handleDprChange);
+    };
+  }, [markDirty]);
+
+// (placeholder removed)
 
   // ✅ FIX: Create canvas element manually to prevent duplicate transfers
   useEffect(() => {
@@ -237,11 +279,13 @@ const UnifiedGridCanvas = React.memo(({
       viewportHeight,
       scrollX: scrollXRef?.current || 0,
       scrollY: scrollYRef?.current || 0,
-      palette
+      palette,
+      devicePixelRatio
     });
 
     workerInitializedRef.current = true;
     workerNeedsFullSyncRef.current = false;
+    lastDevicePixelRatioSentRef.current = devicePixelRatio;
   }, [
     instruments,
     notesData,
@@ -252,7 +296,22 @@ const UnifiedGridCanvas = React.memo(({
     palette,
     scrollXRef,
     scrollYRef,
-    supportsOffscreenCanvas
+    supportsOffscreenCanvas,
+    devicePixelRatio
+  ]);
+
+  useEffect(() => {
+    if (!supportsOffscreenCanvas) return;
+    if (!workerSurfaceIdRef.current) return;
+    if (!isVisible) return;
+    workerNeedsFullSyncRef.current = true;
+    sendFullStateToWorker();
+  }, [
+    supportsOffscreenCanvas,
+    isVisible,
+    sendFullStateToWorker,
+    instrumentsFingerprint,
+    notesDataFingerprint
   ]);
 
   // Worker surface lifecycle (initialization)
@@ -278,7 +337,8 @@ const UnifiedGridCanvas = React.memo(({
       viewportHeight: 0,
       scrollX: 0,
       scrollY: 0,
-      palette
+      palette,
+      devicePixelRatio
     });
 
     if (surfaceId) {
@@ -291,7 +351,7 @@ const UnifiedGridCanvas = React.memo(({
         sendFullStateToWorker();
       }
     }
-  }, [supportsOffscreenCanvas, isVisible, palette, sendFullStateToWorker]);
+  }, [supportsOffscreenCanvas, isVisible, palette, sendFullStateToWorker, devicePixelRatio]);
 
   // Trigger full sync when panel becomes visible again
   useEffect(() => {
@@ -356,6 +416,11 @@ const UnifiedGridCanvas = React.memo(({
       updates.viewportHeight = viewportHeight;
     }
 
+    if (devicePixelRatio !== lastDevicePixelRatioSentRef.current) {
+      lastDevicePixelRatioSentRef.current = devicePixelRatio;
+      updates.devicePixelRatio = devicePixelRatio;
+    }
+
     const instrumentIds = instruments.map((inst) => inst?.id).filter(Boolean);
     const { patches, removals } = computeNotesDiff(notesData, notesCacheRef, instrumentIds);
     if (patches && Object.keys(patches).length > 0) {
@@ -377,7 +442,8 @@ const UnifiedGridCanvas = React.memo(({
     patternLength,
     viewportWidth,
     viewportHeight,
-    palette
+    palette,
+    devicePixelRatio
   ]);
 
   useEffect(() => {

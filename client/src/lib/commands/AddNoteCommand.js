@@ -35,8 +35,11 @@ export class AddNoteCommand extends Command {
     const currentNotes = activePattern.data[this.instrumentId] || [];
 
     // ✅ FL STUDIO STYLE: Calculate pattern length and extend note to pattern length
-    // Get pattern length in steps (default to 64 if no notes exist)
-    const patternLengthInSteps = calculatePatternLoopLength(activePattern) || 64;
+    // Prefer explicit pattern length, otherwise fall back to calculated value
+    const patternLengthInSteps =
+      (typeof activePattern.length === 'number' && activePattern.length > 0)
+        ? activePattern.length
+        : (calculatePatternLoopLength(activePattern) || 64);
     
     // Convert step length to duration string
     // 1 step = 1/16 note, so patternLengthInSteps steps = patternLengthInSteps/16 bars
