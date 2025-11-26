@@ -274,6 +274,48 @@ export const useArrangementStore = create(arrangementStoreOrchestrator((set, get
     }
   },
 
+  setPatternLength: (patternId, newLength) => {
+    if (!patternId || typeof newLength !== 'number') return;
+
+    const normalizeLength = (length) => {
+      const clamped = Math.max(16, Math.min(8192, length));
+      return Math.ceil(clamped / 16) * 16;
+    };
+
+    const nextLength = normalizeLength(newLength);
+
+    set(state => {
+      const pattern = state.patterns[patternId];
+      if (!pattern) {
+        console.warn('❌ Pattern not found for length update:', patternId);
+        return state;
+      }
+
+      if (pattern.length === nextLength) {
+        return state;
+      }
+
+      const updatedPattern = {
+        ...pattern,
+        length: nextLength,
+        settings: {
+          ...(pattern.settings || {}),
+          length: nextLength
+        }
+      };
+
+      return {
+        patterns: {
+          ...state.patterns,
+          [patternId]: updatedPattern
+        }
+      };
+    });
+
+    // Ensure transport + timeline pick up new loop length
+    usePlaybackStore.getState().updateLoopLength();
+  },
+
   updateClip: (clipId, newParams) => {
     set(state => ({
       clips: state.clips.map(clip => 
