@@ -15,12 +15,45 @@ function VelocityLane({
     activeTool = 'select'
 }) {
     const canvasRef = useRef(null);
+    const payloadRef = useRef({
+        notes,
+        selectedNoteIds,
+        dimensions,
+        viewport,
+        activeTool
+    });
+    const dirtyRef = useRef(true);
+    const lastViewportRef = useRef({ scrollX: 0, width: 0 });
 
-    // Draw velocity lane
+    const markDirty = useCallback(() => {
+        dirtyRef.current = true;
+    }, []);
+
     useEffect(() => {
+        payloadRef.current = {
+            notes,
+            selectedNoteIds,
+            dimensions,
+            viewport,
+            activeTool
+        };
+        markDirty();
+    }, [notes, selectedNoteIds, dimensions, viewport, activeTool, markDirty]);
+
+    useEffect(() => {
+        if (typeof ResizeObserver === 'undefined') return;
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const resizeObserver = new ResizeObserver(() => markDirty());
+        resizeObserver.observe(canvas);
+        return () => resizeObserver.disconnect();
+    }, [markDirty]);
+
+    const renderVelocityLane = useCallback(() => {
         const canvas = canvasRef.current;
         const ctx = canvas?.getContext('2d');
-        if (!ctx || !dimensions || !viewport) return;
+        const payload = payloadRef.current;
+        if (!ctx || !payload.dimensions || !payload.viewport) return;
 
         const styles = getComputedStyle(document.documentElement);
         const dpr = window.devicePixelRatio || 1;
@@ -29,26 +62,46 @@ function VelocityLane({
         if (canvas.width !== rect.width * dpr || canvas.height !== rect.height * dpr) {
             canvas.width = rect.width * dpr;
             canvas.height = rect.height * dpr;
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
             ctx.scale(dpr, dpr);
         }
 
-        // Clear canvas
         const bgPrimary = styles.getPropertyValue('--zenith-bg-primary').trim();
         ctx.fillStyle = bgPrimary || '#1a1d23';
         ctx.fillRect(0, 0, rect.width, rect.height);
 
-        // Draw velocity bars
         drawVelocityBars(ctx, {
-            notes,
-            selectedNoteIds,
-            dimensions,
-            viewport,
+            ...payload,
             canvasHeight: rect.height
         });
+    }, []);
 
-    }, [notes, selectedNoteIds, dimensions, viewport]);
+    useEffect(() => {
+        let rafId;
+        const loop = () => {
+            const payload = payloadRef.current;
+            const vp = payload.viewport;
+            if (vp) {
+                const last = lastViewportRef.current;
+                if (vp.scrollX !== last.scrollX || vp.width !== last.width) {
+                    lastViewportRef.current = { scrollX: vp.scrollX, width: vp.width };
+                    dirtyRef.current = true;
+                }
+            }
 
-    const drawVelocityBars = (ctx, { notes, selectedNoteIds, dimensions, viewport, canvasHeight }) => {
+            if (dirtyRef.current) {
+                dirtyRef.current = false;
+                renderVelocityLane();
+            }
+            rafId = requestAnimationFrame(loop);
+        };
+        rafId = requestAnimationFrame(loop);
+        return () => {
+            if (rafId) cancelAnimationFrame(rafId);
+        };
+    }, [renderVelocityLane]);
+
+    const drawVelocityBars = (ctx, { notes, selectedNoteIds, dimensions, viewport, canvasHeight, activeTool: currentTool }) => {
         const styles = getComputedStyle(document.documentElement);
         const { stepWidth } = dimensions;
 
@@ -105,7 +158,7 @@ function VelocityLane({
             }
 
             // Draw resize handles for selected notes
-            if (isSelected && activeTool === 'select') {
+            if (isSelected && currentTool === 'select') {
                 const textPrimary = styles.getPropertyValue('--zenith-text-primary').trim();
                 ctx.fillStyle = textPrimary || '#ffffff';
                 ctx.globalAlpha = 1.0;

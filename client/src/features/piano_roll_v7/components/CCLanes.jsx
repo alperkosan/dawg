@@ -29,12 +29,47 @@ function CCLanes({
     const [hoveredPoint, setHoveredPoint] = useState({ laneIndex: -1, pointIndex: -1 });
     const [draggingPoint, setDraggingPoint] = useState(null);
     const [selectedLaneIndex, setSelectedLaneIndex] = useState(0);
+    const payloadRef = useRef({
+        lanes,
+        selectedLaneIndex: 0,
+        hoveredPoint: { laneIndex: -1, pointIndex: -1 },
+        draggingPoint: null,
+        dimensions,
+        viewport
+    });
+    const dirtyRef = useRef(true);
+    const lastViewportRef = useRef({ scrollX: 0, width: 0 });
 
-    // Draw CC lanes
+    const markDirty = useCallback(() => {
+        dirtyRef.current = true;
+    }, []);
+
     useEffect(() => {
+        payloadRef.current = {
+            lanes,
+            selectedLaneIndex,
+            hoveredPoint,
+            draggingPoint,
+            dimensions,
+            viewport
+        };
+        markDirty();
+    }, [lanes, selectedLaneIndex, hoveredPoint, draggingPoint, dimensions, viewport, markDirty]);
+
+    useEffect(() => {
+        if (typeof ResizeObserver === 'undefined') return;
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const resizeObserver = new ResizeObserver(() => markDirty());
+        resizeObserver.observe(canvas);
+        return () => resizeObserver.disconnect();
+    }, [markDirty]);
+
+    const renderCCLanes = useCallback(() => {
         const canvas = canvasRef.current;
         const ctx = canvas?.getContext('2d');
-        if (!ctx || !dimensions || !viewport || lanes.length === 0) return;
+        const payload = payloadRef.current;
+        if (!ctx || !payload.dimensions || !payload.viewport || payload.lanes.length === 0) return;
 
         const styles = getComputedStyle(document.documentElement);
         const dpr = window.devicePixelRatio || 1;
@@ -43,32 +78,57 @@ function CCLanes({
         if (canvas.width !== rect.width * dpr || canvas.height !== rect.height * dpr) {
             canvas.width = rect.width * dpr;
             canvas.height = rect.height * dpr;
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
             ctx.scale(dpr, dpr);
         }
 
-        // Clear canvas
         const bgPrimary = styles.getPropertyValue('--zenith-bg-primary').trim();
         ctx.fillStyle = bgPrimary || '#1a1d23';
         ctx.fillRect(0, 0, rect.width, rect.height);
 
-        // Draw active lane
-        if (selectedLaneIndex >= 0 && selectedLaneIndex < lanes.length) {
-            const lane = lanes[selectedLaneIndex];
-            if (lane.visible) {
+        const { selectedLaneIndex: laneIndex, lanes: laneList } = payload;
+        if (laneIndex >= 0 && laneIndex < laneList.length) {
+            const lane = laneList[laneIndex];
+            if (lane?.visible) {
                 drawAutomationLane(ctx, {
                     lane,
-                    laneIndex: selectedLaneIndex,
-                    dimensions,
-                    viewport,
+                    laneIndex,
+                    dimensions: payload.dimensions,
+                    viewport: payload.viewport,
                     canvasHeight: rect.height,
                     canvasWidth: rect.width,
-                    hoveredPoint,
-                    draggingPoint
+                    hoveredPoint: payload.hoveredPoint,
+                    draggingPoint: payload.draggingPoint
                 });
             }
         }
+    }, []);
 
-    }, [lanes, selectedLaneIndex, hoveredPoint, draggingPoint, dimensions, viewport, viewport?.scrollX]);
+    useEffect(() => {
+        let rafId;
+        const loop = () => {
+            const payload = payloadRef.current;
+            const vp = payload.viewport;
+            if (vp) {
+                const last = lastViewportRef.current;
+                if (vp.scrollX !== last.scrollX || vp.width !== last.width) {
+                    lastViewportRef.current = { scrollX: vp.scrollX, width: vp.width };
+                    dirtyRef.current = true;
+                }
+            }
+
+            if (dirtyRef.current) {
+                dirtyRef.current = false;
+                renderCCLanes();
+            }
+
+            rafId = requestAnimationFrame(loop);
+        };
+        rafId = requestAnimationFrame(loop);
+        return () => {
+            if (rafId) cancelAnimationFrame(rafId);
+        };
+    }, [renderCCLanes]);
 
     const drawAutomationLane = (ctx, { lane, laneIndex, dimensions, viewport, canvasHeight, canvasWidth, hoveredPoint, draggingPoint }) => {
         const styles = getComputedStyle(document.documentElement);

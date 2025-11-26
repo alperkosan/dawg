@@ -48,6 +48,20 @@ export class PerformanceMonitor {
 
             // Scheduling
             scheduledEvents: 0,
+            scheduler: {
+                lastReason: 'bootstrap',
+                lastScope: 'all',
+                lastPriority: 'idle',
+                lastDurationMs: 0,
+                avgDurationMs: 0,
+                dirtyInstrumentCount: 0,
+                scheduledNotes: 0,
+                scheduledInstruments: 0,
+                queueSize: 0,
+                pendingRequests: 0,
+                force: false,
+                timestamp: 0
+            },
 
             // Session
             sessionDuration: 0,       // seconds
@@ -60,6 +74,7 @@ export class PerformanceMonitor {
             memory: [],
             maxHistoryLength: 60  // Keep last 60 samples (1 minute at 1Hz)
         };
+        this.schedulerHistory = [];
 
         // Monitoring state
         this.isMonitoring = false;
@@ -358,6 +373,48 @@ export class PerformanceMonitor {
         if (this.warnings.length > 0) {
             EventBus.emit('PERFORMANCE_WARNING', this.warnings);
         }
+    }
+
+    /**
+     * Record a scheduling performance sample
+     * @param {Object} sample
+     */
+    recordSchedulingSample(sample = {}) {
+        const durationMs = Number(sample.durationMs) || 0;
+        const scope = sample.scope || 'all';
+        const reason = sample.reason || 'unknown';
+        const priority = sample.priority || 'auto';
+        const dirtyInstrumentCount = Number(sample.dirtyInstrumentCount) || 0;
+        const scheduledNotes = Number(sample.scheduledNotes) || 0;
+        const scheduledInstruments = Number(sample.scheduledInstruments) || 0;
+        const queueSize = Number(sample.queueSize ?? this.metrics.scheduler.queueSize ?? 0);
+        const pendingRequests = Number(sample.pendingRequests ?? 0);
+        const force = Boolean(sample.force);
+        const timestamp = sample.timestamp || Date.now();
+
+        this.schedulerHistory.push(durationMs);
+        if (this.schedulerHistory.length > this.history.maxHistoryLength) {
+            this.schedulerHistory.shift();
+        }
+        const avgDuration = this.schedulerHistory.reduce((acc, value) => acc + value, 0) / this.schedulerHistory.length || 0;
+
+        this.metrics.scheduler = {
+            lastReason: reason,
+            lastScope: scope,
+            lastPriority: priority,
+            lastDurationMs: durationMs,
+            avgDurationMs: avgDuration,
+            dirtyInstrumentCount,
+            scheduledNotes,
+            scheduledInstruments,
+            queueSize,
+            pendingRequests,
+            force,
+            timestamp
+        };
+
+        // Emit immediate update so overlay reflects latest scheduler stats
+        EventBus.emit('PERFORMANCE_UPDATE', this.getMetrics());
     }
 
     /**

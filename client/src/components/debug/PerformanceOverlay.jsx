@@ -141,6 +141,50 @@ export function PerformanceOverlay({ performanceMonitor }) {
                     </div>
                 </div>
 
+                {/* Scheduler */}
+                {metrics.scheduler && (
+                    <div className="performance-scheduler">
+                        <div className="performance-scheduler__header">
+                            <span>Scheduler</span>
+                            <span>
+                                {metrics.scheduler.lastDurationMs?.toFixed
+                                    ? metrics.scheduler.lastDurationMs.toFixed(2)
+                                    : metrics.scheduler.lastDurationMs || 0} ms
+                            </span>
+                        </div>
+                        <div className="performance-scheduler__grid">
+                            <div>
+                                <span className="performance-scheduler__label">Scope</span>
+                                <span className="performance-scheduler__value">{metrics.scheduler.lastScope}</span>
+                            </div>
+                            <div>
+                                <span className="performance-scheduler__label">Priority</span>
+                                <span className="performance-scheduler__value">{metrics.scheduler.lastPriority}</span>
+                            </div>
+                            <div>
+                                <span className="performance-scheduler__label">Dirty Instruments</span>
+                                <span className="performance-scheduler__value">{metrics.scheduler.dirtyInstrumentCount}</span>
+                            </div>
+                            <div>
+                                <span className="performance-scheduler__label">Notes Scheduled</span>
+                                <span className="performance-scheduler__value">{metrics.scheduler.scheduledNotes}</span>
+                            </div>
+                            <div>
+                                <span className="performance-scheduler__label">Avg Duration</span>
+                                <span className="performance-scheduler__value">
+                                    {metrics.scheduler.avgDurationMs?.toFixed
+                                        ? metrics.scheduler.avgDurationMs.toFixed(2)
+                                        : metrics.scheduler.avgDurationMs || 0} ms
+                                </span>
+                            </div>
+                            <div>
+                                <span className="performance-scheduler__label">Queue Size</span>
+                                <span className="performance-scheduler__value">{metrics.scheduler.queueSize}</span>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 {/* Warnings */}
                 {warnings.length > 0 && (
                     <div className="performance-warnings">

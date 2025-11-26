@@ -8,7 +8,6 @@ import { useArrangementWorkspaceStore } from '@/store/useArrangementWorkspaceSto
 // ✅ PHASE 1: Store Consolidation - useArrangementV2Store removed, use useArrangementStore instead
 import EventBus from './EventBus.js';
 import { PositionTracker } from './PositionTracker.js';
-import { audioAssetManager } from '@/lib/audio/AudioAssetManager';
 import { idleDetector } from '../utils/IdleDetector.js';
 import { AutomationLane } from '@/features/piano_roll_v7/types/AutomationLane';
 import { getAutomationManager } from '@/lib/automation/AutomationManager';
@@ -30,9 +29,19 @@ class SchedulingOptimizer {
         this.scheduleDebounceTime = 50; // ✅ OPTIMIZATION: Increased from 16ms to 50ms for better debouncing
         this.lastScheduleReason = '';
         this.scheduleCount = 0;
+        this.priorityDelays = {
+            idle: 50,
+            realtime: 12,
+            burst: 0
+        };
+        this.isPlaybackActive = false;
     }
 
-    requestSchedule(callback, reason = 'unknown') {
+    setPlaybackActivity(isActive) {
+        this.isPlaybackActive = Boolean(isActive);
+    }
+
+    requestSchedule(callback, reason = 'unknown', priority = 'auto') {
         // Cancel any pending schedule
         if (this.pendingSchedule) {
             clearTimeout(this.pendingSchedule);
@@ -41,14 +50,23 @@ class SchedulingOptimizer {
         this.lastScheduleReason = reason;
         this.scheduleCount++;
 
+        const resolvedPriority = this._resolvePriority(priority);
+        const delay = this._getDelayForPriority(resolvedPriority);
+
+        if (delay <= 0) {
+            callback();
+            this.pendingSchedule = null;
+            return;
+        }
+
         // Schedule new callback with debounce
         this.pendingSchedule = setTimeout(() => {
             callback();
             this.pendingSchedule = null;
-        }, this.scheduleDebounceTime);
+        }, delay);
     }
 
-    forceExecute(callback, reason = 'force') {
+    forceExecute(callback) {
         if (this.pendingSchedule) {
             clearTimeout(this.pendingSchedule);
             this.pendingSchedule = null;
@@ -58,6 +76,27 @@ class SchedulingOptimizer {
 
     isSchedulePending() {
         return this.pendingSchedule !== null;
+    }
+
+    getStats() {
+        return {
+            pending: this.pendingSchedule ? 1 : 0,
+            scheduleCount: this.scheduleCount
+        };
+    }
+
+    _resolvePriority(priority) {
+        if (priority === 'auto') {
+            return this.isPlaybackActive ? 'realtime' : 'idle';
+        }
+        return priority;
+    }
+
+    _getDelayForPriority(priority) {
+        if (priority && typeof this.priorityDelays[priority] === 'number') {
+            return this.priorityDelays[priority];
+        }
+        return this.scheduleDebounceTime;
     }
 }
 
@@ -83,6 +122,15 @@ export class PlaybackManager {
         // ✅ NEW: Centralized event management via EventBus
         this._bindGlobalEvents();
 
+        // ✅ NEW: Dirty state tracking for targeted scheduling
+        this.dirtyState = {
+            instruments: new Set(),
+            automation: new Set(),
+            clips: new Set(),
+            global: true,
+            reason: 'bootstrap'
+        };
+
         // Playback state
         this.currentMode = 'pattern'; // 'pattern' | 'song'
         this.isPlaying = false;
@@ -94,6 +142,9 @@ export class PlaybackManager {
         this.loopStart = 0; // in steps
         this.loopEnd = 64; // in steps
         this.isAutoLoop = true; // Auto calculate loop points
+        this.loopPreRollTime = 0.08; // seconds before loop to schedule next cycle
+        this.loopPreRollTimer = null;
+        this.lastPreRollTarget = null;
         
         // Pattern mode settings
         this.activePatternId = null;
@@ -121,7 +172,7 @@ export class PlaybackManager {
     _bindTransportEvents() {
         // ✅ MERKEZI LOOP HANDLING - Transport loop event'ini yakala
         this.transport.on('loop', (data) => {
-            const { nextLoopStartTime, fromTick, toTick, time } = data;
+            const { nextLoopStartTime, time } = data;
             
             
             // ✅ MERKEZI RESTART HANDLING
@@ -219,6 +270,37 @@ export class PlaybackManager {
 
     }
 
+    _markInstrumentDirty(instrumentId) {
+        if (!instrumentId) return;
+        this.dirtyState.instruments.add(instrumentId);
+    }
+
+    _markAllDirty(reason = 'manual') {
+        this.dirtyState.global = true;
+        this.dirtyState.reason = reason;
+    }
+
+    _resetDirtyState() {
+        this.dirtyState.instruments.clear();
+        this.dirtyState.automation.clear();
+        this.dirtyState.clips.clear();
+        this.dirtyState.global = false;
+        this.dirtyState.reason = null;
+    }
+
+    _resolveInstrumentTargets(scope, explicitIds) {
+        if (Array.isArray(explicitIds) && explicitIds.length) {
+            return Array.from(new Set(explicitIds));
+        }
+        if (typeof explicitIds === 'string' && explicitIds) {
+            return [explicitIds];
+        }
+        if (scope === 'notes') {
+            return Array.from(this.dirtyState.instruments);
+        }
+        return null;
+    }
+
     /**
      * ✅ NEW: Centralized pattern change handler
      * @param {Object} data - {patternId, changeType, ...}
@@ -232,6 +314,7 @@ export class PlaybackManager {
             return;
         }
 
+        this._markAllDirty(`pattern-${changeType || 'change'}`);
 
         // Pattern structure changes require full reschedule
         if (['structure-change', 'pattern-switch'].includes(changeType)) {
@@ -261,6 +344,10 @@ export class PlaybackManager {
             return;
         }
 
+        if (instrumentId) {
+            this._markInstrumentDirty(instrumentId);
+        }
+
         // ✅ CRITICAL: Schedule during active playback (not paused)
         // When paused, notes are added to pattern data and will play when resumed
         if (this.isPlaying) {
@@ -274,6 +361,12 @@ export class PlaybackManager {
             console.log('⏹️ Stopped - note will play when playback starts');
         }
         // No else clause - we DON'T want full reschedule for single note additions
+
+        this._scheduleContent(null, 'note-added', false, {
+            scope: 'notes',
+            instrumentIds: instrumentId ? [instrumentId] : null,
+            priority: this.isPlaying && !this.isPaused ? 'realtime' : 'auto'
+        });
     }
 
     /**
@@ -327,6 +420,16 @@ export class PlaybackManager {
         }
 
         // The note will not be scheduled in next loop iteration
+
+        if (instrumentId) {
+            this._markInstrumentDirty(instrumentId);
+        }
+
+        this._scheduleContent(null, 'note-removed', false, {
+            scope: 'notes',
+            instrumentIds: instrumentId ? [instrumentId] : null,
+            priority: this.isPlaying && !this.isPaused ? 'realtime' : 'auto'
+        });
     }
 
     /**
@@ -339,11 +442,20 @@ export class PlaybackManager {
         const arrangementStore = useArrangementStore.getState();
         if (patternId !== arrangementStore.activePatternId) return;
 
+        if (instrumentId) {
+            this._markInstrumentDirty(instrumentId);
+        }
 
         // For note modifications, treat as remove + add
         if (this.isPlaying && !this.isPaused) {
             this._scheduleNewNotesImmediate([{ instrumentId, note }]);
         }
+
+        this._scheduleContent(null, 'note-modified', false, {
+            scope: 'notes',
+            instrumentIds: instrumentId ? [instrumentId] : null,
+            priority: this.isPlaying && !this.isPaused ? 'realtime' : 'auto'
+        });
     }
 
     /**
@@ -351,36 +463,44 @@ export class PlaybackManager {
      * @param {number} nextStartTime - Bir sonraki loop'un başlangıç zamanı
      */
     _handleLoopRestart(nextStartTime = null) {
-        // ✅ OPTIMIZATION: Prevent duplicate scheduling if already pending
-        if (this.schedulingOptimizer.isSchedulePending()) {
+        if (!this.isPlaying) {
             return;
         }
 
-        // ✅ CONSISTENT: Reset to loopStart (not hardcoded 0)
         this.currentPosition = this.loopStart;
 
-        // ✅ CONSISTENT: Force transport position to loopStart immediately
         if (this.transport.setPosition) {
             this.transport.setPosition(this.loopStart);
         }
 
-        // ✅ OPTIMIZATION: DON'T clear here - Transport already cleared (line 303 NativeTransportSystem.js)
-        // _clearScheduledEvents will be called inside _scheduleContent anyway
-        // Removing this prevents DOUBLE clearing
+        let scheduledTarget = nextStartTime;
+        if (!scheduledTarget) {
+            scheduledTarget = this._computeNextLoopStartTime();
+        }
 
-        // ✅ CRITICAL FIX: Stop all active notes to prevent stuck notes on loop restart
-        this._stopAllActiveNotes();
+        if (!scheduledTarget || !Number.isFinite(scheduledTarget)) {
+            this._scheduleContent(null, 'loop-restart-fallback', true);
+        } else {
+            const alreadyMatchesTarget = this.lastPreRollTarget &&
+                Math.abs(this.lastPreRollTarget - scheduledTarget) < 0.0005;
 
-        // Content'i yeniden schedule et
-        const startTime = nextStartTime || this.transport.audioContext.currentTime;
-        this._scheduleContent(startTime, 'loop-restart', true); // Force immediate scheduling for loop restart
+            if (!alreadyMatchesTarget) {
+                this._scheduleContent(scheduledTarget, 'loop-restart-fallback', true, {
+                    append: true,
+                    priority: 'burst'
+                });
+            }
 
-        // ✅ BONUS: Loop restart analytics
+            const nextTarget = scheduledTarget + this._getLoopDurationSeconds();
+            if (Number.isFinite(nextTarget)) {
+                this._scheduleLoopPreRoll(nextTarget);
+            }
+        }
+
         this._trackLoopRestart();
 
-        // UI'ı bilgilendir - use corrected position
         this._emit('loopRestart', {
-            time: startTime,
+            time: scheduledTarget || this.transport.audioContext.currentTime,
             tick: this.loopStart * this.transport.ticksPerStep,
             step: this.loopStart,
             mode: this.currentMode,
@@ -498,6 +618,67 @@ export class PlaybackManager {
         this._updateTransportLoop();
     }
 
+    _getLoopDurationSeconds() {
+        if (!this.transport || typeof this.transport.stepsToSeconds !== 'function') {
+            return 0;
+        }
+        const loopLengthSteps = Math.max(1, this.loopEnd - this.loopStart);
+        return this.transport.stepsToSeconds(loopLengthSteps);
+    }
+
+    _computeNextLoopStartTime() {
+        if (!this.transport?.audioContext) {
+            return null;
+        }
+        const currentTime = this.transport.audioContext.currentTime;
+        const loopLengthSteps = Math.max(1, this.loopEnd - this.loopStart);
+        if (!loopLengthSteps || !Number.isFinite(loopLengthSteps)) {
+            return currentTime;
+        }
+        const currentStep = this.transport.ticksToSteps(this.transport.currentTick);
+        const relativeStep = ((currentStep - this.loopStart) % loopLengthSteps + loopLengthSteps) % loopLengthSteps;
+        const stepsRemaining = loopLengthSteps - relativeStep;
+        const secondsRemaining = this.transport.stepsToSeconds(stepsRemaining);
+        return currentTime + secondsRemaining;
+    }
+
+    _cancelLoopPreRoll() {
+        if (this.loopPreRollTimer) {
+            clearTimeout(this.loopPreRollTimer);
+            this.loopPreRollTimer = null;
+        }
+        this.lastPreRollTarget = null;
+    }
+
+    _scheduleLoopPreRoll(targetStartTime) {
+        if (!this.isPlaying || !this.transport?.audioContext || !isFinite(targetStartTime)) {
+            return;
+        }
+
+        const audioCtx = this.transport.audioContext;
+        const currentTime = audioCtx.currentTime;
+        const adjustedTarget = Math.max(targetStartTime, currentTime);
+        const fireTime = Math.max(currentTime, adjustedTarget - this.loopPreRollTime);
+        const delayMs = Math.max(0, (fireTime - currentTime) * 1000);
+
+        if (this.loopPreRollTimer) {
+            clearTimeout(this.loopPreRollTimer);
+            this.loopPreRollTimer = null;
+        }
+
+        this.lastPreRollTarget = targetStartTime;
+        this.loopPreRollTimer = setTimeout(() => {
+            this.loopPreRollTimer = null;
+            if (!this.isPlaying) {
+                return;
+            }
+            this._scheduleContent(targetStartTime, 'loop-pre-roll', true, {
+                append: true,
+                priority: 'burst'
+            });
+        }, delayMs);
+    }
+
     _calculatePatternLoop() {
         const arrangementStore = useArrangementStore.getState();
         const activePatternId = arrangementStore.activePatternId;
@@ -519,9 +700,8 @@ export class PlaybackManager {
             if (Array.isArray(notes) && notes.length > 0) {
                 let instrumentMaxStep = 0;
                 notes.forEach(note => {
-                    const noteTime = (note.startTime ?? note.time ?? 0);
-                    // Notanın süresini step cinsinden al, varsayılan olarak 1 step (16'lık nota)
-                    const noteDuration = this._getDurationInSteps(note.duration) || 1;
+                    const noteTime = this._getNoteStartStep(note);
+                    const noteDuration = this._getNoteLengthInSteps(note);
                     const noteEnd = noteTime + noteDuration;
                     instrumentMaxStep = Math.max(instrumentMaxStep, noteEnd);
                 });
@@ -577,10 +757,8 @@ export class PlaybackManager {
 
     _updateTransportLoop() {
         if (this.transport) {
-            // ✅ DÜZELTME: Step'leri doğru şekilde transport'a gönder
             this.transport.setLoopPoints(this.loopStart, this.loopEnd);
             this.transport.setLoopEnabled(this.loopEnabled);
-        } else {
         }
     }
 
@@ -632,14 +810,21 @@ export class PlaybackManager {
                 this.transport.setPosition(playPosition);
             }
 
+            const nextLoopStart = startTime + this._getLoopDurationSeconds();
+            if (Number.isFinite(nextLoopStart)) {
+                this._scheduleLoopPreRoll(nextLoopStart);
+            }
+
             this.isPlaying = true;
             this.isPaused = false;
+            this.schedulingOptimizer.setPlaybackActivity(true);
 
             // ⚡ IDLE OPTIMIZATION: Notify idle detector that we're playing
             idleDetector.setPlaying(true);
 
             // usePlaybackStore.getState().setPlaybackState('playing'); // ✅ Handled by PlaybackController
         } catch (error) {
+            console.error('PlaybackManager.play failed:', error);
             this.stop();
         }
     }
@@ -659,12 +844,15 @@ export class PlaybackManager {
             this.audioClipScheduler.stopAll();
 
             this.isPaused = true;
+            this.schedulingOptimizer.setPlaybackActivity(false);
+            this._cancelLoopPreRoll();
 
 
             // Notify stores
             // usePlaybackStore.getState().setPlaybackState('paused'); // ✅ Handled by PlaybackController
 
         } catch (error) {
+            console.error('PlaybackManager.pause failed:', error);
         }
     }
 
@@ -681,15 +869,21 @@ export class PlaybackManager {
 
             this.isPlaying = true;
             this.isPaused = false;
+            this.schedulingOptimizer.setPlaybackActivity(true);
 
 
             // ✅ CRITICAL FIX: Reschedule content from current position
             this._scheduleContent(startTime, 'resume', true);
+            const nextTarget = this._computeNextLoopStartTime();
+            if (nextTarget) {
+                this._scheduleLoopPreRoll(nextTarget);
+            }
 
             // Notify stores
             // usePlaybackStore.getState().setPlaybackState('playing'); // ✅ Handled by PlaybackController
 
         } catch (error) {
+            console.error('PlaybackManager.resume failed:', error);
         }
     }
 
@@ -698,6 +892,7 @@ export class PlaybackManager {
 
         try {
             this.transport.stop();
+            this._cancelLoopPreRoll();
 
             // ✅ OPTIMIZATION: Only stop instruments that are actually playing
             let stoppedCount = 0;
@@ -720,6 +915,7 @@ export class PlaybackManager {
                     console.error('Error stopping instrument:', e);
                 }
             });
+            console.log('PlaybackManager.stop summary:', { stoppedCount, skippedCount });
 
 
             // ✅ REFACTOR: Stop all active audio sources via AudioClipScheduler
@@ -732,6 +928,7 @@ export class PlaybackManager {
 
             this.isPlaying = false;
             this.isPaused = false;
+            this.schedulingOptimizer.setPlaybackActivity(false);
 
             // ⚡ IDLE OPTIMIZATION: Notify idle detector that we stopped
             idleDetector.setPlaying(false);
@@ -743,12 +940,12 @@ export class PlaybackManager {
             }
 
             // Update UI position
-            const { usePlaybackStore } = require('../../store/usePlaybackStore');
             const playbackStore = usePlaybackStore.getState();
             playbackStore.set({ transportPosition: '1:1:0', transportStep: 0 });
 
             // usePlaybackStore.getState().setPlaybackState('stopped'); // ✅ Handled by PlaybackController
         } catch (error) {
+            console.error('PlaybackManager.stop failed:', error);
         }
     }
 
@@ -801,7 +998,7 @@ export class PlaybackManager {
      * This method is kept for backward compatibility but should not be used
      * @deprecated Use EventBus.emit('NOTE_ADDED', data) instead
      */
-    onPatternChanged(patternId, reason = 'pattern-edit', addedNotes = null) {
+    onPatternChanged() {
 
         // Only log for debugging, don't actually process
         // This prevents double-scheduling issues
@@ -814,6 +1011,7 @@ export class PlaybackManager {
     onActivePatternChanged(newPatternId, reason = 'pattern-switch') {
 
         // Pattern switches need immediate scheduling to prevent audio gaps
+        this._markAllDirty(`active-pattern-${reason}`);
         this._scheduleContent(null, `active-pattern-${reason}`, true);
     }
 
@@ -849,21 +1047,66 @@ export class PlaybackManager {
      * @param {string} reason - Scheduling reason for debugging
      * @param {boolean} force - Force immediate execution without debouncing
      */
-    _scheduleContent(startTime = null, reason = 'manual', force = false) {
+    _scheduleContent(startTime = null, reason = 'manual', force = false, options = {}) {
+        const {
+            scope = 'auto',
+            instrumentIds = null,
+            priority = 'auto',
+            append = false
+        } = options;
+
+        let resolvedScope = scope;
+        const appendMode = Boolean(append);
+        const explicitInstrumentTargets = this._resolveInstrumentTargets('notes', instrumentIds);
+
+        if (resolvedScope === 'auto') {
+            resolvedScope = (explicitInstrumentTargets && explicitInstrumentTargets.length) || this.dirtyState.instruments.size > 0
+                ? 'notes'
+                : 'all';
+        }
+
+        if (appendMode) {
+            resolvedScope = 'all';
+        }
+
+        if (this.dirtyState.global || this.currentMode === 'song' || force) {
+            resolvedScope = 'all';
+        }
+
+        const instrumentTargets = resolvedScope === 'notes'
+            ? (explicitInstrumentTargets && explicitInstrumentTargets.length
+                ? explicitInstrumentTargets
+                : this._resolveInstrumentTargets('notes'))
+            : null;
+        const targetSet = instrumentTargets && instrumentTargets.length ? new Set(instrumentTargets) : null;
+        const shouldUseFilter = !appendMode && resolvedScope === 'notes' && targetSet && targetSet.size > 0;
+
+        if (resolvedScope === 'notes' && !shouldUseFilter && !force) {
+            // Nothing dirty to schedule
+            return;
+        }
+
         const scheduleCallback = () => {
             // ✅ PERFORMANCE TRACKING: Start timing
             const scheduleStartTime = performance.now();
 
             const baseTime = startTime || this.transport.audioContext.currentTime;
 
-            // Önceki event'leri temizle (eğer daha önce temizlenmediyse)
-            this._clearScheduledEvents();
+            const clearFilter = shouldUseFilter
+                ? (eventData) => targetSet.has(eventData?.instrumentId)
+                : null;
+
+            if (!appendMode) {
+                this._clearScheduledEvents(false, clearFilter);
+            }
 
             let scheduledNotes = 0;
             let scheduledInstruments = 0;
 
             if (this.currentMode === 'pattern') {
-                const result = this._schedulePatternContent(baseTime);
+                const result = this._schedulePatternContent(baseTime, {
+                    instrumentFilterSet: shouldUseFilter ? targetSet : null
+                });
                 scheduledNotes = result?.totalNotes || 0;
                 scheduledInstruments = result?.instrumentCount || 0;
             } else {
@@ -878,15 +1121,60 @@ export class PlaybackManager {
 
             // ✅ PERFORMANCE TRACKING: End timing
             const scheduleEndTime = performance.now();
-            const scheduleDuration = (scheduleEndTime - scheduleStartTime).toFixed(2);
+            const scheduleDuration = scheduleEndTime - scheduleStartTime;
 
+            const dirtyInstrumentCount = targetSet
+                ? targetSet.size
+                : (resolvedScope === 'all'
+                    ? this.audioEngine?.instruments?.size || 0
+                    : this.dirtyState.instruments.size);
+
+            if (!appendMode) {
+                if (shouldUseFilter) {
+                    targetSet.forEach(id => this.dirtyState.instruments.delete(id));
+                } else {
+                    this._resetDirtyState();
+                }
+            }
+
+            const schedulerStats = this.schedulingOptimizer.getStats ? this.schedulingOptimizer.getStats() : null;
+            const queueSize = this.transport?.scheduledEvents?.size || 0;
+
+            if (this.audioEngine?.performanceMonitor?.recordSchedulingSample) {
+                this.audioEngine.performanceMonitor.recordSchedulingSample({
+                    reason,
+                    scope: resolvedScope,
+                    priority: effectivePriority,
+                    durationMs: scheduleDuration,
+                    dirtyInstrumentCount,
+                    scheduledNotes,
+                    scheduledInstruments,
+                    queueSize,
+                    pendingRequests: schedulerStats?.pending || 0,
+                    force: force || resolvedScope === 'all',
+                    timestamp: Date.now()
+                });
+            }
+
+            if (appendMode && typeof startTime === 'number') {
+                this.lastPreRollTarget = startTime;
+            } else if (!appendMode && this.isPlaying) {
+                const nextTarget = this._computeNextLoopStartTime();
+                if (nextTarget) {
+                    this._scheduleLoopPreRoll(nextTarget);
+                }
+            }
         };
 
+        const effectivePriority = appendMode
+            ? 'burst'
+            : (shouldUseFilter ? 'realtime' : priority);
+
         // Use debounced scheduling unless forced
-        if (force) {
-            this.schedulingOptimizer.forceExecute(scheduleCallback, reason);
+        if (force || resolvedScope === 'all' || appendMode) {
+            this.schedulingOptimizer.forceExecute(scheduleCallback);
         } else {
-            this.schedulingOptimizer.requestSchedule(scheduleCallback, reason);
+            this.schedulingOptimizer.requestSchedule(scheduleCallback, reason, effectivePriority);
         }
     }
 
@@ -894,7 +1182,8 @@ export class PlaybackManager {
      * ✅ DÜZELTME: Pattern content scheduling with base time
      * @param {number} baseTime - Base scheduling time
      */
-    _schedulePatternContent(baseTime) {
+    _schedulePatternContent(baseTime, options = {}) {
+        const { instrumentFilterSet = null } = options;
         console.log('🎵 PlaybackManager._schedulePatternContent() called', { baseTime });
         
         const arrangementStore = useArrangementStore.getState();
@@ -924,6 +1213,9 @@ export class PlaybackManager {
 
         // Schedule notes for each instrument
         Object.entries(activePattern.data || {}).forEach(([instrumentId, notes]) => {
+            if (instrumentFilterSet && !instrumentFilterSet.has(instrumentId)) {
+                return;
+            }
             if (!Array.isArray(notes) || notes.length === 0) {
                 console.log(`⏭️ Skipping instrument ${instrumentId}: no notes`);
                 return;
@@ -946,6 +1238,9 @@ export class PlaybackManager {
             const automationManager = getAutomationManager();
 
             Object.keys(activePattern.data).forEach((instrumentId) => {
+                if (instrumentFilterSet && !instrumentFilterSet.has(instrumentId)) {
+                    return;
+                }
                 const lanes = automationManager.getLanes(arrangementStore.activePatternId, instrumentId);
                 if (lanes && lanes.length > 0) {
                     this.automationScheduler.startRealtimeAutomation(
@@ -1002,7 +1297,7 @@ export class PlaybackManager {
             // Don't return - allow playback to continue silently so playhead still moves
         }
 
-        clips.forEach((clip, index) => {
+        clips.forEach((clip) => {
             // ✅ Check track mute/solo state
             const track = tracks.find(t => t.id === clip.trackId);
             if (!track) {
@@ -1413,14 +1708,13 @@ export class PlaybackManager {
         // ✅ LEAK FIX: Disconnect ALL nodes when source finishes
         source.onended = () => {
             try {
-                // Disconnect all nodes to free memory
                 source.disconnect();
                 gainNode.disconnect();
                 if (panNode) {
                     panNode.disconnect();
                 }
             } catch (e) {
-                // Already disconnected
+                console.warn('Audio node cleanup already handled:', e);
             }
 
             // Remove from tracking
@@ -1701,6 +1995,7 @@ export class PlaybackManager {
                             hasExtendedParams ? extendedParams : null
                         );
                     } catch (error) {
+                        console.error('Error triggering scheduled note:', error);
                     }
                 },
                 { 
@@ -1864,7 +2159,7 @@ export class PlaybackManager {
 
         // 🎛️ MODERN SYSTEM: Flush mixer inserts (NativeEffect system)
         if (this.audioEngine.mixerInserts) {
-            this.audioEngine.mixerInserts.forEach((insert, insertId) => {
+            this.audioEngine.mixerInserts.forEach((insert) => {
                 if (!insert.effects) return;
 
                 // Flush each effect in the insert
@@ -1894,7 +2189,7 @@ export class PlaybackManager {
 
         // 🔙 LEGACY SYSTEM: Fallback to old mixer channels (backward compatibility)
         if (this.audioEngine.mixerChannels) {
-            this.audioEngine.mixerChannels.forEach((channel, channelId) => {
+            this.audioEngine.mixerChannels.forEach((channel) => {
                 if (!channel.effects) return;
 
                 channel.effects.forEach((effect, effectId) => {
@@ -1937,6 +2232,28 @@ export class PlaybackManager {
         const durationInSeconds = NativeTimeUtils.parseTime(duration, bpm);
         // Transport'taki yardımcı fonksiyonla saniyeyi step'e çevir
         return this.transport.secondsToSteps(durationInSeconds);
+    }
+
+    _getNoteStartStep(note) {
+        if (!note) return 0;
+        if (typeof note.startTime === 'number' && !Number.isNaN(note.startTime)) {
+            return note.startTime;
+        }
+        if (typeof note.time === 'number' && !Number.isNaN(note.time)) {
+            return note.time;
+        }
+        return 0;
+    }
+
+    _getNoteLengthInSteps(note) {
+        if (!note) return 1;
+        if (typeof note.length === 'number' && note.length > 0) {
+            return note.length;
+        }
+        if (note.duration) {
+            return this._getDurationInSteps(note.duration) || 1;
+        }
+        return 1;
     }
 
     /**
@@ -2001,7 +2318,7 @@ export class PlaybackManager {
             const noteTimeInTicks = nextPlayStep * this.transport.ticksPerStep;
             const noteTimeInSeconds = noteTimeInTicks * this.transport.getSecondsPerTick();
             const loopStartTime = currentTime - (currentTick * this.transport.getSecondsPerTick());
-            const absoluteTime = loopStartTime + noteTimeInSeconds;
+            let absoluteTime = loopStartTime + noteTimeInSeconds;
 
             console.log('🎯 Scheduling note:', {
                 instrumentId,
@@ -2210,13 +2527,20 @@ export class PlaybackManager {
         console.log(`🛑 _stopAllActiveNotes: Stopped ${stoppedCount} instruments (with release envelope)`);
     }
 
-    _clearScheduledEvents(useFade = false) {
+    _clearScheduledEvents(useFade = false, filterFn = null) {
         if (this.transport && this.transport.clearScheduledEvents) {
-            this.transport.clearScheduledEvents();
+            if (typeof filterFn === 'function') {
+                this.transport.clearScheduledEvents(filterFn);
+            } else {
+                this.transport.clearScheduledEvents();
+            }
         }
 
         // ✅ REFACTOR: Delegate audio source cleanup to AudioClipScheduler
-        this.audioClipScheduler.stopAll(useFade);
+        // Partial scheduling should not stop every clip
+        if (!filterFn) {
+            this.audioClipScheduler.stopAll(useFade);
+        }
     }
 
     // =================== STATUS & DEBUG ===================
@@ -2288,6 +2612,7 @@ export class PlaybackManager {
                 try {
                     callback(data);
                 } catch (error) {
+                    console.error(`PlaybackManager listener error for event "${event}":`, error);
                 }
             });
         }

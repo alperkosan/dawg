@@ -29,7 +29,7 @@
 
 import React, { useRef, useEffect, useCallback, useState, useMemo } from 'react';
 import { globalStyleCache } from '@/lib/rendering/StyleCache';
-import { uiUpdateManager, UPDATE_PRIORITIES, UPDATE_FREQUENCIES } from '@/lib/core/UIUpdateManager';
+import { canvasWorkerBridge, supportsOffscreenCanvas } from '@/lib/rendering/worker/CanvasWorkerBridge';
 
 const STEP_WIDTH = 16;
 const ROW_HEIGHT = 64;
@@ -92,6 +92,72 @@ const UnifiedGridCanvas = React.memo(({
   const [themeVersion, setThemeVersion] = useState(0); // Force re-render on theme change
   const renderRef = useRef(null); // Store render function for immediate theme change
   const isDirtyRef = useRef(true); // ⚡ DIRTY FLAG: Track if canvas needs redraw
+  const markDirty = useCallback(() => {
+    isDirtyRef.current = true;
+  }, []);
+
+  // ✅ Worker/serialization refs
+  const workerSurfaceIdRef = useRef(null);
+  const hasTransferredOffscreenRef = useRef(false);
+  const workerInitializedRef = useRef(false);
+  const workerNeedsFullSyncRef = useRef(false);
+  const instrumentSignatureRef = useRef('');
+  const serializedInstrumentsRef = useRef([]);
+  const notesCacheRef = useRef(new Map());
+  const paletteSignatureRef = useRef('');
+  const lastPatternLengthRef = useRef(null);
+  const lastTotalStepsRef = useRef(null);
+  const lastViewportRef = useRef({ width: null, height: null });
+  const lastScrollPostedRef = useRef({ x: -1, y: -1 });
+
+  const palette = useMemo(() => getPalette(), [themeVersion]);
+
+  // ✅ FIX: Create canvas element manually to prevent duplicate transfers
+  useEffect(() => {
+    const host = containerRef.current;
+    if (!host) return;
+
+    const canvas = document.createElement('canvas');
+    canvas.style.display = 'block';
+    canvas.style.cursor = 'pointer';
+    canvas.style.width = '100%';
+    canvas.style.height = '100%';
+    host.appendChild(canvas);
+    canvasRef.current = canvas;
+
+    if (import.meta.env.DEV && window.verboseLogging) {
+      console.log('🎨 UnifiedGridCanvas: created canvas element');
+    }
+
+    return () => {
+      if (import.meta.env.DEV && window.verboseLogging) {
+        console.log('🎨 UnifiedGridCanvas: removing canvas element');
+      }
+      if (canvas === canvasRef.current) {
+        canvasRef.current = null;
+      }
+      if (canvas.parentNode === host) {
+        host.removeChild(canvas);
+      }
+      workerSurfaceIdRef.current = null;
+      hasTransferredOffscreenRef.current = false;
+    };
+  }, []);
+
+  // Cleanup worker surface on unmount
+  useEffect(() => {
+    return () => {
+      const surfaceId = workerSurfaceIdRef.current;
+      if (surfaceId) {
+        canvasWorkerBridge.destroySurface(surfaceId);
+      }
+      workerSurfaceIdRef.current = null;
+      hasTransferredOffscreenRef.current = false;
+      workerInitializedRef.current = false;
+      workerNeedsFullSyncRef.current = false;
+      notesCacheRef.current = new Map();
+    };
+  }, []);
 
   // ✅ Listen for theme changes and fullscreen - AGGRESSIVE: Call render immediately
   useEffect(() => {
@@ -102,14 +168,14 @@ const UnifiedGridCanvas = React.memo(({
       setThemeVersion(v => v + 1);
 
       // Method 2: Mark dirty for next UIUpdateManager cycle
-      isDirtyRef.current = true;
+      markDirty();
     };
 
     const handleFullscreenChange = () => {
       console.log('🖥️ Fullscreen changed - marking grid canvas dirty');
 
       // Mark dirty for next UIUpdateManager cycle
-      isDirtyRef.current = true;
+      markDirty();
     };
 
     // Listen to custom theme change event
@@ -123,7 +189,235 @@ const UnifiedGridCanvas = React.memo(({
       window.removeEventListener('themeChanged', handleThemeChange);
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
     };
+  }, [markDirty]);
+
+  const sendFullStateToWorker = useCallback(() => {
+    if (!supportsOffscreenCanvas) return;
+    const surfaceId = workerSurfaceIdRef.current;
+    if (!surfaceId) return;
+
+    const serializedInstruments = instruments.map(serializeInstrument);
+    serializedInstrumentsRef.current = serializedInstruments;
+    instrumentSignatureRef.current = buildInstrumentSignature(instruments);
+
+    const serializedNotes = {};
+    const nextNotesCache = new Map();
+    instruments.forEach((instrument) => {
+      const instrumentId = instrument?.id;
+      if (!instrumentId) {
+        return;
+      }
+      const instrumentNotes = Array.isArray(notesData[instrumentId]) ? notesData[instrumentId] : [];
+      const serialized = serializeNoteArray(instrumentNotes);
+      serializedNotes[instrumentId] = serialized;
+      nextNotesCache.set(instrumentId, { source: instrumentNotes, serialized });
+    });
+    Object.entries(notesData || {}).forEach(([instrumentId, instrumentNotes]) => {
+      if (nextNotesCache.has(instrumentId)) {
+        return;
+      }
+      const safeNotes = Array.isArray(instrumentNotes) ? instrumentNotes : [];
+      const serialized = serializeNoteArray(safeNotes);
+      serializedNotes[instrumentId] = serialized;
+      nextNotesCache.set(instrumentId, { source: safeNotes, serialized });
+    });
+    notesCacheRef.current = nextNotesCache;
+
+    paletteSignatureRef.current = JSON.stringify(palette);
+    lastPatternLengthRef.current = patternLength;
+    lastTotalStepsRef.current = totalSteps;
+    lastViewportRef.current = { width: viewportWidth, height: viewportHeight };
+
+    canvasWorkerBridge.updateSurface(surfaceId, {
+      instruments: serializedInstruments,
+      notesData: serializedNotes,
+      totalSteps,
+      patternLength,
+      viewportWidth,
+      viewportHeight,
+      scrollX: scrollXRef?.current || 0,
+      scrollY: scrollYRef?.current || 0,
+      palette
+    });
+
+    workerInitializedRef.current = true;
+    workerNeedsFullSyncRef.current = false;
+  }, [
+    instruments,
+    notesData,
+    totalSteps,
+    patternLength,
+    viewportWidth,
+    viewportHeight,
+    palette,
+    scrollXRef,
+    scrollYRef,
+    supportsOffscreenCanvas
+  ]);
+
+  // Worker surface lifecycle (initialization)
+  useEffect(() => {
+    if (!supportsOffscreenCanvas || !isVisible) {
+      return;
+    }
+    if (workerSurfaceIdRef.current || hasTransferredOffscreenRef.current) {
+      return;
+    }
+
+    const canvas = canvasRef.current;
+    if (!canvas) {
+      return;
+    }
+
+    const surfaceId = canvasWorkerBridge.registerSurface(canvas, 'channelRackGrid', {
+      instruments: [],
+      notesData: {},
+      totalSteps: 0,
+      patternLength: 0,
+      viewportWidth: 0,
+      viewportHeight: 0,
+      scrollX: 0,
+      scrollY: 0,
+      palette
+    });
+
+    if (surfaceId) {
+      workerSurfaceIdRef.current = surfaceId;
+      hasTransferredOffscreenRef.current = true;
+      workerInitializedRef.current = false;
+      workerNeedsFullSyncRef.current = true;
+      notesCacheRef.current = new Map();
+      if (isVisible) {
+        sendFullStateToWorker();
+      }
+    }
+  }, [supportsOffscreenCanvas, isVisible, palette, sendFullStateToWorker]);
+
+  // Trigger full sync when panel becomes visible again
+  useEffect(() => {
+    if (!supportsOffscreenCanvas) return;
+    if (!workerSurfaceIdRef.current) return;
+    if (!isVisible) {
+      workerNeedsFullSyncRef.current = true;
+      return;
+    }
+    if (!workerInitializedRef.current || workerNeedsFullSyncRef.current) {
+      sendFullStateToWorker();
+    }
+  }, [isVisible, sendFullStateToWorker, supportsOffscreenCanvas]);
+
+  useEffect(() => () => {
+    if (workerSurfaceIdRef.current) {
+      canvasWorkerBridge.destroySurface(workerSurfaceIdRef.current);
+      workerSurfaceIdRef.current = null;
+      hasTransferredOffscreenRef.current = false;
+    }
   }, []);
+
+  // Worker state updates (diff-based)
+  useEffect(() => {
+    if (!supportsOffscreenCanvas) return;
+    if (!workerSurfaceIdRef.current) return;
+    if (!workerInitializedRef.current || workerNeedsFullSyncRef.current) return;
+    if (!isVisible) return;
+
+    const updates = {};
+
+    const nextInstrumentSignature = buildInstrumentSignature(instruments);
+    if (nextInstrumentSignature !== instrumentSignatureRef.current) {
+      const serialized = instruments.map(serializeInstrument);
+      serializedInstrumentsRef.current = serialized;
+      instrumentSignatureRef.current = nextInstrumentSignature;
+      updates.instruments = serialized;
+    }
+
+    const nextPaletteSignature = JSON.stringify(palette);
+    if (nextPaletteSignature !== paletteSignatureRef.current) {
+      paletteSignatureRef.current = nextPaletteSignature;
+      updates.palette = palette;
+    }
+
+    if (patternLength !== lastPatternLengthRef.current) {
+      lastPatternLengthRef.current = patternLength;
+      updates.patternLength = patternLength;
+    }
+
+    if (totalSteps !== lastTotalStepsRef.current) {
+      lastTotalStepsRef.current = totalSteps;
+      updates.totalSteps = totalSteps;
+    }
+
+    if (
+      viewportWidth !== lastViewportRef.current.width ||
+      viewportHeight !== lastViewportRef.current.height
+    ) {
+      lastViewportRef.current = { width: viewportWidth, height: viewportHeight };
+      updates.viewportWidth = viewportWidth;
+      updates.viewportHeight = viewportHeight;
+    }
+
+    const instrumentIds = instruments.map((inst) => inst?.id).filter(Boolean);
+    const { patches, removals } = computeNotesDiff(notesData, notesCacheRef, instrumentIds);
+    if (patches && Object.keys(patches).length > 0) {
+      updates.notesPatch = patches;
+    }
+    if (removals.length > 0) {
+      updates.notesRemove = removals;
+    }
+
+    if (Object.keys(updates).length > 0) {
+      canvasWorkerBridge.updateSurface(workerSurfaceIdRef.current, updates);
+    }
+  }, [
+    supportsOffscreenCanvas,
+    isVisible,
+    instruments,
+    notesData,
+    totalSteps,
+    patternLength,
+    viewportWidth,
+    viewportHeight,
+    palette
+  ]);
+
+  useEffect(() => {
+    // ✅ FIX: Use ref for immediate check
+    if (!workerSurfaceIdRef.current) return;
+    canvasWorkerBridge.updateSurface(workerSurfaceIdRef.current, {
+      hoveredCell: hoveredCell ? { ...hoveredCell } : null
+    });
+  }, [hoveredCell]);
+
+  // Worker scroll sync
+  useEffect(() => {
+    if (!supportsOffscreenCanvas) return undefined;
+    if (!workerSurfaceIdRef.current) return undefined;
+
+    let rafId;
+
+    const tick = () => {
+      if (workerSurfaceIdRef.current) {
+        const currentX = scrollXRef?.current || 0;
+        const currentY = scrollYRef?.current || 0;
+        const { x: lastX, y: lastY } = lastScrollPostedRef.current;
+
+        if (currentX !== lastX || currentY !== lastY) {
+          canvasWorkerBridge.updateSurface(workerSurfaceIdRef.current, {
+            scrollX: currentX,
+            scrollY: currentY
+          });
+          lastScrollPostedRef.current = { x: currentX, y: currentY };
+        }
+      }
+      rafId = requestAnimationFrame(tick);
+    };
+
+    tick();
+
+    return () => {
+      if (rafId) cancelAnimationFrame(rafId);
+    };
+  }, [scrollXRef, scrollYRef, supportsOffscreenCanvas]);
 
   // ✅ UTILITY: Detect if instrument should use step sequencer mode
   // Step sequencer: all notes are C4 or C5 (standard drum programming)
@@ -166,8 +460,16 @@ const UnifiedGridCanvas = React.memo(({
 
   // 🎨 RENDER FUNCTION - Single unified render (called from RAF loop)
   const render = useCallback(() => {
+    // ✅ FIX: Use ref instead of state for synchronous check
+    if (workerSurfaceIdRef.current && supportsOffscreenCanvas) {
+      console.log('🎨 UnifiedGridCanvas: Skipping main thread render, worker is active');
+      return;
+    }
+    console.log('🎨 UnifiedGridCanvas: Rendering on main thread');
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas || hasTransferredOffscreenRef.current) {
+      return;
+    }
 
     // ⚡ PERFORMANCE: Measure render time
     const startTime = performance.now();
@@ -568,24 +870,58 @@ const UnifiedGridCanvas = React.memo(({
     hoveredCell,
     calculateVisibleBounds, // ⚡ OPTIMIZATION: Bounds calculation function
     isStepSequencerMode, // ✅ Mode detection function
-    themeVersion, // ✅ THEME: Re-render when theme changes
+    themeVersion // ✅ THEME: Re-render when theme changes
   ]);
 
   // ✅ Store render function in ref for immediate theme change access
   useEffect(() => {
     renderRef.current = render;
-  }, [render]);
+    markDirty();
+  }, [render, markDirty]);
 
-  // ⚡ PERFORMANCE: RAF-based continuous rendering (60 FPS)
   useEffect(() => {
-    if (!isVisible) {
+    markDirty();
+  }, [
+    instruments,
+    notesData,
+    totalSteps,
+    patternLength,
+    viewportWidth,
+    viewportHeight,
+    themeVersion,
+    markDirty
+  ]);
+
+  useEffect(() => {
+    markDirty();
+  }, [hoveredCell, markDirty]);
+
+  const lastScrollRef = useRef({ x: 0, y: 0 });
+
+  useEffect(() => {
+    // ✅ FIX: Use ref for synchronous check
+    const isWorkerActive = Boolean(workerSurfaceIdRef.current && supportsOffscreenCanvas);
+    if (!isVisible || isWorkerActive) {
       return;
     }
 
     let rafId;
 
     const renderLoop = () => {
-      render();
+      const currentScrollX = scrollXRef?.current || 0;
+      const currentScrollY = scrollYRef?.current || 0;
+      if (
+        currentScrollX !== lastScrollRef.current.x ||
+        currentScrollY !== lastScrollRef.current.y
+      ) {
+        lastScrollRef.current = { x: currentScrollX, y: currentScrollY };
+        markDirty();
+      }
+
+      if (isDirtyRef.current) {
+        isDirtyRef.current = false;
+        renderRef.current?.();
+      }
       rafId = requestAnimationFrame(renderLoop);
     };
 
@@ -596,7 +932,7 @@ const UnifiedGridCanvas = React.memo(({
         cancelAnimationFrame(rafId);
       }
     };
-  }, [render, isVisible]);
+  }, [isVisible, supportsOffscreenCanvas, markDirty, scrollXRef, scrollYRef]);
 
   // 🎯 INTERACTION: Map mouse to row/step
   const getInteractionCell = useCallback((mouseX, mouseY) => {
@@ -614,7 +950,8 @@ const UnifiedGridCanvas = React.memo(({
 
   // Mouse move handler
   const handleMouseMove = useCallback((e) => {
-    const rect = canvasRef.current.getBoundingClientRect();
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
 
@@ -629,7 +966,8 @@ const UnifiedGridCanvas = React.memo(({
 
   // Click handler - Adaptive: Note toggle for step sequencer, piano roll for mini preview
   const handleClick = useCallback((e) => {
-    const rect = canvasRef.current.getBoundingClientRect();
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
 
@@ -680,22 +1018,137 @@ const UnifiedGridCanvas = React.memo(({
         width: '100%',
         height: '100%',
         overflow: 'hidden',
+        cursor: 'pointer',
       }}
-    >
-      <canvas
-        ref={canvasRef}
-        onClick={handleClick}
-        onMouseMove={handleMouseMove}
-        onMouseLeave={handleMouseLeave}
-        style={{
-          display: 'block',
-          cursor: 'pointer',
-        }}
-      />
-    </div>
+      onClick={handleClick}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
+    />
   );
 });
 
 UnifiedGridCanvas.displayName = 'UnifiedGridCanvas';
+
+function getPalette() {
+  return {
+    bgPrimary: globalStyleCache.get('--zenith-bg-primary') || '#1a1d24',
+    bgSecondary: globalStyleCache.get('--zenith-bg-secondary') || '#202229',
+    borderSubtle: globalStyleCache.get('--zenith-border-subtle') || 'rgba(180, 188, 208, 0.15)',
+    borderMedium: globalStyleCache.get('--zenith-border-medium') || 'rgba(180, 188, 208, 0.3)',
+    borderStrong: globalStyleCache.get('--zenith-border-strong') || 'rgba(180, 188, 208, 0.7)',
+    accentCool: globalStyleCache.get('--zenith-accent-cool') || '#00d9ff'
+  };
+}
+
+function serializeInstrument(instrument) {
+  if (!instrument) return null;
+  return {
+    id: instrument.id,
+    name: instrument.name,
+    color: instrument.color || null,
+    isActive: Boolean(instrument.isActive),
+    isMuted: Boolean(instrument.isMuted)
+  };
+}
+
+function serializeNoteArray(notes = []) {
+  if (!Array.isArray(notes)) {
+    return [];
+  }
+  return notes.map(note => ({
+    id: note?.id,
+    startTime: note?.startTime ?? note?.time ?? 0,
+    length: typeof note?.length === 'number' ? note.length : 1,
+    visualLength: typeof note?.visualLength === 'number' ? note.visualLength : undefined,
+    pitch: note?.pitch,
+    velocity: note?.velocity,
+    isMuted: Boolean(note?.isMuted)
+  }));
+}
+
+function serializeNotes(notesData = {}) {
+  const result = {};
+  Object.entries(notesData).forEach(([instrumentId, notes]) => {
+    result[instrumentId] = serializeNoteArray(notes);
+  });
+  return result;
+}
+
+function buildInstrumentSignature(instruments = []) {
+  return instruments
+    .map((instrument) => {
+      if (!instrument) return 'null';
+      return [
+        instrument.id ?? 'null',
+        instrument.name ?? '',
+        instrument.color ?? '',
+        instrument.isActive ? '1' : '0',
+        instrument.isMuted ? '1' : '0'
+      ].join(':');
+    })
+    .join('|');
+}
+
+function computeNotesDiff(notesData = {}, cacheRef, instrumentIds = []) {
+  const patches = {};
+  const removals = [];
+  const nextCache = new Map();
+
+  const activeSet = new Set(instrumentIds.filter(Boolean));
+  const ids = new Set([
+    ...activeSet,
+    ...Object.keys(notesData || {}),
+    ...Array.from(cacheRef.current.keys())
+  ]);
+
+  ids.forEach((instrumentId) => {
+    if (!instrumentId) return;
+    const notesArray = Array.isArray(notesData[instrumentId]) ? notesData[instrumentId] : [];
+    const prev = cacheRef.current.get(instrumentId);
+    const instrumentRemoved = !activeSet.has(instrumentId) && notesArray.length === 0;
+
+    if (instrumentRemoved) {
+      if (prev) {
+        removals.push(instrumentId);
+      }
+      return;
+    }
+
+    const serialized = serializeNoteArray(notesArray);
+    const prevSerialized = prev?.serialized;
+    const hasChanged = !prevSerialized || !areSerializedNotesEqual(serialized, prevSerialized);
+
+    if (hasChanged) {
+      patches[instrumentId] = serialized;
+      nextCache.set(instrumentId, { source: notesArray, serialized });
+    } else {
+      nextCache.set(instrumentId, prev);
+    }
+  });
+
+  cacheRef.current = nextCache;
+  return { patches, removals };
+}
+
+function areSerializedNotesEqual(nextNotes = [], prevNotes = []) {
+  if (nextNotes.length !== prevNotes.length) return false;
+  for (let i = 0; i < nextNotes.length; i += 1) {
+    const nextNote = nextNotes[i];
+    const prevNote = prevNotes[i];
+    if (!prevNote) return false;
+    if (
+      nextNote.id !== prevNote.id ||
+      nextNote.startTime !== prevNote.startTime ||
+      nextNote.length !== prevNote.length ||
+      nextNote.visualLength !== prevNote.visualLength ||
+      nextNote.pitch !== prevNote.pitch ||
+      nextNote.velocity !== prevNote.velocity ||
+      nextNote.isMuted !== prevNote.isMuted
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
 
 export default UnifiedGridCanvas;
