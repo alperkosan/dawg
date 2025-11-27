@@ -215,6 +215,18 @@
   gap: 0;
 }
 
+.mixer-2__primary-panel {
+  width: 180px;
+  background: var(--zenith-bg-secondary);
+  border-right: 1px solid var(--zenith-border-medium);
+  padding: 12px;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  flex-shrink: 0;
+  min-height: 0;
+}
+
 /* =================== CHANNELS CONTAINER =================== */
 
 .mixer-2__channels-container {
@@ -222,6 +234,7 @@
   overflow-x: auto;
   overflow-y: hidden;
   background: var(--zenith-bg-primary);
+  min-width: 0;
 }
 
 .mixer-2__channels-wrapper {
@@ -295,6 +308,79 @@
   width: 320px;
   background: var(--zenith-bg-primary);
   overflow-y: auto;
+}
+
+/* =================== PRIMARY METER =================== */
+
+.mixer-primary-meter {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  background: radial-gradient(circle at 20% 15%, rgba(255,255,255,0.08), transparent 50%),
+    linear-gradient(180deg, rgba(12,18,28,0.95) 0%, rgba(5,9,15,0.98) 100%);
+  border: 1px solid var(--zenith-border-medium);
+  border-radius: 10px;
+  padding: 14px 12px;
+  display: flex;
+  flex-direction: row;
+  gap: 12px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 12px 24px rgba(0,0,0,0.35);
+}
+
+.mixer-primary-meter__meter-shell {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: 0;
+}
+
+.mixer-primary-meter__header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.mixer-primary-meter__chip {
+  font-size: 10px;
+  letter-spacing: 0.35em;
+  text-transform: uppercase;
+  color: var(--zenith-text-tertiary);
+}
+
+.mixer-primary-meter__nameplate {
+  flex: 1;
+  text-align: right;
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.2);
+  color: var(--zenith-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mixer-primary-meter__meter {
+  display: flex;
+  justify-content: center;
+  flex: 1;
+  min-height: 0;
+  padding: 4px 0;
+  width: 100%;
+}
+
+.mixer-primary-meter__empty {
+  width: 72px;
+  height: 100%;
+  border-radius: 8px;
+  border: 1px dashed rgba(255,255,255,0.1);
+  background: linear-gradient(180deg, rgba(255,255,255,0.02) 0%, rgba(0,0,0,0.4) 100%);
 }
 
 /* =================== SCROLLBAR =================== */

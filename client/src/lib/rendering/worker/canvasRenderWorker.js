@@ -92,6 +92,13 @@ async function importRenderer(rendererName) {
       }
       break;
     }
+    case 'mixerMeter': {
+      if (!renderers.has(rendererName)) {
+        const module = await import('./renderers/mixerMeterRenderer.js');
+        renderers.set(rendererName, module.mixerMeterRenderer);
+      }
+      break;
+    }
     default:
       throw new Error(`Unknown renderer "${rendererName}"`);
   }

@@ -100,10 +100,6 @@ export const SendAcceptButton = ({ targetTrack, sourceTrack }) => {
               {existingSend.preFader ? 'PRE' : 'POST'}
             </button>
 
-            {/* Target track name label */}
-            <div className="send-accept__source-label" title={targetTrack.name}>
-              {targetTrack.name}
-            </div>
           </div>
         </div>
       </div>

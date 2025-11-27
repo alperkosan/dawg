@@ -35,7 +35,7 @@ export default function NavigationHeader({ currentProjectId, currentProjectTitle
       <div className="navigation-header__container">
         <div className="navigation-header__brand">
           <Link to="/" className="navigation-header__logo">
-            <DawgLogo size={28} variant="full" />
+            <DawgLogo size={36} variant="icon" />
             <span>DAWG</span>
           </Link>
         </div>

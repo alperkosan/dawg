@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { MixerChannel } from './components/MixerChannel';
 import { EffectsRack } from './components/EffectsRack';
+import { MixerPrimaryMeter } from './components/MixerPrimaryMeter';
 import './Mixer.css';
 
 const Mixer = ({ isVisible = true }) => {
@@ -224,26 +225,31 @@ const Mixer = ({ isVisible = true }) => {
 
       {/* Main Content */}
       <div className="mixer-2__content">
+        {/* Primary Meter (left) */}
+        <div className="mixer-2__primary-panel">
+          <MixerPrimaryMeter activeTrack={activeTrack} masterTrack={masterTrack} />
+        </div>
+
         {/* Mixer Channels */}
         <div className="mixer-2__channels-container">
           <div className="mixer-2__channels">
-            {/* Master Channel with left separator */}
+            {/* Master Channel */}
             {masterTrack && (
               <>
                 <div className="mixer-2__separator">
                   <div className="mixer-2__separator-line" />
                   <div className="mixer-2__separator-label">MASTER</div>
                 </div>
-            <MixerChannel
-              key={masterTrack.id}
-              track={masterTrack}
-              allTracks={allTracksOrdered}
-              activeTrack={activeTrack}
-              isActive={activeChannelId === masterTrack.id}
-              isMaster={true}
-              onClick={() => setActiveChannelId(masterTrack.id)}
-              isVisible={isVisible}
-            />
+                <MixerChannel
+                  key={masterTrack.id}
+                  track={masterTrack}
+                  allTracks={allTracksOrdered}
+                  activeTrack={activeTrack}
+                  isActive={activeChannelId === masterTrack.id}
+                  isMaster={true}
+                  onClick={() => setActiveChannelId(masterTrack.id)}
+                  isVisible={isVisible}
+                />
               </>
             )}
 

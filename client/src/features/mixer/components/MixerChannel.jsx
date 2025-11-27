@@ -15,7 +15,7 @@ import { useMixerStore } from '@/store/useMixerStore';
 import { Volume2, VolumeX, Headphones, Radio } from 'lucide-react';
 import { Fader } from '@/components/controls/base/Fader';
 import { Knob } from '@/components/controls/base/Knob';
-import { ChannelMeter } from './ChannelMeter';
+import { ChannelMiniMeter } from './ChannelMeter';
 import { SendAcceptButton } from './SendAcceptButton';
 import './MixerChannel.css';
 
@@ -266,7 +266,7 @@ const MixerChannelComponent = ({
 
       {/* Real-time Meter */}
       <div className="mixer-channel-2__meter-container">
-        <ChannelMeter trackId={track.id} isVisible={isVisible} />
+        <ChannelMiniMeter trackId={track.id} isVisible={isVisible} />
       </div>
 
       {/* Fader */}
