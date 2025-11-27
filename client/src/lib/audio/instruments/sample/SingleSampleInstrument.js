@@ -23,6 +23,8 @@ export class SingleSampleInstrument extends BaseInstrument {
         // Sample data
         this.url = instrumentData.url;
         this.sampleBuffer = sampleBuffer; // AudioBuffer
+        this._reversedBuffer = null;
+        this._reverseBufferDirty = true;
         this.baseNote = instrumentData.baseNote || 60; // C4 by default
 
         // Playback settings
@@ -36,7 +38,7 @@ export class SingleSampleInstrument extends BaseInstrument {
         this.sampleChop = instrumentData.sampleChop
             ? JSON.parse(JSON.stringify(instrumentData.sampleChop))
             : createDefaultSampleChopPattern();
-        this.sampleChopMode = instrumentData.sampleChopMode || 'standard';
+            this.sampleChopMode = instrumentData.sampleChopMode || 'standard';
         this.data.sampleChop = this.sampleChop;
         this.data.sampleChopMode = this.sampleChopMode;
         this._chopTimer = null;
@@ -46,6 +48,85 @@ export class SingleSampleInstrument extends BaseInstrument {
         this._lastChopStep = -1;
         this._currentChopSource = null;
         this._currentChopGain = null;
+    }
+
+    _markReverseDirty() {
+        this._reverseBufferDirty = true;
+        this._reversedBuffer = null;
+    }
+
+    _createReversedBuffer(buffer) {
+        if (!buffer || !this.audioContext) return null;
+        const reversed = this.audioContext.createBuffer(
+            buffer.numberOfChannels,
+            buffer.length,
+            buffer.sampleRate
+        );
+        for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
+            const source = buffer.getChannelData(channel);
+            const target = reversed.getChannelData(channel);
+            for (let i = 0, len = source.length; i < len; i++) {
+                target[len - 1 - i] = source[i];
+            }
+        }
+        return reversed;
+    }
+
+    _getPlaybackBuffer() {
+        if (!this.data?.reverse) {
+            return this.sampleBuffer;
+        }
+        if (!this.sampleBuffer) return null;
+        if (!this._reversedBuffer || this._reverseBufferDirty) {
+            this._reversedBuffer = this._createReversedBuffer(this.sampleBuffer);
+            this._reverseBufferDirty = false;
+        }
+        return this._reversedBuffer || this.sampleBuffer;
+    }
+
+    _clamp(value, min = 0, max = 1, fallback = 0) {
+        if (typeof value !== 'number' || Number.isNaN(value)) return fallback;
+        return Math.min(max, Math.max(min, value));
+    }
+
+    _getTrimWindow(durationSeconds) {
+        const startNorm = this._clamp(this.data.sampleStart ?? 0, 0, 1, 0);
+        const endNorm = this._clamp(this.data.sampleEnd ?? 1, 0, 1, 1);
+        const reverse = !!this.data.reverse;
+
+        let start = reverse ? 1 - endNorm : startNorm;
+        let end = reverse ? 1 - startNorm : endNorm;
+        if (end < start) {
+            const tmp = end;
+            end = start;
+            start = tmp;
+        }
+        const offset = start * durationSeconds;
+        const length = Math.max(0.001, (end - start) * durationSeconds);
+        return { offset, length };
+    }
+
+    _getLoopWindow(durationSeconds) {
+        const hasLoopStart = this.data.loopStart !== undefined;
+        const hasLoopEnd = this.data.loopEnd !== undefined;
+        const rawLoopStart = hasLoopStart ? this.data.loopStart : (this.data.sampleStart ?? 0);
+        const rawLoopEnd = hasLoopEnd ? this.data.loopEnd : (this.data.sampleEnd ?? 1);
+
+        const loopStartNorm = this._clamp(rawLoopStart, 0, 1, 0);
+        const loopEndNorm = this._clamp(rawLoopEnd, 0, 1, 1);
+        const reverse = !!this.data.reverse;
+
+        let start = reverse ? 1 - loopEndNorm : loopStartNorm;
+        let end = reverse ? 1 - loopStartNorm : loopEndNorm;
+        if (end < start) {
+            const tmp = end;
+            end = start;
+            start = tmp;
+        }
+        return {
+            start: start * durationSeconds,
+            end: Math.max(start * durationSeconds + 0.001, end * durationSeconds)
+        };
     }
 
     /**
@@ -119,6 +200,12 @@ export class SingleSampleInstrument extends BaseInstrument {
         });
 
         try {
+            const playbackBuffer = this._getPlaybackBuffer();
+            if (!playbackBuffer) {
+                console.warn(`❌ No sample buffer available for ${this.name}`);
+                return;
+            }
+
             // ✅ CUT ITSELF: Stop existing note at same pitch if enabled
             const cutItself = this.data.cutItself !== undefined ? this.data.cutItself : true; // Default true for single samples (drums)
             if (cutItself && this.activeSources.has(midiNote)) {
@@ -127,14 +214,14 @@ export class SingleSampleInstrument extends BaseInstrument {
 
             // Create buffer source
             const source = this.audioContext.createBufferSource();
-            source.buffer = this.sampleBuffer;
+            source.buffer = playbackBuffer;
 
             // Apply loop settings
             if (this.data.loop) {
                 source.loop = true;
-                const duration = this.sampleBuffer.duration;
-                source.loopStart = (this.data.loopStart || 0) * duration;
-                source.loopEnd = (this.data.loopEnd || 1) * duration;
+                const loopWindow = this._getLoopWindow(playbackBuffer.duration);
+                source.loopStart = loopWindow.start;
+                source.loopEnd = loopWindow.end;
                 console.log(`🔁 Loop enabled: ${source.loopStart.toFixed(3)}s - ${source.loopEnd.toFixed(3)}s`);
             }
 
@@ -246,17 +333,12 @@ export class SingleSampleInstrument extends BaseInstrument {
             source.connect(gainNode);
             lastNode.connect(this.masterGain);
 
-            // Apply sample start/end (trim)
-            const sampleStart = (this.data.sampleStart || 0) * this.sampleBuffer.duration;
-            const sampleEnd = (this.data.sampleEnd || 1) * this.sampleBuffer.duration;
-            const offset = sampleStart;
-            const duration = sampleEnd - sampleStart;
+            const trimWindow = this._getTrimWindow(playbackBuffer.duration);
 
-            // Start playback with offset and duration
             if (this.data.loop) {
-                source.start(when, offset); // Loop indefinitely
+                source.start(when, trimWindow.offset); // Loop indefinitely from offset
             } else {
-                source.start(when, offset, duration); // One-shot with trim
+                source.start(when, trimWindow.offset, trimWindow.length); // One-shot with trim
             }
 
             // Track active source
@@ -397,6 +479,9 @@ export class SingleSampleInstrument extends BaseInstrument {
      */
     updateParameters(params) {
         console.log(`🎛️ SingleSampleInstrument.updateParameters (${this.name}):`, params);
+        if (params && Object.prototype.hasOwnProperty.call(params, 'reverse')) {
+            this._markReverseDirty();
+        }
 
         // Update internal data
         Object.keys(params).forEach(key => {

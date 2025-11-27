@@ -92,29 +92,16 @@ export class AddNoteCommand extends Command {
       });
     }
     
-    // ✅ FL STUDIO STYLE: ALL new notes extend to full pattern length
-    // Calculate duration from note start to pattern end
+    // ✅ STEP SEQUENCER GATE: keep note length to a single step (sustain from envelope)
     const noteStartStep = this.step;
-    const noteLengthInSteps = patternLengthInSteps - noteStartStep;
-    const defaultDuration = stepsToDuration(Math.max(1, noteLengthInSteps));
-    
-    console.log(`📝 AddNoteCommand: New note for ${this.instrumentId}, extending to pattern length:`, {
+    const gateLengthInSteps = 2;
+    const audioDuration = '8n';
+
+    console.log(`📝 AddNoteCommand: New note for ${this.instrumentId} with 1-step gate`, {
       patternLengthInSteps,
       noteStartStep,
-      noteLengthInSteps,
-      duration: defaultDuration
+      gateLengthInSteps
     });
-
-    // ✅ FL STUDIO STYLE: Visual length vs Audio duration
-    // Visual: 1 step (short, oval edges indicate it extends)
-    // Audio: Pattern length (extends to pattern end for full playback)
-    // ALL NEW NOTES should be oval (visualLength = 1) unless explicitly resized
-    
-    // Calculate audio length in steps directly (more accurate than converting duration string)
-    // noteStartStep already defined above, reuse it
-    const audioLengthInSteps = patternLengthInSteps - noteStartStep;
-    
-    const audioDuration = defaultDuration; // Keep duration string for legacy compatibility
 
     // Geri alma (undo) işlemi için notayı burada oluşturup sınıf içinde saklıyoruz.
     this.note = {
@@ -122,9 +109,9 @@ export class AddNoteCommand extends Command {
       time: this.step,
       pitch: defaultPitch,
       velocity: defaultVelocity,
-      duration: audioDuration, // Audio duration (for playback - legacy format)
-      length: audioLengthInSteps, // ✅ Audio length in steps (pattern length for all new notes)
-      visualLength: 1 // ✅ FL STUDIO STYLE: All new notes are oval (1 step visual, full pattern audio)
+      duration: audioDuration,
+      length: gateLengthInSteps,
+      visualLength: gateLengthInSteps
     };
 
     const newNotes = [...currentNotes, this.note];

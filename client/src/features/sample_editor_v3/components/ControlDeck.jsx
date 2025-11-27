@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { SlidersHorizontal, Sparkles, Settings, Play, Square } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Sparkles, Settings, Play, Square } from 'lucide-react';
 import TabButton from '@/components/common/TabButton';
 import { Knob } from '@/components/controls';
 import EffectSwitch from '@/components/controls/base/EffectSwitch';
@@ -13,6 +13,81 @@ import { v4 as uuidv4 } from 'uuid';
 
 export const ControlDeck = ({ instrument, track, onParamChange }) => {
   const [activeTab, setActiveTab] = useState('main');
+  const envelopePreview = useMemo(() => ({
+    attack: instrument.attack ?? 5,
+    decay: instrument.decay ?? 100,
+    sustain: instrument.sustain ?? 100,
+    release: instrument.release ?? 50
+  }), [instrument.attack, instrument.decay, instrument.sustain, instrument.release]);
+
+  const ADSRCanvas = ({ attack, decay, sustain, release, onChange }) => {
+    const canvasRef = React.useRef(null);
+
+    const drawEnvelope = (ctx, width, height) => {
+      ctx.clearRect(0, 0, width, height);
+      ctx.fillStyle = 'rgba(255,255,255,0.02)';
+      ctx.fillRect(0, 0, width, height);
+
+      const sustainLevel = Math.min(Math.max(sustain / 100, 0), 1);
+      const attackTime = Math.max(attack, 1);
+      const decayTime = Math.max(decay, 1);
+      const releaseTime = Math.max(release, 1);
+      const sustainTime = Math.max(width - (attackTime + decayTime + releaseTime), width * 0.2);
+      const total = attackTime + decayTime + releaseTime + sustainTime;
+      const attackX = (attackTime / total) * width;
+      const decayX = attackX + (decayTime / total) * width;
+      const releaseStartX = width - (releaseTime / total) * width;
+      const sustainY = height - sustainLevel * height;
+
+      ctx.beginPath();
+      ctx.strokeStyle = 'rgba(0,255,200,0.8)';
+      ctx.lineWidth = 2;
+      ctx.moveTo(0, height);
+      ctx.lineTo(attackX, 10);
+      ctx.lineTo(decayX, sustainY);
+      ctx.lineTo(releaseStartX, sustainY);
+      ctx.lineTo(width, height);
+      ctx.stroke();
+      ctx.closePath();
+    };
+
+    React.useEffect(() => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      drawEnvelope(ctx, canvas.width, canvas.height);
+    }, [attack, decay, sustain, release]);
+
+    const handlePointer = (e) => {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      const width = rect.width;
+      const height = rect.height;
+
+      if (x < width * 0.25) {
+        onChange('attack', Math.round((x / (width * 0.25)) * 1000));
+      } else if (x < width * 0.5) {
+        onChange('decay', Math.round(((x - width * 0.25) / (width * 0.25)) * 2000));
+        onChange('sustain', Math.round((1 - y / height) * 100));
+      } else if (x < width * 0.75) {
+        onChange('sustain', Math.round((1 - y / height) * 100));
+      } else {
+        onChange('release', Math.round(((x - width * 0.75) / (width * 0.25)) * 2000));
+      }
+    };
+
+    return (
+      <canvas
+        ref={canvasRef}
+        width={320}
+        height={80}
+        onPointerDown={handlePointer}
+        onPointerMove={(e) => e.buttons === 1 && handlePointer(e)}
+        style={{ width: '100%', height: '80px', cursor: 'crosshair', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }}
+      />
+    );
+  };
   const [isPlaying, setIsPlaying] = useState(false);
   const [mixerTracks, setMixerTracks] = useState([]);
   const updateInstrument = useInstrumentsStore(state => state.updateInstrument);
@@ -270,6 +345,10 @@ export const ControlDeck = ({ instrument, track, onParamChange }) => {
             <div className="main-settings-grid" style={{ marginTop: '20px' }}>
             <div className="main-settings-grid__group">
               <h4 className="main-settings-grid__group-title">Envelope (ADSR)</h4>
+              <ADSRCanvas
+                {...envelopePreview}
+                onChange={(param, value) => handleParamChangeWithEngine(param, value)}
+              />
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
                 <Knob
                   label="Attack"

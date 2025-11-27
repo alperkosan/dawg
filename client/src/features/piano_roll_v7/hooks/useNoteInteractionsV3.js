@@ -70,6 +70,8 @@ const Mode = {
 // INITIAL STATE
 // ===================================================================
 
+const RESIZE_HANDLE_PIXEL_TOLERANCE = 10; // px
+
 const createInitialState = () => ({
     mode: Mode.IDLE,
     selection: new Set(),
@@ -587,30 +589,28 @@ export function useNoteInteractionsV3({
     const getResizeHandle = useCallback((coords, note) => {
         if (!note) return null;
         const noteEnd = note.startTime + (note.visualLength || note.length);
-        
-        // ✅ FIX: Smaller, more precise resize handle detection
-        // Use a smaller threshold for better precision (0.15-0.2 range)
-        // This makes resize handles more precise and less likely to trigger accidentally
-        const threshold = snapValue > 0 
-            ? Math.min(0.2, Math.max(0.1, snapValue * 0.15))  // 15% of snap value, clamped between 0.1-0.2
-            : 0.15;  // Default 0.15 when no snap
+        const stepWidth = engine?.dimensions?.stepWidth || 40;
 
-        if (Math.abs(coords.time - note.startTime) < threshold) return 'left';
-        if (Math.abs(coords.time - noteEnd) < threshold) return 'right';
+        // Convert pixel tolerance into time (steps) so hit area stays constant while zooming
+        const pixelDerivedTolerance = RESIZE_HANDLE_PIXEL_TOLERANCE / Math.max(stepWidth, 4);
+        const snapDerivedTolerance = snapValue > 0 ? Math.min(snapValue * 0.2, 0.35) : 0;
+        const minTolerance = 0.08;
+        const maxTolerance = 0.35;
+        const threshold = Math.min(
+            maxTolerance,
+            Math.max(minTolerance, Math.max(pixelDerivedTolerance, snapDerivedTolerance))
+        );
+
+        if (Math.abs(coords.time - note.startTime) <= threshold) return 'left';
+        if (Math.abs(coords.time - noteEnd) <= threshold) return 'right';
         return null;
-    }, [snapValue]);
+    }, [snapValue, engine]);
 
-    const snapToGrid = useCallback((value) => {
+    const snapToGrid = useCallback((value, biasRatio = 0.8) => {
         if (snapValue <= 0) return value;
-        // ✅ FIX: Snap to grid based on grid center (note interaction için)
-        // Grid'in ilk %80'ine (0-0.8) bastığında -> o grid'e yaz (Math.floor)
-        // Grid'in son %20'sine (0.8-1.0) bastığında -> sonraki grid'e yaz (Math.ceil)
-        // Example: snapValue=1, value=0.0 -> gridPos=0.0 < 0.8 -> floor(0.0/1)*1 = 0 ✓
-        //          snapValue=1, value=0.7 -> gridPos=0.7 < 0.8 -> floor(0.7/1)*1 = 0 ✓
-        //          snapValue=1, value=0.9 -> gridPos=0.9 >= 0.8 -> ceil(0.9/1)*1 = 1 ✓
-        //          snapValue=1, value=1.7 -> gridPos=0.7 < 0.8 -> floor(1.7/1)*1 = 1 ✓
-        //          snapValue=1, value=1.9 -> gridPos=0.9 >= 0.8 -> ceil(1.9/1)*1 = 2 ✓
-        const gridCenter = snapValue * 0.8; // 80% threshold
+        // biasRatio determines how far into the current cell we snap forward (0-1 range)
+        const clampedBias = Math.min(0.95, Math.max(0.05, biasRatio));
+        const gridCenter = snapValue * clampedBias;
         const gridPosition = (value % snapValue + snapValue) % snapValue; // Handle negative values
         
         if (gridPosition < gridCenter) {
@@ -1293,7 +1293,7 @@ export function useNoteInteractionsV3({
             if (handle === 'left') {
                 // ✅ Left handle: Snap start time, calculate new length, then snap length
                 const originalEndTime = orig.startTime + (orig.visualLength || orig.length);
-                const snappedNewTime = snapToGrid(Math.max(0, orig.startTime + constrainedDelta));
+                const snappedNewTime = snapToGrid(Math.max(0, orig.startTime + constrainedDelta), 0.5);
                 newTime = snappedNewTime;
 
                 // Calculate new length based on snapped start time
@@ -1301,7 +1301,7 @@ export function useNoteInteractionsV3({
 
                 // ✅ Snap the resulting length to grid
                 newVisualLength = snapValue > 0
-                    ? Math.max(minLength, snapToGrid(calculatedLength))
+                    ? Math.max(minLength, snapToGrid(calculatedLength, 0.5))
                     : calculatedLength;
             } else {
                 // ✅ Right handle: Snap end time, then calculate new length
@@ -1310,7 +1310,7 @@ export function useNoteInteractionsV3({
 
                 // Snap the end time
                 const snappedEndTime = snapValue > 0
-                    ? snapToGrid(Math.max(0, newEndTime))
+                    ? snapToGrid(Math.max(0, newEndTime), 0.5)
                     : Math.max(0, newEndTime);
 
                 // Calculate new length from snapped end time

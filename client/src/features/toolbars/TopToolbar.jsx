@@ -18,13 +18,13 @@ const formatPosition = (position) => {
 };
 
 const ModeButton = ({ label, mode, activeMode, onClick }) => {
-    const isActive = activeMode === mode;
-    const className = `top-toolbar__mode-btn ${isActive ? 'top-toolbar__mode-btn--active' : ''}`;
-    return (
-        <button onClick={() => onClick(mode)} className={className}>
-            {label}
-        </button>
-    );
+  const isActive = activeMode === mode;
+  const className = `top-toolbar__mode-btn ${isActive ? 'top-toolbar__mode-btn--active' : ''}`;
+  return (
+    <button onClick={() => onClick(mode)} className={className}>
+      {label}
+    </button>
+  );
 };
 
 function TopToolbar({ onExportClick, onSaveClick, saveStatus = 'saved', lastSavedAt = null }) {
@@ -57,64 +57,62 @@ function TopToolbar({ onExportClick, onSaveClick, saveStatus = 'saved', lastSave
 
 
   // ✅ Dynamic button classes with state-specific indicators
-  const playButtonClass = `top-toolbar__transport-btn transport-btn ${
-    playbackState === PLAYBACK_STATES.PLAYING ? 'transport-btn--playing' :
+  const playButtonClass = `top-toolbar__transport-btn transport-btn ${playbackState === PLAYBACK_STATES.PLAYING ? 'transport-btn--playing' :
     playbackState === PLAYBACK_STATES.PAUSED ? 'transport-btn--paused' : ''
-  }`;
-  const stopButtonClass = `top-toolbar__transport-btn transport-btn ${
-    playbackState === PLAYBACK_STATES.STOPPED ? 'transport-btn--stopped' : ''
-  }`;
+    }`;
+  const stopButtonClass = `top-toolbar__transport-btn transport-btn ${playbackState === PLAYBACK_STATES.STOPPED ? 'transport-btn--stopped' : ''
+    }`;
 
 
   return (
     <header className="top-toolbar">
       <div className="toolbar__group">
         <button
-            title={
-              playbackState === PLAYBACK_STATES.PLAYING ? 'Pause' :
+          title={
+            playbackState === PLAYBACK_STATES.PLAYING ? 'Pause' :
               playbackState === PLAYBACK_STATES.PAUSED ? 'Resume' : 'Play'
-            }
-            onClick={togglePlayPause}
-            className={playButtonClass}
+          }
+          onClick={togglePlayPause}
+          className={playButtonClass}
         >
           {playbackState === PLAYBACK_STATES.PLAYING ? <Pause size={18} /> : <Play size={18} />}
         </button>
         <button
-            title="Stop"
-            onClick={handleStop}
-            className={stopButtonClass}
+          title="Stop"
+          onClick={handleStop}
+          className={stopButtonClass}
         >
           <Square size={18} />
         </button>
         <button
-            title={loopEnabled ? "Disable Loop" : "Enable Loop"}
-            onClick={() => setLoopEnabled(!loopEnabled)}
-            className={`top-toolbar__transport-btn transport-btn ${loopEnabled ? 'transport-btn--active' : ''}`}
+          title={loopEnabled ? "Disable Loop" : "Enable Loop"}
+          onClick={() => setLoopEnabled(!loopEnabled)}
+          className={`top-toolbar__transport-btn transport-btn ${loopEnabled ? 'transport-btn--active' : ''}`}
         >
           <Repeat size={18} />
         </button>
         <button
-            title={`Follow Playhead: ${followPlayheadMode}\nClick to cycle: CONTINUOUS → PAGE → OFF`}
-            onClick={cycleFollowPlayheadMode}
-            className={`top-toolbar__transport-btn transport-btn ${followPlayheadMode !== 'OFF' ? 'transport-btn--active' : ''}`}
+          title={`Follow Playhead: ${followPlayheadMode}\nClick to cycle: CONTINUOUS → PAGE → OFF`}
+          onClick={cycleFollowPlayheadMode}
+          className={`top-toolbar__transport-btn transport-btn ${followPlayheadMode !== 'OFF' ? 'transport-btn--active' : ''}`}
         >
           {followPlayheadMode === 'CONTINUOUS' && <Maximize2 size={18} />}
           {followPlayheadMode === 'PAGE' && <ChevronRight size={18} />}
           {followPlayheadMode === 'OFF' && <X size={18} />}
         </button>
         <div className="top-toolbar__mode-toggle">
-            <ModeButton
-              label="Pattern"
-              mode={PLAYBACK_MODES.PATTERN}
-              activeMode={playbackMode}
-              onClick={setPlaybackMode}
-            />
-            <ModeButton
-              label="Song"
-              mode={PLAYBACK_MODES.SONG}
-              activeMode={playbackMode}
-              onClick={setPlaybackMode}
-            />
+          <ModeButton
+            label="Pattern"
+            mode={PLAYBACK_MODES.PATTERN}
+            activeMode={playbackMode}
+            onClick={setPlaybackMode}
+          />
+          <ModeButton
+            label="Song"
+            mode={PLAYBACK_MODES.SONG}
+            activeMode={playbackMode}
+            onClick={setPlaybackMode}
+          />
         </div>
         <div className="top-toolbar__display">
           <input
@@ -135,13 +133,13 @@ function TopToolbar({ onExportClick, onSaveClick, saveStatus = 'saved', lastSave
         {onSaveClick && (
           <button
             title={
-              saveStatus === 'saving' 
-                ? 'Saving...' 
-                : saveStatus === 'unsaved' 
-                  ? 'Unsaved changes (Ctrl/Cmd + S)' 
+              saveStatus === 'saving'
+                ? 'Saving...'
+                : saveStatus === 'unsaved'
+                  ? 'Unsaved changes (Ctrl/Cmd + S)'
                   : saveStatus === 'error'
                     ? 'Save failed - Click to retry'
-                    : lastSavedAt 
+                    : lastSavedAt
                       ? `Saved at ${new Date(lastSavedAt).toLocaleTimeString()} (Ctrl/Cmd + S)`
                       : 'Save Project (Ctrl/Cmd + S)'
             }
@@ -150,14 +148,12 @@ function TopToolbar({ onExportClick, onSaveClick, saveStatus = 'saved', lastSave
                 onSaveClick();
               }
             }}
-            className={`top-toolbar__transport-btn transport-btn ${
-              saveStatus === 'unsaved' ? 'top-toolbar__save-btn--unsaved' : ''
-            } ${saveStatus === 'saving' ? 'top-toolbar__save-btn--saving' : ''} ${
-              saveStatus === 'error' ? 'top-toolbar__save-btn--error' : ''
-            }`}
-            style={{ 
-              display: 'flex', 
-              alignItems: 'center', 
+            className={`top-toolbar__transport-btn transport-btn ${saveStatus === 'unsaved' ? 'top-toolbar__save-btn--unsaved' : ''
+              } ${saveStatus === 'saving' ? 'top-toolbar__save-btn--saving' : ''} ${saveStatus === 'error' ? 'top-toolbar__save-btn--error' : ''
+              }`}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
               justifyContent: 'center',
               position: 'relative',
               gap: '4px'
@@ -170,13 +166,13 @@ function TopToolbar({ onExportClick, onSaveClick, saveStatus = 'saved', lastSave
               <Save size={18} />
             )}
             {saveStatus === 'unsaved' && (
-              <span style={{ 
-                position: 'absolute', 
-                top: '4px', 
-                right: '4px', 
-                width: '6px', 
-                height: '6px', 
-                borderRadius: '50%', 
+              <span style={{
+                position: 'absolute',
+                top: '4px',
+                right: '4px',
+                width: '6px',
+                height: '6px',
+                borderRadius: '50%',
                 background: '#ef4444',
                 boxShadow: '0 0 4px rgba(239, 68, 68, 0.8)'
               }} />

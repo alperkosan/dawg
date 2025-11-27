@@ -20,7 +20,7 @@ const SMOOTHNESS = 0.2; // Yumuşaklık faktörü
 
 export function usePianoRollEngine(containerRef, playbackControls = {}) {
     const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
-    const [snapValue, setSnapValue] = useState(1); // 1 = 1/16, 4 = 1/4 etc.
+    const [snapValue, setSnapValue] = useState(4); // default to 1/4 grid
 
     const viewportRef = useRef({
         scrollX: 0, scrollY: 0, zoomX: 1.0, zoomY: 1.0,

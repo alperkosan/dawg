@@ -9,7 +9,7 @@ import { getPreviewManager } from '@/lib/audio/preview';
 import { AudioContextService } from '@/lib/services/AudioContextService';
 import useInstrumentEditorStore from '@/store/useInstrumentEditorStore';
 import { useInstrumentsStore } from '@/store/useInstrumentsStore';
-import Slider from '../controls/Slider';
+import { Slider } from '@/components/controls/base/Slider';
 import WaveformDisplay from '../WaveformDisplay';
 import './MultiSampleEditor.css';
 

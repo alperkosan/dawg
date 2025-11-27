@@ -222,27 +222,11 @@ const SampleEditorV3 = ({ instrument }) => {
     updateInstrument(instrument.id, { [param]: value }, false);
   };
   
-  const handlePrecomputedChange = (param, value) => {
-    const newPrecomputed = { ...instrument.precomputed, [param]: value };
-    updateInstrument(instrument.id, { precomputed: newPrecomputed }, true);
-  };
-  
-  const handleEnvelopeChange = (newEnvelope) => {
-    updateInstrument(instrument.id, { envelope: newEnvelope }, false);
-  };
-
   // Audio clip mode: show waveform + mixer routing control
   if (isAudioClipMode) {
     return (
       <div className="sample-editor-v3-container">
-        <WaveformWorkbench
-          instrument={null}
-          buffer={instrumentBuffer}
-          onPrecomputedChange={() => {}}
-          onEnvelopeChange={() => {}}
-          readOnly={true}
-          clipData={editorClipData}
-        />
+        <WaveformWorkbench instrument={null} buffer={instrumentBuffer} readOnly />
         <AudioClipControls editorClipData={editorClipData} />
       </div>
     );
@@ -251,12 +235,7 @@ const SampleEditorV3 = ({ instrument }) => {
   // Normal instrument mode
   return (
     <div className="sample-editor-v3-container">
-      <WaveformWorkbench
-        instrument={instrument}
-        buffer={instrumentBuffer}
-        onPrecomputedChange={handlePrecomputedChange}
-        onEnvelopeChange={handleEnvelopeChange}
-      />
+      <WaveformWorkbench instrument={instrument} buffer={instrumentBuffer} />
       <ControlDeck
         instrument={instrument}
         track={track}

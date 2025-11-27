@@ -444,8 +444,11 @@ export const useFileBrowserStore = create((set, get) => ({
   quota: null,
   userAssetsLoaded: false,
   userAssets: [], // Store user assets for tree building
+  isBrowserVisible: true, // Default visible
 
   setSelectedNode: (node) => set({ selectedNode: node }),
+  toggleBrowser: () => set(state => ({ isBrowserVisible: !state.isBrowserVisible })),
+  setBrowserVisible: (visible) => set({ isBrowserVisible: visible }),
 
   // ✅ DYNAMIC: Load audio manifest and rebuild file tree
   loadAudioManifest: async () => {

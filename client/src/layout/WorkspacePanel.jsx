@@ -19,11 +19,47 @@ import OceanBubbles from '@/components/effects/OceanBubbles';
 import RetroMiamiGrid from '@/components/effects/RetroMiamiGrid';
 import ParticlesEffect from '@/components/effects/ParticlesEffect';
 
+import { useFileBrowserStore } from '@/store/useFileBrowserStore';
+
 function WorkspacePanel() {
   const {
     panels, panelStack, fullscreenPanel, pianoRollInstrumentId, editingInstrumentId,
     bringPanelToFront, togglePanel, handleMinimize, handleMaximize, updatePanelState
   } = usePanelsStore();
+
+  const isBrowserVisible = useFileBrowserStore(state => state.isBrowserVisible);
+  const [sidebarWidth, setSidebarWidth] = React.useState(280);
+  const [isResizing, setIsResizing] = React.useState(false);
+
+  const handleMouseDown = (e) => {
+    e.preventDefault();
+    setIsResizing(true);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  };
+
+  React.useEffect(() => {
+    if (!isResizing) return;
+
+    const handleMouseMove = (e) => {
+      const newWidth = Math.max(200, Math.min(600, e.clientX));
+      setSidebarWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizing]);
 
   const instruments = useInstrumentsStore(state => state.instruments);
   const mixerTracks = useMixerStore(state => state.mixerTracks);
@@ -163,11 +199,30 @@ function WorkspacePanel() {
   return (
     // 'workspace' sınıfı artık display: flex kullanıyor.
     <div className="workspace">
-      <FileBrowserPanel />
+      {isBrowserVisible && (
+        <div style={{ width: sidebarWidth, position: 'relative', flexShrink: 0 }}>
+          <FileBrowserPanel />
+          <div
+            onMouseDown={handleMouseDown}
+            style={{
+              position: 'absolute',
+              top: 0,
+              right: -4,
+              width: 8,
+              height: '100%',
+              cursor: 'col-resize',
+              zIndex: 100,
+              // Visual indicator on hover/drag
+              background: isResizing ? 'rgba(255,255,255,0.1)' : 'transparent',
+            }}
+            className="hover:bg-white/5 transition-colors"
+          />
+        </div>
+      )}
       {/* 'workspace__main-content' flex-grow: 1 ile geri kalan alanı kaplayacak */}
       <div className="workspace__main-content">
         {/* Atmospheric effects based on active theme */}
-        {renderThemeEffect()} 
+        {renderThemeEffect()}
         {Object.values(panels).map(panel => {
           const isMaximized = fullscreenPanel === panel.id;
 
@@ -267,7 +322,7 @@ function WorkspacePanel() {
             if (panel.id === 'piano-roll') {
               componentProps.instrument = pianoRollInstrument;
             }
-            
+
             // ======================================================
             // === EKLENECEK KOD BURASI ===
             // Bu blok, synth editörüne doğru enstrümanı gönderir.
@@ -276,7 +331,7 @@ function WorkspacePanel() {
               componentProps.instrument = editingInstrument;
             }
             // ======================================================
-            
+
             PanelContent = <PanelComponent {...componentProps} />;
           }
 
