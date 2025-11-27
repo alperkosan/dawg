@@ -302,7 +302,12 @@ export function useNoteInteractionsV3({
                     '16n': 0.25 // sixteenth note = 0.25 beats
                 };
                 normalized.length = durationMap[normalized.duration] || 1;
-                normalized.visualLength = normalized.length;
+            }
+
+            // Legacy support: collapse visualLength into length
+            if (normalized.visualLength !== undefined) {
+                normalized.length = normalized.visualLength;
+                delete normalized.visualLength;
             }
 
             // Convert pitch string to MIDI number (e.g., 'C4' -> 60)
@@ -536,9 +541,7 @@ export function useNoteInteractionsV3({
         // ✅ WYSIWYG PRINCIPLE: Use exact visible area, no padding
         // What you see is what you get - click only on visible note area
         const candidates = notes.filter(n => {
-            // ✅ FL STUDIO STYLE: Use visualLength for hit detection (oval notes support)
-            const displayLength = n.visualLength !== undefined ? n.visualLength : n.length;
-            const noteEndTime = n.startTime + displayLength;
+            const noteEndTime = n.startTime + n.length;
 
             // ✅ EXACT TIME BOUNDARIES - No tolerance, only visible area
             // Use inclusive boundaries to match visual rendering exactly
@@ -563,7 +566,7 @@ export function useNoteInteractionsV3({
         // ✅ FIX: If multiple notes overlap, prefer:
         // 1. Selected notes (if any are selected)
         // 2. Notes with highest pitch (topmost)
-        // 3. Notes with shortest visualLength (most visible)
+        // 3. Notes with shortest length (most visible)
         if (candidates.length === 0) return null;
         if (candidates.length === 1) return candidates[0];
 
@@ -574,21 +577,19 @@ export function useNoteInteractionsV3({
             return selectedCandidates.sort((a, b) => b.pitch - a.pitch)[0];
         }
 
-        // Prefer highest pitch (topmost), then shortest visualLength
+        // Prefer highest pitch (topmost), then shortest note length
         return candidates.sort((a, b) => {
             if (Math.abs(b.pitch - a.pitch) > 0.1) {
                 return b.pitch - a.pitch; // Higher pitch first
             }
-            // If same pitch, prefer shorter visualLength (more visible)
-            const aVisual = a.visualLength !== undefined ? a.visualLength : a.length;
-            const bVisual = b.visualLength !== undefined ? b.visualLength : b.length;
-            return aVisual - bVisual;
+            // If same pitch, prefer shorter length (more visible)
+            return a.length - b.length;
         })[0];
     }, [notes, engine, state.selection]);
 
     const getResizeHandle = useCallback((coords, note) => {
         if (!note) return null;
-        const noteEnd = note.startTime + (note.visualLength || note.length);
+        const noteEnd = note.startTime + note.length;
         const stepWidth = engine?.dimensions?.stepWidth || 40;
 
         // Convert pixel tolerance into time (steps) so hit area stays constant while zooming
@@ -649,8 +650,7 @@ export function useNoteInteractionsV3({
                 originals.set(id, {
                     startTime: note.startTime,
                     pitch: note.pitch,
-                    length: note.length,
-                    visualLength: note.visualLength
+                    length: note.length
                 });
             }
         });
@@ -706,9 +706,11 @@ export function useNoteInteractionsV3({
                         '1n': 4, '2n': 2, '4n': 1, '8n': 0.5, '16n': 0.25
                     };
                     normalized.length = durationMap[normalized.duration] || 1;
-                    if (normalized.visualLength === undefined) {
-                        normalized.visualLength = normalized.length;
-                    }
+                }
+
+                if (normalized.visualLength !== undefined) {
+                    normalized.length = normalized.visualLength;
+                    delete normalized.visualLength;
                 }
                 
                 // Convert pitch string to MIDI number (e.g., 'C4' -> 60)
@@ -802,8 +804,7 @@ export function useNoteInteractionsV3({
                 originals.set(d.id, {
                     startTime: d.startTime,
                     pitch: d.pitch,
-                    length: d.length,
-                    visualLength: d.visualLength !== undefined ? d.visualLength : d.length
+                    length: d.length
                 });
             });
 
@@ -832,8 +833,7 @@ export function useNoteInteractionsV3({
             if (n) {
                 originals.set(id, {
                     startTime: n.startTime,
-                    length: n.length,
-                    visualLength: n.visualLength
+                    length: n.length
                 });
             }
         });
@@ -982,8 +982,7 @@ export function useNoteInteractionsV3({
         const pitchRange = actualNoteHeight / keyHeight;
 
         const existingNote = notes.find(n => {
-            const displayLength = n.visualLength !== undefined ? n.visualLength : n.length;
-            const noteEndTime = n.startTime + displayLength;
+            const noteEndTime = n.startTime + n.length;
 
             // ✅ FIX: Time overlap check with EXCLUSIVE end boundary for paint tool
             // This allows writing notes at the exact end of another note
@@ -1007,7 +1006,7 @@ export function useNoteInteractionsV3({
                     snapped: { time: finalTime, pitch: finalPitch },
                     existing: { 
                         time: existingNote.startTime, 
-                        end: existingNote.startTime + (existingNote.visualLength || existingNote.length), 
+                        end: existingNote.startTime + existingNote.length, 
                         pitch: existingNote.pitch 
                     }
                 });
@@ -1025,7 +1024,6 @@ export function useNoteInteractionsV3({
             startTime: finalTime, // Rounded to grid center, then to grid
             pitch: finalPitch, // MIDI number (0-127) - rounded to grid center
             length: lengthInSteps,
-            visualLength: lengthInSteps,
 
             // ✅ Channel Rack format (for playback - legacy compatibility)
             time: finalTime,
@@ -1285,14 +1283,14 @@ export function useNoteInteractionsV3({
             }
 
             let newTime = orig.startTime;
-            let newVisualLength = orig.visualLength || orig.length;
+            let newLength = orig.length;
 
             // ✅ Minimum length: Use snap value as minimum (or 0.25 if no snap)
             const minLength = snapValue > 0 ? snapValue : 0.25;
 
             if (handle === 'left') {
                 // ✅ Left handle: Snap start time, calculate new length, then snap length
-                const originalEndTime = orig.startTime + (orig.visualLength || orig.length);
+                const originalEndTime = orig.startTime + orig.length;
                 const snappedNewTime = snapToGrid(Math.max(0, orig.startTime + constrainedDelta), 0.5);
                 newTime = snappedNewTime;
 
@@ -1300,12 +1298,12 @@ export function useNoteInteractionsV3({
                 let calculatedLength = Math.max(minLength, originalEndTime - snappedNewTime);
 
                 // ✅ Snap the resulting length to grid
-                newVisualLength = snapValue > 0
+                newLength = snapValue > 0
                     ? Math.max(minLength, snapToGrid(calculatedLength, 0.5))
                     : calculatedLength;
             } else {
                 // ✅ Right handle: Snap end time, then calculate new length
-                const originalEndTime = orig.startTime + (orig.visualLength || orig.length);
+                const originalEndTime = orig.startTime + orig.length;
                 let newEndTime = originalEndTime + constrainedDelta;
 
                 // Snap the end time
@@ -1314,17 +1312,13 @@ export function useNoteInteractionsV3({
                     : Math.max(0, newEndTime);
 
                 // Calculate new length from snapped end time
-                newVisualLength = Math.max(minLength, snappedEndTime - orig.startTime);
+                newLength = Math.max(minLength, snappedEndTime - orig.startTime);
             }
 
-            // ✅ RESIZE BEHAVIOR: When user manually resizes a note, it should no longer be oval
-            // The resize action means "I want to control the exact duration"
-            // So we sync length with visualLength, making it a normal (non-oval) note
             return {
                 ...note,
                 startTime: newTime,
-                visualLength: newVisualLength,
-                length: newVisualLength // ✅ Sync length with visualLength (exit oval mode)
+                length: newLength
             };
         });
 
@@ -1336,17 +1330,15 @@ export function useNoteInteractionsV3({
                     // Single note - simple command
                     const noteId = noteIds[0];
                     const orig = originals.get(noteId);
-                    const updatedNote = updated.find(n => n.id === noteId);
+                            const updatedNote = updated.find(n => n.id === noteId);
                     if (orig && updatedNote) {
                         const oldState = {
                             startTime: orig.startTime,
-                            length: orig.length,
-                            visualLength: orig.visualLength
+                                    length: orig.length
                         };
                         const newState = {
                             startTime: updatedNote.startTime,
-                            length: updatedNote.length,
-                            visualLength: updatedNote.visualLength
+                                    length: updatedNote.length
                         };
 
                         const updateNoteFn = (id, state) => {
@@ -1390,16 +1382,14 @@ export function useNoteInteractionsV3({
                         const orig = originals.get(noteId);
                         const updatedNote = updated.find(n => n.id === noteId);
                         if (orig && updatedNote) {
-                            allOldStates.set(noteId, {
-                                startTime: orig.startTime,
-                                length: orig.length,
-                                visualLength: orig.visualLength
-                            });
-                            allNewStates.set(noteId, {
-                                startTime: updatedNote.startTime,
-                                length: updatedNote.length,
-                                visualLength: updatedNote.visualLength
-                            });
+                                allOldStates.set(noteId, {
+                                    startTime: orig.startTime,
+                                    length: orig.length
+                                });
+                                allNewStates.set(noteId, {
+                                    startTime: updatedNote.startTime,
+                                    length: updatedNote.length
+                                });
                         }
                     });
 
@@ -1463,8 +1453,7 @@ export function useNoteInteractionsV3({
                             // If state matches newState structure, we're executing
                             // If state matches oldState structure, we're undoing
                             const isNewState = state.startTime === newState.startTime && 
-                                            state.length === newState.length &&
-                                            state.visualLength === newState.visualLength;
+                                            state.length === newState.length;
                             
                             if (isNewState) {
                                 // Execute: apply all new states
@@ -1767,7 +1756,7 @@ export function useNoteInteractionsV3({
             if (loopRegion && loopRegion.start !== undefined && loopRegion.end !== undefined) {
                 // Get all notes within loop region (notes that overlap with region)
                 notesToDuplicate = notes.filter(note => {
-                    const noteEnd = note.startTime + (note.visualLength !== undefined ? note.visualLength : note.length);
+                    const noteEnd = note.startTime + note.length;
                     // Note overlaps with loop region if:
                     // - Note starts before region ends AND
                     // - Note ends after region starts
@@ -1817,7 +1806,7 @@ export function useNoteInteractionsV3({
                 if (note.slideDuration !== undefined && note.slideDuration !== null) duplicate.slideDuration = note.slideDuration;
                 if (note.isMuted !== undefined) duplicate.isMuted = note.isMuted;
                 if (note.velocity !== undefined) duplicate.velocity = note.velocity;
-                if (note.visualLength !== undefined) duplicate.visualLength = note.visualLength;
+                // visualLength deprecated - length already reflects actual duration
                 
                 return duplicate;
             });
@@ -1860,7 +1849,7 @@ export function useNoteInteractionsV3({
 
             // Get notes within loop region (notes that overlap with region)
             const notesInRegion = notes.filter(note => {
-                const noteEnd = note.startTime + (note.visualLength !== undefined ? note.visualLength : note.length);
+                const noteEnd = note.startTime + note.length;
                 // Note overlaps with loop region if:
                 // - Note starts before region ends AND
                 // - Note ends after region starts
@@ -1880,10 +1869,7 @@ export function useNoteInteractionsV3({
             }));
 
             const minRelativeStart = Math.min(...normalizedNotes.map(n => n.relativeStart));
-            const maxRelativeEnd = Math.max(...normalizedNotes.map(n => {
-                const noteLength = n.visualLength !== undefined ? n.visualLength : n.length;
-                return n.relativeStart + noteLength;
-            }));
+            const maxRelativeEnd = Math.max(...normalizedNotes.map(n => n.relativeStart + n.length));
             const patternLength = maxRelativeEnd - minRelativeStart;
             const loopLength = loopRegion.end - loopRegion.start;
 
@@ -1910,7 +1896,7 @@ export function useNoteInteractionsV3({
                 normalizedNotes.forEach(note => {
                     const newRelativeStart = note.relativeStart + copyOffset;
                     const newStartTime = loopRegion.start + newRelativeStart;
-                    const noteLength = note.visualLength !== undefined ? note.visualLength : note.length;
+                    const noteLength = note.length;
                     const newEndTime = newStartTime + noteLength;
 
                     // Only add if the note fits within the loop region
@@ -1971,7 +1957,7 @@ export function useNoteInteractionsV3({
             // ✅ LOOP REGION AWARE: If loop region is set, select only notes within it
             if (loopRegion && loopRegion.start !== undefined && loopRegion.end !== undefined) {
                 const notesInRegion = notes.filter(note => {
-                    const noteEnd = note.startTime + (note.visualLength !== undefined ? note.visualLength : note.length);
+                    const noteEnd = note.startTime + note.length;
                     // Note overlaps with loop region if:
                     // - Note starts before region ends AND
                     // - Note ends after region starts
@@ -2221,10 +2207,9 @@ export function useNoteInteractionsV3({
                 }
                 
                 if (quantizeEnd) {
-                    const noteEnd = note.startTime + (note.visualLength || note.length);
+                    const noteEnd = note.startTime + note.length;
                     const snappedEnd = snapToGrid(noteEnd);
                     updates.length = Math.max(snapValue || 0.25, snappedEnd - (updates.startTime || note.startTime));
-                    updates.visualLength = updates.length;
                 }
 
                 if (Object.keys(updates).length === 0) return null;
@@ -2250,10 +2235,9 @@ export function useNoteInteractionsV3({
                     updates.startTime = snapToGrid(note.startTime);
                 }
                 if (quantizeEnd) {
-                    const noteEnd = note.startTime + (note.visualLength || note.length);
+                    const noteEnd = note.startTime + note.length;
                     const snappedEnd = snapToGrid(noteEnd);
                     updates.length = Math.max(snapValue || 0.25, snappedEnd - (updates.startTime || note.startTime));
-                    updates.visualLength = updates.length;
                 }
                 if (Object.keys(updates).length > 0) {
                     _updateNote(note.id, updates);

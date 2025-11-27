@@ -482,7 +482,7 @@ export const useMixerStore = create((set, get) => ({
     const nextNumber = tracksOfType.length + 1;
 
     const newTrack = {
-      id: `${type}-${uuidv4()}`,
+      id: type === 'bus' ? `bus-${nextNumber}` : `${type}-${uuidv4()}`,
       name: type === 'bus' ? `Bus ${nextNumber}` : `Track ${nextNumber}`,
       type: type,
       volume: 0,

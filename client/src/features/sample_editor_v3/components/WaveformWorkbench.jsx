@@ -155,7 +155,7 @@ export const WaveformWorkbench = ({ instrument, buffer, readOnly = false, onInst
     [instrument?.id, onInstrumentChange, updateInstrument, waveformReadOnly]
   );
 
-  const reverse = !!instrument?.reverse;
+  const reverse = !!instrument?.precomputed?.reverse;
   const [regionState, setRegionState] = useState(() => {
     const baseRegion = instrument ? buildRegionFromInstrument(instrument) : defaultRegion;
     return normalizeRegion(instrumentRegionToDisplay(baseRegion, reverse));

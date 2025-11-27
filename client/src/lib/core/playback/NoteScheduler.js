@@ -39,7 +39,7 @@ export class NoteScheduler {
             // Calculate absolute time
             const noteTimeInSteps = note.startTime || note.time || 0;
             const noteTimeInSeconds = this.transport.stepsToSeconds(noteTimeInSteps);
-            const absoluteTime = baseTime + noteTimeInSeconds;
+        const absoluteTime = baseTime + noteTimeInSeconds;
 
             // Calculate duration
             let noteDuration;
@@ -86,10 +86,14 @@ export class NoteScheduler {
             eventsScheduled++;
 
             // Schedule note off event - check for both length and duration
-            const shouldScheduleNoteOff = (typeof note.length === 'number' && note.length > 0) ||
-                                         (note.duration && note.duration !== 'trigger');
+            const shouldScheduleNoteOff =
+                (typeof note.length === 'number' && note.length > 0) ||
+                (note.duration && note.duration !== 'trigger');
+            const instrumentHasRelease = typeof instrument?.hasReleaseSustain === 'function'
+                ? instrument.hasReleaseSustain()
+                : true;
 
-            if (shouldScheduleNoteOff) {
+            if (shouldScheduleNoteOff && instrumentHasRelease) {
                 // Store note metadata to prevent wrong noteOff
                 const noteMetadata = {
                     type: 'noteOff',
@@ -173,6 +177,10 @@ export class NoteScheduler {
                     noteDuration = this.transport.stepsToSeconds(1);
                 }
 
+                const instrumentHasRelease = typeof instrument?.hasReleaseSustain === 'function'
+                    ? instrument.hasReleaseSustain()
+                    : true;
+
                 // Schedule note on
                 this.transport.scheduleEvent(
                     scheduleTime,
@@ -192,7 +200,7 @@ export class NoteScheduler {
                 );
 
                 // Schedule note off if needed
-                if (noteDuration > 0) {
+                if (noteDuration > 0 && instrumentHasRelease) {
                     this.transport.scheduleEvent(
                         scheduleTime + noteDuration,
                         (scheduledTime) => {

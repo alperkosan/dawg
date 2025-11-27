@@ -701,9 +701,11 @@ export class NativeAudioEngine {
             this.unifiedMixerChannelMap.set(`track-${i}`, i - 1);
         }
 
-        // Bus channels: bus-1 → 28, bus-2 → 29
+        // Bus channels: bus-1 → 28, bus-2 → 29, bus-3 → 26, bus-4 → 27 (use available channels)
         this.unifiedMixerChannelMap.set('bus-1', 28);
         this.unifiedMixerChannelMap.set('bus-2', 29);
+        this.unifiedMixerChannelMap.set('bus-3', 26);
+        this.unifiedMixerChannelMap.set('bus-4', 27);
 
         // Master channel: master → 30 (optional, usually not routed through mixer)
         this.unifiedMixerChannelMap.set('master', 30);
