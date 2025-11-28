@@ -832,13 +832,10 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
     ]);
 
     useEffect(() => {
+        // ✅ FIX: During drag/resize, render entire canvas to show all notes
+        // Dirty region optimization causes other notes to disappear
         if (dragDirtyRegion) {
-            markNotesDirty({
-                x: Math.max(0, dragDirtyRegion.x),
-                y: Math.max(0, dragDirtyRegion.y),
-                width: dragDirtyRegion.width,
-                height: dragDirtyRegion.height
-            });
+            markNotesDirty(); // Render entire canvas, not just dirty region
         }
     }, [dragDirtyRegion, markNotesDirty]);
 

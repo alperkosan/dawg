@@ -541,7 +541,9 @@ export function useNoteInteractionsV3({
         // ✅ WYSIWYG PRINCIPLE: Use exact visible area, no padding
         // What you see is what you get - click only on visible note area
         const candidates = notes.filter(n => {
-            const noteEndTime = n.startTime + n.length;
+            // ✅ FIX: Use visualLength for hit detection (oval notes support)
+            const displayLength = n.visualLength !== undefined ? n.visualLength : n.length;
+            const noteEndTime = n.startTime + displayLength;
 
             // ✅ EXACT TIME BOUNDARIES - No tolerance, only visible area
             // Use inclusive boundaries to match visual rendering exactly
@@ -650,7 +652,8 @@ export function useNoteInteractionsV3({
                 originals.set(id, {
                     startTime: note.startTime,
                     pitch: note.pitch,
-                    length: note.length
+                    length: note.length,
+                    visualLength: note.visualLength // ✅ FIX: Preserve visualLength for oval notes
                 });
             }
         });
@@ -804,7 +807,8 @@ export function useNoteInteractionsV3({
                 originals.set(d.id, {
                     startTime: d.startTime,
                     pitch: d.pitch,
-                    length: d.length
+                    length: d.length,
+                    visualLength: d.visualLength // ✅ FIX: Preserve visualLength for oval notes
                 });
             });
 
@@ -833,7 +837,8 @@ export function useNoteInteractionsV3({
             if (n) {
                 originals.set(id, {
                     startTime: n.startTime,
-                    length: n.length
+                    length: n.length,
+                    visualLength: n.visualLength // ✅ FIX: Preserve visualLength for oval notes
                 });
             }
         });
@@ -1283,27 +1288,34 @@ export function useNoteInteractionsV3({
             }
 
             let newTime = orig.startTime;
+            let newVisualLength = orig.visualLength !== undefined ? orig.visualLength : orig.length;
             let newLength = orig.length;
+
+            // ✅ Detect oval note: visualLength < length means it's an oval note
+            const isOvalNote = orig.visualLength !== undefined && orig.visualLength < orig.length;
 
             // ✅ Minimum length: Use snap value as minimum (or 0.25 if no snap)
             const minLength = snapValue > 0 ? snapValue : 0.25;
 
+            // ✅ FIX: Use visualLength for resize calculations (oval notes support)
+            const resizableLength = orig.visualLength !== undefined ? orig.visualLength : orig.length;
+
             if (handle === 'left') {
                 // ✅ Left handle: Snap start time, calculate new length, then snap length
-                const originalEndTime = orig.startTime + orig.length;
+                const originalEndTime = orig.startTime + resizableLength;
                 const snappedNewTime = snapToGrid(Math.max(0, orig.startTime + constrainedDelta), 0.5);
                 newTime = snappedNewTime;
 
-                // Calculate new length based on snapped start time
+                // Calculate new visual length based on snapped start time
                 let calculatedLength = Math.max(minLength, originalEndTime - snappedNewTime);
 
                 // ✅ Snap the resulting length to grid
-                newLength = snapValue > 0
+                newVisualLength = snapValue > 0
                     ? Math.max(minLength, snapToGrid(calculatedLength, 0.5))
                     : calculatedLength;
             } else {
                 // ✅ Right handle: Snap end time, then calculate new length
-                const originalEndTime = orig.startTime + orig.length;
+                const originalEndTime = orig.startTime + resizableLength;
                 let newEndTime = originalEndTime + constrainedDelta;
 
                 // Snap the end time
@@ -1311,14 +1323,18 @@ export function useNoteInteractionsV3({
                     ? snapToGrid(Math.max(0, newEndTime), 0.5)
                     : Math.max(0, newEndTime);
 
-                // Calculate new length from snapped end time
-                newLength = Math.max(minLength, snappedEndTime - orig.startTime);
+                // Calculate new visual length from snapped end time
+                newVisualLength = Math.max(minLength, snappedEndTime - orig.startTime);
             }
 
+            // ✅ RESIZE BEHAVIOR: When user manually resizes a note, it should no longer be oval
+            // The resize action means "I want to control the exact duration"
+            // So we sync length with visualLength, making it a normal (non-oval) note
             return {
                 ...note,
                 startTime: newTime,
-                length: newLength
+                visualLength: newVisualLength,
+                length: newVisualLength // ✅ Sync length with visualLength (exit oval mode)
             };
         });
 
@@ -1334,11 +1350,13 @@ export function useNoteInteractionsV3({
                     if (orig && updatedNote) {
                         const oldState = {
                             startTime: orig.startTime,
-                                    length: orig.length
+                            length: orig.length,
+                            visualLength: orig.visualLength // ✅ FIX: Preserve visualLength for oval notes
                         };
                         const newState = {
                             startTime: updatedNote.startTime,
-                                    length: updatedNote.length
+                            length: updatedNote.length,
+                            visualLength: updatedNote.visualLength // ✅ FIX: Preserve visualLength for oval notes
                         };
 
                         const updateNoteFn = (id, state) => {
@@ -1384,11 +1402,13 @@ export function useNoteInteractionsV3({
                         if (orig && updatedNote) {
                                 allOldStates.set(noteId, {
                                     startTime: orig.startTime,
-                                    length: orig.length
+                                    length: orig.length,
+                                    visualLength: orig.visualLength // ✅ FIX: Preserve visualLength for oval notes
                                 });
                                 allNewStates.set(noteId, {
                                     startTime: updatedNote.startTime,
-                                    length: updatedNote.length
+                                    length: updatedNote.length,
+                                    visualLength: updatedNote.visualLength // ✅ FIX: Preserve visualLength for oval notes
                                 });
                         }
                     });
@@ -1453,7 +1473,8 @@ export function useNoteInteractionsV3({
                             // If state matches newState structure, we're executing
                             // If state matches oldState structure, we're undoing
                             const isNewState = state.startTime === newState.startTime && 
-                                            state.length === newState.length;
+                                            state.length === newState.length &&
+                                            state.visualLength === newState.visualLength;
                             
                             if (isNewState) {
                                 // Execute: apply all new states
@@ -1541,7 +1562,9 @@ export function useNoteInteractionsV3({
             const maxPitch = Math.max(start.pitch, end.pitch);
 
             selected = notes.filter(n => {
-                const noteEnd = n.startTime + n.length;
+                // ✅ FIX: Use visualLength for area selection (oval notes support)
+                const displayLength = n.visualLength !== undefined ? n.visualLength : n.length;
+                const noteEnd = n.startTime + displayLength;
                 return n.startTime < maxTime && noteEnd > minTime &&
                     n.pitch >= minPitch && n.pitch <= maxPitch;
             }).map(n => n.id);
