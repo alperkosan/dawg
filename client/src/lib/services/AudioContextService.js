@@ -225,9 +225,11 @@ export class AudioContextService {
       this.eventBus.emit('transportLoop', data);
       this.loopManager?.handleTransportLoop(data);
 
-      // ✅ CRITICAL FIX: Loop sonrası mixer tracks'ları audio engine'e yeniden sync et
-      // Loop sonrası mixer insert'leri ve send bağlantıları sorunlu olabiliyor
-      await this._syncMixerTracksToAudioEngine();
+      // ✅ FIX: Don't sync mixer tracks on every loop - this causes audio glitches!
+      // DAW best practice: Only sync when tracks are added/removed/modified, not during playback
+      // Sync operations rebuild chains and disconnect/reconnect nodes, causing audio dropouts
+      // If sync is needed, it should be done explicitly by the user or on track changes only
+      // await this._syncMixerTracksToAudioEngine(); // REMOVED - causes audio glitches
     });
 
     this.audioEngine.transport?.on('start', () => {

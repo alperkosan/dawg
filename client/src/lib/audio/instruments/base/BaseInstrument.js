@@ -131,7 +131,9 @@ export class BaseInstrument {
             now: this.audioContext.currentTime.toFixed(3) + 's',
             isInitialized: this._isInitialized,
             hasBuffer: this.sampleBuffer ? 'YES' : 'NO',
-            extendedParams: extendedParams ? 'YES' : 'NO'
+            extendedParams: extendedParams ? 'YES' : 'NO',
+            hasOutput: !!this.output,
+            outputType: this.output?.constructor?.name || 'none'
         });
 
         // ✅ FIX: Pass duration via extendedParams to noteOn

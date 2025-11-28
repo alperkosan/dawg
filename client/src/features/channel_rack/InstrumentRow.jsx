@@ -134,9 +134,10 @@ const InstrumentRow = ({
       notesToAdd.push({ step, pitch: defaultPitch, velocity: defaultVelocity });
     }
 
-    // Execute all add commands
+    // Execute all add commands with fixed length (fill pattern behavior)
+    // ✅ FIX: Use fixed length for fill pattern - all notes should have the same length
     notesToAdd.forEach(({ step }) => {
-      const command = new AddNoteCommand(instrument.id, step);
+      const command = new AddNoteCommand(instrument.id, step, stepInterval);
       commandManager.execute(command);
     });
 

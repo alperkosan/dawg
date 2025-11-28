@@ -149,6 +149,7 @@ export class TransposeNotesCommand extends ICommand {
     execute() {
         const transposedNotes = this.notes.map(note => {
             const newPitch = Math.max(0, Math.min(127, note.pitch + this.semitones));
+            // ✅ FIX: Preserve visualLength and length for oval notes
             return { ...note, pitch: newPitch };
         });
         this.updatePatternStoreFn(transposedNotes);
@@ -157,6 +158,7 @@ export class TransposeNotesCommand extends ICommand {
     undo() {
         const restoredNotes = this.notes.map(note => {
             const originalPitch = this.originalPitches.get(note.id);
+            // ✅ FIX: Preserve visualLength and length for oval notes
             return { ...note, pitch: originalPitch };
         });
         this.updatePatternStoreFn(restoredNotes);

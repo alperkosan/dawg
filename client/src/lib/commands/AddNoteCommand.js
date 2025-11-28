@@ -11,11 +11,13 @@ export class AddNoteCommand extends Command {
   /**
    * @param {string} instrumentId - Notanın ekleneceği enstrümanın ID'si.
    * @param {number} step - Notanın ekleneceği adım (zaman).
+   * @param {number} fixedLength - Sabit nota uzunluğu (opsiyonel, fill pattern için kullanılır).
    */
-  constructor(instrumentId, step) {
+  constructor(instrumentId, step, fixedLength = null) {
     super();
     this.instrumentId = instrumentId;
     this.step = step;
+    this.fixedLength = fixedLength; // ✅ FIX: Allow fixed length for fill pattern
     // Bu nota, execute() metodu çalıştığında oluşturulacak ve saklanacaktır.
     // Bu, undo işlemi için gereklidir.
     this.note = null; 
@@ -95,10 +97,19 @@ export class AddNoteCommand extends Command {
     const gateLengthInSteps = 1;
     const audioDuration = null;
     const noteStartStep = this.step;
-    const ovalLengthInSteps = Math.max(
-      gateLengthInSteps,
-      patternLengthInSteps - noteStartStep
-    );
+    
+    // ✅ FIX: Use fixed length if provided (for fill pattern), otherwise use oval note logic
+    let ovalLengthInSteps;
+    if (this.fixedLength !== null && this.fixedLength > 0) {
+      // Fill pattern: Use fixed length (e.g., 4 steps)
+      ovalLengthInSteps = this.fixedLength;
+    } else {
+      // Normal sequencer: Extend to pattern end (oval note behavior)
+      const remainingSteps = patternLengthInSteps - noteStartStep;
+      ovalLengthInSteps = remainingSteps > 0 
+        ? Math.max(gateLengthInSteps, remainingSteps)
+        : gateLengthInSteps; // If at or past pattern end, use gate length
+    }
 
     console.log(`📝 AddNoteCommand: New note for ${this.instrumentId} with 1-step gate`, {
       patternLengthInSteps,

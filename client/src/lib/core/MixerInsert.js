@@ -61,8 +61,10 @@ export class MixerInsert {
     this._analyzerConnected = false;
 
     // Auto-sleep (silence detection)
+    // ✅ FIX: Disable auto-sleep for bus channels - they receive sends and should stay active
+    const isBusChannel = insertId.startsWith('bus-');
     this.autoSleepConfig = {
-      enabled: insertId !== 'master',
+      enabled: insertId !== 'master' && !isBusChannel, // Disable for master and bus channels
       threshold: 0.00018,
       wakeThreshold: 0.00035,
       sleepAfterMs: 1000,
@@ -577,12 +579,24 @@ export class MixerInsert {
         console.log(`🔧 Rebuilding chain for ${this.insertId}`);
       }
 
-      // Disconnect all first
-      this.input.disconnect();
+      // ✅ FIX: Don't disconnect input - it has sends connected to it!
+      // Only disconnect the output chain (gain, pan, analyzer, effects)
+      // Input should remain connected to any sends that are routing to it
       this.gainNode.disconnect();
       this.panNode.disconnect();
+      
+      // ✅ CRITICAL FIX: Disconnect analyzer from output chain, but preserve send connections
+      // Analyzer has two types of connections:
+      // 1. Output chain: analyzer → output (this should be disconnected and reconnected)
+      // 2. Send connections: analyzer → sendGain → bus.input (these should be preserved)
       if (this._analyzer) {
-        try { this._analyzer.disconnect(); } catch (e) {}
+        try {
+          // Only disconnect analyzer from output, not from sends
+          // Send connections are: analyzer → sendGain, which we want to keep
+          this._analyzer.disconnect(this.output);
+        } catch (e) {
+          // Not connected to output yet, that's fine
+        }
       }
 
       this.effects.forEach(effect => {
@@ -594,6 +608,16 @@ export class MixerInsert {
           }
         }
       });
+
+      // ✅ FIX: Disconnect input only from its current output chain connections
+      // But preserve connections from sends (which connect TO input, not FROM input)
+      // Input can have multiple connections TO it (from sends), but only one FROM it (to gainNode)
+      try {
+        // Disconnect input from gainNode (if connected)
+        this.input.disconnect(this.gainNode);
+      } catch (e) {
+        // Not connected yet, that's fine
+      }
 
       // Build chain
       let currentNode = this.input;
@@ -623,12 +647,17 @@ export class MixerInsert {
       currentNode.connect(this.gainNode);
       this.gainNode.connect(this.panNode);
       
+      // ✅ FIX: Always check if analyzer exists
+      // If analyzer exists (created lazily via getAnalyzer()), insert it into chain
       if (this._analyzer) {
+        // Analyzer exists - insert it: pan → analyzer → output
         this.panNode.connect(this._analyzer);
         this._analyzer.connect(this.output);
         this._analyzerConnected = true;
       } else {
+        // No analyzer yet - direct connection
         this.panNode.connect(this.output);
+        this._analyzerConnected = false;
       }
 
       if (isDev) {
@@ -726,8 +755,19 @@ export class MixerInsert {
    */
   connectToMaster(masterInput) {
     try {
+      // ✅ FIX: Disconnect from any previous connection first
+      this.output.disconnect();
       this.output.connect(masterInput);
-      // Only log errors, not every connection
+      
+      if (import.meta.env.DEV) {
+        console.log(`🔗 ${this.insertId} connected to master bus`, {
+          insertId: this.insertId,
+          hasOutput: !!this.output,
+          hasMasterInput: !!masterInput,
+          outputType: this.output?.constructor?.name,
+          masterInputType: masterInput?.constructor?.name
+        });
+      }
     } catch (error) {
       console.error(`❌ Failed to connect ${this.insertId} to master:`, error);
     }
@@ -754,19 +794,53 @@ export class MixerInsert {
       return;
     }
 
+    // ✅ FIX: Validate busInput before creating send
+    if (!busInput) {
+      console.error(`❌ Cannot create send to ${busId}: busInput is null/undefined`);
+      return;
+    }
+
+    if (typeof busInput.connect !== 'function') {
+      console.error(`❌ Cannot create send to ${busId}: busInput is not a valid AudioNode`);
+      return;
+    }
+
     const sendGain = this.audioContext.createGain();
     sendGain.gain.value = sendLevel;
 
+    // ✅ FIX: Use getAnalyzer() to ensure analyzer exists (lazy creation)
     // Tap from analyzer (post-fader)
-    this.analyzer.connect(sendGain);
-    sendGain.connect(busInput);
+    const analyzer = this.getAnalyzer();
+    
+    try {
+      analyzer.connect(sendGain);
+      sendGain.connect(busInput);
+      
+      this.sends.set(busId, {
+        gain: sendGain,
+        destination: busInput
+      });
 
-    this.sends.set(busId, {
-      gain: sendGain,
-      destination: busInput
-    });
-
-    console.log(`📤 Send: ${this.insertId} → ${busId} (${sendLevel})`);
+      if (import.meta.env.DEV) {
+        console.log(`📤 Send created: ${this.insertId} → ${busId} (level: ${sendLevel})`, {
+          sourceInsert: this.insertId,
+          busId,
+          sendLevel,
+          hasAnalyzer: !!analyzer,
+          hasBusInput: !!busInput,
+          busInputType: busInput?.constructor?.name
+        });
+      }
+    } catch (error) {
+      console.error(`❌ Failed to create send from ${this.insertId} to ${busId}:`, error);
+      // Cleanup on error
+      try {
+        analyzer.disconnect(sendGain);
+        sendGain.disconnect(busInput);
+      } catch (e) {
+        // Ignore cleanup errors
+      }
+    }
   }
 
   /**
@@ -792,7 +866,10 @@ export class MixerInsert {
     }
 
     try {
-      this.analyzer.disconnect(send.gain);
+      // ✅ FIX: Use getAnalyzer() to ensure analyzer exists (lazy creation)
+      if (this._analyzer) {
+        this._analyzer.disconnect(send.gain);
+      }
       send.gain.disconnect(send.destination);
     } catch (error) {
       // Already disconnected
@@ -812,17 +889,14 @@ export class MixerInsert {
       this._analyzer.fftSize = 256;
       this._analyzer.smoothingTimeConstant = 0.8;
       
-      // Insert analyzer into chain: pan → analyzer → output
-      if (!this._analyzerConnected) {
-        try {
-          this.panNode.disconnect(this.output);
-          this.panNode.connect(this._analyzer);
-          this._analyzer.connect(this.output);
-          this._analyzerConnected = true;
-        } catch (e) {
-          // Chain might not be built yet, will be connected in _rebuildChain
-        }
-      }
+      // ✅ FIX: Don't manually reconnect here - let _rebuildChain handle it
+      // Manually disconnecting/reconnecting can break the chain if it's already built
+      // Instead, mark that analyzer should be connected and rebuild the chain
+      this._analyzerConnected = false; // Will be set to true in _rebuildChain
+      
+      // Rebuild chain to properly insert analyzer
+      // This ensures all connections are correct and doesn't break existing chain
+      this._rebuildChain();
       
       if (import.meta.env.DEV) {
         console.log(`📊 Lazy analyzer created for ${this.insertId}`);

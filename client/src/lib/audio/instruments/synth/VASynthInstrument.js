@@ -131,29 +131,101 @@ export class VASynthInstrument extends BaseInstrument {
                         monoVoice.updateParameters({ modulationMatrix: this.modulationMatrix });
                     }
 
-                    this.voices.set('mono', monoVoice);
-                }
+                    // ✅ FIX: Connect mono voice to instrument masterGain immediately after creation
+                    // This ensures the connection is established before noteOn
+                    if (monoVoice.masterGain && this.masterGain) {
+                        try {
+                            monoVoice.masterGain.connect(this.masterGain);
+                            console.log(`🔗 Mono voice masterGain connected to instrument masterGain:`, {
+                                instrumentName: this.name,
+                                hasMonoVoiceMasterGain: !!monoVoice.masterGain,
+                                hasInstrumentMasterGain: !!this.masterGain,
+                                monoVoiceMasterGainType: monoVoice.masterGain?.constructor?.name,
+                                instrumentMasterGainType: this.masterGain?.constructor?.name
+                            });
+                        } catch (e) {
+                            console.error(`❌ Failed to connect mono voice masterGain:`, e, {
+                                instrumentName: this.name,
+                                hasMonoVoiceMasterGain: !!monoVoice.masterGain,
+                                hasInstrumentMasterGain: !!this.masterGain
+                            });
+                        }
+                    } else {
+                        console.error(`❌ Cannot connect mono voice: missing nodes`, {
+                            instrumentName: this.name,
+                            hasMonoVoiceMasterGain: !!monoVoice.masterGain,
+                            hasInstrumentMasterGain: !!this.masterGain
+                        });
+                    }
 
-                // ✅ BUG #1 FIX: Reset routing for mono voice to prevent double connections
-                // Check if voice is still valid and masterGain exists before disconnecting
-                if (monoVoice && monoVoice.masterGain) {
-                    try {
-                        // Check if masterGain is still connected (has any connections)
-                        // If already disconnected or disposed, this will throw, which is fine
-                        monoVoice.masterGain.disconnect();
-                    } catch (e) {
-                        // Voice might be in cleanup phase or already disconnected - ignore
+                    this.voices.set('mono', monoVoice);
+                } else {
+                    // ✅ FIX: For existing mono voice, only disconnect if we need to change routing (pan)
+                    // Don't disconnect on every noteOn - this was causing the connection to break
+                    const hasPan = extendedParams?.pan !== undefined && extendedParams.pan !== 0;
+                    const previousNote = this.activeNotes.size > 0 ? 
+                        Array.from(this.activeNotes.values())[0] : null;
+                    const previousPan = previousNote?.extendedParams?.pan;
+                    const panChanged = hasPan !== (previousPan !== undefined && previousPan !== 0) || 
+                                     (hasPan && previousPan !== extendedParams.pan);
+                    
+                    // Only disconnect if pan routing needs to change
+                    if (panChanged && monoVoice.masterGain) {
+                        try {
+                            monoVoice.masterGain.disconnect();
+                        } catch (e) {
+                            // Already disconnected or error - ignore
+                        }
                     }
                 }
 
                 // ✅ PHASE 2: Apply per-note pan if present
                 if (extendedParams?.pan !== undefined && extendedParams.pan !== 0) {
-                    const panner = this.audioContext.createStereoPanner();
-                    panner.pan.setValueAtTime(extendedParams.pan, time);
-                    monoVoice.masterGain.connect(panner);
-                    panner.connect(this.masterGain);
+                    if (monoVoice.masterGain && this.masterGain) {
+                        try {
+                            const panner = this.audioContext.createStereoPanner();
+                            panner.pan.setValueAtTime(extendedParams.pan, time);
+                            monoVoice.masterGain.connect(panner);
+                            panner.connect(this.masterGain);
+                        } catch (e) {
+                            console.warn(`⚠️ Failed to connect mono voice with pan:`, e);
+                            // Fallback: direct connection without pan
+                            try {
+                                monoVoice.masterGain.connect(this.masterGain);
+                            } catch (e2) {
+                                console.error(`❌ Failed to connect mono voice masterGain:`, e2);
+                            }
+                        }
+                    }
                 } else {
-                    monoVoice.masterGain.connect(this.masterGain);
+                    // ✅ FIX: Direct connection - only if not already connected
+                    if (monoVoice.masterGain && this.masterGain) {
+                        try {
+                            // Try to connect - if already connected, this will throw, which is fine
+                            monoVoice.masterGain.connect(this.masterGain);
+                            console.log(`🔗 Mono voice masterGain reconnected (no pan):`, {
+                                instrumentName: this.name,
+                                midiNote,
+                                hasConnection: true
+                            });
+                        } catch (e) {
+                            // Already connected - this is expected and fine
+                            // Log in dev mode for debugging
+                            if (import.meta.env.DEV) {
+                                console.log(`ℹ️ Mono voice masterGain already connected (expected):`, {
+                                    instrumentName: this.name,
+                                    midiNote
+                                });
+                            }
+                        }
+                    } else {
+                        console.error(`❌ Cannot reconnect mono voice: missing nodes`, {
+                            instrumentName: this.name,
+                            midiNote,
+                            hasMonoVoiceMasterGain: !!monoVoice.masterGain,
+                            hasInstrumentMasterGain: !!this.masterGain
+                        });
+                    }
                 }
 
                 // ✅ PHASE 2: Trigger note on mono voice with extended params
@@ -708,12 +780,31 @@ export class VASynthInstrument extends BaseInstrument {
             const oldOutput = this.output;
             this.output = this.panNode;
 
+            // ✅ FIX: Disconnect old output from all destinations
+            // Then reconnect new output (panNode) to all destinations
+            if (oldOutput && oldOutput !== this.panNode) {
+                this.connectedDestinations.forEach(dest => {
+                    try {
+                        oldOutput.disconnect(dest);
+                    } catch (e) {
+                        // Already disconnected or error - ignore
+                    }
+                });
+            }
+
             // Reconnect to all existing destinations
             this.connectedDestinations.forEach(dest => {
                 try {
                     this.output.connect(dest);
+                    if (import.meta.env.DEV) {
+                        console.log(`🔗 Reconnected ${this.name} output (panNode) to destination:`, {
+                            instrumentName: this.name,
+                            outputType: this.output.constructor.name,
+                            destinationType: dest.constructor?.name || 'unknown'
+                        });
+                    }
                 } catch (e) {
-                    console.warn('Failed to reconnect to destination:', e);
+                    console.warn(`⚠️ Failed to reconnect ${this.name} to destination:`, e);
                 }
             });
         }

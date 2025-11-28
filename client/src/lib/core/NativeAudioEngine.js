@@ -645,16 +645,19 @@ export class NativeAudioEngine {
                 
                 if (insert) {
                     // Route to dynamic MixerInsert
-                    // ✅ FIX: Wait a tick to ensure instrument.output is fully initialized
-                    // Some instruments (like VASynth) need async initialization
+                    // ✅ FIX: VASynth instruments need initialize() to set output
+                    // InstrumentFactory already calls initialize() for VASynth, but we should verify
                     if (instrument.output) {
                         this.routeInstrumentToInsert(instrumentData.id, instrumentData.mixerTrackId);
                         if (import.meta.env.DEV) {
                             console.log(`   ✅ Routing complete`);
                         }
                     } else {
-                        // ✅ FIX: If output not ready, use robust retry mechanism
+                        // ✅ FIX: InstrumentFactory already calls initialize() for VASynth
+                        // But if output is still not ready, it might be a timing issue
+                        // Use retry mechanism to handle async initialization edge cases
                         console.warn(`⚠️ Instrument ${instrumentData.id} output not ready, will retry routing...`);
+                        console.warn(`   Instrument type: ${instrumentData.type}, has initialize: ${typeof instrument.initialize === 'function'}, isInitialized: ${instrument._isInitialized}`);
                         this._retryRouting(instrumentData.id, instrumentData.mixerTrackId, 5, 100);
                     }
                 } else {
@@ -1390,6 +1393,54 @@ export class NativeAudioEngine {
     }
 
     /**
+     * ✅ NEW: Set track output routing (for bus channels)
+     * @param {string} trackId - Source track ID
+     * @param {string} targetId - Target track/bus ID ('master' for master bus)
+     */
+    setTrackOutput(trackId, targetId) {
+        const sourceInsert = this.mixerInserts.get(trackId);
+        if (!sourceInsert) {
+            console.error(`❌ MixerInsert ${trackId} not found for output routing`);
+            return;
+        }
+
+        // Disconnect from current output (master bus by default)
+        try {
+            sourceInsert.disconnectFromMaster(this.masterBusInput);
+        } catch (error) {
+            // May not be connected, ignore
+        }
+
+        // Connect to new target
+        if (targetId === 'master' || !targetId) {
+            // Route to master bus
+            sourceInsert.connectToMaster(this.masterBusInput);
+            if (import.meta.env.DEV) {
+                console.log(`✅ Track ${trackId} routed to master bus`);
+            }
+        } else {
+            // Route to another bus/track
+            const targetInsert = this.mixerInserts.get(targetId);
+            if (targetInsert) {
+                try {
+                    sourceInsert.output.disconnect(); // Disconnect from any previous connection
+                    sourceInsert.output.connect(targetInsert.input);
+                    if (import.meta.env.DEV) {
+                        console.log(`✅ Track ${trackId} routed to ${targetId}`);
+                    }
+                } catch (error) {
+                    console.error(`❌ Failed to route ${trackId} to ${targetId}:`, error);
+                    // Fallback to master
+                    sourceInsert.connectToMaster(this.masterBusInput);
+                }
+            } else {
+                console.warn(`⚠️ Target insert ${targetId} not found, routing ${trackId} to master`);
+                sourceInsert.connectToMaster(this.masterBusInput);
+            }
+        }
+    }
+
+    /**
      * Mixer insert'i sil (track silindiğinde)
      * @param {string} insertId - Insert ID
      */
@@ -1487,6 +1538,20 @@ export class NativeAudioEngine {
             const success = insert.connectInstrument(instrumentId, instrument.output);
             if (success) {
                 this.instrumentToInsert.set(instrumentId, insertId);
+
+                // ✅ FIX: Update instrument's connectedDestinations Set
+                // This ensures that when output changes (e.g., setPan creates panNode),
+                // the new output can reconnect to the mixer insert
+                if (instrument.connectedDestinations && typeof instrument.connect === 'function') {
+                    try {
+                        instrument.connect(insert.input);
+                    } catch (e) {
+                        // Already connected or error - this is fine, MixerInsert already handled it
+                        if (import.meta.env.DEV) {
+                            console.log(`ℹ️ Instrument ${instrumentId} connect() called (may already be connected)`);
+                        }
+                    }
+                }
 
                 // Only log routing in DEV mode
                 if (import.meta.env.DEV) {
@@ -1737,9 +1802,25 @@ export class NativeAudioEngine {
             return;
         }
 
+        // ✅ DEBUG: Verify bus insert is connected to master
+        if (import.meta.env.DEV) {
+            console.log(`🔍 Creating send: ${sourceId} → ${busId}`, {
+                sourceInsert: sourceId,
+                busInsert: busId,
+                hasBusInput: !!busInsert.input,
+                busInputType: busInsert.input?.constructor?.name,
+                hasBusOutput: !!busInsert.output,
+                busOutputType: busInsert.output?.constructor?.name,
+                busOutputConnected: busInsert.output?.numberOfOutputs > 0 || false
+            });
+        }
+
         // Add send: source → bus input
         sourceInsert.addSend(busId, busInsert.input, level);
-        console.log(`✅ Send created: ${sourceId} → ${busId} (level: ${level})`);
+        
+        if (import.meta.env.DEV) {
+            console.log(`✅ Send created: ${sourceId} → ${busId} (level: ${level})`);
+        }
     }
 
     /**

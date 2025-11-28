@@ -1226,10 +1226,25 @@ export class PlaybackManager {
             const instrument = this.audioEngine.instruments.get(instrumentId);
             if (!instrument) {
                 console.warn(`⚠️ Instrument ${instrumentId} not found in audio engine`);
+                console.warn(`   Available instruments:`, Array.from(this.audioEngine.instruments.keys()));
+                console.warn(`   Pattern instrument IDs:`, Object.keys(activePattern.data || {}));
                 return;
             }
 
-            console.log(`🎵 Scheduling ${notes.length} notes for instrument ${instrumentId}`);
+            console.log(`🎵 Scheduling ${notes.length} notes for instrument ${instrumentId}`, {
+                instrumentId,
+                instrumentName: instrument.name,
+                instrumentType: instrument.type || 'unknown',
+                hasOutput: !!instrument.output,
+                outputType: instrument.output?.constructor?.name || 'none',
+                notesCount: notes.length,
+                firstNote: notes[0] ? {
+                    pitch: notes[0].pitch,
+                    time: notes[0].time || notes[0].startTime,
+                    length: notes[0].length,
+                    visualLength: notes[0].visualLength
+                } : null
+            });
             this._scheduleInstrumentNotes(instrument, notes, instrumentId, baseTime);
         });
         
@@ -1763,18 +1778,51 @@ export class PlaybackManager {
             const relativeTime = noteTimeInSeconds - currentPositionInSeconds;
             let absoluteTime = baseTime + relativeTime;
 
+            // ✅ DEBUG: Log timing calculations for VASynth debugging
+            if (instrumentId === 'pluck' || instrument?.type === 'vasynth') {
+                console.log(`🎵 VASynth note timing:`, {
+                    instrumentId,
+                    noteTimeInSteps,
+                    noteTimeInSeconds: noteTimeInSeconds.toFixed(3),
+                    currentPositionInSteps: currentStep,
+                    currentPositionInSeconds: currentPositionInSeconds.toFixed(3),
+                    relativeTime: relativeTime.toFixed(3),
+                    baseTime: baseTime.toFixed(3),
+                    absoluteTime: absoluteTime.toFixed(3),
+                    now: this.transport.audioContext.currentTime.toFixed(3),
+                    isPast: absoluteTime < baseTime
+                });
+            }
+
             // ✅ CRITICAL FIX: Handle loop-aware scheduling with proper current position handling
             if (absoluteTime < baseTime) {
                 // Note is in the past - schedule for next loop if looping is enabled
-                if (this.loop) {
+                // ✅ FIX: Use loopEnabled instead of loop (loop is transport property)
+                if (this.loopEnabled) {
                     absoluteTime = baseTime + relativeTime + loopTimeInSeconds;
 
                     // If still in past after loop adjustment, skip it
                     if (absoluteTime < baseTime) {
+                        if (instrumentId === 'pluck' || instrument?.type === 'vasynth') {
+                            console.warn(`⚠️ VASynth note skipped (still in past after loop):`, {
+                                instrumentId,
+                                noteTimeInSteps,
+                                absoluteTime: absoluteTime.toFixed(3),
+                                baseTime: baseTime.toFixed(3)
+                            });
+                        }
                         return;
                     }
                 } else {
                     // No looping - skip past notes
+                    if (instrumentId === 'pluck' || instrument?.type === 'vasynth') {
+                        console.warn(`⚠️ VASynth note skipped (in past, no loop):`, {
+                            instrumentId,
+                            noteTimeInSteps,
+                            absoluteTime: absoluteTime.toFixed(3),
+                            baseTime: baseTime.toFixed(3)
+                        });
+                    }
                     return;
                 }
             }
@@ -1985,10 +2033,31 @@ export class PlaybackManager {
             const hasExtendedParams = Object.keys(extendedParams).length > 0;
 
             // ✅ SCHEDULE OPT: Note on event with noteId for cancellation tracking
+            // ✅ DEBUG: Log scheduling for VASynth
+            if (instrumentId === 'pluck' || instrument?.type === 'vasynth') {
+                console.log(`📅 Scheduling VASynth note event:`, {
+                    instrumentId,
+                    pitch: note.pitch || 'C4',
+                    absoluteTime: absoluteTime.toFixed(3),
+                    noteDuration: noteDuration.toFixed(3),
+                    now: this.transport.audioContext.currentTime.toFixed(3),
+                    timeUntilNote: (absoluteTime - this.transport.audioContext.currentTime).toFixed(3) + 's'
+                });
+            }
+
             this.transport.scheduleEvent(
                 absoluteTime,
                 (scheduledTime) => {
                     try {
+                        if (instrumentId === 'pluck' || instrument?.type === 'vasynth') {
+                            console.log(`🔊 VASynth note event triggered:`, {
+                                instrumentId,
+                                pitch: note.pitch || 'C4',
+                                scheduledTime: scheduledTime.toFixed(3),
+                                actualTime: this.transport.audioContext.currentTime.toFixed(3),
+                                delay: (scheduledTime - this.transport.audioContext.currentTime).toFixed(3) + 's'
+                            });
+                        }
                         instrument.triggerNote(
                             note.pitch || 'C4',
                             note.velocity || 1,
@@ -2013,8 +2082,42 @@ export class PlaybackManager {
             // ✅ FIX: Note off event - check for both length and duration
             const shouldScheduleNoteOff = (typeof note.length === 'number' && note.length > 0) ||
                                          (note.duration && note.duration !== 'trigger');
+            
+            // ✅ FIX: Check if instrument supports release sustain (like NoteScheduler does)
+            const instrumentHasRelease = typeof instrument?.hasReleaseSustain === 'function'
+                ? instrument.hasReleaseSustain()
+                : true;
 
-            if (shouldScheduleNoteOff) {
+            // ✅ DEBUG: Log noteOff scheduling decision for all instruments
+            if (import.meta.env.DEV) {
+                // Log for specific instruments or last step notes (pattern end issues)
+                const isLastStep = noteTimeInSteps >= (this.patternLength - 1);
+                const shouldLog = (instrumentId === '808bass' || instrument?.type === 'vasynth' || instrumentId === 'snare-1' || isLastStep);
+                
+                if (shouldLog) {
+                    console.log(`🎵 NoteOff scheduling decision:`, {
+                        instrumentId,
+                        instrumentName: instrument?.name,
+                        instrumentType: instrument?.type,
+                        noteId: note.id,
+                        noteTimeInSteps,
+                        noteLength: note.length,
+                        noteDuration: note.duration,
+                        visualLength: note.visualLength,
+                        calculatedNoteDuration: noteDuration.toFixed(3) + 's',
+                        absoluteTime: absoluteTime.toFixed(3) + 's',
+                        noteOffTime: (absoluteTime + noteDuration).toFixed(3) + 's',
+                        shouldScheduleNoteOff,
+                        instrumentHasRelease,
+                        hasReleaseMethod: typeof instrument?.hasReleaseSustain === 'function',
+                        willSchedule: shouldScheduleNoteOff && instrumentHasRelease,
+                        isLastStep,
+                        patternLength: this.patternLength
+                    });
+                }
+            }
+
+            if (shouldScheduleNoteOff && instrumentHasRelease) {
                 // ✅ CRITICAL FIX: Store note metadata to prevent wrong noteOff
                 const noteMetadata = {
                     type: 'noteOff',

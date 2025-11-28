@@ -304,10 +304,17 @@ export function useNoteInteractionsV3({
                 normalized.length = durationMap[normalized.duration] || 1;
             }
 
-            // Legacy support: collapse visualLength into length
+            // ✅ FIX: Preserve visualLength for oval notes (visualLength < length)
+            // Only collapse if visualLength equals length (not an oval note)
             if (normalized.visualLength !== undefined) {
-                normalized.length = normalized.visualLength;
-                delete normalized.visualLength;
+                if (normalized.length === undefined) {
+                    // No length set, use visualLength as length
+                    normalized.length = normalized.visualLength;
+                } else if (normalized.visualLength === normalized.length) {
+                    // visualLength equals length, not an oval note - can be collapsed
+                    // But keep it for now to preserve structure
+                }
+                // Otherwise, keep both visualLength and length (oval note)
             }
 
             // Convert pitch string to MIDI number (e.g., 'C4' -> 60)
@@ -1028,7 +1035,8 @@ export function useNoteInteractionsV3({
             // ✅ Piano Roll format (for rendering)
             startTime: finalTime, // Rounded to grid center, then to grid
             pitch: finalPitch, // MIDI number (0-127) - rounded to grid center
-            length: lengthInSteps,
+            length: lengthInSteps, // ✅ Audio length (for playback)
+            visualLength: lengthInSteps, // ✅ FIX: Piano roll notes use actual length (not oval)
 
             // ✅ Channel Rack format (for playback - legacy compatibility)
             time: finalTime,
@@ -1171,11 +1179,18 @@ export function useNoteInteractionsV3({
                         if (noteIds.includes(note.id)) {
                             const state = statesMap.get(note.id);
                             if (state) {
-                                const updatedNote = { ...note, startTime: state.startTime, pitch: state.pitch };
+                                // ✅ FIX: Preserve visualLength and length for oval notes
+                                const updatedNote = { 
+                                    ...note, 
+                                    startTime: state.startTime, 
+                                    pitch: state.pitch 
+                                };
                                 // ✅ FIX: Ensure time property is set for channel rack (step sequencer and minipreview)
                                 if (updatedNote.time === undefined || updatedNote.time !== state.startTime) {
                                     updatedNote.time = state.startTime;
                                 }
+                                // ✅ FIX: Preserve visualLength and length (don't lose oval note properties)
+                                // visualLength and length are already in the spread note, so they're preserved
                                 return updatedNote;
                             }
                         }
