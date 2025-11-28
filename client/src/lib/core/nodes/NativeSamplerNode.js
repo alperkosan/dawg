@@ -70,6 +70,13 @@ export class NativeSamplerNode {
         this.polyphonyGainReduction = false; // Disabled - RAW signal philosophy
         this.internalOutput.gain.value = 1.0; // Fixed unity gain
 
+        // ✅ PHASE 4: Track last automation values to avoid redundant updates
+        this._lastAutomationValues = {
+            volume: null,
+            pan: null,
+            expression: null
+        };
+
         this.activeSources = new Set();
 
         // Reverse buffer cache
@@ -576,6 +583,71 @@ export class NativeSamplerNode {
     // ✅ UTILITY: Convert dB to linear
     dbToLinear(db) {
         return Math.pow(10, db / 20);
+    }
+
+    // ✅ PHASE 4: Apply automation (compatible with AutomationScheduler)
+    /**
+     * Apply automation parameters (volume, pan, expression, etc.)
+     * @param {Object} params - Automation parameters
+     * @param {number} [params.volume] - Volume (0-1 normalized)
+     * @param {number} [params.pan] - Pan (-1 to 1)
+     * @param {number} [params.expression] - Expression (0-1 normalized)
+     * @param {number} [params.filterCutoff] - Filter cutoff (0-127)
+     * @param {number} [params.filterResonance] - Filter resonance (0-127)
+     * @param {number} [time] - AudioContext time to apply (optional)
+     */
+    applyAutomation(params, time = null) {
+        const now = time !== null ? time : this.context.currentTime;
+
+        // Volume automation (0-1 normalized to gain)
+        if (params.volume !== undefined) {
+            const clampedVolume = Math.max(0, Math.min(1, params.volume));
+            
+            // ✅ OPTIMIZATION: Skip update if value hasn't changed (within tolerance)
+            const tolerance = 0.001; // 0.1% tolerance to avoid floating point issues
+            const lastVolume = this._lastAutomationValues.volume;
+            const volumeChanged = lastVolume === null || Math.abs(clampedVolume - lastVolume) >= tolerance;
+            
+            if (volumeChanged && this.internalOutput) {
+                // Smooth transition to avoid clicks
+                this.internalOutput.gain.cancelScheduledValues(now);
+                this.internalOutput.gain.setTargetAtTime(clampedVolume, now, 0.01);
+                
+                // Update last value
+                this._lastAutomationValues.volume = clampedVolume;
+                
+                // ✅ DEBUG: Log volume automation (always for sample-based instruments, occasionally for others)
+                const isSampleBased = this.id.includes('hihat') || this.id.includes('snare') || this.id.includes('808') || this.id.includes('kick');
+                if (isSampleBased || Math.random() < 0.05) { // Always log for sample-based instruments, 5% chance for others
+                    console.log(`🎚️ NativeSamplerNode.applyAutomation [${this.id}]: volume=${clampedVolume.toFixed(3)}`);
+                }
+            }
+        }
+
+        // Pan automation (-1 to 1)
+        if (params.pan !== undefined) {
+            this.params.pan = Math.max(-1, Math.min(1, params.pan));
+            // Note: Pan is applied per-voice in triggerNote, not here
+        }
+
+        // Expression automation (0-1 normalized, similar to volume)
+        if (params.expression !== undefined) {
+            // Expression affects volume multiplicatively
+            const clampedExpression = Math.max(0, Math.min(1, params.expression));
+            if (this.internalOutput && params.volume === undefined) {
+                // Only apply expression if volume wasn't already set
+                this.internalOutput.gain.cancelScheduledValues(now);
+                this.internalOutput.gain.setTargetAtTime(clampedExpression, now, 0.01);
+            }
+        }
+
+        // Filter automation
+        if (params.filterCutoff !== undefined) {
+            this.params.filterCutoff = Math.max(20, Math.min(20000, params.filterCutoff));
+        }
+        if (params.filterResonance !== undefined) {
+            this.params.filterResonance = Math.max(0, Math.min(40, params.filterResonance));
+        }
     }
 
     // =====================

@@ -1376,7 +1376,8 @@ export class PlaybackManager {
         
         console.log('✅ Pattern content scheduled');
 
-        // ✅ PHASE 4: Start real-time automation for all instruments with automation lanes
+        // ✅ PHASE 4: Start real-time automation ONLY for instruments with actual automation data
+        // ✅ PERFORMANCE: Only start automation if lanes have data points (not empty)
         try {
             const automationManager = getAutomationManager();
 
@@ -1384,14 +1385,33 @@ export class PlaybackManager {
                 if (instrumentFilterSet && !instrumentFilterSet.has(instrumentId)) {
                     return;
                 }
+                
                 const lanes = automationManager.getLanes(arrangementStore.activePatternId, instrumentId);
-                if (lanes && lanes.length > 0) {
+                
+                // ✅ PERFORMANCE: Filter lanes to only include those with actual automation data
+                if (!lanes || lanes.length === 0) {
+                    // No lanes at all - skip automation for this instrument
+                    return;
+                }
+                
+                // Filter lanes to only those with data points
+                const lanesWithData = lanes.filter(lane => {
+                    const points = lane.getPoints();
+                    return points && points.length > 0;
+                });
+                
+                if (lanesWithData.length > 0) {
+                    // ✅ DEBUG: Log which lanes are being used
+                    const laneNames = lanesWithData.map(l => `${l.name} (CC${l.ccNumber})`).join(', ');
+                    console.log(`🎚️ Starting automation for ${instrumentId}: ${laneNames}`);
+                    
                     this.automationScheduler.startRealtimeAutomation(
                         instrumentId,
                         arrangementStore.activePatternId,
-                        lanes
+                        lanesWithData
                     );
                 }
+                // If no lanes have data, skip automation entirely (performance optimization)
             });
         } catch (error) {
             console.warn('⚠️ Failed to start real-time automation:', error);

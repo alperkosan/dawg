@@ -19,6 +19,9 @@ export class AutomationScheduler {
         this.activeAutomations = new Map(); // instrumentId -> automation update interval
         // ✅ FAZ 1: Optimized automation interval for smoother automation
         this.automationUpdateInterval = 10; // Update every 10ms (100Hz) - reduced from 50ms (20Hz)
+        
+        // ✅ OPTIMIZATION: Track last logged values to reduce log spam
+        this._lastLoggedValues = new Map(); // "instrumentId.parameter" -> last logged value
     }
 
     /**
@@ -195,7 +198,21 @@ export class AutomationScheduler {
         // Clear existing automation for this instrument
         this.stopRealtimeAutomation(instrumentId);
 
-        if (!lanes || lanes.length === 0) return;
+        // ✅ PERFORMANCE: Filter out lanes without data points
+        if (!lanes || lanes.length === 0) {
+            return;
+        }
+        
+        // Filter to only lanes with actual automation data
+        const lanesWithData = lanes.filter(lane => {
+            const points = lane.getPoints();
+            return points && points.length > 0;
+        });
+        
+        if (lanesWithData.length === 0) {
+            // No lanes with data - skip automation entirely
+            return;
+        }
 
         // Start update loop
         const updateAutomation = () => {
@@ -220,7 +237,7 @@ export class AutomationScheduler {
                 1: 0      // Mod Wheel - default to none
             };
 
-            lanes.forEach(lane => {
+            lanesWithData.forEach(lane => {
                 const value = lane.getValueAtTime(currentStep, 'linear');
 
                 // Use default if automation has ended (value is null)
@@ -231,6 +248,15 @@ export class AutomationScheduler {
                 switch (lane.ccNumber) {
                     case 7: // Volume
                         automationParams.volume = effectiveValue / 127;
+                        // ✅ DEBUG: Log volume automation only when value changes significantly (reduce spam)
+                        // Track last logged value to avoid duplicate logs
+                        const lastLoggedValue = this._lastLoggedValues?.get(`${instrumentId}.volume`);
+                        const valueChanged = lastLoggedValue === undefined || Math.abs(effectiveValue - lastLoggedValue) >= 1; // Log if changed by 1 or more
+                        if (valueChanged) {
+                            if (!this._lastLoggedValues) this._lastLoggedValues = new Map();
+                            this._lastLoggedValues.set(`${instrumentId}.volume`, effectiveValue);
+                            console.log(`🎚️ Volume automation [${instrumentId}]: step=${currentStep.toFixed(2)}, value=${effectiveValue}, normalized=${automationParams.volume.toFixed(3)}`);
+                        }
                         break;
                     case 10: // Pan
                         automationParams.pan = (effectiveValue - 64) / 64;

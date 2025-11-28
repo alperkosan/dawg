@@ -48,6 +48,13 @@ export class VASynthInstrument extends BaseInstrument {
         // Master output
         this.masterGain = null;
 
+        // ✅ PHASE 4: Track last automation values to avoid redundant updates
+        this._lastAutomationValues = {
+            volume: null,
+            pan: null,
+            expression: null
+        };
+
         this.modulationMatrix = normalizeModulationMatrix(instrumentData?.modulationMatrix || []);
     }
 
@@ -756,9 +763,22 @@ export class VASynthInstrument extends BaseInstrument {
         const now = time !== null ? time : this.audioContext.currentTime;
         const clampedVolume = Math.max(0, Math.min(1, volume));
 
-        // Smooth transition to avoid clicks
-        this.masterGain.gain.cancelScheduledValues(now);
-        this.masterGain.gain.setTargetAtTime(clampedVolume, now, 0.01);
+        // ✅ OPTIMIZATION: Skip update if value hasn't changed (within tolerance)
+        const tolerance = 0.001; // 0.1% tolerance to avoid floating point issues
+        const lastVolume = this._lastAutomationValues?.volume;
+        const volumeChanged = lastVolume === null || Math.abs(clampedVolume - lastVolume) >= tolerance;
+
+        if (volumeChanged) {
+            // Smooth transition to avoid clicks
+            this.masterGain.gain.cancelScheduledValues(now);
+            this.masterGain.gain.setTargetAtTime(clampedVolume, now, 0.01);
+            
+            // Update last value
+            if (!this._lastAutomationValues) {
+                this._lastAutomationValues = { volume: null, pan: null, expression: null };
+            }
+            this._lastAutomationValues.volume = clampedVolume;
+        }
     }
 
     /**

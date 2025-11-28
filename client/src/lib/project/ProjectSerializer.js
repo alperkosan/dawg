@@ -13,6 +13,7 @@ import { useProjectAudioStore } from '@/store/useProjectAudioStore';
 import { useArrangementWorkspaceStore } from '@/store/useArrangementWorkspaceStore';
 import { storageService } from '@/services/storage.js';
 import { normalizeEffectSettings } from '@/lib/audio/effects/parameterMappings.js';
+import { getAutomationManager } from '@/lib/automation/AutomationManager.js';
 
 export class ProjectSerializer {
   static CURRENT_VERSION = '1.0.0';
@@ -614,9 +615,22 @@ export class ProjectSerializer {
   }
 
   static serializePatterns(store) {
+    const automationManager = getAutomationManager();
+    
     return Object.entries(store.patterns || {}).map(([id, pattern]) => {
       // ✅ FIX: Pattern length is in settings.length, not pattern.length
       const patternLength = pattern.settings?.length || pattern.length || 64;
+      
+      // ✅ PHASE 4: Serialize automation lanes for each instrument in pattern
+      const automation = {};
+      if (pattern.data) {
+        Object.keys(pattern.data).forEach(instrumentId => {
+          const lanes = automationManager.getLanes(id, instrumentId);
+          if (lanes && lanes.length > 0) {
+            automation[instrumentId] = lanes.map(lane => lane.toJSON ? lane.toJSON() : lane);
+          }
+        });
+      }
       
       return {
         id,
@@ -626,7 +640,8 @@ export class ProjectSerializer {
         settings: {
           length: patternLength,
           quantization: pattern.settings?.quantization || '16n'
-        }
+        },
+        automation: Object.keys(automation).length > 0 ? automation : undefined // Only include if there's automation
       };
     });
   }
@@ -945,6 +960,26 @@ export class ProjectSerializer {
               console.warn(`  ⚠️ Failed to restore notes for instrument ${instrumentId}:`, error);
             }
           });
+        }
+        
+        // ✅ PHASE 4: Restore automation lanes for each instrument in pattern
+        if (pattern.automation) {
+          try {
+            const automationManager = getAutomationManager();
+            Object.entries(pattern.automation).forEach(([instrumentId, lanesData]) => {
+              try {
+                if (lanesData && Array.isArray(lanesData) && lanesData.length > 0) {
+                  // Use initializeLanes to restore from saved data
+                  automationManager.initializeLanes(patternId, instrumentId, lanesData);
+                  console.log(`  ✅ Restored ${lanesData.length} automation lanes for instrument ${instrumentId}`);
+                }
+              } catch (error) {
+                console.warn(`  ⚠️ Failed to restore automation for instrument ${instrumentId}:`, error);
+              }
+            });
+          } catch (error) {
+            console.warn(`  ⚠️ Failed to restore automation for pattern ${patternId}:`, error);
+          }
         }
         
         console.log(`✅ Restored pattern: ${patternId}`);

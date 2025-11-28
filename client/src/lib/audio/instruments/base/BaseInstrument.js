@@ -253,6 +253,10 @@ export class BaseInstrument {
 
         // Volume automation
         if (params.volume !== undefined) {
+            // ✅ DEBUG: Log volume automation application (only occasionally to avoid spam)
+            if (Math.random() < 0.01) { // 1% chance to log
+                console.log(`🎚️ Applying volume automation: ${params.volume.toFixed(3)} to ${this.constructor.name}`);
+            }
             this.setVolume(params.volume, now);
         }
 
