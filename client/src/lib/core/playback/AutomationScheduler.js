@@ -212,7 +212,7 @@ export class AutomationScheduler {
 
             // ✅ Default values for when automation ends
             const defaults = {
-                7: 100,   // Volume - default to full (127 max, use 100 for ~80%)
+                7: 127,   // Volume - default to full (127 = 100%)
                 10: 64,   // Pan - default to center
                 11: 127,  // Expression - default to full
                 74: 64,   // Filter Cutoff - default to middle

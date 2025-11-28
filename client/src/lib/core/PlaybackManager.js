@@ -2115,14 +2115,19 @@ export class PlaybackManager {
 
                         if (ccValue !== null) {
                             // ✅ MIXING CONTROLS
+                            // ✅ FIX: Volume (CC7) should NOT be applied per-note to velocity
+                            // Volume automation is handled by real-time AutomationScheduler
+                            // which applies it to master gain via applyAutomation()
+                            // Per-note volume would conflict with real-time automation
                             if (lane.ccNumber === 7) {
-                                // Volume (CC7) - normalize from 0-127 to 0-1
-                                extendedParams.volume = ccValue / 127;
+                                // Volume (CC7) - skip per-note application, handled by AutomationScheduler
+                                // Do not set extendedParams.volume here
                             } else if (lane.ccNumber === 10) {
                                 // Pan (CC10) - normalize from 0-127 to -1 to 1
                                 extendedParams.pan = (ccValue - 64) / 64;
                             } else if (lane.ccNumber === 11) {
                                 // Expression (CC11) - normalize from 0-127 to 0-1
+                                // Expression can be applied per-note as it affects velocity
                                 extendedParams.expression = ccValue / 127;
                             }
 

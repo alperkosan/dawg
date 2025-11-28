@@ -90,15 +90,13 @@ export class BaseInstrument {
     triggerNote(pitch, velocity = 1, time = null, duration = null, extendedParams = null) {
         const midiNote = this.pitchToMidi(pitch);
 
-        // ✅ PHASE 4: Apply volume and expression automation to velocity
+        // ✅ PHASE 4: Apply expression automation to velocity
+        // ✅ FIX: Volume (CC7) is NOT applied here - it's handled by AutomationScheduler
+        // Volume automation is applied to master gain via applyAutomation(), not per-note velocity
         let finalVelocity = velocity;
 
-        // Volume (CC7) - master volume control
-        if (extendedParams?.volume !== undefined) {
-            finalVelocity = finalVelocity * extendedParams.volume;
-        }
-
         // Expression (CC11) - dynamic volume control (like breath control)
+        // Expression can be applied per-note as it affects velocity
         if (extendedParams?.expression !== undefined) {
             finalVelocity = finalVelocity * extendedParams.expression;
         }
