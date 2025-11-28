@@ -101,28 +101,51 @@ export class MixerInsert {
 
   /**
    * Instrument'i bu insert'e bağla
+   * @param {string} instrumentId - Instrument ID
+   * @param {AudioNode} instrumentOutput - Instrument output node
+   * @returns {boolean} - Bağlantı başarılı mı
    */
   connectInstrument(instrumentId, instrumentOutput) {
     if (this.instruments.has(instrumentId)) {
       console.warn(`⚠️ Instrument ${instrumentId} already connected to ${this.insertId}`);
-      return;
+      return true; // Already connected is considered success
     }
 
-    // 🔍 DEBUG: Log instrument connection
-    console.log(`🔌 Connecting instrument to ${this.insertId}:`, {
-      instrumentId,
-      hasOutput: !!instrumentOutput,
-      outputType: instrumentOutput?.constructor?.name,
-      connectedInstruments: this.instruments.size
-    });
+    // ✅ FIX: Validate instrumentOutput before attempting connection
+    if (!instrumentOutput) {
+      console.error(`❌ Cannot connect instrument ${instrumentId}: output is null/undefined`);
+      return false;
+    }
+
+    // ✅ FIX: Check if output has connect method (is a valid AudioNode)
+    if (typeof instrumentOutput.connect !== 'function') {
+      console.error(`❌ Cannot connect instrument ${instrumentId}: output is not a valid AudioNode`);
+      return false;
+    }
+
+    // 🔍 DEBUG: Log instrument connection (only in DEV)
+    if (import.meta.env.DEV) {
+      console.log(`🔌 Connecting instrument to ${this.insertId}:`, {
+        instrumentId,
+        hasOutput: !!instrumentOutput,
+        outputType: instrumentOutput?.constructor?.name,
+        connectedInstruments: this.instruments.size
+      });
+    }
 
     try {
       instrumentOutput.connect(this.input);
       this.instruments.add(instrumentId);
-      console.log(`✅ Instrument ${instrumentId} connected to ${this.insertId}`);
-      console.log(`   Total instruments on ${this.insertId}: ${this.instruments.size}`);
+      
+      if (import.meta.env.DEV) {
+        console.log(`✅ Instrument ${instrumentId} connected to ${this.insertId}`);
+        console.log(`   Total instruments on ${this.insertId}: ${this.instruments.size}`);
+      }
+      return true; // ✅ Success
     } catch (error) {
       console.error(`❌ Failed to connect instrument ${instrumentId}:`, error);
+      // ✅ FIX: Don't add to tracking if connection failed
+      return false;
     }
   }
 

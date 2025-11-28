@@ -448,6 +448,39 @@ export class DynamicLoopManager {
     console.log(`Pattern content changed: ${patternId}`);
   }
 
+  /**
+   * Handle transport loop event
+   * Called when transport completes a loop cycle
+   * @param {Object} data - Loop event data from transport
+   */
+  handleTransportLoop(data) {
+    // This method is called when transport fires a 'loop' event
+    // We can use this to update loop state or trigger recalculation if needed
+    
+    // If in auto mode and pattern content has changed, recalculate
+    if (this.loopMode === 'auto') {
+      const activePatternId = this.getActivePatternId();
+      if (activePatternId) {
+        // Clear cache to force fresh analysis on next calculation
+        this.clearAnalysisCache(activePatternId);
+      }
+    }
+    
+    // Emit loop event for other listeners
+    this.eventBus.emit('transportLoopHandled', {
+      loop: this.currentLoop,
+      data: data
+    });
+    
+    // Log in dev mode only
+    if (import.meta.env.DEV) {
+      console.log('Transport loop handled by DynamicLoopManager:', {
+        currentLoop: this.currentLoop,
+        mode: this.loopMode
+      });
+    }
+  }
+
   // =================== UTILITY METHODS ===================
 
   /**

@@ -83,11 +83,25 @@ export const useInstrumentsStore = create((set, get) => ({
       const firstUnusedTrack = storeManager.findUnusedMixerTrack();
 
       if (!firstUnusedTrack) {
-          // ✅ FALLBACK: If no tracks available, assign to master instead of failing
-          console.warn("⚠️ Boş mixer kanalı kalmadı! Master kanalına yönlendiriliyor...");
-          mixerTrackId = 'master';
+          // ✅ FIX: Create a new mixer track instead of falling back to master
+          // Master channel doesn't have a MixerInsert, so routing to it won't work
+          console.log("🎛️ No unused mixer tracks available, creating new track...");
+          
+          // Create new mixer track
+          const newTrackId = useMixerStore.getState().addTrack('track');
+          mixerTrackId = newTrackId;
+          
+          console.log(`✅ Created new mixer track: ${newTrackId}`);
       } else {
           mixerTrackId = firstUnusedTrack.id;
+          
+          // ✅ FIX: Ensure mixer insert exists for this track
+          // The track exists in store but insert might not exist in AudioEngine yet
+          const audioEngine = AudioContextService.getAudioEngine();
+          if (audioEngine && !audioEngine.mixerInserts?.has(mixerTrackId)) {
+            console.log(`🎛️ Creating missing mixer insert for existing track: ${mixerTrackId}`);
+            AudioContextService.createMixerInsert(mixerTrackId, firstUnusedTrack.name);
+          }
       }
     }
 
