@@ -141,9 +141,20 @@ export class PremiumNoteRenderer {
         const hasExtendedAudio = note.visualLength !== undefined && note.visualLength < note.length;
         
         // Calculate width to fill grid cells completely based on visual length
-        const noteWidthInSteps = Math.round(displayLength * stepWidth);
-        const width = Math.max(Math.round(stepWidth) - 1, noteWidthInSteps - 1); // -1 for grid line visibility
+        const noteWidthInSteps = displayLength * stepWidth;
+        const width = Math.max(Math.round(stepWidth) - 1, Math.round(noteWidthInSteps) - 1); // -1 for grid line visibility
         const height = Math.round(keyHeight) - 1; // -1 for horizontal grid line visibility
+
+        if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(width) || width <= 0 || !Number.isFinite(height) || height <= 0) {
+            console.warn('⚠️ noteRenderer: Non-finite geometry detected', {
+                x,
+                y,
+                width,
+                height,
+                note
+            });
+            return;
+        }
 
         // Skip if note is not visible
         if (x + width < viewport.scrollX || x > viewport.scrollX + viewport.width ||
@@ -287,6 +298,16 @@ export class PremiumNoteRenderer {
             ctx.moveTo(x + width - 1, y);
             ctx.lineTo(x + width - 1, y + height);
             ctx.stroke();
+
+            if (width > 12 && height > 10) {
+                ctx.save();
+                ctx.fillStyle = `hsla(${baseHue}, ${saturation}%, ${Math.min(85, lightness + 25)}%, ${alpha})`;
+                ctx.font = `${Math.min(12, Math.max(9, height - 4))}px "Inter", "SF Pro Display", sans-serif`;
+                ctx.textAlign = 'right';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('∞', x + width - 3, y + height / 2);
+                ctx.restore();
+            }
         } else {
             // Normal rounded rectangle
             this.drawRoundedRect(ctx, x, y, width, height, 3);
