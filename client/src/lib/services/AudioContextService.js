@@ -1240,6 +1240,8 @@ export class AudioContextService {
               continue;
             }
             console.log(`✅ Created mixer insert ${instrument.mixerTrackId} for instrument ${instrument.id}`);
+            // ✅ FIX: Wait a tick for insert to be fully initialized
+            await new Promise(resolve => setTimeout(resolve, 10));
           } catch (createError) {
             console.error(`❌ Failed to create mixer insert ${instrument.mixerTrackId}:`, createError);
             errorCount++;
@@ -1262,20 +1264,21 @@ export class AudioContextService {
           console.log(`🔄 Instrument ${instrument.id} (${instrument.name}) is routed to ${currentRoute}, re-routing to ${instrument.mixerTrackId}...`);
         }
 
-        // Route instrument to mixer insert
-        try {
-          this.routeInstrumentToInsert(instrument.id, instrument.mixerTrackId);
+        // ✅ FIX: Use robust retry mechanism for routing
+        // This handles async instrument initialization and timing issues
+        const routingSuccess = await this.routeInstrumentWithRetry(
+          instrument.id, 
+          instrument.mixerTrackId,
+          5,  // maxRetries
+          100 // baseDelay
+        );
+
+        if (routingSuccess) {
           syncedCount++;
           console.log(`✅ Routed instrument ${instrument.id} (${instrument.name}) to ${instrument.mixerTrackId}`);
-        } catch (error) {
-          // ✅ FIX: If error is "already connected", it's not a real error - just log and continue
-          if (error.message?.includes('already connected') || error.message?.includes('not connected')) {
-            console.log(`ℹ️ Instrument ${instrument.id} (${instrument.name}) routing warning (non-critical):`, error.message);
-            skippedCount++;
-          } else {
-          console.error(`❌ Failed to route instrument ${instrument.id}:`, error);
+        } else {
           errorCount++;
-          }
+          console.error(`❌ Failed to route instrument ${instrument.id} after retries`);
         }
       }
 
@@ -2185,6 +2188,71 @@ export class AudioContextService {
       console.error(`❌ AudioContextService: Failed to create mixer insert ${trackId}:`, error);
       return null;
     }
+  }
+
+  /**
+   * ✅ NEW: Route instrument to mixer insert with robust retry mechanism
+   * @param {string} instrumentId - Instrument ID
+   * @param {string} mixerTrackId - Target mixer track ID
+   * @param {number} maxRetries - Maximum retry attempts
+   * @param {number} baseDelay - Base delay between retries (ms)
+   * @returns {Promise<boolean>} - Success status
+   */
+  static async routeInstrumentWithRetry(instrumentId, mixerTrackId, maxRetries = 5, baseDelay = 100) {
+    if (!this.audioEngine) {
+      console.error('❌ No audio engine available');
+      return false;
+    }
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      const instrument = this.audioEngine.instruments?.get(instrumentId);
+      const insert = this.audioEngine.mixerInserts?.get(mixerTrackId);
+
+      // Check if already routed correctly
+      const currentRoute = this.audioEngine.instrumentToInsert?.get(instrumentId);
+      if (currentRoute === mixerTrackId) {
+        if (import.meta.env.DEV) {
+          console.log(`✅ Instrument ${instrumentId} already routed to ${mixerTrackId}`);
+        }
+        return true;
+      }
+
+      // Both must exist and instrument must have output
+      if (instrument?.output && insert) {
+        try {
+          // Use MixerInsert's connectInstrument which returns success status
+          const success = insert.connectInstrument(instrumentId, instrument.output);
+          if (success) {
+            this.audioEngine.instrumentToInsert.set(instrumentId, mixerTrackId);
+            if (import.meta.env.DEV) {
+              console.log(`✅ Routed ${instrumentId} → ${mixerTrackId} (attempt ${attempt + 1})`);
+            }
+            return true;
+          }
+        } catch (error) {
+          console.warn(`⚠️ Routing attempt ${attempt + 1} failed:`, error.message);
+        }
+      }
+
+      // Log what's missing
+      if (import.meta.env.DEV && attempt === 0) {
+        console.log(`🔄 Waiting for routing prerequisites:`, {
+          instrumentId,
+          mixerTrackId,
+          hasInstrument: !!instrument,
+          hasOutput: !!instrument?.output,
+          hasInsert: !!insert,
+          attempt: attempt + 1
+        });
+      }
+
+      // Exponential backoff
+      const delay = baseDelay * Math.pow(1.5, attempt);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+
+    console.error(`❌ Failed to route ${instrumentId} → ${mixerTrackId} after ${maxRetries} attempts`);
+    return false;
   }
 
   /**

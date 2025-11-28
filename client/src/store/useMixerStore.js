@@ -507,7 +507,21 @@ export const useMixerStore = create((set, get) => ({
     }));
 
     // 🎛️ DYNAMIC MIXER: Create mixer insert for this track
-    AudioContextService.createMixerInsert(newTrack.id, newTrack.name);
+    // ✅ FIX: Create insert synchronously and verify it was created
+    const audioEngine = AudioContextService.getAudioEngine();
+    
+    if (!audioEngine) {
+      console.warn(`⚠️ AudioEngine not ready, mixer insert for ${newTrack.id} will be created later`);
+      // Store will be synced when engine is ready via _syncMixerTracksToAudioEngine
+    } else {
+      const insert = AudioContextService.createMixerInsert(newTrack.id, newTrack.name);
+      
+      if (!insert) {
+        console.warn(`⚠️ Failed to create mixer insert for ${newTrack.id}, will retry on instrument routing`);
+      } else {
+        console.log(`✅ Mixer insert created for ${newTrack.id}`);
+      }
+    }
 
     console.log(`✅ ${type} added: ${newTrack.name} (${newTrack.id})`);
     return newTrack.id;
