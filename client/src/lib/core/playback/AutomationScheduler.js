@@ -17,7 +17,8 @@ export class AutomationScheduler {
 
         // ✅ PHASE 4: Real-time automation tracking
         this.activeAutomations = new Map(); // instrumentId -> automation update interval
-        this.automationUpdateInterval = 50; // Update every 50ms (20Hz)
+        // ✅ FAZ 1: Optimized automation interval for smoother automation
+        this.automationUpdateInterval = 10; // Update every 10ms (100Hz) - reduced from 50ms (20Hz)
     }
 
     /**

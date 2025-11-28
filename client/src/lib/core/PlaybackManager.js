@@ -26,12 +26,13 @@ import {
 class SchedulingOptimizer {
     constructor() {
         this.pendingSchedule = null;
-        this.scheduleDebounceTime = 50; // ✅ OPTIMIZATION: Increased from 16ms to 50ms for better debouncing
+        // ✅ FAZ 1: Optimized debounce time for better real-time responsiveness
+        this.scheduleDebounceTime = 16; // 16ms (60fps) - reduced from 50ms
         this.lastScheduleReason = '';
         this.scheduleCount = 0;
         this.priorityDelays = {
-            idle: 50,
-            realtime: 12,
+            idle: 16,    // ✅ FAZ 1: Reduced from 50ms to 16ms (60fps)
+            realtime: 4, // ✅ FAZ 1: Reduced from 12ms to 4ms (250Hz)
             burst: 0
         };
         this.isPlaybackActive = false;

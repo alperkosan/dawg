@@ -23,7 +23,9 @@ export class NativeTransportSystem {
         this.nextTickTime = 0;
         // ⚡ CRITICAL: Tighter scheduling window for better timing accuracy
         this.lookAhead = 10.0; // 10ms look-ahead (matches worker interval)
-        this.scheduleAheadTime = 0.05; // 50ms schedule window (reduced from 100ms)
+        // ✅ FAZ 1: Adaptive schedule ahead time based on BPM
+        // Yüksek BPM (140+): 100ms, Orta BPM (100-140): 120ms, Düşük BPM (<100): 150ms
+        this.scheduleAheadTime = this._calculateAdaptiveScheduleAhead();
 
         // ✅ CRITICAL: Loop system - ALL IN TICKS
         this.loop = true;
@@ -58,13 +60,47 @@ export class NativeTransportSystem {
 
     }
 
+    /**
+     * ✅ FAZ 1: Calculate adaptive schedule ahead time based on BPM
+     * Yüksek BPM (140+): 120ms (optimized for better timing consistency)
+     * Orta BPM (100-140): 120ms (optimal)
+     * Düşük BPM (<100): 150ms (daha uzun, çünkü notalar daha yavaş)
+     * @returns {number} Schedule ahead time in seconds
+     */
+    _calculateAdaptiveScheduleAhead() {
+        if (this.bpm >= 140) {
+            return 0.12; // ✅ OPTIMIZED: 120ms for high BPM (increased from 100ms for better timing consistency)
+        } else if (this.bpm >= 100) {
+            return 0.12; // 120ms for medium BPM
+        } else {
+            return 0.15; // 150ms for low BPM
+        }
+    }
+
+    /**
+     * Update schedule ahead time when BPM changes
+     */
+    _updateScheduleAheadTime() {
+        this.scheduleAheadTime = this._calculateAdaptiveScheduleAhead();
+        if (import.meta.env.DEV) {
+            console.log(`⚡ Schedule ahead time updated: ${(this.scheduleAheadTime * 1000).toFixed(0)}ms (BPM: ${this.bpm})`);
+        }
+    }
+
     // YENİ: Tüm olay dinleyicilerini tek bir yerden yönetelim.
     _setupEventListeners() {
         EventBus.on('PLAY_REQUESTED', () => this.play());
         EventBus.on('STOP_REQUESTED', () => this.stop());
-        EventBus.on('TEMPO_CHANGED', (payload) => this.setTempo(payload.tempo));
+        EventBus.on('TEMPO_CHANGED', (payload) => {
+            this.setBPM(payload.tempo); // ✅ FAZ 1: Use setBPM which updates schedule ahead time
+        });
         // Gelecekte eklenebilecek diğer dinleyiciler:
         // EventBus.on('SEEK_REQUESTED', (payload) => this.seek(payload.tick));
+    }
+
+    // ✅ FAZ 1: Alias for setBPM (for compatibility)
+    setTempo(tempo) {
+        return this.setBPM(tempo);
     }
 
     // =================== TIMER INITIALIZATION ===================
@@ -72,9 +108,9 @@ export class NativeTransportSystem {
     initializeWorkerTimer() {
         const workerScript = `
             let timerID = null;
-            // ⚡ CRITICAL: Reduced from 25ms to 10ms for tighter scheduling
-            // At 120 BPM: 16th note = ~125ms, so 10ms gives us 12 scheduling opportunities per note
-            let interval = 10;
+            // ✅ FAZ 1: Optimized to 16ms (60fps) for better CPU efficiency
+            // At 120 BPM: 16th note = ~125ms, so 16ms gives us ~8 scheduling opportunities per note (sufficient)
+            let interval = 16;
 
             self.onmessage = function(e) {
                 if (e.data === 'start') {
@@ -257,6 +293,9 @@ export class NativeTransportSystem {
         }
 
         this.bpm = bpm;
+
+        // ✅ FAZ 1: Update schedule ahead time when BPM changes
+        this._updateScheduleAheadTime();
 
         // 🎯 CRITICAL: Adjust timing if playing to maintain smooth playback
         if (wasPlaying && oldBpm !== bpm) {

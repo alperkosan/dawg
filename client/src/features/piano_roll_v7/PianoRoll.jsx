@@ -1173,18 +1173,16 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
     // ✅ PHASE 4: Handle scroll from CC Lanes to sync Piano Roll viewport
     const handleCCLanesScroll = useCallback((_deltaX, deltaY) => {
         const currentEngine = engineRef.current;
-        if (!currentEngine) return;
+        if (!currentEngine || !currentEngine.eventHandlers?.updateViewport) return;
 
         // Update viewport scroll (horizontal scroll from vertical wheel)
         const scrollSpeed = 1.0;
         const newScrollX = Math.max(0, currentEngine.viewport.scrollX + (deltaY * scrollSpeed));
 
-        currentEngine.viewport.scrollX = newScrollX;
-        currentEngine.viewport.targetScrollX = newScrollX;
-
-        paintBackgroundLayer();
-        paintNotesLayer();
-    }, [paintBackgroundLayer, paintNotesLayer]);
+        // ✅ FIX: Use updateViewport instead of direct mutation to ensure reactive updates
+        // This ensures VelocityLane and CCLanes stay synchronized
+        currentEngine.eventHandlers.updateViewport({ scrollX: newScrollX, smooth: false });
+    }, []);
 
     // ✅ PHASE 2: NOTE PROPERTIES HANDLERS
     // ✅ FIX: Calculate selectedNote on every render to ensure it updates when notes change
@@ -1557,8 +1555,8 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
                     onPointRemove={handleCCLanePointRemove}
                     onPointUpdate={handleCCLanePointUpdate}
                     onScroll={handleCCLanesScroll}
-                    dimensions={engineRef.current.dimensions}
-                    viewport={engineRef.current.viewport}
+                    dimensions={engine.dimensions}
+                    viewport={engine.viewport}
                     activeTool={activeTool}
                     snapValue={snapValue}
                 />
