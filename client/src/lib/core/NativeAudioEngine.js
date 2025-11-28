@@ -27,6 +27,8 @@ import { analyzeAllSamples } from '../../utils/sampleAnalyzer.js';
 import { testDirectPlayback } from '../../utils/directPlaybackTest.js';
 // 🎛️ DİNAMİK MİXER: Dynamic mixer insert system
 import { MixerInsert } from './MixerInsert.js';
+// ✅ OPTIMIZATION: Global mixer insert management
+import { mixerInsertManager } from './MixerInsertManager.js';
 
 export class NativeAudioEngine {
     constructor(callbacks = {}) {
@@ -186,6 +188,12 @@ export class NativeAudioEngine {
         // UnifiedMixer removed for cleaner architecture
         console.log('✅ Dynamic MixerInsert system ready');
         console.log('ℹ️ Performance: JS nodes for flexibility, optimized signal path');
+
+        // 8. ✅ OPTIMIZATION: Start global mixer insert manager
+        // Uses single timer instead of per-insert timers for auto-sleep
+        mixerInsertManager.setAudioEngine(this);
+        mixerInsertManager.startGlobalMonitor();
+        console.log('✅ MixerInsertManager started (batched auto-sleep)');
 
         this.isInitialized = true;
     }
@@ -1254,6 +1262,8 @@ export class NativeAudioEngine {
     // =================== CLEANUP ===================
 
     dispose() {
+        // ✅ OPTIMIZATION: Stop global mixer insert manager
+        mixerInsertManager.stopGlobalMonitor();
 
         this._stopPerformanceMonitoring();
 

@@ -2443,6 +2443,7 @@ export class AudioContextService {
 
   /**
    * Get mixer insert analyzer for metering
+   * ✅ OPTIMIZED: Uses lazy analyzer creation
    * @param {string} trackId - Track ID
    * @returns {AnalyserNode|null}
    */
@@ -2456,7 +2457,8 @@ export class AudioContextService {
       return null;
     }
 
-    return insert.analyzer || null;
+    // ✅ Use getAnalyzer() for lazy creation
+    return insert.getAnalyzer ? insert.getAnalyzer() : (insert._analyzer || null);
   }
 
   /**
