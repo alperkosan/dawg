@@ -42,9 +42,20 @@ export class NoteScheduler {
         const absoluteTime = baseTime + noteTimeInSeconds;
 
             // Calculate duration
+            // ✅ FIX: Handle oval notes (visualLength < length) - use length for audio duration
             let noteDuration;
-            if (typeof note.length === 'number' && note.length > 0) {
-                // NEW FORMAT: length in steps
+            
+            // ✅ FIX: Check for oval notes FIRST (visualLength < length means oval note)
+            const isOvalNote = note.visualLength !== undefined && 
+                              typeof note.length === 'number' && 
+                              note.length > 0 && 
+                              note.visualLength < note.length;
+            
+            if (isOvalNote) {
+                // ✅ OVAL NOTES: Use length for audio duration (not visualLength)
+                noteDuration = this.transport.stepsToSeconds(note.length);
+            } else if (typeof note.length === 'number' && note.length > 0) {
+                // NEW FORMAT: length in steps - normal note
                 noteDuration = this.transport.stepsToSeconds(note.length);
             } else if (note.duration && typeof note.duration === 'string') {
                 // LEGACY FORMAT: duration as string ("4n", "8n", etc)

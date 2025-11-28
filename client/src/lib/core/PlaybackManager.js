@@ -136,6 +136,7 @@ export class PlaybackManager {
         this.isPlaying = false;
         this.isPaused = false;
         this.currentPosition = 0; // in steps
+        this._isLoopRestarting = false; // ✅ FIX: Track loop restart state to prevent send/unsend during restart
         
         // Loop settings
         this.loopEnabled = true;
@@ -434,16 +435,61 @@ export class PlaybackManager {
 
     /**
      * ✅ NEW: Handle note modification
-     * @param {Object} data - {patternId, instrumentId, note}
+     * @param {Object} data - {patternId, instrumentId, note, oldNote}
      */
     _handleNoteModified(data) {
-        const { patternId, instrumentId, note } = data;
+        const { patternId, instrumentId, note, oldNote } = data;
 
         const arrangementStore = useArrangementStore.getState();
         if (patternId !== arrangementStore.activePatternId) return;
 
         if (instrumentId) {
             this._markInstrumentDirty(instrumentId);
+        }
+
+        // ✅ CRITICAL FIX: If note is currently playing, stop it immediately
+        // This prevents stuck notes when modifying a note during playback
+        if (this.isPlaying && !this.isPaused && oldNote && instrumentId) {
+            const instrument = this.audioEngine.instruments.get(instrumentId);
+            if (instrument && oldNote.pitch) {
+                try {
+                    // Stop the old note if it's currently playing
+                    // Use releaseNote for graceful stop (respects ADSR release)
+                    if (typeof instrument.releaseNote === 'function') {
+                        instrument.releaseNote(oldNote.pitch);
+                    } else if (typeof instrument.noteOff === 'function') {
+                        // Fallback to noteOff if releaseNote not available
+                        instrument.noteOff(oldNote.pitch);
+                    }
+                    if (import.meta.env.DEV) {
+                        console.log('🛑 Stopping old note during modification:', {
+                            instrumentId,
+                            oldPitch: oldNote.pitch,
+                            newPitch: note.pitch,
+                            noteId: note.id
+                        });
+                    }
+                } catch (e) {
+                    console.error('Error stopping modified note:', e);
+                }
+            }
+
+            // ✅ Cancel scheduled events for the old note
+            if (this.transport && this.transport.clearScheduledEvents) {
+                const noteIdToCancel = oldNote.id || note.id;
+                if (noteIdToCancel) {
+                    if (import.meta.env.DEV) {
+                        console.log('🗑️ Cancelling scheduled events for modified note:', noteIdToCancel);
+                    }
+                    
+                    // Cancel scheduled events matching this note ID
+                    this.transport.clearScheduledEvents((eventData) => {
+                        if (!eventData) return false;
+                        return eventData.noteId === noteIdToCancel ||
+                               (eventData.note && eventData.note.id === noteIdToCancel);
+                    });
+                }
+            }
         }
 
         // For note modifications, treat as remove + add
@@ -459,7 +505,7 @@ export class PlaybackManager {
     }
 
     /**
-     * ✅ FIXED: Loop restart handler with immediate position sync
+     * ✅ SIMPLIFIED: Loop restart handler - minimal work, just stop notes and reset position
      * @param {number} nextStartTime - Bir sonraki loop'un başlangıç zamanı
      */
     _handleLoopRestart(nextStartTime = null) {
@@ -467,46 +513,78 @@ export class PlaybackManager {
             return;
         }
 
-        this.currentPosition = this.loopStart;
+        // ✅ CRITICAL FIX: Mark loop restart in progress to prevent send/unsend operations
+        // This prevents vaSynth notes from getting stuck when send/unsend happens during loop restart
+        this._isLoopRestarting = true;
 
+        // ✅ STEP 1: Stop all currently playing notes immediately
+        // This prevents stuck notes from previous loop
+        // Use immediate stop (stopAll) to ensure clean state for next loop
+        this._stopAllActiveNotes(true); // true = immediate stop, no release envelope
+
+        // ✅ STEP 2: Reset position to loop start
+        this.currentPosition = this.loopStart;
         if (this.transport.setPosition) {
             this.transport.setPosition(this.loopStart);
         }
 
+        // ✅ STEP 3: Clear scheduled events (already done by transport, but ensure it's done)
+        // This clears all scheduled note events, so we MUST reschedule
+        this._clearScheduledEvents(false);
+
+        // ✅ STEP 4: ALWAYS reschedule on loop restart
+        // Even if pattern hasn't changed, we need to reschedule because:
+        // 1. Position was reset to loopStart
+        // 2. Scheduled events were cleared
+        // 3. Notes need to be scheduled from the new loop start position
         let scheduledTarget = nextStartTime;
         if (!scheduledTarget) {
             scheduledTarget = this._computeNextLoopStartTime();
         }
 
-        if (!scheduledTarget || !Number.isFinite(scheduledTarget)) {
-            this._scheduleContent(null, 'loop-restart-fallback', true);
-        } else {
-            const alreadyMatchesTarget = this.lastPreRollTarget &&
-                Math.abs(this.lastPreRollTarget - scheduledTarget) < 0.0005;
+        if (scheduledTarget && Number.isFinite(scheduledTarget)) {
+            // ✅ CRITICAL: Always schedule pattern content from loop start
+            // Use 'all' scope to ensure all instruments are scheduled
+            this._scheduleContent(scheduledTarget, 'loop-restart', true, {
+                scope: 'all',
+                priority: 'burst',
+                force: true // Force immediate execution, no debouncing
+            });
 
-            if (!alreadyMatchesTarget) {
-                this._scheduleContent(scheduledTarget, 'loop-restart-fallback', true, {
-                    append: true,
-                    priority: 'burst'
-                });
-            }
-
+            // Schedule next loop pre-roll
             const nextTarget = scheduledTarget + this._getLoopDurationSeconds();
             if (Number.isFinite(nextTarget)) {
                 this._scheduleLoopPreRoll(nextTarget);
             }
+        } else {
+            // Fallback: schedule immediately
+            this._scheduleContent(null, 'loop-restart-fallback', true, {
+                scope: 'all',
+                force: true
+            });
         }
 
-        this._trackLoopRestart();
-
+        // ✅ STEP 5: Emit event and clear flag
         this._emit('loopRestart', {
-            time: scheduledTarget || this.transport.audioContext.currentTime,
+            time: nextStartTime || this.transport.audioContext.currentTime,
             tick: this.loopStart * this.transport.ticksPerStep,
             step: this.loopStart,
             mode: this.currentMode,
             patternId: this.activePatternId
         });
 
+        // Clear loop restart flag immediately after stopping notes
+        // Notes are stopped, so send/unsend operations can proceed safely
+        this._isLoopRestarting = false;
+        
+        if (import.meta.env.DEV) {
+            console.log('🔄 Loop restart completed:', {
+                scheduledTarget: scheduledTarget?.toFixed(3),
+                currentPosition: this.currentPosition,
+                loopStart: this.loopStart,
+                loopEnd: this.loopEnd
+            });
+        }
     }
 
     /**
@@ -1188,6 +1266,33 @@ export class PlaybackManager {
         const { instrumentFilterSet = null } = options;
         console.log('🎵 PlaybackManager._schedulePatternContent() called', { baseTime });
         
+        // ✅ CRITICAL FIX: Ensure currentPosition is correct during loop restart
+        // If we're scheduling from loop start and currentPosition is beyond loopEnd, reset it
+        // Also ensure currentPosition is set to loopStart if we're at loop start
+        if (this.loopEnabled) {
+            if (this.currentPosition >= this.loopEnd) {
+                // Loop restart detected - reset to loop start
+                this.currentPosition = this.loopStart;
+                if (import.meta.env.DEV) {
+                    console.log(`🔄 Loop restart detected in _schedulePatternContent:`, {
+                        currentPosition: this.currentPosition,
+                        loopStart: this.loopStart,
+                        loopEnd: this.loopEnd,
+                        baseTime: baseTime.toFixed(3)
+                    });
+                }
+            } else if (this._isLoopRestarting && this.currentPosition !== this.loopStart) {
+                // Loop restart in progress but position not reset yet - force reset
+                this.currentPosition = this.loopStart;
+                if (import.meta.env.DEV) {
+                    console.log(`🔄 Forcing position reset during loop restart:`, {
+                        oldPosition: this.currentPosition,
+                        newPosition: this.loopStart
+                    });
+                }
+            }
+        }
+        
         const arrangementStore = useArrangementStore.getState();
         console.log('🎵 ArrangementStore state:', {
             activePatternId: arrangementStore.activePatternId,
@@ -1231,6 +1336,10 @@ export class PlaybackManager {
                 return;
             }
 
+            // ✅ DEBUG: Log note properties to detect missing visualLength/length
+            const firstNote = notes[0];
+            const hasOvalNotes = notes.some(n => n.visualLength !== undefined && typeof n.length === 'number' && n.length > 0 && n.visualLength < n.length);
+            
             console.log(`🎵 Scheduling ${notes.length} notes for instrument ${instrumentId}`, {
                 instrumentId,
                 instrumentName: instrument.name,
@@ -1238,12 +1347,28 @@ export class PlaybackManager {
                 hasOutput: !!instrument.output,
                 outputType: instrument.output?.constructor?.name || 'none',
                 notesCount: notes.length,
-                firstNote: notes[0] ? {
-                    pitch: notes[0].pitch,
-                    time: notes[0].time || notes[0].startTime,
-                    length: notes[0].length,
-                    visualLength: notes[0].visualLength
-                } : null
+                hasOvalNotes,
+                firstNote: firstNote ? {
+                    pitch: firstNote.pitch,
+                    time: firstNote.time || firstNote.startTime,
+                    length: firstNote.length,
+                    visualLength: firstNote.visualLength,
+                    duration: firstNote.duration,
+                    isOval: firstNote.visualLength !== undefined && typeof firstNote.length === 'number' && firstNote.length > 0 && firstNote.visualLength < firstNote.length
+                } : null,
+                // ✅ DEBUG: Check if any notes are missing visualLength/length
+                notesWithMissingProps: notes.filter(n => {
+                    const isOval = n.visualLength !== undefined && typeof n.length === 'number' && n.length > 0 && n.visualLength < n.length;
+                    const hasLength = typeof n.length === 'number' && n.length > 0;
+                    const hasVisualLength = n.visualLength !== undefined;
+                    // Normal notes should have length, oval notes should have both
+                    return !hasLength || (isOval && !hasVisualLength);
+                }).map(n => ({
+                    id: n.id,
+                    length: n.length,
+                    visualLength: n.visualLength,
+                    duration: n.duration
+                }))
             });
             this._scheduleInstrumentNotes(instrument, notes, instrumentId, baseTime);
         });
@@ -1756,11 +1881,34 @@ export class PlaybackManager {
 
         // ✅ FIX: Use PlaybackManager's currentPosition, not transport.currentTick
         // (transport may lag behind after jumpToStep)
-        const currentStep = this.currentPosition; // ✅ Use our accurate position
+        // ✅ CRITICAL FIX: During loop restart, currentPosition might not be updated yet
+        // If we're scheduling from loop start (baseTime is close to loop start time) and currentPosition
+        // is beyond loopEnd or significantly ahead, we're likely in a loop restart scenario
+        const loopLength = this.loopEnd - this.loopStart;
+        const loopStartTimeInSeconds = this.loopStart * this.transport.stepsToSeconds(1);
+        const timeSinceLoopStart = baseTime - (this.transport.audioContext.currentTime - loopStartTimeInSeconds);
+        const isLikelyLoopRestart = this.loopEnabled && 
+                                    (this.currentPosition >= this.loopEnd || 
+                                     (this.currentPosition > this.loopStart && Math.abs(timeSinceLoopStart) < 0.1));
+        const currentStep = isLikelyLoopRestart ? this.loopStart : this.currentPosition; // ✅ Use loopStart during loop restart
         const currentPositionInSeconds = currentStep * this.transport.stepsToSeconds(1);
+        
+        // ✅ DEBUG: Log position calculation for loop restart scenarios
+        if (import.meta.env.DEV && isLikelyLoopRestart && (instrumentId === 'piano' || instrument?.type === 'vasynth')) {
+            console.log(`🔄 Loop restart position fix:`, {
+                instrumentId,
+                currentPosition: this.currentPosition,
+                loopStart: this.loopStart,
+                loopEnd: this.loopEnd,
+                usingStep: currentStep,
+                baseTime: baseTime.toFixed(3),
+                now: this.transport.audioContext.currentTime.toFixed(3),
+                timeSinceLoopStart: timeSinceLoopStart.toFixed(3)
+            });
+        }
 
         // ✅ OPTIMIZATION: Cache loop calculations outside the loop (calculated once per instrument, not per note)
-        const loopLength = this.loopEnd - this.loopStart;
+        // loopLength already calculated above
         const loopTimeInSeconds = this.loop ? loopLength * this.transport.stepsToSeconds(1) : 0;
 
         notes.forEach(note => {
@@ -1828,13 +1976,31 @@ export class PlaybackManager {
             }
 
             // ✅ FIX: Support both new format (length: number) and legacy format (duration: string)
-            // ✅ FIX: Handle oval notes (visualLength: 1) - use length if available, otherwise extend to pattern end
+            // ✅ FIX: Handle oval notes (visualLength < length) - use length for audio duration
             let noteDuration;
-            if (typeof note.length === 'number' && note.length > 0) {
-                // NEW FORMAT: length in steps (number)
+            
+            // ✅ FIX: Check for oval notes FIRST (visualLength < length means oval note)
+            const isOvalNote = note.visualLength !== undefined && 
+                              typeof note.length === 'number' && 
+                              note.length > 0 && 
+                              note.visualLength < note.length;
+            
+            if (isOvalNote) {
+                // ✅ OVAL NOTES: Use length for audio duration (not visualLength)
+                noteDuration = this.transport.stepsToSeconds(note.length);
+                if (import.meta.env.DEV && (instrumentId === 'pluck' || instrument?.type === 'vasynth')) {
+                    console.log(`🎵 Oval note detected: using length for audio duration`, {
+                        noteId: note.id,
+                        visualLength: note.visualLength,
+                        length: note.length,
+                        noteDuration: noteDuration.toFixed(3) + 's'
+                    });
+                }
+            } else if (typeof note.length === 'number' && note.length > 0) {
+                // NEW FORMAT: length in steps (number) - normal note
                 noteDuration = this.transport.stepsToSeconds(note.length);
             } else if (note.visualLength === 1 && (typeof note.length !== 'number' || note.length <= 0)) {
-                // ✅ OVAL NOTES: visualLength: 1 but no valid length - extend to pattern end
+                // ✅ LEGACY OVAL NOTES: visualLength: 1 but no valid length - extend to pattern end
                 const arrangementStore = useArrangementStore.getState();
                 const activePattern = arrangementStore.patterns[arrangementStore.activePatternId];
                 if (activePattern) {
@@ -1842,7 +2008,7 @@ export class PlaybackManager {
                     const noteStartStep = noteTimeInSteps;
                     const remainingSteps = Math.max(1, patternLengthInSteps - noteStartStep);
                     noteDuration = this.transport.stepsToSeconds(remainingSteps);
-                    console.log(`🎵 Oval note detected: extending to pattern end`, {
+                    console.log(`🎵 Legacy oval note detected: extending to pattern end`, {
                         noteStartStep,
                         patternLengthInSteps,
                         remainingSteps,
@@ -2473,14 +2639,32 @@ export class PlaybackManager {
                 }
 
                 // ✅ FIX: Calculate note duration properly
-                // ✅ FIX: Handle oval notes (visualLength: 1) - use length if available, otherwise extend to pattern end
+                // ✅ FIX: Handle oval notes (visualLength < length) - use length for audio duration
                 let noteDuration;
                 const noteTimeInSteps = note.startTime || note.time || 0;
-                if (typeof note.length === 'number' && note.length > 0) {
-                    // NEW FORMAT: length in steps
+                
+                // ✅ FIX: Check for oval notes FIRST (visualLength < length means oval note)
+                const isOvalNote = note.visualLength !== undefined && 
+                                  typeof note.length === 'number' && 
+                                  note.length > 0 && 
+                                  note.visualLength < note.length;
+                
+                if (isOvalNote) {
+                    // ✅ OVAL NOTES: Use length for audio duration (not visualLength)
+                    noteDuration = this.transport.stepsToSeconds(note.length);
+                    if (import.meta.env.DEV && (instrumentId === 'pluck' || instrument?.type === 'vasynth')) {
+                        console.log(`🎵 Oval note detected (immediate): using length for audio duration`, {
+                            noteId: note.id,
+                            visualLength: note.visualLength,
+                            length: note.length,
+                            noteDuration: noteDuration.toFixed(3) + 's'
+                        });
+                    }
+                } else if (typeof note.length === 'number' && note.length > 0) {
+                    // NEW FORMAT: length in steps - normal note
                     noteDuration = this.transport.stepsToSeconds(note.length);
                 } else if (note.visualLength === 1 && (typeof note.length !== 'number' || note.length <= 0)) {
-                    // ✅ OVAL NOTES: visualLength: 1 but no valid length - extend to pattern end
+                    // ✅ LEGACY OVAL NOTES: visualLength: 1 but no valid length - extend to pattern end
                     const arrangementStore = useArrangementStore.getState();
                     const activePattern = arrangementStore.patterns[arrangementStore.activePatternId];
                     if (activePattern) {
@@ -2488,7 +2672,7 @@ export class PlaybackManager {
                         const noteStartStep = noteTimeInSteps;
                         const remainingSteps = Math.max(1, patternLengthInSteps - noteStartStep);
                         noteDuration = this.transport.stepsToSeconds(remainingSteps);
-                        console.log(`🎵 Oval note detected (immediate): extending to pattern end`, {
+                        console.log(`🎵 Legacy oval note detected (immediate): extending to pattern end`, {
                             noteStartStep,
                             patternLengthInSteps,
                             remainingSteps,
@@ -2593,10 +2777,10 @@ export class PlaybackManager {
      * ✅ NEW: Stop all currently playing notes across all instruments
      * This prevents stuck notes when loop restarts or playback stops
      * 
-     * ✅ FIX: Use noteOff/allNotesOff for graceful release (with envelope)
-     * This provides natural fade-out when loop restarts, matching industry DAW behavior
+     * @param {boolean} immediate - If true, use stopAll() for immediate stop (loop restart).
+     *                               If false, use allNotesOff() for graceful release (pause).
      */
-    _stopAllActiveNotes() {
+    _stopAllActiveNotes(immediate = false) {
         let stoppedCount = 0;
         const currentTime = this.transport.audioContext.currentTime;
 
@@ -2608,20 +2792,31 @@ export class PlaybackManager {
                                       (instrument.activeNotes && instrument.activeNotes.size > 0);
 
                 if (hasActiveNotes) {
-                    // ✅ FIX: Use allNotesOff/noteOff for graceful release (with envelope)
-                    // This provides natural fade-out when loop restarts
-                    // Pattern will reschedule everything correctly after release
-                    if (typeof instrument.allNotesOff === 'function') {
-                        instrument.allNotesOff(currentTime);
-                        stoppedCount++;
-                    } else if (typeof instrument.noteOff === 'function') {
-                        // noteOff(null) = stop all notes with release envelope
-                        instrument.noteOff(null, currentTime);
-                        stoppedCount++;
-                    } else if (typeof instrument.stopAll === 'function') {
-                        // Fallback: immediate stop if noteOff not available
-                        instrument.stopAll();
-                        stoppedCount++;
+                    if (immediate) {
+                        // ✅ CRITICAL FIX: Loop restart requires immediate stop to prevent stuck notes
+                        // Use stopAll() for instant cleanup - no release envelope
+                        if (typeof instrument.stopAll === 'function') {
+                            instrument.stopAll();
+                            stoppedCount++;
+                        } else if (typeof instrument.allNotesOff === 'function') {
+                            // Fallback: allNotesOff with immediate time
+                            instrument.allNotesOff(currentTime);
+                            stoppedCount++;
+                        }
+                    } else {
+                        // ✅ Graceful release for pause - use envelope for natural fade-out
+                        if (typeof instrument.allNotesOff === 'function') {
+                            instrument.allNotesOff(currentTime);
+                            stoppedCount++;
+                        } else if (typeof instrument.noteOff === 'function') {
+                            // noteOff(null) = stop all notes with release envelope
+                            instrument.noteOff(null, currentTime);
+                            stoppedCount++;
+                        } else if (typeof instrument.stopAll === 'function') {
+                            // Fallback: immediate stop if noteOff not available
+                            instrument.stopAll();
+                            stoppedCount++;
+                        }
                     }
                 }
             } catch (e) {
@@ -2629,7 +2824,9 @@ export class PlaybackManager {
             }
         });
 
-        console.log(`🛑 _stopAllActiveNotes: Stopped ${stoppedCount} instruments (with release envelope)`);
+        if (import.meta.env.DEV) {
+            console.log(`🛑 _stopAllActiveNotes: Stopped ${stoppedCount} instruments (${immediate ? 'immediate' : 'graceful'})`);
+        }
     }
 
     _clearScheduledEvents(useFade = false, filterFn = null) {

@@ -1201,10 +1201,13 @@ export function useNoteInteractionsV3({
                     // EventBus notifications
                     finalNotes.forEach(note => {
                         if (noteIds.includes(note.id)) {
+                            // ✅ FIX: Get old note from originals map for stopping currently playing notes
+                            const oldNote = originals.get(note.id);
                             EventBus.emit('NOTE_MODIFIED', {
                                 patternId: activePatternId,
                                 instrumentId: currentInstrument.id,
-                                note
+                                note,
+                                oldNote: oldNote || note // ✅ FIX: Include old note for stopping currently playing notes
                             });
                         }
                     });
@@ -1396,7 +1399,8 @@ export function useNoteInteractionsV3({
                                 EventBus.emit('NOTE_MODIFIED', {
                                     patternId: activePatternId,
                                     instrumentId: currentInstrument.id,
-                                    note: modifiedNote
+                                    note: modifiedNote,
+                                    oldNote: orig // ✅ FIX: Include old note for stopping currently playing notes
                                 });
                             }
                         };

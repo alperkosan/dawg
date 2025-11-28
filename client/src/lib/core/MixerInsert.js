@@ -193,6 +193,15 @@ export class MixerInsert {
     });
 
     this.effectOrder.push(effectId);
+    
+    // ✅ FIX: Wake up channel if sleeping when effect is added
+    // User is actively working on this channel, so it should be active
+    if (this._autoSleepState.isSleeping && this.autoSleepConfig.enabled) {
+      this._autoSleepState.isSleeping = false;
+      this._autoSleepState.belowTimer = 0;
+      this._autoSleepState.aboveTimer = 0;
+    }
+    
     this._rebuildChain();
 
     // ✅ PERFORMANCE: Only log in DEV mode
@@ -238,6 +247,15 @@ export class MixerInsert {
 
     this.effects.delete(effectId);
     this.effectOrder = this.effectOrder.filter(id => id !== effectId);
+    
+    // ✅ FIX: Wake up channel if sleeping when effect is removed
+    // User is actively working on this channel, so it should be active
+    if (this._autoSleepState.isSleeping && this.autoSleepConfig.enabled) {
+      this._autoSleepState.isSleeping = false;
+      this._autoSleepState.belowTimer = 0;
+      this._autoSleepState.aboveTimer = 0;
+    }
+    
     this._rebuildChain();
 
     console.log(`🗑️ Removed effect ${effectId} from ${this.insertId}`);
@@ -623,18 +641,12 @@ export class MixerInsert {
       let currentNode = this.input;
       let connectedEffects = 0;
 
-      const skipEffects = this.autoSleepConfig.enabled && this._autoSleepState?.isSleeping;
-
-      // Add non-bypassed effects (unless auto-sleeping)
+      // ✅ CRITICAL FIX: Auto-sleep should NOT skip effects - it's only for CPU telemetry
+      // Effects must always be in the chain, even when "sleeping" (silent)
+      // Auto-sleep is just a label for CPU optimization reporting, not an audio state
+      // Removing skipEffects logic - effects are always connected when not bypassed
       for (const effectId of this.effectOrder) {
         const effect = this.effects.get(effectId);
-        if (skipEffects) {
-          if (isDev) {
-            console.log(`  ⏸️ Auto-sleep active → skipping effect chain for ${this.insertId}`);
-          }
-          break;
-        }
-
         if (effect && !effect.bypass && effect.node) {
           currentNode.connect(effect.node);
           currentNode = effect.node;
@@ -821,6 +833,19 @@ export class MixerInsert {
         destination: busInput
       });
 
+      // ✅ CRITICAL FIX: Prevent auto-sleep state change during send/unsend operations
+      // This prevents _rebuildChain() from being called, which would interrupt currently playing notes
+      // Instead, we manually wake up the channel if it's sleeping, without triggering chain rebuild
+      if (this._autoSleepState.isSleeping && this.autoSleepConfig.enabled) {
+        // Wake up without rebuilding chain (send connection doesn't require chain rebuild)
+        this._autoSleepState.isSleeping = false;
+        this._autoSleepState.belowTimer = 0;
+        this._autoSleepState.aboveTimer = 0;
+        if (import.meta.env.DEV) {
+          console.log(`🔔 Auto-sleep disabled for ${this.insertId} (send added, no chain rebuild)`);
+        }
+      }
+
       if (import.meta.env.DEV) {
         console.log(`📤 Send created: ${this.insertId} → ${busId} (level: ${sendLevel})`, {
           sourceInsert: this.insertId,
@@ -876,7 +901,13 @@ export class MixerInsert {
     }
 
     this.sends.delete(busId);
-    console.log(`📥 Send removed: ${this.insertId} ✗ ${busId}`);
+    
+    // ✅ CRITICAL FIX: Prevent auto-sleep state change during send/unsend operations
+    // This prevents _rebuildChain() from being called, which would interrupt currently playing notes
+    // Auto-sleep will be re-evaluated by the monitor on next check, but we don't force it now
+    if (import.meta.env.DEV) {
+      console.log(`📥 Send removed: ${this.insertId} ✗ ${busId} (no chain rebuild)`);
+    }
   }
 
   /**
@@ -995,11 +1026,16 @@ export class MixerInsert {
 
     console.log(
       shouldSleep
-        ? `😴 Auto-sleep enabled for ${this.insertId}`
+        ? `😴 Auto-sleep enabled for ${this.insertId} (CPU optimization only)`
         : `🔔 Auto-sleep disabled for ${this.insertId}`
     );
 
-    this._rebuildChain();
+    // ✅ CRITICAL FIX: Do NOT rebuild chain when auto-sleep state changes
+    // Auto-sleep is only for CPU telemetry, not for audio chain control
+    // Rebuilding chain during playback would interrupt currently playing notes
+    // Effects remain in chain regardless of sleep state
+    // this._rebuildChain(); // REMOVED - causes audio interruptions
+    
     if (shouldSleep) {
       this._pushCpuTelemetry({
         load: 0.05,

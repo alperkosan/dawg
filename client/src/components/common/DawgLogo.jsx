@@ -1,7 +1,7 @@
 /**
  * DAWG Logo Component
- * UNDERGROUND - Abstract graffiti-inspired logo
- * Street Art vibes meets Digital Audio Production
+ * BOOMBOX FOCUSED - Iconic boombox design celebrating underground culture
+ * Where sound meets community, talent rises, and beats drop
  */
 
 import React, { useMemo, useId } from 'react';
@@ -15,154 +15,206 @@ const useThemePalette = () => {
 
   return useMemo(
     () => ({
-      primary: theme?.zenith?.['accent-hot'] || '#FF4411',
-      secondary: theme?.zenith?.['accent-warm'] || '#FFD40F',
-      tertiary: theme?.zenith?.['accent-cool'] || '#25FF90',
-      quaternary: theme?.zenith?.['accent-cold'] || '#0CE0FF',
-      surface: theme?.zenith?.['bg-secondary'] || '#161B25',
-      surfaceDeep: theme?.zenith?.['bg-primary'] || '#080C14',
-      textPrimary: theme?.zenith?.['text-primary'] || '#F8F8F2',
-      textMuted: theme?.zenith?.['text-secondary'] || '#7E8795'
+      primary: theme?.zenith?.['accent-hot'] || '#FF6B35',
+      secondary: theme?.zenith?.['accent-warm'] || '#FFB627',
+      tertiary: theme?.zenith?.['accent-cool'] || '#4ECDC4',
+      quaternary: theme?.zenith?.['accent-cold'] || '#556FB5',
+      surface: theme?.zenith?.['bg-secondary'] || '#151922',
+      surfaceDeep: theme?.zenith?.['bg-primary'] || '#0A0E1A',
+      textPrimary: theme?.zenith?.['text-primary'] || '#FFFFFF',
+      textMuted: theme?.zenith?.['text-secondary'] || '#A1A8B5'
     }),
     [theme]
   );
 };
 
-const UndergroundLogo = ({ palette, uniqueId, isIcon, offsetX = 0, offsetY = 0 }) => {
-  const scale = isIcon ? 0.6 : 1;
-  const baseSize = 80 * scale;
-
+const BoomboxLogo = ({ palette, uniqueId, isIcon, offsetX = 0, offsetY = 0 }) => {
+  // 100x100 alan için optimize - her detay maksimum etki için
   return (
-    <g transform={`translate(${offsetX}, ${offsetY}) scale(${scale})`} opacity={0.95}>
+    <g transform={`translate(${offsetX}, ${offsetY})`} opacity={1}>
       <defs>
-        <linearGradient id={`neon-glow-${uniqueId}`} x1="0%" y1="0%" x2="100%" y2="100%">
+        {/* Main boombox gradient - bold and vibrant */}
+        <linearGradient id={`boombox-gradient-${uniqueId}`} x1="0%" y1="0%" x2="100%" y2="100%">
           <stop offset="0%" stopColor={palette.primary} />
           <stop offset="50%" stopColor={palette.secondary} />
           <stop offset="100%" stopColor={palette.tertiary} />
         </linearGradient>
 
-        <filter id={`neon-shadow-${uniqueId}`} x="-50%" y="-50%" width="200%" height="200%">
-          <feGaussianBlur stdDeviation="4" result="blur" />
+        {/* Text gradient - high contrast */}
+        <linearGradient id={`text-gradient-${uniqueId}`} x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stopColor={palette.secondary} />
+          <stop offset="50%" stopColor={palette.primary} />
+          <stop offset="100%" stopColor={palette.tertiary} />
+        </linearGradient>
+
+        {/* Strong glow for impact */}
+        <filter id={`glow-${uniqueId}`} x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur stdDeviation="2" result="coloredBlur" />
           <feMerge>
-            <feMergeNode in="blur" />
-            <feMergeNode in="blur" />
+            <feMergeNode in="coloredBlur" />
             <feMergeNode in="SourceGraphic" />
           </feMerge>
         </filter>
 
-        <filter id={`drip-filter-${uniqueId}`} x="-50%" y="-50%" width="200%" height="200%">
-          <feGaussianBlur stdDeviation="2" result="blur" />
-          <feMerge>
-            <feMergeNode in="blur" />
-            <feMergeNode in="SourceGraphic" />
-          </feMerge>
-        </filter>
+        {/* Simple speaker pattern - visible at small sizes */}
+        <pattern id={`speaker-dots-${uniqueId}`} x="0" y="0" width="3" height="3" patternUnits="userSpaceOnUse">
+          <circle cx="1.5" cy="1.5" r="0.6" fill={palette.surfaceDeep} opacity="0.8" />
+        </pattern>
+
+        {/* Shine effect */}
+        <linearGradient id={`shine-${uniqueId}`} x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="white" stopOpacity="0.5" />
+          <stop offset="50%" stopColor="white" stopOpacity="0.2" />
+          <stop offset="100%" stopColor="white" stopOpacity="0" />
+        </linearGradient>
       </defs>
 
-      {/* Background abstract shape */}
-      <path
-        d="M40 15 Q20 40, 15 65 Q40 85, 65 65 Q85 40, 65 15 Q40 0, 40 15"
-        fill={palette.surface}
-        opacity={0.3}
-        stroke={palette.primary}
-        strokeWidth="2"
-        filter={`url(#neon-shadow-${uniqueId})`}
-      />
-
-      {/* D - Bold graffiti style */}
-      <g transform="translate(10, 20)">
-        <path
-          d="M0 0 Q0 20, 15 20 L25 20 Q35 20, 35 10 L35 40 Q35 50, 25 50 L15 50 Q0 50, 0 30 Z"
-          fill={palette.primary}
-          stroke={palette.secondary}
-          strokeWidth="2"
-          filter={`url(#neon-shadow-${uniqueId})`}
-        />
-        <path
-          d="M35 15 Q45 15, 45 25 L45 35 Q45 45, 35 45"
-          fill="none"
-          stroke={palette.secondary}
-          strokeWidth="3"
-          strokeLinecap="round"
-        />
-      </g>
-
-      {/* A - Arrow style graffiti */}
-      <g transform="translate(50, 20)">
-        <path
-          d="M0 50 L15 0 L30 50 L25 50 L20 35 L10 35 L5 50 Z"
-          fill={palette.tertiary}
-          stroke={palette.primary}
+      {/* Main boombox body - fills 100x100 space efficiently */}
+      <g filter={`url(#glow-${uniqueId})`}>
+        {/* Boombox case - main body, fills most space */}
+        <rect
+          x="8"
+          y="15"
+          width="84"
+          height="60"
+          rx="5"
+          ry="5"
+          fill={`url(#boombox-gradient-${uniqueId})`}
+          stroke={palette.surface}
           strokeWidth="2"
         />
-        <rect x="12" y="20" width="6" height="15" fill={palette.secondary} />
-      </g>
 
-      {/* W - Wave pattern */}
-      <g transform="translate(85, 20)">
-        <path
-          d="M0 0 L5 15 L10 5 L15 20 L20 0 L25 15 L30 5 L35 20 L40 0 L40 50 L35 35 L30 45 L25 30 L20 45 L15 25 L10 45 L5 30 L0 50 Z"
-          fill={palette.quaternary}
-          stroke={palette.primary}
-          strokeWidth="1.5"
+        {/* Top shine - adds depth */}
+        <rect
+          x="8"
+          y="15"
+          width="84"
+          height="30"
+          rx="5"
+          fill={`url(#shine-${uniqueId})`}
         />
-      </g>
 
-      {/* G - Underground style */}
-      <g transform="translate(135, 20)">
-        <path
-          d="M0 15 Q0 5, 15 5 L25 5 Q35 5, 35 15 L35 25 L20 25 L20 35 L35 35 Q35 45, 25 45 L15 45 Q0 45, 0 35 Z"
-          fill={palette.secondary}
-          stroke={palette.primary}
-          strokeWidth="2"
-        />
-        <path
-          d="M20 15 L30 15"
-          stroke={palette.tertiary}
-          strokeWidth="3"
-          strokeLinecap="round"
-        />
-      </g>
+        {/* Left speaker - bold and clear */}
+        <g transform="translate(15, 22)">
+          <rect
+            x="0"
+            y="0"
+            width="24"
+            height="24"
+            rx="3"
+            fill={palette.surfaceDeep}
+            opacity="0.9"
+          />
+          <rect
+            x="1.5"
+            y="1.5"
+            width="21"
+            height="21"
+            rx="2"
+            fill={`url(#speaker-dots-${uniqueId})`}
+          />
+          {/* Speaker center highlight - visible */}
+          <circle
+            cx="12"
+            cy="12"
+            r="7"
+            fill="none"
+            stroke={palette.secondary}
+            strokeWidth="1.5"
+            opacity="0.8"
+          />
+        </g>
 
-      {/* Audio wave overlay */}
-      <g transform="translate(0, 70)" opacity={0.8}>
-        <path
-          d="M10 0 Q20 10, 30 0 Q40 10, 50 0 Q60 10, 70 0 Q80 10, 90 0 Q100 10, 110 0 Q120 10, 130 0 Q140 10, 150 0"
-          fill="none"
-          stroke={palette.quaternary}
-          strokeWidth="2"
-          strokeLinecap="round"
-          filter={`url(#neon-shadow-${uniqueId})`}
-        />
-        <path
-          d="M10 10 Q20 0, 30 10 Q40 0, 50 10 Q60 0, 70 10 Q80 0, 90 10 Q100 0, 110 10 Q120 0, 130 10 Q140 0, 150 10"
-          fill="none"
-          stroke={palette.tertiary}
-          strokeWidth="1.5"
-          strokeLinecap="round"
-        />
-      </g>
+        {/* Center - DAWG text - MAXIMUM IMPACT */}
+        <g transform="translate(38, 26)">
+          <rect
+            x="0"
+            y="0"
+            width="24"
+            height="16"
+            rx="2.5"
+            fill={palette.surfaceDeep}
+            opacity="0.95"
+          />
+          <text
+            x="12"
+            y="11"
+            fontFamily="'Sora', 'Inter', sans-serif"
+            fontSize="10"
+            fontWeight="900"
+            letterSpacing="0.08em"
+            fill={`url(#text-gradient-${uniqueId})`}
+            textAnchor="middle"
+            dominantBaseline="middle"
+          >
+            DAWG
+          </text>
+        </g>
 
-      {/* Drip effects */}
-      <g filter={`url(#drip-filter-${uniqueId})`} opacity={0.7}>
-        <path
-          d="M25 75 L25 85 Q25 90, 27 95"
-          stroke={palette.primary}
-          strokeWidth="3"
-          strokeLinecap="round"
+        {/* Right speaker - bold and clear */}
+        <g transform="translate(61, 22)">
+          <rect
+            x="0"
+            y="0"
+            width="24"
+            height="24"
+            rx="3"
+            fill={palette.surfaceDeep}
+            opacity="0.9"
+          />
+          <rect
+            x="1.5"
+            y="1.5"
+            width="21"
+            height="21"
+            rx="2"
+            fill={`url(#speaker-dots-${uniqueId})`}
+          />
+          {/* Speaker center highlight - visible */}
+          <circle
+            cx="12"
+            cy="12"
+            r="7"
+            fill="none"
+            stroke={palette.tertiary}
+            strokeWidth="1.5"
+            opacity="0.8"
+          />
+        </g>
+
+        {/* Bottom accent bar - visual anchor */}
+        <rect
+          x="15"
+          y="70"
+          width="70"
+          height="5"
+          rx="2.5"
+          fill={palette.surfaceDeep}
+          opacity="0.85"
         />
-        <path
-          d="M85 75 L85 90 Q85 95, 87 100"
-          stroke={palette.secondary}
-          strokeWidth="2"
-          strokeLinecap="round"
-        />
-        <path
-          d="M145 75 L145 80 Q145 85, 147 90"
-          stroke={palette.tertiary}
-          strokeWidth="2.5"
-          strokeLinecap="round"
-        />
+        {/* Audio level bars - colorful indicators */}
+        <rect x="18" y="71.5" width="5" height="2" rx="0.5" fill={palette.primary} />
+        <rect x="25" y="71.5" width="5" height="2" rx="0.5" fill={palette.secondary} />
+        <rect x="32" y="71.5" width="5" height="2" rx="0.5" fill={palette.tertiary} />
+        <rect x="39" y="71.5" width="5" height="2" rx="0.5" fill={palette.quaternary} />
+
+        {/* Audio waves - minimal but impactful */}
+        <g transform="translate(0, 8)" opacity="0.95">
+          <path
+            d="M18 7 Q21 4, 24 7 Q27 10, 30 7"
+            fill="none"
+            stroke={palette.secondary}
+            strokeWidth="2"
+            strokeLinecap="round"
+          />
+          <path
+            d="M70 7 Q73 4, 76 7 Q79 10, 82 7"
+            fill="none"
+            stroke={palette.tertiary}
+            strokeWidth="2"
+            strokeLinecap="round"
+          />
+        </g>
       </g>
     </g>
   );
@@ -173,77 +225,54 @@ export const DawgLogo = ({ size = 32, className = '', variant = 'full' }) => {
   const uniqueId = useId();
   const isIcon = variant === 'icon';
 
+  // 100x100 alan için optimize edilmiş boyutlar
   const svgHeight = size;
-  const svgWidth = isIcon ? size : size * 2.2;
-  const viewBoxWidth = isIcon ? 120 : 200;
-  const viewBoxHeight = 100;
-  const logoWidth = isIcon ? 108 : 180;
-  const logoHeight = isIcon ? 60 : 100;
-  const boomboxOffsetX = (viewBoxWidth - logoWidth) / 2;
-  const boomboxOffsetY = (viewBoxHeight - logoHeight) / 2;
+  const svgWidth = size; // Her zaman kare
+  const viewBoxSize = 100; // 100x100 viewBox
+  const boomboxSize = 100; // Boombox tam alanı kullanır
+  const logoOffsetX = 0;
+  const logoOffsetY = 0;
 
   const wordmark = !isIcon && (
-    <g transform={`translate(${viewBoxWidth / 2}, 85)`} opacity={0.92}>
+    <g transform={`translate(50, 88)`} opacity={0.95}>
+      <defs>
+        <linearGradient id={`wordmark-gradient-${uniqueId}`} x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stopColor={palette.secondary} />
+          <stop offset="50%" stopColor={palette.primary} />
+          <stop offset="100%" stopColor={palette.tertiary} />
+        </linearGradient>
+      </defs>
       <text
-        x={-70}
+        x={0}
         y={0}
-        fontFamily="'Sora', 'Inter', sans-serif"
-        fontSize="28"
-        fontWeight="700"
-        letterSpacing="0.08em"
-        fill={palette.textPrimary}
+        fontFamily="'Sora', 'Inter', -apple-system, sans-serif"
+        fontSize="7"
+        fontWeight="800"
+        letterSpacing="0.1em"
+        fill={`url(#wordmark-gradient-${uniqueId})`}
         textAnchor="middle"
       >
-        DAWG
+        ELEVATE
       </text>
-          <text
-        x={-70}
-        y={20}
-        fontFamily="'Space Mono', monospace"
-        fontSize="10"
-        letterSpacing="0.5em"
-        fill={palette.textMuted}
-        opacity={0.85}
-        textAnchor="middle"
-      >
-        AUDIO
-          </text>
-        </g>
+    </g>
   );
   
   return (
     <svg
       role="img"
-      aria-label="DAWG logo"
+      aria-label="DAWG logo - Boombox"
       width={svgWidth}
       height={svgHeight}
-      viewBox={`0 0 ${viewBoxWidth} ${viewBoxHeight}`}
+      viewBox={`0 0 ${viewBoxSize} ${viewBoxSize}`}
       className={className}
+      style={{ display: 'block' }}
     >
-      <defs>
-        <linearGradient id={`bg-${uniqueId}`} x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor={palette.surfaceDeep} />
-          <stop offset="100%" stopColor={palette.surface} />
-        </linearGradient>
-      </defs>
-
-      <rect width={viewBoxWidth} height={viewBoxHeight} rx={isIcon ? 16 : 24} fill={`url(#bg-${uniqueId})`} />
-      <rect
-        x={isIcon ? 4 : 8}
-        y={isIcon ? 4 : 8}
-        width={viewBoxWidth - (isIcon ? 8 : 16)}
-        height={viewBoxHeight - (isIcon ? 8 : 16)}
-        rx={isIcon ? 12 : 18}
-        fill={palette.surface}
-        opacity={0.9}
-      />
-
-      <UndergroundLogo
+      <BoomboxLogo
         palette={palette}
         uniqueId={uniqueId}
         isIcon={isIcon}
-        offsetX={boomboxOffsetX}
-        offsetY={boomboxOffsetY}
+        offsetX={logoOffsetX}
+        offsetY={logoOffsetY}
       />
       {wordmark}
     </svg>

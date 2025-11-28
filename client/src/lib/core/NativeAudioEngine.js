@@ -1789,6 +1789,19 @@ export class NativeAudioEngine {
      * @param {boolean} preFader - Pre-fader send (not implemented yet)
      */
     createSend(sourceId, busId, level = 0.5, preFader = false) {
+        // ✅ CRITICAL FIX: Defer send operations during loop restart to prevent vaSynth notes from getting stuck
+        const playbackManager = this.playbackManager;
+        if (playbackManager && playbackManager._isLoopRestarting) {
+            if (import.meta.env.DEV) {
+                console.log(`⏳ Loop restart in progress, deferring send creation: ${sourceId} → ${busId}`);
+            }
+            // Defer send creation until loop restart completes
+            setTimeout(() => {
+                this.createSend(sourceId, busId, level, preFader);
+            }, 60); // Slightly longer than loop restart delay (50ms) to ensure completion
+            return;
+        }
+
         const sourceInsert = this.mixerInserts.get(sourceId);
         const busInsert = this.mixerInserts.get(busId);
 
@@ -1829,6 +1842,19 @@ export class NativeAudioEngine {
      * @param {string} busId - Destination bus ID
      */
     removeSend(sourceId, busId) {
+        // ✅ CRITICAL FIX: Defer send removal during loop restart to prevent vaSynth notes from getting stuck
+        const playbackManager = this.playbackManager;
+        if (playbackManager && playbackManager._isLoopRestarting) {
+            if (import.meta.env.DEV) {
+                console.log(`⏳ Loop restart in progress, deferring send removal: ${sourceId} → ${busId}`);
+            }
+            // Defer send removal until loop restart completes
+            setTimeout(() => {
+                this.removeSend(sourceId, busId);
+            }, 60); // Slightly longer than loop restart delay (50ms) to ensure completion
+            return;
+        }
+
         const sourceInsert = this.mixerInserts.get(sourceId);
 
         if (!sourceInsert) {
