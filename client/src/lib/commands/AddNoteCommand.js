@@ -92,15 +92,19 @@ export class AddNoteCommand extends Command {
       });
     }
     
-    // ✅ STEP SEQUENCER GATE: keep note length to a single step (sustain from envelope)
+    const gateLengthInSteps = 1;
+    const audioDuration = null;
     const noteStartStep = this.step;
-    const gateLengthInSteps = 2;
-    const audioDuration = '8n';
+    const ovalLengthInSteps = Math.max(
+      gateLengthInSteps,
+      patternLengthInSteps - noteStartStep
+    );
 
     console.log(`📝 AddNoteCommand: New note for ${this.instrumentId} with 1-step gate`, {
       patternLengthInSteps,
       noteStartStep,
-      gateLengthInSteps
+      gateLengthInSteps,
+      ovalLengthInSteps
     });
 
     // Geri alma (undo) işlemi için notayı burada oluşturup sınıf içinde saklıyoruz.
@@ -110,7 +114,7 @@ export class AddNoteCommand extends Command {
       pitch: defaultPitch,
       velocity: defaultVelocity,
       duration: audioDuration,
-      length: gateLengthInSteps,
+      length: ovalLengthInSteps,
       visualLength: gateLengthInSteps
     };
 

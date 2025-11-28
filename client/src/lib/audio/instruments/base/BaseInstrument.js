@@ -167,6 +167,10 @@ export class BaseInstrument {
         this.noteOff(null, now); // null = all notes
     }
 
+    hasReleaseSustain() {
+        return true;
+    }
+
     /**
      * Connect instrument output to destination
      *

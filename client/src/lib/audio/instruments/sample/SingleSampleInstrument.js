@@ -17,6 +17,9 @@ import { BaseInstrument } from '../base/BaseInstrument.js';
 import { clampValue, createDefaultSampleChopPattern } from './sampleChopUtils.js';
 
 export class SingleSampleInstrument extends BaseInstrument {
+    hasReleaseSustain() {
+        return this._hasAdsrEnvelope() || !!this.data.loop;
+    }
     constructor(instrumentData, audioContext, sampleBuffer) {
         super(instrumentData, audioContext);
 
@@ -38,7 +41,7 @@ export class SingleSampleInstrument extends BaseInstrument {
         this.sampleChop = instrumentData.sampleChop
             ? JSON.parse(JSON.stringify(instrumentData.sampleChop))
             : createDefaultSampleChopPattern();
-            this.sampleChopMode = instrumentData.sampleChopMode || 'standard';
+        this.sampleChopMode = instrumentData.sampleChopMode || 'standard';
         this.data.sampleChop = this.sampleChop;
         this.data.sampleChopMode = this.sampleChopMode;
         this._chopTimer = null;
@@ -53,6 +56,12 @@ export class SingleSampleInstrument extends BaseInstrument {
     _markReverseDirty() {
         this._reverseBufferDirty = true;
         this._reversedBuffer = null;
+    }
+
+    get effectiveReverse() {
+        const reverse = !!this.data.reverse;
+        const precomputedReverse = !!this.data.precomputed?.reverse;
+        return reverse !== precomputedReverse;
     }
 
     _createReversedBuffer(buffer) {
@@ -73,13 +82,21 @@ export class SingleSampleInstrument extends BaseInstrument {
     }
 
     _getPlaybackBuffer() {
-        if (!this.data?.reverse) {
+        if (!this.effectiveReverse) {
             return this.sampleBuffer;
         }
-        if (!this.sampleBuffer) return null;
+        if (!this.sampleBuffer) {
+            console.warn('⚠️ _getPlaybackBuffer: No sampleBuffer');
+            return null;
+        }
         if (!this._reversedBuffer || this._reverseBufferDirty) {
+            console.log('🔄 Creating reversed buffer...');
             this._reversedBuffer = this._createReversedBuffer(this.sampleBuffer);
             this._reverseBufferDirty = false;
+            console.log('✅ Reversed buffer created:', this._reversedBuffer ? 'Success' : 'Failed');
+        }
+        if (!this._reversedBuffer) {
+            console.warn('⚠️ _getPlaybackBuffer: Reversed buffer is null, falling back to forward buffer');
         }
         return this._reversedBuffer || this.sampleBuffer;
     }
@@ -92,7 +109,7 @@ export class SingleSampleInstrument extends BaseInstrument {
     _getTrimWindow(durationSeconds) {
         const startNorm = this._clamp(this.data.sampleStart ?? 0, 0, 1, 0);
         const endNorm = this._clamp(this.data.sampleEnd ?? 1, 0, 1, 1);
-        const reverse = !!this.data.reverse;
+        const reverse = this.effectiveReverse;
 
         let start = reverse ? 1 - endNorm : startNorm;
         let end = reverse ? 1 - startNorm : endNorm;
@@ -114,7 +131,7 @@ export class SingleSampleInstrument extends BaseInstrument {
 
         const loopStartNorm = this._clamp(rawLoopStart, 0, 1, 0);
         const loopEndNorm = this._clamp(rawLoopEnd, 0, 1, 1);
-        const reverse = !!this.data.reverse;
+        const reverse = this.effectiveReverse;
 
         let start = reverse ? 1 - loopEndNorm : loopStartNorm;
         let end = reverse ? 1 - loopStartNorm : loopEndNorm;
@@ -228,14 +245,14 @@ export class SingleSampleInstrument extends BaseInstrument {
             // Calculate pitch shift (combine base note shift + pitch parameter)
             const baseShift = midiNote - this.baseNote; // semitones
             const pitchParam = this.data.pitch || 0; // additional pitch shift from UI
-            
+
             // ✅ PHASE 2: Apply initial pitch bend if present
             let initialPitchBend = 0;
             if (extendedParams?.pitchBend && Array.isArray(extendedParams.pitchBend) && extendedParams.pitchBend.length > 0) {
                 const firstPoint = extendedParams.pitchBend[0];
                 initialPitchBend = (firstPoint.value / 8192) * 2; // ±2 semitones range
             }
-            
+
             const totalPitchShift = baseShift + pitchParam + initialPitchBend;
             const playbackRate = Math.pow(2, totalPitchShift / 12);
 
@@ -258,7 +275,7 @@ export class SingleSampleInstrument extends BaseInstrument {
             gainNode.gain.setValueAtTime(totalGain, when);
 
             // Apply ADSR envelope if defined
-            if (this.data.attack || this.data.decay || this.data.sustain !== undefined || this.data.release) {
+            if (this._hasAdsrEnvelope()) {
                 const attack = (this.data.attack || 0) / 1000; // ms to seconds
                 const decay = (this.data.decay || 0) / 1000;
                 const sustain = this.data.sustain !== undefined ? this.data.sustain / 100 : 1;
@@ -288,17 +305,17 @@ export class SingleSampleInstrument extends BaseInstrument {
             if (this.data.filterType && this.data.filterCutoff) {
                 const filter = this.audioContext.createBiquadFilter();
                 filter.type = this.data.filterType || 'lowpass';
-                
+
                 // ✅ KEY TRACKING: Get base filter cutoff
                 let filterCutoff = this.data.filterCutoff || 20000;
-                
+
                 // ✅ KEY TRACKING: Apply key tracking if enabled
                 if (this.data.filterKeyTracking !== undefined && this.data.filterKeyTracking > 0) {
                     const keyTrackingAmount = this.data.filterKeyTracking; // 0-1
                     const noteFrequency = 440 * Math.pow(2, (midiNote - 69) / 12);
                     const baseFrequency = 440 * Math.pow(2, (60 - 69) / 12); // C4 as base
                     const frequencyRatio = noteFrequency / baseFrequency;
-                    
+
                     // Calculate key tracking offset
                     // Higher notes = higher frequency = higher cutoff
                     // Range: ±50% of base cutoff based on key tracking amount
@@ -306,7 +323,7 @@ export class SingleSampleInstrument extends BaseInstrument {
                     filterCutoff = filterCutoff + keyTrackingOffset;
                     filterCutoff = Math.max(20, Math.min(20000, filterCutoff)); // Clamp to valid range
                 }
-                
+
                 // Apply mod wheel (CC1) to filter cutoff if present
                 if (extendedParams?.modWheel !== undefined) {
                     const modWheelNormalized = extendedParams.modWheel / 127; // 0-1
@@ -315,7 +332,7 @@ export class SingleSampleInstrument extends BaseInstrument {
                     filterCutoff = Math.max(20, Math.min(20000, filterCutoff)); // Clamp
                 }
                 filter.frequency.setValueAtTime(filterCutoff, when);
-                
+
                 // Apply aftertouch to filter Q if present
                 let filterQ = this.data.filterResonance || 1;
                 if (extendedParams?.aftertouch !== undefined) {
@@ -338,7 +355,7 @@ export class SingleSampleInstrument extends BaseInstrument {
             if (this.data.loop) {
                 source.start(when, trimWindow.offset); // Loop indefinitely from offset
             } else {
-                source.start(when, trimWindow.offset, trimWindow.length); // One-shot with trim
+                source.start(when, trimWindow.offset); // Let ADSR handle release tail
             }
 
             // Track active source
@@ -396,16 +413,25 @@ export class SingleSampleInstrument extends BaseInstrument {
             if (activeSource) {
                 const { source, gainNode } = activeSource;
 
+                const hasAdsr = this._hasAdsrEnvelope();
+
+                // If there's no ADSR envelope and sample isn't looping, let the buffer finish naturally.
+                if (!hasAdsr && !this.data.loop) {
+                    this.activeSources.delete(midiNote);
+                    this.activeNotes.delete(midiNote);
+                    return;
+                }
+
                 // ✅ RELEASE VELOCITY: Calculate effective release time based on release velocity
                 let baseRelease = (this.data.release || 50) / 1000;
                 let effectiveRelease = baseRelease;
-                
+
                 if (releaseVelocity !== null && releaseVelocity !== undefined) {
                     const velocityNormalized = Math.max(0, Math.min(127, releaseVelocity)) / 127; // 0-1
                     // Map velocity to release time: 0.5x (fast) to 1.0x (normal)
                     const releaseTimeMultiplier = 1.0 - (velocityNormalized * 0.5);
                     effectiveRelease = baseRelease * releaseTimeMultiplier;
-                    
+
                     if (import.meta.env.DEV) {
                         console.log(`🎚️ SingleSample release: velocity=${releaseVelocity}, baseTime=${baseRelease.toFixed(3)}s, effectiveTime=${effectiveRelease.toFixed(3)}s`);
                     }
@@ -455,6 +481,18 @@ export class SingleSampleInstrument extends BaseInstrument {
         this._stopSampleChopPlayback();
     }
 
+    _hasAdsrEnvelope() {
+        return Boolean(
+            this.data &&
+            (
+                this.data.attack ||
+                this.data.decay ||
+                this.data.release ||
+                this.data.sustain !== undefined
+            )
+        );
+    }
+
     /**
      * Connect to destination
      */
@@ -479,7 +517,7 @@ export class SingleSampleInstrument extends BaseInstrument {
      */
     updateParameters(params) {
         console.log(`🎛️ SingleSampleInstrument.updateParameters (${this.name}):`, params);
-        if (params && Object.prototype.hasOwnProperty.call(params, 'reverse')) {
+        if (params && (Object.prototype.hasOwnProperty.call(params, 'reverse') || params.precomputed)) {
             this._markReverseDirty();
         }
 
@@ -711,17 +749,17 @@ export class SingleSampleInstrument extends BaseInstrument {
         if (this._currentChopSource) {
             try {
                 this._currentChopSource.stop();
-            } catch (e) {}
+            } catch (e) { }
             try {
                 this._currentChopSource.disconnect();
-            } catch (e) {}
+            } catch (e) { }
             this._currentChopSource = null;
         }
 
         if (this._currentChopGain) {
             try {
                 this._currentChopGain.disconnect();
-            } catch (e) {}
+            } catch (e) { }
             this._currentChopGain = null;
         }
     }

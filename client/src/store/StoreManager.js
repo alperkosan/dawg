@@ -99,6 +99,7 @@ class StoreManager {
 
   /**
    * ✅ PERFORMANCE: Find unused mixer track
+   * Optimized with Set-based lookup for O(n) instead of O(n*m)
    */
   findUnusedMixerTrack() {
     if (!this.initialized || !this.stores.mixer || !this.stores.instruments) return null;
@@ -107,19 +108,30 @@ class StoreManager {
       const { mixerTracks } = this.stores.mixer.getState();
       const { instruments } = this.stores.instruments.getState();
 
-      // ✅ DEBUG: Log track usage
-      const usedTrackIds = instruments.map(inst => inst.mixerTrackId);
-      const availableTracks = mixerTracks.filter(track => track.type === 'track');
-      const unusedTracks = availableTracks.filter(track => !usedTrackIds.includes(track.id));
+      // ✅ PERFORMANCE: Use Set for O(1) lookup instead of array.includes() O(n)
+      const usedTrackIds = new Set(instruments.map(inst => inst.mixerTrackId));
+      
+      // Find first unused track (early return)
+      for (const track of mixerTracks) {
+        if (track.type === 'track' && !usedTrackIds.has(track.id)) {
+          // ✅ PERFORMANCE: Only log in DEV mode
+          if (import.meta.env.DEV) {
+            const availableTracks = mixerTracks.filter(t => t.type === 'track');
+            console.log('🎛️ Mixer Track Usage:', {
+              total: availableTracks.length,
+              used: usedTrackIds.size,
+              foundUnused: track.id
+            });
+          }
+          return track;
+        }
+      }
 
-      console.log('🎛️ Mixer Track Usage:', {
-        total: availableTracks.length,
-        used: usedTrackIds.length,
-        available: unusedTracks.length,
-        unusedTrackIds: unusedTracks.map(t => t.id)
-      });
-
-      return unusedTracks[0] || null;
+      // No unused track found
+      if (import.meta.env.DEV) {
+        console.log('🎛️ No unused mixer tracks available');
+      }
+      return null;
     } catch (error) {
       console.warn('Could not find unused mixer track:', error);
       return null;

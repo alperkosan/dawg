@@ -15,6 +15,7 @@ export class AudioContextService {
   static audioEngine = null;
   static isSubscriptionsSetup = false;
   static idleOptimizationSetup = false; // ✅ FIX: Track if idle optimization is already setup
+  static pendingMixerSync = false;
   
   // =================== NEW: INTERFACE LAYER ===================
   static interfaceManager = null;
@@ -72,6 +73,11 @@ export class AudioContextService {
       } catch (error) {
         console.warn('⚠️ Failed to resume AudioContext:', error);
       }
+    }
+
+    if (this.pendingMixerSync) {
+      console.log('🔁 Pending mixer sync detected - running now');
+      await this._syncMixerTracksToAudioEngine();
     }
 
     console.log("✅ AudioContextService v3.0: Native Engine + Interface Layer + Idle Optimization ready");
@@ -215,9 +221,13 @@ export class AudioContextService {
       this.eventBus.emit('transportTick', data);
     });
 
-    this.audioEngine.transport?.on('loop', (data) => {
+    this.audioEngine.transport?.on('loop', async (data) => {
       this.eventBus.emit('transportLoop', data);
       this.loopManager?.handleTransportLoop(data);
+
+      // ✅ CRITICAL FIX: Loop sonrası mixer tracks'ları audio engine'e yeniden sync et
+      // Loop sonrası mixer insert'leri ve send bağlantıları sorunlu olabiliyor
+      await this._syncMixerTracksToAudioEngine();
     });
 
     this.audioEngine.transport?.on('start', () => {
@@ -914,14 +924,58 @@ export class AudioContextService {
   }
 
   /**
+   * Normalize legacy send formats (object) into modern array structure
+   * @param {object} track
+   * @returns {Array<{busId: string, level: number, preFader: boolean}>}
+   */
+  static _normalizeTrackSends(track) {
+    if (!track) {
+      return [];
+    }
+
+    if (Array.isArray(track.sends)) {
+      return track.sends
+        .filter(send => send && send.busId)
+        .map(send => ({
+          busId: send.busId,
+          level: typeof send.level === 'number'
+            ? Math.max(0, Math.min(1, send.level))
+            : 0,
+          preFader: !!send.preFader
+        }));
+    }
+
+    if (!track.sends || typeof track.sends !== 'object') {
+      return [];
+    }
+
+    return Object.entries(track.sends)
+      .filter(([key]) => key && !key.endsWith('_muted'))
+      .map(([busId, value]) => {
+        const numericValue = typeof value === 'number' ? value : 0;
+        const levelLinear = numericValue > 1
+          ? Math.pow(10, numericValue / 20)
+          : numericValue;
+
+        return {
+          busId,
+          level: Math.max(0, Math.min(1, levelLinear)),
+          preFader: false
+        };
+      });
+  }
+
+  /**
    * ✅ FIX: Sync mixer tracks from store to audio engine
    * Creates mixer inserts for all existing tracks
    */
   static async _syncMixerTracksToAudioEngine() {
     if (!this.audioEngine) {
       console.warn('⚠️ Cannot sync mixer tracks: audio engine not ready');
+      this.pendingMixerSync = true;
       return;
     }
+    this.pendingMixerSync = false;
 
     try {
       // Get mixer tracks from store (direct import to avoid circular deps)
@@ -944,76 +998,89 @@ export class AudioContextService {
 
       console.log(`🎛️ Syncing ${mixerTracks.length} mixer tracks to audio engine...`);
 
-      for (const track of mixerTracks) {
-        // Check if insert already exists
-        const insertExists = this.audioEngine.mixerInserts?.has(track.id);
+      const normalizedTracks = mixerTracks.map(track => ({
+        ...track,
+        sends: this._normalizeTrackSends(track)
+      }));
 
-        if (!insertExists) {
-          // Create mixer insert for this track
-          try {
-            const insert = this.createMixerInsert(track.id, track.name || track.id);
-            if (insert) {
-              // Set initial gain and pan from store
-              if (track.volume !== undefined) {
-                const linearGain = Math.pow(10, track.volume / 20);
-                insert.setGain(linearGain);
-              }
-              if (track.pan !== undefined) {
-                insert.setPan(track.pan);
-              }
-              console.log(`✅ Created mixer insert for track "${track.name || track.id}"`);
+      const trackMap = new Map(normalizedTracks.map(track => [track.id, track]));
+
+      const ensureInsertForTrack = (track) => {
+        if (!track) return null;
+
+        let insert = this.audioEngine.mixerInserts?.get(track.id);
+        if (insert) {
+          return insert;
+        }
+
+        try {
+          insert = this.createMixerInsert(track.id, track.name || track.id);
+          if (insert) {
+            if (typeof track.volume === 'number') {
+              const linearGain = Math.pow(10, track.volume / 20);
+              insert.setGain(linearGain);
             }
-          } catch (error) {
-            console.error(`❌ Failed to create mixer insert for track ${track.id}:`, error);
-            continue; // Skip to next track if insert creation failed
+            if (typeof track.pan === 'number') {
+              insert.setPan(track.pan);
+            }
+            console.log(`✅ Created mixer insert for track "${track.name || track.id}"`);
           }
+        } catch (error) {
+          console.error(`❌ Failed to create mixer insert for track ${track.id}:`, error);
+          return null;
+        }
+
+        return insert;
+      };
+
+      for (const track of normalizedTracks) {
+        const insert = ensureInsertForTrack(track);
+        if (!insert) {
+          continue;
         }
 
         // ✅ CRITICAL FIX: Sync insert effects to AudioEngine
         // This ensures effects from deserialized projects are properly created in AudioEngine
         if (track.insertEffects && Array.isArray(track.insertEffects) && track.insertEffects.length > 0) {
-          const insert = this.audioEngine.mixerInserts.get(track.id);
-          if (insert) {
-            for (const effect of track.insertEffects) {
-              try {
-                // Check if effect already exists in AudioEngine
-                const effectExists = insert.effects?.has(effect.id);
-                if (!effectExists) {
-                  console.log(`🎛️ Adding effect ${effect.type} (${effect.id}) to insert ${track.id}...`);
+          for (const effect of track.insertEffects) {
+            try {
+              // Check if effect already exists in AudioEngine
+              const effectExists = insert.effects?.has(effect.id);
+              if (!effectExists) {
+                console.log(`🎛️ Adding effect ${effect.type} (${effect.id}) to insert ${track.id}...`);
 
-                  // Add effect to insert with original ID and settings
-                  await this.audioEngine.addEffectToInsert(
-                    track.id,
-                    effect.type,
-                    effect.settings || {},
-                    effect.id  // Pass original effect ID to preserve it
-                  );
+                // Add effect to insert with original ID and settings
+                await this.audioEngine.addEffectToInsert(
+                  track.id,
+                  effect.type,
+                  effect.settings || {},
+                  effect.id  // Pass original effect ID to preserve it
+                );
 
-                  // Apply bypass state if needed
-                  if (effect.bypass && insert.effects?.has(effect.id)) {
-                    const effectNode = insert.effects.get(effect.id);
-                    if (effectNode && effectNode.bypass !== undefined) {
-                      effectNode.bypass = effect.bypass;
-                    }
+                // Apply bypass state if needed
+                if (effect.bypass && insert.effects?.has(effect.id)) {
+                  const effectNode = insert.effects.get(effect.id);
+                  if (effectNode && effectNode.bypass !== undefined) {
+                    effectNode.bypass = effect.bypass;
                   }
-
-                  console.log(`✅ Added effect ${effect.type} (${effect.id}) to insert ${track.id}`);
                 }
-              } catch (error) {
-                console.error(`❌ Failed to add effect ${effect.type} to insert ${track.id}:`, error);
+
+                console.log(`✅ Added effect ${effect.type} (${effect.id}) to insert ${track.id}`);
               }
+            } catch (error) {
+              console.error(`❌ Failed to add effect ${effect.type} to insert ${track.id}:`, error);
             }
           }
         }
       }
 
       // ✅ NEW: Restore send routing after all inserts exist
-      for (const track of mixerTracks) {
-        if (!Array.isArray(track.sends) || track.sends.length === 0) {
+      for (const track of normalizedTracks) {
+        if (!track.sends.length) {
           continue;
         }
 
-        const sourceInsert = this.audioEngine.mixerInserts?.get(track.id);
+        const sourceInsert = ensureInsertForTrack(track);
         if (!sourceInsert) {
           console.warn(`⚠️ Cannot restore sends for ${track.id}: insert not found`);
           continue;
@@ -1024,9 +1091,14 @@ export class AudioContextService {
             continue;
           }
 
-          const busInsert = this.audioEngine.mixerInserts?.get(send.busId);
+          let busInsert = this.audioEngine.mixerInserts?.get(send.busId);
           if (!busInsert) {
-            console.warn(`⚠️ Send target ${send.busId} for ${track.id} not found (yet)`);
+            const busTrackState = trackMap.get(send.busId);
+            busInsert = ensureInsertForTrack(busTrackState);
+          }
+
+          if (!busInsert) {
+            console.warn(`⚠️ Send target ${send.busId} for ${track.id} not found (missing track or insert)`);
             continue;
           }
 
@@ -1070,6 +1142,7 @@ export class AudioContextService {
       console.error('❌ Failed to sync mixer tracks:', error);
     }
   }
+
 
   /**
    * ✅ CRITICAL FIX: Sync existing instruments to mixer inserts
@@ -1167,6 +1240,8 @@ export class AudioContextService {
               continue;
             }
             console.log(`✅ Created mixer insert ${instrument.mixerTrackId} for instrument ${instrument.id}`);
+            // ✅ FIX: Wait a tick for insert to be fully initialized
+            await new Promise(resolve => setTimeout(resolve, 10));
           } catch (createError) {
             console.error(`❌ Failed to create mixer insert ${instrument.mixerTrackId}:`, createError);
             errorCount++;
@@ -1189,20 +1264,21 @@ export class AudioContextService {
           console.log(`🔄 Instrument ${instrument.id} (${instrument.name}) is routed to ${currentRoute}, re-routing to ${instrument.mixerTrackId}...`);
         }
 
-        // Route instrument to mixer insert
-        try {
-          this.routeInstrumentToInsert(instrument.id, instrument.mixerTrackId);
+        // ✅ FIX: Use robust retry mechanism for routing
+        // This handles async instrument initialization and timing issues
+        const routingSuccess = await this.routeInstrumentWithRetry(
+          instrument.id, 
+          instrument.mixerTrackId,
+          5,  // maxRetries
+          100 // baseDelay
+        );
+
+        if (routingSuccess) {
           syncedCount++;
           console.log(`✅ Routed instrument ${instrument.id} (${instrument.name}) to ${instrument.mixerTrackId}`);
-        } catch (error) {
-          // ✅ FIX: If error is "already connected", it's not a real error - just log and continue
-          if (error.message?.includes('already connected') || error.message?.includes('not connected')) {
-            console.log(`ℹ️ Instrument ${instrument.id} (${instrument.name}) routing warning (non-critical):`, error.message);
-            skippedCount++;
-          } else {
-          console.error(`❌ Failed to route instrument ${instrument.id}:`, error);
+        } else {
           errorCount++;
-          }
+          console.error(`❌ Failed to route instrument ${instrument.id} after retries`);
         }
       }
 
@@ -2115,6 +2191,71 @@ export class AudioContextService {
   }
 
   /**
+   * ✅ NEW: Route instrument to mixer insert with robust retry mechanism
+   * @param {string} instrumentId - Instrument ID
+   * @param {string} mixerTrackId - Target mixer track ID
+   * @param {number} maxRetries - Maximum retry attempts
+   * @param {number} baseDelay - Base delay between retries (ms)
+   * @returns {Promise<boolean>} - Success status
+   */
+  static async routeInstrumentWithRetry(instrumentId, mixerTrackId, maxRetries = 5, baseDelay = 100) {
+    if (!this.audioEngine) {
+      console.error('❌ No audio engine available');
+      return false;
+    }
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      const instrument = this.audioEngine.instruments?.get(instrumentId);
+      const insert = this.audioEngine.mixerInserts?.get(mixerTrackId);
+
+      // Check if already routed correctly
+      const currentRoute = this.audioEngine.instrumentToInsert?.get(instrumentId);
+      if (currentRoute === mixerTrackId) {
+        if (import.meta.env.DEV) {
+          console.log(`✅ Instrument ${instrumentId} already routed to ${mixerTrackId}`);
+        }
+        return true;
+      }
+
+      // Both must exist and instrument must have output
+      if (instrument?.output && insert) {
+        try {
+          // Use MixerInsert's connectInstrument which returns success status
+          const success = insert.connectInstrument(instrumentId, instrument.output);
+          if (success) {
+            this.audioEngine.instrumentToInsert.set(instrumentId, mixerTrackId);
+            if (import.meta.env.DEV) {
+              console.log(`✅ Routed ${instrumentId} → ${mixerTrackId} (attempt ${attempt + 1})`);
+            }
+            return true;
+          }
+        } catch (error) {
+          console.warn(`⚠️ Routing attempt ${attempt + 1} failed:`, error.message);
+        }
+      }
+
+      // Log what's missing
+      if (import.meta.env.DEV && attempt === 0) {
+        console.log(`🔄 Waiting for routing prerequisites:`, {
+          instrumentId,
+          mixerTrackId,
+          hasInstrument: !!instrument,
+          hasOutput: !!instrument?.output,
+          hasInsert: !!insert,
+          attempt: attempt + 1
+        });
+      }
+
+      // Exponential backoff
+      const delay = baseDelay * Math.pow(1.5, attempt);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+
+    console.error(`❌ Failed to route ${instrumentId} → ${mixerTrackId} after ${maxRetries} attempts`);
+    return false;
+  }
+
+  /**
    * Remove mixer insert (when track is deleted)
    * @param {string} trackId - Track ID
    */
@@ -2375,6 +2516,7 @@ export class AudioContextService {
 
   /**
    * Get mixer insert analyzer for metering
+   * ✅ OPTIMIZED: Uses lazy analyzer creation
    * @param {string} trackId - Track ID
    * @returns {AnalyserNode|null}
    */
@@ -2388,7 +2530,8 @@ export class AudioContextService {
       return null;
     }
 
-    return insert.analyzer || null;
+    // ✅ Use getAnalyzer() for lazy creation
+    return insert.getAnalyzer ? insert.getAnalyzer() : (insert._analyzer || null);
   }
 
   /**

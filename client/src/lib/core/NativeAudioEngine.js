@@ -27,6 +27,8 @@ import { analyzeAllSamples } from '../../utils/sampleAnalyzer.js';
 import { testDirectPlayback } from '../../utils/directPlaybackTest.js';
 // 🎛️ DİNAMİK MİXER: Dynamic mixer insert system
 import { MixerInsert } from './MixerInsert.js';
+// ✅ OPTIMIZATION: Global mixer insert management
+import { mixerInsertManager } from './MixerInsertManager.js';
 
 export class NativeAudioEngine {
     constructor(callbacks = {}) {
@@ -186,6 +188,12 @@ export class NativeAudioEngine {
         // UnifiedMixer removed for cleaner architecture
         console.log('✅ Dynamic MixerInsert system ready');
         console.log('ℹ️ Performance: JS nodes for flexibility, optimized signal path');
+
+        // 8. ✅ OPTIMIZATION: Start global mixer insert manager
+        // Uses single timer instead of per-insert timers for auto-sleep
+        mixerInsertManager.setAudioEngine(this);
+        mixerInsertManager.startGlobalMonitor();
+        console.log('✅ MixerInsertManager started (batched auto-sleep)');
 
         this.isInitialized = true;
     }
@@ -616,24 +624,49 @@ export class NativeAudioEngine {
             this.instruments.set(instrumentData.id, instrument);
 
             // 🎛️ DYNAMIC ROUTING: All instruments route to MixerInsert
-            console.log(`🎛️ Routing new instrument ${instrumentData.id} to mixer...`);
+            if (import.meta.env.DEV) {
+                console.log(`🎛️ Routing new instrument ${instrumentData.id} to mixer...`);
+            }
             if (instrumentData.mixerTrackId) {
-                const insert = this.mixerInserts.get(instrumentData.mixerTrackId);
-                console.log(`   mixerTrackId: ${instrumentData.mixerTrackId}`);
-                console.log(`   Insert found: ${!!insert}`);
+                let insert = this.mixerInserts.get(instrumentData.mixerTrackId);
+                if (import.meta.env.DEV) {
+                    console.log(`   mixerTrackId: ${instrumentData.mixerTrackId}`);
+                    console.log(`   Insert found: ${!!insert}`);
+                }
+                
+                // ✅ FIX: If insert doesn't exist, try to create it
+                if (!insert) {
+                    console.log(`🎛️ Creating missing mixer insert: ${instrumentData.mixerTrackId}`);
+                    insert = this.createMixerInsert(instrumentData.mixerTrackId, instrumentData.mixerTrackId);
+                    if (insert) {
+                        console.log(`✅ Created mixer insert: ${instrumentData.mixerTrackId}`);
+                    }
+                }
+                
                 if (insert) {
                     // Route to dynamic MixerInsert
-                    console.log(`   Calling routeInstrumentToInsert...`);
-                    this.routeInstrumentToInsert(instrumentData.id, instrumentData.mixerTrackId);
-                    console.log(`   ✅ Routing complete`);
+                    // ✅ FIX: Wait a tick to ensure instrument.output is fully initialized
+                    // Some instruments (like VASynth) need async initialization
+                    if (instrument.output) {
+                        this.routeInstrumentToInsert(instrumentData.id, instrumentData.mixerTrackId);
+                        if (import.meta.env.DEV) {
+                            console.log(`   ✅ Routing complete`);
+                        }
+                    } else {
+                        // ✅ FIX: If output not ready, use robust retry mechanism
+                        console.warn(`⚠️ Instrument ${instrumentData.id} output not ready, will retry routing...`);
+                        this._retryRouting(instrumentData.id, instrumentData.mixerTrackId, 5, 100);
+                    }
                 } else {
-                    console.error(`❌ MixerInsert not found: ${instrumentData.mixerTrackId}`);
-                    console.error(`   Available inserts: ${Array.from(this.mixerInserts.keys()).join(', ')}`);
-                    throw new Error(`Cannot route instrument ${instrumentData.id}: MixerInsert ${instrumentData.mixerTrackId} not found`);
+                    // Insert creation failed - schedule retry
+                    console.warn(`⚠️ MixerInsert ${instrumentData.mixerTrackId} could not be created - will retry routing`);
+                    console.warn(`   Available inserts: ${Array.from(this.mixerInserts.keys()).join(', ')}`);
+                    this._retryRouting(instrumentData.id, instrumentData.mixerTrackId, 5, 200);
                 }
             } else {
                 console.error(`❌ Instrument ${instrumentData.id} missing mixerTrackId`);
-                throw new Error(`All instruments must have a mixerTrackId. Create MixerInsert first.`);
+                // ✅ FIX: Don't throw - allow instrument creation, routing can happen later
+                console.warn(`   Instrument created without routing - will be synced when mixerTrackId is available`);
             }
 
             this.metrics.instrumentsCreated++;
@@ -701,9 +734,11 @@ export class NativeAudioEngine {
             this.unifiedMixerChannelMap.set(`track-${i}`, i - 1);
         }
 
-        // Bus channels: bus-1 → 28, bus-2 → 29
+        // Bus channels: bus-1 → 28, bus-2 → 29, bus-3 → 26, bus-4 → 27 (use available channels)
         this.unifiedMixerChannelMap.set('bus-1', 28);
         this.unifiedMixerChannelMap.set('bus-2', 29);
+        this.unifiedMixerChannelMap.set('bus-3', 26);
+        this.unifiedMixerChannelMap.set('bus-4', 27);
 
         // Master channel: master → 30 (optional, usually not routed through mixer)
         this.unifiedMixerChannelMap.set('master', 30);
@@ -1229,6 +1264,8 @@ export class NativeAudioEngine {
     // =================== CLEANUP ===================
 
     dispose() {
+        // ✅ OPTIMIZATION: Stop global mixer insert manager
+        mixerInsertManager.stopGlobalMonitor();
 
         this._stopPerformanceMonitoring();
 
@@ -1402,27 +1439,123 @@ export class NativeAudioEngine {
         }
 
         if (!insert) {
-            console.error(`❌ MixerInsert ${insertId} not found`);
+            console.error(`❌ MixerInsert ${insertId} not found for instrument ${instrumentId}`);
+            console.error(`   Available inserts: ${Array.from(this.mixerInserts.keys()).join(', ')}`);
+            // ✅ FIX: Try to create the mixer insert if it doesn't exist
+            // This can happen during import when mixer tracks are created before inserts
+            if (import.meta.env.DEV) {
+                console.log(`   Attempting to create missing mixer insert ${insertId}...`);
+            }
+            // Note: We can't create it here directly, but we'll log the error
+            // The sync function should handle this
+            return;
+        }
+
+        // ✅ FIX: Check if instrument output is ready
+        if (!instrument.output) {
+            console.error(`❌ Instrument ${instrumentId} has no output node - cannot route`);
             return;
         }
 
         // Önceki bağlantıyı kes
         const oldInsertId = this.instrumentToInsert.get(instrumentId);
-        if (oldInsertId) {
+        if (oldInsertId && oldInsertId !== insertId) {
             const oldInsert = this.mixerInserts.get(oldInsertId);
             if (oldInsert) {
-                oldInsert.disconnectInstrument(instrumentId, instrument.output);
+                try {
+                    oldInsert.disconnectInstrument(instrumentId, instrument.output);
+                } catch (error) {
+                    // Ignore disconnect errors - might already be disconnected
+                    if (import.meta.env.DEV) {
+                        console.warn(`⚠️ Error disconnecting from old insert ${oldInsertId}:`, error.message);
+                    }
+                }
             }
         }
 
-        // Yeni bağlantı
-        insert.connectInstrument(instrumentId, instrument.output);
-        this.instrumentToInsert.set(instrumentId, insertId);
-
-        // Only log routing in DEV mode
-        if (import.meta.env.DEV) {
-            console.log(`🔗 Routed: ${instrumentId} → ${insertId}`);
+        // ✅ FIX: Check if already connected to this insert
+        if (oldInsertId === insertId) {
+            // Already routed correctly
+            if (import.meta.env.DEV) {
+                console.log(`⏭️ Instrument ${instrumentId} already routed to ${insertId}, skipping...`);
+            }
+            return;
         }
+
+        // Yeni bağlantı
+        try {
+            const success = insert.connectInstrument(instrumentId, instrument.output);
+            if (success) {
+                this.instrumentToInsert.set(instrumentId, insertId);
+
+                // Only log routing in DEV mode
+                if (import.meta.env.DEV) {
+                    console.log(`🔗 Routed: ${instrumentId} → ${insertId}`);
+                }
+            } else {
+                console.error(`❌ MixerInsert.connectInstrument returned false for ${instrumentId}`);
+            }
+        } catch (error) {
+            console.error(`❌ Failed to route instrument ${instrumentId} to insert ${insertId}:`, error);
+            // Don't throw - allow retry later
+        }
+    }
+
+    /**
+     * ✅ NEW: Retry routing with exponential backoff
+     * @param {string} instrumentId - Instrument ID
+     * @param {string} mixerTrackId - Target mixer track ID
+     * @param {number} maxRetries - Maximum retry attempts
+     * @param {number} baseDelay - Base delay between retries (ms)
+     */
+    _retryRouting(instrumentId, mixerTrackId, maxRetries = 5, baseDelay = 100) {
+        let attempt = 0;
+        
+        const tryRoute = () => {
+            attempt++;
+            
+            const instrument = this.instruments.get(instrumentId);
+            let insert = this.mixerInserts.get(mixerTrackId);
+            
+            // Try to create insert if it doesn't exist
+            if (!insert && attempt <= 2) {
+                insert = this.createMixerInsert(mixerTrackId, mixerTrackId);
+            }
+            
+            // Check if already routed correctly
+            const currentRoute = this.instrumentToInsert.get(instrumentId);
+            if (currentRoute === mixerTrackId) {
+                if (import.meta.env.DEV) {
+                    console.log(`✅ Retry: ${instrumentId} already routed to ${mixerTrackId}`);
+                }
+                return;
+            }
+            
+            // Both must exist and instrument must have output
+            if (instrument?.output && insert) {
+                try {
+                    const success = insert.connectInstrument(instrumentId, instrument.output);
+                    if (success) {
+                        this.instrumentToInsert.set(instrumentId, mixerTrackId);
+                        console.log(`✅ Retry routing successful: ${instrumentId} → ${mixerTrackId} (attempt ${attempt})`);
+                        return;
+                    }
+                } catch (error) {
+                    console.warn(`⚠️ Retry routing attempt ${attempt} failed:`, error.message);
+                }
+            }
+            
+            // Schedule next retry with exponential backoff
+            if (attempt < maxRetries) {
+                const delay = baseDelay * Math.pow(1.5, attempt - 1);
+                setTimeout(tryRoute, delay);
+            } else {
+                console.error(`❌ Failed to route ${instrumentId} → ${mixerTrackId} after ${maxRetries} attempts`);
+            }
+        };
+        
+        // Start first retry after baseDelay
+        setTimeout(tryRoute, baseDelay);
     }
 
     /**

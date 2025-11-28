@@ -165,10 +165,12 @@ class MeterService {
       let analyzer = null;
 
       // 🎛️ DYNAMIC MIXER: Try mixer insert first
+      // ✅ OPTIMIZATION: Use getAnalyzer() for lazy creation
       if (audioEngine.mixerInserts) {
         const insert = audioEngine.mixerInserts.get(trackId);
-        if (insert && insert.analyzer) {
-          analyzer = insert.analyzer;
+        if (insert) {
+          // Use getAnalyzer() which creates analyzer only when needed
+          analyzer = insert.getAnalyzer ? insert.getAnalyzer() : insert._analyzer;
         }
       }
 

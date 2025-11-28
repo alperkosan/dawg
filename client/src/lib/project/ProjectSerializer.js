@@ -412,6 +412,10 @@ export class ProjectSerializer {
     // This ensures instruments are properly routed to their mixer tracks
     await AudioContextService._syncInstrumentsToMixerInserts();
 
+    // ✅ CRITICAL FIX: Re-sync mixer tracks after instruments are loaded
+    // This ensures send connections are properly established with all inserts ready
+    await AudioContextService._syncMixerTracksToAudioEngine();
+
     if (projectData.patterns) {
       this.deserializePatterns(projectData.patterns);
     }
@@ -1106,6 +1110,22 @@ export class ProjectSerializer {
               ...effect,
               settings: normalizeEffectSettings(effect.type || effect.effectType, effect.settings || {})
             }));
+            // ✅ FIX: Normalize legacy send format (object) to array before using it elsewhere
+            const normalizedSends = Array.isArray(track.sends)
+              ? track.sends
+              : Object.entries(track.sends || {})
+                  .filter(([key]) => !key.endsWith('_muted'))
+                  .map(([busId, value]) => {
+                    const levelLinear = typeof value === 'number'
+                      ? Math.min(1, Math.max(0, value > 1 ? value : Math.pow(10, value / 20)))
+                      : 0.5;
+                    return {
+                      busId,
+                      level: levelLinear,
+                      preFader: false
+                    };
+                  });
+
             // Create new track with template data
             const newTrack = {
               id: track.id,
@@ -1118,7 +1138,7 @@ export class ProjectSerializer {
               isSolo: track.solo !== undefined ? track.solo : (track.isSolo ?? false),
               color: track.color || '#3b82f6',
               output: track.output || 'master',
-              sends: track.sends || [],
+              sends: normalizedSends,
               insertEffects: normalizedInsertEffects,
               eq: track.eq || {
                 enabled: false,
@@ -1210,6 +1230,52 @@ export class ProjectSerializer {
 
           console.log(`✅ Restored master channel with ${masterInsertEffects.length} effects`);
         }
+      }
+
+      // Restore send channels (aux buses) if provided - convert to bus tracks
+      if (Array.isArray(mixer.send_channels)) {
+        const sendChannelsAsBusTracks = mixer.send_channels.map((sendChannel, index) => {
+          const safeChannel = sendChannel || {};
+          return {
+            id: safeChannel.id || `bus-${index + 1}`,
+            name: safeChannel.name || `Bus ${index + 1}`,
+            type: 'bus',
+            volume: safeChannel.volume ?? 0,
+            pan: safeChannel.pan ?? 0,
+            isMuted: safeChannel.muted ?? false,
+            isSolo: safeChannel.solo ?? false,
+            color: '#f59e0b', // Bus color
+            output: 'master',
+            sends: [],
+            insertEffects: [],
+            eq: { enabled: false, lowGain: 0, midGain: 0, highGain: 0 }
+          };
+        });
+
+        // Add bus tracks to mixerTracks
+        newTracks.push(...sendChannelsAsBusTracks);
+
+        // Also keep sendChannels for backward compatibility
+        const normalizedSendChannels = mixer.send_channels.map((sendChannel, index) => {
+          const safeChannel = sendChannel || {};
+          return {
+            id: safeChannel.id || `send-${index + 1}`,
+            name: safeChannel.name || `Send ${index + 1}`,
+            type: safeChannel.type || 'send',
+            masterLevel: safeChannel.masterLevel ?? safeChannel.master_level ?? 0,
+            pan: safeChannel.pan ?? 0,
+            ...safeChannel
+          };
+        });
+
+        useMixerStore.setState(state => ({
+          ...state,
+          sendChannels: normalizedSendChannels
+        }));
+
+        console.log(`✅ Restored ${sendChannelsAsBusTracks.length} send channels as bus tracks`);
+      } else {
+        console.log('ℹ️ No send channels found in project data - keeping current defaults');
       }
 
       // ✅ FIX: Don't sync mixer tracks to AudioEngine here
