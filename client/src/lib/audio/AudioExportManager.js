@@ -8,7 +8,7 @@
 import { AudioContextService } from '../services/AudioContextService';
 import { AudioProcessor } from './AudioProcessor';
 import { FileManager } from './FileManager';
-import { RenderEngine } from './RenderEngine';
+import { getRenderEngine } from './RenderEngine'; // ✅ SYNC: Use singleton RenderEngine
 import { audioAssetManager } from './AudioAssetManager';
 import { normalizeEffectSettings } from './effects/parameterMappings.js';
 import {
@@ -58,7 +58,8 @@ export class AudioExportManager {
   constructor() {
     this.audioProcessor = new AudioProcessor();
     this.fileManager = new FileManager();
-    this.renderEngine = new RenderEngine();
+    // ✅ SYNC: Use singleton RenderEngine for consistency across all export systems
+    this.renderEngine = getRenderEngine();
 
     this.isExporting = false;
     this.exportQueue = [];
@@ -800,16 +801,75 @@ export class AudioExportManager {
       }
     }
 
-    // Ensure bus inserts referenced by sends are included
+    // ✅ FIX: Ensure bus inserts referenced by sends are included
+    // Bus channel'ların efektleri de dahil edilmeli
     for (const busId of requiredBusIds) {
-      if (mixerTrackMap[busId]) continue;
+      if (mixerTrackMap[busId]) {
+        // Bus channel zaten eklenmiş, efektlerinin doğru şekilde serialize edildiğinden emin ol
+        console.log(`🔍 [BUS] Bus channel ${busId} already in mixerTrackMap, checking effects...`);
+        const existingBus = mixerTrackMap[busId];
+        console.log(`🔍 [BUS] Existing bus data:`, {
+          busId,
+          hasInsertEffects: !!existingBus.insertEffects,
+          insertEffectsCount: existingBus.insertEffects?.length || 0,
+          insertEffects: existingBus.insertEffects
+        });
+        
+        if (!existingBus.insertEffects || existingBus.insertEffects.length === 0) {
+          // Bus channel'ın efektleri eksik, yeniden serialize et
+          const busInsert = audioEngine.mixerInserts?.get(busId);
+          if (busInsert) {
+            const trackMeta = mixerTrackMetaMap.get(busId);
+            console.log(`🔄 [BUS] Re-serializing bus channel ${busId} to include effects...`);
+            console.log(`🔍 [BUS] Bus insert data:`, {
+              hasEffectsMap: !!busInsert.effects,
+              effectsSize: busInsert.effects?.size || 0,
+              effectsEntries: busInsert.effects ? Array.from(busInsert.effects.entries()).map(([id, e]) => ({
+                id,
+                type: e.type,
+                bypass: e.bypass
+              })) : [],
+              trackMeta: trackMeta ? {
+                id: trackMeta.id,
+                name: trackMeta.name,
+                hasEffects: !!trackMeta.insertEffects,
+                effectsCount: trackMeta.insertEffects?.length || 0
+              } : null
+            });
+            
+            mixerTrackMap[busId] = this._serializeInsert(busInsert, busId, {
+              trackMeta,
+              forceType: trackMeta?.type || (busId?.startsWith('bus-') ? 'bus' : undefined)
+            });
+            console.log(`✅ [BUS] Bus channel ${busId} re-serialized with ${mixerTrackMap[busId].insertEffects?.length || 0} effects`);
+          } else {
+            console.warn(`⚠️ [BUS] Bus insert ${busId} not found in audio engine for re-serialization`);
+          }
+        }
+        continue;
+      }
+      
       const busInsert = audioEngine.mixerInserts?.get(busId);
-      if (!busInsert) continue;
+      if (!busInsert) {
+        console.warn(`⚠️ [BUS] Bus insert ${busId} not found in audio engine`);
+        continue;
+      }
+      
       const trackMeta = mixerTrackMetaMap.get(busId);
-      mixerTrackMap[busId] = this._serializeInsert(busInsert, busId, {
+      console.log(`🔍 [BUS] Serializing new bus channel ${busId}:`, {
+        hasInsert: !!busInsert,
+        hasEffectsMap: !!busInsert.effects,
+        effectsSize: busInsert.effects?.size || 0,
+        hasTrackMeta: !!trackMeta,
+        trackMetaEffects: trackMeta?.insertEffects?.length || 0
+      });
+      
+      const serializedBus = this._serializeInsert(busInsert, busId, {
         trackMeta,
         forceType: trackMeta?.type || (busId?.startsWith('bus-') ? 'bus' : undefined)
       });
+      mixerTrackMap[busId] = serializedBus;
+      console.log(`✅ [BUS] Added bus channel ${busId} with ${serializedBus.insertEffects?.length || 0} effects`);
     }
 
     snapshot.instruments = instrumentMap;
@@ -822,6 +882,50 @@ export class AudioExportManager {
   }
 
   _serializeInsert(insert, mixerTrackId, { trackMeta = null, forceType, sends: overrideSends } = {}) {
+    // ✅ DEBUG: Log effect serialization for bus channels
+    const isBusChannel = mixerTrackId?.startsWith('bus-');
+    const effectsMap = insert.effects;
+    const effectsSize = effectsMap?.size || 0;
+    
+    if (isBusChannel) {
+      console.log(`🔍 [SERIALIZE] Bus channel ${mixerTrackId}:`, {
+        hasEffectsMap: !!effectsMap,
+        effectsSize,
+        effectsEntries: effectsMap ? Array.from(effectsMap.entries()).map(([id, e]) => ({
+          id,
+          type: e.type,
+          bypass: e.bypass
+        })) : [],
+        insertType: insert.constructor?.name,
+        insertKeys: Object.keys(insert || {})
+      });
+    }
+    
+    const insertEffects = effectsMap && effectsSize > 0
+      ? Array.from(effectsMap.entries()).map(([effectId, effect]) => {
+          const serialized = {
+            id: effectId,
+            type: effect.type,
+            bypass: effect.bypass || false,
+            settings: normalizeEffectSettings(effect.type, effect.settings || {})
+          };
+          
+          if (isBusChannel) {
+            console.log(`  ✅ Serialized bus effect: ${effectId} (${effect.type})`);
+          }
+          
+          return serialized;
+        })
+      : [];
+    
+    if (isBusChannel && insertEffects.length === 0) {
+      console.warn(`⚠️ [SERIALIZE] Bus channel ${mixerTrackId} has NO effects!`, {
+        hasEffectsMap: !!effectsMap,
+        effectsSize,
+        insertType: insert.constructor?.name
+      });
+    }
+    
     const serialized = {
       id: mixerTrackId,
       name: insert.label || mixerTrackId,
@@ -830,16 +934,8 @@ export class AudioExportManager {
       lowGain: trackMeta?.eq?.low ?? 0,
       midGain: trackMeta?.eq?.mid ?? 0,
       highGain: trackMeta?.eq?.high ?? 0,
-      type: forceType || trackMeta?.type || (mixerTrackId?.startsWith('bus-') ? 'bus' : 'track'),
-      insertEffects:
-        insert.effects && insert.effects.size > 0
-          ? Array.from(insert.effects.entries()).map(([effectId, effect]) => ({
-              id: effectId,
-              type: effect.type,
-              bypass: effect.bypass || false,
-              settings: normalizeEffectSettings(effect.type, effect.settings || {})
-            }))
-          : []
+      type: forceType || trackMeta?.type || (isBusChannel ? 'bus' : 'track'),
+      insertEffects
     };
 
     const sends = overrideSends ?? this._serializeSends(insert, trackMeta);

@@ -205,31 +205,36 @@ export function frequencyToMidi(frequency) {
 }
 
 // =================== EXPORT QUALITY PRESETS ===================
+// ✅ SYNC: Quality presets now match real-time audio engine capabilities
+// Standard and High use real-time engine sample rates for perfect sync
 
 export const QUALITY_PRESETS = {
   DEMO: {
-    sampleRate: 22050,
+    sampleRate: 22050, // Lower quality for quick exports
     bitDepth: 16,
     quality: 0.7,
     name: 'Demo Quality'
   },
   STANDARD: {
-    sampleRate: 44100,
+    // ✅ SYNC: Matches real-time engine (typically 44.1kHz)
+    sampleRate: 44100, // CD Quality - matches most real-time engines
     bitDepth: 16,
     quality: 0.8,
-    name: 'Standard (CD Quality)'
+    name: 'Standard (CD Quality) - Matches Real-Time'
   },
   HIGH: {
-    sampleRate: 48000,
+    // ✅ SYNC: Matches real-time engine (typically 48kHz)
+    sampleRate: 48000, // High Quality - matches 48kHz real-time engines
     bitDepth: 24,
     quality: 0.9,
-    name: 'High Quality'
+    name: 'High Quality - Matches Real-Time'
   },
   STUDIO: {
-    sampleRate: 96000,
+    // ✅ SYNC: Higher than real-time (for maximum quality exports)
+    sampleRate: 96000, // Studio Quality - higher than real-time for maximum quality
     bitDepth: 32,
     quality: 1.0,
-    name: 'Studio Quality'
+    name: 'Studio Quality (96kHz)'
   }
 };
 

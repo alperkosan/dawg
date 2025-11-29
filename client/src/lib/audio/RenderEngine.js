@@ -23,28 +23,63 @@ import {
   ensureEffectWorkletsLoaded,
   collectEffectTypesFromMixerTracks
 } from './effects/workletRegistry';
+// ✅ SYNC: Import AutomationManager for automation support in offline rendering
+import { getAutomationManager } from '../automation/AutomationManager';
 
 export class RenderEngine {
   constructor() {
     this.isRendering = false;
     this.renderQueue = [];
-    // ✅ FIX: Use default sample rate initially, will be updated when audio engine is ready
-    // Don't call getCurrentSampleRate() here to avoid AudioContextService access during module load
-    this.sampleRate = 44100; // Default, will be updated via updateSampleRate()
+    // ✅ SYNC: Auto-sync sample rate with real-time audio engine
+    // Try to get sample rate immediately, fallback to default if audio engine not ready
+    this.sampleRate = this._getSyncedSampleRate();
     this.maxRenderTime = RENDER_CONFIG.MAX_RENDER_TIME;
+
+    // ✅ SYNC: Auto-update sample rate when audio engine becomes available
+    this._setupSampleRateSync();
 
     // ✅ FIX: Silent initialization - don't log during module load
     // Will be logged when actually used
   }
 
   /**
-   * Update sample rate when audio engine becomes available
+   * ✅ SYNC: Get sample rate synced with real-time audio engine
+   * @private
+   */
+  _getSyncedSampleRate() {
+    try {
+      const syncedRate = getCurrentSampleRate();
+      if (syncedRate && syncedRate > 0) {
+        return syncedRate;
+      }
+    } catch (error) {
+      // Audio engine not ready yet, use default
+    }
+    return 44100; // Default fallback
+  }
+
+  /**
+   * ✅ SYNC: Setup automatic sample rate synchronization
+   * @private
+   */
+  _setupSampleRateSync() {
+    // Try to sync immediately
+    this.updateSampleRate();
+
+    // Also sync before each render to ensure accuracy
+    // This will be called in renderPattern, renderArrangement, etc.
+  }
+
+  /**
+   * ✅ SYNC: Update sample rate when audio engine becomes available
+   * Now ensures sample rate matches real-time audio engine
    */
   updateSampleRate() {
     const newSampleRate = getCurrentSampleRate();
-    if (newSampleRate !== this.sampleRate) {
-      console.log(`🎬 RenderEngine: Sample rate updated ${this.sampleRate} → ${newSampleRate}`);
+    if (newSampleRate !== this.sampleRate && newSampleRate > 0) {
+      const oldRate = this.sampleRate;
       this.sampleRate = newSampleRate;
+      console.log(`🎬 RenderEngine: Sample rate synced ${oldRate} → ${newSampleRate} (matches real-time engine)`);
     }
   }
 
@@ -57,8 +92,11 @@ export class RenderEngine {
    * @returns {Promise<object>} Render result with audio buffer
    */
   async renderPattern(patternData, options = {}) {
+    // ✅ SYNC: Ensure sample rate is synced before rendering
+    this.updateSampleRate();
+
     const {
-      sampleRate = this.sampleRate,
+      sampleRate = this.sampleRate, // Use synced sample rate
       bitDepth = 16,
       includeEffects = true,
       fadeOut = true,
@@ -67,7 +105,17 @@ export class RenderEngine {
       endTime = null
     } = options;
 
-    console.log(`🎬 Rendering pattern: ${patternData.name || patternData.id}`, options);
+    // ✅ SYNC: Warn if sample rate doesn't match real-time engine
+    const realTimeSampleRate = getCurrentSampleRate();
+    if (sampleRate !== realTimeSampleRate && realTimeSampleRate > 0) {
+      console.warn(`⚠️ RenderEngine: Sample rate mismatch! Render: ${sampleRate}Hz, Real-time: ${realTimeSampleRate}Hz`);
+      console.warn(`   Using render sample rate: ${sampleRate}Hz (export may differ from live playback)`);
+    }
+
+    console.log(`🎬 Rendering pattern: ${patternData.name || patternData.id}`, {
+      ...options,
+      sampleRate: `${sampleRate}Hz (real-time: ${realTimeSampleRate}Hz)`
+    });
 
     try {
       this.isRendering = true;
@@ -466,8 +514,22 @@ export class RenderEngine {
       const busTrack = mixerTracks[busId];
       if (!busTrack) {
         console.warn(`🎚️ Bus track not found for send target ${busId}`);
+        console.warn(`🎚️ Available mixer tracks:`, Object.keys(mixerTracks));
         return null;
       }
+
+      // ✅ DEBUG: Log bus track data before creating channel
+      console.log(`🔍 [BUS CHANNEL] Creating bus channel ${busId}:`, {
+        busId,
+        trackId: busTrack.id,
+        trackName: busTrack.name,
+        hasInsertEffects: !!busTrack.insertEffects,
+        insertEffectsCount: busTrack.insertEffects?.length || 0,
+        insertEffects: busTrack.insertEffects?.map(e => `${e.type} (bypass: ${e.bypass})`),
+        hasEffects: !!busTrack.effects,
+        effectsCount: busTrack.effects?.length || 0,
+        fullTrackData: JSON.stringify(busTrack, null, 2)
+      });
 
       const busInput = offlineContext.createGain();
       const busOutput = await this._createOfflineMixerChannel(offlineContext, busInput, busTrack);
@@ -585,41 +647,109 @@ export class RenderEngine {
       totalTracks: Object.keys(patternData.mixerTracks || {}).length
     });
 
-    // ✅ FIX: Match live playback signal chain order
-    // Live playback (MixerInsert): input → effects → gain → pan → analyzer → output
-    // Render should match: effects → gain → pan
+    // ✅ SYNC: Match live playback signal chain order EXACTLY
+    // Live playback (MixerInsert._rebuildChain): input → effects → gain → pan → analyzer → output
+    // Render should match: effects → gain → pan (analyzer skipped - only for metering)
     
-    // Create instrument output node
+    // Create instrument output node (represents MixerInsert.input)
     const instrumentOutputNode = offlineContext.createGain();
     instrumentOutputNode.gain.setValueAtTime(1.0, offlineContext.currentTime);
 
-    // ✅ FIX: Apply effects FIRST (matches MixerInsert._rebuildChain order)
+    // ✅ SYNC: Build signal chain matching MixerInsert._rebuildChain exactly
     let currentNode = instrumentOutputNode;
     
-    // 1. Effects first (if any)
+    // 1. Effects first (matches MixerInsert: input → effects)
+    // Effects are applied pre-fader in MixerInsert
     const effects = mixerTrack?.insertEffects || mixerTrack?.effects || [];
     if (effects.length > 0 && options.includeEffects) {
-      console.log(`🎛️ Applying ${effects.length} effects to ${instrumentId} (before gain/pan)`);
+      console.log(`🎛️ Applying ${effects.length} effects to ${instrumentId} (pre-fader, matches MixerInsert)`);
       currentNode = await this._applyEffectChain(effects, currentNode, offlineContext);
     }
 
-    // 2. Then route through mixer channel (gain, pan, EQ) - skip effects (already applied above)
-    // Apply gain
+    // 2. Gain (matches MixerInsert: effects → gain)
     const gainNode = offlineContext.createGain();
-    const gainValue = mixerTrack?.gain !== undefined ? mixerTrack.gain : 1.0;
+    const gainValue = mixerTrack?.gain !== undefined ? mixerTrack.gain : 0.8; // Default 0.8 matches MixerInsert
     gainNode.gain.setValueAtTime(gainValue, offlineContext.currentTime);
+    
+    // ✅ SYNC: Apply automation to gain node (if automation data exists)
+    // Automation is applied sample-accurate in offline rendering
+    if (options.automationData && options.automationData[instrumentId]) {
+      const lanes = options.automationData[instrumentId];
+      const patternId = options.patternId;
+      
+      // Calculate pattern length for automation duration
+      const patternLength = patternData.length || 64; // Default 64 steps
+      const bpm = getCurrentBPM();
+      const renderDuration = beatsToSeconds(stepsToBeat(patternLength), bpm);
+      
+      // Apply automation to gain node (volume automation)
+      this._applyAutomationToOfflineNode(
+        lanes,
+        gainNode.gain,
+        offlineContext,
+        patternId,
+        instrumentId,
+        renderDuration
+      );
+      
+      console.log(`🎚️ Applied ${lanes.length} automation lanes to ${instrumentId} gain in offline render`);
+    }
+    
     currentNode.connect(gainNode);
     currentNode = gainNode;
     
-    // Apply pan
+    // 3. Pan (matches MixerInsert: gain → pan)
     if (mixerTrack?.pan !== undefined && mixerTrack.pan !== 0) {
       const panNode = offlineContext.createStereoPanner();
       panNode.pan.setValueAtTime(mixerTrack.pan, offlineContext.currentTime);
+      
+      // ✅ SYNC: Apply pan automation if exists
+      if (options.automationData && options.automationData[instrumentId]) {
+        const lanes = options.automationData[instrumentId];
+        const panLane = lanes.find(lane => lane.ccNumber === 10); // CC10 = Pan
+        if (panLane) {
+          const patternLength = patternData.length || 64;
+          const bpm = getCurrentBPM();
+          const renderDuration = beatsToSeconds(stepsToBeat(patternLength), bpm);
+          this._applyAutomationToOfflineNode(
+            [panLane],
+            panNode.pan,
+            offlineContext,
+            options.patternId,
+            instrumentId,
+            renderDuration
+          );
+          console.log(`🎚️ Applied pan automation to ${instrumentId} in offline render`);
+        }
+      }
+      
       currentNode.connect(panNode);
       currentNode = panNode;
     }
     
+    // ✅ SYNC: Analyzer is skipped in render (only for metering in live playback)
+    // Live: pan → analyzer → output
+    // Render: pan → output (analyzer skipped)
+    
     const mixerOutputNode = currentNode;
+
+    // ✅ SYNC: Apply automation to mixer gain node (if automation data exists)
+    // Automation is applied to gain node in offline rendering (sample-accurate)
+    if (options.automationData && options.automationData[instrumentId]) {
+      const lanes = options.automationData[instrumentId];
+      const patternId = options.patternId;
+      
+      // Apply automation to gain node (volume automation)
+      this._applyAutomationToOfflineNode(
+        lanes,
+        gainNode.gain,
+        offlineContext,
+        patternId,
+        instrumentId
+      );
+      
+      console.log(`🎚️ Applied ${lanes.length} automation lanes to ${instrumentId} in offline render`);
+    }
 
     // ✅ FIX: Remove auto-gain to match live playback
     // Live playback doesn't apply auto-gain, so render shouldn't either
@@ -1715,6 +1845,124 @@ export class RenderEngine {
 
     await ensureEffectWorkletsLoaded(audioContext, effectTypes);
   }
+
+  /**
+   * ✅ SYNC: Apply automation to offline audio node (sample-accurate)
+   * @param {Array} lanes - Automation lanes with data points
+   * @param {AudioParam} audioParam - Audio parameter to automate (e.g., gain.gain)
+   * @param {OfflineAudioContext} offlineContext - Offline audio context
+   * @param {string} patternId - Pattern ID
+   * @param {string} instrumentId - Instrument ID
+   * @param {number} renderDuration - Render duration in seconds
+   * @private
+   */
+  _applyAutomationToOfflineNode(lanes, audioParam, offlineContext, patternId, instrumentId, renderDuration) {
+    const bpm = getCurrentBPM();
+    
+    // Default values for when automation ends
+    const defaults = {
+      7: 127,   // Volume - default to full (127 = 100%)
+      10: 64,   // Pan - default to center
+      11: 127,  // Expression - default to full
+    };
+
+    lanes.forEach(lane => {
+      const points = lane.getPoints();
+      if (!points || points.length === 0) return;
+
+      // Get automation curve - convert step times to seconds
+      const keyframes = [];
+      
+      points.forEach(point => {
+        const stepTime = beatsToSeconds(stepsToBeat(point.time), bpm);
+        keyframes.push({ time: stepTime, value: point.value });
+      });
+      
+      // Sort by time
+      keyframes.sort((a, b) => a.time - b.time);
+      
+      // Apply automation based on CC number
+      switch (lane.ccNumber) {
+        case 7: // Volume
+          // Volume automation: normalize 0-127 to 0-1 gain
+          this._applyKeyframeAutomation(
+            audioParam,
+            keyframes,
+            renderDuration,
+            (value) => value / 127, // Normalize
+            defaults[7] / 127 // Default normalized
+          );
+          break;
+        case 10: // Pan
+          // Pan automation: normalize 0-127 to -1 to 1
+          this._applyKeyframeAutomation(
+            audioParam,
+            keyframes,
+            renderDuration,
+            (value) => (value - 64) / 64, // Normalize to -1 to 1
+            (defaults[10] - 64) / 64 // Default center
+          );
+          break;
+        // Other automation types can be added here
+      }
+    });
+  }
+
+  /**
+   * ✅ SYNC: Apply keyframe-based automation to audio parameter
+   * @param {AudioParam} audioParam - Audio parameter to automate
+   * @param {Array} keyframes - Array of {time, value} keyframes
+   * @param {number} duration - Total duration in seconds
+   * @param {Function} valueTransform - Transform function for values
+   * @param {number} defaultValue - Default value when automation ends
+   * @private
+   */
+  _applyKeyframeAutomation(audioParam, keyframes, duration, valueTransform, defaultValue) {
+    if (keyframes.length === 0) return;
+
+    // Set initial value
+    const initialValue = valueTransform(keyframes[0].value);
+    audioParam.setValueAtTime(initialValue, 0);
+
+    // Apply linear interpolation between keyframes
+    for (let i = 0; i < keyframes.length - 1; i++) {
+      const current = keyframes[i];
+      const next = keyframes[i + 1];
+      
+      const currentTime = current.time;
+      const nextTime = next.time;
+      const currentValue = valueTransform(current.value);
+      const nextValue = valueTransform(next.value);
+      
+      // Linear ramp between keyframes
+      audioParam.linearRampToValueAtTime(nextValue, nextTime);
+    }
+
+    // Set default value after last keyframe
+    if (keyframes.length > 0) {
+      const lastTime = keyframes[keyframes.length - 1].time;
+      if (lastTime < duration) {
+        audioParam.linearRampToValueAtTime(defaultValue, duration);
+      }
+    }
+  }
+}
+
+// ✅ SYNC: Singleton pattern for RenderEngine
+// All export systems should use the same RenderEngine instance for consistency
+let _renderEngineInstance = null;
+
+/**
+ * Get singleton RenderEngine instance
+ * Ensures all export systems use the same RenderEngine with synchronized settings
+ * @returns {RenderEngine} Singleton RenderEngine instance
+ */
+export function getRenderEngine() {
+  if (!_renderEngineInstance) {
+    _renderEngineInstance = new RenderEngine();
+    console.log('🎬 RenderEngine: Created singleton instance');
+  }
+  return _renderEngineInstance;
 }
 
 export default RenderEngine;

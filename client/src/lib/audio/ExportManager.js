@@ -26,11 +26,14 @@ import { useArrangementStore } from '@/store/useArrangementStore';
 import { useInstrumentsStore } from '@/store/useInstrumentsStore';
 import { AudioExportManager, getAudioExportManager } from './AudioExportManager';
 import { audioAssetManager } from './AudioAssetManager';
+import { getRenderEngine } from './RenderEngine'; // ✅ SYNC: Import singleton RenderEngine
+import { QUALITY_PRESETS, EXPORT_FORMATS } from './audioRenderConfig'; // ✅ SYNC: Import from config for consistency
 
 // ═══════════════════════════════════════════════════════════
 // EXPORT FORMATS
 // ═══════════════════════════════════════════════════════════
-
+// ✅ SYNC: Re-export EXPORT_FORMATS from audioRenderConfig for consistency
+// Map to ExportManager format (string values instead of MIME types)
 export const EXPORT_FORMAT = {
     WAV: 'wav',
     MP3: 'mp3',
@@ -38,6 +41,9 @@ export const EXPORT_FORMAT = {
     FLAC: 'flac',
     AIFF: 'aiff'
 };
+
+// ✅ SYNC: Also export EXPORT_FORMATS for compatibility
+export { EXPORT_FORMATS };
 
 // ═══════════════════════════════════════════════════════════
 // EXPORT MODE
@@ -51,26 +57,26 @@ export const EXPORT_MODE = {
 // ═══════════════════════════════════════════════════════════
 // QUALITY PRESETS
 // ═══════════════════════════════════════════════════════════
-
+// ✅ SYNC: Map QUALITY_PRESETS from audioRenderConfig to ExportManager format (with mode)
 export const QUALITY_PRESET = {
     DRAFT: {
-        sampleRate: 44100,
-        bitDepth: 16,
+        sampleRate: QUALITY_PRESETS.DEMO.sampleRate,
+        bitDepth: QUALITY_PRESETS.DEMO.bitDepth,
         mode: EXPORT_MODE.REALTIME
     },
     STANDARD: {
-        sampleRate: 44100,
-        bitDepth: 24,
+        sampleRate: QUALITY_PRESETS.STANDARD.sampleRate,
+        bitDepth: QUALITY_PRESETS.STANDARD.bitDepth,
         mode: EXPORT_MODE.OFFLINE
     },
     HIGH: {
-        sampleRate: 48000,
-        bitDepth: 24,
+        sampleRate: QUALITY_PRESETS.HIGH.sampleRate,
+        bitDepth: QUALITY_PRESETS.HIGH.bitDepth,
         mode: EXPORT_MODE.OFFLINE
     },
     PROFESSIONAL: {
-        sampleRate: 96000,
-        bitDepth: 32,
+        sampleRate: QUALITY_PRESETS.STUDIO.sampleRate,
+        bitDepth: QUALITY_PRESETS.STUDIO.bitDepth,
         mode: EXPORT_MODE.OFFLINE
     }
 };
@@ -83,7 +89,8 @@ export class ExportManager {
     constructor() {
         // ✅ FIX: Use getter to ensure lazy initialization
         this.audioExportManager = getAudioExportManager();
-        this.renderEngine = this.audioExportManager.renderEngine;
+        // ✅ SYNC: Use singleton RenderEngine directly (same instance as AudioExportManager)
+        this.renderEngine = getRenderEngine();
         this.isExporting = false;
         this.exportQueue = [];
         this.activeExports = new Map();
@@ -500,6 +507,164 @@ export class ExportManager {
         }
 
         return await this._exportChannel('master', { ...this.defaultSettings, ...options }, onProgress);
+    }
+
+    /**
+     * Export full arrangement
+     * @param {string} arrangementId - Arrangement ID (optional, uses active if not provided)
+     * @param {object} options - Export options
+     * @param {Function} onProgress - Progress callback
+     * @returns {Promise<object>} Export result with file info
+     */
+    async exportArrangement(arrangementId = null, options = {}, onProgress = null) {
+        if (this.isExporting) {
+            throw new Error('Export already in progress');
+        }
+
+        const settings = { ...this.defaultSettings, ...options };
+        this.isExporting = true;
+
+        try {
+            // Get arrangement from workspace store
+            const { useArrangementWorkspaceStore } = await import('@/store/useArrangementWorkspaceStore');
+            const workspaceStore = useArrangementWorkspaceStore.getState();
+            
+            const arrangement = arrangementId 
+                ? workspaceStore.arrangements[arrangementId]
+                : workspaceStore.getActiveArrangement();
+
+            if (!arrangement) {
+                throw new Error('No arrangement found');
+            }
+
+            if (!arrangement.clips || arrangement.clips.length === 0) {
+                throw new Error('Arrangement has no clips');
+            }
+
+            console.log(`🎵 Exporting arrangement: ${arrangement.name} (${arrangement.clips.length} clips)`);
+
+            if (onProgress) {
+                onProgress(0, 'preparing');
+            }
+
+            // Get arrangement store for patterns
+            const arrangementStore = useArrangementStore.getState();
+            const patterns = arrangementStore.patterns;
+
+            // Convert clips to pattern sequence for rendering
+            const patternSequence = [];
+            const bpm = arrangement.tempo || usePlaybackStore.getState().bpm || 140;
+
+            for (const clip of arrangement.clips) {
+                if (clip.type === 'pattern' && clip.patternId) {
+                    const pattern = patterns[clip.patternId];
+                    if (pattern && pattern.data) {
+                        // Get pattern data snapshot
+                        const { patternData } = await this.audioExportManager._preparePatternSnapshot(
+                            pattern,
+                            { includeAutomation: true }
+                        );
+
+                        // Calculate duration in beats
+                        const durationBeats = clip.duration || (pattern.settings?.length || 64) / 4; // steps to beats
+
+                        patternSequence.push({
+                            patternData,
+                            startTime: clip.startTime || 0, // in beats
+                            duration: durationBeats // in beats
+                        });
+                    }
+                } else if (clip.type === 'audio' && clip.assetId) {
+                    // Audio clips will be handled separately or skipped for now
+                    console.warn(`⚠️ Audio clips not yet supported in arrangement export: ${clip.id}`);
+                }
+            }
+
+            if (patternSequence.length === 0) {
+                throw new Error('No pattern clips found in arrangement');
+            }
+
+            if (onProgress) {
+                onProgress(20, 'rendering');
+            }
+
+            // Render arrangement using RenderEngine
+            const qualityPreset = settings.quality || QUALITY_PRESET.STANDARD;
+            const renderResult = await this.renderEngine.renderArrangement(patternSequence, {
+                sampleRate: qualityPreset.sampleRate,
+                includeEffects: settings.includeEffects,
+                bpm
+            });
+
+            if (onProgress) {
+                onProgress(60, 'processing');
+            }
+
+            // Process audio (normalize, fade, etc.)
+            const audioProcessor = this.audioExportManager.audioProcessor;
+            const processedBuffer = await audioProcessor.processAudio(renderResult.audioBuffer, {
+                normalize: settings.normalize,
+                fadeIn: settings.fadeIn,
+                fadeOut: settings.fadeOut,
+                fadeInDuration: settings.fadeInDuration,
+                fadeOutDuration: settings.fadeOutDuration
+            });
+
+            if (onProgress) {
+                onProgress(80, 'converting');
+            }
+
+            // Convert to format using AudioExportManager
+            const blob = await this.audioExportManager._convertToFormat(processedBuffer, settings.format, qualityPreset);
+
+            // Generate filename
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+            const filename = settings.fileNameTemplate
+                .replace('{arrangementName}', arrangement.name || 'arrangement')
+                .replace('{timestamp}', timestamp)
+                .replace('{format}', settings.format) || `arrangement_${arrangement.name || 'export'}_${timestamp}.${this.audioExportManager._getFileExtension(settings.format)}`;
+
+            if (onProgress) {
+                onProgress(90, 'finalizing');
+            }
+
+            // Download file (if not disabled)
+            if (settings.download !== false) {
+                await this._downloadFile(blob, filename);
+            }
+
+            // Add to project if requested
+            let assetId = null;
+            if (settings.addToProject) {
+                const durationBeats = (processedBuffer.duration / 60) * bpm;
+                assetId = await this._createAudioAsset(
+                    processedBuffer,
+                    arrangement.name || 'Arrangement',
+                    'arrangement',
+                    durationBeats
+                );
+            }
+
+            if (onProgress) {
+                onProgress(100, 'completed');
+            }
+
+            return {
+                arrangementId: arrangement.id,
+                arrangementName: arrangement.name,
+                filename,
+                size: blob.size,
+                format: settings.format,
+                duration: processedBuffer.duration,
+                sampleRate: processedBuffer.sampleRate,
+                assetId,
+                audioBuffer: processedBuffer,
+                file: blob,
+                blob: blob
+            };
+        } finally {
+            this.isExporting = false;
+        }
     }
 
     // ═══════════════════════════════════════════════════════════

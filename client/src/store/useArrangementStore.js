@@ -541,7 +541,43 @@ export const useArrangementStore = create(arrangementStoreOrchestrator((set, get
    */
   createPattern: (name) => {
     const state = get();
-    const newPatternId = `pattern-${state.nextPatternNumber}`;
+    
+    // ✅ FIX: Find the next available pattern number by checking existing patterns
+    // This prevents duplicate pattern IDs when patterns are loaded from templates or projects
+    const existingPatternIds = Object.keys(state.patterns);
+    let nextNumber = state.nextPatternNumber;
+    
+    // Extract all pattern numbers from existing pattern IDs
+    const existingNumbers = existingPatternIds
+      .map(id => {
+        const match = id.match(/^pattern-(\d+)$/);
+        return match ? parseInt(match[1], 10) : null;
+      })
+      .filter(num => num !== null);
+    
+    // Find the next available number
+    if (existingNumbers.length > 0) {
+      const maxNumber = Math.max(...existingNumbers);
+      // Start from max + 1, but ensure we don't go below nextPatternNumber
+      nextNumber = Math.max(maxNumber + 1, state.nextPatternNumber);
+    }
+    
+    // Ensure the pattern ID doesn't already exist (double-check)
+    let newPatternId = `pattern-${nextNumber}`;
+    let attempts = 0;
+    while (state.patterns[newPatternId] && attempts < 100) {
+      nextNumber++;
+      newPatternId = `pattern-${nextNumber}`;
+      attempts++;
+    }
+    
+    if (attempts >= 100) {
+      console.error('❌ Failed to find available pattern ID after 100 attempts');
+      // Fallback: use UUID-based ID
+      const { nanoid } = require('nanoid');
+      newPatternId = `pattern-${nanoid(8)}`;
+    }
+    
     const patternName = name || newPatternId;
 
     // FL Studio Style: Patterns only contain note data
@@ -558,9 +594,11 @@ export const useArrangementStore = create(arrangementStoreOrchestrator((set, get
     set(state => ({
       patterns: { ...state.patterns, [newPatternId]: newPattern },
       patternOrder: [...state.patternOrder, newPatternId],
-      nextPatternNumber: state.nextPatternNumber + 1
+      // ✅ FIX: Update nextPatternNumber to be at least nextNumber + 1
+      nextPatternNumber: Math.max(state.nextPatternNumber, nextNumber + 1)
     }));
 
+    console.log(`✅ Created pattern: ${newPatternId} (nextPatternNumber: ${Math.max(state.nextPatternNumber, nextNumber + 1)})`);
     return newPatternId;
   },
 

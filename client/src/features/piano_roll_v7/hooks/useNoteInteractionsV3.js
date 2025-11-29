@@ -20,6 +20,7 @@ import { TOOL_TYPES } from '@/lib/piano-roll-tools';
 import { useArrangementStore } from '@/store/useArrangementStore';
 import { getPreviewManager } from '@/lib/audio/preview';
 import EventBus from '@/lib/core/EventBus';
+import { STEPS_PER_BEAT } from '@/lib/audio/audioRenderConfig';
 
 const DEBUG = true;
 const VERSION = '3.0.0';
@@ -1882,6 +1883,7 @@ export function useNoteInteractionsV3({
         // Duplicates notes within loop region, filling the entire region
         if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
             e.preventDefault();
+            console.log('🎹 Cmd+B pressed, loopRegion:', loopRegion);
             
             // Require loop region
             if (!loopRegion || loopRegion.start === undefined || loopRegion.end === undefined) {
@@ -1889,13 +1891,20 @@ export function useNoteInteractionsV3({
                 return;
             }
 
+            // ✅ FIX: Convert loop region from steps to beats
+            // Loop region is stored in steps (1 beat = 4 steps for 16th note grid)
+            const loopStartBeats = loopRegion.start / STEPS_PER_BEAT;
+            const loopEndBeats = loopRegion.end / STEPS_PER_BEAT;
+            console.log(`🎹 Loop region: ${loopRegion.start}-${loopRegion.end} steps = ${loopStartBeats.toFixed(2)}-${loopEndBeats.toFixed(2)} beats`);
+
             // Get notes within loop region (notes that overlap with region)
+            // Notes are stored in beats, so compare with beats
             const notesInRegion = notes.filter(note => {
                 const noteEnd = note.startTime + note.length;
                 // Note overlaps with loop region if:
                 // - Note starts before region ends AND
                 // - Note ends after region starts
-                return note.startTime < loopRegion.end && noteEnd > loopRegion.start;
+                return note.startTime < loopEndBeats && noteEnd > loopStartBeats;
             });
 
             if (notesInRegion.length === 0) {
@@ -1905,15 +1914,16 @@ export function useNoteInteractionsV3({
 
             // ✅ FIX: Calculate pattern boundaries relative to loop region start
             // Normalize notes to start from loop region start (0-based)
+            // Use beats for all calculations
             const normalizedNotes = notesInRegion.map(note => ({
                 ...note,
-                relativeStart: note.startTime - loopRegion.start
+                relativeStart: note.startTime - loopStartBeats
             }));
 
             const minRelativeStart = Math.min(...normalizedNotes.map(n => n.relativeStart));
             const maxRelativeEnd = Math.max(...normalizedNotes.map(n => n.relativeStart + n.length));
             const patternLength = maxRelativeEnd - minRelativeStart;
-            const loopLength = loopRegion.end - loopRegion.start;
+            const loopLength = loopEndBeats - loopStartBeats;
 
             if (patternLength <= 0) {
                 console.warn('⚠️ Invalid pattern length');
@@ -1937,12 +1947,12 @@ export function useNoteInteractionsV3({
                 // Create copies of all notes in this iteration
                 normalizedNotes.forEach(note => {
                     const newRelativeStart = note.relativeStart + copyOffset;
-                    const newStartTime = loopRegion.start + newRelativeStart;
+                    const newStartTime = loopStartBeats + newRelativeStart;
                     const noteLength = note.length;
                     const newEndTime = newStartTime + noteLength;
 
-                    // Only add if the note fits within the loop region
-                    if (newStartTime >= loopRegion.start && newEndTime <= loopRegion.end) {
+                    // Only add if the note fits within the loop region (in beats)
+                    if (newStartTime >= loopStartBeats && newEndTime <= loopEndBeats) {
                         allDuplicatedNotes.push({
                             ...note,
                             id: `note_${Date.now()}_${copyIndex}_${Math.random().toString(36).substr(2, 9)}`,

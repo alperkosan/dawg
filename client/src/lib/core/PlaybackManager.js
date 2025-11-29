@@ -350,25 +350,35 @@ export class PlaybackManager {
             this._markInstrumentDirty(instrumentId);
         }
 
-        // ✅ CRITICAL: Schedule during active playback (not paused)
-        // When paused, notes are added to pattern data and will play when resumed
+        // ✅ CRITICAL FIX: During active playback, only use immediate scheduling
+        // Don't call _scheduleContent because it will clear and reschedule all notes,
+        // which can cause timing issues and break scheduling
+        // When paused or stopped, notes are added to pattern data and will play when resumed/started
         if (this.isPlaying) {
             if (this.isPaused) {
                 console.log('⏸️ Paused - note added to pattern, will play when resumed');
+                // When paused, schedule content will be called on resume
+                this._scheduleContent(null, 'note-added', false, {
+                    scope: 'notes',
+                    instrumentIds: instrumentId ? [instrumentId] : null,
+                    priority: 'auto'
+                });
             } else {
-                console.log('✅ Playback active - scheduling note immediately');
+                console.log('✅ Playback active - scheduling note immediately (skipping _scheduleContent to avoid conflicts)');
+                // ✅ FIX: Only use immediate scheduling during active playback
+                // _scheduleContent would clear and reschedule all notes, causing timing issues
                 this._scheduleNewNotesImmediate([{ instrumentId, note }]);
+                // Don't call _scheduleContent here - it would conflict with immediate scheduling
             }
         } else {
             console.log('⏹️ Stopped - note will play when playback starts');
+            // When stopped, schedule content will be called on play
+            this._scheduleContent(null, 'note-added', false, {
+                scope: 'notes',
+                instrumentIds: instrumentId ? [instrumentId] : null,
+                priority: 'auto'
+            });
         }
-        // No else clause - we DON'T want full reschedule for single note additions
-
-        this._scheduleContent(null, 'note-added', false, {
-            scope: 'notes',
-            instrumentIds: instrumentId ? [instrumentId] : null,
-            priority: this.isPlaying && !this.isPaused ? 'realtime' : 'auto'
-        });
     }
 
     /**
