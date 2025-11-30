@@ -103,6 +103,11 @@ export default function ProjectCard({ project }) {
                 </div>
               </div>
               <div className="project-card__author-actions">
+                <div className="project-card__meta-chips">
+                  {project.bpm && <span className="project-card__chip">{project.bpm} BPM</span>}
+                  {project.keySignature && <span className="project-card__chip">{project.keySignature}</span>}
+                  {project.genre && <span className="project-card__chip">{project.genre}</span>}
+                </div>
                 {project.author?.id && (
                   <FollowButton
                     userId={project.author.id}
@@ -110,11 +115,6 @@ export default function ProjectCard({ project }) {
                     variant="compact"
                   />
                 )}
-                <div className="project-card__meta-chips">
-                  {project.bpm && <span className="project-card__chip">{project.bpm} BPM</span>}
-                  {project.keySignature && <span className="project-card__chip">{project.keySignature}</span>}
-                  {project.genre && <span className="project-card__chip">{project.genre}</span>}
-                </div>
               </div>
             </div>
 

@@ -10,6 +10,7 @@
  */
 
 import React, { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   MoreHorizontal, 
   ExternalLink, 
@@ -28,6 +29,7 @@ export default function QuickActions({ project, onFork }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isPlaylistSelectorOpen, setIsPlaylistSelectorOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [menuPosition, setMenuPosition] = useState({ top: 0, right: 0 });
   const menuRef = useRef(null);
   const buttonRef = useRef(null);
 
@@ -66,6 +68,33 @@ export default function QuickActions({ project, onFork }) {
 
     return () => {
       document.removeEventListener('keydown', handleEscape);
+    };
+  }, [isOpen]);
+
+  // Calculate menu position when opened and on scroll/resize
+  useEffect(() => {
+    if (!isOpen || !buttonRef.current) return;
+
+    const updatePosition = () => {
+      if (buttonRef.current) {
+        const buttonRect = buttonRef.current.getBoundingClientRect();
+        setMenuPosition({
+          top: buttonRect.bottom + 4, // 4px gap
+          right: window.innerWidth - buttonRect.right, // Distance from right edge
+        });
+      }
+    };
+
+    // Initial position
+    updatePosition();
+
+    // Update on scroll/resize
+    window.addEventListener('scroll', updatePosition, true); // Capture phase
+    window.addEventListener('resize', updatePosition);
+
+    return () => {
+      window.removeEventListener('scroll', updatePosition, true);
+      window.removeEventListener('resize', updatePosition);
     };
   }, [isOpen]);
 
@@ -170,8 +199,18 @@ export default function QuickActions({ project, onFork }) {
         <MoreHorizontal size={18} />
       </button>
 
-      {isOpen && (
-        <div ref={menuRef} className="quick-actions__menu">
+      {/* ✅ Render dropdown via Portal to avoid overflow/z-index issues */}
+      {isOpen && typeof window !== 'undefined' && createPortal(
+        <div 
+          ref={menuRef} 
+          className="quick-actions__menu"
+          style={{
+            position: 'fixed',
+            top: `${menuPosition.top}px`,
+            right: `${menuPosition.right}px`,
+            zIndex: 10000,
+          }}
+        >
           <div className="quick-actions__menu-header">
             <span>Actions</span>
             <button 
@@ -239,7 +278,8 @@ export default function QuickActions({ project, onFork }) {
               <span>Report</span>
             </button>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
       
       {/* Playlist Selector Modal */}

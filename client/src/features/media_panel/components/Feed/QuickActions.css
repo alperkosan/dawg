@@ -27,11 +27,8 @@
 }
 
 /* Dropdown Menu */
+/* ✅ Position is set inline via Portal (fixed positioning) */
 .quick-actions__menu {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
-  z-index: 100;
   min-width: 180px;
   background: var(--zenith-bg-secondary);
   border: 1px solid var(--zenith-border-subtle);

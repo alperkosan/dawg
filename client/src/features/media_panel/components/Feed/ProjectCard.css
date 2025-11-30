@@ -3,7 +3,7 @@
   border-radius: var(--zenith-radius-xl);
   padding: 1px;
   background: linear-gradient(135deg, rgba(111, 76, 255, 0.65), rgba(17, 21, 46, 0.7));
-  overflow: hidden;
+  overflow: visible; /* ✅ Changed from hidden to visible for dropdown */
   box-shadow: 0 30px 60px rgba(12, 3, 28, 0.45);
 }
 
@@ -17,6 +17,8 @@
   flex-direction: column;
   gap: var(--zenith-space-4);
   color: var(--zenith-text-primary);
+  overflow: visible; /* ✅ Allow dropdown to overflow */
+  position: relative; /* ✅ For z-index stacking */
 }
 
 .project-card__hero {
@@ -56,15 +58,27 @@
 .project-card__author-row {
   display: flex;
   gap: var(--zenith-space-3);
-  align-items: flex-start;
+  align-items: center; /* ✅ Center align for better visual balance */
   justify-content: space-between;
   flex-wrap: wrap;
+}
+
+.project-card__author-actions {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--zenith-space-3);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  min-width: 0; /* Allow shrinking */
+  flex-shrink: 0; /* Prevent shrinking */
 }
 
 .project-card__meta-chips {
   display: flex;
   flex-wrap: wrap;
   gap: var(--zenith-space-2);
+  align-items: center;
 }
 
 .project-card__chip {
@@ -174,6 +188,14 @@
   gap: var(--zenith-space-3);
   border-top: 1px solid rgba(255, 255, 255, 0.05);
   padding-top: var(--zenith-space-3);
+  position: relative; /* ✅ For dropdown positioning */
+  z-index: 1; /* ✅ Ensure actions are above card content */
+}
+
+/* ✅ Allow dropdown to overflow card boundaries */
+.project-card__actions .quick-actions {
+  position: relative;
+  z-index: 10001; /* Higher than card z-index */
 }
 
 .project-card__action-btn {
