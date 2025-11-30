@@ -610,11 +610,11 @@ function drawKeyboard(ctx, { viewport, dimensions, lod, activeKeyboardNote }) {
                 ctx.fillRect(0, y, KEYBOARD_WIDTH, dimensions.keyHeight);
             }
 
-            // Draw note labels - ALL keys
+            // Draw note labels - ALL keys with pitch values (e.g., D6, A4)
             if (lod < 2 && dimensions.keyHeight >= 10) {
                 const octave = Math.floor(midiNote / 12) - 1;
                 const noteName = NOTES[midiNote % 12];
-                const isC = noteName === 'C';
+                const pitchLabel = `${noteName}${octave}`; // Full pitch value (e.g., D6, A4)
                 
                 // Same font for all keys
                 const fontSize = lod < 1 ? 10 : 9;
@@ -626,16 +626,15 @@ function drawKeyboard(ctx, { viewport, dimensions, lod, activeKeyboardNote }) {
                 const labelY = y + dimensions.keyHeight / 2 + 4;
                 
                 if (isBlack) {
-                    // Black keys: white text
+                    // Black keys: white text with pitch
                     ctx.fillStyle = textPrimary || '#e2e8f0';
                     ctx.globalAlpha = 0.9;
-                    ctx.fillText(noteName, labelX, labelY);
+                    ctx.fillText(pitchLabel, labelX, labelY);
                 } else {
-                    // White keys: dark text, C notes show octave
+                    // White keys: dark text with pitch
                     ctx.fillStyle = bgPrimary || '#1a202c';
                     ctx.globalAlpha = 0.8;
-                    const label = isC ? `${noteName}${octave}` : noteName;
-                    ctx.fillText(label, labelX, labelY);
+                    ctx.fillText(pitchLabel, labelX, labelY);
                 }
                 ctx.globalAlpha = 1.0;
             }

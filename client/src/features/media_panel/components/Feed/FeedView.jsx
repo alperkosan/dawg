@@ -3,13 +3,13 @@
  * 
  * Features:
  * - Project feed with filters
- * - Real-time updates via WebSocket
  * - Infinite scroll pagination
+ * 
+ * Note: WebSocket real-time updates are currently disabled
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { apiClient } from '@/services/api.js';
-import { useMediaWebSocket } from '../../hooks/useMediaWebSocket';
 import FeedHeader from './FeedHeader';
 import FeedContent from './FeedContent';
 import FeedSidebar from './FeedSidebar';
@@ -29,47 +29,6 @@ export default function FeedView() {
   const [currentPage, setCurrentPage] = useState(1);
   const [hasNextPage, setHasNextPage] = useState(false);
   const [isFetchingNextPage, setIsFetchingNextPage] = useState(false);
-
-  // ✅ Real-time updates via WebSocket
-  const handleProjectLiked = useCallback((payload) => {
-    const { projectId, likeCount, likedByUserId } = payload;
-    setProjects((prev) =>
-      prev.map((p) =>
-        p.id === projectId
-          ? { ...p, stats: { ...p.stats, likes: likeCount }, isLiked: true }
-          : p
-      )
-    );
-  }, []);
-
-  const handleProjectUnliked = useCallback((payload) => {
-    const { projectId, likeCount } = payload;
-    setProjects((prev) =>
-      prev.map((p) =>
-        p.id === projectId
-          ? { ...p, stats: { ...p.stats, likes: likeCount }, isLiked: false }
-          : p
-      )
-    );
-  }, []);
-
-  const handleProjectCommented = useCallback((payload) => {
-    const { projectId, commentCount } = payload;
-    setProjects((prev) =>
-      prev.map((p) =>
-        p.id === projectId
-          ? { ...p, stats: { ...p.stats, comments: commentCount } }
-          : p
-      )
-    );
-  }, []);
-
-  const { isConnected } = useMediaWebSocket({
-    onProjectLiked: handleProjectLiked,
-    onProjectUnliked: handleProjectUnliked,
-    onProjectCommented: handleProjectCommented,
-    enabled: true,
-  });
 
   const loadFeed = useCallback(async (page = 1, append = false) => {
     try {
