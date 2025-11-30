@@ -6,6 +6,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Heart, MessageCircle, Share2, GitBranch, Eye } from 'lucide-react';
 import { apiClient } from '@/services/api.js';
 import CommentModal from './CommentModal';
+import QuickActions from './QuickActions';
+import FollowButton from '../User/FollowButton';
 import { AudioPreview } from '@/components/audio/AudioPreview';
 import './ProjectCard.css';
 
@@ -100,10 +102,19 @@ export default function ProjectCard({ project }) {
                   </p>
                 </div>
               </div>
-              <div className="project-card__meta-chips">
-                {project.bpm && <span className="project-card__chip">{project.bpm} BPM</span>}
-                {project.keySignature && <span className="project-card__chip">{project.keySignature}</span>}
-                {project.genre && <span className="project-card__chip">{project.genre}</span>}
+              <div className="project-card__author-actions">
+                {project.author?.id && (
+                  <FollowButton
+                    userId={project.author.id}
+                    initialIsFollowing={project.author.isFollowing}
+                    variant="compact"
+                  />
+                )}
+                <div className="project-card__meta-chips">
+                  {project.bpm && <span className="project-card__chip">{project.bpm} BPM</span>}
+                  {project.keySignature && <span className="project-card__chip">{project.keySignature}</span>}
+                  {project.genre && <span className="project-card__chip">{project.genre}</span>}
+                </div>
               </div>
             </div>
 
@@ -148,6 +159,9 @@ export default function ProjectCard({ project }) {
           <button className="project-card__action-btn" onClick={handleShare} title="Share">
             <Share2 size={18} />
           </button>
+          
+          {/* Quick Actions Menu */}
+          <QuickActions project={project} />
         </div>
       </div>
 
