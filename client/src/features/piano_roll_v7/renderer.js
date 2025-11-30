@@ -97,43 +97,22 @@ function drawGrid(ctx, { viewport, dimensions, lod, snapValue, qualityLevel = 'h
         for (let i = startKey; i <= endKey; i++) {
             const midiNote = 127 - i;
             const isInScale = scaleHighlight.isNoteInScale(midiNote);
-            const pitchClass = midiNote % 12;
-            const isRoot = pitchClass === scaleInfo.root;
             const y = i * keyHeight;
 
             if (isInScale) {
-                // ✅ IMPROVED: Enhanced highlight with gradient and subtle glow for in-scale rows
-                if (isRoot) {
-                    // Root note: Stronger highlight with gradient
-                    const gradient = ctx.createLinearGradient(0, y, 0, y + keyHeight);
-                    gradient.addColorStop(0, `rgba(${scaleR}, ${scaleG}, ${scaleB}, 0.25)`);
-                    gradient.addColorStop(0.5, `rgba(${scaleR}, ${scaleG}, ${scaleB}, 0.18)`);
-                    gradient.addColorStop(1, `rgba(${scaleR}, ${scaleG}, ${scaleB}, 0.12)`);
-                    ctx.fillStyle = gradient;
-                    ctx.fillRect(0, y, dimensions.totalWidth, keyHeight);
-                    
-                    // Subtle top border glow
-                    ctx.strokeStyle = `rgba(${scaleR}, ${scaleG}, ${scaleB}, 0.4)`;
-                    ctx.lineWidth = 1;
-                    ctx.beginPath();
-                    ctx.moveTo(0, y);
-                    ctx.lineTo(dimensions.totalWidth, y);
-                    ctx.stroke();
-                } else {
-                    // Other scale notes: Softer highlight with subtle gradient
-                    const gradient = ctx.createLinearGradient(0, y, 0, y + keyHeight);
-                    gradient.addColorStop(0, `rgba(${scaleR}, ${scaleG}, ${scaleB}, 0.12)`);
-                    gradient.addColorStop(0.5, `rgba(${scaleR}, ${scaleG}, ${scaleB}, 0.08)`);
-                    gradient.addColorStop(1, `rgba(${scaleR}, ${scaleG}, ${scaleB}, 0.05)`);
-                    ctx.fillStyle = gradient;
-                    ctx.fillRect(0, y, dimensions.totalWidth, keyHeight);
-                }
-            } else {
-                // ✅ IMPROVED: Softer dimming for out-of-scale rows with gradient
+                // ✅ SIMPLE: Same highlight for ALL scale notes (no special root treatment)
                 const gradient = ctx.createLinearGradient(0, y, 0, y + keyHeight);
-                gradient.addColorStop(0, 'rgba(0, 0, 0, 0.25)');
-                gradient.addColorStop(0.5, 'rgba(0, 0, 0, 0.15)');
-                gradient.addColorStop(1, 'rgba(0, 0, 0, 0.08)');
+                gradient.addColorStop(0, `rgba(${scaleR}, ${scaleG}, ${scaleB}, 0.30)`);
+                gradient.addColorStop(0.5, `rgba(${scaleR}, ${scaleG}, ${scaleB}, 0.22)`);
+                gradient.addColorStop(1, `rgba(${scaleR}, ${scaleG}, ${scaleB}, 0.15)`);
+                ctx.fillStyle = gradient;
+                ctx.fillRect(0, y, dimensions.totalWidth, keyHeight);
+            } else {
+                // ✅ HIGH CONTRAST: Strong dimming for out-of-scale rows
+                const gradient = ctx.createLinearGradient(0, y, 0, y + keyHeight);
+                gradient.addColorStop(0, 'rgba(0, 0, 0, 0.5)');
+                gradient.addColorStop(0.5, 'rgba(0, 0, 0, 0.4)');
+                gradient.addColorStop(1, 'rgba(0, 0, 0, 0.3)');
                 ctx.fillStyle = gradient;
                 ctx.fillRect(0, y, dimensions.totalWidth, keyHeight);
             }
@@ -607,7 +586,9 @@ function drawKeyboard(ctx, { viewport, dimensions, lod, activeKeyboardNote }) {
         for (let key = startKey; key <= endKey; key++) {
             const y = key * dimensions.keyHeight;
             const midiNote = 127 - key;
-            const isBlack = [1, 3, 6, 8, 10].includes(key % 12);
+            // ✅ FIX: Use midiNote % 12 (not key % 12) for correct black key detection
+            // C#=1, D#=3, F#=6, G#=8, A#=10 in MIDI note space
+            const isBlack = [1, 3, 6, 8, 10].includes(midiNote % 12);
             const isActive = activeKeyboardNote !== null && activeKeyboardNote !== undefined && midiNote === activeKeyboardNote;
 
             // ✅ KEYBOARD PREVIEW: Highlight active key
@@ -629,18 +610,34 @@ function drawKeyboard(ctx, { viewport, dimensions, lod, activeKeyboardNote }) {
                 ctx.fillRect(0, y, KEYBOARD_WIDTH, dimensions.keyHeight);
             }
 
-            // Draw note labels
-            if (!isBlack && lod < 2 && dimensions.keyHeight >= 12) {
+            // Draw note labels - ALL keys
+            if (lod < 2 && dimensions.keyHeight >= 10) {
                 const octave = Math.floor(midiNote / 12) - 1;
                 const noteName = NOTES[midiNote % 12];
-                if (noteName === 'C') {
+                const isC = noteName === 'C';
+                
+                // Same font for all keys
+                const fontSize = lod < 1 ? 10 : 9;
+                ctx.font = `${fontSize}px sans-serif`;
+                ctx.textAlign = 'right';
+                
+                // Same X position for all keys (aligned)
+                const labelX = KEYBOARD_WIDTH - 6;
+                const labelY = y + dimensions.keyHeight / 2 + 4;
+                
+                if (isBlack) {
+                    // Black keys: white text
+                    ctx.fillStyle = textPrimary || '#e2e8f0';
+                    ctx.globalAlpha = 0.9;
+                    ctx.fillText(noteName, labelX, labelY);
+                } else {
+                    // White keys: dark text, C notes show octave
                     ctx.fillStyle = bgPrimary || '#1a202c';
-                    ctx.globalAlpha = 1.0;
-                    const fontSize = lod < 1 ? 10 : 8;
-                    ctx.font = `${fontSize}px sans-serif`;
-                    ctx.textAlign = 'right';
-                    ctx.fillText(`${noteName}${octave}`, KEYBOARD_WIDTH - 8, y + dimensions.keyHeight / 2 + 4);
+                    ctx.globalAlpha = 0.8;
+                    const label = isC ? `${noteName}${octave}` : noteName;
+                    ctx.fillText(label, labelX, labelY);
                 }
+                ctx.globalAlpha = 1.0;
             }
         }
     }

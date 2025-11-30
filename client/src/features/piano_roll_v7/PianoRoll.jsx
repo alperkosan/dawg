@@ -829,6 +829,13 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
             }
         }
     }, []);
+    
+    // ✅ KEYBOARD PREVIEW - Trigger background repaint when active key changes
+    useEffect(() => {
+        if (backgroundDirtyRef.current !== undefined) {
+            backgroundDirtyRef.current = true;
+        }
+    }, [activeKeyboardNote]);
 
     // ✅ LOOP REGION HOOK - Timeline selection
     // Pass playhead setter callback for single click behavior
@@ -970,14 +977,15 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
             ...engineRef.current,
             snapValue,
             qualityLevel,
-            scaleHighlight
+            scaleHighlight,
+            activeKeyboardNote  // ✅ Add for keyboard preview highlight
         };
 
         drawPianoRollBackground(ctx, payload);
         if (timelineRenderer) {
             timelineRenderer.render(ctx, payload);
         }
-    }, [qualityLevel, scaleHighlight, snapValue, timelineRenderer]);
+    }, [activeKeyboardNote, qualityLevel, scaleHighlight, snapValue, timelineRenderer]);
 
     const paintNotesLayer = useCallback((clipRect) => {
         const canvas = notesCanvasRef.current;
