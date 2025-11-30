@@ -10,11 +10,13 @@
  */
 
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
-import { Download, Settings, Play, Square, CheckCircle, XCircle, Loader, Save, FolderOpen, File, Clock, HardDrive } from 'lucide-react';
+import { Download, Settings, Play, Square, CheckCircle, XCircle, Loader, Save, FolderOpen, File, Clock, HardDrive, History } from 'lucide-react';
 import { exportManager, EXPORT_FORMAT, EXPORT_MODE, QUALITY_PRESET } from '@/lib/audio/ExportManager';
 import { useMixerStore } from '@/store/useMixerStore';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
 import { TimeRangeSelector } from './TimeRangeSelector';
+import { ExportHistory, addToExportHistory } from './ExportHistory';
+import { ExportPreview } from './ExportPreview';
 import { formatFileSize, formatDuration, formatSampleRate, formatBitDepth, formatExportFormat } from '@/utils/formatUtils';
 import './ExportPanel.css';
 
@@ -138,6 +140,10 @@ export const ExportPanel = ({ isOpen, onClose }) => {
     const [selectedPreset, setSelectedPreset] = useState(null);
     const [showSavePresetDialog, setShowSavePresetDialog] = useState(false);
     const [presetName, setPresetName] = useState('');
+    // ✅ NEW: Export history
+    const [showHistory, setShowHistory] = useState(false);
+    // ✅ NEW: Export preview
+    const [previewAudioBuffer, setPreviewAudioBuffer] = useState(null);
 
     // Store data
     const mixerTracks = useMixerStore(state => state.mixerTracks);
@@ -291,6 +297,24 @@ export const ExportPanel = ({ isOpen, onClose }) => {
                 setExportResults(results);
                 setExportProgress({ overall: 100, status: 'completed' });
 
+                // ✅ NEW: Set preview audio buffer from first successful export
+                const firstSuccess = results.find(r => r.success && r.audioBuffer);
+                if (firstSuccess && firstSuccess.audioBuffer) {
+                    setPreviewAudioBuffer(firstSuccess.audioBuffer);
+                }
+
+                // ✅ NEW: Add to export history
+                results.forEach(result => {
+                    if (result.success && result.file) {
+                        addToExportHistory({
+                            type: 'channels',
+                            settings: exportSettings,
+                            file: result.file,
+                            channelIds: channelIds
+                        });
+                    }
+                });
+
                 // Show success message if assets/clips were created
                 const hasAssets = results.some(r => r.assetId);
                 const hasClips = results.some(r => r.clipId);
@@ -347,6 +371,19 @@ export const ExportPanel = ({ isOpen, onClose }) => {
                 setExportResults([{ success: true, file: result }]);
                 setExportProgress({ overall: 100, status: 'completed' });
 
+                // ✅ NEW: Set preview audio buffer
+                if (result.audioBuffer) {
+                    setPreviewAudioBuffer(result.audioBuffer);
+                }
+
+                // ✅ NEW: Add to export history
+                addToExportHistory({
+                    type: 'arrangement',
+                    settings: exportSettings,
+                    file: result,
+                    arrangementId: selectedArrangementId
+                });
+
                 if (result.assetId) {
                     console.log('✅ Arrangement export completed and added to project');
                 }
@@ -394,7 +431,19 @@ export const ExportPanel = ({ isOpen, onClose }) => {
             >
                 <div className="export-panel-header">
                     <h2>🎵 Export Audio</h2>
-                    <button className="close-button" onClick={onClose}>✕</button>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <button
+                            className="link-button"
+                            onClick={() => setShowHistory(true)}
+                            disabled={isExporting}
+                            style={{ display: 'flex', alignItems: 'center', gap: '4px' }}
+                            title="View export history"
+                        >
+                            <History size={16} />
+                            History
+                        </button>
+                        <button className="close-button" onClick={onClose}>✕</button>
+                    </div>
                 </div>
 
             <div className="export-panel-content">
@@ -954,6 +1003,21 @@ export const ExportPanel = ({ isOpen, onClose }) => {
                     </section>
                 )}
 
+                {/* ✅ NEW: Export Preview */}
+                <section className="export-section">
+                    <ExportPreview
+                        audioBuffer={previewAudioBuffer}
+                        duration={null} // Will use audioBuffer.duration if available
+                        format={exportSettings.format}
+                        sampleRate={exportSettings.quality?.sampleRate || QUALITY_PRESET[exportSettings.quality]?.sampleRate || 44100}
+                        bitDepth={exportSettings.quality?.bitDepth || QUALITY_PRESET[exportSettings.quality]?.bitDepth || 16}
+                        channels={2}
+                        settings={{
+                            includeEffects: exportSettings.includeEffects
+                        }}
+                    />
+                </section>
+
                 {/* Actions */}
                 <div className="export-actions">
                     <button
@@ -983,6 +1047,37 @@ export const ExportPanel = ({ isOpen, onClose }) => {
                 </div>
             </div>
         </div>
+
+        {/* ✅ NEW: Export History Modal */}
+        <ExportHistory
+            isOpen={showHistory}
+            onClose={() => setShowHistory(false)}
+            onReExport={(item) => {
+                setShowHistory(false);
+                // Load settings from history item
+                if (item.settings) {
+                    setExportSettings(prev => ({ ...prev, ...item.settings }));
+                }
+                // Set export type and selection based on history item
+                if (item.type === 'arrangement' && item.arrangementId) {
+                    setExportType('arrangement');
+                    setSelectedArrangementId(item.arrangementId);
+                } else if (item.type === 'channels' && item.channelIds) {
+                    setExportType('channels');
+                    setSelectedChannels(new Set(item.channelIds));
+                }
+                // Trigger export after a short delay to allow state updates
+                setTimeout(() => {
+                    handleExport();
+                }, 100);
+            }}
+            onLoadSettings={(item) => {
+                if (item.settings) {
+                    setExportSettings(prev => ({ ...prev, ...item.settings }));
+                    setShowHistory(false);
+                }
+            }}
+        />
         </>
     );
 };

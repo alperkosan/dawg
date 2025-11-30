@@ -13,7 +13,7 @@ import NotePropertiesPanel from './components/NotePropertiesPanel';
 import LoopRegionOverlay from './components/LoopRegionOverlay';
 import ShortcutsPanel from './components/ShortcutsPanel';
 import ContextMenu from './components/ContextMenu';
-import ScaleSelectorPanel from './components/ScaleSelectorPanel';
+// Removed: ScaleSelectorPanel - scale highlighting is now always enabled with default C Major
 import { usePanelsStore } from '@/store/usePanelsStore';
 import { useInstrumentsStore } from '@/store/useInstrumentsStore';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
@@ -23,18 +23,37 @@ import { getTimelineController } from '@/lib/core/TimelineControllerSingleton';
 import { getToolManager } from '@/lib/piano-roll-tools';
 import { getTransportManagerSync } from '@/lib/core/TransportManagerSingleton';
 import { getAutomationManager } from '@/lib/automation/AutomationManager';
+import { getScaleSystem } from '@/lib/music/ScaleSystem';
 import EventBus from '@/lib/core/EventBus.js';
 import { getPreviewManager } from '@/lib/audio/preview';
 import { PANEL_IDS } from '@/config/constants';
+import { MIDIRecorder } from '@/lib/midi/MIDIRecorder';
+import { CountInOverlay } from '@/components/midi/CountInOverlay';
+import { AudioContextService } from '@/lib/services/AudioContextService';
 // ✅ REMOVED: Complex cursor manager - using simple CSS cursors now
 // ✅ NEW TIMELINE SYSTEM
 import { useTimelineStore } from '@/store/TimelineStore';
 import TimelineCoordinateSystem from '@/lib/timeline/TimelineCoordinateSystem';
 import TimelineRenderer from './renderers/timelineRenderer';
+import { STEPS_PER_BEAT } from '@/lib/audio/audioRenderConfig';
 import './PianoRoll_v5.css';
 
 const KEYBOARD_WIDTH = 80;
 const RULER_HEIGHT = 30;
+
+/**
+ * Convert steps to BBT format (Bar:Beat:Tick)
+ * @param {number} steps - Position in steps
+ * @param {number} stepsPerBeat - Steps per beat (default: STEPS_PER_BEAT)
+ * @returns {string} BBT format string (e.g., "1:2:120")
+ */
+function stepsToBBT(steps, stepsPerBeat = STEPS_PER_BEAT) {
+    const beats = steps / stepsPerBeat;
+    const bar = Math.floor(beats / 4) + 1; // 4/4 time signature
+    const beat = (Math.floor(beats) % 4) + 1;
+    const tick = Math.floor((beats % 1) * 480); // 480 ticks per beat (PPQ * 4)
+    return `${bar}:${beat}:${tick}`;
+}
 
 const resizeCanvasToDisplay = (canvas, ctx) => {
     const dpr = window.devicePixelRatio || 1;
@@ -290,14 +309,228 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
     const [showNoteProperties, setShowNoteProperties] = useState(false);
     const [propertiesPanelCollapsed, setPropertiesPanelCollapsed] = useState(false);
 
-    // ✅ PHASE 5: SCALE HIGHLIGHTING STATE
-    const [showScaleSelector, setShowScaleSelector] = useState(false);
+    // ✅ IMPROVED: SCALE HIGHLIGHTING STATE - Always enabled with default C Major
     const [scaleHighlight, setScaleHighlight] = useState(null);
 
-    // ✅ PHASE 5: Scale change callback
-    const handleScaleChange = useCallback((scaleData) => {
-        setScaleHighlight(scaleData.scaleSystem);
+    // ✅ Initialize default scale (C Major) on mount
+    useEffect(() => {
+        const scaleSystem = getScaleSystem();
+        scaleSystem.setScale(0, 'major'); // C Major (root: 0 = C, scale: 'major')
+        setScaleHighlight(scaleSystem);
     }, []);
+
+    // ✅ MIDI RECORDING STATE
+    const [isRecording, setIsRecording] = useState(false);
+    const [isCountingIn, setIsCountingIn] = useState(false);
+    const [countInBars, setCountInBars] = useState(1);
+    const midiRecorderRef = useRef(null);
+    const bpm = usePlaybackStore(state => state.bpm);
+
+    // ✅ Initialize MIDIRecorder
+    useEffect(() => {
+        const playbackStore = usePlaybackStore.getState();
+        const arrangementStore = useArrangementStore.getState();
+        const timelineStore = useTimelineStore.getState();
+
+        const recorder = new MIDIRecorder(
+            playbackStore,
+            arrangementStore,
+            timelineStore,
+            loopRegion,
+            currentInstrument?.id // ✅ Pass current instrument ID
+        );
+
+        midiRecorderRef.current = recorder;
+
+        // ✅ Listen for count-in events
+        const handleCountInStart = (e) => {
+            setIsCountingIn(true);
+            if (e.detail?.countInBars) {
+                setCountInBars(e.detail.countInBars);
+            }
+        };
+
+        const handleCountInEnd = () => {
+            setIsCountingIn(false);
+        };
+
+        const handleRecordingStart = () => {
+            setIsRecording(true);
+        };
+
+        // ✅ Helper function to convert MIDI pitch to note name
+        const pitchToName = (pitch) => {
+            const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+            const octave = Math.floor(pitch / 12) - 1;
+            const noteName = noteNames[pitch % 12];
+            return `${noteName}${octave}`;
+        };
+
+        // ✅ Listen for keyboard MIDI events during recording
+        const handleKeyboardNoteOn = (e) => {
+            if (recorder && recorder.state.isRecording) {
+                const { pitch, velocity, timestamp } = e.detail;
+                
+                // ✅ Get AudioContext time for accurate timestamp
+                let audioTime = null;
+                let playbackPosition = null;
+                let playbackPositionSteps = null;
+                let playbackElapsedTime = 'N/A';
+                let playbackElapsedSteps = 'N/A';
+                try {
+                    const audioEngine = AudioContextService.getAudioEngine();
+                    if (audioEngine?.audioContext) {
+                        audioTime = audioEngine.audioContext.currentTime;
+                        
+                        // ✅ Calculate playback elapsed time since recording started
+                        if (recorder.state.recordStartAudioTime !== undefined) {
+                            const elapsed = audioTime - recorder.state.recordStartAudioTime;
+                            playbackElapsedTime = elapsed.toFixed(3) + 's';
+                            const bpm = usePlaybackStore.getState().bpm || 120;
+                            playbackElapsedSteps = ((elapsed * bpm / 60) * 4).toFixed(2); // STEPS_PER_BEAT = 4
+                        }
+                    }
+                    if (audioEngine?.playbackManager) {
+                        playbackPosition = audioEngine.playbackManager.getCurrentPosition();
+                        playbackPositionSteps = playbackPosition;
+                    }
+                } catch (e) {
+                    console.warn('⚠️ Error getting audio engine:', e);
+                }
+                
+                const performanceTime = performance.now() / 1000;
+                const finalTimestamp = audioTime || performanceTime;
+                
+                // ✅ Convert steps to BBT format
+                const playbackPositionBBT = playbackPositionSteps !== null && playbackPositionSteps !== undefined 
+                    ? stepsToBBT(playbackPositionSteps) 
+                    : 'N/A';
+                // ✅ Calculate absolute position from elapsed time (linear, not wrapped)
+                const playbackElapsedAbsolute = playbackElapsedSteps !== 'N/A' && recorder.state.recordStartStep !== undefined
+                    ? parseFloat(playbackElapsedSteps) + recorder.state.recordStartStep
+                    : null;
+                const playbackElapsedBBT = playbackElapsedAbsolute !== null
+                    ? stepsToBBT(playbackElapsedAbsolute)
+                    : 'N/A';
+                
+                console.log(`🎹 KEYBOARD DOWN: pitch=${pitch} (${pitchToName(pitch)}) vel=${velocity}`);
+                console.log(`   ⏱️  Performance.now(): ${performanceTime.toFixed(3)}s`);
+                console.log(`   ⏱️  AudioContext.currentTime: ${audioTime?.toFixed(3) || 'N/A'}s`);
+                console.log(`   ⏱️  Event timestamp: ${timestamp?.toFixed(3) || 'N/A'}s`);
+                console.log(`   ⏱️  Playback elapsed: ${playbackElapsedTime} (${playbackElapsedSteps} steps, ${playbackElapsedBBT} since record start) [LINEAR]`);
+                console.log(`   📍 Playback position: ${playbackPositionSteps?.toFixed(2) || 'N/A'} steps (${playbackPositionBBT}) [WRAPPED] (${playbackPositionSteps ? (playbackPositionSteps / 4).toFixed(3) : 'N/A'} beats)`);
+                console.log(`   📊 Using timestamp: ${finalTimestamp.toFixed(3)}s`);
+                
+                recorder.handleMIDIEvent({
+                    type: 'noteOn',
+                    note: pitch,
+                    velocity,
+                    timestamp: finalTimestamp
+                });
+            }
+        };
+
+        const handleKeyboardNoteOff = (e) => {
+            if (recorder && recorder.state.isRecording) {
+                const { pitch, timestamp } = e.detail;
+                
+                // ✅ Get AudioContext time for accurate timestamp
+                let audioTime = null;
+                let playbackPosition = null;
+                let playbackPositionSteps = null;
+                let playbackElapsedTime = 'N/A';
+                let playbackElapsedSteps = 'N/A';
+                try {
+                    const audioEngine = AudioContextService.getAudioEngine();
+                    if (audioEngine?.audioContext) {
+                        audioTime = audioEngine.audioContext.currentTime;
+                        
+                        // ✅ Calculate playback elapsed time since recording started
+                        if (recorder.state.recordStartAudioTime !== undefined) {
+                            const elapsed = audioTime - recorder.state.recordStartAudioTime;
+                            playbackElapsedTime = elapsed.toFixed(3) + 's';
+                            const bpm = usePlaybackStore.getState().bpm || 120;
+                            playbackElapsedSteps = ((elapsed * bpm / 60) * 4).toFixed(2); // STEPS_PER_BEAT = 4
+                        }
+                    }
+                    if (audioEngine?.playbackManager) {
+                        playbackPosition = audioEngine.playbackManager.getCurrentPosition();
+                        playbackPositionSteps = playbackPosition;
+                    }
+                } catch (e) {
+                    console.warn('⚠️ Error getting audio engine:', e);
+                }
+                
+                const performanceTime = performance.now() / 1000;
+                const finalTimestamp = audioTime || performanceTime;
+                
+                // ✅ Convert steps to BBT format
+                const playbackPositionBBT = playbackPositionSteps !== null && playbackPositionSteps !== undefined 
+                    ? stepsToBBT(playbackPositionSteps) 
+                    : 'N/A';
+                // ✅ Calculate absolute position from elapsed time (linear, not wrapped)
+                const playbackElapsedAbsolute = playbackElapsedSteps !== 'N/A' && recorder.state.recordStartStep !== undefined
+                    ? parseFloat(playbackElapsedSteps) + recorder.state.recordStartStep
+                    : null;
+                const playbackElapsedBBT = playbackElapsedAbsolute !== null
+                    ? stepsToBBT(playbackElapsedAbsolute)
+                    : 'N/A';
+                
+                console.log(`🎹 KEYBOARD RELEASE: pitch=${pitch} (${pitchToName(pitch)})`);
+                console.log(`   ⏱️  Performance.now(): ${performanceTime.toFixed(3)}s`);
+                console.log(`   ⏱️  AudioContext.currentTime: ${audioTime?.toFixed(3) || 'N/A'}s`);
+                console.log(`   ⏱️  Event timestamp: ${timestamp?.toFixed(3) || 'N/A'}s`);
+                console.log(`   ⏱️  Playback elapsed: ${playbackElapsedTime} (${playbackElapsedSteps} steps, ${playbackElapsedBBT} since record start) [LINEAR]`);
+                console.log(`   📍 Playback position: ${playbackPositionSteps?.toFixed(2) || 'N/A'} steps (${playbackPositionBBT}) [WRAPPED] (${playbackPositionSteps ? (playbackPositionSteps / 4).toFixed(3) : 'N/A'} beats)`);
+                console.log(`   📊 Using timestamp: ${finalTimestamp.toFixed(3)}s`);
+                
+                recorder.handleMIDIEvent({
+                    type: 'noteOff',
+                    note: pitch,
+                    velocity: 0,
+                    timestamp: finalTimestamp
+                });
+            }
+        };
+
+        // ✅ Listen for transport stop events to stop recording
+        const handleTransportStop = () => {
+            if (recorder && recorder.state.isRecording) {
+                console.log('⏹ Transport stop: Stopping recording');
+                recorder.stopRecording().then(() => {
+                    setIsRecording(false);
+                    setIsCountingIn(false);
+                });
+            }
+        };
+
+        if (typeof window !== 'undefined') {
+            window.addEventListener('midi:countInStart', handleCountInStart);
+            window.addEventListener('midi:countInEnd', handleCountInEnd);
+            window.addEventListener('midi:recordingStart', handleRecordingStart);
+            window.addEventListener('midi:keyboardNoteOn', handleKeyboardNoteOn);
+            window.addEventListener('midi:keyboardNoteOff', handleKeyboardNoteOff);
+        }
+
+        // ✅ Listen for transport stop events
+        EventBus.on('transport:stop', handleTransportStop);
+
+        return () => {
+            if (recorder) {
+                // Cleanup: stop recording without awaiting (cleanup functions can't be async)
+                void recorder.stopRecording();
+            }
+            if (typeof window !== 'undefined') {
+                window.removeEventListener('midi:countInStart', handleCountInStart);
+                window.removeEventListener('midi:countInEnd', handleCountInEnd);
+                window.removeEventListener('midi:recordingStart', handleRecordingStart);
+                window.removeEventListener('midi:keyboardNoteOn', handleKeyboardNoteOn);
+                window.removeEventListener('midi:keyboardNoteOff', handleKeyboardNoteOff);
+            }
+            // ✅ Remove transport stop listener
+            EventBus.off('transport:stop', handleTransportStop);
+        };
+    }, [loopRegion]);
 
 
     // ✅ Listen for double-click events to open Note Properties Panel
@@ -622,7 +855,37 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
         snapValue,
         currentInstrument,
         loopRegion,
-        keyboardPianoMode
+        keyboardPianoMode,
+        // ✅ MIDI Recording
+        isRecording,
+        onRecordToggle: async () => {
+            const recorder = midiRecorderRef.current;
+            if (!recorder) return;
+
+            if (isRecording) {
+                await recorder.stopRecording();
+                setIsRecording(false);
+                setIsCountingIn(false);
+            } else {
+                // Set count-in bars from recorder state
+                const bars = recorder.state.countInBars || 1;
+                setCountInBars(bars);
+                
+                const success = recorder.startRecording({
+                    mode: 'replace', // Default mode
+                    quantizeStrength: 0,
+                    countInBars: bars
+                });
+                if (success) {
+                    // Count-in will be handled by MIDIRecorder
+                    // We'll update isCountingIn via event listeners
+                    setIsCountingIn(bars > 0);
+                    if (bars === 0) {
+                        setIsRecording(true);
+                    }
+                }
+            }
+        }
     });
 
     const {
@@ -1020,7 +1283,8 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
                         position: currentPosition,
                         isPlaying: currentPlaybackState === 'playing',
                         playbackState: currentPlaybackState
-                    }
+                    },
+                    isRecording: isRecording // ✅ Pass recording state
                 });
             },
             UPDATE_PRIORITIES.HIGH, // Important but can defer slightly
@@ -1096,55 +1360,66 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
 
             if (eventKey !== currentKey) return;
 
+            // ✅ FIX: Use queueMicrotask to avoid render-phase state updates
             // Sync ccLanes with AutomationManager
-            const managerLanes = automationManager.getLanes(activePatternId, currentInstrument.id);
-            setCCLanes(managerLanes);
+            queueMicrotask(() => {
+                const managerLanes = automationManager.getLanes(activePatternId, currentInstrument.id);
+                setCCLanes(managerLanes);
+            });
         });
 
         return unsubscribe;
     }, [activePatternId, currentInstrument]);
 
+    // ✅ FIX: Legacy handler - CCLanes now uses useAutomationEditor hook internally
+    // This handler is only used as fallback, wrap in queueMicrotask to avoid render-phase updates
     const handleCCLanePointAdd = useCallback((ccNumber, time, value) => {
         if (!activePatternId || !currentInstrument) return;
 
-        const automationManager = getAutomationManager();
+        queueMicrotask(() => {
+            const automationManager = getAutomationManager();
 
-        setCCLanes(prevLanes => {
-            const updatedLanes = prevLanes.map(lane => {
-                if (lane.ccNumber === ccNumber) {
-                    const newLane = lane.clone();
-                    newLane.addPoint(time, value);
-                    return newLane;
-                }
-                return lane;
+            setCCLanes(prevLanes => {
+                const updatedLanes = prevLanes.map(lane => {
+                    if (lane.ccNumber === ccNumber) {
+                        const newLane = lane.clone();
+                        newLane.addPoint(time, value);
+                        return newLane;
+                    }
+                    return lane;
+                });
+
+                // ✅ PHASE 4: Save to AutomationManager (pattern + instrument specific)
+                automationManager.setLanes(activePatternId, currentInstrument.id, updatedLanes);
+
+                return updatedLanes;
             });
-
-            // ✅ PHASE 4: Save to AutomationManager (pattern + instrument specific)
-            automationManager.setLanes(activePatternId, currentInstrument.id, updatedLanes);
-
-            return updatedLanes;
         });
     }, [activePatternId, currentInstrument]);
 
+    // ✅ FIX: Legacy handler - CCLanes now uses useAutomationEditor hook internally
+    // This handler is only used as fallback, wrap in queueMicrotask to avoid render-phase updates
     const handleCCLanePointRemove = useCallback((ccNumber, pointIndex) => {
         if (!activePatternId || !currentInstrument) return;
 
-        const automationManager = getAutomationManager();
+        queueMicrotask(() => {
+            const automationManager = getAutomationManager();
 
-        setCCLanes(prevLanes => {
-            const updatedLanes = prevLanes.map(lane => {
-                if (lane.ccNumber === ccNumber) {
-                    const newLane = lane.clone();
-                    newLane.removePoint(pointIndex);
-                    return newLane;
-                }
-                return lane;
+            setCCLanes(prevLanes => {
+                const updatedLanes = prevLanes.map(lane => {
+                    if (lane.ccNumber === ccNumber) {
+                        const newLane = lane.clone();
+                        newLane.removePoint(pointIndex);
+                        return newLane;
+                    }
+                    return lane;
+                });
+
+                // ✅ PHASE 4: Save to AutomationManager (pattern + instrument specific)
+                automationManager.setLanes(activePatternId, currentInstrument.id, updatedLanes);
+
+                return updatedLanes;
             });
-
-            // ✅ PHASE 4: Save to AutomationManager (pattern + instrument specific)
-            automationManager.setLanes(activePatternId, currentInstrument.id, updatedLanes);
-
-            return updatedLanes;
         });
     }, [activePatternId, currentInstrument]);
 
@@ -1345,6 +1620,16 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
 
     return (
         <div className="prv5-container">
+            {/* ✅ Count-in Overlay */}
+            <CountInOverlay
+                isCountingIn={isCountingIn}
+                countInBars={countInBars}
+                bpm={bpm}
+                onComplete={() => {
+                    setIsCountingIn(false);
+                }}
+            />
+
             <Toolbar
                 snapValue={snapValue}
                 onSnapChange={setSnapValue}
@@ -1362,15 +1647,40 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
                 onShowCCLanesChange={setShowCCLanes}
                 showNoteProperties={showNoteProperties}
                 onShowNotePropertiesChange={setShowNoteProperties}
-                // ✅ PHASE 5: Scale Selector
-                showScaleSelector={showScaleSelector}
-                onShowScaleSelectorChange={setShowScaleSelector}
+                // ✅ IMPROVED: Scale Highlighting - always enabled, but can be changed
+                scaleHighlight={scaleHighlight}
+                onScaleChange={(root, scaleType) => {
+                    const scaleSystem = getScaleSystem();
+                    scaleSystem.setScale(root, scaleType);
+                    setScaleHighlight(scaleSystem);
+                }}
+                // ✅ MIDI Recording
+                isRecording={isRecording}
+                onRecordToggle={async () => {
+                    const recorder = midiRecorderRef.current;
+                    if (!recorder) return;
+
+                    if (isRecording) {
+                        await recorder.stopRecording();
+                        setIsRecording(false);
+                    } else {
+                        const success = recorder.startRecording({
+                            mode: 'replace', // Default mode
+                            quantizeStrength: 0,
+                            countInBars: 1
+                        });
+                        if (success) {
+                            setIsRecording(true);
+                        }
+                    }
+                }}
             />
             <div
                 ref={containerRef}
                 className="prv5-canvas-container"
                 data-tool={activeTool}
                 style={{ cursor: currentCursor }}
+                tabIndex={0}
                 onWheel={(e) => {
                     const rect = e.currentTarget.getBoundingClientRect();
                     const x = e.clientX - rect.left;
@@ -1465,9 +1775,13 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
                     }
                     noteInteractions.handleKeyDown(e);
                 }}
-                onKeyUp={noteInteractions.handleKeyUp}
+                onKeyUp={(e) => {
+                    // ✅ RECORDING: Handle keyboard Note Off events
+                    if (noteInteractions.handleKeyUp) {
+                        noteInteractions.handleKeyUp(e);
+                    }
+                }}
                 onContextMenu={(e) => e.preventDefault()}
-                tabIndex={0}
             >
                 <canvas ref={gridCanvasRef} className="prv5-canvas prv5-canvas-grid" />
                 <canvas ref={notesCanvasRef} className="prv5-canvas prv5-canvas-notes" />
@@ -1548,6 +1862,7 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
                 <CCLanes
                     lanes={ccLanes}
                     selectedNoteIds={selectedNoteIdsArray}
+                    instrumentId={currentInstrument?.id} // ✅ FIX: Pass instrumentId prop
                     onLaneChange={(laneId, lane) => {
                         // Handle lane change if needed
                     }}
@@ -1573,12 +1888,7 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
                 />
             )}
 
-            {/* ✅ PHASE 5: SCALE SELECTOR PANEL */}
-            {showScaleSelector && (
-                <ScaleSelectorPanel
-                    onChange={handleScaleChange}
-                />
-            )}
+            {/* Removed: ScaleSelectorPanel - scale highlighting is now always enabled with default C Major */}
 
             {/* ✅ SHORTCUTS PANEL */}
             <ShortcutsPanel

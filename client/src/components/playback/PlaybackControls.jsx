@@ -7,10 +7,12 @@ import {
   Repeat, Clock, Radio, Music, Film,
   Volume2, Settings, Zap, Target
 } from 'lucide-react';
+import { BPMInput } from '@/components/controls/BPMInput';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
 import { useArrangementStore } from '@/store/useArrangementStore';
 import { PLAYBACK_MODES, PLAYBACK_STATES } from '@/config/constants';
 import { getTimelineController } from '@/lib/core/TimelineControllerSingleton';
+import EventBus from '@/lib/core/EventBus.js';
 
 export const PlaybackControls = () => {
   const {
@@ -45,6 +47,9 @@ export const PlaybackControls = () => {
   const TransportButtons = () => {
     // ✅ UNIFIED TRANSPORT: Use TimelineController for consistent behavior
     const handleUnifiedStop = async () => {
+      // ✅ Stop recording if active
+      EventBus.emit('transport:stop', {});
+      
       try {
         const timelineController = getTimelineController();
         await timelineController.stop();
@@ -259,44 +264,17 @@ export const PlaybackControls = () => {
   // =================== BPM CONTROL ===================
 
   const BPMControl = () => {
-    const [tempBpm, setTempBpm] = useState(bpm);
-    const [isEditing, setIsEditing] = useState(false);
-
-    useEffect(() => {
-      setTempBpm(bpm);
-    }, [bpm]);
-
-    const handleBpmSubmit = () => {
-      const newBpm = Math.max(60, Math.min(300, parseInt(tempBpm) || 120));
-      handleBpmChange(newBpm);
-      setIsEditing(false);
-    };
-
     return (
       <div className="flex items-center space-x-2">
         <Clock size={16} className="text-gray-400" />
-        {isEditing ? (
-          <input
-            type="number"
-            value={tempBpm}
-            onChange={(e) => setTempBpm(e.target.value)}
-            onBlur={handleBpmSubmit}
-            onKeyPress={(e) => e.key === 'Enter' && handleBpmSubmit()}
-            className="w-16 px-2 py-1 bg-gray-700 text-white rounded text-center text-sm"
-            min="60"
-            max="300"
-            autoFocus
-          />
-        ) : (
-          <button
-            onClick={() => setIsEditing(true)}
-            className="px-2 py-1 bg-gray-700 hover:bg-gray-600 text-white rounded text-sm min-w-12 text-center transition-colors"
-            title="Click to edit BPM"
-          >
-            {bpm}
-          </button>
-        )}
-        <span className="text-xs text-gray-400">BPM</span>
+        <BPMInput
+          value={bpm}
+          onChange={handleBpmChange}
+          showPresets={true}
+          showTapTempo={true}
+          showButtons={true}
+          precision={1}
+        />
       </div>
     );
   };

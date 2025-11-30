@@ -92,10 +92,11 @@ const Mixer = ({ isVisible = true }) => {
           toggleMute(activeChannelId);
           break;
 
-        case 's':
-          e.preventDefault();
-          toggleSolo(activeChannelId);
-          break;
+        // ✅ FIX: Removed 's' key shortcut to avoid conflict with VASynthEditorV2 preview keyboard
+        // case 's':
+        //   e.preventDefault();
+        //   toggleSolo(activeChannelId);
+        //   break;
 
         case 'delete':
         case 'backspace':

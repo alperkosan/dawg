@@ -490,7 +490,12 @@ export class PlaybackController extends SimpleEventEmitter {
   // =================== SETTINGS ===================
 
   setBPM(bpm) {
-    this.state.bpm = Math.max(60, Math.min(300, bpm));
+    // ✅ FIX: Remove BPM restrictions - only ensure positive value
+    if (bpm <= 0 || isNaN(bpm)) {
+      console.warn('Invalid BPM value:', bpm);
+      return;
+    }
+    this.state.bpm = bpm;
     this.audioEngine.playbackManager.setBPM(this.state.bpm);
     this._emitStateChange('bpm-change');
   }

@@ -353,7 +353,7 @@ export class ExportManager {
         };
 
         if (channelId === 'master') {
-            // Master: include all instruments
+            // Master: include all instruments (even if empty - master is the mix of all channels)
             filteredPatternData.data = pattern.data;
         } else {
             // Regular channel: only include instruments routed to this channel
@@ -364,10 +364,19 @@ export class ExportManager {
             });
         }
 
-        // Check if we have any notes
-        const hasNotes = Object.values(filteredPatternData.data).some(notes => notes && notes.length > 0);
-        if (!hasNotes) {
-            throw new Error(`No notes found for channel ${channelName}`);
+        // Check if we have any notes (skip check for master - it's the mix of all channels)
+        if (channelId !== 'master') {
+            const hasNotes = Object.values(filteredPatternData.data).some(notes => notes && notes.length > 0);
+            if (!hasNotes) {
+                throw new Error(`No notes found for channel ${channelName}`);
+            }
+        } else {
+            // For master, check if pattern has any data at all (even if empty notes)
+            // Master export should work even with empty patterns (silence export)
+            const hasAnyData = Object.keys(filteredPatternData.data).length > 0;
+            if (!hasAnyData) {
+                throw new Error(`No instruments found in pattern for master export`);
+            }
         }
 
         if (onProgress) {
@@ -525,37 +534,47 @@ export class ExportManager {
         this.isExporting = true;
 
         try {
-            // Get arrangement from workspace store
-            const { useArrangementWorkspaceStore } = await import('@/store/useArrangementWorkspaceStore');
-            const workspaceStore = useArrangementWorkspaceStore.getState();
+            // ✅ FIX: Get clips from useArrangementStore (where ArrangementPanelV2 stores them)
+            const arrangementStore = useArrangementStore.getState();
+            const clips = arrangementStore.arrangementClips || [];
             
-            const arrangement = arrangementId 
-                ? workspaceStore.arrangements[arrangementId]
-                : workspaceStore.getActiveArrangement();
-
-            if (!arrangement) {
-                throw new Error('No arrangement found');
+            // Get arrangement metadata from workspace store (optional, for name/tempo)
+            let arrangementName = 'Arrangement';
+            let arrangementTempo = null;
+            
+            try {
+                const { useArrangementWorkspaceStore } = await import('@/store/useArrangementWorkspaceStore');
+                const workspaceStore = useArrangementWorkspaceStore.getState();
+                const arrangement = arrangementId 
+                    ? workspaceStore.arrangements[arrangementId]
+                    : workspaceStore.getActiveArrangement();
+                
+                if (arrangement) {
+                    arrangementName = arrangement.name || 'Arrangement';
+                    arrangementTempo = arrangement.tempo;
+                }
+            } catch (err) {
+                console.warn('⚠️ Could not load arrangement metadata from workspace store:', err);
             }
 
-            if (!arrangement.clips || arrangement.clips.length === 0) {
+            if (!clips || clips.length === 0) {
                 throw new Error('Arrangement has no clips');
             }
 
-            console.log(`🎵 Exporting arrangement: ${arrangement.name} (${arrangement.clips.length} clips)`);
+            console.log(`🎵 Exporting arrangement: ${arrangementName} (${clips.length} clips)`);
 
             if (onProgress) {
                 onProgress(0, 'preparing');
             }
 
-            // Get arrangement store for patterns
-            const arrangementStore = useArrangementStore.getState();
+            // Get patterns from arrangement store
             const patterns = arrangementStore.patterns;
 
             // Convert clips to pattern sequence for rendering
             const patternSequence = [];
-            const bpm = arrangement.tempo || usePlaybackStore.getState().bpm || 140;
+            const bpm = arrangementTempo || usePlaybackStore.getState().bpm || 140;
 
-            for (const clip of arrangement.clips) {
+            for (const clip of clips) {
                 if (clip.type === 'pattern' && clip.patternId) {
                     const pattern = patterns[clip.patternId];
                     if (pattern && pattern.data) {
@@ -620,9 +639,9 @@ export class ExportManager {
             // Generate filename
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
             const filename = settings.fileNameTemplate
-                .replace('{arrangementName}', arrangement.name || 'arrangement')
+                .replace('{arrangementName}', arrangementName || 'arrangement')
                 .replace('{timestamp}', timestamp)
-                .replace('{format}', settings.format) || `arrangement_${arrangement.name || 'export'}_${timestamp}.${this.audioExportManager._getFileExtension(settings.format)}`;
+                .replace('{format}', settings.format) || `arrangement_${arrangementName || 'export'}_${timestamp}.${this.audioExportManager._getFileExtension(settings.format)}`;
 
             if (onProgress) {
                 onProgress(90, 'finalizing');
@@ -639,7 +658,7 @@ export class ExportManager {
                 const durationBeats = (processedBuffer.duration / 60) * bpm;
                 assetId = await this._createAudioAsset(
                     processedBuffer,
-                    arrangement.name || 'Arrangement',
+                    arrangementName || 'Arrangement',
                     'arrangement',
                     durationBeats
                 );
@@ -650,8 +669,8 @@ export class ExportManager {
             }
 
             return {
-                arrangementId: arrangement.id,
-                arrangementName: arrangement.name,
+                arrangementId: arrangementId || 'active',
+                arrangementName: arrangementName,
                 filename,
                 size: blob.size,
                 format: settings.format,

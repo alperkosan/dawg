@@ -1,0 +1,76 @@
+/* Automation Lanes Styles for Arrangement Panel */
+.arr-v2-automation-lanes {
+    border-top: 1px solid var(--zenith-border-subtle, rgba(255, 255, 255, 0.05));
+    background: var(--zenith-bg-primary, #0A0E1A);
+}
+
+.arr-v2-automation-lanes-collapsed {
+    border-top: 1px solid var(--zenith-border-subtle, rgba(255, 255, 255, 0.05));
+    background: var(--zenith-bg-primary, #0A0E1A);
+    padding: 4px 8px;
+}
+
+.arr-v2-automation-lanes-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 8px;
+    background: var(--zenith-bg-tertiary, #1E242F);
+    border-bottom: 1px solid var(--zenith-border-subtle, rgba(255, 255, 255, 0.05));
+}
+
+.arr-v2-automation-toggle {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    background: transparent;
+    border: none;
+    border-radius: var(--border-radius-sm, 4px);
+    color: var(--zenith-text-secondary, #A1A8B5);
+    font-size: var(--font-size-sm, 12px);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.arr-v2-automation-toggle:hover {
+    background: var(--zenith-overlay-light, rgba(255, 255, 255, 0.05));
+    color: var(--zenith-text-primary, #FFFFFF);
+}
+
+.arr-v2-automation-toggle-icon {
+    font-size: 14px;
+}
+
+.arr-v2-automation-toggle-label {
+    font-size: var(--font-size-xs, 10px);
+}
+
+.arr-v2-automation-lane-select {
+    flex: 1;
+    padding: 4px 8px;
+    background: var(--zenith-bg-primary, #0A0E1A);
+    border: 1px solid var(--zenith-border-medium, rgba(255, 255, 255, 0.1));
+    border-radius: var(--border-radius-sm, 4px);
+    color: var(--zenith-text-primary, #FFFFFF);
+    font-size: var(--font-size-sm, 12px);
+    cursor: pointer;
+}
+
+.arr-v2-automation-lane-select:hover {
+    border-color: var(--zenith-border-strong, rgba(255, 255, 255, 0.2));
+}
+
+.arr-v2-automation-lane-container {
+    width: 100%;
+    overflow: hidden;
+}
+
+.arr-v2-automation-lanes-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--zenith-text-tertiary, #6B7280);
+    font-size: var(--font-size-sm, 12px);
+}
+

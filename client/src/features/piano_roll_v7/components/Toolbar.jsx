@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { MousePointer, Edit3, Eraser, Scissors, Music, Zap, Guitar, Shuffle, FlipHorizontal2, Piano, Settings, Sliders, Link2, ScaleIcon } from 'lucide-react';
+import { MousePointer, Edit3, Eraser, Scissors, Music, Zap, Guitar, Shuffle, FlipHorizontal2, Piano, Settings, Sliders, Link2, ChevronDown, Circle } from 'lucide-react';
 import { getToolManager, TOOL_TYPES } from '@/lib/piano-roll-tools';
+import { SCALES, NOTE_NAMES } from '@/lib/music/ScaleSystem';
 import './Toolbar.css';
 
 const regularSnapOptions = {
@@ -48,31 +49,41 @@ function Toolbar({
     onShowCCLanesChange,
     showNoteProperties = false,
     onShowNotePropertiesChange,
-    // ✅ PHASE 5: Scale Selector
-    showScaleSelector = false,
-    onShowScaleSelectorChange
+    // ✅ IMPROVED: Scale Highlighting - always enabled, but can be changed
+    scaleHighlight = null,
+    onScaleChange = null,
+    // ✅ MIDI Recording
+    isRecording = false,
+    onRecordToggle = null
 }) {
     const [showQuantizeMenu, setShowQuantizeMenu] = useState(false);
     const [showPianoSettings, setShowPianoSettings] = useState(false);
+    const [showScaleMenu, setShowScaleMenu] = useState(false);
     const pianoButtonRef = useRef(null);
+    const scaleButtonRef = useRef(null);
 
-    // Close settings dropdown on click outside
+    // Close dropdowns on click outside
     useEffect(() => {
-        if (!showPianoSettings) return;
-
         const handleClickOutside = (e) => {
-            if (pianoButtonRef.current && !pianoButtonRef.current.contains(e.target)) {
-                // Check if click is inside the dropdown
+            // Piano settings dropdown
+            if (showPianoSettings && pianoButtonRef.current && !pianoButtonRef.current.contains(e.target)) {
                 const dropdown = document.querySelector('.prv7-piano-settings-menu');
                 if (!dropdown || !dropdown.contains(e.target)) {
                     setShowPianoSettings(false);
+                }
+            }
+            // Scale menu dropdown
+            if (showScaleMenu && scaleButtonRef.current && !scaleButtonRef.current.contains(e.target)) {
+                const dropdown = document.querySelector('.prv7-scale-menu');
+                if (!dropdown || !dropdown.contains(e.target)) {
+                    setShowScaleMenu(false);
                 }
             }
         };
 
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, [showPianoSettings]);
+    }, [showPianoSettings, showScaleMenu]);
 
     return (
         <div className="prv7-toolbar">
@@ -123,6 +134,22 @@ function Toolbar({
 
             {/* Sağ Grup - Sadece Essential Settings */}
             <div className="prv7-toolbar-group">
+                {/* ✅ MIDI Recording Button */}
+                {onRecordToggle && (
+                    <button
+                        className={`prv7-tool-btn prv7-record-btn ${isRecording ? 'prv7-record-btn--recording' : ''}`}
+                        onClick={onRecordToggle}
+                        title={`${isRecording ? 'Stop Recording' : 'Start Recording'} (R)`}
+                        style={{ marginRight: '8px' }}
+                    >
+                        <Circle 
+                            size={18} 
+                            fill={isRecording ? 'currentColor' : 'none'}
+                            className={isRecording ? 'prv7-record-pulse' : ''}
+                        />
+                    </button>
+                )}
+
                 {/* ✅ PHASE 2: CC Lanes Toggle */}
                 <button
                     className={`prv7-tool-btn ${showCCLanes ? 'prv7-tool-btn--active' : ''}`}
@@ -143,15 +170,204 @@ function Toolbar({
                     <Settings size={18} />
                 </button>
 
-                {/* ✅ PHASE 5: Scale Selector Toggle */}
-                <button
-                    className={`prv7-tool-btn ${showScaleSelector ? 'prv7-tool-btn--active' : ''}`}
-                    onClick={() => onShowScaleSelectorChange?.(!showScaleSelector)}
-                    title="Toggle Scale Highlighting"
-                    style={{ marginRight: '8px' }}
-                >
-                    <ScaleIcon size={18} />
-                </button>
+                {/* ✅ IMPROVED: Scale Selector - Compact dropdown */}
+                <div style={{ position: 'relative', marginRight: '8px' }}>
+                    <button
+                        ref={scaleButtonRef}
+                        className="prv7-tool-btn"
+                        onClick={() => setShowScaleMenu(!showScaleMenu)}
+                        title="Change Scale"
+                        style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            padding: '6px 10px',
+                            fontSize: '12px',
+                            fontWeight: 500
+                        }}
+                    >
+                        {scaleHighlight?.getScaleInfo() ? (
+                            <>
+                                <span style={{
+                                    color: scaleHighlight.getScaleInfo().color,
+                                    fontWeight: 600
+                                }}>
+                                    {scaleHighlight.getScaleInfo().name}
+                                </span>
+                                <ChevronDown size={14} />
+                            </>
+                        ) : (
+                            <>
+                                <span>C Major</span>
+                                <ChevronDown size={14} />
+                            </>
+                        )}
+                    </button>
+
+                    {/* Scale Menu Dropdown */}
+                    {showScaleMenu && (
+                        <div
+                            className="prv7-scale-menu"
+                            style={{
+                                position: 'absolute',
+                                top: '100%',
+                                right: 0,
+                                marginTop: '4px',
+                                background: 'var(--zenith-bg-primary, #0A0E1A)',
+                                border: '1px solid var(--zenith-border-medium, rgba(255, 255, 255, 0.1))',
+                                borderRadius: '8px',
+                                padding: '8px',
+                                minWidth: '280px',
+                                maxHeight: '400px',
+                                overflowY: 'auto',
+                                zIndex: 1000,
+                                boxShadow: '0 8px 24px rgba(0, 0, 0, 0.4)'
+                            }}
+                        >
+                            {/* Root Note Selection */}
+                            <div style={{ marginBottom: '12px' }}>
+                                <div style={{
+                                    fontSize: '11px',
+                                    color: 'var(--zenith-text-secondary, rgba(255, 255, 255, 0.7))',
+                                    marginBottom: '6px',
+                                    textTransform: 'uppercase',
+                                    letterSpacing: '0.5px'
+                                }}>
+                                    Root Note
+                                </div>
+                                <div style={{
+                                    display: 'grid',
+                                    gridTemplateColumns: 'repeat(6, 1fr)',
+                                    gap: '4px'
+                                }}>
+                                    {NOTE_NAMES.map((note, index) => {
+                                        const currentScale = scaleHighlight?.getScale();
+                                        const isSelected = currentScale?.root === index;
+                                        const scaleColor = scaleHighlight?.getScaleInfo()?.color || '#3b82f6';
+                                        const colorRgb = scaleColor.replace('#', '').match(/.{1,2}/g)?.map(x => parseInt(x, 16)).join(', ') || '59, 130, 246';
+                                        return (
+                                            <button
+                                                key={index}
+                                                onClick={() => {
+                                                    if (onScaleChange && currentScale) {
+                                                        onScaleChange(index, currentScale.scaleType);
+                                                        setShowScaleMenu(false);
+                                                    }
+                                                }}
+                                                style={{
+                                                    padding: '6px 8px',
+                                                    fontSize: '11px',
+                                                    background: isSelected
+                                                        ? `rgba(${colorRgb}, 0.2)`
+                                                        : 'var(--zenith-bg-tertiary, rgba(255, 255, 255, 0.05))',
+                                                    border: `1px solid ${isSelected ? scaleColor : 'var(--zenith-border-subtle, rgba(255, 255, 255, 0.08))'}`,
+                                                    borderRadius: '4px',
+                                                    color: isSelected ? scaleColor : 'var(--zenith-text-primary, #FFFFFF)',
+                                                    cursor: 'pointer',
+                                                    transition: 'all 0.15s',
+                                                    fontWeight: isSelected ? 600 : 400
+                                                }}
+                                                onMouseEnter={(e) => {
+                                                    if (!isSelected) {
+                                                        e.target.style.background = 'var(--zenith-bg-hover, rgba(255, 255, 255, 0.08))';
+                                                        e.target.style.borderColor = 'var(--zenith-border-medium, rgba(255, 255, 255, 0.15))';
+                                                    }
+                                                }}
+                                                onMouseLeave={(e) => {
+                                                    if (!isSelected) {
+                                                        e.target.style.background = 'var(--zenith-bg-tertiary, rgba(255, 255, 255, 0.05))';
+                                                        e.target.style.borderColor = 'var(--zenith-border-subtle, rgba(255, 255, 255, 0.08))';
+                                                    }
+                                                }}
+                                            >
+                                                {note}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+
+                            {/* Scale Type Selection */}
+                            <div>
+                                <div style={{
+                                    fontSize: '11px',
+                                    color: 'var(--zenith-text-secondary, rgba(255, 255, 255, 0.7))',
+                                    marginBottom: '6px',
+                                    textTransform: 'uppercase',
+                                    letterSpacing: '0.5px'
+                                }}>
+                                    Scale Type
+                                </div>
+                                <div style={{
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '4px',
+                                    maxHeight: '240px',
+                                    overflowY: 'auto'
+                                }}>
+                                    {Object.entries(SCALES).map(([key, scale]) => {
+                                        const currentScale = scaleHighlight?.getScale();
+                                        const isSelected = currentScale?.scaleType === key;
+                                        const scaleColorRgb = scale.color.replace('#', '').match(/.{1,2}/g)?.map(x => parseInt(x, 16)).join(', ') || '59, 130, 246';
+                                        return (
+                                            <button
+                                                key={key}
+                                                onClick={() => {
+                                                    if (onScaleChange && currentScale) {
+                                                        onScaleChange(currentScale.root, key);
+                                                        setShowScaleMenu(false);
+                                                    }
+                                                }}
+                                                style={{
+                                                    padding: '8px 12px',
+                                                    fontSize: '12px',
+                                                    textAlign: 'left',
+                                                    background: isSelected
+                                                        ? `rgba(${scaleColorRgb}, 0.15)`
+                                                        : 'var(--zenith-bg-tertiary, rgba(255, 255, 255, 0.05))',
+                                                    border: `1px solid ${isSelected ? scale.color : 'var(--zenith-border-subtle, rgba(255, 255, 255, 0.08))'}`,
+                                                    borderLeft: `3px solid ${scale.color}`,
+                                                    borderRadius: '4px',
+                                                    color: 'var(--zenith-text-primary, #FFFFFF)',
+                                                    cursor: 'pointer',
+                                                    transition: 'all 0.15s',
+                                                    display: 'flex',
+                                                    justifyContent: 'space-between',
+                                                    alignItems: 'center'
+                                                }}
+                                                onMouseEnter={(e) => {
+                                                    if (!isSelected) {
+                                                        e.target.style.background = 'var(--zenith-bg-hover, rgba(255, 255, 255, 0.08))';
+                                                        e.target.style.borderColor = scale.color;
+                                                    }
+                                                }}
+                                                onMouseLeave={(e) => {
+                                                    if (!isSelected) {
+                                                        e.target.style.background = 'var(--zenith-bg-tertiary, rgba(255, 255, 255, 0.05))';
+                                                        e.target.style.borderColor = 'var(--zenith-border-subtle, rgba(255, 255, 255, 0.08))';
+                                                    }
+                                                }}
+                                            >
+                                                <div>
+                                                    <div style={{ fontWeight: isSelected ? 600 : 500 }}>
+                                                        {scale.name}
+                                                    </div>
+                                                    <div style={{
+                                                        fontSize: '10px',
+                                                        color: 'var(--zenith-text-tertiary, #6B7280)',
+                                                        marginTop: '2px'
+                                                    }}>
+                                                        {scale.description}
+                                                    </div>
+                                                </div>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
 
                 {/* Keyboard Piano Mode Toggle */}
                 <div style={{ position: 'relative', marginRight: '12px' }}>

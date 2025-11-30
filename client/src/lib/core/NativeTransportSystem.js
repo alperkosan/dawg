@@ -280,7 +280,10 @@ export class NativeTransportSystem {
     }
 
     setBPM(bpm) {
-        if (bpm < 60 || bpm > 200) {
+        // ✅ FIX: Remove BPM restrictions - only ensure positive value
+        if (bpm <= 0 || isNaN(bpm)) {
+            console.warn('Invalid BPM value:', bpm);
+            return this;
         }
 
         // Store old BPM for timing adjustment

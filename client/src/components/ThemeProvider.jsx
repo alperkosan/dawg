@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { useThemeStore } from '@/store/useThemeStore';
+import { globalStyleCache } from '@/lib/rendering/StyleCache';
 
 /**
  * ThemeProvider - Zenith Design System Integration
@@ -32,6 +33,20 @@ export const ThemeProvider = ({ children }) => {
       .replace(/^-|-$/g, '');
     root.setAttribute('data-theme-id', themeSlug);
     root.setAttribute('data-theme-name', activeTheme.name);
+
+    // ✅ FIX: Invalidate StyleCache after theme is applied
+    // This ensures canvas renderers get fresh theme values
+    // Use requestAnimationFrame to ensure CSS variables are fully applied
+    requestAnimationFrame(() => {
+      globalStyleCache.invalidate();
+      console.log('🎨 StyleCache invalidated after theme application');
+    });
+
+    // ✅ FIX: Dispatch themeChanged event for canvas components
+    // This ensures all canvas renderers re-render with new theme
+    window.dispatchEvent(new CustomEvent('themeChanged', { 
+      detail: { themeId: activeTheme.id, themeName: activeTheme.name } 
+    }));
 
     console.log(`🎨 Theme applied: ${activeTheme.name}`, {
       colors: Object.keys(activeTheme.colors).length,

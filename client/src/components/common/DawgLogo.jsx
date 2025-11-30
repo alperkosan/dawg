@@ -29,191 +29,302 @@ const useThemePalette = () => {
 };
 
 const BoomboxLogo = ({ palette, uniqueId, isIcon, offsetX = 0, offsetY = 0 }) => {
-  // 100x100 alan için optimize - her detay maksimum etki için
   return (
-    <g transform={`translate(${offsetX}, ${offsetY})`} opacity={1}>
+    <g transform={`translate(${offsetX}, ${offsetY})`}>
       <defs>
-        {/* Main boombox gradient - bold and vibrant */}
-        <linearGradient id={`boombox-gradient-${uniqueId}`} x1="0%" y1="0%" x2="100%" y2="100%">
+        {/* Boombox body gradient - metallic feel with vibrant accents */}
+        <linearGradient id={`boombox-body-gradient-${uniqueId}`} x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stopColor={palette.surface} stopOpacity="0.95" />
+          <stop offset="30%" stopColor={palette.surfaceDeep} stopOpacity="0.98" />
+          <stop offset="70%" stopColor={palette.surfaceDeep} stopOpacity="1" />
+          <stop offset="100%" stopColor={palette.surfaceDeep} stopOpacity="1" />
+        </linearGradient>
+
+        {/* Boombox accent gradient - colorful edge */}
+        <linearGradient id={`boombox-accent-gradient-${uniqueId}`} x1="0%" y1="0%" x2="100%" y2="0%">
           <stop offset="0%" stopColor={palette.primary} />
-          <stop offset="50%" stopColor={palette.secondary} />
-          <stop offset="100%" stopColor={palette.tertiary} />
+          <stop offset="25%" stopColor={palette.secondary} />
+          <stop offset="50%" stopColor={palette.tertiary} />
+          <stop offset="75%" stopColor={palette.quaternary} />
+          <stop offset="100%" stopColor={palette.primary} />
         </linearGradient>
 
-        {/* Text gradient - high contrast */}
-        <linearGradient id={`text-gradient-${uniqueId}`} x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor={palette.secondary} />
-          <stop offset="50%" stopColor={palette.primary} />
-          <stop offset="100%" stopColor={palette.tertiary} />
-        </linearGradient>
+        {/* Speaker grill pattern - professional */}
+        <pattern id={`speaker-grill-${uniqueId}`} x="0" y="0" width="4" height="4" patternUnits="userSpaceOnUse">
+          <circle cx="2" cy="2" r="0.8" fill={palette.surfaceDeep} opacity="0.6" />
+        </pattern>
 
-        {/* Strong glow for impact */}
-        <filter id={`glow-${uniqueId}`} x="-50%" y="-50%" width="200%" height="200%">
-          <feGaussianBlur stdDeviation="2" result="coloredBlur" />
+        {/* Speaker highlight pattern */}
+        <radialGradient id={`speaker-highlight-${uniqueId}`} cx="50%" cy="50%">
+          <stop offset="0%" stopColor={palette.textPrimary} stopOpacity="0.3" />
+          <stop offset="70%" stopColor={palette.surfaceDeep} stopOpacity="0.5" />
+          <stop offset="100%" stopColor={palette.surfaceDeep} stopOpacity="1" />
+        </radialGradient>
+
+        {/* Boombox shadow for depth */}
+        <filter id={`boombox-shadow-${uniqueId}`} x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur in="SourceAlpha" stdDeviation="2.5" result="blur" />
+          <feOffset in="blur" dx="2" dy="2" result="offsetBlur" />
+          <feComponentTransfer>
+            <feFuncA type="linear" slope="0.4" />
+          </feComponentTransfer>
+          <feMerge>
+            <feMergeNode />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+
+        {/* Glow effect for speakers */}
+        <filter id={`speaker-glow-${uniqueId}`} x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur stdDeviation="1" result="coloredBlur" />
           <feMerge>
             <feMergeNode in="coloredBlur" />
             <feMergeNode in="SourceGraphic" />
           </feMerge>
         </filter>
 
-        {/* Simple speaker pattern - visible at small sizes */}
-        <pattern id={`speaker-dots-${uniqueId}`} x="0" y="0" width="3" height="3" patternUnits="userSpaceOnUse">
-          <circle cx="1.5" cy="1.5" r="0.6" fill={palette.surfaceDeep} opacity="0.8" />
-        </pattern>
-
-        {/* Shine effect */}
-        <linearGradient id={`shine-${uniqueId}`} x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="white" stopOpacity="0.5" />
-          <stop offset="50%" stopColor="white" stopOpacity="0.2" />
+        {/* Metallic shine */}
+        <linearGradient id={`metallic-shine-${uniqueId}`} x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stopColor="white" stopOpacity="0.15" />
+          <stop offset="30%" stopColor="white" stopOpacity="0.05" />
           <stop offset="100%" stopColor="white" stopOpacity="0" />
         </linearGradient>
       </defs>
 
-      {/* Main boombox body - fills 100x100 space efficiently */}
-      <g filter={`url(#glow-${uniqueId})`}>
-        {/* Boombox case - main body, fills most space */}
-        <rect
-          x="8"
-          y="15"
-          width="84"
-          height="60"
-          rx="5"
-          ry="5"
-          fill={`url(#boombox-gradient-${uniqueId})`}
-          stroke={palette.surface}
-          strokeWidth="2"
-        />
-
-        {/* Top shine - adds depth */}
-        <rect
-          x="8"
-          y="15"
-          width="84"
-          height="30"
-          rx="5"
-          fill={`url(#shine-${uniqueId})`}
-        />
-
-        {/* Left speaker - bold and clear */}
-        <g transform="translate(15, 22)">
+      {/* Main composition - Boombox centered and prominent */}
+      <g>
+        {/* Boombox body - large, centered, and detailed */}
+        <g transform="translate(5, 20)" filter={`url(#boombox-shadow-${uniqueId})`}>
+          {/* Main body with accent border */}
           <rect
             x="0"
             y="0"
-            width="24"
-            height="24"
-            rx="3"
-            fill={palette.surfaceDeep}
-            opacity="0.9"
-          />
-          <rect
-            x="1.5"
-            y="1.5"
-            width="21"
-            height="21"
-            rx="2"
-            fill={`url(#speaker-dots-${uniqueId})`}
-          />
-          {/* Speaker center highlight - visible */}
-          <circle
-            cx="12"
-            cy="12"
-            r="7"
-            fill="none"
-            stroke={palette.secondary}
-            strokeWidth="1.5"
-            opacity="0.8"
-          />
-        </g>
-
-        {/* Center - DAWG text - MAXIMUM IMPACT */}
-        <g transform="translate(38, 26)">
-          <rect
-            x="0"
-            y="0"
-            width="24"
-            height="16"
-            rx="2.5"
-            fill={palette.surfaceDeep}
+            width="90"
+            height="55"
+            rx="5"
+            ry="5"
+            fill={`url(#boombox-body-gradient-${uniqueId})`}
+            stroke={`url(#boombox-accent-gradient-${uniqueId})`}
+            strokeWidth="2"
             opacity="0.95"
           />
-          <text
-            x="12"
-            y="11"
-            fontFamily="'Sora', 'Inter', sans-serif"
-            fontSize="10"
-            fontWeight="900"
-            letterSpacing="0.08em"
-            fill={`url(#text-gradient-${uniqueId})`}
-            textAnchor="middle"
-            dominantBaseline="middle"
-          >
-            DAWG
-          </text>
-        </g>
-
-        {/* Right speaker - bold and clear */}
-        <g transform="translate(61, 22)">
+          
+          {/* Accent border highlight */}
+          <rect
+            x="1"
+            y="1"
+            width="88"
+            height="53"
+            rx="4"
+            fill="none"
+            stroke={palette.primary}
+            strokeWidth="0.8"
+            opacity="0.4"
+          />
+          
+          {/* Metallic shine overlay */}
           <rect
             x="0"
             y="0"
-            width="24"
-            height="24"
-            rx="3"
+            width="90"
+            height="28"
+            rx="5"
+            fill={`url(#metallic-shine-${uniqueId})`}
+          />
+
+          {/* Left speaker - prominent and detailed */}
+          <g transform="translate(10, 8)">
+            <rect
+              x="0"
+              y="0"
+              width="30"
+              height="39"
+              rx="3.5"
+              fill={palette.surfaceDeep}
+              opacity="0.95"
+            />
+            <rect
+              x="2"
+              y="2"
+              width="26"
+              height="35"
+              rx="2.5"
+              fill={`url(#speaker-grill-${uniqueId})`}
+            />
+            {/* Speaker center cone - more prominent */}
+            <ellipse
+              cx="15"
+              cy="19.5"
+              rx="9"
+              ry="11"
+              fill={`url(#speaker-highlight-${uniqueId})`}
+              filter={`url(#speaker-glow-${uniqueId})`}
+            />
+            <ellipse
+              cx="15"
+              cy="19.5"
+              rx="6"
+              ry="7"
+              fill="none"
+              stroke={palette.primary}
+              strokeWidth="1.5"
+              opacity="0.75"
+            />
+            <ellipse
+              cx="15"
+              cy="19.5"
+              rx="3"
+              ry="3.5"
+              fill={palette.primary}
+              opacity="0.3"
+            />
+          </g>
+
+          {/* Right speaker - prominent and detailed */}
+          <g transform="translate(50, 8)">
+            <rect
+              x="0"
+              y="0"
+              width="30"
+              height="39"
+              rx="3.5"
+              fill={palette.surfaceDeep}
+              opacity="0.95"
+            />
+            <rect
+              x="2"
+              y="2"
+              width="26"
+              height="35"
+              rx="2.5"
+              fill={`url(#speaker-grill-${uniqueId})`}
+            />
+            {/* Speaker center cone - more prominent */}
+            <ellipse
+              cx="15"
+              cy="19.5"
+              rx="9"
+              ry="11"
+              fill={`url(#speaker-highlight-${uniqueId})`}
+              filter={`url(#speaker-glow-${uniqueId})`}
+            />
+            <ellipse
+              cx="15"
+              cy="19.5"
+              rx="6"
+              ry="7"
+              fill="none"
+              stroke={palette.tertiary}
+              strokeWidth="1.5"
+              opacity="0.75"
+            />
+            <ellipse
+              cx="15"
+              cy="19.5"
+              rx="3"
+              ry="3.5"
+              fill={palette.tertiary}
+              opacity="0.3"
+            />
+          </g>
+
+          {/* Center control panel - enhanced with details */}
+          <g transform="translate(35, 12)">
+            <rect
+              x="0"
+              y="0"
+              width="20"
+              height="31"
+              rx="2.5"
+              fill={palette.surfaceDeep}
+              opacity="0.92"
+            />
+            {/* Control panel details */}
+            <rect
+              x="3"
+              y="5"
+              width="14"
+              height="3"
+              rx="1"
+              fill={palette.secondary}
+              opacity="0.6"
+            />
+            <circle
+              cx="10"
+              cy="15"
+              r="4"
+              fill={palette.quaternary}
+              opacity="0.5"
+            />
+            <rect
+              x="3"
+              y="22"
+              width="14"
+              height="2"
+              rx="1"
+              fill={palette.primary}
+              opacity="0.5"
+            />
+          </g>
+
+          {/* Top handle/bar */}
+          <rect
+            x="35"
+            y="2"
+            width="20"
+            height="4"
+            rx="2"
             fill={palette.surfaceDeep}
             opacity="0.9"
           />
-          <rect
-            x="1.5"
-            y="1.5"
-            width="21"
-            height="21"
-            rx="2"
-            fill={`url(#speaker-dots-${uniqueId})`}
+        </g>
+
+        {/* Audio waves - dynamic, positioned above boombox */}
+        <g transform="translate(0, 10)" opacity="0.95">
+          <path
+            d="M12 6 Q15 3, 18 6 Q21 9, 24 6 Q27 3, 30 6"
+            fill="none"
+            stroke={palette.primary}
+            strokeWidth="3"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            opacity="0.9"
           />
-          {/* Speaker center highlight - visible */}
-          <circle
-            cx="12"
-            cy="12"
-            r="7"
+          <path
+            d="M70 6 Q73 3, 76 6 Q79 9, 82 6 Q85 3, 88 6"
             fill="none"
             stroke={palette.tertiary}
-            strokeWidth="1.5"
-            opacity="0.8"
+            strokeWidth="3"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            opacity="0.9"
           />
         </g>
 
-        {/* Bottom accent bar - visual anchor */}
-        <rect
-          x="15"
-          y="70"
-          width="70"
-          height="5"
-          rx="2.5"
-          fill={palette.surfaceDeep}
-          opacity="0.85"
-        />
-        {/* Audio level bars - colorful indicators */}
-        <rect x="18" y="71.5" width="5" height="2" rx="0.5" fill={palette.primary} />
-        <rect x="25" y="71.5" width="5" height="2" rx="0.5" fill={palette.secondary} />
-        <rect x="32" y="71.5" width="5" height="2" rx="0.5" fill={palette.tertiary} />
-        <rect x="39" y="71.5" width="5" height="2" rx="0.5" fill={palette.quaternary} />
-
-        {/* Audio waves - minimal but impactful */}
-        <g transform="translate(0, 8)" opacity="0.95">
-          <path
-            d="M18 7 Q21 4, 24 7 Q27 10, 30 7"
-            fill="none"
-            stroke={palette.secondary}
-            strokeWidth="2"
-            strokeLinecap="round"
+        {/* Bottom accent - professional detail, aligned with boombox */}
+        <g transform="translate(10, 78)">
+          <rect
+            x="0"
+            y="0"
+            width="80"
+            height="4"
+            rx="2"
+            fill={palette.surfaceDeep}
+            opacity="0.9"
           />
-          <path
-            d="M70 7 Q73 4, 76 7 Q79 10, 82 7"
-            fill="none"
-            stroke={palette.tertiary}
-            strokeWidth="2"
-            strokeLinecap="round"
-          />
+          {/* Audio level indicators - vibrant and visible */}
+          <g transform="translate(3, 1)">
+            <rect x="0" y="0" width="6" height="2" rx="0.5" fill={palette.primary} opacity="1" />
+            <rect x="8" y="0" width="6" height="2" rx="0.5" fill={palette.secondary} opacity="1" />
+            <rect x="16" y="0" width="6" height="2" rx="0.5" fill={palette.tertiary} opacity="1" />
+            <rect x="24" y="0" width="6" height="2" rx="0.5" fill={palette.quaternary} opacity="1" />
+            <rect x="32" y="0" width="6" height="2" rx="0.5" fill={palette.primary} opacity="0.85" />
+            <rect x="40" y="0" width="6" height="2" rx="0.5" fill={palette.secondary} opacity="0.85" />
+            <rect x="48" y="0" width="6" height="2" rx="0.5" fill={palette.tertiary} opacity="0.7" />
+            <rect x="56" y="0" width="6" height="2" rx="0.5" fill={palette.quaternary} opacity="0.7" />
+            <rect x="64" y="0" width="6" height="2" rx="0.5" fill={palette.primary} opacity="0.5" />
+            <rect x="72" y="0" width="6" height="2" rx="0.5" fill={palette.secondary} opacity="0.5" />
+          </g>
         </g>
       </g>
     </g>
@@ -234,23 +345,25 @@ export const DawgLogo = ({ size = 32, className = '', variant = 'full' }) => {
   const logoOffsetY = 0;
 
   const wordmark = !isIcon && (
-    <g transform={`translate(50, 88)`} opacity={0.95}>
+    <g transform={`translate(50, 90)`} opacity={0.95}>
       <defs>
         <linearGradient id={`wordmark-gradient-${uniqueId}`} x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor={palette.secondary} />
-          <stop offset="50%" stopColor={palette.primary} />
-          <stop offset="100%" stopColor={palette.tertiary} />
+          <stop offset="0%" stopColor={palette.textMuted} />
+          <stop offset="50%" stopColor={palette.secondary} />
+          <stop offset="100%" stopColor={palette.textMuted} />
         </linearGradient>
       </defs>
       <text
         x={0}
         y={0}
         fontFamily="'Sora', 'Inter', -apple-system, sans-serif"
-        fontSize="7"
-        fontWeight="800"
-        letterSpacing="0.1em"
+        fontSize="6.8"
+        fontWeight="700"
+        letterSpacing="0.22em"
         fill={`url(#wordmark-gradient-${uniqueId})`}
         textAnchor="middle"
+        dominantBaseline="middle"
+        style={{ textRendering: 'optimizeLegibility' }}
       >
         ELEVATE
       </text>

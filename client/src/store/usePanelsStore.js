@@ -33,10 +33,18 @@ export const usePanelsStore = create((set, get) => ({
   editorClipData: null, // Sample Editor için clip metadata (name, color, etc.)
   pianoRollInstrumentId: null,
 
+  // ✅ NEW: Global modal states (rendered at App level to avoid overflow issues)
+  isAudioExportPanelOpen: false,
+  isInstrumentPickerOpen: false,
+
   // --- EYLEMLER (ACTIONS) ---
 
   setEditorBuffer: (buffer) => set({ editorBuffer: buffer }),
   setEditorClipData: (clipData) => set({ editorClipData: clipData }),
+  
+  // ✅ NEW: Modal state management
+  setAudioExportPanelOpen: (isOpen) => set({ isAudioExportPanelOpen: isOpen }),
+  setInstrumentPickerOpen: (isOpen) => set({ isInstrumentPickerOpen: isOpen }),
   
   // Minimize edilmiş panellerin listesini güncelleyen özel fonksiyon.
   _updateMinimizedPanels: () => {

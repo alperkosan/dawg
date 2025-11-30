@@ -27,6 +27,8 @@ import Taskbar from './features/taskbar/Taskbar';
 import InstrumentEditorPanel from './features/instrument_editor/InstrumentEditorPanel';
 import { PerformanceOverlay } from './components/debug/PerformanceOverlay';
 import ExportPanel from './components/ExportPanel';
+import AudioExportPanel from './components/AudioExportPanel';
+import { InstrumentPickerWrapper } from './components/InstrumentPickerWrapper';
 import AuthScreen from './components/auth/AuthScreen';
 import LoginPrompt from './components/common/LoginPrompt';
 import WelcomeScreen from './components/common/WelcomeScreen';
@@ -34,6 +36,7 @@ import NavigationHeader from './components/layout/NavigationHeader';
 import ProjectLoadingScreen from './components/common/ProjectLoadingScreen';
 import { ToastContainer } from './components/common/Toast';
 import ProjectTitleModal from './components/common/ProjectTitleModal';
+import { usePanelsStore } from './store/usePanelsStore';
 
 // ✅ CODE SPLITTING: Lazy load pages and heavy components
 const AdminPanel = lazy(() => import('./pages/AdminPanel'));
@@ -94,6 +97,9 @@ function DAWApp() {
   const [autoStartInProgress, setAutoStartInProgress] = useState(false);
   const [engineError, setEngineError] = useState(null);
   const [isExportPanelOpen, setIsExportPanelOpen] = useState(false);
+  // ✅ FIX: Get modal states from global store (reactive)
+  const isAudioExportPanelOpen = usePanelsStore(state => state.isAudioExportPanelOpen);
+  const setAudioExportPanelOpen = usePanelsStore(state => state.setAudioExportPanelOpen);
   const [showLoginPrompt, setShowLoginPrompt] = useState(false);
   const [showProjectTitleModal, setShowProjectTitleModal] = useState(false);
   const [currentProjectId, setCurrentProjectId] = useState(null);
@@ -826,6 +832,12 @@ function DAWApp() {
             <ToastContainer key={toastKey} toasts={toasts} onRemove={removeToast} />
             {/* ✅ FIX: Modal'ları app-container dışına taşıdık - pointer-events sorunlarını önlemek için */}
             <ExportPanel isOpen={isExportPanelOpen} onClose={() => setIsExportPanelOpen(false)} />
+            {/* ✅ FIX: Channel Rack modals moved to App level to avoid overflow issues */}
+            <AudioExportPanel 
+              isOpen={isAudioExportPanelOpen} 
+              onClose={() => setAudioExportPanelOpen(false)} 
+            />
+            <InstrumentPickerWrapper />
             <LoginPrompt 
               isOpen={showLoginPrompt} 
               onClose={() => setShowLoginPrompt(false)}
@@ -888,7 +900,7 @@ function DAWApp() {
         // No engine exists - show startup screen
         return <StartupScreen onStart={initializeAudioSystem} />;
     }
-  }, [engineStatus, engineError, initializeAudioSystem, isExportPanelOpen, showLoginPrompt, showProjectTitleModal, handleSave, isAuthenticated, isGuest, currentProjectId, handleProjectSelect, handleNewProject, handleEditTitle, isLoadingProject, loadingProjectTitle, currentProjectTitle, toasts, toastKey, removeToast, saveStatus, lastSavedAt, autoStartInProgress]);
+  }, [engineStatus, engineError, initializeAudioSystem, isExportPanelOpen, isAudioExportPanelOpen, setAudioExportPanelOpen, showLoginPrompt, showProjectTitleModal, handleSave, isAuthenticated, isGuest, currentProjectId, handleProjectSelect, handleNewProject, handleEditTitle, isLoadingProject, loadingProjectTitle, currentProjectTitle, toasts, toastKey, removeToast, saveStatus, lastSavedAt, autoStartInProgress]);
 
   return <>{renderContent()}</>;
 }

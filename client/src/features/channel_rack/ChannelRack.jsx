@@ -12,6 +12,7 @@ import { DeleteNoteCommand } from '@/lib/commands/DeleteNoteCommand';
 import { DND_TYPES, PANEL_IDS } from '@/config/constants';
 import { storeManager } from '@/store/StoreManager';
 import { createScrollSynchronizer, createWheelForwarder } from '@/lib/utils/scrollSync';
+import EventBus from '@/lib/core/EventBus';
 
 // ✅ PERFORMANCE: Local throttle utility removed - now using optimized scroll utilities
 import { Copy, X, Download } from 'lucide-react';
@@ -112,11 +113,14 @@ function ChannelRackComponent() {
   // State for pattern dropdown
   const [isPatternDropdownOpen, setIsPatternDropdownOpen] = useState(false);
 
-  // State for audio export panel
+  // State for audio export panel (legacy - kept for compatibility)
   const [isExportPanelOpen, setIsExportPanelOpen] = useState(false);
 
-  // ✅ NEW: State for instrument picker
-  const [isInstrumentPickerOpen, setIsInstrumentPickerOpen] = useState(false);
+  // ✅ FIX: Use global store for modal states (rendered at App level to avoid overflow)
+  const isAudioExportPanelOpen = usePanelsStore(state => state.isAudioExportPanelOpen);
+  const isInstrumentPickerOpen = usePanelsStore(state => state.isInstrumentPickerOpen);
+  const setAudioExportPanelOpen = usePanelsStore(state => state.setAudioExportPanelOpen);
+  const setInstrumentPickerOpen = usePanelsStore(state => state.setInstrumentPickerOpen);
 
   // State for native drag-and-drop visual feedback
   const [isNativeDragOver, setIsNativeDragOver] = useState(false);
@@ -591,6 +595,20 @@ function ChannelRackComponent() {
     }
   }, [handleAddNewInstrument]);
 
+  // ✅ FIX: Listen for instrument picker selection events (from App-level modal)
+  useEffect(() => {
+    const handleInstrumentPickerSelect = (instrumentData) => {
+      console.log('🎹 InstrumentPicker: Instrument selected via EventBus', instrumentData);
+      handleAddNewInstrument(instrumentData);
+    };
+
+    EventBus.on('instrument-picker:select', handleInstrumentPickerSelect);
+
+    return () => {
+      EventBus.off('instrument-picker:select', handleInstrumentPickerSelect);
+    };
+  }, [handleAddNewInstrument]);
+
   // ✅ Pattern management handlers
   const handlePatternChange = useCallback((patternId) => {
     setActivePatternId(patternId);
@@ -736,7 +754,7 @@ function ChannelRackComponent() {
             </button>
             <button
               className="channel-rack-layout__mgmt-btn channel-rack-layout__mgmt-btn--export"
-              onClick={() => setIsExportPanelOpen(true)}
+              onClick={() => setAudioExportPanelOpen(true)}
               title="Export Audio"
             >
               <Download size={14} />
@@ -766,7 +784,7 @@ function ChannelRackComponent() {
               e.stopPropagation();
               e.preventDefault();
               console.log('➕ Add Instrument button clicked');
-              setIsInstrumentPickerOpen(true);
+              setInstrumentPickerOpen(true);
             }}
             onMouseDown={(e) => e.stopPropagation()}
             title="Add New Instrument (Click to add new instrument)"
@@ -775,7 +793,7 @@ function ChannelRackComponent() {
             onKeyDown={(e) => {
               if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault();
-                setIsInstrumentPickerOpen(true);
+                setInstrumentPickerOpen(true);
               }
             }}
           >
@@ -818,22 +836,8 @@ function ChannelRackComponent() {
         />
       </div>
 
-      {/* Audio Export Panel */}
-      <AudioExportPanel
-        isOpen={isExportPanelOpen}
-        onClose={() => setIsExportPanelOpen(false)}
-      />
-
-      {/* ✅ NEW: Instrument Picker */}
-      {isInstrumentPickerOpen && (
-        <InstrumentPicker
-          onSelectInstrument={(instrumentData) => {
-            handleAddNewInstrument(instrumentData);
-            setIsInstrumentPickerOpen(false);
-          }}
-          onClose={() => setIsInstrumentPickerOpen(false)}
-        />
-      )}
+      {/* ✅ FIX: Panels moved to App.jsx level to avoid Channel Rack overflow issues */}
+      {/* Audio Export Panel and Instrument Picker are now rendered at App level */}
     </div>
   );
 }

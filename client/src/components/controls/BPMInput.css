@@ -1,0 +1,305 @@
+/**
+ * 🎵 ENHANCED BPM INPUT STYLES
+ * Modern, professional BPM input component
+ */
+
+.bpm-input-container {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px;
+  background: var(--zenith-bg-tertiary, rgba(255, 255, 255, 0.05));
+  border: 1px solid var(--zenith-border-subtle, rgba(255, 255, 255, 0.08));
+  border-radius: var(--border-radius-md, 6px);
+  transition: all 0.2s ease;
+  z-index: 1; /* ✅ FIX: Ensure container is above other elements */
+}
+
+.bpm-input-container:hover:not(.disabled) {
+  border-color: var(--zenith-border-medium, rgba(255, 255, 255, 0.15));
+  background: var(--zenith-bg-hover, rgba(255, 255, 255, 0.08));
+}
+
+.bpm-input-container.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.bpm-input-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* Input Field */
+.bpm-input-field-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.bpm-input {
+  width: 60px;
+  background: transparent;
+  border: none;
+  outline: none;
+  text-align: center;
+  font-family: var(--zenith-font-mono, 'JetBrains Mono', monospace);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--zenith-text-primary, #FFFFFF);
+  padding: 4px 6px;
+  transition: all 0.15s ease;
+}
+
+.bpm-input::placeholder {
+  color: var(--zenith-text-tertiary, #6B7280);
+}
+
+.bpm-input.editing {
+  background: var(--zenith-bg-secondary, #151922);
+  border: 1px solid var(--zenith-accent-cool, #4ECDC4);
+  border-radius: 4px;
+  box-shadow: 0 0 0 2px rgba(78, 205, 196, 0.1);
+}
+
+.bpm-input.invalid {
+  border-color: var(--zenith-error, #EF4444);
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.1);
+}
+
+.bpm-input:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* Tap Indicator */
+.bpm-input-tap-indicator {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--zenith-accent-cool, #4ECDC4);
+  animation: pulse 0.5s ease-in-out;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: translateY(-50%) scale(1); }
+  50% { opacity: 0.7; transform: translateY(-50%) scale(1.2); }
+}
+
+/* Increment/Decrement Buttons */
+.bpm-input-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  background: var(--zenith-bg-secondary, #151922);
+  border: 1px solid var(--zenith-border-subtle, rgba(255, 255, 255, 0.08));
+  border-radius: 3px;
+  color: var(--zenith-text-secondary, rgba(255, 255, 255, 0.7));
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.bpm-input-btn:hover:not(:disabled) {
+  background: var(--zenith-bg-hover, rgba(255, 255, 255, 0.1));
+  border-color: var(--zenith-border-medium, rgba(255, 255, 255, 0.15));
+  color: var(--zenith-text-primary, #FFFFFF);
+}
+
+.bpm-input-btn:active:not(:disabled) {
+  transform: scale(0.95);
+  background: var(--zenith-accent-cool, #4ECDC4);
+  color: var(--zenith-text-primary, #FFFFFF);
+}
+
+.bpm-input-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Label */
+.bpm-input-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--zenith-text-secondary, rgba(255, 255, 255, 0.7));
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  user-select: none;
+}
+
+/* Preset Menu */
+.bpm-input-preset-wrapper {
+  position: relative;
+}
+
+.bpm-input-preset-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 3px;
+  color: var(--zenith-text-tertiary, #6B7280);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.bpm-input-preset-btn:hover {
+  background: var(--zenith-bg-hover, rgba(255, 255, 255, 0.08));
+  color: var(--zenith-text-secondary, rgba(255, 255, 255, 0.7));
+}
+
+.bpm-input-preset-menu {
+  /* ✅ FIX: Position is now set via inline style (fixed positioning via portal) */
+  min-width: 200px;
+  max-width: 300px;
+  background: var(--zenith-bg-primary, #0A0E1A);
+  border: 1px solid var(--zenith-border-medium, rgba(255, 255, 255, 0.1));
+  border-radius: var(--border-radius-md, 6px);
+  padding: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  z-index: 10000; /* ✅ FIX: Very high z-index to appear above all toolbars */
+}
+
+.bpm-input-preset-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px;
+  margin-bottom: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--zenith-text-secondary, rgba(255, 255, 255, 0.7));
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--zenith-border-subtle, rgba(255, 255, 255, 0.08));
+}
+
+.bpm-input-preset-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 2px;
+  color: var(--zenith-text-tertiary, #6B7280);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.bpm-input-preset-close:hover {
+  background: var(--zenith-bg-hover, rgba(255, 255, 255, 0.08));
+  color: var(--zenith-text-primary, #FFFFFF);
+}
+
+.bpm-input-preset-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 4px;
+}
+
+.bpm-input-preset-item {
+  padding: 6px 8px;
+  background: var(--zenith-bg-tertiary, rgba(255, 255, 255, 0.05));
+  border: 1px solid var(--zenith-border-subtle, rgba(255, 255, 255, 0.08));
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--zenith-text-primary, #FFFFFF);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: center;
+}
+
+.bpm-input-preset-item:hover {
+  background: var(--zenith-bg-hover, rgba(255, 255, 255, 0.08));
+  border-color: var(--zenith-border-medium, rgba(255, 255, 255, 0.15));
+}
+
+.bpm-input-preset-item.active {
+  background: rgba(78, 205, 196, 0.15);
+  border-color: var(--zenith-accent-cool, #4ECDC4);
+  color: var(--zenith-accent-cool, #4ECDC4);
+  font-weight: 600;
+}
+
+/* Tap Tempo Button */
+.bpm-input-tap-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 20px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 3px;
+  color: var(--zenith-text-tertiary, #6B7280);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  position: relative;
+}
+
+.bpm-input-tap-btn:hover {
+  background: var(--zenith-bg-hover, rgba(255, 255, 255, 0.08));
+  color: var(--zenith-text-secondary, rgba(255, 255, 255, 0.7));
+}
+
+.bpm-input-tap-btn.tapping {
+  color: var(--zenith-accent-cool, #4ECDC4);
+}
+
+.bpm-input-tap-btn.tapping .bpm-input-tap-icon-wrapper {
+  animation: tapPulse 0.3s ease-in-out;
+}
+
+.bpm-input-tap-icon-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+.bpm-input-tap-dot {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  fill: currentColor;
+  opacity: 0.8;
+}
+
+.bpm-input-tap-btn.tapping .bpm-input-tap-dot {
+  animation: dotPulse 0.3s ease-in-out;
+  opacity: 1;
+}
+
+@keyframes tapPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.15); }
+}
+
+@keyframes dotPulse {
+  0%, 100% { 
+    transform: scale(1);
+    opacity: 0.8;
+  }
+  50% { 
+    transform: scale(1.5);
+    opacity: 1;
+  }
+}
+

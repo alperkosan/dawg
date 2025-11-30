@@ -41,10 +41,20 @@ const TimelineCanvas = React.memo(({
   const renderTimelineRef = useRef(null); // Store render function for theme change
   const isDirtyRef = useRef(true); // ⚡ DIRTY FLAG: Track if timeline needs redraw
 
+  // ✅ FIX: On mount, invalidate StyleCache to ensure fresh theme values
+  // This handles the case when project is opened with a different theme
+  useEffect(() => {
+    globalStyleCache.invalidate();
+    console.log('🎨 TimelineCanvas: Invalidated StyleCache on mount');
+  }, []);
+
   // ✅ Listen for theme changes and fullscreen - Mark dirty for UIUpdateManager
   useEffect(() => {
     const handleThemeChange = () => {
       console.log('🎨 Theme changed - marking timeline canvas dirty');
+
+      // ✅ FIX: Invalidate StyleCache first to ensure fresh values
+      globalStyleCache.invalidate();
 
       // Method 1: Increment version to trigger useCallback recreation
       setThemeVersion(v => v + 1);

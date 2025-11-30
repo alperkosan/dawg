@@ -201,10 +201,19 @@ const UnifiedGridCanvas = React.memo(({
     };
   }, []);
 
+  // ✅ FIX: On mount, invalidate StyleCache to ensure fresh theme values
+  // This handles the case when project is opened with a different theme
+  useEffect(() => {
+    globalStyleCache.invalidate();
+    console.log('🎨 UnifiedGridCanvas: Invalidated StyleCache on mount');
+  }, []);
+
   // ✅ Listen for theme changes and fullscreen - AGGRESSIVE: Call render immediately
   useEffect(() => {
     const handleThemeChange = () => {
       console.log('🎨 Theme changed - scheduling palette refresh');
+      // ✅ FIX: Invalidate StyleCache first to ensure fresh values
+      globalStyleCache.invalidate();
       // Wait one frame so CSS vars settle before re-reading palette
       requestAnimationFrame(() => {
         setThemeVersion((v) => v + 1);

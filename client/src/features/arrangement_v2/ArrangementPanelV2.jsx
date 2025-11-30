@@ -25,6 +25,7 @@ import { TrackHeader } from './components/TrackHeader';
 import { ClipContextMenu } from './components/ClipContextMenu';
 import { ArrangementToolbar } from './components/ArrangementToolbar';
 import { PatternBrowser } from './components/PatternBrowser';
+import { AutomationLanes } from './components/AutomationLanes';
 import { audioAssetManager } from '@/lib/audio/AudioAssetManager';
 import { uiUpdateManager, UPDATE_PRIORITIES, UPDATE_FREQUENCIES } from '@/lib/core/UIUpdateManager';
 import { getAudioClipDurationBeats } from '@/lib/utils/audioDuration';
@@ -178,6 +179,9 @@ export function ArrangementPanelV2() {
 
   // Sample editor state
   const [sampleEditorOpen, setSampleEditorOpen] = useState(false);
+
+  // ✅ NEW: Automation lanes visibility per track
+  const [automationExpandedTracks, setAutomationExpandedTracks] = useState(new Set());
 
   // ✅ THEME-AWARE: Track theme version to trigger re-renders on theme change
   const [themeVersion, setThemeVersion] = useState(0);
@@ -2432,15 +2436,43 @@ export function ArrangementPanelV2() {
           }}
         >
           {tracks.map((track, index) => (
-            <TrackHeader
-              key={track.id}
-              track={track}
-              index={index}
-              height={dimensions.trackHeight}
-              onUpdate={(updates) => handleTrackUpdate(track.id, updates)}
-              onDoubleClick={() => handleTrackClick(index)}
-              isSelected={selectedTrackIndex === index}
-            />
+            <React.Fragment key={track.id}>
+              <TrackHeader
+                track={track}
+                index={index}
+                height={dimensions.trackHeight}
+                onUpdate={(updates) => handleTrackUpdate(track.id, updates)}
+                onDoubleClick={() => handleTrackClick(index)}
+                isSelected={selectedTrackIndex === index}
+                showAutomation={automationExpandedTracks.has(track.id)}
+                onToggleAutomation={() => {
+                  setAutomationExpandedTracks(prev => {
+                    const newSet = new Set(prev);
+                    if (newSet.has(track.id)) {
+                      newSet.delete(track.id);
+                    } else {
+                      newSet.add(track.id);
+                    }
+                    return newSet;
+                  });
+                }}
+              />
+              {/* ✅ NEW: Automation lanes for this track */}
+              {automationExpandedTracks.has(track.id) && (
+                <AutomationLanes
+                  trackId={track.id}
+                  trackIndex={index}
+                  viewport={viewport}
+                  dimensions={dimensions}
+                  snapValue={snapSize}
+                  activeTool={activeTool}
+                  onScroll={(deltaX, deltaY) => {
+                    // Handle scroll for automation lanes
+                    eventHandlers.onScroll(deltaX, deltaY);
+                  }}
+                />
+              )}
+            </React.Fragment>
           ))}
 
           {/* Add Track Button - ✅ PHASE 2: Using Button component from library */}

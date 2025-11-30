@@ -75,29 +75,67 @@ function drawGrid(ctx, { viewport, dimensions, lod, snapValue, qualityLevel = 'h
     // ⚡ ADAPTIVE: Skip black keys in low quality mode
     const skipBlackKeys = qualityLevel === 'low' && lod >= 2;
 
-    // ✅ PHASE 5: Draw scale highlighting rows FIRST (background layer)
+    // ✅ IMPROVED: Draw scale highlighting rows FIRST (background layer) with enhanced visual effects
     if (scaleHighlight && scaleHighlight.getScale() && lod < 3) {
         const { startKey, endKey } = viewport.visibleKeys;
         const scaleInfo = scaleHighlight.getScaleInfo();
+        const bgPrimary = globalStyleCache.get('--zenith-bg-primary') || '#0A0E1A';
+        const overlayHeavy = globalStyleCache.get('--zenith-overlay-heavy') || 'rgba(0, 0, 0, 0.5)';
+
+        // Parse scale color for gradient
+        const scaleColor = scaleInfo.color || '#3b82f6';
+        const colorMatch = scaleColor.match(/^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
+        let scaleR, scaleG, scaleB;
+        if (colorMatch) {
+            scaleR = parseInt(colorMatch[1], 16);
+            scaleG = parseInt(colorMatch[2], 16);
+            scaleB = parseInt(colorMatch[3], 16);
+        } else {
+            scaleR = 59; scaleG = 130; scaleB = 246; // Default blue
+        }
 
         for (let i = startKey; i <= endKey; i++) {
             const midiNote = 127 - i;
             const isInScale = scaleHighlight.isNoteInScale(midiNote);
             const pitchClass = midiNote % 12;
             const isRoot = pitchClass === scaleInfo.root;
+            const y = i * keyHeight;
 
             if (isInScale) {
-                // Highlight in-scale rows
-                ctx.fillStyle = scaleInfo.color;
-                ctx.globalAlpha = isRoot ? 0.15 : 0.08;
-                ctx.fillRect(0, i * keyHeight, dimensions.totalWidth, keyHeight);
-                ctx.globalAlpha = 1.0;
+                // ✅ IMPROVED: Enhanced highlight with gradient and subtle glow for in-scale rows
+                if (isRoot) {
+                    // Root note: Stronger highlight with gradient
+                    const gradient = ctx.createLinearGradient(0, y, 0, y + keyHeight);
+                    gradient.addColorStop(0, `rgba(${scaleR}, ${scaleG}, ${scaleB}, 0.25)`);
+                    gradient.addColorStop(0.5, `rgba(${scaleR}, ${scaleG}, ${scaleB}, 0.18)`);
+                    gradient.addColorStop(1, `rgba(${scaleR}, ${scaleG}, ${scaleB}, 0.12)`);
+                    ctx.fillStyle = gradient;
+                    ctx.fillRect(0, y, dimensions.totalWidth, keyHeight);
+                    
+                    // Subtle top border glow
+                    ctx.strokeStyle = `rgba(${scaleR}, ${scaleG}, ${scaleB}, 0.4)`;
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.moveTo(0, y);
+                    ctx.lineTo(dimensions.totalWidth, y);
+                    ctx.stroke();
+                } else {
+                    // Other scale notes: Softer highlight with subtle gradient
+                    const gradient = ctx.createLinearGradient(0, y, 0, y + keyHeight);
+                    gradient.addColorStop(0, `rgba(${scaleR}, ${scaleG}, ${scaleB}, 0.12)`);
+                    gradient.addColorStop(0.5, `rgba(${scaleR}, ${scaleG}, ${scaleB}, 0.08)`);
+                    gradient.addColorStop(1, `rgba(${scaleR}, ${scaleG}, ${scaleB}, 0.05)`);
+                    ctx.fillStyle = gradient;
+                    ctx.fillRect(0, y, dimensions.totalWidth, keyHeight);
+                }
             } else {
-                // Dim out-of-scale rows
-                ctx.fillStyle = '#000000';
-                ctx.globalAlpha = 0.2;
-                ctx.fillRect(0, i * keyHeight, dimensions.totalWidth, keyHeight);
-                ctx.globalAlpha = 1.0;
+                // ✅ IMPROVED: Softer dimming for out-of-scale rows with gradient
+                const gradient = ctx.createLinearGradient(0, y, 0, y + keyHeight);
+                gradient.addColorStop(0, 'rgba(0, 0, 0, 0.25)');
+                gradient.addColorStop(0.5, 'rgba(0, 0, 0, 0.15)');
+                gradient.addColorStop(1, 'rgba(0, 0, 0, 0.08)');
+                ctx.fillStyle = gradient;
+                ctx.fillRect(0, y, dimensions.totalWidth, keyHeight);
             }
         }
     }
@@ -843,8 +881,10 @@ function drawPlayhead(ctx, engine) {
     }
 
     // ✅ FL Studio style playhead
-    const playheadColor = playhead.isPlaying ? '#00ff88' : '#ffaa00'; // Green when playing, orange when stopped
-    const lineWidth = 2;
+    // ✅ RECORDING: Red playhead when recording
+    const isRecording = engine.isRecording || false;
+    const playheadColor = isRecording ? '#ff4444' : (playhead.isPlaying ? '#00ff88' : '#ffaa00'); // Red when recording, green when playing, orange when stopped
+    const lineWidth = isRecording ? 3 : 2; // Thicker line when recording
     const arrowSize = 8;
 
     // Main vertical line
@@ -852,10 +892,10 @@ function drawPlayhead(ctx, engine) {
     ctx.lineWidth = lineWidth;
     ctx.globalAlpha = 0.9;
 
-    // Add glow effect when playing
-    if (playhead.isPlaying) {
+    // Add glow effect when playing or recording
+    if (playhead.isPlaying || isRecording) {
         ctx.shadowColor = playheadColor;
-        ctx.shadowBlur = 8;
+        ctx.shadowBlur = isRecording ? 12 : 8; // Stronger glow when recording
     }
 
     ctx.beginPath();

@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { Play, Pause, Square, Repeat, Maximize2, ChevronRight, X, Download, Save, Loader2 } from 'lucide-react';
 import { Knob } from '@/components/controls';
+import { BPMInput } from '@/components/controls/BPMInput';
 import { CPUMonitor } from '@/components/monitors/CPUMonitor';
 import { PLAYBACK_MODES, PLAYBACK_STATES } from '@/config/constants';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
 import { AudioContextService } from '@/lib/services/AudioContextService';
+import EventBus from '@/lib/core/EventBus.js';
 
 // Format position for display (bar:beat:tick format)
 const formatPosition = (position) => {
@@ -79,7 +81,11 @@ function TopToolbar({ onExportClick, onSaveClick, saveStatus = 'saved', lastSave
         </button>
         <button
           title="Stop"
-          onClick={handleStop}
+          onClick={() => {
+            // ✅ Emit transport stop event to stop MIDI recording
+            EventBus.emit('transport:stop', {});
+            handleStop();
+          }}
           className={stopButtonClass}
         >
           <Square size={18} />
@@ -115,13 +121,15 @@ function TopToolbar({ onExportClick, onSaveClick, saveStatus = 'saved', lastSave
           />
         </div>
         <div className="top-toolbar__display">
-          <input
-            type="number"
-            value={Math.round(bpm)}
-            onChange={(e) => setBPM(Number(e.target.value))}
-            className="top-toolbar__bpm-input"
+          <BPMInput
+            value={bpm}
+            onChange={setBPM}
+            showPresets={true}
+            showTapTempo={true}
+            showButtons={true}
+            precision={1}
+            className="top-toolbar__bpm-input-wrapper"
           />
-          <span className="top-toolbar__bpm-label">BPM</span>
           <div className="top-toolbar__transport-pos">
             {formatPosition(currentPosition || 0)}
           </div>

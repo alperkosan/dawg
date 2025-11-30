@@ -707,7 +707,12 @@ export class TransportManager {
    * ✅ SETTINGS
    */
   setBPM(bpm) {
-    this.state.bpm = Math.max(60, Math.min(300, bpm));
+    // ✅ FIX: Remove BPM restrictions - only ensure positive value
+    if (bpm <= 0 || isNaN(bpm)) {
+      console.warn('Invalid BPM value:', bpm);
+      return;
+    }
+    this.state.bpm = bpm;
 
     // ✅ FIXED - Use audioEngine.setBPM instead of playbackManager
     if (this.audioEngine?.setBPM) {

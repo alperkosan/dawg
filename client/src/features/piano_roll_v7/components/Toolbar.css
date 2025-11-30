@@ -80,6 +80,38 @@
   pointer-events: none;
 }
 
+/* ✅ MIDI Recording Button */
+.prv7-record-btn {
+  color: var(--zenith-text-secondary);
+  transition: all 0.2s ease;
+}
+
+.prv7-record-btn:hover {
+  color: var(--zenith-error);
+  background-color: rgba(var(--zenith-error-rgb), 0.1);
+}
+
+.prv7-record-btn--recording {
+  color: var(--zenith-error);
+  background-color: rgba(var(--zenith-error-rgb), 0.15);
+  animation: recordPulse 1s ease-in-out infinite;
+}
+
+.prv7-record-pulse {
+  animation: recordPulse 1s ease-in-out infinite;
+}
+
+@keyframes recordPulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.1);
+  }
+}
+
 /* Transport Controls */
 .prv7-transport-controls {
   display: flex;

@@ -875,7 +875,12 @@ export class TimelineController {
    * ✅ SETTINGS
    */
   setBPM(bpm) {
-    this.state.bpm = Math.max(60, Math.min(300, bpm));
+    // ✅ FIX: Remove BPM restrictions - only ensure positive value
+    if (bpm <= 0 || isNaN(bpm)) {
+      console.warn('Invalid BPM value:', bpm);
+      return;
+    }
+    this.state.bpm = bpm;
     if (this.audioEngine?.setBPM) {
       this.audioEngine.setBPM(this.state.bpm);
     }

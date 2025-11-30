@@ -254,10 +254,14 @@ export function useNoteInteractionsV3({
     snapValue,
     currentInstrument,
     loopRegion,
-    keyboardPianoMode
+    keyboardPianoMode,
+    // ✅ MIDI Recording
+    isRecording = false,
+    onRecordToggle = null
 }) {
     const [state, dispatch] = useReducer(reducer, null, createInitialState);
     const commandStackRef = useRef(null);
+    const pressedKeysRef = useRef(new Set()); // Track pressed keys for Note Off events
 
     // ✅ Store selectors - use individual selectors to prevent re-render loops
     const activePatternId = useArrangementStore(state => state.activePatternId);
@@ -1068,6 +1072,12 @@ export function useNoteInteractionsV3({
 
     const handleMouseDown = useCallback((e) => {
         if (keyboardPianoMode) return;
+        
+        // ✅ RECORDING: Disable note editing during recording
+        if (isRecording) {
+            console.log('⚠️ Cannot edit notes while recording');
+            return;
+        }
 
         const coords = getCoordinatesFromEvent(e);
         const foundNote = findNoteAtPosition(coords);
@@ -1746,7 +1756,58 @@ export function useNoteInteractionsV3({
     // ===================================================================
 
     const handleKeyDown = useCallback((e) => {
+        // ✅ RECORDING: Convert keyboard input to MIDI events when recording
+        if (isRecording && !keyboardPianoMode) {
+            // Standard DAW keyboard mapping (from useNoteInteractionsV2)
+            const KEYBOARD_TO_PITCH = {
+                'z': 60, 's': 61, 'x': 62, 'd': 63, 'c': 64, 'v': 65, 'g': 66, 'b': 67, 'h': 68, 'n': 69, 'j': 70, 'm': 71,
+                'a': 72, 'w': 73, 'f': 74, 'e': 75, 'k': 76, 't': 77, 'l': 78, 'y': 79, ';': 80, 'u': 81, "'": 82, 'o': 83,
+                'q': 84, '2': 85, 'r': 86, '3': 87, 'i': 88, '5': 89, 'p': 90, '6': 91, '[': 92, '7': 93, ']': 94, '0': 95,
+                '1': 96, '`': 97, '4': 98, '~': 99, '8': 100, '!': 101, '9': 102, '@': 103, '-': 104, '#': 105, '=': 106, '$': 107,
+            };
+            
+            const key = e.key.toLowerCase();
+            const pitch = KEYBOARD_TO_PITCH[key];
+            
+            // If it's a piano key and not in input field
+            if (pitch !== undefined && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+                e.preventDefault();
+                
+                // Prevent key repeat
+                if (pressedKeysRef.current.has(key)) return;
+                pressedKeysRef.current.add(key);
+                
+                // Emit MIDI event for recording
+                if (typeof window !== 'undefined' && window.dispatchEvent) {
+                    window.dispatchEvent(new CustomEvent('midi:keyboardNoteOn', {
+                        detail: { pitch, velocity: 100, timestamp: performance.now() }
+                    }));
+                }
+                return;
+            }
+        }
+        
         if (keyboardPianoMode) return;
+
+        // ✅ RECORD TOGGLE - R key
+        if (e.key === 'r' || e.key === 'R') {
+            // Only if not in input field and record handler is available
+            if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA' && onRecordToggle) {
+                e.preventDefault();
+                onRecordToggle();
+                return;
+            }
+        }
+
+        // ✅ STOP RECORDING - Space key (only when recording)
+        if (e.key === ' ' && isRecording && onRecordToggle) {
+            // Only if not in input field
+            if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+                e.preventDefault();
+                onRecordToggle(); // Toggle will stop recording
+                return;
+            }
+        }
 
         // ✅ UNDO/REDO - Ctrl/Cmd + Z, Ctrl/Cmd + Shift + Z, Ctrl/Cmd + Y
         if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
@@ -2171,7 +2232,40 @@ export function useNoteInteractionsV3({
             clearSelection();
             return;
         }
-    }, [keyboardPianoMode, notes, state.selection, select, clearSelection, deleteNotesFromPattern, copyNotes, cutNotes, pasteNotes, addNotesToPattern, loopRegion, activePatternId, currentInstrument, updatePatternNotes]);
+    }, [keyboardPianoMode, isRecording, notes, state.selection, select, clearSelection, deleteNotesFromPattern, copyNotes, cutNotes, pasteNotes, addNotesToPattern, loopRegion, activePatternId, currentInstrument, updatePatternNotes]);
+
+    // ✅ RECORDING: Handle keyboard Note Off events
+    const handleKeyUp = useCallback((e) => {
+        // ✅ RECORDING: Convert keyboard input to MIDI Note Off events when recording
+        if (isRecording && !keyboardPianoMode) {
+            // Standard DAW keyboard mapping (same as handleKeyDown)
+            const KEYBOARD_TO_PITCH = {
+                'z': 60, 's': 61, 'x': 62, 'd': 63, 'c': 64, 'v': 65, 'g': 66, 'b': 67, 'h': 68, 'n': 69, 'j': 70, 'm': 71,
+                'a': 72, 'w': 73, 'f': 74, 'e': 75, 'k': 76, 't': 77, 'l': 78, 'y': 79, ';': 80, 'u': 81, "'": 82, 'o': 83,
+                'q': 84, '2': 85, 'r': 86, '3': 87, 'i': 88, '5': 89, 'p': 90, '6': 91, '[': 92, '7': 93, ']': 94, '0': 95,
+                '1': 96, '`': 97, '4': 98, '~': 99, '8': 100, '!': 101, '9': 102, '@': 103, '-': 104, '#': 105, '=': 106, '$': 107,
+            };
+            
+            const key = e.key.toLowerCase();
+            const pitch = KEYBOARD_TO_PITCH[key];
+            
+            // If it's a piano key and not in input field
+            if (pitch !== undefined && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+                e.preventDefault();
+                
+                // Remove from pressed keys
+                pressedKeysRef.current.delete(key);
+                
+                // Emit MIDI Note Off event for recording
+                if (typeof window !== 'undefined' && window.dispatchEvent) {
+                    window.dispatchEvent(new CustomEvent('midi:keyboardNoteOff', {
+                        detail: { pitch, timestamp: performance.now() }
+                    }));
+                }
+                return;
+            }
+        }
+    }, [isRecording, keyboardPianoMode]);
 
     // ===================================================================
     // STUB METHODS - For compatibility with PianoRoll
@@ -2326,6 +2420,7 @@ export function useNoteInteractionsV3({
         handleMouseMove,
         handleMouseUp,
         handleKeyDown,
+        handleKeyUp,
         handleWheel: () => { }, // Stub
 
         // Selection
