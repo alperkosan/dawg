@@ -176,7 +176,8 @@ function reducer(state, action) {
                     noteIds: action.payload.noteIds,
                     handle: action.payload.handle,
                     start: action.payload.start,
-                    originals: action.payload.originals
+                    originals: action.payload.originals,
+                    delta: 0 // ✅ FIX: Initialize delta to 0 to prevent undefined errors
                 },
                 cursor: action.payload.handle === 'left' ? 'w-resize' : 'e-resize'
             };
@@ -262,6 +263,8 @@ export function useNoteInteractionsV3({
     const [state, dispatch] = useReducer(reducer, null, createInitialState);
     const commandStackRef = useRef(null);
     const pressedKeysRef = useRef(new Set()); // Track pressed keys for Note Off events
+    const lastPreviewedPitchRef = useRef(null); // Track last previewed pitch during drag
+    const previewThrottleRef = useRef(null); // Throttle preview to avoid excessive calls
 
     // ✅ Store selectors - use individual selectors to prevent re-render loops
     const activePatternId = useArrangementStore(state => state.activePatternId);
@@ -1278,8 +1281,11 @@ export function useNoteInteractionsV3({
 
         const { noteIds, handle, originals, delta } = state.resize;
 
+        // ✅ FIX: Ensure delta is a valid number (default to 0 if undefined/null)
+        const safeDelta = (typeof delta === 'number' && !isNaN(delta)) ? delta : 0;
+
         // ✅ CONSTRAINT SYSTEM: If any note hits a boundary, all notes stop together
-        let constrainedDelta = delta;
+        let constrainedDelta = safeDelta;
 
         if (handle === 'left') {
             // Left handle: can't move start time below 0
@@ -1288,7 +1294,7 @@ export function useNoteInteractionsV3({
                 if (!orig) return;
 
                 const minTimeAllowed = -orig.startTime;
-                if (delta < minTimeAllowed) {
+                if (safeDelta < minTimeAllowed) {
                     constrainedDelta = Math.max(constrainedDelta, minTimeAllowed);
                 }
             });
@@ -1329,28 +1335,79 @@ export function useNoteInteractionsV3({
             // ✅ FIX: Use visualLength for resize calculations (oval notes support)
             const resizableLength = orig.visualLength !== undefined ? orig.visualLength : orig.length;
 
+            // ✅ FIX: For notes smaller than grid, preserve relative position instead of aggressive snapping
+            // This prevents notes from jumping unexpectedly when resized
+            const isNoteSmallerThanGrid = snapValue > 0 && resizableLength < snapValue;
+
             if (handle === 'left') {
                 // ✅ Left handle: Snap start time, calculate new length, then snap length
                 const originalEndTime = orig.startTime + resizableLength;
-                const snappedNewTime = snapToGrid(Math.max(0, orig.startTime + constrainedDelta), 0.5);
-                newTime = snappedNewTime;
+                let newStartTime = Math.max(0, orig.startTime + constrainedDelta);
+                
+                // ✅ FIX: For notes smaller than grid, only snap if very close to grid line
+                // Otherwise preserve relative position to avoid unexpected jumps
+                if (isNoteSmallerThanGrid) {
+                    // Check if new start time is close to a grid line (within 10% of grid size)
+                    const snapThreshold = snapValue * 0.1;
+                    const gridPosition = (newStartTime % snapValue + snapValue) % snapValue;
+                    const distanceToPrevGrid = gridPosition;
+                    const distanceToNextGrid = snapValue - gridPosition;
+                    
+                    // Only snap if within threshold
+                    if (distanceToPrevGrid < snapThreshold) {
+                        newTime = Math.floor(newStartTime / snapValue) * snapValue;
+                    } else if (distanceToNextGrid < snapThreshold) {
+                        newTime = Math.ceil(newStartTime / snapValue) * snapValue;
+                    } else {
+                        // Preserve relative position - no snap
+                        newTime = newStartTime;
+                    }
+                } else {
+                    // Normal snap for notes >= grid size
+                    newTime = snapToGrid(newStartTime, 0.5);
+                }
 
                 // Calculate new visual length based on snapped start time
-                let calculatedLength = Math.max(minLength, originalEndTime - snappedNewTime);
+                let calculatedLength = Math.max(minLength, originalEndTime - newTime);
 
-                // ✅ Snap the resulting length to grid
-                newVisualLength = snapValue > 0
-                    ? Math.max(minLength, snapToGrid(calculatedLength, 0.5))
-                    : calculatedLength;
+                // ✅ Snap the resulting length to grid (only if note is >= grid size)
+                if (isNoteSmallerThanGrid) {
+                    // For small notes, preserve length unless it becomes >= grid size
+                    newVisualLength = calculatedLength;
+                } else {
+                    newVisualLength = snapValue > 0
+                        ? Math.max(minLength, snapToGrid(calculatedLength, 0.5))
+                        : calculatedLength;
+                }
             } else {
                 // ✅ Right handle: Snap end time, then calculate new length
                 const originalEndTime = orig.startTime + resizableLength;
                 let newEndTime = originalEndTime + constrainedDelta;
 
-                // Snap the end time
-                const snappedEndTime = snapValue > 0
-                    ? snapToGrid(Math.max(0, newEndTime), 0.5)
-                    : Math.max(0, newEndTime);
+                // ✅ FIX: For notes smaller than grid, only snap if very close to grid line
+                let snappedEndTime;
+                if (isNoteSmallerThanGrid) {
+                    // Check if new end time is close to a grid line
+                    const snapThreshold = snapValue * 0.1;
+                    const gridPosition = (newEndTime % snapValue + snapValue) % snapValue;
+                    const distanceToPrevGrid = gridPosition;
+                    const distanceToNextGrid = snapValue - gridPosition;
+                    
+                    // Only snap if within threshold
+                    if (distanceToPrevGrid < snapThreshold) {
+                        snappedEndTime = Math.floor(newEndTime / snapValue) * snapValue;
+                    } else if (distanceToNextGrid < snapThreshold) {
+                        snappedEndTime = Math.ceil(newEndTime / snapValue) * snapValue;
+                    } else {
+                        // Preserve relative position - no snap
+                        snappedEndTime = newEndTime;
+                    }
+                } else {
+                    // Normal snap for notes >= grid size
+                    snappedEndTime = snapValue > 0
+                        ? snapToGrid(Math.max(0, newEndTime), 0.5)
+                        : Math.max(0, newEndTime);
+                }
 
                 // Calculate new visual length from snapped end time
                 newVisualLength = Math.max(minLength, snappedEndTime - orig.startTime);
@@ -1359,11 +1416,20 @@ export function useNoteInteractionsV3({
             // ✅ RESIZE BEHAVIOR: When user manually resizes a note, it should no longer be oval
             // The resize action means "I want to control the exact duration"
             // So we sync length with visualLength, making it a normal (non-oval) note
+            
+            // ✅ FIX: Validate calculated values to prevent NaN
+            const finalStartTime = (typeof newTime === 'number' && !isNaN(newTime) && isFinite(newTime)) 
+                ? Math.max(0, newTime) 
+                : orig.startTime;
+            const finalVisualLength = (typeof newVisualLength === 'number' && !isNaN(newVisualLength) && isFinite(newVisualLength) && newVisualLength > 0)
+                ? newVisualLength
+                : (orig.visualLength !== undefined ? orig.visualLength : orig.length);
+            
             return {
                 ...note,
-                startTime: newTime,
-                visualLength: newVisualLength,
-                length: newVisualLength // ✅ Sync length with visualLength (exit oval mode)
+                startTime: finalStartTime,
+                visualLength: finalVisualLength,
+                length: finalVisualLength // ✅ Sync length with visualLength (exit oval mode)
             };
         });
 
@@ -1671,6 +1737,29 @@ export function useNoteInteractionsV3({
                 const snappedDeltaTime = snappedTime - firstNoteOriginal.startTime;
                 const snappedDeltaPitch = Math.round(finalPitch) - firstNoteOriginal.pitch;
 
+                // ✅ PREVIEW: Play note preview when pitch changes during drag
+                const newPitch = Math.round(finalPitch);
+                const lastPitch = lastPreviewedPitchRef.current;
+                
+                // Only preview if pitch changed and we have a valid instrument
+                if (newPitch !== lastPitch && currentInstrument) {
+                    // Throttle preview to avoid excessive calls (max once per 50ms)
+                    const now = Date.now();
+                    const lastPreviewTime = previewThrottleRef.current || 0;
+                    
+                    if (now - lastPreviewTime > 50) {
+                        // Get velocity from the first note being dragged
+                        const firstNote = notes.find(n => n.id === firstNoteId);
+                        const velocity = firstNote?.velocity || 100;
+                        
+                        // Preview the new pitch
+                        getPreviewManager().previewNote(newPitch, velocity, 0.15); // Short preview (150ms)
+                        
+                        lastPreviewedPitchRef.current = newPitch;
+                        previewThrottleRef.current = now;
+                    }
+                }
+
                 dispatch({
                     type: Action.UPDATE_DRAG,
                     payload: { delta: { time: snappedDeltaTime, pitch: snappedDeltaPitch } }
@@ -1682,6 +1771,10 @@ export function useNoteInteractionsV3({
                     payload: { delta: { time: rawDeltaTime, pitch: rawDeltaPitch } }
                 });
             }
+        } else {
+            // Reset preview tracking when not dragging
+            lastPreviewedPitchRef.current = null;
+            previewThrottleRef.current = null;
         }
 
         // Handle resize
@@ -1705,7 +1798,7 @@ export function useNoteInteractionsV3({
         // Update cursor
         updateCursor(foundNote, coords);
 
-    }, [state.mode, state.drag, state.resize, state.areaSelect, getCoordinatesFromEvent, findNoteAtPosition, updateCursor]);
+    }, [state.mode, state.drag, state.resize, state.areaSelect, getCoordinatesFromEvent, findNoteAtPosition, updateCursor, notes, currentInstrument, snapToGrid]);
 
     // ===================================================================
     // MOUSE UP

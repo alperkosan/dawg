@@ -870,8 +870,25 @@ export class ProjectSerializer {
         // ✅ CRITICAL: Log the final mixerTrackId before passing to handleAddNewInstrument
         console.log(`📝 Restoring instrument "${instrumentData.name}" with mixerTrackId: ${instrumentData.mixerTrackId} (original: ${originalMixerTrackId})`);
         
+        // Store mute state before adding instrument (will be restored after)
+        const savedMuteState = instrumentData.isMuted !== undefined ? instrumentData.isMuted : false;
+        
         store.handleAddNewInstrument(instrumentData);
         console.log(`✅ Restored instrument: ${instrumentData.name} (${instrumentType}) → ${instrumentData.mixerTrackId}`);
+        
+        // ✅ FIX: Restore mute state to audio engine after instrument is created
+        if (savedMuteState) {
+          // Use dynamic import to avoid circular dependencies
+          import('../services/AudioContextService.js').then(({ AudioContextService }) => {
+            // Wait a bit for instrument to be fully created in audio engine
+            setTimeout(() => {
+              AudioContextService.setInstrumentMute(instrumentData.id, savedMuteState);
+              console.log(`🔇 Restored mute state for instrument ${instrumentData.name}: ${savedMuteState}`);
+            }, 100);
+          }).catch(err => {
+            console.warn('⚠️ Failed to restore mute state:', err);
+          });
+        }
       } catch (error) {
         console.error(`❌ Failed to restore instrument ${instData.id}:`, error);
       }

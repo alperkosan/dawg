@@ -156,15 +156,31 @@ export class MixerInsert {
    */
   disconnectInstrument(instrumentId, instrumentOutput) {
     if (!this.instruments.has(instrumentId)) {
+      // Already disconnected or never connected
       return;
     }
 
     try {
-      instrumentOutput.disconnect(this.input);
+      // ✅ FIX: Check if output exists and is valid before disconnecting
+      if (instrumentOutput && typeof instrumentOutput.disconnect === 'function') {
+        instrumentOutput.disconnect(this.input);
+      }
       this.instruments.delete(instrumentId);
-      console.log(`🔌 Disconnected instrument ${instrumentId} from ${this.insertId}`);
+      if (import.meta.env.DEV) {
+        console.log(`🔌 Disconnected instrument ${instrumentId} from ${this.insertId}`);
+      }
     } catch (error) {
-      console.warn(`⚠️ Error disconnecting instrument ${instrumentId}:`, error);
+      // ✅ FIX: Ignore "not connected" errors - instrument might already be disconnected
+      // This can happen when same ID is reused or during cleanup
+      if (error.name === 'InvalidAccessError' || error.message?.includes('not connected')) {
+        // Silently ignore - already disconnected
+        this.instruments.delete(instrumentId); // Still remove from tracking
+      } else {
+        // Log other errors
+        if (import.meta.env.DEV) {
+          console.warn(`⚠️ Error disconnecting instrument ${instrumentId}:`, error);
+        }
+      }
     }
   }
 

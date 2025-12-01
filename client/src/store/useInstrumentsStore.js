@@ -106,19 +106,30 @@ export const useInstrumentsStore = create((set, get) => ({
     }
 
     // ✅ Build instrument based on type
+    // ✅ FIX: Ensure unique ID - if provided ID already exists, generate new one
+    let instrumentId = instrumentData.id;
+    if (instrumentId && instruments.some(inst => inst.id === instrumentId)) {
+      // ID already exists, generate unique one
+      console.warn(`⚠️ Instrument ID "${instrumentId}" already exists, generating unique ID`);
+      instrumentId = `inst-${uuidv4()}`;
+    } else if (!instrumentId) {
+      // No ID provided, generate one
+      instrumentId = `inst-${uuidv4()}`;
+    }
+    
     const newInstrument = {
-        id: instrumentData.id || `inst-${uuidv4()}`,
+        id: instrumentId,
         name: newName,
         type: instrumentData.type || 'sample',
         color: instrumentData.color || '#888888',
         notes: [],
         mixerTrackId,
-        envelope: { attack: 0.01, decay: 0.1, sustain: 1.0, release: 1.0 },
+        envelope: instrumentData.envelope || { attack: 0.01, decay: 0.1, sustain: 1.0, release: 1.0 },
         precomputed: {},
-        effectChain: [],
-        isMuted: false,
-        cutItself: false,
-        pianoRoll: true,
+        effectChain: instrumentData.effectChain || [],
+        isMuted: instrumentData.isMuted !== undefined ? instrumentData.isMuted : false, // ✅ FIX: Preserve mute state from saved project
+        cutItself: instrumentData.cutItself !== undefined ? instrumentData.cutItself : false, // ✅ FIX: Preserve cutItself state
+        pianoRoll: instrumentData.pianoRoll !== undefined ? instrumentData.pianoRoll : true,
         // Type-specific fields
         ...(instrumentData.url && { url: instrumentData.url }),
         ...(instrumentData.multiSamples && { multiSamples: instrumentData.multiSamples }),
