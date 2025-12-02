@@ -153,7 +153,7 @@ export default function WaveformVisualizer({
         ctx.fillStyle = hoverColor;
       } else if (isPlayed) {
         ctx.fillStyle = playedColor;
-      } else {
+        } else {
         ctx.fillStyle = unplayedColor;
       }
       ctx.globalAlpha = isPlayed ? 1.0 : 0.4;
@@ -172,7 +172,7 @@ export default function WaveformVisualizer({
       }
     }
 
-    ctx.globalAlpha = 1.0;
+      ctx.globalAlpha = 1.0;
 
     // Draw center line
     ctx.strokeStyle = getCSSVar('--zenith-border-subtle', '#374151');

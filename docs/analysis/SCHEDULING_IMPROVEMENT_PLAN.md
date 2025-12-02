@@ -481,3 +481,6 @@ Tüm değişiklikler geriye dönük uyumlu olacak:
 **Versiyon:** 1.0  
 **Durum:** Planlama Tamamlandı - Uygulama Bekliyor
 
+
+
+

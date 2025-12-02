@@ -16,6 +16,7 @@ import {
     TransposeNotesCommand,
     BatchCommand
 } from '@/lib/piano-roll-tools/CommandStack';
+import { BatchUpdateNotesCommand } from '@/lib/piano-roll-tools/MultiNoteCommand';
 import { TOOL_TYPES } from '@/lib/piano-roll-tools';
 import { useArrangementStore } from '@/store/useArrangementStore';
 import { getPreviewManager } from '@/lib/audio/preview';
@@ -1375,9 +1376,9 @@ export function useNoteInteractionsV3({
                     // For small notes, preserve length unless it becomes >= grid size
                     newVisualLength = calculatedLength;
                 } else {
-                    newVisualLength = snapValue > 0
-                        ? Math.max(minLength, snapToGrid(calculatedLength, 0.5))
-                        : calculatedLength;
+                newVisualLength = snapValue > 0
+                    ? Math.max(minLength, snapToGrid(calculatedLength, 0.5))
+                    : calculatedLength;
                 }
             } else {
                 // ✅ Right handle: Snap end time, then calculate new length
@@ -1405,8 +1406,8 @@ export function useNoteInteractionsV3({
                 } else {
                     // Normal snap for notes >= grid size
                     snappedEndTime = snapValue > 0
-                        ? snapToGrid(Math.max(0, newEndTime), 0.5)
-                        : Math.max(0, newEndTime);
+                    ? snapToGrid(Math.max(0, newEndTime), 0.5)
+                    : Math.max(0, newEndTime);
                 }
 
                 // Calculate new visual length from snapped end time
@@ -2367,7 +2368,10 @@ export function useNoteInteractionsV3({
     // ✅ INTERNAL: Update note without command (for undo/redo)
     const _updateNote = useCallback((noteId, updates) => {
         if (!activePatternId || !currentInstrument) return;
-        const updated = notes.map(n =>
+        // ✅ FIX: Get fresh notes from store to avoid stale closure
+        const currentPattern = useArrangementStore.getState().patterns[activePatternId];
+        const currentNotes = currentPattern?.data?.[currentInstrument.id] || [];
+        const updated = currentNotes.map(n =>
             n.id === noteId ? { ...n, ...updates } : n
         );
         updatePatternNotes(activePatternId, currentInstrument.id, updated);
@@ -2381,7 +2385,34 @@ export function useNoteInteractionsV3({
                 note: modifiedNote
             });
         }
-    }, [notes, activePatternId, currentInstrument, updatePatternNotes]);
+    }, [activePatternId, currentInstrument, updatePatternNotes]);
+
+    // ✅ INTERNAL: Batch update multiple notes without command (for undo/redo)
+    const _updateNotes = useCallback((updatesMap) => {
+        if (!activePatternId || !currentInstrument) return;
+        // ✅ FIX: Get fresh notes from store to avoid stale closure
+        const currentPattern = useArrangementStore.getState().patterns[activePatternId];
+        const currentNotes = currentPattern?.data?.[currentInstrument.id] || [];
+        const updated = currentNotes.map(n => {
+            const updates = updatesMap.get(n.id);
+            return updates ? { ...n, ...updates } : n;
+        });
+        updatePatternNotes(activePatternId, currentInstrument.id, updated);
+        
+        // ✅ FIX: Emit single NOTE_MODIFIED event for all notes (batch update)
+        // This prevents multiple PlaybackManager reschedules
+        const modifiedNotes = updated.filter(note => updatesMap.has(note.id));
+        if (modifiedNotes.length > 0) {
+            // Emit one event per note, but they'll be batched by the event system
+            modifiedNotes.forEach(note => {
+                EventBus.emit('NOTE_MODIFIED', {
+                    patternId: activePatternId,
+                    instrumentId: currentInstrument.id,
+                    note: note
+                });
+            });
+        }
+    }, [activePatternId, currentInstrument, updatePatternNotes]);
 
     // ✅ PUBLIC: Update note with CommandStack (for undo/redo)
     const updateNote = useCallback((noteId, updates, skipUndo = false) => {
@@ -2423,6 +2454,74 @@ export function useNoteInteractionsV3({
     const updateNoteVelocity = useCallback((noteId, velocity) => {
         updateNote(noteId, { velocity: Math.max(1, Math.min(127, Math.round(velocity))) });
     }, [updateNote]);
+
+    // ✅ BATCH: Update velocity of multiple notes at once (for Alt+wheel)
+    const updateNotesVelocity = useCallback((noteIds, velocityChange) => {
+        if (!activePatternId || !currentInstrument || noteIds.length === 0) return;
+        
+        // ✅ FIX: Get fresh notes from store to avoid stale closure
+        const currentPattern = useArrangementStore.getState().patterns[activePatternId];
+        const currentNotes = currentPattern?.data?.[currentInstrument.id] || [];
+        const notesToUpdate = noteIds
+            .map(noteId => currentNotes.find(n => n.id === noteId))
+            .filter(Boolean);
+        
+        if (notesToUpdate.length === 0) return;
+        
+        // ✅ COMMAND STACK: Use BatchUpdateNotesCommand for all velocity updates
+        const stack = commandStackRef.current;
+        if (stack) {
+            // Prepare note updates for BatchUpdateNotesCommand
+            const noteUpdates = notesToUpdate.map(note => {
+                const oldState = { ...note };
+                const currentVelocity = note.velocity || 100;
+                const newVelocity = Math.max(1, Math.min(127, currentVelocity + velocityChange));
+                const newState = { ...note, velocity: newVelocity };
+                return { noteId: note.id, oldState, newState };
+            });
+            
+            // Create batch update command
+            // BatchUpdateNotesCommand expects updatePatternStoreFn to receive a Map of noteId -> full newState
+            const batchCommand = new BatchUpdateNotesCommand(
+                noteUpdates,
+                (updatesMap) => {
+                    // BatchUpdateNotesCommand passes Map<noteId, fullNewState>
+                    // We need to update the pattern store with all notes at once
+                    const currentPattern = useArrangementStore.getState().patterns[activePatternId];
+                    const currentNotes = currentPattern?.data?.[currentInstrument.id] || [];
+                    const updated = currentNotes.map(note => {
+                        const newState = updatesMap.get(note.id);
+                        return newState || note;
+                    });
+                    updatePatternNotes(activePatternId, currentInstrument.id, updated);
+                    
+                    // Emit NOTE_MODIFIED events for all updated notes
+                    noteUpdates.forEach(({ noteId }) => {
+                        const updatedNote = updated.find(n => n.id === noteId);
+                        if (updatedNote) {
+                            EventBus.emit('NOTE_MODIFIED', {
+                                patternId: activePatternId,
+                                instrumentId: currentInstrument.id,
+                                note: updatedNote
+                            });
+                        }
+                    });
+                },
+                `Change velocity of ${notesToUpdate.length} note(s)`
+            );
+            
+            stack.execute(batchCommand);
+        } else {
+            // Fallback if CommandStack not available - use batch update
+            const updatesMap = new Map();
+            notesToUpdate.forEach(note => {
+                const currentVelocity = note.velocity || 100;
+                const newVelocity = Math.max(1, Math.min(127, currentVelocity + velocityChange));
+                updatesMap.set(note.id, { velocity: newVelocity });
+            });
+            _updateNotes(updatesMap);
+        }
+    }, [activePatternId, currentInstrument, updatePatternNotes, _updateNotes]);
 
     // ✅ QUANTIZE - Snap selected notes to grid
     const quantizeNotes = useCallback((noteIds = null, quantizeStart = true, quantizeEnd = false) => {
@@ -2514,7 +2613,23 @@ export function useNoteInteractionsV3({
         handleMouseUp,
         handleKeyDown,
         handleKeyUp,
-        handleWheel: () => { }, // Stub
+        handleWheel: useCallback((e) => {
+            // Alt + wheel: Change volume of selected notes
+            // Note: preventDefault() is called in parent component (PianoRoll.jsx) using manual event listener
+            if (e.altKey && state.selection.size > 0) {
+                const delta = -e.deltaY; // Positive = scroll up = increase
+                const step = e.shiftKey ? 1 : 5; // Shift = fine adjustment (1), normal (5)
+                const change = delta > 0 ? step : -step;
+                
+                // ✅ FIX: Use batch update function to update all selected notes at once
+                const selectedNoteIds = Array.from(state.selection);
+                updateNotesVelocity(selectedNoteIds, change);
+                
+                return true; // Event handled
+            }
+            
+            return false; // Event not handled, allow viewport scroll
+        }, [state.selection, updateNotesVelocity]),
 
         // Selection
         selectNote: select,
@@ -2527,6 +2642,7 @@ export function useNoteInteractionsV3({
         copyNotes,
         pasteNotes,
         updateNoteVelocity,
+        updateNotesVelocity, // ✅ BATCH: Update multiple notes velocity at once
         quantizeNotes,
 
         // Data

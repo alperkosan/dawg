@@ -4,15 +4,25 @@ import './VelocityLane.css';
 const VELOCITY_LANE_HEIGHT = 100;
 const KEYBOARD_WIDTH = 80;
 
+// ✅ PHASE 1: Velocity lane tool types
+const VELOCITY_TOOL_TYPES = {
+    SELECT: 'select',
+    DRAW: 'draw' // Drawing tool for freehand velocity editing
+};
+
 function VelocityLane({
     notes = [],
     selectedNoteIds = [],
     onNoteVelocityChange,
+    onNotesVelocityChange, // ✅ BATCH: Update multiple notes velocity at once
     onNoteSelect,
     onDeselectAll,
     dimensions,
     viewport,
-    activeTool = 'select'
+    activeTool = 'select',
+    velocityTool = VELOCITY_TOOL_TYPES.SELECT, // ✅ PHASE 1: Velocity-specific tool
+    brushSize = 2, // ✅ PHASE 1: Brush size in steps
+    onVelocityToolChange // ✅ PHASE 1: Callback for tool change
 }) {
     const canvasRef = useRef(null);
     const payloadRef = useRef({
@@ -25,6 +35,10 @@ function VelocityLane({
     const dirtyRef = useRef(true);
     const lastViewportRef = useRef({ scrollX: 0, width: 0 });
     const hoveredNoteIdRef = useRef(null);
+    // ✅ PHASE 1: Drawing tool state
+    const isDrawingRef = useRef(false);
+    const drawingPathRef = useRef([]); // Array of {x, y, time} points
+    const lastDrawingTimeRef = useRef(null);
 
     const markDirty = useCallback(() => {
         dirtyRef.current = true;
@@ -237,8 +251,8 @@ function VelocityLane({
                 ctx.fillText(velocity.toString(), noteX + noteWidth/2 + offsetX, barY - 2 + offsetY);
             }
 
-            // Draw resize handles for selected notes
-            if (isSelected && currentTool === 'select') {
+            // ✅ FIX: Draw resize handles for selected notes in all tools - velocity lane should work independently
+            if (isSelected) {
                 const textPrimary = styles.getPropertyValue('--zenith-text-primary').trim();
                 ctx.fillStyle = textPrimary || '#ffffff';
                 ctx.globalAlpha = 1.0;
@@ -271,9 +285,124 @@ function VelocityLane({
         ctx.restore();
     };
 
+    // ✅ PHASE 1: Handle velocity drawing
+    const handleDrawingMouseDown = useCallback((e) => {
+        if (velocityTool !== VELOCITY_TOOL_TYPES.DRAW) return;
+        // ✅ FIX: Allow drawing in all tools (paintBrush, etc.) - velocity lane should work independently
+
+        const canvas = canvasRef.current;
+        const rect = canvas.getBoundingClientRect();
+        const clickX = e.clientX - rect.left + viewport.scrollX;
+        const clickY = e.clientY - rect.top;
+        const canvasHeight = canvas.height / (window.devicePixelRatio || 1);
+
+        // Convert Y position to velocity (inverted: top = high velocity)
+        const normalizedY = 1 - (clickY / canvasHeight);
+        const velocity = Math.max(1, Math.min(127, Math.round(normalizedY * 127)));
+
+        isDrawingRef.current = true;
+        drawingPathRef.current = [{ x: clickX, y: clickY, time: Date.now(), velocity }];
+        lastDrawingTimeRef.current = Date.now();
+
+        // Apply velocity to notes at this position
+        const { stepWidth } = dimensions;
+        const clickTime = clickX / stepWidth;
+        const affectedNotes = notes.filter(note => {
+            const displayLength = note.visualLength !== undefined ? note.visualLength : note.length;
+            const noteStart = note.startTime;
+            const noteEnd = noteStart + displayLength;
+            // Check if note is within brush size
+            return clickTime >= noteStart - brushSize && clickTime <= noteEnd + brushSize;
+        });
+
+        affectedNotes.forEach(note => {
+            onNoteVelocityChange?.(note.id, velocity);
+        });
+
+        const handleDrawingMouseMove = (moveEvent) => {
+            if (!isDrawingRef.current) return;
+
+            const currentX = moveEvent.clientX - rect.left + viewport.scrollX;
+            const currentY = moveEvent.clientY - rect.top;
+            const currentTime = Date.now();
+
+            // Throttle drawing updates (every 16ms for ~60fps)
+            if (currentTime - lastDrawingTimeRef.current < 16) return;
+            lastDrawingTimeRef.current = currentTime;
+
+            // Convert Y position to velocity
+            const normalizedY = 1 - (currentY / canvasHeight);
+            const velocity = Math.max(1, Math.min(127, Math.round(normalizedY * 127)));
+
+            // Add point to drawing path
+            drawingPathRef.current.push({ x: currentX, y: currentY, time: currentTime, velocity });
+
+            // ✅ PHASE 1: Smooth interpolation between points
+            if (drawingPathRef.current.length >= 2) {
+                const prevPoint = drawingPathRef.current[drawingPathRef.current.length - 2];
+                const currentPoint = drawingPathRef.current[drawingPathRef.current.length - 1];
+                
+                // Interpolate between previous and current point
+                const distance = Math.abs(currentPoint.x - prevPoint.x);
+                const steps = Math.max(1, Math.floor(distance / (stepWidth * 0.5))); // Interpolate every 0.5 steps
+                
+                for (let i = 1; i <= steps; i++) {
+                    const t = i / steps;
+                    const interpX = prevPoint.x + (currentPoint.x - prevPoint.x) * t;
+                    const interpY = prevPoint.y + (currentPoint.y - prevPoint.y) * t;
+                    const interpVelocity = Math.round(prevPoint.velocity + (currentPoint.velocity - prevPoint.velocity) * t);
+                    
+                    const interpTime = interpX / stepWidth;
+                    
+                    // Find notes within brush size
+                    const affectedNotes = notes.filter(note => {
+                        const displayLength = note.visualLength !== undefined ? note.visualLength : note.length;
+                        const noteStart = note.startTime;
+                        const noteEnd = noteStart + displayLength;
+                        return interpTime >= noteStart - brushSize && interpTime <= noteEnd + brushSize;
+                    });
+
+                    affectedNotes.forEach(note => {
+                        onNoteVelocityChange?.(note.id, interpVelocity);
+                    });
+                }
+            }
+
+            // Apply velocity to notes at current position
+            const currentTimeStep = currentX / stepWidth;
+            const affectedNotes = notes.filter(note => {
+                const displayLength = note.visualLength !== undefined ? note.visualLength : note.length;
+                const noteStart = note.startTime;
+                const noteEnd = noteStart + displayLength;
+                return currentTimeStep >= noteStart - brushSize && currentTimeStep <= noteEnd + brushSize;
+            });
+
+            affectedNotes.forEach(note => {
+                onNoteVelocityChange?.(note.id, velocity);
+            });
+        };
+
+        const handleDrawingMouseUp = () => {
+            isDrawingRef.current = false;
+            drawingPathRef.current = [];
+            lastDrawingTimeRef.current = null;
+            document.removeEventListener('mousemove', handleDrawingMouseMove);
+            document.removeEventListener('mouseup', handleDrawingMouseUp);
+        };
+
+        document.addEventListener('mousemove', handleDrawingMouseMove);
+        document.addEventListener('mouseup', handleDrawingMouseUp);
+    }, [velocityTool, activeTool, notes, dimensions, viewport, brushSize, onNoteVelocityChange]);
+
     // Handle mouse interactions
     const handleMouseDown = useCallback((e) => {
-        if (activeTool !== 'select') return;
+        // ✅ PHASE 1: Check if drawing tool is active
+        if (velocityTool === VELOCITY_TOOL_TYPES.DRAW) {
+            return handleDrawingMouseDown(e);
+        }
+
+        // ✅ FIX: Allow velocity lane interactions in all tools - velocity lane should work independently
+        // Velocity lane can be used to adjust velocity even when painting notes
 
         const canvas = canvasRef.current;
         const rect = canvas.getBoundingClientRect();
@@ -393,11 +522,11 @@ function VelocityLane({
                 onDeselectAll?.();
             }
         }
-    }, [activeTool, notes, selectedNoteIds, dimensions, viewport, onNoteVelocityChange, onNoteSelect, onDeselectAll]);
+    }, [activeTool, velocityTool, notes, selectedNoteIds, dimensions, viewport, onNoteVelocityChange, onNoteSelect, onDeselectAll, handleDrawingMouseDown]);
 
     // ✅ FL STUDIO STYLE: Handle mouse hover to highlight topmost note
     const handleMouseMove = useCallback((e) => {
-        if (activeTool !== 'select') return;
+        // ✅ FIX: Allow hover highlighting in all tools - velocity lane should work independently
 
         const canvas = canvasRef.current;
         const rect = canvas.getBoundingClientRect();
@@ -466,6 +595,72 @@ function VelocityLane({
         markDirty();
     }, [markDirty]);
 
+    // ✅ Alt + wheel: Change velocity of selected notes
+    const handleWheel = useCallback((e) => {
+        if (e.altKey && selectedNoteIds.length > 0) {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            const delta = -e.deltaY; // Positive = scroll up = increase
+            const step = e.shiftKey ? 1 : 5; // Shift = fine adjustment (1), normal (5)
+            const change = delta > 0 ? step : -step;
+            
+            // ✅ FIX: Use batch update function if available, otherwise fallback to individual updates
+            if (onNotesVelocityChange) {
+                onNotesVelocityChange(selectedNoteIds, change);
+            } else {
+                // Fallback: update individually
+                selectedNoteIds.forEach(noteId => {
+                    const note = notes.find(n => n.id === noteId);
+                    if (note) {
+                        const currentVelocity = note.velocity || 100;
+                        const newVelocity = Math.max(1, Math.min(127, currentVelocity + change));
+                        onNoteVelocityChange?.(noteId, newVelocity);
+                    }
+                });
+            }
+        }
+    }, [selectedNoteIds, notes, onNoteVelocityChange, onNotesVelocityChange]);
+
+    // ✅ FIX: Handle wheel events with preventDefault using manual event listener
+    // React's onWheel is passive by default, so we need to use addEventListener with { passive: false }
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        const wheelHandler = (e) => {
+            if (e.altKey && selectedNoteIds.length > 0) {
+                e.preventDefault();
+                e.stopPropagation();
+                
+                const delta = -e.deltaY; // Positive = scroll up = increase
+                const step = e.shiftKey ? 1 : 5; // Shift = fine adjustment (1), normal (5)
+                const change = delta > 0 ? step : -step;
+                
+                // ✅ FIX: Use batch update function if available, otherwise fallback to individual updates
+                if (onNotesVelocityChange) {
+                    onNotesVelocityChange(selectedNoteIds, change);
+                } else {
+                    // Fallback: update individually
+                    selectedNoteIds.forEach(noteId => {
+                        const note = notes.find(n => n.id === noteId);
+                        if (note) {
+                            const currentVelocity = note.velocity || 100;
+                            const newVelocity = Math.max(1, Math.min(127, currentVelocity + change));
+                            onNoteVelocityChange?.(noteId, newVelocity);
+                        }
+                    });
+                }
+            }
+        };
+
+        canvas.addEventListener('wheel', wheelHandler, { passive: false });
+
+        return () => {
+            canvas.removeEventListener('wheel', wheelHandler);
+        };
+    }, [selectedNoteIds, notes, onNoteVelocityChange, onNotesVelocityChange]);
+
     return (
         <div className="velocity-lane">
             <div className="velocity-lane-label">
@@ -480,12 +675,17 @@ function VelocityLane({
                 style={{
                     width: '100%',
                     height: VELOCITY_LANE_HEIGHT,
-                    cursor: activeTool === 'select' ? 'pointer' : 'default'
+                    cursor: velocityTool === VELOCITY_TOOL_TYPES.DRAW 
+                        ? 'crosshair' 
+                        : 'pointer' // ✅ FIX: Always show pointer cursor - velocity lane works in all tools
                 }}
             />
         </div>
     );
 }
+
+// ✅ PHASE 1: Export velocity tool types (before default export)
+export { VELOCITY_TOOL_TYPES };
 
 // Memoize component to prevent unnecessary re-renders during playback
 export default React.memo(VelocityLane, (prevProps, nextProps) => {
@@ -494,6 +694,8 @@ export default React.memo(VelocityLane, (prevProps, nextProps) => {
         prevProps.notes === nextProps.notes &&
         prevProps.selectedNoteIds === nextProps.selectedNoteIds &&
         prevProps.activeTool === nextProps.activeTool &&
+        prevProps.velocityTool === nextProps.velocityTool &&
+        prevProps.brushSize === nextProps.brushSize &&
         prevProps.onNoteVelocityChange === nextProps.onNoteVelocityChange &&
         prevProps.onNoteSelect === nextProps.onNoteSelect &&
         prevProps.onDeselectAll === nextProps.onDeselectAll &&

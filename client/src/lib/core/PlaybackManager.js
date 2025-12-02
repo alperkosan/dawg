@@ -1207,7 +1207,7 @@ export class PlaybackManager {
             return;
         }
 
-        const scheduleCallback = () => {
+        const scheduleCallback = async () => {
             // ✅ PERFORMANCE TRACKING: Start timing
             const scheduleStartTime = performance.now();
 
@@ -1225,7 +1225,7 @@ export class PlaybackManager {
             let scheduledInstruments = 0;
 
             if (this.currentMode === 'pattern') {
-                const result = this._schedulePatternContent(baseTime, {
+                const result = await this._schedulePatternContent(baseTime, {
                     instrumentFilterSet: shouldUseFilter ? targetSet : null,
                     reason: reason // ✅ FIX: Pass reason to detect resume scenario
                 });
@@ -1233,7 +1233,7 @@ export class PlaybackManager {
                 scheduledInstruments = result?.instrumentCount || 0;
             } else {
                 try {
-                    const result = this._scheduleSongContent(baseTime, { reason });
+                    const result = await this._scheduleSongContent(baseTime, { reason });
                     scheduledNotes = result?.totalNotes || 0;
                     scheduledInstruments = result?.instrumentCount || 0;
                 } catch (error) {
@@ -1304,7 +1304,7 @@ export class PlaybackManager {
      * ✅ DÜZELTME: Pattern content scheduling with base time
      * @param {number} baseTime - Base scheduling time
      */
-    _schedulePatternContent(baseTime, options = {}) {
+    async _schedulePatternContent(baseTime, options = {}) {
         const { instrumentFilterSet = null, reason = 'manual' } = options;
         console.log('🎵 PlaybackManager._schedulePatternContent() called', { baseTime, reason });
         
@@ -1495,7 +1495,7 @@ export class PlaybackManager {
         return { totalNotes, instrumentCount };
     }
 
-    _scheduleSongContent(baseTime, options = {}) {
+    async _scheduleSongContent(baseTime, options = {}) {
         const { reason = 'manual' } = options;
 
         // ✅ PHASE 1: Store Consolidation - Use unified store
@@ -1535,21 +1535,22 @@ export class PlaybackManager {
             // Don't return - allow playback to continue silently so playhead still moves
         }
 
-        clips.forEach((clip) => {
+        // ✅ FIX: Use for...of instead of forEach to support async operations
+        for (const clip of clips) {
             // ✅ Check track mute/solo state
             const track = tracks.find(t => t.id === clip.trackId);
             if (!track) {
-                return;
+                continue;
             }
 
             // Skip if track is muted
             if (track.muted) {
-                return;
+                continue;
             }
 
             // If any track is solo, only play clips on solo tracks
             if (hasSolo && !track.solo) {
-                return;
+                continue;
             }
 
             // ✅ Handle different clip types: 'pattern' or 'audio'
@@ -1560,7 +1561,7 @@ export class PlaybackManager {
                 // Schedule pattern clip (default)
                 const pattern = patterns[clip.patternId];
                 if (!pattern) {
-                    return;
+                    continue;
                 }
 
                 // Convert clip startTime and duration to steps (16th notes)
@@ -1573,57 +1574,148 @@ export class PlaybackManager {
                 // This is set when a pattern clip is split, so the right clip plays from the split point
                 const patternOffset = clip.patternOffset || 0; // In steps (16th notes)
                 
-                // ✅ DEBUG: Log pattern offset for debugging
-                if (patternOffset > 0) {
-                    console.log(`🎵 Pattern clip ${clip.id} has patternOffset: ${patternOffset} steps (${patternOffset / 4} beats)`, {
-                        clipId: clip.id,
-                        clipStartTime: clip.startTime,
-                        clipDuration: clipDurationBeats,
-                        patternOffset,
-                        clipStartStep,
-                        clipDurationSteps
+                // ✅ FIX: Calculate pattern length in steps
+                // Pattern length can be stored in pattern.length (in beats) or calculated from notes
+                let patternLengthSteps = 64; // Default 4 bars
+                if (pattern.length) {
+                    // pattern.length is in beats, convert to steps
+                    patternLengthSteps = pattern.length * 4;
+                } else {
+                    // Calculate from notes if length not available
+                    let maxStep = 0;
+                    Object.values(pattern.data || {}).forEach(notes => {
+                        if (Array.isArray(notes)) {
+                            notes.forEach(note => {
+                                const noteTime = note.time || 0;
+                                maxStep = Math.max(maxStep, noteTime);
+                            });
+                        }
                     });
+                    if (maxStep > 0) {
+                        // Round up to nearest bar (16 steps)
+                        patternLengthSteps = Math.max(64, Math.ceil(maxStep / 16) * 16);
+                    }
                 }
+                
+                // ✅ DEBUG: Log clip scheduling info for debugging
+                console.log(`🎵 Scheduling pattern clip:`, {
+                    clipId: clip.id,
+                    clipStartTime: clip.startTime,
+                    clipStartStep,
+                    clipDuration: clipDurationBeats,
+                    clipDurationSteps,
+                    patternOffset,
+                    patternId: clip.patternId,
+                    patternLength: pattern.length,
+                    patternLengthSteps,
+                    instrumentsInPattern: Object.keys(pattern.data || {}).length
+                });
 
                 // Schedule pattern notes with clip timing offset
-                Object.entries(pattern.data).forEach(([instrumentId, notes]) => {
+                // ✅ FIX: Use for...of instead of forEach to support async operations
+                for (const [instrumentId, notes] of Object.entries(pattern.data)) {
                     if (!Array.isArray(notes) || notes.length === 0) {
-                        return;
+                        continue;
                     }
 
-                    const instrument = this.audioEngine.instruments.get(instrumentId);
+                    let instrument = this.audioEngine.instruments.get(instrumentId);
                     if (!instrument) {
-                        console.warn(`🎵 ❌ Instrument ${instrumentId} not found`);
-                        return;
+                        // ✅ FIX: Try to load instrument from store if not in audio engine
+                        console.warn(`🎵 ❌ Instrument ${instrumentId} not found in audio engine, attempting to load...`);
+                        
+                        try {
+                            // Get instrument from store
+                            const { useInstrumentsStore } = await import('@/store/useInstrumentsStore');
+                            const instrumentsStore = useInstrumentsStore.getState();
+                            const instrumentData = instrumentsStore.instruments.find(inst => inst.id === instrumentId);
+                            
+                            if (instrumentData) {
+                                // Load instrument into audio engine
+                                const { AudioContextService } = await import('@/lib/services/AudioContextService');
+                                await AudioContextService._syncInstrumentsToMixerInserts();
+                                
+                                // Try again after sync
+                                instrument = this.audioEngine.instruments.get(instrumentId);
+                                if (instrument) {
+                                    console.log(`✅ Instrument ${instrumentId} loaded successfully`);
+                                } else {
+                                    console.error(`❌ Failed to load instrument ${instrumentId} after sync`);
+                                    continue;
+                                }
+                            } else {
+                                console.error(`❌ Instrument ${instrumentId} not found in store either`);
+                                continue;
+                            }
+                        } catch (error) {
+                            console.error(`❌ Error loading instrument ${instrumentId}:`, error);
+                            continue;
+                        }
                     }
 
-                    // ✅ FIX: Filter and offset notes by clip start time, duration, and pattern offset
-                    // patternOffset determines where in the pattern to start playing (for split clips)
-                    // clipDurationSteps determines how many steps to play from patternOffset
-                    const offsetNotes = notes
-                        .filter(note => {
-                            const noteTime = note.time || 0;
-                            // Only include notes that:
-                            // 1. Are at or after the pattern offset (for split clips)
-                            // 2. Are within the clip duration (from pattern offset)
-                            const noteIsAfterOffset = noteTime >= patternOffset;
-                            const noteIsWithinDuration = noteTime < (patternOffset + clipDurationSteps);
-                            return noteIsAfterOffset && noteIsWithinDuration;
-                        })
-                        .map(note => ({
-                            ...note,
-                            // Adjust note time: subtract patternOffset (so notes start from 0 relative to clip start)
-                            // then add clipStartStep (to position in arrangement timeline)
-                            time: (note.time || 0) - patternOffset + clipStartStep
-                        }));
+                    // ✅ FIX: Pattern loop support - loop pattern notes across clip duration
+                    // Pattern notes are in range [0, patternLengthSteps), we need to loop them
+                    // to cover the entire clip duration (which may be longer than pattern length)
+                    const offsetNotes = [];
                     
-                    // ✅ DEBUG: Log filtered notes for debugging
-                    if (patternOffset > 0 && offsetNotes.length > 0) {
-                        console.log(`🎵 Filtered ${offsetNotes.length} notes for patternOffset ${patternOffset}`, {
+                    // Calculate how many pattern loops we need to cover the clip duration
+                    const effectivePatternStart = patternOffset % patternLengthSteps;
+                    const effectivePatternEnd = effectivePatternStart + clipDurationSteps;
+                    const numLoops = Math.ceil(effectivePatternEnd / patternLengthSteps);
+                    
+                    for (let loopIndex = 0; loopIndex < numLoops; loopIndex++) {
+                        const loopStartStep = loopIndex * patternLengthSteps;
+                        const loopEndStep = (loopIndex + 1) * patternLengthSteps;
+                        
+                        // Filter notes that fall within this loop iteration and clip range
+                        notes.forEach(note => {
+                            const noteTime = note.time || 0;
+                            const noteTimeInLoop = noteTime + loopStartStep;
+                            
+                            // Check if note falls within the effective pattern range (after patternOffset)
+                            // and within the clip duration
+                            if (noteTimeInLoop >= effectivePatternStart && 
+                                noteTimeInLoop < effectivePatternEnd) {
+                                
+                                // Calculate the final note time in arrangement timeline
+                                // Subtract effectivePatternStart to get relative position from clip start
+                                // Then add clipStartStep to position in arrangement
+                                const relativeNoteTime = noteTimeInLoop - effectivePatternStart;
+                                const finalNoteTime = relativeNoteTime + clipStartStep;
+                                
+                                offsetNotes.push({
+                                    ...note,
+                                    time: finalNoteTime
+                                });
+                            }
+                        });
+                    }
+                    
+                    // ✅ DEBUG: Log filtered notes for debugging (especially for piano)
+                    if (instrumentId === 'piano' || offsetNotes.length !== notes.length || patternOffset > 0) {
+                        console.log(`🎵 [${instrumentId}] Pattern clip ${clip.id} note filtering:`, {
+                            instrumentId,
+                            clipId: clip.id,
+                            clipStartStep,
+                            clipDurationSteps,
+                            patternOffset,
+                            patternLengthSteps,
+                            numLoops,
+                            effectivePatternStart,
+                            effectivePatternEnd,
                             originalNoteCount: notes.length,
                             filteredNoteCount: offsetNotes.length,
-                            firstNoteTime: offsetNotes[0]?.time,
-                            lastNoteTime: offsetNotes[offsetNotes.length - 1]?.time
+                            noteTimeRange: notes.length > 0 ? {
+                                min: Math.min(...notes.map(n => n.time || 0)),
+                                max: Math.max(...notes.map(n => n.time || 0))
+                            } : null,
+                            filteredNoteTimeRange: offsetNotes.length > 0 ? {
+                                min: Math.min(...offsetNotes.map(n => n.time || 0)),
+                                max: Math.max(...offsetNotes.map(n => n.time || 0))
+                            } : null,
+                            filterRange: {
+                                min: effectivePatternStart,
+                                max: effectivePatternEnd
+                            }
                         });
                     }
 
@@ -1631,9 +1723,9 @@ export class PlaybackManager {
                     if (offsetNotes.length > 0) {
                         this._scheduleInstrumentNotes(instrument, offsetNotes, instrumentId, baseTime, clip.id, reason);
                     }
-                });
+                }
             }
-        });
+        }
 
 
         // ✅ Return basic metrics (song mode is complex, return clip count as approximation)

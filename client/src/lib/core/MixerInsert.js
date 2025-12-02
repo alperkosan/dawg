@@ -163,11 +163,11 @@ export class MixerInsert {
     try {
       // ✅ FIX: Check if output exists and is valid before disconnecting
       if (instrumentOutput && typeof instrumentOutput.disconnect === 'function') {
-        instrumentOutput.disconnect(this.input);
+      instrumentOutput.disconnect(this.input);
       }
       this.instruments.delete(instrumentId);
       if (import.meta.env.DEV) {
-        console.log(`🔌 Disconnected instrument ${instrumentId} from ${this.insertId}`);
+      console.log(`🔌 Disconnected instrument ${instrumentId} from ${this.insertId}`);
       }
     } catch (error) {
       // ✅ FIX: Ignore "not connected" errors - instrument might already be disconnected
@@ -178,7 +178,7 @@ export class MixerInsert {
       } else {
         // Log other errors
         if (import.meta.env.DEV) {
-          console.warn(`⚠️ Error disconnecting instrument ${instrumentId}:`, error);
+      console.warn(`⚠️ Error disconnecting instrument ${instrumentId}:`, error);
         }
       }
     }

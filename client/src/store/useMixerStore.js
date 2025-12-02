@@ -350,7 +350,7 @@ export const useMixerStore = create((set, get) => ({
     }
   },
 
-  handleMixerEffectChange: (trackId, effectId, paramOrSettings, value) => {
+  handleMixerEffectChange: (trackId, effectId, paramOrSettings, value, options = {}) => {
     let needsRebuild = false;
 
     set(state => {
@@ -365,6 +365,20 @@ export const useMixerStore = create((set, get) => ({
                   ...fx,
                   settings: normalizeEffectSettings(effectType, fx.settings || {})
                 };
+                
+                // ✅ FIX: Save preset information if provided
+                if (options.presetId !== undefined) {
+                  newFx.presetId = options.presetId;
+                }
+                if (options.presetName !== undefined) {
+                  newFx.presetName = options.presetName;
+                }
+                // Clear preset info if explicitly cleared
+                if (options.clearPreset === true) {
+                  delete newFx.presetId;
+                  delete newFx.presetName;
+                }
+                
                 if (typeof paramOrSettings === 'string') {
                   const canonicalParam = normalizeEffectParam(effectType, paramOrSettings);
                   if (canonicalParam === 'bypass' || canonicalParam === 'sidechainSource') {

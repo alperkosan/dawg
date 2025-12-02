@@ -17,8 +17,8 @@ const PresetMenu = ({ isOpen, onClose, anchorEl, factoryPresets, userPresets, on
   if (!isOpen) return null;
   return ReactDOM.createPortal(
     <div ref={menuRef} className="preset-manager__menu" style={{ top: position.top, left: position.left }}>
-      {factoryPresets.length > 0 && ( <> <h4 className="preset-manager__menu-category">Fabrika</h4> {factoryPresets.map(p => <button key={p.name} onClick={() => onSelect(p.settings)} className="preset-manager__menu-item">{p.name}</button>)} </> )}
-      {userPresets.length > 0 && ( <> <h4 className="preset-manager__menu-category">Kullanıcı</h4> {userPresets.map(p => <div key={p.name} className="preset-manager__user-item"> <button onClick={() => onSelect(p.settings)} className="preset-manager__user-item-button">{p.name}</button> <button onClick={() => onDelete(p.name)} className="preset-manager__delete-btn" title="Bu preseti sil"><Trash2 size={14} /></button> </div> )} </> )}
+      {factoryPresets.length > 0 && ( <> <h4 className="preset-manager__menu-category">Fabrika</h4> {factoryPresets.map(p => <button key={p.name} onClick={() => onSelect(p.settings, p.name)} className="preset-manager__menu-item">{p.name}</button>)} </> )}
+      {userPresets.length > 0 && ( <> <h4 className="preset-manager__menu-category">Kullanıcı</h4> {userPresets.map(p => <div key={p.name} className="preset-manager__user-item"> <button onClick={() => onSelect(p.settings, p.name)} className="preset-manager__user-item-button">{p.name}</button> <button onClick={() => onDelete(p.name)} className="preset-manager__delete-btn" title="Bu preseti sil"><Trash2 size={14} /></button> </div> )} </> )}
     </div>, document.body);
 };
 
@@ -39,8 +39,12 @@ const PluginContainer = ({ trackId, effect, definition, children }) => {
     setActivePresetName(matchingPreset ? matchingPreset.name : 'Custom*');
   }, [effect.settings, presets, userPresets]);
 
-  const handlePresetSelect = (settings) => {
-    handleMixerEffectChange(trackId, effect.id, settings);
+  const handlePresetSelect = (settings, presetName) => {
+    // ✅ FIX: Save preset name along with settings
+    // Note: Old PluginContainer doesn't have preset IDs, only names
+    handleMixerEffectChange(trackId, effect.id, settings, null, {
+      presetName: presetName || 'Custom'
+    });
     setIsMenuOpen(false);
   };
   const handleSave = () => {

@@ -334,3 +334,6 @@ Piano Roll Engine
 5. **Test with loop enabled** - Ensure notes respect loop bounds
 6. **Verify duration accuracy** - Compare visualLength with actual key press time
 
+
+
+

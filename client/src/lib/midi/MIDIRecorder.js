@@ -641,7 +641,7 @@ export class MIDIRecorder {
             beats: step / STEPS_PER_BEAT,  // Calculate beats for logging only
             velocity
         });
-        
+
         // ✅ LIVE DRAWING: Add note to pattern immediately with minimum length
         // This allows the user to see the note as they press the key
         this.addLiveNote(noteId, pitch, velocity, startTimeSteps);
@@ -958,7 +958,7 @@ export class MIDIRecorder {
 
         // Remove from pending
         this.state.pendingNotes.delete(pitch);
-        
+
         // Stop live update loop if no more pending notes
         if (this.state.pendingNotes.size === 0) {
             this.stopLiveNoteUpdateLoop();

@@ -195,3 +195,6 @@ C7-B7 (96-107):
 - Mapping fiziksel piyano düzenine uygun olmalı (siyah tuşlar arasında)
 - Oktav shift özelliği kullanıcı deneyimini önemli ölçüde iyileştirir
 
+
+
+

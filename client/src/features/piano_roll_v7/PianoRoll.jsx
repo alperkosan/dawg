@@ -7,7 +7,7 @@ import { drawPianoRollBackground, drawPianoRollForeground, drawPlayhead } from '
 import { uiUpdateManager, UPDATE_PRIORITIES, UPDATE_FREQUENCIES } from '@/lib/core/UIUpdateManager';
 import { performanceMonitor } from '@/utils/PerformanceMonitor';
 import Toolbar from './components/Toolbar';
-import VelocityLane from './components/VelocityLane';
+import VelocityLane, { VELOCITY_TOOL_TYPES } from './components/VelocityLane';
 import CCLanes from './components/CCLanes';
 import NotePropertiesPanel from './components/NotePropertiesPanel';
 import LoopRegionOverlay from './components/LoopRegionOverlay';
@@ -286,6 +286,10 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
     // ✅ FIX: Default to paintBrush for better workflow (users typically want to write notes immediately)
     const [activeTool, setActiveTool] = useState('paintBrush');
     const [zoom, setZoom] = useState(1.0);
+    
+    // ✅ PHASE 1: Velocity lane tool state
+    const [velocityTool, setVelocityTool] = useState(VELOCITY_TOOL_TYPES.SELECT);
+    const [velocityBrushSize, setVelocityBrushSize] = useState(2); // Brush size in steps
 
     // Performance monitoring
     const [fps, setFps] = useState(60);
@@ -665,33 +669,6 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
         }
     }, [keyboardPianoMode]);
 
-    // ✅ KEYBOARD SHORTCUTS - Handle Alt + key for tools and ? for shortcuts panel
-    useEffect(() => {
-        const handleKeyDown = (e) => {
-            // ✅ IGNORE ALL SHORTCUTS when keyboard piano mode is active
-            if (keyboardPianoMode) {
-                return;
-            }
-
-
-            // ? or H key: Toggle shortcuts panel (only if not in input field)
-            if ((e.key === '?' || e.key === 'h' || e.key === 'H') && !e.ctrlKey && !e.metaKey && !e.altKey) {
-                const target = e.target;
-                if (target.tagName !== 'INPUT' && target.tagName !== 'TEXTAREA') {
-                    setShowShortcuts(prev => !prev);
-                    e.preventDefault();
-                    return;
-                }
-            }
-
-            const toolManager = getToolManager();
-            toolManager.handleKeyPress(e);
-        };
-
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [keyboardPianoMode]);
-
     useEffect(() => {
         const interval = setInterval(() => {
             const metrics = performanceMonitor.getMetrics();
@@ -909,6 +886,117 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
         dragState: rawDragState,
         resizeState: rawResizeState
     } = noteInteractions;
+
+    // ✅ FIX: Memoize selectedNoteIds array early to prevent initialization errors
+    const selectedNoteIdsArray = useMemo(
+        () => Array.from(selectedNoteIds || []),
+        [selectedNoteIds]
+    );
+
+    // ✅ VELOCITY LANE HANDLER - Define early to prevent initialization errors
+    const handleNoteVelocityChange = useCallback((noteId, newVelocity) => {
+        // Update note velocity via note interactions
+        noteInteractions.updateNoteVelocity?.(noteId, newVelocity);
+    }, [noteInteractions]);
+
+    // ✅ BATCH: Update velocity of multiple notes at once (for Alt+wheel in velocity lane)
+    const handleNotesVelocityChange = useCallback((noteIds, velocityChange) => {
+        // Update notes velocity via note interactions batch function
+        if (noteInteractions.updateNotesVelocity) {
+            noteInteractions.updateNotesVelocity(noteIds, velocityChange);
+        } else {
+            // Fallback: update individually
+            noteIds.forEach(noteId => {
+                const note = noteInteractions.notes.find(n => n.id === noteId);
+                if (note) {
+                    const currentVelocity = note.velocity || 100;
+                    const newVelocity = Math.max(1, Math.min(127, currentVelocity + velocityChange));
+                    noteInteractions.updateNoteVelocity?.(noteId, newVelocity);
+                }
+            });
+        }
+    }, [noteInteractions]);
+
+    // ✅ KEYBOARD SHORTCUTS - Handle Alt + key for tools and ? for shortcuts panel
+    // ✅ FIX: Moved after selectedNoteIds and handleNoteVelocityChange are defined
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            // ✅ IGNORE ALL SHORTCUTS when keyboard piano mode is active
+            if (keyboardPianoMode) {
+                return;
+            }
+
+            // Don't interfere with text inputs
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+                return;
+            }
+
+            // ✅ PHASE 1: Velocity lane keyboard shortcuts
+            // Check if velocity lane is focused or if we're in velocity editing context
+            const hasSelectedNotes = selectedNoteIds && selectedNoteIds.size > 0;
+            const isVelocityContext = velocityTool === VELOCITY_TOOL_TYPES.DRAW || 
+                                     (hasSelectedNotes && !e.ctrlKey && !e.metaKey && !e.altKey);
+            
+            if (isVelocityContext) {
+                // Convert Set to Array for iteration
+                const selectedArray = Array.from(selectedNoteIds || []);
+                
+                // Arrow keys: Increase/decrease velocity
+                if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    const isIncrease = e.key === 'ArrowUp';
+                    const isFine = e.shiftKey; // Shift = fine adjustment
+                    const step = isFine ? 1 : 5; // Fine: 1, Normal: 5
+                    
+                    selectedArray.forEach(noteId => {
+                        const note = noteInteractions.notes.find(n => n.id === noteId);
+                        if (note) {
+                            const currentVelocity = note.velocity || 100;
+                            const newVelocity = isIncrease
+                                ? Math.min(127, currentVelocity + step)
+                                : Math.max(1, currentVelocity - step);
+                            handleNoteVelocityChange(noteId, newVelocity);
+                        }
+                    });
+                    return;
+                }
+                
+                // 0 key: Reset velocity to 1 (MIDI minimum)
+                if (e.key === '0') {
+                    e.preventDefault();
+                    selectedArray.forEach(noteId => {
+                        handleNoteVelocityChange(noteId, 1);
+                    });
+                    return;
+                }
+                
+                // 1 key: Set velocity to 100
+                if (e.key === '1') {
+                    e.preventDefault();
+                    selectedArray.forEach(noteId => {
+                        handleNoteVelocityChange(noteId, 100);
+                    });
+                    return;
+                }
+            }
+
+            // ? or H key: Toggle shortcuts panel (only if not in input field)
+            if ((e.key === '?' || e.key === 'h' || e.key === 'H') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+                const target = e.target;
+                if (target.tagName !== 'INPUT' && target.tagName !== 'TEXTAREA') {
+                    setShowShortcuts(prev => !prev);
+                    e.preventDefault();
+                    return;
+                }
+            }
+
+            const toolManager = getToolManager();
+            toolManager.handleKeyPress(e);
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [keyboardPianoMode, velocityTool, selectedNoteIds, noteInteractions.notes, handleNoteVelocityChange]);
 
     const rendererDragState = useMemo(() => {
         if (rawDragState && rawDragState.noteIds) {
@@ -1311,11 +1399,7 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
         setZoom(newZoom);
     };
 
-    // ✅ VELOCITY LANE HANDLER
-    const handleNoteVelocityChange = (noteId, newVelocity) => {
-        // Update note velocity via note interactions
-        noteInteractions.updateNoteVelocity?.(noteId, newVelocity);
-    };
+    // ✅ NOTE: handleNoteVelocityChange is now defined earlier (after selectedNoteIdsArray)
 
     // ✅ PHASE 2: CC LANES HANDLERS
     const activePatternId = useArrangementStore(state => state.activePatternId);
@@ -1487,13 +1571,8 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
         noteInteractions.updateNote?.(selectedNote.id, updates);
     }, [selectedNote, noteInteractions]);
 
-    // Memoize selectedNoteIds array to prevent VelocityLane re-renders
-    const selectedNoteIdsArray = useMemo(
-        () => Array.from(selectedNoteIds),
-        [selectedNoteIds]
-    );
-
     // ✅ REMOVED: Cursor manager cleanup - using simple CSS cursors now
+    // ✅ NOTE: selectedNoteIdsArray is now defined earlier (after noteInteractions destructuring)
 
     // ✅ CONTEXT MENU OPERATIONS
     const contextMenuOperations = useMemo(() => ({
@@ -1545,6 +1624,29 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
             });
 
             console.log(`✨ Quantized ${notesToQuantize.length} notes to grid: ${snapValue}`);
+        },
+        // ✅ PHASE 1: Velocity quantization
+        onVelocityQuantize: (quantizeValue = null) => {
+            if (selectedNoteIds.size === 0) return;
+
+            // Default quantization values: 0, 32, 64, 96, 127 (piano, mezzo-piano, mezzo-forte, forte, fortissimo)
+            const defaultQuantizeValues = [1, 32, 64, 96, 127];
+            const quantizeTo = quantizeValue !== null ? quantizeValue : defaultQuantizeValues;
+
+            const notesToQuantize = noteInteractions.notes.filter(n =>
+                selectedNoteIds.has(n.id)
+            );
+
+            notesToQuantize.forEach(note => {
+                const currentVelocity = note.velocity || 100;
+                // Find closest quantization value
+                const closest = quantizeTo.reduce((prev, curr) => {
+                    return Math.abs(curr - currentVelocity) < Math.abs(prev - currentVelocity) ? curr : prev;
+                });
+                handleNoteVelocityChange(note.id, closest);
+            });
+
+            console.log(`✨ Velocity quantized ${notesToQuantize.length} notes to: ${quantizeTo.join(', ')}`);
         },
         onHumanize: () => {
             // Add subtle randomization to timing and velocity
@@ -1626,6 +1728,55 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
     // ✅ REMOVED: Global keyboard shortcuts now handled by TransportManager
     // No need for component-level spacebar handling
 
+    // ✅ FIX: Handle wheel events with preventDefault using manual event listener
+    // React's onWheel is passive by default, so we need to use addEventListener with { passive: false }
+    useEffect(() => {
+        const container = containerRef.current;
+        if (!container) return;
+
+        const wheelHandler = (e) => {
+            // ✅ Alt + wheel: Handle velocity change for selected notes (works everywhere)
+            if (e.altKey && selectedNoteIds.size > 0 && noteInteractions.handleWheel) {
+                const handled = noteInteractions.handleWheel(e);
+                if (handled) {
+                    // Event was handled by note interactions (velocity change)
+                    // Don't pass to viewport scroll
+                    e.preventDefault();
+                    e.stopPropagation();
+                    return;
+                }
+            }
+
+            const rect = container.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            const isInGrid = x > 80 && y > 30;
+
+            // Check if wheel event should be handled by note interactions
+            if (isInGrid && noteInteractions.handleWheel) {
+                const handled = noteInteractions.handleWheel(e);
+                if (handled) {
+                    // Event was handled by note interactions (e.g., velocity change)
+                    // Don't pass to viewport scroll
+                    e.preventDefault();
+                    e.stopPropagation();
+                    return;
+                }
+            }
+
+            // Default: viewport scroll (only if note interactions didn't handle it)
+            if (engine.eventHandlers?.onWheel) {
+                engine.eventHandlers.onWheel(e);
+            }
+        };
+
+        container.addEventListener('wheel', wheelHandler, { passive: false });
+
+        return () => {
+            container.removeEventListener('wheel', wheelHandler);
+        };
+    }, [selectedNoteIds, noteInteractions, engine]);
+
     return (
         <div className="prv5-container">
             {/* ✅ Count-in Overlay */}
@@ -1689,27 +1840,6 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
                 data-tool={activeTool}
                 style={{ cursor: currentCursor }}
                 tabIndex={0}
-                onWheel={(e) => {
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    const x = e.clientX - rect.left;
-                    const y = e.clientY - rect.top;
-                    const isInGrid = x > 80 && y > 30;
-
-                    // Check if wheel event should be handled by note interactions
-                    if (isInGrid && noteInteractions.handleWheel) {
-                        const handled = noteInteractions.handleWheel(e);
-                        if (handled) {
-                            // Event was handled by note interactions (e.g., velocity change)
-                            // Don't pass to viewport scroll
-                            return;
-                        }
-                    }
-
-                    // Default: viewport scroll (only if note interactions didn't handle it)
-                    if (engine.eventHandlers?.onWheel) {
-                        engine.eventHandlers.onWheel(e);
-                    }
-                }}
                 onMouseDown={(e) => {
                     const rect = e.currentTarget.getBoundingClientRect();
                     const x = e.clientX - rect.left;
@@ -1856,20 +1986,24 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
             {/* ✅ VELOCITY LANE */}
             <VelocityLane
                 notes={noteInteractions.notes}
-                selectedNoteIds={selectedNoteIdsArray}
+                selectedNoteIds={selectedNoteIdsArray || []}
                 onNoteVelocityChange={handleNoteVelocityChange}
+                onNotesVelocityChange={handleNotesVelocityChange}
                 onNoteSelect={noteInteractions.selectNote}
                 onDeselectAll={noteInteractions.deselectAll}
                 dimensions={engine.dimensions}
                 viewport={engine.viewport}
                 activeTool={activeTool}
+                velocityTool={velocityTool}
+                brushSize={velocityBrushSize}
+                onVelocityToolChange={setVelocityTool}
             />
 
             {/* ✅ PHASE 2: CC LANES */}
             {showCCLanes && ccLanes.length > 0 && (
                 <CCLanes
                     lanes={ccLanes}
-                    selectedNoteIds={selectedNoteIdsArray}
+                    selectedNoteIds={selectedNoteIdsArray || []}
                     instrumentId={currentInstrument?.id} // ✅ FIX: Pass instrumentId prop
                     onLaneChange={(laneId, lane) => {
                         // Handle lane change if needed

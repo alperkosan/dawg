@@ -101,15 +101,15 @@ function drawGrid(ctx, { viewport, dimensions, lod, snapValue, qualityLevel = 'h
 
             if (isInScale) {
                 // ✅ SIMPLE: Same highlight for ALL scale notes (no special root treatment)
-                const gradient = ctx.createLinearGradient(0, y, 0, y + keyHeight);
+                    const gradient = ctx.createLinearGradient(0, y, 0, y + keyHeight);
                 gradient.addColorStop(0, `rgba(${scaleR}, ${scaleG}, ${scaleB}, 0.30)`);
                 gradient.addColorStop(0.5, `rgba(${scaleR}, ${scaleG}, ${scaleB}, 0.22)`);
                 gradient.addColorStop(1, `rgba(${scaleR}, ${scaleG}, ${scaleB}, 0.15)`);
-                ctx.fillStyle = gradient;
-                ctx.fillRect(0, y, dimensions.totalWidth, keyHeight);
-            } else {
+                    ctx.fillStyle = gradient;
+                    ctx.fillRect(0, y, dimensions.totalWidth, keyHeight);
+                } else {
                 // ✅ HIGH CONTRAST: Strong dimming for out-of-scale rows
-                const gradient = ctx.createLinearGradient(0, y, 0, y + keyHeight);
+                    const gradient = ctx.createLinearGradient(0, y, 0, y + keyHeight);
                 gradient.addColorStop(0, 'rgba(0, 0, 0, 0.5)');
                 gradient.addColorStop(0.5, 'rgba(0, 0, 0, 0.4)');
                 gradient.addColorStop(1, 'rgba(0, 0, 0, 0.3)');
@@ -618,8 +618,8 @@ function drawKeyboard(ctx, { viewport, dimensions, lod, activeKeyboardNote }) {
                 
                 // Same font for all keys
                 const fontSize = lod < 1 ? 10 : 9;
-                ctx.font = `${fontSize}px sans-serif`;
-                ctx.textAlign = 'right';
+                    ctx.font = `${fontSize}px sans-serif`;
+                    ctx.textAlign = 'right';
                 
                 // Same X position for all keys (aligned)
                 const labelX = KEYBOARD_WIDTH - 6;

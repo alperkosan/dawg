@@ -367,11 +367,38 @@ const PluginContainerV2 = ({
     setCanRedo(presetManager.canRedo());
   }, [effect.settings]);
 
+  // ✅ FIX: Restore preset when effect has presetId (from deserialized project)
+  useEffect(() => {
+    if (effect.presetId) {
+      try {
+        const preset = presetManager.findPreset(effect.presetId);
+        if (preset) {
+          // Restore preset state in preset manager
+          // Mark preset as loaded but use the restored settings (not preset's original settings)
+          // This handles cases where user modified the preset before saving
+          presetManager.currentPreset = preset;
+          presetManager.currentSettings = { ...effect.settings }; // Use restored settings
+          console.log(`✅ [PluginContainerV2] Restored preset: ${preset.name} (${effect.presetId})`);
+        } else {
+          console.warn(`⚠️ [PluginContainerV2] Preset not found: ${effect.presetId}, clearing preset info`);
+          // Preset not found, clear preset info
+          handleMixerEffectChange(trackId, effect.id, effect.settings, null, { clearPreset: true });
+        }
+      } catch (error) {
+        console.error(`❌ [PluginContainerV2] Failed to restore preset ${effect.presetId}:`, error);
+      }
+    } else {
+      // No presetId, clear preset state
+      presetManager.currentPreset = null;
+      presetManager.currentSettings = null;
+    }
+  }, [effect.presetId]); // Only run when presetId changes (on mount/restore)
+
   // Detect active preset
   useEffect(() => {
     const currentPreset = presetManager.getCurrentPreset();
     setActivePresetName(currentPreset ? currentPreset.name : 'Custom');
-  }, [effect.settings]);
+  }, [effect.settings, effect.presetId]);
 
   /**
    * PRESET HANDLERS
@@ -382,7 +409,11 @@ const PluginContainerV2 = ({
     console.log('🎯 [PluginContainerV2] Loading preset:', preset.name, preset.settings);
     presetManager.loadPreset(preset.id, (settings) => {
       console.log('✅ [PluginContainerV2] Applying settings:', settings);
-      handleMixerEffectChange(trackId, effect.id, settings);
+      // ✅ FIX: Save preset info along with settings
+      handleMixerEffectChange(trackId, effect.id, settings, null, {
+        presetId: preset.id,
+        presetName: preset.name
+      });
     });
     setIsMenuOpen(false);
   }, [trackId, effect.id]);

@@ -1253,38 +1253,84 @@ export class AudioContextService {
 
         // ✅ FIX: Check if already routed correctly
         const currentRoute = this.audioEngine.instrumentToInsert?.get(instrument.id);
+        
+        // ✅ CRITICAL FIX: Even if currentRoute matches, verify physical connection exists
+        // The map entry might exist but the actual audio connection might have failed
+        let needsRouting = true;
         if (currentRoute === instrument.mixerTrackId) {
-          // Already routed correctly
-          console.log(`⏭️ Instrument ${instrument.id} (${instrument.name}) already routed to ${instrument.mixerTrackId}, skipping...`);
-          skippedCount++;
-          continue;
-        }
-
-        // ✅ FIX: If instrument exists but is routed to a different track, we need to re-route
-        // But first check if the current route is valid (not null/undefined)
-        if (currentRoute && currentRoute !== instrument.mixerTrackId) {
+          // Check if physical connection actually exists
+          const insert = this.audioEngine.mixerInserts?.get(instrument.mixerTrackId);
+          const audioInstrument = this.audioEngine.instruments?.get(instrument.id);
+          
+          if (insert && audioInstrument?.output) {
+            // Check if instrument is actually connected to this insert
+            const isConnected = insert.instruments?.has(instrument.id);
+            if (isConnected) {
+              // Physical connection exists, skip routing
+              console.log(`⏭️ Instrument ${instrument.id} (${instrument.name}) already routed and connected to ${instrument.mixerTrackId}, skipping...`);
+              skippedCount++;
+              needsRouting = false;
+            } else {
+              // Map entry exists but physical connection is missing - need to reconnect
+              console.warn(`⚠️ Instrument ${instrument.id} has map entry for ${instrument.mixerTrackId} but no physical connection - reconnecting...`);
+            }
+          } else {
+            // Insert or instrument output missing - need to route
+            console.warn(`⚠️ Instrument ${instrument.id} routing check failed: insert=${!!insert}, output=${!!audioInstrument?.output}`);
+          }
+        } else if (currentRoute && currentRoute !== instrument.mixerTrackId) {
+          // Routed to different track - need to re-route
           console.log(`🔄 Instrument ${instrument.id} (${instrument.name}) is routed to ${currentRoute}, re-routing to ${instrument.mixerTrackId}...`);
         }
 
         // ✅ FIX: Use robust retry mechanism for routing
         // This handles async instrument initialization and timing issues
-        const routingSuccess = await this.routeInstrumentWithRetry(
-          instrument.id, 
-          instrument.mixerTrackId,
-          5,  // maxRetries
-          100 // baseDelay
-        );
+        // Always call routeInstrumentWithRetry - it has its own "already routed" check
+        if (needsRouting) {
+          const routingSuccess = await this.routeInstrumentWithRetry(
+            instrument.id, 
+            instrument.mixerTrackId,
+            5,  // maxRetries
+            100 // baseDelay
+          );
 
-        if (routingSuccess) {
-          syncedCount++;
-          console.log(`✅ Routed instrument ${instrument.id} (${instrument.name}) to ${instrument.mixerTrackId}`);
-        } else {
-          errorCount++;
-          console.error(`❌ Failed to route instrument ${instrument.id} after retries`);
+          if (routingSuccess) {
+            syncedCount++;
+            console.log(`✅ Routed instrument ${instrument.id} (${instrument.name}) to ${instrument.mixerTrackId}`);
+          } else {
+            errorCount++;
+            console.error(`❌ Failed to route instrument ${instrument.id} after retries`);
+          }
         }
       }
 
       console.log(`✅ Instrument sync complete: ${createdCount} created, ${syncedCount} synced, ${skippedCount} skipped, ${errorCount} errors`);
+      
+      // ✅ CRITICAL FIX: After sync, verify all instruments are actually connected
+      // This catches cases where map entry exists but physical connection failed
+      if (errorCount > 0 || syncedCount > 0) {
+        console.log(`🔍 Verifying instrument connections after sync...`);
+        let verifiedCount = 0;
+        let missingCount = 0;
+        
+        for (const instrument of instruments) {
+          if (!instrument.mixerTrackId) continue;
+          
+          const insert = this.audioEngine.mixerInserts?.get(instrument.mixerTrackId);
+          const audioInstrument = this.audioEngine.instruments?.get(instrument.id);
+          const isConnected = insert?.instruments?.has(instrument.id);
+          
+          if (isConnected && audioInstrument?.output) {
+            verifiedCount++;
+          } else if (audioInstrument) {
+            missingCount++;
+            console.warn(`⚠️ Instrument ${instrument.id} (${instrument.name}) missing connection to ${instrument.mixerTrackId}`);
+            console.warn(`   Insert exists: ${!!insert}, Instrument output: ${!!audioInstrument?.output}, Connected: ${isConnected}`);
+          }
+        }
+        
+        console.log(`✅ Connection verification: ${verifiedCount} connected, ${missingCount} missing`);
+      }
     } catch (error) {
       console.error('❌ Failed to sync instruments:', error);
     }
@@ -2210,13 +2256,24 @@ export class AudioContextService {
       const instrument = this.audioEngine.instruments?.get(instrumentId);
       const insert = this.audioEngine.mixerInserts?.get(mixerTrackId);
 
-      // Check if already routed correctly
+      // ✅ CRITICAL FIX: Check if already routed correctly AND physically connected
+      // The map entry might exist but the actual audio connection might have failed
       const currentRoute = this.audioEngine.instrumentToInsert?.get(instrumentId);
       if (currentRoute === mixerTrackId) {
-        if (import.meta.env.DEV) {
-          console.log(`✅ Instrument ${instrumentId} already routed to ${mixerTrackId}`);
+        // Verify physical connection actually exists
+        const isPhysicallyConnected = insert?.instruments?.has(instrumentId);
+        if (isPhysicallyConnected) {
+          if (import.meta.env.DEV) {
+            console.log(`✅ Instrument ${instrumentId} already routed and connected to ${mixerTrackId}`);
+          }
+          return true;
+        } else {
+          // Map entry exists but physical connection is missing - need to reconnect
+          if (import.meta.env.DEV) {
+            console.warn(`⚠️ Instrument ${instrumentId} has map entry for ${mixerTrackId} but no physical connection - reconnecting...`);
+          }
+          // Continue to routing logic below
         }
-        return true;
       }
 
       // Both must exist and instrument must have output

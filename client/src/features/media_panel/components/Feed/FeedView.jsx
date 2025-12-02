@@ -96,15 +96,15 @@ export default function FeedView() {
           {showTrending ? (
             <TrendingSection />
           ) : (
-            <FeedContent
-              projects={projects}
-              isLoading={isLoading}
-              error={error}
-              hasNextPage={hasNextPage}
-              isFetchingNextPage={isFetchingNextPage}
-              onLoadMore={handleLoadMore}
-              onRefresh={handleRefresh}
-            />
+          <FeedContent
+            projects={projects}
+            isLoading={isLoading}
+            error={error}
+            hasNextPage={hasNextPage}
+            isFetchingNextPage={isFetchingNextPage}
+            onLoadMore={handleLoadMore}
+            onRefresh={handleRefresh}
+          />
           )}
         </div>
         {!showTrending && <FeedSidebar projects={projects} />}

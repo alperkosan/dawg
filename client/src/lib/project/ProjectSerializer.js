@@ -720,7 +720,10 @@ export class ProjectSerializer {
         color: track.color,
         insertEffects: (track.insertEffects || []).map(effect => ({
           ...effect,
-          settings: normalizeEffectSettings(effect.type || effect.effectType, effect.settings || {})
+          settings: normalizeEffectSettings(effect.type || effect.effectType, effect.settings || {}),
+          // ✅ FIX: Preserve preset information
+          presetId: effect.presetId,
+          presetName: effect.presetName
         })),
         sends: track.sends || [],
         output: track.output,
@@ -738,7 +741,10 @@ export class ProjectSerializer {
       muted: master.muted,
       insertEffects: (master.insertEffects || []).map(effect => ({
         ...effect,
-        settings: normalizeEffectSettings(effect.type || effect.effectType, effect.settings || {})
+        settings: normalizeEffectSettings(effect.type || effect.effectType, effect.settings || {}),
+        // ✅ FIX: Preserve preset information
+        presetId: effect.presetId,
+        presetName: effect.presetName
       })),
       eq: master.eq,
     };
@@ -1160,7 +1166,10 @@ export class ProjectSerializer {
           try {
             const normalizedInsertEffects = (track.insertEffects || []).map(effect => ({
               ...effect,
-              settings: normalizeEffectSettings(effect.type || effect.effectType, effect.settings || {})
+              settings: normalizeEffectSettings(effect.type || effect.effectType, effect.settings || {}),
+              // ✅ FIX: Restore preset information
+              presetId: effect.presetId,
+              presetName: effect.presetName
             }));
             // ✅ FIX: Normalize legacy send format (object) to array before using it elsewhere
             const normalizedSends = Array.isArray(track.sends)
@@ -1248,7 +1257,10 @@ export class ProjectSerializer {
           const masterInsertEffects = mixer.master.insertEffects && Array.isArray(mixer.master.insertEffects) 
             ? mixer.master.insertEffects.map(effect => ({
                 ...effect,
-                settings: normalizeEffectSettings(effect.type || effect.effectType, effect.settings || {})
+                settings: normalizeEffectSettings(effect.type || effect.effectType, effect.settings || {}),
+                // ✅ FIX: Restore preset information
+                presetId: effect.presetId,
+                presetName: effect.presetName
               }))
             : [];
           
