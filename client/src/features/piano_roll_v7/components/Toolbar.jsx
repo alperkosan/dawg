@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { MousePointer, Edit3, Eraser, Scissors, Music, Zap, Guitar, Shuffle, FlipHorizontal2, Piano, Settings, Sliders, Link2, ChevronDown, Circle } from 'lucide-react';
+import { MousePointer, Edit3, Eraser, Scissors, Music, Zap, Guitar, Shuffle, FlipHorizontal2, Piano, Settings, Sliders, Link2, ChevronDown, Circle, Eye, EyeOff } from 'lucide-react';
 import { getToolManager, TOOL_TYPES } from '@/lib/piano-roll-tools';
 import { SCALES, NOTE_NAMES } from '@/lib/music/ScaleSystem';
 import './Toolbar.css';
@@ -51,7 +51,9 @@ function Toolbar({
     onShowNotePropertiesChange,
     // ✅ IMPROVED: Scale Highlighting - always enabled, but can be changed
     scaleHighlight = null,
+    scaleHighlightEnabled = true,
     onScaleChange = null,
+    onScaleHighlightToggle = null,
     // ✅ MIDI Recording
     isRecording = false,
     onRecordToggle = null
@@ -170,8 +172,8 @@ function Toolbar({
                     <Settings size={18} />
                 </button>
 
-                {/* ✅ IMPROVED: Scale Selector - Compact dropdown */}
-                <div style={{ position: 'relative', marginRight: '8px' }}>
+                {/* ✅ IMPROVED: Scale Selector - Compact dropdown with toggle */}
+                <div style={{ position: 'relative', marginRight: '8px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                     <button
                         ref={scaleButtonRef}
                         className="prv7-tool-btn"
@@ -201,6 +203,26 @@ function Toolbar({
                                 <span>C Major</span>
                                 <ChevronDown size={14} />
                             </>
+                        )}
+                    </button>
+                    {/* ✅ NEW: Scale Highlighting Toggle */}
+                    <button
+                        className="prv7-tool-btn"
+                        onClick={() => onScaleHighlightToggle?.()}
+                        title={scaleHighlightEnabled ? "Hide Scale Highlighting" : "Show Scale Highlighting"}
+                        style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            padding: '6px',
+                            minWidth: '32px',
+                            opacity: scaleHighlightEnabled ? 1 : 0.5
+                        }}
+                    >
+                        {scaleHighlightEnabled ? (
+                            <Eye size={16} style={{ color: scaleHighlight?.getScaleInfo()?.color || '#3b82f6' }} />
+                        ) : (
+                            <EyeOff size={16} />
                         )}
                     </button>
 

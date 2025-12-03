@@ -315,6 +315,7 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
 
     // ✅ IMPROVED: SCALE HIGHLIGHTING STATE - Always enabled with default C Major
     const [scaleHighlight, setScaleHighlight] = useState(null);
+    const [scaleHighlightEnabled, setScaleHighlightEnabled] = useState(true);
 
     // ✅ Initialize default scale (C Major) on mount
     useEffect(() => {
@@ -1065,7 +1066,7 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
             ...engineRef.current,
             snapValue,
             qualityLevel,
-            scaleHighlight,
+            scaleHighlight: scaleHighlightEnabled ? scaleHighlight : null,
             activeKeyboardNote  // ✅ Add for keyboard preview highlight
         };
 
@@ -1073,7 +1074,7 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
         if (timelineRenderer) {
             timelineRenderer.render(ctx, payload);
         }
-    }, [activeKeyboardNote, qualityLevel, scaleHighlight, snapValue, timelineRenderer]);
+    }, [activeKeyboardNote, qualityLevel, scaleHighlight, scaleHighlightEnabled, snapValue, timelineRenderer]);
 
     const paintNotesLayer = useCallback((clipRect) => {
         const canvas = notesCanvasRef.current;
@@ -1102,7 +1103,7 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
             activeTool,
             loopRegion,
             dragState: rendererDragState,
-            scaleHighlight,
+            scaleHighlight: scaleHighlightEnabled ? scaleHighlight : null,
             activeKeyboardNote
         };
 
@@ -1129,6 +1130,7 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
         previewNote,
         rendererDragState,
         scaleHighlight,
+        scaleHighlightEnabled,
         selectedNoteIds,
         selectionArea,
         slicePreview,
@@ -1735,7 +1737,8 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
         if (!container) return;
 
         const wheelHandler = (e) => {
-            // ✅ Alt + wheel: Handle velocity change for selected notes (works everywhere)
+            // ✅ UX FIX: Alt + wheel: Handle velocity change for selected notes (works everywhere)
+            // Prevent scroll when Alt is pressed
             if (e.altKey && selectedNoteIds.size > 0 && noteInteractions.handleWheel) {
                 const handled = noteInteractions.handleWheel(e);
                 if (handled) {
@@ -1745,6 +1748,14 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
                     e.stopPropagation();
                     return;
                 }
+            }
+
+            // ✅ UX FIX: If Alt is pressed (even without selection), prevent scroll
+            // This prevents accidental scrolling while trying to adjust velocity
+            if (e.altKey) {
+                e.preventDefault();
+                e.stopPropagation();
+                return;
             }
 
             const rect = container.getBoundingClientRect();
@@ -1764,16 +1775,17 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
                 }
             }
 
-            // Default: viewport scroll (only if note interactions didn't handle it)
+            // Default: viewport scroll (only if note interactions didn't handle it and Alt is not pressed)
             if (engine.eventHandlers?.onWheel) {
                 engine.eventHandlers.onWheel(e);
             }
         };
 
-        container.addEventListener('wheel', wheelHandler, { passive: false });
+        // ✅ UX FIX: Use capture phase to handle Alt+wheel before engine's scroll handler
+        container.addEventListener('wheel', wheelHandler, { passive: false, capture: true });
 
         return () => {
-            container.removeEventListener('wheel', wheelHandler);
+            container.removeEventListener('wheel', wheelHandler, { capture: true });
         };
     }, [selectedNoteIds, noteInteractions, engine]);
 
@@ -1808,11 +1820,13 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
                 onShowNotePropertiesChange={setShowNoteProperties}
                 // ✅ IMPROVED: Scale Highlighting - always enabled, but can be changed
                 scaleHighlight={scaleHighlight}
+                scaleHighlightEnabled={scaleHighlightEnabled}
                 onScaleChange={(root, scaleType) => {
                     const scaleSystem = getScaleSystem();
                     scaleSystem.setScale(root, scaleType);
                     setScaleHighlight(scaleSystem);
                 }}
+                onScaleHighlightToggle={() => setScaleHighlightEnabled(!scaleHighlightEnabled)}
                 // ✅ MIDI Recording
                 isRecording={isRecording}
                 onRecordToggle={async () => {

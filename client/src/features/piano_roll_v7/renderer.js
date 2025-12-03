@@ -75,24 +75,9 @@ function drawGrid(ctx, { viewport, dimensions, lod, snapValue, qualityLevel = 'h
     // ⚡ ADAPTIVE: Skip black keys in low quality mode
     const skipBlackKeys = qualityLevel === 'low' && lod >= 2;
 
-    // ✅ IMPROVED: Draw scale highlighting rows FIRST (background layer) with enhanced visual effects
+    // ✅ IMPROVED: Draw scale highlighting rows FIRST (background layer) with simple visual distinction
     if (scaleHighlight && scaleHighlight.getScale() && lod < 3) {
         const { startKey, endKey } = viewport.visibleKeys;
-        const scaleInfo = scaleHighlight.getScaleInfo();
-        const bgPrimary = globalStyleCache.get('--zenith-bg-primary') || '#0A0E1A';
-        const overlayHeavy = globalStyleCache.get('--zenith-overlay-heavy') || 'rgba(0, 0, 0, 0.5)';
-
-        // Parse scale color for gradient
-        const scaleColor = scaleInfo.color || '#3b82f6';
-        const colorMatch = scaleColor.match(/^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
-        let scaleR, scaleG, scaleB;
-        if (colorMatch) {
-            scaleR = parseInt(colorMatch[1], 16);
-            scaleG = parseInt(colorMatch[2], 16);
-            scaleB = parseInt(colorMatch[3], 16);
-        } else {
-            scaleR = 59; scaleG = 130; scaleB = 246; // Default blue
-        }
 
         for (let i = startKey; i <= endKey; i++) {
             const midiNote = 127 - i;
@@ -100,19 +85,19 @@ function drawGrid(ctx, { viewport, dimensions, lod, snapValue, qualityLevel = 'h
             const y = i * keyHeight;
 
             if (isInScale) {
-                // ✅ SIMPLE: Same highlight for ALL scale notes (no special root treatment)
-                    const gradient = ctx.createLinearGradient(0, y, 0, y + keyHeight);
-                gradient.addColorStop(0, `rgba(${scaleR}, ${scaleG}, ${scaleB}, 0.30)`);
-                gradient.addColorStop(0.5, `rgba(${scaleR}, ${scaleG}, ${scaleB}, 0.22)`);
-                gradient.addColorStop(1, `rgba(${scaleR}, ${scaleG}, ${scaleB}, 0.15)`);
-                    ctx.fillStyle = gradient;
-                    ctx.fillRect(0, y, dimensions.totalWidth, keyHeight);
-                } else {
-                // ✅ HIGH CONTRAST: Strong dimming for out-of-scale rows
-                    const gradient = ctx.createLinearGradient(0, y, 0, y + keyHeight);
-                gradient.addColorStop(0, 'rgba(0, 0, 0, 0.5)');
-                gradient.addColorStop(0.5, 'rgba(0, 0, 0, 0.4)');
-                gradient.addColorStop(1, 'rgba(0, 0, 0, 0.3)');
+                // ✅ Simple highlight for scale notes
+                const gradient = ctx.createLinearGradient(0, y, 0, y + keyHeight);
+                gradient.addColorStop(0, 'rgba(255, 255, 255, 0.08)');
+                gradient.addColorStop(0.5, 'rgba(255, 255, 255, 0.05)');
+                gradient.addColorStop(1, 'rgba(255, 255, 255, 0.03)');
+                ctx.fillStyle = gradient;
+                ctx.fillRect(0, y, dimensions.totalWidth, keyHeight);
+            } else {
+                // ✅ Simple dimming for out-of-scale notes
+                const gradient = ctx.createLinearGradient(0, y, 0, y + keyHeight);
+                gradient.addColorStop(0, 'rgba(0, 0, 0, 0.25)');
+                gradient.addColorStop(0.5, 'rgba(0, 0, 0, 0.20)');
+                gradient.addColorStop(1, 'rgba(0, 0, 0, 0.15)');
                 ctx.fillStyle = gradient;
                 ctx.fillRect(0, y, dimensions.totalWidth, keyHeight);
             }
@@ -120,10 +105,11 @@ function drawGrid(ctx, { viewport, dimensions, lod, snapValue, qualityLevel = 'h
     }
 
     // Draw black key rows (piano key colors)
-    if (lod < 3 && !skipBlackKeys) {
+    // ✅ UX FIX: Skip black key rows when scale highlighting is active - scale highlighting already provides visual distinction
+    if (lod < 3 && !skipBlackKeys && !scaleHighlight) {
         const bgSecondary = globalStyleCache.get('--zenith-bg-secondary');
         ctx.fillStyle = bgSecondary || '#202229';
-        ctx.globalAlpha = scaleHighlight ? 0.3 : 1.0; // Make semi-transparent when scale highlighting is active
+        ctx.globalAlpha = 1.0;
         const { startKey, endKey } = viewport.visibleKeys;
         for (let i = startKey; i <= endKey; i++) {
             if ([1, 3, 6, 8, 10].includes(i % 12)) {

@@ -113,6 +113,13 @@ export function usePianoRollEngine(containerRef, playbackControls = {}) {
     }, []);
 
     const handleWheel = useCallback((e) => {
+        // ✅ UX FIX: Don't scroll when Alt is pressed (used for velocity adjustment)
+        if (e.altKey) {
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+        }
+
         e.preventDefault();
         const { deltaX, deltaY, ctrlKey, offsetX, offsetY } = e;
         const vp = viewportRef.current;
