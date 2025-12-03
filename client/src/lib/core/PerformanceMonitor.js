@@ -13,6 +13,7 @@
 
 import EventBus from './EventBus.js';
 import { realCPUMonitor } from '../utils/RealCPUMonitor.js';
+import { logger, NAMESPACES } from '../utils/debugLogger.js';
 
 export class PerformanceMonitor {
     constructor(audioEngine) {
@@ -112,7 +113,7 @@ export class PerformanceMonitor {
             this.update();
         }, this.updateRate);
 
-        console.log('🎯 Performance monitoring started');
+        logger.info(NAMESPACES.PERFORMANCE, 'Performance monitoring started');
     }
 
     /**
@@ -130,13 +131,14 @@ export class PerformanceMonitor {
             this.monitoringInterval = null;
         }
 
-        console.log('🛑 Performance monitoring stopped');
+        logger.info(NAMESPACES.PERFORMANCE, 'Performance monitoring stopped');
     }
 
     /**
      * Update all metrics
      */
     update() {
+        // ✅ FAZ 2.3: Event-based monitoring - emit individual metric events
         this.updateCPUMetrics();
         this.updateMemoryMetrics();
         this.updateAudioMetrics();
@@ -145,8 +147,14 @@ export class PerformanceMonitor {
         this.updateSessionMetrics();
         this.checkWarnings();
 
-        // Emit update event
+        // ✅ FAZ 2.3: Emit comprehensive update event (backwards compatible)
         EventBus.emit('PERFORMANCE_UPDATE', this.getMetrics());
+        
+        // ✅ FAZ 2.3: Emit individual metric events for granular monitoring
+        EventBus.emit('PERFORMANCE_CPU_UPDATE', { cpuUsage: this.metrics.cpuUsage, cpuPeak: this.metrics.cpuPeak });
+        EventBus.emit('PERFORMANCE_MEMORY_UPDATE', { memoryUsed: this.metrics.memoryUsed, memoryPercent: this.metrics.memoryPercent });
+        EventBus.emit('PERFORMANCE_VOICE_UPDATE', { activeVoices: this.metrics.activeVoices, maxVoices: this.metrics.maxVoices });
+        EventBus.emit('PERFORMANCE_AUDIO_UPDATE', { audioLatency: this.metrics.audioLatency, dropouts: this.metrics.dropouts });
     }
 
     /**
@@ -277,18 +285,17 @@ export class PerformanceMonitor {
         let activeEffects = 0;
         let bypassedEffects = 0;
 
-        // ✅ UPDATED: Count effects from mixer channels (new architecture)
-        if (this.audioEngine.mixerChannels) {
-            this.audioEngine.mixerChannels.forEach(channel => {
-                if (channel.effects) {
-                    channel.effects.forEach(effect => {
-                        if (effect.bypass) {
-                            bypassedEffects++;
-                        } else {
-                            activeEffects++;
-                        }
-                    });
-                }
+        // ⚠️ REMOVED: mixerChannels - Replaced by MixerInsert system
+        if (this.audioEngine.mixerInserts) {
+            this.audioEngine.mixerInserts.forEach((insert, insertId) => {
+                const effects = insert.getEffects?.() || [];
+                effects.forEach(effect => {
+                    if (effect.bypass) {
+                        bypassedEffects++;
+                    } else {
+                        activeEffects++;
+                    }
+                });
             });
         }
         // Fallback: Old effects Map (if exists)

@@ -201,12 +201,7 @@ export class AudioClipScheduler {
                 return insert.input;
             }
 
-            // Fallback to old mixer channels (backward compatibility)
-            const channel = this.audioEngine.mixerChannels?.get(mixerChannelId);
-            if (channel && channel.input) {
-                console.log(`🎵 Audio clip "${clip.name || clip.id}" routed to legacy mixer channel: ${mixerChannelId}`);
-                return channel.input;
-            }
+            // ⚠️ REMOVED: mixerChannels fallback - Replaced by MixerInsert system
         }
         
         // ✅ FIX: If clip doesn't have mixerChannelId, try to route through track's mixer channel

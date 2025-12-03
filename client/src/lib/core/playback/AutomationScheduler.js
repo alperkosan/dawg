@@ -115,41 +115,30 @@ export class AutomationScheduler {
      * Apply mixer automation
      */
     applyMixerAutomation(channelId, parameter, value) {
-        const channel = this.audioEngine.mixerChannels.get(channelId);
-        if (!channel) {
-            console.warn(`AutomationScheduler: Mixer channel not found: ${channelId}`);
+        // ⚠️ REMOVED: mixerChannels - Replaced by MixerInsert system
+        const insert = this.audioEngine.mixerInserts?.get(channelId);
+        if (!insert) {
+            console.warn(`AutomationScheduler: Mixer insert not found: ${channelId}`);
             return;
         }
 
         switch (parameter) {
             case 'volume':
             case 'gain':
-                if (channel.gainNode) {
-                    // ✅ NEW: Use sample-accurate time for automation
-                    const sampleAccurateTime = SampleAccurateTime.getCurrentSampleAccurateTime(
-                        this.transport.audioContext
-                    );
-                    channel.gainNode.gain.setValueAtTime(value, sampleAccurateTime);
-                }
+                // ⚠️ REMOVED: mixerChannels - Replaced by MixerInsert system
+                insert.setGain(value);
                 break;
             case 'pan':
-                if (channel.panNode) {
-                    // ✅ NEW: Use sample-accurate time for automation
-                    const sampleAccurateTime = SampleAccurateTime.getCurrentSampleAccurateTime(
-                        this.transport.audioContext
-                    );
-                    channel.panNode.pan.setValueAtTime(value, sampleAccurateTime);
-                }
+                // ⚠️ REMOVED: mixerChannels - Replaced by MixerInsert system
+                insert.setPan(value);
                 break;
             case 'mute':
-                if (channel.setMute) {
-                    channel.setMute(value);
-                }
+                // ⚠️ REMOVED: mixerChannels - Replaced by MixerInsert system
+                insert.setMute(value);
                 break;
             case 'solo':
-                if (channel.setSolo) {
-                    channel.setSolo(value);
-                }
+                // ⚠️ REMOVED: mixerChannels - Replaced by MixerInsert system
+                insert.setSolo(value, false); // TODO: isAnySoloed parameter
                 break;
             default:
                 console.warn(`AutomationScheduler: Unknown mixer parameter: ${parameter}`);

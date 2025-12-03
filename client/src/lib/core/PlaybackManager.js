@@ -2028,14 +2028,8 @@ export class PlaybackManager {
                 const routeType = clip.isUnique ? 'unique' : (clip.assetId ? 'shared' : 'track');
                 console.log(`🎛️ Audio clip routed to mixer insert ${mixerChannelId} (${routeType})`);
             } else {
-                // Fallback to old mixer channels (backward compatibility)
-                const mixerChannel = this.audioEngine.mixerChannels?.get(mixerChannelId);
-                if (mixerChannel && mixerChannel.input) {
-                    destination = mixerChannel.input;
-                    console.log(`🎛️ Audio clip routed to legacy mixer channel ${mixerChannelId}`);
-                } else {
-                    console.warn(`⚠️ Mixer insert/channel ${mixerChannelId} not found, routing to master`);
-                }
+                // ⚠️ REMOVED: mixerChannels fallback - Replaced by MixerInsert system
+                console.warn(`⚠️ Mixer insert ${mixerChannelId} not found, routing to master`);
             }
         }
 
@@ -2632,15 +2626,16 @@ export class PlaybackManager {
     }
 
     _applyMixerAutomation(channelId, parameter, value) {
-        const channel = this.audioEngine.mixerChannels.get(channelId);
-        if (!channel) return;
+        // ⚠️ REMOVED: mixerChannels - Replaced by MixerInsert system
+        const insert = this.audioEngine.mixerInserts?.get(channelId);
+        if (!insert) return;
 
         switch (parameter) {
             case 'volume':
-                channel.setVolume(value);
+                insert.setGain(value);
                 break;
             case 'pan':
-                channel.setPan(value);
+                insert.setPan(value);
                 break;
             default:
         }
@@ -2657,11 +2652,12 @@ export class PlaybackManager {
     }
 
     _applyEffectAutomation(effectId, parameter, value) {
-        // Find effect across all mixer channels
-        this.audioEngine.mixerChannels.forEach(channel => {
-            const effect = channel.effects.get(effectId);
+        // ⚠️ REMOVED: mixerChannels - Replaced by MixerInsert system
+        // Find effect across all mixer inserts
+        this.audioEngine.mixerInserts?.forEach((insert, insertId) => {
+            const effect = insert.getEffect(effectId);
             if (effect) {
-                effect.updateParameter(parameter, value);
+                effect.updateParameter?.(parameter, value);
             }
         });
     }
@@ -2701,58 +2697,36 @@ export class PlaybackManager {
         // 🎛️ MODERN SYSTEM: Flush mixer inserts (NativeEffect system)
         if (this.audioEngine.mixerInserts) {
             this.audioEngine.mixerInserts.forEach((insert) => {
-                if (!insert.effects) return;
+                // ⚠️ FIX: Use getEffects() method instead of effects property
+                const effects = insert.getEffects?.() || [];
+                if (effects.length === 0) return;
 
                 // Flush each effect in the insert
-                insert.effects.forEach((effect, effectId) => {
-                try {
-                    // NativeEffect uses effect.node.port
-                    if (effect.node && effect.node.port) {
-                        effect.node.port.postMessage({ type: 'flush' });
-                            flushedCount++;
-                    }
-                    // WorkletEffect uses effect.workletNode.port
-                    else if (effect.workletNode && effect.workletNode.port) {
-                        effect.workletNode.port.postMessage({ type: 'flush' });
-                            flushedCount++;
-                    }
-                    // Try direct reset method if available
-                    else if (effect.reset && typeof effect.reset === 'function') {
-                        effect.reset();
-                            flushedCount++;
-                    }
-                } catch (e) {
-                        console.warn(`Failed to flush effect ${effectId}:`, e);
-                }
-            });
-        });
-        }
-
-        // 🔙 LEGACY SYSTEM: Fallback to old mixer channels (backward compatibility)
-        if (this.audioEngine.mixerChannels) {
-            this.audioEngine.mixerChannels.forEach((channel) => {
-                if (!channel.effects) return;
-
-                channel.effects.forEach((effect, effectId) => {
+                effects.forEach((effect, effectId) => {
                     try {
+                        // NativeEffect uses effect.node.port
                         if (effect.node && effect.node.port) {
                             effect.node.port.postMessage({ type: 'flush' });
                             flushedCount++;
                         }
+                        // WorkletEffect uses effect.workletNode.port
                         else if (effect.workletNode && effect.workletNode.port) {
                             effect.workletNode.port.postMessage({ type: 'flush' });
                             flushedCount++;
                         }
+                        // Try direct reset method if available
                         else if (effect.reset && typeof effect.reset === 'function') {
                             effect.reset();
                             flushedCount++;
                         }
                     } catch (e) {
-                        console.warn(`Failed to flush legacy effect ${effectId}:`, e);
+                        console.warn(`Failed to flush effect ${effectId}:`, e);
                     }
                 });
             });
         }
+
+        // ⚠️ REMOVED: mixerChannels fallback - Replaced by MixerInsert system
 
         console.log(`🧹 Flushed ${flushedCount} effects`);
     }

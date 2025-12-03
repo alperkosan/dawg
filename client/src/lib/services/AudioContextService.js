@@ -1602,23 +1602,9 @@ export class AudioContextService {
       }
     }
 
-    // ❌ FALLBACK: Old mixer channels system (should not be used)
-    if (!this.audioEngine.mixerChannels) {
-      console.warn('⚠️ No mixer channels or inserts available');
-      return;
-    }
-
-    const channel = this.audioEngine.mixerChannels.get(trackId);
-    if (!channel || !channel.effects) {
-      console.warn('⚠️ No mixer channel or effects found for trackId:', trackId);
-      return;
-    }
-
-    const effect = channel.effects.get(effectId);
-    if (!effect) {
-      console.warn('⚠️ Effect not found:', effectId);
-      return;
-    }
+    // ⚠️ REMOVED: mixerChannels fallback - Replaced by MixerInsert system
+    console.warn(`⚠️ MixerInsert not found for trackId: ${trackId}, effect: ${effectId}`);
+    return;
 
     // If already in desired bypass state, do nothing
     if (effect.bypass === bypass) {
@@ -1716,23 +1702,9 @@ export class AudioContextService {
         return;
       }
     } else {
-      // Old mixer channels (backward compatibility)
-      if (!this.audioEngine.mixerChannels) {
-        console.warn('⚠️ No mixer channels available');
-        return;
-      }
-
-      const channel = this.audioEngine.mixerChannels.get(trackId);
-      if (!channel || !channel.effects) {
-        console.warn('⚠️ No mixer channel or effects found for trackId:', trackId);
-        return;
-      }
-
-      effect = Array.from(channel.effects.values()).find(fx => fx.id === effectId);
-      if (!effect) {
-        console.warn('⚠️ Effect not found:', effectId);
-        return;
-      }
+      // ⚠️ REMOVED: mixerChannels fallback - Replaced by MixerInsert system
+      console.warn(`⚠️ MixerInsert not found for trackId: ${trackId}, effect: ${effectId}`);
+      return;
     }
 
     // ⚡ SPECIAL CASE: Bypass parameter
@@ -1840,17 +1812,7 @@ export class AudioContextService {
       }
     }
 
-    // Fallback to old mixer channels (backward compatibility)
-    if (this.audioEngine.mixerChannels) {
-      const channel = this.audioEngine.mixerChannels.get(trackId);
-      if (channel && channel.effects) {
-        const effect = Array.from(channel.effects.values()).find(fx => fx.id === effectId);
-        if (effect && effect.node) {
-          console.log('✅ [getEffectNode] Found in legacy mixerChannels');
-          return effect.node;
-        }
-      }
-    }
+    // ⚠️ REMOVED: mixerChannels fallback - Replaced by MixerInsert system
 
     // Fallback to old master effects (backward compatibility)
     if (trackId === 'master' && this.audioEngine.masterEffects) {
@@ -1870,7 +1832,7 @@ export class AudioContextService {
       trackId,
       effectId,
       hasMixerInserts: !!this.audioEngine.mixerInserts,
-      hasMixerChannels: !!this.audioEngine.mixerChannels,
+      hasMixerInserts: !!this.audioEngine.mixerInserts && this.audioEngine.mixerInserts.size > 0,
       hasMasterEffects: !!this.audioEngine.masterEffects
     });
     return null;
@@ -2173,25 +2135,7 @@ export class AudioContextService {
       }
     }
 
-    // 🎚️ LEGACY: Fallback to old mixerChannels (for backwards compatibility)
-    if (this.audioEngine.mixerChannels) {
-      const channel = this.audioEngine.mixerChannels.get(trackId);
-      if (channel && channel.effects) {
-        // Try direct lookup first (audioEngineId)
-        let effect = channel.effects.get(effectId);
-
-        // ⚡ FIX: If not found, search by audioEngineId (Store ID → AudioEngine ID mapping)
-        if (!effect) {
-          effect = Array.from(channel.effects.values()).find(fx =>
-            fx.id === effectId || fx.audioEngineId === effectId
-          );
-        }
-
-        if (effect && effect.node) {
-          return effect.node;
-        }
-      }
-    }
+    // ⚠️ REMOVED: mixerChannels fallback - Replaced by MixerInsert system
 
     if (import.meta.env.DEV) {
       console.warn('⚠️ Effect not found in any mixer:', effectId);
@@ -2205,18 +2149,20 @@ export class AudioContextService {
    * @returns {AudioNode|null} The channel's output node or null
    */
   static getChannelAudioNode(trackId) {
-    if (!this.audioEngine || !this.audioEngine.mixerChannels) {
+    // ⚠️ REMOVED: mixerChannels - Replaced by MixerInsert system
+    if (!this.audioEngine) {
       console.warn('⚠️ No audio engine available');
       return null;
     }
 
-    const channel = this.audioEngine.mixerChannels.get(trackId);
-    if (!channel) {
-      console.warn('⚠️ No mixer channel found for trackId:', trackId);
-      return null;
+    // Use MixerInsert system
+    const insert = this.audioEngine.mixerInserts?.get(trackId);
+    if (insert && insert.output) {
+      return insert.output;
     }
 
-    return channel.output;
+    console.warn(`⚠️ MixerInsert not found for trackId: ${trackId}`);
+    return null;
   }
 
   // =================== 🎛️ DİNAMİK MİXER INSERT API ===================

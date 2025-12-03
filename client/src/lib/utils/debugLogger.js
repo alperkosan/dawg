@@ -58,8 +58,8 @@ const LEVEL_ICONS = {
 
 class DebugLogger {
   constructor() {
-    // Global enable/disable
-    this.enabled = process.env.NODE_ENV === 'development';
+    // Global enable/disable - Use Vite's import.meta.env.DEV
+    this.enabled = import.meta.env.DEV;
 
     // Current log level (only logs at or below this level will be shown)
     this.currentLevel = LOG_LEVELS.DEBUG;
@@ -93,11 +93,13 @@ class DebugLogger {
       this.stats.byNamespace[ns] = 0;
     });
 
-    console.log('🔧 DebugLogger initialized', {
-      enabled: this.enabled,
-      level: this.getLevelName(this.currentLevel),
-      env: process.env.NODE_ENV
-    });
+    if (this.enabled) {
+      console.log('🔧 DebugLogger initialized', {
+        enabled: this.enabled,
+        level: this.getLevelName(this.currentLevel),
+        env: import.meta.env.MODE
+      });
+    }
   }
 
   // =================== CONFIGURATION ===================

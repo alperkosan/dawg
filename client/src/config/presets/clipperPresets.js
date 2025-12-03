@@ -24,6 +24,7 @@ export const clipperPresets = [
       postGain: 0,
       mix: 100,
       mode: 0,
+      curve: 2,
       dcFilter: 1,
       oversample: 2
     }
@@ -43,6 +44,7 @@ export const clipperPresets = [
       postGain: -3,
       mix: 100,
       mode: 0,
+      curve: 2,
       dcFilter: 1,
       oversample: 4
     }
@@ -66,6 +68,7 @@ export const clipperPresets = [
       postGain: 0,
       mix: 100,
       mode: 1,
+      curve: 0,
       dcFilter: 1,
       oversample: 2
     }
@@ -85,6 +88,7 @@ export const clipperPresets = [
       postGain: -1,
       mix: 100,
       mode: 2,
+      curve: 0,
       dcFilter: 1,
       oversample: 4
     }
@@ -104,6 +108,7 @@ export const clipperPresets = [
       postGain: 0,
       mix: 100,
       mode: 3,
+      curve: 1,
       dcFilter: 1,
       oversample: 4
     }
@@ -127,6 +132,7 @@ export const clipperPresets = [
       postGain: -4,
       mix: 100,
       mode: 4,
+      curve: 2,
       dcFilter: 1,
       oversample: 4
     }
@@ -146,6 +152,7 @@ export const clipperPresets = [
       postGain: -2,
       mix: 80,
       mode: 5,
+      curve: 1,
       dcFilter: 1,
       oversample: 2
     }
@@ -165,6 +172,7 @@ export const clipperPresets = [
       postGain: -6,
       mix: 100,
       mode: 4,
+      curve: 2,
       dcFilter: 1,
       oversample: 8
     }
@@ -188,6 +196,7 @@ export const clipperPresets = [
       postGain: 0,
       mix: 50,
       mode: 2,
+      curve: 0,
       dcFilter: 1,
       oversample: 4
     }
@@ -207,6 +216,7 @@ export const clipperPresets = [
       postGain: -1,
       mix: 70,
       mode: 1,
+      curve: 1,
       dcFilter: 1,
       oversample: 4
     }

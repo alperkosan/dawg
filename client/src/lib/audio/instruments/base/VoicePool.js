@@ -25,9 +25,13 @@ export class VoicePool {
         }
 
         // Voice tracking
-        this.activeVoices = new Map(); // midiNote → voice
+        // ✅ MEMORY LEAK FIX: Support multiple voices per MIDI note (true polyphony)
+        this.activeVoices = new Map(); // midiNote → Set<voice> (was: midiNote → voice)
         this.freeVoices = [...this.voices]; // Available voices
         this.releaseQueue = []; // Voices in release phase { voice, endTime }
+        
+        // ✅ MEMORY LEAK FIX: Track fallback timeouts for ConstantSourceNode
+        this.voiceReturnTimeouts = new Map(); // voice → timeoutId
 
         if (import.meta.env.DEV) {
             console.log(`🎵 VoicePool created: ${VoiceClass.name}, ${maxVoices} voices`);
@@ -45,10 +49,12 @@ export class VoicePool {
         // ✅ CRITICAL FIX: cutItself behavior - stop existing note before allocating new one
         // If polyphony is disabled (cutItself=true), we need to stop the existing note first
         if (!allowPolyphony && this.activeVoices.has(midiNote)) {
-            // ✅ FIX: Stop existing voice before re-triggering (cutItself behavior)
+            // ✅ FIX: Stop existing voices before re-triggering (cutItself behavior)
             // This ensures oval notes (or any long notes) are properly cut when retriggered
-            const existingVoice = this.activeVoices.get(midiNote);
-            if (existingVoice) {
+            const voicesSet = this.activeVoices.get(midiNote);
+            if (voicesSet && voicesSet.size > 0) {
+                // Stop all voices for this note (cutItself)
+                const existingVoice = Array.from(voicesSet)[0]; // Get first voice
                 const now = this.context.currentTime;
                 // ✅ FIX: Quick fade-out to prevent clicks when cutting (especially for drums/808)
                 try {
@@ -65,8 +71,14 @@ export class VoicePool {
                 } catch (e) {
                     console.warn('⚠️ Failed to stop existing voice for cutItself:', e);
                 }
-                // Remove from active voices (will be re-added below)
-                this.activeVoices.delete(midiNote);
+                // ✅ MEMORY LEAK FIX: Remove from active voices Set
+                const voicesSet = this.activeVoices.get(midiNote);
+                if (voicesSet) {
+                    voicesSet.delete(existingVoice);
+                    if (voicesSet.size === 0) {
+                        this.activeVoices.delete(midiNote);
+                    }
+                }
                 // Return voice to free pool or reuse it
                 if (!this.freeVoices.includes(existingVoice)) {
                     this.freeVoices.push(existingVoice);
@@ -91,10 +103,11 @@ export class VoicePool {
         // Reset and activate voice
         voice.reset();
 
-        // ✅ POLYPHONY FIX: In poly mode with same note, we need to track multiple voices
-        // For now, we'll keep the Map but the last allocation wins (not ideal but functional)
-        // TODO: Consider using Array<{note, voice}> for true polyphony tracking
-        this.activeVoices.set(midiNote, voice);
+        // ✅ MEMORY LEAK FIX: Track multiple voices per MIDI note (true polyphony)
+        if (!this.activeVoices.has(midiNote)) {
+            this.activeVoices.set(midiNote, new Set());
+        }
+        this.activeVoices.get(midiNote).add(voice);
 
         return voice;
     }
@@ -108,8 +121,13 @@ export class VoicePool {
      * @param {number|null} fadeTime - Optional fade-out time in seconds (for loop restart, overrides release envelope)
      */
     release(midiNote, time, releaseVelocity = null, fadeTime = null) {
-        const voice = this.activeVoices.get(midiNote);
-        if (!voice) return;
+        // ✅ MEMORY LEAK FIX: Get first voice from Set (or all voices if needed)
+        const voicesSet = this.activeVoices.get(midiNote);
+        if (!voicesSet || voicesSet.size === 0) return;
+        
+        // Release first voice (most common case: single voice per note)
+        // TODO: Support releasing all voices for same note if needed
+        const voice = Array.from(voicesSet)[0];
 
         // ✅ RELEASE VELOCITY: Start release phase with release velocity
         // ✅ NEW: Use fadeTime if provided (for loop restart), otherwise use release velocity
@@ -117,8 +135,11 @@ export class VoicePool {
             ? voice.release(time, null, fadeTime) // Use fadeTime if provided
             : voice.release(time, releaseVelocity); // Otherwise use release velocity
 
-        // Remove from active voices
-        this.activeVoices.delete(midiNote);
+        // ✅ MEMORY LEAK FIX: Remove voice from Set
+        voicesSet.delete(voice);
+        if (voicesSet.size === 0) {
+            this.activeVoices.delete(midiNote);
+        }
 
         // Add to release queue
         this.releaseQueue.push({
@@ -171,17 +192,27 @@ export class VoicePool {
             let lowestPriority = Infinity;
             let candidateNote = null;
 
-            this.activeVoices.forEach((voice, note) => {
-                const priority = voice.updatePriority();
-                if (priority < lowestPriority) {
-                    lowestPriority = priority;
-                    candidate = voice;
-                    candidateNote = note;
-                }
+            // ✅ MEMORY LEAK FIX: Iterate over Set of voices per note
+            this.activeVoices.forEach((voicesSet, note) => {
+                voicesSet.forEach(voice => {
+                    const priority = voice.updatePriority();
+                    if (priority < lowestPriority) {
+                        lowestPriority = priority;
+                        candidate = voice;
+                        candidateNote = note;
+                    }
+                });
             });
 
             if (candidate) {
-                this.activeVoices.delete(candidateNote);
+                // ✅ MEMORY LEAK FIX: Remove voice from Set
+                const voicesSet = this.activeVoices.get(candidateNote);
+                if (voicesSet) {
+                    voicesSet.delete(candidate);
+                    if (voicesSet.size === 0) {
+                        this.activeVoices.delete(candidateNote);
+                    }
+                }
                 if (import.meta.env.DEV) {
                     console.log(`🎵 Voice stolen: note ${candidateNote}, priority ${lowestPriority.toFixed(1)}`);
                 }
@@ -206,7 +237,18 @@ export class VoicePool {
         // This triggers onended callback at exact audio time
         const timer = this.context.createConstantSource();
 
-        timer.onended = () => {
+        let voiceReturned = false;
+        const returnVoice = () => {
+            if (voiceReturned) return; // Prevent double return
+            voiceReturned = true;
+
+            // Clear fallback timeout
+            const timeoutId = this.voiceReturnTimeouts.get(voice);
+            if (timeoutId) {
+                clearTimeout(timeoutId);
+                this.voiceReturnTimeouts.delete(voice);
+            }
+
             // Return voice to free pool
             if (!this.freeVoices.includes(voice)) {
                 this.freeVoices.push(voice);
@@ -219,8 +261,21 @@ export class VoicePool {
             }
         };
 
+        timer.onended = returnVoice;
+
         timer.start(startTime);
         timer.stop(startTime + duration);
+
+        // ✅ MEMORY LEAK FIX: Fallback timeout in case onended doesn't fire
+        // Add 1 second buffer to account for timing variations
+        const fallbackTimeout = setTimeout(() => {
+            if (!voiceReturned) {
+                console.warn(`⚠️ Voice return fallback triggered for voice (onended didn't fire)`);
+                returnVoice();
+            }
+        }, (duration * 1000) + 1000); // duration in ms + 1s buffer
+        
+        this.voiceReturnTimeouts.set(voice, fallbackTimeout);
     }
 
     /**
@@ -276,6 +331,12 @@ export class VoicePool {
      * Called only when destroying instrument
      */
     dispose() {
+        // ✅ MEMORY LEAK FIX: Clear all fallback timeouts
+        this.voiceReturnTimeouts.forEach(timeoutId => {
+            clearTimeout(timeoutId);
+        });
+        this.voiceReturnTimeouts.clear();
+
         // Stop all voices
         this.stopAll();
 

@@ -67,10 +67,7 @@ if (import.meta.env.DEV) {
     console.log('⚡ WASM helpers loaded! Try: window.wasm.quickBenchmark()');
   });*/
 
-  /* 🎛️ PHASE 3: UnifiedMixer integrated into production! Manual tests available.
-  import('./lib/core/UnifiedMixerDemo.js').then(() => {
-    console.log('🎛️ UnifiedMixer: Running in production (manual tests: window.demo.help())');
-  }).catch(() => {});*/
+  // ⚠️ REMOVED: UnifiedMixer demo - Replaced by MixerInsert system
 }
 
 // DAW Component (existing App logic)
@@ -451,7 +448,7 @@ function DAWApp() {
       // ✅ FIX: Use engine's workletManager to load processors
       if (engine.workletManager) {
         const processorConfigs = [
-          { path: '/worklets/UnifiedMixerWorklet.js', name: 'unified-mixer-worklet' },
+          // ⚠️ REMOVED: UnifiedMixerWorklet - Replaced by MixerInsert system
           { path: '/worklets/effects/compressor-processor.js', name: 'compressor-processor' },
           { path: '/worklets/effects/saturator-processor.js', name: 'saturator-processor' },
           { path: '/worklets/effects/multiband-eq-processor.js', name: 'multiband-eq-processor' },

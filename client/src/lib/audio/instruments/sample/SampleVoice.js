@@ -39,6 +39,13 @@ export class SampleVoice extends BaseVoice {
         // ✅ TIME STRETCH: Cache for stretched buffers
         // Map<cacheKey, { promise, buffer }> - buffer is set when promise resolves
         this.stretchedBufferCache = new Map();
+
+        // ✅ MEMORY LEAK FIX: Track all timers for proper cleanup
+        this.activeTimers = new Set(); // Set of timer IDs (setTimeout/setInterval)
+
+        // ✅ MEMORY LEAK FIX: Track dynamic filter/panner nodes for disposal
+        this.dynamicFilterNode = null;
+        this.dynamicPannerNode = null;
     }
 
     /**
@@ -262,7 +269,16 @@ export class SampleVoice extends BaseVoice {
                            (instrumentData?.filterKeyTracking !== undefined && instrumentData.filterKeyTracking > 0);
         
         if (needsFilter) {
+            // ✅ MEMORY LEAK FIX: Clear previous filter node
+            if (this.dynamicFilterNode) {
+                try {
+                    this.dynamicFilterNode.disconnect();
+                } catch (e) {
+                    // Already disconnected
+                }
+            }
             filterNode = this.context.createBiquadFilter();
+            this.dynamicFilterNode = filterNode; // Track for disposal
             filterNode.type = 'lowpass';
             
             // ✅ KEY TRACKING: Get base filter cutoff from instrument data or default
@@ -308,7 +324,16 @@ export class SampleVoice extends BaseVoice {
         // ✅ PHASE 2: Create panner if pan present
         let pannerNode = null;
         if (extendedParams?.pan !== undefined && extendedParams.pan !== 0) {
+            // ✅ MEMORY LEAK FIX: Clear previous panner node
+            if (this.dynamicPannerNode) {
+                try {
+                    this.dynamicPannerNode.disconnect();
+                } catch (e) {
+                    // Already disconnected
+                }
+            }
             pannerNode = this.context.createStereoPanner();
+            this.dynamicPannerNode = pannerNode; // Track for disposal
             pannerNode.pan.setValueAtTime(extendedParams.pan, time);
             lastNode.connect(pannerNode);
             lastNode = pannerNode;
@@ -469,11 +494,14 @@ export class SampleVoice extends BaseVoice {
 
         // Track envelope phase changes
         const envelopeEndTime = useADSR ? attack + decay : attack;
-        setTimeout(() => {
+        // ✅ MEMORY LEAK FIX: Track setTimeout
+        const timeoutId = setTimeout(() => {
             if (this.envelopePhase === 'attack' || this.envelopePhase === 'decay') {
                 this.envelopePhase = 'sustain';
             }
+            this.activeTimers.delete(timeoutId);
         }, envelopeEndTime * 1000);
+        this.activeTimers.add(timeoutId);
 
         // Auto-cleanup when sample finishes naturally
         this.currentSource.onended = () => {
@@ -546,14 +574,18 @@ export class SampleVoice extends BaseVoice {
         const decayRate = startAmp / effectiveReleaseTime;
         const updateInterval = 50; // Update every 50ms
 
+        // ✅ MEMORY LEAK FIX: Track setInterval and store ID
         const decayInterval = setInterval(() => {
             this.currentAmplitude = Math.max(0, this.currentAmplitude - (decayRate * updateInterval / 1000));
 
             if (this.currentAmplitude <= 0) {
                 clearInterval(decayInterval);
+                this.activeTimers.delete(decayInterval);
                 this.envelopePhase = 'idle';
             }
         }, updateInterval);
+        this.activeTimers.add(decayInterval);
+        this.decayIntervalId = decayInterval; // Store for reset()
 
         return effectiveReleaseTime;
     }
@@ -564,6 +596,32 @@ export class SampleVoice extends BaseVoice {
      */
     reset() {
         super.reset();
+
+        // ✅ MEMORY LEAK FIX: Clear all active timers
+        this.activeTimers.forEach(timerId => {
+            clearTimeout(timerId);
+            clearInterval(timerId);
+        });
+        this.activeTimers.clear();
+        this.decayIntervalId = null;
+
+        // ✅ MEMORY LEAK FIX: Dispose dynamic filter/panner nodes
+        if (this.dynamicFilterNode) {
+            try {
+                this.dynamicFilterNode.disconnect();
+            } catch (e) {
+                // Already disconnected
+            }
+            this.dynamicFilterNode = null;
+        }
+        if (this.dynamicPannerNode) {
+            try {
+                this.dynamicPannerNode.disconnect();
+            } catch (e) {
+                // Already disconnected
+            }
+            this.dynamicPannerNode = null;
+        }
 
         // Stop current source
         this.stopCurrentSource();
@@ -667,6 +725,31 @@ export class SampleVoice extends BaseVoice {
      * Called only when destroying voice pool
      */
     dispose() {
+        // ✅ MEMORY LEAK FIX: Clear all active timers
+        this.activeTimers.forEach(timerId => {
+            clearTimeout(timerId);
+            clearInterval(timerId);
+        });
+        this.activeTimers.clear();
+
+        // ✅ MEMORY LEAK FIX: Dispose dynamic filter/panner nodes
+        if (this.dynamicFilterNode) {
+            try {
+                this.dynamicFilterNode.disconnect();
+            } catch (e) {
+                // Already disconnected
+            }
+            this.dynamicFilterNode = null;
+        }
+        if (this.dynamicPannerNode) {
+            try {
+                this.dynamicPannerNode.disconnect();
+            } catch (e) {
+                // Already disconnected
+            }
+            this.dynamicPannerNode = null;
+        }
+
         this.stopCurrentSource();
 
         if (this.envelopeGain) {

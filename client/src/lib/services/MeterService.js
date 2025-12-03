@@ -179,13 +179,7 @@ class MeterService {
         analyzer = audioEngine.masterAnalyzer;
       }
 
-      // Fallback to old mixer channels (backward compatibility)
-      if (!analyzer && audioEngine.mixerChannels) {
-        const channel = audioEngine.mixerChannels.get(trackId);
-        if (channel && channel.analyzer) {
-          analyzer = channel.analyzer;
-        }
-      }
+      // ⚠️ REMOVED: mixerChannels fallback - Replaced by MixerInsert system
 
       if (!analyzer) continue;
 
