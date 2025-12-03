@@ -113,18 +113,13 @@ export function usePianoRollEngine(containerRef, playbackControls = {}) {
     }, []);
 
     const handleWheel = useCallback((e) => {
-        // ✅ UX FIX: Don't scroll when Alt is pressed (used for velocity adjustment)
-        if (e.altKey) {
+        // ✅ UX FIX 1 & 5: Ctrl + wheel (zoom) has priority over Alt
+        // This allows Ctrl + Alt + wheel to work for zoom
+        if (e.ctrlKey || e.metaKey) {
             e.preventDefault();
-            e.stopPropagation();
-            return;
-        }
-
-        e.preventDefault();
-        const { deltaX, deltaY, ctrlKey, offsetX, offsetY } = e;
-        const vp = viewportRef.current;
-
-        if (ctrlKey) {
+            const { deltaY, offsetX, offsetY } = e;
+            const vp = viewportRef.current;
+            
             const zoomFactor = 1 - deltaY * 0.005;
             const newZoomX = Math.max(MIN_ZOOM_X, Math.min(MAX_ZOOM_X, vp.zoomX * zoomFactor));
             const newZoomY = Math.max(MIN_ZOOM_Y, Math.min(MAX_ZOOM_Y, vp.zoomY * zoomFactor));
@@ -163,7 +158,23 @@ export function usePianoRollEngine(containerRef, playbackControls = {}) {
 
             // Immediate render trigger for zoom changes
             setRenderTrigger(Date.now());
-        } else {
+            return;
+        }
+
+        // ✅ UX FIX: Don't scroll when Alt is pressed (used for velocity adjustment)
+        // But only if Ctrl is not pressed (Ctrl has priority)
+        if (e.altKey && !e.ctrlKey && !e.metaKey) {
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+        }
+
+        e.preventDefault();
+        const { deltaX, deltaY } = e;
+        const vp = viewportRef.current;
+
+        // Normal scroll (no modifiers)
+        {
             // ✅ FIX: scrollX is stored in screen coordinates for scroll operations
             // deltaX is screen pixels, so we can add directly
             // Renderer will convert to world coordinates when needed via translate

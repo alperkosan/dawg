@@ -1737,6 +1737,30 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
         if (!container) return;
 
         const wheelHandler = (e) => {
+            // ✅ UX FIX 3: Don't handle wheel during drag/resize
+            if (rawDragState || rawResizeState) {
+                e.preventDefault();
+                e.stopPropagation();
+                return;
+            }
+
+            // ✅ UX FIX 4: Don't handle wheel when context menu is open
+            if (noteInteractions.contextMenuState) {
+                e.preventDefault();
+                e.stopPropagation();
+                return;
+            }
+
+            // ✅ UX FIX 1 & 5: Ctrl + wheel (zoom) has priority over Alt
+            // This allows Ctrl + Alt + wheel to work for zoom
+            if (e.ctrlKey || e.metaKey) {
+                // Let engine handle zoom (don't prevent if Ctrl is pressed)
+                if (engine.eventHandlers?.onWheel) {
+                    engine.eventHandlers.onWheel(e);
+                }
+                return;
+            }
+
             // ✅ UX FIX: Alt + wheel: Handle velocity change for selected notes (works everywhere)
             // Prevent scroll when Alt is pressed
             if (e.altKey && selectedNoteIds.size > 0 && noteInteractions.handleWheel) {

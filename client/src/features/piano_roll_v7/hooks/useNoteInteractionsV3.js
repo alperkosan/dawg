@@ -2614,6 +2614,40 @@ export function useNoteInteractionsV3({
         handleKeyDown,
         handleKeyUp,
         handleWheel: useCallback((e) => {
+            // ✅ UX FIX 2: Shift + wheel: Change duration of hovered or selected notes
+            if (e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
+                const coords = getCoordinatesFromEvent(e);
+                const foundNote = findNoteAtPosition(coords);
+                
+                if (foundNote || state.selection.size > 0) {
+                    const delta = -e.deltaY; // Positive = scroll up = increase
+                    const step = 0.25; // 1/16th step increment
+                    const change = delta > 0 ? step : -step;
+                    
+                    if (foundNote && !state.selection.has(foundNote.id)) {
+                        // Change hovered note's duration
+                        const newLength = Math.max(0.25, (foundNote.length || 1) + change);
+                        _updateNote(foundNote.id, { length: newLength });
+                        return true; // Event handled
+                    } else if (state.selection.size > 0) {
+                        // Change all selected notes' duration
+                        const selectedNoteIds = Array.from(state.selection);
+                        const updatesMap = new Map();
+                        selectedNoteIds.forEach(noteId => {
+                            const note = notes.find(n => n.id === noteId);
+                            if (note) {
+                                const newLength = Math.max(0.25, (note.length || 1) + change);
+                                updatesMap.set(noteId, { length: newLength });
+                            }
+                        });
+                        if (updatesMap.size > 0) {
+                            _updateNotes(updatesMap);
+                        }
+                        return true; // Event handled
+                    }
+                }
+            }
+            
             // Alt + wheel: Change volume of selected notes
             // Note: preventDefault() is called in parent component (PianoRoll.jsx) using manual event listener
             if (e.altKey && state.selection.size > 0) {
@@ -2629,7 +2663,7 @@ export function useNoteInteractionsV3({
             }
             
             return false; // Event not handled, allow viewport scroll
-        }, [state.selection, updateNotesVelocity]),
+        }, [state.selection, updateNotesVelocity, getCoordinatesFromEvent, findNoteAtPosition, notes, _updateNote, _updateNotes]),
 
         // Selection
         selectNote: select,
