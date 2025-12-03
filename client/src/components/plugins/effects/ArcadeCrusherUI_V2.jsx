@@ -87,7 +87,11 @@ class PixelWaveformRenderer {
 
     ctx.beginPath();
     
-    for (let i = 0; i < recentData.length; i++) {
+    // ✅ PERFORMANCE: Optimize for high bit depths
+    // For 16-bit, use fewer points to reduce computation
+    const stepSize = bits >= 12 ? Math.max(1, Math.floor(recentData.length / 200)) : 1;
+    
+    for (let i = 0; i < recentData.length; i += stepSize) {
       const point = recentData[i];
       const x = (i / recentData.length) * width;
       
@@ -113,16 +117,36 @@ class PixelWaveformRenderer {
     ctx.textAlign = 'center';
     ctx.fillText(`${bits}-BIT`, width / 2, height / 2);
 
-    // Quantization levels indicator
-    ctx.strokeStyle = `${categoryColors.primary}33`;
-    ctx.lineWidth = 1;
-    for (let i = 0; i <= numSteps; i++) {
-      const y = (i / numSteps) * height;
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(width, y);
-      ctx.stroke();
+    // ✅ PERFORMANCE FIX: Skip quantization levels indicator for high bit depths
+    // Drawing 65536 lines at 16-bit is extremely expensive
+    // Only show levels for bit depths <= 8 (256 lines max)
+    if (bits <= 8) {
+      ctx.strokeStyle = `${categoryColors.primary}33`;
+      ctx.lineWidth = 1;
+      const maxLines = Math.min(numSteps, 256); // Cap at 256 lines for performance
+      const lineStep = Math.max(1, Math.floor(numSteps / maxLines));
+      
+      for (let i = 0; i <= numSteps; i += lineStep) {
+        const y = (i / numSteps) * height;
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(width, y);
+        ctx.stroke();
+      }
+    } else if (bits <= 12) {
+      // For 9-12 bit, show fewer lines (every 16th step)
+      ctx.strokeStyle = `${categoryColors.primary}22`;
+      ctx.lineWidth = 1;
+      const lineStep = 16;
+      for (let i = 0; i <= numSteps; i += lineStep) {
+        const y = (i / numSteps) * height;
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(width, y);
+        ctx.stroke();
+      }
     }
+    // For 13-16 bit, skip quantization lines entirely (too expensive)
   }
 }
 

@@ -88,7 +88,14 @@ export const pluginRegistry = {
       highDrive: 1.0,
       lowMix: 1.0,
       midMix: 1.0,
-      highMix: 1.0
+      highMix: 1.0,
+      // ✅ NEW: Oversampling, Drive Curve, and Tape Modeling
+      oversampling: 2,    // 2x oversampling by default
+      driveCurve: 3,      // Tube mode by default
+      tapeBias: 0.5,
+      tapeWow: 0,
+      tapeFlutter: 0,
+      tapeSpeed: 1.0
     },
     // ✨ v2.0: Factory presets managed by PresetManager
     // See: @/config/presets/saturatorPresets.js
@@ -117,6 +124,10 @@ export const pluginRegistry = {
       // 🎯 NEW v2.0: Detection mode defaults
       detectionMode: 0,    // 0=Peak (default), 1=RMS
       rmsWindow: 10,       // 10ms RMS window (SSL-style)
+      // 🎯 NEW: Compressor model (0=Clean/VCA, 1=Opto, 2=FET)
+      compressorModel: 0, // 0=Clean/VCA (transparent), 1=Opto (musical), 2=FET (aggressive)
+      // 🎯 NEW: Mix/Blend control for parallel compression
+      mix: 100,            // 100% = full compression, 0% = dry (parallel compression)
       // Sidechain defaults
       scEnable: 0,
       scGain: 0,
@@ -343,7 +354,11 @@ export const pluginRegistry = {
       earlyLateMix: 0.5,
       diffusion: 0.7,
       modDepth: 0.3,
-      modRate: 0.5
+      modRate: 0.5,
+      lowCut: 100,
+      highCut: 20000,    // ✅ NEW: High cut filter
+      shimmer: 0.0,
+      reverbAlgorithm: 0 // ✅ NEW: Room algorithm by default
     },
     // ✨ v2.0: Factory presets managed by PresetManager
     // See: @/config/presets/reverbPresets.js
@@ -369,7 +384,12 @@ export const pluginRegistry = {
       filterFreq: 8000,
       saturation: 0.0,     // Off by default
       diffusion: 0.0,      // Off by default
-      width: 1.0           // Normal stereo width
+      width: 1.0,          // Normal stereo width
+      // ✅ NEW: Delay model, tempo sync, and note division
+      delayModel: 0,       // Digital by default
+      tempoSync: 0,        // Off by default
+      noteDivision: 3,     // 1/4 note by default
+      bpm: 120             // Default BPM
     },
     // ✨ v2.0: Factory presets managed by PresetManager
     // See: @/config/presets/delayPresets.js

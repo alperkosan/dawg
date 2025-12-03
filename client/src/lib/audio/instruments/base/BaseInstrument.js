@@ -159,12 +159,20 @@ export class BaseInstrument {
     }
 
     /**
-     * Stop all notes immediately
+     * Stop all notes gracefully
      * Used for pause/stop functionality
+     * 
+     * @param {number} [time] - AudioContext time (optional, defaults to now)
+     * @param {number} [fadeTime] - Fade-out time in seconds (optional, uses instrument's release envelope if not provided)
      */
-    allNotesOff() {
-        const now = this.audioContext.currentTime;
-        this.noteOff(null, now); // null = all notes
+    allNotesOff(time = null, fadeTime = null) {
+        const now = time !== null ? time : this.audioContext.currentTime;
+        // ✅ NEW: Pass fadeTime to noteOff if supported
+        if (fadeTime !== null && typeof this.noteOff === 'function' && this.noteOff.length >= 4) {
+            this.noteOff(null, now, null, fadeTime);
+        } else {
+            this.noteOff(null, now); // null = all notes
+        }
     }
 
     hasReleaseSustain() {

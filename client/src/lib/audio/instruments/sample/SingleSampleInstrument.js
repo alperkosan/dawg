@@ -226,6 +226,21 @@ export class SingleSampleInstrument extends BaseInstrument {
             // ✅ CUT ITSELF: Stop existing note at same pitch if enabled
             const cutItself = this.data.cutItself !== undefined ? this.data.cutItself : true; // Default true for single samples (drums)
             if (cutItself && this.activeSources.has(midiNote)) {
+                // ✅ FIX: Quick fade-out before stopping to prevent clicks
+                const existingSource = this.activeSources.get(midiNote);
+                if (existingSource && existingSource.gainNode) {
+                    try {
+                        const fadeTime = 0.002; // 2ms quick fade
+                        const currentGain = existingSource.gainNode.gain.value;
+                        if (currentGain > 0.0001) {
+                            existingSource.gainNode.gain.cancelScheduledValues(when);
+                            existingSource.gainNode.gain.setValueAtTime(currentGain, when);
+                            existingSource.gainNode.gain.linearRampToValueAtTime(0.0001, when + fadeTime);
+                        }
+                    } catch (e) {
+                        // Ignore errors
+                    }
+                }
                 this.noteOff(midiNote, when);
             }
 
@@ -272,23 +287,31 @@ export class SingleSampleInstrument extends BaseInstrument {
             const velocityGain = Math.max(0, Math.min(1, velocity / 127));
             const instrumentGain = this.data.gain || 1;
             const totalGain = velocityGain * instrumentGain;
-            gainNode.gain.setValueAtTime(totalGain, when);
 
             // Apply ADSR envelope if defined
             if (this._hasAdsrEnvelope()) {
-                const attack = (this.data.attack || 0) / 1000; // ms to seconds
+                let attack = (this.data.attack || 0) / 1000; // ms to seconds
                 const decay = (this.data.decay || 0) / 1000;
                 const sustain = this.data.sustain !== undefined ? this.data.sustain / 100 : 1;
                 const release = (this.data.release || 50) / 1000;
 
-                // Attack
-                gainNode.gain.setValueAtTime(0, when);
+                // ✅ FIX: Minimum attack time to prevent clicks (especially for drums/808)
+                const minAttackTime = 0.001; // 1ms minimum
+                attack = Math.max(attack, minAttackTime);
+
+                // Attack: Start from very small value instead of 0 to prevent click
+                gainNode.gain.setValueAtTime(0.0001, when);
                 gainNode.gain.linearRampToValueAtTime(totalGain, when + attack);
 
                 // Decay to sustain
                 if (decay > 0) {
                     gainNode.gain.linearRampToValueAtTime(totalGain * sustain, when + attack + decay);
                 }
+            } else {
+                // ✅ FIX: Even without ADSR, use minimum attack to prevent clicks
+                const minAttackTime = 0.001; // 1ms minimum
+                gainNode.gain.setValueAtTime(0.0001, when);
+                gainNode.gain.linearRampToValueAtTime(totalGain, when + minAttackTime);
             }
 
             // ✅ PHASE 2: Create panner - use note pan if available, otherwise instrument pan

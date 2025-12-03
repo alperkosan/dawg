@@ -548,7 +548,9 @@ export class MultiSampleInstrument extends BaseInstrument {
                 }
             } else {
                 // ✅ NEW: Release all notes via voice pool
-                this.voicePool.releaseAll(time);
+                // ✅ NEW: Support fadeTime parameter for smoother loop restart
+                const fadeTime = releaseVelocity !== null ? null : (arguments[3] || null); // Get fadeTime from 4th argument if provided
+                this.voicePool.releaseAll(time, fadeTime);
                 this.activeNotes.clear();
                 this._stopSampleChopPlayback();
             }

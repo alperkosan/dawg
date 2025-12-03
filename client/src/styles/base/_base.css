@@ -35,6 +35,8 @@ body {
   -moz-osx-font-smoothing: grayscale;
   line-height: 1.5;
   min-height: 100vh;
+  /* ✅ FIX: Prevent body scroll - app-container handles all scrolling */
+  overflow: hidden;
   /* Using centralized scrollbar styles */
 }
 

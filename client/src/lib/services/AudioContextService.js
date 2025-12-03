@@ -1051,11 +1051,21 @@ export class AudioContextService {
               if (!effectExists) {
                 console.log(`🎛️ Adding effect ${effect.type} (${effect.id}) to insert ${track.id}...`);
 
-                // Add effect to insert with original ID and settings
+                // ✅ FIX: Merge with default settings for backward compatibility
+                // This ensures old projects without new parameters (compressorModel, mix) get defaults
+                let mergedSettings = effect.settings || {};
+                if (effect.type === 'Compressor') {
+                  // Import default settings from pluginConfig
+                  const { pluginConfig } = await import('@/config/pluginConfig.jsx');
+                  const compressorDefaults = pluginConfig?.Compressor?.defaultSettings || {};
+                  mergedSettings = { ...compressorDefaults, ...mergedSettings };
+                }
+
+                // Add effect to insert with original ID and merged settings
                 await this.audioEngine.addEffectToInsert(
                   track.id,
                   effect.type,
-                  effect.settings || {},
+                  mergedSettings,
                   effect.id  // Pass original effect ID to preserve it
                 );
 

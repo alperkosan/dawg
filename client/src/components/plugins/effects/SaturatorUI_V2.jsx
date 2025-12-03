@@ -13,7 +13,7 @@
 
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import PluginContainerV2 from '../container/PluginContainerV2';
-import { Knob, Slider, Checkbox } from '@/components/controls';
+import { Knob, Slider, Checkbox, ModeSelector } from '@/components/controls';
 import { getCategoryColors } from '../PluginDesignSystem';
 import { useParameterBatcher } from '@/services/ParameterBatcher';
 import { useRenderer } from '@/services/CanvasRenderManager';
@@ -262,6 +262,14 @@ const SaturatorUI_V2 = ({ trackId, effect, effectNode, definition }) => {
   const [localLowMix, setLocalLowMix] = useState(effect.settings.lowMix || 1.0);
   const [localMidMix, setLocalMidMix] = useState(effect.settings.midMix || 1.0);
   const [localHighMix, setLocalHighMix] = useState(effect.settings.highMix || 1.0);
+  
+  // ✅ NEW: Oversampling, Drive Curve, and Tape Modeling state
+  const [localOversampling, setLocalOversampling] = useState(effect.settings.oversampling || 2);
+  const [localDriveCurve, setLocalDriveCurve] = useState(effect.settings.driveCurve !== undefined ? effect.settings.driveCurve : 3);
+  const [localTapeBias, setLocalTapeBias] = useState(effect.settings.tapeBias || 0.5);
+  const [localTapeWow, setLocalTapeWow] = useState(effect.settings.tapeWow || 0);
+  const [localTapeFlutter, setLocalTapeFlutter] = useState(effect.settings.tapeFlutter || 0);
+  const [localTapeSpeed, setLocalTapeSpeed] = useState(effect.settings.tapeSpeed || 1.0);
 
   // Sync with presets
   useEffect(() => {
@@ -282,6 +290,14 @@ const SaturatorUI_V2 = ({ trackId, effect, effectNode, definition }) => {
     setLocalLowMix(effect.settings.lowMix ?? 1.0);
     setLocalMidMix(effect.settings.midMix ?? 1.0);
     setLocalHighMix(effect.settings.highMix ?? 1.0);
+    
+    // ✅ NEW: Sync oversampling, drive curve, and tape modeling
+    setLocalOversampling(effect.settings.oversampling ?? 2);
+    setLocalDriveCurve(effect.settings.driveCurve !== undefined ? effect.settings.driveCurve : 3);
+    setLocalTapeBias(effect.settings.tapeBias ?? 0.5);
+    setLocalTapeWow(effect.settings.tapeWow ?? 0);
+    setLocalTapeFlutter(effect.settings.tapeFlutter ?? 0);
+    setLocalTapeSpeed(effect.settings.tapeSpeed ?? 1.0);
   }, [effect.settings, effect.id]); // Added effect.id to force update on preset change
 
   // Handlers
@@ -304,6 +320,12 @@ const SaturatorUI_V2 = ({ trackId, effect, effectNode, definition }) => {
       case 'lowMix': setLocalLowMix(value); break;
       case 'midMix': setLocalMidMix(value); break;
       case 'highMix': setLocalHighMix(value); break;
+      case 'oversampling': setLocalOversampling(value); break;
+      case 'driveCurve': setLocalDriveCurve(value); break;
+      case 'tapeBias': setLocalTapeBias(value); break;
+      case 'tapeWow': setLocalTapeWow(value); break;
+      case 'tapeFlutter': setLocalTapeFlutter(value); break;
+      case 'tapeSpeed': setLocalTapeSpeed(value); break;
       default: break;
     }
 
@@ -347,19 +369,37 @@ const SaturatorUI_V2 = ({ trackId, effect, effectNode, definition }) => {
             />
 
             {/* Mode Switch Overlay */}
-            <div className="absolute top-2 right-2 flex bg-black/60 rounded-lg p-1 backdrop-blur-sm border border-white/10">
-              <button
-                className={`px-3 py-1 text-[10px] font-bold rounded-md transition-colors ${!isMultiband ? 'bg-[#F97316] text-black' : 'text-white/60 hover:text-white'}`}
-                onClick={() => handleParamChange('multiband', 0)}
-              >
-                SINGLE BAND
-              </button>
-              <button
-                className={`px-3 py-1 text-[10px] font-bold rounded-md transition-colors ${isMultiband ? 'bg-[#F97316] text-black' : 'text-white/60 hover:text-white'}`}
-                onClick={() => handleParamChange('multiband', 1)}
-              >
-                MULTIBAND
-              </button>
+            <div className="absolute top-2 right-2 flex flex-col gap-2">
+              <div className="flex bg-black/60 rounded-lg p-1 backdrop-blur-sm border border-white/10">
+                <button
+                  className={`px-3 py-1 text-[10px] font-bold rounded-md transition-colors ${!isMultiband ? 'bg-[#F97316] text-black' : 'text-white/60 hover:text-white'}`}
+                  onClick={() => handleParamChange('multiband', 0)}
+                >
+                  SINGLE BAND
+                </button>
+                <button
+                  className={`px-3 py-1 text-[10px] font-bold rounded-md transition-colors ${isMultiband ? 'bg-[#F97316] text-black' : 'text-white/60 hover:text-white'}`}
+                  onClick={() => handleParamChange('multiband', 1)}
+                >
+                  MULTIBAND
+                </button>
+              </div>
+              
+              {/* ✅ NEW: Oversampling Selector */}
+              <div className="bg-black/60 rounded-lg p-2 backdrop-blur-sm border border-white/10">
+                <div className="text-[9px] text-white/60 mb-1 text-center">OVERSAMPLING</div>
+                <ModeSelector
+                  modes={[
+                    { id: 1, name: '1x', description: 'Off' },
+                    { id: 2, name: '2x', description: 'Standard' },
+                    { id: 4, name: '4x', description: 'High Quality' },
+                    { id: 8, name: '8x', description: 'Ultra' }
+                  ]}
+                  activeMode={localOversampling}
+                  onChange={(mode) => handleParamChange('oversampling', mode)}
+                  compact={true}
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -393,6 +433,78 @@ const SaturatorUI_V2 = ({ trackId, effect, effectNode, definition }) => {
                   valueFormatter={(v) => `${(v * 100).toFixed(0)}%`}
                 />
               </div>
+
+              {/* ✅ NEW: Drive Curve Selector */}
+              <div className="flex justify-center mb-4">
+                <div className="bg-black/30 rounded-lg p-3 border border-[#F97316]/20">
+                  <div className="text-xs text-white/60 mb-2 text-center">DRIVE CURVE</div>
+                  <ModeSelector
+                    modes={[
+                      { id: 0, name: 'Soft', description: 'Gentle' },
+                      { id: 1, name: 'Medium', description: 'Balanced' },
+                      { id: 2, name: 'Hard', description: 'Aggressive' },
+                      { id: 3, name: 'Tube', description: 'Warm' },
+                      { id: 4, name: 'Tape', description: 'Vintage' }
+                    ]}
+                    activeMode={localDriveCurve}
+                    onChange={(mode) => handleParamChange('driveCurve', mode)}
+                    compact={true}
+                  />
+                </div>
+              </div>
+              
+              {/* ✅ NEW: Tape Modeling Controls (only visible when Tape mode is selected) */}
+              {localDriveCurve === 4 && (
+                <div className="bg-[#F97316]/10 rounded-lg p-4 mb-4 border border-[#F97316]/30 animate-in fade-in duration-300">
+                  <div className="text-xs font-bold text-[#F97316] mb-3 text-center">TAPE MODELING</div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <Knob
+                      label="BIAS"
+                      value={localTapeBias}
+                      onChange={(v) => handleParamChange('tapeBias', v)}
+                      min={0}
+                      max={1}
+                      defaultValue={0.5}
+                      sizeVariant="small"
+                      category="texture-lab"
+                      valueFormatter={(v) => `${(v * 100).toFixed(0)}%`}
+                    />
+                    <Knob
+                      label="SPEED"
+                      value={localTapeSpeed}
+                      onChange={(v) => handleParamChange('tapeSpeed', v)}
+                      min={0.5}
+                      max={2.0}
+                      defaultValue={1.0}
+                      sizeVariant="small"
+                      category="texture-lab"
+                      valueFormatter={(v) => `${v.toFixed(2)}x`}
+                    />
+                    <Knob
+                      label="WOW"
+                      value={localTapeWow}
+                      onChange={(v) => handleParamChange('tapeWow', v)}
+                      min={0}
+                      max={1}
+                      defaultValue={0}
+                      sizeVariant="small"
+                      category="texture-lab"
+                      valueFormatter={(v) => `${(v * 100).toFixed(0)}%`}
+                    />
+                    <Knob
+                      label="FLUTTER"
+                      value={localTapeFlutter}
+                      onChange={(v) => handleParamChange('tapeFlutter', v)}
+                      min={0}
+                      max={1}
+                      defaultValue={0}
+                      sizeVariant="small"
+                      category="texture-lab"
+                      valueFormatter={(v) => `${(v * 100).toFixed(0)}%`}
+                    />
+                  </div>
+                </div>
+              )}
 
               {/* Tone Controls */}
               <div className="flex justify-center gap-8 pt-4 border-t border-white/5">

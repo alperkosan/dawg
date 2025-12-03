@@ -1,6 +1,9 @@
 // lib/core/NativeTransportSystem.js
 // DAWG - Native Transport System - ToneJS'siz tam native implementasyon
 import EventBus from './EventBus'; // YENİ: EventBus'ı import ediyoruz.
+import { SampleAccurateTime } from './utils/SampleAccurateTime.js'; // ✅ NEW: Sample-accurate timing
+import { LookaheadScheduler } from './utils/LookaheadScheduler.js'; // ✅ NEW: Advanced lookahead scheduling
+import { EventBatcher } from './utils/EventBatcher.js'; // ✅ NEW: Event batching for performance
 
 export class NativeTransportSystem {
     constructor(audioContext) {
@@ -21,9 +24,20 @@ export class NativeTransportSystem {
         // ✅ Position tracking - ALL IN TICKS
         this.currentTick = 0;
         this.nextTickTime = 0;
+        
+        // ✅ NEW: Advanced lookahead scheduler (adaptive, 100-200ms range)
+        this.lookaheadScheduler = new LookaheadScheduler(audioContext, {
+            baseLookahead: 0.12, // 120ms base (optimal)
+            minLookahead: 0.05,  // 50ms minimum
+            maxLookahead: 0.2     // 200ms maximum
+        });
+        
         // ⚡ CRITICAL: Tighter scheduling window for better timing accuracy
-        this.lookAhead = 10.0; // 10ms look-ahead (matches worker interval)
+        // ✅ NEW: Use adaptive lookahead from LookaheadScheduler
+        this.lookAhead = this.lookaheadScheduler.getLookahead() * 1000; // Convert to ms
+        
         // ✅ FAZ 1: Adaptive schedule ahead time based on BPM
+        // ✅ NEW: Now uses LookaheadScheduler for more sophisticated calculation
         // Yüksek BPM (140+): 100ms, Orta BPM (100-140): 120ms, Düşük BPM (<100): 150ms
         this.scheduleAheadTime = this._calculateAdaptiveScheduleAhead();
 
@@ -39,6 +53,12 @@ export class NativeTransportSystem {
         this.scheduledEvents = new Map();
         this.patterns = new Map(); // EKLENDİ
         this.activePatterns = new Set(); // EKLENDİ
+        
+        // ✅ NEW: Event batcher for performance optimization
+        this.eventBatcher = new EventBatcher({
+            batchSize: 32, // Process 32 events at once
+            maxBatchTime: 0.001 // 1ms max batch processing time
+        });
 
         // UI update throttling
         this.lastUIUpdate = 0;
@@ -79,11 +99,24 @@ export class NativeTransportSystem {
 
     /**
      * Update schedule ahead time when BPM changes
+     * ✅ NEW: Also updates LookaheadScheduler
      */
     _updateScheduleAheadTime() {
         this.scheduleAheadTime = this._calculateAdaptiveScheduleAhead();
+        
+        // ✅ NEW: Update lookahead scheduler with new BPM
+        if (this.lookaheadScheduler) {
+            const eventCount = this.scheduledEvents.size;
+            this.lookaheadScheduler.updateLookahead(this.bpm, eventCount);
+            this.lookAhead = this.lookaheadScheduler.getLookahead() * 1000;
+        }
+        
         if (import.meta.env.DEV) {
+            const stats = this.lookaheadScheduler?.getStats();
             console.log(`⚡ Schedule ahead time updated: ${(this.scheduleAheadTime * 1000).toFixed(0)}ms (BPM: ${this.bpm})`);
+            if (stats) {
+                console.log(`📊 Lookahead: ${stats.lookaheadMs.toFixed(0)}ms (BPM factor: ${stats.bpmFactor.toFixed(2)}, Complexity: ${stats.complexityFactor.toFixed(2)})`);
+            }
         }
     }
 
@@ -162,8 +195,11 @@ export class NativeTransportSystem {
             this.isPaused = false;
         }
 
-        // ✅ CRITICAL FIX: Set nextTickTime to current audio time, not relative to position
-        this.nextTickTime = startTime;
+        // ✅ CRITICAL FIX: Set nextTickTime with minimum delay to prevent click at bar start
+        // ✅ NEW: Use sample-accurate time for professional precision
+        const minDelay = SampleAccurateTime.getMinimumSafeOffset(this.audioContext, 64); // 64 samples safety margin
+        const rawNextTickTime = Math.max(startTime + minDelay, this.audioContext.currentTime + minDelay);
+        this.nextTickTime = SampleAccurateTime.toSampleAccurate(this.audioContext, rawNextTickTime);
 
 
         this.timerWorker.postMessage('start');
@@ -344,14 +380,42 @@ export class NativeTransportSystem {
 
     // =================== SCHEDULING CORE ===================
     scheduler() {
-        const scheduleUntil = this.audioContext.currentTime + this.scheduleAheadTime;
+        // ✅ NEW: Use sample-accurate time for scheduling window
+        const currentTime = SampleAccurateTime.getCurrentSampleAccurateTime(this.audioContext);
+        
+        // ✅ NEW: Update lookahead based on current conditions
+        let scheduleUntil;
+        if (this.lookaheadScheduler) {
+            const eventCount = this.scheduledEvents.size;
+            this.lookaheadScheduler.updateLookahead(this.bpm, eventCount);
+            this.lookAhead = this.lookaheadScheduler.getLookahead() * 1000; // Update lookahead in ms
+            
+            // ✅ NEW: Use adaptive schedule ahead time from LookaheadScheduler
+            const adaptiveScheduleAhead = this.lookaheadScheduler.getLookahead();
+            scheduleUntil = SampleAccurateTime.toSampleAccurate(
+                this.audioContext,
+                currentTime + adaptiveScheduleAhead
+            );
+        } else {
+            // Fallback to original schedule ahead time if lookaheadScheduler not initialized
+            scheduleUntil = SampleAccurateTime.toSampleAccurate(
+                this.audioContext,
+                currentTime + this.scheduleAheadTime
+            );
+        }
 
         while (this.nextTickTime < scheduleUntil) {
-            // 1. UI callbacks with position info
-            this.scheduleCurrentTick(this.nextTickTime);
+            // ✅ NEW: Ensure nextTickTime is sample-accurate
+            const sampleAccurateTickTime = SampleAccurateTime.toSampleAccurate(
+                this.audioContext,
+                this.nextTickTime
+            );
 
-            // 2. ✅ FIXED: Process scheduled events at current time
-            this.processScheduledEvents(this.nextTickTime);
+            // 1. UI callbacks with position info
+            this.scheduleCurrentTick(sampleAccurateTickTime);
+
+            // 2. ✅ FIXED: Process scheduled events at current time (sample-accurate)
+            this.processScheduledEvents(sampleAccurateTickTime);
 
             this.advanceToNextTick();
         }
@@ -382,7 +446,12 @@ export class NativeTransportSystem {
                 needsReschedule: true // ✅ Yeniden schedule gerektiğini belirt
             });
         } else {
-            this.nextTickTime += secondsPerTick;
+            // ✅ NEW: Calculate next tick time with sample-accurate precision
+            const nextTickTimeRaw = this.nextTickTime + secondsPerTick;
+            this.nextTickTime = SampleAccurateTime.toSampleAccurate(
+                this.audioContext,
+                nextTickTimeRaw
+            );
         }
 
         // Bar tracking (existing code)
@@ -433,38 +502,69 @@ export class NativeTransportSystem {
      * @returns {string} - Zamanlanmış olayın benzersiz ID'si.
      */
     // ✅ CRITICAL FIX: Event scheduling with proper time conversion
+    // ✅ NEW: Sample-accurate timing for professional precision
     scheduleEvent(timeInSeconds, callback, data = {}) {
+        // ✅ NEW: Convert to sample-accurate time before scheduling
+        const sampleAccurateTime = SampleAccurateTime.toSampleAccurate(
+            this.audioContext,
+            timeInSeconds
+        );
+
+        // ✅ NEW: Ensure time is in the future (avoid past-time errors)
+        const safeTime = SampleAccurateTime.ensureFutureTime(
+            this.audioContext,
+            sampleAccurateTime
+        );
+
         const eventId = `event_${Date.now()}_${Math.random()}`;
 
-        if (!this.scheduledEvents.has(timeInSeconds)) {
-            this.scheduledEvents.set(timeInSeconds, []);
+        // ✅ NEW: Use sample-accurate time as key for event storage
+        if (!this.scheduledEvents.has(safeTime)) {
+            this.scheduledEvents.set(safeTime, []);
         }
 
-        this.scheduledEvents.get(timeInSeconds).push({
+        this.scheduledEvents.get(safeTime).push({
             id: eventId,
             callback,
-            data
+            data,
+            originalTime: timeInSeconds, // Store original for debugging
+            sampleAccurateTime: safeTime // Store sample-accurate time
         });
 
         return eventId;
     }
 
     processScheduledEvents(currentTime) {
-        // Process events at or before current time
+        // ✅ NEW: Use event batching for better performance
+        // Collect all due events first
+        const dueEvents = [];
         for (const [scheduledTime, events] of this.scheduledEvents.entries()) {
             if (scheduledTime <= currentTime) {
-                console.log(`⏰ Processing ${events.length} events at ${scheduledTime}s (currentTime: ${currentTime}s)`);
+                // Add events to batch queue with priority
                 events.forEach(event => {
-                    try {
-                        console.log(`  ▶️ Executing event:`, event.data);
-                        event.callback(scheduledTime, event.data);
-                    } catch (error) {
-                        console.error(`  ❌ Event execution error:`, error);
-                    }
+                    const priority = this._getEventPriority(event.data);
+                    this.eventBatcher.addEvent(
+                        event.callback,
+                        scheduledTime,
+                        event.data,
+                        priority
+                    );
                 });
-                this.scheduledEvents.delete(scheduledTime);
+                dueEvents.push(scheduledTime);
             }
         }
+
+        // Process batch
+        const processedCount = this.eventBatcher.processDueEvents(currentTime);
+        
+        if (processedCount > 0 && import.meta.env.DEV) {
+            console.log(`⏰ Processed ${processedCount} events in batch (currentTime: ${currentTime.toFixed(4)}s)`);
+        }
+
+        // Remove processed events from scheduled events map
+        dueEvents.forEach(scheduledTime => {
+            this.scheduledEvents.delete(scheduledTime);
+        });
 
         // ✅ LEAK FIX: Clean stale events (older than 5 seconds)
         // This prevents unbounded growth due to timing precision issues
@@ -473,6 +573,42 @@ export class NativeTransportSystem {
             if (scheduledTime < staleThreshold) {
                 this.scheduledEvents.delete(scheduledTime);
             }
+        }
+    }
+
+    /**
+     * ✅ NEW: Get event priority for batching
+     * Higher priority events are processed first
+     * 
+     * @param {Object} eventData - Event data
+     * @returns {number} Priority (higher = more important)
+     */
+    _getEventPriority(eventData) {
+        // Priority levels:
+        // 100: Critical (note on/off, transport events)
+        // 50: High (automation, effects)
+        // 0: Normal (UI updates, callbacks)
+        
+        if (!eventData || !eventData.type) {
+            return 0;
+        }
+
+        switch (eventData.type) {
+            case 'noteOn':
+            case 'noteOff':
+            case 'loop':
+            case 'start':
+            case 'stop':
+                return 100; // Critical priority
+            case 'automation':
+            case 'effect':
+                return 50; // High priority
+            case 'tick':
+            case 'beat':
+            case 'bar':
+                return 10; // Medium priority (UI updates)
+            default:
+                return 0; // Normal priority
         }
     }
 

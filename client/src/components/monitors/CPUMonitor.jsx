@@ -1,13 +1,13 @@
 /**
  * CPU Monitor Component
  *
- * Displays real-time CPU usage for the audio engine and UI rendering.
- * Combines Web Audio API metrics with rendering performance.
+ * Displays real-time CPU usage from RealCPUMonitor (shared singleton).
+ * Uses the same measurement system as PerformanceMonitor for consistency.
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Cpu } from 'lucide-react';
-import { AudioContextService } from '@/lib/services/AudioContextService';
+import { realCPUMonitor } from '@/lib/utils/RealCPUMonitor';
 import './CPUMonitor.css';
 
 export const CPUMonitor = () => {
@@ -15,89 +15,36 @@ export const CPUMonitor = () => {
   const [isWarning, setIsWarning] = useState(false);
   const [isCritical, setIsCritical] = useState(false);
 
-  const rafIdRef = useRef(null);
-
   useEffect(() => {
-    // Most accurate approach: Measure idle time vs total time
-    // requestIdleCallback tells us when the browser is idle
-    // If we have lots of idle time = low CPU usage
-    // If we have little idle time = high CPU usage
+    // ✅ OPTIMIZATION: Use shared RealCPUMonitor instead of duplicate idle callback system
+    // RealCPUMonitor is already updated every frame by UIUpdateManager
+    // This eliminates redundant measurement overhead
 
-    let totalTime = 0;
-    let idleTime = 0;
-    let lastReset = performance.now();
-    let idleCallbackId = null;
     let updateIntervalId = null;
-
-    // Schedule idle callback continuously
-    const scheduleIdleCheck = () => {
-      if (typeof requestIdleCallback !== 'undefined') {
-        idleCallbackId = requestIdleCallback((deadline) => {
-          // We got idle time! Measure how much
-          const remaining = deadline.timeRemaining();
-          idleTime += remaining;
-
-          // Schedule next check
-          scheduleIdleCheck();
-        }, { timeout: 1000 }); // Force callback within 1 second
-      } else {
-        // Fallback: Use RAF timing
-        const rafStart = performance.now();
-        rafIdRef.current = requestAnimationFrame(() => {
-          const rafEnd = performance.now();
-          const frameDuration = rafEnd - rafStart;
-
-          // If frame was fast, we had idle time
-          if (frameDuration < 16.67) {
-            idleTime += (16.67 - frameDuration);
-          }
-
-          scheduleIdleCheck();
-        });
-      }
-    };
+    let previousCpuUsage = 0;
 
     // Update CPU usage display every second
     updateIntervalId = setInterval(() => {
-      const now = performance.now();
-      const elapsed = now - lastReset;
+      const currentCpu = realCPUMonitor.getCPUUsage();
 
-      // Calculate CPU usage
-      // More idle time = less CPU usage
-      const idleRatio = idleTime / elapsed;
-      let usage = Math.max(0, Math.min(100, (1 - idleRatio) * 100));
-
-      // Apply smoothing
+      // Apply smoothing to reduce jitter
       const alpha = 0.3;
       const smoothedUsage = Math.round(
-        cpuUsage * (1 - alpha) + usage * alpha
+        previousCpuUsage * (1 - alpha) + currentCpu * alpha
       );
 
+      previousCpuUsage = smoothedUsage;
       setCpuUsage(smoothedUsage);
       setIsWarning(smoothedUsage > 60);
       setIsCritical(smoothedUsage > 85);
-
-      // Reset counters
-      totalTime = 0;
-      idleTime = 0;
-      lastReset = now;
     }, 1000);
 
-    // Start measurement
-    scheduleIdleCheck();
-
     return () => {
-      if (idleCallbackId && typeof cancelIdleCallback !== 'undefined') {
-        cancelIdleCallback(idleCallbackId);
-      }
-      if (rafIdRef.current) {
-        cancelAnimationFrame(rafIdRef.current);
-      }
       if (updateIntervalId) {
         clearInterval(updateIntervalId);
       }
     };
-  }, [cpuUsage]);
+  }, []);
 
   // Format CPU usage for display
   const displayValue = Math.round(cpuUsage);

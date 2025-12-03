@@ -50,13 +50,17 @@ export class VoicePool {
             const existingVoice = this.activeVoices.get(midiNote);
             if (existingVoice) {
                 const now = this.context.currentTime;
-                // Stop existing voice immediately (cutItself = instant cut, no release)
+                // ✅ FIX: Quick fade-out to prevent clicks when cutting (especially for drums/808)
                 try {
                     if (typeof existingVoice.stop === 'function') {
+                        // Use stop() method if available (SampleVoice has stopCurrentSource with fade)
                         existingVoice.stop(now);
                     } else if (typeof existingVoice.noteOff === 'function') {
                         // Quick fade to prevent click
                         existingVoice.noteOff(now);
+                    } else if (typeof existingVoice.stopCurrentSource === 'function') {
+                        // Direct call to stopCurrentSource (has fade-out)
+                        existingVoice.stopCurrentSource();
                     }
                 } catch (e) {
                     console.warn('⚠️ Failed to stop existing voice for cutItself:', e);
@@ -101,13 +105,17 @@ export class VoicePool {
      * @param {number} midiNote - MIDI note number
      * @param {number} time - AudioContext time to release
      * @param {number|null} releaseVelocity - Note-off velocity (0-127, null = default)
+     * @param {number|null} fadeTime - Optional fade-out time in seconds (for loop restart, overrides release envelope)
      */
-    release(midiNote, time, releaseVelocity = null) {
+    release(midiNote, time, releaseVelocity = null, fadeTime = null) {
         const voice = this.activeVoices.get(midiNote);
         if (!voice) return;
 
         // ✅ RELEASE VELOCITY: Start release phase with release velocity
-        const releaseDuration = voice.release(time, releaseVelocity);
+        // ✅ NEW: Use fadeTime if provided (for loop restart), otherwise use release velocity
+        const releaseDuration = fadeTime !== null 
+            ? voice.release(time, null, fadeTime) // Use fadeTime if provided
+            : voice.release(time, releaseVelocity); // Otherwise use release velocity
 
         // Remove from active voices
         this.activeVoices.delete(midiNote);

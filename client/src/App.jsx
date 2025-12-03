@@ -853,7 +853,8 @@ function DAWApp() {
                 height: 'calc(100vh - 56px)', // Full viewport minus header
                 opacity: isLoadingProject ? 0.3 : 1, // ✅ FIX: Dim UI during loading
                 pointerEvents: isLoadingProject ? 'none' : 'auto', // ✅ FIX: Disable interactions during loading
-                transition: 'opacity 0.3s ease-out' // ✅ FIX: Smooth transition
+                transition: 'opacity 0.3s ease-out', // ✅ FIX: Smooth transition
+                overflow: 'hidden' // ✅ FIX: Prevent body scroll
               }}
             >
               <TopToolbar 

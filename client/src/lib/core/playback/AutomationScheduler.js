@@ -10,6 +10,8 @@
  * Extracted from PlaybackManager for better modularity
  */
 
+import { SampleAccurateTime } from '../utils/SampleAccurateTime.js'; // ✅ NEW: Sample-accurate timing
+
 export class AutomationScheduler {
     constructor(transport, audioEngine) {
         this.transport = transport;
@@ -66,7 +68,13 @@ export class AutomationScheduler {
         }
 
         automationData.forEach(event => {
-            const eventTime = this.transport.stepsToSeconds(event.time || 0);
+            const eventTimeRaw = this.transport.stepsToSeconds(event.time || 0);
+            
+            // ✅ NEW: Convert to sample-accurate time for professional precision
+            const eventTime = SampleAccurateTime.toSampleAccurate(
+                this.transport.audioContext,
+                eventTimeRaw
+            );
 
             this.transport.scheduleEvent(
                 eventTime,
@@ -117,18 +125,20 @@ export class AutomationScheduler {
             case 'volume':
             case 'gain':
                 if (channel.gainNode) {
-                    channel.gainNode.gain.setValueAtTime(
-                        value,
-                        this.transport.audioContext.currentTime
+                    // ✅ NEW: Use sample-accurate time for automation
+                    const sampleAccurateTime = SampleAccurateTime.getCurrentSampleAccurateTime(
+                        this.transport.audioContext
                     );
+                    channel.gainNode.gain.setValueAtTime(value, sampleAccurateTime);
                 }
                 break;
             case 'pan':
                 if (channel.panNode) {
-                    channel.panNode.pan.setValueAtTime(
-                        value,
-                        this.transport.audioContext.currentTime
+                    // ✅ NEW: Use sample-accurate time for automation
+                    const sampleAccurateTime = SampleAccurateTime.getCurrentSampleAccurateTime(
+                        this.transport.audioContext
                     );
+                    channel.panNode.pan.setValueAtTime(value, sampleAccurateTime);
                 }
                 break;
             case 'mute':
@@ -238,7 +248,10 @@ export class AutomationScheduler {
             };
 
             lanesWithData.forEach(lane => {
-                const value = lane.getValueAtTime(currentStep, 'linear');
+                // ✅ NEW: Use interpolation method from lane or event, fallback to 'linear'
+                // Support for advanced interpolation: exponential, bezier, cubic, etc.
+                const interpolationMethod = lane.interpolation || 'linear';
+                const value = lane.getValueAtTime(currentStep, interpolationMethod);
 
                 // Use default if automation has ended (value is null)
                 const effectiveValue = value !== null ? value : defaults[lane.ccNumber];
@@ -278,7 +291,11 @@ export class AutomationScheduler {
 
             // Apply automation to instrument
             if (Object.keys(automationParams).length > 0 && instrument.applyAutomation) {
-                instrument.applyAutomation(automationParams, this.transport.audioContext.currentTime);
+                // ✅ NEW: Use sample-accurate time for real-time automation
+                const sampleAccurateTime = SampleAccurateTime.getCurrentSampleAccurateTime(
+                    this.transport.audioContext
+                );
+                instrument.applyAutomation(automationParams, sampleAccurateTime);
             }
         };
 

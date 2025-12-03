@@ -29,6 +29,8 @@ import { testDirectPlayback } from '../../utils/directPlaybackTest.js';
 import { MixerInsert } from './MixerInsert.js';
 // ✅ OPTIMIZATION: Global mixer insert management
 import { mixerInsertManager } from './MixerInsertManager.js';
+// ✅ NEW: Latency compensation for professional playback
+import { LatencyCompensator } from './utils/LatencyCompensator.js';
 
 export class NativeAudioEngine {
     constructor(callbacks = {}) {
@@ -137,6 +139,9 @@ export class NativeAudioEngine {
             latencyHint: this.settings.latencyHint,
             sampleRate: this.settings.sampleRate
         });
+
+        // ✅ NEW: Initialize latency compensator after audioContext is created
+        this.latencyCompensator = new LatencyCompensator(this.audioContext);
 
         // ✅ NOTE: AudioContext will be suspended until user interaction
         // We'll resume it when user clicks "Stüdyoya Gir" or starts playback
@@ -1669,7 +1674,14 @@ export class NativeAudioEngine {
                 const getSourceInsert = (sourceInsertId) => {
                     return this.mixerInserts.get(sourceInsertId);
                 };
-                insert.updateSidechainSource(effectId, settings.scSourceId, getSourceInsert);
+                // ✅ FIX: Only connect if source insert exists (handles timing issues during deserialization)
+                const sourceInsert = getSourceInsert(settings.scSourceId);
+                if (sourceInsert) {
+                    insert.updateSidechainSource(effectId, settings.scSourceId, getSourceInsert);
+                } else {
+                    console.warn(`⚠️ Sidechain source ${settings.scSourceId} not found yet, will retry on next sync`);
+                    // Note: Sidechain will be connected on next _syncMixerTracksToAudioEngine call
+                }
             }
 
             console.log(`✅ Effect added: ${effectType} → ${insertId} (ID: ${effectId})`);
@@ -1678,6 +1690,46 @@ export class NativeAudioEngine {
         } catch (error) {
             console.error(`❌ Failed to add effect to ${insertId}:`, error);
             return null;
+        }
+    }
+
+    /**
+     * ✅ NEW: Estimate effect latency based on type and settings
+     * Some effects have known latency (e.g., compressor with lookahead)
+     * 
+     * @param {string} effectType - Effect type
+     * @param {Object} settings - Effect settings
+     * @returns {number} Estimated latency in samples
+     */
+    _estimateEffectLatency(effectType, settings) {
+        const sampleRate = this.audioContext.sampleRate;
+        
+        switch (effectType) {
+            case 'Compressor':
+                // Compressor with lookahead has latency
+                const lookaheadMs = settings.lookahead || 3; // Default 3ms
+                return Math.round((lookaheadMs / 1000) * sampleRate);
+            
+            case 'Limiter':
+                // Limiter with lookahead has latency
+                const limiterLookahead = settings.lookahead || 1; // Default 1ms
+                return Math.round((limiterLookahead / 1000) * sampleRate);
+            
+            case 'ModernDelay':
+            case 'Delay':
+                // Delay effects have inherent latency (delay time)
+                const delayTime = settings.timeLeft || settings.delayTime || 0;
+                return Math.round(delayTime * sampleRate);
+            
+            case 'ModernReverb':
+            case 'Reverb':
+                // Reverb has pre-delay latency
+                const preDelay = settings.preDelay || 0.02; // Default 20ms
+                return Math.round(preDelay * sampleRate);
+            
+            default:
+                // Most effects have no latency
+                return 0;
         }
     }
 

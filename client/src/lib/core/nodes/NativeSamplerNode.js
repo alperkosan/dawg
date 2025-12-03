@@ -77,7 +77,10 @@ export class NativeSamplerNode {
             expression: null
         };
 
-        this.activeSources = new Set();
+        // ✅ NEW: Store source metadata for fade-out support
+        // Map<source, { source, gainNode, envelopeGain }> for fade-out during loop restart
+        this.activeSources = new Set(); // Keep Set for backward compatibility
+        this.activeSourceMetadata = new Map(); // source -> { source, gainNode, envelopeGain }
 
         // Reverse buffer cache
         this._reversedBuffer = null;
@@ -373,28 +376,86 @@ export class NativeSamplerNode {
         }
 
         this.activeSources.add(source);
+        // ✅ NEW: Store metadata for fade-out support
+        this.activeSourceMetadata.set(source, { source, gainNode, envelopeGain });
 
         source.onended = () => {
             this.activeSources.delete(source);
+            this.activeSourceMetadata.delete(source);
             gainNode.disconnect();
             source.disconnect();
         };
     }
 
-    // ✅ Release all notes gracefully (for pause)
-    allNotesOff(time = null) {
+    // ✅ Release all notes gracefully (for pause/loop restart)
+    allNotesOff(time = null, fadeTime = null) {
         const stopTime = time !== null ? time : this.context.currentTime;
-        console.log(`🎹 NativeSampler allNotesOff: ${this.name} (${this.activeSources.size} active)`);
-
-        // For samples, allNotesOff is same as stopAll (no release envelope)
-        this.activeSources.forEach(source => {
-            try {
-                source.stop(stopTime);
-            } catch(e) {
-                // Already stopped, ignore error
-            }
+        console.log(`🎹 NativeSampler allNotesOff: ${this.name} (${this.activeSources.size} active)`, {
+            fadeTime: fadeTime ? `${(fadeTime * 1000).toFixed(1)}ms` : 'none',
+            metadataSize: this.activeSourceMetadata?.size || 0
         });
+
+        // ✅ NEW: Support fadeTime for smooth loop restart (prevents clicks on long samples)
+        if (fadeTime !== null && fadeTime > 0) {
+            let fadeApplied = 0;
+            let fadeSkipped = 0;
+            // Apply fade-out to each active source using BOTH envelopeGain and gainNode
+            // ✅ CRITICAL FIX: For envelopeNeutral samples (like 808), envelopeGain is at 1.0
+            // We need to fade-out envelopeGain (which controls the signal) AND gainNode (final output)
+            this.activeSources.forEach(source => {
+                try {
+                    const metadata = this.activeSourceMetadata.get(source);
+                    if (metadata && metadata.envelopeGain && metadata.gainNode) {
+                        // ✅ FIX: Fade-out envelopeGain first (controls the main signal)
+                        if (metadata.envelopeGain.gain) {
+                            const envelopeCurrentGain = metadata.envelopeGain.gain.value;
+                            metadata.envelopeGain.gain.cancelScheduledValues(stopTime);
+                            metadata.envelopeGain.gain.setValueAtTime(envelopeCurrentGain, stopTime);
+                            metadata.envelopeGain.gain.linearRampToValueAtTime(0.0001, stopTime + fadeTime);
+                        }
+                        // ✅ FIX: Also fade-out gainNode (final output stage)
+                        if (metadata.gainNode.gain) {
+                            const gainNodeCurrentGain = metadata.gainNode.gain.value;
+                            metadata.gainNode.gain.cancelScheduledValues(stopTime);
+                            metadata.gainNode.gain.setValueAtTime(gainNodeCurrentGain, stopTime);
+                            metadata.gainNode.gain.linearRampToValueAtTime(0.0001, stopTime + fadeTime);
+                        }
+                        fadeApplied++;
+                    } else {
+                        fadeSkipped++;
+                        if (import.meta.env.DEV) {
+                            console.warn(`⚠️ NativeSampler allNotesOff: No metadata/envelopeGain/gainNode for source`, {
+                                hasMetadata: !!metadata,
+                                hasEnvelopeGain: !!(metadata?.envelopeGain),
+                                hasGainNode: !!(metadata?.gainNode)
+                            });
+                        }
+                    }
+                    // Stop source after fade
+                    source.stop(stopTime + fadeTime);
+                } catch(e) {
+                    // Already stopped, ignore error
+                    if (import.meta.env.DEV) {
+                        console.warn(`⚠️ NativeSampler allNotesOff: Error during fade-out`, e);
+                    }
+                }
+            });
+            if (import.meta.env.DEV && (fadeApplied > 0 || fadeSkipped > 0)) {
+                console.log(`🎹 NativeSampler fade-out: ${fadeApplied} applied, ${fadeSkipped} skipped, stop at ${(stopTime + fadeTime).toFixed(3)}s`);
+            }
+        } else {
+            // Immediate stop (no fade)
+            this.activeSources.forEach(source => {
+                try {
+                    source.stop(stopTime);
+                } catch(e) {
+                    // Already stopped, ignore error
+                }
+            });
+        }
+        
         this.activeSources.clear();
+        this.activeSourceMetadata.clear();
         this._stopSampleChopPlayback();
     }
 

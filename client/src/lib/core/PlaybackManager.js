@@ -18,6 +18,7 @@ import {
     AutomationScheduler,
     AudioClipScheduler
 } from './playback/index.js';
+import { SampleAccurateTime } from './utils/SampleAccurateTime.js'; // ✅ NEW: For overlap detection timing
 
 /**
  * ⚡ PERFORMANCE OPTIMIZATION: Debounced Scheduling System
@@ -163,6 +164,9 @@ export class PlaybackManager {
 
         // ✅ REFACTOR: activeAudioSources moved to AudioClipScheduler
         // Access via: this.audioClipScheduler.getActiveSources()
+        
+        // ✅ FIX 1: Initialize active notes tracking (will be cleared on stop/loop restart)
+        // Note: activeNotesByPitch is now managed by NoteScheduler instance-level
 
     }
 
@@ -549,10 +553,14 @@ export class PlaybackManager {
         // This prevents vaSynth notes from getting stuck when send/unsend happens during loop restart
         this._isLoopRestarting = true;
 
-        // ✅ STEP 1: Stop all currently playing notes immediately
-        // This prevents stuck notes from previous loop
-        // Use immediate stop (stopAll) to ensure clean state for next loop
-        this._stopAllActiveNotes(true); // true = immediate stop, no release envelope
+        // ✅ STEP 1: Stop all currently playing notes with smooth fade-out
+        // This prevents stuck notes from previous loop while avoiding clicks
+        // ✅ FIX: Use longer fade-out (20ms) for long samples (like 808s) to prevent clicks
+        // 5ms was too short for samples longer than 1 second
+        this._stopAllActiveNotes(false, 0.02); // false = graceful stop, 20ms fade-out
+        
+        // ✅ FIX 1: Clear active notes tracking on loop restart
+        this.noteScheduler.clearActiveNotes();
 
         // ✅ STEP 2: Reset position to loop start
         this.currentPosition = this.loopStart;
@@ -824,11 +832,25 @@ export class PlaybackManager {
         });
 
     
-        // Uzunluğu en az 4 bar (64 step) yap ve en yakın bar sayısına yukarı yuvarla.
-        // (1 bar = 16 step)
-        this.patternLength = Math.max(64, Math.ceil(maxStep / 16) * 16);
+        // ✅ FIX: Pattern uzunluğunu gerçek uzunluğa göre ayarla
+        // En az 1 bar (16 step) olmalı, ama pattern'in gerçek uzunluğunu kullan
+        // En yakın bar sayısına yukarı yuvarla (1 bar = 16 step)
+        // ÖNCEKİ SORUN: Math.max(64, ...) her zaman en az 4 bar yapıyordu
+        // YENİ: Pattern'in gerçek uzunluğunu kullan, minimum 1 bar (16 step)
+        const calculatedLength = Math.ceil(maxStep / 16) * 16;
+        this.patternLength = Math.max(16, calculatedLength); // Minimum 1 bar (16 step)
         this.loopStart = 0;
         this.loopEnd = this.patternLength;
+        
+        if (import.meta.env.DEV) {
+            console.log(`🔄 Pattern loop calculated:`, {
+                maxStep,
+                calculatedLength,
+                patternLength: this.patternLength,
+                loopEnd: this.loopEnd,
+                bars: this.patternLength / 16
+            });
+        }
         
     }
 
@@ -906,13 +928,21 @@ export class PlaybackManager {
             console.log('✅ PlaybackManager: _scheduleContent() completed');
 
             // ⚡ IDLE OPTIMIZATION: Resume AudioContext if suspended
+            // ✅ FIX: Add small delay after resume to prevent click at playback start
             if (this.audioEngine.audioContext.state === 'suspended') {
                 await this.audioEngine.audioContext.resume();
                 console.log('🎵 AudioContext resumed for playback');
+                // ✅ FIX: Small delay after resume to let AudioContext stabilize (prevents click)
+                await new Promise(resolve => setTimeout(resolve, 5)); // 5ms delay
             }
 
-            console.log('🎵 PlaybackManager: Starting transport at', startTime);
-            this.transport.start(startTime);
+            // ✅ FIX: Add minimum delay before transport start to prevent click at bar start
+            // This ensures AudioContext is fully ready and prevents timing issues
+            const minStartDelay = 0.002; // 2ms minimum delay
+            const adjustedStartTime = Math.max(startTime + minStartDelay, this.audioEngine.audioContext.currentTime + minStartDelay);
+            
+            console.log('🎵 PlaybackManager: Starting transport at', adjustedStartTime);
+            this.transport.start(adjustedStartTime);
             console.log('✅ PlaybackManager: Transport started');
 
             // ✅ CRITICAL FIX: Set position AFTER start() to prevent transport from resetting it
@@ -1039,6 +1069,9 @@ export class PlaybackManager {
 
             // ✅ REFACTOR: Stop all active audio sources via AudioClipScheduler
             this.audioClipScheduler.stopAll();
+            
+            // ✅ FIX 1: Clear active notes tracking on stop
+            this.noteScheduler.clearActiveNotes();
 
             // ✅ NEW: Flush all effect tails (delay, reverb, etc.)
             this._flushAllEffects();
@@ -2064,67 +2097,31 @@ export class PlaybackManager {
      * @param {string | null} clipId - The ID of the parent clip for this note, for targeted clearing.
      */
     _scheduleInstrumentNotes(instrument, notes, instrumentId, baseTime, clipId = null, reason = 'manual') {
-        // ✅ REFACTOR: Delegate to NoteScheduler for simple cases
-        // Complex loop-aware scheduling still handled here for now (TODO: move to NoteScheduler)
-
-        // ✅ FIX: Use PlaybackManager's currentPosition, not transport.currentTick
-        // (transport may lag behind after jumpToStep)
-        // ✅ CRITICAL FIX: During resume, position-jump, and playback-start, preserve currentPosition
-        // Only reset to loop start during actual loop restart (when transport wraps)
-        const isResume = reason === 'resume';
-        const isPositionJump = reason === 'position-jump';
-        const isPlaybackStart = reason === 'playback-start';
-        const isNoteModified = reason === 'note-modified';
-        const isNoteAdded = reason === 'note-added';
-        // ✅ FIX: Preserve position for resume, position-jump, playback-start, and note modifications
-        // Only reset during actual loop restart (detected by transport wrap, not by reason)
-        const shouldPreservePosition = isResume || isPositionJump || isPlaybackStart || isNoteModified || isNoteAdded;
+        // ✅ FIX 2 & 3: Delegate to NoteScheduler (includes overlap detection and loop-aware logic)
+        // NoteScheduler now handles:
+        // - Loop-aware position calculation
+        // - Cross-batch overlap detection (instance-level activeNotesByPitch)
+        // - Sample-accurate timing
+        // - Latency compensation
+        // - Extended parameters and CC lanes
         
-        const loopLength = this.loopEnd - this.loopStart;
-        const loopStartTimeInSeconds = this.loopStart * this.transport.stepsToSeconds(1);
-        const timeSinceLoopStart = baseTime - (this.transport.audioContext.currentTime - loopStartTimeInSeconds);
-        // ✅ FIX: Only treat as loop restart if NOT preserving position AND position is beyond loop end
-        // The timeSinceLoopStart check is unreliable and causes false positives
-        const isLikelyLoopRestart = !shouldPreservePosition && this.loopEnabled && 
-                                    this.currentPosition >= this.loopEnd;
-        const currentStep = isLikelyLoopRestart ? this.loopStart : this.currentPosition; // ✅ Use loopStart during loop restart, preserve position otherwise
-        const currentPositionInSeconds = currentStep * this.transport.stepsToSeconds(1);
-        
-        // ✅ DEBUG: Log position calculation for loop restart scenarios
-        if (import.meta.env.DEV && (instrumentId === 'piano' || instrument?.type === 'vasynth')) {
-            if (isLikelyLoopRestart) {
-                console.log(`🔄 Loop restart position fix:`, {
-                    instrumentId,
-                    currentPosition: this.currentPosition,
-                    loopStart: this.loopStart,
-                    loopEnd: this.loopEnd,
-                    usingStep: currentStep,
-                    baseTime: baseTime.toFixed(3),
-                    now: this.transport.audioContext.currentTime.toFixed(3),
-                    timeSinceLoopStart: timeSinceLoopStart.toFixed(3),
-                    reason,
-                    isResume
-                });
-            } else if (isResume) {
-                console.log(`▶️ Resume position fix:`, {
-                    instrumentId,
-                    currentPosition: this.currentPosition,
-                    loopStart: this.loopStart,
-                    loopEnd: this.loopEnd,
-                    usingStep: currentStep,
-                    baseTime: baseTime.toFixed(3),
-                    now: this.transport.audioContext.currentTime.toFixed(3),
-                    reason,
-                    isResume
-                });
+        return this.noteScheduler.scheduleInstrumentNotes(
+            instrument,
+            notes,
+            instrumentId,
+            baseTime,
+            clipId,
+            {
+                currentPosition: this.currentPosition,
+                loopStart: this.loopStart,
+                loopEnd: this.loopEnd,
+                loopEnabled: this.loopEnabled,
+                reason: reason,
+                patternId: this.activePatternId // ✅ For CC lanes lookup
             }
-        }
+        );
 
-        // ✅ OPTIMIZATION: Cache loop calculations outside the loop (calculated once per instrument, not per note)
-        // loopLength already calculated above
-        const loopTimeInSeconds = this.loop ? loopLength * this.transport.stepsToSeconds(1) : 0;
-
-        notes.forEach(note => {
+        sortedNotes.forEach(note => {
             // ✅ GHOST NOTES: Skip muted notes during playback
             if (note.isMuted) {
                 return; // Skip this note
@@ -2259,6 +2256,59 @@ export class PlaybackManager {
                 // FALLBACK: Default to 1 step
                 noteDuration = this.transport.stepsToSeconds(1);
             }
+
+            // ✅ OVAL NOTE OVERLAP DETECTION: Check for overlapping notes of the same pitch
+            const notePitch = note.pitch || 'C4';
+            const noteEndTime = absoluteTime + noteDuration;
+            
+            // Check if there's an active note of the same pitch that overlaps
+            const existingActiveNote = activeNotesByPitch.get(notePitch);
+            if (existingActiveNote && existingActiveNote.endTime > absoluteTime) {
+                // ✅ OVERLAP DETECTED: Schedule early release for the existing note
+                // Calculate overlap duration and use 50% of it for fade-out (minimum 2ms)
+                const overlapDuration = existingActiveNote.endTime - absoluteTime;
+                const fadeOutDuration = Math.max(0.002, overlapDuration * 0.5); // 50% of overlap or 2ms minimum
+                const earlyReleaseTime = absoluteTime - fadeOutDuration;
+                
+                if (earlyReleaseTime > this.transport.audioContext.currentTime) {
+                    // Schedule early release with fade-out
+                    this.transport.scheduleEvent(
+                        SampleAccurateTime.toSampleAccurate(
+                            this.transport.audioContext,
+                            earlyReleaseTime
+                        ),
+                        (scheduledTime) => {
+                            try {
+                                instrument.releaseNote(notePitch, scheduledTime, null);
+                            } catch (error) {
+                                console.error(`PlaybackManager: Early release error:`, error);
+                            }
+                        },
+                        { type: 'noteOff', instrumentId, note: existingActiveNote.note, earlyRelease: true, fadeOut: fadeOutDuration }
+                    );
+                    
+                    if (import.meta.env.DEV) {
+                        console.log(`🔄 Oval note overlap detected (PlaybackManager):`, {
+                            instrumentId,
+                            pitch: notePitch,
+                            existingStart: existingActiveNote.startTime.toFixed(3),
+                            existingEnd: existingActiveNote.endTime.toFixed(3),
+                            newStart: absoluteTime.toFixed(3),
+                            overlap: (overlapDuration * 1000).toFixed(1) + 'ms',
+                            earlyRelease: earlyReleaseTime.toFixed(3),
+                            fadeOut: (fadeOutDuration * 1000).toFixed(1) + 'ms'
+                        });
+                    }
+                }
+            }
+            
+            // Update active notes map
+            activeNotesByPitch.set(notePitch, {
+                startTime: absoluteTime,
+                endTime: noteEndTime,
+                note: note,
+                absoluteTime: absoluteTime
+            });
 
             // ✅ PHASE 2: Extract extended parameters from note AND CC lanes
             const extendedParams = {};
@@ -3015,23 +3065,35 @@ export class PlaybackManager {
      * ✅ NEW: Stop all currently playing notes across all instruments
      * This prevents stuck notes when loop restarts or playback stops
      * 
-     * @param {boolean} immediate - If true, use stopAll() for immediate stop (loop restart).
-     *                               If false, use allNotesOff() for graceful release (pause).
+     * @param {boolean} immediate - If true, use stopAll() for immediate stop (emergency only).
+     *                               If false, use allNotesOff() for graceful release (pause/loop restart).
+     * @param {number} fadeTime - Fade-out time in seconds (default: 0.01 for pause, 0.005 for loop restart)
      */
-    _stopAllActiveNotes(immediate = false) {
+    _stopAllActiveNotes(immediate = false, fadeTime = 0.01) {
         let stoppedCount = 0;
         const currentTime = this.transport.audioContext.currentTime;
 
         this.audioEngine.instruments.forEach((instrument, instrumentId) => {
             try {
                 // Check if instrument has active notes
-                const hasActiveNotes = instrument.isPlaying ||
+                // ✅ FIX: NativeSamplerNode uses activeSources Set, not isPlaying or activeNotes
+                const hasActiveNotes = (instrument.isPlaying !== undefined && instrument.isPlaying) ||
                                       (instrument.activeSources && instrument.activeSources.size > 0) ||
                                       (instrument.activeNotes && instrument.activeNotes.size > 0);
+                
+                // ✅ DEBUG: Log active notes check for 808
+                if (import.meta.env.DEV && instrumentId.includes('808')) {
+                    console.log(`🔍 _stopAllActiveNotes check for ${instrumentId}:`, {
+                        isPlaying: instrument.isPlaying,
+                        activeSourcesSize: instrument.activeSources?.size || 0,
+                        activeNotesSize: instrument.activeNotes?.size || 0,
+                        hasActiveNotes
+                    });
+                }
 
                 if (hasActiveNotes) {
                     if (immediate) {
-                        // ✅ CRITICAL FIX: Loop restart requires immediate stop to prevent stuck notes
+                        // ✅ EMERGENCY STOP: Only for panic button - immediate stop, no fade
                         // Use stopAll() for instant cleanup - no release envelope
                         if (typeof instrument.stopAll === 'function') {
                             instrument.stopAll();
@@ -3042,17 +3104,39 @@ export class PlaybackManager {
                             stoppedCount++;
                         }
                     } else {
-                        // ✅ Graceful release for pause - use envelope for natural fade-out
+                        // ✅ GRACEFUL STOP: Use fade-out to prevent clicks (loop restart & pause)
+                        // Try to use fade-out methods first
                         if (typeof instrument.allNotesOff === 'function') {
-                            instrument.allNotesOff(currentTime);
+                            // ✅ NEW: Pass fadeTime to allNotesOff if it supports it
+                            // For instruments that support fadeTime, use it for smoother transitions
+                            if (instrument.allNotesOff.length >= 2) {
+                                // allNotesOff(time, fadeTime) signature
+                                instrument.allNotesOff(currentTime, fadeTime);
+                            } else {
+                                // allNotesOff(time) signature (fallback)
+                                instrument.allNotesOff(currentTime);
+                            }
                             stoppedCount++;
                         } else if (typeof instrument.noteOff === 'function') {
+                            // ✅ NEW: Pass fadeTime to noteOff if it supports it
                             // noteOff(null) = stop all notes with release envelope
-                            instrument.noteOff(null, currentTime);
+                            if (instrument.noteOff.length >= 4) {
+                                // noteOff(midiNote, stopTime, releaseVelocity, fadeTime) signature
+                                instrument.noteOff(null, currentTime, null, fadeTime);
+                            } else {
+                                // noteOff(null, currentTime) signature (fallback)
+                                instrument.noteOff(null, currentTime);
+                            }
                             stoppedCount++;
                         } else if (typeof instrument.stopAll === 'function') {
-                            // Fallback: immediate stop if noteOff not available
-                            instrument.stopAll();
+                            // ✅ NEW: Pass fadeTime to stopAll if it supports it
+                            if (instrument.stopAll.length >= 1) {
+                                // stopAll(fadeTime) signature
+                                instrument.stopAll(fadeTime);
+                            } else {
+                                // stopAll() signature (fallback - uses default release)
+                                instrument.stopAll();
+                            }
                             stoppedCount++;
                         }
                     }
@@ -3063,7 +3147,7 @@ export class PlaybackManager {
         });
 
         if (import.meta.env.DEV) {
-            console.log(`🛑 _stopAllActiveNotes: Stopped ${stoppedCount} instruments (${immediate ? 'immediate' : 'graceful'})`);
+            console.log(`🛑 _stopAllActiveNotes: Stopped ${stoppedCount} instruments (${immediate ? 'immediate' : `graceful ${(fadeTime * 1000).toFixed(1)}ms`})`);
         }
     }
 

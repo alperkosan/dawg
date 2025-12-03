@@ -41,7 +41,14 @@ export class EffectRegistry {
         { name: 'highDrive', defaultValue: 1.0, minValue: 0, maxValue: 2.0 },
         { name: 'lowMix', defaultValue: 1.0, minValue: 0, maxValue: 1 },
         { name: 'midMix', defaultValue: 1.0, minValue: 0, maxValue: 1 },
-        { name: 'highMix', defaultValue: 1.0, minValue: 0, maxValue: 1 }
+        { name: 'highMix', defaultValue: 1.0, minValue: 0, maxValue: 1 },
+        // ✅ NEW: Oversampling, Drive Curve, and Tape Modeling
+        { name: 'oversampling', defaultValue: 2, minValue: 1, maxValue: 8 },
+        { name: 'driveCurve', defaultValue: 3, minValue: 0, maxValue: 4 },
+        { name: 'tapeBias', defaultValue: 0.5, minValue: 0, maxValue: 1 },
+        { name: 'tapeWow', defaultValue: 0, minValue: 0, maxValue: 1 },
+        { name: 'tapeFlutter', defaultValue: 0, minValue: 0, maxValue: 1 },
+        { name: 'tapeSpeed', defaultValue: 1.0, minValue: 0.5, maxValue: 2.0 }
       ]
     });
 
@@ -65,6 +72,10 @@ export class EffectRegistry {
         // 🎯 NEW v2.0: Detection mode
         { name: 'detectionMode', defaultValue: 0, minValue: 0, maxValue: 1 },
         { name: 'rmsWindow', defaultValue: 10, minValue: 1, maxValue: 50 },
+        // 🎯 NEW: Compressor model (0=Clean/VCA, 1=Opto, 2=FET)
+        { name: 'compressorModel', defaultValue: 0, minValue: 0, maxValue: 2 },
+        // 🎯 NEW: Mix/Blend control for parallel compression (0-100% wet)
+        { name: 'mix', defaultValue: 100, minValue: 0, maxValue: 100 },
         // Sidechain
         { name: 'scEnable', defaultValue: 0, minValue: 0, maxValue: 1 },
         { name: 'scGain', defaultValue: 0, minValue: -24, maxValue: 24 },
@@ -234,7 +245,9 @@ export class EffectRegistry {
         { name: 'modDepth', defaultValue: 0.3, minValue: 0.0, maxValue: 1.0 },   // Chorus modulation depth
         { name: 'modRate', defaultValue: 0.5, minValue: 0.1, maxValue: 2.0 },    // LFO rate in Hz
         { name: 'lowCut', defaultValue: 100, minValue: 20, maxValue: 1000 },     // 🎯 NEW: High-pass filter
-        { name: 'shimmer', defaultValue: 0.0, minValue: 0.0, maxValue: 1.0 }     // 🎯 NEW: Pitch shift amount
+        { name: 'highCut', defaultValue: 20000, minValue: 2000, maxValue: 20000 }, // ✅ NEW: Low-pass filter
+        { name: 'shimmer', defaultValue: 0.0, minValue: 0.0, maxValue: 1.0 },     // 🎯 NEW: Pitch shift amount
+        { name: 'reverbAlgorithm', defaultValue: 0, minValue: 0, maxValue: 4 }     // ✅ NEW: Reverb algorithm (0=Room, 1=Hall, 2=Plate, 3=Spring, 4=Chamber)
       ]
     });
 
@@ -257,7 +270,12 @@ export class EffectRegistry {
         { name: 'flutter', defaultValue: 0, minValue: 0, maxValue: 1 },
         { name: 'modDepth', defaultValue: 0.0, minValue: 0.0, maxValue: 0.05 },
         { name: 'modRate', defaultValue: 0.5, minValue: 0.1, maxValue: 5.0 },
-        { name: 'width', defaultValue: 1.0, minValue: 0.0, maxValue: 2.0 }
+        { name: 'width', defaultValue: 1.0, minValue: 0.0, maxValue: 2.0 },
+        // ✅ NEW: Delay model, tempo sync, and note division
+        { name: 'delayModel', defaultValue: 0, minValue: 0, maxValue: 3 },
+        { name: 'tempoSync', defaultValue: 0, minValue: 0, maxValue: 1 },
+        { name: 'noteDivision', defaultValue: 3, minValue: 0, maxValue: 9 },
+        { name: 'bpm', defaultValue: 120, minValue: 60, maxValue: 200 }
       ]
     });
 

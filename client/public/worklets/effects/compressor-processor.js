@@ -33,6 +33,10 @@ class CompressorProcessor extends AudioWorkletProcessor {
       // 🎯 NEW v2.0: Detection mode (0=Peak, 1=RMS)
       { name: 'detectionMode', defaultValue: 0, minValue: 0, maxValue: 1 },
       { name: 'rmsWindow', defaultValue: 10, minValue: 1, maxValue: 50 }, // RMS window in ms
+      // 🎯 NEW: Compressor model (0=Clean/VCA, 1=Opto, 2=FET)
+      { name: 'compressorModel', defaultValue: 0, minValue: 0, maxValue: 2 },
+      // 🎯 NEW: Mix/Blend control for parallel compression (0-100% wet)
+      { name: 'mix', defaultValue: 100, minValue: 0, maxValue: 100 },
       // Sidechain parameters
       { name: 'scEnable', defaultValue: 0, minValue: 0, maxValue: 1 },
       { name: 'scGain', defaultValue: 0, minValue: -24, maxValue: 24 },
@@ -204,8 +208,15 @@ class CompressorProcessor extends AudioWorkletProcessor {
           continue;
         }
 
-        const wetSample = this.processEffect(delayedSample, channel, i, parameters, stereoLink, detect);
-        outputChannel[i] = drySample * (1 - wet) + wetSample * wet;
+        // 🎯 NEW: Get mix/blend parameter for parallel compression
+        const mixParam = this.getParam(parameters.mix, 0) ?? (this.settings.mix ?? 100);
+        const mix = Math.max(0, Math.min(100, mixParam)) / 100; // 0-1 range
+        
+        const wetSample = this.processEffect(delayedSample, channel, parameters, stereoLink, detect);
+        
+        // 🎯 NEW: Parallel compression (mix control)
+        // mix=0: 100% dry (no compression), mix=1: 100% wet (full compression)
+        outputChannel[i] = drySample * (1 - mix) + wetSample * mix;
 
         // Frequency band analysis (visual only)
         const absSample = Math.abs(drySample);
@@ -275,9 +286,9 @@ class CompressorProcessor extends AudioWorkletProcessor {
   processEffect(sample, channel, parameters, stereoLink = 1, detectorSample = undefined) {
     const threshold = this.getParam(parameters.threshold, 0) || this.settings.threshold || -24;
     const ratio = this.getParam(parameters.ratio, 0) || this.settings.ratio || 4;
-    const attack = this.getParam(parameters.attack, 0) || this.settings.attack || 0.003;
-    const release = this.getParam(parameters.release, 0) || this.settings.release || 0.25;
-    const knee = this.getParam(parameters.knee, 0) || this.settings.knee || 30;
+    let attack = this.getParam(parameters.attack, 0) || this.settings.attack || 0.003;
+    let release = this.getParam(parameters.release, 0) || this.settings.release || 0.25;
+    let knee = this.getParam(parameters.knee, 0) || this.settings.knee || 30;
     const upwardRatio = this.getParam(parameters.upwardRatio, 0) || this.settings.upwardRatio || 2;
     const upwardDepth = this.getParam(parameters.upwardDepth, 0) || this.settings.upwardDepth || 0;
     const autoMakeup = this.getParam(parameters.autoMakeup, 0) || this.settings.autoMakeup || 0;
@@ -285,6 +296,23 @@ class CompressorProcessor extends AudioWorkletProcessor {
     // 🎯 NEW v2.0: Detection mode (Peak vs RMS)
     const detectionMode = Math.round(this.getParam(parameters.detectionMode, 0) ?? this.settings.detectionMode ?? 0);
     const rmsWindowMs = this.getParam(parameters.rmsWindow, 0) ?? this.settings.rmsWindow ?? 10;
+    
+    // 🎯 NEW: Compressor model (0=Clean/VCA, 1=Opto, 2=FET)
+    const compressorModel = Math.round(this.getParam(parameters.compressorModel, 0) ?? this.settings.compressorModel ?? 0);
+    
+    // Apply model characteristics (modify attack/release/knee based on model)
+    if (compressorModel === 1) {
+      // OPTO (LA-2A style): Smooth, musical, slower attack/release
+      attack = attack * 1.5; // Slower attack (photocell response)
+      release = release * 1.8; // Slower, more musical release
+      knee = knee * 1.2; // Softer knee for transparency
+    } else if (compressorModel === 2) {
+      // FET (1176 style): Aggressive, fast, punchy
+      attack = attack * 0.3; // Much faster attack (FET transistors)
+      release = release * 0.6; // Faster release
+      knee = knee * 0.5; // Harder knee (more aggressive)
+    }
+    // Model 0 (Clean/VCA): Use parameters as-is (transparent, precise)
 
     const state = this.channelState[channel] || this.channelState[0];
 

@@ -23,7 +23,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import PluginContainerV2 from '../container/PluginContainerV2';
 import { TwoPanelLayout } from '../layout/TwoPanelLayout';
-import { Knob } from '@/components/controls';
+import { Knob, ModeSelector } from '@/components/controls';
 import { getCategoryColors } from '../PluginDesignSystem';
 import { useParameterBatcher } from '@/services/ParameterBatcher';
 import { useRenderer } from '@/services/CanvasRenderManager';
@@ -186,6 +186,10 @@ const ModernReverbUI_V2 = ({ trackId, effect, effectNode, onChange, definition }
   const [localModRate, setLocalModRate] = useState(modRate);
   const [localLowCut, setLocalLowCut] = useState(lowCut);
   const [localShimmer, setLocalShimmer] = useState(shimmer);
+  
+  // ✅ NEW: Reverb algorithm and high-cut state
+  const [localReverbAlgorithm, setLocalReverbAlgorithm] = useState(effect.settings.reverbAlgorithm !== undefined ? effect.settings.reverbAlgorithm : 0);
+  const [localHighCut, setLocalHighCut] = useState(effect.settings.highCut !== undefined ? effect.settings.highCut : 20000);
 
   // Get category colors
   const categoryColors = useMemo(() => getCategoryColors('spacetime-chamber'), []);
@@ -217,6 +221,8 @@ const ModernReverbUI_V2 = ({ trackId, effect, effectNode, onChange, definition }
     if (effect.settings.modRate !== undefined) setLocalModRate(effect.settings.modRate);
     if (effect.settings.lowCut !== undefined) setLocalLowCut(effect.settings.lowCut);
     if (effect.settings.shimmer !== undefined) setLocalShimmer(effect.settings.shimmer);
+    if (effect.settings.reverbAlgorithm !== undefined) setLocalReverbAlgorithm(effect.settings.reverbAlgorithm);
+    if (effect.settings.highCut !== undefined) setLocalHighCut(effect.settings.highCut);
   }, [effect.settings]);
 
   // Handle individual parameter changes
@@ -239,6 +245,8 @@ const ModernReverbUI_V2 = ({ trackId, effect, effectNode, onChange, definition }
       case 'modRate': setLocalModRate(value); break;
       case 'lowCut': setLocalLowCut(value); break;
       case 'shimmer': setLocalShimmer(value); break;
+      case 'reverbAlgorithm': setLocalReverbAlgorithm(value); break;
+      case 'highCut': setLocalHighCut(value); break;
     }
   }, [setParam, handleMixerEffectChange, trackId, effect.id, onChange]);
 
@@ -263,6 +271,23 @@ const ModernReverbUI_V2 = ({ trackId, effect, effectNode, onChange, definition }
           <div className="absolute top-4 right-4 flex flex-col items-end gap-1 pointer-events-none">
             <div className="text-[#22D3EE] font-bold text-lg tracking-wider">MODERN REVERB</div>
             <div className="text-[#A855F7] text-xs tracking-widest uppercase opacity-80">The Spacetime Chamber</div>
+          </div>
+          
+          {/* ✅ NEW: Reverb Algorithm Selector (Top Left) */}
+          <div className="absolute top-4 left-4 bg-black/60 rounded-lg p-2 border border-[#22D3EE]/20 backdrop-blur-sm pointer-events-auto">
+            <div className="text-[9px] text-white/60 mb-1 text-center">ALGORITHM</div>
+            <ModeSelector
+              modes={[
+                { id: 0, name: 'Room', description: 'Small' },
+                { id: 1, name: 'Hall', description: 'Large' },
+                { id: 2, name: 'Plate', description: 'Metallic' },
+                { id: 3, name: 'Spring', description: 'Vintage' },
+                { id: 4, name: 'Chamber', description: 'Studio' }
+              ]}
+              activeMode={localReverbAlgorithm}
+              onChange={(mode) => handleParamChange('reverbAlgorithm', mode)}
+              compact={true}
+            />
           </div>
         </div>
 
@@ -414,6 +439,17 @@ const ModernReverbUI_V2 = ({ trackId, effect, effectNode, onChange, definition }
                 sizeVariant="small"
                 category="spacetime-chamber"
                 valueFormatter={(v) => `${v.toFixed(0)} Hz`}
+              />
+              <Knob
+                label="HIGH CUT"
+                value={localHighCut}
+                onChange={(val) => handleParamChange('highCut', val)}
+                min={2000}
+                max={20000}
+                defaultValue={20000}
+                sizeVariant="small"
+                category="spacetime-chamber"
+                valueFormatter={(v) => v >= 20000 ? 'OFF' : `${(v / 1000).toFixed(1)} kHz`}
               />
               <Knob
                 label="SHIMMER"

@@ -38,6 +38,7 @@ import {
   Plus, Volume2, VolumeX, Headphones,
   Trash2, Power, Settings
 } from 'lucide-react';
+import { Checkbox } from '@/components/controls';
 
 // Constants
 const MIN_FREQ = 20;
@@ -260,6 +261,97 @@ const BandControl = ({
             {band.q.toFixed(2)}
           </div>
         </div>
+      </div>
+
+      {/* ✅ NEW: Dynamic EQ Controls */}
+      <div className="mt-3 pt-3 border-t border-white/5">
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-[9px] text-gray-400 uppercase">Dynamic EQ</div>
+          <Checkbox
+            checked={band.dynamicEnabled || false}
+            onChange={(checked) => onChange(index, 'dynamicEnabled', checked)}
+            onClick={(e) => e.stopPropagation()}
+            size="small"
+          />
+        </div>
+
+        {band.dynamicEnabled && (
+          <div className="grid grid-cols-2 gap-2 animate-in fade-in duration-200">
+            <div>
+              <div className="text-[8px] text-gray-500 mb-1">THRESHOLD</div>
+              <input
+                type="range"
+                min="-60"
+                max="0"
+                step="0.1"
+                value={band.threshold !== undefined ? band.threshold : -12}
+                onChange={(e) => onChange(index, 'threshold', parseFloat(e.target.value))}
+                onClick={(e) => e.stopPropagation()}
+                className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                style={{
+                  background: `linear-gradient(to right, ${bandColor} 0%, ${bandColor} ${((band.threshold || -12) + 60) / 60 * 100}%, rgba(255,255,255,0.1) ${((band.threshold || -12) + 60) / 60 * 100}%, rgba(255,255,255,0.1) 100%)`
+                }}
+              />
+              <div className="text-[9px] text-gray-400 mt-0.5 text-center">
+                {(band.threshold || -12).toFixed(1)} dB
+              </div>
+            </div>
+
+            <div>
+              <div className="text-[8px] text-gray-500 mb-1">RATIO</div>
+              <input
+                type="range"
+                min="1"
+                max="20"
+                step="0.1"
+                value={band.ratio !== undefined ? band.ratio : 2}
+                onChange={(e) => onChange(index, 'ratio', parseFloat(e.target.value))}
+                onClick={(e) => e.stopPropagation()}
+                className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                style={{
+                  background: `linear-gradient(to right, ${bandColor} 0%, ${bandColor} ${((band.ratio || 2) - 1) / 19 * 100}%, rgba(255,255,255,0.1) ${((band.ratio || 2) - 1) / 19 * 100}%, rgba(255,255,255,0.1) 100%)`
+                }}
+              />
+              <div className="text-[9px] text-gray-400 mt-0.5 text-center">
+                1:{(band.ratio || 2).toFixed(1)}
+              </div>
+            </div>
+
+            <div>
+              <div className="text-[8px] text-gray-500 mb-1">ATTACK</div>
+              <input
+                type="range"
+                min="0.1"
+                max="100"
+                step="0.1"
+                value={band.attack !== undefined ? band.attack : 10}
+                onChange={(e) => onChange(index, 'attack', parseFloat(e.target.value))}
+                onClick={(e) => e.stopPropagation()}
+                className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+              />
+              <div className="text-[9px] text-gray-400 mt-0.5 text-center">
+                {(band.attack || 10).toFixed(1)} ms
+              </div>
+            </div>
+
+            <div>
+              <div className="text-[8px] text-gray-500 mb-1">RELEASE</div>
+              <input
+                type="range"
+                min="1"
+                max="500"
+                step="1"
+                value={band.release !== undefined ? band.release : 100}
+                onChange={(e) => onChange(index, 'release', parseFloat(e.target.value))}
+                onClick={(e) => e.stopPropagation()}
+                className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+              />
+              <div className="text-[9px] text-gray-400 mt-0.5 text-center">
+                {(band.release || 100).toFixed(0)} ms
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -704,7 +796,18 @@ export const MultiBandEQUI_V2 = ({ trackId, effect, effectNode, definition }) =>
   const { handleMixerEffectChange } = useMixerStore();
 
   // State
-  const [bands, setBands] = useState(effect.settings.bands || []);
+  const [bands, setBands] = useState(() => {
+    // ✅ NEW: Ensure all bands have Dynamic EQ parameters
+    const initialBands = effect.settings.bands || [];
+    return initialBands.map(band => ({
+      ...band,
+      dynamicEnabled: band.dynamicEnabled !== undefined ? band.dynamicEnabled : false,
+      threshold: band.threshold !== undefined ? band.threshold : -12,
+      ratio: band.ratio !== undefined ? band.ratio : 2,
+      attack: band.attack !== undefined ? band.attack : 10,
+      release: band.release !== undefined ? band.release : 100
+    }));
+  });
   const [wet, setWet] = useState(effect.settings.wet || 1.0);
   const [output, setOutput] = useState(effect.settings.output || 1.0);
   const [activeBandIndex, setActiveBandIndex] = useState(0);
@@ -810,7 +913,13 @@ export const MultiBandEQUI_V2 = ({ trackId, effect, effectNode, definition }) =>
       frequency: 1000,
       gain: 0,
       q: 1.0,
-      active: true
+      active: true,
+      // ✅ NEW: Dynamic EQ default parameters
+      dynamicEnabled: false,
+      threshold: -12,
+      ratio: 2,
+      attack: 10,
+      release: 100
     };
 
     setBands(prev => {

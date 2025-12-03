@@ -30,6 +30,8 @@ body {
   font-family: sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* ✅ FIX: Prevent body scroll - app-container handles all scrolling */
+  overflow: hidden;
   /* Apply centralized scrollbar styles */
 }
 

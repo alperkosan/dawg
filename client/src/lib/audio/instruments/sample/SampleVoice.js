@@ -338,10 +338,15 @@ export class SampleVoice extends BaseVoice {
         }
 
         // ✅ ADSR Envelope from instrument data
-        const attack = instrumentData?.attack !== undefined ? instrumentData.attack / 1000 : 0.005; // Default 5ms
+        let attack = instrumentData?.attack !== undefined ? instrumentData.attack / 1000 : 0.005; // Default 5ms
         const decay = instrumentData?.decay !== undefined ? instrumentData.decay / 1000 : 0;
         const sustain = instrumentData?.sustain !== undefined ? instrumentData.sustain / 100 : 1; // 0-100% to 0-1
         const useADSR = instrumentData && (instrumentData.attack !== undefined || instrumentData.decay !== undefined || instrumentData.sustain !== undefined);
+
+        // ✅ FIX: Minimum attack time to prevent clicks (especially for drums/808)
+        // Even if attack is 0, use at least 1ms to prevent buffer start clicks
+        const minAttackTime = 0.001; // 1ms minimum
+        attack = Math.max(attack, minAttackTime);
 
         // Store release time for later use
         if (instrumentData?.release !== undefined) {
@@ -349,11 +354,12 @@ export class SampleVoice extends BaseVoice {
         }
 
         this.envelopeGain.gain.cancelScheduledValues(time);
-        this.envelopeGain.gain.setValueAtTime(0, time);
+        // ✅ FIX: Start from very small value instead of 0 to prevent click
+        this.envelopeGain.gain.setValueAtTime(0.0001, time);
 
         if (useADSR) {
             // Full ADSR envelope
-            // Attack: 0 -> 1
+            // Attack: 0.0001 -> 1 (with minimum attack time to prevent clicks)
             this.envelopeGain.gain.linearRampToValueAtTime(1, time + attack);
 
             // Decay: 1 -> sustain level
@@ -365,6 +371,7 @@ export class SampleVoice extends BaseVoice {
             }
         } else {
             // Simple attack envelope (legacy behavior)
+            // ✅ FIX: Use minimum attack time even for legacy mode
             this.envelopeGain.gain.linearRampToValueAtTime(1, time + attack);
             this.envelopePhase = 'attack';
         }
@@ -483,30 +490,39 @@ export class SampleVoice extends BaseVoice {
      *
      * @param {number} time - AudioContext time
      * @param {number|null} releaseVelocity - Note-off velocity (0-127, null = default)
+     * @param {number|null} fadeTime - Optional fade-out time in seconds (for loop restart, overrides release velocity calculation)
      * @returns {number} Release duration in seconds
      */
-    release(time, releaseVelocity = null) {
+    release(time, releaseVelocity = null, fadeTime = null) {
         if (!this.currentSource || !this.isActive) {
             return 0;
         }
 
-        // ✅ RELEASE VELOCITY: Calculate effective release time based on release velocity
-        // Higher release velocity = faster release (shorter time)
-        // Lower release velocity = slower release (longer time)
-        // Formula: effectiveReleaseTime = baseReleaseTime * (1 - releaseVelocity / 127 * 0.5)
-        // - releaseVelocity = 127 → effectiveReleaseTime = baseReleaseTime * 0.5 (50% faster)
-        // - releaseVelocity = 0 → effectiveReleaseTime = baseReleaseTime * 1.0 (normal)
-        // - releaseVelocity = 64 → effectiveReleaseTime = baseReleaseTime * 0.75 (25% faster)
-        let effectiveReleaseTime = this.releaseTime;
+        // ✅ NEW: Use fadeTime if provided (for loop restart), otherwise calculate from release velocity
+        let effectiveReleaseTime;
         
-        if (releaseVelocity !== null && releaseVelocity !== undefined) {
-            const velocityNormalized = Math.max(0, Math.min(127, releaseVelocity)) / 127; // 0-1
-            // Map velocity to release time: 0.5x (fast) to 1.0x (normal)
-            const releaseTimeMultiplier = 1.0 - (velocityNormalized * 0.5);
-            effectiveReleaseTime = this.releaseTime * releaseTimeMultiplier;
+        if (fadeTime !== null && fadeTime > 0) {
+            // ✅ LOOP RESTART: Use provided fadeTime for smooth transition
+            effectiveReleaseTime = fadeTime;
+        } else {
+            // ✅ RELEASE VELOCITY: Calculate effective release time based on release velocity
+            // Higher release velocity = faster release (shorter time)
+            // Lower release velocity = slower release (longer time)
+            // Formula: effectiveReleaseTime = baseReleaseTime * (1 - releaseVelocity / 127 * 0.5)
+            // - releaseVelocity = 127 → effectiveReleaseTime = baseReleaseTime * 0.5 (50% faster)
+            // - releaseVelocity = 0 → effectiveReleaseTime = baseReleaseTime * 1.0 (normal)
+            // - releaseVelocity = 64 → effectiveReleaseTime = baseReleaseTime * 0.75 (25% faster)
+            effectiveReleaseTime = this.releaseTime;
             
-            if (import.meta.env.DEV) {
-                console.log(`🎚️ SampleVoice release: velocity=${releaseVelocity}, baseTime=${this.releaseTime.toFixed(3)}s, effectiveTime=${effectiveReleaseTime.toFixed(3)}s`);
+            if (releaseVelocity !== null && releaseVelocity !== undefined) {
+                const velocityNormalized = Math.max(0, Math.min(127, releaseVelocity)) / 127; // 0-1
+                // Map velocity to release time: 0.5x (fast) to 1.0x (normal)
+                const releaseTimeMultiplier = 1.0 - (velocityNormalized * 0.5);
+                effectiveReleaseTime = this.releaseTime * releaseTimeMultiplier;
+                
+                if (import.meta.env.DEV) {
+                    console.log(`🎚️ SampleVoice release: velocity=${releaseVelocity}, baseTime=${this.releaseTime.toFixed(3)}s, effectiveTime=${effectiveReleaseTime.toFixed(3)}s`);
+                }
             }
         }
 
@@ -564,15 +580,68 @@ export class SampleVoice extends BaseVoice {
     }
 
     /**
+     * Stop voice immediately (with quick fade-out to prevent clicks)
+     * Called when cutting/retriggering (cutItself behavior)
+     * 
+     * @param {number} time - AudioContext time (optional, defaults to now)
+     */
+    stop(time = null) {
+        if (!this.isActive || !this.currentSource) {
+            return;
+        }
+
+        const now = time || this.context.currentTime;
+        const fadeTime = 0.002; // 2ms quick fade to prevent click
+        
+        try {
+            // Quick fade-out on envelope gain before stopping source
+            if (this.envelopeGain && this.envelopeGain.gain) {
+                const currentGain = this.envelopeGain.gain.value;
+                if (currentGain > 0.0001) {
+                    this.envelopeGain.gain.cancelScheduledValues(now);
+                    this.envelopeGain.gain.setValueAtTime(currentGain, now);
+                    this.envelopeGain.gain.linearRampToValueAtTime(0.0001, now + fadeTime);
+                }
+            }
+            
+            // Stop source after fade
+            this.currentSource.stop(now + fadeTime);
+            this.currentSource.disconnect();
+        } catch (e) {
+            // Already stopped or scheduled
+        }
+        
+        this.currentSource = null;
+        this.isActive = false;
+        this.envelopePhase = 'idle';
+        this.currentAmplitude = 0;
+    }
+
+    /**
      * Stop current buffer source (internal helper)
+     * ✅ FIX: Quick fade-out to prevent clicks when cutting/retriggering
      */
     stopCurrentSource() {
         if (this.currentSource) {
             try {
-                this.currentSource.stop();
+                const now = this.context.currentTime;
+                const fadeTime = 0.002; // 2ms quick fade to prevent click
+                
+                // Quick fade-out on envelope gain before stopping source
+                if (this.envelopeGain && this.envelopeGain.gain) {
+                    const currentGain = this.envelopeGain.gain.value;
+                    if (currentGain > 0.0001) {
+                        this.envelopeGain.gain.cancelScheduledValues(now);
+                        this.envelopeGain.gain.setValueAtTime(currentGain, now);
+                        this.envelopeGain.gain.linearRampToValueAtTime(0.0001, now + fadeTime);
+                    }
+                }
+                
+                // Stop source after fade
+                this.currentSource.stop(now + fadeTime);
                 this.currentSource.disconnect();
             } catch (e) {
-                // Already stopped
+                // Already stopped or scheduled
             }
             this.currentSource = null;
         }
