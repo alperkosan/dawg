@@ -155,6 +155,7 @@ const ClipperUI_V2 = ({ trackId, effect, effectNode, definition }) => {
     postGain = 0,
     mix = 100,
     mode = 0,
+    curve = 1,
     dcFilter = 1,
     oversample = 2
   } = effect.settings || {};
@@ -167,6 +168,7 @@ const ClipperUI_V2 = ({ trackId, effect, effectNode, definition }) => {
   const [localPostGain, setLocalPostGain] = useState(postGain);
   const [localMix, setLocalMix] = useState(mix);
   const [localMode, setLocalMode] = useState(mode);
+  const [localCurve, setLocalCurve] = useState(curve);
   const [localDcFilter, setLocalDcFilter] = useState(dcFilter);
   const [localOversample, setLocalOversample] = useState(oversample);
 
@@ -217,6 +219,10 @@ const ClipperUI_V2 = ({ trackId, effect, effectNode, definition }) => {
       setLocalMode(effect.settings.mode);
       updates.mode = effect.settings.mode;
     }
+    if (effect.settings.curve !== undefined) {
+      setLocalCurve(effect.settings.curve);
+      updates.curve = effect.settings.curve;
+    }
     if (effect.settings.dcFilter !== undefined) {
       setLocalDcFilter(effect.settings.dcFilter);
       updates.dcFilter = effect.settings.dcFilter;
@@ -244,6 +250,7 @@ const ClipperUI_V2 = ({ trackId, effect, effectNode, definition }) => {
       postGain: setLocalPostGain,
       mix: setLocalMix,
       mode: setLocalMode,
+      curve: setLocalCurve,
       dcFilter: setLocalDcFilter,
       oversample: setLocalOversample
     };
@@ -270,6 +277,26 @@ const ClipperUI_V2 = ({ trackId, effect, effectNode, definition }) => {
               mode={localMode}
               categoryColors={categoryColors}
             />
+
+            {/* Clipping Curve */}
+            <div className="p-6">
+              <div className="flex flex-col gap-2">
+                <label className="text-[10px] font-bold tracking-wider uppercase text-center" style={{ color: categoryColors.secondary }}>
+                  CLIPPING CURVE
+                </label>
+                <ModeSelector
+                  value={localCurve.toString()}
+                  onChange={(val) => handleParamChange('curve', parseFloat(val))}
+                  options={[
+                    { id: '0', label: 'Soft' },
+                    { id: '1', label: 'Medium' },
+                    { id: '2', label: 'Hard' }
+                  ]}
+                  category="texture-lab"
+                  compact={true}
+                />
+              </div>
+            </div>
 
             {/* Main Controls */}
             <div className="grid grid-cols-5 gap-4 p-6">

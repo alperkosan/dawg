@@ -202,7 +202,17 @@ export const pluginRegistry = {
       resonance: 0.5,
       filterType: 0, // 0=Lowpass, 0.5=Bandpass, 0.85=Highpass, 1=Notch
       drive: 1.0,
-      wet: 1.0
+      wet: 1.0,
+      // ✅ NEW: Filter model (0=State-Variable, 1=Moog, 2=Korg, 3=Oberheim)
+      filterModel: 0,
+      // ✅ NEW: LFO Modulation
+      lfoEnabled: 0,
+      lfoRate: 1.0,
+      lfoDepth: 0.5,
+      lfoShape: 0, // 0=sine, 1=triangle, 2=square, 3=sawtooth
+      lfoTempoSync: 0,
+      lfoNoteDivision: 3, // 1/4 note
+      bpm: 120
     },
     // ✨ v2.0: Factory presets managed by PresetManager
     // See: @/config/presets/tidalFilterPresets.js
@@ -261,7 +271,11 @@ export const pluginRegistry = {
       depth: 0.7,
       shape: 0,
       stereoWidth: 1.0,
-      wet: 1.0
+      wet: 1.0,
+      // ✅ NEW: Tempo sync
+      tempoSync: 0,
+      noteDivision: 3, // 1/4 note
+      bpm: 120
     },
     presets: orbitPannerPresets
   },
@@ -294,6 +308,10 @@ export const pluginRegistry = {
       fineTune: 0,
       formantShift: 0,
       quality: 1,        // 0=Fast, 1=Normal, 2=High
+      // ✅ NEW: Pitch Algorithm (0=PSOLA, 1=Phase Vocoder, 2=Elastique-like)
+      pitchAlgorithm: 1,
+      // ✅ NEW: Formant Preservation (0=off, 1=on)
+      formantPreservation: 0,
       inputGain: 0,
       outputGain: 0,
       wet: 1.0
@@ -330,7 +348,17 @@ export const pluginRegistry = {
     defaultSettings: {
       attack: 0,
       sustain: 0,
-      mix: 1.0
+      mix: 1.0,
+      // ✅ NEW: Frequency Targeting
+      frequencyTargeting: 0, // 0=Full, 1=Low, 2=Mid, 3=High
+      lowAttack: 0,
+      lowSustain: 0,
+      midAttack: 0,
+      midSustain: 0,
+      highAttack: 0,
+      highSustain: 0,
+      lowCrossover: 200, // Hz
+      highCrossover: 5000 // Hz
     },
     presets: transientDesignerPresets
   },
@@ -410,7 +438,8 @@ export const pluginRegistry = {
       grainSize: 100,
       grainDensity: 8,
       pitchLock: 1,
-      mix: 100
+      mix: 100,
+      reverse: 0
     },
     presets: halfTimePresets
   },
@@ -454,6 +483,7 @@ export const pluginRegistry = {
       postGain: 0,
       mix: 100,
       mode: 0,
+      curve: 1,
       dcFilter: 1,
       oversample: 2
     },
@@ -479,7 +509,9 @@ export const pluginRegistry = {
       glitchAmount: 50,
       tapeSpeed: 100,
       mode: 0,
-      bpm: 128
+      bpm: 128,
+      tempoSync: 0,
+      noteDivision: 0.25
     },
     presets: rhythmFXPresets
   },

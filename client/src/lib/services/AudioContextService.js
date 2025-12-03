@@ -1795,36 +1795,35 @@ export class AudioContextService {
       });
 
       if (insert && insert.effects) {
-        // Try direct lookup first (audioEngineId)
+        // Try direct lookup first (by key - audioEngineId)
         let effect = insert.effects.get(effectId);
 
-        console.log('🔍 [getEffectNode] Direct lookup:', {
-          effectId,
-          found: !!effect,
-          hasNode: !!effect?.node,
-          effectKeys: effect ? Object.keys(effect) : []
-        });
-
-        // If not found, search by audioEngineId (Store ID → AudioEngine ID mapping)
+        // ✅ FIX: Also try lookup by Store ID (effect.id) - master effects use Store ID as key
         if (!effect) {
+          // Search by Store ID (effect.id)
+          effect = Array.from(insert.effects.values()).find(fx => fx.id === effectId);
+        }
+
+        // ✅ FIX: Also try lookup by audioEngineId property
+        if (!effect) {
+          effect = Array.from(insert.effects.values()).find(fx => fx.audioEngineId === effectId);
+        }
+
+        // ✅ FIX: Last resort - search by type (for backward compatibility)
+        if (!effect) {
+          effect = Array.from(insert.effects.values()).find(fx => fx.type === effectId);
+        }
+
+        if (import.meta.env.DEV && !effect) {
           console.log('🔍 [getEffectNode] Trying fallback search...');
           const allEffects = Array.from(insert.effects.entries());
           console.log('🔍 [getEffectNode] All effects:', allEffects.map(([key, fx]) => ({
             key,
             fxId: fx.id,
+            fxAudioEngineId: fx.audioEngineId,
             fxType: fx.type,
             hasNode: !!fx.node
           })));
-
-          effect = Array.from(insert.effects.values()).find(fx =>
-            fx.id === effectId || fx.audioEngineId === effectId
-          );
-
-          console.log('🔍 [getEffectNode] Fallback result:', {
-            found: !!effect,
-            matchedById: effect?.id === effectId,
-            matchedByAudioEngineId: effect?.audioEngineId === effectId
-          });
         }
 
         if (effect && effect.node) {

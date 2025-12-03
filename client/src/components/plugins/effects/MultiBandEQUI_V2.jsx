@@ -264,15 +264,46 @@ const BandControl = ({
       </div>
 
       {/* ✅ NEW: Dynamic EQ Controls */}
-      <div className="mt-3 pt-3 border-t border-white/5">
+      <div className="mt-3 pt-3 border-t border-white/5" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-2">
           <div className="text-[9px] text-gray-400 uppercase">Dynamic EQ</div>
-          <Checkbox
-            checked={band.dynamicEnabled || false}
-            onChange={(checked) => onChange(index, 'dynamicEnabled', checked)}
-            onClick={(e) => e.stopPropagation()}
-            size="small"
-          />
+          <label className="flex items-center cursor-pointer">
+            <input
+              type="checkbox"
+              checked={band.dynamicEnabled || false}
+              onChange={(e) => onChange(index, 'dynamicEnabled', e.target.checked)}
+              className="w-3 h-3 rounded transition-all appearance-none cursor-pointer"
+              style={{
+                border: `1px solid ${bandColor}30`,
+                backgroundColor: band.dynamicEnabled ? bandColor : 'rgba(0, 0, 0, 0.5)',
+                borderColor: band.dynamicEnabled ? bandColor : `${bandColor}30`,
+                boxShadow: band.dynamicEnabled ? `0 0 6px ${bandColor}40` : 'none',
+              }}
+            />
+            {band.dynamicEnabled && (
+              <svg
+                className="absolute w-2 h-2 pointer-events-none"
+                style={{
+                  left: '1px',
+                  top: '1px',
+                  color: '#fff',
+                  position: 'relative',
+                  marginLeft: '-11px',
+                }}
+                viewBox="0 0 12 12"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  d="M2 6L5 9L10 2"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            )}
+          </label>
         </div>
 
         {band.dynamicEnabled && (

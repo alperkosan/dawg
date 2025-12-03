@@ -7,6 +7,7 @@
  * - Morphing waveform shapes (sine → triangle → square)
  * - Stereo width control
  * - Equal power panning law
+ * - Tempo sync (note divisions)
  */
 
 class OrbitPannerProcessor extends AudioWorkletProcessor {
@@ -16,7 +17,11 @@ class OrbitPannerProcessor extends AudioWorkletProcessor {
       { name: 'depth', defaultValue: 0.8, minValue: 0, maxValue: 1 },
       { name: 'shape', defaultValue: 0, minValue: 0, maxValue: 1 },
       { name: 'stereoWidth', defaultValue: 1.0, minValue: 0, maxValue: 2 },
-      { name: 'wet', defaultValue: 1.0, minValue: 0, maxValue: 1 }
+      { name: 'wet', defaultValue: 1.0, minValue: 0, maxValue: 1 },
+      // ✅ NEW: Tempo sync
+      { name: 'tempoSync', defaultValue: 0, minValue: 0, maxValue: 1 },
+      { name: 'noteDivision', defaultValue: 3, minValue: 0, maxValue: 9 }, // Same as ModernDelay
+      { name: 'bpm', defaultValue: 120, minValue: 60, maxValue: 200 }
     ];
   }
 
@@ -41,6 +46,29 @@ class OrbitPannerProcessor extends AudioWorkletProcessor {
   getParam(param, index) {
     if (!param) return undefined;
     return param.length > 1 ? param[index] : param[0];
+  }
+
+  // ✅ NEW: Convert note division to seconds (same as ModernDelay and TidalFilter)
+  noteValueToSeconds(noteDivision, bpm) {
+    const noteValues = [
+      1/32, 1/16, 1/8, 1/4, 1/2, 1/1,  // 0-5: standard
+      1/8 * 1.5, 1/4 * 1.5,              // 6-7: dotted
+      1/8 * 2/3, 1/4 * 2/3                // 8-9: triplet
+    ];
+    const noteValue = noteValues[Math.floor(noteDivision)] || 1/4;
+    return (60 / bpm) * noteValue;
+  }
+
+  // ✅ NEW: Calculate LFO rate (Hz or tempo sync)
+  calculateLFORate(rate, tempoSync, noteDivision, bpm) {
+    if (tempoSync > 0.5) {
+      // Tempo sync: convert note division to Hz
+      const noteSeconds = this.noteValueToSeconds(noteDivision, bpm);
+      return 1 / noteSeconds; // Convert to Hz
+    } else {
+      // Free rate in Hz
+      return rate;
+    }
   }
 
   // Generate LFO with morphing waveform shapes
@@ -87,8 +115,14 @@ class OrbitPannerProcessor extends AudioWorkletProcessor {
     const depth = this.getParam(parameters.depth, 0) || 0.8;
     const shape = this.getParam(parameters.shape, 0) || 0;
     const stereoWidth = this.getParam(parameters.stereoWidth, 0) || 1.0;
+    // ✅ NEW: Tempo sync
+    const tempoSync = this.getParam(parameters.tempoSync, 0) || 0;
+    const noteDivision = this.getParam(parameters.noteDivision, 0) || 3;
+    const bpm = this.getParam(parameters.bpm, 0) || 120;
 
-    const lfoIncrement = (rate / this.sampleRate) * 2 * Math.PI;
+    // ✅ NEW: Calculate effective rate (Hz or tempo sync)
+    const effectiveRate = this.calculateLFORate(rate, tempoSync, noteDivision, bpm);
+    const lfoIncrement = (effectiveRate / this.sampleRate) * 2 * Math.PI;
 
     for (let i = 0; i < input[0].length; i++) {
       // Generate LFO value (-1 to 1)

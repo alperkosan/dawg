@@ -21,12 +21,13 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import PluginContainerV2 from '../container/PluginContainerV2';
 import { TwoPanelLayout } from '../layout/TwoPanelLayout';
-import { Knob } from '@/components/controls';
+import { Knob, ModeSelector } from '@/components/controls';
 import { getCategoryColors } from '../PluginDesignSystem';
 import { useParameterBatcher } from '@/services/ParameterBatcher';
 import { useRenderer } from '@/services/CanvasRenderManager';
 import { useAudioPlugin } from '@/hooks/useAudioPlugin';
 import { useMixerStore } from '@/store/useMixerStore';
+import { usePlaybackStore } from '@/store/usePlaybackStore';
 
 // ============================================================================
 // ORBIT TRAIL VISUALIZER
@@ -189,18 +190,35 @@ const OrbitPannerUI_V2 = ({ trackId, effect, effectNode, definition }) => {
     depth = 0.7,
     shape = 0,
     stereoWidth = 1.0,
-    wet = 1.0
+    wet = 1.0,
+    // ✅ NEW: Tempo sync
+    tempoSync = 0,
+    noteDivision = 3,
+    bpm = 120
   } = effect.settings || {};
+
+  // Get current BPM from playback store
+  const { bpm: currentBpm } = usePlaybackStore();
 
   const [localRate, setLocalRate] = useState(rate);
   const [localDepth, setLocalDepth] = useState(depth);
   const [localShape, setLocalShape] = useState(shape);
   const [localStereoWidth, setLocalStereoWidth] = useState(stereoWidth);
   const [localWet, setLocalWet] = useState(wet);
+  // ✅ NEW: Tempo sync state
+  const [localTempoSync, setLocalTempoSync] = useState(tempoSync);
+  const [localNoteDivision, setLocalNoteDivision] = useState(noteDivision);
 
   const categoryColors = useMemo(() => getCategoryColors('cosmic-modulation'), []);
   const { setParam, setParams } = useParameterBatcher(effectNode);
   const { handleMixerEffectChange } = useMixerStore.getState();
+
+  // ✅ NEW: Update BPM when tempo changes
+  useEffect(() => {
+    if (currentBpm && effectNode) {
+      setParam('bpm', currentBpm);
+    }
+  }, [currentBpm, effectNode, setParam]);
 
   useEffect(() => {
     if (!effectNode || !effect.settings) return;
@@ -227,13 +245,25 @@ const OrbitPannerUI_V2 = ({ trackId, effect, effectNode, definition }) => {
       setLocalWet(effect.settings.wet);
       updates.wet = effect.settings.wet;
     }
+    // ✅ NEW: Tempo sync
+    if (effect.settings.tempoSync !== undefined) {
+      setLocalTempoSync(effect.settings.tempoSync);
+      updates.tempoSync = effect.settings.tempoSync;
+    }
+    if (effect.settings.noteDivision !== undefined) {
+      setLocalNoteDivision(effect.settings.noteDivision);
+      updates.noteDivision = effect.settings.noteDivision;
+    }
+    if (currentBpm) {
+      updates.bpm = currentBpm;
+    }
 
     // Send all parameter updates to worklet immediately
     // Note: Don't call handleMixerEffectChange here - it's already called by PresetManager
     if (Object.keys(updates).length > 0) {
       setParams(updates, { immediate: true });
     }
-  }, [effect.settings, effectNode, setParams]);
+  }, [effect.settings, effectNode, setParams, currentBpm]);
 
   const handleParamChange = useCallback((key, value) => {
     setParam(key, value);
@@ -244,6 +274,9 @@ const OrbitPannerUI_V2 = ({ trackId, effect, effectNode, definition }) => {
     else if (key === 'shape') setLocalShape(value);
     else if (key === 'stereoWidth') setLocalStereoWidth(value);
     else if (key === 'wet') setLocalWet(value);
+    // ✅ NEW: Tempo sync
+    else if (key === 'tempoSync') setLocalTempoSync(value);
+    else if (key === 'noteDivision') setLocalNoteDivision(value);
   }, [setParam, handleMixerEffectChange, trackId, effect.id]);
 
   const getShapeName = (val) => {
@@ -265,11 +298,57 @@ const OrbitPannerUI_V2 = ({ trackId, effect, effectNode, definition }) => {
               shape={localShape}
               stereoWidth={localStereoWidth}
             />
+            {/* ✅ NEW: Tempo Sync Controls */}
+            <div className="bg-gradient-to-br from-black/50 to-[#1e1b4b]/30 rounded-xl p-4 border border-[#64c8ff]/20">
+              <div className="text-[9px] text-[#64c8ff]/70 font-bold uppercase tracking-wider mb-3 flex items-center justify-between">
+                <span>TEMPO SYNC</span>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={localTempoSync > 0.5}
+                    onChange={(e) => handleParamChange('tempoSync', e.target.checked ? 1 : 0)}
+                    className="w-4 h-4 rounded border-[#64c8ff]/30 bg-black/50 checked:bg-[#64c8ff] checked:border-[#64c8ff] focus:ring-2 focus:ring-[#64c8ff]/50"
+                  />
+                  <span className="text-[10px] text-white/70">ENABLED</span>
+                </label>
+              </div>
+              
+              {localTempoSync > 0.5 && (
+                <ModeSelector
+                  modes={[
+                    { id: 0, name: '1/32', description: '1/32 note' },
+                    { id: 1, name: '1/16', description: '1/16 note' },
+                    { id: 2, name: '1/8', description: '1/8 note' },
+                    { id: 3, name: '1/4', description: '1/4 note' },
+                    { id: 4, name: '1/2', description: '1/2 note' },
+                    { id: 5, name: '1/1', description: 'Whole note' },
+                    { id: 6, name: '1/8.', description: 'Dotted 1/8 note' },
+                    { id: 7, name: '1/4.', description: 'Dotted 1/4 note' },
+                    { id: 8, name: '1/8t', description: '1/8 triplet' },
+                    { id: 9, name: '1/4t', description: '1/4 triplet' }
+                  ]}
+                  activeMode={localNoteDivision}
+                  onChange={(mode) => handleParamChange('noteDivision', mode)}
+                  category="cosmic-modulation"
+                  compact={true}
+                />
+              )}
+            </div>
+
             <div className="bg-gradient-to-br from-black/50 to-[#1e1b4b]/30 rounded-xl p-6 border border-[#64c8ff]/20">
               <div className="grid grid-cols-3 gap-6">
-                <Knob label="RATE" value={localRate} onChange={(v) => handleParamChange('rate', v)}
-                  min={0.1} max={10} defaultValue={1.0} sizeVariant="large" category="cosmic-modulation"
-                  valueFormatter={(v) => `${v.toFixed(2)} Hz`} />
+                <Knob 
+                  label="RATE" 
+                  value={localTempoSync > 0.5 ? 0 : localRate} 
+                  onChange={(v) => handleParamChange('rate', v)}
+                  min={0.1} 
+                  max={10} 
+                  defaultValue={1.0} 
+                  sizeVariant="large" 
+                  category="cosmic-modulation"
+                  valueFormatter={(v) => localTempoSync > 0.5 ? 'SYNC' : `${v.toFixed(2)} Hz`}
+                  disabled={localTempoSync > 0.5}
+                />
                 <Knob label="DEPTH" value={localDepth * 100} onChange={(v) => handleParamChange('depth', v / 100)}
                   min={0} max={100} defaultValue={70} sizeVariant="large" category="cosmic-modulation"
                   valueFormatter={(v) => `${v.toFixed(0)}%`} />

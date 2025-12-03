@@ -22,7 +22,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import PluginContainerV2 from '../container/PluginContainerV2';
 import { TwoPanelLayout } from '../layout/TwoPanelLayout';
-import { LinearSlider } from '@/components/controls';
+import { LinearSlider, ModeSelector, Knob } from '@/components/controls';
 import { getCategoryColors } from '../PluginDesignSystem';
 import { useParameterBatcher } from '@/services/ParameterBatcher';
 import { useRenderer } from '@/services/CanvasRenderManager';
@@ -209,13 +209,33 @@ const TransientDesignerUI_V2 = ({ trackId, effect, effectNode, definition }) => 
   const {
     attack = 0,
     sustain = 0,
-    mix = 1.0
+    mix = 1.0,
+    // ✅ NEW: Frequency Targeting
+    frequencyTargeting = 0,
+    lowAttack = 0,
+    lowSustain = 0,
+    midAttack = 0,
+    midSustain = 0,
+    highAttack = 0,
+    highSustain = 0,
+    lowCrossover = 200,
+    highCrossover = 5000
   } = effect.settings || {};
 
   // Local state
   const [localAttack, setLocalAttack] = useState(attack);
   const [localSustain, setLocalSustain] = useState(sustain);
   const [localMix, setLocalMix] = useState(mix);
+  // ✅ NEW: Frequency Targeting state
+  const [localFrequencyTargeting, setLocalFrequencyTargeting] = useState(frequencyTargeting);
+  const [localLowAttack, setLocalLowAttack] = useState(lowAttack);
+  const [localLowSustain, setLocalLowSustain] = useState(lowSustain);
+  const [localMidAttack, setLocalMidAttack] = useState(midAttack);
+  const [localMidSustain, setLocalMidSustain] = useState(midSustain);
+  const [localHighAttack, setLocalHighAttack] = useState(highAttack);
+  const [localHighSustain, setLocalHighSustain] = useState(highSustain);
+  const [localLowCrossover, setLocalLowCrossover] = useState(lowCrossover);
+  const [localHighCrossover, setLocalHighCrossover] = useState(highCrossover);
 
   // Get category colors
   const categoryColors = useMemo(() => getCategoryColors('dynamics-forge'), []);
@@ -230,6 +250,13 @@ const TransientDesignerUI_V2 = ({ trackId, effect, effectNode, definition }) => 
   const ghostAttack = useGhostValue(localAttack, 400);
   const ghostSustain = useGhostValue(localSustain, 400);
   const ghostMix = useGhostValue(localMix * 100, 400);
+  // ✅ NEW: Frequency Targeting ghost values
+  const ghostLowAttack = useGhostValue(localLowAttack, 400);
+  const ghostLowSustain = useGhostValue(localLowSustain, 400);
+  const ghostMidAttack = useGhostValue(localMidAttack, 400);
+  const ghostMidSustain = useGhostValue(localMidSustain, 400);
+  const ghostHighAttack = useGhostValue(localHighAttack, 400);
+  const ghostHighSustain = useGhostValue(localHighSustain, 400);
 
   // Sync with effect.settings when presets are loaded
   useEffect(() => {
@@ -247,6 +274,43 @@ const TransientDesignerUI_V2 = ({ trackId, effect, effectNode, definition }) => 
     if (effect.settings.mix !== undefined) {
       setLocalMix(effect.settings.mix);
       updates.mix = effect.settings.mix;
+    }
+    // ✅ NEW: Frequency Targeting
+    if (effect.settings.frequencyTargeting !== undefined) {
+      setLocalFrequencyTargeting(effect.settings.frequencyTargeting);
+      updates.frequencyTargeting = effect.settings.frequencyTargeting;
+    }
+    if (effect.settings.lowAttack !== undefined) {
+      setLocalLowAttack(effect.settings.lowAttack);
+      updates.lowAttack = effect.settings.lowAttack;
+    }
+    if (effect.settings.lowSustain !== undefined) {
+      setLocalLowSustain(effect.settings.lowSustain);
+      updates.lowSustain = effect.settings.lowSustain;
+    }
+    if (effect.settings.midAttack !== undefined) {
+      setLocalMidAttack(effect.settings.midAttack);
+      updates.midAttack = effect.settings.midAttack;
+    }
+    if (effect.settings.midSustain !== undefined) {
+      setLocalMidSustain(effect.settings.midSustain);
+      updates.midSustain = effect.settings.midSustain;
+    }
+    if (effect.settings.highAttack !== undefined) {
+      setLocalHighAttack(effect.settings.highAttack);
+      updates.highAttack = effect.settings.highAttack;
+    }
+    if (effect.settings.highSustain !== undefined) {
+      setLocalHighSustain(effect.settings.highSustain);
+      updates.highSustain = effect.settings.highSustain;
+    }
+    if (effect.settings.lowCrossover !== undefined) {
+      setLocalLowCrossover(effect.settings.lowCrossover);
+      updates.lowCrossover = effect.settings.lowCrossover;
+    }
+    if (effect.settings.highCrossover !== undefined) {
+      setLocalHighCrossover(effect.settings.highCrossover);
+      updates.highCrossover = effect.settings.highCrossover;
     }
 
     // Send all parameter updates to worklet immediately
@@ -271,6 +335,34 @@ const TransientDesignerUI_V2 = ({ trackId, effect, effectNode, definition }) => 
         break;
       case 'mix':
         setLocalMix(value);
+        break;
+      // ✅ NEW: Frequency Targeting
+      case 'frequencyTargeting':
+        setLocalFrequencyTargeting(value);
+        break;
+      case 'lowAttack':
+        setLocalLowAttack(value);
+        break;
+      case 'lowSustain':
+        setLocalLowSustain(value);
+        break;
+      case 'midAttack':
+        setLocalMidAttack(value);
+        break;
+      case 'midSustain':
+        setLocalMidSustain(value);
+        break;
+      case 'highAttack':
+        setLocalHighAttack(value);
+        break;
+      case 'highSustain':
+        setLocalHighSustain(value);
+        break;
+      case 'lowCrossover':
+        setLocalLowCrossover(value);
+        break;
+      case 'highCrossover':
+        setLocalHighCrossover(value);
         break;
     }
   }, [setParam, handleMixerEffectChange, trackId, effect.id]);
@@ -298,8 +390,30 @@ const TransientDesignerUI_V2 = ({ trackId, effect, effectNode, definition }) => 
 
             {/* Main Controls */}
             <div className="space-y-6 p-6">
-              {/* Attack Slider (Bipolar) */}
-              <div className="space-y-2">
+              {/* ✅ NEW: Frequency Targeting Mode Selector */}
+              <div className="bg-gradient-to-br from-black/50 to-[#001829]/30 rounded-xl p-4 border border-[#00A8E8]/20">
+                <div className="text-[9px] text-[#00B8F8]/70 font-bold uppercase tracking-wider mb-3">
+                  FREQUENCY TARGETING
+                </div>
+                <ModeSelector
+                  modes={[
+                    { id: 0, name: 'Full', description: 'Process full frequency spectrum' },
+                    { id: 1, name: 'Low', description: 'Process low frequencies only' },
+                    { id: 2, name: 'Mid', description: 'Process mid frequencies only' },
+                    { id: 3, name: 'High', description: 'Process high frequencies only' }
+                  ]}
+                  activeMode={localFrequencyTargeting}
+                  onChange={(mode) => handleParamChange('frequencyTargeting', mode)}
+                  category="dynamics-forge"
+                  compact={true}
+                />
+              </div>
+
+              {/* Full Band Controls (when frequencyTargeting === 0) */}
+              {localFrequencyTargeting === 0 && (
+                <>
+                  {/* Attack Slider (Bipolar) */}
+                  <div className="space-y-2">
                 <div className="flex justify-between items-center">
                   <label 
                     className="text-xs font-bold uppercase tracking-wider"
@@ -384,6 +498,222 @@ const TransientDesignerUI_V2 = ({ trackId, effect, effectNode, definition }) => 
                   category="dynamics-forge"
                 />
               </div>
+                </>
+              )}
+
+              {/* ✅ NEW: Frequency Band Controls */}
+              {localFrequencyTargeting > 0 && (
+                <div className="space-y-4">
+                  {/* Crossover Controls */}
+                  <div className="bg-gradient-to-br from-black/50 to-[#001829]/30 rounded-xl p-4 border border-[#00A8E8]/20">
+                    <div className="text-[9px] text-[#00B8F8]/70 font-bold uppercase tracking-wider mb-3">
+                      CROSSOVER FREQUENCIES
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <Knob
+                        label="LOW"
+                        value={localLowCrossover}
+                        onChange={(val) => handleParamChange('lowCrossover', val)}
+                        min={50}
+                        max={1000}
+                        defaultValue={200}
+                        logarithmic
+                        category="dynamics-forge"
+                        valueFormatter={(v) => `${v < 1000 ? v.toFixed(0) : (v / 1000).toFixed(1) + 'k'}Hz`}
+                      />
+                      <Knob
+                        label="HIGH"
+                        value={localHighCrossover}
+                        onChange={(val) => handleParamChange('highCrossover', val)}
+                        min={2000}
+                        max={15000}
+                        defaultValue={5000}
+                        logarithmic
+                        category="dynamics-forge"
+                        valueFormatter={(v) => `${(v / 1000).toFixed(1)}kHz`}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Band-specific Controls */}
+                  {(localFrequencyTargeting === 1 || localFrequencyTargeting === 0) && (
+                    <div className="bg-gradient-to-br from-black/50 to-[#001829]/30 rounded-xl p-4 border border-[#00A8E8]/20">
+                      <div className="text-[9px] text-[#00B8F8]/70 font-bold uppercase tracking-wider mb-3">
+                        LOW BAND
+                      </div>
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <div className="flex justify-between items-center">
+                            <label className="text-xs font-bold uppercase tracking-wider" style={{ color: categoryColors.secondary }}>
+                              ATTACK
+                            </label>
+                            <span className="text-xs font-mono font-bold" style={{ color: localLowAttack >= 0 ? categoryColors.accent : '#ef4444' }}>
+                              {localLowAttack > 0 ? '+' : ''}{localLowAttack.toFixed(1)}dB
+                            </span>
+                          </div>
+                          <LinearSlider
+                            value={localLowAttack}
+                            ghostValue={ghostLowAttack}
+                            onChange={(val) => handleParamChange('lowAttack', val)}
+                            min={-12}
+                            max={12}
+                            defaultValue={0}
+                            category="dynamics-forge"
+                            bipolar={true}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <div className="flex justify-between items-center">
+                            <label className="text-xs font-bold uppercase tracking-wider" style={{ color: categoryColors.secondary }}>
+                              SUSTAIN
+                            </label>
+                            <span className="text-xs font-mono font-bold" style={{ color: localLowSustain >= 0 ? '#f59e0b' : '#ef4444' }}>
+                              {localLowSustain > 0 ? '+' : ''}{localLowSustain.toFixed(1)}dB
+                            </span>
+                          </div>
+                          <LinearSlider
+                            value={localLowSustain}
+                            ghostValue={ghostLowSustain}
+                            onChange={(val) => handleParamChange('lowSustain', val)}
+                            min={-12}
+                            max={12}
+                            defaultValue={0}
+                            category="dynamics-forge"
+                            bipolar={true}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {(localFrequencyTargeting === 2 || localFrequencyTargeting === 0) && (
+                    <div className="bg-gradient-to-br from-black/50 to-[#001829]/30 rounded-xl p-4 border border-[#00A8E8]/20">
+                      <div className="text-[9px] text-[#00B8F8]/70 font-bold uppercase tracking-wider mb-3">
+                        MID BAND
+                      </div>
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <div className="flex justify-between items-center">
+                            <label className="text-xs font-bold uppercase tracking-wider" style={{ color: categoryColors.secondary }}>
+                              ATTACK
+                            </label>
+                            <span className="text-xs font-mono font-bold" style={{ color: localMidAttack >= 0 ? categoryColors.accent : '#ef4444' }}>
+                              {localMidAttack > 0 ? '+' : ''}{localMidAttack.toFixed(1)}dB
+                            </span>
+                          </div>
+                          <LinearSlider
+                            value={localMidAttack}
+                            ghostValue={ghostMidAttack}
+                            onChange={(val) => handleParamChange('midAttack', val)}
+                            min={-12}
+                            max={12}
+                            defaultValue={0}
+                            category="dynamics-forge"
+                            bipolar={true}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <div className="flex justify-between items-center">
+                            <label className="text-xs font-bold uppercase tracking-wider" style={{ color: categoryColors.secondary }}>
+                              SUSTAIN
+                            </label>
+                            <span className="text-xs font-mono font-bold" style={{ color: localMidSustain >= 0 ? '#f59e0b' : '#ef4444' }}>
+                              {localMidSustain > 0 ? '+' : ''}{localMidSustain.toFixed(1)}dB
+                            </span>
+                          </div>
+                          <LinearSlider
+                            value={localMidSustain}
+                            ghostValue={ghostMidSustain}
+                            onChange={(val) => handleParamChange('midSustain', val)}
+                            min={-12}
+                            max={12}
+                            defaultValue={0}
+                            category="dynamics-forge"
+                            bipolar={true}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {(localFrequencyTargeting === 3 || localFrequencyTargeting === 0) && (
+                    <div className="bg-gradient-to-br from-black/50 to-[#001829]/30 rounded-xl p-4 border border-[#00A8E8]/20">
+                      <div className="text-[9px] text-[#00B8F8]/70 font-bold uppercase tracking-wider mb-3">
+                        HIGH BAND
+                      </div>
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <div className="flex justify-between items-center">
+                            <label className="text-xs font-bold uppercase tracking-wider" style={{ color: categoryColors.secondary }}>
+                              ATTACK
+                            </label>
+                            <span className="text-xs font-mono font-bold" style={{ color: localHighAttack >= 0 ? categoryColors.accent : '#ef4444' }}>
+                              {localHighAttack > 0 ? '+' : ''}{localHighAttack.toFixed(1)}dB
+                            </span>
+                          </div>
+                          <LinearSlider
+                            value={localHighAttack}
+                            ghostValue={ghostHighAttack}
+                            onChange={(val) => handleParamChange('highAttack', val)}
+                            min={-12}
+                            max={12}
+                            defaultValue={0}
+                            category="dynamics-forge"
+                            bipolar={true}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <div className="flex justify-between items-center">
+                            <label className="text-xs font-bold uppercase tracking-wider" style={{ color: categoryColors.secondary }}>
+                              SUSTAIN
+                            </label>
+                            <span className="text-xs font-mono font-bold" style={{ color: localHighSustain >= 0 ? '#f59e0b' : '#ef4444' }}>
+                              {localHighSustain > 0 ? '+' : ''}{localHighSustain.toFixed(1)}dB
+                            </span>
+                          </div>
+                          <LinearSlider
+                            value={localHighSustain}
+                            ghostValue={ghostHighSustain}
+                            onChange={(val) => handleParamChange('highSustain', val)}
+                            min={-12}
+                            max={12}
+                            defaultValue={0}
+                            category="dynamics-forge"
+                            bipolar={true}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Mix Slider */}
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center">
+                      <label 
+                        className="text-xs font-bold uppercase tracking-wider"
+                        style={{ color: categoryColors.secondary }}
+                      >
+                        MIX
+                      </label>
+                      <span 
+                        className="text-xs font-mono font-bold"
+                        style={{ color: categoryColors.primary }}
+                      >
+                        {(localMix * 100).toFixed(0)}%
+                      </span>
+                    </div>
+                    <LinearSlider
+                      value={localMix * 100}
+                      ghostValue={ghostMix}
+                      onChange={(val) => handleParamChange('mix', val / 100)}
+                      min={0}
+                      max={100}
+                      defaultValue={100}
+                      category="dynamics-forge"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           </>
         }

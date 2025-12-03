@@ -214,7 +214,11 @@ const ImagerUI_V2 = ({ trackId, effect, effectNode, definition }) => {
     band3Width = 0,
     band4Width = 0,
     globalWidth = 1.0,
-    stereoize = 0
+    stereoize = 0,
+    midGain = 1.0,
+    sideGain = 1.0,
+    lowMono = 0,
+    crossover = 160
   } = effect.settings || {};
 
   // Local state
@@ -228,6 +232,10 @@ const ImagerUI_V2 = ({ trackId, effect, effectNode, definition }) => {
   const [localBand4Width, setLocalBand4Width] = useState(band4Width);
   const [localGlobalWidth, setLocalGlobalWidth] = useState(globalWidth);
   const [localStereoize, setLocalStereoize] = useState(stereoize);
+  const [localMidGain, setLocalMidGain] = useState(midGain);
+  const [localSideGain, setLocalSideGain] = useState(sideGain);
+  const [localLowMono, setLocalLowMono] = useState(lowMono);
+  const [localCrossover, setLocalCrossover] = useState(crossover);
   const [correlation, setCorrelation] = useState(1);
 
   // Get category colors
@@ -247,17 +255,23 @@ const ImagerUI_V2 = ({ trackId, effect, effectNode, definition }) => {
 
   // Listen for correlation
   useEffect(() => {
-    const port = plugin?.audioNode?.workletNode?.port;
-    if (!port) return;
+    const audioNode = plugin?.audioNode?.workletNode;
+    if (!audioNode?.port) return;
 
-    const onMsg = (e) => {
-      if (e.data?.type === 'corr' && typeof e.data.value === 'number') {
-        setCorrelation(Math.max(-1, Math.min(1, e.data.value)));
+    const handleMessage = (event) => {
+      const data = event.data;
+      if (data?.type === 'corr' && typeof data.value === 'number') {
+        setCorrelation(Math.max(-1, Math.min(1, data.value)));
       }
     };
 
-    port.addEventListener('message', onMsg);
-    return () => port.removeEventListener('message', onMsg);
+    audioNode.port.onmessage = handleMessage;
+
+    return () => {
+      if (audioNode?.port) {
+        audioNode.port.onmessage = null;
+      }
+    };
   }, [plugin]);
 
   // Ghost values
@@ -311,6 +325,22 @@ const ImagerUI_V2 = ({ trackId, effect, effectNode, definition }) => {
       setLocalStereoize(effect.settings.stereoize);
       updates.stereoize = effect.settings.stereoize;
     }
+    if (effect.settings.midGain !== undefined) {
+      setLocalMidGain(effect.settings.midGain);
+      updates.midGain = effect.settings.midGain;
+    }
+    if (effect.settings.sideGain !== undefined) {
+      setLocalSideGain(effect.settings.sideGain);
+      updates.sideGain = effect.settings.sideGain;
+    }
+    if (effect.settings.lowMono !== undefined) {
+      setLocalLowMono(effect.settings.lowMono);
+      updates.lowMono = effect.settings.lowMono;
+    }
+    if (effect.settings.crossover !== undefined) {
+      setLocalCrossover(effect.settings.crossover);
+      updates.crossover = effect.settings.crossover;
+    }
 
     if (Object.keys(updates).length > 0) {
       setParams(updates, { immediate: true });
@@ -332,7 +362,11 @@ const ImagerUI_V2 = ({ trackId, effect, effectNode, definition }) => {
       band3Width: setLocalBand3Width,
       band4Width: setLocalBand4Width,
       globalWidth: setLocalGlobalWidth,
-      stereoize: setLocalStereoize
+      stereoize: setLocalStereoize,
+      midGain: setLocalMidGain,
+      sideGain: setLocalSideGain,
+      lowMono: setLocalLowMono,
+      crossover: setLocalCrossover
     };
     if (stateMap[key]) stateMap[key](value);
   }, [setParam, handleMixerEffectChange, trackId, effect.id]);
@@ -349,8 +383,8 @@ const ImagerUI_V2 = ({ trackId, effect, effectNode, definition }) => {
 
         mainPanel={
           <>
-            {/* Stereo Vectorscope */}
-            <div className="h-64 mb-4">
+            {/* Stereo Vectorscope - Larger */}
+            <div className="h-80 mb-6">
               <StereoVectorscope
                 trackId={trackId}
                 effectId={effect.id}
@@ -370,7 +404,7 @@ const ImagerUI_V2 = ({ trackId, effect, effectNode, definition }) => {
                 min={-100}
                 max={100}
                 defaultValue={0}
-                sizeVariant="medium"
+                sizeVariant="large"
                 category="master-chain"
                 valueFormatter={(v) => `${v >= 0 ? '+' : ''}${v.toFixed(0)}%`}
               />
@@ -383,7 +417,7 @@ const ImagerUI_V2 = ({ trackId, effect, effectNode, definition }) => {
                 min={-100}
                 max={100}
                 defaultValue={0}
-                sizeVariant="medium"
+                sizeVariant="large"
                 category="master-chain"
                 valueFormatter={(v) => `${v >= 0 ? '+' : ''}${v.toFixed(0)}%`}
               />
@@ -396,7 +430,7 @@ const ImagerUI_V2 = ({ trackId, effect, effectNode, definition }) => {
                 min={-100}
                 max={100}
                 defaultValue={0}
-                sizeVariant="medium"
+                sizeVariant="large"
                 category="master-chain"
                 valueFormatter={(v) => `${v >= 0 ? '+' : ''}${v.toFixed(0)}%`}
               />
@@ -409,60 +443,9 @@ const ImagerUI_V2 = ({ trackId, effect, effectNode, definition }) => {
                 min={-100}
                 max={100}
                 defaultValue={0}
-                sizeVariant="medium"
+                sizeVariant="large"
                 category="master-chain"
                 valueFormatter={(v) => `${v >= 0 ? '+' : ''}${v.toFixed(0)}%`}
-              />
-            </div>
-
-            {/* Frequency Controls */}
-            <div className="grid grid-cols-4 gap-4 p-6">
-              <Knob
-                label="LOW CROSSOVER"
-                value={localBand1Freq}
-                onChange={(val) => handleParamChange('band1Freq', Math.round(val))}
-                min={20}
-                max={200}
-                defaultValue={100}
-                sizeVariant="medium"
-                category="master-chain"
-                valueFormatter={(v) => `${Math.round(v)}Hz`}
-              />
-
-              <Knob
-                label="LOW MID CROSSOVER"
-                value={localBand2Freq}
-                onChange={(val) => handleParamChange('band2Freq', Math.round(val))}
-                min={200}
-                max={1000}
-                defaultValue={600}
-                sizeVariant="medium"
-                category="master-chain"
-                valueFormatter={(v) => `${Math.round(v)}Hz`}
-              />
-
-              <Knob
-                label="HIGH MID CROSSOVER"
-                value={localBand3Freq}
-                onChange={(val) => handleParamChange('band3Freq', Math.round(val))}
-                min={1000}
-                max={6000}
-                defaultValue={3000}
-                sizeVariant="medium"
-                category="master-chain"
-                valueFormatter={(v) => `${Math.round(v)}Hz`}
-              />
-
-              <Knob
-                label="HIGH CROSSOVER"
-                value={localBand4Freq}
-                onChange={(val) => handleParamChange('band4Freq', Math.round(val))}
-                min={3000}
-                max={20000}
-                defaultValue={6000}
-                sizeVariant="medium"
-                category="master-chain"
-                valueFormatter={(v) => `${Math.round(v)}Hz`}
               />
             </div>
 
@@ -475,7 +458,7 @@ const ImagerUI_V2 = ({ trackId, effect, effectNode, definition }) => {
                 min={0}
                 max={2}
                 defaultValue={1.0}
-                sizeVariant="medium"
+                sizeVariant="large"
                 category="master-chain"
                 valueFormatter={(v) => `${v.toFixed(2)}x`}
               />
@@ -487,7 +470,7 @@ const ImagerUI_V2 = ({ trackId, effect, effectNode, definition }) => {
                 min={0}
                 max={100}
                 defaultValue={0}
-                sizeVariant="medium"
+                sizeVariant="large"
                 category="master-chain"
                 valueFormatter={(v) => `${v.toFixed(0)}%`}
               />
@@ -497,7 +480,189 @@ const ImagerUI_V2 = ({ trackId, effect, effectNode, definition }) => {
 
         sidePanel={
           <>
-            {/* Stats Display */}
+            {/* Phase Correlation Meter */}
+            <div 
+              className="rounded-xl p-4 mb-4"
+              style={{
+                background: `linear-gradient(135deg, rgba(0, 0, 0, 0.5) 0%, ${categoryColors.accent}20 100%)`,
+                border: `1px solid ${categoryColors.primary}1A`,
+              }}
+            >
+              <div 
+                className="text-[9px] uppercase tracking-wider mb-3 font-bold"
+                style={{ color: `${categoryColors.secondary}B3` }}
+              >
+                Phase Correlation
+              </div>
+              <div className="h-8 bg-black/50 rounded overflow-hidden relative mb-2">
+                <div 
+                  className="h-full transition-all duration-100"
+                  style={{
+                    width: `${Math.max(0, Math.min(100, ((correlation + 1) / 2) * 100))}%`,
+                    background: correlation > 0.8 
+                      ? `linear-gradient(90deg, ${categoryColors.primary} 0%, ${categoryColors.accent} 100%)`
+                      : correlation < 0
+                      ? `linear-gradient(90deg, #ef4444 0%, #dc2626 100%)`
+                      : `linear-gradient(90deg, ${categoryColors.accent} 0%, ${categoryColors.primary} 100%)`
+                  }}
+                />
+              </div>
+              <div className="text-center">
+                <span className="text-2xl font-bold font-mono" style={{ 
+                  color: correlation > 0.8 ? categoryColors.primary : correlation < 0 ? '#ef4444' : categoryColors.accent 
+                }}>
+                  {correlation.toFixed(2)}
+                </span>
+              </div>
+              <div className="text-[8px] text-white/50 text-center mt-1">
+                {correlation > 0.8 ? 'Excellent' : correlation > 0.5 ? 'Good' : correlation < 0 ? 'Out of Phase' : 'Fair'}
+              </div>
+            </div>
+
+            {/* Mid/Side Controls */}
+            <div 
+              className="rounded-xl p-4 mb-4"
+              style={{
+                background: `linear-gradient(135deg, rgba(0, 0, 0, 0.5) 0%, ${categoryColors.accent}20 100%)`,
+                border: `1px solid ${categoryColors.primary}1A`,
+              }}
+            >
+              <div 
+                className="text-[9px] uppercase tracking-wider mb-3 font-bold"
+                style={{ color: `${categoryColors.secondary}B3` }}
+              >
+                Mid/Side Processing
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <Knob
+                  label="MID GAIN"
+                  value={localMidGain}
+                  onChange={(val) => handleParamChange('midGain', val)}
+                  min={0}
+                  max={2}
+                  defaultValue={1.0}
+                  sizeVariant="medium"
+                  category="master-chain"
+                  valueFormatter={(v) => `${(v * 100).toFixed(0)}%`}
+                />
+                <Knob
+                  label="SIDE GAIN"
+                  value={localSideGain}
+                  onChange={(val) => handleParamChange('sideGain', val)}
+                  min={0}
+                  max={2}
+                  defaultValue={1.0}
+                  sizeVariant="medium"
+                  category="master-chain"
+                  valueFormatter={(v) => `${(v * 100).toFixed(0)}%`}
+                />
+              </div>
+            </div>
+
+            {/* Low Mono & Crossover */}
+            <div 
+              className="rounded-xl p-4 mb-4"
+              style={{
+                background: `linear-gradient(135deg, rgba(0, 0, 0, 0.5) 0%, ${categoryColors.accent}20 100%)`,
+                border: `1px solid ${categoryColors.primary}1A`,
+              }}
+            >
+              <div 
+                className="text-[9px] uppercase tracking-wider mb-3 font-bold"
+                style={{ color: `${categoryColors.secondary}B3` }}
+              >
+                Bass Mono
+              </div>
+              <div className="flex flex-col gap-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] text-white/80">Enable</label>
+                  <Toggle
+                    value={localLowMono > 0.5}
+                    onChange={(val) => handleParamChange('lowMono', val ? 1 : 0)}
+                    category="master-chain"
+                  />
+                </div>
+                <Knob
+                  label="CROSSOVER"
+                  value={localCrossover}
+                  onChange={(val) => handleParamChange('crossover', Math.round(val))}
+                  min={20}
+                  max={500}
+                  defaultValue={160}
+                  sizeVariant="medium"
+                  category="master-chain"
+                  valueFormatter={(v) => `${Math.round(v)}Hz`}
+                  disabled={localLowMono < 0.5}
+                />
+                <div className="text-[8px] text-white/50">
+                  Removes stereo information below crossover frequency
+                </div>
+              </div>
+            </div>
+
+            {/* Frequency Controls */}
+            <div 
+              className="rounded-xl p-4 mb-4"
+              style={{
+                background: `linear-gradient(135deg, rgba(0, 0, 0, 0.5) 0%, ${categoryColors.accent}20 100%)`,
+                border: `1px solid ${categoryColors.primary}1A`,
+              }}
+            >
+              <div 
+                className="text-[9px] uppercase tracking-wider mb-3 font-bold"
+                style={{ color: `${categoryColors.secondary}B3` }}
+              >
+                Crossover Frequencies
+              </div>
+              <div className="space-y-3">
+                <Knob
+                  label="LOW"
+                  value={localBand1Freq}
+                  onChange={(val) => handleParamChange('band1Freq', Math.round(val))}
+                  min={20}
+                  max={200}
+                  defaultValue={100}
+                  sizeVariant="small"
+                  category="master-chain"
+                  valueFormatter={(v) => `${Math.round(v)}Hz`}
+                />
+                <Knob
+                  label="LOW MID"
+                  value={localBand2Freq}
+                  onChange={(val) => handleParamChange('band2Freq', Math.round(val))}
+                  min={200}
+                  max={1000}
+                  defaultValue={600}
+                  sizeVariant="small"
+                  category="master-chain"
+                  valueFormatter={(v) => `${Math.round(v)}Hz`}
+                />
+                <Knob
+                  label="HIGH MID"
+                  value={localBand3Freq}
+                  onChange={(val) => handleParamChange('band3Freq', Math.round(val))}
+                  min={1000}
+                  max={6000}
+                  defaultValue={3000}
+                  sizeVariant="small"
+                  category="master-chain"
+                  valueFormatter={(v) => `${Math.round(v)}Hz`}
+                />
+                <Knob
+                  label="HIGH"
+                  value={localBand4Freq}
+                  onChange={(val) => handleParamChange('band4Freq', Math.round(val))}
+                  min={3000}
+                  max={20000}
+                  defaultValue={6000}
+                  sizeVariant="small"
+                  category="master-chain"
+                  valueFormatter={(v) => `${Math.round(v)}Hz`}
+                />
+              </div>
+            </div>
+
+            {/* Processing Info */}
             <div 
               className="rounded-xl p-4"
               style={{
@@ -509,51 +674,31 @@ const ImagerUI_V2 = ({ trackId, effect, effectNode, definition }) => {
                 className="text-[9px] uppercase tracking-wider mb-3 font-bold"
                 style={{ color: `${categoryColors.secondary}B3` }}
               >
-                Processing Info
+                Band Width Values
               </div>
-              <div className="space-y-2.5">
+              <div className="space-y-2">
                 <div className="flex justify-between items-center">
-                  <span className="text-[10px] text-white/60">Low Width</span>
+                  <span className="text-[10px] text-white/60">Low</span>
                   <span className="text-[10px] font-mono" style={{ color: categoryColors.primary }}>
                     {localBand1Width >= 0 ? '+' : ''}{localBand1Width.toFixed(0)}%
                   </span>
                 </div>
                 <div className="flex justify-between items-center">
-                  <span className="text-[10px] text-white/60">Low Mid Width</span>
+                  <span className="text-[10px] text-white/60">Low Mid</span>
                   <span className="text-[10px] font-mono" style={{ color: categoryColors.primary }}>
                     {localBand2Width >= 0 ? '+' : ''}{localBand2Width.toFixed(0)}%
                   </span>
                 </div>
                 <div className="flex justify-between items-center">
-                  <span className="text-[10px] text-white/60">High Mid Width</span>
+                  <span className="text-[10px] text-white/60">High Mid</span>
                   <span className="text-[10px] font-mono" style={{ color: categoryColors.primary }}>
                     {localBand3Width >= 0 ? '+' : ''}{localBand3Width.toFixed(0)}%
                   </span>
                 </div>
                 <div className="flex justify-between items-center">
-                  <span className="text-[10px] text-white/60">High Width</span>
+                  <span className="text-[10px] text-white/60">High</span>
                   <span className="text-[10px] font-mono" style={{ color: categoryColors.primary }}>
                     {localBand4Width >= 0 ? '+' : ''}{localBand4Width.toFixed(0)}%
-                  </span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-[10px] text-white/60">Global Width</span>
-                  <span className="text-[10px] font-mono" style={{ color: categoryColors.primary }}>
-                    {localGlobalWidth.toFixed(2)}x
-                  </span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-[10px] text-white/60">Stereoize</span>
-                  <span className="text-[10px] font-mono" style={{ color: categoryColors.primary }}>
-                    {localStereoize.toFixed(0)}%
-                  </span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-[10px] text-white/60">Correlation</span>
-                  <span className="text-[10px] font-mono" style={{ 
-                    color: correlation > 0.8 ? categoryColors.primary : correlation < 0 ? '#ef4444' : categoryColors.accent 
-                  }}>
-                    {correlation.toFixed(2)}
                   </span>
                 </div>
               </div>

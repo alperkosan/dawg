@@ -112,7 +112,17 @@ export class EffectRegistry {
       parameters: [
         { name: 'attack', defaultValue: 0, minValue: -12, maxValue: 12 },
         { name: 'sustain', defaultValue: 0, minValue: -12, maxValue: 12 },
-        { name: 'mix', defaultValue: 1.0, minValue: 0, maxValue: 1 }
+        { name: 'mix', defaultValue: 1.0, minValue: 0, maxValue: 1 },
+        // ✅ NEW: Frequency Targeting
+        { name: 'frequencyTargeting', defaultValue: 0, minValue: 0, maxValue: 3 }, // 0=Full, 1=Low, 2=Mid, 3=High
+        { name: 'lowAttack', defaultValue: 0, minValue: -12, maxValue: 12 },
+        { name: 'lowSustain', defaultValue: 0, minValue: -12, maxValue: 12 },
+        { name: 'midAttack', defaultValue: 0, minValue: -12, maxValue: 12 },
+        { name: 'midSustain', defaultValue: 0, minValue: -12, maxValue: 12 },
+        { name: 'highAttack', defaultValue: 0, minValue: -12, maxValue: 12 },
+        { name: 'highSustain', defaultValue: 0, minValue: -12, maxValue: 12 },
+        { name: 'lowCrossover', defaultValue: 200, minValue: 50, maxValue: 1000 },
+        { name: 'highCrossover', defaultValue: 5000, minValue: 2000, maxValue: 15000 }
       ]
     });
 
@@ -141,7 +151,17 @@ export class EffectRegistry {
         { name: 'resonance', defaultValue: 0.5, minValue: 0, maxValue: 1 },
         { name: 'filterType', defaultValue: 0, minValue: 0, maxValue: 1 },
         { name: 'drive', defaultValue: 1.0, minValue: 1, maxValue: 10 },
-        { name: 'wet', defaultValue: 1.0, minValue: 0, maxValue: 1 }
+        { name: 'wet', defaultValue: 1.0, minValue: 0, maxValue: 1 },
+        // ✅ NEW: Filter model (0=State-Variable, 1=Moog, 2=Korg, 3=Oberheim)
+        { name: 'filterModel', defaultValue: 0, minValue: 0, maxValue: 3 },
+        // ✅ NEW: LFO Modulation
+        { name: 'lfoEnabled', defaultValue: 0, minValue: 0, maxValue: 1 },
+        { name: 'lfoRate', defaultValue: 1.0, minValue: 0.1, maxValue: 20 },
+        { name: 'lfoDepth', defaultValue: 0.5, minValue: 0, maxValue: 1 },
+        { name: 'lfoShape', defaultValue: 0, minValue: 0, maxValue: 3 },
+        { name: 'lfoTempoSync', defaultValue: 0, minValue: 0, maxValue: 1 },
+        { name: 'lfoNoteDivision', defaultValue: 3, minValue: 0, maxValue: 9 },
+        { name: 'bpm', defaultValue: 120, minValue: 60, maxValue: 200 }
       ]
     });
 
@@ -182,7 +202,11 @@ export class EffectRegistry {
         { name: 'depth', defaultValue: 0.8, minValue: 0, maxValue: 1 },
         { name: 'shape', defaultValue: 0, minValue: 0, maxValue: 1 },
         { name: 'stereoWidth', defaultValue: 1.0, minValue: 0, maxValue: 2 },
-        { name: 'wet', defaultValue: 1.0, minValue: 0, maxValue: 1 }
+        { name: 'wet', defaultValue: 1.0, minValue: 0, maxValue: 1 },
+        // ✅ NEW: Tempo sync
+        { name: 'tempoSync', defaultValue: 0, minValue: 0, maxValue: 1 },
+        { name: 'noteDivision', defaultValue: 3, minValue: 0, maxValue: 9 },
+        { name: 'bpm', defaultValue: 120, minValue: 60, maxValue: 200 }
       ]
     });
 
@@ -203,8 +227,16 @@ export class EffectRegistry {
       workletPath: '/worklets/effects/pitch-shifter-processor.js',
       processorName: 'pitch-shifter-processor',
       parameters: [
-        { name: 'pitch', defaultValue: 0, minValue: -12, maxValue: 12 },
-        { name: 'windowSize', defaultValue: 0.1, minValue: 0.01, maxValue: 0.4 },
+        { name: 'pitch', defaultValue: 0, minValue: -24, maxValue: 24 },
+        { name: 'fineTune', defaultValue: 0, minValue: -100, maxValue: 100 },
+        { name: 'formantShift', defaultValue: 0, minValue: -24, maxValue: 24 },
+        { name: 'quality', defaultValue: 1, minValue: 0, maxValue: 2 },
+        // ✅ NEW: Pitch Algorithm (0=PSOLA, 1=Phase Vocoder, 2=Elastique-like)
+        { name: 'pitchAlgorithm', defaultValue: 1, minValue: 0, maxValue: 2 },
+        // ✅ NEW: Formant Preservation (0=off, 1=on)
+        { name: 'formantPreservation', defaultValue: 0, minValue: 0, maxValue: 1 },
+        { name: 'inputGain', defaultValue: 0, minValue: -24, maxValue: 24 },
+        { name: 'outputGain', defaultValue: 0, minValue: -24, maxValue: 24 },
         { name: 'wet', defaultValue: 1.0, minValue: 0, maxValue: 1 }
       ]
     });
@@ -293,7 +325,8 @@ export class EffectRegistry {
         { name: 'mix', defaultValue: 100, minValue: 0, maxValue: 100 },
         { name: 'mode', defaultValue: 0, minValue: 0, maxValue: 5 },
         { name: 'analogWarmth', defaultValue: 0, minValue: 0, maxValue: 100 },
-        { name: 'glitchAmount', defaultValue: 0, minValue: 0, maxValue: 100 }
+        { name: 'glitchAmount', defaultValue: 0, minValue: 0, maxValue: 100 },
+        { name: 'reverse', defaultValue: 0, minValue: 0, maxValue: 1 }
       ]
     });
 
@@ -351,7 +384,9 @@ export class EffectRegistry {
         { name: 'glitchAmount', defaultValue: 50, minValue: 0, maxValue: 100 },
         { name: 'tapeSpeed', defaultValue: 100, minValue: -200, maxValue: 200 },
         { name: 'mode', defaultValue: 0, minValue: 0, maxValue: 5 },
-        { name: 'bpm', defaultValue: 128, minValue: 60, maxValue: 200 }
+        { name: 'bpm', defaultValue: 128, minValue: 60, maxValue: 200 },
+        { name: 'tempoSync', defaultValue: 0, minValue: 0, maxValue: 1 },
+        { name: 'noteDivision', defaultValue: 0.25, minValue: 0.01, maxValue: 4 }
       ]
     });
 

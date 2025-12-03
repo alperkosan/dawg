@@ -95,11 +95,63 @@ const PresetMenuV2 = ({
     onConfirm: null,
   });
 
-  // Position menu
+  // Position menu with viewport boundary checks
   useEffect(() => {
     if (isOpen && anchorEl) {
-      const rect = anchorEl.getBoundingClientRect();
-      setPosition({ top: rect.bottom + 5, left: rect.left });
+      const updatePosition = () => {
+        const rect = anchorEl.getBoundingClientRect();
+        const viewportWidth = window.innerWidth;
+        const viewportHeight = window.innerHeight;
+        
+        // Use actual menu dimensions if available, otherwise use estimates
+        const menuWidth = menuRef.current?.offsetWidth || 320; // Default minWidth
+        const menuHeight = menuRef.current?.offsetHeight || Math.min(400, viewportHeight * 0.6); // Estimated height
+        
+        // Calculate initial position
+        let left = rect.left;
+        let top = rect.bottom + 5;
+        
+        // ✅ FIX: Check right boundary (prevent overflow on right side)
+        if (left + menuWidth > viewportWidth) {
+          // Try to align to right edge of viewport
+          left = Math.max(10, viewportWidth - menuWidth - 10);
+        }
+        
+        // ✅ FIX: Check left boundary (prevent overflow on left side)
+        if (left < 10) {
+          left = 10;
+        }
+        
+        // ✅ FIX: Check bottom boundary (prevent overflow on bottom)
+        if (top + menuHeight > viewportHeight) {
+          // Try to open above the button instead
+          const spaceAbove = rect.top;
+          const spaceBelow = viewportHeight - rect.bottom;
+          
+          if (spaceAbove > spaceBelow && spaceAbove > menuHeight) {
+            // Open above
+            top = rect.top - menuHeight - 5;
+          } else {
+            // Constrain to viewport height
+            top = Math.max(10, viewportHeight - menuHeight - 10);
+          }
+        }
+        
+        // ✅ FIX: Check top boundary (prevent overflow on top)
+        if (top < 10) {
+          top = 10;
+        }
+        
+        setPosition({ top, left });
+      };
+      
+      // Initial position calculation
+      updatePosition();
+      
+      // ✅ FIX: Recalculate after menu is rendered (to get actual dimensions)
+      const timeoutId = setTimeout(updatePosition, 0);
+      
+      return () => clearTimeout(timeoutId);
     }
   }, [isOpen, anchorEl]);
 
@@ -159,8 +211,11 @@ const PresetMenuV2 = ({
         zIndex: 9999,
         background: categoryColors.background,
         border: `1px solid ${categoryColors.primary}40`,
-        maxHeight: '80vh',
+        maxHeight: '60vh', // ✅ FIX: More compact height
+        maxWidth: '400px', // ✅ FIX: Fixed max width for dropdown appearance
+        width: '380px', // ✅ FIX: Fixed width for consistent dropdown size
         overflowY: 'auto',
+        overflowX: 'hidden',
         borderRadius: '8px',
         boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
         minWidth: '320px'

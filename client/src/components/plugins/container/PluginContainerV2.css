@@ -12,8 +12,10 @@
   position: fixed;
   min-width: 320px;
   max-width: 400px;
-  max-height: 500px;
+  width: 380px; /* ✅ FIX: Fixed width for dropdown appearance */
+  max-height: 60vh; /* ✅ FIX: More compact height */
   overflow-y: auto;
+  overflow-x: hidden; /* ✅ FIX: Prevent horizontal scroll */
   border-radius: 8px;
   backdrop-filter: blur(20px);
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6),

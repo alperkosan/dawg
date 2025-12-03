@@ -176,7 +176,7 @@ export const ModeSelector = ({
             onMouseEnter={() => setHoveredMode(mode.id)}
             onMouseLeave={() => setHoveredMode(null)}
             onKeyDown={(e) => handleKeyDown(e, mode.id)}
-            title={mode.description}
+            title={mode.description || (mode.label || mode.name) || undefined}
             role="radio"
             aria-checked={isActive}
             style={{
@@ -215,7 +215,7 @@ export const ModeSelector = ({
                 {mode.icon}
               </span>
             )}
-            {!compact && (
+            {!compact && (mode.label || mode.name) && (
               <span
                 className="mode-label"
                 style={{
@@ -225,7 +225,8 @@ export const ModeSelector = ({
                   minWidth: 0,
                 }}
               >
-                {mode.label || mode.name || String(mode.id)}
+                {/* ✅ FIX: Use label if available, otherwise name. Never use mode.id as fallback */}
+                {mode.label || mode.name}
               </span>
             )}
             {/* ✅ FIX: Show mode name in compact mode too, but only if name exists */}
@@ -239,7 +240,7 @@ export const ModeSelector = ({
       })}
 
       {/* Tooltip for hovered mode */}
-      {hoveredMode && modes.find(m => m.id === hoveredMode)?.description && (
+      {(hoveredMode !== null && hoveredMode !== undefined) && modes.find(m => m.id === hoveredMode)?.description && (
         <div
           className="mode-tooltip"
           style={{
@@ -257,7 +258,7 @@ export const ModeSelector = ({
             pointerEvents: 'none',
           }}
         >
-          {modes.find(m => m.id === hoveredMode).description}
+          {modes.find(m => m.id === hoveredMode)?.description}
         </div>
       )}
     </div>

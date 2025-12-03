@@ -91,7 +91,7 @@ export class ParameterBatcher {
       batchInterval: 16,      // 60fps (ms)
       maxBatchSize: 50,       // Max parameters per batch
       maxBatchAge: 100,       // Max age before force flush (ms)
-      enableLogging: false,   // Log batch statistics
+      enableLogging: false,   // Log batch statistics (disabled by default)
     };
 
     // Statistics
@@ -142,7 +142,12 @@ export class ParameterBatcher {
       const param = node.parameters.get(canonicalKey);
       if (param) {
         param.value = value;
+        if (this.config.enableLogging) {
+          console.log(`🎛️ [ParameterBatcher] AudioParam ${canonicalKey} = ${value}`);
+        }
         return;
+      } else if (this.config.enableLogging) {
+        console.warn(`⚠️ [ParameterBatcher] AudioParam ${canonicalKey} not found, using postMessage`);
       }
     }
 
