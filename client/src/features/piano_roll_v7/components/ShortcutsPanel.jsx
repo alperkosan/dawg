@@ -54,6 +54,7 @@ const SHORTCUTS_DATA = {
         { keys: ['Timeline Drag'], description: 'Select loop region (bar-snapped)' },
         { keys: ['Shift', 'Timeline Drag'], description: 'Free selection (no snap)' },
         { keys: ['Alt', 'Click Bar'], description: 'Quick bar selection' },
+        { keys: ['Ctrl/Cmd', 'L'], description: 'Link notes: Extend each note to next note of same pitch (or pattern end)' },
         { keys: ['Escape'], description: 'Clear loop region' },
     ],
     'Keyboard Piano': [

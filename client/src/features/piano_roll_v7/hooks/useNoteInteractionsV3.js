@@ -256,6 +256,7 @@ export function useNoteInteractionsV3({
     snapValue,
     currentInstrument,
     loopRegion,
+    setLoopRegion, // ✅ FL STUDIO FEATURE: Ctrl+L support
     keyboardPianoMode,
     // ✅ MIDI Recording
     isRecording = false,
@@ -2031,6 +2032,209 @@ export function useNoteInteractionsV3({
             
             // Select the duplicated notes
             select(duplicatedNotes.map(n => n.id), 'replace');
+            return;
+        }
+
+        // ✅ FL STUDIO FEATURE: Link Notes - Ctrl/Cmd + L
+        // Extends each note's duration to the next note of the same pitch
+        // If no next note exists, extends to pattern end
+        if ((e.ctrlKey || e.metaKey) && (e.key === 'l' || e.key === 'L')) {
+            e.preventDefault();
+            console.log('🎹 Ctrl+L pressed');
+            
+            if (!activePatternId || !currentInstrument) {
+                console.warn('⚠️ Ctrl+L requires active pattern and instrument', { activePatternId, currentInstrument });
+                return;
+            }
+
+            // Get all notes (not just selected) for finding next notes
+            const allNotes = notes;
+            console.log('🎹 Ctrl+L: All notes:', allNotes.length, allNotes);
+            if (allNotes.length === 0) {
+                console.warn('⚠️ No notes to link');
+                return;
+            }
+
+            // Get pattern length (default to 64 steps = 16 beats)
+            const pattern = patterns[activePatternId];
+            // Pattern length can be in steps (if pattern.length exists) or we need to calculate
+            // Notes are stored in beats, so we need pattern length in beats
+            const STEPS_PER_BEAT = 4;
+            let patternLengthBeats;
+            
+            if (pattern?.length && typeof pattern.length === 'number') {
+                // Pattern length is in steps, convert to beats
+                patternLengthBeats = pattern.length / STEPS_PER_BEAT;
+            } else {
+                // Calculate pattern length from notes (find max end time)
+                const maxEndTime = Math.max(...allNotes.map(note => 
+                    (note.startTime || 0) + (note.length || 1)
+                ), 0);
+                // Round up to next bar (4 beats = 1 bar)
+                const BEATS_PER_BAR = 4;
+                patternLengthBeats = Math.ceil(maxEndTime / BEATS_PER_BAR) * BEATS_PER_BAR;
+                // Minimum 1 bar (4 beats)
+                patternLengthBeats = Math.max(4, patternLengthBeats);
+            }
+
+            // Group notes by pitch
+            const notesByPitch = new Map();
+            allNotes.forEach(note => {
+                // Support both 'pitch' and 'note' properties
+                const pitch = note.pitch ?? note.note ?? 60;
+                if (!notesByPitch.has(pitch)) {
+                    notesByPitch.set(pitch, []);
+                }
+                notesByPitch.get(pitch).push(note);
+            });
+
+            // Sort notes by startTime for each pitch
+            notesByPitch.forEach((pitchNotes, pitch) => {
+                pitchNotes.sort((a, b) => (a.startTime || 0) - (b.startTime || 0));
+            });
+
+            // Update notes: extend each note to next note or pattern end
+            const updatesMap = new Map();
+            
+            console.log('🎹 Ctrl+L: Pattern length (beats):', patternLengthBeats);
+            console.log('🎹 Ctrl+L: Notes by pitch:', notesByPitch.size, 'pitches');
+            
+            notesByPitch.forEach((pitchNotes, pitch) => {
+                console.log(`🎹 Ctrl+L: Pitch ${pitch}: ${pitchNotes.length} notes`);
+                pitchNotes.forEach((note, index) => {
+                    // Support both 'startTime' and 'time' properties
+                    const noteStartTime = note.startTime ?? note.time ?? 0;
+                    // Support both 'length' and 'duration' properties
+                    let currentLength = note.length;
+                    if (currentLength === undefined || currentLength === null) {
+                        // Try to parse duration string if exists
+                        if (note.duration && typeof note.duration === 'string') {
+                            // Simple duration conversion (Tone.js notation to beats)
+                            const durationMap = {
+                                '1n': 4, '2n': 2, '4n': 1, '8n': 0.5, '16n': 0.25,
+                                '1m': 4, '2m': 2, '4m': 1, '8m': 0.5, '16m': 0.25
+                            };
+                            currentLength = durationMap[note.duration] || 1;
+                        } else if (typeof note.duration === 'number') {
+                            currentLength = note.duration;
+                        } else {
+                            currentLength = 1;
+                        }
+                    }
+                    
+                    let newLength;
+
+                    if (index < pitchNotes.length - 1) {
+                        // There's a next note: extend to next note's start
+                        const nextNote = pitchNotes[index + 1];
+                        const nextNoteStartTime = nextNote.startTime ?? nextNote.time ?? 0;
+                        newLength = nextNoteStartTime - noteStartTime;
+                        console.log(`  Note ${index}: start=${noteStartTime.toFixed(2)}, current=${currentLength.toFixed(2)}, next=${nextNoteStartTime.toFixed(2)}, new=${newLength.toFixed(2)}`);
+                    } else {
+                        // Last note: extend to pattern end
+                        newLength = patternLengthBeats - noteStartTime;
+                        console.log(`  Note ${index} (last): start=${noteStartTime.toFixed(2)}, current=${currentLength.toFixed(2)}, patternEnd=${patternLengthBeats.toFixed(2)}, new=${newLength.toFixed(2)}`);
+                    }
+
+                    // Ensure minimum length of 0.25 beats (1/16th note)
+                    newLength = Math.max(0.25, newLength);
+
+                    // Only update if length changed
+                    const lengthDiff = Math.abs(newLength - currentLength);
+                    if (lengthDiff > 0.01) {
+                        // ✅ FIX: Update both length and visualLength to prevent oval notes
+                        // When linking notes, they should be normal notes (not oval), so visualLength = length
+                        updatesMap.set(note.id, { 
+                            length: newLength,
+                            visualLength: newLength // ✅ Set visualLength = length to make it a normal note, not oval
+                        });
+                        console.log(`  ✅ Will update note ${note.id}: ${currentLength.toFixed(2)} → ${newLength.toFixed(2)} (diff: ${lengthDiff.toFixed(2)})`);
+                    } else {
+                        console.log(`  ⏭️ Skip note ${note.id}: length already correct (${currentLength.toFixed(2)})`);
+                    }
+                });
+            });
+
+            // Apply updates using CommandStack for undo/redo support
+            console.log('🎹 Ctrl+L: Updates map:', updatesMap.size, Array.from(updatesMap.entries()));
+            if (updatesMap.size > 0) {
+                console.log('🎹 Ctrl+L: Applying updates via CommandStack...');
+                
+                // ✅ COMMAND STACK: Use BatchUpdateNotesCommand for undo/redo
+                const stack = commandStackRef.current;
+                if (stack && activePatternId && currentInstrument) {
+                    // Convert updatesMap to array of {id, oldState, newState}
+                    const updateCommands = [];
+                    const currentNotes = notes;
+                    
+                    updatesMap.forEach((updates, noteId) => {
+                        const note = currentNotes.find(n => n.id === noteId);
+                        if (note) {
+                            updateCommands.push({
+                                noteId: noteId, // ✅ BatchUpdateNotesCommand expects 'noteId', not 'id'
+                                oldState: { ...note },
+                                newState: { ...note, ...updates }
+                            });
+                        }
+                    });
+                    
+                    if (updateCommands.length > 0) {
+                        // Create batch command
+                        // BatchUpdateNotesCommand expects updatePatternStoreFn to receive a Map of noteId -> full newState
+                        const batchCommand = new BatchUpdateNotesCommand(
+                            updateCommands,
+                            (updatesMap) => {
+                                // BatchUpdateNotesCommand passes Map<noteId, fullNewState>
+                                // We need to update the pattern store with all notes at once
+                                const currentPattern = useArrangementStore.getState().patterns[activePatternId];
+                                let currentNotes = currentPattern?.data?.[currentInstrument.id] || [];
+                                
+                                // ✅ FIX: Ensure currentNotes is an array
+                                if (!Array.isArray(currentNotes)) {
+                                    console.error('❌ Ctrl+L: currentNotes is not an array:', currentNotes);
+                                    currentNotes = [];
+                                }
+                                
+                                const updated = currentNotes.map(note => {
+                                    const newState = updatesMap.get(note.id);
+                                    return newState || note;
+                                });
+                                
+                                // ✅ FIX: Ensure updated is an array before passing to updatePatternNotes
+                                if (!Array.isArray(updated)) {
+                                    console.error('❌ Ctrl+L: updated is not an array:', updated);
+                                    return;
+                                }
+                                
+                                updatePatternNotes(activePatternId, currentInstrument.id, updated);
+                                
+                                // Emit NOTE_MODIFIED events for all updated notes
+                                updateCommands.forEach(({ noteId }) => {
+                                    const updatedNote = updated.find(n => n.id === noteId);
+                                    if (updatedNote) {
+                                        EventBus.emit('NOTE_MODIFIED', {
+                                            patternId: activePatternId,
+                                            instrumentId: currentInstrument.id,
+                                            note: updatedNote
+                                        });
+                                    }
+                                });
+                            },
+                            `Link ${updateCommands.length} note(s)`
+                        );
+                        
+                        stack.execute(batchCommand);
+                        console.log(`✅ Ctrl+L: Linked ${updatesMap.size} notes (extended to next note or pattern end)`);
+                    }
+                } else {
+                    // Fallback: Direct update if CommandStack not available
+                    console.warn('⚠️ CommandStack not available, using direct update');
+                    _updateNotes(updatesMap);
+                    console.log(`✅ Ctrl+L: Linked ${updatesMap.size} notes (direct update)`);
+                }
+            } else {
+                console.log('🎹 Ctrl+L: No notes needed linking (all notes already at correct length)');
+            }
             return;
         }
 

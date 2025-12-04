@@ -840,6 +840,7 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
         snapValue,
         currentInstrument,
         loopRegion,
+        setLoopRegion, // ✅ FL STUDIO FEATURE: Ctrl+L support
         keyboardPianoMode,
         // ✅ MIDI Recording
         isRecording,

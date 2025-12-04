@@ -546,3 +546,4 @@ Piyasa karşılaştırmasına göre eksik özellikler:
 **Hazırlayan:** DAWG Development Team  
 **Versiyon:** 2.0.0
 
+

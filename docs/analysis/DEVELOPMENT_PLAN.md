@@ -1101,3 +1101,4 @@ Bu geliştirme planı, SWOT analizindeki öncelikli aksiyonları uygulanabilir g
 **Hazırlayan:** DAWG Development Team  
 **Versiyon:** 1.0.0
 
+

@@ -545,3 +545,4 @@ Bu iyileştirmeler yapıldığında, sistem daha **tutarlı** ve **maintainable*
 
 
 
+

@@ -240,3 +240,4 @@ Logları topladıktan sonra:
 
 
 
+
