@@ -1971,10 +1971,68 @@ export class AudioContextService {
 
       // If the audio engine has an instrument creation method, call it here
       if (this.audioEngine.createInstrument) {
-        return await this.audioEngine.createInstrument(instrument);
+        const createdInstrument = await this.audioEngine.createInstrument(instrument);
+
+        // ✅ CRITICAL: Sync instrument parameters immediately after creation
+        // This ensures envelopeEnabled/release and other params are applied before first playback
+        await this._syncInstrumentParams(instrument.id);
+
+        return createdInstrument;
       }
     } catch (error) {
       console.error('❌ AudioContextService: Failed to create instrument:', error);
+    }
+  }
+
+  /**
+   * Sync instrument parameters from store to audio engine instrument
+   * Ensures envelopeEnabled/release and other params are applied without needing editor open
+   */
+  static async _syncInstrumentParams(instrumentId) {
+    if (!this.audioEngine || !instrumentId) return;
+
+    const instrument = this.audioEngine.instruments?.get(instrumentId);
+    if (!instrument || typeof instrument.updateParameters !== 'function') return;
+
+    try {
+      const { useInstrumentsStore } = await import('@/store/useInstrumentsStore');
+      const state = useInstrumentsStore.getState();
+      const instrumentData = state.instruments.find(i => i.id === instrumentId);
+      if (!instrumentData) return;
+
+      const envelopeEnabled =
+        instrumentData.envelopeEnabled !== undefined
+          ? instrumentData.envelopeEnabled
+          : !!instrumentData.envelope;
+
+      // ✅ CRITICAL FIX: envelope values are in seconds, but updateParameters expects ms for attack/decay/release
+      const envelope = instrumentData.envelope || {};
+      const paramsToSync = {
+        envelopeEnabled,
+        attack: instrumentData.attack ?? (envelope.attack !== undefined ? envelope.attack * 1000 : undefined),
+        decay: instrumentData.decay ?? (envelope.decay !== undefined ? envelope.decay * 1000 : undefined),
+        sustain: instrumentData.sustain ?? envelope.sustain,
+        release: instrumentData.release ?? (envelope.release !== undefined ? envelope.release * 1000 : undefined),
+        gain: instrumentData.gain,
+        pan: instrumentData.pan,
+        pitchOffset: instrumentData.pitchOffset,
+        sampleStart: instrumentData.sampleStart,
+        sampleEnd: instrumentData.sampleEnd,
+        cutItself: instrumentData.cutItself,
+      };
+
+      Object.keys(paramsToSync).forEach((key) => {
+        if (paramsToSync[key] === undefined) delete paramsToSync[key];
+      });
+
+      if (Object.keys(paramsToSync).length > 0) {
+        instrument.updateParameters(paramsToSync);
+        if (import.meta.env.DEV) {
+          console.log(`🔄 Synced instrument params after creation: ${instrumentId}`, paramsToSync);
+        }
+      }
+    } catch (error) {
+      console.warn('⚠️ Failed to sync instrument params:', error);
     }
   }
 
@@ -2343,6 +2401,65 @@ export class AudioContextService {
       if (import.meta.env.DEV) {
         console.log(`✅ AudioContextService: Added ${effectType} to ${trackId} (ID: ${effectId})`);
       }
+      
+      // ✅ CRITICAL FIX: Sync instrument parameters when effect is added to track
+      // This ensures envelopeEnabled and other parameters are applied to playback instruments
+      // This is especially important for reverb/delay tails to work correctly
+      const insert = this.audioEngine.mixerInserts?.get(trackId);
+      if (insert && insert.instruments) {
+        const { useInstrumentsStore } = await import('@/store/useInstrumentsStore');
+        const instrumentsStore = useInstrumentsStore.getState();
+        
+        // Find all instruments routed to this track
+        for (const [instrumentId] of insert.instruments) {
+          const instrument = this.audioEngine.instruments?.get(instrumentId);
+          if (!instrument || typeof instrument.updateParameters !== 'function') continue;
+          
+          // Get instrument data from store
+          const instrumentData = instrumentsStore.instruments.find(inst => inst.id === instrumentId);
+          if (!instrumentData) continue;
+          
+          // Sync envelopeEnabled and other critical parameters
+          // ✅ CRITICAL FIX: envelope values are in seconds, but updateParameters expects ms for attack/decay/release
+          const envelopeEnabled =
+            instrumentData.envelopeEnabled !== undefined
+              ? instrumentData.envelopeEnabled
+              : !!instrumentData.envelope;
+          const envelope = instrumentData.envelope || {};
+          const paramsToSync = {
+            envelopeEnabled,
+            attack: instrumentData.attack ?? (envelope.attack !== undefined ? envelope.attack * 1000 : undefined),
+            decay: instrumentData.decay ?? (envelope.decay !== undefined ? envelope.decay * 1000 : undefined),
+            sustain: instrumentData.sustain ?? envelope.sustain,
+            release: instrumentData.release ?? (envelope.release !== undefined ? envelope.release * 1000 : undefined),
+          };
+          
+          // Remove undefined values
+          Object.keys(paramsToSync).forEach(key => {
+            if (paramsToSync[key] === undefined) {
+              delete paramsToSync[key];
+            }
+          });
+          
+          if (Object.keys(paramsToSync).length > 0) {
+            instrument.updateParameters(paramsToSync);
+            if (import.meta.env.DEV) {
+              console.log(`🔄 Synced instrument ${instrumentId} parameters after adding effect:`, paramsToSync);
+            }
+          }
+
+          // ✅ Ensure routing still goes through this insert after effect change
+          try {
+            insert.connectInstrument(instrumentId, instrument.output);
+            if (import.meta.env.DEV) {
+              console.log(`🔌 Reconnected instrument ${instrumentId} to ${trackId} after effect add`);
+            }
+          } catch (err) {
+            console.warn(`⚠️ Failed to reconnect instrument ${instrumentId} to ${trackId} after effect add`, err);
+          }
+        }
+      }
+      
       return effectId;
     } catch (error) {
       console.error(`❌ AudioContextService: Failed to add effect:`, error);

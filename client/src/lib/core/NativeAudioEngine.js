@@ -508,22 +508,22 @@ export class NativeAudioEngine {
      */
     cleanUnusedBuffers(activeInstrumentIds = new Set()) {
         if (!this.sampleBuffers) return;
-        
+
         const beforeCount = this.sampleBuffers.size;
         const toRemove = [];
-        
+
         // Find buffers not associated with active instruments
         this.sampleBuffers.forEach((buffer, instrumentId) => {
             if (!activeInstrumentIds.has(instrumentId)) {
                 toRemove.push(instrumentId);
             }
         });
-        
+
         // Remove unused buffers
         toRemove.forEach(id => {
             this.sampleBuffers.delete(id);
         });
-        
+
         const afterCount = this.sampleBuffers.size;
         if (beforeCount > afterCount) {
             logger.debug(NAMESPACES.AUDIO, `Cleaned ${beforeCount - afterCount} unused sample buffers (${afterCount} remaining)`);
@@ -618,7 +618,7 @@ export class NativeAudioEngine {
             if (instrumentData.mixerTrackId) {
                 let insert = this.mixerInserts.get(instrumentData.mixerTrackId);
                 logger.debug(NAMESPACES.AUDIO, `mixerTrackId: ${instrumentData.mixerTrackId}, Insert found: ${!!insert}`);
-                
+
                 // ✅ FIX: If insert doesn't exist, try to create it
                 if (!insert) {
                     logger.debug(NAMESPACES.AUDIO, `Creating missing mixer insert: ${instrumentData.mixerTrackId}`);
@@ -627,7 +627,7 @@ export class NativeAudioEngine {
                         logger.info(NAMESPACES.AUDIO, `Created mixer insert: ${instrumentData.mixerTrackId}`);
                     }
                 }
-                
+
                 if (insert) {
                     // Route to dynamic MixerInsert
                     // ✅ FIX: VASynth instruments need initialize() to set output
@@ -958,7 +958,7 @@ export class NativeAudioEngine {
         const paramKeys = ['sampleStart', 'sampleStartModulation', 'timeStretchEnabled',
             'gain', 'pan', 'pitch', 'attack', 'decay', 'sustain', 'release',
             'filterCutoff', 'filterResonance', 'filterKeyTracking',
-            'modulationMatrix', 'sampleChop', 'sampleChopMode'];
+            'modulationMatrix', 'sampleChop', 'sampleChopMode', 'cutItself'];
 
         paramKeys.forEach(key => {
             if (params[key] !== undefined) {
@@ -969,7 +969,16 @@ export class NativeAudioEngine {
         // Other parameter updates can be handled here
         const instrument = this.instruments.get(instrumentId);
         if (instrument && instrument.updateParameters && Object.keys(relevantParams).length > 0) {
+            if (import.meta.env?.DEV && params.cutItself !== undefined) {
+                console.log(`✂️ [NativeAudioEngine] Updating cutItself for ${instrumentId}:`, params.cutItself);
+            }
             instrument.updateParameters(relevantParams);
+        } else if (import.meta.env?.DEV && params.cutItself !== undefined) {
+            console.warn(`⚠️ [NativeAudioEngine] Cannot update cutItself for ${instrumentId}:`, {
+                hasInstrument: !!instrument,
+                hasUpdateParameters: !!(instrument && instrument.updateParameters),
+                relevantParamsCount: Object.keys(relevantParams).length
+            });
         }
 
         return true;
@@ -984,7 +993,7 @@ export class NativeAudioEngine {
         if (import.meta.env.DEV) {
             console.log(`🔌 Attempting to connect instrument ${instrumentId} to channel ${channelId}`);
         }
-        
+
         // Use the new routing system
         try {
             this.routeInstrumentToInsert(instrumentId, channelId);
@@ -1380,18 +1389,18 @@ export class NativeAudioEngine {
      */
     _retryRouting(instrumentId, mixerTrackId, maxRetries = 5, baseDelay = 100) {
         let attempt = 0;
-        
+
         const tryRoute = () => {
             attempt++;
-            
+
             const instrument = this.instruments.get(instrumentId);
             let insert = this.mixerInserts.get(mixerTrackId);
-            
+
             // Try to create insert if it doesn't exist
             if (!insert && attempt <= 2) {
                 insert = this.createMixerInsert(mixerTrackId, mixerTrackId);
             }
-            
+
             // Check if already routed correctly
             const currentRoute = this.instrumentToInsert.get(instrumentId);
             if (currentRoute === mixerTrackId) {
@@ -1400,7 +1409,7 @@ export class NativeAudioEngine {
                 }
                 return;
             }
-            
+
             // Both must exist and instrument must have output
             if (instrument?.output && insert) {
                 try {
@@ -1414,7 +1423,7 @@ export class NativeAudioEngine {
                     console.warn(`⚠️ Retry routing attempt ${attempt} failed:`, error.message);
                 }
             }
-            
+
             // Schedule next retry with exponential backoff
             if (attempt < maxRetries) {
                 const delay = baseDelay * Math.pow(1.5, attempt - 1);
@@ -1423,7 +1432,7 @@ export class NativeAudioEngine {
                 console.error(`❌ Failed to route ${instrumentId} → ${mixerTrackId} after ${maxRetries} attempts`);
             }
         };
-        
+
         // Start first retry after baseDelay
         setTimeout(tryRoute, baseDelay);
     }
@@ -1444,25 +1453,30 @@ export class NativeAudioEngine {
         }
 
         try {
-            const effectNode = await effectRegistry.createEffectNode(
-                effectType,
-                this.audioContext,
-                settings
-            );
+            // ✅ FIX: Use EffectFactory to create effect wrapper (BaseEffect)
+            // This ensures we get inputNode/outputNode for stable connections
+            const effect = EffectFactory.createEffect(this.audioContext, effectType);
 
-            if (!effectNode) {
+            if (!effect) {
                 throw new Error(`Failed to create effect: ${effectType}`);
+            }
+
+            // Apply settings
+            if (settings && Object.keys(settings).length > 0) {
+                effect.setParametersState(settings);
             }
 
             // ✅ Use provided storeEffectId if available, otherwise generate new ID
             const effectId = storeEffectId || `${insertId}-fx-${Date.now()}`;
 
-            // Add effect with single ID and effect type
-            insert.addEffect(effectId, effectNode, settings, false, effectType);
+            // Add effect to insert
+            // Note: insert.addEffect now expects the effect wrapper, not just the node
+            insert.addEffect(effectId, effect, settings, false, effectType);
 
             // ⚡ SPECIAL INITIALIZATION: MultiBandEQ requires bands to be sent via message
-            if (effectType === 'MultiBandEQ' && settings.bands && effectNode.port) {
-                effectNode.port.postMessage({
+            // Check if the underlying node has a port (WorkletEffect)
+            if (effectType === 'MultiBandEQ' && settings.bands && effect.workletNode?.port) {
+                effect.workletNode.port.postMessage({
                     type: 'updateBands',
                     bands: settings.bands
                 });
@@ -1503,30 +1517,30 @@ export class NativeAudioEngine {
      */
     _estimateEffectLatency(effectType, settings) {
         const sampleRate = this.audioContext.sampleRate;
-        
+
         switch (effectType) {
             case 'Compressor':
                 // Compressor with lookahead has latency
                 const lookaheadMs = settings.lookahead || 3; // Default 3ms
                 return Math.round((lookaheadMs / 1000) * sampleRate);
-            
+
             case 'Limiter':
                 // Limiter with lookahead has latency
                 const limiterLookahead = settings.lookahead || 1; // Default 1ms
                 return Math.round((limiterLookahead / 1000) * sampleRate);
-            
+
             case 'ModernDelay':
             case 'Delay':
                 // Delay effects have inherent latency (delay time)
                 const delayTime = settings.timeLeft || settings.delayTime || 0;
                 return Math.round(delayTime * sampleRate);
-            
+
             case 'ModernReverb':
             case 'Reverb':
                 // Reverb has pre-delay latency
                 const preDelay = settings.preDelay || 0.02; // Default 20ms
                 return Math.round(preDelay * sampleRate);
-            
+
             default:
                 // Most effects have no latency
                 return 0;
@@ -1682,7 +1696,7 @@ export class NativeAudioEngine {
 
         // Add send: source → bus input
         sourceInsert.addSend(busId, busInsert.input, level);
-        
+
         if (import.meta.env.DEV) {
             console.log(`✅ Send created: ${sourceId} → ${busId} (level: ${level})`);
         }

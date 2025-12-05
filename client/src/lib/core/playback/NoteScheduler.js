@@ -202,6 +202,9 @@ export class NoteScheduler {
             // ✅ OVAL NOTE OVERLAP DETECTION: Check for overlapping notes of the same pitch
             const notePitch = note.pitch || 'C4';
             const noteEndTime = absoluteTime + noteDuration;
+
+            // ⚡ POLICY: Only choke overlaps if instrument explicitly wants cutItself
+            const shouldHandleOverlap = instrument?.cutItself === true;
             
             // ✅ DEBUG: Log note scheduling for overlap detection
             if (import.meta.env.DEV && (instrumentId.includes('808') || notePitch === 'C4')) {
@@ -225,7 +228,7 @@ export class NoteScheduler {
             
             // Check if there's an active note of the same pitch that overlaps
             const existingActiveNote = activeNotesByPitch.get(notePitch);
-            if (existingActiveNote && existingActiveNote.endTime > absoluteTime) {
+            if (shouldHandleOverlap && existingActiveNote && existingActiveNote.endTime > absoluteTime) {
                 // ✅ OVERLAP DETECTED: Schedule early release for the existing note
                 // Calculate overlap duration and use 50% of it for fade-out (minimum 2ms)
                 const overlapDuration = existingActiveNote.endTime - absoluteTime;
@@ -250,7 +253,7 @@ export class NoteScheduler {
                     );
                     
                     if (import.meta.env.DEV) {
-                        console.log(`🔄 Oval note overlap detected:`, {
+                        console.log(`🔄 Oval note overlap detected (choke):`, {
                             pitch: notePitch,
                             existingStart: existingActiveNote.startTime.toFixed(3),
                             existingEnd: existingActiveNote.endTime.toFixed(3),
@@ -260,6 +263,18 @@ export class NoteScheduler {
                             fadeOut: (fadeOutDuration * 1000).toFixed(1) + 'ms'
                         });
                     }
+                }
+            } else if (!shouldHandleOverlap && import.meta.env.DEV) {
+                // Skip choke; allow full polyphony (important for reverb tails)
+                if (existingActiveNote && existingActiveNote.endTime > absoluteTime) {
+                    console.log('🧪 NoteScheduler: overlap ignored (cutItself=false)', {
+                        instrumentId,
+                        pitch: notePitch,
+                        existingEnd: existingActiveNote.endTime.toFixed(3),
+                        newStart: absoluteTime.toFixed(3),
+                        mixerTrackId: instrument?.mixerTrackId,
+                        cutItself: instrument?.cutItself
+                    });
                 }
             }
             
