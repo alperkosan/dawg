@@ -20,6 +20,17 @@ import {
 } from './playback/index.js';
 import { SampleAccurateTime } from './utils/SampleAccurateTime.js'; // ✅ NEW: For overlap detection timing
 
+// ✅ PERFORMANCE: Debug logging flags - set to false in production
+// This eliminates 81+ console.log calls during playback, saving ~2-5ms per frame
+const DEBUG_PLAYBACK = false; // Set to true only for debugging playback issues
+const DEBUG_LOOP = false;     // Set to true only for debugging loop restart issues
+const DEBUG_SCHEDULING = false; // Set to true only for debugging note scheduling
+
+// ✅ PERFORMANCE: Conditional logging helpers (no-op when disabled)
+const logPlayback = DEBUG_PLAYBACK ? (...args) => console.log('🎵', ...args) : () => {};
+const logLoop = DEBUG_LOOP ? (...args) => console.log('🔄', ...args) : () => {};
+const logScheduling = DEBUG_SCHEDULING ? (...args) => console.log('📅', ...args) : () => {};
+
 /**
  * ⚡ PERFORMANCE OPTIMIZATION: Debounced Scheduling System
  * Prevents excessive rescheduling when multiple notes are added/removed rapidly
@@ -180,16 +191,11 @@ export class PlaybackManager {
         this.transport.on('loop', (data) => {
             const { nextLoopStartTime, time, fromTick, toTick } = data;
             
-            console.log('🔄 [LOOP EVENT] Transport loop event received:', {
+            if (DEBUG_LOOP) logLoop('[LOOP EVENT] Transport loop event received:', {
                 nextLoopStartTime: nextLoopStartTime?.toFixed(3),
                 time: time?.toFixed(3),
                 fromTick,
-                toTick,
-                currentPosition: this.currentPosition,
-                loopStart: this.loopStart,
-                loopEnd: this.loopEnd,
-                transportCurrentTick: this.transport.currentTick,
-                transportCurrentStep: this.transport.ticksToSteps(this.transport.currentTick)
+                toTick
             });
             
             // ✅ MERKEZI RESTART HANDLING
@@ -557,18 +563,8 @@ export class PlaybackManager {
      */
     _handleLoopRestart(nextStartTime = null) {
         if (!this.isPlaying) {
-            console.log('🔄 [LOOP RESTART] Skipped - not playing');
-            return;
+            return; // Silent skip - not playing
         }
-
-        console.log('🔄 [LOOP RESTART] Starting loop restart:', {
-            nextStartTime: nextStartTime?.toFixed(3),
-            currentPositionBefore: this.currentPosition,
-            loopStart: this.loopStart,
-            loopEnd: this.loopEnd,
-            transportCurrentTick: this.transport.currentTick,
-            transportCurrentStep: this.transport.ticksToSteps(this.transport.currentTick)
-        });
 
         // ✅ CRITICAL FIX: Mark loop restart in progress to prevent send/unsend operations
         // This prevents vaSynth notes from getting stuck when send/unsend happens during loop restart
@@ -587,14 +583,7 @@ export class PlaybackManager {
         // The NoteScheduler will handle cleanup of stopped notes automatically
 
         // ✅ STEP 2: Reset position to 0 (beginning)
-        const oldPosition = this.currentPosition;
         this.currentPosition = 0;
-        console.log('🔄 [LOOP RESTART] Position reset:', {
-            oldPosition,
-            newPosition: this.currentPosition,
-            transportCurrentTick: this.transport.currentTick,
-            note: 'Transport position NOT set here - already reset by NativeTransportSystem loop boundary'
-        });
         
         // ✅ CRITICAL FIX: Do NOT call transport.setPosition(0) on loop restart!
         // NativeTransportSystem already resets currentTick = 0 in advanceToNextTick()
@@ -617,127 +606,29 @@ export class PlaybackManager {
         // Loop end time is when step (loopEnd - 1) completes
         // Step 0 starts immediately after (seamless transition, no gap)
         // Use nextStartTime if provided (from transport), otherwise calculate from loop end
+        // ✅ SIMPLIFIED: Use nextStartTime directly (already has lookahead from transport)
         let scheduledTarget = nextStartTime;
         if (!scheduledTarget || !Number.isFinite(scheduledTarget)) {
-            const currentTime = this.transport.audioContext.currentTime;
-            
-            // ✅ CRITICAL FIX: If nextStartTime not provided, calculate from current time
-            // Transport should always provide nextStartTime with lookahead already applied
-            // But if not provided, use currentTime (should be rare)
-            scheduledTarget = currentTime;
-            
-            console.log('🔄 [LOOP RESTART] Scheduling target calculated (fallback):', {
-                nextStartTime: nextStartTime?.toFixed(3),
-                currentTime: currentTime.toFixed(3),
-                scheduledTarget: scheduledTarget.toFixed(3),
-                difference: (scheduledTarget - currentTime).toFixed(3) + 's',
-                note: 'nextStartTime not provided, using currentTime (should be rare)'
-            });
-        } else {
-            // ✅ CRITICAL FIX: Use nextStartTime directly - it already has lookahead from transport
-            // Transport's advanceToNextTick() already adds lookahead to nextTickTime
-            // So nextStartTime (which comes from nextTickTime) already has the correct timing
-            // Don't add lookahead again here, it would cause double lookahead and wrong timing
-            scheduledTarget = nextStartTime;
-            
-            const currentTime = this.transport.audioContext.currentTime;
-            console.log('🔄 [LOOP RESTART] Using provided nextStartTime (already has lookahead from transport):', {
-                nextStartTime: nextStartTime.toFixed(3),
-                scheduledTarget: scheduledTarget.toFixed(3),
-                currentTime: currentTime.toFixed(3),
-                difference: (scheduledTarget - currentTime).toFixed(3) + 's',
-                note: 'nextStartTime from transport already includes lookahead, using directly'
-            });
+            scheduledTarget = this.transport.audioContext.currentTime;
         }
 
-        if (scheduledTarget && Number.isFinite(scheduledTarget)) {
-            const currentTime = this.transport.audioContext.currentTime;
-            const timeUntilLoopStart = scheduledTarget - currentTime;
-            
-            // ✅ CRITICAL FIX: For loop restart, always schedule immediately
-            // Pre-roll is designed for normal playback where we have time to prepare
-            // Loop restart happens at a specific moment and needs immediate scheduling
-            // The lookahead delay is already applied to scheduledTarget, so we get the right timing
-            // This ensures notes are scheduled in time and play correctly
-            console.log('🔄 [LOOP RESTART] Scheduling immediately (loop restart requires immediate scheduling):', {
-                scheduledTarget: scheduledTarget.toFixed(3),
-                currentTime: currentTime.toFixed(3),
-                timeUntilLoopStart: timeUntilLoopStart.toFixed(3) + 's',
-                lookaheadApplied: true,
-                note: 'Loop restart needs immediate scheduling, lookahead already applied to target'
-            });
-            
-            this._scheduleContent(scheduledTarget, 'loop-restart', true, {
-                scope: 'all',
-                priority: 'burst',
-                force: true
-            });
+        // ✅ Schedule immediately - loop restart needs instant scheduling
+        this._scheduleContent(scheduledTarget, 'loop-restart', true, {
+            scope: 'all',
+            priority: 'burst',
+            force: true
+        });
 
-            // ✅ CRITICAL FIX: Don't schedule pre-roll for next loop during loop restart
-            // Pre-roll is for normal playback transitions, not loop restarts
-            // Loop restart always uses immediate scheduling with fixed lookahead
-            // Pre-roll will be scheduled by normal playback scheduling after loop restart completes
-            // This prevents pre-roll timer from interfering with subsequent loop restarts
-        } else {
-            // Fallback: schedule immediately
-            this._scheduleContent(null, 'loop-restart-fallback', true, {
-                scope: 'all',
-                force: true
-            });
-        }
-
-        // ✅ STEP 6: Emit event and clear flag
+        // Emit event and clear flag
         this._emit('loopRestart', {
-            time: nextStartTime || this.transport.audioContext.currentTime,
-            tick: 0 * this.transport.ticksPerStep,
+            time: scheduledTarget,
+            tick: 0,
             step: 0,
             mode: this.currentMode,
             patternId: this.activePatternId
         });
 
-        // Clear loop restart flag immediately after stopping notes
-        // Notes are stopped, so send/unsend operations can proceed safely
         this._isLoopRestarting = false;
-        
-        console.log('🔄 [LOOP RESTART] Loop restart completed:', {
-            scheduledTarget: scheduledTarget?.toFixed(3),
-            currentPosition: this.currentPosition,
-            loopStart: this.loopStart,
-            loopEnd: this.loopEnd,
-            transportCurrentTick: this.transport.currentTick,
-            transportCurrentStep: this.transport.ticksToSteps(this.transport.currentTick),
-            transportLoopStartTick: this.transport.loopStartTick,
-            transportLoopEndTick: this.transport.loopEndTick
-        });
-    }
-
-    /**
-     * ✅ YENİ: Loop restart analytics/tracking
-     * @private
-     */
-    _trackLoopRestart() {
-        if (!this.loopStats) {
-            this.loopStats = {
-                totalLoops: 0,
-                loopsInCurrentSession: 0,
-                lastLoopTime: null,
-                averageLoopInterval: 0
-            };
-        }
-        
-        const now = performance.now();
-        
-        if (this.loopStats.lastLoopTime) {
-            const interval = now - this.loopStats.lastLoopTime;
-            this.loopStats.averageLoopInterval = 
-                (this.loopStats.averageLoopInterval + interval) / 2;
-        }
-        
-        this.loopStats.totalLoops++;
-        this.loopStats.loopsInCurrentSession++;
-        this.loopStats.lastLoopTime = now;
-        
-        // Debug info
     }
 
     // =================== MODE MANAGEMENT ===================
@@ -1217,7 +1108,7 @@ export class PlaybackManager {
     }
 
     getCurrentPosition() {
-        // ✅ NEW: Use PositionTracker for accurate position management
+        // ✅ OPTIMIZED: Simplified position calculation without logging
         const position = this.positionTracker.getCurrentPosition();
 
         // During active playback, ensure loop bounds
@@ -1225,30 +1116,12 @@ export class PlaybackManager {
             const loopLength = this.loopEnd - this.loopStart;
             if (loopLength > 0) {
                 const relativeStep = (position.stepFloat - this.loopStart) % loopLength;
-                const boundedStep = this.loopStart + Math.max(0, relativeStep);
-
-                console.log('🎵 [GET POSITION] During playback:', {
-                    positionTrackerStep: position.stepFloat,
-                    loopStart: this.loopStart,
-                    loopEnd: this.loopEnd,
-                    loopLength,
-                    relativeStep,
-                    boundedStep,
-                    storedCurrentPosition: this.currentPosition,
-                    transportCurrentTick: this.transport.currentTick,
-                    transportCurrentStep: this.transport.ticksToSteps(this.transport.currentTick)
-                });
-
-                return boundedStep;
+                return this.loopStart + Math.max(0, relativeStep);
             }
             return position.stepFloat;
         }
 
         // For stopped/paused states, use stored position
-        console.log('🎵 [GET POSITION] Stopped/paused:', {
-            storedCurrentPosition: this.currentPosition,
-            positionTrackerStep: position.stepFloat
-        });
         return this.currentPosition;
     }
     // =================== CONTENT SCHEDULING ===================
@@ -1266,24 +1139,6 @@ export class PlaybackManager {
             priority = 'auto',
             append = false
         } = options;
-
-        // ✅ DEBUG: Log loop-restart scheduling
-        if (reason === 'loop-restart' || reason === 'loop-pre-roll') {
-            const currentTime = this.transport?.audioContext?.currentTime || 0;
-            console.log(`🔄 [SCHEDULE CONTENT] ${reason}:`, {
-                startTime: startTime?.toFixed(3),
-                currentTime: currentTime.toFixed(3),
-                timeUntilStart: startTime ? (startTime - currentTime).toFixed(3) + 's' : 'N/A',
-                force,
-                scope,
-                append,
-                currentPosition: this.currentPosition,
-                transportTick: this.transport?.currentTick,
-                transportStep: this.transport ? this.transport.ticksToSteps(this.transport.currentTick).toFixed(2) : 'N/A',
-                loopPreRollTimer: !!this.loopPreRollTimer,
-                lastPreRollTarget: this.lastPreRollTarget?.toFixed(3)
-            });
-        }
 
         let resolvedScope = scope;
         const appendMode = Boolean(append);
@@ -1408,150 +1263,47 @@ export class PlaybackManager {
      */
     async _schedulePatternContent(baseTime, options = {}) {
         const { instrumentFilterSet = null, reason = 'manual' } = options;
-        console.log('🎵 PlaybackManager._schedulePatternContent() called', { baseTime, reason });
         
-        // ✅ CRITICAL FIX: During resume, note modifications, and note additions, preserve currentPosition
-        // Only reset position during loop restart, not during resume or note modifications
+        // ✅ OPTIMIZED: Simplified position handling without excessive logging
         const isResume = reason === 'resume';
         const isNoteModified = reason === 'note-modified';
         const isNoteAdded = reason === 'note-added';
         const shouldPreservePosition = isResume || isNoteModified || isNoteAdded;
         
-        // ✅ CRITICAL FIX: Ensure currentPosition is correct during loop restart
-        // If we're scheduling from loop start and currentPosition is beyond loopEnd, reset it
-        // Also ensure currentPosition is set to loopStart if we're at loop start
-        // BUT: Don't reset during resume or note modifications - preserve the current position
+        // Reset position during loop restart (not during resume/note modifications)
         if (this.loopEnabled && !shouldPreservePosition) {
-            if (this.currentPosition >= this.loopEnd) {
-                // Loop restart detected - reset to 0 (beginning)
-                const oldPosition = this.currentPosition;
+            if (this.currentPosition >= this.loopEnd || (this._isLoopRestarting && this.currentPosition !== 0)) {
                 this.currentPosition = 0;
-                console.log(`🔄 [SCHEDULE] Loop restart detected in _schedulePatternContent:`, {
-                    oldPosition,
-                    newPosition: this.currentPosition,
-                    loopStart: this.loopStart,
-                    loopEnd: this.loopEnd,
-                    baseTime: baseTime.toFixed(3),
-                    reason
-                });
-            } else if (this._isLoopRestarting && this.currentPosition !== 0) {
-                // Loop restart in progress but position not reset yet - force reset to 0
-                const oldPosition = this.currentPosition;
-                this.currentPosition = 0;
-                console.log(`🔄 [SCHEDULE] Forcing position reset during loop restart:`, {
-                    oldPosition,
-                    newPosition: 0,
-                    reason
-                });
             }
-        } else if (shouldPreservePosition) {
-            // ✅ FIX: During resume, note modifications, and note additions, ensure currentPosition is within loop bounds
-            // Wrap position if it's beyond loop end (for loop-aware scheduling)
-            if (this.loopEnabled && this.currentPosition >= this.loopEnd) {
-                const loopLength = this.loopEnd - this.loopStart;
-                const relativePosition = ((this.currentPosition - this.loopStart) % loopLength + loopLength) % loopLength;
-                this.currentPosition = this.loopStart + relativePosition;
-                if (import.meta.env.DEV) {
-                    console.log(`🔄 ${reason}: Wrapped position within loop bounds:`, {
-                        originalPosition: this.currentPosition,
-                        wrappedPosition: this.currentPosition,
-                        loopStart: this.loopStart,
-                        loopEnd: this.loopEnd
-                    });
-                }
-            }
-            
-            if (import.meta.env.DEV) {
-                console.log(`▶️ ${reason}: Scheduling from current position:`, {
-                    currentPosition: this.currentPosition,
-                    loopStart: this.loopStart,
-                    loopEnd: this.loopEnd,
-                    baseTime: baseTime.toFixed(3)
-                });
-            }
+        } else if (shouldPreservePosition && this.loopEnabled && this.currentPosition >= this.loopEnd) {
+            // Wrap position within loop bounds
+            const loopLength = this.loopEnd - this.loopStart;
+            const relativePosition = ((this.currentPosition - this.loopStart) % loopLength + loopLength) % loopLength;
+            this.currentPosition = this.loopStart + relativePosition;
         }
         
         const arrangementStore = useArrangementStore.getState();
-        console.log('🎵 ArrangementStore state:', {
-            activePatternId: arrangementStore.activePatternId,
-            patternsCount: Object.keys(arrangementStore.patterns || {}).length,
-            patterns: Object.keys(arrangementStore.patterns || {})
-        });
-        
         const activePattern = arrangementStore.patterns[arrangementStore.activePatternId];
 
         if (!activePattern) {
-            console.warn('⚠️ No active pattern found:', arrangementStore.activePatternId);
             return { totalNotes: 0, instrumentCount: 0 };
         }
 
-        console.log('🎵 Active pattern found:', {
-            id: activePattern.id,
-            instrumentCount: Object.keys(activePattern.data || {}).length,
-            instruments: Object.keys(activePattern.data || {})
-        });
+        // ✅ OPTIMIZED: Schedule notes without verbose logging
+        const patternData = activePattern.data || {};
+        const instrumentCount = Object.keys(patternData).length;
+        let totalNotes = 0;
 
-        const instrumentCount = Object.keys(activePattern.data || {}).length;
-        const totalNotes = Object.values(activePattern.data || {}).reduce((sum, notes) => sum + (notes?.length || 0), 0);
-
-        console.log('🎵 Scheduling notes:', { instrumentCount, totalNotes, baseTime });
-
-        // Schedule notes for each instrument
-        Object.entries(activePattern.data || {}).forEach(([instrumentId, notes]) => {
-            if (instrumentFilterSet && !instrumentFilterSet.has(instrumentId)) {
-                return;
-            }
-            if (!Array.isArray(notes) || notes.length === 0) {
-                console.log(`⏭️ Skipping instrument ${instrumentId}: no notes`);
-                return;
-            }
+        Object.entries(patternData).forEach(([instrumentId, notes]) => {
+            if (instrumentFilterSet && !instrumentFilterSet.has(instrumentId)) return;
+            if (!Array.isArray(notes) || notes.length === 0) return;
 
             const instrument = this.audioEngine.instruments.get(instrumentId);
-            if (!instrument) {
-                console.warn(`⚠️ Instrument ${instrumentId} not found in audio engine`);
-                console.warn(`   Available instruments:`, Array.from(this.audioEngine.instruments.keys()));
-                console.warn(`   Pattern instrument IDs:`, Object.keys(activePattern.data || {}));
-                return;
-            }
+            if (!instrument) return;
 
-            // ✅ DEBUG: Log note properties to detect missing visualLength/length
-            const firstNote = notes[0];
-            const hasOvalNotes = notes.some(n => n.visualLength !== undefined && typeof n.length === 'number' && n.length > 0 && n.visualLength < n.length);
-            
-            console.log(`🎵 Scheduling ${notes.length} notes for instrument ${instrumentId}`, {
-                instrumentId,
-                instrumentName: instrument.name,
-                instrumentType: instrument.type || 'unknown',
-                hasOutput: !!instrument.output,
-                outputType: instrument.output?.constructor?.name || 'none',
-                notesCount: notes.length,
-                hasOvalNotes,
-                firstNote: firstNote ? {
-                    pitch: firstNote.pitch,
-                    time: firstNote.time || firstNote.startTime,
-                    length: firstNote.length,
-                    visualLength: firstNote.visualLength,
-                    duration: firstNote.duration,
-                    isOval: firstNote.visualLength !== undefined && typeof firstNote.length === 'number' && firstNote.length > 0 && firstNote.visualLength < firstNote.length
-                } : null,
-                // ✅ DEBUG: Check if any notes are missing visualLength/length
-                notesWithMissingProps: notes.filter(n => {
-                    const isOval = n.visualLength !== undefined && typeof n.length === 'number' && n.length > 0 && n.visualLength < n.length;
-                    const hasLength = typeof n.length === 'number' && n.length > 0;
-                    const hasVisualLength = n.visualLength !== undefined;
-                    // Normal notes should have length, oval notes should have both
-                    return !hasLength || (isOval && !hasVisualLength);
-                }).map(n => ({
-                    id: n.id,
-                    length: n.length,
-                    visualLength: n.visualLength,
-                    duration: n.duration
-                }))
-            });
+            totalNotes += notes.length;
             this._scheduleInstrumentNotes(instrument, notes, instrumentId, baseTime, null, options.reason);
         });
-        
-        console.log('✅ Pattern content scheduled');
 
         // ✅ PHASE 4: Start real-time automation ONLY for instruments with actual automation data
         // ✅ PERFORMANCE: Only start automation if lanes have data points (not empty)

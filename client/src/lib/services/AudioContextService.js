@@ -1069,15 +1069,18 @@ export class AudioContextService {
                   effect.id  // Pass original effect ID to preserve it
                 );
 
-                // Apply bypass state if needed
-                if (effect.bypass && insert.effects?.has(effect.id)) {
-                  const effectNode = insert.effects.get(effect.id);
-                  if (effectNode && effectNode.bypass !== undefined) {
-                    effectNode.bypass = effect.bypass;
-                  }
-                }
-
                 console.log(`✅ Added effect ${effect.type} (${effect.id}) to insert ${track.id}`);
+              }
+              
+              // ✅ CRITICAL FIX: ALWAYS apply bypass state, whether effect is new or existing
+              // This ensures effects load with their saved bypass state on EVERY sync
+              // Previously bypass was only applied for new effects, causing desync on subsequent syncs
+              if (insert.effects?.has(effect.id)) {
+                const bypassState = effect.bypass === true;
+                insert.setEffectBypass(effect.id, bypassState);
+                if (import.meta.env.DEV) {
+                  console.log(`🔄 Applied bypass state: ${effect.id} = ${bypassState}`);
+                }
               }
             } catch (error) {
               console.error(`❌ Failed to add effect ${effect.type} to insert ${track.id}:`, error);

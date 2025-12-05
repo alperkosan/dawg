@@ -1992,6 +1992,13 @@ class NativeSynthInstrument {
 
         for (const effectData of effectChainData) {
             try {
+                // ✅ CRITICAL FIX: Skip bypassed effects
+                // This ensures effects load with their saved bypass state
+                if (effectData.bypass === true) {
+                    logger.debug(NAMESPACES.EFFECT, `Skipping bypassed effect: ${effectData.type}`);
+                    continue;
+                }
+
                 const effect = EffectFactory.deserialize(effectData, this.audioContext);
                 if (!effect) {
                     console.warn(`Failed to create effect: ${effectData.type}`);

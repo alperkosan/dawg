@@ -391,8 +391,10 @@ export class SampleVoice extends BaseVoice {
         if (envelopeEnabled && instrumentData?.release !== undefined) {
             this.releaseTime = instrumentData.release / 1000;
         } else if (!envelopeEnabled) {
-            // ✅ FL Studio behavior: If envelope is OFF, use minimal release for click prevention
-            this.releaseTime = 0.005; // 5ms minimal release
+            // ✅ FL Studio behavior: If envelope is OFF, use longer release to allow effect tails (reverb, delay)
+            // 5ms was too short and cut off reverb tails
+            // 200ms allows natural sample decay and effect processing
+            this.releaseTime = 0.2; // 200ms - allows reverb/delay tails to play
         }
 
         this.envelopeGain.gain.cancelScheduledValues(time);

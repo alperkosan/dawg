@@ -271,8 +271,6 @@ export class NativeTransportSystem {
     }
 
     setPosition(step) {
-        const oldTick = this.currentTick;
-        const oldStep = this.ticksToSteps(this.currentTick);
         const targetTick = this.stepsToTicks(step);
         this.currentTick = targetTick;
         this.currentBar = Math.floor(this.currentTick / this.ticksPerBar);
@@ -280,17 +278,6 @@ export class NativeTransportSystem {
         if (this.isPlaying) {
             this.nextTickTime = this.audioContext.currentTime;
         }
-
-        console.log('🔄 [SET POSITION] Position set:', {
-            requestedStep: step,
-            oldTick,
-            oldStep: oldStep.toFixed(2),
-            newTick: this.currentTick,
-            newStep: this.ticksToSteps(this.currentTick).toFixed(2),
-            isPlaying: this.isPlaying,
-            loopStartTick: this.loopStartTick,
-            loopEndTick: this.loopEndTick
-        });
 
         this.triggerCallback('position', { position: this.currentTick, step: step });
         return this;
@@ -455,47 +442,16 @@ export class NativeTransportSystem {
         // When currentTick reaches 384, we should restart to 0
         if (this.loop && this.currentTick >= this.loopEndTick) {
             const previousTick = this.currentTick;
-            const previousStep = this.ticksToSteps(previousTick);
-            
-            console.log('🔄 [TRANSPORT LOOP] Loop boundary reached:', {
-                oldTick,
-                currentTick: this.currentTick,
-                currentStep: previousStep.toFixed(2),
-                loopEndTick: this.loopEndTick,
-                loopStartTick: this.loopStartTick,
-                loopEndStep: this.ticksToSteps(this.loopEndTick).toFixed(2),
-                loopStartStep: this.ticksToSteps(this.loopStartTick).toFixed(2),
-                oldNextTickTime: oldNextTickTime.toFixed(3),
-                currentTime: currentTime.toFixed(3),
-                timeSinceLastTick: (currentTime - oldNextTickTime).toFixed(3) + 's',
-                note: 'Restarting to tick 0'
-            });
             
             // ✅ Reset to 0 (beginning) on loop restart
             this.currentTick = 0;
             
-            // ✅ CRITICAL FIX: Do NOT update nextTickTime on loop restart!
-            // nextTickTime is already correct from the previous tick increment
-            // Updating it here causes the loop to be one tick shorter (~7ms per tick)
-            // This accumulates to ~130-140ms shorter loops on subsequent restarts
-            // The step0StartTime should use the EXISTING nextTickTime
+            // ✅ CRITICAL: nextTickTime is NOT updated - already correct from previous tick
+            // This ensures perfect loop length consistency
             const step0StartTime = this.nextTickTime;
 
-            console.log('🔄 [TRANSPORT LOOP] Position reset to 0 (nextTickTime preserved):', {
-                newTick: this.currentTick,
-                newStep: this.ticksToSteps(this.currentTick).toFixed(2),
-                nextTickTime: this.nextTickTime.toFixed(3),
-                step0StartTime: step0StartTime.toFixed(3),
-                currentTime: currentTime.toFixed(3),
-                timeUntilStep0: (step0StartTime - currentTime).toFixed(3) + 's',
-                secondsPerTick: secondsPerTick.toFixed(6),
-                note: 'nextTickTime preserved from previous tick for perfect loop length'
-            });
-
-            // ✅ Clear ALL scheduled events on loop restart
+            // Clear scheduled events and trigger loop callback
             this.clearScheduledEvents();
-
-            // ✅ Trigger loop event for PlaybackManager
             this.triggerCallback('loop', {
                 time: step0StartTime,
                 nextLoopStartTime: step0StartTime,
@@ -503,28 +459,12 @@ export class NativeTransportSystem {
                 toTick: 0,
                 needsReschedule: true
             });
-            
-            console.log('🔄 [TRANSPORT LOOP] Loop event triggered');
         } else {
-            // ✅ Normal tick: calculate next tick time
-            const nextTickTimeRaw = this.nextTickTime + secondsPerTick;
+            // ✅ Normal tick: calculate next tick time (sample-accurate)
             this.nextTickTime = SampleAccurateTime.toSampleAccurate(
                 this.audioContext,
-                nextTickTimeRaw
+                this.nextTickTime + secondsPerTick
             );
-            
-            // ✅ DEBUG: Log every 24th tick (every step) for debugging
-            if (this.currentTick % 24 === 0) {
-                console.log('⏱️ [TICK] Normal tick:', {
-                    currentTick: this.currentTick,
-                    currentStep: this.ticksToSteps(this.currentTick).toFixed(2),
-                    oldNextTickTime: oldNextTickTime.toFixed(3),
-                    newNextTickTime: this.nextTickTime.toFixed(3),
-                    currentTime: currentTime.toFixed(3),
-                    tickIncrement: (this.nextTickTime - oldNextTickTime).toFixed(3) + 's',
-                    timeUntilNextTick: (this.nextTickTime - currentTime).toFixed(3) + 's'
-                });
-            }
         }
 
         // Bar tracking (existing code)
