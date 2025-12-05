@@ -7,7 +7,7 @@
  */
 
 import { useReducer, useCallback, useRef, useEffect, useMemo } from 'react';
-import { 
+import {
     getCommandStack,
     AddNoteCommand,
     DeleteNotesCommand,
@@ -40,7 +40,7 @@ const VERSION = '3.0.0';
  */
 function stepsToDurationString(steps) {
     if (typeof steps !== 'number' || steps <= 0) return '16n';
-    
+
     // Round to nearest valid duration
     if (steps <= 0.5) return '32n';
     if (steps <= 1) return '16n';
@@ -48,7 +48,7 @@ function stepsToDurationString(steps) {
     if (steps <= 4) return '4n';
     if (steps <= 8) return '2n';
     if (steps <= 16) return '1n';
-    
+
     // For longer durations, use multiples of whole notes
     // But keep it simple - just use "1n" for anything longer
     // (The actual length is stored in the `length` property)
@@ -416,7 +416,7 @@ export function useNoteInteractionsV3({
             const currentPattern = useArrangementStore.getState().patterns[activePatternId];
             return currentPattern?.data?.[currentInstrument.id] || [];
         };
-        
+
         const currentNotes = getCurrentNotes();
 
         // ✅ FIX: Ensure time property is set for channel rack minipreview
@@ -465,7 +465,7 @@ export function useNoteInteractionsV3({
                 stack.execute(command);
             } else {
                 // Multiple notes - batch command
-                const commands = newNotes.map(note => 
+                const commands = newNotes.map(note =>
                     new AddNoteCommand(
                         note,
                         (note) => _addNotesToPattern([note]),
@@ -518,7 +518,7 @@ export function useNoteInteractionsV3({
         // ✅ COMMAND STACK: Create DeleteNotesCommand
         const stack = commandStackRef.current;
         const notesToDelete = notes.filter(n => noteIds.includes(n.id));
-        
+
         if (stack && notesToDelete.length > 0) {
             const command = new DeleteNotesCommand(
                 notesToDelete,
@@ -632,7 +632,7 @@ export function useNoteInteractionsV3({
         const clampedBias = Math.min(0.95, Math.max(0.05, biasRatio));
         const gridCenter = snapValue * clampedBias;
         const gridPosition = (value % snapValue + snapValue) % snapValue; // Handle negative values
-        
+
         if (gridPosition < gridCenter) {
             // Grid'in ilk %80'i -> o grid'e yaz
             return Math.floor(value / snapValue) * snapValue;
@@ -661,10 +661,17 @@ export function useNoteInteractionsV3({
     // DRAG & RESIZE - Must be defined before tool handlers
     // ===================================================================
 
-    const startDrag = useCallback((noteIds, coords, isDuplicate) => {
+    const startDrag = useCallback((noteIds, coords, isDuplicate, explicitNotes = []) => {
         const originals = new Map();
         noteIds.forEach(id => {
-            const note = notes.find(n => n.id === id);
+            // ✅ FIX: Check explicitNotes first (for newly created notes that aren't in store yet)
+            let note = explicitNotes.find(n => n.id === id);
+
+            // If not found in explicit notes, check store notes
+            if (!note) {
+                note = notes.find(n => n.id === id);
+            }
+
             if (note) {
                 originals.set(id, {
                     startTime: note.startTime,
@@ -683,9 +690,9 @@ export function useNoteInteractionsV3({
                 const currentPattern = useArrangementStore.getState().patterns[activePatternId];
                 return currentPattern?.data?.[currentInstrument.id] || notes;
             };
-            
+
             const currentNotes = getCurrentNotes();
-            
+
             if (DEBUG) {
                 console.log('🔄 [V3] Duplicate mode:', {
                     noteIdsCount: noteIds.length,
@@ -694,7 +701,7 @@ export function useNoteInteractionsV3({
                     notesInClosure: notes.length
                 });
             }
-            
+
             // Create duplicates with normalization
             const duplicates = noteIds.map(id => {
                 // ✅ FIX: Use currentNotes from store instead of closure notes
@@ -707,10 +714,10 @@ export function useNoteInteractionsV3({
                     }
                     return null;
                 }
-                
+
                 // ✅ CRITICAL: Normalize note format (same as notes useMemo)
                 let normalized = { ...note };
-                
+
                 // Convert `time` to `startTime`
                 if (normalized.time !== undefined && normalized.startTime === undefined) {
                     normalized.startTime = normalized.time;
@@ -719,7 +726,7 @@ export function useNoteInteractionsV3({
                 if (normalized.startTime !== undefined && normalized.time === undefined) {
                     normalized.time = normalized.startTime;
                 }
-                
+
                 // Convert `duration` to `length` if needed
                 if (normalized.duration !== undefined && normalized.length === undefined) {
                     const durationMap = {
@@ -732,7 +739,7 @@ export function useNoteInteractionsV3({
                     normalized.length = normalized.visualLength;
                     delete normalized.visualLength;
                 }
-                
+
                 // Convert pitch string to MIDI number (e.g., 'C4' -> 60)
                 if (typeof normalized.pitch === 'string') {
                     const noteMap = { 'C': 0, 'D': 2, 'E': 4, 'F': 5, 'G': 7, 'A': 9, 'B': 11 };
@@ -746,13 +753,13 @@ export function useNoteInteractionsV3({
                         normalized.pitch = 60; // Default to C4
                     }
                 }
-                
+
                 // Create duplicate with new ID
                 const duplicate = {
                     ...normalized,
                     id: `note_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
                 };
-                
+
                 return duplicate;
             }).filter(Boolean);
 
@@ -773,7 +780,7 @@ export function useNoteInteractionsV3({
                 const currentPattern = useArrangementStore.getState().patterns[activePatternId];
                 return currentPattern?.data?.[currentInstrument.id] || [];
             };
-            
+
             // Wait a tick for store to update, then get fresh note IDs
             // Use the duplicate IDs we created, but verify they exist in store
             const freshNotes = getFreshNotes();
@@ -781,7 +788,7 @@ export function useNoteInteractionsV3({
 
             // Verify all duplicates are in store
             const verifiedIds = duplicateIds.filter(id => freshNotes.some(n => n.id === id));
-            
+
             if (DEBUG) {
                 console.log('✅ [V3] Duplicates added:', {
                     expectedCount: duplicates.length,
@@ -791,10 +798,10 @@ export function useNoteInteractionsV3({
                     freshNotesCount: freshNotes.length
                 });
             }
-            
+
             // Update noteIds to verified duplicates for drag operation
             noteIds = verifiedIds.length > 0 ? verifiedIds : duplicateIds;
-            
+
             if (DEBUG) {
                 console.log('✅ [V3] Final noteIds for drag:', noteIds);
             }
@@ -808,19 +815,19 @@ export function useNoteInteractionsV3({
                     // Try to get from time property or use 0 as fallback
                     d.startTime = d.time !== undefined ? d.time : 0;
                 }
-                
+
                 // ✅ FIX: Ensure pitch is a valid number
                 if (d.pitch === undefined || d.pitch === null || isNaN(d.pitch)) {
                     console.error('❌ [V3] Duplicate note has invalid pitch:', d);
                     d.pitch = 60; // Default to C4
                 }
-                
+
                 // ✅ FIX: Ensure length is a valid number
                 if (d.length === undefined || d.length === null || isNaN(d.length)) {
                     console.error('❌ [V3] Duplicate note has invalid length:', d);
                     d.length = 1; // Default to 1 step
                 }
-                
+
                 originals.set(d.id, {
                     startTime: d.startTime,
                     pitch: d.pitch,
@@ -924,7 +931,7 @@ export function useNoteInteractionsV3({
             // CRITICAL: Shift basılıyken seçimi DEĞİŞTİRME, mevcut seçimi koru
             // Always duplicate ALL selected notes if any exist, otherwise duplicate clicked note
             const currentSelection = Array.from(state.selection);
-            
+
             if (DEBUG) {
                 console.log('🔍 [V3] Shift+drag:', {
                     selectionSize: state.selection.size,
@@ -933,12 +940,12 @@ export function useNoteInteractionsV3({
                     isInSelection: state.selection.has(note.id)
                 });
             }
-            
+
             if (state.selection.size > 0) {
                 // ✅ CRITICAL FIX: Shift basılıyken tıklama yapıldığında seçimi değiştirme
                 // Tüm seçili notaları duplicate et (tıklanan nota seçili olsun ya da olmasın)
                 workingIds = currentSelection;
-                
+
                 if (DEBUG) {
                     console.log('✅ [V3] Shift+drag: Duplicating all', workingIds.length, 'selected notes');
                 }
@@ -946,20 +953,20 @@ export function useNoteInteractionsV3({
                 // No selection, duplicate only clicked note
                 select(note.id, 'replace');
                 workingIds = [note.id];
-                
+
                 if (DEBUG) {
                     console.log('✅ [V3] Shift+drag: No selection, duplicating only clicked note');
                 }
             }
         } else {
             // Normal drag: only move clicked note or selected notes
-        if (state.selection.has(note.id)) {
-            // Clicking selected note - keep selection
-            workingIds = Array.from(state.selection);
-        } else {
-            // Clicking unselected note - replace selection
-            select(note.id, 'replace');
-            workingIds = [note.id];
+            if (state.selection.has(note.id)) {
+                // Clicking selected note - keep selection
+                workingIds = Array.from(state.selection);
+            } else {
+                // Clicking unselected note - replace selection
+                select(note.id, 'replace');
+                workingIds = [note.id];
             }
         }
 
@@ -974,24 +981,39 @@ export function useNoteInteractionsV3({
     const handlePaintTool = useCallback((e, coords, note) => {
         // ✅ FIX: First check if there's a note at raw coordinates (for immediate feedback)
         // This uses hit detection to give instant feedback
-        if (note) return; // Can't paint on existing note
+        if (note) {
+            // ✅ FIX: Allow resizing in Paint mode
+            // Check if we're on a resize handle
+            const handle = getResizeHandle(coords, note);
+            if (handle) {
+                // If note is not selected, select it first (for multi-resize if needed)
+                if (!state.selection.has(note.id)) {
+                    select(note.id, 'replace');
+                }
+                startResize(note, handle, coords);
+                return;
+            }
+
+            // If not resizing, just return (don't paint over existing note)
+            return;
+        }
 
         // ✅ FIX: Snap coordinates FIRST, then check if snapped position is empty
         // This ensures paint tool uses same tolerance as hit detection
         // snapToGrid snaps based on grid center: first half -> current grid, second half -> next grid
         const snappedTime = snapToGrid(coords.time);
-        
+
         // ✅ FIX: Treat full key height as same pitch (avoid accidental next-note hits near bottom edge)
         const keyHeightPx = engine.dimensions?.keyHeight || 20;
         const pitchCoverage = Math.max(0.5, (keyHeightPx - 1) / keyHeightPx); // Note body covers ~95% of key height
         let finalPitch = Math.floor(coords.pitch + pitchCoverage);
-        
+
         // Clamp to valid MIDI range
         finalPitch = Math.max(0, Math.min(127, finalPitch));
-        
+
         // snappedTime is already at grid position, no need to round again
         const finalTime = snappedTime;
-        
+
         const lengthInSteps = snapValue || 1;
 
         // ✅ FIX: Check if snapped position already has a note
@@ -1012,24 +1034,24 @@ export function useNoteInteractionsV3({
             // Example: note at [0, 1], finalTime=1.0 -> 1.0 >= 0 && 1.0 < 1 = false ✓ (can write)
             //          note at [0, 1], finalTime=0.5 -> 0.5 >= 0 && 0.5 < 1 = true ✗ (duplicate)
             const timeOverlap = finalTime >= n.startTime && finalTime < noteEndTime;
-            
+
             // Pitch overlap check (same as hit detection - TOP-ALIGNED)
             const notePitchMin = n.pitch - pitchRange;
             const notePitchMax = n.pitch;
             const pitchOverlap = finalPitch >= notePitchMin && finalPitch <= notePitchMax;
-            
+
             return timeOverlap && pitchOverlap;
         });
-        
+
         if (existingNote) {
             // Position already occupied, don't create duplicate
             if (DEBUG) {
                 console.log('⚠️ [V3] Paint blocked - note exists at snapped position:', {
                     snapped: { time: finalTime, pitch: finalPitch },
-                    existing: { 
-                        time: existingNote.startTime, 
-                        end: existingNote.startTime + existingNote.length, 
-                        pitch: existingNote.pitch 
+                    existing: {
+                        time: existingNote.startTime,
+                        end: existingNote.startTime + existingNote.length,
+                        pitch: existingNote.pitch
                     }
                 });
             }
@@ -1060,11 +1082,17 @@ export function useNoteInteractionsV3({
 
         addNotesToPattern([newNote]);
 
-        // ✅ PREVIEW: Play note sound with short duration (200ms)
-        // This gives immediate feedback when painting notes
-        getPreviewManager().previewNote(finalPitch, 100, 0.2);
+        // ✅ FIX: Immediately start dragging the new note
+        // This allows "click-drag" workflow where user can adjust position/pitch immediately
+        // ✅ FIX: Immediately start dragging the new note
+        // This allows "click-drag" workflow where user can adjust position/pitch immediately
+        // Pass newNote explicitly because it's not in the store/notes array yet
+        startDrag([newNote.id], coords, false, [newNote]);
 
-    }, [snapToGrid, snapValue, addNotesToPattern, findNoteAtPosition]);
+        // ✅ PREVIEW: Handled by startDrag -> handleMouseMove
+        // We don't need to play a short burst here anymore because drag will handle sustained preview
+
+    }, [snapToGrid, snapValue, addNotesToPattern, findNoteAtPosition, startDrag]);
 
     const handleEraserTool = useCallback((e, coords, note) => {
         if (!note) return;
@@ -1077,7 +1105,7 @@ export function useNoteInteractionsV3({
 
     const handleMouseDown = useCallback((e) => {
         if (keyboardPianoMode) return;
-        
+
         // ✅ RECORDING: Disable note editing during recording
         if (isRecording) {
             console.log('⚠️ Cannot edit notes while recording');
@@ -1180,7 +1208,7 @@ export function useNoteInteractionsV3({
                 // Build original and new states maps
                 const originalStates = new Map();
                 const newStates = new Map();
-                
+
                 noteIds.forEach(id => {
                     const orig = originals.get(id);
                     const updatedNote = updated.find(n => n.id === id);
@@ -1196,10 +1224,10 @@ export function useNoteInteractionsV3({
                             const state = statesMap.get(note.id);
                             if (state) {
                                 // ✅ FIX: Preserve visualLength and length for oval notes
-                                const updatedNote = { 
-                                    ...note, 
-                                    startTime: state.startTime, 
-                                    pitch: state.pitch 
+                                const updatedNote = {
+                                    ...note,
+                                    startTime: state.startTime,
+                                    pitch: state.pitch
                                 };
                                 // ✅ FIX: Ensure time property is set for channel rack (step sequencer and minipreview)
                                 if (updatedNote.time === undefined || updatedNote.time !== state.startTime) {
@@ -1213,7 +1241,7 @@ export function useNoteInteractionsV3({
                         return note;
                     });
                     updatePatternNotes(activePatternId, currentInstrument.id, finalNotes);
-                    
+
                     // EventBus notifications
                     finalNotes.forEach(note => {
                         if (noteIds.includes(note.id)) {
@@ -1345,7 +1373,7 @@ export function useNoteInteractionsV3({
                 // ✅ Left handle: Snap start time, calculate new length, then snap length
                 const originalEndTime = orig.startTime + resizableLength;
                 let newStartTime = Math.max(0, orig.startTime + constrainedDelta);
-                
+
                 // ✅ FIX: For notes smaller than grid, only snap if very close to grid line
                 // Otherwise preserve relative position to avoid unexpected jumps
                 if (isNoteSmallerThanGrid) {
@@ -1354,7 +1382,7 @@ export function useNoteInteractionsV3({
                     const gridPosition = (newStartTime % snapValue + snapValue) % snapValue;
                     const distanceToPrevGrid = gridPosition;
                     const distanceToNextGrid = snapValue - gridPosition;
-                    
+
                     // Only snap if within threshold
                     if (distanceToPrevGrid < snapThreshold) {
                         newTime = Math.floor(newStartTime / snapValue) * snapValue;
@@ -1377,9 +1405,9 @@ export function useNoteInteractionsV3({
                     // For small notes, preserve length unless it becomes >= grid size
                     newVisualLength = calculatedLength;
                 } else {
-                newVisualLength = snapValue > 0
-                    ? Math.max(minLength, snapToGrid(calculatedLength, 0.5))
-                    : calculatedLength;
+                    newVisualLength = snapValue > 0
+                        ? Math.max(minLength, snapToGrid(calculatedLength, 0.5))
+                        : calculatedLength;
                 }
             } else {
                 // ✅ Right handle: Snap end time, then calculate new length
@@ -1394,7 +1422,7 @@ export function useNoteInteractionsV3({
                     const gridPosition = (newEndTime % snapValue + snapValue) % snapValue;
                     const distanceToPrevGrid = gridPosition;
                     const distanceToNextGrid = snapValue - gridPosition;
-                    
+
                     // Only snap if within threshold
                     if (distanceToPrevGrid < snapThreshold) {
                         snappedEndTime = Math.floor(newEndTime / snapValue) * snapValue;
@@ -1407,8 +1435,8 @@ export function useNoteInteractionsV3({
                 } else {
                     // Normal snap for notes >= grid size
                     snappedEndTime = snapValue > 0
-                    ? snapToGrid(Math.max(0, newEndTime), 0.5)
-                    : Math.max(0, newEndTime);
+                        ? snapToGrid(Math.max(0, newEndTime), 0.5)
+                        : Math.max(0, newEndTime);
                 }
 
                 // Calculate new visual length from snapped end time
@@ -1418,15 +1446,15 @@ export function useNoteInteractionsV3({
             // ✅ RESIZE BEHAVIOR: When user manually resizes a note, it should no longer be oval
             // The resize action means "I want to control the exact duration"
             // So we sync length with visualLength, making it a normal (non-oval) note
-            
+
             // ✅ FIX: Validate calculated values to prevent NaN
-            const finalStartTime = (typeof newTime === 'number' && !isNaN(newTime) && isFinite(newTime)) 
-                ? Math.max(0, newTime) 
+            const finalStartTime = (typeof newTime === 'number' && !isNaN(newTime) && isFinite(newTime))
+                ? Math.max(0, newTime)
                 : orig.startTime;
             const finalVisualLength = (typeof newVisualLength === 'number' && !isNaN(newVisualLength) && isFinite(newVisualLength) && newVisualLength > 0)
                 ? newVisualLength
                 : (orig.visualLength !== undefined ? orig.visualLength : orig.length);
-            
+
             return {
                 ...note,
                 startTime: finalStartTime,
@@ -1443,7 +1471,7 @@ export function useNoteInteractionsV3({
                     // Single note - simple command
                     const noteId = noteIds[0];
                     const orig = originals.get(noteId);
-                            const updatedNote = updated.find(n => n.id === noteId);
+                    const updatedNote = updated.find(n => n.id === noteId);
                     if (orig && updatedNote) {
                         const oldState = {
                             startTime: orig.startTime,
@@ -1471,7 +1499,7 @@ export function useNoteInteractionsV3({
                                 return n;
                             });
                             updatePatternNotes(activePatternId, currentInstrument.id, finalNotes);
-                            
+
                             // EventBus notification
                             const modifiedNote = finalNotes.find(n => n.id === id);
                             if (modifiedNote) {
@@ -1493,21 +1521,21 @@ export function useNoteInteractionsV3({
                     // This prevents each command from overwriting previous updates
                     const allOldStates = new Map();
                     const allNewStates = new Map();
-                    
+
                     noteIds.forEach(noteId => {
                         const orig = originals.get(noteId);
                         const updatedNote = updated.find(n => n.id === noteId);
                         if (orig && updatedNote) {
-                                allOldStates.set(noteId, {
-                                    startTime: orig.startTime,
-                                    length: orig.length,
-                                    visualLength: orig.visualLength // ✅ FIX: Preserve visualLength for oval notes
-                                });
-                                allNewStates.set(noteId, {
-                                    startTime: updatedNote.startTime,
-                                    length: updatedNote.length,
-                                    visualLength: updatedNote.visualLength // ✅ FIX: Preserve visualLength for oval notes
-                                });
+                            allOldStates.set(noteId, {
+                                startTime: orig.startTime,
+                                length: orig.length,
+                                visualLength: orig.visualLength // ✅ FIX: Preserve visualLength for oval notes
+                            });
+                            allNewStates.set(noteId, {
+                                startTime: updatedNote.startTime,
+                                length: updatedNote.length,
+                                visualLength: updatedNote.visualLength // ✅ FIX: Preserve visualLength for oval notes
+                            });
                         }
                     });
 
@@ -1517,7 +1545,7 @@ export function useNoteInteractionsV3({
                     const updateAllNotesFn = (statesToApply) => {
                         // ✅ FIX: Get fresh notes from store each time (not from closure)
                         const freshNotes = getCurrentNotes();
-                        
+
                         // Apply all updates at once
                         const finalNotes = freshNotes.map(n => {
                             const state = statesToApply.get(n.id);
@@ -1531,7 +1559,7 @@ export function useNoteInteractionsV3({
                             }
                             return n;
                         });
-                        
+
                         // ✅ FIX: Ensure all notes are preserved (not just updated ones)
                         // This prevents notes from disappearing if they're not in statesToApply
                         const finalNotesMap = new Map(finalNotes.map(n => [n.id, n]));
@@ -1541,10 +1569,10 @@ export function useNoteInteractionsV3({
                             }
                         });
                         const allNotes = Array.from(finalNotesMap.values());
-                        
+
                         // Update pattern notes with all changes at once
                         updatePatternNotes(activePatternId, currentInstrument.id, allNotes);
-                        
+
                         // ✅ EVENT BUS: Notify audio engine of all modifications
                         finalNotes.forEach(note => {
                             if (noteIds.includes(note.id)) {
@@ -1561,19 +1589,19 @@ export function useNoteInteractionsV3({
                     const commands = Array.from(allOldStates.keys()).map(noteId => {
                         const oldState = allOldStates.get(noteId);
                         const newState = allNewStates.get(noteId);
-                        
+
                         // Each command stores its state, but uses shared update function
                         const updateNoteFn = (id, state) => {
                             // Create a map with all states for this operation
                             const statesMap = new Map();
-                            
+
                             // Determine which states to apply based on the state passed
                             // If state matches newState structure, we're executing
                             // If state matches oldState structure, we're undoing
-                            const isNewState = state.startTime === newState.startTime && 
-                                            state.length === newState.length &&
-                                            state.visualLength === newState.visualLength;
-                            
+                            const isNewState = state.startTime === newState.startTime &&
+                                state.length === newState.length &&
+                                state.visualLength === newState.visualLength;
+
                             if (isNewState) {
                                 // Execute: apply all new states
                                 allNewStates.forEach((s, nid) => statesMap.set(nid, s));
@@ -1581,7 +1609,7 @@ export function useNoteInteractionsV3({
                                 // Undo: apply all old states
                                 allOldStates.forEach((s, nid) => statesMap.set(nid, s));
                             }
-                            
+
                             // Update all notes at once
                             updateAllNotesFn(statesMap);
                         };
@@ -1592,9 +1620,9 @@ export function useNoteInteractionsV3({
                     if (commands.length > 0) {
                         // ✅ FIX: Create custom batch command that updates all notes at once
                         const batchCommand = new BatchCommand(commands, `Resize ${commands.length} note(s)`);
-                        
+
                         // Override execute to call updateAllNotesFn once with all new states
-                        batchCommand.execute = function() {
+                        batchCommand.execute = function () {
                             // Update all notes at once with new states
                             updateAllNotesFn(allNewStates);
                             // Mark commands as executed for undo/redo tracking
@@ -1604,9 +1632,9 @@ export function useNoteInteractionsV3({
                                 }
                             });
                         };
-                        
+
                         // Override undo to call updateAllNotesFn once with all old states
-                        batchCommand.undo = function() {
+                        batchCommand.undo = function () {
                             // Update all notes at once with old states
                             updateAllNotesFn(allOldStates);
                             // Mark commands as not executed
@@ -1616,7 +1644,7 @@ export function useNoteInteractionsV3({
                                 }
                             });
                         };
-                        
+
                         stack.execute(batchCommand);
                     }
                 }
@@ -1689,7 +1717,17 @@ export function useNoteInteractionsV3({
             }
         } else if (activeTool === TOOL_TYPES.PAINT_BRUSH) {
             // ✅ FIX: Paint brush always shows crosshair, even on notes (just won't paint there)
-            cursor = 'crosshair';
+            // UNLESS we are hovering over a resize handle
+            if (note) {
+                const handle = getResizeHandle(coords, note);
+                if (handle) {
+                    cursor = handle === 'left' ? 'w-resize' : 'e-resize';
+                } else {
+                    cursor = 'crosshair';
+                }
+            } else {
+                cursor = 'crosshair';
+            }
         } else if (activeTool === TOOL_TYPES.ERASER) {
             cursor = 'not-allowed';
         }
@@ -1722,7 +1760,7 @@ export function useNoteInteractionsV3({
             // Calculate final positions for the first note (reference point)
             const firstNoteId = state.drag.noteIds[0];
             const firstNoteOriginal = state.drag.originals.get(firstNoteId);
-            
+
             if (firstNoteOriginal) {
                 // Calculate final position
                 let finalTime = firstNoteOriginal.startTime + rawDeltaTime;
@@ -1734,7 +1772,7 @@ export function useNoteInteractionsV3({
 
                 // Snap to grid (time only, pitch stays continuous for smooth movement)
                 const snappedTime = snapToGrid(finalTime);
-                
+
                 // Calculate snapped delta (relative to original position)
                 const snappedDeltaTime = snappedTime - firstNoteOriginal.startTime;
                 const snappedDeltaPitch = Math.round(finalPitch) - firstNoteOriginal.pitch;
@@ -1742,21 +1780,31 @@ export function useNoteInteractionsV3({
                 // ✅ PREVIEW: Play note preview when pitch changes during drag
                 const newPitch = Math.round(finalPitch);
                 const lastPitch = lastPreviewedPitchRef.current;
-                
+
                 // Only preview if pitch changed and we have a valid instrument
                 if (newPitch !== lastPitch && currentInstrument) {
                     // Throttle preview to avoid excessive calls (max once per 50ms)
                     const now = Date.now();
                     const lastPreviewTime = previewThrottleRef.current || 0;
-                    
+
                     if (now - lastPreviewTime > 50) {
                         // Get velocity from the first note being dragged
                         const firstNote = notes.find(n => n.id === firstNoteId);
                         const velocity = firstNote?.velocity || 100;
-                        
-                        // Preview the new pitch
-                        getPreviewManager().previewNote(newPitch, velocity, 0.15); // Short preview (150ms)
-                        
+
+                        // ✅ FIX: Stop previous note if playing
+                        if (lastPreviewedPitchRef.current !== null) {
+                            try {
+                                getPreviewManager().stopNote(lastPreviewedPitchRef.current);
+                            } catch (e) {
+                                // Ignore error if note already stopped
+                            }
+                        }
+
+                        // ✅ FIX: Play sustained note (null duration)
+                        // It will be stopped on pitch change or mouse up
+                        getPreviewManager().previewNote(newPitch, velocity, null);
+
                         lastPreviewedPitchRef.current = newPitch;
                         previewThrottleRef.current = now;
                     }
@@ -1807,6 +1855,16 @@ export function useNoteInteractionsV3({
     // ===================================================================
 
     const handleMouseUp = useCallback(() => {
+        // ✅ FIX: Stop any sustained preview note
+        if (lastPreviewedPitchRef.current !== null) {
+            try {
+                getPreviewManager().stopNote(lastPreviewedPitchRef.current);
+            } catch (e) {
+                // Ignore
+            }
+            lastPreviewedPitchRef.current = null;
+        }
+
         if (state.mode === Mode.DRAG && state.drag) {
             finalizeDrag();
         } else if (state.mode === Mode.RESIZE && state.resize) {
@@ -1860,18 +1918,18 @@ export function useNoteInteractionsV3({
                 'q': 84, '2': 85, 'r': 86, '3': 87, 'i': 88, '5': 89, 'p': 90, '6': 91, '[': 92, '7': 93, ']': 94, '0': 95,
                 '1': 96, '`': 97, '4': 98, '~': 99, '8': 100, '!': 101, '9': 102, '@': 103, '-': 104, '#': 105, '=': 106, '$': 107,
             };
-            
+
             const key = e.key.toLowerCase();
             const pitch = KEYBOARD_TO_PITCH[key];
-            
+
             // If it's a piano key and not in input field
             if (pitch !== undefined && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
                 e.preventDefault();
-                
+
                 // Prevent key repeat
                 if (pressedKeysRef.current.has(key)) return;
                 pressedKeysRef.current.add(key);
-                
+
                 // Emit MIDI event for recording
                 if (typeof window !== 'undefined' && window.dispatchEvent) {
                     window.dispatchEvent(new CustomEvent('midi:keyboardNoteOn', {
@@ -1881,7 +1939,7 @@ export function useNoteInteractionsV3({
                 return;
             }
         }
-        
+
         if (keyboardPianoMode) return;
 
         // ✅ RECORD TOGGLE - R key
@@ -1947,7 +2005,7 @@ export function useNoteInteractionsV3({
         // Otherwise: duplicate selected notes
         if ((e.ctrlKey || e.metaKey) && e.key === 'd') {
             e.preventDefault();
-            
+
             let notesToDuplicate = [];
             let offset = 4; // Default: 4 beats ahead
 
@@ -1961,7 +2019,7 @@ export function useNoteInteractionsV3({
                     // - Note ends after region starts
                     return note.startTime < loopRegion.end && noteEnd > loopRegion.start;
                 });
-                
+
                 // Use loop region length as offset
                 offset = loopRegion.end - loopRegion.start;
             } else {
@@ -1981,11 +2039,11 @@ export function useNoteInteractionsV3({
             const duplicatedNotes = notesToDuplicate.map(note => {
                 const newStartTime = note.startTime + offset;
                 const newTime = note.time !== undefined ? note.time + offset : newStartTime;
-                
+
                 // Create duplicate with all properties preserved
                 const duplicate = {
                     ...note, // Spread all existing properties first
-                id: `note_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                    id: `note_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
                     startTime: newStartTime,
                     time: newTime // ✅ FIX: Set time property for channel rack minipreview
                 };
@@ -1994,7 +2052,7 @@ export function useNoteInteractionsV3({
                 if (note.duration !== undefined) {
                     duplicate.duration = note.duration;
                 }
-                
+
                 // ✅ FIX: Preserve all extended properties explicitly
                 if (note.pitchBend !== undefined) duplicate.pitchBend = Array.isArray(note.pitchBend) ? [...note.pitchBend] : note.pitchBend;
                 if (note.modWheel !== undefined && note.modWheel !== null) duplicate.modWheel = note.modWheel;
@@ -2006,7 +2064,7 @@ export function useNoteInteractionsV3({
                 if (note.isMuted !== undefined) duplicate.isMuted = note.isMuted;
                 if (note.velocity !== undefined) duplicate.velocity = note.velocity;
                 // visualLength deprecated - length already reflects actual duration
-                
+
                 return duplicate;
             });
 
@@ -2029,7 +2087,7 @@ export function useNoteInteractionsV3({
                 // Fallback if command stack not available
                 _addNotesToPattern(duplicatedNotes);
             }
-            
+
             // Select the duplicated notes
             select(duplicatedNotes.map(n => n.id), 'replace');
             return;
@@ -2041,7 +2099,7 @@ export function useNoteInteractionsV3({
         if ((e.ctrlKey || e.metaKey) && (e.key === 'l' || e.key === 'L')) {
             e.preventDefault();
             console.log('🎹 Ctrl+L pressed');
-            
+
             if (!activePatternId || !currentInstrument) {
                 console.warn('⚠️ Ctrl+L requires active pattern and instrument', { activePatternId, currentInstrument });
                 return;
@@ -2061,13 +2119,13 @@ export function useNoteInteractionsV3({
             // Notes are stored in beats, so we need pattern length in beats
             const STEPS_PER_BEAT = 4;
             let patternLengthBeats;
-            
+
             if (pattern?.length && typeof pattern.length === 'number') {
                 // Pattern length is in steps, convert to beats
                 patternLengthBeats = pattern.length / STEPS_PER_BEAT;
             } else {
                 // Calculate pattern length from notes (find max end time)
-                const maxEndTime = Math.max(...allNotes.map(note => 
+                const maxEndTime = Math.max(...allNotes.map(note =>
                     (note.startTime || 0) + (note.length || 1)
                 ), 0);
                 // Round up to next bar (4 beats = 1 bar)
@@ -2095,10 +2153,10 @@ export function useNoteInteractionsV3({
 
             // Update notes: extend each note to next note or pattern end
             const updatesMap = new Map();
-            
+
             console.log('🎹 Ctrl+L: Pattern length (beats):', patternLengthBeats);
             console.log('🎹 Ctrl+L: Notes by pitch:', notesByPitch.size, 'pitches');
-            
+
             notesByPitch.forEach((pitchNotes, pitch) => {
                 console.log(`🎹 Ctrl+L: Pitch ${pitch}: ${pitchNotes.length} notes`);
                 pitchNotes.forEach((note, index) => {
@@ -2121,7 +2179,7 @@ export function useNoteInteractionsV3({
                             currentLength = 1;
                         }
                     }
-                    
+
                     let newLength;
 
                     if (index < pitchNotes.length - 1) {
@@ -2144,7 +2202,7 @@ export function useNoteInteractionsV3({
                     if (lengthDiff > 0.01) {
                         // ✅ FIX: Update both length and visualLength to prevent oval notes
                         // When linking notes, they should be normal notes (not oval), so visualLength = length
-                        updatesMap.set(note.id, { 
+                        updatesMap.set(note.id, {
                             length: newLength,
                             visualLength: newLength // ✅ Set visualLength = length to make it a normal note, not oval
                         });
@@ -2159,14 +2217,14 @@ export function useNoteInteractionsV3({
             console.log('🎹 Ctrl+L: Updates map:', updatesMap.size, Array.from(updatesMap.entries()));
             if (updatesMap.size > 0) {
                 console.log('🎹 Ctrl+L: Applying updates via CommandStack...');
-                
+
                 // ✅ COMMAND STACK: Use BatchUpdateNotesCommand for undo/redo
                 const stack = commandStackRef.current;
                 if (stack && activePatternId && currentInstrument) {
                     // Convert updatesMap to array of {id, oldState, newState}
                     const updateCommands = [];
                     const currentNotes = notes;
-                    
+
                     updatesMap.forEach((updates, noteId) => {
                         const note = currentNotes.find(n => n.id === noteId);
                         if (note) {
@@ -2177,7 +2235,7 @@ export function useNoteInteractionsV3({
                             });
                         }
                     });
-                    
+
                     if (updateCommands.length > 0) {
                         // Create batch command
                         // BatchUpdateNotesCommand expects updatePatternStoreFn to receive a Map of noteId -> full newState
@@ -2188,26 +2246,26 @@ export function useNoteInteractionsV3({
                                 // We need to update the pattern store with all notes at once
                                 const currentPattern = useArrangementStore.getState().patterns[activePatternId];
                                 let currentNotes = currentPattern?.data?.[currentInstrument.id] || [];
-                                
+
                                 // ✅ FIX: Ensure currentNotes is an array
                                 if (!Array.isArray(currentNotes)) {
                                     console.error('❌ Ctrl+L: currentNotes is not an array:', currentNotes);
                                     currentNotes = [];
                                 }
-                                
+
                                 const updated = currentNotes.map(note => {
                                     const newState = updatesMap.get(note.id);
                                     return newState || note;
                                 });
-                                
+
                                 // ✅ FIX: Ensure updated is an array before passing to updatePatternNotes
                                 if (!Array.isArray(updated)) {
                                     console.error('❌ Ctrl+L: updated is not an array:', updated);
                                     return;
                                 }
-                                
+
                                 updatePatternNotes(activePatternId, currentInstrument.id, updated);
-                                
+
                                 // Emit NOTE_MODIFIED events for all updated notes
                                 updateCommands.forEach(({ noteId }) => {
                                     const updatedNote = updated.find(n => n.id === noteId);
@@ -2222,7 +2280,7 @@ export function useNoteInteractionsV3({
                             },
                             `Link ${updateCommands.length} note(s)`
                         );
-                        
+
                         stack.execute(batchCommand);
                         console.log(`✅ Ctrl+L: Linked ${updatesMap.size} notes (extended to next note or pattern end)`);
                     }
@@ -2243,7 +2301,7 @@ export function useNoteInteractionsV3({
         if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
             e.preventDefault();
             console.log('🎹 Cmd+B pressed, loopRegion:', loopRegion);
-            
+
             // Require loop region
             if (!loopRegion || loopRegion.start === undefined || loopRegion.end === undefined) {
                 console.warn('⚠️ Cmd+B requires a loop region to be set');
@@ -2293,11 +2351,11 @@ export function useNoteInteractionsV3({
             // Start from the first copy (i=1) and continue until we fill the region
             const allDuplicatedNotes = [];
             let copyIndex = 1;
-            
+
             while (true) {
                 const copyOffset = patternLength * copyIndex;
                 const copyStartInRegion = minRelativeStart + copyOffset;
-                
+
                 // Stop if this copy would start beyond the loop region
                 if (copyStartInRegion >= loopLength) {
                     break;
@@ -2332,7 +2390,7 @@ export function useNoteInteractionsV3({
                         (newNotes) => {
                             const updated = [...notes, ...newNotes];
                             updatePatternNotes(activePatternId, currentInstrument.id, updated);
-                            
+
                             // EventBus notifications
                             newNotes.forEach(note => {
                                 EventBus.emit('NOTE_ADDED', {
@@ -2364,7 +2422,7 @@ export function useNoteInteractionsV3({
         // Ctrl/Cmd + A - Select all (or all in loop region if loop region is set)
         if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
             e.preventDefault();
-            
+
             // ✅ LOOP REGION AWARE: If loop region is set, select only notes within it
             if (loopRegion && loopRegion.start !== undefined && loopRegion.end !== undefined) {
                 const notesInRegion = notes.filter(note => {
@@ -2443,7 +2501,7 @@ export function useNoteInteractionsV3({
                                 return note;
                             });
                             updatePatternNotes(activePatternId, currentInstrument.id, finalNotes);
-                            
+
                             // EventBus notifications
                             finalNotes.forEach(note => {
                                 if (state.selection.has(note.id)) {
@@ -2504,7 +2562,7 @@ export function useNoteInteractionsV3({
                         return transposed || note;
                     });
                     updatePatternNotes(activePatternId, currentInstrument.id, finalNotes);
-                    
+
                     // EventBus notifications
                     transposedNotes.forEach(note => {
                         EventBus.emit('NOTE_MODIFIED', {
@@ -2543,17 +2601,17 @@ export function useNoteInteractionsV3({
                 'q': 84, '2': 85, 'r': 86, '3': 87, 'i': 88, '5': 89, 'p': 90, '6': 91, '[': 92, '7': 93, ']': 94, '0': 95,
                 '1': 96, '`': 97, '4': 98, '~': 99, '8': 100, '!': 101, '9': 102, '@': 103, '-': 104, '#': 105, '=': 106, '$': 107,
             };
-            
+
             const key = e.key.toLowerCase();
             const pitch = KEYBOARD_TO_PITCH[key];
-            
+
             // If it's a piano key and not in input field
             if (pitch !== undefined && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
                 e.preventDefault();
-                
+
                 // Remove from pressed keys
                 pressedKeysRef.current.delete(key);
-                
+
                 // Emit MIDI Note Off event for recording
                 if (typeof window !== 'undefined' && window.dispatchEvent) {
                     window.dispatchEvent(new CustomEvent('midi:keyboardNoteOff', {
@@ -2579,7 +2637,7 @@ export function useNoteInteractionsV3({
             n.id === noteId ? { ...n, ...updates } : n
         );
         updatePatternNotes(activePatternId, currentInstrument.id, updated);
-        
+
         // EventBus notification
         const modifiedNote = updated.find(n => n.id === noteId);
         if (modifiedNote) {
@@ -2602,7 +2660,7 @@ export function useNoteInteractionsV3({
             return updates ? { ...n, ...updates } : n;
         });
         updatePatternNotes(activePatternId, currentInstrument.id, updated);
-        
+
         // ✅ FIX: Emit single NOTE_MODIFIED event for all notes (batch update)
         // This prevents multiple PlaybackManager reschedules
         const modifiedNotes = updated.filter(note => updatesMap.has(note.id));
@@ -2621,7 +2679,7 @@ export function useNoteInteractionsV3({
     // ✅ PUBLIC: Update note with CommandStack (for undo/redo)
     const updateNote = useCallback((noteId, updates, skipUndo = false) => {
         if (!activePatternId || !currentInstrument) return;
-        
+
         const targetNote = notes.find(n => n.id === noteId);
         if (!targetNote) return;
 
@@ -2636,7 +2694,7 @@ export function useNoteInteractionsV3({
         if (stack) {
             const oldState = { ...targetNote };
             const newState = { ...targetNote, ...updates };
-            
+
             const command = new UpdateNoteCommand(
                 noteId,
                 oldState,
@@ -2662,16 +2720,16 @@ export function useNoteInteractionsV3({
     // ✅ BATCH: Update velocity of multiple notes at once (for Alt+wheel)
     const updateNotesVelocity = useCallback((noteIds, velocityChange) => {
         if (!activePatternId || !currentInstrument || noteIds.length === 0) return;
-        
+
         // ✅ FIX: Get fresh notes from store to avoid stale closure
         const currentPattern = useArrangementStore.getState().patterns[activePatternId];
         const currentNotes = currentPattern?.data?.[currentInstrument.id] || [];
         const notesToUpdate = noteIds
             .map(noteId => currentNotes.find(n => n.id === noteId))
             .filter(Boolean);
-        
+
         if (notesToUpdate.length === 0) return;
-        
+
         // ✅ COMMAND STACK: Use BatchUpdateNotesCommand for all velocity updates
         const stack = commandStackRef.current;
         if (stack) {
@@ -2683,7 +2741,7 @@ export function useNoteInteractionsV3({
                 const newState = { ...note, velocity: newVelocity };
                 return { noteId: note.id, oldState, newState };
             });
-            
+
             // Create batch update command
             // BatchUpdateNotesCommand expects updatePatternStoreFn to receive a Map of noteId -> full newState
             const batchCommand = new BatchUpdateNotesCommand(
@@ -2698,7 +2756,7 @@ export function useNoteInteractionsV3({
                         return newState || note;
                     });
                     updatePatternNotes(activePatternId, currentInstrument.id, updated);
-                    
+
                     // Emit NOTE_MODIFIED events for all updated notes
                     noteUpdates.forEach(({ noteId }) => {
                         const updatedNote = updated.find(n => n.id === noteId);
@@ -2713,7 +2771,7 @@ export function useNoteInteractionsV3({
                 },
                 `Change velocity of ${notesToUpdate.length} note(s)`
             );
-            
+
             stack.execute(batchCommand);
         } else {
             // Fallback if CommandStack not available - use batch update
@@ -2730,11 +2788,11 @@ export function useNoteInteractionsV3({
     // ✅ QUANTIZE - Snap selected notes to grid
     const quantizeNotes = useCallback((noteIds = null, quantizeStart = true, quantizeEnd = false) => {
         if (!activePatternId || !currentInstrument) return;
-        
-        const notesToQuantize = noteIds 
+
+        const notesToQuantize = noteIds
             ? notes.filter(n => noteIds.includes(n.id))
             : notes.filter(n => state.selection.has(n.id));
-        
+
         if (notesToQuantize.length === 0) return;
 
         // ✅ COMMAND STACK: Create BatchCommand for quantize
@@ -2743,11 +2801,11 @@ export function useNoteInteractionsV3({
             const commands = notesToQuantize.map(note => {
                 const oldState = { ...note };
                 const updates = {};
-                
+
                 if (quantizeStart) {
                     updates.startTime = snapToGrid(note.startTime);
                 }
-                
+
                 if (quantizeEnd) {
                     const noteEnd = note.startTime + note.length;
                     const snappedEnd = snapToGrid(noteEnd);
@@ -2822,12 +2880,12 @@ export function useNoteInteractionsV3({
             if (e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
                 const coords = getCoordinatesFromEvent(e);
                 const foundNote = findNoteAtPosition(coords);
-                
+
                 if (foundNote || state.selection.size > 0) {
                     const delta = -e.deltaY; // Positive = scroll up = increase
                     const step = 0.25; // 1/16th step increment
                     const change = delta > 0 ? step : -step;
-                    
+
                     if (foundNote && !state.selection.has(foundNote.id)) {
                         // Change hovered note's duration
                         const newLength = Math.max(0.25, (foundNote.length || 1) + change);
@@ -2851,21 +2909,21 @@ export function useNoteInteractionsV3({
                     }
                 }
             }
-            
+
             // Alt + wheel: Change volume of selected notes
             // Note: preventDefault() is called in parent component (PianoRoll.jsx) using manual event listener
             if (e.altKey && state.selection.size > 0) {
                 const delta = -e.deltaY; // Positive = scroll up = increase
                 const step = e.shiftKey ? 1 : 5; // Shift = fine adjustment (1), normal (5)
                 const change = delta > 0 ? step : -step;
-                
+
                 // ✅ FIX: Use batch update function to update all selected notes at once
                 const selectedNoteIds = Array.from(state.selection);
                 updateNotesVelocity(selectedNoteIds, change);
-                
+
                 return true; // Event handled
             }
-            
+
             return false; // Event not handled, allow viewport scroll
         }, [state.selection, updateNotesVelocity, getCoordinatesFromEvent, findNoteAtPosition, notes, _updateNote, _updateNotes]),
 
