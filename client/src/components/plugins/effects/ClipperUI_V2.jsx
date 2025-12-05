@@ -15,7 +15,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import PluginContainerV2 from '../container/PluginContainerV2';
 import { TwoPanelLayout } from '../layout/TwoPanelLayout';
-import { Knob, Toggle } from '@/components/controls';
+import { Knob, Toggle, ModeSelector } from '@/components/controls';
 import { getCategoryColors } from '../PluginDesignSystem';
 import { useParameterBatcher } from '@/services/ParameterBatcher';
 import { useMixerStore } from '@/store/useMixerStore';
@@ -408,14 +408,14 @@ const ClipperUI_V2 = ({ trackId, effect, effectNode, definition }) => {
         sidePanel={
           <>
             {/* Stats Display */}
-            <div 
+            <div
               className="rounded-xl p-4"
               style={{
                 background: `linear-gradient(135deg, rgba(0, 0, 0, 0.5) 0%, ${categoryColors.accent}20 100%)`,
                 border: `1px solid ${categoryColors.primary}1A`,
               }}
             >
-              <div 
+              <div
                 className="text-[9px] uppercase tracking-wider mb-3 font-bold"
                 style={{ color: `${categoryColors.secondary}B3` }}
               >

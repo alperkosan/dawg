@@ -116,14 +116,14 @@ class ClipperProcessor extends AudioWorkletProcessor {
       case 0: // SOFT - Gentle tanh curve
         const softDrive = 1 + overshoot * 2;
         return sign * (ceiling + (overshoot / softDrive) * 0.3);
-      
+
       case 1: // MEDIUM - Balanced curve
         const mediumDrive = 1 + overshoot;
         return sign * (ceiling + (overshoot / mediumDrive) * 0.5);
-      
+
       case 2: // HARD - Aggressive hard clip
         return sign * ceiling;
-      
+
       default:
         return sign * ceiling;
     }
@@ -149,12 +149,12 @@ class ClipperProcessor extends AudioWorkletProcessor {
   foldbackClip(x, ceiling) {
     const abs = Math.abs(x);
     if (abs <= ceiling) return x;
-    
+
     // Foldback calculation (non-iterative, more efficient)
     const period = 2 * ceiling;
     const phase = (abs - ceiling) % period;
     const cycles = Math.floor((abs - ceiling) / period);
-    
+
     let folded;
     if (phase < ceiling) {
       // Folding up
@@ -163,7 +163,7 @@ class ClipperProcessor extends AudioWorkletProcessor {
       // Folding down
       folded = phase - ceiling;
     }
-    
+
     // Apply sign
     const sign = Math.sign(x);
     return sign * folded;
@@ -179,7 +179,7 @@ class ClipperProcessor extends AudioWorkletProcessor {
   // Apply clipping based on mode and curve
   applyClipping(x, ceiling, hardness, mode, curve) {
     let clipped;
-    
+
     switch (Math.floor(mode)) {
       case 0: // HARD
         clipped = this.hardClip(x, ceiling);
@@ -217,7 +217,7 @@ class ClipperProcessor extends AudioWorkletProcessor {
     // 🎯 EVEN HARMONICS (2nd, 4th): Warm, tube-like
     // Proper harmonic generation from clipping nonlinearity
     const harmonic2 = x * abs * harmonicAmount * 0.12; // 2nd harmonic
-    
+
     // 🎯 ODD HARMONICS (3rd, 5th): Edgy, aggressive
     const harmonic3 = x * x * Math.sign(x) * abs * harmonicAmount * 0.08; // 3rd harmonic
     const harmonic5 = x * x * x * x * Math.sign(x) * abs * harmonicAmount * 0.03; // 5th harmonic
@@ -262,8 +262,9 @@ class ClipperProcessor extends AudioWorkletProcessor {
     const outputLeft = output[0];
     const outputRight = output[1] || output[0];
 
-    // 🎯 OVERSAMPLING: Anti-aliasing for high-frequency content (if enabled)
-    const oversampleFactor = 1; // Can be increased if oversampling param is used
+    // 🎯 OVERSAMPLING: Anti-aliasing for high-frequency content
+    const oversample = this.getParam(parameters.oversample, 0) ?? 1;
+    const oversampleFactor = Math.max(1, Math.min(8, Math.floor(oversample)));
     const useOversampling = oversampleFactor > 1;
 
     for (let i = 0; i < blockSize; i++) {
