@@ -286,7 +286,7 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
     // ✅ FIX: Default to paintBrush for better workflow (users typically want to write notes immediately)
     const [activeTool, setActiveTool] = useState('paintBrush');
     const [zoom, setZoom] = useState(1.0);
-    
+
     // ✅ PHASE 1: Velocity lane tool state
     const [velocityTool, setVelocityTool] = useState(VELOCITY_TOOL_TYPES.SELECT);
     const [velocityBrushSize, setVelocityBrushSize] = useState(2); // Brush size in steps
@@ -317,11 +317,21 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
     const [scaleHighlight, setScaleHighlight] = useState(null);
     const [scaleHighlightEnabled, setScaleHighlightEnabled] = useState(true);
 
-    // ✅ Initialize default scale (C Major) on mount
+    // ✅ Initialize scale from ScaleSystem (persisted state)
     useEffect(() => {
         const scaleSystem = getScaleSystem();
-        scaleSystem.setScale(0, 'major'); // C Major (root: 0 = C, scale: 'major')
+        // Don't reset to C Major - respect persisted state
+        // scaleSystem.setScale(0, 'major'); 
         setScaleHighlight(scaleSystem);
+
+        // Listen for scale changes
+        const handleScaleChange = () => {
+            setScaleHighlight({ ...scaleSystem }); // Force re-render
+        };
+
+        // Assuming ScaleSystem emits events or we can subscribe
+        // If not, we rely on the initial state and updates from UI
+        // For now, just setting initial state is enough as ProjectSerializer restores it
     }, []);
 
     // ✅ MIDI RECORDING STATE
@@ -375,7 +385,7 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
         const handleKeyboardNoteOn = (e) => {
             if (recorder && recorder.state.isRecording) {
                 const { pitch, velocity, timestamp } = e.detail;
-                
+
                 // ✅ Get AudioContext time for accurate timestamp
                 let audioTime = null;
                 let playbackPosition = null;
@@ -386,7 +396,7 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
                     const audioEngine = AudioContextService.getAudioEngine();
                     if (audioEngine?.audioContext) {
                         audioTime = audioEngine.audioContext.currentTime;
-                        
+
                         // ✅ Calculate playback elapsed time since recording started
                         if (recorder.state.recordStartAudioTime !== undefined) {
                             const elapsed = audioTime - recorder.state.recordStartAudioTime;
@@ -402,13 +412,13 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
                 } catch (e) {
                     console.warn('⚠️ Error getting audio engine:', e);
                 }
-                
+
                 const performanceTime = performance.now() / 1000;
                 const finalTimestamp = audioTime || performanceTime;
-                
+
                 // ✅ Convert steps to BBT format
-                const playbackPositionBBT = playbackPositionSteps !== null && playbackPositionSteps !== undefined 
-                    ? stepsToBBT(playbackPositionSteps) 
+                const playbackPositionBBT = playbackPositionSteps !== null && playbackPositionSteps !== undefined
+                    ? stepsToBBT(playbackPositionSteps)
                     : 'N/A';
                 // ✅ Calculate absolute position from elapsed time (linear, not wrapped)
                 const playbackElapsedAbsolute = playbackElapsedSteps !== 'N/A' && recorder.state.recordStartStep !== undefined
@@ -417,7 +427,7 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
                 const playbackElapsedBBT = playbackElapsedAbsolute !== null
                     ? stepsToBBT(playbackElapsedAbsolute)
                     : 'N/A';
-                
+
                 console.log(`🎹 KEYBOARD DOWN: pitch=${pitch} (${pitchToName(pitch)}) vel=${velocity}`);
                 console.log(`   ⏱️  Performance.now(): ${performanceTime.toFixed(3)}s`);
                 console.log(`   ⏱️  AudioContext.currentTime: ${audioTime?.toFixed(3) || 'N/A'}s`);
@@ -425,7 +435,7 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
                 console.log(`   ⏱️  Playback elapsed: ${playbackElapsedTime} (${playbackElapsedSteps} steps, ${playbackElapsedBBT} since record start) [LINEAR]`);
                 console.log(`   📍 Playback position: ${playbackPositionSteps?.toFixed(2) || 'N/A'} steps (${playbackPositionBBT}) [WRAPPED] (${playbackPositionSteps ? (playbackPositionSteps / 4).toFixed(3) : 'N/A'} beats)`);
                 console.log(`   📊 Using timestamp: ${finalTimestamp.toFixed(3)}s`);
-                
+
                 recorder.handleMIDIEvent({
                     type: 'noteOn',
                     note: pitch,
@@ -438,7 +448,7 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
         const handleKeyboardNoteOff = (e) => {
             if (recorder && recorder.state.isRecording) {
                 const { pitch, timestamp } = e.detail;
-                
+
                 // ✅ Get AudioContext time for accurate timestamp
                 let audioTime = null;
                 let playbackPosition = null;
@@ -449,7 +459,7 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
                     const audioEngine = AudioContextService.getAudioEngine();
                     if (audioEngine?.audioContext) {
                         audioTime = audioEngine.audioContext.currentTime;
-                        
+
                         // ✅ Calculate playback elapsed time since recording started
                         if (recorder.state.recordStartAudioTime !== undefined) {
                             const elapsed = audioTime - recorder.state.recordStartAudioTime;
@@ -465,13 +475,13 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
                 } catch (e) {
                     console.warn('⚠️ Error getting audio engine:', e);
                 }
-                
+
                 const performanceTime = performance.now() / 1000;
                 const finalTimestamp = audioTime || performanceTime;
-                
+
                 // ✅ Convert steps to BBT format
-                const playbackPositionBBT = playbackPositionSteps !== null && playbackPositionSteps !== undefined 
-                    ? stepsToBBT(playbackPositionSteps) 
+                const playbackPositionBBT = playbackPositionSteps !== null && playbackPositionSteps !== undefined
+                    ? stepsToBBT(playbackPositionSteps)
                     : 'N/A';
                 // ✅ Calculate absolute position from elapsed time (linear, not wrapped)
                 const playbackElapsedAbsolute = playbackElapsedSteps !== 'N/A' && recorder.state.recordStartStep !== undefined
@@ -480,7 +490,7 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
                 const playbackElapsedBBT = playbackElapsedAbsolute !== null
                     ? stepsToBBT(playbackElapsedAbsolute)
                     : 'N/A';
-                
+
                 console.log(`🎹 KEYBOARD RELEASE: pitch=${pitch} (${pitchToName(pitch)})`);
                 console.log(`   ⏱️  Performance.now(): ${performanceTime.toFixed(3)}s`);
                 console.log(`   ⏱️  AudioContext.currentTime: ${audioTime?.toFixed(3) || 'N/A'}s`);
@@ -488,7 +498,7 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
                 console.log(`   ⏱️  Playback elapsed: ${playbackElapsedTime} (${playbackElapsedSteps} steps, ${playbackElapsedBBT} since record start) [LINEAR]`);
                 console.log(`   📍 Playback position: ${playbackPositionSteps?.toFixed(2) || 'N/A'} steps (${playbackPositionBBT}) [WRAPPED] (${playbackPositionSteps ? (playbackPositionSteps / 4).toFixed(3) : 'N/A'} beats)`);
                 console.log(`   📊 Using timestamp: ${finalTimestamp.toFixed(3)}s`);
-                
+
                 recorder.handleMIDIEvent({
                     type: 'noteOff',
                     note: pitch,
@@ -807,7 +817,7 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
             }
         }
     }, []);
-    
+
     // ✅ KEYBOARD PREVIEW - Trigger background repaint when active key changes
     useEffect(() => {
         if (backgroundDirtyRef.current !== undefined) {
@@ -821,7 +831,7 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
     const handleSetPlayhead = useCallback((step) => {
         jumpToStep(step);
     }, [jumpToStep]);
-    
+
     const loopRegionHook = useLoopRegionSelection(engine, snapValue, loopRegion, setLoopRegion, handleSetPlayhead);
 
     // ✅ LOOP REGION → PLAYBACK ENGINE SYNC
@@ -856,7 +866,7 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
                 // Set count-in bars from recorder state
                 const bars = recorder.state.countInBars || 1;
                 setCountInBars(bars);
-                
+
                 const success = recorder.startRecording({
                     mode: 'replace', // Default mode
                     quantizeStrength: 0,
@@ -936,20 +946,20 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
             // ✅ PHASE 1: Velocity lane keyboard shortcuts
             // Check if velocity lane is focused or if we're in velocity editing context
             const hasSelectedNotes = selectedNoteIds && selectedNoteIds.size > 0;
-            const isVelocityContext = velocityTool === VELOCITY_TOOL_TYPES.DRAW || 
-                                     (hasSelectedNotes && !e.ctrlKey && !e.metaKey && !e.altKey);
-            
+            const isVelocityContext = velocityTool === VELOCITY_TOOL_TYPES.DRAW ||
+                (hasSelectedNotes && !e.ctrlKey && !e.metaKey && !e.altKey);
+
             if (isVelocityContext) {
                 // Convert Set to Array for iteration
                 const selectedArray = Array.from(selectedNoteIds || []);
-                
+
                 // Arrow keys: Increase/decrease velocity
                 if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
                     e.preventDefault();
                     const isIncrease = e.key === 'ArrowUp';
                     const isFine = e.shiftKey; // Shift = fine adjustment
                     const step = isFine ? 1 : 5; // Fine: 1, Normal: 5
-                    
+
                     selectedArray.forEach(noteId => {
                         const note = noteInteractions.notes.find(n => n.id === noteId);
                         if (note) {
@@ -962,7 +972,7 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
                     });
                     return;
                 }
-                
+
                 // 0 key: Reset velocity to 1 (MIDI minimum)
                 if (e.key === '0') {
                     e.preventDefault();
@@ -971,7 +981,7 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
                     });
                     return;
                 }
-                
+
                 // 1 key: Set velocity to 100
                 if (e.key === '1') {
                     e.preventDefault();

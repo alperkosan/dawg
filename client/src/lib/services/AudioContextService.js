@@ -16,7 +16,7 @@ export class AudioContextService {
   static isSubscriptionsSetup = false;
   static idleOptimizationSetup = false; // ✅ FIX: Track if idle optimization is already setup
   static pendingMixerSync = false;
-  
+
   // =================== NEW: INTERFACE LAYER ===================
   static interfaceManager = null;
   static eventBus = EventBus;
@@ -95,15 +95,15 @@ export class AudioContextService {
 
     // ✅ FIX: Track if we're on DAW route to prevent suspend during panel navigation
     let isOnDawRoute = window.location.pathname.startsWith('/daw');
-    
+
     // Listen for route changes
     const checkRoute = () => {
       isOnDawRoute = window.location.pathname.startsWith('/daw');
     };
-    
+
     // Check route on popstate (back/forward) and listen for custom route change events
     window.addEventListener('popstate', checkRoute);
-    
+
     // Also check periodically (fallback for programmatic navigation)
     const routeCheckInterval = setInterval(checkRoute, 1000);
 
@@ -871,7 +871,7 @@ export class AudioContextService {
     // Reset interface layer
     reset: async () => {
       console.log('🔄 Resetting interface layer...');
-      
+
       // Dispose existing components
       this.timelineAPI?.dispose?.();
       this.parameterSync?.dispose?.();
@@ -900,10 +900,10 @@ export class AudioContextService {
     // This would typically be called from setAudioEngine
     // Implementation depends on specific store structure
     console.log('📡 Setting up store subscriptions...');
-    
+
     // ✅ FIX: Sync existing mixer tracks to audio engine
     await this._syncMixerTracksToAudioEngine();
-    
+
     // Example subscription pattern:
     /*
     useArrangementStore.subscribe((state, prevState) => {
@@ -1071,7 +1071,7 @@ export class AudioContextService {
 
                 console.log(`✅ Added effect ${effect.type} (${effect.id}) to insert ${track.id}`);
               }
-              
+
               // ✅ CRITICAL FIX: ALWAYS apply bypass state, whether effect is new or existing
               // This ensures effects load with their saved bypass state on EVERY sync
               // Previously bypass was only applied for new effects, causing desync on subsequent syncs
@@ -1150,7 +1150,7 @@ export class AudioContextService {
       }
 
       console.log(`✅ Synced ${mixerTracks.length} mixer tracks to audio engine`);
-      
+
       // ✅ CRITICAL FIX: Sync existing instruments to mixer inserts
       await this._syncInstrumentsToMixerInserts();
     } catch (error) {
@@ -1206,7 +1206,7 @@ export class AudioContextService {
 
         // Check if instrument already exists in audio engine
         let audioEngineInstrument = this.audioEngine.instruments?.get(instrument.id);
-        
+
         // ✅ CRITICAL FIX: If instrument doesn't exist, create it
         if (!audioEngineInstrument) {
           console.log(`🎵 Instrument ${instrument.id} not found in audio engine, creating...`);
@@ -1266,7 +1266,7 @@ export class AudioContextService {
 
         // ✅ FIX: Check if already routed correctly
         const currentRoute = this.audioEngine.instrumentToInsert?.get(instrument.id);
-        
+
         // ✅ CRITICAL FIX: Even if currentRoute matches, verify physical connection exists
         // The map entry might exist but the actual audio connection might have failed
         let needsRouting = true;
@@ -1274,7 +1274,7 @@ export class AudioContextService {
           // Check if physical connection actually exists
           const insert = this.audioEngine.mixerInserts?.get(instrument.mixerTrackId);
           const audioInstrument = this.audioEngine.instruments?.get(instrument.id);
-          
+
           if (insert && audioInstrument?.output) {
             // Check if instrument is actually connected to this insert
             const isConnected = insert.instruments?.has(instrument.id);
@@ -1301,7 +1301,7 @@ export class AudioContextService {
         // Always call routeInstrumentWithRetry - it has its own "already routed" check
         if (needsRouting) {
           const routingSuccess = await this.routeInstrumentWithRetry(
-            instrument.id, 
+            instrument.id,
             instrument.mixerTrackId,
             5,  // maxRetries
             100 // baseDelay
@@ -1318,21 +1318,21 @@ export class AudioContextService {
       }
 
       console.log(`✅ Instrument sync complete: ${createdCount} created, ${syncedCount} synced, ${skippedCount} skipped, ${errorCount} errors`);
-      
+
       // ✅ CRITICAL FIX: After sync, verify all instruments are actually connected
       // This catches cases where map entry exists but physical connection failed
       if (errorCount > 0 || syncedCount > 0) {
         console.log(`🔍 Verifying instrument connections after sync...`);
         let verifiedCount = 0;
         let missingCount = 0;
-        
+
         for (const instrument of instruments) {
           if (!instrument.mixerTrackId) continue;
-          
+
           const insert = this.audioEngine.mixerInserts?.get(instrument.mixerTrackId);
           const audioInstrument = this.audioEngine.instruments?.get(instrument.id);
           const isConnected = insert?.instruments?.has(instrument.id);
-          
+
           if (isConnected && audioInstrument?.output) {
             verifiedCount++;
           } else if (audioInstrument) {
@@ -1341,7 +1341,7 @@ export class AudioContextService {
             console.warn(`   Insert exists: ${!!insert}, Instrument output: ${!!audioInstrument?.output}, Connected: ${isConnected}`);
           }
         }
-        
+
         console.log(`✅ Connection verification: ${verifiedCount} connected, ${missingCount} missing`);
       }
     } catch (error) {
@@ -1624,10 +1624,10 @@ export class AudioContextService {
       // Disconnect all effects first
       channel.mixerNode.disconnect();
       channel.effects.forEach(fx => {
-        try { fx.node.disconnect(); } catch(e) {}
+        try { fx.node.disconnect(); } catch (e) { }
       });
       if (channel.analyzer) {
-        try { channel.analyzer.disconnect(); } catch(e) {}
+        try { channel.analyzer.disconnect(); } catch (e) { }
       }
 
       // Reconnect chain with updated bypass states
@@ -2401,7 +2401,7 @@ export class AudioContextService {
       if (import.meta.env.DEV) {
         console.log(`✅ AudioContextService: Added ${effectType} to ${trackId} (ID: ${effectId})`);
       }
-      
+
       // ✅ CRITICAL FIX: Sync instrument parameters when effect is added to track
       // This ensures envelopeEnabled and other parameters are applied to playback instruments
       // This is especially important for reverb/delay tails to work correctly
@@ -2409,16 +2409,16 @@ export class AudioContextService {
       if (insert && insert.instruments) {
         const { useInstrumentsStore } = await import('@/store/useInstrumentsStore');
         const instrumentsStore = useInstrumentsStore.getState();
-        
+
         // Find all instruments routed to this track
         for (const [instrumentId] of insert.instruments) {
           const instrument = this.audioEngine.instruments?.get(instrumentId);
           if (!instrument || typeof instrument.updateParameters !== 'function') continue;
-          
+
           // Get instrument data from store
           const instrumentData = instrumentsStore.instruments.find(inst => inst.id === instrumentId);
           if (!instrumentData) continue;
-          
+
           // Sync envelopeEnabled and other critical parameters
           // ✅ CRITICAL FIX: envelope values are in seconds, but updateParameters expects ms for attack/decay/release
           const envelopeEnabled =
@@ -2433,14 +2433,14 @@ export class AudioContextService {
             sustain: instrumentData.sustain ?? envelope.sustain,
             release: instrumentData.release ?? (envelope.release !== undefined ? envelope.release * 1000 : undefined),
           };
-          
+
           // Remove undefined values
           Object.keys(paramsToSync).forEach(key => {
             if (paramsToSync[key] === undefined) {
               delete paramsToSync[key];
             }
           });
-          
+
           if (Object.keys(paramsToSync).length > 0) {
             instrument.updateParameters(paramsToSync);
             if (import.meta.env.DEV) {
@@ -2459,7 +2459,7 @@ export class AudioContextService {
           }
         }
       }
-      
+
       return effectId;
     } catch (error) {
       console.error(`❌ AudioContextService: Failed to add effect:`, error);
