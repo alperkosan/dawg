@@ -363,27 +363,51 @@ export class SampleVoice extends BaseVoice {
         }
 
         // ✅ ADSR Envelope from instrument data
-        let attack = instrumentData?.attack !== undefined ? instrumentData.attack / 1000 : 0.005; // Default 5ms
-        const decay = instrumentData?.decay !== undefined ? instrumentData.decay / 1000 : 0;
-        const sustain = instrumentData?.sustain !== undefined ? instrumentData.sustain / 100 : 1; // 0-100% to 0-1
-        const useADSR = instrumentData && (instrumentData.attack !== undefined || instrumentData.decay !== undefined || instrumentData.sustain !== undefined);
+        // ✅ FL Studio behavior: Envelope is OFF by default
+        // Only apply envelope if explicitly enabled by user
+        const envelopeEnabled = instrumentData?.envelopeEnabled === true;
+        
+        // ✅ DAW standard: Default envelope values (only used if envelopeEnabled is true)
+        let attack = instrumentData?.attack !== undefined ? instrumentData.attack / 1000 : 0.001; // Default 1ms (click prevention)
+        const decay = instrumentData?.decay !== undefined ? instrumentData.decay / 1000 : 0.01; // Default 10ms
+        const sustain = instrumentData?.sustain !== undefined ? instrumentData.sustain / 100 : 1; // 0-100% to 0-1, default 100%
+        
+        // ✅ CRITICAL: Only use ADSR if envelope is explicitly enabled
+        // This preserves the sample's natural character when envelope is OFF
+        const useADSR = envelopeEnabled && instrumentData && (instrumentData.attack !== undefined || instrumentData.decay !== undefined || instrumentData.sustain !== undefined);
 
         // ✅ FIX: Minimum attack time to prevent clicks (especially for drums/808)
         // Even if attack is 0, use at least 1ms to prevent buffer start clicks
+        // Only apply if envelope is enabled
         const minAttackTime = 0.001; // 1ms minimum
-        attack = Math.max(attack, minAttackTime);
+        if (envelopeEnabled) {
+            attack = Math.max(attack, minAttackTime);
+        } else {
+            // If envelope is OFF, use minimal attack to prevent clicks but preserve natural sound
+            attack = 0.001; // 1ms just for click prevention
+        }
 
         // Store release time for later use
-        if (instrumentData?.release !== undefined) {
+        if (envelopeEnabled && instrumentData?.release !== undefined) {
             this.releaseTime = instrumentData.release / 1000;
+        } else if (!envelopeEnabled) {
+            // ✅ FL Studio behavior: If envelope is OFF, use minimal release for click prevention
+            this.releaseTime = 0.005; // 5ms minimal release
         }
 
         this.envelopeGain.gain.cancelScheduledValues(time);
-        // ✅ FIX: Start from very small value instead of 0 to prevent click
-        this.envelopeGain.gain.setValueAtTime(0.0001, time);
-
-        if (useADSR) {
-            // Full ADSR envelope
+        
+        if (!envelopeEnabled) {
+            // ✅ FL Studio behavior: Envelope OFF - minimal envelope just for click prevention
+            // Start from very small value and quickly ramp to full volume
+            this.envelopeGain.gain.setValueAtTime(0.0001, time);
+            this.envelopeGain.gain.linearRampToValueAtTime(1, time + attack);
+            this.envelopePhase = 'attack';
+        } else if (useADSR) {
+            // ✅ Envelope ON: Full ADSR envelope
+            // ✅ FIX: Start from very small value instead of 0 to prevent click
+            this.envelopeGain.gain.setValueAtTime(0.0001, time);
+            
             // Attack: 0.0001 -> 1 (with minimum attack time to prevent clicks)
             this.envelopeGain.gain.linearRampToValueAtTime(1, time + attack);
 
@@ -396,7 +420,7 @@ export class SampleVoice extends BaseVoice {
             }
         } else {
             // Simple attack envelope (legacy behavior)
-            // ✅ FIX: Use minimum attack time even for legacy mode
+            this.envelopeGain.gain.setValueAtTime(0.0001, time);
             this.envelopeGain.gain.linearRampToValueAtTime(1, time + attack);
             this.envelopePhase = 'attack';
         }

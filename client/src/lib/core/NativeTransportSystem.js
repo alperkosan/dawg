@@ -271,6 +271,8 @@ export class NativeTransportSystem {
     }
 
     setPosition(step) {
+        const oldTick = this.currentTick;
+        const oldStep = this.ticksToSteps(this.currentTick);
         const targetTick = this.stepsToTicks(step);
         this.currentTick = targetTick;
         this.currentBar = Math.floor(this.currentTick / this.ticksPerBar);
@@ -278,6 +280,17 @@ export class NativeTransportSystem {
         if (this.isPlaying) {
             this.nextTickTime = this.audioContext.currentTime;
         }
+
+        console.log('🔄 [SET POSITION] Position set:', {
+            requestedStep: step,
+            oldTick,
+            oldStep: oldStep.toFixed(2),
+            newTick: this.currentTick,
+            newStep: this.ticksToSteps(this.currentTick).toFixed(2),
+            isPlaying: this.isPlaying,
+            loopStartTick: this.loopStartTick,
+            loopEndTick: this.loopEndTick
+        });
 
         this.triggerCallback('position', { position: this.currentTick, step: step });
         return this;
@@ -293,6 +306,13 @@ export class NativeTransportSystem {
 
         // Convert steps to ticks (1 step = 24 ticks at PPQ=96)
         this.loopStartTick = startStep * this.ticksPerStep;
+        // ✅ CRITICAL FIX: loopEnd is exclusive, so loopEndTick should be the first tick AFTER the last step
+        // But we want the last step to complete, so we add one more tick to allow the last step's final tick
+        // Example: if loopEnd = 16 steps, we want steps 0-15 to play fully
+        // Step 15 is ticks 360-383, so loopEndTick should be 384 (start of step 16)
+        // But we need to allow step 15 to complete, so we check when currentTick > loopEndTick
+        // Actually, the issue is that we're checking >=, which triggers at the start of the next step
+        // We should check > to allow the last step to complete
         this.loopEndTick = endStep * this.ticksPerStep;
 
         // ✅ FIX: Also set the tick-based properties for the duplicate loop logic
@@ -423,35 +443,88 @@ export class NativeTransportSystem {
 
     advanceToNextTick() {
         const secondsPerTick = this.getSecondsPerTick();
+        const currentTime = this.audioContext.currentTime;
+        const oldTick = this.currentTick;
+        const oldNextTickTime = this.nextTickTime;
+        
+        // ✅ First: Always increment currentTick
         this.currentTick++;
-
+        
+        // ✅ Then: Check if we've reached or passed the loop boundary
+        // loopEndTick is exclusive (e.g., for 16 steps, loopEndTick = 384)
+        // When currentTick reaches 384, we should restart to 0
         if (this.loop && this.currentTick >= this.loopEndTick) {
             const previousTick = this.currentTick;
-            this.currentTick = this.loopStartTick;
-            this.nextTickTime = this.audioContext.currentTime;
+            const previousStep = this.ticksToSteps(previousTick);
+            
+            console.log('🔄 [TRANSPORT LOOP] Loop boundary reached:', {
+                oldTick,
+                currentTick: this.currentTick,
+                currentStep: previousStep.toFixed(2),
+                loopEndTick: this.loopEndTick,
+                loopStartTick: this.loopStartTick,
+                loopEndStep: this.ticksToSteps(this.loopEndTick).toFixed(2),
+                loopStartStep: this.ticksToSteps(this.loopStartTick).toFixed(2),
+                oldNextTickTime: oldNextTickTime.toFixed(3),
+                currentTime: currentTime.toFixed(3),
+                timeSinceLastTick: (currentTime - oldNextTickTime).toFixed(3) + 's',
+                note: 'Restarting to tick 0'
+            });
+            
+            // ✅ Reset to 0 (beginning) on loop restart
+            this.currentTick = 0;
+            
+            // ✅ CRITICAL FIX: Do NOT update nextTickTime on loop restart!
+            // nextTickTime is already correct from the previous tick increment
+            // Updating it here causes the loop to be one tick shorter (~7ms per tick)
+            // This accumulates to ~130-140ms shorter loops on subsequent restarts
+            // The step0StartTime should use the EXISTING nextTickTime
+            const step0StartTime = this.nextTickTime;
 
-            // ✅ SADECE EVENT TETİKLE
+            console.log('🔄 [TRANSPORT LOOP] Position reset to 0 (nextTickTime preserved):', {
+                newTick: this.currentTick,
+                newStep: this.ticksToSteps(this.currentTick).toFixed(2),
+                nextTickTime: this.nextTickTime.toFixed(3),
+                step0StartTime: step0StartTime.toFixed(3),
+                currentTime: currentTime.toFixed(3),
+                timeUntilStep0: (step0StartTime - currentTime).toFixed(3) + 's',
+                secondsPerTick: secondsPerTick.toFixed(6),
+                note: 'nextTickTime preserved from previous tick for perfect loop length'
+            });
 
-            // ✅ CRITICAL FIX: Clear ALL scheduled events on loop restart
-            // PlaybackManager will stop all active notes and reschedule everything from pattern
-            // This prevents duplicate scheduling and stuck notes
+            // ✅ Clear ALL scheduled events on loop restart
             this.clearScheduledEvents();
 
-            // Loop event'ini tetikle (PlaybackManager'da dinlenecek)
+            // ✅ Trigger loop event for PlaybackManager
             this.triggerCallback('loop', {
-                time: this.nextTickTime,
-                nextLoopStartTime: this.nextTickTime,
+                time: step0StartTime,
+                nextLoopStartTime: step0StartTime,
                 fromTick: previousTick - 1,
-                toTick: this.loopStartTick,
-                needsReschedule: true // ✅ Yeniden schedule gerektiğini belirt
+                toTick: 0,
+                needsReschedule: true
             });
+            
+            console.log('🔄 [TRANSPORT LOOP] Loop event triggered');
         } else {
-            // ✅ NEW: Calculate next tick time with sample-accurate precision
+            // ✅ Normal tick: calculate next tick time
             const nextTickTimeRaw = this.nextTickTime + secondsPerTick;
             this.nextTickTime = SampleAccurateTime.toSampleAccurate(
                 this.audioContext,
                 nextTickTimeRaw
             );
+            
+            // ✅ DEBUG: Log every 24th tick (every step) for debugging
+            if (this.currentTick % 24 === 0) {
+                console.log('⏱️ [TICK] Normal tick:', {
+                    currentTick: this.currentTick,
+                    currentStep: this.ticksToSteps(this.currentTick).toFixed(2),
+                    oldNextTickTime: oldNextTickTime.toFixed(3),
+                    newNextTickTime: this.nextTickTime.toFixed(3),
+                    currentTime: currentTime.toFixed(3),
+                    tickIncrement: (this.nextTickTime - oldNextTickTime).toFixed(3) + 's',
+                    timeUntilNextTick: (this.nextTickTime - currentTime).toFixed(3) + 's'
+                });
+            }
         }
 
         // Bar tracking (existing code)

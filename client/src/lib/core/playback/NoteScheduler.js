@@ -97,13 +97,30 @@ export class NoteScheduler {
         const isPlaybackStart = reason === 'playback-start';
         const isNoteModified = reason === 'note-modified';
         const isNoteAdded = reason === 'note-added';
+        const isLoopRestart = reason === 'loop-restart';
         const shouldPreservePosition = isResume || isPositionJump || isPlaybackStart || isNoteModified || isNoteAdded;
         
         const loopLength = loopEnd - loopStart;
         const isLikelyLoopRestart = !shouldPreservePosition && loopEnabled && currentPosition >= loopEnd;
-        const currentStep = isLikelyLoopRestart ? loopStart : currentPosition;
+        
+        // ✅ FIX: For loop-restart reason, always use 0 as current step
+        const currentStep = isLoopRestart ? 0 : (isLikelyLoopRestart ? loopStart : currentPosition);
         const currentPositionInSeconds = currentStep * this.transport.stepsToSeconds(1);
         const loopTimeInSeconds = loopEnabled ? loopLength * this.transport.stepsToSeconds(1) : 0;
+        
+        console.log('🎵 [NOTE SCHEDULER] Position calculation:', {
+            reason,
+            currentPosition,
+            loopStart,
+            loopEnd,
+            isLoopRestart,
+            isLikelyLoopRestart,
+            shouldPreservePosition,
+            calculatedCurrentStep: currentStep,
+            currentPositionInSeconds: currentPositionInSeconds.toFixed(3),
+            transportCurrentTick: this.transport.currentTick,
+            transportCurrentStep: this.transport.ticksToSteps(this.transport.currentTick)
+        });
 
         sortedNotes.forEach(note => {
             // ✅ GHOST NOTES: Skip muted notes during playback

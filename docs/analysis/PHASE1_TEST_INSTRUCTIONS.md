@@ -241,3 +241,4 @@ Logları topladıktan sonra:
 
 
 
+

@@ -38,10 +38,11 @@ export class NativeSamplerNode {
             reverse: false,
 
             // Envelope (ms / percent)
-            attack: 0,            // ms
-            decay: 0,             // ms
-            sustain: 100,         // percent
-            release: 50,          // ms
+            // ✅ DAW standard: Short envelopes for one-shot samples (drums/percussions)
+            attack: 1,            // ms (1ms minimum to prevent clicks)
+            decay: 10,            // ms (short for punchy drums)
+            sustain: 100,         // percent (100% for full sustain)
+            release: 10,          // ms (short for tight one-shot samples)
 
             // Filter
             filterType: 'lowpass',

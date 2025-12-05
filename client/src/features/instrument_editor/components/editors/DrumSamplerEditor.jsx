@@ -179,7 +179,7 @@ const DrumSamplerEditor = ({ instrumentData }) => {
     release: (instrumentData.release ?? 50) / 1000
   }), [instrumentData.attack, instrumentData.decay, instrumentData.sustain, instrumentData.release]);
 
-  const envelopeEnabled = instrumentData.envelopeEnabled ?? true;
+  const envelopeEnabled = instrumentData.envelopeEnabled ?? false; // ✅ FL Studio behavior: Envelope OFF by default
   const envelopeTempoSync = instrumentData.envelopeTempoSync ?? false;
   const volumeLfo = instrumentData.volumeLfo || {
     shape: 'sine',
@@ -192,16 +192,27 @@ const DrumSamplerEditor = ({ instrumentData }) => {
   };
 
   const handleADSRChange = useCallback((newValues) => {
+    // ✅ FL Studio behavior: When user changes envelope values, automatically enable envelope
+    if (!envelopeEnabled) {
+      handleParameterChange('envelopeEnabled', true);
+    }
+    
     // Convert ADSRCanvas format (s/0-1) back to instrument data (ms/0-100)
     if (newValues.attack !== undefined) handleParameterChange('attack', newValues.attack * 1000);
     if (newValues.decay !== undefined) handleParameterChange('decay', newValues.decay * 1000);
     if (newValues.sustain !== undefined) handleParameterChange('sustain', newValues.sustain * 100);
     if (newValues.release !== undefined) handleParameterChange('release', newValues.release * 1000);
-  }, [handleParameterChange]);
+  }, [handleParameterChange, envelopeEnabled]);
 
   const handleEnvelopePreset = (presetId) => {
     const preset = ENVELOPE_PRESETS.find((p) => p.id === presetId);
     if (!preset) return;
+    
+    // ✅ FL Studio behavior: When user applies preset, automatically enable envelope
+    if (!envelopeEnabled) {
+      handleParameterChange('envelopeEnabled', true);
+    }
+    
     handleParameterChange('attack', preset.attack);
     handleParameterChange('decay', preset.decay);
     handleParameterChange('sustain', preset.sustain);

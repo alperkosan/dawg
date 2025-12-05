@@ -124,7 +124,8 @@ export const useInstrumentsStore = create((set, get) => ({
         color: instrumentData.color || '#888888',
         notes: [],
         mixerTrackId,
-        envelope: instrumentData.envelope || { attack: 0.01, decay: 0.1, sustain: 1.0, release: 1.0 },
+        envelope: instrumentData.envelope || { attack: 0.001, decay: 0.01, sustain: 1.0, release: 0.01 }, // ✅ DAW standard: Default values (not applied unless envelopeEnabled is true)
+        envelopeEnabled: instrumentData.envelopeEnabled !== undefined ? instrumentData.envelopeEnabled : false, // ✅ FL Studio behavior: Envelope OFF by default, preserves sample's natural character
         precomputed: {},
         effectChain: instrumentData.effectChain || [],
         isMuted: instrumentData.isMuted !== undefined ? instrumentData.isMuted : false, // ✅ FIX: Preserve mute state from saved project
