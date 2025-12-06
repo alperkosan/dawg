@@ -172,8 +172,8 @@ export class NativeSamplerNode {
                     mixerTrackId: this.mixerTrackId,
                     hasEffectChain: this.effectChain?.length > 0
                 });
-            }
-            
+        }
+
             // Quick fade-out (10-20ms) to preserve reverb tail while cutting through
             const fadeTime = 0.015; // 15ms quick fade
             const stopTime = startTime;
@@ -440,7 +440,7 @@ export class NativeSamplerNode {
                 if (isFinite(durationInSeconds) && durationInSeconds > 0) {
                     desiredDurationSec = durationInSeconds;
                 }
-            } catch (e) {
+            } catch (e) { 
                 console.warn(`[NativeSamplerNode] Geçersiz süre formatı: ${duration}`, e);
             }
         }
@@ -449,7 +449,7 @@ export class NativeSamplerNode {
         if (releaseSec === null) {
             if (envelopeEnabled) {
                 releaseSec = Math.max(0.005, releaseSrc / 1000);
-            } else {
+                } else {
                 // Envelope OFF: use generous dynamic tail based on note duration
                 // Minimum 1.5s, or 120% of note length, or releaseSrc
                 const tailFromLength = desiredDurationSec * 1.2;
@@ -465,7 +465,7 @@ export class NativeSamplerNode {
             const currentGain = gainNode.gain.value;
             gainNode.gain.setValueAtTime(currentGain, stopAt);
             gainNode.gain.linearRampToValueAtTime(0.0001, stopAt + releaseSec);
-            source.stop(stopAt + releaseSec);
+                    source.stop(stopAt + releaseSec);
 
             if (import.meta.env?.DEV) {
                 console.log('🧪 NativeSamplerNode stop scheduled:', {

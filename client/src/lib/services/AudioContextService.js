@@ -2576,7 +2576,7 @@ export class AudioContextService {
     }
 
     // Try to update AudioParam if exists
-    if (node.parameters && node.parameters.has(normalizedParamName)) {
+    if (node.parameters && typeof node.parameters.has === 'function' && node.parameters.has(normalizedParamName)) {
       const param = node.parameters.get(normalizedParamName);
       if (param && param.setValueAtTime) {
         const now = this.audioEngine.audioContext.currentTime;

@@ -157,7 +157,7 @@ const MixerChannelComponent = ({
 
       // Get mixer panel container boundaries
       const mixerPanel = colorBarRef.current.closest('.workspace-panel__content') ||
-                         colorBarRef.current.closest('.mixer-2');
+        colorBarRef.current.closest('.mixer-2');
       const panelRect = mixerPanel ? mixerPanel.getBoundingClientRect() : {
         left: 0,
         right: window.innerWidth,
@@ -382,6 +382,7 @@ export const MixerChannel = memo(MixerChannelComponent, (prevProps, nextProps) =
     // ✅ CRITICAL FIX: Check activeTrack changes for SendAcceptButton updates
     prevProps.activeTrack?.id === nextProps.activeTrack?.id &&
     !activeSendsChanged && // Re-render when active track's sends change
+    prevProps.activeTrack?.output === nextProps.activeTrack?.output && // ✅ Re-render on routing change
     // Deep comparison for arrays/objects
     JSON.stringify(prevProps.track.insertEffects) === JSON.stringify(nextProps.track.insertEffects) &&
     JSON.stringify(prevProps.track.sends) === JSON.stringify(nextProps.track.sends) &&

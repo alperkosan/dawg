@@ -190,3 +190,6 @@ Faz 1 geliştirmeleri **başarılı** ama bazı optimizasyonlar yapılabilir. Ö
 
 
 
+
+
+

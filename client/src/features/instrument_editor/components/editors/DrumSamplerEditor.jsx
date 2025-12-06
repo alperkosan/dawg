@@ -13,6 +13,7 @@ import { WaveformWorkbench } from '@/features/sample_editor_v3/components/Wavefo
 import '@/features/sample_editor_v3/SampleEditorV3.css';
 import './DrumSamplerEditor.css';
 import { ADSRCanvas } from '../../../../components/controls/canvas/ADSRCanvas';
+import { processAudioBuffer } from '@/lib/audio/utils/processAudioBuffer';
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
@@ -119,6 +120,68 @@ const DrumSamplerEditor = ({ instrumentData }) => {
     }
   }, [instrumentData]);
 
+  // ✅ CRITICAL FIX: Sync playback instrument parameters when editor opens
+  // This ensures envelopeEnabled and other parameters are applied to playback instrument
+  // Without this, playback instrument uses stale/default values until user changes something
+  /* Note: Parameter changes are already synced via handleParameterChange, so we only need to sync on mount
+  useEffect(() => {
+    const audioEngine = AudioContextService.getAudioEngine();
+    if (!audioEngine || !instrumentData?.id) return;
+
+    const instrument = audioEngine.instruments.get(instrumentData.id);
+    if (!instrument || typeof instrument.updateParameters !== 'function') return;
+
+    // Sync all relevant parameters to playback instrument
+    // ✅ CRITICAL FIX: Read ADSR from envelope object if top-level doesn't exist
+    /* envelope values are in seconds, but updateParameters expects ms for attack/decay/release
+    const envelope = instrumentData.envelope || {};
+    const paramsToSync = {
+      envelopeEnabled: instrumentData.envelopeEnabled ?? false,
+      attack: instrumentData.attack ?? (envelope.attack !== undefined ? envelope.attack * 1000 : undefined),
+      decay: instrumentData.decay ?? (envelope.decay !== undefined ? envelope.decay * 1000 : undefined),
+      sustain: instrumentData.sustain ?? envelope.sustain,
+      release: instrumentData.release ?? (envelope.release !== undefined ? envelope.release * 1000 : undefined),
+      gain: instrumentData.gain,
+      pan: instrumentData.pan,
+      pitchOffset: instrumentData.pitchOffset,
+      sampleStart: instrumentData.sampleStart,
+      sampleEnd: instrumentData.sampleEnd,
+      cutItself: instrumentData.cutItself
+    };
+
+    // Remove undefined values
+    Object.keys(paramsToSync).forEach(key => {
+      if (paramsToSync[key] === undefined) {
+        delete paramsToSync[key];
+      }
+    });
+
+    if (Object.keys(paramsToSync).length > 0) {
+      instrument.updateParameters(paramsToSync);
+      if (import.meta.env.DEV) {
+        console.log(`🔄 Synced playback instrument parameters on editor open:`, paramsToSync);
+      }
+    }
+  }, [instrumentData?.id]); // Only sync when editor opens (instrument ID changes)*/
+
+  // ✅ SYNC BUFFER FX: Update audio engine when destructive edits (Reverse/Normalize) change
+  useEffect(() => {
+    const audioEngine = AudioContextService.getAudioEngine();
+    if (!audioEngine || !instrumentData.id || !audioBuffer) return;
+
+    const instrument = audioEngine.instruments.get(instrumentData.id);
+    // Only Wasm instruments support setBuffer for now
+    if (!instrument || typeof instrument.setBuffer !== 'function') return;
+
+    const precomputed = instrumentData.precomputed || {};
+
+    // Process buffer (Reverse, Normalize etc.)
+    const processed = processAudioBuffer(audioBuffer, precomputed);
+
+    instrument.setBuffer(processed);
+
+  }, [audioBuffer, instrumentData.precomputed, instrumentData.id]);
+
   // Play sample preview
   const handlePreview = useCallback(() => {
     const previewManager = getPreviewManager();
@@ -196,7 +259,7 @@ const DrumSamplerEditor = ({ instrumentData }) => {
     if (!envelopeEnabled) {
       handleParameterChange('envelopeEnabled', true);
     }
-    
+
     // Convert ADSRCanvas format (s/0-1) back to instrument data (ms/0-100)
     if (newValues.attack !== undefined) handleParameterChange('attack', newValues.attack * 1000);
     if (newValues.decay !== undefined) handleParameterChange('decay', newValues.decay * 1000);
@@ -207,12 +270,12 @@ const DrumSamplerEditor = ({ instrumentData }) => {
   const handleEnvelopePreset = (presetId) => {
     const preset = ENVELOPE_PRESETS.find((p) => p.id === presetId);
     if (!preset) return;
-    
+
     // ✅ FL Studio behavior: When user applies preset, automatically enable envelope
     if (!envelopeEnabled) {
       handleParameterChange('envelopeEnabled', true);
     }
-    
+
     handleParameterChange('attack', preset.attack);
     handleParameterChange('decay', preset.decay);
     handleParameterChange('sustain', preset.sustain);
@@ -303,14 +366,7 @@ const DrumSamplerEditor = ({ instrumentData }) => {
             onChange={(value) => handleParameterChange('pan', value)}
           />
         </div>
-        <div className="drumsampler-editor__toggle-row">
-          <button
-            className={`drumsampler-editor__toggle ${instrumentData.reverse ? 'drumsampler-editor__toggle--active' : ''}`}
-            onClick={() => handleParameterChange('reverse', !instrumentData.reverse)}
-          >
-            {instrumentData.reverse ? '⏪ Reverse' : '⏩ Reverse'}
-          </button>
-        </div>
+
       </div>
 
       {/* Envelope */}
@@ -534,6 +590,23 @@ const DrumSamplerEditor = ({ instrumentData }) => {
         </div>
       </div>
 
+      {/* Enhance */}
+      <div className="drumsampler-editor__section">
+        <div className="drumsampler-editor__section-title">Enhance</div>
+        <div className="drumsampler-editor__controls">
+          <Slider
+            label="Bass Boost"
+            value={instrumentData.bassBoost || 0}
+            min={0}
+            max={100}
+            step={1}
+            color="#FF5722"
+            formatValue={(v) => `${v.toFixed(0)}%`}
+            onChange={(value) => handleParameterChange('bassBoost', value)}
+          />
+        </div>
+      </div>
+
       {/* Info */}
       <div className="drumsampler-editor__section">
         <div className="drumsampler-editor__section-title">Tips</div>
@@ -544,7 +617,7 @@ const DrumSamplerEditor = ({ instrumentData }) => {
           <p>🎵 Use <strong>Pitch</strong> to create melodic variations</p>
         </div>
       </div>
-    </div>
+    </div >
   );
 };
 

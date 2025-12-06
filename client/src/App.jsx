@@ -74,7 +74,7 @@ if (import.meta.env.DEV) {
 function DAWApp() {
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
-  
+
   // ✅ UX IMPROVEMENT: Persist engine status across route changes
   // Check if engine was already initialized in this session
   const getInitialEngineStatus = () => {
@@ -89,7 +89,7 @@ function DAWApp() {
     }
     return 'idle';
   };
-  
+
   const [engineStatus, setEngineStatus] = useState(getInitialEngineStatus);
   const [autoStartInProgress, setAutoStartInProgress] = useState(false);
   const [engineError, setEngineError] = useState(null);
@@ -114,7 +114,7 @@ function DAWApp() {
   const authSessionRef = useRef(null);
 
   const audioEngineCallbacks = useMemo(() => ({
-    setPlaybackState: (state) => {},
+    setPlaybackState: (state) => { },
     setTransportPosition: usePlaybackStore.getState().setTransportPosition,
   }), []);
 
@@ -206,11 +206,11 @@ function DAWApp() {
   const handleProjectSelect = useCallback(async (projectId) => {
     try {
       console.log('📂 Loading project:', projectId);
-      
+
       // ✅ FIX: Show loading screen
       setIsLoadingProject(true);
       setLoadingProjectTitle(null); // Will be set when project is loaded
-      
+
       // ✅ FIX: Set projectLoadAttempted BEFORE loading to prevent useEffect from interfering
       // Use functional update to avoid dependency on projectLoadAttempted
       setProjectLoadAttempted(prev => {
@@ -220,10 +220,10 @@ function DAWApp() {
         }
         return prev;
       });
-      
+
       // Reset flags when switching projects
       setTemplateInitialized(false);
-      
+
       // ✅ FIX: Load project - loadProject() handles clearAll() and deserialize internally
       // No need to call clearAll() here to avoid double-clearing
       const project = await projectService.loadProject(projectId);
@@ -235,7 +235,7 @@ function DAWApp() {
       setSaveStatus('saved');
       setLastSavedAt(project.updatedAt ? new Date(project.updatedAt) : new Date());
       hasUnsavedChangesRef.current = false;
-      
+
       // ✅ FIX: Update URL to reflect selected project (only if different from current)
       // Use window.history to avoid triggering searchParams change (which would recreate handleProjectSelect)
       const currentUrl = new URL(window.location.href);
@@ -246,7 +246,7 @@ function DAWApp() {
         // Note: We don't update searchParams state here to avoid recreating handleProjectSelect
         // The URL is updated, but searchParams state will sync on next render if needed
       }
-      
+
       console.log('✅ Project loaded:', project.id);
     } catch (error) {
       console.error('❌ Failed to load project:', error);
@@ -270,7 +270,7 @@ function DAWApp() {
           // ✅ FIX: Set projectLoadAttempted FIRST to prevent re-running
           setProjectLoadAttempted(true);
           const projectIdFromUrl = searchParams.get('project');
-          
+
           if (projectIdFromUrl && projectIdFromUrl !== currentProjectId) {
             // Load project from URL (only if different from current)
             console.log('📂 Loading project from URL:', projectIdFromUrl);
@@ -286,7 +286,7 @@ function DAWApp() {
           setProjectLoadAttempted(false); // ✅ FIX: Allow retry on error
         }
       };
-      
+
       loadProjectFromUrlOrDefault();
     }
   }, [engineStatus, isAuthenticated, isGuest, templateInitialized, projectLoadAttempted, isLoadingProject, currentProjectId, searchParams, handleProjectSelect, loadDefaultWorkspace, prepareEmptyWorkspace]);
@@ -340,7 +340,7 @@ function DAWApp() {
         console.log('♻️ Found existing audio engine on mount, reusing...');
         audioEngineRef.current = existingEngine;
         window.audioEngine = existingEngine;
-        
+
         // Resume AudioContext if suspended
         const resumeIfNeeded = async () => {
           if (existingEngine.audioContext.state === 'suspended') {
@@ -352,14 +352,14 @@ function DAWApp() {
             }
           }
         };
-        
+
         resumeIfNeeded();
-        
+
         // Re-sync instruments to mixer
         AudioContextService._syncInstrumentsToMixerInserts().catch(err => {
           console.warn('⚠️ Failed to re-sync instruments:', err);
         });
-        
+
         // Update status to ready
         setEngineStatus('ready');
         sessionStorage.setItem('dawg_engine_status', 'ready');
@@ -383,7 +383,7 @@ function DAWApp() {
           }
         }
       };
-      
+
       resumeAudioContext();
     }
   }, [location.pathname, engineStatus]);
@@ -398,7 +398,7 @@ function DAWApp() {
       console.log('♻️ Reusing existing audio engine');
       audioEngineRef.current = existingEngine;
       window.audioEngine = existingEngine;
-      
+
       // Ensure AudioContext is resumed
       if (existingEngine.audioContext.state === 'suspended') {
         try {
@@ -408,7 +408,7 @@ function DAWApp() {
           console.warn('⚠️ Failed to resume AudioContext:', error);
         }
       }
-      
+
       // ✅ CRITICAL: Re-sync instruments to mixer inserts after reusing engine
       // This ensures instrument connections are restored after panel navigation
       try {
@@ -417,7 +417,7 @@ function DAWApp() {
       } catch (syncError) {
         console.warn('⚠️ Failed to re-sync instruments:', syncError);
       }
-      
+
       // Update engine status without reinitializing
       setEngineStatus('ready');
       // ✅ UX IMPROVEMENT: Persist engine status
@@ -449,6 +449,7 @@ function DAWApp() {
       if (engine.workletManager) {
         const processorConfigs = [
           // ⚠️ REMOVED: UnifiedMixerWorklet - Replaced by MixerInsert system
+          { path: '/worklets/wasm-sampler-processor.js', name: 'wasm-sampler-processor' }, // ✅ WASM Sampler
           { path: '/worklets/effects/compressor-processor.js', name: 'compressor-processor' },
           { path: '/worklets/effects/saturator-processor.js', name: 'saturator-processor' },
           { path: '/worklets/effects/multiband-eq-processor.js', name: 'multiband-eq-processor' },
@@ -459,12 +460,12 @@ function DAWApp() {
         const results = await engine.workletManager.loadMultipleWorklets(processorConfigs);
         const successful = results.filter(r => r.status === 'fulfilled').length;
         const failed = results.filter(r => r.status === 'rejected');
-        
+
         if (failed.length > 0) {
-          console.warn(`⚠️ ${failed.length} processor(s) failed to load:`, 
+          console.warn(`⚠️ ${failed.length} processor(s) failed to load:`,
             failed.map(r => r.reason?.message || 'Unknown error'));
         }
-        
+
         console.log(`✅ Loaded ${successful}/${processorConfigs.length} processors`);
       } else {
         console.warn('⚠️ WorkletManager not available, processors will be loaded on demand');
@@ -472,12 +473,12 @@ function DAWApp() {
 
       // ✅ FIX: Use setAudioEngine instead of initialize
       await AudioContextService.setAudioEngine(engine);
-      
+
       // ✅ FIX: Use init instead of initialize, pass AudioContext
       if (engine.audioContext) {
         visualizationEngine.init(engine.audioContext);
       }
-      
+
       TimelineControllerSingleton.getInstance();
       TransportManagerSingleton.getInstance();
 
@@ -485,7 +486,7 @@ function DAWApp() {
       // ✅ UX IMPROVEMENT: Persist engine status
       sessionStorage.setItem('dawg_engine_status', 'ready');
       console.log('✅ Ses sistemi hazır!');
-      
+
       // ✅ FIX: For guest users, create empty template immediately
       // For authenticated users, project loading is handled in the useEffect above
       if (isGuest && !templateInitialized && !isLoadingProject) {
@@ -533,40 +534,40 @@ function DAWApp() {
   const handleNewProject = useCallback(async () => {
     try {
       console.log('📝 Creating new project...');
-      
+
       // ✅ FIX: Show loading screen
       setIsLoadingProject(true);
       setLoadingProjectTitle('Yeni Proje Oluşturuluyor...');
-      
+
       // Reset template flag (handleProjectSelect will handle projectLoadAttempted)
       setTemplateInitialized(false);
       // ✅ FIX: Don't reset projectLoadAttempted - handleProjectSelect will set it to true
-      
+
       // Clear existing project data
       const { ProjectSerializer } = await import('./lib/project/ProjectSerializer.js');
       await ProjectSerializer.clearAll();
-      
+
       // Create new empty project
       const template = ProjectSerializer.createEmptyProjectTemplate();
-      
+
       const newProject = await projectService.createProject({
         title: 'Untitled Project',
         ...template,
       });
-      
+
       // ✅ FIX: Validate that project was created successfully
       if (!newProject || !newProject.id) {
         throw new Error('Failed to create project: No project ID returned');
       }
-      
+
       console.log('✅ New project created:', newProject.id);
-      
+
       setLoadingProjectTitle('Untitled Project');
       setCurrentProjectTitle('Untitled Project');
-      
+
       // Load the new project (this will set projectLoadAttempted to true)
       await handleProjectSelect(newProject.id);
-      
+
       setSaveStatus('saved');
       setLastSavedAt(new Date());
       hasUnsavedChangesRef.current = false;
@@ -585,10 +586,10 @@ function DAWApp() {
   const showNotification = useCallback((message, type = 'info', duration = 4000) => {
     const id = Date.now() + Math.random();
     const toast = { id, message, type, duration };
-    
+
     // ✅ FIX: Serialize/deserialize toast to ensure React detects state change
     const serializedToast = JSON.parse(JSON.stringify(toast));
-    
+
     // ✅ FIX: Use queueMicrotask to defer flushSync if called during render
     // This prevents "flushSync was called from inside a lifecycle method" warning
     queueMicrotask(() => {
@@ -611,7 +612,7 @@ function DAWApp() {
         setToastKey(prev => prev + 1);
       }
     });
-    
+
     // Auto-remove after duration
     setTimeout(() => {
       setToasts(prev => prev.filter(t => t.id !== id));
@@ -620,7 +621,7 @@ function DAWApp() {
   const removeToast = useCallback((id) => {
     setToasts(prev => prev.filter(toast => toast.id !== id));
   }, []);
-  
+
   // ✅ FIX: Set toast handler for API client (so it can show toasts automatically)
   useEffect(() => {
     import('./services/api.js').then(({ setToastHandler }) => {
@@ -643,16 +644,16 @@ function DAWApp() {
 
     try {
       console.log(`💾 ${isAutoSave ? 'Auto-' : ''}Saving project...`);
-      
+
       // ✅ FIX: Serialize ALL current state first (instruments, patterns, mixer, arrangement, etc.)
       const { ProjectSerializer } = await import('./lib/project/ProjectSerializer.js');
       const serializedData = ProjectSerializer.serializeCurrentState();
-      
+
       // ✅ FIX: Get or create project - if no project ID, create new project with current state
       let projectId = currentProjectId;
       if (!projectId) {
         console.log('💾 Creating new project on first save...');
-        
+
         // Get project metadata from store or use defaults
         const playbackStore = usePlaybackStore.getState();
         const projectData = {
@@ -662,31 +663,31 @@ function DAWApp() {
           keySignature: playbackStore.keySignature,
           ...serializedData,
         };
-        
+
         const newProject = await projectService.createProject(projectData);
-        
+
         projectId = newProject.id;
         setCurrentProjectId(projectId);
         setCurrentProjectTitle(newProject.title || 'Untitled Project');
-        
+
         // ✅ Update URL to reflect new project
         const currentUrl = new URL(window.location.href);
         currentUrl.searchParams.set('project', projectId);
         window.history.replaceState({}, '', currentUrl.toString());
-        
+
         console.log('✅ New project created on first save:', projectId);
-        
+
         // Project is already created with data, so we're done
         setSaveStatus('saved');
         setLastSavedAt(new Date());
         hasUnsavedChangesRef.current = false;
-        
+
         if (!isAutoSave) {
           showNotification('Project saved successfully', 'success');
         }
         return; // Exit early - project already created and saved
       }
-      
+
       // Get project metadata from store or use defaults
       const playbackStore = usePlaybackStore.getState();
       const projectData = {
@@ -697,14 +698,14 @@ function DAWApp() {
         // ✅ FIX: Pass serialized data - ProjectSerializer.serialize() will handle it
         ...serializedData,
       };
-      
+
       await projectService.saveProject(projectId, projectData);
       console.log(`✅ Project ${isAutoSave ? 'auto-' : ''}saved successfully`);
-      
+
       setSaveStatus('saved');
       setLastSavedAt(new Date());
       hasUnsavedChangesRef.current = false;
-      
+
       // ✅ Show success notification (only for manual saves)
       if (!isAutoSave) {
         showNotification('Project saved successfully', 'success');
@@ -712,7 +713,7 @@ function DAWApp() {
     } catch (error) {
       console.error(`❌ Failed to ${isAutoSave ? 'auto-' : ''}save project:`, error);
       setSaveStatus('error');
-      
+
       // ✅ Show error notification (only for manual saves)
       if (!isAutoSave) {
         showNotification(`Failed to save project: ${error.message}`, 'error');
@@ -727,7 +728,7 @@ function DAWApp() {
       if (autoSaveTimerRef.current) {
         clearInterval(autoSaveTimerRef.current);
       }
-      
+
       // Set up auto-save timer (30 seconds)
       autoSaveTimerRef.current = setInterval(() => {
         if (hasUnsavedChangesRef.current && saveStatus !== 'saving') {
@@ -735,7 +736,7 @@ function DAWApp() {
           handleSave(true); // Auto-save
         }
       }, 30000); // 30 seconds
-      
+
       return () => {
         if (autoSaveTimerRef.current) {
           clearInterval(autoSaveTimerRef.current);
@@ -753,7 +754,7 @@ function DAWApp() {
         return e.returnValue;
       }
     };
-    
+
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [isGuest]);
@@ -798,12 +799,12 @@ function DAWApp() {
           <ThemeProvider>
             {/* ✅ FIX: Show project loading screen overlay */}
             {isLoadingProject && (
-              <ProjectLoadingScreen 
+              <ProjectLoadingScreen
                 projectTitle={loadingProjectTitle}
                 message="Proje verileri yükleniyor, lütfen bekleyin..."
               />
             )}
-            <NavigationHeader 
+            <NavigationHeader
               currentProjectId={currentProjectId}
               currentProjectTitle={currentProjectTitle}
               onProjectSelect={handleProjectSelect}
@@ -830,22 +831,22 @@ function DAWApp() {
             {/* ✅ FIX: Modal'ları app-container dışına taşıdık - pointer-events sorunlarını önlemek için */}
             <ExportPanel isOpen={isExportPanelOpen} onClose={() => setIsExportPanelOpen(false)} />
             {/* ✅ FIX: Channel Rack modals moved to App level to avoid overflow issues */}
-            <AudioExportPanel 
-              isOpen={isAudioExportPanelOpen} 
-              onClose={() => setAudioExportPanelOpen(false)} 
+            <AudioExportPanel
+              isOpen={isAudioExportPanelOpen}
+              onClose={() => setAudioExportPanelOpen(false)}
             />
             <InstrumentPickerWrapper />
-            <LoginPrompt 
-              isOpen={showLoginPrompt} 
+            <LoginPrompt
+              isOpen={showLoginPrompt}
               onClose={() => setShowLoginPrompt(false)}
               onLogin={() => {
                 // User is now authenticated, state updated automatically
                 setShowLoginPrompt(false);
               }}
             />
-            <div 
-              className="app-container" 
-              style={{ 
+            <div
+              className="app-container"
+              style={{
                 marginTop: '56px', // Navigation header (56px)
                 height: 'calc(100vh - 56px)', // Full viewport minus header
                 opacity: isLoadingProject ? 0.3 : 1, // ✅ FIX: Dim UI during loading
@@ -854,11 +855,11 @@ function DAWApp() {
                 overflow: 'hidden' // ✅ FIX: Prevent body scroll
               }}
             >
-              <TopToolbar 
+              <TopToolbar
                 onExportClick={() => {
                   console.log('🎵 Export button clicked in App.jsx');
                   setIsExportPanelOpen(true);
-                }} 
+                }}
                 onSaveClick={() => handleSave(false)}
                 saveStatus={saveStatus}
                 lastSavedAt={lastSavedAt}
@@ -908,9 +909,9 @@ function MediaApp() {
   return (
     <ThemeProvider>
       <NavigationHeader />
-      <div 
-        className="media-app" 
-        style={{ 
+      <div
+        className="media-app"
+        style={{
           marginTop: '56px', // Navigation header
           height: 'calc(100vh - 56px)', // Full viewport minus header
           display: 'flex',
@@ -919,7 +920,7 @@ function MediaApp() {
         }}
       >
         <Suspense fallback={<LoadingScreen />}>
-        <MediaPanel />
+          <MediaPanel />
         </Suspense>
       </div>
     </ThemeProvider>
@@ -980,13 +981,13 @@ function AppRouter() {
   return (
     <Routes>
       {/* Auth Route - Show if not authenticated and not guest */}
-      <Route 
-        path="/auth" 
+      <Route
+        path="/auth"
         element={
           isAuthenticated ? (
             <Navigate to="/" replace />
           ) : (
-            <AuthScreen 
+            <AuthScreen
               onSuccess={() => {
                 // After successful login, show welcome screen
                 const hasChosen = sessionStorage.getItem('user-has-chosen');
@@ -1002,12 +1003,12 @@ function AppRouter() {
               }}
             />
           )
-        } 
+        }
       />
 
       {/* Welcome Route */}
-      <Route 
-        path="/welcome" 
+      <Route
+        path="/welcome"
         element={
           isAuthenticated ? (
             <ThemeProvider>
@@ -1016,12 +1017,12 @@ function AppRouter() {
           ) : (
             <Navigate to="/auth" replace />
           )
-        } 
+        }
       />
 
       {/* Home - Redirect based on auth status */}
-      <Route 
-        path="/" 
+      <Route
+        path="/"
         element={
           isAuthenticated ? (
             // Authenticated: check if has chosen, if not show welcome
@@ -1039,67 +1040,67 @@ function AppRouter() {
             // Not authenticated and not guest: go to auth
             <Navigate to="/auth" replace />
           )
-        } 
+        }
       />
 
       {/* DAW Route */}
-      <Route 
-        path="/daw" 
+      <Route
+        path="/daw"
         element={
           <ProtectedRoute>
             <DAWApp />
           </ProtectedRoute>
-        } 
+        }
       />
 
       {/* Media Route */}
-      <Route 
-        path="/media" 
+      <Route
+        path="/media"
         element={
           <ProtectedRoute>
             <MediaApp />
           </ProtectedRoute>
-        } 
+        }
       />
 
       {/* Admin Panel Route */}
-      <Route 
-        path="/admin" 
+      <Route
+        path="/admin"
         element={
           <ProtectedRoute requireAuth={true}>
             <ThemeProvider>
               <Suspense fallback={<LoadingScreen />}>
-              <AdminPanel />
+                <AdminPanel />
               </Suspense>
             </ThemeProvider>
           </ProtectedRoute>
-        } 
+        }
       />
 
       {/* Projects Management Route */}
-      <Route 
-        path="/projects" 
+      <Route
+        path="/projects"
         element={
           <ProtectedRoute requireAuth={true}>
             <ThemeProvider>
               <Suspense fallback={<LoadingScreen />}>
-              <ProjectsPage />
+                <ProjectsPage />
               </Suspense>
             </ThemeProvider>
           </ProtectedRoute>
-        } 
+        }
       />
 
       {/* Render Route (for headless browser/Puppeteer) */}
-      <Route 
-        path="/render" 
+      <Route
+        path="/render"
         element={
           <ThemeProvider>
             <Suspense fallback={<LoadingScreen />}>
-            <RenderPage />
+              <RenderPage />
             </Suspense>
           </ThemeProvider>
-        } 
+        }
       />
 
       {/* Catch all */}

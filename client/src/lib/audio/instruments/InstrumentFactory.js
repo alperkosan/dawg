@@ -14,6 +14,7 @@
 import { SampleLoader } from './loaders/SampleLoader.js';
 import { MultiSampleInstrument } from './sample/MultiSampleInstrument.js';
 import { SingleSampleInstrument } from './sample/SingleSampleInstrument.js';
+import { WasmSingleSampleInstrument } from './sample/WasmSingleSampleInstrument.js'; // ✅ WASM
 import { VASynthInstrument } from './synth/VASynthInstrument.js';
 import { INSTRUMENT_TYPES } from '../../../config/constants.js';
 
@@ -84,10 +85,6 @@ export class InstrumentFactory {
         return this.createPlaybackInstrument(instrumentData, audioContext, { preloadSamples });
     }
 
-    /**
-     * Create sample-based instrument (single or multi-sampled)
-     * @private
-     */
     static async _createSampleInstrument(instrumentData, audioContext, options) {
         const { preloadSamples, onProgress } = options;
 
@@ -116,7 +113,7 @@ export class InstrumentFactory {
 
         } else {
             // Single sample instrument (e.g., Kick, Snare)
-            console.log(`  Single sample instrument: ${instrumentData.url}`);
+            console.log(`  Single sample instrument (WASM): ${instrumentData.url}`);
 
             // Load single sample
             let sampleBuffer = null;
@@ -125,8 +122,8 @@ export class InstrumentFactory {
                 sampleBuffer = buffers.get(instrumentData.url);
             }
 
-            // Create instrument
-            const instrument = new SingleSampleInstrument(
+            // Create instrument - SWITCH TO WASM
+            const instrument = new WasmSingleSampleInstrument(
                 instrumentData,
                 audioContext,
                 sampleBuffer

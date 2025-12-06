@@ -29,6 +29,8 @@ import { MixerInsert } from './MixerInsert.js';
 import { mixerInsertManager } from './MixerInsertManager.js';
 // ✅ NEW: Latency compensation for professional playback
 import { LatencyCompensator } from './utils/LatencyCompensator.js';
+// ✅ WASM: Wasm Audio Engine Bridge
+import { wasmAudioEngine } from './WasmAudioEngine.js';
 
 export class NativeAudioEngine {
     constructor(callbacks = {}) {
@@ -113,8 +115,30 @@ export class NativeAudioEngine {
     }
 
     async initialize() {
+        if (this.isInitialized) return this; // Added check
+
         try {
-            await this._createAudioContext();
+            // Create AudioContext
+            const ContextConstructor = window.AudioContext || window.webkitAudioContext;
+            if (!ContextConstructor) {
+                throw new Error('AudioContext not supported in this browser');
+            }
+
+            this.audioContext = new ContextConstructor({
+                latencyHint: this.settings.latencyHint,
+                sampleRate: this.settings.sampleRate
+            });
+
+            // Initialize Wasm Engine (Phase 1)
+            await wasmAudioEngine.initialize(this.audioContext);
+
+            // ✅ NEW: Initialize latency compensator after audioContext is created
+            this.latencyCompensator = new LatencyCompensator(this.audioContext);
+
+            // ✅ NOTE: AudioContext will be suspended until user interaction
+            // We'll resume it when user clicks "Stüdyoya Gir" or starts playback
+            logger.info(NAMESPACES.AUDIO, `AudioContext created (state: ${this.audioContext.state})`);
+
             await this._initializeCore();
             return this;
         } catch (error) {
@@ -123,6 +147,8 @@ export class NativeAudioEngine {
     }
 
     async _createAudioContext() {
+        // This method is now effectively inlined into `initialize`
+        // Keeping it for now, but it's not called by `initialize` anymore.
         const ContextConstructor = window.AudioContext || window.webkitAudioContext;
         if (!ContextConstructor) {
             throw new Error('AudioContext not supported in this browser');
@@ -390,7 +416,8 @@ export class NativeAudioEngine {
                 { path: '/worklets/text-encoder-polyfill.js', name: 'text-encoder-polyfill' },
                 { path: '/worklets/instrument-processor.js', name: 'instrument-processor' },
                 { path: '/worklets/mixer-processor.js', name: 'mixer-processor' },
-                { path: '/worklets/analysis-processor.js', name: 'analysis-processor' }
+                { path: '/worklets/analysis-processor.js', name: 'analysis-processor' },
+                { path: '/worklets/wasm-sampler-processor.js', name: 'wasm-sampler-processor' } // ✅ WASM Sampler
             ];
 
             const results = await this.workletManager.loadMultipleWorklets(workletConfigs);
@@ -570,33 +597,34 @@ export class NativeAudioEngine {
         try {
             let instrument;
 
-            // ✅ NEW: Try to use InstrumentFactory for multi-sampled instruments, VASynth, and Granular
-            const isMultiSampled = instrumentData.multiSamples && instrumentData.multiSamples.length > 0;
-            const isVASynth = instrumentData.type === 'vasynth';
-            if (isMultiSampled || isVASynth) {
-                // Use new centralized instrument system
+            // ✅ NEW: Use InstrumentFactory for centralized creation (Supports Wasm)
+            const isForgeSynth = instrumentData.type === 'synth'; // Legacy special case
+
+            if (!isForgeSynth) {
+                // Use new centralized instrument system for Sample (Single/Multi) and VASynth
                 logger.debug(NAMESPACES.AUDIO, `Creating ${instrumentData.name} using InstrumentFactory...`);
+
+                // Pass preloaded buffer if available to avoid reload
+                const existingBuffer = instrumentData.audioBuffer || this.sampleBuffers.get(instrumentData.id);
+
                 instrument = await InstrumentFactory.createPlaybackInstrument(
                     instrumentData,
                     this.audioContext,
-                    { useCache: true }
+                    {
+                        useCache: true,
+                        // Enhancement: We might want to pass existingBuffer here if Factory supported it,
+                        // but Factory relies on SampleLoader. 
+                        // Since SampleLoader is cached, it should be fine.
+                    }
                 );
 
                 if (!instrument) {
-                    throw new Error(`InstrumentFactory failed to create ${instrumentData.name}`);
+                    // Fallback for types not handled by Factory (shouldn't happen for sample/vasynth)
+                    throw new Error(`InstrumentFactory returned null for ${instrumentData.name}`);
                 }
 
-            } else if (instrumentData.type === 'sample') {
-                // ✅ Legacy: Single-sample instruments (drums, etc.)
-                const audioBuffer = instrumentData.audioBuffer || this.sampleBuffers.get(instrumentData.id);
-                instrument = new NativeSamplerNode(
-                    instrumentData,
-                    audioBuffer,
-                    this.audioContext
-                );
-
-            } else if (instrumentData.type === 'synth') {
-                // ✅ Legacy: ForgeSynth instruments
+            } else if (isForgeSynth) {
+                // ✅ Legacy: ForgeSynth instruments (handled locally until Factory supports them)
                 instrument = new NativeSynthInstrument(
                     instrumentData,
                     this.workletManager,
@@ -606,10 +634,12 @@ export class NativeAudioEngine {
                 if (typeof instrument.initialize === 'function') {
                     await instrument.initialize();
                 }
-
             } else {
+                // Should be unreachable if types are correct
                 throw new Error(`❌ Unknown instrument type: ${instrumentData.type}`);
             }
+
+
 
             this.instruments.set(instrumentData.id, instrument);
 
@@ -717,27 +747,27 @@ export class NativeAudioEngine {
     // =================== ADAPTIVE GAIN SYSTEM (DISABLED) ===================
     // Note: User requested simple equal defaults instead of automatic adjustments
     // Keeping this code for potential future use
-
+    
     _calculateAdaptiveGain() {
         const numInstruments = this.instruments.size || 1;
-
+    
         // Use config system to get gain
         this.gainConfig = getGainConfig(numInstruments);
         const { channelGain, mode, expectedPeak } = this.gainConfig;
-
+    
         logger.debug(NAMESPACES.AUDIO, `${mode === 'adaptive' ? 'Adaptive' : 'Static'} Gain: ${numInstruments} instruments → ${channelGain.toFixed(3)} per channel (peak: ${expectedPeak.toFixed(3)})`);
-
+    
         return channelGain;
     }
-
+    
     updateAdaptiveGains() {
         const newGain = this._calculateAdaptiveGain();
-
+    
         // Update MixerInsert channels
         this.mixerInserts.forEach((insert, id) => {
             insert.setGain(newGain);
         });
-
+    
     }
     */
 
@@ -1747,6 +1777,34 @@ export class NativeAudioEngine {
         }
 
         sourceInsert.setSendLevel(busId, level);
+    }
+
+    /**
+     * 🔀 EXCLUSIVE ROUTING: Route insert output to bus (disconnect from master)
+     */
+    routeInsertToBusExclusive(sourceId, busId) {
+        const sourceInsert = this.mixerInserts.get(sourceId);
+        const busInsert = this.mixerInserts.get(busId);
+
+        if (sourceInsert && busInsert) {
+            if (sourceId === busId) {
+                console.warn(`⚠️ Cannot route insert ${sourceId} to itself`);
+                return;
+            }
+            sourceInsert.connectToBusExclusive(busInsert.input, busId);
+        } else {
+            console.error(`❌ Route failed: Source ${sourceId} or Bus ${busId} not found`);
+        }
+    }
+
+    /**
+     * 🔀 EXCLUSIVE ROUTING: Route insert output back to master
+     */
+    routeInsertToMaster(sourceId) {
+        const sourceInsert = this.mixerInserts.get(sourceId);
+        if (sourceInsert && this.masterGain) {
+            sourceInsert.connectToMaster(this.masterGain);
+        }
     }
 
     // =================== 🎹 INSTRUMENT MANAGEMENT ===================

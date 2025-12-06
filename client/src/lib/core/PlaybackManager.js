@@ -613,11 +613,11 @@ export class PlaybackManager {
         }
 
         // ✅ Schedule immediately - loop restart needs instant scheduling
-        this._scheduleContent(scheduledTarget, 'loop-restart', true, {
-            scope: 'all',
-            priority: 'burst',
-            force: true
-        });
+            this._scheduleContent(scheduledTarget, 'loop-restart', true, {
+                scope: 'all',
+                priority: 'burst',
+                force: true
+            });
 
         // Emit event and clear flag
         this._emit('loopRestart', {
@@ -1277,9 +1277,9 @@ export class PlaybackManager {
             }
         } else if (shouldPreservePosition && this.loopEnabled && this.currentPosition >= this.loopEnd) {
             // Wrap position within loop bounds
-            const loopLength = this.loopEnd - this.loopStart;
-            const relativePosition = ((this.currentPosition - this.loopStart) % loopLength + loopLength) % loopLength;
-            this.currentPosition = this.loopStart + relativePosition;
+                const loopLength = this.loopEnd - this.loopStart;
+                const relativePosition = ((this.currentPosition - this.loopStart) % loopLength + loopLength) % loopLength;
+                this.currentPosition = this.loopStart + relativePosition;
         }
         
         const arrangementStore = useArrangementStore.getState();
@@ -1922,12 +1922,12 @@ export class PlaybackManager {
         // - Extended parameters and CC lanes
         
         const schedulingOptions = {
-            currentPosition: this.currentPosition,
-            loopStart: this.loopStart,
-            loopEnd: this.loopEnd,
-            loopEnabled: this.loopEnabled,
-            reason: reason,
-            patternId: this.activePatternId // ✅ For CC lanes lookup
+                currentPosition: this.currentPosition,
+                loopStart: this.loopStart,
+                loopEnd: this.loopEnd,
+                loopEnabled: this.loopEnabled,
+                reason: reason,
+                patternId: this.activePatternId // ✅ For CC lanes lookup
         };
         
         console.log('🎵 [SCHEDULE INSTRUMENT] Scheduling notes:', {

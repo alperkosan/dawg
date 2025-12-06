@@ -28,6 +28,7 @@ class UnifiedMixerWorklet extends AudioWorkletProcessor {
             case 'init-wasm': this.initializeWasm(data.wasmArrayBuffer); break;
             case 'set-channel-params': this.updateChannelParams(data); break;
             case 'set-channel-eq': this.updateChannelEQ(data); break;
+            case 'add-channel-effect': this.addChannelEffect(data); break;
             case 'reset': this.reset(); break;
             case 'get-stats': this.sendStats(); break;
         }
@@ -68,7 +69,7 @@ class UnifiedMixerWorklet extends AudioWorkletProcessor {
                 }
                 await wasmLoadingPromise;
             }
-            
+
             // Create UnifiedMixerProcessor instance
             // wasm-bindgen pattern: unifiedmixerprocessor_new (not __wbg_...)
             const constructorFunc = wasmModuleCache.unifiedmixerprocessor_new;
@@ -118,6 +119,18 @@ class UnifiedMixerWorklet extends AudioWorkletProcessor {
                     }
                 },
 
+                add_effect: (idx, typeId) => {
+                    const func = wasmModuleCache.unifiedmixerprocessor_add_effect;
+                    if (func) {
+                        // Returns Result, might throw
+                        try {
+                            func(processorPtr, idx, typeId);
+                        } catch (e) {
+                            console.error('Add effect failed', e);
+                        }
+                    }
+                },
+
                 reset: () => {
                     const func = wasmModuleCache.unifiedmixerprocessor_reset;
                     if (func) {
@@ -125,14 +138,59 @@ class UnifiedMixerWorklet extends AudioWorkletProcessor {
                     }
                 }
             };
-            
+
+            // Memory Management for Process Mix
+            // Allocate buffers in Wasm Heap once
+            const malloc = wasmModuleCache.__wbindgen_malloc;
+            if (malloc) {
+                const inputSize = 128 * this.numChannels * 2 * 4; // floats * 4 bytes
+                const outputSize = 128 * 4;
+
+                this.wasmProcessor.inputPtr = malloc(inputSize);
+                this.wasmProcessor.outLPtr = malloc(outputSize);
+                this.wasmProcessor.outRPtr = malloc(outputSize);
+
+                // Override process_mix with REAL Wasm call
+                this.wasmProcessor.process_mix = (interleavedInputs, outputL, outputR, blockSize, numChannels) => {
+                    const memory = wasmModuleCache.memory;
+                    if (!memory) return;
+
+                    // 1. Copy Input to Wasm
+                    const inputF32 = new Float32Array(memory.buffer, this.wasmProcessor.inputPtr, interleavedInputs.length);
+                    inputF32.set(interleavedInputs);
+
+                    // 2. Call Wasm Process
+                    // Rust sig: process_mix(&mut self, inputs: &[f32], outL: &mut [f32], outR: &mut [f32], block: usize, chans: usize)
+                    // bindgen expects: (ptr, input_ptr, input_len, outL_ptr, outL_len, outR_ptr, outR_len, block, chans)
+                    wasmModuleCache.unifiedmixerprocessor_process_mix(
+                        processorPtr,
+                        this.wasmProcessor.inputPtr, interleavedInputs.length,
+                        this.wasmProcessor.outLPtr, blockSize,
+                        this.wasmProcessor.outRPtr, blockSize,
+                        blockSize,
+                        numChannels
+                    );
+
+                    // 3. Copy Output back to JS
+                    const wasmOutL = new Float32Array(memory.buffer, this.wasmProcessor.outLPtr, blockSize);
+                    const wasmOutR = new Float32Array(memory.buffer, this.wasmProcessor.outRPtr, blockSize);
+
+                    outputL.set(wasmOutL);
+                    outputR.set(wasmOutR);
+                };
+
+                console.log("✅ Wasm Mixing Enabled (Buffers Alloc'd)");
+            } else {
+                console.warn("⚠️ Wasm malloc not found, using JS mixing fallback");
+            }
+
             this.isInitialized = true;
             this.port.postMessage({ type: 'wasm-initialized', success: true });
             console.log('✅ WASM UnifiedMixerProcessor initialized');
-            
+
         } catch (error) {
             console.error('❌ Failed to initialize WASM:', error);
-            
+
             // Fallback: Use JavaScript implementation
             console.log('⚠️ Falling back to JavaScript implementation');
             this.wasmProcessor = this.createJavaScriptFallback();
@@ -147,7 +205,7 @@ class UnifiedMixerWorklet extends AudioWorkletProcessor {
             process_mix: (inputBuf, outL, outR, blockSize, numCh) => {
                 outL.fill(0);
                 outR.fill(0);
-                
+
                 // Simple mix: sum all inputs
                 for (let s = 0; s < blockSize; s++) {
                     for (let ch = 0; ch < numCh; ch++) {
@@ -157,9 +215,9 @@ class UnifiedMixerWorklet extends AudioWorkletProcessor {
                     }
                 }
             },
-            set_channel_params: () => {},
-            set_channel_eq: () => {},
-            reset: () => {}
+            set_channel_params: () => { },
+            set_channel_eq: () => { },
+            reset: () => { }
         };
     }
 
@@ -168,7 +226,7 @@ class UnifiedMixerWorklet extends AudioWorkletProcessor {
         if (this.isInitialized && channelIdx < this.numChannels) {
             const { gain, pan, mute, solo, eqActive, compActive } = data;
             this.wasmProcessor.set_channel_params?.(
-                channelIdx, gain ?? 1.0, pan ?? 0.0, mute ?? false, 
+                channelIdx, gain ?? 1.0, pan ?? 0.0, mute ?? false,
                 solo ?? false, eqActive ?? false, compActive ?? false
             );
         }
@@ -181,6 +239,14 @@ class UnifiedMixerWorklet extends AudioWorkletProcessor {
         }
     }
 
+    addChannelEffect(data) {
+        const { channelIdx, effectType } = data;
+        if (this.isInitialized && channelIdx < this.numChannels) {
+            this.wasmProcessor.add_effect?.(channelIdx, effectType);
+            console.log(`➕ Added effect type ${effectType} to channel ${channelIdx}`);
+        }
+    }
+
     reset() {
         if (this.isInitialized) this.wasmProcessor.reset?.();
         this.stats = { samplesProcessed: 0, totalTime: 0, peakTime: 0, processCount: 0 };
@@ -188,24 +254,26 @@ class UnifiedMixerWorklet extends AudioWorkletProcessor {
 
     sendStats() {
         const avgTime = this.stats.processCount > 0 ? this.stats.totalTime / this.stats.processCount : 0;
-        this.port.postMessage({ type: 'stats', data: {
-            samplesProcessed: this.stats.samplesProcessed, averageTime: avgTime,
-            peakTime: this.stats.peakTime, processCount: this.stats.processCount
-        }});
+        this.port.postMessage({
+            type: 'stats', data: {
+                samplesProcessed: this.stats.samplesProcessed, averageTime: avgTime,
+                peakTime: this.stats.peakTime, processCount: this.stats.processCount
+            }
+        });
     }
 
     process(inputs, outputs, parameters) {
         const output = outputs[0];
         const blockSize = output[0].length;
-        
+
         if (!this.isInitialized || !this.wasmProcessor) {
             output[0].fill(0);
             output[1].fill(0);
             return true;
         }
-        
+
         const startTime = currentTime;
-        
+
         // Interleave inputs
         let writeIdx = 0;
         let hasInputSignal = false;
@@ -230,14 +298,14 @@ class UnifiedMixerWorklet extends AudioWorkletProcessor {
         // Copy output
         output[0].set(this.outputL.subarray(0, blockSize));
         output[1].set(this.outputR.subarray(0, blockSize));
-        
+
         // Stats
         const processingTime = currentTime - startTime;
         this.stats.totalTime += processingTime;
         this.stats.peakTime = Math.max(this.stats.peakTime, processingTime);
         this.stats.processCount++;
         this.stats.samplesProcessed += blockSize;
-        
+
         return true;
     }
 }

@@ -297,6 +297,23 @@ export class UnifiedMixerNode {
     }
 
     /**
+     * Add an effect to a channel
+     * @param {number} channelIdx - Channel index
+     * @param {number} effectType - Effect Type ID (0=Delay)
+     */
+    addChannelEffect(channelIdx, effectType) {
+        if (!this.isInitialized) return;
+
+        this.workletNode.port.postMessage({
+            type: 'add-channel-effect',
+            data: {
+                channelIdx,
+                effectType
+            }
+        });
+    }
+
+    /**
      * Reset all processing state
      */
     reset() {

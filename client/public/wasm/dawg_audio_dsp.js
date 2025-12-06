@@ -52,6 +52,69 @@ function passArrayF32ToWasm0(arg, malloc) {
     WASM_VECTOR_LEN = arg.length;
     return ptr;
 }
+/**
+ * @enum {0 | 1 | 2 | 3 | 4}
+ */
+export const EnvelopeState = Object.freeze({
+    Idle: 0, "0": "Idle",
+    Attack: 1, "1": "Attack",
+    Decay: 2, "2": "Decay",
+    Sustain: 3, "3": "Sustain",
+    Release: 4, "4": "Release",
+});
+
+const AudioGraphFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_audiograph_free(ptr >>> 0, 1));
+/**
+ * The main Audio Graph structure exposed to JavaScript.
+ * It acts as the container and conductor for all audio nodes.
+ */
+export class AudioGraph {
+
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        AudioGraphFinalization.unregister(this);
+        return ptr;
+    }
+
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_audiograph_free(ptr, 0);
+    }
+    /**
+     * @param {number} sample_rate
+     */
+    constructor(sample_rate) {
+        const ret = wasm.audiograph_new(sample_rate);
+        this.__wbg_ptr = ret >>> 0;
+        AudioGraphFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * Process a block of audio for the entire graph.
+     * This is the entry point called by the AudioWorklet.
+     * @param {Float32Array} output_l
+     * @param {Float32Array} output_r
+     */
+    process_block(output_l, output_r) {
+        var ptr0 = passArrayF32ToWasm0(output_l, wasm.__wbindgen_malloc);
+        var len0 = WASM_VECTOR_LEN;
+        var ptr1 = passArrayF32ToWasm0(output_r, wasm.__wbindgen_malloc);
+        var len1 = WASM_VECTOR_LEN;
+        wasm.audiograph_process_block(this.__wbg_ptr, ptr0, len0, output_l, ptr1, len1, output_r);
+    }
+    /**
+     * Add a test node (just to verify infrastructure)
+     * @returns {number}
+     */
+    add_test_node() {
+        const ret = wasm.audiograph_add_test_node(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+}
+if (Symbol.dispose) AudioGraph.prototype[Symbol.dispose] = AudioGraph.prototype.free;
 
 const BiquadFilterFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
@@ -104,6 +167,56 @@ export class BiquadFilter {
     }
 }
 if (Symbol.dispose) BiquadFilter.prototype[Symbol.dispose] = BiquadFilter.prototype.free;
+
+const PolySynthFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_polysynth_free(ptr >>> 0, 1));
+
+export class PolySynth {
+
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        PolySynthFinalization.unregister(this);
+        return ptr;
+    }
+
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_polysynth_free(ptr, 0);
+    }
+    /**
+     * @param {number} sample_rate
+     * @param {number} max_voices
+     */
+    constructor(sample_rate, max_voices) {
+        const ret = wasm.polysynth_new(sample_rate, max_voices);
+        this.__wbg_ptr = ret >>> 0;
+        PolySynthFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * @param {number} note
+     * @param {number} velocity
+     */
+    trigger_note(note, velocity) {
+        wasm.polysynth_trigger_note(this.__wbg_ptr, note, velocity);
+    }
+    /**
+     * @param {number} note
+     */
+    release_note(note) {
+        wasm.polysynth_release_note(this.__wbg_ptr, note);
+    }
+    /**
+     * @returns {number}
+     */
+    process() {
+        const ret = wasm.polysynth_process(this.__wbg_ptr);
+        return ret;
+    }
+}
+if (Symbol.dispose) PolySynth.prototype[Symbol.dispose] = PolySynth.prototype.free;
 
 const ReverbProcessorFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
@@ -162,6 +275,127 @@ export class ReverbProcessor {
     }
 }
 if (Symbol.dispose) ReverbProcessor.prototype[Symbol.dispose] = ReverbProcessor.prototype.free;
+
+const SamplerFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_sampler_free(ptr >>> 0, 1));
+
+export class Sampler {
+
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        SamplerFinalization.unregister(this);
+        return ptr;
+    }
+
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_sampler_free(ptr, 0);
+    }
+    /**
+     * @param {number} sample_rate
+     */
+    constructor(sample_rate) {
+        const ret = wasm.sampler_new(sample_rate);
+        this.__wbg_ptr = ret >>> 0;
+        SamplerFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * Load sample data (Mono or Stereo)
+     * If right_channel is empty (len=0), treated as mono.
+     * @param {Float32Array} left_channel
+     * @param {Float32Array} right_channel
+     */
+    load_sample(left_channel, right_channel) {
+        const ptr0 = passArrayF32ToWasm0(left_channel, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArrayF32ToWasm0(right_channel, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        wasm.sampler_load_sample(this.__wbg_ptr, ptr0, len0, ptr1, len1);
+    }
+    /**
+     * @returns {number}
+     */
+    get_current_right() {
+        const ret = wasm.sampler_get_current_right(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Process next sample (Stereo capable)
+     * Returns Left channel (or Mono).
+     * Right channel is stored in `current_right` and must be retrieved separately if needed.
+     * @returns {number}
+     */
+    process() {
+        const ret = wasm.sampler_process(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @param {number} attack
+     * @param {number} decay
+     * @param {number} sustain
+     * @param {number} release
+     */
+    set_adsr(attack, decay, sustain, release) {
+        wasm.sampler_set_adsr(this.__wbg_ptr, attack, decay, sustain, release);
+    }
+    release() {
+        wasm.sampler_release(this.__wbg_ptr);
+    }
+    play() {
+        wasm.sampler_play(this.__wbg_ptr);
+    }
+    stop() {
+        wasm.sampler_stop(this.__wbg_ptr);
+    }
+    /**
+     * @param {number} speed
+     */
+    set_speed(speed) {
+        wasm.sampler_set_speed(this.__wbg_ptr, speed);
+    }
+    /**
+     * @param {number} position
+     */
+    set_position(position) {
+        wasm.sampler_set_position(this.__wbg_ptr, position);
+    }
+    /**
+     * @param {number} start
+     * @param {number} end
+     */
+    set_range(start, end) {
+        wasm.sampler_set_range(this.__wbg_ptr, start, end);
+    }
+    /**
+     * @returns {number}
+     */
+    get_length() {
+        const ret = wasm.sampler_get_length(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @param {number} start
+     * @param {number} end
+     * @param {boolean} loop_active
+     */
+    set_loop(start, end, loop_active) {
+        wasm.sampler_set_loop(this.__wbg_ptr, start, end, loop_active);
+    }
+    /**
+     * @returns {boolean}
+     */
+    is_playing() {
+        const ret = wasm.sampler_is_playing(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    reset() {
+        wasm.sampler_reset(this.__wbg_ptr);
+    }
+}
+if (Symbol.dispose) Sampler.prototype[Symbol.dispose] = Sampler.prototype.free;
 
 const ThreeBandEQFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }

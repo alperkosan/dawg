@@ -436,7 +436,7 @@ export class NativeTransportSystem {
         
         // ✅ First: Always increment currentTick
         this.currentTick++;
-        
+
         // ✅ Then: Check if we've reached or passed the loop boundary
         // loopEndTick is exclusive (e.g., for 16 steps, loopEndTick = 384)
         // When currentTick reaches 384, we should restart to 0

@@ -365,7 +365,7 @@ export const useMixerStore = create((set, get) => ({
                   ...fx,
                   settings: normalizeEffectSettings(effectType, fx.settings || {})
                 };
-                
+
                 // ✅ FIX: Save preset information if provided
                 if (options.presetId !== undefined) {
                   newFx.presetId = options.presetId;
@@ -378,7 +378,7 @@ export const useMixerStore = create((set, get) => ({
                   delete newFx.presetId;
                   delete newFx.presetName;
                 }
-                
+
                 if (typeof paramOrSettings === 'string') {
                   const canonicalParam = normalizeEffectParam(effectType, paramOrSettings);
                   if (canonicalParam === 'bypass' || canonicalParam === 'sidechainSource') {
@@ -450,7 +450,7 @@ export const useMixerStore = create((set, get) => ({
       }
     }
   },
-  
+
   reorderEffect: (trackId, sourceIndex, destinationIndex) => {
     // Update store
     set(state => {
@@ -523,13 +523,13 @@ export const useMixerStore = create((set, get) => ({
     // 🎛️ DYNAMIC MIXER: Create mixer insert for this track
     // ✅ FIX: Create insert synchronously and verify it was created
     const audioEngine = AudioContextService.getAudioEngine();
-    
+
     if (!audioEngine) {
       console.warn(`⚠️ AudioEngine not ready, mixer insert for ${newTrack.id} will be created later`);
       // Store will be synced when engine is ready via _syncMixerTracksToAudioEngine
     } else {
       const insert = AudioContextService.createMixerInsert(newTrack.id, newTrack.name);
-      
+
       if (!insert) {
         console.warn(`⚠️ Failed to create mixer insert for ${newTrack.id}, will retry on instrument routing`);
       } else {
@@ -765,6 +765,41 @@ export const useMixerStore = create((set, get) => ({
     }
 
     console.log(`✅ Send added: ${trackId} → ${busId} (level: ${level}, preFader: ${preFader})`);
+  },
+
+  /**
+   * Route track output exclusively to another track (Submix)
+   * Disconnects from Master.
+   * @param {string} sourceId - Source track ID
+   * @param {string} targetId - Target track/bus ID ('master' for reset)
+   */
+  routeToTrack: (sourceId, targetId) => {
+    // Prevent routing to self
+    if (sourceId === targetId) return;
+
+    set(state => ({
+      mixerTracks: state.mixerTracks.map(track => {
+        if (track.id === sourceId) {
+          return { ...track, output: targetId };
+        }
+        return track;
+      })
+    }));
+
+    // Notify Engine
+    const audioEngine = AudioContextService.getAudioEngine();
+    if (audioEngine) {
+      if (targetId === 'master') {
+        if (audioEngine.routeInsertToMaster) {
+          audioEngine.routeInsertToMaster(sourceId);
+        }
+      } else {
+        if (audioEngine.routeInsertToBusExclusive) {
+          audioEngine.routeInsertToBusExclusive(sourceId, targetId);
+        }
+      }
+    }
+    console.log(`🔀 Routed ${sourceId} exclusively to ${targetId}`);
   },
 
   /**

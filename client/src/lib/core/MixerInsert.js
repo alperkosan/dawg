@@ -833,6 +833,7 @@ export class MixerInsert {
       // ✅ FIX: Disconnect from any previous connection first
       this.output.disconnect();
       this.output.connect(masterInput);
+      this.routedBusId = null; // Reset exclusive route tracking
 
       if (import.meta.env.DEV) {
         console.log(`🔗 ${this.insertId} connected to master bus`, {
@@ -928,6 +929,24 @@ export class MixerInsert {
       } catch (e) {
         // Ignore cleanup errors
       }
+    }
+  }
+
+  /**
+   * 🔀 EXCLUSIVE ROUTING: Connect output directly to bus (Submix)
+   * Disconnects from Master/Previous Bus first.
+   * This prevents "volume boost" caused by parallel sending.
+   */
+  connectToBusExclusive(busInput, busId) {
+    if (!busInput) return;
+
+    try {
+      this.output.disconnect(); // Disconnect from all (Master or other buses)
+      this.output.connect(busInput);
+      this.routedBusId = busId;
+      console.log(`🔀 Routed ${this.insertId} exclusively to ${busId}`);
+    } catch (error) {
+      console.error(`❌ Failed to route ${this.insertId} to ${busId}:`, error);
     }
   }
 

@@ -18,12 +18,12 @@ export class NoteScheduler {
     constructor(transport, audioEngine) {
         this.transport = transport;
         this.audioEngine = audioEngine;
-        
+
         // ✅ FIX 1: Instance-level active notes tracking for cross-batch overlap detection
         // Map: instrumentId -> Map<pitch, { startTime, endTime, note }>
         this.activeNotesByInstrument = new Map();
     }
-    
+
     /**
      * Clear active notes for an instrument (called on loop restart or stop)
      * @param {string} instrumentId - Instrument ID (optional, clears all if not provided)
@@ -35,7 +35,7 @@ export class NoteScheduler {
             this.activeNotesByInstrument.clear();
         }
     }
-    
+
     /**
      * Get active notes map for an instrument
      * @param {string} instrumentId - Instrument ID
@@ -81,7 +81,7 @@ export class NoteScheduler {
 
         // ✅ FIX 1: Use instance-level active notes map for cross-batch overlap detection
         const activeNotesByPitch = this.getActiveNotes(instrumentId);
-        
+
         // ✅ FIX 3: Loop-aware position calculation
         const {
             currentPosition = 0,
@@ -90,7 +90,7 @@ export class NoteScheduler {
             loopEnabled = true,
             reason = 'manual'
         } = options;
-        
+
         // ✅ FIX 3: Determine current step based on reason and loop state
         const isResume = reason === 'resume';
         const isPositionJump = reason === 'position-jump';
@@ -99,15 +99,15 @@ export class NoteScheduler {
         const isNoteAdded = reason === 'note-added';
         const isLoopRestart = reason === 'loop-restart';
         const shouldPreservePosition = isResume || isPositionJump || isPlaybackStart || isNoteModified || isNoteAdded;
-        
+
         const loopLength = loopEnd - loopStart;
         const isLikelyLoopRestart = !shouldPreservePosition && loopEnabled && currentPosition >= loopEnd;
-        
+
         // ✅ FIX: For loop-restart reason, always use 0 as current step
         const currentStep = isLoopRestart ? 0 : (isLikelyLoopRestart ? loopStart : currentPosition);
         const currentPositionInSeconds = currentStep * this.transport.stepsToSeconds(1);
         const loopTimeInSeconds = loopEnabled ? loopLength * this.transport.stepsToSeconds(1) : 0;
-        
+
         console.log('🎵 [NOTE SCHEDULER] Position calculation:', {
             reason,
             currentPosition,
@@ -127,24 +127,31 @@ export class NoteScheduler {
             if (note.isMuted) {
                 return;
             }
-            
+
             // Note timing calculation (support both startTime and time)
             const noteTimeInSteps = note.startTime || note.time || 0;
             const noteTimeInTicks = noteTimeInSteps * this.transport.ticksPerStep;
             const noteTimeInSeconds = noteTimeInTicks * this.transport.getSecondsPerTick();
-            
+
             // ✅ FIX 3: Calculate relative time from current position (loop-aware)
             const relativeTime = noteTimeInSeconds - currentPositionInSeconds;
             let absoluteTimeRaw = baseTime + relativeTime;
-            
+
+            // ✅ FIX 4: Loop boundary tolerance
+            // When loop restarts, currentPosition might be slightly > 0 (jitter).
+            // This makes notes at exactly 0 appear "in the past" relative to baseTime.
+            // We add a tolerance (e.g. 100ms) to play these "slightly late" notes immediately
+            // instead of pushing them to the next loop iteration.
+            const LOOP_BOUNDARY_TOLERANCE = 0.1;
+
             // ✅ FIX 3: Handle loop-aware scheduling with proper current position handling
-            if (absoluteTimeRaw < baseTime) {
-                // Note is in the past - schedule for next loop if looping is enabled
+            if (absoluteTimeRaw < baseTime - LOOP_BOUNDARY_TOLERANCE) {
+                // Note is truly in the past - schedule for next loop if looping is enabled
                 if (loopEnabled) {
                     absoluteTimeRaw = baseTime + relativeTime + loopTimeInSeconds;
-                    
+
                     // If still in past after loop adjustment, skip it
-                    if (absoluteTimeRaw < baseTime) {
+                    if (absoluteTimeRaw < baseTime - LOOP_BOUNDARY_TOLERANCE) {
                         return;
                     }
                 } else {
@@ -152,13 +159,13 @@ export class NoteScheduler {
                     return;
                 }
             }
-            
+
             // ✅ NEW: Convert to sample-accurate time for professional precision
             let absoluteTime = SampleAccurateTime.toSampleAccurate(
                 this.transport.audioContext,
                 absoluteTimeRaw
             );
-            
+
             // ✅ NEW: Apply latency compensation if available
             // Schedule earlier to compensate for plugin latency
             if (this.audioEngine.latencyCompensator) {
@@ -176,13 +183,13 @@ export class NoteScheduler {
             // Calculate duration
             // ✅ FIX: Handle oval notes (visualLength < length) - use length for audio duration
             let noteDuration;
-            
+
             // ✅ FIX: Check for oval notes FIRST (visualLength < length means oval note)
-            const isOvalNote = note.visualLength !== undefined && 
-                              typeof note.length === 'number' && 
-                              note.length > 0 && 
-                              note.visualLength < note.length;
-            
+            const isOvalNote = note.visualLength !== undefined &&
+                typeof note.length === 'number' &&
+                note.length > 0 &&
+                note.visualLength < note.length;
+
             if (isOvalNote) {
                 // ✅ OVAL NOTES: Use length for audio duration (not visualLength)
                 noteDuration = this.transport.stepsToSeconds(note.length);
@@ -205,7 +212,7 @@ export class NoteScheduler {
 
             // ⚡ POLICY: Only choke overlaps if instrument explicitly wants cutItself
             const shouldHandleOverlap = instrument?.cutItself === true;
-            
+
             // ✅ DEBUG: Log note scheduling for overlap detection
             if (import.meta.env.DEV && (instrumentId.includes('808') || notePitch === 'C4')) {
                 console.log(`🎵 NoteScheduler: Scheduling note`, {
@@ -225,7 +232,7 @@ export class NoteScheduler {
                     } : null
                 });
             }
-            
+
             // Check if there's an active note of the same pitch that overlaps
             const existingActiveNote = activeNotesByPitch.get(notePitch);
             if (shouldHandleOverlap && existingActiveNote && existingActiveNote.endTime > absoluteTime) {
@@ -234,7 +241,7 @@ export class NoteScheduler {
                 const overlapDuration = existingActiveNote.endTime - absoluteTime;
                 const fadeOutDuration = Math.max(0.002, overlapDuration * 0.5); // 50% of overlap or 2ms minimum
                 const earlyReleaseTime = absoluteTime - fadeOutDuration;
-                
+
                 if (earlyReleaseTime > this.transport.audioContext.currentTime) {
                     // Schedule early release with fade-out
                     this.transport.scheduleEvent(
@@ -251,7 +258,7 @@ export class NoteScheduler {
                         },
                         { type: 'noteOff', instrumentId, note: existingActiveNote.note, earlyRelease: true, fadeOut: fadeOutDuration }
                     );
-                    
+
                     if (import.meta.env.DEV) {
                         console.log(`🔄 Oval note overlap detected (choke):`, {
                             pitch: notePitch,
@@ -277,7 +284,7 @@ export class NoteScheduler {
                     });
                 }
             }
-            
+
             // Update active notes map
             activeNotesByPitch.set(notePitch, {
                 startTime: absoluteTime,
@@ -291,7 +298,7 @@ export class NoteScheduler {
             if (note.modWheel !== undefined) extendedParams.modWheel = note.modWheel;
             if (note.aftertouch !== undefined) extendedParams.aftertouch = note.aftertouch;
             if (note.pitchBend && Array.isArray(note.pitchBend)) extendedParams.pitchBend = note.pitchBend;
-            
+
             // ✅ FL Studio-style slide logic
             if (note.slideEnabled === true) {
                 let targetPitch = note.slideTargetPitch;
@@ -306,7 +313,7 @@ export class NoteScheduler {
                             targetPitch = null;
                         }
                     }
-                    
+
                     if (targetPitch !== null && targetPitch >= 0 && targetPitch <= 127) {
                         const slideDurationSteps = note.slideDuration || 1;
                         const slideDurationSeconds = this.transport.stepsToSeconds(slideDurationSteps);
@@ -317,20 +324,20 @@ export class NoteScheduler {
                     }
                 }
             }
-            
+
             // ✅ PHASE 4: Get CC lanes data from AutomationManager (per instrument)
             try {
                 const automationManager = getAutomationManager();
                 const { activePatternId } = useArrangementStore.getState();
                 const patternId = options.patternId || activePatternId;
-                
+
                 if (patternId) {
                     const lanes = automationManager.getLanes(patternId, instrumentId);
-                    
+
                     if (lanes && lanes.length > 0) {
                         lanes.forEach(lane => {
                             const ccValue = lane.getValueAtTime(noteTimeInSteps, 'linear');
-                            
+
                             if (ccValue !== null) {
                                 // ✅ MIXING CONTROLS
                                 if (lane.ccNumber === 10) {
@@ -390,7 +397,7 @@ export class NoteScheduler {
             } catch (error) {
                 console.warn('⚠️ Failed to load automation lanes for note:', error);
             }
-            
+
             const hasExtendedParams = Object.keys(extendedParams).length > 0;
 
             // Schedule note on event
@@ -500,7 +507,7 @@ export class NoteScheduler {
                 const deltaSteps = noteStartStep - currentStepInPattern;
                 const deltaSeconds = this.transport.stepsToSeconds(deltaSteps);
                 const scheduleTimeRaw = currentTime + deltaSeconds;
-                
+
                 // ✅ NEW: Convert to sample-accurate time and ensure it's in the future
                 const scheduleTime = SampleAccurateTime.ensureFutureTime(
                     this.transport.audioContext,

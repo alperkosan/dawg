@@ -381,7 +381,7 @@ export class SampleVoice extends BaseVoice {
         // Only apply if envelope is enabled
         const minAttackTime = 0.001; // 1ms minimum
         if (envelopeEnabled) {
-            attack = Math.max(attack, minAttackTime);
+        attack = Math.max(attack, minAttackTime);
         } else {
             // If envelope is OFF, use minimal attack to prevent clicks but preserve natural sound
             attack = 0.001; // 1ms just for click prevention
@@ -407,9 +407,9 @@ export class SampleVoice extends BaseVoice {
             this.envelopePhase = 'attack';
         } else if (useADSR) {
             // ✅ Envelope ON: Full ADSR envelope
-            // ✅ FIX: Start from very small value instead of 0 to prevent click
-            this.envelopeGain.gain.setValueAtTime(0.0001, time);
-            
+        // ✅ FIX: Start from very small value instead of 0 to prevent click
+        this.envelopeGain.gain.setValueAtTime(0.0001, time);
+
             // Attack: 0.0001 -> 1 (with minimum attack time to prevent clicks)
             this.envelopeGain.gain.linearRampToValueAtTime(1, time + attack);
 
