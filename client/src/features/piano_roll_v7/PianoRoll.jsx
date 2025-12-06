@@ -314,24 +314,17 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
     const [propertiesPanelCollapsed, setPropertiesPanelCollapsed] = useState(false);
 
     // ✅ IMPROVED: SCALE HIGHLIGHTING STATE - Always enabled with default C Major
-    const [scaleHighlight, setScaleHighlight] = useState(null);
+    // Use version to force re-render when singleton changes
+    const [scaleVersion, setScaleVersion] = useState(0);
     const [scaleHighlightEnabled, setScaleHighlightEnabled] = useState(true);
 
-    // ✅ Initialize scale from ScaleSystem (persisted state)
+    // Get singleton instance
+    const scaleSystem = getScaleSystem();
+
+    // ✅ Initialize/Sync scale
     useEffect(() => {
-        const scaleSystem = getScaleSystem();
-        // Don't reset to C Major - respect persisted state
-        // scaleSystem.setScale(0, 'major'); 
-        setScaleHighlight(scaleSystem);
-
-        // Listen for scale changes
-        const handleScaleChange = () => {
-            setScaleHighlight({ ...scaleSystem }); // Force re-render
-        };
-
-        // Assuming ScaleSystem emits events or we can subscribe
-        // If not, we rely on the initial state and updates from UI
-        // For now, just setting initial state is enough as ProjectSerializer restores it
+        // Force initial render to ensure we have the latest scale state
+        setScaleVersion(v => v + 1);
     }, []);
 
     // ✅ MIDI RECORDING STATE
@@ -1077,7 +1070,7 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
             ...engineRef.current,
             snapValue,
             qualityLevel,
-            scaleHighlight: scaleHighlightEnabled ? scaleHighlight : null,
+            scaleHighlight: scaleHighlightEnabled ? getScaleSystem() : null,
             activeKeyboardNote  // ✅ Add for keyboard preview highlight
         };
 
@@ -1085,7 +1078,7 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
         if (timelineRenderer) {
             timelineRenderer.render(ctx, payload);
         }
-    }, [activeKeyboardNote, qualityLevel, scaleHighlight, scaleHighlightEnabled, snapValue, timelineRenderer]);
+    }, [activeKeyboardNote, qualityLevel, scaleVersion, scaleHighlightEnabled, snapValue, timelineRenderer]);
 
     const paintNotesLayer = useCallback((clipRect) => {
         const canvas = notesCanvasRef.current;
@@ -1114,7 +1107,7 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
             activeTool,
             loopRegion,
             dragState: rendererDragState,
-            scaleHighlight: scaleHighlightEnabled ? scaleHighlight : null,
+            scaleHighlight: scaleHighlightEnabled ? scaleSystem : null,
             activeKeyboardNote
         };
 
@@ -1140,7 +1133,7 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
         notes,
         previewNote,
         rendererDragState,
-        scaleHighlight,
+        scaleVersion,
         scaleHighlightEnabled,
         selectedNoteIds,
         selectionArea,
@@ -1194,7 +1187,7 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
         slicePreview,
         sliceRange,
         rendererDragState,
-        scaleHighlight,
+        scaleVersion,
         activeTool,
         loopRegion,
         activeKeyboardNote,
@@ -1854,12 +1847,11 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
                 showNoteProperties={showNoteProperties}
                 onShowNotePropertiesChange={setShowNoteProperties}
                 // ✅ IMPROVED: Scale Highlighting - always enabled, but can be changed
-                scaleHighlight={scaleHighlight}
+                scaleHighlight={scaleSystem}
                 scaleHighlightEnabled={scaleHighlightEnabled}
                 onScaleChange={(root, scaleType) => {
-                    const scaleSystem = getScaleSystem();
                     scaleSystem.setScale(root, scaleType);
-                    setScaleHighlight(scaleSystem);
+                    setScaleVersion(v => v + 1); // Force re-render
                 }}
                 onScaleHighlightToggle={() => setScaleHighlightEnabled(!scaleHighlightEnabled)}
                 // ✅ MIDI Recording

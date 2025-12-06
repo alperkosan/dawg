@@ -144,8 +144,8 @@ function Toolbar({
                         title={`${isRecording ? 'Stop Recording' : 'Start Recording'} (R)`}
                         style={{ marginRight: '8px' }}
                     >
-                        <Circle 
-                            size={18} 
+                        <Circle
+                            size={18}
                             fill={isRecording ? 'currentColor' : 'none'}
                             className={isRecording ? 'prv7-record-pulse' : ''}
                         />
@@ -271,8 +271,10 @@ function Toolbar({
                                             <button
                                                 key={index}
                                                 onClick={() => {
-                                                    if (onScaleChange && currentScale) {
-                                                        onScaleChange(index, currentScale.scaleType);
+                                                    if (onScaleChange) {
+                                                        // Use current scale type or default to 'major'
+                                                        const type = currentScale?.scaleType || 'major';
+                                                        onScaleChange(index, type);
                                                         setShowScaleMenu(false);
                                                     }
                                                 }}
@@ -335,8 +337,10 @@ function Toolbar({
                                             <button
                                                 key={key}
                                                 onClick={() => {
-                                                    if (onScaleChange && currentScale) {
-                                                        onScaleChange(currentScale.root, key);
+                                                    if (onScaleChange) {
+                                                        // Use current root or default to 0 (C)
+                                                        const root = currentScale?.root || 0;
+                                                        onScaleChange(root, key);
                                                         setShowScaleMenu(false);
                                                     }
                                                 }}
