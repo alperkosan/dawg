@@ -2118,13 +2118,11 @@ export class NativeAudioEngine {
                 // Reconnect to Wasm Mixer Channel
                 // This ensures signal goes back to Wasm summing
                 sourceInsert.disconnectFromMaster(this.masterGain); // Ensure clean slate
-                const wasmChannelInput = this.unifiedMixer.getChannelInput(channelIdx);
-                if (wasmChannelInput) {
-                    sourceInsert.output.connect(wasmChannelInput);
-                    // Also connect analyzer if needed (handled by insert)
-                    console.log(`🔗 Re-routed ${sourceId} to Wasm Mix Bus (Channel ${channelIdx})`);
-                    return;
-                }
+
+                // ✅ FIX: Use connectToChannel API which handles the specific input index connection
+                this.unifiedMixer.connectToChannel(sourceInsert.output, channelIdx);
+                console.log(`🔗 Re-routed ${sourceId} to Wasm Mix Bus (Channel ${channelIdx})`);
+                return;
             }
         }
 

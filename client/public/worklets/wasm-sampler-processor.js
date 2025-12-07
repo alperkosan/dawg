@@ -1,5 +1,28 @@
 // public/worklets/wasm-sampler-processor.js
 
+// ✅ Polyfill for TextDecoder/TextEncoder in AudioWorklet (needed for Wasm Bindgen)
+// Vercel/Some browsers don't have this in Worklet scope by default
+if (typeof TextDecoder === 'undefined') {
+    self.TextDecoder = class TextDecoder {
+        decode(u8) {
+            return String.fromCharCode.apply(null, u8);
+        }
+    };
+    console.log('🔧 TextDecoder Polyfilled in WasmSamplerProcessor');
+}
+
+if (typeof TextEncoder === 'undefined') {
+    self.TextEncoder = class TextEncoder {
+        encode(str) {
+            const arr = new Uint8Array(str.length);
+            for (let i = 0; i < str.length; i++) {
+                arr[i] = str.charCodeAt(i);
+            }
+            return arr;
+        }
+    };
+}
+
 import init, { Sampler } from '../wasm/dawg_audio_dsp.js';
 
 class WasmSamplerProcessor extends AudioWorkletProcessor {
