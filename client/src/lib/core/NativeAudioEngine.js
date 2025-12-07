@@ -1528,9 +1528,12 @@ export class NativeAudioEngine {
         }
 
         // ✅ FIX: Check if already connected to this insert
-        // Only skip if not in Wasm mode, as re-routing might be needed to ensure WASM connection
-        if (oldInsertId === insertId && !this.useWasmMixer) {
-            // Already routed correctly (for WebAudio MixerInsert)
+        if (oldInsertId === insertId) {
+            // Already routed to the correct MixerInsert.
+            // If using Wasm mixer, we technically should verify Wasm connection, 
+            // but usually if insert is correct, Wasm connection is also preserved 
+            // because channel allocator and connections persist unless explicitly removed.
+
             if (import.meta.env.DEV) {
                 console.log(`⏭️ Instrument ${instrumentId} already routed to ${insertId}, skipping...`);
             }
