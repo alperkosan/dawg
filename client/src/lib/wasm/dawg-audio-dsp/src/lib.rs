@@ -43,6 +43,11 @@ pub struct Transport {
     // Derived values for quick calculation
     samples_per_beat: f32,
     samples_per_tick: f32,
+
+    // Loop support
+    pub loop_enabled: bool,
+    pub loop_start_tick: f32,
+    pub loop_end_tick: f32,
 }
 
 #[wasm_bindgen]
@@ -57,6 +62,9 @@ impl Transport {
             ppq: 96,
             samples_per_beat: 0.0,
             samples_per_tick: 0.0,
+            loop_enabled: false,
+            loop_start_tick: 0.0,
+            loop_end_tick: 0.0,
         };
         t.recalculate_timing();
         t
@@ -89,11 +97,32 @@ impl Transport {
         self.is_playing = false;
     }
 
-    /// Advance time by N samples
+    /// Advance time by N samples with Looping support
     pub fn advance(&mut self, samples: u64) {
         if self.is_playing {
             self.current_sample += samples;
+
+            // Check Loop
+            if self.loop_enabled && self.loop_end_tick > self.loop_start_tick {
+                let loop_end_sample = (self.loop_end_tick * self.samples_per_tick) as u64;
+                
+                if self.current_sample >= loop_end_sample {
+                     let loop_start_sample = (self.loop_start_tick * self.samples_per_tick) as u64;
+                     let loop_len = loop_end_sample - loop_start_sample;
+                     if loop_len > 0 {
+                         // Wrap carefully
+                         let overshoot = self.current_sample - loop_end_sample;
+                         self.current_sample = loop_start_sample + (overshoot % loop_len);
+                     }
+                }
+            }
         }
+    }
+
+    pub fn set_loop(&mut self, enabled: bool, start_tick: f32, end_tick: f32) {
+        self.loop_enabled = enabled;
+        self.loop_start_tick = start_tick;
+        self.loop_end_tick = end_tick;
     }
 
     /// Set absolute position (seek)
@@ -142,12 +171,19 @@ impl SharedAudioState {
     // --- Int32 Indices ---
     pub fn idx_play_state() -> usize { 0 }       // 0: Stop, 1: Play, 2: Pause
     pub fn idx_msg_counter() -> usize { 1 }      // Increment to signal new command
+    pub fn idx_seek_trigger() -> usize { 2 }     // 1 = Seek Requested
     
     // --- Float32 Indices ---
     pub fn idx_bpm() -> usize { 16 }             // Tempo
     pub fn idx_position_samples() -> usize { 17 } // Current Position in Samples (High precision handled via u64 in Transport, but sync via float for UI)
     pub fn idx_position_ticks() -> usize { 18 }   // Current Position in Ticks
-    pub fn idx_sample_rate() -> usize { 19 }     
+    pub fn idx_sample_rate() -> usize { 19 } 
+    pub fn idx_seek_target() -> usize { 20 }      // Target position in Ticks (Float32)
+    
+    // Loop Params
+    pub fn idx_loop_enabled() -> usize { 21 }     // 1.0 = true
+    pub fn idx_loop_start() -> usize { 22 }       // Ticks
+    pub fn idx_loop_end() -> usize { 23 }         // Ticks
 }
 
 // ============================================
@@ -780,6 +816,32 @@ impl UnifiedMixerProcessor {
                 self.transport.set_bpm(bpm);
             }
             
+            // --- READ FROM JS (Seek Command) ---
+            // Check Seek Trigger (Index 2)
+            let seek_trigger_ptr = int_view.add(SharedAudioState::idx_seek_trigger());
+            let seek_trigger = *seek_trigger_ptr;
+            if seek_trigger == 1 {
+                // Read Target (Index 20)
+                let target_ticks = *float_view.add(SharedAudioState::idx_seek_target());
+                if target_ticks >= 0.0 {
+                     // Convert ticks to samples
+                     let target_samples = (target_ticks * self.transport.samples_per_tick) as u64;
+                     self.transport.set_position_samples(target_samples);
+                     
+                     // ✅ FLUSH: Clear buffers (reverb tails, delays, filters) on seek
+                     // This prevents old audio from bleeding into the new position
+                     self.reset();
+                }
+                // Reset trigger
+                *seek_trigger_ptr = 0;
+            }
+            
+            // --- READ FROM JS (Loop Params) ---
+            let loop_enabled = *float_view.add(SharedAudioState::idx_loop_enabled()) > 0.5;
+            let loop_start = *float_view.add(SharedAudioState::idx_loop_start());
+            let loop_end = *float_view.add(SharedAudioState::idx_loop_end());
+            self.transport.set_loop(loop_enabled, loop_start, loop_end);
+
             // --- WRITE TO JS (Position) ---
             // Write current position info for UI
             *float_view.add(SharedAudioState::idx_position_samples()) = self.transport.current_sample as f32;

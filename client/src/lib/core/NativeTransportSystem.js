@@ -97,6 +97,13 @@ export class NativeTransportSystem {
             this.SAB_IDX_POS_SAMPLES = 17;
             this.SAB_IDX_POS_TICKS = 18;
             this.SAB_IDX_SAMPLE_RATE = 19;
+            this.SAB_IDX_SEEK_TARGET = 20; // Float32: Target Ticks
+            this.SAB_IDX_SEEK_TRIGGER = 2; // Int32: 1 = Seek Requested
+
+            // Loop Params
+            this.SAB_IDX_LOOP_ENABLED = 21;
+            this.SAB_IDX_LOOP_START = 22;
+            this.SAB_IDX_LOOP_END = 23;
 
             console.log("✅ NativeTransportSystem: SharedArrayBuffer initialized");
         } catch (e) {
@@ -329,6 +336,13 @@ export class NativeTransportSystem {
             this.nextTickTime = this.audioContext.currentTime;
         }
 
+        // ✅ COMMAND: SEEK (Sync Wasm Clock)
+        // Notify Wasm to jump to this position to prevent clock drift/glitches
+        if (this.sharedInt && this.sharedFloat) {
+            this.sharedFloat[this.SAB_IDX_SEEK_TARGET] = targetTick;
+            Atomics.store(this.sharedInt, this.SAB_IDX_SEEK_TRIGGER, 1);
+        }
+
         this.triggerCallback('position', { position: this.currentTick, step: step });
         return this;
     }
@@ -360,6 +374,12 @@ export class NativeTransportSystem {
         // ⚡ OPTIMIZATION: Update cache
         this._updateLoopCache(startStep, endStep);
 
+        //Sync with SAB
+        if (this.sharedFloat) {
+            this.sharedFloat[this.SAB_IDX_LOOP_START] = this.loopStartTick;
+            this.sharedFloat[this.SAB_IDX_LOOP_END] = this.loopEndTick;
+        }
+
 
         // Reset position if outside loop
         if (this.currentTick >= this.loopEndTick) {
@@ -370,6 +390,9 @@ export class NativeTransportSystem {
 
     setLoopEnabled(enabled) {
         this.loop = enabled;
+        if (this.sharedFloat) {
+            this.sharedFloat[this.SAB_IDX_LOOP_ENABLED] = enabled ? 1.0 : 0.0;
+        }
     }
 
     setBPM(bpm) {
