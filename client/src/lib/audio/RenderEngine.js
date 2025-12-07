@@ -25,6 +25,9 @@ import {
 } from './effects/workletRegistry';
 // ✅ SYNC: Import AutomationManager for automation support in offline rendering
 import { getAutomationManager } from '../automation/AutomationManager';
+import { UnifiedMixerNode } from '../core/UnifiedMixerNode'; // ✅ NEW: Import for Wasm mixing
+import { SampleLoader } from './instruments/loaders/SampleLoader';
+import { audioAssetManager } from './AudioAssetManager';
 
 export class RenderEngine {
   constructor() {
@@ -114,7 +117,9 @@ export class RenderEngine {
 
     console.log(`🎬 Rendering pattern: ${patternData.name || patternData.id}`, {
       ...options,
-      sampleRate: `${sampleRate}Hz (real-time: ${realTimeSampleRate}Hz)`
+      sampleRate: `${sampleRate}Hz (real-time: ${realTimeSampleRate}Hz)`,
+      bitDepth,
+      qualityPreset: options.quality ? 'Custom/Object' : 'Unknown'
     });
 
     try {
@@ -141,11 +146,21 @@ export class RenderEngine {
 
       const renderDuration = renderLength / sampleRate;
 
+      // ✅ WASM INTEGRATION: Check if we should use Wasm Mixer
+      const audioEngine = AudioContextService.getAudioEngine();
+      if (!audioEngine) {
+        throw new Error('Audio engine not available');
+      }
+      const useWasmMixer = audioEngine.useWasmMixer;
+
+      console.log(`🎬 Rendering with length: ${renderLength} frames (${renderDuration.toFixed(2)}s)`);
+      if (useWasmMixer) {
+        console.log('🚀 Using UnifiedMixerNode (Wasm) for offline rendering');
+      }
+
       if (renderDuration > this.maxRenderTime) {
         throw new Error(`Render time too long: ${renderDuration}s (max: ${this.maxRenderTime}s)`);
       }
-
-      console.log(`🎬 Rendering with length: ${renderLength} frames (${renderDuration.toFixed(2)}s)`);
 
       // Create offline audio context for rendering with final validation
       console.log(`🎬 DEBUG: About to create OfflineAudioContext with: channels=2, length=${renderLength}, sampleRate=${sampleRate}`);
@@ -165,7 +180,6 @@ export class RenderEngine {
       );
 
       // Get audio engine for instrument data
-      const audioEngine = AudioContextService.getAudioEngine();
       if (!audioEngine) {
         throw new Error('Audio engine not available');
       }
@@ -174,12 +188,46 @@ export class RenderEngine {
       const masterBus = offlineContext.createGain();
       masterBus.gain.setValueAtTime(1.0, offlineContext.currentTime);
 
+      // ✅ WASM: Initialize offline mixer if needed
+      let offlineMixer = null;
+      let trackToChannelMap = new Map();
+
+      if (useWasmMixer) {
+        try {
+          offlineMixer = await this._createOfflineUnifiedMixer(offlineContext, patternData.mixerTracks);
+          console.log('✅ Offline UnifiedMixer initialized');
+
+          // Connect mixer to master bus
+          offlineMixer.connect(masterBus);
+
+          // Create mapping for tracks
+          this._mapTracksToOfflineChannels(offlineMixer, patternData.mixerTracks, trackToChannelMap);
+        } catch (err) {
+          console.error('❌ Failed to create offline Wasm mixer, falling back to legacy:', err);
+          // Fallback happens automatically as 'offlineMixer' remains null
+        }
+      }
+
+      // map to store offline buses
+      // Map<busId, { input: AudioNode, output: AudioNode, effects: Array, ... }>
+      const offlineBuses = await this._createOfflineBuses(offlineContext, patternData.mixerTracks, masterBus, options);
+
       // Render each instrument's notes (pass master bus as destination)
       const instrumentBuffers = await this._renderInstrumentNotes(
         patternData.data,
         offlineContext,
         audioEngine,
-        { includeEffects, startTime, endTime, patternData, masterBus }
+        {
+          includeEffects,
+          startTime,
+          endTime,
+          patternData,
+          masterBus,
+          offlineMixer,
+          trackToChannelMap,
+          // ✅ FIX: Provide function to get bus channel for sends
+          getBusChannel: (busId) => offlineBuses.get(busId)
+        }
       );
 
       // Apply master channel effects
@@ -256,6 +304,76 @@ export class RenderEngine {
   }
 
   /**
+   * Create and setup an offline UnifiedMixerNode
+   * @private
+   */
+  async _createOfflineUnifiedMixer(offlineContext, mixerTracks) {
+    const mixer = new UnifiedMixerNode(offlineContext, 32);
+
+    // Initialize (loads Wasm)
+    await mixer.initialize();
+
+    // Map mixer tracks to channels and set params
+    // We allocate channels sequentially 0..N
+    let channelIdx = 0;
+
+    // Helper to process a single track
+    const configureTrack = (track) => {
+      if (!track) return -1;
+      if (channelIdx >= 32) return -1;
+
+      const currentIdx = channelIdx++;
+
+      // Apply parameters
+      mixer.setChannelParams(currentIdx, {
+        gain: track.volume ?? track.gain ?? 1.0,
+        pan: track.pan ?? 0.0,
+        mute: track.mute ?? false,
+        solo: track.solo ?? false,
+        eqActive: false,
+        compActive: false
+      });
+
+      return currentIdx;
+    };
+
+    // If mixerTracks is array
+    if (Array.isArray(mixerTracks)) {
+      mixerTracks.forEach(track => {
+        if (track.id !== 'master') configureTrack(track);
+      });
+    } else if (mixerTracks) {
+      // If object
+      Object.values(mixerTracks).forEach(track => {
+        if (track.id !== 'master') configureTrack(track);
+      });
+    }
+
+    return mixer;
+  }
+
+  /**
+   * Map track IDs to allocated offline channels
+   * @private
+   */
+  _mapTracksToOfflineChannels(offlineMixer, mixerTracks, map) {
+    let channelIdx = 0;
+
+    const mapTrack = (track) => {
+      if (!track || track.id === 'master') return;
+      if (channelIdx >= 32) return;
+      map.set(track.id, channelIdx);
+      channelIdx++;
+    };
+
+    if (Array.isArray(mixerTracks)) {
+      mixerTracks.forEach(track => mapTrack(track));
+    } else if (mixerTracks) {
+      Object.values(mixerTracks).forEach(track => mapTrack(track));
+    }
+  }
+
+  /**
    * Render multiple patterns in sequence
    */
   async renderArrangement(patternSequence, options = {}) {
@@ -294,6 +412,7 @@ export class RenderEngine {
 
     const renderedBuffer = await offlineContext.startRendering();
 
+    console.log(`🎬 Arrangement rendered successfully: ${renderedBuffer.duration.toFixed(2)}s`);
     return {
       audioBuffer: renderedBuffer,
       duration: renderedBuffer.duration,
@@ -647,123 +766,133 @@ export class RenderEngine {
       totalTracks: Object.keys(patternData.mixerTracks || {}).length
     });
 
+    // ✅ WASM ROUTING: If offline mixer is active, use it!
+    const offlineMixer = options.offlineMixer;
+    const trackToChannelMap = options.trackToChannelMap;
+    const useWasmRouting = offlineMixer && trackToChannelMap && mixerTrackId && trackToChannelMap.has(mixerTrackId);
+
     // ✅ SYNC: Match live playback signal chain order EXACTLY
     // Live playback (MixerInsert._rebuildChain): input → effects → gain → pan → analyzer → output
     // Render should match: effects → gain → pan (analyzer skipped - only for metering)
-    
+
     // Create instrument output node (represents MixerInsert.input)
     const instrumentOutputNode = offlineContext.createGain();
     instrumentOutputNode.gain.setValueAtTime(1.0, offlineContext.currentTime);
 
-    // ✅ SYNC: Build signal chain matching MixerInsert._rebuildChain exactly
-    let currentNode = instrumentOutputNode;
-    
-    // 1. Effects first (matches MixerInsert: input → effects)
-    // Effects are applied pre-fader in MixerInsert
-    const effects = mixerTrack?.insertEffects || mixerTrack?.effects || [];
-    if (effects.length > 0 && options.includeEffects) {
-      console.log(`🎛️ Applying ${effects.length} effects to ${instrumentId} (pre-fader, matches MixerInsert)`);
-      currentNode = await this._applyEffectChain(effects, currentNode, offlineContext);
-    }
+    let instrumentGainNode;
 
-    // 2. Gain (matches MixerInsert: effects → gain)
-    const gainNode = offlineContext.createGain();
-    const gainValue = mixerTrack?.gain !== undefined ? mixerTrack.gain : 0.8; // Default 0.8 matches MixerInsert
-    gainNode.gain.setValueAtTime(gainValue, offlineContext.currentTime);
-    
-    // ✅ SYNC: Apply automation to gain node (if automation data exists)
-    // Automation is applied sample-accurate in offline rendering
-    if (options.automationData && options.automationData[instrumentId]) {
-      const lanes = options.automationData[instrumentId];
-      const patternId = options.patternId;
-      
-      // Calculate pattern length for automation duration
-      const patternLength = patternData.length || 64; // Default 64 steps
-      const bpm = getCurrentBPM();
-      const renderDuration = beatsToSeconds(stepsToBeat(patternLength), bpm);
-      
-      // Apply automation to gain node (volume automation)
-      this._applyAutomationToOfflineNode(
-        lanes,
-        gainNode.gain,
-        offlineContext,
-        patternId,
-        instrumentId,
-        renderDuration
-      );
-      
-      console.log(`🎚️ Applied ${lanes.length} automation lanes to ${instrumentId} gain in offline render`);
-    }
-    
-    currentNode.connect(gainNode);
-    currentNode = gainNode;
-    
-    // 3. Pan (matches MixerInsert: gain → pan)
-    if (mixerTrack?.pan !== undefined && mixerTrack.pan !== 0) {
-      const panNode = offlineContext.createStereoPanner();
-      panNode.pan.setValueAtTime(mixerTrack.pan, offlineContext.currentTime);
-      
-      // ✅ SYNC: Apply pan automation if exists
+    let sendSourceNode = null;
+
+    if (useWasmRouting) {
+      // 🚀 WASM PATH
+      // If using Wasm mixer, we SKIP the JS-based Gain/Pan nodes because Wasm handles them.
+      // BUT we still need to apply JS-based Insert Effects (WebAudio plugins) BEFORE Wasm.
+
+      let currentNode = instrumentOutputNode;
+
+      // 1. Apply JS Insert Effects (Pre-fader/Pre-Wasm)
+      const effects = mixerTrack?.insertEffects || mixerTrack?.effects || [];
+      if (effects.length > 0 && options.includeEffects) {
+        console.log(`🎛️ Applying ${effects.length} effects to ${instrumentId} (Pre-Wasm)`);
+        currentNode = await this._applyEffectChain(effects, currentNode, offlineContext);
+      }
+
+      // 2. Connect to Wasm Mixer Channel
+      const channelIdx = trackToChannelMap.get(mixerTrackId);
+      console.log(`🚀 Connecting ${instrumentId} -> Wasm Channel ${channelIdx}`);
+
+      // connectToChannel expects a source node.
+      offlineMixer.connectToChannel(currentNode, channelIdx);
+
+      // Save node for sends
+      sendSourceNode = currentNode;
+
+      // In Wasm mode, audio flows to Wasm Mixer -> Master. 
+      // But for consistency with legacy code which expects `instrumentGainNode` to be the "destination" 
+      // where notes are played into, we use `instrumentOutputNode` (the start of the chain).
+      instrumentGainNode = instrumentOutputNode;
+
+    } else {
+      // 🐢 LEGACY/JS PATH
+      // This runs only if Wasm Routing is disabled.
+
+      let currentNode = instrumentOutputNode;
+
+      // 1. Effects first (matches MixerInsert: input → effects)
+      const effects = mixerTrack?.insertEffects || mixerTrack?.effects || [];
+      if (effects.length > 0 && options.includeEffects) {
+        console.log(`🎛️ Applying ${effects.length} effects to ${instrumentId} (pre-fader, matches MixerInsert)`);
+        currentNode = await this._applyEffectChain(effects, currentNode, offlineContext);
+      }
+
+      // 2. Gain (matches MixerInsert: effects → gain)
+      const gainNode = offlineContext.createGain();
+      const gainValue = mixerTrack?.gain !== undefined ? mixerTrack.gain : 0.8;
+      gainNode.gain.setValueAtTime(gainValue, offlineContext.currentTime);
+
+      // Apply automation to gain node
       if (options.automationData && options.automationData[instrumentId]) {
         const lanes = options.automationData[instrumentId];
-        const panLane = lanes.find(lane => lane.ccNumber === 10); // CC10 = Pan
-        if (panLane) {
-          const patternLength = patternData.length || 64;
-          const bpm = getCurrentBPM();
-          const renderDuration = beatsToSeconds(stepsToBeat(patternLength), bpm);
-          this._applyAutomationToOfflineNode(
-            [panLane],
-            panNode.pan,
-            offlineContext,
-            options.patternId,
-            instrumentId,
-            renderDuration
-          );
-          console.log(`🎚️ Applied pan automation to ${instrumentId} in offline render`);
-        }
+        const patternId = options.patternId;
+        const patternLength = patternData.length || 64;
+        const bpm = getCurrentBPM();
+        const renderDuration = beatsToSeconds(stepsToBeat(patternLength), bpm);
+
+        this._applyAutomationToOfflineNode(
+          lanes,
+          gainNode.gain,
+          offlineContext,
+          patternId,
+          instrumentId,
+          renderDuration
+        );
       }
-      
-      currentNode.connect(panNode);
-      currentNode = panNode;
+
+      currentNode.connect(gainNode);
+      currentNode = gainNode;
+
+      // 3. Pan (matches MixerInsert: gain → pan)
+      if (mixerTrack?.pan !== undefined && mixerTrack.pan !== 0) {
+        const panNode = offlineContext.createStereoPanner();
+        panNode.pan.setValueAtTime(mixerTrack.pan, offlineContext.currentTime);
+
+        // Apply pan automation
+        if (options.automationData && options.automationData[instrumentId]) {
+          const lanes = options.automationData[instrumentId];
+          const panLane = lanes.find(lane => lane.ccNumber === 10);
+          if (panLane) {
+            const patternLength = patternData.length || 64;
+            const bpm = getCurrentBPM();
+            const renderDuration = beatsToSeconds(stepsToBeat(patternLength), bpm);
+            this._applyAutomationToOfflineNode(
+              [panLane],
+              panNode.pan,
+              offlineContext,
+              options.patternId,
+              instrumentId,
+              renderDuration
+            );
+          }
+        }
+
+        currentNode.connect(panNode);
+        currentNode = panNode;
+      }
+
+      const mixerOutputNode = currentNode;
+
+      // Direct connection: mixer → masterBus (matches live playback)
+      const finalDestination = options.masterBus || offlineContext.destination;
+      mixerOutputNode.connect(finalDestination);
+
+      // Save node for sends
+      sendSourceNode = mixerOutputNode;
+
+      instrumentGainNode = instrumentOutputNode;
     }
-    
-    // ✅ SYNC: Analyzer is skipped in render (only for metering in live playback)
-    // Live: pan → analyzer → output
-    // Render: pan → output (analyzer skipped)
-    
-    const mixerOutputNode = currentNode;
 
-    // ✅ SYNC: Apply automation to mixer gain node (if automation data exists)
-    // Automation is applied to gain node in offline rendering (sample-accurate)
-    if (options.automationData && options.automationData[instrumentId]) {
-      const lanes = options.automationData[instrumentId];
-      const patternId = options.patternId;
-      
-      // Apply automation to gain node (volume automation)
-      this._applyAutomationToOfflineNode(
-        lanes,
-        gainNode.gain,
-        offlineContext,
-        patternId,
-        instrumentId
-      );
-      
-      console.log(`🎚️ Applied ${lanes.length} automation lanes to ${instrumentId} in offline render`);
-    }
-
-    // ✅ FIX: Remove auto-gain to match live playback
-    // Live playback doesn't apply auto-gain, so render shouldn't either
-    // This was causing ~10-15% difference in output level
-    // const autoGain = options.autoGain !== undefined ? options.autoGain : 1.0;
-    // mixerOutputNode.connect(autoGainNode);
-    // autoGainNode.connect(finalDestination);
-    
-    // Direct connection: mixer → masterBus (matches live playback)
-    const finalDestination = options.masterBus || offlineContext.destination;
-    mixerOutputNode.connect(finalDestination);
-
-    // Apply sends (route to bus inserts) if available
-    if (Array.isArray(mixerTrack?.sends) && typeof options.getBusChannel === 'function') {
+    // ✅ COMMON: Apply sends (Both Wasm and Legacy paths)
+    if (sendSourceNode && Array.isArray(mixerTrack?.sends) && typeof options.getBusChannel === 'function') {
       for (const send of mixerTrack.sends) {
         if (!send?.busId) continue;
         const level = typeof send.level === 'number' ? send.level : 0;
@@ -772,21 +901,18 @@ export class RenderEngine {
         try {
           const busEntry = await options.getBusChannel(send.busId);
           if (!busEntry) continue;
+
+          console.log(`🔀 Connecting Send for ${instrumentId} -> ${send.busId} (Level: ${level})`);
+
           const sendGainNode = offlineContext.createGain();
           sendGainNode.gain.setValueAtTime(level, offlineContext.currentTime);
-          mixerOutputNode.connect(sendGainNode);
+          sendSourceNode.connect(sendGainNode);
           sendGainNode.connect(busEntry.input);
-          console.log(`📤 Send routed: ${instrumentId} → ${send.busId} @ ${level.toFixed(3)}`);
         } catch (error) {
           console.warn(`⚠️ Failed to route send ${send.busId} for ${instrumentId}:`, error);
         }
       }
     }
-
-    console.log(`🎚️ Connected ${instrumentId} to master bus (no auto-gain, matches live playback)`);
-
-    // Use instrumentOutputNode as the target for instrument rendering
-    const instrumentGainNode = instrumentOutputNode;
 
     // ✅ VASYNTH RENDERING: VASynth has its own rendering path
     if (instrument.type === 'vasynth') {
@@ -800,7 +926,7 @@ export class RenderEngine {
       const presetName = instrumentStore?.presetName || instrument.data?.presetName;
       if (!presetName) {
         console.warn(`🎹 No preset found for VASynth ${instrument.name}`);
-        return gainNode;
+        return instrumentGainNode;
       }
 
       const preset = getPreset(presetName);
@@ -911,9 +1037,45 @@ export class RenderEngine {
     }
     // ✅ SAMPLE INSTRUMENTS: Use legacy rendering
     else {
+      // ✅ DEBUG OBJECT STRUCTURE
+      console.log(`🔍 DEBUG INSTRUMENT ${instrument.name} (${instrument.id}):`, JSON.stringify(instrument, null, 2));
+
+      // ✅ FIX: Resolve audio buffer if missing (critical for offline export)
+      if (!instrument.audioBuffer && !instrument.buffer) {
+        // robust lookup for asset key
+        const assetKey = instrument.url ||
+          (instrument.data && instrument.data.url) ||
+          instrument.assetId ||
+          instrument.id ||
+          (instrument.samples && instrument.samples[0] && instrument.samples[0].url);
+
+        console.log(`🔍 DEBUG: Attempting to resolve buffer for ${instrument.name} with key: ${assetKey}`);
+
+        if (assetKey) {
+          // Check AudioAssetManager first
+          const asset = audioAssetManager.getAsset(assetKey);
+          if (asset && asset.buffer) {
+            instrument.audioBuffer = asset.buffer;
+            console.log(`🎬 Resolved audio buffer for ${instrument.name} from AssetManager`);
+          } else if (SampleLoader.isCached(assetKey)) {
+            instrument.audioBuffer = SampleLoader.getCached(assetKey);
+            console.log(`🎬 Resolved audio buffer for ${instrument.name} from SampleLoader cache`);
+          } else {
+            console.warn(`⚠️ Could not resolve audio buffer for ${instrument.name} (key: ${assetKey})`);
+            // Last ditch effort: check if instrument has 'buffer' property directly
+            if (instrument.data && instrument.data.buffer) {
+              instrument.audioBuffer = instrument.data.buffer;
+              console.log(`🎬 Resolved audio buffer for ${instrument.name} from instrument.data.buffer`);
+            }
+          }
+        } else {
+          console.warn(`⚠️ No asset key found for ${instrument.name}`, instrument);
+        }
+      }
+
       // Use legacy rendering for samples
       // ✅ NEW: Apply effect chain for sample instruments
-      let sampleDestination = gainNode;
+      let sampleDestination = instrumentGainNode;
       if (instrumentStore?.effectChain && instrumentStore.effectChain.length > 0) {
         console.log(`🎬 Applying ${instrumentStore.effectChain.length} effects to sample ${instrument.name}`);
 
@@ -1439,8 +1601,11 @@ export class RenderEngine {
     // Add padding and round to nearest bar using config
     const totalBeats = Math.ceil((maxTimeBeats + totalPadding) / BEATS_PER_BAR) * BEATS_PER_BAR;
 
-    // If no notes, use default from config
-    const finalBeats = Math.max(totalBeats, RENDER_CONFIG.DEFAULT_PATTERN_LENGTH_BARS * BEATS_PER_BAR);
+    // ✅ FIX: Respect calculated length if notes exist, otherwise use default
+    // This prevents forcing 2-bar patterns to be 4 bars
+    const finalBeats = totalBeats > 0
+      ? totalBeats
+      : RENDER_CONFIG.DEFAULT_PATTERN_LENGTH_BARS * BEATS_PER_BAR;
 
     // Convert beats to samples using current BPM (bpm already declared above)
     const totalSeconds = beatsToSeconds(finalBeats, bpm);
@@ -1598,7 +1763,7 @@ export class RenderEngine {
           'Clipper': 'clipper',
           'Limiter': 'limiter'
         };
-        
+
         if (typeMap[normalizedType]) {
           normalizedType = typeMap[normalizedType];
           console.log(`🎬 Normalized effect type: ${effectData.type} → ${normalizedType}`);
@@ -1858,7 +2023,7 @@ export class RenderEngine {
    */
   _applyAutomationToOfflineNode(lanes, audioParam, offlineContext, patternId, instrumentId, renderDuration) {
     const bpm = getCurrentBPM();
-    
+
     // Default values for when automation ends
     const defaults = {
       7: 127,   // Volume - default to full (127 = 100%)
@@ -1872,15 +2037,15 @@ export class RenderEngine {
 
       // Get automation curve - convert step times to seconds
       const keyframes = [];
-      
+
       points.forEach(point => {
         const stepTime = beatsToSeconds(stepsToBeat(point.time), bpm);
         keyframes.push({ time: stepTime, value: point.value });
       });
-      
+
       // Sort by time
       keyframes.sort((a, b) => a.time - b.time);
-      
+
       // Apply automation based on CC number
       switch (lane.ccNumber) {
         case 7: // Volume
@@ -1928,12 +2093,12 @@ export class RenderEngine {
     for (let i = 0; i < keyframes.length - 1; i++) {
       const current = keyframes[i];
       const next = keyframes[i + 1];
-      
+
       const currentTime = current.time;
       const nextTime = next.time;
       const currentValue = valueTransform(current.value);
       const nextValue = valueTransform(next.value);
-      
+
       // Linear ramp between keyframes
       audioParam.linearRampToValueAtTime(nextValue, nextTime);
     }
@@ -1945,6 +2110,75 @@ export class RenderEngine {
         audioParam.linearRampToValueAtTime(defaultValue, duration);
       }
     }
+  }
+
+  /**
+   * Create offline bus channels for sends
+   * @private
+   */
+  async _createOfflineBuses(offlineContext, mixerTracks, masterBus, options) {
+    const offlineBuses = new Map();
+
+    if (!mixerTracks) return offlineBuses;
+
+    // Normalize mixerTracks to array
+    const tracksArray = Array.isArray(mixerTracks)
+      ? mixerTracks
+      : Object.values(mixerTracks);
+
+    // Identify busses (non-master tracks)
+    const busTracks = tracksArray.filter(t => t.id !== 'master');
+
+    console.log(`🎛️ Creating ${busTracks.length} offline buses for sends...`);
+
+    for (const track of busTracks) {
+      try {
+        // Create full channel strip for bus:
+        // Input (Gain) -> Effects -> Volume (Gain) -> Pan -> Output
+
+        // 1. Input Node (where sends connect to)
+        const inputNode = offlineContext.createGain();
+
+        // 2. Effects Chain
+        let currentNode = inputNode;
+        const effects = track.insertEffects || track.effects || [];
+
+        if (effects.length > 0 && options.includeEffects) {
+          currentNode = await this._applyEffectChain(effects, currentNode, offlineContext);
+        }
+
+        // 3. Volume/Gain
+        const volumeNode = offlineContext.createGain();
+        const gainValue = track.gain !== undefined ? track.gain : 0.8;
+        volumeNode.gain.setValueAtTime(gainValue, offlineContext.currentTime);
+
+        currentNode.connect(volumeNode);
+        currentNode = volumeNode;
+
+        // 4. Pan
+        if (track.pan !== undefined && track.pan !== 0) {
+          const panNode = offlineContext.createStereoPanner();
+          panNode.pan.setValueAtTime(track.pan, offlineContext.currentTime);
+          currentNode.connect(panNode);
+          currentNode = panNode;
+        }
+
+        // 5. Connect to Master
+        currentNode.connect(masterBus);
+
+        // Store bus entry
+        offlineBuses.set(track.id, {
+          input: inputNode,
+          output: currentNode,
+          track: track
+        });
+
+      } catch (error) {
+        console.warn(`⚠️ Failed to create offline bus for ${track.id}:`, error);
+      }
+    }
+
+    return offlineBuses;
   }
 }
 

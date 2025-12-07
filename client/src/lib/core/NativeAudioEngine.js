@@ -865,7 +865,9 @@ export class NativeAudioEngine {
     }
 
     setChannelMono(channelId, mono) {
-        console.log('📻 NativeAudioEngine.setChannelMono:', channelId, mono);
+        if (import.meta.env.DEV) {
+            console.log('📻 NativeAudioEngine.setChannelMono:', channelId, mono);
+        }
 
         const insert = this.mixerInserts.get(channelId);
         if (insert && typeof insert.setMono === 'function') {
@@ -876,7 +878,9 @@ export class NativeAudioEngine {
     }
 
     setChannelSolo(channelId, soloed, isAnySoloed) {
-        console.log('🎧 NativeAudioEngine.setChannelSolo:', channelId, soloed, isAnySoloed);
+        if (import.meta.env.DEV) {
+            console.log('🎧 NativeAudioEngine.setChannelSolo:', channelId, soloed, isAnySoloed);
+        }
 
         const insert = this.mixerInserts.get(channelId);
         if (insert && typeof insert.setSolo === 'function') {
@@ -1040,7 +1044,8 @@ export class NativeAudioEngine {
         }
 
         // Reconnect using system-aware routing
-        return this._connectInstrumentToChannel(instrumentId, trackId);
+        this.routeInstrumentToInsert(instrumentId, trackId);
+        return true;
     }
 
     /**
@@ -1094,27 +1099,8 @@ export class NativeAudioEngine {
         return true;
     }
 
+
     // Use: createMixerInsert() + routeInstrumentToInsert()
-
-    async _connectInstrumentToChannel(instrumentId, channelId) {
-        // ✅ FIX: Use new MixerInsert system instead of deprecated UnifiedMixer
-        // This method is deprecated - use routeInstrumentToInsert() instead
-        // But keep it for backward compatibility
-        if (import.meta.env.DEV) {
-            console.log(`🔌 Attempting to connect instrument ${instrumentId} to channel ${channelId}`);
-        }
-
-        // Use the new routing system
-        try {
-            this.routeInstrumentToInsert(instrumentId, channelId);
-            return true;
-        } catch (error) {
-            console.error(`❌ Failed to route instrument ${instrumentId} to ${channelId}:`, error);
-            return false;
-        }
-    }
-
-    // ⚠️ REMOVED: _connectToUnifiedMixer - Replaced by MixerInsert system
 
     _stopAllInstruments() {
         this.instruments.forEach(instrument => {
@@ -1241,12 +1227,12 @@ export class NativeAudioEngine {
 
         // ⚠️ REMOVED: UnifiedMixer disposal - Replaced by MixerInsert system
         if (this.useWasmMixer && this.unifiedMixer) {
-            console.log('🧹 Disposing UnifiedMixerNode...');
+            if (import.meta.env.DEV) console.log('🧹 Disposing UnifiedMixerNode...');
             this.unifiedMixer.dispose();
             this.unifiedMixer = null;
             this.channelAllocator.clear();
             this.nextChannelIdx = 0;
-            console.log('✅ UnifiedMixerNode disposed');
+            if (import.meta.env.DEV) console.log('✅ UnifiedMixerNode disposed');
         }
 
         // 🎛️ CRITICAL: Dispose all MixerInserts (prevents memory leak)
@@ -1330,12 +1316,24 @@ export class NativeAudioEngine {
 
                 // Allocate channel if not exists
                 if (channelIdx === undefined) {
-                    if (this.nextChannelIdx < 32) {
-                        channelIdx = this.nextChannelIdx++;
+                    // ✅ FIX: Find first free channel index instead of just incrementing
+                    // This allows reusing channels after track deletion
+                    for (let i = 0; i < 32; i++) {
+                        // Check if this index is used by any other insert
+                        const isUsed = Array.from(this.channelAllocator.values()).includes(i);
+                        if (!isUsed) {
+                            channelIdx = i;
+                            break;
+                        }
+                    }
+
+                    if (channelIdx !== undefined) {
                         this.channelAllocator.set(insertId, channelIdx);
-                        console.log(`🎫 Allocated Channel ${channelIdx} for Insert/Bus ${insertId}`);
+                        if (import.meta.env.DEV) {
+                            console.log(`🎫 Allocated Channel ${channelIdx} for Insert/Bus ${insertId}`);
+                        }
                     } else {
-                        console.warn(`⚠️ No mixer channels available for ${insertId} (Max 32)`);
+                        console.warn(`⚠️ No mixer channels available for ${insertId} (Max 32) - Falling back to Legacy Routing`);
                     }
                 }
 
@@ -1344,6 +1342,13 @@ export class NativeAudioEngine {
                     this.unifiedMixer.connectToChannel(insert.output, channelIdx);
                     if (import.meta.env.DEV) {
                         console.log(`🔗 Connected Insert ${insertId} to Wasm Channel ${channelIdx}`);
+                    }
+                } else {
+                    // ✅ FIX: Fallback to Master Bus if Wasm channels are full
+                    // This ensures the bus/track is not silent even if Wasm mixer is full
+                    insert.connectToMaster(this.masterBusInput);
+                    if (import.meta.env.DEV) {
+                        console.log(`🔗 Fallback: Routed ${insertId} directly to Master Bus (Wasm Full)`);
                     }
                 }
             }
@@ -1539,8 +1544,16 @@ export class NativeAudioEngine {
         if (this.useWasmMixer && this.unifiedMixer && this.unifiedMixer.isInitialized) {
             wasmChannelIdx = this.channelAllocator.get(insertId);
             if (wasmChannelIdx === undefined) {
-                if (this.nextChannelIdx < 32) {
-                    wasmChannelIdx = this.nextChannelIdx++;
+                // ✅ FIX: Find first free channel index (Smart Reuse)
+                for (let i = 0; i < 32; i++) {
+                    const isUsed = Array.from(this.channelAllocator.values()).includes(i);
+                    if (!isUsed) {
+                        wasmChannelIdx = i;
+                        break;
+                    }
+                }
+
+                if (wasmChannelIdx !== undefined) {
                     this.channelAllocator.set(insertId, wasmChannelIdx);
                     console.log(`🎫 Allocated Channel ${wasmChannelIdx} for ${insertId}`);
                 } else {
@@ -1645,8 +1658,16 @@ export class NativeAudioEngine {
                 if (this.useWasmMixer && this.unifiedMixer && this.unifiedMixer.isInitialized) {
                     let channelIdx = this.channelAllocator.get(mixerTrackId);
                     if (channelIdx === undefined) {
-                        if (this.nextChannelIdx < 32) {
-                            channelIdx = this.nextChannelIdx++;
+                        // ✅ FIX: Find first free channel index (Smart Reuse)
+                        for (let i = 0; i < 32; i++) {
+                            const isUsed = Array.from(this.channelAllocator.values()).includes(i);
+                            if (!isUsed) {
+                                channelIdx = i;
+                                break;
+                            }
+                        }
+
+                        if (channelIdx !== undefined) {
                             this.channelAllocator.set(mixerTrackId, channelIdx);
                             console.log(`🎫 Allocated Channel ${channelIdx} for ${mixerTrackId} during retry`);
                         } else {

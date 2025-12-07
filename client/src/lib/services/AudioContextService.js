@@ -1029,7 +1029,9 @@ export class AudioContextService {
             if (typeof track.pan === 'number') {
               insert.setPan(track.pan);
             }
-            console.log(`✅ Created mixer insert for track "${track.name || track.id}"`);
+            if (import.meta.env.DEV) {
+              console.log(`✅ Created mixer insert for track "${track.name || track.id}"`);
+            }
           }
         } catch (error) {
           console.error(`❌ Failed to create mixer insert for track ${track.id}:`, error);
@@ -1198,8 +1200,10 @@ export class AudioContextService {
       }
 
       console.log(`🎵 Syncing ${instruments.length} instruments to mixer inserts...`);
-      console.log('🎵 Available instruments in store:', instruments.map(i => ({ id: i.id, name: i.name })));
-      console.log('🎵 Available instruments in audio engine:', Array.from(this.audioEngine.instruments?.keys() || []));
+      if (import.meta.env.DEV) {
+        console.log('🎵 Available instruments in store:', instruments.map(i => ({ id: i.id, name: i.name })));
+        console.log('🎵 Available instruments in audio engine:', Array.from(this.audioEngine.instruments?.keys() || []));
+      }
 
       let syncedCount = 0;
       let skippedCount = 0;
@@ -1218,15 +1222,21 @@ export class AudioContextService {
 
         // ✅ CRITICAL FIX: If instrument doesn't exist, create it
         if (!audioEngineInstrument) {
-          console.log(`🎵 Instrument ${instrument.id} not found in audio engine, creating...`);
+          if (import.meta.env.DEV) {
+            console.log(`🎵 Instrument ${instrument.id} not found in audio engine, creating...`);
+          }
           try {
             // ✅ CRITICAL: Preload sample if it's a sample instrument
             if (instrument.type === 'sample' && instrument.url && !instrument.audioBuffer) {
-              console.log(`🎵 Preloading sample for instrument ${instrument.id}: ${instrument.url}`);
+              if (import.meta.env.DEV) {
+                console.log(`🎵 Preloading sample for instrument ${instrument.id}: ${instrument.url}`);
+              }
               try {
                 // preloadSamples expects an array, so wrap in array
                 await this.audioEngine.preloadSamples([instrument]);
-                console.log(`✅ Sample preloaded for instrument ${instrument.id}`);
+                if (import.meta.env.DEV) {
+                  console.log(`✅ Sample preloaded for instrument ${instrument.id}`);
+                }
               } catch (preloadError) {
                 console.error(`❌ Failed to preload sample for instrument ${instrument.id}:`, preloadError);
                 // Continue anyway - createInstrument might handle it
@@ -1238,7 +1248,9 @@ export class AudioContextService {
             audioEngineInstrument = this.audioEngine.instruments?.get(instrument.id);
             if (audioEngineInstrument) {
               createdCount++;
-              console.log(`✅ Created instrument ${instrument.id} (${instrument.name}) in audio engine`);
+              if (import.meta.env.DEV) {
+                console.log(`✅ Created instrument ${instrument.id} (${instrument.name}) in audio engine`);
+              }
               continue; // ✅ FIX: Newly created instruments are already routed, skip redundant check
             } else {
               console.error(`❌ Failed to create instrument ${instrument.id} - still not found after creation`);
@@ -1264,7 +1276,9 @@ export class AudioContextService {
               errorCount++;
               continue;
             }
-            console.log(`✅ Created mixer insert ${instrument.mixerTrackId} for instrument ${instrument.id}`);
+            if (import.meta.env.DEV) {
+              console.log(`✅ Created mixer insert ${instrument.mixerTrackId} for instrument ${instrument.id}`);
+            }
             // ✅ FIX: Wait a tick for insert to be fully initialized
             await new Promise(resolve => setTimeout(resolve, 10));
           } catch (createError) {

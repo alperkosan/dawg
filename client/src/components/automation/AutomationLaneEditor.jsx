@@ -58,10 +58,10 @@ function drawAutomationLane(ctx, {
 
         // ✅ FIX: Calculate grid width based on time unit
         const stepWidth = dimensions?.stepWidth || viewport.zoomX || 1;
-        const gridUnitWidth = timeUnit === 'beats' 
+        const gridUnitWidth = timeUnit === 'beats'
             ? stepWidth // Arrangement: 1 beat = stepWidth pixels
             : stepWidth * STEPS_PER_BEAT; // Piano Roll: 1 beat = stepWidth * 4 pixels
-        
+
         const startUnit = Math.floor(viewport.scrollX / gridUnitWidth);
         const endUnit = Math.ceil((viewport.scrollX + canvasWidth) / gridUnitWidth);
 
@@ -107,14 +107,15 @@ function drawAutomationLane(ctx, {
     // ✅ FIX: Handle time unit conversion (steps vs beats)
     const startDisplay = Math.max(0, Math.floor(viewport.scrollX / stepWidth));
     const endDisplay = Math.ceil((viewport.scrollX + canvasWidth) / stepWidth);
-    
+
     // Convert display units to steps for AutomationLane
     const startStep = timeUnit === 'beats' ? startDisplay * STEPS_PER_BEAT : startDisplay;
     const endStep = timeUnit === 'beats' ? endDisplay * STEPS_PER_BEAT : endDisplay;
     const stepIncrement = timeUnit === 'beats' ? 0.25 * STEPS_PER_BEAT : 0.25; // Sample every 1/4 unit
 
     for (let step = startStep; step <= endStep; step += stepIncrement) {
-        const value = lane.getValueAtTime(step, 'linear');
+        // ✅ FIX: Use lane's interpolation method instead of forcing linear
+        const value = lane.getValueAtTime(step, undefined);
         if (value === null) continue;
 
         const normalizedValue = (value - min) / valueRange; // 0-1
@@ -155,9 +156,9 @@ function drawAutomationLane(ctx, {
         const isSelected = selectedPoints?.some(sp => sp.laneIndex === 0 && sp.pointIndex === index);
         const isDragging = draggingPoint?.laneIndex === 0 && draggingPoint?.pointIndex === index;
 
-        const pointSize = isDragging ? POINT_SELECTED_SIZE : 
-                         isHovered || isSelected ? POINT_HOVER_SIZE : 
-                         POINT_SIZE;
+        const pointSize = isDragging ? POINT_SELECTED_SIZE :
+            isHovered || isSelected ? POINT_HOVER_SIZE :
+                POINT_SIZE;
 
         // Point fill
         ctx.fillStyle = isSelected || isDragging
@@ -165,7 +166,7 @@ function drawAutomationLane(ctx, {
                 .getPropertyValue('--zenith-accent-warm') || '#FFB627')
             : (getComputedStyle(document.documentElement)
                 .getPropertyValue('--zenith-accent-cool') || '#4ECDC4');
-        
+
         ctx.beginPath();
         ctx.arc(x, y, pointSize, 0, Math.PI * 2);
         ctx.fill();
@@ -264,7 +265,7 @@ export function AutomationLaneEditor({
         console.log('🎚️ AutomationLaneEditor: lanePointsKey', { keyLength: key.length, pointsCount: points.length });
         return key;
     }, [lanePoints]);
-    
+
     useEffect(() => {
         console.log('🎚️ AutomationLaneEditor: Rendering lane', { lanePointsKey, lanePointsCount: lanePoints.length });
         renderLane();
@@ -294,14 +295,14 @@ export function AutomationLaneEditor({
         // ✅ FIX: Calculate step width from viewport zoom or dimensions
         const stepWidth = dimensions?.stepWidth || viewport.zoomX || 1;
         let time = (x + viewport.scrollX) / stepWidth;
-        
+
         // ✅ FIX: Convert time unit if needed
         // AutomationLane uses steps, but Arrangement uses beats
         if (timeUnit === 'beats') {
             // Convert beats to steps for AutomationLane
             time = time * STEPS_PER_BEAT;
         }
-        
+
         const { min, max } = AutomationLane.getValueRange(lane?.ccNumber || 7);
         const normalizedY = 1 - (y / rect.height); // 0-1, inverted
         const value = min + (normalizedY * (max - min));
@@ -386,7 +387,7 @@ export function AutomationLaneEditor({
 
         const rect = canvas.getBoundingClientRect();
         const point = findPointAt(e.clientX, e.clientY);
-        
+
         // ✅ UX: Store initial mouse position for drag threshold
         setMouseDownPos({ x: e.clientX, y: e.clientY });
         setHasMoved(false);
@@ -484,7 +485,7 @@ export function AutomationLaneEditor({
                 const timePixels = Math.abs(dx) * stepWidth;
                 const valuePixels = Math.abs(dy) * (canvas.getBoundingClientRect().height / 127); // Approximate value to pixel conversion
                 const distance = Math.sqrt(timePixels * timePixels + valuePixels * valuePixels);
-                
+
                 if (distance < BRUSH_MIN_DISTANCE) {
                     shouldAddPoint = false; // Too close to last point
                 }
@@ -571,8 +572,8 @@ export function AutomationLaneEditor({
 
         // Delete/Backspace - delete selected or hovered point
         if ((e.key === 'Delete' || e.key === 'Backspace') && onPointRemove) {
-            const pointToDelete = selectedPointIndex >= 0 
-                ? selectedPointIndex 
+            const pointToDelete = selectedPointIndex >= 0
+                ? selectedPointIndex
                 : (hoveredPoint.pointIndex >= 0 ? hoveredPoint.pointIndex : -1);
 
             if (pointToDelete >= 0) {
@@ -616,7 +617,7 @@ export function AutomationLaneEditor({
             <canvas
                 ref={canvasRef}
                 className="automation-lane-editor-canvas"
-                style={{ 
+                style={{
                     cursor: draggingPoint ? 'grabbing' : hoveredPoint.pointIndex >= 0 ? 'pointer' : 'crosshair',
                     position: 'absolute',
                     top: 0,

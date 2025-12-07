@@ -147,7 +147,7 @@ export class ExportManager {
 
             for (let i = 0; i < channelIds.length; i++) {
                 const channelId = channelIds[i];
-                
+
                 if (onProgress) {
                     onProgress(channelId, (i / channelIds.length) * 100, 'starting');
                 }
@@ -211,6 +211,7 @@ export class ExportManager {
         const channelName = mixerTrack?.name || channelId;
 
         console.log(`🎵 Exporting channel: ${channelName} (${channelId})`);
+        console.log(`⚙️ Export Settings:`, JSON.stringify(settings, null, 2));
 
         // Determine export mode
         if (settings.mode === EXPORT_MODE.REALTIME) {
@@ -232,14 +233,14 @@ export class ExportManager {
 
         // Create MediaRecorder for real-time capture
         const destination = mixerInsert.output || mixerInsert.input;
-        
+
         // Create MediaStreamDestination for capture
         const mediaStreamDestination = audioContext.createMediaStreamDestination();
         destination.connect(mediaStreamDestination);
 
         // Get MediaStream
         const stream = mediaStreamDestination.stream;
-        
+
         // Create MediaRecorder
         const mimeType = this._getMimeType(settings.format);
         const mediaRecorder = new MediaRecorder(stream, {
@@ -257,7 +258,7 @@ export class ExportManager {
             mediaRecorder.onstop = async () => {
                 try {
                     const blob = new Blob(chunks, { type: mimeType || 'audio/webm' });
-                    
+
                     // Process audio if needed (normalize, fade, etc.)
                     const processedBlob = await this._processAudioBlob(blob, settings);
 
@@ -333,7 +334,7 @@ export class ExportManager {
         // It handles all the complexity of pattern data preparation and rendering
         const arrangementStore = useArrangementStore.getState();
         const activePatternId = arrangementStore.activePatternId;
-        
+
         if (!activePatternId) {
             throw new Error('No active pattern for export');
         }
@@ -345,7 +346,7 @@ export class ExportManager {
 
         // Get instruments for this channel
         const instruments = this._getInstrumentsForChannel(channelId);
-        
+
         // Filter pattern data to only include instruments on this channel
         const filteredPatternData = {
             ...pattern,
@@ -442,7 +443,7 @@ export class ExportManager {
         // ✅ NEW: Add to project as audio asset (if addToProject is enabled)
         let assetId = null;
         let clipId = null;
-        
+
         if (settings.addToProject) {
             if (onProgress) {
                 onProgress(92);
@@ -450,14 +451,22 @@ export class ExportManager {
 
             // Calculate duration in beats
             const bpm = usePlaybackStore.getState().bpm;
-            const durationBeats = (finalBuffer.duration / 60) * bpm;
+
+            // ✅ FIX: Use logical pattern length for clip duration (to match grid)
+            // But keep audio buffer duration for asset metadata
+            let clipDurationBeats = (finalBuffer.duration / 60) * bpm; // Default to audio length
+
+            if (fullPatternData && fullPatternData.settings && fullPatternData.settings.length) {
+                clipDurationBeats = fullPatternData.settings.length / 4; // steps to beats
+                console.log(`🎵 Using logical pattern length for clip: ${clipDurationBeats} beats (Audio: ${(finalBuffer.duration / 60) * bpm} beats)`);
+            }
 
             // Create audio asset
             assetId = await this._createAudioAsset(
                 finalBuffer,
                 channelName,
                 channelId,
-                durationBeats
+                clipDurationBeats // Use logical duration for metadata
             );
 
             if (onProgress) {
@@ -470,7 +479,7 @@ export class ExportManager {
                     assetId,
                     channelName,
                     channelId,
-                    durationBeats,
+                    clipDurationBeats, // Use logical duration for clip length
                     finalBuffer
                 );
             }
@@ -537,18 +546,18 @@ export class ExportManager {
             // ✅ FIX: Get clips from useArrangementStore (where ArrangementPanelV2 stores them)
             const arrangementStore = useArrangementStore.getState();
             const clips = arrangementStore.arrangementClips || [];
-            
+
             // Get arrangement metadata from workspace store (optional, for name/tempo)
             let arrangementName = 'Arrangement';
             let arrangementTempo = null;
-            
+
             try {
                 const { useArrangementWorkspaceStore } = await import('@/store/useArrangementWorkspaceStore');
                 const workspaceStore = useArrangementWorkspaceStore.getState();
-                const arrangement = arrangementId 
+                const arrangement = arrangementId
                     ? workspaceStore.arrangements[arrangementId]
                     : workspaceStore.getActiveArrangement();
-                
+
                 if (arrangement) {
                     arrangementName = arrangement.name || 'Arrangement';
                     arrangementTempo = arrangement.tempo;
@@ -696,12 +705,12 @@ export class ExportManager {
      */
     _getInstrumentsForChannel(channelId) {
         const instruments = useInstrumentsStore.getState().instruments;
-        
+
         // ✅ FIX: Master channel gets ALL instruments (it's the final mix)
         if (channelId === 'master') {
             return instruments; // Master = mix of all channels
         }
-        
+
         // Regular channels: get instruments routed to this specific channel
         return instruments.filter(inst => inst.mixerTrackId === channelId);
     }
@@ -713,7 +722,7 @@ export class ExportManager {
     _getPatternDataForInstrument(instrumentId) {
         const arrangementStore = useArrangementStore.getState();
         const activePatternId = arrangementStore.activePatternId;
-        
+
         if (!activePatternId) {
             return null;
         }
@@ -775,7 +784,7 @@ export class ExportManager {
             const arrangementStore = useArrangementStore.getState();
             const activePatternId = arrangementStore.activePatternId;
             const fullPattern = arrangementStore.patterns[activePatternId];
-            
+
             // Get all instruments for pattern data
             const allInstruments = useInstrumentsStore.getState().instruments;
             const patternInstruments = {};
@@ -835,7 +844,7 @@ export class ExportManager {
 
             // Start rendering (this will process all scheduled notes)
             const renderedBuffer = await tempContext.startRendering();
-            
+
             console.log(`✅ Rendered instrument ${instrument.id}: ${renderedBuffer.duration.toFixed(2)}s`);
             return renderedBuffer;
 
@@ -872,7 +881,7 @@ export class ExportManager {
             for (let channel = 0; channel < numChannels; channel++) {
                 const sourceData = buffer.getChannelData(channel);
                 const destData = destination.getChannelData(channel);
-                
+
                 for (let sample = 0; sample < sourceData.length; sample++) {
                     destData[sample] += sourceData[sample];
                 }
@@ -1162,16 +1171,16 @@ export class ExportManager {
     _generateFileName(channelName, settings) {
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
         const extension = settings.format;
-        
+
         let filename = settings.fileNameTemplate
             .replace('{channelName}', channelName)
             .replace('{timestamp}', timestamp)
             .replace('{format}', settings.format.toUpperCase());
-        
+
         if (!filename.endsWith(`.${extension}`)) {
             filename += `.${extension}`;
         }
-        
+
         return filename;
     }
 
@@ -1210,23 +1219,23 @@ export class ExportManager {
 let _exportManagerInstance = null;
 
 export function getExportManager() {
-  if (!_exportManagerInstance) {
-    _exportManagerInstance = new ExportManager();
-    // Update sample rate when audio engine becomes available
-    if (window.audioEngine) {
-      _exportManagerInstance.renderEngine.updateSampleRate();
+    if (!_exportManagerInstance) {
+        _exportManagerInstance = new ExportManager();
+        // Update sample rate when audio engine becomes available
+        if (window.audioEngine) {
+            _exportManagerInstance.renderEngine.updateSampleRate();
+        }
     }
-  }
-  return _exportManagerInstance;
+    return _exportManagerInstance;
 }
 
 // For backward compatibility - lazy proxy
 export const exportManager = new Proxy({}, {
-  get(target, prop) {
-    // Only create instance when actually accessed
-    const instance = getExportManager();
-    return instance[prop];
-  }
+    get(target, prop) {
+        // Only create instance when actually accessed
+        const instance = getExportManager();
+        return instance[prop];
+    }
 });
 
 // ✅ FIX: Don't create instance on module load

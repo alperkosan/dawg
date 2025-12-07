@@ -40,12 +40,12 @@ function pitchToMIDI(pitch) {
   if (typeof pitch === 'number') {
     return Math.round(pitch);
   }
-  
+
   // If pitch is not a string, return default
   if (typeof pitch !== 'string') {
     return 60; // Default to C4
   }
-  
+
   const noteMap = { 'C': 0, 'C#': 1, 'D': 2, 'D#': 3, 'E': 4, 'F': 5, 'F#': 6, 'G': 7, 'G#': 8, 'A': 9, 'A#': 10, 'B': 11 };
   const match = pitch.match(/^([A-G]#?)(-?\d+)$/);
   if (!match) return 60; // Default to C4
@@ -129,7 +129,7 @@ export function ArrangementPanelV2() {
 
   // Pattern store (for pattern clip rendering)
   const patterns = useArrangementStore(state => state.patterns);
-  
+
   // Arrangement actions (from unified store)
   const updateTrack = useArrangementStore(state => state.updateArrangementTrack);
   const setSnapEnabled = useArrangementStore(state => state.setArrangementSnapEnabled);
@@ -147,7 +147,7 @@ export function ArrangementPanelV2() {
   const addLoopRegion = useArrangementStore(state => state.addArrangementLoopRegion);
   const removeLoopRegion = useArrangementStore(state => state.removeArrangementLoopRegion);
   const updateLoopRegion = useArrangementStore(state => state.updateArrangementLoopRegion);
-  
+
   // ✅ PHASE 1: Transport System Unification - Use TimelineController (same as Piano Roll)
   // Playback state (read-only from usePlaybackStore)
   const currentStep = usePlaybackStore(state => state.currentStep);
@@ -155,7 +155,7 @@ export function ArrangementPanelV2() {
   const isPlaying = usePlaybackStore(state => state.isPlaying);
   const followPlayheadMode = usePlaybackStore(state => state.followPlayheadMode);
   const bpm = usePlaybackStore(state => state.bpm || 140);
-  
+
   // Transport control via TimelineController
   const setCursorPosition = useCallback((position) => {
     try {
@@ -356,6 +356,9 @@ export function ArrangementPanelV2() {
   const [loopDragStart, setLoopDragStart] = useState(null); // { regionId, startTime, initialX } - for creating/dragging loops
   const [loopDragMode, setLoopDragMode] = useState(null); // 'create' | 'move' | 'resize-start' | 'resize-end'
   const [hoveredLoop, setHoveredLoop] = useState(null); // { regionId, handle } - for hover feedback
+
+  // Drag & Drop State for generic file nodes
+  const [isDragOver, setIsDragOver] = useState(false);
 
   // ✅ PHASE 1: Transport System Unification
   // TimelineController is initialized globally, no need for local initialization
@@ -1625,7 +1628,7 @@ export function ArrangementPanelV2() {
             // ✅ FIX: Calculate split times from world coordinates (canvasX)
             let startTime = splitRange.startX / (constants.PIXELS_PER_BEAT * viewport.zoomX);
             let endTime = splitRange.endX / (constants.PIXELS_PER_BEAT * viewport.zoomX);
-            
+
             // ✅ FIX: Ensure endTime > startTime
             if (endTime <= startTime) {
               console.warn('⚠️ Range split: endTime must be greater than startTime');
@@ -1633,7 +1636,7 @@ export function ArrangementPanelV2() {
               setSplitRange(null);
               return;
             }
-            
+
             // ✅ SNAP: Apply snap if enabled
             if (snapEnabled) {
               startTime = Math.round(startTime / snapSize) * snapSize;
@@ -1981,7 +1984,8 @@ export function ArrangementPanelV2() {
     // Get pattern duration from pattern data (default 4 bars = 16 beats if not found)
     // Pattern length is stored in steps (16th notes), convert to beats
     const pattern = patterns[patternId];
-    const patternLengthInSteps = pattern?.length || 64; // Default 64 steps = 4 bars
+    // ✅ FIX: Check settings.length first, then top-level length, then default
+    const patternLengthInSteps = pattern?.settings?.length || pattern?.length || 64;
     const duration = patternLengthInSteps / 4; // Convert steps to beats (1 beat = 4 steps)
 
     // Add pattern clip
@@ -1995,7 +1999,7 @@ export function ArrangementPanelV2() {
     );
 
     console.log(`🎹 Added pattern "${patterns[patternId]?.name}" at ${startTime.toFixed(2)} beats on track ${track.name}`);
-  }, [viewport, tracks, dimensions.trackHeight, snapEnabled, snapSize, addPatternClip, patterns, getContainerRect]);
+  }, [viewport, tracks, dimensions.trackHeight, snapEnabled, snapSize, addPatternClip, patterns, getContainerRect, constants]);
 
   // Handle project audio drop (from Audio tab - frozen patterns, stems, etc.)
   const handleProjectAudioDrop = useCallback((e, audioAssetId) => {
@@ -2050,12 +2054,13 @@ export function ArrangementPanelV2() {
     addAudioClip(track.id, startTime, audioAssetId, duration, name);
 
     console.log(`🔊 Added audio clip "${name}" at ${startTime.toFixed(2)} beats on track ${track.name} (${duration.toFixed(2)} beats)`);
-  }, [viewport, tracks, dimensions.trackHeight, snapEnabled, snapSize, getContainerRect]);
+  }, [viewport, tracks, dimensions.trackHeight, snapEnabled, snapSize, getContainerRect, constants]);
 
   // Handle audio file and pattern drop
-  const handleDrop = useCallback((e) => {
+  const handleDrop = useCallback(async (e) => {
     e.preventDefault();
     e.stopPropagation(); // Prevent event from bubbling to parent panels
+    setIsDragOver(false); // Clear drag overlay
     console.log('🎯 ArrangementPanel handleDrop called');
 
     try {
@@ -2074,7 +2079,119 @@ export function ArrangementPanelV2() {
         return;
       }
 
-      // Otherwise, handle audio file drop (from FileBrowser)
+      // Handle generic file node drop (e.g., from FileBrowser)
+      const fileNodeData = e.dataTransfer.getData('application/x-dawg-file-node');
+      if (fileNodeData) {
+        const fileNode = JSON.parse(fileNodeData);
+
+        if (!fileNode.url && !fileNode.assetId) {
+          console.warn('❌ Dropped file has no URL or Asset ID');
+          return;
+        }
+
+        // Calculate drop position
+        const rect = getContainerRect(e);
+        if (!rect) return;
+
+        const screenX = e.clientX - rect.left;
+        const screenY = e.clientY - rect.top;
+
+        // Skip if over toolbar, timeline or left sidebars
+        const totalHeaderHeight = TOOLBAR_HEIGHT + constants.TIMELINE_HEIGHT;
+        if (screenX < LEFT_OFFSET || screenY < totalHeaderHeight) {
+          return;
+        }
+
+        // Convert to canvas coordinates
+        const canvasX = screenX - LEFT_OFFSET + viewport.scrollX;
+        const canvasY = screenY - totalHeaderHeight + viewport.scrollY;
+
+        // Convert X to Beats
+        const zoomX = isFinite(viewport.zoomX) && viewport.zoomX > 0 ? viewport.zoomX : 1;
+        const positionInBeats = Math.max(0, canvasX / (constants.PIXELS_PER_BEAT * zoomX));
+
+        // Quantize to snap size if enabled
+        const snapEnabledState = useArrangementStore.getState().snapEnabled;
+        const snapSizeState = useArrangementStore.getState().snapSize;
+        const startTime = snapEnabledState
+          ? Math.round(positionInBeats / snapSizeState) * snapSizeState
+          : positionInBeats;
+
+        // Convert Y to Track Index
+        const trackIndex = Math.floor(canvasY / dimensions.trackHeight);
+
+        // Get target track or create new
+        const currentTracks = useArrangementStore.getState().arrangementTracks;
+        let targetTrackId;
+
+        if (trackIndex < currentTracks.length && trackIndex >= 0) {
+          targetTrackId = currentTracks[trackIndex].id;
+        } else {
+          // Create new track(s) if dropped below
+          // Automatically expand tracks
+          const newTrackId = await useArrangementStore.getState().addArrangementTrack(`Audio Track ${currentTracks.length + 1}`);
+          targetTrackId = newTrackId;
+        }
+
+        // Load Asset
+        const assetManager = audioAssetManager;
+
+        console.log(`Loading ${fileNode.name}...`);
+
+        try {
+          const buffer = await assetManager.loadAsset(fileNode.url, {
+            name: fileNode.name,
+            source: 'drag-drop'
+          });
+
+          if (buffer) {
+            // Use centralized duration calculation
+            const assetId = assetManager.generateAssetId(fileNode.url);
+            const asset = assetManager.assets.get(assetId);
+            const currentBPM = usePlaybackStore.getState().bpm || 120;
+            const duration = getAudioClipDurationBeats(buffer, asset?.metadata, currentBPM);
+
+            // Add to ProjectAudioStore when first used in project
+            const projectAudioStore = useProjectAudioStore.getState();
+            const existingSample = projectAudioStore.samples.find(s => s.assetId === assetId);
+
+            if (!existingSample) {
+              projectAudioStore.addSample({
+                id: assetId,
+                name: fileNode.name,
+                assetId: assetId,
+                url: fileNode.url,
+                durationBeats: duration,
+                durationSeconds: buffer.duration,
+                type: 'used-in-project', // Mark as actively used in project
+                createdAt: Date.now(),
+                metadata: {
+                  url: fileNode.url,
+                  source: 'drag-drop',
+                  bpm: currentBPM
+                }
+              });
+              console.log(`📦 Added to project audio library: ${fileNode.name}`);
+            }
+
+            // Add Clip
+            useArrangementStore.getState().addArrangementAudioClip(
+              targetTrackId,
+              startTime,
+              assetId, // Ensure ID consistency
+              duration,
+              fileNode.name
+            );
+            console.log(`✅ Imported ${fileNode.name}`);
+          }
+        } catch (err) {
+          console.error('Failed to load dropped audio:', err);
+          console.error(`❌ Failed to load audio: ${err.message}`);
+        }
+        return;
+      }
+
+      // Otherwise, handle audio file drop (from FileBrowser, legacy text/plain)
       const data = e.dataTransfer.getData('text/plain');
       if (!data) return;
 
@@ -2160,22 +2277,28 @@ export function ArrangementPanelV2() {
     } catch (err) {
       console.error('Failed to handle drop:', err);
     }
-  }, [handlePatternDrop, handleProjectAudioDrop, viewport, tracks, dimensions.trackHeight, snapEnabled, snapSize, getContainerRect]);
+  }, [handlePatternDrop, handleProjectAudioDrop, viewport, tracks, dimensions.trackHeight, snapEnabled, snapSize, getContainerRect, constants]);
 
   const handleDragOver = useCallback((e) => {
     e.preventDefault();
     e.stopPropagation(); // Prevent event from bubbling to parent panels
     e.dataTransfer.dropEffect = 'copy';
 
-    // Check if dragging a pattern or audio
+    // Check if dragging a pattern or audio or generic file node
     const types = e.dataTransfer.types;
     const isDraggingPattern = types.includes('application/x-dawg-pattern');
     const isDraggingAudio = types.includes('application/x-dawg-audio');
+    const isDraggingFileNode = types.includes('application/x-dawg-file-node');
+    const isDraggingLegacyAudioFile = types.includes('text/plain'); // For legacy FileBrowser drops
 
-    if (!isDraggingPattern && !isDraggingAudio) {
+    if (!isDraggingPattern && !isDraggingAudio && !isDraggingFileNode && !isDraggingLegacyAudioFile) {
       setPatternDragPreview(null);
+      setIsDragOver(false);
       return;
     }
+
+    // Set general drag over state for visual feedback
+    setIsDragOver(true);
 
     // Only show pattern preview for patterns (audio doesn't need preview)
     if (!isDraggingPattern) {
@@ -2183,7 +2306,7 @@ export function ArrangementPanelV2() {
       return;
     }
 
-    // Calculate drag position for preview
+    // Calculate drag position for pattern preview
     const rect = getContainerRect(e);
     if (!rect) return;
 
@@ -2215,7 +2338,8 @@ export function ArrangementPanelV2() {
         // Pattern length is stored in steps (16th notes), convert to beats
         const patternData = e.dataTransfer.getData('application/x-dawg-pattern');
         const pattern = patterns[patternData];
-        const patternLengthInSteps = pattern?.length || 64; // Default 64 steps = 4 bars
+        // ✅ FIX: Check settings.length first, then top-level length, then default
+        const patternLengthInSteps = pattern?.settings?.length || pattern?.length || 64;
         const duration = patternLengthInSteps / 4; // Convert steps to beats (1 beat = 4 steps)
 
         // Calculate preview dimensions in world space
@@ -2239,11 +2363,15 @@ export function ArrangementPanelV2() {
     } else {
       setPatternDragPreview(null);
     }
-  }, [viewport, tracks, dimensions.trackHeight, snapEnabled, snapSize, patterns, getContainerRect]);
+  }, [viewport, tracks, dimensions.trackHeight, snapEnabled, snapSize, patterns, getContainerRect, constants]);
 
-  const handleDragLeave = useCallback(() => {
+  const handleDragLeave = useCallback((e) => {
     // Clear preview when leaving the drop zone
     setPatternDragPreview(null);
+    // Only clear isDragOver if leaving the container entirely
+    if (!containerRef.current?.contains(e.relatedTarget)) {
+      setIsDragOver(false);
+    }
   }, []);
 
   // Fix passive event listener warning - we need { passive: false } for preventDefault
@@ -2298,8 +2426,10 @@ export function ArrangementPanelV2() {
 
       const isDraggingPattern = types.includes('application/x-dawg-pattern');
       const isDraggingAudio = types.includes('application/x-dawg-audio');
+      const isDraggingFileNode = types.includes('application/x-dawg-file-node');
+      const isDraggingLegacyAudioFile = types.includes('text/plain');
 
-      if (!isDraggingPattern && !isDraggingAudio) return;
+      if (!isDraggingPattern && !isDraggingAudio && !isDraggingFileNode && !isDraggingLegacyAudioFile) return;
 
       // Only handle if NOT already inside our container (avoid duplicate handling)
       const container = containerRef.current;
@@ -2314,8 +2444,10 @@ export function ArrangementPanelV2() {
 
       const isDraggingPattern = types.includes('application/x-dawg-pattern');
       const isDraggingAudio = types.includes('application/x-dawg-audio');
+      const isDraggingFileNode = types.includes('application/x-dawg-file-node');
+      const isDraggingLegacyAudioFile = types.includes('text/plain');
 
-      if (!isDraggingPattern && !isDraggingAudio) return;
+      if (!isDraggingPattern && !isDraggingAudio && !isDraggingFileNode && !isDraggingLegacyAudioFile) return;
 
       // Only handle if NOT already inside our container (avoid duplicate handling)
       const container = containerRef.current;
@@ -2498,16 +2630,16 @@ export function ArrangementPanelV2() {
           style={{
             cursor:
               deletionMode ? 'not-allowed' :
-              activeTool === 'split' ? 'col-resize' :
-              activeTool === 'draw' ? 'crosshair' :
-              hoveredHandle?.handle === 'fadeIn' || hoveredHandle?.handle === 'fadeOut' ? 'nw-resize' :
-              hoveredHandle?.handle === 'gain' ? 'ns-resize' :
-              hoveredHandle ? 'ew-resize' :
-              dragGhosts ? 'grabbing' :
-              resizeGhosts ? 'ew-resize' :
-              fadeGhosts ? 'nw-resize' :
-              gainGhosts ? 'ns-resize' :
-              'default'
+                activeTool === 'split' ? 'col-resize' :
+                  activeTool === 'draw' ? 'crosshair' :
+                    hoveredHandle?.handle === 'fadeIn' || hoveredHandle?.handle === 'fadeOut' ? 'nw-resize' :
+                      hoveredHandle?.handle === 'gain' ? 'ns-resize' :
+                        hoveredHandle ? 'ew-resize' :
+                          dragGhosts ? 'grabbing' :
+                            resizeGhosts ? 'ew-resize' :
+                              fadeGhosts ? 'nw-resize' :
+                                gainGhosts ? 'ns-resize' :
+                                  'default'
           }}
           onContextMenu={handleContextMenu}
         >

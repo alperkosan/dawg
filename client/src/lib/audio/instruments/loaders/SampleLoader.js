@@ -1,3 +1,5 @@
+import { audioAssetManager } from '../../AudioAssetManager';
+
 /**
  * SampleLoader - Centralized audio sample loading with caching
  *
@@ -18,7 +20,7 @@ export class SampleLoader {
         cacheHits: 0,
         cacheMisses: 0
     };
-    
+
     /**
      * Clean unused buffers from cache
      * @param {Set<string>} activeUrls - URLs of currently active samples
@@ -26,23 +28,23 @@ export class SampleLoader {
     static cleanUnusedCache(activeUrls = new Set()) {
         const beforeCount = this.cache.size;
         const toRemove = [];
-        
+
         this.cache.forEach((buffer, url) => {
             if (!activeUrls.has(url)) {
                 toRemove.push(url);
             }
         });
-        
+
         toRemove.forEach(url => {
             this.cache.delete(url);
         });
-        
+
         const afterCount = this.cache.size;
         if (beforeCount > afterCount) {
             console.log(`🧹 SampleLoader: Cleaned ${beforeCount - afterCount} unused cached buffers (${afterCount} remaining)`);
         }
     }
-    
+
     /**
      * Clear all cache (use with caution - only when switching projects)
      */
@@ -66,6 +68,13 @@ export class SampleLoader {
             retries = 2,
             onProgress = null
         } = options;
+
+        // Check if this is an asset ID managed by AudioAssetManager (e.g. exported audio)
+        const existingAsset = audioAssetManager.getAsset(url);
+        if (existingAsset && existingAsset.buffer) {
+            console.log(`📦 Found existing asset buffer for ID: ${url}`);
+            return existingAsset.buffer;
+        }
 
         // Check cache first
         if (useCache && this.cache.has(url)) {

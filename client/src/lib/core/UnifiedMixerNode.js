@@ -123,19 +123,7 @@ export class UnifiedMixerNode {
             );
 
             // Handle messages from worklet (stats, errors, meters)
-            this.workletNode.port.onmessage = (event) => {
-                const { type, data, levels } = event.data;
-
-                if (type === 'stats') {
-                    this.stats = data;
-                } else if (type === 'set-levels') {
-                    if (this.onLevelsUpdate) {
-                        this.onLevelsUpdate(levels);
-                    }
-                } else if (type === 'error') {
-                    logger.error(`❌ UnifiedMixerWorklet Error: ${data.message}`);
-                }
-            };
+            this.workletNode.port.onmessage = this._handleMessage.bind(this);
 
             this.workletNode.onprocessorerror = (err) => {
                 logger.error('❌ Worklet Processor Error:', err);
@@ -165,16 +153,7 @@ export class UnifiedMixerNode {
                     clearTimeout(timeout);
 
                     // ✅ Restore standard message handler
-                    this.workletNode.port.onmessage = (evt) => {
-                        const { type, data, levels } = evt.data;
-                        if (type === 'stats') {
-                            this.stats = data;
-                        } else if (type === 'set-levels') {
-                            if (this.onLevelsUpdate) this.onLevelsUpdate(levels);
-                        } else if (type === 'error') {
-                            logger.error(`❌ UnifiedMixerWorklet Error: ${data.message}`);
-                        }
-                    };
+                    this.workletNode.port.onmessage = this._handleMessage.bind(this);
 
                     if (event.data.success) {
                         resolve();
@@ -411,6 +390,24 @@ export class UnifiedMixerNode {
      */
     getOutputNode() {
         return this.workletNode;
+    }
+
+    /**
+     * Handle messages from worklet
+     * @private
+     */
+    _handleMessage(event) {
+        const { type, data, levels } = event.data;
+
+        if (type === 'stats') {
+            this.stats = data;
+        } else if (type === 'set-levels') {
+            if (this.onLevelsUpdate) {
+                this.onLevelsUpdate(levels);
+            }
+        } else if (type === 'error') {
+            logger.error(`❌ UnifiedMixerWorklet Error: ${data.message}`);
+        }
     }
 
     /**

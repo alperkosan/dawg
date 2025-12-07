@@ -178,18 +178,23 @@ class WaveformCache {
       return null;
     }
 
-    // Apply LOD multiplier (more detail when zoomed in)
-    let samplesPerPixel;
+    // ✅ FIX: standardized samplesPerPixel across all LODs to prevent time-stretching
+    // The LOD should only affect how many samples we check for min/max (fidelity), 
+    // NOT the stride (which affects time).
+    const samplesPerPixel = baseSamplesPerPixel;
+
+    // Adjust fidelity based on LOD
+    let samplesToCheckMultiplier = 1;
     switch (lod) {
-      case 0: // Low detail - more samples per pixel (zoomed out)
-        samplesPerPixel = Math.max(1, Math.floor(baseSamplesPerPixel * 2));
+      case 0: // Low detail - fast render, check fewer samples
+        samplesToCheckMultiplier = 0.5;
         break;
       case 1: // Medium detail
-        samplesPerPixel = Math.max(1, Math.floor(baseSamplesPerPixel));
+        samplesToCheckMultiplier = 0.75;
         break;
-      case 2: // High detail - fewer samples per pixel (zoomed in)
+      case 2: // High detail - check all samples
       default:
-        samplesPerPixel = Math.max(1, Math.floor(baseSamplesPerPixel * 0.5));
+        samplesToCheckMultiplier = 1.0;
         break;
     }
 
@@ -227,7 +232,8 @@ class WaveformCache {
       let count = 0;
 
       // ✅ IMPROVED: Sample more points for smoother waveform
-      const samplesToCheck = Math.max(1, Math.floor(samplesPerPixel));
+      // LOD optimization: check fewer samples at lower LODs for performance
+      const samplesToCheck = Math.max(1, Math.floor(samplesPerPixel * samplesToCheckMultiplier));
 
       for (let s = 0; s < samplesToCheck && sampleIndex + s < endSample; s++) {
         // ✅ FIX: Additional bounds check inside inner loop
