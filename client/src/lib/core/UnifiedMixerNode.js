@@ -281,6 +281,30 @@ export class UnifiedMixerNode {
     }
 
     /**
+     * Reset a specific channel to default state
+     * @param {number} channelIdx - Channel index to reset
+     */
+    resetChannel(channelIdx) {
+        if (!this.isInitialized) return;
+
+        // Disconnect any source
+        this.disconnectChannel(channelIdx);
+
+        // Reset parameters to default
+        this.setChannelParams(channelIdx, {
+            gain: 1.0,
+            pan: 0.0,
+            mute: false,
+            solo: false,
+            eqActive: false,
+            compActive: false
+        });
+
+        // Clear effects (if logic allows, currently just params)
+        logger.debug(`✅ Reset channel ${channelIdx}`);
+    }
+
+    /**
      * Set channel EQ
      *
      * @param {number} channelIdx - Channel index

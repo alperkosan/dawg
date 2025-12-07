@@ -2158,7 +2158,7 @@ export class NativeAudioEngine {
                 if (channelIdx !== undefined) {
                     const instOutput = instrument.workletNode || instrument.outputNode || instrument.output;
                     if (instOutput) {
-                        this.unifiedMixer.disconnectFromChannel(instOutput, channelIdx);
+                        this.unifiedMixer.disconnectChannel(channelIdx);
                         if (import.meta.env.DEV) {
                             console.log(`🔗 WASM Disconnect: ${instrumentId} from Channel ${channelIdx} (${insertId})`);
                         }
