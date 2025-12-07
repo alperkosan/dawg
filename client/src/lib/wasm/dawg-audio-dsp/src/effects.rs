@@ -27,8 +27,8 @@ impl SimpleDelay {
         SimpleDelay {
             delays,
             delay_samples: sample_rate * 0.5, // 500ms
-            feedback: 0.3,
-            mix: 0.5,
+            feedback: 0.7, // Aggressive feedback for testing
+            mix: 0.8, // Mostly Wet
             sample_rate,
         }
     }

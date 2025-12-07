@@ -24,18 +24,18 @@ export class NativeTransportSystem {
         // ✅ Position tracking - ALL IN TICKS
         this.currentTick = 0;
         this.nextTickTime = 0;
-        
+
         // ✅ NEW: Advanced lookahead scheduler (adaptive, 100-200ms range)
         this.lookaheadScheduler = new LookaheadScheduler(audioContext, {
             baseLookahead: 0.12, // 120ms base (optimal)
             minLookahead: 0.05,  // 50ms minimum
             maxLookahead: 0.2     // 200ms maximum
         });
-        
+
         // ⚡ CRITICAL: Tighter scheduling window for better timing accuracy
         // ✅ NEW: Use adaptive lookahead from LookaheadScheduler
         this.lookAhead = this.lookaheadScheduler.getLookahead() * 1000; // Convert to ms
-        
+
         // ✅ FAZ 1: Adaptive schedule ahead time based on BPM
         // ✅ NEW: Now uses LookaheadScheduler for more sophisticated calculation
         // Yüksek BPM (140+): 100ms, Orta BPM (100-140): 120ms, Düşük BPM (<100): 150ms
@@ -53,7 +53,7 @@ export class NativeTransportSystem {
         this.scheduledEvents = new Map();
         this.patterns = new Map(); // EKLENDİ
         this.activePatterns = new Set(); // EKLENDİ
-        
+
         // ✅ NEW: Event batcher for performance optimization
         this.eventBatcher = new EventBatcher({
             batchSize: 32, // Process 32 events at once
@@ -74,10 +74,57 @@ export class NativeTransportSystem {
             cacheValid: false
         };
 
-        // ✅ Initialize worker timer
-        this.initializeWorkerTimer();
-        this._setupEventListeners(); // YENİ: Olay dinleyicilerini başlat
+        // ✅ Initialize worker timer (LEGACY - replaced by SAB Sync)
+        // this.initializeWorkerTimer();
 
+        // ✅ NEW: Shared Memory initialization
+        this._initSharedMemory();
+
+        this._setupEventListeners();
+    }
+
+    _initSharedMemory() {
+        try {
+            // 32 floats/ints = 128 bytes
+            this.sharedAudioState = new SharedArrayBuffer(128);
+            this.sharedInt = new Int32Array(this.sharedAudioState);
+            this.sharedFloat = new Float32Array(this.sharedAudioState);
+
+            // Indices (Must match Rust SharedAudioState)
+            this.SAB_IDX_PLAY_STATE = 0;
+            this.SAB_IDX_MSG_COUNTER = 1;
+            this.SAB_IDX_BPM = 16;
+            this.SAB_IDX_POS_SAMPLES = 17;
+            this.SAB_IDX_POS_TICKS = 18;
+            this.SAB_IDX_SAMPLE_RATE = 19;
+
+            console.log("✅ NativeTransportSystem: SharedArrayBuffer initialized");
+        } catch (e) {
+            console.error("❌ SharedArrayBuffer support missing! Fallback needed.", e);
+        }
+    }
+
+    // Called by AudioContextService or AudioEngine
+    linkAudioEngine(audioEngine) {
+        this.audioEngine = audioEngine;
+        let workletNode = null;
+
+        // Handle both NativeAudioEngine (wrapper) and direct WorkletNode access
+        if (audioEngine.unifiedMixer && audioEngine.unifiedMixer.workletNode) {
+            workletNode = audioEngine.unifiedMixer.workletNode;
+        } else if (audioEngine.unifiedMixerWorkletNode) {
+            workletNode = audioEngine.unifiedMixerWorkletNode;
+        }
+
+        if (workletNode) {
+            workletNode.port.postMessage({
+                type: 'set-shared-state',
+                sharedState: this.sharedAudioState
+            });
+            console.log("🔗 Transport linked to AudioEngine (SAB passed)");
+        } else {
+            console.warn("⚠️ Transport could not find UnifiedMixerWorkletNode to link!");
+        }
     }
 
     /**
@@ -89,7 +136,7 @@ export class NativeTransportSystem {
      */
     _calculateAdaptiveScheduleAhead() {
         if (this.bpm >= 140) {
-            return 0.12; // ✅ OPTIMIZED: 120ms for high BPM (increased from 100ms for better timing consistency)
+            return 0.12; // ✅ OPTIMIZED: 120ms for high BPM
         } else if (this.bpm >= 100) {
             return 0.12; // 120ms for medium BPM
         } else {
@@ -103,20 +150,12 @@ export class NativeTransportSystem {
      */
     _updateScheduleAheadTime() {
         this.scheduleAheadTime = this._calculateAdaptiveScheduleAhead();
-        
+
         // ✅ NEW: Update lookahead scheduler with new BPM
         if (this.lookaheadScheduler) {
             const eventCount = this.scheduledEvents.size;
             this.lookaheadScheduler.updateLookahead(this.bpm, eventCount);
             this.lookAhead = this.lookaheadScheduler.getLookahead() * 1000;
-        }
-        
-        if (import.meta.env.DEV) {
-            const stats = this.lookaheadScheduler?.getStats();
-            console.log(`⚡ Schedule ahead time updated: ${(this.scheduleAheadTime * 1000).toFixed(0)}ms (BPM: ${this.bpm})`);
-            if (stats) {
-                console.log(`📊 Lookahead: ${stats.lookaheadMs.toFixed(0)}ms (BPM factor: ${stats.bpmFactor.toFixed(2)}, Complexity: ${stats.complexityFactor.toFixed(2)})`);
-            }
         }
     }
 
@@ -136,75 +175,35 @@ export class NativeTransportSystem {
         return this.setBPM(tempo);
     }
 
-    // =================== TIMER INITIALIZATION ===================
-
-    initializeWorkerTimer() {
-        const workerScript = `
-            let timerID = null;
-            // ✅ FAZ 1: Optimized to 16ms (60fps) for better CPU efficiency
-            // At 120 BPM: 16th note = ~125ms, so 16ms gives us ~8 scheduling opportunities per note (sufficient)
-            let interval = 16;
-
-            self.onmessage = function(e) {
-                if (e.data === 'start') {
-                    timerID = setInterval(() => {
-                        postMessage('tick');
-                    }, interval);
-                } else if (e.data === 'stop') {
-                    clearInterval(timerID);
-                }
-            };
-        `;
-
-        const blob = new Blob([workerScript], { type: 'application/javascript' });
-        // ✅ LEAK FIX: Store blob URL for cleanup
-        this.workerBlobUrl = URL.createObjectURL(blob);
-        this.timerWorker = new Worker(this.workerBlobUrl);
-
-        this.timerWorker.onmessage = () => {
-            if (this.isPlaying) {
-                this.scheduler();
-            }
-        };
-
-    }
-
     // =================== BASIC TRANSPORT CONTROLS ===================
 
-    // ✅ Start/Stop methods remain the same
     start(when = null) {
         if (this.isPlaying) return;
 
         const startTime = when || this.audioContext.currentTime;
         this.isPlaying = true;
 
-        // ✅ CRITICAL FIX: Preserve position if setPosition was called before start
-        // Only reset to loopStartTick if position hasn't been explicitly set
-        // This allows starting playback from a specific position (e.g., timeline click)
-        if (!this.isPaused) {
-            // Only reset to loop start if currentTick is at loop start (wasn't explicitly set)
-            // If setPosition was called, currentTick will be different from loopStartTick
-            if (this.currentTick === this.loopStartTick || this.currentTick === 0) {
-                // Position wasn't explicitly set, start from loop beginning
-                this.currentTick = this.loopStartTick;
-            }
-            // Otherwise, keep currentTick as set by setPosition
-            this.currentBar = Math.floor(this.currentTick / this.ticksPerBar);
+        // Logic for resume vs start from beginning handled by Rust/SAB mostly
+        // But we write state to SAB
+        if (!this.isPaused && (this.currentTick === this.loopStartTick || this.currentTick === 0)) {
+            this.currentTick = this.loopStartTick;
         } else {
-            // ✅ CRITICAL FIX: When resuming from pause, clear pause state
             this.isPaused = false;
         }
 
-        // ✅ CRITICAL FIX: Set nextTickTime with minimum delay to prevent click at bar start
-        // ✅ NEW: Use sample-accurate time for professional precision
-        const minDelay = SampleAccurateTime.getMinimumSafeOffset(this.audioContext, 64); // 64 samples safety margin
+        const minDelay = SampleAccurateTime.getMinimumSafeOffset(this.audioContext, 64);
         const rawNextTickTime = Math.max(startTime + minDelay, this.audioContext.currentTime + minDelay);
         this.nextTickTime = SampleAccurateTime.toSampleAccurate(this.audioContext, rawNextTickTime);
 
+        // ✅ COMMAND: PLAY (1)
+        Atomics.store(this.sharedInt, this.SAB_IDX_PLAY_STATE, 1);
+        // Note: Atomics cannot be used on Float32Array
+        this.sharedFloat[this.SAB_IDX_BPM] = this.bpm;
 
-        this.timerWorker.postMessage('start');
+        // Start Sync Loop
+        this._startSyncLoop();
+
         this.triggerCallback('start', { time: startTime, position: this.currentTick });
-
         return this;
     }
 
@@ -213,35 +212,86 @@ export class NativeTransportSystem {
 
         const stopTime = when || this.audioContext.currentTime;
         this.isPlaying = false;
-        this.isPaused = false; // ✅ CLEAR: Clear pause state on stop
+        this.isPaused = false;
 
-        this.timerWorker.postMessage('stop');
+        // ✅ COMMAND: STOP (0)
+        Atomics.store(this.sharedInt, this.SAB_IDX_PLAY_STATE, 0);
 
-        // ✅ CRITICAL FIX: Always reset to loop start on stop
         this.currentTick = this.loopStartTick;
         this.currentBar = Math.floor(this.currentTick / this.ticksPerBar);
-        this.nextTickTime = stopTime; // Will be overridden on next start
+        this.nextTickTime = stopTime;
 
         this.clearScheduledEvents();
-        this.triggerCallback('stop', { time: stopTime, position: this.currentTick });
+        this._stopSyncLoop();
 
+        this.triggerCallback('stop', { time: stopTime, position: this.currentTick });
         return this;
     }
 
-    // ✅ CLEANUP: Dispose method
-    // ✅ CRITICAL FIX: Pause state management
     pause(when = null) {
         if (!this.isPlaying) return this;
 
         const pauseTime = when || this.audioContext.currentTime;
         this.isPlaying = false;
-        this.isPaused = true; // ✅ ADD: Track pause state
+        this.isPaused = true;
 
-        this.timerWorker.postMessage('stop');
+        // ✅ COMMAND: PAUSE (2)
+        Atomics.store(this.sharedInt, this.SAB_IDX_PLAY_STATE, 2);
 
-        // Keep current position, don't reset
+        this._stopSyncLoop();
+
         this.triggerCallback('pause', { time: pauseTime, position: this.currentTick });
         return this;
+    }
+
+    _startSyncLoop() {
+        if (this.syncAnimationFrame) cancelAnimationFrame(this.syncAnimationFrame);
+
+        const loop = () => {
+            if (!this.isPlaying) return;
+
+            // 1. Read Position from Wasm
+            // Float doesn't support Atomics.load. Direct read is atomic enough for aligned float32. 
+            // SharedFloat is TypedArray, standard read is atomic enough for single writer.
+            // Or use DataView for consistent endianness? 
+            // For now, volatile read:
+            const currentWasmTick = this.sharedFloat[this.SAB_IDX_POS_TICKS];
+
+            // 2. Sync JS State (Visuals)
+            // Only update if changed significantly? 
+            // Actually, we use this to drive the scheduler
+            if (currentWasmTick > this.currentTick) {
+                // Determine delta
+                this.currentTick = currentWasmTick;
+                this.currentBar = Math.floor(this.currentTick / this.ticksPerBar);
+
+                // Trigger Visual Updates (Throttled)
+                const now = performance.now();
+                if (now - this.lastUIUpdate > 16.67) {
+                    this.triggerCallback('tick', {
+                        time: this.audioContext.currentTime,
+                        position: this.currentTick,
+                        formatted: this.formatPosition(this.currentTick),
+                        bar: this.currentBar,
+                        step: this.ticksToSteps(this.currentTick)
+                    });
+                    this.lastUIUpdate = now;
+                }
+            }
+
+            // 3. Scheduler Call (Still needed for JS-side events)
+            // But scheduler() iterates using nextTickTime. 
+            // We should trust Wasm time.
+            // For now, let's keep scheduler running to process queued events based on TIME.
+            this.scheduler();
+
+            this.syncAnimationFrame = requestAnimationFrame(loop);
+        };
+        this.syncAnimationFrame = requestAnimationFrame(loop);
+    }
+
+    _stopSyncLoop() {
+        if (this.syncAnimationFrame) cancelAnimationFrame(this.syncAnimationFrame);
     }
 
 
@@ -389,14 +439,14 @@ export class NativeTransportSystem {
     scheduler() {
         // ✅ NEW: Use sample-accurate time for scheduling window
         const currentTime = SampleAccurateTime.getCurrentSampleAccurateTime(this.audioContext);
-        
+
         // ✅ NEW: Update lookahead based on current conditions
         let scheduleUntil;
         if (this.lookaheadScheduler) {
             const eventCount = this.scheduledEvents.size;
             this.lookaheadScheduler.updateLookahead(this.bpm, eventCount);
             this.lookAhead = this.lookaheadScheduler.getLookahead() * 1000; // Update lookahead in ms
-            
+
             // ✅ NEW: Use adaptive schedule ahead time from LookaheadScheduler
             const adaptiveScheduleAhead = this.lookaheadScheduler.getLookahead();
             scheduleUntil = SampleAccurateTime.toSampleAccurate(
@@ -433,7 +483,7 @@ export class NativeTransportSystem {
         const currentTime = this.audioContext.currentTime;
         const oldTick = this.currentTick;
         const oldNextTickTime = this.nextTickTime;
-        
+
         // ✅ First: Always increment currentTick
         this.currentTick++;
 
@@ -442,10 +492,10 @@ export class NativeTransportSystem {
         // When currentTick reaches 384, we should restart to 0
         if (this.loop && this.currentTick >= this.loopEndTick) {
             const previousTick = this.currentTick;
-            
+
             // ✅ Reset to 0 (beginning) on loop restart
             this.currentTick = 0;
-            
+
             // ✅ CRITICAL: nextTickTime is NOT updated - already correct from previous tick
             // This ensures perfect loop length consistency
             const step0StartTime = this.nextTickTime;
@@ -490,20 +540,20 @@ export class NativeTransportSystem {
         // ⚡ PERFORMANS: Throttled UI updates - 60fps for smooth playhead
         const now = performance.now();
         if (now - this.lastUIUpdate > 16.67) { // 60fps for smooth UI
-        this.triggerCallback('tick', {
-            time: time,
-            position: this.currentTick,
-            formatted: this.formatPosition(this.currentTick),
-            bar: this.currentBar,
-            step: this.ticksToSteps(this.currentTick)
-        });
-        this.lastUIUpdate = now;
+            this.triggerCallback('tick', {
+                time: time,
+                position: this.currentTick,
+                formatted: this.formatPosition(this.currentTick),
+                bar: this.currentBar,
+                step: this.ticksToSteps(this.currentTick)
+            });
+            this.lastUIUpdate = now;
         }
 
         // Beat callback (her zaman trigger et - önemli)
         if (this.currentTick % this.ppq === 0) {
-        const beat = Math.floor(this.currentTick / this.ppq) % this.timeSignature[0];
-        this.triggerCallback('beat', { time, beat, tick: this.currentTick });
+            const beat = Math.floor(this.currentTick / this.ppq) % this.timeSignature[0];
+            this.triggerCallback('beat', { time, beat, tick: this.currentTick });
         }
     }
 
@@ -569,7 +619,7 @@ export class NativeTransportSystem {
 
         // Process batch
         const processedCount = this.eventBatcher.processDueEvents(currentTime);
-        
+
         if (processedCount > 0 && import.meta.env.DEV) {
             console.log(`⏰ Processed ${processedCount} events in batch (currentTime: ${currentTime.toFixed(4)}s)`);
         }
@@ -601,7 +651,7 @@ export class NativeTransportSystem {
         // 100: Critical (note on/off, transport events)
         // 50: High (automation, effects)
         // 0: Normal (UI updates, callbacks)
-        
+
         if (!eventData || !eventData.type) {
             return 0;
         }
@@ -792,7 +842,7 @@ export class NativeTransportSystem {
         const [, noteValue, type] = matches;
         let duration = (60 / this.bpm) * (4 / parseInt(noteValue));
 
-        if (type === 't') duration *= 2/3; // Triplet
+        if (type === 't') duration *= 2 / 3; // Triplet
         if (type === 'd') duration *= 1.5; // Dotted
 
         return duration;
@@ -882,10 +932,10 @@ export class NativeTransportSystem {
     _isLoopCacheValid(startStep, endStep) {
         const cache = this.loopCache;
         return cache.cacheValid &&
-               cache.lastBpm === this.bpm &&
-               cache.lastLoopStart === startStep &&
-               cache.lastLoopEnd === endStep &&
-               JSON.stringify(cache.lastTimeSignature) === JSON.stringify(this.timeSignature);
+            cache.lastBpm === this.bpm &&
+            cache.lastLoopStart === startStep &&
+            cache.lastLoopEnd === endStep &&
+            JSON.stringify(cache.lastTimeSignature) === JSON.stringify(this.timeSignature);
     }
 
     _updateLoopCache(startStep, endStep) {

@@ -16,6 +16,9 @@ const GHOST_DECAY_RATE = 50; // dB per second
 const SCALE_TICKS = [12, 6, 3, 0, -3, -6, -12, -18, -24, -30, -36, -42, -48, -54, -60];
 const LABELED_SCALE_TICKS = new Set([12, 6, 3, 0, -3, -6, -12, -24, -36, -48, -60]);
 
+const DEFAULT_WIDTH = 24;
+const DEFAULT_HEIGHT = 140;
+
 const dbToPercent = (db) => {
   const clamped = Math.max(-60, Math.min(12, db));
   return (clamped + 60) / 72;
@@ -97,13 +100,13 @@ export const mixerMeterRenderer = {
       }
     };
 
-const drawScale = (ctx, palette, width, height, railX, railWidth) => {
+    const drawScale = (ctx, palette, width, height, railX, railWidth) => {
       ctx.font = '9px Inter, sans-serif';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
       ctx.fillStyle = palette.text;
-  const scaleStart = railX + railWidth + 6;
-  const scaleEnd = width - 6;
+      const scaleStart = railX + railWidth + 6;
+      const scaleEnd = width - 6;
 
       SCALE_TICKS.forEach((db) => {
         const y = height - dbToPercent(db) * height;

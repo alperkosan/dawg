@@ -80,6 +80,10 @@ export class AudioContextService {
       await this._syncMixerTracksToAudioEngine();
     }
 
+    // ✅ FIX: Ensure Send Channels (Reverb/Delay) are initialized
+    // This allows createSend() to work immediately
+    this._syncSendChannels();
+
     console.log("✅ AudioContextService v3.0: Native Engine + Interface Layer + Idle Optimization ready");
     return engine;
   };
@@ -2679,5 +2683,22 @@ export class AudioContextService {
     }
 
     return this.audioEngine.mixerInserts.get(trackId) || null;
+  }
+
+  static async _syncSendChannels() {
+    if (!this.audioEngine) return;
+
+    // Importing store here to avoid circular dependency issues at top level
+    const { useMixerStore } = await import('@/store/useMixerStore');
+    const sendChannels = useMixerStore.getState().sendChannels;
+
+    sendChannels.forEach(channel => {
+      // Create MixerInsert for send channel if it doesn't exist
+      // createMixerInsert now handles Wasm allocation automatically
+      if (!this.audioEngine.mixerInserts.has(channel.id)) {
+        this.audioEngine.createMixerInsert(channel.id, channel.name);
+        console.log(`✅ Initialized Send Bus: ${channel.name} (${channel.id})`);
+      }
+    });
   }
 };

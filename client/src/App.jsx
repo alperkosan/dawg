@@ -8,6 +8,7 @@ import { AudioContextService } from './lib/services/AudioContextService';
 import { visualizationEngine } from './lib/visualization/VisualizationEngine';
 import TimelineControllerSingleton from './lib/core/TimelineControllerSingleton';
 import TransportManagerSingleton from './lib/core/TransportManagerSingleton';
+import { EffectFactory } from './lib/audio/effects/EffectFactory';
 
 // Stores
 import { usePlaybackStore } from './store/usePlaybackStore';
@@ -116,6 +117,7 @@ function DAWApp() {
   const audioEngineCallbacks = useMemo(() => ({
     setPlaybackState: (state) => { },
     setTransportPosition: usePlaybackStore.getState().setTransportPosition,
+    onMixerLevels: useMixerStore.getState().batchUpdateLevels,
   }), []);
 
   const storeGetters = useMemo(() => ({
@@ -447,14 +449,10 @@ function DAWApp() {
       console.log('🎛️ Loading AudioWorklet processors...');
       // ✅ FIX: Use engine's workletManager to load processors
       if (engine.workletManager) {
+        // Dynamic loading from EffectFactory + Sampler
         const processorConfigs = [
-          // ⚠️ REMOVED: UnifiedMixerWorklet - Replaced by MixerInsert system
-          { path: '/worklets/wasm-sampler-processor.js', name: 'wasm-sampler-processor' }, // ✅ WASM Sampler
-          { path: '/worklets/effects/compressor-processor.js', name: 'compressor-processor' },
-          { path: '/worklets/effects/saturator-processor.js', name: 'saturator-processor' },
-          { path: '/worklets/effects/multiband-eq-processor.js', name: 'multiband-eq-processor' },
-          { path: '/worklets/effects/modern-reverb-processor.js', name: 'modern-reverb-processor' },
-          { path: '/worklets/effects/modern-delay-processor.js', name: 'modern-delay-processor' },
+          { path: '/worklets/wasm-sampler-processor.js', name: 'wasm-sampler-processor' }, // Core Sampler
+          ...EffectFactory.getWorkletConfigs() // All Effects
         ];
 
         const results = await engine.workletManager.loadMultipleWorklets(processorConfigs);

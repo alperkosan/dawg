@@ -81,8 +81,10 @@ pub struct DelayLine {
 
 impl DelayLine {
     pub fn new(size: usize) -> DelayLine {
+        // Safety: Ensure buffer is never empty to prevent modulo-by-zero panics
+        let actual_size = size.max(16); 
         DelayLine {
-            buffer: vec![0.0; size],
+            buffer: vec![0.0; actual_size],
             index: 0,
         }
     }
@@ -97,12 +99,26 @@ impl DelayLine {
     }
 
     // Linear interpolation read
+    // Linear interpolation read with safety against underflow
     pub fn read_interpolated(&self, delay_samples: f32) -> f32 {
         let delay_int = delay_samples.floor() as usize;
         let delay_frac = delay_samples - delay_int as f32;
 
-        let idx1 = (self.index + self.buffer.len() - delay_int) % self.buffer.len();
-        let idx2 = (self.index + self.buffer.len() - delay_int - 1) % self.buffer.len();
+        let buf_len = self.buffer.len();
+        
+        // Safe modulo arithmetic for ring buffer
+        // We use % buf_len on the delay itself to ensure it's within range [0, buf_len)
+        let offset = delay_int % buf_len;
+        
+        // Calculate read index safely
+        let idx1 = if self.index >= offset {
+            self.index - offset
+        } else {
+            self.index + buf_len - offset
+        };
+        
+        // idx2 is idx1 - 1 (wrapping)
+        let idx2 = if idx1 == 0 { buf_len - 1 } else { idx1 - 1 };
 
         let s1 = self.buffer[idx1];
         let s2 = self.buffer[idx2];

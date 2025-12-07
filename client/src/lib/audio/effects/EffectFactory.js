@@ -415,11 +415,11 @@ export class EffectFactory {
 
     effect.id = data.id;
     effect.enabled = data.enabled ?? true;
-    
+
     // ✅ FIX: Support both 'parameters' and 'settings' field names
     // Mixer store uses 'settings', but some serialized data may use 'parameters'
     const parameters = data.parameters || data.settings;
-    
+
     // Only set parameters if they exist and are valid
     if (parameters && typeof parameters === 'object' && Object.keys(parameters).length > 0) {
       effect.setParametersState(parameters);
@@ -428,6 +428,17 @@ export class EffectFactory {
     }
 
     return effect;
+  }
+
+  /**
+   * Get worklet configurations for dynamic loading
+   * Returns array of { path, name } objects
+   */
+  static getWorkletConfigs() {
+    return Object.values(this.workletEffects).map(def => ({
+      path: `/worklets/effects/${def.workletName}.js`,
+      name: def.workletName
+    }));
   }
 }
 

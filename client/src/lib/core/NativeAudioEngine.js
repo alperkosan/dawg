@@ -31,6 +31,7 @@ import { mixerInsertManager } from './MixerInsertManager.js';
 import { LatencyCompensator } from './utils/LatencyCompensator.js';
 // ✅ WASM: Wasm Audio Engine Bridge
 import { wasmAudioEngine } from './WasmAudioEngine.js';
+import { UnifiedMixerNode } from './UnifiedMixerNode.js';
 
 export class NativeAudioEngine {
     constructor(callbacks = {}) {
@@ -49,6 +50,7 @@ export class NativeAudioEngine {
         this.setPlaybackState = callbacks.setPlaybackState || (() => { });
         this.setTransportPosition = callbacks.setTransportPosition || (() => { });
         this.onPatternChange = callbacks.onPatternChange || (() => { });
+        this.onMixerLevels = callbacks.onMixerLevels || (() => { });
 
         // =================== DİNAMİK AUDIO ROUTING ===================
 
@@ -97,9 +99,16 @@ export class NativeAudioEngine {
             bufferSize: 256,
             latencyHint: 'interactive',
             sampleRate: 48000,
+            sampleRate: 48000,
             maxPolyphony: 32
         };
 
+        // 🚀 WASM MIXER MODE
+        // Set to true to bypass WebAudio graph and use Rust/Wasm UnifiedMixer
+        this.useWasmMixer = true;
+        this.unifiedMixer = null;
+        this.channelAllocator = new Map(); // insertId -> channelIdx (0-31)
+        this.nextChannelIdx = 0;
     }
 
     // =================== INITIALIZATION ===================
@@ -196,6 +205,27 @@ export class NativeAudioEngine {
         await this._setupMasterAudioChain();
 
         // UnifiedMixer handles all channel routing automatically
+
+        // 4. ✅ WASM MIXER INITIALIZATION
+        if (this.useWasmMixer) {
+            logger.info(NAMESPACES.AUDIO, '🚀 Initializing UnifiedMixerNode (WASM Mode)...');
+            this.unifiedMixer = new UnifiedMixerNode(this.audioContext, 32);
+            await this.unifiedMixer.initialize();
+
+            // Connect Mixer Output to Master Bus Input (Pre-Effects)
+            // This ensures Wasm mix goes through Master Insert effects
+            this.unifiedMixer.connect(this.masterBusInput);
+
+            // Hook up Level Metering
+            this.unifiedMixer.onLevelsUpdate = (levels) => this._processWasmLevels(levels);
+
+            // ✅ SYNC: Link Transport to Wasm Engine (Shared Memory)
+            if (this.transport) {
+                this.transport.linkAudioEngine(this);
+            }
+
+            logger.info(NAMESPACES.AUDIO, '✅ UnifiedMixerNode Ready & Connected to Master');
+        }
 
         // 5. ✅ NEW: Initialize PlaybackManager
         this.playbackManager = new PlaybackManager(this);
@@ -676,7 +706,7 @@ export class NativeAudioEngine {
                 } else {
                     // Insert creation failed - schedule retry
                     logger.warn(NAMESPACES.AUDIO, `MixerInsert ${instrumentData.mixerTrackId} could not be created - will retry routing`);
-                    logger.debug(NAMESPACES.AUDIO, `Available inserts: ${Array.from(this.mixerInserts.keys()).join(', ')}`);
+                    logger.debug(NAMESES.AUDIO, `Available inserts: ${Array.from(this.mixerInserts.keys()).join(', ')}`);
                     this._retryRouting(instrumentData.id, instrumentData.mixerTrackId, 5, 200);
                 }
             } else {
@@ -774,6 +804,20 @@ export class NativeAudioEngine {
     // =================== MIXER CONTROLS (UnifiedMixer Only) ===================
 
     setChannelVolume(channelId, volume) {
+        // WASM Mode
+        if (this.useWasmMixer && this.unifiedMixer) {
+            const chIdx = this.channelAllocator.get(channelId);
+
+            if (chIdx !== undefined) {
+                this.unifiedMixer.setChannelParams(chIdx, { gain: volume });
+                return;
+            } else {
+                if (import.meta.env.DEV) {
+                    console.warn(`⚠️ Wasm Volume control failed: No channel for ${channelId}`);
+                }
+            }
+        }
+
         // ✅ FIX: Use new MixerInsert system instead of deprecated UnifiedMixer
         const insert = this.mixerInserts?.get(channelId);
         if (insert) {
@@ -785,24 +829,38 @@ export class NativeAudioEngine {
     }
 
     setChannelPan(channelId, pan) {
-        // ✅ FIX: Use new MixerInsert system instead of deprecated UnifiedMixer
+        // WASM Mode
+        if (this.useWasmMixer && this.unifiedMixer) {
+            const chIdx = this.channelAllocator.get(channelId);
+            if (chIdx !== undefined) {
+                this.unifiedMixer.setChannelParams(chIdx, { pan });
+                return;
+            }
+        }
+
+        // Legacy Mode
         const insert = this.mixerInserts?.get(channelId);
         if (insert) {
             insert.setPan(pan);
-        } else {
-            // Silently fail - insert may not exist yet (e.g., during deserialization)
-            // console.warn(`⚠️ MixerInsert not found for channel: ${channelId}`);
         }
     }
 
     setChannelMute(channelId, muted) {
         logger.debug(NAMESPACES.AUDIO, `setChannelMute: ${channelId}, muted: ${muted}`);
 
+        // WASM Mode
+        if (this.useWasmMixer && this.unifiedMixer) {
+            const chIdx = this.channelAllocator.get(channelId);
+            if (chIdx !== undefined) {
+                this.unifiedMixer.setChannelParams(chIdx, { mute: muted });
+                return;
+            }
+        }
+
+        // Legacy Mode
         const insert = this.mixerInserts.get(channelId);
         if (insert && typeof insert.setMute === 'function') {
             insert.setMute(muted);
-        } else {
-            console.warn(`⚠️ MixerInsert not found for channel: ${channelId}`);
         }
     }
 
@@ -953,10 +1011,32 @@ export class NativeAudioEngine {
 
         // Disconnect from ALL previous connections
         try {
-            instrument.output.disconnect();
-            console.log('✅ Disconnected from all previous outputs');
+            // If WASM mixer is active, disconnect from it
+            if (this.useWasmMixer && this.unifiedMixer && this.unifiedMixer.isInitialized) {
+                const oldInsertId = this.instrumentToInsert.get(instrumentId);
+                if (oldInsertId) {
+                    const oldChannelIdx = this.channelAllocator.get(oldInsertId);
+                    if (oldChannelIdx !== undefined) {
+                        const instOutput = instrument.workletNode || instrument.outputNode || instrument.output;
+                        if (instOutput) {
+                            this.unifiedMixer.disconnectFromChannel(instOutput, oldChannelIdx);
+                            if (import.meta.env.DEV) {
+                                console.log(`🔗 WASM Disconnect: ${instrumentId} from Channel ${oldChannelIdx} (${oldInsertId})`);
+                            }
+                        }
+                    }
+                }
+            }
+            // Disconnect from WebAudio graph (MixerInsert)
+            if (instrument.output) {
+                instrument.output.disconnect();
+                console.log('✅ Disconnected from all previous WebAudio outputs');
+            }
         } catch (e) {
             // May not be connected, ignore
+            if (import.meta.env.DEV) {
+                console.warn(`⚠️ Error during instrument ${instrumentId} disconnection:`, e.message);
+            }
         }
 
         // Reconnect using system-aware routing
@@ -1073,6 +1153,10 @@ export class NativeAudioEngine {
         console.log('═══════════════════════════════════════════════════');
 
         logger.debug(NAMESPACES.AUDIO, `Mixer System: ${this.mixerInserts.size} active inserts, Dynamic routing, unlimited channels`);
+        if (this.useWasmMixer) {
+            logger.debug(NAMESPACES.AUDIO, `WASM Mixer Active: ${this.unifiedMixer ? 'Initialized' : 'Not Initialized'}`);
+            logger.debug(NAMESPACES.AUDIO, `WASM Channel Allocator: ${JSON.stringify(Object.fromEntries(this.channelAllocator))}`);
+        }
 
         logger.debug(NAMESPACES.AUDIO, 'Instruments:');
         this.instruments.forEach((instrument, id) => {
@@ -1081,7 +1165,8 @@ export class NativeAudioEngine {
                 type: instrument.type,
                 hasOutput: !!instrument.output,
                 outputType: instrument.output?.constructor.name,
-                mixerInsert: insertId || 'not routed'
+                mixerInsert: insertId || 'not routed',
+                wasmChannel: this.useWasmMixer ? this.channelAllocator.get(insertId) : 'N/A'
             });
         });
 
@@ -1155,6 +1240,14 @@ export class NativeAudioEngine {
         this.instruments.clear();
 
         // ⚠️ REMOVED: UnifiedMixer disposal - Replaced by MixerInsert system
+        if (this.useWasmMixer && this.unifiedMixer) {
+            console.log('🧹 Disposing UnifiedMixerNode...');
+            this.unifiedMixer.dispose();
+            this.unifiedMixer = null;
+            this.channelAllocator.clear();
+            this.nextChannelIdx = 0;
+            console.log('✅ UnifiedMixerNode disposed');
+        }
 
         // 🎛️ CRITICAL: Dispose all MixerInserts (prevents memory leak)
         if (this.mixerInserts && this.mixerInserts.size > 0) {
@@ -1226,7 +1319,36 @@ export class NativeAudioEngine {
         const insert = new MixerInsert(this.audioContext, insertId, label);
 
         // Master bus'a bağla
-        insert.connectToMaster(this.masterBusInput);
+        // Only connect to master bus if not using WASM mixer
+        if (!this.useWasmMixer) {
+            insert.connectToMaster(this.masterBusInput);
+        } else {
+            // ✅ WASM MODE: Auto-connect every insert to Wasm Mixer
+            // This ensures Busses (Sends) are also mixed, even without instruments
+            if (this.unifiedMixer && this.unifiedMixer.isInitialized) {
+                let channelIdx = this.channelAllocator.get(insertId);
+
+                // Allocate channel if not exists
+                if (channelIdx === undefined) {
+                    if (this.nextChannelIdx < 32) {
+                        channelIdx = this.nextChannelIdx++;
+                        this.channelAllocator.set(insertId, channelIdx);
+                        console.log(`🎫 Allocated Channel ${channelIdx} for Insert/Bus ${insertId}`);
+                    } else {
+                        console.warn(`⚠️ No mixer channels available for ${insertId} (Max 32)`);
+                    }
+                }
+
+                // Connect if allocated
+                if (channelIdx !== undefined) {
+                    this.unifiedMixer.connectToChannel(insert.output, channelIdx);
+                    if (import.meta.env.DEV) {
+                        console.log(`🔗 Connected Insert ${insertId} to Wasm Channel ${channelIdx}`);
+                    }
+                }
+            }
+        }
+
 
         this.mixerInserts.set(insertId, insert);
 
@@ -1245,6 +1367,12 @@ export class NativeAudioEngine {
         const sourceInsert = this.mixerInserts.get(trackId);
         if (!sourceInsert) {
             console.error(`❌ MixerInsert ${trackId} not found for output routing`);
+            return;
+        }
+
+        // If WASM mixer is active, this routing is handled by UnifiedMixer
+        if (this.useWasmMixer) {
+            console.warn(`⚠️ setTrackOutput is not fully supported in WASM Mixer mode for direct insert routing. Use WASM mixer's internal routing if available.`);
             return;
         }
 
@@ -1301,11 +1429,23 @@ export class NativeAudioEngine {
             .map(([instId]) => instId);
 
         connectedInstruments.forEach(instId => {
-            this.removeInstrument(instId);
+            this.removeInstrument(instId); // This will also handle WASM mixer disconnection
         });
 
-        // Master bus'tan kes
-        insert.disconnectFromMaster(this.masterBusInput);
+        // If WASM mixer is active, deallocate channel
+        if (this.useWasmMixer && this.unifiedMixer && this.unifiedMixer.isInitialized) {
+            const channelIdx = this.channelAllocator.get(insertId);
+            if (channelIdx !== undefined) {
+                this.unifiedMixer.resetChannel(channelIdx); // Clear channel settings
+                this.channelAllocator.delete(insertId);
+                // Note: nextChannelIdx is not decremented to avoid re-using indices immediately
+                // This is fine as 32 channels is a generous limit.
+                console.log(`🎫 Deallocated WASM Channel ${channelIdx} for ${insertId}`);
+            }
+        } else {
+            // Master bus'tan kes (only if not using WASM mixer)
+            insert.disconnectFromMaster(this.masterBusInput);
+        }
 
         // Insert'i dispose et
         insert.dispose();
@@ -1352,9 +1492,10 @@ export class NativeAudioEngine {
             return;
         }
 
-        // Önceki bağlantıyı kes
+        // Previous connection handling
         const oldInsertId = this.instrumentToInsert.get(instrumentId);
         if (oldInsertId && oldInsertId !== insertId) {
+            // Disconnect from old WebAudio MixerInsert
             const oldInsert = this.mixerInserts.get(oldInsertId);
             if (oldInsert) {
                 try {
@@ -1362,22 +1503,80 @@ export class NativeAudioEngine {
                 } catch (error) {
                     // Ignore disconnect errors - might already be disconnected
                     if (import.meta.env.DEV) {
-                        console.warn(`⚠️ Error disconnecting from old insert ${oldInsertId}:`, error.message);
+                        console.warn(`⚠️ Error disconnecting from old WebAudio insert ${oldInsertId}:`, error.message);
+                    }
+                }
+            }
+            // Disconnect from old WASM Mixer channel if it was routed there
+            if (this.useWasmMixer && this.unifiedMixer && this.unifiedMixer.isInitialized) {
+                const oldChannelIdx = this.channelAllocator.get(oldInsertId);
+                if (oldChannelIdx !== undefined) {
+                    const instOutput = instrument.workletNode || instrument.outputNode || instrument.output;
+                    if (instOutput) {
+                        this.unifiedMixer.disconnectFromChannel(instOutput, oldChannelIdx);
+                        if (import.meta.env.DEV) {
+                            console.log(`🔗 WASM Disconnect: ${instrumentId} from Channel ${oldChannelIdx} (${oldInsertId})`);
+                        }
                     }
                 }
             }
         }
 
         // ✅ FIX: Check if already connected to this insert
-        if (oldInsertId === insertId) {
-            // Already routed correctly
+        // Only skip if not in Wasm mode, as re-routing might be needed to ensure WASM connection
+        if (oldInsertId === insertId && !this.useWasmMixer) {
+            // Already routed correctly (for WebAudio MixerInsert)
             if (import.meta.env.DEV) {
                 console.log(`⏭️ Instrument ${instrumentId} already routed to ${insertId}, skipping...`);
             }
             return;
         }
 
-        // Yeni bağlantı
+        // 🚀 WASM MIXER ROUTING
+        // 🚀 WASM MIXER ROUTING PREPARATION
+        // We allocate the channel index here, BUT we route through MixerInsert for plugins
+        let wasmChannelIdx = -1;
+        if (this.useWasmMixer && this.unifiedMixer && this.unifiedMixer.isInitialized) {
+            wasmChannelIdx = this.channelAllocator.get(insertId);
+            if (wasmChannelIdx === undefined) {
+                if (this.nextChannelIdx < 32) {
+                    wasmChannelIdx = this.nextChannelIdx++;
+                    this.channelAllocator.set(insertId, wasmChannelIdx);
+                    console.log(`🎫 Allocated Channel ${wasmChannelIdx} for ${insertId}`);
+                } else {
+                    console.warn(`⚠️ No mixer channels available for ${insertId} (Max 32)`);
+                    return; // Fail gracefully
+                }
+            }
+        }
+
+        // HYBRID ROUTING: Instrument -> MixerInsert (Effects) -> Wasm Mixer (Summing)
+        // We ALWAYS route through MixerInsert first to support plugins.
+
+        try {
+            const success = insert.connectInstrument(instrumentId, instrument.output);
+            if (success) {
+                this.instrumentToInsert.set(instrumentId, insertId);
+
+                // If Wasm Mixer is active, connect the INSERT OUTPUT to the Wasm Channel
+                if (wasmChannelIdx !== -1) {
+                    // Connect MixerInsert Output -> UnifiedMixer Channel Input
+                    // Note: We use insert.output (GainNode) which carries the processed signal
+                    this.unifiedMixer.connectToChannel(insert.output, wasmChannelIdx);
+
+                    if (import.meta.env.DEV) {
+                        console.log(`🔗 WASM Hybrid Route: ${instrumentId} -> Insert(${insertId}) -> Channel ${wasmChannelIdx}`);
+                    }
+                }
+
+                return;
+            }
+        } catch (err) {
+            console.error(`❌ Failed to connect ${instrumentId} to insert ${insertId}:`, err);
+        }
+
+        // FALLBACK: Legacy WebAudio MixerInsert Routing
+        // This will only be reached if useWasmMixer is false, or if WASM routing failed
         try {
             const success = insert.connectInstrument(instrumentId, instrument.output);
             if (success) {
@@ -1442,15 +1641,43 @@ export class NativeAudioEngine {
 
             // Both must exist and instrument must have output
             if (instrument?.output && insert) {
+                // Try WASM routing first
+                if (this.useWasmMixer && this.unifiedMixer && this.unifiedMixer.isInitialized) {
+                    let channelIdx = this.channelAllocator.get(mixerTrackId);
+                    if (channelIdx === undefined) {
+                        if (this.nextChannelIdx < 32) {
+                            channelIdx = this.nextChannelIdx++;
+                            this.channelAllocator.set(mixerTrackId, channelIdx);
+                            console.log(`🎫 Allocated Channel ${channelIdx} for ${mixerTrackId} during retry`);
+                        } else {
+                            console.warn(`⚠️ No mixer channels available for ${mixerTrackId} during retry`);
+                            // Fallback to WebAudio if WASM channels are full
+                            this.useWasmMixer = false; // Temporarily disable WASM for this route
+                            console.warn(`⚠️ Falling back to WebAudio routing for ${instrumentId} due to full WASM channels.`);
+                        }
+                    }
+
+                    if (this.useWasmMixer && channelIdx !== undefined) {
+                        const instOutput = instrument.workletNode || instrument.outputNode || instrument.output;
+                        if (instOutput) {
+                            this.unifiedMixer.connectToChannel(instOutput, channelIdx);
+                            this.instrumentToInsert.set(instrumentId, mixerTrackId);
+                            console.log(`✅ WASM Retry routing successful: ${instrumentId} → Channel ${channelIdx} (${mixerTrackId}) (attempt ${attempt})`);
+                            return;
+                        }
+                    }
+                }
+
+                // Fallback to WebAudio MixerInsert routing
                 try {
                     const success = insert.connectInstrument(instrumentId, instrument.output);
                     if (success) {
                         this.instrumentToInsert.set(instrumentId, mixerTrackId);
-                        console.log(`✅ Retry routing successful: ${instrumentId} → ${mixerTrackId} (attempt ${attempt})`);
+                        console.log(`✅ WebAudio Retry routing successful: ${instrumentId} → ${mixerTrackId} (attempt ${attempt})`);
                         return;
                     }
                 } catch (error) {
-                    console.warn(`⚠️ Retry routing attempt ${attempt} failed:`, error.message);
+                    console.warn(`⚠️ WebAudio Retry routing attempt ${attempt} failed:`, error.message);
                 }
             }
 
@@ -1476,6 +1703,47 @@ export class NativeAudioEngine {
      * @returns {string} Effect ID (audioEngineId)
      */
     async addEffectToInsert(insertId, effectType, settings = {}, storeEffectId = null) {
+        // 🚀 WASM MIXER EFFECT HANDLING
+        // 🚀 WASM MIXER EFFECT HANDLING
+        // HYBRID MODE: We bypass the native Wasm effect logic for now.
+        // Instead, we let the standard WebAudio "MixerInsert" handle the effects.
+        // Since MixerInsert output is routed to Wasm Mixer input, we get:
+        // Instrument -> WebAudio Effects -> Wasm Summing.
+        /*
+        if (this.useWasmMixer) {
+            const channelIdx = this.channelAllocator.get(insertId);
+
+            // Check if Wasm is ready
+            if (!this.unifiedMixer || !this.unifiedMixer.isInitialized) {
+                console.warn(`⏳ Wasm Mixer not ready yet, skipping effect: ${effectType} on ${insertId}`);
+                // Return dummy ID to prevent Store errors, but effect won't be added
+                return storeEffectId || `${insertId}-wasm-pending-${Date.now()}`;
+            }
+
+            if (channelIdx !== undefined) {
+                // Map Effect Type to Wasm Type ID
+                let wasmTypeId = -1;
+
+                // Currently only SimpleDelay (Type 0) is implemented in Rust plumbing
+                if (effectType.toLowerCase().includes('delay')) {
+                    wasmTypeId = 0;
+                }
+
+                if (wasmTypeId >= 0) {
+                    this.unifiedMixer.addChannelEffect(channelIdx, wasmTypeId);
+                    console.log(`✨ Added WASM Effect: ${effectType} (Type ${wasmTypeId}) to Channel ${channelIdx}`);
+
+                    // Return a dummy ID to satisfy UI Store
+                    return storeEffectId || `${insertId}-wasm-fx-${Date.now()}`;
+                } else {
+                    console.warn(`🚧 Effect ${effectType} not yet ported to Wasm. Skipping.`);
+                    // Return dummy ID so UI doesn't break, but no sound effect
+                    return storeEffectId || `${insertId}-wasm-skipped-${Date.now()}`;
+                }
+            }
+        }
+        */
+
         const insert = this.mixerInserts.get(insertId);
         if (!insert) {
             console.error(`❌ MixerInsert ${insertId} not found`);
@@ -1599,6 +1867,16 @@ export class NativeAudioEngine {
      * @param {number} gain - Gain değeri (0-1)
      */
     setInsertGain(insertId, gain) {
+        // WASM Mode
+        if (this.useWasmMixer && this.unifiedMixer) {
+            const chIdx = this.channelAllocator.get(insertId);
+            if (chIdx !== undefined) {
+                this.unifiedMixer.setChannelParams(chIdx, { gain });
+                return;
+            }
+        }
+
+        // Legacy Mode
         const insert = this.mixerInserts.get(insertId);
         if (insert) {
             insert.setGain(gain);
@@ -1611,6 +1889,16 @@ export class NativeAudioEngine {
      * @param {number} pan - Pan değeri (-1 to 1)
      */
     setInsertPan(insertId, pan) {
+        // WASM Mode
+        if (this.useWasmMixer && this.unifiedMixer) {
+            const chIdx = this.channelAllocator.get(insertId);
+            if (chIdx !== undefined) {
+                this.unifiedMixer.setChannelParams(chIdx, { pan });
+                return;
+            }
+        }
+
+        // Legacy Mode
         const insert = this.mixerInserts.get(insertId);
         if (insert) {
             insert.setPan(pan);
@@ -1802,7 +2090,27 @@ export class NativeAudioEngine {
      */
     routeInsertToMaster(sourceId) {
         const sourceInsert = this.mixerInserts.get(sourceId);
-        if (sourceInsert && this.masterGain) {
+        if (!sourceInsert) return;
+
+        // ✅ WASM SUPPORT: Reconnect to UnifiedMixer channel instead of Master Gain
+        if (this.useWasmMixer && this.unifiedMixer && this.unifiedMixer.isInitialized) {
+            const channelIdx = this.channelAllocator.get(sourceId);
+            if (channelIdx !== undefined) {
+                // Reconnect to Wasm Mixer Channel
+                // This ensures signal goes back to Wasm summing
+                sourceInsert.disconnectFromMaster(this.masterGain); // Ensure clean slate
+                const wasmChannelInput = this.unifiedMixer.getChannelInput(channelIdx);
+                if (wasmChannelInput) {
+                    sourceInsert.output.connect(wasmChannelInput);
+                    // Also connect analyzer if needed (handled by insert)
+                    console.log(`🔗 Re-routed ${sourceId} to Wasm Mix Bus (Channel ${channelIdx})`);
+                    return;
+                }
+            }
+        }
+
+        // Standard WebAudio Fallback
+        if (this.masterGain) {
             sourceInsert.connectToMaster(this.masterGain);
         }
     }
@@ -1822,9 +2130,23 @@ export class NativeAudioEngine {
         // Insert'ten disconnect
         const insertId = this.instrumentToInsert.get(instrumentId);
         if (insertId) {
+            // Disconnect from WebAudio MixerInsert
             const insert = this.mixerInserts.get(insertId);
             if (insert) {
                 insert.disconnectInstrument(instrumentId, instrument.output);
+            }
+            // Disconnect from WASM Mixer if applicable
+            if (this.useWasmMixer && this.unifiedMixer && this.unifiedMixer.isInitialized) {
+                const channelIdx = this.channelAllocator.get(insertId);
+                if (channelIdx !== undefined) {
+                    const instOutput = instrument.workletNode || instrument.outputNode || instrument.output;
+                    if (instOutput) {
+                        this.unifiedMixer.disconnectFromChannel(instOutput, channelIdx);
+                        if (import.meta.env.DEV) {
+                            console.log(`🔗 WASM Disconnect: ${instrumentId} from Channel ${channelIdx} (${insertId})`);
+                        }
+                    }
+                }
             }
             this.instrumentToInsert.delete(instrumentId);
         }
@@ -1857,6 +2179,34 @@ export class NativeAudioEngine {
         });
 
         console.log('✅ All audio resources disposed');
+    }
+
+    // =================== ✅ NEW: WASM LEVEL METERING ===================
+    _processWasmLevels(levels) {
+        if (!this.onMixerLevels) return;
+
+        // Map: trackId (insertId) -> { left, right }
+        const mappedLevels = {};
+
+        // Iterate over allocated channels to map raw indices to Track IDs
+        // channelAllocator: Map<insertId, channelIdx>
+        for (const [insertId, channelIdx] of this.channelAllocator.entries()) {
+            const lIdx = channelIdx * 2;
+            const rIdx = channelIdx * 2 + 1;
+
+            if (rIdx < levels.length) {
+                const peakL = levels[lIdx];
+                const peakR = levels[rIdx];
+
+                // Optimization: Only include if signal > epsilon
+                if (peakL > 0.0001 || peakR > 0.0001) {
+                    mappedLevels[insertId] = { left: peakL, right: peakR };
+                }
+            }
+        }
+
+        // Dispatch to UI
+        this.onMixerLevels(mappedLevels);
     }
 
 }

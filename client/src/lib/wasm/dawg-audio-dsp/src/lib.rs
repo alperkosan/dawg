@@ -9,6 +9,147 @@ use crate::graph::AudioNode;
 
 use wasm_bindgen::prelude::*;
 
+// Raw import with valid module path to appease browser loader
+#[link(wasm_import_module = "./dawg-utils.js")]
+extern "C" {
+    fn host_log(ptr: *const u8, len: usize);
+}
+
+// Helper for logging (Nuclear Option)
+fn worker_log(s: &str) {
+    unsafe { host_log(s.as_ptr(), s.len()); }
+}
+
+// Enable better error messages in Wasm panics
+#[wasm_bindgen]
+pub fn set_panic_hook() {
+    #[cfg(feature = "console_error_panic_hook")]
+    console_error_panic_hook::set_once();
+}
+
+// ============================================
+// TRANSPORT SYSTEM (Sample-Accurate Clock)
+// ============================================
+
+#[wasm_bindgen]
+#[derive(Clone, Copy)]
+pub struct Transport {
+    pub is_playing: bool,
+    pub sample_rate: f32,
+    pub bpm: f32,
+    pub current_sample: u64, // Absolute sample position
+    pub ppq: u32,            // Pulses per quarter note (usually 96)
+    
+    // Derived values for quick calculation
+    samples_per_beat: f32,
+    samples_per_tick: f32,
+}
+
+#[wasm_bindgen]
+impl Transport {
+    #[wasm_bindgen(constructor)]
+    pub fn new(sample_rate: f32) -> Transport {
+        let mut t = Transport {
+            is_playing: false,
+            sample_rate,
+            bpm: 120.0,
+            current_sample: 0,
+            ppq: 96,
+            samples_per_beat: 0.0,
+            samples_per_tick: 0.0,
+        };
+        t.recalculate_timing();
+        t
+    }
+
+    pub fn set_bpm(&mut self, bpm: f32) {
+        if bpm > 0.0 {
+            self.bpm = bpm;
+            self.recalculate_timing();
+        }
+    }
+
+    pub fn set_sample_rate(&mut self, sample_rate: f32) {
+        if sample_rate > 0.0 {
+            self.sample_rate = sample_rate;
+            self.recalculate_timing();
+        }
+    }
+
+    pub fn play(&mut self) {
+        self.is_playing = true;
+    }
+
+    pub fn stop(&mut self) {
+        self.is_playing = false;
+        self.current_sample = 0;
+    }
+
+    pub fn pause(&mut self) {
+        self.is_playing = false;
+    }
+
+    /// Advance time by N samples
+    pub fn advance(&mut self, samples: u64) {
+        if self.is_playing {
+            self.current_sample += samples;
+        }
+    }
+
+    /// Set absolute position (seek)
+    pub fn set_position_samples(&mut self, samples: u64) {
+        self.current_sample = samples;
+    }
+
+    // --- Queries ---
+
+    pub fn get_current_time(&self) -> f64 {
+        self.current_sample as f64 / self.sample_rate as f64
+    }
+
+    pub fn get_current_beat(&self) -> f64 {
+        self.current_sample as f64 / self.samples_per_beat as f64
+    }
+
+    pub fn get_current_tick(&self) -> f64 {
+        self.current_sample as f64 / self.samples_per_tick as f64
+    }
+
+    // --- Internals ---
+
+    fn recalculate_timing(&mut self) {
+        // Samples per minute = sample_rate * 60
+        // Samples per beat = (sample_rate * 60) / bpm
+        self.samples_per_beat = (self.sample_rate * 60.0) / self.bpm;
+        self.samples_per_tick = self.samples_per_beat / self.ppq as f32;
+    }
+}
+
+// ============================================
+// SHARED MEMORY STATE (SAB Layout)
+// ============================================
+
+// SAB Layout (Int32Array / Float32Array views)
+// We use a single buffer, but interpret parts as Int32 (State) and Float32 (Params)
+// Index 0-15: Control Flags (Int32)
+// Index 16-31: Parameters (Float32)
+
+#[wasm_bindgen]
+pub struct SharedAudioState;
+
+#[wasm_bindgen]
+impl SharedAudioState {
+    // --- Int32 Indices ---
+    pub fn idx_play_state() -> usize { 0 }       // 0: Stop, 1: Play, 2: Pause
+    pub fn idx_msg_counter() -> usize { 1 }      // Increment to signal new command
+    
+    // --- Float32 Indices ---
+    pub fn idx_bpm() -> usize { 16 }             // Tempo
+    pub fn idx_position_samples() -> usize { 17 } // Current Position in Samples (High precision handled via u64 in Transport, but sync via float for UI)
+    pub fn idx_position_ticks() -> usize { 18 }   // Current Position in Ticks
+    pub fn idx_sample_rate() -> usize { 19 }     
+}
+
 // ============================================
 // BIQUAD FILTER (3-band EQ core)
 // ============================================
@@ -380,6 +521,10 @@ struct ChannelStrip {
     // Scratch buffers for effect processing
     temp_l: Vec<f32>,
     temp_r: Vec<f32>,
+
+    // Metering
+    peak_l: f32,
+    peak_r: f32,
 }
 
 impl ChannelStrip {
@@ -400,6 +545,8 @@ impl ChannelStrip {
             inserts: Vec::new(),
             temp_l: vec![0.0; 1024], // Pre-allocate enough for standard block size
             temp_r: vec![0.0; 1024],
+            peak_l: 0.0,
+            peak_r: 0.0,
         }
     }
 
@@ -432,23 +579,21 @@ impl ChannelStrip {
             if self.temp_l.len() < len { self.temp_l.resize(len, 0.0); }
             if self.temp_r.len() < len { self.temp_r.resize(len, 0.0); }
 
-            for insert in &mut self.inserts {
-                // Input is current output
-                let inputs = [&output_l[0..len], &output_r[0..len]];
-                
-                // Output is temp buffer
-                // We must split borrows carefully. 
-                // Or simpler: inserts write to temp, then we copy back.
-                // AudioNode::process takes &mut [&mut [f32]].
-                
-                {
-                    let mut outputs = [&mut self.temp_l[0..len], &mut self.temp_r[0..len]];
-                    insert.process(&inputs, &mut outputs);
-                }
-                
-                // Copy result back to output_l/r
-                output_l[0..len].copy_from_slice(&self.temp_l[0..len]);
-                output_r[0..len].copy_from_slice(&self.temp_r[0..len]);
+            for (_i, _insert) in self.inserts.iter_mut().enumerate() {
+                 // BYPASS INSERTS AS REQUESTED BY USER
+                 /*
+                 // Input is current output
+                 let inputs = [&output_l[0..len], &output_r[0..len]];
+                 
+                 {
+                     let mut outputs = [&mut self.temp_l[0..len], &mut self.temp_r[0..len]];
+                     insert.process(&inputs, &mut outputs);
+                 }
+                 
+                 // Copy result back to output_l/r
+                 output_l[0..len].copy_from_slice(&self.temp_l[0..len]);
+                 output_r[0..len].copy_from_slice(&self.temp_r[0..len]);
+                 */
             }
         }
 
@@ -490,10 +635,23 @@ impl ChannelStrip {
         let final_gain_l = combined_gain * pan_gain_l;
         let final_gain_r = combined_gain * pan_gain_r;
         
+        // Calculate Peaks for Metering
+        let mut max_l: f32 = 0.0;
+        let mut max_r: f32 = 0.0;
+        
         for i in 0..len {
             output_l[i] *= final_gain_l;
             output_r[i] *= final_gain_r;
+            
+            let abs_l = output_l[i].abs();
+            let abs_r = output_r[i].abs();
+            if abs_l > max_l { max_l = abs_l; }
+            if abs_r > max_r { max_r = abs_r; }
         }
+        
+        // Store recent peak (decay logic can be done in JS, here we capture block peak)
+        self.peak_l = max_l;
+        self.peak_r = max_r;
     }
 
     /// Process compression (same as WasmAudioProcessor)
@@ -529,6 +687,14 @@ impl ChannelStrip {
     }
 }
 
+#[wasm_bindgen]
+pub fn allocate_f32_array(size: usize) -> *mut f32 {
+    let mut vec = Vec::with_capacity(size);
+    let ptr = vec.as_mut_ptr();
+    std::mem::forget(vec); // Prevent deallocation
+    ptr
+}
+
 // ============================================
 // UNIFIED MIXER PROCESSOR (MegaMixer)
 // ============================================
@@ -537,6 +703,12 @@ impl ChannelStrip {
 pub struct UnifiedMixerProcessor {
     channels: Vec<ChannelStrip>,
     sample_rate: f32,
+    
+    // ✅ NEW: Sample-Accurate Transport
+    transport: Transport,
+    
+    // ✅ NEW: Shared State Pointer (SAB)
+    shared_state_ptr: *mut f32,
 
     // Global master compression
     master_comp_gain: f32,
@@ -544,6 +716,12 @@ pub struct UnifiedMixerProcessor {
 
     // Solo state tracking
     any_solo_active: bool,
+    
+    // Pre-allocated temp buffers (prevent allocation in hot path)
+    temp_l: Vec<f32>,
+    temp_r: Vec<f32>,
+    in_l: Vec<f32>,
+    in_r: Vec<f32>,
 }
 
 #[wasm_bindgen]
@@ -558,9 +736,54 @@ impl UnifiedMixerProcessor {
         UnifiedMixerProcessor {
             channels,
             sample_rate,
+            transport: Transport::new(sample_rate), // ✅ Initialize Transport
+            shared_state_ptr: std::ptr::null_mut(), // ✅ Initialize null pointer
             master_comp_gain: 1.0,
             master_comp_threshold_linear: 1.0,
             any_solo_active: false,
+            // Pre-allocate temp buffers (128 samples max)
+            temp_l: vec![0.0; 128],
+            temp_r: vec![0.0; 128],
+            in_l: vec![0.0; 128],
+            in_r: vec![0.0; 128],
+        }
+    }
+
+    /// Set the shared state buffer pointer (SAB)
+    pub fn set_shared_state_buffer(&mut self, ptr: *mut f32) {
+        self.shared_state_ptr = ptr;
+    }
+
+    /// Sync Transport state with Shared Array Buffer
+    /// Reads commands (int) and params (float). Writes position.
+    fn sync_state(&mut self) {
+        if self.shared_state_ptr.is_null() { return; }
+
+        unsafe {
+            // Re-interpret pointer for mixed Int/Float access
+            let int_view = self.shared_state_ptr as *mut i32;
+            let float_view = self.shared_state_ptr;
+
+            // --- READ FROM JS (Commands) ---
+            // Check play state (Index 0)
+            let play_state = *int_view.add(SharedAudioState::idx_play_state());
+            match play_state {
+                0 => { if self.transport.is_playing { self.transport.stop(); } },
+                1 => { if !self.transport.is_playing { self.transport.play(); } },
+                2 => { if self.transport.is_playing { self.transport.pause(); } },
+                _ => {}
+            }
+
+            // Check BPM (Index 16)
+            let bpm = *float_view.add(SharedAudioState::idx_bpm());
+            if bpm > 0.0 && (bpm - self.transport.bpm).abs() > 0.001 {
+                self.transport.set_bpm(bpm);
+            }
+            
+            // --- WRITE TO JS (Position) ---
+            // Write current position info for UI
+            *float_view.add(SharedAudioState::idx_position_samples()) = self.transport.current_sample as f32;
+            *float_view.add(SharedAudioState::idx_position_ticks()) = self.transport.get_current_tick() as f32;
         }
     }
 
@@ -569,56 +792,92 @@ impl UnifiedMixerProcessor {
     /// # Arguments
     /// * `interleaved_inputs` - Flat array: [ch0_L_s0, ch0_R_s0, ch1_L_s0, ch1_R_s0, ..., ch0_L_s1, ch0_R_s1, ...]
     /// * `output_l` - Left channel output buffer
-    /// * `output_r` - Right channel output buffer
-    /// * `block_size` - Number of samples per block
-    /// * `num_channels` - Number of input channels
     #[wasm_bindgen]
     pub fn process_mix(
         &mut self,
-        interleaved_inputs: &[f32],
-        output_l: &mut [f32],
-        output_r: &mut [f32],
+        interleaved_ptr: *const f32,
+        input_len: usize,
+        out_l_ptr: *mut f32,
+        out_r_ptr: *mut f32,
         block_size: usize,
-        num_channels: usize,
     ) {
-        // Clear main outputs
+        // worker_log("PM: Raw Ptr Start");
+        
+        // 1. Sync State with JS (Shared Memory)
+        self.sync_state();
+
+        // SAFETY: We trust the JS caller to provide valid pointers allocated via allocate_f32_array
+        let interleaved_inputs = unsafe { std::slice::from_raw_parts(interleaved_ptr, input_len) };
+        let output_l = unsafe { std::slice::from_raw_parts_mut(out_l_ptr, block_size) };
+        let output_r = unsafe { std::slice::from_raw_parts_mut(out_r_ptr, block_size) };
+
+        // Zero outputs
         for x in output_l.iter_mut() { *x = 0.0; }
         for x in output_r.iter_mut() { *x = 0.0; }
         
-        // Block processing buffers
-        let mut temp_l = vec![0.0; block_size];
-        let mut temp_r = vec![0.0; block_size];
+        // worker_log("PM: Zeroed");
 
-        for ch_idx in 0..num_channels {
-            if ch_idx >= self.channels.len() { break; }
-            
-            // 1. De-interleave
-            for i in 0..block_size {
-                let input_idx = i * num_channels * 2 + ch_idx * 2;
-                if input_idx + 1 < interleaved_inputs.len() {
-                    temp_l[i] = interleaved_inputs[input_idx];
-                    temp_r[i] = interleaved_inputs[input_idx+1];
-                } else {
-                    temp_l[i] = 0.0;
-                    temp_r[i] = 0.0;
+        let num_channels = self.channels.len();
+        
+        // Resize temp buffers if needed
+        if self.temp_l.len() < block_size {
+             self.temp_l.resize(block_size, 0.0);
+             self.temp_r.resize(block_size, 0.0);
+             self.in_l.resize(block_size, 0.0);
+             self.in_r.resize(block_size, 0.0);
+        }
+
+        // Check global solo state
+        self.any_solo_active = self.channels.iter().any(|c| c.solo);
+
+        // Mix loop
+        for (i, channel) in self.channels.iter_mut().enumerate() {
+            // Check Mute/Solo logic
+            if channel.mute { continue; }
+            if self.any_solo_active && !channel.solo { continue; }
+
+            // De-interleave input for this channel
+            // Input format: [S0_C0_L, S0_C0_R, S0_C1_L, S0_C1_R, ...]
+            // Index for Sample s, Channel c: s * num_channels * 2 + c * 2
+            let mut has_signal = false;
+            for s in 0..block_size {
+                let idx = s * num_channels * 2 + i * 2;
+                if idx + 1 < interleaved_inputs.len() {
+                    let l = interleaved_inputs[idx];
+                    let r = interleaved_inputs[idx+1];
+                    self.in_l[s] = l;
+                    self.in_r[s] = r;
+                    if l.abs() > 0.0001 || r.abs() > 0.0001 { has_signal = true; }
                 }
             }
-            
-            // 2. Process Channel (Clone temp since we need separate input/output slices conceptually)
-            // But process_block copies input to output first, so we can pass &temp, &temp... NO.
-            // process_block reads input, writes output. If they are same slice, Rust borrow checker cries.
-            // So we clone input.
-            let in_l = temp_l.clone();
-            let in_r = temp_r.clone();
-            
-            self.channels[ch_idx].process_block(&in_l, &in_r, &mut temp_l, &mut temp_r, self.sample_rate);
-            
-            // 3. Sum
-            for i in 0..block_size {
-                output_l[i] += temp_l[i];
-                output_r[i] += temp_r[i];
+
+            // Optimization: Skip empty channels
+            if !has_signal { continue; }
+
+            // Process Channel Strip (EQ, Comp, Gain, Pan)
+            // Note: We use in_l/in_r as source and mix directly into output_l/output_r?
+            // ChannelStrip process uses in-place or separate? separate.
+            // Using temp_l/temp_r as destination for channel strip
+            channel.process_block(
+                &self.in_l[0..block_size], 
+                &self.in_r[0..block_size], 
+                &mut self.temp_l[0..block_size], 
+                &mut self.temp_r[0..block_size], 
+                self.sample_rate
+            );
+
+            // Sum to Master Bus
+            for s in 0..block_size {
+                output_l[s] += self.temp_l[s];
+                output_r[s] += self.temp_r[s];
             }
         }
+
+        // Master Compression / Limiting (Optional - future)
+        // ...
+
+        // 2. Advance Sample Clock
+        self.transport.advance(block_size as u64);
     }
 
     /// Update channel parameters
@@ -708,6 +967,22 @@ impl UnifiedMixerProcessor {
         
         self.channels[channel_idx].inserts.push(effect);
         Ok(())
+    }
+
+    /// fast polling of levels
+    #[wasm_bindgen]
+    pub fn get_channel_levels(&mut self, levels_ptr: *mut f32, len: usize) {
+        let levels = unsafe { std::slice::from_raw_parts_mut(levels_ptr, len) };
+        for (i, channel) in self.channels.iter_mut().enumerate() {
+            if i * 2 + 1 < len {
+                levels[i * 2] = channel.peak_l;
+                levels[i * 2 + 1] = channel.peak_r;
+                
+                // Decay happens in JS, but we reset here to capture *new* peaks next block
+                channel.peak_l = 0.0;
+                channel.peak_r = 0.0;
+            }
+        }
     }
 }
 

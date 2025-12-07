@@ -679,6 +679,40 @@ export const useMixerStore = create((set, get) => ({
     });
   },
 
+  // ✅ NEW: Batch update for atomic render (Wasm integration)
+  batchUpdateLevels: (levelsMap) => {
+    // Only update if enough time has passed (throttle)
+    const now = Date.now();
+    if (now - get()._levelMeterUpdateTimestamp < get()._levelMeterUpdateInterval) {
+      return;
+    }
+
+    // Create new map
+    const newLevelMeterData = new Map(get().levelMeterData);
+    let hasChanges = false;
+
+    // levelsMap is Object { trackId: { left, right } }
+    for (const [trackId, data] of Object.entries(levelsMap)) {
+      newLevelMeterData.set(trackId, {
+        left: data.left,
+        right: data.right,
+        peak: Math.max(data.left, data.right)
+      });
+      hasChanges = true;
+    }
+
+    if (hasChanges) {
+      set({
+        levelMeterData: newLevelMeterData,
+        _levelMeterUpdateTimestamp: now
+      });
+    }
+  },
+
+  resetLevelMeters: () => {
+    set({ levelMeterData: new Map() });
+  },
+
   handleSendChange: (trackId, sendParam, value) => {
     set(state => ({
       mixerTracks: state.mixerTracks.map(track => {
