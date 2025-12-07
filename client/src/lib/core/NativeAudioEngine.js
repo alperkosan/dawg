@@ -631,6 +631,12 @@ export class NativeAudioEngine {
             const isForgeSynth = instrumentData.type === 'synth'; // Legacy special case
 
             if (!isForgeSynth) {
+                // Check if instrument already exists and clean it up first
+                if (this.instruments.has(instrumentData.id)) {
+                    logger.warn(NAMESPACES.AUDIO, `Duplicate instrument creation for ${instrumentData.id} - cleaning up old instance`);
+                    this.removeInstrument(instrumentData.id);
+                }
+
                 // Use new centralized instrument system for Sample (Single/Multi) and VASynth
                 logger.debug(NAMESPACES.AUDIO, `Creating ${instrumentData.name} using InstrumentFactory...`);
 
