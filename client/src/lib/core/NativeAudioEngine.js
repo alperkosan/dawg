@@ -1963,6 +1963,25 @@ export class NativeAudioEngine {
         }
     }
 
+    /**
+     * ✅ REFRESH CONNECTIONS: Force reconnect all inserts to Wasm Mixer
+     * Fixes race conditions where inserts created before Wasm init are disconnected
+     */
+    refreshAllMixerConnections() {
+        if (!this.useWasmMixer || !this.unifiedMixer || !this.unifiedMixer.isInitialized) {
+            return;
+        }
+
+        console.log('🔄 Refreshing all mixer connections...');
+        this.mixerInserts.forEach((insert, insertId) => {
+            if (insertId === 'master') return;
+
+            // Re-route to master (which connects to Wasm channel)
+            this.routeInsertToMaster(insertId);
+        });
+        console.log('✅ Refreshed routing for all mixer tracks');
+    }
+
     // =================== 📤 SEND ROUTING ===================
 
     /**

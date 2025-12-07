@@ -1155,6 +1155,11 @@ export class AudioContextService {
 
       console.log(`✅ Synced ${mixerTracks.length} mixer tracks to audio engine`);
 
+      // ✅ FIX: Force refresh connections to handle race conditions (e.g. Kick/Track-1)
+      if (typeof this.audioEngine.refreshAllMixerConnections === 'function') {
+        this.audioEngine.refreshAllMixerConnections();
+      }
+
       // ✅ CRITICAL FIX: Sync existing instruments to mixer inserts
       await this._syncInstrumentsToMixerInserts();
     } catch (error) {
