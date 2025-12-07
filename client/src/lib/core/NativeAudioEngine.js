@@ -1019,7 +1019,7 @@ export class NativeAudioEngine {
                     if (oldChannelIdx !== undefined) {
                         const instOutput = instrument.workletNode || instrument.outputNode || instrument.output;
                         if (instOutput) {
-                            this.unifiedMixer.disconnectFromChannel(instOutput, oldChannelIdx);
+                            this.unifiedMixer.disconnectChannel(oldChannelIdx);
                             if (import.meta.env.DEV) {
                                 console.log(`🔗 WASM Disconnect: ${instrumentId} from Channel ${oldChannelIdx} (${oldInsertId})`);
                             }
@@ -1513,7 +1513,7 @@ export class NativeAudioEngine {
                 if (oldChannelIdx !== undefined) {
                     const instOutput = instrument.workletNode || instrument.outputNode || instrument.output;
                     if (instOutput) {
-                        this.unifiedMixer.disconnectFromChannel(instOutput, oldChannelIdx);
+                        this.unifiedMixer.disconnectChannel(oldChannelIdx);
                         if (import.meta.env.DEV) {
                             console.log(`🔗 WASM Disconnect: ${instrumentId} from Channel ${oldChannelIdx} (${oldInsertId})`);
                         }

@@ -1288,10 +1288,12 @@ export class AudioContextService {
             // Check if instrument is actually connected to this insert
             const isConnected = insert.instruments?.has(instrument.id);
             if (isConnected) {
-              // Physical connection exists, skip routing
-              console.log(`⏭️ Instrument ${instrument.id} (${instrument.name}) already routed and connected to ${instrument.mixerTrackId}, skipping...`);
-              skippedCount++;
-              needsRouting = false;
+              // ✅ FORCE ROUTING CHECK: Even if physically connected to Insert, 
+              // we must ensure the Insert is connected to the Wasm Mixer.
+              // The previous optimization skipped this, causing silent tracks.
+              // We log it but proceed to routeInstrumentWithRetry which handles Wasm checks safely.
+              // console.log(`ℹ️ Instrument ${instrument.id} physically connected to ${instrument.mixerTrackId}, but verifying Wasm route...`);
+              needsRouting = true;
             } else {
               // Map entry exists but physical connection is missing - need to reconnect
               console.warn(`⚠️ Instrument ${instrument.id} has map entry for ${instrument.mixerTrackId} but no physical connection - reconnecting...`);
