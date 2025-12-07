@@ -1239,6 +1239,7 @@ export class AudioContextService {
             if (audioEngineInstrument) {
               createdCount++;
               console.log(`✅ Created instrument ${instrument.id} (${instrument.name}) in audio engine`);
+              continue; // ✅ FIX: Newly created instruments are already routed, skip redundant check
             } else {
               console.error(`❌ Failed to create instrument ${instrument.id} - still not found after creation`);
               errorCount++;
