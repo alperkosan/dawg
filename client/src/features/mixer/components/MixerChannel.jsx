@@ -10,8 +10,9 @@
  * - Send Accept Button (target-based routing)
  */
 
-import React, { useState, useRef, useEffect, memo } from 'react';
+import React, { useState, useRef, useEffect, memo, useCallback } from 'react';
 import { useMixerStore } from '@/store/useMixerStore';
+import { MixerService } from '@/lib/services/MixerService';
 import { Volume2, VolumeX, Headphones, Radio } from 'lucide-react';
 import { Fader } from '@/components/controls/base/Fader';
 import { Knob } from '@/components/controls/base/Knob';
@@ -35,11 +36,9 @@ const MixerChannelComponent = ({
   const colorPickerRef = useRef(null);
   const colorBarRef = useRef(null);
 
-  // ✅ Throttle refs for performance
-  const volumeThrottleRef = useRef(null);
-  const panThrottleRef = useRef(null);
-  const lastVolumeRef = useRef(null);
-  const lastPanRef = useRef(null);
+  // ✅ PROFESSIONAL DAW ARCHITECTURE:
+  // Direct audio manipulation + immediate store updates
+  // Smart subscription (detectStructuralChanges) prevents full mixer sync on parameter changes
 
   const {
     handleMixerParamChange,
@@ -53,35 +52,25 @@ const MixerChannelComponent = ({
     monoChannels
   } = useMixerStore();
 
-  // ✅ Throttled parameter update (16ms = 60fps max)
-  const handleThrottledParamChange = (trackId, param, value) => {
-    const throttleRef = param === 'volume' ? volumeThrottleRef : panThrottleRef;
-    const lastValueRef = param === 'volume' ? lastVolumeRef : lastPanRef;
+  // ✅ Direct audio change (zero latency) + immediate store update (UI reactivity)
+  const handleVolumeChange = useCallback((value) => {
+    // 1. IMMEDIATE: Direct audio manipulation (zero latency)
+    MixerService.setTrackVolume(track.id, value);
 
-    // Store the latest value
-    lastValueRef.current = value;
+    // 2. IMMEDIATE: Store update for UI reactivity
+    // Smart subscription (detectStructuralChanges) ensures this won't trigger full mixer sync
+    handleMixerParamChange(track.id, 'volume', value);
+  }, [track.id, handleMixerParamChange]);
 
-    // Skip if already scheduled
-    if (throttleRef.current) return;
+  const handlePanChange = useCallback((normalizedPan) => {
+    // 1. IMMEDIATE: Direct audio manipulation (zero latency)
+    MixerService.setTrackPan(track.id, normalizedPan);
 
-    // Schedule update
-    throttleRef.current = requestAnimationFrame(() => {
-      handleMixerParamChange(trackId, param, lastValueRef.current);
-      throttleRef.current = null;
-    });
-  };
+    // 2. IMMEDIATE: Store update for UI reactivity
+    handleMixerParamChange(track.id, 'pan', normalizedPan);
+  }, [track.id, handleMixerParamChange]);
 
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (volumeThrottleRef.current) {
-        cancelAnimationFrame(volumeThrottleRef.current);
-      }
-      if (panThrottleRef.current) {
-        cancelAnimationFrame(panThrottleRef.current);
-      }
-    };
-  }, []);
+
 
   // Close color picker when clicking outside
   useEffect(() => {
@@ -276,7 +265,7 @@ const MixerChannelComponent = ({
           min={-60}
           max={12}
           defaultValue={0}
-          onChange={(value) => handleThrottledParamChange(track.id, 'volume', value)}
+          onChange={handleVolumeChange}
           height={120}
           width={30}
           variant="mixer"
@@ -301,7 +290,7 @@ const MixerChannelComponent = ({
           onChange={(value) => {
             // Convert display value (-100 to 100) to Web Audio API range (-1 to 1)
             const normalizedPan = value / 100;
-            handleThrottledParamChange(track.id, 'pan', normalizedPan);
+            handlePanChange(normalizedPan);
           }}
           size={36}
           unit=""

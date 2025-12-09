@@ -372,132 +372,104 @@ export class ProjectSerializer {
 
   /**
    * Deserialize project data and restore to stores
+   * Uses batch mode to prevent redundant sync operations
    */
   static async deserialize(projectData) {
     if (!projectData || typeof projectData !== 'object') {
       throw new Error('Invalid project data');
     }
 
-    // ✅ FIX: Don't call clearAll() here - it's already called in handleProjectSelect
-    // This prevents double-clearing and ensures clean state
+    // ✅ OPTIMIZATION: Enable batch mode to suppress redundant syncs
+    // All sync requests during restore will be queued and executed once at the end
+    const syncService = EngineStateSyncService.getInstance();
+    syncService.setBatchMode(true);
 
-    // Restore to stores in correct order:
-    // 1. Mixer tracks FIRST (instruments need mixer inserts to route to)
-    // 2. Preload samples BEFORE creating instruments (instruments need buffers)
-    // 3. Instruments (need mixer inserts and buffers to exist)
-    // 4. Patterns (need instruments to exist)
-    // 5. Arrangement (needs patterns and tracks)
-
-    if (projectData.mixer) {
-      await this.deserializeMixer(projectData.mixer);
-    }
-
-    // ✅ CRITICAL FIX: Sync mixer tracks to AudioEngine after deserialization
-    // This ensures mixer inserts exist before instruments are created
     try {
-      await EngineStateSyncService.getInstance().syncMixerTracks();
-    } catch (e) {
-      console.warn('⚠️ Sync mixer tracks failed (ignoring if engine not ready):', e);
-    }
+      // Restore to stores in correct order:
+      // 1. Mixer tracks FIRST (instruments need mixer inserts to route to)
+      // 2. Preload samples BEFORE creating instruments (instruments need buffers)
+      // 3. Instruments (need mixer inserts and buffers to exist)
+      // 4. Patterns (need instruments to exist)
+      // 5. Arrangement (needs patterns and tracks)
 
-    if (projectData.audio_assets) {
-      this.deserializeAudioAssets(projectData.audio_assets);
-    }
+      if (projectData.mixer) {
+        await this.deserializeMixer(projectData.mixer);
+      }
 
-    // ✅ CRITICAL FIX: Preload samples BEFORE creating instruments
-    // This ensures buffers are available when instruments are created
-    if (projectData.instruments) {
-      await this._preloadProjectSamples(projectData);
-    }
+      if (projectData.audio_assets) {
+        this.deserializeAudioAssets(projectData.audio_assets);
+      }
 
-    if (projectData.instruments) {
-      this.deserializeInstruments(projectData.instruments);
-    }
+      // ✅ CRITICAL: Preload samples BEFORE creating instruments
+      if (projectData.instruments) {
+        await this._preloadProjectSamples(projectData);
+      }
 
-    // ✅ CRITICAL FIX: Sync instruments to mixer inserts AFTER deserializing instruments
-    // This ensures instruments are properly routed to their mixer tracks
-    try {
-      await EngineStateSyncService.getInstance().syncInstrumentsToMixerInserts();
-    } catch (e) {
-      console.warn('⚠️ Sync instruments failed:', e);
-    }
+      if (projectData.instruments) {
+        this.deserializeInstruments(projectData.instruments);
+      }
 
-    // ✅ CRITICAL FIX: Re-sync mixer tracks after instruments are loaded
-    // This ensures send connections are properly established with all inserts ready
-    try {
-      await EngineStateSyncService.getInstance().syncMixerTracks();
-    } catch (e) {
-      console.warn('⚠️ Resync mixer tracks failed:', e);
-    }
+      if (projectData.patterns) {
+        this.deserializePatterns(projectData.patterns);
+      }
 
-    if (projectData.patterns) {
-      this.deserializePatterns(projectData.patterns);
-    }
+      this.deserializePatternOrder(projectData.pattern_order, projectData.active_pattern_id);
 
-    // ✅ FIX: Always restore pattern order and active pattern
-    // If not provided, will default to first pattern
-    this.deserializePatternOrder(projectData.pattern_order, projectData.active_pattern_id);
+      if (projectData.arrangement) {
+        this.deserializeArrangement(projectData.arrangement);
+      }
 
-    if (projectData.arrangement) {
-      this.deserializeArrangement(projectData.arrangement);
-    }
+      if (projectData.timeline) {
+        this.deserializeTimeline(projectData.timeline);
+      }
 
-    if (projectData.timeline) {
-      this.deserializeTimeline(projectData.timeline);
-    }
+      if (projectData.workspace) {
+        this.deserializeWorkspace(projectData.workspace);
+      }
 
-    if (projectData.workspace) {
-      this.deserializeWorkspace(projectData.workspace);
-    }
+      // Restore playback settings
+      if (projectData.metadata) {
+        const playbackStore = usePlaybackStore.getState();
 
-    // Restore playback settings
-    if (projectData.metadata) {
-      const playbackStore = usePlaybackStore.getState();
+        if (projectData.metadata.bpm) {
+          const restoredBpm = Number(projectData.metadata.bpm) || 120;
+          usePlaybackStore.setState({ bpm: restoredBpm });
 
-      if (projectData.metadata.bpm) {
-        const restoredBpm = Number(projectData.metadata.bpm) || 120;
+          try {
+            const engine = AudioEngineGlobal.get();
+            if (engine && typeof engine.setBPM === 'function') {
+              engine.setBPM(restoredBpm);
+            }
 
-        // ✅ Update Zustand state immediately so helper utilities read the correct BPM
-        usePlaybackStore.setState({ bpm: restoredBpm });
-
-        try {
-          // Always push BPM to the currently active audio engine
-          const engine = AudioEngineGlobal.get();
-          if (engine && typeof engine.setBPM === 'function') {
-            engine.setBPM(restoredBpm);
+            const controller = playbackStore._controller;
+            if (controller && controller.audioEngine === engine && typeof controller.setBPM === 'function') {
+              controller.setBPM(restoredBpm);
+            }
+          } catch (error) {
+            console.warn('⚠️ Failed to sync BPM to audio engine:', error);
           }
+        }
 
-          // Only route through PlaybackController when it's bound to the same engine
-          const controller = playbackStore._controller;
-          if (controller && controller.audioEngine === engine && typeof controller.setBPM === 'function') {
-            controller.setBPM(restoredBpm);
+        if (projectData.metadata.time_signature) {
+          console.log(`✅ Restored BPM: ${projectData.metadata.bpm}, Time Signature: ${projectData.metadata.time_signature}`);
+        }
+
+        if (projectData.metadata.scale) {
+          const { root, type } = projectData.metadata.scale;
+          if (root !== undefined && type) {
+            getScaleSystem().setScale(root, type);
+            console.log(`✅ Restored Scale: ${type} (Root: ${root})`);
           }
-        } catch (error) {
-          console.warn('⚠️ Failed to sync BPM to audio engine during project restore:', error);
         }
       }
 
-      if (projectData.metadata.time_signature) {
-        console.log(`✅ Restored BPM: ${projectData.metadata.bpm}, Time Signature: ${projectData.metadata.time_signature}`);
-      }
+      console.log('✅ Project deserialization complete');
+      return projectData;
 
-      // ✅ NEW: Restore scale state
-      if (projectData.metadata.scale) {
-        const { root, type } = projectData.metadata.scale;
-        if (root !== undefined && type) {
-          getScaleSystem().setScale(root, type);
-          console.log(`✅ Restored Scale: ${type} (Root: ${root})`);
-        }
-      }
+    } finally {
+      // ✅ OPTIMIZATION: Disable batch mode - triggers single sync for all queued operations
+      syncService.setBatchMode(false);
     }
-
-    console.log('✅ Project deserialization complete');
-
-    // ✅ FIX: Sample preloading is now done BEFORE instrument creation
-    // This ensures buffers are available when instruments are created
-    // No need to preload again here
-
-    return projectData;
   }
 
   /**
@@ -902,10 +874,10 @@ export class ProjectSerializer {
         // ✅ FIX: Restore mute state to audio engine after instrument is created
         if (savedMuteState) {
           // Use dynamic import to avoid circular dependencies
-          import('../services/AudioContextService.js').then(({ AudioContextService }) => {
+          import('../services/InstrumentService.js').then(({ InstrumentService }) => {
             // Wait a bit for instrument to be fully created in audio engine
             setTimeout(() => {
-              AudioContextService.setInstrumentMute(instrumentData.id, savedMuteState);
+              InstrumentService.setMute(instrumentData.id, savedMuteState);
               console.log(`🔇 Restored mute state for instrument ${instrumentData.name}: ${savedMuteState}`);
             }, 100);
           }).catch(err => {

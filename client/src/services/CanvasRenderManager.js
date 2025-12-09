@@ -173,6 +173,10 @@ class CanvasRenderManager {
       avgFrameTime: 0,
       maxFrameTime: 0
     };
+
+    // Optimization: Cache sorted tasks
+    this.sortedTasksCache = [];
+    this.tasksDirty = false;
   }
 
   /**
@@ -203,6 +207,7 @@ class CanvasRenderManager {
 
     const task = new RendererTask(id, callback, priority, throttle);
     this.tasks.set(id, task);
+    this.tasksDirty = true; // Mark for resorting
 
     // Start RAF loop if not running
     this.start();
@@ -218,6 +223,7 @@ class CanvasRenderManager {
     const task = this.tasks.get(id);
     if (task) {
       this.tasks.delete(id);
+      this.tasksDirty = true; // Mark for resorting
       console.log(`🗑️ Unregistered renderer: ${id}`);
 
       // Stop RAF if no more tasks
@@ -244,6 +250,7 @@ class CanvasRenderManager {
     const task = this.tasks.get(id);
     if (task) {
       task.priority = priority;
+      this.tasksDirty = true; // Mark for resorting
     }
   }
 
@@ -297,12 +304,16 @@ class CanvasRenderManager {
     const frameStart = now;
 
     // Get tasks sorted by priority (high to low)
-    const sortedTasks = Array.from(this.tasks.values())
-      .sort((a, b) => b.priority - a.priority);
+    // ✅ OPTIMIZATION: Only resort when tasks change
+    if (this.tasksDirty || this.sortedTasksCache.length !== this.tasks.size) {
+      this.sortedTasksCache = Array.from(this.tasks.values())
+        .sort((a, b) => b.priority - a.priority);
+      this.tasksDirty = false;
+    }
 
     // Render each task that's ready
     let rendered = 0;
-    for (const task of sortedTasks) {
+    for (const task of this.sortedTasksCache) {
       if (task.shouldRender(now)) {
         task.render(now);
         rendered++;
@@ -442,6 +453,8 @@ class CanvasRenderManager {
   cleanup() {
     this.stop();
     this.tasks.clear();
+    this.sortedTasksCache = [];
+    this.tasksDirty = false;
     this.canvasPool.clear();
     this.resetStats();
     console.log('🧹 Canvas Render Manager cleaned up');

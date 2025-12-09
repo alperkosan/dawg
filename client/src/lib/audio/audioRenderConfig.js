@@ -6,6 +6,7 @@
  */
 
 import { AudioContextService } from '../services/AudioContextService';
+import { AudioEngineGlobal } from '../core/AudioEngineGlobal';
 
 /**
  * Get current BPM from transport or project settings
@@ -13,7 +14,7 @@ import { AudioContextService } from '../services/AudioContextService';
  */
 export function getCurrentBPM() {
   try {
-    const audioEngine = AudioContextService.getAudioEngine();
+    const audioEngine = AudioEngineGlobal.get();
     if (audioEngine?.transport?.bpm) {
       return audioEngine.transport.bpm;
     }
@@ -29,7 +30,7 @@ export function getCurrentBPM() {
  */
 export function getCurrentSampleRate() {
   try {
-    const audioEngine = AudioContextService.getAudioEngine();
+    const audioEngine = AudioEngineGlobal.get();
     if (audioEngine?.audioContext?.sampleRate) {
       return audioEngine.audioContext.sampleRate;
     }

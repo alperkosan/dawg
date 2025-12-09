@@ -11,6 +11,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { AudioContextService } from '@/lib/services/AudioContextService';
+import { AudioEngineGlobal } from '@/lib/core/AudioEngineGlobal';
 import { audioAssetManager } from '@/lib/audio/AudioAssetManager';
 import './SampleEditor.css';
 
@@ -32,7 +33,7 @@ export function SampleEditor({ clip, onClose, onUpdate }) {
       }
 
       // Get available mixer channels
-      const audioEngine = AudioContextService.getAudioEngine();
+      const audioEngine = AudioEngineGlobal.get();
       if (audioEngine) {
         const channels = Array.from(audioEngine.mixerChannels.entries()).map(([id, channel]) => ({
           id,

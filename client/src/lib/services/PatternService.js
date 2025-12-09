@@ -4,6 +4,7 @@
 import { useArrangementStore } from '@/store/useArrangementStore';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
 import { AudioContextService } from './AudioContextService';
+import { AudioEngineGlobal } from '../core/AudioEngineGlobal';
 import { NativeTimeUtils } from '../utils/NativeTimeUtils';
 import { calculatePatternLoopLength, analyzePatternDensity } from '../utils/patternUtils';
 import { v4 as uuidv4 } from 'uuid';
@@ -12,7 +13,7 @@ import { v4 as uuidv4 } from 'uuid';
  * Enhanced Pattern Service for managing patterns and arrangement with Native Audio Engine
  */
 export class PatternService {
-  
+
   /**
    * Clears all notes from a pattern
    * @param {string} patternId - ID of pattern to clear
@@ -21,7 +22,7 @@ export class PatternService {
   static clearPattern(patternId) {
     const { patterns } = useArrangementStore.getState();
     const pattern = patterns[patternId];
-    
+
     if (!pattern) {
       console.warn(`⚠️ Pattern not found: ${patternId}`);
       return false;
@@ -46,14 +47,14 @@ export class PatternService {
     });
 
     // Update audio engine
-    const engine = AudioContextService.getAudioEngine();
+    const engine = AudioEngineGlobal.get();
     if (engine) {
       engine.setActivePattern(patternId);
     }
 
     // Reschedule if this is the active pattern and we're playing
     if (patternId === useArrangementStore.getState().activePatternId &&
-        usePlaybackStore.getState().playbackState === 'playing') {
+      usePlaybackStore.getState().playbackState === 'playing') {
       engine?.reschedule();
     }
 
@@ -71,25 +72,25 @@ export class PatternService {
   static quantizePattern(patternId, gridValue = '16n', strength = 1.0) {
     const { patterns } = useArrangementStore.getState();
     const pattern = patterns[patternId];
-    
+
     if (!pattern) {
       console.warn(`⚠️ Pattern not found: ${patternId}`);
       return false;
     }
 
     const currentBPM = usePlaybackStore.getState().bpm;
-    const gridStep = NativeTimeUtils.parseTime(gridValue, currentBPM) / 
-                     NativeTimeUtils.parseTime('16n', currentBPM);
+    const gridStep = NativeTimeUtils.parseTime(gridValue, currentBPM) /
+      NativeTimeUtils.parseTime('16n', currentBPM);
 
     const quantizedData = {};
-    
+
     Object.entries(pattern.data).forEach(([instrumentId, notes]) => {
       if (Array.isArray(notes)) {
         quantizedData[instrumentId] = notes.map(note => {
           const originalTime = note.time || 0;
           const quantizedTime = Math.round(originalTime / gridStep) * gridStep;
           const finalTime = originalTime + (quantizedTime - originalTime) * strength;
-          
+
           return {
             ...note,
             time: Math.max(0, finalTime)
@@ -113,14 +114,14 @@ export class PatternService {
     });
 
     // Update audio engine
-    const engine = AudioContextService.getAudioEngine();
+    const engine = AudioEngineGlobal.get();
     if (engine) {
       engine.setActivePattern(patternId);
     }
 
     // Reschedule if needed
     if (patternId === useArrangementStore.getState().activePatternId &&
-        usePlaybackStore.getState().playbackState === 'playing') {
+      usePlaybackStore.getState().playbackState === 'playing') {
       engine?.reschedule();
     }
 
@@ -136,7 +137,7 @@ export class PatternService {
   static analyzePattern(patternId) {
     const { patterns } = useArrangementStore.getState();
     const pattern = patterns[patternId];
-    
+
     if (!pattern) {
       console.warn(`⚠️ Pattern not found: ${patternId}`);
       return null;
@@ -144,15 +145,15 @@ export class PatternService {
 
     const analysis = analyzePatternDensity(pattern);
     const calculatedLength = calculatePatternLoopLength(pattern);
-    
+
     return {
       ...analysis,
       calculatedLength,
       actualLength: pattern.length || calculatedLength,
       isEmpty: analysis.totalNotes === 0,
       instrumentsWithNotes: Object.keys(pattern.data).filter(
-        instrumentId => Array.isArray(pattern.data[instrumentId]) && 
-                       pattern.data[instrumentId].length > 0
+        instrumentId => Array.isArray(pattern.data[instrumentId]) &&
+          pattern.data[instrumentId].length > 0
       ),
       created: pattern.created,
       modified: pattern.modified
@@ -167,26 +168,26 @@ export class PatternService {
   static optimizePattern(patternId) {
     const { patterns } = useArrangementStore.getState();
     const pattern = patterns[patternId];
-    
+
     if (!pattern) {
       console.warn(`⚠️ Pattern not found: ${patternId}`);
       return false;
     }
 
     const optimizedData = {};
-    
+
     Object.entries(pattern.data).forEach(([instrumentId, notes]) => {
       if (Array.isArray(notes) && notes.length > 0) {
         // Filter out invalid notes and sort by time
         const validNotes = notes
-          .filter(note => 
-            note && 
-            typeof note.time === 'number' && 
+          .filter(note =>
+            note &&
+            typeof note.time === 'number' &&
             note.time >= 0 &&
             note.pitch
           )
           .sort((a, b) => (a.time || 0) - (b.time || 0));
-        
+
         if (validNotes.length > 0) {
           optimizedData[instrumentId] = validNotes;
         }
@@ -206,7 +207,7 @@ export class PatternService {
     });
 
     // Update audio engine
-    const engine = AudioContextService.getAudioEngine();
+    const engine = AudioEngineGlobal.get();
     if (engine) {
       engine.setActivePattern(patternId);
     }
@@ -224,7 +225,7 @@ export class PatternService {
    */
   static mergePatterns(patternIds, newName = 'Merged Pattern', mergeMode = 'sequence') {
     const { patterns } = useArrangementStore.getState();
-    
+
     if (!Array.isArray(patternIds) || patternIds.length < 2) {
       console.warn('⚠️ At least 2 patterns required for merging');
       return null;
@@ -246,10 +247,10 @@ export class PatternService {
         sourcePatterns.forEach((pattern, index) => {
           const patternLength = calculatePatternLoopLength(pattern);
           const timeOffset = totalLength;
-          
+
           Object.entries(pattern.data).forEach(([instrumentId, notes]) => {
             if (!mergedData[instrumentId]) mergedData[instrumentId] = [];
-            
+
             if (Array.isArray(notes)) {
               const offsetNotes = notes.map(note => ({
                 ...note,
@@ -258,7 +259,7 @@ export class PatternService {
               mergedData[instrumentId].push(...offsetNotes);
             }
           });
-          
+
           totalLength += patternLength;
         });
         break;
@@ -268,7 +269,7 @@ export class PatternService {
         sourcePatterns.forEach(pattern => {
           Object.entries(pattern.data).forEach(([instrumentId, notes]) => {
             if (!mergedData[instrumentId]) mergedData[instrumentId] = [];
-            
+
             if (Array.isArray(notes)) {
               mergedData[instrumentId].push(...notes);
             }
@@ -281,26 +282,26 @@ export class PatternService {
         // Interleave patterns bar by bar
         const maxLength = Math.max(...sourcePatterns.map(p => calculatePatternLoopLength(p)));
         const barLength = 16; // 16 steps per bar
-        
+
         for (let bar = 0; bar < Math.ceil(maxLength / barLength); bar++) {
           const patternIndex = bar % sourcePatterns.length;
           const pattern = sourcePatterns[patternIndex];
           const timeOffset = bar * barLength;
-          
+
           Object.entries(pattern.data).forEach(([instrumentId, notes]) => {
             if (!mergedData[instrumentId]) mergedData[instrumentId] = [];
-            
+
             if (Array.isArray(notes)) {
               const barNotes = notes.filter(note => {
                 const noteTime = note.time || 0;
                 return noteTime >= 0 && noteTime < barLength;
               });
-              
+
               const offsetNotes = barNotes.map(note => ({
                 ...note,
                 time: (note.time || 0) + timeOffset
               }));
-              
+
               mergedData[instrumentId].push(...offsetNotes);
             }
           });
@@ -333,7 +334,7 @@ export class PatternService {
     });
 
     // Add to audio engine
-    const engine = AudioContextService.getAudioEngine();
+    const engine = AudioEngineGlobal.get();
     if (engine) {
       engine.setActivePattern(mergedId);
     }
@@ -351,7 +352,7 @@ export class PatternService {
   static exportPattern(patternId, format = 'json') {
     const { patterns } = useArrangementStore.getState();
     const pattern = patterns[patternId];
-    
+
     if (!pattern) {
       console.warn(`⚠️ Pattern not found: ${patternId}`);
       return null;
@@ -400,7 +401,7 @@ export class PatternService {
 
       // Create new pattern
       const importedPattern = this.createNewPattern(name);
-      
+
       // Update with imported data
       if (patternData.data) {
         useArrangementStore.setState(state => ({
@@ -416,7 +417,7 @@ export class PatternService {
         }));
 
         // Update audio engine
-        const engine = AudioContextService.getAudioEngine();
+        const engine = AudioEngineGlobal.get();
         if (engine) {
           engine.setActivePattern(importedPattern.id);
         }
@@ -437,7 +438,7 @@ export class PatternService {
    */
   static getPatternStats() {
     const { patterns } = useArrangementStore.getState();
-    
+
     const stats = {
       total: Object.keys(patterns).length,
       totalNotes: 0,
@@ -449,7 +450,7 @@ export class PatternService {
     };
 
     const patternArray = Object.values(patterns);
-    
+
     if (patternArray.length === 0) {
       return stats;
     }
@@ -462,28 +463,28 @@ export class PatternService {
       // Analyze each pattern
       const analysis = analyzePatternDensity(pattern);
       stats.totalNotes += analysis.totalNotes;
-      
+
       const length = calculatePatternLoopLength(pattern);
       totalLength += length;
-      
+
       // Density distribution
       const density = analysis.density;
       stats.densityDistribution[density] = (stats.densityDistribution[density] || 0) + 1;
-      
+
       // Instrument usage
       Object.keys(pattern.data).forEach(instrumentId => {
-        if (pattern.data[instrumentId] && Array.isArray(pattern.data[instrumentId]) && 
-            pattern.data[instrumentId].length > 0) {
+        if (pattern.data[instrumentId] && Array.isArray(pattern.data[instrumentId]) &&
+          pattern.data[instrumentId].length > 0) {
           stats.instrumentUsage[instrumentId] = (stats.instrumentUsage[instrumentId] || 0) + 1;
         }
       });
-      
+
       // Timestamps
       if (pattern.created < oldestTime) {
         oldestTime = pattern.created;
         stats.oldestPattern = pattern.id;
       }
-      
+
       if (pattern.modified > newestTime) {
         newestTime = pattern.modified;
         stats.newestPattern = pattern.id;
@@ -503,7 +504,7 @@ export class PatternService {
   static validateAndFixPattern(patternId) {
     const { patterns } = useArrangementStore.getState();
     const pattern = patterns[patternId];
-    
+
     if (!pattern) {
       return { isValid: false, errors: ['Pattern not found'] };
     }
@@ -534,7 +535,7 @@ export class PatternService {
 
         // Fix note properties
         const fixedNote = { ...note };
-        
+
         if (typeof note.time !== 'number' || note.time < 0) {
           fixedNote.time = 0;
           issues.push(`Invalid time for note in instrument ${instrumentId}`);
@@ -582,7 +583,7 @@ export class PatternService {
       });
 
       // Update audio engine
-      const engine = AudioContextService.getAudioEngine();
+      const engine = AudioEngineGlobal.get();
       if (engine) {
         engine.setActivePattern(patternId);
       }
@@ -603,7 +604,7 @@ export class PatternService {
    * @param {boolean} shouldReschedule - Whether to reschedule playback
    */
   static updateNotesForActivePattern(instrumentId, newNotes, shouldReschedule = true) {
-    const engine = AudioContextService.getAudioEngine();
+    const engine = AudioEngineGlobal.get();
     const { activePatternId, updatePatternNotes } = useArrangementStore.getState();
 
     if (!activePatternId) {
@@ -613,18 +614,18 @@ export class PatternService {
 
     // 1. Update state
     updatePatternNotes(activePatternId, instrumentId, newNotes);
-    
+
     // 2. Update audio engine pattern data
     if (engine) {
       engine.setActivePattern(activePatternId);
     }
-    
+
     // 3. Update loop settings if pattern length changed
     const playbackStore = usePlaybackStore.getState();
     if (playbackStore.isAutoLoop) {
       playbackStore.updateLoopLength();
     }
-    
+
     // 4. Reschedule if playing and requested
     if (shouldReschedule && playbackStore.playbackState === 'playing') {
       engine?.reschedule();
@@ -661,7 +662,7 @@ export class PatternService {
     });
 
     // Add to audio engine
-    const engine = AudioContextService.getAudioEngine();
+    const engine = AudioEngineGlobal.get();
     if (engine) {
       engine.setActivePattern(patternId);
     }
@@ -679,7 +680,7 @@ export class PatternService {
   static duplicatePattern(sourcePatternId, newName = null) {
     const { patterns, patternOrder } = useArrangementStore.getState();
     const sourcePattern = patterns[sourcePatternId];
-    
+
     if (!sourcePattern) {
       console.warn(`⚠️ Source pattern not found: ${sourcePatternId}`);
       return null;
@@ -687,7 +688,7 @@ export class PatternService {
 
     const duplicatedId = `pattern-${uuidv4()}`;
     const finalName = newName || `${sourcePattern.name} Copy`;
-    
+
     // Deep copy the pattern data
     const duplicatedPattern = {
       id: duplicatedId,
@@ -708,7 +709,7 @@ export class PatternService {
     });
 
     // Add to audio engine
-    const engine = AudioContextService.getAudioEngine();
+    const engine = AudioEngineGlobal.get();
     if (engine) {
       engine.setActivePattern(duplicatedId);
     }
@@ -724,7 +725,7 @@ export class PatternService {
    */
   static deletePattern(patternId) {
     const { patterns, patternOrder, activePatternId } = useArrangementStore.getState();
-    
+
     if (!patterns[patternId]) {
       console.warn(`⚠️ Pattern not found: ${patternId}`);
       return false;
@@ -747,7 +748,7 @@ export class PatternService {
     // Update stores
     const newPatterns = { ...patterns };
     delete newPatterns[patternId];
-    
+
     useArrangementStore.setState({
       patterns: newPatterns,
       patternOrder: patternOrder.filter(id => id !== patternId),
@@ -755,7 +756,7 @@ export class PatternService {
     });
 
     // Remove from audio engine
-    const engine = AudioContextService.getAudioEngine();
+    const engine = AudioEngineGlobal.get();
     if (engine) {
       engine.setActivePattern(newActivePatternId);
     }
@@ -771,7 +772,7 @@ export class PatternService {
    */
   static setActivePattern(patternId) {
     const { patterns } = useArrangementStore.getState();
-    
+
     if (!patterns[patternId]) {
       console.warn(`⚠️ Pattern not found: ${patternId}`);
       return false;
@@ -781,7 +782,7 @@ export class PatternService {
     useArrangementStore.setState({ activePatternId: patternId });
 
     // Update audio engine
-    const engine = AudioContextService.getAudioEngine();
+    const engine = AudioEngineGlobal.get();
     if (engine) {
       engine.setActivePattern(patternId);
     }

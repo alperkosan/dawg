@@ -3,6 +3,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { useArrangementStore } from '@/store/useArrangementStore';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
 import { PatternService } from '@/lib/services/PatternService';
+import { InstrumentService } from '@/lib/services/InstrumentService';
 import { AudioContextService } from '@/lib/services/AudioContextService';
 import { pianoRollUtils } from '@/lib/utils/pianoRollUtils';
 import { commandManager } from '@/lib/commands/CommandManager';
@@ -81,7 +82,7 @@ export const usePianoRoll = (instrumentId) => {
   const updateNote = useCallback((noteId, updates) => {
     const currentNotes = notesRef.current;
     const noteIndex = currentNotes.findIndex(note => note.id === noteId);
-    
+
     if (noteIndex === -1) return;
 
     const updatedNotes = [...currentNotes];
@@ -123,7 +124,7 @@ export const usePianoRoll = (instrumentId) => {
     }
 
     // Play note
-    AudioContextService.auditionNoteOn(instrumentId, pitch, velocity);
+    InstrumentService.auditionNoteOn(instrumentId, pitch, velocity);
 
     // Schedule note off
     previewTimeoutRef.current = setTimeout(() => {
@@ -176,11 +177,11 @@ export const usePianoRoll = (instrumentId) => {
   const zoom = useCallback((factor, centerX, centerY) => {
     const newZoomLevel = pianoRollUtils.clamp(zoomLevel * factor, 0.25, 4);
     setZoomLevel(newZoomLevel);
-    
+
     // Adjust viewport to zoom around center point
     const deltaX = (centerX - viewPort.scrollX) * (factor - 1);
     const deltaY = (centerY - viewPort.scrollY) * (factor - 1);
-    
+
     setViewPort(prev => ({
       scrollX: prev.scrollX - deltaX,
       scrollY: prev.scrollY - deltaY
@@ -201,7 +202,7 @@ export const usePianoRoll = (instrumentId) => {
     if (isPlaying && currentStep) {
       const playheadX = currentStep * 20 * zoomLevel; // 20px per step base
       const viewportWidth = 800; // Adjust to your piano roll width
-      
+
       if (playheadX < viewPort.scrollX || playheadX > viewPort.scrollX + viewportWidth) {
         setViewPort(prev => ({
           ...prev,
@@ -242,7 +243,7 @@ export const usePianoRoll = (instrumentId) => {
   const duplicateSelectedNotes = useCallback(() => {
     const currentNotes = notesRef.current;
     const notesToDuplicate = currentNotes.filter(note => selectedNotes.has(note.id));
-    
+
     const duplicatedNotes = notesToDuplicate.map(note => ({
       ...note,
       id: pianoRollUtils.generateNoteId(),
@@ -327,7 +328,7 @@ export const usePianoRoll = (instrumentId) => {
     selectedNotes,
     isRecording,
     isPlaying,
-    
+
     // Grid & View
     gridSnap,
     zoomLevel,
@@ -335,33 +336,33 @@ export const usePianoRoll = (instrumentId) => {
     setGridSize,
     zoom,
     scrollTo,
-    
+
     // Note operations
     addNote,
     deleteNote,
     updateNote,
     selectNotes,
     clearSelection,
-    
+
     // Audio
     previewNote,
     stopPreview,
-    
+
     // Recording
     startRecording,
     stopRecording,
     recordNote,
-    
+
     // Playback
     jumpToStep,
     currentStep,
     bpm,
-    
+
     // Batch operations
     deleteSelectedNotes,
     quantizeSelectedNotes,
     duplicateSelectedNotes,
-    
+
     // Utils
     calculateNotePosition: (note) => pianoRollUtils.calculateNotePosition(note, viewPort, 20 * zoomLevel),
     getMidiFromY: (y) => 127 - Math.floor((y + viewPort.scrollY) / 12),

@@ -7,6 +7,7 @@
 import { useEffect, useCallback, useState, useMemo } from 'react';
 import { getPreviewManager } from '@/lib/audio/preview';
 import { AudioContextService } from '@/lib/services/AudioContextService';
+import { AudioEngineGlobal } from '@/lib/core/AudioEngineGlobal';
 import useInstrumentEditorStore from '../../../../store/useInstrumentEditorStore';
 import { Slider } from '@/components/controls/base/Slider';
 import { WaveformWorkbench } from '@/features/sample_editor_v3/components/WaveformWorkbench';
@@ -93,7 +94,7 @@ const DrumSamplerEditor = ({ instrumentData }) => {
 
     const loadAudio = async () => {
       try {
-        const audioEngine = AudioContextService.getAudioEngine();
+        const audioEngine = AudioEngineGlobal.get();
         if (!audioEngine?.audioContext) return;
 
         const response = await fetch(sampleUrl);
@@ -112,7 +113,7 @@ const DrumSamplerEditor = ({ instrumentData }) => {
 
   // Setup PreviewManager with current instrument
   useEffect(() => {
-    const audioEngine = AudioContextService.getAudioEngine();
+    const audioEngine = AudioEngineGlobal.get();
     if (audioEngine?.audioContext && instrumentData) {
       // ✅ FX CHAIN: Pass audioEngine to PreviewManager for mixer routing
       const previewManager = getPreviewManager(audioEngine.audioContext, audioEngine);
@@ -125,7 +126,7 @@ const DrumSamplerEditor = ({ instrumentData }) => {
   // Without this, playback instrument uses stale/default values until user changes something
   /* Note: Parameter changes are already synced via handleParameterChange, so we only need to sync on mount
   useEffect(() => {
-    const audioEngine = AudioContextService.getAudioEngine();
+    const audioEngine = AudioEngineGlobal.get();
     if (!audioEngine || !instrumentData?.id) return;
 
     const instrument = audioEngine.instruments.get(instrumentData.id);
@@ -166,7 +167,7 @@ const DrumSamplerEditor = ({ instrumentData }) => {
 
   // ✅ SYNC BUFFER FX: Update audio engine when destructive edits (Reverse/Normalize) change
   useEffect(() => {
-    const audioEngine = AudioContextService.getAudioEngine();
+    const audioEngine = AudioEngineGlobal.get();
     if (!audioEngine || !instrumentData.id || !audioBuffer) return;
 
     const instrument = audioEngine.instruments.get(instrumentData.id);
@@ -214,7 +215,7 @@ const DrumSamplerEditor = ({ instrumentData }) => {
     const payload = { [paramName]: value };
 
     // Update audio engine in real-time
-    const audioEngine = AudioContextService.getAudioEngine();
+    const audioEngine = AudioEngineGlobal.get();
     if (audioEngine && instrumentData.id) {
       const instrument = audioEngine.instruments.get(instrumentData.id);
       if (instrument && typeof instrument.updateParameters === 'function') {

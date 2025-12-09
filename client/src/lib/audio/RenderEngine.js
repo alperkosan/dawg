@@ -6,6 +6,7 @@
  */
 
 import { AudioContextService } from '../services/AudioContextService';
+import { AudioEngineGlobal } from '../core/AudioEngineGlobal';
 import {
   getCurrentBPM,
   getCurrentSampleRate,
@@ -147,7 +148,7 @@ export class RenderEngine {
       const renderDuration = renderLength / sampleRate;
 
       // ✅ WASM INTEGRATION: Check if we should use Wasm Mixer
-      const audioEngine = AudioContextService.getAudioEngine();
+      const audioEngine = AudioEngineGlobal.get();
       if (!audioEngine) {
         throw new Error('Audio engine not available');
       }
@@ -1230,6 +1231,25 @@ export class RenderEngine {
       const source = offlineContext.createBufferSource();
       source.buffer = instrument.audioBuffer || instrument.buffer;
 
+      // ✅ FIX: Apply pitch shifting for single-sample instruments
+      // Calculate pitch difference from base note (default 60/C4)
+      let midiNote = 60;
+      if (typeof note.pitch === 'number') {
+        midiNote = note.pitch;
+      } else if (typeof note.pitch === 'string') {
+        midiNote = this._noteNameToMidi(note.pitch);
+      }
+
+      const baseNote = instrument.data?.baseNote ?? 60;
+      const semitones = midiNote - baseNote;
+
+      // Calculate playback rate: 2^(semitones/12)
+      // Also factor in instrument global detune/fine pitch if available
+      const detune = instrument.data?.detune ?? 0; // in cents
+      const playbackRate = Math.pow(2, (semitones + detune / 100) / 12);
+
+      source.playbackRate.setValueAtTime(playbackRate, startTime);
+
       // Apply velocity
       const gainNode = offlineContext.createGain();
       gainNode.gain.setValueAtTime(noteVelocity, startTime);
@@ -1242,7 +1262,11 @@ export class RenderEngine {
       // For drum samples, let them play naturally
       // For pitched samples or if duration is specified, stop after noteLength
       const buffer = instrument.audioBuffer || instrument.buffer;
-      if (noteLength < buffer.duration) {
+
+      // Adjust duration based on playback rate (faster playback = shorter duration)
+      const bufferDuration = buffer.duration / playbackRate;
+
+      if (noteLength < bufferDuration) {
         source.stop(startTime + noteLength);
       }
 

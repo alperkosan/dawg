@@ -121,8 +121,8 @@ export class MixerInsert {
    */
   connectInstrument(instrumentId, instrumentOutput) {
     if (this.instruments.has(instrumentId)) {
-      console.warn(`⚠️ Instrument ${instrumentId} already connected to ${this.insertId}`);
-      return true; // Already connected is considered success
+      // Already connected - silently return success (reduces log spam during project restore)
+      return true;
     }
 
     // ✅ FIX: Validate instrumentOutput before attempting connection

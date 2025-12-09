@@ -19,6 +19,36 @@ export class EngineStateSyncService {
 
     constructor() {
         this.pendingMixerSync = false;
+        // Batch mode: suppresses syncs during project restore
+        this._batchMode = false;
+        this._pendingBatchSync = false;
+        this._syncDebounceTimer = null;
+    }
+
+    /**
+     * Enable/disable batch mode for project restore
+     * When enabled, syncs are suppressed and queued for a single sync at the end
+     */
+    setBatchMode(enabled) {
+        const wasInBatchMode = this._batchMode;
+        this._batchMode = enabled;
+
+        // When exiting batch mode, ALWAYS perform final sync
+        // This ensures instruments are connected to mixer after project restore
+        if (wasInBatchMode && !enabled) {
+            this._pendingBatchSync = false;
+            console.log('📦 Batch mode ended - performing final sync...');
+            this.syncMixerTracks();
+            // Critical: Also sync instruments to mixer inserts!
+            this.syncInstrumentsToMixerInserts();
+        }
+    }
+
+    /**
+     * Check if currently in batch mode
+     */
+    isInBatchMode() {
+        return this._batchMode;
     }
 
     /**
@@ -50,9 +80,90 @@ export class EngineStateSyncService {
     }
 
     /**
+     * Detect structural changes in mixer state (vs parameter changes)
+     * Structural changes require full sync, parameter changes are handled by UI
+     * 
+     * @param {Object} state - Current mixer state
+     * @param {Object} prevState - Previous mixer state
+     * @returns {Object} { hasStructuralChanges, changes: [] }
+     */
+    detectStructuralChanges(state, prevState) {
+        const changes = [];
+
+        // Track count changed (add/remove)
+        if (state.mixerTracks?.length !== prevState.mixerTracks?.length) {
+            changes.push('track_count');
+        }
+
+        // Send channel configuration changed
+        if (state.sendChannels?.length !== prevState.sendChannels?.length) {
+            changes.push('send_channels');
+        }
+
+        // Check for routing changes (send bus assignments)
+        if (state.mixerTracks && prevState.mixerTracks) {
+            const routingChanged = state.mixerTracks.some((track, idx) => {
+                const prevTrack = prevState.mixerTracks[idx];
+                if (!prevTrack || track.id !== prevTrack.id) return true;
+
+                // Check if send routing changed (not levels, just assignments)
+                const currentSends = this._normalizeTrackSends(track);
+                const prevSends = this._normalizeTrackSends(prevTrack);
+
+                if (currentSends.length !== prevSends.length) return true;
+
+                return currentSends.some((send, i) => {
+                    const prevSend = prevSends[i];
+                    return !prevSend || send.busId !== prevSend.busId;
+                });
+            });
+
+            if (routingChanged) {
+                changes.push('routing');
+            }
+        }
+
+        // Check for effect structure changes (add/remove, not parameter changes)
+        if (state.mixerTracks && prevState.mixerTracks) {
+            const effectsChanged = state.mixerTracks.some((track, idx) => {
+                const prevTrack = prevState.mixerTracks[idx];
+                if (!prevTrack || track.id !== prevTrack.id) return false;
+
+                const currentEffects = track.insertEffects || [];
+                const prevEffects = prevTrack.insertEffects || [];
+
+                // Check count
+                if (currentEffects.length !== prevEffects.length) return true;
+
+                // Check IDs and types (not settings)
+                return currentEffects.some((effect, i) => {
+                    const prevEffect = prevEffects[i];
+                    return !prevEffect || effect.id !== prevEffect.id || effect.type !== prevEffect.type;
+                });
+            });
+
+            if (effectsChanged) {
+                changes.push('effects');
+            }
+        }
+
+        return {
+            hasStructuralChanges: changes.length > 0,
+            changes
+        };
+    }
+
+    /**
      * Sync mixer tracks from store to audio engine
+     * Respects batch mode - queues sync if in batch mode
      */
     async syncMixerTracks() {
+        // If in batch mode, queue the sync for later
+        if (this._batchMode) {
+            this._pendingBatchSync = true;
+            return;
+        }
+
         const engine = AudioEngineGlobal.get();
         if (!engine) {
             console.warn('⚠️ Cannot sync mixer tracks: audio engine not ready');
@@ -183,7 +294,10 @@ export class EngineStateSyncService {
     /**
      * Sync existing instruments to mixer inserts
      */
-    async syncInstrumentsToMixerInserts() {
+    async syncInstrumentsToMixerInserts(silent = false) {
+        // If in batch mode, skip (will be called after batch ends)
+        if (this._batchMode) return;
+
         const engine = AudioEngineGlobal.get();
         if (!engine) return;
 
@@ -200,7 +314,9 @@ export class EngineStateSyncService {
                 } else return;
             }
 
-            console.log(`🎵 Syncing ${instruments.length} instruments to mixer inserts...`);
+            if (!silent) {
+                console.log(`🎵 Syncing ${instruments.length} instruments to mixer inserts...`);
+            }
 
             for (const instrument of instruments) {
                 if (!instrument.mixerTrackId) continue;

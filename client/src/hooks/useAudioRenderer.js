@@ -14,6 +14,7 @@ import { useArrangementWorkspaceStore } from '@/store/useArrangementWorkspaceSto
 import { useMixerStore } from '@/store/useMixerStore';
 import { RenderEngine } from '@/lib/audio/RenderEngine';
 import { AudioContextService } from '@/lib/services/AudioContextService';
+import { AudioEngineGlobal } from '@/lib/core/AudioEngineGlobal';
 import { v4 as uuidv4 } from 'uuid';
 
 export const useAudioRenderer = () => {
@@ -286,7 +287,7 @@ export const useAudioRenderer = () => {
       const url = URL.createObjectURL(blob);
 
       // Get audio engine to load the audio buffer
-      const audioEngine = AudioContextService.getAudioEngine();
+      const audioEngine = AudioEngineGlobal.get();
       if (!audioEngine) {
         throw new Error('Audio engine not available');
       }

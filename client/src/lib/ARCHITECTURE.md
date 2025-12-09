@@ -1575,10 +1575,10 @@ const { patterns, activePatternId } = useArrangementStore();
 
 ### 🚧 **In Progress**
 
-1. **Singleton Migration**:
+1. **Singleton Migration**: ✅ COMPLETE
    - ✅ PlaybackControllerSingleton uses BaseSingleton
-   - ⏳ TimelineControllerSingleton (legacy pattern)
-   - ⏳ TransportManagerSingleton (legacy pattern)
+   - ✅ TimelineControllerSingleton uses BaseSingleton
+   - ✅ TransportManagerSingleton uses BaseSingleton
 
 2. **EventBus Optimization**:
    - ✅ Throttling implemented

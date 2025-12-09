@@ -16,7 +16,9 @@
 
 import { getMIDIDeviceManager, MIDI_MESSAGE_TYPE } from './MIDIDeviceManager';
 import { Metronome } from '@/lib/audio/Metronome';
-import { AudioContextService } from '@/lib/services/AudioContextService';
+import { AudioContextService } from '../services/AudioContextService';
+import { InstrumentService } from '../services/InstrumentService';
+import { AudioEngineGlobal } from '@/lib/core/AudioEngineGlobal';
 import { STEPS_PER_BEAT } from '@/lib/audio/audioRenderConfig';
 import { getTimelineController } from '@/lib/core/TimelineControllerSingleton';
 import { useArrangementStore } from '@/store/useArrangementStore';
@@ -68,7 +70,7 @@ const MIDILog = {
         if (!LOG_CONFIG.enabled || !LOG_CONFIG.categories.NOTE) return;
         const prefix = type === 'ON' ? '🎹→' : '🎹←';
         const { pitch, pitchName, step, beats, velocity, duration } = data;
-        
+
         if (type === 'ON') {
             console.log(
                 `${prefix} [NOTE:${type}] ${pitchName} (${pitch}) | pos: ${this._formatTime(step)} (${this._formatSteps(step)}) | vel: ${velocity}`
@@ -83,12 +85,12 @@ const MIDILog = {
     sync(data) {
         if (!LOG_CONFIG.enabled || !LOG_CONFIG.categories.SYNC) return;
         if (LOG_CONFIG.level === 'minimal') return;
-        
+
         const { calculated, actual, diff, source, bpm } = data;
         const bpmInfo = bpm ? ` | bpm: ${bpm}` : '';
         const transportInfo = actual !== null ? ` | transport: ${this._formatSteps(actual)}` : '';
         const driftInfo = diff !== null && diff > 0.5 ? ` | ⚠️drift: ${diff.toFixed(1)}st` : '';
-        
+
         console.log(
             `🔍 [SYNC:✓] pos: ${this._formatSteps(calculated)}${transportInfo}${driftInfo} | ${source}${bpmInfo}`
         );
@@ -163,7 +165,7 @@ export class MIDIRecorder {
             recordStartStep: null,    // Step position when recording started
             recordingBPM: null,       // BPM captured at recording start (authoritative)
             pendingNotes: new Map(),  // pitch -> { noteId, startTime, velocity }
-            
+
             // Live note update loop
             liveUpdateInterval: null,  // Interval ID for updating note lengths while keys are held
 
@@ -171,7 +173,7 @@ export class MIDIRecorder {
             isCountingIn: false,
             countInStartTime: null,
             countInCallback: null,
-            
+
             // Loop state backup (to restore after recording)
             loopEnabledBeforeRecording: null
         };
@@ -215,10 +217,10 @@ export class MIDIRecorder {
         // Capture playhead position from PlaybackManager (not store)
         let initialPlayheadStep = 0;
         let positionSource = 'store';
-        
+
         try {
-            const audioEngine = AudioContextService.getAudioEngine();
-            
+            const audioEngine = AudioEngineGlobal.get();
+
             if (this.playbackStore.isPlaying && audioEngine?.playbackManager) {
                 initialPlayheadStep = audioEngine.playbackManager.getCurrentPosition();
                 if (initialPlayheadStep === null || initialPlayheadStep === undefined || isNaN(initialPlayheadStep)) {
@@ -226,13 +228,13 @@ export class MIDIRecorder {
                 }
                 positionSource = 'playbackManager.live';
             } else if (audioEngine?.playbackManager) {
-                    initialPlayheadStep = audioEngine.playbackManager.currentPosition || 0;
+                initialPlayheadStep = audioEngine.playbackManager.currentPosition || 0;
                 positionSource = 'playbackManager.stored';
-                } else {
-                    initialPlayheadStep = this.playbackStore.currentStep || 0;
+            } else {
+                initialPlayheadStep = this.playbackStore.currentStep || 0;
                 positionSource = 'store.fallback';
             }
-            
+
             // Validate position
             if (initialPlayheadStep < 0 || isNaN(initialPlayheadStep) || !isFinite(initialPlayheadStep)) {
                 MIDILog.warn(`Invalid initial position: ${initialPlayheadStep}, using 0`);
@@ -242,7 +244,7 @@ export class MIDIRecorder {
             MIDILog.warn('Could not get initial playhead position', e);
             initialPlayheadStep = this.playbackStore.currentStep || 0;
         }
-        
+
         // ✅ Store initial position - this will be used as recordStartStep
         this.state.initialPlayheadStep = initialPlayheadStep;
 
@@ -288,7 +290,7 @@ export class MIDIRecorder {
         // Get BPM from Transport (Tone.js) - the authoritative source
         let bpm = 120; // Default
         try {
-            const audioEngine = AudioContextService.getAudioEngine();
+            const audioEngine = AudioEngineGlobal.get();
             if (audioEngine?.transport?.bpm?.value) {
                 bpm = audioEngine.transport.bpm.value;
             }
@@ -301,7 +303,7 @@ export class MIDIRecorder {
         MIDILog.session('COUNT_IN', { bars: this.state.countInBars, durationMs: Math.round(countInDuration), bpm });
 
         // ✅ Initialize metronome
-        const audioEngine = AudioContextService.getAudioEngine();
+        const audioEngine = AudioEngineGlobal.get();
         if (audioEngine?.audioContext) {
             this.metronome = new Metronome(audioEngine.audioContext);
             this.metronome.initialize();
@@ -342,10 +344,10 @@ export class MIDIRecorder {
         this.state.recordStartTime = performance.now();
         this.state.recordedNotes.clear();
         this.state.pendingNotes.clear();
-        
+
         // Store AudioContext and get BPM from Transport (the authoritative source)
         try {
-            const audioEngine = AudioContextService.getAudioEngine();
+            const audioEngine = AudioEngineGlobal.get();
             if (audioEngine?.audioContext) {
                 this.state.audioContext = audioEngine.audioContext;
             }
@@ -361,7 +363,7 @@ export class MIDIRecorder {
             MIDILog.warn('Could not get AudioContext/BPM for recording', e);
             this.state.recordingBPM = 120; // Safe default
         }
-        
+
         // Disable loop during recording (save current state to restore later)
         const currentLoopEnabled = this.playbackStore.loopEnabled;
         this.state.loopEnabledBeforeRecording = currentLoopEnabled;
@@ -377,19 +379,19 @@ export class MIDIRecorder {
             // always starts from 0. We'll use the actual position after playback starts.
             await this.playbackStore.togglePlayPause();
             // Wait for transport to actually start and position to stabilize
-            await new Promise(resolve => setTimeout(resolve, 100)); 
+            await new Promise(resolve => setTimeout(resolve, 100));
         }
 
         // Get AudioContext time and ACTUAL position AFTER playback starts
         let actualStartAudioTime = null;
         let actualRecordStartStep = 0; // Default to 0, will be updated from actual position
-        
+
         try {
-            const audioEngine = AudioContextService.getAudioEngine();
+            const audioEngine = AudioEngineGlobal.get();
             if (audioEngine?.audioContext) {
                 actualStartAudioTime = audioEngine.audioContext.currentTime;
                 this.state.recordStartAudioTime = actualStartAudioTime;
-                
+
                 // ✅ CRITICAL FIX: Get the ACTUAL playback position from transport
                 // This is the real position after playback has started
                 if (audioEngine?.playbackManager) {
@@ -397,7 +399,7 @@ export class MIDIRecorder {
                     if (actualPosAtStart !== null && actualPosAtStart !== undefined && !isNaN(actualPosAtStart) && actualPosAtStart >= 0) {
                         actualRecordStartStep = actualPosAtStart;
                     }
-                    
+
                     // Debug: Log position sources for troubleshooting
                     MIDILog.session('POSITION_DEBUG', {
                         initialPlayhead: initialPlayheadStep.toFixed(2),
@@ -410,10 +412,10 @@ export class MIDIRecorder {
         } catch (e) {
             MIDILog.warn('Could not get AudioContext time', e);
         }
-        
+
         // Set the REAL start step (from actual transport position)
         this.state.recordStartStep = actualRecordStartStep;
-        
+
         // Log recording start with essential info
         MIDILog.session('START', {
             mode: this.state.recordMode,
@@ -485,7 +487,7 @@ export class MIDIRecorder {
 
         // Stop live note update loop
         this.stopLiveNoteUpdateLoop();
-        
+
         // Stop all pending note previews
         this.state.pendingNotes.forEach((pendingNote) => {
             this.previewNoteOff(pendingNote.pitch);
@@ -520,34 +522,34 @@ export class MIDIRecorder {
         let currentStep;
         let positionSource = 'audioContext';
         let transportStep = null; // For debug comparison only
-        
+
         try {
-            const audioEngine = AudioContextService.getAudioEngine();
+            const audioEngine = AudioEngineGlobal.get();
             const currentAudioTime = this.state.audioContext?.currentTime;
             const recordStartAudioTime = this.state.recordStartAudioTime;
             const recordStartStep = this.state.recordStartStep || 0;
             const bpm = this.state.recordingBPM || 120;
-            
+
             // Get transport position for debug comparison
             if (audioEngine?.playbackManager) {
                 transportStep = audioEngine.playbackManager.getCurrentPosition();
             }
-            
+
             if (currentAudioTime && recordStartAudioTime) {
                 // ✅ RELIABLE CALCULATION: Elapsed time from AudioContext
                 // AudioContext.currentTime is monotonic and consistent
                 const elapsedSeconds = currentAudioTime - recordStartAudioTime;
                 const elapsedBeats = (elapsedSeconds * bpm) / 60;
                 const elapsedSteps = elapsedBeats * STEPS_PER_BEAT;
-                
+
                 currentStep = recordStartStep + elapsedSteps;
                 positionSource = 'audioContext';
-                    } else {
+            } else {
                 // Fallback: Use transport if AudioContext unavailable
                 if (transportStep !== null && !isNaN(transportStep)) {
                     currentStep = transportStep;
                     positionSource = 'transport.fallback';
-            } else {
+                } else {
                     // Ultimate fallback: Use performance.now()
                     const elapsedMs = performance.now() - this.state.recordStartTime;
                     const elapsedSeconds = elapsedMs / 1000;
@@ -565,7 +567,7 @@ export class MIDIRecorder {
             currentStep = (this.state.recordStartStep || 0) + (elapsedBeats * STEPS_PER_BEAT);
             positionSource = 'error.fallback';
         }
-        
+
         // Validate position
         if (currentStep < 0 || isNaN(currentStep) || !isFinite(currentStep)) {
             MIDILog.warn(`Invalid step position: ${currentStep}`);
@@ -574,7 +576,7 @@ export class MIDIRecorder {
 
         // Apply quantization
         const quantizedStep = this.quantizeStep(currentStep, this.state.quantizeStrength);
-        
+
         // Log sync check (compare AudioContext-based position with transport for verification)
         MIDILog.sync({
             calculated: currentStep,
@@ -610,15 +612,15 @@ export class MIDIRecorder {
 
         // Get AudioContext time for accurate duration calculation
         const actualAudioTime = this.state.audioContext?.currentTime || timestamp;
-        
+
         // Get actual playhead for comparison
         let actualPlayhead = null;
         try {
-            const audioEngine = AudioContextService.getAudioEngine();
+            const audioEngine = AudioEngineGlobal.get();
             if (audioEngine?.playbackManager) {
                 actualPlayhead = audioEngine.playbackManager.currentPosition;
             }
-        } catch (e) {}
+        } catch (e) { }
 
         // Store in pending notes (waiting for Note Off)
         // CRITICAL: startTime must be in STEPS (piano roll coordinate system)
@@ -645,11 +647,11 @@ export class MIDIRecorder {
         // ✅ LIVE DRAWING: Add note to pattern immediately with minimum length
         // This allows the user to see the note as they press the key
         this.addLiveNote(noteId, pitch, velocity, startTimeSteps);
-        
+
         // ✅ AUDIO PREVIEW: Play the note sound while recording
         this.previewNoteOn(pitch, velocity);
     }
-    
+
     /**
      * Play note preview sound (called on Note On during recording)
      */
@@ -670,17 +672,17 @@ export class MIDIRecorder {
                     activeInstrumentId = instruments[0].id;
                 }
             }
-            
+
             if (activeInstrumentId) {
                 // Convert velocity (0-127) to normalized (0-1)
                 const normalizedVelocity = velocity / 127;
-                AudioContextService.auditionNoteOn(activeInstrumentId, pitch, normalizedVelocity);
+                InstrumentService.auditionNoteOn(activeInstrumentId, pitch, normalizedVelocity);
             }
         } catch (e) {
             // Preview is optional, don't fail recording if preview fails
         }
     }
-    
+
     /**
      * Stop note preview sound (called on Note Off during recording)
      */
@@ -701,7 +703,7 @@ export class MIDIRecorder {
                     activeInstrumentId = instruments[0].id;
                 }
             }
-            
+
             if (activeInstrumentId) {
                 AudioContextService.auditionNoteOff(activeInstrumentId, pitch);
             }
@@ -709,7 +711,7 @@ export class MIDIRecorder {
             // Preview is optional, don't fail recording if preview fails
         }
     }
-    
+
     /**
      * Add a note to the pattern for live drawing (called on Note On)
      * The note will be updated with correct duration on Note Off
@@ -721,7 +723,7 @@ export class MIDIRecorder {
             const noteName = noteNames[midiPitch % 12];
             return `${noteName}${octave}`;
         };
-        
+
         // Create note with minimum length (will be updated on Note Off)
         const note = {
             id: noteId,
@@ -734,11 +736,11 @@ export class MIDIRecorder {
             isMuted: false,
             isLive: true  // Mark as live note (being recorded)
         };
-        
+
         // Add to arrangement store
         const freshState = useArrangementStore.getState();
         const activePatternId = freshState.activePatternId;
-        
+
         let activeInstrumentId = this.activeInstrumentId;
         if (!activeInstrumentId) {
             if (typeof window !== 'undefined' && window.usePanelsStore) {
@@ -752,7 +754,7 @@ export class MIDIRecorder {
                 activeInstrumentId = instruments[0].id;
             }
         }
-        
+
         if (activePatternId && activeInstrumentId) {
             const freshStore = useArrangementStore.getState();
             const pattern = freshStore.patterns[activePatternId];
@@ -762,11 +764,11 @@ export class MIDIRecorder {
                 freshStore.updatePatternNotes(activePatternId, activeInstrumentId, updatedNotes);
             }
         }
-        
+
         // Start live note update loop if not already running
         this.startLiveNoteUpdateLoop();
     }
-    
+
     /**
      * Start the live note update loop
      * Updates pending notes' lengths in real-time as keys are held
@@ -774,13 +776,13 @@ export class MIDIRecorder {
     startLiveNoteUpdateLoop() {
         // Don't start if already running
         if (this.state.liveUpdateInterval) return;
-        
+
         // Update every ~50ms (20 FPS) for smooth visual feedback without performance issues
         this.state.liveUpdateInterval = setInterval(() => {
             this.updateLiveNotes();
         }, 50);
     }
-    
+
     /**
      * Stop the live note update loop
      */
@@ -790,7 +792,7 @@ export class MIDIRecorder {
             this.state.liveUpdateInterval = null;
         }
     }
-    
+
     /**
      * Update all pending notes' lengths based on current playback position
      * This creates the "growing note" effect while keys are held
@@ -799,7 +801,7 @@ export class MIDIRecorder {
         if (!this.state.isRecording || this.state.pendingNotes.size === 0) {
             return;
         }
-        
+
         // Calculate current position using AudioContext timing
         let currentStep = 0;
         try {
@@ -807,7 +809,7 @@ export class MIDIRecorder {
             const recordStartAudioTime = this.state.recordStartAudioTime;
             const recordStartStep = this.state.recordStartStep || 0;
             const bpm = this.state.recordingBPM || 120;
-            
+
             if (currentAudioTime && recordStartAudioTime) {
                 const elapsedSeconds = currentAudioTime - recordStartAudioTime;
                 const elapsedBeats = (elapsedSeconds * bpm) / 60;
@@ -817,12 +819,12 @@ export class MIDIRecorder {
         } catch (e) {
             return; // Skip this update if we can't get position
         }
-        
+
         // Get active pattern and instrument
         const freshState = useArrangementStore.getState();
         const activePatternId = freshState.activePatternId;
         let activeInstrumentId = this.activeInstrumentId;
-        
+
         if (!activeInstrumentId) {
             if (typeof window !== 'undefined' && window.usePanelsStore) {
                 const panelsStore = window.usePanelsStore.getState();
@@ -835,21 +837,21 @@ export class MIDIRecorder {
                 activeInstrumentId = instruments[0].id;
             }
         }
-        
+
         if (!activePatternId || !activeInstrumentId) return;
-        
+
         const pattern = freshState.patterns[activePatternId];
         if (!pattern) return;
-        
+
         let existingNotes = pattern?.data?.[activeInstrumentId] || [];
         let notesUpdated = false;
-        
+
         // Update each pending note's length
         this.state.pendingNotes.forEach((pendingNote) => {
             const noteId = pendingNote.noteId;
             const startStep = pendingNote.startTimeSteps;
             const newLength = Math.max(1, currentStep - startStep);
-            
+
             // Find and update the note in existingNotes
             existingNotes = existingNotes.map(note => {
                 if (note.id === noteId) {
@@ -863,7 +865,7 @@ export class MIDIRecorder {
                 return note;
             });
         });
-        
+
         // Only update store if notes were actually changed
         if (notesUpdated) {
             const freshStore = useArrangementStore.getState();
@@ -885,24 +887,24 @@ export class MIDIRecorder {
 
         // Calculate duration from actual key press time (AudioContext)
         const currentAudioTime = this.state.audioContext?.currentTime || timestamp;
-        
+
         let actualDurationSteps = null;
-        
+
         if (pendingNote.startKeyboardTime !== undefined && currentAudioTime !== undefined) {
             const durationSeconds = currentAudioTime - pendingNote.startKeyboardTime;
             // ✅ FIX: Use BPM captured at recording start (consistent)
             const bpm = this.state.recordingBPM || 120;
             const durationBeats = (durationSeconds * bpm / 60);
             actualDurationSteps = durationBeats * STEPS_PER_BEAT;
-            
+
             // Minimum duration: 1 step (1/16 note)
             actualDurationSteps = Math.max(1, actualDurationSteps);
         }
-        
+
         // Fallback: Calculate step-based length
         const endTimeSteps = step;
         const lengthSteps = Math.max(1, endTimeSteps - pendingNote.startTimeSteps);
-        
+
         // Use actual duration if available, otherwise fallback to step-based
         // CRITICAL: Piano roll expects length in STEPS (not beats!)
         const finalDurationSteps = actualDurationSteps !== null ? actualDurationSteps : lengthSteps;
@@ -914,7 +916,7 @@ export class MIDIRecorder {
             const noteName = noteNames[midiPitch % 12];
             return `${noteName}${octave}`;
         };
-        
+
         // Convert steps to Tone.js duration string
         const lengthToDuration = (lengthSteps) => {
             // 1 beat = 4 steps, so:
@@ -929,7 +931,7 @@ export class MIDIRecorder {
             if (lengthSteps >= 2) return '8n';
             return '16n';
         };
-        
+
         const note = {
             id: pendingNote.noteId,
             time: pendingNote.startTime,  // In STEPS
@@ -940,7 +942,7 @@ export class MIDIRecorder {
             visualLength: finalDurationSteps,  // In STEPS
             isMuted: false
         };
-        
+
         // Log note off event (show duration in beats for readability)
         MIDILog.note('OFF', {
             pitch: pendingNote.pitch,
@@ -967,16 +969,16 @@ export class MIDIRecorder {
         // Add to arrangement store
         const freshState = useArrangementStore.getState();
         const activePatternId = freshState.activePatternId;
-        
+
         let activeInstrumentId = this.activeInstrumentId;
-        
+
         if (!activeInstrumentId) {
             if (typeof window !== 'undefined' && window.usePanelsStore) {
                 const panelsStore = window.usePanelsStore.getState();
                 activeInstrumentId = panelsStore.pianoRollInstrumentId;
             }
         }
-        
+
         if (!activeInstrumentId) {
             const instruments = freshState.instruments || [];
             if (instruments.length > 0) {
@@ -991,18 +993,18 @@ export class MIDIRecorder {
                 MIDILog.warn('Pattern not found', { activePatternId });
                 return;
             }
-            
+
             let existingNotes = pattern?.data?.[activeInstrumentId] || [];
-            
+
             // In REPLACE mode, clear notes in the recording region before adding first note
             if (this.state.recordMode === RECORD_MODE.REPLACE && this.state.recordedNotes.size === 0) {
                 existingNotes = this.clearNotesInRegionForReplace(existingNotes);
             }
-            
+
             // Filter out notes with same ID to prevent duplicates
             const filteredNotes = existingNotes.filter(n => n.id !== note.id);
             const updatedNotes = [...filteredNotes, note];
-            
+
             freshStore.updatePatternNotes(activePatternId, activeInstrumentId, updatedNotes);
         } else {
             MIDILog.warn('Cannot record: missing pattern or instrument', { activePatternId, activeInstrumentId });
@@ -1014,11 +1016,11 @@ export class MIDIRecorder {
      */
     finalizePendingNotes() {
         if (this.state.pendingNotes.size === 0) return;
-        
+
         // Use AudioContext.currentTime for accurate position calculation
         let currentStep;
         const bpm = this.state.recordingBPM || 120;
-        
+
         if (this.state.audioContext && this.state.recordStartAudioTime !== undefined) {
             const currentAudioTime = this.state.audioContext.currentTime;
             const elapsedAudioTime = currentAudioTime - this.state.recordStartAudioTime;
@@ -1044,7 +1046,7 @@ export class MIDIRecorder {
                 const noteName = noteNames[midiPitch % 12];
                 return `${noteName}${octave}`;
             };
-            
+
             const lengthToDuration = (lengthBeats) => {
                 if (lengthBeats >= 4) return '1n';
                 if (lengthBeats >= 2) return '2n';
@@ -1068,16 +1070,16 @@ export class MIDIRecorder {
 
             const freshStore = useArrangementStore.getState();
             const activePatternId = freshStore.activePatternId;
-            
+
             let activeInstrumentId = this.activeInstrumentId;
-            
+
             if (!activeInstrumentId) {
                 if (typeof window !== 'undefined' && window.usePanelsStore) {
                     const panelsStore = window.usePanelsStore.getState();
                     activeInstrumentId = panelsStore.pianoRollInstrumentId;
                 }
             }
-            
+
             if (!activeInstrumentId) {
                 const instruments = freshStore.instruments || [];
                 if (instruments.length > 0) {
@@ -1091,11 +1093,11 @@ export class MIDIRecorder {
                     MIDILog.warn('Pattern not found for finalization', { activePatternId });
                     continue;
                 }
-                
+
                 const existingNotes = pattern?.data?.[activeInstrumentId] || [];
                 const filteredNotes = existingNotes.filter(n => n.id !== note.id);
                 const updatedNotes = [...filteredNotes, note];
-                
+
                 freshStore.updatePatternNotes(activePatternId, activeInstrumentId, updatedNotes);
             }
         }
@@ -1152,20 +1154,20 @@ export class MIDIRecorder {
      */
     clearNotesInRegionForReplace(existingNotes) {
         if (!existingNotes || existingNotes.length === 0) return existingNotes;
-        
+
         const regionStartSteps = this.state.recordStartStep;
         const regionStartBeats = regionStartSteps / STEPS_PER_BEAT;
-        
+
         const currentStep = this.playbackStore.currentStep || regionStartSteps;
         const regionEndSteps = currentStep + 64;
         const regionEndBeats = regionEndSteps / STEPS_PER_BEAT;
-        
+
         const filteredNotes = existingNotes.filter(note => {
             const noteStart = note.startTime;
             const noteEnd = note.startTime + (note.visualLength !== undefined ? note.visualLength : note.length);
             return !(noteStart < regionEndBeats && noteEnd > regionStartBeats);
         });
-        
+
         const clearedCount = existingNotes.length - filteredNotes.length;
         if (clearedCount > 0) {
             MIDILog.session('REPLACE_CLEAR', { clearedNotes: clearedCount, regionStart: regionStartBeats.toFixed(1), regionEnd: regionEndBeats.toFixed(1) });
@@ -1178,16 +1180,16 @@ export class MIDIRecorder {
      */
     clearNotesInRegion() {
         const activePatternId = this.arrangementStore.activePatternId;
-        
+
         let activeInstrumentId = this.activeInstrumentId;
-        
+
         if (!activeInstrumentId) {
             if (typeof window !== 'undefined' && window.usePanelsStore) {
                 const panelsStore = window.usePanelsStore.getState();
                 activeInstrumentId = panelsStore.pianoRollInstrumentId;
             }
         }
-        
+
         if (!activeInstrumentId) {
             const instruments = this.arrangementStore.instruments || [];
             if (instruments.length > 0) {
@@ -1207,7 +1209,7 @@ export class MIDIRecorder {
         }
 
         const existingNotes = pattern.data?.[activeInstrumentId] || [];
-        
+
         let regionStart = this.state.recordStartStep;
         let regionEnd = null;
 
@@ -1225,7 +1227,7 @@ export class MIDIRecorder {
         });
 
         this.arrangementStore.updatePatternNotes(activePatternId, activeInstrumentId, filteredNotes);
-        
+
         const clearedCount = existingNotes.length - filteredNotes.length;
         if (clearedCount > 0) {
             MIDILog.session('REPLACE_CLEAR', { clearedNotes: clearedCount });

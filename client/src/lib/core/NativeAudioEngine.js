@@ -636,9 +636,7 @@ export class NativeAudioEngine {
                 this.audioContext,
                 {
                     useCache: true,
-                    // Enhancement: We might want to pass existingBuffer here if Factory supported it,
-                    // but Factory relies on SampleLoader. 
-                    // Since SampleLoader is cached, it should be fine.
+                    existingBuffer: existingBuffer  // ✅ FIX: Pass existing buffer to factory
                 }
             );
 

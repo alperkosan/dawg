@@ -37,10 +37,10 @@ export const useSampleDrop = () => {
                 console.log('🎵 Native drag sample dropped:', fileData);
 
                 // Load dependencies dynamically
-                const { AudioContextService } = await import('@/lib/services/AudioContextService');
+                const { AudioEngineGlobal } = await import('@/lib/core/AudioEngineGlobal');
                 const { getProjectBufferManager } = await import('@/lib/audio/ProjectBufferManager.js');
 
-                const audioEngine = AudioContextService.getAudioEngine();
+                const audioEngine = AudioEngineGlobal.get();
                 if (!audioEngine?.audioContext) {
                     console.warn('⚠️ Audio Engine not ready for sample drop');
                     return;

@@ -7,6 +7,7 @@
 import { useEffect, useCallback, useState } from 'react';
 import { getPreviewManager } from '@/lib/audio/preview';
 import { AudioContextService } from '@/lib/services/AudioContextService';
+import { AudioEngineGlobal } from '@/lib/core/AudioEngineGlobal';
 import useInstrumentEditorStore from '@/store/useInstrumentEditorStore';
 import { useInstrumentsStore } from '@/store/useInstrumentsStore';
 import { Slider } from '@/components/controls/base/Slider';
@@ -18,12 +19,12 @@ const MultiSampleEditor = ({ instrumentData: initialData }) => {
   const instrumentData = useInstrumentEditorStore((state) => state.instrumentData) || initialData;
   const { updateParameter } = useInstrumentEditorStore();
   const { updateInstrument } = useInstrumentsStore();
-  
+
   const samples = instrumentData?.multiSamples || [];
   const [activeNote, setActiveNote] = useState(null);
   const [selectedSample, setSelectedSample] = useState(null);
   const [audioBuffer, setAudioBuffer] = useState(null);
-  
+
   // ✅ TIME STRETCH: Get time stretch enabled state
   const timeStretchEnabled = instrumentData?.timeStretchEnabled || false;
 
@@ -40,7 +41,7 @@ const MultiSampleEditor = ({ instrumentData: initialData }) => {
   // ✅ FIX: Only update when instrument ID changes, not when parameters change
   // This prevents re-creating the instrument when time stretch toggle is changed
   useEffect(() => {
-    const audioEngine = AudioContextService.getAudioEngine();
+    const audioEngine = AudioEngineGlobal.get();
     if (audioEngine?.audioContext && instrumentData?.id) {
       // ✅ FX CHAIN: Pass audioEngine to PreviewManager for mixer routing
       const previewManager = getPreviewManager(audioEngine.audioContext, audioEngine);
@@ -57,7 +58,7 @@ const MultiSampleEditor = ({ instrumentData: initialData }) => {
 
     const loadAudio = async () => {
       try {
-        const audioEngine = AudioContextService.getAudioEngine();
+        const audioEngine = AudioEngineGlobal.get();
         if (!audioEngine?.audioContext) return;
 
         const response = await fetch(selectedSample.url);
@@ -96,7 +97,7 @@ const MultiSampleEditor = ({ instrumentData: initialData }) => {
     const previewManager = getPreviewManager();
     if (previewManager) {
       if (activeNote) {
-        const map = { 'C':0,'C#':1,'D':2,'D#':3,'E':4,'F':5,'F#':6,'G':7,'G#':8,'A':9,'A#':10,'B':11 };
+        const map = { 'C': 0, 'C#': 1, 'D': 2, 'D#': 3, 'E': 4, 'F': 5, 'F#': 6, 'G': 7, 'G#': 8, 'A': 9, 'A#': 10, 'B': 11 };
         const name = activeNote.replace(/[0-9-]/g, '');
         const octave = parseInt(activeNote.replace(/[^0-9-]/g, ''), 10) || 4;
         const midi = (octave + 1) * 12 + (map[name] ?? 0);
@@ -119,7 +120,7 @@ const MultiSampleEditor = ({ instrumentData: initialData }) => {
     updateInstrument(instrumentData.id, { timeStretchEnabled: enabled });
 
     // Update audio engine instrument
-    const audioEngine = AudioContextService.getAudioEngine();
+    const audioEngine = AudioEngineGlobal.get();
     if (audioEngine && instrumentData.id) {
       const instrument = audioEngine.instruments.get(instrumentData.id);
       if (instrument && typeof instrument.timeStretchEnabled !== 'undefined') {
@@ -159,158 +160,158 @@ const MultiSampleEditor = ({ instrumentData: initialData }) => {
 
   return (
     <div className="multisample-editor">
-          <div className="multisample-editor__section">
-            <div className="multisample-editor__section-title">Samples ({samples.length})</div>
-            <div className="multisample-editor__sample-list">
-              {samples.map((sample, index) => (
-                <div
-                  key={index}
-                  className={`multisample-editor__sample ${selectedSample === sample ? 'multisample-editor__sample--selected' : ''}`}
-                  onClick={() => setSelectedSample(sample)}
-                >
-                  <div className="multisample-editor__sample-icon">🎵</div>
-                  <div className="multisample-editor__sample-info">
-                    <div className="multisample-editor__sample-name">
-                      {sample.url.split('/').pop()}
-                    </div>
-                    <div className="multisample-editor__sample-meta">
-                      {sample.note} (MIDI {sample.midiNote})
-                    </div>
-                  </div>
-                  <button
-                    className="multisample-editor__sample-action"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleSamplePreview(sample.midiNote);
-                    }}
-                  >
-                    ▶
-                  </button>
+      <div className="multisample-editor__section">
+        <div className="multisample-editor__section-title">Samples ({samples.length})</div>
+        <div className="multisample-editor__sample-list">
+          {samples.map((sample, index) => (
+            <div
+              key={index}
+              className={`multisample-editor__sample ${selectedSample === sample ? 'multisample-editor__sample--selected' : ''}`}
+              onClick={() => setSelectedSample(sample)}
+            >
+              <div className="multisample-editor__sample-icon">🎵</div>
+              <div className="multisample-editor__sample-info">
+                <div className="multisample-editor__sample-name">
+                  {sample.url.split('/').pop()}
                 </div>
-              ))}
+                <div className="multisample-editor__sample-meta">
+                  {sample.note} (MIDI {sample.midiNote})
+                </div>
+              </div>
+              <button
+                className="multisample-editor__sample-action"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleSamplePreview(sample.midiNote);
+                }}
+              >
+                ▶
+              </button>
             </div>
+          ))}
+        </div>
+      </div>
+
+      {selectedSample && (
+        <div className="multisample-editor__section">
+          <div className="multisample-editor__section-title">
+            Waveform - {selectedSample.note}
+          </div>
+          <WaveformDisplay
+            audioBuffer={audioBuffer}
+            currentTime={0}
+            isPlaying={false}
+            height={100}
+          />
+        </div>
+      )}
+
+      <div className="multisample-editor__section">
+        <div className="multisample-editor__section-title">Preview</div>
+        <div className="multisample-editor__keyboard">
+          {['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'].map((note) => {
+            const pitch = note + '4';
+            const isActive = activeNote === pitch;
+            return (
+              <button
+                key={note}
+                className={`multisample-editor__key ${note.includes('#') ? 'multisample-editor__key--black' : 'multisample-editor__key--white'} ${isActive ? 'multisample-editor__key--active' : ''}`}
+                onMouseDown={() => handleNoteOn(note, '4')}
+                onMouseUp={handleNoteOff}
+                onMouseLeave={handleNoteOff}
+              >
+                {!note.includes('#') && <span className="multisample-editor__key-label">{note}</span>}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="multisample-editor__section">
+        <div className="multisample-editor__section-title">Sample Start</div>
+        <div className="multisample-editor__sample-start">
+          <Slider
+            label="Start Offset"
+            value={sampleStart}
+            min={0}
+            max={1}
+            step={0.001}
+            color="#6B8EBF"
+            formatValue={(v) => `${(v * 100).toFixed(1)}%`}
+            onChange={handleSampleStartChange}
+          />
+
+          <div className="multisample-editor__modulation-toggle">
+            <label className="multisample-editor__modulation-label">
+              <input
+                type="checkbox"
+                checked={sampleStartModulation.enabled}
+                onChange={(e) => handleSampleStartModulationChange({ enabled: e.target.checked })}
+                className="multisample-editor__modulation-checkbox"
+              />
+              <span>Enable Modulation</span>
+            </label>
           </div>
 
-          {selectedSample && (
-            <div className="multisample-editor__section">
-              <div className="multisample-editor__section-title">
-                Waveform - {selectedSample.note}
+          {sampleStartModulation.enabled && (
+            <div className="multisample-editor__modulation-controls">
+              <div className="multisample-editor__modulation-source">
+                <label>Source:</label>
+                <select
+                  value={sampleStartModulation.source}
+                  onChange={(e) => handleSampleStartModulationChange({ source: e.target.value })}
+                  className="multisample-editor__modulation-select"
+                >
+                  <option value="envelope">Envelope</option>
+                  <option value="lfo" disabled>LFO (Coming Soon)</option>
+                </select>
               </div>
-              <WaveformDisplay
-                audioBuffer={audioBuffer}
-                currentTime={0}
-                isPlaying={false}
-                height={100}
+
+              <Slider
+                label="Modulation Depth"
+                value={sampleStartModulation.depth}
+                min={0}
+                max={1}
+                step={0.01}
+                color="#6B8EBF"
+                formatValue={(v) => `${(v * 100).toFixed(0)}%`}
+                onChange={(value) => handleSampleStartModulationChange({ depth: value })}
               />
             </div>
           )}
+        </div>
+      </div>
 
-          <div className="multisample-editor__section">
-            <div className="multisample-editor__section-title">Preview</div>
-            <div className="multisample-editor__keyboard">
-              {['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'].map((note) => {
-                const pitch = note + '4';
-                const isActive = activeNote === pitch;
-                return (
-                  <button
-                    key={note}
-                    className={`multisample-editor__key ${note.includes('#') ? 'multisample-editor__key--black' : 'multisample-editor__key--white'} ${isActive ? 'multisample-editor__key--active' : ''}`}
-                    onMouseDown={() => handleNoteOn(note, '4')}
-                    onMouseUp={handleNoteOff}
-                    onMouseLeave={handleNoteOff}
-                  >
-                    {!note.includes('#') && <span className="multisample-editor__key-label">{note}</span>}
-                  </button>
-                );
-              })}
-            </div>
+      <div className="multisample-editor__section">
+        <div className="multisample-editor__section-title">Time Stretch</div>
+        <div className="multisample-editor__time-stretch">
+          <label className="multisample-editor__time-stretch-label">
+            <input
+              type="checkbox"
+              checked={timeStretchEnabled}
+              onChange={(e) => handleTimeStretchToggle(e.target.checked)}
+              className="multisample-editor__time-stretch-checkbox"
+            />
+            <span>Enable Time Stretching</span>
+          </label>
+          <div className="multisample-editor__time-stretch-info">
+            <p>When enabled, pitch changes won't affect sample duration.</p>
+            <p>Reduces aliasing and maintains consistent timing.</p>
+            <p className="multisample-editor__time-stretch-warning">
+              ⚠️ First playback may use playbackRate (fallback) while buffers are cached.
+            </p>
           </div>
+        </div>
+      </div>
 
-          <div className="multisample-editor__section">
-            <div className="multisample-editor__section-title">Sample Start</div>
-            <div className="multisample-editor__sample-start">
-              <Slider
-                label="Start Offset"
-                value={sampleStart}
-                min={0}
-                max={1}
-                step={0.001}
-                color="#6B8EBF"
-                formatValue={(v) => `${(v * 100).toFixed(1)}%`}
-                onChange={handleSampleStartChange}
-              />
+      <div className="multisample-editor__section">
+        <div className="multisample-editor__section-title">Info</div>
+        <div className="multisample-editor__info">
+          <p>This instrument uses <strong>{samples.length} samples</strong> across the keyboard range.</p>
+          <p>Each MIDI note is mapped to the nearest sample with automatic pitch shifting.</p>
+        </div>
+      </div>
 
-              <div className="multisample-editor__modulation-toggle">
-                <label className="multisample-editor__modulation-label">
-                  <input
-                    type="checkbox"
-                    checked={sampleStartModulation.enabled}
-                    onChange={(e) => handleSampleStartModulationChange({ enabled: e.target.checked })}
-                    className="multisample-editor__modulation-checkbox"
-                  />
-                  <span>Enable Modulation</span>
-                </label>
-              </div>
-
-              {sampleStartModulation.enabled && (
-                <div className="multisample-editor__modulation-controls">
-                  <div className="multisample-editor__modulation-source">
-                    <label>Source:</label>
-                    <select
-                      value={sampleStartModulation.source}
-                      onChange={(e) => handleSampleStartModulationChange({ source: e.target.value })}
-                      className="multisample-editor__modulation-select"
-                    >
-                      <option value="envelope">Envelope</option>
-                      <option value="lfo" disabled>LFO (Coming Soon)</option>
-                    </select>
-                  </div>
-
-                  <Slider
-                    label="Modulation Depth"
-                    value={sampleStartModulation.depth}
-                    min={0}
-                    max={1}
-                    step={0.01}
-                    color="#6B8EBF"
-                    formatValue={(v) => `${(v * 100).toFixed(0)}%`}
-                    onChange={(value) => handleSampleStartModulationChange({ depth: value })}
-                  />
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="multisample-editor__section">
-            <div className="multisample-editor__section-title">Time Stretch</div>
-            <div className="multisample-editor__time-stretch">
-              <label className="multisample-editor__time-stretch-label">
-                <input
-                  type="checkbox"
-                  checked={timeStretchEnabled}
-                  onChange={(e) => handleTimeStretchToggle(e.target.checked)}
-                  className="multisample-editor__time-stretch-checkbox"
-                />
-                <span>Enable Time Stretching</span>
-              </label>
-              <div className="multisample-editor__time-stretch-info">
-                <p>When enabled, pitch changes won't affect sample duration.</p>
-                <p>Reduces aliasing and maintains consistent timing.</p>
-                <p className="multisample-editor__time-stretch-warning">
-                  ⚠️ First playback may use playbackRate (fallback) while buffers are cached.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="multisample-editor__section">
-            <div className="multisample-editor__section-title">Info</div>
-            <div className="multisample-editor__info">
-              <p>This instrument uses <strong>{samples.length} samples</strong> across the keyboard range.</p>
-              <p>Each MIDI note is mapped to the nearest sample with automatic pitch shifting.</p>
-            </div>
-          </div>
-    
     </div>
   );
 };

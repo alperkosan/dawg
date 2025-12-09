@@ -5,6 +5,9 @@ import { v4 as uuidv4 } from 'uuid';
 // ✅ Empty project - no initial data
 import { INSTRUMENT_TYPES } from '@/config/constants';
 import { AudioContextService } from '@/lib/services/AudioContextService';
+import { InstrumentService } from '@/lib/services/InstrumentService';
+import { MixerService } from '@/lib/services/MixerService';
+import { AudioEngineGlobal } from '@/lib/core/AudioEngineGlobal';
 import { createDefaultSampleChopPattern } from '@/lib/audio/instruments/sample/sampleChopUtils';
 import { storeManager } from './StoreManager';
 import { useMixerStore } from './useMixerStore';
@@ -97,10 +100,10 @@ export const useInstrumentsStore = create((set, get) => ({
 
         // ✅ FIX: Ensure mixer insert exists for this track
         // The track exists in store but insert might not exist in AudioEngine yet
-        const audioEngine = AudioContextService.getAudioEngine();
+        const audioEngine = AudioEngineGlobal.get();
         if (audioEngine && !audioEngine.mixerInserts?.has(mixerTrackId)) {
           console.log(`🎛️ Creating missing mixer insert for existing track: ${mixerTrackId}`);
-          AudioContextService.createMixerInsert(mixerTrackId, firstUnusedTrack.name);
+          MixerService.createMixerInsert(mixerTrackId, firstUnusedTrack.name);
         }
       }
     }
@@ -214,7 +217,7 @@ export const useInstrumentsStore = create((set, get) => ({
     }));
 
     // SES MOTORUNA KOMUT GÖNDER: Enstrümanın mute durumunu anında güncelle.
-    AudioContextService.setInstrumentMute(instrumentId, isMuted);
+    InstrumentService.setMute(instrumentId, isMuted);
   },
 
   /**
@@ -256,7 +259,7 @@ export const useInstrumentsStore = create((set, get) => ({
 
       try {
         // SES MOTORUNA KOMUT GÖNDER: Buffer'ı yeniden işle ve güncelle.
-        const newBuffer = await AudioContextService.reconcileInstrument(instrumentId, updatedInstrument);
+        const newBuffer = await InstrumentService.reconcile(instrumentId, updatedInstrument);
 
         // Sample Editor açıksa, güncellenmiş buffer'ı anında göster.
         // ✅ PERFORMANCE: Use StoreManager for panel updates
@@ -268,7 +271,7 @@ export const useInstrumentsStore = create((set, get) => ({
       }
     } else {
       // SES MOTORUNA KOMUT GÖNDER: Sadece değişen parametreleri motorla senkronla.
-      AudioContextService.updateInstrumentParameters(instrumentId, newParams);
+      InstrumentService.updateParameters(instrumentId, newParams);
     }
   },
 

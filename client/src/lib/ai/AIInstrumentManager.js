@@ -7,7 +7,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { aiInstrumentService } from './AIInstrumentService';
 import { useInstrumentsStore } from '@/store/useInstrumentsStore';
-import { AudioContextService } from '@/lib/services/AudioContextService';
+import { InstrumentService } from '@/lib/services/InstrumentService';
 import { useArrangementStore } from '@/store/useArrangementStore';
 
 export class AIInstrumentManager {
@@ -60,7 +60,7 @@ export class AIInstrumentManager {
 
       // Add to instruments store
       const instrumentsStore = useInstrumentsStore.getState();
-      
+
       // Format instrument data for handleAddNewInstrument
       const formattedInstrumentData = {
         id: instrumentData.id,
@@ -69,7 +69,7 @@ export class AIInstrumentManager {
         audioBuffer: instrumentData.audioBuffer,
         aiMetadata: instrumentData.aiMetadata
       };
-      
+
       instrumentsStore.handleAddNewInstrument(formattedInstrumentData);
 
       // Add to first pattern if it exists
@@ -88,10 +88,10 @@ export class AIInstrumentManager {
   generateInstrumentName(prompt) {
     // Extract key words from prompt
     const words = prompt.toLowerCase().split(/\s+/);
-    const keyWords = words.filter(word => 
+    const keyWords = words.filter(word =>
       !['a', 'an', 'the', 'with', 'and', 'or', 'for', 'to'].includes(word)
     );
-    
+
     // Capitalize first letter of each word
     const name = keyWords
       .slice(0, 3) // Take first 3 words
@@ -107,16 +107,16 @@ export class AIInstrumentManager {
   addToFirstPattern(instrumentId) {
     try {
       const { patterns, patternOrder, createPattern } = useArrangementStore.getState();
-      
+
       if (patternOrder.length === 0) {
         // Create first pattern if it doesn't exist
         createPattern('Pattern 1');
       }
 
-      const firstPatternId = patternOrder.length > 0 
-        ? patternOrder[0] 
+      const firstPatternId = patternOrder.length > 0
+        ? patternOrder[0]
         : useArrangementStore.getState().patternOrder[0];
-      
+
       if (firstPatternId) {
         // Instrument is automatically added to pattern via handleAddNewInstrument
         console.log(`✅ Added AI instrument to pattern: ${firstPatternId}`);
@@ -170,7 +170,8 @@ export class AIInstrumentManager {
       instrumentsStore.updateInstrument(instrumentId, updatedInstrument);
 
       // Update audio engine
-      AudioContextService.updateInstrument(updatedInstrument);
+      // Note: updateInstrument needs buffer sync - reconcile handles this
+      InstrumentService.reconcile(instrumentId, updatedInstrument);
 
       return updatedInstrument;
     } catch (error) {

@@ -17,6 +17,7 @@ import { usePanelsStore } from '@/store/usePanelsStore';
 import { useProjectAudioStore } from '@/store/useProjectAudioStore';
 import { getTimelineController } from '@/lib/core/TimelineControllerSingleton'; // ✅ Unified transport system
 import { AudioContextService } from '@/lib/services/AudioContextService'; // ✅ For audio engine sync
+import { AudioEngineGlobal } from '@/lib/core/AudioEngineGlobal';
 // ✅ PHASE 2: Design Consistency - Using component library
 import { Button } from '@/components/controls/base/Button';
 import { drawGrid, renderAudioClip, renderPatternClip } from './renderers';
@@ -367,7 +368,7 @@ export function ArrangementPanelV2() {
     console.log('🎵 ArrangementV2 mounting, syncing tracks to audio engine...');
     const syncTracks = async () => {
       try {
-        const audioEngine = AudioContextService.getAudioEngine();
+        const audioEngine = AudioEngineGlobal.get();
         if (audioEngine) {
           // Sync arrangement tracks to audio engine
           await useArrangementStore.getState()._syncArrangementTracksToAudioEngine();

@@ -1,6 +1,6 @@
 // src/features/piano_roll_v5/usePianoRollEngine.js
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import {usePlaybackStore} from '@/store/usePlaybackStore';
+import { usePlaybackStore } from '@/store/usePlaybackStore';
 import { uiUpdateManager, UPDATE_PRIORITIES, UPDATE_FREQUENCIES } from '@/lib/core/UIUpdateManager.js';
 import { getTimelineController } from '@/lib/core/TimelineControllerSingleton';
 
@@ -119,7 +119,7 @@ export function usePianoRollEngine(containerRef, playbackControls = {}) {
             e.preventDefault();
             const { deltaY, offsetX, offsetY } = e;
             const vp = viewportRef.current;
-            
+
             const zoomFactor = 1 - deltaY * 0.005;
             const newZoomX = Math.max(MIN_ZOOM_X, Math.min(MAX_ZOOM_X, vp.zoomX * zoomFactor));
             const newZoomY = Math.max(MIN_ZOOM_Y, Math.min(MAX_ZOOM_Y, vp.zoomY * zoomFactor));
@@ -141,7 +141,7 @@ export function usePianoRollEngine(containerRef, playbackControls = {}) {
             // newScrollX = (scrollX + mouseX) * (newZoomX / oldZoomX) - mouseX
             const worldX = (vp.scrollX + mouseX) / vp.zoomX;
             const worldY = (vp.scrollY + mouseY) / vp.zoomY;
-            
+
             // Keep the same world point under the mouse (convert back to screen coordinates)
             const newScrollX = (worldX * newZoomX) - mouseX;
             const newScrollY = (worldY * newZoomY) - mouseY;
@@ -300,7 +300,7 @@ export function usePianoRollEngine(containerRef, playbackControls = {}) {
     }, [containerRef, handleWheel]);
 
     const viewportData = viewportRef.current;
-    
+
     const dimensions = useMemo(() => {
         const stepWidth = BASE_STEP_WIDTH * viewportData.zoomX;
         const keyHeight = BASE_KEY_HEIGHT * viewportData.zoomY;
@@ -312,14 +312,15 @@ export function usePianoRollEngine(containerRef, playbackControls = {}) {
             totalHeight: TOTAL_KEYS * keyHeight,
         };
     }, [viewportData.zoomX, viewportData.zoomY]);
-    
+
     const lod = useMemo(() => {
         const stepWidth = BASE_STEP_WIDTH * viewportData.zoomX;
-        if (stepWidth < 0.2) return 4;
-        if (stepWidth < 0.8) return 3;
-        if (stepWidth < 2.5) return 2;
-        if (stepWidth < 10) return 1;
-        return 0;
+        // Adjusted thresholds for earlier optimization
+        if (stepWidth < 2) return 4;   // Ultra zoomed out
+        if (stepWidth < 5) return 3;   // Very zoomed out
+        if (stepWidth < 15) return 2;  // Zoomed out (Flat colors)
+        if (stepWidth < 30) return 1;  // Normal/Slightly zoomed out (No shadows)
+        return 0; // High detail
     }, [viewportData.zoomX]);
 
     const visibleSteps = useMemo(() => {

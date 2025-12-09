@@ -2,6 +2,7 @@
 // Ortak kullanılabilir motor durumu takip hook'u
 import { useState, useEffect, useCallback } from 'react';
 import { AudioContextService } from '@/lib/services/AudioContextService';
+import { AudioEngineGlobal } from '@/lib/core/AudioEngineGlobal';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
 
 /**
@@ -29,7 +30,7 @@ export const useEngineState = (options = {}) => {
 
   // Motor bağlantısını kontrol et
   const checkEngineConnection = useCallback(() => {
-    const audioEngine = AudioContextService.getAudioEngine();
+    const audioEngine = AudioEngineGlobal.get();
     const transport = audioEngine?.transport;
     const isConnected = !!(audioEngine && transport);
 

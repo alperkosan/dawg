@@ -1009,8 +1009,8 @@ export const useArrangementWorkspaceStore = create((set, get) => ({
    */
   _notifyPlaybackScheduleChange: (reason = 'clips-changed') => {
     try {
-      import('../lib/services/AudioContextService').then(({ AudioContextService }) => {
-        const audioEngine = AudioContextService.getAudioEngine();
+      import('../lib/core/AudioEngineGlobal').then(({ AudioEngineGlobal }) => {
+        const audioEngine = AudioEngineGlobal.get();
         if (audioEngine?.playbackManager) {
           const playbackManager = audioEngine.playbackManager;
 

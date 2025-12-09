@@ -6,6 +6,7 @@ import { create } from 'zustand';
 import { nanoid } from 'nanoid';
 // ✅ Empty project - no initial data
 import { AudioContextService } from '@/lib/services/AudioContextService';
+import { AudioEngineGlobal } from '@/lib/core/AudioEngineGlobal';
 import { storeManager } from './StoreManager';
 import { usePlaybackStore } from './usePlaybackStore';
 import { audioAssetManager } from '@/lib/audio/AudioAssetManager.js';
@@ -138,7 +139,7 @@ const arrangementStoreOrchestrator = (config) => (set, get, api) => {
     originalSetActivePatternId(...args);
     // Immediate for pattern changes (more critical)
     usePlaybackStore.getState().updateLoopLength();
-    AudioContextService.getAudioEngine()?.playbackManager?.reschedule('active-pattern-change');
+    AudioEngineGlobal.get()?.playbackManager?.reschedule('active-pattern-change');
   };
 
   return store;
@@ -732,7 +733,7 @@ export const useArrangementStore = create(arrangementStoreOrchestrator((set, get
     get().pushHistory({ type: 'ADD_ARRANGEMENT_TRACK', trackId: newTrack.id });
 
     // Sync to audio engine if initialized
-    const audioEngine = get()._audioEngine || AudioContextService.getAudioEngine();
+    const audioEngine = get()._audioEngine || AudioEngineGlobal.get();
     if (audioEngine) {
       await get()._syncArrangementTracksToAudioEngine();
     }
@@ -761,7 +762,7 @@ export const useArrangementStore = create(arrangementStoreOrchestrator((set, get
     });
 
     // Remove mixer insert from audio engine
-    const audioEngine = get()._audioEngine || AudioContextService.getAudioEngine();
+    const audioEngine = get()._audioEngine || AudioEngineGlobal.get();
     const trackChannelMap = get()._trackChannelMap;
     const insertId = trackChannelMap.get(trackId);
 
@@ -780,7 +781,7 @@ export const useArrangementStore = create(arrangementStoreOrchestrator((set, get
     });
 
     // Sync to audio engine if initialized
-    const audioEngine = get()._audioEngine || AudioContextService.getAudioEngine();
+    const audioEngine = get()._audioEngine || AudioEngineGlobal.get();
     const trackChannelMap = get()._trackChannelMap;
     const insertId = trackChannelMap.get(trackId);
 
@@ -877,7 +878,7 @@ export const useArrangementStore = create(arrangementStoreOrchestrator((set, get
     get().pushHistory({ type: 'UPDATE_ARRANGEMENT_CLIP', clipId, oldState: oldClip, newState: updates });
 
     // Reschedule only the updated clip
-    const audioEngine = get()._audioEngine || AudioContextService.getAudioEngine();
+    const audioEngine = get()._audioEngine || AudioEngineGlobal.get();
     if (audioEngine?.playbackManager && updatedClip) {
       audioEngine.playbackManager.rescheduleClipEvents(updatedClip);
     }
@@ -1218,7 +1219,7 @@ export const useArrangementStore = create(arrangementStoreOrchestrator((set, get
   // =================== AUDIO ENGINE INTEGRATION ===================
 
   _syncArrangementTracksToAudioEngine: async () => {
-    const audioEngine = get()._audioEngine || AudioContextService.getAudioEngine();
+    const audioEngine = get()._audioEngine || AudioEngineGlobal.get();
     const tracks = get().arrangementTracks;
     const trackChannelMap = get()._trackChannelMap;
 

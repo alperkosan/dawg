@@ -5,6 +5,7 @@ import { useTimelineStore } from '@/store/TimelineStore';
 import { MIDIRecorder } from '@/lib/midi/MIDIRecorder';
 import EventBus from '@/lib/core/EventBus';
 import { AudioContextService } from '@/lib/services/AudioContextService';
+import { AudioEngineGlobal } from '@/lib/core/AudioEngineGlobal';
 
 export const useMidiRecording = ({
     currentInstrument,
@@ -78,7 +79,7 @@ export const useMidiRecording = ({
 
                 let audioTime = null;
                 try {
-                    const audioEngine = AudioContextService.getAudioEngine();
+                    const audioEngine = AudioEngineGlobal.get();
                     if (audioEngine?.audioContext) {
                         audioTime = audioEngine.audioContext.currentTime;
                     }
@@ -101,7 +102,7 @@ export const useMidiRecording = ({
 
                 let audioTime = null;
                 try {
-                    const audioEngine = AudioContextService.getAudioEngine();
+                    const audioEngine = AudioEngineGlobal.get();
                     if (audioEngine?.audioContext) {
                         audioTime = audioEngine.audioContext.currentTime;
                     }

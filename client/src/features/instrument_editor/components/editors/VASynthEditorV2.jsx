@@ -8,6 +8,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import useInstrumentEditorStore from '@/store/useInstrumentEditorStore';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
 import { AudioContextService } from '@/lib/services/AudioContextService';
+import { AudioEngineGlobal } from '@/lib/core/AudioEngineGlobal';
 import { getPreset } from '@/lib/audio/synth/presets';
 import { getPreviewManager } from '@/lib/audio/preview';
 import { ADSRCanvas, OscillatorPanel } from '@/components/controls/canvas';
@@ -84,13 +85,13 @@ const VASynthEditorV2 = ({ instrumentData: initialData }) => {
     ...(instrumentData.amplitudeEnvelope || {})
   };
   const lfo1 = instrumentData.lfo1 || presetData?.lfo || { frequency: 4, depth: 0.5, waveform: 'sine', target: 'filter.cutoff', tempoSync: false, tempoSyncRate: '1/4' };
-  
+
   // ✅ TEMPO SYNC: Get BPM from playback store
   const bpm = usePlaybackStore(state => state.bpm);
 
   // Helper: map note name like 'C', 'C#' with octave 4 to MIDI
   const noteNameToMidi = useCallback((name, octave = 4) => {
-    const map = { 'C':0,'C#':1,'D':2,'D#':3,'E':4,'F':5,'F#':6,'G':7,'G#':8,'A':9,'A#':10,'B':11 };
+    const map = { 'C': 0, 'C#': 1, 'D': 2, 'D#': 3, 'E': 4, 'F': 5, 'F#': 6, 'G': 7, 'G#': 8, 'A': 9, 'A#': 10, 'B': 11 };
     const offset = map[name] ?? 0;
     return (octave + 1) * 12 + offset; // MIDI formula
   }, []);
@@ -99,13 +100,13 @@ const VASynthEditorV2 = ({ instrumentData: initialData }) => {
   const handleParameterChange = useCallback((path, value) => {
     updateParameter(path, value);
 
-    const audioEngine = AudioContextService.getAudioEngine();
+    const audioEngine = AudioEngineGlobal.get();
     if (audioEngine && instrumentData.id) {
       const instrument = audioEngine.instruments.get(instrumentData.id);
       if (instrument && typeof instrument.updateParameters === 'function') {
         const updateObj = {};
         const keys = path.split('.');
-        
+
         // ✅ TEMPO SYNC: If tempo sync or rate changed, include BPM
         if (keys[0] === 'lfo1' && (keys[1] === 'tempoSync' || keys[1] === 'tempoSyncRate')) {
           if (!updateObj.lfo1) updateObj.lfo1 = {};
@@ -225,7 +226,7 @@ const VASynthEditorV2 = ({ instrumentData: initialData }) => {
 
   // Setup PreviewManager
   useEffect(() => {
-    const audioEngine = AudioContextService.getAudioEngine();
+    const audioEngine = AudioEngineGlobal.get();
     if (audioEngine?.audioContext && instrumentData) {
       // ✅ FX CHAIN: Pass audioEngine to PreviewManager for mixer routing
       const previewManager = getPreviewManager(audioEngine.audioContext, audioEngine);

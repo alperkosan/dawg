@@ -11,6 +11,7 @@ import { panelRegistry, panelDefinitions } from '@/config/panelConfig';
 import { pluginRegistry } from '@/config/pluginConfig';
 import PluginContainer from '@/components/plugins/container/PluginContainer';
 import { AudioContextService } from '@/lib/services/AudioContextService';
+import { EffectService } from '@/lib/services/EffectService';
 
 // Atmospheric effects
 import MatrixRain from '@/components/effects/MatrixRain';
@@ -263,7 +264,7 @@ function WorkspacePanel() {
             };
 
             // Get the effect node for visualization
-            const effectNode = AudioContextService.getEffectNode(track.id, effect.id);
+            const effectNode = EffectService.getEffectNode(track.id, effect.id);
 
             // 🔍 DEBUG: Log effect node lookup
             console.log('🔍 [WorkspacePanel] Effect node lookup:', {

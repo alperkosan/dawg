@@ -30,7 +30,8 @@ export class InstrumentFactory {
     static async createPlaybackInstrument(instrumentData, audioContext, options = {}) {
         const {
             preloadSamples = true,
-            onProgress = null
+            onProgress = null,
+            existingBuffer = null  // ✅ NEW: Use pre-loaded buffer if available
         } = options;
 
         console.log(`🏭 Creating playback instrument: ${instrumentData.name} (${instrumentData.type})`);
@@ -41,7 +42,7 @@ export class InstrumentFactory {
                     return await this._createSampleInstrument(
                         instrumentData,
                         audioContext,
-                        { preloadSamples, onProgress }
+                        { preloadSamples, onProgress, existingBuffer }
                     );
 
                 case INSTRUMENT_TYPES.VASYNTH:
@@ -89,7 +90,7 @@ export class InstrumentFactory {
     }
 
     static async _createSampleInstrument(instrumentData, audioContext, options) {
-        const { preloadSamples, onProgress } = options;
+        const { preloadSamples, onProgress, existingBuffer } = options;
 
         // Check if multi-sampled
         const isMultiSampled = instrumentData.multiSamples && instrumentData.multiSamples.length > 0;
@@ -118,11 +119,17 @@ export class InstrumentFactory {
             // Single sample instrument (e.g., Kick, Snare)
             console.log(`  Single sample instrument (WASM): ${instrumentData.url}`);
 
-            // Load single sample
-            let sampleBuffer = null;
-            if (preloadSamples) {
+            // ✅ FIX: Use existing buffer if provided (from store or engine cache)
+            let sampleBuffer = existingBuffer || instrumentData.audioBuffer || null;
+
+            // Only load from network if we don't have a buffer
+            if (!sampleBuffer && preloadSamples) {
                 const buffers = await SampleLoader.preloadInstrument(instrumentData, audioContext);
                 sampleBuffer = buffers.get(instrumentData.url);
+            }
+
+            if (!sampleBuffer) {
+                console.warn(`⚠️ No buffer available for ${instrumentData.name}, will try to load on demand`);
             }
 
             // Create instrument - SWITCH TO WASM

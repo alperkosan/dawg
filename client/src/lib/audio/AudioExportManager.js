@@ -6,6 +6,7 @@
  */
 
 import { AudioContextService } from '../services/AudioContextService';
+import { AudioEngineGlobal } from '../core/AudioEngineGlobal';
 import { AudioProcessor } from './AudioProcessor';
 import { FileManager } from './FileManager';
 import { getRenderEngine } from './RenderEngine'; // ✅ SYNC: Use singleton RenderEngine
@@ -762,7 +763,7 @@ export class AudioExportManager {
     const mixerTrackMap = {};
     const requiredBusIds = new Set();
 
-    const audioEngine = AudioContextService.getAudioEngine();
+    const audioEngine = AudioEngineGlobal.get();
     if (!audioEngine) {
       throw new Error('Audio engine not available');
     }
@@ -1177,7 +1178,7 @@ export class AudioExportManager {
    * Export master bus
    */
   async exportMaster(options = {}, onProgress = null) {
-    const audioEngine = AudioContextService.getAudioEngine();
+    const audioEngine = AudioEngineGlobal.get();
     if (!audioEngine) {
       throw new Error('Audio engine not available');
     }
@@ -1416,19 +1417,6 @@ export class AudioExportManager {
 
   async _exportChannelRealtime(channelId, settings) {
     throw new Error('Realtime export moved to offline rendering for higher quality.');
-  }
-
-  _serializeInsert(insert, mixerTrackId, { trackMeta = null, forceType, sends: overrideSends } = {}) {
-    // Simplified serialization for export snapshot
-    return {
-      id: mixerTrackId,
-      name: insert.label || mixerTrackId,
-      gain: insert.gainNode?.gain?.value ?? 1,
-      pan: insert.panNode?.pan?.value ?? 0,
-      // Basic params only for now
-      type: forceType || 'track',
-      insertEffects: [] // Effects handling in snapshot preparation
-    };
   }
 
   /**
