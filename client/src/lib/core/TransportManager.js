@@ -520,7 +520,10 @@ export class TransportManager {
       switch (e.key) {
         case ' ': // Spacebar
           e.preventDefault();
-          this.togglePlayPause();
+          // ✅ FIX: Use unified store action to match Toolbar behavior
+          import('@/store/usePlaybackStore').then(({ usePlaybackStore }) => {
+            usePlaybackStore.getState().togglePlayPause();
+          });
           break;
         case 'Numpad0':
         case 'Insert':

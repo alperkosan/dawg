@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { visualizationEngine } from '@/lib/visualization/VisualizationEngine';
-import { WaveformVisualizer } from '@/lib/visualization/visualizers/WaveformVisualizer';
+import { visualizationEngine } from '@/features/visualization/engine/VisualizationEngine';
+import { WaveformVisualizer } from '@/features/visualization/engine/visualizers/WaveformVisualizer';
 import './VisualizationTest.css';
 
 /**

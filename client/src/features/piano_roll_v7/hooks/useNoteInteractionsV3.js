@@ -15,9 +15,9 @@ import {
     MoveNotesCommand,
     TransposeNotesCommand,
     BatchCommand
-} from '@/lib/piano-roll-tools/CommandStack';
-import { BatchUpdateNotesCommand } from '@/lib/piano-roll-tools/MultiNoteCommand';
-import { TOOL_TYPES } from '@/lib/piano-roll-tools';
+} from '@/features/piano_roll_v7/lib/tools/CommandStack';
+import { BatchUpdateNotesCommand } from '@/features/piano_roll_v7/lib/tools/MultiNoteCommand';
+import { TOOL_TYPES } from '@/features/piano_roll_v7/lib/tools';
 import { useArrangementStore } from '@/store/useArrangementStore';
 import { getPreviewManager } from '@/lib/audio/preview';
 import EventBus from '@/lib/core/EventBus';

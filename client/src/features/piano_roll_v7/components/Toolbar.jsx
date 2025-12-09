@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { MousePointer, Edit3, Eraser, Scissors, Music, Zap, Guitar, Shuffle, FlipHorizontal2, Piano, Settings, Sliders, Link2, ChevronDown, Circle, Eye, EyeOff } from 'lucide-react';
-import { getToolManager, TOOL_TYPES } from '@/lib/piano-roll-tools';
+import { getToolManager, TOOL_TYPES } from '@/features/piano_roll_v7/lib/tools';
 import { SCALES, NOTE_NAMES } from '@/lib/music/ScaleSystem';
 import './Toolbar.css';
 

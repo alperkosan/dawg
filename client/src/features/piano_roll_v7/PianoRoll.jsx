@@ -20,13 +20,14 @@ import { usePlaybackStore } from '@/store/usePlaybackStore';
 import { useArrangementStore } from '@/store/useArrangementStore';
 import { AutomationLane } from './types/AutomationLane';
 import { getTimelineController } from '@/lib/core/TimelineControllerSingleton';
-import { getToolManager } from '@/lib/piano-roll-tools';
+import { getToolManager } from '@/features/piano_roll_v7/lib/tools';
 import { getTransportManagerSync } from '@/lib/core/TransportManagerSingleton';
 import { getAutomationManager } from '@/lib/automation/AutomationManager';
 import { getScaleSystem } from '@/lib/music/ScaleSystem';
 import EventBus from '@/lib/core/EventBus.js';
 import { getPreviewManager } from '@/lib/audio/preview';
 import { PANEL_IDS } from '@/config/constants';
+import { useMidiRecording } from './hooks/useMidiRecording';
 import { MIDIRecorder } from '@/lib/midi/MIDIRecorder';
 import { CountInOverlay } from '@/components/midi/CountInOverlay';
 import { AudioContextService } from '@/lib/services/AudioContextService';
@@ -262,6 +263,7 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
     const currentStep = usePlaybackStore(state => state.currentStep);
     const setTransportPosition = usePlaybackStore(state => state.setTransportPosition);
     const followPlayheadMode = usePlaybackStore(state => state.followPlayheadMode);
+    const bpm = usePlaybackStore(state => state.bpm);
 
     // Pass transport position setter to engine for timeline interaction
     const { snapValue, setSnapValue, ...engine } = usePianoRollEngine(containerRef, {
@@ -298,6 +300,18 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
 
     // ✅ GHOST PLAYHEAD STATE
     const [ghostPosition, setGhostPosition] = useState(null);
+
+    // Get data from persistent stores
+    const pianoRollInstrumentId = usePanelsStore(state => state.pianoRollInstrumentId);
+    const storeVisibility = usePanelsStore(selectPianoRollVisibility);
+    const isPianoRollVisible = panelVisibleProp && storeVisibility;
+    const instruments = useInstrumentsStore(state => state.instruments);
+    const arrangementStore = useArrangementStore();
+    const playbackStore = usePlaybackStore();
+
+    const currentInstrument = pianoRollInstrumentId
+        ? instruments.find(inst => inst.id === pianoRollInstrumentId)
+        : null;
 
     // ✅ LOOP REGION STATE
     const [loopRegion, setLoopRegion] = useState(null); // { start: step, end: step }
@@ -336,217 +350,11 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
     }, []);
 
     // ✅ MIDI RECORDING STATE
-    const [isRecording, setIsRecording] = useState(false);
-    const [isCountingIn, setIsCountingIn] = useState(false);
-    const [countInBars, setCountInBars] = useState(1);
-    const midiRecorderRef = useRef(null);
-    const bpm = usePlaybackStore(state => state.bpm);
-
-    // ✅ Initialize MIDIRecorder
-    useEffect(() => {
-        const playbackStore = usePlaybackStore.getState();
-        const arrangementStore = useArrangementStore.getState();
-        const timelineStore = useTimelineStore.getState();
-
-        const recorder = new MIDIRecorder(
-            playbackStore,
-            arrangementStore,
-            timelineStore,
-            loopRegion,
-            currentInstrument?.id // ✅ Pass current instrument ID
-        );
-
-        midiRecorderRef.current = recorder;
-
-        // ✅ Listen for count-in events
-        const handleCountInStart = (e) => {
-            setIsCountingIn(true);
-            if (e.detail?.countInBars) {
-                setCountInBars(e.detail.countInBars);
-            }
-        };
-
-        const handleCountInEnd = () => {
-            setIsCountingIn(false);
-        };
-
-        const handleRecordingStart = () => {
-            setIsRecording(true);
-        };
-
-        // ✅ Helper function to convert MIDI pitch to note name
-        const pitchToName = (pitch) => {
-            const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-            const octave = Math.floor(pitch / 12) - 1;
-            const noteName = noteNames[pitch % 12];
-            return `${noteName}${octave}`;
-        };
-
-        // ✅ Listen for keyboard MIDI events during recording
-        const handleKeyboardNoteOn = (e) => {
-            if (recorder && recorder.state.isRecording) {
-                const { pitch, velocity, timestamp } = e.detail;
-
-                // ✅ Get AudioContext time for accurate timestamp
-                let audioTime = null;
-                let playbackPosition = null;
-                let playbackPositionSteps = null;
-                let playbackElapsedTime = 'N/A';
-                let playbackElapsedSteps = 'N/A';
-                try {
-                    const audioEngine = AudioContextService.getAudioEngine();
-                    if (audioEngine?.audioContext) {
-                        audioTime = audioEngine.audioContext.currentTime;
-
-                        // ✅ Calculate playback elapsed time since recording started
-                        if (recorder.state.recordStartAudioTime !== undefined) {
-                            const elapsed = audioTime - recorder.state.recordStartAudioTime;
-                            playbackElapsedTime = elapsed.toFixed(3) + 's';
-                            const bpm = usePlaybackStore.getState().bpm || 120;
-                            playbackElapsedSteps = ((elapsed * bpm / 60) * 4).toFixed(2); // STEPS_PER_BEAT = 4
-                        }
-                    }
-                    if (audioEngine?.playbackManager) {
-                        playbackPosition = audioEngine.playbackManager.getCurrentPosition();
-                        playbackPositionSteps = playbackPosition;
-                    }
-                } catch (e) {
-                    console.warn('⚠️ Error getting audio engine:', e);
-                }
-
-                const performanceTime = performance.now() / 1000;
-                const finalTimestamp = audioTime || performanceTime;
-
-                // ✅ Convert steps to BBT format
-                const playbackPositionBBT = playbackPositionSteps !== null && playbackPositionSteps !== undefined
-                    ? stepsToBBT(playbackPositionSteps)
-                    : 'N/A';
-                // ✅ Calculate absolute position from elapsed time (linear, not wrapped)
-                const playbackElapsedAbsolute = playbackElapsedSteps !== 'N/A' && recorder.state.recordStartStep !== undefined
-                    ? parseFloat(playbackElapsedSteps) + recorder.state.recordStartStep
-                    : null;
-                const playbackElapsedBBT = playbackElapsedAbsolute !== null
-                    ? stepsToBBT(playbackElapsedAbsolute)
-                    : 'N/A';
-
-                console.log(`🎹 KEYBOARD DOWN: pitch=${pitch} (${pitchToName(pitch)}) vel=${velocity}`);
-                console.log(`   ⏱️  Performance.now(): ${performanceTime.toFixed(3)}s`);
-                console.log(`   ⏱️  AudioContext.currentTime: ${audioTime?.toFixed(3) || 'N/A'}s`);
-                console.log(`   ⏱️  Event timestamp: ${timestamp?.toFixed(3) || 'N/A'}s`);
-                console.log(`   ⏱️  Playback elapsed: ${playbackElapsedTime} (${playbackElapsedSteps} steps, ${playbackElapsedBBT} since record start) [LINEAR]`);
-                console.log(`   📍 Playback position: ${playbackPositionSteps?.toFixed(2) || 'N/A'} steps (${playbackPositionBBT}) [WRAPPED] (${playbackPositionSteps ? (playbackPositionSteps / 4).toFixed(3) : 'N/A'} beats)`);
-                console.log(`   📊 Using timestamp: ${finalTimestamp.toFixed(3)}s`);
-
-                recorder.handleMIDIEvent({
-                    type: 'noteOn',
-                    note: pitch,
-                    velocity,
-                    timestamp: finalTimestamp
-                });
-            }
-        };
-
-        const handleKeyboardNoteOff = (e) => {
-            if (recorder && recorder.state.isRecording) {
-                const { pitch, timestamp } = e.detail;
-
-                // ✅ Get AudioContext time for accurate timestamp
-                let audioTime = null;
-                let playbackPosition = null;
-                let playbackPositionSteps = null;
-                let playbackElapsedTime = 'N/A';
-                let playbackElapsedSteps = 'N/A';
-                try {
-                    const audioEngine = AudioContextService.getAudioEngine();
-                    if (audioEngine?.audioContext) {
-                        audioTime = audioEngine.audioContext.currentTime;
-
-                        // ✅ Calculate playback elapsed time since recording started
-                        if (recorder.state.recordStartAudioTime !== undefined) {
-                            const elapsed = audioTime - recorder.state.recordStartAudioTime;
-                            playbackElapsedTime = elapsed.toFixed(3) + 's';
-                            const bpm = usePlaybackStore.getState().bpm || 120;
-                            playbackElapsedSteps = ((elapsed * bpm / 60) * 4).toFixed(2); // STEPS_PER_BEAT = 4
-                        }
-                    }
-                    if (audioEngine?.playbackManager) {
-                        playbackPosition = audioEngine.playbackManager.getCurrentPosition();
-                        playbackPositionSteps = playbackPosition;
-                    }
-                } catch (e) {
-                    console.warn('⚠️ Error getting audio engine:', e);
-                }
-
-                const performanceTime = performance.now() / 1000;
-                const finalTimestamp = audioTime || performanceTime;
-
-                // ✅ Convert steps to BBT format
-                const playbackPositionBBT = playbackPositionSteps !== null && playbackPositionSteps !== undefined
-                    ? stepsToBBT(playbackPositionSteps)
-                    : 'N/A';
-                // ✅ Calculate absolute position from elapsed time (linear, not wrapped)
-                const playbackElapsedAbsolute = playbackElapsedSteps !== 'N/A' && recorder.state.recordStartStep !== undefined
-                    ? parseFloat(playbackElapsedSteps) + recorder.state.recordStartStep
-                    : null;
-                const playbackElapsedBBT = playbackElapsedAbsolute !== null
-                    ? stepsToBBT(playbackElapsedAbsolute)
-                    : 'N/A';
-
-                console.log(`🎹 KEYBOARD RELEASE: pitch=${pitch} (${pitchToName(pitch)})`);
-                console.log(`   ⏱️  Performance.now(): ${performanceTime.toFixed(3)}s`);
-                console.log(`   ⏱️  AudioContext.currentTime: ${audioTime?.toFixed(3) || 'N/A'}s`);
-                console.log(`   ⏱️  Event timestamp: ${timestamp?.toFixed(3) || 'N/A'}s`);
-                console.log(`   ⏱️  Playback elapsed: ${playbackElapsedTime} (${playbackElapsedSteps} steps, ${playbackElapsedBBT} since record start) [LINEAR]`);
-                console.log(`   📍 Playback position: ${playbackPositionSteps?.toFixed(2) || 'N/A'} steps (${playbackPositionBBT}) [WRAPPED] (${playbackPositionSteps ? (playbackPositionSteps / 4).toFixed(3) : 'N/A'} beats)`);
-                console.log(`   📊 Using timestamp: ${finalTimestamp.toFixed(3)}s`);
-
-                recorder.handleMIDIEvent({
-                    type: 'noteOff',
-                    note: pitch,
-                    velocity: 0,
-                    timestamp: finalTimestamp
-                });
-            }
-        };
-
-        // ✅ Listen for transport stop events to stop recording
-        const handleTransportStop = () => {
-            if (recorder && recorder.state.isRecording) {
-                console.log('⏹ Transport stop: Stopping recording');
-                recorder.stopRecording().then(() => {
-                    setIsRecording(false);
-                    setIsCountingIn(false);
-                });
-            }
-        };
-
-        if (typeof window !== 'undefined') {
-            window.addEventListener('midi:countInStart', handleCountInStart);
-            window.addEventListener('midi:countInEnd', handleCountInEnd);
-            window.addEventListener('midi:recordingStart', handleRecordingStart);
-            window.addEventListener('midi:keyboardNoteOn', handleKeyboardNoteOn);
-            window.addEventListener('midi:keyboardNoteOff', handleKeyboardNoteOff);
-        }
-
-        // ✅ Listen for transport stop events
-        EventBus.on('transport:stop', handleTransportStop);
-
-        return () => {
-            if (recorder) {
-                // Cleanup: stop recording without awaiting (cleanup functions can't be async)
-                void recorder.stopRecording();
-            }
-            if (typeof window !== 'undefined') {
-                window.removeEventListener('midi:countInStart', handleCountInStart);
-                window.removeEventListener('midi:countInEnd', handleCountInEnd);
-                window.removeEventListener('midi:recordingStart', handleRecordingStart);
-                window.removeEventListener('midi:keyboardNoteOn', handleKeyboardNoteOn);
-                window.removeEventListener('midi:keyboardNoteOff', handleKeyboardNoteOff);
-            }
-            // ✅ Remove transport stop listener
-            EventBus.off('transport:stop', handleTransportStop);
-        };
-    }, [loopRegion]);
+    // ✅ MIDI RECORDING HOOK
+    const { isRecording, isCountingIn, countInBars } = useMidiRecording({
+        currentInstrument,
+        loopRegion
+    });
 
 
     // ✅ Listen for double-click events to open Note Properties Panel
@@ -707,20 +515,6 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
         [playbackMode, currentStep]
     );
 
-    // Get data from persistent stores
-    const pianoRollInstrumentId = usePanelsStore(state => state.pianoRollInstrumentId);
-    const storeVisibility = usePanelsStore(selectPianoRollVisibility);
-    const isPianoRollVisible = panelVisibleProp && storeVisibility;
-    const instruments = useInstrumentsStore(state => state.instruments);
-    const arrangementStore = useArrangementStore();
-    const playbackStore = usePlaybackStore();
-    // timelineStore already declared above (line 123)
-
-    const currentInstrument = pianoRollInstrumentId
-        ? instruments.find(inst => inst.id === pianoRollInstrumentId)
-        : null;
-
-
     // ✅ Setup PreviewManager to use AudioEngine's instrument directly
     useEffect(() => {
         if (!currentInstrument) return;
@@ -728,30 +522,22 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
         let cancelled = false;
 
         const setupPreview = async () => {
+            // ... logic refactored to use AudioEngineGlobal if possible
+            // For now, restoring context
             try {
-                const [{ getPreviewManager }, { AudioContextService }] = await Promise.all([
-                    import('@/lib/audio/preview'),
-                    import('@/lib/services/AudioContextService')
-                ]);
+                // Dynamic import to avoid circular dep if needed, or just cleaner
+                const { getPreviewManager } = await import('@/lib/audio/preview');
+                const { AudioEngineGlobal } = await import('@/lib/core/AudioEngineGlobal');
 
                 if (cancelled) return;
 
-                const audioEngine = AudioContextService.getAudioEngine();
+                const audioEngine = AudioEngineGlobal.get();
                 if (audioEngine?.audioContext) {
                     const previewManager = getPreviewManager(audioEngine.audioContext, audioEngine);
-
-                    // ✅ Use PreviewManager's normal setInstrument flow
-                    // This creates a separate preview instrument that won't interfere with playback
                     await previewManager.setInstrument(currentInstrument);
-
-                    if (!cancelled) {
-                        console.log('✅ Preview instrument set:', currentInstrument.name);
-                    }
                 }
             } catch (err) {
-                if (!cancelled) {
-                    console.error('Failed to setup preview:', err);
-                }
+                if (!cancelled) console.error('Failed to setup preview:', err);
             }
         };
 
@@ -761,6 +547,8 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
             cancelled = true;
         };
     }, [currentInstrument]);
+
+
 
     // ✅ KEYBOARD PREVIEW - Track active keyboard preview note
     const activeKeyboardNoteRef = useRef(null);

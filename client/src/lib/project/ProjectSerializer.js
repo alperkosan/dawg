@@ -4,7 +4,7 @@
  */
 
 import { useArrangementStore } from '@/store/useArrangementStore';
-import { useArrangementV2Store } from '@/store/useArrangementV2Store';
+
 import { useInstrumentsStore } from '@/store/useInstrumentsStore';
 import { useMixerStore } from '@/store/useMixerStore';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
@@ -15,6 +15,8 @@ import { storageService } from '@/services/storage.js';
 import { normalizeEffectSettings } from '@/lib/audio/effects/parameterMappings.js';
 import { getAutomationManager } from '@/lib/automation/AutomationManager.js';
 import { getScaleSystem } from '@/lib/music/ScaleSystem.js';
+import { AudioEngineGlobal } from '@/lib/core/AudioEngineGlobal.js'; // ✅ NEW
+import { EngineStateSyncService } from '@/lib/services/EngineStateSyncService.js'; // ✅ NEW
 
 export class ProjectSerializer {
   static CURRENT_VERSION = '1.0.0';
@@ -26,6 +28,7 @@ export class ProjectSerializer {
    * - 20 arrangement tracks
    */
   static createEmptyProjectTemplate() {
+    // ... (rest of template creation remains unchanged)
     // Color palette for mixer channels (5 colors, repeated 4 times for 20 channels)
     const mixerColors = [
       '#ef4444', // Red
@@ -261,8 +264,7 @@ export class ProjectSerializer {
       });
 
       // Clear audio engine instruments and buffers FIRST
-      const { AudioContextService } = await import('../services/AudioContextService.js');
-      const engine = AudioContextService.getAudioEngine();
+      const engine = AudioEngineGlobal.get();
       if (engine) {
         // Clear instruments from audio engine
         if (engine.instruments) {
@@ -271,8 +273,6 @@ export class ProjectSerializer {
             try {
               if (engine.removeInstrument) {
                 engine.removeInstrument(id);
-              } else if (AudioContextService.removeInstrument) {
-                AudioContextService.removeInstrument(id);
               }
             } catch (e) {
               console.warn(`⚠️ Failed to remove engine instrument ${id}:`, e);
@@ -394,8 +394,11 @@ export class ProjectSerializer {
 
     // ✅ CRITICAL FIX: Sync mixer tracks to AudioEngine after deserialization
     // This ensures mixer inserts exist before instruments are created
-    const { AudioContextService } = await import('../services/AudioContextService.js');
-    await AudioContextService._syncMixerTracksToAudioEngine();
+    try {
+      await EngineStateSyncService.getInstance().syncMixerTracks();
+    } catch (e) {
+      console.warn('⚠️ Sync mixer tracks failed (ignoring if engine not ready):', e);
+    }
 
     if (projectData.audio_assets) {
       this.deserializeAudioAssets(projectData.audio_assets);
@@ -413,11 +416,19 @@ export class ProjectSerializer {
 
     // ✅ CRITICAL FIX: Sync instruments to mixer inserts AFTER deserializing instruments
     // This ensures instruments are properly routed to their mixer tracks
-    await AudioContextService._syncInstrumentsToMixerInserts();
+    try {
+      await EngineStateSyncService.getInstance().syncInstrumentsToMixerInserts();
+    } catch (e) {
+      console.warn('⚠️ Sync instruments failed:', e);
+    }
 
     // ✅ CRITICAL FIX: Re-sync mixer tracks after instruments are loaded
     // This ensures send connections are properly established with all inserts ready
-    await AudioContextService._syncMixerTracksToAudioEngine();
+    try {
+      await EngineStateSyncService.getInstance().syncMixerTracks();
+    } catch (e) {
+      console.warn('⚠️ Resync mixer tracks failed:', e);
+    }
 
     if (projectData.patterns) {
       this.deserializePatterns(projectData.patterns);
@@ -450,19 +461,15 @@ export class ProjectSerializer {
         usePlaybackStore.setState({ bpm: restoredBpm });
 
         try {
-          const { AudioContextService } = await import('../services/AudioContextService.js');
           // Always push BPM to the currently active audio engine
-          if (typeof AudioContextService.setBPM === 'function') {
-            AudioContextService.setBPM(restoredBpm);
-          } else {
-            const engine = AudioContextService.getAudioEngine?.();
-            engine?.setBPM?.(restoredBpm);
+          const engine = AudioEngineGlobal.get();
+          if (engine && typeof engine.setBPM === 'function') {
+            engine.setBPM(restoredBpm);
           }
 
           // Only route through PlaybackController when it's bound to the same engine
           const controller = playbackStore._controller;
-          const currentEngine = AudioContextService.getAudioEngine?.();
-          if (controller && controller.audioEngine === currentEngine && typeof controller.setBPM === 'function') {
+          if (controller && controller.audioEngine === engine && typeof controller.setBPM === 'function') {
             controller.setBPM(restoredBpm);
           }
         } catch (error) {
@@ -505,8 +512,7 @@ export class ProjectSerializer {
         return;
       }
 
-      const { AudioContextService } = await import('../services/AudioContextService.js');
-      const engine = AudioContextService.getAudioEngine();
+      const engine = AudioEngineGlobal.get();
       if (!engine || !engine.audioContext) {
         console.warn('⚠️ Cannot preload samples: audio engine not ready');
         return;
@@ -1035,6 +1041,27 @@ export class ProjectSerializer {
       store.setActivePatternId(firstPatternId);
       console.log(`✅ Active pattern not found, switched to first pattern: ${firstPatternId}`);
     }
+
+    // ✅ FIX: Update nextPatternNumber based on highest existing pattern number
+    // This prevents pattern number collisions (e.g. creating pattern-1 when it exists)
+    let maxPatternNum = 0;
+    restoredPatternIds.forEach(id => {
+      const match = id.match(/pattern-(\d+)/);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (!isNaN(num) && num > maxPatternNum) {
+          maxPatternNum = num;
+        }
+      }
+    });
+
+    // Set next number to max + 1
+    // If no patterns (max=0), default to 1 (or 2 if we want next one)
+    // If pattern-1 exists (max=1), next is 2
+    const nextNum = Math.max(1, maxPatternNum + 1);
+
+    useArrangementStore.setState({ nextPatternNumber: nextNum });
+    console.log(`🔢 Updated nextPatternNumber to ${nextNum} (max existing: ${maxPatternNum})`);
 
     // Restore pattern order and active pattern if available
     // Note: pattern_order is stored in metadata, will be restored in main deserialize method

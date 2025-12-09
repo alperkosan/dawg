@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useArrangementStore } from '@/store/useArrangementStore';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
 import { getPreviewManager } from '@/lib/audio/preview';
-import { getToolManager, TOOL_TYPES } from '@/lib/piano-roll-tools';
+import { getToolManager, TOOL_TYPES } from '@/features/piano_roll_v7/lib/tools';
 import EventBus from '@/lib/core/EventBus.js';
 import { premiumNoteRenderer } from '../renderers/noteRenderer';
 import { calculatePatternLoopLength } from '@/lib/utils/patternUtils.js';
@@ -17,7 +17,7 @@ import {
     BatchCommand,
     TransposeNotesCommand,
     ToggleMuteCommand
-} from '@/lib/piano-roll-tools/CommandStack';
+} from '@/features/piano_roll_v7/lib/tools/CommandStack';
 import { midiInputContext } from '../state/MIDIInputContext';
 import { ActionType } from '../state/ActionTypes';
 import { migrateNoteToExtended } from '../utils/noteMigration';
@@ -1123,7 +1123,7 @@ export function useNoteInteractionsV2(
         }));
 
         // ✅ USE BATCH COMMAND for undo/redo
-        import('@/lib/piano-roll-tools/CommandStack').then(({ getCommandStack, BatchCommand, AddNoteCommand }) => {
+        import('@/features/piano_roll_v7/lib/tools/CommandStack').then(({ getCommandStack, BatchCommand, AddNoteCommand }) => {
             const commands = newNotes.map(note =>
                 new AddNoteCommand(
                     note,
@@ -2440,7 +2440,7 @@ export function useNoteInteractionsV2(
                 updatePatternStore(updatedNotes);
 
                 // ✅ CREATE BATCH COMMAND for undo/redo (async is OK here)
-                import('@/lib/piano-roll-tools/CommandStack').then(({ getCommandStack, BatchCommand, UpdateNoteCommand }) => {
+                import('@/features/piano_roll_v7/lib/tools/CommandStack').then(({ getCommandStack, BatchCommand, UpdateNoteCommand }) => {
                     const commands = [];
 
                     noteIds.forEach(noteId => {
@@ -2750,8 +2750,8 @@ export function useNoteInteractionsV2(
                 // ✅ CREATE BATCH UPDATE COMMAND for undo/redo (async is OK here)
                 // IMPORTANT: We already applied the changes above (immediate update)
                 // So we need to add to history WITHOUT executing again
-                import('@/lib/piano-roll-tools/MultiNoteCommand').then(({ BatchUpdateNotesCommand }) => {
-                    import('@/lib/piano-roll-tools/CommandStack').then(({ getCommandStack }) => {
+                import('@/features/piano_roll_v7/lib/tools/MultiNoteCommand').then(({ BatchUpdateNotesCommand }) => {
+                    import('@/features/piano_roll_v7/lib/tools/CommandStack').then(({ getCommandStack }) => {
                         const noteUpdates = [];
                         
                         // ✅ Use originalNotesForUndo if available (for proper undo), otherwise fallback to originalNotes

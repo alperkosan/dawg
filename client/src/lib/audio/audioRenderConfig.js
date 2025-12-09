@@ -256,6 +256,11 @@ export const EXPORT_TYPES = {
   FREEZE: 'freeze'
 };
 
+export const EXPORT_MODE = {
+  OFFLINE: 'offline',
+  REALTIME: 'realtime'
+};
+
 // =================== CPU OPTIMIZATION ===================
 
 export const CPU_CONFIG = {

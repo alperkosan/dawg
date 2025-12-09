@@ -1260,8 +1260,7 @@ export function ArrangementPanelV2() {
       // Space - toggle play/pause
       if (e.code === 'Space') {
         e.preventDefault();
-        // TODO: Connect to playback system
-        console.log('Toggle play/pause');
+        usePlaybackStore.getState().togglePlayPause();
         return;
       }
 

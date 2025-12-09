@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { visualizationEngine } from '@/lib/visualization/VisualizationEngine';
-import { WebGLSpectrumAnalyzer } from '@/lib/visualization/visualizers/WebGLSpectrumAnalyzer';
-import { WebGLWaveform } from '@/lib/visualization/visualizers/WebGLWaveform';
-import { WebGLOscilloscope } from '@/lib/visualization/visualizers/WebGLOscilloscope';
+import { visualizationEngine } from '@/features/visualization/engine/VisualizationEngine';
+import { WebGLSpectrumAnalyzer } from '@/features/visualization/engine/visualizers/WebGLSpectrumAnalyzer';
+import { WebGLWaveform } from '@/features/visualization/engine/visualizers/WebGLWaveform';
+import { WebGLOscilloscope } from '@/features/visualization/engine/visualizers/WebGLOscilloscope';
 import './WebGLVisualizationTest.css';
 
 /**

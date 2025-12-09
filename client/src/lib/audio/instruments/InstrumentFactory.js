@@ -51,9 +51,12 @@ export class InstrumentFactory {
                     );
 
                 case INSTRUMENT_TYPES.SYNTH:
-                    // Legacy ForgeSynth - not implemented yet in new system
-                    console.warn(`ForgeSynth not yet supported in InstrumentFactory`);
-                    return null;
+                    // ✅ Map generic 'synth' type to VASynthInstrument for now
+                    console.log(`Address legacy 'synth' type -> using VASynthInstrument`);
+                    return await this._createVASynthInstrument(
+                        instrumentData,
+                        audioContext
+                    );
 
                 default:
                     throw new Error(`Unknown instrument type: ${instrumentData.type}`);

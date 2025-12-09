@@ -27,9 +27,9 @@ const DEBUG_LOOP = false;     // Set to true only for debugging loop restart iss
 const DEBUG_SCHEDULING = false; // Set to true only for debugging note scheduling
 
 // ✅ PERFORMANCE: Conditional logging helpers (no-op when disabled)
-const logPlayback = DEBUG_PLAYBACK ? (...args) => console.log('🎵', ...args) : () => {};
-const logLoop = DEBUG_LOOP ? (...args) => console.log('🔄', ...args) : () => {};
-const logScheduling = DEBUG_SCHEDULING ? (...args) => console.log('📅', ...args) : () => {};
+const logPlayback = DEBUG_PLAYBACK ? (...args) => console.log('🎵', ...args) : () => { };
+const logLoop = DEBUG_LOOP ? (...args) => console.log('🔄', ...args) : () => { };
+const logScheduling = DEBUG_SCHEDULING ? (...args) => console.log('📅', ...args) : () => { };
 
 /**
  * ⚡ PERFORMANCE OPTIMIZATION: Debounced Scheduling System
@@ -150,7 +150,7 @@ export class PlaybackManager {
         this.isPaused = false;
         this.currentPosition = 0; // in steps
         this._isLoopRestarting = false; // ✅ FIX: Track loop restart state to prevent send/unsend during restart
-        
+
         // Loop settings
         this.loopEnabled = true;
         this.loopStart = 0; // in steps
@@ -159,15 +159,15 @@ export class PlaybackManager {
         // ✅ REMOVED: Pre-roll system removed for DAW-standard loop behavior
         // Pre-roll caused timing inconsistencies and conflicts with loop restart
         // DAW-standard: Loop restart is immediate and seamless, no pre-roll needed
-        
+
         // Pattern mode settings
         this.activePatternId = null;
         this.patternLength = 64;
-        
+
         // Song mode settings
         this.songLength = 256; // in bars
         this.playbackCursor = 0; // Current playback position in song
-        
+
         // Scheduling
         this.scheduledEvents = new Map();
         this.automationEvents = new Map();
@@ -175,7 +175,7 @@ export class PlaybackManager {
 
         // ✅ REFACTOR: activeAudioSources moved to AudioClipScheduler
         // Access via: this.audioClipScheduler.getActiveSources()
-        
+
         // ✅ FIX 1: Initialize active notes tracking (will be cleared on stop/loop restart)
         // Note: activeNotesByPitch is now managed by NoteScheduler instance-level
 
@@ -190,14 +190,14 @@ export class PlaybackManager {
         // ✅ MERKEZI LOOP HANDLING - Transport loop event'ini yakala
         this.transport.on('loop', (data) => {
             const { nextLoopStartTime, time, fromTick, toTick } = data;
-            
+
             if (DEBUG_LOOP) logLoop('[LOOP EVENT] Transport loop event received:', {
                 nextLoopStartTime: nextLoopStartTime?.toFixed(3),
                 time: time?.toFixed(3),
                 fromTick,
                 toTick
             });
-            
+
             // ✅ MERKEZI RESTART HANDLING
             this._handleLoopRestart(nextLoopStartTime || time);
         });
@@ -451,23 +451,23 @@ export class PlaybackManager {
                 });
             } else {
                 console.log('✅ Playback active - cancelling note immediately (skipping _scheduleContent to avoid conflicts)');
-                
+
                 // ✅ SCHEDULE OPT: Cancel future scheduled events for this note
                 if (this.transport && this.transport.clearScheduledEvents) {
                     const noteIdToCancel = noteId || (note && note.id);
                     if (noteIdToCancel) {
                         console.log('🗑️ Cancelling scheduled events for note:', noteIdToCancel);
-                        
+
                         // Cancel scheduled events matching this note ID
                         this.transport.clearScheduledEvents((eventData) => {
                             // Check if event is for this note (noteId or note.id match)
                             if (!eventData) return false;
                             return eventData.noteId === noteIdToCancel ||
-                                   (eventData.note && eventData.note.id === noteIdToCancel);
+                                (eventData.note && eventData.note.id === noteIdToCancel);
                         });
                     }
                 }
-                
+
                 // Don't call _scheduleContent here - it would conflict with immediate cancellation
             }
         } else {
@@ -534,12 +534,12 @@ export class PlaybackManager {
                     if (import.meta.env.DEV) {
                         console.log('🗑️ Cancelling scheduled events for modified note:', noteIdToCancel);
                     }
-                    
+
                     // Cancel scheduled events matching this note ID
                     this.transport.clearScheduledEvents((eventData) => {
                         if (!eventData) return false;
                         return eventData.noteId === noteIdToCancel ||
-                               (eventData.note && eventData.note.id === noteIdToCancel);
+                            (eventData.note && eventData.note.id === noteIdToCancel);
                     });
                 }
             }
@@ -571,12 +571,12 @@ export class PlaybackManager {
         this._isLoopRestarting = true;
 
         // ✅ Pre-roll system removed for DAW-standard loop behavior
-        
+
         // ✅ STEP 2: Stop only notes outside loop boundaries (DAW-like behavior)
         // This allows notes in the last step and sustain/release notes to continue playing
         // ✅ FIX: Use longer fade-out (20ms) for long samples (like 808s) to prevent clicks
         this._stopNotesOutsideLoop(0.02); // 20ms fade-out for graceful stop
-        
+
         // ✅ FIX: Don't clear all active notes tracking - only clear notes that were stopped
         // This preserves tracking for notes that continue playing (sustain/release)
         // Note: We'll update active notes tracking after stopping notes outside loop
@@ -584,7 +584,7 @@ export class PlaybackManager {
 
         // ✅ STEP 2: Reset position to 0 (beginning)
         this.currentPosition = 0;
-        
+
         // ✅ CRITICAL FIX: Do NOT call transport.setPosition(0) on loop restart!
         // NativeTransportSystem already resets currentTick = 0 in advanceToNextTick()
         // Calling setPosition() here would reset nextTickTime to currentTime,
@@ -613,11 +613,11 @@ export class PlaybackManager {
         }
 
         // ✅ Schedule immediately - loop restart needs instant scheduling
-            this._scheduleContent(scheduledTarget, 'loop-restart', true, {
-                scope: 'all',
-                priority: 'burst',
-                force: true
-            });
+        this._scheduleContent(scheduledTarget, 'loop-restart', true, {
+            scope: 'all',
+            priority: 'burst',
+            force: true
+        });
 
         // Emit event and clear flag
         this._emit('loopRestart', {
@@ -661,7 +661,7 @@ export class PlaybackManager {
         this.loopStart = Math.max(0, startStep);
         this.loopEnd = Math.max(this.loopStart + 1, endStep);
         this.isAutoLoop = false;
-        
+
         // Update transport loop
         this._updateTransportLoop();
 
@@ -727,14 +727,14 @@ export class PlaybackManager {
         const arrangementStore = useArrangementStore.getState();
         const activePatternId = arrangementStore.activePatternId;
         const activePattern = arrangementStore.patterns[activePatternId];
-        
+
         if (!activePattern || !activePattern.data) {
             this.loopStart = 0;
             this.loopEnd = 64; // 4 bar * 16 step/bar
             this.patternLength = 64;
             return;
         }
-    
+
 
         // Pattern içindeki en son notanın bittiği adımı (step) hesapla
         let maxStep = 0;
@@ -757,7 +757,7 @@ export class PlaybackManager {
             }
         });
 
-    
+
         // ✅ FIX: Pattern uzunluğunu gerçek uzunluğa göre ayarla
         // En az 1 bar (16 step) olmalı, ama pattern'in gerçek uzunluğunu kullan
         // En yakın bar sayısına yukarı yuvarla (1 bar = 16 step)
@@ -767,7 +767,7 @@ export class PlaybackManager {
         this.patternLength = Math.max(16, calculatedLength); // Minimum 1 bar (16 step)
         this.loopStart = 0;
         this.loopEnd = this.patternLength;
-        
+
         if (import.meta.env.DEV) {
             console.log(`🔄 Pattern loop calculated:`, {
                 maxStep,
@@ -777,7 +777,7 @@ export class PlaybackManager {
                 bars: this.patternLength / 16
             });
         }
-        
+
     }
 
     _calculateSongLoop() {
@@ -862,7 +862,7 @@ export class PlaybackManager {
             }
 
             this._updateLoopSettingsImmediate(); // Force immediate loop update for playback start
-            
+
             console.log('🎵 PlaybackManager: Calling _scheduleContent()', { startTime, reason: 'playback-start' });
             this._scheduleContent(startTime, 'playback-start', true); // Force immediate scheduling for playback start
             console.log('✅ PlaybackManager: _scheduleContent() completed');
@@ -880,7 +880,7 @@ export class PlaybackManager {
             // This ensures AudioContext is fully ready and prevents timing issues
             const minStartDelay = 0.002; // 2ms minimum delay
             const adjustedStartTime = Math.max(startTime + minStartDelay, this.audioEngine.audioContext.currentTime + minStartDelay);
-            
+
             console.log('🎵 PlaybackManager: Starting transport at', adjustedStartTime);
             this.transport.start(adjustedStartTime);
             console.log('✅ PlaybackManager: Transport started');
@@ -984,8 +984,8 @@ export class PlaybackManager {
                 try {
                     // Check if instrument is actually playing before stopping
                     const isPlaying = instrument.isPlaying ||
-                                    (instrument.activeSources && instrument.activeSources.size > 0) ||
-                                    (instrument.activeNotes && instrument.activeNotes.size > 0);
+                        (instrument.activeSources && instrument.activeSources.size > 0) ||
+                        (instrument.activeNotes && instrument.activeNotes.size > 0);
 
                     if (isPlaying && typeof instrument.stopAll === 'function') {
                         instrument.stopAll(); // VASynth, Sampler instant stop
@@ -1002,7 +1002,7 @@ export class PlaybackManager {
 
             // ✅ REFACTOR: Stop all active audio sources via AudioClipScheduler
             this.audioClipScheduler.stopAll();
-            
+
             // ✅ FIX 1: Clear active notes tracking on stop
             this.noteScheduler.clearActiveNotes();
 
@@ -1125,6 +1125,16 @@ export class PlaybackManager {
         return this.currentPosition;
     }
     // =================== CONTENT SCHEDULING ===================
+
+    /**
+     * Public API to force rescheduling of content
+     * @param {string} reason - Reason for rescheduling
+     * @param {boolean} force - Whether to force immediate scheduling without debounce
+     */
+    reschedule(reason = 'manual', force = false) {
+        // Use null for startTime to default to AudioContext.currentTime inside _scheduleContent
+        this._scheduleContent(null, reason, force);
+    }
 
     /**
      * ⚡ OPTIMIZED: Debounced content scheduling to prevent excessive rescheduling
@@ -1263,13 +1273,13 @@ export class PlaybackManager {
      */
     async _schedulePatternContent(baseTime, options = {}) {
         const { instrumentFilterSet = null, reason = 'manual' } = options;
-        
+
         // ✅ OPTIMIZED: Simplified position handling without excessive logging
         const isResume = reason === 'resume';
         const isNoteModified = reason === 'note-modified';
         const isNoteAdded = reason === 'note-added';
         const shouldPreservePosition = isResume || isNoteModified || isNoteAdded;
-        
+
         // Reset position during loop restart (not during resume/note modifications)
         if (this.loopEnabled && !shouldPreservePosition) {
             if (this.currentPosition >= this.loopEnd || (this._isLoopRestarting && this.currentPosition !== 0)) {
@@ -1277,11 +1287,11 @@ export class PlaybackManager {
             }
         } else if (shouldPreservePosition && this.loopEnabled && this.currentPosition >= this.loopEnd) {
             // Wrap position within loop bounds
-                const loopLength = this.loopEnd - this.loopStart;
-                const relativePosition = ((this.currentPosition - this.loopStart) % loopLength + loopLength) % loopLength;
-                this.currentPosition = this.loopStart + relativePosition;
+            const loopLength = this.loopEnd - this.loopStart;
+            const relativePosition = ((this.currentPosition - this.loopStart) % loopLength + loopLength) % loopLength;
+            this.currentPosition = this.loopStart + relativePosition;
         }
-        
+
         const arrangementStore = useArrangementStore.getState();
         const activePattern = arrangementStore.patterns[arrangementStore.activePatternId];
 
@@ -1314,26 +1324,26 @@ export class PlaybackManager {
                 if (instrumentFilterSet && !instrumentFilterSet.has(instrumentId)) {
                     return;
                 }
-                
+
                 const lanes = automationManager.getLanes(arrangementStore.activePatternId, instrumentId);
-                
+
                 // ✅ PERFORMANCE: Filter lanes to only include those with actual automation data
                 if (!lanes || lanes.length === 0) {
                     // No lanes at all - skip automation for this instrument
                     return;
                 }
-                
+
                 // Filter lanes to only those with data points
                 const lanesWithData = lanes.filter(lane => {
                     const points = lane.getPoints();
                     return points && points.length > 0;
                 });
-                
+
                 if (lanesWithData.length > 0) {
                     // ✅ DEBUG: Log which lanes are being used
                     const laneNames = lanesWithData.map(l => `${l.name} (CC${l.ccNumber})`).join(', ');
                     console.log(`🎚️ Starting automation for ${instrumentId}: ${laneNames}`);
-                    
+
                     this.automationScheduler.startRealtimeAutomation(
                         instrumentId,
                         arrangementStore.activePatternId,
@@ -1428,7 +1438,7 @@ export class PlaybackManager {
                 // ✅ FIX: Get patternOffset (number of steps to skip from pattern start)
                 // This is set when a pattern clip is split, so the right clip plays from the split point
                 const patternOffset = clip.patternOffset || 0; // In steps (16th notes)
-                
+
                 // ✅ FIX: Calculate pattern length in steps
                 // Pattern length can be stored in pattern.length (in beats) or calculated from notes
                 let patternLengthSteps = 64; // Default 4 bars
@@ -1451,7 +1461,7 @@ export class PlaybackManager {
                         patternLengthSteps = Math.max(64, Math.ceil(maxStep / 16) * 16);
                     }
                 }
-                
+
                 // ✅ DEBUG: Log clip scheduling info for debugging
                 console.log(`🎵 Scheduling pattern clip:`, {
                     clipId: clip.id,
@@ -1477,18 +1487,18 @@ export class PlaybackManager {
                     if (!instrument) {
                         // ✅ FIX: Try to load instrument from store if not in audio engine
                         console.warn(`🎵 ❌ Instrument ${instrumentId} not found in audio engine, attempting to load...`);
-                        
+
                         try {
                             // Get instrument from store
                             const { useInstrumentsStore } = await import('@/store/useInstrumentsStore');
                             const instrumentsStore = useInstrumentsStore.getState();
                             const instrumentData = instrumentsStore.instruments.find(inst => inst.id === instrumentId);
-                            
+
                             if (instrumentData) {
                                 // Load instrument into audio engine
                                 const { AudioContextService } = await import('@/lib/services/AudioContextService');
                                 await AudioContextService._syncInstrumentsToMixerInserts();
-                                
+
                                 // Try again after sync
                                 instrument = this.audioEngine.instruments.get(instrumentId);
                                 if (instrument) {
@@ -1511,32 +1521,32 @@ export class PlaybackManager {
                     // Pattern notes are in range [0, patternLengthSteps), we need to loop them
                     // to cover the entire clip duration (which may be longer than pattern length)
                     const offsetNotes = [];
-                    
+
                     // Calculate how many pattern loops we need to cover the clip duration
                     const effectivePatternStart = patternOffset % patternLengthSteps;
                     const effectivePatternEnd = effectivePatternStart + clipDurationSteps;
                     const numLoops = Math.ceil(effectivePatternEnd / patternLengthSteps);
-                    
+
                     for (let loopIndex = 0; loopIndex < numLoops; loopIndex++) {
                         const loopStartStep = loopIndex * patternLengthSteps;
                         const loopEndStep = (loopIndex + 1) * patternLengthSteps;
-                        
+
                         // Filter notes that fall within this loop iteration and clip range
                         notes.forEach(note => {
                             const noteTime = note.time || 0;
                             const noteTimeInLoop = noteTime + loopStartStep;
-                            
+
                             // Check if note falls within the effective pattern range (after patternOffset)
                             // and within the clip duration
-                            if (noteTimeInLoop >= effectivePatternStart && 
+                            if (noteTimeInLoop >= effectivePatternStart &&
                                 noteTimeInLoop < effectivePatternEnd) {
-                                
+
                                 // Calculate the final note time in arrangement timeline
                                 // Subtract effectivePatternStart to get relative position from clip start
                                 // Then add clipStartStep to position in arrangement
                                 const relativeNoteTime = noteTimeInLoop - effectivePatternStart;
                                 const finalNoteTime = relativeNoteTime + clipStartStep;
-                                
+
                                 offsetNotes.push({
                                     ...note,
                                     time: finalNoteTime
@@ -1544,7 +1554,7 @@ export class PlaybackManager {
                             }
                         });
                     }
-                    
+
                     // ✅ DEBUG: Log filtered notes for debugging (especially for piano)
                     if (instrumentId === 'piano' || offsetNotes.length !== notes.length || patternOffset > 0) {
                         console.log(`🎵 [${instrumentId}] Pattern clip ${clip.id} note filtering:`, {
@@ -1604,7 +1614,7 @@ export class PlaybackManager {
         // Step 2: If playing, schedule new events for this clip
         if (this.isPlaying && !this.isPaused) {
             const baseTime = this.audioEngine.audioContext.currentTime;
-            
+
             // Re-use existing scheduling logic, but for a single clip
             if (clip.type === 'audio') {
                 this._scheduleAudioClip(clip, baseTime);
@@ -1920,16 +1930,16 @@ export class PlaybackManager {
         // - Sample-accurate timing
         // - Latency compensation
         // - Extended parameters and CC lanes
-        
+
         const schedulingOptions = {
-                currentPosition: this.currentPosition,
-                loopStart: this.loopStart,
-                loopEnd: this.loopEnd,
-                loopEnabled: this.loopEnabled,
-                reason: reason,
-                patternId: this.activePatternId // ✅ For CC lanes lookup
+            currentPosition: this.currentPosition,
+            loopStart: this.loopStart,
+            loopEnd: this.loopEnd,
+            loopEnabled: this.loopEnabled,
+            reason: reason,
+            patternId: this.activePatternId // ✅ For CC lanes lookup
         };
-        
+
         console.log('🎵 [SCHEDULE INSTRUMENT] Scheduling notes:', {
             instrumentId,
             reason,
@@ -1941,7 +1951,7 @@ export class PlaybackManager {
             getCurrentPosition: this.getCurrentPosition(),
             schedulingOptions
         });
-        
+
         return this.noteScheduler.scheduleInstrumentNotes(
             instrument,
             notes,
@@ -2020,13 +2030,13 @@ export class PlaybackManager {
             // ✅ FIX: Support both new format (length: number) and legacy format (duration: string)
             // ✅ FIX: Handle oval notes (visualLength < length) - use length for audio duration
             let noteDuration;
-            
+
             // ✅ FIX: Check for oval notes FIRST (visualLength < length means oval note)
-            const isOvalNote = note.visualLength !== undefined && 
-                              typeof note.length === 'number' && 
-                              note.length > 0 && 
-                              note.visualLength < note.length;
-            
+            const isOvalNote = note.visualLength !== undefined &&
+                typeof note.length === 'number' &&
+                note.length > 0 &&
+                note.visualLength < note.length;
+
             if (isOvalNote) {
                 // ✅ OVAL NOTES: Use length for audio duration (not visualLength)
                 noteDuration = this.transport.stepsToSeconds(note.length);
@@ -2090,7 +2100,7 @@ export class PlaybackManager {
             // ✅ OVAL NOTE OVERLAP DETECTION: Check for overlapping notes of the same pitch
             const notePitch = note.pitch || 'C4';
             const noteEndTime = absoluteTime + noteDuration;
-            
+
             // Check if there's an active note of the same pitch that overlaps
             const existingActiveNote = activeNotesByPitch.get(notePitch);
             if (existingActiveNote && existingActiveNote.endTime > absoluteTime) {
@@ -2099,7 +2109,7 @@ export class PlaybackManager {
                 const overlapDuration = existingActiveNote.endTime - absoluteTime;
                 const fadeOutDuration = Math.max(0.002, overlapDuration * 0.5); // 50% of overlap or 2ms minimum
                 const earlyReleaseTime = absoluteTime - fadeOutDuration;
-                
+
                 if (earlyReleaseTime > this.transport.audioContext.currentTime) {
                     // Schedule early release with fade-out
                     this.transport.scheduleEvent(
@@ -2116,7 +2126,7 @@ export class PlaybackManager {
                         },
                         { type: 'noteOff', instrumentId, note: existingActiveNote.note, earlyRelease: true, fadeOut: fadeOutDuration }
                     );
-                    
+
                     if (import.meta.env.DEV) {
                         console.log(`🔄 Oval note overlap detected (PlaybackManager):`, {
                             instrumentId,
@@ -2131,7 +2141,7 @@ export class PlaybackManager {
                     }
                 }
             }
-            
+
             // Update active notes map
             activeNotesByPitch.set(notePitch, {
                 startTime: absoluteTime,
@@ -2146,7 +2156,7 @@ export class PlaybackManager {
             if (note.modWheel !== undefined) extendedParams.modWheel = note.modWheel;
             if (note.aftertouch !== undefined) extendedParams.aftertouch = note.aftertouch;
             if (note.pitchBend && Array.isArray(note.pitchBend)) extendedParams.pitchBend = note.pitchBend;
-            
+
             // ✅ FL Studio-style slide logic
             // Slide is a property of the note itself: slideEnabled, slideDuration, slideTargetPitch
             if (note.slideEnabled === true) {
@@ -2169,20 +2179,20 @@ export class PlaybackManager {
                             targetPitch = null;
                         }
                     }
-                    
+
                     if (targetPitch !== null && targetPitch >= 0 && targetPitch <= 127) {
                         const slideDurationSteps = note.slideDuration || 1;
                         const slideDurationSeconds = this.transport.stepsToSeconds(slideDurationSteps);
-                        
+
                         // ✅ FL Studio-style slide: Note glides from its own pitch to target pitch
                         // Slide starts immediately when note starts, glides over slideDuration
                         extendedParams.slideEnabled = true;
                         extendedParams.slideTargetPitch = targetPitch;
                         extendedParams.slideDuration = slideDurationSeconds;
-                        
+
                         // Extend note duration to include slide duration
                         noteDuration = noteDuration + slideDurationSeconds;
-                        
+
                         console.log('🎚️ Slide enabled:', {
                             noteId: note.id.substring(0, 12),
                             sourcePitch: note.pitch,
@@ -2193,7 +2203,7 @@ export class PlaybackManager {
                     }
                 }
             }
-            
+
             // ✅ PHASE 4: Get CC lanes data from AutomationManager (per instrument)
             try {
                 const automationManager = getAutomationManager();
@@ -2295,7 +2305,7 @@ export class PlaybackManager {
             } catch (error) {
                 console.warn('⚠️ Failed to load automation lanes for note:', error);
             }
-            
+
             const hasExtendedParams = Object.keys(extendedParams).length > 0;
 
             // ✅ SCHEDULE OPT: Note on event with noteId for cancellation tracking
@@ -2335,20 +2345,20 @@ export class PlaybackManager {
                         console.error('Error triggering scheduled note:', error);
                     }
                 },
-                { 
-                    type: 'noteOn', 
-                    instrumentId, 
-                    note, 
+                {
+                    type: 'noteOn',
+                    instrumentId,
+                    note,
                     noteId: note.id, // ✅ SCHEDULE OPT: Store note ID for cancellation
-                    step: noteTimeInSteps, 
-                    clipId 
+                    step: noteTimeInSteps,
+                    clipId
                 }
             );
 
             // ✅ FIX: Note off event - check for both length and duration
             const shouldScheduleNoteOff = (typeof note.length === 'number' && note.length > 0) ||
-                                         (note.duration && note.duration !== 'trigger');
-            
+                (note.duration && note.duration !== 'trigger');
+
             // ✅ FIX: Check if instrument supports release sustain (like NoteScheduler does)
             const instrumentHasRelease = typeof instrument?.hasReleaseSustain === 'function'
                 ? instrument.hasReleaseSustain()
@@ -2359,7 +2369,7 @@ export class PlaybackManager {
                 // Log for specific instruments or last step notes (pattern end issues)
                 const isLastStep = noteTimeInSteps >= (this.patternLength - 1);
                 const shouldLog = (instrumentId === '808bass' || instrument?.type === 'vasynth' || instrumentId === 'snare-1' || isLastStep);
-                
+
                 if (shouldLog) {
                     console.log(`🎵 NoteOff scheduling decision:`, {
                         instrumentId,
@@ -2432,7 +2442,7 @@ export class PlaybackManager {
 
         automationData.forEach(event => {
             const eventTime = this._stepsToSeconds(event.time || 0);
-            
+
             this.transport.scheduleEvent(
                 eventTime,
                 () => {
@@ -2446,7 +2456,7 @@ export class PlaybackManager {
     _applyAutomationEvent(targetId, event) {
         // Apply automation event to target (mixer channel, instrument parameter, etc.)
         const [type, id, parameter] = targetId.split('.');
-        
+
         switch (type) {
             case 'mixer':
                 this._applyMixerAutomation(id, parameter, event.value);
@@ -2577,7 +2587,7 @@ export class PlaybackManager {
         if (!duration || typeof duration !== 'string') {
             return 1; // Varsayılan süre 1 step (16'lık nota)
         }
-        
+
         const bpm = this.transport.bpm || 120;
         // NativeTimeUtils kullanarak süreyi saniyeye çevir
         const durationInSeconds = NativeTimeUtils.parseTime(duration, bpm);
@@ -2635,7 +2645,7 @@ export class PlaybackManager {
         const nextTickTime = this.transport.nextTickTime || currentTime;
         const currentTick = this.transport.currentTick;
         const secondsPerTick = this.transport.getSecondsPerTick();
-        
+
         // ✅ Calculate the absolute time when current step (0) would play
         // This is the reference point for all step-to-time conversions
         const transportStartTime = nextTickTime - (currentTick * secondsPerTick);
@@ -2740,13 +2750,13 @@ export class PlaybackManager {
                 let noteDuration;
                 // ✅ FIX: Use ?? instead of || to handle 0 values correctly (fill pattern notes may have time: 0)
                 const noteTimeInSteps = note.startTime ?? note.time ?? 0;
-                
+
                 // ✅ FIX: Check for oval notes FIRST (visualLength < length means oval note)
-                const isOvalNote = note.visualLength !== undefined && 
-                                  typeof note.length === 'number' && 
-                                  note.length > 0 && 
-                                  note.visualLength < note.length;
-                
+                const isOvalNote = note.visualLength !== undefined &&
+                    typeof note.length === 'number' &&
+                    note.length > 0 &&
+                    note.visualLength < note.length;
+
                 if (isOvalNote) {
                     // ✅ OVAL NOTES: Use length for audio duration (not visualLength)
                     noteDuration = this.transport.stepsToSeconds(note.length);
@@ -2821,13 +2831,13 @@ export class PlaybackManager {
                             console.error('❌ Error in immediate noteOn:', error);
                         }
                     },
-                    { 
-                        type: 'noteOn', 
-                        instrumentId, 
-                        note, 
+                    {
+                        type: 'noteOn',
+                        instrumentId,
+                        note,
                         noteId: note.id, // ✅ SCHEDULE OPT: Store note ID for cancellation
-                        step: nextPlayStep, 
-                        immediate: true 
+                        step: nextPlayStep,
+                        immediate: true
                     }
                 );
 
@@ -2835,7 +2845,7 @@ export class PlaybackManager {
 
                 // ✅ SCHEDULE OPT: Schedule noteOff with noteId for cancellation tracking
                 const shouldScheduleNoteOff = (typeof note.length === 'number' && note.length > 0) ||
-                                             (note.duration && note.duration !== 'trigger');
+                    (note.duration && note.duration !== 'trigger');
 
                 if (shouldScheduleNoteOff) {
                     console.log(`📝 Scheduling noteOff at ${absoluteTime + noteDuration}s (now: ${currentTime}s, in ${(absoluteTime + noteDuration - currentTime).toFixed(2)}s)`);
@@ -2851,13 +2861,13 @@ export class PlaybackManager {
                                 console.error('❌ Error in immediate noteOff:', error);
                             }
                         },
-                        { 
-                            type: 'noteOff', 
-                            instrumentId, 
-                            note, 
+                        {
+                            type: 'noteOff',
+                            instrumentId,
+                            note,
                             noteId: note.id, // ✅ SCHEDULE OPT: Store note ID for cancellation
-                            step: nextPlayStep, 
-                            immediate: true 
+                            step: nextPlayStep,
+                            immediate: true
                         }
                     );
                 }
@@ -2888,9 +2898,9 @@ export class PlaybackManager {
                 // Check if instrument has active notes
                 // ✅ FIX: NativeSamplerNode uses activeSources Set, not isPlaying or activeNotes
                 const hasActiveNotes = (instrument.isPlaying !== undefined && instrument.isPlaying) ||
-                                      (instrument.activeSources && instrument.activeSources.size > 0) ||
-                                      (instrument.activeNotes && instrument.activeNotes.size > 0);
-                
+                    (instrument.activeSources && instrument.activeSources.size > 0) ||
+                    (instrument.activeNotes && instrument.activeNotes.size > 0);
+
                 // ✅ DEBUG: Log active notes check for 808
                 if (import.meta.env.DEV && instrumentId.includes('808')) {
                     console.log(`🔍 _stopAllActiveNotes check for ${instrumentId}:`, {
@@ -3038,7 +3048,7 @@ export class PlaybackManager {
                     // Convert startTime to step
                     const noteStartTime = noteData.startTime;
                     const noteEndTime = noteData.endTime;
-                    
+
                     // Calculate step positions using helper function
                     const noteStartStep = this._secondsToSteps(noteStartTime);
                     const noteEndStep = noteEndTime ? this._secondsToSteps(noteEndTime) : null;
@@ -3106,7 +3116,7 @@ export class PlaybackManager {
             // Get step information from event data
             const eventStep = eventData.step;
             const eventTime = eventData.originalTime || eventData.sampleAccurateTime;
-            
+
             // If we have step information, use it
             if (eventStep !== undefined) {
                 // Check if event is outside loop
@@ -3129,7 +3139,7 @@ export class PlaybackManager {
                     return false; // Preserve this event
                 }
             }
-            
+
             // If we only have time information, use it
             if (eventTime !== undefined) {
                 if (eventTime >= loopEndTime) {
@@ -3206,7 +3216,7 @@ export class PlaybackManager {
             activePatternId: this.activePatternId,
             scheduledEventsCount: this.transport?.scheduledEvents?.size || 0
         };
-    }    
+    }
 
     // =================== EVENTS ===================
 
@@ -3214,11 +3224,11 @@ export class PlaybackManager {
         if (!this.eventListeners) {
             this.eventListeners = new Map();
         }
-        
+
         if (!this.eventListeners.has(event)) {
             this.eventListeners.set(event, new Set());
         }
-        
+
         this.eventListeners.get(event).add(callback);
     }
 

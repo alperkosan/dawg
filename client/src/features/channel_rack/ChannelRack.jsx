@@ -21,6 +21,7 @@ import TimelineCanvas from './TimelineCanvas'; // ⚡ PERFORMANCE: Canvas-based 
 import UnifiedGridContainer from './UnifiedGridContainer'; // 🚀 REVOLUTIONARY: Single canvas for all instruments
 import AudioExportPanel from '@/components/AudioExportPanel';
 import InstrumentPicker from './InstrumentPicker'; // ✅ NEW: Instrument selection UI
+import { useSampleDrop } from './hooks/useSampleDrop';
 
 // ✅ PERFORMANCE: Lazy-loaded icons to reduce initial bundle size
 const Icon = memo(({ name, size = 20, ...props }) => {
@@ -122,8 +123,14 @@ function ChannelRackComponent() {
   const setAudioExportPanelOpen = usePanelsStore(state => state.setAudioExportPanelOpen);
   const setInstrumentPickerOpen = usePanelsStore(state => state.setInstrumentPickerOpen);
 
-  // State for native drag-and-drop visual feedback
-  const [isNativeDragOver, setIsNativeDragOver] = useState(false);
+  // ✅ Native HTML5 drag-and-drop support for FileBrowser
+  const {
+    isNativeDragOver,
+    handleNativeDragOver,
+    handleNativeDragEnter,
+    handleNativeDragLeave,
+    handleNativeDrop
+  } = useSampleDrop();
 
   // ⚡ PERFORMANCE: Track scroll position for timeline + legacy mini views
   const [scrollX, setScrollX] = useState(0);
@@ -529,71 +536,7 @@ function ChannelRackComponent() {
     })
   });
 
-  // ✅ Native HTML5 drag-and-drop support for FileBrowser
-  const handleNativeDragOver = useCallback((e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsNativeDragOver(true); // ✅ Show visual feedback
-  }, []);
 
-  const handleNativeDragEnter = useCallback((e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsNativeDragOver(true);
-  }, []);
-
-  const handleNativeDragLeave = useCallback((e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    // Only hide if actually leaving the container (not just entering a child)
-    if (e.currentTarget === e.target || !e.currentTarget.contains(e.relatedTarget)) {
-      setIsNativeDragOver(false);
-    }
-  }, []);
-
-  const handleNativeDrop = useCallback(async (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsNativeDragOver(false); // ✅ Hide feedback after drop
-
-    try {
-      // Try to get data from native drag event (FileBrowser uses this)
-      const data = e.dataTransfer.getData('text/plain');
-      if (data) {
-        const fileData = JSON.parse(data);
-        console.log('🎵 Native drag sample dropped from FileBrowser:', fileData);
-
-        // ✅ Load audio buffer before creating instrument
-        const { AudioContextService } = await import('@/lib/services/AudioContextService');
-        const audioContext = AudioContextService.getAudioEngine().audioContext;
-
-        try {
-          // ✅ NEW: Use ProjectBufferManager for efficient buffer management
-          const { getProjectBufferManager } = await import('@/lib/audio/ProjectBufferManager.js');
-          const bufferManager = getProjectBufferManager();
-
-          // Get buffer (checks cache first, only loads if needed)
-          const audioBuffer = await bufferManager.getBuffer(fileData.url, audioContext);
-
-          console.log('✅ Audio buffer loaded:', audioBuffer.duration, 'seconds');
-
-          // Convert FileBrowser format to instrument format with buffer
-          handleAddNewInstrument({
-            name: fileData.name,
-            url: fileData.url,
-            audioBuffer: audioBuffer, // ✅ Include loaded audio buffer
-            type: 'sample' // ✅ Use standard instrument type
-          });
-        } catch (loadError) {
-          console.error('Failed to load audio file:', loadError);
-          const { apiClient } = await import('@/services/api.js');
-          apiClient.showToast(`Failed to load audio file: ${fileData.name}`, 'error', 5000);
-        }
-      }
-    } catch (error) {
-      console.error('Failed to handle native drop:', error);
-    }
-  }, [handleAddNewInstrument]);
 
   // ✅ FIX: Listen for instrument picker selection events (from App-level modal)
   useEffect(() => {

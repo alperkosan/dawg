@@ -11,7 +11,7 @@
 
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { Download, Settings, Play, Square, CheckCircle, XCircle, Loader, Save, FolderOpen, File, Clock, HardDrive, History } from 'lucide-react';
-import { exportManager, EXPORT_FORMAT, EXPORT_MODE, QUALITY_PRESET } from '@/lib/audio/ExportManager';
+import { audioExportManager, EXPORT_FORMATS as EXPORT_FORMAT, EXPORT_MODE, QUALITY_PRESETS as QUALITY_PRESET } from '@/lib/audio/AudioExportManager';
 import { useMixerStore } from '@/store/useMixerStore';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
 import { TimeRangeSelector } from './TimeRangeSelector';
@@ -277,7 +277,7 @@ export const ExportPanel = ({ isOpen, onClose }) => {
                 const channelIds = Array.from(selectedChannels);
                 const qualityPreset = QUALITY_PRESET[exportSettings.quality] || QUALITY_PRESET.STANDARD;
 
-                const results = await exportManager.exportChannels(
+                const results = await audioExportManager.exportChannels(
                     channelIds,
                     {
                         ...exportSettings,
@@ -352,7 +352,7 @@ export const ExportPanel = ({ isOpen, onClose }) => {
                 const qualityPreset = QUALITY_PRESET[exportSettings.quality] || QUALITY_PRESET.STANDARD;
                 const selectedArrangement = arrangements.find(a => a.id === selectedArrangementId);
 
-                const result = await exportManager.exportArrangement(
+                const result = await audioExportManager.exportArrangement(
                     selectedArrangementId,
                     {
                         ...exportSettings,

@@ -628,54 +628,23 @@ export class NativeAudioEngine {
             let instrument;
 
             // ✅ NEW: Use InstrumentFactory for centralized creation (Supports Wasm)
-            const isForgeSynth = instrumentData.type === 'synth'; // Legacy special case
+            // Pass preloaded buffer if available to avoid reload
+            const existingBuffer = instrumentData.audioBuffer || this.sampleBuffers.get(instrumentData.id);
 
-            if (!isForgeSynth) {
-                // Check if instrument already exists and clean it up first
-                if (this.instruments.has(instrumentData.id)) {
-                    logger.warn(NAMESPACES.AUDIO, `Duplicate instrument creation for ${instrumentData.id} - cleaning up old instance`);
-                    this.removeInstrument(instrumentData.id);
+            instrument = await InstrumentFactory.createPlaybackInstrument(
+                instrumentData,
+                this.audioContext,
+                {
+                    useCache: true,
+                    // Enhancement: We might want to pass existingBuffer here if Factory supported it,
+                    // but Factory relies on SampleLoader. 
+                    // Since SampleLoader is cached, it should be fine.
                 }
+            );
 
-                // Use new centralized instrument system for Sample (Single/Multi) and VASynth
-                logger.debug(NAMESPACES.AUDIO, `Creating ${instrumentData.name} using InstrumentFactory...`);
-
-                // Pass preloaded buffer if available to avoid reload
-                const existingBuffer = instrumentData.audioBuffer || this.sampleBuffers.get(instrumentData.id);
-
-                instrument = await InstrumentFactory.createPlaybackInstrument(
-                    instrumentData,
-                    this.audioContext,
-                    {
-                        useCache: true,
-                        // Enhancement: We might want to pass existingBuffer here if Factory supported it,
-                        // but Factory relies on SampleLoader. 
-                        // Since SampleLoader is cached, it should be fine.
-                    }
-                );
-
-                if (!instrument) {
-                    // Fallback for types not handled by Factory (shouldn't happen for sample/vasynth)
-                    throw new Error(`InstrumentFactory returned null for ${instrumentData.name}`);
-                }
-
-            } else if (isForgeSynth) {
-                // ✅ Legacy: ForgeSynth instruments (handled locally until Factory supports them)
-                instrument = new NativeSynthInstrument(
-                    instrumentData,
-                    this.workletManager,
-                    this.audioContext
-                );
-
-                if (typeof instrument.initialize === 'function') {
-                    await instrument.initialize();
-                }
-            } else {
-                // Should be unreachable if types are correct
-                throw new Error(`❌ Unknown instrument type: ${instrumentData.type}`);
+            if (!instrument) {
+                throw new Error(`InstrumentFactory returned null for ${instrumentData.name}`);
             }
-
-
 
             this.instruments.set(instrumentData.id, instrument);
 

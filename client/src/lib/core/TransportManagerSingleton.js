@@ -1,6 +1,6 @@
 // lib/core/TransportManagerSingleton.js
 import { BaseSingleton } from './singletons/BaseSingleton.js';
-import { AudioContextService } from '../services/AudioContextService.js';
+import { AudioEngineGlobal } from './AudioEngineGlobal.js';
 import { TransportManager } from './TransportManager.js';
 
 /**
@@ -24,7 +24,12 @@ class TransportManagerSingleton extends BaseSingleton {
     console.log('🎚️ Creating TransportManager singleton...');
 
     // Get audio engine
-    const audioEngine = AudioContextService.getAudioEngine();
+    let audioEngine = AudioEngineGlobal.get();
+
+    if (!audioEngine && typeof window !== 'undefined') {
+      audioEngine = window.audioEngine;
+    }
+
     if (!audioEngine) {
       throw new Error('AudioEngine not available for TransportManager');
     }
