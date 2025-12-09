@@ -282,7 +282,7 @@ const ChannelMeterLegacy = ({ trackId, isVisible = true, className = '' }) => {
   ghostTrailRef.current = ghostTrail;
 
   useEffect(() => {
-    if (!isVisible) return () => {};
+    if (!isVisible) return () => { };
 
     const PEAK_HOLD_DURATION = 2000;
     const GHOST_FADE_DURATION = 300;
@@ -420,48 +420,88 @@ const ChannelMeterLegacy = ({ trackId, isVisible = true, className = '' }) => {
 };
 
 export const ChannelMiniMeter = ({ trackId, isVisible = true }) => {
-  const [levels, setLevels] = useState({ peak: -60, rms: -60 });
-  const [peakHold, setPeakHold] = useState(-60);
-  const holdTimestampRef = useRef(0);
-  const throttledRef = useRef(null);
+  const rmsRef = useRef(null);
+  const peakRef = useRef(null);
+  const holdRef = useRef(null);
+
+  // Refs for current state to avoid closure staleness without re-renders
+  const stateRef = useRef({
+    peak: -60,
+    rms: -60,
+    peakHold: -60,
+    holdTimestamp: 0
+  });
+
   const tickPercents = useMemo(
     () => SCALE_TICKS.map(dbToPercent),
     []
   );
 
   useEffect(() => {
-    if (!isVisible || !trackId) return () => {};
+    if (!isVisible || !trackId) return () => { };
 
-    const unsubscribe = meterService.subscribe(trackId, (nextLevels) => {
-      if (throttledRef.current) return;
+    // Reset visual state when becoming visible or track changes
+    if (rmsRef.current) rmsRef.current.style.height = '0%';
+    if (peakRef.current) peakRef.current.style.height = '0%';
+    if (holdRef.current) holdRef.current.style.bottom = '0%';
 
-      throttledRef.current = setTimeout(() => {
-        throttledRef.current = null;
-        const timestamp = performance.now();
-        setLevels(nextLevels);
-        setPeakHold((prev) => {
-          if (nextLevels.peak > prev || timestamp - holdTimestampRef.current > PEAK_HOLD_DURATION) {
-            holdTimestampRef.current = timestamp;
-            return nextLevels.peak;
-          }
-          return prev;
-        });
-      }, UI_UPDATE_INTERVAL);
-    });
+    // Reset internal state
+    stateRef.current = {
+      peak: -60,
+      rms: -60,
+      peakHold: -60,
+      holdTimestamp: 0
+    };
+
+    let animationFrameId;
+    let lastUpdate = 0;
+
+    const updateVisuals = (levels) => {
+      const now = performance.now();
+
+      // Throttle visual updates to ~30fps (33ms) to save main thread
+      if (now - lastUpdate < 33) {
+        return;
+      }
+      lastUpdate = now;
+
+      // Calculate Hold
+      if (levels.peak > stateRef.current.peakHold || now - stateRef.current.holdTimestamp > PEAK_HOLD_DURATION) {
+        stateRef.current.peakHold = levels.peak;
+        stateRef.current.holdTimestamp = now;
+      }
+
+      // Update State
+      stateRef.current.peak = levels.peak;
+      stateRef.current.rms = levels.rms;
+
+      // Update DOM directly
+      if (rmsRef.current) {
+        rmsRef.current.style.height = `${dbToPercent(levels.rms)}%`;
+        rmsRef.current.style.backgroundColor = getColor(levels.rms);
+      }
+      if (peakRef.current) {
+        peakRef.current.style.height = `${dbToPercent(levels.peak)}%`;
+        peakRef.current.style.backgroundColor = getColor(levels.peak);
+      }
+      if (holdRef.current) {
+        const holdPercent = dbToPercent(stateRef.current.peakHold);
+        holdRef.current.style.bottom = `${holdPercent}%`;
+        holdRef.current.style.backgroundColor = getColor(stateRef.current.peakHold);
+        // Hide hold if it's at the bottom
+        holdRef.current.style.display = holdPercent <= 0 ? 'none' : 'block';
+      }
+    };
+
+    const unsubscribe = meterService.subscribe(trackId, updateVisuals);
 
     return () => {
       unsubscribe();
-      if (throttledRef.current) {
-        clearTimeout(throttledRef.current);
-        throttledRef.current = null;
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
       }
     };
   }, [trackId, isVisible]);
-
-  const peakPercent = useMemo(() => dbToPercent(levels.peak), [levels.peak]);
-  const rmsPercent = useMemo(() => dbToPercent(levels.rms), [levels.rms]);
-  const holdPercent = useMemo(() => dbToPercent(peakHold), [peakHold]);
-  const peakColor = useMemo(() => getColor(levels.peak), [levels.peak]);
 
   return (
     <div className="channel-mini-meter" data-track={trackId}>
@@ -476,22 +516,19 @@ export const ChannelMiniMeter = ({ trackId, isVisible = true }) => {
       </div>
       <div className="channel-mini-meter__rail">
         <div
+          ref={rmsRef}
           className="channel-mini-meter__rms"
-          style={{ height: `${rmsPercent}%` }}
+          style={{ height: '0%' }}
         />
         <div
+          ref={peakRef}
           className="channel-mini-meter__peak"
-          style={{
-            height: `${peakPercent}%`,
-            backgroundColor: peakColor
-          }}
+          style={{ height: '0%' }}
         />
         <div
+          ref={holdRef}
           className="channel-mini-meter__hold"
-          style={{
-            bottom: `${holdPercent}%`,
-            backgroundColor: peakColor
-          }}
+          style={{ bottom: '0%' }}
         />
       </div>
     </div>

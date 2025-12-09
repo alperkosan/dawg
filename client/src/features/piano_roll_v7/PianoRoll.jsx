@@ -323,6 +323,14 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
 
     // ✅ Initialize/Sync scale
     useEffect(() => {
+        // Enforce default C Major if no scale is set (as per "Always enabled" policy)
+        if (!scaleSystem.getScale()) {
+            console.log('🎹 Initializing default scale: C Major');
+            scaleSystem.setScale(0, 'major'); // 0 = C
+        } else {
+            console.log('🎹 Scale already set:', scaleSystem.getScaleInfo()?.name);
+        }
+
         // Force initial render to ensure we have the latest scale state
         setScaleVersion(v => v + 1);
     }, []);
