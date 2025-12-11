@@ -17,6 +17,8 @@ import { getAutomationManager } from '@/lib/automation/AutomationManager.js';
 import { getScaleSystem } from '@/lib/music/ScaleSystem.js';
 import { AudioEngineGlobal } from '@/lib/core/AudioEngineGlobal.js'; // ✅ NEW
 import { EngineStateSyncService } from '@/lib/services/EngineStateSyncService.js'; // ✅ NEW
+import { v4 as uuidv4 } from 'uuid'; // ✅ For unique ID generation
+
 
 export class ProjectSerializer {
   static CURRENT_VERSION = '1.0.0';
@@ -793,8 +795,11 @@ export class ProjectSerializer {
       }
     });
 
-    // ✅ DEBUG: Log mixer track name map for debugging
-    console.log(`🔍 Mixer track name map:`, Array.from(mixerTrackNameMap.entries()));
+    console.log('🔍 Mixer track name map:', Array.from(mixerTrackNameMap.entries()).flat().join(','));
+
+    // ✅ CRITICAL: Track used IDs to prevent duplicates
+    const usedIds = new Set();
+    const idMapping = new Map(); // Maps old ID -> new ID for duplicate resolution
 
     // Add instruments
     instruments.forEach(instData => {
@@ -806,6 +811,73 @@ export class ProjectSerializer {
         if (instrumentType === 'sampler') {
           instrumentType = 'sample';
         }
+
+        // ✅ FIX: Migrate legacy 'samples' property to 'multiSamples'
+        // Some legacy instruments store multi-sample data in 'samples' array
+        if (instrumentType === 'sample' && !instData.multiSamples && Array.isArray(instData.samples)) {
+          console.log(`📦 Migrating legacy 'samples' to 'multiSamples' for instrument: ${instData.name}`);
+          instData.multiSamples = instData.samples;
+        }
+
+        // ✅ CRITICAL FIX: Correct misclassified instruments
+        // Some instruments are saved as 'vasynth' or 'synth' but actually should be 'sample'
+        // This is detected by having a NON-EMPTY multiSamples array OR Piano preset
+        if (instrumentType === 'vasynth' || instrumentType === 'synth') {
+          const hasNonEmptyMultiSamples = Array.isArray(instData.multiSamples) && instData.multiSamples.length > 0;
+          const isSampleBasedPreset = instData.preset === 'Piano'; // Known sample-based preset
+
+          if (hasNonEmptyMultiSamples || isSampleBasedPreset) {
+            console.log(`🔧 Correcting misclassified instrument "${instData.name}": ${instrumentType} → sample`, {
+              reason: hasNonEmptyMultiSamples ? `has multiSamples array (${instData.multiSamples.length} items)` : `sample-based preset: ${instData.preset}`
+            });
+            instrumentType = 'sample';
+            instData.type = 'sample'; // ✅ CRITICAL: Also update the source object!
+          }
+        }
+
+        // ✅ CRITICAL FIX: Restore missing multiSamples data from preset
+        // If instrument has empty multiSamples array but is Piano preset, restore the data
+        const isPianoPreset = instData.preset === 'Piano';
+        const isPianoByName = instData.name?.toLowerCase().includes('piano');
+
+        if (instrumentType === 'sample' &&
+          Array.isArray(instData.multiSamples) &&
+          instData.multiSamples.length === 0 &&
+          (isPianoPreset || isPianoByName)) {
+
+          console.warn(`⚠️ Restoring missing multiSamples for "${instData.name}" from Piano preset`);
+
+          // Restore Piano multiSamples from known preset
+          instData.multiSamples = [
+            { url: '/audio/samples/instruments/piano/C1.ogg', note: 24, baseNote: 24 },
+            { url: '/audio/samples/instruments/piano/C2.ogg', note: 36, baseNote: 36 },
+            { url: '/audio/samples/instruments/piano/C3.ogg', note: 48, baseNote: 48 },
+            { url: '/audio/samples/instruments/piano/C4.ogg', note: 60, baseNote: 60 },
+            { url: '/audio/samples/instruments/piano/C5.ogg', note: 72, baseNote: 72 },
+            { url: '/audio/samples/instruments/piano/C6.ogg', note: 84, baseNote: 84 },
+            { url: '/audio/samples/instruments/piano/C7.ogg', note: 96, baseNote: 96 },
+            { url: '/audio/samples/instruments/piano/C8.ogg', note: 108, baseNote: 108 }
+          ];
+
+          console.log(`✅ Restored ${instData.multiSamples.length} samples for "${instData.name}"`);
+        }
+
+        // ✅ CRITICAL: Ensure unique instrument ID
+        let instrumentId = instData.id;
+        if (!instrumentId || usedIds.has(instrumentId)) {
+          const oldId = instrumentId;
+          instrumentId = `inst-${uuidv4()}`;
+
+          if (oldId) {
+            console.warn(`⚠️ Duplicate instrument ID detected: "${oldId}" for instrument "${instData.name}". Regenerated as: ${instrumentId}`);
+            idMapping.set(oldId, instrumentId);
+          } else {
+            console.warn(`⚠️ Missing instrument ID for "${instData.name}". Generated: ${instrumentId}`);
+          }
+
+          instData.id = instrumentId;
+        }
+        usedIds.add(instrumentId);
 
         // ✅ FIX: Auto-match mixer track by instrument name if mixerTrackId is "master"
         // This fixes the issue where instruments added later are saved with mixerTrackId: "master"
@@ -841,7 +913,7 @@ export class ProjectSerializer {
         // Ensure required fields
         const instrumentData = {
           ...instData,
-          id: instData.id || `inst-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          id: instrumentId, // Use validated unique ID
           type: instrumentType,
           mixerTrackId: mixerTrackId || instData.mixerTrackId || 'master', // Fallback to master if no match
         };
@@ -851,6 +923,7 @@ export class ProjectSerializer {
           instrumentData.url = resolvedInstrumentUrl;
         }
 
+        // ✅ FIX: Resolve asset URLs for multiSamples
         if (Array.isArray(instrumentData.multiSamples)) {
           instrumentData.multiSamples = instrumentData.multiSamples.map(sample => {
             if (!sample) return sample;
@@ -888,6 +961,11 @@ export class ProjectSerializer {
         console.error(`❌ Failed to restore instrument ${instData.id}:`, error);
       }
     });
+
+    // ✅ Log ID mapping summary if any duplicates were found
+    if (idMapping.size > 0) {
+      console.log(`🔄 Regenerated ${idMapping.size} duplicate instrument IDs:`, Object.fromEntries(idMapping));
+    }
   }
 
   static deserializePatterns(patterns) {

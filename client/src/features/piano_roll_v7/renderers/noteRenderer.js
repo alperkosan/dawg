@@ -602,7 +602,11 @@ export class PremiumNoteRenderer {
         const sortedNotes = [...notes].sort((a, b) => b.pitch - a.pitch);
 
         // ✅ PHASE 3: Render slide connections first (behind notes)
-        this.renderSlideConnections(ctx, sortedNotes, dimensions, viewport);
+        try {
+            this.renderSlideConnections(ctx, sortedNotes, dimensions, viewport);
+        } catch (e) {
+            console.error('❌ Error rendering slide connections:', e);
+        }
 
         const hideVelocityIndicator = lod >= 2;
 
@@ -728,7 +732,11 @@ export class PremiumNoteRenderer {
             }
 
             // ✅ FIX: Pass LOD down to single note renderer
-            this.renderNote(ctx, renderNote, dimensions, viewport, isSelected, isHovered, isEraserTarget, { hideVelocityIndicator, lod });
+            try {
+                this.renderNote(ctx, renderNote, dimensions, viewport, isSelected, isHovered, isEraserTarget, { hideVelocityIndicator, lod });
+            } catch (e) {
+                console.error(`❌ Error rendering note ${note.id}:`, e);
+            }
         });
     }
 

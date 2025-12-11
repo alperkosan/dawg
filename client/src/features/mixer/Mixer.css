@@ -158,6 +158,7 @@
     opacity: 0;
     transform: translateY(-4px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -246,7 +247,7 @@
 .mixer-2__channels {
   display: flex;
   gap: 2px;
-  min-height: 100%;
+  height: 100%;
   align-items: stretch;
 }
 
@@ -265,13 +266,11 @@
 .mixer-2__separator-line {
   width: 2px;
   flex: 1;
-  background: linear-gradient(
-    180deg,
-    transparent 0%,
-    var(--zenith-border-strong) 10%,
-    var(--zenith-border-strong) 90%,
-    transparent 100%
-  );
+  background: linear-gradient(180deg,
+      transparent 0%,
+      var(--zenith-border-strong) 10%,
+      var(--zenith-border-strong) 90%,
+      transparent 100%);
   border-radius: 1px;
   margin-bottom: 8px;
 }
@@ -317,15 +316,15 @@
   height: 100%;
   min-width: 0;
   min-height: 0;
-  background: radial-gradient(circle at 20% 15%, rgba(255,255,255,0.08), transparent 50%),
-    linear-gradient(180deg, rgba(12,18,28,0.95) 0%, rgba(5,9,15,0.98) 100%);
+  background: radial-gradient(circle at 20% 15%, rgba(255, 255, 255, 0.08), transparent 50%),
+    linear-gradient(180deg, rgba(12, 18, 28, 0.95) 0%, rgba(5, 9, 15, 0.98) 100%);
   border: 1px solid var(--zenith-border-medium);
   border-radius: 10px;
   padding: 14px 12px;
   display: flex;
   flex-direction: row;
   gap: 12px;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 12px 24px rgba(0,0,0,0.35);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 12px 24px rgba(0, 0, 0, 0.35);
 }
 
 .mixer-primary-meter__meter-shell {
@@ -359,7 +358,7 @@
   font-size: 12px;
   padding: 4px 8px;
   border-radius: 999px;
-  border: 1px solid rgba(255,255,255,0.2);
+  border: 1px solid rgba(255, 255, 255, 0.2);
   color: var(--zenith-text-primary);
   white-space: nowrap;
   overflow: hidden;
@@ -379,8 +378,8 @@
   width: 72px;
   height: 100%;
   border-radius: 8px;
-  border: 1px dashed rgba(255,255,255,0.1);
-  background: linear-gradient(180deg, rgba(255,255,255,0.02) 0%, rgba(0,0,0,0.4) 100%);
+  border: 1px dashed rgba(255, 255, 255, 0.1);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.02) 0%, rgba(0, 0, 0, 0.4) 100%);
 }
 
 /* =================== SCROLLBAR =================== */

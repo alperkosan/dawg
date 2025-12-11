@@ -356,7 +356,9 @@ const ChannelMeterLegacy = ({ trackId, isVisible = true, className = '' }) => {
           <div
             className="channel-meter__ghost"
             style={{
-              height: `${ghostTrailPercent}%`,
+              transform: `scaleY(${ghostTrailPercent / 100})`,
+              transformOrigin: 'bottom',
+              height: '100%',
               backgroundColor: peakColor,
               opacity: 0.15
             }}
@@ -365,7 +367,9 @@ const ChannelMeterLegacy = ({ trackId, isVisible = true, className = '' }) => {
         <div
           className="channel-meter__rms"
           style={{
-            height: `${rmsPercent}%`,
+            transform: `scaleY(${rmsPercent / 100})`,
+            transformOrigin: 'bottom',
+            height: '100%',
             backgroundColor: rmsColor,
             opacity: 0.4
           }}
@@ -373,7 +377,9 @@ const ChannelMeterLegacy = ({ trackId, isVisible = true, className = '' }) => {
         <div
           className="channel-meter__peak"
           style={{
-            height: `${peakPercent}%`,
+            transform: `scaleY(${peakPercent / 100})`,
+            transformOrigin: 'bottom',
+            height: '100%',
             backgroundColor: peakColor,
             boxShadow: `0 0 4px ${peakColor}`
           }}
@@ -382,7 +388,7 @@ const ChannelMeterLegacy = ({ trackId, isVisible = true, className = '' }) => {
           <div
             className="channel-meter__peak-hold"
             style={{
-              bottom: `${peakHoldPercent}%`,
+              bottom: `${peakHoldPercent}%`, // Keep bottom for hold line (it's absolute)
               backgroundColor: peakHoldColor,
               boxShadow: `0 0 3px ${peakHoldColor}`
             }}
@@ -390,9 +396,12 @@ const ChannelMeterLegacy = ({ trackId, isVisible = true, className = '' }) => {
         )}
       </div>
       <div className="channel-meter__scale">
-        {SCALE_TICKS.map((db) => {
+        {SCALE_TICKS.map((db, i) => {
           const percent = dbToPercent(db);
+          // Reduce DOM weight: only render labeled ticks or significantly spaced ones
           const isLabeled = LABELED_SCALE_TICKS.has(db);
+          if (!isLabeled && i % 2 !== 0 && percent < 10) return null;
+
           return (
             <div
               key={`legacy-scale-${db}`}
@@ -441,8 +450,8 @@ export const ChannelMiniMeter = ({ trackId, isVisible = true }) => {
     if (!isVisible || !trackId) return () => { };
 
     // Reset visual state when becoming visible or track changes
-    if (rmsRef.current) rmsRef.current.style.height = '0%';
-    if (peakRef.current) peakRef.current.style.height = '0%';
+    if (rmsRef.current) rmsRef.current.style.transform = 'scaleY(0)';
+    if (peakRef.current) peakRef.current.style.transform = 'scaleY(0)';
     if (holdRef.current) holdRef.current.style.bottom = '0%';
 
     // Reset internal state
@@ -475,13 +484,13 @@ export const ChannelMiniMeter = ({ trackId, isVisible = true }) => {
       stateRef.current.peak = levels.peak;
       stateRef.current.rms = levels.rms;
 
-      // Update DOM directly
+      // Update DOM directly with Transforms for performance
       if (rmsRef.current) {
-        rmsRef.current.style.height = `${dbToPercent(levels.rms)}%`;
+        rmsRef.current.style.transform = `scaleY(${dbToPercent(levels.rms) / 100})`;
         rmsRef.current.style.backgroundColor = getColor(levels.rms);
       }
       if (peakRef.current) {
-        peakRef.current.style.height = `${dbToPercent(levels.peak)}%`;
+        peakRef.current.style.transform = `scaleY(${dbToPercent(levels.peak) / 100})`;
         peakRef.current.style.backgroundColor = getColor(levels.peak);
       }
       if (holdRef.current) {
@@ -518,12 +527,12 @@ export const ChannelMiniMeter = ({ trackId, isVisible = true }) => {
         <div
           ref={rmsRef}
           className="channel-mini-meter__rms"
-          style={{ height: '0%' }}
+          style={{ height: '100%', transform: 'scaleY(0)', transformOrigin: 'bottom' }}
         />
         <div
           ref={peakRef}
           className="channel-mini-meter__peak"
-          style={{ height: '0%' }}
+          style={{ height: '100%', transform: 'scaleY(0)', transformOrigin: 'bottom' }}
         />
         <div
           ref={holdRef}

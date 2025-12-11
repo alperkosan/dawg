@@ -327,7 +327,8 @@ export class EngineStateSyncService {
                     try {
                         // ✅ FIX: Preload samples even if audioBuffer exists
                         // For newly added samples, audioBuffer is loaded in UI but needs to be transferred to WASM worklet
-                        if (instrument.type === 'sample' && instrument.url) {
+                        // ✅ CRITICAL FIX: Also check for multiSamples (for multisampled instruments like Piano)
+                        if (instrument.type === 'sample' && (instrument.url || (instrument.multiSamples && instrument.multiSamples.length > 0))) {
                             try {
                                 await engine.preloadSamples([instrument]);
                             } catch (e) {

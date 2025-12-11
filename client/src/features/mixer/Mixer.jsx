@@ -9,6 +9,7 @@
  * - Pre/Post fader sends
  * - Effect chain reordering (drag & drop)
  * - Throttled controls for performance
+ * - Virtualized channel list for performance
  * - Centralized meter service
  */
 
@@ -25,12 +26,22 @@ import {
 import { MixerChannel } from './components/MixerChannel';
 import { EffectsRack } from './components/EffectsRack';
 import { MixerPrimaryMeter } from './components/MixerPrimaryMeter';
+import { ColorPicker } from './components/ColorPicker';
 import './Mixer.css';
+
+
 
 const Mixer = ({ isVisible = true }) => {
   const [showEffectsRack, setShowEffectsRack] = useState(true);
   const [showAddMenu, setShowAddMenu] = useState(false);
   const addMenuRef = useRef(null);
+
+  // ✅ OPTIMIZATION: Global color picker state
+  const [colorPickerState, setColorPickerState] = useState({
+    isOpen: false,
+    trackId: null,
+    position: { top: 0, left: 0 }
+  });
 
   // ✅ PERFORMANCE: Separate audio state from UI state
   // Audio state - subscribe to specific values only
@@ -43,6 +54,7 @@ const Mixer = ({ isVisible = true }) => {
   // UI state - subscribe to specific values only
   const activeChannelId = useMixerUIStore(state => state.activeChannelId);
   const setActiveChannelId = useMixerUIStore(state => state.setActiveChannelId);
+  const setTrackColor = useMixerStore(state => state.setTrackColor);
 
   // Close add menu when clicking outside
   useEffect(() => {
@@ -74,6 +86,51 @@ const Mixer = ({ isVisible = true }) => {
       setActiveChannelId(allTracksOrdered[newIndex].id);
     }
   }, [mixerTracks, activeChannelId, setActiveChannelId]);
+
+  // ✅ OPTIMIZATION: Handle color picker requests from channels
+  const handleChannelClick = useCallback((trackId) => (event) => {
+    if (event?.type === 'color-picker') {
+      const { rect } = event;
+      const pickerWidth = 172;
+      const pickerHeight = 130;
+
+      // Calculate position relative to viewport
+      let left = rect.left - 2;
+      let top = rect.bottom + 2;
+
+      // Constrain to viewport
+      const maxLeft = window.innerWidth - pickerWidth - 4;
+      const maxTop = window.innerHeight - pickerHeight - 4;
+
+      left = Math.max(4, Math.min(left, maxLeft));
+
+      // If doesn't fit below, show above
+      if (top + pickerHeight > window.innerHeight - 4) {
+        top = rect.top - pickerHeight - 2;
+      }
+      top = Math.max(4, Math.min(top, maxTop));
+
+      setColorPickerState({
+        isOpen: true,
+        trackId,
+        position: { top, left }
+      });
+    } else {
+      // Regular click - select channel
+      setActiveChannelId(trackId);
+    }
+  }, [setActiveChannelId]);
+
+  const handleColorSelect = useCallback((color) => {
+    if (colorPickerState.trackId) {
+      setTrackColor(colorPickerState.trackId, color);
+      setColorPickerState(prev => ({ ...prev, isOpen: false }));
+    }
+  }, [colorPickerState.trackId, setTrackColor]);
+
+  const handleColorPickerClose = useCallback(() => {
+    setColorPickerState(prev => ({ ...prev, isOpen: false }));
+  }, []);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -232,9 +289,10 @@ const Mixer = ({ isVisible = true }) => {
         </div>
 
         {/* Mixer Channels */}
+        {/* Mixer Channels */}
         <div className="mixer-2__channels-container">
           <div className="mixer-2__channels">
-            {/* Master Channel */}
+            {/* Master Channel (Pinned) */}
             {masterTrack && (
               <>
                 <div className="mixer-2__separator">
@@ -243,18 +301,18 @@ const Mixer = ({ isVisible = true }) => {
                 </div>
                 <MixerChannel
                   key={masterTrack.id}
-                  track={masterTrack}
+                  trackId={masterTrack.id}
                   allTracks={allTracksOrdered}
-                  activeTrack={activeTrack}
+                  activeTrackId={activeChannelId}
                   isActive={activeChannelId === masterTrack.id}
                   isMaster={true}
-                  onClick={() => setActiveChannelId(masterTrack.id)}
+                  onClick={handleChannelClick(masterTrack.id)}
                   isVisible={isVisible}
                 />
               </>
             )}
 
-            {/* Bus Channels with left separator */}
+            {/* Bus Channels */}
             {busTracks.length > 0 && (
               <>
                 <div className="mixer-2__separator">
@@ -264,13 +322,13 @@ const Mixer = ({ isVisible = true }) => {
                 {busTracks.map(track => (
                   <MixerChannel
                     key={track.id}
-                    track={track}
+                    trackId={track.id}
                     allTracks={allTracksOrdered}
-                    activeTrack={activeTrack}
+                    activeTrackId={activeChannelId}
                     isActive={activeChannelId === track.id}
                     isMaster={false}
-                onClick={() => setActiveChannelId(track.id)}
-                isVisible={isVisible}
+                    onClick={handleChannelClick(track.id)}
+                    isVisible={isVisible}
                   />
                 ))}
               </>
@@ -284,12 +342,12 @@ const Mixer = ({ isVisible = true }) => {
             {regularTracks.map(track => (
               <MixerChannel
                 key={track.id}
-                track={track}
+                trackId={track.id}
                 allTracks={allTracksOrdered}
-                activeTrack={activeTrack}
+                activeTrackId={activeChannelId}
                 isActive={activeChannelId === track.id}
                 isMaster={false}
-                onClick={() => setActiveChannelId(track.id)}
+                onClick={handleChannelClick(track.id)}
                 isVisible={isVisible}
               />
             ))}
@@ -303,6 +361,15 @@ const Mixer = ({ isVisible = true }) => {
           </div>
         )}
       </div>
+
+      {/* ✅ OPTIMIZATION: Global Color Picker */}
+      <ColorPicker
+        isOpen={colorPickerState.isOpen}
+        position={colorPickerState.position}
+        currentColor={mixerTracks.find(t => t.id === colorPickerState.trackId)?.color}
+        onColorSelect={handleColorSelect}
+        onClose={handleColorPickerClose}
+      />
     </div>
   );
 };

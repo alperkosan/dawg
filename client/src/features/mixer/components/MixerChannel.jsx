@@ -10,7 +10,7 @@
  * - Send Accept Button (target-based routing)
  */
 
-import React, { useState, useRef, useEffect, memo, useCallback } from 'react';
+import React, { useState, useRef, useEffect, memo, useCallback, useMemo } from 'react';
 import { useMixerStore } from '@/store/useMixerStore';
 import { MixerService } from '@/lib/services/MixerService';
 import { Volume2, VolumeX, Headphones, Radio } from 'lucide-react';
@@ -21,24 +21,25 @@ import { SendAcceptButton } from './SendAcceptButton';
 import './MixerChannel.css';
 
 const MixerChannelComponent = ({
-  track,
+  trackId,
   allTracks,
   isActive,
   isMaster,
   onClick,
-  activeTrack,
+  activeTrackId,
   isVisible = true
 }) => {
+  // ✅ OPTIMIZED: Use shallow selector for track data
+  const track = useMixerStore(useCallback(state =>
+    state.mixerTracks.find(t => t.id === trackId), [trackId]
+  ));
+
+  // If track was deleted, don't render
+  if (!track) return null;
+
   const [isEditingName, setIsEditingName] = useState(false);
   const [editedName, setEditedName] = useState(track.name);
-  const [showColorPicker, setShowColorPicker] = useState(false);
-  const [pickerPosition, setPickerPosition] = useState({ top: 0, left: 0 });
-  const colorPickerRef = useRef(null);
   const colorBarRef = useRef(null);
-
-  // ✅ PROFESSIONAL DAW ARCHITECTURE:
-  // Direct audio manipulation + immediate store updates
-  // Smart subscription (detectStructuralChanges) prevents full mixer sync on parameter changes
 
   const {
     handleMixerParamChange,
@@ -70,43 +71,20 @@ const MixerChannelComponent = ({
     handleMixerParamChange(track.id, 'pan', normalizedPan);
   }, [track.id, handleMixerParamChange]);
 
+  // ✅ OPTIMIZATION: Memoize computed values
+  const volume = useMemo(() => track.volume !== undefined ? track.volume : 0, [track.volume]);
+  const panNormalized = useMemo(() => track.pan !== undefined ? track.pan : 0, [track.pan]);
+  const panDisplay = useMemo(() => Math.round(panNormalized * 100), [panNormalized]);
+  const isMuted = useMemo(() => mutedChannels?.has(track.id) || false, [mutedChannels, track.id]);
+  const isSolo = useMemo(() => soloedChannels?.has(track.id) || false, [soloedChannels, track.id]);
+  const isMono = useMemo(() => monoChannels?.has(track.id) || false, [monoChannels, track.id]);
 
-
-  // Close color picker when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (colorPickerRef.current && !colorPickerRef.current.contains(event.target)) {
-        setShowColorPicker(false);
-      }
-    };
-
-    if (showColorPicker) {
-      document.addEventListener('mousedown', handleClickOutside);
-      return () => document.removeEventListener('mousedown', handleClickOutside);
-    }
-  }, [showColorPicker]);
-
-  const volume = track.volume !== undefined ? track.volume : 0;
-  // Pan: stored as -1 to 1 (Web Audio API standard), displayed as -100 to 100 (user-friendly)
-  const panNormalized = track.pan !== undefined ? track.pan : 0;
-  const panDisplay = Math.round(panNormalized * 100);
-  const isMuted = mutedChannels?.has(track.id) || false;
-  const isSolo = soloedChannels?.has(track.id) || false;
-  const isMono = monoChannels?.has(track.id) || false;
-
-  // Pan label helper
-  const getPanLabel = (panValue) => {
-    if (panValue === 0) return 'C';
-    if (panValue > 0) return `R${Math.round(panValue * 100)}`;
-    return `L${Math.round(-panValue * 100)}`;
-  };
-
-  // Preset colors for quick selection
-  const presetColors = [
-    '#ef4444', '#f97316', '#f59e0b', '#eab308', '#84cc16', '#22c55e',
-    '#10b981', '#14b8a6', '#06b6d4', '#0ea5e9', '#3b82f6', '#6366f1',
-    '#8b5cf6', '#a855f7', '#d946ef', '#ec4899', '#f43f5e', '#64748b'
-  ];
+  // ✅ OPTIMIZATION: Memoize pan label calculation
+  const panLabel = useMemo(() => {
+    if (panNormalized === 0) return 'C';
+    if (panNormalized > 0) return `R${Math.round(panNormalized * 100)}`;
+    return `L${Math.round(-panNormalized * 100)}`;
+  }, [panNormalized]);
 
   const handleNameDoubleClick = (e) => {
     e.stopPropagation();
@@ -136,63 +114,31 @@ const MixerChannelComponent = ({
     }
   };
 
-  const handleColorClick = (e) => {
+  // ✅ OPTIMIZATION: Use global color picker via callback to parent
+  const handleColorClick = useCallback((e) => {
     e.stopPropagation();
-
-    if (!showColorPicker && colorBarRef.current) {
+    if (colorBarRef.current && onClick) {
       const rect = colorBarRef.current.getBoundingClientRect();
-      const pickerWidth = 172; // Actual width: 160px + 8px padding + 4px border
-      const pickerHeight = 130; // Actual height with padding
-
-      // Get mixer panel container boundaries
-      const mixerPanel = colorBarRef.current.closest('.workspace-panel__content') ||
-        colorBarRef.current.closest('.mixer-2');
-      const panelRect = mixerPanel ? mixerPanel.getBoundingClientRect() : {
-        left: 0,
-        right: window.innerWidth,
-        top: 0,
-        bottom: window.innerHeight
-      };
-
-      // ✅ Simple strategy: Stick to color bar, minimal offset
-      let left = rect.left - 2; // Slight left offset for visual alignment
-      let top = rect.bottom + 2; // Minimal gap
-
-      // ✅ Constrain to panel boundaries
-      const minLeft = panelRect.left + 4;
-      const maxLeft = panelRect.right - pickerWidth - 4;
-      const minTop = panelRect.top + 4;
-      const maxBottom = panelRect.bottom - 4;
-
-      // Horizontal: clamp to panel
-      left = Math.max(minLeft, Math.min(left, maxLeft));
-
-      // Vertical: if doesn't fit below, try above
-      if (top + pickerHeight > maxBottom) {
-        const topAbove = rect.top - pickerHeight - 2;
-        if (topAbove >= minTop) {
-          top = topAbove;
-        } else {
-          // Clamp to panel top if nowhere to go
-          top = Math.max(minTop, Math.min(top, maxBottom - pickerHeight));
-        }
-      }
-
-      setPickerPosition({ top, left });
+      // Trigger parent to show global color picker
+      onClick({ type: 'color-picker', trackId: track.id, rect });
     }
+  }, [track.id, onClick]);
 
-    setShowColorPicker(!showColorPicker);
-  };
-
-  const handleColorSelect = (color) => {
-    setTrackColor(track.id, color);
-    setShowColorPicker(false);
-  };
+  // Handle channel click for selection
+  const handleChannelSelect = useCallback((e) => {
+    // If it's a color-picker event, pass it through. Otherwise it's a normal click.
+    if (e?.type === 'color-picker') {
+      onClick?.(e);
+    } else {
+      // Normal DOM click event - call onClick without the event
+      onClick?.();
+    }
+  }, [onClick]);
 
   return (
     <div
       className={`mixer-channel-2 ${isActive ? 'mixer-channel-2--active' : ''} ${isMaster ? 'mixer-channel-2--master' : ''}`}
-      onClick={onClick}
+      onClick={handleChannelSelect}
       data-channel-id={track.id}
     >
       {/* Header */}
@@ -205,29 +151,6 @@ const MixerChannelComponent = ({
             onClick={handleColorClick}
             title="Click to change color"
           />
-          {showColorPicker && (
-            <div
-              ref={colorPickerRef}
-              className="mixer-channel-2__color-picker"
-              style={{
-                position: 'fixed',
-                top: `${pickerPosition.top}px`,
-                left: `${pickerPosition.left}px`
-              }}
-            >
-              <div className="mixer-channel-2__color-grid">
-                {presetColors.map(color => (
-                  <button
-                    key={color}
-                    className={`mixer-channel-2__color-swatch ${track.color === color ? 'active' : ''}`}
-                    style={{ backgroundColor: color }}
-                    onClick={() => handleColorSelect(color)}
-                    title={color}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
         </div>
         <div className="mixer-channel-2__name-container">
           {isEditingName ? (
@@ -299,7 +222,7 @@ const MixerChannelComponent = ({
           showValue={false}
         />
         <div className="mixer-channel-2__pan-label">
-          {getPanLabel(panNormalized)}
+          {panLabel}
         </div>
       </div>
 
@@ -340,7 +263,7 @@ const MixerChannelComponent = ({
       </div>
 
       {/* Send Accept Button - Target-based routing */}
-      <SendAcceptButton targetTrack={track} sourceTrack={activeTrack} />
+      <SendAcceptButton targetTrack={track} sourceTrack={useMixerStore.getState().mixerTracks.find(t => t.id === activeTrackId)} />
     </div>
   );
 };
@@ -348,34 +271,12 @@ const MixerChannelComponent = ({
 // ✅ PERFORMANCE: Memoize component with custom equality check
 // Only re-render when these specific props change
 export const MixerChannel = memo(MixerChannelComponent, (prevProps, nextProps) => {
-  // Return true if props are equal (skip re-render)
-  // Return false if props are different (do re-render)
-
-  // ✅ CRITICAL: Check activeTrack.sends changes (for SendAcceptButton reactivity)
-  const prevActiveSends = prevProps.activeTrack?.sends || [];
-  const nextActiveSends = nextProps.activeTrack?.sends || [];
-  const activeSendsChanged = prevActiveSends.length !== nextActiveSends.length ||
-    JSON.stringify(prevActiveSends) !== JSON.stringify(nextActiveSends);
-
+  // Simple prop check is enough now because track data is internal!
   return (
-    prevProps.track.id === nextProps.track.id &&
-    prevProps.track.volume === nextProps.track.volume &&
-    prevProps.track.pan === nextProps.track.pan &&
-    prevProps.track.name === nextProps.track.name &&
-    prevProps.track.color === nextProps.track.color &&
-    prevProps.track.muted === nextProps.track.muted &&
-    prevProps.track.solo === nextProps.track.solo &&
-    prevProps.track.output === nextProps.track.output &&
+    prevProps.trackId === nextProps.trackId &&
     prevProps.isActive === nextProps.isActive &&
     prevProps.isMaster === nextProps.isMaster &&
-    // ✅ CRITICAL FIX: Check activeTrack changes for SendAcceptButton updates
-    prevProps.activeTrack?.id === nextProps.activeTrack?.id &&
-    !activeSendsChanged && // Re-render when active track's sends change
-    prevProps.activeTrack?.output === nextProps.activeTrack?.output && // ✅ Re-render on routing change
-    // Deep comparison for arrays/objects
-    JSON.stringify(prevProps.track.insertEffects) === JSON.stringify(nextProps.track.insertEffects) &&
-    JSON.stringify(prevProps.track.sends) === JSON.stringify(nextProps.track.sends) &&
-    JSON.stringify(prevProps.track.eq) === JSON.stringify(nextProps.track.eq)
+    prevProps.activeTrackId === nextProps.activeTrackId // Important for Send button state
   );
 });
 

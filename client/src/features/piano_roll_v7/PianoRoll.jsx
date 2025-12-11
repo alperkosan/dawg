@@ -956,6 +956,7 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
 
     useEffect(() => {
         markBackgroundDirty();
+        markNotesDirty(); // ✅ FIX: Ensure notes are redrawn on zoom/scroll/resize
     }, [
         viewportData.scrollX,
         viewportData.scrollY,
@@ -966,7 +967,9 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
         dimensionsData.stepWidth,
         dimensionsData.keyHeight,
         loopRegion,
-        markBackgroundDirty
+        loopRegion,
+        markBackgroundDirty,
+        markNotesDirty // ✅ FIX: Also mark notes dirty on viewport changes (resize clears canvas)
     ]);
 
     useEffect(() => {
@@ -998,6 +1001,7 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
         if (dragDirtyRegion) {
             markNotesDirty(); // Render entire canvas, not just dirty region
         }
+
     }, [dragDirtyRegion, markNotesDirty]);
 
     useEffect(() => {
