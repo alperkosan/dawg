@@ -1464,6 +1464,9 @@ export const audioExportManager = new Proxy({}, {
   }
 });
 
+// ✅ Alias for backward compatibility (used by RenderPage, ProjectsPage)
+export const exportManager = audioExportManager;
+
 // ✅ FIX: Don't create instance on module load
 // Use getAudioExportManager() when you need the instance
 export default audioExportManager;

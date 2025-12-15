@@ -12,7 +12,7 @@ import { useState, useCallback, useMemo } from 'react';
 import { useInstrumentsStore } from '@/store/useInstrumentsStore';
 import { useArrangementWorkspaceStore } from '@/store/useArrangementWorkspaceStore';
 import { useMixerStore } from '@/store/useMixerStore';
-import { RenderEngine } from '@/lib/audio/RenderEngine';
+import { RenderEngine } from '@/lib/audio/RenderEngine.js';
 import { AudioContextService } from '@/lib/services/AudioContextService';
 import { AudioEngineGlobal } from '@/lib/core/AudioEngineGlobal';
 import { v4 as uuidv4 } from 'uuid';
