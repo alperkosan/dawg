@@ -8,7 +8,7 @@ import React, { useEffect } from 'react';
 import { NativeAudioEngine } from '@/lib/core/NativeAudioEngine';
 import { AudioContextService } from '@/lib/services/AudioContextService';
 import { ProjectSerializer } from '@/lib/project/ProjectSerializer';
-import { exportManager } from '@/lib/audio/ExportManager';
+import { exportManager } from '@/lib/audio/AudioExportManager.js';
 import { useArrangementStore } from '@/store/useArrangementStore';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
 import { apiClient } from '@/services/api.js';
@@ -18,19 +18,19 @@ export default function RenderPage() {
     console.log('🎬 [RENDER] ========================================');
     console.log('🎬 [RENDER] RenderPage mounted, useEffect running...');
     console.log('🎬 [RENDER] Window location:', window.location.href);
-    
+
     // Mark that the page has mounted (for Puppeteer to detect)
     window.renderPageMounted = true;
-    
+
     const projectId = new URLSearchParams(window.location.search).get('projectId');
     console.log('🎬 [RENDER] ProjectId from URL:', projectId);
-    
+
     if (projectId) {
       console.log('🎬 [RENDER] Starting renderProject...');
       // Initialize window properties
       window.renderResult = undefined;
       window.renderError = undefined;
-      
+
       // Start render asynchronously
       renderProject(projectId).catch((error) => {
         console.error('❌ [RENDER] Render failed:', error);
@@ -61,7 +61,7 @@ export default function RenderPage() {
       const project = projectResponse.project;
       const loadTime = Date.now() - loadStart;
       console.log(`✅ [RENDER] Project data loaded in ${loadTime}ms`);
-      
+
       if (!project || !project.projectData) {
         throw new Error('Project data not found');
       }
@@ -70,20 +70,20 @@ export default function RenderPage() {
       // 2. Initialize audio engine
       console.log(`🎵 [RENDER] Step 2/7: Initializing audio engine...`);
       const engineStart = Date.now();
-      
+
       // Create and initialize NativeAudioEngine (same as App.jsx)
       const audioEngine = new NativeAudioEngine();
       await audioEngine.initialize();
-      
+
       // Set the engine in AudioContextService
       await AudioContextService.setAudioEngine(audioEngine);
-      
+
       // Resume AudioContext (required for headless browser)
       await audioEngine.resumeAudioContext();
-      
+
       const engineTime = Date.now() - engineStart;
       console.log(`✅ [RENDER] Audio engine initialized in ${engineTime}ms`);
-      
+
       if (!audioEngine) {
         throw new Error('Failed to initialize audio engine');
       }
@@ -109,9 +109,9 @@ export default function RenderPage() {
       // Calculate arrangement duration
       const arrangementTracks = arrangementStore.arrangementTracks || [];
       const clips = arrangementStore.arrangementClips || [];
-      
+
       console.log(`📊 [RENDER] Arrangement: ${arrangementTracks.length} tracks, ${clips.length} clips`);
-      
+
       let maxEndTime = 0;
       clips.forEach(clip => {
         const clipEndTime = (clip.startTime || 0) + (clip.duration || 0);
@@ -164,7 +164,7 @@ export default function RenderPage() {
       const arrayBuffer = await audioFile.arrayBuffer();
       const readTime = Date.now() - readStart;
       console.log(`✅ [RENDER] Audio file read in ${readTime}ms (${(arrayBuffer.byteLength / 1024 / 1024).toFixed(2)} MB)`);
-      
+
       // 8. Convert to base64 (browser-compatible, handles large arrays)
       console.log(`🔄 [RENDER] Converting to base64...`);
       const encodeStart = Date.now();
@@ -173,7 +173,7 @@ export default function RenderPage() {
       const chunkSize = 8192; // Process in chunks to avoid stack overflow
       const totalChunks = Math.ceil(uint8Array.length / chunkSize);
       console.log(`📊 [RENDER] Processing ${totalChunks} chunks...`);
-      
+
       for (let i = 0; i < uint8Array.length; i += chunkSize) {
         const chunk = uint8Array.subarray(i, i + chunkSize);
         binary += String.fromCharCode.apply(null, Array.from(chunk));
