@@ -21,7 +21,7 @@ import { TOOL_TYPES } from '@/features/piano_roll_v7/lib/tools';
 import { useArrangementStore } from '@/store/useArrangementStore';
 import { getPreviewManager } from '@/lib/audio/preview';
 import EventBus from '@/lib/core/EventBus';
-import { STEPS_PER_BEAT } from '@/lib/audio/audioRenderConfig';
+import { STEPS_PER_BEAT } from '@/lib/audio/audioRenderConfig.js';
 
 const DEBUG = true;
 const VERSION = '3.0.0';

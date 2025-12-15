@@ -9,14 +9,14 @@ import { useAuthStore } from '../store/useAuthStore';
 import { projectService } from '../services/projectService';
 import { apiClient } from '../services/api.js';
 import ConfirmationModal from '../components/common/ConfirmationModal';
-import { 
-  FolderOpen, 
-  Edit, 
-  Trash2, 
-  Share2, 
-  Eye, 
-  EyeOff, 
-  Search, 
+import {
+  FolderOpen,
+  Edit,
+  Trash2,
+  Share2,
+  Eye,
+  EyeOff,
+  Search,
   Music,
   Calendar,
   Loader2,
@@ -41,7 +41,7 @@ export default function ProjectsPage() {
   const [showPublishModal, setShowPublishModal] = useState(false);
   const [publishProgress, setPublishProgress] = useState({ progress: 0, status: '', error: null });
   const [copiedShareUrl, setCopiedShareUrl] = useState(null);
-  
+
   // ✅ Confirmation modal state
   const [confirmationModal, setConfirmationModal] = useState({
     isOpen: false,
@@ -118,7 +118,7 @@ export default function ProjectsPage() {
       // ✅ Error toast will be shown automatically by API client
     }
   };
-  
+
   // ✅ Multi-select handlers
   const handleToggleProjectSelection = (projectId) => {
     const newSelection = new Set(selectedProjects);
@@ -140,7 +140,7 @@ export default function ProjectsPage() {
 
   const handleDeleteSelectedProjects = async () => {
     if (selectedProjects.size === 0) return;
-    
+
     const count = selectedProjects.size;
     setConfirmationModal({
       isOpen: true,
@@ -153,7 +153,7 @@ export default function ProjectsPage() {
         setConfirmationModal({ ...confirmationModal, isOpen: false });
         try {
           // Delete all selected projects in parallel
-          await Promise.all(Array.from(selectedProjects).map(projectId => 
+          await Promise.all(Array.from(selectedProjects).map(projectId =>
             projectService.deleteProject(projectId)
           ));
           setSelectedProjects(new Set()); // Clear selection
@@ -171,7 +171,7 @@ export default function ProjectsPage() {
     try {
       const wasPublic = project.isPublic;
       console.log(`📤 [PUBLISH] Toggling public status for project ${project.id}: ${wasPublic} → ${!wasPublic}`);
-      
+
       if (!wasPublic) {
         // Project is becoming public - open publish modal to render audio
         setSelectedProject(project);
@@ -208,37 +208,37 @@ export default function ProjectsPage() {
   const handlePublishWithRender = React.useCallback(async (project) => {
     try {
       setPublishProgress({ progress: 0, status: 'Loading project...', error: null });
-      
+
       // Import render dependencies
       const { runProjectExportSession } = await import('@/lib/audio/export/ExportSessionManager.js');
-      const { exportManager } = await import('@/lib/audio/ExportManager');
+      const { exportManager } = await import('@/lib/audio/AudioExportManager.js');
       const { useArrangementStore } = await import('@/store/useArrangementStore');
       const { usePlaybackStore } = await import('@/store/usePlaybackStore');
-      
+
       // 1. Load project data
       setPublishProgress({ progress: 10, status: 'Loading project data...', error: null });
       const projectResponse = await apiClient.getProject(project.id);
       const projectData = projectResponse.project;
-      
+
       if (!projectData || !projectData.projectData) {
         throw new Error('Project data not found');
       }
-      
+
       setPublishProgress({ progress: 20, status: 'Preparing export workspace...', error: null });
-      
+
       const { exportResult, durationBeats, bpm } = await runProjectExportSession(
         projectData.projectData,
         async () => {
           setPublishProgress({ progress: 30, status: 'Loading project into audio engine...', error: null });
-          
+
           // Wait for samples to hydrate before rendering
           await new Promise(resolve => setTimeout(resolve, 1000));
-          
+
           setPublishProgress({ progress: 40, status: 'Calculating arrangement duration...', error: null });
           const arrangementStore = useArrangementStore.getState();
           const playbackStore = usePlaybackStore.getState();
           const bpmValue = playbackStore.bpm || projectData.bpm || 120;
-          
+
           const clips = arrangementStore.arrangementClips || [];
           let maxEndTime = 0;
           clips.forEach(clip => {
@@ -246,7 +246,7 @@ export default function ProjectsPage() {
             maxEndTime = Math.max(maxEndTime, clipEndTime);
           });
           const durationBeatsValue = maxEndTime > 0 ? maxEndTime : 16;
-          
+
           setPublishProgress({ progress: 50, status: 'Rendering audio (optimized for upload)...', error: null });
           const exportResultLocal = await exportManager.exportChannels(
             ['master'],
@@ -285,7 +285,7 @@ export default function ProjectsPage() {
         },
         { preserveWorkspace: true }
       );
-      
+
       // 6. Upload to backend
       setPublishProgress({ progress: 90, status: 'Uploading audio preview...', error: null });
       // exportResult[0].file is an object with { file: Blob, blob: Blob, ... }
@@ -300,60 +300,60 @@ export default function ProjectsPage() {
       // and allows larger files (up to Vercel's 4.5MB limit, but without base64 overhead)
       const fileSizeMB = audioBlob.size / (1024 * 1024);
       console.log(`📊 [PUBLISH] Audio file size: ${fileSizeMB.toFixed(2)}MB`);
-      
+
       // ✅ Check file size (multipart is smaller than base64, so we can allow slightly larger files)
       // Vercel's 4.5MB limit applies to the request body, but multipart has some overhead
       // So we'll use a conservative limit of 4MB for the actual file
       if (fileSizeMB > 4.0) {
         throw new Error(`Audio file too large (${fileSizeMB.toFixed(2)}MB). Maximum size is 4MB for upload. Please reduce the project duration or use a shorter arrangement.`);
       }
-      
+
       // ✅ Use unified upload service
       const durationSeconds = (durationBeats / 4) * (60 / bpm);
       console.log(`📤 [PUBLISH] Starting upload: ${fileSizeMB.toFixed(2)}MB, duration: ${durationSeconds.toFixed(2)}s`);
       const uploadStartTime = Date.now();
-      
+
       const { uploadFile: uploadFileService, UploadType } = await import('@/lib/services/uploadService.js');
-      
+
       await uploadFileService(audioBlob, {
         type: UploadType.PROJECT_PREVIEW,
         projectId: project.id,
         duration: durationSeconds,
         onProgress: (progress) => {
           // Update publish progress (90-95% range for upload)
-          setPublishProgress({ 
-            progress: 90 + (progress * 0.05), 
-            status: `Uploading audio preview... ${Math.round(progress)}%`, 
-            error: null 
+          setPublishProgress({
+            progress: 90 + (progress * 0.05),
+            status: `Uploading audio preview... ${Math.round(progress)}%`,
+            error: null
           });
         },
       });
-      
+
       const uploadTime = Date.now() - uploadStartTime;
       console.log(`✅ [PUBLISH] Upload completed in ${uploadTime}ms`);
-      
+
       // 7. Update project to public
       setPublishProgress({ progress: 95, status: 'Publishing project...', error: null });
       await apiClient.updateProject(project.id, {
         isPublic: true,
       });
-      
+
       // 8. Complete
       setPublishProgress({ progress: 100, status: 'Complete!', error: null });
       await loadProjects();
-      
+
       setTimeout(() => {
         setShowPublishModal(false);
         setSelectedProject(null);
         apiClient.showToast('Project published successfully!', 'success', 3000);
       }, 1000);
-      
+
     } catch (error) {
       console.error('❌ [PUBLISH] Render failed:', error);
-      setPublishProgress({ 
-        progress: 0, 
-        status: 'Failed', 
-        error: error.message || 'Render failed' 
+      setPublishProgress({
+        progress: 0,
+        status: 'Failed',
+        error: error.message || 'Render failed'
       });
       apiClient.showToast(`Failed to publish: ${error.message}`, 'error', 5000);
     }
@@ -448,8 +448,8 @@ export default function ProjectsPage() {
         ) : (
           <div className="projects-page__grid">
             {filteredProjects.map((project) => (
-              <div 
-                key={project.id} 
+              <div
+                key={project.id}
                 className={`projects-page__card ${selectedProjects.has(project.id) ? 'projects-page__card--selected' : ''}`}
               >
                 {/* ✅ Multi-select checkbox */}
@@ -603,32 +603,32 @@ export default function ProjectsPage() {
       )}
 
       {/* Share Modal */}
-        {showShareModal && selectedProject && (
-          <ShareProjectModal
-            project={selectedProject}
-            onClose={() => {
-              setShowShareModal(false);
-              setSelectedProject(null);
-            }}
-            onCopyUrl={handleCopyShareUrl}
-            onTogglePublic={handleTogglePublic}
-            copiedShareUrl={copiedShareUrl}
-          />
-        )}
-        
-        {showPublishModal && selectedProject && (
-          <PublishModal
-            project={selectedProject}
-            progress={publishProgress}
-            onClose={() => {
-              setShowPublishModal(false);
-              setSelectedProject(null);
-              setPublishProgress({ progress: 0, status: '', error: null });
-            }}
-            onPublish={handlePublishWithRender}
-          />
-        )}
-      
+      {showShareModal && selectedProject && (
+        <ShareProjectModal
+          project={selectedProject}
+          onClose={() => {
+            setShowShareModal(false);
+            setSelectedProject(null);
+          }}
+          onCopyUrl={handleCopyShareUrl}
+          onTogglePublic={handleTogglePublic}
+          copiedShareUrl={copiedShareUrl}
+        />
+      )}
+
+      {showPublishModal && selectedProject && (
+        <PublishModal
+          project={selectedProject}
+          progress={publishProgress}
+          onClose={() => {
+            setShowPublishModal(false);
+            setSelectedProject(null);
+            setPublishProgress({ progress: 0, status: '', error: null });
+          }}
+          onPublish={handlePublishWithRender}
+        />
+      )}
+
       {/* ✅ Confirmation Modal */}
       <ConfirmationModal
         isOpen={confirmationModal.isOpen}
@@ -769,7 +769,7 @@ function DeleteProjectModal({ project, onClose, onConfirm }) {
 function PublishModal({ project, progress, onClose, onPublish }) {
   const hasStartedRef = React.useRef(false);
   const projectIdRef = React.useRef(null);
-  
+
   React.useEffect(() => {
     // ✅ FIX: Only run once per project ID to prevent infinite loop
     // Use refs to track state without causing re-renders
@@ -781,10 +781,10 @@ function PublishModal({ project, progress, onClose, onPublish }) {
     // ✅ FIX: Only depend on project.id, not the entire project object or onPublish function
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.id]); // Only re-run if project ID changes
-  
+
   const isComplete = progress.progress === 100;
   const hasError = progress.error !== null;
-  
+
   return (
     <div className="projects-modal-overlay" onClick={isComplete || hasError ? onClose : undefined}>
       <div className="projects-modal" onClick={(e) => e.stopPropagation()}>
@@ -797,7 +797,7 @@ function PublishModal({ project, progress, onClose, onPublish }) {
         <div className="projects-modal__body">
           <div className="projects-publish-progress">
             <div className="projects-publish-progress__bar">
-              <div 
+              <div
                 className="projects-publish-progress__fill"
                 style={{ width: `${progress.progress}%` }}
               />
@@ -843,7 +843,7 @@ function PublishModal({ project, progress, onClose, onPublish }) {
 // Share Project Modal
 function ShareProjectModal({ project, onClose, onCopyUrl, onTogglePublic, copiedShareUrl }) {
   const shareUrl = `${window.location.origin}/media/project/${project.id}`;
-  
+
   const handleToggleUnlisted = async () => {
     try {
       await apiClient.updateProject(project.id, {

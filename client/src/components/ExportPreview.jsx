@@ -12,7 +12,7 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Play, Pause, Volume2, File, Clock, HardDrive, Gauge, Info } from 'lucide-react';
 import { formatFileSize, formatDuration, formatSampleRate, formatBitDepth, formatExportFormat } from '@/utils/formatUtils';
-import { getCurrentBPM } from '@/lib/audio/audioRenderConfig';
+import { getCurrentBPM } from '@/lib/audio/audioRenderConfig.js';
 import './ExportPreview.css';
 
 /**
@@ -94,7 +94,7 @@ function drawWaveform(canvas, audioBuffer, currentTime = 0, isPlaying = false) {
         for (let x = 0; x < progressPixel; x++) {
             const sampleStart = Math.floor(x * samplesPerPixel);
             const sampleEnd = Math.min(sampleStart + samplesPerPixel, totalSamples);
-            
+
             let min = 0;
             let max = 0;
             for (let i = sampleStart; i < sampleEnd; i++) {
@@ -105,7 +105,7 @@ function drawWaveform(canvas, audioBuffer, currentTime = 0, isPlaying = false) {
 
             const y1 = centerY + (min * centerY);
             const y2 = centerY + (max * centerY);
-            
+
             if (x === 0) {
                 ctx.moveTo(x, y1);
             } else {
@@ -122,7 +122,7 @@ function drawWaveform(canvas, audioBuffer, currentTime = 0, isPlaying = false) {
     for (let x = Math.max(0, progressPixel); x < width; x++) {
         const sampleStart = Math.floor(x * samplesPerPixel);
         const sampleEnd = Math.min(sampleStart + samplesPerPixel, totalSamples);
-        
+
         let min = 0;
         let max = 0;
         for (let i = sampleStart; i < sampleEnd; i++) {
@@ -133,7 +133,7 @@ function drawWaveform(canvas, audioBuffer, currentTime = 0, isPlaying = false) {
 
         const y1 = centerY + (min * centerY);
         const y2 = centerY + (max * centerY);
-        
+
         if (x === Math.max(0, progressPixel)) {
             ctx.moveTo(x, y1);
         } else {

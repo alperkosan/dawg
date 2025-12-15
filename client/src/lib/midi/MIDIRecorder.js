@@ -15,11 +15,11 @@
  */
 
 import { getMIDIDeviceManager, MIDI_MESSAGE_TYPE } from './MIDIDeviceManager';
-import { Metronome } from '@/lib/audio/Metronome';
+import { Metronome } from '@/lib/audio/Metronome.js';
 import { AudioContextService } from '../services/AudioContextService';
 import { InstrumentService } from '../services/InstrumentService';
 import { AudioEngineGlobal } from '@/lib/core/AudioEngineGlobal';
-import { STEPS_PER_BEAT } from '@/lib/audio/audioRenderConfig';
+import { STEPS_PER_BEAT } from '@/lib/audio/audioRenderConfig.js';
 import { getTimelineController } from '@/lib/core/TimelineControllerSingleton';
 import { useArrangementStore } from '@/store/useArrangementStore';
 

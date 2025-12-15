@@ -11,7 +11,7 @@
 
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { Download, Settings, Play, Square, CheckCircle, XCircle, Loader, Save, FolderOpen, File, Clock, HardDrive, History } from 'lucide-react';
-import { audioExportManager, EXPORT_FORMATS as EXPORT_FORMAT, EXPORT_MODE, QUALITY_PRESETS as QUALITY_PRESET } from '@/lib/audio/AudioExportManager';
+import { audioExportManager, EXPORT_FORMATS as EXPORT_FORMAT, EXPORT_MODE, QUALITY_PRESETS as QUALITY_PRESET } from '@/lib/audio/AudioExportManager.js';
 import { useMixerStore } from '@/store/useMixerStore';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
 import { TimeRangeSelector } from './TimeRangeSelector';

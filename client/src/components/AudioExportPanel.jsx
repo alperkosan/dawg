@@ -7,7 +7,7 @@
 
 import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import { FileAudio, Zap, Snowflake, Save } from 'lucide-react';
-import { audioExportManager, EXPORT_FORMATS, QUALITY_PRESETS, EXPORT_TYPES, FL_PRESETS } from '@/lib/audio/AudioExportManager';
+import { audioExportManager, EXPORT_FORMATS, QUALITY_PRESETS, EXPORT_TYPES, FL_PRESETS } from '@/lib/audio/AudioExportManager.js';
 import { useArrangementStore } from '@/store/useArrangementStore';
 import { TimeRangeSelector } from './TimeRangeSelector';
 import './AudioExportPanel.css';
@@ -16,67 +16,67 @@ import './AudioExportPanel.css';
 const AUDIO_EXPORT_PRESETS_KEY = 'dawg_audio_export_presets';
 
 const DEFAULT_AUDIO_PRESETS = {
-    'Master Mixdown': {
-        format: EXPORT_FORMATS.WAV,
-        quality: 'STUDIO',
-        type: EXPORT_TYPES.PATTERN,
-        normalize: true,
-        fadeOut: true,
-        includeEffects: true,
-        mp3Bitrate: 320,
-        mp3Mode: 'CBR',
-        mp3Quality: 2,
-        fileNameTemplate: '{patternName}_{timestamp}',
-        exportStems: false
-    },
-    'Stems for Mixing': {
-        format: EXPORT_FORMATS.WAV,
-        quality: 'HIGH',
-        type: EXPORT_TYPES.PATTERN,
-        normalize: false,
-        fadeOut: false,
-        includeEffects: true,
-        mp3Bitrate: 320,
-        mp3Mode: 'CBR',
-        mp3Quality: 2,
-        fileNameTemplate: '{patternName}_{stemName}',
-        exportStems: true,
-        stemNamingTemplate: '{patternName}_{stemName}'
-    },
-    'Social Media': {
-        format: EXPORT_FORMATS.MP3,
-        quality: 'STANDARD',
-        type: EXPORT_TYPES.PATTERN,
-        normalize: true,
-        fadeOut: true,
-        includeEffects: true,
-        mp3Bitrate: 320,
-        mp3Mode: 'CBR',
-        mp3Quality: 2,
-        fileNameTemplate: '{patternName}_{timestamp}',
-        exportStems: false
-    }
+  'Master Mixdown': {
+    format: EXPORT_FORMATS.WAV,
+    quality: 'STUDIO',
+    type: EXPORT_TYPES.PATTERN,
+    normalize: true,
+    fadeOut: true,
+    includeEffects: true,
+    mp3Bitrate: 320,
+    mp3Mode: 'CBR',
+    mp3Quality: 2,
+    fileNameTemplate: '{patternName}_{timestamp}',
+    exportStems: false
+  },
+  'Stems for Mixing': {
+    format: EXPORT_FORMATS.WAV,
+    quality: 'HIGH',
+    type: EXPORT_TYPES.PATTERN,
+    normalize: false,
+    fadeOut: false,
+    includeEffects: true,
+    mp3Bitrate: 320,
+    mp3Mode: 'CBR',
+    mp3Quality: 2,
+    fileNameTemplate: '{patternName}_{stemName}',
+    exportStems: true,
+    stemNamingTemplate: '{patternName}_{stemName}'
+  },
+  'Social Media': {
+    format: EXPORT_FORMATS.MP3,
+    quality: 'STANDARD',
+    type: EXPORT_TYPES.PATTERN,
+    normalize: true,
+    fadeOut: true,
+    includeEffects: true,
+    mp3Bitrate: 320,
+    mp3Mode: 'CBR',
+    mp3Quality: 2,
+    fileNameTemplate: '{patternName}_{timestamp}',
+    exportStems: false
+  }
 };
 
 function loadAudioPresets() {
-    try {
-        const stored = localStorage.getItem(AUDIO_EXPORT_PRESETS_KEY);
-        if (stored) {
-            const parsed = JSON.parse(stored);
-            return { ...DEFAULT_AUDIO_PRESETS, ...parsed };
-        }
-    } catch (error) {
-        console.warn('Failed to load audio export presets:', error);
+  try {
+    const stored = localStorage.getItem(AUDIO_EXPORT_PRESETS_KEY);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      return { ...DEFAULT_AUDIO_PRESETS, ...parsed };
     }
-    return DEFAULT_AUDIO_PRESETS;
+  } catch (error) {
+    console.warn('Failed to load audio export presets:', error);
+  }
+  return DEFAULT_AUDIO_PRESETS;
 }
 
 function saveAudioPresets(presets) {
-    try {
-        localStorage.setItem(AUDIO_EXPORT_PRESETS_KEY, JSON.stringify(presets));
-    } catch (error) {
-        console.warn('Failed to save audio export presets:', error);
-    }
+  try {
+    localStorage.setItem(AUDIO_EXPORT_PRESETS_KEY, JSON.stringify(presets));
+  } catch (error) {
+    console.warn('Failed to save audio export presets:', error);
+  }
 }
 
 const AudioExportPanel = ({ isOpen, onClose }) => {
@@ -637,8 +637,8 @@ const AudioExportPanel = ({ isOpen, onClose }) => {
 
           <div className="audio-export-panel__fl-info">
             <small>
-              💡 <strong>Freeze:</strong> Pattern'i audio'ya çevirip yerine koy (CPU tasarrufu)<br/>
-              💡 <strong>Pattern → Audio:</strong> Audio sample oluştur + arrangement'a ekle (pattern'i değiştirmez)<br/>
+              💡 <strong>Freeze:</strong> Pattern'i audio'ya çevirip yerine koy (CPU tasarrufu)<br />
+              💡 <strong>Pattern → Audio:</strong> Audio sample oluştur + arrangement'a ekle (pattern'i değiştirmez)<br />
               💡 <strong>Quick Mixdown:</strong> Yüksek kaliteli dosya export et (download)
             </small>
           </div>
@@ -680,10 +680,9 @@ const AudioExportPanel = ({ isOpen, onClose }) => {
 
         {/* Progress Display */}
         {exportProgress && (
-          <div className={`audio-export-panel__progress ${
-            exportProgress.status === 'error' ? 'audio-export-panel__progress--error' :
-            (exportProgress.status.includes('completed') ? 'audio-export-panel__progress--success' : '')
-          }`}>
+          <div className={`audio-export-panel__progress ${exportProgress.status === 'error' ? 'audio-export-panel__progress--error' :
+              (exportProgress.status.includes('completed') ? 'audio-export-panel__progress--success' : '')
+            }`}>
             <div className="audio-export-panel__progress-message">
               {getProgressMessage()}
               {exportProgress.progress !== undefined && (

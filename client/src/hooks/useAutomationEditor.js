@@ -8,7 +8,7 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { getAutomationManager } from '@/lib/automation/AutomationManager';
 import { AutomationLane } from '@/features/piano_roll_v7/types/AutomationLane';
-import { STEPS_PER_BEAT } from '@/lib/audio/audioRenderConfig';
+import { STEPS_PER_BEAT } from '@/lib/audio/audioRenderConfig.js';
 
 /**
  * useAutomationEditor - Ortak automation editing hook
@@ -67,11 +67,11 @@ export function useAutomationEditor({
 
             if (eventKey === currentKey) {
                 const updatedLanes = automationManager.getLanes(patternId, instrumentId) || [];
-                
+
                 // Only update if lanes actually changed
                 const currentLanesStr = JSON.stringify(lanesRef.current.map(l => ({ id: l.id, ccNumber: l.ccNumber })));
                 const updatedLanesStr = JSON.stringify(updatedLanes.map(l => ({ id: l.id, ccNumber: l.ccNumber })));
-                
+
                 if (currentLanesStr !== updatedLanesStr) {
                     setLanes(updatedLanes);
                     lanesRef.current = updatedLanes;
@@ -115,7 +115,7 @@ export function useAutomationEditor({
      */
     const handlePointAdd = useCallback((time, value) => {
         console.log('🎚️ useAutomationEditor: handlePointAdd called', { time, value, hasSelectedLane: !!selectedLane, patternId, instrumentId, lanesLength: lanes.length });
-        
+
         if (!selectedLane || !patternId || !instrumentId) {
             console.warn('🎚️ useAutomationEditor: handlePointAdd skipped', { hasSelectedLane: !!selectedLane, patternId, instrumentId });
             return;
@@ -139,29 +139,29 @@ export function useAutomationEditor({
         // Update lanes array with new lane instance
         const updatedLanes = [...lanes];
         updatedLanes[laneIndex] = clonedLane;
-        
+
         // ✅ DEBUG: Log point addition
-        console.log('🎚️ useAutomationEditor: Adding point', { 
-            timeInSteps, 
-            value, 
-            laneIndex, 
-            pointsBefore: currentLane.getPoints().length, 
+        console.log('🎚️ useAutomationEditor: Adding point', {
+            timeInSteps,
+            value,
+            laneIndex,
+            pointsBefore: currentLane.getPoints().length,
             pointsAfter: clonedLane.getPoints().length,
             updatedLanesLength: updatedLanes.length,
             selectedLaneIndex
         });
-        
+
         automationManager.setLanes(patternId, instrumentId, updatedLanes);
 
         // Update local state
         console.log('🎚️ useAutomationEditor: Updating lanes state', { lanesLength: lanes.length, updatedLanesLength: updatedLanes.length });
         setLanes(updatedLanes);
         lanesRef.current = updatedLanes;
-        
+
         // ✅ DEBUG: Verify selectedLane will update
         const newSelectedLane = updatedLanes[selectedLaneIndex];
-        console.log('🎚️ useAutomationEditor: New selectedLane', { 
-            hasLane: !!newSelectedLane, 
+        console.log('🎚️ useAutomationEditor: New selectedLane', {
+            hasLane: !!newSelectedLane,
             pointsCount: newSelectedLane?.getPoints().length,
             laneId: newSelectedLane?.id,
             ccNumber: newSelectedLane?.ccNumber
@@ -226,7 +226,7 @@ export function useAutomationEditor({
         // Update lanes array with new lane instance
         const updatedLanes = [...lanes];
         updatedLanes[laneIndex] = clonedLane;
-        
+
         automationManager.setLanes(patternId, instrumentId, updatedLanes);
 
         // Update local state
@@ -322,7 +322,7 @@ export function useAutomationEditor({
         lanes,
         selectedLane,
         selectedLaneIndex,
-        
+
         // Actions
         setSelectedLaneIndex,
         handlePointAdd,
@@ -331,7 +331,7 @@ export function useAutomationEditor({
         addLane,
         removeLane,
         updateLane,
-        
+
         // Utilities
         toSteps,
         fromSteps

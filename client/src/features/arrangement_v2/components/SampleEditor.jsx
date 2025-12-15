@@ -12,7 +12,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { AudioContextService } from '@/lib/services/AudioContextService';
 import { AudioEngineGlobal } from '@/lib/core/AudioEngineGlobal';
-import { audioAssetManager } from '@/lib/audio/AudioAssetManager';
+import { audioAssetManager } from '@/lib/audio/AudioAssetManager.js';
 import './SampleEditor.css';
 
 export function SampleEditor({ clip, onClose, onUpdate }) {

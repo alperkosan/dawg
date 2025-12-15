@@ -8,7 +8,7 @@
 
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { Clock, Music, Repeat } from 'lucide-react';
-import { getCurrentBPM } from '@/lib/audio/audioRenderConfig';
+import { getCurrentBPM } from '@/lib/audio/audioRenderConfig.js';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
 import { useArrangementStore } from '@/store/useArrangementStore';
 import { useArrangementWorkspaceStore } from '@/store/useArrangementWorkspaceStore';
@@ -83,25 +83,25 @@ export const TimeRangeSelector = ({
     const [timeFormat, setTimeFormat] = useState(TIME_FORMAT.BEATS);
     const [startValue, setStartValue] = useState('');
     const [endValue, setEndValue] = useState('');
-    
+
     const bpm = getCurrentBPM();
     const currentStep = usePlaybackStore(state => state.currentStep);
     const arrangementStore = useArrangementStore();
     const workspaceStore = useArrangementWorkspaceStore();
-    
+
     // Get loop region from workspace store
     const activeArrangement = useMemo(() => {
         return workspaceStore.getActiveArrangement();
     }, [workspaceStore]);
-    
+
     const loopStart = activeArrangement?.loopStart || 0;
     const loopEnd = activeArrangement?.loopEnd || 32;
-    
+
     // Convert current step to beats (1 step = 0.25 beats for 16th note grid)
     const currentStepInBeats = useMemo(() => {
         return currentStep * 0.25;
     }, [currentStep]);
-    
+
     // Initialize values from props
     useEffect(() => {
         if (startTime !== null) {
@@ -112,7 +112,7 @@ export const TimeRangeSelector = ({
             setStartValue(formatValue(0, timeFormat, bpm));
         }
     }, [startTime, loopRegion, loopStart, timeFormat, bpm]);
-    
+
     useEffect(() => {
         if (endTime !== null) {
             setEndValue(formatValue(endTime, timeFormat, bpm));
@@ -125,7 +125,7 @@ export const TimeRangeSelector = ({
             setEndValue(formatValue(songLengthBeats, timeFormat, bpm));
         }
     }, [endTime, loopRegion, loopEnd, timeFormat, bpm, arrangementStore.songLength]);
-    
+
     /**
      * Format value based on time format
      */
@@ -141,16 +141,16 @@ export const TimeRangeSelector = ({
                 return beats.toFixed(2);
         }
     }, []);
-    
+
     /**
      * Parse value based on time format
      */
     const parseValue = useCallback((value, format, bpm) => {
         if (!value || value.trim() === '') return null;
-        
+
         const numValue = parseFloat(value);
         if (isNaN(numValue)) return null;
-        
+
         switch (format) {
             case TIME_FORMAT.BEATS:
                 return numValue;
@@ -163,7 +163,7 @@ export const TimeRangeSelector = ({
                 return numValue;
         }
     }, []);
-    
+
     /**
      * Handle start time change
      */
@@ -174,7 +174,7 @@ export const TimeRangeSelector = ({
             onStartTimeChange(beats);
         }
     }, [timeFormat, bpm, parseValue, onStartTimeChange]);
-    
+
     /**
      * Handle end time change
      */
@@ -185,7 +185,7 @@ export const TimeRangeSelector = ({
             onEndTimeChange(beats);
         }
     }, [timeFormat, bpm, parseValue, onEndTimeChange]);
-    
+
     /**
      * Handle loop region toggle
      */
@@ -193,7 +193,7 @@ export const TimeRangeSelector = ({
         if (onLoopRegionChange) {
             const newLoopRegion = !loopRegion;
             onLoopRegionChange(newLoopRegion);
-            
+
             if (newLoopRegion) {
                 // Set to loop region values
                 if (onStartTimeChange) onStartTimeChange(loopStart);
@@ -201,7 +201,7 @@ export const TimeRangeSelector = ({
             }
         }
     }, [loopRegion, onLoopRegionChange, loopStart, loopEnd, onStartTimeChange, onEndTimeChange]);
-    
+
     /**
      * Set to current playhead position
      */
@@ -210,7 +210,7 @@ export const TimeRangeSelector = ({
             onStartTimeChange(currentStepInBeats);
         }
     }, [currentStepInBeats, onStartTimeChange]);
-    
+
     /**
      * Set to song start
      */
@@ -219,7 +219,7 @@ export const TimeRangeSelector = ({
             onStartTimeChange(0);
         }
     }, [onStartTimeChange]);
-    
+
     /**
      * Set to song end
      */
@@ -230,7 +230,7 @@ export const TimeRangeSelector = ({
             onEndTimeChange(songLengthBeats);
         }
     }, [arrangementStore.songLength, onEndTimeChange]);
-    
+
     return (
         <div className="time-range-selector">
             <div className="time-range-selector__header">
@@ -265,7 +265,7 @@ export const TimeRangeSelector = ({
                     </button>
                 </div>
             </div>
-            
+
             <div className="time-range-selector__inputs">
                 <div className="time-range-selector__input-group">
                     <label className="time-range-selector__label">Start</label>
@@ -296,7 +296,7 @@ export const TimeRangeSelector = ({
                         </button>
                     </div>
                 </div>
-                
+
                 <div className="time-range-selector__input-group">
                     <label className="time-range-selector__label">End</label>
                     <input
@@ -319,7 +319,7 @@ export const TimeRangeSelector = ({
                     </div>
                 </div>
             </div>
-            
+
             <div className="time-range-selector__options">
                 <label className="time-range-selector__checkbox">
                     <input
@@ -337,7 +337,7 @@ export const TimeRangeSelector = ({
                     )}
                 </label>
             </div>
-            
+
             {startTime !== null && endTime !== null && (
                 <div className="time-range-selector__info">
                     <span>Duration: {formatValue(endTime - startTime, timeFormat, bpm)} {timeFormat}</span>

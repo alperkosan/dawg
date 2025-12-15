@@ -31,7 +31,7 @@ import { getCategoryColors } from '../PluginDesignSystem';
 import { useParameterBatcher } from '@/services/ParameterBatcher';
 import { useRenderer } from '@/services/CanvasRenderManager';
 import { useWebGLSpectrum } from '@/services/WebGLSpectrumAnalyzer';
-import { EQCalculations } from '@/lib/audio/EQCalculations';
+import { EQCalculations } from '@/lib/audio/EQCalculations.js';
 import { AudioContextService } from '@/lib/services/AudioContextService';
 import { useMixerStore } from '@/store/useMixerStore';
 import {
@@ -1036,17 +1036,17 @@ export const MultiBandEQUI_V2 = ({ trackId, effect, effectNode, definition }) =>
 
                 {/* EQ Curve (foreground) */}
                 <EQCurveCanvas
-                bands={bands}
-                onBandChange={handleBandChange}
-                activeBandIndex={activeBandIndex}
-                setActiveBandIndex={setActiveBandIndex}
-                soloedBand={soloedBand}
-                mutedBands={mutedBands}
-                categoryColors={categoryColors}
-                canvasDimensions={canvasDimensions}
-                onDimensionsChange={setCanvasDimensions}
-                onSolo={handleSolo}
-              />
+                  bands={bands}
+                  onBandChange={handleBandChange}
+                  activeBandIndex={activeBandIndex}
+                  setActiveBandIndex={setActiveBandIndex}
+                  soloedBand={soloedBand}
+                  mutedBands={mutedBands}
+                  categoryColors={categoryColors}
+                  canvasDimensions={canvasDimensions}
+                  onDimensionsChange={setCanvasDimensions}
+                  onSolo={handleSolo}
+                />
               </div>
             </div>
 

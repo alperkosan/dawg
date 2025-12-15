@@ -27,7 +27,7 @@ import { ClipContextMenu } from './components/ClipContextMenu';
 import { ArrangementToolbar } from './components/ArrangementToolbar';
 import { PatternBrowser } from './components/PatternBrowser';
 import { AutomationLanes } from './components/AutomationLanes';
-import { audioAssetManager } from '@/lib/audio/AudioAssetManager';
+import { audioAssetManager } from '@/lib/audio/AudioAssetManager.js';
 import { uiUpdateManager, UPDATE_PRIORITIES, UPDATE_FREQUENCIES } from '@/lib/core/UIUpdateManager';
 import { getAudioClipDurationBeats } from '@/lib/utils/audioDuration';
 import { StyleCache } from '@/lib/rendering/StyleCache';

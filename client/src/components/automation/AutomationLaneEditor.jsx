@@ -11,7 +11,7 @@
 
 import React, { useRef, useEffect, useCallback, useState, useMemo } from 'react';
 import { AutomationLane } from '@/features/piano_roll_v7/types/AutomationLane';
-import { STEPS_PER_BEAT } from '@/lib/audio/audioRenderConfig';
+import { STEPS_PER_BEAT } from '@/lib/audio/audioRenderConfig.js';
 import './AutomationLaneEditor.css';
 
 const POINT_SIZE = 6;

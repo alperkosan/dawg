@@ -36,7 +36,7 @@ import { AudioContextService } from '@/lib/services/AudioContextService';
 import { useTimelineStore } from '@/store/TimelineStore';
 import TimelineCoordinateSystem from '@/lib/timeline/TimelineCoordinateSystem';
 import TimelineRenderer from './renderers/timelineRenderer';
-import { STEPS_PER_BEAT } from '@/lib/audio/audioRenderConfig';
+import { STEPS_PER_BEAT } from '@/lib/audio/audioRenderConfig.js';
 import './PianoRoll_v5.css';
 
 const KEYBOARD_WIDTH = 80;

@@ -8,7 +8,7 @@ import { AudioContextService } from '@/lib/services/AudioContextService';
 import { InstrumentService } from '@/lib/services/InstrumentService';
 import { MixerService } from '@/lib/services/MixerService';
 import { AudioEngineGlobal } from '@/lib/core/AudioEngineGlobal';
-import { createDefaultSampleChopPattern } from '@/lib/audio/instruments/sample/sampleChopUtils';
+import { createDefaultSampleChopPattern } from '@/lib/audio/instruments/sample/sampleChopUtils.js';
 import { storeManager } from './StoreManager';
 import { useMixerStore } from './useMixerStore';
 

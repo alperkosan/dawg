@@ -4,7 +4,7 @@ import { usePanelsStore } from '@/store/usePanelsStore';
 import { useMixerStore } from '@/store/useMixerStore';
 // ✅ PHASE 1: Store Consolidation - Use unified store
 import { useArrangementStore } from '@/store/useArrangementStore';
-import { audioAssetManager } from '@/lib/audio/AudioAssetManager';
+import { audioAssetManager } from '@/lib/audio/AudioAssetManager.js';
 
 import { WaveformWorkbench } from './components/WaveformWorkbench';
 import { ControlDeck } from './components/ControlDeck';
@@ -221,7 +221,7 @@ const SampleEditorV3 = ({ instrument }) => {
   const handleParamChange = (param, value) => {
     updateInstrument(instrument.id, { [param]: value }, false);
   };
-  
+
   // Audio clip mode: show waveform + mixer routing control
   if (isAudioClipMode) {
     return (
