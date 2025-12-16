@@ -33,11 +33,17 @@ class RendererTask {
     this.throttle = throttle;     // Min ms between renders (0 = every frame)
     this.lastRun = 0;
     this.enabled = true;
+
+    // ✅ DIRTY TRACKING: Skip rendering if nothing changed
+    this.isDirty = true;          // Start dirty (needs initial render)
+    this.dirtyRegions = [];       // Specific regions to redraw (optional)
+
     this.stats = {
       renderCount: 0,
       totalTime: 0,
       avgTime: 0,
-      maxTime: 0
+      maxTime: 0,
+      skippedFrames: 0            // ✅ Track skipped frames
     };
   }
 
@@ -46,7 +52,32 @@ class RendererTask {
    */
   shouldRender(now) {
     if (!this.enabled) return false;
-    return (now - this.lastRun) >= this.throttle;
+
+    // ✅ OPTIMIZATION: Skip if not dirty and throttled
+    const throttleReady = (now - this.lastRun) >= this.throttle;
+    if (!throttleReady) return false;
+
+    // Only render if dirty or throttle allows
+    return this.isDirty || throttleReady;
+  }
+
+  /**
+   * Mark this task as dirty (needs redraw)
+   * @param {Object} region - Optional specific region {x, y, width, height}
+   */
+  markDirty(region = null) {
+    this.isDirty = true;
+    if (region) {
+      this.dirtyRegions.push(region);
+    }
+  }
+
+  /**
+   * Clear dirty flag after successful render
+   */
+  clearDirty() {
+    this.isDirty = false;
+    this.dirtyRegions = [];
   }
 
   /**
@@ -65,6 +96,9 @@ class RendererTask {
       this.stats.totalTime += renderTime;
       this.stats.avgTime = this.stats.totalTime / this.stats.renderCount;
       this.stats.maxTime = Math.max(this.stats.maxTime, renderTime);
+
+      // ✅ Clear dirty flag after successful render
+      this.clearDirty();
     } catch (e) {
       console.error(`Renderer ${this.id} error:`, e);
     }
@@ -78,7 +112,8 @@ class RendererTask {
       renderCount: 0,
       totalTime: 0,
       avgTime: 0,
-      maxTime: 0
+      maxTime: 0,
+      skippedFrames: 0
     };
   }
 }
@@ -265,6 +300,18 @@ class CanvasRenderManager {
   }
 
   /**
+   * Mark a renderer as dirty (needs redraw)
+   * @param {string} id - Renderer ID
+   * @param {Object} region - Optional specific region {x, y, width, height}
+   */
+  markDirty(id, region = null) {
+    const task = this.tasks.get(id);
+    if (task) {
+      task.markDirty(region);
+    }
+  }
+
+  /**
    * RAF LOOP
    */
 
@@ -313,10 +360,15 @@ class CanvasRenderManager {
 
     // Render each task that's ready
     let rendered = 0;
+    let skipped = 0;
     for (const task of this.sortedTasksCache) {
       if (task.shouldRender(now)) {
         task.render(now);
         rendered++;
+      } else if (!task.isDirty) {
+        // ✅ Track skipped frames (not dirty, no need to render)
+        task.stats.skippedFrames++;
+        skipped++;
       }
     }
 

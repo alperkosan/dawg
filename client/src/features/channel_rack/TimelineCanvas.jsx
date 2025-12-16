@@ -18,6 +18,7 @@ import React, { useRef, useEffect, useCallback, useState } from 'react';
 import TimelineControllerSingleton, { getTimelineController, isTimelineControllerInitialized } from '@/lib/core/TimelineControllerSingleton';
 import { globalStyleCache } from '@/lib/rendering/StyleCache';
 import { uiUpdateManager, UPDATE_PRIORITIES, UPDATE_FREQUENCIES } from '@/lib/core/UIUpdateManager';
+import { renderManager } from '@/services/CanvasRenderManager';
 
 const TimelineCanvas = React.memo(({
   loopLength,
@@ -40,6 +41,7 @@ const TimelineCanvas = React.memo(({
   const [themeVersion, setThemeVersion] = useState(0); // Force re-render on theme change
   const renderTimelineRef = useRef(null); // Store render function for theme change
   const isDirtyRef = useRef(true); // ⚡ DIRTY FLAG: Track if timeline needs redraw
+  const renderIdRef = useRef(null); // ✅ NEW: CanvasRenderManager ID
 
   // ✅ FIX: On mount, invalidate StyleCache to ensure fresh theme values
   // This handles the case when project is opened with a different theme
@@ -61,6 +63,11 @@ const TimelineCanvas = React.memo(({
 
       // Method 2: Mark dirty for next UIUpdateManager cycle
       isDirtyRef.current = true;
+
+      // ✅ NEW: Mark dirty in CanvasRenderManager
+      if (renderIdRef.current) {
+        renderManager.markDirty(renderIdRef.current);
+      }
     };
 
     const handleFullscreenChange = () => {
@@ -68,6 +75,11 @@ const TimelineCanvas = React.memo(({
 
       // Mark dirty for next UIUpdateManager cycle
       isDirtyRef.current = true;
+
+      // ✅ NEW: Mark dirty in CanvasRenderManager
+      if (renderIdRef.current) {
+        renderManager.markDirty(renderIdRef.current);
+      }
     };
 
     window.addEventListener('themeChanged', handleThemeChange);
@@ -194,12 +206,17 @@ const TimelineCanvas = React.memo(({
     renderTimelineRef.current = renderTimeline;
   }, [renderTimeline]);
 
-  // ⚡ PERFORMANCE: Unified rendering via UIUpdateManager
+  // ⚡ PERFORMANCE: Unified rendering via UIUpdateManager + CanvasRenderManager
   useEffect(() => {
     if (!isVisible) return;
 
     // Mark dirty whenever render dependencies change
     isDirtyRef.current = true;
+
+    // ✅ NEW: Mark dirty in CanvasRenderManager
+    if (renderIdRef.current) {
+      renderManager.markDirty(renderIdRef.current);
+    }
 
     const unsubscribe = uiUpdateManager.subscribe(
       'channel-rack-timeline',
@@ -230,207 +247,207 @@ const TimelineCanvas = React.memo(({
           console.log('⏳ TimelineController not ready, waiting...');
           await TimelineControllerSingleton.getInstance();
         }
-        
+
         const timelineController = getTimelineController();
 
-      // Stable callback reference with animation control
-      const handlePositionChange = (position, ghostPosition) => {
-        // ⚡ Get interaction state from TimelineController
-        let shouldAnimate = true;
-        try {
-          const timelineController = getTimelineController();
-          const state = timelineController.getState();
+        // Stable callback reference with animation control
+        const handlePositionChange = (position, ghostPosition) => {
+          // ⚡ Get interaction state from TimelineController
+          let shouldAnimate = true;
+          try {
+            const timelineController = getTimelineController();
+            const state = timelineController.getState();
 
-          // Disable transition during seek/scrub for instant feedback
-          shouldAnimate = !(
-            state.interactionMode === 'seek' ||
-            state.interactionMode === 'scrub' ||
-            state.isScrubbing
-          );
-        } catch (e) {
-          // TimelineController not available, use default
-        }
-
-        // ✅ Update main playhead position
-        if (playheadRef.current) {
-          // Get current scroll position from parent
-          const currentScrollX = containerRef.current?.parentElement?.scrollLeft || 0;
-          const pixelX = position * STEP_WIDTH - currentScrollX; // ✅ FIX: Offset by scroll
-
-          if (shouldAnimate) {
-            playheadRef.current.style.transition = 'transform 0.1s linear';
-          } else {
-            playheadRef.current.style.transition = 'none';
+            // Disable transition during seek/scrub for instant feedback
+            shouldAnimate = !(
+              state.interactionMode === 'seek' ||
+              state.interactionMode === 'scrub' ||
+              state.isScrubbing
+            );
+          } catch (e) {
+            // TimelineController not available, use default
           }
 
-          playheadRef.current.style.transform = `translateX(${pixelX}px)`;
-        }
-
-        // Notify parent component
-        if (onPositionChange) {
-          onPositionChange(position);
-        }
-      };
-
-      // ✅ Separate callback for ghost position updates
-      const handleGhostPositionChange = (ghostPosition) => {
-        setLocalGhostPosition(ghostPosition);
-
-        // Update ghost playhead position
-        if (ghostPlayheadRef.current) {
-          if (ghostPosition !== null) {
+          // ✅ Update main playhead position
+          if (playheadRef.current) {
             // Get current scroll position from parent
             const currentScrollX = containerRef.current?.parentElement?.scrollLeft || 0;
-            const pixelX = ghostPosition * STEP_WIDTH - currentScrollX; // ✅ FIX: Offset by scroll
-            ghostPlayheadRef.current.style.transform = `translateX(${pixelX}px)`;
-            ghostPlayheadRef.current.style.opacity = '1';
-          } else {
-            ghostPlayheadRef.current.style.opacity = '0';
-          }
-        }
-      };
+            const pixelX = position * STEP_WIDTH - currentScrollX; // ✅ FIX: Offset by scroll
 
-      // ✅ Custom position calculation accounting for scroll
-      const calculatePosition = (mouseX, mouseY) => {
-        // ⚡ IMPORTANT: Use current scrollX value (not from closure)
-        // Get fresh scrollX from parent container
-        const parentScroll = containerRef.current?.parentElement?.scrollLeft || 0;
-
-        // Account for scroll
-        const adjustedX = mouseX + parentScroll;
-
-        // Convert to step
-        const exactStep = adjustedX / STEP_WIDTH;
-        const step = Math.floor(exactStep);
-        const clampedStep = Math.max(0, Math.min(loopLength - 1, step));
-
-
-        return clampedStep;
-      };
-
-      // ✅ NEW: Preview notes at seek position (one-shot playback)
-      const handleSeek = async (position) => {
-        try {
-          const timelineController = getTimelineController();
-          const audioEngine = timelineController.audioEngine;
-
-          if (!audioEngine?.audioContext) {
-            console.warn('⚠️ AudioContext not available');
-            return;
-          }
-
-          const isPlaying = timelineController.getState().isPlaying;
-
-          // ✅ If already playing, notes will play automatically at new position
-          if (isPlaying) {
-            console.log(`🎵 Timeline seek to ${position} (playing - notes will trigger automatically)`);
-            return;
-          }
-
-          // ✅ If stopped, trigger one-shot preview of notes at this position
-          if (!activePattern || !instruments || instruments.length === 0) {
-            console.log('⏭️ No pattern or instruments for preview');
-            return;
-          }
-
-          console.log(`🎵 Timeline seek to step ${position} (stopped - triggering note preview)`);
-
-          // ✅ Ensure AudioContext is running
-          if (audioEngine.audioContext.state === 'suspended') {
-            console.log('🔊 AudioContext suspended, resuming...');
-            await audioEngine.audioContext.resume();
-          }
-
-          console.log(`🔊 AudioContext state: ${audioEngine.audioContext.state}`);
-
-          const currentTime = audioEngine.audioContext.currentTime;
-          let notesTriggered = 0;
-
-          // Find and trigger all notes at this position
-          instruments.forEach(instrument => {
-            const instrumentNotes = activePattern.data?.[instrument.id] || [];
-
-            // 🐛 DEBUG: Log all notes for this instrument
-            console.log(`📋 ${instrument.name} all notes:`, instrumentNotes.map(n => n.time));
-
-            const notesAtPosition = instrumentNotes.filter(note => note.time === position);
-
-            // 🐛 DEBUG: Show what we're looking for vs what we found
-            console.log(`🔍 Looking for notes at step ${position}:`, {
-              instrument: instrument.name,
-              foundCount: notesAtPosition.length,
-              allNoteTimes: instrumentNotes.map(n => n.time).slice(0, 10) // First 10 notes
-            });
-
-            console.log(`🎹 Instrument ${instrument.name}:`, {
-              hasNotes: notesAtPosition.length,
-              hasInstrumentInstance: audioEngine.instruments?.has(instrument.id),
-              notes: notesAtPosition.map(n => ({ time: n.time, pitch: n.pitch, velocity: n.velocity }))
-            });
-
-            if (notesAtPosition.length > 0 && audioEngine.instruments?.has(instrument.id)) {
-              const instrumentInstance = audioEngine.instruments.get(instrument.id);
-
-              notesAtPosition.forEach(note => {
-                try {
-                  // ✅ FIX: Convert pitch to MIDI number if it's a string
-                  let pitch = note.pitch || 60;
-                  if (typeof pitch === 'string') {
-                    // Simple pitch string to MIDI conversion
-                    const pitchMap = {
-                      'C': 0, 'C#': 1, 'D': 2, 'D#': 3, 'E': 4, 'F': 5,
-                      'F#': 6, 'G': 7, 'G#': 8, 'A': 9, 'A#': 10, 'B': 11
-                    };
-                    const noteName = pitch.replace(/[0-9-]/g, '');
-                    const octave = parseInt(pitch.replace(/[^0-9-]/g, '')) || 4;
-                    pitch = (octave + 1) * 12 + (pitchMap[noteName] || 0);
-                  }
-
-                  // ✅ FIX: Boost velocity for preview (make it louder and more noticeable)
-                  // Original velocity is 0-127, normalize and boost to 0.9-1.0 range
-                  const originalVelocity = (note.velocity || 100) / 127;
-                  const velocity = Math.min(1.0, originalVelocity * 1.3); // 30% boost, max 1.0
-                  const duration = 0.3; // 300ms preview
-
-                  console.log(`🔊 TRIGGERING:`, {
-                    instrument: instrument.name,
-                    originalPitch: note.pitch,
-                    midiPitch: pitch,
-                    velocity,
-                    duration,
-                    currentTime
-                  });
-
-                  instrumentInstance.triggerNote(pitch, velocity, currentTime, duration);
-                  console.log(`✅ Triggered successfully`);
-                  notesTriggered++;
-                } catch (err) {
-                  console.error(`❌ Failed to trigger note for ${instrument.name}:`, err);
-                }
-              });
-            } else if (notesAtPosition.length > 0) {
-              console.warn(`⚠️ Notes found but no instrument instance for ${instrument.name}`);
+            if (shouldAnimate) {
+              playheadRef.current.style.transition = 'transform 0.1s linear';
+            } else {
+              playheadRef.current.style.transition = 'none';
             }
-          });
 
-          console.log(`🎵 Triggered ${notesTriggered} note(s) at step ${position}`);
-        } catch (error) {
-          console.error('❌ Timeline seek preview error:', error);
-        }
-      };
+            playheadRef.current.style.transform = `translateX(${pixelX}px)`;
+          }
 
-      // Register this timeline
-      timelineController.registerTimeline('channel-rack-timeline', {
-        element: containerRef.current,
-        stepWidth: STEP_WIDTH,
-        totalSteps: loopLength,
-        onPositionChange: handlePositionChange,
-        onGhostPositionChange: handleGhostPositionChange,
-        onSeek: handleSeek, // ✅ NEW: Preview notes on seek
-        enableGhostPosition: true,
-        enableRangeSelection: false,
-        calculatePosition
-      });
+          // Notify parent component
+          if (onPositionChange) {
+            onPositionChange(position);
+          }
+        };
+
+        // ✅ Separate callback for ghost position updates
+        const handleGhostPositionChange = (ghostPosition) => {
+          setLocalGhostPosition(ghostPosition);
+
+          // Update ghost playhead position
+          if (ghostPlayheadRef.current) {
+            if (ghostPosition !== null) {
+              // Get current scroll position from parent
+              const currentScrollX = containerRef.current?.parentElement?.scrollLeft || 0;
+              const pixelX = ghostPosition * STEP_WIDTH - currentScrollX; // ✅ FIX: Offset by scroll
+              ghostPlayheadRef.current.style.transform = `translateX(${pixelX}px)`;
+              ghostPlayheadRef.current.style.opacity = '1';
+            } else {
+              ghostPlayheadRef.current.style.opacity = '0';
+            }
+          }
+        };
+
+        // ✅ Custom position calculation accounting for scroll
+        const calculatePosition = (mouseX, mouseY) => {
+          // ⚡ IMPORTANT: Use current scrollX value (not from closure)
+          // Get fresh scrollX from parent container
+          const parentScroll = containerRef.current?.parentElement?.scrollLeft || 0;
+
+          // Account for scroll
+          const adjustedX = mouseX + parentScroll;
+
+          // Convert to step
+          const exactStep = adjustedX / STEP_WIDTH;
+          const step = Math.floor(exactStep);
+          const clampedStep = Math.max(0, Math.min(loopLength - 1, step));
+
+
+          return clampedStep;
+        };
+
+        // ✅ NEW: Preview notes at seek position (one-shot playback)
+        const handleSeek = async (position) => {
+          try {
+            const timelineController = getTimelineController();
+            const audioEngine = timelineController.audioEngine;
+
+            if (!audioEngine?.audioContext) {
+              console.warn('⚠️ AudioContext not available');
+              return;
+            }
+
+            const isPlaying = timelineController.getState().isPlaying;
+
+            // ✅ If already playing, notes will play automatically at new position
+            if (isPlaying) {
+              console.log(`🎵 Timeline seek to ${position} (playing - notes will trigger automatically)`);
+              return;
+            }
+
+            // ✅ If stopped, trigger one-shot preview of notes at this position
+            if (!activePattern || !instruments || instruments.length === 0) {
+              console.log('⏭️ No pattern or instruments for preview');
+              return;
+            }
+
+            console.log(`🎵 Timeline seek to step ${position} (stopped - triggering note preview)`);
+
+            // ✅ Ensure AudioContext is running
+            if (audioEngine.audioContext.state === 'suspended') {
+              console.log('🔊 AudioContext suspended, resuming...');
+              await audioEngine.audioContext.resume();
+            }
+
+            console.log(`🔊 AudioContext state: ${audioEngine.audioContext.state}`);
+
+            const currentTime = audioEngine.audioContext.currentTime;
+            let notesTriggered = 0;
+
+            // Find and trigger all notes at this position
+            instruments.forEach(instrument => {
+              const instrumentNotes = activePattern.data?.[instrument.id] || [];
+
+              // 🐛 DEBUG: Log all notes for this instrument
+              console.log(`📋 ${instrument.name} all notes:`, instrumentNotes.map(n => n.time));
+
+              const notesAtPosition = instrumentNotes.filter(note => note.time === position);
+
+              // 🐛 DEBUG: Show what we're looking for vs what we found
+              console.log(`🔍 Looking for notes at step ${position}:`, {
+                instrument: instrument.name,
+                foundCount: notesAtPosition.length,
+                allNoteTimes: instrumentNotes.map(n => n.time).slice(0, 10) // First 10 notes
+              });
+
+              console.log(`🎹 Instrument ${instrument.name}:`, {
+                hasNotes: notesAtPosition.length,
+                hasInstrumentInstance: audioEngine.instruments?.has(instrument.id),
+                notes: notesAtPosition.map(n => ({ time: n.time, pitch: n.pitch, velocity: n.velocity }))
+              });
+
+              if (notesAtPosition.length > 0 && audioEngine.instruments?.has(instrument.id)) {
+                const instrumentInstance = audioEngine.instruments.get(instrument.id);
+
+                notesAtPosition.forEach(note => {
+                  try {
+                    // ✅ FIX: Convert pitch to MIDI number if it's a string
+                    let pitch = note.pitch || 60;
+                    if (typeof pitch === 'string') {
+                      // Simple pitch string to MIDI conversion
+                      const pitchMap = {
+                        'C': 0, 'C#': 1, 'D': 2, 'D#': 3, 'E': 4, 'F': 5,
+                        'F#': 6, 'G': 7, 'G#': 8, 'A': 9, 'A#': 10, 'B': 11
+                      };
+                      const noteName = pitch.replace(/[0-9-]/g, '');
+                      const octave = parseInt(pitch.replace(/[^0-9-]/g, '')) || 4;
+                      pitch = (octave + 1) * 12 + (pitchMap[noteName] || 0);
+                    }
+
+                    // ✅ FIX: Boost velocity for preview (make it louder and more noticeable)
+                    // Original velocity is 0-127, normalize and boost to 0.9-1.0 range
+                    const originalVelocity = (note.velocity || 100) / 127;
+                    const velocity = Math.min(1.0, originalVelocity * 1.3); // 30% boost, max 1.0
+                    const duration = 0.3; // 300ms preview
+
+                    console.log(`🔊 TRIGGERING:`, {
+                      instrument: instrument.name,
+                      originalPitch: note.pitch,
+                      midiPitch: pitch,
+                      velocity,
+                      duration,
+                      currentTime
+                    });
+
+                    instrumentInstance.triggerNote(pitch, velocity, currentTime, duration);
+                    console.log(`✅ Triggered successfully`);
+                    notesTriggered++;
+                  } catch (err) {
+                    console.error(`❌ Failed to trigger note for ${instrument.name}:`, err);
+                  }
+                });
+              } else if (notesAtPosition.length > 0) {
+                console.warn(`⚠️ Notes found but no instrument instance for ${instrument.name}`);
+              }
+            });
+
+            console.log(`🎵 Triggered ${notesTriggered} note(s) at step ${position}`);
+          } catch (error) {
+            console.error('❌ Timeline seek preview error:', error);
+          }
+        };
+
+        // Register this timeline
+        timelineController.registerTimeline('channel-rack-timeline', {
+          element: containerRef.current,
+          stepWidth: STEP_WIDTH,
+          totalSteps: loopLength,
+          onPositionChange: handlePositionChange,
+          onGhostPositionChange: handleGhostPositionChange,
+          onSeek: handleSeek, // ✅ NEW: Preview notes on seek
+          enableGhostPosition: true,
+          enableRangeSelection: false,
+          calculatePosition
+        });
 
         setIsRegistered(true);
         console.log('✅ TimelineCanvas registered');
@@ -462,7 +479,7 @@ const TimelineCanvas = React.memo(({
     if (!isTimelineControllerInitialized()) {
       return; // Wait for initialization
     }
-    
+
     try {
       const timelineController = getTimelineController();
       const timeline = timelineController.timelines.get('channel-rack-timeline');

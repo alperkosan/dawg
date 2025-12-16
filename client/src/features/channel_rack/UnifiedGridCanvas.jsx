@@ -30,6 +30,7 @@
 import React, { useRef, useEffect, useCallback, useState, useMemo } from 'react';
 import { globalStyleCache } from '@/lib/rendering/StyleCache';
 import { canvasWorkerBridge, supportsOffscreenCanvas } from '@/lib/rendering/worker/CanvasWorkerBridge';
+import { renderManager } from '@/services/CanvasRenderManager';
 
 const STEP_WIDTH = 16;
 const ROW_HEIGHT = 64;
@@ -99,8 +100,13 @@ const UnifiedGridCanvas = React.memo(({
   const [themeVersion, setThemeVersion] = useState(0); // Force re-render on theme change
   const renderRef = useRef(null); // Store render function for immediate theme change
   const isDirtyRef = useRef(true); // ⚡ DIRTY FLAG: Track if canvas needs redraw
+  const renderIdRef = useRef(null); // ✅ NEW: CanvasRenderManager ID
   const markDirty = useCallback(() => {
     isDirtyRef.current = true;
+    // ✅ NEW: Mark dirty in CanvasRenderManager
+    if (renderIdRef.current) {
+      renderManager.markDirty(renderIdRef.current);
+    }
   }, []);
 
   // ✅ Worker/serialization refs
@@ -152,7 +158,7 @@ const UnifiedGridCanvas = React.memo(({
     };
   }, [markDirty]);
 
-// (placeholder removed)
+  // (placeholder removed)
 
   // ✅ FIX: Create canvas element manually to prevent duplicate transfers
   useEffect(() => {
