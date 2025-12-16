@@ -13,6 +13,7 @@ import { getPreset } from '@/lib/audio/synth/presets';
 import { getPreviewManager } from '@/lib/audio/preview';
 import { ADSRCanvas, OscillatorPanel } from '@/components/controls/canvas';
 import { Knob } from '@/components/controls';
+import VASynthEffectsPanel from './VASynthEffectsPanel'; // ✅ EFFECTS UI
 import './VASynthEditorV2.css';
 
 const VASynthEditorV2 = ({ instrumentData: initialData }) => {
@@ -38,6 +39,11 @@ const VASynthEditorV2 = ({ instrumentData: initialData }) => {
           ...presetData.lfo,
           target: presetData.lfoTarget || 'filter.cutoff' // ✅ LFO TARGET: Include target in lfo1
         },
+        // ✅ EFFECTS: Initialize empty effects objects if missing
+        eq: presetData.eq || instrumentData.eq || {},
+        chorus: presetData.chorus || instrumentData.chorus || {},
+        delay: presetData.delay || instrumentData.delay || {},
+        reverb: presetData.reverb || instrumentData.reverb || {},
       };
       useInstrumentEditorStore.setState({ instrumentData: mergedData });
     }
@@ -86,6 +92,12 @@ const VASynthEditorV2 = ({ instrumentData: initialData }) => {
   };
   const lfo1 = instrumentData.lfo1 || presetData?.lfo || { frequency: 4, depth: 0.5, waveform: 'sine', target: 'filter.cutoff', tempoSync: false, tempoSyncRate: '1/4' };
 
+  // ✅ EFFECTS DATA
+  const eq = instrumentData.eq || {};
+  const chorus = instrumentData.chorus || {};
+  const delay = instrumentData.delay || {};
+  const reverb = instrumentData.reverb || {};
+
   // ✅ TEMPO SYNC: Get BPM from playback store
   const bpm = usePlaybackStore(state => state.bpm);
 
@@ -130,6 +142,11 @@ const VASynthEditorV2 = ({ instrumentData: initialData }) => {
           // ✅ LFO UI: Update LFO parameters
           const currentData = useInstrumentEditorStore.getState().instrumentData;
           updateObj.lfo1 = currentData?.lfo1;
+        } else if (['eq', 'chorus', 'delay', 'reverb'].includes(keys[0])) {
+          // ✅ EFFECTS UI: Update Effect parameters
+          const currentData = useInstrumentEditorStore.getState().instrumentData;
+          // Send the specific effect object that changed
+          updateObj[keys[0]] = currentData?.[keys[0]];
         }
 
         instrument.updateParameters(updateObj);
@@ -513,6 +530,19 @@ const VASynthEditorV2 = ({ instrumentData: initialData }) => {
           )}
         </div>
       </div>
+
+      {/* ✅ EFFECTS SECTION */}
+      <div className="vasynth-editor-v2__section">
+        <div className="vasynth-editor-v2__section-title">EFFECTS</div>
+        <VASynthEffectsPanel
+          eq={eq}
+          chorus={chorus}
+          delay={delay}
+          reverb={reverb}
+          onParameterChange={handleParameterChange}
+        />
+      </div>
+
     </div>
   );
 };

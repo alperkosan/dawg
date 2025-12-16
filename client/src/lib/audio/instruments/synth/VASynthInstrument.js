@@ -5,9 +5,10 @@
  * Provides unified interface for both playback and preview
  */
 
-import { BaseInstrument } from '../base/BaseInstrument.js';
 import { VASynth } from '../../synth/VASynth.js';
+import { BaseInstrument } from '../base/BaseInstrument.js';
 import { getPreset } from '../../synth/presets.js';
+import { VASynthEffectChain } from './VASynthEffectChain.js';
 
 const normalizeModulationMatrix = (matrix) => {
     if (!Array.isArray(matrix)) {
@@ -47,6 +48,7 @@ export class VASynthInstrument extends BaseInstrument {
 
         // Master output
         this.masterGain = null;
+        this.effects = null; // VASynthEffectChain
 
         // ✅ PHASE 4: Track last automation values to avoid redundant updates
         this._lastAutomationValues = {
@@ -74,8 +76,17 @@ export class VASynthInstrument extends BaseInstrument {
             this.masterGain = this.audioContext.createGain();
             this.masterGain.gain.setValueAtTime(0.7, this.audioContext.currentTime);
 
-            // Set as output
-            this.output = this.masterGain;
+            // ✅ PHASE 2: Initialize Effects Chain
+            this.effects = new VASynthEffectChain(this.audioContext);
+
+            // ROUTING: MasterGain -> Effects -> Output
+            this.masterGain.connect(this.effects.input);
+
+            // Set as output (connect effects output to instrument output)
+            this.output = this.effects.output;
+
+            // ⚠️ DEBUG: BYPASS REMOVED (Safety nodes added to VASynthEffectChain)
+            // this.output = this.masterGain;
 
             if (this.modulationMatrix.length > 0) {
                 this.preset = {
@@ -118,7 +129,7 @@ export class VASynthInstrument extends BaseInstrument {
 
                 // ✅ BUG #2 FIX: Check if existing voice is in cleanup phase
                 // If voice exists but is not playing and oscillators are null, it's in cleanup phase
-                if (monoVoice && !monoVoice.isPlaying && 
+                if (monoVoice && !monoVoice.isPlaying &&
                     (!monoVoice.oscillators || monoVoice.oscillators.every(osc => !osc))) {
                     // Voice is in cleanup phase - dispose it and create new one
                     try {
@@ -170,12 +181,12 @@ export class VASynthInstrument extends BaseInstrument {
                     // ✅ FIX: For existing mono voice, only disconnect if we need to change routing (pan)
                     // Don't disconnect on every noteOn - this was causing the connection to break
                     const hasPan = extendedParams?.pan !== undefined && extendedParams.pan !== 0;
-                    const previousNote = this.activeNotes.size > 0 ? 
+                    const previousNote = this.activeNotes.size > 0 ?
                         Array.from(this.activeNotes.values())[0] : null;
                     const previousPan = previousNote?.extendedParams?.pan;
-                    const panChanged = hasPan !== (previousPan !== undefined && previousPan !== 0) || 
-                                     (hasPan && previousPan !== extendedParams.pan);
-                    
+                    const panChanged = hasPan !== (previousPan !== undefined && previousPan !== 0) ||
+                        (hasPan && previousPan !== extendedParams.pan);
+
                     // Only disconnect if pan routing needs to change
                     if (panChanged && monoVoice.masterGain) {
                         try {
@@ -254,7 +265,7 @@ export class VASynthInstrument extends BaseInstrument {
                         this.voiceTimeouts.delete(midiNote);
                     }
                     // Cancel all retrigger timeouts (they use unique keys like retrigger_${midiNote}_${timestamp})
-                    const retriggerKeys = Array.from(this.voiceTimeouts.keys()).filter(key => 
+                    const retriggerKeys = Array.from(this.voiceTimeouts.keys()).filter(key =>
                         typeof key === 'string' && key.startsWith(`retrigger_${midiNote}_`)
                     );
                     retriggerKeys.forEach(key => {
@@ -461,7 +472,7 @@ export class VASynthInstrument extends BaseInstrument {
         // ✅ CRITICAL FIX: For mono mode, immediately dispose voice to prevent playback issues on loop restart
         // Mono voice reuse can cause problems when voice is in release phase during new loop
         const isMono = this.preset?.voiceMode === 'mono';
-        
+
         if (isMono && this.voices.has('mono')) {
             // Mono mode: Immediately dispose to ensure clean state for next loop
             const monoVoice = this.voices.get('mono');
@@ -642,6 +653,11 @@ export class VASynthInstrument extends BaseInstrument {
         }
 
         console.log('✅ VASynth parameters updated, active voices:', this.voices.size);
+
+        // ✅ PHASE 2: Update Effects
+        if (this.effects) {
+            this.effects.update(updates);
+        }
     }
 
     /**
@@ -716,6 +732,11 @@ export class VASynthInstrument extends BaseInstrument {
             }
         }
 
+        // Dispose effects
+        if (this.effects) {
+            this.effects.dispose();
+        }
+
         super.dispose();
 
         console.log(`🗑️ VASynth disposed: ${this.name}`);
@@ -772,7 +793,7 @@ export class VASynthInstrument extends BaseInstrument {
             // Smooth transition to avoid clicks
             this.masterGain.gain.cancelScheduledValues(now);
             this.masterGain.gain.setTargetAtTime(clampedVolume, now, 0.01);
-            
+
             // Update last value
             if (!this._lastAutomationValues) {
                 this._lastAutomationValues = { volume: null, pan: null, expression: null };
@@ -792,9 +813,16 @@ export class VASynthInstrument extends BaseInstrument {
         if (!this.panNode) {
             this.panNode = this.audioContext.createStereoPanner();
 
-            // Reconnect: masterGain -> panNode -> output destination
-            this.masterGain.disconnect();
-            this.masterGain.connect(this.panNode);
+            // Reconnect: effects.output -> panNode -> output destination
+            // (Previously masterGain.connect(panNode))
+            if (this.effects) {
+                this.effects.output.disconnect(); // Disconnect default direct connection if any
+                this.effects.output.connect(this.panNode);
+            } else {
+                // Fallback if effects not ready
+                this.masterGain.disconnect();
+                this.masterGain.connect(this.panNode);
+            }
 
             // Update output to point to panner
             const oldOutput = this.output;

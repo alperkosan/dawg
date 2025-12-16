@@ -288,3 +288,21 @@
   border-color: var(--zenith-accent-cool);
   box-shadow: 0 0 0 2px rgba(78, 205, 196, 0.2);
 }
+
+/* Effects Section */
+.vasynth-editor-v2__effects-container {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 16px;
+  background: var(--zenith-bg-secondary);
+  border-radius: var(--zenith-radius-md, 8px);
+  border: 1px solid var(--zenith-border-subtle);
+}
+
+.vasynth-editor-v2__row {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  align-items: center;
+}
