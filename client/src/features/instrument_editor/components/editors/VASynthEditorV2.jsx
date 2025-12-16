@@ -9,7 +9,7 @@ import useInstrumentEditorStore from '@/store/useInstrumentEditorStore';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
 import { AudioContextService } from '@/lib/services/AudioContextService';
 import { AudioEngineGlobal } from '@/lib/core/AudioEngineGlobal';
-import { getPreset } from '@/lib/audio/synth/presets';
+import { getPreset, getPresetNames } from '@/lib/audio/synth/presets';
 import { getPreviewManager } from '@/lib/audio/preview';
 import { ADSRCanvas, OscillatorPanel } from '@/components/controls/canvas';
 import { Knob } from '@/components/controls';
@@ -253,11 +253,65 @@ const VASynthEditorV2 = ({ instrumentData: initialData }) => {
 
   return (
     <div className="vasynth-editor-v2">
-      {/* Header */}
+      {/* Header with Preset Selector */}
       <div className="vasynth-editor-v2__header">
         <h2 className="vasynth-editor-v2__title">{instrumentData.name}</h2>
-        <span className="vasynth-editor-v2__preset">{presetName}</span>
+        <div className="vasynth-preset-selector">
+          <label className="vasynth-preset-selector__label">Preset:</label>
+          <select
+            className="vasynth-preset-selector__dropdown"
+            value={presetName}
+            onChange={(e) => {
+              const newPresetName = e.target.value;
+              const newPreset = getPreset(newPresetName);
+              if (newPreset) {
+                // Update store with new preset
+                const mergedData = {
+                  ...instrumentData,
+                  presetName: newPresetName,
+                  oscillators: newPreset.oscillators,
+                  filter: newPreset.filter,
+                  filterEnvelope: newPreset.filterEnvelope,
+                  amplitudeEnvelope: newPreset.amplitudeEnvelope,
+                  lfo1: {
+                    ...newPreset.lfo,
+                    target: newPreset.lfoTarget || 'filter.cutoff'
+                  }
+                };
+                useInstrumentEditorStore.setState({ instrumentData: mergedData });
+
+                // Update audio engine
+                const audioEngine = AudioEngineGlobal.get();
+                if (audioEngine && instrumentData.id) {
+                  const instrument = audioEngine.instruments.get(instrumentData.id);
+                  if (instrument && typeof instrument.setPreset === 'function') {
+                    instrument.setPreset(newPresetName);
+                  }
+                }
+              }
+            }}
+          >
+            {getPresetNames().map(name => (
+              <option key={name} value={name}>{name}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Master Volume */}
+        <div className="vasynth-master-volume">
+          <Knob
+            label="MASTER"
+            value={instrumentData.masterVolume || 0.7}
+            min={0}
+            max={1}
+            sizeVariant="large"
+            color="#E74C3C"
+            valueFormatter={(v) => `${(v * 100).toFixed(0)}%`}
+            onChange={(value) => handleParameterChange('masterVolume', value)}
+          />
+        </div>
       </div>
+
 
       {/* Oscillators Section */}
       <div className="vasynth-editor-v2__section">
@@ -286,6 +340,25 @@ const VASynthEditorV2 = ({ instrumentData: initialData }) => {
       {/* Filter Section */}
       <div className="vasynth-editor-v2__section">
         <div className="vasynth-editor-v2__section-title">FILTER</div>
+
+        {/* Filter Type Selector */}
+        <div className="vasynth-filter-type-selector">
+          {['lowpass', 'highpass', 'bandpass', 'notch'].map(type => (
+            <button
+              key={type}
+              className={`vasynth-filter-type-btn ${filter.type === type ? 'active' : ''}`}
+              onClick={() => handleParameterChange('filter.type', type)}
+              title={type.toUpperCase()}
+            >
+              {type === 'lowpass' && '↘'}
+              {type === 'highpass' && '↗'}
+              {type === 'bandpass' && '⬌'}
+              {type === 'notch' && '⬍'}
+              <span className="vasynth-filter-type-label">{type}</span>
+            </button>
+          ))}
+        </div>
+
         <div className="vasynth-editor-v2__filter-controls">
           <Knob
             label="Cutoff"

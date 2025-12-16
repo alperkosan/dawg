@@ -5,7 +5,7 @@
  * Input -> EQ -> Chorus -> Delay -> Reverb -> Output
  */
 
-import { SimpleReverbEffect } from '../../effects/SimpleReverbEffect.js';
+import { ConvolutionReverbEffect } from '../../effects/ConvolutionReverbEffect.js';
 import { ModernDelayEffect } from '../../effects/ModernDelayEffect.js';
 import { ChorusEffect } from '../../effects/ChorusEffect.js';
 
@@ -35,7 +35,7 @@ export class VASynthEffectChain {
         this._initEQ();
         this.chorus = new ChorusEffect(context);
         this.delay = new ModernDelayEffect(context);
-        this.reverb = new SimpleReverbEffect(context); // ✅ Stable, feedback-free reverb
+        this.reverb = new ConvolutionReverbEffect(context); // ✅ High-quality convolution reverb
 
         // Build Graph
         this._buildGraph();
