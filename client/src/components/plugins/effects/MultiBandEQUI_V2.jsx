@@ -888,9 +888,21 @@ export const MultiBandEQUI_V2 = ({ trackId, effect, effectNode, definition }) =>
   const { setParams } = useParameterBatcher(workletNode);
 
   // Sync with effect.settings when presets are loaded
+  // ✅ FIX: Use ref to prevent infinite loop
+  const prevSettingsRef = useRef(null);
+
   useEffect(() => {
+    // Only update if settings actually changed (deep comparison for bands)
+    const settingsChanged =
+      JSON.stringify(prevSettingsRef.current?.bands) !== JSON.stringify(effect.settings.bands) ||
+      prevSettingsRef.current?.wet !== effect.settings.wet ||
+      prevSettingsRef.current?.output !== effect.settings.output;
+
+    if (!settingsChanged) return;
+
+    console.log('[MultiBandEQ] Preset loaded, updating bands:', effect.settings.bands);
+
     if (effect.settings.bands) {
-      console.log('[MultiBandEQ] Preset loaded, updating bands:', effect.settings.bands);
       setBands(effect.settings.bands);
     }
     if (effect.settings.wet !== undefined) {
@@ -899,7 +911,14 @@ export const MultiBandEQUI_V2 = ({ trackId, effect, effectNode, definition }) =>
     if (effect.settings.output !== undefined) {
       setOutput(effect.settings.output);
     }
-  }, [effect.settings]);
+
+    // Store current settings
+    prevSettingsRef.current = {
+      bands: effect.settings.bands,
+      wet: effect.settings.wet,
+      output: effect.settings.output
+    };
+  }, [effect.settings.bands, effect.settings.wet, effect.settings.output]);
 
   // Update effect when bands change
   useEffect(() => {
