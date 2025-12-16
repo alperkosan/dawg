@@ -9,24 +9,44 @@ import { calculatePatternLoopLength } from '../utils/patternUtils.js';
  */
 export class AddNoteCommand extends Command {
   /**
-   * @param {string} instrumentId - Notanın ekleneceği enstrümanın ID'si.
-   * @param {number} step - Notanın ekleneceği adım (zaman).
-   * @param {number} fixedLength - Sabit nota uzunluğu (opsiyonel, fill pattern için kullanılır).
+   * @param {string|object} instrumentIdOrNote - Notanın ekleneceği enstrümanın ID'si VEYA hazır nota objesi (Piano Roll için).
+   * @param {number|function} stepOrAddFn - Notanın ekleneceği adım (zaman) VEYA add fonksiyonu (Piano Roll için).
+   * @param {number|function} fixedLengthOrDeleteFn - Sabit nota uzunluğu VEYA delete fonksiyonu (Piano Roll için).
    */
-  constructor(instrumentId, step, fixedLength = null) {
+  constructor(instrumentIdOrNote, stepOrAddFn, fixedLengthOrDeleteFn = null) {
     super();
-    this.instrumentId = instrumentId;
-    this.step = step;
-    this.fixedLength = fixedLength; // ✅ FIX: Allow fixed length for fill pattern
-    // Bu nota, execute() metodu çalıştığında oluşturulacak ve saklanacaktır.
-    // Bu, undo işlemi için gereklidir.
-    this.note = null; 
+
+    // ✅ FIX: Detect Piano Roll mode (note object passed directly)
+    if (typeof instrumentIdOrNote === 'object' && instrumentIdOrNote !== null) {
+      // Piano Roll mode: note is already fully formed
+      this.isPianoRollMode = true;
+      this.note = instrumentIdOrNote;
+      this.addFn = stepOrAddFn;
+      this.deleteFn = fixedLengthOrDeleteFn;
+      // No need to set instrumentId, step, fixedLength
+    } else {
+      // Step Sequencer mode: construct note from parameters
+      this.isPianoRollMode = false;
+      this.instrumentId = instrumentIdOrNote;
+      this.step = stepOrAddFn;
+      this.fixedLength = fixedLengthOrDeleteFn;
+      this.note = null; // Will be created in execute()
+    }
   }
 
   /**
    * Notayı oluşturur, state'i günceller ve ses motorunu yeniden zamanlar.
    */
   execute() {
+    // ✅ FIX: Piano Roll mode - note is already created, just add it
+    if (this.isPianoRollMode) {
+      if (this.addFn) {
+        this.addFn(this.note);
+      }
+      return;
+    }
+
+    // ✅ Step Sequencer mode - create note with oval behavior
     const activePatternId = useArrangementStore.getState().activePatternId;
     if (!activePatternId) return;
 
@@ -42,7 +62,7 @@ export class AddNoteCommand extends Command {
       (typeof activePattern.length === 'number' && activePattern.length > 0)
         ? activePattern.length
         : (calculatePatternLoopLength(activePattern) || 64);
-    
+
     // Convert step length to duration string
     // 1 step = 1/16 note, so patternLengthInSteps steps = patternLengthInSteps/16 bars
     // But duration is relative to the beat, so we need to calculate in beats
@@ -73,7 +93,7 @@ export class AddNoteCommand extends Command {
       // Use pitch and velocity from the first existing note
       const firstNote = currentNotes[0];
       defaultPitch = firstNote.pitch || 'C4';
-      
+
       // ✅ FIX: Normalize velocity to 0-127 range
       // Handle both 0-1 normalized and 0-127 MIDI formats
       if (firstNote.velocity !== undefined) {
@@ -93,11 +113,11 @@ export class AddNoteCommand extends Command {
         velocity: defaultVelocity
       });
     }
-    
+
     const gateLengthInSteps = 1;
     const audioDuration = null;
     const noteStartStep = this.step;
-    
+
     // ✅ FIX: Use fixed length if provided (for fill pattern), otherwise use oval note logic
     let ovalLengthInSteps;
     if (this.fixedLength !== null && this.fixedLength > 0) {
@@ -106,7 +126,7 @@ export class AddNoteCommand extends Command {
     } else {
       // Normal sequencer: Extend to pattern end (oval note behavior)
       const remainingSteps = patternLengthInSteps - noteStartStep;
-      ovalLengthInSteps = remainingSteps > 0 
+      ovalLengthInSteps = remainingSteps > 0
         ? Math.max(gateLengthInSteps, remainingSteps)
         : gateLengthInSteps; // If at or past pattern end, use gate length
     }
@@ -151,6 +171,15 @@ export class AddNoteCommand extends Command {
    * Eklenen notayı state'ten kaldırır ve ses motorunu yeniden zamanlar.
    */
   undo() {
+    // ✅ FIX: Piano Roll mode
+    if (this.isPianoRollMode) {
+      if (this.deleteFn) {
+        this.deleteFn([this.note.id]);
+      }
+      return;
+    }
+
+    // ✅ Step Sequencer mode
     const activePatternId = useArrangementStore.getState().activePatternId;
     if (!activePatternId || !this.note) return;
 
@@ -172,6 +201,9 @@ export class AddNoteCommand extends Command {
    * @returns {string}
    */
   getDescription() {
+    if (this.isPianoRollMode) {
+      return `Add note at step ${this.note.startTime || this.note.time}`;
+    }
     return `Add note to instrument ${this.instrumentId} at step ${this.step}`;
   }
 }

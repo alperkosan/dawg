@@ -12,6 +12,7 @@ import { useMixerStore } from '../store/useMixerStore';
 import { useAuthStore } from '../store/useAuthStore';
 import { InterfaceService } from '../lib/services/InterfaceService';
 import { IdleOptimizationManager } from '../lib/audio/IdleOptimizationManager';
+import { WasmModuleCache } from '../lib/core/WasmModuleCache.js';
 
 export const useSystemBoot = () => {
     // ✅ Initialize ref with existing engine (HMR support)
@@ -85,6 +86,12 @@ export const useSystemBoot = () => {
             try {
                 await engine.resumeAudioContext();
             } catch (e) { console.warn(e); }
+
+            // ✅ PERFORMANCE: Preload WASM module before any instruments are created
+            // This eliminates the fetch/compile delay for the first instrument
+            WasmModuleCache.preload().catch(err => {
+                console.warn('⚠️ WASM preload failed (will load on-demand):', err);
+            });
 
             // Load Worklets
             if (engine.workletManager) {

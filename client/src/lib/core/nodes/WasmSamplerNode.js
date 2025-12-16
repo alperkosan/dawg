@@ -1,5 +1,7 @@
 // src/lib/core/nodes/WasmSamplerNode.js
 
+import { WasmModuleCache } from '../WasmModuleCache.js';
+
 export class WasmSamplerNode {
     constructor(instrumentData, audioBuffer, audioContext) {
         this.id = instrumentData.id;
@@ -37,11 +39,8 @@ export class WasmSamplerNode {
                 }
             });
 
-            // ✅ MAIN THREAD FETCH & COMPILE
-            const response = await fetch('/wasm/dawg_audio_dsp_bg.wasm');
-            if (!response.ok) throw new Error(`Failed to fetch wasm: ${response.statusText}`);
-            const bytes = await response.arrayBuffer();
-            const wasmModule = await WebAssembly.compile(bytes);
+            // ✅ PERFORMANCE: Use cached WASM module instead of fetching each time
+            const bytes = await WasmModuleCache.getWasmBytes();
 
             // Guard against disposal during await
             if (this.isDisposed || !this.workletNode) {

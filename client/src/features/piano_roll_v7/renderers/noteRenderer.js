@@ -349,7 +349,7 @@ export class PremiumNoteRenderer {
                 isSelected,
                 isHovered,
                 velocity: note.velocity
-            });
+            }, options);
         }
 
         // Velocity indicator (subtle left bar)
@@ -428,7 +428,7 @@ export class PremiumNoteRenderer {
     }
 
     // Premium note border with depth
-    renderNoteBorder(ctx, x, y, width, height, style) {
+    renderNoteBorder(ctx, x, y, width, height, style, options = {}) {
         // ✅ OPTIMIZED: Using StyleCache
         const borderHue = style.hue;
         const borderAlpha = style.isSelected ? 0.9 : 0.6;

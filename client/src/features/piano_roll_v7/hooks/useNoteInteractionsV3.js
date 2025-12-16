@@ -1003,10 +1003,10 @@ export function useNoteInteractionsV3({
         // snapToGrid snaps based on grid center: first half -> current grid, second half -> next grid
         const snappedTime = snapToGrid(coords.time);
 
-        // ✅ FIX: Treat full key height as same pitch (avoid accidental next-note hits near bottom edge)
-        const keyHeightPx = engine.dimensions?.keyHeight || 20;
-        const pitchCoverage = Math.max(0.5, (keyHeightPx - 1) / keyHeightPx); // Note body covers ~95% of key height
-        let finalPitch = Math.floor(coords.pitch + pitchCoverage);
+        // ✅ FIX: Round pitch to nearest integer (standard MIDI pitch)
+        // coords.pitch comes from mouse position and can be fractional
+        // We want to snap to the nearest pitch, not floor/ceil with offset
+        let finalPitch = Math.round(coords.pitch);
 
         // Clamp to valid MIDI range
         finalPitch = Math.max(0, Math.min(127, finalPitch));
@@ -1021,12 +1021,13 @@ export function useNoteInteractionsV3({
         // Hit detection uses inclusive boundaries, but paint tool should allow writing
         // notes at the exact end of another note (for continuous note writing)
         // So we use EXCLUSIVE end boundary for paint tool duplicate check
-        const { keyHeight } = engine.dimensions || { keyHeight: 20 };
-        const actualNoteHeight = keyHeight - 1;
-        const pitchRange = actualNoteHeight / keyHeight;
 
         const existingNote = notes.find(n => {
-            const noteEndTime = n.startTime + n.length;
+            // ✅ FIX: For oval notes, use visualLength for overlap check
+            // Oval notes have: visualLength = 1 step (visual), length = 64 steps (audio)
+            // We want to check visual overlap, not audio overlap
+            const displayLength = n.visualLength !== undefined ? n.visualLength : n.length;
+            const noteEndTime = n.startTime + displayLength;
 
             // ✅ FIX: Time overlap check with EXCLUSIVE end boundary for paint tool
             // This allows writing notes at the exact end of another note
@@ -1035,10 +1036,10 @@ export function useNoteInteractionsV3({
             //          note at [0, 1], finalTime=0.5 -> 0.5 >= 0 && 0.5 < 1 = true ✗ (duplicate)
             const timeOverlap = finalTime >= n.startTime && finalTime < noteEndTime;
 
-            // Pitch overlap check (same as hit detection - TOP-ALIGNED)
-            const notePitchMin = n.pitch - pitchRange;
-            const notePitchMax = n.pitch;
-            const pitchOverlap = finalPitch >= notePitchMin && finalPitch <= notePitchMax;
+            // ✅ FIX: Pitch overlap check - EXACT MATCH ONLY
+            // Piano Roll: each pitch is a discrete row, no range needed
+            // Only block if trying to write on the EXACT same pitch
+            const pitchOverlap = finalPitch === n.pitch;
 
             return timeOverlap && pitchOverlap;
         });

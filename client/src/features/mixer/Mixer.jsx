@@ -43,18 +43,20 @@ const Mixer = ({ isVisible = true }) => {
     position: { top: 0, left: 0 }
   });
 
-  // ✅ PERFORMANCE: Separate audio state from UI state
-  // Audio state - subscribe to specific values only
+  // ✅ PERFORMANCE OPTIMIZATION: Use memoized selectors
+  // Only re-render when mixer tracks array changes (not on individual track updates)
   const mixerTracks = useMixerStore(state => state.mixerTracks);
+
+  // ✅ PERFORMANCE: Subscribe to actions individually (stable references)
   const addTrack = useMixerStore(state => state.addTrack);
   const removeTrack = useMixerStore(state => state.removeTrack);
   const toggleMute = useMixerStore(state => state.toggleMute);
   const toggleSolo = useMixerStore(state => state.toggleSolo);
+  const setTrackColor = useMixerStore(state => state.setTrackColor);
 
   // UI state - subscribe to specific values only
   const activeChannelId = useMixerUIStore(state => state.activeChannelId);
   const setActiveChannelId = useMixerUIStore(state => state.setActiveChannelId);
-  const setTrackColor = useMixerStore(state => state.setTrackColor);
 
   // Close add menu when clicking outside
   useEffect(() => {
