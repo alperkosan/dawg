@@ -16,6 +16,9 @@ export class WasmSingleSampleInstrument extends BaseInstrument {
         this.wasmNode = null;
         this.masterGain = null;
         this._isInitialized = false;
+
+        // ✅ NEW: Track sample URL for cleanup
+        this.sampleUrl = instrumentData.url || null;
     }
 
     async initialize() {
@@ -179,6 +182,17 @@ export class WasmSingleSampleInstrument extends BaseInstrument {
     }
 
     dispose() {
+        // ✅ NEW: Release buffer reference for AudioBufferPool cleanup
+        if (this.sampleUrl) {
+            try {
+                const { SampleLoader } = require('../loaders/SampleLoader.js');
+                SampleLoader.releaseBuffer(this.sampleUrl);
+                console.log(`🗑️ Released buffer for: ${this.name}`);
+            } catch (error) {
+                console.warn(`⚠️ Failed to release buffer for ${this.name}:`, error);
+            }
+        }
+
         if (this.wasmNode) {
             this.wasmNode.output.disconnect();
             this.wasmNode.dispose();
