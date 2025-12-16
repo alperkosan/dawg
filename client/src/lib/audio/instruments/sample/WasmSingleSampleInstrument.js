@@ -38,11 +38,22 @@ export class WasmSingleSampleInstrument extends BaseInstrument {
             this.wasmNode.output.connect(this.panner);
             this.panner.connect(this.masterGain);
 
+            // ✅ Wait for WASM initialization with timeout
+            const timeoutPromise = new Promise((_, reject) => {
+                setTimeout(() => reject(new Error('WASM instrument initialization timeout')), 10000);
+            });
+
+            await Promise.race([
+                this.wasmNode.initializationPromise,
+                timeoutPromise
+            ]);
+
             this._isInitialized = true;
             console.log(`🥁 WasmSingleSample initialized: ${this.name}`);
 
         } catch (error) {
-            console.error(`❌ WasmSingleSample init failed: ${this.name}`, error);
+            console.error(`❌ WasmSingleSample init failed for ${this.name}:`, error);
+            this._isInitialized = false;
             throw error;
         }
     }

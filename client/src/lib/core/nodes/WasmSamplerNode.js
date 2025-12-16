@@ -6,6 +6,7 @@ export class WasmSamplerNode {
         this.context = audioContext;
         this.workletNode = null;
         this.output = this.context.createGain(); // Public output
+        this.isDisposed = false; // ✅ Disposal guard
 
         // Persistent Internal State
         // Helper to ensure defaults
@@ -18,7 +19,9 @@ export class WasmSamplerNode {
         };
 
         this.buffer = null; // AudioBuffer reference
-        this.initialize(audioBuffer);
+
+        // ✅ Track initialization promise
+        this.initializationPromise = this.initialize(audioBuffer);
     }
 
     async initialize(audioBuffer) {
@@ -41,38 +44,53 @@ export class WasmSamplerNode {
             const wasmModule = await WebAssembly.compile(bytes);
 
             // Guard against disposal during await
-            if (!this.workletNode) return;
+            if (this.isDisposed || !this.workletNode) {
+                console.warn(`⚠️ WasmSamplerNode ${this.id} disposed during WASM fetch`);
+                return;
+            }
 
-            // TEST: Send a ping first to verify channel
-            this.workletNode.port.postMessage({ type: 'ping' });
+            // ✅ Create initialization promise with timeout
+            const initPromise = new Promise((resolve, reject) => {
+                const timeout = setTimeout(() => {
+                    reject(new Error(`WASM initialization timeout for ${this.id}`));
+                }, 5000); // 5 second timeout
 
-            // STRATEGY CHANGE: Transfer ArrayBuffer bytes instead of Module
-            setTimeout(() => {
-                if (this.workletNode) {
-                    this.workletNode.port.postMessage({
-                        type: 'init-wasm',
-                        data: { wasmBytes: bytes }
-                    }, [bytes]);
-                }
-            }, 100);
-
-            // Wait for initialization (simple bridge)
-            this.workletNode.port.onmessage = (event) => {
-                const { type } = event.data;
-                if (type === 'initialized') {
-                    console.log(`✅ WasmSamplerNode initialized for ${this.id}`);
-                    if (this.buffer) {
-                        this.loadBuffer(this.buffer);
+                this.workletNode.port.onmessage = (event) => {
+                    const { type } = event.data;
+                    if (type === 'initialized') {
+                        clearTimeout(timeout);
+                        console.log(`✅ WasmSamplerNode initialized for ${this.id}`);
+                        if (this.buffer && !this.isDisposed) {
+                            this.loadBuffer(this.buffer);
+                        }
+                        resolve();
+                    } else if (type === 'error') {
+                        clearTimeout(timeout);
+                        console.error(`❌ WasmSamplerNode Worklet error:`, event.data.error);
+                        reject(new Error(event.data.error));
                     }
-                } else if (type === 'error') {
-                    console.error(`❌ WasmSamplerNode Worklet error:`, event.data.error);
-                }
-            };
+                };
+            });
+
+            // ✅ Send WASM bytes immediately (no setTimeout delay)
+            if (this.isDisposed || !this.workletNode) {
+                console.warn(`⚠️ WasmSamplerNode ${this.id} disposed before sending WASM bytes`);
+                return;
+            }
+
+            this.workletNode.port.postMessage({
+                type: 'init-wasm',
+                data: { wasmBytes: bytes }
+            }, [bytes]);
 
             this.workletNode.connect(this.output);
 
+            // Wait for initialization to complete
+            await initPromise;
+
         } catch (error) {
-            console.error('❌ WasmSamplerNode initialization failed:', error);
+            console.error(`❌ WasmSamplerNode initialization failed for ${this.id}:`, error);
+            throw error; // Re-throw so caller can handle
         }
     }
 
@@ -85,74 +103,74 @@ export class WasmSamplerNode {
         Object.assign(this.data, params);
 
         // ✅ REAL-TIME UPDATE: Send new params to Worklet for active voices
-        if (this.workletNode) {
-            const updatePayload = {};
+        if (this.isDisposed || !this.workletNode) return;
 
-            // Prepare ADSR update
-            // Note: If envelope is disabled, we enforce the "Gate" defaults ensuring tight response
-            if (this.data.envelopeEnabled) {
-                updatePayload.adsr = {
-                    attack: this.data.attack || 0.001,
-                    decay: this.data.decay || 0.1,
-                    sustain: this.data.sustain !== undefined ? this.data.sustain : 1.0,
-                    release: this.data.release || 0.1
-                };
-            } else {
-                updatePayload.adsr = {
-                    attack: 0.0,
-                    decay: 0.0,
-                    sustain: 1.0,
-                    release: 0.01 // 10ms de-click
-                };
-            }
+        const updatePayload = {};
 
-            // ✅ TRIM UPDATE
-            if (params.sampleStart !== undefined || params.sampleEnd !== undefined) {
-                const bufferLen = this.buffer ? this.buffer.length : 0;
-                if (bufferLen > 0) {
-                    const sStart = this.data.sampleStart !== undefined ? this.data.sampleStart : 0.0;
-                    const sEnd = this.data.sampleEnd !== undefined ? this.data.sampleEnd : 1.0;
-
-                    const startIdx = Math.floor(Math.max(0, Math.min(1, sStart)) * bufferLen);
-                    const endIdx = Math.floor(Math.max(0, Math.min(1, sEnd)) * bufferLen);
-
-                    updatePayload.range = { start: startIdx, end: endIdx };
-                }
-            }
-
-            // ✅ FILTER UPDATE
-            if (params.filterCutoff !== undefined || params.filterResonance !== undefined || params.filterType !== undefined || params.filterEnabled !== undefined) {
-                const cutoff = this.data.filterCutoff || 20000;
-                const res = this.data.filterResonance || 0;
-                const typeStr = this.data.filterType || 'lowpass';
-                const enabled = !!this.data.filterEnabled;
-
-                let typeIdx = 0;
-                if (typeStr === 'highpass') typeIdx = 1;
-                else if (typeStr === 'bandpass') typeIdx = 2;
-                else if (typeStr === 'notch') typeIdx = 3;
-
-                // Map Resonance (0.0 - 1.0) to Q (0.707 - 10.0)
-                const q = 0.707 + (res * 9.3);
-
-                updatePayload.filter = {
-                    cutoff: cutoff,
-                    q: q,
-                    type: typeIdx,
-                    enabled: enabled
-                };
-            }
-
-            // ✅ BASS BOOST UPDATE
-            if (params.bassBoost !== undefined) {
-                updatePayload.bassBoost = params.bassBoost / 100.0;
-            }
-
-            this.workletNode.port.postMessage({
-                type: 'update-params',
-                data: updatePayload
-            });
+        // Prepare ADSR update
+        // Note: If envelope is disabled, we enforce the "Gate" defaults ensuring tight response
+        if (this.data.envelopeEnabled) {
+            updatePayload.adsr = {
+                attack: this.data.attack || 0.001,
+                decay: this.data.decay || 0.1,
+                sustain: this.data.sustain !== undefined ? this.data.sustain : 1.0,
+                release: this.data.release || 0.1
+            };
+        } else {
+            updatePayload.adsr = {
+                attack: 0.0,
+                decay: 0.0,
+                sustain: 1.0,
+                release: 0.01 // 10ms de-click
+            };
         }
+
+        // ✅ TRIM UPDATE
+        if (params.sampleStart !== undefined || params.sampleEnd !== undefined) {
+            const bufferLen = this.buffer ? this.buffer.length : 0;
+            if (bufferLen > 0) {
+                const sStart = this.data.sampleStart !== undefined ? this.data.sampleStart : 0.0;
+                const sEnd = this.data.sampleEnd !== undefined ? this.data.sampleEnd : 1.0;
+
+                const startIdx = Math.floor(Math.max(0, Math.min(1, sStart)) * bufferLen);
+                const endIdx = Math.floor(Math.max(0, Math.min(1, sEnd)) * bufferLen);
+
+                updatePayload.range = { start: startIdx, end: endIdx };
+            }
+        }
+
+        // ✅ FILTER UPDATE
+        if (params.filterCutoff !== undefined || params.filterResonance !== undefined || params.filterType !== undefined || params.filterEnabled !== undefined) {
+            const cutoff = this.data.filterCutoff || 20000;
+            const res = this.data.filterResonance || 0;
+            const typeStr = this.data.filterType || 'lowpass';
+            const enabled = !!this.data.filterEnabled;
+
+            let typeIdx = 0;
+            if (typeStr === 'highpass') typeIdx = 1;
+            else if (typeStr === 'bandpass') typeIdx = 2;
+            else if (typeStr === 'notch') typeIdx = 3;
+
+            // Map Resonance (0.0 - 1.0) to Q (0.707 - 10.0)
+            const q = 0.707 + (res * 9.3);
+
+            updatePayload.filter = {
+                cutoff: cutoff,
+                q: q,
+                type: typeIdx,
+                enabled: enabled
+            };
+        }
+
+        // ✅ BASS BOOST UPDATE
+        if (params.bassBoost !== undefined) {
+            updatePayload.bassBoost = params.bassBoost / 100.0;
+        }
+
+        this.workletNode.port.postMessage({
+            type: 'update-params',
+            data: updatePayload
+        });
     }
 
     // Alias for compatibility
@@ -161,7 +179,7 @@ export class WasmSamplerNode {
     }
 
     loadBuffer(audioBuffer) {
-        if (!audioBuffer) return;
+        if (!audioBuffer || this.isDisposed) return;
 
         this.buffer = audioBuffer;
 
@@ -183,7 +201,7 @@ export class WasmSamplerNode {
     }
 
     triggerNote(midiNote, velocity = 100, time = 0, duration = 0) {
-        if (!this.workletNode) return;
+        if (this.isDisposed || !this.workletNode) return;
 
         // Calculate pitch ratio
         const baseNote = this.data.baseNote || 60;
@@ -278,11 +296,13 @@ export class WasmSamplerNode {
     }
 
     releaseNote() {
-        if (!this.workletNode) return;
+        if (this.isDisposed || !this.workletNode) return;
         this.workletNode.port.postMessage({ type: 'release' });
     }
 
     dispose() {
+        this.isDisposed = true; // ✅ Set disposal flag first
+
         if (this.workletNode) {
             this.workletNode.port.postMessage({ type: 'dispose' }); // Let processor clean wasm memory
             this.workletNode.disconnect();

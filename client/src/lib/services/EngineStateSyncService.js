@@ -318,13 +318,25 @@ export class EngineStateSyncService {
                 console.log(`🎵 Syncing ${instruments.length} instruments to mixer inserts...`);
             }
 
+            // ✅ Track pending instrument creations to prevent duplicates
+            if (!this._pendingInstrumentCreations) {
+                this._pendingInstrumentCreations = new Set();
+            }
+
+            // ✅ Track initialization promises to wait for completion
+            const initPromises = [];
+
             for (const instrument of instruments) {
                 if (!instrument.mixerTrackId) continue;
 
                 let audioEngineInstrument = engine.instruments?.get(instrument.id);
 
-                if (!audioEngineInstrument) {
+                // ✅ CRITICAL FIX: Check if instrument exists OR is being created
+                if (!audioEngineInstrument && !this._pendingInstrumentCreations.has(instrument.id)) {
                     try {
+                        // Mark as pending to prevent duplicate creation
+                        this._pendingInstrumentCreations.add(instrument.id);
+
                         // ✅ FIX: Preload samples even if audioBuffer exists
                         // For newly added samples, audioBuffer is loaded in UI but needs to be transferred to WASM worklet
                         // ✅ CRITICAL FIX: Also check for multiSamples (for multisampled instruments like Piano)
@@ -335,13 +347,36 @@ export class EngineStateSyncService {
                                 console.warn(`Failed to preload sample for ${instrument.id}:`, e);
                             }
                         }
-                        await engine.createInstrument(instrument);
-                        audioEngineInstrument = engine.instruments?.get(instrument.id);
+
+                        // ✅ Create instrument and track initialization promise
+                        const creationPromise = engine.createInstrument(instrument)
+                            .then(() => {
+                                // Remove from pending after successful creation
+                                this._pendingInstrumentCreations.delete(instrument.id);
+                                return engine.instruments?.get(instrument.id);
+                            })
+                            .catch((createError) => {
+                                console.error(`❌ Failed to create instrument ${instrument.id}:`, createError);
+                                // Remove from pending even on error to allow retry
+                                this._pendingInstrumentCreations.delete(instrument.id);
+                                return null;
+                            });
+
+                        initPromises.push(creationPromise);
+                        audioEngineInstrument = await creationPromise;
+
                         if (!audioEngineInstrument) continue;
                     } catch (createError) {
                         console.error(`❌ Failed to create instrument ${instrument.id}:`, createError);
+                        this._pendingInstrumentCreations.delete(instrument.id);
                         continue;
                     }
+                } else if (this._pendingInstrumentCreations.has(instrument.id)) {
+                    // Instrument is being created, skip for now
+                    if (!silent) {
+                        console.log(`⏳ Instrument ${instrument.id} is being created, skipping...`);
+                    }
+                    continue;
                 }
 
                 let mixerInsert = engine.mixerInserts?.get(instrument.mixerTrackId);
@@ -386,6 +421,14 @@ export class EngineStateSyncService {
                         }
                         if (!success) await new Promise(resolve => setTimeout(resolve, 100 * Math.pow(1.5, attempt)));
                     }
+                }
+            }
+
+            // ✅ Wait for all instrument initializations to complete
+            if (initPromises.length > 0) {
+                await Promise.all(initPromises);
+                if (!silent) {
+                    console.log(`✅ All ${initPromises.length} instrument initializations completed`);
                 }
             }
         } catch (error) {
