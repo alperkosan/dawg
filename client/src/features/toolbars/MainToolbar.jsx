@@ -40,9 +40,6 @@ function MainToolbar() {
                 >
                     {themes.map(theme => <option key={theme.id} value={theme.id}>{theme.name}</option>)}
                 </select>
-                <button onClick={() => togglePanel('theme-editor')} className="main-toolbar__button" title="Open Theme Editor">
-                    <Palette size={16} />
-                </button>
             </div>
 
             <div className="toolbar__group">
