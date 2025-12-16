@@ -21,6 +21,10 @@ export const OscillatorPanel = ({
   level = 0.5,
   detune = 0,
   octave = 0,
+  // ✅ SUPERSAW: Unison parameters
+  unisonVoices = 7,
+  unisonDetune = 50,
+  unisonSpread = 50,
   onChange,
   width = 160,
   height = 80,
@@ -29,7 +33,7 @@ export const OscillatorPanel = ({
   const [isDragging, setIsDragging] = useState(false);
   const [isHovering, setIsHovering] = useState(false);
 
-  const waveforms = ['sawtooth', 'square', 'triangle', 'sine'];
+  const waveforms = ['sawtooth', 'square', 'triangle', 'sine', 'supersaw'];
 
   // Use Zenith theme colors
   const themeColors = [
@@ -66,7 +70,7 @@ export const OscillatorPanel = ({
       ctx.fillRect(0, 0, width, height);
 
       // Subtle glow overlay
-      const gradient = ctx.createRadialGradient(width/2, height/2, 0, width/2, height/2, width/2);
+      const gradient = ctx.createRadialGradient(width / 2, height / 2, 0, width / 2, height / 2, width / 2);
       gradient.addColorStop(0, `${color}20`); // 20 = ~12% opacity
       gradient.addColorStop(1, 'transparent');
       ctx.fillStyle = gradient;
@@ -109,6 +113,18 @@ export const OscillatorPanel = ({
           break;
         case 'triangle':
           y = 2 * Math.abs(2 * ((t / (2 * Math.PI)) % 1) - 1) - 1;
+          break;
+        case 'supersaw':
+          // ✅ SUPERSAW: Draw multiple detuned saws
+          y = 0;
+          const voices = Math.min(unisonVoices || 7, 7);
+          for (let v = 0; v < voices; v++) {
+            const center = (voices - 1) / 2;
+            const offset = v - center;
+            const detuneAmount = (offset / center) * (unisonDetune / 100) * 0.1;
+            const detunedT = t * (1 + detuneAmount);
+            y += (2 * ((detunedT / (2 * Math.PI)) % 1) - 1) / voices;
+          }
           break;
         default:
           y = 0;

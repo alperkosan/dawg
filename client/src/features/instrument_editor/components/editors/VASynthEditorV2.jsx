@@ -255,6 +255,9 @@ const VASynthEditorV2 = ({ instrumentData: initialData }) => {
               level={osc.level}
               detune={osc.detune}
               octave={osc.octave}
+              unisonVoices={osc.unisonVoices || 7}
+              unisonDetune={osc.unisonDetune || 50}
+              unisonSpread={osc.unisonSpread || 50}
               onChange={(updates) => handleOscillatorChange(index, updates)}
               width={180}
               height={100}

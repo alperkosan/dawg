@@ -7,6 +7,7 @@
 
 import { BaseInstrument } from '../base/BaseInstrument.js';
 import { WasmSamplerNode } from '../../../core/nodes/WasmSamplerNode.js';
+import { SampleLoader } from '../loaders/SampleLoader.js';
 
 export class WasmSingleSampleInstrument extends BaseInstrument {
     constructor(instrumentData, audioContext, sampleBuffer) {
@@ -185,7 +186,6 @@ export class WasmSingleSampleInstrument extends BaseInstrument {
         // ✅ NEW: Release buffer reference for AudioBufferPool cleanup
         if (this.sampleUrl) {
             try {
-                const { SampleLoader } = require('../loaders/SampleLoader.js');
                 SampleLoader.releaseBuffer(this.sampleUrl);
                 console.log(`🗑️ Released buffer for: ${this.name}`);
             } catch (error) {

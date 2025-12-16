@@ -318,6 +318,9 @@ export class MixerService {
         const now = engine.audioContext?.currentTime || 0;
 
         for (const [trackId, insert] of engine.mixerInserts) {
+            // ✅ FIX: Master channel should never be muted by solo logic
+            if (trackId === 'master') continue;
+
             if (!insert?.gainNode) continue;
 
             const isSoloed = soloedChannels.has(trackId);
