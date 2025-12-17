@@ -11,6 +11,7 @@ import { AudioEngineGlobal } from '@/lib/core/AudioEngineGlobal';
 import useInstrumentEditorStore from '@/store/useInstrumentEditorStore';
 import { useInstrumentsStore } from '@/store/useInstrumentsStore';
 import { Slider } from '@/components/controls/base/Slider';
+import { VelocityCurveType, VelocityPresets } from '@/lib/audio/instruments/sample/VelocityCurve';
 import WaveformDisplay from '../WaveformDisplay';
 import './MultiSampleEditor.css';
 
@@ -35,6 +36,18 @@ const MultiSampleEditor = ({ instrumentData: initialData }) => {
     source: 'envelope',
     depth: 0.5
   };
+
+  // ✅ VELOCITY CURVE: Get velocity curve state
+  const velocityCurveType = instrumentData?.velocityCurveType || VelocityCurveType.LINEAR;
+  const velocityCurveOptions = instrumentData?.velocityCurveOptions || {};
+
+  // ✅ SYMPATHETIC RESONANCE: Get resonance state
+  const sympatheticResonanceEnabled = instrumentData?.sympatheticResonanceEnabled !== undefined
+    ? instrumentData.sympatheticResonanceEnabled
+    : true;
+  const sympatheticResonanceGain = instrumentData?.sympatheticResonanceGain !== undefined
+    ? instrumentData.sympatheticResonanceGain
+    : 0.08;
 
 
   // Setup PreviewManager with current instrument
@@ -157,6 +170,24 @@ const MultiSampleEditor = ({ instrumentData: initialData }) => {
     updateParameter('sampleStartModulation', newModulation);
     updateInstrument(instrumentData.id, { sampleStartModulation: newModulation });
   }, [instrumentData, sampleStartModulation, updateParameter, updateInstrument]);
+
+  // ✅ VELOCITY CURVE: Handle velocity curve changes
+  const handleVelocityCurveChange = useCallback((curveType) => {
+    if (!instrumentData?.id) return;
+    updateParameter('velocityCurveType', curveType);
+    updateInstrument(instrumentData.id, { velocityCurveType: curveType });
+
+    // Update audio engine instrument
+    const audioEngine = AudioEngineGlobal.get();
+    if (audioEngine && instrumentData.id) {
+      const instrument = audioEngine.instruments.get(instrumentData.id);
+      if (instrument) {
+        instrument.velocityCurveType = curveType;
+      }
+    }
+
+    console.log(`🎹 Velocity curve changed to: ${curveType}`);
+  }, [instrumentData, updateParameter, updateInstrument]);
 
   return (
     <div className="multisample-editor">
@@ -299,6 +330,33 @@ const MultiSampleEditor = ({ instrumentData: initialData }) => {
             <p>Reduces aliasing and maintains consistent timing.</p>
             <p className="multisample-editor__time-stretch-warning">
               ⚠️ First playback may use playbackRate (fallback) while buffers are cached.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="multisample-editor__section">
+        <div className="multisample-editor__section-title">Velocity Curve</div>
+        <div className="multisample-editor__velocity-curve">
+          <label className="multisample-editor__velocity-curve-label">
+            <span>Response Curve:</span>
+            <select
+              value={velocityCurveType}
+              onChange={(e) => handleVelocityCurveChange(e.target.value)}
+              className="multisample-editor__velocity-curve-select"
+            >
+              <option value={VelocityCurveType.LINEAR}>Linear (Default)</option>
+              <option value={VelocityCurveType.EXPONENTIAL}>Exponential (Soft)</option>
+              <option value={VelocityCurveType.LOGARITHMIC}>Logarithmic (Hard)</option>
+              <option value={VelocityCurveType.S_CURVE}>S-Curve (Smooth)</option>
+            </select>
+          </label>
+          <div className="multisample-editor__velocity-curve-info">
+            <p>
+              {velocityCurveType === VelocityCurveType.LINEAR && '1:1 velocity mapping, no transformation'}
+              {velocityCurveType === VelocityCurveType.EXPONENTIAL && 'More sensitive to soft playing, wider dynamic range'}
+              {velocityCurveType === VelocityCurveType.LOGARITHMIC && 'More sensitive to hard playing, compressed dynamics'}
+              {velocityCurveType === VelocityCurveType.S_CURVE && 'Smooth transitions, gentle at extremes'}
             </p>
           </div>
         </div>

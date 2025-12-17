@@ -19,6 +19,9 @@ import { VoicePool } from '../base/VoicePool.js';
 import { SampleVoice } from './SampleVoice.js';
 import { TimeStretcher } from '../../dsp/TimeStretcher.js';
 import { clampValue, createDefaultSampleChopPattern } from './sampleChopUtils.js';
+import { VelocityCurve, VelocityCurveType } from './VelocityCurve.js';
+import { SympatheticResonance } from './SympatheticResonance.js';
+import { IntelligentRoundRobin } from './IntelligentRoundRobin.js';
 
 export class MultiSampleInstrument extends BaseInstrument {
     constructor(instrumentData, audioContext, sampleBuffers) {
@@ -31,8 +34,9 @@ export class MultiSampleInstrument extends BaseInstrument {
         // Sample mapping
         this.sampleMap = null; // midiNote -> { buffer, baseNote, pitchShift }
 
-        // ✅ ROUND ROBIN: Track round-robin counters for each note
-        // midiNote -> current round-robin index
+        // ✅ ROUND ROBIN: Intelligent round-robin system
+        this.intelligentRoundRobin = new IntelligentRoundRobin();
+        // Legacy counter for backward compatibility
         this.roundRobinCounters = new Map();
 
         // Playback settings
@@ -44,9 +48,22 @@ export class MultiSampleInstrument extends BaseInstrument {
 
         // ✅ TIME STRETCH: Time stretcher for pitch-shifted buffers
         this.timeStretcher = null;
-        this.timeStretchEnabled = instrumentData.timeStretchEnabled !== undefined 
-            ? instrumentData.timeStretchEnabled 
+        this.timeStretchEnabled = instrumentData.timeStretchEnabled !== undefined
+            ? instrumentData.timeStretchEnabled
             : false; // Default: disabled (use playbackRate)
+
+        // ✅ VELOCITY CURVE: Velocity response curve
+        this.velocityCurveType = instrumentData.velocityCurveType || VelocityCurveType.LINEAR;
+        this.velocityCurveOptions = instrumentData.velocityCurveOptions || {};
+
+        // ✅ SYMPATHETIC RESONANCE: Piano string resonance simulation
+        this.sympatheticResonance = null;
+        this.sympatheticResonanceEnabled = instrumentData.sympatheticResonanceEnabled !== undefined
+            ? instrumentData.sympatheticResonanceEnabled
+            : true; // Default: enabled for piano
+        this.sympatheticResonanceGain = instrumentData.sympatheticResonanceGain !== undefined
+            ? instrumentData.sympatheticResonanceGain
+            : 0.08; // Default: subtle
 
         // Master output
         this.masterGain = null;
@@ -110,6 +127,13 @@ export class MultiSampleInstrument extends BaseInstrument {
 
             // Build sample map
             this.sampleMap = this._buildSampleMap();
+
+            // ✅ SYMPATHETIC RESONANCE: Initialize resonance system
+            if (this.sympatheticResonanceEnabled) {
+                this.sympatheticResonance = new SympatheticResonance(this.audioContext, this);
+                this.sympatheticResonance.updateSettings({ gain: this.sympatheticResonanceGain });
+                console.log(`  Sympathetic resonance initialized for ${this.name} (gain: ${this.sympatheticResonanceGain})`);
+            }
 
             this._isInitialized = true;
 
@@ -248,8 +272,8 @@ export class MultiSampleInstrument extends BaseInstrument {
         });
 
         // Step 2: If no velocity-matched samples, use all samples (fallback)
-        let candidates = velocityMatchedSamples.length > 0 
-            ? velocityMatchedSamples 
+        let candidates = velocityMatchedSamples.length > 0
+            ? velocityMatchedSamples
             : sortedSamples;
 
         // Step 3: Filter by MIDI note (find samples for this exact note or nearest)
@@ -326,6 +350,9 @@ export class MultiSampleInstrument extends BaseInstrument {
 
         const time = startTime !== null ? startTime : this.audioContext.currentTime;
 
+        // ✅ VELOCITY CURVE: Apply velocity curve
+        const mappedVelocity = VelocityCurve.apply(velocity, this.velocityCurveType, this.velocityCurveOptions);
+
         const useChop = this._shouldUseSampleChop();
         if (import.meta.env.DEV) {
             console.log(`[SampleChop][Multi] noteOn ${this.name}`, {
@@ -338,7 +365,7 @@ export class MultiSampleInstrument extends BaseInstrument {
         }
 
         if (useChop) {
-            this._trackNoteOn(midiNote, velocity, time);
+            this._trackNoteOn(midiNote, mappedVelocity, time);
             if (this.activeNotes.size === 1) {
                 this._startSampleChopPlayback(time);
             }
@@ -346,10 +373,10 @@ export class MultiSampleInstrument extends BaseInstrument {
         }
 
         // ✅ VELOCITY LAYERS: Get sample mapping for this note and velocity
-        const mapping = this._getSampleMapping(midiNote, velocity);
+        const mapping = this._getSampleMapping(midiNote, mappedVelocity);
 
         if (!mapping) {
-            console.warn(`${this.name}: No sample for MIDI note ${midiNote} at velocity ${velocity}`);
+            console.warn(`${this.name}: No sample for MIDI note ${midiNote} at velocity ${mappedVelocity}`);
             return;
         }
 
@@ -370,10 +397,15 @@ export class MultiSampleInstrument extends BaseInstrument {
             const frequency = this.midiToFrequency(midiNote);
 
             // ✅ PHASE 2: Trigger voice with sample data and extended params
-            voice.trigger(midiNote, velocity, frequency, time, mapping, this.data, extendedParams);
+            voice.trigger(midiNote, mappedVelocity, frequency, time, mapping, this.data, extendedParams);
+
+            // ✅ SYMPATHETIC RESONANCE: Trigger harmonic resonances
+            if (this.sympatheticResonance && this.sympatheticResonanceEnabled) {
+                this.sympatheticResonance.trigger(midiNote, mappedVelocity, time);
+            }
 
             // Track note
-            this._trackNoteOn(midiNote, velocity, time);
+            this._trackNoteOn(midiNote, mappedVelocity, time);
 
         } catch (error) {
             console.error(`❌ MultiSample noteOn failed:`, error);
@@ -424,7 +456,7 @@ export class MultiSampleInstrument extends BaseInstrument {
                 // Check if there are other samples with same note and velocity range
                 const sameNoteSamples = [];
                 for (const [mapVelocity, mapping] of mapEntry.entries()) {
-                    if (mapping.roundRobinIndex !== undefined && 
+                    if (mapping.roundRobinIndex !== undefined &&
                         mapping.baseNote === selectedMapping.baseNote) {
                         sameNoteSamples.push({ velocity: mapVelocity, mapping });
                     }
@@ -463,8 +495,8 @@ export class MultiSampleInstrument extends BaseInstrument {
             // ✅ ROUND ROBIN: Still check for round-robin in non-layered maps
             if (mapEntry.roundRobinIndex !== undefined) {
                 // Check if there are other samples with same note in multiSamples
-                const sameNoteSamples = this.multiSamples.filter(s => 
-                    s.midiNote === mapEntry.baseNote && 
+                const sameNoteSamples = this.multiSamples.filter(s =>
+                    s.midiNote === mapEntry.baseNote &&
                     s.roundRobinIndex !== undefined
                 );
 
@@ -542,6 +574,11 @@ export class MultiSampleInstrument extends BaseInstrument {
             if (midiNote !== null) {
                 // ✅ RELEASE VELOCITY: Release specific note via voice pool with release velocity
                 this.voicePool.release(midiNote, time, releaseVelocity);
+
+                // ✅ SYMPATHETIC RESONANCE: Release harmonic resonances
+                if (this.sympatheticResonance && this.sympatheticResonanceEnabled) {
+                    this.sympatheticResonance.release(midiNote, time);
+                }
                 this._trackNoteOff(midiNote);
                 if (this.sampleChop?.loopEnabled && this.activeNotes.size === 0) {
                     this._stopSampleChopPlayback();
@@ -608,7 +645,7 @@ export class MultiSampleInstrument extends BaseInstrument {
             this.data.sampleStart = params.sampleStart;
             console.log(`🎚️ Sample start updated: ${params.sampleStart}`);
         }
-        
+
         if (params.sampleStartModulation !== undefined) {
             this.data.sampleStartModulation = params.sampleStartModulation;
             console.log(`🎚️ Sample start modulation updated:`, params.sampleStartModulation);

@@ -22,12 +22,12 @@ const note = (time, pitch = 'C4', velocity = 100, duration = '16n', patternLengt
     // Default to 1 step if pattern not recognized
     return 1;
   };
-  
+
   const durationSteps = durationToSteps(duration);
-  const audioLengthInSteps = isDrum 
+  const audioLengthInSteps = isDrum
     ? Math.max(1, patternLength - time) // Drums extend to pattern end
     : durationSteps; // VASynth uses actual duration
-  
+
   return {
     id: `note_${time}_${pitch}_${Math.random().toString(36).substring(7)}`,
     time,
@@ -191,7 +191,7 @@ const boomBapPattern = {
     { t: 224, p: 'F2', d: '4n' }, { t: 224, p: 'A2', d: '4n' }, { t: 224, p: 'C3', d: '4n' },
     { t: 240, p: 'G2', d: '4n' }, { t: 240, p: 'B2', d: '4n' }, { t: 240, p: 'D3', d: '4n' }
   ].map(n => note(n.t, n.p, 30, n.d, BOOM_BAP_PATTERN_LENGTH, false)), // Very quiet, just atmosphere
-  
+
   // ✅ BASS: Rhythmic bassline with varied durations
   bass: [
     // Bar 1-4: Root notes with rhythm
@@ -569,10 +569,26 @@ export const initialInstruments = [
     color: '#FFD93D',
     mixerTrackId: 'track-9',
     multiSamples: [
+      // Low register
       { url: '/audio/samples/instruments/piano/C1.ogg', note: 'C1', midiNote: 24 },
       { url: '/audio/samples/instruments/piano/C2.ogg', note: 'C2', midiNote: 36 },
       { url: '/audio/samples/instruments/piano/C3.ogg', note: 'C3', midiNote: 48 },
+
+      // Mid register - FULL CHROMATIC SCALE (C4 octave)
       { url: '/audio/samples/instruments/piano/C4.ogg', note: 'C4', midiNote: 60 },
+      { url: '/audio/samples/instruments/piano/Cs4.ogg', note: 'C#4', midiNote: 61 },
+      { url: '/audio/samples/instruments/piano/D4.ogg', note: 'D4', midiNote: 62 },
+      { url: '/audio/samples/instruments/piano/Ds4.ogg', note: 'D#4', midiNote: 63 },
+      { url: '/audio/samples/instruments/piano/E4.ogg', note: 'E4', midiNote: 64 },
+      { url: '/audio/samples/instruments/piano/F4.ogg', note: 'F4', midiNote: 65 },
+      { url: '/audio/samples/instruments/piano/Fs4.ogg', note: 'F#4', midiNote: 66 },
+      { url: '/audio/samples/instruments/piano/G4.ogg', note: 'G4', midiNote: 67 },
+      { url: '/audio/samples/instruments/piano/Gs4.ogg', note: 'G#4', midiNote: 68 },
+      { url: '/audio/samples/instruments/piano/A4.ogg', note: 'A4', midiNote: 69 },
+      { url: '/audio/samples/instruments/piano/As4.ogg', note: 'A#4', midiNote: 70 },
+      { url: '/audio/samples/instruments/piano/B4.ogg', note: 'B4', midiNote: 71 },
+
+      // High register
       { url: '/audio/samples/instruments/piano/C5.ogg', note: 'C5', midiNote: 72 },
       { url: '/audio/samples/instruments/piano/C6.ogg', note: 'C6', midiNote: 84 },
       { url: '/audio/samples/instruments/piano/C7.ogg', note: 'C7', midiNote: 96 },
