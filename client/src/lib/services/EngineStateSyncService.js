@@ -83,6 +83,9 @@ export class EngineStateSyncService {
      * Detect structural changes in mixer state (vs parameter changes)
      * Structural changes require full sync, parameter changes are handled by UI
      * 
+     * ✅ OPTIMIZED: Effect changes are NOT structural - they only affect the internal
+     * chain of a single track and don't require full mixer re-routing.
+     * 
      * @param {Object} state - Current mixer state
      * @param {Object} prevState - Previous mixer state
      * @returns {Object} { hasStructuralChanges, changes: [] }
@@ -123,29 +126,9 @@ export class EngineStateSyncService {
             }
         }
 
-        // Check for effect structure changes (add/remove, not parameter changes)
-        if (state.mixerTracks && prevState.mixerTracks) {
-            const effectsChanged = state.mixerTracks.some((track, idx) => {
-                const prevTrack = prevState.mixerTracks[idx];
-                if (!prevTrack || track.id !== prevTrack.id) return false;
-
-                const currentEffects = track.insertEffects || [];
-                const prevEffects = prevTrack.insertEffects || [];
-
-                // Check count
-                if (currentEffects.length !== prevEffects.length) return true;
-
-                // Check IDs and types (not settings)
-                return currentEffects.some((effect, i) => {
-                    const prevEffect = prevEffects[i];
-                    return !prevEffect || effect.id !== prevEffect.id || effect.type !== prevEffect.type;
-                });
-            });
-
-            if (effectsChanged) {
-                changes.push('effects');
-            }
-        }
+        // ✅ REMOVED: Effect changes are NOT structural
+        // Effects are managed internally by MixerInsert and don't require full mixer re-routing
+        // Effect add/remove/reorder is handled by EffectService and MixerInsert._rebuildChain()
 
         return {
             hasStructuralChanges: changes.length > 0,
