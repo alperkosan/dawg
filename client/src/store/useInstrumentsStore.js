@@ -11,6 +11,7 @@ import { AudioEngineGlobal } from '@/lib/core/AudioEngineGlobal';
 import { createDefaultSampleChopPattern } from '@/lib/audio/instruments/sample/sampleChopUtils.js';
 import { storeManager } from './StoreManager';
 import { useMixerStore } from './useMixerStore';
+import { useArrangementStore } from './useArrangementStore';
 
 export const useInstrumentsStore = create((set, get) => ({
   instruments: [], // ✅ Empty project - start with no instruments
@@ -286,6 +287,38 @@ export const useInstrumentsStore = create((set, get) => ({
     storeManager.updatePatternNotes(instrumentId, newNotes);
 
     // NOT: Ses motorunun yeniden zamanlanması artık ArrangementStore'dan tetikleniyor.
+  },
+
+  removeInstrument: (instrumentId) => {
+    const { instruments } = get();
+    const instrument = instruments.find(i => i.id === instrumentId);
+
+    if (!instrument) return;
+
+    const audioEngine = AudioEngineGlobal.get();
+    if (audioEngine) {
+      audioEngine.removeInstrument(instrumentId);
+    }
+
+    const arrangementStore = useArrangementStore.getState();
+    Object.values(arrangementStore.patterns).forEach(pattern => {
+      if (pattern.data[instrumentId]) {
+        delete pattern.data[instrumentId];
+      }
+    });
+
+    if (instrument.mixerTrackId) {
+      const mixerStore = useMixerStore.getState();
+      mixerStore.removeTrack?.(instrument.mixerTrackId);
+    }
+
+    set({
+      instruments: instruments.filter(i => i.id !== instrumentId),
+      channelOrder: get().channelOrder.filter(id => id !== instrumentId),
+      selectedChannels: get().selectedChannels.filter(id => id !== instrumentId)
+    });
+
+    console.log(`🗑️ Removed instrument: ${instrument.name}`);
   },
 
   // ========================================================

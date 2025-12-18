@@ -16,6 +16,7 @@ import { MultiSampleInstrument } from './sample/MultiSampleInstrument.js';
 import { SingleSampleInstrument } from './sample/SingleSampleInstrument.js';
 import { WasmSingleSampleInstrument } from './sample/WasmSingleSampleInstrument.js'; // ✅ WASM
 import { VASynthInstrument } from './synth/VASynthInstrument.js';
+import { ZenithSynthInstrument } from './synth/ZenithSynthInstrument.js';
 import { INSTRUMENT_TYPES } from '../../../config/constants.js';
 
 export class InstrumentFactory {
@@ -47,6 +48,12 @@ export class InstrumentFactory {
 
                 case INSTRUMENT_TYPES.VASYNTH:
                     return await this._createVASynthInstrument(
+                        instrumentData,
+                        audioContext
+                    );
+
+                case INSTRUMENT_TYPES.ZENITH:
+                    return await this._createZenithSynthInstrument(
                         instrumentData,
                         audioContext
                     );
@@ -161,6 +168,20 @@ export class InstrumentFactory {
     }
 
     /**
+     * Create Zenith Synth instrument
+     * @private
+     */
+    static async _createZenithSynthInstrument(instrumentData, audioContext) {
+        console.log(`  Zenith Synth preset: ${instrumentData.presetName}`);
+
+        const { ZenithSynthInstrument } = await import('./synth/ZenithSynthInstrument.js');
+        const instrument = new ZenithSynthInstrument(instrumentData, audioContext);
+        await instrument.initialize();
+
+        return instrument;
+    }
+
+    /**
      * Preload samples for an instrument
      *
      * @param {Object} instrumentData - Instrument configuration
@@ -197,6 +218,17 @@ export class InstrumentFactory {
                 };
 
             case INSTRUMENT_TYPES.VASYNTH:
+                return {
+                    supportsPolyphony: true,
+                    supportsPitchBend: false,
+                    supportsVelocity: true,
+                    supportsAftertouch: false,
+                    supportsPresetChange: true,
+                    supportsParameterAutomation: true,
+                    requiresSamples: false
+                };
+
+            case INSTRUMENT_TYPES.ZENITH:
                 return {
                     supportsPolyphony: true,
                     supportsPitchBend: false,
@@ -264,6 +296,12 @@ export class InstrumentFactory {
         if (instrumentData.type === INSTRUMENT_TYPES.VASYNTH) {
             if (!instrumentData.presetName) {
                 errors.push('VASynth instrument requires presetName');
+            }
+        }
+
+        if (instrumentData.type === INSTRUMENT_TYPES.ZENITH) {
+            if (!instrumentData.presetName) {
+                errors.push('Zenith Synth instrument requires presetName');
             }
         }
 

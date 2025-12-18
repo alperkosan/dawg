@@ -11,6 +11,7 @@ export const INSTRUMENT_CATEGORIES = {
   SAMPLER: 'sampler',
   MULTI_SAMPLER: 'multiSampler',
   VA_SYNTH: 'vaSynth',
+  ZENITH_SYNTH: 'zenithSynth',
   AI_INSTRUMENT: 'aiInstrument'
 };
 
@@ -32,6 +33,12 @@ export const CATEGORY_INFO = {
     icon: '🎛️',
     description: 'Virtual analog synthesizer with presets',
     engine: 'VASynthInstrument_v2'
+  },
+  [INSTRUMENT_CATEGORIES.ZENITH_SYNTH]: {
+    name: 'Zenith Synth',
+    icon: '⚡',
+    description: 'Premium synthesizer with 4 oscillators, advanced filter & modulation',
+    engine: 'ZenithSynthInstrument'
   },
   [INSTRUMENT_CATEGORIES.AI_INSTRUMENT]: {
     name: 'AI Instrument',
@@ -68,26 +75,10 @@ export const MULTI_SAMPLER_PRESETS = {
         name: 'Piano',
         color: '#FFD93D',
         multiSamples: [
-          // Low register
           { url: '/audio/samples/instruments/piano/C1.ogg', note: 'C1', midiNote: 24 },
           { url: '/audio/samples/instruments/piano/C2.ogg', note: 'C2', midiNote: 36 },
           { url: '/audio/samples/instruments/piano/C3.ogg', note: 'C3', midiNote: 48 },
-
-          // Mid register - FULL CHROMATIC SCALE (C4 octave)
           { url: '/audio/samples/instruments/piano/C4.ogg', note: 'C4', midiNote: 60 },
-          { url: '/audio/samples/instruments/piano/Cs4.ogg', note: 'C#4', midiNote: 61 },
-          { url: '/audio/samples/instruments/piano/D4.ogg', note: 'D4', midiNote: 62 },
-          { url: '/audio/samples/instruments/piano/Ds4.ogg', note: 'D#4', midiNote: 63 },
-          { url: '/audio/samples/instruments/piano/E4.ogg', note: 'E4', midiNote: 64 },
-          { url: '/audio/samples/instruments/piano/F4.ogg', note: 'F4', midiNote: 65 },
-          { url: '/audio/samples/instruments/piano/Fs4.ogg', note: 'F#4', midiNote: 66 },
-          { url: '/audio/samples/instruments/piano/G4.ogg', note: 'G4', midiNote: 67 },
-          { url: '/audio/samples/instruments/piano/Gs4.ogg', note: 'G#4', midiNote: 68 },
-          { url: '/audio/samples/instruments/piano/A4.ogg', note: 'A4', midiNote: 69 },
-          { url: '/audio/samples/instruments/piano/As4.ogg', note: 'A#4', midiNote: 70 },
-          { url: '/audio/samples/instruments/piano/B4.ogg', note: 'B4', midiNote: 71 },
-
-          // High register
           { url: '/audio/samples/instruments/piano/C5.ogg', note: 'C5', midiNote: 72 },
           { url: '/audio/samples/instruments/piano/C6.ogg', note: 'C6', midiNote: 84 },
           { url: '/audio/samples/instruments/piano/C7.ogg', note: 'C7', midiNote: 96 },
@@ -145,6 +136,45 @@ export const VA_SYNTH_PRESETS = {
   }
 };
 
+// =========================================================================
+// ⚡ ZENITH SYNTH PRESETS
+// =========================================================================
+export const ZENITH_SYNTH_PRESETS = {
+  bass: {
+    name: 'Bass',
+    presets: [
+      { id: 'deepsubbass', name: 'Deep Sub Bass', presetName: 'Deep Sub Bass', color: '#1a1a2e' },
+      { id: 'reesebass', name: 'Reese Bass', presetName: 'Reese Bass', color: '#16213e' }
+    ]
+  },
+  lead: {
+    name: 'Lead',
+    presets: [
+      { id: 'supersawlead', name: 'Supersaw Lead', presetName: 'Supersaw Lead', color: '#e94560' },
+      { id: 'plucklead', name: 'Pluck Lead', presetName: 'Pluck Lead', color: '#f38181' }
+    ]
+  },
+  pad: {
+    name: 'Pad',
+    presets: [
+      { id: 'warmpad', name: 'Warm Pad', presetName: 'Warm Pad', color: '#a8dadc' },
+      { id: 'dreampad', name: 'Dream Pad', presetName: 'Dream Pad', color: '#457b9d' }
+    ]
+  },
+  fx: {
+    name: 'FX',
+    presets: [
+      { id: 'riser', name: 'Riser', presetName: 'Riser', color: '#f1faee' }
+    ]
+  },
+  keys: {
+    name: 'Keys',
+    presets: [
+      { id: 'epiano', name: 'E.Piano', presetName: 'E.Piano', color: '#ffd166' }
+    ]
+  }
+};
+
 /**
  * Helper to create instrument from preset
  */
@@ -186,6 +216,13 @@ export function createInstrumentFromPreset(category, preset, options = {}) {
         presetName: preset.presetName
       };
 
+    case INSTRUMENT_CATEGORIES.ZENITH_SYNTH:
+      return {
+        ...baseInstrument,
+        type: INSTRUMENT_TYPES.ZENITH,
+        presetName: preset.presetName
+      };
+
     case INSTRUMENT_CATEGORIES.AI_INSTRUMENT:
       // AI instruments are created via AI Instrument Panel, not from preset
       // This case should not be called, but included for completeness
@@ -207,6 +244,8 @@ export function getPresetsForCategory(category) {
       return MULTI_SAMPLER_PRESETS;
     case INSTRUMENT_CATEGORIES.VA_SYNTH:
       return VA_SYNTH_PRESETS;
+    case INSTRUMENT_CATEGORIES.ZENITH_SYNTH:
+      return ZENITH_SYNTH_PRESETS;
     case INSTRUMENT_CATEGORIES.AI_INSTRUMENT:
       // AI instruments don't have presets - they're generated on-demand
       return {};

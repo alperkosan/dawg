@@ -13,6 +13,7 @@ import { calculatePatternLoopLength } from '@/lib/utils/patternUtils.js';
 
 // ✅ Direct property selectors - no object creation
 const selectUpdateInstrument = (state) => state.updateInstrument;
+const selectRemoveInstrument = (state) => state.removeInstrument;
 const selectSetTrackName = (state) => state.setTrackName;
 const selectHandleMixerParamChange = (state) => state.handleMixerParamChange;
 const selectSetActiveChannelId = (state) => state.setActiveChannelId;
@@ -29,6 +30,7 @@ const InstrumentRow = ({
 }) => {
   // ✅ Direct selectors - no object creation in selectors
   const updateInstrument = useInstrumentsStore(selectUpdateInstrument);
+  const removeInstrument = useInstrumentsStore(selectRemoveInstrument);
   const setTrackName = useMixerStore(selectSetTrackName);
   const handleMixerParamChange = useMixerStore(selectHandleMixerParamChange);
   const setActiveChannelId = useMixerStore(selectSetActiveChannelId);
@@ -38,9 +40,9 @@ const InstrumentRow = ({
   const mixerTrack = useMixerStore(
     useMemo(() =>
       (state) => state.mixerTracks.find(t => t.id === instrument.mixerTrackId)
-    , [instrument.mixerTrackId])
+      , [instrument.mixerTrackId])
   );
-  
+
   const [contextMenu, setContextMenu] = useState(null);
 
   if (!instrument || !mixerTrack) return null;
@@ -97,11 +99,11 @@ const InstrumentRow = ({
     if (!activePattern) return;
 
     const patternLengthInSteps = calculatePatternLoopLength(activePattern) || 64;
-    
+
     // Get existing notes to determine pitch and velocity
     const currentNotes = activePattern.data[instrument.id] || [];
     const defaultPitch = currentNotes.length > 0 ? currentNotes[0].pitch : 'C4';
-    
+
     // ✅ FIX: Normalize velocity to 0-127 MIDI range
     let defaultVelocity = 100; // Default MIDI velocity
     if (currentNotes.length > 0 && currentNotes[0].velocity !== undefined) {
@@ -123,7 +125,7 @@ const InstrumentRow = ({
         commandManager.execute(command);
       });
     }
-    
+
     // Add notes at specified intervals
     const notesToAdd = [];
     for (let step = 0; step < patternLengthInSteps; step += stepInterval) {
@@ -149,6 +151,22 @@ const InstrumentRow = ({
     });
   }, [instrument.id]);
 
+  const handleDelete = useCallback(() => {
+    const confirmDelete = window.confirm(
+      `🗑️ Delete Instrument?\n\n` +
+      `Instrument: "${instrument.name}"\n` +
+      `Mixer Track: ${mixerTrack?.name || 'Unknown'}\n\n` +
+      `⚠️ This will permanently remove:\n` +
+      `• The instrument from all patterns\n` +
+      `• All notes and automation\n` +
+      `• Associated mixer track\n\n` +
+      `This action cannot be undone.`
+    );
+    if (confirmDelete) {
+      removeInstrument(instrument.id);
+    }
+  }, [instrument.id, instrument.name, mixerTrack?.name, removeInstrument]);
+
   const getContextMenuOptions = useCallback(() => {
     // Determine current cutItself state
     const cutItselfActive = instrument.cutItself !== undefined ? instrument.cutItself :
@@ -173,6 +191,8 @@ const InstrumentRow = ({
           { label: 'Fill each 16 steps', action: () => handleFillPattern(16) },
         ]
       },
+      { type: 'separator' },
+      { label: 'Delete Instrument', action: handleDelete, danger: true },
     ];
   }, [handleRename, openMixerAndFocus, handleToggleCutItself, handleFillPattern, instrument.cutItself, instrument.type]);
 
@@ -249,8 +269,8 @@ const InstrumentRow = ({
         <button
           className={muteButtonClasses}
           onClick={(e) => {
-              e.stopPropagation();
-              useInstrumentsStore.getState().handleToggleInstrumentMute(instrument.id);
+            e.stopPropagation();
+            useInstrumentsStore.getState().handleToggleInstrumentMute(instrument.id);
           }}
           title={isMuted ? "Unmute" : "Mute"}
         >
@@ -271,7 +291,7 @@ const InstrumentRow = ({
           <SlidersHorizontal size={16} />
         </button>
       </div>
-      
+
       {contextMenu && (
         <ChannelContextMenu
           x={contextMenu.x}

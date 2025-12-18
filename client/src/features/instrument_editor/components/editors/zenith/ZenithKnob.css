@@ -1,0 +1,55 @@
+/**
+ * ZenithKnob Styles
+ */
+
+.zenith-knob {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    user-select: none;
+}
+
+.zenith-knob__label {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: rgba(255, 255, 255, 0.7);
+    text-shadow: 0 0 8px rgba(0, 217, 255, 0.3);
+}
+
+.zenith-knob__canvas {
+    cursor: ns-resize;
+    transition: transform 0.2s ease;
+}
+
+.zenith-knob__canvas:hover {
+    transform: scale(1.05);
+}
+
+.zenith-knob__canvas:active {
+    transform: scale(0.98);
+}
+
+.zenith-knob__canvas--disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.zenith-knob__canvas--disabled:hover {
+    transform: none;
+}
+
+.zenith-knob__value {
+    font-size: 11px;
+    font-family: 'Monaco', 'Courier New', monospace;
+    color: #00d9ff;
+    text-shadow: 0 0 8px rgba(0, 217, 255, 0.5);
+    min-width: 50px;
+    text-align: center;
+    padding: 2px 6px;
+    background: rgba(0, 217, 255, 0.1);
+    border-radius: 4px;
+    border: 1px solid rgba(0, 217, 255, 0.2);
+}

@@ -12,6 +12,7 @@ import { useMixerStore } from '../../store/useMixerStore';
 import { useArrangementStore } from '../../store/useArrangementStore';
 import VASynthEditor from './components/editors/VASynthEditor';
 import VASynthEditorV2 from './components/editors/VASynthEditorV2';
+import ZenithSynthEditor from './components/editors/ZenithSynthEditor';
 import MultiSampleEditor from './components/editors/MultiSampleEditor';
 import DrumSamplerEditor from './components/editors/DrumSamplerEditor';
 import { ForgeSynthUI } from './ForgeSynthUI';
@@ -151,53 +152,53 @@ const InstrumentEditorPanel = () => {
       variant: 'warning',
       onConfirm: () => {
         setConfirmationModal({ ...confirmationModal, isOpen: false });
-        
+
         // Define randomization rules for different parameter types
         const randomizeParameter = (key, value) => {
-      // Skip certain parameters
-      if (['id', 'name', 'type', 'mixerTrackId', 'presetName'].includes(key)) {
-        return value;
-      }
+          // Skip certain parameters
+          if (['id', 'name', 'type', 'mixerTrackId', 'presetName'].includes(key)) {
+            return value;
+          }
 
-      // Number randomization
-      if (typeof value === 'number') {
-        // Detect parameter range from current value or use defaults
-        if (key.includes('gain') || key.includes('volume')) {
-          return Math.random() * 1.0; // 0 to 1
-        }
-        if (key.includes('frequency') || key.includes('cutoff')) {
-          return Math.random() * 10000 + 20; // 20Hz to 10kHz
-        }
-        if (key.includes('detune') || key.includes('pitch')) {
-          return Math.random() * 24 - 12; // -12 to +12
-        }
-        if (key.includes('pan')) {
-          return Math.random() * 2 - 1; // -1 to 1
-        }
-        if (key.includes('resonance') || key.includes('q')) {
-          return Math.random() * 30 + 0.1; // 0.1 to 30
-        }
-        // Default: randomize in a reasonable range
-        if (value >= 0 && value <= 1) {
-          return Math.random(); // 0 to 1
-        }
-        return Math.random() * 100; // 0 to 100
-      }
+          // Number randomization
+          if (typeof value === 'number') {
+            // Detect parameter range from current value or use defaults
+            if (key.includes('gain') || key.includes('volume')) {
+              return Math.random() * 1.0; // 0 to 1
+            }
+            if (key.includes('frequency') || key.includes('cutoff')) {
+              return Math.random() * 10000 + 20; // 20Hz to 10kHz
+            }
+            if (key.includes('detune') || key.includes('pitch')) {
+              return Math.random() * 24 - 12; // -12 to +12
+            }
+            if (key.includes('pan')) {
+              return Math.random() * 2 - 1; // -1 to 1
+            }
+            if (key.includes('resonance') || key.includes('q')) {
+              return Math.random() * 30 + 0.1; // 0.1 to 30
+            }
+            // Default: randomize in a reasonable range
+            if (value >= 0 && value <= 1) {
+              return Math.random(); // 0 to 1
+            }
+            return Math.random() * 100; // 0 to 100
+          }
 
-      // Boolean randomization
-      if (typeof value === 'boolean') {
-        return Math.random() > 0.5;
-      }
+          // Boolean randomization
+          if (typeof value === 'boolean') {
+            return Math.random() > 0.5;
+          }
 
-      // Keep other types unchanged (strings, objects, arrays)
-      return value;
-    };
+          // Keep other types unchanged (strings, objects, arrays)
+          return value;
+        };
 
-    // Apply randomization
-    const randomized = {};
-    Object.entries(instrumentData).forEach(([key, value]) => {
-      randomized[key] = randomizeParameter(key, value);
-    });
+        // Apply randomization
+        const randomized = {};
+        Object.entries(instrumentData).forEach(([key, value]) => {
+          randomized[key] = randomizeParameter(key, value);
+        });
 
         // Update all randomized parameters
         Object.entries(randomized).forEach(([key, value]) => {
@@ -222,36 +223,36 @@ const InstrumentEditorPanel = () => {
       variant: 'warning',
       onConfirm: () => {
         setConfirmationModal({ ...confirmationModal, isOpen: false });
-        
+
         // Get default values based on instrument type
         const getDefaults = () => {
-      const baseDefaults = {
-        gain: 0.7,
-        pan: 0,
-      };
+          const baseDefaults = {
+            gain: 0.7,
+            pan: 0,
+          };
 
-      if (instrumentData.type === 'vasynth') {
-        return {
-          ...baseDefaults,
-          oscillatorType: 'sine',
-          attack: 0.01,
-          decay: 0.1,
-          sustain: 0.7,
-          release: 0.3,
+          if (instrumentData.type === 'vasynth') {
+            return {
+              ...baseDefaults,
+              oscillatorType: 'sine',
+              attack: 0.01,
+              decay: 0.1,
+              sustain: 0.7,
+              release: 0.3,
+            };
+          }
+
+          if (instrumentData.type === 'sample') {
+            return {
+              ...baseDefaults,
+              pitch: 0,
+              reverse: false,
+              loop: false,
+            };
+          }
+
+          return baseDefaults;
         };
-      }
-
-      if (instrumentData.type === 'sample') {
-        return {
-          ...baseDefaults,
-          pitch: 0,
-          reverse: false,
-          loop: false,
-        };
-      }
-
-      return baseDefaults;
-    };
 
         const defaults = getDefaults();
 
@@ -360,10 +361,10 @@ const InstrumentEditorPanel = () => {
       });
       return;
     }
-    
+
     pasteParameters();
   };
-  
+
   const pasteParameters = () => {
 
     // Apply all copied parameters
@@ -470,6 +471,11 @@ const InstrumentEditorPanel = () => {
       return <VASynthEditorV2 instrumentData={instrumentData} />;
     }
 
+    if (type === 'zenith') {
+      // ⚡ Zenith Synth - Premium synthesizer
+      return <ZenithSynthEditor instrumentData={instrumentData} />;
+    }
+
     if (type === 'sample') {
       if (multiSamples && multiSamples.length > 0) {
         return <MultiSampleEditor instrumentData={instrumentData} />;
@@ -542,6 +548,7 @@ const InstrumentEditorPanel = () => {
           <div className="instrument-editor-panel__title">
             <div className="instrument-editor-panel__icon">
               {instrumentData.type === 'vasynth' && '🎹'}
+              {instrumentData.type === 'zenith' && '⚡'}
               {instrumentData.type === 'sample' && (instrumentData.multiSamples ? '🎵' : '🥁')}
               {instrumentData.type === 'synth' && '🎛️'}
             </div>
