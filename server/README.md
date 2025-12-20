@@ -29,7 +29,7 @@ cp .env.example .env
 # Start development server
 npm run dev
 
-# Server will run on http://localhost:3000
+# Server will run on http://localhost:3001
 ```
 
 ### Production

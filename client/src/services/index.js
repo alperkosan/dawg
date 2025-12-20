@@ -60,16 +60,16 @@ export const initializeServices = () => {
   console.groupEnd();
 };
 
+import { renderManager } from './CanvasRenderManager.js';
+import { parameterBatcher } from './ParameterBatcher.js';
+
 /**
  * Performance monitoring
  */
 export const getServicesStats = () => {
-  const { default: rm } = require('./CanvasRenderManager.js');
-  const { default: pb } = require('./ParameterBatcher.js');
-
   return {
-    renderManager: rm.renderManager?.getAllStats() || {},
-    parameterBatcher: pb.parameterBatcher?.getStats() || {},
+    renderManager: renderManager?.getAllStats() || {},
+    parameterBatcher: parameterBatcher?.getStats() || {},
   };
 };
 
@@ -79,11 +79,8 @@ export const getServicesStats = () => {
 export const disposeAllServices = () => {
   console.log('🧹 Disposing Plugin System v2.0 Services');
 
-  const { default: rm } = require('./CanvasRenderManager.js');
-  const { default: pb } = require('./ParameterBatcher.js');
-
-  rm.renderManager?.stop();
-  pb.parameterBatcher?.dispose();
+  renderManager?.stop();
+  parameterBatcher?.dispose();
 
   console.log('✅ All services disposed');
 };

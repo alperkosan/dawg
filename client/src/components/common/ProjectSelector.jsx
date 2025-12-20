@@ -10,7 +10,7 @@ import { FolderOpen, Plus, Loader2, X, Search } from 'lucide-react';
 import './ProjectSelector.css';
 
 export default function ProjectSelector({ currentProjectId, onProjectSelect, onNewProject }) {
-  const { isAuthenticated, isGuest } = useAuthStore();
+  const { isAuthenticated, isGuest, user } = useAuthStore();
   const [isOpen, setIsOpen] = useState(false);
   const [projects, setProjects] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -22,19 +22,22 @@ export default function ProjectSelector({ currentProjectId, onProjectSelect, onN
   // Note: currentProjectId is used inside but not in deps to avoid infinite loops
   // It's checked in a separate useEffect that watches currentProjectId
   const loadProjects = useCallback(async () => {
+    if (!user?.id) return; // Don't load if no user (unless guest, but guest returns early below)
+
     setIsLoading(true);
     setError(null);
     try {
       const response = await projectService.listProjects({
+        userId: user.id, // ✅ FIX: Pass userId to see own private projects
         limit: 50,
         sortBy: 'updated_at',
         sortOrder: 'desc',
       });
-      
+
       const loadedProjects = response.projects || [];
       setProjects(loadedProjects);
-      console.log(`✅ Loaded ${loadedProjects.length} projects`);
-      
+      console.log(`✅ Loaded ${loadedProjects.length} projects for user ${user.id}`);
+
       // ✅ FIX: If currentProjectId is set but not in loaded projects, it might be a new project
       // This is handled by the parent component, so we just log it
       // Note: We access currentProjectId from closure, which is safe because it's a prop
@@ -49,14 +52,14 @@ export default function ProjectSelector({ currentProjectId, onProjectSelect, onN
     } finally {
       setIsLoading(false);
     }
-  }, [currentProjectId]); // ✅ FIX: Add currentProjectId to deps - it's used in the callback
+  }, [currentProjectId, user?.id]); // ✅ FIX: Add user.id dependencies
 
   // ✅ FIX: Load projects immediately when authenticated (for initial load)
   useEffect(() => {
-    if (isAuthenticated && !isGuest) {
+    if (isAuthenticated && !isGuest && user?.id) {
       loadProjects();
     }
-  }, [isAuthenticated, isGuest, loadProjects]);
+  }, [isAuthenticated, isGuest, user?.id, loadProjects]);
 
   // ✅ FIX: When currentProjectId is set but project not in list, reload projects
   useEffect(() => {
@@ -119,12 +122,12 @@ export default function ProjectSelector({ currentProjectId, onProjectSelect, onN
   // ✅ FIX: Find current project, or if currentProjectId is set but not in projects yet, 
   // show a loading state or the project ID
   const currentProject = projects.find(p => p.id === currentProjectId);
-  
+
   // ✅ FIX: If currentProjectId is set but project not loaded yet, show it as "Loading..."
-  const displayText = currentProject 
-    ? currentProject.title 
-    : currentProjectId 
-      ? (isLoading ? 'Yükleniyor...' : 'Proje Seç...') 
+  const displayText = currentProject
+    ? currentProject.title
+    : currentProjectId
+      ? (isLoading ? 'Yükleniyor...' : 'Proje Seç...')
       : 'Proje Seç...';
 
   if (isGuest || !isAuthenticated) {
@@ -188,9 +191,8 @@ export default function ProjectSelector({ currentProjectId, onProjectSelect, onN
               filteredProjects.map((project) => (
                 <button
                   key={project.id}
-                  className={`project-selector__item ${
-                    project.id === currentProjectId ? 'project-selector__item--active' : ''
-                  }`}
+                  className={`project-selector__item ${project.id === currentProjectId ? 'project-selector__item--active' : ''
+                    }`}
                   onClick={() => handleProjectClick(project.id)}
                 >
                   <div className="project-selector__item-info">

@@ -6,17 +6,18 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuthStore } from '../store/useAuthStore';
 import { apiClient, setToastHandler } from '../services/api';
-import { Upload, Edit, Trash2, Plus, Search, Filter, Music, Folder, Tag, Settings, FileText, Eye, EyeOff, Globe, Lock } from 'lucide-react';
+import { Upload, Edit, Trash2, Plus, Search, Filter, Music, Folder, Tag, Settings, FileText, Eye, EyeOff, Globe, Lock, ArrowLeft } from 'lucide-react';
 import ConfirmationModal from '../components/common/ConfirmationModal';
 import './AdminPanel.css';
 
 export default function AdminPanel() {
   const { isAuthenticated } = useAuthStore();
-  const [activeTab, setActiveTab] = useState('assets'); // 'assets', 'packs', 'categories', 'projects'
+  const [activeTab, setActiveTab] = useState('assets'); // 'assets', 'packs', 'categories', 'projects', 'presets'
   const [assets, setAssets] = useState([]);
   const [packs, setPacks] = useState([]);
   const [categories, setCategories] = useState([]);
   const [projects, setProjects] = useState([]);
+  const [presets, setPresets] = useState([]); // ✅ Added presets state
   const [isLoading, setIsLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedAsset, setSelectedAsset] = useState(null);
@@ -24,6 +25,7 @@ export default function AdminPanel() {
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [selectedPacks, setSelectedPacks] = useState(new Set()); // For multi-select
   const [selectedProjects, setSelectedProjects] = useState(new Set()); // For multi-select
+  const [selectedPresets, setSelectedPresets] = useState(new Set()); // For multi-select
   const [selectedProject, setSelectedProject] = useState(null);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -32,7 +34,7 @@ export default function AdminPanel() {
   const [showPackModal, setShowPackModal] = useState(false);
   const [showPackEditModal, setShowPackEditModal] = useState(false);
   const [showCategoryEditModal, setShowCategoryEditModal] = useState(false);
-  
+
   // Confirmation modal state
   const [confirmationModal, setConfirmationModal] = useState({
     isOpen: false,
@@ -43,7 +45,7 @@ export default function AdminPanel() {
     variant: 'default',
     onConfirm: null,
   });
-  
+
   // ✅ Toast notifications - use API client's built-in toast system
   // Toast'lar API client tarafından otomatik gösterilecek
 
@@ -66,7 +68,7 @@ export default function AdminPanel() {
     } else {
       console.log('⚠️ Not authenticated, skipping data load');
     }
-  }, [isAuthenticated, activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, activeTab, searchQuery]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ✅ Load categories separately (always needed for modals)
   const loadCategories = async () => {
@@ -116,6 +118,12 @@ export default function AdminPanel() {
       } else if (activeTab === 'projects') {
         const response = await apiClient.getProjects({ limit: 1000 });
         setProjects(response.projects || []);
+      } else if (activeTab === 'presets') {
+        const params = { limit: 100 };
+        if (searchQuery) params.search = searchQuery;
+        const response = await apiClient.getPresets(params);
+        console.log('📦 AdminPanel presets response:', response);
+        setPresets(response.presets || []);
       }
     } catch (error) {
       console.error('Failed to load data:', error);
@@ -129,11 +137,11 @@ export default function AdminPanel() {
   const handleUpload = async (file, metadata) => {
     setIsUploading(true);
     setUploadProgress(0);
-    
+
     try {
       // ✅ Use unified upload service
       const { uploadFile: uploadFileService, UploadType } = await import('@/lib/services/uploadService.js');
-      
+
       const asset = await uploadFileService(file, {
         type: UploadType.SYSTEM_ASSET,
         metadata: {
@@ -144,10 +152,10 @@ export default function AdminPanel() {
           setUploadProgress(progress);
         },
       });
-      
+
       // Show success toast
       apiClient.showToast(`✅ Asset "${asset.name}" uploaded successfully`, 'success', 3000);
-      
+
       await loadData();
       setShowUploadModal(false);
       setUploadProgress(0);
@@ -206,7 +214,7 @@ export default function AdminPanel() {
 
   const handleDeleteSelectedPacks = async () => {
     if (selectedPacks.size === 0) return;
-    
+
     const count = selectedPacks.size;
     setConfirmationModal({
       isOpen: true,
@@ -249,6 +257,51 @@ export default function AdminPanel() {
     }
   };
 
+  const handleDeletePreset = async (presetId) => {
+    const preset = presets.find(p => p.id === presetId);
+    setConfirmationModal({
+      isOpen: true,
+      title: 'Delete Preset',
+      message: `Are you sure you want to delete "${preset?.name || 'this preset'}"? This action cannot be undone.`,
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      variant: 'danger',
+      onConfirm: async () => {
+        setConfirmationModal(prev => ({ ...prev, isOpen: false }));
+        try {
+          await apiClient.deletePresetAdmin(presetId);
+          await loadData();
+        } catch (error) {
+          console.error('Delete failed:', error);
+        }
+      },
+    });
+  };
+
+  const handleDeleteSelectedPresets = async () => {
+    if (selectedPresets.size === 0) return;
+
+    const count = selectedPresets.size;
+    setConfirmationModal({
+      isOpen: true,
+      title: 'Delete Presets',
+      message: `Are you sure you want to delete ${count} preset(s)? This action cannot be undone.`,
+      confirmText: 'Delete All',
+      cancelText: 'Cancel',
+      variant: 'danger',
+      onConfirm: async () => {
+        setConfirmationModal(prev => ({ ...prev, isOpen: false }));
+        try {
+          await Promise.all(Array.from(selectedPresets).map(id => apiClient.deletePresetAdmin(id)));
+          setSelectedPresets(new Set());
+          await loadData();
+        } catch (error) {
+          console.error('Delete failed:', error);
+        }
+      },
+    });
+  };
+
   const filteredAssets = assets.filter(asset =>
     asset.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     asset.description?.toLowerCase().includes(searchQuery.toLowerCase())
@@ -268,10 +321,19 @@ export default function AdminPanel() {
   return (
     <div className="admin-panel">
       <header className="admin-panel__header">
-        <h1 className="admin-panel__title">
-          <Settings size={24} />
-          Admin Panel
-        </h1>
+        <div className="admin-panel__header-left">
+          <button
+            className="admin-panel__back-btn"
+            onClick={() => window.location.href = '/daw'}
+            title="Back to DAW"
+          >
+            <ArrowLeft size={20} />
+          </button>
+          <h1 className="admin-panel__title">
+            <Settings size={24} />
+            Admin Panel
+          </h1>
+        </div>
         <div className="admin-panel__tabs">
           <button
             className={`admin-panel__tab ${activeTab === 'assets' ? 'active' : ''}`}
@@ -300,6 +362,13 @@ export default function AdminPanel() {
           >
             <FileText size={18} />
             Projects
+          </button>
+          <button
+            className={`admin-panel__tab ${activeTab === 'presets' ? 'active' : ''}`}
+            onClick={() => setActiveTab('presets')}
+          >
+            <Settings size={18} />
+            Presets
           </button>
         </div>
       </header>
@@ -356,7 +425,7 @@ export default function AdminPanel() {
                             <div className="admin-panel__asset-description">{asset.description}</div>
                           )}
                         </td>
-                        <td>{asset.categoryId || '-'}</td>
+                        <td>{asset.categoryId ? (asset.categoryId.length > 8 ? `${asset.categoryId.substring(0, 8)}...` : asset.categoryId) : '-'}</td>
                         <td>{asset.packName || '-'}</td>
                         <td>{asset.bpm || '-'}</td>
                         <td>{asset.keySignature || '-'}</td>
@@ -443,8 +512,8 @@ export default function AdminPanel() {
             ) : (
               <div className="admin-panel__packs-grid">
                 {packs.map((pack) => (
-                  <div 
-                    key={pack.id} 
+                  <div
+                    key={pack.id}
                     className={`admin-panel__pack-card ${!pack.isActive ? 'admin-panel__pack-card--inactive' : ''} ${selectedPacks.has(pack.id) ? 'admin-panel__pack-card--selected' : ''}`}
                   >
                     <div className="admin-panel__pack-checkbox">
@@ -472,7 +541,7 @@ export default function AdminPanel() {
                       <span>{pack.isFree ? 'Free' : `$${pack.price}`}</span>
                     </div>
                     <div className="admin-panel__pack-actions">
-                      <button 
+                      <button
                         className="admin-panel__button admin-panel__button--small"
                         onClick={() => {
                           setSelectedPack(pack);
@@ -482,7 +551,7 @@ export default function AdminPanel() {
                         <Edit size={16} />
                         Edit
                       </button>
-                      <button 
+                      <button
                         className="admin-panel__button admin-panel__button--small admin-panel__button--danger"
                         onClick={() => handleDeletePack(pack.id)}
                       >
@@ -510,7 +579,7 @@ export default function AdminPanel() {
                     <p>{category.description || 'No description'}</p>
                   </div>
                   <div className="admin-panel__category-actions">
-                    <button 
+                    <button
                       className="admin-panel__button admin-panel__button--small"
                       onClick={() => {
                         setSelectedCategory(category);
@@ -604,8 +673,8 @@ export default function AdminPanel() {
                   </thead>
                   <tbody>
                     {projects
-                      .filter(project => 
-                        !searchQuery || 
+                      .filter(project =>
+                        !searchQuery ||
                         project.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
                         project.description?.toLowerCase().includes(searchQuery.toLowerCase())
                       )
@@ -640,7 +709,7 @@ export default function AdminPanel() {
                               </div>
                             )}
                           </td>
-                          <td>{project.userId || '-'}</td>
+                          <td>{project.userId ? (project.userId.length > 8 ? `${project.userId.substring(0, 8)}...` : project.userId) : '-'}</td>
                           <td>{project.bpm || '-'}</td>
                           <td>
                             <div className="admin-panel__visibility">
@@ -665,7 +734,7 @@ export default function AdminPanel() {
                             </div>
                           </td>
                           <td>
-                            {project.createdAt 
+                            {project.createdAt
                               ? new Date(project.createdAt).toLocaleDateString()
                               : '-'
                             }
@@ -740,6 +809,146 @@ export default function AdminPanel() {
             )}
           </div>
         )}
+        {activeTab === 'presets' && (
+          <div className="admin-panel__section">
+            <div className="admin-panel__toolbar">
+              <div className="admin-panel__search">
+                <Search size={18} />
+                <input
+                  type="text"
+                  placeholder="Search presets..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+              </div>
+              <div className="admin-panel__toolbar-actions">
+                {selectedPresets.size > 0 && (
+                  <button
+                    className="admin-panel__button admin-panel__button--danger"
+                    onClick={handleDeleteSelectedPresets}
+                  >
+                    <Trash2 size={18} />
+                    Delete Selected ({selectedPresets.size})
+                  </button>
+                )}
+                {presets.length > 0 && (
+                  <button
+                    className="admin-panel__button"
+                    onClick={() => {
+                      if (selectedPresets.size === presets.length) {
+                        setSelectedPresets(new Set());
+                      } else {
+                        setSelectedPresets(new Set(presets.map(p => p.id)));
+                      }
+                    }}
+                  >
+                    {selectedPresets.size === presets.length ? 'Deselect All' : 'Select All'}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {isLoading ? (
+              <div className="admin-panel__loading">Loading presets...</div>
+            ) : (
+              <div className="admin-panel__table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th style={{ width: '40px' }}>
+                        <input
+                          type="checkbox"
+                          checked={selectedPresets.size === presets.length && presets.length > 0}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedPresets(new Set(presets.map(p => p.id)));
+                            } else {
+                              setSelectedPresets(new Set());
+                            }
+                          }}
+                        />
+                      </th>
+                      <th>Name</th>
+                      <th>Type</th>
+                      <th>Engine</th>
+                      <th>Stats</th>
+                      <th>Created</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {presets
+                      .filter(preset =>
+                        !searchQuery ||
+                        preset.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                        preset.description?.toLowerCase().includes(searchQuery.toLowerCase())
+                      )
+                      .map((preset) => (
+                        <tr key={preset.id}>
+                          <td>
+                            <input
+                              type="checkbox"
+                              checked={selectedPresets.has(preset.id)}
+                              onChange={(e) => {
+                                const newSelected = new Set(selectedPresets);
+                                if (e.target.checked) {
+                                  newSelected.add(preset.id);
+                                } else {
+                                  newSelected.delete(preset.id);
+                                }
+                                setSelectedPresets(newSelected);
+                              }}
+                            />
+                          </td>
+                          <td>
+                            <div className="admin-panel__asset-name">
+                              {preset.name}
+                              {preset.isFeatured && <span className="admin-panel__badge featured">Featured</span>}
+                            </div>
+                            {preset.description && (
+                              <div className="admin-panel__asset-description">
+                                {preset.description.substring(0, 100)}
+                                {preset.description.length > 100 ? '...' : ''}
+                              </div>
+                            )}
+                          </td>
+                          <td>
+                            <span className={`admin-panel__badge ${preset.presetType === 'instrument' ? 'instrument' : 'effect'}`}>
+                              {preset.presetType}
+                            </span>
+                          </td>
+                          <td>{preset.engineType}</td>
+                          <td>
+                            <div className="admin-panel__stats">
+                              <span title="Downloads">⬇️ {preset.downloadsCount || 0}</span>
+                              <span title="Rating">⭐ {preset.ratingAvg && typeof preset.ratingAvg === 'number' ? preset.ratingAvg.toFixed(1) : '-'}</span>
+                            </div>
+                          </td>
+                          <td>{new Date(preset.createdAt).toLocaleDateString()}</td>
+                          <td>
+                            <div className="admin-panel__actions">
+                              <button
+                                className="admin-panel__action-btn admin-panel__action-btn--danger"
+                                onClick={() => handleDeletePreset(preset.id)}
+                                title="Delete"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+                {presets.length === 0 && (
+                  <div className="admin-panel__empty">
+                    {searchQuery ? 'No presets found matching your search' : 'No presets yet.'}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Upload Modal */}
@@ -792,9 +1001,9 @@ export default function AdminPanel() {
               const newPack = await apiClient.createSystemPack(packData);
               console.log('✅ Pack created:', newPack);
               console.log('📦 Pack isActive:', newPack.isActive);
-              
+
               setShowPackModal(false);
-              
+
               // ✅ FIX: Reload packs data after creation (with a delay to ensure DB is updated)
               // Wait for database transaction to commit before reloading
               setTimeout(async () => {
@@ -942,7 +1151,7 @@ function AssetUploadModal({ categories, packs, onClose, onUpload, uploadProgress
           <button className="admin-modal__close" onClick={onClose}>×</button>
         </div>
         <form className="admin-modal__form" onSubmit={handleSubmit}>
-          <div 
+          <div
             className={`admin-modal__dropzone ${isDragOver ? 'admin-modal__dropzone--active' : ''} ${file ? 'admin-modal__dropzone--filled' : ''}`}
             onDragOver={(e) => {
               e.preventDefault();
@@ -1093,12 +1302,12 @@ function AssetUploadModal({ categories, packs, onClose, onUpload, uploadProgress
               Active
             </label>
           </div>
-          
+
           {/* Upload Progress */}
           {isUploading && (
             <div className="admin-modal__progress">
               <div className="admin-modal__progress-bar">
-                <div 
+                <div
                   className="admin-modal__progress-fill"
                   style={{ width: `${uploadProgress}%` }}
                 />
@@ -1110,16 +1319,16 @@ function AssetUploadModal({ categories, packs, onClose, onUpload, uploadProgress
           )}
 
           <div className="admin-modal__actions">
-            <button 
-              type="button" 
-              className="admin-panel__button" 
+            <button
+              type="button"
+              className="admin-panel__button"
               onClick={onClose}
               disabled={isUploading}
             >
               Cancel
             </button>
-            <button 
-              type="submit" 
+            <button
+              type="submit"
               className="admin-panel__button admin-panel__button--primary"
               disabled={isUploading}
             >

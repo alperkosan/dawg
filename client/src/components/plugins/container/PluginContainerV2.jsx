@@ -35,7 +35,7 @@
  *   </PluginContainerV2>
  */
 
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo, Suspense } from 'react';
 import ReactDOM from 'react-dom';
 import './PluginContainerV2.css';
 import {
@@ -50,7 +50,8 @@ import {
   Upload,
   Search,
   Tag,
-  Info
+  Info,
+  Sparkles
 } from 'lucide-react';
 import {
   PluginColorPalette,
@@ -78,7 +79,8 @@ const PresetMenuV2 = ({
   onDelete,
   onImport,
   onExport,
-  categoryColors
+  categoryColors,
+  onManagePresets
 }) => {
   const menuRef = useRef(null);
   const [position, setPosition] = useState({ top: 0, left: 0 });
@@ -102,32 +104,32 @@ const PresetMenuV2 = ({
         const rect = anchorEl.getBoundingClientRect();
         const viewportWidth = window.innerWidth;
         const viewportHeight = window.innerHeight;
-        
+
         // Use actual menu dimensions if available, otherwise use estimates
         const menuWidth = menuRef.current?.offsetWidth || 320; // Default minWidth
         const menuHeight = menuRef.current?.offsetHeight || Math.min(400, viewportHeight * 0.6); // Estimated height
-        
+
         // Calculate initial position
         let left = rect.left;
         let top = rect.bottom + 5;
-        
+
         // ✅ FIX: Check right boundary (prevent overflow on right side)
         if (left + menuWidth > viewportWidth) {
           // Try to align to right edge of viewport
           left = Math.max(10, viewportWidth - menuWidth - 10);
         }
-        
+
         // ✅ FIX: Check left boundary (prevent overflow on left side)
         if (left < 10) {
           left = 10;
         }
-        
+
         // ✅ FIX: Check bottom boundary (prevent overflow on bottom)
         if (top + menuHeight > viewportHeight) {
           // Try to open above the button instead
           const spaceAbove = rect.top;
           const spaceBelow = viewportHeight - rect.bottom;
-          
+
           if (spaceAbove > spaceBelow && spaceAbove > menuHeight) {
             // Open above
             top = rect.top - menuHeight - 5;
@@ -136,21 +138,21 @@ const PresetMenuV2 = ({
             top = Math.max(10, viewportHeight - menuHeight - 10);
           }
         }
-        
+
         // ✅ FIX: Check top boundary (prevent overflow on top)
         if (top < 10) {
           top = 10;
         }
-        
+
         setPosition({ top, left });
       };
-      
+
       // Initial position calculation
       updatePosition();
-      
+
       // ✅ FIX: Recalculate after menu is rendered (to get actual dimensions)
       const timeoutId = setTimeout(updatePosition, 0);
-      
+
       return () => clearTimeout(timeoutId);
     }
   }, [isOpen, anchorEl]);
@@ -357,6 +359,22 @@ const PresetMenuV2 = ({
           <Info size={14} />
           Stats
         </button>
+        <button
+          onClick={() => {
+            onClose();
+            if (onManagePresets) {
+              onManagePresets();
+            }
+          }}
+          className="preset-menu-v2__footer-btn preset-menu-v2__footer-btn--primary"
+          style={{
+            borderColor: categoryColors.primary,
+            background: `${categoryColors.primary}20`
+          }}
+        >
+          <Sparkles size={14} />
+          Manage Presets
+        </button>
       </div>
 
       {/* Stats (if enabled) */}
@@ -414,7 +432,9 @@ const PluginContainerV2 = ({
   const [activePresetName, setActivePresetName] = useState('Custom');
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
+  const [showPresetBrowser, setShowPresetBrowser] = useState(false);
   const buttonRef = useRef(null);
+
 
   // Update undo/redo state
   useEffect(() => {
@@ -472,21 +492,6 @@ const PluginContainerV2 = ({
     });
     setIsMenuOpen(false);
   }, [trackId, effect.id]);
-
-  // Save preset
-  const handleSave = useCallback(() => {
-    const name = prompt('Enter preset name:', activePresetName === 'Custom' ? '' : activePresetName);
-    if (!name || !name.trim()) return;
-
-    const tags = prompt('Enter tags (comma-separated, optional):');
-    const description = prompt('Enter description (optional):');
-
-    presetManager.savePreset(
-      name.trim(),
-      tags ? tags.split(',').map(t => t.trim()) : [],
-      description || ''
-    );
-  }, [activePresetName]);
 
   // Delete preset
   const [deleteConfirmation, setDeleteConfirmation] = useState({
@@ -648,7 +653,7 @@ const PluginContainerV2 = ({
   };
 
   return (
-    <TexturePack 
+    <TexturePack
       categoryColors={categoryColors}
       intensity="medium"
       enableGrain={true}
@@ -658,170 +663,217 @@ const PluginContainerV2 = ({
       <div style={containerStyle}>
         {/* HEADER */}
         <div style={headerStyle} className="plugin-header__controls">
-        {/* Title Section */}
-        <div className="plugin-header__title-section">
-          {/* Bypass Button */}
-          <button
-            onClick={handleBypass}
-            className="plugin-bypass-button"
-            data-active={!effect.bypass}
-            title={effect.bypass ? 'Bypassed' : 'Active'}
-            style={{
-              background: !effect.bypass ? categoryColors.primary : 'transparent',
-            }}
-          >
-            <Power size={14} />
-          </button>
+          {/* Title Section */}
+          <div className="plugin-header__title-section">
+            {/* Bypass Button */}
+            <button
+              onClick={handleBypass}
+              className="plugin-bypass-button"
+              data-active={!effect.bypass}
+              title={effect.bypass ? 'Bypassed' : 'Active'}
+              style={{
+                background: !effect.bypass ? categoryColors.primary : 'transparent',
+              }}
+            >
+              <Power size={14} />
+            </button>
 
-          {/* Title */}
-          <div>
-            <h1 style={{ ...PluginTypography.title, color: categoryColors.primary }}>
-              {pluginType}
-            </h1>
-            <h2 style={{ ...PluginTypography.label, color: categoryColors.secondary }}>
-              {categoryColors.name}
-            </h2>
+            {/* Title */}
+            <div>
+              <h1 style={{ ...PluginTypography.title, color: categoryColors.primary }}>
+                {pluginType}
+              </h1>
+              <h2 style={{ ...PluginTypography.label, color: categoryColors.secondary }}>
+                {categoryColors.name}
+              </h2>
+            </div>
+          </div>
+
+          {/* Preset Actions */}
+          <div className="preset-actions">
+            {/* Undo/Redo */}
+            <button
+              onClick={handleUndo}
+              disabled={!canUndo}
+              className="preset-action-btn"
+              title="Undo (Cmd+Z)"
+              style={{
+                opacity: canUndo ? 1 : 0.3,
+                color: categoryColors.primary,
+              }}
+            >
+              <Undo2 size={16} />
+            </button>
+            <button
+              onClick={handleRedo}
+              disabled={!canRedo}
+              className="preset-action-btn"
+              title="Redo (Cmd+Shift+Z)"
+              style={{
+                opacity: canRedo ? 1 : 0.3,
+                color: categoryColors.primary,
+              }}
+            >
+              <Redo2 size={16} />
+            </button>
+
+            {/* Preset Selector */}
+            <div className="preset-manager__selector">
+              <button
+                ref={buttonRef}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsMenuOpen(true);
+                }}
+                className={`preset-button ${isMenuOpen ? 'preset-button--open' : ''}`}
+                style={{
+                  borderColor: categoryColors.primary,
+                  background: `${categoryColors.primary}10`,
+                }}
+              >
+                <span className="preset-button__name">{activePresetName}</span>
+                <ChevronDown size={16} className="preset-button__chevron" />
+              </button>
+
+              <PresetMenuV2
+                isOpen={isMenuOpen}
+                onClose={() => setIsMenuOpen(false)}
+                anchorEl={buttonRef.current}
+                presetManager={presetManager}
+                onSelect={handlePresetSelect}
+                onDelete={handleDelete}
+                onImport={handleImport}
+                onExport={handleExport}
+                categoryColors={categoryColors}
+                onManagePresets={() => setShowPresetBrowser(true)}
+              />
+            </div>
+
+            {/* A/B Toggle */}
+            <div className="ab-toggle">
+              <button
+                onClick={handleSnapshotA}
+                onDoubleClick={handleToggleAB}
+                className={`ab-button ${presetManager.getCurrentABSlot() === 'A' ? 'ab-button--active' : ''}`}
+                title="Double-click to switch"
+                style={{
+                  background: presetManager.getCurrentABSlot() === 'A'
+                    ? categoryColors.primary
+                    : 'transparent',
+                  borderColor: categoryColors.primary,
+                }}
+              >
+                A
+              </button>
+              <button
+                onClick={handleSnapshotB}
+                onDoubleClick={handleToggleAB}
+                className={`ab-button ${presetManager.getCurrentABSlot() === 'B' ? 'ab-button--active' : ''}`}
+                title="Double-click to switch"
+                style={{
+                  background: presetManager.getCurrentABSlot() === 'B'
+                    ? categoryColors.primary
+                    : 'transparent',
+                  borderColor: categoryColors.primary,
+                }}
+              >
+                B
+              </button>
+            </div>
+
+            {/* Copy A→B */}
+            <button
+              onClick={handleCopyAtoB}
+              className="preset-action-btn"
+              title="Copy A to B"
+              style={{ color: categoryColors.primary }}
+            >
+              <GitCompareArrows size={16} />
+            </button>
           </div>
         </div>
 
-        {/* Preset Actions */}
-        <div className="preset-actions">
-          {/* Undo/Redo */}
-          <button
-            onClick={handleUndo}
-            disabled={!canUndo}
-            className="preset-action-btn"
-            title="Undo (Cmd+Z)"
+        {/* BODY */}
+        <div className="plugin-body" style={{ flex: 1, overflow: 'auto', position: 'relative' }}>
+          {children}
+
+          {/* Preset Browser Overlay */}
+          {showPresetBrowser && (
+            <div
+              className="plugin-preset-browser-overlay"
+              onClick={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+              onMouseUp={(e) => e.stopPropagation()}
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                background: 'rgba(10, 10, 20, 0.98)',
+                zIndex: 100,
+                padding: '12px',
+                overflowY: 'auto'
+              }}
+            >
+              <button
+                onClick={() => setShowPresetBrowser(false)}
+                style={{
+                  position: 'absolute',
+                  top: '8px',
+                  right: '8px',
+                  background: 'rgba(255, 255, 255, 0.1)',
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  borderRadius: '4px',
+                  padding: '8px',
+                  cursor: 'pointer',
+                  color: '#fff',
+                  zIndex: 101
+                }}
+              >
+                ✕
+              </button>
+
+              <Suspense fallback={<div>Loading...</div>}>
+                {(() => {
+                  const PresetBrowser = React.lazy(() => import('../../../features/instrument_editor/components/PresetBrowser'));
+                  return (
+                    <PresetBrowser
+                      targetData={effect.settings}
+                      presetType="effect"
+                      engineType={effect.type}
+                      onApplyPreset={(data) => {
+                        handleMixerEffectChange(trackId, effect.id, data);
+                        setShowPresetBrowser(false);
+                      }}
+                    />
+                  );
+                })()}
+              </Suspense>
+            </div>
+          )}
+        </div>
+
+        {/* PERFORMANCE STATS (Dev Mode) */}
+        {showPerformanceStats && (
+          <div
+            className="plugin-performance-stats"
             style={{
-              opacity: canUndo ? 1 : 0.3,
+              position: 'absolute',
+              bottom: 4,
+              right: 4,
+              background: 'rgba(0, 0, 0, 0.8)',
+              padding: '4px 8px',
+              borderRadius: '4px',
+              fontSize: '10px',
+              fontFamily: 'monospace',
               color: categoryColors.primary,
             }}
           >
-            <Undo2 size={16} />
-          </button>
-          <button
-            onClick={handleRedo}
-            disabled={!canRedo}
-            className="preset-action-btn"
-            title="Redo (Cmd+Shift+Z)"
-            style={{
-              opacity: canRedo ? 1 : 0.3,
-              color: categoryColors.primary,
-            }}
-          >
-            <Redo2 size={16} />
-          </button>
-
-          {/* Preset Selector */}
-          <div className="preset-manager__selector">
-            <button
-              ref={buttonRef}
-              onClick={(e) => {
-                e.stopPropagation();
-                setIsMenuOpen(true);
-              }}
-              className={`preset-button ${isMenuOpen ? 'preset-button--open' : ''}`}
-              style={{
-                borderColor: categoryColors.primary,
-                background: `${categoryColors.primary}10`,
-              }}
-            >
-              <span className="preset-button__name">{activePresetName}</span>
-              <ChevronDown size={16} className="preset-button__chevron" />
-            </button>
-
-            <PresetMenuV2
-              isOpen={isMenuOpen}
-              onClose={() => setIsMenuOpen(false)}
-              anchorEl={buttonRef.current}
-              presetManager={presetManager}
-              onSelect={handlePresetSelect}
-              onDelete={handleDelete}
-              onImport={handleImport}
-              onExport={handleExport}
-              categoryColors={categoryColors}
-            />
+            {/* TODO: Add real performance metrics */}
+            60 FPS
           </div>
-
-          {/* A/B Toggle */}
-          <div className="ab-toggle">
-            <button
-              onClick={handleSnapshotA}
-              onDoubleClick={handleToggleAB}
-              className={`ab-button ${presetManager.getCurrentABSlot() === 'A' ? 'ab-button--active' : ''}`}
-              title="Double-click to switch"
-              style={{
-                background: presetManager.getCurrentABSlot() === 'A'
-                  ? categoryColors.primary
-                  : 'transparent',
-                borderColor: categoryColors.primary,
-              }}
-            >
-              A
-            </button>
-            <button
-              onClick={handleSnapshotB}
-              onDoubleClick={handleToggleAB}
-              className={`ab-button ${presetManager.getCurrentABSlot() === 'B' ? 'ab-button--active' : ''}`}
-              title="Double-click to switch"
-              style={{
-                background: presetManager.getCurrentABSlot() === 'B'
-                  ? categoryColors.primary
-                  : 'transparent',
-                borderColor: categoryColors.primary,
-              }}
-            >
-              B
-            </button>
-          </div>
-
-          {/* Copy A→B */}
-          <button
-            onClick={handleCopyAtoB}
-            className="preset-action-btn"
-            title="Copy A to B"
-            style={{ color: categoryColors.primary }}
-          >
-            <GitCompareArrows size={16} />
-          </button>
-
-          {/* Save */}
-          <button
-            onClick={handleSave}
-            className="preset-action-btn"
-            title="Save Preset"
-            style={{ color: categoryColors.primary }}
-          >
-            <Save size={16} />
-          </button>
-        </div>
-      </div>
-
-      {/* BODY */}
-      <div className="plugin-body" style={{ flex: 1, overflow: 'auto' }}>
-        {children}
-      </div>
-
-      {/* PERFORMANCE STATS (Dev Mode) */}
-      {showPerformanceStats && (
-        <div
-          className="plugin-performance-stats"
-          style={{
-            position: 'absolute',
-            bottom: 4,
-            right: 4,
-            background: 'rgba(0, 0, 0, 0.8)',
-            padding: '4px 8px',
-            borderRadius: '4px',
-            fontSize: '10px',
-            fontFamily: 'monospace',
-            color: categoryColors.primary,
-          }}
-        >
-          {/* TODO: Add real performance metrics */}
-          60 FPS
-        </div>
-      )}
+        )}
       </div>
 
       {/* Confirmation Modal */}

@@ -29,7 +29,7 @@ import './ProjectsPage.css';
 
 export default function ProjectsPage() {
   const navigate = useNavigate();
-  const { isAuthenticated, isGuest } = useAuthStore();
+  const { user, isAuthenticated, isGuest } = useAuthStore();
   const [projects, setProjects] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -54,12 +54,12 @@ export default function ProjectsPage() {
   });
 
   useEffect(() => {
-    if (isAuthenticated && !isGuest) {
+    if (isAuthenticated && !isGuest && user?.id) {
       loadProjects();
-    } else {
+    } else if (!isAuthenticated || isGuest) {
       navigate('/auth');
     }
-  }, [isAuthenticated, isGuest, navigate]);
+  }, [isAuthenticated, isGuest, user?.id, navigate]);
 
   const loadProjects = async () => {
     setIsLoading(true);
@@ -68,6 +68,7 @@ export default function ProjectsPage() {
         limit: 100,
         sortBy: 'updated_at',
         sortOrder: 'desc',
+        userId: user.id
       });
       setProjects(response.projects || []);
     } catch (error) {

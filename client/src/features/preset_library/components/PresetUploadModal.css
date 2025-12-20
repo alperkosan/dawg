@@ -1,0 +1,169 @@
+/**
+ * Preset Upload Modal Styles
+ */
+
+.preset-upload-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(8px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000;
+}
+
+.preset-upload-modal {
+    width: 90%;
+    max-width: 500px;
+    background: linear-gradient(135deg,
+            rgba(10, 10, 20, 0.98) 0%,
+            rgba(20, 15, 35, 0.98) 100%);
+    border: 1px solid rgba(0, 255, 255, 0.2);
+    border-radius: 16px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    color: #e0e0e0;
+}
+
+.preset-upload-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 24px;
+    border-bottom: 1px solid rgba(0, 255, 255, 0.1);
+}
+
+.preset-upload-modal-header h2 {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+    color: #00ffff;
+}
+
+.preset-upload-modal-close {
+    padding: 8px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    color: #999;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.preset-upload-modal-close:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(0, 255, 255, 0.3);
+    color: #00ffff;
+}
+
+.preset-upload-modal-form {
+    padding: 24px;
+}
+
+.preset-upload-modal-field {
+    margin-bottom: 20px;
+}
+
+.preset-upload-modal-field label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    color: #999;
+}
+
+.preset-upload-modal-field input,
+.preset-upload-modal-field textarea,
+.preset-upload-modal-field select {
+    width: 100%;
+    padding: 10px 14px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    color: #e0e0e0;
+    font-size: 14px;
+    font-family: inherit;
+    outline: none;
+    transition: all 0.2s;
+}
+
+.preset-upload-modal-field input::placeholder,
+.preset-upload-modal-field textarea::placeholder {
+    color: #666;
+}
+
+.preset-upload-modal-field input:focus,
+.preset-upload-modal-field textarea:focus,
+.preset-upload-modal-field select:focus {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(0, 255, 255, 0.3);
+    box-shadow: 0 0 20px rgba(0, 255, 255, 0.1);
+}
+
+.preset-upload-modal-field textarea {
+    resize: vertical;
+    min-height: 60px;
+}
+
+.preset-upload-modal-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+
+.preset-upload-modal-actions {
+    display: flex;
+    gap: 12px;
+    margin-top: 24px;
+}
+
+.preset-upload-modal-cancel,
+.preset-upload-modal-submit {
+    flex: 1;
+    padding: 12px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.preset-upload-modal-cancel {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #999;
+}
+
+.preset-upload-modal-cancel:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.2);
+    color: #e0e0e0;
+}
+
+.preset-upload-modal-submit {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    background: linear-gradient(135deg,
+            rgba(0, 255, 255, 0.15) 0%,
+            rgba(138, 43, 226, 0.15) 100%);
+    border: 1px solid rgba(0, 255, 255, 0.3);
+    color: #00ffff;
+}
+
+.preset-upload-modal-submit:hover {
+    background: linear-gradient(135deg,
+            rgba(0, 255, 255, 0.25) 0%,
+            rgba(138, 43, 226, 0.25) 100%);
+    box-shadow: 0 0 30px rgba(0, 255, 255, 0.3);
+    transform: translateY(-1px);
+}

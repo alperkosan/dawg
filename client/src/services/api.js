@@ -13,17 +13,50 @@ const getApiBaseUrl = () => {
   if (import.meta.env.VITE_API_URL) {
     return import.meta.env.VITE_API_URL;
   }
-  
+
   // Production: Always use relative path (works with Vercel)
   if (import.meta.env.PROD || import.meta.env.MODE === 'production') {
     return '/api';
   }
-  
-  // Development: Use localhost
-  return 'http://localhost:3000/api';
+
+  // Development: Use Vite proxy
+  return '/api';
 };
 
 const API_BASE_URL = getApiBaseUrl();
+
+// ✅ Centralized API Endpoints
+export const ENDPOINTS = {
+  AUTH: {
+    LOGIN: '/auth/login',
+    REGISTER: '/auth/register',
+    LOGOUT: '/auth/logout',
+    ME: '/auth/me',
+    REFRESH: '/auth/refresh',
+  },
+  PROJECTS: {
+    LIST: '/projects',
+    CREATE: '/projects',
+    GET: (id) => `/projects/${id}`,
+    UPDATE: (id) => `/projects/${id}`,
+    DELETE: (id) => `/projects/${id}`,
+    FORK: (id) => `/projects/${id}/fork`,
+  },
+  PRESETS: {
+    LIST: '/presets',
+    CREATE: '/presets',
+    GET: (id) => `/presets/${id}`,
+    UPDATE: (id) => `/presets/${id}`,
+    DELETE: (id) => `/presets/${id}`,
+    DELETE_ADMIN: (id) => `/presets/admin/${id}`,
+    DOWNLOAD: (id) => `/presets/${id}/download`,
+    RATE: (id) => `/presets/${id}/rate`,
+    MY_DOWNLOADS: '/presets/downloads/me',
+  },
+  ASSETS: {
+    UPLOAD: '/assets/upload',
+  }
+};
 
 // ✅ Toast notification handler (will be set by App.jsx)
 let toastHandler = null;
@@ -69,7 +102,7 @@ class ApiClient {
     // Also don't set Content-Type for FormData (multipart/form-data)
     const hasBody = options.body !== undefined;
     const isFormData = options.body instanceof FormData;
-    
+
     const config = {
       ...options,
       headers: {
@@ -92,14 +125,14 @@ class ApiClient {
           }
           throw new Error(errorMessage);
         }
-        
+
         const data = await response.json().catch(() => ({}));
-        
+
         // Handle errors
         if (!response.ok) {
           // ✅ FIX: Better error message extraction with validation details
           let errorMessage = data.error?.message || data.message || `Request failed: ${response.statusText}`;
-          
+
           // ✅ FIX: Include validation error details if available
           if (data.error?.details && Array.isArray(data.error.details)) {
             const details = data.error.details.map(d => d.message || `${d.path}: ${d.message || 'Invalid'}`).join(', ');
@@ -113,12 +146,12 @@ class ApiClient {
               errorMessage = `${errorMessage}: ${detail.message}`;
             }
           }
-          
+
           // ✅ Show error toast (unless suppressed)
           if (!suppressToasts) {
             this._showToast(errorMessage, 'error', 6000);
           }
-          
+
           throw new Error(errorMessage);
         }
 
@@ -142,12 +175,12 @@ class ApiClient {
         if (!error.message?.includes('Failed to fetch') && !error.message?.includes('ERR_CONNECTION_REFUSED')) {
           console.error('API request failed:', error);
         }
-        
+
         // ✅ Show error toast for network errors (unless suppressed)
         if (!suppressToasts && (error.message?.includes('Failed to fetch') || error.message?.includes('ERR_CONNECTION_REFUSED'))) {
           this._showToast('Connection error. Please check if the server is running.', 'error', 5000);
         }
-        
+
         throw error;
       });
   }
@@ -161,7 +194,7 @@ class ApiClient {
   }
 
   async login(email, password) {
-    return this.request('/auth/login', {
+    return this.request(ENDPOINTS.AUTH.LOGIN, {
       method: 'POST',
       body: JSON.stringify({ email, password }),
       credentials: 'include', // For refresh token cookie
@@ -169,42 +202,42 @@ class ApiClient {
   }
 
   async refreshToken() {
-    return this.request('/auth/refresh', {
+    return this.request(ENDPOINTS.AUTH.REFRESH, {
       method: 'POST',
       credentials: 'include', // For refresh token cookie
     });
   }
 
   async logout() {
-    return this.request('/auth/logout', {
+    return this.request(ENDPOINTS.AUTH.LOGOUT, {
       method: 'POST',
       credentials: 'include',
     });
   }
 
   async getCurrentUser() {
-    return this.request('/auth/me');
+    return this.request(ENDPOINTS.AUTH.ME);
   }
 
   // Project endpoints
   async getProjects(params = {}) {
     const queryString = new URLSearchParams(params).toString();
-    return this.request(`/projects?${queryString}`);
+    return this.request(`${ENDPOINTS.PROJECTS.LIST}?${queryString}`);
   }
 
   async getProject(id) {
-    return this.request(`/projects/${id}`);
+    return this.request(ENDPOINTS.PROJECTS.GET(id));
   }
 
   async createProject(projectData) {
-    return this.request('/projects', {
+    return this.request(ENDPOINTS.PROJECTS.CREATE, {
       method: 'POST',
       body: JSON.stringify(projectData),
     });
   }
 
   async updateProject(id, projectData) {
-    return this.request(`/projects/${id}`, {
+    return this.request(ENDPOINTS.PROJECTS.UPDATE(id), {
       method: 'PUT',
       body: JSON.stringify(projectData),
     });
@@ -550,6 +583,57 @@ class ApiClient {
     return this.request('/notifications/settings', {
       method: 'PUT',
       body: JSON.stringify(settings),
+    });
+  }
+
+  // Preset endpoints
+  async getPresets(params = {}) {
+    // Filter out undefined/null values
+    const cleanParams = Object.fromEntries(
+      Object.entries(params).filter(([_, v]) => v != null)
+    );
+    const queryString = new URLSearchParams(cleanParams).toString();
+    return this.request(`${ENDPOINTS.PRESETS.LIST}${queryString ? `?${queryString}` : ''}`);
+  }
+
+  async getMyDownloads(params = {}) {
+    // Filter out undefined/null values
+    const cleanParams = Object.fromEntries(
+      Object.entries(params).filter(([_, v]) => v != null)
+    );
+    const queryString = new URLSearchParams(cleanParams).toString();
+    return this.request(`${ENDPOINTS.PRESETS.MY_DOWNLOADS}${queryString ? `?${queryString}` : ''}`);
+  }
+
+  async downloadPreset(presetId) {
+    return this.request(ENDPOINTS.PRESETS.DOWNLOAD(presetId), {
+      method: 'POST',
+    });
+  }
+
+  async ratePreset(presetId, rating) {
+    return this.request(ENDPOINTS.PRESETS.RATE(presetId), {
+      method: 'POST',
+      body: JSON.stringify({ rating }),
+    });
+  }
+
+  async uploadPreset(presetData) {
+    return this.request(ENDPOINTS.PRESETS.CREATE, {
+      method: 'POST',
+      body: JSON.stringify(presetData),
+    });
+  }
+
+  async deletePreset(presetId) {
+    return this.request(ENDPOINTS.PRESETS.DELETE(presetId), {
+      method: 'DELETE',
+    });
+  }
+
+  async deletePresetAdmin(presetId) {
+    return this.request(ENDPOINTS.PRESETS.DELETE_ADMIN(presetId), {
+      method: 'DELETE',
     });
   }
 

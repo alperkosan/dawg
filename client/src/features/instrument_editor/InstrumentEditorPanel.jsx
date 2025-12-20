@@ -779,7 +779,7 @@ const InstrumentEditorPanel = () => {
         {/* Content */}
         <div className="instrument-editor-panel__content">
           {activeTab === 'main' && getEditorComponent()}
-          {activeTab === 'presets' && <PresetBrowser instrumentData={instrumentData} />}
+          {activeTab === 'presets' && <PresetBrowser targetData={instrumentData} presetType="instrument" />}
           {activeTab === 'effects' && <InstrumentEffectsPanel instrumentData={instrumentData} />}
           {activeTab === 'automation' && activePatternId && <AutomationSettingsPanel patternId={activePatternId} instrumentId={instrumentId} />}
           {activeTab === 'modulation' && <ModulationMatrix instrumentData={instrumentData} />}

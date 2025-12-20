@@ -46,4 +46,4 @@ Script otomatik olarak:
 - Migration'ları çalıştırır
 - Server'ı başlatır
 
-Server `http://localhost:3000` adresinde çalışacak.
+Server `http://localhost:3001` adresinde çalışacak.

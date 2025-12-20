@@ -128,7 +128,7 @@ export default function AuthScreen({ onSuccess, onGuest }) {
           </button>
         </div>
 
-        <form className="auth-form" onSubmit={handleSubmit}>
+        <form className="auth-form" onSubmit={handleSubmit} autoComplete="off">
           <div className="form-group">
             <label htmlFor="email">Email</label>
             <input
@@ -139,6 +139,7 @@ export default function AuthScreen({ onSuccess, onGuest }) {
               onChange={handleChange}
               placeholder="your@email.com"
               className={errors.email ? 'error' : ''}
+              autoComplete="off"
             />
             {errors.email && <span className="error-message">{errors.email}</span>}
           </div>
@@ -155,6 +156,7 @@ export default function AuthScreen({ onSuccess, onGuest }) {
                   onChange={handleChange}
                   placeholder="username"
                   className={errors.username ? 'error' : ''}
+                  autoComplete="off"
                 />
                 {errors.username && <span className="error-message">{errors.username}</span>}
               </div>
@@ -168,6 +170,7 @@ export default function AuthScreen({ onSuccess, onGuest }) {
                   value={formData.displayName}
                   onChange={handleChange}
                   placeholder="Display Name"
+                  autoComplete="off"
                 />
               </div>
             </>
@@ -183,6 +186,7 @@ export default function AuthScreen({ onSuccess, onGuest }) {
               onChange={handleChange}
               placeholder="••••••••"
               className={errors.password ? 'error' : ''}
+              autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
             />
             {errors.password && <span className="error-message">{errors.password}</span>}
           </div>

@@ -35,6 +35,7 @@ import WelcomeScreen from './components/common/WelcomeScreen';
 import NavigationHeader from './components/layout/NavigationHeader';
 import ProjectLoadingScreen from './components/common/ProjectLoadingScreen';
 import ProjectTitleModal from './components/common/ProjectTitleModal';
+import PresetLibraryPanel from './features/preset_library/PresetLibraryPanel';
 
 // Styles
 import './components/common/WelcomeScreen.css';
@@ -88,6 +89,13 @@ function DAWApp() {
   const [isExportPanelOpen, setIsExportPanelOpen] = useState(false);
   const isAudioExportPanelOpen = usePanelsStore(state => state.isAudioExportPanelOpen);
   const setAudioExportPanelOpen = usePanelsStore(state => state.setAudioExportPanelOpen);
+  const isPresetLibraryOpen = usePanelsStore(state => state.isPresetLibraryOpen);
+  const setPresetLibraryOpen = usePanelsStore(state => state.setPresetLibraryOpen);
+
+  // Debug preset library state
+  useEffect(() => {
+    console.log('📚 App.jsx - isPresetLibraryOpen:', isPresetLibraryOpen);
+  }, [isPresetLibraryOpen]);
 
   // Keyboard Shortcuts (Export Only - Save handled by hook)
   useEffect(() => {
@@ -172,6 +180,7 @@ function DAWApp() {
               onClose={() => setShowLoginPrompt(false)}
               onLogin={() => setShowLoginPrompt(false)}
             />
+            <PresetLibraryPanel />
 
             <div
               className="app-container"

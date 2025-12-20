@@ -849,17 +849,6 @@ export const MultiBandEQUI_V2 = ({ trackId, effect, effectNode, definition }) =>
   // Use effectNode prop (passed from WorkspacePanel)
   const workletNode = effectNode || effect.node;
 
-  // Debug: Log connection status
-  useEffect(() => {
-    console.log('[MultiBandEQ] Connection status:', {
-      hasEffectNode: !!effectNode,
-      hasEffectDotNode: !!effect.node,
-      hasWorkletNode: !!workletNode,
-      hasPort: !!workletNode?.port,
-      effectId: effect.id,
-      trackId
-    });
-  }, [effectNode, effect.node, workletNode, effect.id, trackId]);
 
   // Get audio context for spectrum analyzer
   const audioContext = AudioContextService.audioEngine?.audioContext;
@@ -900,7 +889,7 @@ export const MultiBandEQUI_V2 = ({ trackId, effect, effectNode, definition }) =>
 
     if (!settingsChanged) return;
 
-    console.log('[MultiBandEQ] Preset loaded, updating bands:', effect.settings.bands);
+    // Preset loaded - bands updated
 
     if (effect.settings.bands) {
       setBands(effect.settings.bands);
@@ -937,7 +926,7 @@ export const MultiBandEQUI_V2 = ({ trackId, effect, effectNode, definition }) =>
       bands: bands.filter(b => b.active)
     });
 
-    console.log('[MultiBandEQ] Updated bands:', bands.filter(b => b.active).length);
+    // Bands updated
   }, [bands, wet, output, workletNode, setParams]);
 
   // Band management

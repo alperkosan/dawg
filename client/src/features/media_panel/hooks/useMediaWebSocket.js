@@ -42,7 +42,7 @@ export function useMediaWebSocket(options = {}) {
   const wsRef = useRef(null);
   const reconnectAttempts = useRef(0);
   const reconnectTimeout = useRef(null);
-  
+
   const [isConnected, setIsConnected] = useState(false);
   const [connectionError, setConnectionError] = useState(null);
 

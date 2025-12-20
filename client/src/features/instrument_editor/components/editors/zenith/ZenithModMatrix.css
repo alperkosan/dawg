@@ -12,7 +12,7 @@
     gap: 8px;
     margin-bottom: 16px;
     padding-bottom: 12px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    border-bottom: 1px solid var(--zenith-border-subtle);
 }
 
 .zenith-mod-matrix__icon {
@@ -24,12 +24,12 @@
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    color: rgba(255, 255, 255, 0.9);
+    color: var(--zenith-text-primary);
 }
 
 .zenith-mod-matrix__subtitle {
     font-size: 11px;
-    color: rgba(255, 255, 255, 0.5);
+    color: var(--zenith-text-tertiary);
     margin-left: auto;
 }
 
@@ -42,21 +42,21 @@
 /* Individual Slot */
 .zenith-mod-slot {
     padding: 12px;
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 8px;
-    transition: all 0.3s ease;
+    background: var(--zenith-overlay-light);
+    border: 1px solid var(--zenith-border-subtle);
+    border-radius: var(--zenith-radius-md);
+    transition: all var(--zenith-duration-slow) var(--zenith-ease-out);
     min-height: 120px;
 }
 
 .zenith-mod-slot--active {
-    background: rgba(168, 85, 247, 0.05);
-    border-color: rgba(168, 85, 247, 0.3);
+    background: rgba(var(--zenith-accent-hot-rgb), 0.05);
+    border-color: rgba(var(--zenith-accent-hot-rgb), 0.3);
 }
 
 .zenith-mod-slot:hover {
-    border-color: rgba(168, 85, 247, 0.4);
-    box-shadow: 0 0 16px rgba(168, 85, 247, 0.2);
+    border-color: rgba(var(--zenith-accent-hot-rgb), 0.4);
+    box-shadow: 0 0 16px rgba(var(--zenith-accent-hot-rgb), 0.2);
 }
 
 .zenith-mod-slot__header {
@@ -69,10 +69,10 @@
 .zenith-mod-slot__number {
     font-size: 11px;
     font-weight: 600;
-    color: rgba(255, 255, 255, 0.5);
-    background: rgba(255, 255, 255, 0.05);
+    color: var(--zenith-text-tertiary);
+    background: var(--zenith-overlay-light);
     padding: 2px 8px;
-    border-radius: 4px;
+    border-radius: var(--zenith-radius-sm);
 }
 
 .zenith-mod-slot__toggle {
@@ -113,7 +113,7 @@
 }
 
 .zenith-mod-slot__toggle input:checked+.zenith-mod-slot__toggle-slider {
-    background: linear-gradient(135deg, #a855f7 0%, #ec4899 100%);
+    background: linear-gradient(135deg, var(--zenith-accent-hot) 0%, var(--zenith-accent-warm) 100%);
 }
 
 .zenith-mod-slot__toggle input:checked+.zenith-mod-slot__toggle-slider:before {
@@ -131,7 +131,7 @@
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    color: rgba(255, 255, 255, 0.6);
+    color: var(--zenith-text-secondary);
     margin-bottom: 4px;
 }
 
@@ -139,9 +139,9 @@
     width: 100%;
     padding: 6px 8px;
     background: rgba(0, 0, 0, 0.3);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 4px;
-    color: white;
+    border: 1px solid var(--zenith-border-subtle);
+    border-radius: var(--zenith-radius-sm);
+    color: var(--zenith-text-primary);
     font-size: 11px;
     cursor: pointer;
     transition: all 0.2s ease;
@@ -149,13 +149,13 @@
 
 .zenith-mod-slot__select:hover {
     background: rgba(0, 0, 0, 0.4);
-    border-color: rgba(168, 85, 247, 0.3);
+    border-color: rgba(var(--zenith-accent-hot-rgb), 0.3);
 }
 
 .zenith-mod-slot__select:focus {
     outline: none;
-    border-color: #a855f7;
-    box-shadow: 0 0 8px rgba(168, 85, 247, 0.3);
+    border-color: var(--zenith-accent-hot);
+    box-shadow: 0 0 8px rgba(var(--zenith-accent-hot-rgb), 0.3);
 }
 
 .zenith-mod-slot__select--small {
@@ -164,8 +164,8 @@
 }
 
 .zenith-mod-slot__select option {
-    background: #1a1a2e;
-    color: white;
+    background: var(--zenith-bg-secondary);
+    color: var(--zenith-text-primary);
 }
 
 /* Slider */
@@ -186,9 +186,9 @@
     height: 14px;
     border-radius: 50%;
     background: white;
-    border: 2px solid #a855f7;
+    border: 2px solid var(--zenith-accent-hot);
     cursor: pointer;
-    box-shadow: 0 0 8px rgba(168, 85, 247, 0.5);
+    box-shadow: 0 0 8px rgba(var(--zenith-accent-hot-rgb), 0.5);
 }
 
 .zenith-mod-slot__slider::-moz-range-thumb {
@@ -196,9 +196,9 @@
     height: 14px;
     border-radius: 50%;
     background: white;
-    border: 2px solid #a855f7;
+    border: 2px solid var(--zenith-accent-hot);
     cursor: pointer;
-    box-shadow: 0 0 8px rgba(168, 85, 247, 0.5);
+    box-shadow: 0 0 8px rgba(var(--zenith-accent-hot-rgb), 0.5);
 }
 
 /* Visual Routing */
@@ -223,7 +223,7 @@
 }
 
 .zenith-mod-slot__routing-dest {
-    color: rgba(255, 255, 255, 0.8);
+    color: var(--zenith-text-primary);
     font-weight: 600;
 }
 

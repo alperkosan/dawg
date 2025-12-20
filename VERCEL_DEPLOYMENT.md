@@ -25,7 +25,7 @@ Vercel Dashboard → Project → Settings → Environment Variables:
 ```bash
 # ✅ Production'da relative path kullanılır (/api), bu variable'a gerek yok
 # Development için (local):
-# VITE_API_URL=http://localhost:3000/api
+# VITE_API_URL=http://localhost:3001/api
 ```
 
 **Backend (Server) Environment Variables:**

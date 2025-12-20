@@ -12,15 +12,15 @@ export const authService = {
    */
   async register(userData) {
     const { setLoading, setError, setUser } = useAuthStore.getState();
-    
+
     try {
       setLoading(true);
       setError(null);
-      
+
       const response = await apiClient.register(userData);
-      
+
       setUser(response.user, response.accessToken);
-      
+
       return response;
     } catch (error) {
       setError(error.message);
@@ -35,15 +35,15 @@ export const authService = {
    */
   async login(email, password) {
     const { setLoading, setError, setUser } = useAuthStore.getState();
-    
+
     try {
       setLoading(true);
       setError(null);
-      
+
       const response = await apiClient.login(email, password);
-      
+
       setUser(response.user, response.accessToken);
-      
+
       return response;
     } catch (error) {
       setError(error.message);
@@ -58,13 +58,15 @@ export const authService = {
    */
   async logout() {
     const { logout } = useAuthStore.getState();
-    
+
     try {
       await apiClient.logout();
     } catch (error) {
       console.error('Logout error:', error);
     } finally {
       logout();
+      // Force reload to clear all states (AudioEngine, Stores, etc.)
+      window.location.href = '/auth';
     }
   },
 
@@ -74,7 +76,7 @@ export const authService = {
   async checkAuth() {
     const state = useAuthStore.getState();
     const { accessToken, setUser, setGuest } = state;
-    
+
     if (!accessToken) {
       setGuest();
       return false;
@@ -96,9 +98,9 @@ export const authService = {
         } catch (refreshError) {
           // Silently fail - user might not be logged in (guest mode)
           // Only log if it's not a 401/400 error (expected for guest users)
-          if (!refreshError.message?.includes('Unauthorized') && 
-              !refreshError.message?.includes('Bad Request') &&
-              !refreshError.message?.includes('Body cannot be empty')) {
+          if (!refreshError.message?.includes('Unauthorized') &&
+            !refreshError.message?.includes('Bad Request') &&
+            !refreshError.message?.includes('Body cannot be empty')) {
             console.warn('Token refresh failed:', refreshError);
           }
         }

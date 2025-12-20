@@ -11,15 +11,8 @@ import ProjectCard from './ProjectCard';
 import ProjectCardSkeleton from './ProjectCardSkeleton';
 import './FeedContent.css';
 
-// Try to import react-window (optional dependency)
-let FixedSizeList = null;
-try {
-  const reactWindow = require('react-window');
-  FixedSizeList = reactWindow.FixedSizeList;
-} catch (e) {
-  // react-window not installed, will use fallback
-  console.log('react-window not available, using fallback rendering');
-}
+import { FixedSizeList } from 'react-window';
+const HAS_VIRTUAL_LIST = true;
 
 // Estimated card height (will be measured dynamically)
 const ESTIMATED_CARD_HEIGHT = 400;
@@ -161,12 +154,12 @@ export default function VirtualizedFeedContent({
         >
           {renderItem}
         </FixedSizeList>
-        
+
         {/* Sentinel for infinite scroll */}
         {hasNextPage && (
           <div className="feed-content__sentinel" />
         )}
-        
+
         {/* Loading more indicator */}
         {isFetchingNextPage && (
           <div className="feed-content__loading">

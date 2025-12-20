@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { Play, Pause, Square, Repeat, Maximize2, ChevronRight, X, Download, Save, Loader2 } from 'lucide-react';
+import { Play, Pause, Square, Repeat, Maximize2, ChevronRight, X, Download, Save, Loader2, Sparkles } from 'lucide-react';
 import { Knob } from '@/components/controls';
 import { BPMInput } from '@/components/controls/BPMInput';
 import { CPUMonitor } from '@/components/monitors/CPUMonitor';
 import { PLAYBACK_MODES, PLAYBACK_STATES } from '@/config/constants';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
+import { usePanelsStore } from '@/store/usePanelsStore';
 import { AudioContextService } from '@/lib/services/AudioContextService';
 import EventBus from '@/lib/core/EventBus.js';
 
@@ -48,6 +49,9 @@ function TopToolbar({ onExportClick, onSaveClick, saveStatus = 'saved', lastSave
   const cycleFollowPlayheadMode = usePlaybackStore(state => state.cycleFollowPlayheadMode);
 
   const isReady = true; // Store is always ready
+
+  // Preset Library state
+  const setPresetLibraryOpen = usePanelsStore(state => state.setPresetLibraryOpen);
 
   // Master volume state
   const [masterVolume, setMasterVolume] = useState(0.8);
@@ -201,6 +205,17 @@ function TopToolbar({ onExportClick, onSaveClick, saveStatus = 'saved', lastSave
           style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
         >
           <Download size={18} />
+        </button>
+        <button
+          title="Preset Library"
+          onClick={() => {
+            console.log('✨ Preset Library button clicked');
+            setPresetLibraryOpen(true);
+          }}
+          className="top-toolbar__transport-btn transport-btn"
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+        >
+          <Sparkles size={18} />
         </button>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <Knob

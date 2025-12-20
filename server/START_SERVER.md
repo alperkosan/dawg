@@ -86,7 +86,7 @@ Server başladıktan sonra:
 
 ```bash
 # Health check
-curl http://localhost:3000/health
+curl http://localhost:3001/health
 
 # Beklenen yanıt:
 # {"status":"ok","timestamp":"2025-01-XX..."}

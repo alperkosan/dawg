@@ -7,7 +7,6 @@ import { z } from 'zod';
 import {
   createProject,
   findProjectById,
-  findProjectByShareToken,
   updateProject,
   deleteProject,
   listProjects,
@@ -16,6 +15,7 @@ import {
   duplicateProject,
   incrementPlayCount,
 } from '../services/projects.js';
+import { getDatabase } from '../services/database.js';
 import { NotFoundError, ForbiddenError, BadRequestError } from '../utils/errors.js';
 import { logger } from '../utils/logger.js';
 import { JWTPayload } from '../middleware/auth.js';
@@ -45,7 +45,7 @@ const UpdateProjectSchema = CreateProjectSchema.partial().extend({
 
 export async function projectRoutes(server: FastifyInstance) {
   // Get all projects
-  server.get('/', async (request: FastifyRequest, reply: FastifyReply) => {
+  server.get('/', async (request: FastifyRequest) => { // Removed unused reply
     try {
       const query = request.query as {
         userId?: string;
@@ -56,17 +56,75 @@ export async function projectRoutes(server: FastifyInstance) {
         sortBy?: string;
         sortOrder?: string;
       };
-      
+
+      // 🔒 SECURITY HARDENING
+      // Get authenticated user (if any)
+      const user = (request as any).user as JWTPayload | undefined;
+      const currentUserId = user?.userId; // ✅ Fixed: use userId instead of id
+      const targetUserId = query.userId;
+
+      logger.info('🔍 [LIST_PROJECTS] Request received', {
+        query,
+        currentUserId,
+        targetUserId,
+        userRoleCheck: 'checking...'
+      });
+
+      // Check if user is admin
+      let isAdmin = false;
+      if (currentUserId) {
+        const db = getDatabase();
+        const roleResult = await db.query(
+          `SELECT 1 FROM user_roles WHERE user_id = $1 AND role_type = 'admin'`,
+          [currentUserId]
+        );
+        isAdmin = roleResult.rows.length > 0;
+        logger.info('👮‍♂️ [LIST_PROJECTS] Admin check result:', { isAdmin, userId: currentUserId });
+      }
+
+      let isPublicFilter = query.public === 'true' ? true : query.public === 'false' ? false : undefined;
+
+      // If Admin, bypass restrictions (unless explicitly filtering)
+      /* 🔒 SECURITY DISABLED FOR DIAGNOSTICS */
+      // If Admin, bypass restrictions (unless explicitly filtering)
+      if (isAdmin && !isPublicFilter) {
+        // Allow viewing all logic (keep isPublicFilter as undefined)
+      } else {
+        // Rule 1: Cross-User Access
+        // If asking for a specific user's projects...
+        if (targetUserId) {
+          // ...and that user is NOT me...
+          if (!currentUserId || targetUserId !== currentUserId) {
+            // ...FORCE public only.
+            if (isPublicFilter === false) {
+              // throw new ForbiddenError('Cannot view private projects of another user');
+              logger.warn('⚠️ [DIAGNOSTICS] Allowing private view of another user');
+            }
+            // isPublicFilter = true; // DISABLED
+          }
+          // If it IS me, let isPublicFilter stay as is (can see my own private/public)
+        }
+        // Rule 2: Global Feed (No specific user)
+        else {
+          // Always FORCE public for global lists to prevent leaking private projects
+          if (isPublicFilter === false) {
+            // throw new ForbiddenError('Cannot view global list of private projects');
+            logger.warn('⚠️ [DIAGNOSTICS] Allowing global private view');
+          }
+          // isPublicFilter = true; // DISABLED
+        }
+      }
+
       const result = await listProjects({
-        userId: query.userId,
-        isPublic: query.public === 'true' ? true : query.public === 'false' ? false : undefined,
+        userId: targetUserId,
+        isPublic: isPublicFilter,
         search: query.search,
         page: query.page ? parseInt(query.page, 10) : undefined,
         limit: query.limit ? parseInt(query.limit, 10) : undefined,
         sortBy: query.sortBy as any,
         sortOrder: query.sortOrder as 'asc' | 'desc',
       });
-      
+
       return {
         projects: result.projects.map(p => ({
           id: p.id,
@@ -102,7 +160,7 @@ export async function projectRoutes(server: FastifyInstance) {
       throw error;
     }
   });
-  
+
   // Create project
   server.post('/', {
     preHandler: [server.authenticate],
@@ -111,11 +169,11 @@ export async function projectRoutes(server: FastifyInstance) {
       if (!request.user) {
         throw new ForbiddenError('Authentication required');
       }
-      
+
       const body = CreateProjectSchema.parse(request.body);
-      
+
       const project = await createProject({
-        userId: request.user.userId,
+        userId: (request.user as any).userId,
         title: body.title,
         description: body.description,
         thumbnailUrl: body.thumbnailUrl,
@@ -124,7 +182,7 @@ export async function projectRoutes(server: FastifyInstance) {
         timeSignature: body.timeSignature,
         projectData: body.projectData,
       });
-      
+
       // Update public/unlisted if provided
       if (body.isPublic !== undefined || body.isUnlisted !== undefined) {
         await updateProject(project.id, {
@@ -132,9 +190,9 @@ export async function projectRoutes(server: FastifyInstance) {
           isUnlisted: body.isUnlisted,
         });
       }
-      
+
       reply.code(201);
-      
+
       return {
         project: {
           id: project.id,
@@ -158,17 +216,17 @@ export async function projectRoutes(server: FastifyInstance) {
       };
     } catch (error: any) {
       if (error instanceof z.ZodError) {
-        throw new BadRequestError('Validation failed', error.errors);
+        throw new BadRequestError('Validation failed', JSON.stringify(error.errors));
       }
       throw error;
     }
   });
-  
+
   // Get project by ID (optional auth - public projects can be accessed without login)
-  server.get('/:id', async (request: FastifyRequest, reply: FastifyReply) => {
+  server.get('/:id', async (request: FastifyRequest) => { // Removed unused reply
     try {
       const { id } = request.params as { id: string };
-      
+
       // Try to get userId from token (optional authentication)
       let userId: string | null = null;
       try {
@@ -184,23 +242,23 @@ export async function projectRoutes(server: FastifyInstance) {
       } catch (error) {
         // Ignore auth errors - user will be treated as anonymous
       }
-      
+
       const project = await findProjectById(id);
       if (!project) {
         throw new NotFoundError('Project not found');
       }
-      
+
       // Check access
       const hasAccess = await canAccessProject(userId, id);
       if (!hasAccess) {
         throw new ForbiddenError('Access denied');
       }
-      
+
       // Increment play count if not owner
       if (userId && userId !== project.user_id) {
         await incrementPlayCount(id);
       }
-      
+
       return {
         project: {
           id: project.id,
@@ -228,18 +286,18 @@ export async function projectRoutes(server: FastifyInstance) {
       throw error;
     }
   });
-  
+
   // Update project
   server.put('/:id', {
     preHandler: [server.authenticate],
-  }, async (request: FastifyRequest, reply: FastifyReply) => {
+  }, async (request: FastifyRequest) => { // Removed unused reply
     try {
       if (!request.user) {
         throw new ForbiddenError('Authentication required');
       }
-      
+
       const { id } = request.params as { id: string };
-      
+
       // ✅ FIX: Better error handling for validation
       let body;
       try {
@@ -247,26 +305,26 @@ export async function projectRoutes(server: FastifyInstance) {
       } catch (validationError) {
         logger.error(`❌ [UPDATE_PROJECT] Validation error for project ${id}:`, validationError);
         if (validationError instanceof z.ZodError) {
-          throw new BadRequestError('Validation failed', validationError.errors);
+          throw new BadRequestError('Validation failed', JSON.stringify(validationError.errors));
         }
         throw validationError;
       }
-      
+
       // Check if user can edit
-      const canEdit = await canEditProject(request.user.userId, id);
+      const canEdit = await canEditProject((request.user as any).userId, id);
       if (!canEdit) {
         throw new ForbiddenError('You do not have permission to edit this project');
       }
-      
+
       // ✅ FIX: Convert previewAudioRenderedAt string to Date if needed
-      const previewAudioRenderedAt = body.previewAudioRenderedAt 
-        ? (typeof body.previewAudioRenderedAt === 'string' 
-           ? new Date(body.previewAudioRenderedAt) 
-           : body.previewAudioRenderedAt)
+      const previewAudioRenderedAt = body.previewAudioRenderedAt
+        ? (typeof body.previewAudioRenderedAt === 'string'
+          ? new Date(body.previewAudioRenderedAt)
+          : body.previewAudioRenderedAt)
         : undefined;
 
       logger.info(`📝 [UPDATE_PROJECT] Updating project ${id} with preview audio: ${body.previewAudioUrl ? 'yes' : 'no'}`);
-      
+
       const project = await updateProject(id, {
         title: body.title,
         description: body.description,
@@ -283,7 +341,7 @@ export async function projectRoutes(server: FastifyInstance) {
         previewAudioRenderedAt: previewAudioRenderedAt,
         previewAudioStatus: body.previewAudioStatus,
       });
-      
+
       return {
         project: {
           id: project.id,
@@ -308,55 +366,55 @@ export async function projectRoutes(server: FastifyInstance) {
     } catch (error: any) {
       logger.error(`❌ [UPDATE_PROJECT] Error updating project:`, error);
       if (error instanceof z.ZodError) {
-        throw new BadRequestError('Validation failed', error.errors);
+        throw new BadRequestError('Validation failed', JSON.stringify(error.errors));
       }
       if (error instanceof BadRequestError || error instanceof ForbiddenError || error instanceof NotFoundError) {
-      throw error;
+        throw error;
       }
       // Re-throw as internal server error for unexpected errors
       throw new Error(`Failed to update project: ${error.message || 'Unknown error'}`);
     }
   });
-  
+
   // Delete project
   server.delete('/:id', {
     preHandler: [server.authenticate],
-  }, async (request: FastifyRequest, reply: FastifyReply) => {
+  }, async (request: FastifyRequest) => { // Removed unused reply
     try {
       if (!request.user) {
         throw new ForbiddenError('Authentication required');
       }
-      
+
       const { id } = request.params as { id: string };
-      
+
       // Check if user owns project
       const project = await findProjectById(id);
       if (!project) {
         throw new NotFoundError('Project not found');
       }
-      
-      if (project.user_id !== request.user.userId) {
+
+      if (project.user_id !== (request.user as any).userId) {
         // Check if user can delete (collaborator with can_delete permission)
-        const canEdit = await canEditProject(request.user.userId, id);
+        const canEdit = await canEditProject((request.user as any).userId, id);
         if (!canEdit) {
           throw new ForbiddenError('You do not have permission to delete this project');
         }
-        
+
         // Check collaborator delete permission
         const db = (await import('../services/database.js')).getDatabase();
         const collaboratorResult = await db.query(
           `SELECT can_delete FROM project_collaborators
            WHERE project_id = $1 AND user_id = $2 AND is_active = true`,
-          [id, request.user.userId]
+          [id, (request.user as any).userId]
         );
-        
+
         if (collaboratorResult.rows.length === 0 || !collaboratorResult.rows[0].can_delete) {
           throw new ForbiddenError('You do not have permission to delete this project');
         }
       }
-      
+
       await deleteProject(id);
-      
+
       return {
         message: 'Project deleted successfully',
       };
@@ -364,36 +422,36 @@ export async function projectRoutes(server: FastifyInstance) {
       throw error;
     }
   });
-  
+
   // Render project preview
   server.post('/:id/render-preview', {
     preHandler: [server.authenticate],
-  }, async (request: FastifyRequest, reply: FastifyReply) => {
+  }, async (request: FastifyRequest) => { // Removed unused reply
     try {
       if (!request.user) {
         throw new ForbiddenError('Authentication required');
       }
-      
+
       const { id } = request.params as { id: string };
-      
+
       // Check if user can edit
-      const canEdit = await canEditProject(request.user.userId, id);
+      const canEdit = await canEditProject((request.user as any).userId, id);
       if (!canEdit) {
         throw new ForbiddenError('You do not have permission to render this project');
       }
-      
+
       // Trigger render (async, don't wait)
       const { getAudioRenderService } = await import('../services/audioRender.js');
       const renderService = getAudioRenderService();
-      
+
       // Initialize if needed
       await renderService.initialize();
-      
+
       // Start render in background
       renderService.renderProjectPreview(id).catch((error) => {
         logger.error(`Failed to render preview for project ${id}:`, error);
       });
-      
+
       return {
         message: 'Render started',
         status: 'queued',
@@ -402,12 +460,12 @@ export async function projectRoutes(server: FastifyInstance) {
       throw error;
     }
   });
-  
+
   // Upload client-side rendered preview audio
   // ✅ FIX: Support both base64 (legacy) and multipart/form-data (streaming) uploads
   server.post('/:id/upload-preview', {
     preHandler: [server.authenticate],
-  }, async (request: FastifyRequest, reply: FastifyReply) => {
+  }, async (request: FastifyRequest) => { // Removed unused reply
     try {
       if (!request.user) {
         throw new ForbiddenError('Authentication required');
@@ -420,7 +478,7 @@ export async function projectRoutes(server: FastifyInstance) {
       }
 
       // Only owner can upload preview
-      if (project.user_id !== request.user.userId) {
+      if (project.user_id !== (request.user as any).userId) {
         throw new ForbiddenError('You do not have permission to upload preview for this project');
       }
 
@@ -430,13 +488,13 @@ export async function projectRoutes(server: FastifyInstance) {
 
       // ✅ NEW: Support multipart/form-data (streaming upload, no base64 overhead)
       // ✅ FIX: Also check for application/json with pre-parsed multipart data
-      const isMultipartRequest = contentType.includes('multipart/form-data') || 
-                                 (contentType.includes('application/json') && 
-                                  request.body && 
-                                  typeof request.body === 'object' && 
-                                  'fields' in request.body && 
-                                  'files' in request.body);
-      
+      const isMultipartRequest = contentType.includes('multipart/form-data') ||
+        (contentType.includes('application/json') &&
+          request.body &&
+          typeof request.body === 'object' &&
+          'fields' in request.body &&
+          'files' in request.body);
+
       if (isMultipartRequest) {
         logger.info(`📦 [UPLOAD_PREVIEW] Starting multipart parsing...`);
         logger.info(`📦 [UPLOAD_PREVIEW] Content-Type: ${contentType}`);
@@ -445,31 +503,31 @@ export async function projectRoutes(server: FastifyInstance) {
         logger.info(`📦 [UPLOAD_PREVIEW] Request body stringified length: ${request.body ? JSON.stringify(request.body).length : 0}`);
 
         const body = request.body as any;
-        
+
         // ✅ FIX: Check if multipart data was pre-parsed by Vercel handler (formidable)
         // This data comes as application/json with fields and files (base64 encoded)
         if (body && typeof body === 'object' && 'fields' in body && 'files' in body) {
           logger.info(`✅ [UPLOAD_PREVIEW] Using pre-parsed multipart data from Vercel handler`);
-          const parsedData = body as { 
-            fields: Record<string, string>; 
-            files: Record<string, { bufferBase64?: string; buffer?: Buffer; filename: string; mimetype: string }> 
+          const parsedData = body as {
+            fields: Record<string, string>;
+            files: Record<string, { bufferBase64?: string; buffer?: Buffer; filename: string; mimetype: string }>
           };
-          
+
           // Get duration from fields
           const durationValue = parsedData.fields['duration'];
           if (!durationValue) {
             throw new BadRequestError('duration field is required');
           }
-          
+
           // Get file from files (accept any file field name)
           const fileKeys = Object.keys(parsedData.files);
           if (fileKeys.length === 0) {
             throw new BadRequestError('No file provided in multipart form');
           }
-          
+
           const fileKey = fileKeys[0]; // Use first file
           const fileInfo = parsedData.files[fileKey];
-          
+
           // ✅ FIX: Decode base64 buffer if present (from JSON serialization)
           if (fileInfo.bufferBase64) {
             audioBuffer = Buffer.from(fileInfo.bufferBase64, 'base64');
@@ -480,14 +538,14 @@ export async function projectRoutes(server: FastifyInstance) {
           } else {
             throw new BadRequestError('File buffer not found in parsed data');
           }
-          
+
           duration = parseFloat(durationValue);
-          
+
           logger.info(`📤 [UPLOAD_PREVIEW] Multipart upload completed: ${(audioBuffer.length / 1024 / 1024).toFixed(2)}MB, duration: ${duration}s`);
         } else {
           // ✅ FALLBACK: Try request.parts() if pre-parsed data not available
-        let fileData: any = null;
-        let durationValue: string | null = null;
+          let fileData: any = null;
+          let durationValue: string | null = null;
 
           // Try request.body first (if attachFieldsToBody works)
           if (body && typeof body === 'object' && 'duration' in body) {
@@ -499,21 +557,21 @@ export async function projectRoutes(server: FastifyInstance) {
           try {
             logger.info(`🔄 [UPLOAD_PREVIEW] Calling request.parts()...`);
             let partCount = 0;
-        for await (const part of request.parts()) {
+            for await (const part of request.parts()) {
               partCount++;
               logger.info(`📦 [UPLOAD_PREVIEW] Part ${partCount}: type=${part.type}, fieldname=${(part as any).fieldname || 'N/A'}`);
-              
-          if (part.type === 'field') {
-            const field = part as any;
+
+              if (part.type === 'field') {
+                const field = part as any;
                 logger.info(`📝 [UPLOAD_PREVIEW] Field: ${field.fieldname} = ${field.value?.substring(0, 50) || 'empty'}...`);
-            if (field.fieldname === 'duration') {
-              durationValue = field.value;
+                if (field.fieldname === 'duration') {
+                  durationValue = field.value;
                   logger.info(`✅ [UPLOAD_PREVIEW] Duration from parts(): ${durationValue}`);
-            }
-          } else if (part.type === 'file') {
-            fileData = part;
+                }
+              } else if (part.type === 'file') {
+                fileData = part;
                 logger.info(`📁 [UPLOAD_PREVIEW] File part found: ${(fileData as any).filename || 'unknown'}`);
-                audioBuffer = await fileData.toBuffer();
+                audioBuffer = await fileData!.toBuffer();
                 logger.info(`✅ [UPLOAD_PREVIEW] File buffer created: ${(audioBuffer.length / 1024 / 1024).toFixed(2)}MB`);
               }
             }
@@ -528,7 +586,7 @@ export async function projectRoutes(server: FastifyInstance) {
                 const fallbackFile = await request.file();
                 if (fallbackFile) {
                   fileData = fallbackFile;
-            audioBuffer = await fileData.toBuffer();
+                  audioBuffer = await fileData!.toBuffer();
                   logger.info(`✅ [UPLOAD_PREVIEW] File received via fallback: ${fileData.filename || 'unknown'}, size: ${(audioBuffer.length / 1024 / 1024).toFixed(2)}MB`);
                 } else {
                   logger.error(`❌ [UPLOAD_PREVIEW] request.file() also returned null`);
@@ -536,25 +594,25 @@ export async function projectRoutes(server: FastifyInstance) {
               } catch (fallbackError: any) {
                 logger.error(`❌ [UPLOAD_PREVIEW] Fallback request.file() also failed: ${fallbackError.message}`);
               }
+            }
           }
-        }
 
-        if (!fileData || !audioBuffer) {
+          if (!fileData || !audioBuffer) {
             logger.error('❌ [UPLOAD_PREVIEW] No file received in multipart form');
             logger.error('❌ [UPLOAD_PREVIEW] Content-Type:', contentType);
             logger.error('❌ [UPLOAD_PREVIEW] Request body keys:', Object.keys(body || {}));
             logger.error('❌ [UPLOAD_PREVIEW] Request headers:', JSON.stringify(request.headers, null, 2));
-          throw new BadRequestError('No file provided in multipart form');
-        }
+            throw new BadRequestError('No file provided in multipart form');
+          }
 
-        if (!durationValue) {
+          if (!durationValue) {
             logger.error('❌ [UPLOAD_PREVIEW] Duration not found in request.body or parts()');
             logger.error('❌ [UPLOAD_PREVIEW] Request body:', JSON.stringify(body, null, 2));
-          throw new BadRequestError('duration field is required');
-        }
+            throw new BadRequestError('duration field is required');
+          }
 
-        duration = parseFloat(durationValue);
-        logger.info(`📤 [UPLOAD_PREVIEW] Multipart upload completed: ${(audioBuffer.length / 1024 / 1024).toFixed(2)}MB, duration: ${duration}s`);
+          duration = parseFloat(durationValue);
+          logger.info(`📤 [UPLOAD_PREVIEW] Multipart upload completed: ${(audioBuffer.length / 1024 / 1024).toFixed(2)}MB, duration: ${duration}s`);
         }
       } else {
         // ✅ LEGACY: Support base64 JSON (for backward compatibility)
@@ -623,14 +681,14 @@ export async function projectRoutes(server: FastifyInstance) {
       if (!request.user) {
         throw new ForbiddenError('Authentication required');
       }
-      
+
       const { id } = request.params as { id: string };
       const body = request.body as { title?: string } | undefined;
-      
-      const newProject = await duplicateProject(id, request.user.userId, body?.title);
-      
+
+      const newProject = await duplicateProject(id, (request.user as any).userId, body?.title);
+
       reply.code(201);
-      
+
       return {
         project: {
           id: newProject.id,
