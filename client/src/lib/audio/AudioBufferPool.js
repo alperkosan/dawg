@@ -230,6 +230,8 @@ class AudioBufferPool {
      * @private
      */
     getShortUrl(url) {
+        if (!url) return '';
+        if (url.startsWith('data:')) return 'Data URL (...)';
         const parts = url.split('/');
         return parts[parts.length - 1] || url;
     }

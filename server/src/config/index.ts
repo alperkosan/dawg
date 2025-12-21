@@ -12,7 +12,14 @@ const __dirname = path.dirname(__filename);
 const envPath = path.resolve(__dirname, '../../.env');
 
 // Load .env file from server root directory
-dotenv.config({ path: envPath });
+console.log(`🔍 [Config] Loading .env from: ${envPath}`);
+const envResult = dotenv.config({ path: envPath });
+if (envResult.error) {
+  console.error('❌ [Config] Failed to load .env:', envResult.error);
+} else {
+  console.log('✅ [Config] .env loaded successfully');
+  console.log(`🔑 [Config] ElevenLabs Key present: ${!!process.env.ELEVENLABS_API_KEY}`);
+}
 
 export const config = {
   // Server
@@ -131,5 +138,8 @@ export const config = {
     max: parseInt(process.env.RATE_LIMIT_MAX || '100', 10),
     timeWindow: parseInt(process.env.RATE_LIMIT_TIME_WINDOW || '60000', 10),
   },
+
+  // ElevenLabs
+  elevenlabsApiKey: process.env.ELEVENLABS_API_KEY || '',
 } as const;
 

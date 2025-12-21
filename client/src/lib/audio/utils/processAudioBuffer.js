@@ -8,17 +8,25 @@ export const processAudioBuffer = (buffer, options = {}) => {
         return buffer;
     }
 
+    // ✅ Handle Tone.js ToneAudioBuffer wrapper
+    const rawBuffer = (buffer.get && typeof buffer.get === 'function') ? buffer.get() : buffer;
+
+    if (!rawBuffer || !rawBuffer.length || !rawBuffer.numberOfChannels || !rawBuffer.sampleRate) {
+        console.warn('Invalid audio buffer passed to processAudioBuffer', rawBuffer);
+        return buffer;
+    }
+
     try {
         const clone = new AudioBuffer({
-            length: buffer.length,
-            numberOfChannels: buffer.numberOfChannels,
-            sampleRate: buffer.sampleRate
+            length: rawBuffer.length,
+            numberOfChannels: rawBuffer.numberOfChannels,
+            sampleRate: rawBuffer.sampleRate
         });
 
         let peak = 0;
 
-        for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
-            const source = buffer.getChannelData(channel);
+        for (let channel = 0; channel < rawBuffer.numberOfChannels; channel++) {
+            const source = rawBuffer.getChannelData(channel);
             const target = clone.getChannelData(channel);
             const lastIndex = source.length - 1;
 

@@ -1,5 +1,12 @@
+import { ElevenLabsClient } from 'elevenlabs';
 import { getDatabase } from './database.js';
 import { logger } from '../utils/logger.js';
+import { config } from '../config/index.js';
+
+// Initialize SDK Client
+const elevenlabs = new ElevenLabsClient({
+    apiKey: config.elevenlabsApiKey
+});
 
 export interface ProjectContext {
     bpm?: number;
@@ -67,26 +74,131 @@ export const coProducerService = {
     /**
      * Generate a sound variation based on prompt and context
      */
-    async generateVariation(prompt: string, context: ProjectContext): Promise<any> {
-        logger.info(`🎨 CoProducer: Generating variation for prompt: "${prompt}" with context: ${JSON.stringify(context)}`);
+    /**
+     * Enhance the user prompt with quality keywords and project context
+     */
+    enhancePrompt(prompt: string, context: ProjectContext): string {
+        let enhanced = prompt;
 
-        // In a real implementation, we would call an external API here (e.g., Stability AI)
-        // For now, we will simulate the generation delay and return a mock result
-        // that the frontend can handle (similar to current AIInstrumentService mock)
+        // 1. Basic Turkish keyword enhancement
+        const mapping: { [key: string]: string } = {
+            'vokal': 'vocal',
+            'kız çocuğu': 'girl',
+            'çocuk': 'child',
+            'koro': 'choir',
+            'davul': 'drum',
+            'bas': 'bass',
+            'piyano': 'piano',
+            'keman': 'violin'
+        };
 
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        Object.entries(mapping).forEach(([tr, en]) => {
+            if (enhanced.toLowerCase().includes(tr)) {
+                enhanced += `, ${en}`;
+            }
+        });
 
-        // Mock variations
-        const variations = [
-            { id: `var-server-${Date.now()}-1`, prompt: `${prompt} - Variation A`, duration: 4 },
-            { id: `var-server-${Date.now()}-2`, prompt: `${prompt} - Variation B`, duration: 4 }
-        ];
+        // 2. Project Context Enrichment
 
+        // BPM Context
+        if (context.bpm) {
+            const bpm = Math.round(context.bpm);
+            const tempoType = bpm > 115 ? 'upbeat, dance' : (bpm < 90 ? 'slow, chill' : 'moderate');
+            enhanced += `, ${tempoType} tempo around ${bpm}bpm`;
+        }
+
+        // Key/Scale Context
+        if (context.key && context.key !== '...') {
+            enhanced += `, tuned to ${context.key}`;
+        }
+
+        // Energy Context (Atmosphere)
+        if (typeof context.energy === 'number') {
+            const energy = context.energy;
+            if (energy > 0.7) {
+                enhanced += ', aggressive, bright timbre, impactful, punchy';
+            } else if (energy < 0.3) {
+                enhanced += ', atmospheric, cinematic, soft attack, long decay, ambient';
+            } else {
+                enhanced += ', balanced texture, musical';
+            }
+        }
+
+        // 3. Global quality keywords
+        if (!enhanced.toLowerCase().includes('high quality')) {
+            enhanced += ', high quality, studio recording, professional audio, 44.1kHz';
+        }
+
+        return enhanced;
+    },
+
+    async generateVariation(prompt: string, context: ProjectContext, options: { promptInfluence?: number } = {}): Promise<any> {
+        logger.info(`🎨 CoProducer: Generating variation for prompt: "${prompt}" (Context: ${JSON.stringify(context)})`);
+
+        const apiKey = config.elevenlabsApiKey;
+        if (!apiKey) {
+            const error = new Error('ELEVENLABS_API_KEY is missing in config. Please ensure it is set in .env and server is restarted.');
+            logger.warn(`⚠️ ${error.message}`);
+            return this.generateMockVariation(prompt, error);
+        }
+
+        try {
+            const enhancedPrompt = this.enhancePrompt(prompt, context);
+            logger.info(`✨ Enhanced Prompt: "${enhancedPrompt}"`);
+
+            // SDK Sound Generation (returns a stream)
+            const audioStream = await elevenlabs.textToSoundEffects.convert({
+                text: enhancedPrompt,
+                duration_seconds: 5,
+                prompt_influence: options.promptInfluence ?? 0.7
+            });
+
+            // Read stream into buffer
+            const chunks: Buffer[] = [];
+            for await (const chunk of audioStream) {
+                chunks.push(chunk);
+            }
+            const buffer = Buffer.concat(chunks);
+            const base64Audio = buffer.toString('base64');
+
+            // Return a single variation for now with the real audio
+            return {
+                originalPrompt: prompt,
+                variations: [
+                    {
+                        id: `var-el-${Date.now()}`,
+                        prompt: prompt,
+                        duration: 5,
+                        audioData: base64Audio, // Base64 encoded audio
+                        format: 'mp3' // ElevenLabs typically returns MP3 or WAV depending on endpoint
+                    }
+                ],
+                mock: false,
+                timestamp: Date.now(),
+                provider: 'elevenlabs'
+            };
+
+        } catch (error) {
+            logger.error('❌ ElevenLabs generation failed:', error);
+            // Fallback to mock so UI doesn't break
+            return this.generateMockVariation(prompt, error);
+        }
+    },
+
+    /**
+     * Fallback mock generator
+     */
+    async generateMockVariation(prompt: string, error?: any): Promise<any> {
+        await new Promise(resolve => setTimeout(resolve, 1500));
         return {
             originalPrompt: prompt,
-            variations,
+            variations: [
+                { id: `var-server-${Date.now()}-1`, prompt: `${prompt} - Variation A`, duration: 4 },
+                { id: `var-server-${Date.now()}-2`, prompt: `${prompt} - Variation B`, duration: 4 }
+            ],
             mock: true,
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            serviceError: error ? (error.message || String(error)) : 'Unknown error'
         };
     }
 };

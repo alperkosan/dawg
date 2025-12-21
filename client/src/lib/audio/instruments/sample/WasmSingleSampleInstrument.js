@@ -184,7 +184,8 @@ export class WasmSingleSampleInstrument extends BaseInstrument {
 
     dispose() {
         // ✅ NEW: Release buffer reference for AudioBufferPool cleanup
-        if (this.sampleUrl) {
+        // Only release if it was actually cached (to avoid "unknown buffer" warnings for direct buffers)
+        if (this.sampleUrl && SampleLoader.isCached(this.sampleUrl)) {
             try {
                 SampleLoader.releaseBuffer(this.sampleUrl);
                 console.log(`🗑️ Released buffer for: ${this.name}`);

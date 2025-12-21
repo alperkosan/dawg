@@ -9,37 +9,48 @@ import './VariationSelector.css';
 
 export function VariationSelector({ variations, selectedIndex, onSelect }) {
   const [previewingIndex, setPreviewingIndex] = useState(null);
-  const audioRefs = useRef({});
+  const audioSourceRef = useRef(null);
+  const audioContextRef = useRef(null);
 
   const handlePreview = async (index, variation) => {
-    // Stop other previews
-    Object.values(audioRefs.current).forEach(audio => {
-      if (audio) {
-        audio.pause();
-        audio.currentTime = 0;
+    // Initialize AudioContext if not already done
+    if (!audioContextRef.current) {
+      audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+    }
+
+    // Stop current preview
+    if (audioSourceRef.current) {
+      try {
+        audioSourceRef.current.stop();
+      } catch (e) {
+        // Source might already be stopped
       }
-    });
+      audioSourceRef.current = null;
+    }
 
     if (previewingIndex === index) {
-      // Stop current preview
-      if (audioRefs.current[index]) {
-        audioRefs.current[index].pause();
-        audioRefs.current[index].currentTime = 0;
-      }
       setPreviewingIndex(null);
       return;
     }
 
     // Start new preview
+    if (!variation.audioBuffer) {
+      console.warn('No audio buffer available for preview');
+      return;
+    }
+
     try {
-      // TODO: Create audio element from AudioBuffer when API is available
-      // For now, just show preview state
-      setPreviewingIndex(index);
-      
-      // Mock preview (will be replaced with real audio playback)
-      setTimeout(() => {
+      const source = audioContextRef.current.createBufferSource();
+      source.buffer = variation.audioBuffer;
+      source.connect(audioContextRef.current.destination);
+
+      source.onended = () => {
         setPreviewingIndex(null);
-      }, 2000);
+      };
+
+      setPreviewingIndex(index);
+      source.start(0);
+      audioSourceRef.current = source;
     } catch (error) {
       console.error('Preview failed:', error);
       setPreviewingIndex(null);
@@ -71,9 +82,8 @@ export function VariationSelector({ variations, selectedIndex, onSelect }) {
 function VariationCard({ variation, index, selected, previewing, onSelect, onPreview }) {
   return (
     <div
-      className={`ai-variation-card ${selected ? 'selected' : ''} ${
-        previewing ? 'previewing' : ''
-      }`}
+      className={`ai-variation-card ${selected ? 'selected' : ''} ${previewing ? 'previewing' : ''
+        }`}
       onClick={onSelect}
     >
       <div className="ai-variation-card__header">

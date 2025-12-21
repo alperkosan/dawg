@@ -22,6 +22,7 @@ import { useFileBrowserStore } from '@/store/useFileBrowserStore';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
 import { apiClient } from '@/services/api';
 import { audioAnalysisService } from '@/lib/services/AudioAnalysisService';
+import { decodeAudioData } from '@/lib/utils/audioUtils';
 import './CoProducerPanel.css';
 
 const CoProducerPanel = () => {
@@ -103,13 +104,32 @@ const CoProducerPanel = () => {
             // If the server returns mock variations (ids only), we still need to decode them 
             // OR if it's production audio, handle the URLs.
             // For now, since server returns mock metadata, we adapt it:
-            const newSuggestions = (result.variations || []).map(v => ({
+            // ✅ Decode ElevenLabs base64 audio if present
+            const variations = await Promise.all(
+                (result.variations || []).map(async (v) => {
+                    if (v.audioData) {
+                        try {
+                            const dataUrl = `data:audio/mpeg;base64,${v.audioData}`;
+                            const response = await fetch(dataUrl);
+                            const arrayBuffer = await response.arrayBuffer();
+                            const audioBuffer = await decodeAudioData(arrayBuffer);
+                            return { ...v, audioBuffer };
+                        } catch (err) {
+                            console.error('❌ Failed to decode suggestion audio:', err);
+                            return v;
+                        }
+                    }
+                    return v;
+                })
+            );
+
+            const newSuggestions = variations.map(v => ({
                 id: v.id,
                 name: v.prompt || `AI Gen: ${prompt.slice(0, 10)}...`,
                 type: 'AI Generation',
                 match: 99,
-                prompt: v.prompt
-                // audioBuffer: v.audioBuffer // Server variations would likely be URLs in prod
+                prompt: v.prompt,
+                audioBuffer: v.audioBuffer
             }));
 
             setSuggestions(prev => [...newSuggestions, ...prev].slice(0, 10));
@@ -161,11 +181,9 @@ const CoProducerPanel = () => {
 
         if (!buffer && item.url) {
             try {
-                // Fetch and decode for library items
                 const response = await fetch(item.url);
                 const arrayBuffer = await response.arrayBuffer();
-                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                buffer = await audioCtx.decodeAudioData(arrayBuffer);
+                buffer = await decodeAudioData(arrayBuffer);
             } catch (error) {
                 console.error('❌ Failed to load library sample for project:', error);
                 return;

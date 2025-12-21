@@ -60,13 +60,32 @@ const LFO_SHAPES = [
 ];
 const DrumSamplerEditor = ({ instrumentData }) => {
   const sampleUrl = instrumentData.url || '';
-  const sampleName = sampleUrl.split('/').pop();
+  // ✅ FIX: Prioritize instrument name. If falling back to URL, handle Data URLs gracefully.
+  const getSampleName = () => {
+    if (instrumentData.name) return instrumentData.name;
+    if (sampleUrl.startsWith('data:')) return 'Audio Data';
+    return sampleUrl.split('/').pop() || 'Untitled';
+  };
+  const sampleName = getSampleName();
   const [audioBuffer, setAudioBuffer] = useState(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const waveformData = useMemo(() => {
     if (!audioBuffer) return null;
-    const channelData = audioBuffer.getChannelData(0);
+
+    // ✅ CRITICAL FIX: Handle both native AudioBuffer and Tone.ToneAudioBuffer
+    // If it's a ToneAudioBuffer, use .get() to retrieve the native AudioBuffer
+    const rawBuffer = (audioBuffer.get && typeof audioBuffer.get === 'function')
+      ? audioBuffer.get()
+      : audioBuffer;
+
+    // Double check if getChannelData exists
+    if (!rawBuffer || typeof rawBuffer.getChannelData !== 'function') {
+      console.warn('Waveform visualization: Invalid audio buffer', rawBuffer);
+      return null;
+    }
+
+    const channelData = rawBuffer.getChannelData(0);
     const bucketCount = 512;
     const samplesPerBucket = Math.max(1, Math.floor(channelData.length / bucketCount));
     const buckets = [];
@@ -83,13 +102,27 @@ const DrumSamplerEditor = ({ instrumentData }) => {
       buckets.push({ min, max });
     }
     return {
-      duration: audioBuffer.duration,
+      duration: rawBuffer.duration,
       buckets,
     };
   }, [audioBuffer]);
 
   // Load audio buffer for waveform
   useEffect(() => {
+    // ✅ OPTIMIZATION: Use pre-loaded buffer if available (e.g. from AI generation)
+    // CRITICAL: Check for valid buffer structure, not just existence (to avoid empty objects)
+    const isValidBuffer = (buf) => buf && (
+      (buf instanceof AudioBuffer) ||
+      (buf.get && typeof buf.get === 'function') ||
+      (buf.length && buf.numberOfChannels)
+    );
+
+    if (isValidBuffer(instrumentData.audioBuffer)) {
+      setAudioBuffer(instrumentData.audioBuffer);
+      console.log('✅ Used existing audio buffer from instrument data');
+      return;
+    }
+
     if (!sampleUrl) return;
 
     const loadAudio = async () => {
@@ -109,7 +142,7 @@ const DrumSamplerEditor = ({ instrumentData }) => {
     };
 
     loadAudio();
-  }, [sampleUrl]);
+  }, [sampleUrl, instrumentData.audioBuffer]);
 
   // Setup PreviewManager with current instrument
   useEffect(() => {
@@ -168,7 +201,14 @@ const DrumSamplerEditor = ({ instrumentData }) => {
   // ✅ SYNC BUFFER FX: Update audio engine when destructive edits (Reverse/Normalize) change
   useEffect(() => {
     const audioEngine = AudioEngineGlobal.get();
-    if (!audioEngine || !instrumentData.id || !audioBuffer) return;
+    // Use strict check here as well to avoid passing {} to processAudioBuffer
+    const isValidBuffer = (buf) => buf && (
+      (buf instanceof AudioBuffer) ||
+      (buf.get && typeof buf.get === 'function') ||
+      (buf.length && buf.numberOfChannels)
+    );
+
+    if (!audioEngine || !instrumentData.id || !isValidBuffer(audioBuffer)) return;
 
     const instrument = audioEngine.instruments.get(instrumentData.id);
     // Only Wasm instruments support setBuffer for now
@@ -179,7 +219,14 @@ const DrumSamplerEditor = ({ instrumentData }) => {
     // Process buffer (Reverse, Normalize etc.)
     const processed = processAudioBuffer(audioBuffer, precomputed);
 
-    instrument.setBuffer(processed);
+    // Double check result
+    if (processed && isValidBuffer(processed)) {
+      instrument.setBuffer(processed);
+    } else {
+      console.warn('Buffer processing resulted in invalid buffer', processed);
+      // Fallback to original if valid
+      if (isValidBuffer(audioBuffer)) instrument.setBuffer(audioBuffer);
+    }
 
   }, [audioBuffer, instrumentData.precomputed, instrumentData.id]);
 

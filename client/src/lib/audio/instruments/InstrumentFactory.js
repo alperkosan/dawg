@@ -127,10 +127,18 @@ export class InstrumentFactory {
             console.log(`  Single sample instrument (WASM): ${instrumentData.url}`);
 
             // ✅ FIX: Use existing buffer if provided (from store or engine cache)
-            let sampleBuffer = existingBuffer || instrumentData.audioBuffer || null;
+            // CRITICAL: Validate that instrumentData.audioBuffer is a real buffer and not an empty object {} from JSON
+            const isValidBuffer = (buf) => buf && (
+                (typeof AudioBuffer !== 'undefined' && buf instanceof AudioBuffer) ||
+                (buf.length && buf.numberOfChannels) ||
+                (buf.get && typeof buf.get === 'function')
+            );
+
+            let sampleBuffer = existingBuffer || (isValidBuffer(instrumentData.audioBuffer) ? instrumentData.audioBuffer : null);
 
             // Only load from network if we don't have a buffer
             if (!sampleBuffer && preloadSamples) {
+                console.log(`  Fetching sample from URL: ${instrumentData.url ? 'Data/URL' : 'None'}`);
                 const buffers = await SampleLoader.preloadInstrument(instrumentData, audioContext);
                 sampleBuffer = buffers.get(instrumentData.url);
             }

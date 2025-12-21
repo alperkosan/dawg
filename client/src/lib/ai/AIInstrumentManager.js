@@ -17,14 +17,15 @@ export class AIInstrumentManager {
   async createAIInstrument(prompt, options = {}) {
     const {
       variationIndex = 0,
-      provider = 'stability-ai',
+      provider = 'elevenlabs',
       duration = 5,
-      apiKey = null
+      apiKey = null,
+      preGeneratedResult = null // ✅ NEW: Allow passing already generated result
     } = options;
 
     try {
-      // Generate audio
-      const result = await aiInstrumentService.generateInstrument(prompt, {
+      // Use pre-generated result if available, otherwise generate
+      const result = preGeneratedResult || await aiInstrumentService.generateInstrument(prompt, {
         provider,
         variations: 3,
         duration,
@@ -39,11 +40,21 @@ export class AIInstrumentManager {
 
       // Create instrument data
       const instrumentId = `ai-inst-${uuidv4()}`;
+
+      // ✅ PERSISTENCE FIX: Create Data URL for the sample
+      // This ensures the instrument can be restored/reloaded even if audioBuffer is lost
+      // and matches the project's standard sample usage (which relies on .url)
+      let audioUrl = null;
+      if (selectedVariation.audioData) {
+        audioUrl = `data:audio/mpeg;base64,${selectedVariation.audioData}`;
+      }
+
       const instrumentData = {
         id: instrumentId,
         name: this.generateInstrumentName(prompt),
         type: 'ai-generated',
         audioBuffer: selectedVariation.audioBuffer,
+        url: audioUrl, // ✅ Assign standard URL property
         aiMetadata: {
           provider,
           originalPrompt: prompt,
@@ -62,11 +73,13 @@ export class AIInstrumentManager {
       const instrumentsStore = useInstrumentsStore.getState();
 
       // Format instrument data for handleAddNewInstrument
+      // Format instrument data for handleAddNewInstrument
       const formattedInstrumentData = {
         id: instrumentData.id,
         name: instrumentData.name,
         type: 'sample', // AI-generated instruments are treated as samples
         audioBuffer: instrumentData.audioBuffer,
+        url: instrumentData.url, // ✅ Pass URL to store
         aiMetadata: instrumentData.aiMetadata
       };
 
@@ -156,9 +169,15 @@ export class AIInstrumentManager {
       );
 
       // Update instrument
+      let audioUrl = null;
+      if (result.variations[0].audioData) {
+        audioUrl = `data:audio/mpeg;base64,${result.variations[0].audioData}`;
+      }
+
       const updatedInstrument = {
         ...instrument,
         audioBuffer: result.variations[0].audioBuffer,
+        url: audioUrl, // ✅ Update URL
         aiMetadata: {
           ...aiMetadata,
           selectedPrompt: variation.prompt,

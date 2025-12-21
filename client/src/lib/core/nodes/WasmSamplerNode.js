@@ -180,12 +180,20 @@ export class WasmSamplerNode {
     loadBuffer(audioBuffer) {
         if (!audioBuffer || this.isDisposed) return;
 
-        this.buffer = audioBuffer;
+        // ✅ Handle Tone.js ToneAudioBuffer wrapper
+        const rawBuffer = (audioBuffer.get && typeof audioBuffer.get === 'function') ? audioBuffer.get() : audioBuffer;
+
+        this.buffer = rawBuffer;
 
         // Extract channels
-        const left = audioBuffer.getChannelData(0);
-        const right = audioBuffer.numberOfChannels > 1
-            ? audioBuffer.getChannelData(1)
+        if (!rawBuffer.getChannelData) {
+            console.error('❌ WasmSamplerNode received invalid buffer:', rawBuffer);
+            return;
+        }
+
+        const left = rawBuffer.getChannelData(0);
+        const right = rawBuffer.numberOfChannels > 1
+            ? rawBuffer.getChannelData(1)
             : new Float32Array(0); // Send empty if mono
 
         if (this.workletNode) {

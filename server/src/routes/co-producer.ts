@@ -24,8 +24,8 @@ export async function coProducerRoutes(server: FastifyInstance) {
      */
     server.post('/generate', async (request: FastifyRequest, reply: FastifyReply) => {
         try {
-            const { prompt, context } = request.body as { prompt: string, context: ProjectContext };
-            const result = await coProducerService.generateVariation(prompt, context);
+            const { prompt, context, options } = request.body as { prompt: string, context: ProjectContext, options?: any };
+            const result = await coProducerService.generateVariation(prompt, context, options);
             return result;
         } catch (error) {
             logger.error('❌ Co-Producer generation failed:', error);
