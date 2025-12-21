@@ -12,6 +12,7 @@ import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { useArrangementCanvas, useClipInteraction } from './hooks';
 // ✅ PHASE 1: Store Consolidation - Use unified store
 import { useArrangementStore } from '@/store/useArrangementStore';
+import ShortcutManager, { SHORTCUT_PRIORITY } from '@/lib/core/ShortcutManager';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
 import { usePanelsStore } from '@/store/usePanelsStore';
 import { useProjectAudioStore } from '@/store/useProjectAudioStore';
@@ -1170,12 +1171,13 @@ export function ArrangementPanelV2() {
   // KEYBOARD SHORTCUTS
   // ============================================================================
 
+  // ✅ KEYBOARD SHORTCUTS MIGRATION
   useEffect(() => {
     const handleKeyDown = (e) => {
-      // Ignore if typing in input/textarea
-      if (e.target.matches('input, textarea')) return;
+      // Ignore if typing in input/textarea (handled by manager, but extra safety)
+      if (e.target.matches('input, textarea')) return false;
 
-      // Escape - cancel operations or close context menu or exit deletion mode or cancel split range
+      // Escape - cancel operations
       if (e.key === 'Escape') {
         cancelDrag();
         cancelResize();
@@ -1183,30 +1185,27 @@ export function ArrangementPanelV2() {
         cancelGain();
         setContextMenu(null);
 
-        // Cancel draw mode
         if (drawStart || drawGhost) {
           setDrawStart(null);
           setDrawGhost(null);
           console.log('✅ Draw cancelled');
-          return;
+          return true;
         }
 
-        // Cancel split range selection
         if (splitStart || splitRange) {
           setSplitStart(null);
           setSplitRange(null);
           console.log('✅ Split range cancelled');
-          return;
+          return true;
         }
 
-        // Exit deletion mode
         if (deletionMode) {
           setDeletionMode(false);
           setActiveTool('select');
           console.log('✅ Deletion mode deactivated');
         }
 
-        return;
+        return true;
       }
 
       // Copy - Ctrl+C
@@ -1215,8 +1214,9 @@ export function ArrangementPanelV2() {
           e.preventDefault();
           copySelection();
           console.log(`Copied ${selectedClipIds.length} clip(s)`);
+          return true;
         }
-        return;
+        return false;
       }
 
       // Cut - Ctrl+X
@@ -1225,19 +1225,20 @@ export function ArrangementPanelV2() {
           e.preventDefault();
           cutSelection();
           console.log(`Cut ${selectedClipIds.length} clip(s)`);
+          return true;
         }
-        return;
+        return false;
       }
 
       // Paste - Ctrl+V
       if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
         if (clipboard && clipboard.length > 0) {
           e.preventDefault();
-          // Get cursor position from effectiveCurrentStep (already in beats)
           paste(effectiveCurrentStep || 0);
           console.log(`Pasted ${clipboard.length} clip(s)`);
+          return true;
         }
-        return;
+        return false;
       }
 
       // Duplicate - Ctrl+D
@@ -1247,31 +1248,33 @@ export function ArrangementPanelV2() {
           const newClipIds = duplicateClips(selectedClipIds);
           useArrangementStore.getState().setArrangementSelection(newClipIds);
           console.log(`Duplicated ${selectedClipIds.length} clip(s)`);
+          return true;
         }
-        return;
+        return false;
       }
 
       // Select All - Ctrl+A
       if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
         e.preventDefault();
         useArrangementStore.getState().selectAllArrangementClips();
-        return;
+        return true;
       }
 
-      // Space - toggle play/pause
-      if (e.code === 'Space') {
-        e.preventDefault();
-        usePlaybackStore.getState().togglePlayPause();
-        return;
-      }
+      // Space - toggle play/pause (handled by global shortcuts)
+      // if (e.code === 'Space') {
+      //   e.preventDefault();
+      //   usePlaybackStore.getState().togglePlayPause();
+      //   return true;
+      // }
 
-      // Delete - remove selected clips
+      // Delete/Backspace
       if (e.key === 'Delete' || e.key === 'Backspace') {
         if (selectedClipIds.length > 0) {
           e.preventDefault();
           removeClips(selectedClipIds);
+          return true;
         }
-        return;
+        return false;
       }
 
       // Tool shortcuts
@@ -1279,32 +1282,28 @@ export function ArrangementPanelV2() {
         e.preventDefault();
         setActiveTool('select');
         console.log('✋ Select tool activated');
-        return;
+        return true;
       }
 
-      if (e.key === 'd' || e.key === 'D') {
-        if (!(e.ctrlKey || e.metaKey)) { // Avoid conflict with Ctrl+D (duplicate)
-          e.preventDefault();
-          setActiveTool('delete');
-          console.log('🗑️ Delete tool activated');
-          return;
-        }
+      if ((e.key === 'd' || e.key === 'D') && !e.ctrlKey && !e.metaKey) { // Avoid conflict with Ctrl+D (duplicate)
+        e.preventDefault();
+        setActiveTool('delete');
+        console.log('🗑️ Delete tool activated');
+        return true;
       }
 
-      if (e.key === 's' || e.key === 'S') {
-        if (!(e.ctrlKey || e.metaKey)) { // Avoid conflict with Ctrl+S (save)
-          e.preventDefault();
-          setActiveTool('split');
-          console.log('✂️ Split tool activated');
-          return;
-        }
+      if ((e.key === 's' || e.key === 'S') && !e.ctrlKey && !e.metaKey) { // Avoid conflict with Ctrl+S (save)
+        e.preventDefault();
+        setActiveTool('split');
+        console.log('✂️ Split tool activated');
+        return true;
       }
 
       if (e.key === 'p' || e.key === 'P') {
         e.preventDefault();
         setActiveTool('draw');
         console.log('✏️ Draw tool activated');
-        return;
+        return true;
       }
 
       // Zoom shortcuts
@@ -1313,7 +1312,7 @@ export function ArrangementPanelV2() {
         const newZoomX = Math.min(4, viewport.zoomX * 1.25);
         eventHandlers.onZoom(newZoomX, viewport.zoomY);
         console.log(`🔍 Zoom in: ${newZoomX.toFixed(2)}x`);
-        return;
+        return true;
       }
 
       if ((e.ctrlKey || e.metaKey) && (e.key === '-' || e.key === '_')) {
@@ -1321,42 +1320,40 @@ export function ArrangementPanelV2() {
         const newZoomX = Math.max(0.25, viewport.zoomX * 0.8);
         eventHandlers.onZoom(newZoomX, viewport.zoomY);
         console.log(`🔍 Zoom out: ${newZoomX.toFixed(2)}x`);
-        return;
+        return true;
       }
 
       if ((e.ctrlKey || e.metaKey) && e.key === '0') {
         e.preventDefault();
         eventHandlers.onZoom(1.0, 1.0);
         console.log('🔍 Reset zoom');
-        return;
+        return true;
       }
 
-      if (e.key === 'f' || e.key === 'F') {
-        if (!(e.ctrlKey || e.metaKey)) {
-          e.preventDefault();
-          // Fit to view - same logic as toolbar button
-          if (clips.length === 0) {
-            eventHandlers.onZoom(1.0, 1.0);
-            return;
-          }
-
-          let minTime = Infinity;
-          let maxTime = -Infinity;
-
-          clips.forEach(clip => {
-            minTime = Math.min(minTime, clip.startTime);
-            maxTime = Math.max(maxTime, clip.startTime + clip.duration);
-          });
-
-          const totalBeats = maxTime - minTime;
-          const availableWidth = viewport.width - constants.TRACK_HEADER_WIDTH;
-          const pixelsPerBeat = availableWidth / totalBeats;
-          const newZoomX = Math.max(0.25, Math.min(4, pixelsPerBeat / constants.PIXELS_PER_BEAT));
-
-          eventHandlers.onZoom(newZoomX, 1.0);
-          console.log(`🔍 Fit to view: ${totalBeats.toFixed(1)} beats, zoom ${newZoomX.toFixed(2)}x`);
-          return;
+      if ((e.key === 'f' || e.key === 'F') && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        // Fit to view - same logic as toolbar button
+        if (clips.length === 0) {
+          eventHandlers.onZoom(1.0, 1.0);
+          return true;
         }
+
+        let minTime = Infinity;
+        let maxTime = -Infinity;
+
+        clips.forEach(clip => {
+          minTime = Math.min(minTime, clip.startTime);
+          maxTime = Math.max(maxTime, clip.startTime + clip.duration);
+        });
+
+        const totalBeats = maxTime - minTime;
+        const availableWidth = viewport.width - constants.TRACK_HEADER_WIDTH;
+        const pixelsPerBeat = availableWidth / totalBeats;
+        const newZoomX = Math.max(0.25, Math.min(4, pixelsPerBeat / constants.PIXELS_PER_BEAT));
+
+        eventHandlers.onZoom(newZoomX, 1.0);
+        console.log(`🔍 Fit to view: ${totalBeats.toFixed(1)} beats, zoom ${newZoomX.toFixed(2)}x`);
+        return true;
       }
 
       // Marker shortcuts
@@ -1364,30 +1361,32 @@ export function ArrangementPanelV2() {
         e.preventDefault();
         const label = prompt('Marker name:', 'Marker');
         if (label) {
-          // Get cursor position from effectiveCurrentStep (already in beats)
           addMarker(effectiveCurrentStep || 0, label);
           console.log(`📍 Added marker "${label}" at ${(effectiveCurrentStep || 0).toFixed(2)} beats`);
         }
-        return;
+        return true;
       }
 
-      if (e.key === 'l' || e.key === 'L') {
-        if (!(e.ctrlKey || e.metaKey)) {
-          e.preventDefault();
-          const label = prompt('Loop region name:', 'Loop');
-          if (label) {
-            const start = effectiveCurrentStep || 0;
-            const end = start + 8; // Default 8 beats
-            addLoopRegion(start, end, label);
-            console.log(`🔄 Added loop region "${label}" from ${start.toFixed(2)} to ${end.toFixed(2)} beats`);
-          }
-          return;
+      if ((e.key === 'l' || e.key === 'L') && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        const label = prompt('Loop region name:', 'Loop');
+        if (label) {
+          const start = effectiveCurrentStep || 0;
+          const end = start + 8; // Default 8 beats
+          addLoopRegion(start, end, label);
+          console.log(`🔄 Added loop region "${label}" from ${start.toFixed(2)} to ${end.toFixed(2)} beats`);
         }
+        return true;
       }
+
+      return false;
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    ShortcutManager.registerContext('ARRANGEMENT', SHORTCUT_PRIORITY.CONTEXTUAL, {
+      onKeyDown: handleKeyDown
+    });
+
+    return () => ShortcutManager.unregisterContext('ARRANGEMENT');
   }, [selectedClipIds, clipboard, effectiveCurrentStep, cancelDrag, cancelResize, cancelFade, cancelGain, copySelection, cutSelection, paste, duplicateClips, removeClips, setActiveTool, viewport, eventHandlers, clips, constants, deletionMode, setDeletionMode, drawStart, drawGhost, setDrawStart, setDrawGhost, splitStart, splitRange, setSplitStart, setSplitRange, addMarker, addLoopRegion]);
 
   // ============================================================================

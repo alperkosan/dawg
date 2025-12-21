@@ -354,6 +354,7 @@ export class MultiSampleInstrument extends BaseInstrument {
         const mappedVelocity = VelocityCurve.apply(velocity, this.velocityCurveType, this.velocityCurveOptions);
 
         const useChop = this._shouldUseSampleChop();
+        /*
         if (import.meta.env.DEV) {
             console.log(`[SampleChop][Multi] noteOn ${this.name}`, {
                 midiNote,
@@ -363,6 +364,7 @@ export class MultiSampleInstrument extends BaseInstrument {
                 useChop
             });
         }
+        */
 
         if (useChop) {
             this._trackNoteOn(midiNote, mappedVelocity, time);
@@ -576,7 +578,7 @@ export class MultiSampleInstrument extends BaseInstrument {
                 this.voicePool.release(midiNote, time, releaseVelocity);
 
                 // ✅ SYMPATHETIC RESONANCE: Release harmonic resonances
-                if (this.sympatheticResonance && this.sympatheticResonanceEnabled) {
+                if (this.sympatheticResonance && this.sympatheticResonanceEnabled && typeof this.sympatheticResonance.release === 'function') {
                     this.sympatheticResonance.release(midiNote, time);
                 }
                 this._trackNoteOff(midiNote);
@@ -614,16 +616,18 @@ export class MultiSampleInstrument extends BaseInstrument {
     }
 
     /**
-     * Set master volume
+     * ✅ PHASE 4: Set instrument volume (real-time automation)
      */
-    setVolume(volume) {
+    setVolume(volume, time = null) {
         if (!this.masterGain) return;
 
+        const now = time !== null ? time : this.audioContext.currentTime;
         const clampedVolume = Math.max(0, Math.min(1, volume));
-        this.masterGain.gain.setValueAtTime(
-            clampedVolume,
-            this.audioContext.currentTime
-        );
+
+        // ✅ IMPROVED: Linear ramping for smoother automation (Phase 2)
+        this.masterGain.gain.cancelScheduledValues(now);
+        this.masterGain.gain.setValueAtTime(this.masterGain.gain.value, now);
+        this.masterGain.gain.linearRampToValueAtTime(clampedVolume, now + 0.005);
     }
 
     /**
@@ -719,6 +723,7 @@ export class MultiSampleInstrument extends BaseInstrument {
             Array.isArray(this.sampleChop.slices) &&
             this.sampleChop.slices.length > 0
         );
+        /*
         if (import.meta.env.DEV) {
             console.log(`[SampleChop][Multi] _shouldUseSampleChop ${this.name}`, {
                 mode: this.sampleChopMode,
@@ -727,6 +732,7 @@ export class MultiSampleInstrument extends BaseInstrument {
                 result
             });
         }
+        */
         return result;
     }
 

@@ -13,6 +13,7 @@ import { getPreset, getPresetNames } from '@/lib/audio/synth/presets';
 import { getPreviewManager } from '@/lib/audio/preview';
 import { ADSRCanvas, OscillatorPanel } from '@/components/controls/canvas';
 import { Knob } from '@/components/controls';
+import ShortcutManager, { SHORTCUT_PRIORITY } from '@/lib/core/ShortcutManager';
 import VASynthEffectsPanel from './VASynthEffectsPanel'; // ✅ EFFECTS UI
 import './VASynthEditorV2.css';
 
@@ -210,13 +211,16 @@ const VASynthEditorV2 = ({ instrumentData: initialData }) => {
       'l': 74,  // D5
     };
 
+    // ✅ KEYBOARD SHORTCUTS MIGRATION
     const handleKeyDown = (e) => {
       const key = e.key.toLowerCase();
       if (keyToNote[key] && !pressedKeys.has(key)) {
         e.preventDefault();
         setPressedKeys(prev => new Set([...prev, key]));
         handleNoteOn(keyToNote[key]);
+        return true;
       }
+      return false;
     };
 
     const handleKeyUp = (e) => {
@@ -229,16 +233,17 @@ const VASynthEditorV2 = ({ instrumentData: initialData }) => {
           return newSet;
         });
         handleNoteOff(keyToNote[key]);
+        return true;
       }
+      return false;
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
+    ShortcutManager.registerContext('VASYNTH_PREVIEW', SHORTCUT_PRIORITY.SYSTEM, {
+      onKeyDown: handleKeyDown,
+      onKeyUp: handleKeyUp
+    });
 
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('keyup', handleKeyUp);
-    };
+    return () => ShortcutManager.unregisterContext('VASYNTH_PREVIEW');
   }, [pressedKeys, handleNoteOn, handleNoteOff]);
 
   // Setup PreviewManager

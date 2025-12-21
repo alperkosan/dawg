@@ -612,6 +612,18 @@ export class PlaybackManager {
             scheduledTarget = this.transport.audioContext.currentTime;
         }
 
+        // ✅ STEP 6: Notify all instruments about the loop restart (Handshake Mechanism)
+        // This allows instruments to resync LFOs, phases, and preserve mono voices
+        this.audioEngine.instruments.forEach((instrument) => {
+            if (typeof instrument.onLoopRestart === 'function') {
+                try {
+                    instrument.onLoopRestart(scheduledTarget, this.loopStart);
+                } catch (e) {
+                    console.error(`Error during onLoopRestart for instrument ${instrument.id}:`, e);
+                }
+            }
+        });
+
         // ✅ Schedule immediately - loop restart needs instant scheduling
         this._scheduleContent(scheduledTarget, 'loop-restart', true, {
             scope: 'all',
@@ -868,20 +880,26 @@ export class PlaybackManager {
             console.log('✅ PlaybackManager: _scheduleContent() completed');
 
             // ⚡ IDLE OPTIMIZATION: Resume AudioContext if suspended
-            // ✅ FIX: Add small delay after resume to prevent click at playback start
             if (this.audioEngine.audioContext.state === 'suspended') {
                 await this.audioEngine.audioContext.resume();
                 console.log('🎵 AudioContext resumed for playback');
-                // ✅ FIX: Small delay after resume to let AudioContext stabilize (prevents click)
-                await new Promise(resolve => setTimeout(resolve, 5)); // 5ms delay
+                await new Promise(resolve => setTimeout(resolve, 5));
             }
 
-            // ✅ FIX: Add minimum delay before transport start to prevent click at bar start
-            // This ensures AudioContext is fully ready and prevents timing issues
-            const minStartDelay = 0.002; // 2ms minimum delay
-            const adjustedStartTime = Math.max(startTime + minStartDelay, this.audioEngine.audioContext.currentTime + minStartDelay);
+            // ✅ PHASE 3: Global ADC Pre-Delay (Professional Parity)
+            // Calculate necessary pre-roll to accommodate plugin latency
+            const maxLatency = this.audioEngine.latencyCompensator?.getMaxLatencySeconds() || 0;
+            const safetyBuffer = 0.050; // 50ms safety buffer for lookahead stability
+            const startDelay = Math.max(0.010, maxLatency + safetyBuffer); // Min 10ms
 
-            console.log('🎵 PlaybackManager: Starting transport at', adjustedStartTime);
+            const adjustedStartTime = this.audioEngine.audioContext.currentTime + startDelay;
+
+            console.log('🎵 PlaybackManager: Starting transport with ADC pre-delay:', {
+                latency: maxLatency.toFixed(3),
+                preDelay: startDelay.toFixed(3),
+                startTime: adjustedStartTime.toFixed(3)
+            });
+
             this.transport.start(adjustedStartTime);
             console.log('✅ PlaybackManager: Transport started');
 

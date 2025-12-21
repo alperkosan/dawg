@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Play, Pause, Square, Repeat, Maximize2, ChevronRight, X, Download, Save, Loader2, Sparkles } from 'lucide-react';
+import { Play, Pause, Square, Repeat, Maximize2, ChevronRight, X, Download, Save, Loader2, Sparkles, Music, Keyboard } from 'lucide-react';
 import { Knob } from '@/components/controls';
 import { BPMInput } from '@/components/controls/BPMInput';
 import { CPUMonitor } from '@/components/monitors/CPUMonitor';
@@ -47,6 +47,9 @@ function TopToolbar({ onExportClick, onSaveClick, saveStatus = 'saved', lastSave
   const togglePlayPause = usePlaybackStore(state => state.togglePlayPause);
   const handleStop = usePlaybackStore(state => state.handleStop);
   const cycleFollowPlayheadMode = usePlaybackStore(state => state.cycleFollowPlayheadMode);
+
+  const keyboardPianoMode = usePlaybackStore(state => state.keyboardPianoMode);
+  const setKeyboardPianoMode = usePlaybackStore(state => state.setKeyboardPianoMode);
 
   const isReady = true; // Store is always ready
 
@@ -109,6 +112,18 @@ function TopToolbar({ onExportClick, onSaveClick, saveStatus = 'saved', lastSave
           {followPlayheadMode === 'CONTINUOUS' && <Maximize2 size={18} />}
           {followPlayheadMode === 'PAGE' && <ChevronRight size={18} />}
           {followPlayheadMode === 'OFF' && <X size={18} />}
+        </button>
+        <button
+          title={keyboardPianoMode ? "Disable Musical Typing (Keyboard Piano)" : "Enable Musical Typing (Keyboard Piano)"}
+          onClick={() => setKeyboardPianoMode(!keyboardPianoMode)}
+          className={`top-toolbar__transport-btn transport-btn ${keyboardPianoMode ? 'transport-btn--active' : ''}`}
+          style={{
+            color: keyboardPianoMode ? '#f59e0b' : undefined,
+            borderColor: keyboardPianoMode ? '#f59e0b' : undefined,
+            backgroundColor: keyboardPianoMode ? 'rgba(245, 158, 11, 0.1)' : undefined
+          }}
+        >
+          <Keyboard size={18} />
         </button>
         <div className="top-toolbar__mode-toggle">
           <ModeButton

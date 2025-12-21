@@ -53,6 +53,7 @@ const RenderPage = lazy(() => import('./pages/RenderPage'));
 // Services
 import { authService } from './services/authService';
 import { projectService } from './services/projectService';
+import ShortcutManager, { SHORTCUT_PRIORITY } from './lib/core/ShortcutManager';
 
 // Development Helpers
 if (import.meta.env.DEV) {
@@ -97,20 +98,35 @@ function DAWApp() {
     console.log('📚 App.jsx - isPresetLibraryOpen:', isPresetLibraryOpen);
   }, [isPresetLibraryOpen]);
 
-  // Keyboard Shortcuts (Export Only - Save handled by hook)
+  // ✅ SHORTCUT SYSTEM INITIALIZATION
   useEffect(() => {
-    if (engineStatus === 'ready') {
-      const handleKeyDown = (e) => {
-        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    ShortcutManager.init();
+
+    // Register Global Context (Transport, Save, Export)
+    ShortcutManager.registerContext('GLOBAL', SHORTCUT_PRIORITY.GLOBAL, {
+      onKeyDown: (e) => {
+        // Transport handled by TransportManager (migrated separately)
+
+        // Export - Ctrl+E
         if ((e.ctrlKey || e.metaKey) && e.key === 'e') {
           e.preventDefault();
           setIsExportPanelOpen(prev => !prev);
+          return true;
         }
-      };
-      window.addEventListener('keydown', handleKeyDown);
-      return () => window.removeEventListener('keydown', handleKeyDown);
-    }
-  }, [engineStatus]);
+
+        // Save - Ctrl+S
+        if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+          e.preventDefault();
+          handleSave();
+          return true;
+        }
+
+        return false;
+      }
+    });
+
+    return () => ShortcutManager.unregisterContext('GLOBAL');
+  }, [handleSave]);
 
   // Resume On Return Effect
   useEffect(() => {

@@ -23,6 +23,7 @@ import {
   ChevronRight,
   ChevronLeft
 } from 'lucide-react';
+import ShortcutManager, { SHORTCUT_PRIORITY } from '@/lib/core/ShortcutManager';
 import { MixerChannel } from './components/MixerChannel';
 import { EffectsRack } from './components/EffectsRack';
 import { MixerPrimaryMeter } from './components/MixerPrimaryMeter';
@@ -134,28 +135,22 @@ const Mixer = ({ isVisible = true }) => {
     setColorPickerState(prev => ({ ...prev, isOpen: false }));
   }, []);
 
-  // Keyboard shortcuts
+  // ✅ KEYBOARD SHORTCUTS MIGRATION
   useEffect(() => {
     const handleKeyDown = (e) => {
-      // Ignore if user is typing in an input field
+      // Ignore if user is typing in an input field (handled by manager, but extra safety)
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
-        return;
+        return false;
       }
 
       const activeTrack = mixerTracks.find(t => t.id === activeChannelId);
-      if (!activeTrack) return;
+      if (!activeTrack) return false;
 
       switch (e.key.toLowerCase()) {
         case 'm':
           e.preventDefault();
           toggleMute(activeChannelId);
-          break;
-
-        // ✅ FIX: Removed 's' key shortcut to avoid conflict with VASynthEditorV2 preview keyboard
-        // case 's':
-        //   e.preventDefault();
-        //   toggleSolo(activeChannelId);
-        //   break;
+          return true;
 
         case 'delete':
         case 'backspace':
@@ -165,25 +160,29 @@ const Mixer = ({ isVisible = true }) => {
               removeTrack(activeChannelId);
             }
           }
-          break;
+          return true;
 
         case 'arrowleft':
           e.preventDefault();
           navigateChannel(-1);
-          break;
+          return true;
 
         case 'arrowright':
           e.preventDefault();
           navigateChannel(1);
-          break;
+          return true;
 
         default:
           break;
       }
+      return false;
     };
 
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
+    ShortcutManager.registerContext('MIXER', SHORTCUT_PRIORITY.CONTEXTUAL, {
+      onKeyDown: handleKeyDown
+    });
+
+    return () => ShortcutManager.unregisterContext('MIXER');
   }, [activeChannelId, mixerTracks, toggleMute, toggleSolo, removeTrack, navigateChannel]);
 
   const handleAddTrack = () => {

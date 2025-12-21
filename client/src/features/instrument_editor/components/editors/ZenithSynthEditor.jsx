@@ -185,6 +185,12 @@ const ZenithSynthEditor = ({ instrumentData: initialData }) => {
                 } else if (keys[0] === 'amplitudeEnvelope') {
                     const currentData = useInstrumentEditorStore.getState().instrumentData;
                     updateObj.amplitudeEnvelope = currentData?.amplitudeEnvelope;
+                } else if (keys[0] === 'lfos') {
+                    const currentData = useInstrumentEditorStore.getState().instrumentData;
+                    updateObj.lfos = currentData?.lfos;
+                } else if (keys[0] === 'modSlots') {
+                    const currentData = useInstrumentEditorStore.getState().instrumentData;
+                    updateObj.modSlots = currentData?.modSlots;
                 }
 
                 instrument.updateParameters(updateObj);
@@ -207,10 +213,40 @@ const ZenithSynthEditor = ({ instrumentData: initialData }) => {
 
     // Handle modulation slot changes
     const handleModSlotChange = useCallback((slotIndex, updates) => {
-        // Update each field in the slot
-        Object.entries(updates).forEach(([key, value]) => {
-            handleParameterChange(`modSlots.${slotIndex}.${key}`, value);
-        });
+        console.log(`🎛️ [MOD SLOT] Change requested:`, { slotIndex, updates });
+
+        // Get current modSlots array
+        const currentData = useInstrumentEditorStore.getState().instrumentData;
+        const currentModSlots = currentData?.modSlots || [];
+
+        // If adding a new slot beyond current array length, expand the array
+        if (slotIndex >= currentModSlots.length) {
+            console.log(`  ➕ Expanding modSlots array from ${currentModSlots.length} to ${slotIndex + 1}`);
+            const newModSlots = [...currentModSlots];
+            // Fill gaps with empty slots
+            while (newModSlots.length <= slotIndex) {
+                newModSlots.push({
+                    enabled: false,
+                    source: null,
+                    destination: null,
+                    amount: 0,
+                    curve: 'linear'
+                });
+            }
+            // Update the new slot
+            newModSlots[slotIndex] = {
+                ...newModSlots[slotIndex],
+                ...updates
+            };
+            // Update entire array at once
+            handleParameterChange('modSlots', newModSlots);
+        } else {
+            // Update existing slot fields individually
+            Object.entries(updates).forEach(([key, value]) => {
+                console.log(`  📝 Updating modSlots.${slotIndex}.${key} = ${value}`);
+                handleParameterChange(`modSlots.${slotIndex}.${key}`, value);
+            });
+        }
     }, [handleParameterChange]);
 
     // Preview keyboard handlers

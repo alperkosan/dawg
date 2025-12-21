@@ -431,6 +431,36 @@ export class EffectFactory {
   }
 
   /**
+   * Get latency in samples for an effect type and settings
+   * Useful for ADC (Automatic Delay Compensation)
+   */
+  static getLatencySamples(type, settings = {}, sampleRate = 48000) {
+    const normalizedType = this.normalizeType(type);
+
+    // 1. Limiter (lookahead)
+    if (normalizedType === 'limiter') {
+      const lookaheadMs = settings.lookahead !== undefined ? Number(settings.lookahead) : 5;
+      return Math.round((lookaheadMs / 1000) * sampleRate);
+    }
+
+    // 2. Clipper (oversampling)
+    if (normalizedType === 'clipper' && settings.oversample > 1) {
+      // Linear phase oversampling filters add delay
+      // Simplified: each stage adds roughly 32 samples of group delay
+      return Math.round(Number(settings.oversample) * 16);
+    }
+
+    // 3. Sidechain Compressor (lookahead)
+    if (normalizedType === 'sidechain-compressor') {
+      // Small internal lookahead for RMS detection
+      return 128;
+    }
+
+    // Default: zero latency
+    return 0;
+  }
+
+  /**
    * Get worklet configurations for dynamic loading
    * Returns array of { path, name } objects
    */

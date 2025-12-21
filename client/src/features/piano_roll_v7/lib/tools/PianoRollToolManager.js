@@ -5,6 +5,8 @@
  * Supports: Paint Brush, Chopper, Strumizer, Arpeggiator
  * Keyboard shortcuts: Alt + [1-9] for tool selection
  */
+import ShortcutManager from '@/lib/core/ShortcutManager';
+import { usePlaybackStore } from '@/store/usePlaybackStore';
 
 export const TOOL_TYPES = {
   SELECT: 'select',           // Default selection tool
@@ -190,11 +192,6 @@ class PianoRollToolManager {
    * Handle keyboard shortcuts
    */
   handleKeyPress(e) {
-    // ✅ IGNORE SHORTCUTS when keyboard piano mode is active
-    if (this.keyboardPianoModeActive) {
-      return false;
-    }
-
     if (!e.altKey) return false;
 
     const key = e.key.toLowerCase();
@@ -211,13 +208,7 @@ class PianoRollToolManager {
     return false;
   }
 
-  /**
-   * ✅ SET KEYBOARD PIANO MODE
-   * When active, tool shortcuts are disabled
-   */
-  setKeyboardPianoMode(active) {
-    this.keyboardPianoModeActive = active;
-  }
+  // ✅ REMOVED: setKeyboardPianoMode - handled by store subscription
 
   /**
    * Subscribe to tool changes
@@ -265,6 +256,10 @@ let toolManagerInstance = null;
 export function getToolManager() {
   if (!toolManagerInstance) {
     toolManagerInstance = new PianoRollToolManager();
+    // ✅ AUTO-SYNC: Musical Typing state
+    usePlaybackStore.subscribe((state) => {
+      toolManagerInstance.keyboardPianoModeActive = state.keyboardPianoMode;
+    });
   }
   return toolManagerInstance;
 }

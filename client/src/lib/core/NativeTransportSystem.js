@@ -418,11 +418,16 @@ export class NativeTransportSystem {
 
         // 🎯 CRITICAL: Adjust timing if playing to maintain smooth playback
         if (wasPlaying && oldBpm !== bpm) {
-            // Recalibrate nextTickTime based on new BPM
-            // Current position should remain the same, but timing intervals change
+            // ✅ IMPROVED: Selective event clearing during BPM change
+            // This prevents "latencies" from events scheduled with the old BPM
+            this.clearScheduledEvents((event) => event.data?.type !== 'noteOff');
+
+            // Recalibrate nextTickTime to current time
+            // This effectively "restarts" the scheduler window from now
             const currentTime = this.audioContext.currentTime;
             this.nextTickTime = currentTime;
 
+            console.log(`⏱️ BPM Change: ${oldBpm} -> ${bpm}. Scheduler window reset at tick ${this.currentTick}`);
         }
 
         this.triggerCallback('bpm', { bpm: this.bpm, oldBpm, wasPlaying });
@@ -464,25 +469,19 @@ export class NativeTransportSystem {
         const currentTime = SampleAccurateTime.getCurrentSampleAccurateTime(this.audioContext);
 
         // ✅ NEW: Update lookahead based on current conditions
-        let scheduleUntil;
+        let lookaheadSeconds = this.scheduleAheadTime; // Fallback
+
         if (this.lookaheadScheduler) {
             const eventCount = this.scheduledEvents.size;
             this.lookaheadScheduler.updateLookahead(this.bpm, eventCount);
-            this.lookAhead = this.lookaheadScheduler.getLookahead() * 1000; // Update lookahead in ms
-
-            // ✅ NEW: Use adaptive schedule ahead time from LookaheadScheduler
-            const adaptiveScheduleAhead = this.lookaheadScheduler.getLookahead();
-            scheduleUntil = SampleAccurateTime.toSampleAccurate(
-                this.audioContext,
-                currentTime + adaptiveScheduleAhead
-            );
-        } else {
-            // Fallback to original schedule ahead time if lookaheadScheduler not initialized
-            scheduleUntil = SampleAccurateTime.toSampleAccurate(
-                this.audioContext,
-                currentTime + this.scheduleAheadTime
-            );
+            this.lookAhead = this.lookaheadScheduler.getLookahead() * 1000;
+            lookaheadSeconds = this.lookaheadScheduler.getLookahead();
         }
+
+        const scheduleUntil = SampleAccurateTime.toSampleAccurate(
+            this.audioContext,
+            currentTime + lookaheadSeconds
+        );
 
         while (this.nextTickTime < scheduleUntil) {
             // ✅ NEW: Ensure nextTickTime is sample-accurate
@@ -491,10 +490,19 @@ export class NativeTransportSystem {
                 this.nextTickTime
             );
 
-            // 1. UI callbacks with position info
+            // 1. UI callbacks with position info (Throttled inside)
             this.scheduleCurrentTick(sampleAccurateTickTime);
 
-            // 2. ✅ FIXED: Process scheduled events at current time (sample-accurate)
+            // 2. High-precision scheduling event (Unthrottled)
+            // Used by NoteScheduler, AutomationScheduler, etc.
+            this.triggerCallback('scheduler', {
+                time: sampleAccurateTickTime,
+                tick: this.currentTick,
+                bar: this.currentBar,
+                lookahead: lookaheadSeconds
+            });
+
+            // 3. ✅ FIXED: Process scheduled events at current time (sample-accurate)
             this.processScheduledEvents(sampleAccurateTickTime);
 
             this.advanceToNextTick();
@@ -523,8 +531,8 @@ export class NativeTransportSystem {
             // This ensures perfect loop length consistency
             const step0StartTime = this.nextTickTime;
 
-            // Clear scheduled events and trigger loop callback
-            this.clearScheduledEvents();
+            // Clear scheduled events (preserving noteOff events to prevent hanging notes)
+            this.clearScheduledEvents((event) => event.data?.type !== 'noteOff');
             this.triggerCallback('loop', {
                 time: step0StartTime,
                 nextLoopStartTime: step0StartTime,
@@ -553,9 +561,25 @@ export class NativeTransportSystem {
         }
     }
 
-    // ✅ YENİ EKLENEN: Event temizleme
-    clearScheduledEvents() {
-        this.scheduledEvents.clear();
+    /**
+     * ✅ IMPROVED: Selective event clearing
+     * Allows keeping certain events (like noteOff) during loop wraps or seeks.
+     * 
+     * @param {Function} filter - Optional filter function. If it returns true, the event is CLEARED.
+     *                            If not provided, all events are cleared.
+     */
+    clearScheduledEvents(filter = null) {
+        if (!filter) {
+            this.scheduledEvents.clear();
+            return;
+        }
+
+        // Apply filter: Delete only events that match the filter
+        for (const [id, event] of this.scheduledEvents.entries()) {
+            if (filter(event)) {
+                this.scheduledEvents.delete(id);
+            }
+        }
     }
 
     // lib/core/NativeTransportSystem.js içinde scheduleCurrentTick metodunu güncelle
@@ -643,7 +667,7 @@ export class NativeTransportSystem {
         // Process batch
         const processedCount = this.eventBatcher.processDueEvents(currentTime);
 
-        if (processedCount > 0 && import.meta.env.DEV) {
+        if (processedCount >= 50 && import.meta.env.DEV) {
             console.log(`⏰ Processed ${processedCount} events in batch (currentTime: ${currentTime.toFixed(4)}s)`);
         }
 

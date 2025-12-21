@@ -230,8 +230,14 @@ export class VASynth {
                 }
             });
 
-            // Legato mode: don't retrigger envelopes
-            if (!this.legato) {
+            // Legato mode: don't retrigger envelopes UNLESS they are already in release phase
+            // (e.g. after a loop restart or rapid retrigger where the voice was previously released)
+            const shouldRetrigger = !this.legato || (this.amplitudeEnvelope && this.amplitudeEnvelope.isReleased);
+
+            if (shouldRetrigger) {
+                if (import.meta.env.DEV && this.legato && this.amplitudeEnvelope.isReleased) {
+                    console.log(`🎹 VASynth: Legato retrigger enforced because envelope was released.`);
+                }
                 // Retrigger envelopes for new note
                 const baseCutoff = this.filterSettings.cutoff;
                 const filterEnvAmount = this.filterSettings.envelopeAmount;
@@ -770,6 +776,13 @@ export class VASynth {
                 }
             });
 
+            // ✅ OFFLINE RENDER FIX: Don't use setTimeout for cleanup in offline context
+            // The virtual clock moves too fast, causing premature cleanup/silence.
+            if (this.context instanceof (window.OfflineAudioContext || window.webkitOfflineAudioContext)) {
+                this.isPlaying = false;
+                return;
+            }
+
             // ✅ BUG #3 FIX: Schedule cleanup after oscillators have stopped
             // Use slightly longer delay to ensure oscillators are stopped before cleanup
             // Cleanup will only disconnect nodes, not stop oscillators (they're already stopped)
@@ -789,6 +802,27 @@ export class VASynth {
             this._cancelCleanupTimer();
             this.cleanup();
             this.isPlaying = false;
+        }
+    }
+
+    /**
+     * ✅ LOOP CONTINUITY: Handle loop restart by cancelling cleanup and resyncing modulators
+     * This is called by VASynthInstrument.onLoopRestart()
+     * @param {number} loopStartTime - Next loop start time
+     */
+    onLoopRestart(loopStartTime) {
+        // 1. Prevent cleanup! The loop restarted, so this voice (if mono) should stay alive
+        // This is the core of the "Handshake" mechanism
+        this._cancelCleanupTimer();
+
+        // 2. Resume playing state for mono voices to allow subsequent noteOn/noteOff calls
+        // to work correctly on the same voice instance
+        if (this.voiceMode === 'mono' && this.oscillators.some(osc => !!osc)) {
+            this.isPlaying = true;
+        }
+
+        if (import.meta.env.DEV) {
+            console.log(`🎹 VASynth.onLoopRestart: cleanup cancelled, isPlaying=${this.isPlaying}`);
         }
     }
 

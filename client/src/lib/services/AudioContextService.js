@@ -14,6 +14,7 @@ import { InterfaceService } from './InterfaceService';
 import { MixerService } from './MixerService';
 import { EffectService } from './EffectService';
 import { InstrumentService } from './InstrumentService';
+import { AudioAnalysisService } from './AudioAnalysisService';
 
 export class AudioContextService {
   static instance = null;
@@ -567,6 +568,7 @@ export class AudioContextService {
     }
     this.audioEngine = null;
     this.pendingMixerSync = false;
+    AudioAnalysisService.getInstance().stop();
     this.instance = null;
   }
 

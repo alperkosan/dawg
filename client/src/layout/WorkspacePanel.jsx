@@ -3,6 +3,7 @@
 import React, { Suspense } from 'react';
 import DraggableWindow from '@/components/layout/DraggableWindow';
 import FileBrowserPanel from '@/features/file_browser/FileBrowserPanel';
+import CoProducerPanel from '@/features/co_producer/CoProducerPanel';
 import { usePanelsStore } from '@/store/usePanelsStore';
 import { useInstrumentsStore } from '@/store/useInstrumentsStore';
 import { useMixerStore } from '@/store/useMixerStore';
@@ -29,8 +30,11 @@ function WorkspacePanel() {
   } = usePanelsStore();
 
   const isBrowserVisible = useFileBrowserStore(state => state.isBrowserVisible);
+  const isCoProducerOpen = usePanelsStore(state => state.isCoProducerOpen);
   const [sidebarWidth, setSidebarWidth] = React.useState(280);
+  const [rightSidebarWidth, setRightSidebarWidth] = React.useState(300);
   const [isResizing, setIsResizing] = React.useState(false);
+  const [isResizingRight, setIsResizingRight] = React.useState(false);
 
   const handleMouseDown = (e) => {
     e.preventDefault();
@@ -61,6 +65,37 @@ function WorkspacePanel() {
       window.removeEventListener('mouseup', handleMouseUp);
     };
   }, [isResizing]);
+
+  // Right Sidebar Resizing
+  const handleMouseDownRight = (e) => {
+    e.preventDefault();
+    setIsResizingRight(true);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  };
+
+  React.useEffect(() => {
+    if (!isResizingRight) return;
+
+    const handleMouseMove = (e) => {
+      const newWidth = Math.max(250, Math.min(500, window.innerWidth - e.clientX));
+      setRightSidebarWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizingRight(false);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizingRight]);
 
   const instruments = useInstrumentsStore(state => state.instruments);
   const mixerTracks = useMixerStore(state => state.mixerTracks);
@@ -359,6 +394,26 @@ function WorkspacePanel() {
           );
         })}
       </div>
+
+      {isCoProducerOpen && (
+        <div style={{ width: rightSidebarWidth, position: 'relative', flexShrink: 0 }}>
+          <div
+            onMouseDown={handleMouseDownRight}
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: -4,
+              width: 8,
+              height: '100%',
+              cursor: 'col-resize',
+              zIndex: 100,
+              background: isResizingRight ? 'rgba(255,255,255,0.1)' : 'transparent',
+            }}
+            className="hover:bg-white/5 transition-colors"
+          />
+          <CoProducerPanel />
+        </div>
+      )}
     </div>
   );
 }

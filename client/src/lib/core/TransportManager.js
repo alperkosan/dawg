@@ -11,6 +11,8 @@
  */
 
 import { PLAYBACK_STATES } from '@/config/constants.js';
+import ShortcutManager, { SHORTCUT_PRIORITY } from './ShortcutManager';
+import { usePlaybackStore } from '@/store/usePlaybackStore';
 import { uiUpdateManager, UPDATE_PRIORITIES, UPDATE_FREQUENCIES } from './UIUpdateManager.js';
 
 // Precise step calculation to avoid floating point errors
@@ -62,6 +64,11 @@ export class TransportManager {
 
     // ✅ KEYBOARD PIANO MODE: When active, disable global shortcuts
     this.keyboardPianoModeActive = false;
+
+    // ✅ AUTO-SYNC: Musical Typing state
+    usePlaybackStore.subscribe((state) => {
+      this.keyboardPianoModeActive = state.keyboardPianoMode;
+    });
 
     // UI element references - tüm transport UI'ları buradan yönetilecek
     this.transportButtons = new Map(); // button-id -> element
@@ -500,44 +507,37 @@ export class TransportManager {
   // =================== KEYBOARD SHORTCUTS ===================
 
   /**
-   * ✅ GLOBAL KEYBOARD SHORTCUTS - MEMORY LEAK FIXED
+   * ✅ GLOBAL KEYBOARD SHORTCUTS - MIGRATED TO SHORTCUTMANAGER
    */
   _setupGlobalKeyboardShortcuts() {
-    const keydownHandler = (e) => {
-      // ✅ MEMORY LEAK FIX: Check if destroyed
-      if (this.isDestroyed) return;
+    ShortcutManager.registerContext('TRANSPORT', SHORTCUT_PRIORITY.GLOBAL + 1, {
+      onKeyDown: (e) => {
+        // ✅ IGNORE SHORTCUTS when keyboard piano mode is active
+        if (this.keyboardPianoModeActive) {
+          return false;
+        }
 
-      // ✅ IGNORE SHORTCUTS when keyboard piano mode is active
-      if (this.keyboardPianoModeActive) {
-        return;
+        switch (e.key) {
+          case ' ': // Spacebar
+            e.preventDefault();
+            // Toggle via store for consistency
+            import('@/store/usePlaybackStore').then(({ usePlaybackStore }) => {
+              usePlaybackStore.getState().togglePlayPause();
+            });
+            return true;
+          case 'Numpad0':
+          case 'Insert':
+            e.preventDefault();
+            this.stop();
+            return true;
+        }
+        return false;
       }
+    });
 
-      // Don't interfere with text inputs
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
-        return;
-      }
-
-      switch (e.key) {
-        case ' ': // Spacebar
-          e.preventDefault();
-          // ✅ FIX: Use unified store action to match Toolbar behavior
-          import('@/store/usePlaybackStore').then(({ usePlaybackStore }) => {
-            usePlaybackStore.getState().togglePlayPause();
-          });
-          break;
-        case 'Numpad0':
-        case 'Insert':
-          e.preventDefault();
-          this.stop();
-          break;
-      }
-    };
-
-    document.addEventListener('keydown', keydownHandler);
-
-    // ✅ MEMORY LEAK FIX: Store cleanup function
+    // Cleanup function
     this.keyboardCleanup = () => {
-      document.removeEventListener('keydown', keydownHandler);
+      ShortcutManager.unregisterContext('TRANSPORT');
     };
   }
 

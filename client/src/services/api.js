@@ -55,6 +55,11 @@ export const ENDPOINTS = {
   },
   ASSETS: {
     UPLOAD: '/assets/upload',
+  },
+  CO_PRODUCER: {
+    SUGGESTIONS: '/co-producer/suggestions',
+    GENERATE: '/co-producer/generate',
+    STATUS: '/co-producer/status',
   }
 };
 
@@ -685,6 +690,21 @@ class ApiClient {
   async deleteSystemPack(packId) {
     return this.request(`/assets/admin/system/packs/${packId}`, {
       method: 'DELETE',
+    });
+  }
+
+  // Co-Producer endpoints
+  async getCoProducerSuggestions(context) {
+    return this.request(ENDPOINTS.CO_PRODUCER.SUGGESTIONS, {
+      method: 'POST',
+      body: JSON.stringify(context),
+    });
+  }
+
+  async generateCoProducerVariation(prompt, options = {}) {
+    return this.request(ENDPOINTS.CO_PRODUCER.GENERATE, {
+      method: 'POST',
+      body: JSON.stringify({ prompt, ...options }),
     });
   }
 }

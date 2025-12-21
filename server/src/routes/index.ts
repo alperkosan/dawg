@@ -13,6 +13,7 @@ import { interactionRoutes } from './interactions.js';
 import { notificationRoutes } from './notifications.js';
 import { registerWebSocketRoutes } from './websocket.js';
 import { presetRoutes } from './presets.js';
+import { coProducerRoutes } from './co-producer.js';
 
 export async function registerRoutes(server: FastifyInstance) {
   // Health check is in index.ts
@@ -35,6 +36,9 @@ export async function registerRoutes(server: FastifyInstance) {
 
   // Preset Library routes
   await server.register(presetRoutes, { prefix: '/api/presets' });
+
+  // Co-Producer routes
+  await server.register(coProducerRoutes, { prefix: '/api/co-producer' });
 
   // WebSocket routes
   await registerWebSocketRoutes(server);

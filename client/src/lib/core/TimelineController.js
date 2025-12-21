@@ -483,6 +483,7 @@ export class TimelineController {
       onSeek = null, // ✅ NEW: Callback when user seeks to a position (for note preview)
       enableGhostPosition = true,
       enableRangeSelection = false,
+      enableInteraction = true, // ✅ NEW: Allow disabling mouse interaction (seek/scrub)
       calculatePosition = null // ✅ Custom position calculation (for viewport scroll/zoom)
     } = config;
 
@@ -495,6 +496,7 @@ export class TimelineController {
       onSeek, // ✅ NEW: Store seek callback
       enableGhostPosition,
       enableRangeSelection,
+      enableInteraction, // ✅ Store interaction flag
       calculatePosition, // ✅ Store custom calculation
       handlers: null // Will be populated by _setupTimelineInteraction
     });
@@ -535,7 +537,7 @@ export class TimelineController {
     const timeline = this.timelines.get(id);
     if (!timeline) return;
 
-    const { element, stepWidth, totalSteps, enableGhostPosition, enableRangeSelection, calculatePosition } = timeline;
+    const { element, stepWidth, totalSteps, enableGhostPosition, enableRangeSelection, enableInteraction, calculatePosition } = timeline;
 
     let isDragging = false;
     let dragStartPosition = null;
@@ -557,6 +559,9 @@ export class TimelineController {
 
     // Click handler - Seek to position
     const handleClick = (e) => {
+      // ✅ Check if interaction is enabled
+      if (!enableInteraction) return;
+
       // Only handle if not dragging
       if (isDragging) return;
 
@@ -568,6 +573,9 @@ export class TimelineController {
 
     // Mouse down - Start drag
     const handleMouseDown = (e) => {
+      // ✅ Check if interaction is enabled
+      if (!enableInteraction) return;
+
       if (e.button !== 0) return; // Only left click
 
       const targetStep = getPositionFromMouse(e);
@@ -768,7 +776,7 @@ export class TimelineController {
     // PlaybackManager maintains correct position even when transport resets
     const playbackManager = this.audioEngine.playbackManager;
     let newPosition;
-    
+
     if (playbackManager?.currentPosition !== undefined) {
       // Use PlaybackManager position (more reliable, especially at play start)
       newPosition = playbackManager.currentPosition;

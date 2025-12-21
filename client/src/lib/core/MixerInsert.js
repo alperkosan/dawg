@@ -585,6 +585,77 @@ export class MixerInsert {
   }
 
   /**
+   * 🏗️ STATE HYDRATION: Rebuild channel state from data
+   * Useful for pattern rendering and project restoration
+   * @param {object} trackData - Serialized track/mixer data
+   * @param {object} effectFactory - EffectFactory class for creating effects
+   */
+  async loadState(trackData, effectFactory = null) {
+    if (!trackData) return;
+
+    const now = this.audioContext.currentTime;
+
+    // 1. Basic properties
+    if (trackData.gain !== undefined) {
+      this.gainNode.gain.setValueAtTime(trackData.gain, now);
+    }
+    if (trackData.pan !== undefined) {
+      this.panNode.pan.setValueAtTime(trackData.pan, now);
+    }
+    if (trackData.mute !== undefined) {
+      this.setMute(trackData.mute);
+    }
+    if (trackData.mono !== undefined) {
+      this.setMono(trackData.mono);
+    }
+
+    // 2. Insert Effects
+    const effects = trackData.insertEffects || trackData.effects || [];
+    if (effects.length > 0 && effectFactory) {
+      // Clear existing effects if any
+      this.effects.clear();
+      this.effectOrder = [];
+
+      for (const effectData of effects) {
+        try {
+          const effectNode = effectFactory.createEffect(
+            this.audioContext,
+            effectData.type,
+            effectData.settings || effectData.parameters
+          );
+
+          if (effectNode) {
+            this.addEffect(
+              effectData.id || `fx-${Math.random().toString(36).substr(2, 9)}`,
+              effectNode,
+              effectData.settings || effectData.parameters,
+              effectData.bypass || false,
+              effectData.type
+            );
+          }
+        } catch (error) {
+          console.error(`❌ MixerInsert: Failed to load effect ${effectData.type}:`, error);
+        }
+      }
+    }
+
+    // 3. Sends
+    if (Array.isArray(trackData.sends)) {
+      this.sends.clear();
+      for (const send of trackData.sends) {
+        if (send.busId) {
+          this.sends.set(send.busId, {
+            gain: send.level ?? 0,
+            destination: null // To be connected externally
+          });
+        }
+      }
+    }
+
+    this._rebuildChain();
+  }
+
+  /**
    * 🎛️ SIDECHAIN: Update sidechain source for an effect
    * @param {string} effectId - Effect ID
    * @param {string} sourceInsertId - Source mixer insert ID (empty string = disconnect)

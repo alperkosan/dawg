@@ -102,13 +102,21 @@ export class ZenithSynthInstrument extends BaseInstrument {
                         // Release old voice
                         oldVoice.noteOff(time);
 
-                        const releaseTime = oldVoice.amplitudeEnvelope?.releaseTime || 0.5;
-                        const timeoutId = setTimeout(() => {
+                        // ✅ OFFLINE RENDER FIX: Skip setTimeout in offline context
+                        if (this.audioContext instanceof (window.OfflineAudioContext || window.webkitOfflineAudioContext)) {
                             oldVoice.dispose();
-                        }, (releaseTime + 0.1) * 1000);
+                        } else {
+                            // ✅ FIX: Define releaseTime before using it
+                            const presetRelease = this.preset?.amplitudeEnvelope?.release || 1.0;
+                            const releaseTime = oldVoice.amplitudeEnvelope?.releaseTime || presetRelease;
 
-                        const timeoutKey = `retrigger_${midiNote}_${Date.now()}`;
-                        this.voiceTimeouts.set(timeoutKey, timeoutId);
+                            const timeoutId = setTimeout(() => {
+                                oldVoice.dispose();
+                            }, (releaseTime + 0.1) * 1000);
+
+                            const timeoutKey = `retrigger_${midiNote}_${Date.now()}`;
+                            this.voiceTimeouts.set(timeoutKey, timeoutId);
+                        }
                     }
 
                     this.voices.delete(midiNote);
@@ -173,16 +181,22 @@ export class ZenithSynthInstrument extends BaseInstrument {
                     if (voice) {
                         voice.noteOff(time);
 
-                        // Schedule disposal
-                        const releaseTime = voice.amplitudeEnvelope?.releaseTime || 0.5;
-                        const timeoutId = setTimeout(() => {
+                        // ✅ OFFLINE RENDER FIX: Skip setTimeout in offline context
+                        if (this.audioContext instanceof (window.OfflineAudioContext || window.webkitOfflineAudioContext)) {
                             voice.dispose();
                             this.voices.delete(midiNote);
-                            this.voiceTimeouts.delete(midiNote);
                             this._trackNoteOff(midiNote);
-                        }, (releaseTime + 0.1) * 1000);
+                        } else {
+                            const releaseTime = voice.amplitudeEnvelope?.releaseTime || 0.5;
+                            const timeoutId = setTimeout(() => {
+                                voice.dispose();
+                                this.voices.delete(midiNote);
+                                this.voiceTimeouts.delete(midiNote);
+                                this._trackNoteOff(midiNote);
+                            }, (releaseTime + 0.1) * 1000);
 
-                        this.voiceTimeouts.set(midiNote, timeoutId);
+                            this.voiceTimeouts.set(midiNote, timeoutId);
+                        }
                     }
                 }
             } else {
@@ -193,12 +207,17 @@ export class ZenithSynthInstrument extends BaseInstrument {
                 this.voices.forEach((voice, note) => {
                     voice.noteOff(time);
 
-                    const releaseTime = voice.amplitudeEnvelope?.releaseTime || 0.5;
-                    const timeoutId = setTimeout(() => {
+                    // ✅ OFFLINE RENDER FIX: Skip setTimeout in offline context
+                    if (this.audioContext instanceof (window.OfflineAudioContext || window.webkitOfflineAudioContext)) {
                         voice.dispose();
-                    }, (releaseTime + 0.1) * 1000);
+                    } else {
+                        const releaseTime = voice.amplitudeEnvelope?.releaseTime || 0.5;
+                        const timeoutId = setTimeout(() => {
+                            voice.dispose();
+                        }, (releaseTime + 0.1) * 1000);
 
-                    this.voiceTimeouts.set(note, timeoutId);
+                        this.voiceTimeouts.set(note, timeoutId);
+                    }
                 });
 
                 this.activeNotes.clear();
@@ -232,19 +251,44 @@ export class ZenithSynthInstrument extends BaseInstrument {
             this.voices.forEach((voice, midiNote) => {
                 voice.noteOff(stopTime);
 
-                const releaseTime = voice.amplitudeEnvelope?.releaseTime || 0.5;
-                const timeoutId = setTimeout(() => {
+                // ✅ OFFLINE RENDER FIX: Skip setTimeout in offline context
+                if (this.audioContext instanceof (window.OfflineAudioContext || window.webkitOfflineAudioContext)) {
                     voice.dispose();
                     this.voices.delete(midiNote);
-                    this.voiceTimeouts.delete(midiNote);
                     this.activeNotes.delete(midiNote);
-                }, (releaseTime + 0.1) * 1000);
+                } else {
+                    const releaseTime = voice.amplitudeEnvelope?.releaseTime || 0.5;
+                    const timeoutId = setTimeout(() => {
+                        voice.dispose();
+                        this.voices.delete(midiNote);
+                        this.voiceTimeouts.delete(midiNote);
+                        this.activeNotes.delete(midiNote);
+                    }, (releaseTime + 0.1) * 1000);
 
-                this.voiceTimeouts.set(midiNote, timeoutId);
+                    this.voiceTimeouts.set(midiNote, timeoutId);
+                }
             });
         }
 
         this._isPlaying = false;
+    }
+
+    /**
+     * Called when the playback loop restarts
+     * Pass notification to the underlying engine
+     */
+    onLoopRestart(loopStartTime, loopStartStep = 0) {
+        if (!this._isInitialized) return;
+
+        this.voices.forEach(voice => {
+            if (voice && typeof voice.onLoopRestart === 'function') {
+                try {
+                    voice.onLoopRestart(loopStartTime);
+                } catch (e) {
+                    console.error('Error during Zenith voice onLoopRestart:', e);
+                }
+            }
+        });
     }
 
     /**
@@ -270,16 +314,76 @@ export class ZenithSynthInstrument extends BaseInstrument {
     }
 
     /**
-     * Set master volume
+     * ✅ PHASE 4: Set instrument volume (real-time automation)
      */
-    setVolume(volume) {
+    setVolume(volume, time = null) {
         if (!this.masterGain) return;
 
+        const now = time !== null ? time : this.audioContext.currentTime;
         const clampedVolume = Math.max(0, Math.min(1, volume));
-        this.masterGain.gain.setValueAtTime(
-            clampedVolume,
-            this.audioContext.currentTime
-        );
+
+        // ✅ IMPROVED: Linear ramping for smoother automation (Phase 2)
+        this.masterGain.gain.cancelScheduledValues(now);
+        this.masterGain.gain.setValueAtTime(this.masterGain.gain.value, now);
+        this.masterGain.gain.linearRampToValueAtTime(clampedVolume, now + 0.005);
+    }
+
+    /**
+     * ✅ PHASE 4: Set instrument pan (real-time automation)
+     */
+    setPan(pan, time = null) {
+        if (!this.masterGain) return;
+
+        // Create panner node if it doesn't exist
+        if (!this.panNode) {
+            this.panNode = this.audioContext.createStereoPanner();
+
+            // Reconnect: masterGain -> panNode -> output destination
+            this.masterGain.disconnect();
+            this.masterGain.connect(this.panNode);
+
+            // Update output and reconnect to destinations
+            const oldOutput = this.output;
+            this.output = this.panNode;
+
+            if (oldOutput && oldOutput !== this.panNode) {
+                this.connectedDestinations.forEach(dest => {
+                    try {
+                        oldOutput.disconnect(dest);
+                        this.output.connect(dest);
+                    } catch (e) {
+                        // Ignore
+                    }
+                });
+            }
+        }
+
+        const now = time !== null ? time : this.audioContext.currentTime;
+        const clampedPan = Math.max(-1, Math.min(1, pan));
+
+        // ✅ IMPROVED: Linear ramping for smoother automation (Phase 2)
+        this.panNode.pan.cancelScheduledValues(now);
+        this.panNode.pan.setValueAtTime(this.panNode.pan.value, now);
+        this.panNode.pan.linearRampToValueAtTime(clampedPan, now + 0.005);
+    }
+
+    /**
+     * ✅ PHASE 4: Set filter cutoff (real-time automation)
+     */
+    setFilterCutoff(cutoff, time = null) {
+        // Apply to all active voices
+        this.voices.forEach(voice => {
+            if (voice.filter && voice.filter.frequency) {
+                const now = time !== null ? time : this.audioContext.currentTime;
+                // Map CC 0-127 to Hz (approximate 20Hz - 20kHz)
+                const freqHz = 20 + (cutoff / 127) * 19980;
+
+                // ✅ IMPROVED: Linear ramping for smoother filter automation (Phase 2)
+                voice.filter.frequency.cancelScheduledValues(now);
+                voice.filter.frequency.setValueAtTime(voice.filter.frequency.value, now);
+                voice.filter.frequency.linearRampToValueAtTime(freqHz, now + 0.005);
+            }
+        });
     }
 
     /**
@@ -319,6 +423,24 @@ export class ZenithSynthInstrument extends BaseInstrument {
         if (updates.amplitudeEnvelope) {
             this.preset.amplitudeEnvelope = updates.amplitudeEnvelope;
         }
+        if (updates.lfos) {
+            this.preset.lfos = updates.lfos;
+        }
+        if (updates.modSlots) {
+            this.preset.modulation = updates.modSlots;
+        }
+        if (updates.voiceMode !== undefined) {
+            this.preset.voiceMode = updates.voiceMode;
+        }
+        if (updates.portamento !== undefined) {
+            this.preset.portamento = updates.portamento;
+        }
+        if (updates.legato !== undefined) {
+            this.preset.legato = updates.legato;
+        }
+        if (updates.masterVolume !== undefined) {
+            this.preset.masterVolume = updates.masterVolume;
+        }
 
         // Update all active voices
         this.voices.forEach(voice => {
@@ -341,6 +463,32 @@ export class ZenithSynthInstrument extends BaseInstrument {
 
                 if (updates.amplitudeEnvelope && voice.setAmplitudeEnvelope) {
                     voice.setAmplitudeEnvelope(updates.amplitudeEnvelope);
+                }
+
+                if (updates.lfos && Array.isArray(updates.lfos)) {
+                    updates.lfos.forEach((lfoSettings, index) => {
+                        if (lfoSettings && voice.setLFO) {
+                            voice.setLFO(index, lfoSettings);
+                        }
+                    });
+                }
+
+                if (updates.modSlots && voice._updateModulationSlots) {
+                    voice._updateModulationSlots(updates.modSlots);
+                }
+
+                // Global voice parameters
+                if (updates.voiceMode !== undefined) {
+                    voice.voiceMode = updates.voiceMode;
+                }
+                if (updates.portamento !== undefined) {
+                    voice.portamento = updates.portamento;
+                }
+                if (updates.legato !== undefined) {
+                    voice.legato = updates.legato;
+                }
+                if (updates.masterVolume !== undefined) {
+                    voice.setMasterVolume(updates.masterVolume);
                 }
             } catch (error) {
                 console.error('Error updating voice parameters:', error);
@@ -422,7 +570,13 @@ export class ZenithSynthInstrument extends BaseInstrument {
                 oscillators: this.preset.oscillators,
                 filter: this.preset.filter,
                 filterEnvelope: this.preset.filterEnvelope,
-                amplitudeEnvelope: this.preset.amplitudeEnvelope
+                amplitudeEnvelope: this.preset.amplitudeEnvelope,
+                lfos: this.preset.lfos,
+                modulation: this.preset.modulation,
+                voiceMode: this.preset.voiceMode,
+                portamento: this.preset.portamento,
+                legato: this.preset.legato,
+                masterVolume: this.preset.masterVolume || this.preset.masterGain
             } : null
         };
     }
@@ -456,6 +610,15 @@ export class ZenithSynthInstrument extends BaseInstrument {
         if (preset.lfos && Array.isArray(preset.lfos)) {
             preset.lfos.forEach((lfoSettings, index) => {
                 this.setLFO(index, lfoSettings);
+            });
+        }
+
+        // Set modulation slots
+        if (preset.modulation && Array.isArray(preset.modulation)) {
+            this.voices.forEach(voice => {
+                if (voice._updateModulationSlots) {
+                    voice._updateModulationSlots(preset.modulation);
+                }
             });
         }
 

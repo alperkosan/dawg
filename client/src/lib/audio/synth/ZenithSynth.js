@@ -53,6 +53,10 @@ export class ZenithSynth {
             this._applyModulation(modulationMap);
         };
 
+        // ✅ MODULATION MATRIX: Register sources
+        this.modulationEngine.setLFOs(this.lfos);
+        this.modulationEngine.setEnvelopes(this.filterEnvelope, this.amplitudeEnvelope);
+
         // Synth parameters
         this.masterVolume = 0.7;
         this._cleanupTimer = null;
@@ -196,8 +200,14 @@ export class ZenithSynth {
                 }
             });
 
-            // Retrigger envelopes if not legato
-            if (!this.legato) {
+            // Retrigger envelopes if not legato UNLESS they are already in release phase
+            // (e.g. after a loop restart or rapid retrigger where the voice was previously released)
+            const shouldRetrigger = !this.legato || (this.amplitudeEnvelope && this.amplitudeEnvelope.isReleased);
+
+            if (shouldRetrigger) {
+                if (import.meta.env.DEV && this.legato && this.amplitudeEnvelope.isReleased) {
+                    console.log(`🎹 ZenithSynth: Legato retrigger enforced because envelope was released.`);
+                }
                 const baseCutoff = this.filterSettings.cutoff;
                 const filterEnvAmount = this.filterSettings.envelopeAmount;
 
@@ -456,7 +466,14 @@ export class ZenithSynth {
                 if (lfo.isRunning) lfo.stop();
             });
 
-            // Schedule cleanup
+            // ✅ OFFLINE RENDER FIX: Don't use setTimeout for cleanup in offline context
+            // The virtual clock moves too fast, causing premature cleanup/silence.
+            if (this.context instanceof (window.OfflineAudioContext || window.webkitOfflineAudioContext)) {
+                this.isPlaying = false;
+                return;
+            }
+
+            // Schedule cleanup for real-time
             this._cancelCleanupTimer();
             const cleanupDelay = Math.max(0, (releaseEnd - this.context.currentTime + 0.2) * 1000);
             this._cleanupTimer = setTimeout(() => {
@@ -470,6 +487,25 @@ export class ZenithSynth {
             this._cancelCleanupTimer();
             this.cleanup();
             this.isPlaying = false;
+        }
+    }
+
+    /**
+     * ✅ LOOP CONTINUITY: Handle loop restart by cancelling cleanup and maintaining mono state
+     * This is called by ZenithSynthInstrument.onLoopRestart()
+     */
+    onLoopRestart(loopStartTime) {
+        // 1. Prevent cleanup! The loop restarted, so this voice should stay alive
+        this._cancelCleanupTimer();
+
+        // 2. Resume playing state for mono voices to allow subsequent noteOn/noteOff calls
+        // to work correctly on the same voice instance during the handshake
+        if (this.voiceMode === 'mono' && this.oscillators.some(osc => !!osc)) {
+            this.isPlaying = true;
+        }
+
+        if (import.meta.env.DEV) {
+            console.log(`🎹 ZenithSynth.onLoopRestart: cleanup cancelled, isPlaying=${this.isPlaying}`);
         }
     }
 
@@ -613,21 +649,79 @@ export class ZenithSynth {
             max: 30
         });
 
-        // Oscillator levels
+        // Filter drive
+        this.modulationTargets.set('filter.drive', {
+            apply: (value) => {
+                if (this.filterDrive) {
+                    this.filterDrive.curve = this._createDriveCurve(Math.max(0, Math.min(1, value)));
+                }
+            },
+            getBaseValue: () => this.filterSettings.drive,
+            getRange: () => 1,
+            min: 0,
+            max: 1
+        });
+
+        // Oscillator levels and detune
         this.oscillatorGains.forEach((gain, i) => {
             if (gain) {
-                this.modulationTargets.set(`osc${i + 1}.level`, {
+                this.modulationTargets.set(`osc.${i + 1}.level`, {
                     param: gain.gain,
                     apply: (value) => {
                         gain.gain.cancelScheduledValues(this.context.currentTime);
                         gain.gain.setValueAtTime(value, this.context.currentTime);
                     },
                     getBaseValue: () => this.oscillatorSettings[i].level,
-                    getRange: () => 1 - 0,
+                    getRange: () => 1,
                     min: 0,
                     max: 1
                 });
+
+                // detune for non-array oscillators
+                const osc = this.oscillators[i];
+                if (osc && !Array.isArray(osc)) {
+                    if (osc.detune) {
+                        // Standard oscillator
+                        this.modulationTargets.set(`osc.${i + 1}.detune`, {
+                            param: osc.detune,
+                            apply: (value) => {
+                                osc.detune.cancelScheduledValues(this.context.currentTime);
+                                osc.detune.setValueAtTime(value, this.context.currentTime);
+                            },
+                            getBaseValue: () => this.oscillatorSettings[i].detune,
+                            getRange: () => 2400, // ± 1 octave
+                            min: -1200,
+                            max: 1200
+                        });
+                    } else if (osc.setDetune) {
+                        // Supersaw oscillator
+                        this.modulationTargets.set(`osc.${i + 1}.detune`, {
+                            apply: (value) => {
+                                // Map -1200..1200 cents to 0..100 supersaw detune param
+                                const normalized = (value + 1200) / 24; // 0..100
+                                osc.setDetune(normalized);
+                            },
+                            getBaseValue: () => (this.oscillatorSettings[i].unisonDetune || 50) * 24 - 1200,
+                            getRange: () => 2400,
+                            min: -1200,
+                            max: 1200
+                        });
+                    }
+                }
             }
+        });
+
+        // LFO rates
+        this.lfos.forEach((lfo, i) => {
+            this.modulationTargets.set(`lfo.${i + 1}.rate`, {
+                apply: (value) => {
+                    lfo.setFrequency(value);
+                },
+                getBaseValue: () => lfo.frequency,
+                getRange: () => 19.99,
+                min: 0.01,
+                max: 20
+            });
         });
     }
 
@@ -795,6 +889,13 @@ export class ZenithSynth {
 
         if (preset.legato !== undefined) {
             this.legato = preset.legato;
+        }
+
+        // Set modulation matrix slots
+        if (preset.modulation && Array.isArray(preset.modulation)) {
+            this._updateModulationSlots(preset.modulation);
+        } else if (preset.modSlots && Array.isArray(preset.modSlots)) {
+            this._updateModulationSlots(preset.modSlots);
         }
 
         // Set master volume

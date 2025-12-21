@@ -12,6 +12,9 @@ class SamplePreview {
         this.previewVolume = 0.6;
         this.sustainMode = false; // For keyboard hold
         this.maxPreviewDuration = 2000; // Max 2 seconds for preview
+
+        // ✅ Callback for keyboard note changes (for piano roll highlight)
+        this.onKeyboardNoteChange = null;
     }
 
     // Initialize audio context
@@ -176,6 +179,11 @@ class SamplePreview {
             // Store active source with key mapping
             this.activeKeyboardSources.set(key, { source, gainNode, pitch });
 
+            // ✅ Notify callback of note start
+            if (this.onKeyboardNoteChange) {
+                this.onKeyboardNoteChange(pitch);
+            }
+
             // Cleanup when ended
             source.onended = () => {
                 if (this.activeKeyboardSources.get(key)?.source === source) {
@@ -225,6 +233,11 @@ class SamplePreview {
             }
 
             this.activeKeyboardSources.delete(key);
+
+            // ✅ Notify callback of note stop
+            if (this.onKeyboardNoteChange) {
+                this.onKeyboardNoteChange(null);
+            }
         }
     }
 

@@ -23,6 +23,14 @@ const CORE_WORKLETS = [
   {
     processor: 'analysis-processor',
     path: '/worklets/analysis-processor.js'
+  },
+  {
+    processor: 'wasm-sampler-processor',
+    path: '/worklets/wasm-sampler-processor.js'
+  },
+  {
+    processor: 'wasm-instrument-processor',
+    path: '/worklets/wasm-instrument-processor.js'
   }
 ];
 

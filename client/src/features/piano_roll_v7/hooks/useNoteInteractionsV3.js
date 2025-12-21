@@ -19,6 +19,7 @@ import {
 import { BatchUpdateNotesCommand } from '@/features/piano_roll_v7/lib/tools/MultiNoteCommand';
 import { TOOL_TYPES } from '@/features/piano_roll_v7/lib/tools';
 import { useArrangementStore } from '@/store/useArrangementStore';
+import ShortcutManager, { SHORTCUT_PRIORITY } from '@/lib/core/ShortcutManager';
 import { getPreviewManager } from '@/lib/audio/preview';
 import EventBus from '@/lib/core/EventBus';
 import { STEPS_PER_BEAT } from '@/lib/audio/audioRenderConfig.js';
@@ -65,7 +66,8 @@ const Mode = {
     RESIZE: 'resize',
     PAINT: 'paint',
     ERASE: 'erase',
-    AREA_SELECT: 'area_select'
+    AREA_SELECT: 'area_select',
+    TIME_SELECT: 'time_select'
 };
 
 // ===================================================================
@@ -80,6 +82,7 @@ const createInitialState = () => ({
     drag: null,      // { noteIds, start, originals, delta, isDuplicate }
     resize: null,    // { noteIds, handle, start, originals }
     areaSelect: null, // { type, start, end, path }
+    timeRange: null, // { start, end } in steps
     hover: null,
     cursor: 'default',
     clipboard: null,
@@ -102,10 +105,19 @@ const Action = {
     START_AREA: 'start_area',
     UPDATE_AREA: 'update_area',
     END_AREA: 'end_area',
+    START_TIME_SELECT: 'start_time_select',
+    UPDATE_TIME_SELECT: 'update_time_select',
+    END_TIME_SELECT: 'end_time_select',
+    CLEAR_TIME_SELECT: 'clear_time_select',
+    SET_TIME_RANGE: 'set_time_range',
     SET_HOVER: 'set_hover',
     SET_CURSOR: 'set_cursor',
     SET_MODE: 'set_mode',
-    CLIPBOARD: 'clipboard'
+    CLIPBOARD: 'clipboard',
+    START_ERASE: 'start_erase',
+    END_ERASE: 'end_erase',
+    START_PAINT: 'start_paint',
+    END_PAINT: 'end_paint'
 };
 
 // ===================================================================
@@ -229,6 +241,41 @@ function reducer(state, action) {
                 areaSelect: null
             };
 
+        case Action.START_TIME_SELECT:
+            return {
+                ...state,
+                mode: Mode.TIME_SELECT,
+                timeRange: { start: action.payload.start, end: action.payload.start },
+                cursor: 'col-resize'
+            };
+
+        case Action.UPDATE_TIME_SELECT:
+            if (!state.timeRange) return state;
+            return {
+                ...state,
+                timeRange: { ...state.timeRange, end: action.payload.end }
+            };
+
+        case Action.END_TIME_SELECT:
+            return {
+                ...state,
+                mode: Mode.IDLE,
+                cursor: 'default'
+            };
+
+        case Action.CLEAR_TIME_SELECT:
+            return {
+                ...state,
+                timeRange: null,
+                mode: Mode.IDLE
+            };
+
+        case Action.SET_TIME_RANGE:
+            return {
+                ...state,
+                timeRange: action.payload.range
+            };
+
         case Action.SET_HOVER:
             return { ...state, hover: action.payload.noteId };
 
@@ -240,6 +287,34 @@ function reducer(state, action) {
 
         case Action.CLIPBOARD:
             return { ...state, clipboard: action.payload.data };
+
+        case Action.START_ERASE:
+            return {
+                ...state,
+                mode: Mode.ERASE,
+                cursor: 'crosshair'
+            };
+
+        case Action.END_ERASE:
+            return {
+                ...state,
+                mode: Mode.IDLE,
+                cursor: 'default'
+            };
+
+        case Action.START_PAINT:
+            return {
+                ...state,
+                mode: Mode.PAINT,
+                cursor: 'crosshair'
+            };
+
+        case Action.END_PAINT:
+            return {
+                ...state,
+                mode: Mode.IDLE,
+                cursor: 'default'
+            };
 
         default:
             return state;
@@ -260,7 +335,8 @@ export function useNoteInteractionsV3({
     keyboardPianoMode,
     // ✅ MIDI Recording
     isRecording = false,
-    onRecordToggle = null
+    onRecordToggle = null,
+    onNoteActive = null // ✅ Added for keyboard highlighting
 }) {
     const [state, dispatch] = useReducer(reducer, null, createInitialState);
     const commandStackRef = useRef(null);
@@ -608,7 +684,10 @@ export function useNoteInteractionsV3({
 
     const getResizeHandle = useCallback((coords, note) => {
         if (!note) return null;
-        const noteEnd = note.startTime + note.length;
+
+        // ✅ OVAL NOTES support: Use visualLength for right handle detection
+        const displayLength = note.visualLength !== undefined ? note.visualLength : note.length;
+        const noteEnd = note.startTime + displayLength;
         const stepWidth = engine?.dimensions?.stepWidth || 40;
 
         // Convert pixel tolerance into time (steps) so hit area stays constant while zooming
@@ -1083,29 +1162,99 @@ export function useNoteInteractionsV3({
 
         addNotesToPattern([newNote]);
 
-        // ✅ FIX: Immediately start dragging the new note
-        // This allows "click-drag" workflow where user can adjust position/pitch immediately
-        // ✅ FIX: Immediately start dragging the new note
-        // This allows "click-drag" workflow where user can adjust position/pitch immediately
-        // Pass newNote explicitly because it's not in the store/notes array yet
-        startDrag([newNote.id], coords, false, [newNote]);
+        addNotesToPattern([newNote]);
 
-        // ✅ PREVIEW: Handled by startDrag -> handleMouseMove
-        // We don't need to play a short burst here anymore because drag will handle sustained preview
+        // ✅ FL STUDIO STYLE: Start continuous PAINT mode
+        // This allows painting multiple notes by dragging
+        dispatch({ type: Action.START_PAINT });
 
-    }, [snapToGrid, snapValue, addNotesToPattern, findNoteAtPosition, startDrag]);
+        // ✅ PREVIEW: Play the new note
+        getPreviewManager().previewNote(newNote.pitch, 100, 0.2);
+
+    }, [snapToGrid, snapValue, addNotesToPattern, findNoteAtPosition]);
 
     const handleEraserTool = useCallback((e, coords, note) => {
         if (!note) return;
         deleteNotesFromPattern([note.id]);
     }, [deleteNotesFromPattern]);
 
+    const handleChopperTool = useCallback((e, coords, note) => {
+        // Find notes to slice
+        // If clicking a specific note, slice it
+        // If clicking empty space, maybe slice all selected notes at that time
+        let notesToSlice = [];
+        if (note) {
+            notesToSlice = [note];
+        } else if (state.selection.size > 0) {
+            notesToSlice = notes.filter(n => state.selection.has(n.id));
+        }
+
+        if (notesToSlice.length === 0) return;
+
+        // Snap slicing time
+        const sliceTime = snapToGrid(coords.time);
+
+        const newNotesToAdd = [];
+        const notesToRemove = [];
+
+        notesToSlice.forEach(n => {
+            const noteEndTime = n.startTime + n.length;
+
+            // Only slice if sliceTime is strictly within the note
+            if (sliceTime > n.startTime && sliceTime < noteEndTime) {
+                notesToRemove.push(n.id);
+
+                // Note 1: start to sliceTime
+                const note1 = {
+                    ...n,
+                    id: `note_${Date.now()}_1_${Math.random().toString(36).substr(2, 9)}`,
+                    length: sliceTime - n.startTime,
+                    visualLength: n.visualLength !== undefined ? Math.min(n.visualLength, sliceTime - n.startTime) : undefined
+                };
+
+                // Note 2: sliceTime to end
+                const note2 = {
+                    ...n,
+                    id: `note_${Date.now()}_2_${Math.random().toString(36).substr(2, 9)}`,
+                    startTime: sliceTime,
+                    time: sliceTime,
+                    length: noteEndTime - sliceTime,
+                    visualLength: n.visualLength !== undefined ? Math.max(0, n.visualLength - (sliceTime - n.startTime)) : undefined
+                };
+
+                newNotesToAdd.push(note1, note2);
+            }
+        });
+
+        if (newNotesToAdd.length > 0) {
+            // Batch the operations
+            const stack = commandStackRef.current;
+            if (stack && activePatternId && currentInstrument) {
+                const batchCommand = new BatchCommand([
+                    {
+                        execute: () => _deleteNotesFromPattern(notesToRemove),
+                        undo: () => _addNotesToPattern(notesToSlice),
+                        getDescription: () => `Slice ${notesToSlice.length} note(s)`
+                    },
+                    {
+                        execute: () => _addNotesToPattern(newNotesToAdd),
+                        undo: () => _deleteNotesFromPattern(newNotesToAdd.map(n => n.id)),
+                        getDescription: () => `Add ${newNotesToAdd.length} sliced note(s)`
+                    }
+                ], `Slice ${notesToSlice.length} note(s)`);
+                stack.execute(batchCommand);
+            } else {
+                deleteNotesFromPattern(notesToRemove);
+                addNotesToPattern(newNotesToAdd);
+            }
+        }
+    }, [state.selection, notes, snapToGrid, activePatternId, currentInstrument, deleteNotesFromPattern, addNotesToPattern, commandStackRef, _deleteNotesFromPattern, _addNotesToPattern]);
+
     // ===================================================================
     // MOUSE DOWN - Main entry point for mouse interactions
     // ===================================================================
 
     const handleMouseDown = useCallback((e) => {
-        if (keyboardPianoMode) return;
 
         // ✅ RECORDING: Disable note editing during recording
         if (isRecording) {
@@ -1115,16 +1264,37 @@ export function useNoteInteractionsV3({
 
         const coords = getCoordinatesFromEvent(e);
         const foundNote = findNoteAtPosition(coords);
+        const isRulerClick = coords.y < RULER_HEIGHT;
+
+        if (isRulerClick) {
+            const snappedTime = snapToGrid(coords.time);
+            dispatch({ type: Action.START_TIME_SELECT, payload: { start: snappedTime } });
+            return;
+        }
+
+        const isRightClick = e.button === 2;
 
         if (DEBUG) {
             console.log('🎯 [V3] Mouse down:', {
                 activeTool,
                 foundNote: foundNote ? foundNote.id : null,
-                coords: { time: coords.time.toFixed(2), pitch: Math.round(coords.pitch) }
+                coords: { time: coords.time.toFixed(2), pitch: Math.round(coords.pitch) },
+                button: e.button
             });
         }
 
-        // Tool-specific behavior
+        // ✅ RIGHT CLICK DELETION (FL Studio style)
+        if (isRightClick) {
+            if (foundNote) {
+                // Single right click on note: Delete instantly
+                deleteNotesFromPattern([foundNote.id]);
+            }
+            // Start brush erase mode whether we clicked a note or not
+            dispatch({ type: Action.START_ERASE });
+            return;
+        }
+
+        // Tool-specific behavior (for Left Click)
         if (activeTool === TOOL_TYPES.SELECT) {
             if (foundNote && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
                 // ✅ PREVIEW: Play note when clicking/selecting with short duration (300ms)
@@ -1135,8 +1305,10 @@ export function useNoteInteractionsV3({
             handlePaintTool(e, coords, foundNote);
         } else if (activeTool === TOOL_TYPES.ERASER) {
             handleEraserTool(e, coords, foundNote);
+        } else if (activeTool === TOOL_TYPES.CHOPPER) {
+            handleChopperTool(e, coords, foundNote);
         }
-    }, [activeTool, keyboardPianoMode, getCoordinatesFromEvent, findNoteAtPosition, handleSelectTool, handlePaintTool, handleEraserTool]);
+    }, [activeTool, keyboardPianoMode, getCoordinatesFromEvent, findNoteAtPosition, handleSelectTool, handlePaintTool, handleEraserTool, handleChopperTool, deleteNotesFromPattern, isRecording, dispatch, getPreviewManager]);
 
     // ===================================================================
     // FINALIZE & CURSOR - Must be defined before mouse handlers
@@ -1305,7 +1477,7 @@ export function useNoteInteractionsV3({
         }
 
         dispatch({ type: Action.END_DRAG });
-    }, [state.drag, notes, snapToGrid, activePatternId, currentInstrument, updatePatternNotes]);
+    }, [state.drag, notes, snapToGrid, activePatternId, currentInstrument, updatePatternNotes, commandStackRef, dispatch, getPreviewManager]);
 
     const finalizeResize = useCallback(() => {
         if (!state.resize) return;
@@ -1674,7 +1846,7 @@ export function useNoteInteractionsV3({
             }
         }
         dispatch({ type: Action.END_RESIZE });
-    }, [state.resize, notes, snapToGrid, snapValue, activePatternId, currentInstrument, updatePatternNotes]);
+    }, [state.resize, notes, snapToGrid, snapValue, activePatternId, currentInstrument, updatePatternNotes, commandStackRef, dispatch, getPreviewManager, useArrangementStore]);
 
     const finalizeAreaSelection = useCallback(() => {
         if (!state.areaSelect) return;
@@ -1700,12 +1872,14 @@ export function useNoteInteractionsV3({
         select(selected, 'replace');
         dispatch({ type: Action.END_AREA });
 
-    }, [state.areaSelect, notes, select]);
+    }, [state.areaSelect, notes, select, dispatch]);
 
     const updateCursor = useCallback((note, coords) => {
         let cursor = 'default';
 
-        if (state.mode === Mode.DRAG) {
+        if (state.mode === Mode.TIME_SELECT) {
+            cursor = 'col-resize';
+        } else if (state.mode === Mode.DRAG) {
             cursor = 'grabbing';
         } else if (state.mode === Mode.RESIZE) {
             cursor = state.resize?.handle === 'left' ? 'w-resize' : 'e-resize';
@@ -1736,13 +1910,29 @@ export function useNoteInteractionsV3({
         if (cursor !== state.cursor) {
             dispatch({ type: Action.SET_CURSOR, payload: { cursor } });
         }
-    }, [state.mode, state.cursor, state.resize, activeTool, getResizeHandle]);
+    }, [state.mode, state.cursor, state.resize, activeTool, getResizeHandle, dispatch]);
 
     // ===================================================================
     // MOUSE MOVE
     // ===================================================================
 
     const handleMouseMove = useCallback((e) => {
+        if (state.mode === Mode.TIME_SELECT) {
+            const coords = getCoordinatesFromEvent(e);
+            const snappedEnd = snapToGrid(coords.time);
+            dispatch({ type: Action.UPDATE_TIME_SELECT, payload: { end: snappedEnd } });
+
+            // ✅ SYNC: Update loop region in real-time
+            if (setLoopRegion && state.timeRange) {
+                const s = Math.min(state.timeRange.start, snappedEnd);
+                const e = Math.max(state.timeRange.start, snappedEnd);
+                if (Math.abs(e - s) > 0.1) {
+                    setLoopRegion({ start: s, end: e });
+                }
+            }
+            return;
+        }
+
         const coords = getCoordinatesFromEvent(e);
         const foundNote = findNoteAtPosition(coords);
 
@@ -1751,6 +1941,18 @@ export function useNoteInteractionsV3({
             type: Action.SET_HOVER,
             payload: { noteId: foundNote?.id || null }
         });
+
+        // ✅ BRUSH ERASE (FL Studio style) - If in erase mode and hovering a note, delete it
+        if (state.mode === Mode.ERASE && foundNote) {
+            deleteNotesFromPattern([foundNote.id]);
+            return;
+        }
+
+        // ✅ BRUSH PAINT (FL Studio style) - If in paint mode and hovering empty space, create note
+        if (state.mode === Mode.PAINT && !foundNote) {
+            handlePaintTool(e, coords, null);
+            return;
+        }
 
         // Handle drag
         if (state.mode === Mode.DRAG && state.drag) {
@@ -1849,13 +2051,25 @@ export function useNoteInteractionsV3({
         // Update cursor
         updateCursor(foundNote, coords);
 
-    }, [state.mode, state.drag, state.resize, state.areaSelect, getCoordinatesFromEvent, findNoteAtPosition, updateCursor, notes, currentInstrument, snapToGrid]);
+    }, [state.mode, state.drag, state.resize, state.areaSelect, state.timeRange, snapToGrid, setLoopRegion, getCoordinatesFromEvent, findNoteAtPosition, dispatch, deleteNotesFromPattern, handlePaintTool, notes, currentInstrument, getPreviewManager, lastPreviewedPitchRef, previewThrottleRef, updateCursor]);
 
     // ===================================================================
     // MOUSE UP
     // ===================================================================
 
     const handleMouseUp = useCallback(() => {
+        if (state.mode === Mode.TIME_SELECT) {
+            const range = state.timeRange;
+            if (range && Math.abs(range.start - range.end) < 0.01) {
+                dispatch({ type: Action.CLEAR_TIME_SELECT });
+                // ✅ SYNC: Clear loop region on single click
+                if (setLoopRegion) setLoopRegion(null);
+            } else {
+                dispatch({ type: Action.END_TIME_SELECT });
+            }
+            return;
+        }
+
         // ✅ FIX: Stop any sustained preview note
         if (lastPreviewedPitchRef.current !== null) {
             try {
@@ -1872,8 +2086,12 @@ export function useNoteInteractionsV3({
             finalizeResize();
         } else if (state.mode === Mode.AREA_SELECT && state.areaSelect) {
             finalizeAreaSelection();
+        } else if (state.mode === Mode.ERASE) {
+            dispatch({ type: Action.END_ERASE });
+        } else if (state.mode === Mode.PAINT) {
+            dispatch({ type: Action.END_PAINT });
         }
-    }, [state.mode, state.drag, state.resize, state.areaSelect, finalizeDrag, finalizeResize, finalizeAreaSelection]);
+    }, [state.mode, state.drag, state.resize, state.areaSelect, state.timeRange, finalizeDrag, finalizeResize, finalizeAreaSelection, setLoopRegion]);
 
     // ===================================================================
     // CLIPBOARD OPERATIONS - Must be defined before handleKeyDown
@@ -1909,10 +2127,323 @@ export function useNoteInteractionsV3({
     // KEYBOARD
     // ===================================================================
 
-    const handleKeyDown = useCallback((e) => {
-        // ✅ RECORDING: Convert keyboard input to MIDI events when recording
-        if (isRecording && !keyboardPianoMode) {
-            // Standard DAW keyboard mapping (from useNoteInteractionsV2)
+
+
+
+    // ===================================================================
+    // STUB METHODS - For compatibility with PianoRoll
+    // ===================================================================
+
+    // ✅ INTERNAL: Update note without command (for undo/redo)
+    const _updateNote = useCallback((noteId, updates) => {
+        if (!activePatternId || !currentInstrument) return;
+        // ✅ FIX: Get fresh notes from store to avoid stale closure
+        const currentPattern = useArrangementStore.getState().patterns[activePatternId];
+        const currentNotes = currentPattern?.data?.[currentInstrument.id] || [];
+        const updated = currentNotes.map(n =>
+            n.id === noteId ? { ...n, ...updates } : n
+        );
+        updatePatternNotes(activePatternId, currentInstrument.id, updated);
+
+        // EventBus notification
+        const modifiedNote = updated.find(n => n.id === noteId);
+        if (modifiedNote) {
+            EventBus.emit('NOTE_MODIFIED', {
+                patternId: activePatternId,
+                instrumentId: currentInstrument.id,
+                note: modifiedNote
+            });
+        }
+    }, [activePatternId, currentInstrument, updatePatternNotes]);
+
+    // ✅ INTERNAL: Batch update multiple notes without command (for undo/redo)
+    const _updateNotes = useCallback((updatesMap) => {
+        if (!activePatternId || !currentInstrument) return;
+        // ✅ FIX: Get fresh notes from store to avoid stale closure
+        const currentPattern = useArrangementStore.getState().patterns[activePatternId];
+        const currentNotes = currentPattern?.data?.[currentInstrument.id] || [];
+        const updated = currentNotes.map(n => {
+            const updates = updatesMap.get(n.id);
+            return updates ? { ...n, ...updates } : n;
+        });
+        updatePatternNotes(activePatternId, currentInstrument.id, updated);
+
+        // ✅ FIX: Emit single NOTE_MODIFIED event for all notes (batch update)
+        // This prevents multiple PlaybackManager reschedules
+        const modifiedNotes = updated.filter(note => updatesMap.has(note.id));
+        if (modifiedNotes.length > 0) {
+            // Emit one event per note, but they'll be batched by the event system
+            modifiedNotes.forEach(note => {
+                EventBus.emit('NOTE_MODIFIED', {
+                    patternId: activePatternId,
+                    instrumentId: currentInstrument.id,
+                    note: note
+                });
+            });
+        }
+    }, [activePatternId, currentInstrument, updatePatternNotes]);
+
+    // ✅ PUBLIC: Update note with CommandStack (for undo/redo)
+    const updateNote = useCallback((noteId, updates, skipUndo = false) => {
+        if (!activePatternId || !currentInstrument) return;
+
+        const targetNote = notes.find(n => n.id === noteId);
+        if (!targetNote) return;
+
+        if (skipUndo) {
+            // Direct update (for undo/redo)
+            _updateNote(noteId, updates);
+            return;
+        }
+
+        // ✅ COMMAND STACK: Create UpdateNoteCommand
+        const stack = commandStackRef.current;
+        if (stack) {
+            const oldState = { ...targetNote };
+            const newState = { ...targetNote, ...updates };
+
+            const command = new UpdateNoteCommand(
+                noteId,
+                oldState,
+                newState,
+                (id, state) => _updateNote(id, state)
+            );
+            stack.execute(command);
+        } else {
+            // Fallback if CommandStack not available
+            _updateNote(noteId, updates);
+        }
+    }, [notes, activePatternId, currentInstrument, _updateNote]);
+
+    const deleteNotes = useCallback((noteIds) => {
+        deleteNotesFromPattern(noteIds);
+    }, [deleteNotesFromPattern]);
+
+
+    const updateNoteVelocity = useCallback((noteId, velocity) => {
+        updateNote(noteId, { velocity: Math.max(1, Math.min(127, Math.round(velocity))) });
+    }, [updateNote]);
+
+    // ✅ BATCH: Update velocity of multiple notes at once (for Alt+wheel)
+    const updateNotesVelocity = useCallback((noteIds, velocityChange) => {
+        if (!activePatternId || !currentInstrument || noteIds.length === 0) return;
+
+        // ✅ FIX: Get fresh notes from store to avoid stale closure
+        const currentPattern = useArrangementStore.getState().patterns[activePatternId];
+        const currentNotes = currentPattern?.data?.[currentInstrument.id] || [];
+        const notesToUpdate = noteIds
+            .map(noteId => currentNotes.find(n => n.id === noteId))
+            .filter(Boolean);
+
+        if (notesToUpdate.length === 0) return;
+
+        // ✅ COMMAND STACK: Use BatchUpdateNotesCommand for all velocity updates
+        const stack = commandStackRef.current;
+        if (stack) {
+            // Prepare note updates for BatchUpdateNotesCommand
+            const noteUpdates = notesToUpdate.map(note => {
+                const oldState = { ...note };
+                const currentVelocity = note.velocity || 100;
+                const newVelocity = Math.max(1, Math.min(127, currentVelocity + velocityChange));
+                const newState = { ...note, velocity: newVelocity };
+                return { noteId: note.id, oldState, newState };
+            });
+
+            // Create batch update command
+            // BatchUpdateNotesCommand expects updatePatternStoreFn to receive a Map of noteId -> full newState
+            const batchCommand = new BatchUpdateNotesCommand(
+                noteUpdates,
+                (updatesMap) => {
+                    // BatchUpdateNotesCommand passes Map<noteId, fullNewState>
+                    // We need to update the pattern store with all notes at once
+                    const currentPattern = useArrangementStore.getState().patterns[activePatternId];
+                    const currentNotes = currentPattern?.data?.[currentInstrument.id] || [];
+                    const updated = currentNotes.map(note => {
+                        const newState = updatesMap.get(note.id);
+                        return newState || note;
+                    });
+                    updatePatternNotes(activePatternId, currentInstrument.id, updated);
+
+                    // Emit NOTE_MODIFIED events for all updated notes
+                    noteUpdates.forEach(({ noteId }) => {
+                        const updatedNote = updated.find(n => n.id === noteId);
+                        if (updatedNote) {
+                            EventBus.emit('NOTE_MODIFIED', {
+                                patternId: activePatternId,
+                                instrumentId: currentInstrument.id,
+                                note: updatedNote
+                            });
+                        }
+                    });
+                },
+                `Change velocity of ${notesToUpdate.length} note(s)`
+            );
+
+            stack.execute(batchCommand);
+        } else {
+            // Fallback if CommandStack not available - use batch update
+            const updatesMap = new Map();
+            notesToUpdate.forEach(note => {
+                const currentVelocity = note.velocity || 100;
+                const newVelocity = Math.max(1, Math.min(127, currentVelocity + velocityChange));
+                updatesMap.set(note.id, { velocity: newVelocity });
+            });
+            _updateNotes(updatesMap);
+        }
+    }, [activePatternId, currentInstrument, updatePatternNotes, _updateNotes]);
+
+    // ✅ QUANTIZE - Snap selected notes to grid
+    const duplicateSelection = useCallback(() => {
+        const stack = commandStackRef.current;
+        if (!activePatternId || !currentInstrument) return;
+
+        let notesToDuplicate = [];
+        let offset = 0;
+        let newTimeRange = null;
+
+        if (state.timeRange && Math.abs(state.timeRange.start - state.timeRange.end) > 0.1) {
+            // 1. Time selection based duplication (FL Studio Style)
+            const minT = Math.min(state.timeRange.start, state.timeRange.end);
+            const maxT = Math.max(state.timeRange.start, state.timeRange.end);
+            offset = maxT - minT;
+
+            notesToDuplicate = notes.filter(n => {
+                // Return notes that START within the time range
+                return n.startTime >= minT && n.startTime < maxT;
+            });
+
+            if (notesToDuplicate.length === 0) {
+                // If no notes in range, just move the time selection forward
+                dispatch({
+                    type: Action.SET_TIME_RANGE,
+                    payload: { range: { start: minT + offset, end: maxT + offset } }
+                });
+                return;
+            }
+
+            newTimeRange = { start: minT + offset, end: maxT + offset };
+        } else if (state.selection.size > 0) {
+            // 2. Selection based duplication
+            notesToDuplicate = notes.filter(n => state.selection.has(n.id));
+            const minStart = Math.min(...notesToDuplicate.map(n => n.startTime));
+            const maxEnd = Math.max(...notesToDuplicate.map(n => n.startTime + n.length));
+
+            // Smart offset: length of selection, snapped to nearest bar/beat if very close
+            offset = maxEnd - minStart;
+            if (Math.abs(offset - Math.round(offset)) < 0.05) {
+                offset = Math.round(offset);
+            }
+        }
+
+        if (notesToDuplicate.length === 0) return;
+
+        // Create clones
+        const clones = notesToDuplicate.map(n => ({
+            ...n,
+            id: `note_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            startTime: n.startTime + offset,
+            time: (n.time !== undefined ? n.time : n.startTime) + offset
+        }));
+
+        const cloneIds = clones.map(c => c.id);
+
+        // Execute via command stack
+        if (stack) {
+            const batchCommand = new BatchCommand(
+                [
+                    {
+                        execute: () => _addNotesToPattern(clones),
+                        undo: () => _deleteNotesFromPattern(cloneIds),
+                        getDescription: () => `Duplicate ${clones.length} note(s)`
+                    }
+                ],
+                `Duplicate ${clones.length} note(s)`
+            );
+            stack.execute(batchCommand);
+        } else {
+            _addNotesToPattern(clones);
+        }
+
+        // Select the new clones
+        select(cloneIds, 'replace');
+
+        // Move time selection forward if it existed
+        if (newTimeRange) {
+            dispatch({
+                type: Action.SET_TIME_RANGE,
+                payload: { range: newTimeRange }
+            });
+        }
+
+    }, [state.timeRange, state.selection, notes, activePatternId, currentInstrument, _addNotesToPattern, _deleteNotesFromPattern, select]);
+
+    const quantizeNotes = useCallback((noteIds = null, quantizeStart = true, quantizeEnd = false) => {
+        if (!activePatternId || !currentInstrument) return;
+
+        const notesToQuantize = noteIds
+            ? notes.filter(n => noteIds.includes(n.id))
+            : notes.filter(n => state.selection.has(n.id));
+        if (notesToQuantize.length === 0) return;
+
+        // ✅ COMMAND STACK: Create BatchCommand for quantize
+        const stack = commandStackRef.current;
+        if (stack) {
+            const commands = notesToQuantize.map(note => {
+                const oldState = { ...note };
+                const updates = {};
+
+                if (quantizeStart) {
+                    updates.startTime = snapToGrid(note.startTime);
+                }
+
+                if (quantizeEnd) {
+                    const noteEnd = note.startTime + note.length;
+                    const snappedEnd = snapToGrid(noteEnd);
+                    updates.length = Math.max(snapValue || 0.25, snappedEnd - (updates.startTime || note.startTime));
+                }
+
+                if (Object.keys(updates).length === 0) return null;
+
+                const newState = { ...note, ...updates };
+                return new UpdateNoteCommand(
+                    note.id,
+                    oldState,
+                    newState,
+                    (id, state) => _updateNote(id, state)
+                );
+            }).filter(Boolean);
+
+            if (commands.length > 0) {
+                const batchCommand = new BatchCommand(commands, `Quantize ${commands.length} note(s)`);
+                stack.execute(batchCommand);
+            }
+        } else {
+            // Fallback if CommandStack not available
+            notesToQuantize.forEach(note => {
+                const updates = {};
+                if (quantizeStart) {
+                    updates.startTime = snapToGrid(note.startTime);
+                }
+                if (quantizeEnd) {
+                    const noteEnd = note.startTime + note.length;
+                    const snappedEnd = snapToGrid(noteEnd);
+                    updates.length = Math.max(snapValue || 0.25, snappedEnd - (updates.startTime || note.startTime));
+                }
+                if (Object.keys(updates).length > 0) {
+                    _updateNote(note.id, updates);
+                }
+            });
+        }
+    }, [notes, state.selection, snapToGrid, snapValue, activePatternId, currentInstrument, _updateNote]);
+
+    // ===================================================================
+    // RETURN API
+    // ===================================================================
+
+    // Keyboard Handlers
+    const _handleKeyDownInternal = useCallback((e) => {
+        // ✅ MUSICAL TYPING (Keyboard Piano) - Key Down
+        if (keyboardPianoMode) {
             const KEYBOARD_TO_PITCH = {
                 'z': 60, 's': 61, 'x': 62, 'd': 63, 'c': 64, 'v': 65, 'g': 66, 'b': 67, 'h': 68, 'n': 69, 'j': 70, 'm': 71,
                 'a': 72, 'w': 73, 'f': 74, 'e': 75, 'k': 76, 't': 77, 'l': 78, 'y': 79, ';': 80, 'u': 81, "'": 82, 'o': 83,
@@ -1923,25 +2454,32 @@ export function useNoteInteractionsV3({
             const key = e.key.toLowerCase();
             const pitch = KEYBOARD_TO_PITCH[key];
 
-            // If it's a piano key and not in input field
-            if (pitch !== undefined && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+            // If it's a piano key and not in input field AND no modifiers (except Shift for higher octave if supported later)
+            if (pitch !== undefined && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA' && !e.ctrlKey && !e.metaKey) {
                 e.preventDefault();
 
                 // Prevent key repeat
-                if (pressedKeysRef.current.has(key)) return;
+                if (pressedKeysRef.current.has(key)) return true;
                 pressedKeysRef.current.add(key);
 
-                // Emit MIDI event for recording
-                if (typeof window !== 'undefined' && window.dispatchEvent) {
+                // ✅ SOUND PREVIEW: Play the note immediately
+                try {
+                    getPreviewManager().previewNote(pitch, 100, null); // null = sustain until key up
+                    // ✅ HIGHLIGHT: Update piano roll highlight
+                    if (onNoteActive) onNoteActive(pitch);
+                } catch (err) {
+                    console.error('🎹 Musical typing error:', err);
+                }
+
+                // ✅ RECORDING: Emit MIDI event for recording if active
+                if (isRecording && typeof window !== 'undefined' && window.dispatchEvent) {
                     window.dispatchEvent(new CustomEvent('midi:keyboardNoteOn', {
                         detail: { pitch, velocity: 100, timestamp: performance.now() }
                     }));
                 }
-                return;
+                return true; // Restore return for musical typing
             }
         }
-
-        if (keyboardPianoMode) return;
 
         // ✅ RECORD TOGGLE - R key
         if (e.key === 'r' || e.key === 'R') {
@@ -1949,7 +2487,7 @@ export function useNoteInteractionsV3({
             if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA' && onRecordToggle) {
                 e.preventDefault();
                 onRecordToggle();
-                return;
+                return true;
             }
         }
 
@@ -1959,7 +2497,7 @@ export function useNoteInteractionsV3({
             if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
                 e.preventDefault();
                 onRecordToggle(); // Toggle will stop recording
-                return;
+                return true;
             }
         }
 
@@ -1970,7 +2508,7 @@ export function useNoteInteractionsV3({
             if (stack?.canUndo()) {
                 stack.undo();
             }
-            return;
+            return true;
         }
 
         if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
@@ -1979,26 +2517,26 @@ export function useNoteInteractionsV3({
             if (stack?.canRedo()) {
                 stack.redo();
             }
-            return;
+            return true;
         }
 
         // ✅ COPY/CUT/PASTE - Ctrl/Cmd + C, Ctrl/Cmd + X, Ctrl/Cmd + V
         if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
             e.preventDefault();
             copyNotes();
-            return;
+            return true;
         }
 
         if ((e.ctrlKey || e.metaKey) && e.key === 'x') {
             e.preventDefault();
             cutNotes();
-            return;
+            return true;
         }
 
         if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
             e.preventDefault();
             pasteNotes();
-            return;
+            return true;
         }
 
         // ✅ DUPLICATE - Ctrl/Cmd + D
@@ -2012,27 +2550,43 @@ export function useNoteInteractionsV3({
 
             // ✅ LOOP REGION PRIORITY: If loop region is set, duplicate all notes in region
             if (loopRegion && loopRegion.start !== undefined && loopRegion.end !== undefined) {
-                // Get all notes within loop region (notes that overlap with region)
+                // Convert loop region steps to beats
+                const loopStart = loopRegion.start / STEPS_PER_BEAT;
+                const loopEnd = loopRegion.end / STEPS_PER_BEAT;
+
                 notesToDuplicate = notes.filter(note => {
                     const noteEnd = note.startTime + note.length;
-                    // Note overlaps with loop region if:
-                    // - Note starts before region ends AND
-                    // - Note ends after region starts
-                    return note.startTime < loopRegion.end && noteEnd > loopRegion.start;
+                    return note.startTime < loopEnd && noteEnd > loopStart;
                 });
 
                 // Use loop region length as offset
-                offset = loopRegion.end - loopRegion.start;
+                offset = loopEnd - loopStart;
             } else {
                 // No loop region: use selected notes
-                if (state.selection.size === 0) return;
+                if (state.selection.size === 0) return false;
                 notesToDuplicate = notes.filter(n => state.selection.has(n.id));
-                if (notesToDuplicate.length === 0) return;
+                if (notesToDuplicate.length === 0) return false;
+
+                // ✅ SMART OFFSET: Calculate based on selection bounds
+                const minStart = Math.min(...notesToDuplicate.map(n => n.startTime));
+                const maxEnd = Math.max(...notesToDuplicate.map(n => n.startTime + n.length));
+                const length = maxEnd - minStart;
+
+                // Round to nearest bar (4 beats) if it's significant, otherwise nearest beat
+                if (length <= 0) {
+                    offset = 4;
+                } else if (length <= 1) {
+                    offset = 1;
+                } else if (length <= 4) {
+                    offset = 4;
+                } else {
+                    offset = Math.ceil(length / 4) * 4;
+                }
             }
 
             if (notesToDuplicate.length === 0) {
                 console.warn('⚠️ No notes to duplicate');
-                return;
+                return false;
             }
 
             // Create duplicated notes
@@ -2091,7 +2645,7 @@ export function useNoteInteractionsV3({
 
             // Select the duplicated notes
             select(duplicatedNotes.map(n => n.id), 'replace');
-            return;
+            return true;
         }
 
         // ✅ FL STUDIO FEATURE: Link Notes - Ctrl/Cmd + L
@@ -2103,7 +2657,7 @@ export function useNoteInteractionsV3({
 
             if (!activePatternId || !currentInstrument) {
                 console.warn('⚠️ Ctrl+L requires active pattern and instrument', { activePatternId, currentInstrument });
-                return;
+                return true;
             }
 
             // Get all notes (not just selected) for finding next notes
@@ -2111,7 +2665,7 @@ export function useNoteInteractionsV3({
             console.log('🎹 Ctrl+L: All notes:', allNotes.length, allNotes);
             if (allNotes.length === 0) {
                 console.warn('⚠️ No notes to link');
-                return;
+                return true;
             }
 
             // Get pattern length (default to 64 steps = 16 beats)
@@ -2294,121 +2848,14 @@ export function useNoteInteractionsV3({
             } else {
                 console.log('🎹 Ctrl+L: No notes needed linking (all notes already at correct length)');
             }
-            return;
+            return true;
         }
 
-        // ✅ SEQUENTIAL DUPLICATE (LOOP REGION) - Ctrl/Cmd + B
-        // Duplicates notes within loop region, filling the entire region
+        // ✅ SEQUENTIAL DUPLICATE (LOOP REGION / TIME SELECTION) - Ctrl/Cmd + B
         if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
             e.preventDefault();
-            console.log('🎹 Cmd+B pressed, loopRegion:', loopRegion);
-
-            // Require loop region
-            if (!loopRegion || loopRegion.start === undefined || loopRegion.end === undefined) {
-                console.warn('⚠️ Cmd+B requires a loop region to be set');
-                return;
-            }
-
-            // ✅ FIX: Convert loop region from steps to beats
-            // Loop region is stored in steps (1 beat = 4 steps for 16th note grid)
-            const loopStartBeats = loopRegion.start / STEPS_PER_BEAT;
-            const loopEndBeats = loopRegion.end / STEPS_PER_BEAT;
-            console.log(`🎹 Loop region: ${loopRegion.start}-${loopRegion.end} steps = ${loopStartBeats.toFixed(2)}-${loopEndBeats.toFixed(2)} beats`);
-
-            // Get notes within loop region (notes that overlap with region)
-            // Notes are stored in beats, so compare with beats
-            const notesInRegion = notes.filter(note => {
-                const noteEnd = note.startTime + note.length;
-                // Note overlaps with loop region if:
-                // - Note starts before region ends AND
-                // - Note ends after region starts
-                return note.startTime < loopEndBeats && noteEnd > loopStartBeats;
-            });
-
-            if (notesInRegion.length === 0) {
-                console.warn('⚠️ No notes found within loop region');
-                return;
-            }
-
-            // ✅ FIX: Calculate pattern boundaries relative to loop region start
-            // Normalize notes to start from loop region start (0-based)
-            // Use beats for all calculations
-            const normalizedNotes = notesInRegion.map(note => ({
-                ...note,
-                relativeStart: note.startTime - loopStartBeats
-            }));
-
-            const minRelativeStart = Math.min(...normalizedNotes.map(n => n.relativeStart));
-            const maxRelativeEnd = Math.max(...normalizedNotes.map(n => n.relativeStart + n.length));
-            const patternLength = maxRelativeEnd - minRelativeStart;
-            const loopLength = loopEndBeats - loopStartBeats;
-
-            if (patternLength <= 0) {
-                console.warn('⚠️ Invalid pattern length');
-                return;
-            }
-
-            // Calculate how many copies we need to fill the loop region
-            // Start from the first copy (i=1) and continue until we fill the region
-            const allDuplicatedNotes = [];
-            let copyIndex = 1;
-
-            while (true) {
-                const copyOffset = patternLength * copyIndex;
-                const copyStartInRegion = minRelativeStart + copyOffset;
-
-                // Stop if this copy would start beyond the loop region
-                if (copyStartInRegion >= loopLength) {
-                    break;
-                }
-
-                // Create copies of all notes in this iteration
-                normalizedNotes.forEach(note => {
-                    const newRelativeStart = note.relativeStart + copyOffset;
-                    const newStartTime = loopStartBeats + newRelativeStart;
-                    const noteLength = note.length;
-                    const newEndTime = newStartTime + noteLength;
-
-                    // Only add if the note fits within the loop region (in beats)
-                    if (newStartTime >= loopStartBeats && newEndTime <= loopEndBeats) {
-                        allDuplicatedNotes.push({
-                            ...note,
-                            id: `note_${Date.now()}_${copyIndex}_${Math.random().toString(36).substr(2, 9)}`,
-                            startTime: newStartTime
-                        });
-                    }
-                });
-
-                copyIndex++;
-            }
-
-            if (allDuplicatedNotes.length > 0) {
-                // ✅ COMMAND STACK: Use BatchCommand for undo/redo
-                const stack = commandStackRef.current;
-                if (stack && activePatternId && currentInstrument) {
-                    const command = new AddNoteCommand(
-                        allDuplicatedNotes,
-                        (newNotes) => {
-                            const updated = [...notes, ...newNotes];
-                            updatePatternNotes(activePatternId, currentInstrument.id, updated);
-
-                            // EventBus notifications
-                            newNotes.forEach(note => {
-                                EventBus.emit('NOTE_ADDED', {
-                                    patternId: activePatternId,
-                                    instrumentId: currentInstrument.id,
-                                    note
-                                });
-                            });
-                        }
-                    );
-                    stack.execute(command);
-                } else {
-                    // Fallback if command stack not available
-                    addNotesToPattern(allDuplicatedNotes);
-                }
-            }
-            return;
+            duplicateSelection();
+            return true;
         }
 
         // ✅ INVERT SELECTION - Ctrl/Cmd + I
@@ -2417,7 +2864,7 @@ export function useNoteInteractionsV3({
             const allNoteIds = notes.map(n => n.id);
             const invertedIds = allNoteIds.filter(id => !state.selection.has(id));
             select(invertedIds, 'replace');
-            return;
+            return true;
         }
 
         // Ctrl/Cmd + A - Select all (or all in loop region if loop region is set)
@@ -2438,16 +2885,16 @@ export function useNoteInteractionsV3({
                 // No loop region: select all notes
                 select(notes.map(n => n.id), 'replace');
             }
-            return;
+            return true;
         }
 
         // Delete/Backspace
         if (e.key === 'Delete' || e.key === 'Backspace') {
             e.preventDefault();
-            if (state.selection.size === 0) return;
+            if (state.selection.size === 0) return false;
             deleteNotesFromPattern(Array.from(state.selection));
             clearSelection();
-            return;
+            return true;
         }
 
         // ✅ ARROW KEYS - Move selected notes
@@ -2456,7 +2903,7 @@ export function useNoteInteractionsV3({
                 e.preventDefault();
 
                 const selectedNotes = notes.filter(n => state.selection.has(n.id));
-                if (selectedNotes.length === 0) return;
+                if (selectedNotes.length === 0) return false;
 
                 let pitchDelta = 0;
                 let timeDelta = 0;
@@ -2540,16 +2987,16 @@ export function useNoteInteractionsV3({
                     }
                 }
             }
-            return;
+            return true;
         }
 
         // ✅ TRANSPOSE - Ctrl/Cmd + Up/Down (1 semitone), Ctrl/Cmd + Alt + Up/Down (1 octave)
         if ((e.ctrlKey || e.metaKey) && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
-            if (state.selection.size === 0) return;
+            if (state.selection.size === 0) return false;
             e.preventDefault();
 
             const selectedNotes = notes.filter(n => state.selection.has(n.id));
-            if (selectedNotes.length === 0) return;
+            if (selectedNotes.length === 0) return false;
 
             const direction = e.key === 'ArrowUp' ? 1 : -1;
             const semitones = e.altKey ? direction * 12 : direction; // Alt = octave, otherwise semitone
@@ -2581,21 +3028,35 @@ export function useNoteInteractionsV3({
                 );
                 stack.execute(command);
             }
-            return;
+            return true;
+        }
+
+        // Duplicate - Ctrl/Cmd + B (FL Studio style)
+        if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
+            e.preventDefault();
+            duplicateSelection();
+            return true;
         }
 
         // Escape
         if (e.key === 'Escape') {
+            e.preventDefault();
+            // ✅ Clear time selection and sync with loop region
+            if (state.timeRange) {
+                dispatch({ type: Action.CLEAR_TIME_SELECT });
+                if (setLoopRegion) setLoopRegion(null);
+            }
+            // ✅ Clear note selection
             clearSelection();
-            return;
+            return true;
         }
-    }, [keyboardPianoMode, isRecording, notes, state.selection, select, clearSelection, deleteNotesFromPattern, copyNotes, cutNotes, pasteNotes, addNotesToPattern, loopRegion, activePatternId, currentInstrument, updatePatternNotes]);
+        return false; // Event not handled
+    }, [keyboardPianoMode, isRecording, notes, state.selection, state.timeRange, dispatch, setLoopRegion, select, clearSelection, deleteNotesFromPattern, copyNotes, cutNotes, pasteNotes, addNotesToPattern, loopRegion, activePatternId, currentInstrument, updatePatternNotes, onNoteActive, duplicateSelection]);
 
     // ✅ RECORDING: Handle keyboard Note Off events
-    const handleKeyUp = useCallback((e) => {
-        // ✅ RECORDING: Convert keyboard input to MIDI Note Off events when recording
-        if (isRecording && !keyboardPianoMode) {
-            // Standard DAW keyboard mapping (same as handleKeyDown)
+    const _handleKeyUpInternal = useCallback((e) => {
+        // ✅ MUSICAL TYPING (Keyboard Piano) - Key Up
+        if (keyboardPianoMode) {
             const KEYBOARD_TO_PITCH = {
                 'z': 60, 's': 61, 'x': 62, 'd': 63, 'c': 64, 'v': 65, 'g': 66, 'b': 67, 'h': 68, 'n': 69, 'j': 70, 'm': 71,
                 'a': 72, 'w': 73, 'f': 74, 'e': 75, 'k': 76, 't': 77, 'l': 78, 'y': 79, ';': 80, 'u': 81, "'": 82, 'o': 83,
@@ -2606,250 +3067,40 @@ export function useNoteInteractionsV3({
             const key = e.key.toLowerCase();
             const pitch = KEYBOARD_TO_PITCH[key];
 
-            // If it's a piano key and not in input field
-            if (pitch !== undefined && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+            // If it's a piano key and not in input field AND no modifiers
+            if (pitch !== undefined && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA' && !e.ctrlKey && !e.metaKey) {
                 e.preventDefault();
 
                 // Remove from pressed keys
                 pressedKeysRef.current.delete(key);
 
-                // Emit MIDI Note Off event for recording
-                if (typeof window !== 'undefined' && window.dispatchEvent) {
+                // ✅ SOUND PREVIEW: Stop the note
+                try {
+                    getPreviewManager().stopNote(pitch);
+                    // ✅ HIGHLIGHT: Update piano roll highlight (turn off)
+                    if (onNoteActive) onNoteActive(null);
+                } catch (err) { }
+
+                // ✅ RECORDING: Emit MIDI Note Off event for recording if active
+                if (isRecording && typeof window !== 'undefined' && window.dispatchEvent) {
                     window.dispatchEvent(new CustomEvent('midi:keyboardNoteOff', {
                         detail: { pitch, timestamp: performance.now() }
                     }));
                 }
-                return;
+                return true;
             }
         }
-    }, [isRecording, keyboardPianoMode]);
+        return false; // Event not handled
+    }, [isRecording, keyboardPianoMode, onNoteActive]);
 
-    // ===================================================================
-    // STUB METHODS - For compatibility with PianoRoll
-    // ===================================================================
-
-    // ✅ INTERNAL: Update note without command (for undo/redo)
-    const _updateNote = useCallback((noteId, updates) => {
-        if (!activePatternId || !currentInstrument) return;
-        // ✅ FIX: Get fresh notes from store to avoid stale closure
-        const currentPattern = useArrangementStore.getState().patterns[activePatternId];
-        const currentNotes = currentPattern?.data?.[currentInstrument.id] || [];
-        const updated = currentNotes.map(n =>
-            n.id === noteId ? { ...n, ...updates } : n
-        );
-        updatePatternNotes(activePatternId, currentInstrument.id, updated);
-
-        // EventBus notification
-        const modifiedNote = updated.find(n => n.id === noteId);
-        if (modifiedNote) {
-            EventBus.emit('NOTE_MODIFIED', {
-                patternId: activePatternId,
-                instrumentId: currentInstrument.id,
-                note: modifiedNote
-            });
-        }
-    }, [activePatternId, currentInstrument, updatePatternNotes]);
-
-    // ✅ INTERNAL: Batch update multiple notes without command (for undo/redo)
-    const _updateNotes = useCallback((updatesMap) => {
-        if (!activePatternId || !currentInstrument) return;
-        // ✅ FIX: Get fresh notes from store to avoid stale closure
-        const currentPattern = useArrangementStore.getState().patterns[activePatternId];
-        const currentNotes = currentPattern?.data?.[currentInstrument.id] || [];
-        const updated = currentNotes.map(n => {
-            const updates = updatesMap.get(n.id);
-            return updates ? { ...n, ...updates } : n;
+    // ✅ KEYBOARD SHORTCUTS REGISTRATION - MOVED AFTER DEFINITIONS
+    useEffect(() => {
+        ShortcutManager.registerContext('MUSICAL_TYPING', SHORTCUT_PRIORITY.MUSICAL_TYPING, {
+            onKeyDown: (e) => _handleKeyDownInternal(e),
+            onKeyUp: (e) => _handleKeyUpInternal(e)
         });
-        updatePatternNotes(activePatternId, currentInstrument.id, updated);
-
-        // ✅ FIX: Emit single NOTE_MODIFIED event for all notes (batch update)
-        // This prevents multiple PlaybackManager reschedules
-        const modifiedNotes = updated.filter(note => updatesMap.has(note.id));
-        if (modifiedNotes.length > 0) {
-            // Emit one event per note, but they'll be batched by the event system
-            modifiedNotes.forEach(note => {
-                EventBus.emit('NOTE_MODIFIED', {
-                    patternId: activePatternId,
-                    instrumentId: currentInstrument.id,
-                    note: note
-                });
-            });
-        }
-    }, [activePatternId, currentInstrument, updatePatternNotes]);
-
-    // ✅ PUBLIC: Update note with CommandStack (for undo/redo)
-    const updateNote = useCallback((noteId, updates, skipUndo = false) => {
-        if (!activePatternId || !currentInstrument) return;
-
-        const targetNote = notes.find(n => n.id === noteId);
-        if (!targetNote) return;
-
-        if (skipUndo) {
-            // Direct update (for undo/redo)
-            _updateNote(noteId, updates);
-            return;
-        }
-
-        // ✅ COMMAND STACK: Create UpdateNoteCommand
-        const stack = commandStackRef.current;
-        if (stack) {
-            const oldState = { ...targetNote };
-            const newState = { ...targetNote, ...updates };
-
-            const command = new UpdateNoteCommand(
-                noteId,
-                oldState,
-                newState,
-                (id, state) => _updateNote(id, state)
-            );
-            stack.execute(command);
-        } else {
-            // Fallback if CommandStack not available
-            _updateNote(noteId, updates);
-        }
-    }, [notes, activePatternId, currentInstrument, _updateNote]);
-
-    const deleteNotes = useCallback((noteIds) => {
-        deleteNotesFromPattern(noteIds);
-    }, [deleteNotesFromPattern]);
-
-
-    const updateNoteVelocity = useCallback((noteId, velocity) => {
-        updateNote(noteId, { velocity: Math.max(1, Math.min(127, Math.round(velocity))) });
-    }, [updateNote]);
-
-    // ✅ BATCH: Update velocity of multiple notes at once (for Alt+wheel)
-    const updateNotesVelocity = useCallback((noteIds, velocityChange) => {
-        if (!activePatternId || !currentInstrument || noteIds.length === 0) return;
-
-        // ✅ FIX: Get fresh notes from store to avoid stale closure
-        const currentPattern = useArrangementStore.getState().patterns[activePatternId];
-        const currentNotes = currentPattern?.data?.[currentInstrument.id] || [];
-        const notesToUpdate = noteIds
-            .map(noteId => currentNotes.find(n => n.id === noteId))
-            .filter(Boolean);
-
-        if (notesToUpdate.length === 0) return;
-
-        // ✅ COMMAND STACK: Use BatchUpdateNotesCommand for all velocity updates
-        const stack = commandStackRef.current;
-        if (stack) {
-            // Prepare note updates for BatchUpdateNotesCommand
-            const noteUpdates = notesToUpdate.map(note => {
-                const oldState = { ...note };
-                const currentVelocity = note.velocity || 100;
-                const newVelocity = Math.max(1, Math.min(127, currentVelocity + velocityChange));
-                const newState = { ...note, velocity: newVelocity };
-                return { noteId: note.id, oldState, newState };
-            });
-
-            // Create batch update command
-            // BatchUpdateNotesCommand expects updatePatternStoreFn to receive a Map of noteId -> full newState
-            const batchCommand = new BatchUpdateNotesCommand(
-                noteUpdates,
-                (updatesMap) => {
-                    // BatchUpdateNotesCommand passes Map<noteId, fullNewState>
-                    // We need to update the pattern store with all notes at once
-                    const currentPattern = useArrangementStore.getState().patterns[activePatternId];
-                    const currentNotes = currentPattern?.data?.[currentInstrument.id] || [];
-                    const updated = currentNotes.map(note => {
-                        const newState = updatesMap.get(note.id);
-                        return newState || note;
-                    });
-                    updatePatternNotes(activePatternId, currentInstrument.id, updated);
-
-                    // Emit NOTE_MODIFIED events for all updated notes
-                    noteUpdates.forEach(({ noteId }) => {
-                        const updatedNote = updated.find(n => n.id === noteId);
-                        if (updatedNote) {
-                            EventBus.emit('NOTE_MODIFIED', {
-                                patternId: activePatternId,
-                                instrumentId: currentInstrument.id,
-                                note: updatedNote
-                            });
-                        }
-                    });
-                },
-                `Change velocity of ${notesToUpdate.length} note(s)`
-            );
-
-            stack.execute(batchCommand);
-        } else {
-            // Fallback if CommandStack not available - use batch update
-            const updatesMap = new Map();
-            notesToUpdate.forEach(note => {
-                const currentVelocity = note.velocity || 100;
-                const newVelocity = Math.max(1, Math.min(127, currentVelocity + velocityChange));
-                updatesMap.set(note.id, { velocity: newVelocity });
-            });
-            _updateNotes(updatesMap);
-        }
-    }, [activePatternId, currentInstrument, updatePatternNotes, _updateNotes]);
-
-    // ✅ QUANTIZE - Snap selected notes to grid
-    const quantizeNotes = useCallback((noteIds = null, quantizeStart = true, quantizeEnd = false) => {
-        if (!activePatternId || !currentInstrument) return;
-
-        const notesToQuantize = noteIds
-            ? notes.filter(n => noteIds.includes(n.id))
-            : notes.filter(n => state.selection.has(n.id));
-
-        if (notesToQuantize.length === 0) return;
-
-        // ✅ COMMAND STACK: Create BatchCommand for quantize
-        const stack = commandStackRef.current;
-        if (stack) {
-            const commands = notesToQuantize.map(note => {
-                const oldState = { ...note };
-                const updates = {};
-
-                if (quantizeStart) {
-                    updates.startTime = snapToGrid(note.startTime);
-                }
-
-                if (quantizeEnd) {
-                    const noteEnd = note.startTime + note.length;
-                    const snappedEnd = snapToGrid(noteEnd);
-                    updates.length = Math.max(snapValue || 0.25, snappedEnd - (updates.startTime || note.startTime));
-                }
-
-                if (Object.keys(updates).length === 0) return null;
-
-                const newState = { ...note, ...updates };
-                return new UpdateNoteCommand(
-                    note.id,
-                    oldState,
-                    newState,
-                    (id, state) => _updateNote(id, state)
-                );
-            }).filter(Boolean);
-
-            if (commands.length > 0) {
-                const batchCommand = new BatchCommand(commands, `Quantize ${commands.length} note(s)`);
-                stack.execute(batchCommand);
-            }
-        } else {
-            // Fallback if CommandStack not available
-            notesToQuantize.forEach(note => {
-                const updates = {};
-                if (quantizeStart) {
-                    updates.startTime = snapToGrid(note.startTime);
-                }
-                if (quantizeEnd) {
-                    const noteEnd = note.startTime + note.length;
-                    const snappedEnd = snapToGrid(noteEnd);
-                    updates.length = Math.max(snapValue || 0.25, snappedEnd - (updates.startTime || note.startTime));
-                }
-                if (Object.keys(updates).length > 0) {
-                    _updateNote(note.id, updates);
-                }
-            });
-        }
-    }, [notes, state.selection, snapToGrid, snapValue, activePatternId, currentInstrument, _updateNote]);
-
-    // ===================================================================
-    // RETURN API
-    // ===================================================================
+        return () => ShortcutManager.unregisterContext('MUSICAL_TYPING');
+    }, [_handleKeyDownInternal, _handleKeyUpInternal]);
 
     return {
         // State
@@ -2863,8 +3114,8 @@ export function useNoteInteractionsV3({
         // Stub - compatibility
         selectionArea: state.areaSelect,
         isSelectingArea: state.mode === Mode.AREA_SELECT,
-        isSelectingTimeRange: false, // Not implemented yet
-        timeRangeSelection: null,
+        isSelectingTimeRange: !!state.timeRange,
+        timeRangeSelection: state.timeRange,
         previewNote: null,
         slicePreview: null,
         sliceRange: null,
@@ -2874,8 +3125,8 @@ export function useNoteInteractionsV3({
         handleMouseDown,
         handleMouseMove,
         handleMouseUp,
-        handleKeyDown,
-        handleKeyUp,
+        handleKeyDown: (e) => _handleKeyDownInternal(e),
+        handleKeyUp: (e) => _handleKeyUpInternal(e),
         handleWheel: useCallback((e) => {
             // ✅ UX FIX 2: Shift + wheel: Change duration of hovered or selected notes
             if (e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
@@ -2941,6 +3192,7 @@ export function useNoteInteractionsV3({
         updateNoteVelocity,
         updateNotesVelocity, // ✅ BATCH: Update multiple notes velocity at once
         quantizeNotes,
+        duplicateSelection,
 
         // Data
         notes,

@@ -772,8 +772,78 @@ export class AudioExportManager {
       const inst = instruments.find(i => i.id === instrumentId);
       if (!inst) return;
 
-      instrumentMap[instrumentId] = inst;
+      // ✅ FIX: Capture live instrument state from audio engine
+      const liveInstrument = audioEngine.instruments?.get(instrumentId);
+      const liveState = {};
 
+      if (liveInstrument) {
+        console.log(`🎹 Capturing live state for instrument: ${instrumentId} (${inst.type})`);
+
+        // For VASynth/Zenith: capture current settings and preset
+        if (inst.type === 'vasynth' || inst.type === 'zenith') {
+          // ✅ FIX: Use getPreset() instead of getSettings() for synths
+          if (typeof liveInstrument.getPreset === 'function') {
+            liveState.preset = liveInstrument.getPreset();
+            console.log(`  ✅ Captured live preset from getPreset():`, Object.keys(liveState.preset || {}));
+          } else if (liveInstrument.preset) {
+            // Fallback: use stored preset
+            liveState.preset = liveInstrument.preset;
+            console.log(`  ✅ Captured stored preset:`, liveInstrument.preset.name || 'Custom');
+          }
+
+          // ✅ FIX: Explicitly capture masterVolume (critical for gain staging)
+          if (liveInstrument.masterVolume !== undefined) {
+            if (!liveState.preset) liveState.preset = {};
+            liveState.preset.masterVolume = liveInstrument.masterVolume;
+            console.log(`  ✅ Captured masterVolume: ${liveInstrument.masterVolume}`);
+          } else if (liveInstrument.masterGain?.gain?.value !== undefined) {
+            // Fallback: read from masterGain node
+            if (!liveState.preset) liveState.preset = {};
+            liveState.preset.masterVolume = liveInstrument.masterGain.gain.value;
+            console.log(`  ✅ Captured masterVolume from masterGain: ${liveInstrument.masterGain.gain.value}`);
+          }
+
+          // Capture preset name for fallback
+          if (liveInstrument.presetName) {
+            liveState.presetName = liveInstrument.presetName;
+          }
+        }
+
+        // For samplers: capture playback settings
+        if (inst.type === 'sample' || inst.type === 'sampler') {
+          if (liveInstrument.sampleStart !== undefined) {
+            liveState.sampleStart = liveInstrument.sampleStart;
+          }
+          if (liveInstrument.sampleEnd !== undefined) {
+            liveState.sampleEnd = liveInstrument.sampleEnd;
+          }
+          if (liveInstrument.reverse !== undefined) {
+            liveState.reverse = liveInstrument.reverse;
+          }
+          if (liveInstrument.pitch !== undefined) {
+            liveState.pitch = liveInstrument.pitch;
+          }
+          if (liveInstrument.playbackRate !== undefined) {
+            liveState.playbackRate = liveInstrument.playbackRate;
+          }
+          console.log(`  ✅ Captured sampler settings:`, {
+            sampleStart: liveState.sampleStart,
+            sampleEnd: liveState.sampleEnd,
+            reverse: liveState.reverse,
+            pitch: liveState.pitch
+          });
+        }
+      } else {
+        console.warn(`⚠️ Live instrument not found in audio engine: ${instrumentId}`);
+      }
+
+      // Merge live state with static metadata (live state takes priority)
+      instrumentMap[instrumentId] = {
+        ...inst,
+        ...liveState
+      };
+
+      // Serialize mixer track for this instrument
       const mixerTrackId = inst.mixerTrackId;
       if (
         mixerTrackId &&

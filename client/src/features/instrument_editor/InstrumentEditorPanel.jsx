@@ -21,6 +21,7 @@ import InstrumentEffectsPanel from './components/InstrumentEffectsPanel';
 import ModulationMatrix from './components/ModulationMatrix';
 import AutomationSettingsPanel from '../piano_roll_v7/components/AutomationSettingsPanel';
 import ConfirmationModal from '../../components/common/ConfirmationModal';
+import ShortcutManager, { SHORTCUT_PRIORITY } from '@/lib/core/ShortcutManager';
 import './InstrumentEditorPanel.css';
 
 const InstrumentEditorPanel = () => {
@@ -382,7 +383,7 @@ const InstrumentEditorPanel = () => {
     }
   }, [showSearch]);
 
-  // Keyboard shortcuts
+  // ✅ KEYBOARD SHORTCUTS MIGRATION
   useEffect(() => {
     if (!isOpen) return;
 
@@ -399,64 +400,77 @@ const InstrumentEditorPanel = () => {
         } else {
           closeEditor();
         }
+        return true;
       }
 
       // Ctrl+F to toggle search
-      if (e.ctrlKey && e.key === 'f') {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
         e.preventDefault();
         setShowSearch(prev => !prev);
+        return true;
       }
 
       // Ctrl+T to toggle A/B
-      if (e.ctrlKey && e.key === 't') {
+      if ((e.ctrlKey || e.metaKey) && e.key === 't') {
         e.preventDefault();
         if (slotA && slotB) {
           handleToggleAB();
         }
+        return true;
       }
 
       // Ctrl+C to copy parameters (only if not typing in other inputs)
-      if (e.ctrlKey && e.key === 'c' && (!isTyping || isSearchInput)) {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'c' && (!isTyping || isSearchInput)) {
         if (!isSearchInput || !searchQuery) {
           e.preventDefault();
           handleCopyParameters();
+          return true;
         }
       }
 
       // Ctrl+V to paste parameters (only if not typing in other inputs)
-      if (e.ctrlKey && e.key === 'v' && (!isTyping || isSearchInput)) {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'v' && (!isTyping || isSearchInput)) {
         if (!isSearchInput || !searchQuery) {
           e.preventDefault();
           handlePasteParameters();
+          return true;
         }
       }
 
       // Ctrl+Z to undo
-      if (e.ctrlKey && e.key === 'z' && !e.shiftKey) {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
         e.preventDefault();
         if (canUndo()) {
           undo();
         }
+        return true;
       }
 
       // Ctrl+Shift+Z or Ctrl+Y to redo
-      if ((e.ctrlKey && e.shiftKey && e.key === 'z') || (e.ctrlKey && e.key === 'y')) {
+      if (((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'z') || ((e.ctrlKey || e.metaKey) && e.key === 'y')) {
         e.preventDefault();
         if (canRedo()) {
           redo();
         }
+        return true;
       }
 
       // Ctrl+S to save
-      if (e.ctrlKey && e.key === 's') {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
         save();
+        return true;
       }
+
+      return false;
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, showSearch, searchQuery, copiedParams, closeEditor, canUndo, canRedo, undo, redo, save, handleCopyParameters, handlePasteParameters]);
+    ShortcutManager.registerContext('INSTRUMENT_EDITOR', SHORTCUT_PRIORITY.SYSTEM, {
+      onKeyDown: handleKeyDown
+    });
+
+    return () => ShortcutManager.unregisterContext('INSTRUMENT_EDITOR');
+  }, [isOpen, showSearch, searchQuery, copiedParams, closeEditor, canUndo, canRedo, undo, redo, save, handleCopyParameters, handlePasteParameters, slotA, slotB]);
 
   if (!isOpen || !instrumentData) {
     return null;

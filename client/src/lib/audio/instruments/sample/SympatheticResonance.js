@@ -15,7 +15,7 @@ export class SympatheticResonance {
         this.attack = 0.3; // Slow attack for natural resonance
         this.decay = 1.5; // Long decay
         this.sustain = 0.2; // Low sustain level
-        this.release = 3.0; // Very long release
+        this.releaseTime = 3.0; // Very long release
 
         // Active resonances (midiNote -> { voices: [], startTime: number })
         this.activeResonances = new Map();
@@ -210,7 +210,7 @@ export class SympatheticResonance {
         const resonance = this.activeResonances.get(midiNote);
         if (!resonance) return;
 
-        const releaseEndTime = releaseTime + this.release;
+        const releaseEndTime = releaseTime + this.releaseTime;
 
         resonance.voices.forEach(({ gainNode, source, stopTime }) => {
             try {
@@ -281,7 +281,7 @@ export class SympatheticResonance {
         if (settings.attack !== undefined) this.attack = settings.attack;
         if (settings.decay !== undefined) this.decay = settings.decay;
         if (settings.sustain !== undefined) this.sustain = settings.sustain;
-        if (settings.release !== undefined) this.release = settings.release;
+        if (settings.release !== undefined) this.releaseTime = settings.release;
     }
 
     /**

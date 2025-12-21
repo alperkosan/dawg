@@ -37,6 +37,7 @@ export const usePanelsStore = create((set, get) => ({
   isAudioExportPanelOpen: false,
   isInstrumentPickerOpen: false,
   isPresetLibraryOpen: false,
+  isCoProducerOpen: false,
 
   // --- EYLEMLER (ACTIONS) ---
 
@@ -51,6 +52,8 @@ export const usePanelsStore = create((set, get) => ({
     set({ isPresetLibraryOpen: isOpen });
     console.log('🔧 usePanelsStore - state after set:', get().isPresetLibraryOpen);
   },
+  setCoProducerOpen: (isOpen) => set({ isCoProducerOpen: isOpen }),
+  toggleCoProducer: () => set(state => ({ isCoProducerOpen: !state.isCoProducerOpen })),
 
   // Minimize edilmiş panellerin listesini güncelleyen özel fonksiyon.
   _updateMinimizedPanels: () => {

@@ -178,6 +178,17 @@ export class BaseInstrument {
     hasReleaseSustain() {
         return true;
     }
+    /**
+     * Called when the playback loop restarts
+     * Allows instruments to resync internal states (LFOs, phases)
+     * or preserve active voices that should survive the loop boundary.
+     * 
+     * @param {number} loopStartTime - AudioContext time coordinate of the loop start
+     * @param {number} loopStartStep - The logical step position where the loop starts (usually 0)
+     */
+    onLoopRestart(loopStartTime, loopStartStep = 0) {
+        // Default: no-op, override in subclass
+    }
 
     /**
      * Connect instrument output to destination

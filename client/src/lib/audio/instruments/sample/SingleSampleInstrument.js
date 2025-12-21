@@ -217,6 +217,7 @@ export class SingleSampleInstrument extends BaseInstrument {
         });
 
         try {
+            let activeFilter = null;
             const playbackBuffer = this._getPlaybackBuffer();
             if (!playbackBuffer) {
                 console.warn(`❌ No sample buffer available for ${this.name}`);
@@ -230,13 +231,13 @@ export class SingleSampleInstrument extends BaseInstrument {
                 const existingSource = this.activeSources.get(midiNote);
                 if (existingSource && existingSource.gainNode) {
                     try {
-                        const fadeTime = 0.002; // 2ms quick fade
+                        const fadeTime = 0.005; // 5ms quick fade for smoother choking
                         const currentGain = existingSource.gainNode.gain.value;
-                        if (currentGain > 0.0001) {
-                            existingSource.gainNode.gain.cancelScheduledValues(when);
-                            existingSource.gainNode.gain.setValueAtTime(currentGain, when);
-                            existingSource.gainNode.gain.linearRampToValueAtTime(0.0001, when + fadeTime);
-                        }
+
+                        // Prevent click with exponential ramp
+                        existingSource.gainNode.gain.cancelScheduledValues(when);
+                        existingSource.gainNode.gain.setValueAtTime(Math.max(0.0001, currentGain), when);
+                        existingSource.gainNode.gain.exponentialRampToValueAtTime(0.0001, when + fadeTime);
                     } catch (e) {
                         // Ignore errors
                     }
@@ -367,6 +368,7 @@ export class SingleSampleInstrument extends BaseInstrument {
 
                 lastNode.connect(filter);
                 lastNode = filter;
+                activeFilter = filter; // Store for activeSources
             }
 
             // Connect: source -> gain (-> envelope) (-> pan) (-> filter) -> master
@@ -386,7 +388,8 @@ export class SingleSampleInstrument extends BaseInstrument {
                 source,
                 gainNode,
                 startTime: when,
-                panner: lastNode !== gainNode ? lastNode : null
+                panner: lastNode !== gainNode ? lastNode : null,
+                filter: activeFilter
             });
 
             // Auto-cleanup when finished
@@ -564,20 +567,83 @@ export class SingleSampleInstrument extends BaseInstrument {
                 }
             }
         }
-
         if (params.sampleChop !== undefined) {
             this._updateSampleChopPattern(params.sampleChop);
         }
 
         // Update master gain if volume/gain changed
         if (params.gain !== undefined && this.masterGain) {
-            this.masterGain.gain.setValueAtTime(
-                params.gain,
-                this.audioContext.currentTime
-            );
+            this.setVolume(params.gain);
         }
 
         console.log(`✅ Parameters updated for ${this.name}`);
+    }
+
+    /**
+     * ✅ PHASE 4: Set instrument volume (real-time automation)
+     */
+    setVolume(volume, time = null) {
+        if (!this.masterGain) return;
+
+        const now = time !== null ? time : this.audioContext.currentTime;
+        const clampedVolume = Math.max(0, Math.min(1, volume));
+
+        // ✅ IMPROVED: Linear ramping for smoother automation (Phase 2)
+        this.masterGain.gain.cancelScheduledValues(now);
+        this.masterGain.gain.setValueAtTime(this.masterGain.gain.value, now);
+        this.masterGain.gain.linearRampToValueAtTime(clampedVolume, now + 0.005);
+    }
+
+    /**
+     * ✅ PHASE 4: Set instrument pan (real-time automation)
+     */
+    setPan(pan, time = null) {
+        if (!this.masterGain) return;
+
+        // Create panner node if it doesn't exist
+        if (!this.panNode) {
+            this.panNode = this.audioContext.createStereoPanner();
+
+            // Reconnect: masterGain -> panNode -> output destinations
+            const oldOutput = this.output;
+            this.output = this.panNode;
+
+            if (oldOutput && oldOutput !== this.panNode) {
+                this.connectedDestinations.forEach(dest => {
+                    try {
+                        oldOutput.disconnect(dest);
+                        this.panNode.connect(dest);
+                    } catch (e) { }
+                });
+            }
+            this.masterGain.connect(this.panNode);
+        }
+
+        const now = time !== null ? time : this.audioContext.currentTime;
+        const clampedPan = Math.max(-1, Math.min(1, pan));
+
+        // ✅ IMPROVED: Linear ramping for smoother automation (Phase 2)
+        this.panNode.pan.cancelScheduledValues(now);
+        this.panNode.pan.setValueAtTime(this.panNode.pan.value, now);
+        this.panNode.pan.linearRampToValueAtTime(clampedPan, now + 0.005);
+    }
+
+    /**
+     * ✅ PHASE 4: Set filter cutoff (real-time automation)
+     */
+    setFilterCutoff(cutoff, time = null) {
+        // Apply to all active sources that have a filter
+        this.activeSources.forEach(voice => {
+            if (voice.filter && voice.filter.frequency) {
+                const now = time !== null ? time : this.audioContext.currentTime;
+                const freqHz = 20 + (cutoff / 127) * 19980;
+
+                // ✅ IMPROVED: Linear ramping for smoother filter automation (Phase 2)
+                voice.filter.frequency.cancelScheduledValues(now);
+                voice.filter.frequency.setValueAtTime(voice.filter.frequency.value, now);
+                voice.filter.frequency.linearRampToValueAtTime(freqHz, now + 0.005);
+            }
+        });
     }
 
     /**

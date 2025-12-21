@@ -47,6 +47,9 @@ export const usePlaybackStore = create((set, get) => ({
   // ✅ PHASE 1: Follow Playhead Mode
   followPlayheadMode: 'OFF', // 'CONTINUOUS' | 'PAGE' | 'OFF'
 
+  // ✅ GLOBAL SHORTCUTS: Musical Typing mode
+  keyboardPianoMode: false,
+
   // =============== INITIALIZATION ===============
   _initController: async () => {
     const state = get();
@@ -287,6 +290,11 @@ export const usePlaybackStore = create((set, get) => ({
     const nextIndex = (currentIndex + 1) % modes.length;
     const nextMode = modes[nextIndex];
     get().setFollowPlayheadMode(nextMode);
+  },
+
+  setKeyboardPianoMode: (active) => {
+    set({ keyboardPianoMode: active });
+    console.log('🎹 Global Musical Typing:', active ? 'ON' : 'OFF');
   },
 
   // =============== UTILITY ===============

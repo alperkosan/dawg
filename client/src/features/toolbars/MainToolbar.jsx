@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutGrid, SlidersHorizontal, AudioLines, Music, Keyboard, Palette, Activity, Settings, Infinity, Layers, Newspaper, Sidebar } from 'lucide-react';
+import { LayoutGrid, SlidersHorizontal, AudioLines, Music, Keyboard, Palette, Activity, Settings, Infinity, Layers, Newspaper, Sidebar, Wand2 } from 'lucide-react';
 import { usePanelsStore } from '@/store/usePanelsStore';
 import { useThemeStore } from '@/store/useThemeStore';
 import { useFileBrowserStore } from '@/store/useFileBrowserStore';
 import { AudioContextService } from '@/lib/services/AudioContextService';
 
 function MainToolbar() {
-    const { panels, togglePanel } = usePanelsStore();
+    const { panels, togglePanel, isCoProducerOpen, toggleCoProducer } = usePanelsStore();
     const { themes, activeThemeId, setActiveThemeId } = useThemeStore();
     const { isBrowserVisible, toggleBrowser } = useFileBrowserStore();
     const [performanceStats, setPerformanceStats] = useState({
@@ -60,6 +60,26 @@ function MainToolbar() {
                             borderRadius: '50%',
                             backgroundColor: 'var(--zenith-accent-cool)',
                             boxShadow: '0 0 4px var(--zenith-accent-cool)'
+                        }} />
+                    )}
+                </button>
+                <button
+                    title={isCoProducerOpen ? "Hide Co-Producer" : "Show Co-Producer"}
+                    className={`main-toolbar__button ${isCoProducerOpen ? 'main-toolbar__button--active' : ''}`}
+                    onClick={toggleCoProducer}
+                    style={{ position: 'relative' }}
+                >
+                    <Wand2 size={18} className={isCoProducerOpen ? 'text-purple-400' : ''} />
+                    {isCoProducerOpen && (
+                        <span style={{
+                            position: 'absolute',
+                            top: '4px',
+                            right: '4px',
+                            width: '6px',
+                            height: '6px',
+                            borderRadius: '50%',
+                            backgroundColor: '#a78bfa',
+                            boxShadow: '0 0 4px #a78bfa'
                         }} />
                     )}
                 </button>

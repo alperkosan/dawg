@@ -289,9 +289,14 @@ export class VASynthInstrument extends BaseInstrument {
                                     oldVoice.amplitudeGain.gain.exponentialRampToValueAtTime(0.0001, now + fadeTime);
                                 }
 
-                                setTimeout(() => {
+                                // ✅ OFFLINE RENDER FIX: Skip setTimeout in offline context
+                                if (this.audioContext instanceof (window.OfflineAudioContext || window.webkitOfflineAudioContext)) {
                                     oldVoice.dispose();
-                                }, fadeTime * 1000 + 10);
+                                } else {
+                                    setTimeout(() => {
+                                        oldVoice.dispose();
+                                    }, fadeTime * 1000 + 10);
+                                }
 
                                 console.log(`✂️ Retrigger (cut itself): Quick fade for note ${midiNote}`);
                             } catch (e) {
@@ -307,14 +312,21 @@ export class VASynthInstrument extends BaseInstrument {
                                 // ✅ FIX: Use preset's actual release time, better fallback
                                 const presetRelease = this.preset?.amplitudeEnvelope?.release || 1.0;
                                 const releaseTime = oldVoice.amplitudeEnvelope?.releaseTime || presetRelease;
-                                const timeoutId = setTimeout(() => {
+                                // ✅ OFFLINE RENDER FIX: Skip setTimeout in offline context
+                                if (this.audioContext instanceof (window.OfflineAudioContext || window.webkitOfflineAudioContext)) {
                                     oldVoice.dispose();
-                                    console.log(`♻️ Disposed retriggered voice for note ${midiNote} after ${releaseTime}s release`);
-                                }, (releaseTime + 0.1) * 1000);
+                                } else {
+                                    const presetRelease = this.preset?.amplitudeEnvelope?.release || 1.0;
+                                    const releaseTime = oldVoice.amplitudeEnvelope?.releaseTime || presetRelease;
+                                    const timeoutId = setTimeout(() => {
+                                        oldVoice.dispose();
+                                        console.log(`♻️ Disposed retriggered voice for note ${midiNote} after ${releaseTime}s release`);
+                                    }, (releaseTime + 0.1) * 1000);
 
-                                // ✅ FIX: Use unique timestamp to avoid collision
-                                const timeoutKey = `retrigger_${midiNote}_${Date.now()}`;
-                                this.voiceTimeouts.set(timeoutKey, timeoutId);
+                                    // ✅ FIX: Use unique timestamp to avoid collision
+                                    const timeoutKey = `retrigger_${midiNote}_${Date.now()}`;
+                                    this.voiceTimeouts.set(timeoutKey, timeoutId);
+                                }
 
                                 console.log(`🔄 Retrigger (natural release): ${releaseTime}s release for note ${midiNote}`);
                             } catch (e) {
@@ -411,16 +423,22 @@ export class VASynthInstrument extends BaseInstrument {
                     if (voice) {
                         voice.noteOff(time);
 
-                        // Schedule voice disposal after release
-                        const releaseTime = voice.amplitudeEnvelope?.releaseTime || 0.5;
-                        const timeoutId = setTimeout(() => {
+                        // ✅ OFFLINE RENDER FIX: Skip setTimeout in offline context
+                        if (this.audioContext instanceof (window.OfflineAudioContext || window.webkitOfflineAudioContext)) {
                             voice.dispose();
                             this.voices.delete(midiNote);
-                            this.voiceTimeouts.delete(midiNote);
                             this._trackNoteOff(midiNote);
-                        }, (releaseTime + 0.1) * 1000);
+                        } else {
+                            const releaseTime = voice.amplitudeEnvelope?.releaseTime || 0.5;
+                            const timeoutId = setTimeout(() => {
+                                voice.dispose();
+                                this.voices.delete(midiNote);
+                                this.voiceTimeouts.delete(midiNote);
+                                this._trackNoteOff(midiNote);
+                            }, (releaseTime + 0.1) * 1000);
 
-                        this.voiceTimeouts.set(midiNote, timeoutId);
+                            this.voiceTimeouts.set(midiNote, timeoutId);
+                        }
                     } else {
                         console.warn(`⚠️ VASynth noteOff: No voice found for midiNote=${midiNote}`);
                     }
@@ -434,13 +452,17 @@ export class VASynthInstrument extends BaseInstrument {
                 this.voices.forEach((voice, note) => {
                     voice.noteOff(time);
 
-                    // Schedule disposal
-                    const releaseTime = voice.amplitudeEnvelope?.releaseTime || 0.5;
-                    const timeoutId = setTimeout(() => {
+                    // ✅ OFFLINE RENDER FIX: Skip setTimeout in offline context
+                    if (this.audioContext instanceof (window.OfflineAudioContext || window.webkitOfflineAudioContext)) {
                         voice.dispose();
-                    }, (releaseTime + 0.1) * 1000);
+                    } else {
+                        const releaseTime = voice.amplitudeEnvelope?.releaseTime || 0.5;
+                        const timeoutId = setTimeout(() => {
+                            voice.dispose();
+                        }, (releaseTime + 0.1) * 1000);
 
-                    this.voiceTimeouts.set(note, timeoutId);
+                        this.voiceTimeouts.set(note, timeoutId);
+                    }
                 });
 
                 // ✅ Don't clear voices immediately - let timeouts handle it
@@ -489,16 +511,22 @@ export class VASynthInstrument extends BaseInstrument {
                 try {
                     voice.noteOff(stopTime);
 
-                    // ✅ Schedule voice disposal after release completes
-                    const releaseTime = voice.amplitudeEnvelope?.releaseTime || 0.5;
-                    const timeoutId = setTimeout(() => {
+                    // ✅ OFFLINE RENDER FIX: Skip setTimeout in offline context
+                    if (this.audioContext instanceof (window.OfflineAudioContext || window.webkitOfflineAudioContext)) {
                         voice.dispose();
                         this.voices.delete(midiNote);
-                        this.voiceTimeouts.delete(midiNote);
                         this.activeNotes.delete(midiNote);
-                    }, (releaseTime + 0.1) * 1000);
+                    } else {
+                        const releaseTime = voice.amplitudeEnvelope?.releaseTime || 0.5;
+                        const timeoutId = setTimeout(() => {
+                            voice.dispose();
+                            this.voices.delete(midiNote);
+                            this.voiceTimeouts.delete(midiNote);
+                            this.activeNotes.delete(midiNote);
+                        }, (releaseTime + 0.1) * 1000);
 
-                    this.voiceTimeouts.set(midiNote, timeoutId);
+                        this.voiceTimeouts.set(midiNote, timeoutId);
+                    }
                 } catch (error) {
                     console.error('Error releasing voice:', error);
                 }
@@ -506,6 +534,25 @@ export class VASynthInstrument extends BaseInstrument {
         }
 
         this._isPlaying = false;
+    }
+
+    /**
+     * Called when the playback loop restarts
+     * Pass the notification to the underlying engine voices
+     */
+    onLoopRestart(loopStartTime, loopStartStep = 0) {
+        if (!this._isInitialized) return;
+
+        // Notify all active voices (including mono voice)
+        this.voices.forEach((voice) => {
+            if (voice && typeof voice.onLoopRestart === 'function') {
+                try {
+                    voice.onLoopRestart(loopStartTime);
+                } catch (e) {
+                    console.error('Error during VASynth voice onLoopRestart:', e);
+                }
+            }
+        });
     }
 
     /**
@@ -790,9 +837,11 @@ export class VASynthInstrument extends BaseInstrument {
         const volumeChanged = lastVolume === null || Math.abs(clampedVolume - lastVolume) >= tolerance;
 
         if (volumeChanged) {
-            // Smooth transition to avoid clicks
+            // ✅ IMPROVED: Linear ramping for smoother automation (Phase 2)
             this.masterGain.gain.cancelScheduledValues(now);
-            this.masterGain.gain.setTargetAtTime(clampedVolume, now, 0.01);
+            // Start from current value and ramp to target
+            this.masterGain.gain.setValueAtTime(this.masterGain.gain.value, now);
+            this.masterGain.gain.linearRampToValueAtTime(clampedVolume, now + 0.005); // 5ms micro-ramp to prevent clicks
 
             // Update last value
             if (!this._lastAutomationValues) {
@@ -860,9 +909,10 @@ export class VASynthInstrument extends BaseInstrument {
         const now = time !== null ? time : this.audioContext.currentTime;
         const clampedPan = Math.max(-1, Math.min(1, pan));
 
-        // Smooth transition to avoid clicks
+        // ✅ IMPROVED: Linear ramping for smoother automation (Phase 2)
         this.panNode.pan.cancelScheduledValues(now);
-        this.panNode.pan.setTargetAtTime(clampedPan, now, 0.01);
+        this.panNode.pan.setValueAtTime(this.panNode.pan.value, now);
+        this.panNode.pan.linearRampToValueAtTime(clampedPan, now + 0.005);
     }
 
     /**
@@ -873,8 +923,12 @@ export class VASynthInstrument extends BaseInstrument {
         this.voices.forEach(voice => {
             if (voice.filter && voice.filter.frequency) {
                 const now = time !== null ? time : this.audioContext.currentTime;
-                const freqHz = 20 + (cutoff / 127) * 20000; // Map 0-127 to 20Hz-20kHz
-                voice.filter.frequency.setTargetAtTime(freqHz, now, 0.01);
+                const freqHz = 20 + (cutoff / 127) * 20000;
+
+                // ✅ IMPROVED: Linear ramping for smoother filter automation (Phase 2)
+                voice.filter.frequency.cancelScheduledValues(now);
+                voice.filter.frequency.setValueAtTime(voice.filter.frequency.value, now);
+                voice.filter.frequency.linearRampToValueAtTime(freqHz, now + 0.005);
             }
         });
     }

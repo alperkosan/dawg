@@ -450,16 +450,16 @@ export class PremiumNoteRenderer {
         // Simplify selection for LOD >= 2
         if (style.isSelected) {
             // Subtle outer selection border
-            const accentCool = globalStyleCache.get('--zenith-accent-cool');
-            ctx.strokeStyle = accentCool || 'rgba(59, 130, 246, 0.8)';
+            // FL Studio Style: Red selection border
+            ctx.strokeStyle = 'rgba(255, 0, 0, 0.8)';
             ctx.lineWidth = 2;
             ctx.setLineDash([]);
             this.drawRoundedRect(ctx, x - 1, y - 1, width + 2, height + 2, 3.5);
             ctx.stroke();
 
             // Gentle selection glow
-            const accentCoolFaded = globalStyleCache.get('--zenith-accent-cool-faded');
-            ctx.shadowColor = accentCoolFaded || 'rgba(59, 130, 246, 0.3)';
+            // FL Studio Style: Red selection glow
+            ctx.shadowColor = 'rgba(255, 0, 0, 0.4)';
             ctx.shadowBlur = 4;
             ctx.shadowOffsetY = 0;
 
@@ -477,8 +477,7 @@ export class PremiumNoteRenderer {
 
             // Minimal corner indicators (only top corners)
             const cornerSize = 4;
-            const accentCoolBright = globalStyleCache.get('--zenith-accent-cool');
-            ctx.fillStyle = accentCoolBright || 'rgba(59, 130, 246, 0.9)';
+            ctx.fillStyle = 'rgba(255, 0, 0, 0.9)';
             // Top-left corner dot
             ctx.fillRect(x - 1, y - 1, cornerSize, 1);
             ctx.fillRect(x - 1, y - 1, 1, cornerSize);
