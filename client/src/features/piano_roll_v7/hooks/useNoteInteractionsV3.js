@@ -3044,8 +3044,10 @@ export function useNoteInteractionsV3({
             // ✅ Clear time selection and sync with loop region
             if (state.timeRange) {
                 dispatch({ type: Action.CLEAR_TIME_SELECT });
-                if (setLoopRegion) setLoopRegion(null);
             }
+            // ✅ Always clear loop region if setLoopRegion is available
+            if (setLoopRegion) setLoopRegion(null);
+
             // ✅ Clear note selection
             clearSelection();
             return true;
