@@ -62,23 +62,23 @@ export const CURSOR_PRIORITY_LEVELS = {
 export class CursorIntegrationFix extends EventEmitter {
     constructor(options = {}) {
         super();
-        
+
         // Configuration
         this.config = {
             // Integration mode
             mode: CURSOR_INTEGRATION_MODES.UNIFIED,
-            
+
             // Piano roll element targeting
             pianoRollSelector: '.prv5-canvas-container',
             pianoRollElement: null,
-            
+
             // Cursor system priority
             priority: {
                 premium: CURSOR_PRIORITY_LEVELS.HIGH,
                 css: CURSOR_PRIORITY_LEVELS.MEDIUM,
                 direct: CURSOR_PRIORITY_LEVELS.LOW
             },
-            
+
             // Conflict resolution
             conflictResolution: {
                 enabled: true,
@@ -86,7 +86,7 @@ export class CursorIntegrationFix extends EventEmitter {
                 autoResolve: true,
                 fallbackToCSS: true
             },
-            
+
             // Performance settings
             performance: {
                 debounceMs: 16,
@@ -94,7 +94,7 @@ export class CursorIntegrationFix extends EventEmitter {
                 maxUpdatesPerSecond: 60,
                 enableCaching: true
             },
-            
+
             // Debug settings
             debug: {
                 enabled: false,
@@ -102,40 +102,40 @@ export class CursorIntegrationFix extends EventEmitter {
                 logConflicts: true,
                 logPerformance: false
             },
-            
+
             ...options
         };
-        
+
         // State management
         this.state = {
             // Current cursor
             current: null,
             previous: null,
             source: null, // 'premium', 'css', 'direct'
-            
+
             // Piano roll element
             pianoRollElement: null,
-            
+
             // Conflict tracking
             conflicts: [],
             lastConflict: null,
-            
+
             // Performance tracking
             updateCount: 0,
             lastUpdate: 0,
             averageUpdateTime: 0,
-            
+
             // Cursor cache
             cursorCache: new Map(),
-            
+
             // Event listeners
             listeners: new Map()
         };
-        
+
         // Initialize
         this.initialize();
     }
-    
+
     /**
      * Initialize the cursor integration fix
      */
@@ -144,10 +144,10 @@ export class CursorIntegrationFix extends EventEmitter {
         this.setupEventListeners();
         this.setupConflictResolution();
         this.setupPerformanceMonitoring();
-        
+
         console.log('🔧 Cursor Integration Fix initialized');
     }
-    
+
     /**
      * Find piano roll element
      */
@@ -164,7 +164,7 @@ export class CursorIntegrationFix extends EventEmitter {
             setTimeout(() => this.findPianoRollElement(), 100);
         }
     }
-    
+
     /**
      * Setup event listeners
      */
@@ -172,62 +172,55 @@ export class CursorIntegrationFix extends EventEmitter {
         // Listen for cursor changes from different sources
         this.on('cursorChange', this.handleCursorChange.bind(this));
         this.on('cursorConflict', this.handleCursorConflict.bind(this));
-        
+
         // Listen for DOM changes
         this.setupDOMObserver();
-        
+
         // Listen for style changes
         this.setupStyleObserver();
     }
-    
+
     /**
      * Setup DOM observer
      */
     setupDOMObserver() {
         if (!this.state.pianoRollElement) return;
-        
+
         const observer = new MutationObserver((mutations) => {
             mutations.forEach((mutation) => {
-                if (mutation.type === 'attributes' && 
-                    (mutation.attributeName === 'data-cursor' || 
-                     mutation.attributeName === 'style')) {
+                if (mutation.type === 'attributes' &&
+                    (mutation.attributeName === 'data-cursor' ||
+                        mutation.attributeName === 'style')) {
                     this.handleDOMChange(mutation);
                 }
             });
         });
-        
+
         observer.observe(this.state.pianoRollElement, {
             attributes: true,
             attributeFilter: ['data-cursor', 'style']
         });
-        
+
         this.state.listeners.set('domObserver', observer);
     }
-    
+
     /**
      * Setup style observer
+     * ✅ REMOVED: MutationObserver already monitors style changes
+     * No need for polling - attribute observer handles this
      */
     setupStyleObserver() {
-        if (!this.state.pianoRollElement) return;
-        
-        // Monitor style changes
-        const checkStyleChanges = () => {
-            const currentStyle = this.state.pianoRollElement.style.cursor;
-            if (currentStyle !== this.state.current?.style) {
-                this.handleStyleChange(currentStyle);
-            }
-        };
-        
-        const interval = setInterval(checkStyleChanges, 100);
-        this.state.listeners.set('styleObserver', interval);
+        // ✅ Style changes are now handled by MutationObserver in setupDOMObserver()
+        // No polling needed!
+        console.log('✅ Style observer: Using MutationObserver (no polling)');
     }
-    
+
     /**
      * Setup conflict resolution
      */
     setupConflictResolution() {
         if (!this.config.conflictResolution.enabled) return;
-        
+
         // Monitor for conflicts
         this.on('cursorConflict', (conflict) => {
             if (this.config.conflictResolution.autoResolve) {
@@ -235,42 +228,25 @@ export class CursorIntegrationFix extends EventEmitter {
             }
         });
     }
-    
+
     /**
      * Setup performance monitoring
+     * ✅ OPTIMIZED: Only log on-demand, no continuous polling
      */
     setupPerformanceMonitoring() {
-        if (!this.config.debug.logPerformance) return;
-        
-        const monitor = () => {
-            const now = performance.now();
-            const deltaTime = now - this.state.lastUpdate;
-            
-            this.state.updateCount++;
-            this.state.averageUpdateTime = 
-                (this.state.averageUpdateTime * 0.9) + (deltaTime * 0.1);
-            
-            this.state.lastUpdate = now;
-            
-            if (this.config.debug.logPerformance) {
-                console.log('📊 Cursor Performance:', {
-                    updateCount: this.state.updateCount,
-                    averageUpdateTime: this.state.averageUpdateTime.toFixed(2) + 'ms',
-                    conflicts: this.state.conflicts.length
-                });
-            }
-        };
-        
-        const interval = setInterval(monitor, 1000);
-        this.state.listeners.set('performanceMonitor', interval);
+        // ✅ Performance metrics are tracked per-update, no need for interval
+        // Call getPerformanceMetrics() when needed instead of continuous logging
+        if (this.config.debug.logPerformance) {
+            console.log('📊 Performance monitoring: On-demand (no polling)');
+        }
     }
-    
+
     /**
      * Handle cursor change
      */
     handleCursorChange(data) {
         const { cursor, source, priority } = data;
-        
+
         // Check for conflicts
         if (this.state.current && this.state.current.source !== source) {
             this.handleCursorConflict({
@@ -279,14 +255,14 @@ export class CursorIntegrationFix extends EventEmitter {
                 timestamp: Date.now()
             });
         }
-        
+
         // Update state
         this.state.previous = this.state.current;
         this.state.current = { cursor, source, priority, timestamp: Date.now() };
-        
+
         // Apply cursor based on integration mode
         this.applyCursor(cursor, source, priority);
-        
+
         // Emit change event
         this.emit('cursorApplied', {
             cursor,
@@ -295,21 +271,21 @@ export class CursorIntegrationFix extends EventEmitter {
             previous: this.state.previous
         });
     }
-    
+
     /**
      * Handle cursor conflict
      */
     handleCursorConflict(conflict) {
         this.state.conflicts.push(conflict);
         this.state.lastConflict = conflict;
-        
+
         if (this.config.debug.logConflicts) {
             console.warn('⚠️ Cursor conflict detected:', conflict);
         }
-        
+
         this.emit('cursorConflict', conflict);
     }
-    
+
     /**
      * Handle performance update
      */
@@ -318,13 +294,13 @@ export class CursorIntegrationFix extends EventEmitter {
             console.log('📊 Cursor Performance Update:', data);
         }
     }
-    
+
     /**
      * Resolve cursor conflict
      */
     resolveConflict(conflict) {
         const { current, incoming } = conflict;
-        
+
         // Resolve based on priority
         if (incoming.priority > current.priority) {
             this.applyCursor(incoming.cursor, incoming.source, incoming.priority);
@@ -339,13 +315,13 @@ export class CursorIntegrationFix extends EventEmitter {
             console.log('✅ Conflict resolved: Current cursor has higher priority');
         }
     }
-    
+
     /**
      * Handle DOM change
      */
     handleDOMChange(mutation) {
         const { attributeName, target } = mutation;
-        
+
         if (attributeName === 'data-cursor') {
             const cursor = target.getAttribute('data-cursor');
             this.handleCursorChange({
@@ -355,7 +331,7 @@ export class CursorIntegrationFix extends EventEmitter {
             });
         }
     }
-    
+
     /**
      * Handle style change
      */
@@ -371,7 +347,7 @@ export class CursorIntegrationFix extends EventEmitter {
             }
         }
     }
-    
+
     /**
      * Apply cursor based on integration mode
      */
@@ -380,7 +356,7 @@ export class CursorIntegrationFix extends EventEmitter {
             console.warn('⚠️ Piano roll element not found, cannot apply cursor');
             return;
         }
-        
+
         switch (this.config.mode) {
             case CURSOR_INTEGRATION_MODES.CSS_ONLY:
                 this.applyCSSCursor(cursor);
@@ -396,7 +372,7 @@ export class CursorIntegrationFix extends EventEmitter {
                 break;
         }
     }
-    
+
     /**
      * Apply CSS cursor
      */
@@ -405,31 +381,31 @@ export class CursorIntegrationFix extends EventEmitter {
         this.state.pianoRollElement.classList.remove(
             'premium-cursor', 'custom-cursor', 'cursor-animated'
         );
-        
+
         // Set data-cursor attribute
         this.state.pianoRollElement.setAttribute('data-cursor', cursor);
-        
+
         // Clear direct style
         this.state.pianoRollElement.style.cursor = '';
     }
-    
+
     /**
      * Apply premium cursor
      */
     applyPremiumCursor(cursor, source, priority) {
         // Remove CSS cursor
         this.state.pianoRollElement.removeAttribute('data-cursor');
-        
+
         // Clear direct style
         this.state.pianoRollElement.style.cursor = '';
-        
+
         // Apply premium cursor classes
         this.state.pianoRollElement.classList.add('premium-cursor', cursor);
-        
+
         // Set CSS cursor for fallback
         this.state.pianoRollElement.style.cursor = this.getCSSFallback(cursor);
     }
-    
+
     /**
      * Apply hybrid cursor
      */
@@ -440,14 +416,14 @@ export class CursorIntegrationFix extends EventEmitter {
             this.applyCSSCursor(cursor);
         }
     }
-    
+
     /**
      * Apply unified cursor
      */
     applyUnifiedCursor(cursor, source, priority) {
         // Remove all existing cursor styles
         this.clearAllCursors();
-        
+
         // Apply based on source and priority
         if (source === 'premium' && priority >= this.config.priority.premium) {
             this.applyPremiumCursor(cursor, source, priority);
@@ -457,41 +433,41 @@ export class CursorIntegrationFix extends EventEmitter {
             this.applyDirectCursor(cursor);
         }
     }
-    
+
     /**
      * Apply direct cursor
      */
     applyDirectCursor(cursor) {
         // Remove CSS cursor
         this.state.pianoRollElement.removeAttribute('data-cursor');
-        
+
         // Remove premium cursor classes
         this.state.pianoRollElement.classList.remove(
             'premium-cursor', 'custom-cursor', 'cursor-animated'
         );
-        
+
         // Set direct style
         this.state.pianoRollElement.style.cursor = cursor;
     }
-    
+
     /**
      * Clear all cursors
      */
     clearAllCursors() {
         if (!this.state.pianoRollElement) return;
-        
+
         // Remove data-cursor attribute
         this.state.pianoRollElement.removeAttribute('data-cursor');
-        
+
         // Clear style cursor
         this.state.pianoRollElement.style.cursor = '';
-        
+
         // Remove cursor classes
         this.state.pianoRollElement.classList.remove(
             'premium-cursor', 'custom-cursor', 'cursor-animated'
         );
     }
-    
+
     /**
      * Get CSS fallback for cursor
      */
@@ -507,31 +483,31 @@ export class CursorIntegrationFix extends EventEmitter {
             'grab-premium': 'grab',
             'grabbing-premium': 'grabbing'
         };
-        
+
         return fallbackMap[cursor] || 'default';
     }
-    
+
     /**
      * Set cursor with priority
      */
     setCursor(cursor, source = 'direct', priority = CURSOR_PRIORITY_LEVELS.MEDIUM) {
         this.handleCursorChange({ cursor, source, priority });
     }
-    
+
     /**
      * Get current cursor
      */
     getCurrentCursor() {
         return this.state.current;
     }
-    
+
     /**
      * Get cursor conflicts
      */
     getConflicts() {
         return this.state.conflicts;
     }
-    
+
     /**
      * Clear conflicts
      */
@@ -539,7 +515,7 @@ export class CursorIntegrationFix extends EventEmitter {
         this.state.conflicts = [];
         this.state.lastConflict = null;
     }
-    
+
     /**
      * Update configuration
      */
@@ -547,7 +523,7 @@ export class CursorIntegrationFix extends EventEmitter {
         this.config = { ...this.config, ...newConfig };
         this.emit('configUpdate', this.config);
     }
-    
+
     /**
      * Get performance metrics
      */
@@ -559,23 +535,23 @@ export class CursorIntegrationFix extends EventEmitter {
             lastConflict: this.state.lastConflict?.timestamp
         };
     }
-    
+
     /**
      * Cleanup resources
+     * ✅ OPTIMIZED: Only MutationObserver to cleanup now
      */
     destroy() {
         // Clear all listeners
         this.state.listeners.forEach((listener, key) => {
             if (key === 'domObserver') {
                 listener.disconnect();
-            } else if (key === 'styleObserver' || key === 'performanceMonitor') {
-                clearInterval(listener);
             }
+            // ✅ No more intervals to clear!
         });
-        
+
         this.state.listeners.clear();
         this.removeAllListeners();
-        
+
         console.log('🔧 Cursor Integration Fix destroyed');
     }
 }

@@ -308,6 +308,12 @@ class CanvasRenderManager {
     const task = this.tasks.get(id);
     if (task) {
       task.markDirty(region);
+
+      // ✅ OPTIMIZATION: Restart RAF if it was stopped (idle detection)
+      if (!this.running) {
+        console.log('▶️ Canvas Render Manager: Restarting RAF (task marked dirty)');
+        this.start();
+      }
     }
   }
 
@@ -343,6 +349,7 @@ class CanvasRenderManager {
 
   /**
    * Main render loop
+   * ✅ OPTIMIZED: Pauses when idle (no dirty tasks)
    */
   render() {
     if (!this.running) return;
@@ -356,6 +363,18 @@ class CanvasRenderManager {
       this.sortedTasksCache = Array.from(this.tasks.values())
         .sort((a, b) => b.priority - a.priority);
       this.tasksDirty = false;
+    }
+
+    // ✅ OPTIMIZATION: Check if any task needs rendering
+    const hasDirtyTasks = this.sortedTasksCache.some(task =>
+      task.enabled && task.isDirty
+    );
+
+    if (!hasDirtyTasks) {
+      console.log('🎨 Canvas Render Manager: No dirty tasks, pausing RAF');
+      this.running = false;
+      this.rafId = null;
+      return; // Stop RAF loop when idle
     }
 
     // Render each task that's ready

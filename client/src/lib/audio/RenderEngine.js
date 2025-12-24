@@ -551,7 +551,7 @@ export class RenderEngine {
       if (type === 'vasynth') {
         const { VASynth } = await import('./synth/VASynth.js');
         const instrument = new VASynth(context);
-        
+
         // ✅ FIX: Prioritize live settings from export snapshot
         if (config.settings) {
           // Apply live settings (includes all user modifications)
@@ -570,7 +570,7 @@ export class RenderEngine {
           // Last resort: use config as preset
           instrument.loadPreset(config);
         }
-        
+
         return { instrument, type: 'vasynth', output: instrument.masterGain };
       }
 
@@ -578,7 +578,7 @@ export class RenderEngine {
         const { ZenithSynth } = await import('./synth/ZenithSynth.js');
         const bpm = getCurrentBPM();
         const instrument = new ZenithSynth(context, bpm);
-        
+
         // ✅ FIX: Prioritize live settings from export snapshot
         if (config.settings) {
           console.log(`🎹 Loading Zenith with live settings:`, Object.keys(config.settings));
@@ -593,7 +593,7 @@ export class RenderEngine {
         } else {
           instrument.loadPreset(config);
         }
-        
+
         return { instrument, type: 'zenith', output: instrument.masterGain };
       }
 
@@ -610,25 +610,41 @@ export class RenderEngine {
             (config.samples && config.samples[0] && config.samples[0].url);
 
           if (assetKey) {
-            console.log(`🏗️ Ghost Instrument: Resolving buffer for key: ${assetKey}`);
+            console.log(`🏗️ Ghost Instrument: Resolving buffer for key: ${assetKey.substring(0, 100)}...`);
 
-            // Try ID lookup first (for frozen patterns)
-            buffer = audioAssetManager.getAsset(assetKey)?.buffer;
+            // ✅ FIX: Handle base64 data URLs (AI-generated instruments)
+            if (assetKey.startsWith('data:')) {
+              console.log(`🏗️ Decoding base64 data URL for AI instrument...`);
+              try {
+                // Convert data URL to ArrayBuffer
+                const response = await fetch(assetKey);
+                const arrayBuffer = await response.arrayBuffer();
 
-            // Try URL lookup
-            if (!buffer) {
-              buffer = audioAssetManager.getAssetByUrl(assetKey)?.buffer;
-            }
+                // Decode audio data
+                buffer = await context.decodeAudioData(arrayBuffer);
+                console.log(`✅ Successfully decoded AI instrument buffer: ${buffer.duration.toFixed(2)}s`);
+              } catch (error) {
+                console.error(`❌ Failed to decode base64 audio data:`, error);
+              }
+            } else {
+              // Try ID lookup first (for frozen patterns)
+              buffer = audioAssetManager.getAsset(assetKey)?.buffer;
 
-            // Try SampleLoader cache
-            if (!buffer) {
-              buffer = SampleLoader.getCached(assetKey);
-            }
+              // Try URL lookup
+              if (!buffer) {
+                buffer = audioAssetManager.getAssetByUrl(assetKey)?.buffer;
+              }
 
-            if (!buffer) {
-              // Last attempt: fetch via AssetManager (might trigger async load)
-              console.log(`🏗️ Ghost Instrument: Asset not in cache, attempting async load: ${assetKey}`);
-              buffer = await audioAssetManager.loadAsset(assetKey);
+              // Try SampleLoader cache
+              if (!buffer) {
+                buffer = SampleLoader.getCached(assetKey);
+              }
+
+              if (!buffer) {
+                // Last attempt: fetch via AssetManager (might trigger async load)
+                console.log(`🏗️ Ghost Instrument: Asset not in cache, attempting async load: ${assetKey}`);
+                buffer = await audioAssetManager.loadAsset(assetKey);
+              }
             }
           }
         }
@@ -949,6 +965,17 @@ export class RenderEngine {
       }
 
       const mixerTrackId = instrumentStore?.mixerTrackId || 'master';
+
+      // ✅ FIX: Check if instrument or mixer track is muted (check all property variants)
+      const mixerTrack = mixerTracks[mixerTrackId];
+      const isInstrumentMuted = instrumentStore?.muted || instrumentStore?.mute || instrumentStore?.isMuted;
+      const isMixerTrackMuted = mixerTrack?.muted || mixerTrack?.mute;
+
+      if (isInstrumentMuted || isMixerTrackMuted) {
+        console.log(`🔇 Skipping muted instrument ${instrumentId} (instrument muted: ${isInstrumentMuted}, track muted: ${isMixerTrackMuted})`);
+        continue;
+      }
+
       const instrumentLatency = trackLatencies.get(mixerTrackId) || 0;
       const instrumentAdcDelay = (globalMaxLatencySamples - instrumentLatency) / sampleRate;
 
@@ -1108,11 +1135,11 @@ export class RenderEngine {
       if ((instrumentStore?.type === 'vasynth' || instrumentStore?.type === 'zenith') && getPreset) {
         // ✅ FIX: Check both instrument settings (user overrides) AND preset library
         let releaseTime = 0.3; // Engine default floor (from ADSREnvelope.js)
-        
+
         // 1. Try to get release from current instrument settings (highest priority)
         const settings = instrumentStore.settings || instrumentStore.data?.settings;
         const ampEnv = settings?.amplitudeEnvelope || settings?.ampEnvelope;
-        
+
         if (ampEnv?.release !== undefined) {
           releaseTime = Math.max(releaseTime, parseFloat(ampEnv.release));
         } else {

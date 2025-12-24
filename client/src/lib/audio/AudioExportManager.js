@@ -446,7 +446,7 @@ export class AudioExportManager {
       ...settings,
       // Freeze-specific optimizations
       includeEffects: true,
-      normalize: false, // Preserve dynamics for further processing
+      normalize: true,  // ✅ FIX: Enable normalization to prevent excessive gain
       fadeOut: false   // No fade for frozen patterns
     });
   }
@@ -833,8 +833,15 @@ export class AudioExportManager {
             pitch: liveState.pitch
           });
         }
-      } else {
-        console.warn(`⚠️ Live instrument not found in audio engine: ${instrumentId}`);
+      }
+
+      // ✅ FIX: Capture mute state from instrument store (check all variants)
+      if (inst.isMuted !== undefined) {
+        liveState.muted = inst.isMuted;  // Store uses 'isMuted', export uses 'muted'
+      } else if (inst.muted !== undefined) {
+        liveState.muted = inst.muted;
+      } else if (inst.mute !== undefined) {
+        liveState.muted = inst.mute;
       }
 
       // Merge live state with static metadata (live state takes priority)
@@ -1003,6 +1010,7 @@ export class AudioExportManager {
       name: insert.label || mixerTrackId,
       gain: insert.gainNode?.gain?.value ?? 1,
       pan: insert.panNode?.pan?.value ?? 0,
+      mute: trackMeta?.mute || trackMeta?.muted || false,  // ✅ FIX: Capture mute state
       lowGain: trackMeta?.eq?.low ?? 0,
       midGain: trackMeta?.eq?.mid ?? 0,
       highGain: trackMeta?.eq?.high ?? 0,

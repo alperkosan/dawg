@@ -29,10 +29,10 @@ const MixerChannelComponent = ({
   activeTrackId,
   isVisible = true
 }) => {
-  // ✅ OPTIMIZED: Use shallow selector for track data
-  const track = useMixerStore(useCallback(state =>
-    state.mixerTracks.find(t => t.id === trackId), [trackId]
-  ));
+  // Subscribe to track data
+  const track = useMixerStore(state =>
+    state.mixerTracks.find(t => t.id === trackId)
+  );
 
   // If track was deleted, don't render
   if (!track) return null;

@@ -18,8 +18,8 @@ export function useAudioRecording() {
     const [inputLevel, setInputLevel] = useState(0);
     const [error, setError] = useState(null);
 
-    // Level monitoring interval
-    const levelIntervalRef = useRef(null);
+    // Level monitoring RAF handle
+    const levelRafRef = useRef(null);
 
     // Initialize recorder
     useEffect(() => {
@@ -81,21 +81,30 @@ export function useAudioRecording() {
         };
     }, [audioRecorder]);
 
-    // Start level monitoring
+    // Start level monitoring (RAF-based with throttling)
     const startLevelMonitoring = useCallback(() => {
-        if (levelIntervalRef.current) return;
+        if (levelRafRef.current) return;
 
-        levelIntervalRef.current = setInterval(() => {
-            const level = audioRecorder.getInputLevel();
-            setInputLevel(level);
-        }, 50); // Update 20 times per second
+        let lastUpdate = 0;
+        const THROTTLE_MS = 100; // 10 FPS is sufficient for visual feedback
+
+        const updateLevel = (timestamp) => {
+            if (timestamp - lastUpdate >= THROTTLE_MS) {
+                const level = audioRecorder.getInputLevel();
+                setInputLevel(level);
+                lastUpdate = timestamp;
+            }
+            levelRafRef.current = requestAnimationFrame(updateLevel);
+        };
+
+        levelRafRef.current = requestAnimationFrame(updateLevel);
     }, [audioRecorder]);
 
     // Stop level monitoring
     const stopLevelMonitoring = useCallback(() => {
-        if (levelIntervalRef.current) {
-            clearInterval(levelIntervalRef.current);
-            levelIntervalRef.current = null;
+        if (levelRafRef.current) {
+            cancelAnimationFrame(levelRafRef.current);
+            levelRafRef.current = null;
             setInputLevel(0);
         }
     }, []);

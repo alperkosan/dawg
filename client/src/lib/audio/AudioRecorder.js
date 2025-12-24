@@ -534,24 +534,26 @@ export class AudioRecorder {
     }
 
     /**
-     * Start duration tracking
+     * Start duration tracking (RAF-based for performance)
      */
     startDurationTracking() {
-        this.durationInterval = setInterval(() => {
+        const updateDuration = () => {
             if (this.state.currentState === RECORDING_STATE.RECORDING) {
                 this.state.recordingDuration = (performance.now() - this.state.recordingStartTime) / 1000;
                 this.emit('durationUpdate', { duration: this.state.recordingDuration });
+                this.durationRafId = requestAnimationFrame(updateDuration);
             }
-        }, 100);
+        };
+        this.durationRafId = requestAnimationFrame(updateDuration);
     }
 
     /**
      * Stop duration tracking
      */
     stopDurationTracking() {
-        if (this.durationInterval) {
-            clearInterval(this.durationInterval);
-            this.durationInterval = null;
+        if (this.durationRafId) {
+            cancelAnimationFrame(this.durationRafId);
+            this.durationRafId = null;
         }
     }
 

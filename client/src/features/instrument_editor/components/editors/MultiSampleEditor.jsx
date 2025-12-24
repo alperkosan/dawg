@@ -21,6 +21,16 @@ const MultiSampleEditor = ({ instrumentData: initialData }) => {
   const { updateParameter } = useInstrumentEditorStore();
   const { updateInstrument } = useInstrumentsStore();
 
+  // Helper function to format sample names
+  const formatSampleName = (sample) => {
+    if (sample.url.startsWith('data:')) {
+      // For AI-generated samples, show a friendly name
+      return `AI Sample - ${sample.note}`;
+    }
+    // For regular files, extract filename
+    return sample.url.split('/').pop();
+  };
+
   const samples = instrumentData?.multiSamples || [];
   const [activeNote, setActiveNote] = useState(null);
   const [selectedSample, setSelectedSample] = useState(null);
@@ -203,7 +213,7 @@ const MultiSampleEditor = ({ instrumentData: initialData }) => {
               <div className="multisample-editor__sample-icon">🎵</div>
               <div className="multisample-editor__sample-info">
                 <div className="multisample-editor__sample-name">
-                  {sample.url.split('/').pop()}
+                  {formatSampleName(sample)}
                 </div>
                 <div className="multisample-editor__sample-meta">
                   {sample.note} (MIDI {sample.midiNote})

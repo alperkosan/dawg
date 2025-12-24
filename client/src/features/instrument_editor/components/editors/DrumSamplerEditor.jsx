@@ -63,8 +63,14 @@ const DrumSamplerEditor = ({ instrumentData }) => {
   // ✅ FIX: Prioritize instrument name. If falling back to URL, handle Data URLs gracefully.
   const getSampleName = () => {
     if (instrumentData.name) return instrumentData.name;
-    if (sampleUrl.startsWith('data:')) return 'Audio Data';
+    if (sampleUrl.startsWith('data:')) return `AI Sample - ${instrumentData.name || 'Untitled'}`;
     return sampleUrl.split('/').pop() || 'Untitled';
+  };
+
+  // Format URL display - hide data URLs
+  const getDisplayUrl = () => {
+    if (sampleUrl.startsWith('data:')) return 'AI Generated Audio';
+    return sampleUrl;
   };
   const sampleName = getSampleName();
   const [audioBuffer, setAudioBuffer] = useState(null);
@@ -354,7 +360,7 @@ const DrumSamplerEditor = ({ instrumentData }) => {
           <div className="drumsampler-editor__sample-icon">🥁</div>
           <div className="drumsampler-editor__sample-info">
             <div className="drumsampler-editor__sample-name">{sampleName}</div>
-            <div className="drumsampler-editor__sample-path">{sampleUrl}</div>
+            <div className="drumsampler-editor__sample-path">{getDisplayUrl()}</div>
           </div>
           <button className="drumsampler-editor__preview-btn" onClick={handlePreview}>
             ▶ Preview

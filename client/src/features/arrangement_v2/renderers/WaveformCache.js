@@ -19,29 +19,44 @@ class WaveformCache {
 
   /**
    * Generate cache key from clip properties
-   * KEY INSIGHT: Width IS part of the key because canvas size matters
-   * But we also need zoom/ppb to ensure correct time-scale rendering
+   * ✅ OPTIMIZED: Width removed from key - we'll resize canvas instead
+   * ✅ OPTIMIZED: Zoom bucketed to reduce cache misses
    */
-  _getCacheKey(clipId, width, height, lod, sampleOffset = 0, zoomX = 1, pixelsPerBeat = 48, bpm = 140) {
+  _getCacheKey(clipId, height, lod, sampleOffset = 0, zoomX = 1, pixelsPerBeat = 48, bpm = 140) {
     // Round values to avoid cache misses from floating point errors
     const roundedOffset = Math.round(sampleOffset * 1000) / 1000;
-    const roundedZoom = Math.round(zoomX * 1000) / 1000;
+    // ✅ Bucket zoom to 0.25 increments (1.0, 1.25, 1.5, etc.)
+    const zoomBucket = Math.round(zoomX * 4) / 4;
     const roundedPPB = Math.round(pixelsPerBeat * 10) / 10;
     const roundedBPM = Math.round(bpm * 10) / 10;
-    return `${clipId}-w${width}-h${height}-lod${lod}-off${roundedOffset}-z${roundedZoom}-ppb${roundedPPB}-bpm${roundedBPM}`;
+    return `${clipId}-h${height}-lod${lod}-off${roundedOffset}-z${zoomBucket}-ppb${roundedPPB}-bpm${roundedBPM}`;
   }
 
   /**
    * Get cached waveform canvas
+   * ✅ OPTIMIZED: Resize cached canvas if width changed
    */
   get(clipId, clip, width, height, bpm, lod, pixelsPerBeat, zoomX) {
-    const key = this._getCacheKey(clipId, width, height, lod, clip.sampleOffset, zoomX, pixelsPerBeat, bpm);
+    const key = this._getCacheKey(clipId, height, lod, clip.sampleOffset, zoomX, pixelsPerBeat, bpm);
     const cached = this.cache.get(key);
 
     if (cached) {
       // Move to end (LRU)
       this.cache.delete(key);
       this.cache.set(key, cached);
+
+      // ✅ If width changed, resize canvas (cheap operation vs re-render)
+      if (cached.width !== width) {
+        const resized = document.createElement('canvas');
+        resized.width = width;
+        resized.height = height;
+        const ctx = resized.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(cached, 0, 0, width, height);
+          return resized;
+        }
+      }
+
       return cached;
     }
 
@@ -50,11 +65,12 @@ class WaveformCache {
 
   /**
    * Store waveform canvas in cache
+   * ✅ OPTIMIZED: Width not in key, proper LRU eviction
    */
   set(clipId, clip, width, height, bpm, lod, canvas, pixelsPerBeat, zoomX) {
-    const key = this._getCacheKey(clipId, width, height, lod, clip.sampleOffset, zoomX, pixelsPerBeat, bpm);
+    const key = this._getCacheKey(clipId, height, lod, clip.sampleOffset, zoomX, pixelsPerBeat, bpm);
 
-    // Remove oldest if cache is full
+    // ✅ Evict oldest if at max size (LRU)
     if (this.cache.size >= this.maxSize) {
       const firstKey = this.cache.keys().next().value;
       this.cache.delete(firstKey);
