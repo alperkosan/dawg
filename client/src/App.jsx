@@ -202,7 +202,7 @@ function DAWApp() {
               className="app-container"
               style={{
                 marginTop: '56px',
-                height: 'calc(100vh - 56px)',
+                height: 'calc(100dvh - 56px)', // ✅ MOBILE FIX: Use dynamic viewport height
                 opacity: isLoadingProject ? 0.3 : 1,
                 pointerEvents: isLoadingProject ? 'none' : 'auto',
                 transition: 'opacity 0.3s ease-out',
@@ -246,7 +246,7 @@ function MediaApp() {
         className="media-app"
         style={{
           marginTop: '56px',
-          height: 'calc(100vh - 56px)',
+          height: 'calc(100dvh - 56px)', // ✅ MOBILE FIX: Use dynamic viewport height
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden'

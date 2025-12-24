@@ -59,11 +59,21 @@ function TopToolbar({ onExportClick, onSaveClick, saveStatus = 'saved', lastSave
   // Master volume state
   const [masterVolume, setMasterVolume] = useState(0.8);
 
+  // Mobile detection
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+
+  React.useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   const handleMasterVolumeChange = (value) => {
     setMasterVolume(value);
     AudioContextService.setMasterVolume(value);
   };
-
 
   // ✅ Dynamic button classes with state-specific indicators
   const playButtonClass = `top-toolbar__transport-btn transport-btn ${playbackState === PLAYBACK_STATES.PLAYING ? 'transport-btn--playing' :
@@ -104,72 +114,74 @@ function TopToolbar({ onExportClick, onSaveClick, saveStatus = 'saved', lastSave
         >
           <Repeat size={18} />
         </button>
-        <button
-          title={`Follow Playhead: ${followPlayheadMode}\nClick to cycle: CONTINUOUS → PAGE → OFF`}
-          onClick={cycleFollowPlayheadMode}
-          className={`top-toolbar__transport-btn transport-btn ${followPlayheadMode !== 'OFF' ? 'transport-btn--active' : ''}`}
-        >
-          {followPlayheadMode === 'CONTINUOUS' && <Maximize2 size={18} />}
-          {followPlayheadMode === 'PAGE' && <ChevronRight size={18} />}
-          {followPlayheadMode === 'OFF' && <X size={18} />}
-        </button>
-        <button
-          title={keyboardPianoMode ? "Disable Musical Typing (Keyboard Piano)" : "Enable Musical Typing (Keyboard Piano)"}
-          onClick={() => setKeyboardPianoMode(!keyboardPianoMode)}
-          className={`top-toolbar__transport-btn transport-btn ${keyboardPianoMode ? 'transport-btn--active' : ''}`}
-          style={{
-            color: keyboardPianoMode ? '#f59e0b' : undefined,
-            borderColor: keyboardPianoMode ? '#f59e0b' : undefined,
-            backgroundColor: keyboardPianoMode ? 'rgba(245, 158, 11, 0.1)' : undefined
-          }}
-        >
-          <Keyboard size={18} />
-        </button>
+
+        {/* Hide complex controls on mobile */}
+        {!isMobile && (
+          <>
+            <button
+              title={`Follow Playhead: ${followPlayheadMode}\nClick to cycle: CONTINUOUS → PAGE → OFF`}
+              onClick={cycleFollowPlayheadMode}
+              className={`top-toolbar__transport-btn transport-btn ${followPlayheadMode !== 'OFF' ? 'transport-btn--active' : ''}`}
+            >
+              {followPlayheadMode === 'CONTINUOUS' && <Maximize2 size={18} />}
+              {followPlayheadMode === 'PAGE' && <ChevronRight size={18} />}
+              {followPlayheadMode === 'OFF' && <X size={18} />}
+            </button>
+            <button
+              title={keyboardPianoMode ? "Disable Musical Typing (Keyboard Piano)" : "Enable Musical Typing (Keyboard Piano)"}
+              onClick={() => setKeyboardPianoMode(!keyboardPianoMode)}
+              className={`top-toolbar__transport-btn transport-btn ${keyboardPianoMode ? 'transport-btn--active' : ''}`}
+              style={{
+                color: keyboardPianoMode ? '#f59e0b' : undefined,
+                borderColor: keyboardPianoMode ? '#f59e0b' : undefined,
+                backgroundColor: keyboardPianoMode ? 'rgba(245, 158, 11, 0.1)' : undefined
+              }}
+            >
+              <Keyboard size={18} />
+            </button>
+          </>
+        )}
+
+        {/* Compact Mode Toggle */}
         <div className="top-toolbar__mode-toggle">
           <ModeButton
-            label="Pattern"
+            label={isMobile ? "Pat" : "Pattern"}
             mode={PLAYBACK_MODES.PATTERN}
             activeMode={playbackMode}
             onClick={setPlaybackMode}
           />
           <ModeButton
-            label="Song"
+            label={isMobile ? "Song" : "Song"}
             mode={PLAYBACK_MODES.SONG}
             activeMode={playbackMode}
             onClick={setPlaybackMode}
           />
         </div>
+
         <div className="top-toolbar__display">
           <BPMInput
             value={bpm}
             onChange={setBPM}
-            showPresets={true}
-            showTapTempo={true}
-            showButtons={true}
+            showPresets={!isMobile}
+            showTapTempo={!isMobile}
+            showButtons={!isMobile}
             precision={1}
             className="top-toolbar__bpm-input-wrapper"
           />
-          <div className="top-toolbar__transport-pos">
-            {formatPosition(currentPosition || 0)}
-          </div>
+          {!isMobile && (
+            <div className="top-toolbar__transport-pos">
+              {formatPosition(currentPosition || 0)}
+            </div>
+          )}
         </div>
       </div>
 
-      <div className="toolbar__group" style={{ width: '280px', justifyContent: 'flex-end', gap: '12px' }}>
-        <CPUMonitor />
+      <div className="toolbar__group" style={{ width: isMobile ? 'auto' : '280px', justifyContent: 'flex-end', gap: '8px' }}>
+        {!isMobile && <CPUMonitor />}
+
         {onSaveClick && (
           <button
-            title={
-              saveStatus === 'saving'
-                ? 'Saving...'
-                : saveStatus === 'unsaved'
-                  ? 'Unsaved changes (Ctrl/Cmd + S)'
-                  : saveStatus === 'error'
-                    ? 'Save failed - Click to retry'
-                    : lastSavedAt
-                      ? `Saved at ${new Date(lastSavedAt).toLocaleTimeString()} (Ctrl/Cmd + S)`
-                      : 'Save Project (Ctrl/Cmd + S)'
-            }
+            title={isMobile ? "Save" : "Save Project (Ctrl/Cmd + S)"}
             onClick={() => {
               if (onSaveClick && saveStatus !== 'saving') {
                 onSaveClick();
@@ -192,6 +204,7 @@ function TopToolbar({ onExportClick, onSaveClick, saveStatus = 'saved', lastSave
             ) : (
               <Save size={18} />
             )}
+            {/* Mobile simplified status dot */}
             {saveStatus === 'unsaved' && (
               <span style={{
                 position: 'absolute',
@@ -206,46 +219,43 @@ function TopToolbar({ onExportClick, onSaveClick, saveStatus = 'saved', lastSave
             )}
           </button>
         )}
+
         <button
-          title="Export Audio (Ctrl/Cmd + E)"
-          onClick={() => {
-            console.log('🎵 Export button clicked');
-            if (onExportClick) {
-              onExportClick();
-            } else {
-              console.warn('⚠️ onExportClick not provided');
-            }
-          }}
+          title="Export"
+          onClick={() => onExportClick && onExportClick()}
           className="top-toolbar__transport-btn transport-btn"
           style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
         >
           <Download size={18} />
         </button>
-        <button
-          title="Preset Library"
-          onClick={() => {
-            console.log('✨ Preset Library button clicked');
-            setPresetLibraryOpen(true);
-          }}
-          className="top-toolbar__transport-btn transport-btn"
-          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-        >
-          <Sparkles size={18} />
-        </button>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <Knob
-            size={28}
-            value={masterVolume}
-            onChange={handleMasterVolumeChange}
-            min={0}
-            max={1}
-            defaultValue={0.8}
-            precision={2}
-            showValue={false}
-            aria-label="Master Volume"
-          />
-          <span style={{ fontSize: '10px', fontWeight: 800, color: 'var(--zenith-text-secondary)', letterSpacing: '0.1em' }}>M</span>
-        </div>
+
+        {!isMobile && (
+          <button
+            title="Preset Library"
+            onClick={() => setPresetLibraryOpen(true)}
+            className="top-toolbar__transport-btn transport-btn"
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          >
+            <Sparkles size={18} />
+          </button>
+        )}
+
+        {!isMobile && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Knob
+              size={28}
+              value={masterVolume}
+              onChange={handleMasterVolumeChange}
+              min={0}
+              max={1}
+              defaultValue={0.8}
+              precision={2}
+              showValue={false}
+              aria-label="Master Volume"
+            />
+            <span style={{ fontSize: '10px', fontWeight: 800, color: 'var(--zenith-text-secondary)', letterSpacing: '0.1em' }}>M</span>
+          </div>
+        )}
       </div>
     </header>
   );

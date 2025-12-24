@@ -222,17 +222,28 @@ const Mixer = ({ isVisible = true }) => {
     [mixerTracks, activeChannelId]
   );
 
+  // ✅ MOBILE SUPPORT
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   return (
-    <div className="mixer-2">
+    <div className={`mixer-2 ${isMobile ? 'mixer-2--mobile' : ''}`}>
       {/* Header */}
       <div className="mixer-2__header">
         <div className="mixer-2__header-center">
-          <div className="mixer-2__shortcuts-hint">
-            <kbd>M</kbd> Mute
-            <kbd>S</kbd> Solo
-            <kbd>←→</kbd> Navigate
-            <kbd>Del</kbd> Remove
-          </div>
+          {/* Hide shortcuts hint on mobile */}
+          {!isMobile && (
+            <div className="mixer-2__shortcuts-hint">
+              <kbd>M</kbd> Mute
+              <kbd>S</kbd> Solo
+              <kbd>←→</kbd> Navigate
+              <kbd>Del</kbd> Remove
+            </div>
+          )}
         </div>
 
         <div className="mixer-2__header-right">
@@ -242,7 +253,7 @@ const Mixer = ({ isVisible = true }) => {
               onClick={() => setShowAddMenu(!showAddMenu)}
             >
               <Plus size={14} />
-              Add Channel
+              {isMobile ? 'Add' : 'Add Channel'}
             </button>
             {showAddMenu && (
               <div className="mixer-2__add-menu">
@@ -269,9 +280,11 @@ const Mixer = ({ isVisible = true }) => {
               </div>
             )}
           </div>
-          <button className="mixer-2__header-btn">
-            <Settings size={14} />
-          </button>
+          {!isMobile && (
+            <button className="mixer-2__header-btn">
+              <Settings size={14} />
+            </button>
+          )}
           <button
             className={`mixer-2__panel-toggle ${showEffectsRack ? 'active' : ''}`}
             onClick={() => setShowEffectsRack(!showEffectsRack)}
@@ -284,12 +297,13 @@ const Mixer = ({ isVisible = true }) => {
 
       {/* Main Content */}
       <div className="mixer-2__content">
-        {/* Primary Meter (left) */}
-        <div className="mixer-2__primary-panel">
-          <MixerPrimaryMeter activeTrack={activeTrack} masterTrack={masterTrack} />
-        </div>
+        {/* Primary Meter (left) - Hidden on mobile to save space */}
+        {!isMobile && (
+          <div className="mixer-2__primary-panel">
+            <MixerPrimaryMeter activeTrack={activeTrack} masterTrack={masterTrack} />
+          </div>
+        )}
 
-        {/* Mixer Channels */}
         {/* Mixer Channels */}
         <div className="mixer-2__channels-container">
           <div className="mixer-2__channels">
@@ -355,9 +369,17 @@ const Mixer = ({ isVisible = true }) => {
           </div>
         </div>
 
-        {/* Right: Effects Rack */}
+        {/* Right: Effects Rack - Overlay on mobile */}
         {showEffectsRack && (
-          <div className="mixer-2__effects-panel">
+          <div className={`mixer-2__effects-panel ${isMobile ? 'mixer-2__effects-panel--mobile' : ''}`}>
+            {isMobile && (
+              <button
+                className="mixer-2__mobile-close-btn"
+                onClick={() => setShowEffectsRack(false)}
+              >
+                Close Rack
+              </button>
+            )}
             <EffectsRack track={activeTrack} />
           </div>
         )}

@@ -132,6 +132,14 @@ const InstrumentEditorPanel = () => {
     useInstrumentEditorStore.getState().updateParameter('mixerTrackId', newChannelId);
   };
 
+  // ✅ MOBILE SUPPORT
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   // Update instrument data when instrument changes
   useEffect(() => {
     if (instrumentId && !instrumentData) {
@@ -522,13 +530,15 @@ const InstrumentEditorPanel = () => {
       <div
         ref={panelRef}
         className={`instrument-editor-panel ${isOpen ? 'instrument-editor-panel--open' : ''} ${isResizing ? 'instrument-editor-panel--resizing' : ''}`}
-        style={{ width: `${panelWidth}px` }}
+        style={{ width: isMobile ? '100%' : `${panelWidth}px` }}
       >
-        {/* Resize Handle */}
-        <div
-          className="instrument-editor-panel__resize-handle"
-          onMouseDown={handleResizeStart}
-        />
+        {/* Resize Handle (Desktop Only) */}
+        {!isMobile && (
+          <div
+            className="instrument-editor-panel__resize-handle"
+            onMouseDown={handleResizeStart}
+          />
+        )}
 
         {/* Copy Notification */}
         {showCopyNotification && (

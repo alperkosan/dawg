@@ -32,6 +32,8 @@ body {
   -moz-osx-font-smoothing: grayscale;
   /* ✅ FIX: Prevent body scroll - app-container handles all scrolling */
   overflow: hidden;
+  /* ✅ MOBILE FIX: Prevent browser gestures (pull-to-refresh, swipe nav) on interactive areas */
+  touch-action: none;
   /* Apply centralized scrollbar styles */
 }
 
@@ -40,6 +42,7 @@ body {
   background-color: var(--color-primary);
   border-radius: var(--border-radius);
 }
+
 .btn-primary:hover {
   filter: brightness(1.2);
 }
@@ -56,9 +59,12 @@ body {
   ========================================================================== */
 .tabs-container {
   width: 100%;
-  overflow-x: auto; /* Gerektiğinde yatay kaydırmayı etkinleştir */
-  -ms-overflow-style: none;  /* IE ve Edge için kaydırma çubuğunu gizle */
-  scrollbar-width: none;  /* Firefox için kaydırma çubuğunu gizle */
+  overflow-x: auto;
+  /* Gerektiğinde yatay kaydırmayı etkinleştir */
+  -ms-overflow-style: none;
+  /* IE ve Edge için kaydırma çubuğunu gizle */
+  scrollbar-width: none;
+  /* Firefox için kaydırma çubuğunu gizle */
 }
 
 /* Chrome, Safari ve Opera için kaydırma çubuğunu gizle */
@@ -67,8 +73,10 @@ body {
 }
 
 .tabs-wrapper {
-  display: flex; /* Butonları her zaman yan yana diz */
+  display: flex;
+  /* Butonları her zaman yan yana diz */
   flex-direction: row;
-  width: fit-content; /* Genişliği içeriğe göre ayarla, taşmayı sağla */
+  width: fit-content;
+  /* Genişliği içeriğe göre ayarla, taşmayı sağla */
   border-bottom: 2px solid var(--color-background);
 }

@@ -1707,6 +1707,85 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
                 data-tool={activeTool}
                 style={{ cursor: currentCursor }}
                 tabIndex={0}
+                // ✅ TOUCH HANDLING - 1-finger edit, 2-finger pan/zoom (handled by engine)
+                onTouchStart={(e) => {
+                    if (e.touches.length !== 1) return;
+
+                    // Create mock mouse event
+                    const touch = e.touches[0];
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    const mockEvent = {
+                        clientX: touch.clientX,
+                        clientY: touch.clientY,
+                        currentTarget: e.currentTarget,
+                        target: e.target,
+                        button: 0,
+                        buttons: 1,
+                        stopPropagation: () => e.stopPropagation(),
+                        preventDefault: () => { if (e.cancelable) e.preventDefault(); }
+                    };
+
+                    const x = mockEvent.clientX - rect.left;
+                    const y = mockEvent.clientY - rect.top;
+                    const isInRuler = y <= 30;
+                    const isInKeyboard = x <= 80 && y > 30;
+                    const isInGrid = x > 80 && y > 30;
+
+                    if (isInRuler) {
+                        e.stopPropagation();
+                        noteInteractions.handleMouseDown(mockEvent);
+                    } else if (isInKeyboard) {
+                        handleKeyboardMouseDown(mockEvent);
+                    } else if (isInGrid) {
+                        noteInteractions.handleMouseDown(mockEvent);
+                    }
+                }}
+                onTouchMove={(e) => {
+                    if (e.touches.length !== 1) return;
+
+                    const touch = e.touches[0];
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    const mockEvent = {
+                        clientX: touch.clientX,
+                        clientY: touch.clientY,
+                        currentTarget: e.currentTarget,
+                        target: e.target,
+                        button: 0,
+                        buttons: 1,
+                        stopPropagation: () => e.stopPropagation(),
+                        preventDefault: () => { if (e.cancelable) e.preventDefault(); }
+                    };
+
+                    const x = mockEvent.clientX - rect.left;
+                    const y = mockEvent.clientY - rect.top;
+                    const isInRuler = y <= 30;
+                    const isInGrid = x > 80 && y > 30;
+
+                    if (isInRuler || isInGrid) {
+                        noteInteractions.handleMouseMove(mockEvent);
+                    }
+                }}
+                onTouchEnd={(e) => {
+                    // Start of touch end - if 1 finger was active
+                    // Note: e.touches is empty if last finger lifted
+                    // Use changedTouches
+
+                    const mockEvent = {
+                        // Use last known position if needed, or just trigger up
+                        clientX: 0, clientY: 0, // MouseUp usually doesn't need precise coords for end logic depending on implementation
+                        currentTarget: e.currentTarget,
+                        target: e.target,
+                        button: 0,
+                        buttons: 0,
+                        stopPropagation: () => e.stopPropagation(),
+                        preventDefault: () => { if (e.cancelable) e.preventDefault(); }
+                    };
+
+                    handleKeyboardMouseUp(); // Stop sound
+                    loopRegionHook.handleRulerMouseUp();
+                    noteInteractions.handleMouseUp(mockEvent);
+                    engine.eventHandlers.onMouseUp?.(mockEvent);
+                }}
                 onMouseDown={(e) => {
                     const rect = e.currentTarget.getBoundingClientRect();
                     const x = e.clientX - rect.left;

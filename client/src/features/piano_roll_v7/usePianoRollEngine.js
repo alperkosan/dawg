@@ -347,6 +347,66 @@ export function usePianoRollEngine(containerRef, playbackControls = {}) {
         };
     }, [viewportData.scrollY, viewportSize.height, dimensions.keyHeight, dimensions.totalKeys]);
 
+    // --- Touch handling for 2-finger zoom/pan ---
+    const lastTouchRef = useRef({ dist: 0, x: 0, y: 0 });
+
+    const handleTouchStart = useCallback((e) => {
+        if (e.touches.length === 2) {
+            e.preventDefault();
+            const t1 = e.touches[0];
+            const t2 = e.touches[1];
+            const dist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+            const cx = (t1.clientX + t2.clientX) / 2;
+            const cy = (t1.clientY + t2.clientY) / 2;
+            lastTouchRef.current = { dist, x: cx, y: cy };
+        }
+    }, []);
+
+    const handleTouchMove = useCallback((e) => {
+        // Prevent default scrolling for all touch events in canvas
+        if (e.cancelable) e.preventDefault();
+
+        if (e.touches.length === 2) {
+            const vp = viewportRef.current;
+            const t1 = e.touches[0];
+            const t2 = e.touches[1];
+
+            const dist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+            const cx = (t1.clientX + t2.clientX) / 2;
+            const cy = (t1.clientY + t2.clientY) / 2;
+
+            // Pan
+            const dx = cx - lastTouchRef.current.x;
+            const dy = cy - lastTouchRef.current.y;
+
+            // Apply pan
+            vp.targetScrollX -= dx;
+            vp.targetScrollY -= dy;
+
+            // Zoom
+            if (lastTouchRef.current.dist > 0) {
+                const scale = dist / lastTouchRef.current.dist;
+
+                // Limit zoom speed
+                const smoothedScale = 1 + (scale - 1) * 0.8;
+
+                const newZoomX = Math.max(MIN_ZOOM_X, Math.min(MAX_ZOOM_X, vp.targetZoomX * smoothedScale));
+                const newZoomY = Math.max(MIN_ZOOM_Y, Math.min(MAX_ZOOM_Y, vp.targetZoomY * smoothedScale));
+
+                // TODO: Center zoom on touch midpoint (complex math, simplified here)
+                vp.targetZoomX = newZoomX;
+                vp.targetZoomY = newZoomY;
+            }
+
+            lastTouchRef.current = { dist, x: cx, y: cy };
+            setRenderTrigger(Date.now());
+        }
+    }, []);
+
+    const handleTouchEnd = useCallback((e) => {
+        // Cleanup if needed
+    }, []);
+
     // ✅ PHASE 1: Follow Playhead Mode - Programmatic viewport control
     const updateViewport = useCallback(({ scrollX, scrollY, smooth = true }) => {
         const vp = viewportRef.current;
@@ -375,9 +435,22 @@ export function usePianoRollEngine(containerRef, playbackControls = {}) {
                 vp.targetScrollY = clampedScrollY;
             }
         }
-
-        setRenderTrigger(Date.now());
     }, [dimensions, viewportSize]);
+
+    // Attach non-passive listeners for touch
+    useEffect(() => {
+        const container = containerRef.current;
+        if (container) {
+            container.addEventListener('touchstart', handleTouchStart, { passive: false });
+            container.addEventListener('touchmove', handleTouchMove, { passive: false });
+            container.addEventListener('touchend', handleTouchEnd);
+            return () => {
+                container.removeEventListener('touchstart', handleTouchStart);
+                container.removeEventListener('touchmove', handleTouchMove);
+                container.removeEventListener('touchend', handleTouchEnd);
+            };
+        }
+    }, [containerRef, handleTouchStart, handleTouchMove, handleTouchEnd]);
 
     return {
         viewport: { ...viewportData, width: viewportSize.width, height: viewportSize.height, visibleSteps, visibleKeys },
@@ -390,6 +463,9 @@ export function usePianoRollEngine(containerRef, playbackControls = {}) {
             onMouseMove: handleMouseMove,
             onMouseUp: handleMouseUp,
             onMouseLeave: handleMouseUp,
+            // Touch events are attached via ref/effect, but we can expose them if needed 
+            // via React props if we prefer that over addEventListener
+            // But addEventListener { passive: false } is required for e.preventDefault()
             updateViewport
         }
     };

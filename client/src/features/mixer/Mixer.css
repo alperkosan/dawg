@@ -409,3 +409,55 @@
 .mixer-2__effects-panel::-webkit-scrollbar-thumb:hover {
   background: var(--zenith-border-strong);
 }
+
+/* ✅ MOBILE RESPONSIVENESS */
+.mixer-2--mobile .mixer-2__effects-panel--mobile {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 320px;
+  /* Or 100% on very small screens? */
+  max-width: 100%;
+  height: 100%;
+  z-index: 500;
+  border-left: 1px solid var(--zenith-border-strong);
+  box-shadow: -4px 0 12px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+}
+
+@media (max-width: 480px) {
+  .mixer-2--mobile .mixer-2__effects-panel--mobile {
+    width: 100%;
+  }
+}
+
+.mixer-2__mobile-close-btn {
+  width: 100%;
+  padding: 12px;
+  background: var(--zenith-bg-tertiary);
+  color: var(--zenith-text-primary);
+  border: none;
+  border-bottom: 1px solid var(--zenith-border-medium);
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.mixer-2__mobile-close-btn:hover {
+  background: var(--zenith-bg-secondary);
+}
+
+/* ✅ MOBILE: Larger Touch Targets */
+.mixer-2--mobile .mixer-channel-2 {
+  width: 96px;
+  /* Wider for easier handling */
+  padding-left: 4px;
+  padding-right: 4px;
+}
+
+.mixer-2--mobile .mixer-channel-2__btn {
+  width: 36px;
+  height: 32px;
+  /* Taller buttons */
+}
