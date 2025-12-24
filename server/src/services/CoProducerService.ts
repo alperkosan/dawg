@@ -3,10 +3,20 @@ import { getDatabase } from './database.js';
 import { logger } from '../utils/logger.js';
 import { config } from '../config/index.js';
 
-// Initialize SDK Client
-const elevenlabs = new ElevenLabsClient({
-    apiKey: config.elevenlabsApiKey
-});
+// Initialize SDK Client (lazy initialization - only when API key is available)
+let elevenlabs: ElevenLabsClient | null = null;
+
+function getElevenLabsClient(): ElevenLabsClient | null {
+    if (!config.elevenlabsApiKey) {
+        return null;
+    }
+    if (!elevenlabs) {
+        elevenlabs = new ElevenLabsClient({
+            apiKey: config.elevenlabsApiKey
+        });
+    }
+    return elevenlabs;
+}
 
 export interface ProjectContext {
     bpm?: number;
@@ -135,8 +145,8 @@ export const coProducerService = {
     async generateVariation(prompt: string, context: ProjectContext, options: { promptInfluence?: number } = {}): Promise<any> {
         logger.info(`🎨 CoProducer: Generating variation for prompt: "${prompt}" (Context: ${JSON.stringify(context)})`);
 
-        const apiKey = config.elevenlabsApiKey;
-        if (!apiKey) {
+        const client = getElevenLabsClient();
+        if (!client) {
             const error = new Error('ELEVENLABS_API_KEY is missing in config. Please ensure it is set in .env and server is restarted.');
             logger.warn(`⚠️ ${error.message}`);
             return this.generateMockVariation(prompt, error);
@@ -147,7 +157,7 @@ export const coProducerService = {
             logger.info(`✨ Enhanced Prompt: "${enhancedPrompt}"`);
 
             // SDK Sound Generation (returns a stream)
-            const audioStream = await elevenlabs.textToSoundEffects.convert({
+            const audioStream = await client.textToSoundEffects.convert({
                 text: enhancedPrompt,
                 duration_seconds: 5,
                 prompt_influence: options.promptInfluence ?? 0.7
