@@ -17,6 +17,9 @@ Welcome to the DAWG documentation. This hub provides a structured navigation thr
 | [🏗️ Architecture](./ARCHITECTURE.md) | High-level system design, layers, and design patterns. |
 | [🎵 Features](./FEATURES.md) | Complete feature list with implementation status. |
 | [⚡ Optimizations](./OPTIMIZATIONS.md) | Performance analysis and optimization history. |
+| [🔬 Engineering Analysis](./ENGINEERING_ANALYSIS.md) | Critical review: what could be improved. |
+| [🛠️ Improvement Roadmap](./ARCHITECTURE_IMPROVEMENT_ROADMAP.md) | **NEW** 6-phase plan to fix identified issues. |
+
 
 ### Level 3: Deep Dives
 
@@ -74,6 +77,7 @@ docs/
 | `optimizations/` | [⚡ Optimization Index](./optimizations/README.md) | Canvas, CPU, memory optimization docs. |
 | `bugs/` | [🐛 Bug Tracker](./bugs/README.md) | Current bugs and analysis documents. |
 | `system_index/` | [🔍 System Index](./system_index/index.md) | Deep dive specs (DSP, UI, Database). |
+| `analysis/` | [📊 39 Analysis Files](./analysis/) | MIDI, Scheduling, Playback, Plugin analysis. |
 
 
 ---

@@ -36,5 +36,31 @@ export { PositionTracker } from './PositionTracker.js';
 export { NativeAudioEngine } from './NativeAudioEngine.js';
 export { NativeTransportSystem } from './NativeTransportSystem.js';
 
+// ✅ NEW: Audio Engine Facade (recommended for new code)
+export { NativeAudioEngineFacade, createAudioEngine } from './NativeAudioEngineFacade.js';
+
+// ✅ NEW: Extracted Services
+export {
+  InstrumentService,
+  MixerService,
+  TransportService,
+  WorkletService,
+  EffectService,
+  PerformanceService,
+  PlaybackService,
+  SchedulerService
+} from './services/index.js';
+
+// ✅ NEW: Command Pattern
+export {
+  Command,
+  CommandManager,
+  BatchCommand,
+  globalCommandManager
+} from './commands/index.js';
+
+// ✅ NEW: Object Pool
+export { AudioObjectPool, audioObjectPool } from './utils/AudioObjectPool.js';
+
 // Nodes
 export { NativeSamplerNode } from './nodes/NativeSamplerNode.js';
