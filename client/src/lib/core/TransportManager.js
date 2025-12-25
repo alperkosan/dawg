@@ -186,7 +186,7 @@ export class TransportManager {
       }
 
       // Start audio engine
-      await this.audioEngine.playbackManager.play(this.state.currentPosition);
+      await this.audioEngine.playbackFacade.play(this.state.currentPosition);
 
       // Update state
       this.state.isPlaying = true;
@@ -215,7 +215,7 @@ export class TransportManager {
     if (!this.state.isPlaying) return false;
 
     try {
-      await this.audioEngine.playbackManager.pause();
+      await this.audioEngine.playbackFacade.pause();
 
       this.state.isPlaying = false;
       this.state.playbackState = PLAYBACK_STATES.PAUSED;
@@ -241,7 +241,7 @@ export class TransportManager {
       const now = Date.now();
       const timeSinceLastStop = now - (this.state.lastStopTime || 0);
 
-      await this.audioEngine.playbackManager.stop();
+      await this.audioEngine.playbackFacade.stop();
 
       this.state.isPlaying = false;
       this.state.playbackState = PLAYBACK_STATES.STOPPED;
@@ -298,8 +298,8 @@ export class TransportManager {
 
 
     // ✅ SIMPLIFIED: Always immediate jump, no smooth complexity
-    if (this.audioEngine?.playbackManager) {
-      this.audioEngine.playbackManager.jumpToStep(newPosition); // No await - fire and forget
+    if (this.audioEngine?.playbackFacade) {
+      this.audioEngine.playbackFacade.jumpToStep(newPosition); // No await - fire and forget
     }
 
     if (updateUI) {

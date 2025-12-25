@@ -10,30 +10,58 @@ import {
 import { BPMInput } from '@/components/controls/BPMInput';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
 import { useArrangementStore } from '@/store/useArrangementStore';
+import {
+  selectPlaybackControls,
+  selectTransportDisplay,
+  selectPlaybackActions,
+  shallow
+} from '@/store/selectors/playbackSelectors';
 import { PLAYBACK_MODES, PLAYBACK_STATES } from '@/config/constants';
 import { getTimelineController } from '@/lib/core/TimelineControllerSingleton';
 import EventBus from '@/lib/core/EventBus.js';
 
 export const PlaybackControls = () => {
+  // ✅ PERFORMANCE FIX: Use memoized selectors instead of entire store
+  // Before: Re-renders 10x/sec (currentStep updates) = 2,000ms/sec waste
+  // After: Re-renders ONLY when playbackState/mode/bpm changes = ~0ms waste
+
+  // Memoized controls (stable reference, no currentStep)
   const {
     playbackState,
     playbackMode,
     bpm,
-    transportPosition,
     loopEnabled,
-    isAutoLoop,
-    playbackRegion,
-    timelineSelection,
-    // Actions
+    isPlaying
+  } = usePlaybackStore(selectPlaybackControls, shallow);
+
+  // Transport display (only for position text display)
+  const { position: transportPosition } = usePlaybackStore(selectTransportDisplay, shallow);
+
+  // Actions (stable function references)
+  const {
     togglePlayPause,
     handleStop,
     setPlaybackMode,
-    setLoopEnabled,
+    handleBpmChange,
+    setLoopEnabled
+  } = usePlaybackStore(selectPlaybackActions, shallow);
+
+  // Legacy actions not in selectors yet (used rarely)
+  const {
     enableAutoLoop,
     setPlaybackRegion,
     jumpToBar,
-    handleBpmChange
-  } = usePlaybackStore();
+    isAutoLoop,
+    playbackRegion,
+    timelineSelection
+  } = usePlaybackStore((state) => ({
+    enableAutoLoop: state.enableAutoLoop,
+    setPlaybackRegion: state.setPlaybackRegion,
+    jumpToBar: state.jumpToBar,
+    isAutoLoop: state.isAutoLoop,
+    playbackRegion: state.playbackRegion,
+    timelineSelection: state.timelineSelection
+  }), shallow);
 
   const { activePatternId, patterns } = useArrangementStore();
 
@@ -49,7 +77,7 @@ export const PlaybackControls = () => {
     const handleUnifiedStop = async () => {
       // ✅ Stop recording if active
       EventBus.emit('transport:stop', {});
-      
+
       try {
         const timelineController = getTimelineController();
         await timelineController.stop();
@@ -74,11 +102,10 @@ export const PlaybackControls = () => {
         {/* Stop */}
         <button
           onClick={handleUnifiedStop}
-          className={`p-2 rounded transition-colors ${
-            playbackState === PLAYBACK_STATES.STOPPED
+          className={`p-2 rounded transition-colors ${playbackState === PLAYBACK_STATES.STOPPED
               ? 'bg-orange-600 text-white shadow-lg'
               : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
-          }`}
+            }`}
           title="Stop"
         >
           <Square size={18} />
@@ -87,19 +114,18 @@ export const PlaybackControls = () => {
         {/* Play/Pause */}
         <button
           onClick={handleUnifiedPlayPause}
-          className={`p-3 rounded-lg transition-all duration-200 ${
-            playbackState === PLAYBACK_STATES.PLAYING
+          className={`p-3 rounded-lg transition-all duration-200 ${playbackState === PLAYBACK_STATES.PLAYING
               ? 'bg-red-600 hover:bg-red-700 shadow-lg'
               : playbackState === PLAYBACK_STATES.PAUSED
-              ? 'bg-yellow-600 hover:bg-yellow-700 shadow-lg'
-              : 'bg-green-600 hover:bg-green-700 shadow-lg'
-          }`}
+                ? 'bg-yellow-600 hover:bg-yellow-700 shadow-lg'
+                : 'bg-green-600 hover:bg-green-700 shadow-lg'
+            }`}
           title={
             playbackState === PLAYBACK_STATES.PLAYING
               ? 'Pause'
               : playbackState === PLAYBACK_STATES.PAUSED
-              ? 'Resume'
-              : 'Play'
+                ? 'Resume'
+                : 'Play'
           }
         >
           {playbackState === PLAYBACK_STATES.PLAYING ? (
@@ -109,46 +135,46 @@ export const PlaybackControls = () => {
           )}
         </button>
 
-      {/* Previous/Next Bar */}
-      <div className="flex space-x-1">
-        <button
-          onClick={() => {
-            try {
-              const timelineController = getTimelineController();
-              const currentPosition = timelineController.getCurrentPosition();
-              const currentBar = Math.floor(currentPosition / 16);
-              const previousBarStep = Math.max(0, currentBar - 1) * 16;
-              timelineController.seekTo(previousBarStep);
-            } catch (error) {
-              const currentBar = Math.floor(transportPosition.split(':')[0]) || 1;
-              jumpToBar(Math.max(1, currentBar - 1));
-            }
-          }}
-          className="p-2 rounded bg-gray-700 hover:bg-gray-600 transition-colors"
-          title="Previous Bar"
-        >
-          <SkipBack size={16} className="text-gray-300" />
-        </button>
-        <button
-          onClick={() => {
-            try {
-              const timelineController = getTimelineController();
-              const currentPosition = timelineController.getCurrentPosition();
-              const currentBar = Math.floor(currentPosition / 16);
-              const nextBarStep = (currentBar + 1) * 16;
-              timelineController.seekTo(nextBarStep);
-            } catch (error) {
-              const currentBar = Math.floor(transportPosition.split(':')[0]) || 1;
-              jumpToBar(currentBar + 1);
-            }
-          }}
-          className="p-2 rounded bg-gray-700 hover:bg-gray-600 transition-colors"
-          title="Next Bar"
-        >
-          <SkipForward size={16} className="text-gray-300" />
-        </button>
+        {/* Previous/Next Bar */}
+        <div className="flex space-x-1">
+          <button
+            onClick={() => {
+              try {
+                const timelineController = getTimelineController();
+                const currentPosition = timelineController.getCurrentPosition();
+                const currentBar = Math.floor(currentPosition / 16);
+                const previousBarStep = Math.max(0, currentBar - 1) * 16;
+                timelineController.seekTo(previousBarStep);
+              } catch (error) {
+                const currentBar = Math.floor(transportPosition.split(':')[0]) || 1;
+                jumpToBar(Math.max(1, currentBar - 1));
+              }
+            }}
+            className="p-2 rounded bg-gray-700 hover:bg-gray-600 transition-colors"
+            title="Previous Bar"
+          >
+            <SkipBack size={16} className="text-gray-300" />
+          </button>
+          <button
+            onClick={() => {
+              try {
+                const timelineController = getTimelineController();
+                const currentPosition = timelineController.getCurrentPosition();
+                const currentBar = Math.floor(currentPosition / 16);
+                const nextBarStep = (currentBar + 1) * 16;
+                timelineController.seekTo(nextBarStep);
+              } catch (error) {
+                const currentBar = Math.floor(transportPosition.split(':')[0]) || 1;
+                jumpToBar(currentBar + 1);
+              }
+            }}
+            className="p-2 rounded bg-gray-700 hover:bg-gray-600 transition-colors"
+            title="Next Bar"
+          >
+            <SkipForward size={16} className="text-gray-300" />
+          </button>
+        </div>
       </div>
-    </div>
     );
   };
 
@@ -158,24 +184,22 @@ export const PlaybackControls = () => {
     <div className="flex items-center bg-gray-800 rounded-lg p-1">
       <button
         onClick={() => setPlaybackMode(PLAYBACK_MODES.PATTERN)}
-        className={`flex items-center space-x-2 px-3 py-2 rounded-md transition-all ${
-          playbackMode === PLAYBACK_MODES.PATTERN
+        className={`flex items-center space-x-2 px-3 py-2 rounded-md transition-all ${playbackMode === PLAYBACK_MODES.PATTERN
             ? 'bg-blue-600 text-white shadow-md'
             : 'text-gray-400 hover:text-white hover:bg-gray-700'
-        }`}
+          }`}
         title="Pattern Mode - Play active pattern in loop"
       >
         <Radio size={16} />
         <span className="text-sm font-medium">Pattern</span>
       </button>
-      
+
       <button
         onClick={() => setPlaybackMode(PLAYBACK_MODES.SONG)}
-        className={`flex items-center space-x-2 px-3 py-2 rounded-md transition-all ${
-          playbackMode === PLAYBACK_MODES.SONG
+        className={`flex items-center space-x-2 px-3 py-2 rounded-md transition-all ${playbackMode === PLAYBACK_MODES.SONG
             ? 'bg-purple-600 text-white shadow-md'
             : 'text-gray-400 hover:text-white hover:bg-gray-700'
-        }`}
+          }`}
         title="Song Mode - Play arrangement timeline"
       >
         <Film size={16} />
@@ -191,11 +215,10 @@ export const PlaybackControls = () => {
       {/* Loop Enable */}
       <button
         onClick={() => setLoopEnabled(!loopEnabled)}
-        className={`p-2 rounded transition-all ${
-          loopEnabled
+        className={`p-2 rounded transition-all ${loopEnabled
             ? 'bg-yellow-600 text-white shadow-md'
             : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
-        }`}
+          }`}
         title={loopEnabled ? 'Disable Loop' : 'Enable Loop'}
       >
         <Repeat size={16} />
@@ -204,11 +227,10 @@ export const PlaybackControls = () => {
       {/* Auto Loop */}
       <button
         onClick={enableAutoLoop}
-        className={`px-3 py-1 rounded text-xs transition-all ${
-          isAutoLoop
+        className={`px-3 py-1 rounded text-xs transition-all ${isAutoLoop
             ? 'bg-green-600 text-white'
             : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
-        }`}
+          }`}
         title="Auto-calculate loop points based on content"
       >
         AUTO
@@ -222,23 +244,21 @@ export const PlaybackControls = () => {
     <div className="flex items-center bg-gray-800 rounded-lg p-1">
       <button
         onClick={() => setPlaybackRegion('full')}
-        className={`px-2 py-1 rounded text-xs transition-all ${
-          playbackRegion === 'full'
+        className={`px-2 py-1 rounded text-xs transition-all ${playbackRegion === 'full'
             ? 'bg-blue-600 text-white'
             : 'text-gray-400 hover:text-white hover:bg-gray-700'
-        }`}
+          }`}
         title="Play full content"
       >
         FULL
       </button>
-      
+
       <button
         onClick={() => setPlaybackRegion('loop')}
-        className={`px-2 py-1 rounded text-xs transition-all ${
-          playbackRegion === 'loop'
+        className={`px-2 py-1 rounded text-xs transition-all ${playbackRegion === 'loop'
             ? 'bg-yellow-600 text-white'
             : 'text-gray-400 hover:text-white hover:bg-gray-700'
-        }`}
+          }`}
         title="Play loop range only"
       >
         LOOP
@@ -247,13 +267,12 @@ export const PlaybackControls = () => {
       <button
         onClick={() => setPlaybackRegion('selection')}
         disabled={!timelineSelection}
-        className={`px-2 py-1 rounded text-xs transition-all ${
-          playbackRegion === 'selection'
+        className={`px-2 py-1 rounded text-xs transition-all ${playbackRegion === 'selection'
             ? 'bg-purple-600 text-white'
             : timelineSelection
-            ? 'text-gray-400 hover:text-white hover:bg-gray-700'
-            : 'text-gray-600 cursor-not-allowed'
-        }`}
+              ? 'text-gray-400 hover:text-white hover:bg-gray-700'
+              : 'text-gray-600 cursor-not-allowed'
+          }`}
         title="Play timeline selection"
       >
         SEL
@@ -338,9 +357,9 @@ export const PlaybackControls = () => {
 
 // =================== TIMELINE RULER COMPONENT ===================
 
-export const TimelineRuler = ({ 
-  lengthInSteps = 64, 
-  currentStep = 0, 
+export const TimelineRuler = ({
+  lengthInSteps = 64,
+  currentStep = 0,
   onStepClick,
   onSelectionChange,
   className = ""
@@ -349,12 +368,12 @@ export const TimelineRuler = ({
   const [dragStart, setDragStart] = useState(null);
   const [dragEnd, setDragEnd] = useState(null);
 
-  const { 
-    loopStartStep, 
-    loopEndStep, 
+  const {
+    loopStartStep,
+    loopEndStep,
     timelineSelection,
     setTimelineSelection,
-    jumpToStep 
+    jumpToStep
   } = usePlaybackStore();
 
   const stepsPerBar = 16;
@@ -376,7 +395,7 @@ export const TimelineRuler = ({
     if (isDragging && dragStart !== null && dragEnd !== null) {
       const selectionStart = Math.min(dragStart, dragEnd);
       const selectionEnd = Math.max(dragStart, dragEnd);
-      
+
       if (selectionStart !== selectionEnd) {
         setTimelineSelection(selectionStart, selectionEnd);
         onSelectionChange?.(selectionStart, selectionEnd);
@@ -385,7 +404,7 @@ export const TimelineRuler = ({
         onStepClick?.(selectionStart);
       }
     }
-    
+
     setIsDragging(false);
     setDragStart(null);
     setDragEnd(null);
@@ -448,27 +467,24 @@ export const TimelineRuler = ({
         {Array.from({ length: lengthInSteps }, (_, stepIndex) => {
           const isBarStart = stepIndex % stepsPerBar === 0;
           const isBeatStart = stepIndex % 4 === 0;
-          
+
           return (
             <div
               key={stepIndex}
-              className={`flex-1 border-r border-gray-700 last:border-r-0 cursor-pointer hover:bg-gray-700 ${
-                isBarStart ? 'border-r-gray-500' : ''
-              }`}
+              className={`flex-1 border-r border-gray-700 last:border-r-0 cursor-pointer hover:bg-gray-700 ${isBarStart ? 'border-r-gray-500' : ''
+                }`}
               onMouseDown={() => handleMouseDown(stepIndex)}
               onMouseEnter={() => handleMouseMove(stepIndex)}
               title={`Step ${stepIndex + 1}`}
             >
               {/* Step marker */}
-              <div className={`h-full flex items-end ${
-                isBarStart ? 'justify-center' : 
-                isBeatStart ? 'justify-center' : 'justify-end'
-              }`}>
-                <div className={`${
-                  isBarStart ? 'w-0.5 h-6 bg-gray-400' :
-                  isBeatStart ? 'w-0.5 h-4 bg-gray-500' :
-                  'w-0.5 h-2 bg-gray-600'
-                }`} />
+              <div className={`h-full flex items-end ${isBarStart ? 'justify-center' :
+                  isBeatStart ? 'justify-center' : 'justify-end'
+                }`}>
+                <div className={`${isBarStart ? 'w-0.5 h-6 bg-gray-400' :
+                    isBeatStart ? 'w-0.5 h-4 bg-gray-500' :
+                      'w-0.5 h-2 bg-gray-600'
+                  }`} />
               </div>
             </div>
           );

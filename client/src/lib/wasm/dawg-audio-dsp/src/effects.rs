@@ -271,3 +271,620 @@ impl ReverbProcessor {
         self.early_buffer.reset();
     }
 }
+
+// ============================================
+// COMPRESSOR
+// ============================================
+
+#[wasm_bindgen]
+pub struct Compressor {
+    sample_rate: f32,
+    threshold: f32,    // dB (-60 to 0)
+    ratio: f32,        // 1:1 to 20:1
+    attack: f32,       // seconds
+    release: f32,      // seconds
+    knee: f32,         // dB (0 = hard knee)
+    makeup_gain: f32,  // dB
+    
+    // State
+    envelope: f32,
+    gain_reduction: f32,
+}
+
+#[wasm_bindgen]
+impl Compressor {
+    #[wasm_bindgen(constructor)]
+    pub fn new(sample_rate: f32) -> Compressor {
+        Compressor {
+            sample_rate,
+            threshold: -18.0,
+            ratio: 4.0,
+            attack: 0.01,
+            release: 0.1,
+            knee: 6.0,
+            makeup_gain: 0.0,
+            envelope: 0.0,
+            gain_reduction: 1.0,
+        }
+    }
+
+    pub fn set_threshold(&mut self, db: f32) {
+        self.threshold = db.clamp(-60.0, 0.0);
+    }
+
+    pub fn set_ratio(&mut self, ratio: f32) {
+        self.ratio = ratio.clamp(1.0, 20.0);
+    }
+
+    pub fn set_attack(&mut self, seconds: f32) {
+        self.attack = seconds.clamp(0.0001, 1.0);
+    }
+
+    pub fn set_release(&mut self, seconds: f32) {
+        self.release = seconds.clamp(0.01, 5.0);
+    }
+
+    pub fn set_knee(&mut self, db: f32) {
+        self.knee = db.clamp(0.0, 24.0);
+    }
+
+    pub fn set_makeup_gain(&mut self, db: f32) {
+        self.makeup_gain = db.clamp(0.0, 24.0);
+    }
+
+    #[wasm_bindgen]
+    pub fn process(
+        &mut self,
+        input_l: &[f32],
+        input_r: &[f32],
+        output_l: &mut [f32],
+        output_r: &mut [f32],
+    ) {
+        let len = input_l.len().min(input_r.len()).min(output_l.len()).min(output_r.len());
+        
+        let attack_coef = (-1.0 / (self.attack * self.sample_rate)).exp();
+        let release_coef = (-1.0 / (self.release * self.sample_rate)).exp();
+        let threshold_linear = 10.0_f32.powf(self.threshold / 20.0);
+        let makeup_linear = 10.0_f32.powf(self.makeup_gain / 20.0);
+        let knee_half = self.knee / 2.0;
+
+        for i in 0..len {
+            // Peak detection
+            let peak = input_l[i].abs().max(input_r[i].abs());
+            
+            // Envelope follower
+            let coef = if peak > self.envelope { attack_coef } else { release_coef };
+            self.envelope = coef * self.envelope + (1.0 - coef) * peak;
+            
+            // Gain calculation with soft knee
+            let db_over = 20.0 * (self.envelope / threshold_linear).log10();
+            
+            let gain_db = if db_over <= -knee_half {
+                0.0
+            } else if db_over >= knee_half {
+                db_over * (1.0 - 1.0 / self.ratio)
+            } else {
+                // Soft knee
+                let knee_factor = (db_over + knee_half) / self.knee;
+                db_over * (1.0 - 1.0 / self.ratio) * knee_factor * knee_factor
+            };
+            
+            self.gain_reduction = 10.0_f32.powf(-gain_db / 20.0);
+            
+            // Apply gain reduction and makeup
+            let final_gain = self.gain_reduction * makeup_linear;
+            output_l[i] = input_l[i] * final_gain;
+            output_r[i] = input_r[i] * final_gain;
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.envelope = 0.0;
+        self.gain_reduction = 1.0;
+    }
+}
+
+// ============================================
+// SATURATOR (Tape/Tube Saturation)
+// ============================================
+
+#[wasm_bindgen]
+pub struct Saturator {
+    drive: f32,        // 0.0 to 1.0
+    mix: f32,          // dry/wet
+    mode: u32,         // 0=tape, 1=tube, 2=hard
+    output_gain: f32,
+}
+
+#[wasm_bindgen]
+impl Saturator {
+    #[wasm_bindgen(constructor)]
+    pub fn new(_sample_rate: f32) -> Saturator {
+        Saturator {
+            drive: 0.5,
+            mix: 1.0,
+            mode: 0,
+            output_gain: 1.0,
+        }
+    }
+
+    pub fn set_drive(&mut self, val: f32) {
+        self.drive = val.clamp(0.0, 1.0);
+    }
+
+    pub fn set_mix(&mut self, val: f32) {
+        self.mix = val.clamp(0.0, 1.0);
+    }
+
+    pub fn set_mode(&mut self, mode: u32) {
+        self.mode = mode.min(2);
+    }
+
+    pub fn set_output_gain(&mut self, db: f32) {
+        self.output_gain = 10.0_f32.powf(db.clamp(-12.0, 12.0) / 20.0);
+    }
+
+    #[wasm_bindgen]
+    pub fn process(
+        &mut self,
+        input_l: &[f32],
+        input_r: &[f32],
+        output_l: &mut [f32],
+        output_r: &mut [f32],
+    ) {
+        let len = input_l.len().min(input_r.len()).min(output_l.len()).min(output_r.len());
+        let drive_amount = 1.0 + self.drive * 10.0;
+
+        for i in 0..len {
+            let dry_l = input_l[i];
+            let dry_r = input_r[i];
+            
+            let driven_l = dry_l * drive_amount;
+            let driven_r = dry_r * drive_amount;
+            
+            let sat_l = match self.mode {
+                0 => self.tape_saturate(driven_l),
+                1 => self.tube_saturate(driven_l),
+                _ => self.hard_clip(driven_l),
+            };
+            
+            let sat_r = match self.mode {
+                0 => self.tape_saturate(driven_r),
+                1 => self.tube_saturate(driven_r),
+                _ => self.hard_clip(driven_r),
+            };
+            
+            output_l[i] = (dry_l * (1.0 - self.mix) + sat_l * self.mix) * self.output_gain;
+            output_r[i] = (dry_r * (1.0 - self.mix) + sat_r * self.mix) * self.output_gain;
+        }
+    }
+
+    fn tape_saturate(&self, x: f32) -> f32 {
+        // Soft saturation (tanh approximation)
+        let x2 = x * x;
+        x * (27.0 + x2) / (27.0 + 9.0 * x2)
+    }
+
+    fn tube_saturate(&self, x: f32) -> f32 {
+        // Asymmetric tube-style saturation
+        if x >= 0.0 {
+            1.0 - (-x).exp()
+        } else {
+            -1.0 + x.exp()
+        }
+    }
+
+    fn hard_clip(&self, x: f32) -> f32 {
+        x.clamp(-1.0, 1.0)
+    }
+}
+
+// ============================================
+// LIMITER (Brickwall)
+// ============================================
+
+#[wasm_bindgen]
+pub struct Limiter {
+    sample_rate: f32,
+    threshold: f32,
+    release: f32,
+    ceiling: f32,
+    
+    // State
+    envelope: f32,
+}
+
+#[wasm_bindgen]
+impl Limiter {
+    #[wasm_bindgen(constructor)]
+    pub fn new(sample_rate: f32) -> Limiter {
+        Limiter {
+            sample_rate,
+            threshold: -1.0,
+            release: 0.1,
+            ceiling: -0.3,
+            envelope: 0.0,
+        }
+    }
+
+    pub fn set_threshold(&mut self, db: f32) {
+        self.threshold = db.clamp(-20.0, 0.0);
+    }
+
+    pub fn set_release(&mut self, seconds: f32) {
+        self.release = seconds.clamp(0.01, 1.0);
+    }
+
+    pub fn set_ceiling(&mut self, db: f32) {
+        self.ceiling = db.clamp(-6.0, 0.0);
+    }
+
+    #[wasm_bindgen]
+    pub fn process(
+        &mut self,
+        input_l: &[f32],
+        input_r: &[f32],
+        output_l: &mut [f32],
+        output_r: &mut [f32],
+    ) {
+        let len = input_l.len().min(input_r.len()).min(output_l.len()).min(output_r.len());
+        
+        let threshold_lin = 10.0_f32.powf(self.threshold / 20.0);
+        let ceiling_lin = 10.0_f32.powf(self.ceiling / 20.0);
+        let release_coef = (-1.0 / (self.release * self.sample_rate)).exp();
+
+        for i in 0..len {
+            let peak = input_l[i].abs().max(input_r[i].abs());
+            
+            // Instant attack, slow release envelope
+            if peak > self.envelope {
+                self.envelope = peak;
+            } else {
+                self.envelope = release_coef * self.envelope + (1.0 - release_coef) * peak;
+            }
+            
+            // Calculate gain reduction
+            let gain = if self.envelope > threshold_lin {
+                threshold_lin / self.envelope
+            } else {
+                1.0
+            };
+            
+            // Apply gain and ceiling
+            output_l[i] = (input_l[i] * gain).clamp(-ceiling_lin, ceiling_lin);
+            output_r[i] = (input_r[i] * gain).clamp(-ceiling_lin, ceiling_lin);
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.envelope = 0.0;
+    }
+}
+
+// ============================================
+// CLIPPER (Soft/Hard Clip)
+// ============================================
+
+#[wasm_bindgen]
+pub struct Clipper {
+    threshold: f32,
+    softness: f32,  // 0 = hard, 1 = soft
+}
+
+#[wasm_bindgen]
+impl Clipper {
+    #[wasm_bindgen(constructor)]
+    pub fn new(_sample_rate: f32) -> Clipper {
+        Clipper {
+            threshold: 0.8,
+            softness: 0.5,
+        }
+    }
+
+    pub fn set_threshold(&mut self, val: f32) {
+        self.threshold = val.clamp(0.1, 1.0);
+    }
+
+    pub fn set_softness(&mut self, val: f32) {
+        self.softness = val.clamp(0.0, 1.0);
+    }
+
+    #[wasm_bindgen]
+    pub fn process(
+        &mut self,
+        input_l: &[f32],
+        input_r: &[f32],
+        output_l: &mut [f32],
+        output_r: &mut [f32],
+    ) {
+        let len = input_l.len().min(input_r.len()).min(output_l.len()).min(output_r.len());
+
+        for i in 0..len {
+            output_l[i] = self.clip_sample(input_l[i]);
+            output_r[i] = self.clip_sample(input_r[i]);
+        }
+    }
+
+    fn clip_sample(&self, x: f32) -> f32 {
+        let abs_x = x.abs();
+        if abs_x <= self.threshold {
+            x
+        } else {
+            let over = abs_x - self.threshold;
+            let soft_clip = self.threshold + over * (1.0 - self.softness);
+            x.signum() * soft_clip.min(1.0)
+        }
+    }
+}
+
+// ============================================
+// CHORUS
+// ============================================
+
+#[wasm_bindgen]
+pub struct Chorus {
+    sample_rate: f32,
+    delay_l: DelayLine,
+    delay_r: DelayLine,
+    lfo_phase: f32,
+    rate: f32,      // Hz
+    depth: f32,     // 0-1
+    mix: f32,
+    base_delay: f32, // samples
+}
+
+#[wasm_bindgen]
+impl Chorus {
+    #[wasm_bindgen(constructor)]
+    pub fn new(sample_rate: f32) -> Chorus {
+        let max_delay = (sample_rate * 0.05) as usize; // 50ms max
+        Chorus {
+            sample_rate,
+            delay_l: DelayLine::new(max_delay),
+            delay_r: DelayLine::new(max_delay),
+            lfo_phase: 0.0,
+            rate: 1.5,
+            depth: 0.5,
+            mix: 0.5,
+            base_delay: sample_rate * 0.007, // 7ms base
+        }
+    }
+
+    pub fn set_rate(&mut self, hz: f32) {
+        self.rate = hz.clamp(0.1, 10.0);
+    }
+
+    pub fn set_depth(&mut self, val: f32) {
+        self.depth = val.clamp(0.0, 1.0);
+    }
+
+    pub fn set_mix(&mut self, val: f32) {
+        self.mix = val.clamp(0.0, 1.0);
+    }
+
+    #[wasm_bindgen]
+    pub fn process(
+        &mut self,
+        input_l: &[f32],
+        input_r: &[f32],
+        output_l: &mut [f32],
+        output_r: &mut [f32],
+    ) {
+        let len = input_l.len().min(input_r.len()).min(output_l.len()).min(output_r.len());
+        let lfo_inc = 2.0 * std::f32::consts::PI * self.rate / self.sample_rate;
+        let mod_depth = self.base_delay * self.depth;
+
+        for i in 0..len {
+            self.lfo_phase += lfo_inc;
+            if self.lfo_phase > 2.0 * std::f32::consts::PI {
+                self.lfo_phase -= 2.0 * std::f32::consts::PI;
+            }
+            
+            let lfo_l = self.lfo_phase.sin();
+            let lfo_r = (self.lfo_phase + std::f32::consts::PI / 2.0).sin();
+            
+            let delay_l = self.base_delay + lfo_l * mod_depth;
+            let delay_r = self.base_delay + lfo_r * mod_depth;
+            
+            self.delay_l.write(input_l[i]);
+            self.delay_r.write(input_r[i]);
+            
+            let wet_l = self.delay_l.read_interpolated(delay_l);
+            let wet_r = self.delay_r.read_interpolated(delay_r);
+            
+            output_l[i] = input_l[i] * (1.0 - self.mix) + wet_l * self.mix;
+            output_r[i] = input_r[i] * (1.0 - self.mix) + wet_r * self.mix;
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.delay_l.reset();
+        self.delay_r.reset();
+        self.lfo_phase = 0.0;
+    }
+}
+
+// ============================================
+// PHASER
+// ============================================
+
+#[wasm_bindgen]
+pub struct Phaser {
+    sample_rate: f32,
+    lfo_phase: f32,
+    rate: f32,
+    depth: f32,
+    feedback: f32,
+    stages: u32,
+    mix: f32,
+    
+    // Allpass state (6 stages max)
+    ap_state: [[f32; 2]; 6],
+}
+
+#[wasm_bindgen]
+impl Phaser {
+    #[wasm_bindgen(constructor)]
+    pub fn new(sample_rate: f32) -> Phaser {
+        Phaser {
+            sample_rate,
+            lfo_phase: 0.0,
+            rate: 0.5,
+            depth: 0.7,
+            feedback: 0.6,
+            stages: 4,
+            mix: 0.5,
+            ap_state: [[0.0; 2]; 6],
+        }
+    }
+
+    pub fn set_rate(&mut self, hz: f32) {
+        self.rate = hz.clamp(0.01, 5.0);
+    }
+
+    pub fn set_depth(&mut self, val: f32) {
+        self.depth = val.clamp(0.0, 1.0);
+    }
+
+    pub fn set_feedback(&mut self, val: f32) {
+        self.feedback = val.clamp(0.0, 0.95);
+    }
+
+    pub fn set_stages(&mut self, stages: u32) {
+        self.stages = stages.clamp(2, 6);
+    }
+
+    pub fn set_mix(&mut self, val: f32) {
+        self.mix = val.clamp(0.0, 1.0);
+    }
+
+    #[wasm_bindgen]
+    pub fn process(
+        &mut self,
+        input_l: &[f32],
+        input_r: &[f32],
+        output_l: &mut [f32],
+        output_r: &mut [f32],
+    ) {
+        let len = input_l.len().min(input_r.len()).min(output_l.len()).min(output_r.len());
+        let lfo_inc = 2.0 * std::f32::consts::PI * self.rate / self.sample_rate;
+
+        for i in 0..len {
+            self.lfo_phase += lfo_inc;
+            if self.lfo_phase > 2.0 * std::f32::consts::PI {
+                self.lfo_phase -= 2.0 * std::f32::consts::PI;
+            }
+            
+            let lfo = (self.lfo_phase.sin() + 1.0) * 0.5;
+            let freq = 200.0 + lfo * self.depth * 3000.0;
+            let coef = (std::f32::consts::PI * freq / self.sample_rate).tan();
+            let a = (coef - 1.0) / (coef + 1.0);
+            
+            // Process mono sum through allpass chain
+            let mono = (input_l[i] + input_r[i]) * 0.5;
+            let mut phased = mono + self.ap_state[0][1] * self.feedback;
+            
+            for s in 0..self.stages as usize {
+                let ap_out = a * phased + self.ap_state[s][0] - a * self.ap_state[s][1];
+                self.ap_state[s][0] = phased;
+                self.ap_state[s][1] = ap_out;
+                phased = ap_out;
+            }
+            
+            output_l[i] = input_l[i] * (1.0 - self.mix) + phased * self.mix;
+            output_r[i] = input_r[i] * (1.0 - self.mix) + phased * self.mix;
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.ap_state = [[0.0; 2]; 6];
+        self.lfo_phase = 0.0;
+    }
+}
+
+// ============================================
+// STEREO PANNER
+// ============================================
+
+#[wasm_bindgen]
+pub struct StereoPanner {
+    pan: f32,         // -1 to 1
+    width: f32,       // stereo width 0-2
+    lfo_phase: f32,
+    lfo_rate: f32,
+    lfo_depth: f32,
+}
+
+#[wasm_bindgen]
+impl StereoPanner {
+    #[wasm_bindgen(constructor)]
+    pub fn new(sample_rate: f32) -> StereoPanner {
+        StereoPanner {
+            pan: 0.0,
+            width: 1.0,
+            lfo_phase: 0.0,
+            lfo_rate: 0.0,
+            lfo_depth: 0.0,
+        }
+    }
+
+    pub fn set_pan(&mut self, val: f32) {
+        self.pan = val.clamp(-1.0, 1.0);
+    }
+
+    pub fn set_width(&mut self, val: f32) {
+        self.width = val.clamp(0.0, 2.0);
+    }
+
+    pub fn set_lfo_rate(&mut self, hz: f32) {
+        self.lfo_rate = hz.clamp(0.0, 10.0);
+    }
+
+    pub fn set_lfo_depth(&mut self, val: f32) {
+        self.lfo_depth = val.clamp(0.0, 1.0);
+    }
+
+    #[wasm_bindgen]
+    pub fn process(
+        &mut self,
+        input_l: &[f32],
+        input_r: &[f32],
+        output_l: &mut [f32],
+        output_r: &mut [f32],
+        sample_rate: f32,
+    ) {
+        let len = input_l.len().min(input_r.len()).min(output_l.len()).min(output_r.len());
+        let lfo_inc = 2.0 * std::f32::consts::PI * self.lfo_rate / sample_rate;
+
+        for i in 0..len {
+            // LFO modulation
+            let lfo = if self.lfo_rate > 0.0 {
+                self.lfo_phase += lfo_inc;
+                if self.lfo_phase > 2.0 * std::f32::consts::PI {
+                    self.lfo_phase -= 2.0 * std::f32::consts::PI;
+                }
+                self.lfo_phase.sin() * self.lfo_depth
+            } else {
+                0.0
+            };
+            
+            let pan = (self.pan + lfo).clamp(-1.0, 1.0);
+            
+            // Constant power panning
+            let angle = (pan + 1.0) * std::f32::consts::PI / 4.0;
+            let gain_l = angle.cos();
+            let gain_r = angle.sin();
+            
+            // Stereo width (mid/side)
+            let mid = (input_l[i] + input_r[i]) * 0.5;
+            let side = (input_l[i] - input_r[i]) * 0.5 * self.width;
+            
+            let widened_l = mid + side;
+            let widened_r = mid - side;
+            
+            output_l[i] = widened_l * gain_l;
+            output_r[i] = widened_r * gain_r;
+        }
+    }
+}
+

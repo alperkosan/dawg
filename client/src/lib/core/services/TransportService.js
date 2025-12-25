@@ -28,10 +28,11 @@ export class TransportService {
     }
 
     /**
-     * Get playback manager from parent engine
+     * Get playback facade from parent engine
+     * ✅ MIGRATION: Now returns playbackFacade instead of playbackManager
      */
     get playbackManager() {
-        return this.engine.playbackManager;
+        return this.engine.playbackFacade;
     }
 
     /**

@@ -2,6 +2,10 @@
  * CORE SYSTEMS - Barrel Export
  *
  * Central export for all core systems
+ * 
+ * MIGRATION NOTICE:
+ * - NativeAudioEngine is DEPRECATED - use NativeAudioEngineFacade instead
+ * - See /docs/AUDIO_ENGINE_MIGRATION.md for migration guide
  */
 
 // Singletons Base
@@ -33,13 +37,22 @@ export { MeteringService } from './MeteringService.js';
 export { PlaybackEngine } from './PlaybackEngine.js';
 export { PlayheadRenderer } from './PlayheadRenderer.js';
 export { PositionTracker } from './PositionTracker.js';
-export { NativeAudioEngine } from './NativeAudioEngine.js';
 export { NativeTransportSystem } from './NativeTransportSystem.js';
 
-// ✅ NEW: Audio Engine Facade (recommended for new code)
+// =================== AUDIO ENGINE ===================
+
+// ✅ RECOMMENDED: Audio Engine Facade (use this for all new code)
 export { NativeAudioEngineFacade, createAudioEngine } from './NativeAudioEngineFacade.js';
 
-// ✅ NEW: Extracted Services
+// ⚠️ DEPRECATED: Old NativeAudioEngine - use NativeAudioEngineFacade instead
+// Kept for backward compatibility only
+export { NativeAudioEngine } from './NativeAudioEngine.js';
+
+// WASM Audio Engine
+export { wasmAudioEngine, WasmAudioEngine } from './WasmAudioEngine.js';
+
+// =================== EXTRACTED SERVICES ===================
+
 export {
   InstrumentService,
   MixerService,
@@ -48,10 +61,12 @@ export {
   EffectService,
   PerformanceService,
   PlaybackService,
-  SchedulerService
+  SchedulerService,
+  WasmService
 } from './services/index.js';
 
-// ✅ NEW: Command Pattern
+// =================== COMMAND PATTERN ===================
+
 export {
   Command,
   CommandManager,
@@ -59,8 +74,10 @@ export {
   globalCommandManager
 } from './commands/index.js';
 
-// ✅ NEW: Object Pool
+// =================== UTILITIES ===================
+
 export { AudioObjectPool, audioObjectPool } from './utils/AudioObjectPool.js';
 
-// Nodes
+// =================== NODES ===================
+
 export { NativeSamplerNode } from './nodes/NativeSamplerNode.js';

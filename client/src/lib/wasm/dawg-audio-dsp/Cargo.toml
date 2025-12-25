@@ -17,9 +17,14 @@ features = ["console"]
 
 [profile.release]
 opt-level = 3            # Maximum optimization
-lto = true               # Link-time optimization
+lto = true               # Link-time optimization  
 codegen-units = 1        # Better optimization (slower compile)
 # panic = 'abort' removed to allow panic bucket
 
 [profile.release.package."*"]
 opt-level = 3
+
+# SIMD Feature Flags
+[features]
+default = ["simd"]
+simd = []

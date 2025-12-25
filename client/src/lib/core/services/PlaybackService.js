@@ -11,6 +11,7 @@
  */
 
 import { logger, NAMESPACES } from '../../utils/debugLogger.js';
+import { idleDetector } from '../../utils/IdleDetector.js';
 
 export class PlaybackService {
     /**
@@ -22,13 +23,15 @@ export class PlaybackService {
         // Playback state
         this.isPlaying = false;
         this.isPaused = false;
-        this.currentPosition = 0;
+        // ✅ CRITICAL FIX: Position now reads from Transport (Single Source of Truth)
+        this._currentPosition = 0; // Backing field for fallback only
         this.startTime = 0;
 
         // Mode
         this.playbackMode = 'pattern'; // 'pattern' | 'song'
 
-        // Loop settings
+        // ✅ CRITICAL FIX: Loop settings now read from Transport (Single Source of Truth)
+        // Keeping backing fields for fallback only
         this.loopSettings = {
             start: 0,
             end: 64,
@@ -46,6 +49,29 @@ export class PlaybackService {
 
         // Event listeners
         this._listeners = new Map();
+    }
+
+    // =================== SINGLE SOURCE OF TRUTH GETTERS ===================
+
+    /**
+     * Get current playback position in steps
+     * @returns {number} Current position (derived from Transport)
+     */
+    get currentPosition() {
+        // Read from Transport (single source of truth)
+        return this.transport?.getCurrentStep() || this._currentPosition || 0;
+    }
+
+    /**
+     * Set current position (updates Transport)
+     * @param {number} value - Position in steps
+     */
+    set currentPosition(value) {
+        this._currentPosition = value;
+        // Also update Transport if available
+        if (this.transport?.setPosition) {
+            this.transport.setPosition(value);
+        }
     }
 
     /**
@@ -82,6 +108,9 @@ export class PlaybackService {
             this.startTime = this.audioContext.currentTime;
             this.isPlaying = true;
             this.isPaused = false;
+
+            // ✅ CRITICAL: Prevent idle mode during playback
+            idleDetector.setPlaying(true);
 
             // Start transport
             if (this.transport) {
@@ -124,6 +153,9 @@ export class PlaybackService {
             this.isPlaying = false;
             this.isPaused = false;
             this.currentPosition = 0;
+
+            // ✅ CRITICAL: Re-enable idle detection
+            idleDetector.setPlaying(false);
 
             // Stop position tracking
             this._stopPositionTracking();
@@ -181,13 +213,17 @@ export class PlaybackService {
         }
 
         try {
-            // Resume transport
+            // ✅ FIX: NativeTransportSystem doesn't have resume(), use start() with current position
+            // Resume is just starting from the paused position
             if (this.transport) {
-                this.transport.resume();
+                this.transport.start(this.currentPosition);
             }
 
             this.isPlaying = true;
             this.isPaused = false;
+
+            // Restart position tracking
+            this._startPositionTracking();
 
             // Emit event
             this._emit('resume', { position: this.currentPosition });

@@ -30,7 +30,8 @@
 // Core systems
 import { NativeTransportSystem } from './NativeTransportSystem.js';
 import { ImprovedWorkletManager } from '../audio/ImprovedWorkletManager.js';
-import { PlaybackManager } from './PlaybackManager.js';
+// ✅ MIGRATION: Using PlaybackFacade instead of monolithic PlaybackManager
+import { PlaybackFacade } from './PlaybackFacade.js';
 
 // Services (extracted from this class)
 import { InstrumentService } from './services/InstrumentService.js';
@@ -40,6 +41,8 @@ import { WorkletService } from './services/WorkletService.js';
 import { EffectService } from './services/EffectService.js';
 import { PerformanceService } from './services/PerformanceService.js';
 import { WasmService } from './services/WasmService.js';
+import { PlaybackService } from './services/PlaybackService.js';
+import { SchedulerService } from './services/SchedulerService.js';
 
 // WASM components
 import { wasmAudioEngine } from './WasmAudioEngine.js';
@@ -66,7 +69,8 @@ export class NativeAudioEngineFacade {
         // =================== CORE SYSTEMS ===================
         this.transport = null;
         this.workletManager = null;
-        this.playbackManager = null;
+        // ✅ MIGRATION: PlaybackFacade replaces PlaybackManager
+        this.playbackFacade = null;
         this.latencyCompensator = null;
 
         // =================== WASM MIXER ===================
@@ -83,6 +87,8 @@ export class NativeAudioEngineFacade {
         this._effectService = null;
         this._performanceService = null;
         this._wasmService = null;
+        this._playbackService = null;
+        this._schedulerService = null;
 
         // =================== LEGACY COMPATIBILITY ===================
         // These Maps are accessed directly by some components
@@ -189,6 +195,20 @@ export class NativeAudioEngineFacade {
         return this._wasmService;
     }
 
+    get playbackService() {
+        if (!this._playbackService) {
+            this._playbackService = new PlaybackService(this);
+        }
+        return this._playbackService;
+    }
+
+    get schedulerService() {
+        if (!this._schedulerService) {
+            this._schedulerService = new SchedulerService(this);
+        }
+        return this._schedulerService;
+    }
+
     // =================== INITIALIZATION ===================
 
     async initialize() {
@@ -228,9 +248,11 @@ export class NativeAudioEngineFacade {
                 await this._initializeWasmMixer();
             }
 
-            // Initialize PlaybackManager (will be migrated to PlaybackService later)
-            this.playbackManager = new PlaybackManager(this);
-            this._setupPlaybackManagerCallbacks();
+            // ✅ MIGRATION: Initialize PlaybackFacade instead of monolithic PlaybackManager
+            // This delegates to PlaybackService (503 lines) + SchedulerService (387 lines)
+            // Replaces PlaybackManager (3,282 lines)
+            this.playbackFacade = new PlaybackFacade(this);
+            this._setupPlaybackFacadeCallbacks();
 
             // Start performance monitoring
             this.performanceService.start();
@@ -324,8 +346,10 @@ export class NativeAudioEngineFacade {
         });
 
         this.transport.on('tick', (data) => {
-            if (this.playbackManager?.positionTracker) {
-                const position = this.playbackManager.positionTracker.getDisplayPosition();
+            // ✅ MIGRATION: Use PlaybackFacade for position tracking
+            const playbackService = this.playbackFacade?.getPlaybackService();
+            if (playbackService?.positionTracker) {
+                const position = playbackService.positionTracker.getDisplayPosition();
                 this.setTransportPosition(position.display, position.stepFloat);
             } else {
                 const currentStep = data.step || this.transport.ticksToSteps(data.position);
@@ -334,12 +358,13 @@ export class NativeAudioEngineFacade {
         });
     }
 
-    _setupPlaybackManagerCallbacks() {
-        this.playbackManager.on('positionUpdate', (data) => {
+    _setupPlaybackFacadeCallbacks() {
+        // ✅ MIGRATION: Setup callbacks for PlaybackFacade
+        this.playbackFacade.on('positionUpdate', (data) => {
             this.setTransportPosition(data.formatted, data.step);
         });
 
-        this.playbackManager.on('patternChange', (data) => {
+        this.playbackFacade.on('patternChange', (data) => {
             this.onPatternChange(data);
         });
     }
@@ -350,75 +375,92 @@ export class NativeAudioEngineFacade {
         }
     }
 
-    // =================== PLAYBACK CONTROL (Delegated) ===================
+    // =================== PLAYBACK CONTROL (Delegated to PlaybackFacade) ===================
 
     play(startStep = 0) {
         if (!this.isInitialized) return this;
-        return this.playbackManager.play(startStep);
+        // ✅ MIGRATION: Delegate to PlaybackFacade
+        return this.playbackFacade.play(startStep);
     }
 
     stop() {
         if (!this.isInitialized) return this;
-        return this.playbackManager.stop();
+        // ✅ MIGRATION: Delegate to PlaybackFacade
+        return this.playbackFacade.stop();
     }
 
     pause() {
         if (!this.isInitialized) return this;
-        return this.playbackManager.pause();
+        // ✅ MIGRATION: Delegate to PlaybackFacade
+        return this.playbackFacade.pause();
     }
 
     resume() {
         if (!this.isInitialized) return this;
-        return this.playbackManager.resume();
+        // ✅ MIGRATION: Delegate to PlaybackFacade
+        return this.playbackFacade.resume();
     }
 
     setBPM(bpm) {
         if (this.transport) this.transport.setBPM(bpm);
-        if (this.playbackManager) this.playbackManager._updateLoopSettings();
+        // ✅ MIGRATION: PlaybackFacade handles loop settings updates
+        if (this.playbackFacade) {
+            const playbackService = this.playbackFacade.getPlaybackService();
+            playbackService?._updateLoopSettings?.();
+        }
         this.instrumentService.updateBPM(bpm);
         return this;
     }
 
     setPlaybackMode(mode) {
-        this.playbackManager?.setPlaybackMode(mode);
+        // ✅ MIGRATION: Delegate to PlaybackFacade
+        this.playbackFacade?.setPlaybackMode(mode);
         return this;
     }
 
     getPlaybackMode() {
-        return this.playbackManager?.getPlaybackMode() || 'pattern';
+        // ✅ MIGRATION: Delegate to PlaybackFacade
+        return this.playbackFacade?.getPlaybackMode() || 'pattern';
     }
 
     setLoopPoints(startStep, endStep) {
-        this.playbackManager?.setLoopPoints(startStep, endStep);
+        // ✅ MIGRATION: Delegate to PlaybackFacade
+        this.playbackFacade?.setLoopPoints(startStep, endStep);
         return this;
     }
 
     setLoopEnabled(enabled) {
-        this.playbackManager?.setLoopEnabled(enabled);
+        // ✅ MIGRATION: Delegate to PlaybackFacade
+        this.playbackFacade?.setLoopEnabled(enabled);
         return this;
     }
 
     enableAutoLoop() {
-        this.playbackManager?.enableAutoLoop();
+        // ✅ MIGRATION: Delegate to PlaybackFacade
+        this.playbackFacade?.enableAutoLoop();
         return this;
     }
 
     jumpToStep(step) {
-        this.playbackManager?.jumpToStep(step);
+        // ✅ MIGRATION: Delegate to PlaybackFacade
+        this.playbackFacade?.jumpToStep(step);
         return this;
     }
 
     jumpToBar(bar) {
-        this.playbackManager?.jumpToBar(bar);
+        // ✅ MIGRATION: Delegate to PlaybackFacade
+        this.playbackFacade?.jumpToBar(bar);
         return this;
     }
 
     getCurrentPosition() {
-        return this.playbackManager?.getCurrentPosition() || 0;
+        // ✅ MIGRATION: Delegate to PlaybackFacade
+        return this.playbackFacade?.getCurrentPosition() || 0;
     }
 
     getLoopInfo() {
-        return this.playbackManager?.getLoopInfo() || {
+        // ✅ MIGRATION: Delegate to PlaybackFacade
+        return this.playbackFacade?.getLoopInfo() || {
             start: 0, end: 64, length: 64, enabled: true, auto: true
         };
     }
@@ -517,12 +559,14 @@ export class NativeAudioEngineFacade {
     setActivePattern(patternId) {
         this.activePatternId = patternId;
 
-        if (this.playbackManager) {
-            this.playbackManager.activePatternId = patternId;
-            this.playbackManager._updateLoopSettings();
+        // ✅ MIGRATION: Use PlaybackFacade
+        if (this.playbackFacade) {
+            this.playbackFacade.activePatternId = patternId;
+            const playbackService = this.playbackFacade.getPlaybackService();
+            playbackService?._updateLoopSettings?.();
         }
 
-        if (this.playbackManager?.isPlaying) {
+        if (this.playbackFacade?.isPlaying) {
             this.schedulePattern();
         }
 
@@ -530,7 +574,11 @@ export class NativeAudioEngineFacade {
     }
 
     schedulePattern(patternData = null) {
-        this.playbackManager?._scheduleContent(null, 'pattern-schedule', false);
+        // ✅ MIGRATION: Delegate to SchedulerService via PlaybackFacade
+        if (this.playbackFacade) {
+            const schedulerService = this.playbackFacade.getSchedulerService();
+            schedulerService?._scheduleContent?.(null, 'pattern-schedule', false);
+        }
     }
 
     // =================== PERFORMANCE & STATS ===================
@@ -579,8 +627,9 @@ export class NativeAudioEngineFacade {
         this.performanceService.dispose();
         mixerInsertManager.stopGlobalMonitor();
 
-        // Stop playback
-        this.playbackManager?.stop();
+        // ✅ MIGRATION: Stop playback via facade
+        this.playbackFacade?.stop();
+        this.playbackFacade?.dispose();
 
         // Dispose transport
         this.transport?.dispose();

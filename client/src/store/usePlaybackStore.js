@@ -203,13 +203,13 @@ export const usePlaybackStore = create((set, get) => ({
     return _controller?.getCurrentPosition() || 0;
   },
 
-  setTransportPosition: async (position, step) => {
+  setTransportPosition: (position, step) => {
+    // ✅ CRITICAL FIX: Only update UI state, do NOT call jumpToStep
+    // Previously this was calling jumpToStep which caused a circular callback loop:
+    // tick → setTransportPosition → jumpToStep → loop restart → position=0 → ...
     set({ transportPosition: position, transportStep: step });
-    const controller = await get()._initController();
-    if (controller?.playbackManager) {
-      controller.playbackManager.jumpToStep(step);
-    }
   },
+
 
   setPlaybackState: (state) => {
     // Silently handled by PlaybackController

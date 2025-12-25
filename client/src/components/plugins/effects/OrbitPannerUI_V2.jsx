@@ -28,6 +28,7 @@ import { useRenderer } from '@/services/CanvasRenderManager';
 import { useAudioPlugin } from '@/hooks/useAudioPlugin';
 import { useMixerStore } from '@/store/useMixerStore';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
+import { selectBpm } from '@/store/selectors/playbackSelectors';
 
 // ============================================================================
 // ORBIT TRAIL VISUALIZER
@@ -198,7 +199,8 @@ const OrbitPannerUI_V2 = ({ trackId, effect, effectNode, definition }) => {
   } = effect.settings || {};
 
   // Get current BPM from playback store
-  const { bpm: currentBpm } = usePlaybackStore();
+  // ✅ PERFORMANCE FIX: Use selectBpm instead of entire store
+  const currentBpm = usePlaybackStore(selectBpm);
 
   const [localRate, setLocalRate] = useState(rate);
   const [localDepth, setLocalDepth] = useState(depth);
@@ -312,7 +314,7 @@ const OrbitPannerUI_V2 = ({ trackId, effect, effectNode, definition }) => {
                   <span className="text-[10px] text-white/70">ENABLED</span>
                 </label>
               </div>
-              
+
               {localTempoSync > 0.5 && (
                 <ModeSelector
                   modes={[
@@ -337,14 +339,14 @@ const OrbitPannerUI_V2 = ({ trackId, effect, effectNode, definition }) => {
 
             <div className="bg-gradient-to-br from-black/50 to-[#1e1b4b]/30 rounded-xl p-6 border border-[#64c8ff]/20">
               <div className="grid grid-cols-3 gap-6">
-                <Knob 
-                  label="RATE" 
-                  value={localTempoSync > 0.5 ? 0 : localRate} 
+                <Knob
+                  label="RATE"
+                  value={localTempoSync > 0.5 ? 0 : localRate}
                   onChange={(v) => handleParamChange('rate', v)}
-                  min={0.1} 
-                  max={10} 
-                  defaultValue={1.0} 
-                  sizeVariant="large" 
+                  min={0.1}
+                  max={10}
+                  defaultValue={1.0}
+                  sizeVariant="large"
                   category="cosmic-modulation"
                   valueFormatter={(v) => localTempoSync > 0.5 ? 'SYNC' : `${v.toFixed(2)} Hz`}
                   disabled={localTempoSync > 0.5}

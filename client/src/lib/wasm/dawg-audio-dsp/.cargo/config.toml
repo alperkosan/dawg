@@ -1,0 +1,3 @@
+# Enable WASM SIMD (128-bit) for audio processing
+[target.wasm32-unknown-unknown]
+rustflags = ["-C", "target-feature=+simd128"]

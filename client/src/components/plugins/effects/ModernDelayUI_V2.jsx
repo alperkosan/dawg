@@ -20,6 +20,7 @@ import { useParameterBatcher } from '@/services/ParameterBatcher';
 import { useRenderer } from '@/services/CanvasRenderManager';
 import { useMixerStore } from '@/store/useMixerStore';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
+import { selectBpm } from '@/store/selectors/playbackSelectors';
 
 // ============================================================================
 // PING-PONG VISUALIZER - Using CanvasRenderManager
@@ -211,19 +212,22 @@ const ModernDelayUI_V2 = ({ trackId, effect, effectNode, onChange, definition })
   const [localWobble, setLocalWobble] = useState(wobble);
   const [localFlutter, setLocalFlutter] = useState(flutter);
   const [localWidth, setLocalWidth] = useState(width);
-  
+
   // ✅ NEW: Delay model, tempo sync, and note division state
   const [localDelayModel, setLocalDelayModel] = useState(effect.settings.delayModel !== undefined ? effect.settings.delayModel : 0);
   const [localTempoSync, setLocalTempoSync] = useState(effect.settings.tempoSync !== undefined ? effect.settings.tempoSync : 0);
   const [localNoteDivision, setLocalNoteDivision] = useState(effect.settings.noteDivision !== undefined ? effect.settings.noteDivision : 3);
-  
+
   // Get BPM from playback store
-  const bpm = usePlaybackStore(state => state.bpm || 120);
+  // ✅ PERFORMANCE FIX: Use selectBpm instead of entire store
+  // Before: Re-renders 10x/sec (currentStep updates) even though only needs BPM
+  // After: Re-renders ONLY when BPM changes (rare)
+  const bpm = usePlaybackStore(selectBpm);
 
   const categoryColors = useMemo(() => getCategoryColors('spacetime-chamber'), []);
   const { setParam } = useParameterBatcher(effectNode);
   const { handleMixerEffectChange } = useMixerStore.getState();
-  
+
   // ✅ NEW: Update BPM parameter when BPM changes
   useEffect(() => {
     if (localTempoSync > 0.5) {
@@ -304,7 +308,7 @@ const ModernDelayUI_V2 = ({ trackId, effect, effectNode, onChange, definition })
           {/* Time & Feedback Controls */}
           <div className="flex-1 bg-gradient-to-br from-black/50 to-[#2d1854]/30 rounded-xl p-3 border border-[#A855F7]/20 flex flex-col justify-between min-w-0">
             <div className="text-[11px] font-bold text-[#22D3EE]/70 mb-2 uppercase tracking-wider truncate">Time & Space</div>
-            
+
             {/* ✅ NEW: Delay Model Selector */}
             <div className="mb-3 bg-black/30 rounded-lg p-2 border border-[#A855F7]/20">
               <div className="text-[9px] text-white/60 mb-1 text-center">DELAY MODEL</div>
@@ -320,7 +324,7 @@ const ModernDelayUI_V2 = ({ trackId, effect, effectNode, onChange, definition })
                 compact={true}
               />
             </div>
-            
+
             {/* ✅ NEW: Tempo Sync Toggle & Note Division */}
             <div className="mb-3 bg-black/30 rounded-lg p-2 border border-[#A855F7]/20">
               <div className="flex items-center justify-between mb-2">

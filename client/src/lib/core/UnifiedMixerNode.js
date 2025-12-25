@@ -187,6 +187,37 @@ export class UnifiedMixerNode {
     }
 
     /**
+     * Get a channel input node for routing
+     * 
+     * For the UnifiedMixerNode, we return a small wrapper that can be connected to.
+     * MixerService uses this to route instruments to channels.
+     * 
+     * @param {number} channelIdx - Channel index (0-31)
+     * @returns {Object|null} Channel input info or null if invalid
+     */
+    getChannelInput(channelIdx) {
+        if (channelIdx < 0 || channelIdx >= this.numChannels) {
+            logger.error(`❌ Invalid channel index: ${channelIdx}`);
+            return null;
+        }
+
+        if (!this.isInitialized) {
+            logger.warn('⚠️ UnifiedMixerNode not initialized yet, returning proxy');
+        }
+
+        // Return channel info object that MixerService can use
+        return {
+            channelIdx,
+            mixer: this,
+            connect: (sourceNode) => {
+                return this.connectToChannel(sourceNode, channelIdx);
+            },
+            disconnect: () => {
+                return this.disconnectChannel(channelIdx);
+            }
+        };
+    }
+
     /**
      * Connect an audio source to a specific channel
      *

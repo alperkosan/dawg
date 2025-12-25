@@ -2,6 +2,7 @@ mod graph;
 mod synth;
 mod filters;
 mod sampler;
+mod simd_ops;
 pub mod envelope;
 pub mod effects;
 pub use graph::AudioGraph;
@@ -381,43 +382,76 @@ impl WasmAudioProcessor {
             pan_gain_r = ((p + 1.0) * std::f32::consts::PI / 4.0).sin();
         }
 
-        for i in 0..len {
-            let mut sample_l = input_l[i];
-            let mut sample_r = input_r[i];
-
-            // EQ processing
-            if eq_active {
-                sample_l = self.eq_l.process(sample_l);
-                sample_r = self.eq_r.process(sample_r);
+        // SIMD fast path: when no EQ/Comp, no pan, no mono - just apply gain
+        let can_use_simd = !eq_active && !comp_active && pan == 0.0 && !mono;
+        
+        if can_use_simd {
+            // Process 4 samples at a time using SIMD
+            let simd_len = (len / 4) * 4;
+            
+            for i in (0..simd_len).step_by(4) {
+                let chunk_l = [input_l[i], input_l[i+1], input_l[i+2], input_l[i+3]];
+                let chunk_r = [input_r[i], input_r[i+1], input_r[i+2], input_r[i+3]];
+                
+                let result_l = crate::simd_ops::simd_gain_4(&chunk_l, gain);
+                let result_r = crate::simd_ops::simd_gain_4(&chunk_r, gain);
+                
+                output_l[i] = result_l[0];
+                output_l[i+1] = result_l[1];
+                output_l[i+2] = result_l[2];
+                output_l[i+3] = result_l[3];
+                
+                output_r[i] = result_r[0];
+                output_r[i+1] = result_r[1];
+                output_r[i+2] = result_r[2];
+                output_r[i+3] = result_r[3];
             }
-
-            // Compression
-            if comp_active {
-                let comp_gain = self.process_compression(sample_l, sample_r, threshold, ratio);
-                sample_l *= comp_gain;
-                sample_r *= comp_gain;
+            
+            // Handle remaining samples (scalar)
+            for i in simd_len..len {
+                output_l[i] = input_l[i] * gain;
+                output_r[i] = input_r[i] * gain;
             }
+        } else {
+            // Scalar path with full processing
+            for i in 0..len {
+                let mut sample_l = input_l[i];
+                let mut sample_r = input_r[i];
 
-            // Gain
-            sample_l *= gain;
-            sample_r *= gain;
+                // EQ processing
+                if eq_active {
+                    sample_l = self.eq_l.process(sample_l);
+                    sample_r = self.eq_r.process(sample_r);
+                }
 
-            // Pan
-            if pan != 0.0 {
-                let mono_sum = (sample_l + sample_r) * 0.5;
-                sample_l = mono_sum * pan_gain_l;
-                sample_r = mono_sum * pan_gain_r;
+                // Compression
+                if comp_active {
+                    let comp_gain = self.process_compression(sample_l, sample_r, threshold, ratio);
+                    sample_l *= comp_gain;
+                    sample_r *= comp_gain;
+                }
+
+                // Gain
+                sample_l *= gain;
+                sample_r *= gain;
+
+                // Pan
+                if pan != 0.0 {
+                    let mono_sum = (sample_l + sample_r) * 0.5;
+                    sample_l = mono_sum * pan_gain_l;
+                    sample_r = mono_sum * pan_gain_r;
+                }
+
+                // Mono
+                if mono {
+                    let mono_sum = (sample_l + sample_r) * 0.5;
+                    sample_l = mono_sum;
+                    sample_r = mono_sum;
+                }
+
+                output_l[i] = sample_l;
+                output_r[i] = sample_r;
             }
-
-            // Mono
-            if mono {
-                let mono_sum = (sample_l + sample_r) * 0.5;
-                sample_l = mono_sum;
-                sample_r = mono_sum;
-            }
-
-            output_l[i] = sample_l;
-            output_r[i] = sample_r;
         }
     }
 

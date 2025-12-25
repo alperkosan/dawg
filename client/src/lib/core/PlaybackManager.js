@@ -1,6 +1,34 @@
 // lib/core/PlaybackManager.js
 // DAWG - Enhanced Playback System with Song/Pattern Modes
 
+/**
+ * @deprecated This class is being DEPRECATED. Use PlaybackFacade instead.
+ * 
+ * Migration Progress:
+ * - ✅ PlaybackFacade created (delegates to PlaybackService + SchedulerService)
+ * - ✅ NativeAudioEngineFacade migrated to use PlaybackFacade
+ * - ⚠️ PlaybackManager still exists for backward compatibility
+ * - 🎯 FUTURE: Full migration to services (PlaybackService, SchedulerService)
+ * 
+ * This 3,282-line god class will be replaced by:
+ * - PlaybackFacade.js (287 lines) - Thin orchestrator
+ * - PlaybackService.js (503 lines) - Play/stop/pause/resume/loop logic
+ * - SchedulerService.js (387 lines) - Note/automation scheduling
+ * 
+ * Total reduction: 3,282 → 1,177 lines (64% reduction)
+ * 
+ * Migration Guide:
+ * ```javascript
+ * // OLD (deprecated):
+ * const playbackManager = new PlaybackManager(audioEngine);
+ * playbackManager.play();
+ * 
+ * // ✅ NEW:
+ * const playbackFacade = new PlaybackFacade(audioEngine);
+ * playbackFacade.play();
+ * ```
+ */
+
 import { NativeTimeUtils } from '../utils/NativeTimeUtils.js';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
 import { useArrangementStore } from '@/store/useArrangementStore';
@@ -148,13 +176,18 @@ export class PlaybackManager {
         this.currentMode = 'pattern'; // 'pattern' | 'song'
         this.isPlaying = false;
         this.isPaused = false;
-        this.currentPosition = 0; // in steps
+
+        // ✅ PHASE 1: Position now reads from Transport (Single Source of Truth)
+        // Keeping private backing field for transition period
+        this._currentPosition = 0; // Will be removed in Phase 3
+
         this._isLoopRestarting = false; // ✅ FIX: Track loop restart state to prevent send/unsend during restart
 
-        // Loop settings
+        // ✅ PHASE 1: Loop settings now read from Transport (Single Source of Truth)
+        // Keeping private backing fields for transition period
         this.loopEnabled = true;
-        this.loopStart = 0; // in steps
-        this.loopEnd = 64; // in steps
+        this._loopStart = 0; // Will be removed in Phase 3
+        this._loopEnd = 64; // Will be removed in Phase 3
         this.isAutoLoop = true; // Auto calculate loop points
         // ✅ REMOVED: Pre-roll system removed for DAW-standard loop behavior
         // Pre-roll caused timing inconsistencies and conflicts with loop restart
@@ -179,6 +212,42 @@ export class PlaybackManager {
         // ✅ FIX 1: Initialize active notes tracking (will be cleared on stop/loop restart)
         // Note: activeNotesByPitch is now managed by NoteScheduler instance-level
 
+    }
+
+    // =================== SINGLE SOURCE OF TRUTH GETTERS ===================
+    // ✅ PHASE 1: Position and loop state now read from Transport
+
+    /**
+     * Get current playback position in steps
+     * @returns {number} Current position (derived from Transport)
+     */
+    get currentPosition() {
+        // Read from Transport (single source of truth)
+        return this.transport?.getCurrentStep() || this._currentPosition || 0;
+    }
+
+    /**
+     * Get loop start position in steps
+     * @returns {number} Loop start (derived from Transport)
+     */
+    get loopStart() {
+        // Read from Transport (single source of truth)
+        if (this.transport?.loopStartTick !== undefined) {
+            return this.transport.ticksToSteps(this.transport.loopStartTick);
+        }
+        return this._loopStart || 0;
+    }
+
+    /**
+     * Get loop end position in steps
+     * @returns {number} Loop end (derived from Transport)
+     */
+    get loopEnd() {
+        // Read from Transport (single source of truth)
+        if (this.transport?.loopEndTick !== undefined) {
+            return this.transport.ticksToSteps(this.transport.loopEndTick);
+        }
+        return this._loopEnd || 64;
     }
 
     /**
@@ -214,7 +283,7 @@ export class PlaybackManager {
 
             // ✅ FIX: Reset position tracker and emit accurate position
             this.positionTracker.clearCache();
-            this.currentPosition = 0;
+            // ✅ PHASE 2: Position reset handled by Transport (no direct write)
 
             const position = this.positionTracker.jumpToStep(0);
             const positionData = {
@@ -233,9 +302,9 @@ export class PlaybackManager {
             // ✅ PHASE 4: Stop all real-time automations on pause
             this.automationScheduler.stopAllRealtimeAutomations();
 
-            // ✅ FIX: Get accurate position from PositionTracker and preserve it
+            // ✅ FIX: Get accurate position from PositionTracker
+            // ✅ PHASE 2: Position is now read-only from Transport (no write needed)
             const position = this.positionTracker.getDisplayPosition();
-            this.currentPosition = position.stepFloat;
 
             const positionData = {
                 step: position.stepFloat,
@@ -566,9 +635,34 @@ export class PlaybackManager {
             return; // Silent skip - not playing
         }
 
+        // ✅ DEBOUNCE: Prevent rapid successive loop restart calls
+        // This prevents scheduling thrashing when transport/WASM sync conflicts occur
+        const now = performance.now();
+
+        // ✅ DIAGNOSTIC: Track loop restart frequency
+        if (!this._loopRestartCount) this._loopRestartCount = 0;
+        this._loopRestartCount++;
+
+        if (this._lastLoopRestartTime && (now - this._lastLoopRestartTime) < 100) {
+            console.warn(`⏭️ [LOOP RESTART] Debounced (#${this._loopRestartCount}) - ${(now - this._lastLoopRestartTime).toFixed(1)}ms since last restart`);
+            return;
+        }
+
+        // ✅ DIAGNOSTIC: Log successful loop restart
+        console.log(`🔄 [LOOP RESTART] Executing (#${this._loopRestartCount}) - ${this._lastLoopRestartTime ? (now - this._lastLoopRestartTime).toFixed(1) + 'ms' : 'first'} since last`, {
+            currentPosition: this.currentPosition,
+            loopStart: this.loopStart,
+            loopEnd: this.loopEnd,
+            transportTick: this.transport?.currentTick,
+            transportLoopEnd: this.transport?.loopEndTick
+        });
+
+        this._lastLoopRestartTime = now;
+
         // ✅ CRITICAL FIX: Mark loop restart in progress to prevent send/unsend operations
         // This prevents vaSynth notes from getting stuck when send/unsend happens during loop restart
         this._isLoopRestarting = true;
+
 
         // ✅ Pre-roll system removed for DAW-standard loop behavior
 
@@ -582,8 +676,10 @@ export class PlaybackManager {
         // Note: We'll update active notes tracking after stopping notes outside loop
         // The NoteScheduler will handle cleanup of stopped notes automatically
 
-        // ✅ STEP 2: Reset position to 0 (beginning)
-        this.currentPosition = 0;
+        // ✅ STEP 2: Position reset handled by Transport
+        // Transport already reset currentTick to loopStartTick in advanceToNextTick()
+        // Our getter will automatically reflect the change
+        // ✅ PHASE 2: Removed direct write - Transport is the source of truth
 
         // ✅ CRITICAL FIX: Do NOT call transport.setPosition(0) on loop restart!
         // NativeTransportSystem already resets currentTick = 0 in advanceToNextTick()
@@ -932,8 +1028,8 @@ export class PlaybackManager {
         }
 
         try {
-            // ✅ FIX: Sync current position before pausing (keep current position, don't reset)
-            this.currentPosition = this.transport.ticksToSteps(this.transport.currentTick);
+            // ✅ FIX: Position is preserved automatically via Transport
+            // ✅ PHASE 2: No need to sync - getter reads from Transport
 
             this.transport.pause();
 
@@ -1037,7 +1133,7 @@ export class PlaybackManager {
             idleDetector.setPlaying(false);
 
             // ✅ DAW STANDARD: Always reset to 0 on stop (expected behavior)
-            this.currentPosition = 0;
+            // ✅ PHASE 2: Position reset handled by Transport
             if (this.transport.setPosition) {
                 this.transport.setPosition(0);
             }
@@ -1061,9 +1157,8 @@ export class PlaybackManager {
         const targetStep = Math.max(0, Math.min(step, this.loopEnd - 1));
 
 
-        // ALWAYS set position immediately
-        this.currentPosition = targetStep;
-
+        // ✅ PHASE 2: Position managed by Transport (no direct write)
+        // Transport will update currentTick, our getter will reflect it
         if (this.transport.setPosition) {
             this.transport.setPosition(targetStep);
         }
@@ -1298,17 +1393,10 @@ export class PlaybackManager {
         const isNoteAdded = reason === 'note-added';
         const shouldPreservePosition = isResume || isNoteModified || isNoteAdded;
 
-        // Reset position during loop restart (not during resume/note modifications)
-        if (this.loopEnabled && !shouldPreservePosition) {
-            if (this.currentPosition >= this.loopEnd || (this._isLoopRestarting && this.currentPosition !== 0)) {
-                this.currentPosition = 0;
-            }
-        } else if (shouldPreservePosition && this.loopEnabled && this.currentPosition >= this.loopEnd) {
-            // Wrap position within loop bounds
-            const loopLength = this.loopEnd - this.loopStart;
-            const relativePosition = ((this.currentPosition - this.loopStart) % loopLength + loopLength) % loopLength;
-            this.currentPosition = this.loopStart + relativePosition;
-        }
+        // ✅ PHASE 2: Position management moved to Transport
+        // Transport handles loop wrapping in advanceToNextTick()
+        // Our getter automatically reflects Transport's currentTick
+        // No need to manually reset position here
 
         const arrangementStore = useArrangementStore.getState();
         const activePattern = arrangementStore.patterns[arrangementStore.activePatternId];

@@ -111,7 +111,9 @@ export class PlaybackController extends SimpleEventEmitter {
     transport.on('stop', () => this._handleMotorEvent('stopped'));
     transport.on('pause', () => this._handleMotorEvent('paused'));
 
-    // Position updates - SADECE motor çalarken
+    // ✅ CRITICAL FIX: Position updates via Transport tick event ONLY
+    // Transport tick is throttled to 60fps and sample-accurate
+    // No need for separate UIUpdateManager subscription (was causing double updates)
     transport.on('tick', () => {
       if (this.state.isPlaying && !this.state.isUserScrubbing) {
         this._updatePositionFromMotor();
@@ -218,8 +220,8 @@ export class PlaybackController extends SimpleEventEmitter {
       return false;
     }
 
-    if (!this.audioEngine.playbackManager) {
-      console.error('❌ PlaybackController: PlaybackManager not available');
+    if (!this.audioEngine.playbackFacade) {
+      console.error('❌ PlaybackController: PlaybackFacade not available');
       return false;
     }
 
@@ -231,9 +233,9 @@ export class PlaybackController extends SimpleEventEmitter {
       if (playPosition === null) {
         // Use persistent UI position (set by timeline click or previous play)
         playPosition = this.state.currentPosition;
-        
-        // Also check PlaybackManager for consistency
-        const managerPosition = this.audioEngine.playbackManager?.currentPosition;
+
+        // Also check PlaybackFacade for consistency
+        const managerPosition = this.audioEngine.playbackFacade?.getCurrentPosition();
         if (managerPosition !== undefined && Math.abs(managerPosition - playPosition) > 0.01) {
           // Manager has different position, sync UI to manager
           playPosition = managerPosition;
@@ -279,10 +281,10 @@ export class PlaybackController extends SimpleEventEmitter {
       }
 
       // Motor başlat (use the resolved position)
-      console.log('🎵 PlaybackController: Calling PlaybackManager.play()', playPosition);
+      console.log('🎵 PlaybackController: Calling PlaybackFacade.play()', playPosition);
       try {
-        await this.audioEngine.playbackManager.play(playPosition);
-        console.log('✅ PlaybackController: PlaybackManager.play() completed');
+        await this.audioEngine.playbackFacade.play(playPosition);
+        console.log('✅ PlaybackController: PlaybackFacade.play() completed');
       } catch (playError) {
         console.error('❌ PlaybackManager.play() failed:', playError);
         throw playError;
@@ -291,13 +293,13 @@ export class PlaybackController extends SimpleEventEmitter {
       // ✅ Manual state update - motor events disabled
       this.state.playbackState = PLAYBACK_STATES.PLAYING;
       this.state.isPlaying = true;
-      
+
       // ✅ CRITICAL: Emit position update immediately with locked position
       // This ensures UI shows correct position before position loop starts
       const playbackManager = this.audioEngine.playbackManager;
       const currentMode = playbackManager?.getCurrentMode?.() || playbackManager?.currentMode || 'pattern';
       this._emitPositionUpdate(currentMode);
-      
+
       this._startPositionLoop();
       this._emitStateChange('play-command');
 
@@ -314,8 +316,8 @@ export class PlaybackController extends SimpleEventEmitter {
   async _resume() {
     console.log('🎵 PlaybackController._resume() called');
 
-    if (!this.audioEngine?.playbackManager) {
-      console.error('❌ PlaybackController: PlaybackManager not available');
+    if (!this.audioEngine?.playbackFacade) {
+      console.error('❌ PlaybackController: PlaybackFacade not available');
       return false;
     }
 
@@ -330,9 +332,9 @@ export class PlaybackController extends SimpleEventEmitter {
         }
       }
 
-      // ✅ CRITICAL: Use PlaybackManager.resume() to preserve position
-      await this.audioEngine.playbackManager.resume();
-      console.log('✅ PlaybackController: PlaybackManager.resume() completed');
+      // ✅ CRITICAL: Use PlaybackFacade.resume() to preserve position
+      await this.audioEngine.playbackFacade.resume();
+      console.log('✅ PlaybackController: PlaybackFacade.resume() completed');
 
       // Update state
       this.state.playbackState = PLAYBACK_STATES.PLAYING;
@@ -360,7 +362,7 @@ export class PlaybackController extends SimpleEventEmitter {
     if (!this.state.isPlaying) return false;
 
     try {
-      await this.audioEngine.playbackManager.pause();
+      await this.audioEngine.playbackFacade.pause();
 
       // ✅ Manual state update - motor events disabled
       this.state.playbackState = PLAYBACK_STATES.PAUSED;
@@ -384,7 +386,7 @@ export class PlaybackController extends SimpleEventEmitter {
       const now = Date.now();
       const timeSinceLastStop = now - (this.state.lastStopTime || 0);
 
-      await this.audioEngine.playbackManager.stop();
+      await this.audioEngine.playbackFacade.stop();
 
       // ✅ Manual state update - motor events disabled
       this.state.playbackState = PLAYBACK_STATES.STOPPED;
@@ -395,7 +397,7 @@ export class PlaybackController extends SimpleEventEmitter {
       // Position survives stop/play cycles (matches FL Studio, Ableton, Logic Pro behavior)
       // Don't reset position - it should persist for next play
       // User can manually reset by clicking timeline or using jumpToPosition
-      
+
       // ✅ Release position lock if active
       this.state.positionLocked = false;
       this.state.positionLockFrames = 0;
@@ -426,7 +428,7 @@ export class PlaybackController extends SimpleEventEmitter {
       playbackState: this.state.playbackState,
       isPlaying: this.state.isPlaying,
       hasAudioEngine: !!this.audioEngine,
-      hasPlaybackManager: !!this.audioEngine?.playbackManager
+      hasPlaybackFacade: !!this.audioEngine?.playbackFacade
     });
 
     switch (this.state.playbackState) {
@@ -442,9 +444,9 @@ export class PlaybackController extends SimpleEventEmitter {
       case PLAYBACK_STATES.STOPPED:
       default:
         console.log('🎵 State is STOPPED, calling play()');
-        // ✅ FIX: Use PlaybackManager's current position (set by jumpToStep/timeline click)
+        // ✅ FIX: Use PlaybackFacade's current position (set by jumpToStep/timeline click)
         // This ensures we use the position that was actually set, not stale state
-        const managerPosition = this.audioEngine?.playbackManager?.currentPosition;
+        const managerPosition = this.audioEngine?.playbackFacade?.getCurrentPosition();
         const playPosition = managerPosition !== undefined ? managerPosition : this.state.currentPosition;
         console.log('🎵 Play position determined:', { managerPosition, currentPosition: this.state.currentPosition, playPosition });
         // Sync state with manager position
@@ -498,18 +500,18 @@ export class PlaybackController extends SimpleEventEmitter {
     // ✅ INDUSTRY STANDARD: Update UI position immediately (persistent)
     // This position survives stop/play cycles (matches FL Studio, Ableton behavior)
     this.state.currentPosition = Math.max(0, position);
-    
-    // ✅ CRITICAL FIX: Always update PlaybackManager position, even when stopped
-    // This ensures that when play is pressed, PlaybackManager has the correct position
-    // Otherwise, PlaybackManager.currentPosition will be 0 (from stop) and play will start at 0
-    await this.audioEngine.playbackManager.jumpToStep(position);
-    
+
+    // ✅ CRITICAL FIX: Always update PlaybackFacade position, even when stopped
+    // This ensures that when play is pressed, PlaybackFacade has the correct position
+    // Otherwise, PlaybackFacade.currentPosition will be 0 (from stop) and play will start at 0
+    await this.audioEngine.playbackFacade.jumpToStep(position);
+
     // ✅ Update transport position only if playing
     // If stopped, transport position will sync on next play
     if (this.state.isPlaying) {
       this.state.transportPosition = this.state.currentPosition;
     }
-    
+
     // ✅ Always emit UI update (even when stopped)
     // This ensures UI playhead moves immediately on timeline click
     this._emitPositionUpdate();
@@ -518,9 +520,9 @@ export class PlaybackController extends SimpleEventEmitter {
   async _smoothJump(position) {
     // Kısa pause-resume ile smooth jump
     if (this.state.isPlaying) {
-      await this.audioEngine.playbackManager.pause();
+      await this.audioEngine.playbackFacade.pause();
       await new Promise(resolve => setTimeout(resolve, 50)); // 50ms pause
-      await this.audioEngine.playbackManager.play(position);
+      await this.audioEngine.playbackFacade.play(position);
     } else {
       await this._jumpToPositionInternal(position);
     }
@@ -547,45 +549,46 @@ export class PlaybackController extends SimpleEventEmitter {
       return;
     }
     this.state.bpm = bpm;
-    this.audioEngine.playbackManager.setBPM(this.state.bpm);
+    this.audioEngine.playbackFacade.setBPM(this.state.bpm);
     this._emitStateChange('bpm-change');
   }
 
   setLoopRange(start, end) {
     this.state.loopStart = Math.max(0, start);
     this.state.loopEnd = Math.max(start + 1, end);
-    this.audioEngine.playbackManager.setLoopPoints(this.state.loopStart, this.state.loopEnd);
+    this.audioEngine.playbackFacade.setLoopPoints(this.state.loopStart, this.state.loopEnd);
     this._emitStateChange('loop-change');
   }
 
   setLoopEnabled(enabled) {
     this.state.loopEnabled = enabled;
-    this.audioEngine.playbackManager.setLoopEnabled(enabled);
+    this.audioEngine.playbackFacade.setLoopEnabled(enabled);
     this._emitStateChange('loop-change');
   }
 
   // =================== POSITION UPDATES ===================
 
   _startPositionLoop() {
+    // ✅ CRITICAL FIX: Removed UIUpdateManager subscription
+    // Transport 'tick' event already updates position at 60fps (see _bindMotorEvents)
+    // This was causing duplicate updates and playhead stuttering
+
+    // Position updates are now handled exclusively by Transport tick event
+    // This function is kept for backward compatibility but does nothing
+
+    /* REMOVED - Causing double updates:
     if (this.positionLoopSubscription) return;
-
-    // ✅ INDUSTRY STANDARD: Position lock is already set in play() function
-    // No need to initialize here - position lock mechanism handles it
-    // The locked position (playStartSnapshot) will be used for first few frames
-
-    // Subscribe to UIUpdateManager with NORMAL priority
     this.positionLoopSubscription = uiUpdateManager.subscribe(
       'playback-controller-position-loop',
       (currentTime, frameTime) => {
         if (this.state.isPlaying) {
-          // ✅ Position lock mechanism is handled in _updatePositionFromMotor
-          // It will use playStartSnapshot for first 3 frames
           this._updatePositionFromMotor();
         }
       },
       UPDATE_PRIORITIES.NORMAL,
       UPDATE_FREQUENCIES.HIGH
     );
+    */
   }
 
   _stopPositionLoop() {

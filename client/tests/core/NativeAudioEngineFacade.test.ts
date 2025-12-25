@@ -136,6 +136,9 @@ describe('NativeAudioEngineFacade', () => {
             expect(facade.effectService).toBeDefined();
             expect(facade.workletService).toBeDefined();
             expect(facade.performanceService).toBeDefined();
+            expect(facade.wasmService).toBeDefined();
+            expect(facade.playbackService).toBeDefined();
+            expect(facade.schedulerService).toBeDefined();
         });
 
         it('should have legacy compatibility maps', () => {

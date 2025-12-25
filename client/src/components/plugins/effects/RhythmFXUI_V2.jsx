@@ -22,6 +22,7 @@ import { getCategoryColors } from '../PluginDesignSystem';
 import { useParameterBatcher } from '@/services/ParameterBatcher';
 import { useMixerStore } from '@/store/useMixerStore';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
+import { selectBpm } from '@/store/selectors/playbackSelectors';
 import { useGhostValue } from '@/hooks/useAudioPlugin';
 
 // Mode options for Select dropdown
@@ -51,7 +52,8 @@ const RhythmFXUI_V2 = ({ trackId, effect, effectNode, definition }) => {
   } = effect.settings || {};
 
   // Get current BPM from playback store
-  const { bpm: currentBpm } = usePlaybackStore();
+  // ✅ PERFORMANCE FIX: Use selectBpm instead of entire store
+  const currentBpm = usePlaybackStore(selectBpm);
 
   // Local state
   const [localDivision, setLocalDivision] = useState(division);
@@ -66,7 +68,7 @@ const RhythmFXUI_V2 = ({ trackId, effect, effectNode, definition }) => {
   const [localBpm, setLocalBpm] = useState(bpm);
   const [localTempoSync, setLocalTempoSync] = useState(tempoSync);
   const [localNoteDivision, setLocalNoteDivision] = useState(noteDivision);
-  
+
   // Pattern state
   const [pattern, setPattern] = useState(() => {
     // Initialize pattern from settings or default to all active
@@ -77,7 +79,7 @@ const RhythmFXUI_V2 = ({ trackId, effect, effectNode, definition }) => {
   const categoryColors = useMemo(() => getCategoryColors('rhythm-forge'), []);
   const { setParam, setParams } = useParameterBatcher(effectNode);
   const { handleMixerEffectChange } = useMixerStore.getState();
-  
+
   // Ref for processor message handling
   const processorPortRef = useRef(null);
 
@@ -90,17 +92,17 @@ const RhythmFXUI_V2 = ({ trackId, effect, effectNode, definition }) => {
   // Initialize processor port for pattern communication
   useEffect(() => {
     if (!effectNode) return;
-    
+
     // Get the processor port
     if (effectNode.port) {
       processorPortRef.current = effectNode.port;
-      
+
       // Set initial pattern
       effectNode.port.postMessage({
         type: 'setPattern',
         data: { pattern }
       });
-      
+
       // Listen for current step updates
       const handleMessage = (e) => {
         if (e.data.type === 'currentStep') {
@@ -109,9 +111,9 @@ const RhythmFXUI_V2 = ({ trackId, effect, effectNode, definition }) => {
           setPattern(e.data.pattern);
         }
       };
-      
+
       effectNode.port.onmessage = handleMessage;
-      
+
       return () => {
         if (effectNode.port) {
           effectNode.port.onmessage = null;
@@ -123,9 +125,9 @@ const RhythmFXUI_V2 = ({ trackId, effect, effectNode, definition }) => {
   // Sync with presets and update processor
   useEffect(() => {
     if (!effectNode || !effect.settings) return;
-    
+
     const updates = {};
-    
+
     if (effect.settings.division !== undefined) {
       setLocalDivision(effect.settings.division);
       updates.division = effect.settings.division;
@@ -173,7 +175,7 @@ const RhythmFXUI_V2 = ({ trackId, effect, effectNode, definition }) => {
     if (effect.settings.pattern) {
       setPattern(effect.settings.pattern);
     }
-    
+
     // Update BPM: use current BPM if tempo sync is enabled, otherwise use saved BPM
     if (localTempoSync > 0.5 && currentBpm) {
       updates.bpm = currentBpm;
@@ -182,7 +184,7 @@ const RhythmFXUI_V2 = ({ trackId, effect, effectNode, definition }) => {
       setLocalBpm(effect.settings.bpm);
       updates.bpm = effect.settings.bpm;
     }
-    
+
     // Batch update all parameters
     if (Object.keys(updates).length > 0) {
       setParams(updates);
@@ -193,7 +195,7 @@ const RhythmFXUI_V2 = ({ trackId, effect, effectNode, definition }) => {
     setParam(key, value);
     handleMixerEffectChange(trackId, effect.id, { [key]: value });
 
-    switch(key) {
+    switch (key) {
       case 'division': setLocalDivision(value); break;
       case 'chance': setLocalChance(value); break;
       case 'intensity': setLocalIntensity(value); break;
@@ -214,7 +216,7 @@ const RhythmFXUI_V2 = ({ trackId, effect, effectNode, definition }) => {
     const newPattern = [...pattern];
     newPattern[stepIndex] = newPattern[stepIndex] > 0 ? 0 : 1;
     setPattern(newPattern);
-    
+
     // Send to processor
     if (processorPortRef.current) {
       processorPortRef.current.postMessage({
@@ -222,7 +224,7 @@ const RhythmFXUI_V2 = ({ trackId, effect, effectNode, definition }) => {
         data: { step: stepIndex, value: newPattern[stepIndex] }
       });
     }
-    
+
     // Update settings
     handleMixerEffectChange(trackId, effect.id, { pattern: newPattern });
   }, [pattern, trackId, effect.id, handleMixerEffectChange]);
@@ -315,22 +317,22 @@ const RhythmFXUI_V2 = ({ trackId, effect, effectNode, definition }) => {
                     onClick={() => handleStepToggle(index)}
                     className={`
                       h-12 rounded border-2 transition-all
-                      ${step > 0 
-                        ? 'bg-pink-500/40 border-pink-500/60' 
+                      ${step > 0
+                        ? 'bg-pink-500/40 border-pink-500/60'
                         : 'bg-black/30 border-pink-500/20'
                       }
-                      ${currentStep === index 
-                        ? 'ring-2 ring-pink-400 ring-offset-1 ring-offset-black' 
+                      ${currentStep === index
+                        ? 'ring-2 ring-pink-400 ring-offset-1 ring-offset-black'
                         : ''
                       }
                       hover:bg-pink-500/50
                     `}
                     style={{
-                      backgroundColor: step > 0 
+                      backgroundColor: step > 0
                         ? (currentStep === index ? categoryColors.primary : 'rgba(236, 72, 153, 0.4)')
                         : 'rgba(0, 0, 0, 0.3)',
-                      borderColor: currentStep === index 
-                        ? categoryColors.primary 
+                      borderColor: currentStep === index
+                        ? categoryColors.primary
                         : (step > 0 ? 'rgba(236, 72, 153, 0.6)' : 'rgba(236, 72, 153, 0.2)')
                     }}
                   >
@@ -412,7 +414,7 @@ const RhythmFXUI_V2 = ({ trackId, effect, effectNode, definition }) => {
                   disabled={localTempoSync > 0.5}
                 />
               </div>
-              
+
               {/* Tempo Sync Controls */}
               <div className="mt-4 pt-4 border-t border-pink-500/20">
                 <div className="flex items-center justify-between mb-3">

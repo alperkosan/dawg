@@ -1,175 +1,215 @@
-import { UnifiedMixerNode } from './UnifiedMixerNode';
-import { AudioEngineFacade } from './AudioEngineFacade';
+/**
+ * WasmAudioEngine - WASM-based Audio Processing Engine
+ * 
+ * Manages the WASM audio processing graph and provides high-level API for:
+ * - WASM synth instruments
+ * - WASM effects
+ * - Audio buffer management
+ * 
+ * @module lib/core/WasmAudioEngine
+ */
 
-export class WasmAudioEngine extends AudioEngineFacade {
+class WasmAudioEngine {
     constructor() {
-        super();
-        this.audioContext = null;
-        this.wasmGraph = null;
         this.isInitialized = false;
+        this.wasmGraph = null;
+        this.wasmModule = null;
+        this.audioContext = null;
 
-        // Maps for state tracking (Parity with NativeEngine)
+        // Instrument tracking
         this.instruments = new Map();
-        this.mixerInserts = new Map();
-
-        // Singleton instance
-        if (WasmAudioEngine.instance) {
-            return WasmAudioEngine.instance;
-        }
-        WasmAudioEngine.instance = this;
+        this.effects = new Map();
     }
 
-    // =========================================================================
-    // 1. LIFECYCLE & INITIALIZATION
-    // =========================================================================
-
+    /**
+     * Initialize WASM engine with audio context
+     * @param {AudioContext} audioContext 
+     * @returns {Promise<boolean>}
+     */
     async initialize(audioContext) {
-        if (this.isInitialized) return;
-        this.audioContext = audioContext;
+        if (this.isInitialized) {
+            return true;
+        }
 
         try {
-            console.log('🚀 Initializing Wasm Audio Engine...');
+            this.audioContext = audioContext;
 
-            // Load Wasm Module
-            // Note: We use the same path as WasmBackend.js for now, assuming the build output is there.
-            const wasmModulePath = '/wasm/dawg_audio_dsp.js';
+            // Dynamic import WASM module
             const dynamicImport = new Function('path', 'return import(path)');
-            const wasmModule = await dynamicImport(wasmModulePath);
-            await wasmModule.default();
+            const wasmModulePath = '/wasm/dawg_audio_dsp.js';
 
-            // Initialize AudioGraph from Rust
-            // AudioGraph is now exposed via lib.rs -> graph.rs
-            this.wasmGraph = new wasmModule.AudioGraph(audioContext.sampleRate);
+            this.wasmModule = await dynamicImport(wasmModulePath);
+            await this.wasmModule.default();
+
+            // Create audio graph
+            this.wasmGraph = new this.wasmModule.AudioGraph(audioContext.sampleRate);
+
+            // Test node creation
+            const nodeId = this.wasmGraph.add_test_node();
+            console.log(`✅ WASM Audio Engine initialized (test node: ${nodeId})`);
 
             this.isInitialized = true;
-            console.log('✅ Wasm Audio Engine Initialized!');
-
-            // Phase 1 Verification: Test Node Creation
-            const nodeId = this.wasmGraph.add_test_node();
-            console.log(`🧪 Verified: Created Test Node in Rust with ID: ${nodeId}`);
-
+            return true;
         } catch (error) {
-            console.error('❌ Wasm Engine Initialization Failed:', error);
-            throw error;
+            console.warn('⚠️ WASM Audio Engine initialization failed:', error);
+            this.isInitialized = false;
+            return false;
         }
     }
 
+    /**
+     * Get the WASM audio graph
+     * @returns {Object|null}
+     */
     getGraph() {
-        if (!this.isInitialized) {
-            console.warn('⚠️ WasmGraph requested before initialization');
-        }
         return this.wasmGraph;
     }
 
+    /**
+     * Dispose WASM engine
+     */
     dispose() {
-        console.log('🗑️ Disposing WasmAudioEngine');
         if (this.wasmGraph && this.wasmGraph.free) {
             this.wasmGraph.free();
         }
-        this.isInitialized = false;
+
         this.wasmGraph = null;
+        this.wasmModule = null;
+        this.audioContext = null;
+        this.isInitialized = false;
+        this.instruments.clear();
+        this.effects.clear();
+
+        console.log('🧹 WASM Audio Engine disposed');
     }
 
+    // =================== INSTRUMENTS ===================
 
-    // =========================================================================
-    // 2. TRANSPORT CONTROL (STUBS)
-    // =========================================================================
+    /**
+     * Create a WASM instrument
+     * @param {Object} instrumentData 
+     * @returns {string} Instrument ID
+     */
+    createInstrument(instrumentData) {
+        if (!this.isInitialized || !this.wasmGraph) {
+            console.warn('WASM engine not initialized');
+            return null;
+        }
 
-    play(startStep = 0) { console.warn('Wasm: play() not implemented'); }
-    stop() { console.warn('Wasm: stop() not implemented'); }
-    pause() { console.warn('Wasm: pause() not implemented'); }
-    resume() { console.warn('Wasm: resume() not implemented'); }
+        const id = `wasm-inst-${Date.now()}`;
 
-    setBPM(bpm) { console.warn(`Wasm: setBPM(${bpm}) not implemented`); }
-    setPlaybackMode(mode) { console.warn(`Wasm: setPlaybackMode(${mode}) not implemented`); } // 'pattern' | 'song'
+        try {
+            // Create synth or sampler based on type
+            if (instrumentData.type === 'synth') {
+                const synth = new this.wasmModule.WasmSynth(this.audioContext.sampleRate);
+                this.instruments.set(id, { type: 'synth', instance: synth, data: instrumentData });
+            } else if (instrumentData.type === 'sampler') {
+                // Sampler creation would go here
+                this.instruments.set(id, { type: 'sampler', instance: null, data: instrumentData });
+            }
 
-    setLoopPoints(startStep, endStep) { console.warn('Wasm: setLoopPoints() not implemented'); }
-    setLoopEnabled(enabled) { console.warn(`Wasm: setLoopEnabled(${enabled}) not implemented`); }
-    enableAutoLoop() { console.warn('Wasm: enableAutoLoop() not implemented'); }
-
-    jumpToStep(step) { console.warn(`Wasm: jumpToStep(${step}) not implemented`); }
-    getCurrentPosition() { return { step: 0, time: 0 }; }
-
-
-    // =========================================================================
-    // 3. INSTRUMENT MANAGEMENT (STUBS)
-    // =========================================================================
-
-    async createInstrument(instrumentData) {
-        console.warn('Wasm: createInstrument() not implemented, returning mock ID');
-        return `wasm-inst-${Date.now()}`;
+            console.log(`🎹 WASM Instrument created: ${id}`);
+            return id;
+        } catch (error) {
+            console.error('Failed to create WASM instrument:', error);
+            return null;
+        }
     }
 
-    updateInstrumentParameters(instrumentId, params) {
-        // console.warn(`Wasm: updateInstrumentParameters(${instrumentId}) not implemented`);
+    /**
+     * Remove a WASM instrument
+     * @param {string} instrumentId 
+     */
+    removeInstrument(instrumentId) {
+        const instrument = this.instruments.get(instrumentId);
+        if (instrument?.instance?.free) {
+            instrument.instance.free();
+        }
+        this.instruments.delete(instrumentId);
     }
 
-    setInstrumentMute(instrumentId, isMuted) {
-        console.warn(`Wasm: setInstrumentMute(${instrumentId}, ${isMuted}) not implemented`);
+    /**
+     * Get instrument by ID
+     * @param {string} instrumentId 
+     * @returns {Object|null}
+     */
+    getInstrument(instrumentId) {
+        return this.instruments.get(instrumentId) || null;
     }
 
+    // =================== EFFECTS ===================
 
-    // =========================================================================
-    // 4. MIXER & ROUTING (STUBS)
-    // =========================================================================
+    /**
+     * Create a WASM effect
+     * @param {string} effectType 
+     * @param {Object} settings 
+     * @returns {string} Effect ID
+     */
+    createEffect(effectType, settings = {}) {
+        if (!this.isInitialized || !this.wasmGraph) {
+            console.warn('WASM engine not initialized');
+            return null;
+        }
 
-    createMixerInsert(trackId, label) {
-        console.log(`Wasm: createMixerInsert(${trackId}) called`);
-        // Mock insert object to prevent crashes if consumed by UI
-        const mockInsert = {
-            id: trackId,
-            label,
-            effects: new Map(),
-            instruments: new Set(),
-            getAnalyzer: () => null
+        const id = `wasm-effect-${Date.now()}`;
+
+        try {
+            // Effect creation based on type
+            let effect = null;
+
+            switch (effectType) {
+                case 'eq':
+                case 'eq3band':
+                    effect = new this.wasmModule.ThreeBandEQ(this.audioContext.sampleRate);
+                    break;
+                case 'compressor':
+                    // Compressor is built into WasmAudioProcessor
+                    effect = { type: 'compressor', bypass: false };
+                    break;
+                default:
+                    console.warn(`Unknown WASM effect type: ${effectType}`);
+                    return null;
+            }
+
+            this.effects.set(id, { type: effectType, instance: effect, settings });
+            console.log(`✨ WASM Effect created: ${effectType} (${id})`);
+            return id;
+        } catch (error) {
+            console.error('Failed to create WASM effect:', error);
+            return null;
+        }
+    }
+
+    /**
+     * Remove a WASM effect
+     * @param {string} effectId 
+     */
+    removeEffect(effectId) {
+        const effect = this.effects.get(effectId);
+        if (effect?.instance?.free) {
+            effect.instance.free();
+        }
+        this.effects.delete(effectId);
+    }
+
+    // =================== STATS ===================
+
+    /**
+     * Get engine stats
+     * @returns {Object}
+     */
+    getStats() {
+        return {
+            isInitialized: this.isInitialized,
+            instrumentCount: this.instruments.size,
+            effectCount: this.effects.size,
+            hasGraph: !!this.wasmGraph
         };
-        this.mixerInserts.set(trackId, mockInsert);
-        return mockInsert;
     }
-
-    removeMixerInsert(trackId) {
-        this.mixerInserts.delete(trackId);
-    }
-
-    setInsertGain(trackId, gain) { }
-    setInsertPan(trackId, pan) { }
-
-    setMasterVolume(volume) { }
-    setMasterPan(pan) { }
-
-    routeInstrumentToInsert(instrumentId, trackId) {
-        console.log(`Wasm: routeInstrumentToInsert(${instrumentId} -> ${trackId}) stub called`);
-    }
-
-    // Exclusive Routing (Submixes)
-    routeInsertToBusExclusive(sourceTrackId, targetBusId) { }
-    routeInsertToMaster(sourceTrackId) { }
-
-
-    // =========================================================================
-    // 5. SEND SYSTEM (STUBS)
-    // =========================================================================
-
-    createSend(sourceId, targetId, level, preFader) {
-        console.log(`Wasm: createSend(${sourceId} -> ${targetId}) stub called`);
-    }
-    removeSend(sourceId, targetId) { }
-    updateSendLevel(sourceId, targetId, level) { }
-
-
-    // =========================================================================
-    // 6. EFFECTS SYSTEM (STUBS)
-    // =========================================================================
-
-    async addEffectToInsert(trackId, effectType, settings) {
-        console.warn(`Wasm: addEffectToInsert(${trackId}, ${effectType}) not implemented`);
-        return `wasm-effect-${Date.now()}`;
-    }
-
-    removeEffectFromInsert(trackId, effectId) { }
-    updateInsertEffectParam(trackId, effectId, param, value) { }
-    reorderInsertEffects(trackId, fromIndex, toIndex) { }
-    setEffectBypass(trackId, effectId, bypassed) { }
 }
 
+// Singleton instance
 export const wasmAudioEngine = new WasmAudioEngine();
+
+// Also export class for testing
+export { WasmAudioEngine };

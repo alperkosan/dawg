@@ -301,6 +301,362 @@ export class BiquadFilter {
 }
 if (Symbol.dispose) BiquadFilter.prototype[Symbol.dispose] = BiquadFilter.prototype.free;
 
+const ChorusFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_chorus_free(ptr >>> 0, 1));
+
+export class Chorus {
+
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        ChorusFinalization.unregister(this);
+        return ptr;
+    }
+
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_chorus_free(ptr, 0);
+    }
+    /**
+     * @param {number} sample_rate
+     */
+    constructor(sample_rate) {
+        const ret = wasm.chorus_new(sample_rate);
+        this.__wbg_ptr = ret >>> 0;
+        ChorusFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * @param {number} hz
+     */
+    set_rate(hz) {
+        wasm.chorus_set_rate(this.__wbg_ptr, hz);
+    }
+    /**
+     * @param {number} val
+     */
+    set_depth(val) {
+        wasm.chorus_set_depth(this.__wbg_ptr, val);
+    }
+    /**
+     * @param {number} val
+     */
+    set_mix(val) {
+        wasm.chorus_set_mix(this.__wbg_ptr, val);
+    }
+    /**
+     * @param {Float32Array} input_l
+     * @param {Float32Array} input_r
+     * @param {Float32Array} output_l
+     * @param {Float32Array} output_r
+     */
+    process(input_l, input_r, output_l, output_r) {
+        const ptr0 = passArrayF32ToWasm0(input_l, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArrayF32ToWasm0(input_r, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        var ptr2 = passArrayF32ToWasm0(output_l, wasm.__wbindgen_malloc);
+        var len2 = WASM_VECTOR_LEN;
+        var ptr3 = passArrayF32ToWasm0(output_r, wasm.__wbindgen_malloc);
+        var len3 = WASM_VECTOR_LEN;
+        wasm.chorus_process(this.__wbg_ptr, ptr0, len0, ptr1, len1, ptr2, len2, output_l, ptr3, len3, output_r);
+    }
+    reset() {
+        wasm.chorus_reset(this.__wbg_ptr);
+    }
+}
+if (Symbol.dispose) Chorus.prototype[Symbol.dispose] = Chorus.prototype.free;
+
+const ClipperFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_clipper_free(ptr >>> 0, 1));
+
+export class Clipper {
+
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        ClipperFinalization.unregister(this);
+        return ptr;
+    }
+
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_clipper_free(ptr, 0);
+    }
+    /**
+     * @param {number} _sample_rate
+     */
+    constructor(_sample_rate) {
+        const ret = wasm.clipper_new(_sample_rate);
+        this.__wbg_ptr = ret >>> 0;
+        ClipperFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * @param {number} val
+     */
+    set_threshold(val) {
+        wasm.clipper_set_threshold(this.__wbg_ptr, val);
+    }
+    /**
+     * @param {number} val
+     */
+    set_softness(val) {
+        wasm.clipper_set_softness(this.__wbg_ptr, val);
+    }
+    /**
+     * @param {Float32Array} input_l
+     * @param {Float32Array} input_r
+     * @param {Float32Array} output_l
+     * @param {Float32Array} output_r
+     */
+    process(input_l, input_r, output_l, output_r) {
+        const ptr0 = passArrayF32ToWasm0(input_l, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArrayF32ToWasm0(input_r, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        var ptr2 = passArrayF32ToWasm0(output_l, wasm.__wbindgen_malloc);
+        var len2 = WASM_VECTOR_LEN;
+        var ptr3 = passArrayF32ToWasm0(output_r, wasm.__wbindgen_malloc);
+        var len3 = WASM_VECTOR_LEN;
+        wasm.clipper_process(this.__wbg_ptr, ptr0, len0, ptr1, len1, ptr2, len2, output_l, ptr3, len3, output_r);
+    }
+}
+if (Symbol.dispose) Clipper.prototype[Symbol.dispose] = Clipper.prototype.free;
+
+const CompressorFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_compressor_free(ptr >>> 0, 1));
+
+export class Compressor {
+
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        CompressorFinalization.unregister(this);
+        return ptr;
+    }
+
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_compressor_free(ptr, 0);
+    }
+    /**
+     * @param {number} sample_rate
+     */
+    constructor(sample_rate) {
+        const ret = wasm.compressor_new(sample_rate);
+        this.__wbg_ptr = ret >>> 0;
+        CompressorFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * @param {number} db
+     */
+    set_threshold(db) {
+        wasm.compressor_set_threshold(this.__wbg_ptr, db);
+    }
+    /**
+     * @param {number} ratio
+     */
+    set_ratio(ratio) {
+        wasm.compressor_set_ratio(this.__wbg_ptr, ratio);
+    }
+    /**
+     * @param {number} seconds
+     */
+    set_attack(seconds) {
+        wasm.compressor_set_attack(this.__wbg_ptr, seconds);
+    }
+    /**
+     * @param {number} seconds
+     */
+    set_release(seconds) {
+        wasm.compressor_set_release(this.__wbg_ptr, seconds);
+    }
+    /**
+     * @param {number} db
+     */
+    set_knee(db) {
+        wasm.compressor_set_knee(this.__wbg_ptr, db);
+    }
+    /**
+     * @param {number} db
+     */
+    set_makeup_gain(db) {
+        wasm.compressor_set_makeup_gain(this.__wbg_ptr, db);
+    }
+    /**
+     * @param {Float32Array} input_l
+     * @param {Float32Array} input_r
+     * @param {Float32Array} output_l
+     * @param {Float32Array} output_r
+     */
+    process(input_l, input_r, output_l, output_r) {
+        const ptr0 = passArrayF32ToWasm0(input_l, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArrayF32ToWasm0(input_r, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        var ptr2 = passArrayF32ToWasm0(output_l, wasm.__wbindgen_malloc);
+        var len2 = WASM_VECTOR_LEN;
+        var ptr3 = passArrayF32ToWasm0(output_r, wasm.__wbindgen_malloc);
+        var len3 = WASM_VECTOR_LEN;
+        wasm.compressor_process(this.__wbg_ptr, ptr0, len0, ptr1, len1, ptr2, len2, output_l, ptr3, len3, output_r);
+    }
+    reset() {
+        wasm.compressor_reset(this.__wbg_ptr);
+    }
+}
+if (Symbol.dispose) Compressor.prototype[Symbol.dispose] = Compressor.prototype.free;
+
+const LimiterFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_limiter_free(ptr >>> 0, 1));
+
+export class Limiter {
+
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        LimiterFinalization.unregister(this);
+        return ptr;
+    }
+
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_limiter_free(ptr, 0);
+    }
+    /**
+     * @param {number} sample_rate
+     */
+    constructor(sample_rate) {
+        const ret = wasm.limiter_new(sample_rate);
+        this.__wbg_ptr = ret >>> 0;
+        LimiterFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * @param {number} db
+     */
+    set_threshold(db) {
+        wasm.limiter_set_threshold(this.__wbg_ptr, db);
+    }
+    /**
+     * @param {number} seconds
+     */
+    set_release(seconds) {
+        wasm.limiter_set_release(this.__wbg_ptr, seconds);
+    }
+    /**
+     * @param {number} db
+     */
+    set_ceiling(db) {
+        wasm.limiter_set_ceiling(this.__wbg_ptr, db);
+    }
+    /**
+     * @param {Float32Array} input_l
+     * @param {Float32Array} input_r
+     * @param {Float32Array} output_l
+     * @param {Float32Array} output_r
+     */
+    process(input_l, input_r, output_l, output_r) {
+        const ptr0 = passArrayF32ToWasm0(input_l, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArrayF32ToWasm0(input_r, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        var ptr2 = passArrayF32ToWasm0(output_l, wasm.__wbindgen_malloc);
+        var len2 = WASM_VECTOR_LEN;
+        var ptr3 = passArrayF32ToWasm0(output_r, wasm.__wbindgen_malloc);
+        var len3 = WASM_VECTOR_LEN;
+        wasm.limiter_process(this.__wbg_ptr, ptr0, len0, ptr1, len1, ptr2, len2, output_l, ptr3, len3, output_r);
+    }
+    reset() {
+        wasm.limiter_reset(this.__wbg_ptr);
+    }
+}
+if (Symbol.dispose) Limiter.prototype[Symbol.dispose] = Limiter.prototype.free;
+
+const PhaserFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_phaser_free(ptr >>> 0, 1));
+
+export class Phaser {
+
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        PhaserFinalization.unregister(this);
+        return ptr;
+    }
+
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_phaser_free(ptr, 0);
+    }
+    /**
+     * @param {number} sample_rate
+     */
+    constructor(sample_rate) {
+        const ret = wasm.phaser_new(sample_rate);
+        this.__wbg_ptr = ret >>> 0;
+        PhaserFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * @param {number} hz
+     */
+    set_rate(hz) {
+        wasm.phaser_set_rate(this.__wbg_ptr, hz);
+    }
+    /**
+     * @param {number} val
+     */
+    set_depth(val) {
+        wasm.phaser_set_depth(this.__wbg_ptr, val);
+    }
+    /**
+     * @param {number} val
+     */
+    set_feedback(val) {
+        wasm.phaser_set_feedback(this.__wbg_ptr, val);
+    }
+    /**
+     * @param {number} stages
+     */
+    set_stages(stages) {
+        wasm.phaser_set_stages(this.__wbg_ptr, stages);
+    }
+    /**
+     * @param {number} val
+     */
+    set_mix(val) {
+        wasm.phaser_set_mix(this.__wbg_ptr, val);
+    }
+    /**
+     * @param {Float32Array} input_l
+     * @param {Float32Array} input_r
+     * @param {Float32Array} output_l
+     * @param {Float32Array} output_r
+     */
+    process(input_l, input_r, output_l, output_r) {
+        const ptr0 = passArrayF32ToWasm0(input_l, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArrayF32ToWasm0(input_r, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        var ptr2 = passArrayF32ToWasm0(output_l, wasm.__wbindgen_malloc);
+        var len2 = WASM_VECTOR_LEN;
+        var ptr3 = passArrayF32ToWasm0(output_r, wasm.__wbindgen_malloc);
+        var len3 = WASM_VECTOR_LEN;
+        wasm.phaser_process(this.__wbg_ptr, ptr0, len0, ptr1, len1, ptr2, len2, output_l, ptr3, len3, output_r);
+    }
+    reset() {
+        wasm.phaser_reset(this.__wbg_ptr);
+    }
+}
+if (Symbol.dispose) Phaser.prototype[Symbol.dispose] = Phaser.prototype.free;
+
 const PolySynthFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_polysynth_free(ptr >>> 0, 1));
@@ -550,6 +906,173 @@ export class Sampler {
 }
 if (Symbol.dispose) Sampler.prototype[Symbol.dispose] = Sampler.prototype.free;
 
+const SaturatorFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_saturator_free(ptr >>> 0, 1));
+
+export class Saturator {
+
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        SaturatorFinalization.unregister(this);
+        return ptr;
+    }
+
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_saturator_free(ptr, 0);
+    }
+    /**
+     * @param {number} _sample_rate
+     */
+    constructor(_sample_rate) {
+        const ret = wasm.saturator_new(_sample_rate);
+        this.__wbg_ptr = ret >>> 0;
+        SaturatorFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * @param {number} val
+     */
+    set_drive(val) {
+        wasm.saturator_set_drive(this.__wbg_ptr, val);
+    }
+    /**
+     * @param {number} val
+     */
+    set_mix(val) {
+        wasm.clipper_set_softness(this.__wbg_ptr, val);
+    }
+    /**
+     * @param {number} mode
+     */
+    set_mode(mode) {
+        wasm.saturator_set_mode(this.__wbg_ptr, mode);
+    }
+    /**
+     * @param {number} db
+     */
+    set_output_gain(db) {
+        wasm.saturator_set_output_gain(this.__wbg_ptr, db);
+    }
+    /**
+     * @param {Float32Array} input_l
+     * @param {Float32Array} input_r
+     * @param {Float32Array} output_l
+     * @param {Float32Array} output_r
+     */
+    process(input_l, input_r, output_l, output_r) {
+        const ptr0 = passArrayF32ToWasm0(input_l, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArrayF32ToWasm0(input_r, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        var ptr2 = passArrayF32ToWasm0(output_l, wasm.__wbindgen_malloc);
+        var len2 = WASM_VECTOR_LEN;
+        var ptr3 = passArrayF32ToWasm0(output_r, wasm.__wbindgen_malloc);
+        var len3 = WASM_VECTOR_LEN;
+        wasm.saturator_process(this.__wbg_ptr, ptr0, len0, ptr1, len1, ptr2, len2, output_l, ptr3, len3, output_r);
+    }
+}
+if (Symbol.dispose) Saturator.prototype[Symbol.dispose] = Saturator.prototype.free;
+
+const SharedAudioStateFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_sharedaudiostate_free(ptr >>> 0, 1));
+
+export class SharedAudioState {
+
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        SharedAudioStateFinalization.unregister(this);
+        return ptr;
+    }
+
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_sharedaudiostate_free(ptr, 0);
+    }
+    /**
+     * @returns {number}
+     */
+    static idx_play_state() {
+        const ret = wasm.sharedaudiostate_idx_play_state();
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    static idx_msg_counter() {
+        const ret = wasm.sharedaudiostate_idx_msg_counter();
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    static idx_seek_trigger() {
+        const ret = wasm.sharedaudiostate_idx_seek_trigger();
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    static idx_bpm() {
+        const ret = wasm.sharedaudiostate_idx_bpm();
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    static idx_position_samples() {
+        const ret = wasm.sharedaudiostate_idx_position_samples();
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    static idx_position_ticks() {
+        const ret = wasm.sharedaudiostate_idx_position_ticks();
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    static idx_sample_rate() {
+        const ret = wasm.sharedaudiostate_idx_sample_rate();
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    static idx_seek_target() {
+        const ret = wasm.sharedaudiostate_idx_seek_target();
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    static idx_loop_enabled() {
+        const ret = wasm.sharedaudiostate_idx_loop_enabled();
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    static idx_loop_start() {
+        const ret = wasm.sharedaudiostate_idx_loop_start();
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    static idx_loop_end() {
+        const ret = wasm.sharedaudiostate_idx_loop_end();
+        return ret >>> 0;
+    }
+}
+if (Symbol.dispose) SharedAudioState.prototype[Symbol.dispose] = SharedAudioState.prototype.free;
+
 const SimpleDelayFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_simpledelay_free(ptr >>> 0, 1));
@@ -596,6 +1119,77 @@ export class SimpleDelay {
     }
 }
 if (Symbol.dispose) SimpleDelay.prototype[Symbol.dispose] = SimpleDelay.prototype.free;
+
+const StereoPannerFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_stereopanner_free(ptr >>> 0, 1));
+
+export class StereoPanner {
+
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        StereoPannerFinalization.unregister(this);
+        return ptr;
+    }
+
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_stereopanner_free(ptr, 0);
+    }
+    /**
+     * @param {number} sample_rate
+     */
+    constructor(sample_rate) {
+        const ret = wasm.stereopanner_new(sample_rate);
+        this.__wbg_ptr = ret >>> 0;
+        StereoPannerFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * @param {number} val
+     */
+    set_pan(val) {
+        wasm.stereopanner_set_pan(this.__wbg_ptr, val);
+    }
+    /**
+     * @param {number} val
+     */
+    set_width(val) {
+        wasm.stereopanner_set_width(this.__wbg_ptr, val);
+    }
+    /**
+     * @param {number} hz
+     */
+    set_lfo_rate(hz) {
+        wasm.stereopanner_set_lfo_rate(this.__wbg_ptr, hz);
+    }
+    /**
+     * @param {number} val
+     */
+    set_lfo_depth(val) {
+        wasm.stereopanner_set_lfo_depth(this.__wbg_ptr, val);
+    }
+    /**
+     * @param {Float32Array} input_l
+     * @param {Float32Array} input_r
+     * @param {Float32Array} output_l
+     * @param {Float32Array} output_r
+     * @param {number} sample_rate
+     */
+    process(input_l, input_r, output_l, output_r, sample_rate) {
+        const ptr0 = passArrayF32ToWasm0(input_l, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArrayF32ToWasm0(input_r, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        var ptr2 = passArrayF32ToWasm0(output_l, wasm.__wbindgen_malloc);
+        var len2 = WASM_VECTOR_LEN;
+        var ptr3 = passArrayF32ToWasm0(output_r, wasm.__wbindgen_malloc);
+        var len3 = WASM_VECTOR_LEN;
+        wasm.stereopanner_process(this.__wbg_ptr, ptr0, len0, ptr1, len1, ptr2, len2, output_l, ptr3, len3, output_r, sample_rate);
+    }
+}
+if (Symbol.dispose) StereoPanner.prototype[Symbol.dispose] = StereoPanner.prototype.free;
 
 const ThreeBandEQFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
@@ -652,6 +1246,203 @@ export class ThreeBandEQ {
 }
 if (Symbol.dispose) ThreeBandEQ.prototype[Symbol.dispose] = ThreeBandEQ.prototype.free;
 
+const TransportFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_transport_free(ptr >>> 0, 1));
+
+export class Transport {
+
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        TransportFinalization.unregister(this);
+        return ptr;
+    }
+
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_transport_free(ptr, 0);
+    }
+    /**
+     * @returns {boolean}
+     */
+    get is_playing() {
+        const ret = wasm.__wbg_get_transport_is_playing(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * @param {boolean} arg0
+     */
+    set is_playing(arg0) {
+        wasm.__wbg_set_transport_is_playing(this.__wbg_ptr, arg0);
+    }
+    /**
+     * @returns {number}
+     */
+    get sample_rate() {
+        const ret = wasm.__wbg_get_transport_sample_rate(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @param {number} arg0
+     */
+    set sample_rate(arg0) {
+        wasm.__wbg_set_transport_sample_rate(this.__wbg_ptr, arg0);
+    }
+    /**
+     * @returns {number}
+     */
+    get bpm() {
+        const ret = wasm.__wbg_get_transport_bpm(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @param {number} arg0
+     */
+    set bpm(arg0) {
+        wasm.__wbg_set_transport_bpm(this.__wbg_ptr, arg0);
+    }
+    /**
+     * @returns {bigint}
+     */
+    get current_sample() {
+        const ret = wasm.__wbg_get_transport_current_sample(this.__wbg_ptr);
+        return BigInt.asUintN(64, ret);
+    }
+    /**
+     * @param {bigint} arg0
+     */
+    set current_sample(arg0) {
+        wasm.__wbg_set_transport_current_sample(this.__wbg_ptr, arg0);
+    }
+    /**
+     * @returns {number}
+     */
+    get ppq() {
+        const ret = wasm.__wbg_get_transport_ppq(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @param {number} arg0
+     */
+    set ppq(arg0) {
+        wasm.__wbg_set_transport_ppq(this.__wbg_ptr, arg0);
+    }
+    /**
+     * @returns {boolean}
+     */
+    get loop_enabled() {
+        const ret = wasm.__wbg_get_transport_loop_enabled(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * @param {boolean} arg0
+     */
+    set loop_enabled(arg0) {
+        wasm.__wbg_set_transport_loop_enabled(this.__wbg_ptr, arg0);
+    }
+    /**
+     * @returns {number}
+     */
+    get loop_start_tick() {
+        const ret = wasm.__wbg_get_transport_loop_start_tick(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @param {number} arg0
+     */
+    set loop_start_tick(arg0) {
+        wasm.__wbg_set_transport_loop_start_tick(this.__wbg_ptr, arg0);
+    }
+    /**
+     * @returns {number}
+     */
+    get loop_end_tick() {
+        const ret = wasm.__wbg_get_transport_loop_end_tick(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @param {number} arg0
+     */
+    set loop_end_tick(arg0) {
+        wasm.__wbg_set_transport_loop_end_tick(this.__wbg_ptr, arg0);
+    }
+    /**
+     * @param {number} sample_rate
+     */
+    constructor(sample_rate) {
+        const ret = wasm.transport_new(sample_rate);
+        this.__wbg_ptr = ret >>> 0;
+        TransportFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * @param {number} bpm
+     */
+    set_bpm(bpm) {
+        wasm.transport_set_bpm(this.__wbg_ptr, bpm);
+    }
+    /**
+     * @param {number} sample_rate
+     */
+    set_sample_rate(sample_rate) {
+        wasm.transport_set_sample_rate(this.__wbg_ptr, sample_rate);
+    }
+    play() {
+        wasm.transport_play(this.__wbg_ptr);
+    }
+    stop() {
+        wasm.transport_stop(this.__wbg_ptr);
+    }
+    pause() {
+        wasm.transport_pause(this.__wbg_ptr);
+    }
+    /**
+     * Advance time by N samples with Looping support
+     * @param {bigint} samples
+     */
+    advance(samples) {
+        wasm.transport_advance(this.__wbg_ptr, samples);
+    }
+    /**
+     * @param {boolean} enabled
+     * @param {number} start_tick
+     * @param {number} end_tick
+     */
+    set_loop(enabled, start_tick, end_tick) {
+        wasm.transport_set_loop(this.__wbg_ptr, enabled, start_tick, end_tick);
+    }
+    /**
+     * Set absolute position (seek)
+     * @param {bigint} samples
+     */
+    set_position_samples(samples) {
+        wasm.transport_set_position_samples(this.__wbg_ptr, samples);
+    }
+    /**
+     * @returns {number}
+     */
+    get_current_time() {
+        const ret = wasm.transport_get_current_time(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get_current_beat() {
+        const ret = wasm.transport_get_current_beat(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get_current_tick() {
+        const ret = wasm.transport_get_current_tick(this.__wbg_ptr);
+        return ret;
+    }
+}
+if (Symbol.dispose) Transport.prototype[Symbol.dispose] = Transport.prototype.free;
+
 const UnifiedMixerProcessorFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_unifiedmixerprocessor_free(ptr >>> 0, 1));
@@ -680,14 +1471,18 @@ export class UnifiedMixerProcessor {
         return this;
     }
     /**
+     * Set the shared state buffer pointer (SAB)
+     * @param {number} ptr
+     */
+    set_shared_state_buffer(ptr) {
+        wasm.unifiedmixerprocessor_set_shared_state_buffer(this.__wbg_ptr, ptr);
+    }
+    /**
      * Process all channels and mix to stereo output
      *
      * # Arguments
      * * `interleaved_inputs` - Flat array: [ch0_L_s0, ch0_R_s0, ch1_L_s0, ch1_R_s0, ..., ch0_L_s1, ch0_R_s1, ...]
      * * `output_l` - Left channel output buffer
-     * * `output_r` - Right channel output buffer
-     * * `block_size` - Number of samples per block
-     * * `num_channels` - Number of input channels
      * @param {number} interleaved_ptr
      * @param {number} input_len
      * @param {number} out_l_ptr

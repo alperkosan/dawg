@@ -142,7 +142,7 @@ export class PerformanceService {
             },
             workletManager: this.engine.workletManager?.getDetailedStats(),
             transport: this.engine.transport?.getStats(),
-            playback: this.engine.playbackManager?.getPlaybackStatus()
+            playback: this.engine.playbackFacade?.getPlaybackStatus()
         };
     }
 

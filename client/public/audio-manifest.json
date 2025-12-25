@@ -1,7 +1,7 @@
 {
   "version": "1.0.0",
-  "generatedAt": "2025-11-24T17:42:29.165Z",
-  "totalFiles": 25,
+  "generatedAt": "2025-12-25T11:57:46.564Z",
+  "totalFiles": 37,
   "directories": [
     {
       "name": "drums",
@@ -74,8 +74,26 @@
     {
       "name": "piano",
       "path": "instruments/piano",
-      "fileCount": 16,
+      "fileCount": 28,
       "files": [
+        {
+          "name": "A4.ogg",
+          "url": "/audio/samples/instruments/piano/A4.ogg",
+          "size": 33332,
+          "ext": "ogg"
+        },
+        {
+          "name": "As4.ogg",
+          "url": "/audio/samples/instruments/piano/As4.ogg",
+          "size": 33834,
+          "ext": "ogg"
+        },
+        {
+          "name": "B4.ogg",
+          "url": "/audio/samples/instruments/piano/B4.ogg",
+          "size": 34393,
+          "ext": "ogg"
+        },
         {
           "name": "C1.ogg",
           "url": "/audio/samples/instruments/piano/C1.ogg",
@@ -101,6 +119,12 @@
           "ext": "ogg"
         },
         {
+          "name": "C4_new.ogg",
+          "url": "/audio/samples/instruments/piano/C4_new.ogg",
+          "size": 35181,
+          "ext": "ogg"
+        },
+        {
           "name": "C5.ogg",
           "url": "/audio/samples/instruments/piano/C5.ogg",
           "size": 82214,
@@ -122,6 +146,54 @@
           "name": "C8.ogg",
           "url": "/audio/samples/instruments/piano/C8.ogg",
           "size": 21746,
+          "ext": "ogg"
+        },
+        {
+          "name": "Cs4.ogg",
+          "url": "/audio/samples/instruments/piano/Cs4.ogg",
+          "size": 34578,
+          "ext": "ogg"
+        },
+        {
+          "name": "D4.ogg",
+          "url": "/audio/samples/instruments/piano/D4.ogg",
+          "size": 35693,
+          "ext": "ogg"
+        },
+        {
+          "name": "Ds4.ogg",
+          "url": "/audio/samples/instruments/piano/Ds4.ogg",
+          "size": 36131,
+          "ext": "ogg"
+        },
+        {
+          "name": "E4.ogg",
+          "url": "/audio/samples/instruments/piano/E4.ogg",
+          "size": 36850,
+          "ext": "ogg"
+        },
+        {
+          "name": "F4.ogg",
+          "url": "/audio/samples/instruments/piano/F4.ogg",
+          "size": 37232,
+          "ext": "ogg"
+        },
+        {
+          "name": "Fs4.ogg",
+          "url": "/audio/samples/instruments/piano/Fs4.ogg",
+          "size": 37047,
+          "ext": "ogg"
+        },
+        {
+          "name": "G4.ogg",
+          "url": "/audio/samples/instruments/piano/G4.ogg",
+          "size": 32968,
+          "ext": "ogg"
+        },
+        {
+          "name": "Gs4.ogg",
+          "url": "/audio/samples/instruments/piano/Gs4.ogg",
+          "size": 36644,
           "ext": "ogg"
         },
         {

@@ -177,10 +177,11 @@ export class MixerService {
             if (this.useWasmMixer && this.unifiedMixer) {
                 const chIdx = this.channelAllocator.get(insertId);
                 if (chIdx !== undefined) {
-                    const channelInput = this.unifiedMixer.getChannelInput(chIdx);
-                    if (channelInput) {
-                        instrument.output.connect(channelInput);
+                    // Use UnifiedMixerNode's connectToChannel directly
+                    const success = this.unifiedMixer.connectToChannel(instrument.output, chIdx);
+                    if (success) {
                         this.instrumentToInsert.set(instrumentId, insertId);
+                        logger.debug(NAMESPACES.AUDIO, `Routed ${instrumentId} → WASM channel ${chIdx}`);
                         return true;
                     }
                 }

@@ -28,6 +28,7 @@ import { useRenderer } from '@/services/CanvasRenderManager';
 import { useAudioPlugin, useGhostValue } from '@/hooks/useAudioPlugin';
 import { useMixerStore } from '@/store/useMixerStore';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
+import { selectBpm } from '@/store/selectors/playbackSelectors';
 
 // ============================================================================
 // FILTER SWEEP VISUALIZER
@@ -255,7 +256,8 @@ const TidalFilterUI_V2 = ({ trackId, effect, effectNode, definition }) => {
   } = effect.settings || {};
 
   // Get current BPM from playback store
-  const { bpm: currentBpm } = usePlaybackStore();
+  // ✅ PERFORMANCE FIX: Use selectBpm instead of entire store
+  const currentBpm = usePlaybackStore(selectBpm);
 
   // Local state for UI
   const [localCutoff, setLocalCutoff] = useState(cutoff);
@@ -404,210 +406,210 @@ const TidalFilterUI_V2 = ({ trackId, effect, effectNode, definition }) => {
             ${categoryColors.primary}06 100%)`
         }}
       >
-            {/* Filter Sweep Visualizer */}
-            <div className="flex-shrink-0">
-              <FilterSweepVisualizer
-                trackId={trackId}
-                effectId={effect.id}
-                cutoff={localCutoff}
-                resonance={localResonance}
-                filterType={localFilterType}
-                drive={localDrive}
-              />
-            </div>
+        {/* Filter Sweep Visualizer */}
+        <div className="flex-shrink-0">
+          <FilterSweepVisualizer
+            trackId={trackId}
+            effectId={effect.id}
+            cutoff={localCutoff}
+            resonance={localResonance}
+            filterType={localFilterType}
+            drive={localDrive}
+          />
+        </div>
 
-            {/* ✅ NEW: Filter Model Selector */}
-            <div className="flex-shrink-0 bg-gradient-to-br from-black/50 to-[#001829]/30 rounded-xl p-3 border border-[#06b6d4]/20">
-              <div className="text-[9px] text-[#14b8a6]/70 font-bold uppercase tracking-wider mb-2">
-                FILTER MODEL
-              </div>
-              <ModeSelector
-                modes={[
-                  { id: 0, name: 'State-Var', description: 'Clean state-variable filter' },
-                  { id: 1, name: 'Moog', description: 'Warm Moog ladder filter' },
-                  { id: 2, name: 'Korg', description: 'Aggressive Korg MS-20 filter' },
-                  { id: 3, name: 'Oberheim', description: 'Smooth Oberheim SEM filter' }
-                ]}
-                activeMode={localFilterModel}
-                onChange={(mode) => handleParamChange('filterModel', mode)}
-                category="spectral-weave"
-                compact={true}
-              />
-            </div>
+        {/* ✅ NEW: Filter Model Selector */}
+        <div className="flex-shrink-0 bg-gradient-to-br from-black/50 to-[#001829]/30 rounded-xl p-3 border border-[#06b6d4]/20">
+          <div className="text-[9px] text-[#14b8a6]/70 font-bold uppercase tracking-wider mb-2">
+            FILTER MODEL
+          </div>
+          <ModeSelector
+            modes={[
+              { id: 0, name: 'State-Var', description: 'Clean state-variable filter' },
+              { id: 1, name: 'Moog', description: 'Warm Moog ladder filter' },
+              { id: 2, name: 'Korg', description: 'Aggressive Korg MS-20 filter' },
+              { id: 3, name: 'Oberheim', description: 'Smooth Oberheim SEM filter' }
+            ]}
+            activeMode={localFilterModel}
+            onChange={(mode) => handleParamChange('filterModel', mode)}
+            category="spectral-weave"
+            compact={true}
+          />
+        </div>
 
-            {/* Main Controls */}
-            <div className="flex-shrink-0 bg-gradient-to-br from-black/50 to-[#001829]/30 rounded-xl p-4 border border-[#06b6d4]/20">
-              <div className="grid grid-cols-3 gap-4">
+        {/* Main Controls */}
+        <div className="flex-shrink-0 bg-gradient-to-br from-black/50 to-[#001829]/30 rounded-xl p-4 border border-[#06b6d4]/20">
+          <div className="grid grid-cols-3 gap-4">
+            <Knob
+              label="CUTOFF"
+              value={localCutoff}
+              ghostValue={ghostCutoff}
+              onChange={(val) => handleParamChange('cutoff', val)}
+              min={20}
+              max={20000}
+              defaultValue={1000}
+              logarithmic
+              sizeVariant="large"
+              category="spectral-weave"
+              valueFormatter={(v) => `${v < 1000 ? v.toFixed(0) : (v / 1000).toFixed(1) + 'k'}Hz`}
+            />
+
+            <Knob
+              label="RESONANCE"
+              value={localResonance * 100}
+              ghostValue={ghostResonance}
+              onChange={(val) => handleParamChange('resonance', val / 100)}
+              min={0}
+              max={100}
+              defaultValue={50}
+              sizeVariant="large"
+              category="spectral-weave"
+              valueFormatter={(v) => `${v.toFixed(0)}%`}
+            />
+
+            <Knob
+              label="TYPE"
+              value={localFilterType * 100}
+              ghostValue={ghostFilterType}
+              onChange={(val) => handleParamChange('filterType', val / 100)}
+              min={0}
+              max={100}
+              defaultValue={0}
+              sizeVariant="large"
+              category="spectral-weave"
+              valueFormatter={(v) => getFilterTypeName(v / 100)}
+            />
+          </div>
+        </div>
+
+        {/* Secondary Controls */}
+        <div className="flex-shrink-0 bg-gradient-to-br from-black/50 to-[#001829]/30 rounded-xl p-4 border border-[#06b6d4]/20">
+          <div className="grid grid-cols-2 gap-4">
+            <Knob
+              label="DRIVE"
+              value={localDrive}
+              ghostValue={ghostDrive}
+              onChange={(val) => handleParamChange('drive', val)}
+              min={1}
+              max={10}
+              defaultValue={1}
+              sizeVariant="medium"
+              category="spectral-weave"
+              valueFormatter={(v) => `${v.toFixed(1)}x`}
+            />
+
+            <Knob
+              label="MIX"
+              value={localWet * 100}
+              ghostValue={ghostWet}
+              onChange={(val) => handleParamChange('wet', val / 100)}
+              min={0}
+              max={100}
+              defaultValue={100}
+              sizeVariant="medium"
+              category="spectral-weave"
+              valueFormatter={(v) => `${v.toFixed(0)}%`}
+            />
+          </div>
+        </div>
+
+        {/* ✅ NEW: LFO Modulation */}
+        <div className="flex-shrink-0 bg-gradient-to-br from-black/50 to-[#001829]/30 rounded-xl p-4 border border-[#06b6d4]/20">
+          <div className="text-[9px] text-[#14b8a6]/70 font-bold uppercase tracking-wider mb-3 flex items-center justify-between">
+            <span>LFO MODULATION</span>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={localLfoEnabled > 0.5}
+                onChange={(e) => handleParamChange('lfoEnabled', e.target.checked ? 1 : 0)}
+                className="w-4 h-4 rounded border-[#06b6d4]/30 bg-black/50 checked:bg-[#06b6d4] checked:border-[#06b6d4] focus:ring-2 focus:ring-[#06b6d4]/50"
+              />
+              <span className="text-[10px] text-white/70">ENABLED</span>
+            </label>
+          </div>
+
+          {localLfoEnabled > 0.5 && (
+            <>
+              <div className="grid grid-cols-2 gap-3 mb-3">
                 <Knob
-                  label="CUTOFF"
-                  value={localCutoff}
-                  ghostValue={ghostCutoff}
-                  onChange={(val) => handleParamChange('cutoff', val)}
-                  min={20}
-                  max={20000}
-                  defaultValue={1000}
-                  logarithmic
-                  sizeVariant="large"
+                  label="RATE"
+                  value={localLfoTempoSync > 0.5 ? 0 : localLfoRate}
+                  onChange={(val) => handleParamChange('lfoRate', val)}
+                  min={0.1}
+                  max={20}
+                  defaultValue={1.0}
+                  sizeVariant="medium"
                   category="spectral-weave"
-                  valueFormatter={(v) => `${v < 1000 ? v.toFixed(0) : (v / 1000).toFixed(1) + 'k'}Hz`}
+                  valueFormatter={(v) => `${v.toFixed(2)}Hz`}
+                  disabled={localLfoTempoSync > 0.5}
                 />
 
                 <Knob
-                  label="RESONANCE"
-                  value={localResonance * 100}
-                  ghostValue={ghostResonance}
-                  onChange={(val) => handleParamChange('resonance', val / 100)}
+                  label="DEPTH"
+                  value={localLfoDepth * 100}
+                  onChange={(val) => handleParamChange('lfoDepth', val / 100)}
                   min={0}
                   max={100}
                   defaultValue={50}
-                  sizeVariant="large"
-                  category="spectral-weave"
-                  valueFormatter={(v) => `${v.toFixed(0)}%`}
-                />
-
-                <Knob
-                  label="TYPE"
-                  value={localFilterType * 100}
-                  ghostValue={ghostFilterType}
-                  onChange={(val) => handleParamChange('filterType', val / 100)}
-                  min={0}
-                  max={100}
-                  defaultValue={0}
-                  sizeVariant="large"
-                  category="spectral-weave"
-                  valueFormatter={(v) => getFilterTypeName(v / 100)}
-                />
-              </div>
-            </div>
-
-            {/* Secondary Controls */}
-            <div className="flex-shrink-0 bg-gradient-to-br from-black/50 to-[#001829]/30 rounded-xl p-4 border border-[#06b6d4]/20">
-              <div className="grid grid-cols-2 gap-4">
-                <Knob
-                  label="DRIVE"
-                  value={localDrive}
-                  ghostValue={ghostDrive}
-                  onChange={(val) => handleParamChange('drive', val)}
-                  min={1}
-                  max={10}
-                  defaultValue={1}
-                  sizeVariant="medium"
-                  category="spectral-weave"
-                  valueFormatter={(v) => `${v.toFixed(1)}x`}
-                />
-
-                <Knob
-                  label="MIX"
-                  value={localWet * 100}
-                  ghostValue={ghostWet}
-                  onChange={(val) => handleParamChange('wet', val / 100)}
-                  min={0}
-                  max={100}
-                  defaultValue={100}
                   sizeVariant="medium"
                   category="spectral-weave"
                   valueFormatter={(v) => `${v.toFixed(0)}%`}
                 />
               </div>
-            </div>
 
-            {/* ✅ NEW: LFO Modulation */}
-            <div className="flex-shrink-0 bg-gradient-to-br from-black/50 to-[#001829]/30 rounded-xl p-4 border border-[#06b6d4]/20">
-              <div className="text-[9px] text-[#14b8a6]/70 font-bold uppercase tracking-wider mb-3 flex items-center justify-between">
-                <span>LFO MODULATION</span>
-                <label className="flex items-center gap-2 cursor-pointer">
+              <div className="mb-3">
+                <div className="text-[9px] text-[#14b8a6]/70 font-bold uppercase tracking-wider mb-2">
+                  SHAPE
+                </div>
+                <ModeSelector
+                  modes={[
+                    { id: 0, name: 'Sine', description: 'Smooth sine wave' },
+                    { id: 1, name: 'Triangle', description: 'Linear triangle wave' },
+                    { id: 2, name: 'Square', description: 'Hard square wave' },
+                    { id: 3, name: 'Saw', description: 'Rising sawtooth wave' }
+                  ]}
+                  activeMode={localLfoShape}
+                  onChange={(mode) => handleParamChange('lfoShape', mode)}
+                  category="spectral-weave"
+                  compact={true}
+                />
+              </div>
+
+              <div className="mb-0">
+                <label className="flex items-center gap-2 cursor-pointer mb-2">
                   <input
                     type="checkbox"
-                    checked={localLfoEnabled > 0.5}
-                    onChange={(e) => handleParamChange('lfoEnabled', e.target.checked ? 1 : 0)}
+                    checked={localLfoTempoSync > 0.5}
+                    onChange={(e) => handleParamChange('lfoTempoSync', e.target.checked ? 1 : 0)}
                     className="w-4 h-4 rounded border-[#06b6d4]/30 bg-black/50 checked:bg-[#06b6d4] checked:border-[#06b6d4] focus:ring-2 focus:ring-[#06b6d4]/50"
                   />
-                  <span className="text-[10px] text-white/70">ENABLED</span>
+                  <span className="text-[10px] text-white/70 font-bold uppercase">TEMPO SYNC</span>
                 </label>
+
+                {localLfoTempoSync > 0.5 && (
+                  <ModeSelector
+                    modes={[
+                      { id: 0, name: '1/32', description: '1/32 note' },
+                      { id: 1, name: '1/16', description: '1/16 note' },
+                      { id: 2, name: '1/8', description: '1/8 note' },
+                      { id: 3, name: '1/4', description: '1/4 note' },
+                      { id: 4, name: '1/2', description: '1/2 note' },
+                      { id: 5, name: '1/1', description: 'Whole note' },
+                      { id: 6, name: '1/8.', description: 'Dotted 1/8 note' },
+                      { id: 7, name: '1/4.', description: 'Dotted 1/4 note' },
+                      { id: 8, name: '1/8t', description: '1/8 triplet' },
+                      { id: 9, name: '1/4t', description: '1/4 triplet' }
+                    ]}
+                    activeMode={localLfoNoteDivision}
+                    onChange={(mode) => handleParamChange('lfoNoteDivision', mode)}
+                    category="spectral-weave"
+                    compact={true}
+                  />
+                )}
               </div>
-              
-              {localLfoEnabled > 0.5 && (
-                <>
-                  <div className="grid grid-cols-2 gap-3 mb-3">
-                    <Knob
-                      label="RATE"
-                      value={localLfoTempoSync > 0.5 ? 0 : localLfoRate}
-                      onChange={(val) => handleParamChange('lfoRate', val)}
-                      min={0.1}
-                      max={20}
-                      defaultValue={1.0}
-                      sizeVariant="medium"
-                      category="spectral-weave"
-                      valueFormatter={(v) => `${v.toFixed(2)}Hz`}
-                      disabled={localLfoTempoSync > 0.5}
-                    />
-
-                    <Knob
-                      label="DEPTH"
-                      value={localLfoDepth * 100}
-                      onChange={(val) => handleParamChange('lfoDepth', val / 100)}
-                      min={0}
-                      max={100}
-                      defaultValue={50}
-                      sizeVariant="medium"
-                      category="spectral-weave"
-                      valueFormatter={(v) => `${v.toFixed(0)}%`}
-                    />
-                  </div>
-
-                  <div className="mb-3">
-                    <div className="text-[9px] text-[#14b8a6]/70 font-bold uppercase tracking-wider mb-2">
-                      SHAPE
-                    </div>
-                    <ModeSelector
-                      modes={[
-                        { id: 0, name: 'Sine', description: 'Smooth sine wave' },
-                        { id: 1, name: 'Triangle', description: 'Linear triangle wave' },
-                        { id: 2, name: 'Square', description: 'Hard square wave' },
-                        { id: 3, name: 'Saw', description: 'Rising sawtooth wave' }
-                      ]}
-                      activeMode={localLfoShape}
-                      onChange={(mode) => handleParamChange('lfoShape', mode)}
-                      category="spectral-weave"
-                      compact={true}
-                    />
-                  </div>
-
-                  <div className="mb-0">
-                    <label className="flex items-center gap-2 cursor-pointer mb-2">
-                      <input
-                        type="checkbox"
-                        checked={localLfoTempoSync > 0.5}
-                        onChange={(e) => handleParamChange('lfoTempoSync', e.target.checked ? 1 : 0)}
-                        className="w-4 h-4 rounded border-[#06b6d4]/30 bg-black/50 checked:bg-[#06b6d4] checked:border-[#06b6d4] focus:ring-2 focus:ring-[#06b6d4]/50"
-                      />
-                      <span className="text-[10px] text-white/70 font-bold uppercase">TEMPO SYNC</span>
-                    </label>
-
-                    {localLfoTempoSync > 0.5 && (
-                      <ModeSelector
-                        modes={[
-                          { id: 0, name: '1/32', description: '1/32 note' },
-                          { id: 1, name: '1/16', description: '1/16 note' },
-                          { id: 2, name: '1/8', description: '1/8 note' },
-                          { id: 3, name: '1/4', description: '1/4 note' },
-                          { id: 4, name: '1/2', description: '1/2 note' },
-                          { id: 5, name: '1/1', description: 'Whole note' },
-                          { id: 6, name: '1/8.', description: 'Dotted 1/8 note' },
-                          { id: 7, name: '1/4.', description: 'Dotted 1/4 note' },
-                          { id: 8, name: '1/8t', description: '1/8 triplet' },
-                          { id: 9, name: '1/4t', description: '1/4 triplet' }
-                        ]}
-                        activeMode={localLfoNoteDivision}
-                        onChange={(mode) => handleParamChange('lfoNoteDivision', mode)}
-                        category="spectral-weave"
-                        compact={true}
-                      />
-                    )}
-                  </div>
-                </>
-              )}
-            </div>
+            </>
+          )}
+        </div>
       </div>
     </PluginContainerV2>
   );

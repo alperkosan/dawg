@@ -355,6 +355,20 @@ export class NativeTransportSystem {
             return;
         }
 
+        // ✅ CRITICAL FIX: Validate endStep to prevent infinite loop restart
+        // If endStep is 0 or negative, set a minimum of 64 steps (4 bars)
+        if (!endStep || endStep <= 0) {
+            console.warn(`⚠️ Invalid loopEnd (${endStep}), using default 64 steps`);
+            endStep = 64;
+        }
+
+        // Ensure startStep is not greater than endStep
+        if (startStep >= endStep) {
+            console.warn(`⚠️ Invalid loop points: start (${startStep}) >= end (${endStep}), using defaults`);
+            startStep = 0;
+            endStep = 64;
+        }
+
         // Convert steps to ticks (1 step = 24 ticks at PPQ=96)
         this.loopStartTick = startStep * this.ticksPerStep;
         // ✅ CRITICAL FIX: loopEnd is exclusive, so loopEndTick should be the first tick AFTER the last step
@@ -381,8 +395,8 @@ export class NativeTransportSystem {
         }
 
 
-        // Reset position if outside loop
-        if (this.currentTick >= this.loopEndTick) {
+        // Reset position if outside loop (only if loopEndTick is valid)
+        if (this.loopEndTick > 0 && this.currentTick >= this.loopEndTick) {
             this.currentTick = this.loopStartTick;
             this.nextTickTime = this.audioContext.currentTime;
         }
@@ -521,11 +535,12 @@ export class NativeTransportSystem {
         // ✅ Then: Check if we've reached or passed the loop boundary
         // loopEndTick is exclusive (e.g., for 16 steps, loopEndTick = 384)
         // When currentTick reaches 384, we should restart to 0
-        if (this.loop && this.currentTick >= this.loopEndTick) {
+        // ✅ CRITICAL FIX: Also check that loopEndTick is valid (> 0) to prevent infinite loop events
+        if (this.loop && this.loopEndTick > 0 && this.currentTick >= this.loopEndTick) {
             const previousTick = this.currentTick;
 
-            // ✅ Reset to 0 (beginning) on loop restart
-            this.currentTick = 0;
+            // ✅ Reset to loopStartTick (not always 0) on loop restart
+            this.currentTick = this.loopStartTick || 0;
 
             // ✅ CRITICAL: nextTickTime is NOT updated - already correct from previous tick
             // This ensures perfect loop length consistency

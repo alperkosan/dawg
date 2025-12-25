@@ -1,4 +1,27 @@
+/**
+ * @deprecated This class is DEPRECATED. Use NativeAudioEngineFacade instead.
+ * 
+ * Migration Guide:
+ * ```javascript
+ * // OLD (deprecated):
+ * import { NativeAudioEngine } from '@/lib/core/NativeAudioEngine';
+ * const engine = new NativeAudioEngine(callbacks);
+ * 
+ * // NEW (recommended):
+ * import { NativeAudioEngineFacade } from '@/lib/core/NativeAudioEngineFacade';
+ * const engine = new NativeAudioEngineFacade(callbacks);
+ * // OR use the factory:
+ * import { createAudioEngine } from '@/lib/core';
+ * const engine = createAudioEngine(callbacks);
+ * ```
+ * 
+ * See /docs/AUDIO_ENGINE_MIGRATION.md for full migration guide.
+ * 
+ * This file will be removed in a future version.
+ */
+
 import { NativeTransportSystem } from './NativeTransportSystem.js';
+
 import { ImprovedWorkletManager } from '../audio/ImprovedWorkletManager.js';
 import { PlaybackManager } from './PlaybackManager.js';
 import { NativeTimeUtils } from '../utils/NativeTimeUtils.js';
