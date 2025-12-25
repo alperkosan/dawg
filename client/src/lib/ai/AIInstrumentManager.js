@@ -7,7 +7,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { aiInstrumentService } from './AIInstrumentService';
 import { useInstrumentsStore } from '@/store/useInstrumentsStore';
-import { AudioContextService } from '@/lib/services/AudioContextService';
+import { InstrumentService } from '@/lib/services/InstrumentService';
 import { useArrangementStore } from '@/store/useArrangementStore';
 
 export class AIInstrumentManager {
@@ -17,14 +17,15 @@ export class AIInstrumentManager {
   async createAIInstrument(prompt, options = {}) {
     const {
       variationIndex = 0,
-      provider = 'stability-ai',
+      provider = 'elevenlabs',
       duration = 5,
-      apiKey = null
+      apiKey = null,
+      preGeneratedResult = null // ✅ NEW: Allow passing already generated result
     } = options;
 
     try {
-      // Generate audio
-      const result = await aiInstrumentService.generateInstrument(prompt, {
+      // Use pre-generated result if available, otherwise generate
+      const result = preGeneratedResult || await aiInstrumentService.generateInstrument(prompt, {
         provider,
         variations: 3,
         duration,
@@ -39,11 +40,21 @@ export class AIInstrumentManager {
 
       // Create instrument data
       const instrumentId = `ai-inst-${uuidv4()}`;
+
+      // ✅ PERSISTENCE FIX: Create Data URL for the sample
+      // This ensures the instrument can be restored/reloaded even if audioBuffer is lost
+      // and matches the project's standard sample usage (which relies on .url)
+      let audioUrl = null;
+      if (selectedVariation.audioData) {
+        audioUrl = `data:audio/mpeg;base64,${selectedVariation.audioData}`;
+      }
+
       const instrumentData = {
         id: instrumentId,
         name: this.generateInstrumentName(prompt),
         type: 'ai-generated',
         audioBuffer: selectedVariation.audioBuffer,
+        url: audioUrl, // ✅ Assign standard URL property
         aiMetadata: {
           provider,
           originalPrompt: prompt,
@@ -60,16 +71,18 @@ export class AIInstrumentManager {
 
       // Add to instruments store
       const instrumentsStore = useInstrumentsStore.getState();
-      
+
+      // Format instrument data for handleAddNewInstrument
       // Format instrument data for handleAddNewInstrument
       const formattedInstrumentData = {
         id: instrumentData.id,
         name: instrumentData.name,
         type: 'sample', // AI-generated instruments are treated as samples
         audioBuffer: instrumentData.audioBuffer,
+        url: instrumentData.url, // ✅ Pass URL to store
         aiMetadata: instrumentData.aiMetadata
       };
-      
+
       instrumentsStore.handleAddNewInstrument(formattedInstrumentData);
 
       // Add to first pattern if it exists
@@ -88,10 +101,10 @@ export class AIInstrumentManager {
   generateInstrumentName(prompt) {
     // Extract key words from prompt
     const words = prompt.toLowerCase().split(/\s+/);
-    const keyWords = words.filter(word => 
+    const keyWords = words.filter(word =>
       !['a', 'an', 'the', 'with', 'and', 'or', 'for', 'to'].includes(word)
     );
-    
+
     // Capitalize first letter of each word
     const name = keyWords
       .slice(0, 3) // Take first 3 words
@@ -107,16 +120,16 @@ export class AIInstrumentManager {
   addToFirstPattern(instrumentId) {
     try {
       const { patterns, patternOrder, createPattern } = useArrangementStore.getState();
-      
+
       if (patternOrder.length === 0) {
         // Create first pattern if it doesn't exist
         createPattern('Pattern 1');
       }
 
-      const firstPatternId = patternOrder.length > 0 
-        ? patternOrder[0] 
+      const firstPatternId = patternOrder.length > 0
+        ? patternOrder[0]
         : useArrangementStore.getState().patternOrder[0];
-      
+
       if (firstPatternId) {
         // Instrument is automatically added to pattern via handleAddNewInstrument
         console.log(`✅ Added AI instrument to pattern: ${firstPatternId}`);
@@ -156,9 +169,15 @@ export class AIInstrumentManager {
       );
 
       // Update instrument
+      let audioUrl = null;
+      if (result.variations[0].audioData) {
+        audioUrl = `data:audio/mpeg;base64,${result.variations[0].audioData}`;
+      }
+
       const updatedInstrument = {
         ...instrument,
         audioBuffer: result.variations[0].audioBuffer,
+        url: audioUrl, // ✅ Update URL
         aiMetadata: {
           ...aiMetadata,
           selectedPrompt: variation.prompt,
@@ -170,7 +189,8 @@ export class AIInstrumentManager {
       instrumentsStore.updateInstrument(instrumentId, updatedInstrument);
 
       // Update audio engine
-      AudioContextService.updateInstrument(updatedInstrument);
+      // Note: updateInstrument needs buffer sync - reconcile handles this
+      InstrumentService.reconcile(instrumentId, updatedInstrument);
 
       return updatedInstrument;
     } catch (error) {

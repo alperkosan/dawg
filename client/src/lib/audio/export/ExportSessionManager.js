@@ -1,5 +1,6 @@
 import { ProjectSerializer } from '@/lib/project/ProjectSerializer';
 import { AudioContextService } from '@/lib/services/AudioContextService';
+import { AudioEngineGlobal } from '@/lib/core/AudioEngineGlobal';
 import { NativeAudioEngine } from '@/lib/core/NativeAudioEngine';
 
 /**
@@ -26,7 +27,7 @@ export async function runProjectExportSession(projectData, executor, options = {
 
   const { preserveWorkspace = true } = options;
 
-  const previousEngine = AudioContextService.getAudioEngine();
+  const previousEngine = AudioEngineGlobal.get();
   let workspaceSnapshot = null;
 
   if (preserveWorkspace && typeof ProjectSerializer.serializeCurrentState === 'function') {

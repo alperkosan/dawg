@@ -10,10 +10,12 @@ const DND_TYPE = 'EFFECT_SLOT';
 export const EffectSlot = ({ effect, trackId, index, moveEffect }) => {
   const ref = useRef(null);
   const { handleMixerEffectChange, handleMixerEffectRemove } = useMixerStore.getState();
+  const canDragRef = useRef(true);
 
   const [{ isDragging }, drag] = useDrag({
     type: DND_TYPE,
     item: { id: effect.id, index },
+    canDrag: () => canDragRef.current,
     collect: (monitor) => ({
       isDragging: monitor.isDragging(),
     }),
@@ -58,16 +60,23 @@ export const EffectSlot = ({ effect, trackId, index, moveEffect }) => {
       </div>
       <div className="effect-slot-v2__body">
         {hasMixControl && (
-          <Knob
-            label="Mix"
-            value={(effect.settings.wet || 0) * 100}
-            onChange={(val) => handleMixerEffectChange(trackId, effect.id, 'wet', val / 100)}
-            min={0}
-            max={100}
-            defaultValue={100}
-            size={32}
-            unit="%"
-          />
+          <div
+            onPointerDown={() => { canDragRef.current = false; }}
+            onPointerUp={() => { canDragRef.current = true; }}
+            onPointerLeave={() => { canDragRef.current = true; }}
+            onPointerCancel={() => { canDragRef.current = true; }}
+          >
+            <Knob
+              label="Mix"
+              value={(effect.settings.wet || 0) * 100}
+              onChange={(val) => handleMixerEffectChange(trackId, effect.id, 'wet', val / 100)}
+              min={0}
+              max={100}
+              defaultValue={100}
+              size={32}
+              unit="%"
+            />
+          </div>
         )}
         {/* Gelecekte diğer hızlı kontroller buraya eklenebilir */}
       </div>

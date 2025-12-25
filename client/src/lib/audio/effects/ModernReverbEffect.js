@@ -183,6 +183,9 @@ export class ModernReverbEffect extends BaseEffect {
     const sampleRate = ctx.sampleRate;
     const stereSpread = 23; // Slight offset for stereo
 
+    // ✅ FIX: Create mixer for comb filter outputs
+    this.combMixer = ctx.createGain();
+
     // Left channel combs
     for (let i = 0; i < 4; i++) {
       const delay = ctx.createDelay(0.2);
@@ -193,10 +196,14 @@ export class ModernReverbEffect extends BaseEffect {
       damping.type = 'lowpass';
       damping.frequency.value = 5000;
 
+      // ✅ FIX: Proper feedback routing
       this.preDelayNode.connect(delay);
       delay.connect(damping);
       damping.connect(feedback);
-      feedback.connect(delay);
+      feedback.connect(delay); // Feedback loop
+
+      // ✅ FIX: Connect output to mixer (was missing!)
+      damping.connect(this.combMixer);
 
       this.combFilters.push({ delay, feedback, damping, channel: 'left' });
     }
@@ -211,10 +218,14 @@ export class ModernReverbEffect extends BaseEffect {
       damping.type = 'lowpass';
       damping.frequency.value = 5000;
 
+      // ✅ FIX: Proper feedback routing
       this.preDelayNode.connect(delay);
       delay.connect(damping);
       damping.connect(feedback);
-      feedback.connect(delay);
+      feedback.connect(delay); // Feedback loop
+
+      // ✅ FIX: Connect output to mixer (was missing!)
+      damping.connect(this.combMixer);
 
       this.combFilters.push({ delay, feedback, damping, channel: 'right' });
     }
@@ -223,11 +234,8 @@ export class ModernReverbEffect extends BaseEffect {
     this.allpassFilters = [];
     const allpassTunings = [225, 341, 441, 556];
 
-    let lastNode = null;
-    this.combFilters.forEach(comb => {
-      if (!lastNode) lastNode = ctx.createGain();
-      comb.delay.connect(lastNode);
-    });
+    // ✅ FIX: Start with combMixer output, not individual comb delays
+    let lastNode = this.combMixer;
 
     allpassTunings.forEach(tuning => {
       const delay = ctx.createDelay(0.1);
@@ -291,7 +299,8 @@ export class ModernReverbEffect extends BaseEffect {
     this.lateGain.gain.value = earlyLateMix;
 
     // Comb filters: feedback based on decay time and size
-    const baseFeedback = Math.min(0.98, 1 - (1 / (decay * 10)));
+    // ✅ SAFETY: Clamp max feedback to 0.95 to prevent self-oscillation/runaway feedback
+    const baseFeedback = Math.min(0.95, 1 - (1 / (decay * 10)));
     this.combFilters.forEach(comb => {
       comb.feedback.gain.value = baseFeedback * (0.9 + size * 0.1);
 

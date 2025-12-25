@@ -1,0 +1,50 @@
+/* Global Color Picker Styles */
+
+.mixer-color-picker {
+    background: var(--zenith-bg-tertiary);
+    border: 1px solid var(--zenith-border-strong);
+    border-radius: 6px;
+    padding: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    animation: colorPickerFadeIn 0.15s ease-out;
+    pointer-events: all;
+}
+
+@keyframes colorPickerFadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-4px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.mixer-color-picker__grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 4px;
+    min-width: 140px;
+}
+
+.mixer-color-picker__swatch {
+    width: 20px;
+    height: 20px;
+    border-radius: 3px;
+    border: 2px solid transparent;
+    cursor: pointer;
+    transition: all 0.15s;
+    padding: 0;
+}
+
+.mixer-color-picker__swatch:hover {
+    transform: scale(1.15);
+    box-shadow: 0 0 8px currentColor;
+}
+
+.mixer-color-picker__swatch.active {
+    border-color: var(--zenith-text-primary);
+    box-shadow: 0 0 6px currentColor;
+}

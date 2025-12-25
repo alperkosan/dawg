@@ -4,7 +4,7 @@
  */
 
 import { useArrangementStore } from '@/store/useArrangementStore';
-import { useArrangementV2Store } from '@/store/useArrangementV2Store';
+
 import { useInstrumentsStore } from '@/store/useInstrumentsStore';
 import { useMixerStore } from '@/store/useMixerStore';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
@@ -13,6 +13,12 @@ import { useProjectAudioStore } from '@/store/useProjectAudioStore';
 import { useArrangementWorkspaceStore } from '@/store/useArrangementWorkspaceStore';
 import { storageService } from '@/services/storage.js';
 import { normalizeEffectSettings } from '@/lib/audio/effects/parameterMappings.js';
+import { getAutomationManager } from '@/lib/automation/AutomationManager.js';
+import { getScaleSystem } from '@/lib/music/ScaleSystem.js';
+import { AudioEngineGlobal } from '@/lib/core/AudioEngineGlobal.js'; // ✅ NEW
+import { EngineStateSyncService } from '@/lib/services/EngineStateSyncService.js'; // ✅ NEW
+import { v4 as uuidv4 } from 'uuid'; // ✅ For unique ID generation
+
 
 export class ProjectSerializer {
   static CURRENT_VERSION = '1.0.0';
@@ -24,6 +30,7 @@ export class ProjectSerializer {
    * - 20 arrangement tracks
    */
   static createEmptyProjectTemplate() {
+    // ... (rest of template creation remains unchanged)
     // Color palette for mixer channels (5 colors, repeated 4 times for 20 channels)
     const mixerColors = [
       '#ef4444', // Red
@@ -189,12 +196,13 @@ export class ProjectSerializer {
         bpm: playbackStore.bpm || 120,
         time_signature: playbackStore.timeSignature || '4/4',
         key_signature: playbackStore.keySignature,
+        scale: getScaleSystem().getScale(), // ✅ NEW: Persist scale state
       },
 
       instruments: this.serializeInstruments(instrumentsStore, projectAudioStore),
       patterns: this.serializePatterns(arrangementStore),
       pattern_order: arrangementStore.patternOrder || [],
-      
+
       arrangement: {
         tracks: this.serializeArrangementTracks(arrangementStore),
         clips: this.serializeArrangementClips(arrangementStore),
@@ -241,13 +249,13 @@ export class ProjectSerializer {
    */
   static async clearAll() {
     console.log('🧹 Clearing all project data from stores...');
-    
+
     try {
       // ✅ FIX: Get active instrument URLs for buffer cleanup
       const instrumentsStore = useInstrumentsStore.getState();
       const activeUrls = new Set();
       const instruments = instrumentsStore.instruments || [];
-      
+
       instruments.forEach(inst => {
         if (inst.url) activeUrls.add(inst.url);
         if (inst.multiSamples) {
@@ -256,10 +264,9 @@ export class ProjectSerializer {
           });
         }
       });
-      
+
       // Clear audio engine instruments and buffers FIRST
-      const { AudioContextService } = await import('../services/AudioContextService.js');
-      const engine = AudioContextService.getAudioEngine();
+      const engine = AudioEngineGlobal.get();
       if (engine) {
         // Clear instruments from audio engine
         if (engine.instruments) {
@@ -268,27 +275,25 @@ export class ProjectSerializer {
             try {
               if (engine.removeInstrument) {
                 engine.removeInstrument(id);
-              } else if (AudioContextService.removeInstrument) {
-                AudioContextService.removeInstrument(id);
               }
             } catch (e) {
               console.warn(`⚠️ Failed to remove engine instrument ${id}:`, e);
             }
           });
         }
-        
+
         // ✅ FIX: Clear ALL sample buffers when switching projects (not just unused)
         // This ensures clean state for new project
         if (engine.sampleBuffers) {
           engine.sampleBuffers.clear();
           console.log('🧹 Cleared all sample buffers from audio engine');
         }
-        
+
         // ✅ FIX: Clear ALL cache in SampleLoader when switching projects
         const { SampleLoader } = await import('../audio/instruments/loaders/SampleLoader.js');
         SampleLoader.clearCache();
       }
-      
+
       // Clear instruments from store (direct state update)
       useInstrumentsStore.setState({
         instruments: [],
@@ -296,12 +301,12 @@ export class ProjectSerializer {
         selectedChannels: [],
         processingEffects: {}
       });
-      
+
       // Clear mixer tracks (except master) - use removeTrack method
       const mixerStore = useMixerStore.getState();
       const mixerTracks = mixerStore.mixerTracks || [];
       const tracksToRemove = mixerTracks.filter(track => track.id !== 'master');
-      
+
       // Remove tracks in reverse order to avoid dependency issues
       tracksToRemove.reverse().forEach(track => {
         try {
@@ -310,7 +315,7 @@ export class ProjectSerializer {
           console.warn(`⚠️ Failed to remove mixer track ${track.id}:`, e);
         }
       });
-      
+
       // ✅ FIX: Clear ALL patterns completely (don't use deletePattern which keeps at least one)
       // Directly reset patterns state to empty object
       useArrangementStore.setState({
@@ -319,7 +324,7 @@ export class ProjectSerializer {
         activePatternId: null, // Will be set when new project loads
         nextPatternNumber: 1, // Reset pattern numbering
       });
-      
+
       // Clear arrangement tracks and clips
       // ✅ FIX: Use Zustand store's setState method (not from getState())
       useArrangementStore.setState({
@@ -328,7 +333,7 @@ export class ProjectSerializer {
         arrangementMarkers: [],
         arrangementLoopRegions: []
       });
-      
+
       // Clear timeline
       // ✅ FIX: TimelineStore doesn't have setTotalBars/setTotalBeats methods
       // Timeline state is managed through markers, loop regions, etc.
@@ -338,11 +343,11 @@ export class ProjectSerializer {
         loopRegions: [],
         activeLoopRegionId: null
       });
-      
+
       // Clear audio assets
       const audioStore = useProjectAudioStore.getState();
       audioStore.clearAll();
-      
+
       // Clear workspace
       // ✅ FIX: Workspace state is in useArrangementStore, not useArrangementWorkspaceStore
       // Reset workspace selection state
@@ -350,7 +355,7 @@ export class ProjectSerializer {
         selectedClipIds: [],
         // viewMode and selectedTrackId might not exist in store, but we'll try to reset if they do
       });
-      
+
       // ✅ FIX: Stop playback and reset position when switching projects
       const playbackStore = usePlaybackStore.getState();
       if (playbackStore.isPlaying) {
@@ -359,7 +364,7 @@ export class ProjectSerializer {
       if (playbackStore.jumpToStep) {
         playbackStore.jumpToStep(0);
       }
-      
+
       console.log('✅ All project data cleared');
     } catch (error) {
       console.error('❌ Failed to clear project data:', error);
@@ -369,112 +374,104 @@ export class ProjectSerializer {
 
   /**
    * Deserialize project data and restore to stores
+   * Uses batch mode to prevent redundant sync operations
    */
   static async deserialize(projectData) {
     if (!projectData || typeof projectData !== 'object') {
       throw new Error('Invalid project data');
     }
 
-    // ✅ FIX: Don't call clearAll() here - it's already called in handleProjectSelect
-    // This prevents double-clearing and ensures clean state
+    // ✅ OPTIMIZATION: Enable batch mode to suppress redundant syncs
+    // All sync requests during restore will be queued and executed once at the end
+    const syncService = EngineStateSyncService.getInstance();
+    syncService.setBatchMode(true);
 
-    // Restore to stores in correct order:
-    // 1. Mixer tracks FIRST (instruments need mixer inserts to route to)
-    // 2. Preload samples BEFORE creating instruments (instruments need buffers)
-    // 3. Instruments (need mixer inserts and buffers to exist)
-    // 4. Patterns (need instruments to exist)
-    // 5. Arrangement (needs patterns and tracks)
-    
-    if (projectData.mixer) {
-      await this.deserializeMixer(projectData.mixer);
-    }
+    try {
+      // Restore to stores in correct order:
+      // 1. Mixer tracks FIRST (instruments need mixer inserts to route to)
+      // 2. Preload samples BEFORE creating instruments (instruments need buffers)
+      // 3. Instruments (need mixer inserts and buffers to exist)
+      // 4. Patterns (need instruments to exist)
+      // 5. Arrangement (needs patterns and tracks)
 
-    // ✅ CRITICAL FIX: Sync mixer tracks to AudioEngine after deserialization
-    // This ensures mixer inserts exist before instruments are created
-    const { AudioContextService } = await import('../services/AudioContextService.js');
-    await AudioContextService._syncMixerTracksToAudioEngine();
+      if (projectData.mixer) {
+        await this.deserializeMixer(projectData.mixer);
+      }
 
-    if (projectData.audio_assets) {
-      this.deserializeAudioAssets(projectData.audio_assets);
-    }
+      if (projectData.audio_assets) {
+        this.deserializeAudioAssets(projectData.audio_assets);
+      }
 
-    // ✅ CRITICAL FIX: Preload samples BEFORE creating instruments
-    // This ensures buffers are available when instruments are created
-    if (projectData.instruments) {
-      await this._preloadProjectSamples(projectData);
-    }
+      // ✅ CRITICAL: Preload samples BEFORE creating instruments
+      if (projectData.instruments) {
+        await this._preloadProjectSamples(projectData);
+      }
 
-    if (projectData.instruments) {
-      this.deserializeInstruments(projectData.instruments);
-    }
+      if (projectData.instruments) {
+        this.deserializeInstruments(projectData.instruments);
+      }
 
-    // ✅ CRITICAL FIX: Sync instruments to mixer inserts AFTER deserializing instruments
-    // This ensures instruments are properly routed to their mixer tracks
-    await AudioContextService._syncInstrumentsToMixerInserts();
+      if (projectData.patterns) {
+        this.deserializePatterns(projectData.patterns);
+      }
 
-    if (projectData.patterns) {
-      this.deserializePatterns(projectData.patterns);
-    }
-    
-    // ✅ FIX: Always restore pattern order and active pattern
-    // If not provided, will default to first pattern
-    this.deserializePatternOrder(projectData.pattern_order, projectData.active_pattern_id);
+      this.deserializePatternOrder(projectData.pattern_order, projectData.active_pattern_id);
 
-    if (projectData.arrangement) {
-      this.deserializeArrangement(projectData.arrangement);
-    }
+      if (projectData.arrangement) {
+        this.deserializeArrangement(projectData.arrangement);
+      }
 
-    if (projectData.timeline) {
-      this.deserializeTimeline(projectData.timeline);
-    }
+      if (projectData.timeline) {
+        this.deserializeTimeline(projectData.timeline);
+      }
 
-    if (projectData.workspace) {
-      this.deserializeWorkspace(projectData.workspace);
-    }
+      if (projectData.workspace) {
+        this.deserializeWorkspace(projectData.workspace);
+      }
 
-    // Restore playback settings
-    if (projectData.metadata) {
-      const playbackStore = usePlaybackStore.getState();
+      // Restore playback settings
+      if (projectData.metadata) {
+        const playbackStore = usePlaybackStore.getState();
 
-      if (projectData.metadata.bpm) {
-        const restoredBpm = Number(projectData.metadata.bpm) || 120;
+        if (projectData.metadata.bpm) {
+          const restoredBpm = Number(projectData.metadata.bpm) || 120;
+          usePlaybackStore.setState({ bpm: restoredBpm });
 
-        // ✅ Update Zustand state immediately so helper utilities read the correct BPM
-        usePlaybackStore.setState({ bpm: restoredBpm });
+          try {
+            const engine = AudioEngineGlobal.get();
+            if (engine && typeof engine.setBPM === 'function') {
+              engine.setBPM(restoredBpm);
+            }
 
-        try {
-          const { AudioContextService } = await import('../services/AudioContextService.js');
-          // Always push BPM to the currently active audio engine
-          if (typeof AudioContextService.setBPM === 'function') {
-            AudioContextService.setBPM(restoredBpm);
-          } else {
-            const engine = AudioContextService.getAudioEngine?.();
-            engine?.setBPM?.(restoredBpm);
+            const controller = playbackStore._controller;
+            if (controller && controller.audioEngine === engine && typeof controller.setBPM === 'function') {
+              controller.setBPM(restoredBpm);
+            }
+          } catch (error) {
+            console.warn('⚠️ Failed to sync BPM to audio engine:', error);
           }
+        }
 
-          // Only route through PlaybackController when it's bound to the same engine
-          const controller = playbackStore._controller;
-          const currentEngine = AudioContextService.getAudioEngine?.();
-          if (controller && controller.audioEngine === currentEngine && typeof controller.setBPM === 'function') {
-            controller.setBPM(restoredBpm);
+        if (projectData.metadata.time_signature) {
+          console.log(`✅ Restored BPM: ${projectData.metadata.bpm}, Time Signature: ${projectData.metadata.time_signature}`);
+        }
+
+        if (projectData.metadata.scale) {
+          const { root, type } = projectData.metadata.scale;
+          if (root !== undefined && type) {
+            getScaleSystem().setScale(root, type);
+            console.log(`✅ Restored Scale: ${type} (Root: ${root})`);
           }
-        } catch (error) {
-          console.warn('⚠️ Failed to sync BPM to audio engine during project restore:', error);
         }
       }
 
-      if (projectData.metadata.time_signature) {
-        console.log(`✅ Restored BPM: ${projectData.metadata.bpm}, Time Signature: ${projectData.metadata.time_signature}`);
-      }
-    }
+      console.log('✅ Project deserialization complete');
+      return projectData;
 
-    console.log('✅ Project deserialization complete');
-    
-    // ✅ FIX: Sample preloading is now done BEFORE instrument creation
-    // This ensures buffers are available when instruments are created
-    // No need to preload again here
-    
-    return projectData;
+    } finally {
+      // ✅ OPTIMIZATION: Disable batch mode - triggers single sync for all queued operations
+      syncService.setBatchMode(false);
+    }
   }
 
   /**
@@ -489,8 +486,7 @@ export class ProjectSerializer {
         return;
       }
 
-      const { AudioContextService } = await import('../services/AudioContextService.js');
-      const engine = AudioContextService.getAudioEngine();
+      const engine = AudioEngineGlobal.get();
       if (!engine || !engine.audioContext) {
         console.warn('⚠️ Cannot preload samples: audio engine not ready');
         return;
@@ -501,7 +497,7 @@ export class ProjectSerializer {
       const bufferManager = getProjectBufferManager();
 
       console.log(`📦 Preloading samples for ${instruments.length} instruments...`);
-      
+
       // Collect all sample URLs
       const sampleUrls = new Set();
       instruments.forEach(inst => {
@@ -518,11 +514,11 @@ export class ProjectSerializer {
         try {
           // ProjectBufferManager checks cache first, only loads if needed
           const buffer = await bufferManager.getBuffer(url, engine.audioContext);
-          
+
           // Also add to SampleLoader cache for compatibility
           const { SampleLoader } = await import('../audio/instruments/loaders/SampleLoader.js');
           SampleLoader.cache.set(url, buffer);
-          
+
           return buffer;
         } catch (error) {
           console.warn(`⚠️ Failed to preload sample ${url}:`, error);
@@ -531,7 +527,7 @@ export class ProjectSerializer {
       });
 
       await Promise.allSettled(preloadPromises);
-      
+
       // Preload samples in audio engine for instruments
       const sampleInstruments = instruments.filter(inst => inst.type === 'sample' && (inst.url || inst.multiSamples));
       if (sampleInstruments.length > 0 && engine.preloadSamples) {
@@ -610,10 +606,23 @@ export class ProjectSerializer {
   }
 
   static serializePatterns(store) {
+    const automationManager = getAutomationManager();
+
     return Object.entries(store.patterns || {}).map(([id, pattern]) => {
       // ✅ FIX: Pattern length is in settings.length, not pattern.length
       const patternLength = pattern.settings?.length || pattern.length || 64;
-      
+
+      // ✅ PHASE 4: Serialize automation lanes for each instrument in pattern
+      const automation = {};
+      if (pattern.data) {
+        Object.keys(pattern.data).forEach(instrumentId => {
+          const lanes = automationManager.getLanes(id, instrumentId);
+          if (lanes && lanes.length > 0) {
+            automation[instrumentId] = lanes.map(lane => lane.toJSON ? lane.toJSON() : lane);
+          }
+        });
+      }
+
       return {
         id,
         name: pattern.name || id,
@@ -622,7 +631,8 @@ export class ProjectSerializer {
         settings: {
           length: patternLength,
           quantization: pattern.settings?.quantization || '16n'
-        }
+        },
+        automation: Object.keys(automation).length > 0 ? automation : undefined // Only include if there's automation
       };
     });
   }
@@ -701,7 +711,10 @@ export class ProjectSerializer {
         color: track.color,
         insertEffects: (track.insertEffects || []).map(effect => ({
           ...effect,
-          settings: normalizeEffectSettings(effect.type || effect.effectType, effect.settings || {})
+          settings: normalizeEffectSettings(effect.type || effect.effectType, effect.settings || {}),
+          // ✅ FIX: Preserve preset information
+          presetId: effect.presetId,
+          presetName: effect.presetName
         })),
         sends: track.sends || [],
         output: track.output,
@@ -719,7 +732,10 @@ export class ProjectSerializer {
       muted: master.muted,
       insertEffects: (master.insertEffects || []).map(effect => ({
         ...effect,
-        settings: normalizeEffectSettings(effect.type || effect.effectType, effect.settings || {})
+        settings: normalizeEffectSettings(effect.type || effect.effectType, effect.settings || {}),
+        // ✅ FIX: Preserve preset information
+        presetId: effect.presetId,
+        presetName: effect.presetName
       })),
       eq: master.eq,
     };
@@ -766,7 +782,7 @@ export class ProjectSerializer {
       assetMap.set(sample.assetId || sample.id, sample);
     });
     console.log(`📦 Restoring ${instruments.length} instruments...`);
-    
+
     // ✅ FIX: Build a map of mixer track names to track IDs for matching
     // This helps fix cases where instruments are saved with mixerTrackId: "master"
     // but mixer has a track with the same name as the instrument
@@ -778,32 +794,102 @@ export class ProjectSerializer {
         mixerTrackNameMap.set(normalizedName, track.id);
       }
     });
-    
-    // ✅ DEBUG: Log mixer track name map for debugging
-    console.log(`🔍 Mixer track name map:`, Array.from(mixerTrackNameMap.entries()));
-    
+
+    console.log('🔍 Mixer track name map:', Array.from(mixerTrackNameMap.entries()).flat().join(','));
+
+    // ✅ CRITICAL: Track used IDs to prevent duplicates
+    const usedIds = new Set();
+    const idMapping = new Map(); // Maps old ID -> new ID for duplicate resolution
+
     // Add instruments
     instruments.forEach(instData => {
       try {
         // ✅ FIX: Map legacy instrument types to current types
         let instrumentType = instData.type || 'sample';
-        
+
         // Map 'sampler' to 'sample' (legacy type from DB)
         if (instrumentType === 'sampler') {
           instrumentType = 'sample';
         }
-        
+
+        // ✅ FIX: Migrate legacy 'samples' property to 'multiSamples'
+        // Some legacy instruments store multi-sample data in 'samples' array
+        if (instrumentType === 'sample' && !instData.multiSamples && Array.isArray(instData.samples)) {
+          console.log(`📦 Migrating legacy 'samples' to 'multiSamples' for instrument: ${instData.name}`);
+          instData.multiSamples = instData.samples;
+        }
+
+        // ✅ CRITICAL FIX: Correct misclassified instruments
+        // Some instruments are saved as 'vasynth' or 'synth' but actually should be 'sample'
+        // This is detected by having a NON-EMPTY multiSamples array OR Piano preset
+        if (instrumentType === 'vasynth' || instrumentType === 'synth') {
+          const hasNonEmptyMultiSamples = Array.isArray(instData.multiSamples) && instData.multiSamples.length > 0;
+          const isSampleBasedPreset = instData.preset === 'Piano'; // Known sample-based preset
+
+          if (hasNonEmptyMultiSamples || isSampleBasedPreset) {
+            console.log(`🔧 Correcting misclassified instrument "${instData.name}": ${instrumentType} → sample`, {
+              reason: hasNonEmptyMultiSamples ? `has multiSamples array (${instData.multiSamples.length} items)` : `sample-based preset: ${instData.preset}`
+            });
+            instrumentType = 'sample';
+            instData.type = 'sample'; // ✅ CRITICAL: Also update the source object!
+          }
+        }
+
+        // ✅ CRITICAL FIX: Restore missing multiSamples data from preset
+        // If instrument has empty multiSamples array but is Piano preset, restore the data
+        const isPianoPreset = instData.preset === 'Piano';
+        const isPianoByName = instData.name?.toLowerCase().includes('piano');
+
+        if (instrumentType === 'sample' &&
+          Array.isArray(instData.multiSamples) &&
+          instData.multiSamples.length === 0 &&
+          (isPianoPreset || isPianoByName)) {
+
+          console.warn(`⚠️ Restoring missing multiSamples for "${instData.name}" from Piano preset`);
+
+          // Restore Piano multiSamples from known preset
+          instData.multiSamples = [
+            { url: '/audio/samples/instruments/piano/C1.ogg', note: 24, baseNote: 24 },
+            { url: '/audio/samples/instruments/piano/C2.ogg', note: 36, baseNote: 36 },
+            { url: '/audio/samples/instruments/piano/C3.ogg', note: 48, baseNote: 48 },
+            { url: '/audio/samples/instruments/piano/C4.ogg', note: 60, baseNote: 60 },
+            { url: '/audio/samples/instruments/piano/C5.ogg', note: 72, baseNote: 72 },
+            { url: '/audio/samples/instruments/piano/C6.ogg', note: 84, baseNote: 84 },
+            { url: '/audio/samples/instruments/piano/C7.ogg', note: 96, baseNote: 96 },
+            { url: '/audio/samples/instruments/piano/C8.ogg', note: 108, baseNote: 108 }
+          ];
+
+          console.log(`✅ Restored ${instData.multiSamples.length} samples for "${instData.name}"`);
+        }
+
+        // ✅ CRITICAL: Ensure unique instrument ID
+        let instrumentId = instData.id;
+        if (!instrumentId || usedIds.has(instrumentId)) {
+          const oldId = instrumentId;
+          instrumentId = `inst-${uuidv4()}`;
+
+          if (oldId) {
+            console.warn(`⚠️ Duplicate instrument ID detected: "${oldId}" for instrument "${instData.name}". Regenerated as: ${instrumentId}`);
+            idMapping.set(oldId, instrumentId);
+          } else {
+            console.warn(`⚠️ Missing instrument ID for "${instData.name}". Generated: ${instrumentId}`);
+          }
+
+          instData.id = instrumentId;
+        }
+        usedIds.add(instrumentId);
+
         // ✅ FIX: Auto-match mixer track by instrument name if mixerTrackId is "master"
         // This fixes the issue where instruments added later are saved with mixerTrackId: "master"
         // but mixer has a track with the same name
         let mixerTrackId = instData.mixerTrackId;
         const originalMixerTrackId = mixerTrackId;
-        
+
         if (mixerTrackId === 'master' || !mixerTrackId) {
           const instrumentName = instData.name?.toLowerCase().trim();
           console.log(`🔍 Checking auto-match for "${instData.name}" (normalized: "${instrumentName}")`);
           console.log(`🔍 Available mixer track names:`, Array.from(mixerTrackNameMap.keys()));
-          
+
           if (instrumentName && mixerTrackNameMap.has(instrumentName)) {
             const matchedTrackId = mixerTrackNameMap.get(instrumentName);
             mixerTrackId = matchedTrackId;
@@ -812,7 +898,7 @@ export class ProjectSerializer {
             console.log(`🔍 No match found for "${instData.name}" in mixer tracks`);
             // ✅ FIX: Try partial matching (e.g., "Piano" matches "Piano" track)
             // This handles cases where names might have slight variations
-            const partialMatch = Array.from(mixerTrackNameMap.entries()).find(([trackName, trackId]) => 
+            const partialMatch = Array.from(mixerTrackNameMap.entries()).find(([trackName, trackId]) =>
               trackName.includes(instrumentName) || instrumentName.includes(trackName)
             );
             if (partialMatch) {
@@ -823,11 +909,11 @@ export class ProjectSerializer {
         } else {
           console.log(`🔍 Instrument "${instData.name}" already has mixerTrackId: ${mixerTrackId} (skipping auto-match)`);
         }
-        
+
         // Ensure required fields
         const instrumentData = {
           ...instData,
-          id: instData.id || `inst-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          id: instrumentId, // Use validated unique ID
           type: instrumentType,
           mixerTrackId: mixerTrackId || instData.mixerTrackId || 'master', // Fallback to master if no match
         };
@@ -837,6 +923,7 @@ export class ProjectSerializer {
           instrumentData.url = resolvedInstrumentUrl;
         }
 
+        // ✅ FIX: Resolve asset URLs for multiSamples
         if (Array.isArray(instrumentData.multiSamples)) {
           instrumentData.multiSamples = instrumentData.multiSamples.map(sample => {
             if (!sample) return sample;
@@ -847,33 +934,55 @@ export class ProjectSerializer {
             return sample;
           });
         }
-        
+
         // ✅ CRITICAL: Log the final mixerTrackId before passing to handleAddNewInstrument
         console.log(`📝 Restoring instrument "${instrumentData.name}" with mixerTrackId: ${instrumentData.mixerTrackId} (original: ${originalMixerTrackId})`);
-        
+
+        // Store mute state before adding instrument (will be restored after)
+        const savedMuteState = instrumentData.isMuted !== undefined ? instrumentData.isMuted : false;
+
         store.handleAddNewInstrument(instrumentData);
         console.log(`✅ Restored instrument: ${instrumentData.name} (${instrumentType}) → ${instrumentData.mixerTrackId}`);
+
+        // ✅ FIX: Restore mute state to audio engine after instrument is created
+        if (savedMuteState) {
+          // Use dynamic import to avoid circular dependencies
+          import('../services/InstrumentService.js').then(({ InstrumentService }) => {
+            // Wait a bit for instrument to be fully created in audio engine
+            setTimeout(() => {
+              InstrumentService.setMute(instrumentData.id, savedMuteState);
+              console.log(`🔇 Restored mute state for instrument ${instrumentData.name}: ${savedMuteState}`);
+            }, 100);
+          }).catch(err => {
+            console.warn('⚠️ Failed to restore mute state:', err);
+          });
+        }
       } catch (error) {
         console.error(`❌ Failed to restore instrument ${instData.id}:`, error);
       }
     });
+
+    // ✅ Log ID mapping summary if any duplicates were found
+    if (idMapping.size > 0) {
+      console.log(`🔄 Regenerated ${idMapping.size} duplicate instrument IDs:`, Object.fromEntries(idMapping));
+    }
   }
 
   static deserializePatterns(patterns) {
     const store = useArrangementStore.getState();
-    
+
     // Handle both array and object formats
-    const patternsArray = Array.isArray(patterns) 
-      ? patterns 
+    const patternsArray = Array.isArray(patterns)
+      ? patterns
       : Object.values(patterns || {});
-    
+
     console.log(`📦 Restoring ${patternsArray.length} patterns...`);
-    
+
     // Restore patterns
     patternsArray.forEach(pattern => {
       try {
         const patternId = pattern.id;
-        
+
         // ✅ FIX: Create pattern with specific ID if it doesn't exist
         if (!store.patterns[patternId]) {
           // Create pattern manually with the correct ID instead of letting createPattern generate a new one
@@ -886,24 +995,24 @@ export class ProjectSerializer {
               quantization: pattern.settings?.quantization || '16n'
             }
           };
-          
+
           // Add pattern to store using setState
           useArrangementStore.setState(state => ({
             patterns: { ...state.patterns, [patternId]: newPattern },
-            patternOrder: state.patternOrder.includes(patternId) 
-              ? state.patternOrder 
+            patternOrder: state.patternOrder.includes(patternId)
+              ? state.patternOrder
               : [...state.patternOrder, patternId]
           }));
-          
+
           console.log(`✅ Created pattern: ${patternId}`);
         }
-        
+
         // ✅ FIX: Restore pattern length if provided
         // Pattern length can be in pattern.length or pattern.settings.length
         if (store.patterns[patternId]) {
           const currentPattern = store.patterns[patternId];
           const patternLength = pattern.length || pattern.settings?.length || currentPattern.settings?.length || 64;
-          
+
           // Update pattern with length in settings using setState
           useArrangementStore.setState(state => ({
             patterns: {
@@ -919,7 +1028,7 @@ export class ProjectSerializer {
             }
           }));
         }
-        
+
         // ✅ FIX: Restore pattern data (notes) - handle both object and array formats
         if (pattern.data) {
           // pattern.data can be:
@@ -928,7 +1037,7 @@ export class ProjectSerializer {
           const patternData = typeof pattern.data === 'object' && !Array.isArray(pattern.data)
             ? pattern.data
             : {};
-          
+
           Object.entries(patternData).forEach(([instrumentId, notes]) => {
             try {
               // Ensure notes is an array
@@ -942,13 +1051,33 @@ export class ProjectSerializer {
             }
           });
         }
-        
+
+        // ✅ PHASE 4: Restore automation lanes for each instrument in pattern
+        if (pattern.automation) {
+          try {
+            const automationManager = getAutomationManager();
+            Object.entries(pattern.automation).forEach(([instrumentId, lanesData]) => {
+              try {
+                if (lanesData && Array.isArray(lanesData) && lanesData.length > 0) {
+                  // Use initializeLanes to restore from saved data
+                  automationManager.initializeLanes(patternId, instrumentId, lanesData);
+                  console.log(`  ✅ Restored ${lanesData.length} automation lanes for instrument ${instrumentId}`);
+                }
+              } catch (error) {
+                console.warn(`  ⚠️ Failed to restore automation for instrument ${instrumentId}:`, error);
+              }
+            });
+          } catch (error) {
+            console.warn(`  ⚠️ Failed to restore automation for pattern ${patternId}:`, error);
+          }
+        }
+
         console.log(`✅ Restored pattern: ${patternId}`);
       } catch (error) {
         console.error(`❌ Failed to restore pattern ${pattern.id}:`, error);
       }
     });
-    
+
     // ✅ FIX: Ensure at least one pattern is active after restore
     const restoredPatternIds = Object.keys(store.patterns);
     if (restoredPatternIds.length > 0 && !store.activePatternId) {
@@ -962,25 +1091,46 @@ export class ProjectSerializer {
       store.setActivePatternId(firstPatternId);
       console.log(`✅ Active pattern not found, switched to first pattern: ${firstPatternId}`);
     }
-    
+
+    // ✅ FIX: Update nextPatternNumber based on highest existing pattern number
+    // This prevents pattern number collisions (e.g. creating pattern-1 when it exists)
+    let maxPatternNum = 0;
+    restoredPatternIds.forEach(id => {
+      const match = id.match(/pattern-(\d+)/);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (!isNaN(num) && num > maxPatternNum) {
+          maxPatternNum = num;
+        }
+      }
+    });
+
+    // Set next number to max + 1
+    // If no patterns (max=0), default to 1 (or 2 if we want next one)
+    // If pattern-1 exists (max=1), next is 2
+    const nextNum = Math.max(1, maxPatternNum + 1);
+
+    useArrangementStore.setState({ nextPatternNumber: nextNum });
+    console.log(`🔢 Updated nextPatternNumber to ${nextNum} (max existing: ${maxPatternNum})`);
+
     // Restore pattern order and active pattern if available
     // Note: pattern_order is stored in metadata, will be restored in main deserialize method
   }
-  
+
   static deserializePatternOrder(patternOrder, activePatternId) {
     const store = useArrangementStore.getState();
-    
+
     // ✅ FIX: Restore pattern order if provided
     if (patternOrder && Array.isArray(patternOrder)) {
       // Filter to only include patterns that exist
       const validPatternOrder = patternOrder.filter(id => store.patterns[id]);
-      
+
       if (validPatternOrder.length > 0) {
         // Update pattern order (if store supports it)
         // Note: patternOrder might be read-only, so we'll just ensure active pattern is set
       }
     }
-    
+
     // ✅ FIX: Set active pattern - ensure it exists, otherwise use first available
     if (activePatternId && store.patterns[activePatternId]) {
       store.setActivePatternId(activePatternId);
@@ -999,11 +1149,11 @@ export class ProjectSerializer {
   static deserializeArrangement(arrangement) {
     const store = useArrangementStore.getState();
     console.log(`📦 Restoring arrangement...`);
-    
+
     try {
       // Clear existing arrangement tracks first
       store.arrangementTracks = [];
-      
+
       // Restore arrangement tracks
       if (arrangement.tracks && Array.isArray(arrangement.tracks)) {
         arrangement.tracks.forEach(track => {
@@ -1020,7 +1170,7 @@ export class ProjectSerializer {
               locked: track.locked ?? false,
               collapsed: track.collapsed ?? false,
             };
-            
+
             store.arrangementTracks.push(newTrack);
             console.log(`✅ Restored arrangement track: ${track.name}`);
           } catch (error) {
@@ -1028,7 +1178,7 @@ export class ProjectSerializer {
           }
         });
       }
-      
+
       // Restore arrangement clips
       if (arrangement.clips && Array.isArray(arrangement.clips)) {
         arrangement.clips.forEach(clip => {
@@ -1050,7 +1200,7 @@ export class ProjectSerializer {
                 locked: clip.locked ?? false,
                 name: clip.name,
               };
-              
+
               store.arrangementClips.push(newClip);
               console.log(`✅ Restored arrangement clip: ${clip.id}`);
             }
@@ -1059,12 +1209,12 @@ export class ProjectSerializer {
           }
         });
       }
-      
+
       // Restore markers
       if (arrangement.markers && Array.isArray(arrangement.markers)) {
         store.arrangementMarkers = arrangement.markers;
       }
-      
+
       // Restore loop regions
       if (arrangement.loop_regions && Array.isArray(arrangement.loop_regions)) {
         store.arrangementLoopRegions = arrangement.loop_regions;
@@ -1077,7 +1227,7 @@ export class ProjectSerializer {
   static async deserializeMixer(mixer) {
     const store = useMixerStore.getState();
     console.log(`📦 Restoring mixer...`);
-    
+
     try {
       // Get master track
       const masterTrack = store.mixerTracks.find(t => t.id === 'master') || {
@@ -1094,18 +1244,37 @@ export class ProjectSerializer {
         insertEffects: [],
         eq: { enabled: false, lowGain: 0, midGain: 0, highGain: 0 },
       };
-      
+
       // Build all tracks array
       const newTracks = [masterTrack];
-      
+
       // Restore mixer tracks
       if (mixer.tracks && Array.isArray(mixer.tracks)) {
         mixer.tracks.forEach(track => {
           try {
             const normalizedInsertEffects = (track.insertEffects || []).map(effect => ({
               ...effect,
-              settings: normalizeEffectSettings(effect.type || effect.effectType, effect.settings || {})
+              settings: normalizeEffectSettings(effect.type || effect.effectType, effect.settings || {}),
+              // ✅ FIX: Restore preset information
+              presetId: effect.presetId,
+              presetName: effect.presetName
             }));
+            // ✅ FIX: Normalize legacy send format (object) to array before using it elsewhere
+            const normalizedSends = Array.isArray(track.sends)
+              ? track.sends
+              : Object.entries(track.sends || {})
+                .filter(([key]) => !key.endsWith('_muted'))
+                .map(([busId, value]) => {
+                  const levelLinear = typeof value === 'number'
+                    ? Math.min(1, Math.max(0, value > 1 ? value : Math.pow(10, value / 20)))
+                    : 0.5;
+                  return {
+                    busId,
+                    level: levelLinear,
+                    preFader: false
+                  };
+                });
+
             // Create new track with template data
             const newTrack = {
               id: track.id,
@@ -1118,7 +1287,7 @@ export class ProjectSerializer {
               isSolo: track.solo !== undefined ? track.solo : (track.isSolo ?? false),
               color: track.color || '#3b82f6',
               output: track.output || 'master',
-              sends: track.sends || [],
+              sends: normalizedSends,
               insertEffects: normalizedInsertEffects,
               eq: track.eq || {
                 enabled: false,
@@ -1127,7 +1296,7 @@ export class ProjectSerializer {
                 highGain: 0,
               },
             };
-            
+
             newTracks.push(newTrack);
             console.log(`✅ Restored mixer track: ${newTrack.name} (${newTrack.id})`);
           } catch (error) {
@@ -1135,12 +1304,12 @@ export class ProjectSerializer {
           }
         });
       }
-      
+
       // ✅ CRITICAL: Update store using Zustand's set() method
       // This ensures the store is properly updated and reactive
       useMixerStore.setState({ mixerTracks: newTracks });
       console.log(`✅ Updated mixer store with ${newTracks.length} tracks (1 master + ${newTracks.length - 1} channels)`);
-      
+
       // ✅ FIX: Don't restore effects here - they're already in the store (line 953)
       // and will be synced to AudioEngine by _syncMixerTracksToAudioEngine() in deserialize()
       // Restoring them here with handleMixerEffectAdd() would create duplicate effects with new IDs
@@ -1165,7 +1334,7 @@ export class ProjectSerializer {
           console.error(`❌ Failed to restore parameters for track ${track.id}:`, error);
         }
       });
-      
+
       // Restore master channel parameters
       if (mixer.master) {
         const masterTrackInArray = newTracks.find(t => t.id === 'master');
@@ -1173,13 +1342,16 @@ export class ProjectSerializer {
           // ✅ FIX: Restore master effects FIRST (before Object.assign)
           // This ensures effects are restored with their original IDs and settings
           // We'll set insertEffects directly and then rebuild the chain
-          const masterInsertEffects = mixer.master.insertEffects && Array.isArray(mixer.master.insertEffects) 
+          const masterInsertEffects = mixer.master.insertEffects && Array.isArray(mixer.master.insertEffects)
             ? mixer.master.insertEffects.map(effect => ({
-                ...effect,
-                settings: normalizeEffectSettings(effect.type || effect.effectType, effect.settings || {})
-              }))
+              ...effect,
+              settings: normalizeEffectSettings(effect.type || effect.effectType, effect.settings || {}),
+              // ✅ FIX: Restore preset information
+              presetId: effect.presetId,
+              presetName: effect.presetName
+            }))
             : [];
-          
+
           // Update master track with mixer.master data
           Object.assign(masterTrackInArray, {
             volume: mixer.master.volume ?? masterTrackInArray.volume,
@@ -1190,10 +1362,10 @@ export class ProjectSerializer {
             // ✅ FIX: Set insertEffects directly (don't use handleMixerEffectAdd which adds new effects)
             insertEffects: masterInsertEffects,
           });
-          
+
           // Update store again with updated master
           useMixerStore.setState({ mixerTracks: newTracks });
-          
+
           // Restore master parameters
           if (mixer.master.volume !== undefined) {
             store.handleMixerParamChange('master', 'volume', mixer.master.volume);
@@ -1212,6 +1384,52 @@ export class ProjectSerializer {
         }
       }
 
+      // Restore send channels (aux buses) if provided - convert to bus tracks
+      if (Array.isArray(mixer.send_channels)) {
+        const sendChannelsAsBusTracks = mixer.send_channels.map((sendChannel, index) => {
+          const safeChannel = sendChannel || {};
+          return {
+            id: safeChannel.id || `bus-${index + 1}`,
+            name: safeChannel.name || `Bus ${index + 1}`,
+            type: 'bus',
+            volume: safeChannel.volume ?? 0,
+            pan: safeChannel.pan ?? 0,
+            isMuted: safeChannel.muted ?? false,
+            isSolo: safeChannel.solo ?? false,
+            color: '#f59e0b', // Bus color
+            output: 'master',
+            sends: [],
+            insertEffects: [],
+            eq: { enabled: false, lowGain: 0, midGain: 0, highGain: 0 }
+          };
+        });
+
+        // Add bus tracks to mixerTracks
+        newTracks.push(...sendChannelsAsBusTracks);
+
+        // Also keep sendChannels for backward compatibility
+        const normalizedSendChannels = mixer.send_channels.map((sendChannel, index) => {
+          const safeChannel = sendChannel || {};
+          return {
+            id: safeChannel.id || `send-${index + 1}`,
+            name: safeChannel.name || `Send ${index + 1}`,
+            type: safeChannel.type || 'send',
+            masterLevel: safeChannel.masterLevel ?? safeChannel.master_level ?? 0,
+            pan: safeChannel.pan ?? 0,
+            ...safeChannel
+          };
+        });
+
+        useMixerStore.setState(state => ({
+          ...state,
+          sendChannels: normalizedSendChannels
+        }));
+
+        console.log(`✅ Restored ${sendChannelsAsBusTracks.length} send channels as bus tracks`);
+      } else {
+        console.log('ℹ️ No send channels found in project data - keeping current defaults');
+      }
+
       // ✅ FIX: Don't sync mixer tracks to AudioEngine here
       // This is now handled in deserialize() method (after deserializeMixer() call)
       // which ensures proper order: mixer → sync → samples → instruments
@@ -1223,7 +1441,7 @@ export class ProjectSerializer {
   static deserializeTimeline(timeline) {
     const store = useTimelineStore.getState();
     console.log(`📦 Restoring timeline settings...`);
-    
+
     try {
       // Timeline store methods may vary, update what's available
       if (timeline.total_beats) {
@@ -1238,10 +1456,10 @@ export class ProjectSerializer {
   static deserializeAudioAssets(assets) {
     const store = useProjectAudioStore.getState();
     console.log(`📦 Restoring ${assets.length} audio samples...`);
-    
+
     // Clear existing samples
     store.clearAll();
-    
+
     try {
       assets.forEach(sample => {
         try {
@@ -1276,20 +1494,20 @@ export class ProjectSerializer {
   static deserializeWorkspace(workspace) {
     const store = useArrangementWorkspaceStore.getState();
     console.log(`📦 Restoring workspace settings...`);
-    
+
     try {
       if (workspace.viewMode && store.setViewMode) {
         store.setViewMode(workspace.viewMode);
       }
-      
+
       if (workspace.selectedTrackId && store.setSelectedTrackId) {
         store.setSelectedTrackId(workspace.selectedTrackId);
       }
-      
+
       if (workspace.selectedClipIds && store.setSelectedClipIds) {
         store.setSelectedClipIds(workspace.selectedClipIds);
       }
-      
+
       console.log(`✅ Workspace settings restored`);
     } catch (error) {
       console.error('❌ Failed to restore workspace:', error);

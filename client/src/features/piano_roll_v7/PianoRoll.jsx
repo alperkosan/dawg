@@ -7,34 +7,55 @@ import { drawPianoRollBackground, drawPianoRollForeground, drawPlayhead } from '
 import { uiUpdateManager, UPDATE_PRIORITIES, UPDATE_FREQUENCIES } from '@/lib/core/UIUpdateManager';
 import { performanceMonitor } from '@/utils/PerformanceMonitor';
 import Toolbar from './components/Toolbar';
-import VelocityLane from './components/VelocityLane';
+import VelocityLane, { VELOCITY_TOOL_TYPES } from './components/VelocityLane';
 import CCLanes from './components/CCLanes';
 import NotePropertiesPanel from './components/NotePropertiesPanel';
 import LoopRegionOverlay from './components/LoopRegionOverlay';
 import ShortcutsPanel from './components/ShortcutsPanel';
 import ContextMenu from './components/ContextMenu';
-import ScaleSelectorPanel from './components/ScaleSelectorPanel';
+// Removed: ScaleSelectorPanel - scale highlighting is now always enabled with default C Major
 import { usePanelsStore } from '@/store/usePanelsStore';
 import { useInstrumentsStore } from '@/store/useInstrumentsStore';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
 import { useArrangementStore } from '@/store/useArrangementStore';
 import { AutomationLane } from './types/AutomationLane';
 import { getTimelineController } from '@/lib/core/TimelineControllerSingleton';
-import { getToolManager } from '@/lib/piano-roll-tools';
+import { getToolManager, TOOL_TYPES, TOOL_SHORTCUTS } from './lib/tools/PianoRollToolManager';
+import ShortcutManager, { SHORTCUT_PRIORITY } from '@/lib/core/ShortcutManager';
 import { getTransportManagerSync } from '@/lib/core/TransportManagerSingleton';
 import { getAutomationManager } from '@/lib/automation/AutomationManager';
+import { getScaleSystem } from '@/lib/music/ScaleSystem';
 import EventBus from '@/lib/core/EventBus.js';
 import { getPreviewManager } from '@/lib/audio/preview';
 import { PANEL_IDS } from '@/config/constants';
+import { useMidiRecording } from './hooks/useMidiRecording';
+import { MIDIRecorder } from '@/lib/midi/MIDIRecorder';
+import { CountInOverlay } from '@/components/midi/CountInOverlay';
+import { AudioContextService } from '@/lib/services/AudioContextService';
 // ✅ REMOVED: Complex cursor manager - using simple CSS cursors now
 // ✅ NEW TIMELINE SYSTEM
 import { useTimelineStore } from '@/store/TimelineStore';
 import TimelineCoordinateSystem from '@/lib/timeline/TimelineCoordinateSystem';
 import TimelineRenderer from './renderers/timelineRenderer';
+import { STEPS_PER_BEAT } from '@/lib/audio/audioRenderConfig.js';
 import './PianoRoll_v5.css';
 
 const KEYBOARD_WIDTH = 80;
 const RULER_HEIGHT = 30;
+
+/**
+ * Convert steps to BBT format (Bar:Beat:Tick)
+ * @param {number} steps - Position in steps
+ * @param {number} stepsPerBeat - Steps per beat (default: STEPS_PER_BEAT)
+ * @returns {string} BBT format string (e.g., "1:2:120")
+ */
+function stepsToBBT(steps, stepsPerBeat = STEPS_PER_BEAT) {
+    const beats = steps / stepsPerBeat;
+    const bar = Math.floor(beats / 4) + 1; // 4/4 time signature
+    const beat = (Math.floor(beats) % 4) + 1;
+    const tick = Math.floor((beats % 1) * 480); // 480 ticks per beat (PPQ * 4)
+    return `${bar}:${beat}:${tick}`;
+}
 
 const resizeCanvasToDisplay = (canvas, ctx) => {
     const dpr = window.devicePixelRatio || 1;
@@ -243,6 +264,7 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
     const currentStep = usePlaybackStore(state => state.currentStep);
     const setTransportPosition = usePlaybackStore(state => state.setTransportPosition);
     const followPlayheadMode = usePlaybackStore(state => state.followPlayheadMode);
+    const bpm = usePlaybackStore(state => state.bpm);
 
     // Pass transport position setter to engine for timeline interaction
     const { snapValue, setSnapValue, ...engine } = usePianoRollEngine(containerRef, {
@@ -268,6 +290,10 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
     const [activeTool, setActiveTool] = useState('paintBrush');
     const [zoom, setZoom] = useState(1.0);
 
+    // ✅ PHASE 1: Velocity lane tool state
+    const [velocityTool, setVelocityTool] = useState(VELOCITY_TOOL_TYPES.SELECT);
+    const [velocityBrushSize, setVelocityBrushSize] = useState(2); // Brush size in steps
+
     // Performance monitoring
     const [fps, setFps] = useState(60);
     const [showPerf, setShowPerf] = useState(false);
@@ -275,6 +301,19 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
 
     // ✅ GHOST PLAYHEAD STATE
     const [ghostPosition, setGhostPosition] = useState(null);
+
+    // Get data from persistent stores
+    const pianoRollInstrumentId = usePanelsStore(state => state.pianoRollInstrumentId);
+    const storeVisibility = usePanelsStore(selectPianoRollVisibility);
+    const isPianoRollVisible = panelVisibleProp && storeVisibility;
+    const instruments = useInstrumentsStore(state => state.instruments);
+    // ✅ Optimized Store access
+    const activePatternId = useArrangementStore(state => state.activePatternId);
+    const patterns = useArrangementStore(state => state.patterns);
+
+    const currentInstrument = pianoRollInstrumentId
+        ? instruments.find(inst => inst.id === pianoRollInstrumentId)
+        : null;
 
     // ✅ LOOP REGION STATE
     const [loopRegion, setLoopRegion] = useState(null); // { start: step, end: step }
@@ -290,14 +329,34 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
     const [showNoteProperties, setShowNoteProperties] = useState(false);
     const [propertiesPanelCollapsed, setPropertiesPanelCollapsed] = useState(false);
 
-    // ✅ PHASE 5: SCALE HIGHLIGHTING STATE
-    const [showScaleSelector, setShowScaleSelector] = useState(false);
-    const [scaleHighlight, setScaleHighlight] = useState(null);
+    // ✅ IMPROVED: SCALE HIGHLIGHTING STATE - Always enabled with default C Major
+    // Use version to force re-render when singleton changes
+    const [scaleVersion, setScaleVersion] = useState(0);
+    const [scaleHighlightEnabled, setScaleHighlightEnabled] = useState(true);
 
-    // ✅ PHASE 5: Scale change callback
-    const handleScaleChange = useCallback((scaleData) => {
-        setScaleHighlight(scaleData.scaleSystem);
+    // Get singleton instance
+    const scaleSystem = getScaleSystem();
+
+    // ✅ Initialize/Sync scale
+    useEffect(() => {
+        // Enforce default C Major if no scale is set (as per "Always enabled" policy)
+        if (!scaleSystem.getScale()) {
+            console.log('🎹 Initializing default scale: C Major');
+            scaleSystem.setScale(0, 'major'); // 0 = C
+        } else {
+            console.log('🎹 Scale already set:', scaleSystem.getScaleInfo()?.name);
+        }
+
+        // Force initial render to ensure we have the latest scale state
+        setScaleVersion(v => v + 1);
     }, []);
+
+    // ✅ MIDI RECORDING STATE
+    // ✅ MIDI RECORDING HOOK
+    const { isRecording, isCountingIn, countInBars } = useMidiRecording({
+        currentInstrument,
+        loopRegion
+    });
 
 
     // ✅ Listen for double-click events to open Note Properties Panel
@@ -312,7 +371,8 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
     }, []);
 
     // ✅ KEYBOARD PIANO MODE STATE
-    const [keyboardPianoMode, setKeyboardPianoMode] = useState(false);
+    const keyboardPianoMode = usePlaybackStore(state => state.keyboardPianoMode);
+    const setKeyboardPianoMode = usePlaybackStore(state => state.setKeyboardPianoMode);
     const [keyboardPianoSettings, setKeyboardPianoSettings] = useState({
         baseOctave: 4, // C4 = MIDI 60
         scale: 'chromatic' // chromatic, major, minor, etc.
@@ -321,7 +381,7 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
     // ✅ REMOVED: Cursor manager state - using simple CSS cursors now
 
     // ✅ TIMELINE SYSTEM STATE
-    const timelineStore = useTimelineStore();
+    // timelineStore call removed as it's passed to constructors
     const [timelineCoordinateSystem, setTimelineCoordinateSystem] = useState(null);
     const [timelineRenderer, setTimelineRenderer] = useState(null);
 
@@ -419,46 +479,6 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
         return unsubscribe;
     }, []);
 
-    // ✅ NOTIFY TRANSPORT MANAGER and TOOL MANAGER when keyboard piano mode changes
-    useEffect(() => {
-        const transportManager = getTransportManagerSync();
-        if (transportManager) {
-            transportManager.setKeyboardPianoMode(keyboardPianoMode);
-        }
-
-        const toolManager = getToolManager();
-        if (toolManager) {
-            toolManager.setKeyboardPianoMode(keyboardPianoMode);
-        }
-    }, [keyboardPianoMode]);
-
-    // ✅ KEYBOARD SHORTCUTS - Handle Alt + key for tools and ? for shortcuts panel
-    useEffect(() => {
-        const handleKeyDown = (e) => {
-            // ✅ IGNORE ALL SHORTCUTS when keyboard piano mode is active
-            if (keyboardPianoMode) {
-                return;
-            }
-
-
-            // ? or H key: Toggle shortcuts panel (only if not in input field)
-            if ((e.key === '?' || e.key === 'h' || e.key === 'H') && !e.ctrlKey && !e.metaKey && !e.altKey) {
-                const target = e.target;
-                if (target.tagName !== 'INPUT' && target.tagName !== 'TEXTAREA') {
-                    setShowShortcuts(prev => !prev);
-                    e.preventDefault();
-                    return;
-                }
-            }
-
-            const toolManager = getToolManager();
-            toolManager.handleKeyPress(e);
-        };
-
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [keyboardPianoMode]);
-
     useEffect(() => {
         const interval = setInterval(() => {
             const metrics = performanceMonitor.getMetrics();
@@ -485,20 +505,6 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
         [playbackMode, currentStep]
     );
 
-    // Get data from persistent stores
-    const pianoRollInstrumentId = usePanelsStore(state => state.pianoRollInstrumentId);
-    const storeVisibility = usePanelsStore(selectPianoRollVisibility);
-    const isPianoRollVisible = panelVisibleProp && storeVisibility;
-    const instruments = useInstrumentsStore(state => state.instruments);
-    const arrangementStore = useArrangementStore();
-    const playbackStore = usePlaybackStore();
-    // timelineStore already declared above (line 123)
-
-    const currentInstrument = pianoRollInstrumentId
-        ? instruments.find(inst => inst.id === pianoRollInstrumentId)
-        : null;
-
-
     // ✅ Setup PreviewManager to use AudioEngine's instrument directly
     useEffect(() => {
         if (!currentInstrument) return;
@@ -506,30 +512,22 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
         let cancelled = false;
 
         const setupPreview = async () => {
+            // ... logic refactored to use AudioEngineGlobal if possible
+            // For now, restoring context
             try {
-                const [{ getPreviewManager }, { AudioContextService }] = await Promise.all([
-                    import('@/lib/audio/preview'),
-                    import('@/lib/services/AudioContextService')
-                ]);
+                // Dynamic import to avoid circular dep if needed, or just cleaner
+                const { getPreviewManager } = await import('@/lib/audio/preview');
+                const { AudioEngineGlobal } = await import('@/lib/core/AudioEngineGlobal');
 
                 if (cancelled) return;
 
-                const audioEngine = AudioContextService.getAudioEngine();
+                const audioEngine = AudioEngineGlobal.get();
                 if (audioEngine?.audioContext) {
                     const previewManager = getPreviewManager(audioEngine.audioContext, audioEngine);
-
-                    // ✅ Use PreviewManager's normal setInstrument flow
-                    // This creates a separate preview instrument that won't interfere with playback
                     await previewManager.setInstrument(currentInstrument);
-
-                    if (!cancelled) {
-                        console.log('✅ Preview instrument set:', currentInstrument.name);
-                    }
                 }
             } catch (err) {
-                if (!cancelled) {
-                    console.error('Failed to setup preview:', err);
-                }
+                if (!cancelled) console.error('Failed to setup preview:', err);
             }
         };
 
@@ -540,9 +538,12 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
         };
     }, [currentInstrument]);
 
+
+
     // ✅ KEYBOARD PREVIEW - Track active keyboard preview note
     const activeKeyboardNoteRef = useRef(null);
     const [activeKeyboardNote, setActiveKeyboardNote] = useState(null);
+
 
     // ✅ KEYBOARD PREVIEW - Start note when mouse down on keyboard
     const handleKeyboardMouseDown = useCallback((e) => {
@@ -597,13 +598,25 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
         }
     }, []);
 
+    // ✅ KEYBOARD PREVIEW - Trigger background repaint when active key changes
+    useEffect(() => {
+        if (backgroundDirtyRef.current !== undefined) {
+            backgroundDirtyRef.current = true;
+        }
+    }, [activeKeyboardNote]);
+
+    // ✅ MOMENTARY TOOLS (FL Studio style: hold key to switch tool temporarily)
+    const previousToolRef = useRef(null);
+    const momentaryKeyRef = useRef(null);
+    const keyDownTimeRef = useRef(0);
+
     // ✅ LOOP REGION HOOK - Timeline selection
     // Pass playhead setter callback for single click behavior
     const jumpToStep = usePlaybackStore(state => state.jumpToStep);
     const handleSetPlayhead = useCallback((step) => {
         jumpToStep(step);
     }, [jumpToStep]);
-    
+
     const loopRegionHook = useLoopRegionSelection(engine, snapValue, loopRegion, setLoopRegion, handleSetPlayhead);
 
     // ✅ LOOP REGION → PLAYBACK ENGINE SYNC
@@ -622,7 +635,39 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
         snapValue,
         currentInstrument,
         loopRegion,
-        keyboardPianoMode
+        setLoopRegion, // ✅ FL STUDIO FEATURE: Ctrl+L support
+        keyboardPianoMode,
+        // ✅ MIDI Recording
+        isRecording,
+        onRecordToggle: useCallback(async () => {
+            const recorder = midiRecorderRef.current;
+            if (!recorder) return;
+
+            if (isRecording) {
+                await recorder.stopRecording();
+                setIsRecording(false);
+                setIsCountingIn(false);
+            } else {
+                // Set count-in bars from recorder state
+                const bars = recorder.state.countInBars || 1;
+                setCountInBars(bars);
+
+                const success = recorder.startRecording({
+                    mode: 'replace', // Default mode
+                    quantizeStrength: 0,
+                    countInBars: bars
+                });
+                if (success) {
+                    // Count-in will be handled by MIDIRecorder
+                    // We'll update isCountingIn via event listeners
+                    setIsCountingIn(bars > 0);
+                    if (bars === 0) {
+                        setIsRecording(true);
+                    }
+                }
+            }
+        }, [isRecording]),
+        onNoteActive: setActiveKeyboardNote // ✅ Added for keyboard highlighting
     });
 
     const {
@@ -639,6 +684,149 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
         dragState: rawDragState,
         resizeState: rawResizeState
     } = noteInteractions;
+
+    // ✅ FIX: Memoize selectedNoteIds array early to prevent initialization errors
+    const selectedNoteIdsArray = useMemo(
+        () => Array.from(selectedNoteIds || []),
+        [selectedNoteIds]
+    );
+
+    // ✅ VELOCITY LANE HANDLER - Define early to prevent initialization errors
+    const handleNoteVelocityChange = useCallback((noteId, newVelocity) => {
+        // Update note velocity via note interactions
+        noteInteractions.updateNoteVelocity?.(noteId, newVelocity);
+    }, [noteInteractions]);
+
+    // ✅ BATCH: Update velocity of multiple notes at once (for Alt+wheel in velocity lane)
+    const handleNotesVelocityChange = useCallback((noteIds, velocityChange) => {
+        // Update notes velocity via note interactions batch function
+        if (noteInteractions.updateNotesVelocity) {
+            noteInteractions.updateNotesVelocity(noteIds, velocityChange);
+        } else {
+            // Fallback: update individually
+            noteIds.forEach(noteId => {
+                const note = noteInteractions.notes.find(n => n.id === noteId);
+                if (note) {
+                    const currentVelocity = note.velocity || 100;
+                    const newVelocity = Math.max(1, Math.min(127, currentVelocity + velocityChange));
+                    noteInteractions.updateNoteVelocity?.(noteId, newVelocity);
+                }
+            });
+        }
+    }, [noteInteractions]);
+
+    // ✅ KEYBOARD SHORTCUTS MIGRATION
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            // Don't interfere with text inputs
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+                return false;
+            }
+
+            // ✅ IGNORE ALL SHORTCUTS when keyboard piano mode is active
+            if (keyboardPianoMode) {
+                return false;
+            }
+
+            // ✅ MOMENTARY TOOLS - KEY DOWN
+            if (!e.ctrlKey && !e.metaKey && !momentaryKeyRef.current) {
+                const key = e.key.toLowerCase();
+                let targetTool = null;
+
+                if (key === 'c') targetTool = TOOL_TYPES.CHOPPER;
+                else if (key === 'e') targetTool = TOOL_TYPES.ERASER;
+                else if (key === 'b') targetTool = TOOL_TYPES.PAINT_BRUSH;
+                else if (key === 'v') targetTool = TOOL_TYPES.SELECT;
+
+                if (targetTool && targetTool !== activeTool) {
+                    previousToolRef.current = activeTool;
+                    momentaryKeyRef.current = e.key;
+                    keyDownTimeRef.current = Date.now();
+                    getToolManager().setActiveTool(targetTool);
+                    return true; // Momentary handled
+                }
+            }
+
+            // ✅ PHASE 1: Velocity lane keyboard shortcuts
+            const hasSelectedNotes = selectedNoteIds && selectedNoteIds.size > 0;
+            const isVelocityContext = velocityTool === VELOCITY_TOOL_TYPES.DRAW ||
+                (hasSelectedNotes && !e.ctrlKey && !e.metaKey && !e.altKey);
+
+            if (isVelocityContext) {
+                const selectedArray = Array.from(selectedNoteIds || []);
+
+                // Arrow keys: Increase/decrease velocity
+                if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    const isIncrease = e.key === 'ArrowUp';
+                    const isFine = e.shiftKey;
+                    const step = isFine ? 1 : 5;
+
+                    selectedArray.forEach(noteId => {
+                        const note = (noteInteractions.notes || []).find(n => n.id === noteId);
+                        if (note) {
+                            const currentVelocity = note.velocity || 100;
+                            const newVelocity = isIncrease
+                                ? Math.min(127, currentVelocity + step)
+                                : Math.max(1, currentVelocity - step);
+                            handleNoteVelocityChange(noteId, newVelocity);
+                        }
+                    });
+                    return true;
+                }
+
+                if (e.key === '0') {
+                    e.preventDefault();
+                    selectedArray.forEach(noteId => handleNoteVelocityChange(noteId, 1));
+                    return true;
+                }
+
+                if (e.key === '1') {
+                    e.preventDefault();
+                    selectedArray.forEach(noteId => handleNoteVelocityChange(noteId, 100));
+                    return true;
+                }
+            }
+
+            // ? or H key: Toggle shortcuts panel
+            if ((e.key === '?' || e.key === 'h' || e.key === 'H') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+                setShowShortcuts(prev => !prev);
+                e.preventDefault();
+                return true;
+            }
+
+            const toolManager = getToolManager();
+            const toolHandled = toolManager.handleKeyPress(e);
+            if (toolHandled) return true;
+
+            return false;
+        };
+
+        const handleKeyUp = (e) => {
+            // ✅ MOMENTARY TOOLS - KEY UP
+            if (momentaryKeyRef.current && e.key === momentaryKeyRef.current) {
+                const holdDuration = Date.now() - keyDownTimeRef.current;
+
+                if (holdDuration > 300) {
+                    if (previousToolRef.current) {
+                        getToolManager().setActiveTool(previousToolRef.current);
+                    }
+                }
+
+                momentaryKeyRef.current = null;
+                previousToolRef.current = null;
+                return true;
+            }
+            return false;
+        };
+
+        ShortcutManager.registerContext('PIANO_ROLL', SHORTCUT_PRIORITY.CONTEXTUAL, {
+            onKeyDown: handleKeyDown,
+            onKeyUp: handleKeyUp
+        });
+
+        return () => ShortcutManager.unregisterContext('PIANO_ROLL');
+    }, [keyboardPianoMode, velocityTool, selectedNoteIds, noteInteractions.notes, handleNoteVelocityChange, activeTool]);
 
     const rendererDragState = useMemo(() => {
         if (rawDragState && rawDragState.noteIds) {
@@ -707,14 +895,17 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
             ...engineRef.current,
             snapValue,
             qualityLevel,
-            scaleHighlight
+            scaleHighlight: scaleHighlightEnabled ? getScaleSystem() : null,
+            activeKeyboardNote,  // ✅ Add for keyboard preview highlight
+            isSelectingTimeRange: noteInteractions.isSelectingTimeRange,
+            timeRangeSelection: noteInteractions.timeRangeSelection
         };
 
         drawPianoRollBackground(ctx, payload);
         if (timelineRenderer) {
             timelineRenderer.render(ctx, payload);
         }
-    }, [qualityLevel, scaleHighlight, snapValue, timelineRenderer]);
+    }, [activeKeyboardNote, qualityLevel, scaleVersion, scaleHighlightEnabled, snapValue, timelineRenderer, noteInteractions.isSelectingTimeRange, noteInteractions.timeRangeSelection]);
 
     const paintNotesLayer = useCallback((clipRect) => {
         const canvas = notesCanvasRef.current;
@@ -733,8 +924,8 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
             hoveredNoteId,
             selectionArea,
             isSelectingArea,
-            isSelectingTimeRange,
-            timeRangeSelection,
+            isSelectingTimeRange: noteInteractions.isSelectingTimeRange,
+            timeRangeSelection: noteInteractions.timeRangeSelection,
             previewNote,
             slicePreview,
             sliceRange,
@@ -743,7 +934,7 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
             activeTool,
             loopRegion,
             dragState: rendererDragState,
-            scaleHighlight,
+            scaleHighlight: scaleHighlightEnabled ? scaleSystem : null,
             activeKeyboardNote
         };
 
@@ -764,18 +955,19 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
         activeTool,
         ghostPosition,
         isSelectingArea,
-        isSelectingTimeRange,
+        noteInteractions.isSelectingTimeRange, // Updated to use noteInteractions
+        noteInteractions.timeRangeSelection,   // Updated to use noteInteractions
         loopRegion,
         notes,
         previewNote,
         rendererDragState,
-        scaleHighlight,
+        scaleVersion,
+        scaleHighlightEnabled,
         selectedNoteIds,
         selectionArea,
         slicePreview,
         sliceRange,
         snapValue,
-        timeRangeSelection,
         hoveredNoteId,
         qualityLevel
     ]);
@@ -795,6 +987,7 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
 
     useEffect(() => {
         markBackgroundDirty();
+        markNotesDirty(); // ✅ FIX: Ensure notes are redrawn on zoom/scroll/resize
     }, [
         viewportData.scrollX,
         viewportData.scrollY,
@@ -805,7 +998,9 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
         dimensionsData.stepWidth,
         dimensionsData.keyHeight,
         loopRegion,
-        markBackgroundDirty
+        loopRegion,
+        markBackgroundDirty,
+        markNotesDirty // ✅ FIX: Also mark notes dirty on viewport changes (resize clears canvas)
     ]);
 
     useEffect(() => {
@@ -816,13 +1011,13 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
         hoveredNoteId,
         selectionArea,
         isSelectingArea,
-        isSelectingTimeRange,
-        timeRangeSelection,
+        noteInteractions.isSelectingTimeRange, // Updated to use noteInteractions
+        noteInteractions.timeRangeSelection,   // Updated to use noteInteractions
         previewNote,
         slicePreview,
         sliceRange,
         rendererDragState,
-        scaleHighlight,
+        scaleVersion,
         activeTool,
         loopRegion,
         activeKeyboardNote,
@@ -832,14 +1027,16 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
     ]);
 
     useEffect(() => {
+        markBackgroundDirty();
+    }, [noteInteractions.timeRangeSelection, noteInteractions.isSelectingTimeRange, markBackgroundDirty]);
+
+    useEffect(() => {
+        // ✅ FIX: During drag/resize, render entire canvas to show all notes
+        // Dirty region optimization causes other notes to disappear
         if (dragDirtyRegion) {
-            markNotesDirty({
-                x: Math.max(0, dragDirtyRegion.x),
-                y: Math.max(0, dragDirtyRegion.y),
-                width: dragDirtyRegion.width,
-                height: dragDirtyRegion.height
-            });
+            markNotesDirty(); // Render entire canvas, not just dirty region
         }
+
     }, [dragDirtyRegion, markNotesDirty]);
 
     useEffect(() => {
@@ -921,31 +1118,22 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
             // ✅ Custom position calculation for piano roll (accounts for scroll/zoom)
             // Use engineRef to always get the LATEST engine state (avoid stale closure)
             const calculatePosition = (mouseX, mouseY) => {
-                // Only handle clicks in timeline ruler area
-                if (mouseY > RULER_HEIGHT) {
-                    return null; // Not in ruler
-                }
+                const { viewport, dimensions } = engineRef.current;
 
-                // Subtract keyboard width
-                const canvasX = mouseX - KEYBOARD_WIDTH;
-                if (canvasX < 0) {
-                    return null; // In keyboard area
-                }
+                // ✅ IGNORE RULER: If mouse is in ruler area (0-30px), return null
+                // This prevents TimelineController from reacting to ruler clicks/scrubs
+                if (mouseY <= 30) return null;
 
-                // ✅ CRITICAL FIX: Use engineRef.current to get LATEST engine state
-                const currentEngine = engineRef.current;
-                const viewport = currentEngine.viewport;
-                const dimensions = currentEngine.dimensions;
-                if (!viewport || !dimensions) return null;
+                // We need to translate mouseX (from element rect) to canvas coordinates
+                // Since container is the basis, x is already relative.
+                const canvasX = mouseX - 80; // KEYBOARD_WIDTH is 80
 
-                // ✅ CRITICAL FIX: Convert canvas coordinates to world coordinates
-                // scrollX is already in world pixel space, canvasX is in screen pixel space
+                if (canvasX < 0) return null;
+
                 // We need to add scrollX (which is in world space) to canvasX (screen space)
                 const worldX = viewport.scrollX + canvasX;
 
                 // ✅ IMPORTANT: dimensions.stepWidth is the RENDERED step width (already includes zoom)
-                // It's updated by the engine's render loop based on viewport.zoomX
-                // So we DON'T multiply by zoomX again - that would apply zoom twice!
                 const stepWidth = dimensions.stepWidth;
 
                 // Convert world pixels to steps
@@ -960,6 +1148,7 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
                 stepWidth: engine.dimensions.stepWidth,
                 totalSteps: engine.dimensions.totalSteps,
                 onPositionChange: null, // Position updates handled by playback store
+                enableInteraction: false, // ✅ Disable scrubbing/seeking in Piano Roll grid
                 onGhostPositionChange: (pos) => {
                     setGhostPosition(pos);
                 },
@@ -1023,7 +1212,8 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
                         position: currentPosition,
                         isPlaying: currentPlaybackState === 'playing',
                         playbackState: currentPlaybackState
-                    }
+                    },
+                    isRecording: isRecording // ✅ Pass recording state
                 });
             },
             UPDATE_PRIORITIES.HIGH, // Important but can defer slightly
@@ -1042,14 +1232,9 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
         setZoom(newZoom);
     };
 
-    // ✅ VELOCITY LANE HANDLER
-    const handleNoteVelocityChange = (noteId, newVelocity) => {
-        // Update note velocity via note interactions
-        noteInteractions.updateNoteVelocity?.(noteId, newVelocity);
-    };
+    // ✅ NOTE: handleNoteVelocityChange is now defined earlier (after selectedNoteIdsArray)
 
-    // ✅ PHASE 2: CC LANES HANDLERS
-    const activePatternId = useArrangementStore(state => state.activePatternId);
+    // ✅ PHASE 2: CC LANES HANDLERS (activePatternId is already declared at top)
 
     // ✅ PHASE 4: Initialize CC lanes from AutomationManager (per pattern + instrument)
     useEffect(() => {
@@ -1099,55 +1284,66 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
 
             if (eventKey !== currentKey) return;
 
+            // ✅ FIX: Use queueMicrotask to avoid render-phase state updates
             // Sync ccLanes with AutomationManager
-            const managerLanes = automationManager.getLanes(activePatternId, currentInstrument.id);
-            setCCLanes(managerLanes);
+            queueMicrotask(() => {
+                const managerLanes = automationManager.getLanes(activePatternId, currentInstrument.id);
+                setCCLanes(managerLanes);
+            });
         });
 
         return unsubscribe;
     }, [activePatternId, currentInstrument]);
 
+    // ✅ FIX: Legacy handler - CCLanes now uses useAutomationEditor hook internally
+    // This handler is only used as fallback, wrap in queueMicrotask to avoid render-phase updates
     const handleCCLanePointAdd = useCallback((ccNumber, time, value) => {
         if (!activePatternId || !currentInstrument) return;
 
-        const automationManager = getAutomationManager();
+        queueMicrotask(() => {
+            const automationManager = getAutomationManager();
 
-        setCCLanes(prevLanes => {
-            const updatedLanes = prevLanes.map(lane => {
-                if (lane.ccNumber === ccNumber) {
-                    const newLane = lane.clone();
-                    newLane.addPoint(time, value);
-                    return newLane;
-                }
-                return lane;
+            setCCLanes(prevLanes => {
+                const updatedLanes = prevLanes.map(lane => {
+                    if (lane.ccNumber === ccNumber) {
+                        const newLane = lane.clone();
+                        newLane.addPoint(time, value);
+                        return newLane;
+                    }
+                    return lane;
+                });
+
+                // ✅ PHASE 4: Save to AutomationManager (pattern + instrument specific)
+                automationManager.setLanes(activePatternId, currentInstrument.id, updatedLanes);
+
+                return updatedLanes;
             });
-
-            // ✅ PHASE 4: Save to AutomationManager (pattern + instrument specific)
-            automationManager.setLanes(activePatternId, currentInstrument.id, updatedLanes);
-
-            return updatedLanes;
         });
     }, [activePatternId, currentInstrument]);
 
+    // ✅ FIX: Legacy handler - CCLanes now uses useAutomationEditor hook internally
+    // This handler is only used as fallback, wrap in queueMicrotask to avoid render-phase updates
     const handleCCLanePointRemove = useCallback((ccNumber, pointIndex) => {
         if (!activePatternId || !currentInstrument) return;
 
-        const automationManager = getAutomationManager();
+        queueMicrotask(() => {
+            const automationManager = getAutomationManager();
 
-        setCCLanes(prevLanes => {
-            const updatedLanes = prevLanes.map(lane => {
-                if (lane.ccNumber === ccNumber) {
-                    const newLane = lane.clone();
-                    newLane.removePoint(pointIndex);
-                    return newLane;
-                }
-                return lane;
+            setCCLanes(prevLanes => {
+                const updatedLanes = prevLanes.map(lane => {
+                    if (lane.ccNumber === ccNumber) {
+                        const newLane = lane.clone();
+                        newLane.removePoint(pointIndex);
+                        return newLane;
+                    }
+                    return lane;
+                });
+
+                // ✅ PHASE 4: Save to AutomationManager (pattern + instrument specific)
+                automationManager.setLanes(activePatternId, currentInstrument.id, updatedLanes);
+
+                return updatedLanes;
             });
-
-            // ✅ PHASE 4: Save to AutomationManager (pattern + instrument specific)
-            automationManager.setLanes(activePatternId, currentInstrument.id, updatedLanes);
-
-            return updatedLanes;
         });
     }, [activePatternId, currentInstrument]);
 
@@ -1176,18 +1372,16 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
     // ✅ PHASE 4: Handle scroll from CC Lanes to sync Piano Roll viewport
     const handleCCLanesScroll = useCallback((_deltaX, deltaY) => {
         const currentEngine = engineRef.current;
-        if (!currentEngine) return;
+        if (!currentEngine || !currentEngine.eventHandlers?.updateViewport) return;
 
         // Update viewport scroll (horizontal scroll from vertical wheel)
         const scrollSpeed = 1.0;
         const newScrollX = Math.max(0, currentEngine.viewport.scrollX + (deltaY * scrollSpeed));
 
-        currentEngine.viewport.scrollX = newScrollX;
-        currentEngine.viewport.targetScrollX = newScrollX;
-
-        paintBackgroundLayer();
-        paintNotesLayer();
-    }, [paintBackgroundLayer, paintNotesLayer]);
+        // ✅ FIX: Use updateViewport instead of direct mutation to ensure reactive updates
+        // This ensures VelocityLane and CCLanes stay synchronized
+        currentEngine.eventHandlers.updateViewport({ scrollX: newScrollX, smooth: false });
+    }, []);
 
     // ✅ PHASE 2: NOTE PROPERTIES HANDLERS
     // ✅ FIX: Calculate selectedNote on every render to ensure it updates when notes change
@@ -1209,13 +1403,8 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
         noteInteractions.updateNote?.(selectedNote.id, updates);
     }, [selectedNote, noteInteractions]);
 
-    // Memoize selectedNoteIds array to prevent VelocityLane re-renders
-    const selectedNoteIdsArray = useMemo(
-        () => Array.from(selectedNoteIds),
-        [selectedNoteIds]
-    );
-
     // ✅ REMOVED: Cursor manager cleanup - using simple CSS cursors now
+    // ✅ NOTE: selectedNoteIdsArray is now defined earlier (after noteInteractions destructuring)
 
     // ✅ CONTEXT MENU OPERATIONS
     const contextMenuOperations = useMemo(() => ({
@@ -1267,6 +1456,29 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
             });
 
             console.log(`✨ Quantized ${notesToQuantize.length} notes to grid: ${snapValue}`);
+        },
+        // ✅ PHASE 1: Velocity quantization
+        onVelocityQuantize: (quantizeValue = null) => {
+            if (selectedNoteIds.size === 0) return;
+
+            // Default quantization values: 0, 32, 64, 96, 127 (piano, mezzo-piano, mezzo-forte, forte, fortissimo)
+            const defaultQuantizeValues = [1, 32, 64, 96, 127];
+            const quantizeTo = quantizeValue !== null ? quantizeValue : defaultQuantizeValues;
+
+            const notesToQuantize = noteInteractions.notes.filter(n =>
+                selectedNoteIds.has(n.id)
+            );
+
+            notesToQuantize.forEach(note => {
+                const currentVelocity = note.velocity || 100;
+                // Find closest quantization value
+                const closest = quantizeTo.reduce((prev, curr) => {
+                    return Math.abs(curr - currentVelocity) < Math.abs(prev - currentVelocity) ? curr : prev;
+                });
+                handleNoteVelocityChange(note.id, closest);
+            });
+
+            console.log(`✨ Velocity quantized ${notesToQuantize.length} notes to: ${quantizeTo.join(', ')}`);
         },
         onHumanize: () => {
             // Add subtle randomization to timing and velocity
@@ -1348,8 +1560,101 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
     // ✅ REMOVED: Global keyboard shortcuts now handled by TransportManager
     // No need for component-level spacebar handling
 
+    // ✅ FIX: Handle wheel events with preventDefault using manual event listener
+    // React's onWheel is passive by default, so we need to use addEventListener with { passive: false }
+    useEffect(() => {
+        const container = containerRef.current;
+        if (!container) return;
+
+        const wheelHandler = (e) => {
+            // ✅ UX FIX 3: Don't handle wheel during drag/resize
+            if (rawDragState || rawResizeState) {
+                e.preventDefault();
+                e.stopPropagation();
+                return;
+            }
+
+            // ✅ UX FIX 4: Don't handle wheel when context menu is open
+            if (noteInteractions.contextMenuState) {
+                e.preventDefault();
+                e.stopPropagation();
+                return;
+            }
+
+            // ✅ UX FIX 1 & 5: Ctrl + wheel (zoom) has priority over Alt
+            // This allows Ctrl + Alt + wheel to work for zoom
+            if (e.ctrlKey || e.metaKey) {
+                // Let engine handle zoom (don't prevent if Ctrl is pressed)
+                if (engine.eventHandlers?.onWheel) {
+                    engine.eventHandlers.onWheel(e);
+                }
+                return;
+            }
+
+            // ✅ UX FIX: Alt + wheel: Handle velocity change for selected notes (works everywhere)
+            // Prevent scroll when Alt is pressed
+            if (e.altKey && selectedNoteIds.size > 0 && noteInteractions.handleWheel) {
+                const handled = noteInteractions.handleWheel(e);
+                if (handled) {
+                    // Event was handled by note interactions (velocity change)
+                    // Don't pass to viewport scroll
+                    e.preventDefault();
+                    e.stopPropagation();
+                    return;
+                }
+            }
+
+            // ✅ UX FIX: If Alt is pressed (even without selection), prevent scroll
+            // This prevents accidental scrolling while trying to adjust velocity
+            if (e.altKey) {
+                e.preventDefault();
+                e.stopPropagation();
+                return;
+            }
+
+            const rect = container.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            const isInGrid = x > 80 && y > 30;
+
+            // Check if wheel event should be handled by note interactions
+            if (isInGrid && noteInteractions.handleWheel) {
+                const handled = noteInteractions.handleWheel(e);
+                if (handled) {
+                    // Event was handled by note interactions (e.g., velocity change)
+                    // Don't pass to viewport scroll
+                    e.preventDefault();
+                    e.stopPropagation();
+                    return;
+                }
+            }
+
+            // Default: viewport scroll (only if note interactions didn't handle it and Alt is not pressed)
+            if (engine.eventHandlers?.onWheel) {
+                engine.eventHandlers.onWheel(e);
+            }
+        };
+
+        // ✅ UX FIX: Use capture phase to handle Alt+wheel before engine's scroll handler
+        container.addEventListener('wheel', wheelHandler, { passive: false, capture: true });
+
+        return () => {
+            container.removeEventListener('wheel', wheelHandler, { capture: true });
+        };
+    }, [selectedNoteIds, noteInteractions, engine]);
+
     return (
         <div className="prv5-container">
+            {/* ✅ Count-in Overlay */}
+            <CountInOverlay
+                isCountingIn={isCountingIn}
+                countInBars={countInBars}
+                bpm={bpm}
+                onComplete={() => {
+                    setIsCountingIn(false);
+                }}
+            />
+
             <Toolbar
                 snapValue={snapValue}
                 onSnapChange={setSnapValue}
@@ -1367,35 +1672,119 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
                 onShowCCLanesChange={setShowCCLanes}
                 showNoteProperties={showNoteProperties}
                 onShowNotePropertiesChange={setShowNoteProperties}
-                // ✅ PHASE 5: Scale Selector
-                showScaleSelector={showScaleSelector}
-                onShowScaleSelectorChange={setShowScaleSelector}
+                // ✅ IMPROVED: Scale Highlighting - always enabled, but can be changed
+                scaleHighlight={scaleSystem}
+                scaleHighlightEnabled={scaleHighlightEnabled}
+                onScaleChange={(root, scaleType) => {
+                    scaleSystem.setScale(root, scaleType);
+                    setScaleVersion(v => v + 1); // Force re-render
+                }}
+                onScaleHighlightToggle={() => setScaleHighlightEnabled(!scaleHighlightEnabled)}
+                // ✅ MIDI Recording
+                isRecording={isRecording}
+                onRecordToggle={async () => {
+                    const recorder = midiRecorderRef.current;
+                    if (!recorder) return;
+
+                    if (isRecording) {
+                        await recorder.stopRecording();
+                        setIsRecording(false);
+                    } else {
+                        const success = recorder.startRecording({
+                            mode: 'replace', // Default mode
+                            quantizeStrength: 0,
+                            countInBars: 1
+                        });
+                        if (success) {
+                            setIsRecording(true);
+                        }
+                    }
+                }}
             />
             <div
                 ref={containerRef}
                 className="prv5-canvas-container"
                 data-tool={activeTool}
                 style={{ cursor: currentCursor }}
-                onWheel={(e) => {
+                tabIndex={0}
+                // ✅ TOUCH HANDLING - 1-finger edit, 2-finger pan/zoom (handled by engine)
+                onTouchStart={(e) => {
+                    if (e.touches.length !== 1) return;
+
+                    // Create mock mouse event
+                    const touch = e.touches[0];
                     const rect = e.currentTarget.getBoundingClientRect();
-                    const x = e.clientX - rect.left;
-                    const y = e.clientY - rect.top;
+                    const mockEvent = {
+                        clientX: touch.clientX,
+                        clientY: touch.clientY,
+                        currentTarget: e.currentTarget,
+                        target: e.target,
+                        button: 0,
+                        buttons: 1,
+                        stopPropagation: () => e.stopPropagation(),
+                        preventDefault: () => { if (e.cancelable) e.preventDefault(); }
+                    };
+
+                    const x = mockEvent.clientX - rect.left;
+                    const y = mockEvent.clientY - rect.top;
+                    const isInRuler = y <= 30;
+                    const isInKeyboard = x <= 80 && y > 30;
                     const isInGrid = x > 80 && y > 30;
 
-                    // Check if wheel event should be handled by note interactions
-                    if (isInGrid && noteInteractions.handleWheel) {
-                        const handled = noteInteractions.handleWheel(e);
-                        if (handled) {
-                            // Event was handled by note interactions (e.g., velocity change)
-                            // Don't pass to viewport scroll
-                            return;
-                        }
+                    if (isInRuler) {
+                        e.stopPropagation();
+                        noteInteractions.handleMouseDown(mockEvent);
+                    } else if (isInKeyboard) {
+                        handleKeyboardMouseDown(mockEvent);
+                    } else if (isInGrid) {
+                        noteInteractions.handleMouseDown(mockEvent);
                     }
+                }}
+                onTouchMove={(e) => {
+                    if (e.touches.length !== 1) return;
 
-                    // Default: viewport scroll (only if note interactions didn't handle it)
-                    if (engine.eventHandlers?.onWheel) {
-                        engine.eventHandlers.onWheel(e);
+                    const touch = e.touches[0];
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    const mockEvent = {
+                        clientX: touch.clientX,
+                        clientY: touch.clientY,
+                        currentTarget: e.currentTarget,
+                        target: e.target,
+                        button: 0,
+                        buttons: 1,
+                        stopPropagation: () => e.stopPropagation(),
+                        preventDefault: () => { if (e.cancelable) e.preventDefault(); }
+                    };
+
+                    const x = mockEvent.clientX - rect.left;
+                    const y = mockEvent.clientY - rect.top;
+                    const isInRuler = y <= 30;
+                    const isInGrid = x > 80 && y > 30;
+
+                    if (isInRuler || isInGrid) {
+                        noteInteractions.handleMouseMove(mockEvent);
                     }
+                }}
+                onTouchEnd={(e) => {
+                    // Start of touch end - if 1 finger was active
+                    // Note: e.touches is empty if last finger lifted
+                    // Use changedTouches
+
+                    const mockEvent = {
+                        // Use last known position if needed, or just trigger up
+                        clientX: 0, clientY: 0, // MouseUp usually doesn't need precise coords for end logic depending on implementation
+                        currentTarget: e.currentTarget,
+                        target: e.target,
+                        button: 0,
+                        buttons: 0,
+                        stopPropagation: () => e.stopPropagation(),
+                        preventDefault: () => { if (e.cancelable) e.preventDefault(); }
+                    };
+
+                    handleKeyboardMouseUp(); // Stop sound
+                    loopRegionHook.handleRulerMouseUp();
+                    noteInteractions.handleMouseUp(mockEvent);
+                    engine.eventHandlers.onMouseUp?.(mockEvent);
                 }}
                 onMouseDown={(e) => {
                     const rect = e.currentTarget.getBoundingClientRect();
@@ -1406,18 +1795,9 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
                     const isInGrid = x > 80 && y > 30;
 
                     if (isInRuler) {
-                        // ✅ Shift+drag: Time-based selection (select all notes in time range)
-                        // Normal drag: Loop region selection
-                        if (e.shiftKey) {
-                            // Time-based selection - handled by noteInteractions
-                            noteInteractions.handleRulerMouseDown?.(e);
-                        } else {
-                            // Loop region selection
-                            const handled = loopRegionHook.handleRulerMouseDown(e);
-                            if (!handled) {
-                                engine.eventHandlers.onMouseDown?.(e);
-                            }
-                        }
+                        e.stopPropagation(); // ✅ Prevent TimelineController scrubbing
+                        // ✅ ALWAYS use noteInteractions for ruler (Time Selection)
+                        noteInteractions.handleMouseDown(e);
                     } else if (isInKeyboard) {
                         // ✅ Keyboard preview - start playing note on mouse down
                         handleKeyboardMouseDown(e);
@@ -1433,20 +1813,11 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
                     const isInGrid = x > 80 && y > 30;
 
                     if (isInRuler) {
-                        // ✅ Shift+drag: Time-based selection
-                        if (e.shiftKey) {
-                            noteInteractions.handleRulerMouseMove?.(e);
-                        } else {
-                            // Loop region dragging
-                            const handled = loopRegionHook.handleRulerMouseMove(e);
-                            if (!handled) {
-                                engine.eventHandlers.onMouseMove?.(e);
-                            }
-                        }
+                        e.stopPropagation(); // ✅ Prevent TimelineController scrubbing
+                        noteInteractions.handleMouseMove(e);
                     } else if (isInGrid) {
                         noteInteractions.handleMouseMove(e);
                     }
-                    // engine.eventHandlers.onMouseMove?.(e); // Bu satır viewport kaymasına neden oluyor
                 }}
                 onMouseUp={(e) => {
                     // ✅ Stop keyboard preview note if active
@@ -1462,17 +1833,19 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
                     engine.eventHandlers.onMouseLeave?.(e);
                 }}
                 onKeyDown={(e) => {
-                    // Escape: Clear loop region if exists, otherwise deselect notes
-                    if (e.key === 'Escape' && loopRegion) {
-                        loopRegionHook.clearLoopRegion();
-                        e.stopPropagation();
+                    // Delegate all keyboard shortcuts to noteInteractions handler
+
+                    if (noteInteractions.handleKeyDown(e)) {
                         return;
                     }
-                    noteInteractions.handleKeyDown(e);
                 }}
-                onKeyUp={noteInteractions.handleKeyUp}
+                onKeyUp={(e) => {
+                    // ✅ RECORDING: Handle keyboard Note Off events
+                    if (noteInteractions.handleKeyUp) {
+                        noteInteractions.handleKeyUp(e);
+                    }
+                }}
                 onContextMenu={(e) => e.preventDefault()}
-                tabIndex={0}
             >
                 <canvas ref={gridCanvasRef} className="prv5-canvas prv5-canvas-grid" />
                 <canvas ref={notesCanvasRef} className="prv5-canvas prv5-canvas-notes" />
@@ -1539,51 +1912,55 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
             {/* ✅ VELOCITY LANE */}
             <VelocityLane
                 notes={noteInteractions.notes}
-                selectedNoteIds={selectedNoteIdsArray}
+                selectedNoteIds={selectedNoteIdsArray || []}
                 onNoteVelocityChange={handleNoteVelocityChange}
+                onNotesVelocityChange={handleNotesVelocityChange}
                 onNoteSelect={noteInteractions.selectNote}
                 onDeselectAll={noteInteractions.deselectAll}
                 dimensions={engine.dimensions}
                 viewport={engine.viewport}
                 activeTool={activeTool}
+                velocityTool={velocityTool}
+                brushSize={velocityBrushSize}
+                onVelocityToolChange={setVelocityTool}
             />
 
             {/* ✅ PHASE 2: CC LANES */}
-            {showCCLanes && ccLanes.length > 0 && (
-                <CCLanes
-                    lanes={ccLanes}
-                    selectedNoteIds={selectedNoteIdsArray}
-                    onLaneChange={(laneId, lane) => {
-                        // Handle lane change if needed
-                    }}
-                    onPointAdd={handleCCLanePointAdd}
-                    onPointRemove={handleCCLanePointRemove}
-                    onPointUpdate={handleCCLanePointUpdate}
-                    onScroll={handleCCLanesScroll}
-                    dimensions={engineRef.current.dimensions}
-                    viewport={engineRef.current.viewport}
-                    activeTool={activeTool}
-                    snapValue={snapValue}
-                />
-            )}
+            {
+                showCCLanes && ccLanes.length > 0 && (
+                    <CCLanes
+                        lanes={ccLanes}
+                        selectedNoteIds={selectedNoteIdsArray || []}
+                        instrumentId={currentInstrument?.id} // ✅ FIX: Pass instrumentId prop
+                        onLaneChange={(laneId, lane) => {
+                            // Handle lane change if needed
+                        }}
+                        onPointAdd={handleCCLanePointAdd}
+                        onPointRemove={handleCCLanePointRemove}
+                        onPointUpdate={handleCCLanePointUpdate}
+                        onScroll={handleCCLanesScroll}
+                        dimensions={engine.dimensions}
+                        viewport={engine.viewport}
+                        activeTool={activeTool}
+                        snapValue={snapValue}
+                    />
+                )
+            }
 
             {/* ✅ PHASE 2: NOTE PROPERTIES PANEL */}
-            {showNoteProperties && (
-                <NotePropertiesPanel
-                    selectedNote={selectedNote}
-                    onPropertyChange={handleNotePropertyChange}
-                    collapsed={propertiesPanelCollapsed}
-                    onToggleCollapse={() => setPropertiesPanelCollapsed(prev => !prev)}
-                    allNotes={noteInteractions.notes} // ✅ FL Studio: Need all notes to find next note for slide target
-                />
-            )}
+            {
+                showNoteProperties && (
+                    <NotePropertiesPanel
+                        selectedNote={selectedNote}
+                        onPropertyChange={handleNotePropertyChange}
+                        collapsed={propertiesPanelCollapsed}
+                        onToggleCollapse={() => setPropertiesPanelCollapsed(prev => !prev)}
+                        allNotes={noteInteractions.notes} // ✅ FL Studio: Need all notes to find next note for slide target
+                    />
+                )
+            }
 
-            {/* ✅ PHASE 5: SCALE SELECTOR PANEL */}
-            {showScaleSelector && (
-                <ScaleSelectorPanel
-                    onChange={handleScaleChange}
-                />
-            )}
+            {/* Removed: ScaleSelectorPanel - scale highlighting is now always enabled with default C Major */}
 
             {/* ✅ SHORTCUTS PANEL */}
             <ShortcutsPanel
@@ -1593,19 +1970,21 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
 
 
             {/* ✅ CONTEXT MENU */}
-            {noteInteractions.contextMenuState && (
-                <ContextMenu
-                    x={noteInteractions.contextMenuState.x}
-                    y={noteInteractions.contextMenuState.y}
-                    noteId={noteInteractions.contextMenuState.noteId}
-                    hasSelection={selectedNoteIds.size > 0}
-                    canUndo={noteInteractions.canUndo}
-                    canRedo={noteInteractions.canRedo}
-                    onClose={noteInteractions.clearContextMenu}
-                    {...contextMenuOperations}
-                />
-            )}
-        </div>
+            {
+                noteInteractions.contextMenuState && (
+                    <ContextMenu
+                        x={noteInteractions.contextMenuState.x}
+                        y={noteInteractions.contextMenuState.y}
+                        noteId={noteInteractions.contextMenuState.noteId}
+                        hasSelection={selectedNoteIds.size > 0}
+                        canUndo={noteInteractions.canUndo}
+                        canRedo={noteInteractions.canRedo}
+                        onClose={noteInteractions.clearContextMenu}
+                        {...contextMenuOperations}
+                    />
+                )
+            }
+        </div >
     );
 }
 

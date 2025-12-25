@@ -1,5 +1,11 @@
 /**
  * Feed View - Main feed component
+ * 
+ * Features:
+ * - Project feed with filters
+ * - Infinite scroll pagination
+ * 
+ * Note: WebSocket real-time updates are currently disabled
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -7,6 +13,7 @@ import { apiClient } from '@/services/api.js';
 import FeedHeader from './FeedHeader';
 import FeedContent from './FeedContent';
 import FeedSidebar from './FeedSidebar';
+import TrendingSection from './TrendingSection';
 import './FeedView.css';
 
 export default function FeedView() {
@@ -78,11 +85,17 @@ export default function FeedView() {
     loadFeed(1, false);
   }, [loadFeed]);
 
+  // Show trending section when trending filter is active
+  const showTrending = filters.filter === 'trending';
+
   return (
     <div className="feed-view">
       <FeedHeader filters={filters} onFilterChange={handleFilterChange} />
       <div className="feed-view__body">
         <div className="feed-view__content">
+          {showTrending ? (
+            <TrendingSection />
+          ) : (
           <FeedContent
             projects={projects}
             isLoading={isLoading}
@@ -92,8 +105,9 @@ export default function FeedView() {
             onLoadMore={handleLoadMore}
             onRefresh={handleRefresh}
           />
+          )}
         </div>
-        <FeedSidebar projects={projects} />
+        {!showTrending && <FeedSidebar projects={projects} />}
       </div>
     </div>
   );

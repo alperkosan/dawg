@@ -12,6 +12,7 @@
 import { ADSREnvelope } from './ADSREnvelope.js';
 import { LFO } from './LFO.js';
 import { ModulationEngine, ModulationSourceType } from './modulation/ModulationEngine.js';
+import { SupersawOscillator } from './SupersawOscillator.js';
 
 export class VASynth {
     constructor(audioContext, bpm = 120) {
@@ -44,11 +45,11 @@ export class VASynth {
         this.modulationEngine = new ModulationEngine(audioContext, 16);
         this.modulationEngine.setLFO(this.lfo);
         this.modulationEngine.setEnvelopes(this.filterEnvelope, this.amplitudeEnvelope);
-        
+
         // ✅ MODULATION MATRIX: Parameter targets (will be set in noteOn)
         this.modulationTargets = new Map(); // destination -> { param, baseValue, range }
         this.modulationMatrix = [];
-        
+
         // ✅ MODULATION MATRIX: Setup modulation callback
         this.modulationEngine.onModulationUpdate = (modulationMap) => {
             this._applyModulation(modulationMap);
@@ -75,7 +76,12 @@ export class VASynth {
                 detune: 0,        // cents (-1200 to +1200)
                 octave: 0,        // -2, -1, 0, +1, +2
                 level: 0.33,      // 0-1
-                pulseWidth: 0.5   // For future PWM implementation
+                pulseWidth: 0.5,  // For PWM implementation
+
+                // ✅ SUPERSAW: Unison parameters
+                unisonVoices: 7,  // 1-7 voices
+                unisonDetune: 50, // 0-100 cents
+                unisonSpread: 50  // 0-100 stereo width
             },
             {
                 enabled: true,
@@ -83,7 +89,12 @@ export class VASynth {
                 detune: -7,       // Slight detune for richness
                 octave: 0,
                 level: 0.33,
-                pulseWidth: 0.5
+                pulseWidth: 0.5,
+
+                // ✅ SUPERSAW: Unison parameters
+                unisonVoices: 7,
+                unisonDetune: 50,
+                unisonSpread: 50
             },
             {
                 enabled: false,
@@ -91,7 +102,12 @@ export class VASynth {
                 detune: 0,
                 octave: -1,       // Sub oscillator
                 level: 0.33,
-                pulseWidth: 0.5
+                pulseWidth: 0.5,
+
+                // ✅ SUPERSAW: Unison parameters
+                unisonVoices: 1,  // Disabled for sub osc
+                unisonDetune: 0,
+                unisonSpread: 0
             }
         ];
 
@@ -138,14 +154,14 @@ export class VASynth {
     noteOn(midiNote, velocity = 100, startTime = null, extendedParams = null) {
         const time = startTime !== null ? startTime : this.context.currentTime;
         this._cancelCleanupTimer();
-        
+
         // ✅ FIX: Store duration from extendedParams for note off timing
         if (extendedParams?.duration && extendedParams.duration > 0) {
             this.noteDuration = extendedParams.duration;
         } else {
             this.noteDuration = null;
         }
-        
+
         // ✅ MODULATION MATRIX: Update MIDI sources
         let aftertouch = 0;
         let modWheel = 0;
@@ -156,21 +172,21 @@ export class VASynth {
         if (this.modulationEngine) {
             this.modulationEngine.setMIDISources(velocity, aftertouch, modWheel);
         }
-        
+
         // ✅ PHASE 2: Apply initial pitch bend if present
         let pitchBendSemitones = 0;
         if (extendedParams?.pitchBend && Array.isArray(extendedParams.pitchBend) && extendedParams.pitchBend.length > 0) {
             const firstPoint = extendedParams.pitchBend[0];
             pitchBendSemitones = (firstPoint.value / 8192) * 2; // ±2 semitones range
         }
-        
+
         const baseFrequency = this.midiToFrequency(midiNote + pitchBendSemitones);
         this.currentBaseFrequency = baseFrequency;
 
         // ✅ BUG #5 FIX: Check if voice is in cleanup phase (isPlaying false but oscillators still exist)
         // If in cleanup phase, we need to create new oscillators instead of using portamento
-        const isInCleanupPhase = !this.isPlaying && 
-            this.oscillators && 
+        const isInCleanupPhase = !this.isPlaying &&
+            this.oscillators &&
             this.oscillators.some(osc => osc !== null && osc !== undefined);
 
         // ✅ Monophonic Mode with Portamento
@@ -214,8 +230,14 @@ export class VASynth {
                 }
             });
 
-            // Legato mode: don't retrigger envelopes
-            if (!this.legato) {
+            // Legato mode: don't retrigger envelopes UNLESS they are already in release phase
+            // (e.g. after a loop restart or rapid retrigger where the voice was previously released)
+            const shouldRetrigger = !this.legato || (this.amplitudeEnvelope && this.amplitudeEnvelope.isReleased);
+
+            if (shouldRetrigger) {
+                if (import.meta.env.DEV && this.legato && this.amplitudeEnvelope.isReleased) {
+                    console.log(`🎹 VASynth: Legato retrigger enforced because envelope was released.`);
+                }
                 // Retrigger envelopes for new note
                 const baseCutoff = this.filterSettings.cutoff;
                 const filterEnvAmount = this.filterSettings.envelopeAmount;
@@ -285,7 +307,7 @@ export class VASynth {
                 // Pulse width > 0.5 = wider pulse (less high, more low)
                 const pulseWidth = Math.max(0.01, Math.min(0.99, settings.pulseWidth)); // Clamp 0.01-0.99
                 const phaseOffset = (pulseWidth - 0.5) * Math.PI * 2; // Convert to phase offset
-                
+
                 // Create gain nodes for mixing
                 const gain1 = this.context.createGain();
                 const gain2 = this.context.createGain();
@@ -316,6 +338,31 @@ export class VASynth {
                 // Store references
                 this.oscillators[i] = [osc1, osc2]; // Store array for PWM
                 this.oscillatorGains[i] = mixGain;
+            } else if (settings.waveform === 'supersaw') {
+                // ✅ SUPERSAW: Create supersaw oscillator with unison
+                const supersaw = new SupersawOscillator(
+                    this.context,
+                    frequency,
+                    {
+                        voices: settings.unisonVoices || 7,
+                        detune: settings.unisonDetune || 50,
+                        spread: settings.unisonSpread || 50
+                    }
+                );
+
+                // Apply level
+                const oscGain = this.context.createGain();
+                oscGain.gain.setValueAtTime(settings.level, time);
+
+                // Connect: Supersaw → Gain
+                supersaw.output.connect(oscGain);
+
+                // Start supersaw
+                supersaw.start(time);
+
+                // Store references
+                this.oscillators[i] = supersaw;
+                this.oscillatorGains[i] = oscGain;
             } else {
                 // ✅ NORMAL: Standard oscillator (non-square or square with 0.5 pulse width)
                 const osc = this.context.createOscillator();
@@ -342,14 +389,14 @@ export class VASynth {
         // ✅ PHASE 2: Base filter cutoff with mod wheel modulation
         // ✅ KEY TRACKING: Apply key tracking if enabled
         let baseCutoff = this.filterSettings.cutoff;
-        
+
         // ✅ KEY TRACKING: Apply key tracking if enabled
         const keyTrackingAmount = this.filterSettings.keyTracking || 0; // 0-1
         if (keyTrackingAmount > 0) {
             const noteFrequency = this.midiToFrequency(midiNote);
             const baseFrequency = this.midiToFrequency(60); // C4 as base
             const frequencyRatio = noteFrequency / baseFrequency;
-            
+
             // Calculate key tracking offset
             // Higher notes = higher frequency = higher cutoff
             // Range: ±50% of base cutoff based on key tracking amount
@@ -357,7 +404,7 @@ export class VASynth {
             baseCutoff = baseCutoff + keyTrackingOffset;
             baseCutoff = Math.max(20, Math.min(20000, baseCutoff)); // Clamp to valid range
         }
-        
+
         if (extendedParams?.modWheel !== undefined) {
             const modWheelNormalized = extendedParams.modWheel / 127; // 0-1
             const cutoffRange = baseCutoff * 0.5; // ±50% modulation
@@ -365,7 +412,7 @@ export class VASynth {
             baseCutoff = Math.max(20, Math.min(20000, baseCutoff)); // Clamp
         }
         this.filter.frequency.setValueAtTime(baseCutoff, time);
-        
+
         // ✅ PHASE 2: Apply aftertouch to filter Q
         let filterQ = this.filterSettings.resonance;
         if (extendedParams?.aftertouch !== undefined) {
@@ -388,7 +435,7 @@ export class VASynth {
             this.filterDrive = this.context.createWaveShaper();
             this.filterDrive.curve = this._createDriveCurve(this.filterSettings.drive);
             this.filterDrive.oversample = '4x'; // Reduce aliasing
-            
+
             // Connect: Oscillators → Filter Drive → Filter → Amplitude Gain → Master Gain
             this.oscillatorGains.forEach(oscGain => {
                 if (oscGain) {
@@ -445,32 +492,32 @@ export class VASynth {
             if (this.lfo.isRunning) {
                 this.lfo.stop();
             }
-            
+
             // ✅ TEMPO SYNC: Update BPM before starting (if tempo sync is enabled)
             if (this.lfo.tempoSync && this.bpm) {
                 this.lfo.updateBPM(this.bpm);
             }
-            
+
             this.lfo.start(time);
-            
+
             // ✅ LFO TARGET: Connect LFO to target parameter based on lfoTarget
             const target = this.lfoTarget || 'filter.cutoff';
             let targetParam = null;
             let modulationAmount = 0;
-            
+
             switch (target) {
                 case 'filter.cutoff':
                     targetParam = this.filter.frequency;
                     const baseCutoff = this.filterSettings.cutoff;
                     modulationAmount = this.lfo.depth * baseCutoff * 0.5; // ±50% of cutoff
                     break;
-                    
+
                 case 'filter.resonance':
                     targetParam = this.filter.Q;
                     const baseResonance = this.filterSettings.resonance;
                     modulationAmount = this.lfo.depth * baseResonance * 0.5; // ±50% of resonance
                     break;
-                    
+
                 case 'osc.level':
                     // ✅ LFO TARGET: Modulate first oscillator level
                     if (this.oscillatorGains[0]) {
@@ -478,7 +525,7 @@ export class VASynth {
                         modulationAmount = this.lfo.depth * 0.5; // ±50% of level
                     }
                     break;
-                    
+
                 case 'osc.detune':
                     // ✅ LFO TARGET: Modulate first oscillator detune
                     if (this.oscillators[0] && !Array.isArray(this.oscillators[0])) {
@@ -486,7 +533,7 @@ export class VASynth {
                         modulationAmount = this.lfo.depth * 50; // ±50 cents
                     }
                     break;
-                    
+
                 case 'osc.pitch':
                     // ✅ LFO TARGET: Modulate first oscillator frequency (pitch)
                     if (this.oscillators[0] && !Array.isArray(this.oscillators[0])) {
@@ -495,7 +542,7 @@ export class VASynth {
                         modulationAmount = this.lfo.depth * baseFreq * 0.1; // ±10% of frequency (vibrato)
                     }
                     break;
-                    
+
                 default:
                     // Fallback to filter cutoff
                     targetParam = this.filter.frequency;
@@ -503,7 +550,7 @@ export class VASynth {
                     modulationAmount = this.lfo.depth * fallbackCutoff * 0.5;
                     break;
             }
-            
+
             if (targetParam) {
                 this.lfo.connect(targetParam, modulationAmount);
             }
@@ -519,7 +566,7 @@ export class VASynth {
 
         this.isPlaying = true;
     }
-    
+
     /**
      * ✅ MODULATION MATRIX: Register parameter targets for modulation
      */
@@ -606,7 +653,7 @@ export class VASynth {
             });
         }
     }
-    
+
     /**
      * ✅ MODULATION MATRIX: Apply modulation to parameters
      */
@@ -729,6 +776,13 @@ export class VASynth {
                 }
             });
 
+            // ✅ OFFLINE RENDER FIX: Don't use setTimeout for cleanup in offline context
+            // The virtual clock moves too fast, causing premature cleanup/silence.
+            if (this.context instanceof (window.OfflineAudioContext || window.webkitOfflineAudioContext)) {
+                this.isPlaying = false;
+                return;
+            }
+
             // ✅ BUG #3 FIX: Schedule cleanup after oscillators have stopped
             // Use slightly longer delay to ensure oscillators are stopped before cleanup
             // Cleanup will only disconnect nodes, not stop oscillators (they're already stopped)
@@ -752,6 +806,27 @@ export class VASynth {
     }
 
     /**
+     * ✅ LOOP CONTINUITY: Handle loop restart by cancelling cleanup and resyncing modulators
+     * This is called by VASynthInstrument.onLoopRestart()
+     * @param {number} loopStartTime - Next loop start time
+     */
+    onLoopRestart(loopStartTime) {
+        // 1. Prevent cleanup! The loop restarted, so this voice (if mono) should stay alive
+        // This is the core of the "Handshake" mechanism
+        this._cancelCleanupTimer();
+
+        // 2. Resume playing state for mono voices to allow subsequent noteOn/noteOff calls
+        // to work correctly on the same voice instance
+        if (this.voiceMode === 'mono' && this.oscillators.some(osc => !!osc)) {
+            this.isPlaying = true;
+        }
+
+        if (import.meta.env.DEV) {
+            console.log(`🎹 VASynth.onLoopRestart: cleanup cancelled, isPlaying=${this.isPlaying}`);
+        }
+    }
+
+    /**
      * Cleanup audio nodes
      */
     cleanup() {
@@ -765,8 +840,13 @@ export class VASynth {
         this.oscillators.forEach(osc => {
             if (osc) {
                 try {
+                    // ✅ SUPERSAW: Handle SupersawOscillator
+                    if (osc instanceof SupersawOscillator) {
+                        osc.stop(now);
+                        osc.disconnect();
+                    }
                     // ✅ PWM: Handle array of oscillators (PWM mode)
-                    if (Array.isArray(osc)) {
+                    else if (Array.isArray(osc)) {
                         osc.forEach(o => {
                             // Only stop if not already stopped (defensive check)
                             if (o && o.context && o.context.state !== 'closed' && o.playbackState !== 'finished') {
@@ -868,9 +948,9 @@ export class VASynth {
      * ✅ KEY TRACKING: Key tracking is applied per-note in noteOn(), not here
      */
     setFilter(settings) {
-        const driveChanged = settings.drive !== undefined && 
-                            settings.drive !== this.filterSettings.drive;
-        
+        const driveChanged = settings.drive !== undefined &&
+            settings.drive !== this.filterSettings.drive;
+
         this.filterSettings = {
             ...this.filterSettings,
             ...settings
@@ -904,7 +984,7 @@ export class VASynth {
                     this.context.currentTime
                 );
             }
-            
+
             // ✅ FILTER DRIVE: If drive changed significantly, restart note to apply drive node
             // Drive node is created in noteOn(), so we need to restart to apply changes
             if (driveChanged && this.currentNote !== null) {
@@ -991,7 +1071,7 @@ export class VASynth {
         if (preset.lfo) {
             this.setLFO(preset.lfo);
         }
-        
+
         // ✅ LFO TARGET: Load LFO target from preset
         if (preset.lfoTarget !== undefined) {
             this.lfoTarget = preset.lfoTarget;
@@ -1067,27 +1147,27 @@ export class VASynth {
             if (lfoSettings.tempoSync && this.bpm) {
                 lfoSettings.bpm = this.bpm;
             }
-            
+
             this.setLFO(lfoSettings);
-            
+
             // ✅ LFO TARGET: Update LFO target if provided
             if (params.lfo1.target !== undefined) {
                 this.lfoTarget = params.lfo1.target;
             }
-            
+
             // ✅ LFO PLAYBACK: Reconnect LFO if playing (with new target)
             if (this.isPlaying && this.lfo && this.lfo.isRunning) {
                 // Disconnect all old connections
                 this.lfo.connectedParams.forEach(param => {
                     this.lfo.disconnect(param);
                 });
-                
+
                 // Reconnect with new target and settings
                 if (this.lfo.frequency > 0 && this.lfo.depth > 0) {
                     const target = this.lfoTarget || 'filter.cutoff';
                     let targetParam = null;
                     let modulationAmount = 0;
-                    
+
                     switch (target) {
                         case 'filter.cutoff':
                             if (this.filter) {
@@ -1096,7 +1176,7 @@ export class VASynth {
                                 modulationAmount = this.lfo.depth * baseCutoff * 0.5;
                             }
                             break;
-                            
+
                         case 'filter.resonance':
                             if (this.filter) {
                                 targetParam = this.filter.Q;
@@ -1104,21 +1184,21 @@ export class VASynth {
                                 modulationAmount = this.lfo.depth * baseResonance * 0.5;
                             }
                             break;
-                            
+
                         case 'osc.level':
                             if (this.oscillatorGains[0]) {
                                 targetParam = this.oscillatorGains[0].gain;
                                 modulationAmount = this.lfo.depth * 0.5;
                             }
                             break;
-                            
+
                         case 'osc.detune':
                             if (this.oscillators[0] && !Array.isArray(this.oscillators[0])) {
                                 targetParam = this.oscillators[0].detune;
                                 modulationAmount = this.lfo.depth * 50;
                             }
                             break;
-                            
+
                         case 'osc.pitch':
                             if (this.oscillators[0] && !Array.isArray(this.oscillators[0])) {
                                 targetParam = this.oscillators[0].frequency;
@@ -1127,7 +1207,7 @@ export class VASynth {
                             }
                             break;
                     }
-                    
+
                     if (targetParam) {
                         this.lfo.connect(targetParam, modulationAmount);
                     }
@@ -1215,23 +1295,23 @@ export class VASynth {
         const samples = 4096;
         const curve = new Float32Array(samples);
         const deg = Math.PI / 180;
-        
+
         // Soft saturation curve (tanh-like)
         // Drive controls the amount of saturation
         // Higher drive = more distortion
         for (let i = 0; i < samples; i++) {
             const x = (i * 2) / samples - 1; // -1 to 1
             const driveAmount = drive * 3; // Scale drive (0-3)
-            
+
             // Soft saturation using tanh
             // Drive amount controls how much saturation is applied
             const saturated = Math.tanh(x * (1 + driveAmount));
-            
+
             // Mix between original and saturated signal
             const mix = drive; // 0 = original, 1 = fully saturated
             curve[i] = x * (1 - mix) + saturated * mix;
         }
-        
+
         return curve;
     }
 

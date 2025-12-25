@@ -61,8 +61,10 @@ export class MixerInsert {
     this._analyzerConnected = false;
 
     // Auto-sleep (silence detection)
+    // ✅ FIX: Disable auto-sleep for bus channels - they receive sends and should stay active
+    const isBusChannel = insertId.startsWith('bus-');
     this.autoSleepConfig = {
-      enabled: insertId !== 'master',
+      enabled: insertId !== 'master' && !isBusChannel, // Disable for master and bus channels
       threshold: 0.00018,
       wakeThreshold: 0.00035,
       sleepAfterMs: 1000,
@@ -89,6 +91,18 @@ export class MixerInsert {
     // Initial routing (no effects)
     this._rebuildChain();
 
+    // ✅ FIX: Add silent keep-alive oscillator to prevent browser from suspending 
+    // the audio graph when no instruments are playing. This ensures reverb tails 
+    // and other time-based effects continue to process even when input is silent.
+    // Using 1Hz at -180dB (1e-9) to be invisible to meters and inaudible.
+    this._keepAliveOscillator = this.audioContext.createOscillator();
+    this._keepAliveOscillator.frequency.value = 1; // 1Hz (sub-audible)
+    this._keepAliveGain = this.audioContext.createGain();
+    this._keepAliveGain.gain.value = 0.000000001; // 1e-9 (invisible to 8-bit meters)
+    this._keepAliveOscillator.connect(this._keepAliveGain);
+    this._keepAliveGain.connect(this.input);
+    this._keepAliveOscillator.start();
+
     // ✅ OPTIMIZATION: Auto-sleep monitoring is now handled by MixerInsertManager
     // Individual per-insert timers replaced with a single global timer
     // this._initAutoSleepMonitor(); // DISABLED - managed globally
@@ -107,8 +121,8 @@ export class MixerInsert {
    */
   connectInstrument(instrumentId, instrumentOutput) {
     if (this.instruments.has(instrumentId)) {
-      console.warn(`⚠️ Instrument ${instrumentId} already connected to ${this.insertId}`);
-      return true; // Already connected is considered success
+      // Already connected - silently return success (reduces log spam during project restore)
+      return true;
     }
 
     // ✅ FIX: Validate instrumentOutput before attempting connection
@@ -136,7 +150,7 @@ export class MixerInsert {
     try {
       instrumentOutput.connect(this.input);
       this.instruments.add(instrumentId);
-      
+
       if (import.meta.env.DEV) {
         console.log(`✅ Instrument ${instrumentId} connected to ${this.insertId}`);
         console.log(`   Total instruments on ${this.insertId}: ${this.instruments.size}`);
@@ -154,15 +168,31 @@ export class MixerInsert {
    */
   disconnectInstrument(instrumentId, instrumentOutput) {
     if (!this.instruments.has(instrumentId)) {
+      // Already disconnected or never connected
       return;
     }
 
     try {
-      instrumentOutput.disconnect(this.input);
+      // ✅ FIX: Check if output exists and is valid before disconnecting
+      if (instrumentOutput && typeof instrumentOutput.disconnect === 'function') {
+        instrumentOutput.disconnect(this.input);
+      }
       this.instruments.delete(instrumentId);
-      console.log(`🔌 Disconnected instrument ${instrumentId} from ${this.insertId}`);
+      if (import.meta.env.DEV) {
+        console.log(`🔌 Disconnected instrument ${instrumentId} from ${this.insertId}`);
+      }
     } catch (error) {
-      console.warn(`⚠️ Error disconnecting instrument ${instrumentId}:`, error);
+      // ✅ FIX: Ignore "not connected" errors - instrument might already be disconnected
+      // This can happen when same ID is reused or during cleanup
+      if (error.name === 'InvalidAccessError' || error.message?.includes('not connected')) {
+        // Silently ignore - already disconnected
+        this.instruments.delete(instrumentId); // Still remove from tracking
+      } else {
+        // Log other errors
+        if (import.meta.env.DEV) {
+          console.warn(`⚠️ Error disconnecting instrument ${instrumentId}:`, error);
+        }
+      }
     }
   }
 
@@ -191,6 +221,15 @@ export class MixerInsert {
     });
 
     this.effectOrder.push(effectId);
+
+    // ✅ FIX: Wake up channel if sleeping when effect is added
+    // User is actively working on this channel, so it should be active
+    if (this._autoSleepState.isSleeping && this.autoSleepConfig.enabled) {
+      this._autoSleepState.isSleeping = false;
+      this._autoSleepState.belowTimer = 0;
+      this._autoSleepState.aboveTimer = 0;
+    }
+
     this._rebuildChain();
 
     // ✅ PERFORMANCE: Only log in DEV mode
@@ -224,11 +263,11 @@ export class MixerInsert {
 
     // Dispose effect node
     try {
-      if (effect.node.disconnect) {
-        effect.node.disconnect();
-      }
+      // ✅ FIX: Handle BaseEffect wrapper disposal
       if (effect.node.dispose) {
         effect.node.dispose();
+      } else if (effect.node.disconnect) {
+        effect.node.disconnect();
       }
     } catch (error) {
       console.warn(`⚠️ Error disposing effect ${effectId}:`, error);
@@ -236,6 +275,15 @@ export class MixerInsert {
 
     this.effects.delete(effectId);
     this.effectOrder = this.effectOrder.filter(id => id !== effectId);
+
+    // ✅ FIX: Wake up channel if sleeping when effect is removed
+    // User is actively working on this channel, so it should be active
+    if (this._autoSleepState.isSleeping && this.autoSleepConfig.enabled) {
+      this._autoSleepState.isSleeping = false;
+      this._autoSleepState.belowTimer = 0;
+      this._autoSleepState.aboveTimer = 0;
+    }
+
     this._rebuildChain();
 
     console.log(`🗑️ Removed effect ${effectId} from ${this.insertId}`);
@@ -271,9 +319,9 @@ export class MixerInsert {
     // ✅ OPTIMIZATION: Try incremental segment rebuild first
     const minIndex = Math.min(sourceIndex, destinationIndex);
     const maxIndex = Math.max(sourceIndex, destinationIndex);
-    
+
     const success = this._rebuildChainSegment(minIndex, maxIndex);
-    
+
     if (!success) {
       // Fallback to full rebuild if segment rebuild fails
       if (import.meta.env.DEV) {
@@ -301,7 +349,12 @@ export class MixerInsert {
         const effect = this.effects.get(effectId);
         if (effect && effect.node) {
           try {
-            effect.node.disconnect();
+            // ✅ FIX: Disconnect outputNode if available (BaseEffect wrapper)
+            if (effect.node.outputNode) {
+              effect.node.outputNode.disconnect();
+            } else if (effect.node.disconnect) {
+              effect.node.disconnect();
+            }
           } catch (e) { /* May not be connected */ }
         }
       }
@@ -313,14 +366,18 @@ export class MixerInsert {
 
       // Reconnect the segment in new order
       let currentNode = prevNode;
-      
+
       for (let i = startIndex; i <= endIndex; i++) {
         const effectId = this.effectOrder[i];
         const effect = this.effects.get(effectId);
-        
+
         if (effect && !effect.bypass && effect.node) {
-          currentNode.connect(effect.node);
-          currentNode = effect.node;
+          // ✅ FIX: Connect to inputNode, continue from outputNode (BaseEffect wrapper)
+          const input = effect.node.inputNode || effect.node;
+          const output = effect.node.outputNode || effect.node;
+
+          currentNode.connect(input);
+          currentNode = output;
         }
       }
 
@@ -370,7 +427,7 @@ export class MixerInsert {
 
     // ✅ OPTIMIZATION: Try incremental update first, fallback to full rebuild
     const success = this._updateEffectBypassIncremental(effectId, bypass);
-    
+
     if (!success) {
       // Fallback to full rebuild if incremental update fails
       if (import.meta.env.DEV) {
@@ -378,7 +435,7 @@ export class MixerInsert {
       }
       this._rebuildChain();
     }
-    
+
     // ✅ PERFORMANCE: Only log in DEV mode
     if (import.meta.env.DEV) {
       console.log(`⏭️ Effect ${effectId} bypass: ${bypass} (incremental: ${success})`);
@@ -409,11 +466,13 @@ export class MixerInsert {
         try {
           prevNode.disconnect(effect.node);
         } catch (e) { /* May not be connected */ }
-        
+
         try {
-          effect.node.disconnect(nextNode);
+          // ✅ FIX: Disconnect outputNode if available
+          const output = effect.node.outputNode || effect.node;
+          output.disconnect(nextNode);
         } catch (e) { /* May not be connected */ }
-        
+
         // Connect around the bypassed effect
         prevNode.connect(nextNode);
       } else {
@@ -421,10 +480,14 @@ export class MixerInsert {
         try {
           prevNode.disconnect(nextNode);
         } catch (e) { /* May not be connected */ }
-        
+
         // Connect prev → effect → next
-        prevNode.connect(effect.node);
-        effect.node.connect(nextNode);
+        // ✅ FIX: Use inputNode/outputNode
+        const input = effect.node.inputNode || effect.node;
+        const output = effect.node.outputNode || effect.node;
+
+        prevNode.connect(input);
+        output.connect(nextNode);
       }
 
       return true;
@@ -446,7 +509,8 @@ export class MixerInsert {
       const effectId = this.effectOrder[i];
       const effect = this.effects.get(effectId);
       if (effect && !effect.bypass && effect.node) {
-        return effect.node;
+        // ✅ FIX: Return outputNode if available
+        return effect.node.outputNode || effect.node;
       }
     }
     // No active effect before, return input
@@ -463,7 +527,8 @@ export class MixerInsert {
       const effectId = this.effectOrder[i];
       const effect = this.effects.get(effectId);
       if (effect && !effect.bypass && effect.node) {
-        return effect.node;
+        // ✅ FIX: Return inputNode if available
+        return effect.node.inputNode || effect.node;
       }
     }
     // No active effect after, return gainNode (next in chain)
@@ -500,14 +565,94 @@ export class MixerInsert {
     }
     // Native Web Audio effects use direct property assignment
     else if (effect.node.parameters) {
-      Object.entries(settings).forEach(([key, value]) => {
-        if (effect.node.parameters.has(key)) {
-          effect.node.parameters.get(key).value = value;
-        }
-      });
+      // ✅ FIX: Handle BaseEffect wrapper parameters (updateParameter method)
+      if (typeof effect.node.updateParameter === 'function') {
+        Object.entries(settings).forEach(([key, value]) => {
+          effect.node.updateParameter(key, value);
+        });
+      }
+      // Fallback for raw nodes
+      else if (effect.node.parameters) {
+        Object.entries(settings).forEach(([key, value]) => {
+          if (effect.node.parameters.has(key)) {
+            effect.node.parameters.get(key).value = value;
+          }
+        });
+      }
     }
 
     console.log(`✅ Updated settings for ${effectId}`);
+  }
+
+  /**
+   * 🏗️ STATE HYDRATION: Rebuild channel state from data
+   * Useful for pattern rendering and project restoration
+   * @param {object} trackData - Serialized track/mixer data
+   * @param {object} effectFactory - EffectFactory class for creating effects
+   */
+  async loadState(trackData, effectFactory = null) {
+    if (!trackData) return;
+
+    const now = this.audioContext.currentTime;
+
+    // 1. Basic properties
+    if (trackData.gain !== undefined) {
+      this.gainNode.gain.setValueAtTime(trackData.gain, now);
+    }
+    if (trackData.pan !== undefined) {
+      this.panNode.pan.setValueAtTime(trackData.pan, now);
+    }
+    if (trackData.mute !== undefined) {
+      this.setMute(trackData.mute);
+    }
+    if (trackData.mono !== undefined) {
+      this.setMono(trackData.mono);
+    }
+
+    // 2. Insert Effects
+    const effects = trackData.insertEffects || trackData.effects || [];
+    if (effects.length > 0 && effectFactory) {
+      // Clear existing effects if any
+      this.effects.clear();
+      this.effectOrder = [];
+
+      for (const effectData of effects) {
+        try {
+          const effectNode = effectFactory.createEffect(
+            this.audioContext,
+            effectData.type,
+            effectData.settings || effectData.parameters
+          );
+
+          if (effectNode) {
+            this.addEffect(
+              effectData.id || `fx-${Math.random().toString(36).substr(2, 9)}`,
+              effectNode,
+              effectData.settings || effectData.parameters,
+              effectData.bypass || false,
+              effectData.type
+            );
+          }
+        } catch (error) {
+          console.error(`❌ MixerInsert: Failed to load effect ${effectData.type}:`, error);
+        }
+      }
+    }
+
+    // 3. Sends
+    if (Array.isArray(trackData.sends)) {
+      this.sends.clear();
+      for (const send of trackData.sends) {
+        if (send.busId) {
+          this.sends.set(send.busId, {
+            gain: send.level ?? 0,
+            destination: null // To be connected externally
+          });
+        }
+      }
+    }
+
+    this._rebuildChain();
   }
 
   /**
@@ -570,50 +715,75 @@ export class MixerInsert {
    */
   _rebuildChain() {
     const isDev = import.meta.env.DEV;
-    
+
     try {
       // ✅ PERFORMANCE: Only log in DEV mode
       if (isDev) {
         console.log(`🔧 Rebuilding chain for ${this.insertId}`);
       }
 
-      // Disconnect all first
-      this.input.disconnect();
+      // ✅ FIX: Don't disconnect input - it has sends connected to it!
+      // Only disconnect the output chain (gain, pan, analyzer, effects)
+      // Input should remain connected to any sends that are routing to it
       this.gainNode.disconnect();
       this.panNode.disconnect();
+
+      // ✅ CRITICAL FIX: Disconnect analyzer from output chain, but preserve send connections
+      // Analyzer has two types of connections:
+      // 1. Output chain: analyzer → output (this should be disconnected and reconnected)
+      // 2. Send connections: analyzer → sendGain → bus.input (these should be preserved)
       if (this._analyzer) {
-        try { this._analyzer.disconnect(); } catch (e) {}
+        try {
+          // Only disconnect analyzer from output, not from sends
+          // Send connections are: analyzer → sendGain, which we want to keep
+          this._analyzer.disconnect(this.output);
+        } catch (e) {
+          // Not connected to output yet, that's fine
+        }
       }
 
       this.effects.forEach(effect => {
-        if (effect.node && effect.node.disconnect) {
+        if (effect.node) {
           try {
-            effect.node.disconnect();
+            // ✅ FIX: Disconnect outputNode if available
+            if (effect.node.outputNode) {
+              effect.node.outputNode.disconnect();
+            } else if (effect.node.disconnect) {
+              effect.node.disconnect();
+            }
           } catch (e) {
             // Already disconnected
           }
         }
       });
 
+      // ✅ FIX: Disconnect input only from its current output chain connections
+      // But preserve connections from sends (which connect TO input, not FROM input)
+      // Input can have multiple connections TO it (from sends), but only one FROM it (to gainNode)
+      try {
+        // Disconnect input from gainNode (if connected)
+        this.input.disconnect(this.gainNode);
+      } catch (e) {
+        // Not connected yet, that's fine
+      }
+
       // Build chain
       let currentNode = this.input;
       let connectedEffects = 0;
 
-      const skipEffects = this.autoSleepConfig.enabled && this._autoSleepState?.isSleeping;
-
-      // Add non-bypassed effects (unless auto-sleeping)
+      // ✅ CRITICAL FIX: Auto-sleep should NOT skip effects - it's only for CPU telemetry
+      // Effects must always be in the chain, even when "sleeping" (silent)
+      // Auto-sleep is just a label for CPU optimization reporting, not an audio state
+      // Removing skipEffects logic - effects are always connected when not bypassed
       for (const effectId of this.effectOrder) {
         const effect = this.effects.get(effectId);
-        if (skipEffects) {
-          if (isDev) {
-            console.log(`  ⏸️ Auto-sleep active → skipping effect chain for ${this.insertId}`);
-          }
-          break;
-        }
-
         if (effect && !effect.bypass && effect.node) {
-          currentNode.connect(effect.node);
-          currentNode = effect.node;
+          // ✅ FIX: Connect to inputNode, continue from outputNode (BaseEffect wrapper)
+          const input = effect.node.inputNode || effect.node;
+          const output = effect.node.outputNode || effect.node;
+
+          currentNode.connect(input);
+          currentNode = output;
           connectedEffects++;
         }
       }
@@ -622,13 +792,18 @@ export class MixerInsert {
       // ✅ OPTIMIZED: Analyzer is optional (lazy creation)
       currentNode.connect(this.gainNode);
       this.gainNode.connect(this.panNode);
-      
+
+      // ✅ FIX: Always check if analyzer exists
+      // If analyzer exists (created lazily via getAnalyzer()), insert it into chain
       if (this._analyzer) {
+        // Analyzer exists - insert it: pan → analyzer → output
         this.panNode.connect(this._analyzer);
         this._analyzer.connect(this.output);
         this._analyzerConnected = true;
       } else {
+        // No analyzer yet - direct connection
         this.panNode.connect(this.output);
+        this._analyzerConnected = false;
       }
 
       if (isDev) {
@@ -726,8 +901,20 @@ export class MixerInsert {
    */
   connectToMaster(masterInput) {
     try {
+      // ✅ FIX: Disconnect from any previous connection first
+      this.output.disconnect();
       this.output.connect(masterInput);
-      // Only log errors, not every connection
+      this.routedBusId = null; // Reset exclusive route tracking
+
+      if (import.meta.env.DEV) {
+        console.log(`🔗 ${this.insertId} connected to master bus`, {
+          insertId: this.insertId,
+          hasOutput: !!this.output,
+          hasMasterInput: !!masterInput,
+          outputType: this.output?.constructor?.name,
+          masterInputType: masterInput?.constructor?.name
+        });
+      }
     } catch (error) {
       console.error(`❌ Failed to connect ${this.insertId} to master:`, error);
     }
@@ -754,19 +941,84 @@ export class MixerInsert {
       return;
     }
 
+    // ✅ FIX: Validate busInput before creating send
+    if (!busInput) {
+      console.error(`❌ Cannot create send to ${busId}: busInput is null/undefined`);
+      return;
+    }
+
+    if (typeof busInput.connect !== 'function') {
+      console.error(`❌ Cannot create send to ${busId}: busInput is not a valid AudioNode`);
+      return;
+    }
+
     const sendGain = this.audioContext.createGain();
     sendGain.gain.value = sendLevel;
 
+    // ✅ FIX: Use getAnalyzer() to ensure analyzer exists (lazy creation)
     // Tap from analyzer (post-fader)
-    this.analyzer.connect(sendGain);
-    sendGain.connect(busInput);
+    const analyzer = this.getAnalyzer();
 
-    this.sends.set(busId, {
-      gain: sendGain,
-      destination: busInput
-    });
+    try {
+      analyzer.connect(sendGain);
+      sendGain.connect(busInput);
 
-    console.log(`📤 Send: ${this.insertId} → ${busId} (${sendLevel})`);
+      this.sends.set(busId, {
+        gain: sendGain,
+        destination: busInput
+      });
+
+      // ✅ CRITICAL FIX: Prevent auto-sleep state change during send/unsend operations
+      // This prevents _rebuildChain() from being called, which would interrupt currently playing notes
+      // Instead, we manually wake up the channel if it's sleeping, without triggering chain rebuild
+      if (this._autoSleepState.isSleeping && this.autoSleepConfig.enabled) {
+        // Wake up without rebuilding chain (send connection doesn't require chain rebuild)
+        this._autoSleepState.isSleeping = false;
+        this._autoSleepState.belowTimer = 0;
+        this._autoSleepState.aboveTimer = 0;
+        if (import.meta.env.DEV) {
+          console.log(`🔔 Auto-sleep disabled for ${this.insertId} (send added, no chain rebuild)`);
+        }
+      }
+
+      if (import.meta.env.DEV) {
+        console.log(`📤 Send created: ${this.insertId} → ${busId} (level: ${sendLevel})`, {
+          sourceInsert: this.insertId,
+          busId,
+          sendLevel,
+          hasAnalyzer: !!analyzer,
+          hasBusInput: !!busInput,
+          busInputType: busInput?.constructor?.name
+        });
+      }
+    } catch (error) {
+      console.error(`❌ Failed to create send from ${this.insertId} to ${busId}:`, error);
+      // Cleanup on error
+      try {
+        analyzer.disconnect(sendGain);
+        sendGain.disconnect(busInput);
+      } catch (e) {
+        // Ignore cleanup errors
+      }
+    }
+  }
+
+  /**
+   * 🔀 EXCLUSIVE ROUTING: Connect output directly to bus (Submix)
+   * Disconnects from Master/Previous Bus first.
+   * This prevents "volume boost" caused by parallel sending.
+   */
+  connectToBusExclusive(busInput, busId) {
+    if (!busInput) return;
+
+    try {
+      this.output.disconnect(); // Disconnect from all (Master or other buses)
+      this.output.connect(busInput);
+      this.routedBusId = busId;
+      console.log(`🔀 Routed ${this.insertId} exclusively to ${busId}`);
+    } catch (error) {
+      console.error(`❌ Failed to route ${this.insertId} to ${busId}:`, error);
+    }
   }
 
   /**
@@ -792,14 +1044,23 @@ export class MixerInsert {
     }
 
     try {
-      this.analyzer.disconnect(send.gain);
+      // ✅ FIX: Use getAnalyzer() to ensure analyzer exists (lazy creation)
+      if (this._analyzer) {
+        this._analyzer.disconnect(send.gain);
+      }
       send.gain.disconnect(send.destination);
     } catch (error) {
       // Already disconnected
     }
 
     this.sends.delete(busId);
-    console.log(`📥 Send removed: ${this.insertId} ✗ ${busId}`);
+
+    // ✅ CRITICAL FIX: Prevent auto-sleep state change during send/unsend operations
+    // This prevents _rebuildChain() from being called, which would interrupt currently playing notes
+    // Auto-sleep will be re-evaluated by the monitor on next check, but we don't force it now
+    if (import.meta.env.DEV) {
+      console.log(`📥 Send removed: ${this.insertId} ✗ ${busId} (no chain rebuild)`);
+    }
   }
 
   /**
@@ -811,19 +1072,16 @@ export class MixerInsert {
       this._analyzer = this.audioContext.createAnalyser();
       this._analyzer.fftSize = 256;
       this._analyzer.smoothingTimeConstant = 0.8;
-      
-      // Insert analyzer into chain: pan → analyzer → output
-      if (!this._analyzerConnected) {
-        try {
-          this.panNode.disconnect(this.output);
-          this.panNode.connect(this._analyzer);
-          this._analyzer.connect(this.output);
-          this._analyzerConnected = true;
-        } catch (e) {
-          // Chain might not be built yet, will be connected in _rebuildChain
-        }
-      }
-      
+
+      // ✅ FIX: Don't manually reconnect here - let _rebuildChain handle it
+      // Manually disconnecting/reconnecting can break the chain if it's already built
+      // Instead, mark that analyzer should be connected and rebuild the chain
+      this._analyzerConnected = false; // Will be set to true in _rebuildChain
+
+      // Rebuild chain to properly insert analyzer
+      // This ensures all connections are correct and doesn't break existing chain
+      this._rebuildChain();
+
       if (import.meta.env.DEV) {
         console.log(`📊 Lazy analyzer created for ${this.insertId}`);
       }
@@ -838,7 +1096,7 @@ export class MixerInsert {
   getMeterLevel() {
     // If analyzer not created yet, return 0 (no metering overhead)
     if (!this._analyzer) return 0;
-    
+
     const dataArray = new Uint8Array(this._analyzer.frequencyBinCount);
     this._analyzer.getByteTimeDomainData(dataArray);
 
@@ -874,7 +1132,7 @@ export class MixerInsert {
     if (!this.autoSleepConfig.enabled) {
       return;
     }
-    
+
     // ✅ OPTIMIZED: Skip if no analyzer (no metering = no sleep detection)
     // This is fine because tracks without metering are likely not visible anyway
     if (!this._analyzer) {
@@ -921,11 +1179,16 @@ export class MixerInsert {
 
     console.log(
       shouldSleep
-        ? `😴 Auto-sleep enabled for ${this.insertId}`
+        ? `😴 Auto-sleep enabled for ${this.insertId} (CPU optimization only)`
         : `🔔 Auto-sleep disabled for ${this.insertId}`
     );
 
-    this._rebuildChain();
+    // ✅ CRITICAL FIX: Do NOT rebuild chain when auto-sleep state changes
+    // Auto-sleep is only for CPU telemetry, not for audio chain control
+    // Rebuilding chain during playback would interrupt currently playing notes
+    // Effects remain in chain regardless of sleep state
+    // this._rebuildChain(); // REMOVED - causes audio interruptions
+
     if (shouldSleep) {
       this._pushCpuTelemetry({
         load: 0.05,
@@ -1018,6 +1281,13 @@ export class MixerInsert {
 
     // Disconnect all nodes
     try {
+      // ✅ FIX: Cleanup keep-alive oscillator
+      if (this._keepAliveOscillator) {
+        this._keepAliveOscillator.stop();
+        this._keepAliveOscillator.disconnect();
+        this._keepAliveGain.disconnect();
+      }
+
       this.input.disconnect();
       this.gainNode.disconnect();
       this.panNode.disconnect();

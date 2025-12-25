@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useArrangementStore } from '@/store/useArrangementStore';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
 import { getPreviewManager } from '@/lib/audio/preview';
-import { getToolManager, TOOL_TYPES } from '@/lib/piano-roll-tools';
+import { getToolManager, TOOL_TYPES } from '@/features/piano_roll_v7/lib/tools';
 import EventBus from '@/lib/core/EventBus.js';
 import { premiumNoteRenderer } from '../renderers/noteRenderer';
 import { calculatePatternLoopLength } from '@/lib/utils/patternUtils.js';
@@ -17,7 +17,7 @@ import {
     BatchCommand,
     TransposeNotesCommand,
     ToggleMuteCommand
-} from '@/lib/piano-roll-tools/CommandStack';
+} from '@/features/piano_roll_v7/lib/tools/CommandStack';
 import { midiInputContext } from '../state/MIDIInputContext';
 import { ActionType } from '../state/ActionTypes';
 import { migrateNoteToExtended } from '../utils/noteMigration';
@@ -28,12 +28,13 @@ const KEYBOARD_WIDTH = 80;
 // Debug mode - set to false for production
 const DEBUG_MODE = true; // ✅ Temporarily enabled for multi-resize debugging
 
-// ✅ KEYBOARD PIANO MAPPING - Computer keyboard keys to MIDI pitches
-// 3 octaves starting from C4 (MIDI 60-95)
-// Piano-style layout: white keys on letter keys, black keys on number/upper row
+// ✅ KEYBOARD PIANO MAPPING - Standard DAW Layout (FL Studio / Ableton Live style)
+// 4 octaves: C4-C7 (MIDI 60-107) - Full range coverage
+// Piano-style layout: white keys on letter keys, black keys between white keys
+// Each key maps to exactly one MIDI note (no conflicts)
 const KEYBOARD_TO_PITCH = {
     // ===== OCTAVE 1: C4-B4 (MIDI 60-71) =====
-    // Bottom row: ZXCVBNM
+    // Bottom row: ZXCVBNM (white keys)
     'z': 60,   // C4
     'x': 62,   // D4
     'c': 64,   // E4
@@ -41,7 +42,6 @@ const KEYBOARD_TO_PITCH = {
     'b': 67,   // G4
     'n': 69,   // A4
     'm': 71,   // B4
-    ',': 72,   // C5
 
     // Black keys for octave 1 (between white keys)
     's': 61,   // C#4 (between Z-X)
@@ -51,12 +51,14 @@ const KEYBOARD_TO_PITCH = {
     'j': 70,   // A#4 (between N-M)
 
     // ===== OCTAVE 2: C5-B5 (MIDI 72-83) =====
-    // Middle row: ASDFGHJKL
+    // Middle row: ASDFGHJKL (white keys)
     'a': 72,   // C5
-    'f': 77,   // F5
-    'k': 84,   // C6
-    'l': 86,   // D6
-    ';': 88,   // E6
+    'f': 74,   // D5
+    'k': 76,   // E5
+    'l': 77,   // F5
+    ';': 79,   // G5
+    "'": 81,   // A5
+    '\\': 83,  // B5
 
     // Black keys for octave 2
     'w': 73,   // C#5
@@ -66,14 +68,14 @@ const KEYBOARD_TO_PITCH = {
     'u': 82,   // A#5
 
     // ===== OCTAVE 3: C6-B6 (MIDI 84-95) =====
-    // Top row: QWERTYUIOP
+    // Top row: QWERTYUIOP[] (white keys)
     'q': 84,   // C6
-    'r': 89,   // F6
-    'i': 96,   // C7
-    'o': 98,   // D7
-    'p': 100,  // E7
-    '[': 101,  // F7
-    ']': 103,  // G7
+    'r': 86,   // D6
+    'i': 88,   // E6
+    'o': 89,   // F6
+    'p': 91,   // G6
+    '[': 93,   // A6
+    ']': 95,   // B6
 
     // Black keys for octave 3
     '2': 85,   // C#6
@@ -81,9 +83,23 @@ const KEYBOARD_TO_PITCH = {
     '5': 90,   // F#6
     '6': 92,   // G#6
     '7': 94,   // A#6
-    '9': 97,   // C#7
-    '0': 99,   // D#7
-    '=': 102   // F#7
+
+    // ===== OCTAVE 4: C7-B7 (MIDI 96-107) =====
+    // Number row: 1234567890-= (white keys)
+    '1': 96,   // C7
+    '4': 98,   // D7
+    '8': 100,  // E7
+    '9': 101,  // F7
+    '0': 103,  // G7
+    '-': 105,  // A7
+    '=': 107,  // B7
+
+    // Black keys for octave 4 (using available keys)
+    '`': 97,   // C#7
+    '~': 99,   // D#7
+    '!': 102,  // F#7
+    '@': 104,  // G#7
+    '#': 106,  // A#7
 };
 
 // Helper: MIDI pitch to note name
@@ -1107,7 +1123,7 @@ export function useNoteInteractionsV2(
         }));
 
         // ✅ USE BATCH COMMAND for undo/redo
-        import('@/lib/piano-roll-tools/CommandStack').then(({ getCommandStack, BatchCommand, AddNoteCommand }) => {
+        import('@/features/piano_roll_v7/lib/tools/CommandStack').then(({ getCommandStack, BatchCommand, AddNoteCommand }) => {
             const commands = newNotes.map(note =>
                 new AddNoteCommand(
                     note,
@@ -2424,7 +2440,7 @@ export function useNoteInteractionsV2(
                 updatePatternStore(updatedNotes);
 
                 // ✅ CREATE BATCH COMMAND for undo/redo (async is OK here)
-                import('@/lib/piano-roll-tools/CommandStack').then(({ getCommandStack, BatchCommand, UpdateNoteCommand }) => {
+                import('@/features/piano_roll_v7/lib/tools/CommandStack').then(({ getCommandStack, BatchCommand, UpdateNoteCommand }) => {
                     const commands = [];
 
                     noteIds.forEach(noteId => {
@@ -2734,8 +2750,8 @@ export function useNoteInteractionsV2(
                 // ✅ CREATE BATCH UPDATE COMMAND for undo/redo (async is OK here)
                 // IMPORTANT: We already applied the changes above (immediate update)
                 // So we need to add to history WITHOUT executing again
-                import('@/lib/piano-roll-tools/MultiNoteCommand').then(({ BatchUpdateNotesCommand }) => {
-                    import('@/lib/piano-roll-tools/CommandStack').then(({ getCommandStack }) => {
+                import('@/features/piano_roll_v7/lib/tools/MultiNoteCommand').then(({ BatchUpdateNotesCommand }) => {
+                    import('@/features/piano_roll_v7/lib/tools/CommandStack').then(({ getCommandStack }) => {
                         const noteUpdates = [];
                         
                         // ✅ Use originalNotesForUndo if available (for proper undo), otherwise fallback to originalNotes

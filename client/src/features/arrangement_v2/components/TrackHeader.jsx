@@ -17,7 +17,7 @@ import { Button } from '@/components/controls/base/Button';
 import { Toggle } from '@/components/controls/base/Toggle';
 import { Slider } from '@/components/controls/base/Slider';
 import { Checkbox } from '@/components/controls/base/Checkbox';
-import { GripVertical, Volume2, VolumeX, Headphones, Lock } from 'lucide-react';
+import { GripVertical, Volume2, VolumeX, Headphones, Lock, TrendingUp } from 'lucide-react';
 import './TrackHeader.css';
 
 /**
@@ -32,7 +32,9 @@ export function TrackHeader({
   onUpdate,
   onDoubleClick,
   onDragStart,
-  isSelected = false
+  isSelected = false,
+  showAutomation = false, // ✅ NEW: Show automation lanes toggle
+  onToggleAutomation // ✅ NEW: Callback for toggling automation
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(track.name);
@@ -220,6 +222,25 @@ export function TrackHeader({
             {track.pan === 0 ? 'C' : track.pan > 0 ? `R${Math.round(track.pan * 100)}` : `L${Math.abs(Math.round(track.pan * 100))}`}
           </span>
         </div>
+
+        {/* ✅ NEW: Automation toggle button */}
+        {onToggleAutomation && (
+          <div className="arr-v2-track-control">
+            <Button
+              active={showAutomation}
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleAutomation();
+              }}
+              variant="default"
+              size="sm"
+              className="arr-v2-track-btn"
+              title={showAutomation ? "Hide automation lanes" : "Show automation lanes"}
+            >
+              <TrendingUp size={14} />
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   );

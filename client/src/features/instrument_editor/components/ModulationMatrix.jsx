@@ -7,6 +7,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import useInstrumentEditorStore from '@/store/useInstrumentEditorStore';
 import { AudioContextService } from '@/lib/services/AudioContextService';
+import { AudioEngineGlobal } from '@/lib/core/AudioEngineGlobal';
 import { Plus, Trash2, Activity, TrendingUp, Sliders } from 'lucide-react';
 import './ModulationMatrix.css';
 
@@ -32,7 +33,7 @@ const MODULATION_TARGETS = [
 
 const ModulationMatrix = ({ instrumentData }) => {
   const { updateParameter } = useInstrumentEditorStore();
-  
+
   // ✅ MODULATION MATRIX: Load modulations from instrumentData
   const [modulations, setModulations] = useState(() => {
     return instrumentData?.modulationMatrix || [];
@@ -51,7 +52,7 @@ const ModulationMatrix = ({ instrumentData }) => {
 
   // ✅ MODULATION MATRIX: Update audio engine when modulations change
   const updateAudioEngine = useCallback((newModulations) => {
-    const audioEngine = AudioContextService.getAudioEngine();
+    const audioEngine = AudioEngineGlobal.get();
     if (audioEngine && instrumentData?.id) {
       const instrument = audioEngine.instruments.get(instrumentData.id);
       if (instrument && typeof instrument.updateParameters === 'function') {
@@ -80,11 +81,11 @@ const ModulationMatrix = ({ instrumentData }) => {
 
     const newModulations = [...modulations, newMod];
     setModulations(newModulations);
-    
+
     // ✅ MODULATION MATRIX: Update store and audio engine
     updateParameter('modulationMatrix', newModulations);
     updateAudioEngine(newModulations);
-    
+
     setShowAddModal(false);
     setSelectedSource(null);
     setSelectedTarget(null);
@@ -94,7 +95,7 @@ const ModulationMatrix = ({ instrumentData }) => {
   const handleRemoveModulation = (modId) => {
     const newModulations = modulations.filter(m => m.id !== modId);
     setModulations(newModulations);
-    
+
     // ✅ MODULATION MATRIX: Update store and audio engine
     updateParameter('modulationMatrix', newModulations);
     updateAudioEngine(newModulations);
@@ -105,7 +106,7 @@ const ModulationMatrix = ({ instrumentData }) => {
       m.id === modId ? { ...m, enabled: !m.enabled } : m
     );
     setModulations(newModulations);
-    
+
     // ✅ MODULATION MATRIX: Update store and audio engine
     updateParameter('modulationMatrix', newModulations);
     updateAudioEngine(newModulations);
@@ -116,7 +117,7 @@ const ModulationMatrix = ({ instrumentData }) => {
       m.id === modId ? { ...m, amount: newAmount } : m
     );
     setModulations(newModulations);
-    
+
     // ✅ MODULATION MATRIX: Update store and audio engine
     updateParameter('modulationMatrix', newModulations);
     updateAudioEngine(newModulations);

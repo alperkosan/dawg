@@ -15,7 +15,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import PluginContainerV2 from '../container/PluginContainerV2';
 import { TwoPanelLayout } from '../layout/TwoPanelLayout';
-import { Knob, Toggle } from '@/components/controls';
+import { Knob, Toggle, ModeSelector } from '@/components/controls';
 import { getCategoryColors } from '../PluginDesignSystem';
 import { useParameterBatcher } from '@/services/ParameterBatcher';
 import { useMixerStore } from '@/store/useMixerStore';
@@ -155,6 +155,7 @@ const ClipperUI_V2 = ({ trackId, effect, effectNode, definition }) => {
     postGain = 0,
     mix = 100,
     mode = 0,
+    curve = 1,
     dcFilter = 1,
     oversample = 2
   } = effect.settings || {};
@@ -167,6 +168,7 @@ const ClipperUI_V2 = ({ trackId, effect, effectNode, definition }) => {
   const [localPostGain, setLocalPostGain] = useState(postGain);
   const [localMix, setLocalMix] = useState(mix);
   const [localMode, setLocalMode] = useState(mode);
+  const [localCurve, setLocalCurve] = useState(curve);
   const [localDcFilter, setLocalDcFilter] = useState(dcFilter);
   const [localOversample, setLocalOversample] = useState(oversample);
 
@@ -217,6 +219,10 @@ const ClipperUI_V2 = ({ trackId, effect, effectNode, definition }) => {
       setLocalMode(effect.settings.mode);
       updates.mode = effect.settings.mode;
     }
+    if (effect.settings.curve !== undefined) {
+      setLocalCurve(effect.settings.curve);
+      updates.curve = effect.settings.curve;
+    }
     if (effect.settings.dcFilter !== undefined) {
       setLocalDcFilter(effect.settings.dcFilter);
       updates.dcFilter = effect.settings.dcFilter;
@@ -244,6 +250,7 @@ const ClipperUI_V2 = ({ trackId, effect, effectNode, definition }) => {
       postGain: setLocalPostGain,
       mix: setLocalMix,
       mode: setLocalMode,
+      curve: setLocalCurve,
       dcFilter: setLocalDcFilter,
       oversample: setLocalOversample
     };
@@ -270,6 +277,26 @@ const ClipperUI_V2 = ({ trackId, effect, effectNode, definition }) => {
               mode={localMode}
               categoryColors={categoryColors}
             />
+
+            {/* Clipping Curve */}
+            <div className="p-6">
+              <div className="flex flex-col gap-2">
+                <label className="text-[10px] font-bold tracking-wider uppercase text-center" style={{ color: categoryColors.secondary }}>
+                  CLIPPING CURVE
+                </label>
+                <ModeSelector
+                  value={localCurve.toString()}
+                  onChange={(val) => handleParamChange('curve', parseFloat(val))}
+                  options={[
+                    { id: '0', label: 'Soft' },
+                    { id: '1', label: 'Medium' },
+                    { id: '2', label: 'Hard' }
+                  ]}
+                  category="texture-lab"
+                  compact={true}
+                />
+              </div>
+            </div>
 
             {/* Main Controls */}
             <div className="grid grid-cols-5 gap-4 p-6">
@@ -381,14 +408,14 @@ const ClipperUI_V2 = ({ trackId, effect, effectNode, definition }) => {
         sidePanel={
           <>
             {/* Stats Display */}
-            <div 
+            <div
               className="rounded-xl p-4"
               style={{
                 background: `linear-gradient(135deg, rgba(0, 0, 0, 0.5) 0%, ${categoryColors.accent}20 100%)`,
                 border: `1px solid ${categoryColors.primary}1A`,
               }}
             >
-              <div 
+              <div
                 className="text-[9px] uppercase tracking-wider mb-3 font-bold"
                 style={{ color: `${categoryColors.secondary}B3` }}
               >

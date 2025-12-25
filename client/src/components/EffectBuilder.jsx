@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { effectRegistry } from '@/lib/audio/EffectRegistry';
+import { effectRegistry } from '@/lib/audio/EffectRegistry.js';
 import './EffectBuilder.css';
 
 /**

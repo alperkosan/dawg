@@ -12,11 +12,13 @@ import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { useArrangementCanvas, useClipInteraction } from './hooks';
 // ✅ PHASE 1: Store Consolidation - Use unified store
 import { useArrangementStore } from '@/store/useArrangementStore';
+import ShortcutManager, { SHORTCUT_PRIORITY } from '@/lib/core/ShortcutManager';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
 import { usePanelsStore } from '@/store/usePanelsStore';
 import { useProjectAudioStore } from '@/store/useProjectAudioStore';
 import { getTimelineController } from '@/lib/core/TimelineControllerSingleton'; // ✅ Unified transport system
 import { AudioContextService } from '@/lib/services/AudioContextService'; // ✅ For audio engine sync
+import { AudioEngineGlobal } from '@/lib/core/AudioEngineGlobal';
 // ✅ PHASE 2: Design Consistency - Using component library
 import { Button } from '@/components/controls/base/Button';
 import { drawGrid, renderAudioClip, renderPatternClip } from './renderers';
@@ -25,7 +27,8 @@ import { TrackHeader } from './components/TrackHeader';
 import { ClipContextMenu } from './components/ClipContextMenu';
 import { ArrangementToolbar } from './components/ArrangementToolbar';
 import { PatternBrowser } from './components/PatternBrowser';
-import { audioAssetManager } from '@/lib/audio/AudioAssetManager';
+import { AutomationLanes } from './components/AutomationLanes';
+import { audioAssetManager } from '@/lib/audio/AudioAssetManager.js';
 import { uiUpdateManager, UPDATE_PRIORITIES, UPDATE_FREQUENCIES } from '@/lib/core/UIUpdateManager';
 import { getAudioClipDurationBeats } from '@/lib/utils/audioDuration';
 import { StyleCache } from '@/lib/rendering/StyleCache';
@@ -39,12 +42,12 @@ function pitchToMIDI(pitch) {
   if (typeof pitch === 'number') {
     return Math.round(pitch);
   }
-  
+
   // If pitch is not a string, return default
   if (typeof pitch !== 'string') {
     return 60; // Default to C4
   }
-  
+
   const noteMap = { 'C': 0, 'C#': 1, 'D': 2, 'D#': 3, 'E': 4, 'F': 5, 'F#': 6, 'G': 7, 'G#': 8, 'A': 9, 'A#': 10, 'B': 11 };
   const match = pitch.match(/^([A-G]#?)(-?\d+)$/);
   if (!match) return 60; // Default to C4
@@ -128,7 +131,7 @@ export function ArrangementPanelV2() {
 
   // Pattern store (for pattern clip rendering)
   const patterns = useArrangementStore(state => state.patterns);
-  
+
   // Arrangement actions (from unified store)
   const updateTrack = useArrangementStore(state => state.updateArrangementTrack);
   const setSnapEnabled = useArrangementStore(state => state.setArrangementSnapEnabled);
@@ -146,7 +149,7 @@ export function ArrangementPanelV2() {
   const addLoopRegion = useArrangementStore(state => state.addArrangementLoopRegion);
   const removeLoopRegion = useArrangementStore(state => state.removeArrangementLoopRegion);
   const updateLoopRegion = useArrangementStore(state => state.updateArrangementLoopRegion);
-  
+
   // ✅ PHASE 1: Transport System Unification - Use TimelineController (same as Piano Roll)
   // Playback state (read-only from usePlaybackStore)
   const currentStep = usePlaybackStore(state => state.currentStep);
@@ -154,7 +157,7 @@ export function ArrangementPanelV2() {
   const isPlaying = usePlaybackStore(state => state.isPlaying);
   const followPlayheadMode = usePlaybackStore(state => state.followPlayheadMode);
   const bpm = usePlaybackStore(state => state.bpm || 140);
-  
+
   // Transport control via TimelineController
   const setCursorPosition = useCallback((position) => {
     try {
@@ -178,6 +181,9 @@ export function ArrangementPanelV2() {
 
   // Sample editor state
   const [sampleEditorOpen, setSampleEditorOpen] = useState(false);
+
+  // ✅ NEW: Automation lanes visibility per track
+  const [automationExpandedTracks, setAutomationExpandedTracks] = useState(new Set());
 
   // ✅ THEME-AWARE: Track theme version to trigger re-renders on theme change
   const [themeVersion, setThemeVersion] = useState(0);
@@ -353,6 +359,9 @@ export function ArrangementPanelV2() {
   const [loopDragMode, setLoopDragMode] = useState(null); // 'create' | 'move' | 'resize-start' | 'resize-end'
   const [hoveredLoop, setHoveredLoop] = useState(null); // { regionId, handle } - for hover feedback
 
+  // Drag & Drop State for generic file nodes
+  const [isDragOver, setIsDragOver] = useState(false);
+
   // ✅ PHASE 1: Transport System Unification
   // TimelineController is initialized globally, no need for local initialization
   // Audio engine sync on mount
@@ -360,7 +369,7 @@ export function ArrangementPanelV2() {
     console.log('🎵 ArrangementV2 mounting, syncing tracks to audio engine...');
     const syncTracks = async () => {
       try {
-        const audioEngine = AudioContextService.getAudioEngine();
+        const audioEngine = AudioEngineGlobal.get();
         if (audioEngine) {
           // Sync arrangement tracks to audio engine
           await useArrangementStore.getState()._syncArrangementTracksToAudioEngine();
@@ -1162,12 +1171,13 @@ export function ArrangementPanelV2() {
   // KEYBOARD SHORTCUTS
   // ============================================================================
 
+  // ✅ KEYBOARD SHORTCUTS MIGRATION
   useEffect(() => {
     const handleKeyDown = (e) => {
-      // Ignore if typing in input/textarea
-      if (e.target.matches('input, textarea')) return;
+      // Ignore if typing in input/textarea (handled by manager, but extra safety)
+      if (e.target.matches('input, textarea')) return false;
 
-      // Escape - cancel operations or close context menu or exit deletion mode or cancel split range
+      // Escape - cancel operations
       if (e.key === 'Escape') {
         cancelDrag();
         cancelResize();
@@ -1175,30 +1185,27 @@ export function ArrangementPanelV2() {
         cancelGain();
         setContextMenu(null);
 
-        // Cancel draw mode
         if (drawStart || drawGhost) {
           setDrawStart(null);
           setDrawGhost(null);
           console.log('✅ Draw cancelled');
-          return;
+          return true;
         }
 
-        // Cancel split range selection
         if (splitStart || splitRange) {
           setSplitStart(null);
           setSplitRange(null);
           console.log('✅ Split range cancelled');
-          return;
+          return true;
         }
 
-        // Exit deletion mode
         if (deletionMode) {
           setDeletionMode(false);
           setActiveTool('select');
           console.log('✅ Deletion mode deactivated');
         }
 
-        return;
+        return true;
       }
 
       // Copy - Ctrl+C
@@ -1207,8 +1214,9 @@ export function ArrangementPanelV2() {
           e.preventDefault();
           copySelection();
           console.log(`Copied ${selectedClipIds.length} clip(s)`);
+          return true;
         }
-        return;
+        return false;
       }
 
       // Cut - Ctrl+X
@@ -1217,19 +1225,20 @@ export function ArrangementPanelV2() {
           e.preventDefault();
           cutSelection();
           console.log(`Cut ${selectedClipIds.length} clip(s)`);
+          return true;
         }
-        return;
+        return false;
       }
 
       // Paste - Ctrl+V
       if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
         if (clipboard && clipboard.length > 0) {
           e.preventDefault();
-          // Get cursor position from effectiveCurrentStep (already in beats)
           paste(effectiveCurrentStep || 0);
           console.log(`Pasted ${clipboard.length} clip(s)`);
+          return true;
         }
-        return;
+        return false;
       }
 
       // Duplicate - Ctrl+D
@@ -1239,32 +1248,33 @@ export function ArrangementPanelV2() {
           const newClipIds = duplicateClips(selectedClipIds);
           useArrangementStore.getState().setArrangementSelection(newClipIds);
           console.log(`Duplicated ${selectedClipIds.length} clip(s)`);
+          return true;
         }
-        return;
+        return false;
       }
 
       // Select All - Ctrl+A
       if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
         e.preventDefault();
         useArrangementStore.getState().selectAllArrangementClips();
-        return;
+        return true;
       }
 
-      // Space - toggle play/pause
-      if (e.code === 'Space') {
-        e.preventDefault();
-        // TODO: Connect to playback system
-        console.log('Toggle play/pause');
-        return;
-      }
+      // Space - toggle play/pause (handled by global shortcuts)
+      // if (e.code === 'Space') {
+      //   e.preventDefault();
+      //   usePlaybackStore.getState().togglePlayPause();
+      //   return true;
+      // }
 
-      // Delete - remove selected clips
+      // Delete/Backspace
       if (e.key === 'Delete' || e.key === 'Backspace') {
         if (selectedClipIds.length > 0) {
           e.preventDefault();
           removeClips(selectedClipIds);
+          return true;
         }
-        return;
+        return false;
       }
 
       // Tool shortcuts
@@ -1272,32 +1282,28 @@ export function ArrangementPanelV2() {
         e.preventDefault();
         setActiveTool('select');
         console.log('✋ Select tool activated');
-        return;
+        return true;
       }
 
-      if (e.key === 'd' || e.key === 'D') {
-        if (!(e.ctrlKey || e.metaKey)) { // Avoid conflict with Ctrl+D (duplicate)
-          e.preventDefault();
-          setActiveTool('delete');
-          console.log('🗑️ Delete tool activated');
-          return;
-        }
+      if ((e.key === 'd' || e.key === 'D') && !e.ctrlKey && !e.metaKey) { // Avoid conflict with Ctrl+D (duplicate)
+        e.preventDefault();
+        setActiveTool('delete');
+        console.log('🗑️ Delete tool activated');
+        return true;
       }
 
-      if (e.key === 's' || e.key === 'S') {
-        if (!(e.ctrlKey || e.metaKey)) { // Avoid conflict with Ctrl+S (save)
-          e.preventDefault();
-          setActiveTool('split');
-          console.log('✂️ Split tool activated');
-          return;
-        }
+      if ((e.key === 's' || e.key === 'S') && !e.ctrlKey && !e.metaKey) { // Avoid conflict with Ctrl+S (save)
+        e.preventDefault();
+        setActiveTool('split');
+        console.log('✂️ Split tool activated');
+        return true;
       }
 
       if (e.key === 'p' || e.key === 'P') {
         e.preventDefault();
         setActiveTool('draw');
         console.log('✏️ Draw tool activated');
-        return;
+        return true;
       }
 
       // Zoom shortcuts
@@ -1306,7 +1312,7 @@ export function ArrangementPanelV2() {
         const newZoomX = Math.min(4, viewport.zoomX * 1.25);
         eventHandlers.onZoom(newZoomX, viewport.zoomY);
         console.log(`🔍 Zoom in: ${newZoomX.toFixed(2)}x`);
-        return;
+        return true;
       }
 
       if ((e.ctrlKey || e.metaKey) && (e.key === '-' || e.key === '_')) {
@@ -1314,42 +1320,40 @@ export function ArrangementPanelV2() {
         const newZoomX = Math.max(0.25, viewport.zoomX * 0.8);
         eventHandlers.onZoom(newZoomX, viewport.zoomY);
         console.log(`🔍 Zoom out: ${newZoomX.toFixed(2)}x`);
-        return;
+        return true;
       }
 
       if ((e.ctrlKey || e.metaKey) && e.key === '0') {
         e.preventDefault();
         eventHandlers.onZoom(1.0, 1.0);
         console.log('🔍 Reset zoom');
-        return;
+        return true;
       }
 
-      if (e.key === 'f' || e.key === 'F') {
-        if (!(e.ctrlKey || e.metaKey)) {
-          e.preventDefault();
-          // Fit to view - same logic as toolbar button
-          if (clips.length === 0) {
-            eventHandlers.onZoom(1.0, 1.0);
-            return;
-          }
-
-          let minTime = Infinity;
-          let maxTime = -Infinity;
-
-          clips.forEach(clip => {
-            minTime = Math.min(minTime, clip.startTime);
-            maxTime = Math.max(maxTime, clip.startTime + clip.duration);
-          });
-
-          const totalBeats = maxTime - minTime;
-          const availableWidth = viewport.width - constants.TRACK_HEADER_WIDTH;
-          const pixelsPerBeat = availableWidth / totalBeats;
-          const newZoomX = Math.max(0.25, Math.min(4, pixelsPerBeat / constants.PIXELS_PER_BEAT));
-
-          eventHandlers.onZoom(newZoomX, 1.0);
-          console.log(`🔍 Fit to view: ${totalBeats.toFixed(1)} beats, zoom ${newZoomX.toFixed(2)}x`);
-          return;
+      if ((e.key === 'f' || e.key === 'F') && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        // Fit to view - same logic as toolbar button
+        if (clips.length === 0) {
+          eventHandlers.onZoom(1.0, 1.0);
+          return true;
         }
+
+        let minTime = Infinity;
+        let maxTime = -Infinity;
+
+        clips.forEach(clip => {
+          minTime = Math.min(minTime, clip.startTime);
+          maxTime = Math.max(maxTime, clip.startTime + clip.duration);
+        });
+
+        const totalBeats = maxTime - minTime;
+        const availableWidth = viewport.width - constants.TRACK_HEADER_WIDTH;
+        const pixelsPerBeat = availableWidth / totalBeats;
+        const newZoomX = Math.max(0.25, Math.min(4, pixelsPerBeat / constants.PIXELS_PER_BEAT));
+
+        eventHandlers.onZoom(newZoomX, 1.0);
+        console.log(`🔍 Fit to view: ${totalBeats.toFixed(1)} beats, zoom ${newZoomX.toFixed(2)}x`);
+        return true;
       }
 
       // Marker shortcuts
@@ -1357,30 +1361,32 @@ export function ArrangementPanelV2() {
         e.preventDefault();
         const label = prompt('Marker name:', 'Marker');
         if (label) {
-          // Get cursor position from effectiveCurrentStep (already in beats)
           addMarker(effectiveCurrentStep || 0, label);
           console.log(`📍 Added marker "${label}" at ${(effectiveCurrentStep || 0).toFixed(2)} beats`);
         }
-        return;
+        return true;
       }
 
-      if (e.key === 'l' || e.key === 'L') {
-        if (!(e.ctrlKey || e.metaKey)) {
-          e.preventDefault();
-          const label = prompt('Loop region name:', 'Loop');
-          if (label) {
-            const start = effectiveCurrentStep || 0;
-            const end = start + 8; // Default 8 beats
-            addLoopRegion(start, end, label);
-            console.log(`🔄 Added loop region "${label}" from ${start.toFixed(2)} to ${end.toFixed(2)} beats`);
-          }
-          return;
+      if ((e.key === 'l' || e.key === 'L') && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        const label = prompt('Loop region name:', 'Loop');
+        if (label) {
+          const start = effectiveCurrentStep || 0;
+          const end = start + 8; // Default 8 beats
+          addLoopRegion(start, end, label);
+          console.log(`🔄 Added loop region "${label}" from ${start.toFixed(2)} to ${end.toFixed(2)} beats`);
         }
+        return true;
       }
+
+      return false;
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    ShortcutManager.registerContext('ARRANGEMENT', SHORTCUT_PRIORITY.CONTEXTUAL, {
+      onKeyDown: handleKeyDown
+    });
+
+    return () => ShortcutManager.unregisterContext('ARRANGEMENT');
   }, [selectedClipIds, clipboard, effectiveCurrentStep, cancelDrag, cancelResize, cancelFade, cancelGain, copySelection, cutSelection, paste, duplicateClips, removeClips, setActiveTool, viewport, eventHandlers, clips, constants, deletionMode, setDeletionMode, drawStart, drawGhost, setDrawStart, setDrawGhost, splitStart, splitRange, setSplitStart, setSplitRange, addMarker, addLoopRegion]);
 
   // ============================================================================
@@ -1621,7 +1627,7 @@ export function ArrangementPanelV2() {
             // ✅ FIX: Calculate split times from world coordinates (canvasX)
             let startTime = splitRange.startX / (constants.PIXELS_PER_BEAT * viewport.zoomX);
             let endTime = splitRange.endX / (constants.PIXELS_PER_BEAT * viewport.zoomX);
-            
+
             // ✅ FIX: Ensure endTime > startTime
             if (endTime <= startTime) {
               console.warn('⚠️ Range split: endTime must be greater than startTime');
@@ -1629,7 +1635,7 @@ export function ArrangementPanelV2() {
               setSplitRange(null);
               return;
             }
-            
+
             // ✅ SNAP: Apply snap if enabled
             if (snapEnabled) {
               startTime = Math.round(startTime / snapSize) * snapSize;
@@ -1977,7 +1983,8 @@ export function ArrangementPanelV2() {
     // Get pattern duration from pattern data (default 4 bars = 16 beats if not found)
     // Pattern length is stored in steps (16th notes), convert to beats
     const pattern = patterns[patternId];
-    const patternLengthInSteps = pattern?.length || 64; // Default 64 steps = 4 bars
+    // ✅ FIX: Check settings.length first, then top-level length, then default
+    const patternLengthInSteps = pattern?.settings?.length || pattern?.length || 64;
     const duration = patternLengthInSteps / 4; // Convert steps to beats (1 beat = 4 steps)
 
     // Add pattern clip
@@ -1991,7 +1998,7 @@ export function ArrangementPanelV2() {
     );
 
     console.log(`🎹 Added pattern "${patterns[patternId]?.name}" at ${startTime.toFixed(2)} beats on track ${track.name}`);
-  }, [viewport, tracks, dimensions.trackHeight, snapEnabled, snapSize, addPatternClip, patterns, getContainerRect]);
+  }, [viewport, tracks, dimensions.trackHeight, snapEnabled, snapSize, addPatternClip, patterns, getContainerRect, constants]);
 
   // Handle project audio drop (from Audio tab - frozen patterns, stems, etc.)
   const handleProjectAudioDrop = useCallback((e, audioAssetId) => {
@@ -2046,12 +2053,13 @@ export function ArrangementPanelV2() {
     addAudioClip(track.id, startTime, audioAssetId, duration, name);
 
     console.log(`🔊 Added audio clip "${name}" at ${startTime.toFixed(2)} beats on track ${track.name} (${duration.toFixed(2)} beats)`);
-  }, [viewport, tracks, dimensions.trackHeight, snapEnabled, snapSize, getContainerRect]);
+  }, [viewport, tracks, dimensions.trackHeight, snapEnabled, snapSize, getContainerRect, constants]);
 
   // Handle audio file and pattern drop
-  const handleDrop = useCallback((e) => {
+  const handleDrop = useCallback(async (e) => {
     e.preventDefault();
     e.stopPropagation(); // Prevent event from bubbling to parent panels
+    setIsDragOver(false); // Clear drag overlay
     console.log('🎯 ArrangementPanel handleDrop called');
 
     try {
@@ -2070,7 +2078,119 @@ export function ArrangementPanelV2() {
         return;
       }
 
-      // Otherwise, handle audio file drop (from FileBrowser)
+      // Handle generic file node drop (e.g., from FileBrowser)
+      const fileNodeData = e.dataTransfer.getData('application/x-dawg-file-node');
+      if (fileNodeData) {
+        const fileNode = JSON.parse(fileNodeData);
+
+        if (!fileNode.url && !fileNode.assetId) {
+          console.warn('❌ Dropped file has no URL or Asset ID');
+          return;
+        }
+
+        // Calculate drop position
+        const rect = getContainerRect(e);
+        if (!rect) return;
+
+        const screenX = e.clientX - rect.left;
+        const screenY = e.clientY - rect.top;
+
+        // Skip if over toolbar, timeline or left sidebars
+        const totalHeaderHeight = TOOLBAR_HEIGHT + constants.TIMELINE_HEIGHT;
+        if (screenX < LEFT_OFFSET || screenY < totalHeaderHeight) {
+          return;
+        }
+
+        // Convert to canvas coordinates
+        const canvasX = screenX - LEFT_OFFSET + viewport.scrollX;
+        const canvasY = screenY - totalHeaderHeight + viewport.scrollY;
+
+        // Convert X to Beats
+        const zoomX = isFinite(viewport.zoomX) && viewport.zoomX > 0 ? viewport.zoomX : 1;
+        const positionInBeats = Math.max(0, canvasX / (constants.PIXELS_PER_BEAT * zoomX));
+
+        // Quantize to snap size if enabled
+        const snapEnabledState = useArrangementStore.getState().snapEnabled;
+        const snapSizeState = useArrangementStore.getState().snapSize;
+        const startTime = snapEnabledState
+          ? Math.round(positionInBeats / snapSizeState) * snapSizeState
+          : positionInBeats;
+
+        // Convert Y to Track Index
+        const trackIndex = Math.floor(canvasY / dimensions.trackHeight);
+
+        // Get target track or create new
+        const currentTracks = useArrangementStore.getState().arrangementTracks;
+        let targetTrackId;
+
+        if (trackIndex < currentTracks.length && trackIndex >= 0) {
+          targetTrackId = currentTracks[trackIndex].id;
+        } else {
+          // Create new track(s) if dropped below
+          // Automatically expand tracks
+          const newTrackId = await useArrangementStore.getState().addArrangementTrack(`Audio Track ${currentTracks.length + 1}`);
+          targetTrackId = newTrackId;
+        }
+
+        // Load Asset
+        const assetManager = audioAssetManager;
+
+        console.log(`Loading ${fileNode.name}...`);
+
+        try {
+          const buffer = await assetManager.loadAsset(fileNode.url, {
+            name: fileNode.name,
+            source: 'drag-drop'
+          });
+
+          if (buffer) {
+            // Use centralized duration calculation
+            const assetId = assetManager.generateAssetId(fileNode.url);
+            const asset = assetManager.assets.get(assetId);
+            const currentBPM = usePlaybackStore.getState().bpm || 120;
+            const duration = getAudioClipDurationBeats(buffer, asset?.metadata, currentBPM);
+
+            // Add to ProjectAudioStore when first used in project
+            const projectAudioStore = useProjectAudioStore.getState();
+            const existingSample = projectAudioStore.samples.find(s => s.assetId === assetId);
+
+            if (!existingSample) {
+              projectAudioStore.addSample({
+                id: assetId,
+                name: fileNode.name,
+                assetId: assetId,
+                url: fileNode.url,
+                durationBeats: duration,
+                durationSeconds: buffer.duration,
+                type: 'used-in-project', // Mark as actively used in project
+                createdAt: Date.now(),
+                metadata: {
+                  url: fileNode.url,
+                  source: 'drag-drop',
+                  bpm: currentBPM
+                }
+              });
+              console.log(`📦 Added to project audio library: ${fileNode.name}`);
+            }
+
+            // Add Clip
+            useArrangementStore.getState().addArrangementAudioClip(
+              targetTrackId,
+              startTime,
+              assetId, // Ensure ID consistency
+              duration,
+              fileNode.name
+            );
+            console.log(`✅ Imported ${fileNode.name}`);
+          }
+        } catch (err) {
+          console.error('Failed to load dropped audio:', err);
+          console.error(`❌ Failed to load audio: ${err.message}`);
+        }
+        return;
+      }
+
+      // Otherwise, handle audio file drop (from FileBrowser, legacy text/plain)
       const data = e.dataTransfer.getData('text/plain');
       if (!data) return;
 
@@ -2156,22 +2276,28 @@ export function ArrangementPanelV2() {
     } catch (err) {
       console.error('Failed to handle drop:', err);
     }
-  }, [handlePatternDrop, handleProjectAudioDrop, viewport, tracks, dimensions.trackHeight, snapEnabled, snapSize, getContainerRect]);
+  }, [handlePatternDrop, handleProjectAudioDrop, viewport, tracks, dimensions.trackHeight, snapEnabled, snapSize, getContainerRect, constants]);
 
   const handleDragOver = useCallback((e) => {
     e.preventDefault();
     e.stopPropagation(); // Prevent event from bubbling to parent panels
     e.dataTransfer.dropEffect = 'copy';
 
-    // Check if dragging a pattern or audio
+    // Check if dragging a pattern or audio or generic file node
     const types = e.dataTransfer.types;
     const isDraggingPattern = types.includes('application/x-dawg-pattern');
     const isDraggingAudio = types.includes('application/x-dawg-audio');
+    const isDraggingFileNode = types.includes('application/x-dawg-file-node');
+    const isDraggingLegacyAudioFile = types.includes('text/plain'); // For legacy FileBrowser drops
 
-    if (!isDraggingPattern && !isDraggingAudio) {
+    if (!isDraggingPattern && !isDraggingAudio && !isDraggingFileNode && !isDraggingLegacyAudioFile) {
       setPatternDragPreview(null);
+      setIsDragOver(false);
       return;
     }
+
+    // Set general drag over state for visual feedback
+    setIsDragOver(true);
 
     // Only show pattern preview for patterns (audio doesn't need preview)
     if (!isDraggingPattern) {
@@ -2179,7 +2305,7 @@ export function ArrangementPanelV2() {
       return;
     }
 
-    // Calculate drag position for preview
+    // Calculate drag position for pattern preview
     const rect = getContainerRect(e);
     if (!rect) return;
 
@@ -2211,7 +2337,8 @@ export function ArrangementPanelV2() {
         // Pattern length is stored in steps (16th notes), convert to beats
         const patternData = e.dataTransfer.getData('application/x-dawg-pattern');
         const pattern = patterns[patternData];
-        const patternLengthInSteps = pattern?.length || 64; // Default 64 steps = 4 bars
+        // ✅ FIX: Check settings.length first, then top-level length, then default
+        const patternLengthInSteps = pattern?.settings?.length || pattern?.length || 64;
         const duration = patternLengthInSteps / 4; // Convert steps to beats (1 beat = 4 steps)
 
         // Calculate preview dimensions in world space
@@ -2235,11 +2362,15 @@ export function ArrangementPanelV2() {
     } else {
       setPatternDragPreview(null);
     }
-  }, [viewport, tracks, dimensions.trackHeight, snapEnabled, snapSize, patterns, getContainerRect]);
+  }, [viewport, tracks, dimensions.trackHeight, snapEnabled, snapSize, patterns, getContainerRect, constants]);
 
-  const handleDragLeave = useCallback(() => {
+  const handleDragLeave = useCallback((e) => {
     // Clear preview when leaving the drop zone
     setPatternDragPreview(null);
+    // Only clear isDragOver if leaving the container entirely
+    if (!containerRef.current?.contains(e.relatedTarget)) {
+      setIsDragOver(false);
+    }
   }, []);
 
   // Fix passive event listener warning - we need { passive: false } for preventDefault
@@ -2294,8 +2425,10 @@ export function ArrangementPanelV2() {
 
       const isDraggingPattern = types.includes('application/x-dawg-pattern');
       const isDraggingAudio = types.includes('application/x-dawg-audio');
+      const isDraggingFileNode = types.includes('application/x-dawg-file-node');
+      const isDraggingLegacyAudioFile = types.includes('text/plain');
 
-      if (!isDraggingPattern && !isDraggingAudio) return;
+      if (!isDraggingPattern && !isDraggingAudio && !isDraggingFileNode && !isDraggingLegacyAudioFile) return;
 
       // Only handle if NOT already inside our container (avoid duplicate handling)
       const container = containerRef.current;
@@ -2310,8 +2443,10 @@ export function ArrangementPanelV2() {
 
       const isDraggingPattern = types.includes('application/x-dawg-pattern');
       const isDraggingAudio = types.includes('application/x-dawg-audio');
+      const isDraggingFileNode = types.includes('application/x-dawg-file-node');
+      const isDraggingLegacyAudioFile = types.includes('text/plain');
 
-      if (!isDraggingPattern && !isDraggingAudio) return;
+      if (!isDraggingPattern && !isDraggingAudio && !isDraggingFileNode && !isDraggingLegacyAudioFile) return;
 
       // Only handle if NOT already inside our container (avoid duplicate handling)
       const container = containerRef.current;
@@ -2432,15 +2567,43 @@ export function ArrangementPanelV2() {
           }}
         >
           {tracks.map((track, index) => (
-            <TrackHeader
-              key={track.id}
-              track={track}
-              index={index}
-              height={dimensions.trackHeight}
-              onUpdate={(updates) => handleTrackUpdate(track.id, updates)}
-              onDoubleClick={() => handleTrackClick(index)}
-              isSelected={selectedTrackIndex === index}
-            />
+            <React.Fragment key={track.id}>
+              <TrackHeader
+                track={track}
+                index={index}
+                height={dimensions.trackHeight}
+                onUpdate={(updates) => handleTrackUpdate(track.id, updates)}
+                onDoubleClick={() => handleTrackClick(index)}
+                isSelected={selectedTrackIndex === index}
+                showAutomation={automationExpandedTracks.has(track.id)}
+                onToggleAutomation={() => {
+                  setAutomationExpandedTracks(prev => {
+                    const newSet = new Set(prev);
+                    if (newSet.has(track.id)) {
+                      newSet.delete(track.id);
+                    } else {
+                      newSet.add(track.id);
+                    }
+                    return newSet;
+                  });
+                }}
+              />
+              {/* ✅ NEW: Automation lanes for this track */}
+              {automationExpandedTracks.has(track.id) && (
+                <AutomationLanes
+                  trackId={track.id}
+                  trackIndex={index}
+                  viewport={viewport}
+                  dimensions={dimensions}
+                  snapValue={snapSize}
+                  activeTool={activeTool}
+                  onScroll={(deltaX, deltaY) => {
+                    // Handle scroll for automation lanes
+                    eventHandlers.onScroll(deltaX, deltaY);
+                  }}
+                />
+              )}
+            </React.Fragment>
           ))}
 
           {/* Add Track Button - ✅ PHASE 2: Using Button component from library */}
@@ -2466,16 +2629,16 @@ export function ArrangementPanelV2() {
           style={{
             cursor:
               deletionMode ? 'not-allowed' :
-              activeTool === 'split' ? 'col-resize' :
-              activeTool === 'draw' ? 'crosshair' :
-              hoveredHandle?.handle === 'fadeIn' || hoveredHandle?.handle === 'fadeOut' ? 'nw-resize' :
-              hoveredHandle?.handle === 'gain' ? 'ns-resize' :
-              hoveredHandle ? 'ew-resize' :
-              dragGhosts ? 'grabbing' :
-              resizeGhosts ? 'ew-resize' :
-              fadeGhosts ? 'nw-resize' :
-              gainGhosts ? 'ns-resize' :
-              'default'
+                activeTool === 'split' ? 'col-resize' :
+                  activeTool === 'draw' ? 'crosshair' :
+                    hoveredHandle?.handle === 'fadeIn' || hoveredHandle?.handle === 'fadeOut' ? 'nw-resize' :
+                      hoveredHandle?.handle === 'gain' ? 'ns-resize' :
+                        hoveredHandle ? 'ew-resize' :
+                          dragGhosts ? 'grabbing' :
+                            resizeGhosts ? 'ew-resize' :
+                              fadeGhosts ? 'nw-resize' :
+                                gainGhosts ? 'ns-resize' :
+                                  'default'
           }}
           onContextMenu={handleContextMenu}
         >

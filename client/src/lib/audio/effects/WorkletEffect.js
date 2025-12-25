@@ -34,6 +34,14 @@ export class WorkletEffect extends BaseEffect {
     }
   }
 
+  /**
+   * ✅ FIX: Expose workletNode's port for UI access
+   * This allows MultiBandEQ and other UIs to send messages to the worklet
+   */
+  get port() {
+    return this.workletNode?.port || null;
+  }
+
   getParametersState() {
     if (!this.workletNode?.parameters) return this.parameterDefinitions;
 

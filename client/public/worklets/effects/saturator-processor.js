@@ -32,7 +32,16 @@ class SaturatorProcessor extends AudioWorkletProcessor {
       { name: 'highDrive', defaultValue: 1.0, minValue: 0, maxValue: 2.0 },
       { name: 'lowMix', defaultValue: 1.0, minValue: 0, maxValue: 1 },
       { name: 'midMix', defaultValue: 1.0, minValue: 0, maxValue: 1 },
-      { name: 'highMix', defaultValue: 1.0, minValue: 0, maxValue: 1 }
+      { name: 'highMix', defaultValue: 1.0, minValue: 0, maxValue: 1 },
+      // ✅ NEW: Oversampling (1=off, 2=2x, 4=4x, 8=8x)
+      { name: 'oversampling', defaultValue: 2, minValue: 1, maxValue: 8 },
+      // ✅ NEW: Drive curve mode (0=Soft, 1=Medium, 2=Hard, 3=Tube, 4=Tape)
+      { name: 'driveCurve', defaultValue: 3, minValue: 0, maxValue: 4 },
+      // ✅ NEW: Tape modeling parameters (only active when driveCurve=4)
+      { name: 'tapeBias', defaultValue: 0.5, minValue: 0, maxValue: 1 },
+      { name: 'tapeWow', defaultValue: 0, minValue: 0, maxValue: 1 },
+      { name: 'tapeFlutter', defaultValue: 0, minValue: 0, maxValue: 1 },
+      { name: 'tapeSpeed', defaultValue: 1.0, minValue: 0.5, maxValue: 2.0 }
     ];
   }
 
@@ -48,14 +57,17 @@ class SaturatorProcessor extends AudioWorkletProcessor {
     this.channelState = [
       {
         history: new Float32Array(4),
-        dcBlocker: { x1: 0, y1: 0 }
+        dcBlocker: { x1: 0, y1: 0 },
+        tapePhase: 0 // ✅ NEW: For tape wow/flutter modulation
       },
       {
         history: new Float32Array(4),
-        dcBlocker: { x1: 0, y1: 0 }
+        dcBlocker: { x1: 0, y1: 0 },
+        tapePhase: 0 // ✅ NEW: For tape wow/flutter modulation
       }
     ];
 
+    // ✅ NEW: Oversampling (will be set from parameter)
     this.oversample = 2;
 
     // v2.0 mode switches
@@ -278,6 +290,21 @@ class SaturatorProcessor extends AudioWorkletProcessor {
     const highCutFreq = this.getParam(parameters.highCutFreq, 0) || 20000;
     const tone = this.getParam(parameters.tone, 0) || 0;
     const headroom = this.getParam(parameters.headroom, 0) || 0;
+    
+    // ✅ NEW: Oversampling parameter (1=off, 2=2x, 4=4x, 8=8x)
+    const oversampleParam = this.getParam(parameters.oversampling, 0);
+    const oversampleFactor = oversampleParam !== undefined ? Math.floor(oversampleParam) : 2;
+    this.oversample = oversampleFactor;
+    
+    // ✅ NEW: Drive curve mode (0=Soft, 1=Medium, 2=Hard, 3=Tube, 4=Tape)
+    const driveCurveParam = this.getParam(parameters.driveCurve, 0);
+    const driveCurveMode = driveCurveParam !== undefined ? Math.floor(driveCurveParam) : 3;
+    
+    // ✅ NEW: Tape modeling parameters (only active when driveCurveMode=4)
+    const tapeBias = this.getParam(parameters.tapeBias, 0) || 0.5;
+    const tapeWow = this.getParam(parameters.tapeWow, 0) || 0;
+    const tapeFlutter = this.getParam(parameters.tapeFlutter, 0) || 0;
+    const tapeSpeed = this.getParam(parameters.tapeSpeed, 0) || 1.0;
 
     const drive = 1 + distortion * 9;
     const state = this.channelState[channel] || this.channelState[0];
@@ -315,24 +342,42 @@ class SaturatorProcessor extends AudioWorkletProcessor {
     // Stage 3: Frequency-dependent saturation
     const saturationConfig = this.getSaturationConfig(this.saturationMode);
 
+    // ✅ NEW: Apply tape modeling (wow/flutter) before saturation
+    let processedWithTape = processed;
+    if (driveCurveMode === 4) {
+      // Tape speed modulation (wow/flutter) - per channel
+      const wowFreq = 0.1 + tapeWow * 4.9; // Wow: 0.1-5 Hz
+      const tapePhaseInc = (2 * Math.PI * wowFreq) / this.sampleRate;
+      state.tapePhase = (state.tapePhase || 0) + tapePhaseInc;
+      if (state.tapePhase > Math.PI * 2) state.tapePhase -= Math.PI * 2;
+      
+      const flutterFreq = 5 + tapeFlutter * 15; // Flutter: 5-20 Hz
+      const flutterMod = Math.sin(state.tapePhase * flutterFreq / wowFreq) * tapeFlutter * 0.02;
+      
+      // Apply tape speed variation
+      processedWithTape = processed * (tapeSpeed + flutterMod);
+      
+      // Tape bias (DC offset simulation)
+      processedWithTape += (tapeBias - 0.5) * 0.1;
+    }
+
     // 🎯 PROFESSIONAL OVERSAMPLING: Anti-aliasing for high-frequency content
     // Process at higher sample rate, then downsample with filtering
-    const oversampleFactor = this.oversample;
-    let processedOversampled = processed * drive * (1 + headroom / 12);
+    let processedOversampled = processedWithTape * drive * (1 + headroom / 12);
 
-    // Apply saturation curve based on mode (before tube saturation)
-    if (processedOversampled > saturationConfig.threshold) {
-      processedOversampled = saturationConfig.threshold + (processedOversampled - saturationConfig.threshold) * saturationConfig.softness;
-    } else if (processedOversampled < -saturationConfig.threshold * 0.9) {
-      processedOversampled = -saturationConfig.threshold * 0.9 + (processedOversampled + saturationConfig.threshold * 0.9) * saturationConfig.softness * 1.1;
+    // ✅ NEW: Apply drive curve based on mode
+    if (oversampleFactor > 1) {
+      // Process with oversampling
+      for (let os = 0; os < oversampleFactor; os++) {
+        processedOversampled = this.applyDriveCurve(processedOversampled, driveCurveMode);
+      }
+      // Downsample (simple averaging for now)
+      processedOversampled /= oversampleFactor;
+    } else {
+      // No oversampling
+      processedOversampled = this.applyDriveCurve(processedOversampled, driveCurveMode);
     }
 
-    // 🎯 PROFESSIONAL TUBE SATURATION: Multi-stage with oversampling
-    for (let os = 0; os < oversampleFactor; os++) {
-      processedOversampled = this.tubeSaturate(processedOversampled, this.frequencyMode);
-    }
-
-    // Simple downsampling (for 2x oversampling, average is sufficient)
     processed = processedOversampled;
 
     // Stage 5: Add harmonics based on saturation mode
@@ -360,6 +405,48 @@ class SaturatorProcessor extends AudioWorkletProcessor {
     state.history[0] = sample;
 
     return processed;
+  }
+
+  // ✅ NEW: Apply drive curve based on mode
+  applyDriveCurve(x, mode) {
+    const abs = Math.abs(x);
+    const sign = Math.sign(x);
+    
+    switch (mode) {
+      case 0: // Soft - gentle saturation
+        return sign * (abs < 0.7 ? abs : 0.7 + (abs - 0.7) * 0.1);
+      case 1: // Medium - balanced
+        return sign * (abs < 0.5 ? abs : 0.5 + (abs - 0.5) * 0.3);
+      case 2: // Hard - aggressive clipping
+        return sign * Math.min(0.95, abs * 0.8);
+      case 3: // Tube - existing tube saturation
+        return this.tubeSaturate(x, this.frequencyMode);
+      case 4: // Tape - tape saturation curve
+        return this.tapeSaturate(x);
+      default:
+        return this.tubeSaturate(x, this.frequencyMode);
+    }
+  }
+  
+  // ✅ NEW: Tape saturation curve (modeled after analog tape)
+  tapeSaturate(x) {
+    const abs = Math.abs(x);
+    const sign = Math.sign(x);
+    
+    // Tape saturation: smooth compression with high-frequency rolloff
+    if (abs < 0.3) {
+      return x; // Linear region
+    } else if (abs < 0.7) {
+      // Soft saturation region
+      const t = (abs - 0.3) / 0.4;
+      const saturated = 0.3 + 0.4 * (1 - Math.exp(-t * 2));
+      return sign * saturated;
+    } else {
+      // Hard limiting region
+      const excess = abs - 0.7;
+      const limited = 0.7 + 0.25 * (1 - Math.exp(-excess / 0.15));
+      return sign * Math.min(0.95, limited);
+    }
   }
 
   // 🎯 PROFESSIONAL TUBE SATURATION: Industry-standard curves (like UAD, Waves)

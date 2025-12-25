@@ -43,6 +43,7 @@ export const Knob = ({
   valueFormatter,          // Custom format function
   showGhostValue = true,   // Toggle ghost value display
   category,                // Plugin category for theming
+  step,                    // ✅ NEW: Step size for discrete values (e.g., 1 for integers)
 
   // Legacy props (maintained for compatibility)
   size: legacySize,        // Old size prop (number)
@@ -126,7 +127,15 @@ export const Knob = ({
         newValue = dragStartRef.current.value + (deltaY * range * sensitivity);
       }
 
-      const clampedValue = Math.max(min, Math.min(max, newValue));
+      let clampedValue = Math.max(min, Math.min(max, newValue));
+      
+      // ✅ NEW: Apply step if provided
+      if (step && step > 0) {
+        clampedValue = Math.round(clampedValue / step) * step;
+        // Ensure it's still within bounds after rounding
+        clampedValue = Math.max(min, Math.min(max, clampedValue));
+      }
+      
       console.log('🎛️ Knob onChange triggered:', { label, value: clampedValue, hasCallback: !!onChangeRef.current });
       onChangeRef.current?.(clampedValue);
       rafRef.current = null;

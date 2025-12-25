@@ -77,13 +77,13 @@ class AudioAssetManager {
    * Internal: Load and decode audio file
    */
   async _loadAudioFile(url, assetId, metadata) {
-    // If AudioContext not set, try to get it from AudioContextService
+    // If AudioContext not set, try to get it from AudioEngineGlobal
     if (!this.audioContext) {
-      const { AudioContextService } = await import('../services/AudioContextService');
-      const engine = AudioContextService.getAudioEngine();
+      const { AudioEngineGlobal } = await import('../core/AudioEngineGlobal');
+      const engine = AudioEngineGlobal.get();
       if (engine?.audioContext) {
         this.audioContext = engine.audioContext;
-        console.log('📦 AudioContext initialized from AudioContextService');
+        console.log('📦 AudioContext initialized from AudioEngineGlobal');
       } else {
         throw new Error('AudioContext not initialized. Call setAudioContext first or ensure AudioContextService is running.');
       }

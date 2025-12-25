@@ -19,29 +19,44 @@ class WaveformCache {
 
   /**
    * Generate cache key from clip properties
-   * KEY INSIGHT: Width IS part of the key because canvas size matters
-   * But we also need zoom/ppb to ensure correct time-scale rendering
+   * ✅ OPTIMIZED: Width removed from key - we'll resize canvas instead
+   * ✅ OPTIMIZED: Zoom bucketed to reduce cache misses
    */
-  _getCacheKey(clipId, width, height, lod, sampleOffset = 0, zoomX = 1, pixelsPerBeat = 48, bpm = 140) {
+  _getCacheKey(clipId, height, lod, sampleOffset = 0, zoomX = 1, pixelsPerBeat = 48, bpm = 140) {
     // Round values to avoid cache misses from floating point errors
     const roundedOffset = Math.round(sampleOffset * 1000) / 1000;
-    const roundedZoom = Math.round(zoomX * 1000) / 1000;
+    // ✅ Bucket zoom to 0.25 increments (1.0, 1.25, 1.5, etc.)
+    const zoomBucket = Math.round(zoomX * 4) / 4;
     const roundedPPB = Math.round(pixelsPerBeat * 10) / 10;
     const roundedBPM = Math.round(bpm * 10) / 10;
-    return `${clipId}-w${width}-h${height}-lod${lod}-off${roundedOffset}-z${roundedZoom}-ppb${roundedPPB}-bpm${roundedBPM}`;
+    return `${clipId}-h${height}-lod${lod}-off${roundedOffset}-z${zoomBucket}-ppb${roundedPPB}-bpm${roundedBPM}`;
   }
 
   /**
    * Get cached waveform canvas
+   * ✅ OPTIMIZED: Resize cached canvas if width changed
    */
   get(clipId, clip, width, height, bpm, lod, pixelsPerBeat, zoomX) {
-    const key = this._getCacheKey(clipId, width, height, lod, clip.sampleOffset, zoomX, pixelsPerBeat, bpm);
+    const key = this._getCacheKey(clipId, height, lod, clip.sampleOffset, zoomX, pixelsPerBeat, bpm);
     const cached = this.cache.get(key);
 
     if (cached) {
       // Move to end (LRU)
       this.cache.delete(key);
       this.cache.set(key, cached);
+
+      // ✅ If width changed, resize canvas (cheap operation vs re-render)
+      if (cached.width !== width) {
+        const resized = document.createElement('canvas');
+        resized.width = width;
+        resized.height = height;
+        const ctx = resized.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(cached, 0, 0, width, height);
+          return resized;
+        }
+      }
+
       return cached;
     }
 
@@ -50,11 +65,12 @@ class WaveformCache {
 
   /**
    * Store waveform canvas in cache
+   * ✅ OPTIMIZED: Width not in key, proper LRU eviction
    */
   set(clipId, clip, width, height, bpm, lod, canvas, pixelsPerBeat, zoomX) {
-    const key = this._getCacheKey(clipId, width, height, lod, clip.sampleOffset, zoomX, pixelsPerBeat, bpm);
+    const key = this._getCacheKey(clipId, height, lod, clip.sampleOffset, zoomX, pixelsPerBeat, bpm);
 
-    // Remove oldest if cache is full
+    // ✅ Evict oldest if at max size (LRU)
     if (this.cache.size >= this.maxSize) {
       const firstKey = this.cache.keys().next().value;
       this.cache.delete(firstKey);
@@ -178,18 +194,23 @@ class WaveformCache {
       return null;
     }
 
-    // Apply LOD multiplier (more detail when zoomed in)
-    let samplesPerPixel;
+    // ✅ FIX: standardized samplesPerPixel across all LODs to prevent time-stretching
+    // The LOD should only affect how many samples we check for min/max (fidelity), 
+    // NOT the stride (which affects time).
+    const samplesPerPixel = baseSamplesPerPixel;
+
+    // Adjust fidelity based on LOD
+    let samplesToCheckMultiplier = 1;
     switch (lod) {
-      case 0: // Low detail - more samples per pixel (zoomed out)
-        samplesPerPixel = Math.max(1, Math.floor(baseSamplesPerPixel * 2));
+      case 0: // Low detail - fast render, check fewer samples
+        samplesToCheckMultiplier = 0.5;
         break;
       case 1: // Medium detail
-        samplesPerPixel = Math.max(1, Math.floor(baseSamplesPerPixel));
+        samplesToCheckMultiplier = 0.75;
         break;
-      case 2: // High detail - fewer samples per pixel (zoomed in)
+      case 2: // High detail - check all samples
       default:
-        samplesPerPixel = Math.max(1, Math.floor(baseSamplesPerPixel * 0.5));
+        samplesToCheckMultiplier = 1.0;
         break;
     }
 
@@ -227,7 +248,8 @@ class WaveformCache {
       let count = 0;
 
       // ✅ IMPROVED: Sample more points for smoother waveform
-      const samplesToCheck = Math.max(1, Math.floor(samplesPerPixel));
+      // LOD optimization: check fewer samples at lower LODs for performance
+      const samplesToCheck = Math.max(1, Math.floor(samplesPerPixel * samplesToCheckMultiplier));
 
       for (let s = 0; s < samplesToCheck && sampleIndex + s < endSample; s++) {
         // ✅ FIX: Additional bounds check inside inner loop

@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import AudioQualityManager, { AUDIO_QUALITY_PRESETS } from '@/lib/config/AudioQualityConfig';
 import { AudioContextService } from '@/lib/services/AudioContextService';
+import { AudioEngineGlobal } from '@/lib/core/AudioEngineGlobal';
 
 const AudioQualitySettings_v2 = ({ onClose, currentEngine = null }) => {
     const [qualityManager] = useState(() => new AudioQualityManager());
@@ -33,7 +34,7 @@ const AudioQualitySettings_v2 = ({ onClose, currentEngine = null }) => {
     const [testAudioPlaying, setTestAudioPlaying] = useState(false);
 
     // Get audio engine
-    const audioEngine = currentEngine || AudioContextService.getAudioEngine();
+    const audioEngine = currentEngine || AudioEngineGlobal.get();
 
     // Initialize quality manager
     useEffect(() => {

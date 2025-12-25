@@ -5,9 +5,10 @@
  * Provides unified interface for both playback and preview
  */
 
-import { BaseInstrument } from '../base/BaseInstrument.js';
 import { VASynth } from '../../synth/VASynth.js';
+import { BaseInstrument } from '../base/BaseInstrument.js';
 import { getPreset } from '../../synth/presets.js';
+import { VASynthEffectChain } from './VASynthEffectChain.js';
 
 const normalizeModulationMatrix = (matrix) => {
     if (!Array.isArray(matrix)) {
@@ -47,6 +48,14 @@ export class VASynthInstrument extends BaseInstrument {
 
         // Master output
         this.masterGain = null;
+        this.effects = null; // VASynthEffectChain
+
+        // ✅ PHASE 4: Track last automation values to avoid redundant updates
+        this._lastAutomationValues = {
+            volume: null,
+            pan: null,
+            expression: null
+        };
 
         this.modulationMatrix = normalizeModulationMatrix(instrumentData?.modulationMatrix || []);
     }
@@ -67,8 +76,17 @@ export class VASynthInstrument extends BaseInstrument {
             this.masterGain = this.audioContext.createGain();
             this.masterGain.gain.setValueAtTime(0.7, this.audioContext.currentTime);
 
-            // Set as output
-            this.output = this.masterGain;
+            // ✅ PHASE 2: Initialize Effects Chain
+            this.effects = new VASynthEffectChain(this.audioContext);
+
+            // ROUTING: MasterGain -> Effects -> Output
+            this.masterGain.connect(this.effects.input);
+
+            // Set as output (connect effects output to instrument output)
+            this.output = this.effects.output;
+
+            // ⚠️ DEBUG: BYPASS REMOVED (Safety nodes added to VASynthEffectChain)
+            // this.output = this.masterGain;
 
             if (this.modulationMatrix.length > 0) {
                 this.preset = {
@@ -111,7 +129,7 @@ export class VASynthInstrument extends BaseInstrument {
 
                 // ✅ BUG #2 FIX: Check if existing voice is in cleanup phase
                 // If voice exists but is not playing and oscillators are null, it's in cleanup phase
-                if (monoVoice && !monoVoice.isPlaying && 
+                if (monoVoice && !monoVoice.isPlaying &&
                     (!monoVoice.oscillators || monoVoice.oscillators.every(osc => !osc))) {
                     // Voice is in cleanup phase - dispose it and create new one
                     try {
@@ -131,29 +149,101 @@ export class VASynthInstrument extends BaseInstrument {
                         monoVoice.updateParameters({ modulationMatrix: this.modulationMatrix });
                     }
 
-                    this.voices.set('mono', monoVoice);
-                }
+                    // ✅ FIX: Connect mono voice to instrument masterGain immediately after creation
+                    // This ensures the connection is established before noteOn
+                    if (monoVoice.masterGain && this.masterGain) {
+                        try {
+                            monoVoice.masterGain.connect(this.masterGain);
+                            console.log(`🔗 Mono voice masterGain connected to instrument masterGain:`, {
+                                instrumentName: this.name,
+                                hasMonoVoiceMasterGain: !!monoVoice.masterGain,
+                                hasInstrumentMasterGain: !!this.masterGain,
+                                monoVoiceMasterGainType: monoVoice.masterGain?.constructor?.name,
+                                instrumentMasterGainType: this.masterGain?.constructor?.name
+                            });
+                        } catch (e) {
+                            console.error(`❌ Failed to connect mono voice masterGain:`, e, {
+                                instrumentName: this.name,
+                                hasMonoVoiceMasterGain: !!monoVoice.masterGain,
+                                hasInstrumentMasterGain: !!this.masterGain
+                            });
+                        }
+                    } else {
+                        console.error(`❌ Cannot connect mono voice: missing nodes`, {
+                            instrumentName: this.name,
+                            hasMonoVoiceMasterGain: !!monoVoice.masterGain,
+                            hasInstrumentMasterGain: !!this.masterGain
+                        });
+                    }
 
-                // ✅ BUG #1 FIX: Reset routing for mono voice to prevent double connections
-                // Check if voice is still valid and masterGain exists before disconnecting
-                if (monoVoice && monoVoice.masterGain) {
-                    try {
-                        // Check if masterGain is still connected (has any connections)
-                        // If already disconnected or disposed, this will throw, which is fine
-                        monoVoice.masterGain.disconnect();
-                    } catch (e) {
-                        // Voice might be in cleanup phase or already disconnected - ignore
+                    this.voices.set('mono', monoVoice);
+                } else {
+                    // ✅ FIX: For existing mono voice, only disconnect if we need to change routing (pan)
+                    // Don't disconnect on every noteOn - this was causing the connection to break
+                    const hasPan = extendedParams?.pan !== undefined && extendedParams.pan !== 0;
+                    const previousNote = this.activeNotes.size > 0 ?
+                        Array.from(this.activeNotes.values())[0] : null;
+                    const previousPan = previousNote?.extendedParams?.pan;
+                    const panChanged = hasPan !== (previousPan !== undefined && previousPan !== 0) ||
+                        (hasPan && previousPan !== extendedParams.pan);
+
+                    // Only disconnect if pan routing needs to change
+                    if (panChanged && monoVoice.masterGain) {
+                        try {
+                            monoVoice.masterGain.disconnect();
+                        } catch (e) {
+                            // Already disconnected or error - ignore
+                        }
                     }
                 }
 
                 // ✅ PHASE 2: Apply per-note pan if present
                 if (extendedParams?.pan !== undefined && extendedParams.pan !== 0) {
-                    const panner = this.audioContext.createStereoPanner();
-                    panner.pan.setValueAtTime(extendedParams.pan, time);
-                    monoVoice.masterGain.connect(panner);
-                    panner.connect(this.masterGain);
+                    if (monoVoice.masterGain && this.masterGain) {
+                        try {
+                            const panner = this.audioContext.createStereoPanner();
+                            panner.pan.setValueAtTime(extendedParams.pan, time);
+                            monoVoice.masterGain.connect(panner);
+                            panner.connect(this.masterGain);
+                        } catch (e) {
+                            console.warn(`⚠️ Failed to connect mono voice with pan:`, e);
+                            // Fallback: direct connection without pan
+                            try {
+                                monoVoice.masterGain.connect(this.masterGain);
+                            } catch (e2) {
+                                console.error(`❌ Failed to connect mono voice masterGain:`, e2);
+                            }
+                        }
+                    }
                 } else {
-                    monoVoice.masterGain.connect(this.masterGain);
+                    // ✅ FIX: Direct connection - only if not already connected
+                    if (monoVoice.masterGain && this.masterGain) {
+                        try {
+                            // Try to connect - if already connected, this will throw, which is fine
+                            monoVoice.masterGain.connect(this.masterGain);
+                            console.log(`🔗 Mono voice masterGain reconnected (no pan):`, {
+                                instrumentName: this.name,
+                                midiNote,
+                                hasConnection: true
+                            });
+                        } catch (e) {
+                            // Already connected - this is expected and fine
+                            // Log in dev mode for debugging
+                            if (import.meta.env.DEV) {
+                                console.log(`ℹ️ Mono voice masterGain already connected (expected):`, {
+                                    instrumentName: this.name,
+                                    midiNote
+                                });
+                            }
+                        }
+                    } else {
+                        console.error(`❌ Cannot reconnect mono voice: missing nodes`, {
+                            instrumentName: this.name,
+                            midiNote,
+                            hasMonoVoiceMasterGain: !!monoVoice.masterGain,
+                            hasInstrumentMasterGain: !!this.masterGain
+                        });
+                    }
                 }
 
                 // ✅ PHASE 2: Trigger note on mono voice with extended params
@@ -175,7 +265,7 @@ export class VASynthInstrument extends BaseInstrument {
                         this.voiceTimeouts.delete(midiNote);
                     }
                     // Cancel all retrigger timeouts (they use unique keys like retrigger_${midiNote}_${timestamp})
-                    const retriggerKeys = Array.from(this.voiceTimeouts.keys()).filter(key => 
+                    const retriggerKeys = Array.from(this.voiceTimeouts.keys()).filter(key =>
                         typeof key === 'string' && key.startsWith(`retrigger_${midiNote}_`)
                     );
                     retriggerKeys.forEach(key => {
@@ -199,9 +289,14 @@ export class VASynthInstrument extends BaseInstrument {
                                     oldVoice.amplitudeGain.gain.exponentialRampToValueAtTime(0.0001, now + fadeTime);
                                 }
 
-                                setTimeout(() => {
+                                // ✅ OFFLINE RENDER FIX: Skip setTimeout in offline context
+                                if (this.audioContext instanceof (window.OfflineAudioContext || window.webkitOfflineAudioContext)) {
                                     oldVoice.dispose();
-                                }, fadeTime * 1000 + 10);
+                                } else {
+                                    setTimeout(() => {
+                                        oldVoice.dispose();
+                                    }, fadeTime * 1000 + 10);
+                                }
 
                                 console.log(`✂️ Retrigger (cut itself): Quick fade for note ${midiNote}`);
                             } catch (e) {
@@ -217,14 +312,21 @@ export class VASynthInstrument extends BaseInstrument {
                                 // ✅ FIX: Use preset's actual release time, better fallback
                                 const presetRelease = this.preset?.amplitudeEnvelope?.release || 1.0;
                                 const releaseTime = oldVoice.amplitudeEnvelope?.releaseTime || presetRelease;
-                                const timeoutId = setTimeout(() => {
+                                // ✅ OFFLINE RENDER FIX: Skip setTimeout in offline context
+                                if (this.audioContext instanceof (window.OfflineAudioContext || window.webkitOfflineAudioContext)) {
                                     oldVoice.dispose();
-                                    console.log(`♻️ Disposed retriggered voice for note ${midiNote} after ${releaseTime}s release`);
-                                }, (releaseTime + 0.1) * 1000);
+                                } else {
+                                    const presetRelease = this.preset?.amplitudeEnvelope?.release || 1.0;
+                                    const releaseTime = oldVoice.amplitudeEnvelope?.releaseTime || presetRelease;
+                                    const timeoutId = setTimeout(() => {
+                                        oldVoice.dispose();
+                                        console.log(`♻️ Disposed retriggered voice for note ${midiNote} after ${releaseTime}s release`);
+                                    }, (releaseTime + 0.1) * 1000);
 
-                                // ✅ FIX: Use unique timestamp to avoid collision
-                                const timeoutKey = `retrigger_${midiNote}_${Date.now()}`;
-                                this.voiceTimeouts.set(timeoutKey, timeoutId);
+                                    // ✅ FIX: Use unique timestamp to avoid collision
+                                    const timeoutKey = `retrigger_${midiNote}_${Date.now()}`;
+                                    this.voiceTimeouts.set(timeoutKey, timeoutId);
+                                }
 
                                 console.log(`🔄 Retrigger (natural release): ${releaseTime}s release for note ${midiNote}`);
                             } catch (e) {
@@ -321,16 +423,22 @@ export class VASynthInstrument extends BaseInstrument {
                     if (voice) {
                         voice.noteOff(time);
 
-                        // Schedule voice disposal after release
-                        const releaseTime = voice.amplitudeEnvelope?.releaseTime || 0.5;
-                        const timeoutId = setTimeout(() => {
+                        // ✅ OFFLINE RENDER FIX: Skip setTimeout in offline context
+                        if (this.audioContext instanceof (window.OfflineAudioContext || window.webkitOfflineAudioContext)) {
                             voice.dispose();
                             this.voices.delete(midiNote);
-                            this.voiceTimeouts.delete(midiNote);
                             this._trackNoteOff(midiNote);
-                        }, (releaseTime + 0.1) * 1000);
+                        } else {
+                            const releaseTime = voice.amplitudeEnvelope?.releaseTime || 0.5;
+                            const timeoutId = setTimeout(() => {
+                                voice.dispose();
+                                this.voices.delete(midiNote);
+                                this.voiceTimeouts.delete(midiNote);
+                                this._trackNoteOff(midiNote);
+                            }, (releaseTime + 0.1) * 1000);
 
-                        this.voiceTimeouts.set(midiNote, timeoutId);
+                            this.voiceTimeouts.set(midiNote, timeoutId);
+                        }
                     } else {
                         console.warn(`⚠️ VASynth noteOff: No voice found for midiNote=${midiNote}`);
                     }
@@ -344,13 +452,17 @@ export class VASynthInstrument extends BaseInstrument {
                 this.voices.forEach((voice, note) => {
                     voice.noteOff(time);
 
-                    // Schedule disposal
-                    const releaseTime = voice.amplitudeEnvelope?.releaseTime || 0.5;
-                    const timeoutId = setTimeout(() => {
+                    // ✅ OFFLINE RENDER FIX: Skip setTimeout in offline context
+                    if (this.audioContext instanceof (window.OfflineAudioContext || window.webkitOfflineAudioContext)) {
                         voice.dispose();
-                    }, (releaseTime + 0.1) * 1000);
+                    } else {
+                        const releaseTime = voice.amplitudeEnvelope?.releaseTime || 0.5;
+                        const timeoutId = setTimeout(() => {
+                            voice.dispose();
+                        }, (releaseTime + 0.1) * 1000);
 
-                    this.voiceTimeouts.set(note, timeoutId);
+                        this.voiceTimeouts.set(note, timeoutId);
+                    }
                 });
 
                 // ✅ Don't clear voices immediately - let timeouts handle it
@@ -382,7 +494,7 @@ export class VASynthInstrument extends BaseInstrument {
         // ✅ CRITICAL FIX: For mono mode, immediately dispose voice to prevent playback issues on loop restart
         // Mono voice reuse can cause problems when voice is in release phase during new loop
         const isMono = this.preset?.voiceMode === 'mono';
-        
+
         if (isMono && this.voices.has('mono')) {
             // Mono mode: Immediately dispose to ensure clean state for next loop
             const monoVoice = this.voices.get('mono');
@@ -399,16 +511,22 @@ export class VASynthInstrument extends BaseInstrument {
                 try {
                     voice.noteOff(stopTime);
 
-                    // ✅ Schedule voice disposal after release completes
-                    const releaseTime = voice.amplitudeEnvelope?.releaseTime || 0.5;
-                    const timeoutId = setTimeout(() => {
+                    // ✅ OFFLINE RENDER FIX: Skip setTimeout in offline context
+                    if (this.audioContext instanceof (window.OfflineAudioContext || window.webkitOfflineAudioContext)) {
                         voice.dispose();
                         this.voices.delete(midiNote);
-                        this.voiceTimeouts.delete(midiNote);
                         this.activeNotes.delete(midiNote);
-                    }, (releaseTime + 0.1) * 1000);
+                    } else {
+                        const releaseTime = voice.amplitudeEnvelope?.releaseTime || 0.5;
+                        const timeoutId = setTimeout(() => {
+                            voice.dispose();
+                            this.voices.delete(midiNote);
+                            this.voiceTimeouts.delete(midiNote);
+                            this.activeNotes.delete(midiNote);
+                        }, (releaseTime + 0.1) * 1000);
 
-                    this.voiceTimeouts.set(midiNote, timeoutId);
+                        this.voiceTimeouts.set(midiNote, timeoutId);
+                    }
                 } catch (error) {
                     console.error('Error releasing voice:', error);
                 }
@@ -416,6 +534,25 @@ export class VASynthInstrument extends BaseInstrument {
         }
 
         this._isPlaying = false;
+    }
+
+    /**
+     * Called when the playback loop restarts
+     * Pass the notification to the underlying engine voices
+     */
+    onLoopRestart(loopStartTime, loopStartStep = 0) {
+        if (!this._isInitialized) return;
+
+        // Notify all active voices (including mono voice)
+        this.voices.forEach((voice) => {
+            if (voice && typeof voice.onLoopRestart === 'function') {
+                try {
+                    voice.onLoopRestart(loopStartTime);
+                } catch (e) {
+                    console.error('Error during VASynth voice onLoopRestart:', e);
+                }
+            }
+        });
     }
 
     /**
@@ -563,6 +700,11 @@ export class VASynthInstrument extends BaseInstrument {
         }
 
         console.log('✅ VASynth parameters updated, active voices:', this.voices.size);
+
+        // ✅ PHASE 2: Update Effects
+        if (this.effects) {
+            this.effects.update(updates);
+        }
     }
 
     /**
@@ -637,6 +779,11 @@ export class VASynthInstrument extends BaseInstrument {
             }
         }
 
+        // Dispose effects
+        if (this.effects) {
+            this.effects.dispose();
+        }
+
         super.dispose();
 
         console.log(`🗑️ VASynth disposed: ${this.name}`);
@@ -684,9 +831,24 @@ export class VASynthInstrument extends BaseInstrument {
         const now = time !== null ? time : this.audioContext.currentTime;
         const clampedVolume = Math.max(0, Math.min(1, volume));
 
-        // Smooth transition to avoid clicks
-        this.masterGain.gain.cancelScheduledValues(now);
-        this.masterGain.gain.setTargetAtTime(clampedVolume, now, 0.01);
+        // ✅ OPTIMIZATION: Skip update if value hasn't changed (within tolerance)
+        const tolerance = 0.001; // 0.1% tolerance to avoid floating point issues
+        const lastVolume = this._lastAutomationValues?.volume;
+        const volumeChanged = lastVolume === null || Math.abs(clampedVolume - lastVolume) >= tolerance;
+
+        if (volumeChanged) {
+            // ✅ IMPROVED: Linear ramping for smoother automation (Phase 2)
+            this.masterGain.gain.cancelScheduledValues(now);
+            // Start from current value and ramp to target
+            this.masterGain.gain.setValueAtTime(this.masterGain.gain.value, now);
+            this.masterGain.gain.linearRampToValueAtTime(clampedVolume, now + 0.005); // 5ms micro-ramp to prevent clicks
+
+            // Update last value
+            if (!this._lastAutomationValues) {
+                this._lastAutomationValues = { volume: null, pan: null, expression: null };
+            }
+            this._lastAutomationValues.volume = clampedVolume;
+        }
     }
 
     /**
@@ -700,20 +862,46 @@ export class VASynthInstrument extends BaseInstrument {
         if (!this.panNode) {
             this.panNode = this.audioContext.createStereoPanner();
 
-            // Reconnect: masterGain -> panNode -> output destination
-            this.masterGain.disconnect();
-            this.masterGain.connect(this.panNode);
+            // Reconnect: effects.output -> panNode -> output destination
+            // (Previously masterGain.connect(panNode))
+            if (this.effects) {
+                this.effects.output.disconnect(); // Disconnect default direct connection if any
+                this.effects.output.connect(this.panNode);
+            } else {
+                // Fallback if effects not ready
+                this.masterGain.disconnect();
+                this.masterGain.connect(this.panNode);
+            }
 
             // Update output to point to panner
             const oldOutput = this.output;
             this.output = this.panNode;
 
+            // ✅ FIX: Disconnect old output from all destinations
+            // Then reconnect new output (panNode) to all destinations
+            if (oldOutput && oldOutput !== this.panNode) {
+                this.connectedDestinations.forEach(dest => {
+                    try {
+                        oldOutput.disconnect(dest);
+                    } catch (e) {
+                        // Already disconnected or error - ignore
+                    }
+                });
+            }
+
             // Reconnect to all existing destinations
             this.connectedDestinations.forEach(dest => {
                 try {
                     this.output.connect(dest);
+                    if (import.meta.env.DEV) {
+                        console.log(`🔗 Reconnected ${this.name} output (panNode) to destination:`, {
+                            instrumentName: this.name,
+                            outputType: this.output.constructor.name,
+                            destinationType: dest.constructor?.name || 'unknown'
+                        });
+                    }
                 } catch (e) {
-                    console.warn('Failed to reconnect to destination:', e);
+                    console.warn(`⚠️ Failed to reconnect ${this.name} to destination:`, e);
                 }
             });
         }
@@ -721,9 +909,10 @@ export class VASynthInstrument extends BaseInstrument {
         const now = time !== null ? time : this.audioContext.currentTime;
         const clampedPan = Math.max(-1, Math.min(1, pan));
 
-        // Smooth transition to avoid clicks
+        // ✅ IMPROVED: Linear ramping for smoother automation (Phase 2)
         this.panNode.pan.cancelScheduledValues(now);
-        this.panNode.pan.setTargetAtTime(clampedPan, now, 0.01);
+        this.panNode.pan.setValueAtTime(this.panNode.pan.value, now);
+        this.panNode.pan.linearRampToValueAtTime(clampedPan, now + 0.005);
     }
 
     /**
@@ -734,8 +923,12 @@ export class VASynthInstrument extends BaseInstrument {
         this.voices.forEach(voice => {
             if (voice.filter && voice.filter.frequency) {
                 const now = time !== null ? time : this.audioContext.currentTime;
-                const freqHz = 20 + (cutoff / 127) * 20000; // Map 0-127 to 20Hz-20kHz
-                voice.filter.frequency.setTargetAtTime(freqHz, now, 0.01);
+                const freqHz = 20 + (cutoff / 127) * 20000;
+
+                // ✅ IMPROVED: Linear ramping for smoother filter automation (Phase 2)
+                voice.filter.frequency.cancelScheduledValues(now);
+                voice.filter.frequency.setValueAtTime(voice.filter.frequency.value, now);
+                voice.filter.frequency.linearRampToValueAtTime(freqHz, now + 0.005);
             }
         });
     }

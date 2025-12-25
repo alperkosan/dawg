@@ -1,6 +1,36 @@
-# Saturator Metrics & Performance Fixes
+# Mixer Redesign & Routing
 
 ## Overview
+Redesigned the Mixer's Send UI to improve usability and implemented "Exclusive Routing" (Submix capability) alongside the existing parallel sends.
+
+## Changes
+
+### 1. FL Studio-Style Send UI
+**Problem:** Clicking a mixer channel was causing layout shifts ("jumping faders") because the Send controls appeared/disappeared dynamically.
+**Fix:** Implemented a fixed-height container that renders a dimmed, disabled arrow when no connection is possible (e.g. self-send). This reserves space consistently and provides helpful tooltips (e.g., "Cannot send to itself"), improving both stability and UX.
+
+### 2. Exclusive Routing ("Route to this track only")
+**Problem:** Previously, sending a track to a bus created a *parallel* clean signal + send signal, resulting in a volume boost. There was no way to create a true submix (where the original signal stops going to Master).
+**Fix:** Added an "Exclusive Routing" mode. 
+- **Right-Click** the Send Arrow to access the menu.
+- Select **"Route to this track only"**.
+- This disconnects the track from the Master and routes it *exclusively* to the target bus.
+- Visualized by a **Green Knob (Locked at 100%)** and **ROUTE badge**, matching the style of parallel sends but with distinct color coding.
+- **Disconnect**: Click the triangular arrow at the top (just like standard sends) to reset routing to Master.
+
+### 3. Context Menu
+Added a context menu to the Send button with options:
+- **Route to this track only**: Exclusive submix routing.
+- **Sidechain to this track**: Creates a send at 0% volume (useful for sidechain compression).
+- **Reset Routing**: Reconnects to Master.
+- **Disconnect**: Removes the send.
+**Fix:** Ensured the menu renders via `ReactDOM.createPortal` to break out of the Mixer's stacking context, guaranteeing visibility. Also implemented a robust `onMouseUp` handler for right-click reliability.
+
+## Verification
+- **UI Stability**: Click between tracks; the faders and buttons should remaining perfectly stationary.
+- **Routing**: Right-click a send -> "Route to this track only". Verify the sound goes through the Bus only.
+- **Menu**: Right-click the arrow or existing connection to open routing options.
+
 Addressed the issue where Saturator RMS/Peak monitors were showing `-InfinitydB`. This was caused by a combination of a performance bottleneck in the DSP code and a limitation in the metering hook that prevented updates when the transport was stopped.
 
 ## Changes

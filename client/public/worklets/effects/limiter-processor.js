@@ -73,6 +73,25 @@ class LimiterProcessor extends AudioWorkletProcessor {
       samples: []
     };
 
+    // LUFS (Loudness Units relative to Full Scale) calculation
+    // K-weighting filter coefficients (simplified)
+    this.lufsState = {
+      // K-weighting filter state (pre-filter for LUFS)
+      x1: 0, x2: 0, y1: 0, y2: 0, // High shelf filter
+      // RMS calculation (400ms window for LUFS-I)
+      rmsBuffer: [],
+      rmsSum: 0,
+      rmsWindowSize: Math.floor(this.sampleRate * 0.4), // 400ms window
+      // Peak and LRA (Loudness Range)
+      peak: -144,
+      lra: 0,
+      lraBuffer: []
+    };
+
+    // Metering interval (send every ~33ms for 30fps UI updates)
+    this.meteringInterval = Math.floor(this.sampleRate / 30); // ~30fps
+    this.meteringCounter = 0;
+
     // Mode profiles (professional settings)
     this.modeProfiles = {
       0: { // TRANSPARENT - Pristine mastering
@@ -167,6 +186,93 @@ class LimiterProcessor extends AudioWorkletProcessor {
   // Linear to dB conversion
   linearToDb(linear) {
     return 20 * Math.log10(Math.max(linear, 0.00001));
+  }
+
+  // K-weighting filter for LUFS (simplified high shelf + high pass)
+  applyKWeighting(sample) {
+    // Simplified K-weighting (high shelf filter at 1.5kHz, +4dB)
+    // This is a simplified version - full K-weighting is more complex
+    const state = this.lufsState;
+    
+    // High shelf filter (simplified)
+    const fc = 1500; // 1.5kHz
+    const gain = 4; // +4dB
+    const Q = 0.707;
+    const w = 2 * Math.PI * fc / this.sampleRate;
+    const cosw = Math.cos(w);
+    const sinw = Math.sin(w);
+    const A = Math.pow(10, gain / 40);
+    const alpha = sinw / (2 * Q);
+    const S = 1;
+    const b0 = S * (A + 1) + (A - 1) * cosw + 2 * Math.sqrt(A) * alpha;
+    const b1 = -2 * S * ((A - 1) + (A + 1) * cosw);
+    const b2 = S * (A + 1) + (A - 1) * cosw - 2 * Math.sqrt(A) * alpha;
+    const a0 = (A + 1) - (A - 1) * cosw + 2 * Math.sqrt(A) * alpha;
+    const a1 = 2 * ((A - 1) - (A + 1) * cosw);
+    const a2 = (A + 1) - (A - 1) * cosw - 2 * Math.sqrt(A) * alpha;
+
+    // Apply filter (simplified IIR)
+    const x = sample;
+    const y = (b0 / a0) * x + (b1 / a0) * state.x1 + (b2 / a0) * state.x2
+              - (a1 / a0) * state.y1 - (a2 / a0) * state.y2;
+    
+    state.x2 = state.x1;
+    state.x1 = x;
+    state.y2 = state.y1;
+    state.y1 = y;
+    
+    return y;
+  }
+
+  // Calculate LUFS (simplified - uses K-weighted RMS)
+  calculateLUFS(samples) {
+    const state = this.lufsState;
+    
+    // Apply K-weighting and accumulate RMS
+    for (let i = 0; i < samples.length; i++) {
+      const kWeighted = this.applyKWeighting(samples[i]);
+      const squared = kWeighted * kWeighted;
+      
+      state.rmsBuffer.push(squared);
+      state.rmsSum += squared;
+      
+      // Maintain window size
+      if (state.rmsBuffer.length > state.rmsWindowSize) {
+        const removed = state.rmsBuffer.shift();
+        state.rmsSum -= removed;
+      }
+    }
+    
+    // Calculate RMS
+    if (state.rmsBuffer.length === 0) return -144;
+    const rms = Math.sqrt(state.rmsSum / state.rmsBuffer.length);
+    
+    // Convert to LUFS (relative to -23 LUFS reference)
+    const lufs = this.linearToDb(rms) - 23;
+    
+    // Update peak
+    state.peak = Math.max(state.peak, lufs);
+    
+    // Update LRA buffer (for loudness range calculation)
+    state.lraBuffer.push(lufs);
+    if (state.lraBuffer.length > state.rmsWindowSize) {
+      state.lraBuffer.shift();
+    }
+    
+    return lufs;
+  }
+
+  // Calculate LRA (Loudness Range)
+  calculateLRA() {
+    const state = this.lufsState;
+    if (state.lraBuffer.length < 100) return 0;
+    
+    // Find 10th and 95th percentiles
+    const sorted = [...state.lraBuffer].sort((a, b) => a - b);
+    const p10 = sorted[Math.floor(sorted.length * 0.1)];
+    const p95 = sorted[Math.floor(sorted.length * 0.95)];
+    
+    return Math.max(0, p95 - p10);
   }
 
   // 🎯 NEW v2.0: TPDF Dither (Triangular Probability Density Function)
@@ -394,6 +500,30 @@ class LimiterProcessor extends AudioWorkletProcessor {
       const grDb = this.linearToDb(grLinear);
       this.grHistory.peak = Math.min(this.grHistory.peak, grDb);
 
+      // Calculate LUFS continuously (K-weighted RMS on output)
+      const kWeightedL = this.applyKWeighting(limitedLeft);
+      const kWeightedR = this.applyKWeighting(limitedRight);
+      const squared = (kWeightedL * kWeightedL + kWeightedR * kWeightedR) / 2;
+      
+      this.lufsState.rmsBuffer.push(squared);
+      this.lufsState.rmsSum += squared;
+      
+      // Maintain window size (400ms)
+      if (this.lufsState.rmsBuffer.length > this.lufsState.rmsWindowSize) {
+        const removed = this.lufsState.rmsBuffer.shift();
+        this.lufsState.rmsSum -= removed;
+      }
+      
+      // Update LRA buffer and peak
+      if (this.lufsState.rmsBuffer.length > 0) {
+        const currentLufs = this.linearToDb(Math.sqrt(this.lufsState.rmsSum / this.lufsState.rmsBuffer.length)) - 23;
+        this.lufsState.lraBuffer.push(currentLufs);
+        if (this.lufsState.lraBuffer.length > this.lufsState.rmsWindowSize) {
+          this.lufsState.lraBuffer.shift();
+        }
+        this.lufsState.peak = Math.max(this.lufsState.peak, currentLufs);
+      }
+
       // 🎯 NEW v2.0: Output processing chain
       // 1. Auto-gain compensation
       if (autoGain) {
@@ -495,6 +625,12 @@ class LimiterProcessor extends AudioWorkletProcessor {
       // Calculate average GR
       const avgGr = this.grHistory.peak;
 
+      // Get current LUFS (calculated continuously in processLimiter)
+      const lufs = this.lufsState.rmsBuffer.length > 0 
+        ? this.linearToDb(Math.sqrt(this.lufsState.rmsSum / this.lufsState.rmsBuffer.length)) - 23
+        : -144;
+      const lra = this.calculateLRA();
+
       this.port.postMessage({
         type: 'metering',
         data: {
@@ -505,7 +641,10 @@ class LimiterProcessor extends AudioWorkletProcessor {
           inputDb: isFinite(inputDb) ? inputDb : -144,
           outputDb: isFinite(outputDb) ? outputDb : -144,
           truePeakInDb: isFinite(truePeakInDb) ? truePeakInDb : -144,
-          truePeakOutDb: isFinite(truePeakOutDb) ? truePeakOutDb : -144
+          truePeakOutDb: isFinite(truePeakOutDb) ? truePeakOutDb : -144,
+          lufs: isFinite(lufs) ? lufs : -144,
+          lra: isFinite(lra) ? lra : 0,
+          peak: this.lufsState.peak
         }
       });
 

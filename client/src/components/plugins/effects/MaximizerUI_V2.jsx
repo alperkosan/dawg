@@ -195,6 +195,9 @@ const MaximizerUI_V2 = ({ trackId, effect, effectNode, definition }) => {
   const [localTruePeak, setLocalTruePeak] = useState(truePeak);
   const [grMeter, setGrMeter] = useState(0);
   const [outPeak, setOutPeak] = useState(0);
+  const [lufs, setLufs] = useState(-144);
+  const [lra, setLra] = useState(0);
+  const [peak, setPeak] = useState(-144);
 
   // Get category colors
   const categoryColors = useMemo(() => getCategoryColors('master-chain'), []);
@@ -213,19 +216,39 @@ const MaximizerUI_V2 = ({ trackId, effect, effectNode, definition }) => {
 
   // Subscribe to meters from worklet port
   useEffect(() => {
-    const port = plugin?.audioNode?.workletNode?.port;
-    if (!port) return;
+    const audioNode = plugin?.audioNode?.workletNode;
+    if (!audioNode?.port) return;
 
-    const onMessage = (e) => {
-      const data = e.data;
+    const handleMessage = (event) => {
+      const data = event.data;
       if (!data) return;
+      
       if (data.type === 'meters') {
-        if (typeof data.gr === 'number') setGrMeter(Math.max(0, Math.min(1, data.gr)));
-        if (typeof data.out === 'number') setOutPeak(Math.max(0, Math.min(1, data.out)));
+        if (typeof data.gr === 'number') {
+          setGrMeter(Math.max(0, Math.min(1, data.gr)));
+        }
+        if (typeof data.out === 'number') {
+          setOutPeak(Math.max(0, Math.min(1, data.out)));
+        }
+        if (typeof data.lufs === 'number' && isFinite(data.lufs) && data.lufs > -144) {
+          setLufs(data.lufs);
+        }
+        if (typeof data.lra === 'number' && isFinite(data.lra)) {
+          setLra(data.lra);
+        }
+        if (typeof data.peak === 'number' && isFinite(data.peak) && data.peak > -144) {
+          setPeak(data.peak);
+        }
       }
     };
-    port.addEventListener('message', onMessage);
-    return () => port.removeEventListener('message', onMessage);
+
+    audioNode.port.onmessage = handleMessage;
+
+    return () => {
+      if (audioNode?.port) {
+        audioNode.port.onmessage = null;
+      }
+    };
   }, [plugin]);
 
   // Ghost values
@@ -488,9 +511,60 @@ const MaximizerUI_V2 = ({ trackId, effect, effectNode, definition }) => {
               </div>
             </div>
 
+            {/* Loudness Metering */}
+            <div 
+              className="rounded-xl p-4 mt-4 mb-4"
+              style={{
+                background: `linear-gradient(135deg, rgba(0, 0, 0, 0.5) 0%, ${categoryColors.accent}20 100%)`,
+                border: `1px solid ${categoryColors.primary}1A`,
+              }}
+            >
+              <div 
+                className="text-[9px] uppercase tracking-wider mb-3 font-bold"
+                style={{ color: `${categoryColors.secondary}B3` }}
+              >
+                Loudness Metering
+              </div>
+              <div className="space-y-3">
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-[10px] text-white/60">LUFS</span>
+                    <span className="text-lg font-bold font-mono" style={{ color: categoryColors.primary }}>
+                      {lufs > -144 ? lufs.toFixed(1) : '---'}
+                    </span>
+                  </div>
+                  <div className="h-2 rounded-full overflow-hidden" style={{ background: 'rgba(0, 0, 0, 0.3)' }}>
+                    <div
+                      className="h-full transition-all duration-100"
+                      style={{
+                        width: `${Math.min(100, Math.max(0, ((lufs + 60) / 60) * 100))}%`,
+                        background: lufs > -14 
+                          ? `linear-gradient(to right, ${categoryColors.primary}, #E74C3C)`
+                          : lufs > -23
+                          ? `linear-gradient(to right, ${categoryColors.accent}, ${categoryColors.primary})`
+                          : categoryColors.accent
+                      }}
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] text-white/60">LRA</span>
+                  <span className="text-[12px] font-mono" style={{ color: categoryColors.primary }}>
+                    {lra > 0 ? lra.toFixed(1) : '---'} LU
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] text-white/60">Peak</span>
+                  <span className="text-[12px] font-mono" style={{ color: categoryColors.primary }}>
+                    {peak > -144 ? peak.toFixed(1) : '---'} LUFS
+                  </span>
+                </div>
+              </div>
+            </div>
+
             {/* Output Peak Meter */}
             <div 
-              className="rounded-xl p-4 mt-4"
+              className="rounded-xl p-4"
               style={{
                 background: `linear-gradient(135deg, rgba(0, 0, 0, 0.5) 0%, ${categoryColors.accent}20 100%)`,
                 border: `1px solid ${categoryColors.primary}1A`,

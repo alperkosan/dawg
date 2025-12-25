@@ -474,7 +474,7 @@ CommandManager.redo()
 
 ---
 
-### 7. **Visualization Layer** (`/lib/visualization`)
+### 7. **Visualization Layer** (`/features/visualization/engine`)
 
 **Purpose**: WebGL-based audio visualization
 
@@ -490,7 +490,7 @@ CommandManager.redo()
 
 ---
 
-### 8. **Piano Roll Tools** (`/lib/piano-roll-tools`)
+### 8. **Piano Roll Tools** (`/features/piano_roll_v7/lib/tools`)
 
 **Purpose**: Advanced MIDI editing tools
 
@@ -1575,10 +1575,10 @@ const { patterns, activePatternId } = useArrangementStore();
 
 ### 🚧 **In Progress**
 
-1. **Singleton Migration**:
+1. **Singleton Migration**: ✅ COMPLETE
    - ✅ PlaybackControllerSingleton uses BaseSingleton
-   - ⏳ TimelineControllerSingleton (legacy pattern)
-   - ⏳ TransportManagerSingleton (legacy pattern)
+   - ✅ TimelineControllerSingleton uses BaseSingleton
+   - ✅ TransportManagerSingleton uses BaseSingleton
 
 2. **EventBus Optimization**:
    - ✅ Throttling implemented

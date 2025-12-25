@@ -15,54 +15,292 @@
  * - Memory pooling for analyzer buffers
  */
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { meterService } from '@/lib/services/MeterService';
+import { canvasWorkerBridge, supportsOffscreenCanvas } from '@/lib/rendering/worker/CanvasWorkerBridge';
+import { useThemeStore } from '@/store/useThemeStore';
 import './ChannelMeter.css';
 
-export const ChannelMeter = ({ trackId, isVisible = true }) => {
+const DEFAULT_WIDTH = 60;
+const DEFAULT_HEIGHT = 180;
+const UI_UPDATE_INTERVAL = 50;
+const PEAK_HOLD_DURATION = 2000;
+const SCALE_TICKS = [12, 6, 3, 0, -3, -6, -12, -18, -24, -30, -36, -42, -48, -54, -60];
+const LABELED_SCALE_TICKS = new Set([12, 6, 3, 0, -3, -6, -12, -24, -36, -48, -60]);
+
+const clampDb = (value) => Math.max(-60, Math.min(12, value));
+
+const dbToPercent = (db) => {
+  const clampedDb = clampDb(db);
+  return ((clampedDb + 60) / 72) * 100;
+};
+
+const getColor = (db) => {
+  if (db > 0) return '#ef4444';
+  if (db > -6) return '#f59e0b';
+  if (db > -18) return '#eab308';
+  return '#22c55e';
+};
+
+const formatDb = (value) => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '-∞';
+  if (value <= -59.5) return '-∞';
+  const rounded = value.toFixed(1);
+  return value > 0 ? `+${rounded}` : rounded;
+};
+
+const readPaletteFromTheme = () => {
+  if (typeof window === 'undefined') return null;
+  const root = getComputedStyle(document.documentElement);
+  const read = (token, fallback) => root.getPropertyValue(token)?.trim() || fallback;
+  return {
+    background: read('--zenith-bg-secondary', '#05080f'),
+    rail: read('--zenith-bg-tertiary', '#0e141f'),
+    grid: read('--zenith-border-subtle', 'rgba(255,255,255,0.1)'),
+    safe: read('--zenith-success', '#22c55e'),
+    warn: read('--zenith-warning', '#eab308'),
+    hot: read('--zenith-accent-warm', '#f59e0b'),
+    clip: read('--zenith-error', '#ef4444'),
+    text: read('--zenith-text-secondary', 'rgba(255,255,255,0.65)')
+  };
+};
+
+const ChannelMeterWorkerImpl = ({ trackId, isVisible, themeToken, className = '' }) => {
+  const canvasRef = useRef(null);
+  const surfaceIdRef = useRef(null);
+  const unsubscribeRef = useRef(null);
+  const resizeObserverRef = useRef(null);
+  const throttleRef = useRef(null);
+  const lastLevelsRef = useRef({ peak: -60, rms: -60 });
+  const cleanupTimerRef = useRef(null);
+  const lastTrackIdRef = useRef(trackId);
+  const clipPulseTimeoutRef = useRef(null);
+
+  const [uiLevels, setUiLevels] = useState({
+    peak: -60,
+    rms: -60,
+    clip: false,
+    crest: 0
+  });
+  const [clipPulse, setClipPulse] = useState(false);
+
+  useEffect(() => {
+    if (isVisible) return;
+    setUiLevels({ peak: -60, rms: -60, clip: false });
+    setClipPulse(false);
+  }, [isVisible]);
+
+  useEffect(() => {
+    return () => {
+      if (clipPulseTimeoutRef.current) {
+        clearTimeout(clipPulseTimeoutRef.current);
+        clipPulseTimeoutRef.current = null;
+      }
+    };
+  }, []);
+
+  const triggerClipPulse = () => {
+    if (clipPulseTimeoutRef.current) {
+      clearTimeout(clipPulseTimeoutRef.current);
+    }
+    setClipPulse(true);
+    clipPulseTimeoutRef.current = setTimeout(() => {
+      setClipPulse(false);
+      clipPulseTimeoutRef.current = null;
+    }, 650);
+  };
+
+  const destroySurface = () => {
+    if (surfaceIdRef.current) {
+      canvasWorkerBridge.destroySurface(surfaceIdRef.current);
+      surfaceIdRef.current = null;
+    }
+    if (resizeObserverRef.current) {
+      resizeObserverRef.current.disconnect();
+      resizeObserverRef.current = null;
+    }
+  };
+
+  const scheduleDestroySurface = () => {
+    if (cleanupTimerRef.current) {
+      cancelAnimationFrame(cleanupTimerRef.current);
+    }
+    cleanupTimerRef.current = requestAnimationFrame(() => {
+      cleanupTimerRef.current = null;
+      destroySurface();
+    });
+  };
+
+  const cancelScheduledDestroy = () => {
+    if (cleanupTimerRef.current) {
+      cancelAnimationFrame(cleanupTimerRef.current);
+      cleanupTimerRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    if (!supportsOffscreenCanvas || !isVisible) {
+      if (unsubscribeRef.current) {
+        unsubscribeRef.current();
+        unsubscribeRef.current = null;
+      }
+      scheduleDestroySurface();
+      if (unsubscribeRef.current) {
+        unsubscribeRef.current();
+        unsubscribeRef.current = null;
+      }
+      return;
+    }
+
+    cancelScheduledDestroy();
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    if (!surfaceIdRef.current) {
+      const surfaceId = canvasWorkerBridge.registerSurface(canvas, 'mixerMeter', {
+        width: canvas.clientWidth || DEFAULT_WIDTH,
+        height: canvas.clientHeight || DEFAULT_HEIGHT,
+        devicePixelRatio: window.devicePixelRatio || 1,
+        palette: readPaletteFromTheme()
+      });
+      surfaceIdRef.current = surfaceId;
+
+      const sendDimensions = () => {
+        if (!surfaceIdRef.current) return;
+        canvasWorkerBridge.updateSurface(surfaceIdRef.current, {
+          width: canvas.clientWidth || DEFAULT_WIDTH,
+          height: canvas.clientHeight || DEFAULT_HEIGHT,
+          devicePixelRatio: window.devicePixelRatio || 1
+        });
+      };
+
+      sendDimensions();
+
+      const resizeObserver = new ResizeObserver(sendDimensions);
+      resizeObserver.observe(canvas);
+      resizeObserverRef.current = resizeObserver;
+    }
+
+    const pushLevels = () => {
+      if (!surfaceIdRef.current) return;
+      canvasWorkerBridge.updateSurface(surfaceIdRef.current, {
+        levels: {
+          peak: lastLevelsRef.current.peak,
+          rms: lastLevelsRef.current.rms,
+          timestamp: performance.now()
+        }
+      });
+    };
+
+    const handleLevels = (levels) => {
+      lastLevelsRef.current = levels;
+      if (throttleRef.current) return;
+
+      throttleRef.current = setTimeout(() => {
+        throttleRef.current = null;
+        pushLevels();
+        const peak = lastLevelsRef.current.peak;
+        const rms = lastLevelsRef.current.rms;
+        const crest = Math.max(0, Math.max(-60, peak) - Math.max(-60, rms));
+        const clip = peak >= -0.1;
+        setUiLevels({ peak, rms, clip, crest });
+        if (clip) {
+          triggerClipPulse();
+        }
+      }, UI_UPDATE_INTERVAL);
+    };
+
+    if (!unsubscribeRef.current || lastTrackIdRef.current !== trackId) {
+      if (unsubscribeRef.current) {
+        unsubscribeRef.current();
+      }
+      unsubscribeRef.current = meterService.subscribe(trackId, handleLevels);
+      lastTrackIdRef.current = trackId;
+    }
+
+    return () => {
+      if (throttleRef.current) {
+        clearTimeout(throttleRef.current);
+        throttleRef.current = null;
+      }
+      if (unsubscribeRef.current) {
+        unsubscribeRef.current();
+        unsubscribeRef.current = null;
+      }
+      scheduleDestroySurface();
+    };
+  }, [trackId, isVisible]);
+
+  useEffect(() => {
+    if (!supportsOffscreenCanvas) return;
+    if (!surfaceIdRef.current) return;
+    canvasWorkerBridge.updateSurface(surfaceIdRef.current, {
+      palette: readPaletteFromTheme()
+    });
+  }, [themeToken]);
+
+  const classes = ['channel-meter', 'channel-meter--worker', className].filter(Boolean).join(' ');
+
+  return (
+    <div className={classes}>
+      <div className="channel-meter__frame">
+        <canvas ref={canvasRef} className="channel-meter__canvas" />
+        <div className="channel-meter__glass" />
+        <div className={`channel-meter__clip-indicator ${clipPulse ? 'is-active' : ''}`}>
+          CLIP
+        </div>
+      </div>
+      <div className="channel-meter__telemetry-panel">
+        <div className="channel-meter__telemetry-chip channel-meter__telemetry-chip--peak">
+          <strong>{formatDb(uiLevels.peak).padStart(5, ' ')}</strong>
+        </div>
+        <div className="channel-meter__telemetry-chip channel-meter__telemetry-chip--rms">
+          <strong>{formatDb(uiLevels.rms).padStart(5, ' ')}</strong>
+        </div>
+        <div className="channel-meter__telemetry-chip channel-meter__telemetry-chip--dyn">
+          <strong>{uiLevels.crest.toFixed(1).padStart(5, ' ')}</strong>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const ChannelMeterLegacy = ({ trackId, isVisible = true, className = '' }) => {
   const [meterData, setMeterData] = useState({ peak: -60, rms: -60 });
   const [peakHold, setPeakHold] = useState(-60);
   const [ghostTrail, setGhostTrail] = useState(-60);
+  const [clipPulse, setClipPulse] = useState(false);
 
   const peakHoldTimeRef = useRef(0);
   const ghostTrailTimeRef = useRef(0);
   const uiUpdateTimerRef = useRef(null);
+  const clipTimerRef = useRef(null);
 
-  // ✅ Use refs to avoid re-subscribing when peakHold/ghostTrail change
   const peakHoldRef = useRef(-60);
   const ghostTrailRef = useRef(-60);
-
-  // Sync refs with state
   peakHoldRef.current = peakHold;
   ghostTrailRef.current = ghostTrail;
 
   useEffect(() => {
-    if (!isVisible) return;
+    if (!isVisible) return () => { };
 
-    const PEAK_HOLD_DURATION = 2000; // 2 seconds
-    const GHOST_FADE_DURATION = 300;  // 300ms
-    const UI_UPDATE_INTERVAL = 50;    // Update UI less frequently (20fps is enough for visual feedback)
+    const PEAK_HOLD_DURATION = 2000;
+    const GHOST_FADE_DURATION = 300;
 
-    // ✅ Subscribe to centralized meter service
     const unsubscribe = meterService.subscribe(trackId, (levels) => {
       const timestamp = performance.now();
 
-      // Throttle UI updates to reduce React overhead
       if (uiUpdateTimerRef.current) return;
 
       uiUpdateTimerRef.current = setTimeout(() => {
         uiUpdateTimerRef.current = null;
-
-        // Update meter data (already smoothed by service)
         setMeterData(levels);
 
-        // Peak hold logic (use ref to get latest value)
         if (levels.peak > peakHoldRef.current || timestamp - peakHoldTimeRef.current > PEAK_HOLD_DURATION) {
           setPeakHold(levels.peak);
           peakHoldTimeRef.current = timestamp;
         }
 
-        // Ghost trail logic (use ref to get latest value)
         if (levels.peak > ghostTrailRef.current) {
           setGhostTrail(levels.peak);
           ghostTrailTimeRef.current = timestamp;
@@ -70,113 +308,272 @@ export const ChannelMeter = ({ trackId, isVisible = true }) => {
           const fadeProgress = (timestamp - ghostTrailTimeRef.current - GHOST_FADE_DURATION) / 200;
           setGhostTrail(Math.max(-60, ghostTrailRef.current - (fadeProgress * 60)));
         }
+
+        if (levels.peak >= -0.1) {
+          if (clipTimerRef.current) {
+            clearTimeout(clipTimerRef.current);
+          }
+          setClipPulse(true);
+          clipTimerRef.current = setTimeout(() => {
+            setClipPulse(false);
+            clipTimerRef.current = null;
+          }, 650);
+        }
       }, UI_UPDATE_INTERVAL);
     });
 
-    // Cleanup on unmount
     return () => {
       unsubscribe();
       if (uiUpdateTimerRef.current) {
         clearTimeout(uiUpdateTimerRef.current);
       }
+      if (clipTimerRef.current) {
+        clearTimeout(clipTimerRef.current);
+        clipTimerRef.current = null;
+      }
     };
-  }, [trackId, isVisible]); // ✅ Only re-subscribe if trackId or visibility changes
+  }, [trackId, isVisible]);
 
-  // Convert dB to percentage (range: -60dB to +12dB → 0% to 100%)
-  const dbToPercent = (db) => {
-    const clampedDb = Math.max(-60, Math.min(12, db));
-    return ((clampedDb + 60) / 72) * 100;
-  };
-
-  // Get color based on dB level
-  const getColor = (db) => {
-    if (db > 0) return '#ef4444';       // Red (clipping)
-    if (db > -6) return '#f59e0b';      // Orange
-    if (db > -18) return '#eab308';     // Yellow
-    return '#22c55e';                    // Green (safe)
-  };
-
-  // ✅ useMemo for performance - only recalculate when values change
   const peakPercent = useMemo(() => dbToPercent(meterData.peak), [meterData.peak]);
   const rmsPercent = useMemo(() => dbToPercent(meterData.rms), [meterData.rms]);
   const peakHoldPercent = useMemo(() => dbToPercent(peakHold), [peakHold]);
   const ghostTrailPercent = useMemo(() => dbToPercent(ghostTrail), [ghostTrail]);
+  const crestValue = useMemo(() => Math.max(0, Math.max(-60, meterData.peak) - Math.max(-60, meterData.rms)), [meterData.peak, meterData.rms]);
 
   const peakColor = useMemo(() => getColor(meterData.peak), [meterData.peak]);
   const rmsColor = useMemo(() => getColor(meterData.rms), [meterData.rms]);
   const peakHoldColor = useMemo(() => getColor(peakHold), [peakHold]);
 
+  const classes = ['channel-meter', className].filter(Boolean).join(' ');
+
   return (
-    <div className="channel-meter">
+    <div className={classes}>
       <div className="channel-meter__bar">
-        {/* Ghost trail (fades over time) */}
+        <div className={`channel-meter__clip-indicator ${clipPulse ? 'is-active' : ''}`}>
+          CLIP
+        </div>
         {ghostTrailPercent > 0 && (
           <div
             className="channel-meter__ghost"
             style={{
-              height: `${ghostTrailPercent}%`,
+              transform: `scaleY(${ghostTrailPercent / 100})`,
+              transformOrigin: 'bottom',
+              height: '100%',
               backgroundColor: peakColor,
               opacity: 0.15
             }}
           />
         )}
-
-        {/* RMS level (background, darker) */}
         <div
           className="channel-meter__rms"
           style={{
-            height: `${rmsPercent}%`,
+            transform: `scaleY(${rmsPercent / 100})`,
+            transformOrigin: 'bottom',
+            height: '100%',
             backgroundColor: rmsColor,
             opacity: 0.4
           }}
         />
-
-        {/* Peak level (foreground, brighter) */}
         <div
           className="channel-meter__peak"
           style={{
-            height: `${peakPercent}%`,
+            transform: `scaleY(${peakPercent / 100})`,
+            transformOrigin: 'bottom',
+            height: '100%',
             backgroundColor: peakColor,
             boxShadow: `0 0 4px ${peakColor}`
           }}
         />
-
-        {/* Peak hold indicator (thin line that stays for 2 seconds) */}
         {peakHoldPercent > 0 && (
           <div
             className="channel-meter__peak-hold"
             style={{
-              bottom: `${peakHoldPercent}%`,
+              bottom: `${peakHoldPercent}%`, // Keep bottom for hold line (it's absolute)
               backgroundColor: peakHoldColor,
               boxShadow: `0 0 3px ${peakHoldColor}`
             }}
           />
         )}
       </div>
-
-      {/* dB scale markers (optional) */}
       <div className="channel-meter__scale">
-        <div className="channel-meter__scale-mark" style={{ bottom: '100%' }}>
-          <span>+12</span>
+        {SCALE_TICKS.map((db, i) => {
+          const percent = dbToPercent(db);
+          // Reduce DOM weight: only render labeled ticks or significantly spaced ones
+          const isLabeled = LABELED_SCALE_TICKS.has(db);
+          if (!isLabeled && i % 2 !== 0 && percent < 10) return null;
+
+          return (
+            <div
+              key={`legacy-scale-${db}`}
+              className={`channel-meter__scale-mark ${isLabeled ? 'channel-meter__scale-mark--label' : ''}`}
+              style={{ bottom: `${percent}%` }}
+            >
+              {isLabeled && <span>{db > 0 ? `+${db}` : db}</span>}
+            </div>
+          );
+        })}
+      </div>
+      <div className="channel-meter__telemetry-panel channel-meter__telemetry-panel--legacy">
+        <div className="channel-meter__telemetry-chip channel-meter__telemetry-chip--peak">
+          <strong>{formatDb(meterData.peak).padStart(5, ' ')}</strong>
         </div>
-        <div className="channel-meter__scale-mark" style={{ bottom: '83%' }}>
-          <span>0</span>
+        <div className="channel-meter__telemetry-chip channel-meter__telemetry-chip--rms">
+          <strong>{formatDb(meterData.rms).padStart(5, ' ')}</strong>
         </div>
-        <div className="channel-meter__scale-mark" style={{ bottom: '58%' }}>
-          <span>-18</span>
-        </div>
-        <div className="channel-meter__scale-mark" style={{ bottom: '0%' }}>
-          <span>-60</span>
+        <div className="channel-meter__telemetry-chip channel-meter__telemetry-chip--dyn">
+          <strong>{crestValue.toFixed(1).padStart(5, ' ')}</strong>
         </div>
       </div>
     </div>
   );
 };
 
-// ✅ React.memo prevents unnecessary re-renders when parent component updates
-// Only re-renders if trackId changes
-export const ChannelMeterMemo = React.memo(ChannelMeter, (prevProps, nextProps) => {
-  return prevProps.trackId === nextProps.trackId;
+export const ChannelMiniMeter = ({ trackId, isVisible = true }) => {
+  const rmsRef = useRef(null);
+  const peakRef = useRef(null);
+  const holdRef = useRef(null);
+
+  // Refs for current state to avoid closure staleness without re-renders
+  const stateRef = useRef({
+    peak: -60,
+    rms: -60,
+    peakHold: -60,
+    holdTimestamp: 0
+  });
+
+  const tickPercents = useMemo(
+    () => SCALE_TICKS.map(dbToPercent),
+    []
+  );
+
+  useEffect(() => {
+    if (!isVisible || !trackId) return () => { };
+
+    // Reset visual state when becoming visible or track changes
+    if (rmsRef.current) rmsRef.current.style.transform = 'scaleY(0)';
+    if (peakRef.current) peakRef.current.style.transform = 'scaleY(0)';
+    if (holdRef.current) holdRef.current.style.bottom = '0%';
+
+    // Reset internal state
+    stateRef.current = {
+      peak: -60,
+      rms: -60,
+      peakHold: -60,
+      holdTimestamp: 0
+    };
+
+    let animationFrameId;
+    let lastUpdate = 0;
+
+    const updateVisuals = (levels) => {
+      const now = performance.now();
+
+      // Throttle visual updates to ~30fps (33ms) to save main thread
+      if (now - lastUpdate < 33) {
+        return;
+      }
+      lastUpdate = now;
+
+      // Calculate Hold
+      if (levels.peak > stateRef.current.peakHold || now - stateRef.current.holdTimestamp > PEAK_HOLD_DURATION) {
+        stateRef.current.peakHold = levels.peak;
+        stateRef.current.holdTimestamp = now;
+      }
+
+      // Update State
+      stateRef.current.peak = levels.peak;
+      stateRef.current.rms = levels.rms;
+
+      // Update DOM directly with Transforms for performance
+      if (rmsRef.current) {
+        rmsRef.current.style.transform = `scaleY(${dbToPercent(levels.rms) / 100})`;
+        rmsRef.current.style.backgroundColor = getColor(levels.rms);
+      }
+      if (peakRef.current) {
+        peakRef.current.style.transform = `scaleY(${dbToPercent(levels.peak) / 100})`;
+        peakRef.current.style.backgroundColor = getColor(levels.peak);
+      }
+      if (holdRef.current) {
+        const holdPercent = dbToPercent(stateRef.current.peakHold);
+        holdRef.current.style.bottom = `${holdPercent}%`;
+        holdRef.current.style.backgroundColor = getColor(stateRef.current.peakHold);
+        // Hide hold if it's at the bottom
+        holdRef.current.style.display = holdPercent <= 0 ? 'none' : 'block';
+      }
+    };
+
+    const unsubscribe = meterService.subscribe(trackId, updateVisuals);
+
+    return () => {
+      unsubscribe();
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+      }
+    };
+  }, [trackId, isVisible]);
+
+  return (
+    <div className="channel-mini-meter" data-track={trackId}>
+      <div className="channel-mini-meter__grid">
+        {tickPercents.map((percent, index) => (
+          <div
+            key={`${percent}-${index}`}
+            className="channel-mini-meter__tick"
+            style={{ bottom: `${percent}%` }}
+          />
+        ))}
+      </div>
+      <div className="channel-mini-meter__rail">
+        <div
+          ref={rmsRef}
+          className="channel-mini-meter__rms"
+          style={{ height: '100%', transform: 'scaleY(0)', transformOrigin: 'bottom' }}
+        />
+        <div
+          ref={peakRef}
+          className="channel-mini-meter__peak"
+          style={{ height: '100%', transform: 'scaleY(0)', transformOrigin: 'bottom' }}
+        />
+        <div
+          ref={holdRef}
+          className="channel-mini-meter__hold"
+          style={{ bottom: '0%' }}
+        />
+      </div>
+    </div>
+  );
+};
+
+const ChannelMeterComponent = ({ trackId, isVisible = true, className = '' }) => {
+  const activeThemeId = useThemeStore(state => state.activeThemeId);
+
+  if (supportsOffscreenCanvas) {
+    return (
+      <ChannelMeterWorkerImpl
+        trackId={trackId}
+        isVisible={isVisible}
+        themeToken={activeThemeId}
+        className={className}
+      />
+    );
+  }
+
+  return (
+    <ChannelMeterLegacy
+      trackId={trackId}
+      isVisible={isVisible}
+      className={className}
+    />
+  );
+};
+
+export const ChannelMeterMemo = React.memo(ChannelMeterComponent, (prevProps, nextProps) => {
+  return (
+    prevProps.trackId === nextProps.trackId &&
+    prevProps.isVisible === nextProps.isVisible &&
+    prevProps.className === nextProps.className
+  );
 });
 
 export default ChannelMeterMemo;
+export const ChannelMeter = ChannelMeterComponent;

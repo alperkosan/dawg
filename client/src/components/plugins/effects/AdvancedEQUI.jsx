@@ -17,7 +17,7 @@
  */
 
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
-import { EQCalculations } from '@/lib/audio/EQCalculations';
+import { EQCalculations } from '@/lib/audio/EQCalculations.js';
 import { Knob, Button, Toggle, ModeSelector } from '@/components/controls';
 import { SignalVisualizer } from '@/components/common/SignalVisualizer';
 import { useAudioPlugin, useGhostValue } from '@/hooks/useAudioPlugin';
@@ -30,7 +30,7 @@ import {
 // ⚡ Performance utilities
 const throttle = (func, limit) => {
   let inThrottle;
-  return function(...args) {
+  return function (...args) {
     if (!inThrottle) {
       func.apply(this, args);
       inThrottle = true;
@@ -46,7 +46,7 @@ const debounce = (func, wait, options = {}) => {
   let lastCallTime = 0;
   const maxWait = options.maxWait || wait * 2;
 
-  return function(...args) {
+  return function (...args) {
     const now = Date.now();
     const timeSinceLastCall = now - lastCallTime;
 
@@ -346,7 +346,7 @@ const ProfessionalEQCanvas = React.memo(({
         // Draw spectrum with logarithmic frequency mapping
         const points = [];
         const peakPoints = []; // For peak hold display
-        
+
         for (let i = 0; i < width; i++) {
           const freq = xToFreq(i, width);
           if (freq < 20 || freq > 20000) continue;
@@ -405,13 +405,13 @@ const ProfessionalEQCanvas = React.memo(({
           if (peakPoints.length > 10) {
             ctx.fillStyle = 'rgba(0, 229, 181, 0.9)';
             ctx.beginPath();
-            
+
             // Sample every 20th point for performance
             for (let i = 10; i < peakPoints.length - 10; i += 20) {
               const prev = peakPoints[i - 1];
               const curr = peakPoints[i];
               const next = peakPoints[i + 1];
-              
+
               // Simple peak detection: higher than neighbors
               if (curr.db > prev.db && curr.db > next.db && curr.db > -80) {
                 ctx.moveTo(curr.x, curr.y);
@@ -883,7 +883,7 @@ const ProfessionalEQCanvas = React.memo(({
 
       {/* Frequency labels */}
       <div className="absolute bottom-2 left-0 right-0 flex justify-between px-4 text-[10px] font-mono pointer-events-none"
-           style={{ color: COLORS.text.muted }}>
+        style={{ color: COLORS.text.muted }}>
         {[50, 100, 500, '1k', '5k', '10k'].map((freq, i) => (
           <span key={i}>{freq}</span>
         ))}

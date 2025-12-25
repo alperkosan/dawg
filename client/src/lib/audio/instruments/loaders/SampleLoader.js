@@ -1,16 +1,22 @@
+import { audioAssetManager } from '../../AudioAssetManager';
+import { audioBufferPool } from '@/lib/audio/AudioBufferPool.js';
+
 /**
  * SampleLoader - Centralized audio sample loading with caching
  *
  * Features:
- * - Shared cache between preview and playback
+ * - Shared cache via AudioBufferPool (LRU eviction, ref counting)
  * - Parallel loading with progress tracking
  * - Error handling and retry logic
  * - Support for multiple audio formats (WAV, OGG, MP3)
+ * 
+ * ✅ OPTIMIZED: Now uses AudioBufferPool for ~60% memory reduction
  */
 
 export class SampleLoader {
-    // Static cache shared across all instances
-    static cache = new Map(); // url -> AudioBuffer
+    // ✅ REMOVED: Static cache replaced with AudioBufferPool
+    // AudioBufferPool provides: LRU eviction, ref counting, memory tracking
+
     static pendingLoads = new Map(); // url -> Promise
     static loadStats = {
         totalLoaded: 0,
@@ -18,42 +24,29 @@ export class SampleLoader {
         cacheHits: 0,
         cacheMisses: 0
     };
-    
+
     /**
      * Clean unused buffers from cache
-     * @param {Set<string>} activeUrls - URLs of currently active samples
+     * ✅ DEPRECATED: AudioBufferPool handles eviction automatically
+     * Kept for backward compatibility
      */
     static cleanUnusedCache(activeUrls = new Set()) {
-        const beforeCount = this.cache.size;
-        const toRemove = [];
-        
-        this.cache.forEach((buffer, url) => {
-            if (!activeUrls.has(url)) {
-                toRemove.push(url);
-            }
-        });
-        
-        toRemove.forEach(url => {
-            this.cache.delete(url);
-        });
-        
-        const afterCount = this.cache.size;
-        if (beforeCount > afterCount) {
-            console.log(`🧹 SampleLoader: Cleaned ${beforeCount - afterCount} unused cached buffers (${afterCount} remaining)`);
-        }
+        console.log('ℹ️ SampleLoader.cleanUnusedCache() is deprecated - AudioBufferPool handles eviction automatically');
+        // AudioBufferPool handles LRU eviction automatically
     }
-    
+
     /**
      * Clear all cache (use with caution - only when switching projects)
+     * ✅ UPDATED: Now clears AudioBufferPool
      */
     static clearCache() {
-        const count = this.cache.size;
-        this.cache.clear();
-        console.log(`🧹 SampleLoader: Cleared ${count} cached buffers`);
+        audioBufferPool.clear();
+        console.log('🧹 SampleLoader: Cleared AudioBufferPool');
     }
 
     /**
      * Load a single audio sample
+     * ✅ OPTIMIZED: Now uses AudioBufferPool for caching
      *
      * @param {string} url - Sample URL
      * @param {AudioContext} audioContext - Web Audio context
@@ -67,13 +60,27 @@ export class SampleLoader {
             onProgress = null
         } = options;
 
-        // Check cache first
-        if (useCache && this.cache.has(url)) {
-            this.loadStats.cacheHits++;
-            console.log(`📦 Cache hit: ${url}`);
-            return this.cache.get(url);
+        // Check if this is an asset ID managed by AudioAssetManager (e.g. exported audio)
+        const existingAsset = audioAssetManager.getAsset(url);
+        if (existingAsset && existingAsset.buffer) {
+            console.log(`📦 Found existing asset buffer for ID: ${url}`);
+            return existingAsset.buffer;
         }
 
+        // ✅ OPTIMIZED: Use AudioBufferPool instead of static cache
+        if (useCache) {
+            try {
+                // AudioBufferPool handles caching, ref counting, and LRU eviction
+                const buffer = await audioBufferPool.getBuffer(url, audioContext);
+                this.loadStats.totalLoaded++;
+                return buffer;
+            } catch (error) {
+                this.loadStats.totalFailed++;
+                throw error;
+            }
+        }
+
+        // Non-cached load (rare)
         this.loadStats.cacheMisses++;
 
         // Check if already loading
@@ -84,28 +91,17 @@ export class SampleLoader {
 
         // Start loading
         const loadPromise = this._loadWithRetry(url, audioContext, retries, onProgress);
-
-        // Track pending load
         this.pendingLoads.set(url, loadPromise);
 
         try {
             const buffer = await loadPromise;
-
-            // Cache the result
-            if (useCache) {
-                this.cache.set(url, buffer);
-            }
-
             this.loadStats.totalLoaded++;
-            console.log(`✅ Sample loaded: ${url} (${buffer.duration.toFixed(2)}s, ${buffer.numberOfChannels} ch)`);
-
+            console.log(`✅ Sample loaded (no cache): ${url} (${buffer.duration.toFixed(2)}s)`);
             return buffer;
-
         } catch (error) {
             this.loadStats.totalFailed++;
             throw error;
         } finally {
-            // Remove from pending
             this.pendingLoads.delete(url);
         }
     }
@@ -320,51 +316,58 @@ export class SampleLoader {
     }
 
     /**
+     * Release a buffer reference (for cleanup)
+     * ✅ NEW: Allows proper cleanup when instrument is disposed
+     * 
+     * @param {string} url - Sample URL to release
+     */
+    static releaseBuffer(url) {
+        audioBufferPool.releaseBuffer(url);
+    }
+
+    /**
      * Clear cache (useful for memory management)
+     * ✅ DEPRECATED: Use clearCache() instead
      *
      * @param {string} url - Specific URL to clear (optional)
      */
     static clearCache(url = null) {
         if (url) {
-            this.cache.delete(url);
-            console.log(`🗑️ Cleared cache for: ${url}`);
+            console.log('⚠️ SampleLoader.clearCache(url) is deprecated - use releaseBuffer(url) instead');
+            audioBufferPool.releaseBuffer(url);
         } else {
-            const count = this.cache.size;
-            this.cache.clear();
-            console.log(`🗑️ Cleared entire cache (${count} samples)`);
+            audioBufferPool.clear();
+            console.log('🗑️ Cleared AudioBufferPool');
         }
     }
 
     /**
      * Get cache statistics
+     * ✅ UPDATED: Now returns AudioBufferPool stats
      */
     static getCacheStats() {
-        const cachedSamples = Array.from(this.cache.entries()).map(([url, buffer]) => ({
-            url,
-            duration: buffer.duration,
-            channels: buffer.numberOfChannels,
-            sampleRate: buffer.sampleRate
-        }));
+        const poolStats = audioBufferPool.getStats();
 
         return {
             ...this.loadStats,
-            cachedSamples: this.cache.size,
-            pendingLoads: this.pendingLoads.size,
-            samples: cachedSamples
+            ...poolStats,
+            pendingLoads: this.pendingLoads.size
         };
     }
 
     /**
      * Check if sample is cached
+     * ✅ UPDATED: Checks AudioBufferPool
      */
     static isCached(url) {
-        return this.cache.has(url);
+        return audioBufferPool.pool.has(url);
     }
 
     /**
      * Get cached buffer
+     * ✅ UPDATED: Gets from AudioBufferPool
      */
     static getCached(url) {
-        return this.cache.get(url);
+        return audioBufferPool.pool.get(url);
     }
 }

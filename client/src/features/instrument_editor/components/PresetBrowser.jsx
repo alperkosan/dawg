@@ -4,41 +4,125 @@
  */
 
 import { useState, useEffect } from 'react';
-import { Save, Download, Trash2, Search, Star, StarOff } from 'lucide-react';
+import { Save, Download, Trash2, Search, Star, StarOff, Upload, Sparkles } from 'lucide-react';
+import { usePanelsStore } from '../../../store/usePanelsStore';
 import useInstrumentEditorStore from '../../../store/useInstrumentEditorStore';
+import { AudioEngineGlobal } from '@/lib/core/AudioEngineGlobal';
+import PresetUploadModal from '../../preset_library/components/PresetUploadModal';
+import ConfirmationModal from '@/components/common/ConfirmationModal';
+import { useAuthStore } from '@/store/useAuthStore';
 import './PresetBrowser.css';
 
-const PresetBrowser = ({ instrumentData }) => {
+const PresetBrowser = ({
+  targetData,
+  presetType = 'instrument',
+  engineType,
+  onApplyPreset
+}) => {
+  const user = useAuthStore(state => state.user);
   const [presets, setPresets] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [newPresetName, setNewPresetName] = useState('');
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [favorites, setFavorites] = useState(new Set());
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [uploadPresetData, setUploadPresetData] = useState(null);
+  const [filter, setFilter] = useState('all'); // 'all' | 'local' | 'downloaded'
+  const [confirmationModal, setConfirmationModal] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => { },
+    variant: 'default'
+  });
+
+  // Default engine type if not provided
+  const effectiveEngineType = engineType || targetData?.type || 'unknown';
 
   const loadParameter = useInstrumentEditorStore((state) => state.loadParameter);
   const updateParameter = useInstrumentEditorStore((state) => state.updateParameter);
 
-  // Load presets from localStorage on mount
+  // Load presets from localStorage on mount and when user changes
   useEffect(() => {
-    loadPresets();
+    loadAllPresets();
     loadFavorites();
-  }, [instrumentData.type]);
+  }, [effectiveEngineType, presetType, user?.id]);
 
-  const loadPresets = () => {
-    const storageKey = `presets_${instrumentData.type}`;
-    const stored = localStorage.getItem(storageKey);
-    if (stored) {
+  const getStorageKeys = () => {
+    const userId = user?.id || 'guest';
+    return {
+      localKey: `presets_${presetType}_${effectiveEngineType}_${userId}`,
+      communityKey: 'downloaded_presets', // ✅ Unified across all users and components
+      favoritesKey: `favorites_${presetType}_${effectiveEngineType}_${userId}`
+    };
+  };
+
+  const loadAllPresets = () => {
+    const { localKey, communityKey } = getStorageKeys();
+
+    let combined = [];
+
+    // 1. Load Local Presets
+    const localStored = localStorage.getItem(localKey);
+    if (localStored) {
       try {
-        setPresets(JSON.parse(stored));
+        combined = JSON.parse(localStored);
       } catch (e) {
-        console.error('Failed to load presets:', e);
-        setPresets([]);
+        console.error('Failed to load local presets:', e);
       }
     }
+
+    // 2. Load Community Downloaded Presets
+    const communityStored = localStorage.getItem(communityKey);
+    if (communityStored) {
+      try {
+        const allDownloaded = JSON.parse(communityStored);
+
+        // 🔧 Migration: Add missing presetType to old downloads
+        let needsMigration = false;
+        const migratedDownloads = allDownloaded.map(p => {
+          if (!p.presetType) {
+            needsMigration = true;
+            // Default to 'instrument' for backwards compatibility
+            return { ...p, presetType: 'instrument' };
+          }
+          return p;
+        });
+
+        // Save migrated data back to localStorage
+        if (needsMigration) {
+          localStorage.setItem(communityKey, JSON.stringify(migratedDownloads));
+          console.log('✅ Migrated downloaded presets with missing presetType');
+        }
+
+        const filtered = migratedDownloads.filter(p => {
+          // Robust case-insensitive match
+          const engineMatch = p.engineType?.toLowerCase() === effectiveEngineType?.toLowerCase();
+          const typeMatch = p.presetType === presetType;
+
+          return typeMatch && engineMatch;
+        });
+
+        const communityPresets = filtered.map(p => ({
+          ...p,
+          data: p.presetData,
+          isCommunity: true,
+          createdAt: p.downloadedAt ? new Date(p.downloadedAt).getTime() : Date.now()
+        }));
+
+        combined = [...communityPresets, ...combined];
+      } catch (e) {
+        console.error('Failed to load community presets:', e);
+      }
+    }
+
+    console.log(`📂 Loaded ${combined.length} total presets (${combined.filter(p => p.isCommunity).length} community)`);
+    setPresets(combined);
   };
 
   const loadFavorites = () => {
-    const stored = localStorage.getItem('preset_favorites');
+    const { favoritesKey } = getStorageKeys();
+    const stored = localStorage.getItem(favoritesKey);
     if (stored) {
       try {
         setFavorites(new Set(JSON.parse(stored)));
@@ -46,17 +130,22 @@ const PresetBrowser = ({ instrumentData }) => {
         console.error('Failed to load favorites:', e);
         setFavorites(new Set());
       }
+    } else {
+      setFavorites(new Set());
     }
   };
 
   const savePresets = (newPresets) => {
-    const storageKey = `presets_${instrumentData.type}`;
-    localStorage.setItem(storageKey, JSON.stringify(newPresets));
+    const { localKey } = getStorageKeys();
+    // Only save local presets (not community)
+    const localPresets = newPresets.filter(p => !p.isCommunity);
+    localStorage.setItem(localKey, JSON.stringify(localPresets));
     setPresets(newPresets);
   };
 
   const saveFavorites = (newFavorites) => {
-    localStorage.setItem('preset_favorites', JSON.stringify([...newFavorites]));
+    const { favoritesKey } = getStorageKeys();
+    localStorage.setItem(favoritesKey, JSON.stringify([...newFavorites]));
     setFavorites(newFavorites);
   };
 
@@ -70,9 +159,10 @@ const PresetBrowser = ({ instrumentData }) => {
     const preset = {
       id: `preset_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       name: newPresetName.trim(),
-      type: instrumentData.type,
+      presetType,
+      engineType: effectiveEngineType,
       createdAt: Date.now(),
-      data: { ...instrumentData },
+      data: { ...targetData },
     };
 
     const newPresets = [...presets, preset];
@@ -85,30 +175,100 @@ const PresetBrowser = ({ instrumentData }) => {
   };
 
   const handleLoadPreset = (preset) => {
-    // Apply all preset data to current instrument
-    Object.entries(preset.data).forEach(([key, value]) => {
-      if (key !== 'id' && key !== 'name') {
-        updateParameter(key, value);
-      }
-    });
+    if (onApplyPreset) {
+      onApplyPreset(preset.data);
+      console.log('✅ Preset applied via callback:', preset.name);
+      return;
+    }
 
-    console.log('✅ Preset loaded:', preset.name);
+    // Default behavior for instruments (legacy compatibility)
+    if (presetType === 'instrument') {
+      Object.entries(preset.data).forEach(([key, value]) => {
+        if (key !== 'id' && key !== 'name' && key !== 'type' && key !== 'mixerTrackId') {
+          updateParameter(key, value);
+        }
+      });
+
+      // Synchronize audio engine for instruments
+      const audioEngine = AudioEngineGlobal.get();
+      const targetId = targetData.id;
+      if (audioEngine && targetId) {
+        const instrument = audioEngine.instruments.get(targetId);
+        if (instrument && typeof instrument.updateParameters === 'function') {
+          const updateObj = {
+            oscillatorSettings: preset.data.oscillators,
+            filterSettings: preset.data.filter,
+            filterEnvelope: preset.data.filterEnvelope,
+            amplitudeEnvelope: preset.data.amplitudeEnvelope,
+            lfos: preset.data.lfos,
+            voiceMode: preset.data.voiceMode,
+            portamento: preset.data.portamento,
+            legato: preset.data.legato
+          };
+          instrument.updateParameters(updateObj);
+        }
+      }
+    }
+
+    console.log('✅ Preset loaded and synced:', preset.name);
   };
 
   const handleDeletePreset = (presetId) => {
-    if (!confirm('Delete this preset?')) return;
+    const preset = presets.find(p => p.id === presetId);
 
-    const newPresets = presets.filter(p => p.id !== presetId);
-    savePresets(newPresets);
+    if (preset?.isCommunity) {
+      // Community preset: only remove from localStorage
+      setConfirmationModal({
+        isOpen: true,
+        title: 'Remove Downloaded Preset',
+        message: 'Remove this downloaded preset from your local library? You can re-download it anytime from the community library.',
+        variant: 'warning',
+        onConfirm: () => {
+          const { communityKey } = getStorageKeys();
+          const stored = localStorage.getItem(communityKey);
+          if (stored) {
+            const allDownloaded = JSON.parse(stored);
+            const updated = allDownloaded.filter(p => p.id !== presetId);
+            localStorage.setItem(communityKey, JSON.stringify(updated));
+          }
 
-    // Also remove from favorites
-    if (favorites.has(presetId)) {
-      const newFavorites = new Set(favorites);
-      newFavorites.delete(presetId);
-      saveFavorites(newFavorites);
+          const newPresets = presets.filter(p => p.id !== presetId);
+          savePresets(newPresets);
+
+          // Also remove from favorites
+          if (favorites.has(presetId)) {
+            const newFavorites = new Set(favorites);
+            newFavorites.delete(presetId);
+            saveFavorites(newFavorites);
+          }
+
+          setConfirmationModal({ ...confirmationModal, isOpen: false });
+          console.log('🗑️ Downloaded preset removed');
+        }
+      });
+    } else {
+      // Local preset: delete permanently
+      setConfirmationModal({
+        isOpen: true,
+        title: 'Delete Preset',
+        message: `Delete "${preset.name}" permanently? This action cannot be undone.`,
+        variant: 'danger',
+        onConfirm: () => {
+          const newPresets = presets.filter(p => p.id !== presetId);
+          savePresets(newPresets);
+
+          // Also remove from favorites
+          if (favorites.has(presetId)) {
+            const newFavorites = new Set(favorites);
+            newFavorites.delete(presetId);
+            saveFavorites(newFavorites);
+          }
+
+          setConfirmationModal({ ...confirmationModal, isOpen: false });
+          console.log('🗑️ Preset deleted permanently');
+        }
+      });
     }
-
-    console.log('🗑️ Preset deleted');
   };
 
   const handleToggleFavorite = (presetId) => {
@@ -132,10 +292,59 @@ const PresetBrowser = ({ instrumentData }) => {
     URL.revokeObjectURL(url);
   };
 
-  // Filter presets by search query
-  const filteredPresets = presets.filter(preset =>
-    preset.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const handleSaveToLibrary = async () => {
+    try {
+      if (!targetData) {
+        const { apiClient } = await import('@/services/api.js');
+        apiClient.showToast('No preset data available', 'warning', 3000);
+        return;
+      }
+
+      let dataToUpload = { ...targetData };
+
+      // If it's an instrument and we're in the instrument editor, 
+      // we might want to extract only the sound settings if targetData contains UI state
+      if (presetType === 'instrument' && targetData.type) {
+        // Special handling for legacy objects that might have metadata
+        dataToUpload = {
+          oscillators: targetData.oscillators || [],
+          filter: targetData.filter || {},
+          filterEnvelope: targetData.filterEnvelope || {},
+          amplitudeEnvelope: targetData.amplitudeEnvelope || {},
+          lfos: targetData.lfos || [],
+          modulation: targetData.modulation || [],
+          voiceMode: targetData.voiceMode || 'poly',
+          portamento: targetData.portamento || 0,
+          legato: targetData.legato || false,
+          masterVolume: targetData.masterVolume || 0.7
+        };
+      }
+
+      setUploadPresetData({
+        presetType,
+        engineType: effectiveEngineType,
+        presetData: dataToUpload
+      });
+      setShowUploadModal(true);
+
+      console.log(`✅ Opening ${presetType} upload modal with data:`, dataToUpload);
+    } catch (error) {
+      console.error('Failed to export preset:', error);
+      const { apiClient } = await import('@/services/api.js');
+      apiClient.showToast('Failed to export preset', 'error', 3000);
+    }
+  };
+
+  // Filter presets by search query and filter type
+  const filteredPresets = presets.filter(preset => {
+    const matchesSearch = preset.name.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesFilter =
+      filter === 'all' ? true :
+        filter === 'local' ? !preset.isCommunity :
+          filter === 'downloaded' ? preset.isCommunity :
+            true;
+    return matchesSearch && matchesFilter;
+  });
 
   // Sort: favorites first, then by date
   const sortedPresets = [...filteredPresets].sort((a, b) => {
@@ -146,21 +355,45 @@ const PresetBrowser = ({ instrumentData }) => {
     return b.createdAt - a.createdAt;
   });
 
+  const localCount = presets.filter(p => !p.isCommunity).length;
+  const downloadedCount = presets.filter(p => p.isCommunity).length;
+
   return (
     <div className="preset-browser">
-      {/* Header with Save button */}
+      {/* Header with Save buttons */}
       <div className="preset-browser__header">
         <h3 className="preset-browser__title">
           Preset Manager
-          <span className="preset-browser__count">({presets.length})</span>
+          <span className="preset-browser__count">({localCount} local, {downloadedCount} downloaded)</span>
         </h3>
-        <button
-          className="preset-browser__save-btn"
-          onClick={() => setShowSaveDialog(true)}
-        >
-          <Save size={14} />
-          Save Current
-        </button>
+        <div className="preset-browser__header-actions">
+          <button
+            className="preset-browser__save-btn"
+            onClick={() => setShowSaveDialog(true)}
+            title="Save current settings as a local preset"
+          >
+            <Save size={14} />
+            Save Current
+          </button>
+          <button
+            className="preset-browser__upload-btn"
+            onClick={handleSaveToLibrary}
+            title="Upload current settings to community library"
+          >
+            <Upload size={16} />
+            Upload to Community
+          </button>
+          <button
+            className="preset-browser__community-btn"
+            onClick={() => {
+              usePanelsStore.getState().setPresetLibraryOpen(true);
+            }}
+            title="Browse community presets library"
+          >
+            <Sparkles size={16} />
+            Browse Community
+          </button>
+        </div>
       </div>
 
       {/* Save Dialog */}
@@ -188,6 +421,28 @@ const PresetBrowser = ({ instrumentData }) => {
           </div>
         </div>
       )}
+
+      {/* Filter Tabs */}
+      <div className="preset-browser__filters">
+        <button
+          className={`preset-browser__filter ${filter === 'all' ? 'active' : ''}`}
+          onClick={() => setFilter('all')}
+        >
+          All ({presets.length})
+        </button>
+        <button
+          className={`preset-browser__filter ${filter === 'local' ? 'active' : ''}`}
+          onClick={() => setFilter('local')}
+        >
+          Local ({localCount})
+        </button>
+        <button
+          className={`preset-browser__filter ${filter === 'downloaded' ? 'active' : ''}`}
+          onClick={() => setFilter('downloaded')}
+        >
+          Downloaded ({downloadedCount})
+        </button>
+      </div>
 
       {/* Search */}
       <div className="preset-browser__search">
@@ -232,8 +487,16 @@ const PresetBrowser = ({ instrumentData }) => {
               </button>
 
               <div className="preset-browser__info" onClick={() => handleLoadPreset(preset)}>
-                <div className="preset-browser__name">{preset.name}</div>
+                <div className="preset-browser__name">
+                  {preset.name}
+                  {preset.isCommunity && (
+                    <span className="preset-browser__community-tag">
+                      {preset.author || preset.userName || 'Community'}
+                    </span>
+                  )}
+                </div>
                 <div className="preset-browser__date">
+                  {preset.isCommunity ? 'Downloaded ' : ''}
                   {new Date(preset.createdAt).toLocaleDateString()}
                 </div>
               </div>
@@ -261,8 +524,30 @@ const PresetBrowser = ({ instrumentData }) => {
 
       {/* Footer Info */}
       <div className="preset-browser__footer">
-        💡 Click a preset to load • Export to share with others
+        💡 Click a preset to load • Export to share with others • Save to Library for community
       </div>
+
+      {/* Upload Modal */}
+      {showUploadModal && uploadPresetData && (
+        <PresetUploadModal
+          isOpen={showUploadModal}
+          onClose={() => {
+            setShowUploadModal(false);
+            setUploadPresetData(null);
+          }}
+          initialData={uploadPresetData}
+        />
+      )}
+
+      {/* Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={confirmationModal.isOpen}
+        title={confirmationModal.title}
+        message={confirmationModal.message}
+        variant={confirmationModal.variant}
+        onConfirm={confirmationModal.onConfirm}
+        onCancel={() => setConfirmationModal({ ...confirmationModal, isOpen: false })}
+      />
     </div>
   );
 };

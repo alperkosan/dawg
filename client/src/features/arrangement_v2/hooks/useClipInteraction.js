@@ -22,8 +22,8 @@
 import { useState, useCallback, useRef } from 'react';
 // ✅ PHASE 1: Store Consolidation - Use unified store
 import { useArrangementStore } from '@/store/useArrangementStore';
+import { usePlaybackStore } from '@/store/usePlaybackStore';
 import { snapToGrid } from '../renderers/gridRenderer';
-import { getTimelineController } from '@/lib/core/TimelineControllerSingleton'; // ✅ Unified transport system
 
 // ============================================================================
 // CONSTANTS
@@ -66,7 +66,7 @@ export function useClipInteraction(viewport, tracks, clips, constants, dimension
 
   // Double-click detection
   const lastClickRef = useRef({ time: 0, clipId: null });
-  
+
   // ✅ FIX: Track if double-click was handled (for preventing other interactions)
   const doubleClickHandledRef = useRef(false);
 
@@ -92,7 +92,6 @@ export function useClipInteraction(viewport, tracks, clips, constants, dimension
     resizeHandle: null, // 'left' | 'right'
     resizeStartCanvasX: 0,
     resizeStartScreenX: 0,
-    originalClipStates: new Map(), // Map<clipId, {startTime, duration}> for resize
 
     // Fade state
     fadingClipIds: [], // Array of clip IDs being faded together
@@ -620,7 +619,7 @@ export function useClipInteraction(viewport, tracks, clips, constants, dimension
 
         // For audio clips: adjust sample offset when resizing from left
         if (clip.type === 'audio') {
-          const currentBPM = TransportManagerSingleton.getBPM?.() || 140;
+          const currentBPM = usePlaybackStore.getState().bpm || 140;
           const secondsPerBeat = 60 / currentBPM;
           const startTimeDelta = newStartTime - original.startTime;
           const startTimeDeltaSeconds = startTimeDelta * secondsPerBeat;
@@ -628,7 +627,7 @@ export function useClipInteraction(viewport, tracks, clips, constants, dimension
           newSampleOffset = (clip.sampleOffset || 0) + startTimeDeltaSeconds;
           newSampleOffset = Math.max(0, newSampleOffset); // Can't be negative
         }
-        
+
         // ✅ FIX: For pattern clips, preserve pattern offset when resizing
         // Pattern offset determines where in the pattern to start playing, which should NOT change
         // when resizing the clip in the arrangement (only changes on split)
@@ -650,7 +649,7 @@ export function useClipInteraction(viewport, tracks, clips, constants, dimension
 
         // No sampleOffset change when resizing from right
         newSampleOffset = clip.sampleOffset;
-        
+
         // ✅ FIX: For pattern clips, preserve pattern offset when resizing from right
         // Pattern offset determines where in the pattern to start playing, which should NOT change
         // when resizing the clip duration (only changes on split)
@@ -703,7 +702,7 @@ export function useClipInteraction(viewport, tracks, clips, constants, dimension
         if (ghost.clip.type === 'audio' && ghost.newSampleOffset !== undefined) {
           updates.sampleOffset = ghost.newSampleOffset;
         }
-        
+
         // ✅ FIX: For pattern clips, update patternOffset if changed
         if (ghost.clip.type === 'pattern' && ghost.newPatternOffset !== undefined) {
           updates.patternOffset = ghost.newPatternOffset;
@@ -1370,7 +1369,7 @@ export function useClipInteraction(viewport, tracks, clips, constants, dimension
     cancelResize,
     cancelFade,
     cancelGain,
-    
+
     // ✅ FIX: Export double-click handler flag for preventing other interactions
     wasDoubleClick: () => {
       const handled = doubleClickHandledRef.current;

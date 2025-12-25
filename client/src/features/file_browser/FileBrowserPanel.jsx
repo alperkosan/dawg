@@ -17,13 +17,13 @@ function formatBytes(bytes) {
     return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
 }
 
-export default function FileBrowserPanel() {
-    const { 
-        fileTree, 
-        selectedNode, 
-        setSelectedNode, 
-        createFolder, 
-        deleteNode, 
+export default function FileBrowserPanel({ onRequestClose }) {
+    const {
+        fileTree,
+        selectedNode,
+        setSelectedNode,
+        createFolder,
+        deleteNode,
         renameNode,
         moveNode,
         uploadFiles,
@@ -35,7 +35,7 @@ export default function FileBrowserPanel() {
         quota,
         userAssetsLoaded
     } = useFileBrowserStore();
-    
+
     // ✅ DYNAMIC: Load audio manifest on mount
     useEffect(() => {
         if (!manifestLoaded) {
@@ -45,7 +45,7 @@ export default function FileBrowserPanel() {
 
     // ✅ FIX: Get auth state to react to login changes
     const { isAuthenticated, isGuest } = useAuthStore();
-    
+
     // ✅ FIX: Load storage quota, user assets, and system assets when authenticated (on mount and when auth state changes)
     useEffect(() => {
         const loadBackendData = async () => {
@@ -56,7 +56,7 @@ export default function FileBrowserPanel() {
             } catch (error) {
                 console.log('⚠️ Failed to load system assets:', error);
             }
-            
+
             // Only load user-specific data if authenticated (not guest)
             if (isAuthenticated && !isGuest) {
                 try {
@@ -70,16 +70,16 @@ export default function FileBrowserPanel() {
                 }
             } else {
                 // ✅ FIX: Clear user data when logged out or in guest mode
-                useFileBrowserStore.setState({ 
-                    userAssets: [], 
+                useFileBrowserStore.setState({
+                    userAssets: [],
                     userAssetsLoaded: false,
-                    quota: null 
+                    quota: null
                 });
             }
         };
         loadBackendData();
     }, [loadStorageQuota, loadUserAssets, isAuthenticated, isGuest]); // ✅ FIX: Add isAuthenticated and isGuest as dependencies
-    
+
     const [contextMenu, setContextMenu] = useState(null);
     const [isDragOver, setIsDragOver] = useState(false); // Sürükleme efekti için state
     const [uploadingFiles, setUploadingFiles] = useState(new Map()); // Map<filename, { status: 'uploading' | 'success' | 'error', progress?: number }>
@@ -99,7 +99,7 @@ export default function FileBrowserPanel() {
             const folderPath = selectedNode?.type === 'folder' ? selectedNode.folderPath || '/' : '/';
             // ✅ FIX: Only use parentFolderId if it's a valid UUID (user-created folders have UUIDs)
             let parentFolderId = null;
-            if (selectedNode?.type === 'folder' && selectedNode.id && selectedNode.id !== 'root' && 
+            if (selectedNode?.type === 'folder' && selectedNode.id && selectedNode.id !== 'root' &&
                 selectedNode.id !== 'folder-dawg-library' && selectedNode.id !== 'folder-user-samples' &&
                 !selectedNode.id.startsWith('folder-dawg-')) {
                 // Only use parentFolderId for user-created folders (they have UUIDs)
@@ -109,19 +109,19 @@ export default function FileBrowserPanel() {
                     parentFolderId = selectedNode.id;
                 }
             }
-            
+
             // Initialize upload states
             const newUploadingFiles = new Map();
             Array.from(files).forEach(file => {
                 newUploadingFiles.set(file.name, { status: 'uploading', progress: 0 });
             });
             setUploadingFiles(newUploadingFiles);
-            
+
             // Show info toast for multiple files
             if (files.length > 1) {
                 apiClient.showToast(`Uploading ${files.length} files...`, 'info', 2000);
             }
-            
+
             // Upload files sequentially
             for (const file of Array.from(files)) {
                 try {
@@ -130,26 +130,26 @@ export default function FileBrowserPanel() {
                     if (!mimeType.startsWith('audio/')) {
                         console.warn(`⚠️ File ${file.name} has non-audio mime type: ${mimeType}, using 'audio/wav'`);
                     }
-                    
+
                     // Update status to uploading
                     setUploadingFiles(prev => {
                         const newMap = new Map(prev);
                         newMap.set(file.name, { status: 'uploading', progress: 50 });
                         return newMap;
                     });
-                    
+
                     await uploadFile(file, folderPath, parentFolderId);
-                    
+
                     // Update status to success
                     setUploadingFiles(prev => {
                         const newMap = new Map(prev);
                         newMap.set(file.name, { status: 'success', progress: 100 });
                         return newMap;
                     });
-                    
+
                     // Show success toast
                     apiClient.showToast(`✅ ${file.name} uploaded successfully`, 'success', 3000);
-                    
+
                     // Remove from uploading list after 2 seconds
                     setTimeout(() => {
                         setUploadingFiles(prev => {
@@ -160,17 +160,17 @@ export default function FileBrowserPanel() {
                     }, 2000);
                 } catch (error) {
                     console.error(`❌ Failed to upload ${file.name}:`, error);
-                    
+
                     // Update status to error
                     setUploadingFiles(prev => {
                         const newMap = new Map(prev);
                         newMap.set(file.name, { status: 'error', progress: 0 });
                         return newMap;
                     });
-                    
+
                     // Show error toast
                     apiClient.showToast(`❌ Failed to upload ${file.name}: ${error.message}`, 'error', 5000);
-                    
+
                     // Remove from uploading list after 5 seconds
                     setTimeout(() => {
                         setUploadingFiles(prev => {
@@ -215,7 +215,7 @@ export default function FileBrowserPanel() {
     const handleDrop = (e) => {
         e.preventDefault();
         setIsDragOver(false);
-        
+
         // Only handle external file drops (not internal file browser drags)
         const isInternalDrag = e.dataTransfer.types.includes('application/x-dawg-file-node');
         if (!isInternalDrag) {
@@ -233,18 +233,18 @@ export default function FileBrowserPanel() {
         let options = [];
 
         // ✅ DYNAMIC: Check if node is part of DAWG Library (read-only)
-        const isDAWGLibrary = node.id === 'folder-dawg-library' || 
-                              node.id?.startsWith('folder-dawg-') ||
-                              (node.id?.startsWith('file-') && node.readOnly === true);
+        const isDAWGLibrary = node.id === 'folder-dawg-library' ||
+            node.id?.startsWith('folder-dawg-') ||
+            (node.id?.startsWith('file-') && node.readOnly === true);
 
         if (node.type === 'folder' && !isDAWGLibrary) {
             // ✅ FIX: Check if it's a system folder (DAWG Library, My Samples, etc.)
-            const isSystemFolder = node.id === 'folder-dawg-library' || 
-                                  node.id === 'folder-user-samples' ||
-                                  node.id?.startsWith('folder-dawg-');
+            const isSystemFolder = node.id === 'folder-dawg-library' ||
+                node.id === 'folder-user-samples' ||
+                node.id?.startsWith('folder-dawg-');
             // ✅ FIX: Always create folder at root level, not inside system folders
-            options.push({ 
-                label: 'New Folder', 
+            options.push({
+                label: 'New Folder',
                 action: async () => {
                     try {
                         await createFolder(isSystemFolder ? 'root' : node.id);
@@ -259,7 +259,7 @@ export default function FileBrowserPanel() {
 
         if (node.id !== 'root' && !isDAWGLibrary) {
             options.push({ type: 'separator' });
-            
+
             // ✅ NEW: Move option (only for files, not folders)
             if (node.type === FILE_SYSTEM_TYPES.FILE && !node.readOnly) {
                 options.push({
@@ -276,18 +276,18 @@ export default function FileBrowserPanel() {
                     }
                 });
             }
-            
-            options.push({ 
-                label: 'Rename', 
+
+            options.push({
+                label: 'Rename',
                 action: () => {
                     const newName = prompt(`'${node.name}' için yeni isim girin:`, node.name);
                     if (newName && newName.trim()) {
                         renameNode(node.id, newName.trim());
                     }
-                } 
+                }
             });
-            options.push({ 
-                label: 'Delete', 
+            options.push({
+                label: 'Delete',
                 action: () => {
                     // ÖNEMLİ: Gerçek bir uygulamada burada özel bir onay penceresi kullanılmalıdır.
                     // Proje kuralları gereği window.confirm'den kaçınılmıştır.
@@ -297,17 +297,18 @@ export default function FileBrowserPanel() {
         }
         return options;
     };
-    
+
     // Sürükleme durumuna göre dinamik sınıf
     const asideClasses = `file-browser ${isDragOver ? 'file-browser--drag-over' : ''}`;
 
     return (
-        <aside 
+        <aside
             className={asideClasses}
             onDragEnter={handleDragEnter}
             onDragLeave={handleDragLeave}
             onDragOver={handleDragOver}
             onDrop={handleDrop}
+            style={{ width: '100%', height: '100%' }}
         >
             {isDragOver && (
                 <div className="file-browser__drop-overlay">
@@ -324,7 +325,7 @@ export default function FileBrowserPanel() {
                                 {formatBytes(quota.used_bytes)} / {formatBytes(quota.quota_bytes)}
                             </span>
                             <div className="file-browser__quota-bar">
-                                <div 
+                                <div
                                     className="file-browser__quota-fill"
                                     style={{ width: `${Math.min((quota.used_bytes / quota.quota_bytes) * 100, 100)}%` }}
                                 />
@@ -336,9 +337,9 @@ export default function FileBrowserPanel() {
                     <button onClick={async () => {
                         try {
                             // ✅ FIX: Always create folder at root level, not inside system folders
-                            const isSystemFolder = selectedNode?.id === 'folder-dawg-library' || 
-                                                  selectedNode?.id === 'folder-user-samples' ||
-                                                  selectedNode?.id?.startsWith('folder-dawg-');
+                            const isSystemFolder = selectedNode?.id === 'folder-dawg-library' ||
+                                selectedNode?.id === 'folder-user-samples' ||
+                                selectedNode?.id?.startsWith('folder-dawg-');
                             const parentId = (selectedNode?.type === 'folder' && !isSystemFolder) ? selectedNode.id : 'root';
                             await createFolder(parentId);
                         } catch (error) {
@@ -386,7 +387,7 @@ export default function FileBrowserPanel() {
                                     <div className="file-browser__upload-item-name">{filename}</div>
                                     {fileState.status === 'uploading' && (
                                         <div className="file-browser__upload-item-progress">
-                                            <div 
+                                            <div
                                                 className="file-browser__upload-item-progress-bar"
                                                 style={{ width: `${fileState.progress || 0}%` }}
                                             />
@@ -400,7 +401,7 @@ export default function FileBrowserPanel() {
             )}
 
             <div className="file-browser__preview">
-              <FileBrowserPreview fileNode={selectedNode} />
+                <FileBrowserPreview fileNode={selectedNode} />
             </div>
 
             {contextMenu && (

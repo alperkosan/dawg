@@ -5,9 +5,13 @@ import { v4 as uuidv4 } from 'uuid';
 // ✅ Empty project - no initial data
 import { INSTRUMENT_TYPES } from '@/config/constants';
 import { AudioContextService } from '@/lib/services/AudioContextService';
-import { createDefaultSampleChopPattern } from '@/lib/audio/instruments/sample/sampleChopUtils';
+import { InstrumentService } from '@/lib/services/InstrumentService';
+import { MixerService } from '@/lib/services/MixerService';
+import { AudioEngineGlobal } from '@/lib/core/AudioEngineGlobal';
+import { createDefaultSampleChopPattern } from '@/lib/audio/instruments/sample/sampleChopUtils.js';
 import { storeManager } from './StoreManager';
 import { useMixerStore } from './useMixerStore';
+import { useArrangementStore } from './useArrangementStore';
 
 export const useInstrumentsStore = create((set, get) => ({
   instruments: [], // ✅ Empty project - start with no instruments
@@ -52,7 +56,7 @@ export const useInstrumentsStore = create((set, get) => ({
     let counter = 2;
     // Aynı isimde başka bir enstrüman varsa, ismin sonuna sayı ekle.
     while (instruments.some(inst => inst.name === newName)) {
-        newName = `${baseName} ${counter++}`;
+      newName = `${baseName} ${counter++}`;
     }
 
     // ✅ PERFORMANCE: Use StoreManager to find unused mixer track (only if not already specified)
@@ -64,14 +68,14 @@ export const useInstrumentsStore = create((set, get) => ({
     if (mixerTrackId === 'master' || !mixerTrackId) {
       const mixerState = useMixerStore.getState();
       const instrumentName = newName?.toLowerCase().trim();
-      
+
       if (instrumentName) {
         // Find mixer track with matching name
-        const matchingTrack = mixerState.mixerTracks.find(track => 
-          track.id !== 'master' && 
+        const matchingTrack = mixerState.mixerTracks.find(track =>
+          track.id !== 'master' &&
           track.name?.toLowerCase().trim() === instrumentName
         );
-        
+
         if (matchingTrack) {
           mixerTrackId = matchingTrack.id;
           console.log(`🔗 ✅ Auto-matched instrument "${newName}" to mixer track "${matchingTrack.id}" (${matchingTrack.name})`);
@@ -83,49 +87,61 @@ export const useInstrumentsStore = create((set, get) => ({
       const firstUnusedTrack = storeManager.findUnusedMixerTrack();
 
       if (!firstUnusedTrack) {
-          // ✅ FIX: Create a new mixer track instead of falling back to master
-          // Master channel doesn't have a MixerInsert, so routing to it won't work
-          console.log("🎛️ No unused mixer tracks available, creating new track...");
-          
-          // Create new mixer track
-          const newTrackId = useMixerStore.getState().addTrack('track');
-          mixerTrackId = newTrackId;
-          
-          console.log(`✅ Created new mixer track: ${newTrackId}`);
+        // ✅ FIX: Create a new mixer track instead of falling back to master
+        // Master channel doesn't have a MixerInsert, so routing to it won't work
+        console.log("🎛️ No unused mixer tracks available, creating new track...");
+
+        // Create new mixer track
+        const newTrackId = useMixerStore.getState().addTrack('track');
+        mixerTrackId = newTrackId;
+
+        console.log(`✅ Created new mixer track: ${newTrackId}`);
       } else {
-          mixerTrackId = firstUnusedTrack.id;
-          
-          // ✅ FIX: Ensure mixer insert exists for this track
-          // The track exists in store but insert might not exist in AudioEngine yet
-          const audioEngine = AudioContextService.getAudioEngine();
-          if (audioEngine && !audioEngine.mixerInserts?.has(mixerTrackId)) {
-            console.log(`🎛️ Creating missing mixer insert for existing track: ${mixerTrackId}`);
-            AudioContextService.createMixerInsert(mixerTrackId, firstUnusedTrack.name);
-          }
+        mixerTrackId = firstUnusedTrack.id;
+
+        // ✅ FIX: Ensure mixer insert exists for this track
+        // The track exists in store but insert might not exist in AudioEngine yet
+        const audioEngine = AudioEngineGlobal.get();
+        if (audioEngine && !audioEngine.mixerInserts?.has(mixerTrackId)) {
+          console.log(`🎛️ Creating missing mixer insert for existing track: ${mixerTrackId}`);
+          MixerService.createMixerInsert(mixerTrackId, firstUnusedTrack.name);
+        }
       }
     }
 
     // ✅ Build instrument based on type
+    // ✅ FIX: Ensure unique ID - if provided ID already exists, generate new one
+    let instrumentId = instrumentData.id;
+    if (instrumentId && instruments.some(inst => inst.id === instrumentId)) {
+      // ID already exists, generate unique one
+      console.warn(`⚠️ Instrument ID "${instrumentId}" already exists, generating unique ID`);
+      instrumentId = `inst-${uuidv4()}`;
+    } else if (!instrumentId) {
+      // No ID provided, generate one
+      instrumentId = `inst-${uuidv4()}`;
+    }
+
     const newInstrument = {
-        id: instrumentData.id || `inst-${uuidv4()}`,
-        name: newName,
-        type: instrumentData.type || 'sample',
-        color: instrumentData.color || '#888888',
-        notes: [],
-        mixerTrackId,
-        envelope: { attack: 0.01, decay: 0.1, sustain: 1.0, release: 1.0 },
-        precomputed: {},
-        effectChain: [],
-        isMuted: false,
-        cutItself: false,
-        pianoRoll: true,
-        // Type-specific fields
-        ...(instrumentData.url && { url: instrumentData.url }),
-        ...(instrumentData.multiSamples && { multiSamples: instrumentData.multiSamples }),
-        ...(instrumentData.presetName && { presetName: instrumentData.presetName }),
-        ...(instrumentData.baseNote && { baseNote: instrumentData.baseNote }),
-        ...(instrumentData.assetId && { assetId: instrumentData.assetId }),
-        ...(instrumentData.audioBuffer && { audioBuffer: instrumentData.audioBuffer })
+      id: instrumentId,
+      name: newName,
+      type: instrumentData.type || 'sample',
+      color: instrumentData.color || '#888888',
+      notes: [],
+      mixerTrackId,
+      envelope: instrumentData.envelope || { attack: 0.001, decay: 0.01, sustain: 1.0, release: 0.01 }, // ✅ DAW standard: Default values (not applied unless envelopeEnabled is true)
+      envelopeEnabled: instrumentData.envelopeEnabled !== undefined ? instrumentData.envelopeEnabled : false, // ✅ FL Studio behavior: Envelope OFF by default, preserves sample's natural character
+      precomputed: {},
+      effectChain: instrumentData.effectChain || [],
+      isMuted: instrumentData.isMuted !== undefined ? instrumentData.isMuted : false, // ✅ FIX: Preserve mute state from saved project
+      cutItself: instrumentData.cutItself !== undefined ? instrumentData.cutItself : false, // ✅ FIX: Preserve cutItself state
+      pianoRoll: instrumentData.pianoRoll !== undefined ? instrumentData.pianoRoll : true,
+      // Type-specific fields
+      ...(instrumentData.url && { url: instrumentData.url }),
+      ...(instrumentData.multiSamples && { multiSamples: instrumentData.multiSamples }),
+      ...(instrumentData.presetName && { presetName: instrumentData.presetName }),
+      ...(instrumentData.baseNote && { baseNote: instrumentData.baseNote }),
+      ...(instrumentData.assetId && { assetId: instrumentData.assetId }),
+      ...(instrumentData.audioBuffer && { audioBuffer: instrumentData.audioBuffer })
     };
 
     const resolvedType = newInstrument.type || INSTRUMENT_TYPES.SAMPLE;
@@ -180,10 +196,11 @@ export const useInstrumentsStore = create((set, get) => ({
       });
     }
 
-    // SES MOTORUNA KOMUT GÖNDER: Yeni enstrümanı oluştur.
-    AudioContextService.createInstrument(newInstrument);
+    // ✅ NOTE: Instrument creation in AudioEngine is now handled automatically
+    // by the store subscription in AudioContextService._setupStoreSubscriptions()
+    // which calls EngineStateSyncService.syncInstrumentsToMixerInserts()
   },
-  
+
   /**
    * Bir enstrümanın Mute (Susturma) durumunu değiştirir.
    * @param {string} instrumentId - Susturulacak enstrümanın ID'si.
@@ -199,9 +216,9 @@ export const useInstrumentsStore = create((set, get) => ({
         return inst;
       })
     }));
-    
+
     // SES MOTORUNA KOMUT GÖNDER: Enstrümanın mute durumunu anında güncelle.
-    AudioContextService.setInstrumentMute(instrumentId, isMuted);
+    InstrumentService.setMute(instrumentId, isMuted);
   },
 
   /**
@@ -240,11 +257,11 @@ export const useInstrumentsStore = create((set, get) => ({
     if (shouldReconcile) {
       console.log(`[STORE->ENGINE] Reconcile komutu gönderiliyor: ${instrumentId}`);
       set(state => ({ processingEffects: { ...state.processingEffects, [instrumentId]: true } }));
-      
+
       try {
         // SES MOTORUNA KOMUT GÖNDER: Buffer'ı yeniden işle ve güncelle.
-        const newBuffer = await AudioContextService.reconcileInstrument(instrumentId, updatedInstrument);
-        
+        const newBuffer = await InstrumentService.reconcile(instrumentId, updatedInstrument);
+
         // Sample Editor açıksa, güncellenmiş buffer'ı anında göster.
         // ✅ PERFORMANCE: Use StoreManager for panel updates
         storeManager.updatePanelBuffer(instrumentId, newBuffer);
@@ -255,7 +272,7 @@ export const useInstrumentsStore = create((set, get) => ({
       }
     } else {
       // SES MOTORUNA KOMUT GÖNDER: Sadece değişen parametreleri motorla senkronla.
-      AudioContextService.updateInstrumentParameters(instrumentId, newParams);
+      InstrumentService.updateParameters(instrumentId, newParams);
     }
   },
 
@@ -270,6 +287,38 @@ export const useInstrumentsStore = create((set, get) => ({
     storeManager.updatePatternNotes(instrumentId, newNotes);
 
     // NOT: Ses motorunun yeniden zamanlanması artık ArrangementStore'dan tetikleniyor.
+  },
+
+  removeInstrument: (instrumentId) => {
+    const { instruments } = get();
+    const instrument = instruments.find(i => i.id === instrumentId);
+
+    if (!instrument) return;
+
+    const audioEngine = AudioEngineGlobal.get();
+    if (audioEngine) {
+      audioEngine.removeInstrument(instrumentId);
+    }
+
+    const arrangementStore = useArrangementStore.getState();
+    Object.values(arrangementStore.patterns).forEach(pattern => {
+      if (pattern.data[instrumentId]) {
+        delete pattern.data[instrumentId];
+      }
+    });
+
+    if (instrument.mixerTrackId) {
+      const mixerStore = useMixerStore.getState();
+      mixerStore.removeTrack?.(instrument.mixerTrackId);
+    }
+
+    set({
+      instruments: instruments.filter(i => i.id !== instrumentId),
+      channelOrder: get().channelOrder.filter(id => id !== instrumentId),
+      selectedChannels: get().selectedChannels.filter(id => id !== instrumentId)
+    });
+
+    console.log(`🗑️ Removed instrument: ${instrument.name}`);
   },
 
   // ========================================================

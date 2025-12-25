@@ -49,3 +49,15 @@
   grid-column: 1 / -1;
 }
 
+/* Virtualized feed styles */
+.feed-content--virtualized {
+  position: relative;
+  overflow: hidden;
+}
+
+.feed-content__sentinel {
+  height: 1px;
+  width: 100%;
+  pointer-events: none;
+}
+

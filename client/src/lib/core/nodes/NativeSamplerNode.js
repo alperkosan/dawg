@@ -15,6 +15,17 @@ export class NativeSamplerNode {
         this.cutItself = instrumentData.cutItself;
         this.pitchOffset = instrumentData.pitchOffset || 0;
         this.baseNote = instrumentData.baseNote || 60; // Default C4 for samples
+        this.mixerTrackId = instrumentData.mixerTrackId; // For debug/routing visibility
+        
+        // ✅ FL Studio behavior: Envelope enabled state
+        // Fallback: if envelopeEnabled is undefined but envelope data exists, enable it
+        if (instrumentData.envelopeEnabled !== undefined) {
+            this.envelopeEnabled = instrumentData.envelopeEnabled === true;
+        } else if (instrumentData.envelope) {
+            this.envelopeEnabled = true;
+        } else {
+            this.envelopeEnabled = false;
+        }
 
         // ✅ NEW: Effect chain support
         this.effectChain = [];
@@ -38,16 +49,42 @@ export class NativeSamplerNode {
             reverse: false,
 
             // Envelope (ms / percent)
-            attack: 0,            // ms
-            decay: 0,             // ms
-            sustain: 100,         // percent
-            release: 50,          // ms
+            // ✅ DAW standard: Short envelopes for one-shot samples (drums/percussions)
+            attack: 1,            // ms (1ms minimum to prevent clicks)
+            decay: 10,            // ms (short for punchy drums)
+            sustain: 100,         // percent (100% for full sustain)
+            release: 10,          // ms (short for tight one-shot samples)
 
             // Filter
             filterType: 'lowpass',
             filterCutoff: 20000,
             filterResonance: 0,
         };
+
+        // ✅ HYDRATE ENVELOPE FROM INSTRUMENT DATA (ms / percent)
+        // Project data may store ADSR either top-level (attack/decay/...) or under envelope{}
+        const envSrc = instrumentData.envelope || instrumentData;
+        if (envSrc) {
+            if (envSrc.attack !== undefined) this.params.attack = envSrc.attack;
+            if (envSrc.decay !== undefined) this.params.decay = envSrc.decay;
+            if (envSrc.sustain !== undefined) this.params.sustain = envSrc.sustain;
+            if (envSrc.release !== undefined) this.params.release = envSrc.release;
+        }
+
+        // Debug: hydrate log
+        if (import.meta.env?.DEV) {
+            console.log('🧪 NativeSamplerNode ctor hydrated envelope:', {
+                id: this.id,
+                name: this.name,
+                envelopeEnabled: this.envelopeEnabled,
+                attack: this.params.attack,
+                decay: this.params.decay,
+                sustain: this.params.sustain,
+                release: this.params.release,
+                mixerTrackId: this.mixerTrackId,
+                effectChainLength: (instrumentData.effectChain || []).length
+            });
+        }
 
         // Sample chop state
         this.sampleChop = instrumentData.sampleChop
@@ -70,7 +107,17 @@ export class NativeSamplerNode {
         this.polyphonyGainReduction = false; // Disabled - RAW signal philosophy
         this.internalOutput.gain.value = 1.0; // Fixed unity gain
 
-        this.activeSources = new Set();
+        // ✅ PHASE 4: Track last automation values to avoid redundant updates
+        this._lastAutomationValues = {
+            volume: null,
+            pan: null,
+            expression: null
+        };
+
+        // ✅ NEW: Store source metadata for fade-out support
+        // Map<source, { source, gainNode, envelopeGain }> for fade-out during loop restart
+        this.activeSources = new Set(); // Keep Set for backward compatibility
+        this.activeSourceMetadata = new Map(); // source -> { source, gainNode, envelopeGain }
 
         // Reverse buffer cache
         this._reversedBuffer = null;
@@ -95,7 +142,9 @@ export class NativeSamplerNode {
                 mode: this.sampleChopMode,
                 loopEnabled: this.sampleChop?.loopEnabled,
                 sliceCount: this.sampleChop?.slices?.length || 0,
-                useChop
+                useChop,
+                mixerTrackId: this.mixerTrackId,
+                cutItself: this.cutItself
             });
         }
 
@@ -110,14 +159,49 @@ export class NativeSamplerNode {
             return;
         }
 
-        // ✅ DEBUG: Log kick triggers
-        if (this.id === 'inst-1') {
-            console.log('🥁 Kick triggerNote!', { pitch, velocity: normalizedVelocity, hasBuffer: !!this.buffer });
+        // ✅ cutItself: sadece cutItself true ise choke uygula
+        // ⚠️ FIX: Instead of stopping source immediately (which cuts reverb tail),
+        // apply quick fade-out to preserve reverb tail while allowing new note to cut through
+        if (this.cutItself && this.activeSources.size > 0) {
+            if (import.meta.env?.DEV) {
+                console.log(`✂️ [cutItself] ${this.name} fading out ${this.activeSources.size} active sources before new note`, {
+                    name: this.name,
+                    cutItself: this.cutItself,
+                    activeSourcesCount: this.activeSources.size,
+                    startTime: startTime.toFixed(3),
+                    mixerTrackId: this.mixerTrackId,
+                    hasEffectChain: this.effectChain?.length > 0
+                });
         }
 
-        // ✅ DÜZELTME: cutItself özelliği
-        if (this.cutItself) {
-            this.stopAll(startTime);
+            // Quick fade-out (10-20ms) to preserve reverb tail while cutting through
+            const fadeTime = 0.015; // 15ms quick fade
+            const stopTime = startTime;
+            
+            this.activeSources.forEach(source => {
+                try {
+                    const metadata = this.activeSourceMetadata.get(source);
+                    if (metadata && metadata.gainNode) {
+                        // Apply quick fade-out to gainNode (preserves reverb tail)
+                        const currentGain = metadata.gainNode.gain.value;
+                        metadata.gainNode.gain.cancelScheduledValues(stopTime);
+                        metadata.gainNode.gain.setValueAtTime(currentGain, stopTime);
+                        metadata.gainNode.gain.linearRampToValueAtTime(0.0001, stopTime + fadeTime);
+                        
+                        // Stop source after fade completes (allows reverb tail to continue)
+                        source.stop(stopTime + fadeTime);
+                    } else {
+                        // Fallback: immediate stop if no metadata
+                        source.stop(stopTime);
+                    }
+                } catch(e) {
+                    // Already stopped, ignore error
+                }
+            });
+            
+            // Clear active sources after fade-out
+            this.activeSources.clear();
+            this.activeSourceMetadata.clear();
         }
 
         const source = this.context.createBufferSource();
@@ -203,20 +287,28 @@ export class NativeSamplerNode {
 
         // Envelope gain (per-note)
         const envelopeGain = this.context.createGain();
+        
+        // ✅ FL Studio behavior: Check if envelope is enabled
+        // If envelope is OFF, use minimal envelope (just click prevention) and longer release for effect tails
+        const envelopeEnabled = this.envelopeEnabled;
+        
         const sustainLinear = Math.max(0, Math.min(1, (this.params.sustain ?? 100) / 100));
-        const attackSec = Math.max(0, (this.params.attack || 0) / 1000);
-        const decaySec = Math.max(0, (this.params.decay || 0) / 1000);
-        const releaseSec = Math.max(0.005, (this.params.release || 50) / 1000);
+        const attackSec = envelopeEnabled ? Math.max(0.001, (this.params.attack || 1) / 1000) : 0.001; // 1ms click prevention
+        const decaySec = envelopeEnabled ? Math.max(0, (this.params.decay || 0) / 1000) : 0;
+        // ✅ CRITICAL: If envelope is OFF, use longer release (200ms) to allow reverb/delay tails
+        const releaseSrc = this.params.release || 50; // ms
 
-        // Backward-compatible behavior: if ADSR is effectively neutral (A=0,D=0,S=100),
-        // don't impose an envelope ramp; keep unity pass-through.
-        const envelopeNeutral = attackSec === 0 && decaySec === 0 && Math.abs(sustainLinear - 1.0) < 1e-6;
+        // Backward-compatible behavior: if ADSR is effectively neutral (A=0,D=0,S=100) OR envelope disabled,
+        // don't impose an envelope ramp; keep unity pass-through (with minimal click prevention)
+        const envelopeNeutral = !envelopeEnabled || (attackSec <= 0.001 && decaySec === 0 && Math.abs(sustainLinear - 1.0) < 1e-6);
         if (envelopeNeutral) {
-            envelopeGain.gain.setValueAtTime(1.0, startTime);
+            // ✅ Minimal envelope: quick ramp from 0 to 1 for click prevention
+            envelopeGain.gain.setValueAtTime(0.0001, startTime);
+            envelopeGain.gain.linearRampToValueAtTime(1.0, startTime + attackSec);
         } else {
             // Start at 0, ramp to peak, then decay to sustain
             const peak = 1.0;
-            envelopeGain.gain.setValueAtTime(0, startTime);
+            envelopeGain.gain.setValueAtTime(0.0001, startTime);
             if (attackSec > 0) {
                 envelopeGain.gain.linearRampToValueAtTime(peak, startTime + attackSec);
             } else {
@@ -228,6 +320,9 @@ export class NativeSamplerNode {
                 envelopeGain.gain.setValueAtTime(peak * sustainLinear, startTime + attackSec);
             }
         }
+
+        // Defer releaseSec calculation until we know desiredDurationSec (later)
+        let releaseSec = null;
 
         // Filter (optional)
         let lastNode = envelopeGain;
@@ -325,10 +420,14 @@ export class NativeSamplerNode {
             source.loopEnd = Math.max(0, Math.min(1, this.params.loopEnd === undefined ? 1 : this.params.loopEnd)) * durationSec;
         }
 
-        // Start with region trimming
-        source.start(startTime, regionStart, this.params.loop ? undefined : regionLength);
+        // Start playback (do not pass duration param; stop will be scheduled explicitly)
+        source.start(startTime, regionStart);
         
-        // ✅ DÜZELTME: Duration handling with Native Time Utils
+        // =====================
+        // Stop / Release scheduling (dynamic tail)
+        // =====================
+        // Compute desired note length: explicit duration if provided, otherwise region length
+        let desiredDurationSec = regionLength;
         if (duration) {
             try {
                 let durationInSeconds;
@@ -338,72 +437,168 @@ export class NativeSamplerNode {
                     const currentBpm = usePlaybackStore.getState().bpm;
                     durationInSeconds = NativeTimeUtils.parseTime(duration, currentBpm);
                 }
-                
                 if (isFinite(durationInSeconds) && durationInSeconds > 0) {
-                    // Release envelope before stop if envelope is active
-                    const stopAt = startTime + durationInSeconds;
-                    if (envelopeNeutral) {
-                        source.stop(stopAt);
-                    } else {
-                        const currentGain = gainNode.gain.value;
-                        gainNode.gain.setValueAtTime(currentGain, stopAt);
-                        gainNode.gain.linearRampToValueAtTime(0, stopAt + releaseSec);
-                        source.stop(stopAt + releaseSec);
-                    }
+                    desiredDurationSec = durationInSeconds;
                 }
             } catch (e) { 
                 console.warn(`[NativeSamplerNode] Geçersiz süre formatı: ${duration}`, e);
-                // Default 1 saniye duration
-                const stopAt = startTime + 1;
-                if (envelopeNeutral) {
-                    source.stop(stopAt);
+            }
+        }
+
+        // Dynamic release calculation
+        if (releaseSec === null) {
+            if (envelopeEnabled) {
+                releaseSec = Math.max(0.005, releaseSrc / 1000);
                 } else {
-                    gainNode.gain.setValueAtTime(gainNode.gain.value, stopAt);
-                    gainNode.gain.linearRampToValueAtTime(0, stopAt + releaseSec);
+                // Envelope OFF: use generous dynamic tail based on note duration
+                // Minimum 1.5s, or 120% of note length, or releaseSrc
+                const tailFromLength = desiredDurationSec * 1.2;
+                const tailFromSrc = releaseSrc / 1000;
+                releaseSec = Math.max(1.5, tailFromLength, tailFromSrc);
+            }
+        }
+
+        // If looping, do not schedule stop
+        if (!this.params.loop) {
+            const stopAt = startTime + desiredDurationSec;
+            // Always apply release ramp (also when envelopeNeutral) to feed effects/reverb tail
+            const currentGain = gainNode.gain.value;
+            gainNode.gain.setValueAtTime(currentGain, stopAt);
+            gainNode.gain.linearRampToValueAtTime(0.0001, stopAt + releaseSec);
                     source.stop(stopAt + releaseSec);
-                }
+
+            if (import.meta.env?.DEV) {
+                console.log('🧪 NativeSamplerNode stop scheduled:', {
+                    id: this.id,
+                    name: this.name,
+                    loop: this.params.loop,
+                    stopAt: stopAt.toFixed(3),
+                    releaseSec: releaseSec,
+                    releaseMs: (releaseSec * 1000).toFixed(3),
+                    desiredDurationSec: desiredDurationSec.toFixed(3),
+                    envelopeEnabled,
+                    envelopeNeutral,
+                    tailFromLength: (desiredDurationSec * 0.6).toFixed(3),
+                    tailFromSrc: (releaseSrc / 1000).toFixed(3),
+                    releaseSrcMs: releaseSrc,
+                    mixerTrackId: this.mixerTrackId,
+                    effectChainLength: this.effectChain.length
+                });
             }
         }
 
         this.activeSources.add(source);
+        // ✅ NEW: Store metadata for fade-out support
+        this.activeSourceMetadata.set(source, { source, gainNode, envelopeGain });
 
         source.onended = () => {
             this.activeSources.delete(source);
+            this.activeSourceMetadata.delete(source);
             gainNode.disconnect();
             source.disconnect();
         };
     }
 
-    // ✅ Release all notes gracefully (for pause)
-    allNotesOff(time = null) {
+    // ✅ Release all notes gracefully (for pause/loop restart)
+    allNotesOff(time = null, fadeTime = null) {
         const stopTime = time !== null ? time : this.context.currentTime;
-        console.log(`🎹 NativeSampler allNotesOff: ${this.name} (${this.activeSources.size} active)`);
-
-        // For samples, allNotesOff is same as stopAll (no release envelope)
-        this.activeSources.forEach(source => {
-            try {
-                source.stop(stopTime);
-            } catch(e) {
-                // Already stopped, ignore error
-            }
+        console.log(`🎹 NativeSampler allNotesOff: ${this.name} (${this.activeSources.size} active)`, {
+            fadeTime: fadeTime ? `${(fadeTime * 1000).toFixed(1)}ms` : 'none',
+            metadataSize: this.activeSourceMetadata?.size || 0
         });
+
+        // ✅ NEW: Support fadeTime for smooth loop restart (prevents clicks on long samples)
+        if (fadeTime !== null && fadeTime > 0) {
+            let fadeApplied = 0;
+            let fadeSkipped = 0;
+            // Apply fade-out to each active source using BOTH envelopeGain and gainNode
+            // ✅ CRITICAL FIX: For envelopeNeutral samples (like 808), envelopeGain is at 1.0
+            // We need to fade-out envelopeGain (which controls the signal) AND gainNode (final output)
+            this.activeSources.forEach(source => {
+                try {
+                    const metadata = this.activeSourceMetadata.get(source);
+                    if (metadata && metadata.envelopeGain && metadata.gainNode) {
+                        // ✅ FIX: Fade-out envelopeGain first (controls the main signal)
+                        if (metadata.envelopeGain.gain) {
+                            const envelopeCurrentGain = metadata.envelopeGain.gain.value;
+                            metadata.envelopeGain.gain.cancelScheduledValues(stopTime);
+                            metadata.envelopeGain.gain.setValueAtTime(envelopeCurrentGain, stopTime);
+                            metadata.envelopeGain.gain.linearRampToValueAtTime(0.0001, stopTime + fadeTime);
+                        }
+                        // ✅ FIX: Also fade-out gainNode (final output stage)
+                        if (metadata.gainNode.gain) {
+                            const gainNodeCurrentGain = metadata.gainNode.gain.value;
+                            metadata.gainNode.gain.cancelScheduledValues(stopTime);
+                            metadata.gainNode.gain.setValueAtTime(gainNodeCurrentGain, stopTime);
+                            metadata.gainNode.gain.linearRampToValueAtTime(0.0001, stopTime + fadeTime);
+                        }
+                        fadeApplied++;
+                    } else {
+                        fadeSkipped++;
+                        if (import.meta.env.DEV) {
+                            console.warn(`⚠️ NativeSampler allNotesOff: No metadata/envelopeGain/gainNode for source`, {
+                                hasMetadata: !!metadata,
+                                hasEnvelopeGain: !!(metadata?.envelopeGain),
+                                hasGainNode: !!(metadata?.gainNode)
+                            });
+                        }
+                    }
+                    // Stop source after fade
+                    source.stop(stopTime + fadeTime);
+                } catch(e) {
+                    // Already stopped, ignore error
+                    if (import.meta.env.DEV) {
+                        console.warn(`⚠️ NativeSampler allNotesOff: Error during fade-out`, e);
+                    }
+                }
+            });
+            if (import.meta.env.DEV && (fadeApplied > 0 || fadeSkipped > 0)) {
+                console.log(`🎹 NativeSampler fade-out: ${fadeApplied} applied, ${fadeSkipped} skipped, stop at ${(stopTime + fadeTime).toFixed(3)}s`);
+            }
+        } else {
+            // Immediate stop (no fade)
+            this.activeSources.forEach(source => {
+                try {
+                    source.stop(stopTime);
+                } catch(e) {
+                    // Already stopped, ignore error
+                }
+            });
+        }
+        
         this.activeSources.clear();
+        this.activeSourceMetadata.clear();
         this._stopSampleChopPlayback();
     }
 
     // ✅ PANIC: Instant stop (for emergency stop button)
     stopAll(time = 0) {
         const stopTime = time || this.context.currentTime;
-        console.log(`🛑 NativeSampler stopAll: ${this.name} (${this.activeSources.size} active)`);
+        if (import.meta.env?.DEV) {
+            console.log(`🛑 [stopAll] ${this.name}:`, {
+                name: this.name,
+                activeSourcesCount: this.activeSources.size,
+                stopTime: stopTime.toFixed(3),
+                currentTime: this.context.currentTime.toFixed(3),
+                cutItself: this.cutItself,
+                mixerTrackId: this.mixerTrackId,
+                envelopeEnabled: this.envelopeEnabled,
+                hasEffectChain: this.effectChain?.length > 0
+            });
+        }
 
-        this.activeSources.forEach(source => {
+        this.activeSources.forEach((source, index) => {
             try {
+                if (import.meta.env?.DEV) {
+                    console.log(`  → Stopping source ${index} at ${stopTime.toFixed(3)}`);
+                }
                 source.stop(stopTime);
             } catch(e) {
                 // Already stopped, ignore error
             }
         });
         this.activeSources.clear();
+        this.activeSourceMetadata.clear();
         this._stopSampleChopPlayback();
     }
 
@@ -515,8 +710,17 @@ export class NativeSamplerNode {
         }
 
         if (params.cutItself !== undefined) {
+            const oldValue = this.cutItself;
             this.cutItself = params.cutItself;
-            console.log(`✂️ Updated cutItself: ${params.cutItself}`);
+            if (import.meta.env?.DEV) {
+                console.log(`✂️ [NativeSamplerNode] Updated cutItself:`, {
+                    name: this.name,
+                    id: this.id,
+                    oldValue,
+                    newValue: params.cutItself,
+                    activeSourcesCount: this.activeSources.size
+                });
+            }
         }
 
         // Map UI fields
@@ -543,6 +747,13 @@ export class NativeSamplerNode {
         if (params.decay !== undefined) this.params.decay = params.decay;
         if (params.sustain !== undefined) this.params.sustain = params.sustain;
         if (params.release !== undefined) this.params.release = params.release;
+        
+        // ✅ FL Studio behavior: Update envelope enabled state
+        // This is critical for reverb/delay tails to work correctly
+        if (params.envelopeEnabled !== undefined) {
+            this.envelopeEnabled = params.envelopeEnabled === true;
+            console.log(`🎚️ Updated envelopeEnabled: ${this.envelopeEnabled}`);
+        }
 
         if (params.filterType !== undefined) this.params.filterType = params.filterType;
         if (params.filterCutoff !== undefined) this.params.filterCutoff = params.filterCutoff;
@@ -576,6 +787,71 @@ export class NativeSamplerNode {
     // ✅ UTILITY: Convert dB to linear
     dbToLinear(db) {
         return Math.pow(10, db / 20);
+    }
+
+    // ✅ PHASE 4: Apply automation (compatible with AutomationScheduler)
+    /**
+     * Apply automation parameters (volume, pan, expression, etc.)
+     * @param {Object} params - Automation parameters
+     * @param {number} [params.volume] - Volume (0-1 normalized)
+     * @param {number} [params.pan] - Pan (-1 to 1)
+     * @param {number} [params.expression] - Expression (0-1 normalized)
+     * @param {number} [params.filterCutoff] - Filter cutoff (0-127)
+     * @param {number} [params.filterResonance] - Filter resonance (0-127)
+     * @param {number} [time] - AudioContext time to apply (optional)
+     */
+    applyAutomation(params, time = null) {
+        const now = time !== null ? time : this.context.currentTime;
+
+        // Volume automation (0-1 normalized to gain)
+        if (params.volume !== undefined) {
+            const clampedVolume = Math.max(0, Math.min(1, params.volume));
+            
+            // ✅ OPTIMIZATION: Skip update if value hasn't changed (within tolerance)
+            const tolerance = 0.001; // 0.1% tolerance to avoid floating point issues
+            const lastVolume = this._lastAutomationValues.volume;
+            const volumeChanged = lastVolume === null || Math.abs(clampedVolume - lastVolume) >= tolerance;
+            
+            if (volumeChanged && this.internalOutput) {
+                // Smooth transition to avoid clicks
+                this.internalOutput.gain.cancelScheduledValues(now);
+                this.internalOutput.gain.setTargetAtTime(clampedVolume, now, 0.01);
+                
+                // Update last value
+                this._lastAutomationValues.volume = clampedVolume;
+                
+                // ✅ DEBUG: Log volume automation (always for sample-based instruments, occasionally for others)
+                const isSampleBased = this.id.includes('hihat') || this.id.includes('snare') || this.id.includes('808') || this.id.includes('kick');
+                if (isSampleBased || Math.random() < 0.05) { // Always log for sample-based instruments, 5% chance for others
+                    console.log(`🎚️ NativeSamplerNode.applyAutomation [${this.id}]: volume=${clampedVolume.toFixed(3)}`);
+                }
+            }
+        }
+
+        // Pan automation (-1 to 1)
+        if (params.pan !== undefined) {
+            this.params.pan = Math.max(-1, Math.min(1, params.pan));
+            // Note: Pan is applied per-voice in triggerNote, not here
+        }
+
+        // Expression automation (0-1 normalized, similar to volume)
+        if (params.expression !== undefined) {
+            // Expression affects volume multiplicatively
+            const clampedExpression = Math.max(0, Math.min(1, params.expression));
+            if (this.internalOutput && params.volume === undefined) {
+                // Only apply expression if volume wasn't already set
+                this.internalOutput.gain.cancelScheduledValues(now);
+                this.internalOutput.gain.setTargetAtTime(clampedExpression, now, 0.01);
+            }
+        }
+
+        // Filter automation
+        if (params.filterCutoff !== undefined) {
+            this.params.filterCutoff = Math.max(20, Math.min(20000, params.filterCutoff));
+        }
+        if (params.filterResonance !== undefined) {
+            this.params.filterResonance = Math.max(0, Math.min(40, params.filterResonance));
+        }
     }
 
     // =====================
@@ -938,6 +1214,13 @@ export class NativeSamplerNode {
 
         for (const effectData of effectChainData) {
             try {
+                // ✅ CRITICAL FIX: Skip bypassed effects
+                // This ensures effects load with their saved bypass state
+                if (effectData.bypass === true) {
+                    console.log(`⏭️ Skipping bypassed effect: ${effectData.type}`);
+                    continue;
+                }
+
                 const effect = EffectFactory.deserialize(effectData, this.context);
                 if (!effect) {
                     console.warn(`Failed to create effect: ${effectData.type}`);

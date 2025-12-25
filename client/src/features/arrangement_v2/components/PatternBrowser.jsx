@@ -90,7 +90,7 @@ export function PatternBrowser() {
                 <div className="pattern-info">
                   <div className="pattern-name">{pattern.name}</div>
                   <div className="pattern-details">
-                    {noteCount} notes • {pattern.length || 16} steps
+                    {noteCount} notes • {pattern.settings?.length || pattern.length || 64} steps
                   </div>
                 </div>
               </div>

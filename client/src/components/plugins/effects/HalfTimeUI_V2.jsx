@@ -22,7 +22,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import PluginContainerV2 from '../container/PluginContainerV2';
 import { TwoPanelLayout } from '../layout/TwoPanelLayout';
-import { Knob } from '@/components/controls';
+import { Knob, Toggle } from '@/components/controls';
 import { getCategoryColors } from '../PluginDesignSystem';
 import { useParameterBatcher } from '@/services/ParameterBatcher';
 import { useRenderer } from '@/services/CanvasRenderManager';
@@ -224,7 +224,8 @@ const HalfTimeUI_V2 = ({ trackId, effect, effectNode, definition }) => {
     grainSize = 100,
     grainDensity = 8,
     pitchLock = 1,
-    mix = 100
+    mix = 100,
+    reverse = 0
   } = effect.settings || {};
 
   // Local state
@@ -235,6 +236,7 @@ const HalfTimeUI_V2 = ({ trackId, effect, effectNode, definition }) => {
   const [localGrainDensity, setLocalGrainDensity] = useState(grainDensity);
   const [localPitchLock, setLocalPitchLock] = useState(pitchLock);
   const [localMix, setLocalMix] = useState(mix);
+  const [localReverse, setLocalReverse] = useState(reverse);
   const [inputLevel, setInputLevel] = useState(0.5);
 
   // Get category colors
@@ -335,6 +337,9 @@ const HalfTimeUI_V2 = ({ trackId, effect, effectNode, definition }) => {
         break;
       case 'mix':
         setLocalMix(value);
+        break;
+      case 'reverse':
+        setLocalReverse(value);
         break;
     }
   }, [setParam, handleMixerEffectChange, trackId, effect.id]);
@@ -442,17 +447,30 @@ const HalfTimeUI_V2 = ({ trackId, effect, effectNode, definition }) => {
                 valueFormatter={(v) => `${Math.round(v)}ms`}
               />
 
-              <Knob
-                label="PITCH LOCK"
-                value={localPitchLock}
-                onChange={(val) => handleParamChange('pitchLock', Math.round(val))}
-                min={0}
-                max={1}
-                defaultValue={1}
-                sizeVariant="medium"
-                category="spacetime-chamber"
-                valueFormatter={(v) => Math.round(v) ? 'ON' : 'OFF'}
-              />
+              <div className="flex flex-col gap-2">
+                <label className="text-[10px] font-bold tracking-wider uppercase flex items-center justify-between" style={{ color: categoryColors.secondary }}>
+                  <span>PITCH LOCK</span>
+                  <Toggle
+                    value={localPitchLock > 0.5}
+                    onChange={(val) => handleParamChange('pitchLock', val ? 1 : 0)}
+                    category="spacetime-chamber"
+                  />
+                </label>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <label className="text-[10px] font-bold tracking-wider uppercase flex items-center justify-between" style={{ color: categoryColors.secondary }}>
+                  <span>REVERSE</span>
+                  <Toggle
+                    value={localReverse > 0.5}
+                    onChange={(val) => handleParamChange('reverse', val ? 1 : 0)}
+                    category="spacetime-chamber"
+                  />
+                </label>
+                <div className="text-[8px] text-white/50">
+                  Playback backwards
+                </div>
+              </div>
 
               <Knob
                 label="MIX"

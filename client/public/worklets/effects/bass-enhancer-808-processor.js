@@ -64,10 +64,10 @@ class BassEnhancer808Processor extends AudioWorkletProcessor {
     const a2 = 1 - alpha;
 
     const y = (b0 / a0) * sample +
-              (b1 / a0) * filter.x1 +
-              (b2 / a0) * filter.x2 -
-              (a1 / a0) * filter.y1 -
-              (a2 / a0) * filter.y2;
+      (b1 / a0) * filter.x1 +
+      (b2 / a0) * filter.x2 -
+      (a1 / a0) * filter.y1 -
+      (a2 / a0) * filter.y2;
 
     filter.x2 = filter.x1;
     filter.x1 = sample;
@@ -91,10 +91,10 @@ class BassEnhancer808Processor extends AudioWorkletProcessor {
     const a2 = 1 - alpha;
 
     const y = (b0 / a0) * sample +
-              (b1 / a0) * filter.x1 +
-              (b2 / a0) * filter.x2 -
-              (a1 / a0) * filter.y1 -
-              (a2 / a0) * filter.y2;
+      (b1 / a0) * filter.x1 +
+      (b2 / a0) * filter.x2 -
+      (a1 / a0) * filter.y1 -
+      (a2 / a0) * filter.y2;
 
     filter.x2 = filter.x1;
     filter.x1 = sample;
@@ -131,14 +131,14 @@ class BassEnhancer808Processor extends AudioWorkletProcessor {
 
     // 🎯 PROFESSIONAL SUB-BASS SYNTHESIS: Octave down generation (like MaxxBass, RBass)
     // Sub-harmonic generation: Full-wave rectification + filtering for natural sub
-    const rectified = Math.abs(filteredBass);
-    
+
+
     // 🎯 ANALOG-STYLE SUB: Square root compression for musical character
     const subHarmonic = Math.sign(filteredBass) * Math.sqrt(rectified) * state.envelope * 0.8;
-    
+
     // 🎯 SECOND HARMONIC: Even harmonic for warmth (like tube saturation)
     const secondHarmonic = filteredBass * rectified * harmonics * 0.4; // Reduced for balance
-    
+
     // 🎯 THIRD HARMONIC: Odd harmonic for presence (subtle)
     const thirdHarmonic = filteredBass * filteredBass * Math.sign(filteredBass) * rectified * harmonics * 0.15;
 
@@ -167,7 +167,7 @@ class BassEnhancer808Processor extends AudioWorkletProcessor {
 
     const wetParam = this.getParam(parameters.wet, 0);
     const wet = wetParam !== undefined ? wetParam :
-                (this.settings.wet !== undefined ? this.settings.wet : 0.5);
+      (this.settings.wet !== undefined ? this.settings.wet : 0.5);
     const dry = 1 - wet;
 
     for (let channel = 0; channel < output.length; channel++) {

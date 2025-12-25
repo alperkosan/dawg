@@ -17,6 +17,14 @@ export class ADSREnvelope {
 
         // Velocity sensitivity
         this.velocitySensitivity = 0.5; // 0 = no velocity, 1 = full velocity
+
+        // ✅ ANALYTIC TRACKING: For JS modulation matrix polling
+        this.triggerTime = null;
+        this.releaseStartTime = null;
+        this.peakLevel = 1;
+        this.sustainLevelValue = 0;
+        this.isExponential = false;
+        this.isReleased = false;
     }
 
     /**
@@ -41,7 +49,7 @@ export class ADSREnvelope {
         // ✅ DELAY: Start from 0 and wait for delay period
         const delayEnd = triggerTime + this.delay;
         param.setValueAtTime(0, triggerTime);
-        
+
         // If delay > 0, stay at 0 during delay
         if (this.delay > 0.001) {
             param.setValueAtTime(0, delayEnd);
@@ -65,6 +73,15 @@ export class ADSREnvelope {
         param.linearRampToValueAtTime(sustainLevel, decayEnd);
 
         // Hold at sustain level (will be released later)
+
+        // ✅ ANALYTIC TRACKING
+        this.triggerTime = triggerTime;
+        this.releaseStartTime = null;
+        this.peakLevel = adjustedPeak;
+        this.sustainLevelValue = sustainLevel;
+        this.isExponential = false;
+        this.isReleased = false;
+
         return {
             sustainLevel,
             decayEndTime: decayEnd
@@ -95,6 +112,10 @@ export class ADSREnvelope {
         // Release phase
         const releaseEnd = releaseStart + this.releaseTime;
         param.linearRampToValueAtTime(0, releaseEnd);
+
+        // ✅ ANALYTIC TRACKING
+        this.releaseStartTime = releaseStart;
+        this.isReleased = true;
 
         return releaseEnd;
     }
@@ -127,11 +148,11 @@ export class ADSREnvelope {
         const minValue = Math.max(0.001, baseValue);
 
         param.cancelScheduledValues(triggerTime);
-        
+
         // ✅ DELAY: Start from base value and wait for delay period
         const delayEnd = triggerTime + this.delay;
         param.setValueAtTime(minValue, triggerTime);
-        
+
         // If delay > 0, stay at base value during delay
         if (this.delay > 0.001) {
             param.setValueAtTime(minValue, delayEnd);
@@ -154,6 +175,14 @@ export class ADSREnvelope {
         const decayTarget = baseValue + (adjustedPeak - baseValue) * this.sustain;
         const sustainLevel = Math.max(minValue, decayTarget);
         param.exponentialRampToValueAtTime(sustainLevel, decayEnd);
+
+        // ✅ ANALYTIC TRACKING
+        this.triggerTime = triggerTime;
+        this.releaseStartTime = null;
+        this.peakLevel = adjustedPeak;
+        this.sustainLevelValue = sustainLevel;
+        this.isExponential = true;
+        this.isReleased = false;
 
         return {
             sustainLevel,
@@ -180,6 +209,10 @@ export class ADSREnvelope {
 
         const releaseEnd = releaseStart + this.releaseTime;
         param.exponentialRampToValueAtTime(0.001, releaseEnd);
+
+        // ✅ ANALYTIC TRACKING
+        this.releaseStartTime = releaseStart;
+        this.isReleased = true;
 
         return releaseEnd;
     }
@@ -237,5 +270,65 @@ export class ADSREnvelope {
      */
     getTotalDurationWithRelease() {
         return this.delay + this.attack + this.hold + this.decay + this.releaseTime;
+    }
+
+    /**
+     * ✅ ANALYTIC TRACKING: Get current envelope value (0-1) for JS modulation
+     */
+    getCurrentValue() {
+        if (!this.triggerTime) return 0;
+
+        const now = this.context.currentTime;
+        let time = now - this.triggerTime;
+
+        if (time < 0) return 0;
+
+        // Handle Released state
+        if (this.isReleased && this.releaseStartTime) {
+            const releaseElapsed = now - this.releaseStartTime;
+            if (releaseElapsed < 0) return this.sustainLevelValue; // Not reached release yet
+
+            const releaseProgress = releaseElapsed / this.releaseTime;
+            if (releaseProgress >= 1) return 0;
+
+            // In release phase
+            if (this.isExponential) {
+                // Exponential release (approximated)
+                return this.sustainLevelValue * Math.exp(-releaseProgress * 5);
+            } else {
+                return this.sustainLevelValue * (1 - releaseProgress);
+            }
+        }
+
+        // Delay phase
+        if (time < this.delay) return 0;
+        time -= this.delay;
+
+        // Attack phase
+        if (time < this.attack) {
+            const progress = time / this.attack;
+            return progress * this.peakLevel;
+        }
+        time -= this.attack;
+
+        // Hold phase
+        if (time < this.hold) {
+            return this.peakLevel;
+        }
+        time -= this.hold;
+
+        // Decay phase
+        if (time < this.decay) {
+            const progress = time / this.decay;
+            if (this.isExponential) {
+                // Approximate exponential decay
+                return this.sustainLevelValue + (this.peakLevel - this.sustainLevelValue) * Math.pow(0.1, progress);
+            } else {
+                return this.peakLevel - (this.peakLevel - this.sustainLevelValue) * progress;
+            }
+        }
+
+        // Sustain phase
+        return this.sustainLevelValue;
     }
 }

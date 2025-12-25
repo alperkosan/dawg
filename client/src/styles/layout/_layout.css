@@ -13,6 +13,7 @@
   flex-grow: 1;
   display: flex;
   min-height: 0;
+
 }
 
 
@@ -31,6 +32,8 @@
   flex-shrink: 0;
   box-shadow: var(--zenith-shadow-sm);
   backdrop-filter: blur(10px);
+  position: relative;
+  z-index: 100; /* ✅ FIX: Higher z-index than main-toolbar (40) */
 }
 
 /* <<< YENİ KURAL: Master Knob için özel bir sarmalayıcı sınıfı >>> */
@@ -123,31 +126,19 @@
 .top-toolbar__display {
   display: flex;
   align-items: center;
+  gap: var(--spacing-2);
   background-color: var(--zenith-bg-tertiary);
   border-radius: var(--border-radius-md);
   border: 1px solid var(--zenith-border-medium);
-  overflow: hidden;
+  padding: var(--spacing-1);
+  overflow: visible; /* Allow preset menu to overflow */
+  position: relative; /* ✅ FIX: Create stacking context for dropdown */
+  z-index: 1; /* ✅ FIX: Ensure dropdown is above other elements */
 }
-.top-toolbar__bpm-input {
-  width: 60px;
-  background-color: transparent;
-  text-align: center;
-  font-family: var(--font-mono);
-  font-size: var(--font-size-lg);
-  font-weight: 500;
-  padding: var(--spacing-2) 0;
-  outline: none;
-  color: var(--zenith-text-primary);
-}
-.top-toolbar__bpm-label {
-  font-size: var(--font-size-xs);
-  font-weight: 700;
-  padding: 0 var(--spacing-3);
-  color: var(--zenith-text-secondary);
-  background-color: var(--zenith-bg-secondary);
-  align-self: stretch; /* Dikeyde tüm alanı kapla */
-  display: flex;
-  align-items: center;
+.top-toolbar__bpm-input-wrapper {
+  flex-shrink: 0;
+  position: relative; /* ✅ FIX: Create stacking context */
+  z-index: 1;
 }
 .top-toolbar__transport-pos {
   width: 120px;

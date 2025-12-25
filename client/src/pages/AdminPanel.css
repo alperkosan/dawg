@@ -18,13 +18,41 @@
   z-index: 100;
 }
 
+.admin-panel__header-left {
+  display: flex;
+  align-items: center;
+  gap: var(--zenith-space-3);
+  margin-bottom: var(--zenith-space-4);
+}
+
+.admin-panel__back-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  background: var(--zenith-bg-tertiary);
+  border: 1px solid var(--zenith-border-medium);
+  border-radius: var(--zenith-radius-md);
+  color: var(--zenith-text-secondary);
+  cursor: pointer;
+  transition: all var(--zenith-duration-fast) var(--zenith-ease-out);
+}
+
+.admin-panel__back-btn:hover {
+  background: var(--zenith-bg-hover);
+  border-color: var(--zenith-accent-primary);
+  color: var(--zenith-accent-primary);
+  transform: translateX(-2px);
+}
+
 .admin-panel__title {
   display: flex;
   align-items: center;
   gap: var(--zenith-space-3);
   font-size: var(--zenith-text-2xl);
   font-weight: var(--zenith-weight-bold);
-  margin-bottom: var(--zenith-space-4);
+  margin: 0;
   color: var(--zenith-text-primary);
 }
 
@@ -127,7 +155,8 @@
 .admin-panel__button--primary {
   background: linear-gradient(135deg, var(--zenith-accent-cool) 0%, var(--zenith-accent-warm) 100%);
   border-color: var(--zenith-accent-cool);
-  color: #000000; /* ✅ FIX: Use black for better contrast on gradient background */
+  color: #000000;
+  /* ✅ FIX: Use black for better contrast on gradient background */
   box-shadow: 0 2px 8px rgba(var(--zenith-accent-cool-rgb), 0.3);
 }
 
@@ -154,17 +183,33 @@
 }
 
 .admin-panel__table {
-  overflow-x: auto;
+  overflow: auto;
+  /* Handles both x and y */
+  width: 100%;
+  max-width: 100%;
+  max-height: 70vh;
+  /* Fixed height for vertical scrolling */
+  border: 1px solid var(--zenith-border-medium);
+  border-radius: var(--zenith-radius-md);
+  background: var(--zenith-bg-tertiary);
+  position: relative;
 }
 
 .admin-panel__table table {
   width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  /* Required for sticky borders */
+  border-spacing: 0;
+  min-width: 1000px;
+  /* Force horizontal scroll if screen is narrow */
 }
 
 .admin-panel__table thead {
-  background: var(--zenith-bg-tertiary);
-  border-bottom: 2px solid var(--zenith-border-medium);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--zenith-bg-secondary);
+  box-shadow: 0 1px 0 var(--zenith-border-medium);
 }
 
 .admin-panel__table th {
@@ -175,6 +220,8 @@
   color: var(--zenith-text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  background: var(--zenith-bg-secondary);
+  /* Ensure background is solid for sticky */
 }
 
 .admin-panel__table td {
@@ -219,6 +266,18 @@
   background: rgba(var(--zenith-accent-cool-rgb), 0.2);
   color: var(--zenith-accent-cool);
   border: 1px solid var(--zenith-accent-cool);
+}
+
+.admin-panel__badge.instrument {
+  background: rgba(var(--zenith-accent-cool-rgb), 0.15);
+  color: var(--zenith-accent-cool);
+  border: 1px solid rgba(var(--zenith-accent-cool-rgb), 0.3);
+}
+
+.admin-panel__badge.effect {
+  background: rgba(var(--zenith-accent-warm-rgb), 0.15);
+  color: var(--zenith-accent-warm);
+  border: 1px solid rgba(var(--zenith-accent-warm-rgb), 0.3);
 }
 
 .admin-panel__badge.inactive {
@@ -371,13 +430,13 @@
   top: 2px;
 }
 
-.admin-panel__checkbox-input:checked ~ .admin-panel__checkbox-custom {
+.admin-panel__checkbox-input:checked~.admin-panel__checkbox-custom {
   background: var(--zenith-bg-secondary);
   border-color: var(--zenith-accent-cool);
   box-shadow: 0 0 0 2px var(--zenith-accent-cool), 0 0 8px rgba(78, 205, 196, 0.3);
 }
 
-.admin-panel__checkbox-input:checked ~ .admin-panel__checkbox-custom::after {
+.admin-panel__checkbox-input:checked~.admin-panel__checkbox-custom::after {
   display: block;
 }
 
@@ -392,7 +451,8 @@
   align-items: flex-start;
   gap: var(--zenith-space-2);
   margin-bottom: var(--zenith-space-2);
-  padding-top: var(--zenith-space-6); /* Space for checkbox */
+  padding-top: var(--zenith-space-6);
+  /* Space for checkbox */
 }
 
 .admin-panel__pack-badges {
@@ -733,11 +793,13 @@
 }
 
 @keyframes pulse {
-  0%, 100% {
+
+  0%,
+  100% {
     opacity: 1;
   }
+
   50% {
     opacity: 0.7;
   }
 }
-

@@ -170,7 +170,9 @@
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .ai-instrument-panel__advanced-toggle {
@@ -226,6 +228,46 @@
 
 .ai-instrument-panel__select {
   cursor: pointer;
+}
+
+.ai-instrument-panel__label-with-value {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.ai-instrument-panel__value {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--zenith-accent-cool, #6B8EBF);
+}
+
+.ai-instrument-panel__range-input {
+  width: 100%;
+  height: 6px;
+  background: var(--zenith-bg-primary, #0f0f0f);
+  border-radius: 3px;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+}
+
+.ai-instrument-panel__range-input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  background: var(--zenith-accent-cool, #6B8EBF);
+  border-radius: 50%;
+  border: 2px solid white;
+}
+
+.ai-instrument-panel__help-text {
+  font-size: 11px;
+  color: var(--zenith-text-secondary, #94a3b8);
+  margin-top: 4px;
+  line-height: 1.4;
 }
 
 /* Error Message */
@@ -311,4 +353,3 @@
 .ai-instrument-panel__suggestions-badge:hover {
   background: var(--zenith-accent-cool-hover, #5a7aaf);
 }
-

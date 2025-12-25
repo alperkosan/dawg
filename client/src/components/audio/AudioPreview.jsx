@@ -6,6 +6,7 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Play, Pause, Volume2, VolumeX, Loader2 } from 'lucide-react';
+import { getMediaPlayer } from '@/lib/media/MediaPlayer';
 import './AudioPreview.css';
 
 /**
@@ -30,6 +31,8 @@ export function AudioPreview({
 }) {
   const audioRef = useRef(null);
   const waveformAbortRef = useRef(null);
+  const mediaPlayerRef = useRef(null);
+  const unsubscribeRef = useRef(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -41,77 +44,91 @@ export function AudioPreview({
   const [waveformData, setWaveformData] = useState(null);
   const [isWaveformLoading, setIsWaveformLoading] = useState(false);
 
-  // Stop any playing audio when URL changes or component unmounts
+  // Initialize MediaPlayer and subscribe to events
   useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
+    const mediaPlayer = getMediaPlayer();
+    mediaPlayerRef.current = mediaPlayer;
 
-    audio.pause();
-    audio.currentTime = 0;
-    setIsPlaying(false);
-    setCurrentTime(0);
+    // Subscribe to player events for this URL
+    const unsubscribe = mediaPlayer.subscribe(url, (event, data) => {
+      switch (event) {
+        case 'play':
+          setIsPlaying(true);
+          break;
+        case 'pause':
+          setIsPlaying(false);
+          break;
+        case 'ended':
+          setIsPlaying(false);
+          setCurrentTime(0);
+          break;
+        case 'timeupdate':
+          setCurrentTime(mediaPlayer.currentTime);
+          break;
+        case 'loadedmetadata':
+          setDuration(mediaPlayer.duration);
+          setIsLoading(false);
+          setError(null);
+          break;
+        case 'loadstart':
+          setIsLoading(true);
+          setError(null);
+          break;
+        case 'error':
+          setError(data.error);
+          setIsLoading(false);
+          setIsPlaying(false);
+          break;
+        case 'volumechange':
+          setVolume(mediaPlayer.volume);
+          setIsMuted(mediaPlayer.isMuted);
+          break;
+      }
+    });
+
+    unsubscribeRef.current = unsubscribe;
+
+    // Load URL if provided
+    if (url) {
+      mediaPlayer.load(url);
+      const state = mediaPlayer.getState();
+      setIsPlaying(state.isPlaying);
+      setIsLoading(state.isLoading);
+      setDuration(state.duration);
+      setCurrentTime(state.currentTime);
+      setVolume(state.volume);
+      setIsMuted(state.isMuted);
+      if (state.error) {
+        setError(state.error);
+      }
+    }
+
+    return () => {
+      unsubscribe();
+      // Stop playback if this component was controlling it
+      if (mediaPlayer.currentUrl === url && mediaPlayer.isPlaying) {
+        mediaPlayer.stop();
+      }
+    };
   }, [url]);
 
+  // Cleanup on unmount
   useEffect(() => {
-    const audio = audioRef.current;
     return () => {
-      if (audio) {
-        audio.pause();
-        audio.currentTime = 0;
+      if (unsubscribeRef.current) {
+        unsubscribeRef.current();
       }
     };
   }, []);
 
-  // Load audio metadata
+  // Keep hidden audio element for waveform generation (not for playback)
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio || !url) return;
 
-    setIsLoading(true);
-    setError(null);
-
-    const handleLoadedMetadata = () => {
-      setDuration(audio.duration);
-      setIsLoading(false);
-    };
-
-    const handleError = (e) => {
-      console.error('AudioPreview error:', e, audio.error);
-      const audioError = audio.error;
-      let errorMsg = 'Failed to load audio';
-      
-      if (audioError) {
-        switch (audioError.code) {
-          case audioError.MEDIA_ERR_ABORTED:
-            errorMsg = 'Audio loading aborted';
-            break;
-          case audioError.MEDIA_ERR_NETWORK:
-            errorMsg = 'Network error loading audio';
-            break;
-          case audioError.MEDIA_ERR_DECODE:
-            errorMsg = 'Audio decode error';
-            break;
-          case audioError.MEDIA_ERR_SRC_NOT_SUPPORTED:
-            errorMsg = 'Audio format not supported';
-            break;
-        }
-      }
-      
-      setError(errorMsg);
-      setIsLoading(false);
-    };
-
-    audio.addEventListener('loadedmetadata', handleLoadedMetadata);
-    audio.addEventListener('error', handleError);
-
-    // Set src and load
+    // Only use for waveform generation, not playback
     audio.src = url;
     audio.load();
-
-    return () => {
-      audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
-      audio.removeEventListener('error', handleError);
-    };
   }, [url]);
 
   // Generate waveform background based on audio data
@@ -169,67 +186,39 @@ export function AudioPreview({
     };
   }, [url]);
 
-  // Update current time
+  // Time updates are handled by MediaPlayer subscription
+
+  // Update volume via MediaPlayer
   useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-
-    const handleTimeUpdate = () => {
-      setCurrentTime(audio.currentTime);
-    };
-
-    const handlePlay = () => setIsPlaying(true);
-    const handlePause = () => setIsPlaying(false);
-    const handleEnded = () => {
-      setIsPlaying(false);
-      setCurrentTime(0);
-      audio.currentTime = 0;
-    };
-
-    audio.addEventListener('timeupdate', handleTimeUpdate);
-    audio.addEventListener('play', handlePlay);
-    audio.addEventListener('pause', handlePause);
-    audio.addEventListener('ended', handleEnded);
-
-    return () => {
-      audio.removeEventListener('timeupdate', handleTimeUpdate);
-      audio.removeEventListener('play', handlePlay);
-      audio.removeEventListener('pause', handlePause);
-      audio.removeEventListener('ended', handleEnded);
-    };
-  }, []);
-
-  // Update volume
-  useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    audio.volume = isMuted ? 0 : volume;
+    const mediaPlayer = mediaPlayerRef.current;
+    if (!mediaPlayer) return;
+    
+    mediaPlayer.setVolume(volume);
+    mediaPlayer.setMuted(isMuted);
   }, [volume, isMuted]);
 
-  const handlePlayPause = useCallback(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
+  const handlePlayPause = useCallback(async () => {
+    const mediaPlayer = mediaPlayerRef.current;
+    if (!mediaPlayer || !url) return;
 
-    if (isPlaying) {
-      audio.pause();
-    } else {
-      audio.play().catch(err => {
-        console.error('Failed to play audio:', err);
-        setError('Failed to play audio');
-      });
+    try {
+      await mediaPlayer.toggle(url);
+    } catch (err) {
+      console.error('Failed to play audio:', err);
+      setError(err.message || 'Failed to play audio');
     }
-  }, [isPlaying]);
+  }, [url, isPlaying]);
 
   const handleSeek = useCallback((e) => {
-    const audio = audioRef.current;
-    if (!audio || !duration) return;
+    const mediaPlayer = mediaPlayerRef.current;
+    if (!mediaPlayer || !duration) return;
 
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const percentage = x / rect.width;
     const newTime = percentage * duration;
 
-    audio.currentTime = newTime;
+    mediaPlayer.seek(newTime);
     setCurrentTime(newTime);
   }, [duration]);
 
@@ -355,11 +344,11 @@ export function AudioPreview({
                   onKeyDown={(e) => {
                     if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
                       e.preventDefault();
-                      const audio = audioRef.current;
-                      if (!audio || !duration) return;
+                      const mediaPlayer = mediaPlayerRef.current;
+                      if (!mediaPlayer || !duration) return;
                       const delta = e.key === 'ArrowLeft' ? -5 : 5;
                       const newTime = Math.max(0, Math.min(duration, currentTime + delta));
-                      audio.currentTime = newTime;
+                      mediaPlayer.seek(newTime);
                       setCurrentTime(newTime);
                     }
                   }}

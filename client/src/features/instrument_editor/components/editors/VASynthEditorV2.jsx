@@ -8,10 +8,13 @@ import React, { useCallback, useEffect, useState } from 'react';
 import useInstrumentEditorStore from '@/store/useInstrumentEditorStore';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
 import { AudioContextService } from '@/lib/services/AudioContextService';
-import { getPreset } from '@/lib/audio/synth/presets';
+import { AudioEngineGlobal } from '@/lib/core/AudioEngineGlobal';
+import { getPreset, getPresetNames } from '@/lib/audio/synth/presets';
 import { getPreviewManager } from '@/lib/audio/preview';
 import { ADSRCanvas, OscillatorPanel } from '@/components/controls/canvas';
 import { Knob } from '@/components/controls';
+import ShortcutManager, { SHORTCUT_PRIORITY } from '@/lib/core/ShortcutManager';
+import VASynthEffectsPanel from './VASynthEffectsPanel'; // ✅ EFFECTS UI
 import './VASynthEditorV2.css';
 
 const VASynthEditorV2 = ({ instrumentData: initialData }) => {
@@ -37,6 +40,11 @@ const VASynthEditorV2 = ({ instrumentData: initialData }) => {
           ...presetData.lfo,
           target: presetData.lfoTarget || 'filter.cutoff' // ✅ LFO TARGET: Include target in lfo1
         },
+        // ✅ EFFECTS: Initialize empty effects objects if missing
+        eq: presetData.eq || instrumentData.eq || {},
+        chorus: presetData.chorus || instrumentData.chorus || {},
+        delay: presetData.delay || instrumentData.delay || {},
+        reverb: presetData.reverb || instrumentData.reverb || {},
       };
       useInstrumentEditorStore.setState({ instrumentData: mergedData });
     }
@@ -84,13 +92,19 @@ const VASynthEditorV2 = ({ instrumentData: initialData }) => {
     ...(instrumentData.amplitudeEnvelope || {})
   };
   const lfo1 = instrumentData.lfo1 || presetData?.lfo || { frequency: 4, depth: 0.5, waveform: 'sine', target: 'filter.cutoff', tempoSync: false, tempoSyncRate: '1/4' };
-  
+
+  // ✅ EFFECTS DATA
+  const eq = instrumentData.eq || {};
+  const chorus = instrumentData.chorus || {};
+  const delay = instrumentData.delay || {};
+  const reverb = instrumentData.reverb || {};
+
   // ✅ TEMPO SYNC: Get BPM from playback store
   const bpm = usePlaybackStore(state => state.bpm);
 
   // Helper: map note name like 'C', 'C#' with octave 4 to MIDI
   const noteNameToMidi = useCallback((name, octave = 4) => {
-    const map = { 'C':0,'C#':1,'D':2,'D#':3,'E':4,'F':5,'F#':6,'G':7,'G#':8,'A':9,'A#':10,'B':11 };
+    const map = { 'C': 0, 'C#': 1, 'D': 2, 'D#': 3, 'E': 4, 'F': 5, 'F#': 6, 'G': 7, 'G#': 8, 'A': 9, 'A#': 10, 'B': 11 };
     const offset = map[name] ?? 0;
     return (octave + 1) * 12 + offset; // MIDI formula
   }, []);
@@ -99,13 +113,13 @@ const VASynthEditorV2 = ({ instrumentData: initialData }) => {
   const handleParameterChange = useCallback((path, value) => {
     updateParameter(path, value);
 
-    const audioEngine = AudioContextService.getAudioEngine();
+    const audioEngine = AudioEngineGlobal.get();
     if (audioEngine && instrumentData.id) {
       const instrument = audioEngine.instruments.get(instrumentData.id);
       if (instrument && typeof instrument.updateParameters === 'function') {
         const updateObj = {};
         const keys = path.split('.');
-        
+
         // ✅ TEMPO SYNC: If tempo sync or rate changed, include BPM
         if (keys[0] === 'lfo1' && (keys[1] === 'tempoSync' || keys[1] === 'tempoSyncRate')) {
           if (!updateObj.lfo1) updateObj.lfo1 = {};
@@ -129,6 +143,11 @@ const VASynthEditorV2 = ({ instrumentData: initialData }) => {
           // ✅ LFO UI: Update LFO parameters
           const currentData = useInstrumentEditorStore.getState().instrumentData;
           updateObj.lfo1 = currentData?.lfo1;
+        } else if (['eq', 'chorus', 'delay', 'reverb'].includes(keys[0])) {
+          // ✅ EFFECTS UI: Update Effect parameters
+          const currentData = useInstrumentEditorStore.getState().instrumentData;
+          // Send the specific effect object that changed
+          updateObj[keys[0]] = currentData?.[keys[0]];
         }
 
         instrument.updateParameters(updateObj);
@@ -192,13 +211,16 @@ const VASynthEditorV2 = ({ instrumentData: initialData }) => {
       'l': 74,  // D5
     };
 
+    // ✅ KEYBOARD SHORTCUTS MIGRATION
     const handleKeyDown = (e) => {
       const key = e.key.toLowerCase();
       if (keyToNote[key] && !pressedKeys.has(key)) {
         e.preventDefault();
         setPressedKeys(prev => new Set([...prev, key]));
         handleNoteOn(keyToNote[key]);
+        return true;
       }
+      return false;
     };
 
     const handleKeyUp = (e) => {
@@ -211,21 +233,22 @@ const VASynthEditorV2 = ({ instrumentData: initialData }) => {
           return newSet;
         });
         handleNoteOff(keyToNote[key]);
+        return true;
       }
+      return false;
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
+    ShortcutManager.registerContext('VASYNTH_PREVIEW', SHORTCUT_PRIORITY.SYSTEM, {
+      onKeyDown: handleKeyDown,
+      onKeyUp: handleKeyUp
+    });
 
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('keyup', handleKeyUp);
-    };
+    return () => ShortcutManager.unregisterContext('VASYNTH_PREVIEW');
   }, [pressedKeys, handleNoteOn, handleNoteOff]);
 
   // Setup PreviewManager
   useEffect(() => {
-    const audioEngine = AudioContextService.getAudioEngine();
+    const audioEngine = AudioEngineGlobal.get();
     if (audioEngine?.audioContext && instrumentData) {
       // ✅ FX CHAIN: Pass audioEngine to PreviewManager for mixer routing
       const previewManager = getPreviewManager(audioEngine.audioContext, audioEngine);
@@ -235,11 +258,65 @@ const VASynthEditorV2 = ({ instrumentData: initialData }) => {
 
   return (
     <div className="vasynth-editor-v2">
-      {/* Header */}
+      {/* Header with Preset Selector */}
       <div className="vasynth-editor-v2__header">
         <h2 className="vasynth-editor-v2__title">{instrumentData.name}</h2>
-        <span className="vasynth-editor-v2__preset">{presetName}</span>
+        <div className="vasynth-preset-selector">
+          <label className="vasynth-preset-selector__label">Preset:</label>
+          <select
+            className="vasynth-preset-selector__dropdown"
+            value={presetName}
+            onChange={(e) => {
+              const newPresetName = e.target.value;
+              const newPreset = getPreset(newPresetName);
+              if (newPreset) {
+                // Update store with new preset
+                const mergedData = {
+                  ...instrumentData,
+                  presetName: newPresetName,
+                  oscillators: newPreset.oscillators,
+                  filter: newPreset.filter,
+                  filterEnvelope: newPreset.filterEnvelope,
+                  amplitudeEnvelope: newPreset.amplitudeEnvelope,
+                  lfo1: {
+                    ...newPreset.lfo,
+                    target: newPreset.lfoTarget || 'filter.cutoff'
+                  }
+                };
+                useInstrumentEditorStore.setState({ instrumentData: mergedData });
+
+                // Update audio engine
+                const audioEngine = AudioEngineGlobal.get();
+                if (audioEngine && instrumentData.id) {
+                  const instrument = audioEngine.instruments.get(instrumentData.id);
+                  if (instrument && typeof instrument.setPreset === 'function') {
+                    instrument.setPreset(newPresetName);
+                  }
+                }
+              }
+            }}
+          >
+            {getPresetNames().map(name => (
+              <option key={name} value={name}>{name}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Master Volume */}
+        <div className="vasynth-master-volume">
+          <Knob
+            label="MASTER"
+            value={instrumentData.masterVolume || 0.7}
+            min={0}
+            max={1}
+            sizeVariant="large"
+            color="#E74C3C"
+            valueFormatter={(v) => `${(v * 100).toFixed(0)}%`}
+            onChange={(value) => handleParameterChange('masterVolume', value)}
+          />
+        </div>
       </div>
+
 
       {/* Oscillators Section */}
       <div className="vasynth-editor-v2__section">
@@ -254,6 +331,9 @@ const VASynthEditorV2 = ({ instrumentData: initialData }) => {
               level={osc.level}
               detune={osc.detune}
               octave={osc.octave}
+              unisonVoices={osc.unisonVoices || 7}
+              unisonDetune={osc.unisonDetune || 50}
+              unisonSpread={osc.unisonSpread || 50}
               onChange={(updates) => handleOscillatorChange(index, updates)}
               width={180}
               height={100}
@@ -265,6 +345,25 @@ const VASynthEditorV2 = ({ instrumentData: initialData }) => {
       {/* Filter Section */}
       <div className="vasynth-editor-v2__section">
         <div className="vasynth-editor-v2__section-title">FILTER</div>
+
+        {/* Filter Type Selector */}
+        <div className="vasynth-filter-type-selector">
+          {['lowpass', 'highpass', 'bandpass', 'notch'].map(type => (
+            <button
+              key={type}
+              className={`vasynth-filter-type-btn ${filter.type === type ? 'active' : ''}`}
+              onClick={() => handleParameterChange('filter.type', type)}
+              title={type.toUpperCase()}
+            >
+              {type === 'lowpass' && '↘'}
+              {type === 'highpass' && '↗'}
+              {type === 'bandpass' && '⬌'}
+              {type === 'notch' && '⬍'}
+              <span className="vasynth-filter-type-label">{type}</span>
+            </button>
+          ))}
+        </div>
+
         <div className="vasynth-editor-v2__filter-controls">
           <Knob
             label="Cutoff"
@@ -509,6 +608,19 @@ const VASynthEditorV2 = ({ instrumentData: initialData }) => {
           )}
         </div>
       </div>
+
+      {/* ✅ EFFECTS SECTION */}
+      <div className="vasynth-editor-v2__section">
+        <div className="vasynth-editor-v2__section-title">EFFECTS</div>
+        <VASynthEffectsPanel
+          eq={eq}
+          chorus={chorus}
+          delay={delay}
+          reverb={reverb}
+          onParameterChange={handleParameterChange}
+        />
+      </div>
+
     </div>
   );
 };

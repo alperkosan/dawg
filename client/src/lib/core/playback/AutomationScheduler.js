@@ -10,14 +10,42 @@
  * Extracted from PlaybackManager for better modularity
  */
 
+import { SampleAccurateTime } from '../utils/SampleAccurateTime.js'; // ✅ NEW: Sample-accurate timing
+
 export class AutomationScheduler {
     constructor(transport, audioEngine) {
         this.transport = transport;
         this.audioEngine = audioEngine;
 
         // ✅ PHASE 4: Real-time automation tracking
-        this.activeAutomations = new Map(); // instrumentId -> automation update interval
-        this.automationUpdateInterval = 50; // Update every 50ms (20Hz)
+        // instrumentId -> { patternId, lanes }
+        this.activeAutomations = new Map();
+
+        // ✅ OPTIMIZATION: Track last logged values to reduce log spam
+        this._lastLoggedValues = new Map();
+
+        // ✅ NEW: Bind to high-precision transport scheduler (Phase 2 Improvement)
+        // This replaces the jittery setInterval polling
+        this.transport.on('scheduler', (data) => this.onSchedule(data));
+    }
+
+    /**
+     * ✅ NEW: High-precision scheduling callback
+     * Called by NativeTransportSystem for every tick within the lookahead window.
+     * 
+     * @param {Object} data - { time, tick, lookahead }
+     */
+    onSchedule({ time, tick }) {
+        if (this.activeAutomations.size === 0) return;
+
+        // Convert current tick to steps (with sub-step precision if needed, but here it's per-tick)
+        // ticksPerStep = ppq / 4
+        const ticksPerStep = this.transport.ppq / 4;
+        const currentStep = tick / ticksPerStep;
+
+        this.activeAutomations.forEach((info, instrumentId) => {
+            this.processRealtimeAutomation(instrumentId, info.lanes, currentStep, time);
+        });
     }
 
     /**
@@ -62,7 +90,13 @@ export class AutomationScheduler {
         }
 
         automationData.forEach(event => {
-            const eventTime = this.transport.stepsToSeconds(event.time || 0);
+            const eventTimeRaw = this.transport.stepsToSeconds(event.time || 0);
+
+            // ✅ NEW: Convert to sample-accurate time for professional precision
+            const eventTime = SampleAccurateTime.toSampleAccurate(
+                this.transport.audioContext,
+                eventTimeRaw
+            );
 
             this.transport.scheduleEvent(
                 eventTime,
@@ -103,39 +137,30 @@ export class AutomationScheduler {
      * Apply mixer automation
      */
     applyMixerAutomation(channelId, parameter, value) {
-        const channel = this.audioEngine.mixerChannels.get(channelId);
-        if (!channel) {
-            console.warn(`AutomationScheduler: Mixer channel not found: ${channelId}`);
+        // ⚠️ REMOVED: mixerChannels - Replaced by MixerInsert system
+        const insert = this.audioEngine.mixerInserts?.get(channelId);
+        if (!insert) {
+            console.warn(`AutomationScheduler: Mixer insert not found: ${channelId}`);
             return;
         }
 
         switch (parameter) {
             case 'volume':
             case 'gain':
-                if (channel.gainNode) {
-                    channel.gainNode.gain.setValueAtTime(
-                        value,
-                        this.transport.audioContext.currentTime
-                    );
-                }
+                // ⚠️ REMOVED: mixerChannels - Replaced by MixerInsert system
+                insert.setGain(value);
                 break;
             case 'pan':
-                if (channel.panNode) {
-                    channel.panNode.pan.setValueAtTime(
-                        value,
-                        this.transport.audioContext.currentTime
-                    );
-                }
+                // ⚠️ REMOVED: mixerChannels - Replaced by MixerInsert system
+                insert.setPan(value);
                 break;
             case 'mute':
-                if (channel.setMute) {
-                    channel.setMute(value);
-                }
+                // ⚠️ REMOVED: mixerChannels - Replaced by MixerInsert system
+                insert.setMute(value);
                 break;
             case 'solo':
-                if (channel.setSolo) {
-                    channel.setSolo(value);
-                }
+                // ⚠️ REMOVED: mixerChannels - Replaced by MixerInsert system
+                insert.setSolo(value, false); // TODO: isAnySoloed parameter
                 break;
             default:
                 console.warn(`AutomationScheduler: Unknown mixer parameter: ${parameter}`);
@@ -194,72 +219,75 @@ export class AutomationScheduler {
         // Clear existing automation for this instrument
         this.stopRealtimeAutomation(instrumentId);
 
-        if (!lanes || lanes.length === 0) return;
+        // ✅ PERFORMANCE: Filter out lanes without data points
+        if (!lanes || lanes.length === 0) {
+            return;
+        }
 
-        // Start update loop
-        const updateAutomation = () => {
-            const currentStep = this.transport.getCurrentStep();
-            const instrument = this.audioEngine.instruments.get(instrumentId);
+        // Filter to only lanes with actual automation data
+        const lanesWithData = lanes.filter(lane => {
+            const points = lane.getPoints();
+            return points && points.length > 0;
+        });
 
-            if (!instrument || !this.transport.isPlaying) {
-                this.stopRealtimeAutomation(instrumentId);
-                return;
-            }
+        if (lanesWithData.length === 0) {
+            // No lanes with data - skip automation entirely
+            return;
+        }
 
-            // Build automation params from all lanes
-            const automationParams = {};
+        // ✅ NEW: Store automation info instead of starting an interval
+        this.activeAutomations.set(instrumentId, { patternId, lanes: lanesWithData });
 
-            // ✅ Default values for when automation ends
-            const defaults = {
-                7: 100,   // Volume - default to full (127 max, use 100 for ~80%)
-                10: 64,   // Pan - default to center
-                11: 127,  // Expression - default to full
-                74: 64,   // Filter Cutoff - default to middle
-                71: 0,    // Filter Resonance - default to none
-                1: 0      // Mod Wheel - default to none
-            };
+        console.log(`✅ Real-time automation [LOOKAHEAD] started for ${instrumentId}`);
+    }
 
-            lanes.forEach(lane => {
-                const value = lane.getValueAtTime(currentStep, 'linear');
+    /**
+     * ✅ NEW: Process automation for a specific time and step
+     * This is called by onSchedule for every tick.
+     */
+    processRealtimeAutomation(instrumentId, lanes, currentStep, time) {
+        const instrument = this.audioEngine.instruments.get(instrumentId);
+        if (!instrument || !this.transport.isPlaying) {
+            this.stopRealtimeAutomation(instrumentId);
+            return;
+        }
 
-                // Use default if automation has ended (value is null)
-                const effectiveValue = value !== null ? value : defaults[lane.ccNumber];
-                if (effectiveValue === undefined) return;
-
-                // Map CC numbers to parameters
-                switch (lane.ccNumber) {
-                    case 7: // Volume
-                        automationParams.volume = effectiveValue / 127;
-                        break;
-                    case 10: // Pan
-                        automationParams.pan = (effectiveValue - 64) / 64;
-                        break;
-                    case 11: // Expression
-                        automationParams.expression = effectiveValue / 127;
-                        break;
-                    case 74: // Filter Cutoff
-                        automationParams.filterCutoff = effectiveValue;
-                        break;
-                    case 71: // Filter Resonance
-                        automationParams.filterResonance = effectiveValue;
-                        break;
-                    case 1: // Mod Wheel
-                        automationParams.modWheel = effectiveValue;
-                        break;
-                }
-            });
-
-            // Apply automation to instrument
-            if (Object.keys(automationParams).length > 0 && instrument.applyAutomation) {
-                instrument.applyAutomation(automationParams, this.transport.audioContext.currentTime);
-            }
+        const automationParams = {};
+        const defaults = {
+            7: 127, 10: 64, 11: 127, 74: 64, 71: 0, 1: 0
         };
 
-        // Start interval
-        const intervalId = setInterval(updateAutomation, this.automationUpdateInterval);
-        this.activeAutomations.set(instrumentId, intervalId);
+        lanes.forEach(lane => {
+            const interpolationMethod = lane.interpolation || 'linear';
+            const value = lane.getValueAtTime(currentStep, interpolationMethod);
+            const effectiveValue = value !== null ? value : defaults[lane.ccNumber];
+            if (effectiveValue === undefined) return;
 
-        console.log(`✅ Real-time automation started for ${instrumentId}`);
+            switch (lane.ccNumber) {
+                case 7: // Volume
+                    automationParams.volume = effectiveValue / 127;
+                    // ✅ DEBUG: Log volume automation only when value changes significantly (reduce spam)
+                    // Track last logged value to avoid duplicate logs
+                    const lastLoggedValue = this._lastLoggedValues?.get(`${instrumentId}.volume`);
+                    const valueChanged = lastLoggedValue === undefined || Math.abs(effectiveValue - lastLoggedValue) >= 1; // Log if changed by 1 or more
+                    if (valueChanged) {
+                        if (!this._lastLoggedValues) this._lastLoggedValues = new Map();
+                        this._lastLoggedValues.set(`${instrumentId}.volume`, effectiveValue);
+                        // console.log(`🎚️ Volume automation [${instrumentId}]: step=${currentStep.toFixed(2)}, value=${effectiveValue}, normalized=${automationParams.volume.toFixed(3)}`);
+                    }
+                    break;
+                case 10: automationParams.pan = (effectiveValue - 64) / 64; break;
+                case 11: automationParams.expression = effectiveValue / 127; break;
+                case 74: automationParams.filterCutoff = effectiveValue; break;
+                case 71: automationParams.filterResonance = effectiveValue; break;
+                case 1: automationParams.modWheel = effectiveValue; break;
+            }
+        });
+
+        // Apply automation to instrument with sample-accurate time
+        if (Object.keys(automationParams).length > 0 && instrument.applyAutomation) {
+            instrument.applyAutomation(automationParams, time);
+        }
     }
 
     /**
@@ -268,21 +296,18 @@ export class AutomationScheduler {
      * @param {string} instrumentId - Instrument ID
      */
     stopRealtimeAutomation(instrumentId) {
-        const intervalId = this.activeAutomations.get(instrumentId);
-        if (intervalId) {
-            clearInterval(intervalId);
+        if (this.activeAutomations.has(instrumentId)) {
             this.activeAutomations.delete(instrumentId);
-            console.log(`⏹️ Real-time automation stopped for ${instrumentId}`);
+            console.log(`🛑 Real-time automation stopped for ${instrumentId}`);
+            return true;
         }
+        return false;
     }
 
     /**
      * ✅ PHASE 4: Stop all real-time automations
      */
     stopAllRealtimeAutomations() {
-        this.activeAutomations.forEach((intervalId, instrumentId) => {
-            clearInterval(intervalId);
-        });
         this.activeAutomations.clear();
         console.log(`⏹️ All real-time automations stopped`);
     }

@@ -90,15 +90,13 @@ export class BaseInstrument {
     triggerNote(pitch, velocity = 1, time = null, duration = null, extendedParams = null) {
         const midiNote = this.pitchToMidi(pitch);
 
-        // ✅ PHASE 4: Apply volume and expression automation to velocity
+        // ✅ PHASE 4: Apply expression automation to velocity
+        // ✅ FIX: Volume (CC7) is NOT applied here - it's handled by AutomationScheduler
+        // Volume automation is applied to master gain via applyAutomation(), not per-note velocity
         let finalVelocity = velocity;
 
-        // Volume (CC7) - master volume control
-        if (extendedParams?.volume !== undefined) {
-            finalVelocity = finalVelocity * extendedParams.volume;
-        }
-
         // Expression (CC11) - dynamic volume control (like breath control)
+        // Expression can be applied per-note as it affects velocity
         if (extendedParams?.expression !== undefined) {
             finalVelocity = finalVelocity * extendedParams.expression;
         }
@@ -131,7 +129,9 @@ export class BaseInstrument {
             now: this.audioContext.currentTime.toFixed(3) + 's',
             isInitialized: this._isInitialized,
             hasBuffer: this.sampleBuffer ? 'YES' : 'NO',
-            extendedParams: extendedParams ? 'YES' : 'NO'
+            extendedParams: extendedParams ? 'YES' : 'NO',
+            hasOutput: !!this.output,
+            outputType: this.output?.constructor?.name || 'none'
         });
 
         // ✅ FIX: Pass duration via extendedParams to noteOn
@@ -159,12 +159,35 @@ export class BaseInstrument {
     }
 
     /**
-     * Stop all notes immediately
+     * Stop all notes gracefully
      * Used for pause/stop functionality
+     * 
+     * @param {number} [time] - AudioContext time (optional, defaults to now)
+     * @param {number} [fadeTime] - Fade-out time in seconds (optional, uses instrument's release envelope if not provided)
      */
-    allNotesOff() {
-        const now = this.audioContext.currentTime;
-        this.noteOff(null, now); // null = all notes
+    allNotesOff(time = null, fadeTime = null) {
+        const now = time !== null ? time : this.audioContext.currentTime;
+        // ✅ NEW: Pass fadeTime to noteOff if supported
+        if (fadeTime !== null && typeof this.noteOff === 'function' && this.noteOff.length >= 4) {
+            this.noteOff(null, now, null, fadeTime);
+        } else {
+            this.noteOff(null, now); // null = all notes
+        }
+    }
+
+    hasReleaseSustain() {
+        return true;
+    }
+    /**
+     * Called when the playback loop restarts
+     * Allows instruments to resync internal states (LFOs, phases)
+     * or preserve active voices that should survive the loop boundary.
+     * 
+     * @param {number} loopStartTime - AudioContext time coordinate of the loop start
+     * @param {number} loopStartStep - The logical step position where the loop starts (usually 0)
+     */
+    onLoopRestart(loopStartTime, loopStartStep = 0) {
+        // Default: no-op, override in subclass
     }
 
     /**
@@ -249,6 +272,10 @@ export class BaseInstrument {
 
         // Volume automation
         if (params.volume !== undefined) {
+            // ✅ DEBUG: Log volume automation application (only occasionally to avoid spam)
+            if (Math.random() < 0.01) { // 1% chance to log
+                console.log(`🎚️ Applying volume automation: ${params.volume.toFixed(3)} to ${this.constructor.name}`);
+            }
             this.setVolume(params.volume, now);
         }
 

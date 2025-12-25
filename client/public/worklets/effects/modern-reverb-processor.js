@@ -23,7 +23,10 @@ class ModernReverbProcessor extends AudioWorkletProcessor {
       { name: 'modDepth', defaultValue: 0.3, minValue: 0, maxValue: 1 },
       { name: 'modRate', defaultValue: 0.5, minValue: 0.1, maxValue: 5 },
       { name: 'lowCut', defaultValue: 100, minValue: 20, maxValue: 1000 },
-      { name: 'shimmer', defaultValue: 0.0, minValue: 0, maxValue: 1 }
+      { name: 'highCut', defaultValue: 20000, minValue: 2000, maxValue: 20000 }, // ✅ NEW: High cut filter
+      { name: 'shimmer', defaultValue: 0.0, minValue: 0, maxValue: 1 },
+      // ✅ NEW: Reverb algorithm (0=Room, 1=Hall, 2=Plate, 3=Spring, 4=Chamber)
+      { name: 'reverbAlgorithm', defaultValue: 0, minValue: 0, maxValue: 4 }
     ];
   }
 
@@ -54,8 +57,22 @@ class ModernReverbProcessor extends AudioWorkletProcessor {
     this.erIndex = 0;
 
     // --- LATE REVERB SETUP ---
-    this.baseTankDelays = [0.0297, 0.0371, 0.0411, 0.0437];
+    // ✅ NEW: Algorithm-specific tank delays (will be updated based on algorithm)
+    this.reverbAlgorithm = 0; // 0=Room, 1=Hall, 2=Plate, 3=Spring, 4=Chamber
+    this.baseTankDelays = [0.0297, 0.0371, 0.0411, 0.0437]; // Default (Room)
     this.tankFilters = this.baseTankDelays.map(d => new ModulatedAllpass(d, this.sampleRate));
+    
+    // ✅ NEW: Algorithm-specific early reflections patterns (initialized per algorithm)
+    this.algorithmERPatterns = {
+      room: { erTapsL: this.erTapsL, erTapsR: this.erTapsR }, // Current default
+      hall: null, // Will be set dynamically
+      plate: null,
+      spring: null,
+      chamber: null
+    };
+    
+    // ✅ NEW: High-cut filter (for reverb tail EQ)
+    this.tankLPF = new LowPassFilter(this.sampleRate);
 
     // Diffusion steps
     this.diffuser1L = new AllpassFilter(0.005, this.sampleRate);
@@ -99,8 +116,93 @@ class ModernReverbProcessor extends AudioWorkletProcessor {
     this.diffuser2R.reset();
     this.inputHPF.reset();
     this.tankHPF.reset();
+    this.tankLPF.reset(); // ✅ NEW: Reset low-pass filter
     this.shimmerL.reset();
     this.shimmerR.reset();
+  }
+  
+  // ✅ NEW: Update algorithm-specific settings
+  _updateAlgorithm(algorithm) {
+    switch (algorithm) {
+      case 0: // Room
+        this.baseTankDelays = [0.0297, 0.0371, 0.0411, 0.0437];
+        this.erTapsL = [
+          { delay: 0.0043, gain: 0.84 }, { delay: 0.0215, gain: 0.50 },
+          { delay: 0.0225, gain: 0.38 }, { delay: 0.0268, gain: 0.20 },
+          { delay: 0.0270, gain: 0.50 }, { delay: 0.0298, gain: 0.20 },
+          { delay: 0.0458, gain: 0.10 }, { delay: 0.0485, gain: 0.10 }
+        ];
+        this.erTapsR = [
+          { delay: 0.0045, gain: 0.84 }, { delay: 0.0218, gain: 0.50 },
+          { delay: 0.0227, gain: 0.38 }, { delay: 0.0270, gain: 0.20 },
+          { delay: 0.0272, gain: 0.50 }, { delay: 0.0300, gain: 0.20 },
+          { delay: 0.0460, gain: 0.10 }, { delay: 0.0487, gain: 0.10 }
+        ];
+        break;
+      case 1: // Hall (larger space, longer delays)
+        this.baseTankDelays = [0.0450, 0.0520, 0.0580, 0.0620];
+        this.erTapsL = [
+          { delay: 0.0080, gain: 0.75 }, { delay: 0.0150, gain: 0.60 },
+          { delay: 0.0220, gain: 0.45 }, { delay: 0.0280, gain: 0.35 },
+          { delay: 0.0350, gain: 0.25 }, { delay: 0.0420, gain: 0.18 },
+          { delay: 0.0500, gain: 0.12 }, { delay: 0.0580, gain: 0.08 }
+        ];
+        this.erTapsR = [
+          { delay: 0.0082, gain: 0.75 }, { delay: 0.0152, gain: 0.60 },
+          { delay: 0.0222, gain: 0.45 }, { delay: 0.0282, gain: 0.35 },
+          { delay: 0.0352, gain: 0.25 }, { delay: 0.0422, gain: 0.18 },
+          { delay: 0.0502, gain: 0.12 }, { delay: 0.0582, gain: 0.08 }
+        ];
+        break;
+      case 2: // Plate (dense, metallic character)
+        this.baseTankDelays = [0.0197, 0.0231, 0.0271, 0.0317];
+        this.erTapsL = [
+          { delay: 0.0020, gain: 0.70 }, { delay: 0.0050, gain: 0.55 },
+          { delay: 0.0080, gain: 0.40 }, { delay: 0.0110, gain: 0.30 },
+          { delay: 0.0140, gain: 0.22 }, { delay: 0.0170, gain: 0.16 },
+          { delay: 0.0200, gain: 0.12 }, { delay: 0.0230, gain: 0.08 }
+        ];
+        this.erTapsR = [
+          { delay: 0.0022, gain: 0.70 }, { delay: 0.0052, gain: 0.55 },
+          { delay: 0.0082, gain: 0.40 }, { delay: 0.0112, gain: 0.30 },
+          { delay: 0.0142, gain: 0.22 }, { delay: 0.0172, gain: 0.16 },
+          { delay: 0.0202, gain: 0.12 }, { delay: 0.0232, gain: 0.08 }
+        ];
+        break;
+      case 3: // Spring (characteristic spring reverb sound)
+        this.baseTankDelays = [0.0150, 0.0180, 0.0210, 0.0240];
+        this.erTapsL = [
+          { delay: 0.0010, gain: 0.80 }, { delay: 0.0030, gain: 0.65 },
+          { delay: 0.0050, gain: 0.50 }, { delay: 0.0070, gain: 0.38 },
+          { delay: 0.0090, gain: 0.28 }, { delay: 0.0110, gain: 0.20 },
+          { delay: 0.0130, gain: 0.14 }, { delay: 0.0150, gain: 0.10 }
+        ];
+        this.erTapsR = [
+          { delay: 0.0012, gain: 0.80 }, { delay: 0.0032, gain: 0.65 },
+          { delay: 0.0052, gain: 0.50 }, { delay: 0.0072, gain: 0.38 },
+          { delay: 0.0092, gain: 0.28 }, { delay: 0.0112, gain: 0.20 },
+          { delay: 0.0132, gain: 0.14 }, { delay: 0.0152, gain: 0.10 }
+        ];
+        break;
+      case 4: // Chamber (studio chamber, balanced)
+        this.baseTankDelays = [0.0320, 0.0390, 0.0440, 0.0480];
+        this.erTapsL = [
+          { delay: 0.0050, gain: 0.78 }, { delay: 0.0120, gain: 0.58 },
+          { delay: 0.0180, gain: 0.42 }, { delay: 0.0240, gain: 0.32 },
+          { delay: 0.0300, gain: 0.24 }, { delay: 0.0360, gain: 0.18 },
+          { delay: 0.0420, gain: 0.13 }, { delay: 0.0480, gain: 0.09 }
+        ];
+        this.erTapsR = [
+          { delay: 0.0052, gain: 0.78 }, { delay: 0.0122, gain: 0.58 },
+          { delay: 0.0182, gain: 0.42 }, { delay: 0.0242, gain: 0.32 },
+          { delay: 0.0302, gain: 0.24 }, { delay: 0.0362, gain: 0.18 },
+          { delay: 0.0422, gain: 0.13 }, { delay: 0.0482, gain: 0.09 }
+        ];
+        break;
+    }
+    
+    // Recreate tank filters with new delays
+    this.tankFilters = this.baseTankDelays.map(d => new ModulatedAllpass(d, this.sampleRate));
   }
 
   process(inputs, outputs, parameters) {
@@ -128,7 +230,17 @@ class ModernReverbProcessor extends AudioWorkletProcessor {
     const modDepth = this.getParam(parameters.modDepth, 0) ?? 0.3;
     const modRate = this.getParam(parameters.modRate, 0) ?? 0.5;
     const lowCut = this.getParam(parameters.lowCut, 0) ?? 100;
+    const highCut = this.getParam(parameters.highCut, 0) ?? 20000; // ✅ NEW: High cut filter
     const shimmer = this.getParam(parameters.shimmer, 0) ?? 0.0;
+    
+    // ✅ NEW: Reverb algorithm parameter
+    const reverbAlgorithm = Math.floor(this.getParam(parameters.reverbAlgorithm, 0) ?? this.settings.reverbAlgorithm ?? 0);
+    
+    // ✅ NEW: Update algorithm-specific settings if changed
+    if (reverbAlgorithm !== this.reverbAlgorithm) {
+      this._updateAlgorithm(reverbAlgorithm);
+      this.reverbAlgorithm = reverbAlgorithm;
+    }
 
     // Derived Parameters
     const avgDelay = 0.035;
@@ -215,6 +327,13 @@ class ModernReverbProcessor extends AudioWorkletProcessor {
 
       let lateR = this.diffuser1R.process(m1, diffFeedback);
       lateR = this.diffuser2R.process(lateR, diffFeedback);
+      
+      // ✅ NEW: Apply high-cut filter to reverb tail
+      if (highCut < 20000) {
+        this.tankLPF.update(highCut);
+        lateL = this.tankLPF.process(lateL);
+        lateR = this.tankLPF.process(lateR);
+      }
 
       // 4. Mix Early/Late
       const reverbL = erL * (1 - earlyLateMix) + lateL * earlyLateMix;
@@ -266,6 +385,37 @@ class HighPassFilter {
   process(input) {
     const output = this.alpha * (this.y1 + input - this.x1);
     this.x1 = input;
+    this.y1 = output;
+    return output;
+  }
+}
+
+// ✅ NEW: Low-Pass Filter for high-cut
+class LowPassFilter {
+  constructor(sampleRate) {
+    this.sampleRate = sampleRate;
+    this.x1 = 0;
+    this.y1 = 0;
+    this.alpha = 0;
+    this.prevFreq = 0;
+  }
+
+  reset() {
+    this.x1 = 0;
+    this.y1 = 0;
+  }
+
+  update(frequency) {
+    if (Math.abs(frequency - this.prevFreq) > 0.1) {
+      const dt = 1 / this.sampleRate;
+      const rc = 1 / (2 * Math.PI * frequency);
+      this.alpha = dt / (rc + dt);
+      this.prevFreq = frequency;
+    }
+  }
+
+  process(input) {
+    const output = this.alpha * input + (1 - this.alpha) * this.y1;
     this.y1 = output;
     return output;
   }

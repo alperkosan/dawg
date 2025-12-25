@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { visualizationEngine } from '@/lib/visualization/VisualizationEngine';
+import { visualizationEngine } from '@/features/visualization/engine/VisualizationEngine';
 import './VisualizationDebugMonitor.css';
 
 /**

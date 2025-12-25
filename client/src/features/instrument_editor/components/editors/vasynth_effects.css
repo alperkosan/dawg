@@ -1,0 +1,59 @@
+/* Effects Panel Styles */
+.vasynth-effects-panel {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    padding: 16px;
+    background: var(--zenith-bg-secondary);
+    border-radius: var(--zenith-radius-md, 8px);
+    border: 1px solid var(--zenith-border-subtle);
+}
+
+.vasynth-effect-group {
+    background: var(--zenith-bg-tertiary);
+    border-radius: var(--zenith-radius-sm, 6px);
+    padding: 12px;
+    border: 1px solid var(--zenith-border-subtle);
+}
+
+.vasynth-effect-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--zenith-border-subtle);
+}
+
+.vasynth-effect-title {
+    font-size: var(--zenith-text-xs);
+    font-weight: var(--zenith-font-bold, 700);
+    letter-spacing: 1px;
+    color: var(--zenith-text-secondary);
+}
+
+.vasynth-effect-status {
+    font-size: 10px;
+    font-weight: var(--zenith-font-semibold, 600);
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: var(--zenith-accent-cool);
+    color: white;
+    transition: opacity 0.2s ease;
+}
+
+.vasynth-effect-controls {
+    display: flex;
+    gap: 12px;
+    justify-content: space-around;
+    flex-wrap: wrap;
+}
+
+/* Envelope Extra Controls - Horizontal Layout */
+.vasynth-editor-v2__envelope-extra-controls {
+    display: flex;
+    gap: 16px;
+    margin-top: 12px;
+    justify-content: center;
+    align-items: center;
+}

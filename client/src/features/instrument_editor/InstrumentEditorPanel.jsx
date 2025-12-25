@@ -12,6 +12,7 @@ import { useMixerStore } from '../../store/useMixerStore';
 import { useArrangementStore } from '../../store/useArrangementStore';
 import VASynthEditor from './components/editors/VASynthEditor';
 import VASynthEditorV2 from './components/editors/VASynthEditorV2';
+import ZenithSynthEditor from './components/editors/ZenithSynthEditor';
 import MultiSampleEditor from './components/editors/MultiSampleEditor';
 import DrumSamplerEditor from './components/editors/DrumSamplerEditor';
 import { ForgeSynthUI } from './ForgeSynthUI';
@@ -20,6 +21,7 @@ import InstrumentEffectsPanel from './components/InstrumentEffectsPanel';
 import ModulationMatrix from './components/ModulationMatrix';
 import AutomationSettingsPanel from '../piano_roll_v7/components/AutomationSettingsPanel';
 import ConfirmationModal from '../../components/common/ConfirmationModal';
+import ShortcutManager, { SHORTCUT_PRIORITY } from '@/lib/core/ShortcutManager';
 import './InstrumentEditorPanel.css';
 
 const InstrumentEditorPanel = () => {
@@ -130,6 +132,14 @@ const InstrumentEditorPanel = () => {
     useInstrumentEditorStore.getState().updateParameter('mixerTrackId', newChannelId);
   };
 
+  // ✅ MOBILE SUPPORT
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   // Update instrument data when instrument changes
   useEffect(() => {
     if (instrumentId && !instrumentData) {
@@ -151,53 +161,53 @@ const InstrumentEditorPanel = () => {
       variant: 'warning',
       onConfirm: () => {
         setConfirmationModal({ ...confirmationModal, isOpen: false });
-        
+
         // Define randomization rules for different parameter types
         const randomizeParameter = (key, value) => {
-      // Skip certain parameters
-      if (['id', 'name', 'type', 'mixerTrackId', 'presetName'].includes(key)) {
-        return value;
-      }
+          // Skip certain parameters
+          if (['id', 'name', 'type', 'mixerTrackId', 'presetName'].includes(key)) {
+            return value;
+          }
 
-      // Number randomization
-      if (typeof value === 'number') {
-        // Detect parameter range from current value or use defaults
-        if (key.includes('gain') || key.includes('volume')) {
-          return Math.random() * 1.0; // 0 to 1
-        }
-        if (key.includes('frequency') || key.includes('cutoff')) {
-          return Math.random() * 10000 + 20; // 20Hz to 10kHz
-        }
-        if (key.includes('detune') || key.includes('pitch')) {
-          return Math.random() * 24 - 12; // -12 to +12
-        }
-        if (key.includes('pan')) {
-          return Math.random() * 2 - 1; // -1 to 1
-        }
-        if (key.includes('resonance') || key.includes('q')) {
-          return Math.random() * 30 + 0.1; // 0.1 to 30
-        }
-        // Default: randomize in a reasonable range
-        if (value >= 0 && value <= 1) {
-          return Math.random(); // 0 to 1
-        }
-        return Math.random() * 100; // 0 to 100
-      }
+          // Number randomization
+          if (typeof value === 'number') {
+            // Detect parameter range from current value or use defaults
+            if (key.includes('gain') || key.includes('volume')) {
+              return Math.random() * 1.0; // 0 to 1
+            }
+            if (key.includes('frequency') || key.includes('cutoff')) {
+              return Math.random() * 10000 + 20; // 20Hz to 10kHz
+            }
+            if (key.includes('detune') || key.includes('pitch')) {
+              return Math.random() * 24 - 12; // -12 to +12
+            }
+            if (key.includes('pan')) {
+              return Math.random() * 2 - 1; // -1 to 1
+            }
+            if (key.includes('resonance') || key.includes('q')) {
+              return Math.random() * 30 + 0.1; // 0.1 to 30
+            }
+            // Default: randomize in a reasonable range
+            if (value >= 0 && value <= 1) {
+              return Math.random(); // 0 to 1
+            }
+            return Math.random() * 100; // 0 to 100
+          }
 
-      // Boolean randomization
-      if (typeof value === 'boolean') {
-        return Math.random() > 0.5;
-      }
+          // Boolean randomization
+          if (typeof value === 'boolean') {
+            return Math.random() > 0.5;
+          }
 
-      // Keep other types unchanged (strings, objects, arrays)
-      return value;
-    };
+          // Keep other types unchanged (strings, objects, arrays)
+          return value;
+        };
 
-    // Apply randomization
-    const randomized = {};
-    Object.entries(instrumentData).forEach(([key, value]) => {
-      randomized[key] = randomizeParameter(key, value);
-    });
+        // Apply randomization
+        const randomized = {};
+        Object.entries(instrumentData).forEach(([key, value]) => {
+          randomized[key] = randomizeParameter(key, value);
+        });
 
         // Update all randomized parameters
         Object.entries(randomized).forEach(([key, value]) => {
@@ -222,36 +232,36 @@ const InstrumentEditorPanel = () => {
       variant: 'warning',
       onConfirm: () => {
         setConfirmationModal({ ...confirmationModal, isOpen: false });
-        
+
         // Get default values based on instrument type
         const getDefaults = () => {
-      const baseDefaults = {
-        gain: 0.7,
-        pan: 0,
-      };
+          const baseDefaults = {
+            gain: 0.7,
+            pan: 0,
+          };
 
-      if (instrumentData.type === 'vasynth') {
-        return {
-          ...baseDefaults,
-          oscillatorType: 'sine',
-          attack: 0.01,
-          decay: 0.1,
-          sustain: 0.7,
-          release: 0.3,
+          if (instrumentData.type === 'vasynth') {
+            return {
+              ...baseDefaults,
+              oscillatorType: 'sine',
+              attack: 0.01,
+              decay: 0.1,
+              sustain: 0.7,
+              release: 0.3,
+            };
+          }
+
+          if (instrumentData.type === 'sample') {
+            return {
+              ...baseDefaults,
+              pitch: 0,
+              reverse: false,
+              loop: false,
+            };
+          }
+
+          return baseDefaults;
         };
-      }
-
-      if (instrumentData.type === 'sample') {
-        return {
-          ...baseDefaults,
-          pitch: 0,
-          reverse: false,
-          loop: false,
-        };
-      }
-
-      return baseDefaults;
-    };
 
         const defaults = getDefaults();
 
@@ -360,10 +370,10 @@ const InstrumentEditorPanel = () => {
       });
       return;
     }
-    
+
     pasteParameters();
   };
-  
+
   const pasteParameters = () => {
 
     // Apply all copied parameters
@@ -381,7 +391,7 @@ const InstrumentEditorPanel = () => {
     }
   }, [showSearch]);
 
-  // Keyboard shortcuts
+  // ✅ KEYBOARD SHORTCUTS MIGRATION
   useEffect(() => {
     if (!isOpen) return;
 
@@ -398,64 +408,77 @@ const InstrumentEditorPanel = () => {
         } else {
           closeEditor();
         }
+        return true;
       }
 
       // Ctrl+F to toggle search
-      if (e.ctrlKey && e.key === 'f') {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
         e.preventDefault();
         setShowSearch(prev => !prev);
+        return true;
       }
 
       // Ctrl+T to toggle A/B
-      if (e.ctrlKey && e.key === 't') {
+      if ((e.ctrlKey || e.metaKey) && e.key === 't') {
         e.preventDefault();
         if (slotA && slotB) {
           handleToggleAB();
         }
+        return true;
       }
 
       // Ctrl+C to copy parameters (only if not typing in other inputs)
-      if (e.ctrlKey && e.key === 'c' && (!isTyping || isSearchInput)) {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'c' && (!isTyping || isSearchInput)) {
         if (!isSearchInput || !searchQuery) {
           e.preventDefault();
           handleCopyParameters();
+          return true;
         }
       }
 
       // Ctrl+V to paste parameters (only if not typing in other inputs)
-      if (e.ctrlKey && e.key === 'v' && (!isTyping || isSearchInput)) {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'v' && (!isTyping || isSearchInput)) {
         if (!isSearchInput || !searchQuery) {
           e.preventDefault();
           handlePasteParameters();
+          return true;
         }
       }
 
       // Ctrl+Z to undo
-      if (e.ctrlKey && e.key === 'z' && !e.shiftKey) {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
         e.preventDefault();
         if (canUndo()) {
           undo();
         }
+        return true;
       }
 
       // Ctrl+Shift+Z or Ctrl+Y to redo
-      if ((e.ctrlKey && e.shiftKey && e.key === 'z') || (e.ctrlKey && e.key === 'y')) {
+      if (((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'z') || ((e.ctrlKey || e.metaKey) && e.key === 'y')) {
         e.preventDefault();
         if (canRedo()) {
           redo();
         }
+        return true;
       }
 
       // Ctrl+S to save
-      if (e.ctrlKey && e.key === 's') {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
         save();
+        return true;
       }
+
+      return false;
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, showSearch, searchQuery, copiedParams, closeEditor, canUndo, canRedo, undo, redo, save, handleCopyParameters, handlePasteParameters]);
+    ShortcutManager.registerContext('INSTRUMENT_EDITOR', SHORTCUT_PRIORITY.SYSTEM, {
+      onKeyDown: handleKeyDown
+    });
+
+    return () => ShortcutManager.unregisterContext('INSTRUMENT_EDITOR');
+  }, [isOpen, showSearch, searchQuery, copiedParams, closeEditor, canUndo, canRedo, undo, redo, save, handleCopyParameters, handlePasteParameters, slotA, slotB]);
 
   if (!isOpen || !instrumentData) {
     return null;
@@ -468,6 +491,11 @@ const InstrumentEditorPanel = () => {
     if (type === 'vasynth') {
       // ✅ NEW: FL Studio style canvas-based editor
       return <VASynthEditorV2 instrumentData={instrumentData} />;
+    }
+
+    if (type === 'zenith') {
+      // ⚡ Zenith Synth - Premium synthesizer
+      return <ZenithSynthEditor instrumentData={instrumentData} />;
     }
 
     if (type === 'sample') {
@@ -502,13 +530,15 @@ const InstrumentEditorPanel = () => {
       <div
         ref={panelRef}
         className={`instrument-editor-panel ${isOpen ? 'instrument-editor-panel--open' : ''} ${isResizing ? 'instrument-editor-panel--resizing' : ''}`}
-        style={{ width: `${panelWidth}px` }}
+        style={{ width: isMobile ? '100%' : `${panelWidth}px` }}
       >
-        {/* Resize Handle */}
-        <div
-          className="instrument-editor-panel__resize-handle"
-          onMouseDown={handleResizeStart}
-        />
+        {/* Resize Handle (Desktop Only) */}
+        {!isMobile && (
+          <div
+            className="instrument-editor-panel__resize-handle"
+            onMouseDown={handleResizeStart}
+          />
+        )}
 
         {/* Copy Notification */}
         {showCopyNotification && (
@@ -542,6 +572,7 @@ const InstrumentEditorPanel = () => {
           <div className="instrument-editor-panel__title">
             <div className="instrument-editor-panel__icon">
               {instrumentData.type === 'vasynth' && '🎹'}
+              {instrumentData.type === 'zenith' && '⚡'}
               {instrumentData.type === 'sample' && (instrumentData.multiSamples ? '🎵' : '🥁')}
               {instrumentData.type === 'synth' && '🎛️'}
             </div>
@@ -772,7 +803,7 @@ const InstrumentEditorPanel = () => {
         {/* Content */}
         <div className="instrument-editor-panel__content">
           {activeTab === 'main' && getEditorComponent()}
-          {activeTab === 'presets' && <PresetBrowser instrumentData={instrumentData} />}
+          {activeTab === 'presets' && <PresetBrowser targetData={instrumentData} presetType="instrument" />}
           {activeTab === 'effects' && <InstrumentEffectsPanel instrumentData={instrumentData} />}
           {activeTab === 'automation' && activePatternId && <AutomationSettingsPanel patternId={activePatternId} instrumentId={instrumentId} />}
           {activeTab === 'modulation' && <ModulationMatrix instrumentData={instrumentData} />}

@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { SlidersHorizontal, Sparkles, Settings, Play, Square } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Sparkles, Settings, Play, Square } from 'lucide-react';
 import TabButton from '@/components/common/TabButton';
 import { Knob } from '@/components/controls';
 import EffectSwitch from '@/components/controls/base/EffectSwitch';
 import { EffectsRack } from './EffectsRack'; // Yeni raf sistemimizi import ediyoruz
 import EffectsPanel from './EffectsPanel'; // Yeni efekt panelimiz
 import { AudioContextService } from '@/lib/services/AudioContextService';
+import { AudioEngineGlobal } from '@/lib/core/AudioEngineGlobal';
 import { useInstrumentsStore } from '@/store/useInstrumentsStore';
 import { useMixerStore } from '@/store/useMixerStore';
 import { EffectFactory } from '@/lib/audio/effects';
@@ -13,6 +14,81 @@ import { v4 as uuidv4 } from 'uuid';
 
 export const ControlDeck = ({ instrument, track, onParamChange }) => {
   const [activeTab, setActiveTab] = useState('main');
+  const envelopePreview = useMemo(() => ({
+    attack: instrument.attack ?? 5,
+    decay: instrument.decay ?? 100,
+    sustain: instrument.sustain ?? 100,
+    release: instrument.release ?? 50
+  }), [instrument.attack, instrument.decay, instrument.sustain, instrument.release]);
+
+  const ADSRCanvas = ({ attack, decay, sustain, release, onChange }) => {
+    const canvasRef = React.useRef(null);
+
+    const drawEnvelope = (ctx, width, height) => {
+      ctx.clearRect(0, 0, width, height);
+      ctx.fillStyle = 'rgba(255,255,255,0.02)';
+      ctx.fillRect(0, 0, width, height);
+
+      const sustainLevel = Math.min(Math.max(sustain / 100, 0), 1);
+      const attackTime = Math.max(attack, 1);
+      const decayTime = Math.max(decay, 1);
+      const releaseTime = Math.max(release, 1);
+      const sustainTime = Math.max(width - (attackTime + decayTime + releaseTime), width * 0.2);
+      const total = attackTime + decayTime + releaseTime + sustainTime;
+      const attackX = (attackTime / total) * width;
+      const decayX = attackX + (decayTime / total) * width;
+      const releaseStartX = width - (releaseTime / total) * width;
+      const sustainY = height - sustainLevel * height;
+
+      ctx.beginPath();
+      ctx.strokeStyle = 'rgba(0,255,200,0.8)';
+      ctx.lineWidth = 2;
+      ctx.moveTo(0, height);
+      ctx.lineTo(attackX, 10);
+      ctx.lineTo(decayX, sustainY);
+      ctx.lineTo(releaseStartX, sustainY);
+      ctx.lineTo(width, height);
+      ctx.stroke();
+      ctx.closePath();
+    };
+
+    React.useEffect(() => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      drawEnvelope(ctx, canvas.width, canvas.height);
+    }, [attack, decay, sustain, release]);
+
+    const handlePointer = (e) => {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      const width = rect.width;
+      const height = rect.height;
+
+      if (x < width * 0.25) {
+        onChange('attack', Math.round((x / (width * 0.25)) * 1000));
+      } else if (x < width * 0.5) {
+        onChange('decay', Math.round(((x - width * 0.25) / (width * 0.25)) * 2000));
+        onChange('sustain', Math.round((1 - y / height) * 100));
+      } else if (x < width * 0.75) {
+        onChange('sustain', Math.round((1 - y / height) * 100));
+      } else {
+        onChange('release', Math.round(((x - width * 0.75) / (width * 0.25)) * 2000));
+      }
+    };
+
+    return (
+      <canvas
+        ref={canvasRef}
+        width={320}
+        height={80}
+        onPointerDown={handlePointer}
+        onPointerMove={(e) => e.buttons === 1 && handlePointer(e)}
+        style={{ width: '100%', height: '80px', cursor: 'crosshair', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }}
+      />
+    );
+  };
   const [isPlaying, setIsPlaying] = useState(false);
   const [mixerTracks, setMixerTracks] = useState([]);
   const updateInstrument = useInstrumentsStore(state => state.updateInstrument);
@@ -45,7 +121,7 @@ export const ControlDeck = ({ instrument, track, onParamChange }) => {
     const engineParams = ['volume', 'pitchOffset', 'cutItself', 'attack', 'decay', 'sustain', 'release', 'filterType', 'filterCutoff', 'filterResonance'];
 
     if (engineParams.includes(param)) {
-      const audioEngine = AudioContextService.getAudioEngine();
+      const audioEngine = AudioEngineGlobal.get();
       if (audioEngine) {
         const audioInstrument = audioEngine.instruments.get(instrument.id);
         if (audioInstrument && typeof audioInstrument.updateParameters === 'function') {
@@ -64,7 +140,7 @@ export const ControlDeck = ({ instrument, track, onParamChange }) => {
     updateInstrument(instrument.id, { mixerTrackId: newTrackId });
 
     // Reconnect in audio engine
-    const audioEngine = AudioContextService.getAudioEngine();
+    const audioEngine = AudioEngineGlobal.get();
     if (audioEngine) {
       // Disconnect from old track
       if (instrument.mixerTrackId) {
@@ -98,7 +174,7 @@ export const ControlDeck = ({ instrument, track, onParamChange }) => {
     updateInstrument(instrument.id, { effectChain: updatedChain });
 
     // Update audio engine
-    const audioEngine = AudioContextService.getAudioEngine();
+    const audioEngine = AudioEngineGlobal.get();
     if (audioEngine) {
       const audioInstrument = audioEngine.instruments.get(instrument.id);
       if (audioInstrument && typeof audioInstrument.setEffectChain === 'function') {
@@ -124,7 +200,7 @@ export const ControlDeck = ({ instrument, track, onParamChange }) => {
     updateInstrument(instrument.id, { effectChain: updatedChain });
 
     // Update audio engine
-    const audioEngine = AudioContextService.getAudioEngine();
+    const audioEngine = AudioEngineGlobal.get();
     if (audioEngine) {
       const audioInstrument = audioEngine.instruments.get(instrument.id);
       if (audioInstrument && typeof audioInstrument.setEffectChain === 'function') {
@@ -159,7 +235,7 @@ export const ControlDeck = ({ instrument, track, onParamChange }) => {
     updateInstrument(instrument.id, { effectChain: updatedChain });
 
     // Update audio engine
-    const audioEngine = AudioContextService.getAudioEngine();
+    const audioEngine = AudioEngineGlobal.get();
     if (audioEngine) {
       const audioInstrument = audioEngine.instruments.get(instrument.id);
       if (audioInstrument && typeof audioInstrument.setEffectChain === 'function') {
@@ -258,119 +334,123 @@ export const ControlDeck = ({ instrument, track, onParamChange }) => {
               </div>
               <div className="main-settings-grid__group">
                 <h4 className="main-settings-grid__group-title">Playback</h4>
-                 <EffectSwitch
-                   label="Cut Itself"
-                   isActive={!!instrument.cutItself}
-                   onClick={() => handleParamChangeWithEngine('cutItself', !instrument.cutItself)}
-                 />
+                <EffectSwitch
+                  label="Cut Itself"
+                  isActive={!!instrument.cutItself}
+                  onClick={() => handleParamChangeWithEngine('cutItself', !instrument.cutItself)}
+                />
               </div>
             </div>
 
             {/* ADSR Envelope Section */}
             <div className="main-settings-grid" style={{ marginTop: '20px' }}>
-            <div className="main-settings-grid__group">
-              <h4 className="main-settings-grid__group-title">Envelope (ADSR)</h4>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
-                <Knob
-                  label="Attack"
-                  value={instrument.attack ?? 5}
-                  onChange={v => handleParamChangeWithEngine('attack', v)}
-                  min={0}
-                  max={1000}
-                  defaultValue={5}
-                  unit="ms"
+              <div className="main-settings-grid__group">
+                <h4 className="main-settings-grid__group-title">Envelope (ADSR)</h4>
+                <ADSRCanvas
+                  {...envelopePreview}
+                  onChange={(param, value) => handleParamChangeWithEngine(param, value)}
                 />
-                <Knob
-                  label="Decay"
-                  value={instrument.decay ?? 100}
-                  onChange={v => handleParamChangeWithEngine('decay', v)}
-                  min={0}
-                  max={2000}
-                  defaultValue={100}
-                  unit="ms"
-                />
-                <Knob
-                  label="Sustain"
-                  value={instrument.sustain ?? 100}
-                  onChange={v => handleParamChangeWithEngine('sustain', v)}
-                  min={0}
-                  max={100}
-                  defaultValue={100}
-                  unit="%"
-                />
-                <Knob
-                  label="Release"
-                  value={instrument.release ?? 50}
-                  onChange={v => handleParamChangeWithEngine('release', v)}
-                  min={0}
-                  max={2000}
-                  defaultValue={50}
-                  unit="ms"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Filter Section */}
-          <div className="main-settings-grid" style={{ marginTop: '20px' }}>
-            <div className="main-settings-grid__group">
-              <h4 className="main-settings-grid__group-title">Filter</h4>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
-                <div>
-                  <label style={{ fontSize: '11px', color: 'rgba(255,255,255,0.6)', marginBottom: '4px', display: 'block' }}>
-                    Type
-                  </label>
-                  <select
-                    value={instrument.filterType || 'lowpass'}
-                    onChange={(e) => handleParamChangeWithEngine('filterType', e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '6px 10px',
-                      background: 'rgba(255,255,255,0.05)',
-                      border: '1px solid rgba(255,255,255,0.1)',
-                      borderRadius: '6px',
-                      color: 'white',
-                      fontSize: '13px',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    <option value="lowpass">Low Pass</option>
-                    <option value="highpass">High Pass</option>
-                    <option value="bandpass">Band Pass</option>
-                    <option value="notch">Notch</option>
-                  </select>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
+                  <Knob
+                    label="Attack"
+                    value={instrument.attack ?? 5}
+                    onChange={v => handleParamChangeWithEngine('attack', v)}
+                    min={0}
+                    max={1000}
+                    defaultValue={5}
+                    unit="ms"
+                  />
+                  <Knob
+                    label="Decay"
+                    value={instrument.decay ?? 100}
+                    onChange={v => handleParamChangeWithEngine('decay', v)}
+                    min={0}
+                    max={2000}
+                    defaultValue={100}
+                    unit="ms"
+                  />
+                  <Knob
+                    label="Sustain"
+                    value={instrument.sustain ?? 100}
+                    onChange={v => handleParamChangeWithEngine('sustain', v)}
+                    min={0}
+                    max={100}
+                    defaultValue={100}
+                    unit="%"
+                  />
+                  <Knob
+                    label="Release"
+                    value={instrument.release ?? 50}
+                    onChange={v => handleParamChangeWithEngine('release', v)}
+                    min={0}
+                    max={2000}
+                    defaultValue={50}
+                    unit="ms"
+                  />
                 </div>
-                <Knob
-                  label="Cutoff"
-                  value={instrument.filterCutoff ?? 20000}
-                  onChange={v => handleParamChangeWithEngine('filterCutoff', v)}
-                  min={20}
-                  max={20000}
-                  defaultValue={20000}
-                  logarithmic
-                  unit="Hz"
-                />
-                <Knob
-                  label="Resonance"
-                  value={instrument.filterResonance ?? 1}
-                  onChange={v => handleParamChangeWithEngine('filterResonance', v)}
-                  min={0.1}
-                  max={20}
-                  defaultValue={1}
-                  step={0.1}
-                />
               </div>
             </div>
-          </div>
+
+            {/* Filter Section */}
+            <div className="main-settings-grid" style={{ marginTop: '20px' }}>
+              <div className="main-settings-grid__group">
+                <h4 className="main-settings-grid__group-title">Filter</h4>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
+                  <div>
+                    <label style={{ fontSize: '11px', color: 'rgba(255,255,255,0.6)', marginBottom: '4px', display: 'block' }}>
+                      Type
+                    </label>
+                    <select
+                      value={instrument.filterType || 'lowpass'}
+                      onChange={(e) => handleParamChangeWithEngine('filterType', e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '6px 10px',
+                        background: 'rgba(255,255,255,0.05)',
+                        border: '1px solid rgba(255,255,255,0.1)',
+                        borderRadius: '6px',
+                        color: 'white',
+                        fontSize: '13px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <option value="lowpass">Low Pass</option>
+                      <option value="highpass">High Pass</option>
+                      <option value="bandpass">Band Pass</option>
+                      <option value="notch">Notch</option>
+                    </select>
+                  </div>
+                  <Knob
+                    label="Cutoff"
+                    value={instrument.filterCutoff ?? 20000}
+                    onChange={v => handleParamChangeWithEngine('filterCutoff', v)}
+                    min={20}
+                    max={20000}
+                    defaultValue={20000}
+                    logarithmic
+                    unit="Hz"
+                  />
+                  <Knob
+                    label="Resonance"
+                    value={instrument.filterResonance ?? 1}
+                    onChange={v => handleParamChangeWithEngine('filterResonance', v)}
+                    min={0.1}
+                    max={20}
+                    defaultValue={1}
+                    step={0.1}
+                  />
+                </div>
+              </div>
+            </div>
           </>
         )}
         {activeTab === 'effects' && (
-           <EffectsPanel
-             instrument={instrument}
-             onEffectAdd={handleEffectAdd}
-             onEffectRemove={handleEffectRemove}
-             onEffectUpdate={handleEffectUpdate}
-           />
+          <EffectsPanel
+            instrument={instrument}
+            onEffectAdd={handleEffectAdd}
+            onEffectRemove={handleEffectRemove}
+            onEffectUpdate={handleEffectUpdate}
+          />
         )}
       </div>
     </div>

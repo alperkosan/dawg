@@ -34,6 +34,9 @@ const useInstrumentEditorStore = create(
       /**
        * Open editor for instrument
        */
+      /**
+       * Open editor for instrument
+       */
       openEditor: (instrumentId, instrumentData) => {
         set({
           isOpen: true,

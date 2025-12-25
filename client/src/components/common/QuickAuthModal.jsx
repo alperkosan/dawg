@@ -41,12 +41,12 @@ export default function QuickAuthModal({ isOpen, onClose, onSuccess }) {
     if (mode === 'register') {
       if (!formData.email) newErrors.email = 'Email gereklidir';
       else if (!/\S+@\S+\.\S+/.test(formData.email)) newErrors.email = 'Geçerli bir email giriniz';
-      
+
       if (!formData.username) newErrors.username = 'Kullanıcı adı gereklidir';
       else if (formData.username.length < 3) newErrors.username = 'Kullanıcı adı en az 3 karakter olmalıdır';
-      
+
       if (!formData.displayName) newErrors.displayName = 'İsim gereklidir';
-      
+
       if (!formData.password) newErrors.password = 'Şifre gereklidir';
       else if (formData.password.length < 6) newErrors.password = 'Şifre en az 6 karakter olmalıdır';
     } else {
@@ -60,7 +60,7 @@ export default function QuickAuthModal({ isOpen, onClose, onSuccess }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
+
     if (!validateForm()) return;
 
     setIsLoading(true);
@@ -75,7 +75,7 @@ export default function QuickAuthModal({ isOpen, onClose, onSuccess }) {
 
       // Success - update session storage
       sessionStorage.setItem('user-has-chosen', JSON.stringify(true));
-      
+
       // Call success callback
       if (onSuccess) {
         onSuccess();
@@ -83,7 +83,7 @@ export default function QuickAuthModal({ isOpen, onClose, onSuccess }) {
 
       // Close modal
       onClose();
-      
+
       // Reset form
       setFormData({
         email: '',
@@ -144,7 +144,7 @@ export default function QuickAuthModal({ isOpen, onClose, onSuccess }) {
           </button>
         </div>
 
-        <form className="quick-auth-modal__form" onSubmit={handleSubmit}>
+        <form className="quick-auth-modal__form" onSubmit={handleSubmit} autoComplete="off">
           <div className="quick-auth-modal__field">
             <label className="quick-auth-modal__label">
               <Mail size={16} />
@@ -157,6 +157,7 @@ export default function QuickAuthModal({ isOpen, onClose, onSuccess }) {
               className={`quick-auth-modal__input ${errors.email ? 'error' : ''}`}
               placeholder="ornek@email.com"
               disabled={isLoading}
+              autoComplete="off"
             />
             {errors.email && (
               <span className="quick-auth-modal__error">{errors.email}</span>
@@ -177,6 +178,7 @@ export default function QuickAuthModal({ isOpen, onClose, onSuccess }) {
                   className={`quick-auth-modal__input ${errors.username ? 'error' : ''}`}
                   placeholder="kullaniciadi"
                   disabled={isLoading}
+                  autoComplete="off"
                 />
                 {errors.username && (
                   <span className="quick-auth-modal__error">{errors.username}</span>
@@ -195,6 +197,7 @@ export default function QuickAuthModal({ isOpen, onClose, onSuccess }) {
                   className={`quick-auth-modal__input ${errors.displayName ? 'error' : ''}`}
                   placeholder="Adınız Soyadınız"
                   disabled={isLoading}
+                  autoComplete="off"
                 />
                 {errors.displayName && (
                   <span className="quick-auth-modal__error">{errors.displayName}</span>
@@ -215,6 +218,7 @@ export default function QuickAuthModal({ isOpen, onClose, onSuccess }) {
               className={`quick-auth-modal__input ${errors.password ? 'error' : ''}`}
               placeholder="••••••••"
               disabled={isLoading}
+              autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
             />
             {errors.password && (
               <span className="quick-auth-modal__error">{errors.password}</span>

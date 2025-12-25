@@ -5,10 +5,14 @@ export const WaveformV3 = ({
   buffer, 
   onSliceCreate, 
   onEnvelopeChange, 
+  onSelectionChange,
+  onRegionChange,
+  regionControls = null,
   playPosition = 0,
   isPlaying = false,
   selectedRegion = null,
-  tools = { slice: false, envelope: false, select: true }
+  tools = { slice: false, envelope: false, select: true, loop: false },
+  isReadOnly = false
 }) => {
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
@@ -18,9 +22,50 @@ export const WaveformV3 = ({
   const [zoom, setZoom] = useState(1);
   const [offset, setOffset] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
-  const [dragStart, setDragStart] = useState(null);
-  const [selection, setSelection] = useState(null);
+  const [selection, setSelection] = useState(selectedRegion);
   const [sliceMarkers, setSliceMarkers] = useState([]);
+  const [dragMode, setDragMode] = useState(null); // 'selection' | 'start' | 'end' | 'loopStart' | 'loopEnd'
+  const [dragValue, setDragValue] = useState(null);
+  const [hoverHandle, setHoverHandle] = useState(null);
+
+  useEffect(() => {
+    if (!selectedRegion) {
+      setSelection(null);
+      return;
+    }
+    setSelection(selectedRegion);
+  }, [selectedRegion?.start, selectedRegion?.end, selectedRegion?.type]);
+
+  const clamp01 = (value) => Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0));
+  const dragLabels = {
+    start: 'Start',
+    end: 'End',
+    loopStart: 'Loop Start',
+    loopEnd: 'Loop End'
+  };
+  const formatTime = (seconds) => {
+    if (!Number.isFinite(seconds)) return '0.00s';
+    if (seconds >= 1) return `${seconds.toFixed(2)}s`;
+    return `${Math.round(seconds * 1000)}ms`;
+  };
+  const detectHandleAtPosition = useCallback((position) => {
+    if (!regionControls) return null;
+    const threshold = 0.01;
+    const handles = [];
+    const push = (value, label) => {
+      if (typeof value === 'number') {
+        handles.push({ value: clamp01(value), label });
+      }
+    };
+    push(regionControls.start, 'start');
+    push(regionControls.end, 'end');
+    push(regionControls.loopStart, 'loopStart');
+    push(regionControls.loopEnd, 'loopEnd');
+
+    const match = handles.find(entry => Math.abs(position - entry.value) <= threshold);
+    return match?.label || null;
+  }, [regionControls]);
+
 
   // Performans optimizasyonu: Waveform data cache
   const waveformDataRef = useRef(null);
@@ -161,9 +206,38 @@ export const WaveformV3 = ({
       ctx.setLineDash([]);
     }
     
-    // Selection çiz
+    // Trim ve loop overlay çizimleri
+    const interactiveHandle = ['start', 'end', 'loopStart', 'loopEnd'].includes(dragMode)
+      ? dragMode
+      : hoverHandle;
+    const trimHandleFocus = interactiveHandle && (interactiveHandle === 'start' || interactiveHandle === 'end')
+      ? interactiveHandle
+      : null;
+    const loopHandleFocus = interactiveHandle && (interactiveHandle === 'loopStart' || interactiveHandle === 'loopEnd')
+      ? interactiveHandle
+      : null;
+
+    if (regionControls) {
+      const trimRegion = {
+        start: clamp01(regionControls.start ?? 0),
+        end: clamp01(regionControls.end ?? 1),
+        type: 'trim'
+      };
+      renderSelection(ctx, trimRegion, width, height, actualSampleRatio, trimHandleFocus);
+
+      if (regionControls.loopEnabled) {
+        const loopRegion = {
+          start: clamp01(regionControls.loopStart ?? trimRegion.start),
+          end: clamp01(regionControls.loopEnd ?? trimRegion.end),
+          type: 'loop'
+        };
+        renderSelection(ctx, loopRegion, width, height, actualSampleRatio, loopHandleFocus);
+      }
+    }
+
+    // Kullanıcı seçimi
     if (selection) {
-      renderSelection(ctx, selection, width, height, actualSampleRatio);
+      renderSelection(ctx, selection, width, height, actualSampleRatio, null);
     }
     
     // Slice markers çiz
@@ -177,7 +251,7 @@ export const WaveformV3 = ({
     // Tools overlay çiz
     renderToolsOverlay(ctx, width, height, tools);
 
-  }, [dimensions, zoom, offset, selection, sliceMarkers, playPosition, isPlaying, tools]);
+  }, [dimensions, zoom, offset, selection, sliceMarkers, playPosition, isPlaying, tools, regionControls, dragMode, hoverHandle]);
 
   // Waveform path rendering (orantılı genişlik ile)
   const renderWaveformPath = (ctx, data, start, end, renderWidth, height, color, sampleRatio) => {
@@ -285,20 +359,99 @@ export const WaveformV3 = ({
   };
 
   // Selection rendering (orantılı)
-  const renderSelection = (ctx, selection, width, height, sampleRatio) => {
-    const { start, end } = selection;
-    const actualWidth = width * sampleRatio;
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
-    ctx.fillRect(start * actualWidth, 0, (end - start) * actualWidth, height);
-    
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
-    ctx.lineWidth = 1;
+  const renderRegionHandle = (ctx, x, height, label, color, options = {}) => {
+    const { isActive = false } = options;
+    ctx.save();
+    if (isActive) {
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 12;
+    }
+    ctx.fillStyle = color;
+    ctx.fillRect(x - 1, 0, 2, height);
     ctx.beginPath();
-    ctx.moveTo(start * actualWidth, 0);
-    ctx.lineTo(start * actualWidth, height);
-    ctx.moveTo(end * actualWidth, 0);
-    ctx.lineTo(end * actualWidth, height);
+    ctx.moveTo(x - 6, height - 18);
+    ctx.lineTo(x + 6, height - 18);
+    ctx.lineTo(x, height - 4);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+    ctx.save();
+    ctx.fillStyle = isActive ? '#000' : '#0b0b0b';
+    ctx.font = '10px monospace';
+    ctx.fillText(label, x - 18, height - 24);
+    ctx.restore();
+  };
+
+  const selectionThemes = {
+    trim: {
+      fill: 'rgba(56, 255, 168, 0.24)',
+      stroke: '#00FF88',
+      labels: { start: 'Start', end: 'End' },
+      handleKeys: { start: 'start', end: 'end' },
+      showHandles: true,
+      dash: []
+    },
+    loop: {
+      fill: 'rgba(255, 181, 74, 0.22)',
+      stroke: '#FF9900',
+      labels: { start: 'Loop In', end: 'Loop Out' },
+      handleKeys: { start: 'loopStart', end: 'loopEnd' },
+      showHandles: true,
+      dash: [6, 4]
+    },
+    selection: {
+      fill: 'rgba(77, 172, 255, 0.18)',
+      stroke: '#4DACFF',
+      labels: { start: 'A', end: 'B' },
+      showHandles: false,
+      dash: [4, 4]
+    }
+  };
+
+  const renderSelection = (ctx, selection, width, height, sampleRatio, activeHandle) => {
+    if (!selection) return;
+    const { start, end, type = 'selection' } = selection;
+    const theme = selectionThemes[type] || selectionThemes.selection;
+    const actualWidth = width * sampleRatio;
+    const a = clamp01(start);
+    const b = clamp01(end);
+    const normalizedStart = Math.min(a, b);
+    const normalizedEnd = Math.max(a, b);
+    ctx.fillStyle = theme.fill;
+    ctx.fillRect(normalizedStart * actualWidth, 0, (normalizedEnd - normalizedStart) * actualWidth, height);
+    
+    ctx.strokeStyle = theme.stroke;
+    ctx.lineWidth = 1;
+    if (theme.dash?.length) {
+      ctx.setLineDash(theme.dash);
+    }
+    ctx.beginPath();
+    ctx.moveTo(normalizedStart * actualWidth, 0);
+    ctx.lineTo(normalizedStart * actualWidth, height);
+    ctx.moveTo(normalizedEnd * actualWidth, 0);
+    ctx.lineTo(normalizedEnd * actualWidth, height);
     ctx.stroke();
+    ctx.setLineDash([]);
+
+    if (theme.showHandles) {
+      const handleKeys = theme.handleKeys || { start: 'start', end: 'end' };
+      renderRegionHandle(
+        ctx,
+        normalizedStart * actualWidth,
+        height,
+        theme.labels.start,
+        theme.stroke,
+        { isActive: activeHandle === handleKeys.start }
+      );
+      renderRegionHandle(
+        ctx,
+        normalizedEnd * actualWidth,
+        height,
+        theme.labels.end,
+        theme.stroke,
+        { isActive: activeHandle === handleKeys.end }
+      );
+    }
   };
 
   // Slice markers rendering (orantılı)
@@ -355,20 +508,26 @@ export const WaveformV3 = ({
   };
 
   // Mouse event handlers (orantılı hesaplama ile)
-  const handleMouseDown = (e) => {
-    if (!waveformDataRef.current) return;
+  const handlePointerDown = (e) => {
+    if (!waveformDataRef.current || isReadOnly) return;
     
     const rect = canvasRef.current.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / dimensions.width;
+    const xNorm = (e.clientX - rect.left) / dimensions.width;
     const { actualSampleRatio } = waveformDataRef.current;
-    
-    // Sadece sample alanı içinde tıklama kabul et
-    if (x > actualSampleRatio) return;
-    
-    const position = (offset + (x / zoom)) / actualSampleRatio;
-    
-    setIsDragging(true);
-    setDragStart({ x, position });
+    if (xNorm > actualSampleRatio) return;
+    const position = (offset + (xNorm / zoom)) / actualSampleRatio;
+    canvasRef.current?.setPointerCapture?.(e.pointerId);
+
+    const handle = detectHandleAtPosition(position);
+    if (handle) {
+      const clamped = clamp01(position);
+      setDragMode(handle);
+      setHoverHandle(handle);
+      setIsDragging(true);
+      setDragValue(clamped);
+      onRegionChange?.({ [handle]: clamped });
+      return;
+    }
 
     if (tools.slice) {
       setSliceMarkers(prev => [...prev, { 
@@ -378,29 +537,65 @@ export const WaveformV3 = ({
       }]);
       onSliceCreate?.(position);
     } else if (tools.select) {
-      setSelection({ start: position, end: position });
+      const baseSelection = { start: position, end: position, type: 'selection' };
+      setSelection(baseSelection);
+      onSelectionChange?.(baseSelection);
+      setIsDragging(true);
+      setDragMode('selection');
+    } else if (tools.loop) {
+      const loopSelection = { start: position, end: position, type: 'loop' };
+      setSelection(loopSelection);
+      onSelectionChange?.(loopSelection);
+      setIsDragging(true);
+      setDragMode('loopSelection');
     }
   };
 
-  const handleMouseMove = (e) => {
-    if (!isDragging || !dragStart || !waveformDataRef.current) return;
-    
+  const handlePointerMove = (e) => {
+    if (!waveformDataRef.current) return;
     const rect = canvasRef.current.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / dimensions.width;
+    const xNorm = (e.clientX - rect.left) / dimensions.width;
     const { actualSampleRatio } = waveformDataRef.current;
-    const position = (offset + (x / zoom)) / actualSampleRatio;
-    
-    if (tools.select && selection) {
-      setSelection(prev => ({
-        ...prev,
-        end: position
-      }));
+    const rawPosition = (offset + (xNorm / zoom)) / actualSampleRatio;
+    if (xNorm > actualSampleRatio && !isDragging) {
+      if (hoverHandle) {
+        setHoverHandle(null);
+      }
+      return;
+    }
+    const position = rawPosition;
+
+    if (!isDragging) {
+      const nextHandle = detectHandleAtPosition(position);
+      if (nextHandle !== hoverHandle) {
+        setHoverHandle(nextHandle);
+      }
+      return;
+    }
+
+    if (dragMode === 'selection' || dragMode === 'loopSelection') {
+      setSelection(prev => {
+        if (!prev) return prev;
+        const next = { ...prev, end: position, type: dragMode === 'loopSelection' ? 'loop' : 'selection' };
+        onSelectionChange?.(next);
+        return next;
+      });
+    } else if (dragMode && regionControls) {
+      const nextValue = clamp01(position);
+      setDragValue(nextValue);
+      setHoverHandle(dragMode);
+      onRegionChange?.({ [dragMode]: nextValue });
     }
   };
 
-  const handleMouseUp = () => {
+  const handlePointerUp = (e) => {
+    if (e?.pointerId !== undefined) {
+      canvasRef.current?.releasePointerCapture?.(e.pointerId);
+    }
     setIsDragging(false);
-    setDragStart(null);
+    setDragMode(null);
+    setDragValue(null);
+    setHoverHandle(null);
   };
 
   const handleWheel = useCallback((e) => {
@@ -448,50 +643,66 @@ export const WaveformV3 = ({
     };
   }, [isPlaying, renderWaveform]);
 
+  const waveformDuration = waveformDataRef.current?.duration || 0;
+  const handleNames = ['start', 'end', 'loopStart', 'loopEnd'];
+  const isHandleDrag = handleNames.includes(dragMode);
+  const activeHandleLabel = isHandleDrag ? dragLabels[dragMode] : null;
+  const activeHandleValue = isHandleDrag
+    ? formatTime((dragValue ?? clamp01(regionControls?.[dragMode])) * waveformDuration)
+    : null;
+  const playbackWindowSeconds = regionControls
+    ? (clamp01(regionControls.end ?? 1) - clamp01(regionControls.start ?? 0)) * waveformDuration
+    : waveformDuration;
+  let cursorStyle = 'text';
+  if (isDragging) {
+    if (isHandleDrag) {
+      cursorStyle = 'ew-resize';
+    } else if (dragMode === 'selection' || dragMode === 'loopSelection') {
+      cursorStyle = 'grabbing';
+    }
+  } else if (hoverHandle && handleNames.includes(hoverHandle)) {
+    cursorStyle = 'ew-resize';
+  } else if (tools.slice) {
+    cursorStyle = 'crosshair';
+  } else if (tools.loop) {
+    cursorStyle = 'alias';
+  }
+
   return (
     <div className="waveform-v3-container" ref={containerRef}>
       <canvas
         ref={canvasRef}
         className="waveform-v3-canvas"
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp} // Eğer mouse dışarı çıkarsa sürüklemeyi bitir
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerLeave={handlePointerUp}
+        onPointerCancel={handlePointerUp}
         style={{ 
-          cursor: tools.slice ? 'crosshair' : tools.select ? 'text' : 'pointer',
+          cursor: cursorStyle,
           display: 'block',
           maxWidth: '100%'
         }}
       />
+
+      {isHandleDrag && (
+        <div className="waveform-drag-hud">
+          <span>{activeHandleLabel}</span>
+          <strong>{activeHandleValue}</strong>
+        </div>
+      )}
       
-      {/* Debug/Info panel */}
       {waveformDataRef.current && (
-        <div style={{ 
-          position: 'absolute', 
-          top: '8px', 
-          right: '8px', 
-          background: 'rgba(0,0,0,0.8)', 
-          color: 'white', 
-          padding: '4px 8px', 
-          borderRadius: '4px',
-          fontSize: '11px',
-          fontFamily: 'monospace'
-        }}>
-          {waveformDataRef.current.duration.toFixed(2)}s | 
-          Zoom: {zoom.toFixed(1)}x |
-          Ratio: {waveformDataRef.current.actualSampleRatio.toFixed(3)} |
-          Slices: {sliceMarkers.length}
+        <div className="waveform-meta-overlay">
+          <span>{waveformDuration.toFixed(2)}s total</span>
+          <span>Window {formatTime(playbackWindowSeconds)}</span>
+          <span>Zoom {zoom.toFixed(1)}x</span>
+          <span>Slices {sliceMarkers.length}</span>
         </div>
       )}
       
       {!buffer && (
-        <div style={{ 
-          position: 'absolute', 
-          top: '50%', 
-          left: '50%', 
-          transform: 'translate(-50%, -50%)',
-          color: '#888888'
-        }}>
+        <div className="waveform-loading">
           Dalga formu yükleniyor...
         </div>
       )}

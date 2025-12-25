@@ -36,6 +36,7 @@ export const INSTRUMENT_TYPES = Object.freeze({
 
   // Synthesis-based instruments
   VASYNTH: 'vasynth',    // Native Web Audio Virtual Analog Synth
+  ZENITH: 'zenith',      // Zenith Synth - Premium synthesizer
   SYNTH: 'synth',        // Legacy ForgeSynth (deprecated)
 });
 

@@ -15,6 +15,8 @@
 /**
  * CC Data class for managing MIDI Control Change data
  */
+import { AutomationInterpolation } from '../../../lib/core/utils/AutomationInterpolation.js'; // ✅ NEW: Advanced interpolation
+
 export class CCData {
     /**
      * @param {number} ccNumber - CC number (1-127, or special: 'pitchBend', 'aftertouch')
@@ -140,10 +142,11 @@ export class CCData {
     /**
      * Get value at specific time (interpolated)
      * @param {number} time - Time in steps
-     * @param {string} [interpolation='linear'] - Interpolation method: 'linear', 'step', 'none'
+     * @param {string} [interpolation='linear'] - Interpolation method: 'linear', 'exponential', 'logarithmic', 'bezier', 'cubic', 'step', 'easeInOut', 'easeIn', 'easeOut'
+     * @param {Object} [options={}] - Interpolation options (exponent, base, control1, control2, etc.)
      * @returns {number|null} Interpolated value or null if no events
      */
-    getValueAtTime(time, interpolation = 'linear') {
+    getValueAtTime(time, interpolation = 'linear', options = {}) {
         if (this.events.length === 0) {
             return null;
         }
@@ -177,18 +180,36 @@ export class CCData {
             return null;
         }
 
-        // Interpolate
-        if (interpolation === 'none' || interpolation === 'step') {
-            return this.events[beforeIndex].value;
-        }
-
-        // Linear interpolation
+        // Get interpolation method from event or use default
         const before = this.events[beforeIndex];
         const after = this.events[afterIndex];
-        const ratio = (time - before.time) / (after.time - before.time);
+        const effectiveInterpolation = before.interpolation || after.interpolation || interpolation;
+
+        // Step interpolation (no interpolation)
+        if (effectiveInterpolation === 'none' || effectiveInterpolation === 'step') {
+            return before.value;
+        }
+
+        // Calculate progress ratio (0-1)
+        const timeRange = after.time - before.time;
+        if (timeRange <= 0) {
+            return before.value;
+        }
+        const t = (time - before.time) / timeRange;
+
+        // ✅ NEW: Use advanced interpolation methods
         const { min, max } = CCData.getValueRange(this.ccNumber);
         
-        const interpolated = before.value + (after.value - before.value) * ratio;
+        // Interpolate using advanced methods
+        const interpolated = AutomationInterpolation.interpolate(
+            before.value,
+            after.value,
+            t,
+            effectiveInterpolation,
+            options
+        );
+        
+        // Clamp to valid range and round for MIDI values
         return Math.max(min, Math.min(max, Math.round(interpolated)));
     }
 

@@ -1,6 +1,6 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, Suspense } from 'react';
 import ReactDOM from 'react-dom';
-import { Power, ChevronDown, Save, Trash2, GitCompareArrows } from 'lucide-react';
+import { Power, ChevronDown, Save, Trash2, GitCompareArrows, Sparkles } from 'lucide-react';
 import { PluginColorPalette, PluginAnimations, PluginTypography, PluginSpacingHeader } from '../PluginDesignSystem';
 import { useMixerStore } from '@/store/useMixerStore';
 
@@ -17,8 +17,8 @@ const PresetMenu = ({ isOpen, onClose, anchorEl, factoryPresets, userPresets, on
   if (!isOpen) return null;
   return ReactDOM.createPortal(
     <div ref={menuRef} className="preset-manager__menu" style={{ top: position.top, left: position.left }}>
-      {factoryPresets.length > 0 && ( <> <h4 className="preset-manager__menu-category">Fabrika</h4> {factoryPresets.map(p => <button key={p.name} onClick={() => onSelect(p.settings)} className="preset-manager__menu-item">{p.name}</button>)} </> )}
-      {userPresets.length > 0 && ( <> <h4 className="preset-manager__menu-category">Kullanıcı</h4> {userPresets.map(p => <div key={p.name} className="preset-manager__user-item"> <button onClick={() => onSelect(p.settings)} className="preset-manager__user-item-button">{p.name}</button> <button onClick={() => onDelete(p.name)} className="preset-manager__delete-btn" title="Bu preseti sil"><Trash2 size={14} /></button> </div> )} </> )}
+      {factoryPresets.length > 0 && (<> <h4 className="preset-manager__menu-category">Fabrika</h4> {factoryPresets.map(p => <button key={p.name} onClick={() => onSelect(p.settings, p.name)} className="preset-manager__menu-item">{p.name}</button>)} </>)}
+      {userPresets.length > 0 && (<> <h4 className="preset-manager__menu-category">Kullanıcı</h4> {userPresets.map(p => <div key={p.name} className="preset-manager__user-item"> <button onClick={() => onSelect(p.settings, p.name)} className="preset-manager__user-item-button">{p.name}</button> <button onClick={() => onDelete(p.name)} className="preset-manager__delete-btn" title="Bu preseti sil"><Trash2 size={14} /></button> </div>)} </>)}
     </div>, document.body);
 };
 
@@ -39,8 +39,12 @@ const PluginContainer = ({ trackId, effect, definition, children }) => {
     setActivePresetName(matchingPreset ? matchingPreset.name : 'Custom*');
   }, [effect.settings, presets, userPresets]);
 
-  const handlePresetSelect = (settings) => {
-    handleMixerEffectChange(trackId, effect.id, settings);
+  const handlePresetSelect = (settings, presetName) => {
+    // ✅ FIX: Save preset name along with settings
+    // Note: Old PluginContainer doesn't have preset IDs, only names
+    handleMixerEffectChange(trackId, effect.id, settings, null, {
+      presetName: presetName || 'Custom'
+    });
     setIsMenuOpen(false);
   };
   const handleSave = () => {
@@ -59,7 +63,7 @@ const PluginContainer = ({ trackId, effect, definition, children }) => {
       window.localStorage.setItem(storageKey, JSON.stringify(updatedPresets));
     }
   };
-  
+
   const handleToggleAB = () => handleMixerEffectChange(trackId, effect.id, '__toggle_ab_state');
   const handleCopyToB = () => handleMixerEffectChange(trackId, effect.id, '__copy_a_to_b');
   const handleBypass = (e) => {
@@ -77,6 +81,8 @@ const PluginContainer = ({ trackId, effect, definition, children }) => {
     padding: `${PluginSpacingHeader.padding}`, height: '52px', flexShrink: 0,
   };
 
+  const [showBrowser, setShowBrowser] = useState(false);
+
   return (
     <div style={containerStyle}>
       <div style={headerStyle} className="plugin-header__controls">
@@ -90,6 +96,13 @@ const PluginContainer = ({ trackId, effect, definition, children }) => {
           </div>
         </div>
         <div className="preset-actions">
+          <button
+            onClick={() => setShowBrowser(!showBrowser)}
+            className={`preset-action-btn ${showBrowser ? 'active' : ''}`}
+            title="Topluluk Presetlerini Gör"
+          >
+            <Sparkles size={16} />
+          </button>
           <div className="preset-manager__selector">
             <button ref={buttonRef} onClick={(e) => { e.stopPropagation(); setIsMenuOpen(true); }} className={`preset-button ${isMenuOpen ? 'preset-button--open' : ''}`}>
               <span className="preset-button__name">{activePresetName}</span>
@@ -101,11 +114,58 @@ const PluginContainer = ({ trackId, effect, definition, children }) => {
             <button onClick={handleToggleAB} className={`ab-button ${!effect.abState?.isB ? 'ab-button--active' : ''}`}>A</button>
             <button onClick={handleToggleAB} className={`ab-button ${effect.abState?.isB ? 'ab-button--active' : ''}`}>B</button>
           </div>
-          <button onClick={handleCopyToB} className="preset-action-btn" title="A'yı B'ye Kopyala"><GitCompareArrows size={16} /></button>
           <button onClick={handleSave} className="preset-action-btn" title="Preset'i Kaydet"><Save size={16} /></button>
         </div>
       </div>
-      <div className="plugin-body">{children}</div>
+      <div className="plugin-body" style={{ position: 'relative', flex: 1, overflow: 'hidden' }}>
+        {children}
+
+        {showBrowser && (
+          <div
+            className="plugin-preset-browser-overlay"
+            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            onMouseUp={(e) => e.stopPropagation()}
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(10, 10, 20, 0.98)',
+              zIndex: 100,
+              padding: '12px',
+              overflowY: 'auto'
+            }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <h3 style={{ fontSize: '14px', fontWeight: '600', color: '#00ffff', margin: 0 }}>Preset Manager</h3>
+              <button
+                onClick={() => setShowBrowser(false)}
+                style={{ background: 'transparent', border: 'none', color: '#666', cursor: 'pointer' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <Suspense fallback={<div>Yükleniyor...</div>}>
+              {(() => {
+                const PresetBrowser = React.lazy(() => import('../../../features/instrument_editor/components/PresetBrowser'));
+                return (
+                  <PresetBrowser
+                    targetData={effect.settings}
+                    presetType="effect"
+                    engineType={effect.type}
+                    onApplyPreset={(data) => {
+                      handleMixerEffectChange(trackId, effect.id, data);
+                      setShowBrowser(false);
+                    }}
+                  />
+                );
+              })()}
+            </Suspense>
+          </div>
+        )}
+      </div>
     </div>
   );
 };

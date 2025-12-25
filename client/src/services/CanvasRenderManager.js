@@ -33,11 +33,17 @@ class RendererTask {
     this.throttle = throttle;     // Min ms between renders (0 = every frame)
     this.lastRun = 0;
     this.enabled = true;
+
+    // ✅ DIRTY TRACKING: Skip rendering if nothing changed
+    this.isDirty = true;          // Start dirty (needs initial render)
+    this.dirtyRegions = [];       // Specific regions to redraw (optional)
+
     this.stats = {
       renderCount: 0,
       totalTime: 0,
       avgTime: 0,
-      maxTime: 0
+      maxTime: 0,
+      skippedFrames: 0            // ✅ Track skipped frames
     };
   }
 
@@ -46,7 +52,32 @@ class RendererTask {
    */
   shouldRender(now) {
     if (!this.enabled) return false;
-    return (now - this.lastRun) >= this.throttle;
+
+    // ✅ OPTIMIZATION: Skip if not dirty and throttled
+    const throttleReady = (now - this.lastRun) >= this.throttle;
+    if (!throttleReady) return false;
+
+    // Only render if dirty or throttle allows
+    return this.isDirty || throttleReady;
+  }
+
+  /**
+   * Mark this task as dirty (needs redraw)
+   * @param {Object} region - Optional specific region {x, y, width, height}
+   */
+  markDirty(region = null) {
+    this.isDirty = true;
+    if (region) {
+      this.dirtyRegions.push(region);
+    }
+  }
+
+  /**
+   * Clear dirty flag after successful render
+   */
+  clearDirty() {
+    this.isDirty = false;
+    this.dirtyRegions = [];
   }
 
   /**
@@ -65,6 +96,9 @@ class RendererTask {
       this.stats.totalTime += renderTime;
       this.stats.avgTime = this.stats.totalTime / this.stats.renderCount;
       this.stats.maxTime = Math.max(this.stats.maxTime, renderTime);
+
+      // ✅ Clear dirty flag after successful render
+      this.clearDirty();
     } catch (e) {
       console.error(`Renderer ${this.id} error:`, e);
     }
@@ -78,7 +112,8 @@ class RendererTask {
       renderCount: 0,
       totalTime: 0,
       avgTime: 0,
-      maxTime: 0
+      maxTime: 0,
+      skippedFrames: 0
     };
   }
 }
@@ -173,6 +208,10 @@ class CanvasRenderManager {
       avgFrameTime: 0,
       maxFrameTime: 0
     };
+
+    // Optimization: Cache sorted tasks
+    this.sortedTasksCache = [];
+    this.tasksDirty = false;
   }
 
   /**
@@ -203,6 +242,7 @@ class CanvasRenderManager {
 
     const task = new RendererTask(id, callback, priority, throttle);
     this.tasks.set(id, task);
+    this.tasksDirty = true; // Mark for resorting
 
     // Start RAF loop if not running
     this.start();
@@ -218,6 +258,7 @@ class CanvasRenderManager {
     const task = this.tasks.get(id);
     if (task) {
       this.tasks.delete(id);
+      this.tasksDirty = true; // Mark for resorting
       console.log(`🗑️ Unregistered renderer: ${id}`);
 
       // Stop RAF if no more tasks
@@ -244,6 +285,7 @@ class CanvasRenderManager {
     const task = this.tasks.get(id);
     if (task) {
       task.priority = priority;
+      this.tasksDirty = true; // Mark for resorting
     }
   }
 
@@ -254,6 +296,24 @@ class CanvasRenderManager {
     const task = this.tasks.get(id);
     if (task) {
       task.throttle = throttle;
+    }
+  }
+
+  /**
+   * Mark a renderer as dirty (needs redraw)
+   * @param {string} id - Renderer ID
+   * @param {Object} region - Optional specific region {x, y, width, height}
+   */
+  markDirty(id, region = null) {
+    const task = this.tasks.get(id);
+    if (task) {
+      task.markDirty(region);
+
+      // ✅ OPTIMIZATION: Restart RAF if it was stopped (idle detection)
+      if (!this.running) {
+        console.log('▶️ Canvas Render Manager: Restarting RAF (task marked dirty)');
+        this.start();
+      }
     }
   }
 
@@ -289,6 +349,7 @@ class CanvasRenderManager {
 
   /**
    * Main render loop
+   * ✅ OPTIMIZED: Pauses when idle (no dirty tasks)
    */
   render() {
     if (!this.running) return;
@@ -297,15 +358,36 @@ class CanvasRenderManager {
     const frameStart = now;
 
     // Get tasks sorted by priority (high to low)
-    const sortedTasks = Array.from(this.tasks.values())
-      .sort((a, b) => b.priority - a.priority);
+    // ✅ OPTIMIZATION: Only resort when tasks change
+    if (this.tasksDirty || this.sortedTasksCache.length !== this.tasks.size) {
+      this.sortedTasksCache = Array.from(this.tasks.values())
+        .sort((a, b) => b.priority - a.priority);
+      this.tasksDirty = false;
+    }
+
+    // ✅ OPTIMIZATION: Check if any task needs rendering
+    const hasDirtyTasks = this.sortedTasksCache.some(task =>
+      task.enabled && task.isDirty
+    );
+
+    if (!hasDirtyTasks) {
+      console.log('🎨 Canvas Render Manager: No dirty tasks, pausing RAF');
+      this.running = false;
+      this.rafId = null;
+      return; // Stop RAF loop when idle
+    }
 
     // Render each task that's ready
     let rendered = 0;
-    for (const task of sortedTasks) {
+    let skipped = 0;
+    for (const task of this.sortedTasksCache) {
       if (task.shouldRender(now)) {
         task.render(now);
         rendered++;
+      } else if (!task.isDirty) {
+        // ✅ Track skipped frames (not dirty, no need to render)
+        task.stats.skippedFrames++;
+        skipped++;
       }
     }
 
@@ -442,6 +524,8 @@ class CanvasRenderManager {
   cleanup() {
     this.stop();
     this.tasks.clear();
+    this.sortedTasksCache = [];
+    this.tasksDirty = false;
     this.canvasPool.clear();
     this.resetStats();
     console.log('🧹 Canvas Render Manager cleaned up');

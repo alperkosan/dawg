@@ -14,7 +14,9 @@
 import { SampleLoader } from './loaders/SampleLoader.js';
 import { MultiSampleInstrument } from './sample/MultiSampleInstrument.js';
 import { SingleSampleInstrument } from './sample/SingleSampleInstrument.js';
+import { WasmSingleSampleInstrument } from './sample/WasmSingleSampleInstrument.js'; // ✅ WASM
 import { VASynthInstrument } from './synth/VASynthInstrument.js';
+import { ZenithSynthInstrument } from './synth/ZenithSynthInstrument.js';
 import { INSTRUMENT_TYPES } from '../../../config/constants.js';
 
 export class InstrumentFactory {
@@ -29,7 +31,8 @@ export class InstrumentFactory {
     static async createPlaybackInstrument(instrumentData, audioContext, options = {}) {
         const {
             preloadSamples = true,
-            onProgress = null
+            onProgress = null,
+            existingBuffer = null  // ✅ NEW: Use pre-loaded buffer if available
         } = options;
 
         console.log(`🏭 Creating playback instrument: ${instrumentData.name} (${instrumentData.type})`);
@@ -40,7 +43,7 @@ export class InstrumentFactory {
                     return await this._createSampleInstrument(
                         instrumentData,
                         audioContext,
-                        { preloadSamples, onProgress }
+                        { preloadSamples, onProgress, existingBuffer }
                     );
 
                 case INSTRUMENT_TYPES.VASYNTH:
@@ -49,10 +52,19 @@ export class InstrumentFactory {
                         audioContext
                     );
 
+                case INSTRUMENT_TYPES.ZENITH:
+                    return await this._createZenithSynthInstrument(
+                        instrumentData,
+                        audioContext
+                    );
+
                 case INSTRUMENT_TYPES.SYNTH:
-                    // Legacy ForgeSynth - not implemented yet in new system
-                    console.warn(`ForgeSynth not yet supported in InstrumentFactory`);
-                    return null;
+                    // ✅ Map generic 'synth' type to VASynthInstrument for now
+                    console.log(`Address legacy 'synth' type -> using VASynthInstrument`);
+                    return await this._createVASynthInstrument(
+                        instrumentData,
+                        audioContext
+                    );
 
                 default:
                     throw new Error(`Unknown instrument type: ${instrumentData.type}`);
@@ -84,12 +96,8 @@ export class InstrumentFactory {
         return this.createPlaybackInstrument(instrumentData, audioContext, { preloadSamples });
     }
 
-    /**
-     * Create sample-based instrument (single or multi-sampled)
-     * @private
-     */
     static async _createSampleInstrument(instrumentData, audioContext, options) {
-        const { preloadSamples, onProgress } = options;
+        const { preloadSamples, onProgress, existingBuffer } = options;
 
         // Check if multi-sampled
         const isMultiSampled = instrumentData.multiSamples && instrumentData.multiSamples.length > 0;
@@ -116,17 +124,31 @@ export class InstrumentFactory {
 
         } else {
             // Single sample instrument (e.g., Kick, Snare)
-            console.log(`  Single sample instrument: ${instrumentData.url}`);
+            console.log(`  Single sample instrument (WASM): ${instrumentData.url}`);
 
-            // Load single sample
-            let sampleBuffer = null;
-            if (preloadSamples) {
+            // ✅ FIX: Use existing buffer if provided (from store or engine cache)
+            // CRITICAL: Validate that instrumentData.audioBuffer is a real buffer and not an empty object {} from JSON
+            const isValidBuffer = (buf) => buf && (
+                (typeof AudioBuffer !== 'undefined' && buf instanceof AudioBuffer) ||
+                (buf.length && buf.numberOfChannels) ||
+                (buf.get && typeof buf.get === 'function')
+            );
+
+            let sampleBuffer = existingBuffer || (isValidBuffer(instrumentData.audioBuffer) ? instrumentData.audioBuffer : null);
+
+            // Only load from network if we don't have a buffer
+            if (!sampleBuffer && preloadSamples) {
+                console.log(`  Fetching sample from URL: ${instrumentData.url ? 'Data/URL' : 'None'}`);
                 const buffers = await SampleLoader.preloadInstrument(instrumentData, audioContext);
                 sampleBuffer = buffers.get(instrumentData.url);
             }
 
-            // Create instrument
-            const instrument = new SingleSampleInstrument(
+            if (!sampleBuffer) {
+                console.warn(`⚠️ No buffer available for ${instrumentData.name}, will try to load on demand`);
+            }
+
+            // Create instrument - SWITCH TO WASM
+            const instrument = new WasmSingleSampleInstrument(
                 instrumentData,
                 audioContext,
                 sampleBuffer
@@ -148,6 +170,20 @@ export class InstrumentFactory {
         // ✅ Use VASynthInstrument (existing implementation)
         const { VASynthInstrument } = await import('./synth/VASynthInstrument.js');
         const instrument = new VASynthInstrument(instrumentData, audioContext);
+        await instrument.initialize();
+
+        return instrument;
+    }
+
+    /**
+     * Create Zenith Synth instrument
+     * @private
+     */
+    static async _createZenithSynthInstrument(instrumentData, audioContext) {
+        console.log(`  Zenith Synth preset: ${instrumentData.presetName}`);
+
+        const { ZenithSynthInstrument } = await import('./synth/ZenithSynthInstrument.js');
+        const instrument = new ZenithSynthInstrument(instrumentData, audioContext);
         await instrument.initialize();
 
         return instrument;
@@ -190,6 +226,17 @@ export class InstrumentFactory {
                 };
 
             case INSTRUMENT_TYPES.VASYNTH:
+                return {
+                    supportsPolyphony: true,
+                    supportsPitchBend: false,
+                    supportsVelocity: true,
+                    supportsAftertouch: false,
+                    supportsPresetChange: true,
+                    supportsParameterAutomation: true,
+                    requiresSamples: false
+                };
+
+            case INSTRUMENT_TYPES.ZENITH:
                 return {
                     supportsPolyphony: true,
                     supportsPitchBend: false,
@@ -257,6 +304,12 @@ export class InstrumentFactory {
         if (instrumentData.type === INSTRUMENT_TYPES.VASYNTH) {
             if (!instrumentData.presetName) {
                 errors.push('VASynth instrument requires presetName');
+            }
+        }
+
+        if (instrumentData.type === INSTRUMENT_TYPES.ZENITH) {
+            if (!instrumentData.presetName) {
+                errors.push('Zenith Synth instrument requires presetName');
             }
         }
 

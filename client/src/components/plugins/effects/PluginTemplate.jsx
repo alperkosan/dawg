@@ -14,7 +14,7 @@
 
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { useAudioPlugin, useGhostValue, useCanvasVisualization } from '@/hooks/useAudioPlugin';
-import { createPresetManager } from '@/lib/audio/PresetManager';
+import { createPresetManager } from '@/services/PresetManager';
 
 /**
  * Factory Presets

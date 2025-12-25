@@ -1,388 +1,157 @@
-import React, { useRef, useEffect, useCallback, useState } from 'react';
-import { AutomationLane } from '../types/AutomationLane';
+/**
+ * CC Lanes Component - Refactored to use shared AutomationLaneEditor
+ * 
+ * ✅ NEW: Uses shared AutomationLaneEditor component and useAutomationEditor hook
+ * This ensures consistency across Piano Roll and Arrangement panel
+ */
+
+import React, { useState, useCallback, useEffect } from 'react';
+import { AutomationLaneEditor } from '@/components/automation/AutomationLaneEditor';
+import { useAutomationEditor } from '@/hooks/useAutomationEditor';
+import { useArrangementStore } from '@/store/useArrangementStore';
+import { useInstrumentsStore } from '@/store/useInstrumentsStore';
 import './CCLanes.css';
 
 const CC_LANE_HEIGHT = 80;
 const KEYBOARD_WIDTH = 80;
-const POINT_SIZE = 6;
-const POINT_HOVER_SIZE = 8;
 
 /**
  * CC Lanes Component
- * Phase 2: FIRST LAYER - UI & Basic Editing
- * Displays and allows editing of MIDI CC automation lanes
+ * Wrapper around shared AutomationLaneEditor for Piano Roll
+ * ✅ NEW: Uses shared useAutomationEditor hook
  */
 function CCLanes({
-    lanes = [], // Array of AutomationLane instances
+    lanes = [], // Array of AutomationLane instances (legacy prop - will be replaced by hook)
     selectedNoteIds = [],
-    onLaneChange, // (laneId, lane) => void
-    onPointAdd, // (laneId, time, value) => void
-    onPointRemove, // (laneId, pointIndex) => void
-    onPointUpdate, // (laneId, pointIndex, updates) => void
+    onLaneChange, // (laneId, lane) => void (legacy - will be replaced by hook)
+    onPointAdd, // (laneId, time, value) => void (legacy - will be replaced by hook)
+    onPointRemove, // (laneId, pointIndex) => void (legacy - will be replaced by hook)
+    onPointUpdate, // (laneId, pointIndex, updates) => void (legacy - will be replaced by hook)
     onScroll, // (deltaX, deltaY) => void - Scroll callback to sync with Piano Roll
     dimensions,
     viewport,
     activeTool = 'select',
-    snapValue = 1
+    snapValue = 1,
+    instrumentId = null // ✅ NEW: Accept instrumentId as prop (from PianoRoll)
 }) {
-    const canvasRef = useRef(null);
-    const [hoveredPoint, setHoveredPoint] = useState({ laneIndex: -1, pointIndex: -1 });
-    const [draggingPoint, setDraggingPoint] = useState(null);
-    const [selectedLaneIndex, setSelectedLaneIndex] = useState(0);
-    const payloadRef = useRef({
-        lanes,
-        selectedLaneIndex: 0,
-        hoveredPoint: { laneIndex: -1, pointIndex: -1 },
-        draggingPoint: null,
-        dimensions,
-        viewport
-    });
-    const dirtyRef = useRef(true);
-    const lastViewportRef = useRef({ scrollX: 0, width: 0 });
+    // Get active pattern and instrument
+    const activePatternId = useArrangementStore(state => state.activePatternId);
+    // ✅ FIX: Use prop instrumentId if provided, otherwise fall back to store
+    const currentInstrumentFromStore = useInstrumentsStore(state => state.currentInstrument);
+    const currentInstrument = instrumentId 
+        ? useInstrumentsStore(state => state.instruments.find(inst => inst.id === instrumentId))
+        : currentInstrumentFromStore;
 
-    const markDirty = useCallback(() => {
-        dirtyRef.current = true;
-    }, []);
-
-    useEffect(() => {
-        payloadRef.current = {
-            lanes,
-            selectedLaneIndex,
-            hoveredPoint,
-            draggingPoint,
-            dimensions,
-            viewport
-        };
-        markDirty();
-    }, [lanes, selectedLaneIndex, hoveredPoint, draggingPoint, dimensions, viewport, markDirty]);
-
-    useEffect(() => {
-        if (typeof ResizeObserver === 'undefined') return;
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-        const resizeObserver = new ResizeObserver(() => markDirty());
-        resizeObserver.observe(canvas);
-        return () => resizeObserver.disconnect();
-    }, [markDirty]);
-
-    const renderCCLanes = useCallback(() => {
-        const canvas = canvasRef.current;
-        const ctx = canvas?.getContext('2d');
-        const payload = payloadRef.current;
-        if (!ctx || !payload.dimensions || !payload.viewport || payload.lanes.length === 0) return;
-
-        const styles = getComputedStyle(document.documentElement);
-        const dpr = window.devicePixelRatio || 1;
-        const rect = canvas.getBoundingClientRect();
-
-        if (canvas.width !== rect.width * dpr || canvas.height !== rect.height * dpr) {
-            canvas.width = rect.width * dpr;
-            canvas.height = rect.height * dpr;
-            ctx.setTransform(1, 0, 0, 1, 0, 0);
-            ctx.scale(dpr, dpr);
-        }
-
-        const bgPrimary = styles.getPropertyValue('--zenith-bg-primary').trim();
-        ctx.fillStyle = bgPrimary || '#1a1d23';
-        ctx.fillRect(0, 0, rect.width, rect.height);
-
-        const { selectedLaneIndex: laneIndex, lanes: laneList } = payload;
-        if (laneIndex >= 0 && laneIndex < laneList.length) {
-            const lane = laneList[laneIndex];
-            if (lane?.visible) {
-                drawAutomationLane(ctx, {
-                    lane,
-                    laneIndex,
-                    dimensions: payload.dimensions,
-                    viewport: payload.viewport,
-                    canvasHeight: rect.height,
-                    canvasWidth: rect.width,
-                    hoveredPoint: payload.hoveredPoint,
-                    draggingPoint: payload.draggingPoint
+    // ✅ NEW: Use shared automation editor hook
+    // ✅ FIX: Memoize onLanesChange callback to prevent infinite loops
+    // ✅ FIX: Use queueMicrotask to avoid React render-phase state updates
+    const handleLanesChange = useCallback((updatedLanes) => {
+        // Sync with legacy onLaneChange callback if provided
+        // Use queueMicrotask to ensure this runs after render
+        queueMicrotask(() => {
+            if (onLaneChange && updatedLanes.length > 0) {
+                updatedLanes.forEach(lane => {
+                    onLaneChange(lane.id || lane.ccNumber, lane);
                 });
             }
-        }
-    }, []);
+        });
+    }, [onLaneChange]);
 
+    const {
+        lanes: hookLanes,
+        selectedLane,
+        selectedLaneIndex,
+        setSelectedLaneIndex,
+        handlePointAdd: hookHandlePointAdd,
+        handlePointUpdate: hookHandlePointUpdate,
+        handlePointRemove: hookHandlePointRemove
+    } = useAutomationEditor({
+        patternId: activePatternId,
+        instrumentId: currentInstrument?.id,
+        timeUnit: 'steps', // Piano Roll uses steps
+        onLanesChange: handleLanesChange
+    });
+
+    // Use hook lanes if available, otherwise fall back to prop lanes (backward compatibility)
+    const effectiveLanes = hookLanes.length > 0 ? hookLanes : lanes;
+    const effectiveSelectedLane = selectedLane || effectiveLanes[selectedLaneIndex] || null;
+    
+    // ✅ DEBUG: Log lane state
     useEffect(() => {
-        let rafId;
-        const loop = () => {
-            const payload = payloadRef.current;
-            const vp = payload.viewport;
-            if (vp) {
-                const last = lastViewportRef.current;
-                if (vp.scrollX !== last.scrollX || vp.width !== last.width) {
-                    lastViewportRef.current = { scrollX: vp.scrollX, width: vp.width };
-                    dirtyRef.current = true;
-                }
-            }
-
-            if (dirtyRef.current) {
-                dirtyRef.current = false;
-                renderCCLanes();
-            }
-
-            rafId = requestAnimationFrame(loop);
-        };
-        rafId = requestAnimationFrame(loop);
-        return () => {
-            if (rafId) cancelAnimationFrame(rafId);
-        };
-    }, [renderCCLanes]);
-
-    const drawAutomationLane = (ctx, { lane, laneIndex, dimensions, viewport, canvasHeight, canvasWidth, hoveredPoint, draggingPoint }) => {
-        const styles = getComputedStyle(document.documentElement);
-        const { stepWidth } = dimensions;
-        const points = lane.getPoints();
-        const { min, max } = AutomationLane.getValueRange(lane.ccNumber);
-
-        ctx.save();
-        ctx.translate(-viewport.scrollX, 0);
-
-        // Draw grid lines
-        const gridColor = styles.getPropertyValue('--zenith-border-subtle').trim() || '#2a2d35';
-        ctx.strokeStyle = gridColor;
-        ctx.lineWidth = 0.5;
-        ctx.globalAlpha = 0.3;
-
-        // Calculate visible width
-        const visibleWidth = viewport.width - KEYBOARD_WIDTH;
-
-        // Horizontal grid (value lines)
-        for (let i = 0; i <= 4; i++) {
-            const valueY = (canvasHeight / 4) * i;
-            ctx.beginPath();
-            ctx.moveTo(viewport.scrollX, valueY);
-            ctx.lineTo(viewport.scrollX + visibleWidth, valueY);
-            ctx.stroke();
-        }
-
-        // Vertical grid (time lines)
-        const startStep = Math.floor(viewport.scrollX / stepWidth);
-        const endStep = Math.ceil((viewport.scrollX + visibleWidth) / stepWidth);
-        for (let step = startStep; step <= endStep; step++) {
-            const x = step * stepWidth;
-            ctx.beginPath();
-            ctx.moveTo(x, 0);
-            ctx.lineTo(x, canvasHeight);
-            ctx.stroke();
-        }
-
-        ctx.globalAlpha = 1.0;
-
-        // Draw automation curve
-        if (points.length > 0) {
-            ctx.strokeStyle = lane.color;
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-
-            // Draw curve connecting points
-            for (let i = 0; i < points.length; i++) {
-                const point = points[i];
-                const x = point.time * stepWidth;
-                const valueNormalized = (point.value - min) / (max - min);
-                const y = canvasHeight - (valueNormalized * canvasHeight);
-
-                if (i === 0) {
-                    ctx.moveTo(x, y);
-                } else {
-                    // Linear interpolation between points
-                    ctx.lineTo(x, y);
-                }
-            }
-
-            ctx.stroke();
-
-            // Fill area under curve
-            if (points.length > 1) {
-                ctx.fillStyle = lane.color;
-                ctx.globalAlpha = 0.2;
-                ctx.lineTo(points[points.length - 1].time * stepWidth, canvasHeight);
-                ctx.lineTo(points[0].time * stepWidth, canvasHeight);
-                ctx.closePath();
-                ctx.fill();
-                ctx.globalAlpha = 1.0;
-            }
-        }
-
-        // Draw automation points
-        points.forEach((point, pointIndex) => {
-            const x = point.time * stepWidth;
-            const valueNormalized = (point.value - min) / (max - min);
-            const y = canvasHeight - (valueNormalized * canvasHeight);
-
-            // Only draw if in viewport
-            if (x < viewport.scrollX || x > viewport.scrollX + viewport.width - KEYBOARD_WIDTH) {
-                return;
-            }
-
-            const isHovered = hoveredPoint.laneIndex === laneIndex && hoveredPoint.pointIndex === pointIndex;
-            const isDragging = draggingPoint?.laneIndex === laneIndex && draggingPoint?.pointIndex === pointIndex;
-            const size = (isHovered || isDragging) ? POINT_HOVER_SIZE : POINT_SIZE;
-
-            // Point circle
-            ctx.fillStyle = isDragging ? '#ffffff' : lane.color;
-            ctx.globalAlpha = isHovered || isDragging ? 1.0 : 0.8;
-            ctx.beginPath();
-            ctx.arc(x, y, size / 2, 0, Math.PI * 2);
-            ctx.fill();
-
-            // Point outline
-            ctx.strokeStyle = '#ffffff';
-            ctx.lineWidth = 1;
-            ctx.stroke();
-
-            // Value label
-            if (isHovered || isDragging) {
-                const textPrimary = styles.getPropertyValue('--zenith-text-primary').trim();
-                ctx.fillStyle = textPrimary || '#ffffff';
-                ctx.font = '10px monospace';
-                ctx.textAlign = 'center';
-                ctx.fillText(point.value.toString(), x, y - size - 5);
-            }
+        console.log('🎚️ CCLanes: Lane state', { 
+            hookLanesLength: hookLanes.length, 
+            propLanesLength: lanes.length,
+            effectiveLanesLength: effectiveLanes.length,
+            selectedLaneIndex,
+            hasSelectedLane: !!selectedLane,
+            hasEffectiveSelectedLane: !!effectiveSelectedLane,
+            selectedLanePoints: selectedLane?.getPoints().length,
+            effectiveSelectedLanePoints: effectiveSelectedLane?.getPoints().length
         });
+    }, [hookLanes, lanes, effectiveLanes, selectedLaneIndex, selectedLane, effectiveSelectedLane]);
 
-        ctx.restore();
-    };
-
-
-    // Handle mouse interactions
-    const handleMouseDown = useCallback((e) => {
-        // ✅ FIX: Allow automation drawing with any tool (or at least select/paintBrush)
-        // Automation should be drawable regardless of active tool
-        if (selectedLaneIndex < 0 || selectedLaneIndex >= lanes.length) return;
-        
-        // ✅ FIX: Stop event propagation to prevent piano roll from handling the event
-        e.stopPropagation();
-
-        const canvas = canvasRef.current;
-        const rect = canvas.getBoundingClientRect();
-        const clickX = e.clientX - rect.left + viewport.scrollX;
-        const clickY = e.clientY - rect.top;
-
-        const { stepWidth } = dimensions;
-        const clickTime = clickX / stepWidth;
-        const lane = lanes[selectedLaneIndex];
-        const points = lane.getPoints();
-        const { min, max } = AutomationLane.getValueRange(lane.ccNumber);
-        const canvasHeight = rect.height;
-        const clickValue = max - ((clickY / canvasHeight) * (max - min));
-
-        // Snap time to grid
-        const snappedTime = snapValue > 0 ? Math.round(clickTime / snapValue) * snapValue : clickTime;
-
-        // Check if clicking on existing point
-        let clickedPointIndex = -1;
-        const clickTolerance = 10; // pixels
-
-        points.forEach((point, index) => {
-            const pointX = point.time * stepWidth;
-            const pointY = canvasHeight - ((point.value - min) / (max - min)) * canvasHeight;
-            const distance = Math.sqrt(
-                Math.pow(clickX - pointX, 2) + Math.pow(clickY - pointY, 2)
-            );
-
-            if (distance < clickTolerance) {
-                clickedPointIndex = index;
-            }
+    // ✅ FIX: Always use hook handlers when available (hook manages state internally)
+    // Legacy callbacks are only used as fallback for backward compatibility
+    const handlePointAdd = useCallback((time, value) => {
+        console.log('🎚️ CCLanes: handlePointAdd called', { 
+            hasHookHandlePointAdd: !!hookHandlePointAdd, 
+            activePatternId, 
+            instrumentId: currentInstrument?.id,
+            hasEffectiveSelectedLane: !!effectiveSelectedLane,
+            hasOnPointAdd: !!onPointAdd,
+            effectiveSelectedLaneId: effectiveSelectedLane?.id,
+            effectiveSelectedLaneCCNumber: effectiveSelectedLane?.ccNumber
         });
-
-        if (clickedPointIndex >= 0) {
-            // Start dragging point
-            setDraggingPoint({ laneIndex: selectedLaneIndex, pointIndex: clickedPointIndex });
-        } else {
-            // Add new point
-            if (onPointAdd) {
-                onPointAdd(lane.ccNumber, snappedTime, Math.max(min, Math.min(max, Math.round(clickValue))));
-            }
-        }
-    }, [selectedLaneIndex, lanes, dimensions, viewport, snapValue, onPointAdd]);
-
-    const handleMouseMove = useCallback((e) => {
-        // ✅ FIX: Stop event propagation when interacting with automation
-        if (draggingPoint || (selectedLaneIndex >= 0 && selectedLaneIndex < lanes.length)) {
-            e.stopPropagation();
-        }
         
-        if (!draggingPoint || selectedLaneIndex < 0 || selectedLaneIndex >= lanes.length) {
-            // Update hover state
-            const canvas = canvasRef.current;
-            if (!canvas) return;
-            const rect = canvas.getBoundingClientRect();
-            const mouseX = e.clientX - rect.left + viewport.scrollX;
-            const mouseY = e.clientY - rect.top;
-
-            const { stepWidth } = dimensions;
-            const lane = lanes[selectedLaneIndex];
-            const points = lane.getPoints();
-            const { min, max } = AutomationLane.getValueRange(lane.ccNumber);
-            const canvasHeight = rect.height;
-            const clickTolerance = 10;
-
-            let foundHover = { laneIndex: -1, pointIndex: -1 };
-
-            points.forEach((point, index) => {
-                const pointX = point.time * stepWidth;
-                const pointY = canvasHeight - ((point.value - min) / (max - min)) * canvasHeight;
-                const distance = Math.sqrt(
-                    Math.pow(mouseX - pointX, 2) + Math.pow(mouseY - pointY, 2)
-                );
-
-                if (distance < clickTolerance) {
-                    foundHover = { laneIndex: selectedLaneIndex, pointIndex: index };
-                }
+        // ✅ FIX: If hook is available and instrumentId exists, use hook
+        // Otherwise, use legacy callback with effectiveSelectedLane
+        if (hookHandlePointAdd && activePatternId && currentInstrument?.id) {
+            // Use hook handler (manages state internally, no render-phase updates)
+            console.log('🎚️ CCLanes: Using hook handler');
+            hookHandlePointAdd(time, value);
+        } else if (effectiveSelectedLane && onPointAdd) {
+            // Fall back to legacy callback (wrap in queueMicrotask to avoid render-phase updates)
+            console.log('🎚️ CCLanes: Using legacy callback', { 
+                laneId: effectiveSelectedLane.id, 
+                ccNumber: effectiveSelectedLane.ccNumber 
             });
-
-            setHoveredPoint(foundHover);
-            return;
+            queueMicrotask(() => {
+                onPointAdd(effectiveSelectedLane.id || effectiveSelectedLane.ccNumber, time, value);
+            });
+        } else {
+            console.warn('🎚️ CCLanes: No handler available for point add');
         }
+    }, [hookHandlePointAdd, effectiveSelectedLane, onPointAdd, activePatternId, currentInstrument]);
 
-        // Drag point
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-        const rect = canvas.getBoundingClientRect();
-        const mouseX = e.clientX - rect.left + viewport.scrollX;
-        const mouseY = e.clientY - rect.top;
-
-        const { stepWidth } = dimensions;
-        const newTime = mouseX / stepWidth;
-        const lane = lanes[selectedLaneIndex];
-        const { min, max } = AutomationLane.getValueRange(lane.ccNumber);
-        const canvasHeight = rect.height;
-        const newValue = max - ((mouseY / canvasHeight) * (max - min));
-
-        // Snap time to grid
-        const snappedTime = snapValue > 0 ? Math.round(newTime / snapValue) * snapValue : newTime;
-
-        if (onPointUpdate) {
-            onPointUpdate(
-                lane.ccNumber,
-                draggingPoint.pointIndex,
-                {
-                    time: Math.max(0, snappedTime),
-                    value: Math.max(min, Math.min(max, Math.round(newValue)))
-                }
-            );
+    const handlePointUpdate = useCallback((pointIndex, updates) => {
+        if (hookHandlePointUpdate && activePatternId && currentInstrument?.id) {
+            // Use hook handler (manages state internally, no render-phase updates)
+            hookHandlePointUpdate(pointIndex, updates);
+        } else if (effectiveSelectedLane && onPointUpdate) {
+            // Fall back to legacy callback (wrap in queueMicrotask to avoid render-phase updates)
+            queueMicrotask(() => {
+                onPointUpdate(effectiveSelectedLane.id || effectiveSelectedLane.ccNumber, pointIndex, updates);
+            });
         }
-    }, [draggingPoint, selectedLaneIndex, lanes, dimensions, viewport, snapValue, onPointUpdate]);
+    }, [hookHandlePointUpdate, effectiveSelectedLane, onPointUpdate, activePatternId, currentInstrument]);
 
-    const handleMouseUp = useCallback((e) => {
-        // ✅ FIX: Stop event propagation when interacting with automation
-        if (draggingPoint) {
-            e?.stopPropagation();
-            setDraggingPoint(null);
+    const handlePointRemove = useCallback((pointIndex) => {
+        if (hookHandlePointRemove && activePatternId && currentInstrument?.id) {
+            // Use hook handler (manages state internally, no render-phase updates)
+            hookHandlePointRemove(pointIndex);
+        } else if (effectiveSelectedLane && onPointRemove) {
+            // Fall back to legacy callback (wrap in queueMicrotask to avoid render-phase updates)
+            queueMicrotask(() => {
+                onPointRemove(effectiveSelectedLane.id || effectiveSelectedLane.ccNumber, pointIndex);
+            });
         }
-    }, [draggingPoint]);
+    }, [hookHandlePointRemove, effectiveSelectedLane, onPointRemove, activePatternId, currentInstrument]);
 
-    // Handle wheel scroll to sync with Piano Roll
-    const handleWheel = useCallback((e) => {
-        if (!onScroll) return;
-
-        e.preventDefault();
-        e.stopPropagation();
-
-        // Pass scroll delta to parent (Piano Roll)
-        onScroll(e.deltaX, e.deltaY);
+    // Handle scroll (pass to parent)
+    const handleScroll = useCallback((e) => {
+        if (onScroll) {
+            onScroll(e.deltaX, e.deltaY);
+        }
     }, [onScroll]);
 
     return (
@@ -397,7 +166,7 @@ function CCLanes({
                         onChange={(e) => setSelectedLaneIndex(parseInt(e.target.value))}
                         className="cc-lane-select"
                     >
-                        {lanes.map((lane, index) => (
+                        {effectiveLanes.map((lane, index) => (
                             <option key={index} value={index}>
                                 {lane.name}
                             </option>
@@ -405,23 +174,35 @@ function CCLanes({
                     </select>
                 </div>
             </div>
-            <canvas
-                ref={canvasRef}
-                className="cc-lanes-canvas"
-                onMouseDown={handleMouseDown}
-                onMouseMove={handleMouseMove}
-                onMouseUp={handleMouseUp}
-                onMouseLeave={handleMouseUp}
-                onWheel={handleWheel}
-                style={{
-                    width: '100%',
-                    height: CC_LANE_HEIGHT,
-                    cursor: draggingPoint ? 'grabbing' : (hoveredPoint.pointIndex >= 0 ? 'pointer' : 'crosshair')
-                }}
-            />
+            {/* ✅ NEW: Use shared AutomationLaneEditor component */}
+            {effectiveSelectedLane ? (
+                <div 
+                    className="cc-lanes-editor-container"
+                    style={{ height: CC_LANE_HEIGHT, width: '100%' }}
+                    onWheel={handleScroll}
+                >
+                    <AutomationLaneEditor
+                        lane={effectiveSelectedLane}
+                        dimensions={dimensions}
+                        viewport={viewport}
+                        onPointAdd={handlePointAdd}
+                        onPointUpdate={handlePointUpdate}
+                        onPointRemove={handlePointRemove}
+                        keyboardWidth={KEYBOARD_WIDTH}
+                        showGrid={true}
+                        snapValue={snapValue}
+                        activeTool={activeTool}
+                        timeUnit="steps" // Piano Roll uses steps
+                        className="cc-lanes-editor"
+                    />
+                </div>
+            ) : (
+                <div className="cc-lanes-empty" style={{ height: CC_LANE_HEIGHT }}>
+                    <span>No automation lanes available</span>
+                </div>
+            )}
         </div>
     );
 }
 
 export default React.memo(CCLanes);
-
